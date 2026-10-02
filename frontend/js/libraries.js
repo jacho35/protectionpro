@@ -7,7 +7,7 @@
  * for the selected entry — where it comes from, drift, history (restore a version), retire /
  * restore, submit to the company. Rates & prices docks the rate library; Team libraries docks the
  * shared-libraries panel under your layer order and the clash report; Out of date, Submissions,
- * Activity log and Import / export complete it. Settings' library tabs are links into this screen.
+ * Activity log and Import / export complete it. Settings no longer has library tabs; their panes live in #lib-panes and are docked here.
  *
  *   Libraries.open({ view, id })   view = a library key | 'rates' | 'drift' | 'teams' | 'activity' | 'export'
  *   Libraries.refreshBadge()       the count on the menu item (out of date + submissions waiting)
@@ -16,7 +16,7 @@
 const Libraries = {
   KEYS: ['cables', 'cbs', 'fuses', 'transformers', 'loadClasses'],
   LABELS: { cables: 'Cables', cbs: 'Circuit breakers', fuses: 'Fuses', transformers: 'Transformers', loadClasses: 'Load classes' },
-  // Settings tab that holds each library's editable table (docked here)
+  // Pane (#lib-pane-<tab>) that holds each library's editable table (docked here)
   TAB: { cables: 'cables', cbs: 'cbs', fuses: 'fuses', transformers: 'transformers', loadClasses: 'load-classes' },
   RENDER: { cables: 'renderCableTable', cbs: 'renderCBTable', fuses: 'renderFuseTable', transformers: 'renderTransformerTable', loadClasses: 'renderLoadClassTable' },
   ACTIONS: {
@@ -102,7 +102,7 @@ const Libraries = {
   // ── docking: the real editors live here now ──
   // A Settings pane is moved into the screen (a comment keeps its place) and put back on leaving.
   _dockPane(tab) {
-    const el = document.getElementById(`settings-tab-${tab}`);
+    const el = document.getElementById(`lib-pane-${tab}`);
     if (!el) return null;
     const ph = document.createComment('lib-dock');
     el.parentNode.insertBefore(ph, el);

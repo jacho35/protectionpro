@@ -1,6 +1,6 @@
 /* ProtectionPro — the one cable library.
  *
- * STANDARD_CABLES (constants.js, edited in Settings › Cables) is the only cable
+ * STANDARD_CABLES (constants.js, edited in the Libraries manager) is the only cable
  * library in the app: MV and LV armoured multicore, LV 2-core service cables,
  * and building wiring (T+E, H07V-R singles, Surfix, control). Every picker —
  * Demand, site / floor plans, the single-line diagram, DB schedules — and the

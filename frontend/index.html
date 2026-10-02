@@ -4,22 +4,22 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ProtectionPro — Single Line Diagram Builder</title>
-  <link rel="stylesheet" href="css/app.css?v=3.5.225">
-  <link rel="stylesheet" href="css/sidebar.css?v=3.5.225">
-  <link rel="stylesheet" href="css/properties.css?v=3.5.225">
-  <link rel="stylesheet" href="css/toolbar.css?v=3.5.225">
-  <link rel="stylesheet" href="css/symbols.css?v=3.5.225">
-  <link rel="stylesheet" href="css/retic.css?v=3.5.225">
-  <link rel="stylesheet" href="css/lightning.css?v=3.5.225">
-  <link rel="stylesheet" href="css/rates.css?v=3.5.225">
-  <link rel="stylesheet" href="css/plan.css?v=3.5.225">
-  <link rel="stylesheet" href="css/mobile.css?v=3.5.225">
-  <link rel="stylesheet" href="css/interlocking.css?v=3.5.225">
-  <link rel="stylesheet" href="css/schedules.css?v=3.5.225">
-  <link rel="stylesheet" href="css/quantities.css?v=3.5.225">
-  <link rel="stylesheet" href="css/streetlight.css?v=3.5.225">
-  <link rel="stylesheet" href="css/roadlight.css?v=3.5.225">
-  <link rel="stylesheet" href="css/help.css?v=3.5.225">
+  <link rel="stylesheet" href="css/app.css?v=3.5.226">
+  <link rel="stylesheet" href="css/sidebar.css?v=3.5.226">
+  <link rel="stylesheet" href="css/properties.css?v=3.5.226">
+  <link rel="stylesheet" href="css/toolbar.css?v=3.5.226">
+  <link rel="stylesheet" href="css/symbols.css?v=3.5.226">
+  <link rel="stylesheet" href="css/retic.css?v=3.5.226">
+  <link rel="stylesheet" href="css/lightning.css?v=3.5.226">
+  <link rel="stylesheet" href="css/rates.css?v=3.5.226">
+  <link rel="stylesheet" href="css/plan.css?v=3.5.226">
+  <link rel="stylesheet" href="css/mobile.css?v=3.5.226">
+  <link rel="stylesheet" href="css/interlocking.css?v=3.5.226">
+  <link rel="stylesheet" href="css/schedules.css?v=3.5.226">
+  <link rel="stylesheet" href="css/quantities.css?v=3.5.226">
+  <link rel="stylesheet" href="css/streetlight.css?v=3.5.226">
+  <link rel="stylesheet" href="css/roadlight.css?v=3.5.226">
+  <link rel="stylesheet" href="css/help.css?v=3.5.226">
 </head>
 <body>
   <!-- Top Toolbar -->
@@ -2512,27 +2512,165 @@
     </div>
   </div>
 
+  <!-- Library editors: docked into the Libraries manager (Project → Libraries…), never shown in Settings -->
+  <div id="lib-panes" hidden>
+        <div id="lib-pane-cables" class="settings-tab-content">
+          <div class="library-source-ref">
+            Data per IEC 60502 / SANS 1339 &mdash; R and X at 90&deg;C, trefoil formation. Zero-sequence ratios per IEC 60502 Annex C.
+          </div>
+          <div class="library-toolbar">
+            <button id="btn-add-cable" class="btn-small">+ Add Cable</button>
+            <button id="btn-reset-cables" class="btn-small btn-secondary">Reset to Defaults</button>
+          </div>
+          <div class="library-table-wrap">
+            <table id="cable-library-table" class="library-table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Conductor</th>
+                  <th>Insulation</th>
+                  <th>Construction</th>
+                  <th>Cores</th>
+                  <th>Size (mm²)</th>
+                  <th>Voltage (kV)</th>
+                  <th>R₁ (Ω/km)</th>
+                  <th>X₁ (Ω/km)</th>
+                  <th>R₀ (Ω/km)</th>
+                  <th>X₀ (Ω/km)</th>
+                  <th>Irated (A)</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="cable-library-body">
+                <!-- Populated by JS -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div id="lib-pane-transformers" class="settings-tab-content">
+          <div class="library-toolbar">
+            <button id="btn-add-xfmr" class="btn-small">+ Add Transformer</button>
+            <button id="btn-reset-xfmrs" class="btn-small btn-secondary">Reset to Defaults</button>
+          </div>
+          <div class="library-table-wrap">
+            <table id="xfmr-library-table" class="library-table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Rating (MVA)</th>
+                  <th>HV (kV)</th>
+                  <th>LV (kV)</th>
+                  <th>Z%</th>
+                  <th>X/R</th>
+                  <th>Vector</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="xfmr-library-body">
+                <!-- Populated by JS -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div id="lib-pane-cbs" class="settings-tab-content">
+          <div class="library-toolbar">
+            <button id="btn-add-cb" class="btn-small">+ Add CB</button>
+            <button id="btn-reset-cbs" class="btn-small btn-secondary">Reset to Defaults</button>
+          </div>
+          <div class="library-table-wrap">
+            <table id="cb-library-table" class="library-table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Type</th>
+                  <th>Trip (A)</th>
+                  <th>Voltage (kV)</th>
+                  <th>Breaking (kA)</th>
+                  <th>Mag. (xIn)</th>
+                  <th>LT Class</th>
+                  <th title="Trip-unit profile the breaker gets when picked (Auto: by type and frame)">Trip unit</th>
+                  <th title="Default short-time pickup (× Ir); blank = the trip unit's default">Isd (×Ir)</th>
+                  <th title="Default short-time delay; blank = the trip unit's default">tsd (s)</th>
+                  <th title="Default instantaneous pickup (× Ir); blank = the trip unit's default">Ii (×Ir)</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="cb-library-body">
+                <!-- Populated by JS -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div id="lib-pane-fuses" class="settings-tab-content">
+          <div class="library-toolbar">
+            <button id="btn-add-fuse" class="btn-small">+ Add Fuse</button>
+            <button id="btn-reset-fuses" class="btn-small btn-secondary">Reset to Defaults</button>
+          </div>
+          <div class="library-table-wrap">
+            <table id="fuse-library-table" class="library-table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Type</th>
+                  <th>Rating (A)</th>
+                  <th>Voltage (kV)</th>
+                  <th>Breaking (kA)</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="fuse-library-body">
+                <!-- Populated by JS -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div id="lib-pane-load-classes" class="settings-tab-content">
+          <div class="library-source-ref">
+            Load classes per CTEF100 Appendix A1 (CoCT-modified NRS 034-1 Table 3, 15-year) and NRS 034-1 Table 3a. Used by the Reticulation workspace for ADMD demand estimation. α/β/c are Herman-Beta parameters; ADMD is per-consumer after-diversity maximum demand.
+          </div>
+          <div class="library-toolbar">
+            <button id="btn-add-loadclass" class="btn-small">+ Add Class</button>
+            <button id="btn-reset-loadclasses" class="btn-small btn-secondary">Reset to Defaults</button>
+          </div>
+          <div class="library-table-wrap">
+            <table id="loadclass-library-table" class="library-table">
+              <thead>
+                <tr>
+                  <th>Label</th>
+                  <th>LSM</th>
+                  <th>α</th>
+                  <th>β</th>
+                  <th>c</th>
+                  <th>ADMD (kVA)</th>
+                  <th>μ (A)</th>
+                  <th>σ (A)</th>
+                  <th>Phase</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="loadclass-library-body">
+                <!-- Populated by JS -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div id="lib-pane-shared-libs" class="settings-tab-content">
+          <p class="shl-intro">Libraries shared with you or by you. Their entries appear in the library tabs (badged) under your own edits, which always win. The <b>company standard</b>, if your admin has set one, is read-only for everyone.</p>
+          <div id="shared-libs-panel"></div>
+        </div>
+  </div>
+
   <!-- Settings Modal (tabbed) -->
   <div id="settings-modal" class="modal" role="dialog" aria-modal="true" aria-label="Settings" style="display:none">
     <div class="modal-content modal-wide">
       <div class="modal-header">
         <button class="settings-back" id="btn-settings-back" aria-label="Back to Settings" hidden>&lsaquo;</button>
         <h3 id="settings-title">Settings</h3>
-        <button class="settings-more" id="btn-settings-more" aria-label="More" aria-haspopup="menu" hidden>&#8943;</button>
         <button class="modal-close" id="btn-close-settings">&times;</button>
-      </div>
-      <div class="settings-more-menu" id="settings-more-menu" role="menu" hidden>
-        <button type="button" role="menuitem" data-more="reset">Reset this library to defaults&hellip;</button>
       </div>
       <div class="settings-home" id="settings-home" hidden></div>
       <div class="settings-tabs">
         <button class="settings-tab active" data-tab="system">System Base</button>
-        <button class="settings-tab" data-tab="cables">Cable Library</button>
-        <button class="settings-tab" data-tab="transformers">Transformer Library</button>
-        <button class="settings-tab" data-tab="cbs">CB Library</button>
-        <button class="settings-tab" data-tab="fuses">Fuse Library</button>
-        <button class="settings-tab" data-tab="load-classes">Load Classes</button>
-        <button class="settings-tab" data-tab="shared-libs">Shared Libraries</button>
         <button class="settings-tab" data-tab="iec-standards">IEC Standards</button>
         <button class="settings-tab" data-tab="email" id="settings-tab-btn-email" hidden>Email</button>
       </div>
@@ -2572,119 +2710,13 @@
           <button id="btn-save-settings" class="btn-primary">Apply</button>
         </div>
         <!-- Cable Library Tab -->
-        <div id="settings-tab-cables" class="settings-tab-content">
-          <div class="library-source-ref">
-            Data per IEC 60502 / SANS 1339 &mdash; R and X at 90&deg;C, trefoil formation. Zero-sequence ratios per IEC 60502 Annex C.
-          </div>
-          <div class="library-toolbar">
-            <button id="btn-add-cable" class="btn-small">+ Add Cable</button>
-            <button id="btn-reset-cables" class="btn-small btn-secondary">Reset to Defaults</button>
-          </div>
-          <div class="library-table-wrap">
-            <table id="cable-library-table" class="library-table">
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th>Conductor</th>
-                  <th>Insulation</th>
-                  <th>Construction</th>
-                  <th>Cores</th>
-                  <th>Size (mm²)</th>
-                  <th>Voltage (kV)</th>
-                  <th>R₁ (Ω/km)</th>
-                  <th>X₁ (Ω/km)</th>
-                  <th>R₀ (Ω/km)</th>
-                  <th>X₀ (Ω/km)</th>
-                  <th>Irated (A)</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody id="cable-library-body">
-                <!-- Populated by JS -->
-              </tbody>
-            </table>
-          </div>
-        </div>
+
         <!-- Transformer Library Tab -->
-        <div id="settings-tab-transformers" class="settings-tab-content">
-          <div class="library-toolbar">
-            <button id="btn-add-xfmr" class="btn-small">+ Add Transformer</button>
-            <button id="btn-reset-xfmrs" class="btn-small btn-secondary">Reset to Defaults</button>
-          </div>
-          <div class="library-table-wrap">
-            <table id="xfmr-library-table" class="library-table">
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th>Rating (MVA)</th>
-                  <th>HV (kV)</th>
-                  <th>LV (kV)</th>
-                  <th>Z%</th>
-                  <th>X/R</th>
-                  <th>Vector</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody id="xfmr-library-body">
-                <!-- Populated by JS -->
-              </tbody>
-            </table>
-          </div>
-        </div>
+
         <!-- CB Library Tab -->
-        <div id="settings-tab-cbs" class="settings-tab-content">
-          <div class="library-toolbar">
-            <button id="btn-add-cb" class="btn-small">+ Add CB</button>
-            <button id="btn-reset-cbs" class="btn-small btn-secondary">Reset to Defaults</button>
-          </div>
-          <div class="library-table-wrap">
-            <table id="cb-library-table" class="library-table">
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th>Type</th>
-                  <th>Trip (A)</th>
-                  <th>Voltage (kV)</th>
-                  <th>Breaking (kA)</th>
-                  <th>Mag. (xIn)</th>
-                  <th>LT Class</th>
-                  <th title="Trip-unit profile the breaker gets when picked (Auto: by type and frame)">Trip unit</th>
-                  <th title="Default short-time pickup (× Ir); blank = the trip unit's default">Isd (×Ir)</th>
-                  <th title="Default short-time delay; blank = the trip unit's default">tsd (s)</th>
-                  <th title="Default instantaneous pickup (× Ir); blank = the trip unit's default">Ii (×Ir)</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody id="cb-library-body">
-                <!-- Populated by JS -->
-              </tbody>
-            </table>
-          </div>
-        </div>
+
         <!-- Fuse Library Tab -->
-        <div id="settings-tab-fuses" class="settings-tab-content">
-          <div class="library-toolbar">
-            <button id="btn-add-fuse" class="btn-small">+ Add Fuse</button>
-            <button id="btn-reset-fuses" class="btn-small btn-secondary">Reset to Defaults</button>
-          </div>
-          <div class="library-table-wrap">
-            <table id="fuse-library-table" class="library-table">
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th>Type</th>
-                  <th>Rating (A)</th>
-                  <th>Voltage (kV)</th>
-                  <th>Breaking (kA)</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody id="fuse-library-body">
-                <!-- Populated by JS -->
-              </tbody>
-            </table>
-          </div>
-        </div>
+
         <!-- Load Classes Tab (NRS 034-1 / CTEF100 ADMD) -->
         <!-- Email (SMTP) Tab — admin only, optional -->
         <div id="settings-tab-email" class="settings-tab-content">
@@ -2693,41 +2725,9 @@
         </div>
 
         <!-- Shared (team) libraries Tab -->
-        <div id="settings-tab-shared-libs" class="settings-tab-content">
-          <p class="shl-intro">Libraries shared with you or by you. Their entries appear in the library tabs (badged) under your own edits, which always win. The <b>company standard</b>, if your admin has set one, is read-only for everyone.</p>
-          <div id="shared-libs-panel"></div>
-        </div>
 
-        <div id="settings-tab-load-classes" class="settings-tab-content">
-          <div class="library-source-ref">
-            Load classes per CTEF100 Appendix A1 (CoCT-modified NRS 034-1 Table 3, 15-year) and NRS 034-1 Table 3a. Used by the Reticulation workspace for ADMD demand estimation. α/β/c are Herman-Beta parameters; ADMD is per-consumer after-diversity maximum demand.
-          </div>
-          <div class="library-toolbar">
-            <button id="btn-add-loadclass" class="btn-small">+ Add Class</button>
-            <button id="btn-reset-loadclasses" class="btn-small btn-secondary">Reset to Defaults</button>
-          </div>
-          <div class="library-table-wrap">
-            <table id="loadclass-library-table" class="library-table">
-              <thead>
-                <tr>
-                  <th>Label</th>
-                  <th>LSM</th>
-                  <th>α</th>
-                  <th>β</th>
-                  <th>c</th>
-                  <th>ADMD (kVA)</th>
-                  <th>μ (A)</th>
-                  <th>σ (A)</th>
-                  <th>Phase</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody id="loadclass-library-body">
-                <!-- Populated by JS -->
-              </tbody>
-            </table>
-          </div>
-        </div>
+
+
         <!-- IEC Standards Tab -->
         <div id="settings-tab-iec-standards" class="settings-tab-content">
           <div class="iec-standards-container">
@@ -3362,114 +3362,114 @@
   </div>
 
   <!-- Scripts -->
-  <script src="js/lib/jspdf.umd.min.js?v=3.5.225"></script>
-  <script src="js/lib/jspdf.plugin.autotable.min.js?v=3.5.225"></script>
-  <script src="js/lib/xlsx.full.min.js?v=3.5.225"></script>
-  <script src="js/lib/pdf.min.js?v=3.5.225"></script>
-  <script src="js/iec-60364-data.js?v=3.5.225"></script>
-  <script src="js/constants.js?v=3.5.225"></script>
-  <script src="js/cablelib.js?v=3.5.225"></script>
-  <script src="js/plan-defs.js?v=3.5.225"></script>
-  <script src="js/ui.js?v=3.5.225"></script>
-  <script src="js/state.js?v=3.5.225"></script>
-  <script src="js/grid.js?v=3.5.225"></script>
-  <script src="js/components.js?v=3.5.225"></script>
-  <script src="js/voltage.js?v=3.5.225"></script>
-  <script src="js/symbols.js?v=3.5.225"></script>
-  <script src="js/canvas.js?v=3.5.225"></script>
-  <script src="js/sidebar.js?v=3.5.225"></script>
-  <script src="js/wiring.js?v=3.5.225"></script>
-  <script src="js/field-help.js?v=3.5.225"></script>
-  <script src="js/properties.js?v=3.5.225"></script>
-  <script src="js/propwindow.js?v=3.5.225"></script>
-  <script src="js/tripunit.js?v=3.5.225"></script>
-  <script src="js/annotations.js?v=3.5.225"></script>
-  <script src="js/cablefocus.js?v=3.5.225"></script>
-  <script src="js/api.js?v=3.5.225"></script>
-  <script src="js/emailform.js?v=3.5.225"></script>
-  <script src="js/setup.js?v=3.5.225"></script>
-  <script src="js/auth.js?v=3.5.225"></script>
-  <script src="js/notifications.js?v=3.5.225"></script>
-  <script src="js/quote.js?v=3.5.225"></script>
-  <script src="js/submissions.js?v=3.5.225"></script>
-  <script src="js/libraries.js?v=3.5.225"></script>
-  <script src="js/sharing.js?v=3.5.225"></script>
-  <script src="js/compliance.js?v=3.5.225"></script>
-  <script src="js/tcc.js?v=3.5.225"></script>
-  <script src="js/project.js?v=3.5.225"></script>
-  <script src="js/reports.js?v=3.5.225"></script>
-  <script src="js/verification-templates.js?v=3.5.225"></script>
-  <script src="js/templates.js?v=3.5.225"></script>
-  <script src="js/standard-data.js?v=3.5.225"></script>
-  <script src="js/shared-libs.js?v=3.5.225"></script>
-  <script src="js/undo.js?v=3.5.225"></script>
-  <script src="js/arrange.js?v=3.5.225"></script>
-  <script src="js/revisions.js?v=3.5.225"></script>
-  <script src="js/minimap.js?v=3.5.225"></script>
-  <script src="js/contextmenu.js?v=3.5.225"></script>
-  <script src="js/dbschedule.js?v=3.5.225"></script>
-  <script src="js/control-sim.js?v=3.5.225"></script>
-  <script src="js/dynmotor.js?v=3.5.225"></script>
-  <script src="js/transient.js?v=3.5.225"></script>
-  <script src="js/voltage-stability.js?v=3.5.225"></script>
-  <script src="js/freqscan.js?v=3.5.225"></script>
-  <script src="js/battsizing.js?v=3.5.225"></script>
-  <script src="js/opf.js?v=3.5.225"></script>
-  <script src="js/reliability.js?v=3.5.225"></script>
-  <script src="js/flicker.js?v=3.5.225"></script>
-  <script src="js/hostingcapacity.js?v=3.5.225"></script>
-  <script src="js/filtersizing.js?v=3.5.225"></script>
-  <script src="js/capplace.js?v=3.5.225"></script>
-  <script src="js/contingency.js?v=3.5.225"></script>
-  <script src="js/timeseries.js?v=3.5.225"></script>
-  <script src="js/lfstudy.js?v=3.5.225"></script>
-  <script src="js/interlocking.js?v=3.5.225"></script>
-  <script src="js/sequence.js?v=3.5.225"></script>
-  <script src="js/retic.js?v=3.5.225"></script>
-  <script src="js/schedules.js?v=3.5.225"></script>
-  <script src="js/searchselect.js?v=3.5.225"></script>
-  <script src="js/streetlight.js?v=3.5.225"></script>
-  <script src="js/roadlight.js?v=3.5.225"></script>
-  <script src="js/roadlight-report.js?v=3.5.225"></script>
-  <script src="js/sl-diagram.js?v=3.5.225"></script>
-  <script src="js/workspaces.js?v=3.5.225"></script>
-  <script src="js/header.js?v=3.5.225"></script>
-  <script src="js/lightning.js?v=3.5.225"></script>
-  <script src="js/earthgrid.js?v=3.5.225"></script>
-  <script src="js/rates.js?v=3.5.225"></script>
-  <script src="js/boq.js?v=3.5.225"></script>
-  <script src="js/cableschedules.js?v=3.5.225"></script>
-  <script src="js/quantities.js?v=3.5.225"></script>
-  <script src="js/dbaccessories.js?v=3.5.225"></script>
-  <script src="js/dbdrawing.js?v=3.5.225"></script>
-  <script src="js/retic-diagram.js?v=3.5.225"></script>
-  <script src="js/retic-report.js?v=3.5.225"></script>
-  <script src="js/plan-symbols.js?v=3.5.225"></script>
-  <script src="js/plan-engine.js?v=3.5.225"></script>
-  <script src="js/plan-images.js?v=3.5.225"></script>
-  <script src="js/plan-tools.js?v=3.5.225"></script>
-  <script src="js/plan-sync.js?v=3.5.225"></script>
-  <script src="js/sldgen.js?v=3.5.225"></script>
-  <script src="js/plan-csv.js?v=3.5.225"></script>
-  <script src="js/plan-dxf.js?v=3.5.225"></script>
-  <script src="js/plan-export.js?v=3.5.225"></script>
-  <script src="js/plan-lux.js?v=3.5.225"></script>
-  <script src="js/plan-ies.js?v=3.5.225"></script>
-  <script src="js/plan-dxf-import.js?v=3.5.225"></script>
-  <script src="js/plan-dxf-manager.js?v=3.5.225"></script>
-  <script src="js/plan-dd-import.js?v=3.5.225"></script>
-  <script src="js/plan-circuits.js?v=3.5.225"></script>
-  <script src="js/plan-ui.js?v=3.5.225"></script>
-  <script src="js/plan.js?v=3.5.225"></script>
-  <script src="js/help.js?v=3.5.225"></script>
-  <script src="js/help-faults.js?v=3.5.225"></script>
-  <script src="js/help-flow.js?v=3.5.225"></script>
-  <script src="js/help-dynamics.js?v=3.5.225"></script>
-  <script src="js/help-protect.js?v=3.5.225"></script>
-  <script src="js/help-cables.js?v=3.5.225"></script>
-  <script src="js/help-design.js?v=3.5.225"></script>
-  <script src="js/help-workflow.js?v=3.5.225"></script>
-  <script src="js/app.js?v=3.5.225"></script>
-  <script src="js/mobile.js?v=3.5.225"></script>
+  <script src="js/lib/jspdf.umd.min.js?v=3.5.226"></script>
+  <script src="js/lib/jspdf.plugin.autotable.min.js?v=3.5.226"></script>
+  <script src="js/lib/xlsx.full.min.js?v=3.5.226"></script>
+  <script src="js/lib/pdf.min.js?v=3.5.226"></script>
+  <script src="js/iec-60364-data.js?v=3.5.226"></script>
+  <script src="js/constants.js?v=3.5.226"></script>
+  <script src="js/cablelib.js?v=3.5.226"></script>
+  <script src="js/plan-defs.js?v=3.5.226"></script>
+  <script src="js/ui.js?v=3.5.226"></script>
+  <script src="js/state.js?v=3.5.226"></script>
+  <script src="js/grid.js?v=3.5.226"></script>
+  <script src="js/components.js?v=3.5.226"></script>
+  <script src="js/voltage.js?v=3.5.226"></script>
+  <script src="js/symbols.js?v=3.5.226"></script>
+  <script src="js/canvas.js?v=3.5.226"></script>
+  <script src="js/sidebar.js?v=3.5.226"></script>
+  <script src="js/wiring.js?v=3.5.226"></script>
+  <script src="js/field-help.js?v=3.5.226"></script>
+  <script src="js/properties.js?v=3.5.226"></script>
+  <script src="js/propwindow.js?v=3.5.226"></script>
+  <script src="js/tripunit.js?v=3.5.226"></script>
+  <script src="js/annotations.js?v=3.5.226"></script>
+  <script src="js/cablefocus.js?v=3.5.226"></script>
+  <script src="js/api.js?v=3.5.226"></script>
+  <script src="js/emailform.js?v=3.5.226"></script>
+  <script src="js/setup.js?v=3.5.226"></script>
+  <script src="js/auth.js?v=3.5.226"></script>
+  <script src="js/notifications.js?v=3.5.226"></script>
+  <script src="js/quote.js?v=3.5.226"></script>
+  <script src="js/submissions.js?v=3.5.226"></script>
+  <script src="js/libraries.js?v=3.5.226"></script>
+  <script src="js/sharing.js?v=3.5.226"></script>
+  <script src="js/compliance.js?v=3.5.226"></script>
+  <script src="js/tcc.js?v=3.5.226"></script>
+  <script src="js/project.js?v=3.5.226"></script>
+  <script src="js/reports.js?v=3.5.226"></script>
+  <script src="js/verification-templates.js?v=3.5.226"></script>
+  <script src="js/templates.js?v=3.5.226"></script>
+  <script src="js/standard-data.js?v=3.5.226"></script>
+  <script src="js/shared-libs.js?v=3.5.226"></script>
+  <script src="js/undo.js?v=3.5.226"></script>
+  <script src="js/arrange.js?v=3.5.226"></script>
+  <script src="js/revisions.js?v=3.5.226"></script>
+  <script src="js/minimap.js?v=3.5.226"></script>
+  <script src="js/contextmenu.js?v=3.5.226"></script>
+  <script src="js/dbschedule.js?v=3.5.226"></script>
+  <script src="js/control-sim.js?v=3.5.226"></script>
+  <script src="js/dynmotor.js?v=3.5.226"></script>
+  <script src="js/transient.js?v=3.5.226"></script>
+  <script src="js/voltage-stability.js?v=3.5.226"></script>
+  <script src="js/freqscan.js?v=3.5.226"></script>
+  <script src="js/battsizing.js?v=3.5.226"></script>
+  <script src="js/opf.js?v=3.5.226"></script>
+  <script src="js/reliability.js?v=3.5.226"></script>
+  <script src="js/flicker.js?v=3.5.226"></script>
+  <script src="js/hostingcapacity.js?v=3.5.226"></script>
+  <script src="js/filtersizing.js?v=3.5.226"></script>
+  <script src="js/capplace.js?v=3.5.226"></script>
+  <script src="js/contingency.js?v=3.5.226"></script>
+  <script src="js/timeseries.js?v=3.5.226"></script>
+  <script src="js/lfstudy.js?v=3.5.226"></script>
+  <script src="js/interlocking.js?v=3.5.226"></script>
+  <script src="js/sequence.js?v=3.5.226"></script>
+  <script src="js/retic.js?v=3.5.226"></script>
+  <script src="js/schedules.js?v=3.5.226"></script>
+  <script src="js/searchselect.js?v=3.5.226"></script>
+  <script src="js/streetlight.js?v=3.5.226"></script>
+  <script src="js/roadlight.js?v=3.5.226"></script>
+  <script src="js/roadlight-report.js?v=3.5.226"></script>
+  <script src="js/sl-diagram.js?v=3.5.226"></script>
+  <script src="js/workspaces.js?v=3.5.226"></script>
+  <script src="js/header.js?v=3.5.226"></script>
+  <script src="js/lightning.js?v=3.5.226"></script>
+  <script src="js/earthgrid.js?v=3.5.226"></script>
+  <script src="js/rates.js?v=3.5.226"></script>
+  <script src="js/boq.js?v=3.5.226"></script>
+  <script src="js/cableschedules.js?v=3.5.226"></script>
+  <script src="js/quantities.js?v=3.5.226"></script>
+  <script src="js/dbaccessories.js?v=3.5.226"></script>
+  <script src="js/dbdrawing.js?v=3.5.226"></script>
+  <script src="js/retic-diagram.js?v=3.5.226"></script>
+  <script src="js/retic-report.js?v=3.5.226"></script>
+  <script src="js/plan-symbols.js?v=3.5.226"></script>
+  <script src="js/plan-engine.js?v=3.5.226"></script>
+  <script src="js/plan-images.js?v=3.5.226"></script>
+  <script src="js/plan-tools.js?v=3.5.226"></script>
+  <script src="js/plan-sync.js?v=3.5.226"></script>
+  <script src="js/sldgen.js?v=3.5.226"></script>
+  <script src="js/plan-csv.js?v=3.5.226"></script>
+  <script src="js/plan-dxf.js?v=3.5.226"></script>
+  <script src="js/plan-export.js?v=3.5.226"></script>
+  <script src="js/plan-lux.js?v=3.5.226"></script>
+  <script src="js/plan-ies.js?v=3.5.226"></script>
+  <script src="js/plan-dxf-import.js?v=3.5.226"></script>
+  <script src="js/plan-dxf-manager.js?v=3.5.226"></script>
+  <script src="js/plan-dd-import.js?v=3.5.226"></script>
+  <script src="js/plan-circuits.js?v=3.5.226"></script>
+  <script src="js/plan-ui.js?v=3.5.226"></script>
+  <script src="js/plan.js?v=3.5.226"></script>
+  <script src="js/help.js?v=3.5.226"></script>
+  <script src="js/help-faults.js?v=3.5.226"></script>
+  <script src="js/help-flow.js?v=3.5.226"></script>
+  <script src="js/help-dynamics.js?v=3.5.226"></script>
+  <script src="js/help-protect.js?v=3.5.226"></script>
+  <script src="js/help-cables.js?v=3.5.226"></script>
+  <script src="js/help-design.js?v=3.5.226"></script>
+  <script src="js/help-workflow.js?v=3.5.226"></script>
+  <script src="js/app.js?v=3.5.226"></script>
+  <script src="js/mobile.js?v=3.5.226"></script>
 </body>
 </html>

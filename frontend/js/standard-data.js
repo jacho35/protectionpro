@@ -1087,12 +1087,6 @@ const StandardData = {
 
   _SECTIONS: [
     { group: 'General', tab: 'system', sub: () => `${AppState.baseMVA} MVA · ${AppState.frequency} Hz · c = ${(AppState.voltageFactor ?? DEFAULT_VOLTAGE_FACTOR).toFixed(2)}` },
-    { group: 'Libraries', tab: 'cables', sub: () => 'Sizes, resistance, ratings', count: s => s.cables.length },
-    { group: 'Libraries', tab: 'transformers', sub: () => 'Ratings, vector groups, impedance', count: s => s.transformers.length },
-    { group: 'Libraries', tab: 'cbs', sub: () => 'Frames, trip units, ratings', count: s => s.cbs.length },
-    { group: 'Libraries', tab: 'fuses', sub: () => 'Ratings and breaking capacity', count: s => s.fuses.length },
-    { group: 'Libraries', tab: 'shared-libs', sub: () => 'Company standard and team libraries', count: s => s._sharedLayers.length },
-    { group: 'Reference', tab: 'load-classes', sub: () => 'Demand parameters (NRS 034-1)', count: s => s.loadClasses.length },
     { group: 'Server', tab: 'email', sub: () => 'Invites and password resets (optional)', adminOnly: true },
     { group: 'Reference', tab: 'iec-standards', sub: () => 'Ampacity, sizing and derating tables' },
   ],
@@ -1101,21 +1095,6 @@ const StandardData = {
     this._compactMQ = window.matchMedia('(max-width: 768px)');
     this._compactMQ.addEventListener('change', () => this._applyCompact());
     document.getElementById('btn-settings-back')?.addEventListener('click', () => this._showScreen('home'));
-    document.getElementById('btn-settings-more')?.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const m = document.getElementById('settings-more-menu');
-      m.hidden = !m.hidden;
-    });
-    document.getElementById('settings-more-menu')?.addEventListener('click', (e) => {
-      const b = e.target.closest('[data-more]');
-      if (!b) return;
-      document.getElementById('settings-more-menu').hidden = true;
-      if (b.dataset.more === 'reset') {
-        const map = { cables: 'btn-reset-cables', transformers: 'btn-reset-xfmrs', cbs: 'btn-reset-cbs', fuses: 'btn-reset-fuses', 'load-classes': 'btn-reset-loadclasses' };
-        document.getElementById(map[this._screen])?.click(); // keeps the existing confirmation
-      }
-    });
-    document.addEventListener('click', () => { const m = document.getElementById('settings-more-menu'); if (m) m.hidden = true; });
     this._applyCompact();
   },
 
@@ -1131,7 +1110,6 @@ const StandardData = {
       modal.removeAttribute('data-screen');
       document.getElementById('settings-home').hidden = true;
       document.getElementById('btn-settings-back').hidden = true;
-      document.getElementById('btn-settings-more').hidden = true;
       document.getElementById('settings-title').textContent = 'Settings';
     }
   },
@@ -1156,12 +1134,10 @@ const StandardData = {
     const home = document.getElementById('settings-home');
     this._screen = name;
     modal.setAttribute('data-screen', name === 'home' ? 'home' : 'section');
-    document.getElementById('settings-more-menu').hidden = true;
     if (name === 'home') {
       this._buildHome();
       home.hidden = false;
       document.getElementById('btn-settings-back').hidden = true;
-      document.getElementById('btn-settings-more').hidden = true;
       document.getElementById('settings-title').textContent = 'Settings';
       return;
     }
@@ -1170,7 +1146,6 @@ const StandardData = {
     if (tab) tab.click(); // activates the pane and renders its table
     document.getElementById('btn-settings-back').hidden = false;
     document.getElementById('settings-title').textContent = tab ? tab.textContent.trim() : 'Settings';
-    document.getElementById('btn-settings-more').hidden = !['cables', 'transformers', 'cbs', 'fuses', 'load-classes'].includes(name);
     document.querySelector('#settings-modal .modal-body')?.scrollTo(0, 0);
   },
 
@@ -1186,23 +1161,13 @@ const StandardData = {
   // ─── Tab Switching ───
   bindTabs() {
     document.querySelectorAll('.settings-tab').forEach(tab => {
-      // The library tabs are links: the libraries are managed in the Libraries manager (Project → Libraries…).
-      const link = { cables: 'cables', transformers: 'transformers', cbs: 'cbs', fuses: 'fuses', 'load-classes': 'loadClasses', 'shared-libs': 'teams' }[tab.dataset.tab];
-      if (link) tab.title = 'Opens in the Libraries manager';
       tab.addEventListener('click', () => {
-        if (link && typeof Libraries !== 'undefined') { Libraries.open({ view: link }); return; }
         document.querySelectorAll('.settings-tab').forEach(t => t.classList.remove('active'));
         document.querySelectorAll('.settings-tab-content').forEach(c => c.classList.remove('active'));
         tab.classList.add('active');
         document.getElementById(`settings-tab-${tab.dataset.tab}`).classList.add('active');
         // Render table when tab becomes active
-        if (tab.dataset.tab === 'cables') this.renderCableTable();
-        if (tab.dataset.tab === 'transformers') this.renderTransformerTable();
-        if (tab.dataset.tab === 'cbs') this.renderCBTable();
-        if (tab.dataset.tab === 'fuses') this.renderFuseTable();
-        if (tab.dataset.tab === 'load-classes') this.renderLoadClassTable();
         if (tab.dataset.tab === 'iec-standards') this.renderIECActiveSection();
-        if (tab.dataset.tab === 'shared-libs' && typeof SharedLibs !== 'undefined') SharedLibs.render();
         if (tab.dataset.tab === 'email') this._renderEmailTab();
       });
     });
@@ -1616,13 +1581,9 @@ const StandardData = {
     document.getElementById('default-length-unit').value = AppState.defaultLengthUnit || 'm';
     document.getElementById('use-iec-symbols').checked = AppState.symbolSet === 'iec';
     document.getElementById('settings-modal').style.display = '';
-    // Render the currently active tab's table
+    // Render the currently active tab's content
     const activeTab = document.querySelector('.settings-tab.active');
-    if (activeTab.dataset.tab === 'cables') this.renderCableTable();
-    else if (activeTab.dataset.tab === 'transformers') this.renderTransformerTable();
-    else if (activeTab.dataset.tab === 'cbs') this.renderCBTable();
-    else if (activeTab.dataset.tab === 'fuses') this.renderFuseTable();
-    else if (activeTab.dataset.tab === 'iec-standards') this.renderIECActiveSection();
+    if (activeTab.dataset.tab === 'iec-standards') this.renderIECActiveSection();
     if (this._compactOn) this._showScreen('home');
   },
 

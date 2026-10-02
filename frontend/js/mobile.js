@@ -1074,7 +1074,7 @@ const MobileUI = {
     const out = [];
     if (byId('btn-auto-save')) out.push({ el: byId('btn-auto-save'), label: 'Auto save', toggle: byId('btn-auto-save').classList.contains('active') });
     if (byId('btn-dark-mode')) out.push({ el: byId('btn-dark-mode'), label: 'Dark mode', toggle: document.body.classList.contains('dark-mode') });
-    for (const [id, label, sub] of [['btn-settings', 'Settings', 'Base MVA, libraries, symbols'], ['btn-help', 'Help', 'Calculations & tools'], ['btn-account', 'Account', 'Sign in, sync, sharing']]) {
+    for (const [id, label, sub] of [['btn-settings', 'Settings', 'Base MVA, frequency, symbols'], ['btn-help', 'Help', 'Calculations & tools'], ['btn-account', 'Account', 'Sign in, sync, sharing']]) {
       if (byId(id) && !byId(id).hidden) out.push({ el: byId(id), label, sub, nav: true });
     }
     return out;
