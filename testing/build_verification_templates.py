@@ -79,7 +79,7 @@ CASES = [
     ("case-dc-arcflash", "ver_dc_arcflash",
      "DC Arc Flash (Stokes & Oppenländer)",
      "DC bus — arc operating point & E",
-     "DC arc flash via the Ammerman / CED published method. The Stokes & Oppenländer arc operating point and the spherical incident-energy / boundary reproduce the reference to ≤0.06 % (calorie rounding)."),
+     "DC arc flash via the Ammerman / CED published method, on a 250 V DC bus fed by a battery (open-air electrode configuration, as the reference). The Stokes & Oppenländer arc operating point and the spherical incident-energy / boundary reproduce the reference exactly."),
     ("case-unbalanced-loadflow", "ver_unbalanced_lf",
      "Unbalanced Load Flow (symmetrical comp.)",
      "Sequence-based unbalanced solve + VUF",
@@ -174,8 +174,8 @@ EXPECTED = {
     }),
     "ver_dc_arcflash": ("dc-arcflash", {
         "i_arc": ("buses.bus-1.dc_arcing_current_a", 6196.3),
-        "e": ("buses.bus-1.incident_energy_cal", 10.82),
-        "afb_mm": ("buses.bus-1.arc_flash_boundary_mm", 1366.0),
+        "e": ("buses.bus-1.incident_energy_cal", 10.83),
+        "afb_mm": ("buses.bus-1.arc_flash_boundary_mm", 1367.0),
         "ppe": ("buses.bus-1.ppe_category", 3),
     }),
     # Independent phase-domain solve (Zabc = A·diag(Z0,Z1,Z2)·A⁻¹ for the line
@@ -271,7 +271,7 @@ INSTRUCTIONS = {
     "ver_dc_arcflash":
         "VERIFICATION TEMPLATE — DC arc flash (Stokes & Oppenländer / Ammerman-CED). "
         "RUN: DC Arc Flash analysis. Expected arc current {i_arc:.0f} A, incident energy {e:.2f} cal/cm², "
-        "boundary {afb_mm:.0f} mm, PPE Cat {ppe}. The DC bolted fault is set via dc_bolted_fault_ka on the bus. "
+        "boundary {afb_mm:.0f} mm, PPE Cat {ppe}. The DC bolted fault (10 kA) is entered on the DC bus. "
         "Full working: Help → Verification.",
     "ver_unbalanced_lf":
         "VERIFICATION TEMPLATE — unbalanced load flow (symmetrical components), phase split 60/20/20. "

@@ -461,18 +461,10 @@ def arc_flash(data: ProjectData):
 
 @router.post("/dc-arcflash", response_model=DCArcFlashResults)
 def dc_arc_flash(data: ProjectData):
-    """Run DC arc flash analysis per Stokes & Oppenlander method.
-
-    Requires fault analysis data. Runs fault analysis first if needed.
-    """
+    """Run DC arc flash per Stokes & Oppenlander on every DC bus, with the DC
+    bolted fault current from the IEC 61660-1 short-circuit engine."""
     try:
-        fault_results = run_fault_analysis(data, fault_bus_id=None, fault_type=None)
-    except Exception as e:
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Fault analysis (pre-DC-arc-flash) error: {e}")
-
-    try:
-        return run_dc_arc_flash(data, fault_results)
+        return run_dc_arc_flash(data)
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"DC arc flash analysis error: {e}")

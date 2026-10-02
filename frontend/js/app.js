@@ -3633,12 +3633,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const buses = result.buses || {};
     const entries = Object.values(buses).sort((a, b) => b.incident_energy_cal - a.incident_energy_cal);
 
-    if (entries.length === 0) {
-      body.innerHTML = '<p>No buses found for DC arc flash analysis.</p>';
-      modal.style.display = '';
-      return;
-    }
-
     let html = '';
     if (result.warnings && result.warnings.length > 0) {
       html += '<div class="af-warnings">';
@@ -3648,11 +3642,17 @@ document.addEventListener('DOMContentLoaded', () => {
       html += '</div>';
     }
 
+    if (entries.length === 0) {
+      body.innerHTML = html + '<p>No DC buses studied. DC arc flash runs on buses whose System is set to DC, fed by a DC battery, rectifier or charger.</p>';
+      modal.style.display = '';
+      return;
+    }
+
     html += `<table class="af-table">
       <thead><tr>
         <th>Bus</th><th>DC Voltage</th><th>Bolted Fault</th><th>DC Arc Current</th>
         <th>Arc Voltage</th><th>Incident Energy</th><th>AFB</th><th>Clearing Time</th>
-        <th>PPE Cat.</th><th>PPE</th>
+        <th>Enclosure</th><th>PPE Cat.</th><th>PPE</th>
       </tr></thead><tbody>`;
 
     for (const b of entries) {
@@ -3667,12 +3667,16 @@ document.addEventListener('DOMContentLoaded', () => {
         <td><strong>${b.incident_energy_cal.toFixed(2)}</strong> cal/cm²</td>
         <td>${(b.arc_flash_boundary_mm / 1000).toFixed(2)} m</td>
         <td>${(b.clearing_time_s * 1000).toFixed(0)} ms</td>
+        <td>${escHtml(b.enclosure || 'open air')}</td>
         <td><span class="af-ppe-badge">${b.ppe_category === -1 ? 'DANGER' : b.ppe_category}</span></td>
         <td>${b.ppe_name}</td>
       </tr>`;
+      if (b.warning) {
+        html += `<tr class="af-medium"><td colspan="11" style="padding-left:24px;font-size:11px">${escHtml(b.warning)}</td></tr>`;
+      }
       if (hasRecs) {
         html += `<tr class="${ppeClass} af-rec-row">
-          <td colspan="10">
+          <td colspan="11">
             <details class="af-rec-details">
               <summary>Recommendations (${b.recommendations.length})</summary>
               <ul class="af-rec-list">

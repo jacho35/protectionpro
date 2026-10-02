@@ -1056,6 +1056,7 @@ class DCArcFlashBusResult(BaseModel):
     ppe_category: int
     ppe_name: str
     ppe_description: str
+    enclosure: str = "open air"
     warning: str = ""
     label_html: str = ""
     recommendations: list[str] = []
