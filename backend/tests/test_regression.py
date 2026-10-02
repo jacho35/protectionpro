@@ -5630,7 +5630,10 @@ class TestAnsiFaultDuty:
         1/V scale-up (20*145/132=21.97 kA) is correctly capped at K x
         rated = 20 kA) -> comfortably PASSES (7.17 kA << 16 kA = 80%).
         """
-        fault_mva = 100.0 / 0.061
+        # [AN-L1] Re-baselined fixture: the standard's X1 = 0.061 pu is a
+        # REACTANCE. The utility source now splits |Z| = base/S by X/R (it used
+        # to take X = |Z|), so S is set to give X = 0.061 exactly at X/R 15.
+        fault_mva = 100.0 * (15 / math.sqrt(1 + 15 ** 2)) / 0.061
         project = ProjectData(
             projectName="ansi-example-a", baseMVA=100.0, frequency=60,
             components=[

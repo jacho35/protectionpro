@@ -1340,6 +1340,7 @@ const FIELD_INFO = {
 
   // Circuit Breaker
   'cb.breaking_capacity_ka': 'Default 25 kA — typical for 11 kV distribution circuit breakers.\nSource: IEC 62271-100 — rated short-circuit breaking current. For an ANSI fault-duty study this is read as the C37.06 "rated short-circuit current" (symmetrical, at Rated Voltage as the rated max kV).',
+  'cb.contact_parting_cycles': 'Contact parting time in cycles, for the ANSI fault-duty study: 4 for an 8-cycle breaker, 3 for 5-cycle (default), 2 for 3-cycle, 1.5 for 2-cycle. When the interrupting duty is above 80 % of capability and the X/R above 15, the duty is multiplied by the dc-decrement (remote) factor at this time — a conservative bound on the standard\'s remote/local curves. Not used for breakers at or below 1 kV.\nSource: ANSI/IEEE C37.010.',
   'cb.k_factor': 'ANSI/IEEE C37.06 voltage-range factor. 1.0 (default) for modern "preferred ratings" breakers (~1999+) — interrupting capability is flat at Breaking Cap. for any operating voltage up to Rated Voltage. Older "total current basis" breakers have K > 1 (typically 1.0–1.65, some up to ~2.5): capability scales up as 1/V below rated voltage, CAPPED at K × Breaking Cap. Only used by the ANSI fault-duty study, not the IEC one.\nSource: ANSI/IEEE C37.010 / C37.06.',
   'cb.thermal_pickup':       'Default 1.0×In — thermal overload pickup at rated current.\nSource: IEC 60947-2 §4.7 — thermal trip characteristics.',
   'cb.magnetic_pickup':      'Default 10×In — typical magnetic instantaneous pickup for MCCB.\nSource: IEC 60947-2 Annex F — magnetic trip range:\n• Type B: 3–5×In\n• Type C: 5–10×In\n• Type D: 10–20×In',
@@ -2817,6 +2818,7 @@ const COMPONENT_DEFS = {
       short_time_delay: 0,
       instantaneous_pickup: 0,
       k_factor: 1.0,
+      contact_parting_cycles: 3,
     },
     fields: [
       { key: 'name', label: 'Name', type: 'text' },
@@ -2825,6 +2827,7 @@ const COMPONENT_DEFS = {
       { key: 'rated_current_a', label: 'Rated Current', type: 'number', unit: 'A' },
       { key: 'breaking_capacity_ka', label: 'Breaking Cap.', type: 'number', unit: 'kA' },
       { key: 'k_factor', label: 'ANSI K Factor', type: 'number', min: 1, step: 0.01, section: 'fault' },
+      { key: 'contact_parting_cycles', label: 'ANSI Contact Parting (cycles)', type: 'number', min: 0, step: 0.5, section: 'fault' },
       { key: 'circuit_type', label: 'Circuit Type', type: 'select',
         options: [
           { value: '', label: 'Auto (assume final)' },
