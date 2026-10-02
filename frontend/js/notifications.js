@@ -206,7 +206,7 @@ const Notifications = {
   _actionLabel(n) {
     const t = n.link && n.link.type;
     if (t === 'project') return 'Open project';
-    if (t === 'library') return 'View libraries';
+    if (t === 'library') return n.link.drift ? 'Review my edits' : 'View libraries';
     return '';
   },
 
@@ -215,6 +215,9 @@ const Notifications = {
     if (!l) return;
     if (l.type === 'project') {
       if (await Project.openById(l.id)) this.close();
+    } else if (l.type === 'library' && l.drift) {
+      this.close();
+      StandardData.reviewDrift();
     } else if (l.type === 'library') {
       this.close();
       StandardData.open();
