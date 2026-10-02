@@ -1990,7 +1990,7 @@ document.addEventListener('DOMContentLoaded', () => {
       <thead><tr>
         <th>Bus</th><th>Voltage (kV)</th><th>I sym momentary (kA)</th>
         <th>I asym momentary / C&amp;L (kA)</th><th>I sym interrupting (kA)</th>
-        <th>X/R interrupting</th>
+        <th>X/R interrupting</th><th>LV first cycle (kA, X/R)</th>
       </tr></thead><tbody>`;
     for (const b of buses) {
       html += `<tr${b.warning ? ' class="af-medium"' : ''}>
@@ -2000,24 +2000,26 @@ document.addEventListener('DOMContentLoaded', () => {
         <td>${b.i_asym_momentary_ka.toFixed(2)}</td>
         <td>${b.i_sym_interrupting_ka.toFixed(2)}</td>
         <td>${b.x_r_interrupting != null ? b.x_r_interrupting.toFixed(1) : '—'}</td>
+        <td>${b.i_sym_lv_first_cycle_ka != null ? `${b.i_sym_lv_first_cycle_ka.toFixed(2)} (${b.x_r_lv_first_cycle != null ? b.x_r_lv_first_cycle.toFixed(1) : '—'})` : '—'}</td>
       </tr>`;
       if (b.warning) {
-        html += `<tr class="af-medium"><td colspan="6" style="padding-left:24px;font-size:11px">${escHtml(b.warning)}</td></tr>`;
+        html += `<tr class="af-medium"><td colspan="7" style="padding-left:24px;font-size:11px">${escHtml(b.warning)}</td></tr>`;
       }
     }
     html += '</tbody></table>';
 
     if (devices.length > 0) {
-      html += `<h4 style="margin:12px 0 4px">Breaker Duty (vs. C37.06 rating)</h4>
+      html += `<h4 style="margin:12px 0 4px">Breaker Duty (C37.010 above 1 kV; LV first-cycle at or below 1 kV)</h4>
       <table class="af-table">
         <thead><tr>
           <th>Breaker</th><th>Bus</th><th>Rated (kA @ kV, K)</th>
-          <th>Interrupting duty / cap.</th><th>Status</th>
+          <th>Interrupting duty / cap.</th><th>MF</th><th>Status</th>
           <th>Closing &amp; latching duty / cap.</th><th>Status</th>
         </tr></thead><tbody>`;
+      const fmt = v => (v == null ? '—' : Number(v).toFixed(2));
       for (const d of devices) {
         const passI = d.status_interrupting === 'PASS';
-        const passL = d.status_closing_latching === 'PASS';
+        const passL = d.status_closing_latching === 'PASS' || d.status_closing_latching === 'N/A';
         const rowClass = (!passI && !d.requires_detailed_method) || !passL ? 'af-danger'
           : d.requires_detailed_method ? 'af-medium' : 'af-low';
         const badge = (ok, review) => ok
@@ -2028,13 +2030,14 @@ document.addEventListener('DOMContentLoaded', () => {
           <td>${escHtml(d.device_name)}</td>
           <td>${escHtml(d.bus_id)}</td>
           <td>${d.rated_interrupting_ka.toFixed(1)} @ ${d.rated_max_kv.toFixed(1)}, K=${d.k_factor.toFixed(2)}</td>
-          <td>${d.duty_interrupting_ka.toFixed(2)} / ${d.capability_interrupting_ka.toFixed(2)}</td>
+          <td>${fmt(d.duty_interrupting_ka)} / ${fmt(d.capability_interrupting_ka)}</td>
+          <td title="${escHtml(d.method || '')}">${d.multiplying_factor != null ? d.multiplying_factor.toFixed(3) : '—'}</td>
           <td>${badge(passI, d.requires_detailed_method)}</td>
-          <td>${d.duty_closing_latching_ka.toFixed(2)} / ${d.capability_closing_latching_ka.toFixed(2)}</td>
-          <td>${badge(passL, false)}</td>
+          <td>${fmt(d.duty_closing_latching_ka)} / ${fmt(d.capability_closing_latching_ka)}</td>
+          <td>${d.status_closing_latching === 'N/A' ? '<span style="color:#888">N/A (LV)</span>' : badge(passL, false)}</td>
         </tr>`;
         if (d.requires_detailed_method) {
-          html += `<tr class="af-medium"><td colspan="7" style="padding-left:24px;font-size:11px">${escHtml(d.status_interrupting)}</td></tr>`;
+          html += `<tr class="af-medium"><td colspan="8" style="padding-left:24px;font-size:11px">${escHtml(d.status_interrupting)}</td></tr>`;
         }
       }
       html += '</tbody></table>';

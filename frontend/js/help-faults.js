@@ -150,7 +150,7 @@ $$\mathbf{A}\,\mathbf{x}=\mathbf{b},\qquad \mathbf{x}=\big[I_1,I_2,I_0\big]_{\te
 
 { id: 'fault-ansi', group: 'faults', title: 'ANSI/IEEE breaker duty (C37.010)',
   std: 'ANSI/IEEE C37.010-1979 · C37.06 · Analyse ▸ Short circuit ▸ ANSI duty',
-  kw: 'ansi c37 e/x momentary interrupting closing latching 1.6 80% x/r 15',
+  kw: 'ansi c37 e/x momentary interrupting closing latching 1.6 80% x/r 15 multiplying factor contact parting low voltage c37.13 mccb',
   html: String.raw`
 <p>Answers one question for US-rated equipment: is each ANSI circuit breaker adequate for the fault duty at its location? It uses the standard's "E/X simplified method" — the preferred method in both of C37.010's worked examples.</p>
 <h4>Two reduced networks</h4>
@@ -161,15 +161,20 @@ $$\mathbf{A}\,\mathbf{x}=\mathbf{b},\qquad \mathbf{x}=\big[I_1,I_2,I_0\big]_{\te
 <tr><td>Induction motor 50 hp up to those limits</td><td>$1.2\,X''_d$</td><td>$3.0\,X''_d$</td></tr>
 <tr><td>Induction motor &lt;50 hp (three-phase)</td><td colspan="2">neglected</td></tr>
 <tr><td>Static load treated as motors</td><td>$1.2\,X''_d$</td><td>$3.0\,X''_d$</td></tr></tbody></table>
+<p>Machines on a board isolated by an open breaker are not running and contribute nothing; a motor behind a diode-front-end drive does not feed the fault (an active-front-end drive does, as a medium induction motor).</p>
 <h4>Duties</h4>
-<p>The symmetrical current uses reactance only (resistance is disregarded — conservative), but the engine keeps a full complex reduction so the local $X/R$ is exact:</p>
-$$I_{sym}=\frac{E}{X},\qquad I_{mom}=1.6\,I_{sym,\,mom},\qquad I_{int}=I_{sym,\,int}$$
-<p>Closing-and-latching capability of a breaker is $1.6\,K\,I_{rated}$ ($K=1.0$ for modern preferred-rating C37.06 breakers).</p>
+<p>The network is solved nodally, so an impedance shared by several sources (a transformer feeding the faulted board from a bus that also has motors on it) is counted once. As the standard prescribes, $X$ comes from a reactance-only network and the fault-point $X/R$ from <em>separate</em> reactance-only and resistance-only networks. A complex $R+jX$ reduction gives a different, usually lower, $X/R$. Lines are taken at 20 °C.</p>
+$$I_{sym}=\frac{E}{X},\qquad I_{mom}=\max\!\left(1.6,\ \sqrt{1+2e^{-2\pi/(X/R)}}\right)I_{sym,\,mom},\qquad I_{int}=I_{sym,\,int}$$
+<p>1.6 is the half-cycle asymmetrical rms at $X/R\approx25$; above that the real half-cycle value is used. Closing-and-latching capability of a breaker is $1.6\,K\,I_{rated}$ ($K=1.0$ for modern preferred-rating C37.06 breakers).</p>
 <h4>The 80 % / X/R rule</h4>
 <ul>
-<li>$I_{int}\le0.8\,I_{cap}$ → pass, no further check.</li>
+<li>$I_{int}\le0.8\,I_{cap}$ → compare directly, no factor.</li>
 <li>$I_{int}>0.8\,I_{cap}$ and $X/R\le15$ → compare directly with $100\%$ of capability.</li>
-<li>$I_{int}>0.8\,I_{cap}$ and $X/R>15$ → the standard requires its more exact E/Z method with AC/DC decrement curves. That is graphical and not implemented, so the breaker is flagged <strong>REVIEW</strong> rather than silently passed or failed.</li></ul>
+<li>$I_{int}>0.8\,I_{cap}$ and $X/R>15$ → $I_{int}$ is multiplied by the dc-decrement ("remote") factor at the breaker's contact parting time $C$ (cycles, a breaker property, default 3 for a 5-cycle breaker):
+$$MF=\frac{\sqrt{1+2e^{-4\pi C/(X/R)}}}{\sqrt{1+2e^{-4\pi C/15}}}$$
+The standard's "local" curves (ac decrement of nearby generators) are always lower, so this is a conservative bound.</li></ul>
+<h4>Breakers at 1 kV and below</h4>
+<p>Low-voltage breakers are not C37.010 breakers: they interrupt within the first cycle. Their duty is the first-cycle current with motors below 50 hp included at $1.67\,X''_d$, multiplied up when the fault $X/R$ exceeds the breaker's test $X/R$: 6.6 for an LV power breaker (ACB), and for moulded-case breakers 4.9 above 20 kA, 3.2 for 10–20 kA and 1.7 up to 10 kA. The multiplier is the larger of the half-cycle rms ratio and the peak ratio, $(1+e^{-\pi/(X/R)})/(1+e^{-\pi/(X/R)_{test}})$, and is never below 1. These breakers have no separate closing-and-latching check.</p>
 <p>Scope: three-phase symmetrical duty only, which is what a breaker's ANSI nameplate is expressed in. * Hydro generators without amortisseurs (0.75 $X'_d$) are not distinguished.</p>` },
 
 { id: 'fault-dc', group: 'faults', title: 'DC short circuit & DC load flow',
