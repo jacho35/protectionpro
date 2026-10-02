@@ -45,7 +45,10 @@
 
 /* A dialog docked in the pane: no overlay, fills the pane, no close button. */
 .modal.q-docked {
-  position: static; inset: auto; z-index: auto;
+  position: static; inset: auto;
+  /* A flex item honours z-index even when static, and #rates-modal's own z-index:1050 (an ID rule)
+     would otherwise lift the docked panel above the Settings modal and every other dialog. */
+  z-index: auto !important;
   flex: 1; min-height: 0; width: 100%;
   background: none; align-items: stretch; justify-content: stretch;
 }
