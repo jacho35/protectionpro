@@ -278,6 +278,32 @@ class PasswordReset(Base):
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
+class Notification(Base):
+    """One in-app notification for one user (the notifications center).
+
+    Rows that share a `group_key` while still unread are coalesced into one row
+    whose `count` goes up (e.g. a busy shared project does not flood the list).
+    `link` is a small JSON locator the client turns into navigation.
+    """
+    __tablename__ = "notifications"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"),
+                     nullable=False, index=True)
+    actor_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    category = Column(String(16), nullable=False, index=True)   # 'libraries' | 'projects' | 'approvals'
+    kind = Column(String(48), nullable=False)
+    message = Column(Text, nullable=False)
+    message_many = Column(Text, nullable=True)   # used instead of `message` when count > 1; {count} filled in
+    count = Column(Integer, nullable=False, default=1)
+    link = Column(Text, nullable=True)           # JSON, e.g. {"type":"project","id":3}
+    group_key = Column(String(128), nullable=True, index=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
+    read_at = Column(DateTime, nullable=True)
+
+    actor = relationship("User", foreign_keys=[actor_id])
+
+
 def init_db():
     Base.metadata.create_all(bind=engine)
     _migrate_add_folder_id()

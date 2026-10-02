@@ -508,6 +508,24 @@ const API = {
   async saveUserLibraries(data) { return this.request('/user-libraries', 'PUT', { data }); },
   async resetUserLibraries() { return this.request('/user-libraries', 'DELETE'); },
   // Shared (team) libraries the signed-in user can read (owned, member, company standard), with entries
+  // ── Notifications center ──
+  async getNotifications({ category, unreadOnly, beforeId, limit } = {}) {
+    const q = new URLSearchParams();
+    if (category) q.set('category', category);
+    if (unreadOnly) q.set('unread_only', 'true');
+    if (beforeId) q.set('before_id', beforeId);
+    if (limit) q.set('limit', limit);
+    const qs = q.toString();
+    return this.request('/notifications' + (qs ? '?' + qs : ''));
+  },
+  async getUnreadCount() { return this.request('/notifications/unread-count'); },
+  async markNotificationsRead({ ids, category } = {}) {
+    const body = {};
+    if (ids) body.ids = ids; else if (category) body.category = category;
+    return this.request('/notifications/read', 'POST', body);
+  },
+  async deleteNotification(id) { return this.request(`/notifications/${id}`, 'DELETE'); },
+
   async getSharedLibraries() { return this.request('/shared-libraries'); },
   async createSharedLibrary(name) { return this.request('/shared-libraries', 'POST', { name }); },
   async renameSharedLibrary(id, name) { return this.request(`/shared-libraries/${id}`, 'PATCH', { name }); },

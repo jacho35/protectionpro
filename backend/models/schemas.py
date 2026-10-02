@@ -442,6 +442,36 @@ class ShareOut(BaseModel):
     created_at: datetime
 
 
+# ── Notifications center ────────────────────────────────────────────────────
+
+class NotificationOut(BaseModel):
+    id: int
+    category: str
+    kind: str
+    message: str
+    count: int
+    link: Optional[dict] = None
+    actor: Optional[str] = None
+    created_at: datetime
+    read: bool
+
+
+class UnreadCounts(BaseModel):
+    total: int
+    by_category: dict[str, int]
+
+
+class NotificationList(BaseModel):
+    items: list[NotificationOut]
+    has_more: bool
+    unread: UnreadCounts
+
+
+class NotificationsRead(BaseModel):
+    ids: Optional[list[int]] = None
+    category: Optional[str] = None
+
+
 # ── ADMD / reticulation demand estimation ───────────────────────────────────
 
 
