@@ -1,4 +1,4 @@
-/* ProtectionPro — Shared (team) libraries panel (Settings › Shared Libraries)
+/* ProtectionPro — Shared (team) libraries panel (Libraries manager › Team libraries)
  *
  * Lists the shared libraries the signed-in user can read (owned, member of, or the admin-designated
  * company standard) and manages them: create, rename, delete, members and roles, leave, the admin's

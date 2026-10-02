@@ -35,7 +35,7 @@ const PLAN_DXF_FIELD_TAGS = {
 };
 
 /* Cables for every route come from the one cable library (STANDARD_CABLES,
- * Settings › Cables) via CableLib. A route's cable_select field names which
+ * the Libraries manager) via CableLib. A route's cable_select field names which
  * kinds it offers: `voltage` 'lv' | 'mv' (reticulation: armoured distribution
  * cables) or `uses` (building: a list of CableLib constructions). */
 

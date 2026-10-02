@@ -2512,27 +2512,165 @@
     </div>
   </div>
 
+  <!-- Library editors: docked into the Libraries manager (Project → Libraries…), never shown in Settings -->
+  <div id="lib-panes" hidden>
+        <div id="lib-pane-cables" class="settings-tab-content">
+          <div class="library-source-ref">
+            Data per IEC 60502 / SANS 1339 &mdash; R and X at 90&deg;C, trefoil formation. Zero-sequence ratios per IEC 60502 Annex C.
+          </div>
+          <div class="library-toolbar">
+            <button id="btn-add-cable" class="btn-small">+ Add Cable</button>
+            <button id="btn-reset-cables" class="btn-small btn-secondary">Reset to Defaults</button>
+          </div>
+          <div class="library-table-wrap">
+            <table id="cable-library-table" class="library-table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Conductor</th>
+                  <th>Insulation</th>
+                  <th>Construction</th>
+                  <th>Cores</th>
+                  <th>Size (mm²)</th>
+                  <th>Voltage (kV)</th>
+                  <th>R₁ (Ω/km)</th>
+                  <th>X₁ (Ω/km)</th>
+                  <th>R₀ (Ω/km)</th>
+                  <th>X₀ (Ω/km)</th>
+                  <th>Irated (A)</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="cable-library-body">
+                <!-- Populated by JS -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div id="lib-pane-transformers" class="settings-tab-content">
+          <div class="library-toolbar">
+            <button id="btn-add-xfmr" class="btn-small">+ Add Transformer</button>
+            <button id="btn-reset-xfmrs" class="btn-small btn-secondary">Reset to Defaults</button>
+          </div>
+          <div class="library-table-wrap">
+            <table id="xfmr-library-table" class="library-table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Rating (MVA)</th>
+                  <th>HV (kV)</th>
+                  <th>LV (kV)</th>
+                  <th>Z%</th>
+                  <th>X/R</th>
+                  <th>Vector</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="xfmr-library-body">
+                <!-- Populated by JS -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div id="lib-pane-cbs" class="settings-tab-content">
+          <div class="library-toolbar">
+            <button id="btn-add-cb" class="btn-small">+ Add CB</button>
+            <button id="btn-reset-cbs" class="btn-small btn-secondary">Reset to Defaults</button>
+          </div>
+          <div class="library-table-wrap">
+            <table id="cb-library-table" class="library-table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Type</th>
+                  <th>Trip (A)</th>
+                  <th>Voltage (kV)</th>
+                  <th>Breaking (kA)</th>
+                  <th>Mag. (xIn)</th>
+                  <th>LT Class</th>
+                  <th title="Trip-unit profile the breaker gets when picked (Auto: by type and frame)">Trip unit</th>
+                  <th title="Default short-time pickup (× Ir); blank = the trip unit's default">Isd (×Ir)</th>
+                  <th title="Default short-time delay; blank = the trip unit's default">tsd (s)</th>
+                  <th title="Default instantaneous pickup (× Ir); blank = the trip unit's default">Ii (×Ir)</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="cb-library-body">
+                <!-- Populated by JS -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div id="lib-pane-fuses" class="settings-tab-content">
+          <div class="library-toolbar">
+            <button id="btn-add-fuse" class="btn-small">+ Add Fuse</button>
+            <button id="btn-reset-fuses" class="btn-small btn-secondary">Reset to Defaults</button>
+          </div>
+          <div class="library-table-wrap">
+            <table id="fuse-library-table" class="library-table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Type</th>
+                  <th>Rating (A)</th>
+                  <th>Voltage (kV)</th>
+                  <th>Breaking (kA)</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="fuse-library-body">
+                <!-- Populated by JS -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div id="lib-pane-load-classes" class="settings-tab-content">
+          <div class="library-source-ref">
+            Load classes per CTEF100 Appendix A1 (CoCT-modified NRS 034-1 Table 3, 15-year) and NRS 034-1 Table 3a. Used by the Reticulation workspace for ADMD demand estimation. α/β/c are Herman-Beta parameters; ADMD is per-consumer after-diversity maximum demand.
+          </div>
+          <div class="library-toolbar">
+            <button id="btn-add-loadclass" class="btn-small">+ Add Class</button>
+            <button id="btn-reset-loadclasses" class="btn-small btn-secondary">Reset to Defaults</button>
+          </div>
+          <div class="library-table-wrap">
+            <table id="loadclass-library-table" class="library-table">
+              <thead>
+                <tr>
+                  <th>Label</th>
+                  <th>LSM</th>
+                  <th>α</th>
+                  <th>β</th>
+                  <th>c</th>
+                  <th>ADMD (kVA)</th>
+                  <th>μ (A)</th>
+                  <th>σ (A)</th>
+                  <th>Phase</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="loadclass-library-body">
+                <!-- Populated by JS -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div id="lib-pane-shared-libs" class="settings-tab-content">
+          <p class="shl-intro">Libraries shared with you or by you. Their entries appear in the library tabs (badged) under your own edits, which always win. The <b>company standard</b>, if your admin has set one, is read-only for everyone.</p>
+          <div id="shared-libs-panel"></div>
+        </div>
+  </div>
+
   <!-- Settings Modal (tabbed) -->
   <div id="settings-modal" class="modal" role="dialog" aria-modal="true" aria-label="Settings" style="display:none">
     <div class="modal-content modal-wide">
       <div class="modal-header">
         <button class="settings-back" id="btn-settings-back" aria-label="Back to Settings" hidden>&lsaquo;</button>
         <h3 id="settings-title">Settings</h3>
-        <button class="settings-more" id="btn-settings-more" aria-label="More" aria-haspopup="menu" hidden>&#8943;</button>
         <button class="modal-close" id="btn-close-settings">&times;</button>
-      </div>
-      <div class="settings-more-menu" id="settings-more-menu" role="menu" hidden>
-        <button type="button" role="menuitem" data-more="reset">Reset this library to defaults&hellip;</button>
       </div>
       <div class="settings-home" id="settings-home" hidden></div>
       <div class="settings-tabs">
         <button class="settings-tab active" data-tab="system">System Base</button>
-        <button class="settings-tab" data-tab="cables">Cable Library</button>
-        <button class="settings-tab" data-tab="transformers">Transformer Library</button>
-        <button class="settings-tab" data-tab="cbs">CB Library</button>
-        <button class="settings-tab" data-tab="fuses">Fuse Library</button>
-        <button class="settings-tab" data-tab="load-classes">Load Classes</button>
-        <button class="settings-tab" data-tab="shared-libs">Shared Libraries</button>
         <button class="settings-tab" data-tab="iec-standards">IEC Standards</button>
         <button class="settings-tab" data-tab="email" id="settings-tab-btn-email" hidden>Email</button>
       </div>
@@ -2572,119 +2710,13 @@
           <button id="btn-save-settings" class="btn-primary">Apply</button>
         </div>
         <!-- Cable Library Tab -->
-        <div id="settings-tab-cables" class="settings-tab-content">
-          <div class="library-source-ref">
-            Data per IEC 60502 / SANS 1339 &mdash; R and X at 90&deg;C, trefoil formation. Zero-sequence ratios per IEC 60502 Annex C.
-          </div>
-          <div class="library-toolbar">
-            <button id="btn-add-cable" class="btn-small">+ Add Cable</button>
-            <button id="btn-reset-cables" class="btn-small btn-secondary">Reset to Defaults</button>
-          </div>
-          <div class="library-table-wrap">
-            <table id="cable-library-table" class="library-table">
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th>Conductor</th>
-                  <th>Insulation</th>
-                  <th>Construction</th>
-                  <th>Cores</th>
-                  <th>Size (mm²)</th>
-                  <th>Voltage (kV)</th>
-                  <th>R₁ (Ω/km)</th>
-                  <th>X₁ (Ω/km)</th>
-                  <th>R₀ (Ω/km)</th>
-                  <th>X₀ (Ω/km)</th>
-                  <th>Irated (A)</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody id="cable-library-body">
-                <!-- Populated by JS -->
-              </tbody>
-            </table>
-          </div>
-        </div>
+
         <!-- Transformer Library Tab -->
-        <div id="settings-tab-transformers" class="settings-tab-content">
-          <div class="library-toolbar">
-            <button id="btn-add-xfmr" class="btn-small">+ Add Transformer</button>
-            <button id="btn-reset-xfmrs" class="btn-small btn-secondary">Reset to Defaults</button>
-          </div>
-          <div class="library-table-wrap">
-            <table id="xfmr-library-table" class="library-table">
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th>Rating (MVA)</th>
-                  <th>HV (kV)</th>
-                  <th>LV (kV)</th>
-                  <th>Z%</th>
-                  <th>X/R</th>
-                  <th>Vector</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody id="xfmr-library-body">
-                <!-- Populated by JS -->
-              </tbody>
-            </table>
-          </div>
-        </div>
+
         <!-- CB Library Tab -->
-        <div id="settings-tab-cbs" class="settings-tab-content">
-          <div class="library-toolbar">
-            <button id="btn-add-cb" class="btn-small">+ Add CB</button>
-            <button id="btn-reset-cbs" class="btn-small btn-secondary">Reset to Defaults</button>
-          </div>
-          <div class="library-table-wrap">
-            <table id="cb-library-table" class="library-table">
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th>Type</th>
-                  <th>Trip (A)</th>
-                  <th>Voltage (kV)</th>
-                  <th>Breaking (kA)</th>
-                  <th>Mag. (xIn)</th>
-                  <th>LT Class</th>
-                  <th title="Trip-unit profile the breaker gets when picked (Auto: by type and frame)">Trip unit</th>
-                  <th title="Default short-time pickup (× Ir); blank = the trip unit's default">Isd (×Ir)</th>
-                  <th title="Default short-time delay; blank = the trip unit's default">tsd (s)</th>
-                  <th title="Default instantaneous pickup (× Ir); blank = the trip unit's default">Ii (×Ir)</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody id="cb-library-body">
-                <!-- Populated by JS -->
-              </tbody>
-            </table>
-          </div>
-        </div>
+
         <!-- Fuse Library Tab -->
-        <div id="settings-tab-fuses" class="settings-tab-content">
-          <div class="library-toolbar">
-            <button id="btn-add-fuse" class="btn-small">+ Add Fuse</button>
-            <button id="btn-reset-fuses" class="btn-small btn-secondary">Reset to Defaults</button>
-          </div>
-          <div class="library-table-wrap">
-            <table id="fuse-library-table" class="library-table">
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th>Type</th>
-                  <th>Rating (A)</th>
-                  <th>Voltage (kV)</th>
-                  <th>Breaking (kA)</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody id="fuse-library-body">
-                <!-- Populated by JS -->
-              </tbody>
-            </table>
-          </div>
-        </div>
+
         <!-- Load Classes Tab (NRS 034-1 / CTEF100 ADMD) -->
         <!-- Email (SMTP) Tab — admin only, optional -->
         <div id="settings-tab-email" class="settings-tab-content">
@@ -2693,41 +2725,9 @@
         </div>
 
         <!-- Shared (team) libraries Tab -->
-        <div id="settings-tab-shared-libs" class="settings-tab-content">
-          <p class="shl-intro">Libraries shared with you or by you. Their entries appear in the library tabs (badged) under your own edits, which always win. The <b>company standard</b>, if your admin has set one, is read-only for everyone.</p>
-          <div id="shared-libs-panel"></div>
-        </div>
 
-        <div id="settings-tab-load-classes" class="settings-tab-content">
-          <div class="library-source-ref">
-            Load classes per CTEF100 Appendix A1 (CoCT-modified NRS 034-1 Table 3, 15-year) and NRS 034-1 Table 3a. Used by the Reticulation workspace for ADMD demand estimation. α/β/c are Herman-Beta parameters; ADMD is per-consumer after-diversity maximum demand.
-          </div>
-          <div class="library-toolbar">
-            <button id="btn-add-loadclass" class="btn-small">+ Add Class</button>
-            <button id="btn-reset-loadclasses" class="btn-small btn-secondary">Reset to Defaults</button>
-          </div>
-          <div class="library-table-wrap">
-            <table id="loadclass-library-table" class="library-table">
-              <thead>
-                <tr>
-                  <th>Label</th>
-                  <th>LSM</th>
-                  <th>α</th>
-                  <th>β</th>
-                  <th>c</th>
-                  <th>ADMD (kVA)</th>
-                  <th>μ (A)</th>
-                  <th>σ (A)</th>
-                  <th>Phase</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody id="loadclass-library-body">
-                <!-- Populated by JS -->
-              </tbody>
-            </table>
-          </div>
-        </div>
+
+
         <!-- IEC Standards Tab -->
         <div id="settings-tab-iec-standards" class="settings-tab-content">
           <div class="iec-standards-container">
