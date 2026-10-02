@@ -979,7 +979,7 @@ body.dark-mode {
      They're siblings of #app-container (which switchWorkspace hides), so the
      mobile header + bottom nav survive. Fit the workspace between them and
      drop the SLD-only chrome. */
-  #retic-workspace, #plan-workspace, #interlock-workspace, #schedules-workspace, #streetlight-workspace {
+  #retic-workspace, #plan-workspace, #interlock-workspace, #schedules-workspace, #streetlight-workspace, #quantities-workspace {
     position: fixed;
     top: var(--mobile-header-height) !important;
     bottom: var(--mobile-nav-height) !important;

@@ -16,6 +16,7 @@
   <link rel="stylesheet" href="css/mobile.css?v=3.5.216">
   <link rel="stylesheet" href="css/interlocking.css?v=3.5.216">
   <link rel="stylesheet" href="css/schedules.css?v=3.5.216">
+  <link rel="stylesheet" href="css/quantities.css?v=3.5.216">
   <link rel="stylesheet" href="css/streetlight.css?v=3.5.216">
   <link rel="stylesheet" href="css/roadlight.css?v=3.5.216">
   <link rel="stylesheet" href="css/help.css?v=3.5.216">
@@ -64,6 +65,7 @@
           <button id="btn-workspace-plan" class="workspace-tab" role="tab" aria-selected="false" title="Plan markup — site &amp; floor-plan drawings">Plan</button>
           <button id="btn-workspace-interlock" class="workspace-tab" role="tab" aria-selected="false" title="Circuit-breaker interlocking logic — boolean gates + simulation">Interlock</button>
           <button id="btn-workspace-schedules" class="workspace-tab" role="tab" aria-selected="false" title="Distribution-board circuit schedules — full-screen editor for every board, with per-way cable checks">Schedules</button>
+          <button id="btn-workspace-quantities" class="workspace-tab" role="tab" aria-selected="false" title="Bill of quantities, cable schedules and the rate library">Quantities</button>
         </div>
       <div class="toolbar-right">
         <button type="button" id="btn-command-search" class="cmd-search-btn" title="Search every command, analysis, export and setting (Ctrl K)">
@@ -567,6 +569,9 @@
   <div id="schedules-workspace" style="display:none">
     <!-- Populated by Schedules.buildDOM() -->
   </div>
+
+  <!-- QUANTITIES WORKSPACE — rail + docked BOQ / cable schedules / rate library, built by js/quantities.js -->
+  <div id="quantities-workspace" style="display:none"></div>
 
   <!-- STREET LIGHTING WORKSPACE (Reticulation) — built by js/streetlight.js -->
   <div id="streetlight-workspace" style="display:none"></div>
@@ -3419,6 +3424,7 @@
   <script src="js/rates.js?v=3.5.216"></script>
   <script src="js/boq.js?v=3.5.216"></script>
   <script src="js/cableschedules.js?v=3.5.216"></script>
+  <script src="js/quantities.js?v=3.5.216"></script>
   <script src="js/dbaccessories.js?v=3.5.216"></script>
   <script src="js/dbdrawing.js?v=3.5.216"></script>
   <script src="js/retic-diagram.js?v=3.5.216"></script>

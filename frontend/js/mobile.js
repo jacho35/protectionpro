@@ -128,7 +128,7 @@ const MobileUI = {
 
   // The workspace on screen (secondary workspaces are shown with display:flex).
   currentWorkspace() {
-    for (const ws of ['retic', 'streetlight', 'plan', 'interlock', 'schedules']) {
+    for (const ws of ['retic', 'streetlight', 'plan', 'interlock', 'schedules', 'quantities']) {
       const el = document.getElementById(ws + '-workspace');
       if (el && el.style.display === 'flex') return ws;
     }
