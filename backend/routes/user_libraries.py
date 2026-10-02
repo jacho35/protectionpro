@@ -49,6 +49,8 @@ def _validate(data: dict) -> str:
             if not (isinstance(base, dict) and all(
                     isinstance(r, dict) and isinstance(r.get("version"), int) and r["version"] >= 1
                     and (r.get("library") is None or isinstance(r["library"], int))
+                    and isinstance(r.get("fp", ""), str) and len(r.get("fp", "")) <= 32
+                    and isinstance(r.get("gone", False), bool)
                     for r in base.values())):
                 raise HTTPException(status_code=422,
                                     detail=f"Library '{key}' base must map entry ids to {{library, version}}")

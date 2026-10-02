@@ -97,3 +97,23 @@ def test_batch_publish_and_non_overriders(client):
     assert len(r["updated"]) == 2 and not r["conflicts"]
     n = _drift_notes(client, w)
     assert len(n) == 1 and n[0]["message"].startswith("2 of your edited")
+
+
+def test_removal_notifies_overrider_and_gone_records_validate(client):
+    lib, admin = _setup(client)
+    u = _login(client, "u6@x.com")
+    base = {"cb1": {"library": lib, "version": 1}, "cb3": {"library": None, "version": 1, "fp": "abc123"},
+            "cb2": {"library": lib, "version": 1, "gone": True}}
+    ok = client.put("/api/user-libraries", headers=u, json={"data": {"format": "overrides", "version": 3,
+        "cbs": {"set": [{"id": "cb1", "name": "Mine"}, {"id": "cb2", "name": "Gone"}, {"id": "cb3", "name": "S"}],
+                "removed": [], "base": base}}})
+    assert ok.status_code == 200, ok.text
+    for bad in ({"cb1": {"library": 1, "version": 1, "fp": 5}}, {"cb1": {"library": 1, "version": 1, "gone": "yes"}}):
+        r = client.put("/api/user-libraries", headers=u, json={"data": {"format": "overrides", "version": 3,
+            "cbs": {"set": [{"id": "cb1", "name": "Mine"}], "removed": [], "base": bad}}})
+        assert r.status_code == 422
+    client.delete(f"{LIB}/{lib}/entries/cbs/cb1", headers=admin)
+    client.delete(f"{LIB}/{lib}/entries/cbs/cb2", headers=admin)       # u6 already knows cb2 is gone
+    n = _drift_notes(client, u)
+    assert len(n) == 1 and "Mine" in n[0]["message"] and "removed" in n[0]["message"]
+    assert "Gone" not in n[0]["message"]

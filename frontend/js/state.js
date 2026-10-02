@@ -161,6 +161,10 @@ const AppState = {
   // Raceway/conduit-fill study definitions: {id, name, nominal_mm,
   // custom_id_mm, cableIds: []} — persisted with the project.
   raceways: [],
+  // Quoted-project freeze (quote.js); reset() and fromJSON() keep these in step.
+  quoted: null,
+  quotedLibrary: null,
+  quoteLog: [],
 
   // Independent workspace from the SLD canvas. Kiosks feed groups of erven
   // (stands); demand is estimated via the backend /api/analysis/admd engine.
@@ -1273,6 +1277,12 @@ const AppState = {
     // Bill-of-quantities rate library — only the entries the user has set
     // (rates.js builds the catalogue of item keys itself).
     this.rateLibrary = null;
+    // Quoted-project freeze (quote.js): { at, by, note } while the prices are locked, else null.
+    // quotedLibrary = the library entries (+ origins) this project used when it was quoted, kept as they were.
+    // quoteLog = every quoted / reopened event, oldest first.
+    this.quoted = null;
+    this.quotedLibrary = null;
+    this.quoteLog = [];
     this.raceways = [];
     // Clear annotation drag offsets + hidden result boxes
     if (typeof Annotations !== 'undefined') {
@@ -1538,11 +1548,15 @@ const AppState = {
       rateLibrary: this.rateLibrary || undefined,
       // Library entries this project uses that are custom/edited (your libraries
       // stay yours; on open they are compared and you choose — see StandardData).
-      libraryItems: (typeof StandardData !== 'undefined') ? StandardData.usedLibraryItems() : undefined,
+      // A quoted project keeps the entries it was quoted with, whatever the libraries hold now.
+      libraryItems: this.quoted && this.quotedLibrary ? this.quotedLibrary.items : (typeof StandardData !== 'undefined') ? StandardData.usedLibraryItems() : undefined,
       // Where each of those entries came from (custom / edited shipped / shared library / company)
-      libraryOrigins: (typeof StandardData !== 'undefined') ? StandardData.usedLibraryOrigins() : undefined,
+      libraryOrigins: this.quoted && this.quotedLibrary ? this.quotedLibrary.origins : (typeof StandardData !== 'undefined') ? StandardData.usedLibraryOrigins() : undefined,
       // Same cables as libraryItems.cables, still written for older builds.
-      customCables: (() => { const c = typeof StandardData !== 'undefined' ? (StandardData.usedLibraryItems() || {}).cables : undefined; return c && c.length ? c : undefined; })(),
+      customCables: (() => { const c = this.quoted && this.quotedLibrary ? (this.quotedLibrary.items || {}).cables : typeof StandardData !== 'undefined' ? (StandardData.usedLibraryItems() || {}).cables : undefined; return c && c.length ? c : undefined; })(),
+      quoted: this.quoted || undefined,
+      quotedLibrary: this.quoted && this.quotedLibrary ? this.quotedLibrary : undefined,
+      quoteLog: this.quoteLog.length ? this.quoteLog : undefined,
       raceways: this.raceways.length ? this.raceways : undefined,
     };
   },
@@ -1881,6 +1895,9 @@ const AppState = {
     this.tccFaultOpts = (data.tccFaultOpts && typeof data.tccFaultOpts === 'object') ? data.tccFaultOpts : null;
     this.harmonicsLimits = data.harmonicsLimits === 'iec' ? 'iec' : null;
     this.rateLibrary = (data.rateLibrary && typeof data.rateLibrary === 'object') ? data.rateLibrary : null;
+    this.quoted = (data.quoted && typeof data.quoted === 'object' && data.quoted.at) ? { at: String(data.quoted.at), by: String(data.quoted.by || ''), note: String(data.quoted.note || '') } : null;
+    this.quotedLibrary = (this.quoted && data.quotedLibrary && typeof data.quotedLibrary === 'object') ? data.quotedLibrary : null;
+    this.quoteLog = Array.isArray(data.quoteLog) ? data.quoteLog.filter(e => e && typeof e === 'object') : [];
     // Cable rate keys come from library ids now; move name-keyed rates once.
     if (this.rateLibrary && typeof Rates !== 'undefined' && Rates._migrateKeys) Rates._migrateKeys(this.rateLibrary);
     this.raceways = Array.isArray(data.raceways) ? data.raceways : [];

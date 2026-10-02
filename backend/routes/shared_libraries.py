@@ -137,7 +137,8 @@ def _check_rate(data: dict) -> None:
         raise HTTPException(status_code=422, detail="priceDate must be YYYY-MM-DD")
 
 
-def _notify_override_drift(db: Session, lib: SharedLibrary, changed: list, actor: User) -> None:
+def _notify_override_drift(db: Session, lib: SharedLibrary, changed: list, actor: User,
+                           removed: bool = False) -> None:
     """Tell users who hold their OWN edit of an entry that has just changed in this library
     that their copy is now out of date. `changed` = [(kind, entry_id, new_version)], rates
     excluded (they are not overridden). A user whose override already records this version
@@ -166,14 +167,18 @@ def _notify_override_drift(db: Session, lib: SharedLibrary, changed: list, actor
             if mine is None:
                 continue
             rec = (ov.get("base") or {}).get(eid)
-            if isinstance(rec, dict) and rec.get("library") == lib.id and (rec.get("version") or 0) >= version:
-                continue
+            if isinstance(rec, dict) and rec.get("library") == lib.id:
+                if removed and rec.get("gone"):
+                    continue                   # already knows it is gone
+                if not removed and (rec.get("version") or 0) >= version:
+                    continue                   # already reviewed this version
             hit.append(str(mine.get("name") or mine.get("label") or eid))
         if hit:
             one = len(hit) == 1
+            verb = "removed" if removed else "changed"
             notify(db, [row.user_id], "libraries", "override_out_of_date",
-                   f"Your edited “{hit[0]}” is out of date — {where} has changed it." if one
-                   else f"{len(hit)} of your edited library entries are out of date — {where} has changed them.",
+                   f"Your edited “{hit[0]}” is out of date — {where} has {verb} it." if one
+                   else f"{len(hit)} of your edited library entries are out of date — {where} has {verb} them.",
                    actor=actor, link={"type": "library", "id": lib.id, "drift": True},
                    message_many=f"Some of your edited library entries are out of date — {where} has changed them.",
                    group_key=f"drift:{lib.id}")
@@ -424,6 +429,7 @@ def delete_entry(library_id: int, kind: str, entry_id: str, base_version: int | 
     except ValueError:
         label = entry_id
     _notify_entry(db, lib, user, kind, entry_id, label, "removed")
+    _notify_override_drift(db, lib, [(kind, entry_id, e.version)], user, removed=True)
     db.delete(e)
     db.commit()
     return {"ok": True}

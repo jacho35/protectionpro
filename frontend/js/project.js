@@ -3,6 +3,7 @@
 function updateProjectNameDisplay(name) {
   const el = document.getElementById('project-name-display');
   if (el) el.textContent = name || AppState.projectName || 'Untitled Project';
+  if (typeof Quote !== 'undefined') Quote.refresh();   // a loaded project may be quoted
 }
 
 // Encode one CSV cell (shared by every client-side CSV exporter):

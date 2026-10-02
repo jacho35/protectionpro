@@ -611,7 +611,7 @@ const BOQ = {
     const o = this.opts;
     const res = this._last = this.compute(o);
     const typeLabel = { retic: 'Reticulation project', building: 'Building project' }[AppState.projectType] || 'Project';
-    m.querySelector('#bq-sub').textContent = `${typeLabel} · ${AppState.projectName || 'Untitled'}`;
+    m.querySelector('#bq-sub').textContent = `${typeLabel} · ${AppState.projectName || 'Untitled'}${typeof Quote !== 'undefined' && Quote.isQuoted() ? ' · Prices as quoted ' + Quote._date(AppState.quoted.at) : ''}`;
     const L = AppState.rateLibrary;
     const d = L && L.updatedAt ? new Date(L.updatedAt).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : null;
     m.querySelector('#bq-tag').textContent = d ? `Rates: project library, ${d}` : 'Rates: none entered yet';
@@ -766,7 +766,7 @@ const BOQ = {
     doc.setFontSize(16); doc.setFont('helvetica', 'bold');
     doc.text('Bill of quantities', margin, margin + 4);
     doc.setFontSize(10); doc.setFont('helvetica', 'normal');
-    doc.text(`Project: ${AppState.projectName || 'Untitled Project'}    Date: ${new Date().toLocaleDateString()}    Priced: ${priceLbl}`, margin, margin + 11);
+    doc.text(`Project: ${AppState.projectName || 'Untitled Project'}    Date: ${new Date().toLocaleDateString()}    Priced: ${priceLbl}${typeof Quote !== 'undefined' && Quote.isQuoted() ? `    Prices as quoted ${Quote._date(AppState.quoted.at)}` : ''}`, margin, margin + 11);
     const srcs = this.SOURCES.filter(s => this.opts && this.opts.sources[s.id]).map(s => s.label).join(', ');
     const wasteTxt = res.price === 'install' ? '' : this.opts && this.opts.waste === false ? 'No waste allowance.' : 'Quantities are measured; material includes each item’s waste allowance, labour does not.';
     doc.text(doc.splitTextToSize(`Quantities from: ${srcs || '—'}.  ${wasteTxt}`, tw), margin, margin + 16);
