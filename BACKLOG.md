@@ -72,9 +72,8 @@ section and adding the `## Completed` entry.
 44. **Real-time collaboration** — multiple users editing one SLD. *(Multi-User & Collaboration)*
 45. **Audit trail** — change tracking with user attribution. *(Multi-User & Collaboration)*
 46. **AI / natural-language search** — query the model and run analyses from plain-language prompts. *(Platform)*
-- **Company master libraries — phase 5: submissions and approvals** — users submit entries to the company library, any admin (not on their own) approves / requests changes / rejects; decisions notify via the notifications center. *(Multi-User & Collaboration)*
 - **Company master libraries — phase 6: Libraries screen and admin tools** — full-screen manager under Project (replaces the Settings library tabs), retire flag, history table, designation log. *(Multi-User & Collaboration)*
-- **Notifications — email delivery, per-user preferences, approvals tab** — optional email for notifications through the existing mailer; preferences; an Approvals tab once phase 5 lands. *(Multi-User & Collaboration)*
+- **Notifications — email delivery, per-user preferences, approvals tab** — optional email for notifications through the existing mailer; preferences; per-user preferences. *(Multi-User & Collaboration)*
 
 ### Street lighting — follow-ups
 
@@ -379,6 +378,12 @@ The Street lighting workspace (Reticulation) solves each circuit with phasors �
 - **Road lighting criteria still open.** P-class Ev,min / Esc,min and C/P-class TI; wet Uow with W-tables; HS / SC / EV classes; scaling the r-table by a measured Q0; the EN 13201-3 Annex B extended r-table for luminaires ≤ 2 m high.
 
 ## Completed
+
+### Company master libraries — phase 5: submissions and approvals (2026-10-02)
+- Users propose entries for the company library — cables, breakers, fuses, transformers, load classes (Settings → each library tab → **Submit to company…**, for anyone who cannot edit the company library directly) and rate prices (rate library → **Submit prices to company…**) — each as a snapshot plus a note. Submitting the same entry again replaces the open submission; an entry identical to the company's is not a submission.
+- **Project → Library Submissions…** opens a full-screen queue (count badge on the menu item): admins see Waiting / Changes requested / Approved / Rejected for everyone plus *My submissions*; everyone else sees their own. The detail pane shows the submitter's note and a field diff against the company entry now, warns when the company entry changed or was deleted since, and offers **Approve** (writes company v1 or the next version), **Request changes** (note required) and **Reject**, singly or on a ticked selection. Any admin can decide but never their own submission; approving over a changed company entry asks first ("Approve anyway"). Submitters can resubmit their current entry or withdraw an open submission.
+- Approving goes through the normal company write, so everyone is told the library changed and people whose own edit of it is now out of date are notified. Notifications: admins on submit, the submitter on every decision (one per submitter per action, however many entries); **Approvals tab** in the notifications center; links open the queue.
+- Backend: `library_submissions` table, `/api/library-submissions` (submit, list, counts, get, `decide`, resubmit, withdraw). Tests: `test_library_submissions.py`. Next: phase 6 — Libraries screen and admin tools.
 
 ### Company master libraries — phase 4: quoted-project freeze, plus phase 3 follow-ups (2026-10-02)
 - **Project → Mark as Quoted…** (optional note, e.g. the quote number) locks the project's rate library — prices, currency, waste, quantity rules, import / refresh / publish / load-default — and keeps the library entries it uses as they were (`AppState.quoted`, `quotedLibrary`, `quoteLog`, saved with the project). A "Quoted <date>" chip sits beside the project type; **Reopen for editing** (menu or chip) is a confirmed action and is logged. Company price changes after the quote show as information in the rate library ("changed since for N items — not applied"); opening a quoted project uses the entries it was quoted with without asking and without touching your libraries; the BOQ header and PDF say "Prices as quoted <date>".

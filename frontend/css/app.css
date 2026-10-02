@@ -3830,3 +3830,59 @@ body:not(.dark-mode) .eg-warn { color: #c25e00; }
 
 .project-quoted-chip { margin-left: 6px; padding: 1px 9px; font-size: 11px; font-weight: 600; border-radius: 10px; cursor: pointer; border: 1px solid var(--warning); color: var(--warning); background: color-mix(in srgb, var(--warning) 12%, transparent); }
 .project-quoted-chip[hidden] { display: none; }
+
+/* ── Company library submissions screen ── */
+.subm-screen { position: fixed; inset: 0; z-index: 2000; display: flex; flex-direction: column; background: var(--bg-secondary); color: var(--text-primary); }
+.subm-screen[hidden] { display: none; }
+.subm-head { display: flex; align-items: center; gap: 16px; height: 52px; padding: 0 16px; background: var(--bg-primary); border-bottom: 1px solid var(--border-color); flex-shrink: 0; }
+.subm-head h2 { margin: 0; font-size: 17px; font-weight: 600; }
+.subm-sub { margin-left: auto; font-size: 13px; color: var(--text-muted); }
+.subm-back { min-height: 36px; padding: 0 12px; border: 1px solid var(--border-color); border-radius: 6px; background: var(--bg-primary); color: var(--text-primary); font: inherit; cursor: pointer; }
+.subm-body { flex: 1; min-height: 0; display: flex; }
+.subm-rail { width: 220px; flex-shrink: 0; padding: 14px 10px; border-right: 1px solid var(--border-color); background: var(--bg-primary); display: flex; flex-direction: column; gap: 2px; overflow-y: auto; }
+.subm-rail-h { padding: 10px 10px 4px; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--text-muted); }
+.subm-rail-item { display: flex; justify-content: space-between; align-items: center; min-height: 38px; padding: 0 10px; border: 0; border-radius: 6px; background: transparent; color: inherit; font: inherit; font-size: 14px; text-align: left; cursor: pointer; }
+.subm-rail-item:hover { background: var(--bg-tertiary); }
+.subm-rail-item.on { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); font-weight: 600; }
+.subm-n { font-size: 12px; padding: 1px 8px; border-radius: 10px; background: var(--warning); color: #1a1a2e; }
+.subm-main { flex: 1; min-width: 0; display: flex; flex-direction: column; padding: 16px; gap: 10px; }
+.subm-bulk { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border: 1px solid var(--accent); border-radius: 8px; background: color-mix(in srgb, var(--accent) 8%, var(--bg-primary)); font-size: 13px; }
+.subm-bulk[hidden] { display: none; }
+.subm-tablewrap { flex: 1; min-height: 0; overflow: auto; border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-primary); }
+.subm-tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
+.subm-tbl th { position: sticky; top: 0; background: var(--bg-secondary); text-align: left; padding: 8px 10px; font-size: 11px; letter-spacing: .05em; text-transform: uppercase; color: var(--text-muted); border-bottom: 1px solid var(--border-color); }
+.subm-tbl td { padding: 8px 10px; border-bottom: 1px solid var(--border-color); vertical-align: middle; }
+.subm-tbl tr.sel td { background: color-mix(in srgb, var(--accent) 10%, var(--bg-primary)); }
+.subm-tbl .c-chk { width: 34px; }
+.subm-link { display: flex; flex-direction: column; align-items: flex-start; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; padding: 0; }
+.subm-link small { color: var(--text-muted); font-size: 11px; }
+.subm-empty { padding: 32px 16px; text-align: center; color: var(--text-muted); font-size: 14px; }
+.subm-pill { display: inline-block; padding: 1px 9px; border-radius: 10px; font-size: 11px; font-weight: 600; background: var(--bg-tertiary); color: var(--text-secondary); }
+.subm-pill.amb { background: color-mix(in srgb, var(--warning) 20%, transparent); color: var(--warning); }
+.subm-pill.ok { background: color-mix(in srgb, var(--success) 18%, transparent); color: var(--success); }
+.subm-detail { width: 400px; flex-shrink: 0; padding: 18px; border-left: 1px solid var(--border-color); background: var(--bg-primary); overflow-y: auto; display: flex; flex-direction: column; gap: 10px; font-size: 13px; }
+.subm-detail h3 { margin: 0; font-size: 17px; }
+.subm-kind { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--accent); display: flex; gap: 8px; align-items: center; }
+.subm-id { color: var(--text-muted); font-size: 12px; }
+.subm-quote { padding: 10px 12px; border-radius: 6px; background: var(--bg-secondary); line-height: 1.5; }
+.subm-decision { padding: 8px 12px; border-radius: 6px; border: 1px solid var(--border-color); line-height: 1.5; }
+.subm-warn { padding: 8px 12px; border-radius: 6px; border: 1px solid var(--warning); background: color-mix(in srgb, var(--warning) 12%, transparent); line-height: 1.45; }
+.subm-kv { width: 100%; border-collapse: collapse; font-size: 12px; }
+.subm-kv th, .subm-kv td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--border-color); overflow-wrap: anywhere; vertical-align: top; }
+.subm-kv th { color: var(--text-muted); font-weight: 600; }
+.subm-actions { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
+.subm-actions textarea, .subm-note-l textarea { width: 100%; box-sizing: border-box; margin-top: 4px; }
+.subm-note-l { font-size: 12px; color: var(--text-secondary); }
+.subm-two { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.subm-hint { font-size: 12px; color: var(--text-muted); line-height: 1.45; }
+.btn-small.danger { color: var(--danger); }
+.sub-pick { display: flex; flex-direction: column; gap: 2px; max-height: 40vh; overflow-y: auto; border: 1px solid var(--border-color); border-radius: 6px; }
+.sub-pick-row { display: flex; gap: 10px; align-items: flex-start; padding: 8px 10px; border-bottom: 1px solid var(--border-color); cursor: pointer; }
+.sub-pick-row small { display: block; color: var(--text-muted); font-size: 11px; }
+@media (max-width: 900px) {
+  .subm-body { flex-direction: column; overflow-y: auto; }
+  .subm-rail { width: auto; flex-direction: row; flex-wrap: wrap; border-right: 0; border-bottom: 1px solid var(--border-color); }
+  .subm-rail-h { display: none; }
+  .subm-detail { width: auto; border-left: 0; border-top: 1px solid var(--border-color); }
+}
+.lib-submit[hidden] { display: none; }

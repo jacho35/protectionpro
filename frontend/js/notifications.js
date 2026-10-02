@@ -15,6 +15,7 @@ const Notifications = {
     { id: '', label: 'All' },
     { id: 'libraries', label: 'Libraries' },
     { id: 'projects', label: 'Projects' },
+    { id: 'approvals', label: 'Approvals' },
   ],
   CATEGORY_LABEL: { libraries: 'Library', projects: 'Project', approvals: 'Approval' },
 
@@ -51,6 +52,7 @@ const Notifications = {
       const grew = this._seeded && c.total > this._unread.total;
       this._setUnread(c);
       this._seeded = true;
+      if (typeof Submissions !== 'undefined') Submissions.refreshBadge();
       if (this._open) await this.load();
       else if (grew) UI.toast(`You have ${c.total} unread notification${c.total === 1 ? '' : 's'}.`, 'info');
     } catch (_) { /* offline or signed out — try again next tick */ }
@@ -218,6 +220,7 @@ const Notifications = {
     const t = n.link && n.link.type;
     if (t === 'project') return 'Open project';
     if (t === 'library') return n.link.drift ? 'Review my edits' : 'View libraries';
+    if (t === 'submissions') return 'Open submissions';
     return '';
   },
 
@@ -226,6 +229,9 @@ const Notifications = {
     if (!l) return;
     if (l.type === 'project') {
       if (await Project.openById(l.id)) this.close();
+    } else if (l.type === 'submissions') {
+      this.close();
+      Submissions.open({ id: l.id });
     } else if (l.type === 'library' && l.drift) {
       this.close();
       StandardData.reviewDrift();

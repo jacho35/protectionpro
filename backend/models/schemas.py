@@ -457,6 +457,52 @@ class ShareOut(BaseModel):
     created_at: datetime
 
 
+# ── Library submissions (company library approval workflow) ─────────────────
+
+class SubmissionEntryIn(BaseModel):
+    kind: str
+    data: dict
+    base_version: Optional[int] = None   # company entry version the submitter's copy was based on
+
+
+class SubmissionCreate(BaseModel):
+    entries: list[SubmissionEntryIn]
+    note: str = ""
+
+
+class SubmissionOut(BaseModel):
+    id: int
+    kind: str
+    entry_id: str
+    label: str
+    data: dict
+    note: str
+    change_type: str
+    base_version: Optional[int] = None
+    status: str
+    decision_note: str
+    submitter: str
+    submitter_id: int
+    decided_by: Optional[str] = None
+    decided_at: Optional[datetime] = None
+    batch: Optional[str] = None
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+    current: Optional[dict] = None       # detail only: the company's entry now ({data, version}), if any
+
+
+class SubmissionDecision(BaseModel):
+    ids: list[int]
+    action: str                          # 'approve' | 'request_changes' | 'reject'
+    note: str = ""
+    force: bool = False                  # approve even though the company entry changed since
+
+
+class SubmissionResubmit(BaseModel):
+    data: Optional[dict] = None
+    note: Optional[str] = None
+
+
 # ── Notifications center ────────────────────────────────────────────────────
 
 class NotificationOut(BaseModel):
