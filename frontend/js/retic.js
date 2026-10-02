@@ -20,6 +20,12 @@ const Retic = {
   // Open calculation panels (view state only, never saved): 'k:<kiosk id>'
   // kiosk demand, 'e:<erf id>' service VD, 'f:<kiosk id>' feeder VD.
   _calcOpen: new Set(),
+  // Bulk cable change: ticked erven / kiosk feeders (session-only) and the
+  // pickers' current values.
+  _selErfs: new Set(),
+  _selFeeders: new Set(),
+  _bulk: { cableType: '', earthCable: '', feederCable: '' },
+  _lastTick: null,
 
   PHASES: [
     { id: 'Red', color: '#dc2626' },
@@ -226,6 +232,17 @@ const Retic = {
       return;
     }
 
+    if (action === 'bulk-field') {
+      const f = t.dataset.field;
+      if (t.value === '__all__') {
+        CableLib.handleShowAll(t, this._bulk[f], (v) => f === 'earthCable' ? this._earthCableOptions(v) : this._cableOptions(v, true));
+        return;
+      }
+      this._bulk[f] = t.value;
+      this._updateBulkBar();
+      return;
+    }
+
     if (action === 'setting') {
       const key = t.dataset.field;
       let v = t.value;
@@ -325,7 +342,12 @@ const Retic = {
     const btn = e.target.closest('[data-action]');
     if (!btn) return;
     const action = btn.dataset.action;
-    if (action === 'add-kiosk') this.addKiosk();
+    if (action === 'sel-erf') this._tickErf(btn, e.shiftKey);
+    else if (action === 'sel-kiosk') this._tickKiosk(btn.dataset.kiosk, btn.checked);
+    else if (action === 'sel-feeder') this._tickFeeder(btn.dataset.kiosk, btn.checked);
+    else if (action === 'bulk-clear') this._clearSel();
+    else if (action === 'bulk-apply') this.applyBulk();
+    else if (action === 'add-kiosk') this.addKiosk();
     else if (action === 'quick-build') this.quickBuild();
     else if (action === 'add-minisub') this.addMinisub();
     else if (action === 'del-minisub') this.deleteMinisub(btn.dataset.ms);
@@ -747,6 +769,7 @@ const Retic = {
       return `
       <div class="kiosk-card" data-kiosk="${k.id}">
         <div class="kiosk-head" data-action="toggle-kiosk" data-kiosk="${k.id}">
+          <input type="checkbox" class="sel-box" data-action="sel-kiosk" data-kiosk="${k.id}" aria-label="Select this kiosk's erven and feeder for a bulk cable change" title="Select this kiosk's erven and LV feeder to change their cables together"${this._kioskAllSel(k) ? ' checked' : ''}>
           <span class="toggle">${k.collapsed ? '▸' : '▾'}</span>
           <input class="kiosk-name" data-action="kiosk-field" data-kiosk="${k.id}" data-field="name" value="${escHtml(k.name)}" onclick="event.stopPropagation()">
           <button type="button" class="kiosk-vd-badge" data-kiosk-vd="${k.id}" data-action="toggle-calc" data-calc="f:${k.id}"
@@ -770,7 +793,7 @@ const Retic = {
               ${k.streetLightFromCircuits
                 ? `<input type="number" value="${k.streetLightKVA || 0}" readonly title="From this kiosk's circuits in the Street lighting workspace (fixed, undiversified). Edit the circuits there.">`
                 : `<input type="number" step="0.1" data-action="kiosk-field" data-kiosk="${k.id}" data-field="streetLightKVA" value="${k.streetLightKVA || ''}" placeholder="0" title="Fixed, undiversified street-lighting load">`}</div>
-            <div class="retic-field"><label>Feeder Cable</label>
+            <div class="retic-field"><label>Feeder Cable <span class="sel-feeder" title="Include this kiosk's LV feeder cable in the bulk cable change"><input type="checkbox" data-action="sel-feeder" data-kiosk="${k.id}" aria-label="Include this kiosk's feeder in the bulk cable change"${this._selFeeders.has(k.id) ? ' checked' : ''}> change</span></label>
               <select data-action="kiosk-field" data-kiosk="${k.id}" data-field="feederCable" data-cable-select>${this._cableOptions(k.feederCable)}</select></div>
             <div class="retic-field"><label>Feeder Length (m)</label>
               <input type="number" step="1" data-action="kiosk-field" data-kiosk="${k.id}" data-field="feederLength" value="${k.feederLength || ''}"></div>
@@ -786,7 +809,7 @@ const Retic = {
               <div class="earth-cell" data-earth-kiosk="${k.id}">—</div></div>
           </div>
           <table class="erf-table">
-            <thead><tr><th>Erf #</th><th>Length (m)</th><th>Phase</th><th>Service Cable</th><th title="Earth conductor of the service cable (Cu or Al)">Earth Cable</th><th title="Fixed, undiversified load replacing the ADMD for that erf: enter amps or kVA">Override (A / kVA)</th><th>Service VD</th><th title="Earth-fault loop disconnection and ECC size at the end of the service">Earth fault</th><th></th></tr></thead>
+            <thead><tr><th class="sel-col"></th><th>Erf #</th><th>Length (m)</th><th>Phase</th><th>Service Cable</th><th title="Earth conductor of the service cable (Cu or Al)">Earth Cable</th><th title="Fixed, undiversified load replacing the ADMD for that erf: enter amps or kVA">Override (A / kVA)</th><th>Service VD</th><th title="Earth-fault loop disconnection and ECC size at the end of the service">Earth fault</th><th></th></tr></thead>
             <tbody>${erfRows}</tbody>
           </table>
           <div class="retic-toolbar" style="margin-top:8px">
@@ -795,12 +818,151 @@ const Retic = {
           </div>
         </div>`}
       </div>`;
-    }).join('');
+    }).join('') + this._bulkBar();
 
+    this._updateBulkBar();
     this.updateBadges();
     this.updateVD();   // re-render replaced the cells; VD is client-side, no refetch
     this.updateEarth();   // …and the last earth-fault check, until the next one lands
     this._attachErfGrids();
+  },
+
+  // ─── Bulk cable change ───
+  // Tick erven (Shift-click for a range) and/or kiosk feeders, pick the new
+  // service / earth / LV feeder cables, Apply — one undo step. A picker left on
+  // "unchanged" touches nothing.
+  _kioskAllSel(k) {
+    return k.erfs.length > 0 && k.erfs.every(e => this._selErfs.has(e.id)) && this._selFeeders.has(k.id);
+  },
+
+  _bulkBar() {
+    const b = this._bulk;
+    const keep = '<option value="" data-ss-always>— leave unchanged —</option>';
+    const opts = (html, v) => keep + html.replace('<option value="">— select —</option>', '').replace('<option value="">— assumed (Table 54.7) —</option>', '')
+      .replace(`value="${escHtml(v)}"`, `value="${escHtml(v)}" selected`);
+    return `
+      <div class="bulk-bar" id="retic-bulkbar" role="region" aria-label="Change cables for the selected erven" hidden>
+        <div class="bulk-sel"><div class="bulk-title" data-bulk="title"></div>
+          <button type="button" class="bulk-link" data-action="bulk-clear">Clear selection</button></div>
+        <div class="retic-field"><label data-bulk="svcLabel">Service cable</label>
+          <select data-action="bulk-field" data-field="cableType" data-cable-select data-ss-placeholder="Service cable — type to search">${opts(this._cableOptions(b.cableType), b.cableType)}</select></div>
+        <div class="retic-field"><label data-bulk="earthLabel">Earth cable</label>
+          <select data-action="bulk-field" data-field="earthCable" data-cable-select data-ss-placeholder="Earth cable — e.g. 16 cu, 25 al">${opts(this._earthCableOptions(b.earthCable), b.earthCable)}</select></div>
+        <div class="retic-field"><label data-bulk="feederLabel">LV feeder cable</label>
+          <select data-action="bulk-field" data-field="feederCable" data-cable-select data-ss-placeholder="Feeder cable — type to search">${opts(this._cableOptions(b.feederCable), b.feederCable)}</select></div>
+        <button type="button" class="retic-btn primary" data-action="bulk-apply" data-bulk="apply">Apply</button>
+        <div class="bulk-warn" data-bulk="warn"></div>
+      </div>`;
+  },
+
+  // Erven the picked service cable cannot serve (3-phase on a 2-core cable) are
+  // skipped, mirroring _erfCableMismatch's hard case.
+  _bulkTargets() {
+    const out = { erfs: [], feeders: [], skipped: 0, noEarth: 0 };
+    const c = this._bulk.cableType ? CableLib.byName(this._bulk.cableType) : null;
+    const cores = c ? Number(CableLib.normalize(c).cores) : 0;
+    this.kiosks.forEach(k => {
+      if (this._selFeeders.has(k.id)) out.feeders.push(k);
+      k.erfs.forEach(e => {
+        if (!this._selErfs.has(e.id)) return;
+        out.erfs.push({ k, e, skipSvc: !!(c && cores === 2 && this._erfIs3ph(k, e)), pen: this._earthingOf(k) === 'TN-C' });
+      });
+    });
+    return out;
+  },
+
+  _updateBulkBar() {
+    const bar = document.getElementById('retic-bulkbar');
+    if (!bar) return;
+    // Drop ticks for erven / kiosks that no longer exist.
+    const ids = new Set(), kids = new Set();
+    this.kiosks.forEach(k => { kids.add(k.id); k.erfs.forEach(e => ids.add(e.id)); });
+    this._selErfs.forEach(i => { if (!ids.has(i)) this._selErfs.delete(i); });
+    this._selFeeders.forEach(i => { if (!kids.has(i)) this._selFeeders.delete(i); });
+    const t = this._bulkTargets();
+    const nE = t.erfs.length, nF = t.feeders.length;
+    bar.hidden = nE + nF === 0;
+    const set = (key, txt) => { const el = bar.querySelector(`[data-bulk="${key}"]`); if (el) el.textContent = txt; };
+    set('title', `${nE} ${nE === 1 ? 'erf' : 'erven'} · ${nF} kiosk feeder${nF === 1 ? '' : 's'}`);
+    set('svcLabel', `Service cable (${nE} ${nE === 1 ? 'erf' : 'erven'})`);
+    set('earthLabel', `Earth cable (${nE} ${nE === 1 ? 'erf' : 'erven'}${nF ? ' + feeders' : ''})`);
+    set('feederLabel', `LV feeder cable (${nF} kiosk${nF === 1 ? '' : 's'})`);
+    const b = this._bulk;
+    const skipped = b.cableType ? t.erfs.filter(x => x.skipSvc).length : 0;
+    const pen = b.earthCable ? t.erfs.filter(x => x.pen).length : 0;
+    const warn = [];
+    if (skipped) warn.push(`${skipped} selected ${skipped === 1 ? 'erf is' : 'erven are'} 3 Phase and need a 4-core service cable — ${skipped === 1 ? 'it keeps' : 'they keep'} the current one.`);
+    if (pen) warn.push(`${pen} on a TN-C minisub use the PEN conductor — no earth cable to set.`);
+    set('warn', warn.join(' '));
+    const apply = bar.querySelector('[data-bulk="apply"]');
+    const any = b.cableType || b.earthCable || (b.feederCable && nF);
+    apply.disabled = !any;
+    apply.textContent = any ? 'Apply' : 'Pick a cable to apply';
+    // Row / kiosk tick state follows the model.
+    document.querySelectorAll('#retic-kiosks tr[data-erf]').forEach(tr => {
+      const on = this._selErfs.has(tr.dataset.erf);
+      tr.classList.toggle('erf-selected', on);
+      const cb = tr.querySelector('[data-action="sel-erf"]'); if (cb) cb.checked = on;
+    });
+    this.kiosks.forEach(k => {
+      const card = document.querySelector(`.kiosk-card[data-kiosk="${k.id}"]`);
+      if (!card) return;
+      const all = card.querySelector('[data-action="sel-kiosk"]');
+      if (all) {
+        const n = k.erfs.filter(e => this._selErfs.has(e.id)).length + (this._selFeeders.has(k.id) ? 1 : 0);
+        all.checked = this._kioskAllSel(k);
+        all.indeterminate = n > 0 && !all.checked;
+      }
+      const f = card.querySelector('[data-action="sel-feeder"]'); if (f) f.checked = this._selFeeders.has(k.id);
+    });
+  },
+
+  _tickErf(cb, shift) {
+    const k = this.kioskById(cb.dataset.kiosk);
+    if (!k) return;
+    const idx = k.erfs.findIndex(e => e.id === cb.dataset.erf);
+    const last = this._lastTick;
+    if (shift && last && last.kiosk === k.id) {
+      const [a, b] = [Math.min(idx, last.idx), Math.max(idx, last.idx)];
+      k.erfs.slice(a, b + 1).forEach(e => { if (cb.checked) this._selErfs.add(e.id); else this._selErfs.delete(e.id); });
+    } else if (cb.checked) this._selErfs.add(cb.dataset.erf);
+    else this._selErfs.delete(cb.dataset.erf);
+    this._lastTick = { kiosk: k.id, idx };
+    this._updateBulkBar();
+  },
+  _tickKiosk(kid, on) {
+    const k = this.kioskById(kid);
+    if (!k) return;
+    k.erfs.forEach(e => { if (on) this._selErfs.add(e.id); else this._selErfs.delete(e.id); });
+    if (on) this._selFeeders.add(kid); else this._selFeeders.delete(kid);
+    this._updateBulkBar();
+  },
+  _tickFeeder(kid, on) {
+    if (on) this._selFeeders.add(kid); else this._selFeeders.delete(kid);
+    this._updateBulkBar();
+  },
+  _clearSel() {
+    this._selErfs.clear(); this._selFeeders.clear(); this._lastTick = null;
+    this._updateBulkBar();
+  },
+
+  applyBulk() {
+    const b = this._bulk, t = this._bulkTargets();
+    let svc = 0, earth = 0, feed = 0, skipped = 0;
+    t.erfs.forEach(({ k, e, skipSvc, pen }) => {
+      if (b.cableType) { if (skipSvc) skipped++; else { e.cableType = b.cableType; svc++; } }
+      if (b.earthCable && !pen) { e.earthCable = b.earthCable; earth++; }
+    });
+    t.feeders.forEach(k => {
+      if (b.feederCable) { k.feederCable = b.feederCable; feed++; }
+      if (b.earthCable && this._earthingOf(k) === 'TN-S') { k.feederEarth = b.earthCable; earth++; }
+    });
+    if (!svc && !earth && !feed) { if (typeof UI !== 'undefined') UI.toast('Nothing to change for this selection', 'warning'); return; }
+    this._bulk = { cableType: '', earthCable: '', feederCable: '' };
+    if ((svc || feed) && typeof PlanSync !== 'undefined') PlanSync.pullCablesFromDemand();   // drawn routes follow
+    this._afterMutate();
+    const bits = [svc && `${svc} service`, feed && `${feed} feeder`, earth && `${earth} earth`].filter(Boolean).join(', ');
+    if (typeof UI !== 'undefined') UI.toast(`Cables changed: ${bits}${skipped ? `; ${skipped} skipped (3 Phase needs 4-core)` : ''}. Undo reverts it.`, skipped ? 'warning' : 'success');
   },
 
   // Each kiosk's erf table is an Excel-style grid (grid.js). Enter on the last
@@ -828,7 +990,8 @@ const Retic = {
     // data-cell / data-label drive the mobile card layout (grid areas + the
     // ::before field captions that replace the hidden <thead>).
     return `
-      <tr data-erf="${e.id}">
+      <tr data-erf="${e.id}"${this._selErfs.has(e.id) ? ' class="erf-selected"' : ''}>
+        <td data-cell="sel" class="sel-col"><input type="checkbox" class="sel-box" data-action="sel-erf" data-kiosk="${k.id}" data-erf="${e.id}" aria-label="Select this erf for a bulk cable change"${this._selErfs.has(e.id) ? ' checked' : ''}></td>
         <td data-cell="erf" data-label="Erf #"><input type="text" data-action="erf-field" data-kiosk="${k.id}" data-erf="${e.id}" data-field="erfNumber" value="${escHtml(e.erfNumber || '')}"></td>
         <td data-cell="len" data-label="Length (m)"><input type="number" step="1" data-action="erf-field" data-kiosk="${k.id}" data-erf="${e.id}" data-field="length" value="${e.length || ''}"></td>
         <td data-cell="phase" data-label="Phase"${this._erfPhaseMismatch(k, e) ? ` class="erf-phase-warn" title="${escHtml(this._mixedPhaseText(this._kioskClass(k)))}"` : ''}><select data-action="erf-field" data-kiosk="${k.id}" data-erf="${e.id}" data-field="phase">${phaseOpts}</select></td>
@@ -841,7 +1004,7 @@ const Retic = {
         <td class="earth-cell" data-cell="ef" data-label="Earth fault" data-earth-erf="${e.id}">—</td>
         <td data-cell="del"><button class="btn-icon-del" data-action="del-erf" data-kiosk="${k.id}" data-erf="${e.id}" title="Delete erf">&times;</button></td>
       </tr>
-      <tr class="calc-row" data-calc-panel="e:${e.id}"${this._calcOpen.has('e:' + e.id) ? '' : ' hidden'}><td colspan="9"><div class="calc-panel" data-calc-body="e:${e.id}"></div></td></tr>`;
+      <tr class="calc-row" data-calc-panel="e:${e.id}"${this._calcOpen.has('e:' + e.id) ? '' : ' hidden'}><td colspan="10"><div class="calc-panel" data-calc-body="e:${e.id}"></div></td></tr>`;
   },
 
   // Fixed-load override cell: type amps OR kVA; the other is derived through
