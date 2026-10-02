@@ -25,29 +25,29 @@ const SharedLibs = {
     if (!box) return;
     if (!this._bound) { this._bind(box); this._bound = true; }
     const SD = StandardData;
-    if (!SD._serverReady) { box.innerHTML = '<p class="sl-note">Sign in to see the libraries shared with you.</p>'; return; }
+    if (!SD._serverReady) { box.innerHTML = '<p class="shl-note">Sign in to see the libraries shared with you.</p>'; return; }
     const layers = [...SD._sharedLayers].sort((a, b) => (b.is_company_default ? 1 : 0) - (a.is_company_default ? 1 : 0) || String(a.name).localeCompare(String(b.name)));
     const T = SD._editTarget;
     const me = Auth.currentUserId();
     const admin = Auth.isAdmin();
-    let html = `<div class="sl-bar"><button type="button" class="btn-small" data-act="new">+ New shared library</button><button type="button" class="btn-small" data-act="reload" title="Fetch the latest changes made by your team">Reload</button></div>`;
-    if (!layers.length) html += '<p class="sl-note">You have no shared libraries yet. Create one to share cables, transformers, breakers, fuses and load classes with your team.</p>';
+    let html = `<div class="shl-bar"><button type="button" class="btn-small" data-act="new">+ New shared library</button><button type="button" class="btn-small" data-act="reload" title="Fetch the latest changes made by your team">Reload</button></div>`;
+    if (!layers.length) html += '<p class="shl-note">You have no shared libraries yet. Create one to share cables, transformers, breakers, fuses and load classes with your team.</p>';
     for (const L of layers) {
       const canEdit = L.role === 'owner' || L.role === 'edit';
       const editing = T && T.id === L.id;
       const isOwner = L.owner_id === me;
-      html += `<div class="sl-card${editing ? ' sl-editing' : ''}" data-id="${L.id}">
-        <div class="sl-head"><b>${escHtml(L.name)}</b>
+      html += `<div class="shl-card${editing ? ' shl-editing' : ''}" data-id="${L.id}">
+        <div class="shl-head"><b>${escHtml(L.name)}</b>
           ${L.is_company_default ? '<span class="lib-badge company">Company standard</span>' : ''}
-          <span class="sl-role">${escHtml(this._ROLE[L.role] || L.role)}</span></div>
-        <div class="sl-sub">${isOwner ? 'Owned by you' : 'Owner: ' + escHtml(L.owner_email)} · ${escHtml(this._counts(L))}</div>
-        <div class="sl-actions">
+          <span class="shl-role">${escHtml(this._ROLE[L.role] || L.role)}</span></div>
+        <div class="shl-sub">${isOwner ? 'Owned by you' : 'Owner: ' + escHtml(L.owner_email)} · ${escHtml(this._counts(L))}</div>
+        <div class="shl-actions">
           ${canEdit ? `<button type="button" class="btn-small${editing ? ' btn-primary' : ''}" data-act="edit">${editing ? 'Editing this library ✓ (stop)' : 'Edit its entries'}</button>
                        <button type="button" class="btn-small" data-act="publish">Publish my entries…</button>
                        <button type="button" class="btn-small" data-act="seed" title="Copy the shipped cables, transformers, breakers, fuses and load classes into this library so they can be edited here">Add default entries</button>` : ''}
           ${isOwner ? '<button type="button" class="btn-small" data-act="rename">Rename</button><button type="button" class="btn-small" data-act="members">Members</button><button type="button" class="btn-small btn-danger-text" data-act="delete">Delete</button>'
                     : (L.is_company_default ? '' : '<button type="button" class="btn-small" data-act="leave">Leave</button>')}
-          ${admin ? `<label class="sl-company"><input type="checkbox" data-act="company" ${L.is_company_default ? 'checked' : ''}> Company standard</label>` : ''}
+          ${admin ? `<label class="shl-company"><input type="checkbox" data-act="company" ${L.is_company_default ? 'checked' : ''}> Company standard</label>` : ''}
         </div>
         ${isOwner && this._open[L.id] ? this._membersHtml(L) : ''}
       </div>`;
@@ -57,12 +57,12 @@ const SharedLibs = {
 
   _membersHtml(L) {
     const ms = this._members[L.id] || [];
-    const rows = ms.length ? ms.map(m => `<div class="sl-member" data-uid="${m.user_id}"><span>${escHtml(m.email)}${m.name ? ' <small>' + escHtml(m.name) + '</small>' : ''}</span>
+    const rows = ms.length ? ms.map(m => `<div class="shl-member" data-uid="${m.user_id}"><span>${escHtml(m.email)}${m.name ? ' <small>' + escHtml(m.name) + '</small>' : ''}</span>
         <select data-act="member-role" aria-label="Role of ${escHtml(m.email)}"><option value="view"${m.role === 'view' ? ' selected' : ''}>View only</option><option value="edit"${m.role === 'edit' ? ' selected' : ''}>Can edit</option></select>
         <button type="button" class="btn-small" data-act="member-remove">Remove</button></div>`).join('')
-      : '<div class="sl-note">Only you so far.</div>';
-    return `<div class="sl-members">${rows}
-      <div class="sl-add"><input type="email" placeholder="Their email (they must already have an account)" data-f="email" aria-label="Email to add">
+      : '<div class="shl-note">Only you so far.</div>';
+    return `<div class="shl-members">${rows}
+      <div class="shl-add"><input type="email" placeholder="Their email (they must already have an account)" data-f="email" aria-label="Email to add">
         <select data-f="role" aria-label="Role"><option value="view">View only</option><option value="edit">Can edit</option></select>
         <button type="button" class="btn-small" data-act="member-add">Add</button></div></div>`;
   },
@@ -73,7 +73,7 @@ const SharedLibs = {
   },
 
   async _act(el, ev) {
-    const card = el.closest('.sl-card');
+    const card = el.closest('.shl-card');
     const id = card ? parseInt(card.dataset.id) : null;
     const L = id != null ? StandardData._sharedLayers.find(x => x.id === id) : null;
     const act = el.dataset.act;
@@ -114,11 +114,11 @@ const SharedLibs = {
         this._members[id] = await API.addLibraryMember(id, email, card.querySelector('[data-f="role"]').value);
         this.render();
       } else if (act === 'member-role') {
-        const uid = parseInt(el.closest('.sl-member').dataset.uid);
+        const uid = parseInt(el.closest('.shl-member').dataset.uid);
         this._members[id] = await API.setLibraryMemberRole(id, uid, el.value);
         this.render();
       } else if (act === 'member-remove') {
-        const uid = parseInt(el.closest('.sl-member').dataset.uid);
+        const uid = parseInt(el.closest('.shl-member').dataset.uid);
         await API.removeLibraryMember(id, uid);
         this._members[id] = await API.getLibraryMembers(id);
         this.render();
@@ -140,9 +140,9 @@ const SharedLibs = {
       m.innerHTML = `<div class="modal-content" style="max-width:520px;width:92vw">
         <div class="modal-header"><h3>New shared library</h3></div>
         <div class="modal-body">
-          <label class="sl-field">Name<input type="text" data-f="name" placeholder="e.g. Company standard" maxlength="255"></label>
-          <label class="sl-pick"><input type="checkbox" data-f="seed" checked> <span style="min-width:0">Start with the ${n} shipped default entries (cables, transformers, breakers, fuses, load classes)</span></label>
-          <p class="sl-note" style="margin:6px 0 0">Copies can be edited by the team here. They override the shipped ones for everyone who uses this library, so later corrections to the shipped values will not reach them. Untick to start empty and add only your own entries.</p>
+          <label class="shl-field">Name<input type="text" data-f="name" placeholder="e.g. Company standard" maxlength="255"></label>
+          <label class="shl-pick"><input type="checkbox" data-f="seed" checked> <span style="min-width:0">Start with the ${n} shipped default entries (cables, transformers, breakers, fuses, load classes)</span></label>
+          <p class="shl-note" style="margin:6px 0 0">Copies can be edited by the team here. They override the shipped ones for everyone who uses this library, so later corrections to the shipped values will not reach them. Untick to start empty and add only your own entries.</p>
         </div>
         <div class="ui-dialog-actions" style="padding:12px 16px;display:flex;gap:8px;justify-content:flex-end">
           <button type="button" class="btn-small" data-a="cancel">Cancel</button><button type="button" class="btn-primary" data-a="ok">Create</button></div></div>`;
@@ -181,7 +181,7 @@ const SharedLibs = {
       m.innerHTML = `<div class="modal-content" style="max-width:640px;width:92vw;max-height:86vh;display:flex;flex-direction:column">
         <div class="modal-header"><h3>Publish to “${escHtml(L.name)}”</h3></div>
         <div class="modal-body" style="overflow:auto"><p style="margin:0 0 10px">These are your own entries. Publishing copies them into the shared library for everyone who uses it; entries with an id that already exists there are skipped.</p>
-          ${mine.map((x, i) => `<label class="sl-pick"><input type="checkbox" data-i="${i}" checked> <span>${SD._LIBNAME[x.key]}</span> <b>${escHtml(SD._label(x.e))}</b></label>`).join('')}</div>
+          ${mine.map((x, i) => `<label class="shl-pick"><input type="checkbox" data-i="${i}" checked> <span>${SD._LIBNAME[x.key]}</span> <b>${escHtml(SD._label(x.e))}</b></label>`).join('')}</div>
         <div class="ui-dialog-actions" style="padding:12px 16px;display:flex;gap:8px;justify-content:flex-end">
           <button type="button" class="btn-small" data-a="cancel">Cancel</button><button type="button" class="btn-primary" data-a="ok">Publish selected</button></div></div>`;
       document.body.appendChild(m);
