@@ -88,10 +88,8 @@ def _run_single_study(key: str, project: ProjectData):
         from .grounding_system import run_grounding_analysis
         return run_grounding_analysis(project)
     elif key == "dc_arcflash":
-        from .fault import run_fault_analysis
         from .dc_arcflash import run_dc_arc_flash
-        fault_results = run_fault_analysis(project, fault_bus_id=None, fault_type=None)
-        return run_dc_arc_flash(project, fault_results)
+        return run_dc_arc_flash(project)   # [DA1] DC buses, IEC 61660 fault current
     else:
         raise ValueError(f"Unknown study key: {key}")
 

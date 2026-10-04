@@ -15,7 +15,7 @@
 // App version = 1.<PR number>b — set to the number of the PR that ships the change
 // (CLAUDE.md › Development Workflow). It also stamps saved study results, so
 // every bump marks results from older builds as stale.
-const APP_VERSION = '1.422b';
+const APP_VERSION = '1.423b';
 
 const GRID_SIZE = 20;
 const SNAP_SIZE = 20;
@@ -1658,6 +1658,7 @@ const FIELD_INFO = {
 
   // Bus — DC system
   'bus.system': 'AC bus (default) participates in fault / load-flow / arc-flash / grounding studies.\nDC bus feeds the DC Load Flow and DC Short Circuit (IEC 61660) studies instead, and is skipped by the AC engines.',
+  'bus.dc_bolted_fault_ka': 'DC bolted fault current used by DC arc flash. 0 (default) takes the IEC 61660-1 quasi-steady short-circuit current the DC short-circuit study computes for this bus from its batteries, rectifiers and chargers; enter a value to override it (e.g. a manufacturer\'s figure).',
   'bus.voltage_dc_v': 'Nominal DC voltage of the busbar (e.g. 110 / 125 / 220 Vdc). Used as the reference for DC bus voltage-drop reporting.',
 
   // DC Battery (IEC 61660 battery source + DC load-flow source)
@@ -2536,6 +2537,7 @@ const COMPONENT_DEFS = {
       { key: 'system', label: 'System', type: 'select', options: ['ac', 'dc'] },
       { key: 'voltage_kv', label: 'Voltage', type: 'number', unit: 'kV', unitOptions: [{ label: 'kV', mult: 1 }, { label: 'V', mult: 0.001 }], showWhen: { field: 'system', values: ['ac'] } },
       { key: 'voltage_dc_v', label: 'DC Voltage', type: 'number', unit: 'Vdc', min: 0, showWhen: { field: 'system', values: ['dc'] } },
+      { key: 'dc_bolted_fault_ka', label: 'DC Fault Current (0 = from DC short circuit)', type: 'number', unit: 'kA', min: 0, step: 0.1, section: 'arcflash', showWhen: { field: 'system', values: ['dc'] } },
       { key: 'bus_type', label: 'Bus Type', type: 'select', options: ['PQ', 'PV', 'Swing'], showWhen: { field: 'system', values: ['ac'] } },
       { key: 'busWidth', label: 'Width', type: 'number', unit: 'px', min: 60, step: 20 },
       { key: 'arc_flash_method', label: 'Arc Flash Method', type: 'select', options: ['IEEE 1584-2018', 'IEEE 1584-2002'], section: 'arcflash' },

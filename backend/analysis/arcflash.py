@@ -954,9 +954,10 @@ def _build_relay_maps(components):
     return relay_by_ct, relay_by_cb
 
 
-def _leads_to_source(start_id, bus_id, components, adjacency):
+def _leads_to_source(start_id, bus_id, components, adjacency, source_types=None):
     """Return True if a source is reachable from start_id without passing
     back through bus_id (i.e. the component sits on the source side of the bus)."""
+    source_types = source_types or _SOURCE_TYPES
     visited = {bus_id, start_id}
     stack = [start_id]
     while stack:
@@ -964,7 +965,7 @@ def _leads_to_source(start_id, bus_id, components, adjacency):
         comp = components.get(nid)
         if not comp:
             continue
-        if comp.type in _SOURCE_TYPES:
+        if comp.type in source_types:
             return True
         # An open CB/switch carries no fault current — it cannot connect the
         # bus to a source, so do not traverse through it (mirrors fault.py).
@@ -1161,7 +1162,7 @@ def device_current_shares(fault_bus):
 
 
 def get_clearing_time(bus, components, adjacency, iarc_ka=None, kappa=None,
-                      freq_hz=50.0, device_share=None):
+                      freq_hz=50.0, device_share=None, source_types=None):
     """Estimate fault clearing time from upstream protection devices.
 
     ``kappa``: IEC 60909 peak factor at the faulted bus (fault_bus.kappa
@@ -1207,6 +1208,10 @@ def get_clearing_time(bus, components, adjacency, iarc_ka=None, kappa=None,
     up at Iarc — counts as unprotected (2.0 s, the IEEE 1584 maximum).
     Falls back to 2.0 s when no upstream device is found.
     """
+    # [DA3] source_types: the DC study passes its own (battery, rectifier,
+    # charger) — with the AC set no DC source was ever reached, every DC
+    # device was skipped as a "feeder" and every DC bus fell to 2.0 s.
+    source_types = source_types or _SOURCE_TYPES
     iarc_a = (iarc_ka or 0) * 1000
     v_bus = float(bus.props.get("voltage_kv", 11) or 11)
     relay_by_ct, relay_by_cb = _build_relay_maps(components)
@@ -1228,7 +1233,7 @@ def get_clearing_time(bus, components, adjacency, iarc_ka=None, kappa=None,
         # bus to a source or clear the fault, so it blocks the walk.
         if comp.type in ("cb", "switch") and comp.props.get("state") == "open":
             continue
-        if comp.type in _SOURCE_TYPES:
+        if comp.type in source_types:
             # Source reached with no protective element on this infeed
             # path — the arc is fed for the full IEEE 1584 maximum.
             path_times.append(_MAX_CLEARING_TIME_S)
@@ -1238,7 +1243,7 @@ def get_clearing_time(bus, components, adjacency, iarc_ka=None, kappa=None,
             comp.type == "ct" and nid in relay_by_ct)
         if is_device:
             # Skip downstream feeder devices — they do not clear a bus fault
-            if not _leads_to_source(nid, bus.id, components, adjacency):
+            if not _leads_to_source(nid, bus.id, components, adjacency, source_types):
                 continue
             if device_share and nid in device_share:
                 # [AF1] This device's own share, already in its own amps
