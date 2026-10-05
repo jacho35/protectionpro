@@ -24,9 +24,10 @@ const Retic = {
   // pickers' current values.
   _selErfs: new Set(),
   _selFeeders: new Set(),
-  _bulk: { cableType: '', earthCable: '', feederCable: '' },
+  _bulk: { cableType: '', earthCable: '', feederCable: '', phase: '', renamePrefix: '', renameStart: 1, renameStyle: 'nest', renameTarget: 'erf' },
   _lastTick: null,
 
+  ROTATE: 'Rotate',
   PHASES: [
     { id: 'Red', color: '#dc2626' },
     { id: 'White', color: '#6b7280' },
@@ -95,7 +96,11 @@ const Retic = {
     return msIds.has(cur) ? cur : this.minisubs[0].id;
   },
 
-  _markDirty() { AppState.dirty = true; },
+  // Names flow Demand → drawn plan elements that are linked to a row.
+  _markDirty() {
+    AppState.dirty = true;
+    if (typeof PlanSync !== 'undefined' && PlanSync.pullNamesFromDemand) PlanSync.pullNamesFromDemand();
+  },
 
   // ─── CRUD ───
   // Bare kiosk object seeded with the Quick Build feeder defaults.
@@ -238,7 +243,7 @@ const Retic = {
         CableLib.handleShowAll(t, this._bulk[f], (v) => f === 'earthCable' ? this._earthCableOptions(v) : this._cableOptions(v, true));
         return;
       }
-      this._bulk[f] = t.value;
+      this._bulk[f] = f === 'renameStart' ? Math.max(1, parseInt(t.value, 10) || 1) : t.value;
       this._updateBulkBar();
       return;
     }
@@ -850,8 +855,23 @@ const Retic = {
           <select data-action="bulk-field" data-field="earthCable" data-cable-select data-ss-placeholder="Earth cable — e.g. 16 cu, 25 al">${opts(this._earthCableOptions(b.earthCable), b.earthCable)}</select></div>
         <div class="retic-field"><label data-bulk="feederLabel">LV feeder cable</label>
           <select data-action="bulk-field" data-field="feederCable" data-cable-select data-ss-placeholder="Feeder cable — type to search">${opts(this._cableOptions(b.feederCable), b.feederCable)}</select></div>
+        <div class="retic-field"><label data-bulk="phaseLabel">Phase</label>
+          <select data-action="bulk-field" data-field="phase" aria-label="Phase for the selected erven">${['', ...this.PHASES.map(p => p.id), this.ROTATE].map(v =>
+            `<option value="${v}"${b.phase === v ? ' selected' : ''}>${v === '' ? '— leave unchanged —' : v === this.ROTATE ? 'Rotate R-W-B' : v}</option>`).join('')}</select></div>
+        <div class="retic-field"><label data-bulk="renameLabel">Rename</label>
+          <div class="bulk-rename">
+            <select data-action="bulk-field" data-field="renameTarget" aria-label="What to rename">
+              <option value="erf"${b.renameTarget === 'erf' ? ' selected' : ''}>Erven</option>
+              <option value="kiosk"${b.renameTarget === 'kiosk' ? ' selected' : ''}>Kiosks</option></select>
+            <input type="text" data-action="bulk-field" data-field="renamePrefix" value="${escHtml(b.renamePrefix)}" placeholder="Prefix: K1 or K" aria-label="Erf name prefix" size="9">
+            <input type="number" min="1" step="1" data-action="bulk-field" data-field="renameStart" value="${b.renameStart}" aria-label="Start numbering at" title="Start at">
+            <select data-action="bulk-field" data-field="renameStyle" aria-label="Numbering style">
+              <option value="nest"${b.renameStyle === 'nest' ? ' selected' : ''}>Prefix.1, .2 (K1.1, K1.2)</option>
+              <option value="seq"${b.renameStyle === 'seq' ? ' selected' : ''}>Prefix + 1, 2 (K1, K2, K3)</option></select>
+          </div></div>
         <button type="button" class="retic-btn primary" data-action="bulk-apply" data-bulk="apply">Apply</button>
         <div class="bulk-warn" data-bulk="warn"></div>
+        <div class="bulk-note" data-bulk="preview"></div>
       </div>`;
   },
 
@@ -871,6 +891,27 @@ const Retic = {
     return out;
   },
 
+  // Quick rename: prefix + running number over the ticked erven in table order.
+  _bulkName(i) {
+    const b = this._bulk, n = b.renameStart + i;
+    return b.renameStyle === 'seq' ? `${b.renamePrefix}${n}` : `${b.renamePrefix}.${n}`;
+  },
+  // Phase the bulk change would give the i-th ticked erf (null = no change).
+  // A 3 Phase erf cannot sit on a 2-core service cable (the picked one, else its own).
+  _bulkPhase(x, i) {
+    const ph = this._bulk.phase;
+    if (!ph) return null;
+    const cyc = this.PHASES.slice(0, 3);
+    const to = ph === this.ROTATE ? cyc[i % 3].id : ph;
+    if (to === x.e.phase) return null;
+    if (to === '3 Phase') {
+      const cn = this._bulk.cableType && !x.skipSvc ? this._bulk.cableType : x.e.cableType;
+      const c = cn ? CableLib.byName(cn) : null;
+      if (c && Number(CableLib.normalize(c).cores) === 2) return 'skip';
+    }
+    return to;
+  },
+
   _updateBulkBar() {
     const bar = document.getElementById('retic-bulkbar');
     if (!bar) return;
@@ -887,17 +928,25 @@ const Retic = {
     set('svcLabel', `Service cable (${nE} ${nE === 1 ? 'erf' : 'erven'})`);
     set('earthLabel', `Earth cable (${nE} ${nE === 1 ? 'erf' : 'erven'}${nF ? ' + feeders' : ''})`);
     set('feederLabel', `LV feeder cable (${nF} kiosk${nF === 1 ? '' : 's'})`);
+    set('phaseLabel', `Phase (${nE} ${nE === 1 ? 'erf' : 'erven'})`);
     const b = this._bulk;
+    const nR = b.renameTarget === 'kiosk' ? nF : nE;
+    const rWord = b.renameTarget === 'kiosk' ? (nR === 1 ? 'kiosk' : 'kiosks') : (nR === 1 ? 'erf' : 'erven');
+    set('renameLabel', `Rename (${nR} ${rWord})`);
+    const phaseSkipped = t.erfs.filter((x, i) => this._bulkPhase(x, i) === 'skip').length;
+    const renaming = !!b.renamePrefix.trim() && nR > 0;
+    set('preview', renaming ? `Renames ${nR} ${rWord}: ${this._bulkName(0)}${nR > 1 ? ', ' + this._bulkName(1) : ''}${nR > 2 ? ' … ' + this._bulkName(nR - 1) : ''}` : '');
     const skipped = b.cableType ? t.erfs.filter(x => x.skipSvc).length : 0;
     const pen = b.earthCable ? t.erfs.filter(x => x.pen).length : 0;
     const warn = [];
     if (skipped) warn.push(`${skipped} selected ${skipped === 1 ? 'erf is' : 'erven are'} 3 Phase and need a 4-core service cable — ${skipped === 1 ? 'it keeps' : 'they keep'} the current one.`);
+    if (phaseSkipped) warn.push(`${phaseSkipped} selected ${phaseSkipped === 1 ? 'erf has' : 'erven have'} a 2-core service cable — ${phaseSkipped === 1 ? 'it keeps' : 'they keep'} the current phase (pick a 4-core cable too).`);
     if (pen) warn.push(`${pen} on a TN-C minisub use the PEN conductor — no earth cable to set.`);
     set('warn', warn.join(' '));
     const apply = bar.querySelector('[data-bulk="apply"]');
-    const any = b.cableType || b.earthCable || (b.feederCable && nF);
+    const any = b.cableType || b.earthCable || (b.feederCable && nF) || (b.phase && nE) || renaming;
     apply.disabled = !any;
-    apply.textContent = any ? 'Apply' : 'Pick a cable to apply';
+    apply.textContent = any ? 'Apply' : 'Pick a change to apply';
     // Row / kiosk tick state follows the model.
     document.querySelectorAll('#retic-kiosks tr[data-erf]').forEach(tr => {
       const on = this._selErfs.has(tr.dataset.erf);
@@ -948,21 +997,29 @@ const Retic = {
 
   applyBulk() {
     const b = this._bulk, t = this._bulkTargets();
-    let svc = 0, earth = 0, feed = 0, skipped = 0;
-    t.erfs.forEach(({ k, e, skipSvc, pen }) => {
+    let svc = 0, earth = 0, feed = 0, skipped = 0, ph = 0, phSkipped = 0, ren = 0;
+    const renaming = !!b.renamePrefix.trim();
+    t.erfs.forEach((x, i) => {
+      const { e, skipSvc, pen } = x;
+      const to = this._bulkPhase(x, i);
+      if (to === 'skip') phSkipped++;
+      else if (to) { e.phase = to; this._syncErfOverride(e); ph++; }
+      if (renaming && b.renameTarget !== 'kiosk') { e.erfNumber = this._bulkName(i); ren++; }
       if (b.cableType) { if (skipSvc) skipped++; else { e.cableType = b.cableType; svc++; } }
       if (b.earthCable && !pen) { e.earthCable = b.earthCable; earth++; }
     });
-    t.feeders.forEach(k => {
+    t.feeders.forEach((k, i) => {
+      if (renaming && b.renameTarget === 'kiosk') { k.name = this._bulkName(i); ren++; }
       if (b.feederCable) { k.feederCable = b.feederCable; feed++; }
       if (b.earthCable && this._earthingOf(k) === 'TN-S') { k.feederEarth = b.earthCable; earth++; }
     });
-    if (!svc && !earth && !feed) { if (typeof UI !== 'undefined') UI.toast('Nothing to change for this selection', 'warning'); return; }
-    this._bulk = { cableType: '', earthCable: '', feederCable: '' };
+    if (!svc && !earth && !feed && !ph && !ren) { if (typeof UI !== 'undefined') UI.toast('Nothing to change for this selection', 'warning'); return; }
+    this._bulk = { cableType: '', earthCable: '', feederCable: '', phase: '', renamePrefix: '', renameStart: 1, renameStyle: b.renameStyle, renameTarget: b.renameTarget };
     if ((svc || feed) && typeof PlanSync !== 'undefined') PlanSync.pullCablesFromDemand();   // drawn routes follow
     this._afterMutate();
-    const bits = [svc && `${svc} service`, feed && `${feed} feeder`, earth && `${earth} earth`].filter(Boolean).join(', ');
-    if (typeof UI !== 'undefined') UI.toast(`Cables changed: ${bits}${skipped ? `; ${skipped} skipped (3 Phase needs 4-core)` : ''}. Undo reverts it.`, skipped ? 'warning' : 'success');
+    const bits = [svc && `${svc} service cable${svc === 1 ? '' : 's'}`, feed && `${feed} feeder`, earth && `${earth} earth`, ph && `${ph} phase`, ren && `${ren} renamed`].filter(Boolean).join(', ');
+    const skips = skipped + phSkipped;
+    if (typeof UI !== 'undefined') UI.toast(`Changed: ${bits}${skips ? `; ${skips} skipped (3 Phase needs 4-core)` : ''}. Undo reverts it.`, skips ? 'warning' : 'success');
   },
 
   // Each kiosk's erf table is an Excel-style grid (grid.js). Enter on the last
