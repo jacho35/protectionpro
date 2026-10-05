@@ -855,7 +855,12 @@ const PlanUI = {
     // snapshots and re-renders the SLD per keystroke. Checkboxes fire `change`
     // only, so they snapshot once (no double-snapshot).
     const commit = (e.type === 'change');
-    const oldName = item.name;
+    // Live `input` events already write item.name, so remember what it was
+    // before the edit began; the commit hands that to the sync as the old name.
+    if (kind === 'element' && key === 'name' && (!this._nameBefore || this._nameBefore.id !== item.id)) {
+      this._nameBefore = { id: item.id, name: item.name };
+    }
+    const oldName = (kind === 'element' && key === 'name' && this._nameBefore && this._nameBefore.id === item.id) ? this._nameBefore.name : item.name;
     if (kind === 'element') {
       if (key === 'name' || key === 'rotation') item[key] = val;
       else if (key === 'symScale') { if (val > 0 && val !== 1) item.scale = Math.min(10, val); else delete item.scale; }
@@ -863,6 +868,7 @@ const PlanUI = {
       if (key === 'name' && commit && typeof PlanSync !== 'undefined' && PlanSync.onElementRenamed) {
         PlanSync.onElementRenamed(item, oldName, val);
       }
+      if (key === 'name' && commit) this._nameBefore = null;
       // A circuit attribute (board / way / phase / load) changed → refresh the
       // board schedule on commit (not every keystroke) and re-render the panel.
       if (/^(circuitDbId|circuitNo|poles|load_va)$/.test(key) && commit &&
