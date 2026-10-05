@@ -1225,32 +1225,45 @@ const PlanSync = {
         if (typeof Canvas !== 'undefined' && Canvas.render) Canvas.render();
       }
     }
-    if (!el || typeof AppState.reticulation === 'undefined' || !AppState.reticulation) return;
+    const kinds = { minisub: 'minisub', kiosk: 'kiosk', erf: 'erf' };
+    const what = el && kinds[el.type];
+    if (!what) return { status: 'skip' };                 // not a Demand item
     const R = AppState.reticulation;
+    const fail = (why) => ({ status: 'fail', msg: `"${newName || oldName}" was not sent to Demand — ${why}` });
+    if (!R) return fail('this project has no Demand (Reticulation) data.');
+    const nameOf = (r) => (what === 'erf' ? r.erfNumber : r.name) || '';
+    const newTrim = (newName || '').trim();
+    if (!newTrim) {
+      // An empty label cannot be a Demand name: put the Demand name back.
+      const row0 = this._demandRow(el);
+      if (row0) { el.name = nameOf(row0); if (typeof PlanEngine !== 'undefined') PlanEngine.requestDraw({ all: true }); }
+      return { status: 'fail', msg: `A ${what} needs a name — kept the Demand name${row0 ? ` "${nameOf(row0)}"` : ''}.` };
+    }
     // Drawn but never pushed/linked: adopt the Demand row that carried its old name.
-    if (!el.reticId && ['minisub', 'kiosk', 'erf'].includes(el.type) && oldName) {
+    if (!el.reticId && oldName) {
       const nm = oldName.trim().toLowerCase();
       let hit = null;
-      if (el.type === 'minisub') hit = R.minisubs.find(m => (m.name || '').trim().toLowerCase() === nm);
-      else if (el.type === 'kiosk') hit = R.kiosks.find(k => (k.name || '').trim().toLowerCase() === nm);
+      if (what === 'minisub') hit = R.minisubs.find(m => (m.name || '').trim().toLowerCase() === nm);
+      else if (what === 'kiosk') hit = R.kiosks.find(k => (k.name || '').trim().toLowerCase() === nm);
       else for (const k of R.kiosks) { hit = k.erfs.find(e => (e.erfNumber || '').trim().toLowerCase() === nm); if (hit) break; }
-      const taken = hit && AppState.planAllElements().some(o => o !== el && o.reticId === hit.id);
-      if (hit && !taken) el.reticId = hit.id;
-    }
-    if (!el.reticId) return;
-    let row = R.minisubs.find(m => m.id === el.reticId) || R.kiosks.find(k => k.id === el.reticId);
-    if (row) { row.name = newName; }
-    else {
-      // erf: find in whichever kiosk holds it
-      for (const k of R.kiosks) {
-        const erf = k.erfs.find(e => e.id === el.reticId);
-        if (erf) { erf.erfNumber = newName; break; }
+      if (hit && AppState.planAllElements().some(o => o !== el && o.reticId === hit.id)) {
+        return fail(`another drawn ${what} is already linked to the Demand ${what} "${nameOf(hit)}". Use "Linked Demand item" to pick the right one.`);
       }
+      if (hit) el.reticId = hit.id;
     }
+    if (!el.reticId) return fail(`this ${what} is not linked to a Demand ${what}. Pick one under "Linked Demand item", or use → Push to Schedules.`);
+    const row = this._demandRow(el);
+    if (!row) return fail(`its linked Demand ${what} no longer exists. Pick another under "Linked Demand item".`);
+    if (nameOf(row) === newTrim || nameOf(row) === newName) return { status: 'unchanged' };
+    const dup = what === 'erf'
+      ? R.kiosks.some(k => k.erfs.includes(row) && k.erfs.some(e => e !== row && (e.erfNumber || '').trim().toLowerCase() === newTrim.toLowerCase()))
+      : (what === 'kiosk' ? R.kiosks : R.minisubs).some(r => r !== row && (r.name || '').trim().toLowerCase() === newTrim.toLowerCase());
+    if (what === 'erf') row.erfNumber = newName; else row.name = newName;
     AppState.dirty = true;
     if (typeof Retic !== 'undefined') {
       if (Retic._snapshot) Retic._snapshot();
       if (Retic._active) { Retic.render && Retic.render(); Retic.recompute && Retic.recompute(); }
     }
+    return { status: 'ok', msg: `Demand ${what} renamed to "${newTrim}".`, warn: dup ? `Another Demand ${what} is already called "${newTrim}".` : '' };
   },
 };

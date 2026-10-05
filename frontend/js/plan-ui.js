@@ -803,6 +803,19 @@ const PlanUI = {
       <div class="plan-linked-note">${note}</div></div>`;
   },
 
+  // One toast per rename so a failed sync is never silent.
+  _reportRename(r, commit) {
+    if (!r || r.status === 'skip' || r.status === 'unchanged' || typeof UI === 'undefined') return;
+    const text = r.msg + (r.warn ? ' ' + r.warn : '');
+    const now = Date.now();
+    if (!(this._lastRename && this._lastRename.text === text && now - this._lastRename.at < 4000)) {
+      UI.toast(text, r.status === 'ok' && !r.warn ? 'success' : 'warning');
+    }
+    this._lastRename = { text, at: now };
+    if (commit) this.renderProps();      // never mid-typing: it would drop focus
+    if (typeof PlanEngine !== 'undefined') PlanEngine.requestDraw({ all: true });
+  },
+
   _onDemandLink(e) {
     if (e.type !== 'change') return;
     const ids = [...PlanMarkup.selectedIds];
@@ -865,10 +878,17 @@ const PlanUI = {
       if (key === 'name' || key === 'rotation') item[key] = val;
       else if (key === 'symScale') { if (val > 0 && val !== 1) item.scale = Math.min(10, val); else delete item.scale; }
       else { item.props = item.props || {}; item.props[key] = val; }
-      if (key === 'name' && commit && typeof PlanSync !== 'undefined' && PlanSync.onElementRenamed) {
-        PlanSync.onElementRenamed(item, oldName, val);
+      if (key === 'name' && typeof PlanSync !== 'undefined' && PlanSync.onElementRenamed) {
+        // Typing syncs after a short pause as well as on commit: a name typed
+        // and then abandoned by clicking elsewhere never fires `change`.
+        clearTimeout(this._renameTimer);
+        const run = () => {
+          const before = (this._nameBefore && this._nameBefore.id === item.id) ? this._nameBefore.name : oldName;
+          this._nameBefore = null;
+          this._reportRename(PlanSync.onElementRenamed(item, before, item.name), commit);
+        };
+        if (commit) run(); else this._renameTimer = setTimeout(run, 1200);
       }
-      if (key === 'name' && commit) this._nameBefore = null;
       // A circuit attribute (board / way / phase / load) changed → refresh the
       // board schedule on commit (not every keystroke) and re-render the panel.
       if (/^(circuitDbId|circuitNo|poles|load_va)$/.test(key) && commit &&
