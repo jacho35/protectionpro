@@ -148,6 +148,61 @@ const PlanSync = {
     return n;
   },
 
+  // ─── Names and links, Demand ↔ plan ───
+  // The Demand row a drawn minisub / kiosk / erf is linked to (by reticId only).
+  _demandRow(el) {
+    const R = AppState.reticulation;
+    if (!R || !el || !el.reticId) return null;
+    if (el.type === 'minisub') return R.minisubs.find(m => m.id === el.reticId) || null;
+    if (el.type === 'kiosk') return R.kiosks.find(k => k.id === el.reticId) || null;
+    if (el.type === 'erf') {
+      for (const k of R.kiosks) { const e = k.erfs.find(x => x.id === el.reticId); if (e) return e; }
+    }
+    return null;
+  },
+  _demandRowName(el, row) { return el.type === 'erf' ? row.erfNumber : row.name; },
+
+  // Demand → Plan: a linked element's label follows its Demand row.
+  pullNamesFromDemand() {
+    const pm = AppState.planMarkup;
+    if (!pm || !AppState.reticulation) return 0;
+    let n = 0;
+    for (const el of AppState.planAllElements()) {
+      const row = this._demandRow(el);
+      const want = row && this._demandRowName(el, row);
+      if (want && el.name !== want) { el.name = want; n++; }
+    }
+    if (n && typeof PlanMarkup !== 'undefined') {
+      PlanMarkup.snapshot(); PlanMarkup.markDirty();
+      if (PlanMarkup.refreshProps) PlanMarkup.refreshProps();
+      if (typeof PlanEngine !== 'undefined') PlanEngine.requestDraw({ fg: true });
+    }
+    return n;
+  },
+
+  // Demand rows a drawn element could be linked to: same kind, not already
+  // taken by another drawn element (the current link is always listed).
+  demandLinkCandidates(el) {
+    const R = AppState.reticulation;
+    if (!R || !['minisub', 'kiosk', 'erf'].includes(el.type)) return [];
+    const taken = new Set(AppState.planAllElements().filter(e => e !== el && e.reticId).map(e => e.reticId));
+    const out = [];
+    if (el.type === 'minisub') R.minisubs.forEach(m => out.push({ id: m.id, label: m.name || m.id }));
+    else if (el.type === 'kiosk') R.kiosks.forEach(k => out.push({ id: k.id, label: k.name || k.id }));
+    else R.kiosks.forEach(k => k.erfs.forEach(e => out.push({ id: e.id, label: `${e.erfNumber || e.id} (${k.name})` })));
+    return out.filter(c => c.id === el.reticId || !taken.has(c.id));
+  },
+
+  // Link a drawn element to a Demand row (it takes the row's name) or detach it.
+  linkElementToDemand(el, rowId) {
+    el.reticId = rowId || null;
+    if (rowId) {
+      const row = this._demandRow(el);
+      const nm = row && this._demandRowName(el, row);
+      if (nm) el.name = nm;
+    }
+  },
+
   async pushToSchedules() {
     const pm = AppState.planMarkup;
     const factor = this._factor();
@@ -172,6 +227,8 @@ const PlanSync = {
       } else if (!row) {
         row = { id: AppState.reticGenMinisubId(), name: el.name || 'Minisub' };
         R.minisubs.push(row); summary.minisubs++;
+      } else if (el.reticId === row.id) {
+        el.name = row.name || el.name;      // already linked: Demand's name wins
       } else {
         row.name = el.name || row.name;
       }
@@ -186,6 +243,8 @@ const PlanSync = {
         row = Retic._newKiosk(R.minisubs[0] ? R.minisubs[0].id : 'source');
         row.name = el.name || row.name;
         R.kiosks.push(row); summary.kiosks++;
+      } else if (el.reticId === row.id) {
+        el.name = row.name || el.name;      // already linked: Demand's name wins
       } else {
         row.name = el.name || row.name;
       }
@@ -220,6 +279,7 @@ const PlanSync = {
         };
         krow.erfs.push(erf); summary.erfs++;
       } else {
+        if (erfEl.reticId === erf.id && erf.erfNumber) erfEl.name = erf.erfNumber;
         if (len) erf.length = len;
         if (r.cableType) erf.cableType = r.cableType;
       }

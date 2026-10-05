@@ -355,6 +355,7 @@ const PlanUI = {
     }
     for (const f of fields) html += this._field(f, getVal(f.key));
     html += this._demandBlock(item, kind);
+    html += this._demandLinkField(item, kind);
     html += this._sldLinkField(item, kind);
     // Building auto-circuiting: circuit-tag editor on load devices; bulk-assign
     // on distribution boards.
@@ -785,6 +786,35 @@ const PlanUI = {
       <select data-role="sld-link" title="Attach this drawn item to an existing SLD component${isRoute ? ' (cable)' : ''}">${opts}</select></div>`;
   },
 
+  // "Linked Demand item" picker for a drawn minisub / kiosk / erf: attach it to a
+  // Demand row drawn after the fact. Linked labels then follow the Demand sheet.
+  _demandLinkField(item, kind) {
+    if (kind !== 'element' || typeof PlanSync === 'undefined' || !AppState.reticulation) return '';
+    if (!['minisub', 'kiosk', 'erf'].includes(item.type)) return '';
+    const cands = PlanSync.demandLinkCandidates(item);
+    const live = !!PlanSync._demandRow(item);
+    let opts = `<option value=""${live ? '' : ' selected'}>— not linked —</option>`;
+    for (const c of cands.sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true }))) {
+      opts += `<option value="${escHtml(c.id)}"${live && c.id === item.reticId ? ' selected' : ''}>${escHtml(c.label)}</option>`;
+    }
+    const note = live ? 'The name follows the Demand sheet — edit it there.' : 'Pick the Demand row this stands for, or use → Push to Schedules.';
+    return `<div class="plan-field"><label class="plan-field-label">Linked Demand item</label>
+      <select data-role="demand-link" title="Attach this drawn item to a Demand row">${opts}</select>
+      <div class="plan-linked-note">${note}</div></div>`;
+  },
+
+  _onDemandLink(e) {
+    if (e.type !== 'change') return;
+    const ids = [...PlanMarkup.selectedIds];
+    if (ids.length !== 1) return;
+    const found = PlanMarkup.findEntityById(ids[0]);
+    if (!found) return;
+    PlanSync.linkElementToDemand(found.item, e.target.value || null);
+    PlanMarkup.snapshot(); PlanMarkup.markDirty();
+    this.renderProps();
+    if (typeof PlanEngine !== 'undefined') PlanEngine.requestDraw({ fg: true });
+  },
+
   _onSldLink(e) {
     if (e.type !== 'change') return;
     const ids = [...PlanMarkup.selectedIds];
@@ -800,6 +830,7 @@ const PlanUI = {
 
   _onPropsChange(e) {
     if (e.target.dataset && e.target.dataset.role === 'sld-link') { this._onSldLink(e); return; }
+    if (e.target.dataset && e.target.dataset.role === 'demand-link') { this._onDemandLink(e); return; }
     if (e.target.dataset && e.target.dataset.role === 'delete') return;
     const key = e.target.dataset ? e.target.dataset.key : null;
     if (!key) return;
