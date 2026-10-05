@@ -1222,8 +1222,19 @@ const PlanSync = {
         if (typeof Canvas !== 'undefined' && Canvas.render) Canvas.render();
       }
     }
-    if (!el || !el.reticId || typeof AppState.reticulation === 'undefined') return;
+    if (!el || typeof AppState.reticulation === 'undefined' || !AppState.reticulation) return;
     const R = AppState.reticulation;
+    // Drawn but never pushed/linked: adopt the Demand row that carried its old name.
+    if (!el.reticId && ['minisub', 'kiosk', 'erf'].includes(el.type) && oldName) {
+      const nm = oldName.trim().toLowerCase();
+      let hit = null;
+      if (el.type === 'minisub') hit = R.minisubs.find(m => (m.name || '').trim().toLowerCase() === nm);
+      else if (el.type === 'kiosk') hit = R.kiosks.find(k => (k.name || '').trim().toLowerCase() === nm);
+      else for (const k of R.kiosks) { hit = k.erfs.find(e => (e.erfNumber || '').trim().toLowerCase() === nm); if (hit) break; }
+      const taken = hit && AppState.planAllElements().some(o => o !== el && o.reticId === hit.id);
+      if (hit && !taken) el.reticId = hit.id;
+    }
+    if (!el.reticId) return;
     let row = R.minisubs.find(m => m.id === el.reticId) || R.kiosks.find(k => k.id === el.reticId);
     if (row) { row.name = newName; }
     else {
