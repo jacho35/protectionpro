@@ -167,7 +167,9 @@ const PlanSync = {
     const pm = AppState.planMarkup;
     if (!pm || !AppState.reticulation) return 0;
     let n = 0;
+    const editing = (typeof PlanUI !== 'undefined' && PlanUI._nameBefore) ? PlanUI._nameBefore.id : null;
     for (const el of AppState.planAllElements()) {
+      if (el.id === editing) continue;     // don't overwrite a label while it is being typed
       const row = this._demandRow(el);
       const want = row && this._demandRowName(el, row);
       if (want && el.name !== want) { el.name = want; n++; }
@@ -175,7 +177,8 @@ const PlanSync = {
     if (n && typeof PlanMarkup !== 'undefined') {
       PlanMarkup.snapshot(); PlanMarkup.markDirty();
       if (PlanMarkup.refreshProps) PlanMarkup.refreshProps();
-      if (typeof PlanEngine !== 'undefined') PlanEngine.requestDraw({ fg: true });
+      if (typeof PlanUI !== 'undefined' && PlanUI.renderPalette) PlanUI.renderPalette();
+      if (typeof PlanEngine !== 'undefined') PlanEngine.requestDraw({ all: true });
     }
     return n;
   },
@@ -1244,9 +1247,10 @@ const PlanSync = {
         if (erf) { erf.erfNumber = newName; break; }
       }
     }
+    AppState.dirty = true;
     if (typeof Retic !== 'undefined') {
       if (Retic._snapshot) Retic._snapshot();
-      if (Retic._active && Retic.render) Retic.render();
+      if (Retic._active) { Retic.render && Retic.render(); Retic.recompute && Retic.recompute(); }
     }
   },
 };

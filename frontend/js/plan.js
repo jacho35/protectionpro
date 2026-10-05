@@ -210,6 +210,7 @@ const PlanMarkup = {
   activate() {
     this._active = true;
     if (typeof PlanSync !== 'undefined' && PlanSync.fillEmptyCables) PlanSync.fillEmptyCables();
+    if (typeof PlanSync !== 'undefined' && PlanSync.pullNamesFromDemand) PlanSync.pullNamesFromDemand();   // catches any Demand rename that missed the live path
     this.refreshProps();   // Demand may have changed while Plan was hidden
     // Anchor the workspace exactly below the toolbar (whose height varies with
     // width / responsive wrapping) so the workspace tabs stay visible and the
