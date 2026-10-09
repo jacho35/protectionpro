@@ -156,3 +156,51 @@ def test_building_wiring_values_trace_to_standards(pre, size, amps):
     assert fe["r_per_km"] == pytest.approx(_bw_r70(IEC_60228_CU[size]), rel=1e-3)
     assert fe["x_per_km"] == pytest.approx(SANS_X[size])
     assert fe["r0_per_km"] == 0 and fe["x0_per_km"] == 0     # not tabulated
+
+
+# ── XLPE: LV (IEC 60502-1 Table 6) and MV (IEC 60502-2 Table 6, Annex B) ──
+IEC_60228_CU_400 = dict(IEC_60228_CU); IEC_60228_CU_400[400] = 0.0470
+IEC_60228_AL_400 = dict(IEC_60228_AL); IEC_60228_AL_400[400] = 0.0778
+DL.update({400: 22.6})
+T_LV_XLPE = {16: .7, 25: .9, 35: .9, 50: 1.0, 70: 1.1, 95: 1.1, 120: 1.2, 150: 1.4, 185: 1.6, 240: 1.7, 300: 1.8, 400: 2.0}
+T_MV_XLPE = {"11kv": 3.4, "22kv": 5.5, "33kv": 8.0}
+# IEC 60502-2:2005 Annex B, 3-core XLPE, armoured, in air (Tables B.6 / B.7), 90 deg C, 30 deg C air
+B6_AIR = {16: 110, 25: 143, 35: 172, 50: 205, 70: 253, 95: 307, 120: 352, 150: 397, 185: 453, 240: 529, 300: 599, 400: 683}
+B7_AIR = {16: 85, 25: 111, 35: 133, 50: 159, 70: 196, 95: 238, 120: 274, 150: 309, 185: 354, 240: 415, 300: 472, 400: 545}
+
+
+def iec_r90(r20, al, size, t_ins, shaped):
+    k = 1 + (0.00403 if al else 0.00393) * 70
+    x4 = (8 * math.pi * 50 / (r20 * k / 1000) * 1e-7) ** 2
+    F = x4 / (192 + 0.8 * x4)
+    r = DL[size] / (DL[size] + t_ins)
+    yp = F * r * r * (0.312 * r * r + 1.18 / (F + 0.27)) * (2 / 3 if shaped else 1)
+    return r20 * k * (1 + F + yp)
+
+
+def _xlpe_cases():
+    cases = []
+    for cond, r20, ratings in (("cu", IEC_60228_CU_400, B6_AIR), ("al", IEC_60228_AL_400, B7_AIR)):
+        for size in B6_AIR:
+            cases.append((cond, size, "lv", r20[size], None))
+            for v in ("11kv", "22kv", "33kv"):
+                if re.search(r"\{ id: '%s_xlpe_%d_%s'" % (cond, size, v), CONSTANTS):
+                    cases.append((cond, size, v, r20[size], ratings[size] if v != "33kv" else None))
+    return [c for c in cases if re.search(r"\{ id: '%s_xlpe_%d_%s'" % (c[0], c[1], c[2]), CONSTANTS)]
+
+
+@pytest.mark.parametrize("cond,size,volt,r20,amps", _xlpe_cases())
+def test_xlpe_resistance_and_ratings_trace_to_standards(cond, size, volt, r20, amps):
+    cid = f"{cond}_xlpe_{size}_{volt}"
+    fe = _frontend(cid)
+    mv = volt != "lv"
+    t = T_MV_XLPE[volt] if mv else T_LV_XLPE[size]
+    assert fe["r_per_km"] == pytest.approx(iec_r90(r20, cond == "al", size, t, shaped=not mv), rel=1e-3), cid
+    if amps is not None:
+        assert fe["rated_amps"] == amps, cid
+        be = next(c for c in STANDARD_CABLES if c["id"] == cid)
+        assert be["rated_amps"] == amps, cid
+    if not mv:
+        assert fe["x_per_km"] == pytest.approx(SANS_X[size]), cid
+        be = next(c for c in STANDARD_CABLES if c["id"] == cid)
+        assert be["x_per_km"] == pytest.approx(SANS_X[size]), cid
