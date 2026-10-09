@@ -36,9 +36,12 @@ const API_BASE = '/api';
 // Values: AC resistance at 90°C conductor temperature (derived from IEC 60228
 // 20°C DC values × temperature factor: Cu ×1.275, Al ×1.282; PVC entries at
 // 70°C: ×1.20), trefoil formation. X values at 50 Hz.
-// EXCEPTION — the armoured PVC LV entries (cu_pvc_*_lv, al_pvc_*_lv and their 2c services) take SANS 10142-1:2026
-// values directly: R and X from Table D.1 (a.c., 70 °C), ratings from Table 6.4(a) col. 3 (Cu), 6.7(a) col. 3 (Al),
+// EXCEPTION — the armoured PVC LV entries (cu_pvc_*_lv, al_pvc_*_lv and their 2c services): R = a.c. resistance at 70 °C
+// calculated from IEC 60228 Table 2 (R20) × Annex B temperature factor × IEC 60287-1-1 skin/proximity (cl. 2.1.2–2.1.4,
+// ks = kp = 1; insulation thickness IEC 60502-1 Table 5, conductor diameter its Table A.1), 4 s.f. (SANS Table D.1 differs
+// by up to 6.6 % at 50 mm²); X = SANS 10142-1:2026 Table D.1; ratings from SANS Table 6.4(a) col. 3 (Cu), 6.7(a) col. 3 (Al),
 // 6.8 two-core buried (services). r0 = 4.2/4.0 (Cu 4c/2c) or 3.8 (Al) × r1 and x0 = 3.2 × x1 are not from a standard.
+// test_al_pvc_cables.py recomputes every R from the IEC formulas.
 const STANDARD_CABLES = [
   // MV XLPE Copper (11kV) — r0: 3.8×r1, x0: 2.8×x1 per IEC 60502 (Cu XLPE MV screened)
   { id: 'cu_xlpe_16_11kv',  name: '16mm² Cu XLPE 11kV',   conductor: 'Cu', insulation: 'XLPE', size_mm2: 16,  voltage_kv: 11,  r_per_km: 1.466,   x_per_km: 0.119, r0_per_km: 5.572, x0_per_km: 0.333, rated_amps: 110 },
@@ -108,38 +111,38 @@ const STANDARD_CABLES = [
   { id: 'al_xlpe_185_lv', name: '185mm² Al XLPE LV',  conductor: 'Al', insulation: 'XLPE', size_mm2: 185, voltage_kv: 0.4, r_per_km: 0.2118,  x_per_km: 0.069, r0_per_km: 0.7201, x0_per_km: 0.193, rated_amps: 295 },
   { id: 'al_xlpe_240_lv', name: '240mm² Al XLPE LV',  conductor: 'Al', insulation: 'XLPE', size_mm2: 240, voltage_kv: 0.4, r_per_km: 0.1623,  x_per_km: 0.068, r0_per_km: 0.5518, x0_per_km: 0.190, rated_amps: 350 },
   { id: 'al_xlpe_300_lv', name: '300mm² Al XLPE LV',  conductor: 'Al', insulation: 'XLPE', size_mm2: 300, voltage_kv: 0.4, r_per_km: 0.1307,  x_per_km: 0.067, r0_per_km: 0.4444, x0_per_km: 0.188, rated_amps: 395 },
-  // LV PVC Aluminium (0.6/1kV) — r and x = SANS 10142-1 Table D.1 (a.c., 70 °C); r0 = 3.8×r1, x0 = 3.2×x1 assumed;
+  // LV PVC Aluminium (0.6/1kV) — r = IEC 60228 + 60287-1-1 calculation, x = SANS 10142-1 Table D.1; r0 = 3.8×r1, x0 = 3.2×x1 assumed;
   // rated_amps = SANS 10142-1 Table 6.7(a) col. 3 (multicore PVC armoured, clipped direct, 30 °C), the aluminium
   // twin of Table 6.4(a), which the Cu PVC ratings follow.
   // 2-core services: Table 6.8 two-core buried (25, 35 mm²); 16 mm² is not in 6.8 for Al, so Table 6.7(a) col. 2
-  { id: 'al_pvc_16_lv', name: '16mm² Al PVC LV',   conductor: 'Al', insulation: 'PVC',  size_mm2: 16,  voltage_kv: 0.4, r_per_km: 2.3,   x_per_km: 0.080, r0_per_km: 8.74,   x0_per_km: 0.256, rated_amps: 58 },
-  { id: 'al_pvc_25_lv', name: '25mm² Al PVC LV',   conductor: 'Al', insulation: 'PVC',  size_mm2: 25,  voltage_kv: 0.4, r_per_km: 1.44,    x_per_km: 0.079, r0_per_km: 5.472,  x0_per_km: 0.2528, rated_amps: 76 },
-  { id: 'al_pvc_35_lv', name: '35mm² Al PVC LV',   conductor: 'Al', insulation: 'PVC',  size_mm2: 35,  voltage_kv: 0.4, r_per_km: 1.03,   x_per_km: 0.076, r0_per_km: 3.914,   x0_per_km: 0.2432, rated_amps: 94 },
-  { id: 'al_pvc_50_lv', name: '50mm² Al PVC LV',   conductor: 'Al', insulation: 'PVC',  size_mm2: 50,  voltage_kv: 0.4, r_per_km: 0.72,  x_per_km: 0.076, r0_per_km: 2.736,  x0_per_km: 0.2432, rated_amps: 113 },
-  { id: 'al_pvc_70_lv', name: '70mm² Al PVC LV',   conductor: 'Al', insulation: 'PVC',  size_mm2: 70,  voltage_kv: 0.4, r_per_km: 0.52,  x_per_km: 0.074, r0_per_km: 1.976,   x0_per_km: 0.2368, rated_amps: 143 },
-  { id: 'al_pvc_95_lv', name: '95mm² Al PVC LV',   conductor: 'Al', insulation: 'PVC',  size_mm2: 95,  voltage_kv: 0.4, r_per_km: 0.38,   x_per_km: 0.073, r0_per_km: 1.444,  x0_per_km: 0.2336, rated_amps: 174 },
-  { id: 'al_pvc_120_lv', name: '120mm² Al PVC LV',  conductor: 'Al', insulation: 'PVC',  size_mm2: 120, voltage_kv: 0.4, r_per_km: 0.3,  x_per_km: 0.072, r0_per_km: 1.14,  x0_per_km: 0.2304, rated_amps: 202 },
-  { id: 'al_pvc_150_lv', name: '150mm² Al PVC LV',  conductor: 'Al', insulation: 'PVC',  size_mm2: 150, voltage_kv: 0.4, r_per_km: 0.24,  x_per_km: 0.072, r0_per_km: 0.912, x0_per_km: 0.2304, rated_amps: 232 },
-  { id: 'al_pvc_185_lv', name: '185mm² Al PVC LV',  conductor: 'Al', insulation: 'PVC',  size_mm2: 185, voltage_kv: 0.4, r_per_km: 0.2,  x_per_km: 0.072, r0_per_km: 0.76, x0_per_km: 0.2304, rated_amps: 265 },
-  { id: 'al_pvc_240_lv', name: '240mm² Al PVC LV',  conductor: 'Al', insulation: 'PVC',  size_mm2: 240, voltage_kv: 0.4, r_per_km: 0.156,    x_per_km: 0.072, r0_per_km: 0.5928,   x0_per_km: 0.2304, rated_amps: 312 },
-  { id: 'al_pvc_300_lv', name: '300mm² Al PVC LV',  conductor: 'Al', insulation: 'PVC',  size_mm2: 300, voltage_kv: 0.4, r_per_km: 0.127,    x_per_km: 0.071, r0_per_km: 0.4826,  x0_per_km: 0.2272, rated_amps: 360 },
+  { id: 'al_pvc_16_lv', name: '16mm² Al PVC LV',   conductor: 'Al', insulation: 'PVC',  size_mm2: 16,  voltage_kv: 0.4, r_per_km: 2.295,   x_per_km: 0.080, r0_per_km: 8.721,   x0_per_km: 0.256, rated_amps: 58 },
+  { id: 'al_pvc_25_lv', name: '25mm² Al PVC LV',   conductor: 'Al', insulation: 'PVC',  size_mm2: 25,  voltage_kv: 0.4, r_per_km: 1.442,    x_per_km: 0.079, r0_per_km: 5.48,  x0_per_km: 0.2528, rated_amps: 76 },
+  { id: 'al_pvc_35_lv', name: '35mm² Al PVC LV',   conductor: 'Al', insulation: 'PVC',  size_mm2: 35,  voltage_kv: 0.4, r_per_km: 1.043,   x_per_km: 0.076, r0_per_km: 3.963,   x0_per_km: 0.2432, rated_amps: 94 },
+  { id: 'al_pvc_50_lv', name: '50mm² Al PVC LV',   conductor: 'Al', insulation: 'PVC',  size_mm2: 50,  voltage_kv: 0.4, r_per_km: 0.7705,  x_per_km: 0.076, r0_per_km: 2.928,  x0_per_km: 0.2432, rated_amps: 113 },
+  { id: 'al_pvc_70_lv', name: '70mm² Al PVC LV',   conductor: 'Al', insulation: 'PVC',  size_mm2: 70,  voltage_kv: 0.4, r_per_km: 0.5328,  x_per_km: 0.074, r0_per_km: 2.025,   x0_per_km: 0.2368, rated_amps: 143 },
+  { id: 'al_pvc_95_lv', name: '95mm² Al PVC LV',   conductor: 'Al', insulation: 'PVC',  size_mm2: 95,  voltage_kv: 0.4, r_per_km: 0.3852,   x_per_km: 0.073, r0_per_km: 1.464,  x0_per_km: 0.2336, rated_amps: 174 },
+  { id: 'al_pvc_120_lv', name: '120mm² Al PVC LV',  conductor: 'Al', insulation: 'PVC',  size_mm2: 120, voltage_kv: 0.4, r_per_km: 0.3049,  x_per_km: 0.072, r0_per_km: 1.159,  x0_per_km: 0.2304, rated_amps: 202 },
+  { id: 'al_pvc_150_lv', name: '150mm² Al PVC LV',  conductor: 'Al', insulation: 'PVC',  size_mm2: 150, voltage_kv: 0.4, r_per_km: 0.2486,  x_per_km: 0.072, r0_per_km: 0.9447, x0_per_km: 0.2304, rated_amps: 232 },
+  { id: 'al_pvc_185_lv', name: '185mm² Al PVC LV',  conductor: 'Al', insulation: 'PVC',  size_mm2: 185, voltage_kv: 0.4, r_per_km: 0.1985,  x_per_km: 0.072, r0_per_km: 0.7543, x0_per_km: 0.2304, rated_amps: 265 },
+  { id: 'al_pvc_240_lv', name: '240mm² Al PVC LV',  conductor: 'Al', insulation: 'PVC',  size_mm2: 240, voltage_kv: 0.4, r_per_km: 0.152,    x_per_km: 0.072, r0_per_km: 0.5776,   x0_per_km: 0.2304, rated_amps: 312 },
+  { id: 'al_pvc_300_lv', name: '300mm² Al PVC LV',  conductor: 'Al', insulation: 'PVC',  size_mm2: 300, voltage_kv: 0.4, r_per_km: 0.1225,    x_per_km: 0.071, r0_per_km: 0.4655,  x0_per_km: 0.2272, rated_amps: 360 },
   // LV PVC Copper (0.6/1kV) — r0: 4.2×r1, x0: 3.2×x1 per IEC 60502 (Cu PVC)
-  { id: 'cu_pvc_1.5_lv',  name: '1.5mm² Cu PVC LV',   conductor: 'Cu', insulation: 'PVC',  size_mm2: 1.5, voltage_kv: 0.4, r_per_km: 14.48,   x_per_km: 0.100, r0_per_km: 60.816, x0_per_km: 0.32, rated_amps: 18  },
-  { id: 'cu_pvc_2.5_lv',  name: '2.5mm² Cu PVC LV',   conductor: 'Cu', insulation: 'PVC',  size_mm2: 2.5, voltage_kv: 0.4, r_per_km: 8.87,   x_per_km: 0.095, r0_per_km: 37.254, x0_per_km: 0.304, rated_amps: 25  },
-  { id: 'cu_pvc_4_lv',    name: '4mm² Cu PVC LV',     conductor: 'Cu', insulation: 'PVC',  size_mm2: 4,   voltage_kv: 0.4, r_per_km: 5.52,   x_per_km: 0.093, r0_per_km: 23.184, x0_per_km: 0.2976, rated_amps: 33  },
-  { id: 'cu_pvc_6_lv',    name: '6mm² Cu PVC LV',     conductor: 'Cu', insulation: 'PVC',  size_mm2: 6,   voltage_kv: 0.4, r_per_km: 3.69,   x_per_km: 0.090, r0_per_km: 15.498, x0_per_km: 0.288, rated_amps: 42  },
+  { id: 'cu_pvc_1.5_lv',  name: '1.5mm² Cu PVC LV',   conductor: 'Cu', insulation: 'PVC',  size_mm2: 1.5, voltage_kv: 0.4, r_per_km: 14.48,   x_per_km: 0.100, r0_per_km: 60.82, x0_per_km: 0.32, rated_amps: 18  },
+  { id: 'cu_pvc_2.5_lv',  name: '2.5mm² Cu PVC LV',   conductor: 'Cu', insulation: 'PVC',  size_mm2: 2.5, voltage_kv: 0.4, r_per_km: 8.866,   x_per_km: 0.095, r0_per_km: 37.24, x0_per_km: 0.304, rated_amps: 25  },
+  { id: 'cu_pvc_4_lv',    name: '4mm² Cu PVC LV',     conductor: 'Cu', insulation: 'PVC',  size_mm2: 4,   voltage_kv: 0.4, r_per_km: 5.516,   x_per_km: 0.093, r0_per_km: 23.17, x0_per_km: 0.2976, rated_amps: 33  },
+  { id: 'cu_pvc_6_lv',    name: '6mm² Cu PVC LV',     conductor: 'Cu', insulation: 'PVC',  size_mm2: 6,   voltage_kv: 0.4, r_per_km: 3.685,   x_per_km: 0.090, r0_per_km: 15.48, x0_per_km: 0.288, rated_amps: 42  },
   { id: 'cu_pvc_10_lv',   name: '10mm² Cu PVC LV',    conductor: 'Cu', insulation: 'PVC',  size_mm2: 10,  voltage_kv: 0.4, r_per_km: 2.19,   x_per_km: 0.084, r0_per_km: 9.198, x0_per_km: 0.2688, rated_amps: 58  },
-  { id: 'cu_pvc_16_lv',   name: '16mm² Cu PVC LV',    conductor: 'Cu', insulation: 'PVC',  size_mm2: 16,  voltage_kv: 0.4, r_per_km: 1.4,   x_per_km: 0.080, r0_per_km: 5.88, x0_per_km: 0.256, rated_amps: 77  },
-  { id: 'cu_pvc_25_lv',   name: '25mm² Cu PVC LV',    conductor: 'Cu', insulation: 'PVC',  size_mm2: 25,  voltage_kv: 0.4, r_per_km: 0.88,  x_per_km: 0.079, r0_per_km: 3.696, x0_per_km: 0.2528, rated_amps: 102 },
-  { id: 'cu_pvc_35_lv',   name: '35mm² Cu PVC LV',    conductor: 'Cu', insulation: 'PVC',  size_mm2: 35,  voltage_kv: 0.4, r_per_km: 0.63,  x_per_km: 0.076, r0_per_km: 2.646, x0_per_km: 0.2432, rated_amps: 125 },
-  { id: 'cu_pvc_50_lv',   name: '50mm² Cu PVC LV',    conductor: 'Cu', insulation: 'PVC',  size_mm2: 50,  voltage_kv: 0.4, r_per_km: 0.44,  x_per_km: 0.076, r0_per_km: 1.848, x0_per_km: 0.2432, rated_amps: 151 },
-  { id: 'cu_pvc_70_lv',   name: '70mm² Cu PVC LV',    conductor: 'Cu', insulation: 'PVC',  size_mm2: 70,  voltage_kv: 0.4, r_per_km: 0.31,  x_per_km: 0.074, r0_per_km: 1.302, x0_per_km: 0.2368, rated_amps: 192 },
-  { id: 'cu_pvc_95_lv',   name: '95mm² Cu PVC LV',    conductor: 'Cu', insulation: 'PVC',  size_mm2: 95,  voltage_kv: 0.4, r_per_km: 0.23,  x_per_km: 0.073, r0_per_km: 0.966, x0_per_km: 0.2336, rated_amps: 231 },
-  { id: 'cu_pvc_120_lv',  name: '120mm² Cu PVC LV',   conductor: 'Cu', insulation: 'PVC',  size_mm2: 120, voltage_kv: 0.4, r_per_km: 0.18,  x_per_km: 0.072, r0_per_km: 0.756, x0_per_km: 0.2304, rated_amps: 267 },
-  { id: 'cu_pvc_150_lv',  name: '150mm² Cu PVC LV',   conductor: 'Cu', insulation: 'PVC',  size_mm2: 150, voltage_kv: 0.4, r_per_km: 0.15,  x_per_km: 0.072, r0_per_km: 0.63, x0_per_km: 0.2304, rated_amps: 306 },
-  { id: 'cu_pvc_185_lv',  name: '185mm² Cu PVC LV',   conductor: 'Cu', insulation: 'PVC',  size_mm2: 185, voltage_kv: 0.4, r_per_km: 0.12, x_per_km: 0.072, r0_per_km: 0.504, x0_per_km: 0.2304, rated_amps: 348 },
-  { id: 'cu_pvc_240_lv',  name: '240mm² Cu PVC LV',   conductor: 'Cu', insulation: 'PVC',  size_mm2: 240, voltage_kv: 0.4, r_per_km: 0.095, x_per_km: 0.072, r0_per_km: 0.399, x0_per_km: 0.2304, rated_amps: 409 },
-  { id: 'cu_pvc_300_lv',  name: '300mm² Cu PVC LV',   conductor: 'Cu', insulation: 'PVC',  size_mm2: 300, voltage_kv: 0.4, r_per_km: 0.077, x_per_km: 0.071, r0_per_km: 0.3234, x0_per_km: 0.2272, rated_amps: 469 },
+  { id: 'cu_pvc_16_lv',   name: '16mm² Cu PVC LV',    conductor: 'Cu', insulation: 'PVC',  size_mm2: 16,  voltage_kv: 0.4, r_per_km: 1.376,   x_per_km: 0.080, r0_per_km: 5.779, x0_per_km: 0.256, rated_amps: 77  },
+  { id: 'cu_pvc_25_lv',   name: '25mm² Cu PVC LV',    conductor: 'Cu', insulation: 'PVC',  size_mm2: 25,  voltage_kv: 0.4, r_per_km: 0.8701,  x_per_km: 0.079, r0_per_km: 3.654, x0_per_km: 0.2528, rated_amps: 102 },
+  { id: 'cu_pvc_35_lv',   name: '35mm² Cu PVC LV',    conductor: 'Cu', insulation: 'PVC',  size_mm2: 35,  voltage_kv: 0.4, r_per_km: 0.6274,  x_per_km: 0.076, r0_per_km: 2.635, x0_per_km: 0.2432, rated_amps: 125 },
+  { id: 'cu_pvc_50_lv',   name: '50mm² Cu PVC LV',    conductor: 'Cu', insulation: 'PVC',  size_mm2: 50,  voltage_kv: 0.4, r_per_km: 0.4636,  x_per_km: 0.076, r0_per_km: 1.947, x0_per_km: 0.2432, rated_amps: 151 },
+  { id: 'cu_pvc_70_lv',   name: '70mm² Cu PVC LV',    conductor: 'Cu', insulation: 'PVC',  size_mm2: 70,  voltage_kv: 0.4, r_per_km: 0.3215,  x_per_km: 0.074, r0_per_km: 1.35, x0_per_km: 0.2368, rated_amps: 192 },
+  { id: 'cu_pvc_95_lv',   name: '95mm² Cu PVC LV',    conductor: 'Cu', insulation: 'PVC',  size_mm2: 95,  voltage_kv: 0.4, r_per_km: 0.2321,  x_per_km: 0.073, r0_per_km: 0.9748, x0_per_km: 0.2336, rated_amps: 231 },
+  { id: 'cu_pvc_120_lv',  name: '120mm² Cu PVC LV',   conductor: 'Cu', insulation: 'PVC',  size_mm2: 120, voltage_kv: 0.4, r_per_km: 0.1846,  x_per_km: 0.072, r0_per_km: 0.7753, x0_per_km: 0.2304, rated_amps: 267 },
+  { id: 'cu_pvc_150_lv',  name: '150mm² Cu PVC LV',   conductor: 'Cu', insulation: 'PVC',  size_mm2: 150, voltage_kv: 0.4, r_per_km: 0.1502,  x_per_km: 0.072, r0_per_km: 0.6308, x0_per_km: 0.2304, rated_amps: 306 },
+  { id: 'cu_pvc_185_lv',  name: '185mm² Cu PVC LV',   conductor: 'Cu', insulation: 'PVC',  size_mm2: 185, voltage_kv: 0.4, r_per_km: 0.1209, x_per_km: 0.072, r0_per_km: 0.5078, x0_per_km: 0.2304, rated_amps: 348 },
+  { id: 'cu_pvc_240_lv',  name: '240mm² Cu PVC LV',   conductor: 'Cu', insulation: 'PVC',  size_mm2: 240, voltage_kv: 0.4, r_per_km: 0.09324, x_per_km: 0.072, r0_per_km: 0.3916, x0_per_km: 0.2304, rated_amps: 409 },
+  { id: 'cu_pvc_300_lv',  name: '300mm² Cu PVC LV',   conductor: 'Cu', insulation: 'PVC',  size_mm2: 300, voltage_kv: 0.4, r_per_km: 0.07565, x_per_km: 0.071, r0_per_km: 0.3177, x0_per_km: 0.2272, rated_amps: 469 },
 
   // ── Unified library additions (2026-09-18) ────────────────────────────
   // One cable library for the whole app. Existing entries above are armoured
@@ -151,8 +154,8 @@ const STANDARD_CABLES = [
   // R0/X0 = 0 means "not tabulated": the fault engine then uses 3.5 × R1.
   // Building "x4C Cu PVC/SWA" names are aliases of the Cu PVC LV entries above.
   // Small 2-core PVC/SWA for single-phase street-lighting strings (same R/X as the 4-core; r0 = 4 × R1, 70 °C in ground).
-  { id: 'cu_pvc_4_lv_2c', name: '4mm² 2c Cu PVC LV', conductor: 'Cu', insulation: 'PVC', size_mm2: 4, voltage_kv: 0.4, r_per_km: 5.52, x_per_km: 0.093, r0_per_km: 22.08, x0_per_km: 0.260, rated_amps: 50, cores: 2, construction: 'armoured' },
-  { id: 'cu_pvc_6_lv_2c', name: '6mm² 2c Cu PVC LV', conductor: 'Cu', insulation: 'PVC', size_mm2: 6, voltage_kv: 0.4, r_per_km: 3.69, x_per_km: 0.090, r0_per_km: 14.76, x0_per_km: 0.252, rated_amps: 62, cores: 2, construction: 'armoured' },
+  { id: 'cu_pvc_4_lv_2c', name: '4mm² 2c Cu PVC LV', conductor: 'Cu', insulation: 'PVC', size_mm2: 4, voltage_kv: 0.4, r_per_km: 5.516, x_per_km: 0.093, r0_per_km: 22.06, x0_per_km: 0.260, rated_amps: 50, cores: 2, construction: 'armoured' },
+  { id: 'cu_pvc_6_lv_2c', name: '6mm² 2c Cu PVC LV', conductor: 'Cu', insulation: 'PVC', size_mm2: 6, voltage_kv: 0.4, r_per_km: 3.685, x_per_km: 0.090, r0_per_km: 14.74, x0_per_km: 0.252, rated_amps: 62, cores: 2, construction: 'armoured' },
   { id: 'cu_pvc_10_lv_2c', name: '10mm² 2c Cu PVC LV', conductor: 'Cu', insulation: 'PVC', size_mm2: 10, voltage_kv: 0.4, r_per_km: 2.19, x_per_km: 0.084, r0_per_km: 8.76, x0_per_km: 0.235, rated_amps: 83, cores: 2, construction: 'armoured' },
   { id: 'cu_xlpe_16_lv_2c', name: '16mm² 2c Cu XLPE LV', conductor: 'Cu', insulation: 'XLPE', size_mm2: 16, voltage_kv: 0.4, r_per_km: 1.466, x_per_km: 0.082, r0_per_km: 5.572, x0_per_km: 0.230, rated_amps: 91, cores: 2, construction: 'armoured' },
   { id: 'cu_xlpe_25_lv_2c', name: '25mm² 2c Cu XLPE LV', conductor: 'Cu', insulation: 'XLPE', size_mm2: 25, voltage_kv: 0.4, r_per_km: 0.9269, x_per_km: 0.079, r0_per_km: 3.523, x0_per_km: 0.221, rated_amps: 116, cores: 2, construction: 'armoured' },
@@ -160,9 +163,9 @@ const STANDARD_CABLES = [
   { id: 'al_xlpe_16_lv_2c', name: '16mm² 2c Al XLPE LV', conductor: 'Al', insulation: 'XLPE', size_mm2: 16, voltage_kv: 0.4, r_per_km: 2.449, x_per_km: 0.082, r0_per_km: 8.325, x0_per_km: 0.230, rated_amps: 70, cores: 2, construction: 'armoured' },
   { id: 'al_xlpe_25_lv_2c', name: '25mm² 2c Al XLPE LV', conductor: 'Al', insulation: 'XLPE', size_mm2: 25, voltage_kv: 0.4, r_per_km: 1.538, x_per_km: 0.079, r0_per_km: 5.231, x0_per_km: 0.221, rated_amps: 90, cores: 2, construction: 'armoured' },
   { id: 'al_xlpe_35_lv_2c', name: '35mm² 2c Al XLPE LV', conductor: 'Al', insulation: 'XLPE', size_mm2: 35, voltage_kv: 0.4, r_per_km: 1.113, x_per_km: 0.077, r0_per_km: 3.783, x0_per_km: 0.216, rated_amps: 110, cores: 2, construction: 'armoured' },
-  { id: 'al_pvc_16_lv_2c', name: '16mm² 2c Al PVC LV', conductor: 'Al', insulation: 'PVC', size_mm2: 16, voltage_kv: 0.4, r_per_km: 2.3, x_per_km: 0.080, r0_per_km: 8.74, x0_per_km: 0.256, rated_amps: 68, cores: 2, construction: 'armoured' },
-  { id: 'al_pvc_25_lv_2c', name: '25mm² 2c Al PVC LV', conductor: 'Al', insulation: 'PVC', size_mm2: 25, voltage_kv: 0.4, r_per_km: 1.44, x_per_km: 0.079, r0_per_km: 5.472, x0_per_km: 0.2528, rated_amps: 106, cores: 2, construction: 'armoured' },
-  { id: 'al_pvc_35_lv_2c', name: '35mm² 2c Al PVC LV', conductor: 'Al', insulation: 'PVC', size_mm2: 35, voltage_kv: 0.4, r_per_km: 1.03, x_per_km: 0.076, r0_per_km: 3.914, x0_per_km: 0.2432, rated_amps: 128, cores: 2, construction: 'armoured' },
+  { id: 'al_pvc_16_lv_2c', name: '16mm² 2c Al PVC LV', conductor: 'Al', insulation: 'PVC', size_mm2: 16, voltage_kv: 0.4, r_per_km: 2.295, x_per_km: 0.080, r0_per_km: 8.721, x0_per_km: 0.256, rated_amps: 68, cores: 2, construction: 'armoured' },
+  { id: 'al_pvc_25_lv_2c', name: '25mm² 2c Al PVC LV', conductor: 'Al', insulation: 'PVC', size_mm2: 25, voltage_kv: 0.4, r_per_km: 1.442, x_per_km: 0.079, r0_per_km: 5.48, x0_per_km: 0.2528, rated_amps: 106, cores: 2, construction: 'armoured' },
+  { id: 'al_pvc_35_lv_2c', name: '35mm² 2c Al PVC LV', conductor: 'Al', insulation: 'PVC', size_mm2: 35, voltage_kv: 0.4, r_per_km: 1.043, x_per_km: 0.076, r0_per_km: 3.963, x0_per_km: 0.2432, rated_amps: 128, cores: 2, construction: 'armoured' },
   { id: 'te_cu_1.5', name: '1.5mm² T+E Cu PVC', conductor: 'Cu', insulation: 'PVC', size_mm2: 1.5, voltage_kv: 0.4, r_per_km: 14.6, x_per_km: 0.1, r0_per_km: 0, x0_per_km: 0, rated_amps: 16, cores: 2, construction: 'te' },
   { id: 'te_cu_2.5', name: '2.5mm² T+E Cu PVC', conductor: 'Cu', insulation: 'PVC', size_mm2: 2.5, voltage_kv: 0.4, r_per_km: 8.7, x_per_km: 0.095, r0_per_km: 0, x0_per_km: 0, rated_amps: 22, cores: 2, construction: 'te' },
   { id: 'te_cu_4', name: '4mm² T+E Cu PVC', conductor: 'Cu', insulation: 'PVC', size_mm2: 4, voltage_kv: 0.4, r_per_km: 5.5, x_per_km: 0.093, r0_per_km: 0, x0_per_km: 0, rated_amps: 30, cores: 2, construction: 'te' },
