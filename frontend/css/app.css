@@ -3916,3 +3916,9 @@ body:not(.dark-mode) .eg-warn { color: #c25e00; }
 .lib-dock-flow .lib-docked > * { flex-shrink: 0; }
 .lib-dock-flow { flex: none; }
 .lib-screen .lib-card { flex: none; overflow: visible; }
+
+/* TCC full screen */
+#tcc-modal.tcc-fullscreen { padding: 0; }
+#tcc-modal.tcc-fullscreen .tcc-modal-content {
+  width: 100vw; max-width: none; height: 100vh; max-height: none; border-radius: 0;
+}
