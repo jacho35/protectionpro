@@ -126,3 +126,33 @@ def test_al_pvc_two_core_resistance_is_iec_calculation(size):
     fe = _frontend(f"al_pvc_{size}_lv_2c")
     assert fe["r_per_km"] == pytest.approx(iec_r70(IEC_60228_AL[size], True, size, 2), rel=1e-3)
     assert fe["r0_per_km"] == pytest.approx(fe["r_per_km"] * 3.8, rel=2e-3)
+
+
+# ── Building wiring (T+E, Surfix, H07V-R): SANS 10142-1:2026 Tables 6.2(a) / 6.3(a), Table D.1 ──
+BW_AMPS = {
+    "h07vr_cu": {1.5: 17.5, 2.5: 24, 4: 32, 6: 41, 10: 57, 16: 76, 25: 101, 35: 125, 50: 151, 70: 192, 95: 232},  # 6.2(a) col. 3
+    "te_cu": {1.5: 16.5, 2.5: 23, 4: 30, 6: 38, 10: 52, 16: 69},                                                   # 6.3(a) col. 4
+    "surfix_2c": {1.5: 19.5, 2.5: 27, 4: 36, 6: 46},                                                                # 6.3(a) col. 6
+    "surfix_3c": {1.5: 17.5, 2.5: 24, 4: 32},                                                                       # 6.3(a) col. 7
+}
+
+
+def _bw_r70(r20):
+    """IEC 60228 R20 x Annex B factor x IEC 60287-1-1 skin effect (proximity <0.1 % at these sizes, neglected)."""
+    k = 1 + 0.00393 * 50
+    x4 = (8 * math.pi * 50 / (r20 * k / 1000) * 1e-7) ** 2
+    return r20 * k * (1 + x4 / (192 + 0.8 * x4))
+
+
+def _bw_cases():
+    return [(pre, size, amps) for pre, tbl in BW_AMPS.items() for size, amps in tbl.items()]
+
+
+@pytest.mark.parametrize("pre,size,amps", _bw_cases())
+def test_building_wiring_values_trace_to_standards(pre, size, amps):
+    cid = f"{pre}_{'%g' % size}"
+    fe = _frontend(cid)
+    assert fe["rated_amps"] == amps
+    assert fe["r_per_km"] == pytest.approx(_bw_r70(IEC_60228_CU[size]), rel=1e-3)
+    assert fe["x_per_km"] == pytest.approx(SANS_X[size])
+    assert fe["r0_per_km"] == 0 and fe["x0_per_km"] == 0     # not tabulated
