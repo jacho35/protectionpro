@@ -39,8 +39,10 @@ const API_BASE = '/api';
 // EXCEPTION (XLPE) — all XLPE entries: R = a.c. 90 °C value from IEC 60228 R20 × Annex B factor × IEC 60287-1-1 skin/proximity effect
 // (insulation thickness IEC 60502-1 Table 6 for LV, IEC 60502-2 Table 6 for 11 kV = 6/10, 22 kV = 12/20, 33 kV = 18/30 as the
 // nearest class; MV cores treated as circular, LV as shaped). LV XLPE X = SANS 10142-1 Table D.1; MV X unchanged (no standard here).
+// LV XLPE ratings (incl. 2c services, which reuse the 4-core value) = IEC 60364-5-52:2009 Table B.52.5, method C (on a wall /
+// clipped direct, 3 loaded conductors, 90 °C, 30 °C air) — the counterpart of SANS 10142-1 "clipped direct" used for PVC.
 // 11 and 22 kV ratings = IEC 60502-2 Annex B Tables B.6 / B.7 (3-core XLPE, armoured, in air, 30 °C — the app derates for the
-// installation); 33 kV is outside Annex B (up to 18/30 kV) and keeps its old ratings; LV XLPE ratings have no standard here.
+// installation); 33 kV is outside Annex B (up to 18/30 kV) and keeps its old ratings.
 // EXCEPTION — the armoured PVC LV entries (cu_pvc_*_lv, al_pvc_*_lv and their 2c services): R = a.c. resistance at 70 °C
 // calculated from IEC 60228 Table 2 (R20) × Annex B temperature factor × IEC 60287-1-1 skin/proximity (cl. 2.1.2–2.1.4,
 // ks = kp = 1; insulation thickness IEC 60502-1 Table 5, conductor diameter its Table A.1), 4 s.f. (SANS Table D.1 differs
@@ -73,17 +75,17 @@ const STANDARD_CABLES = [
   { id: 'al_xlpe_300_11kv', name: '300mm² Al XLPE 11kV',  conductor: 'Al', insulation: 'XLPE', size_mm2: 300, voltage_kv: 11,  r_per_km: 0.1309,  x_per_km: 0.091, r0_per_km: 0.4451, x0_per_km: 0.255, rated_amps: 472 },
   { id: 'al_xlpe_400_11kv', name: '400mm² Al XLPE 11kV',  conductor: 'Al', insulation: 'XLPE', size_mm2: 400, voltage_kv: 11,  r_per_km: 0.1033, x_per_km: 0.089, r0_per_km: 0.3512, x0_per_km: 0.249, rated_amps: 545 },
   // LV XLPE Copper (0.6/1kV) — r0: 3.8×r1, x0: 2.8×x1 per IEC 60502 (Cu XLPE)
-  { id: 'cu_xlpe_16_lv',  name: '16mm² Cu XLPE LV',   conductor: 'Cu', insulation: 'XLPE', size_mm2: 16,  voltage_kv: 0.4, r_per_km: 1.467,   x_per_km: 0.08, r0_per_km: 5.575, x0_per_km: 0.224, rated_amps: 91  },
-  { id: 'cu_xlpe_25_lv',  name: '25mm² Cu XLPE LV',   conductor: 'Cu', insulation: 'XLPE', size_mm2: 25,  voltage_kv: 0.4, r_per_km: 0.9273,  x_per_km: 0.079, r0_per_km: 3.524, x0_per_km: 0.2212, rated_amps: 116 },
-  { id: 'cu_xlpe_35_lv',  name: '35mm² Cu XLPE LV',   conductor: 'Cu', insulation: 'XLPE', size_mm2: 35,  voltage_kv: 0.4, r_per_km: 0.6686,  x_per_km: 0.076, r0_per_km: 2.541, x0_per_km: 0.2128, rated_amps: 140 },
-  { id: 'cu_xlpe_50_lv',  name: '50mm² Cu XLPE LV',   conductor: 'Cu', insulation: 'XLPE', size_mm2: 50,  voltage_kv: 0.4, r_per_km: 0.494,  x_per_km: 0.076, r0_per_km: 1.877, x0_per_km: 0.2128, rated_amps: 167 },
-  { id: 'cu_xlpe_70_lv',  name: '70mm² Cu XLPE LV',   conductor: 'Cu', insulation: 'XLPE', size_mm2: 70,  voltage_kv: 0.4, r_per_km: 0.3426,  x_per_km: 0.074, r0_per_km: 1.302, x0_per_km: 0.2072, rated_amps: 210 },
-  { id: 'cu_xlpe_95_lv',  name: '95mm² Cu XLPE LV',   conductor: 'Cu', insulation: 'XLPE', size_mm2: 95,  voltage_kv: 0.4, r_per_km: 0.2473,  x_per_km: 0.073, r0_per_km: 0.9397, x0_per_km: 0.2044, rated_amps: 254 },
-  { id: 'cu_xlpe_120_lv', name: '120mm² Cu XLPE LV',  conductor: 'Cu', insulation: 'XLPE', size_mm2: 120, voltage_kv: 0.4, r_per_km: 0.1966,  x_per_km: 0.072, r0_per_km: 0.7471, x0_per_km: 0.2016, rated_amps: 292 },
-  { id: 'cu_xlpe_150_lv', name: '150mm² Cu XLPE LV',  conductor: 'Cu', insulation: 'XLPE', size_mm2: 150, voltage_kv: 0.4, r_per_km: 0.1599,  x_per_km: 0.072, r0_per_km: 0.6076, x0_per_km: 0.2016, rated_amps: 330 },
-  { id: 'cu_xlpe_185_lv', name: '185mm² Cu XLPE LV',  conductor: 'Cu', insulation: 'XLPE', size_mm2: 185, voltage_kv: 0.4, r_per_km: 0.1286, x_per_km: 0.072, r0_per_km: 0.4887, x0_per_km: 0.2016, rated_amps: 375 },
-  { id: 'cu_xlpe_240_lv', name: '240mm² Cu XLPE LV',  conductor: 'Cu', insulation: 'XLPE', size_mm2: 240, voltage_kv: 0.4, r_per_km: 0.0991, x_per_km: 0.072, r0_per_km: 0.3766, x0_per_km: 0.2016, rated_amps: 440 },
-  { id: 'cu_xlpe_300_lv', name: '300mm² Cu XLPE LV',  conductor: 'Cu', insulation: 'XLPE', size_mm2: 300, voltage_kv: 0.4, r_per_km: 0.08032, x_per_km: 0.071, r0_per_km: 0.3052, x0_per_km: 0.1988, rated_amps: 500 },
+  { id: 'cu_xlpe_16_lv',  name: '16mm² Cu XLPE LV',   conductor: 'Cu', insulation: 'XLPE', size_mm2: 16,  voltage_kv: 0.4, r_per_km: 1.467,   x_per_km: 0.08, r0_per_km: 5.575, x0_per_km: 0.224, rated_amps: 96  },
+  { id: 'cu_xlpe_25_lv',  name: '25mm² Cu XLPE LV',   conductor: 'Cu', insulation: 'XLPE', size_mm2: 25,  voltage_kv: 0.4, r_per_km: 0.9273,  x_per_km: 0.079, r0_per_km: 3.524, x0_per_km: 0.2212, rated_amps: 119 },
+  { id: 'cu_xlpe_35_lv',  name: '35mm² Cu XLPE LV',   conductor: 'Cu', insulation: 'XLPE', size_mm2: 35,  voltage_kv: 0.4, r_per_km: 0.6686,  x_per_km: 0.076, r0_per_km: 2.541, x0_per_km: 0.2128, rated_amps: 147 },
+  { id: 'cu_xlpe_50_lv',  name: '50mm² Cu XLPE LV',   conductor: 'Cu', insulation: 'XLPE', size_mm2: 50,  voltage_kv: 0.4, r_per_km: 0.494,  x_per_km: 0.076, r0_per_km: 1.877, x0_per_km: 0.2128, rated_amps: 179 },
+  { id: 'cu_xlpe_70_lv',  name: '70mm² Cu XLPE LV',   conductor: 'Cu', insulation: 'XLPE', size_mm2: 70,  voltage_kv: 0.4, r_per_km: 0.3426,  x_per_km: 0.074, r0_per_km: 1.302, x0_per_km: 0.2072, rated_amps: 229 },
+  { id: 'cu_xlpe_95_lv',  name: '95mm² Cu XLPE LV',   conductor: 'Cu', insulation: 'XLPE', size_mm2: 95,  voltage_kv: 0.4, r_per_km: 0.2473,  x_per_km: 0.073, r0_per_km: 0.9397, x0_per_km: 0.2044, rated_amps: 278 },
+  { id: 'cu_xlpe_120_lv', name: '120mm² Cu XLPE LV',  conductor: 'Cu', insulation: 'XLPE', size_mm2: 120, voltage_kv: 0.4, r_per_km: 0.1966,  x_per_km: 0.072, r0_per_km: 0.7471, x0_per_km: 0.2016, rated_amps: 322 },
+  { id: 'cu_xlpe_150_lv', name: '150mm² Cu XLPE LV',  conductor: 'Cu', insulation: 'XLPE', size_mm2: 150, voltage_kv: 0.4, r_per_km: 0.1599,  x_per_km: 0.072, r0_per_km: 0.6076, x0_per_km: 0.2016, rated_amps: 371 },
+  { id: 'cu_xlpe_185_lv', name: '185mm² Cu XLPE LV',  conductor: 'Cu', insulation: 'XLPE', size_mm2: 185, voltage_kv: 0.4, r_per_km: 0.1286, x_per_km: 0.072, r0_per_km: 0.4887, x0_per_km: 0.2016, rated_amps: 424 },
+  { id: 'cu_xlpe_240_lv', name: '240mm² Cu XLPE LV',  conductor: 'Cu', insulation: 'XLPE', size_mm2: 240, voltage_kv: 0.4, r_per_km: 0.0991, x_per_km: 0.072, r0_per_km: 0.3766, x0_per_km: 0.2016, rated_amps: 500 },
+  { id: 'cu_xlpe_300_lv', name: '300mm² Cu XLPE LV',  conductor: 'Cu', insulation: 'XLPE', size_mm2: 300, voltage_kv: 0.4, r_per_km: 0.08032, x_per_km: 0.071, r0_per_km: 0.3052, x0_per_km: 0.1988, rated_amps: 576 },
   // MV XLPE Copper (22kV) — r0: 3.8×r1, x0: 2.8×x1 per IEC 60502 (Cu XLPE MV screened)
   { id: 'cu_xlpe_35_22kv',  name: '35mm² Cu XLPE 22kV',   conductor: 'Cu', insulation: 'XLPE', size_mm2: 35,  voltage_kv: 22,  r_per_km: 0.6684,  x_per_km: 0.122, r0_per_km: 2.54, x0_per_km: 0.342, rated_amps: 172 },
   { id: 'cu_xlpe_50_22kv',  name: '50mm² Cu XLPE 22kV',   conductor: 'Cu', insulation: 'XLPE', size_mm2: 50,  voltage_kv: 22,  r_per_km: 0.4939,  x_per_km: 0.118, r0_per_km: 1.877, x0_per_km: 0.330, rated_amps: 205 },
@@ -105,17 +107,17 @@ const STANDARD_CABLES = [
   { id: 'cu_xlpe_300_33kv', name: '300mm² Cu XLPE 33kV',  conductor: 'Cu', insulation: 'XLPE', size_mm2: 300, voltage_kv: 33,  r_per_km: 0.08, x_per_km: 0.109, r0_per_km: 0.304, x0_per_km: 0.305, rated_amps: 510 },
   { id: 'cu_xlpe_400_33kv', name: '400mm² Cu XLPE 33kV',  conductor: 'Cu', insulation: 'XLPE', size_mm2: 400, voltage_kv: 33,  r_per_km: 0.06437, x_per_km: 0.107, r0_per_km: 0.2446, x0_per_km: 0.300, rated_amps: 575 },
   // LV XLPE Aluminium (0.6/1kV) — r0: 3.4×r1, x0: 2.8×x1 per IEC 60502 (Al XLPE)
-  { id: 'al_xlpe_16_lv',  name: '16mm² Al XLPE LV',   conductor: 'Al', insulation: 'XLPE', size_mm2: 16,  voltage_kv: 0.4, r_per_km: 2.449,   x_per_km: 0.08, r0_per_km: 8.327, x0_per_km: 0.224, rated_amps: 70  },
+  { id: 'al_xlpe_16_lv',  name: '16mm² Al XLPE LV',   conductor: 'Al', insulation: 'XLPE', size_mm2: 16,  voltage_kv: 0.4, r_per_km: 2.449,   x_per_km: 0.08, r0_per_km: 8.327, x0_per_km: 0.224, rated_amps: 76  },
   { id: 'al_xlpe_25_lv',  name: '25mm² Al XLPE LV',   conductor: 'Al', insulation: 'XLPE', size_mm2: 25,  voltage_kv: 0.4, r_per_km: 1.539,   x_per_km: 0.079, r0_per_km: 5.233, x0_per_km: 0.2212, rated_amps: 90  },
-  { id: 'al_xlpe_35_lv',  name: '35mm² Al XLPE LV',   conductor: 'Al', insulation: 'XLPE', size_mm2: 35,  voltage_kv: 0.4, r_per_km: 1.113,  x_per_km: 0.076, r0_per_km: 3.784, x0_per_km: 0.2128, rated_amps: 110 },
-  { id: 'al_xlpe_50_lv',  name: '50mm² Al XLPE LV',   conductor: 'Al', insulation: 'XLPE', size_mm2: 50,  voltage_kv: 0.4, r_per_km: 0.8222,  x_per_km: 0.076, r0_per_km: 2.795, x0_per_km: 0.2128, rated_amps: 130 },
-  { id: 'al_xlpe_70_lv',  name: '70mm² Al XLPE LV',   conductor: 'Al', insulation: 'XLPE', size_mm2: 70,  voltage_kv: 0.4, r_per_km: 0.5685,  x_per_km: 0.074, r0_per_km: 1.933, x0_per_km: 0.2072, rated_amps: 165 },
-  { id: 'al_xlpe_95_lv',  name: '95mm² Al XLPE LV',   conductor: 'Al', insulation: 'XLPE', size_mm2: 95,  voltage_kv: 0.4, r_per_km: 0.411,  x_per_km: 0.073, r0_per_km: 1.397, x0_per_km: 0.2044, rated_amps: 200 },
-  { id: 'al_xlpe_120_lv', name: '120mm² Al XLPE LV',  conductor: 'Al', insulation: 'XLPE', size_mm2: 120, voltage_kv: 0.4, r_per_km: 0.3253,  x_per_km: 0.072, r0_per_km: 1.106, x0_per_km: 0.2016, rated_amps: 230 },
-  { id: 'al_xlpe_150_lv', name: '150mm² Al XLPE LV',  conductor: 'Al', insulation: 'XLPE', size_mm2: 150, voltage_kv: 0.4, r_per_km: 0.2652,  x_per_km: 0.072, r0_per_km: 0.9017, x0_per_km: 0.2016, rated_amps: 260 },
-  { id: 'al_xlpe_185_lv', name: '185mm² Al XLPE LV',  conductor: 'Al', insulation: 'XLPE', size_mm2: 185, voltage_kv: 0.4, r_per_km: 0.2116,  x_per_km: 0.072, r0_per_km: 0.7194, x0_per_km: 0.2016, rated_amps: 295 },
-  { id: 'al_xlpe_240_lv', name: '240mm² Al XLPE LV',  conductor: 'Al', insulation: 'XLPE', size_mm2: 240, voltage_kv: 0.4, r_per_km: 0.1621,  x_per_km: 0.072, r0_per_km: 0.5511, x0_per_km: 0.2016, rated_amps: 350 },
-  { id: 'al_xlpe_300_lv', name: '300mm² Al XLPE LV',  conductor: 'Al', insulation: 'XLPE', size_mm2: 300, voltage_kv: 0.4, r_per_km: 0.1305,  x_per_km: 0.071, r0_per_km: 0.4437, x0_per_km: 0.1988, rated_amps: 395 },
+  { id: 'al_xlpe_35_lv',  name: '35mm² Al XLPE LV',   conductor: 'Al', insulation: 'XLPE', size_mm2: 35,  voltage_kv: 0.4, r_per_km: 1.113,  x_per_km: 0.076, r0_per_km: 3.784, x0_per_km: 0.2128, rated_amps: 112 },
+  { id: 'al_xlpe_50_lv',  name: '50mm² Al XLPE LV',   conductor: 'Al', insulation: 'XLPE', size_mm2: 50,  voltage_kv: 0.4, r_per_km: 0.8222,  x_per_km: 0.076, r0_per_km: 2.795, x0_per_km: 0.2128, rated_amps: 136 },
+  { id: 'al_xlpe_70_lv',  name: '70mm² Al XLPE LV',   conductor: 'Al', insulation: 'XLPE', size_mm2: 70,  voltage_kv: 0.4, r_per_km: 0.5685,  x_per_km: 0.074, r0_per_km: 1.933, x0_per_km: 0.2072, rated_amps: 174 },
+  { id: 'al_xlpe_95_lv',  name: '95mm² Al XLPE LV',   conductor: 'Al', insulation: 'XLPE', size_mm2: 95,  voltage_kv: 0.4, r_per_km: 0.411,  x_per_km: 0.073, r0_per_km: 1.397, x0_per_km: 0.2044, rated_amps: 211 },
+  { id: 'al_xlpe_120_lv', name: '120mm² Al XLPE LV',  conductor: 'Al', insulation: 'XLPE', size_mm2: 120, voltage_kv: 0.4, r_per_km: 0.3253,  x_per_km: 0.072, r0_per_km: 1.106, x0_per_km: 0.2016, rated_amps: 245 },
+  { id: 'al_xlpe_150_lv', name: '150mm² Al XLPE LV',  conductor: 'Al', insulation: 'XLPE', size_mm2: 150, voltage_kv: 0.4, r_per_km: 0.2652,  x_per_km: 0.072, r0_per_km: 0.9017, x0_per_km: 0.2016, rated_amps: 283 },
+  { id: 'al_xlpe_185_lv', name: '185mm² Al XLPE LV',  conductor: 'Al', insulation: 'XLPE', size_mm2: 185, voltage_kv: 0.4, r_per_km: 0.2116,  x_per_km: 0.072, r0_per_km: 0.7194, x0_per_km: 0.2016, rated_amps: 323 },
+  { id: 'al_xlpe_240_lv', name: '240mm² Al XLPE LV',  conductor: 'Al', insulation: 'XLPE', size_mm2: 240, voltage_kv: 0.4, r_per_km: 0.1621,  x_per_km: 0.072, r0_per_km: 0.5511, x0_per_km: 0.2016, rated_amps: 382 },
+  { id: 'al_xlpe_300_lv', name: '300mm² Al XLPE LV',  conductor: 'Al', insulation: 'XLPE', size_mm2: 300, voltage_kv: 0.4, r_per_km: 0.1305,  x_per_km: 0.071, r0_per_km: 0.4437, x0_per_km: 0.1988, rated_amps: 440 },
   // LV PVC Aluminium (0.6/1kV) — r = IEC 60228 + 60287-1-1 calculation, x = SANS 10142-1 Table D.1; r0 = 3.8×r1, x0 = 3.2×x1 assumed;
   // rated_amps = SANS 10142-1 Table 6.7(a) col. 3 (multicore PVC armoured, clipped direct, 30 °C), the aluminium
   // twin of Table 6.4(a), which the Cu PVC ratings follow.
@@ -165,12 +167,12 @@ const STANDARD_CABLES = [
   { id: 'cu_pvc_4_lv_2c', name: '4mm² 2c Cu PVC LV', conductor: 'Cu', insulation: 'PVC', size_mm2: 4, voltage_kv: 0.4, r_per_km: 5.516, x_per_km: 0.093, r0_per_km: 22.06, x0_per_km: 0.260, rated_amps: 50, cores: 2, construction: 'armoured' },
   { id: 'cu_pvc_6_lv_2c', name: '6mm² 2c Cu PVC LV', conductor: 'Cu', insulation: 'PVC', size_mm2: 6, voltage_kv: 0.4, r_per_km: 3.685, x_per_km: 0.090, r0_per_km: 14.74, x0_per_km: 0.252, rated_amps: 62, cores: 2, construction: 'armoured' },
   { id: 'cu_pvc_10_lv_2c', name: '10mm² 2c Cu PVC LV', conductor: 'Cu', insulation: 'PVC', size_mm2: 10, voltage_kv: 0.4, r_per_km: 2.19, x_per_km: 0.084, r0_per_km: 8.76, x0_per_km: 0.235, rated_amps: 83, cores: 2, construction: 'armoured' },
-  { id: 'cu_xlpe_16_lv_2c', name: '16mm² 2c Cu XLPE LV', conductor: 'Cu', insulation: 'XLPE', size_mm2: 16, voltage_kv: 0.4, r_per_km: 1.467, x_per_km: 0.08, r0_per_km: 5.575, x0_per_km: 0.224, rated_amps: 91, cores: 2, construction: 'armoured' },
-  { id: 'cu_xlpe_25_lv_2c', name: '25mm² 2c Cu XLPE LV', conductor: 'Cu', insulation: 'XLPE', size_mm2: 25, voltage_kv: 0.4, r_per_km: 0.9273, x_per_km: 0.079, r0_per_km: 3.524, x0_per_km: 0.2212, rated_amps: 116, cores: 2, construction: 'armoured' },
-  { id: 'cu_xlpe_35_lv_2c', name: '35mm² 2c Cu XLPE LV', conductor: 'Cu', insulation: 'XLPE', size_mm2: 35, voltage_kv: 0.4, r_per_km: 0.6686, x_per_km: 0.076, r0_per_km: 2.541, x0_per_km: 0.2128, rated_amps: 140, cores: 2, construction: 'armoured' },
-  { id: 'al_xlpe_16_lv_2c', name: '16mm² 2c Al XLPE LV', conductor: 'Al', insulation: 'XLPE', size_mm2: 16, voltage_kv: 0.4, r_per_km: 2.449, x_per_km: 0.08, r0_per_km: 8.327, x0_per_km: 0.224, rated_amps: 70, cores: 2, construction: 'armoured' },
+  { id: 'cu_xlpe_16_lv_2c', name: '16mm² 2c Cu XLPE LV', conductor: 'Cu', insulation: 'XLPE', size_mm2: 16, voltage_kv: 0.4, r_per_km: 1.467, x_per_km: 0.08, r0_per_km: 5.575, x0_per_km: 0.224, rated_amps: 96, cores: 2, construction: 'armoured' },
+  { id: 'cu_xlpe_25_lv_2c', name: '25mm² 2c Cu XLPE LV', conductor: 'Cu', insulation: 'XLPE', size_mm2: 25, voltage_kv: 0.4, r_per_km: 0.9273, x_per_km: 0.079, r0_per_km: 3.524, x0_per_km: 0.2212, rated_amps: 119, cores: 2, construction: 'armoured' },
+  { id: 'cu_xlpe_35_lv_2c', name: '35mm² 2c Cu XLPE LV', conductor: 'Cu', insulation: 'XLPE', size_mm2: 35, voltage_kv: 0.4, r_per_km: 0.6686, x_per_km: 0.076, r0_per_km: 2.541, x0_per_km: 0.2128, rated_amps: 147, cores: 2, construction: 'armoured' },
+  { id: 'al_xlpe_16_lv_2c', name: '16mm² 2c Al XLPE LV', conductor: 'Al', insulation: 'XLPE', size_mm2: 16, voltage_kv: 0.4, r_per_km: 2.449, x_per_km: 0.08, r0_per_km: 8.327, x0_per_km: 0.224, rated_amps: 76, cores: 2, construction: 'armoured' },
   { id: 'al_xlpe_25_lv_2c', name: '25mm² 2c Al XLPE LV', conductor: 'Al', insulation: 'XLPE', size_mm2: 25, voltage_kv: 0.4, r_per_km: 1.539, x_per_km: 0.079, r0_per_km: 5.233, x0_per_km: 0.2212, rated_amps: 90, cores: 2, construction: 'armoured' },
-  { id: 'al_xlpe_35_lv_2c', name: '35mm² 2c Al XLPE LV', conductor: 'Al', insulation: 'XLPE', size_mm2: 35, voltage_kv: 0.4, r_per_km: 1.113, x_per_km: 0.076, r0_per_km: 3.784, x0_per_km: 0.2128, rated_amps: 110, cores: 2, construction: 'armoured' },
+  { id: 'al_xlpe_35_lv_2c', name: '35mm² 2c Al XLPE LV', conductor: 'Al', insulation: 'XLPE', size_mm2: 35, voltage_kv: 0.4, r_per_km: 1.113, x_per_km: 0.076, r0_per_km: 3.784, x0_per_km: 0.2128, rated_amps: 112, cores: 2, construction: 'armoured' },
   { id: 'al_pvc_16_lv_2c', name: '16mm² 2c Al PVC LV', conductor: 'Al', insulation: 'PVC', size_mm2: 16, voltage_kv: 0.4, r_per_km: 2.295, x_per_km: 0.080, r0_per_km: 8.721, x0_per_km: 0.256, rated_amps: 68, cores: 2, construction: 'armoured' },
   { id: 'al_pvc_25_lv_2c', name: '25mm² 2c Al PVC LV', conductor: 'Al', insulation: 'PVC', size_mm2: 25, voltage_kv: 0.4, r_per_km: 1.442, x_per_km: 0.079, r0_per_km: 5.48, x0_per_km: 0.2528, rated_amps: 106, cores: 2, construction: 'armoured' },
   { id: 'al_pvc_35_lv_2c', name: '35mm² 2c Al PVC LV', conductor: 'Al', insulation: 'PVC', size_mm2: 35, voltage_kv: 0.4, r_per_km: 1.043, x_per_km: 0.076, r0_per_km: 3.963, x0_per_km: 0.2432, rated_amps: 128, cores: 2, construction: 'armoured' },

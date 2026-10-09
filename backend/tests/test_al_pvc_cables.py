@@ -169,6 +169,11 @@ B6_AIR = {16: 110, 25: 143, 35: 172, 50: 205, 70: 253, 95: 307, 120: 352, 150: 3
 B7_AIR = {16: 85, 25: 111, 35: 133, 50: 159, 70: 196, 95: 238, 120: 274, 150: 309, 185: 354, 240: 415, 300: 472, 400: 545}
 
 
+# IEC 60364-5-52:2009 Table B.52.5, method C (XLPE/EPR, three loaded conductors, 90 deg C, 30 deg C air)
+XLPE_LV_C_CU = dict(zip([16, 25, 35, 50, 70, 95, 120, 150, 185, 240, 300], [96, 119, 147, 179, 229, 278, 322, 371, 424, 500, 576]))
+XLPE_LV_C_AL = dict(zip([16, 25, 35, 50, 70, 95, 120, 150, 185, 240, 300], [76, 90, 112, 136, 174, 211, 245, 283, 323, 382, 440]))
+
+
 def iec_r90(r20, al, size, t_ins, shaped):
     k = 1 + (0.00403 if al else 0.00393) * 70
     x4 = (8 * math.pi * 50 / (r20 * k / 1000) * 1e-7) ** 2
@@ -182,7 +187,8 @@ def _xlpe_cases():
     cases = []
     for cond, r20, ratings in (("cu", IEC_60228_CU_400, B6_AIR), ("al", IEC_60228_AL_400, B7_AIR)):
         for size in B6_AIR:
-            cases.append((cond, size, "lv", r20[size], None))
+            lv = (XLPE_LV_C_CU if cond == "cu" else XLPE_LV_C_AL).get(size)
+            cases.append((cond, size, "lv", r20[size], lv))
             for v in ("11kv", "22kv", "33kv"):
                 if re.search(r"\{ id: '%s_xlpe_%d_%s'" % (cond, size, v), CONSTANTS):
                     cases.append((cond, size, v, r20[size], ratings[size] if v != "33kv" else None))
@@ -204,3 +210,18 @@ def test_xlpe_resistance_and_ratings_trace_to_standards(cond, size, volt, r20, a
         assert fe["x_per_km"] == pytest.approx(SANS_X[size]), cid
         be = next(c for c in STANDARD_CABLES if c["id"] == cid)
         assert be["x_per_km"] == pytest.approx(SANS_X[size]), cid
+
+
+@pytest.mark.parametrize("cond,size", [(c, s) for c in ("cu", "al") for s in (16, 25, 35)])
+def test_xlpe_two_core_services_reuse_four_core_rating(cond, size):
+    table = XLPE_LV_C_CU if cond == "cu" else XLPE_LV_C_AL
+    assert _frontend(f"{cond}_xlpe_{size}_lv_2c")["rated_amps"] == table[size]
+
+
+def test_repo_iec_60364_xlpe_tables_match_the_standard():
+    """The generated iec_60364_data.py was cross-checked cell-by-cell (213 cells) against Table B.52.5 read from the
+    standard; pin the method C column it must keep reproducing."""
+    from backend.analysis.iec_60364_data import IEC_AMPACITY
+    for key, table in (("xlpe_cu", XLPE_LV_C_CU), ("xlpe_al", XLPE_LV_C_AL)):
+        for size, amps in table.items():
+            assert IEC_AMPACITY[key][3]["C"][size] == amps
