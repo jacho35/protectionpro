@@ -60,7 +60,7 @@ def test_backend_entry_matches_frontend(size):
     # backend stores the IEC 60228 20 °C DC value, the frontend the calculated 70 °C a.c. value
     assert be["r_per_km"] == pytest.approx(IEC_60228_AL[size], rel=1e-3)
     assert fe["r_per_km"] == pytest.approx(iec_r70(IEC_60228_AL[size], True, size, 4), rel=1e-3)
-    assert fe["r0_per_km"] == pytest.approx(fe["r_per_km"] * 3.8, rel=2e-3)
+    assert fe["r0_per_km"] == pytest.approx(fe["r_per_km"] * 4.0, rel=2e-3)   # IEC TR 60909-2 Table 12
 
 
 @pytest.mark.parametrize("cid", [f"al_pvc_{s}_lv" for s in SIZES] + ["al_pvc_16_lv_2c"])
@@ -94,7 +94,7 @@ def test_pvc_reactance_is_sans_table_d1(size):
         assert _frontend(cid)["x_per_km"] == pytest.approx(SANS_X[size]), cid
         be = next(c for c in STANDARD_CABLES if c["id"] == cid)
         assert be["x_per_km"] == pytest.approx(SANS_X[size]), cid
-        assert _frontend(cid)["x0_per_km"] == pytest.approx(3.2 * SANS_X[size], rel=2e-3), cid
+        assert _frontend(cid)["x0_per_km"] == pytest.approx(4.0 * SANS_X[size], rel=2e-3), cid   # IEC TR 60909-2 Table 12
 
 
 @pytest.mark.parametrize("size", SIZES)
@@ -125,7 +125,7 @@ def test_cu_pvc_two_core_follow_sans(size):
 def test_al_pvc_two_core_resistance_is_iec_calculation(size):
     fe = _frontend(f"al_pvc_{size}_lv_2c")
     assert fe["r_per_km"] == pytest.approx(iec_r70(IEC_60228_AL[size], True, size, 2), rel=1e-3)
-    assert fe["r0_per_km"] == pytest.approx(fe["r_per_km"] * 3.8, rel=2e-3)
+    assert fe["r0_per_km"] == pytest.approx(fe["r_per_km"] * 3.8, rel=2e-3)   # services keep their earlier ratio
 
 
 # ── Building wiring (T+E, Surfix, H07V-R): SANS 10142-1:2026 Tables 6.2(a) / 6.3(a), Table D.1 ──
@@ -164,6 +164,8 @@ IEC_60228_AL_400 = dict(IEC_60228_AL); IEC_60228_AL_400[400] = 0.0778
 DL.update({400: 22.6})
 T_LV_XLPE = {16: .7, 25: .9, 35: .9, 50: 1.0, 70: 1.1, 95: 1.1, 120: 1.2, 150: 1.4, 185: 1.6, 240: 1.7, 300: 1.8, 400: 2.0}
 T_MV_XLPE = {"11kv": 3.4, "22kv": 5.5, "33kv": 8.0}
+# CBI-electric SANS 1339 datasheet, 6.35/11 kV Cu 3-core Type A, in air in shade (30 deg C): lower than IEC at 300 / 400 mm2
+CBI_A_AIR_11KV = {300: 592, 400: 678}
 # IEC 60502-2:2005 Annex B, 3-core XLPE, armoured, in air (Tables B.6 / B.7), 90 deg C, 30 deg C air
 B6_AIR = {16: 110, 25: 143, 35: 172, 50: 205, 70: 253, 95: 307, 120: 352, 150: 397, 185: 453, 240: 529, 300: 599, 400: 683}
 B7_AIR = {16: 85, 25: 111, 35: 133, 50: 159, 70: 196, 95: 238, 120: 274, 150: 309, 185: 354, 240: 415, 300: 472, 400: 545}
@@ -191,7 +193,10 @@ def _xlpe_cases():
             cases.append((cond, size, "lv", r20[size], lv))
             for v in ("11kv", "22kv", "33kv"):
                 if re.search(r"\{ id: '%s_xlpe_%d_%s'" % (cond, size, v), CONSTANTS):
-                    cases.append((cond, size, v, r20[size], ratings[size] if v != "33kv" else None))
+                    amps = ratings[size] if v != "33kv" else None
+                    if cond == "cu" and v == "11kv":
+                        amps = min(amps, CBI_A_AIR_11KV.get(size, amps))
+                    cases.append((cond, size, v, r20[size], amps))
     return [c for c in cases if re.search(r"\{ id: '%s_xlpe_%d_%s'" % (c[0], c[1], c[2]), CONSTANTS)]
 
 
@@ -225,3 +230,27 @@ def test_repo_iec_60364_xlpe_tables_match_the_standard():
     for key, table in (("xlpe_cu", XLPE_LV_C_CU), ("xlpe_al", XLPE_LV_C_AL)):
         for size, amps in table.items():
             assert IEC_AMPACITY[key][3]["C"][size] == amps
+
+
+# ── MV reactance: worst case (highest) of CBI-electric (SANS 1339 Type A/B), Aberdare (from its tabulated impedance) and
+#    Torrent (IS 7098) for 11 kV; CBI-electric for 22 and 33 kV. Ohm/km.
+MV_X = {
+    "11kv": {16: .138, 25: .126, 35: .118, 50: .116, 70: .110, 95: .105, 120: .101, 150: .098, 185: .096, 240: .093, 300: .090, 400: .087},
+    "22kv": {25: .139, 35: .131, 50: .124, 70: .117, 95: .111, 120: .107, 150: .104, 185: .100, 240: .096, 300: .094},
+    "33kv": {50: .137, 70: .129, 95: .122, 120: .117, 150: .114, 185: .110, 240: .105, 300: .103},
+}
+
+
+@pytest.mark.parametrize("cond,volt,size,x", [(c, v, s, x) for v, t in MV_X.items() for s, x in t.items() for c in ("cu", "al")
+                                               if re.search(r"\{ id: '%s_xlpe_%d_%s'" % (c, s, v), CONSTANTS)])
+def test_mv_reactance_is_manufacturer_worst_case(cond, volt, size, x):
+    cid = f"{cond}_xlpe_{size}_{volt}"
+    assert _frontend(cid)["x_per_km"] == pytest.approx(x), cid
+    assert next(c for c in STANDARD_CABLES if c["id"] == cid)["x_per_km"] == pytest.approx(x), cid
+
+
+@pytest.mark.parametrize("cond,size", [(c, s) for c in ("cu", "al") for s in (16, 25, 35, 50, 70, 95, 120, 150, 185, 240, 300)])
+def test_lv_xlpe_zero_sequence_follows_iec_tr_60909_2(cond, size):
+    fe = _frontend(f"{cond}_xlpe_{size}_lv")
+    assert fe["r0_per_km"] == pytest.approx(4.0 * fe["r_per_km"], rel=2e-3)
+    assert fe["x0_per_km"] == pytest.approx(4.0 * fe["x_per_km"], rel=2e-3)
