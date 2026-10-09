@@ -781,6 +781,9 @@ class PlanImageClaim(BaseModel):
 
 class RevisionCreate(BaseModel):
     label: str = ""
+    # Optional explicit state to snapshot (e.g. the browser's unsaved diagram
+    # before a restore). Absent ⇒ the project as last saved.
+    data: Optional[dict] = None
 
 
 class FolderCreate(BaseModel):

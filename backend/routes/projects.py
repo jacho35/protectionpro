@@ -310,13 +310,20 @@ def remove_share(project_id: int, user_id: int,
 MAX_REVISIONS = 20
 
 
+def _is_disposable_revision(label: str) -> bool:
+    """Auto-saves and agent safety snapshots go first when the cap is hit, so a
+    burst of them cannot push out the user's manual saves."""
+    lab = (label or "").lower()
+    return "auto" in lab or lab.startswith("before mcp")
+
+
 @router.get("/{project_id}/revisions", response_model=list[RevisionSummary])
 def list_revisions(project_id: int, ctx=Depends(require_project("view")),
                    db: Session = Depends(get_db)):
     return (
         db.query(Revision)
         .filter(Revision.project_id == project_id)
-        .order_by(Revision.created_at.desc())
+        .order_by(Revision.created_at.desc(), Revision.id.desc())
         .limit(MAX_REVISIONS)
         .all()
     )
@@ -326,23 +333,32 @@ def list_revisions(project_id: int, ctx=Depends(require_project("view")),
 def create_revision(project_id: int, body: RevisionCreate,
                     ctx=Depends(require_project("edit")), db: Session = Depends(get_db)):
     project, _level = ctx
-    revision = Revision(
-        project_id=project_id,
-        data=project.data,  # snapshot current project state
-        label=body.label or "",
-    )
+    if body.data is not None:
+        try:
+            snapshot = json.dumps(ProjectData(**body.data).model_dump())
+        except Exception as e:
+            raise HTTPException(status_code=422, detail=f"Invalid project data: {e}")
+    else:
+        snapshot = project.data  # current saved state
+    revision = Revision(project_id=project_id, data=snapshot, label=body.label or "")
     db.add(revision)
     db.flush()
 
-    # Trim old revisions beyond the limit
-    all_revisions = (
+    # Trim beyond the cap: oldest auto-saves/agent snapshots first, then oldest overall
+    newest_first = (
         db.query(Revision)
         .filter(Revision.project_id == project_id)
-        .order_by(Revision.created_at.desc())
+        .order_by(Revision.created_at.desc(), Revision.id.desc())
         .all()
     )
-    if len(all_revisions) > MAX_REVISIONS:
-        for old in all_revisions[MAX_REVISIONS:]:
+    excess = len(newest_first) - MAX_REVISIONS
+    if excess > 0:
+        oldest_first = [r for r in reversed(newest_first) if r.id != revision.id]
+        victims = [r for r in oldest_first if _is_disposable_revision(r.label)][:excess]
+        if len(victims) < excess:
+            chosen = {r.id for r in victims}
+            victims += [r for r in oldest_first if r.id not in chosen][:excess - len(victims)]
+        for old in victims:
             db.delete(old)
 
     db.commit()

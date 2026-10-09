@@ -725,8 +725,9 @@ const API = {
     return this.request(`/projects/${projectId}/revisions`);
   },
 
-  async createRevision(projectId, label = '') {
-    return this.request(`/projects/${projectId}/revisions`, 'POST', { label });
+  // `data` (optional): snapshot this state instead of the project as last saved
+  async createRevision(projectId, label = '', data = undefined) {
+    return this.request(`/projects/${projectId}/revisions`, 'POST', data ? { label, data } : { label });
   },
 
   async getRevision(projectId, revisionId) {
