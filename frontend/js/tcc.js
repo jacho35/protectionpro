@@ -362,6 +362,8 @@ const TCC = {
     bind('btn-tcc-view-saveas', () => this._openSaveDialog());
     bind('btn-tcc-sv-cancel', () => { document.getElementById('tcc-save-view').hidden = true; });
     bind('btn-tcc-sv-new', () => this._submitSaveDialog(false));
+    bind('btn-tcc-fullscreen', () => this._setFullscreen(!document.getElementById('tcc-modal').classList.contains('tcc-fullscreen')));
+    try { if (localStorage.getItem('protectionpro-tcc-fullscreen') === '1') this._setFullscreen(true); } catch (e) { /* ignore */ }
     bind('btn-tcc-sv-replace', () => this._submitSaveDialog(true));
     document.getElementById('tcc-sv-name')?.addEventListener('keydown', (e) => { if (e.key === 'Enter') this._submitSaveDialog(false); });
     document.addEventListener('click', (e) => {
@@ -370,6 +372,9 @@ const TCC = {
     });
     document.getElementById('tcc-modal').addEventListener('keydown', (e) => {
       if (e.key !== 'Escape') return;
+      const modalEl = document.getElementById('tcc-modal');
+      const anyOpen = ['tcc-save-view', 'tcc-view-menu', 'tcc-fault-menu'].some(id => { const el = document.getElementById(id); return el && !el.hidden; });
+      if (!anyOpen && modalEl.classList.contains('tcc-fullscreen')) { this._setFullscreen(false); e.stopPropagation(); return; }
       const dlg = document.getElementById('tcc-save-view');
       const menu = document.getElementById('tcc-view-menu');
       const fm = document.getElementById('tcc-fault-menu');
@@ -1784,6 +1789,20 @@ const TCC = {
         this._afterOpenCompact(true);
       });
     });
+  },
+
+  _setFullscreen(on) {
+    const modal = document.getElementById('tcc-modal');
+    if (!modal) return;
+    modal.classList.toggle('tcc-fullscreen', !!on);
+    const btn = document.getElementById('btn-tcc-fullscreen');
+    if (btn) {
+      btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+      btn.title = on ? 'Exit full screen (Esc)' : 'Full screen';
+      btn.textContent = on ? '\u2922 Exit' : '\u2922';
+    }
+    try { localStorage.setItem('protectionpro-tcc-fullscreen', on ? '1' : '0'); } catch (e) { /* ignore */ }
+    requestAnimationFrame(() => { this.render(); });
   },
 
   close() {
@@ -5568,6 +5587,8 @@ const TCC = {
     for (const [, w] of wires) {
       link(endNode(w.fromComponent, w.fromPort), endNode(w.toComponent, w.toPort));
     }
+    // Linked off-page connectors join their two ends like a wire
+    for (const [a, b] of Components.offpagePairs()) link(a, b);
     return adj;
   },
 

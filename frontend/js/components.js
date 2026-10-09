@@ -292,6 +292,13 @@ const Components = {
       adj.get(wire.fromComponent).push(wire.toComponent);
       adj.get(wire.toComponent).push(wire.fromComponent);
     }
+    // Linked off-page connectors join their two ends like a wire
+    for (const [a, b] of this.offpagePairs()) {
+      if (!adj.has(a)) adj.set(a, []);
+      if (!adj.has(b)) adj.set(b, []);
+      adj.get(a).push(b);
+      adj.get(b).push(a);
+    }
 
     // Find all sources
     const sources = [];
