@@ -1,0 +1,1050 @@
+{
+ "utility": {
+  "name": "Utility Source",
+  "category": "sources",
+  "ports": [
+   "out"
+  ],
+  "dynamicPorts": false,
+  "defaults": {
+   "name": "Utility",
+   "voltage_kv": 33,
+   "fault_mva": 500,
+   "x_r_ratio": 15,
+   "z2_z1_ratio": 1,
+   "z0_z1_ratio": 1,
+   "dispatch_priority": 3,
+   "cost_per_mwh": 120,
+   "allow_export": "yes",
+   "supply_capacity_mva": 0,
+   "lf_grid_model": "infinite",
+   "v_setpoint_pu": 1,
+   "earthing_system": "TN-S",
+   "earth_electrode_r_source": 1,
+   "earth_electrode_r_installation": 20
+  }
+ },
+ "generator": {
+  "name": "Generator",
+  "category": "sources",
+  "ports": [
+   "out"
+  ],
+  "dynamicPorts": false,
+  "defaults": {
+   "name": "Gen",
+   "prime_mover": "diesel",
+   "rated_mva": 10,
+   "voltage_kv": 11,
+   "xd_pp": 0.15,
+   "xd_p": 0.25,
+   "xd": 1.2,
+   "power_factor": 0.85,
+   "x2": 0,
+   "x0": 0,
+   "rotor_type": "cylindrical",
+   "scr": 0,
+   "excitation_series": 1,
+   "excitation_type": "rotating",
+   "ikp_pu": 0,
+   "dispatch_priority": 2,
+   "cost_per_mwh": 180,
+   "dispatch_mode": "standby",
+   "min_load_pct": 30,
+   "max_load_pct": 100,
+   "gen_control": "droop",
+   "start_threshold_pct": 90,
+   "inertia_h_s": 1,
+   "damping_pu": 0,
+   "machine_model": "classical",
+   "xq": 0.7,
+   "tdo_p": 6,
+   "tqo_p": 1,
+   "subtransient_on": "off",
+   "xq_pp": 0.15,
+   "tdo_pp": 0.03,
+   "tqo_pp": 0.03,
+   "gov_mode": "isochronous",
+   "gov_droop_pct": 4,
+   "gov_time_const_s": 0.5,
+   "gov_reset_time_s": 5,
+   "gov_model": "first_order",
+   "degov_td_s": 0.1,
+   "gast_t1_s": 0.4,
+   "gast_t2_s": 0.1,
+   "gast_fuel_limit_pu": 1.15,
+   "tgov1_t1_s": 0.5,
+   "tgov1_t2_s": 2.5,
+   "tgov1_t3_s": 7,
+   "hygov_tw_s": 1,
+   "hygov_gate_tg_s": 1.5,
+   "hygov_rt_pct": 40,
+   "hygov_dashpot_tr_s": 6,
+   "avr_mode": "on",
+   "avr_gain": 25,
+   "avr_time_const_s": 0.2,
+   "exc_model": "first_order",
+   "sexs_tb_s": 10,
+   "sexs_tc_s": 1,
+   "st1_tr_s": 0.02,
+   "st1_tb_s": 1,
+   "st1_tc_s": 1,
+   "st1_ta_s": 0.02,
+   "ac_tr_s": 0.02,
+   "ac_ta_s": 0.2,
+   "ac_ke": 1,
+   "ac_sat_a": 0.05,
+   "ac_sat_b": 0.8,
+   "ac_kf": 0.03,
+   "ac_tf": 1,
+   "pss_on": "off",
+   "pss_kstab": 10,
+   "pss_tw_s": 10,
+   "pss_t1_s": 0.2,
+   "pss_t2_s": 0.1,
+   "pss_t3_s": 0.2,
+   "pss_t4_s": 0.1,
+   "pss_vs_limit_pu": 0.1,
+   "trip_of_hz": 0,
+   "trip_uf_hz": 0,
+   "trip_uv_pu": 0,
+   "trip_rocof_hzs": 0,
+   "trip_oos_deg": 0,
+   "trip_vhz_pu": 0,
+   "trip_delay_s": 0.2
+  }
+ },
+ "solar_pv": {
+  "name": "Solar PV",
+  "category": "sources",
+  "ports": [
+   "out"
+  ],
+  "dynamicPorts": false,
+  "defaults": {
+   "name": "PV",
+   "rated_kw": 100,
+   "voltage_kv": 0.4,
+   "num_inverters": 1,
+   "inverter_eff": 0.97,
+   "power_factor": 1,
+   "var_mode": "power_factor",
+   "v_setpoint_pu": 1,
+   "mppt_tracking": "fixed",
+   "inverter_type": "grid_tied",
+   "pv_array_mode": "rated",
+   "pv_panel_type": "",
+   "pv_panel_w": 550,
+   "pv_panels_per_string": 10,
+   "pv_strings": 2,
+   "pv_voc": 49.9,
+   "pv_vmp": 41.95,
+   "pv_isc": 14,
+   "pv_imp": 13.12,
+   "pv_beta_voc": -0.26,
+   "pv_gamma_vmp": -0.34,
+   "mppt_min_v": 200,
+   "mppt_max_v": 800,
+   "dc_max_v": 1000,
+   "mppt_count": 2,
+   "mppt_max_a": 26,
+   "site_temp_min_c": -5,
+   "site_cell_temp_max_c": 70,
+   "battery_kwh": 100,
+   "battery_dod_pct": 90,
+   "battery_max_charge_kw": 50,
+   "battery_max_discharge_kw": 50,
+   "battery_rt_eff": 0.95,
+   "battery_soc_pct": 100,
+   "battery_chemistry": "lfp",
+   "battery_nominal_v": 48,
+   "battery_hour_rating_h": 1,
+   "battery_mode": "auto",
+   "fault_contribution_pu": 1.1,
+   "irradiance_pct": 100,
+   "dispatch_priority": 1,
+   "cost_per_mwh": 0,
+   "dispatch_mode": "must_run",
+   "ibr_ctrl": "frozen",
+   "ibr_imax_pu": 1.2,
+   "ibr_inertia_h_s": 3,
+   "ibr_pf_droop_pct": 5,
+   "ibr_xf_pu": 0.15,
+   "ibr_ffr_droop_pct": 0,
+   "ibr_qv_gain": 2,
+   "ibr_p_headroom_pct": 0,
+   "ibr_uv_pu": 0,
+   "ibr_uf_hz": 0,
+   "ibr_of_hz": 0,
+   "ibr_rocof_hzs": 0,
+   "ibr_oos_deg": 0,
+   "ibr_trip_delay_s": 0.2
+  }
+ },
+ "wind_turbine": {
+  "name": "Wind Turbine",
+  "category": "sources",
+  "ports": [
+   "out"
+  ],
+  "dynamicPorts": false,
+  "defaults": {
+   "name": "WTG",
+   "rated_mva": 2,
+   "voltage_kv": 0.69,
+   "turbine_type": "type3_dfig",
+   "xd_pp": 0.2,
+   "x_r_ratio": 30,
+   "power_factor": 0.95,
+   "num_turbines": 1,
+   "fault_contribution_pu": 1.1,
+   "wind_speed_pct": 100,
+   "dispatch_priority": 1,
+   "cost_per_mwh": 0,
+   "dispatch_mode": "must_run",
+   "ibr_ctrl": "frozen",
+   "ibr_imax_pu": 1.2,
+   "ibr_inertia_h_s": 3,
+   "ibr_pf_droop_pct": 5,
+   "ibr_xf_pu": 0.15,
+   "ibr_ffr_droop_pct": 0,
+   "ibr_qv_gain": 2,
+   "ibr_p_headroom_pct": 0,
+   "ibr_uv_pu": 0,
+   "ibr_uf_hz": 0,
+   "ibr_of_hz": 0,
+   "ibr_rocof_hzs": 0,
+   "ibr_oos_deg": 0,
+   "ibr_trip_delay_s": 0.2
+  }
+ },
+ "battery": {
+  "name": "Battery Storage",
+  "category": "sources",
+  "ports": [
+   "out"
+  ],
+  "dynamicPorts": false,
+  "defaults": {
+   "name": "BESS",
+   "rated_kva": 100,
+   "voltage_kv": 0.4,
+   "power_factor": 1,
+   "battery_kwh": 200,
+   "battery_dod_pct": 90,
+   "battery_max_charge_kw": 100,
+   "battery_max_discharge_kw": 100,
+   "battery_rt_eff": 0.95,
+   "battery_soc_pct": 100,
+   "battery_chemistry": "lfp",
+   "battery_nominal_v": 48,
+   "battery_hour_rating_h": 1,
+   "battery_mode": "auto",
+   "var_mode": "power_factor",
+   "v_setpoint_pu": 1,
+   "fault_contribution_pu": 1.1,
+   "dispatch_priority": 1,
+   "cost_per_mwh": 50,
+   "ibr_ctrl": "frozen",
+   "ibr_imax_pu": 1.2,
+   "ibr_inertia_h_s": 3,
+   "ibr_pf_droop_pct": 5,
+   "ibr_xf_pu": 0.15,
+   "ibr_ffr_droop_pct": 0,
+   "ibr_qv_gain": 2,
+   "ibr_uv_pu": 0,
+   "ibr_uf_hz": 0,
+   "ibr_of_hz": 0,
+   "ibr_rocof_hzs": 0,
+   "ibr_oos_deg": 0,
+   "ibr_trip_delay_s": 0.2
+  }
+ },
+ "bus": {
+  "name": "Bus",
+  "category": "distribution",
+  "ports": [
+   "top",
+   "bottom",
+   "left",
+   "right"
+  ],
+  "dynamicPorts": true,
+  "defaults": {
+   "name": "Bus",
+   "system": "ac",
+   "voltage_kv": 11,
+   "voltage_dc_v": 125,
+   "bus_type": "PQ",
+   "busWidth": 120,
+   "working_distance_mm": 455,
+   "arc_flash_method": "IEEE 1584-2018",
+   "equipment_class": "auto",
+   "conductor_gap_mm": 0,
+   "electrode_config": "VCB",
+   "enclosure_size_mm": 0,
+   "enclosure_height_mm": 0,
+   "enclosure_depth_mm": 0,
+   "soil_type": "custom",
+   "soil_resistivity": 100,
+   "crushed_rock_resistivity": 2500,
+   "crushed_rock_depth": 0.15,
+   "two_layer_soil": "off",
+   "soil_resistivity_lower": 100,
+   "upper_layer_thickness": 3,
+   "grid_length": 30,
+   "grid_width": 30,
+   "grid_depth": 0.5,
+   "num_conductors_x": 6,
+   "num_conductors_y": 6,
+   "rod_length_preset": "custom",
+   "ground_rod_length": 3,
+   "num_ground_rods": 20,
+   "conductor_material": "copper_hard",
+   "conductor_area_mm2": 70,
+   "grid_joint_type": "exothermic",
+   "current_split_factor": 1,
+   "fault_duration": 0.5,
+   "fault_clearing_time": 0.5,
+   "ambient_temp": 40,
+   "body_weight": 70
+  }
+ },
+ "transformer": {
+  "name": "Transformer",
+  "category": "distribution",
+  "ports": [
+   "primary",
+   "secondary"
+  ],
+  "dynamicPorts": false,
+  "defaults": {
+   "name": "Xfmr",
+   "standard_type": "",
+   "rated_mva": 10,
+   "voltage_hv_kv": 33,
+   "voltage_lv_kv": 11,
+   "z_percent": 8,
+   "x_r_ratio": 10,
+   "tap_mode": "fixed",
+   "tap_percent": 0,
+   "tap_min_pct": -10,
+   "tap_max_pct": 10,
+   "tap_step_pct": 1.25,
+   "v_target_pu": 1,
+   "regulated_side": "lv",
+   "vector_group": "Dyn11",
+   "winding_config": "step_down",
+   "grounding_hv": "ungrounded",
+   "grounding_hv_resistance": 0,
+   "grounding_hv_reactance": 0,
+   "grounding_lv": "solidly_grounded",
+   "grounding_lv_resistance": 0,
+   "grounding_lv_reactance": 0,
+   "core_construction": "three_limb",
+   "z0m_pu": 0,
+   "z0_z1_ratio": 0,
+   "earthing_system": "TN-S",
+   "earth_electrode_r_source": 1,
+   "earth_electrode_r_installation": 20
+  }
+ },
+ "autotransformer": {
+  "name": "Autotransformer",
+  "category": "distribution",
+  "ports": [
+   "primary",
+   "secondary",
+   "tertiary"
+  ],
+  "dynamicPorts": false,
+  "defaults": {
+   "name": "AutoTX",
+   "windings": 2,
+   "rated_mva": 20,
+   "voltage_hv_kv": 132,
+   "voltage_lv_kv": 66,
+   "voltage_tv_kv": 11,
+   "z_percent": 8,
+   "z_ht_percent": 26,
+   "z_lt_percent": 16,
+   "x_r_ratio": 30,
+   "tap_mode": "fixed",
+   "tap_percent": 0,
+   "tap_min_pct": -10,
+   "tap_max_pct": 10,
+   "tap_step_pct": 1.25,
+   "v_target_pu": 1,
+   "regulated_side": "lv"
+  }
+ },
+ "cable": {
+  "name": "Cable / Feeder",
+  "category": "distribution",
+  "ports": [
+   "from",
+   "to"
+  ],
+  "dynamicPorts": false,
+  "defaults": {
+   "name": "Cable",
+   "construction": "cable",
+   "standard_type": "",
+   "overhead_type": "",
+   "length_km": 0.1,
+   "r_per_km": 0.1,
+   "x_per_km": 0.08,
+   "r0_per_km": 0,
+   "x0_per_km": 0,
+   "rated_amps": 400,
+   "voltage_kv": 11,
+   "num_parallel": 1,
+   "ampacity_standard": "IEC",
+   "temperature_c": 75,
+   "z0_coupling": "",
+   "circuit_spacing_m": 8,
+   "soil_resistivity_ohm_m": 100,
+   "z0_mutual_factor": 0
+  }
+ },
+ "cb": {
+  "name": "Circuit Breaker",
+  "category": "protection",
+  "ports": [
+   "top",
+   "bottom"
+  ],
+  "dynamicPorts": false,
+  "defaults": {
+   "name": "CB",
+   "rated_voltage_kv": 12,
+   "rated_current_a": 630,
+   "breaking_capacity_ka": 25,
+   "circuit_type": "",
+   "state": "closed",
+   "cb_type": "mccb",
+   "mounting": "fixed",
+   "mcb_curve": "C",
+   "trip_rating_a": 630,
+   "thermal_pickup": 1,
+   "magnetic_pickup": 10,
+   "long_time_delay": 10,
+   "short_time_pickup": 0,
+   "short_time_delay": 0,
+   "instantaneous_pickup": 0,
+   "k_factor": 1,
+   "contact_parting_cycles": 3
+  }
+ },
+ "fuse": {
+  "name": "Fuse",
+  "category": "protection",
+  "ports": [
+   "top",
+   "bottom"
+  ],
+  "dynamicPorts": false,
+  "defaults": {
+   "name": "Fuse",
+   "rated_voltage_kv": 12,
+   "rated_current_a": 100,
+   "breaking_capacity_ka": 50,
+   "fuse_type": "gG",
+   "circuit_type": ""
+  }
+ },
+ "relay": {
+  "name": "Relay",
+  "category": "protection",
+  "ports": [],
+  "dynamicPorts": false,
+  "defaults": {
+   "name": "Relay",
+   "relay_type": "50/51",
+   "associated_ct": "",
+   "associated_pt": "",
+   "trip_cb": "",
+   "pickup_a": 100,
+   "time_dial": 1,
+   "curve": "IEC Standard Inverse",
+   "idmt_max_multiple": 20,
+   "inst_pickup_a": 0,
+   "inst_delay_s": 0.05,
+   "direction": "forward",
+   "characteristic_angle_deg": 45,
+   "voltage_kv": 11,
+   "z1_reach_ohm": 4,
+   "z1_delay_s": 0,
+   "z2_reach_ohm": 6,
+   "z2_delay_s": 0.3,
+   "z3_reach_ohm": 12,
+   "z3_delay_s": 0.8,
+   "z3_reverse": false,
+   "mho_angle_deg": 75,
+   "dist_fault_detect": "on",
+   "dist_psb": "on",
+   "psb_transit_s": 0.03,
+   "z1_margin_pct": 85,
+   "z2_next_line_pct": 50,
+   "z3_next_line_pct": 100,
+   "z3_margin_pct": 120
+  }
+ },
+ "switch": {
+  "name": "Switch",
+  "category": "protection",
+  "ports": [
+   "top",
+   "bottom"
+  ],
+  "dynamicPorts": false,
+  "defaults": {
+   "name": "Switch",
+   "switch_type": "switch_disconnector",
+   "rated_voltage_kv": 11,
+   "rated_current_a": 630,
+   "state": "closed"
+  }
+ },
+ "changeover": {
+  "name": "Changeover Switch",
+  "category": "protection",
+  "ports": [
+   "in_1",
+   "in_2",
+   "out"
+  ],
+  "dynamicPorts": false,
+  "defaults": {
+   "name": "CO",
+   "co_type": "manual_i_0_ii",
+   "co_layout": "two_in_one_out",
+   "state": "in_1",
+   "contact_duty": "switch_disconnector",
+   "input_1_label": "Mains",
+   "input_2_label": "Gen",
+   "rated_voltage_kv": 0.4,
+   "rated_current_a": 630,
+   "breaking_capacity_ka": 25,
+   "transfer_delay_s": 5,
+   "retransfer_delay_s": 300,
+   "cb1_cb_type": "acb",
+   "cb1_thermal_pickup": 1,
+   "cb1_magnetic_pickup": 10,
+   "cb1_long_time_delay": 10,
+   "cb1_short_time_pickup": 0,
+   "cb1_short_time_delay": 0,
+   "cb1_instantaneous_pickup": 0,
+   "cb2_cb_type": "acb",
+   "cb2_thermal_pickup": 1,
+   "cb2_magnetic_pickup": 10,
+   "cb2_long_time_delay": 10,
+   "cb2_short_time_pickup": 0,
+   "cb2_short_time_delay": 0,
+   "cb2_instantaneous_pickup": 0
+  }
+ },
+ "ct": {
+  "name": "Current Transformer",
+  "category": "instruments",
+  "ports": [
+   "top",
+   "bottom"
+  ],
+  "dynamicPorts": false,
+  "defaults": {
+   "name": "CT",
+   "ct_type": "phase",
+   "ratio": "400/5",
+   "accuracy_class": "5P20",
+   "burden_va": 15,
+   "connected_burden_va": 0,
+   "rct_ohm": 0,
+   "knee_point_v": 0
+  }
+ },
+ "pt": {
+  "name": "Potential Transformer",
+  "category": "instruments",
+  "ports": [
+   "top",
+   "bottom"
+  ],
+  "dynamicPorts": false,
+  "defaults": {
+   "name": "PT",
+   "ratio": "11000/110",
+   "accuracy_class": "0.5",
+   "burden_va": 30,
+   "connected_burden_va": 0,
+   "connection": "phase_earth",
+   "voltage_factor": ""
+  }
+ },
+ "motor_induction": {
+  "name": "Induction Motor",
+  "category": "loads",
+  "ports": [
+   "in"
+  ],
+  "dynamicPorts": false,
+  "defaults": {
+   "name": "IM",
+   "rated_kw": 200,
+   "voltage_kv": 0.4,
+   "efficiency": 0.93,
+   "power_factor": 0.85,
+   "locked_rotor_current": 6,
+   "starting_method": "dol",
+   "flicker_starts_per_hour": 0,
+   "dyn_role": "starts",
+   "start_time_s": 0,
+   "x_r_ratio": 2.4,
+   "demand_factor": 1,
+   "essential": "yes",
+   "x2": 0,
+   "poles": 0,
+   "rated_speed_rpm": 1480,
+   "locked_rotor_torque_pct": 150,
+   "motor_j_kgm2": 0,
+   "load_j_kgm2": 0,
+   "load_torque_model": "quadratic",
+   "load_torque_pct": 90,
+   "load_breakaway_pct": 10,
+   "transition_speed_pct": 80,
+   "ss_current_limit_xflc": 3.5,
+   "ss_ramp_s": 10,
+   "ss_initial_v_pct": 30,
+   "stall_time_hot_s": 15,
+   "accel_time_s": 5,
+   "sim_t_max_s": 30,
+   "ts_dynamic": "on",
+   "uv_trip_pu": 0,
+   "uv_trip_delay_s": 0.2
+  }
+ },
+ "motor_synchronous": {
+  "name": "Synchronous Motor",
+  "category": "loads",
+  "ports": [
+   "in"
+  ],
+  "dynamicPorts": false,
+  "defaults": {
+   "name": "SM",
+   "rated_kva": 500,
+   "voltage_kv": 3.3,
+   "power_factor": 0.9,
+   "pf_mode": "leading",
+   "xd_pp": 0.15,
+   "xd_p": 0.25,
+   "locked_rotor_current": 5.5,
+   "starting_method": "dol",
+   "flicker_starts_per_hour": 0,
+   "dyn_role": "starts",
+   "start_time_s": 0,
+   "demand_factor": 1,
+   "essential": "yes",
+   "x2": 0,
+   "x0": 0,
+   "voltage_regulated": "no",
+   "scr": 0,
+   "rated_speed_rpm": 1500,
+   "locked_rotor_torque_pct": 120,
+   "motor_j_kgm2": 0,
+   "load_j_kgm2": 0,
+   "load_torque_model": "quadratic",
+   "load_torque_pct": 90,
+   "load_breakaway_pct": 10,
+   "transition_speed_pct": 80,
+   "ss_current_limit_xflc": 3.5,
+   "ss_ramp_s": 10,
+   "ss_initial_v_pct": 30,
+   "stall_time_hot_s": 15,
+   "accel_time_s": 5,
+   "sim_t_max_s": 30
+  }
+ },
+ "static_load": {
+  "name": "Static Load",
+  "category": "loads",
+  "ports": [
+   "in"
+  ],
+  "dynamicPorts": false,
+  "defaults": {
+   "name": "Load",
+   "rated_kva": 100,
+   "voltage_kv": 0.4,
+   "power_factor": 0.85,
+   "load_type": "constant_power",
+   "demand_factor": 1,
+   "essential": "yes",
+   "motor_fraction": 0,
+   "motor_lrc_ratio": 6,
+   "phase_connection": "3P",
+   "phase_a_pct": 33.33,
+   "phase_b_pct": 33.33,
+   "phase_c_pct": 33.34,
+   "uf_shed_hz": 0,
+   "uf_shed_delay_s": 0.2,
+   "uv_trip_pu": 0,
+   "uv_trip_delay_s": 0.2
+  }
+ },
+ "distribution_board": {
+  "name": "Distribution Board",
+  "category": "loads",
+  "ports": [
+   "in",
+   "out"
+  ],
+  "dynamicPorts": false,
+  "defaults": {
+   "name": "DB",
+   "voltage_kv": 0.4,
+   "power_factor": 0.85,
+   "board_diversity": 1,
+   "essential": "yes",
+   "motor_fraction": 0,
+   "motor_lrc_ratio": 6,
+   "circuits": [],
+   "accessories": [],
+   "way_install": null,
+   "ze_ohm": null,
+   "rated_kva": 0,
+   "demand_factor": 1,
+   "load_type": "constant_power",
+   "phase_connection": "3P",
+   "phase_a_pct": 33.33,
+   "phase_b_pct": 33.33,
+   "phase_c_pct": 33.34
+  }
+ },
+ "bus_duct": {
+  "name": "Bus Duct",
+  "category": "distribution",
+  "ports": [
+   "from",
+   "to"
+  ],
+  "dynamicPorts": false,
+  "defaults": {
+   "name": "BusDuct",
+   "rated_current_a": 800,
+   "length_m": 2
+  }
+ },
+ "ups": {
+  "name": "UPS",
+  "category": "dc_systems",
+  "ports": [
+   "ac_in",
+   "ac_out"
+  ],
+  "dynamicPorts": false,
+  "defaults": {
+   "name": "UPS",
+   "rated_kva": 100,
+   "voltage_in_kv": 0.4,
+   "voltage_out_kv": 0.4,
+   "topology": "online_double",
+   "efficiency": 0.94,
+   "power_factor": 0.9,
+   "battery_autonomy_min": 15,
+   "battery_voltage_vdc": 480,
+   "static_bypass": "yes",
+   "fault_contribution_pu": 2
+  }
+ },
+ "rectifier": {
+  "name": "Rectifier",
+  "category": "dc_systems",
+  "ports": [
+   "ac_in",
+   "dc_out"
+  ],
+  "dynamicPorts": false,
+  "defaults": {
+   "name": "Rect",
+   "rated_kw": 50,
+   "voltage_ac_kv": 0.4,
+   "voltage_dc_v": 125,
+   "rectifier_type": "thyristor",
+   "efficiency": 0.92,
+   "ripple_pct": 5,
+   "num_pulses": "6",
+   "tx_kva": 0,
+   "tx_uk_pct": 5,
+   "tx_xr": 4,
+   "tx_secondary_v": 0,
+   "l_dc_uh": 0,
+   "dc_sc_factor": 0
+  }
+ },
+ "charger": {
+  "name": "Battery Charger",
+  "category": "dc_systems",
+  "ports": [
+   "ac_in",
+   "dc_out"
+  ],
+  "dynamicPorts": false,
+  "defaults": {
+   "name": "Chgr",
+   "rated_a": 200,
+   "voltage_ac_kv": 0.4,
+   "voltage_dc_v": 125,
+   "charger_type": "float_equalize",
+   "float_voltage_v": 131,
+   "equalize_voltage_v": 140,
+   "efficiency": 0.9,
+   "current_limit_pct": 100,
+   "bridge_type": "thyristor",
+   "tx_kva": 0,
+   "tx_uk_pct": 5,
+   "tx_xr": 4,
+   "tx_secondary_v": 0,
+   "l_dc_uh": 0,
+   "dc_sc_factor": 0
+  }
+ },
+ "dc_battery": {
+  "name": "DC Battery",
+  "category": "dc_systems",
+  "ports": [
+   "dc"
+  ],
+  "dynamicPorts": false,
+  "defaults": {
+   "name": "Battery",
+   "nominal_v": 125,
+   "emf_v": 0,
+   "ah_capacity": 200,
+   "internal_r_mohm": 20,
+   "internal_l_uh": 0,
+   "max_discharge_a": 0
+  }
+ },
+ "dc_load": {
+  "name": "DC Load",
+  "category": "loads",
+  "ports": [
+   "in"
+  ],
+  "dynamicPorts": false,
+  "defaults": {
+   "name": "DC Load",
+   "load_model": "constant_power",
+   "load_kw": 1,
+   "load_a": 10,
+   "resistance_ohm": 10,
+   "nominal_v": 125
+  }
+ },
+ "vfd": {
+  "name": "Variable Frequency Drive",
+  "category": "loads",
+  "ports": [
+   "in",
+   "out"
+  ],
+  "dynamicPorts": false,
+  "defaults": {
+   "name": "VFD",
+   "rated_kw": 200,
+   "voltage_kv": 0.4,
+   "efficiency": 0.96,
+   "load_pct": 100,
+   "displacement_pf": 0.98,
+   "pulse_number": 6,
+   "front_end": "diode",
+   "input_reactor_pct": 3,
+   "demand_factor": 1,
+   "fault_contribution_pu": 1.5
+  }
+ },
+ "svc": {
+  "name": "SVC / STATCOM",
+  "category": "other",
+  "ports": [
+   "in"
+  ],
+  "dynamicPorts": false,
+  "defaults": {
+   "name": "SVC",
+   "device_mode": "statcom",
+   "control_mode": "voltage_regulating",
+   "voltage_kv": 33,
+   "v_setpoint_pu": 1,
+   "rated_mvar": 50,
+   "q_max_mvar": 50,
+   "q_min_mvar": -50,
+   "q_output_mvar": 0,
+   "coupling_x_pu": 0.15
+  }
+ },
+ "capacitor_bank": {
+  "name": "Capacitor Bank",
+  "category": "other",
+  "ports": [
+   "in"
+  ],
+  "dynamicPorts": false,
+  "defaults": {
+   "name": "Cap",
+   "rated_kvar": 100,
+   "voltage_kv": 11,
+   "steps": 1,
+   "steps_in_service": 1,
+   "tuned_order": 0,
+   "quality_factor": 30
+  }
+ },
+ "surge_arrester": {
+  "name": "Surge Arrester",
+  "category": "other",
+  "ports": [
+   "top",
+   "bottom"
+  ],
+  "dynamicPorts": false,
+  "defaults": {
+   "name": "SA",
+   "rated_voltage_kv": 11,
+   "mcov_kv": 8.4,
+   "class": "Station"
+  }
+ },
+ "offpage_connector": {
+  "name": "Off-Page Connector",
+  "category": "other",
+  "ports": [
+   "port"
+  ],
+  "dynamicPorts": false,
+  "defaults": {
+   "name": "X1",
+   "linked_to": ""
+  }
+ },
+ "ctl_supply": {
+  "name": "Control Supply",
+  "category": "control",
+  "ports": [
+   "l",
+   "n"
+  ],
+  "dynamicPorts": false,
+  "defaults": {
+   "name": "CTRL",
+   "supply_type": "230VAC"
+  }
+ },
+ "ctl_breaker": {
+  "name": "Control Breaker (MCB)",
+  "category": "control",
+  "ports": [
+   "top",
+   "bottom"
+  ],
+  "dynamicPorts": false,
+  "defaults": {
+   "name": "Q1",
+   "state": "closed",
+   "rating_a": 6
+  }
+ },
+ "ctl_pb_no": {
+  "name": "Pushbutton NO",
+  "category": "control",
+  "ports": [
+   "top",
+   "bottom"
+  ],
+  "dynamicPorts": false,
+  "defaults": {
+   "name": "S1"
+  }
+ },
+ "ctl_pb_nc": {
+  "name": "Pushbutton NC",
+  "category": "control",
+  "ports": [
+   "top",
+   "bottom"
+  ],
+  "dynamicPorts": false,
+  "defaults": {
+   "name": "S0"
+  }
+ },
+ "ctl_switch": {
+  "name": "Selector Switch",
+  "category": "control",
+  "ports": [
+   "top",
+   "bottom"
+  ],
+  "dynamicPorts": false,
+  "defaults": {
+   "name": "SA1",
+   "state": "open",
+   "contact_type": "no"
+  }
+ },
+ "ctl_contact_no": {
+  "name": "Contact NO",
+  "category": "control",
+  "ports": [
+   "top",
+   "bottom"
+  ],
+  "dynamicPorts": false,
+  "defaults": {
+   "name": "K1.1",
+   "tag": "K1"
+  }
+ },
+ "ctl_contact_nc": {
+  "name": "Contact NC",
+  "category": "control",
+  "ports": [
+   "top",
+   "bottom"
+  ],
+  "dynamicPorts": false,
+  "defaults": {
+   "name": "K1.2",
+   "tag": "K1"
+  }
+ },
+ "ctl_coil": {
+  "name": "Coil / Relay",
+  "category": "control",
+  "ports": [
+   "top",
+   "bottom"
+  ],
+  "dynamicPorts": false,
+  "defaults": {
+   "name": "K1",
+   "tag": "K1",
+   "coil_type": "contactor",
+   "delay_s": 1
+  }
+ },
+ "ctl_lamp": {
+  "name": "Pilot Lamp",
+  "category": "control",
+  "ports": [
+   "top",
+   "bottom"
+  ],
+  "dynamicPorts": false,
+  "defaults": {
+   "name": "H1",
+   "color": "green"
+  }
+ }
+}

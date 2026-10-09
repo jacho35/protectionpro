@@ -91,10 +91,13 @@ const RevisionTimeline = {
   },
 
   // Create a new revision snapshot
-  async createRevision(label = 'Manual save') {
+  // `includeUnsaved`: snapshot the diagram as it is on screen, not the project
+  // as last saved (the server only knows the saved state)
+  async createRevision(label = 'Manual save', includeUnsaved = false) {
     if (AppState.projectId) {
       try {
-        await API.createRevision(AppState.projectId, label);
+        await API.createRevision(AppState.projectId, label,
+          includeUnsaved ? AppState.toJSON() : undefined);
       } catch (e) {
         console.error('Failed to create revision:', e);
         // Fall back to local
@@ -273,7 +276,7 @@ const RevisionTimeline = {
     if (!revData) return;
 
     // Save current state as a revision before restoring (so user can go back)
-    await this.createRevision('Before restore');
+    await this.createRevision('Before restore', true);
 
     // Apply the revision data, preserving the current project identity:
     // projectId, and the session token (fromJSON → reset() rotates it, but a
@@ -311,7 +314,8 @@ const RevisionTimeline = {
 
   _formatTime(isoStr) {
     if (!isoStr) return '';
-    const d = new Date(isoStr);
+    // The server sends UTC without a zone designator
+    const d = Notifications._date(isoStr);
     const now = new Date();
     const diffMs = now - d;
     const diffMin = Math.floor(diffMs / 60000);

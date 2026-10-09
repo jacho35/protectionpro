@@ -92,7 +92,8 @@ frontend/
     └── undo.js             # Snapshot-based undo/redo (50 states max)
 
 clients/
-└── python/                 # Python API client (protectionpro_client.py, httpx) — batch/parametric scripting; see its README
+├── python/                 # Python API client (protectionpro_client.py, httpx) — batch/parametric scripting; see its README
+└── mcp/                    # MCP server (protectionpro_mcp) over that client: component-level read/edit tools + run_analysis for AI agents, no project deletion; component_catalog.json is generated from COMPONENT_DEFS by build_catalog.mjs; see its README
 
 backend/
 ├── mailer.py               # Optional SMTP: config in app_settings (password never returned), send_email, invite/reset messages; callers fall back to a copy-able link when get_config() is None
