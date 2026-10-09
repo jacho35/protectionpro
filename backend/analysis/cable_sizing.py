@@ -87,6 +87,18 @@ STANDARD_CABLES = [
     {"id": "al_xlpe_185_lv", "conductor": "Al", "insulation": "XLPE", "size_mm2": 185, "voltage_kv": 0.4, "r_per_km": 0.164, "x_per_km": 0.069, "rated_amps": 295},
     {"id": "al_xlpe_240_lv", "conductor": "Al", "insulation": "XLPE", "size_mm2": 240, "voltage_kv": 0.4, "r_per_km": 0.125, "x_per_km": 0.068, "rated_amps": 350},
     {"id": "al_xlpe_300_lv", "conductor": "Al", "insulation": "XLPE", "size_mm2": 300, "voltage_kv": 0.4, "r_per_km": 0.100, "x_per_km": 0.067, "rated_amps": 395},
+    # LV PVC Aluminium (0.6/1kV) — r at 20 °C (IEC 60228); x as Cu PVC; rating derived as in the frontend library
+    {"id": "al_pvc_16_lv", "conductor": "Al", "insulation": "PVC", "size_mm2": 16, "voltage_kv": 0.4, "r_per_km": 1.910, "x_per_km": 0.079, "rated_amps": 62},
+    {"id": "al_pvc_25_lv", "conductor": "Al", "insulation": "PVC", "size_mm2": 25, "voltage_kv": 0.4, "r_per_km": 1.20, "x_per_km": 0.077, "rated_amps": 78},
+    {"id": "al_pvc_35_lv", "conductor": "Al", "insulation": "PVC", "size_mm2": 35, "voltage_kv": 0.4, "r_per_km": 0.868, "x_per_km": 0.075, "rated_amps": 98},
+    {"id": "al_pvc_50_lv", "conductor": "Al", "insulation": "PVC", "size_mm2": 50, "voltage_kv": 0.4, "r_per_km": 0.641, "x_per_km": 0.073, "rated_amps": 118},
+    {"id": "al_pvc_70_lv", "conductor": "Al", "insulation": "PVC", "size_mm2": 70, "voltage_kv": 0.4, "r_per_km": 0.443, "x_per_km": 0.072, "rated_amps": 151},
+    {"id": "al_pvc_95_lv", "conductor": "Al", "insulation": "PVC", "size_mm2": 95, "voltage_kv": 0.4, "r_per_km": 0.320, "x_per_km": 0.071, "rated_amps": 183},
+    {"id": "al_pvc_120_lv", "conductor": "Al", "insulation": "PVC", "size_mm2": 120, "voltage_kv": 0.4, "r_per_km": 0.253, "x_per_km": 0.070, "rated_amps": 212},
+    {"id": "al_pvc_150_lv", "conductor": "Al", "insulation": "PVC", "size_mm2": 150, "voltage_kv": 0.4, "r_per_km": 0.206, "x_per_km": 0.069, "rated_amps": 236},
+    {"id": "al_pvc_185_lv", "conductor": "Al", "insulation": "PVC", "size_mm2": 185, "voltage_kv": 0.4, "r_per_km": 0.164, "x_per_km": 0.068, "rated_amps": 268},
+    {"id": "al_pvc_240_lv", "conductor": "Al", "insulation": "PVC", "size_mm2": 240, "voltage_kv": 0.4, "r_per_km": 0.125, "x_per_km": 0.067, "rated_amps": 318},
+    {"id": "al_pvc_300_lv", "conductor": "Al", "insulation": "PVC", "size_mm2": 300, "voltage_kv": 0.4, "r_per_km": 0.10, "x_per_km": 0.066, "rated_amps": 362},
     # LV PVC Copper (0.6/1kV)
     {"id": "cu_pvc_1.5_lv", "conductor": "Cu", "insulation": "PVC", "size_mm2": 1.5, "voltage_kv": 0.4, "r_per_km": 12.1, "x_per_km": 0.094, "rated_amps": 18},
     {"id": "cu_pvc_2.5_lv", "conductor": "Cu", "insulation": "PVC", "size_mm2": 2.5, "voltage_kv": 0.4, "r_per_km": 7.41, "x_per_km": 0.090, "rated_amps": 25},
