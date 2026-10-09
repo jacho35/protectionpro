@@ -40,8 +40,33 @@ def test_engines_read_it_as_aluminium_pvc(cid):
     assert insulated_hot_factor(props) == 1.2
 
 
-def test_two_core_services_exist():
-    for s in (16, 25, 35):
+def test_two_core_services_follow_sans_table_6_8():
+    # 25/35 mm²: Table 6.8 two-core buried; 16 mm² is not in 6.8 for Al -> Table 6.7(a) col. 2
+    for s, amps in ((16, 68), (25, 106), (35, 128)):
         row = re.search(r"\{ id: 'al_pvc_%d_lv_2c'.*?\},?\n" % s, CONSTANTS).group(0)
         assert "cores: 2" in row and "construction: 'armoured'" in row
-        assert _frontend(f"al_pvc_{s}_lv")["rated_amps"] == float(re.search(r"rated_amps: (\d+)", row).group(1))
+        assert float(re.search(r"rated_amps: (\d+)", row).group(1)) == amps
+
+
+# SANS 10142-1:2026 Table D.1 reactance (same for Cu and Al) and Table 6.7(a) col. 3 ratings
+SANS_X = {1.5: .100, 2.5: .095, 4: .093, 6: .090, 10: .084, 16: .080, 25: .079, 35: .076,
+          50: .076, 70: .074, 95: .073, 120: .072, 150: .072, 185: .072, 240: .072, 300: .071}
+SANS_AL_AMPS = dict(zip(SIZES, [58, 76, 94, 113, 143, 174, 202, 232, 265, 312, 360]))
+
+
+@pytest.mark.parametrize("size", list(SANS_X))
+def test_pvc_reactance_is_sans_table_d1(size):
+    sz = ("%g" % size)
+    for prefix in ("cu", "al"):
+        if prefix == "al" and size < 16:
+            continue
+        cid = f"{prefix}_pvc_{sz}_lv"
+        assert _frontend(cid)["x_per_km"] == pytest.approx(SANS_X[size]), cid
+        be = next(c for c in STANDARD_CABLES if c["id"] == cid)
+        assert be["x_per_km"] == pytest.approx(SANS_X[size]), cid
+        assert _frontend(cid)["x0_per_km"] == pytest.approx(3.2 * SANS_X[size], rel=2e-3), cid
+
+
+@pytest.mark.parametrize("size", SIZES)
+def test_al_pvc_rating_is_sans_table_6_7a(size):
+    assert _frontend(f"al_pvc_{size}_lv")["rated_amps"] == SANS_AL_AMPS[size]
