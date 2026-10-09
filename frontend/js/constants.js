@@ -37,7 +37,7 @@ const API_BASE = '/api';
 // 20°C DC values × temperature factor: Cu ×1.275, Al ×1.282; PVC entries at
 // 70°C: ×1.20), trefoil formation. X values at 50 Hz.
 // EXCEPTION (XLPE) — all XLPE entries: R = a.c. 90 °C value from IEC 60228 R20 × Annex B factor × IEC 60287-1-1 skin/proximity effect
-// (insulation thickness IEC 60502-1 Table 6 for LV, IEC 60502-2 Table 6 for 11 kV = 6/10, 22 kV = 12/20, 33 kV = 18/30 as the
+// (insulation thickness IEC 60502-1 Table 6 = SANS 1507-4 Table 9 for LV, IEC 60502-2 Table 6 for 11 kV = 6/10, 22 kV = 12/20, 33 kV = 18/30 as the
 // nearest class; MV cores treated as circular, LV as shaped). LV XLPE X = SANS 10142-1 Table D.1; MV X unchanged (no standard here).
 // LV XLPE ratings (incl. 2c services, which reuse the 4-core value) = IEC 60364-5-52:2009 Table B.52.5, method C (on a wall /
 // clipped direct, 3 loaded conductors, 90 °C, 30 °C air) — the counterpart of SANS 10142-1 "clipped direct" used for PVC.
@@ -45,7 +45,7 @@ const API_BASE = '/api';
 // installation); 33 kV is outside Annex B (up to 18/30 kV) and keeps its old ratings.
 // EXCEPTION — the armoured PVC LV entries (cu_pvc_*_lv, al_pvc_*_lv and their 2c services): R = a.c. resistance at 70 °C
 // calculated from IEC 60228 Table 2 (R20) × Annex B temperature factor × IEC 60287-1-1 skin/proximity (cl. 2.1.2–2.1.4,
-// ks = kp = 1; insulation thickness IEC 60502-1 Table 5, conductor diameter its Table A.1), 4 s.f. (SANS Table D.1 differs
+// ks = kp = 1; insulation thickness IEC 60502-1 Table 5 = SANS 1507-3 Table 9, conductor diameter IEC 60502-1 Table A.1), 4 s.f. (SANS Table D.1 differs
 // by up to 6.6 % at 50 mm²); X = SANS 10142-1:2026 Table D.1; ratings from SANS Table 6.4(a) col. 3 (Cu), 6.7(a) col. 3 (Al),
 // 6.8 two-core buried (services). r0 = 4.2/4.0 (Cu 4c/2c) or 3.8 (Al) × r1 and x0 = 3.2 × x1 are not from a standard.
 // test_al_pvc_cables.py recomputes every R from the IEC formulas.
