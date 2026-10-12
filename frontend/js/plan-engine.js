@@ -681,6 +681,31 @@ const PlanEngine = {
     return out;
   },
 
+  // Persisted measurement polylines within tolerance of the point (topmost first).
+  findMeasurementsAt(pt, tolPx) {
+    const tol = (tolPx || 8) / this.view.zoom;
+    const out = [];
+    const ms = AppState.planMarkup.measurements || [];
+    for (let i = ms.length - 1; i >= 0; i--) {
+      const m = ms[i];
+      for (let s = 1; s < (m.points || []).length; s++) {
+        if (this._distToSeg(pt, m.points[s - 1], m.points[s]) <= tol) { out.push(m); break; }
+      }
+    }
+    return out;
+  },
+
+  // Crossing markers (p1–p2 segments) within tolerance of the point.
+  findCrossingsAt(pt, tolPx) {
+    const tol = (tolPx || 8) / this.view.zoom;
+    const cs = AppState.planMarkup.crossings || [];
+    const out = [];
+    for (let i = cs.length - 1; i >= 0; i--) {
+      if (this._distToSeg(pt, cs[i].p1, cs[i].p2) <= tol) out.push(cs[i]);
+    }
+    return out;
+  },
+
   findRouteAt(pt, tolPx) {
     const pm = AppState.planMarkup;
     const tol = (tolPx || 8) / this.view.zoom;
