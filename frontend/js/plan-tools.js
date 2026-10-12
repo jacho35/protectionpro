@@ -279,6 +279,8 @@ PlanTools.register({
     for (const h of PlanEngine.findRoutesAt(pt)) add(h.route.id);
     for (const el of PlanEngine.findElementsAt(pt)) add(el.id);
     for (const t of PlanEngine.findTrenchesAt(pt)) add(t.id);
+    for (const m of PlanEngine.findMeasurementsAt(pt)) add(m.id);
+    for (const c of PlanEngine.findCrossingsAt(pt)) add(c.id);
     const tx = this._textAt(pt); if (tx) out.push(tx.id);
     const rm = PlanEngine.findRoomAt(pt); if (rm) out.push(rm.id);
     return out;
