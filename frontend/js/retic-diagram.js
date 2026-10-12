@@ -90,6 +90,20 @@ const ReticDiagram = {
     return Retic._rootOf(k.id);
   },
 
+  // Ring ties touching one minisub, for the Demand side bar:
+  // [{other, cable, len}] (other = the RMU / minisub at the far end).
+  ringTiesFor(msId) {
+    let tree;
+    try { tree = this._tree(); } catch (e) { return []; }
+    const name = (id) => tree.rmuById[id] ? (tree.rmuById[id].name || 'RMU') : ((tree.msById[id] || {}).name || '');
+    const out = [];
+    for (const t of tree.ring || []) {
+      if (t.from !== msId && t.to !== msId) continue;
+      out.push({ other: name(t.from === msId ? t.to : t.from), cable: this._cableShort(t.info.cable), len: t.info.len });
+    }
+    return out;
+  },
+
   // The plan's MV network as an undirected graph (retic domain only), with
   // helpers that walk it through joints and RMUs. null when nothing is drawn.
   _planMv() {
