@@ -113,6 +113,20 @@ const PlanEngine = {
     this.requestDraw({ all: true });
   },
 
+  // Fit the view to a set of world points (zoom to selection).
+  zoomToPoints(pts) {
+    if (!pts.length) return;
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const p of pts) { minX = Math.min(minX, p.x); minY = Math.min(minY, p.y); maxX = Math.max(maxX, p.x); maxY = Math.max(maxY, p.y); }
+    const pad = 80;
+    const w = Math.max(40, maxX - minX), h = Math.max(40, maxY - minY);
+    const z = Math.max(0.02, Math.min(20, Math.min((this.cssW - pad * 2) / w, (this.cssH - pad * 2) / h)));
+    this.view.zoom = z;
+    this.view.panX = -((minX + maxX) / 2) * z;
+    this.view.panY = -((minY + maxY) / 2) * z;
+    this.requestDraw({ all: true });
+  },
+
   _contentBBox() {
     const pm = AppState.planMarkup;
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity, any = false;
@@ -790,6 +804,10 @@ const PlanEngine = {
       // Right-click a route node → delete it; otherwise cancel any tool gesture.
       const pt = this.screenToWorld(e.clientX, e.clientY);
       if (typeof PlanTools !== 'undefined' && PlanTools.deleteVertexAt && PlanTools.deleteVertexAt(pt)) return;
+      // Select tool: the item menu (select similar, rotate, delete…). Any other
+      // armed tool: right-click cancels the gesture as before.
+      if (typeof PlanTools !== 'undefined' && PlanTools.active && PlanTools.active.id === 'select' &&
+          typeof PlanMarkup !== 'undefined' && PlanMarkup.openContextMenu(e, pt)) return;
       if (typeof PlanTools !== 'undefined' && PlanTools.cancel) PlanTools.cancel();
     });
     // Double-click a route node → delete it.

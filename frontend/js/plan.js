@@ -544,6 +544,144 @@ const PlanMarkup = {
     }
   },
 
+  // ─── Right-click context menu ───
+  // The way a device's circuit is identified for "same circuit" selection:
+  // the stable way id when tagged, else board + way number.
+  _circuitKey(el) {
+    const p = el.props || {};
+    if (p.circuitWid) return 'w:' + p.circuitWid;
+    if (p.circuitDbId && p.circuitNo != null && p.circuitNo !== '') return 'n:' + p.circuitDbId + ':' + p.circuitNo;
+    return null;
+  },
+
+  // Every entity "like" the one given, as [{label, ids}] choices (the entity
+  // itself is always included). Floors are separate working copies, so a
+  // choice never reaches another floor.
+  similarChoices(found) {
+    const pm = AppState.planMarkup;
+    const { kind, item } = found;
+    const out = [];
+    const add = (label, arr) => { out.push({ label, ids: arr.map(x => x.id) }); };
+    if (kind === 'element') {
+      const def = PLAN_DEFS.element(item.type);
+      const tn = (def && def.name) || item.type;
+      const sameType = pm.elements.filter(e => e.type === item.type);
+      add(`Same type — ${tn}`, sameType);
+      const ck = this._circuitKey(item);
+      if (ck) {
+        add(`Same type and circuit`, sameType.filter(e => this._circuitKey(e) === ck));
+        add(`Everything on this circuit`, pm.elements.filter(e => this._circuitKey(e) === ck));
+      }
+    } else if (kind === 'route') {
+      const def = PLAN_DEFS.route(item.type);
+      add(`Same type — ${(def && def.name) || item.type}`, pm.routes.filter(r => r.type === item.type));
+    } else if (kind === 'trench') {
+      add('Same excavation type', pm.trenches.filter(t => t.excType === item.excType));
+    } else {
+      const tables = { crossing: ['All crossings', pm.crossings], room: ['All rooms', pm.rooms || []],
+        text: ['All text labels', pm.texts], measurement: ['All measurements', pm.measurements] };
+      const t = tables[kind];
+      if (t) add(t[0], t[1]);
+    }
+    return out;
+  },
+
+  selectSimilar(ids) {
+    this.setSelection(ids);
+    if (typeof UI !== 'undefined' && UI.toast) UI.toast(`${ids.length} selected.`, 'info');
+  },
+
+  rotateSelected() {
+    let changed = false;
+    for (const id of this.selectedIds) {
+      const f = this.findEntityById(id);
+      if (f && f.kind === 'element' && PLAN_DEFS.element(f.item.type) && PLAN_DEFS.element(f.item.type).rotatable) {
+        f.item.rotation = ((f.item.rotation || 0) + 90) % 360; changed = true;
+      }
+    }
+    if (changed) { this._snapshot(); this.markDirty(); this.refreshProps(); PlanEngine.requestDraw({ fg: true }); }
+    return changed;
+  },
+
+  // Copies of the selected elements, nudged aside. Cables, links to the SLD
+  // and circuit tags are not carried: a copy is a plain, untagged device.
+  duplicateSelected() {
+    const pm = AppState.planMarkup;
+    const off = 20 / PlanEngine.view.zoom;
+    const made = [];
+    for (const id of this.selectedIds) {
+      const f = this.findEntityById(id);
+      if (!f || f.kind !== 'element' || f.item.reticId) continue;
+      const src = f.item;
+      const props = JSON.parse(JSON.stringify(src.props || {}));
+      for (const k of ['circuitDbId', 'circuitNo', 'circuitWid']) delete props[k];
+      const el = { id: AppState.planGenId('pmel'), type: src.type, x: src.x + off, y: src.y + off,
+        rotation: src.rotation || 0, name: this.nextName(src.type), reticId: null, props };
+      pm.elements.push(el); made.push(el.id);
+    }
+    if (!made.length) return false;
+    this.setSelection(made);
+    this._snapshot(); this.markDirty();
+    return true;
+  },
+
+  zoomToSelection() {
+    const pts = [];
+    for (const id of this.selectedIds) {
+      const f = this.findEntityById(id);
+      if (!f) continue;
+      if (f.item.points) pts.push(...f.item.points);
+      else if (f.item.p1) pts.push(f.item.p1, f.item.p2);
+      else pts.push({ x: f.item.x, y: f.item.y });
+    }
+    if (pts.length) PlanEngine.zoomToPoints(pts);
+  },
+
+  // Open the menu for the entity under a right-click (selecting it first when
+  // it is not already part of the selection). Returns true when shown.
+  openContextMenu(e, pt) {
+    if (typeof ContextMenu === 'undefined' || !ContextMenu.el) return false;
+    const sel = PlanTools._tools && PlanTools._tools.select;
+    const stack = sel && sel._hitStack ? sel._hitStack(pt) : [];
+    const items = [];
+    if (stack.length) {
+      const hit = stack.find(id => this.selectedIds.has(id)) || stack[0];
+      if (!this.selectedIds.has(hit)) this.selectOnly(hit);
+      const f = this.findEntityById(hit);
+      if (f) {
+        for (const c of this.similarChoices(f)) {
+          items.push({ label: `Select similar: ${c.label} (${c.ids.length})`, disabled: c.ids.length < 2,
+            action: () => this.selectSimilar(c.ids) });
+        }
+        items.push('---');
+      }
+      const canRotate = [...this.selectedIds].some(id => {
+        const x = this.findEntityById(id);
+        return x && x.kind === 'element' && PLAN_DEFS.element(x.item.type) && PLAN_DEFS.element(x.item.type).rotatable;
+      });
+      const canDup = [...this.selectedIds].some(id => {
+        const x = this.findEntityById(id);
+        return x && x.kind === 'element' && !x.item.reticId;
+      });
+      items.push({ label: 'Duplicate', disabled: !canDup, action: () => this.duplicateSelected() });
+      items.push({ label: 'Rotate 90°', shortcut: 'R', disabled: !canRotate, action: () => this.rotateSelected() });
+      items.push('---');
+      items.push({ label: 'Zoom to selection', action: () => this.zoomToSelection() });
+      items.push({ label: 'Delete', shortcut: 'Del', danger: true, action: () => this.deleteSelected() });
+    } else {
+      const pm = AppState.planMarkup;
+      const all = () => [...pm.elements, ...pm.routes, ...pm.trenches, ...pm.crossings, ...(pm.rooms || []),
+        ...pm.texts, ...pm.measurements].map(x => x.id);
+      items.push({ label: 'Select all', action: () => this.setSelection(all()) });
+      items.push({ label: 'Clear selection', disabled: !this.selectedIds.size, action: () => this.clearSelection() });
+      items.push('---');
+      items.push({ label: 'Zoom to fit', action: () => PlanEngine.zoomFit() });
+    }
+    ContextMenu.open(items, e.clientX, e.clientY);
+    PlanEngine.requestDraw({ fg: true });
+    return true;
+  },
+
   // Auto-name a freshly placed element from its type prefix.
   nextName(type) {
     const def = PLAN_DEFS.element(type);
@@ -571,16 +709,7 @@ const PlanMarkup = {
       const cb = document.querySelector('[data-snap="snapGrid"]'); if (cb) cb.checked = s.snapGrid;
       return true;
     }
-    if (e.key === 'r' || e.key === 'R') {
-      let changed = false;
-      for (const id of this.selectedIds) {
-        const f = this.findEntityById(id);
-        if (f && f.kind === 'element' && PLAN_DEFS.element(f.item.type) && PLAN_DEFS.element(f.item.type).rotatable) {
-          f.item.rotation = ((f.item.rotation || 0) + 90) % 360; changed = true;
-        }
-      }
-      if (changed) { this._snapshot(); this.markDirty(); this.refreshProps(); PlanEngine.requestDraw({ fg: true }); return true; }
-    }
+    if (e.key === 'r' || e.key === 'R') { if (this.rotateSelected()) return true; }
     if (e.key.startsWith('Arrow')) {
       // When the plan canvas holds keyboard focus (reached via Tab), arrows
       // navigate the selection between placed items (mirrors the SLD). When
