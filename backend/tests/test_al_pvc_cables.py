@@ -254,3 +254,22 @@ def test_lv_xlpe_zero_sequence_follows_iec_tr_60909_2(cond, size):
     fe = _frontend(f"{cond}_xlpe_{size}_lv")
     assert fe["r0_per_km"] == pytest.approx(4.0 * fe["r_per_km"], rel=2e-3)
     assert fe["x0_per_km"] == pytest.approx(4.0 * fe["x_per_km"], rel=2e-3)
+
+
+# MV zero-sequence: IEC TR 60909-2 Tables 9/10 (trefoil) where tabulated, CBI-electric 11 kV Type A sheet elsewhere
+TR_MV0 = {"11kv": {95: (5.29, 4.80), 120: (6.39, 5.00), 150: (5.96, 2.93), 185: (7.20, 3.03), 240: (9.13, 3.11), 300: (11.17, 3.17)},
+          "22kv": {95: (5.19, 4.58), 120: (6.25, 4.76), 150: (5.76, 2.84), 185: (6.89, 2.90), 240: (8.55, 3.00), 300: (10.22, 3.07)}}
+CBI_0_11KV = {16: (2.935, .154), 25: (2.109, .149), 35: (1.777, .142), 50: (1.535, .137), 70: (1.313, .130), 400: (.550, .103)}
+
+
+@pytest.mark.parametrize("volt,size,ratios", [(v, s, r) for v, t in TR_MV0.items() for s, r in t.items()])
+def test_mv_zero_sequence_uses_iec_tr_where_tabulated(volt, size, ratios):
+    fe = _frontend(f"cu_xlpe_{size}_{volt}")
+    assert fe["r0_per_km"] == pytest.approx(ratios[0] * fe["r_per_km"], rel=2e-3)
+    assert fe["x0_per_km"] == pytest.approx(ratios[1] * fe["x_per_km"], abs=1e-3 + 1e-3)
+
+
+@pytest.mark.parametrize("size,rx", CBI_0_11KV.items())
+def test_mv_zero_sequence_uses_cbi_sheet_where_not_in_tr(size, rx):
+    fe = _frontend(f"cu_xlpe_{size}_11kv")
+    assert (fe["r0_per_km"], fe["x0_per_km"]) == pytest.approx(rx, rel=2e-3)
