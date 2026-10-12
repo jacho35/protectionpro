@@ -281,6 +281,7 @@ const PlanSync = {
 
     // 3) fedFrom walk over LV routes (BFS from each minisub element)
     this._walkFeeders(pm, elById, factor, R, summary);
+    this._walkMvFeeds(pm, elById, factor, R, summary);
 
     // 4) Service routes → erven under their kiosk
     for (const r of pm.routes) {
@@ -334,14 +335,15 @@ const PlanSync = {
       if (Retic._active) { Retic.render && Retic.render(); Retic.recompute && Retic.recompute(); }
     }
     const extra = [];
-    const mv = pm.routes.filter(r => r.type === 'mv').length;
-    if (mv) extra.push(`${mv} MV route(s)`);
+    const mv = pm.routes.filter(r => r.type === 'mv').length - (summary.mvFeeds || 0);
+    if (mv > 0) extra.push(`${mv} other MV route(s)`);
     if (pm.trenches.length) extra.push(`${pm.trenches.length} trench(es)`);
     if (pm.crossings.length) extra.push(`${pm.crossings.length} crossing(s)`);
     UI.alert(
       `Pushed to Reticulation:\n` +
       `• ${summary.minisubs} new minisub(s), ${summary.kiosks} new kiosk(s), ${summary.erfs} new erf(s)\n` +
       `• ${summary.feeders} feeder link(s), ${summary.sl} kiosk SL load(s)` +
+      (summary.mvFeeds ? `\n• ${summary.mvFeeds} MV link(s) between minisubs` : '') +
       (extra.length ? `\n\n${extra.join(', ')} → included in the CSV/DXF exports only.` : ''));
   },
 
@@ -380,6 +382,60 @@ const PlanSync = {
           }
         }
         queue.push(edge.other);
+      }
+    }
+  },
+
+  // MV routes → each minisub's `mvFedFrom` (upstream minisub), mvLength and
+  // mvCable. Within a connected MV group the upstream end is the minisub no
+  // other one feeds already (an existing Demand choice is kept), else the
+  // first in Demand's list. Non-minisub elements (RMUs, joints) are walked
+  // through; the nearest minisub back along the path is the parent.
+  _walkMvFeeds(pm, elById, factor, R, summary) {
+    const adj = {};
+    const addEdge = (u, v, r) => { (adj[u] = adj[u] || []).push({ other: v, route: r }); };
+    for (const r of pm.routes) {
+      if (r.type !== 'mv' || !r.fromId || !r.toId) continue;
+      addEdge(r.fromId, r.toId, r); addEdge(r.toId, r.fromId, r);
+    }
+    const rowOf = (id) => { const el = elById[id]; return el && el.type === 'minisub' && el.reticId
+      ? R.minisubs.find(m => m.id === el.reticId) || null : null; };
+    const order = (row) => R.minisubs.indexOf(row);
+    const seen = new Set();
+    for (const startId of Object.keys(adj)) {
+      if (seen.has(startId)) continue;
+      const comp = []; const stack = [startId]; seen.add(startId);
+      while (stack.length) {
+        const id = stack.pop(); comp.push(id);
+        for (const e of adj[id]) if (!seen.has(e.other)) { seen.add(e.other); stack.push(e.other); }
+      }
+      const rows = comp.map(rowOf).filter(Boolean);
+      if (rows.length < 2) continue;
+      const inComp = new Set(rows.map(r => r.id));
+      const roots = rows.filter(r => !inComp.has(r.mvFedFrom));
+      const rootRow = (roots.length ? roots : rows).sort((a, b) => order(a) - order(b))[0];
+      const rootId = comp.find(id => rowOf(id) === rootRow);
+      rootRow.mvFedFrom = '';
+      const visited = new Set([rootId]);
+      const q = [{ id: rootId, parent: rootRow, len: 0, cable: '' }];
+      while (q.length) {
+        const cur = q.shift();
+        for (const e of adj[cur.id] || []) {
+          if (visited.has(e.other)) continue;
+          visited.add(e.other);
+          const len = +(cur.len + (this._routeLenM(e.route, factor) || 0)).toFixed(2);
+          const cable = cur.cable || e.route.cableType || '';
+          const row = rowOf(e.other);
+          if (row && row !== cur.parent) {
+            row.mvFedFrom = cur.parent.id;
+            if (len) row.mvLength = len;
+            if (cable) row.mvCable = cable;
+            summary.mvFeeds = (summary.mvFeeds || 0) + 1;
+            q.push({ id: e.other, parent: row, len: 0, cable: '' });
+          } else {
+            q.push({ id: e.other, parent: cur.parent, len, cable });
+          }
+        }
       }
     }
   },
