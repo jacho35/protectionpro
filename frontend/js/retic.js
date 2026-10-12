@@ -1582,6 +1582,8 @@ const Retic = {
           <select class="ms-mvcable" data-action="minisub-field" data-ms="${ms.id}" data-field="mvCable" data-cable-select>${this._mvCableOptions(ms.mvCable)}</select></span></div>
         <div class="summary-row"><span class="k">MV length (m)</span><span class="v">
           <input type="number" step="1" min="0" class="ms-mvlen" data-action="minisub-field" data-ms="${ms.id}" data-field="mvLength" value="${ms.mvLength || ''}" placeholder="0"></span></div>` : ''}
+        ${(typeof ReticDiagram !== 'undefined' ? ReticDiagram.ringTiesFor(ms.id) : []).map(t => `
+        <div class="summary-row"><span class="k" title="MV ring tie: a drawn MV route closing the ring back to ${escHtml(t.other)}. Shown on the diagram; not part of the MV fed-from chain.">Ring tie to</span><span class="v">${escHtml(t.other)}${t.cable ? ' · ' + escHtml(t.cable) : ''}${t.len ? ' · ' + t.len + ' m' : ''}</span></div>`).join('')}
         ${this._stringsRows(ms)}
         <div class="summary-row"><span class="k">Utilisation</span><span class="v">${xfmr && xfmr.util != null ? xfmr.util + '%' : '—'}</span></div>
       </div>`;
