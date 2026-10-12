@@ -85,12 +85,48 @@ const PlanSync = {
         if (k && k.fedFrom === p.reticId) return { row: k, key: 'feederCable' };
       }
     }
-    // MV route between two minisubs/transformers: the one fed from the other
-    // (Demand › minisub › MV fed from) holds the cable.
-    if (route.type === 'mv' && a.type === 'minisub' && b.type === 'minisub' && a.reticId && b.reticId) {
-      const ma = R.minisubs.find(x => x.id === a.reticId), mb = R.minisubs.find(x => x.id === b.reticId);
-      if (mb && mb.mvFedFrom === a.reticId) return { row: mb, key: 'mvCable' };
-      if (ma && ma.mvFedFrom === b.reticId) return { row: ma, key: 'mvCable' };
+    if (route.type === 'mv') return this._mvCableLink(route, elById);
+    return null;
+  },
+
+  // An MV route's Demand row: the minisub fed through it holds the cable
+  // (Demand › minisub › MV fed from). RMUs / joints between minisubs are walked
+  // through, so every route of A – RMU – B maps to B's cable; a route from an
+  // RMU to the top minisub (no upstream minisub) maps to that minisub's
+  // supply cable.
+  _mvCableLink(route, elById) {
+    const R = AppState.reticulation, pm = AppState.planMarkup;
+    if (!R || !pm || !route.fromId || !route.toId) return null;
+    const adj = {};
+    for (const r of pm.routes) {
+      if (r.type !== 'mv' || r === route || !r.fromId || !r.toId) continue;
+      (adj[r.fromId] = adj[r.fromId] || []).push(r.toId);
+      (adj[r.toId] = adj[r.toId] || []).push(r.fromId);
+    }
+    // Minisub rows reachable from `start` without crossing another minisub.
+    const side = (start, other) => {
+      const rows = new Set(), seen = new Set([other, start]), stack = [start];
+      while (stack.length) {
+        const id = stack.pop(), el = elById[id];
+        if (el && el.type === 'minisub') {
+          const row = el.reticId && R.minisubs.find(m => m.id === el.reticId);
+          if (row) rows.add(row);
+          continue;
+        }
+        for (const n of adj[id] || []) if (!seen.has(n)) { seen.add(n); stack.push(n); }
+      }
+      return rows;
+    };
+    const A = side(route.fromId, route.toId), B = side(route.toId, route.fromId);
+    for (const [from, to] of [[A, B], [B, A]]) {
+      for (const row of to) {
+        if (row.mvFedFrom && [...from].some(m => m.id === row.mvFedFrom)) return { row, key: 'mvCable' };
+      }
+    }
+    // Supply side: an RMU end with no minisub beyond it.
+    for (const [from, to] of [[A, B], [B, A]]) {
+      if (from.size) continue;
+      for (const row of to) if (!row.mvFedFrom) return { row, key: 'mvCable' };
     }
     return null;
   },
@@ -410,12 +446,14 @@ const PlanSync = {
         for (const e of adj[id]) if (!seen.has(e.other)) { seen.add(e.other); stack.push(e.other); }
       }
       const rows = comp.map(rowOf).filter(Boolean);
-      if (rows.length < 2) continue;
+      if (!rows.length) continue;
       const inComp = new Set(rows.map(r => r.id));
       const roots = rows.filter(r => !inComp.has(r.mvFedFrom));
       const rootRow = (roots.length ? roots : rows).sort((a, b) => order(a) - order(b))[0];
       const rootId = comp.find(id => rowOf(id) === rootRow);
       rootRow.mvFedFrom = '';
+      this._mvSupplyCable(adj, elById, rootId, rootRow, factor);
+      if (rows.length < 2) continue;
       const visited = new Set([rootId]);
       const q = [{ id: rootId, parent: rootRow, len: 0, cable: '' }];
       while (q.length) {
@@ -436,6 +474,30 @@ const PlanSync = {
             q.push({ id: e.other, parent: cur.parent, len, cable });
           }
         }
+      }
+    }
+  },
+
+  // The feeding end of the MV network: the top minisub of a group reached from
+  // an RMU (through joints) carries that supply cable's length and cable.
+  _mvSupplyCable(adj, elById, rootId, rootRow, factor) {
+    const visited = new Set([rootId]);
+    const q = [{ id: rootId, len: 0, cable: '' }];
+    while (q.length) {
+      const cur = q.shift();
+      for (const e of adj[cur.id] || []) {
+        if (visited.has(e.other)) continue;
+        visited.add(e.other);
+        const el = elById[e.other];
+        if (!el || el.type === 'minisub') continue;
+        const len = +(cur.len + (this._routeLenM(e.route, factor) || 0)).toFixed(2);
+        const cable = cur.cable || e.route.cableType || '';
+        if (el.type === 'rmu') {
+          if (len) rootRow.mvLength = len;
+          if (cable) rootRow.mvCable = cable;
+          return;
+        }
+        q.push({ id: e.other, len, cable });
       }
     }
   },

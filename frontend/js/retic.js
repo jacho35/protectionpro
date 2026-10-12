@@ -1577,7 +1577,7 @@ const Retic = {
             <option value=""${!ms.mvFedFrom ? ' selected' : ''}>— MV supply —</option>
             ${this.minisubs.filter(o => o.id !== ms.id).map(o => `<option value="${o.id}"${ms.mvFedFrom === o.id ? ' selected' : ''}>${escHtml(o.name)}</option>`).join('')}
           </select></span></div>
-        ${ms.mvFedFrom ? `
+        ${ms.mvFedFrom || ms.mvLength ? `
         <div class="summary-row"><span class="k">MV cable</span><span class="v">
           <select class="ms-mvcable" data-action="minisub-field" data-ms="${ms.id}" data-field="mvCable" data-cable-select>${this._mvCableOptions(ms.mvCable)}</select></span></div>
         <div class="summary-row"><span class="k">MV length (m)</span><span class="v">

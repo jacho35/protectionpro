@@ -97,14 +97,35 @@ const ReticDiagram = {
     const byId = {};
     for (const k of kiosks) byId[k.id] = k;
 
+    // MV topology: a minisub with `mvFedFrom` hangs under that minisub (an
+    // unknown, self or cyclic parent makes it a root, like "MV supply").
+    const msById = {};
+    for (const m of minisubs) msById[m.id] = m;
+    const msParent = (m) => {
+      const seen = new Set([m.id]);
+      let cur = m.mvFedFrom || '';
+      const first = cur;
+      while (cur) {
+        if (!msById[cur] || seen.has(cur)) return '';
+        seen.add(cur);
+        cur = msById[cur].mvFedFrom || '';
+      }
+      return first;
+    };
+
     const children = {};
     for (const m of minisubs) children[m.id] = [];
     for (const k of kiosks) children[k.id] = [];
+    const roots = [];
     for (const k of kiosks) {
       const p = this._resolveParent(k, byId, msIds);
       (children[p] = children[p] || []).push(k.id);
     }
-    return { minisubs, kiosks, byId, children };
+    for (const m of minisubs) {
+      const p = msParent(m);
+      if (p) children[p].push(m.id); else roots.push(m.id);
+    }
+    return { minisubs, kiosks, byId, msById, msIds, roots, children };
   },
 
   // ─── Counting (must match backend/analysis/admd.py conventions) ───
@@ -141,11 +162,11 @@ const ReticDiagram = {
 
   // ─── Layout: left-to-right layered tree, post-order leaf packing ───
   _layout(tree) {
-    const { minisubs, children } = tree;
+    const { roots, children, msIds } = tree;
     const nodes = [];
     let row = 0, maxDepth = 0;
 
-    const place = (id, depth, isMs) => {
+    const place = (id, depth) => {
       maxDepth = Math.max(maxDepth, depth);
       const kids = children[id] || [];
       let y;
@@ -153,16 +174,16 @@ const ReticDiagram = {
         y = row * this.ROW_H;
         row++;
       } else {
-        const ys = kids.map(c => place(c, depth + 1, false));
+        const ys = kids.map(c => place(c, depth + 1));
         y = (ys[0] + ys[ys.length - 1]) / 2;
       }
-      nodes.push({ id, depth, y, isMs, x: this.PAD + depth * this.COL_W });
+      nodes.push({ id, depth, y, isMs: msIds.has(id), x: this.PAD + depth * this.COL_W });
       return y;
     };
 
-    minisubs.forEach((m, i) => {
+    roots.forEach((id, i) => {
       if (i > 0) row += this.GROUP_GAP / this.ROW_H;   // breathing room between groups
-      place(m.id, 0, true);
+      place(id, 0);
     });
 
     const pos = {};
@@ -221,7 +242,7 @@ const ReticDiagram = {
   buildSVG(opts) {
     opts = opts || {};
     const tree = this._tree();
-    if (!tree.kiosks.length) return '';
+    if (!tree.kiosks.length && !tree.minisubs.length) return '';
     const P = this._palette(!!opts.dark);
     const L = this._layout(tree);
     this._size = { w: L.w, h: L.h };
@@ -239,6 +260,7 @@ const ReticDiagram = {
     for (const e of L.edges) {
       const a = L.pos[e.from], b = L.pos[e.to];
       const k = tree.byId[e.to];
+      if (tree.msIds.has(e.to)) { edgeSvg += this._mvEdge(a, b, tree.msById[e.to], P); continue; }
       const px = a.x + this.NODE_W, py = a.y + this.NODE_H / 2;
       const cx = b.x, cy = b.y + this.NODE_H / 2;
       const mx = (px + cx) / 2;
@@ -276,18 +298,37 @@ const ReticDiagram = {
     </svg>`;
   },
 
+  // MV leg between two minisubs (Demand › MV fed from): cable and length.
+  _mvEdge(a, b, ms, P) {
+    const px = a.x + this.NODE_W, py = a.y + this.NODE_H / 2;
+    const cx = b.x, cy = b.y + this.NODE_H / 2;
+    const mx = (px + cx) / 2;
+    const cable = this._cableShort(ms && ms.mvCable);
+    const len = ms && ms.mvLength ? `${ms.mvLength} m` : '';
+    const sub = [cable, len].filter(Boolean).join(' · ');
+    return `<g><title>${this._esc(`${ms ? ms.name : ''} MV feed: ${cable || 'no cable'}${len ? ', ' + len : ''}`)}</title>`
+      + `<path d="M ${px} ${py} H ${mx} V ${cy} H ${cx}" fill="none" stroke="${P.accent}" stroke-width="2"/>`
+      + `<polygon points="${cx - 7},${cy - 4} ${cx - 7},${cy + 4} ${cx},${cy}" fill="${P.accent}"/>`
+      + `<text x="${mx}" y="${cy - 14}" text-anchor="middle" font-size="10" font-weight="700" fill="${P.accent}">MV</text>`
+      + (sub ? `<text x="${mx}" y="${cy - 4}" text-anchor="middle" font-size="8.5" fill="${P.muted}">${this._esc(sub)}</text>` : '')
+      + `</g>`;
+  },
+
   _minisubNode(n, mr, tree, P) {
     const ms = tree.minisubs.find(m => m.id === n.id);
     const W = this.NODE_W, H = this.NODE_H;
     const name = this._trunc((ms && ms.name) || 'Minisub', 24);
     const l1 = mr ? `${mr.totalKVA} kVA · ${mr.currentA} A` : '—';
     const l2 = mr ? `${mr.conns} conns · ${mr.numKiosks} kiosk${mr.numKiosks === 1 ? '' : 's'}` : '—';
+    const supply = ms && !ms.mvFedFrom && ms.mvLength
+      ? [this._cableShort(ms.mvCable), `${ms.mvLength} m`].filter(Boolean).join(' · ') : '';
     return `<g><title>${this._esc(`${name} — diversified demand ${l1}; ${l2}`)}</title>
       <rect x="${n.x}" y="${n.y}" width="${W}" height="${H}" rx="6" fill="${P.msBody}" stroke="${P.border}"/>
       <path d="M ${n.x} ${n.y + 6} a 6 6 0 0 1 6 -6 h ${W - 12} a 6 6 0 0 1 6 6 v 15 h -${W} z" fill="${P.msHead}"/>
       <text x="${n.x + 10}" y="${n.y + 15}" font-size="11" font-weight="700" fill="${P.ink}">${this._esc(name)}</text>
       <text x="${n.x + 10}" y="${n.y + 38}" font-size="10.5" font-weight="600" fill="${P.accent}">${this._esc(l1)}</text>
       <text x="${n.x + 10}" y="${n.y + 53}" font-size="9.5" fill="${P.inkSec}">${this._esc(l2)}</text>
+      ${supply ? `<text x="${n.x + W - 8}" y="${n.y + 15}" text-anchor="end" font-size="8.5" fill="${P.muted}">${this._esc('MV supply · ' + supply)}</text>` : ''}
     </g>`;
   },
 
@@ -356,7 +397,7 @@ const ReticDiagram = {
     const dark = document.body.classList.contains('dark-mode');
     const svg = this.buildSVG({ dark });
     if (!svg) {
-      host.innerHTML = '<div class="retic-empty">No kiosks yet — add kiosks (or use ⚡ Quick Build) and the topology will appear here.</div>';
+      host.innerHTML = '<div class="retic-empty">Nothing to draw yet — add minisubs or kiosks (or use ⚡ Quick Build) and the topology will appear here.</div>';
       return;
     }
     host.innerHTML = svg;
@@ -414,7 +455,7 @@ const ReticDiagram = {
 
   exportSVG() {
     const ex = this._exportNode();
-    if (!ex) { UI.alert('Nothing to export yet — add kiosks first.'); return; }
+    if (!ex) { UI.alert('Nothing to export yet — add minisubs or kiosks first.'); return; }
     const str = new XMLSerializer().serializeToString(ex.node);
     const url = URL.createObjectURL(new Blob([str], { type: 'image/svg+xml' }));
     const a = document.createElement('a');
@@ -426,7 +467,7 @@ const ReticDiagram = {
 
   exportPNG() {
     const ex = this._exportNode();
-    if (!ex) { UI.alert('Nothing to export yet — add kiosks first.'); return; }
+    if (!ex) { UI.alert('Nothing to export yet — add minisubs or kiosks first.'); return; }
     Project._rasterizeSVG(ex.node, ex.w, ex.h, 2, (canvas) => {
       canvas.toBlob((blob) => {
         const url = URL.createObjectURL(blob);
