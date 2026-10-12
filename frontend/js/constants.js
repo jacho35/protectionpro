@@ -15,7 +15,7 @@
 // App version = 1.<PR number>b — set to the number of the PR that ships the change
 // (CLAUDE.md › Development Workflow). It also stamps saved study results, so
 // every bump marks results from older builds as stale.
-const APP_VERSION = '1.431b';
+const APP_VERSION = '1.432b';
 
 const GRID_SIZE = 20;
 const SNAP_SIZE = 20;
@@ -45,9 +45,9 @@ const API_BASE = '/api';
 // installation); 33 kV is outside Annex B (up to 18/30 kV) and keeps its old ratings. Cu 11 kV 300/400 mm² take CBI-electric
 // Type A's lower in-air figure (592/678 A). MV X = worst case (highest) of CBI-electric SANS 1339 datasheets (Type A/B, 11/22/33 kV),
 // Aberdare (from its tabulated impedance) and Torrent IS 7098 (11 kV); Polycab (AS/NZS) and IEC TR 60909-2 single-core data excluded
-// (different construction). MV zero-sequence: IEC TR 60909-2:2008 Tables 9/10 (trefoil, screen + earth return: R0/R1, X0/X1 × the library R1/X1)
-// for 95–300 mm² at 11 kV (10 kV table) and 22 kV (20 kV table); elsewhere the CBI-electric 11 kV Type A sheet (absolute R0/X0 at 11 kV;
-// at 22/33 kV its X0/X1 ratio and its R0−R1 return component). Al = Cu return component added to the Al R1, same X0.
+// (different construction). MV zero-sequence: CBI-electric 11 kV Type A SANS 1339 sheet (armoured 3-core; absolute R0/X0 at 11 kV; at 22/33 kV its
+// X0/X1 ratio and its R0−R1 return component), consistent with IEC TR 60909-4 §3.3.2 (3-core cable, sheath return: R0 = 4.23·R1, X0 = 1.21·X1).
+// IEC TR 60909-2 Tables 9/10 are single-core screened cables, so not used. Al = Cu return component added to the Al R1, same X0.
 // EXCEPTION — the armoured PVC LV entries (cu_pvc_*_lv, al_pvc_*_lv and their 2c services): R = a.c. resistance at 70 °C
 // calculated from IEC 60228 Table 2 (R20) × Annex B temperature factor × IEC 60287-1-1 skin/proximity (cl. 2.1.2–2.1.4,
 // ks = kp = 1; insulation thickness IEC 60502-1 Table 5 = SANS 1507-3 Table 9, conductor diameter IEC 60502-1 Table A.1), 4 s.f. (SANS Table D.1 differs
@@ -62,23 +62,23 @@ const STANDARD_CABLES = [
   { id: 'cu_xlpe_35_11kv',  name: '35mm² Cu XLPE 11kV',   conductor: 'Cu', insulation: 'XLPE', size_mm2: 35,  voltage_kv: 11,  r_per_km: 0.6685,  x_per_km: 0.118, r0_per_km: 1.777, x0_per_km: 0.142, rated_amps: 172 },
   { id: 'cu_xlpe_50_11kv',  name: '50mm² Cu XLPE 11kV',   conductor: 'Cu', insulation: 'XLPE', size_mm2: 50,  voltage_kv: 11,  r_per_km: 0.494,  x_per_km: 0.116, r0_per_km: 1.535, x0_per_km: 0.137, rated_amps: 205 },
   { id: 'cu_xlpe_70_11kv',  name: '70mm² Cu XLPE 11kV',   conductor: 'Cu', insulation: 'XLPE', size_mm2: 70,  voltage_kv: 11,  r_per_km: 0.3426,  x_per_km: 0.11, r0_per_km: 1.313, x0_per_km: 0.130, rated_amps: 253 },
-  { id: 'cu_xlpe_95_11kv',  name: '95mm² Cu XLPE 11kV',   conductor: 'Cu', insulation: 'XLPE', size_mm2: 95,  voltage_kv: 11,  r_per_km: 0.2473,  x_per_km: 0.105, r0_per_km: 1.308, x0_per_km: 0.504, rated_amps: 307 },
-  { id: 'cu_xlpe_120_11kv', name: '120mm² Cu XLPE 11kV',  conductor: 'Cu', insulation: 'XLPE', size_mm2: 120, voltage_kv: 11,  r_per_km: 0.1967,  x_per_km: 0.101, r0_per_km: 1.257, x0_per_km: 0.505, rated_amps: 352 },
-  { id: 'cu_xlpe_150_11kv', name: '150mm² Cu XLPE 11kV',  conductor: 'Cu', insulation: 'XLPE', size_mm2: 150, voltage_kv: 11,  r_per_km: 0.1601,  x_per_km: 0.098, r0_per_km: 0.9542, x0_per_km: 0.287, rated_amps: 397 },
-  { id: 'cu_xlpe_185_11kv', name: '185mm² Cu XLPE 11kV',  conductor: 'Cu', insulation: 'XLPE', size_mm2: 185, voltage_kv: 11,  r_per_km: 0.129, x_per_km: 0.096, r0_per_km: 0.9288, x0_per_km: 0.291, rated_amps: 453 },
-  { id: 'cu_xlpe_240_11kv', name: '240mm² Cu XLPE 11kV',  conductor: 'Cu', insulation: 'XLPE', size_mm2: 240, voltage_kv: 11,  r_per_km: 0.09964, x_per_km: 0.093, r0_per_km: 0.9097, x0_per_km: 0.289, rated_amps: 529 },
-  { id: 'cu_xlpe_300_11kv', name: '300mm² Cu XLPE 11kV',  conductor: 'Cu', insulation: 'XLPE', size_mm2: 300, voltage_kv: 11,  r_per_km: 0.08107, x_per_km: 0.09, r0_per_km: 0.9056, x0_per_km: 0.285, rated_amps: 592 },
+  { id: 'cu_xlpe_95_11kv',  name: '95mm² Cu XLPE 11kV',   conductor: 'Cu', insulation: 'XLPE', size_mm2: 95,  voltage_kv: 11,  r_per_km: 0.2473,  x_per_km: 0.105, r0_per_km: 1.143, x0_per_km: 0.124, rated_amps: 307 },
+  { id: 'cu_xlpe_120_11kv', name: '120mm² Cu XLPE 11kV',  conductor: 'Cu', insulation: 'XLPE', size_mm2: 120, voltage_kv: 11,  r_per_km: 0.1967,  x_per_km: 0.101, r0_per_km: 1.031, x0_per_km: 0.120, rated_amps: 352 },
+  { id: 'cu_xlpe_150_11kv', name: '150mm² Cu XLPE 11kV',  conductor: 'Cu', insulation: 'XLPE', size_mm2: 150, voltage_kv: 11,  r_per_km: 0.1601,  x_per_km: 0.098, r0_per_km: 0.839, x0_per_km: 0.119, rated_amps: 397 },
+  { id: 'cu_xlpe_185_11kv', name: '185mm² Cu XLPE 11kV',  conductor: 'Cu', insulation: 'XLPE', size_mm2: 185, voltage_kv: 11,  r_per_km: 0.129, x_per_km: 0.096, r0_per_km: 0.764, x0_per_km: 0.115, rated_amps: 453 },
+  { id: 'cu_xlpe_240_11kv', name: '240mm² Cu XLPE 11kV',  conductor: 'Cu', insulation: 'XLPE', size_mm2: 240, voltage_kv: 11,  r_per_km: 0.09964, x_per_km: 0.093, r0_per_km: 0.685, x0_per_km: 0.110, rated_amps: 529 },
+  { id: 'cu_xlpe_300_11kv', name: '300mm² Cu XLPE 11kV',  conductor: 'Cu', insulation: 'XLPE', size_mm2: 300, voltage_kv: 11,  r_per_km: 0.08107, x_per_km: 0.09, r0_per_km: 0.636, x0_per_km: 0.108, rated_amps: 592 },
   { id: 'cu_xlpe_400_11kv', name: '400mm² Cu XLPE 11kV',  conductor: 'Cu', insulation: 'XLPE', size_mm2: 400, voltage_kv: 11,  r_per_km: 0.06563, x_per_km: 0.087, r0_per_km: 0.55, x0_per_km: 0.103, rated_amps: 678 },
   // MV XLPE Aluminium (11kV) — r0: 3.4×r1, x0: 2.8×x1 per IEC 60502 (Al XLPE MV screened)
   { id: 'al_xlpe_35_11kv',  name: '35mm² Al XLPE 11kV',   conductor: 'Al', insulation: 'XLPE', size_mm2: 35,  voltage_kv: 11,  r_per_km: 1.113,  x_per_km: 0.118, r0_per_km: 2.221, x0_per_km: 0.142, rated_amps: 133 },
   { id: 'al_xlpe_50_11kv',  name: '50mm² Al XLPE 11kV',   conductor: 'Al', insulation: 'XLPE', size_mm2: 50,  voltage_kv: 11,  r_per_km: 0.8221,  x_per_km: 0.116, r0_per_km: 1.863, x0_per_km: 0.137, rated_amps: 159 },
   { id: 'al_xlpe_70_11kv',  name: '70mm² Al XLPE 11kV',   conductor: 'Al', insulation: 'XLPE', size_mm2: 70,  voltage_kv: 11,  r_per_km: 0.5685,  x_per_km: 0.11, r0_per_km: 1.539, x0_per_km: 0.130, rated_amps: 196 },
-  { id: 'al_xlpe_95_11kv',  name: '95mm² Al XLPE 11kV',   conductor: 'Al', insulation: 'XLPE', size_mm2: 95,  voltage_kv: 11,  r_per_km: 0.411,  x_per_km: 0.105, r0_per_km: 1.472, x0_per_km: 0.504, rated_amps: 238 },
-  { id: 'al_xlpe_120_11kv', name: '120mm² Al XLPE 11kV',  conductor: 'Al', insulation: 'XLPE', size_mm2: 120, voltage_kv: 11,  r_per_km: 0.3253,  x_per_km: 0.101, r0_per_km: 1.386, x0_per_km: 0.505, rated_amps: 274 },
-  { id: 'al_xlpe_150_11kv', name: '150mm² Al XLPE 11kV',  conductor: 'Al', insulation: 'XLPE', size_mm2: 150, voltage_kv: 11,  r_per_km: 0.2653,  x_per_km: 0.098, r0_per_km: 1.059, x0_per_km: 0.287, rated_amps: 309 },
-  { id: 'al_xlpe_185_11kv', name: '185mm² Al XLPE 11kV',  conductor: 'Al', insulation: 'XLPE', size_mm2: 185, voltage_kv: 11,  r_per_km: 0.2118,  x_per_km: 0.096, r0_per_km: 1.012, x0_per_km: 0.291, rated_amps: 354 },
-  { id: 'al_xlpe_240_11kv', name: '240mm² Al XLPE 11kV',  conductor: 'Al', insulation: 'XLPE', size_mm2: 240, voltage_kv: 11,  r_per_km: 0.1624,  x_per_km: 0.093, r0_per_km: 0.9725, x0_per_km: 0.289, rated_amps: 415 },
-  { id: 'al_xlpe_300_11kv', name: '300mm² Al XLPE 11kV',  conductor: 'Al', insulation: 'XLPE', size_mm2: 300, voltage_kv: 11,  r_per_km: 0.1309,  x_per_km: 0.09, r0_per_km: 0.9554, x0_per_km: 0.285, rated_amps: 472 },
+  { id: 'al_xlpe_95_11kv',  name: '95mm² Al XLPE 11kV',   conductor: 'Al', insulation: 'XLPE', size_mm2: 95,  voltage_kv: 11,  r_per_km: 0.411,  x_per_km: 0.105, r0_per_km: 1.307, x0_per_km: 0.124, rated_amps: 238 },
+  { id: 'al_xlpe_120_11kv', name: '120mm² Al XLPE 11kV',  conductor: 'Al', insulation: 'XLPE', size_mm2: 120, voltage_kv: 11,  r_per_km: 0.3253,  x_per_km: 0.101, r0_per_km: 1.16, x0_per_km: 0.120, rated_amps: 274 },
+  { id: 'al_xlpe_150_11kv', name: '150mm² Al XLPE 11kV',  conductor: 'Al', insulation: 'XLPE', size_mm2: 150, voltage_kv: 11,  r_per_km: 0.2653,  x_per_km: 0.098, r0_per_km: 0.9442, x0_per_km: 0.119, rated_amps: 309 },
+  { id: 'al_xlpe_185_11kv', name: '185mm² Al XLPE 11kV',  conductor: 'Al', insulation: 'XLPE', size_mm2: 185, voltage_kv: 11,  r_per_km: 0.2118,  x_per_km: 0.096, r0_per_km: 0.8468, x0_per_km: 0.115, rated_amps: 354 },
+  { id: 'al_xlpe_240_11kv', name: '240mm² Al XLPE 11kV',  conductor: 'Al', insulation: 'XLPE', size_mm2: 240, voltage_kv: 11,  r_per_km: 0.1624,  x_per_km: 0.093, r0_per_km: 0.7478, x0_per_km: 0.110, rated_amps: 415 },
+  { id: 'al_xlpe_300_11kv', name: '300mm² Al XLPE 11kV',  conductor: 'Al', insulation: 'XLPE', size_mm2: 300, voltage_kv: 11,  r_per_km: 0.1309,  x_per_km: 0.09, r0_per_km: 0.6858, x0_per_km: 0.108, rated_amps: 472 },
   { id: 'al_xlpe_400_11kv', name: '400mm² Al XLPE 11kV',  conductor: 'Al', insulation: 'XLPE', size_mm2: 400, voltage_kv: 11,  r_per_km: 0.1033, x_per_km: 0.087, r0_per_km: 0.5877, x0_per_km: 0.103, rated_amps: 545 },
   // LV XLPE Copper (0.6/1kV) — r0: 3.8×r1, x0: 2.8×x1 per IEC 60502 (Cu XLPE)
   { id: 'cu_xlpe_16_lv',  name: '16mm² Cu XLPE LV',   conductor: 'Cu', insulation: 'XLPE', size_mm2: 16,  voltage_kv: 0.4, r_per_km: 1.467,   x_per_km: 0.08, r0_per_km: 5.868, x0_per_km: 0.32, rated_amps: 96  },
@@ -96,12 +96,12 @@ const STANDARD_CABLES = [
   { id: 'cu_xlpe_35_22kv',  name: '35mm² Cu XLPE 22kV',   conductor: 'Cu', insulation: 'XLPE', size_mm2: 35,  voltage_kv: 22,  r_per_km: 0.6684,  x_per_km: 0.131, r0_per_km: 1.777, x0_per_km: 0.159, rated_amps: 172 },
   { id: 'cu_xlpe_50_22kv',  name: '50mm² Cu XLPE 22kV',   conductor: 'Cu', insulation: 'XLPE', size_mm2: 50,  voltage_kv: 22,  r_per_km: 0.4939,  x_per_km: 0.124, r0_per_km: 1.535, x0_per_km: 0.152, rated_amps: 205 },
   { id: 'cu_xlpe_70_22kv',  name: '70mm² Cu XLPE 22kV',   conductor: 'Cu', insulation: 'XLPE', size_mm2: 70,  voltage_kv: 22,  r_per_km: 0.3424,  x_per_km: 0.117, r0_per_km: 1.313, x0_per_km: 0.143, rated_amps: 253 },
-  { id: 'cu_xlpe_95_22kv',  name: '95mm² Cu XLPE 22kV',   conductor: 'Cu', insulation: 'XLPE', size_mm2: 95,  voltage_kv: 22,  r_per_km: 0.2471,  x_per_km: 0.111, r0_per_km: 1.282, x0_per_km: 0.508, rated_amps: 307 },
-  { id: 'cu_xlpe_120_22kv', name: '120mm² Cu XLPE 22kV',  conductor: 'Cu', insulation: 'XLPE', size_mm2: 120, voltage_kv: 22,  r_per_km: 0.1964,  x_per_km: 0.107, r0_per_km: 1.228, x0_per_km: 0.509, rated_amps: 352 },
-  { id: 'cu_xlpe_150_22kv', name: '150mm² Cu XLPE 22kV',  conductor: 'Cu', insulation: 'XLPE', size_mm2: 150, voltage_kv: 22,  r_per_km: 0.1598,  x_per_km: 0.104, r0_per_km: 0.9204, x0_per_km: 0.295, rated_amps: 397 },
-  { id: 'cu_xlpe_185_22kv', name: '185mm² Cu XLPE 22kV',  conductor: 'Cu', insulation: 'XLPE', size_mm2: 185, voltage_kv: 22,  r_per_km: 0.1286, x_per_km: 0.1, r0_per_km: 0.8861, x0_per_km: 0.290, rated_amps: 453 },
-  { id: 'cu_xlpe_240_22kv', name: '240mm² Cu XLPE 22kV',  conductor: 'Cu', insulation: 'XLPE', size_mm2: 240, voltage_kv: 22,  r_per_km: 0.09916, x_per_km: 0.096, r0_per_km: 0.8478, x0_per_km: 0.288, rated_amps: 529 },
-  { id: 'cu_xlpe_300_22kv', name: '300mm² Cu XLPE 22kV',  conductor: 'Cu', insulation: 'XLPE', size_mm2: 300, voltage_kv: 22,  r_per_km: 0.0805, x_per_km: 0.094, r0_per_km: 0.8227, x0_per_km: 0.289, rated_amps: 599 },
+  { id: 'cu_xlpe_95_22kv',  name: '95mm² Cu XLPE 22kV',   conductor: 'Cu', insulation: 'XLPE', size_mm2: 95,  voltage_kv: 22,  r_per_km: 0.2471,  x_per_km: 0.111, r0_per_km: 1.143, x0_per_km: 0.138, rated_amps: 307 },
+  { id: 'cu_xlpe_120_22kv', name: '120mm² Cu XLPE 22kV',  conductor: 'Cu', insulation: 'XLPE', size_mm2: 120, voltage_kv: 22,  r_per_km: 0.1964,  x_per_km: 0.107, r0_per_km: 1.031, x0_per_km: 0.134, rated_amps: 352 },
+  { id: 'cu_xlpe_150_22kv', name: '150mm² Cu XLPE 22kV',  conductor: 'Cu', insulation: 'XLPE', size_mm2: 150, voltage_kv: 22,  r_per_km: 0.1598,  x_per_km: 0.104, r0_per_km: 0.8398, x0_per_km: 0.132, rated_amps: 397 },
+  { id: 'cu_xlpe_185_22kv', name: '185mm² Cu XLPE 22kV',  conductor: 'Cu', insulation: 'XLPE', size_mm2: 185, voltage_kv: 22,  r_per_km: 0.1286, x_per_km: 0.1, r0_per_km: 0.7646, x0_per_km: 0.126, rated_amps: 453 },
+  { id: 'cu_xlpe_240_22kv', name: '240mm² Cu XLPE 22kV',  conductor: 'Cu', insulation: 'XLPE', size_mm2: 240, voltage_kv: 22,  r_per_km: 0.09916, x_per_km: 0.096, r0_per_km: 0.6852, x0_per_km: 0.120, rated_amps: 529 },
+  { id: 'cu_xlpe_300_22kv', name: '300mm² Cu XLPE 22kV',  conductor: 'Cu', insulation: 'XLPE', size_mm2: 300, voltage_kv: 22,  r_per_km: 0.0805, x_per_km: 0.094, r0_per_km: 0.6365, x0_per_km: 0.118, rated_amps: 599 },
   // MV XLPE Copper (33kV) — r0: 3.8×r1, x0: 2.8×x1 per IEC 60502 (Cu XLPE MV screened)
   { id: 'cu_xlpe_50_33kv',  name: '50mm² Cu XLPE 33kV',   conductor: 'Cu', insulation: 'XLPE', size_mm2: 50,  voltage_kv: 33,  r_per_km: 0.4938,  x_per_km: 0.137, r0_per_km: 1.535, x0_per_km: 0.168, rated_amps: 175 },
   { id: 'cu_xlpe_70_33kv',  name: '70mm² Cu XLPE 33kV',   conductor: 'Cu', insulation: 'XLPE', size_mm2: 70,  voltage_kv: 33,  r_per_km: 0.3423,  x_per_km: 0.129, r0_per_km: 1.313, x0_per_km: 0.158, rated_amps: 220 },
