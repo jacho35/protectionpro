@@ -85,7 +85,31 @@ const PlanSync = {
         if (k && k.fedFrom === p.reticId) return { row: k, key: 'feederCable' };
       }
     }
+    // MV route between two minisubs/transformers: the one fed from the other
+    // (Demand › minisub › MV fed from) holds the cable.
+    if (route.type === 'mv' && a.type === 'minisub' && b.type === 'minisub' && a.reticId && b.reticId) {
+      const ma = R.minisubs.find(x => x.id === a.reticId), mb = R.minisubs.find(x => x.id === b.reticId);
+      if (mb && mb.mvFedFrom === a.reticId) return { row: mb, key: 'mvCable' };
+      if (ma && ma.mvFedFrom === b.reticId) return { row: ma, key: 'mvCable' };
+    }
     return null;
+  },
+
+  // The Demand setting a route type's default cable lives in (null = none).
+  _defaultKeyFor(type) {
+    return { service: 'quickServiceCable', lv: 'quickFeederCable', mv: 'quickMvCable' }[type] || null;
+  },
+
+  // Make the selected route's cable the default for every new route of its type
+  // (and fill the drawn routes of that type that still have none).
+  setDefaultCable(route) {
+    const R = AppState.reticulation, key = route && this._defaultKeyFor(route.type);
+    if (!R || !key || !route.cableType) return false;
+    R.settings[key] = route.cableType;
+    AppState.dirty = true;
+    this.fillEmptyCables();
+    if (typeof Retic !== 'undefined' && Retic.renderKiosks) { Retic.renderKiosks(); Retic.recompute(); }
+    return true;
   },
 
   // The cable Demand would give a new retic route: the Quick Build service /
@@ -95,6 +119,7 @@ const PlanSync = {
     if (!R || !pm || pm.settings.domain !== 'retic') return '';
     if (type === 'service') return R.settings.quickServiceCable || '';
     if (type === 'lv') return R.settings.quickFeederCable || '';
+    if (type === 'mv') return R.settings.quickMvCable || '';
     return '';
   },
 
