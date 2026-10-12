@@ -274,11 +274,11 @@ PlanTools.register({
     // A glyph itself first; then every cable under the point (overlapping ones
     // cycle on repeated clicks); the glyph's forgiving margin comes after, so it
     // never shadows a cable that runs just past its edge.
-    const tight = PlanEngine.findElementAt(pt, 0);
-    if (tight) out.push(tight.id);
-    for (const h of PlanEngine.findRoutesAt(pt)) out.push(h.route.id);
-    const el = tight || PlanEngine.findElementAt(pt); if (el && el !== tight) out.push(el.id);
-    const th = PlanEngine.findTrenchAt(pt); if (th) out.push(th.trench.id);
+    const add = (id) => { if (!out.includes(id)) out.push(id); };
+    for (const el of PlanEngine.findElementsAt(pt, 0)) add(el.id);
+    for (const h of PlanEngine.findRoutesAt(pt)) add(h.route.id);
+    for (const el of PlanEngine.findElementsAt(pt)) add(el.id);
+    for (const t of PlanEngine.findTrenchesAt(pt)) add(t.id);
     const tx = this._textAt(pt); if (tx) out.push(tx.id);
     const rm = PlanEngine.findRoomAt(pt); if (rm) out.push(rm.id);
     return out;
@@ -292,6 +292,9 @@ PlanTools.register({
       lc.ids.length === ids.length && lc.ids.every((v, i) => v === ids[i]);
     const index = same ? (lc.index + 1) % ids.length : 0;
     this._lastClick = { x: pt.x, y: pt.y, ids, index };
+    if (ids.length > 1 && typeof UI !== 'undefined' && UI.toast) {
+      UI.toast(`${ids.length} items here — ${index + 1} of ${ids.length}. Click again to cycle.`, 'info');
+    }
     return ids[index];
   },
 

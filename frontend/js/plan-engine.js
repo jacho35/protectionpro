@@ -649,6 +649,38 @@ const PlanEngine = {
     return null;
   },
 
+  // Every element whose glyph (plus tolerance) covers the point, nearest
+  // centre first (ties: topmost). Stacked / near-touching glyphs all appear so
+  // repeated clicks can cycle through them.
+  findElementsAt(pt, tolPx) {
+    const pm = AppState.planMarkup;
+    const tol = (tolPx != null ? tolPx : 6) / this.view.zoom;
+    const hits = [];
+    for (let i = pm.elements.length - 1; i >= 0; i--) {
+      const el = pm.elements[i];
+      const half = this.glyphHalf(el.type, el.props, el);
+      if (Math.abs(pt.x - el.x) <= half + tol && Math.abs(pt.y - el.y) <= half + tol) {
+        hits.push({ el, dist: Math.hypot(pt.x - el.x, pt.y - el.y), order: pm.elements.length - i });
+      }
+    }
+    hits.sort((a, b) => (Math.abs(a.dist - b.dist) < 0.5 / this.view.zoom ? a.order - b.order : a.dist - b.dist));
+    return hits.map(h => h.el);
+  },
+
+  // Every trench within tolerance of the point (topmost first).
+  findTrenchesAt(pt, tolPx) {
+    const pm = AppState.planMarkup;
+    const tol = (tolPx || 8) / this.view.zoom;
+    const out = [];
+    for (let i = pm.trenches.length - 1; i >= 0; i--) {
+      const t = pm.trenches[i];
+      for (let s = 1; s < t.points.length; s++) {
+        if (this._distToSeg(pt, t.points[s - 1], t.points[s]) <= tol) { out.push(t); break; }
+      }
+    }
+    return out;
+  },
+
   findRouteAt(pt, tolPx) {
     const pm = AppState.planMarkup;
     const tol = (tolPx || 8) / this.view.zoom;
