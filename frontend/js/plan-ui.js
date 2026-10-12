@@ -295,7 +295,7 @@ const PlanUI = {
     const el = this.propsEl; if (!el) return;
     const ids = [...PlanMarkup.selectedIds];
     if (ids.length === 0) { el.innerHTML = `<div class="plan-props-empty">Select an item to edit its properties.</div>`; return; }
-    if (ids.length > 1) { el.innerHTML = `<div class="plan-props-empty">${ids.length} items selected.</div>`; return; }
+    if (ids.length > 1) { this._renderBulk(el, ids); return; }
     const found = PlanMarkup.findEntityById(ids[0]);
     if (!found) { el.innerHTML = ''; return; }
     const { kind, item } = found;
@@ -370,6 +370,129 @@ const PlanUI = {
     html += `<button class="plan-props-delete" data-role="delete">Delete</button>`;
     el.innerHTML = html;
     this._searchifyCables(el);
+  },
+
+  // ─── Bulk edit (several items of one kind + type selected) ───
+  // The field list and value reader for one entity, shared by the bulk panel.
+  _bulkSpec(kind, item) {
+    if (kind === 'element') {
+      const def = PLAN_DEFS.element(item.type);
+      return { title: def ? def.name : item.type,
+        fields: ((def && def.fields) || []).concat([{ key: 'symScale', label: 'Symbol scale ×', type: 'number', min: 0.25, max: 10, step: 0.25 }]),
+        get: (it, k) => (k === 'symScale') ? (it.scale || '') : (k === 'rotation') ? it.rotation : (it.props ? it.props[k] : undefined) };
+    }
+    if (kind === 'route') {
+      const def = PLAN_DEFS.route(item.type);
+      return { title: def ? def.name : item.type,
+        fields: ((def && def.fields) || []).concat([{ key: 'curved', label: 'Curved', type: 'checkbox' }]),
+        get: (it, k) => (k === 'cableType') ? it.cableType : (k === 'curved') ? !!it.curved : (it.props ? it.props[k] : undefined) };
+    }
+    if (kind === 'trench') {
+      return { title: 'Trenches',
+        fields: [{ key: 'excType', label: 'Type', type: 'select', options: Object.keys(PLAN_DEFS.trenchTypes).map(k => ({ value: k, label: PLAN_DEFS.trenchTypes[k].name })) }],
+        get: (it, k) => it[k] };
+    }
+    if (kind === 'crossing') {
+      return { title: 'Road crossings',
+        fields: [{ key: 'size', label: 'Duct (mm)', type: 'select', options: PLAN_DEFS.crossings.sizes.map(x => ({ value: x, label: x })) }],
+        get: (it, k) => it[k] };
+    }
+    if (kind === 'text') {
+      return { title: 'Text labels', fields: PLAN_DEFS.annotations.text.fields.filter(f => f.key !== 'text'), get: (it, k) => it[k] };
+    }
+    if (kind === 'room') return { title: 'Rooms / areas', fields: [], get: () => '' };
+    return { title: kind === 'measurement' ? 'Measurements' : kind, fields: [], get: () => '' };
+  },
+
+  _renderBulk(el, ids) {
+    const items = ids.map(id => PlanMarkup.findEntityById(id)).filter(Boolean);
+    const n = items.length;
+    const kind = items[0] && items[0].kind;
+    const same = items.length && items.every(f => f.kind === kind &&
+      (kind === 'element' || kind === 'route' ? f.item.type === items[0].item.type : true));
+    const del = `<button class="plan-props-delete" data-role="delete">Delete ${n} items</button>`;
+    if (!same) {
+      el.innerHTML = `<div class="plan-props-title">${n} items selected</div>
+        <div class="plan-props-empty">Mixed types. Right-click one and choose <b>Select similar</b> to edit them together.</div>${del}`;
+      return;
+    }
+    if (kind === 'route' && items.some(f => !f.item.cableType) && typeof PlanSync !== 'undefined' && PlanSync.fillEmptyCables) PlanSync.fillEmptyCables();
+    const spec = this._bulkSpec(kind, items[0].item);
+    let html = `<div class="plan-props-title">${n} × ${escHtml(spec.title)}</div>`;
+    const mixed = [];
+    for (const f of spec.fields) {
+      if (f.key === 'name' || f.type === 'ies_select') continue;
+      const vals = items.map(x => spec.get(x.item, f.key));
+      const first = vals[0];
+      const isMixed = vals.some(v => String(v == null ? '' : v) !== String(first == null ? '' : first));
+      if (isMixed) mixed.push(f.key);
+      html += this._field(f, isMixed ? '' : first);
+    }
+    if (!spec.fields.length) html += `<div class="plan-props-empty">Nothing to edit in bulk for this kind.</div>`;
+    html += del;
+    el.innerHTML = html;
+    for (const k of mixed) {
+      const c = el.querySelector(`[data-key="${k}"]`);
+      if (!c) continue;
+      if (c.tagName === 'SELECT') {
+        const o = document.createElement('option');
+        o.value = '__mixed__'; o.textContent = '— mixed —'; o.selected = true;
+        c.insertBefore(o, c.firstChild);
+        const cur = c.closest('.plan-field') && c.closest('.plan-field').querySelector('.plan-field-current');
+        if (cur) cur.textContent = 'Mixed — values differ';
+      } else if (c.type === 'checkbox') c.indeterminate = true;
+      else c.placeholder = 'mixed';
+    }
+    this._searchifyCables(el);
+  },
+
+  // A field edited while several like items are selected: write it to all.
+  _onBulkChange(e, key, ids) {
+    if (key === 'name') return;
+    const items = ids.map(id => PlanMarkup.findEntityById(id)).filter(Boolean);
+    if (!items.length) return;
+    if (e.target.tagName === 'SELECT' && e.target.value === '__mixed__') return;
+    if (e.target.tagName === 'SELECT' && e.target.value === '__all__') {
+      const first = items[0];
+      const def = first.kind === 'route' ? PLAN_DEFS.route(first.item.type) : null;
+      const field = def && (def.fields || []).find(f => f.key === key);
+      CableLib.handleShowAll(e.target, first.item[key], (v) => this._cableOptions(v, field, true));
+      return;
+    }
+    let val = e.target.value;
+    if (e.target.type === 'number') val = parseFloat(val) || 0;
+    if (e.target.type === 'checkbox') { val = e.target.checked; e.target.indeterminate = false; }
+    const commit = (e.type === 'change');
+    let circuitTouched = false;
+    for (const { kind, item } of items) {
+      if (kind === 'element') {
+        if (key === 'rotation') item.rotation = val;
+        else if (key === 'symScale') { if (val > 0 && val !== 1) item.scale = Math.min(10, val); else delete item.scale; }
+        else {
+          item.props = item.props || {}; item.props[key] = val;
+          if (/^(circuitDbId|circuitNo|poles|load_va)$/.test(key)) {
+            circuitTouched = true;
+            if (key === 'circuitDbId' || key === 'circuitNo') delete item.props.circuitWid;
+            if (!val && key === 'circuitDbId') delete item.props.circuitNo;
+          }
+        }
+      } else if (kind === 'route') {
+        if (key === 'cableType') {
+          item.cableType = val;
+          if (commit && typeof PlanSync !== 'undefined' && PlanSync.pushRouteCable) PlanSync.pushRouteCable(item);
+        } else if (key === 'curved') item.curved = val;
+        else { item.props = item.props || {}; item.props[key] = val; }
+      } else {
+        item[key] = val;
+      }
+    }
+    if (circuitTouched && commit && typeof PlanCircuits !== 'undefined') {
+      PlanCircuits.syncLoads();
+      if (PlanCircuits.syncRoutedLengths) PlanCircuits.syncRoutedLengths();
+      if (typeof UndoManager !== 'undefined' && UndoManager.snapshot) UndoManager.snapshot();
+    }
+    PlanEngine.requestDraw({ fg: true });
+    if (commit) { PlanMarkup.snapshot(); PlanMarkup.markDirty(); this.renderProps(); }
   },
 
   // Reticulation routes: "use this cable as the default for <route type>" —
@@ -876,6 +999,7 @@ const PlanUI = {
     const key = e.target.dataset ? e.target.dataset.key : null;
     if (!key) return;
     const ids = [...PlanMarkup.selectedIds];
+    if (ids.length > 1) { this._onBulkChange(e, key, ids); return; }
     if (ids.length !== 1) return;
     const found = PlanMarkup.findEntityById(ids[0]);
     if (!found) return;
