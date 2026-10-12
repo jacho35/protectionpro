@@ -139,7 +139,7 @@ const ReticDiagram = {
         acc.push(h);
         if (el[h.id].type === 'rmu') { stops.push({ id: h.id, info: fold(acc) }); acc = []; }
       }
-      return { stops, last: fold(acc.length ? acc : hops.slice(-1)), tail: acc };
+      return { stops, last: fold(acc.length ? acc : hops.slice(-1)), routes: hops.map(h => h.route) };
     };
     return {
       el,
@@ -159,7 +159,43 @@ const ReticDiagram = {
         const hops = bfs(b.id, (id, st) => id !== st && el[id].type === 'rmu');
         if (!hops) return null;
         const rmuId = hops[hops.length - 1].id;
-        return { rmuId, info: fold(hops) };
+        return { rmuId, info: fold(hops), routes: hops.map(h => h.route) };
+      },
+      // MV routes the tree did not use — the ring ties. Each chain of unused
+      // routes (through joints) between two drawn nodes is one leg:
+      // [{from, to, info}], ids as nodeFor() names them.
+      ringLegs(used, nodeFor) {
+        const all = [];
+        for (const id of Object.keys(adj)) for (const e of adj[id]) {
+          if (used.has(e.route) || all.includes(e.route)) continue;
+          all.push(e.route);
+        }
+        const nbr = {};
+        for (const r of all) {
+          (nbr[r.fromId] = nbr[r.fromId] || []).push({ other: r.toId, route: r });
+          (nbr[r.toId] = nbr[r.toId] || []).push({ other: r.fromId, route: r });
+        }
+        const legs = [], done = new Set();
+        for (const r0 of all) {
+          if (done.has(r0)) continue;
+          // extend both ways from r0 through undrawn elements
+          const walk = (fromId, viaRoute) => {
+            const hops = []; let cur = fromId, via = viaRoute;
+            for (;;) {
+              if (nodeFor(cur)) return { end: cur, hops };
+              const nx = (nbr[cur] || []).find(e => e.route !== via && !done.has(e.route));
+              if (!nx) return { end: cur, hops };
+              hops.push({ id: nx.other, route: nx.route }); done.add(nx.route);
+              via = nx.route; cur = nx.other;
+            }
+          };
+          done.add(r0);
+          const A = walk(r0.fromId, r0), B = walk(r0.toId, r0);
+          const from = nodeFor(A.end), to = nodeFor(B.end);
+          if (!from || !to || from === to) continue;
+          legs.push({ from, to, info: fold([...A.hops, { route: r0 }, ...B.hops]) });
+        }
+        return legs;
       },
     };
   },
@@ -204,12 +240,14 @@ const ReticDiagram = {
     const roots = [];
     const addRoot = (id) => { if (!roots.includes(id)) roots.push(id); };
     const plan = this._planMv();
+    const used = new Set();
     for (const m of minisubs) {
       const p = msParent(m);
       const path = plan ? plan.path(p || m.id, m.id, !p) : null;
       if (p) {
         let cur = p;
         if (path) {
+          path.routes.forEach(r => used.add(r));
           for (const hop of path.stops) {
             const node = 'rmu:' + hop.id;
             if (!placed.has(node)) {
@@ -227,6 +265,7 @@ const ReticDiagram = {
         // top minisub: a supply RMU above it, if one is drawn
         const sup = plan ? plan.supply(m.id) : null;
         if (sup) {
+          sup.routes.forEach(r => used.add(r));
           const node = 'rmu:' + sup.rmuId;
           if (!placed.has(node)) {
             placed.add(node); rmuById[node] = plan.el[sup.rmuId]; children[node] = [];
@@ -239,7 +278,19 @@ const ReticDiagram = {
         }
       }
     }
-    return { minisubs, kiosks, byId, msById, msIds, rmuById, mvInfo, roots, children };
+    // Ring ties: drawn MV routes the tree above did not need (the last minisub
+    // looping back to an RMU, or to the first minisub).
+    let ring = [];
+    if (plan) {
+      const nodeFor = (elId) => {
+        const e = plan.el[elId];
+        if (!e) return null;
+        if (e.type === 'minisub') return e.reticId && msIds.has(e.reticId) ? e.reticId : null;
+        return e.type === 'rmu' && placed.has('rmu:' + elId) ? 'rmu:' + elId : null;
+      };
+      ring = plan.ringLegs(used, nodeFor);
+    }
+    return { minisubs, kiosks, byId, msById, msIds, rmuById, mvInfo, ring, roots, children };
   },
 
   // ─── Counting (must match backend/analysis/admd.py conventions) ───
@@ -311,10 +362,13 @@ const ReticDiagram = {
     }
 
     const maxY = nodes.reduce((a, n) => Math.max(a, n.y), 0);
+    const ringN = (tree.ring || []).filter(r => pos[r.from] && pos[r.to]).length;
     return {
       nodes, edges, pos,
       w: this.PAD * 2 + maxDepth * this.COL_W + this.NODE_W,
-      h: maxY + this.NODE_H + this.PAD,   // maxY already includes the top pad
+      baseH: maxY + this.NODE_H + this.PAD,
+      // maxY already includes the top pad; ring ties run in a lane below
+      h: maxY + this.NODE_H + this.PAD + (ringN ? 14 + ringN * 22 : 0),
     };
   },
 
@@ -400,6 +454,28 @@ const ReticDiagram = {
         + `</g>`;
     }
 
+    // Ring ties: dashed, routed down the column gutters and along a lane
+    // beneath the diagram so they never cross a node.
+    let ringSvg = '';
+    let ri = 0;
+    for (const t of (tree.ring || [])) {
+      const a = L.pos[t.from], b = L.pos[t.to];
+      if (!a || !b) continue;
+      const nameOf = (id) => tree.rmuById[id] ? (tree.rmuById[id].name || 'RMU') : ((tree.msById[id] || {}).name || '');
+      const sx = a.x + this.NODE_W, sy = a.y + this.NODE_H * 0.8;
+      const ex = b.x, ey = b.y + this.NODE_H * 0.8;
+      const xr = sx + 10 + 5 * ri, xl = ex - 14 - 5 * ri;
+      const yb = L.baseH + 8 + ri * 22;
+      const cable = this._cableShort(t.info.cable);
+      const len = t.info.len ? `${t.info.len} m` : '';
+      const sub = ['Ring tie', cable, len].filter(Boolean).join(' · ');
+      const lx = (Math.min(xr, xl) + Math.max(xr, xl)) / 2;
+      ringSvg += `<g><title>${this._esc(`Ring tie ${nameOf(t.from)} ↔ ${nameOf(t.to)}: ${cable || 'no cable'}${len ? ', ' + len : ''}`)}</title>`
+        + `<path d="M ${sx} ${sy} H ${xr} V ${yb} H ${xl} V ${ey} H ${ex}" fill="none" stroke="${P.accent}" stroke-width="1.8" stroke-dasharray="6 4"/>`
+        + `<text x="${lx}" y="${yb - 4}" text-anchor="middle" font-size="9" font-weight="700" fill="${P.accent}">${this._esc(sub)}</text></g>`;
+      ri++;
+    }
+
     let nodeSvg = '';
     for (const n of L.nodes) {
       nodeSvg += n.isRmu ? this._rmuNode(n, tree, P)
@@ -412,6 +488,7 @@ const ReticDiagram = {
         font-family="Helvetica, Arial, sans-serif">
       <rect x="0" y="0" width="${L.w}" height="${L.h}" fill="${P.surface}"/>
       ${edgeSvg}
+      ${ringSvg}
       ${nodeSvg}
     </svg>`;
   },
