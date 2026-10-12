@@ -271,8 +271,13 @@ PlanTools.register({
 
   _hitStack(pt) {
     const out = [];
-    const el = PlanEngine.findElementAt(pt); if (el) out.push(el.id);
-    const rh = PlanEngine.findRouteAt(pt); if (rh) out.push(rh.route.id);
+    // A glyph itself first; then every cable under the point (overlapping ones
+    // cycle on repeated clicks); the glyph's forgiving margin comes after, so it
+    // never shadows a cable that runs just past its edge.
+    const tight = PlanEngine.findElementAt(pt, 0);
+    if (tight) out.push(tight.id);
+    for (const h of PlanEngine.findRoutesAt(pt)) out.push(h.route.id);
+    const el = tight || PlanEngine.findElementAt(pt); if (el && el !== tight) out.push(el.id);
     const th = PlanEngine.findTrenchAt(pt); if (th) out.push(th.trench.id);
     const tx = this._textAt(pt); if (tx) out.push(tx.id);
     const rm = PlanEngine.findRoomAt(pt); if (rm) out.push(rm.id);

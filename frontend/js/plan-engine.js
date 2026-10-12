@@ -643,7 +643,7 @@ const PlanEngine = {
     for (let i = pm.elements.length - 1; i >= 0; i--) {
       const el = pm.elements[i];
       const half = this.glyphHalf(el.type, el.props, el);
-      const tol = (tolPx || 6) / this.view.zoom;
+      const tol = (tolPx != null ? tolPx : 6) / this.view.zoom;
       if (Math.abs(pt.x - el.x) <= half + tol && Math.abs(pt.y - el.y) <= half + tol) return el;
     }
     return null;
@@ -659,6 +659,25 @@ const PlanEngine = {
       }
     }
     return null;
+  },
+
+  // Every route within tolerance of the point, nearest first (ties: topmost).
+  // Overlapping cables (a ring tie running back along the feed, routes sharing
+  // a corridor) all appear, so repeated clicks can cycle through them.
+  findRoutesAt(pt, tolPx) {
+    const pm = AppState.planMarkup;
+    const tol = (tolPx || 8) / this.view.zoom;
+    const hits = [];
+    for (let i = pm.routes.length - 1; i >= 0; i--) {
+      const r = pm.routes[i];
+      let best = Infinity;
+      for (let s = 1; s < r.points.length; s++) {
+        best = Math.min(best, this._distToSeg(pt, r.points[s - 1], r.points[s]));
+      }
+      if (best <= tol) hits.push({ route: r, dist: best, order: pm.routes.length - i });
+    }
+    hits.sort((a, b) => (Math.abs(a.dist - b.dist) < 0.5 / this.view.zoom ? a.order - b.order : a.dist - b.dist));
+    return hits;
   },
 
   findTrenchAt(pt, tolPx) {
@@ -695,7 +714,7 @@ const PlanEngine = {
   hitStack(pt) {
     const out = [];
     const el = this.findElementAt(pt); if (el) out.push({ kind: 'element', item: el });
-    const r = this.findRouteAt(pt); if (r) out.push({ kind: 'route', item: r.route });
+    for (const h of this.findRoutesAt(pt)) out.push({ kind: 'route', item: h.route });
     const t = this.findTrenchAt(pt); if (t) out.push({ kind: 'trench', item: t.trench });
     return out;
   },
