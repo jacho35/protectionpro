@@ -184,6 +184,7 @@ const AppState = {
       quickServiceLen: 60,             // worst-case service run length (m)
       quickFeederCable: '',            // feeder cable applied to each kiosk
       quickFeederLen: 100,             // feeder segment length (m)
+      quickMvCable: '',                // default MV cable (MV routes between transformers)
       quickChain: true,                // daisy-chain kiosks (else star from minisub)
       quickFeedFrom: 'source',         // minisub the quick build feeds from
       networkDiversity: 1.0,           // × on Σ minisub demands (NMD estimate)
@@ -244,7 +245,7 @@ const AppState = {
         maxRunVD: 5, maxFeederVD: 7,
         quickKiosks: 4, quickErven: 6,
         quickServiceCable: '', quickServiceLen: 60,
-        quickFeederCable: '', quickFeederLen: 100, quickChain: true,
+        quickFeederCable: '', quickFeederLen: 100, quickChain: true, quickMvCable: '',
         quickFeedFrom: 'source', networkDiversity: 1.0,
         lvConductor: '', mvConductor: '',   // project standard conductor ('Al' | 'Cu' | '' = any): listed first in cable pickers
       },

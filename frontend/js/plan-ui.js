@@ -25,6 +25,7 @@ const PlanUI = {
       if (e.target.closest('[data-role="bulk-assign"]')) { this._bulkAssign(); return; }
       if (e.target.closest('[data-role="sync-circuits"]')) { this._syncCircuits(); return; }
       if (e.target.closest('[data-role="import-ies"]')) { this._importIes(); return; }
+      if (e.target.closest('[data-role="set-default-cable"]')) { this._setDefaultCable(); return; }
       if (e.target.closest('[data-role="balance-phases"]')) { this._balancePhases(); return; }
     });
   },
@@ -354,6 +355,7 @@ const PlanUI = {
       PlanSync.fillEmptyCables(); getVal = (k) => (k === 'cableType') ? item.cableType : (k === 'curved') ? !!item.curved : (item.props ? item.props[k] : undefined);
     }
     for (const f of fields) html += this._field(f, getVal(f.key));
+    html += this._defaultCableButton(item, kind);
     html += this._demandBlock(item, kind);
     html += this._demandLinkField(item, kind);
     html += this._sldLinkField(item, kind);
@@ -368,6 +370,32 @@ const PlanUI = {
     html += `<button class="plan-props-delete" data-role="delete">Delete</button>`;
     el.innerHTML = html;
     this._searchifyCables(el);
+  },
+
+  // Reticulation routes: "use this cable as the default for <route type>" —
+  // stored in the Demand settings (Quick Build) so new routes and Demand rows
+  // of that type start with it.
+  _defaultCableButton(item, kind) {
+    if (kind !== 'route' || typeof PlanSync === 'undefined' || !AppState.reticulation) return '';
+    if (AppState.planMarkup.settings.domain !== 'retic' || !PlanSync._defaultKeyFor(item.type)) return '';
+    const R = AppState.reticulation, key = PlanSync._defaultKeyFor(item.type);
+    const def = R.settings[key] || '';
+    const name = (PLAN_DEFS.route(item.type) || {}).name || item.type;
+    const isDef = !!item.cableType && item.cableType === def;
+    return `<div class="plan-field">
+      <button class="plan-circuit-btn" data-role="set-default-cable"${item.cableType && !isDef ? '' : ' disabled'}
+        title="New ${escHtml(name)} routes (and empty ones already drawn) will take this cable">★ Use as default for ${escHtml(name)} routes</button>
+      <div class="plan-field-current">${def ? 'Default: <b>' + escHtml(def) + '</b>' : 'No default set'}</div></div>`;
+  },
+
+  _setDefaultCable() {
+    const ids = [...PlanMarkup.selectedIds];
+    const found = ids.length === 1 && PlanMarkup.findEntityById(ids[0]);
+    if (!found || found.kind !== 'route') return;
+    if (PlanSync.setDefaultCable(found.item)) {
+      UI.toast('Default cable set for ' + ((PLAN_DEFS.route(found.item.type) || {}).name || found.item.type) + ' routes.', 'success');
+      this.renderProps();
+    }
   },
 
   // Cable dropdowns are wildcard type-to-filter boxes ("16 cu", "25*xlpe").

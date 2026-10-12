@@ -176,7 +176,8 @@ const Retic = {
 
   addMinisub() {
     const n = this.minisubs.length + 1;
-    this.minisubs.push({ id: AppState.reticGenMinisubId(), name: 'Minisub ' + n });
+    this.minisubs.push({ id: AppState.reticGenMinisubId(), name: 'Minisub ' + n,
+      mvFedFrom: '', mvCable: this.settings.quickMvCable || '', mvLength: 0 });
     this._afterMutate();
   },
 
@@ -232,8 +233,10 @@ const Retic = {
       const f = t.dataset.field;
       const k = t.dataset.kiosk ? this.kioskById(t.dataset.kiosk) : null;
       const erf = k && t.dataset.erf ? k.erfs.find(x => x.id === t.dataset.erf) : null;
-      const cur = action === 'setting' ? this.settings[f] : erf ? erf[f] : k ? k[f] : '';
-      CableLib.handleShowAll(t, cur, (v) => this._cableOptions(v, true));
+      const ms = t.dataset.ms ? this.minisubs.find(m => m.id === t.dataset.ms) : null;
+      const cur = action === 'setting' ? this.settings[f] : ms ? ms[f] : erf ? erf[f] : k ? k[f] : '';
+      const mv = f === 'quickMvCable' || !!ms;
+      CableLib.handleShowAll(t, cur, (v) => mv ? this._mvCableOptions(v, true) : this._cableOptions(v, true));
       return;
     }
 
@@ -332,9 +335,11 @@ const Retic = {
       const ms = this.minisubs.find(m => m.id === t.dataset.ms);
       if (!ms) return;
       const field = t.dataset.field;
-      ms[field] = t.value;
+      ms[field] = field === 'mvLength' ? (parseFloat(t.value) || 0) : t.value;
+      if (field === 'mvFedFrom' && t.value === ms.id) ms.mvFedFrom = '';
       this._snapshot();
       this._markDirty();
+      if ((field === 'mvCable' || field === 'mvFedFrom') && typeof PlanSync !== 'undefined') PlanSync.pullCablesFromDemand();   // drawn MV route follows
       // Only a rename affects the kiosk list (its Fed From dropdowns show
       // minisub names); a transformer pick is summary-only.
       if (field === 'name' || field === 'earthing') this.renderKiosks();   // earthing decides which cables take an earth conductor
@@ -693,6 +698,14 @@ const Retic = {
   // Demand pickers offer LV distribution cables from the one cable library
   // (4-core, then 2-core single-phase services), the project's standard
   // conductor first; the others after "Show all cables…".
+  // MV cables (the link between transformers / minisubs).
+  _mvCableOptions(selected, showAll) {
+    return CableLib.options(selected, {
+      filter: CableLib.reticFilter('mv'), groups: CableLib.reticGroups(),
+      prefer: CableLib.reticPrefer('mv'), showAll: !!showAll,
+    });
+  },
+
   _cableOptions(selected, showAll) {
     return CableLib.options(selected, {
       filter: CableLib.reticFilter('lv'), groups: CableLib.reticGroups(),
@@ -721,6 +734,8 @@ const Retic = {
           <select data-action="setting" data-field="quickFeederCable" data-cable-select>${this._cableOptions(s.quickFeederCable)}</select></div>
         <div class="retic-field"><label>Feeder Len (m)</label>
           <input type="number" step="1" min="0" data-action="setting" data-field="quickFeederLen" value="${Number(s.quickFeederLen) || 0}"></div>
+        <div class="retic-field"><label>MV Cable</label>
+          <select data-action="setting" data-field="quickMvCable" data-cable-select title="Default MV cable between transformers / minisubs (new minisubs and drawn MV routes start with it)">${this._mvCableOptions(s.quickMvCable)}</select></div>
         <div class="retic-field"><label>Feed From</label>
           <select data-action="setting" data-field="quickFeedFrom" title="Minisub the new kiosks feed from — ADMD diversity is applied per minisub across its downstream loads">${
             this.minisubs.map(m => `<option value="${m.id}" ${s.quickFeedFrom === m.id ? 'selected' : ''}>${escHtml(m.name)}</option>`).join('')
@@ -1557,6 +1572,16 @@ const Retic = {
           <select class="ms-earthing" data-action="minisub-field" data-ms="${ms.id}" data-field="earthing">
             ${['TN-S', 'TN-C', 'TN-C-S'].map(t => `<option value="${t}"${(ms.earthing || 'TN-S') === t ? ' selected' : ''}>${t}</option>`).join('')}
           </select></span></div>
+        <div class="summary-row"><span class="k" title="The upstream transformer / minisub this one is fed from on the MV network (none = the MV supply).">MV fed from</span><span class="v">
+          <select class="ms-mvfrom" data-action="minisub-field" data-ms="${ms.id}" data-field="mvFedFrom">
+            <option value=""${!ms.mvFedFrom ? ' selected' : ''}>— MV supply —</option>
+            ${this.minisubs.filter(o => o.id !== ms.id).map(o => `<option value="${o.id}"${ms.mvFedFrom === o.id ? ' selected' : ''}>${escHtml(o.name)}</option>`).join('')}
+          </select></span></div>
+        ${ms.mvFedFrom ? `
+        <div class="summary-row"><span class="k">MV cable</span><span class="v">
+          <select class="ms-mvcable" data-action="minisub-field" data-ms="${ms.id}" data-field="mvCable" data-cable-select>${this._mvCableOptions(ms.mvCable)}</select></span></div>
+        <div class="summary-row"><span class="k">MV length (m)</span><span class="v">
+          <input type="number" step="1" min="0" class="ms-mvlen" data-action="minisub-field" data-ms="${ms.id}" data-field="mvLength" value="${ms.mvLength || ''}" placeholder="0"></span></div>` : ''}
         ${this._stringsRows(ms)}
         <div class="summary-row"><span class="k">Utilisation</span><span class="v">${xfmr && xfmr.util != null ? xfmr.util + '%' : '—'}</span></div>
       </div>`;
