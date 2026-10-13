@@ -51,6 +51,8 @@ const Schedules = {
           title="Run the per-way cable check on every board — derated ampacity, Ib ≤ In ≤ Iz, voltage drop, ECC size and earth-fault loop Zs">Check circuits</button>
         <button class="btn-small" id="sch-generate-sld"
           title="Build a bus + one breaker + one feeder per way for the selected board on the main SLD canvas — safe to re-run after schedule edits">Generate SLD</button>
+        <button class="btn-small sch-tb-toggle" id="sch-tb-toggle" aria-expanded="false"
+          title="Show the installation conditions (ambient, method, supply, grouping)">Settings ▾</button>
         <span class="sch-sep"></span>
         <label title="Ambient temperature used for the IEC 60364-5-52 derating">Ambient
           <input type="number" id="sch-ambient" value="30" min="10" max="60" step="5"> °C</label>
@@ -66,7 +68,7 @@ const Schedules = {
       </div>
       <div class="sch-body">
         <aside class="sch-rail">
-          <div class="sch-rail-head">Boards</div>
+          <div class="sch-rail-head" id="sch-rail-head" role="button" tabindex="0">Boards</div>
           <ul id="sch-board-list" role="listbox" aria-label="Distribution boards" tabindex="0"></ul>
           <div class="sch-rail-foot" id="sch-rail-foot"></div>
         </aside>
@@ -75,6 +77,19 @@ const Schedules = {
           <div id="sch-grid-host"></div>
         </section>
       </div>`;
+
+    // Phone only (the controls are CSS-hidden above 768 px): installation
+    // settings and the board list fold away so the schedule / drawing gets the screen.
+    const tbToggle = ws.querySelector('#sch-tb-toggle');
+    tbToggle.addEventListener('click', () => {
+      const open = ws.querySelector('.sch-toolbar').classList.toggle('sch-tb-open');
+      tbToggle.setAttribute('aria-expanded', String(open));
+      tbToggle.textContent = open ? 'Settings ▴' : 'Settings ▾';
+    });
+    const railHead = ws.querySelector('#sch-rail-head');
+    const toggleRail = () => ws.querySelector('.sch-rail').classList.toggle('open');
+    railHead.addEventListener('click', toggleRail);
+    railHead.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleRail(); } });
 
     ws.querySelector('#sch-run-check').addEventListener('click', () => this.runCheck(true));
     ws.querySelector('#sch-generate-sld').addEventListener('click', () => {
@@ -370,7 +385,11 @@ const Schedules = {
     }).join('') || '<li class="sch-board-meta" style="padding:10px;">No boards</li>';
 
     list.querySelectorAll('.sch-board[data-id]').forEach(li => {
-      li.addEventListener('click', () => this.selectBoard(li.dataset.id));
+      li.addEventListener('click', () => {
+        const rail = document.querySelector('#schedules-workspace .sch-rail');
+        if (rail) rail.classList.remove('open');
+        this.selectBoard(li.dataset.id);
+      });
     });
 
     const totalWays = boards.reduce((n, b) => n + (b.props.circuits || []).length, 0);
@@ -379,6 +398,11 @@ const Schedules = {
       + (s ? ` · ${s.fail} fail, ${s.warn} warn` : '');
 
     const comp = AppState.components.get(this._boardId);
+    const railHead = document.getElementById('sch-rail-head');
+    if (railHead) {
+      railHead.textContent = comp
+        ? `Board: ${comp.props.name || comp.id} (${boards.length})` : 'Boards';
+    }
     head.innerHTML = comp
       ? `<strong>${escHtml(comp.props.name || comp.id)}</strong>
          <span style="color:var(--text-secondary);font-size:12px;">

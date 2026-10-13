@@ -615,3 +615,20 @@ body.dark-mode .db-con-chip-s.db-con-over { background: #4a1c1c; color: #ffa8a8;
   .dbd-canvas { flex: 0 0 auto; height: 55vh; }
   .dbd-side, .ga-side { width: 100%; flex: 0 0 auto; max-height: none; overflow: visible; }
 }
+
+/* ── Phone: fold the board list + installation settings away ─────────── */
+.sch-tb-toggle { display: none; }
+@media (max-width: 768px) {
+  .sch-title { display: none; }
+  .sch-tb-toggle { display: inline-block; }
+  .sch-toolbar { gap: 6px; min-height: 0; }
+  .sch-toolbar:not(.sch-tb-open) label { display: none; }
+  .sch-rail { flex: 0 0 auto; max-height: none; }
+  .sch-rail-head { cursor: pointer; padding: 8px 12px; }
+  .sch-rail-head::after { content: ' ▾'; }
+  .sch-rail.open .sch-rail-head::after { content: ' ▴'; }
+  .sch-rail:not(.open) #sch-board-list,
+  .sch-rail:not(.open) .sch-rail-foot { display: none; }
+  /* The drawing fills what is left of the screen instead of a fixed share. */
+  .dbd-canvas { height: calc(100vh - 365px); height: calc(100dvh - 365px); min-height: 240px; }
+}
