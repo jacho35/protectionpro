@@ -580,3 +580,21 @@ button.db-con-chip-s:hover, button.db-con-chip-s:focus-visible { outline: 2px so
 body.dark-mode .db-con-chip-s.db-con-ok { background: #1f3a24; color: #8fe39c; }
 body.dark-mode .db-con-chip-s.db-con-near { background: #433210; color: #ffd98a; }
 body.dark-mode .db-con-chip-s.db-con-over { background: #4a1c1c; color: #ffa8a8; }
+
+/* ── General arrangement (GA) layout tab ─────────────────────────────── */
+.ga-side { width: 340px; overflow: auto; font-size: 12px; }
+.ga-side h4 { margin: 12px 0 4px; font-size: 12px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: .04em; }
+.ga-side label { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin: 4px 0; }
+.ga-side input, .ga-side select { font-size: 12px; padding: 2px 4px; background: var(--bg-primary); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 4px; }
+.ga-summary { padding: 8px 10px; border: 1px solid var(--border-color); border-left: 4px solid #2e8b57; border-radius: 6px; background: var(--bg-primary); }
+.ga-summary.st-fail { border-left-color: #c0392b; }
+.ga-big { font-size: 16px; font-weight: 600; }
+.ga-warn { color: #c0392b; margin-top: 4px; }
+.ga-heat { height: 6px; background: var(--border-color); border-radius: 3px; margin: 6px 0 2px; overflow: hidden; }
+.ga-heat span { display: block; height: 100%; background: #e08a00; }
+.ga-items { width: 100%; border-collapse: collapse; }
+.ga-items td { padding: 2px 3px; border-bottom: 1px solid var(--border-color); vertical-align: middle; }
+.ga-items .btn-small { padding: 0 5px; }
+.ga-sub { color: var(--text-secondary); font-size: 11px; }
+.ga-add { display: flex; gap: 6px; margin-top: 8px; }
+.ga-note { color: var(--text-secondary); font-size: 11px; margin-top: 10px; }
