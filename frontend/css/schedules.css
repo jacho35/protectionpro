@@ -598,3 +598,20 @@ body.dark-mode .db-con-chip-s.db-con-over { background: #4a1c1c; color: #ffa8a8;
 .ga-sub { color: var(--text-secondary); font-size: 11px; }
 .ga-add { display: flex; gap: 6px; margin-top: 8px; }
 .ga-note { color: var(--text-secondary); font-size: 11px; margin-top: 10px; }
+
+/* ── Phone: schedules toolbar + drawing tabs ─────────────────────────── */
+@media (max-width: 768px) {
+  /* Long option text (installation method, grouping) pushed the selects past
+     the viewport — each control takes its own full-width line instead. */
+  .sch-toolbar label { display: flex; flex: 1 1 100%; min-width: 0; }
+  .sch-toolbar label select,
+  .sch-toolbar label input[type="number"] { min-width: 0; }
+  .sch-toolbar label select { flex: 1 1 auto; max-width: 100%; width: 100%; text-overflow: ellipsis; }
+  .sch-sep { display: none; }
+  /* Drawing tabs: the pane scrolls; the canvas keeps a usable height instead
+     of being squeezed to nothing by the stacked side panel. */
+  .dbd-wrap { overflow: auto; }
+  .dbd-body { flex: 0 0 auto; min-height: auto; }
+  .dbd-canvas { flex: 0 0 auto; height: 55vh; }
+  .dbd-side, .ga-side { width: 100%; flex: 0 0 auto; max-height: none; overflow: visible; }
+}
