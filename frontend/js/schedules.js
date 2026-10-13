@@ -31,6 +31,12 @@ const Schedules = {
   init() {
     this.buildDOM();
     window.addEventListener('beforeunload', () => this._commitCurrent());
+    // Rotating a phone / resizing across 768 px swaps the grid for the card list.
+    const mq = window.matchMedia('(max-width: 768px)');
+    const swap = () => {
+      if (this._active && this._tab === 'grid' && this._boardId) { this._commitCurrent(); this._openCurrent(); }
+    };
+    if (mq.addEventListener) mq.addEventListener('change', swap); else if (mq.addListener) mq.addListener(swap);
   },
 
   buildDOM() {
@@ -148,6 +154,7 @@ const Schedules = {
     this._commitCurrent();
     DBDrawing.unmount();
     GA.unmount();
+    SchMobile.unmount();
     clearTimeout(this._commitTimer);
     clearTimeout(this._checkTimer);
   },
@@ -199,6 +206,7 @@ const Schedules = {
       DBSchedule.currentId = null;
       DBDrawing.unmount();
       GA.unmount();
+      SchMobile.unmount();
       host.innerHTML = `
         <div class="sch-empty">
           <p><strong>No distribution boards in this project.</strong></p>
@@ -210,6 +218,19 @@ const Schedules = {
       if (btn) btn.addEventListener('click', () => switchWorkspace('sld'));
       return;
     }
+    if (this._tab === 'grid' && SchMobile.isPhone()) {
+      // Phone: the card list + edit sheet replace the 30-column grid. The edit
+      // session stays open (so commit / undo / result columns behave exactly as
+      // for the grid) with the grid pointed at a detached node.
+      DBDrawing.unmount();
+      GA.unmount();
+      DBSchedule._beginEdit(this._boardId);
+      DBSchedule._setHost(document.createElement('div'), 'workspace');
+      SchMobile.mount(this._boardId, host);
+      this._readInstallFromBoard();
+      return;
+    }
+    SchMobile.unmount();
     if (this._tab === 'ga') {
       // Same detached-grid arrangement as the single-line tab: the edit
       // session stays open so a schedule edit made elsewhere still commits.
@@ -397,6 +418,7 @@ const Schedules = {
     foot.textContent = `${boards.length} board${boards.length === 1 ? '' : 's'} · ${totalWays} ways`
       + (s ? ` · ${s.fail} fail, ${s.warn} warn` : '');
 
+    if (SchMobile._host) SchMobile.render();
     const comp = AppState.components.get(this._boardId);
     const railHead = document.getElementById('sch-rail-head');
     if (railHead) {

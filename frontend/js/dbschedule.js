@@ -1103,6 +1103,86 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
     this._notifyEdited();
   },
 
+  // The single write path for one way field — shared by the grid's change
+  // handler and the phone edit sheet (schedule-mobile.js) so both apply the
+  // same coercion, plan-pin flags and poles/phase/load-type rules.
+  // Returns 'duplicate' (way number refused, nothing written), 'conduit'
+  // (conduit fields written; only the conduit verdict needs repainting),
+  // 'render' (the grid must re-render) or 'totals' (totals refresh suffices).
+  _setWayField(comp, c, k, v) {
+    const circuits = comp.props.circuits;
+    // Way numbers are how the schedule and plan devices are read back, so a
+    // number already used by another way is refused (EE-7).
+    if (k === 'way' && circuits.some(o => o !== c && String(o.way) === String(v).trim())) return 'duplicate';
+    // Coerce by FIELD, not by input type: the cable/ECC cells are text
+    // inputs but still hold numbers. A blank ECC means "Table 54.7 minimum",
+    // so it stays null rather than collapsing to 0.
+    if (k === 'ecc_mm2') {
+      c[k] = String(v).trim() === '' ? null : (parseFloat(v) || 0);
+    } else if (NUMERIC_KEYS.has(k)) {
+      c[k] = parseFloat(v) || 0;
+    } else {
+      c[k] = v;
+    }
+    // F-PIN (+ EE-14): a hand edit to a plan-derived way pins that field so
+    // the next plan sync can't silently overwrite it.
+    if (Number(c.plan_qty) > 0) {
+      if (k === 'load_va') c._manualLoadOverride = true;
+      else if (k === 'cable_m') c._cableManual = true;
+      else if (k === 'description') c._nameOverride = true;
+      else if (k === 'poles' || k === 'phase') c._polesManual = true;
+    }
+    if (k === 'conduit_tag' || k === 'conduit_type' || k === 'conduit_size') {
+      // A conduit is shared by every way with the same tag, so an edit to its
+      // type/size lands on all of them; joining a tag adopts that conduit.
+      c[k] = String(v).trim();
+      if (k === 'conduit_type') c.conduit_size = '';
+      const tag = String(c.conduit_tag || '').trim().toLowerCase();
+      if (tag) {
+        const others = circuits.filter(o => o !== c && String(o.conduit_tag || '').trim().toLowerCase() === tag);
+        if (k === 'conduit_tag' && others.length) {
+          const src = others.find(o => o.conduit_type) || others[0];
+          c.conduit_type = src.conduit_type || ''; c.conduit_size = src.conduit_size || '';
+        } else if (k !== 'conduit_tag') {
+          for (const o of others) { o.conduit_type = c.conduit_type; o.conduit_size = c.conduit_size; }
+        }
+      }
+      return 'conduit';
+    }
+    if (k === 'way') {
+      // Editing a way number re-sorts the schedule by circuit number so
+      // rows always read in order (numeric-aware: 1,2,10 not 1,10,2).
+      this._sortByWay(comp);
+      return 'render';
+    }
+    if (k === 'poles') {
+      if (c.poles === '3P') c.phase = 'RWB';
+      else if (c.phase === 'RWB') c.phase = 'R';
+      return 'render';
+    }
+    if (k === 'description' && !(Number(c.load_va) > 0)) {
+      // Picked a known load type into an empty way → fill its defaults
+      // (wattage, demand factor, breaker, curve, cable) for one unit.
+      const t = (typeof DB_LOAD_TYPES !== 'undefined')
+        ? DB_LOAD_TYPES.find(x => x.va && x.label.toLowerCase() === String(v).trim().toLowerCase())
+        : null;
+      if (t) {
+        c.load_va = t.va;
+        c.demand_factor = t.df;
+        c.breaker_a = t.breaker_a;
+        c.curve = t.curve;
+        c.cable_mm2 = t.cable_mm2;
+        c.ecc_mm2 = t.ecc_mm2 ?? null;
+        c.leakage_ma = t.leak_ma || 0;
+        c.poles = t.poles;
+        if (t.poles === '3P') c.phase = 'RWB';
+        else if (c.phase === 'RWB') c.phase = 'R';
+        return 'render';
+      }
+    }
+    return 'totals';
+  },
+
   // ── Rendering ───────────────────────────────────────────────────────
   render() {
     const comp = AppState.components.get(this.currentId);
@@ -1450,88 +1530,16 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
         const c = circuits[parseInt(tr.dataset.idx)];
         if (!c) return;
         const k = e.target.dataset.k;
-        let v = e.target.value;
-        // Way numbers are how the schedule and plan devices are read back, so a
-        // number already used by another way is refused (EE-7).
-        if (k === 'way' && circuits.some(o => o !== c && String(o.way) === String(v).trim())) {
+        const typed = e.target.value;
+        const out = this._setWayField(comp, c, k, typed);
+        if (out === 'duplicate') {
           e.target.value = e.target.defaultValue;
-          if (typeof UI !== 'undefined' && UI.toast) UI.toast(`Way ${String(v).trim()} already exists on this board.`, 'warning');
+          if (typeof UI !== 'undefined' && UI.toast) UI.toast(`Way ${String(typed).trim()} already exists on this board.`, 'warning');
           return;
         }
-        // Coerce by FIELD, not by input type: the cable/ECC cells are text
-        // inputs (so they can carry a searchable datalist without a spinner)
-        // but still hold numbers. A blank ECC means "Table 54.7 minimum", so
-        // it stays null rather than collapsing to 0.
-        if (k === 'ecc_mm2') {
-          c[k] = String(v).trim() === '' ? null : (parseFloat(v) || 0);
-        } else if (NUMERIC_KEYS.has(k)) {
-          c[k] = parseFloat(v) || 0;
-        } else {
-          c[k] = v;
-        }
-        // F-PIN (+ EE-14): a hand edit to a plan-derived way pins that field so
-        // the next PlanCircuits.syncLoads()/syncRoutedLengths() (fired on any
-        // device attribute commit) can't silently overwrite it. Only ways the
-        // plan drives (plan_qty > 0) can be pinned — manual ways are never
-        // touched by sync anyway.
-        if (Number(c.plan_qty) > 0) {
-          if (k === 'load_va') c._manualLoadOverride = true;
-          else if (k === 'cable_m') c._cableManual = true;
-          else if (k === 'description') c._nameOverride = true;
-          else if (k === 'poles' || k === 'phase') c._polesManual = true;
-        }
-        if (k === 'conduit_tag' || k === 'conduit_type' || k === 'conduit_size') {
-          // A conduit is shared by every way with the same tag, so an edit to its
-          // type/size lands on all of them; joining a tag adopts that conduit.
-          c[k] = String(v).trim();
-          if (k === 'conduit_type') c.conduit_size = '';
-          const tag = String(c.conduit_tag || '').trim().toLowerCase();
-          if (tag) {
-            const others = circuits.filter(o => o !== c && String(o.conduit_tag || '').trim().toLowerCase() === tag);
-            if (k === 'conduit_tag' && others.length) {
-              const src = others.find(o => o.conduit_type) || others[0];
-              c.conduit_type = src.conduit_type || ''; c.conduit_size = src.conduit_size || '';
-            } else if (k !== 'conduit_tag') {
-              for (const o of others) { o.conduit_type = c.conduit_type; o.conduit_size = c.conduit_size; }
-            }
-          }
-          this._paintConduit(comp);
-          this._notifyEdited();
-          return;
-        }
-        if (k === 'way') {
-          // Editing a way number re-sorts the schedule by circuit number so
-          // rows always read in order (numeric-aware: 1,2,10 not 1,10,2).
-          this._sortByWay(comp);
-          this.render();
-        } else if (k === 'poles') {
-          if (c.poles === '3P') c.phase = 'RWB';
-          else if (c.phase === 'RWB') c.phase = 'R';
-          this.render();
-        } else if (k === 'description' && !(Number(c.load_va) > 0)) {
-          // Picked a known load type into an empty way → fill its defaults
-          // (wattage, demand factor, breaker, curve, cable) for one unit.
-          const t = (typeof DB_LOAD_TYPES !== 'undefined')
-            ? DB_LOAD_TYPES.find(x => x.va && x.label.toLowerCase() === String(v).trim().toLowerCase())
-            : null;
-          if (t) {
-            c.load_va = t.va;
-            c.demand_factor = t.df;
-            c.breaker_a = t.breaker_a;
-            c.curve = t.curve;
-            c.cable_mm2 = t.cable_mm2;
-            c.ecc_mm2 = t.ecc_mm2 ?? null;
-            c.leakage_ma = t.leak_ma || 0;
-            c.poles = t.poles;
-            if (t.poles === '3P') c.phase = 'RWB';
-            else if (c.phase === 'RWB') c.phase = 'R';
-            this.render();
-          } else {
-            this.refreshTotals(comp);
-          }
-        } else {
-          this.refreshTotals(comp);
-        }
+        if (out === 'conduit') { this._paintConduit(comp); this._notifyEdited(); return; }
+        if (out === 'render') this.render();
+        else this.refreshTotals(comp);
         this._paintConduit(comp);
       });
     });
