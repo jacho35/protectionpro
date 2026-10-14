@@ -324,3 +324,80 @@ async function tripSetup(page, cbId) {
   }, cbId);
   await page.waitForTimeout(800);
 }
+
+// ── Tier 3 ──
+Object.assign(SETUPS, {
+  'lightning-1': { run: async (page) => {
+    await page.click('#menu-analyse .toolbar-menu-btn');
+    await page.click('#btn-lightning');
+    await page.waitForSelector('#lightning-modal [data-lr-panel="1"]');
+  } },
+  'lightning-2': { run: async (page) => {
+    await openLightning(page);
+    await page.click('[data-lr-go="2"]'); await page.waitForTimeout(400);
+  } },
+  'lightning-3': { run: async (page) => {
+    await openLightning(page);
+    await page.click('[data-lr-go="3"]'); await page.waitForTimeout(400);
+  } },
+  'lightning-results': { run: async (page) => {
+    await openLightning(page);
+    await page.click('[data-lr-go="4"]'); await page.waitForTimeout(300);
+    await page.click('#btn-run-lightning');
+    await page.waitForSelector('.lr-verdict', { timeout: 20000 });
+  } },
+
+  'cf-all': { run: async (page) => { await cableNetwork(page); }, viewport: { width: 1440, height: 1300 } },
+  'cf-focus': { run: async (page) => {
+    await cableNetwork(page);
+    await page.evaluate(() => {
+      const bus = [...AppState.components.values()].find(c => c.type === 'bus' && /11kV Bus/.test(c.props.name));
+      AppState.select(bus.id); Canvas.render();
+      CableFocus.enable(bus.id);
+    });
+    await page.waitForTimeout(500);
+  }, viewport: { width: 1440, height: 1300 } },
+
+  'ctrlk': { run: async (page) => { await page.keyboard.press('Control+k'); await page.keyboard.type('arc'); await page.waitForTimeout(400); } },
+  'menu-analyse': { run: async (page) => { await page.click('#menu-analyse .toolbar-menu-btn'); await page.waitForTimeout(300); } },
+  'menu-results': { run: async (page) => {
+    await cableNetwork(page);
+    await page.click('#menu-results .toolbar-menu-btn'); await page.waitForTimeout(300);
+  } },
+
+  'type-new': { run: async (page) => {
+    await page.click('#menu-file .toolbar-menu-btn'); await page.click('#btn-new');
+    await page.waitForSelector('.ws-type-card');
+    await page.click('.ws-type-card >> nth=0');
+  } },
+  'type-dialog': { run: async (page) => {
+    await page.click('#menu-file .toolbar-menu-btn'); await page.click('#btn-project-type');
+    await page.waitForSelector('.ws-type-card');
+  } },
+});
+
+async function openLightning(page) {
+  await page.click('#menu-analyse .toolbar-menu-btn');
+  await page.click('#btn-lightning');
+  await page.waitForSelector('#lightning-modal [data-lr-panel="1"]');
+  await page.waitForTimeout(300);
+}
+
+// The 33/11 kV template with a cable sizing run: result boxes on every cable.
+async function cableNetwork(page) {
+  await page.click('#menu-file .toolbar-menu-btn'); await page.click('#btn-templates');
+  await page.click('.template-load-btn[data-id="substation_33_11"]');
+  await page.waitForTimeout(1200);
+  await page.click('#menu-analyse .toolbar-menu-btn'); await page.click('#btn-cable-sizing');
+  for (let i = 0; i < 24; i++) {
+    const pv = page.locator('#validation-proceed');
+    if (await pv.isVisible().catch(() => false)) await pv.click();
+    if (await page.evaluate(() => !!AppState.cableSizingResults)) break;
+    await page.waitForTimeout(500);
+  }
+  await page.waitForTimeout(600);
+  await page.evaluate(() => document.querySelectorAll('.modal').forEach(m => { if (m.id !== 'lightning-modal') m.style.display = 'none'; }));
+  await page.evaluate(() => { Canvas.fitToView && Canvas.fitToView(); });
+  await page.waitForTimeout(400);
+}
+
