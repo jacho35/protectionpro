@@ -520,7 +520,8 @@ const DBDrawing = {
     const def = (typeof COMPONENT_DEFS !== 'undefined') ? COMPONENT_DEFS[type] : null;
     const fn = (typeof Symbols !== 'undefined' && def) ? Symbols._symbolFor(type) : null;
     if (!fn) return '';
-    let m = fn(def.width, def.height, comp || { type, props: {} });
+    // Circuit breakers on a board's single line are drawn open (blade lifted).
+    let m = fn(def.width, def.height, comp || { type, props: type === 'cb' ? { state: 'open' } : {} });
     m = m.replace(/class="iec-solid"/g, `fill="${stroke}"`)
       .replace(/\sclass="[^"]*"/g, '')
       .replace(/var\(--[a-z-]+,\s*[^)]+\)/g, P.surface)
