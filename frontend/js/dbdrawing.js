@@ -102,6 +102,7 @@ const DBDrawing = {
           <span class="sch-sep"></span>
           <button class="btn-small" data-dbd="svg" title="Download the drawing as a vector SVG">SVG</button>
           <button class="btn-small" data-dbd="png" title="Download the drawing as a PNG">PNG</button>
+          <button class="btn-small" data-dbd="dxf" title="Download the drawing as a DXF for CAD (mm)">DXF</button>
           <button class="btn-small btn-primary" data-dbd="sheet" title="Print-ready PDF sheet with a title block">Print sheet</button>
           <button class="btn-small" data-dbd="sheet-all" title="One PDF sheet per board in the project">All boards</button>
         </div>
@@ -120,6 +121,7 @@ const DBDrawing = {
       else if (a === 'fit') this.fit();
       else if (a === 'svg') this.exportSVG();
       else if (a === 'png') this.exportPNG();
+      else if (a === 'dxf') this.exportDXF();
       else if (a === 'sheet') this.exportSheet(false);
       else if (a === 'sheet-all') this.exportSheet(true);
     });
@@ -925,6 +927,16 @@ const DBDrawing = {
     if (!ex) { UI.alert('Nothing to export — select a board first.'); return; }
     const str = new XMLSerializer().serializeToString(ex.node);
     this._download(new Blob([str], { type: 'image/svg+xml' }), `${this._fileBase()}_single_line.svg`);
+  },
+
+  // Vector DXF (mm, 1 px = 0.25 mm) from the same SVG the screen and PNG use.
+  exportDXF() {
+    const board = this.board();
+    const svg = board ? this.buildSVG({ dark: false, board }) : '';
+    if (!svg) { UI.alert('Nothing to export — select a board first.'); return; }
+    const dxf = DxfWriter.fromSvg(svg, { scale: 0.25, geomLayer: 'SINGLE_LINE' });
+    if (!dxf) { UI.alert('Could not build the DXF.'); return; }
+    this._download(new Blob([dxf], { type: 'application/dxf' }), `${this._fileBase()}_single_line.dxf`);
   },
 
   exportPNG() {

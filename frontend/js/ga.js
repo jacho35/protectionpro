@@ -574,25 +574,16 @@ const GA = {
       <rect width="${W}" height="${H}" fill="#fff"/>${dims}${bodies}</svg>`;
   },
 
-  // ── DXF (R12 ASCII: LINE + TEXT on named layers; units mm, y up) ───
+  // ── DXF (R12 ASCII via DxfWriter: named layers, units mm, y up) ─────
   dxf(L) {
-    const H = L.enc.h, out = ['0', 'SECTION', '2', 'ENTITIES'];
-    const line = (x1, y1, x2, y2, layer) => out.push('0', 'LINE', '8', layer,
-      '10', x1.toFixed(2), '20', (H - y1).toFixed(2), '30', '0', '11', x2.toFixed(2), '21', (H - y2).toFixed(2), '31', '0');
+    const H = L.enc.h, k = 0.72;   // text height = cap height of the SVG font size
+    const d = DxfWriter.create({ ENCLOSURE: 7, COMPARTMENT: 5, PARTITION: 8, RAIL: 9, BARS: 8, DEVICES: 1, TEXT: 7 });
     for (const sh of this.shapes(L)) {
-      if (sh.t === 'rect') {
-        line(sh.x, sh.y, sh.x + sh.w, sh.y, sh.layer);
-        line(sh.x + sh.w, sh.y, sh.x + sh.w, sh.y + sh.h, sh.layer);
-        line(sh.x + sh.w, sh.y + sh.h, sh.x, sh.y + sh.h, sh.layer);
-        line(sh.x, sh.y + sh.h, sh.x, sh.y, sh.layer);
-      } else {
-        const x = sh.anchor === 'middle' ? sh.x - (String(sh.s).length * sh.size * 0.28) : sh.x;
-        out.push('0', 'TEXT', '8', 'TEXT', '10', x.toFixed(2), '20', (H - sh.y - sh.size / 2).toFixed(2), '30', '0',
-          '40', sh.size.toFixed(2), '1', String(sh.s).replace(/[\r\n]/g, ' '));
-      }
+      const col = sh.color && /^#[0-9a-f]{6}$/i.test(sh.color) ? DxfWriter.aci(DxfWriter.parseColor(sh.color)) : undefined;
+      if (sh.t === 'rect') d.rect(sh.x, H - sh.y - sh.h, sh.w, sh.h, sh.layer, col);
+      else d.text(sh.x, H - sh.y - sh.size * 0.36, sh.size * k, sh.s, { anchor: sh.anchor, layer: 'TEXT', color: col });
     }
-    out.push('0', 'ENDSEC', '0', 'EOF');
-    return out.join('\r\n');
+    return d.toString();
   },
 
   // ── Mounting ──────────────────────────────────────────────────────
@@ -893,7 +884,7 @@ const GA = {
     doc.setFontSize(8);
     doc.text(`Project: ${AppState.projectName || 'Untitled'}`, m + 4, tbY + 15);
     doc.text(`Enclosure: ${L.enc.w} x ${L.enc.h} x ${L.enc.d} mm (${L.enc.type === 'floor' ? 'floor' : 'wall'})`, m + 100, tbY + 8);
-    if (L.comps) doc.text(`Compartments: ${L.comps.map(c => `${c.sec.name} ${c.w}x${c.h}`).join(' | ')} · form ${L.form}`, m + 100, tbY + 20);
+    if (L.comps) doc.text(`Compartments (${L.grid ? `grid ${L.gcols} x ${L.grows}` : L.side ? 'side by side' : 'stacked'}): ${L.comps.map(c => `${c.sec.name} ${c.w}x${c.h}`).join(' | ')} · form ${L.form}`, m + 100, tbY + 20);
     doc.text(`Rows ${L.rowsNeeded}/${L.rowsAvail} · space ${L.utilisation.toFixed(0)} % · heat ${L.heat.toFixed(0)}/${L.capacity.toFixed(0)} W`, m + 100, tbY + 15);
     doc.text(`Date: ${new Date().toISOString().slice(0, 10)}`, pw - m - 70, tbY + 8);
     doc.text('Distribution board general arrangement (indicative sizes)', pw - m - 70, tbY + 15);
