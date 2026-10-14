@@ -665,7 +665,8 @@ body.dark-mode .db-con-chip-s.db-con-over { background: #4a1c1c; color: #ffa8a8;
 .smb-chk .st-pass { color: #2e7d32; } .smb-chk .st-warn { color: #b26a00; } .smb-chk .st-fail { color: #c62828; }
 .smb-filters { display: flex; gap: 8px; align-items: center; padding: 6px 12px; background: var(--bg-primary); border-bottom: 1px solid var(--border-color); }
 .smb-filters input[type="search"] { flex: 1 1 90px; min-width: 0; font-size: 14px; padding: 6px 8px; background: var(--bg-primary); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 6px; }
-.smb-chips { display: flex; gap: 4px; }
+.smb-chips { display: flex; gap: 4px; overflow-x: auto; flex-wrap: nowrap; }
+.smb-chip { flex: 0 0 auto; white-space: nowrap; }
 .smb-chip { font-size: 12px; padding: 5px 9px; border-radius: 14px; border: 1px solid var(--border-color); background: var(--bg-primary); color: var(--text-primary); }
 .smb-chip.on { background: var(--accent, #1976d2); color: #fff; border-color: transparent; }
 .smb-list { flex: 1; min-height: 0; overflow-y: auto; padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; }
