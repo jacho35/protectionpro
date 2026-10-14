@@ -15,8 +15,8 @@
  * symbol classes in css/symbols.css: Project._rasterizeSVG only resolves
  * `var(--x, fallback)` forms and a detached export SVG carries no stylesheet,
  * so anything else rasterizes colourless into the PNG/PDF exports. The glyphs
- * below therefore restate the geometry of their Symbols.* counterparts
- * (cb/fuse/switch/surge_arrester/ctl_lamp) with explicit strokes.
+ * below draw the main SLD symbols through Symbols._symbolFor (see _sym), falling back to
+ * the old hand-drawn geometry only if Symbols is unavailable.
  */
 
 const DBDrawing = {
@@ -201,7 +201,7 @@ const DBDrawing = {
     for (const c of this._sortedWays(comp)) {
       const v = verdicts[c.id] || null;
       const lines = [];
-      const dev = `${Number(c.breaker_a) || 0} A${c.curve ? ' ' + c.curve : ''}`;
+      const dev = `${Number(c.breaker_a) || 0} A${c.curve ? ' ' + c.curve : ''}${c.poles && c.poles !== '1P' ? ' ' + c.poles : ''}`;
       lines.push({ text: `W${c.way ?? ''} · ${dev}`, bold: true });
       lines.push({ text: this._trunc(c.description || '—', 22) });
       if (D.cable) {
@@ -396,7 +396,52 @@ const DBDrawing = {
       + `<circle cx="${x}" cy="${y}" r="3" fill="none" stroke="${stroke}" stroke-width="1.3"/>`;
   },
 
+  // The main single line's own symbol, drawn by Symbols (so it follows the
+  // project's IEC / classic symbol set) with literal colours: class names are
+  // stripped and the stroke set on a wrapper, because an exported SVG carries
+  // no stylesheet. `stroke` overrides the symbol's native SLD colour.
+  _sym(type, x, y, P, stroke, comp) {
+    const def = (typeof COMPONENT_DEFS !== 'undefined') ? COMPONENT_DEFS[type] : null;
+    const fn = (typeof Symbols !== 'undefined' && def) ? Symbols._symbolFor(type) : null;
+    if (!fn) return '';
+    let m = fn(def.width, def.height, comp || { type, props: {} });
+    m = m.replace(/class="iec-solid"/g, `fill="${stroke}"`)
+      .replace(/\sclass="[^"]*"/g, '')
+      .replace(/var\(--[a-z-]+,\s*[^)]+\)/g, P.surface)
+      .replace(/fill="white"/g, `fill="${P.surface}"`)
+      .replace(/currentColor/g, stroke)
+      .replace(/<text((?:(?!fill=)[^>])*)>/g, `<text stroke="none" fill="${stroke}"$1>`);
+    return `<g transform="translate(${x},${y})" stroke="${stroke}" stroke-width="1.5" fill="none">${m}</g>`;
+  },
+
+  // SLD-native stroke colour per symbol type (neutral ones follow the theme).
+  _native(type, P) {
+    const dark = P.surface !== '#ffffff';
+    return { cb: dark ? '#ef5350' : '#d32f2f', fuse: '#e65100',
+      surge_arrester: dark ? '#66bb6a' : '#2e7d32' }[type] || P.line;
+  },
+
+  // Vertical conductor y1→y2 broken around symbols (centre ± half their height),
+  // so an open-contact blade is not struck through by the line behind it.
+  _vline(x, y1, y2, gaps, stroke, w) {
+    let out = '', cur = y1;
+    for (const [c, hh] of gaps.slice().sort((a, b) => a[0] - b[0])) {
+      if (c - hh > cur) out += `<line x1="${x}" y1="${cur}" x2="${x}" y2="${c - hh}" stroke="${stroke}" stroke-width="${w}"/>`;
+      cur = Math.max(cur, c + hh);
+    }
+    if (y2 > cur) out += `<line x1="${x}" y1="${cur}" x2="${x}" y2="${y2}" stroke="${stroke}" stroke-width="${w}"/>`;
+    return out;
+  },
+
   _glyph(name, x, y, P, stroke, item) {
+    const map = { mcb: 'cb', fuse: 'fuse', switch: 'switch', spd: 'surge_arrester', lamp: 'ctl_lamp' };
+    const t = map[name];
+    if (t) {
+      // Verdict colouring wins; otherwise the symbol keeps its SLD colour.
+      const c = (stroke && stroke !== P.line) ? stroke : this._native(t, P);
+      const g = this._sym(t, x, y, P, c);
+      if (g) return g;
+    }
     switch (name) {
       case 'mcb': return this._gMcb(x, y, P, stroke);
       case 'fuse': return this._gFuse(x, y, P, stroke);
@@ -472,7 +517,9 @@ const DBDrawing = {
   _incomer(comp, L, P, x0) {
     const inc = L.inc;
     const x = x0 + this.INCOMER_X;
-    let s = `<line x1="${x}" y1="${L.incTop}" x2="${x}" y2="${L.busY}" stroke="${P.line}" stroke-width="1.8"/>`;
+    const incGaps = [[L.devY, 20]];
+    if (L.isoY) incGaps.push([L.isoY, 20]);
+    let s = this._vline(x, L.incTop, L.busY, incGaps, P.line, 1.8);
     s += `<circle cx="${x}" cy="${L.incTop}" r="3.4" fill="${P.line}"/>`;
     s += `<text x="${x + 10}" y="${L.incTop + 4}" font-size="10" fill="${P.inkSec}">${this._esc(inc.source ? inc.source.name : 'supply')}</text>`;
 
@@ -544,13 +591,8 @@ const DBDrawing = {
       const stroke = D.status ? this._statusColor(it.status, P) : P.line;
       const devY = busY + this.BUS_TO_DEV;
       let g = `<g><title>${this._esc(it.tip)}</title>`;
-      g += `<line x1="${x}" y1="${busY}" x2="${x}" y2="${D.bars ? barsY - 6 : devY + 22}" stroke="${stroke}" stroke-width="1.4"/>`;
+      g += this._vline(x, busY, D.bars ? barsY - 6 : devY + 22, [[devY, it.glyph === 'spd' ? 25 : 20]], stroke, 1.4);
       g += this._glyph(it.glyph, x, devY, P, stroke, it);
-      if (it.poles === '3P') {
-        // Three-pole device: the two extra pole ticks across the drop.
-        g += `<line x1="${x - 13}" y1="${devY - 12}" x2="${x + 13}" y2="${devY - 12}" stroke="${stroke}" stroke-width="1"/>`;
-        g += `<line x1="${x - 13}" y1="${devY + 12}" x2="${x + 13}" y2="${devY + 12}" stroke="${stroke}" stroke-width="1"/>`;
-      }
       if (D.phase) {
         const pc = P.phase[it.phase] || P.muted;
         g += `<rect x="${x - 16}" y="${devY + this.TICK_DY - 5}" width="9" height="9" rx="2" fill="${pc}"/>`;
