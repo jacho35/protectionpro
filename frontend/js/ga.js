@@ -27,6 +27,7 @@ const GA_DEV_H = 90;           // standard DIN device height
 const GA_SIDE_MM = 50;         // side trunking / clearance each side
 const GA_TOP_MM = 60;          // top trunking
 const GA_BOTTOM_MM = 110;      // N/PE bars + gland clearance
+const GA_STRIP_BOTTOM_MM = 30; // a section's upper strip (no bars of its own) — wiring clearance only
 const GA_MCCB_GAP = 30;        // vertical gap between stacked frames
 const GA_STD_AMPS = [40, 63, 80, 100, 125, 160, 200, 250, 315, 400, 500, 630, 800, 1000, 1250, 1600];
 
@@ -69,6 +70,12 @@ const GA_EXTRA_KINDS = [
 
 // Internal separation between compartments (IEC 61439-2 forms): partition
 // thickness + terminal clearance each side, mm. Indicative.
+// Interactive compartment sizing: snap step and smallest cell (mm), and the
+// margin round the enclosure in the SVG (its viewBox units are mm).
+const GA_DRAG_SNAP_MM = 10;
+const GA_MIN_CELL_MM = 100;
+const GA_SVG_MARGIN = 70;
+
 const GA_PARTITION_MM = { '1': 0, '2a': 20, '2b': 20, '3a': 40, '3b': 40, '4a': 60, '4b': 60 };
 
 const GA_KIND_FILL = {
@@ -78,6 +85,7 @@ const GA_KIND_FILL = {
 
 const GA = {
   _zoom: 1,
+  _brush: null,       // painting grid cells: a section id or 'spare' (null = not painting)
   _boardId: null,
   _host: null,
   _last: null,        // last computed layout, for export
@@ -103,7 +111,18 @@ const GA = {
       grid_cols: Number(g.grid_cols) > 0 ? Math.min(8, Math.floor(Number(g.grid_cols))) : null,
       grid_rows: Number(g.grid_rows) > 0 ? Math.min(8, Math.floor(Number(g.grid_rows))) : null,
       section_dims: (g.section_dims && typeof g.section_dims === 'object') ? g.section_dims : {},
+      // Grid column widths / row heights as proportions (dragged on screen);
+      // absent or the wrong length ⇒ equal cells.
+      grid_col_f: this._fracs(g.grid_col_f),
+      grid_row_f: this._fracs(g.grid_row_f),
+      // Painted grid: one entry per cell, row by row — a section id or 'spare'.
+      // Absent (or the wrong length for the grid) ⇒ sections in schedule order.
+      grid_cells: Array.isArray(g.grid_cells) ? g.grid_cells.map(v => String(v == null ? 'spare' : v)) : null,
     };
+  },
+
+  _fracs(a) {
+    return Array.isArray(a) && a.length && a.every(v => Number(v) > 0 && isFinite(Number(v))) ? a.map(Number) : null;
   },
 
   _write(comp, patch) {
@@ -258,14 +277,17 @@ const GA = {
 
   // ── Packing ───────────────────────────────────────────────────────
   // Frames stack in a left column; DIN devices fill rail rows, never split.
-  pack(items, enc, sparePct) {
+  // `opt.noBars`: a box with no N/PE bars of its own (an upper strip of a
+  // painted section) — only wiring clearance at the bottom.
+  pack(items, enc, sparePct, opt) {
     const W = enc.w, H = enc.h;
+    const bottom = opt && opt.noBars ? GA_STRIP_BOTTOM_MM : GA_BOTTOM_MM;
     const frames = items.filter(i => i.form === 'frame');
     const din = items.filter(i => i.form === 'din');
     const colW = frames.length ? Math.max(...frames.map(f => f.w)) + 20 : 0;
     const usable = W - 2 * GA_SIDE_MM - colW;
     const perRow = Math.max(0, Math.floor(usable / GA_MODULE_MM));
-    const rowsAvail = Math.max(0, Math.floor((H - GA_TOP_MM - GA_BOTTOM_MM) / GA_ROW_PITCH));
+    const rowsAvail = Math.max(0, Math.floor((H - GA_TOP_MM - bottom) / GA_ROW_PITCH));
     const warnings = [];
     const placed = [];
 
@@ -276,7 +298,7 @@ const GA = {
       fy += f.h + GA_MCCB_GAP;
     }
     const colUsed = frames.length ? fy - GA_MCCB_GAP - GA_TOP_MM : 0;
-    const colOK = colUsed <= H - GA_TOP_MM - GA_BOTTOM_MM;
+    const colOK = colUsed <= H - GA_TOP_MM - bottom;
 
     // rows
     const used = din.reduce((n, d) => n + d.modules, 0);
@@ -310,7 +332,8 @@ const GA = {
     const fits = colOK && !wide && rowsNeeded <= rowsAvail && (din.length === 0 || perRow > 0);
     if (wide) warnings.push('A device is wider than the rail — pick a wider enclosure.');
     if (!colOK) warnings.push('The moulded-case devices do not fit the height of this enclosure.');
-    return { placed, perRow, rowsAvail, rowsNeeded, colW, colUsed, usedModules: used, spareModules: spareMods, fits, warnings };
+    return { placed, perRow, rowsAvail, rowsNeeded, colW, colUsed, usedModules: used, spareModules: spareMods, fits, warnings,
+      noBars: !!(opt && opt.noBars), totalModules: perRow * rowsAvail };
   },
 
   // IEC 60890-style effective cooling surface (m²) for a free / wall box
@@ -323,8 +346,10 @@ const GA = {
   _capacity(enc, dT) { return 5.5 * this._surface(enc) * dT; },
 
   // ── Layout for a board ────────────────────────────────────────────
-  layout(comp) {
-    const cfg = this.cfg(comp);
+  // `ov` (drag preview only): { cfg: patch, enc: the enclosure to keep }.
+  layout(comp, ov) {
+    const cfg = Object.assign(this.cfg(comp), ov && ov.cfg);
+    if (ov && ov.enc) { cfg._encFixed = ov.enc; cfg._encAuto = !!ov.auto; }
     const items = this.items(comp);
     if (typeof DBSections !== 'undefined' && DBSections.has(comp)) return this._layoutSections(comp, cfg, items);
     const heat = items.reduce((n, i) => n + (i.heat || 0), 0) * 1.1;   // +10 % busbars / wiring
@@ -396,17 +421,43 @@ const GA = {
       const comps = [];
       let ok = true;
       if (grid) {
-        // Equal cells: columns × rows across the enclosure, partitions between.
-        const cw = Math.floor((enc.w - part * (gcols - 1)) / gcols), ch = Math.floor((enc.h - part * (grows - 1)) / grows);
-        secs.forEach((sec, i) => {
+        // Columns × rows across the enclosure, partitions between; column
+        // widths / row heights follow the dragged proportions, else equal.
+        // Each cell belongs to a section (painted, else schedule order) or is
+        // spare; a section's cells — any shape, an L included — are split into
+        // rectangles its devices flow through, top to bottom.
+        const cws = this._split(enc.w - part * (gcols - 1), gcols, cfg.grid_col_f);
+        const chs = this._split(enc.h - part * (grows - 1), grows, cfg.grid_row_f);
+        const owner = this._cellOwners(cfg, secs, gcols * grows);
+        const G = { gcols, grows, cws, chs, part };
+        secs.forEach((sec) => {
           const its = by.get(sec.id) || [];
-          const col = i % gcols, row = Math.floor(i / gcols);
-          const res = this.pack(its, { w: cw, h: ch }, cfg.spare_pct);
-          if (!res.fits) ok = false;
-          comps.push({ sec, items: its, size: cw, res, manual: false, x: col * (cw + part), y: row * (ch + part),
-            w: cw, h: ch, heat: its.reduce((n, it) => n + (it.heat || 0), 0) * 1.1 });
+          const heat = its.reduce((n, it) => n + (it.heat || 0), 0) * 1.1;
+          const strips = this._strips(owner, sec.id, G);
+          if (!strips.length) {
+            ok = false;
+            comps.push({ sec, items: its, strips: [], parts: [], missing: true, x: 0, y: 0, w: 0, h: 0, heat,
+              res: { fits: false, warnings: ['has no cells — paint at least one cell for it.'], usedModules: 0, spareModules: 0,
+                perRow: 0, rowsAvail: 0, rowsNeeded: 0, totalModules: 0 } });
+            return;
+          }
+          const parts = this._packStrips(its, strips, cfg.spare_pct);
+          const fits = parts.every(pt => pt.res.fits);
+          if (!fits) ok = false;
+          const bb = this._bbox(strips);
+          comps.push({ sec, items: its, strips, parts, shape: strips.length > 1 ? 'L' : 'rect',
+            cells: owner.filter(o => o === sec.id).length, size: bb.w, manual: true, ...bb, heat,
+            res: {
+              fits, warnings: [].concat(...parts.map(pt => pt.res.warnings)),
+              usedModules: parts.reduce((n, pt) => n + pt.res.usedModules, 0),
+              spareModules: parts.reduce((n, pt) => n + pt.res.spareModules, 0),
+              totalModules: parts.reduce((n, pt) => n + pt.res.totalModules, 0),
+              perRow: parts[0].res.perRow, rowsAvail: parts[0].res.rowsAvail,
+              rowsNeeded: Math.max(...parts.map(pt => pt.res.rowsNeeded)),
+            } });
         });
-        return { ok, comps, used: enc.w };
+        const spares = this._strips(owner, 'spare', G);
+        return { ok, comps, used: enc.w, cws, chs, owner, spares };
       }
       for (const sec of secs) {
         const its = by.get(sec.id) || [];
@@ -442,7 +493,9 @@ const GA = {
     const sorted = GA_ENCLOSURES.slice().sort((a, b) => a.w * a.h * a.d - b.w * b.h * b.d);
     const pool = sorted.filter(e => cfg.mounting === 'any' || e.type === cfg.mounting);
     let enc = null, r = null, auto = false, note = null;
-    if (cfg.enclosure === 'custom') {
+    if (cfg._encFixed) {
+      enc = cfg._encFixed; auto = !!cfg._encAuto;
+    } else if (cfg.enclosure === 'custom') {
       enc = { key: 'custom', label: `${cfg.custom.w} × ${cfg.custom.h} × ${cfg.custom.d} custom`,
         w: +cfg.custom.w || 600, h: +cfg.custom.h || 800, d: +cfg.custom.d || 250, type: (+cfg.custom.h || 0) >= 1400 ? 'floor' : 'wall' };
     } else if (cfg.enclosure !== 'auto') {
@@ -478,15 +531,80 @@ const GA = {
     }
     if (!grid && r.used > (side ? enc.w : enc.h)) warnings.push(`Compartments need ${r.used} mm ${side ? 'width' : 'height'} incl. partitions; the enclosure has ${side ? enc.w : enc.h} mm.`);
     if (heat > cap) warnings.push(`Heat ${heat.toFixed(0)} W exceeds the ${cap.toFixed(0)} W the enclosure sheds at a ${cfg.delta_t} K rise.`);
-    const totalMods = r.comps.reduce((n, c) => n + c.res.perRow * c.res.rowsAvail, 0);
+    const totalMods = r.comps.reduce((n, c) => n + (c.res.totalModules != null ? c.res.totalModules : c.res.perRow * c.res.rowsAvail), 0);
     const usedMods = r.comps.reduce((n, c) => n + c.res.usedModules, 0);
-    const first = r.comps[0].res;
-    return { comp, cfg, items, enc, auto, comps: r.comps, part, form, side, grid, gcols, grows, heat, capacity: cap,
+    const first = (r.comps.find(c => !c.missing) || r.comps[0]).res;
+    return { comp, cfg, items, enc, auto, comps: r.comps, part, form, side, grid, gcols, grows, cws: r.cws, chs: r.chs,
+      owner: r.owner, spares: r.spares || [], heat, capacity: cap,
       placed: [], perRow: first.perRow, rowsAvail: first.rowsAvail,
       rowsNeeded: Math.max(...r.comps.map(c => c.res.rowsNeeded)), colW: 0,
       usedModules: usedMods, spareModules: r.comps.reduce((n, c) => n + c.res.spareModules, 0),
       fits: r.ok, utilisation: totalMods ? Math.min(100, usedMods / totalMods * 100) : 0,
       totalModules: totalMods, warnings };
+  },
+
+  // Start (mm) of the partition before cell k.
+  _edge(sizes, k, part) { return sizes.slice(0, k).reduce((n, v) => n + v, 0) + part * (k - 1); },
+
+  // Owner of each grid cell (row by row): the painted section id, else the
+  // sections in schedule order; anything else is 'spare'.
+  _cellOwners(cfg, secs, n) {
+    const ids = new Set(secs.map(x => x.id));
+    if (cfg.grid_cells && cfg.grid_cells.length === n) return cfg.grid_cells.map(v => ids.has(v) ? v : 'spare');
+    return Array.from({ length: n }, (_, i) => (i < secs.length ? secs[i].id : 'spare'));
+  },
+
+  // The cells owned by `id` as rectangles (mm): runs along each row, merged
+  // down where the next row's run spans the same columns. Top to bottom.
+  _strips(owner, id, G) {
+    const { gcols, grows, cws, chs, part } = G;
+    const at = (sizes, i) => sizes.slice(0, i).reduce((n, v) => n + v, 0) + part * i;
+    const span = (sizes, a, b) => sizes.slice(a, b + 1).reduce((n, v) => n + v, 0) + part * (b - a);
+    const runs = [];
+    for (let r = 0; r < grows; r++) {
+      for (let c = 0; c < gcols; c++) {
+        if (owner[r * gcols + c] !== id) continue;
+        let c2 = c;
+        while (c2 + 1 < gcols && owner[r * gcols + c2 + 1] === id) c2++;
+        const up = runs.find(u => u.c0 === c && u.c1 === c2 && u.r1 === r - 1);
+        if (up) up.r1 = r; else runs.push({ r0: r, r1: r, c0: c, c1: c2 });
+        c = c2;
+      }
+    }
+    return runs.map(u => ({ ...u, x: at(cws, u.c0), y: at(chs, u.r0), w: span(cws, u.c0, u.c1), h: span(chs, u.r0, u.r1) }));
+  },
+
+  _bbox(rects) {
+    const x = Math.min(...rects.map(r => r.x)), y = Math.min(...rects.map(r => r.y));
+    return { x, y, w: Math.max(...rects.map(r => r.x + r.w)) - x, h: Math.max(...rects.map(r => r.y + r.h)) - y };
+  },
+
+  // Devices flow through a section's strips in order: each upper strip takes
+  // as many as fit (no N/PE bars of its own), the last takes the rest plus
+  // the spare allowance and carries the section's N/PE bars.
+  _packStrips(items, strips, sparePct) {
+    let rest = items.slice();
+    return strips.map((st, j) => {
+      const box = { w: st.w, h: st.h };
+      if (j === strips.length - 1) return { ...st, res: this.pack(rest, box, sparePct) };
+      let lo = 0, hi = rest.length;
+      while (lo < hi) {
+        const mid = Math.ceil((lo + hi) / 2);
+        if (this.pack(rest.slice(0, mid), box, 0, { noBars: true }).fits) lo = mid; else hi = mid - 1;
+      }
+      const res = this.pack(rest.slice(0, lo), box, 0, { noBars: true });
+      rest = rest.slice(lo);
+      return { ...st, res };
+    });
+  },
+
+  // `total` mm shared by n cells in proportion to `fr` (equal without it).
+  _split(total, n, fr) {
+    const f = fr && fr.length === n ? fr : Array(n).fill(1);
+    const sum = f.reduce((a, v) => a + v, 0) || 1;
+    const out = f.map(v => Math.floor(total * v / sum));
+    out[n - 1] += total - out.reduce((a, v) => a + v, 0);    // rounding to the last cell
+    return out;
   },
 
   // ── Drawing primitives (one list feeds SVG, PDF and DXF) ───────────
@@ -507,10 +625,9 @@ const GA = {
           title: `Partition — form ${L.form}` });
       }
     });
-    if (L.grid && L.part > 0) {
-      const cw = L.comps[0].w, ch = L.comps[0].h;
-      for (let k = 1; k < L.gcols; k++) s.push({ t: 'rect', x: k * (cw + L.part) - L.part, y: 0, w: L.part, h: enc.h, layer: 'PARTITION', kind: 'part', title: `Partition — form ${L.form}` });
-      for (let k = 1; k < L.grows; k++) s.push({ t: 'rect', x: 0, y: k * (ch + L.part) - L.part, w: enc.w, h: L.part, layer: 'PARTITION', kind: 'part', title: `Partition — form ${L.form}` });
+    if (L.grid) {
+      this._gridShapes(s, L);
+      return s;
     }
     for (const c of L.comps) {
       const col = DBSections.color(c.sec);
@@ -520,6 +637,57 @@ const GA = {
       this._boxShapes(s, { w: c.w, h: c.h }, c.res, c.x, c.y, false, c.sec, L.comp);
     }
     return s;
+  },
+
+  // Painted grid: section regions tinted (an L-shaped one reads as one
+  // compartment), partitions only where two different owners meet, spare
+  // cells labelled, then each section's devices strip by strip — its N/PE
+  // bars in the bottom strip only.
+  _gridShapes(s, L) {
+    const { gcols, grows, cws, chs, part, owner } = L;
+    const at = (sizes, i) => sizes.slice(0, i).reduce((n, v) => n + v, 0) + part * i;
+    const own = (r, c) => owner[r * gcols + c];
+    const colOf = (id) => id === 'spare' ? '#9e9e9e' : DBSections.color(L.comps.find(c => c.sec.id === id)?.sec);
+    const title = `Partition — form ${L.form}`;
+    // tints: each cell, the gap to a same-owner neighbour right / below, and
+    // the crossing square when all four cells round it share the owner
+    const tint = (x, y, w, h, id) => s.push({ t: 'rect', x, y, w, h, kind: 'tint', color: colOf(id), layer: 'COMPARTMENT' });
+    for (let r = 0; r < grows; r++) for (let c = 0; c < gcols; c++) {
+      const id = own(r, c), x = at(cws, c), y = at(chs, r);
+      const right = c + 1 < gcols && own(r, c + 1) === id, below = r + 1 < grows && own(r + 1, c) === id;
+      tint(x, y, cws[c], chs[r], id);
+      if (part > 0 && right) tint(x + cws[c], y, part, chs[r], id);
+      if (part > 0 && below) tint(x, y + chs[r], cws[c], part, id);
+      if (part > 0 && right && below && own(r + 1, c + 1) === id) tint(x + cws[c], y + chs[r], part, part, id);
+    }
+    if (part > 0) {
+      // vertical partition segments between columns c-1 | c, row by row
+      for (let c = 1; c < gcols; c++) for (let r = 0; r < grows; r++) {
+        if (own(r, c - 1) !== own(r, c)) s.push({ t: 'rect', x: at(cws, c) - part, y: at(chs, r), w: part, h: chs[r], layer: 'PARTITION', kind: 'part', title });
+      }
+      // horizontal segments between rows r-1 / r, column by column
+      for (let r = 1; r < grows; r++) for (let c = 0; c < gcols; c++) {
+        if (own(r - 1, c) !== own(r, c)) s.push({ t: 'rect', x: at(cws, c), y: at(chs, r) - part, w: cws[c], h: part, layer: 'PARTITION', kind: 'part', title });
+      }
+      // crossings: partition unless all four cells share an owner
+      for (let r = 1; r < grows; r++) for (let c = 1; c < gcols; c++) {
+        const a = own(r - 1, c - 1);
+        if (!(a === own(r - 1, c) && a === own(r, c - 1) && a === own(r, c))) {
+          s.push({ t: 'rect', x: at(cws, c) - part, y: at(chs, r) - part, w: part, h: part, layer: 'PARTITION', kind: 'part', title });
+        }
+      }
+    }
+    for (const st of L.spares || []) {
+      s.push({ t: 'text', x: st.x + st.w / 2, y: st.y + st.h / 2, s: 'SPARE', size: 28, anchor: 'middle', layer: 'TEXT', color: '#9e9e9e', bold: true });
+    }
+    for (const c of L.comps) {
+      if (c.missing) continue;
+      const col = DBSections.color(c.sec);
+      const first = c.parts[0];
+      const dims = c.parts.length === 1 ? `  ${first.w} × ${first.h}` : '';
+      s.push({ t: 'text', x: first.x + 10, y: first.y + 14, s: `${c.sec.name.toUpperCase()}${dims}`, size: 9, layer: 'TEXT', color: col, bold: true });
+      for (const pt of c.parts) this._boxShapes(s, { w: pt.w, h: pt.h }, pt.res, pt.x, pt.y, false, c.sec, L.comp);
+    }
   },
 
   // Rails, N/PE bars and devices of one box (the whole enclosure, or a compartment).
@@ -532,7 +700,7 @@ const GA = {
       s.push({ t: 'rect', x: ox + GA_SIDE_MM + res.colW, y: oy + y - 17.5, w: res.perRow * GA_MODULE_MM, h: 35, layer: 'RAIL', thin: true });
     }
     const barY = box.h - GA_BOTTOM_MM + 28;
-    for (const [i, n] of ['N', 'PE'].entries()) {
+    for (const [i, n] of (res.noBars ? [] : ['N', 'PE']).entries()) {
       s.push({ t: 'rect', x: ox + GA_SIDE_MM, y: oy + barY + i * 30, w: box.w - 2 * GA_SIDE_MM, h: 14, layer: 'BARS', kind: 'bar' });
       s.push({ t: 'text', x: ox + GA_SIDE_MM + 4, y: oy + barY + i * 30 + 10.5, s: n + ' bar' + (sec ? ' · ' + sec.name : ''), size: 8, layer: 'TEXT' });
     }
@@ -558,8 +726,10 @@ const GA = {
   // ── SVG ───────────────────────────────────────────────────────────
   _esc(v) { return typeof escHtml === 'function' ? escHtml(String(v)) : String(v).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); },
 
-  svg(L) {
-    const M = 70, enc = L.enc;
+  // `opt.interactive`: add the on-screen partition drag handles (never in an
+  // export); `opt.drag`: the live readout while one is dragged.
+  svg(L, opt) {
+    const M = GA_SVG_MARGIN, enc = L.enc;
     const W = enc.w + M * 2, H = enc.h + M * 2;
     let open = null;
     const bodies = this.shapes(L).map(sh => {
@@ -579,12 +749,282 @@ const GA = {
       <text x="${(x1 + x2) / 2}" y="${(y1 + y2) / 2 - 6}" text-anchor="middle" stroke="none"${rot ? ` transform="rotate(-90 ${(x1 + x2) / 2} ${(y1 + y2) / 2})"` : ''}>${label}</text></g>`;
     const dims = dim(M, M - 24, M + enc.w, M - 24, `${enc.w} mm`, false)
       + dim(M - 24, M, M - 24, M + enc.h, `${enc.h} mm`, true);
+    const handles = opt && opt.interactive
+      ? (this._brush && L.grid ? this._cellsSvg(L, M) : '') + this._handlesSvg(L, M, opt.drag) : '';
     return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}">
-      <rect width="${W}" height="${H}" fill="#fff"/>${dims}${bodies}</svg>`;
+      <rect width="${W}" height="${H}" fill="#fff"/>${dims}${bodies}${handles}</svg>`;
+  },
+
+  // ── Interactive compartment sizing ───────────────────────────────
+  // The boundaries a user can drag: grid column / row partitions, or the
+  // partitions between side-by-side / stacked compartments.
+  // Each: { id 'col:k'|'row:k'|'side:k'|'stack:k', axis 'x'|'y', pos (mm, partition centre), sizes, k }.
+  _boundaries(L) {
+    const out = [];
+    if (!L.comps || L.comps.length < 2) return out;
+    const p = L.part;
+    if (L.grid) {
+      // A grid line with the same owner on both sides all along it has no
+      // partition to drag (it runs inside one merged compartment).
+      const own = (r, c) => (L.owner || [])[r * L.gcols + c];
+      const colSplits = (k) => Array.from({ length: L.grows }, (_, r) => r).some(r => own(r, k - 1) !== own(r, k));
+      const rowSplits = (k) => Array.from({ length: L.gcols }, (_, c) => c).some(c => own(k - 1, c) !== own(k, c));
+      for (let k = 1; k < L.gcols; k++) if (colSplits(k)) out.push({ id: 'col:' + k, axis: 'x', k, sizes: L.cws, pos: this._edge(L.cws, k, p) + p / 2 });
+      for (let k = 1; k < L.grows; k++) if (rowSplits(k)) out.push({ id: 'row:' + k, axis: 'y', k, sizes: L.chs, pos: this._edge(L.chs, k, p) + p / 2 });
+    } else {
+      const sizes = L.comps.map(c => L.side ? c.w : c.h);
+      for (let k = 1; k < L.comps.length; k++) {
+        out.push({ id: (L.side ? 'side:' : 'stack:') + k, axis: L.side ? 'x' : 'y', k, sizes, pos: this._edge(sizes, k, p) + p / 2 });
+      }
+    }
+    return out;
+  },
+
+  _handlesSvg(L, M, drag) {
+    const { enc } = L;
+    const u = 1 / Math.max(0.1, this._zoom || 1);     // one screen pixel, in drawing units
+    // Grips sit mid-way along the first cell's edge — never where a column and
+    // a row partition cross — and are drawn above every hit band.
+    // On a painted grid the grip goes on a drawn partition segment (two
+    // different owners either side), else the first cell's edge.
+    const mid = (sizes, i) => sizes.slice(0, i).reduce((n, v) => n + v, 0) + L.part * i + sizes[i] / 2;
+    const gripAt = (b) => {
+      if (!L.grid || !L.cws) return b.axis === 'x' ? { x: M + b.pos, y: M + enc.h / 2 } : { x: M + enc.w / 2, y: M + b.pos };
+      const own = (r, c) => (L.owner || [])[r * L.gcols + c];
+      if (b.axis === 'x') {
+        let r = 0;
+        while (r < L.grows && own(r, b.k - 1) === own(r, b.k)) r++;
+        return { x: M + b.pos, y: M + mid(L.chs, r < L.grows ? r : 0) };
+      }
+      let c = 0;
+      while (c < L.gcols && own(b.k - 1, c) === own(b.k, c)) c++;
+      return { x: M + mid(L.cws, c < L.gcols ? c : 0), y: M + b.pos };
+    };
+    const all = this._boundaries(L);
+    const head = (b, inner, cls) => {
+      const vert = b.axis === 'x', what = vert ? 'width' : 'height';
+      const active = drag && drag.id === b.id;
+      return `<g class="ga-handle${cls || ''}${active ? ' dragging' : ''}" data-ga-handle="${b.id}" data-dxf-skip${cls ? '' : ` tabindex="0" role="separator"
+        aria-orientation="${vert ? 'vertical' : 'horizontal'}" aria-label="Drag to change the compartment ${what}s (arrow keys: 10 mm, Shift: 50 mm)"`}
+        style="cursor:${vert ? 'col-resize' : 'row-resize'};touch-action:none"><title>Drag to resize — ${b.sizes[b.k - 1]} | ${b.sizes[b.k]} mm</title>${inner}</g>`;
+    };
+    const bands = all.map(b => {
+      const vert = b.axis === 'x';
+      const x = M + b.pos, y = M + b.pos;
+      const inner = vert
+        ? `<rect x="${x - 9 * u}" y="${M}" width="${18 * u}" height="${enc.h}" fill="transparent"/><line class="ga-handle-line" vector-effect="non-scaling-stroke" x1="${x}" y1="${M}" x2="${x}" y2="${M + enc.h}"/>`
+        : `<rect x="${M}" y="${y - 9 * u}" width="${enc.w}" height="${18 * u}" fill="transparent"/><line class="ga-handle-line" vector-effect="non-scaling-stroke" x1="${M}" y1="${y}" x2="${M + enc.w}" y2="${y}"/>`;
+      return head(b, inner);
+    }).join('');
+    const grips = all.map(b => {
+      const vert = b.axis === 'x';
+      const g = gripAt(b);
+      let inner = vert
+        ? `<rect class="ga-grip" x="${g.x - 5 * u}" y="${g.y - 22 * u}" width="${10 * u}" height="${44 * u}" rx="${5 * u}"/>`
+        : `<rect class="ga-grip" x="${g.x - 22 * u}" y="${g.y - 5 * u}" width="${44 * u}" height="${10 * u}" rx="${5 * u}"/>`;
+      if (drag && drag.id === b.id) {
+        const txt = `${b.sizes[b.k - 1]} mm  |  ${b.sizes[b.k]} mm`;
+        const ly = vert ? g.y - 56 * u : g.y - 38 * u;
+        inner += `<g class="ga-drag-label"><rect x="${g.x - 80 * u}" y="${ly}" width="${160 * u}" height="${24 * u}" rx="${4 * u}"/>`
+          + `<text x="${g.x}" y="${ly + 17 * u}" text-anchor="middle" font-size="${13 * u}">${txt}</text></g>`;
+      }
+      return head(b, inner, ' ga-handle-grip');
+    }).join('');
+    return bands + grips;
+  },
+
+  // ── Painting grid cells ───────────────────────────────────────────
+  _brushColor(L, id) {
+    if (id === 'spare') return '#9e9e9e';
+    const c = (L.comps || []).find(x => x.sec.id === id);
+    return c ? DBSections.color(c.sec) : '#555';
+  },
+
+  _ownerName(L, id) {
+    if (id === 'spare') return 'Spare';
+    const c = (L.comps || []).find(x => x.sec.id === id);
+    return c ? c.sec.name : 'Spare';
+  },
+
+  // One overlay per cell while a brush is picked: click / drag to paint.
+  _cellsSvg(L, M) {
+    const { gcols, grows, cws, chs, part, owner } = L;
+    const at = (sizes, i) => sizes.slice(0, i).reduce((n, v) => n + v, 0) + part * i;
+    const brush = this._brush, bc = this._brushColor(L, brush), bn = this._ownerName(L, brush);
+    let out = '';
+    for (let r = 0; r < grows; r++) for (let c = 0; c < gcols; c++) {
+      const i = r * gcols + c, mine = owner[i] === brush;
+      out += `<rect class="ga-cell${mine ? ' mine' : ''}" data-ga-cell="${i}" data-dxf-skip tabindex="0" role="button"
+        aria-label="Cell row ${r + 1}, column ${c + 1}: ${this._esc(this._ownerName(L, owner[i]))}. Enter paints it ${this._esc(bn)}"
+        x="${at(cws, c) + M}" y="${at(chs, r) + M}" width="${cws[c]}" height="${chs[r]}" style="--brush:${bc};touch-action:none"><title>${this._esc(this._ownerName(L, owner[i]))} — click or drag to paint ${this._esc(bn)}</title></rect>`;
+    }
+    return out;
+  },
+
+  // Grid cell (index) under a point in mm, or null.
+  _cellAt(L, pt) {
+    const { gcols, grows, cws, chs, part } = L;
+    const find = (sizes, v) => {
+      let a = 0;
+      for (let i = 0; i < sizes.length; i++) {
+        if (v >= a - part / 2 && v <= a + sizes[i] + part / 2) return i;
+        a += sizes[i] + part;
+      }
+      return null;
+    };
+    const c = find(cws, pt.x), r = find(chs, pt.y);
+    return c == null || r == null || c >= gcols || r >= grows ? null : r * gcols + c;
+  },
+
+  // Press on a cell with a brush: paint it and every cell dragged over;
+  // live preview, one write (one undo step) on release.
+  _paintDown(e, cellEl) {
+    const comp = this.board(), L0 = this._last, brush = this._brush;
+    if (!comp || !L0 || !L0.grid || !brush) return;
+    e.preventDefault();
+    const cells = L0.owner.slice();
+    let changed = false, raf = 0;
+    const preview = () => {
+      raf = 0;
+      const canvas = document.getElementById('ga-canvas');
+      if (!canvas) return;
+      const L = this.layout(comp, { cfg: { grid_cells: cells }, enc: L0.enc, auto: L0.auto });
+      canvas.innerHTML = this.svg(L, { interactive: true });
+      this._applyZoom();
+    };
+    const paint = (i) => {
+      if (i == null || cells[i] === brush) return;
+      cells[i] = brush; changed = true;
+      if (!raf) raf = requestAnimationFrame(preview);
+    };
+    paint(Number(cellEl.dataset.gaCell));
+    const move = (ev) => { const pt = this._svgPoint(ev); if (pt) paint(this._cellAt(L0, pt)); };
+    const up = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', up);
+      if (raf) cancelAnimationFrame(raf);
+      if (changed) this._write(comp, { grid_cells: cells });
+      this.render();
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', up);
+  },
+
+  // New sizes with boundary k moved to `pos` (mm), snapped and clamped so
+  // neither neighbour drops under the minimum.
+  _resized(b, pos, part) {
+    const sizes = b.sizes.slice();
+    const pair = sizes[b.k - 1] + sizes[b.k];
+    const start = sizes.slice(0, b.k - 1).reduce((n, v) => n + v, 0) + part * (b.k - 1);   // cell k−1 starts here
+    let a = Math.round((pos - part / 2 - start) / GA_DRAG_SNAP_MM) * GA_DRAG_SNAP_MM;
+    a = Math.max(GA_MIN_CELL_MM, Math.min(pair - GA_MIN_CELL_MM, a));
+    if (pair < 2 * GA_MIN_CELL_MM) a = Math.round(pair / 2);
+    sizes[b.k - 1] = a; sizes[b.k] = pair - a;
+    return sizes;
+  },
+
+  // The stored choice for a set of sizes along boundary b's axis.
+  _sizesPatch(L, b, sizes) {
+    if (b.id.startsWith('col:')) return { grid_col_f: sizes.slice() };
+    if (b.id.startsWith('row:')) return { grid_row_f: sizes.slice() };
+    const dims = JSON.parse(JSON.stringify(L.cfg.section_dims || {}));
+    const key = b.axis === 'x' ? 'w' : 'h';
+    L.comps.forEach((c, i) => { dims[c.sec.id] = Object.assign(dims[c.sec.id] || {}, { [key]: sizes[i] }); });
+    return { section_dims: dims };
+  },
+
+  _svgPoint(ev) {
+    const svg = document.querySelector('#ga-canvas svg');
+    if (!svg || !svg.getScreenCTM()) return null;
+    const pt = svg.createSVGPoint();
+    pt.x = ev.clientX; pt.y = ev.clientY;
+    const q = pt.matrixTransform(svg.getScreenCTM().inverse());
+    return { x: q.x - GA_SVG_MARGIN, y: q.y - GA_SVG_MARGIN };
+  },
+
+  // Pointer drag on a partition handle: live preview with the enclosure held
+  // where it is, one write (one undo step) on release.
+  _pointerDown(e) {
+    const h = e.target.closest && e.target.closest('[data-ga-handle]');
+    const comp = this.board();
+    if (!h) {
+      const cell = e.target.closest && e.target.closest('[data-ga-cell]');
+      if (cell && (e.button == null || e.button === 0)) this._paintDown(e, cell);
+      return;
+    }
+    if (!comp || !this._last || (e.button != null && e.button !== 0)) return;
+    const L0 = this._last;
+    const b = this._boundaries(L0).find(x => x.id === h.dataset.gaHandle);
+    if (!b) return;
+    e.preventDefault();
+    const drag = { id: b.id, b, L0, patch: null, raf: 0 };
+    this._drag = drag;
+    const move = (ev) => {
+      const pt = this._svgPoint(ev);
+      if (!pt) return;
+      const sizes = this._resized(b, b.axis === 'x' ? pt.x : pt.y, L0.part);
+      drag.patch = this._sizesPatch(L0, b, sizes);
+      if (!drag.raf) drag.raf = requestAnimationFrame(() => { drag.raf = 0; this._preview(comp, drag); });
+    };
+    const up = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', up);
+      if (drag.raf) cancelAnimationFrame(drag.raf);
+      this._drag = null;
+      if (drag.patch) this._write(comp, drag.patch);
+      this.render();
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', up);
+    this._preview(comp, drag);
+  },
+
+  _preview(comp, drag) {
+    const canvas = document.getElementById('ga-canvas');
+    if (!canvas) return;
+    const L = this.layout(comp, { cfg: drag.patch || {}, enc: drag.L0.enc, auto: drag.L0.auto });
+    const b = this._boundaries(L).find(x => x.id === drag.id);
+    canvas.innerHTML = this.svg(L, { interactive: true, drag: b ? { id: b.id } : null });
+    this._applyZoom();
+  },
+
+  // Arrow keys on a focused handle: 10 mm steps (Shift: 50 mm).
+  _keyDown(e) {
+    const comp = this.board();
+    if (this._brush && e.key === 'Escape') { e.preventDefault(); this._brush = null; this.render(); return; }
+    const cell = e.target.closest && e.target.closest('[data-ga-cell]');
+    if (cell && comp && this._last && this._brush && (e.key === 'Enter' || e.key === ' ')) {
+      e.preventDefault();
+      const cells = this._last.owner.slice();
+      const i = Number(cell.dataset.gaCell);
+      if (cells[i] !== this._brush) { cells[i] = this._brush; this._write(comp, { grid_cells: cells }); this.render(); }
+      const again = document.querySelector(`#ga-canvas [data-ga-cell="${i}"]`);
+      if (again) again.focus();
+      return;
+    }
+    const h = e.target.closest && e.target.closest('[data-ga-handle]');
+    if (!h || !comp || !this._last) return;
+    const b = this._boundaries(this._last).find(x => x.id === h.dataset.gaHandle);
+    if (!b) return;
+    const dir = { ArrowLeft: -1, ArrowUp: -1, ArrowRight: 1, ArrowDown: 1 }[e.key];
+    if (!dir) return;
+    e.preventDefault();
+    const sizes = this._resized(b, b.pos + dir * (e.shiftKey ? 50 : GA_DRAG_SNAP_MM), this._last.part);
+    this._write(comp, this._sizesPatch(this._last, b, sizes));
+    this.render();
+    const again = document.querySelector(`#ga-canvas [data-ga-handle="${b.id}"]`);
+    if (again) again.focus();
   },
 
   // One shape → SVG. Labels inside a device group carry their attribute tag.
   _shapeSvg(sh, M) {
+    if (sh.t === 'rect' && sh.kind === 'tint') {
+      return `<rect x="${sh.x + M}" y="${sh.y + M}" width="${sh.w}" height="${sh.h}" fill="${sh.color}" fill-opacity="0.09" stroke="none"/>`;
+    }
     if (sh.t === 'rect') {
       const fill = sh.layer === 'ENCLOSURE' || sh.layer === 'COMPARTMENT' ? 'none' : sh.kind === 'part' ? '#8a8a8a' : sh.kind === 'bar' ? '#b8b8b8' : sh.layer === 'RAIL' ? '#d6d6d6' : (GA_KIND_FILL[sh.kind] || '#999');
       const stroke = sh.color || (sh.layer === 'ENCLOSURE' ? '#222' : '#333');
@@ -619,6 +1059,7 @@ const GA = {
   // ── Mounting ──────────────────────────────────────────────────────
   mount(boardId, host) {
     if (!host) return;
+    if (this._boardId !== boardId) this._brush = null;
     this._boardId = boardId;
     this._host = host;
     host.innerHTML = `
@@ -641,11 +1082,13 @@ const GA = {
       </div>`;
     host.onclick = (e) => this._click(e);
     host.onchange = (e) => this._change(e);
+    host.onpointerdown = (e) => this._pointerDown(e);
+    host.onkeydown = (e) => this._keyDown(e);
     this.render();
     this.fit();
   },
 
-  unmount() { this._boardId = null; this._host = null; this._last = null; },
+  unmount() { this._boardId = null; this._host = null; this._last = null; this._brush = null; },
 
   board() { return this._boardId ? AppState.components.get(this._boardId) : null; },
 
@@ -656,7 +1099,7 @@ const GA = {
     if (!comp || !canvas || !side) return;
     const L = this.layout(comp);
     this._last = L;
-    canvas.innerHTML = this.svg(L);
+    canvas.innerHTML = this.svg(L, { interactive: true });
     this._applyZoom();
     side.innerHTML = this._sideHTML(L);
   },
@@ -713,6 +1156,19 @@ const GA = {
       <p class="ga-note">Generic sizes (17.5 mm DIN pole, typical MCCB frames and enclosures) with an indicative heat check — confirm against the manufacturer's catalogue before ordering.</p>`;
   },
 
+  // Brush chips for painting grid cells: each section, plus Spare.
+  _paintHTML(L) {
+    const e = this._esc, brush = this._brush;
+    const chip = (id, name, color) => `<button type="button" class="btn-small ga-brush${brush === id ? ' active' : ''}" data-ga-brush="${e(id)}"
+      style="--dbs-c:${color}" aria-pressed="${brush === id}" title="Paint cells as ${e(name)}"><span class="dbs-dot"></span>${e(name)}</button>`;
+    const chips = L.comps.map(c => chip(c.sec.id, c.sec.name, DBSections.color(c.sec))).join('') + chip('spare', 'Spare', '#9e9e9e');
+    return `<div class="ga-paint"><span class="ga-sub">Paint cells:</span>${chips}
+      ${brush ? '<button type="button" class="btn-small btn-primary" data-ga="paint-done">Done</button>' : ''}
+      ${L.cfg.grid_cells ? '<button type="button" class="btn-small" data-ga="cells-reset" title="Back to one cell per section in schedule order">Reset cells</button>' : ''}</div>
+      <div class="ga-sub">${brush ? `Painting <b>${e(this._ownerName(L, brush))}</b> — click or drag across cells on the drawing; Esc or Done to finish.`
+        : 'Pick a section, then click or drag over grid cells to give them to it — a section can take several cells, an L-shape included.'}</div>`;
+  },
+
   // Compartment controls: arrangement, partition and per-section size.
   _sectionsSideHTML(L) {
     const e = this._esc, cfg = L.cfg;
@@ -721,8 +1177,8 @@ const GA = {
       const m = (cfg.section_dims[c.sec.id] || {})[dim];
       return `<tr style="--dbs-c:${DBSections.color(c.sec)}">
         <td><span class="dbs-dot"></span>${e(c.sec.name)}</td>
-        <td>${c.w} × ${c.h}</td>
-        <td>${L.grid ? '<span class="ga-sub">equal</span>' : `<input type="number" data-ga-dim="${e(c.sec.id)}" value="${m ? e(m) : ''}" placeholder="auto" min="100" step="50" style="width:62px" title="Fix this compartment's ${L.side ? 'width' : 'height'} (mm); blank = fitted to its devices">`}</td>
+        <td>${c.missing ? '—' : c.shape === 'L' ? 'L-shape' : `${c.w} × ${c.h}`}</td>
+        <td>${L.grid ? `<span class="ga-sub">${c.missing ? 'no cells' : `${c.cells} cell${c.cells === 1 ? '' : 's'}`}</span>` : `<input type="number" data-ga-dim="${e(c.sec.id)}" value="${m ? e(m) : ''}" placeholder="auto" min="100" step="50" style="width:62px" title="Fix this compartment's ${L.side ? 'width' : 'height'} (mm); blank = fitted to its devices">`}</td>
         <td class="ga-sub">${c.res.usedModules} mod · ${c.heat.toFixed(0)} W${c.res.fits ? '' : ' ⚠'}</td></tr>`;
     }).join('');
     return `
@@ -735,13 +1191,23 @@ const GA = {
       <label>Rows <input type="number" data-ga-set="grid_rows" min="1" max="8" step="1" value="${cfg.grid_rows || ''}" placeholder="auto" style="width:56px"></label>
       <div class="ga-sub">${L.gcols} × ${L.grows} grid · sections fill left→right, top→bottom in schedule order</div>` : ''}
       <div class="ga-sub">Form ${e(L.form)} separation · ${L.part} mm partitions (set on the schedule's Sections panel)</div>
-      <table class="ga-items"><thead><tr><th>Section</th><th>mm</th><th>${L.grid ? 'Size' : L.side ? 'Width' : 'Height'}</th><th>Load</th></tr></thead><tbody>${rows}</tbody></table>`;
+      ${L.comps.length > 1 ? `<div class="ga-sub ga-drag-hint">Drag a partition on the drawing to resize the compartments either side of it (or focus it and use the arrow keys).</div>` : ''}
+      ${L.grid ? this._paintHTML(L) : ''}
+      ${L.grid && (cfg.grid_col_f || cfg.grid_row_f) ? '<button class="btn-small" data-ga="grid-equal" title="Back to equal columns and rows">Equal sizes</button>' : ''}
+      ${!L.grid && Object.keys(cfg.section_dims || {}).length ? '<button class="btn-small" data-ga="dims-fit" title="Clear the fixed sizes — each compartment fitted to its devices again">Fit to devices</button>' : ''}
+      <table class="ga-items"><thead><tr><th>Section</th><th>mm</th><th>${L.grid ? 'Cells' : L.side ? 'Width' : 'Height'}</th><th>Load</th></tr></thead><tbody>${rows}</tbody></table>`;
   },
 
   // ── Events ────────────────────────────────────────────────────────
   _click(e) {
     const comp = this.board();
     if (!comp) return;
+    const br = e.target.closest('[data-ga-brush]');
+    if (br) {
+      this._brush = this._brush === br.dataset.gaBrush ? null : br.dataset.gaBrush;
+      this.render();
+      return;
+    }
     const mv = e.target.closest('[data-ga-move]');
     if (mv) {
       const [key, d] = mv.dataset.gaMove.split(/:(?=-?1$)/);
@@ -763,6 +1229,10 @@ const GA = {
     if (a === 'zoom-in') this.zoom(1.25);
     else if (a === 'zoom-out') this.zoom(1 / 1.25);
     else if (a === 'fit') this.fit();
+    else if (a === 'grid-equal') { this._write(comp, { grid_col_f: null, grid_row_f: null }); this.render(); }
+    else if (a === 'paint-done') { this._brush = null; this.render(); }
+    else if (a === 'cells-reset') { this._write(comp, { grid_cells: null }); this.render(); }
+    else if (a === 'dims-fit') { this._write(comp, { section_dims: {} }); this.render(); }
     else if (a === 'svg') this.exportSVG();
     else if (a === 'dxf') this.exportDXF();
     else if (a === 'pdf') this.exportSheet(false);
@@ -821,7 +1291,15 @@ const GA = {
     const lab = document.getElementById('ga-zoom-label');
     if (lab) lab.textContent = Math.round(this._zoom * 100) + '%';
   },
-  zoom(f) { this._zoom = Math.min(4, Math.max(0.1, this._zoom * f)); this._applyZoom(); },
+  zoom(f) { this._zoom = Math.min(4, Math.max(0.1, this._zoom * f)); this._redrawCanvas(); },
+
+  // Redraw the drawing at the current zoom — the drag handles are sized in
+  // screen pixels, so they follow the zoom.
+  _redrawCanvas() {
+    const canvas = document.getElementById('ga-canvas');
+    if (canvas && this._last) canvas.innerHTML = this.svg(this._last, { interactive: true });
+    this._applyZoom();
+  },
   fit() {
     const c = document.getElementById('ga-canvas');
     const svg = c && c.querySelector('svg');
@@ -829,7 +1307,7 @@ const GA = {
     const vb = svg.viewBox.baseVal;
     const z = Math.min((c.clientWidth - 24) / vb.width, (c.clientHeight - 24) / vb.height);
     this._zoom = z > 0 && isFinite(z) ? Math.min(1.5, z) : 0.5;
-    this._applyZoom();
+    this._redrawCanvas();
   },
 
   // ── Exports ───────────────────────────────────────────────────────
@@ -873,6 +1351,13 @@ const GA = {
     const ox = m + 6 + (aw - L.enc.w * sc) / 2, oy = m + 14;
     const rgb = (c) => DxfExport.parseColor(c) || [0, 0, 0];
     for (const sh of this.shapes(L)) {
+      if (sh.t === 'rect' && sh.kind === 'tint') {
+        // a pale wash of the section colour (9 % over white)
+        const c = rgb(sh.color).map(v => Math.round(v * 0.09 + 255 * 0.91));
+        doc.setFillColor(c[0], c[1], c[2]);
+        doc.rect(ox + sh.x * sc, oy + sh.y * sc, sh.w * sc, sh.h * sc, 'F');
+        continue;
+      }
       if (sh.t === 'rect') {
         doc.setLineWidth(sh.thin ? 0.15 : 0.3);
         if (sh.color) { const c = rgb(sh.color); doc.setDrawColor(c[0], c[1], c[2]); } else doc.setDrawColor(0, 0, 0);

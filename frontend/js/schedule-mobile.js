@@ -146,7 +146,36 @@ const SchMobile = {
     }
     el.querySelector('#smb-chips').innerHTML =
       chip('all', 'All') + chip('fail', 'Issues') + chip('R', 'R') + chip('W', 'W') + chip('B', 'B')
-      + (DBSections.has(this.comp()) ? DBSections.list(this.comp()).map(s => chip('sec:' + s.id, this._e(s.name))).join('') : '');
+      + (DBSections.has(this.comp()) ? DBSections.list(this.comp()).map(s => chip('sec:' + s.id, this._e(s.name))).join('') : '')
+      + `<button class="smb-chip" data-smb="sections">${DBSections.has(this.comp()) ? '⚙ Sections' : '+ Sections'}</button>`;
+  },
+
+  // Add / edit / remove board sections (Normal, Essential, UPS …) — the same
+  // panel the desktop grid shows, in a full-height sheet.
+  openSections() {
+    const comp = this.comp(); if (!comp) return;
+    let sh = document.getElementById('smb-sec-sheet');
+    if (!sh) {
+      sh = document.createElement('div');
+      sh.id = 'smb-sec-sheet';
+      sh.className = 'smb-sheet';
+      sh.setAttribute('role', 'dialog');
+      sh.setAttribute('aria-modal', 'true');
+      document.getElementById('schedules-workspace').appendChild(sh);
+      sh.addEventListener('click', (e) => {
+        if (e.target.closest('[data-sec-close]')) { sh.classList.remove('open'); this.render(); }
+      });
+    }
+    const paint = () => {
+      const c = this.comp();
+      sh.innerHTML = `
+        <div class="smb-sheet-head"><strong>Board sections</strong><span style="flex:1"></span>
+          <button class="btn-small" data-sec-close>Done</button></div>
+        <div class="smb-sheet-body">${DBSections.panelHTML(c).replace('<details class="dbs-panel" id="dbs-panel"', '<details class="dbs-panel" id="dbs-panel" open')}</div>`;
+      DBSections.bind(sh, c, (rerender) => { this._touch(); if (rerender) paint(); }, null);
+    };
+    paint();
+    sh.classList.add('open');
   },
 
   _renderList() {
@@ -371,6 +400,7 @@ const SchMobile = {
     if (a === 'add-way') this.addWay();
     else if (a === 'add-load') this._loadMenu(b);
     else if (a === 'more') this._moreMenu(b);
+    else if (a === 'sections') this.openSections();
   },
 
   _sheetClick(e) {
@@ -493,6 +523,8 @@ const SchMobile = {
   _moreMenu(anchor) {
     const comp = this.comp();
     this._menu(anchor, [
+      { label: 'Board sections (Normal / Essential / UPS)…', run: () => this.openSections() },
+      {},
       { label: 'Check circuits', run: () => Schedules.runCheck(true) },
       { label: 'Auto balance phases', run: () => { DBSchedule.autoBalance(comp); this._touch(); this.render(); } },
       { label: 'Fill missing ECC', run: () => { DBSchedule.fillEcc(comp); this._touch(); this.render(); } },
