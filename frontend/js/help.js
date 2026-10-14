@@ -372,6 +372,7 @@ const HelpMobile = {
   TOPICS: [
     { group: 'Start here', tab: 'getting-started', sub: 'Draw, connect and analyse, the phone way' },
     { group: 'Start here', tab: 'touch', sub: 'Pan, pinch, tap, modes, labels' },
+    { group: 'Start here', tab: 'guides', sub: 'Step-by-step, with screenshots', count: () => HELP_GUIDES.length },
     { group: 'Reference', tab: 'reference', sub: 'Formulas, standards, worked examples', count: () => HELP_ARTICLES.length },
     { group: 'Reference', tab: 'components', sub: 'What every symbol is and what it needs', count: () => document.querySelectorAll('#help-tab-components tbody tr').length },
     { group: 'Reference', tab: 'verification', sub: 'How the engines are checked' },
