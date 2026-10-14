@@ -27,7 +27,7 @@ const DBDrawing = {
 
   // Geometry (SVG user units, which are CSS px at zoom 1)
   PAD: 26,
-  HEAD_H: 64,          // "fed from" caption + summary block
+  HEAD_H: 78,          // "fed from" caption + summary block
   INCOMER_X: 96,       // riser centre, measured from the left pad
   SRC_TO_DEV: 52,      // source terminal → incomer device centre
   DEV_TO_BUS: 50,      // last incomer device → busbar
@@ -37,13 +37,15 @@ const DBDrawing = {
   WAYS_PER_ROW: 12,
   BUS_TO_RCD: 12,      // busbar → top of the earth-leakage bracket
   RCD_H: 20,
-  BUS_TO_DEV: 62,      // busbar → device centre
-  TICK_DY: 20,         // device centre → phase tick
-  LABEL_DY: 34,        // device centre → first label baseline
+  BUS_TO_DEV: 68,      // busbar → device centre
+  TICK_DY: 32,         // device centre → phase tick
+  LABEL_DY: 48,        // device centre → first label baseline
   LINE_H: 12,
   BAR_GAP: 16,         // last label → N bar
   BAR_PITCH: 13,       // N bar → PE bar
   ROW_GAP: 30,
+  LOAD_H: 62,          // PE bar → load symbol block
+  SYM_SCALE: 1.3,      // device symbols are drawn this much larger than the SLD's
 
   DETAIL_DEFAULTS: {
     cable: true, load: true, phase: true, elgroups: true,
@@ -204,11 +206,13 @@ const DBDrawing = {
       const dev = `${Number(c.breaker_a) || 0} A${c.curve ? ' ' + c.curve : ''}${c.poles && c.poles !== '1P' ? ' ' + c.poles : ''}`;
       lines.push({ text: `W${c.way ?? ''} · ${dev}`, bold: true });
       lines.push({ text: this._trunc(c.description || '—', 22) });
-      if (D.cable) {
+      const spare = !(Number(c.load_va) > 0) && !(Number(c.cable_m) > 0);
+      if (spare) lines[1] = { text: 'Spare', dim: true };
+      if (D.cable && !spare) {
         const ecc = c.ecc_mm2 != null ? `${c.ecc_mm2}` : 'min';
         lines.push({ text: `${c.cable_mm2 || '?'} mm² · ${c.cable_m || 0} m · E ${ecc}`, dim: true });
       }
-      if (D.load) {
+      if (D.load && !spare) {
         const fla = DBSchedule._wayFlaA(c, vll);
         const kva = (Number(c.load_va) || 0) / 1000;
         lines.push({ text: `${fla.toFixed(1)} A · ${kva.toFixed(2)} kVA`, dim: true });
@@ -223,7 +227,7 @@ const DBDrawing = {
 
       items.push({
         kind: 'way', glyph: 'mcb', phase: (c.poles === '3P' || c.phase === 'RWB') ? 'RWB' : (c.phase || 'R'),
-        poles: c.poles || '1P',
+        poles: c.poles || '1P', spare, wayDesc: c.description || '',
         elGroup: D.elgroups ? (c.el_group || '') : '',
         status: v ? v.status : (warns.length ? 'warn' : null),
         lines, tip,
@@ -303,7 +307,7 @@ const DBDrawing = {
 
     const maxLines = items.reduce((n, it) => Math.max(n, it.lines.length), 1);
     const rowInner = this.BUS_TO_DEV + this.LABEL_DY + maxLines * this.LINE_H
-      + (D.bars ? this.BAR_GAP + this.BAR_PITCH + 8 : 8);
+      + (D.bars ? this.BAR_GAP + this.BAR_PITCH + 8 : 8) + (D.load ? this.LOAD_H : 0);
     const rowH = rowInner + this.ROW_GAP;
 
     const incTop = this.PAD + this.HEAD_H + 14;
@@ -400,7 +404,7 @@ const DBDrawing = {
   // project's IEC / classic symbol set) with literal colours: class names are
   // stripped and the stroke set on a wrapper, because an exported SVG carries
   // no stylesheet. `stroke` overrides the symbol's native SLD colour.
-  _sym(type, x, y, P, stroke, comp) {
+  _sym(type, x, y, P, stroke, comp, scale) {
     const def = (typeof COMPONENT_DEFS !== 'undefined') ? COMPONENT_DEFS[type] : null;
     const fn = (typeof Symbols !== 'undefined' && def) ? Symbols._symbolFor(type) : null;
     if (!fn) return '';
@@ -411,7 +415,7 @@ const DBDrawing = {
       .replace(/fill="white"/g, `fill="${P.surface}"`)
       .replace(/currentColor/g, stroke)
       .replace(/<text((?:(?!fill=)[^>])*)>/g, `<text stroke="none" fill="${stroke}"$1>`);
-    return `<g transform="translate(${x},${y})" stroke="${stroke}" stroke-width="1.5" fill="none">${m}</g>`;
+    return `<g transform="translate(${x},${y})${scale && scale !== 1 ? ` scale(${scale})` : ''}" stroke="${stroke}" stroke-width="1.5" fill="none">${m}</g>`;
   },
 
   // SLD-native stroke colour per symbol type (neutral ones follow the theme).
@@ -439,7 +443,7 @@ const DBDrawing = {
     if (t) {
       // Verdict colouring wins; otherwise the symbol keeps its SLD colour.
       const c = (stroke && stroke !== P.line) ? stroke : this._native(t, P);
-      const g = this._sym(t, x, y, P, c);
+      const g = this._sym(t, x, y, P, c, null, this.SYM_SCALE);
       if (g) return g;
     }
     switch (name) {
@@ -509,16 +513,16 @@ const DBDrawing = {
       <text x="${x0}" y="${this.PAD + 16}" font-size="15" font-weight="700" fill="${P.ink}">${this._esc(name)}</text>
       <text x="${x0}" y="${this.PAD + 34}" font-size="10.5" fill="${P.inkSec}">${this._esc(from)}</text>
       <text x="${x0}" y="${this.PAD + 50}" font-size="10.5" fill="${P.muted}">${this._esc(`${Math.round(vll)}/${Math.round(vll / Math.sqrt(3))} V 3φ + N`)}</text>
-      <rect x="${boxX}" y="${this.PAD}" width="${boxW}" height="${this.HEAD_H - 4}" rx="5" fill="${P.panel}" stroke="${P.border}"/>
-      ${chips.map((c, i) => `<text x="${boxX + 10}" y="${this.PAD + 15 + i * 11}" font-size="9.5" fill="${P.inkSec}">${this._esc(c)}</text>`).join('')}
+      <rect x="${boxX}" y="${this.PAD}" width="${boxW}" height="${chips.length * 12 + 12}" rx="5" fill="${P.panel}" stroke="${P.border}"/>
+      ${chips.map((c, i) => `<text x="${boxX + 10}" y="${this.PAD + 16 + i * 12}" font-size="9.5" fill="${P.inkSec}">${this._esc(c)}</text>`).join('')}
     </g>`;
   },
 
   _incomer(comp, L, P, x0) {
     const inc = L.inc;
     const x = x0 + this.INCOMER_X;
-    const incGaps = [[L.devY, 20]];
-    if (L.isoY) incGaps.push([L.isoY, 20]);
+    const incGaps = [[L.devY, 20 * this.SYM_SCALE]];
+    if (L.isoY) incGaps.push([L.isoY, 20 * this.SYM_SCALE]);
     let s = this._vline(x, L.incTop, L.busY, incGaps, P.line, 1.8);
     s += `<circle cx="${x}" cy="${L.incTop}" r="3.4" fill="${P.line}"/>`;
     s += `<text x="${x + 10}" y="${L.incTop + 4}" font-size="10" fill="${P.inkSec}">${this._esc(inc.source ? inc.source.name : 'supply')}</text>`;
@@ -572,8 +576,11 @@ const DBDrawing = {
 
     if (D.elgroups) {
       for (const br of this._elBrackets(row)) {
-        const ax = x0 + this.DROP_X0 + br.from * this.DROP_W - 26;
-        const bx = x0 + this.DROP_X0 + br.to * this.DROP_W + 26;
+        const idn0 = ((comp.props.el_ratings || {})[br.group]) || 30;
+        const txtW = `EL ${br.group} · ${idn0} mA`.length * 5.8 + 16;
+        const mid = x0 + this.DROP_X0 + (br.from + br.to) / 2 * this.DROP_W;
+        const half = Math.max(((br.to - br.from) * this.DROP_W) / 2 + 26, txtW / 2);
+        const ax = mid - half, bx = mid + half;
         const y = busY + this.BUS_TO_RCD;
         const idn = ((comp.props.el_ratings || {})[br.group]) || 30;
         s += `<g><title>${this._esc(`Earth-leakage group ${br.group} — IΔn ${idn} mA, shared by ${br.to - br.from + 1} way(s)`)}</title>`
@@ -591,17 +598,32 @@ const DBDrawing = {
       const stroke = D.status ? this._statusColor(it.status, P) : P.line;
       const devY = busY + this.BUS_TO_DEV;
       let g = `<g><title>${this._esc(it.tip)}</title>`;
-      g += this._vline(x, busY, D.bars ? barsY - 6 : devY + 22, [[devY, it.glyph === 'spd' ? 25 : 20]], stroke, 1.4);
+      const endY = (D.bars ? barsY + this.BAR_PITCH : devY + 26) + (D.load && !it.spare ? 14 : 0);
+      const half = (it.glyph === 'spd' ? 25 : 20) * this.SYM_SCALE;
+      g += this._vline(x, busY, endY, [[devY, half]], stroke, 1.4);
       g += this._glyph(it.glyph, x, devY, P, stroke, it);
       if (D.phase) {
+        // Phase chip sits left of the drop so the conductor never crosses it.
         const pc = P.phase[it.phase] || P.muted;
-        g += `<rect x="${x - 16}" y="${devY + this.TICK_DY - 5}" width="9" height="9" rx="2" fill="${pc}"/>`;
-        g += `<text x="${x - 4}" y="${devY + this.TICK_DY + 3}" font-size="9" fill="${P.inkSec}">${this._esc(it.phase)}</text>`;
+        const tw = String(it.phase).length * 5.6;
+        g += `<rect x="${x - 10 - tw - 11}" y="${devY + this.TICK_DY - 5}" width="9" height="9" rx="2" fill="${pc}"/>`;
+        g += `<text x="${x - 8}" y="${devY + this.TICK_DY + 3}" text-anchor="end" font-size="9" fill="${P.inkSec}">${this._esc(it.phase)}</text>`;
       }
+      // Labels sit on a page-coloured patch, so the conductor reads as passing
+      // behind them rather than being struck through the text.
+      const lw = this.DROP_W - 12, lh = it.lines.length * this.LINE_H + 2;
+      g += `<rect x="${x - lw / 2}" y="${labelTop - 10}" width="${lw}" height="${lh}" fill="${P.surface}"/>`;
       it.lines.forEach((ln, li) => {
         g += `<text x="${x}" y="${labelTop + li * this.LINE_H}" text-anchor="middle" font-size="${ln.bold ? 9.5 : 9}"
           font-weight="${ln.bold ? 700 : 400}" fill="${ln.dim ? P.muted : P.ink}">${this._esc(ln.text)}</text>`;
       });
+      // The way leaves the board to its load, drawn with the SLD's own symbol.
+      if (D.load && !it.spare && it.kind === 'way') {
+        const motor = (it.poles === '3P' || it.phase === 'RWB')
+          && /pump|motor|fan|compress|aircon|a\/c|hvac|drive/i.test(it.wayDesc || '');
+        const lt = motor ? 'motor_induction' : 'static_load';
+        g += this._sym(lt, x, endY + COMPONENT_DEFS[lt].height / 2, P, P.line, null, 1);
+      }
       g += `</g>`;
       s += g;
     });
@@ -612,11 +634,11 @@ const DBDrawing = {
         + `<text x="${x0 - 2}" y="${barsY - 4}" font-size="9" fill="${P.muted}">N</text>`
         + `<line x1="${x0}" y1="${barsY + this.BAR_PITCH}" x2="${barEnd}" y2="${barsY + this.BAR_PITCH}" stroke="${P.line}" stroke-width="1.6" stroke-dasharray="6,3"/>`
         + `<text x="${x0 - 2}" y="${barsY + this.BAR_PITCH + 10}" font-size="9" fill="${P.muted}">PE</text>`;
-      // Each way lands on both bars; SPDs bond to PE only.
+      // The conductors cross the bars; only an SPD is bonded to PE.
       row.forEach((it, i) => {
+        if (it.glyph !== 'spd') return;
         const x = x0 + this.DROP_X0 + i * this.DROP_W;
-        const toPeOnly = it.glyph === 'spd';
-        s += `<line x1="${x}" y1="${barsY - 6}" x2="${x}" y2="${barsY + (toPeOnly ? this.BAR_PITCH : 0)}" stroke="${P.muted}" stroke-width="1"/>`;
+        s += `<circle cx="${x}" cy="${barsY + this.BAR_PITCH}" r="2.4" fill="${P.line}"/>`;
       });
     }
     return s;
