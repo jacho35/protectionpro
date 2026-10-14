@@ -596,6 +596,17 @@ body.dark-mode .db-con-chip-s.db-con-over { background: #4a1c1c; color: #ffa8a8;
 .ga-items td { padding: 2px 3px; border-bottom: 1px solid var(--border-color); vertical-align: middle; }
 .ga-items .btn-small { padding: 0 5px; }
 .ga-sub { color: var(--text-secondary); font-size: 11px; }
+/* GA: draggable compartment partitions (on screen only) */
+.ga-handle .ga-handle-line { stroke: var(--accent, #0078d7); stroke-width: 3; opacity: 0; }
+.ga-handle .ga-grip { fill: var(--accent, #0078d7); opacity: .45; }
+.ga-handle:hover .ga-handle-line, .ga-handle:focus .ga-handle-line, .ga-handle.dragging .ga-handle-line { opacity: .85; }
+.ga-handle:hover .ga-grip, .ga-handle:focus .ga-grip, .ga-handle.dragging .ga-grip { opacity: 1; }
+.ga-handle-grip { cursor: inherit; }
+.ga-handle:focus { outline: none; }
+.ga-drag-label rect { fill: var(--accent, #0078d7); }
+.ga-drag-label text { fill: #fff; font-family: Arial, sans-serif; font-weight: 600; }
+.ga-drag-hint { margin: 4px 0 6px; }
+#ga-canvas.ga-dragging { cursor: grabbing; user-select: none; }
 .ga-add { display: flex; gap: 6px; margin-top: 8px; }
 .ga-note { color: var(--text-secondary); font-size: 11px; margin-top: 10px; }
 

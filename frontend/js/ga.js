@@ -69,6 +69,12 @@ const GA_EXTRA_KINDS = [
 
 // Internal separation between compartments (IEC 61439-2 forms): partition
 // thickness + terminal clearance each side, mm. Indicative.
+// Interactive compartment sizing: snap step and smallest cell (mm), and the
+// margin round the enclosure in the SVG (its viewBox units are mm).
+const GA_DRAG_SNAP_MM = 10;
+const GA_MIN_CELL_MM = 100;
+const GA_SVG_MARGIN = 70;
+
 const GA_PARTITION_MM = { '1': 0, '2a': 20, '2b': 20, '3a': 40, '3b': 40, '4a': 60, '4b': 60 };
 
 const GA_KIND_FILL = {
@@ -103,7 +109,15 @@ const GA = {
       grid_cols: Number(g.grid_cols) > 0 ? Math.min(8, Math.floor(Number(g.grid_cols))) : null,
       grid_rows: Number(g.grid_rows) > 0 ? Math.min(8, Math.floor(Number(g.grid_rows))) : null,
       section_dims: (g.section_dims && typeof g.section_dims === 'object') ? g.section_dims : {},
+      // Grid column widths / row heights as proportions (dragged on screen);
+      // absent or the wrong length ⇒ equal cells.
+      grid_col_f: this._fracs(g.grid_col_f),
+      grid_row_f: this._fracs(g.grid_row_f),
     };
+  },
+
+  _fracs(a) {
+    return Array.isArray(a) && a.length && a.every(v => Number(v) > 0 && isFinite(Number(v))) ? a.map(Number) : null;
   },
 
   _write(comp, patch) {
@@ -323,8 +337,10 @@ const GA = {
   _capacity(enc, dT) { return 5.5 * this._surface(enc) * dT; },
 
   // ── Layout for a board ────────────────────────────────────────────
-  layout(comp) {
-    const cfg = this.cfg(comp);
+  // `ov` (drag preview only): { cfg: patch, enc: the enclosure to keep }.
+  layout(comp, ov) {
+    const cfg = Object.assign(this.cfg(comp), ov && ov.cfg);
+    if (ov && ov.enc) { cfg._encFixed = ov.enc; cfg._encAuto = !!ov.auto; }
     const items = this.items(comp);
     if (typeof DBSections !== 'undefined' && DBSections.has(comp)) return this._layoutSections(comp, cfg, items);
     const heat = items.reduce((n, i) => n + (i.heat || 0), 0) * 1.1;   // +10 % busbars / wiring
@@ -396,17 +412,21 @@ const GA = {
       const comps = [];
       let ok = true;
       if (grid) {
-        // Equal cells: columns × rows across the enclosure, partitions between.
-        const cw = Math.floor((enc.w - part * (gcols - 1)) / gcols), ch = Math.floor((enc.h - part * (grows - 1)) / grows);
+        // Columns × rows across the enclosure, partitions between; column
+        // widths / row heights follow the dragged proportions, else equal.
+        const cws = this._split(enc.w - part * (gcols - 1), gcols, cfg.grid_col_f);
+        const chs = this._split(enc.h - part * (grows - 1), grows, cfg.grid_row_f);
+        const at = (sizes, i) => sizes.slice(0, i).reduce((n, v) => n + v, 0) + part * i;
         secs.forEach((sec, i) => {
           const its = by.get(sec.id) || [];
           const col = i % gcols, row = Math.floor(i / gcols);
+          const cw = cws[col], ch = chs[row];
           const res = this.pack(its, { w: cw, h: ch }, cfg.spare_pct);
           if (!res.fits) ok = false;
-          comps.push({ sec, items: its, size: cw, res, manual: false, x: col * (cw + part), y: row * (ch + part),
+          comps.push({ sec, items: its, size: cw, res, manual: !!(cfg.grid_col_f || cfg.grid_row_f), x: at(cws, col), y: at(chs, row),
             w: cw, h: ch, heat: its.reduce((n, it) => n + (it.heat || 0), 0) * 1.1 });
         });
-        return { ok, comps, used: enc.w };
+        return { ok, comps, used: enc.w, cws, chs };
       }
       for (const sec of secs) {
         const its = by.get(sec.id) || [];
@@ -442,7 +462,9 @@ const GA = {
     const sorted = GA_ENCLOSURES.slice().sort((a, b) => a.w * a.h * a.d - b.w * b.h * b.d);
     const pool = sorted.filter(e => cfg.mounting === 'any' || e.type === cfg.mounting);
     let enc = null, r = null, auto = false, note = null;
-    if (cfg.enclosure === 'custom') {
+    if (cfg._encFixed) {
+      enc = cfg._encFixed; auto = !!cfg._encAuto;
+    } else if (cfg.enclosure === 'custom') {
       enc = { key: 'custom', label: `${cfg.custom.w} × ${cfg.custom.h} × ${cfg.custom.d} custom`,
         w: +cfg.custom.w || 600, h: +cfg.custom.h || 800, d: +cfg.custom.d || 250, type: (+cfg.custom.h || 0) >= 1400 ? 'floor' : 'wall' };
     } else if (cfg.enclosure !== 'auto') {
@@ -481,12 +503,24 @@ const GA = {
     const totalMods = r.comps.reduce((n, c) => n + c.res.perRow * c.res.rowsAvail, 0);
     const usedMods = r.comps.reduce((n, c) => n + c.res.usedModules, 0);
     const first = r.comps[0].res;
-    return { comp, cfg, items, enc, auto, comps: r.comps, part, form, side, grid, gcols, grows, heat, capacity: cap,
+    return { comp, cfg, items, enc, auto, comps: r.comps, part, form, side, grid, gcols, grows, cws: r.cws, chs: r.chs, heat, capacity: cap,
       placed: [], perRow: first.perRow, rowsAvail: first.rowsAvail,
       rowsNeeded: Math.max(...r.comps.map(c => c.res.rowsNeeded)), colW: 0,
       usedModules: usedMods, spareModules: r.comps.reduce((n, c) => n + c.res.spareModules, 0),
       fits: r.ok, utilisation: totalMods ? Math.min(100, usedMods / totalMods * 100) : 0,
       totalModules: totalMods, warnings };
+  },
+
+  // Start (mm) of the partition before cell k.
+  _edge(sizes, k, part) { return sizes.slice(0, k).reduce((n, v) => n + v, 0) + part * (k - 1); },
+
+  // `total` mm shared by n cells in proportion to `fr` (equal without it).
+  _split(total, n, fr) {
+    const f = fr && fr.length === n ? fr : Array(n).fill(1);
+    const sum = f.reduce((a, v) => a + v, 0) || 1;
+    const out = f.map(v => Math.floor(total * v / sum));
+    out[n - 1] += total - out.reduce((a, v) => a + v, 0);    // rounding to the last cell
+    return out;
   },
 
   // ── Drawing primitives (one list feeds SVG, PDF and DXF) ───────────
@@ -508,9 +542,8 @@ const GA = {
       }
     });
     if (L.grid && L.part > 0) {
-      const cw = L.comps[0].w, ch = L.comps[0].h;
-      for (let k = 1; k < L.gcols; k++) s.push({ t: 'rect', x: k * (cw + L.part) - L.part, y: 0, w: L.part, h: enc.h, layer: 'PARTITION', kind: 'part', title: `Partition — form ${L.form}` });
-      for (let k = 1; k < L.grows; k++) s.push({ t: 'rect', x: 0, y: k * (ch + L.part) - L.part, w: enc.w, h: L.part, layer: 'PARTITION', kind: 'part', title: `Partition — form ${L.form}` });
+      for (let k = 1; k < L.gcols; k++) s.push({ t: 'rect', x: this._edge(L.cws, k, L.part), y: 0, w: L.part, h: enc.h, layer: 'PARTITION', kind: 'part', title: `Partition — form ${L.form}` });
+      for (let k = 1; k < L.grows; k++) s.push({ t: 'rect', x: 0, y: this._edge(L.chs, k, L.part), w: enc.w, h: L.part, layer: 'PARTITION', kind: 'part', title: `Partition — form ${L.form}` });
     }
     for (const c of L.comps) {
       const col = DBSections.color(c.sec);
@@ -558,8 +591,10 @@ const GA = {
   // ── SVG ───────────────────────────────────────────────────────────
   _esc(v) { return typeof escHtml === 'function' ? escHtml(String(v)) : String(v).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); },
 
-  svg(L) {
-    const M = 70, enc = L.enc;
+  // `opt.interactive`: add the on-screen partition drag handles (never in an
+  // export); `opt.drag`: the live readout while one is dragged.
+  svg(L, opt) {
+    const M = GA_SVG_MARGIN, enc = L.enc;
     const W = enc.w + M * 2, H = enc.h + M * 2;
     let open = null;
     const bodies = this.shapes(L).map(sh => {
@@ -579,8 +614,162 @@ const GA = {
       <text x="${(x1 + x2) / 2}" y="${(y1 + y2) / 2 - 6}" text-anchor="middle" stroke="none"${rot ? ` transform="rotate(-90 ${(x1 + x2) / 2} ${(y1 + y2) / 2})"` : ''}>${label}</text></g>`;
     const dims = dim(M, M - 24, M + enc.w, M - 24, `${enc.w} mm`, false)
       + dim(M - 24, M, M - 24, M + enc.h, `${enc.h} mm`, true);
+    const handles = opt && opt.interactive ? this._handlesSvg(L, M, opt.drag) : '';
     return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}">
-      <rect width="${W}" height="${H}" fill="#fff"/>${dims}${bodies}</svg>`;
+      <rect width="${W}" height="${H}" fill="#fff"/>${dims}${bodies}${handles}</svg>`;
+  },
+
+  // ── Interactive compartment sizing ───────────────────────────────
+  // The boundaries a user can drag: grid column / row partitions, or the
+  // partitions between side-by-side / stacked compartments.
+  // Each: { id 'col:k'|'row:k'|'side:k'|'stack:k', axis 'x'|'y', pos (mm, partition centre), sizes, k }.
+  _boundaries(L) {
+    const out = [];
+    if (!L.comps || L.comps.length < 2) return out;
+    const p = L.part;
+    if (L.grid) {
+      for (let k = 1; k < L.gcols; k++) out.push({ id: 'col:' + k, axis: 'x', k, sizes: L.cws, pos: this._edge(L.cws, k, p) + p / 2 });
+      for (let k = 1; k < L.grows; k++) out.push({ id: 'row:' + k, axis: 'y', k, sizes: L.chs, pos: this._edge(L.chs, k, p) + p / 2 });
+    } else {
+      const sizes = L.comps.map(c => L.side ? c.w : c.h);
+      for (let k = 1; k < L.comps.length; k++) {
+        out.push({ id: (L.side ? 'side:' : 'stack:') + k, axis: L.side ? 'x' : 'y', k, sizes, pos: this._edge(sizes, k, p) + p / 2 });
+      }
+    }
+    return out;
+  },
+
+  _handlesSvg(L, M, drag) {
+    const { enc } = L;
+    const u = 1 / Math.max(0.1, this._zoom || 1);     // one screen pixel, in drawing units
+    // Grips sit mid-way along the first cell's edge — never where a column and
+    // a row partition cross — and are drawn above every hit band.
+    const gripAt = (b) => b.axis === 'x'
+      ? { x: M + b.pos, y: M + (L.grid && L.chs ? L.chs[0] / 2 : enc.h / 2) }
+      : { x: M + (L.grid && L.cws ? L.cws[0] / 2 : enc.w / 2), y: M + b.pos };
+    const all = this._boundaries(L);
+    const head = (b, inner, cls) => {
+      const vert = b.axis === 'x', what = vert ? 'width' : 'height';
+      const active = drag && drag.id === b.id;
+      return `<g class="ga-handle${cls || ''}${active ? ' dragging' : ''}" data-ga-handle="${b.id}" data-dxf-skip${cls ? '' : ` tabindex="0" role="separator"
+        aria-orientation="${vert ? 'vertical' : 'horizontal'}" aria-label="Drag to change the compartment ${what}s (arrow keys: 10 mm, Shift: 50 mm)"`}
+        style="cursor:${vert ? 'col-resize' : 'row-resize'};touch-action:none"><title>Drag to resize — ${b.sizes[b.k - 1]} | ${b.sizes[b.k]} mm</title>${inner}</g>`;
+    };
+    const bands = all.map(b => {
+      const vert = b.axis === 'x';
+      const x = M + b.pos, y = M + b.pos;
+      const inner = vert
+        ? `<rect x="${x - 9 * u}" y="${M}" width="${18 * u}" height="${enc.h}" fill="transparent"/><line class="ga-handle-line" vector-effect="non-scaling-stroke" x1="${x}" y1="${M}" x2="${x}" y2="${M + enc.h}"/>`
+        : `<rect x="${M}" y="${y - 9 * u}" width="${enc.w}" height="${18 * u}" fill="transparent"/><line class="ga-handle-line" vector-effect="non-scaling-stroke" x1="${M}" y1="${y}" x2="${M + enc.w}" y2="${y}"/>`;
+      return head(b, inner);
+    }).join('');
+    const grips = all.map(b => {
+      const vert = b.axis === 'x';
+      const g = gripAt(b);
+      let inner = vert
+        ? `<rect class="ga-grip" x="${g.x - 5 * u}" y="${g.y - 22 * u}" width="${10 * u}" height="${44 * u}" rx="${5 * u}"/>`
+        : `<rect class="ga-grip" x="${g.x - 22 * u}" y="${g.y - 5 * u}" width="${44 * u}" height="${10 * u}" rx="${5 * u}"/>`;
+      if (drag && drag.id === b.id) {
+        const txt = `${b.sizes[b.k - 1]} mm  |  ${b.sizes[b.k]} mm`;
+        const ly = vert ? g.y - 56 * u : g.y - 38 * u;
+        inner += `<g class="ga-drag-label"><rect x="${g.x - 80 * u}" y="${ly}" width="${160 * u}" height="${24 * u}" rx="${4 * u}"/>`
+          + `<text x="${g.x}" y="${ly + 17 * u}" text-anchor="middle" font-size="${13 * u}">${txt}</text></g>`;
+      }
+      return head(b, inner, ' ga-handle-grip');
+    }).join('');
+    return bands + grips;
+  },
+
+  // New sizes with boundary k moved to `pos` (mm), snapped and clamped so
+  // neither neighbour drops under the minimum.
+  _resized(b, pos, part) {
+    const sizes = b.sizes.slice();
+    const pair = sizes[b.k - 1] + sizes[b.k];
+    const start = sizes.slice(0, b.k - 1).reduce((n, v) => n + v, 0) + part * (b.k - 1);   // cell k−1 starts here
+    let a = Math.round((pos - part / 2 - start) / GA_DRAG_SNAP_MM) * GA_DRAG_SNAP_MM;
+    a = Math.max(GA_MIN_CELL_MM, Math.min(pair - GA_MIN_CELL_MM, a));
+    if (pair < 2 * GA_MIN_CELL_MM) a = Math.round(pair / 2);
+    sizes[b.k - 1] = a; sizes[b.k] = pair - a;
+    return sizes;
+  },
+
+  // The stored choice for a set of sizes along boundary b's axis.
+  _sizesPatch(L, b, sizes) {
+    if (b.id.startsWith('col:')) return { grid_col_f: sizes.slice() };
+    if (b.id.startsWith('row:')) return { grid_row_f: sizes.slice() };
+    const dims = JSON.parse(JSON.stringify(L.cfg.section_dims || {}));
+    const key = b.axis === 'x' ? 'w' : 'h';
+    L.comps.forEach((c, i) => { dims[c.sec.id] = Object.assign(dims[c.sec.id] || {}, { [key]: sizes[i] }); });
+    return { section_dims: dims };
+  },
+
+  _svgPoint(ev) {
+    const svg = document.querySelector('#ga-canvas svg');
+    if (!svg || !svg.getScreenCTM()) return null;
+    const pt = svg.createSVGPoint();
+    pt.x = ev.clientX; pt.y = ev.clientY;
+    const q = pt.matrixTransform(svg.getScreenCTM().inverse());
+    return { x: q.x - GA_SVG_MARGIN, y: q.y - GA_SVG_MARGIN };
+  },
+
+  // Pointer drag on a partition handle: live preview with the enclosure held
+  // where it is, one write (one undo step) on release.
+  _pointerDown(e) {
+    const h = e.target.closest && e.target.closest('[data-ga-handle]');
+    const comp = this.board();
+    if (!h || !comp || !this._last || (e.button != null && e.button !== 0)) return;
+    const L0 = this._last;
+    const b = this._boundaries(L0).find(x => x.id === h.dataset.gaHandle);
+    if (!b) return;
+    e.preventDefault();
+    const drag = { id: b.id, b, L0, patch: null, raf: 0 };
+    this._drag = drag;
+    const move = (ev) => {
+      const pt = this._svgPoint(ev);
+      if (!pt) return;
+      const sizes = this._resized(b, b.axis === 'x' ? pt.x : pt.y, L0.part);
+      drag.patch = this._sizesPatch(L0, b, sizes);
+      if (!drag.raf) drag.raf = requestAnimationFrame(() => { drag.raf = 0; this._preview(comp, drag); });
+    };
+    const up = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', up);
+      if (drag.raf) cancelAnimationFrame(drag.raf);
+      this._drag = null;
+      if (drag.patch) this._write(comp, drag.patch);
+      this.render();
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', up);
+    this._preview(comp, drag);
+  },
+
+  _preview(comp, drag) {
+    const canvas = document.getElementById('ga-canvas');
+    if (!canvas) return;
+    const L = this.layout(comp, { cfg: drag.patch || {}, enc: drag.L0.enc, auto: drag.L0.auto });
+    const b = this._boundaries(L).find(x => x.id === drag.id);
+    canvas.innerHTML = this.svg(L, { interactive: true, drag: b ? { id: b.id } : null });
+    this._applyZoom();
+  },
+
+  // Arrow keys on a focused handle: 10 mm steps (Shift: 50 mm).
+  _keyDown(e) {
+    const h = e.target.closest && e.target.closest('[data-ga-handle]');
+    const comp = this.board();
+    if (!h || !comp || !this._last) return;
+    const b = this._boundaries(this._last).find(x => x.id === h.dataset.gaHandle);
+    if (!b) return;
+    const dir = { ArrowLeft: -1, ArrowUp: -1, ArrowRight: 1, ArrowDown: 1 }[e.key];
+    if (!dir) return;
+    e.preventDefault();
+    const sizes = this._resized(b, b.pos + dir * (e.shiftKey ? 50 : GA_DRAG_SNAP_MM), this._last.part);
+    this._write(comp, this._sizesPatch(this._last, b, sizes));
+    this.render();
+    const again = document.querySelector(`#ga-canvas [data-ga-handle="${b.id}"]`);
+    if (again) again.focus();
   },
 
   // One shape → SVG. Labels inside a device group carry their attribute tag.
@@ -641,6 +830,8 @@ const GA = {
       </div>`;
     host.onclick = (e) => this._click(e);
     host.onchange = (e) => this._change(e);
+    host.onpointerdown = (e) => this._pointerDown(e);
+    host.onkeydown = (e) => this._keyDown(e);
     this.render();
     this.fit();
   },
@@ -656,7 +847,7 @@ const GA = {
     if (!comp || !canvas || !side) return;
     const L = this.layout(comp);
     this._last = L;
-    canvas.innerHTML = this.svg(L);
+    canvas.innerHTML = this.svg(L, { interactive: true });
     this._applyZoom();
     side.innerHTML = this._sideHTML(L);
   },
@@ -722,7 +913,7 @@ const GA = {
       return `<tr style="--dbs-c:${DBSections.color(c.sec)}">
         <td><span class="dbs-dot"></span>${e(c.sec.name)}</td>
         <td>${c.w} × ${c.h}</td>
-        <td>${L.grid ? '<span class="ga-sub">equal</span>' : `<input type="number" data-ga-dim="${e(c.sec.id)}" value="${m ? e(m) : ''}" placeholder="auto" min="100" step="50" style="width:62px" title="Fix this compartment's ${L.side ? 'width' : 'height'} (mm); blank = fitted to its devices">`}</td>
+        <td>${L.grid ? `<span class="ga-sub">${c.w} × ${c.h}</span>` : `<input type="number" data-ga-dim="${e(c.sec.id)}" value="${m ? e(m) : ''}" placeholder="auto" min="100" step="50" style="width:62px" title="Fix this compartment's ${L.side ? 'width' : 'height'} (mm); blank = fitted to its devices">`}</td>
         <td class="ga-sub">${c.res.usedModules} mod · ${c.heat.toFixed(0)} W${c.res.fits ? '' : ' ⚠'}</td></tr>`;
     }).join('');
     return `
@@ -735,6 +926,9 @@ const GA = {
       <label>Rows <input type="number" data-ga-set="grid_rows" min="1" max="8" step="1" value="${cfg.grid_rows || ''}" placeholder="auto" style="width:56px"></label>
       <div class="ga-sub">${L.gcols} × ${L.grows} grid · sections fill left→right, top→bottom in schedule order</div>` : ''}
       <div class="ga-sub">Form ${e(L.form)} separation · ${L.part} mm partitions (set on the schedule's Sections panel)</div>
+      ${L.comps.length > 1 ? `<div class="ga-sub ga-drag-hint">Drag a partition on the drawing to resize the compartments either side of it (or focus it and use the arrow keys).</div>` : ''}
+      ${L.grid && (cfg.grid_col_f || cfg.grid_row_f) ? '<button class="btn-small" data-ga="grid-equal" title="Back to equal columns and rows">Equal sizes</button>' : ''}
+      ${!L.grid && Object.keys(cfg.section_dims || {}).length ? '<button class="btn-small" data-ga="dims-fit" title="Clear the fixed sizes — each compartment fitted to its devices again">Fit to devices</button>' : ''}
       <table class="ga-items"><thead><tr><th>Section</th><th>mm</th><th>${L.grid ? 'Size' : L.side ? 'Width' : 'Height'}</th><th>Load</th></tr></thead><tbody>${rows}</tbody></table>`;
   },
 
@@ -763,6 +957,8 @@ const GA = {
     if (a === 'zoom-in') this.zoom(1.25);
     else if (a === 'zoom-out') this.zoom(1 / 1.25);
     else if (a === 'fit') this.fit();
+    else if (a === 'grid-equal') { this._write(comp, { grid_col_f: null, grid_row_f: null }); this.render(); }
+    else if (a === 'dims-fit') { this._write(comp, { section_dims: {} }); this.render(); }
     else if (a === 'svg') this.exportSVG();
     else if (a === 'dxf') this.exportDXF();
     else if (a === 'pdf') this.exportSheet(false);
@@ -821,7 +1017,15 @@ const GA = {
     const lab = document.getElementById('ga-zoom-label');
     if (lab) lab.textContent = Math.round(this._zoom * 100) + '%';
   },
-  zoom(f) { this._zoom = Math.min(4, Math.max(0.1, this._zoom * f)); this._applyZoom(); },
+  zoom(f) { this._zoom = Math.min(4, Math.max(0.1, this._zoom * f)); this._redrawCanvas(); },
+
+  // Redraw the drawing at the current zoom — the drag handles are sized in
+  // screen pixels, so they follow the zoom.
+  _redrawCanvas() {
+    const canvas = document.getElementById('ga-canvas');
+    if (canvas && this._last) canvas.innerHTML = this.svg(this._last, { interactive: true });
+    this._applyZoom();
+  },
   fit() {
     const c = document.getElementById('ga-canvas');
     const svg = c && c.querySelector('svg');
@@ -829,7 +1033,7 @@ const GA = {
     const vb = svg.viewBox.baseVal;
     const z = Math.min((c.clientWidth - 24) / vb.width, (c.clientHeight - 24) / vb.height);
     this._zoom = z > 0 && isFinite(z) ? Math.min(1.5, z) : 0.5;
-    this._applyZoom();
+    this._redrawCanvas();
   },
 
   // ── Exports ───────────────────────────────────────────────────────
