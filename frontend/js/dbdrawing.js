@@ -33,7 +33,9 @@ const DBDrawing = {
   DEV_TO_BUS: 50,      // last incomer device → busbar
   SUPPLY_TAP_H: 38,    // vertical pitch of a supply-side accessory tap
   DROP_W: 118,         // way column pitch
-  DROP_X0: 62,         // first drop, measured from the left pad
+  DROP_X0: 62,
+  TABLE_HDR: 74,       // extra left margin for the row headings in table mode
+  TBL_ROW: 14,         // info-table row pitch         // first drop, measured from the left pad
   WAYS_PER_ROW: 12,
   BUS_TO_RCD: 12,      // busbar → top of the earth-leakage bracket
   RCD_H: 20,
@@ -50,6 +52,7 @@ const DBDrawing = {
   DETAIL_DEFAULTS: {
     cable: true, load: true, phase: true, elgroups: true,
     bars: true, status: true, accessories: true,
+    table: false,        // way info as a table under the load arrows instead of beside the device
   },
 
   // ── Detail toggles ──────────────────────────────────────────────────
@@ -91,6 +94,7 @@ const DBDrawing = {
           ${toggle('bars', 'N + PE bars', 'Draw the neutral and protective earth bars')}
           ${toggle('status', 'Check status', 'Colour each way by its circuit-check verdict')}
           ${toggle('accessories', 'Accessories', 'Draw the board accessories on the single line')}
+          ${toggle('table', 'Info table', 'Show each way\'s information as a table below its load, instead of beside the device')}
           <span class="sch-sep"></span>
           <button class="btn-small" data-dbd="svg" title="Download the drawing as a vector SVG">SVG</button>
           <button class="btn-small" data-dbd="png" title="Download the drawing as a PNG">PNG</button>
@@ -228,6 +232,13 @@ const DBDrawing = {
       items.push({
         kind: 'way', glyph: 'mcb', phase: (c.poles === '3P' || c.phase === 'RWB') ? 'RWB' : (c.phase || 'R'),
         poles: c.poles || '1P', spare, wayDesc: c.description || '',
+        cells: {
+          way: String(c.way ?? ''), device: dev, desc: this._trunc(c.description || (spare ? 'Spare' : '—'), 19),
+          cable: spare ? '' : `${c.cable_mm2 || '?'}`, len: spare ? '' : `${c.cable_m || 0}`,
+          ecc: spare ? '' : (c.ecc_mm2 != null ? `${c.ecc_mm2}` : 'min'),
+          amps: spare ? '' : DBSchedule._wayFlaA(c, vll).toFixed(1),
+          kva: spare ? '' : ((Number(c.load_va) || 0) / 1000).toFixed(2),
+        },
         elGroup: D.elgroups ? (c.el_group || '') : '',
         status: v ? v.status : (warns.length ? 'warn' : null),
         lines, tip,
@@ -254,6 +265,10 @@ const DBDrawing = {
     const warns = DBAccessories.warnings(acc, DBAccessories.incomer(comp));
     return {
       kind: 'acc', glyph, accKind: acc.kind,
+      cells: {
+        way: '—', device: fuseA && acc.fuse_type !== 'none' ? `${fuseA} A ${acc.fuse_type === 'mcb' ? 'MCB' : acc.fuse_type}` : 'unprotected',
+        desc: this._trunc(acc.label || '', 19), cable: '', len: '', ecc: '', amps: '', kva: '',
+      },
       phase: acc.phases || 'RWB', poles: (acc.phases === 'RWB') ? '3P' : '1P',
       elGroup: '',
       status: warns.some(w => w.level === 'warn') ? 'warn' : null,
@@ -293,6 +308,7 @@ const DBDrawing = {
   },
 
   _layout(comp, D) {
+    this._dropX0 = this.DROP_X0 + (D.table ? this.TABLE_HDR : 0);
     const items = this._items(comp, D);
     const supply = D.accessories
       ? DBAccessories.list(comp).filter(a => a.tap === 'supply')
@@ -305,9 +321,11 @@ const DBDrawing = {
     }
     if (!rows.length) rows.push([]);
 
-    const maxLines = items.reduce((n, it) => Math.max(n, it.lines.length), 1);
+    const tRows = D.table ? this._tableRows(D) : [];
+    const maxLines = D.table ? 0 : items.reduce((n, it) => Math.max(n, it.lines.length), 1);
     const rowInner = this.BUS_TO_DEV + this.LABEL_DY + maxLines * this.LINE_H
-      + (D.bars ? this.BAR_GAP + this.BAR_PITCH + 8 : 8) + (D.load ? this.LOAD_H : 0);
+      + (D.bars ? this.BAR_GAP + this.BAR_PITCH + 8 : 8) + (D.load ? this.LOAD_H : 0)
+      + (tRows.length ? tRows.length * this.TBL_ROW + 14 : 0);
     const rowH = rowInner + this.ROW_GAP;
 
     const incTop = this.PAD + this.HEAD_H + 14;
@@ -316,11 +334,11 @@ const DBDrawing = {
     const busY = (isoY || devY) + this.DEV_TO_BUS;
 
     const widest = rows.reduce((n, r) => Math.max(n, r.length), 0);
-    const busW = Math.max(this.DROP_X0 + widest * this.DROP_W, 460);
+    const busW = Math.max(this._dropX0 + widest * this.DROP_W, 460);
     const w = this.PAD * 2 + Math.max(busW + 20, 620);
     const h = busY + rows.length * rowH + this.PAD;
 
-    return { items, rows, supply, inc, maxLines, rowInner, rowH, incTop, devY, isoY, busY, busW, w, h };
+    return { tRows, items, rows, supply, inc, maxLines, rowInner, rowH, incTop, devY, isoY, busY, busW, w, h };
   },
 
   // ── Palette ─────────────────────────────────────────────────────────
@@ -562,9 +580,19 @@ const DBDrawing = {
     return s;
   },
 
+  // Row headings of the info table, in drawing order; a row is dropped when
+  // its detail group is switched off, exactly as the label lines are.
+  _tableRows(D) {
+    const r = [{ k: 'way', h: 'Way', bold: true }, { k: 'device', h: 'Device' }, { k: 'desc', h: 'Description' }];
+    if (D.phase) r.push({ k: 'phase', h: 'Phase' });
+    if (D.cable) r.push({ k: 'cable', h: 'Cable mm²' }, { k: 'len', h: 'Length m' }, { k: 'ecc', h: 'ECC mm²' });
+    if (D.load) r.push({ k: 'amps', h: 'Load A' }, { k: 'kva', h: 'Load kVA' });
+    return r;
+  },
+
   _busRow(row, ri, L, P, D, x0, comp) {
     const busY = L.busY + ri * L.rowH;
-    const busEndX = x0 + Math.max(this.DROP_X0 + row.length * this.DROP_W - this.DROP_W / 2 + 30, 260);
+    const busEndX = x0 + Math.max(this._dropX0 + row.length * this.DROP_W - this.DROP_W / 2 + 30, 260);
     let s = `<line x1="${x0}" y1="${busY}" x2="${busEndX}" y2="${busY}" stroke="${P.bus}" stroke-width="3.4" stroke-linecap="round"/>`;
 
     // Riser joining this busbar section to the previous one.
@@ -578,7 +606,7 @@ const DBDrawing = {
       for (const br of this._elBrackets(row)) {
         const idn0 = ((comp.props.el_ratings || {})[br.group]) || 30;
         const txtW = `EL ${br.group} · ${idn0} mA`.length * 5.8 + 16;
-        const mid = x0 + this.DROP_X0 + (br.from + br.to) / 2 * this.DROP_W;
+        const mid = x0 + this._dropX0 + (br.from + br.to) / 2 * this.DROP_W;
         const half = Math.max(((br.to - br.from) * this.DROP_W) / 2 + 26, txtW / 2);
         const ax = mid - half, bx = mid + half;
         const y = busY + this.BUS_TO_RCD;
@@ -594,7 +622,7 @@ const DBDrawing = {
     const barsY = labelTop + L.maxLines * this.LINE_H + this.BAR_GAP;
 
     row.forEach((it, i) => {
-      const x = x0 + this.DROP_X0 + i * this.DROP_W;
+      const x = x0 + this._dropX0 + i * this.DROP_W;
       const stroke = D.status ? this._statusColor(it.status, P) : P.line;
       const devY = busY + this.BUS_TO_DEV;
       let g = `<g><title>${this._esc(it.tip)}</title>`;
@@ -602,7 +630,7 @@ const DBDrawing = {
       const half = (it.glyph === 'spd' ? 25 : 20) * this.SYM_SCALE;
       g += this._vline(x, busY, endY, [[devY, half]], stroke, 1.4);
       g += this._glyph(it.glyph, x, devY, P, stroke, it);
-      if (D.phase) {
+      if (D.phase && !D.table) {
         // Phase chip sits left of the drop so the conductor never crosses it.
         const pc = P.phase[it.phase] || P.muted;
         const tw = String(it.phase).length * 5.6;
@@ -612,8 +640,8 @@ const DBDrawing = {
       // Labels sit on a page-coloured patch, so the conductor reads as passing
       // behind them rather than being struck through the text.
       const lw = this.DROP_W - 12, lh = it.lines.length * this.LINE_H + 2;
-      g += `<rect x="${x - lw / 2}" y="${labelTop - 10}" width="${lw}" height="${lh}" fill="${P.surface}"/>`;
-      it.lines.forEach((ln, li) => {
+      if (!D.table) g += `<rect x="${x - lw / 2}" y="${labelTop - 10}" width="${lw}" height="${lh}" fill="${P.surface}"/>`;
+      (D.table ? [] : it.lines).forEach((ln, li) => {
         g += `<text x="${x}" y="${labelTop + li * this.LINE_H}" text-anchor="middle" font-size="${ln.bold ? 9.5 : 9}"
           font-weight="${ln.bold ? 700 : 400}" fill="${ln.dim ? P.muted : P.ink}">${this._esc(ln.text)}</text>`;
       });
@@ -628,6 +656,36 @@ const DBDrawing = {
       s += g;
     });
 
+    if (L.tRows.length) {
+      const top = barsY + (D.bars ? this.BAR_PITCH : 0) + 14 + (D.load ? 56 : 0);
+      const h = L.tRows.length * this.TBL_ROW;
+      const left = x0, right = busEndX;
+      s += `<rect x="${left}" y="${top}" width="${right - left}" height="${h}" fill="none" stroke="${P.border}"/>`;
+      L.tRows.forEach((r, ri2) => {
+        const y = top + ri2 * this.TBL_ROW;
+        if (ri2 > 0) s += `<line x1="${left}" y1="${y}" x2="${right}" y2="${y}" stroke="${P.border}"/>`;
+        s += `<text x="${left + 5}" y="${y + 10}" font-size="8.5" font-weight="600" fill="${P.muted}">${this._esc(r.h)}</text>`;
+      });
+      const hx = x0 + this._dropX0 - this.DROP_W / 2;
+      s += `<line x1="${hx}" y1="${top}" x2="${hx}" y2="${top + h}" stroke="${P.border}"/>`;
+      row.forEach((it, i) => {
+        const x = x0 + this._dropX0 + i * this.DROP_W;
+        s += `<line x1="${x + this.DROP_W / 2}" y1="${top}" x2="${x + this.DROP_W / 2}" y2="${top + h}" stroke="${P.border}"/>`;
+        L.tRows.forEach((r, ri2) => {
+          const y = top + ri2 * this.TBL_ROW + 10;
+          if (r.k === 'phase') {
+            const pc = P.phase[it.phase] || P.muted;
+            const tw = String(it.phase).length * 5.4;
+            s += `<rect x="${x - tw / 2 - 7}" y="${y - 8}" width="8" height="8" rx="2" fill="${pc}"/>`
+              + `<text x="${x - tw / 2 + 4}" y="${y}" font-size="9" fill="${P.ink}">${this._esc(it.phase)}</text>`;
+            return;
+          }
+          const v = it.cells ? it.cells[r.k] : '';
+          s += `<text x="${x}" y="${y}" text-anchor="middle" font-size="9" font-weight="${r.bold ? 700 : 400}" fill="${r.k === 'desc' && it.spare ? P.muted : P.ink}">${this._esc(v)}</text>`;
+        });
+      });
+    }
+
     if (D.bars) {
       const barEnd = busEndX;
       s += `<line x1="${x0}" y1="${barsY}" x2="${barEnd}" y2="${barsY}" stroke="${P.line}" stroke-width="1.6"/>`
@@ -637,7 +695,7 @@ const DBDrawing = {
       // The conductors cross the bars; only an SPD is bonded to PE.
       row.forEach((it, i) => {
         if (it.glyph !== 'spd') return;
-        const x = x0 + this.DROP_X0 + i * this.DROP_W;
+        const x = x0 + this._dropX0 + i * this.DROP_W;
         s += `<circle cx="${x}" cy="${barsY + this.BAR_PITCH}" r="2.4" fill="${P.line}"/>`;
       });
     }
