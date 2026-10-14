@@ -19,14 +19,16 @@ def _payload(**kw):
     base = {
         "fileName": "test",
         "layers": {"SYMBOLS": "#d32f2f", "TEXT": None, "WIRES": "#222222"},
+        "linetypes": {"PP_DASH_6_3": [1.5, 0.75], "PP_DASH_2P2_1P8": [0.55, 0.45], "BAD": [1]},
         "blocks": [{"name": "PP_CB", "entities": [
-            {"t": "line", "a": [0, -5], "b": [0, 5], "layer": "SYMBOLS"},
+            {"t": "line", "a": [0, -5], "b": [0, 5], "layer": "SYMBOLS", "linetype": "PP_DASH_2P2_1P8"},
             {"t": "circle", "c": [0, 0], "r": 1.2, "fill": "#d32f2f", "layer": "SYMBOLS"},
             {"t": "text", "at": [3, 0], "h": 1.5, "s": "×", "layer": "SYMBOLS"},
         ]}],
         "entities": [
             {"t": "line", "a": [0, 0], "b": [100, 0], "layer": "WIRES", "lw": 0.85},
-            {"t": "poly", "pts": [[0, 0], [10, 0], [10, 10]], "closed": True, "fill": "#2e7d32", "dash": 2},
+            {"t": "poly", "pts": [[0, 0], [10, 0], [10, 10]], "closed": True, "fill": "#2e7d32",
+             "linetype": "PP_DASH_6_3"},
             {"t": "text", "at": [5, 20], "h": 2.5, "s": "Board 1 — 400/230 V · 2.5 mm² Ω", "align": "center",
              "valign": "middle", "layer": "TEXT"},
             {"t": "insert", "name": "PP_CB", "at": [50, 50], "sx": 0.25, "sy": 0.25, "rot": 90, "layer": "SYMBOLS",
@@ -96,7 +98,7 @@ def test_fills_dashes_and_lineweights():
     msp = doc.modelspace()
     assert len(msp.query("HATCH")) == 1
     poly = msp.query("LWPOLYLINE")[0]
-    assert poly.dxf.linetype == "PP_DASHED"
+    assert poly.dxf.linetype == "PP_DASH_6_3"
     line = msp.query("LINE")[0]
     assert line.dxf.lineweight in (80, 90)      # 0.85 mm → a standard weight
 
@@ -123,3 +125,23 @@ def test_route_returns_a_dxf(monkeypatch):
     assert r.headers["content-type"].startswith("application/dxf")
     assert 'filename="DB-1 single line.dxf"' in r.headers["content-disposition"]
     assert _read(r.content).blocks.get("PP_CB") is not None
+
+
+def test_each_dash_pattern_is_its_own_linetype_in_mm():
+    doc = _read(build_drawing_dxf(_payload()))
+    lt = doc.linetypes.get("PP_DASH_6_3")
+    assert lt is not None
+    assert lt.simplified_line_pattern() == pytest.approx((1.5, 0.75))   # 6-3 dash at 0.25 mm/px
+    assert doc.linetypes.get("PP_DASH_2P2_1P8") is not None
+    assert "BAD" not in doc.linetypes                                         # one value is not a pattern
+    blk_line = doc.blocks.get("PP_CB").query("LINE")[0]
+    assert blk_line.dxf.linetype == "PP_DASH_2P2_1P8"
+    assert not doc.audit().has_errors
+
+
+def test_unknown_linetype_falls_back_to_continuous():
+    p = _payload()
+    p["entities"].append({"t": "line", "a": [0, 0], "b": [5, 5], "linetype": "PP_DASH_9_9"})
+    doc = _read(build_drawing_dxf(p))
+    line = doc.modelspace().query("LINE")[-1]
+    assert line.dxf.get("linetype", "BYLAYER") == "BYLAYER"

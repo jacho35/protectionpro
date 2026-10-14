@@ -17,7 +17,12 @@ prim (all coordinates mm):
     {"t": "circle", "c": [x, y], "r": r, "fill": "#hex"?}
     {"t": "text",   "at": [x, y], "h": cap height, "s": str,
                     "align": "left|center|right", "valign": "baseline|middle", "rot": deg}
-  common keys: "layer", "color" ("#hex"), "lw" (mm), "dash" (pattern length mm)
+  common keys: "layer", "color" ("#hex"), "lw" (mm),
+               "linetype" (a name from "linetypes"), "ltscale"
+
+"linetypes": {NAME: [dash, gap, dash, gap, ...]} — lengths in mm, the SVG
+dash pattern at the drawing's scale. Block geometry is in mm and inserts are
+normally at scale 1, so a pattern reads the same in every CAD package.
 
 insert — a symbol placed as a block reference with attributes:
     {"t": "insert", "name": block, "at": [x, y], "sx": f, "sy": f, "rot": deg, "layer": str,
@@ -43,7 +48,6 @@ from ezdxf.enums import TextEntityAlignment
 
 _LINEWEIGHTS = [0, 5, 9, 13, 15, 18, 20, 25, 30, 35, 40, 50, 53, 60, 70, 80, 90, 100,
                 106, 120, 140, 158, 200, 211]
-_DASH_PATTERN_MM = 4.5          # PP_DASHED: 3 mm dash, 1.5 mm gap
 MAX_ENTITIES = 400_000
 
 
@@ -118,14 +122,31 @@ class _Writer:
         self.doc.header["$LWDISPLAY"] = 1
         if "PP_TEXT" not in self.doc.styles:
             self.doc.styles.new("PP_TEXT", dxfattribs={"font": "arial.ttf"})
-        if "PP_DASHED" not in self.doc.linetypes:
-            self.doc.linetypes.add("PP_DASHED", pattern=[_DASH_PATTERN_MM, 3.0, -1.5],
-                                   description="ProtectionPro dashed __ __ __")
+        self.linetypes = set()
+        for name, pat in (payload.get("linetypes") or {}).items():
+            self._linetype(name, pat)
         self.count = 0
         for name, col in (payload.get("layers") or {}).items():
             self._layer(name, col)
 
     # ── tables ──
+    def _linetype(self, name, pat):
+        """A dash pattern [d, g, d, g, ...] (mm) → LTYPE (dashes +, gaps −)."""
+        name = _safe_name(name, "")
+        try:
+            vals = [abs(float(v)) for v in (pat or [])][:24]
+        except (TypeError, ValueError):
+            return
+        if not name or len(vals) < 2 or sum(vals) <= 0 or name in self.doc.linetypes:
+            return
+        if len(vals) % 2:
+            vals = vals + vals
+        elements = [v if i % 2 == 0 else -v for i, v in enumerate(vals)]
+        desc = " / ".join(f"{v:g}" for v in vals)
+        self.doc.linetypes.add(name, pattern=[sum(vals)] + elements,
+                               description=f"ProtectionPro dash / gap {desc} mm"[:200])
+        self.linetypes.add(name)
+
     def _layer(self, name, col=None):
         name = _safe_name(name, "0")
         if name not in self.doc.layers:
@@ -145,11 +166,13 @@ class _Writer:
         lw = _lineweight(d.get("lw"))
         if lw is not None:
             a["lineweight"] = lw
-        dash = d.get("dash")
-        if dash:
+        lt = _safe_name(d.get("linetype"), "") if d.get("linetype") else ""
+        if lt and lt in self.linetypes:
+            a["linetype"] = lt
             try:
-                a["linetype"] = "PP_DASHED"
-                a["ltscale"] = max(0.05, float(dash) / _DASH_PATTERN_MM)
+                sc = float(d.get("ltscale") or 1)
+                if sc > 0 and abs(sc - 1) > 1e-6:
+                    a["ltscale"] = sc
             except (TypeError, ValueError):
                 pass
         return a
