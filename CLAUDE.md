@@ -60,6 +60,7 @@ frontend/
     ├── tcc.js              # Time-current curve coordination plotting
     ├── dynmotor.js         # Dynamic motor starting modal + SVG time-series charts
     ├── dbschedule.js       # DB circuit schedule grid — renders into the #db-modal OR the Schedules workspace
+    ├── dbsections.js       # DBSections — board sections/compartments (Normal / Essential / UPS): model, schedule panel + tabs, per-section totals; consumed by dbdrawing.js, ga.js and the circuit check
     ├── schedules.js        # Schedules workspace (every board: rail + full-height grid + per-way circuit check)
     ├── sl-diagram.js       # Street lighting circuit schematic (SLDiagram): source → main run, spurs on rows below, per-pole phase/VD/Zs, span length/current/neutral; zoom, PNG/SVG export
     ├── roadlight.js        # Street lighting › Lighting design: SANS 10098 / EN 13201 road lighting on a cross-section (SANS category helper from the functional road class) (strips, luminaire rows, arrangements), luminaire library (IES/LDT import, generic optics), results/isolux, max-spacing + optimiser, apply spacing to a circuit; state in reticulation.streetLighting.roadDesigns/.photometry; PDF in roadlight-report.js

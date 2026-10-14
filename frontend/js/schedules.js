@@ -20,7 +20,7 @@ const Schedules = {
   _active: false,
   _built: false,
   _boardId: null,
-  _tab: 'grid',         // 'grid' | 'drawing'
+  _tab: 'grid',         // 'grid' | 'drawing' | 'ga'
   _commitTimer: null,
   _checkTimer: null,
   _checkRan: false,     // has the user asked for a check at least once?
@@ -31,6 +31,12 @@ const Schedules = {
   init() {
     this.buildDOM();
     window.addEventListener('beforeunload', () => this._commitCurrent());
+    // Rotating a phone / resizing across 768 px swaps the grid for the card list.
+    const mq = window.matchMedia('(max-width: 768px)');
+    const swap = () => {
+      if (this._active && this._tab === 'grid' && this._boardId) { this._commitCurrent(); this._openCurrent(); }
+    };
+    if (mq.addEventListener) mq.addEventListener('change', swap); else if (mq.addListener) mq.addListener(swap);
   },
 
   buildDOM() {
@@ -51,6 +57,8 @@ const Schedules = {
           title="Run the per-way cable check on every board — derated ampacity, Ib ≤ In ≤ Iz, voltage drop, ECC size and earth-fault loop Zs">Check circuits</button>
         <button class="btn-small" id="sch-generate-sld"
           title="Build a bus + one breaker + one feeder per way for the selected board on the main SLD canvas — safe to re-run after schedule edits">Generate SLD</button>
+        <button class="btn-small sch-tb-toggle" id="sch-tb-toggle" aria-expanded="false"
+          title="Show the installation conditions (ambient, method, supply, grouping)">Settings ▾</button>
         <span class="sch-sep"></span>
         <label title="Ambient temperature used for the IEC 60364-5-52 derating">Ambient
           <input type="number" id="sch-ambient" value="30" min="10" max="60" step="5"> °C</label>
@@ -66,7 +74,7 @@ const Schedules = {
       </div>
       <div class="sch-body">
         <aside class="sch-rail">
-          <div class="sch-rail-head">Boards</div>
+          <div class="sch-rail-head" id="sch-rail-head" role="button" tabindex="0">Boards</div>
           <ul id="sch-board-list" role="listbox" aria-label="Distribution boards" tabindex="0"></ul>
           <div class="sch-rail-foot" id="sch-rail-foot"></div>
         </aside>
@@ -75,6 +83,19 @@ const Schedules = {
           <div id="sch-grid-host"></div>
         </section>
       </div>`;
+
+    // Phone only (the controls are CSS-hidden above 768 px): installation
+    // settings and the board list fold away so the schedule / drawing gets the screen.
+    const tbToggle = ws.querySelector('#sch-tb-toggle');
+    tbToggle.addEventListener('click', () => {
+      const open = ws.querySelector('.sch-toolbar').classList.toggle('sch-tb-open');
+      tbToggle.setAttribute('aria-expanded', String(open));
+      tbToggle.textContent = open ? 'Settings ▴' : 'Settings ▾';
+    });
+    const railHead = ws.querySelector('#sch-rail-head');
+    const toggleRail = () => ws.querySelector('.sch-rail').classList.toggle('open');
+    railHead.addEventListener('click', toggleRail);
+    railHead.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleRail(); } });
 
     ws.querySelector('#sch-run-check').addEventListener('click', () => this.runCheck(true));
     ws.querySelector('#sch-generate-sld').addEventListener('click', () => {
@@ -132,6 +153,8 @@ const Schedules = {
     this._active = false;
     this._commitCurrent();
     DBDrawing.unmount();
+    GA.unmount();
+    SchMobile.unmount();
     clearTimeout(this._commitTimer);
     clearTimeout(this._checkTimer);
   },
@@ -182,6 +205,8 @@ const Schedules = {
     if (!this._boardId) {
       DBSchedule.currentId = null;
       DBDrawing.unmount();
+      GA.unmount();
+      SchMobile.unmount();
       host.innerHTML = `
         <div class="sch-empty">
           <p><strong>No distribution boards in this project.</strong></p>
@@ -193,6 +218,30 @@ const Schedules = {
       if (btn) btn.addEventListener('click', () => switchWorkspace('sld'));
       return;
     }
+    if (this._tab === 'grid' && SchMobile.isPhone()) {
+      // Phone: the card list + edit sheet replace the 30-column grid. The edit
+      // session stays open (so commit / undo / result columns behave exactly as
+      // for the grid) with the grid pointed at a detached node.
+      DBDrawing.unmount();
+      GA.unmount();
+      DBSchedule._beginEdit(this._boardId);
+      DBSchedule._setHost(document.createElement('div'), 'workspace');
+      SchMobile.mount(this._boardId, host);
+      this._readInstallFromBoard();
+      return;
+    }
+    SchMobile.unmount();
+    if (this._tab === 'ga') {
+      // Same detached-grid arrangement as the single-line tab: the edit
+      // session stays open so a schedule edit made elsewhere still commits.
+      DBDrawing.unmount();
+      DBSchedule._beginEdit(this._boardId);
+      DBSchedule._setHost(document.createElement('div'), 'workspace');
+      GA.mount(this._boardId, host);
+      this._readInstallFromBoard();
+      return;
+    }
+    GA.unmount();
     if (this._tab === 'drawing') {
       // The edit session stays open even though the grid isn't rendered: an
       // accessory edited on the drawing has to commit through the same
@@ -357,7 +406,11 @@ const Schedules = {
     }).join('') || '<li class="sch-board-meta" style="padding:10px;">No boards</li>';
 
     list.querySelectorAll('.sch-board[data-id]').forEach(li => {
-      li.addEventListener('click', () => this.selectBoard(li.dataset.id));
+      li.addEventListener('click', () => {
+        const rail = document.querySelector('#schedules-workspace .sch-rail');
+        if (rail) rail.classList.remove('open');
+        this.selectBoard(li.dataset.id);
+      });
     });
 
     const totalWays = boards.reduce((n, b) => n + (b.props.circuits || []).length, 0);
@@ -365,7 +418,13 @@ const Schedules = {
     foot.textContent = `${boards.length} board${boards.length === 1 ? '' : 's'} · ${totalWays} ways`
       + (s ? ` · ${s.fail} fail, ${s.warn} warn` : '');
 
+    if (SchMobile._host) SchMobile.render();
     const comp = AppState.components.get(this._boardId);
+    const railHead = document.getElementById('sch-rail-head');
+    if (railHead) {
+      railHead.textContent = comp
+        ? `Board: ${comp.props.name || comp.id} (${boards.length})` : 'Boards';
+    }
     head.innerHTML = comp
       ? `<strong>${escHtml(comp.props.name || comp.id)}</strong>
          <span style="color:var(--text-secondary);font-size:12px;">
@@ -377,6 +436,9 @@ const Schedules = {
            <button class="sch-tab${this._tab === 'drawing' ? ' active' : ''}" data-sch-tab="drawing"
              role="tab" aria-selected="${this._tab === 'drawing'}"
              title="Single-line drawing generated from this schedule">Single Line</button>
+           <button class="sch-tab${this._tab === 'ga' ? ' active' : ''}" data-sch-tab="ga"
+             role="tab" aria-selected="${this._tab === 'ga'}"
+             title="General arrangement: physical front view and enclosure size">Layout (GA)</button>
          </span>`
       : '';
     head.querySelectorAll('[data-sch-tab]').forEach(btn => {

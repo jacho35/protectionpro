@@ -15,8 +15,8 @@
  * symbol classes in css/symbols.css: Project._rasterizeSVG only resolves
  * `var(--x, fallback)` forms and a detached export SVG carries no stylesheet,
  * so anything else rasterizes colourless into the PNG/PDF exports. The glyphs
- * below therefore restate the geometry of their Symbols.* counterparts
- * (cb/fuse/switch/surge_arrester/ctl_lamp) with explicit strokes.
+ * below draw the main SLD symbols through Symbols._symbolFor (see _sym), falling back to
+ * the old hand-drawn geometry only if Symbols is unavailable.
  */
 
 const DBDrawing = {
@@ -27,27 +27,36 @@ const DBDrawing = {
 
   // Geometry (SVG user units, which are CSS px at zoom 1)
   PAD: 26,
-  HEAD_H: 64,          // "fed from" caption + summary block
+  HEAD_H: 78,          // "fed from" caption + summary block
   INCOMER_X: 96,       // riser centre, measured from the left pad
   SRC_TO_DEV: 52,      // source terminal → incomer device centre
   DEV_TO_BUS: 50,      // last incomer device → busbar
-  SUPPLY_TAP_H: 38,    // vertical pitch of a supply-side accessory tap
+  SUPPLY_TAP_H: 46,    // vertical pitch of a supply-side accessory tap
   DROP_W: 118,         // way column pitch
-  DROP_X0: 62,         // first drop, measured from the left pad
+  DROP_X0: 62,
+  TABLE_HDR: 74,       // extra left margin for the row headings in table mode
+  STRIP_H: 24,         // section title strip
+  BAND_GAP: 20,        // between section compartments
+  ACC_W: 88,           // accessory column pitch (narrower than a way)
+  PROT_DY: 28,         // busbar → an accessory's protective device
+  TBL_ROW: 14,         // info-table row pitch         // first drop, measured from the left pad
   WAYS_PER_ROW: 12,
   BUS_TO_RCD: 12,      // busbar → top of the earth-leakage bracket
   RCD_H: 20,
-  BUS_TO_DEV: 62,      // busbar → device centre
-  TICK_DY: 20,         // device centre → phase tick
-  LABEL_DY: 34,        // device centre → first label baseline
+  BUS_TO_DEV: 68,      // busbar → device centre
+  TICK_DY: 32,         // device centre → phase tick
+  LABEL_DY: 48,        // device centre → first label baseline
   LINE_H: 12,
   BAR_GAP: 16,         // last label → N bar
   BAR_PITCH: 13,       // N bar → PE bar
   ROW_GAP: 30,
+  LOAD_H: 62,          // PE bar → load symbol block
+  SYM_SCALE: 1.3,      // device symbols are drawn this much larger than the SLD's
 
   DETAIL_DEFAULTS: {
     cable: true, load: true, phase: true, elgroups: true,
     bars: true, status: true, accessories: true,
+    table: false,        // way info as a table under the load arrows instead of beside the device
   },
 
   // ── Detail toggles ──────────────────────────────────────────────────
@@ -89,9 +98,11 @@ const DBDrawing = {
           ${toggle('bars', 'N + PE bars', 'Draw the neutral and protective earth bars')}
           ${toggle('status', 'Check status', 'Colour each way by its circuit-check verdict')}
           ${toggle('accessories', 'Accessories', 'Draw the board accessories on the single line')}
+          ${toggle('table', 'Info table', 'Show each way\'s information as a table below its load, instead of beside the device')}
           <span class="sch-sep"></span>
           <button class="btn-small" data-dbd="svg" title="Download the drawing as a vector SVG">SVG</button>
           <button class="btn-small" data-dbd="png" title="Download the drawing as a PNG">PNG</button>
+          <button class="btn-small" data-dbd="dxf" title="Download the drawing as a DXF for CAD (mm)">DXF</button>
           <button class="btn-small btn-primary" data-dbd="sheet" title="Print-ready PDF sheet with a title block">Print sheet</button>
           <button class="btn-small" data-dbd="sheet-all" title="One PDF sheet per board in the project">All boards</button>
         </div>
@@ -110,6 +121,7 @@ const DBDrawing = {
       else if (a === 'fit') this.fit();
       else if (a === 'svg') this.exportSVG();
       else if (a === 'png') this.exportPNG();
+      else if (a === 'dxf') this.exportDXF();
       else if (a === 'sheet') this.exportSheet(false);
       else if (a === 'sheet-all') this.exportSheet(true);
     });
@@ -194,21 +206,25 @@ const DBDrawing = {
     if (D.accessories) {
       for (const acc of DBAccessories.list(comp)) {
         if (acc.tap === 'supply') continue;          // drawn on the incomer riser
-        items.push(this._accItem(acc, comp));
+        const ai = this._accItem(acc, comp);
+        ai.sec = (DBSections.of(comp, acc) || {}).id;
+        items.push(ai);
       }
     }
 
     for (const c of this._sortedWays(comp)) {
       const v = verdicts[c.id] || null;
       const lines = [];
-      const dev = `${Number(c.breaker_a) || 0} A${c.curve ? ' ' + c.curve : ''}`;
-      lines.push({ text: `W${c.way ?? ''} · ${dev}`, bold: true });
+      const dev = `${Number(c.breaker_a) || 0} A${c.curve ? ' ' + c.curve : ''}${c.poles && c.poles !== '1P' ? ' ' + c.poles : ''}`;
+      lines.push({ text: `${/^\d/.test(String(c.way ?? '')) ? 'W' : ''}${c.way ?? ''} · ${dev}`, bold: true });
       lines.push({ text: this._trunc(c.description || '—', 22) });
-      if (D.cable) {
+      const spare = !(Number(c.load_va) > 0) && !(Number(c.cable_m) > 0);
+      if (spare) lines[1] = { text: 'Spare', dim: true };
+      if (D.cable && !spare) {
         const ecc = c.ecc_mm2 != null ? `${c.ecc_mm2}` : 'min';
         lines.push({ text: `${c.cable_mm2 || '?'} mm² · ${c.cable_m || 0} m · E ${ecc}`, dim: true });
       }
-      if (D.load) {
+      if (D.load && !spare) {
         const fla = DBSchedule._wayFlaA(c, vll);
         const kva = (Number(c.load_va) || 0) / 1000;
         lines.push({ text: `${fla.toFixed(1)} A · ${kva.toFixed(2)} kVA`, dim: true });
@@ -222,8 +238,15 @@ const DBDrawing = {
         ...warns].join('\n');
 
       items.push({
-        kind: 'way', glyph: 'mcb', phase: (c.poles === '3P' || c.phase === 'RWB') ? 'RWB' : (c.phase || 'R'),
-        poles: c.poles || '1P',
+        kind: 'way', w: this.DROP_W, glyph: 'mcb', sec: (DBSections.of(comp, c) || {}).id, phase: (c.poles === '3P' || c.phase === 'RWB') ? 'RWB' : (c.phase || 'R'),
+        poles: c.poles || '1P', spare, wayDesc: c.description || '',
+        cells: {
+          way: String(c.way ?? ''), device: dev, desc: this._trunc(c.description || (spare ? 'Spare' : '—'), 19),
+          cable: spare ? '' : `${c.cable_mm2 || '?'}`, len: spare ? '' : `${c.cable_m || 0}`,
+          ecc: spare ? '' : (c.ecc_mm2 != null ? `${c.ecc_mm2}` : 'min'),
+          amps: spare ? '' : DBSchedule._wayFlaA(c, vll).toFixed(1),
+          kva: spare ? '' : ((Number(c.load_va) || 0) / 1000).toFixed(2),
+        },
         elGroup: D.elgroups ? (c.el_group || '') : '',
         status: v ? v.status : (warns.length ? 'warn' : null),
         lines, tip,
@@ -235,21 +258,31 @@ const DBDrawing = {
   // `comp` is passed explicitly rather than read from this.board(): an export
   // or report run draws a board that is not the one mounted in the view.
   _accItem(acc, comp) {
+    const util = { socket: 'socket', light: 'light', hour_meter: 'hour', ctl_transformer: 'ctltx' };
     const glyph = acc.kind === 'spd' ? 'spd'
       : acc.kind === 'indicator' ? 'lamp'
-        : acc.kind === 'metering' ? 'meter' : 'utility';
-    const lines = [{ text: this._trunc(acc.label || '', 22), bold: true }];
-    lines.push({ text: this._trunc(this._accSpec(acc), 24) });
+        : acc.kind === 'metering' ? 'meter' : (util[acc.utility_kind] || 'utility');
     const fuseA = Number(acc.fuse_a) || 0;
-    lines.push({
-      text: fuseA && acc.fuse_type !== 'none'
-        ? `${fuseA} A ${acc.fuse_type === 'mcb' ? 'MCB' : acc.fuse_type}`
-        : 'unprotected',
-      dim: true,
-    });
+    const prot = fuseA && acc.fuse_type !== 'none' ? { a: fuseA, type: acc.fuse_type } : null;
+    const protText = prot ? `${prot.a} A ${prot.type === 'mcb' ? 'MCB' : prot.type}` : 'unprotected';
+    // Spec wrapped onto short lines so it fits the narrow accessory column.
+    const lines = [{ text: this._trunc(acc.label || '', 15), bold: true }];
+    const parts = this._accSpec(acc).replace('Control ', 'Ctl ').split(' · ');
+    let cur = '';
+    for (const p of parts) {
+      if (cur && (cur + ' · ' + p).length > 16) { lines.push({ text: cur }); cur = p; }
+      else cur = cur ? cur + ' · ' + p : p;
+    }
+    if (cur) lines.push({ text: this._trunc(cur, 17) });
+    lines.push({ text: protText, dim: true });
     const warns = DBAccessories.warnings(acc, DBAccessories.incomer(comp));
     return {
-      kind: 'acc', glyph, accKind: acc.kind,
+      kind: 'acc', w: this.ACC_W, glyph, accKind: acc.kind, prot,
+      meterLetter: acc.meter === 'ammeter' ? 'A' : (acc.meter === 'both' ? 'VA' : 'V'),
+      cells: {
+        way: '—', device: protText, desc: this._trunc(acc.label || '', 13),
+        cable: '', len: '', ecc: '', amps: '', kva: '',
+      },
       phase: acc.phases || 'RWB', poles: (acc.phases === 'RWB') ? '3P' : '1P',
       elGroup: '',
       status: warns.some(w => w.level === 'warn') ? 'warn' : null,
@@ -289,34 +322,88 @@ const DBDrawing = {
   },
 
   _layout(comp, D) {
+    this._dropX0 = this.DROP_X0 + (D.table ? this.TABLE_HDR : 0);
     const items = this._items(comp, D);
-    const supply = D.accessories
+    const allSupply = D.accessories
       ? DBAccessories.list(comp).filter(a => a.tap === 'supply')
       : [];
-    const inc = DBAccessories.incomer(comp);
+    const boardInc = DBAccessories.incomer(comp);
+    const sectioned = DBSections.has(comp);
 
-    const rows = [];
-    for (let i = 0; i < items.length; i += this.WAYS_PER_ROW) {
-      rows.push(items.slice(i, i + this.WAYS_PER_ROW));
-    }
-    if (!rows.length) rows.push([]);
+    // One band per section (a single, section-less band for a legacy board).
+    const defs = sectioned
+      ? DBSections.list(comp).map(sec => ({
+        sec,
+        items: items.filter(it => it.sec === sec.id),
+        supply: allSupply.filter(a => DBSections.of(comp, a) === sec),
+        inc: this._sectionIncomer(comp, sec),
+      }))
+      : [{ sec: null, items, supply: allSupply, inc: boardInc }];
 
-    const maxLines = items.reduce((n, it) => Math.max(n, it.lines.length), 1);
-    const rowInner = this.BUS_TO_DEV + this.LABEL_DY + maxLines * this.LINE_H
-      + (D.bars ? this.BAR_GAP + this.BAR_PITCH + 8 : 8);
+    const tRows = D.table ? this._tableRows(D) : [];
+    const maxLines = D.table ? 0 : items.reduce((n, it) => Math.max(n, it.lines.length), 1);
+    const btd = items.some(it => it.kind === 'acc') ? 92 : this.BUS_TO_DEV;
+    const rowInner = btd + this.LABEL_DY + maxLines * this.LINE_H
+      + (D.bars ? this.BAR_GAP + this.BAR_PITCH + 8 : 8) + (D.load ? this.LOAD_H : 0)
+      + (tRows.length ? tRows.length * this.TBL_ROW + 14 : 0);
     const rowH = rowInner + this.ROW_GAP;
 
-    const incTop = this.PAD + this.HEAD_H + 14;
-    const devY = incTop + this.SRC_TO_DEV + supply.length * this.SUPPLY_TAP_H;
-    const isoY = inc.isolator ? devY + 44 : null;
-    const busY = (isoY || devY) + this.DEV_TO_BUS;
-
-    const widest = rows.reduce((n, r) => Math.max(n, r.length), 0);
-    const busW = Math.max(this.DROP_X0 + widest * this.DROP_W, 460);
+    const e0 = this._dropX0 - this.DROP_W / 2;
+    const bands = [];
+    const rowDefs = [];
+    let y = this.PAD + this.HEAD_H;
+    let widest = 0;
+    for (const d of defs) {
+      const y0 = y;
+      const strip = d.sec ? this.STRIP_H : 0;
+      const incTop = y0 + strip + 14;
+      const devY = incTop + this.SRC_TO_DEV + d.supply.length * this.SUPPLY_TAP_H;
+      const isoY = d.inc.isolator ? devY + 44 : null;
+      const busY = (isoY || devY) + this.DEV_TO_BUS;
+      const chunks = [];
+      for (let i = 0; i < d.items.length; i += this.WAYS_PER_ROW) chunks.push(d.items.slice(i, i + this.WAYS_PER_ROW));
+      if (!chunks.length) chunks.push([]);
+      const band = { sec: d.sec, inc: d.inc, supply: d.supply, y0, incTop, devY, isoY, busY, rows: [] };
+      chunks.forEach((r, ci) => {
+        // Column centres: ways keep the DROP_W pitch, accessories are narrower.
+        let cur = e0; const xs = [];
+        for (const it of r) { xs.push(cur + it.w / 2); cur += it.w; }
+        widest = Math.max(widest, cur);
+        const rd = { items: r, xs, rowW: cur, busY: busY + ci * rowH, band,
+          prevBusY: ci > 0 ? busY + (ci - 1) * rowH : null };
+        band.rows.push(rd); rowDefs.push(rd);
+      });
+      band.y1 = busY + chunks.length * rowH - this.ROW_GAP / 2 + (d.sec ? 6 : 0);
+      bands.push(band);
+      y = band.y1 + (d.sec ? this.BAND_GAP : 0);
+    }
+    const busW = Math.max(widest + this.DROP_W / 2, 460);
     const w = this.PAD * 2 + Math.max(busW + 20, 620);
-    const h = busY + rows.length * rowH + this.PAD;
+    const last = bands[bands.length - 1];
+    const h = (sectioned ? last.y1 : last.busY + last.rows.length * rowH) + this.PAD;
 
-    return { items, rows, supply, inc, maxLines, rowInner, rowH, incTop, devY, isoY, busY, busW, w, h };
+    return { bands, rowDefs, sectioned, btd, tRows, items, inc: boardInc, maxLines, rowInner, rowH, busW, w, h };
+  },
+
+  // An incomer description for a section, shaped like Components.boardIncomer().
+  _sectionIncomer(comp, sec) {
+    const kindLabel = { normal: 'Mains', essential: 'Generator', ups: 'UPS', other: 'Supply' }[sec.kind] || 'Supply';
+    const own = (sec.source_label || kindLabel) + (Number(sec.source_kva) > 0 ? ` ${sec.source_kva} kVA` : '');
+    const from = DBSections.get(comp, sec.feed_from);
+    const src = sec.feed === 'board' ? 'Board incomer'
+      : sec.feed === 'section' ? `From ${from ? from.name : 'another section'}`
+        : sec.feed === 'changeover' ? `${own} ⇄ ${from ? from.name : '?'}`
+          : own;
+    const a = Number(sec.incomer_a) || null;
+    const bits = [];
+    if (Number(sec.feed_mm2) > 0) bits.push(`${sec.feed_mm2} mm²${Number(sec.feed_m) > 0 ? ' · ' + sec.feed_m + ' m' : ''}`);
+    if (sec.feed === 'changeover') bits.push('changeover');
+    return {
+      basis: 'section', device: { type: 'cb' }, rating_a: a,
+      device_label: a ? `${a} A ${sec.incomer_poles || '4P'}${Number(sec.incomer_ka) > 0 ? ' · ' + sec.incomer_ka + ' kA' : ''}` : null,
+      isolator: null, cable: null, source: { id: sec.id, name: src, type: sec.kind }, way: null,
+      note: bits.join(' · ') || 'section incomer',
+    };
   },
 
   // ── Palette ─────────────────────────────────────────────────────────
@@ -388,7 +475,38 @@ const DBDrawing = {
 
   _gMeter(x, y, P, stroke, letter) {
     return `<circle cx="${x}" cy="${y}" r="9" fill="${P.surface}" stroke="${stroke}" stroke-width="1.4"/>`
-      + `<text x="${x}" y="${y + 3.5}" text-anchor="middle" font-size="10" font-weight="700" fill="${stroke}">${letter}</text>`;
+      + `<text x="${x}" y="${y + 3.5}" text-anchor="middle" font-size="${String(letter).length > 1 ? 8 : 10}" font-weight="700" fill="${stroke}">${letter}</text>`;
+  },
+
+  _gSocket(x, y, P, stroke) {
+    return `<circle cx="${x}" cy="${y}" r="8" fill="${P.surface}" stroke="${stroke}" stroke-width="1.4"/>`
+      + `<line x1="${x - 3}" y1="${y - 4}" x2="${x - 3}" y2="${y + 4}" stroke="${stroke}" stroke-width="1.4"/>`
+      + `<line x1="${x + 3}" y1="${y - 4}" x2="${x + 3}" y2="${y + 4}" stroke="${stroke}" stroke-width="1.4"/>`;
+  },
+
+  _gLight(x, y, P, stroke) {
+    const k = 8 * Math.SQRT1_2;
+    let r = '';
+    for (const [dx, dy] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) {
+      r += `<line x1="${x + dx * k}" y1="${y + dy * k}" x2="${x + dx * (k + 4)}" y2="${y + dy * (k + 4)}" stroke="${stroke}" stroke-width="1.2"/>`;
+    }
+    return this._gLamp(x, y, P, stroke) + r;
+  },
+
+  _gHour(x, y, P, stroke) {
+    return `<circle cx="${x}" cy="${y}" r="9" fill="${P.surface}" stroke="${stroke}" stroke-width="1.4"/>`
+      + `<text x="${x}" y="${y + 3.5}" text-anchor="middle" font-size="10" font-weight="700" fill="${stroke}">h</text>`;
+  },
+
+  _gCtlTx(x, y, P, stroke) {
+    return `<circle cx="${x}" cy="${y - 5}" r="7" fill="none" stroke="${stroke}" stroke-width="1.4"/>`
+      + `<circle cx="${x}" cy="${y + 5}" r="7" fill="none" stroke="${stroke}" stroke-width="1.4"/>`;
+  },
+
+  // Protective device type for an accessory (SLD symbol key), or null.
+  _protType(prot) {
+    if (!prot) return null;
+    return prot.type === 'mcb' ? 'cb' : 'fuse';
   },
 
   _gUtility(x, y, P, stroke) {
@@ -396,14 +514,64 @@ const DBDrawing = {
       + `<circle cx="${x}" cy="${y}" r="3" fill="none" stroke="${stroke}" stroke-width="1.3"/>`;
   },
 
+  // The main single line's own symbol, drawn by Symbols (so it follows the
+  // project's IEC / classic symbol set) with literal colours: class names are
+  // stripped and the stroke set on a wrapper, because an exported SVG carries
+  // no stylesheet. `stroke` overrides the symbol's native SLD colour.
+  _sym(type, x, y, P, stroke, comp, scale, rot) {
+    const def = (typeof COMPONENT_DEFS !== 'undefined') ? COMPONENT_DEFS[type] : null;
+    const fn = (typeof Symbols !== 'undefined' && def) ? Symbols._symbolFor(type) : null;
+    if (!fn) return '';
+    // Circuit breakers on a board's single line are drawn open (blade lifted).
+    let m = fn(def.width, def.height, comp || { type, props: type === 'cb' ? { state: 'open' } : {} });
+    m = m.replace(/class="iec-solid"/g, `fill="${stroke}"`)
+      .replace(/\sclass="[^"]*"/g, '')
+      .replace(/var\(--[a-z-]+,\s*[^)]+\)/g, P.surface)
+      .replace(/fill="white"/g, `fill="${P.surface}"`)
+      .replace(/currentColor/g, stroke)
+      .replace(/<text((?:(?!fill=)[^>])*)>/g, `<text stroke="none" fill="${stroke}"$1>`);
+    return `<g transform="translate(${x},${y})${scale && scale !== 1 ? ` scale(${scale})` : ''}${rot ? ` rotate(${rot})` : ''}" stroke="${stroke}" stroke-width="1.5" fill="none">${m}</g>`;
+  },
+
+  // SLD-native stroke colour per symbol type (neutral ones follow the theme).
+  _native(type, P) {
+    const dark = P.surface !== '#ffffff';
+    return { cb: dark ? '#ef5350' : '#d32f2f', fuse: '#e65100',
+      surge_arrester: dark ? '#66bb6a' : '#2e7d32' }[type] || P.line;
+  },
+
+  // Vertical conductor y1→y2 broken around symbols (centre ± half their height),
+  // so an open-contact blade is not struck through by the line behind it.
+  _vline(x, y1, y2, gaps, stroke, w) {
+    let out = '', cur = y1;
+    for (const [c, hh] of gaps.slice().sort((a, b) => a[0] - b[0])) {
+      if (c - hh > cur) out += `<line x1="${x}" y1="${cur}" x2="${x}" y2="${c - hh}" stroke="${stroke}" stroke-width="${w}"/>`;
+      cur = Math.max(cur, c + hh);
+    }
+    if (y2 > cur) out += `<line x1="${x}" y1="${cur}" x2="${x}" y2="${y2}" stroke="${stroke}" stroke-width="${w}"/>`;
+    return out;
+  },
+
   _glyph(name, x, y, P, stroke, item) {
+    const map = { mcb: 'cb', fuse: 'fuse', switch: 'switch', spd: 'surge_arrester', lamp: 'ctl_lamp' };
+    const t = map[name];
+    if (t) {
+      // Verdict colouring wins; otherwise the symbol keeps its SLD colour.
+      const c = (stroke && stroke !== P.line) ? stroke : this._native(t, P);
+      const g = this._sym(t, x, y, P, c, null, this.SYM_SCALE);
+      if (g) return g;
+    }
     switch (name) {
       case 'mcb': return this._gMcb(x, y, P, stroke);
       case 'fuse': return this._gFuse(x, y, P, stroke);
       case 'switch': return this._gSwitch(x, y, P, stroke);
       case 'spd': return this._gSpd(x, y, P, stroke);
       case 'lamp': return this._gLamp(x, y, P, stroke);
-      case 'meter': return this._gMeter(x, y, P, stroke, 'V');
+      case 'meter': return this._gMeter(x, y, P, stroke, (item && item.meterLetter) || 'V');
+      case 'socket': return this._gSocket(x, y, P, stroke);
+      case 'light': return this._gLight(x, y, P, stroke);
+      case 'hour': return this._gHour(x, y, P, stroke);
+      case 'ctltx': return this._gCtlTx(x, y, P, stroke);
       default: return this._gUtility(x, y, P, stroke);
     }
   },
@@ -424,10 +592,13 @@ const DBDrawing = {
 
     let svg = `<rect x="0" y="0" width="${L.w}" height="${L.h}" fill="${P.surface}"/>`;
     svg += this._header(comp, L, P, t, vll, x0);
-    svg += this._incomer(comp, L, P, x0);
-
-    L.rows.forEach((row, ri) => {
-      svg += this._busRow(row, ri, L, P, D, x0, comp);
+    const tot = L.sectioned ? DBSections.totals(comp) : null;
+    for (const b of L.bands) {
+      if (b.sec) svg += this._sectionFrame(b, L, P, x0, tot.get(b.sec.id));
+      svg += this._incomer(comp, b, P, x0);
+    }
+    L.rowDefs.forEach((rd) => {
+      svg += this._busRow(rd, L, P, D, x0, comp);
     });
 
     return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${L.w} ${L.h}" width="${L.w}" height="${L.h}"
@@ -464,15 +635,22 @@ const DBDrawing = {
       <text x="${x0}" y="${this.PAD + 16}" font-size="15" font-weight="700" fill="${P.ink}">${this._esc(name)}</text>
       <text x="${x0}" y="${this.PAD + 34}" font-size="10.5" fill="${P.inkSec}">${this._esc(from)}</text>
       <text x="${x0}" y="${this.PAD + 50}" font-size="10.5" fill="${P.muted}">${this._esc(`${Math.round(vll)}/${Math.round(vll / Math.sqrt(3))} V 3φ + N`)}</text>
-      <rect x="${boxX}" y="${this.PAD}" width="${boxW}" height="${this.HEAD_H - 4}" rx="5" fill="${P.panel}" stroke="${P.border}"/>
-      ${chips.map((c, i) => `<text x="${boxX + 10}" y="${this.PAD + 15 + i * 11}" font-size="9.5" fill="${P.inkSec}">${this._esc(c)}</text>`).join('')}
+      <rect x="${boxX}" y="${this.PAD}" width="${boxW}" height="${chips.length * 12 + 12}" rx="5" fill="${P.panel}" stroke="${P.border}"/>
+      ${chips.map((c, i) => `<text x="${boxX + 10}" y="${this.PAD + 16 + i * 12}" font-size="9.5" fill="${P.inkSec}">${this._esc(c)}</text>`).join('')}
     </g>`;
   },
 
   _incomer(comp, L, P, x0) {
     const inc = L.inc;
     const x = x0 + this.INCOMER_X;
-    let s = `<line x1="${x}" y1="${L.incTop}" x2="${x}" y2="${L.busY}" stroke="${P.line}" stroke-width="1.8"/>`;
+    const incGaps = [[L.devY, 20 * this.SYM_SCALE]];
+    if (L.isoY) incGaps.push([L.isoY, 20 * this.SYM_SCALE]);
+    L.supply.forEach((acc, i) => {
+      if (acc.kind === 'metering' && acc.meter !== 'voltmeter') {
+        incGaps.push([L.incTop + this.SRC_TO_DEV / 2 + i * this.SUPPLY_TAP_H - 18, 12]);
+      }
+    });
+    let s = this._vline(x, L.incTop, L.busY, incGaps, P.line, 1.8);
     s += `<circle cx="${x}" cy="${L.incTop}" r="3.4" fill="${P.line}"/>`;
     s += `<text x="${x + 10}" y="${L.incTop + 4}" font-size="10" fill="${P.inkSec}">${this._esc(inc.source ? inc.source.name : 'supply')}</text>`;
 
@@ -481,15 +659,30 @@ const DBDrawing = {
     // right-aligned label overruns into negative x and clips out of the sheet.
     L.supply.forEach((acc, i) => {
       const y = L.incTop + this.SRC_TO_DEV / 2 + i * this.SUPPLY_TAP_H;
-      const gx = x + 46;
+      const gx = x + 74;
       const item = this._accItem(acc, comp);
       const stroke = item.status === 'warn' ? P.warn : P.line;
-      s += `<g><title>${this._esc('Supply-side tap — stays live with the board switched off\n' + item.tip)}</title>`
-        + `<line x1="${x}" y1="${y}" x2="${gx}" y2="${y}" stroke="${P.line}" stroke-width="1.2"/>`
-        + this._glyph(item.glyph, gx, y, P, stroke, item)
-        + `<text x="${gx + 14}" y="${y - 2}" font-size="9" fill="${P.ink}">${this._esc(this._trunc(acc.label || '', 18))}</text>`
-        + `<text x="${gx + 14}" y="${y + 9}" font-size="8.5" fill="${P.muted}">${this._esc(this._trunc(this._accSpec(acc), 22))}</text>`
+      const pt = this._protType(item.prot);
+      const fx = x + 26;
+      let g = `<g><title>${this._esc('Supply-side tap — stays live with the board switched off\n' + item.tip)}</title>`;
+      // Current transformer on the riser for an ammeter, just above the tap.
+      if (acc.kind === 'metering' && acc.meter !== 'voltmeter') {
+        g += this._sym('ct', x, y - 18, P, this._native('ct', P), null, 0.6)
+          + `<text x="${x - 8}" y="${y - 14}" text-anchor="end" font-size="8" fill="${P.muted}">${this._esc(acc.ct_ratio || 'CT')}</text>`;
+      }
+      if (pt) {
+        g += `<line x1="${x}" y1="${y}" x2="${fx - 14}" y2="${y}" stroke="${P.line}" stroke-width="1.2"/>`
+          + `<line x1="${fx + 14}" y1="${y}" x2="${gx}" y2="${y}" stroke="${P.line}" stroke-width="1.2"/>`
+          + this._sym(pt, fx, y, P, this._native(pt, P), null, 0.7, 90);
+      } else {
+        g += `<line x1="${x}" y1="${y}" x2="${gx}" y2="${y}" stroke="${P.line}" stroke-width="1.2"/>`;
+      }
+      g += this._glyph(item.glyph, gx, y, P, stroke, item)
+        + `<text x="${gx + 16}" y="${y - 2}" font-size="9" fill="${P.ink}">${this._esc(this._trunc(acc.label || '', 20))}</text>`
+        + `<text x="${gx + 16}" y="${y + 9}" font-size="8.5" fill="${P.muted}">${this._esc(this._trunc(this._accSpec(acc), 34))}</text>`
+        + `<text x="${gx + 16}" y="${y + 19}" font-size="8.5" fill="${P.muted}">${this._esc(item.prot ? `${item.prot.a} A ${item.prot.type === 'mcb' ? 'MCB' : item.prot.type}` : 'unprotected')}</text>`
         + `</g>`;
+      s += g;
     });
 
     // Incomer device
@@ -499,7 +692,7 @@ const DBDrawing = {
     s += `<g><title>${this._esc(`Incomer: ${label}${inc.basis === 'feeder_way' ? ' (from the feeding board\'s way)' : inc.basis === 'sld' ? ' (from the SLD)' : ''}`)}</title>`
       + this._glyph(glyph, x, L.devY, P, known ? P.line : P.warn)
       + `<text x="${x + 16}" y="${L.devY + 1}" font-size="10.5" font-weight="700" fill="${known ? P.ink : P.warn}">${this._esc(label)}</text>`
-      + `<text x="${x + 16}" y="${L.devY + 12}" font-size="8.5" fill="${P.muted}">${this._esc(inc.basis === 'sld' ? 'from the SLD' : inc.basis === 'feeder_way' ? 'from the feeding board' : 'not modelled')}</text>`
+      + `<text x="${x + 16}" y="${L.devY + 12}" font-size="8.5" fill="${P.muted}">${this._esc(inc.note || (inc.basis === 'sld' ? 'from the SLD' : inc.basis === 'feeder_way' ? 'from the feeding board' : 'not modelled'))}</text>`
       + `</g>`;
 
     if (L.isoY) {
@@ -511,24 +704,55 @@ const DBDrawing = {
     return s;
   },
 
-  _busRow(row, ri, L, P, D, x0, comp) {
-    const busY = L.busY + ri * L.rowH;
-    const busEndX = x0 + Math.max(this.DROP_X0 + row.length * this.DROP_W - this.DROP_W / 2 + 30, 260);
+  // Compartment outline + title strip for one section.
+  _sectionFrame(b, L, P, x0, t) {
+    const c = DBSections.color(b.sec);
+    const w = L.w - this.PAD * 2 + 0;
+    const kind = DBSections.kind(b.sec.kind).label;
+    const bits = [];
+    if (t) {
+      bits.push(`${t.ways} ways`, `${(t.connectedVa / 1000).toFixed(1)} kVA`, `${t.demandA.toFixed(0)} A demand`);
+    }
+    return `<g><title>${this._esc(`${b.sec.name} — ${kind}`)}</title>`
+      + `<rect x="${x0 - 8}" y="${b.y0}" width="${w + 16}" height="${b.y1 - b.y0}" rx="7" fill="${c}" fill-opacity="0.05" stroke="${c}" stroke-width="1.3" stroke-dasharray="7,4"/>`
+      + `<rect x="${x0 - 8}" y="${b.y0}" width="${w + 16}" height="${this.STRIP_H - 4}" rx="7" fill="${c}" fill-opacity="0.9"/>`
+      + `<text x="${x0}" y="${b.y0 + 13}" font-size="11" font-weight="700" fill="#fff">${this._esc(b.sec.name.toUpperCase())}</text>`
+      + `<text x="${x0 + 12 + b.sec.name.length * 8}" y="${b.y0 + 13}" font-size="9.5" fill="#fff" fill-opacity="0.9">${this._esc(kind + (bits.length ? ' · ' + bits.join(' · ') : ''))}</text>`
+      + `</g>`;
+  },
+
+  // Row headings of the info table, in drawing order; a row is dropped when
+  // its detail group is switched off, exactly as the label lines are.
+  _tableRows(D) {
+    const r = [{ k: 'way', h: 'Way', bold: true }, { k: 'device', h: 'Device' }, { k: 'desc', h: 'Description' }];
+    if (D.phase) r.push({ k: 'phase', h: 'Phase' });
+    if (D.cable) r.push({ k: 'cable', h: 'Cable mm²' }, { k: 'len', h: 'Length m' }, { k: 'ecc', h: 'ECC mm²' });
+    if (D.load) r.push({ k: 'amps', h: 'Load A' }, { k: 'kva', h: 'Load kVA' });
+    return r;
+  },
+
+  _busRow(rd, L, P, D, x0, comp) {
+    const row = rd.items;
+    const busY = rd.busY;
+    const xs = rd.xs.map(v => x0 + v);
+    const busEndX = x0 + Math.max(rd.rowW + 30, 260);
     let s = `<line x1="${x0}" y1="${busY}" x2="${busEndX}" y2="${busY}" stroke="${P.bus}" stroke-width="3.4" stroke-linecap="round"/>`;
 
     // Riser joining this busbar section to the previous one.
-    if (ri > 0) {
-      const prevY = L.busY + (ri - 1) * L.rowH;
+    if (rd.prevBusY != null) {
+      const prevY = rd.prevBusY;
       s += `<line x1="${x0 + 6}" y1="${prevY}" x2="${x0 + 6}" y2="${busY}" stroke="${P.bus}" stroke-width="1.6" stroke-dasharray="4,3"/>`;
       s += `<text x="${x0 + 12}" y="${busY - 6}" font-size="8.5" fill="${P.muted}">busbar continued</text>`;
     }
 
     if (D.elgroups) {
       for (const br of this._elBrackets(row)) {
-        const ax = x0 + this.DROP_X0 + br.from * this.DROP_W - 26;
-        const bx = x0 + this.DROP_X0 + br.to * this.DROP_W + 26;
-        const y = busY + this.BUS_TO_RCD;
         const idn = ((comp.props.el_ratings || {})[br.group]) || 30;
+        const txtW = `EL ${br.group} · ${idn} mA`.length * 5.8 + 16;
+        const mid = (xs[br.from] + xs[br.to]) / 2;
+        const half = Math.max((xs[br.to] - xs[br.from]) / 2 + 26, txtW / 2);
+        const ax = mid - half, bx = mid + half;
+        const y = busY + this.BUS_TO_RCD;
         s += `<g><title>${this._esc(`Earth-leakage group ${br.group} — IΔn ${idn} mA, shared by ${br.to - br.from + 1} way(s)`)}</title>`
           + `<rect x="${ax}" y="${y}" width="${bx - ax}" height="${this.RCD_H}" rx="4" fill="${P.panel}" stroke="${P.accent}" stroke-width="1.2"/>`
           + `<text x="${(ax + bx) / 2}" y="${y + 14}" text-anchor="middle" font-size="9.5" font-weight="600" fill="${P.accent}">${this._esc(`EL ${br.group} · ${idn} mA`)}</text>`
@@ -536,46 +760,103 @@ const DBDrawing = {
       }
     }
 
-    const labelTop = busY + this.BUS_TO_DEV + this.LABEL_DY;
+    const devY = busY + L.btd;
+    const secName = rd.band.sec ? rd.band.sec.name : '';
+    const labelTop = devY + this.LABEL_DY;
     const barsY = labelTop + L.maxLines * this.LINE_H + this.BAR_GAP;
+    const peY = barsY + this.BAR_PITCH;
+
+    // Accessory bay: a dashed enclosure round the leading accessory columns.
+    const nAcc = row.filter(it => it.kind === 'acc').length;
+    if (nAcc) {
+      const bx0 = xs[0] - row[0].w / 2 + 3, bx1 = xs[nAcc - 1] + row[nAcc - 1].w / 2 - 3;
+      s += `<rect x="${bx0}" y="${busY + 6}" width="${bx1 - bx0}" height="${(D.bars ? peY + 8 : devY + 60) - busY - 6}" rx="6" fill="none" stroke="${P.muted}" stroke-width="1" stroke-dasharray="5,4"/>`
+        + `<text x="${bx0 + 6}" y="${busY + 17}" font-size="8.5" fill="${P.muted}">Board accessories</text>`;
+    }
 
     row.forEach((it, i) => {
-      const x = x0 + this.DROP_X0 + i * this.DROP_W;
+      const x = xs[i];
       const stroke = D.status ? this._statusColor(it.status, P) : P.line;
-      const devY = busY + this.BUS_TO_DEV;
       let g = `<g><title>${this._esc(it.tip)}</title>`;
-      g += `<line x1="${x}" y1="${busY}" x2="${x}" y2="${D.bars ? barsY - 6 : devY + 22}" stroke="${stroke}" stroke-width="1.4"/>`;
-      g += this._glyph(it.glyph, x, devY, P, stroke, it);
-      if (it.poles === '3P') {
-        // Three-pole device: the two extra pole ticks across the drop.
-        g += `<line x1="${x - 13}" y1="${devY - 12}" x2="${x + 13}" y2="${devY - 12}" stroke="${stroke}" stroke-width="1"/>`;
-        g += `<line x1="${x - 13}" y1="${devY + 12}" x2="${x + 13}" y2="${devY + 12}" stroke="${stroke}" stroke-width="1"/>`;
+      if (it.kind === 'acc') {
+        // Protective device, then the accessory, then its termination: PE for
+        // an SPD, N for everything else — the conductor stops there.
+        const protY = busY + this.PROT_DY;
+        const endY = it.glyph === 'spd' ? peY : barsY;
+        const gaps = [[devY, (it.glyph === 'spd' ? 25 : 14) * this.SYM_SCALE]];
+        const pt = this._protType(it.prot);
+        if (pt) gaps.push([protY, 20 * 0.7]);
+        g += this._vline(x, busY, D.bars ? endY : devY + 26, gaps, stroke, 1.4);
+        if (pt) g += this._sym(pt, x, protY, P, this._native(pt, P), null, 0.7);
+        g += this._glyph(it.glyph, x, devY, P, stroke, it);
+        if (D.bars) g += `<circle cx="${x}" cy="${endY}" r="2.4" fill="${P.line}"/>`;
+      } else {
+        const endY = it.spare ? devY + 30 : (D.bars ? peY : devY + 26) + (D.load ? 14 : 0);
+        g += this._vline(x, busY, endY, [[devY, 20 * this.SYM_SCALE]], stroke, 1.4);
+        g += this._glyph(it.glyph, x, devY, P, stroke, it);
+        if (D.load && !it.spare) {
+          const motor = (it.poles === '3P' || it.phase === 'RWB')
+            && /pump|motor|fan|compress|aircon|a\/c|hvac|drive/i.test(it.wayDesc || '');
+          const lt = motor ? 'motor_induction' : 'static_load';
+          g += this._sym(lt, x, endY + COMPONENT_DEFS[lt].height / 2, P, P.line, null, 1);
+        }
       }
-      if (D.phase) {
+      if (D.phase && !D.table) {
+        // Phase chip sits left of the drop so the conductor never crosses it.
         const pc = P.phase[it.phase] || P.muted;
-        g += `<rect x="${x - 16}" y="${devY + this.TICK_DY - 5}" width="9" height="9" rx="2" fill="${pc}"/>`;
-        g += `<text x="${x - 4}" y="${devY + this.TICK_DY + 3}" font-size="9" fill="${P.inkSec}">${this._esc(it.phase)}</text>`;
+        const tw = String(it.phase).length * 5.6;
+        g += `<rect x="${x - 10 - tw - 11}" y="${devY + this.TICK_DY - 5}" width="9" height="9" rx="2" fill="${pc}"/>`;
+        g += `<text x="${x - 8}" y="${devY + this.TICK_DY + 3}" text-anchor="end" font-size="9" fill="${P.inkSec}">${this._esc(it.phase)}</text>`;
       }
-      it.lines.forEach((ln, li) => {
-        g += `<text x="${x}" y="${labelTop + li * this.LINE_H}" text-anchor="middle" font-size="${ln.bold ? 9.5 : 9}"
+      if (!D.table) {
+        // Labels sit on a page-coloured patch, so the conductor reads as passing
+        // behind them rather than being struck through the text.
+        const lw = it.w - 12, lh = it.lines.length * this.LINE_H + 2;
+        g += `<rect x="${x - lw / 2}" y="${labelTop - 10}" width="${lw}" height="${lh}" fill="${P.surface}"/>`;
+        it.lines.forEach((ln, li) => {
+          g += `<text x="${x}" y="${labelTop + li * this.LINE_H}" text-anchor="middle" font-size="${ln.bold ? 9.5 : 9}"
           font-weight="${ln.bold ? 700 : 400}" fill="${ln.dim ? P.muted : P.ink}">${this._esc(ln.text)}</text>`;
-      });
+        });
+      }
       g += `</g>`;
       s += g;
     });
 
-    if (D.bars) {
-      const barEnd = busEndX;
-      s += `<line x1="${x0}" y1="${barsY}" x2="${barEnd}" y2="${barsY}" stroke="${P.line}" stroke-width="1.6"/>`
-        + `<text x="${x0 - 2}" y="${barsY - 4}" font-size="9" fill="${P.muted}">N</text>`
-        + `<line x1="${x0}" y1="${barsY + this.BAR_PITCH}" x2="${barEnd}" y2="${barsY + this.BAR_PITCH}" stroke="${P.line}" stroke-width="1.6" stroke-dasharray="6,3"/>`
-        + `<text x="${x0 - 2}" y="${barsY + this.BAR_PITCH + 10}" font-size="9" fill="${P.muted}">PE</text>`;
-      // Each way lands on both bars; SPDs bond to PE only.
-      row.forEach((it, i) => {
-        const x = x0 + this.DROP_X0 + i * this.DROP_W;
-        const toPeOnly = it.glyph === 'spd';
-        s += `<line x1="${x}" y1="${barsY - 6}" x2="${x}" y2="${barsY + (toPeOnly ? this.BAR_PITCH : 0)}" stroke="${P.muted}" stroke-width="1"/>`;
+    if (L.tRows.length) {
+      const top = peY + 14 + (D.load ? 56 : 0);
+      const h = L.tRows.length * this.TBL_ROW;
+      const left = x0, right = xs.length ? xs[xs.length - 1] + row[row.length - 1].w / 2 : busEndX;
+      s += `<rect x="${left}" y="${top}" width="${right - left}" height="${h}" fill="none" stroke="${P.border}"/>`;
+      L.tRows.forEach((r, ri2) => {
+        const y = top + ri2 * this.TBL_ROW;
+        if (ri2 > 0) s += `<line x1="${left}" y1="${y}" x2="${right}" y2="${y}" stroke="${P.border}"/>`;
+        s += `<text x="${left + 5}" y="${y + 10}" font-size="8.5" font-weight="600" fill="${P.muted}">${this._esc(r.h)}</text>`;
       });
+      const hx = xs[0] - row[0].w / 2;
+      s += `<line x1="${hx}" y1="${top}" x2="${hx}" y2="${top + h}" stroke="${P.border}"/>`;
+      row.forEach((it, i) => {
+        const x = xs[i];
+        s += `<line x1="${x + it.w / 2}" y1="${top}" x2="${x + it.w / 2}" y2="${top + h}" stroke="${P.border}"/>`;
+        L.tRows.forEach((r, ri2) => {
+          const y = top + ri2 * this.TBL_ROW + 10;
+          if (r.k === 'phase') {
+            const pc = P.phase[it.phase] || P.muted;
+            const tw = String(it.phase).length * 5.4;
+            s += `<rect x="${x - tw / 2 - 7}" y="${y - 8}" width="8" height="8" rx="2" fill="${pc}"/>`
+              + `<text x="${x - tw / 2 + 4}" y="${y}" font-size="9" fill="${P.ink}">${this._esc(it.phase)}</text>`;
+            return;
+          }
+          const v = it.cells ? it.cells[r.k] : '';
+          s += `<text x="${x}" y="${y}" text-anchor="middle" font-size="9" font-weight="${r.bold ? 700 : 400}" fill="${r.k === 'desc' && it.spare ? P.muted : P.ink}">${this._esc(v)}</text>`;
+        });
+      });
+    }
+
+    if (D.bars) {
+      s += `<line x1="${x0}" y1="${barsY}" x2="${busEndX}" y2="${barsY}" stroke="${P.line}" stroke-width="1.6"/>`
+        + `<text x="${busEndX}" y="${barsY - 4}" text-anchor="end" font-size="9" fill="${P.muted}">N${secName ? ' · ' + this._esc(secName) : ''}</text>`
+        + `<line x1="${x0}" y1="${peY}" x2="${busEndX}" y2="${peY}" stroke="${P.line}" stroke-width="1.6" stroke-dasharray="6,3"/>`
+        + `<text x="${busEndX}" y="${peY + 10}" text-anchor="end" font-size="9" fill="${P.muted}">PE${secName ? ' · ' + this._esc(secName) : ''}</text>`;
     }
     return s;
   },
@@ -646,6 +927,16 @@ const DBDrawing = {
     if (!ex) { UI.alert('Nothing to export — select a board first.'); return; }
     const str = new XMLSerializer().serializeToString(ex.node);
     this._download(new Blob([str], { type: 'image/svg+xml' }), `${this._fileBase()}_single_line.svg`);
+  },
+
+  // Vector DXF (mm, 1 px = 0.25 mm) from the same SVG the screen and PNG use.
+  exportDXF() {
+    const board = this.board();
+    const svg = board ? this.buildSVG({ dark: false, board }) : '';
+    if (!svg) { UI.alert('Nothing to export — select a board first.'); return; }
+    const dxf = DxfWriter.fromSvg(svg, { scale: 0.25, geomLayer: 'SINGLE_LINE' });
+    if (!dxf) { UI.alert('Could not build the DXF.'); return; }
+    this._download(new Blob([dxf], { type: 'application/dxf' }), `${this._fileBase()}_single_line.dxf`);
   },
 
   exportPNG() {
