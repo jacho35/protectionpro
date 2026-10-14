@@ -299,3 +299,14 @@ body.dark-mode .hg-shot { background: #fff; }
   .hg-wrap.hg-reading .hg-back { display: block; }
 }
 #help-modal.help-compact .help-content.hg-pane { padding: 0; }
+
+/* "? Guide" link placed on a feature's own screen (js/help-guides.js) */
+.hg-link {
+  display: inline-flex; align-items: center; flex: 0 0 auto; margin: 0 6px; padding: 3px 9px;
+  font: inherit; font-size: 12px; line-height: 1.3; white-space: nowrap; cursor: pointer;
+  color: var(--accent, #0078d7); background: transparent;
+  border: 1px solid color-mix(in srgb, var(--accent, #0078d7) 45%, transparent); border-radius: 12px;
+}
+.hg-link:hover { background: color-mix(in srgb, var(--accent, #0078d7) 12%, transparent); }
+.hg-link:focus-visible { outline: 2px solid var(--accent, #0078d7); outline-offset: 2px; }
+@media (max-width: 768px) { .hg-link { padding: 8px 12px; font-size: 13px; } }

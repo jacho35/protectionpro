@@ -760,4 +760,97 @@ const HelpGuides = {
 
 document.addEventListener('DOMContentLoaded', () => {
   document.querySelector('.help-tab[data-tab="guides"]')?.addEventListener('click', () => HelpGuides.init());
+  HelpGuideLinks.init();
 });
+
+// Open Help on a guide (from any module: HelpGuides.openGuide('db-ga')).
+HelpGuides.openGuide = function (id) {
+  const modal = document.getElementById('help-modal');
+  if (!modal) return;
+  // Full-screen managers and the command search sit above ordinary modals.
+  // Close the command search the way Esc does, so its key handler is released too.
+  if (document.getElementById('cmd-search')) document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+  modal.style.zIndex = '4000';
+  modal.style.display = '';
+  document.querySelector('.help-tab[data-tab="guides"]')?.click();
+  this.open(id);
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// "? Guide" links on each feature's own screen. Screens are built (and rebuilt)
+// by their modules, so a small observer keeps one link in each host rather than
+// every module having to remember to draw it.
+//
+//   host   CSS selector of the element to put the link in (appended), or
+//   after / before   CSS selector of an element the link is placed beside
+//   guide  a guide id, or () => id when it depends on the screen's state
+//   when   optional () => boolean; the link exists only while it is true
+// ─────────────────────────────────────────────────────────────────────────────
+const HELP_GUIDE_LINKS = [
+  { host: '#sch-grid-head', guide: () => {
+      const tab = typeof Schedules !== 'undefined' ? Schedules._tab : 'grid';
+      if (tab === 'grid' && typeof SchMobile !== 'undefined' && SchMobile.isPhone()) return 'db-phone';
+      return { grid: 'db-schedule', drawing: 'db-single-line', ga: 'db-ga' }[tab] || 'db-schedule';
+    } },
+  { host: '#plan-toolbar', guide: 'plan-select' },
+  { after: 'button[data-action="diagram"]', guide: 'demand-plan' },
+  { host: '.sl-toolbar', guide: 'street-light' },
+  { host: '.tu-head', guide: 'trip-unit' },
+  { after: '#lr-tag-scope', guide: 'lightning' },
+  { after: '#btn-eg-save', guide: 'earth-grid' },
+  { before: '#lib-sub', guide: 'libraries' },
+  { host: '#cable-focus-bar', guide: 'cable-focus' },
+  { host: '.cmd-search-input-row', guide: 'find-anything' },
+  { after: '.ws-dialog-note', guide: 'project-types' },
+  { after: '#project-quoted-chip', guide: 'quoted', when: () => typeof Quote !== 'undefined' && Quote.isQuoted() },
+];
+
+const HelpGuideLinks = {
+  _t: null,
+
+  init() {
+    document.addEventListener('click', (e) => {
+      const b = e.target.closest('.hg-link');
+      if (!b) return;
+      e.preventDefault(); e.stopPropagation();
+      const id = b.dataset.hgGuide;
+      if (id) HelpGuides.openGuide(id);
+    }, true);
+    const run = () => { this._t = null; this.sync(); };
+    const obs = new MutationObserver(() => { if (!this._t) this._t = requestAnimationFrame(run); });
+    obs.observe(document.body, { childList: true, subtree: true });
+    this.sync();
+  },
+
+  _guideId(def) {
+    try { return typeof def.guide === 'function' ? def.guide() : def.guide; } catch (_) { return null; }
+  },
+
+  sync() {
+    HELP_GUIDE_LINKS.forEach((def, i) => {
+      const slot = String(i);
+      const want = (!def.when || def.when()) ? this._guideId(def) : null;
+      const anchors = def.host ? [...document.querySelectorAll(def.host)] : [...document.querySelectorAll(def.after || def.before)];
+      anchors.forEach(a => {
+        const has = def.host
+          ? a.querySelector(`:scope > .hg-link[data-hg-slot="${slot}"]`)
+          : (def.after ? a.nextElementSibling : a.previousElementSibling);
+        const existing = has && has.classList && has.classList.contains('hg-link') && has.dataset.hgSlot === slot ? has : null;
+        if (!want) { if (existing) existing.remove(); return; }
+        if (existing) { existing.dataset.hgGuide = want; return; }
+        const g = HELP_GUIDES.find(x => x.id === want);
+        if (!g) return;
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'hg-link';
+        b.dataset.hgSlot = slot;
+        b.dataset.hgGuide = want;
+        b.title = `Open the guide: ${g.title}`;
+        b.textContent = '? Guide';
+        if (def.host) a.appendChild(b);
+        else if (def.after) a.insertAdjacentElement('afterend', b);
+        else a.insertAdjacentElement('beforebegin', b);
+      });
+    });
+  },
+};
