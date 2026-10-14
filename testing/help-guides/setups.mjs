@@ -493,3 +493,113 @@ Object.assign(SETUPS, {
   'study-grounding': { run: async (page) => { await loadTemplate(page, 'ver_grounding'); await runStudy(page, '#btn-grounding', 'groundingResults'); await markModal(page); } },
 });
 
+// ── The remaining studies ─────────────────────────────────────────────────
+// A plant with a VFD (harmonic source) and a battery on the MCC bus.
+async function plantNetwork(page) {
+  await loadTemplate(page, 'industrial_plant');
+  await page.evaluate(() => {
+    const bus = [...AppState.components.values()].find(c => c.type === 'bus' && /MCC/.test(c.props.name));
+    const vfd = Canvas.placeComponent('vfd', 700, 520);
+    Object.assign(vfd.props, { rated_kw: 110, voltage_kv: 0.4, name: 'VFD P1' });
+    const batt = Canvas.placeComponent('battery', 760, 560);
+    Object.assign(batt.props, { name: 'BESS', voltage_kv: 0.4 });
+    AppState.addWire(vfd.id, 'in', bus.id, 'at_-20', true);
+    AppState.addWire(batt.id, 'out', bus.id, 'at_40', true);
+    // A compressor that starts repeatedly, so the flicker screening has something to judge.
+    for (const c of AppState.components.values()) if (c.type === 'motor_induction' && /Compressor/.test(c.props.name)) c.props.flicker_starts_per_hour = 12;
+    AppState.clearSelection(); Canvas.render();
+  });
+  await page.waitForTimeout(400);
+}
+// A small control circuit: supply, MCB, start button, coil, and a lamp via the coil's contact.
+async function controlCircuit(page) {
+  await page.evaluate(() => {
+    const P = (t, x, y, props) => { const c = Canvas.placeComponent(t, x, y); Object.assign(c.props, props || {}); return c; };
+    const sup = P('ctl_supply', 500, 150), q1 = P('ctl_breaker', 400, 250), s1 = P('ctl_pb_no', 400, 340, { name: 'S1' });
+    const k1 = P('ctl_coil', 400, 430, { name: 'K1', tag: 'K1' });
+    const c1 = P('ctl_contact_no', 600, 340, { name: 'K1.1', tag: 'K1' }), h1 = P('ctl_lamp', 600, 430, { name: 'H1' });
+    const w = (a, ap, b, bp) => AppState.addWire(a.id, ap, b.id, bp, true);
+    w(sup, 'l', q1, 'top'); w(q1, 'bottom', s1, 'top'); w(s1, 'bottom', k1, 'top'); w(k1, 'bottom', sup, 'n');
+    w(q1, 'bottom', c1, 'top'); w(c1, 'bottom', h1, 'top'); w(h1, 'bottom', sup, 'n');
+    AppState.clearSelection(); Canvas.render(); Canvas.fitToView && Canvas.fitToView();
+  });
+  await page.waitForTimeout(500);
+}
+async function selectNamed(page, names) {
+  await page.evaluate((names) => {
+    AppState.clearSelection();
+    for (const n of names) { const c = [...AppState.components.values()].find(x => x.props && x.props.name === n); AppState.selectedIds.add(c.id); }
+    Canvas.render();
+  }, names);
+}
+async function waitModal(page, timeout = 15000) {
+  await page.waitForFunction(() => [...document.querySelectorAll('.modal')].some(m => getComputedStyle(m).display !== 'none' && m.getBoundingClientRect().width > 0), null, { timeout }).catch(() => {});
+  await page.waitForTimeout(800);
+}
+// study(spec): { tpl | seed, pre, btn, run } → { config, results } setups.
+function study(spec) {
+  const open = async (page) => {
+    if (spec.seed === 'plant') await plantNetwork(page); else await loadTemplate(page, spec.tpl);
+    if (spec.pre) await spec.pre(page);
+    await page.click('#menu-analyse .toolbar-menu-btn'); await page.click(spec.btn);
+    await waitModal(page);
+    for (let i = 0; i < 3; i++) { const pv = page.locator('#validation-proceed'); if (await pv.isVisible().catch(() => false)) { await pv.click(); await page.waitForTimeout(600); } }
+  };
+  return {
+    config: { run: async (page) => { await open(page); await markModal(page); }, viewport: spec.viewport },
+    results: { run: async (page) => {
+      await open(page);
+      if (spec.run) { await page.click(spec.run); await page.waitForTimeout(2500); await waitModal(page); }
+      await markModal(page);
+    }, viewport: spec.viewport },
+  };
+}
+const SPECS = {
+  'ts': { tpl: 'industrial_plant', btn: '#btn-timeseries', run: '#btn-tsl-run' },
+  'lfs': { tpl: 'industrial_plant', btn: '#btn-lf-study' },
+  'opf': { tpl: 'industrial_plant', btn: '#btn-opf', run: '#btn-opf-run' },
+  'dclf': { tpl: 'ver_dc_lf', btn: '#btn-dc-loadflow' },
+  'ansi': { tpl: 'industrial_plant', btn: '#btn-fault-ansi' },
+  'openc': { tpl: 'ver_unbalanced_lf', btn: '#btn-open-conductor', pre: p => selectNamed(p, ['Ln']) },
+  'twoopen': { tpl: 'ver_unbalanced_lf', btn: '#btn-two-conductor-open', pre: p => selectNamed(p, ['Ln']) },
+  'simul': { tpl: 'ver_unbalanced_lf', btn: '#btn-simultaneous-fault', pre: p => selectNamed(p, ['Ln', 'Src']) },
+  'dcsc': { tpl: 'ver_dc_sc', btn: '#btn-dc-shortcircuit' },
+  'dynmot': { tpl: 'industrial_plant', btn: '#btn-dynamic-motor', run: '#btn-dynmot-run' },
+  'trans': { tpl: 'generator_island', btn: '#btn-transient-stability', run: '#btn-stability-run' },
+  'vstab': { tpl: 'ver_lf_3bus', btn: '#btn-voltage-stability', run: '#btn-vstab-run' },
+  'harm': { seed: 'plant', btn: '#btn-harmonics' },
+  'fscan': { seed: 'plant', btn: '#btn-frequency-scan', run: '#btn-fscan-run' },
+  'filt': { seed: 'plant', btn: '#btn-filter-sizing', run: '#btn-flt-run' },
+  'flk': { seed: 'plant', btn: '#btn-flicker', run: '#btn-flk-run' },
+  'cont': { tpl: 'substation_33_11', btn: '#btn-contingency', run: '#btn-contingency-run' },
+  'hc': { tpl: 'substation_33_11', btn: '#btn-hosting-capacity', run: '#btn-hc-run' },
+  'cpl': { tpl: 'substation_33_11', btn: '#btn-cap-placement', run: '#btn-cpl-run' },
+  'rel': { tpl: 'substation_33_11', btn: '#btn-reliability' },
+  'bsz': { seed: 'plant', btn: '#btn-battery-sizing', run: '#btn-bsz-run' },
+  'backup': { seed: 'plant', btn: '#btn-backup-study' },
+  'div': { tpl: 'ver_diversity', btn: '#btn-load-diversity' },
+  'race': { tpl: 'industrial_plant', btn: '#btn-raceway' },
+  'seq': { tpl: 'industrial_plant', btn: '#btn-sequence-op', run: '#btn-sequence-run', pre: async p => { await runStudy(p, '#btn-run-fault', 'faultResults'); await closeModals(p); } },
+  'compl': { tpl: 'industrial_plant', btn: '#btn-compliance', pre: async p => { await runStudy(p, '#btn-run-fault', 'faultResults'); await closeModals(p); await runStudy(p, '#btn-run-loadflow', 'loadFlowResults'); await closeModals(p); } },
+  'wenner': { tpl: 'industrial_plant', btn: '#btn-wenner' },
+};
+for (const [k, spec] of Object.entries(SPECS)) {
+  const s = study(spec);
+  SETUPS[`x-${k}-config`] = s.config;
+  SETUPS[`x-${k}-results`] = s.results;
+}
+SETUPS['x-unbal'] = { run: async (page) => { await loadTemplate(page, 'ver_unbalanced_lf'); await runStudy(page, '#btn-run-unbalanced-loadflow', 'unbalancedLoadFlowResults'); await closeModals(page); }, viewport: { width: 1500, height: 1000 } };
+SETUPS['x-control'] = { run: async (page) => { await controlCircuit(page); await page.click('#menu-analyse .toolbar-menu-btn'); await page.click('#btn-control-sim'); await page.waitForTimeout(1500); } };
+SETUPS['x-wenner-results'] = { run: async (page) => {
+  await loadTemplate(page, 'industrial_plant');
+  await page.click('#menu-analyse .toolbar-menu-btn'); await page.click('#btn-wenner');
+  await waitModal(page);
+  const rho = ['118', '135', '170', '215', '260'];
+  const inputs = page.locator('#wenner-modal input');
+  const n = await inputs.count();
+  // inputs alternate spacing, resistivity per row
+  for (let i = 0; i < Math.min(5, Math.floor(n / 2)); i++) await inputs.nth(i * 2 + 1).fill(rho[i]);
+  await page.click('#btn-wenner-run'); await page.waitForTimeout(1500);
+  await markModal(page);
+} };
+
