@@ -97,6 +97,8 @@ const GA = {
       over: (g.over && typeof g.over === 'object') ? g.over : {},
       extras: Array.isArray(g.extras) ? g.extras : [],
       section_layout: g.section_layout === 'stack' ? 'stack' : g.section_layout === 'grid' ? 'grid' : 'side',
+      grid_cols: Number(g.grid_cols) > 0 ? Math.min(8, Math.floor(Number(g.grid_cols))) : null,
+      grid_rows: Number(g.grid_rows) > 0 ? Math.min(8, Math.floor(Number(g.grid_rows))) : null,
       section_dims: (g.section_dims && typeof g.section_dims === 'object') ? g.section_dims : {},
     };
   },
@@ -373,8 +375,14 @@ const GA = {
     const secs = DBSections.list(comp);
     const grid = cfg.section_layout === 'grid';
     const side = cfg.section_layout === 'side';
-    const gcols = Math.ceil(Math.sqrt(secs.length)) || 1;
-    const grows = Math.ceil(secs.length / gcols) || 1;
+    // Columns/rows: either or both may be set; blank = automatic (near-square).
+    // Sections fill row by row in schedule order; a grid too small grows rows.
+    const nsec = secs.length || 1;
+    let gcols = cfg.grid_cols || 0, grows = cfg.grid_rows || 0;
+    if (!gcols && !grows) gcols = Math.ceil(Math.sqrt(nsec));
+    if (!gcols) gcols = Math.ceil(nsec / grows);
+    if (!grows || gcols * grows < nsec) grows = Math.ceil(nsec / gcols);
+    const gridGrew = !!(cfg.grid_cols && cfg.grid_rows && cfg.grid_cols * cfg.grid_rows < nsec);
     const form = comp.props.segregation || '2b';
     const part = GA_PARTITION_MM[form] != null ? GA_PARTITION_MM[form] : 20;
     const heat = items.reduce((n, i) => n + (i.heat || 0), 0) * 1.1;
@@ -460,6 +468,7 @@ const GA = {
     const cap = this._capacity(enc, cfg.delta_t);
     const warnings = [];
     if (note) warnings.push(note);
+    if (grid && gridGrew) warnings.push(`${cfg.grid_cols} × ${cfg.grid_rows} cells cannot hold ${secs.length} sections — grown to ${gcols} × ${grows}.`);
     for (const c of r.comps) {
       for (const w of c.res.warnings) warnings.push(`${c.sec.name}: ${w}`);
       if (!c.res.fits && !c.res.warnings.length) warnings.push(`${c.sec.name}: does not fit its compartment (${c.w} × ${c.h} mm).`);
@@ -701,6 +710,9 @@ const GA = {
         <option value="side"${L.side ? ' selected' : ''}>Side by side</option>
         <option value="stack"${!L.side && !L.grid ? ' selected' : ''}>Stacked</option>
         <option value="grid"${L.grid ? ' selected' : ''}>Grid</option></select></label>
+      ${L.grid ? `<label>Columns <input type="number" data-ga-set="grid_cols" min="1" max="8" step="1" value="${cfg.grid_cols || ''}" placeholder="auto" style="width:56px"></label>
+      <label>Rows <input type="number" data-ga-set="grid_rows" min="1" max="8" step="1" value="${cfg.grid_rows || ''}" placeholder="auto" style="width:56px"></label>
+      <div class="ga-sub">${L.gcols} × ${L.grows} grid · sections fill left→right, top→bottom in schedule order</div>` : ''}
       <div class="ga-sub">Form ${e(L.form)} separation · ${L.part} mm partitions (set on the schedule's Sections panel)</div>
       <table class="ga-items"><thead><tr><th>Section</th><th>mm</th><th>${L.grid ? 'Size' : L.side ? 'Width' : 'Height'}</th><th>Load</th></tr></thead><tbody>${rows}</tbody></table>`;
   },
@@ -770,7 +782,7 @@ const GA = {
       if (k.startsWith('custom.')) {
         this._write(comp, { custom: Object.assign({}, cfg.custom, { [k.slice(7)]: Number(t.value) }) });
       } else {
-        const numeric = ['spare_pct', 'delta_t', 'incomer_a'].includes(k);
+        const numeric = ['spare_pct', 'delta_t', 'incomer_a', 'grid_cols', 'grid_rows'].includes(k);
         this._write(comp, { [k]: numeric ? (t.value === '' ? null : Number(t.value)) : t.value });
       }
     } else return;
