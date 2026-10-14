@@ -201,7 +201,7 @@ const DBSections = {
     const n = (comp.props.circuits || []).length;
     const tab = (id, label, count, color) =>
       `<button type="button" class="dbs-tab${act === id ? ' active' : ''}" data-dbs-tab="${this._e(id)}"` +
-      `${color ? ` style="--dbs-c:${color}"` : ''}>${color ? '<span class="dbs-dot"></span>' : ''}${this._e(label)}` +
+      `${color ? ` style="--dbs-c:${this._e(color)}"` : ''}>${color ? '<span class="dbs-dot"></span>' : ''}${this._e(label)}` +
       `<span class="dbs-n">${count}</span></button>`;
     return `<div class="dbs-tabs" role="tablist" aria-label="Board sections">`
       + tab('', 'All sections', n, '')
@@ -224,7 +224,7 @@ const DBSections = {
       const feedFromOpts = [{ key: '', label: '— choose —' }, ...others];
       const showFrom = s.feed === 'section' || s.feed === 'changeover';
       return `
-        <div class="dbs-card" style="--dbs-c:${this.color(s)}">
+        <div class="dbs-card" style="--dbs-c:${this._e(this.color(s))}">
           <div class="dbs-card-h">
             <span class="dbs-dot"></span>
             ${inp(s, 'name', 'text', 130)}
