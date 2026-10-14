@@ -65,7 +65,13 @@ const DBSections = {
     return l.find(s => s.id === (item && item.section)) || l[0];
   },
 
-  color(sec) { return sec ? (sec.color || this.kind(sec.kind).color) : '#555'; },
+  // Always a plain hex colour: section data comes from the project file and
+  // the value is interpolated into style / SVG attributes.
+  color(sec) {
+    if (!sec) return '#555';
+    const c = sec.color;
+    return (typeof c === 'string' && /^#[0-9a-fA-F]{3,8}$/.test(c)) ? c : this.kind(sec.kind).color;
+  },
 
   _blank(kind, n) {
     const k = this.kind(kind);
