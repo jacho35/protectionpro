@@ -1333,6 +1333,27 @@ document.addEventListener('DOMContentLoaded', () => {
   HelpGuideLinks.init();
 });
 
+// A guide as the plain-text shape the article search scores (title, keywords,
+// standard line, headings, body), so one scorer ranks articles and guides alike.
+HelpGuides.docs = function () {
+  if (this._docs) return this._docs;
+  const strip = (h) => String(h || '').replace(/<[^>]+>/g, ' ').replace(/&[a-z]+;/g, ' ').replace(/\s+/g, ' ').trim();
+  this._docs = HELP_GUIDES.map(g => {
+    const grp = (HELP_GUIDE_GROUPS.find(x => x.id === g.group) || {}).title || '';
+    const rel = (g.related || []).map(r => r.label).join(' ');
+    return {
+      id: 'guide:' + g.id, guideId: g.id, title: g.title, group: 'guides',
+      kw: `guide how to steps ${grp} ${rel}`,
+      std: g.where,
+      html: `<p>${g.intro}</p>` + g.steps.map(s => `<h4>${s.title}</h4><p>${s.html}</p>`).join('')
+        + (g.tips || []).map(t => `<p>${t}</p>`).join(''),
+      _plain: strip(g.title + ' ' + g.where + ' ' + g.intro + ' ' + g.steps.map(s => s.title).join(' ')),
+      _where: grp,
+    };
+  });
+  return this._docs;
+};
+
 // Open Help on a guide (from any module: HelpGuides.openGuide('db-ga')).
 HelpGuides.openGuide = function (id) {
   const modal = document.getElementById('help-modal');

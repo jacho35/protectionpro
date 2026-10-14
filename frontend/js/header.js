@@ -123,6 +123,19 @@ const Header = {
     return out;
   },
 
+  // How-to guides (Help ▸ Guides), found by title, where they live, what they
+  // cover and their step headings. Like devices, shown only once the user types.
+  _guideIndex() {
+    if (typeof HELP_GUIDES === 'undefined') return [];
+    const strip = (h) => String(h || '').replace(/<[^>]+>/g, ' ').replace(/&[a-z]+;/g, ' ');
+    const grp = (id) => ((typeof HELP_GUIDE_GROUPS !== 'undefined' && HELP_GUIDE_GROUPS.find(x => x.id === id)) || {}).title || '';
+    return HELP_GUIDES.map(g => ({
+      guide: g.id, label: g.title, where: 'Guide · ' + grp(g.group), shortcut: '',
+      hay: ('guide how to ' + g.title + ' ' + g.where + ' ' + grp(g.group) + ' ' + strip(g.intro) + ' '
+        + g.steps.map(s => s.title).join(' ')).replace(/\s+/g, ' ').toLowerCase(),
+    }));
+  },
+
   // Take the user to a placed device: its workspace, its page, selected + centred.
   locateComponent(id) {
     const comp = AppState.components.get(id);
@@ -145,10 +158,14 @@ const Header = {
 
   _rank(items, q) {
     const words = q.toLowerCase().split(/\s+/).filter(Boolean);
-    if (!words.length) return items.filter(it => !it.device).slice(0, 60);
+    if (!words.length) return items.filter(it => !it.device && !it.guide).slice(0, 60);
     const scored = [];
     for (const it of items) {
-      if (!words.every(w => it.hay.includes(w))) continue;
+      // Guides match on word starts, so "arc" does not hit "search" in their text.
+      const ok = it.guide
+        ? words.every(w => new RegExp('(^|[^a-z0-9])' + w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).test(it.hay))
+        : words.every(w => it.hay.includes(w));
+      if (!ok) continue;
       const l = it.label.toLowerCase();
       const score = l.startsWith(words[0]) ? 0 : l.includes(words[0]) ? 1 : 2;
       scored.push([score, it]);
@@ -160,7 +177,8 @@ const Header = {
   openSearch() {
     if (document.getElementById('cmd-search')) return;
     if (typeof window.closeAllToolbarMenus === 'function') window.closeAllToolbarMenus();
-    const items = this._index().concat(this._deviceIndex());
+    // Commands first so an exact command name outranks a guide of the same score.
+    const items = this._index().concat(this._guideIndex(), this._deviceIndex());
     const prevFocus = document.activeElement;
     // A `.modal` overlay: the global shortcut handler already stands down while
     // one is open, so typing here can never edit the diagram behind it.
@@ -172,7 +190,7 @@ const Header = {
       <div class="cmd-search" role="dialog" aria-modal="true" aria-label="Search commands">
         <div class="cmd-search-input-row">
           <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/></svg>
-          <input type="text" class="cmd-search-input" placeholder="Search commands, analyses, exports, settings, devices…"
+          <input type="text" class="cmd-search-input" placeholder="Search commands, analyses, exports, settings, guides, devices…"
             aria-label="Search commands" role="combobox" aria-expanded="true" aria-controls="cmd-search-list" aria-autocomplete="list">
           <kbd class="cmd-kbd">Esc</kbd>
         </div>
@@ -211,6 +229,7 @@ const Header = {
       if (!it) return;
       close();
       if (it.device) { this.locateComponent(it.device); return; }
+      if (it.guide) { if (typeof HelpGuides !== 'undefined') HelpGuides.openGuide(it.guide); return; }
       const btn = document.getElementById(it.id);
       if (!btn) return;
       // Row-2 buttons belong to the Single-line workspace.
