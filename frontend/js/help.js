@@ -107,11 +107,14 @@ const HelpCenter = {
         e.preventDefault();
         const r = this._results[Math.max(0, this._cursor)];
         if (r) this.show(r.a.id);
+        else if (this._guideHits && this._guideHits.length) HelpGuides.openGuide(this._guideHits[0].a.guideId);
       } else if (e.key === 'Escape' && this._search.value) {
         e.stopPropagation(); this._search.value = ''; this._renderList();
       }
     });
     this._list.addEventListener('click', (e) => {
+      const g = e.target.closest('[data-guide]');
+      if (g) { HelpGuides.openGuide(g.dataset.guide); return; }
       const b = e.target.closest('[data-article]');
       if (b) this.show(b.dataset.article);
     });
@@ -241,7 +244,7 @@ const HelpCenter = {
     this._phrase = words.join(' ');
     const cnt = this._count;
     if (!terms.length) {
-      this._results = []; this._cursor = -1;
+      this._results = []; this._cursor = -1; this._guideHits = [];
       cnt.textContent = `${HELP_ARTICLES.length} articles`;
       let html = '';
       for (const g of HELP_GROUPS) {
@@ -259,8 +262,22 @@ const HelpCenter = {
       .sort((x, y) => y.score - x.score || HELP_ARTICLES.indexOf(x.a) - HELP_ARTICLES.indexOf(y.a));
     this._results = res;
     this._cursor = res.length ? 0 : -1;
-    cnt.textContent = res.length ? `${res.length} match${res.length === 1 ? '' : 'es'} — Enter opens the top one` : '';
-    if (!res.length) {
+    // Guides that match, ranked by the same scorer, listed after the articles.
+    const gh = this._guideMatches(terms, 6);
+    this._guideHits = gh;
+    const guideHtml = gh.length
+      ? `<div class="hc-group">Guides</div>` + gh.map(r =>
+        `<button type="button" class="hc-item hc-result hc-guide-hit" data-guide="${r.a.guideId}">` +
+        `<span class="hc-rtitle">${this._mark(r.a.title, terms)}</span>` +
+        `<span class="hc-rgroup">Guide · ${this._esc(r.a._where)}</span>` +
+        (this._snippet(r, terms) ? `<span class="hc-snip">${this._snippet(r, terms)}</span>` : '') +
+        `</button>`).join('')
+      : '';
+    const found = res.length + gh.length;
+    cnt.textContent = found
+      ? `${res.length} article${res.length === 1 ? '' : 's'}${gh.length ? ` · ${gh.length} guide${gh.length === 1 ? '' : 's'}` : ''} — Enter opens the top one`
+      : '';
+    if (!found) {
       this._list.innerHTML = `<div class="hc-none">No article matches “${this._esc(q)}”.<br>Try a single word such as <em>sag</em>, <em>earth fault</em> or <em>ampacity</em>.</div>`;
       return;
     }
@@ -270,7 +287,15 @@ const HelpCenter = {
       `<span class="hc-rtitle">${this._mark(r.a.title, terms)}</span>` +
       `<span class="hc-rgroup">${gname(r.a.group)}</span>` +
       (this._snippet(r, terms) ? `<span class="hc-snip">${this._snippet(r, terms)}</span>` : '') +
-      `</button>`).join('');
+      `</button>`).join('') + guideHtml;
+  },
+
+  // Guides matching the terms, scored like articles (needs help-guides.js).
+  _guideMatches(terms, limit = 6) {
+    if (typeof HelpGuides === 'undefined' || typeof HELP_GUIDES === 'undefined' || !terms.length) return [];
+    // Whole-word hits only: a stray substring ("sag" in "message") is not a match.
+    return HelpGuides.docs().map(d => this._score(d, terms)).filter(r => r && r.score >= 3)
+      .sort((x, y) => y.score - x.score).slice(0, limit);
   },
 
   // Top article matches for a query (used by the phone home's single search field)
@@ -466,6 +491,8 @@ const HelpMobile = {
       if (chip) { const q = home.querySelector('#help-home-q'); q.value = chip.dataset.q; this._search(chip.dataset.q); return; }
       const go = e.target.closest('[data-go]');
       if (go) { document.querySelector(`.help-tab[data-tab="${go.dataset.go}"]`).click(); return; }
+      const gd = e.target.closest('[data-guide]');
+      if (gd) { HelpGuides.openGuide(gd.dataset.guide); return; }
       const art = e.target.closest('[data-article]');
       if (art) { HelpCenter.open(art.dataset.article); return; }
       const comp = e.target.closest('[data-comp]');
@@ -479,9 +506,16 @@ const HelpMobile = {
     const query = q.trim().toLowerCase();
     if (!query) { this._buildHome(); document.getElementById('help-home-q').focus(); return; }
     const arts = HelpCenter.searchArticles(query, 8);
+    const gw = HelpCenter._terms(query);
+    const guides = HelpCenter._guideMatches(gw.length > 1 ? gw.filter(w => w.length > 1) : gw, 5);
     const comps = [...document.querySelectorAll('#help-tab-components .hc-comp')]
       .map((el, i) => ({ el, i })).filter(({ el }) => el.textContent.toLowerCase().includes(query)).slice(0, 8);
-    let html = `<div class="help-home-count-line">${arts.length + comps.length ? `${arts.length} article${arts.length === 1 ? '' : 's'} · ${comps.length} component${comps.length === 1 ? '' : 's'}` : 'Nothing matches'}</div>`;
+    let html = `<div class="help-home-count-line">${arts.length + comps.length + guides.length ? `${guides.length ? guides.length + ' guide' + (guides.length === 1 ? '' : 's') + ' · ' : ''}${arts.length} article${arts.length === 1 ? '' : 's'} · ${comps.length} component${comps.length === 1 ? '' : 's'}` : 'Nothing matches'}</div>`;
+    if (guides.length) {
+      html += '<div class="help-home-group">Guides</div>' + guides.map(r =>
+        `<button type="button" class="help-home-row" data-guide="${r.a.guideId}"><span class="help-home-text"><span class="help-home-title">${r.a.title}</span><span class="help-home-sub">Guide · ${r.a._where}</span></span></button>`
+      ).join('');
+    }
     if (arts.length) {
       html += '<div class="help-home-group">Articles</div>' + arts.map(a => {
         const g = (HELP_GROUPS.find(x => x.id === a.group) || {}).title || '';
