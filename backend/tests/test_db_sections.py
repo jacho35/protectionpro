@@ -43,3 +43,50 @@ def test_section_feed_cable_adds_loop_impedance_and_drop():
             {"id": "s2", "name": "B", "feed_mm2": 16, "feed_m": 60}]
     rows = _rows(_board_project(ways, {"sections": secs}))
     assert _zs(rows["b"]) > _zs(rows["a"])
+
+
+def test_reduced_pe_on_the_feed_raises_the_loop():
+    ways = [_way(id="a", section="s1"), _way(id="b", section="s2")]
+    feed = {"feed_mm2": 95, "feed_m": 80}
+    secs = [{"id": "s1", "name": "Full PE", **feed},
+            {"id": "s2", "name": "Reduced PE", **feed, "feed_pe_mm2": 25}]
+    rows = _rows(_board_project(ways, {"sections": secs}))
+    assert _zs(rows["b"]) > _zs(rows["a"])
+
+
+def test_aluminium_feed_has_a_higher_loop_than_copper():
+    ways = [_way(id="a", section="s1"), _way(id="b", section="s2")]
+    feed = {"feed_mm2": 50, "feed_m": 80}
+    secs = [{"id": "s1", "name": "Cu", **feed},
+            {"id": "s2", "name": "Al", **feed, "feed_conductor": "Al"}]
+    rows = _rows(_board_project(ways, {"sections": secs}))
+    assert _zs(rows["b"]) > _zs(rows["a"])
+
+
+def test_section_fed_from_a_section_inherits_its_source():
+    # UPS-side section fed from the Essential section: it sees the generator
+    # Zs plus both feed cables, not the board's own supply.
+    ways = [_way(id="e", section="sE"), _way(id="d", section="sD")]
+    secs = [{"id": "sN", "name": "Normal"},
+            {"id": "sE", "name": "Essential", "zs_ohm": 0.9},
+            {"id": "sD", "name": "Downstream", "feed": "section", "feed_from": "sE",
+             "feed_mm2": 16, "feed_m": 30}]
+    rows = _rows(_board_project(ways, {"sections": secs}))
+    assert _zs(rows["d"]) > _zs(rows["e"]) > 0.9
+
+
+def test_changeover_takes_the_worse_source():
+    ways = [_way(id="n", section="sN"), _way(id="c", section="sC")]
+    secs = [{"id": "sN", "name": "Normal"},
+            {"id": "sG", "name": "Generator", "zs_ohm": 1.2},
+            {"id": "sC", "name": "Changeover", "feed": "changeover", "feed_from": "sG"}]
+    rows = _rows(_board_project(ways, {"sections": secs}))
+    assert _zs(rows["c"]) >= 1.2 > _zs(rows["n"])
+
+
+def test_section_feed_loop_does_not_hang():
+    ways = [_way(id="a", section="s1")]
+    secs = [{"id": "s1", "name": "A", "feed": "section", "feed_from": "s2"},
+            {"id": "s2", "name": "B", "feed": "section", "feed_from": "s1"}]
+    rows = _rows(_board_project(ways, {"sections": secs}))
+    assert rows["a"]["section"] == "A"

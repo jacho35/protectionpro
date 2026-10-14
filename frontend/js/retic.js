@@ -335,6 +335,13 @@ const Retic = {
       const ms = this.minisubs.find(m => m.id === t.dataset.ms);
       if (!ms) return;
       const field = t.dataset.field;
+      if (field === 'mvFedFrom' && t.value && this._mvFeedsInto(ms.id, t.value)) {
+        // Picking a minisub this one already feeds would close a loop.
+        const other = this.minisubs.find(m => m.id === t.value);
+        t.value = ms.mvFedFrom || '';
+        UI.toast(`${other ? other.name : 'That minisub'} is fed from ${ms.name} — it can't also feed it.`, 'warning');
+        return;
+      }
       ms[field] = field === 'mvLength' ? (parseFloat(t.value) || 0) : t.value;
       if (field === 'mvFedFrom' && t.value === ms.id) ms.mvFedFrom = '';
       this._snapshot();
@@ -698,6 +705,19 @@ const Retic = {
   // Demand pickers offer LV distribution cables from the one cable library
   // (4-core, then 2-core single-phase services), the project's standard
   // conductor first; the others after "Show all cables…".
+  // True when `msId` is upstream of `candId` on the MV fed-from chain (or is
+  // it) — feeding msId from candId would then close a loop.
+  _mvFeedsInto(msId, candId) {
+    const seen = new Set();
+    for (let cur = candId; cur && !seen.has(cur); ) {
+      if (cur === msId) return true;
+      seen.add(cur);
+      const m = this.minisubs.find(x => x.id === cur);
+      cur = m ? m.mvFedFrom : '';
+    }
+    return false;
+  },
+
   // MV cables (the link between transformers / minisubs).
   _mvCableOptions(selected, showAll) {
     return CableLib.options(selected, {

@@ -623,6 +623,13 @@ const DBSchedule = {
     }, overrides || {});
   },
 
+  // Ways shown in the grid: those of the active section tab, else all.
+  _visibleWays(comp) {
+    const circuits = comp.props.circuits || [];
+    const act = DBSections.has(comp) ? (DBSections._active[comp.id] || '') : '';
+    return act ? circuits.filter(c => (DBSections.of(comp, c) || {}).id === act) : circuits;
+  },
+
   // Section + way number for a way added while the grid is on a section tab.
   _sectionOverrides(comp) {
     const sec = DBSections.target(comp);
@@ -1124,11 +1131,16 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
     // number already used by another way is refused (EE-7).
     if (k === 'way' && circuits.some(o => o !== c && String(o.way) === String(v).trim())) return 'duplicate';
     if (k === 'section') {
+      const from = DBSections.of(comp, c);
+      const to = DBSections.get(comp, v);
+      // A way numbered with its old section's prefix ('N3') is renumbered into
+      // the new section ('E4'); a plain or hand-typed number is left alone.
+      // The number is taken before the move so the way doesn't count itself.
+      const pre = from && from.prefix ? String(from.prefix) : '';
+      const w = String(c.way ?? '');
+      const renumber = to && from !== to && pre && w.toLowerCase().startsWith(pre.toLowerCase()) && /^\d+$/.test(w.slice(pre.length));
+      if (renumber) c.way = DBSections.nextWayNumber(comp, to);
       c.section = v;
-      // Keep way numbers unique across the board: renumber into the new section.
-      if (circuits.some(o => o !== c && String(o.way) === String(c.way))) {
-        c.way = DBSections.nextWayNumber(comp, DBSections.get(comp, v));
-      }
       this._sortByWay(comp);
       return 'render';
     }
@@ -1210,8 +1222,9 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
     Conduit.syncGroups(circuits);
     this._conEval = Conduit.evaluate(circuits);
 
-    // Drop selection entries for ways that no longer exist.
-    const validIds = new Set(circuits.map(c => c.id));
+    // Drop selection entries for ways that no longer exist — or that the active
+    // section tab hides, so a bulk edit/delete never reaches a way not on screen.
+    const validIds = new Set(this._visibleWays(comp).map(c => c.id));
     for (const id of [...this._selected]) if (!validIds.has(id)) this._selected.delete(id);
     if (this._selAnchor && !validIds.has(this._selAnchor)) this._selAnchor = null;
 
@@ -1415,7 +1428,7 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
     DBSections.bind(this.body, comp, (rerender) => {
       if (rerender) this.render();
       this._notifyEdited();
-    });
+    }, () => this.render());
     this._refreshElPanel(comp);
     this._refreshAccessories(comp);
     this._refreshBulkBar();
@@ -1450,7 +1463,7 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
       cb.addEventListener('click', (e) => {
         const want = cb.checked;
         const id = cb.dataset.id;
-        const ids = circuits.map(c => c.id);
+        const ids = this._visibleWays(comp).map(c => c.id);
         const anchored = e.shiftKey && this._selAnchor && this._selAnchor !== id
           && ids.indexOf(this._selAnchor) >= 0;
         if (anchored) {
@@ -1473,8 +1486,10 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
     const selAll = this.body.querySelector('#db-select-all');
     if (selAll) {
       selAll.addEventListener('change', () => {
-        if (selAll.checked) circuits.forEach(c => this._selected.add(c.id));
-        else this._selected.clear();
+        // On a section tab, "all" means the ways shown — never hidden ones.
+        const shown = this._visibleWays(comp);
+        if (selAll.checked) shown.forEach(c => this._selected.add(c.id));
+        else shown.forEach(c => this._selected.delete(c.id));
         this._selAnchor = null;
         this._paintSelection();
       });
@@ -1645,7 +1660,7 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
         } else if (key === 'curve') {
           if (['B', 'C', 'D'].includes(raw.toUpperCase())) c.curve = raw.toUpperCase();
         } else if (key === 'section') {
-          const sc = DBSections.list(AppState.components.get(this.currentId)).find(x => x.name.toLowerCase() === raw.toLowerCase() || x.prefix.toLowerCase() === raw.toLowerCase());
+          const sc = DBSections.list(AppState.components.get(this.currentId)).find(x => String(x.name || '').toLowerCase() === raw.toLowerCase() || (x.prefix && String(x.prefix).toLowerCase() === raw.toLowerCase()));
           if (sc) c.section = sc.id; else bad++;
         } else if (key === 'conduit_type') {
           const t = Conduit.parseType(raw);
@@ -1707,7 +1722,7 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
     const selAll = this.body && this.body.querySelector('#db-select-all');
     if (!selAll) return;
     const comp = AppState.components.get(this.currentId);
-    const total = comp ? (comp.props.circuits || []).length : 0;
+    const total = comp ? this._visibleWays(comp).length : 0;
     const sel = this._selected.size;
     selAll.checked = total > 0 && sel === total;
     selAll.indeterminate = sel > 0 && sel < total;
@@ -2219,14 +2234,25 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
       const byWay = new Map();
       for (const c of existing) byWay.set(String(c.way), c);
       const merged = [];
-      // A Section column maps by name; an unknown name adds that section.
+      // A Section column maps by name. Names the board doesn't have yet only
+      // become sections once the user agrees; otherwise the column is ignored.
+      const known = (nm) => DBSections.list(comp).find(x => String(x.name || '').toLowerCase() === nm.toLowerCase());
+      const fresh = [...new Set(circuits.map(r => r._sectionName).filter(nm => nm && !known(nm)))];
+      let makeNew = false;
+      if (fresh.length) {
+        makeNew = await UI.confirm(`The sheet names section${fresh.length === 1 ? '' : 's'} this board doesn't have: ${fresh.join(', ')}. Add ${fresh.length === 1 ? 'it' : 'them'}?`
+          + (DBSections.has(comp) ? '' : ' The board becomes sectioned; its existing ways go to the first section.')
+          + ' Cancel imports the ways without those sections.');
+      }
       for (const row of circuits) {
         const nm = row._sectionName; delete row._sectionName;
         if (!nm) continue;
-        let sec = DBSections.list(comp).find(x => x.name.toLowerCase() === nm.toLowerCase());
-        if (!sec) sec = DBSections.create(comp, /ups/i.test(nm) ? 'ups' : /ess|gen/i.test(nm) ? 'essential' : /norm|main/i.test(nm) ? 'normal' : 'other');
-        if (sec.name.toLowerCase() !== nm.toLowerCase()) sec.name = nm;
-        row.section = sec.id;
+        let sec = known(nm);
+        if (!sec && makeNew) {
+          sec = DBSections.create(comp, /ups/i.test(nm) ? 'ups' : /ess|gen/i.test(nm) ? 'essential' : /norm|main/i.test(nm) ? 'normal' : 'other');
+          sec.name = nm;
+        }
+        if (sec) row.section = sec.id;
       }
       for (const row of circuits) {
         const ex = byWay.get(String(row.way));

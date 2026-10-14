@@ -7,6 +7,7 @@
  *   { id, name, kind ('normal'|'essential'|'ups'|'other'), prefix,
  *     feed ('own' | 'board' | 'section' | 'changeover'), feed_from (section id),
  *     source_label, source_kva, zs_ohm, feed_mm2, feed_m,
+ *     feed_conductor ('Cu'|'Al'), feed_pe_mm2 (blank = line size),
  *     incomer_a, incomer_poles ('3P'|'4P'), incomer_ka, bus_a }
  *
  * A way (and an accessory) carries `section` = a section id. A board with no
@@ -98,7 +99,8 @@ const DBSections = {
     const s = this._blank(kind || 'essential');
     // A second section of the same kind gets a numeric suffix.
     const same = comp.props.sections.filter(x => x.kind === s.kind).length;
-    if (same) { s.name += ' ' + (same + 1); s.prefix += (same + 1); }
+    // The prefix ends in a separator so 'N2-1' never reads as Normal way 21.
+    if (same) { s.name += ' ' + (same + 1); s.prefix += (same + 1) + '-'; }
     comp.props.sections.push(s);
     return s;
   },
@@ -129,7 +131,10 @@ const DBSections = {
     let n = 1;
     for (const c of circuits) {
       if (sec && this.of(comp, c) !== sec) continue;
-      const m = String(c.way ?? '').match(/(\d+)$/);
+      // The number after the section's own prefix: 'N2' + '13' → 13, not 213.
+      let w = String(c.way ?? '');
+      if (pre && w.toLowerCase().startsWith(pre.toLowerCase())) w = w.slice(pre.length);
+      const m = w.match(/^\D*(\d+)$/);
       if (m) n = Math.max(n, Number(m[1]) + 1);
     }
     while (used.has(pre + n)) n++;
@@ -244,6 +249,8 @@ const DBSections = {
             <label>kA ${inp(s, 'incomer_ka', 'number', 56, ' min="0" step="1"')}</label>
             <label>Bus A ${inp(s, 'bus_a', 'number', 64, ' min="0" step="1"')}</label>
             <label title="Cable from the board incomer / source to this section">Feed mm² ${inp(s, 'feed_mm2', 'number', 60, ' min="0"')}</label>
+            <label>${sel(s, 'feed_conductor', [{ key: 'Cu', label: 'Cu' }, { key: 'Al', label: 'Al' }])}</label>
+            <label title="Protective conductor of the feed cable. Blank = same size as the line conductors; a reduced PE raises the earth-fault loop.">PE mm² ${inp(s, 'feed_pe_mm2', 'number', 56, ' min="0" placeholder="= line"')}</label>
             <label>m ${inp(s, 'feed_m', 'number', 52, ' min="0"')}</label>
           </div>
           ${warns.length ? `<div class="dbs-warn">${warns.map(w => this._e(w)).join(' · ')}</div>` : ''}
@@ -267,15 +274,17 @@ const DBSections = {
       </details>`;
   },
 
-  // Wire the tabs + panel inside `host`. `after` runs after a model edit.
-  bind(host, comp, after) {
+  // Wire the tabs + panel inside `host`. `after` runs after a model edit,
+  // `view` after a view-only change (a tab switch).
+  bind(host, comp, after, view) {
     const done = (rerender) => { if (after) after(rerender); };
     const det = host.querySelector('#dbs-panel');
     if (det) det.addEventListener('toggle', () => { this._open = det.open; });
 
+    // A tab only changes the view — re-render without announcing an edit.
     host.querySelectorAll('[data-dbs-tab]').forEach(b => b.addEventListener('click', () => {
       this._active[comp.id] = b.dataset.dbsTab;
-      done(true, false);
+      if (view) view();
     }));
     host.querySelectorAll('[data-dbs-add]').forEach(b => b.addEventListener('click', () => {
       const s = this.create(comp, b.dataset.dbsAdd);

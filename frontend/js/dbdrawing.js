@@ -33,13 +33,13 @@ const DBDrawing = {
   DEV_TO_BUS: 50,      // last incomer device → busbar
   SUPPLY_TAP_H: 46,    // vertical pitch of a supply-side accessory tap
   DROP_W: 118,         // way column pitch
-  DROP_X0: 62,
+  DROP_X0: 62,         // first drop, measured from the left pad
   TABLE_HDR: 74,       // extra left margin for the row headings in table mode
   STRIP_H: 24,         // section title strip
   BAND_GAP: 20,        // between section compartments
   ACC_W: 88,           // accessory column pitch (narrower than a way)
   PROT_DY: 28,         // busbar → an accessory's protective device
-  TBL_ROW: 14,         // info-table row pitch         // first drop, measured from the left pad
+  TBL_ROW: 14,         // info-table row pitch
   WAYS_PER_ROW: 12,
   BUS_TO_RCD: 12,      // busbar → top of the earth-leakage bracket
   RCD_H: 20,
@@ -218,7 +218,9 @@ const DBDrawing = {
       const dev = `${Number(c.breaker_a) || 0} A${c.curve ? ' ' + c.curve : ''}${c.poles && c.poles !== '1P' ? ' ' + c.poles : ''}`;
       lines.push({ text: `${/^\d/.test(String(c.way ?? '')) ? 'W' : ''}${c.way ?? ''} · ${dev}`, bold: true });
       lines.push({ text: this._trunc(c.description || '—', 22) });
-      const spare = !(Number(c.load_va) > 0) && !(Number(c.cable_m) > 0);
+      // A spare way: nothing on it and no description. A described way with
+      // no load yet ("Future geyser") keeps its description.
+      const spare = !(Number(c.load_va) > 0) && !(Number(c.cable_m) > 0) && !String(c.description || '').trim();
       if (spare) lines[1] = { text: 'Spare', dim: true };
       if (D.cable && !spare) {
         const ecc = c.ecc_mm2 != null ? `${c.ecc_mm2}` : 'min';
@@ -396,7 +398,9 @@ const DBDrawing = {
           : own;
     const a = Number(sec.incomer_a) || null;
     const bits = [];
-    if (Number(sec.feed_mm2) > 0) bits.push(`${sec.feed_mm2} mm²${Number(sec.feed_m) > 0 ? ' · ' + sec.feed_m + ' m' : ''}`);
+    if (Number(sec.feed_mm2) > 0) {
+      bits.push(`${sec.feed_mm2} mm²${sec.feed_conductor === 'Al' ? ' Al' : ''}${Number(sec.feed_pe_mm2) > 0 ? ` + ${sec.feed_pe_mm2} PE` : ''}${Number(sec.feed_m) > 0 ? ' · ' + sec.feed_m + ' m' : ''}`);
+    }
     if (sec.feed === 'changeover') bits.push('changeover');
     return {
       basis: 'section', device: { type: 'cb' }, rating_a: a,

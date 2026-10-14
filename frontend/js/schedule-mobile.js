@@ -80,7 +80,7 @@ const SchMobile = {
     if (status === 'fail' || status === 'warn') {
       const pick = (st, msg) => (st === status && msg) ? msg : '';
       reason = pick(row.coordination_status, row.coordination_message)
-        || pick(row.ampacity_status, row.coordination_message)
+        || pick(row.ampacity_status, row.ampacity_message)
         || pick(row.vd_status, row.vd_message)
         || pick(row.ecc_status, row.ecc_message)
         || local[0] || ((row.messages || [])[0]) || '';
@@ -203,20 +203,46 @@ const SchMobile = {
       sheet = document.createElement('div');
       sheet.id = 'smb-sheet';
       sheet.className = 'smb-sheet';
+      sheet.setAttribute('role', 'dialog');
+      sheet.setAttribute('aria-modal', 'true');
+      sheet.setAttribute('aria-labelledby', 'smb-sheet-title');
+      sheet.tabIndex = -1;
       document.getElementById('schedules-workspace').appendChild(sheet);
       sheet.addEventListener('click', (e) => this._sheetClick(e));
       sheet.addEventListener('change', (e) => this._sheetChange(e));
+      sheet.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); this.closeSheet(); this.render(); }
+      });
     }
+    const wasOpen = sheet.classList.contains('open');
     this._renderSheet();
     sheet.classList.add('open');
     const body = sheet.querySelector('.smb-sheet-body');
     if (body) body.scrollTop = 0;
+    if (!wasOpen) {
+      this._returnFocus = document.activeElement;
+      sheet.focus({ preventScroll: true });
+      // The phone's back button closes the sheet instead of leaving the page.
+      try { history.pushState({ smbSheet: true }, ''); this._histPushed = true; } catch (e) { this._histPushed = false; }
+      if (!this._onPop) {
+        this._onPop = () => { if (this._sheetId) { this._histPushed = false; this.closeSheet(); this.render(); } };
+        window.addEventListener('popstate', this._onPop);
+      }
+    }
   },
 
   closeSheet() {
     this._sheetId = null;
     const sheet = document.getElementById('smb-sheet');
-    if (sheet) sheet.classList.remove('open');
+    if (!sheet || !sheet.classList.contains('open')) return;
+    sheet.classList.remove('open');
+    if (this._histPushed) {
+      this._histPushed = false;
+      if (history.state && history.state.smbSheet) history.back();
+    }
+    const back = this._returnFocus;
+    this._returnFocus = null;
+    if (back && back.isConnected && back.focus) back.focus({ preventScroll: true });
   },
 
   _renderSheet() {
@@ -243,7 +269,7 @@ const SchMobile = {
     sheet.innerHTML = `
       <div class="smb-sheet-head">
         <button class="btn-small" data-sh="prev" ${idx <= 0 ? 'disabled' : ''} aria-label="Previous way">‹</button>
-        <strong>Way ${e(c.way)}</strong>
+        <strong id="smb-sheet-title">Way ${e(c.way)}</strong>
         <span class="smb-sheet-of">${idx + 1} / ${ways.length}</span>
         <button class="btn-small" data-sh="next" ${idx >= ways.length - 1 ? 'disabled' : ''} aria-label="Next way">›</button>
         <button class="btn-small btn-primary smb-done" data-sh="close">Done</button>
@@ -365,9 +391,13 @@ const SchMobile = {
       // Plan-sync bookkeeping belongs to the original way, not the copy.
       ['plan_qty', '_manualLoadOverride', '_cableManual', '_nameOverride', '_polesManual', '_orphaned']
         .forEach(k => delete copy[k]);
-      let n = ways.length + 1;
-      while (ways.some(w => String(w.way) === String(n))) n++;
-      copy.way = String(n);
+      if (DBSections.has(comp)) {
+        copy.way = DBSections.nextWayNumber(comp, DBSections.of(comp, c));
+      } else {
+        let n = ways.length + 1;
+        while (ways.some(w => String(w.way) === String(n))) n++;
+        copy.way = String(n);
+      }
       ways.splice(i + 1, 0, copy);
       this._touch();
       this._sheetId = copy.id;

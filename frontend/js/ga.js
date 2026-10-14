@@ -88,10 +88,13 @@ const GA = {
     return {
       mounting: g.mounting || 'any',
       enclosure: g.enclosure || 'auto',
+      // Typed values are clamped to sane ranges: a stray 1e9 % spare or a 0 K
+      // rise would otherwise stall the packer or divide the heat check by zero.
       custom: (() => { const cu = (g.custom && typeof g.custom === 'object') ? g.custom : {};
-        return { w: Number(cu.w) || 600, h: Number(cu.h) || 800, d: Number(cu.d) || 250 }; })(),
-      spare_pct: g.spare_pct != null ? Number(g.spare_pct) : 20,
-      delta_t: g.delta_t != null ? Number(g.delta_t) : 20,
+        const dim = (v, dflt, lo) => { const n = Number(v); return n > 0 ? Math.min(5000, Math.max(lo, n)) : dflt; };
+        return { w: dim(cu.w, 600, 100), h: dim(cu.h, 800, 100), d: dim(cu.d, 250, 50) }; })(),
+      spare_pct: g.spare_pct != null && isFinite(Number(g.spare_pct)) ? Math.min(200, Math.max(0, Number(g.spare_pct))) : 20,
+      delta_t: g.delta_t != null && Number(g.delta_t) > 0 ? Math.min(60, Number(g.delta_t)) : 20,
       incomer_a: g.incomer_a != null && g.incomer_a !== '' ? Number(g.incomer_a) : null,
       order: Array.isArray(g.order) ? g.order.slice() : [],
       over: (g.over && typeof g.over === 'object') ? g.over : {},
@@ -237,7 +240,7 @@ const GA = {
     for (const x of cfg.extras) {
       const kd = GA_EXTRA_KINDS.find(k => k.key === x.kind) || GA_EXTRA_KINDS[GA_EXTRA_KINDS.length - 1];
       out.push({ key: 'x:' + x.id, form: 'din', kind: x.kind === 'spare' ? 'spare' : 'extra',
-        modules: Math.max(1, Math.round(Number(x.modules) || kd.modules)),
+        modules: Math.min(72, Math.max(1, Math.round(Number(x.modules) || kd.modules))),
         heat: Number(x.heat_w) || 0, label: x.label || kd.label, sub: '', role: 'extra', extra: x, sec: secOf(x) });
     }
 
@@ -841,7 +844,7 @@ const GA = {
     const aw = pw - 2 * m - listW - 12, ah = ph - 2 * m - tb - 24;
     const sc = Math.min(aw / L.enc.w, ah / L.enc.h);
     const ox = m + 6 + (aw - L.enc.w * sc) / 2, oy = m + 14;
-    const rgb = (hex) => { const n = parseInt(hex.slice(1), 16); return [n >> 16, (n >> 8) & 255, n & 255]; };
+    const rgb = (c) => DxfWriter.parseColor(c) || [0, 0, 0];
     for (const sh of this.shapes(L)) {
       if (sh.t === 'rect') {
         doc.setLineWidth(sh.thin ? 0.15 : 0.3);
@@ -863,21 +866,35 @@ const GA = {
     const lx = pw - m - listW;
     doc.setFontSize(10); doc.text('Parts list', lx, m + 8);
     doc.setFontSize(7);
-    let y = m + 14;
+    // Lines that do not fit beside the drawing continue on following sheets,
+    // in columns, so a large board never loses parts silently.
+    const lines = [];
     let lastSec = null;
     for (const it of L.items) {
-      if (y > ph - m - tb - 6) break;
       if (L.comps && it.sec !== lastSec) {
         lastSec = it.sec;
-        doc.setFontSize(7.5); doc.setFont(undefined, 'bold');
-        doc.text(((DBSections.get(comp, it.sec) || {}).name || 'Section').toUpperCase(), lx, y);
-        doc.setFont(undefined, 'normal'); doc.setFontSize(7);
-        y += 4.6;
+        lines.push({ head: ((DBSections.get(comp, it.sec) || {}).name || 'Section').toUpperCase() });
       }
-      const sz = it.form === 'frame' ? `${Math.round(it.w)}x${Math.round(it.h)}` : `${it.modules}M`;
-      doc.text(`${it.role === 'way' ? 'Way ' : ''}${it.label}  ${it.sub || ''}`.slice(0, 44), lx, y);
-      doc.text(sz, lx + listW - 2, y, { align: 'right' });
-      y += 4.2;
+      lines.push({ text: `${it.role === 'way' ? 'Way ' : ''}${it.label}  ${it.sub || ''}`.slice(0, 44),
+        size: it.form === 'frame' ? `${Math.round(it.w)}x${Math.round(it.h)}` : `${it.modules}M` });
+    }
+    const put = (ln, x, yy) => {
+      if (ln.head) {
+        doc.setFontSize(7.5); doc.setFont(undefined, 'bold'); doc.text(ln.head, x, yy);
+        doc.setFont(undefined, 'normal'); doc.setFontSize(7);
+        return 4.6;
+      }
+      doc.text(ln.text, x, yy);
+      doc.text(ln.size, x + listW - 2, yy, { align: 'right' });
+      return 4.2;
+    };
+    let y = m + 14, i = 0;
+    const yMax = ph - m - tb - 6;
+    for (; i < lines.length && y <= yMax; i++) y += put(lines[i], lx, y);
+    if (i < lines.length) {
+      doc.setFontSize(7); doc.setTextColor(150, 30, 30);
+      doc.text(`… ${lines.length - i} more — continued on the next sheet`, lx, Math.min(y, yMax + 4));
+      doc.setTextColor(30, 30, 30);
     }
     const tbY = ph - m - tb;
     doc.setFontSize(12); doc.text(String(comp.props.name || comp.id), m + 4, tbY + 8);
@@ -888,5 +905,18 @@ const GA = {
     doc.text(`Rows ${L.rowsNeeded}/${L.rowsAvail} · space ${L.utilisation.toFixed(0)} % · heat ${L.heat.toFixed(0)}/${L.capacity.toFixed(0)} W`, m + 100, tbY + 15);
     doc.text(`Date: ${new Date().toISOString().slice(0, 10)}`, pw - m - 70, tbY + 8);
     doc.text('Distribution board general arrangement (indicative sizes)', pw - m - 70, tbY + 15);
+
+    while (i < lines.length) {
+      doc.addPage('a3', 'landscape');
+      doc.setLineWidth(0.4); doc.rect(m, m, pw - 2 * m, ph - 2 * m);
+      doc.setTextColor(30, 30, 30); doc.setFontSize(10);
+      doc.text(`${String(comp.props.name || comp.id)} — parts list (continued)`, m + 6, m + 8);
+      doc.setFontSize(7);
+      for (let col = 0; col * (listW + 10) + listW <= pw - 2 * m - 12 && i < lines.length; col++) {
+        const x = m + 6 + col * (listW + 10);
+        let yy = m + 16;
+        for (; i < lines.length && yy <= ph - m - 6; i++) yy += put(lines[i], x, yy);
+      }
+    }
   },
 };
