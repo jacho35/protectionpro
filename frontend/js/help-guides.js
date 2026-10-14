@@ -7,7 +7,8 @@
  *     tips: [...], related: [{ help, label }] }
  *
  * `shot` describes one picture: { file, alt, setup, clip?, phone?, callouts: [{ sel, label, all? }] };
- * `all` outlines the union of every element `sel` matches instead of the first.
+ * `all` outlines the union of every element `sel` matches instead of the first;
+ * `text` picks, among the matches, the smallest element whose text contains it.
  * The same data drives testing/help-guides/capture.mjs, which opens the app,
  * runs the named `setup`, draws the numbered callouts over `sel` and writes
  * img/help/<file>. The legend under each picture is built from the callout
@@ -22,6 +23,7 @@ const HELP_GUIDE_GROUPS = [
   { id: 'retic', title: 'Reticulation & plans' },
   { id: 'protection', title: 'Protection devices' },
   { id: 'earthing', title: 'Earthing' },
+  { id: 'analyses', title: 'Running studies' },
   { id: 'studies', title: 'Studies & navigation' },
   { id: 'libs', title: 'Libraries & quoting' },
   { id: 'output', title: 'Drawings & export' },
@@ -666,6 +668,304 @@ const HELP_GUIDES = [
   tips: ['Quantities is optional for a Network project, and appears by itself once the rate library has data.', 'The tab order follows the work: plan, demand, street lighting, single line, quantities.'],
   related: [{ help: 'design-types', label: 'Project types & workspaces (reference)' }] },
 
+// ───────────────────────────────────────────────────────────────────────────
+{ id: 'tcc-read', group: 'protection', title: 'Read the time-current chart (TCC)',
+  where: 'Analyse ▸ Protection & safety ▸ Time-Current Curves (TCC)', time: '8 min', phone: 'Use a wider screen',
+  intro: 'The TCC plots how long each protective device takes to operate at each current, so you can see whether the device nearest a fault clears it first. This guide covers finding your way around the chart; the next two cover changing settings and checking coordination.',
+  steps: [
+    { title: 'Open the chart',
+      html: 'Run a short-circuit study first so the chart can mark fault levels, then open <strong>Analyse ▸ Protection &amp; safety ▸ Time-Current Curves (TCC)</strong>. The tabs across the top show every device, or one voltage level at a time. <strong>Protection path</strong> on the left is the chain of devices from the source to the load. The chart is time against current on log scales, and the list on the right has one row per device.',
+      shot: { file: 'tcc-read-1.png', alt: 'The TCC with voltage tabs, protection path, chart and device list',
+        setup: 'tcc-open', clip: '#tcc-modal .modal-content',
+        callouts: [
+          { sel: '.tcc-tab-bar', label: 'Voltage tabs — all devices, or one level' },
+          { sel: '.tcc-mini-sld', label: 'Protection path from the source to the load' },
+          { sel: '.tcc-canvas-wrap', label: 'The chart: time against current' },
+          { sel: '.tcc-side-panel', label: 'Devices — show, hide or solo each curve' },
+        ] } },
+    { title: 'Move around the chart',
+      html: 'Scroll to zoom. <kbd>Shift</kbd>+scroll zooms current only and <kbd>Alt</kbd>+scroll zooms time only. Drag to pan. <strong>Fit</strong>, or a double-click on the chart, frames the visible curves and fault levels. <strong>Ref. Voltage</strong> at the top right scales every device’s current to one voltage so devices either side of a transformer can be compared on the same axis.',
+      shot: { file: 'tcc-read-2.png', alt: 'The chart toolbar and the reference voltage',
+        setup: 'tcc-open', clip: '#tcc-modal .modal-content',
+        callouts: [
+          { sel: '.tcc-chart-toolbar', label: 'Zoom, fit, fault levels, cursor, compare' },
+          { sel: '.tcc-voltage-ref', label: 'Reference voltage for scaling' },
+        ] } },
+    { title: 'Choose which fault levels show',
+      html: '<strong>Faults</strong> shows or hides the fault levels, drawn as dashed vertical lines with a strip along the top. The arrow beside it chooses what is shown: three-phase, single line to ground and peak, for the devices on the path, at this voltage, or everywhere, plus the minimum and maximum range and the maximum and minimum labels.',
+      shot: { file: 'tcc-read-3.png', alt: 'The fault display options menu',
+        setup: 'tcc-faults', clip: '#tcc-modal .modal-content',
+        callouts: [
+          { sel: '#btn-tcc-faults, #btn-tcc-fault-markers', label: 'Show or hide fault levels' },
+          { sel: '.tcc-fault-menu', label: 'Which levels, and for which devices' },
+        ] } },
+    { title: 'Read every device at one current',
+      html: 'Press <strong>Cursor</strong> and click a current on the plot. A panel lists each device’s trip time at that current, so you can read the grading at a fault without following curves by eye. Click elsewhere on the plot to move it, or pick a fault level to snap to.',
+      shot: { file: 'tcc-read-4.png', alt: 'The cursor placed on the chart with each device’s trip time listed',
+        setup: 'tcc-cursor', clip: '#tcc-modal .modal-content',
+        callouts: [
+          { sel: '.tcc-cursor-panel', label: 'Trip time of every device at the cursor current' },
+        ] } },
+    { title: 'Compare two arrangements',
+      html: '<strong>Compare</strong> puts two tabs side by side, for example the 11 kV and 0.4 kV views, or a before and after. The <em>View</em> bar above the chart keeps saved arrangements: which devices are shown, the zoom and the fault display.',
+      shot: { file: 'tcc-read-5.png', alt: 'Two tabs shown side by side',
+        setup: 'tcc-compare', clip: '#tcc-modal .modal-content',
+        callouts: [
+          { sel: '#btn-tcc-compare', label: 'Compare' },
+          { sel: '.tcc-view-bar', label: 'Saved views' },
+        ] } },
+    { title: 'Export',
+      html: '<strong>Export</strong> writes the chart as a PNG or PDF, or the curve data as a CSV, for a report or a spreadsheet.' },
+  ],
+  tips: ['The chart evaluates each curve at the current the device carries, including current transformer saturation for relays.'],
+  related: [{ help: 'prot-tcc', label: 'Time-current curves & relay settings (the maths)' }, { help: 'prot-ct-pt', label: 'CT saturation & PT adequacy' }] },
+
+// ───────────────────────────────────────────────────────────────────────────
+{ id: 'tcc-settings', group: 'protection', title: 'Change a device’s settings on the TCC',
+  where: 'TCC ▸ Devices ▸ Selected device', time: '5 min', phone: 'Use a wider screen',
+  intro: 'You can adjust a breaker, fuse or relay while watching its curve move against its neighbours, and add a device that is not yet on the diagram to try it out.',
+  steps: [
+    { title: 'Select a device',
+      html: 'Click a device’s row in the list, or its curve on the chart. The <strong>Selected device</strong> panel shows its settings, and its curve is highlighted. The row’s buttons centre the chart on it, show only that one (solo), or hide it.',
+      shot: { file: 'tcc-settings-1.png', alt: 'A breaker selected with its settings in the Selected device panel',
+        setup: 'tcc-select', clip: '#tcc-modal .modal-content',
+        callouts: [
+          { sel: '.tcc-device-item', text: 'CB-M1', label: 'The selected device' },
+          { sel: '.tcc-inspector', label: 'Its settings — change a value and the curve moves' },
+        ] } },
+    { title: 'Change a setting',
+      html: 'Edit a value in the panel and the curve follows at once. You can also drag a handle on the curve itself (pickup, delay, instantaneous), or with a curve selected, press the arrow keys to move the handle one step. A breaker with a trip unit moves to the next real dial position, not an arbitrary number.' },
+    { title: 'Try a device that is not on the diagram',
+      html: '<strong>+ Add device</strong> opens a small form to add a breaker, fuse or relay curve to the chart from the libraries, or from your own data. It is a way to test grading before you commit a device to the single line.',
+      shot: { file: 'tcc-settings-2.png', alt: 'The Add device form',
+        setup: 'tcc-add', clip: '#tcc-modal .modal-content',
+        callouts: [
+          { sel: '.tcc-add-popover', label: 'Choose the device and its settings' },
+        ] } },
+    { title: 'Save the arrangement as a view',
+      html: 'When the chart shows what you want, <strong>Save as…</strong> stores it as a named view. You choose what it remembers: the path and grading point, which curves are shown, the zoom, colours and label positions, the fault display, the cursor and reference voltage, and the grading margin. Device settings are not part of a view; they stay on the diagram, so a view always shows the current ones. Pick a view from the list to return to it.',
+      shot: { file: 'tcc-settings-3.png', alt: 'The Save this arrangement as a view dialog',
+        setup: 'tcc-saveas', clip: '#tcc-modal',
+        callouts: [
+          { sel: '.tcc-save-card, .tcc-sv-include', label: 'What the view remembers' },
+        ] } },
+  ],
+  tips: ['Settings changed here belong to the device itself, so the diagram, arc flash and the other studies use them.', 'Use <em>Reset</em> on a dial to go back to the library default.'],
+  related: [{ help: 'trip-unit', label: 'Set up a breaker’s trip unit' }, { help: 'prot-tcc', label: 'Time-current curves & relay settings' }] },
+
+// ───────────────────────────────────────────────────────────────────────────
+{ id: 'tcc-coordination', group: 'protection', title: 'Check coordination and the trip sequence',
+  where: 'TCC ▸ the checks panel at the bottom', time: '8 min', phone: 'Use a wider screen',
+  intro: 'Coordination means the device nearest a fault clears it and the ones behind it stay in. The checks panel tests every upstream and downstream pair for you, proposes fixes, and verifies the order devices operate in for a fault at a chosen bus.',
+  steps: [
+    { title: 'Set the grading margin',
+      html: 'In the <strong>Coordination</strong> tab of the checks panel, <strong>Grading margin</strong> is the minimum time an upstream device must be slower than the one below it. The default is 0.3 s; use what your design basis requires.' },
+    { title: 'Detect miscoordination',
+      html: 'Press <strong>Detect miscoordination</strong>. Each problem is listed with a severity, what is wrong (for example <em>trips at the same time as \u2014 race condition</em>), the current it was found at, and the trip times of both devices. Below it, the pair table lists every upstream and downstream pair with its status (Pass, Note or Fail), the margin you have and the margin required. Click a row to show that pair on the chart; <strong>Fails only</strong> hides the rest.',
+      shot: { file: 'tcc-coordination-1.png', alt: 'A miscoordination reported between two breakers',
+        setup: 'tcc-coord', clip: '#tcc-modal .modal-content',
+        callouts: [
+          { sel: '#btn-tcc-detect-miscord', label: 'Detect miscoordination' },
+          { sel: '.tcc-coord-table', label: 'The issue: which devices, at what current, and their trip times' },
+        ] } },
+    { title: 'Let it propose a fix',
+      html: '<strong>Auto-coordinate\u2026</strong> works out setting changes that give the grading margin and previews them on the chart before you keep them; nothing changes on the diagram until you accept. When no setting can do it, it says so and names the pair. Here no long-time delay class gives enough margin, so the answer is a different device or rating.',
+      shot: { file: 'tcc-coordination-2.png', alt: 'Auto-coordinate reporting a pair it could not coordinate',
+        setup: 'tcc-autocoord', clip: '#tcc-modal .modal-content',
+        callouts: [
+          { sel: '#btn-tcc-auto-coord', label: 'Auto-coordinate' },
+          { sel: '.tcc-coord-info', label: 'What it changed, and what it could not coordinate' },
+        ] } },
+    { title: 'Verify the order of operation',
+      html: 'On the <strong>Sequence</strong> tab, <strong>Verify sequence</strong> walks each faulted bus and lists the order devices operate in: primary, then backup, then final, with each trip time and the margin to the next. A device that sees the fault but has no trip path is flagged. Run it for the minimum fault too, since a backup that grades well at maximum fault can be very slow at the end of a long feeder.',
+      shot: { file: 'tcc-coordination-3.png', alt: 'The Sequence tab with the verified trip order for each bus',
+        setup: 'tcc-sequence', clip: '#tcc-modal .modal-content',
+        callouts: [
+          { sel: '#btn-tcc-verify-seq', label: 'Verify sequence' },
+        ] } },
+    { title: 'Distance relays and fault levels',
+      html: 'The <strong>Distance</strong> tab computes the zone reaches (Z1, Z2, Z3) from the line and transformer impedances and the infeed, and checks every distance relay’s settings against them. <strong>Fault levels</strong> lists the fault current at each bus used by these checks.' },
+  ],
+  tips: ['Fix a Fail by moving the upstream device’s delay or pickup, then press Detect again; the table refreshes.', 'The Sequence of Operation study in the Analyse menu runs the same check as a report.'],
+  related: [{ help: 'prot-sequence', label: 'Sequence of operation (the method)' }, { help: 'prot-tcc', label: 'Time-current curves & relay settings' }] },
+
+// ───────────────────────────────────────────────────────────────────────────
+{ id: 'study-fault', group: 'analyses', title: 'Run a short-circuit study',
+  where: 'Analyse ▸ Short circuit ▸ Short Circuit (IEC 60909)', time: '5 min', phone: 'Results are readable on a phone',
+  intro: 'The short-circuit study finds the fault current at every bus: three-phase, single line to ground, line to line and double line to ground, with the contribution from motors. Equipment is then checked against it.',
+  steps: [
+    { title: 'Have what the study needs',
+      html: 'The network has to be connected to a source with its fault level (the utility’s short-circuit MVA or a generator), transformers with their impedance, and cables with their length. Run <strong>Analyse ▸ Short circuit ▸ Short Circuit (IEC 60909)</strong>, or the <strong>Fault Analysis</strong> button on the toolbar.',
+      shot: { file: 'study-fault-1.png', alt: 'The Analyse menu with the Short circuit group',
+        setup: 'menu-analyse', clip: 'viewport',
+        callouts: [
+          { sel: '#btn-run-fault', label: 'Short Circuit (IEC 60909)' },
+        ] } },
+    { title: 'Read the result boxes',
+      html: 'Every bus gets a box: the three-phase current, the peak current (ip), single line to ground, line to line, double line to ground, and the contribution from motors. A message in the status bar confirms the study ran on all buses.',
+      shot: { file: 'study-fault-2.png', alt: 'Fault result boxes at the buses of a small plant',
+        setup: 'study-fault', clip: '#sld-canvas',
+        callouts: [
+          { sel: '.annotation-badge', label: 'Fault currents at a bus', all: false },
+        ] } },
+    { title: 'See where equipment is exceeded',
+      html: 'A breaker whose rating is lower than the fault current at its bus is marked with a warning symbol. The <strong>Duty Check</strong> study lists them with the numbers; the next guides cover it.' },
+    { title: 'Choose what is shown',
+      html: 'In <strong>Project details ▸ Result boxes &amp; values</strong> (the right-hand panel with nothing selected), tick which fault quantities appear. <strong>Results ▸ Fault Results</strong> shows or hides the boxes for the whole study.' },
+  ],
+  tips: ['The study uses a maximum case with the voltage factor c max and a minimum case with c min and motors left out; protection settings use the minimum.', 'Change a source’s fault level and run again; the boxes are replaced.'],
+  related: [{ help: 'fault-iec60909', label: 'Short circuit (IEC 60909)' }, { help: 'fault-zero-seq', label: 'Zero-sequence & earthing' }] },
+
+// ───────────────────────────────────────────────────────────────────────────
+{ id: 'study-loadflow', group: 'analyses', title: 'Run a load flow study',
+  where: 'Analyse ▸ Power flow ▸ Load Flow', time: '5 min', phone: 'Results are readable on a phone',
+  intro: 'Load flow solves the voltage at every bus and the power in every branch for the loads and generation as drawn. It shows where voltage is out of range and which cables or transformers are overloaded.',
+  steps: [
+    { title: 'Run it',
+      html: 'Open <strong>Analyse ▸ Power flow ▸ Load Flow</strong> or the <strong>Load Flow</strong> toolbar button. The same group has the unbalanced load flow, a 24 hour or yearly time-series, the Load Flow Study Manager for comparing named cases, optimal power flow and a DC load flow.',
+      shot: { file: 'study-loadflow-1.png', alt: 'The Analyse menu with the Power flow group',
+        setup: 'menu-analyse', clip: 'viewport',
+        callouts: [
+          { sel: '#btn-run-loadflow', label: 'Load Flow' },
+          { sel: '#btn-lf-study', label: 'Compare named cases' },
+        ] } },
+    { title: 'Read the boxes',
+      html: 'Each bus shows its voltage (in kV and per unit), angle, real and reactive power, apparent power and current. Branches show the power through them and their loading. A branch over its rating is flagged in red with its loading as a percentage, and a bus outside the voltage band is highlighted.',
+      shot: { file: 'study-loadflow-2.png', alt: 'Load flow boxes with an overloaded cable marked',
+        setup: 'study-loadflow', clip: '#sld-canvas',
+        callouts: [
+          { sel: '.annotation-badge', label: 'Voltage, power and current at a bus' },
+        ] } },
+    { title: 'Check the messages',
+      html: 'The status bar says whether the solver converged and in how many iterations. If it did not, the cause is usually a source with no path to a load, a bus with the wrong voltage, or a load far larger than the supply. The dispatch summary lists what each source and battery delivered.' },
+    { title: 'Try a change',
+      html: 'Open or close a breaker, change a tap or add a capacitor bank and run again to see the effect. <strong>Scenarios</strong> keeps named switching states so you can return to one.' },
+  ],
+  tips: ['Time-series and the study manager reuse this same solver, so a flat profile reproduces this result exactly.'],
+  related: [{ help: 'flow-loadflow', label: 'Load flow (the method)' }, { help: 'wf-studies', label: 'Run All Studies, scenarios & load-flow cases' }] },
+
+// ───────────────────────────────────────────────────────────────────────────
+{ id: 'study-arcflash', group: 'analyses', title: 'Run an arc flash study and print labels',
+  where: 'Analyse ▸ Protection & safety ▸ Arc Flash', time: '5 min', phone: 'Results are readable on a phone',
+  intro: 'The arc flash study gives the incident energy and arc flash boundary at each bus, from the arcing current and the time the upstream protection takes to clear it, and the PPE category that goes with it.',
+  steps: [
+    { title: 'Check the inputs',
+      html: 'Each bus has its own equipment type, electrode configuration, gap, working distance and enclosure size in its properties, and a method (<em>IEEE 1584-2018</em> for new buses, <em>2002</em> for projects saved before it). Protection settings on the breakers and relays upstream set the clearing time, so give them realistic trip settings first.' },
+    { title: 'Run the study',
+      html: 'Open <strong>Analyse ▸ Protection &amp; safety ▸ Arc Flash</strong> or the <strong>Arc Flash</strong> toolbar button. A table lists each bus with its voltage, bolted fault current, arcing current, incident energy, boundary, clearing time and PPE category.',
+      shot: { file: 'study-arcflash-1.png', alt: 'The arc flash results table',
+        setup: 'study-arcflash', clip: '[data-hg-cap] .modal-content',
+        callouts: [
+          { sel: '[data-hg-cap] table', label: 'Incident energy, boundary, clearing time and PPE for each bus' },
+        ] } },
+    { title: 'Read the result',
+      html: 'A bus that shows <strong>DANGER</strong> has an incident energy above 40 cal/cm², which no PPE category covers: the answer is a faster clearing time (a lower instantaneous setting, an arc-flash maintenance mode, a current limiting device), not heavier PPE. The result boxes on the diagram carry the same numbers for each bus.' },
+    { title: 'Print the labels',
+      html: 'After the study, <strong>Output ▸ Reports ▸ Arc Flash Labels (PDF)</strong> makes warning labels with the incident energy at the working distance, the minimum arc rating and the boundary for every bus.',
+      shot: { file: 'study-arcflash-2.png', alt: 'The Output menu with Arc Flash Labels',
+        setup: 'menu-output', clip: 'viewport',
+        callouts: [
+          { sel: '#btn-export-aflabels', label: 'Arc Flash Labels (PDF)' },
+        ] } },
+  ],
+  tips: ['Run it for the minimum fault too: a lower arcing current can be cleared more slowly and give a higher energy.', 'Use the TCC to see why a bus has a long clearing time.'],
+  related: [{ help: 'prot-arcflash-2018', label: 'Arc flash (IEEE 1584-2018)' }, { help: 'tcc-coordination', label: 'Check coordination and the trip sequence' }] },
+
+// ───────────────────────────────────────────────────────────────────────────
+{ id: 'study-cable', group: 'analyses', title: 'Size and check cables',
+  where: 'Analyse ▸ Sizing & installation ▸ Cable Sizing', time: '5 min', phone: 'Results are readable on a phone',
+  intro: 'Cable sizing checks every cable on the diagram for current rating, voltage drop, protection and fault withstand, and recommends the smallest standard size that passes everything.',
+  steps: [
+    { title: 'Run it',
+      html: 'Open <strong>Analyse ▸ Sizing &amp; installation ▸ Cable Sizing</strong>. The load each cable carries is taken from what it feeds, so wire the cable between its source and its load. Its installation method, ambient temperature and grouping are set in its properties.' },
+    { title: 'Read the table',
+      html: 'Each cable has its load current, thermal loading as a percentage of its derated capacity, volt drop, protection check and fault withstand, a status, and a recommended size when it fails. The messages under a failing row say which check and by how much.',
+      shot: { file: 'study-cable-1.png', alt: 'The cable sizing results with a failing cable and its recommendation',
+        setup: 'study-cable', clip: '#cable-sizing-modal .modal-content',
+        callouts: [
+          { sel: '#cable-sizing-modal table', label: 'Load, thermal, volt drop, protection, withstand and the recommendation' },
+          { sel: '#cable-sizing-modal .cs-filter, #cable-sizing-modal [class*="filter"]', label: 'Show all cables, or only those at one bus' },
+        ] } },
+    { title: 'See it on the diagram',
+      html: 'Every cable also carries a small result box with its size, loading and volt drop, green when it passes and red when it fails. With a large diagram, <strong>Results ▸ Cables at Selected Bus</strong> keeps only those at one bus; see the cable focus guide.',
+      shot: { file: 'study-cable-2.png', alt: 'A cable result box in red on the diagram',
+        setup: 'study-cable-canvas', clip: '#sld-canvas',
+        callouts: [
+          { sel: '.annotation-badge', label: 'A cable’s result box', all: false },
+        ] } },
+  ],
+  tips: ['Where nothing standard passes, the recommendation suggests parallel cables, a shorter route, a higher voltage or faster fault clearing.', 'Cable sizes come from the one cable library, so your company’s library entries are what it recommends from.'],
+  related: [{ help: 'cable-sizing', label: 'Cable sizing (thermal, voltage drop, fault)' }, { help: 'cable-focus', label: 'Show only the cables at one bus' }] },
+
+// ───────────────────────────────────────────────────────────────────────────
+{ id: 'study-motor', group: 'analyses', title: 'Check motor starting',
+  where: 'Analyse ▸ Stability & dynamics ▸ Motor Starting', time: '5 min', phone: 'Results are readable on a phone',
+  intro: 'Motor starting finds the voltage dip when each motor starts across the line or by its starter, and whether the motor will accelerate and the rest of the network stay within limits.',
+  steps: [
+    { title: 'Set the motor and its starter',
+      html: 'Each motor has its rating, locked-rotor current and torque, and starter (direct on line, star-delta, autotransformer, soft starter) in its properties. The bus and supply behind it give the system strength the dip depends on.' },
+    { title: 'Run it',
+      html: 'Open <strong>Analyse ▸ Stability &amp; dynamics ▸ Motor Starting</strong>. Every motor on the diagram is checked.',
+      shot: { file: 'study-motor-1.png', alt: 'Motor starting results for two motors with the dip at each bus',
+        setup: 'study-motor', clip: '[data-hg-cap] .modal-content',
+        callouts: [
+          { sel: '[data-hg-cap] .modal-content > * > div', label: 'One card per motor: start current, terminal voltage and the dip at each bus', all: false },
+        ] } },
+    { title: 'Read the dip',
+      html: 'Each motor card gives the start current, the voltage at its terminals in per unit, whether it will start, and the dip at each bus on the way back to the source. Dips are coloured by how much of the limit they use. A motor that will not start has too little terminal voltage for its starting torque.',
+      shot: { file: 'study-motor-2.png', alt: 'Motor starting boxes on the diagram',
+        setup: 'study-motor-canvas', clip: '#sld-canvas',
+        callouts: [
+          { sel: '.annotation-badge', label: 'Voltage at the motor while starting', all: false },
+        ] } },
+    { title: 'Go further',
+      html: 'For the speed and current against time, and the thermal use of the rotor, use <strong>Dynamic Motor Starting</strong> in the same menu.' },
+  ],
+  tips: ['A soft starter or star-delta starter is the usual fix for a dip that is too deep; run again to see it.'],
+  related: [{ help: 'dyn-motor-static', label: 'Motor starting (voltage dip)' }, { help: 'dyn-motor-dynamic', label: 'Dynamic motor starting' }] },
+
+// ───────────────────────────────────────────────────────────────────────────
+{ id: 'study-duty', group: 'analyses', title: 'Check equipment duty',
+  where: 'Analyse ▸ Protection & safety ▸ Duty Check', time: '4 min', phone: 'Results are readable on a phone',
+  intro: 'The duty check compares each breaker, fuse and transformer with the fault and load it sees: breaking and making capacity, short-time withstand and voltage rating. It tells you which equipment is under-rated.',
+  steps: [
+    { title: 'Run it',
+      html: 'Open <strong>Analyse \u25B8 Protection &amp; safety \u25B8 Duty Check</strong>. It works out the fault current at each bus itself, so no other study has to be run first. Each device needs its rated breaking capacity and voltage in its properties.' },
+    { title: 'Read the table',
+      html: 'Transformer loading is listed first, then each protective device with the fault at its bus, its rating, the utilisation as a percentage, and a status. A failing device gets one line for each check it fails: the largest prospective fault against its breaking capacity, the peak against its making capacity, and so on. A warning is something to confirm, such as a rated voltage below the highest voltage of the system.',
+      shot: { file: 'study-duty-1.png', alt: 'The duty check with four failing breakers and the reason for each',
+        setup: 'study-duty', clip: '[data-hg-cap] .modal-content',
+        callouts: [
+          { sel: '[data-hg-cap] table', label: 'Transformers, then each device with its fault, rating and utilisation' },
+        ] } },
+    { title: 'Fix what fails',
+      html: 'A device that fails needs a higher rating, a current-limiting upstream device, or a lower fault level (a transformer with higher impedance, for example). Change it and run both studies again.' },
+  ],
+  tips: ['Fuses and LV breakers are judged on the largest prospective fault; medium-voltage breakers on breaking, making and asymmetry.'],
+  related: [{ help: 'prot-duty', label: 'Equipment duty check' }, { help: 'study-fault', label: 'Run a short-circuit study' }] },
+
+// ───────────────────────────────────────────────────────────────────────────
+{ id: 'study-grounding', group: 'analyses', title: 'Check a substation grounding grid',
+  where: 'Analyse ▸ Earthing & lightning ▸ Grounding (IEEE 80)', time: '6 min', phone: 'Results are readable on a phone',
+  intro: 'The grounding study checks the touch and step voltages of an earth grid against the safe limits, for the fault current that flows into it, and sizes the grid conductor.',
+  steps: [
+    { title: 'Describe the grid on the bus',
+      html: 'In the properties of the bus, open its grounding section: soil resistivity, grid size and mesh, conductor and burial depth, number and length of rods, the surface layer, and the fault clearing time. For a grid of any shape, use the earth grid designer and pick it on the bus (see that guide).' },
+    { title: 'Run it',
+      html: 'Open <strong>Analyse ▸ Earthing &amp; lightning ▸ Grounding (IEEE 80)</strong>. Every bus with a grid is checked, or only the ones you select.' },
+    { title: 'Read the result',
+      html: 'Each bus shows the grid resistance, the ground potential rise, the mesh (touch) and step voltages against their limits, the conductor size against the minimum for the fault, and a plan of the grid. A touch or step voltage over its limit is a failure. A ground potential rise over the touch limit with a safe mesh voltage is a warning to check transferred potentials.',
+      shot: { file: 'study-grounding-1.png', alt: 'The grounding results with touch and step voltage against their limits',
+        setup: 'study-grounding', clip: '[data-hg-cap] .modal-content',
+        callouts: [
+          { sel: '[data-hg-cap] .modal-content', label: 'Touch and step voltage against the limits, conductor size and the grid plan', all: false },
+        ] } },
+    { title: 'Improve the design',
+      html: 'To bring a voltage down add rods or conductors, reduce the mesh spacing or add a surface layer, then run it again. Use the <strong>Wenner Test Interpreter</strong> in the same menu to turn field soil measurements into a resistivity.' },
+  ],
+  tips: ['Where the earth-fault current at the bus is not known, the three-phase current is used instead, which overstates it; enter the design earth-fault current.'],
+  related: [{ help: 'prot-grounding', label: 'Substation grounding (IEEE 80)' }, { help: 'earth-grid', label: 'Design an earth grid' }] },
+
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -803,6 +1103,12 @@ const HELP_GUIDE_LINKS = [
   { host: '.cmd-search-input-row', guide: 'find-anything' },
   { after: '.ws-dialog-note', guide: 'project-types' },
   { after: '#project-quoted-chip', guide: 'quoted', when: () => typeof Quote !== 'undefined' && Quote.isQuoted() },
+  { before: '#tcc-modal .tcc-header-actions', guide: 'tcc-read' },
+  { before: '#arcflash-modal .modal-close', guide: 'study-arcflash' },
+  { before: '#cable-sizing-modal .modal-close', guide: 'study-cable' },
+  { before: '#motor-starting-modal .modal-close', guide: 'study-motor' },
+  { before: '#duty-check-modal .modal-close', guide: 'study-duty' },
+  { before: '#grounding-modal .modal-close', guide: 'study-grounding' },
 ];
 
 const HelpGuideLinks = {
