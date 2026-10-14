@@ -607,6 +607,14 @@ body.dark-mode .db-con-chip-s.db-con-over { background: #4a1c1c; color: #ffa8a8;
 .ga-drag-label text { fill: #fff; font-family: Arial, sans-serif; font-weight: 600; }
 .ga-drag-hint { margin: 4px 0 6px; }
 #ga-canvas.ga-dragging { cursor: grabbing; user-select: none; }
+/* GA: painting grid cells */
+.ga-paint { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin: 6px 0 4px; }
+.ga-brush { display: inline-flex; align-items: center; gap: 4px; }
+.ga-brush .dbs-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--dbs-c); display: inline-block; }
+.ga-brush.active { outline: 2px solid var(--dbs-c); outline-offset: 1px; font-weight: 600; }
+.ga-cell { fill: transparent; stroke: transparent; cursor: crosshair; }
+.ga-cell:hover, .ga-cell:focus { fill: var(--brush); fill-opacity: .22; stroke: var(--brush); stroke-width: 3; stroke-dasharray: 10 6; outline: none; }
+.ga-cell.mine { stroke: var(--brush); stroke-opacity: .45; stroke-width: 2; }
 .ga-add { display: flex; gap: 6px; margin-top: 8px; }
 .ga-note { color: var(--text-secondary); font-size: 11px; margin-top: 10px; }
 
