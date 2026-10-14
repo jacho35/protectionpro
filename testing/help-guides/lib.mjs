@@ -95,3 +95,36 @@ export async function openBoardTab(page, id, tab) {
   await page.click(`[data-sch-tab="${tab}"]`);
   await page.waitForTimeout(500);
 }
+
+
+// A small reticulation plan: minisub, three kiosks in a string, nine erven. Returns nothing.
+export async function seedPlan(page, { scale = 0.5 } = {}) {
+  await page.evaluate(() => Workspaces.setType('reticulation', []));
+  await page.evaluate(() => switchWorkspace('plan'));
+  await page.waitForTimeout(600);
+  await page.evaluate((scale) => {
+    const pm = AppState.planMarkup;
+    const el = (type, x, y, name) => { const e = { id: AppState.planGenId('pmel'), type, x, y, rotation: 0, name, reticId: null, props: PLAN_DEFS.defaults(type) }; pm.elements.push(e); return e; };
+    const rt = (type, a, b, pts) => pm.routes.push({ id: AppState.planGenId('pmrt'), type, fromId: a && a.id, toId: b && b.id, points: pts.map(p => ({ x: p[0], y: p[1] })), cableType: '', curved: false, props: {} });
+    const ms = el('minisub', 0, 0, 'TX1');
+    const ks = [el('kiosk', 70, 0, 'K1'), el('kiosk', 140, 0, 'K2'), el('kiosk', 210, 0, 'K3')];
+    rt('lv', ms, ks[0], [[0, 0], [70, 0]]); rt('lv', ks[0], ks[1], [[70, 0], [140, 0]]); rt('lv', ks[1], ks[2], [[140, 0], [210, 0]]);
+    let n = 1;
+    ks.forEach(k => { for (let j = 0; j < 3; j++) { const e = el('erf', k.x - 22 + j * 22, (j % 2 ? 45 : -45), 'E' + (n++)); rt('service', k, e, [[k.x, 0], [e.x, e.y]]); } });
+    pm.settings.symbolScale = scale;
+    const inp = document.getElementById('plan-symbol-scale'); if (inp) inp.value = String(scale);
+    PlanEngine.zoomFit && PlanEngine.zoomFit();
+    PlanEngine.requestDraw({ all: true });
+  }, scale);
+  await page.waitForTimeout(500);
+}
+
+// Click (or right-click) a plan element by name.
+export async function planPoint(page, name) {
+  return page.evaluate((nm) => {
+    const e = AppState.planMarkup.elements.find(x => x.name === nm);
+    const p = PlanEngine.worldToScreen(e.x, e.y);
+    const r = PlanEngine.fg.getBoundingClientRect();
+    return { x: r.left + p.x, y: r.top + p.y };
+  }, name);
+}

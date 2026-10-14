@@ -30,6 +30,8 @@ for (const g of ctx.HELP_GUIDES) for (const s of g.steps) if (s.shot) shots.push
 
 mkdirSync(OUT, { recursive: true });
 const jwt = await token();
+// Start from shipped libraries: an earlier run's edits live in the test user's account.
+await fetch(`${process.env.BASE_URL || 'http://localhost:8902'}/api/user-libraries`, { method: 'DELETE', headers: { Authorization: `Bearer ${jwt}` } }).catch(() => {});
 const browser = await launch();
 let bad = 0;
 
@@ -44,6 +46,8 @@ for (const shot of shots) {
   try {
     await setup.run(page, { seedBoard, openBoardTab });
     await page.waitForTimeout(400);
+    // Transient toasts only belong in a picture that points at one.
+    if (!(shot.callouts || []).some(c => c.sel.includes('.toast'))) await page.evaluate(() => document.querySelectorAll('.toast').forEach(t => t.remove()));
     const missing = await page.evaluate((callouts) => {
       document.querySelectorAll('.hg-callout').forEach(n => n.remove());
       const miss = [];
