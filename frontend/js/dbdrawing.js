@@ -31,10 +31,12 @@ const DBDrawing = {
   INCOMER_X: 96,       // riser centre, measured from the left pad
   SRC_TO_DEV: 52,      // source terminal → incomer device centre
   DEV_TO_BUS: 50,      // last incomer device → busbar
-  SUPPLY_TAP_H: 38,    // vertical pitch of a supply-side accessory tap
+  SUPPLY_TAP_H: 46,    // vertical pitch of a supply-side accessory tap
   DROP_W: 118,         // way column pitch
   DROP_X0: 62,
   TABLE_HDR: 74,       // extra left margin for the row headings in table mode
+  ACC_W: 88,           // accessory column pitch (narrower than a way)
+  PROT_DY: 28,         // busbar → an accessory's protective device
   TBL_ROW: 14,         // info-table row pitch         // first drop, measured from the left pad
   WAYS_PER_ROW: 12,
   BUS_TO_RCD: 12,      // busbar → top of the earth-leakage bracket
@@ -230,7 +232,7 @@ const DBDrawing = {
         ...warns].join('\n');
 
       items.push({
-        kind: 'way', glyph: 'mcb', phase: (c.poles === '3P' || c.phase === 'RWB') ? 'RWB' : (c.phase || 'R'),
+        kind: 'way', w: this.DROP_W, glyph: 'mcb', phase: (c.poles === '3P' || c.phase === 'RWB') ? 'RWB' : (c.phase || 'R'),
         poles: c.poles || '1P', spare, wayDesc: c.description || '',
         cells: {
           way: String(c.way ?? ''), device: dev, desc: this._trunc(c.description || (spare ? 'Spare' : '—'), 19),
@@ -250,24 +252,30 @@ const DBDrawing = {
   // `comp` is passed explicitly rather than read from this.board(): an export
   // or report run draws a board that is not the one mounted in the view.
   _accItem(acc, comp) {
+    const util = { socket: 'socket', light: 'light', hour_meter: 'hour', ctl_transformer: 'ctltx' };
     const glyph = acc.kind === 'spd' ? 'spd'
       : acc.kind === 'indicator' ? 'lamp'
-        : acc.kind === 'metering' ? 'meter' : 'utility';
-    const lines = [{ text: this._trunc(acc.label || '', 22), bold: true }];
-    lines.push({ text: this._trunc(this._accSpec(acc), 24) });
+        : acc.kind === 'metering' ? 'meter' : (util[acc.utility_kind] || 'utility');
     const fuseA = Number(acc.fuse_a) || 0;
-    lines.push({
-      text: fuseA && acc.fuse_type !== 'none'
-        ? `${fuseA} A ${acc.fuse_type === 'mcb' ? 'MCB' : acc.fuse_type}`
-        : 'unprotected',
-      dim: true,
-    });
+    const prot = fuseA && acc.fuse_type !== 'none' ? { a: fuseA, type: acc.fuse_type } : null;
+    const protText = prot ? `${prot.a} A ${prot.type === 'mcb' ? 'MCB' : prot.type}` : 'unprotected';
+    // Spec wrapped onto short lines so it fits the narrow accessory column.
+    const lines = [{ text: this._trunc(acc.label || '', 15), bold: true }];
+    const parts = this._accSpec(acc).replace('Control ', 'Ctl ').split(' · ');
+    let cur = '';
+    for (const p of parts) {
+      if (cur && (cur + ' · ' + p).length > 16) { lines.push({ text: cur }); cur = p; }
+      else cur = cur ? cur + ' · ' + p : p;
+    }
+    if (cur) lines.push({ text: this._trunc(cur, 17) });
+    lines.push({ text: protText, dim: true });
     const warns = DBAccessories.warnings(acc, DBAccessories.incomer(comp));
     return {
-      kind: 'acc', glyph, accKind: acc.kind,
+      kind: 'acc', w: this.ACC_W, glyph, accKind: acc.kind, prot,
+      meterLetter: acc.meter === 'ammeter' ? 'A' : (acc.meter === 'both' ? 'VA' : 'V'),
       cells: {
-        way: '—', device: fuseA && acc.fuse_type !== 'none' ? `${fuseA} A ${acc.fuse_type === 'mcb' ? 'MCB' : acc.fuse_type}` : 'unprotected',
-        desc: this._trunc(acc.label || '', 19), cable: '', len: '', ecc: '', amps: '', kva: '',
+        way: '—', device: protText, desc: this._trunc(acc.label || '', 13),
+        cable: '', len: '', ecc: '', amps: '', kva: '',
       },
       phase: acc.phases || 'RWB', poles: (acc.phases === 'RWB') ? '3P' : '1P',
       elGroup: '',
@@ -323,7 +331,8 @@ const DBDrawing = {
 
     const tRows = D.table ? this._tableRows(D) : [];
     const maxLines = D.table ? 0 : items.reduce((n, it) => Math.max(n, it.lines.length), 1);
-    const rowInner = this.BUS_TO_DEV + this.LABEL_DY + maxLines * this.LINE_H
+    const btd = rows.some(r => r.some(it => it.kind === 'acc')) ? 92 : this.BUS_TO_DEV;
+    const rowInner = btd + this.LABEL_DY + maxLines * this.LINE_H
       + (D.bars ? this.BAR_GAP + this.BAR_PITCH + 8 : 8) + (D.load ? this.LOAD_H : 0)
       + (tRows.length ? tRows.length * this.TBL_ROW + 14 : 0);
     const rowH = rowInner + this.ROW_GAP;
@@ -333,12 +342,19 @@ const DBDrawing = {
     const isoY = inc.isolator ? devY + 44 : null;
     const busY = (isoY || devY) + this.DEV_TO_BUS;
 
-    const widest = rows.reduce((n, r) => Math.max(n, r.length), 0);
-    const busW = Math.max(this._dropX0 + widest * this.DROP_W, 460);
+    // Column centres per row: ways keep the DROP_W pitch, accessories are narrower.
+    const e0 = this._dropX0 - this.DROP_W / 2;
+    const xs = [], rowW = [];
+    for (const r of rows) {
+      let cur = e0; const row = [];
+      for (const it of r) { row.push(cur + it.w / 2); cur += it.w; }
+      xs.push(row); rowW.push(cur);
+    }
+    const busW = Math.max(Math.max(...rowW) + this.DROP_W / 2, 460);
     const w = this.PAD * 2 + Math.max(busW + 20, 620);
     const h = busY + rows.length * rowH + this.PAD;
 
-    return { tRows, items, rows, supply, inc, maxLines, rowInner, rowH, incTop, devY, isoY, busY, busW, w, h };
+    return { xs, rowW, btd, tRows, items, rows, supply, inc, maxLines, rowInner, rowH, incTop, devY, isoY, busY, busW, w, h };
   },
 
   // ── Palette ─────────────────────────────────────────────────────────
@@ -410,7 +426,38 @@ const DBDrawing = {
 
   _gMeter(x, y, P, stroke, letter) {
     return `<circle cx="${x}" cy="${y}" r="9" fill="${P.surface}" stroke="${stroke}" stroke-width="1.4"/>`
-      + `<text x="${x}" y="${y + 3.5}" text-anchor="middle" font-size="10" font-weight="700" fill="${stroke}">${letter}</text>`;
+      + `<text x="${x}" y="${y + 3.5}" text-anchor="middle" font-size="${String(letter).length > 1 ? 8 : 10}" font-weight="700" fill="${stroke}">${letter}</text>`;
+  },
+
+  _gSocket(x, y, P, stroke) {
+    return `<circle cx="${x}" cy="${y}" r="8" fill="${P.surface}" stroke="${stroke}" stroke-width="1.4"/>`
+      + `<line x1="${x - 3}" y1="${y - 4}" x2="${x - 3}" y2="${y + 4}" stroke="${stroke}" stroke-width="1.4"/>`
+      + `<line x1="${x + 3}" y1="${y - 4}" x2="${x + 3}" y2="${y + 4}" stroke="${stroke}" stroke-width="1.4"/>`;
+  },
+
+  _gLight(x, y, P, stroke) {
+    const k = 8 * Math.SQRT1_2;
+    let r = '';
+    for (const [dx, dy] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) {
+      r += `<line x1="${x + dx * k}" y1="${y + dy * k}" x2="${x + dx * (k + 4)}" y2="${y + dy * (k + 4)}" stroke="${stroke}" stroke-width="1.2"/>`;
+    }
+    return this._gLamp(x, y, P, stroke) + r;
+  },
+
+  _gHour(x, y, P, stroke) {
+    return `<circle cx="${x}" cy="${y}" r="9" fill="${P.surface}" stroke="${stroke}" stroke-width="1.4"/>`
+      + `<text x="${x}" y="${y + 3.5}" text-anchor="middle" font-size="10" font-weight="700" fill="${stroke}">h</text>`;
+  },
+
+  _gCtlTx(x, y, P, stroke) {
+    return `<circle cx="${x}" cy="${y - 5}" r="7" fill="none" stroke="${stroke}" stroke-width="1.4"/>`
+      + `<circle cx="${x}" cy="${y + 5}" r="7" fill="none" stroke="${stroke}" stroke-width="1.4"/>`;
+  },
+
+  // Protective device type for an accessory (SLD symbol key), or null.
+  _protType(prot) {
+    if (!prot) return null;
+    return prot.type === 'mcb' ? 'cb' : 'fuse';
   },
 
   _gUtility(x, y, P, stroke) {
@@ -422,7 +469,7 @@ const DBDrawing = {
   // project's IEC / classic symbol set) with literal colours: class names are
   // stripped and the stroke set on a wrapper, because an exported SVG carries
   // no stylesheet. `stroke` overrides the symbol's native SLD colour.
-  _sym(type, x, y, P, stroke, comp, scale) {
+  _sym(type, x, y, P, stroke, comp, scale, rot) {
     const def = (typeof COMPONENT_DEFS !== 'undefined') ? COMPONENT_DEFS[type] : null;
     const fn = (typeof Symbols !== 'undefined' && def) ? Symbols._symbolFor(type) : null;
     if (!fn) return '';
@@ -433,7 +480,7 @@ const DBDrawing = {
       .replace(/fill="white"/g, `fill="${P.surface}"`)
       .replace(/currentColor/g, stroke)
       .replace(/<text((?:(?!fill=)[^>])*)>/g, `<text stroke="none" fill="${stroke}"$1>`);
-    return `<g transform="translate(${x},${y})${scale && scale !== 1 ? ` scale(${scale})` : ''}" stroke="${stroke}" stroke-width="1.5" fill="none">${m}</g>`;
+    return `<g transform="translate(${x},${y})${scale && scale !== 1 ? ` scale(${scale})` : ''}${rot ? ` rotate(${rot})` : ''}" stroke="${stroke}" stroke-width="1.5" fill="none">${m}</g>`;
   },
 
   // SLD-native stroke colour per symbol type (neutral ones follow the theme).
@@ -470,7 +517,11 @@ const DBDrawing = {
       case 'switch': return this._gSwitch(x, y, P, stroke);
       case 'spd': return this._gSpd(x, y, P, stroke);
       case 'lamp': return this._gLamp(x, y, P, stroke);
-      case 'meter': return this._gMeter(x, y, P, stroke, 'V');
+      case 'meter': return this._gMeter(x, y, P, stroke, (item && item.meterLetter) || 'V');
+      case 'socket': return this._gSocket(x, y, P, stroke);
+      case 'light': return this._gLight(x, y, P, stroke);
+      case 'hour': return this._gHour(x, y, P, stroke);
+      case 'ctltx': return this._gCtlTx(x, y, P, stroke);
       default: return this._gUtility(x, y, P, stroke);
     }
   },
@@ -541,6 +592,11 @@ const DBDrawing = {
     const x = x0 + this.INCOMER_X;
     const incGaps = [[L.devY, 20 * this.SYM_SCALE]];
     if (L.isoY) incGaps.push([L.isoY, 20 * this.SYM_SCALE]);
+    L.supply.forEach((acc, i) => {
+      if (acc.kind === 'metering' && acc.meter !== 'voltmeter') {
+        incGaps.push([L.incTop + this.SRC_TO_DEV / 2 + i * this.SUPPLY_TAP_H - 18, 12]);
+      }
+    });
     let s = this._vline(x, L.incTop, L.busY, incGaps, P.line, 1.8);
     s += `<circle cx="${x}" cy="${L.incTop}" r="3.4" fill="${P.line}"/>`;
     s += `<text x="${x + 10}" y="${L.incTop + 4}" font-size="10" fill="${P.inkSec}">${this._esc(inc.source ? inc.source.name : 'supply')}</text>`;
@@ -550,15 +606,30 @@ const DBDrawing = {
     // right-aligned label overruns into negative x and clips out of the sheet.
     L.supply.forEach((acc, i) => {
       const y = L.incTop + this.SRC_TO_DEV / 2 + i * this.SUPPLY_TAP_H;
-      const gx = x + 46;
+      const gx = x + 74;
       const item = this._accItem(acc, comp);
       const stroke = item.status === 'warn' ? P.warn : P.line;
-      s += `<g><title>${this._esc('Supply-side tap — stays live with the board switched off\n' + item.tip)}</title>`
-        + `<line x1="${x}" y1="${y}" x2="${gx}" y2="${y}" stroke="${P.line}" stroke-width="1.2"/>`
-        + this._glyph(item.glyph, gx, y, P, stroke, item)
-        + `<text x="${gx + 14}" y="${y - 2}" font-size="9" fill="${P.ink}">${this._esc(this._trunc(acc.label || '', 18))}</text>`
-        + `<text x="${gx + 14}" y="${y + 9}" font-size="8.5" fill="${P.muted}">${this._esc(this._trunc(this._accSpec(acc), 22))}</text>`
+      const pt = this._protType(item.prot);
+      const fx = x + 26;
+      let g = `<g><title>${this._esc('Supply-side tap — stays live with the board switched off\n' + item.tip)}</title>`;
+      // Current transformer on the riser for an ammeter, just above the tap.
+      if (acc.kind === 'metering' && acc.meter !== 'voltmeter') {
+        g += this._sym('ct', x, y - 18, P, this._native('ct', P), null, 0.6)
+          + `<text x="${x - 8}" y="${y - 14}" text-anchor="end" font-size="8" fill="${P.muted}">${this._esc(acc.ct_ratio || 'CT')}</text>`;
+      }
+      if (pt) {
+        g += `<line x1="${x}" y1="${y}" x2="${fx - 14}" y2="${y}" stroke="${P.line}" stroke-width="1.2"/>`
+          + `<line x1="${fx + 14}" y1="${y}" x2="${gx}" y2="${y}" stroke="${P.line}" stroke-width="1.2"/>`
+          + this._sym(pt, fx, y, P, this._native(pt, P), null, 0.7, 90);
+      } else {
+        g += `<line x1="${x}" y1="${y}" x2="${gx}" y2="${y}" stroke="${P.line}" stroke-width="1.2"/>`;
+      }
+      g += this._glyph(item.glyph, gx, y, P, stroke, item)
+        + `<text x="${gx + 16}" y="${y - 2}" font-size="9" fill="${P.ink}">${this._esc(this._trunc(acc.label || '', 20))}</text>`
+        + `<text x="${gx + 16}" y="${y + 9}" font-size="8.5" fill="${P.muted}">${this._esc(this._trunc(this._accSpec(acc), 34))}</text>`
+        + `<text x="${gx + 16}" y="${y + 19}" font-size="8.5" fill="${P.muted}">${this._esc(item.prot ? `${item.prot.a} A ${item.prot.type === 'mcb' ? 'MCB' : item.prot.type}` : 'unprotected')}</text>`
         + `</g>`;
+      s += g;
     });
 
     // Incomer device
@@ -592,7 +663,8 @@ const DBDrawing = {
 
   _busRow(row, ri, L, P, D, x0, comp) {
     const busY = L.busY + ri * L.rowH;
-    const busEndX = x0 + Math.max(this._dropX0 + row.length * this.DROP_W - this.DROP_W / 2 + 30, 260);
+    const xs = L.xs[ri].map(v => x0 + v);
+    const busEndX = x0 + Math.max(L.rowW[ri] + 30, 260);
     let s = `<line x1="${x0}" y1="${busY}" x2="${busEndX}" y2="${busY}" stroke="${P.bus}" stroke-width="3.4" stroke-linecap="round"/>`;
 
     // Riser joining this busbar section to the previous one.
@@ -604,13 +676,12 @@ const DBDrawing = {
 
     if (D.elgroups) {
       for (const br of this._elBrackets(row)) {
-        const idn0 = ((comp.props.el_ratings || {})[br.group]) || 30;
-        const txtW = `EL ${br.group} · ${idn0} mA`.length * 5.8 + 16;
-        const mid = x0 + this._dropX0 + (br.from + br.to) / 2 * this.DROP_W;
-        const half = Math.max(((br.to - br.from) * this.DROP_W) / 2 + 26, txtW / 2);
+        const idn = ((comp.props.el_ratings || {})[br.group]) || 30;
+        const txtW = `EL ${br.group} · ${idn} mA`.length * 5.8 + 16;
+        const mid = (xs[br.from] + xs[br.to]) / 2;
+        const half = Math.max((xs[br.to] - xs[br.from]) / 2 + 26, txtW / 2);
         const ax = mid - half, bx = mid + half;
         const y = busY + this.BUS_TO_RCD;
-        const idn = ((comp.props.el_ratings || {})[br.group]) || 30;
         s += `<g><title>${this._esc(`Earth-leakage group ${br.group} — IΔn ${idn} mA, shared by ${br.to - br.from + 1} way(s)`)}</title>`
           + `<rect x="${ax}" y="${y}" width="${bx - ax}" height="${this.RCD_H}" rx="4" fill="${P.panel}" stroke="${P.accent}" stroke-width="1.2"/>`
           + `<text x="${(ax + bx) / 2}" y="${y + 14}" text-anchor="middle" font-size="9.5" font-weight="600" fill="${P.accent}">${this._esc(`EL ${br.group} · ${idn} mA`)}</text>`
@@ -618,18 +689,46 @@ const DBDrawing = {
       }
     }
 
-    const labelTop = busY + this.BUS_TO_DEV + this.LABEL_DY;
+    const devY = busY + L.btd;
+    const labelTop = devY + this.LABEL_DY;
     const barsY = labelTop + L.maxLines * this.LINE_H + this.BAR_GAP;
+    const peY = barsY + this.BAR_PITCH;
+
+    // Accessory bay: a dashed enclosure round the leading accessory columns.
+    const nAcc = row.filter(it => it.kind === 'acc').length;
+    if (nAcc) {
+      const bx0 = xs[0] - row[0].w / 2 + 3, bx1 = xs[nAcc - 1] + row[nAcc - 1].w / 2 - 3;
+      s += `<rect x="${bx0}" y="${busY + 6}" width="${bx1 - bx0}" height="${(D.bars ? peY + 8 : devY + 60) - busY - 6}" rx="6" fill="none" stroke="${P.muted}" stroke-width="1" stroke-dasharray="5,4"/>`
+        + `<text x="${bx0 + 6}" y="${busY + 17}" font-size="8.5" fill="${P.muted}">Board accessories</text>`;
+    }
 
     row.forEach((it, i) => {
-      const x = x0 + this._dropX0 + i * this.DROP_W;
+      const x = xs[i];
       const stroke = D.status ? this._statusColor(it.status, P) : P.line;
-      const devY = busY + this.BUS_TO_DEV;
       let g = `<g><title>${this._esc(it.tip)}</title>`;
-      const endY = (D.bars ? barsY + this.BAR_PITCH : devY + 26) + (D.load && !it.spare ? 14 : 0);
-      const half = (it.glyph === 'spd' ? 25 : 20) * this.SYM_SCALE;
-      g += this._vline(x, busY, endY, [[devY, half]], stroke, 1.4);
-      g += this._glyph(it.glyph, x, devY, P, stroke, it);
+      if (it.kind === 'acc') {
+        // Protective device, then the accessory, then its termination: PE for
+        // an SPD, N for everything else — the conductor stops there.
+        const protY = busY + this.PROT_DY;
+        const endY = it.glyph === 'spd' ? peY : barsY;
+        const gaps = [[devY, (it.glyph === 'spd' ? 25 : 14) * this.SYM_SCALE]];
+        const pt = this._protType(it.prot);
+        if (pt) gaps.push([protY, 20 * 0.7]);
+        g += this._vline(x, busY, D.bars ? endY : devY + 26, gaps, stroke, 1.4);
+        if (pt) g += this._sym(pt, x, protY, P, this._native(pt, P), null, 0.7);
+        g += this._glyph(it.glyph, x, devY, P, stroke, it);
+        if (D.bars) g += `<circle cx="${x}" cy="${endY}" r="2.4" fill="${P.line}"/>`;
+      } else {
+        const endY = it.spare ? devY + 30 : (D.bars ? peY : devY + 26) + (D.load ? 14 : 0);
+        g += this._vline(x, busY, endY, [[devY, 20 * this.SYM_SCALE]], stroke, 1.4);
+        g += this._glyph(it.glyph, x, devY, P, stroke, it);
+        if (D.load && !it.spare) {
+          const motor = (it.poles === '3P' || it.phase === 'RWB')
+            && /pump|motor|fan|compress|aircon|a\/c|hvac|drive/i.test(it.wayDesc || '');
+          const lt = motor ? 'motor_induction' : 'static_load';
+          g += this._sym(lt, x, endY + COMPONENT_DEFS[lt].height / 2, P, P.line, null, 1);
+        }
+      }
       if (D.phase && !D.table) {
         // Phase chip sits left of the drop so the conductor never crosses it.
         const pc = P.phase[it.phase] || P.muted;
@@ -637,40 +736,35 @@ const DBDrawing = {
         g += `<rect x="${x - 10 - tw - 11}" y="${devY + this.TICK_DY - 5}" width="9" height="9" rx="2" fill="${pc}"/>`;
         g += `<text x="${x - 8}" y="${devY + this.TICK_DY + 3}" text-anchor="end" font-size="9" fill="${P.inkSec}">${this._esc(it.phase)}</text>`;
       }
-      // Labels sit on a page-coloured patch, so the conductor reads as passing
-      // behind them rather than being struck through the text.
-      const lw = this.DROP_W - 12, lh = it.lines.length * this.LINE_H + 2;
-      if (!D.table) g += `<rect x="${x - lw / 2}" y="${labelTop - 10}" width="${lw}" height="${lh}" fill="${P.surface}"/>`;
-      (D.table ? [] : it.lines).forEach((ln, li) => {
-        g += `<text x="${x}" y="${labelTop + li * this.LINE_H}" text-anchor="middle" font-size="${ln.bold ? 9.5 : 9}"
+      if (!D.table) {
+        // Labels sit on a page-coloured patch, so the conductor reads as passing
+        // behind them rather than being struck through the text.
+        const lw = it.w - 12, lh = it.lines.length * this.LINE_H + 2;
+        g += `<rect x="${x - lw / 2}" y="${labelTop - 10}" width="${lw}" height="${lh}" fill="${P.surface}"/>`;
+        it.lines.forEach((ln, li) => {
+          g += `<text x="${x}" y="${labelTop + li * this.LINE_H}" text-anchor="middle" font-size="${ln.bold ? 9.5 : 9}"
           font-weight="${ln.bold ? 700 : 400}" fill="${ln.dim ? P.muted : P.ink}">${this._esc(ln.text)}</text>`;
-      });
-      // The way leaves the board to its load, drawn with the SLD's own symbol.
-      if (D.load && !it.spare && it.kind === 'way') {
-        const motor = (it.poles === '3P' || it.phase === 'RWB')
-          && /pump|motor|fan|compress|aircon|a\/c|hvac|drive/i.test(it.wayDesc || '');
-        const lt = motor ? 'motor_induction' : 'static_load';
-        g += this._sym(lt, x, endY + COMPONENT_DEFS[lt].height / 2, P, P.line, null, 1);
+        });
       }
       g += `</g>`;
       s += g;
     });
 
     if (L.tRows.length) {
-      const top = barsY + (D.bars ? this.BAR_PITCH : 0) + 14 + (D.load ? 56 : 0);
+      const top = peY + 14 + (D.load ? 56 : 0);
       const h = L.tRows.length * this.TBL_ROW;
-      const left = x0, right = busEndX;
+      const left = x0, right = xs.length ? xs[xs.length - 1] + row[row.length - 1].w / 2 : busEndX;
       s += `<rect x="${left}" y="${top}" width="${right - left}" height="${h}" fill="none" stroke="${P.border}"/>`;
       L.tRows.forEach((r, ri2) => {
         const y = top + ri2 * this.TBL_ROW;
         if (ri2 > 0) s += `<line x1="${left}" y1="${y}" x2="${right}" y2="${y}" stroke="${P.border}"/>`;
         s += `<text x="${left + 5}" y="${y + 10}" font-size="8.5" font-weight="600" fill="${P.muted}">${this._esc(r.h)}</text>`;
       });
-      const hx = x0 + this._dropX0 - this.DROP_W / 2;
+      const hx = xs[0] - row[0].w / 2;
       s += `<line x1="${hx}" y1="${top}" x2="${hx}" y2="${top + h}" stroke="${P.border}"/>`;
       row.forEach((it, i) => {
-        const x = x0 + this._dropX0 + i * this.DROP_W;
-        s += `<line x1="${x + this.DROP_W / 2}" y1="${top}" x2="${x + this.DROP_W / 2}" y2="${top + h}" stroke="${P.border}"/>`;
+        const x = xs[i];
+        s += `<line x1="${x + it.w / 2}" y1="${top}" x2="${x + it.w / 2}" y2="${top + h}" stroke="${P.border}"/>`;
         L.tRows.forEach((r, ri2) => {
           const y = top + ri2 * this.TBL_ROW + 10;
           if (r.k === 'phase') {
@@ -687,17 +781,10 @@ const DBDrawing = {
     }
 
     if (D.bars) {
-      const barEnd = busEndX;
-      s += `<line x1="${x0}" y1="${barsY}" x2="${barEnd}" y2="${barsY}" stroke="${P.line}" stroke-width="1.6"/>`
+      s += `<line x1="${x0}" y1="${barsY}" x2="${busEndX}" y2="${barsY}" stroke="${P.line}" stroke-width="1.6"/>`
         + `<text x="${x0 - 2}" y="${barsY - 4}" font-size="9" fill="${P.muted}">N</text>`
-        + `<line x1="${x0}" y1="${barsY + this.BAR_PITCH}" x2="${barEnd}" y2="${barsY + this.BAR_PITCH}" stroke="${P.line}" stroke-width="1.6" stroke-dasharray="6,3"/>`
-        + `<text x="${x0 - 2}" y="${barsY + this.BAR_PITCH + 10}" font-size="9" fill="${P.muted}">PE</text>`;
-      // The conductors cross the bars; only an SPD is bonded to PE.
-      row.forEach((it, i) => {
-        if (it.glyph !== 'spd') return;
-        const x = x0 + this._dropX0 + i * this.DROP_W;
-        s += `<circle cx="${x}" cy="${barsY + this.BAR_PITCH}" r="2.4" fill="${P.line}"/>`;
-      });
+        + `<line x1="${x0}" y1="${peY}" x2="${busEndX}" y2="${peY}" stroke="${P.line}" stroke-width="1.6" stroke-dasharray="6,3"/>`
+        + `<text x="${x0 - 2}" y="${peY + 10}" font-size="9" fill="${P.muted}">PE</text>`;
     }
     return s;
   },
