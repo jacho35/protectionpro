@@ -66,6 +66,7 @@ const ReticDiagram = {
       else if (a === 'fit') this.fit();
       else if (a === 'png') this.exportPNG();
       else if (a === 'svg') this.exportSVG();
+      else if (a === 'dxf') this.exportDXF();
     });
   },
 
@@ -543,13 +544,15 @@ const ReticDiagram = {
     const W = this.NODE_W, H = this.NODE_H;
     const name = this._trunc(el.name || 'RMU', 24);
     const nOut = (tree.children[n.id] || []).length;
+    const dxf = { NAME: el.name || 'RMU', ID: n.id.replace(/^rmu:/, ''), TYPE: 'Ring main unit', MV_FEEDS_OUT: nOut };
     return `<g><title>${this._esc(`${name} — ring main unit, ${nOut} outgoing MV feed${nOut === 1 ? '' : 's'}`)}</title>
+      <g data-dxf-block="RMU" data-dxf-at="${n.x},${n.y}" data-dxf-attrs="${this._esc(JSON.stringify(dxf))}">
       <rect x="${n.x}" y="${n.y}" width="${W}" height="${H}" rx="6" fill="${P.node}" stroke="${P.rmu}" stroke-width="1.6"/>
       <path d="M ${n.x} ${n.y + 6} a 6 6 0 0 1 6 -6 h ${W - 12} a 6 6 0 0 1 6 6 v 15 h -${W} z" fill="${P.rmu}" opacity="0.18"/>
-      <text x="${n.x + 10}" y="${n.y + 15}" font-size="11" font-weight="700" fill="${P.ink}">${this._esc(name)}</text>
+      <text x="${n.x + 10}" y="${n.y + 15}" font-size="11" font-weight="700" fill="${P.ink}" data-dxf-attr="NAME">${this._esc(name)}</text>
       <text x="${n.x + 10}" y="${n.y + 38}" font-size="10.5" font-weight="600" fill="${P.rmu}">Ring main unit</text>
-      <text x="${n.x + 10}" y="${n.y + 53}" font-size="9.5" fill="${P.inkSec}">${nOut} MV feed${nOut === 1 ? '' : 's'} out</text>
-    </g>`;
+      <text x="${n.x + 10}" y="${n.y + 53}" font-size="9.5" fill="${P.inkSec}" data-dxf-attr="FEEDS_LABEL">${nOut} MV feed${nOut === 1 ? '' : 's'} out</text>
+    </g></g>`;
   },
 
   _minisubNode(n, mr, tree, P) {
@@ -560,14 +563,19 @@ const ReticDiagram = {
     const l2 = mr ? `${mr.conns} conns · ${mr.numKiosks} kiosk${mr.numKiosks === 1 ? '' : 's'}` : '—';
     const supply = ms && !ms.mvFedFrom && !tree.mvInfo[n.id] && ms.mvLength
       ? [this._cableShort(ms.mvCable), `${ms.mvLength} m`].filter(Boolean).join(' · ') : '';
+    const dxf = { NAME: (ms && ms.name) || 'Minisub', ID: n.id, KVA: mr ? mr.totalKVA : '', CURRENT_A: mr ? mr.currentA : '',
+      CONNS: mr ? mr.conns : '', KIOSKS: mr ? mr.numKiosks : '', EARTHING: (ms && ms.earthing) || 'TN-S',
+      MV_FED_FROM: this._nodeName(tree, ms && ms.mvFedFrom) || 'MV supply', MV_CABLE: (ms && ms.mvCable) || '',
+      MV_LENGTH_M: (ms && ms.mvLength) || '' };
     return `<g><title>${this._esc(`${name} — diversified demand ${l1}; ${l2}`)}</title>
+      <g data-dxf-block="MINISUB" data-dxf-at="${n.x},${n.y}" data-dxf-attrs="${this._esc(JSON.stringify(dxf))}">
       <rect x="${n.x}" y="${n.y}" width="${W}" height="${H}" rx="6" fill="${P.msBody}" stroke="${P.border}"/>
       <path d="M ${n.x} ${n.y + 6} a 6 6 0 0 1 6 -6 h ${W - 12} a 6 6 0 0 1 6 6 v 15 h -${W} z" fill="${P.msHead}"/>
-      <text x="${n.x + 10}" y="${n.y + 15}" font-size="11" font-weight="700" fill="${P.ink}">${this._esc(name)}</text>
-      <text x="${n.x + 10}" y="${n.y + 38}" font-size="10.5" font-weight="600" fill="${P.accent}">${this._esc(l1)}</text>
-      <text x="${n.x + 10}" y="${n.y + 53}" font-size="9.5" fill="${P.inkSec}">${this._esc(l2)}</text>
-      ${supply ? `<text x="${n.x + W - 8}" y="${n.y + 15}" text-anchor="end" font-size="8.5" fill="${P.muted}">${this._esc('MV supply · ' + supply)}</text>` : ''}
-    </g>`;
+      <text x="${n.x + 10}" y="${n.y + 15}" font-size="11" font-weight="700" fill="${P.ink}" data-dxf-attr="NAME">${this._esc(name)}</text>
+      <text x="${n.x + 10}" y="${n.y + 38}" font-size="10.5" font-weight="600" fill="${P.accent}" data-dxf-attr="DEMAND_LABEL">${this._esc(l1)}</text>
+      <text x="${n.x + 10}" y="${n.y + 53}" font-size="9.5" fill="${P.inkSec}" data-dxf-attr="CONNS_LABEL">${this._esc(l2)}</text>
+      ${supply ? `<text x="${n.x + W - 8}" y="${n.y + 15}" text-anchor="end" font-size="8.5" fill="${P.muted}" data-dxf-attr="MV_SUPPLY_LABEL">${this._esc('MV supply · ' + supply)}</text>` : ''}
+    </g></g>`;
   },
 
   _kioskNode(n, tree, resById, P, limit) {
@@ -596,7 +604,7 @@ const ReticDiagram = {
     chips.forEach((c, i) => {
       const cx = n.x + 12 + i * step;
       chipSvg += `<circle cx="${cx}" cy="${n.y + 33}" r="3.2" fill="${c[2]}"/>`
-        + `<text x="${cx + 6}" y="${n.y + 36.5}" font-size="9.5" fill="${P.inkSec}">${c[0]} ${c[1]}</text>`;
+        + `<text x="${cx + 6}" y="${n.y + 36.5}" font-size="9.5" fill="${P.inkSec}" data-dxf-attr="ERVEN_${['R', 'W', 'B', '3P', 'UNASSIGNED'][i]}">${c[0]} ${c[1]}</text>`;
     });
 
     // Downstream totals, this kiosk included. The erf count is unweighted; the
@@ -616,16 +624,21 @@ const ReticDiagram = {
       + (nk != null ? `, ${nk} kiosks` : '')
       + (kr ? `\nDemand at this kiosk: ${kr.totalKVA} kVA; feeder carries ${kr.feederKVA != null ? kr.feederKVA : kr.totalKVA} kVA` : '');
 
-    return `<g><title>${this._esc(tip)}</title>
+    const dxf = { NAME: (k && k.name) || 'Kiosk', ID: n.id, FED_FROM: this._nodeName(tree, k && k.fedFrom),
+      FEEDER_CABLE: (k && k.feederCable) || '', FEEDER_LENGTH_M: (k && k.feederLength) || '',
+      CUM_VD_PCT: cum != null ? cum.toFixed(2) : '', VD_LIMIT_PCT: limit || '', STATUS: cum == null ? 'not computed' : (fail ? 'fail' : 'pass'),
+      KVA: kr ? kr.totalKVA : '', FEEDER_KVA: kr ? (kr.feederKVA != null ? kr.feederKVA : kr.totalKVA) : '',
+      ERVEN_DOWNSTREAM: erven, CONNS_DOWNSTREAM: conns != null ? conns : '', KIOSKS_DOWNSTREAM: nk != null ? nk : '' };
+    return `<g><title>${this._esc(tip)}</title><g data-dxf-block="KIOSK" data-dxf-at="${n.x},${n.y}" data-dxf-attrs="${this._esc(JSON.stringify(dxf))}">
       <rect x="${n.x}" y="${n.y}" width="${W}" height="${H}" rx="6" fill="${P.node}" stroke="${P.border}"/>
       <path d="M ${n.x} ${n.y + 6} a 6 6 0 0 1 6 -6 h ${W - 12} a 6 6 0 0 1 6 6 v 15 h -${W} z" fill="${P.nodeHead}"/>
       <rect x="${n.x}" y="${n.y + 3}" width="3.5" height="${H - 6}" fill="${stripe}"/>
-      <text x="${n.x + 12}" y="${n.y + 15}" font-size="11" font-weight="700" fill="${P.ink}">${this._esc(name)}</text>
+      <text x="${n.x + 12}" y="${n.y + 15}" font-size="11" font-weight="700" fill="${P.ink}" data-dxf-attr="NAME">${this._esc(name)}</text>
       <rect x="${pillX}" y="${n.y + 4}" width="${pillW}" height="14" rx="7" fill="${pillFill}" opacity="0.16"/>
-      <text x="${pillX + pillW / 2}" y="${n.y + 14.5}" text-anchor="middle" font-size="9.5" font-weight="700" fill="${pillFill}">${this._esc(pillTxt)}</text>
+      <text x="${pillX + pillW / 2}" y="${n.y + 14.5}" text-anchor="middle" font-size="9.5" font-weight="700" fill="${pillFill}" data-dxf-attr="VD_LABEL">${this._esc(pillTxt)}</text>
       ${chipSvg}
-      <text x="${n.x + 12}" y="${n.y + 52}" font-size="9.5" fill="${P.muted}">${this._esc(foot)}</text>
-    </g>`;
+      <text x="${n.x + 12}" y="${n.y + 52}" font-size="9.5" fill="${P.muted}" data-dxf-attr="DOWNSTREAM_LABEL">${this._esc(foot)}</text>
+    </g></g>`;
   },
 
   // ─── Render into the modal ───
@@ -675,6 +688,24 @@ const ReticDiagram = {
   autoZoom() {
     this._zoom = Math.max(0.75, this._fitZoom());
     this._applyZoom();
+  },
+
+  // Display name of a minisub / kiosk / RMU node id ('' when none).
+  _nodeName(tree, id) {
+    if (!id) return '';
+    if (tree.rmuById && tree.rmuById[id]) return tree.rmuById[id].name || 'RMU';
+    const m = tree.msById && tree.msById[id];
+    if (m) return m.name || '';
+    const k = tree.byId && tree.byId[id];
+    return k ? (k.name || '') : '';
+  },
+
+  // DXF: minisubs, kiosks and RMUs are blocks with their figures as attributes.
+  exportDXF() {
+    const svg = this.buildSVG({ dark: false });
+    if (!svg) { UI.alert('Nothing to export yet — add minisubs or kiosks first.'); return; }
+    return DxfExport.exportSvg(svg, { scale: 0.25, geomLayer: 'NETWORK', fileName: `${this._fileBase()}_reticulation_diagram`,
+      title: AppState.projectName || '', layers: { NETWORK: null, SYMBOLS: null, TEXT: null } });
   },
 
   // ─── Export ───

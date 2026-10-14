@@ -495,7 +495,7 @@ const GA = {
     const { enc } = L;
     s.push({ t: 'rect', x: 0, y: 0, w: enc.w, h: enc.h, layer: 'ENCLOSURE' });
     if (!L.comps) {
-      this._boxShapes(s, { w: enc.w, h: enc.h }, L, 0, 0, true);
+      this._boxShapes(s, { w: enc.w, h: enc.h }, L, 0, 0, true, null, L.comp);
       return s;
     }
     // Partitions first, then each compartment's own rails, bars and devices.
@@ -517,13 +517,15 @@ const GA = {
       s.push({ t: 'rect', x: c.x + 4, y: c.y + 4, w: c.w - 8, h: c.h - 8, layer: 'COMPARTMENT', thin: true, color: col,
         title: `${c.sec.name} — ${c.w} × ${c.h} mm` });
       s.push({ t: 'text', x: c.x + 10, y: c.y + 14, s: `${c.sec.name.toUpperCase()}  ${c.w} × ${c.h}`, size: 9, layer: 'TEXT', color: col, bold: true });
-      this._boxShapes(s, { w: c.w, h: c.h }, c.res, c.x, c.y, false, c.sec);
+      this._boxShapes(s, { w: c.w, h: c.h }, c.res, c.x, c.y, false, c.sec, L.comp);
     }
     return s;
   },
 
   // Rails, N/PE bars and devices of one box (the whole enclosure, or a compartment).
-  _boxShapes(s, box, res, ox, oy, inset, sec) {
+  // Each device's rect + labels share a `grp` (its item key): the SVG wraps
+  // them in one group that the DXF export turns into a block with attributes.
+  _boxShapes(s, box, res, ox, oy, inset, sec, comp) {
     if (inset) s.push({ t: 'rect', x: 12, y: 12, w: box.w - 24, h: box.h - 24, layer: 'ENCLOSURE', thin: true });
     for (let r = 0; r < res.rowsAvail; r++) {
       const y = GA_TOP_MM + r * GA_ROW_PITCH + GA_ROW_PITCH / 2 - 10;
@@ -538,15 +540,17 @@ const GA = {
       const it = p.item;
       const kind = it.role === 'incomer' ? 'incomer' : it.kind;
       const x = ox + p.x, y = oy + p.y;
-      s.push({ t: 'rect', x, y, w: p.w, h: p.h, layer: 'DEVICES', kind, dash: kind === 'spare', title: it.title || `${it.label} ${it.sub || ''}`.trim() });
+      const grp = { key: it.key, block: 'GA_' + (kind === 'spare' ? 'SPARE' : kind), at: [x + p.w / 2, y + p.h / 2],
+        attrs: comp ? this._dxfAttrs(comp, it, p) : null };
+      s.push({ t: 'rect', x, y, w: p.w, h: p.h, layer: 'DEVICES', kind, dash: kind === 'spare', grp, title: it.title || `${it.label} ${it.sub || ''}`.trim() });
       if (kind === 'spare') continue;
       const narrow = p.w < 30;
       if (it.role === 'way' || it.role === 'incomer') {
-        s.push({ t: 'text', x: x + p.w / 2, y: y + 14, s: String(it.role === 'incomer' ? 'INC' : it.label), size: narrow ? 6 : 8, anchor: 'middle', layer: 'TEXT', light: true });
-        s.push({ t: 'text', x: x + p.w / 2, y: y + p.h - 8, s: String(it.sub || '').split(' ')[0] + (it.sub ? 'A' : ''), size: narrow ? 5.5 : 7, anchor: 'middle', layer: 'TEXT', light: true });
+        s.push({ t: 'text', x: x + p.w / 2, y: y + 14, s: String(it.role === 'incomer' ? 'INC' : it.label), size: narrow ? 6 : 8, anchor: 'middle', layer: 'TEXT', light: true, grp, attr: 'LABEL' });
+        s.push({ t: 'text', x: x + p.w / 2, y: y + p.h - 8, s: String(it.sub || '').split(' ')[0] + (it.sub ? 'A' : ''), size: narrow ? 5.5 : 7, anchor: 'middle', layer: 'TEXT', light: true, grp, attr: 'RATING' });
       } else {
         const lab = narrow ? String(it.label).slice(0, 4) : String(it.label).slice(0, Math.floor(p.w / 5.5));
-        s.push({ t: 'text', x: x + p.w / 2, y: y + p.h / 2, s: lab, size: 6.5, anchor: 'middle', layer: 'TEXT', light: true });
+        s.push({ t: 'text', x: x + p.w / 2, y: y + p.h / 2, s: lab, size: 6.5, anchor: 'middle', layer: 'TEXT', light: true, grp, attr: 'LABEL' });
       }
     }
   },
@@ -557,18 +561,20 @@ const GA = {
   svg(L) {
     const M = 70, enc = L.enc;
     const W = enc.w + M * 2, H = enc.h + M * 2;
+    let open = null;
     const bodies = this.shapes(L).map(sh => {
-      if (sh.t === 'rect') {
-        const fill = sh.layer === 'ENCLOSURE' || sh.layer === 'COMPARTMENT' ? 'none' : sh.kind === 'part' ? '#8a8a8a' : sh.kind === 'bar' ? '#b8b8b8' : sh.layer === 'RAIL' ? '#d6d6d6' : (GA_KIND_FILL[sh.kind] || '#999');
-        const stroke = sh.color || (sh.layer === 'ENCLOSURE' ? '#222' : '#333');
-        return `<rect x="${sh.x + M}" y="${sh.y + M}" width="${sh.w}" height="${sh.h}" fill="${fill}"
-          stroke="${stroke}" stroke-width="${sh.thin ? 1 : 2}"${sh.dash ? ' stroke-dasharray="6 4" fill-opacity="0"' : ''}
-          ${sh.title ? `><title>${this._esc(sh.title)}</title></rect>` : '/>'}`;
+      // Wrap a device's rect + labels in one group (a DXF block + attributes).
+      let pre = '';
+      if (open && (!sh.grp || sh.grp !== open)) { pre += '</g>'; open = null; }
+      if (sh.grp && sh.grp !== open) {
+        open = sh.grp;
+        pre += `<g data-dxf-block="${this._esc(sh.grp.block)}" data-dxf-at="${sh.grp.at[0] + M},${sh.grp.at[1] + M}"`
+          + `${sh.grp.attrs ? ` data-dxf-attrs="${this._esc(JSON.stringify(sh.grp.attrs))}"` : ''} data-dxf-layer="DEVICES">`;
       }
-      return `<text x="${sh.x + M}" y="${sh.y + M}" font-size="${sh.size}" font-family="Arial,sans-serif"
-        text-anchor="${sh.anchor || 'start'}" dominant-baseline="middle"${sh.bold ? ' font-weight="700"' : ''} fill="${sh.color || (sh.light ? '#fff' : '#222')}">${this._esc(sh.s)}</text>`;
-    }).join('');
-    const dim = (x1, y1, x2, y2, label, rot) => `<g stroke="#555" stroke-width="1" fill="#222" font-size="16" font-family="Arial,sans-serif">
+      return pre + body(sh);
+    }).join('') + (open ? '</g>' : '');
+    function body(sh) { return GA._shapeSvg(sh, M); }
+    const dim = (x1, y1, x2, y2, label, rot) => `<g stroke="#555" stroke-width="1" fill="#222" font-size="16" font-family="Arial,sans-serif" data-dxf-layer="DIMENSIONS">
       <line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}"/>
       <text x="${(x1 + x2) / 2}" y="${(y1 + y2) / 2 - 6}" text-anchor="middle" stroke="none"${rot ? ` transform="rotate(-90 ${(x1 + x2) / 2} ${(y1 + y2) / 2})"` : ''}>${label}</text></g>`;
     const dims = dim(M, M - 24, M + enc.w, M - 24, `${enc.w} mm`, false)
@@ -577,16 +583,37 @@ const GA = {
       <rect width="${W}" height="${H}" fill="#fff"/>${dims}${bodies}</svg>`;
   },
 
-  // ── DXF (R12 ASCII via DxfWriter: named layers, units mm, y up) ─────
-  dxf(L) {
-    const H = L.enc.h, k = 0.72;   // text height = cap height of the SVG font size
-    const d = DxfWriter.create({ ENCLOSURE: 7, COMPARTMENT: 5, PARTITION: 8, RAIL: 9, BARS: 8, DEVICES: 1, TEXT: 7 });
-    for (const sh of this.shapes(L)) {
-      const col = sh.color && /^#[0-9a-f]{6}$/i.test(sh.color) ? DxfWriter.aci(DxfWriter.parseColor(sh.color)) : undefined;
-      if (sh.t === 'rect') d.rect(sh.x, H - sh.y - sh.h, sh.w, sh.h, sh.layer, col);
-      else d.text(sh.x, H - sh.y - sh.size * 0.36, sh.size * k, sh.s, { anchor: sh.anchor, layer: 'TEXT', color: col });
+  // One shape → SVG. Labels inside a device group carry their attribute tag.
+  _shapeSvg(sh, M) {
+    if (sh.t === 'rect') {
+      const fill = sh.layer === 'ENCLOSURE' || sh.layer === 'COMPARTMENT' ? 'none' : sh.kind === 'part' ? '#8a8a8a' : sh.kind === 'bar' ? '#b8b8b8' : sh.layer === 'RAIL' ? '#d6d6d6' : (GA_KIND_FILL[sh.kind] || '#999');
+      const stroke = sh.color || (sh.layer === 'ENCLOSURE' ? '#222' : '#333');
+      return `<rect x="${sh.x + M}" y="${sh.y + M}" width="${sh.w}" height="${sh.h}" fill="${fill}"
+        stroke="${stroke}" stroke-width="${sh.thin ? 1 : 2}"${sh.dash ? ' stroke-dasharray="6 4" fill-opacity="0"' : ''} data-dxf-layer="${sh.layer}"
+        ${sh.title ? `><title>${this._esc(sh.title)}</title></rect>` : '/>'}`;
     }
-    return d.toString();
+    return `<text x="${sh.x + M}" y="${sh.y + M}" font-size="${sh.size}" font-family="Arial,sans-serif"
+      text-anchor="${sh.anchor || 'start'}" dominant-baseline="middle"${sh.bold ? ' font-weight="700"' : ''} fill="${sh.color || (sh.light ? '#fff' : '#222')}"${sh.attr ? ` data-dxf-attr="${sh.attr}"` : ''}>${this._esc(sh.s)}</text>`;
+  },
+
+  // DXF attributes of one placed GA item.
+  _dxfAttrs(comp, it, p) {
+    const size = it.form === 'frame' ? `${Math.round(it.w)}x${Math.round(it.h)} mm` : `${it.modules} modules`;
+    const sec = it.sec && typeof DBSections !== 'undefined' ? (DBSections.get(comp, it.sec) || {}).name : '';
+    const base = { BOARD: comp.props.name || comp.id, SECTION: sec || '', KIND: it.kind, SIZE: size,
+      WIDTH_MM: Math.round(p.w), HEIGHT_MM: Math.round(p.h), HEAT_W: (it.heat || 0).toFixed(1) };
+    if (it.role === 'way' && it.way) return Object.assign(DBDrawing.wayDxfAttrs(comp, it.way), base);
+    return Object.assign(base, { DESCRIPTION: it.label || '', SPEC: it.sub || '', ROLE: it.role || '' });
+  },
+
+  // ── DXF (server-built, mm, y up): devices are blocks with attributes ──
+  dxfPayload(L) {
+    return DxfExport.fromSvg(this.svg(L), {
+      scale: 1, geomLayer: 'ENCLOSURE', fileName: `${this._fileBase(L.comp)}_GA`,
+      title: String(L.comp.props.name || L.comp.id),
+      layers: { ENCLOSURE: '#222222', COMPARTMENT: '#1976d2', PARTITION: '#8a8a8a', RAIL: '#9e9e9e',
+        BARS: '#8a8a8a', DEVICES: '#c0392b', TEXT: null, DIMENSIONS: '#555555' },
+    });
   },
 
   // ── Mounting ──────────────────────────────────────────────────────
@@ -816,7 +843,7 @@ const GA = {
 
   exportDXF() {
     const comp = this.board(); if (!comp) return;
-    this._download(new Blob([this.dxf(this.layout(comp))], { type: 'application/dxf' }), `${this._fileBase(comp)}_GA.dxf`);
+    return DxfExport.download(this.dxfPayload(this.layout(comp)));
   },
 
   exportSheet(all) {
@@ -844,7 +871,7 @@ const GA = {
     const aw = pw - 2 * m - listW - 12, ah = ph - 2 * m - tb - 24;
     const sc = Math.min(aw / L.enc.w, ah / L.enc.h);
     const ox = m + 6 + (aw - L.enc.w * sc) / 2, oy = m + 14;
-    const rgb = (c) => DxfWriter.parseColor(c) || [0, 0, 0];
+    const rgb = (c) => DxfExport.parseColor(c) || [0, 0, 0];
     for (const sh of this.shapes(L)) {
       if (sh.t === 'rect') {
         doc.setLineWidth(sh.thin ? 0.15 : 0.3);

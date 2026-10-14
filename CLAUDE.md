@@ -88,6 +88,7 @@ frontend/
     ├── boq.js              # Bill of quantities — take-off over Demand / plans / SLD / DB schedules + rule lines from BOQ.BASES counts, material/labour split, % allowances; priced from rates.js
     ├── quantities.js       # Quantities workspace tab (last step of Reticulation / Building; opt-in for Network, or kept once the rate library has data): rail + the BOQ / Cable schedules / Rate library dialogs docked into the pane (`.q-docked`, their close() is then a no-op); Output-menu items and Ctrl K route here
     ├── cableschedules.js   # Cable schedules — retic feeders/services (Demand VD) + building sub-mains (LF) / final circuits (circuit check)
+    ├── dxfwriter.js        # DxfExport — every drawing DXF (SLD, Demand topology, street-light schematic, DB single line, GA): renders the page SVG in a shadow root, `data-dxf-block` groups → BLOCK + INSERT, `data-dxf-attr` texts → visible ATTRIBs, `data-dxf-attrs` JSON → hidden ATTRIBs; posts to /api/drawing/dxf-export (the plan DXF is plan-dxf.js)
     ├── compliance.js       # Standards compliance verification
     ├── minimap.js          # Scaled diagram overview widget
     └── undo.js             # Snapshot-based undo/redo (50 states max)
@@ -137,6 +138,7 @@ backend/
 │   ├── study_manager.py    # Batch analysis orchestration
 │   ├── changeover.py       # Changeover switch → 2-terminal devices, applied by every analysis route before any engine runs
 │   ├── offpage.py          # Linked off-page connector pairs → closed switches + a joining wire (props.linked_to; legacy same-name), applied after changeover
+│   ├── drawing_dxf.py      # Drawing DXF writer (ezdxf R2010, mm): blocks with ATTDEFs, inserts with visible label + hidden data attributes, true colour, hatches, lineweights
 │   └── pdf_reports.py      # ReportLab PDF generation
 └── routes/
     ├── analysis.py         # POST /api/analysis/* endpoints
@@ -144,6 +146,7 @@ backend/
     ├── email_settings.py   # GET/PUT /api/settings/email, POST /test (admin only)
     ├── user_libraries.py   # GET/PUT/DELETE /api/user-libraries (+ /default-rates) — the signed-in user's own libraries and default rates
     ├── shared_libraries.py # /api/shared-libraries — team libraries: members (view/edit), per-entry versioned saves (409 on stale), admin company standard
+    ├── drawing_dxf.py      # POST /api/drawing/dxf-export — drawing payload → DXF download
     └── reports.py          # CSV & PDF export endpoints
 ```
 
@@ -422,7 +425,7 @@ Run these after any change to `backend/analysis/`. Frontend testing is mostly ma
 
 - **Adding a new component type**: `constants.js` (definition) → `symbols.js` (SVG) → `properties.js` (editor) → `sidebar.js` (palette category)
 - **Adding a new analysis**: `backend/analysis/` (engine) → `backend/routes/analysis.py` (endpoint) → `backend/models/schemas.py` (Pydantic model) → `frontend/js/api.js` (client) → `frontend/js/app.js` (toolbar button)
-- **Modifying export formats**: `frontend/js/project.js` (JSON/SVG/PNG) or `backend/analysis/pdf_reports.py` (PDF) or `backend/routes/reports.py` (CSV)
+- **Modifying export formats**: `frontend/js/project.js` (JSON/SVG/PNG), `frontend/js/dxfwriter.js` + `backend/analysis/drawing_dxf.py` (drawing DXF) or `backend/analysis/pdf_reports.py` (PDF) or `backend/routes/reports.py` (CSV)
 - **Changing diagram rendering**: `frontend/js/canvas.js` (layout/interaction) or `frontend/js/symbols.js` (component visuals)
 - **Editing TCC curves**: `frontend/js/tcc.js`
 - **Standards/compliance checks**: `frontend/js/compliance.js`

@@ -53,6 +53,7 @@ const SLDiagram = {
             <span class="rdg-spacer"></span>
             <button class="retic-btn" data-sldg="png" title="Download the diagram as a PNG image">PNG</button>
             <button class="retic-btn" data-sldg="svg" title="Download the diagram as a vector SVG">SVG</button>
+            <button class="retic-btn" data-sldg="dxf" title="Download the schematic as a DXF for CAD (mm) — source and poles as blocks with attributes">DXF</button>
           </div>
           <div id="sldg-canvas" class="rdg-scroll"></div>
           <div class="rdg-legend">
@@ -103,6 +104,7 @@ const SLDiagram = {
       else if (a === 'fit') this.fit();
       else if (a === 'png') this.exportPNG();
       else if (a === 'svg') this.exportSVG();
+      else if (a === 'dxf') this.exportDXF();
     });
     m.addEventListener('change', (e) => {
       if (e.target.id === 'sldg-circuit') { this._circuitId = e.target.value; this.render(); this.autoZoom(); }
@@ -230,15 +232,20 @@ const SLDiagram = {
     const sx = L.X(0), sy = L.Y(0);
     const srcKind = c.source && c.source.kind === 'minisub' ? 'Minisub' : 'Kiosk';
     const ze = StreetLight._ze(c), svd = StreetLight._supplyVd(c);
+    const srcData = { CIRCUIT: c.name, NAME: StreetLight._sourceName(c.source), KIND: srcKind,
+      PROTECTION: prot.id === 'custom' ? `Ia ${StreetLight._ia(c)} A` : prot.name, ZE_OHM: this._f(ze.value, 3),
+      SUPPLY_VD_PCT: this._f(svd.value), KVA: this._f(StreetLight.circuitKVA(c)), SYSTEM: sys, CABLE: c.cable || '',
+      POLES: c.poles.length, STATUS: verdict };
     const src = `<g><title>${this._esc(`${StreetLight._sourceName(c.source)} — Ze ${this._f(ze.value, 3)} Ω (${ze.basis}); supply VD ${this._f(svd.value)} % (${svd.basis})`)}</title>
+      <g data-dxf-block="SL_SOURCE" data-dxf-at="${sx},${sy}" data-dxf-attrs="${this._esc(JSON.stringify(srcData))}">
       <rect x="${sx}" y="${sy}" width="${this.SRC_W}" height="${this.NODE_H}" rx="6" fill="${P.srcBody}" stroke="${P.border}"/>
       <path d="M ${sx} ${sy + 6} a 6 6 0 0 1 6 -6 h ${this.SRC_W - 12} a 6 6 0 0 1 6 6 v 15 h -${this.SRC_W} z" fill="${P.srcHead}"/>
-      <text x="${sx + 10}" y="${sy + 15}" font-size="11" font-weight="700" fill="${P.ink}">${this._esc(this._trunc(StreetLight._sourceName(c.source), 22))}</text>
-      <text x="${sx + this.SRC_W - 10}" y="${sy + 15}" text-anchor="end" font-size="9" fill="${P.inkSec}">${srcKind}</text>
-      <text x="${sx + 10}" y="${sy + 36}" font-size="10" font-weight="600" fill="${P.accent}">${this._esc(prot.id === 'custom' ? 'Ia ' + StreetLight._ia(c) + ' A' : prot.name)}</text>
-      <text x="${sx + 10}" y="${sy + 50}" font-size="9.5" fill="${P.inkSec}">Ze ${this._f(ze.value, 3)} Ω · supply ${this._f(svd.value)} %</text>
-      <text x="${sx + 10}" y="${sy + 63}" font-size="9.5" fill="${P.inkSec}">${this._f(StreetLight.circuitKVA(c))} kVA</text>
-    </g>`;
+      <text x="${sx + 10}" y="${sy + 15}" font-size="11" font-weight="700" fill="${P.ink}" data-dxf-attr="NAME_LABEL">${this._esc(this._trunc(StreetLight._sourceName(c.source), 22))}</text>
+      <text x="${sx + this.SRC_W - 10}" y="${sy + 15}" text-anchor="end" font-size="9" fill="${P.inkSec}" data-dxf-attr="KIND_LABEL">${srcKind}</text>
+      <text x="${sx + 10}" y="${sy + 36}" font-size="10" font-weight="600" fill="${P.accent}" data-dxf-attr="PROTECTION_LABEL">${this._esc(prot.id === 'custom' ? 'Ia ' + StreetLight._ia(c) + ' A' : prot.name)}</text>
+      <text x="${sx + 10}" y="${sy + 50}" font-size="9.5" fill="${P.inkSec}" data-dxf-attr="SUPPLY_LABEL">Ze ${this._f(ze.value, 3)} Ω · supply ${this._f(svd.value)} %</text>
+      <text x="${sx + 10}" y="${sy + 63}" font-size="9.5" fill="${P.inkSec}" data-dxf-attr="KVA_LABEL">${this._f(StreetLight.circuitKVA(c))} kVA</text>
+    </g></g>`;
 
     // Spans (edges) first so the boxes paint over the line ends.
     let edges = '';
@@ -270,9 +277,9 @@ const SLDiagram = {
       edges += `<g><title>${this._esc(`Span to ${p.name || p.id}: ${len}${amps ? ', ' + amps + ' on the busiest phase' : ''}${neut ? ', neutral ' + neut.slice(2) : ''}`)}</title>
         <path d="${path}" fill="none" stroke="${hot ? P.fail : P.edge}" stroke-width="1.6"/>
         <polygon points="${tx - 7},${ty - 4} ${tx - 7},${ty + 4} ${tx},${ty}" fill="${hot ? P.fail : P.edge}"/>
-        <text x="${lx}" y="${ly - 16}" text-anchor="middle" font-size="9" font-weight="600" fill="${P.ink}">${this._esc(len)}</text>
-        <text x="${lx}" y="${ly - 6}" text-anchor="middle" font-size="8.5" fill="${hot ? P.fail : P.muted}">${this._esc(amps)}</text>
-        ${neut ? `<text x="${lx}" y="${ly + 12}" text-anchor="middle" font-size="8.5" fill="${P.muted}">${this._esc(neut)}</text>` : ''}
+        <text x="${lx}" y="${ly - 16}" text-anchor="middle" font-size="9" font-weight="600" fill="${P.ink}" data-dxf-attr="SPAN_LABEL" data-dxf-owner="${this._esc(p.id)}">${this._esc(len)}</text>
+        <text x="${lx}" y="${ly - 6}" text-anchor="middle" font-size="8.5" fill="${hot ? P.fail : P.muted}" data-dxf-attr="SPAN_CURRENT_LABEL" data-dxf-owner="${this._esc(p.id)}">${this._esc(amps)}</text>
+        ${neut ? `<text x="${lx}" y="${ly + 12}" text-anchor="middle" font-size="8.5" fill="${P.muted}" data-dxf-attr="NEUTRAL_LABEL" data-dxf-owner="${this._esc(p.id)}">${this._esc(neut)}</text>` : ''}
       </g>`;
     }
 
@@ -293,18 +300,24 @@ const SLDiagram = {
       const tip = `${p.name || p.id} — phase ${ph}, ${l.name}` + (rp
         ? `\nVD ${this._f(rp.vdPct)} % from the source · cumulative ${this._f(rp.cumVdPct)} %\nZs ${this._f(rp.zsOhm)} Ω · Ik1 ${rp.ik1A == null ? '—' : this._f(rp.ik1A, 0)} A · ${this._f(rp.distM, 0)} m from the source${why ? '\nFails: ' + why : ''}`
         : '');
+      const poleData = { CIRCUIT: c.name, NAME: p.name || p.id, ID: p.id, PARENT: p.parent ? ((pole[p.parent] || {}).name || p.parent) : StreetLight._sourceName(c.source),
+        PHASE: ph, LUMINAIRE: l.name, WATTS: l.watts || '', CABLE: p.cable || c.cable || '',
+        SPAN_M: rp ? this._f(rp.spanM, 1) : '', DIST_M: rp ? this._f(rp.distM, 0) : '', SPAN_I_A: rp ? this._f(rp.iSpanA) : '',
+        VD_PCT: rp ? this._f(rp.vdPct) : '', CUM_VD_PCT: rp ? this._f(rp.cumVdPct) : '', ZS_OHM: rp ? this._f(rp.zsOhm) : '',
+        IK1_A: rp && rp.ik1A != null ? this._f(rp.ik1A, 0) : '', STATUS: !rp ? 'not computed' : (ok ? 'pass' : 'fail: ' + why) };
       nodes += `<g><title>${this._esc(tip)}</title>
+        <g data-dxf-block="SL_POLE" data-dxf-key="${this._esc(p.id)}" data-dxf-at="${x},${y}" data-dxf-attrs="${this._esc(JSON.stringify(poleData))}">
         <rect x="${x}" y="${y}" width="${W}" height="${H}" rx="6" fill="${P.node}" stroke="${ok ? P.border : P.fail}"/>
         <path d="M ${x} ${y + 6} a 6 6 0 0 1 6 -6 h ${W - 12} a 6 6 0 0 1 6 6 v 13 h -${W} z" fill="${P.nodeHead}"/>
         <rect x="${x}" y="${y + 3}" width="3.5" height="${H - 6}" fill="${stripe}"/>
-        <text x="${x + 10}" y="${y + 13.5}" font-size="10.5" font-weight="700" fill="${P.ink}">${this._esc(this._trunc(p.name || p.id, 9))}</text>
+        <text x="${x + 10}" y="${y + 13.5}" font-size="10.5" font-weight="700" fill="${P.ink}" data-dxf-attr="NAME_LABEL">${this._esc(this._trunc(p.name || p.id, 9))}</text>
         <rect x="${x + W - 24}" y="${y + 3}" width="18" height="13" rx="3" fill="${phCol}"/>
-        <text x="${x + W - 15}" y="${y + 13}" text-anchor="middle" font-size="9" font-weight="700" fill="${P.onPhase[ph] || '#fff'}">${this._esc(ph)}</text>
-        <text x="${x + 10}" y="${y + 32}" font-size="9" fill="${P.inkSec}">${this._esc(this._trunc(l.name, 16))}</text>
-        <text x="${x + 10}" y="${y + 46}" font-size="10" font-weight="700" fill="${rp && (!rp.vdOk || !rp.cumOk) ? P.fail : P.ink}">${rp ? this._f(rp.vdPct) + ' %' : '—'}</text>
-        <text x="${x + W - 8}" y="${y + 46}" text-anchor="end" font-size="9" fill="${rp && !rp.zsOk ? P.fail : P.inkSec}">${rp ? this._f(rp.zsOhm) + ' Ω' : ''}</text>
-        <text x="${x + 10}" y="${y + 61}" font-size="9" fill="${why ? P.fail : P.muted}">${why ? this._esc(why) : (rp ? this._f(rp.distM, 0) + ' m' : '')}</text>
-      </g>`;
+        <text x="${x + W - 15}" y="${y + 13}" text-anchor="middle" font-size="9" font-weight="700" fill="${P.onPhase[ph] || '#fff'}" data-dxf-attr="PHASE_LABEL">${this._esc(ph)}</text>
+        <text x="${x + 10}" y="${y + 32}" font-size="9" fill="${P.inkSec}" data-dxf-attr="LUMINAIRE_LABEL">${this._esc(this._trunc(l.name, 16))}</text>
+        <text x="${x + 10}" y="${y + 46}" font-size="10" font-weight="700" fill="${rp && (!rp.vdOk || !rp.cumOk) ? P.fail : P.ink}" data-dxf-attr="VD_LABEL">${rp ? this._f(rp.vdPct) + ' %' : '—'}</text>
+        <text x="${x + W - 8}" y="${y + 46}" text-anchor="end" font-size="9" fill="${rp && !rp.zsOk ? P.fail : P.inkSec}" data-dxf-attr="ZS_LABEL">${rp ? this._f(rp.zsOhm) + ' Ω' : ''}</text>
+        <text x="${x + 10}" y="${y + 61}" font-size="9" fill="${why ? P.fail : P.muted}" data-dxf-attr="NOTE_LABEL">${why ? this._esc(why) : (rp ? this._f(rp.distM, 0) + ' m' : '')}</text>
+      </g></g>`;
     }
 
     return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${L.w} ${L.h}" width="${L.w}" height="${L.h}"
@@ -359,6 +372,17 @@ const SLDiagram = {
     const c = StreetLight.circuit(this._circuitId);
     return [AppState.projectName || 'project', c ? c.name : 'circuit'].join('_').replace(/[^a-z0-9]+/gi, '_');
   },
+  // DXF: the source and every pole are blocks; a span's length / current are
+  // attributes of the pole it feeds.
+  exportDXF() {
+    const svg = this.buildSVG({ dark: false });
+    const c = StreetLight.circuit(this._circuitId);
+    if (!svg || !c) { UI.alert('Nothing to export — pick a circuit with poles.'); return; }
+    return DxfExport.exportSvg(svg, { scale: 0.25, geomLayer: 'CIRCUIT',
+      fileName: `${this._fileBase()}_street_lighting`, title: c.name,
+      layers: { CIRCUIT: null, SYMBOLS: null, TEXT: null } });
+  },
+
   exportSVG() {
     const ex = this._exportNode();
     if (!ex) { UI.alert('Nothing to export — the circuit has no poles.'); return; }
