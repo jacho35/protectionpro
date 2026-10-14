@@ -31,7 +31,14 @@ const DBDrawing = {
   INCOMER_X: 96,       // riser centre, measured from the left pad
   SRC_TO_DEV: 52,      // source terminal → incomer device centre
   DEV_TO_BUS: 50,      // last incomer device → busbar
-  SUPPLY_TAP_H: 46,    // vertical pitch of a supply-side accessory tap
+  // Supply-side taps (ahead of the incomer): a tap conductor off the riser,
+  // each accessory dropping from it like a busbar-accessory column.
+  TAP_DY: 24,          // source terminal → tap conductor
+  TAP_X0: 70,          // riser → first tap column centre
+  TAP_PROT_DY: 30,     // tap conductor → protective device
+  TAP_SYM_DY: 76,      // tap conductor → accessory symbol
+  TAP_LBL_DY: 48,      // accessory symbol → first label baseline (as LABEL_DY)
+  CT_PITCH: 28,        // riser CTs (ammeters), one under another
   DROP_W: 118,         // way column pitch
   DROP_X0: 62,         // first drop, measured from the left pad
   TABLE_HDR: 74,       // extra left margin for the row headings in table mode
@@ -50,6 +57,7 @@ const DBDrawing = {
   BAR_GAP: 16,         // last label → N bar
   BAR_PITCH: 13,       // N bar → PE bar
   ROW_GAP: 30,
+  RISER_GUTTER: 18,    // left lane for the "busbar continued" riser when a busbar wraps
   LOAD_H: 62,          // PE bar → load symbol block
   SYM_SCALE: 1.3,      // device symbols are drawn this much larger than the SLD's
 
@@ -383,6 +391,11 @@ const DBDrawing = {
       + (tRows.length ? tRows.length * this.TBL_ROW + 14 : 0);
     const rowH = rowInner + this.ROW_GAP;
 
+    // A busbar that wraps onto further rows gets a lane at the left for the
+    // continuation riser: busbars, N/PE bars and columns start after it, so
+    // the riser never crosses a bar or the accessory bay.
+    const gutter = defs.some(d => d.items.length > this.WAYS_PER_ROW) ? this.RISER_GUTTER : 0;
+    this._dropX0 += gutter;
     const e0 = this._dropX0 - this.DROP_W / 2;
     const bands = [];
     const rowDefs = [];
@@ -392,7 +405,7 @@ const DBDrawing = {
       const y0 = y;
       const strip = d.sec ? this.STRIP_H : 0;
       const incTop = y0 + strip + 14;
-      const devY = incTop + this.SRC_TO_DEV + d.supply.length * this.SUPPLY_TAP_H;
+      const devY = incTop + this.SRC_TO_DEV + this._supplyBlockH(comp, d.supply);
       const isoY = d.inc.isolator ? devY + 44 : null;
       const busY = (isoY || devY) + this.DEV_TO_BUS;
       const chunks = [];
@@ -413,11 +426,24 @@ const DBDrawing = {
       y = band.y1 + (d.sec ? this.BAND_GAP : 0);
     }
     const busW = Math.max(widest + this.DROP_W / 2, 460);
-    const w = this.PAD * 2 + Math.max(busW + 20, 620);
+    const tapW = Math.max(0, ...defs.map(d => d.supply.length ? this.INCOMER_X + this.TAP_X0 + d.supply.length * this.ACC_W : 0));
+    const w = this.PAD * 2 + Math.max(busW + 20, tapW + 20, 620);
     const last = bands[bands.length - 1];
     const h = (sectioned ? last.y1 : last.busY + last.rows.length * rowH) + this.PAD;
 
-    return { bands, rowDefs, sectioned, btd, tRows, items, inc: boardInc, maxLines, rowInner, rowH, busW, w, h };
+    return { bands, rowDefs, sectioned, btd, tRows, items, inc: boardInc, maxLines, rowInner, rowH, busW, w, h, gutter };
+  },
+
+  // Extra riser height the supply-side tap block takes (0 without taps): tap
+  // conductor, protective device, symbol, its labels and termination, plus
+  // room for any ammeter CTs on the riser beside it.
+  _supplyBlockH(comp, supply) {
+    if (!supply.length) return 0;
+    const lines = Math.max(...supply.map(a => this._accItem(a, comp).lines.length));
+    const bottom = this.TAP_DY + this.TAP_SYM_DY + this.TAP_LBL_DY + lines * this.LINE_H + 16;
+    const cts = supply.filter(a => a.kind === 'metering' && a.meter !== 'voltmeter').length;
+    const ctBottom = this.TAP_DY + 30 + cts * this.CT_PITCH;
+    return Math.max(bottom, ctBottom) + 36 - this.SRC_TO_DEV;
   },
 
   // An incomer description for a section, shaped like Components.boardIncomer().
@@ -683,48 +709,62 @@ const DBDrawing = {
     const x = x0 + this.INCOMER_X;
     const incGaps = [[L.devY, 20 * this.SYM_SCALE]];
     if (L.isoY) incGaps.push([L.isoY, 20 * this.SYM_SCALE]);
-    L.supply.forEach((acc, i) => {
-      if (acc.kind === 'metering' && acc.meter !== 'voltmeter') {
-        incGaps.push([L.incTop + this.SRC_TO_DEV / 2 + i * this.SUPPLY_TAP_H - 18, 12]);
-      }
-    });
+    const tapY = L.incTop + this.TAP_DY;
+    // Ammeter CTs sit on the riser just below the tap point, one per meter.
+    const meters = L.supply.filter(a => a.kind === 'metering' && a.meter !== 'voltmeter');
+    const ctY = (j) => tapY + 30 + j * this.CT_PITCH;
+    meters.forEach((_, j) => incGaps.push([ctY(j), 12]));
     let s = this._vline(x, L.incTop, L.busY, incGaps, P.line, 1.8);
     s += `<circle cx="${x}" cy="${L.incTop}" r="3.4" fill="${P.line}"/>`;
     s += `<text x="${x + 10}" y="${L.incTop + 4}" font-size="10" fill="${P.inkSec}">${this._esc(inc.source ? inc.source.name : 'supply')}</text>`;
 
-    // Supply-side accessory taps, above the incomer device. Drawn to the RIGHT
-    // of the riser: there is only INCOMER_X of margin to its left, which a
-    // right-aligned label overruns into negative x and clips out of the sheet.
-    L.supply.forEach((acc, i) => {
-      const y = L.incTop + this.SRC_TO_DEV / 2 + i * this.SUPPLY_TAP_H;
-      const gx = x + 74;
-      const item = this._accItem(acc, comp);
-      const stroke = item.status === 'warn' ? P.warn : P.line;
-      const pt = this._protType(item.prot);
-      const fx = x + 26;
-      let g = `<g><title>${this._esc('Supply-side tap — stays live with the board switched off\n' + item.tip)}</title>`;
-      // Current transformer on the riser for an ammeter, just above the tap.
-      if (acc.kind === 'metering' && acc.meter !== 'voltmeter') {
-        g += `<g data-dxf-block="ct" data-dxf-at="${x},${y - 18}" data-dxf-attrs="${this._dxfData({ BOARD: comp.props.name || comp.id, DESCRIPTION: `${acc.label || 'Meter'} CT`, RATIO: acc.ct_ratio || '' })}">`
-          + this._sym('ct', x, y - 18, P, this._native('ct', P), null, 0.6)
-          + `<text x="${x - 8}" y="${y - 14}" text-anchor="end" font-size="8" fill="${P.muted}" data-dxf-attr="RATIO_LABEL">${this._esc(acc.ct_ratio || 'CT')}</text></g>`;
-      }
-      if (pt) {
-        g += `<line x1="${x}" y1="${y}" x2="${fx - 14}" y2="${y}" stroke="${P.line}" stroke-width="1.2"/>`
-          + `<line x1="${fx + 14}" y1="${y}" x2="${gx}" y2="${y}" stroke="${P.line}" stroke-width="1.2"/>`
-          + this._sym(pt, fx, y, P, this._native(pt, P), null, 0.7, 90,
-            { DESCRIPTION: `${item.dxf.DESCRIPTION} protection`, RATING_A: item.prot.a, PROTECTION: item.prot.type });
-      } else {
-        g += `<line x1="${x}" y1="${y}" x2="${gx}" y2="${y}" stroke="${P.line}" stroke-width="1.2"/>`;
-      }
-      g += `<g data-dxf-block="DB_${item.glyph}" data-dxf-at="${gx},${y}" data-dxf-attrs="${this._dxfData(item.dxf)}">`
-        + this._glyph(item.glyph, gx, y, P, stroke, item)
-        + `<text x="${gx + 16}" y="${y - 2}" font-size="9" fill="${P.ink}" data-dxf-attr="NAME_LABEL">${this._esc(this._trunc(acc.label || '', 20))}</text>`
-        + `<text x="${gx + 16}" y="${y + 9}" font-size="8.5" fill="${P.muted}" data-dxf-attr="SPEC_LABEL">${this._esc(this._trunc(this._accSpec(acc), 34))}</text>`
-        + `<text x="${gx + 16}" y="${y + 19}" font-size="8.5" fill="${P.muted}" data-dxf-attr="PROT_LABEL">${this._esc(item.prot ? `${item.prot.a} A ${item.prot.type === 'mcb' ? 'MCB' : item.prot.type}` : 'unprotected')}</text>`
-        + `</g></g>`;
-      s += g;
+    meters.forEach((acc, j) => {
+      s += `<g><title>${this._esc(`${acc.label || 'Meter'} — current transformer ${acc.ct_ratio || ''}`)}</title>`
+        + `<g data-dxf-block="ct" data-dxf-at="${x},${ctY(j)}" data-dxf-attrs="${this._dxfData({ BOARD: comp.props.name || comp.id, DESCRIPTION: `${acc.label || 'Meter'} CT`, RATIO: acc.ct_ratio || '' })}">`
+        + this._sym('ct', x, ctY(j), P, this._native('ct', P), null, 0.6)
+        + `<text x="${x - 10}" y="${ctY(j) + 4}" text-anchor="end" font-size="8" fill="${P.muted}" data-dxf-attr="RATIO_LABEL">${this._esc(acc.ct_ratio || 'CT')}</text></g></g>`;
     });
+
+    // Supply-side taps — stay live with the board switched off. A tap
+    // conductor leaves the riser above the incomer; each accessory drops from
+    // it exactly like a busbar-accessory column: protective device, symbol,
+    // labels, then its termination (an SPD's own earth, else N).
+    if (L.supply.length) {
+      const cx = (i) => x + this.TAP_X0 + i * this.ACC_W;
+      const last = cx(L.supply.length - 1);
+      s += `<line x1="${x}" y1="${tapY}" x2="${last}" y2="${tapY}" stroke="${P.line}" stroke-width="1.6"/>`
+        + `<circle cx="${x}" cy="${tapY}" r="2.6" fill="${P.line}"/>`
+        + `<text x="${x + 8}" y="${tapY - 5}" font-size="8.5" fill="${P.muted}">supply-side taps</text>`;
+      L.supply.forEach((acc, i) => {
+        const X = cx(i);
+        const item = this._accItem(acc, comp);
+        const stroke = item.status === 'warn' ? P.warn : P.line;
+        const pt = this._protType(item.prot);
+        const protY = tapY + this.TAP_PROT_DY, gY = tapY + this.TAP_SYM_DY;
+        const lblTop = gY + this.TAP_LBL_DY;
+        const lblH = item.lines.length * this.LINE_H + 2;
+        const isSpd = item.glyph === 'spd';
+        const endY = lblTop - 10 + lblH + 8;
+        const gaps = [[gY, (isSpd ? 25 : 14) * this.SYM_SCALE], [lblTop - 10 + lblH / 2, lblH / 2 + 1]];
+        if (pt) gaps.push([protY, 20 * 0.7]);
+        let g = `<g><title>${this._esc('Supply-side tap — stays live with the board switched off\n' + item.tip)}</title>`;
+        if (i) g += `<circle cx="${X}" cy="${tapY}" r="2.2" fill="${P.line}"/>`;
+        g += this._vline(X, tapY, isSpd ? gY : endY, gaps, stroke, 1.4);
+        if (pt) g += this._sym(pt, X, protY, P, this._native(pt, P), null, 0.7, 0,
+          { DESCRIPTION: `${item.dxf.DESCRIPTION} protection`, RATING_A: item.prot.a, PROTECTION: item.prot.type });
+        let sym = this._glyph(item.glyph, X, gY, P, stroke, item);
+        item.lines.forEach((ln, li) => {
+          sym += `<text x="${X}" y="${lblTop + li * this.LINE_H}" text-anchor="middle" font-size="${ln.bold ? 9.5 : 9}"
+            font-weight="${ln.bold ? 700 : 400}" fill="${ln.dim ? P.muted : P.ink}" data-dxf-attr="${ln.tag || 'LABEL_' + (li + 1)}">${this._esc(ln.text)}</text>`;
+        });
+        g += `<g data-dxf-block="DB_${item.glyph}" data-dxf-at="${X},${gY}" data-dxf-attrs="${this._dxfData(item.dxf)}">${sym}</g>`;
+        if (!isSpd) {
+          g += `<circle cx="${X}" cy="${endY}" r="2.4" fill="${P.line}"/>`
+            + `<text x="${X + 6}" y="${endY + 4}" font-size="8.5" fill="${P.muted}">N</text>`;
+        }
+        s += g + `</g>`;
+      });
+    }
 
     // Incomer device
     const label = inc.device_label || (inc.rating_a ? `${inc.rating_a} A` : 'incomer — rating unknown');
@@ -783,13 +823,15 @@ const DBDrawing = {
     const busY = rd.busY;
     const xs = rd.xs.map(v => x0 + v);
     const busEndX = x0 + Math.max(rd.rowW + 30, 260);
-    let s = `<line x1="${x0}" y1="${busY}" x2="${busEndX}" y2="${busY}" stroke="${P.bus}" stroke-width="3.4" stroke-linecap="round"/>`;
+    const xb = x0 + (L.gutter || 0);      // busbar / N / PE start, right of the riser lane
+    let s = `<line x1="${xb}" y1="${busY}" x2="${busEndX}" y2="${busY}" stroke="${P.bus}" stroke-width="3.4" stroke-linecap="round"/>`;
 
-    // Riser joining this busbar section to the previous one.
+    // Riser joining this busbar section to the previous one, in its own lane:
+    // out of the previous busbar's left end, down, into this one.
     if (rd.prevBusY != null) {
-      const prevY = rd.prevBusY;
-      s += `<line x1="${x0 + 6}" y1="${prevY}" x2="${x0 + 6}" y2="${busY}" stroke="${P.bus}" stroke-width="1.6" stroke-dasharray="4,3"/>`;
-      s += `<text x="${x0 + 12}" y="${busY - 6}" font-size="8.5" fill="${P.muted}">busbar continued</text>`;
+      const prevY = rd.prevBusY, rx = x0 + 4;
+      s += `<path d="M ${xb} ${prevY} H ${rx} V ${busY} H ${xb}" fill="none" stroke="${P.bus}" stroke-width="1.6" stroke-dasharray="4,3"/>`;
+      s += `<text x="${xb + 6}" y="${busY - 6}" font-size="8.5" fill="${P.muted}">busbar continued</text>`;
     }
 
     if (D.elgroups) {
@@ -881,7 +923,7 @@ const DBDrawing = {
     if (L.tRows.length) {
       const top = peY + 14 + (D.load ? 56 : 0);
       const h = L.tRows.length * this.TBL_ROW;
-      const left = x0, right = xs.length ? xs[xs.length - 1] + row[row.length - 1].w / 2 : busEndX;
+      const left = xb, right = xs.length ? xs[xs.length - 1] + row[row.length - 1].w / 2 : busEndX;
       s += `<rect x="${left}" y="${top}" width="${right - left}" height="${h}" fill="none" stroke="${P.border}"/>`;
       L.tRows.forEach((r, ri2) => {
         const y = top + ri2 * this.TBL_ROW;
@@ -909,9 +951,9 @@ const DBDrawing = {
     }
 
     if (D.bars) {
-      s += `<line x1="${x0}" y1="${barsY}" x2="${busEndX}" y2="${barsY}" stroke="${P.line}" stroke-width="1.6"/>`
+      s += `<line x1="${xb}" y1="${barsY}" x2="${busEndX}" y2="${barsY}" stroke="${P.line}" stroke-width="1.6"/>`
         + `<text x="${busEndX}" y="${barsY - 4}" text-anchor="end" font-size="9" fill="${P.muted}">N${secName ? ' · ' + this._esc(secName) : ''}</text>`
-        + `<line x1="${x0}" y1="${peY}" x2="${busEndX}" y2="${peY}" stroke="${P.line}" stroke-width="1.6" stroke-dasharray="6,3"/>`
+        + `<line x1="${xb}" y1="${peY}" x2="${busEndX}" y2="${peY}" stroke="${P.line}" stroke-width="1.6" stroke-dasharray="6,3"/>`
         + `<text x="${busEndX}" y="${peY + 10}" text-anchor="end" font-size="9" fill="${P.muted}">PE${secName ? ' · ' + this._esc(secName) : ''}</text>`;
     }
     return s;

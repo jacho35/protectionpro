@@ -113,9 +113,24 @@ const DxfExport = {
     const W = (p) => [(p[0] - X0) * k, (H - (p[1] - Y0)) * k];
     const r3 = (v) => Math.round(v * 1000) / 1000;
 
-    // Output target: the page (world mm) or the open block (block units, y up).
+    // Output target: the page (world mm) or the open block. Block geometry is
+    // in real millimetres too (inserted at scale 1), so a linetype inside a
+    // block reads the same in every CAD package — viewers disagree on whether
+    // an insert's scale also scales its linetype patterns.
     let blk = null;   // { ents, lm (matrix from element space → block-local SVG units), key, attribs }
-    const emitPt = (m, lm, x, y) => blk ? (() => { const q = ap(lm, x, y); return [r3(q[0]), r3(-q[1])]; })() : W(ap(m, x, y)).map(r3);
+    const emitPt = (m, lm, x, y) => blk ? (() => { const q = ap(lm, x, y); return [r3(q[0] * k), r3(-q[1] * k)]; })() : W(ap(m, x, y)).map(r3);
+    // Dash patterns → named linetypes (lengths in mm at the drawing's scale);
+    // an element drawn larger or smaller than 1:1 carries it as its ltscale.
+    const linetypes = {};
+    const linetypeOf = (str) => {
+      const v = String(str || 'none') === 'none' ? [] : String(str).split(/[\s,]+/).map(x => parseFloat(x)).filter(x => isFinite(x) && x >= 0);
+      if (!v.length || v.every(x => x === 0)) return null;
+      const pat = v.length % 2 ? v.concat(v) : v;        // SVG repeats an odd list
+      const tag = pat.map(x => String(Math.round(x * 100) / 100).replace('.', 'P')).join('_');
+      const name = ('PP_DASH_' + tag).slice(0, 60);
+      if (!linetypes[name]) linetypes[name] = pat.map(x => r3(x * k));
+      return name;
+    };
     const out = (e) => { if (blk) blk.ents.push(e); else entities.push(e); };
 
     const cs = (el) => getComputedStyle(el);
@@ -141,12 +156,11 @@ const DxfExport = {
       const s = scaleOf(blk ? lm : m);
       const worldS = scaleOf(m) * k;
       const sw = (parseFloat(st.strokeWidth) || 1) * worldS;
-      const dashes = String(st.strokeDasharray || 'none');
-      const dashSum = dashes === 'none' ? 0 : dashes.split(/[\s,]+/).reduce((n, v) => n + (parseFloat(v) || 0), 0);
+      const lt = linetypeOf(st.strokeDasharray);
       return {
         stroke, fill: fill && fo >= 0.5 ? fill : null, fillLine: fill,
         lw: sw >= 0.35 ? r3(sw) : null,
-        dash: dashSum > 0 ? r3(dashSum * worldS) : null, s,
+        linetype: lt, ltscale: lt ? r3(blk ? scaleOf(lm) : scaleOf(m)) : null, s,
       };
     };
     const layerOf = (el, inh) => el.getAttribute && el.getAttribute('data-dxf-layer') ? lay(el.getAttribute('data-dxf-layer')) : inh;
@@ -156,7 +170,7 @@ const DxfExport = {
       if (!col || pts.length < 2) return;
       const e = { t: 'poly', pts, closed: !!closed, layer, color: this._hex(col) };
       if (pt.lw) e.lw = pt.lw;
-      if (pt.dash) e.dash = pt.dash;
+      if (pt.linetype) { e.linetype = pt.linetype; if (pt.ltscale !== 1) e.ltscale = pt.ltscale; }
       if (closed && pt.fill) e.fill = this._hex(pt.fill);
       out(e);
     };
@@ -255,7 +269,7 @@ const DxfExport = {
       const col = this.parseColor(st.fill);
       const mm = blk && !attrTag ? lm : m;
       const at = blk && !attrTag ? emitPt(m, lm, x, y) : W(ap(m, x, y)).map(r3);
-      const sc = blk && !attrTag ? scaleOf(lm) : scaleOf(m) * k;
+      const sc = blk && !attrTag ? scaleOf(lm) * k : scaleOf(m) * k;
       const rot = r3(-Math.atan2(mm[1], mm[0]) * 180 / Math.PI);
       const rec = { at, h: r3(fs * 0.72 * sc), s: str, align, valign, rot, layer, color: this._hex(col) };
       if (attrTag) return { tag: attrTag, value: str, at: rec.at, h: rec.h, align, valign, rot: rec.rot, color: rec.color, layer };
@@ -314,8 +328,14 @@ const DxfExport = {
             const F = mul(m, [1, 0, 0, 1, atL[0], atL[1]]);
             let data = {};
             try { data = JSON.parse(c.getAttribute('data-dxf-attrs') || '{}') || {}; } catch (_) { data = {}; }
+            // The group's own scale is baked into the block geometry, so every
+            // insert is at scale 1 (−1 in y when mirrored): dash patterns and
+            // text then read the same in every CAD package.
+            const gsx = Math.hypot(F[0], F[1]) || 1;
+            const gdet = F[0] * F[3] - F[1] * F[2];
+            const gsy = Math.abs(gdet) / gsx || 1;
             blk = { ents: [], attribs: [], key: c.getAttribute('data-dxf-key') };
-            walk(c, m, [1, 0, 0, 1, -atL[0], -atL[1]], lay(c.getAttribute('data-dxf-layer') || 'SYMBOLS'));
+            walk(c, m, [gsx, 0, 0, gsy, -gsx * atL[0], -gsy * atL[1]], lay(c.getAttribute('data-dxf-layer') || 'SYMBOLS'));
             const b = blk; blk = null;
             if (!b.ents.length) {
               // Nothing drawn: keep its labels as plain text.
@@ -332,9 +352,7 @@ const DxfExport = {
               blocks.push({ name, entities: b.ents });
             }
             const O = W(ap(F, 0, 0));
-            const sx = Math.hypot(F[0], F[1]) || 1;
-            const det = F[0] * F[3] - F[1] * F[2];
-            const ins = { t: 'insert', name, at: O.map(r3), sx: sx * k, sy: (det / sx) * k,
+            const ins = { t: 'insert', name, at: O.map(r3), sx: 1, sy: gdet < 0 ? -1 : 1,
               rot: r3(-Math.atan2(F[1], F[0]) * 180 / Math.PI), layer: lay(c.getAttribute('data-dxf-layer') || 'SYMBOLS'),
               attribs: b.attribs.slice() };
             const have = new Set(ins.attribs.map(a => a.tag));
@@ -361,7 +379,7 @@ const DxfExport = {
           if (!col) continue;
           const e = { t: 'line', a: P(num(c, 'x1'), num(c, 'y1')), b: P(num(c, 'x2'), num(c, 'y2')), layer, color: this._hex(col) };
           if (pt.lw) e.lw = pt.lw;
-          if (pt.dash) e.dash = pt.dash;
+          if (pt.linetype) { e.linetype = pt.linetype; if (pt.ltscale !== 1) e.ltscale = pt.ltscale; }
           out(e);
         } else if (tag === 'rect') {
           const x = num(c, 'x'), y = num(c, 'y'), w = num(c, 'width'), h = num(c, 'height');
@@ -374,8 +392,9 @@ const DxfExport = {
           const s1 = Math.hypot(mm[0], mm[1]), s2 = Math.hypot(mm[2], mm[3]);
           const uniform = rx === ry && Math.abs(s1 - s2) < 1e-6 && Math.abs(mm[0] * mm[2] + mm[1] * mm[3]) < 1e-6;
           if (uniform) {
-            const e = { t: 'circle', c: P(cx, cy), r: r3(rx * s1 * (blk ? 1 : k)), layer, color: this._hex(pt.stroke || pt.fillLine) };
+            const e = { t: 'circle', c: P(cx, cy), r: r3(rx * s1 * k), layer, color: this._hex(pt.stroke || pt.fillLine) };
             if (pt.lw) e.lw = pt.lw;
+            if (pt.linetype) { e.linetype = pt.linetype; if (pt.ltscale !== 1) e.ltscale = pt.ltscale; }
             if (pt.fill) e.fill = this._hex(pt.fill);
             out(e);
           } else {
@@ -400,7 +419,7 @@ const DxfExport = {
       if (ins) ins.attribs.unshift(...p.attribs);
       else for (const a of p.attribs) entities.push({ t: 'text', at: a.at, h: a.h, s: a.value, align: a.align, valign: a.valign, rot: a.rot, layer: a.layer, color: a.color });
     }
-    return { fileName: o.fileName || 'drawing', title: o.title || '', layers, blocks, entities };
+    return { fileName: o.fileName || 'drawing', title: o.title || '', layers, linetypes, blocks, entities };
   },
 
   // ── Server round trip + download ─────────────────────────────────────
