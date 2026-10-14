@@ -22,6 +22,7 @@ const HELP_GUIDE_GROUPS = [
   { id: 'retic', title: 'Reticulation & plans' },
   { id: 'protection', title: 'Protection devices' },
   { id: 'earthing', title: 'Earthing' },
+  { id: 'studies', title: 'Studies & navigation' },
   { id: 'libs', title: 'Libraries & quoting' },
   { id: 'output', title: 'Drawings & export' },
 ];
@@ -533,6 +534,137 @@ const HELP_GUIDES = [
   ],
   tips: ['The quote log keeps every quoted and reopened event.', 'Reopen only when you mean to re-quote: prices and library entries follow your libraries again.'],
   related: [{ help: 'design-boq', label: 'Bill of quantities, rates & cable schedules' }] },
+
+// ───────────────────────────────────────────────────────────────────────────
+{ id: 'lightning', group: 'earthing', title: 'Assess lightning risk for a structure',
+  where: 'Analyse ▸ Earthing & lightning ▸ Lightning risk', time: '10 min', phone: 'Use a wider screen',
+  intro: 'The assessment works out how often lightning harms a structure and what protection brings that within the tolerable limit. It walks you through four steps, shows a live estimate as you type, and ends with a verdict and a report.',
+  steps: [
+    { title: 'Start an assessment and choose the edition',
+      html: 'Open <strong>Lightning risk</strong>. The assessments saved in the project are in the list at the top left; <strong>New</strong>, <strong>Duplicate</strong>, <strong>Rename</strong> and <strong>Delete</strong> manage them, so you can keep a design alongside the existing building. Choose the <strong>Edition</strong>: <em>2024</em> (the current one, with physical damage and the frequency of damage to internal systems) or <em>2010</em> where that is the adopted standard.',
+      shot: { file: 'lightning-1.png', alt: 'The lightning risk assessment with the assessment list, steps and live estimate',
+        setup: 'lightning-1', clip: '#lightning-modal .modal-content',
+        callouts: [
+          { sel: '#lr-assess-select', label: 'Assessments saved in this project' },
+          { sel: '[data-lr-ed]', label: 'Edition of the standard' },
+          { sel: '[data-lr-go="1"]', label: 'The four steps and the results' },
+        ] } },
+    { title: 'Describe the structure and site',
+      html: 'Step 1 takes the length, width and height, and the site’s <strong>lightning ground flash density</strong> from your national lightning map (or the strike-point density, if your data provider gives it). Beside the form, the <strong>live estimate</strong> updates as you type: the collection area, direct strikes per year, strikes near the building, and the tolerable risk the result will be judged against.',
+      shot: { file: 'lightning-2.png', alt: 'Structure and site inputs beside the live estimate',
+        setup: 'lightning-1', clip: '#lightning-modal .modal-content',
+        callouts: [
+          { sel: '[data-lr-panel="1"]', label: 'Size, surroundings and flash density' },
+          { sel: '#lightning-modal [class*="live"], #lightning-modal aside:last-of-type', label: 'Live estimate — updates as you type' },
+        ] } },
+    { title: 'Say who is inside, and what can burn',
+      html: 'Step 2 is the people and the fire risk: how many people, for how many hours a year, the kind of structure, and what a fire or damage would cost. The loss class and fire risk set the size of each loss in the result.',
+      shot: { file: 'lightning-3.png', alt: 'Step 2, people and fire',
+        setup: 'lightning-2', clip: '#lightning-modal .modal-content',
+        callouts: [
+          { sel: '[data-lr-go="2"]', label: 'Step 2 of 4' },
+        ] } },
+    { title: 'Add the service lines and any protection already there',
+      html: 'Step 3 lists the power and telecom lines that enter the structure: length, aerial or buried, whether a transformer sits on the line, and the equipment withstand voltage. Step 4 records what protection exists: a lightning protection system and its class, entrance surge protectors, coordinated protectors and bonding.',
+      shot: { file: 'lightning-4.png', alt: 'Step 3, service lines',
+        setup: 'lightning-3', clip: '#lightning-modal .modal-content',
+        callouts: [
+          { sel: '[data-lr-go="3"]', label: 'Step 3 of 4' },
+        ] } },
+    { title: 'Read the verdict',
+      html: 'On step 4 press <strong>Assess risk</strong>. The result opens with the verdict first: the risk against the tolerable limit and, if it is exceeded, the <strong>lightest protection that meets it</strong>. Under that, a table splits the risk into its causes, largest first, and the protection options are listed lightest to heaviest with the risk each gives. The 2024 edition also shows the frequency of damage to internal systems for each zone.',
+      shot: { file: 'lightning-5.png', alt: 'The verdict with the recommended protection and the risk components',
+        setup: 'lightning-results', clip: '#lightning-modal .modal-content',
+        callouts: [
+          { sel: '.lr-verdict', label: 'Verdict and the lightest protection that meets the limit' },
+          { sel: '.lr-tbl', label: 'What makes up the risk' },
+        ] } },
+    { title: 'Save and report',
+      html: 'Everything you enter is saved with the project as part of the assessment, and the result is stored with it. A banner warns when inputs have changed since the result was calculated. The report button writes a PDF of the assessment for the file.' },
+  ],
+  tips: ['Use <strong>Duplicate</strong> to compare a protected and an unprotected case side by side.'],
+  related: [{ help: 'prot-lightning', label: 'Lightning risk (the method)' }] },
+
+// ───────────────────────────────────────────────────────────────────────────
+{ id: 'cable-focus', group: 'studies', title: 'Show only the cables at one bus',
+  where: 'Results ▸ Cables at Selected Bus', time: '2 min', phone: 'Use the bus properties button',
+  intro: 'After a cable sizing run every cable carries a result box, and a busy diagram becomes unreadable. Focus mode keeps only the cables into and out of one bus and dims everything else.',
+  steps: [
+    { title: 'Run the cable sizing',
+      html: 'Run <strong>Analyse ▸ Cable sizing</strong>. Each cable on the diagram gets a result box with its size, loading and volt drop.',
+      shot: { file: 'cable-focus-1.png', alt: 'A network with a cable result box on every cable',
+        setup: 'cf-all', clip: '#sld-canvas',
+        callouts: [
+          { sel: '#sld-canvas', label: 'One result box per cable' },
+        ] } },
+    { title: 'Focus on a bus',
+      html: 'Select a bus, then use <strong>Results ▸ Cables at Selected Bus</strong>, or the <strong>Cables</strong> button in the bus’s properties, or <strong>At bus</strong> in the cable sizing results table. The cables arriving from the source side and leaving toward the loads stay; the rest of the sheet is dimmed.',
+      shot: { file: 'cable-focus-2.png', alt: 'The diagram dimmed except for the cables at the 11 kV bus',
+        setup: 'cf-focus', clip: '#sld-canvas',
+        callouts: [
+          { sel: '#cable-focus-bar', label: 'Focus bar — Esc shows everything again' },
+        ] } },
+    { title: 'Move along the network',
+      html: 'The focus follows the selection. Select another bus and it moves there; selecting a cable or empty canvas keeps the last bus. Press <kbd>Esc</kbd> or use the focus bar to show every cable again.' },
+  ],
+  tips: ['Focus is only for viewing: it is not saved with the project and does not change any result.'],
+  related: [{ help: 'cable-sizing', label: 'Cable sizing (thermal, voltage drop, fault)' }] },
+
+// ───────────────────────────────────────────────────────────────────────────
+{ id: 'find-anything', group: 'studies', title: 'Find any command with Ctrl K and the menus',
+  where: 'Ctrl K, or the search box at the top', time: '2 min', phone: 'Search button in the header',
+  intro: 'Everything in the menus can be reached by name. The same search finds analyses, exports, settings and workspaces, and runs the one you pick.',
+  steps: [
+    { title: 'Search by name',
+      html: 'Press <kbd>Ctrl</kbd>+<kbd>K</kbd> (or click the search box) and start typing. Each result shows where it lives, for example <em>Analyse › Protection &amp; safety</em>. Use the arrow keys to move, <kbd>Enter</kbd> to run it and <kbd>Esc</kbd> to close.',
+      shot: { file: 'find-anything-1.png', alt: 'The command search with three results for arc',
+        setup: 'ctrlk', clip: 'viewport',
+        callouts: [
+          { sel: '#cmdk-panel, .cmdk-panel, .command-palette, [role="dialog"][aria-label*="earch" i]', label: 'Command search' },
+        ] } },
+    { title: 'Know the menus',
+      html: '<strong>Project</strong> is files, templates, sharing, type and libraries. <strong>Edit</strong> and <strong>View</strong> are the diagram tools. <strong>Analyse</strong> groups every study by what it answers: fault, flow, power quality, protection and safety, cables. <strong>Scenarios</strong> and <strong>Run All Studies</strong> are next to <strong>Output</strong>, which holds reports, quantities, data and drawing exports.',
+      shot: { file: 'find-anything-2.png', alt: 'The Analyse menu open with its groups',
+        setup: 'menu-analyse', clip: 'viewport',
+        callouts: [
+          { sel: '#menu-analyse .toolbar-menu-panel', label: 'Analyse — studies grouped by what they answer' },
+        ] } },
+    { title: 'Show only the results you have',
+      html: 'The <strong>Results</strong> menu lists a result-box toggle only for studies that have been run, so it stays short. Use <strong>All Result Boxes</strong> to hide or show everything, <strong>Restore hidden boxes</strong> after closing some, and <strong>Reset Result Box Positions</strong> to tidy dragged boxes.',
+      shot: { file: 'find-anything-3.png', alt: 'The Results menu listing toggles for the studies that have run',
+        setup: 'menu-results', clip: 'viewport',
+        callouts: [
+          { sel: '#menu-results .toolbar-menu-panel', label: 'Only studies with results are listed' },
+        ] } },
+  ],
+  tips: ['The search is built from the menus every time it opens, so anything added to a menu is searchable at once.'],
+  related: [] },
+
+// ───────────────────────────────────────────────────────────────────────────
+{ id: 'project-types', group: 'studies', title: 'Choose a project type and its workspaces',
+  where: 'Project ▸ New Project, Project ▸ Project Type & Workspaces…', time: '3 min', phone: 'Same dialog',
+  intro: 'The project type decides which workspace tabs you see, in the order you will use them. Nothing is deleted when a workspace is hidden.',
+  steps: [
+    { title: 'Pick a type when you start',
+      html: '<strong>New Project</strong> asks what you are designing. <strong>Reticulation</strong> is a township or site LV network sized by ADMD: site plan, Demand, street lighting, single line and quantities. <strong>Building</strong> is floors, boards and final circuits: floor plans, single line, schedules and quantities. <strong>Network / plant</strong> is substations and industrial networks: single line and interlocking.',
+      shot: { file: 'project-types-1.png', alt: 'The New project dialog with three type cards',
+        setup: 'type-new', clip: 'viewport',
+        callouts: [
+          { sel: '.ws-type-card', label: 'Each card shows its workspaces, in workflow order' },
+        ] } },
+    { title: 'Change it later',
+      html: 'Open <strong>Project ▸ Project Type &amp; Workspaces…</strong>. A project opened without a type shows the one its content implies. Tick any other workspace to add it to the tab strip; the ones in the type’s core set are fixed.',
+      shot: { file: 'project-types-2.png', alt: 'The Project type and workspaces dialog',
+        setup: 'type-dialog', clip: 'viewport',
+        callouts: [
+          { sel: '.ws-type-cards', label: 'Project type' },
+          { sel: '.ws-rows', label: 'Workspaces — tick to add' },
+        ] } },
+    { title: 'Workspaces that hold data stay',
+      html: 'A workspace with data in it is never hidden, so a Network project that later gets a plan keeps its Plan tab. Hiding one only removes its tab; the data stays in the project.' },
+  ],
+  tips: ['Quantities is optional for a Network project, and appears by itself once the rate library has data.', 'The tab order follows the work: plan, demand, street lighting, single line, quantities.'],
+  related: [{ help: 'design-types', label: 'Project types & workspaces (reference)' }] },
 
 ];
 
