@@ -53,7 +53,12 @@ for (const shot of shots) {
       const miss = [];
       let n = 0;
       for (const c of callouts) {
-        const vis = [...document.querySelectorAll(c.sel)].filter(e => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; });
+        let vis = [...document.querySelectorAll(c.sel)].filter(e => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; });
+        // `text` narrows to the smallest matching element that contains it.
+        if (c.text) {
+          vis = vis.filter(e => (e.textContent || '').includes(c.text))
+            .sort((a, b) => a.getBoundingClientRect().width * a.getBoundingClientRect().height - b.getBoundingClientRect().width * b.getBoundingClientRect().height).slice(0, 1);
+        }
         n++;
         if (!vis.length) { miss.push(c.sel); continue; }
         // `all: true` outlines the union of every match (e.g. the parts of one way on a drawing).

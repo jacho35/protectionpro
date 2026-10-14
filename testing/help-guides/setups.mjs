@@ -401,3 +401,95 @@ async function cableNetwork(page) {
   await page.waitForTimeout(400);
 }
 
+// ── Studies and the TCC ──
+async function loadTemplate(page, id) {
+  await page.click('#menu-file .toolbar-menu-btn'); await page.click('#btn-templates');
+  await page.click(`.template-load-btn[data-id="${id}"]`);
+  await page.waitForTimeout(1200);
+}
+async function runStudy(page, btn, field) {
+  await page.click('#menu-analyse .toolbar-menu-btn'); await page.click(btn);
+  for (let i = 0; i < 30; i++) {
+    const pv = page.locator('#validation-proceed');
+    if (await pv.isVisible().catch(() => false)) await pv.click();
+    if (await page.evaluate(f => !!AppState[f], field)) break;
+    await page.waitForTimeout(400);
+  }
+  await page.waitForTimeout(900);
+}
+// Tag the open results window so a picture can clip to it.
+async function markModal(page) {
+  await page.evaluate(() => {
+    const m = [...document.querySelectorAll('.modal')].filter(e => getComputedStyle(e).display !== 'none' && e.getBoundingClientRect().width > 0)
+      .sort((a, b) => (+getComputedStyle(b).zIndex || 0) - (+getComputedStyle(a).zIndex || 0))[0];
+    if (m) m.setAttribute('data-hg-cap', '1');
+  });
+}
+async function closeModals(page) {
+  await page.evaluate(() => document.querySelectorAll('.modal').forEach(m => { m.style.display = 'none'; }));
+  await page.waitForTimeout(300);
+}
+async function openTcc(page, { miscord = false } = {}) {
+  await loadTemplate(page, 'industrial_plant');
+  if (miscord) {
+    // Make the main incomer trip before the LV main it feeds.
+    await page.evaluate(() => {
+      const by = n => [...AppState.components.values()].find(c => c.props && c.props.name === n);
+      const up = by('Main Incomer'), dn = by('LV Main');
+      Object.assign(up.props, { thermal_pickup: 0.7, magnetic_pickup: 2, long_time_delay: 2 });
+      Object.assign(dn.props, { long_time_delay: 30, magnetic_pickup: 10 });
+    });
+  }
+  await runStudy(page, '#btn-run-fault', 'faultResults');
+  await closeModals(page);
+  await page.click('#menu-analyse .toolbar-menu-btn'); await page.click('#btn-tcc');
+  await page.waitForSelector('#tcc-modal .tcc-canvas-wrap');
+  await page.waitForTimeout(1200);
+}
+
+const TCC_VP = { width: 1500, height: 950 };
+Object.assign(SETUPS, {
+  'tcc-open': { run: async (page) => { await openTcc(page); }, viewport: TCC_VP },
+  'tcc-faults': { run: async (page) => { await openTcc(page); await page.click('#btn-tcc-fault-menu'); await page.waitForTimeout(400); }, viewport: TCC_VP },
+  'tcc-cursor': { run: async (page) => {
+    await openTcc(page);
+    await page.click('#btn-tcc-cursor');
+    const r = await page.evaluate(() => { const b = document.getElementById('tcc-canvas').getBoundingClientRect(); return { x: b.x, y: b.y, w: b.width, h: b.height }; });
+    await page.mouse.click(r.x + r.w * 0.55, r.y + r.h * 0.45);
+    await page.waitForTimeout(600);
+  }, viewport: TCC_VP },
+  'tcc-compare': { run: async (page) => { await openTcc(page); await page.click('#btn-tcc-compare'); await page.waitForTimeout(800); }, viewport: TCC_VP },
+  'tcc-select': { run: async (page) => {
+    await openTcc(page);
+    await page.locator('#tcc-device-list >> text=CB-M1').first().click();
+    await page.waitForTimeout(600);
+  }, viewport: TCC_VP },
+  'tcc-add': { run: async (page) => { await openTcc(page); await page.getByRole('button', { name: '+ Add device' }).click(); await page.waitForTimeout(500); }, viewport: TCC_VP },
+  'tcc-saveas': { run: async (page) => { await openTcc(page); await page.click('#btn-tcc-view-saveas'); await page.waitForTimeout(500); }, viewport: TCC_VP },
+  'tcc-coord': { run: async (page) => { await openTcc(page, { miscord: true }); await page.click('#btn-tcc-detect-miscord'); await page.waitForTimeout(900); }, viewport: TCC_VP },
+  'tcc-autocoord': { run: async (page) => {
+    await openTcc(page, { miscord: true });
+    await page.click('#btn-tcc-detect-miscord'); await page.waitForTimeout(600);
+    await page.click('#btn-tcc-auto-coord'); await page.waitForTimeout(1500);
+  }, viewport: TCC_VP },
+  'tcc-sequence': { run: async (page) => {
+    await openTcc(page);
+    await page.locator('.tcc-drawer-tab', { hasText: 'Sequence' }).click();
+    await page.click('#btn-tcc-verify-seq'); await page.waitForTimeout(1200);
+  }, viewport: TCC_VP },
+
+  'study-fault': { run: async (page) => { await loadTemplate(page, 'industrial_plant'); await runStudy(page, '#btn-run-fault', 'faultResults'); await closeModals(page); }, viewport: { width: 1500, height: 1100 } },
+  'study-loadflow': { run: async (page) => { await loadTemplate(page, 'industrial_plant'); await runStudy(page, '#btn-run-loadflow', 'loadFlowResults'); await closeModals(page); }, viewport: { width: 1500, height: 1100 } },
+  'study-arcflash': { run: async (page) => { await loadTemplate(page, 'industrial_plant'); await runStudy(page, '#btn-arcflash', 'arcFlashResults'); await markModal(page); } },
+  'menu-output': { run: async (page) => {
+    await loadTemplate(page, 'industrial_plant'); await runStudy(page, '#btn-arcflash', 'arcFlashResults'); await closeModals(page);
+    await page.click('#menu-export .toolbar-menu-btn'); await page.waitForSelector('#btn-export-aflabels');
+  } },
+  'study-cable': { run: async (page) => { await loadTemplate(page, 'industrial_plant'); await runStudy(page, '#btn-cable-sizing', 'cableSizingResults'); } },
+  'study-cable-canvas': { run: async (page) => { await loadTemplate(page, 'industrial_plant'); await runStudy(page, '#btn-cable-sizing', 'cableSizingResults'); await closeModals(page); }, viewport: { width: 1500, height: 1100 } },
+  'study-motor': { run: async (page) => { await loadTemplate(page, 'industrial_plant'); await runStudy(page, '#btn-motor-starting', 'motorStartingResults'); await markModal(page); } },
+  'study-motor-canvas': { run: async (page) => { await loadTemplate(page, 'industrial_plant'); await runStudy(page, '#btn-motor-starting', 'motorStartingResults'); await closeModals(page); }, viewport: { width: 1500, height: 1100 } },
+  'study-duty': { run: async (page) => { await loadTemplate(page, 'industrial_plant'); await runStudy(page, '#btn-duty-check', 'dutyCheckResults'); await markModal(page); }, viewport: { width: 1500, height: 1000 } },
+  'study-grounding': { run: async (page) => { await loadTemplate(page, 'ver_grounding'); await runStudy(page, '#btn-grounding', 'groundingResults'); await markModal(page); } },
+});
+
