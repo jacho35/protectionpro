@@ -29,6 +29,7 @@ const Project = {
     document.getElementById('btn-export-json').addEventListener('click', () => { window.closeAllToolbarMenus?.(); this.exportJSON(); });
     document.getElementById('btn-export-svg').addEventListener('click', () => { window.closeAllToolbarMenus?.(); this.exportSVG(); });
     document.getElementById('btn-export-png').addEventListener('click', () => { window.closeAllToolbarMenus?.(); this.exportPNG(); });
+    document.getElementById('btn-export-dxf').addEventListener('click', () => { window.closeAllToolbarMenus?.(); this.exportDXF(); });
     document.getElementById('btn-export-diagram-pdf').addEventListener('click', () => { window.closeAllToolbarMenus?.(); this.exportDiagramPDF(); });
     document.getElementById('btn-export-csv').addEventListener('click', () => { window.closeAllToolbarMenus?.(); this.exportResultsCSV(); });
     document.getElementById('btn-export-pdf').addEventListener('click', () => { window.closeAllToolbarMenus?.(); this.exportPDF(); });
@@ -455,6 +456,69 @@ const Project = {
     a.click();
     URL.revokeObjectURL(url);
     this._statusMsg('Exported diagram as SVG.');
+  },
+
+  // ── Export: DXF ──
+  // The same export clone as SVG/PNG. Each component is a block (one per
+  // symbol variant) carrying its name and data label as visible attributes
+  // and its properties + latest results as hidden attributes.
+  dxfPayload() {
+    const { clone } = this._prepareExportSVG();
+    const layer = (sel, name) => { const g = clone.querySelector(sel); if (g) g.setAttribute('data-dxf-layer', name); };
+    layer('#wires-layer', 'WIRES');
+    layer('#annotations-layer', 'ANNOTATIONS');
+    const pageComps = AppState.getActivePageComponents ? AppState.getActivePageComponents() : AppState.components;
+    clone.querySelectorAll('.sld-component[data-id]').forEach(g => {
+      const comp = pageComps.get(g.getAttribute('data-id')) || AppState.components.get(g.getAttribute('data-id'));
+      if (!comp) return;
+      g.setAttribute('data-dxf-block', comp.type);
+      g.setAttribute('data-dxf-key', comp.id);
+      g.setAttribute('data-dxf-layer', 'SYMBOLS');
+      g.setAttribute('data-dxf-attrs', JSON.stringify(this._dxfCompAttrs(comp)));
+      const nm = g.querySelector('.comp-name-label');
+      if (nm) nm.setAttribute('data-dxf-attr', 'NAME');
+    });
+    // Device data labels sit in the annotations layer, linked to their owner.
+    clone.querySelectorAll('.comp-data-label[data-comp-id]').forEach(t => {
+      t.setAttribute('data-dxf-attr', 'DATA');
+      t.setAttribute('data-dxf-owner', t.getAttribute('data-comp-id'));
+    });
+    return DxfExport.fromSvg(clone, {
+      scale: 0.25, geomLayer: 'DIAGRAM', fileName: `${AppState.projectName || 'diagram'}_SLD`,
+      title: AppState.projectName || '',
+      layers: { WIRES: null, SYMBOLS: null, ANNOTATIONS: '#0078d7', TEXT: null },
+    });
+  },
+
+  exportDXF() {
+    const payload = this.dxfPayload();
+    if (!payload) { UI.alert('Nothing to export.'); return; }
+    return DxfExport.download(payload).then(ok => { if (ok) this._statusMsg('Exported diagram as DXF.'); });
+  },
+
+  // A component's DXF attributes: identity, its own ratings/settings, and the
+  // latest load flow / fault results that apply to it.
+  _dxfCompAttrs(comp) {
+    const def = COMPONENT_DEFS[comp.type] || {};
+    const a = { NAME: comp.props.name || '', ID: comp.id, TYPE: def.name || comp.type };
+    let n = 0;
+    for (const [k, v] of Object.entries(comp.props || {})) {
+      if (k === 'name' || k.startsWith('_') || v == null || v === '' || typeof v === 'object') continue;
+      const tag = k.toUpperCase().replace(/[^A-Z0-9_]+/g, '_').slice(0, 30);
+      if (a[tag] != null) continue;
+      a[tag] = typeof v === 'number' ? +v.toPrecision(6) : String(v);
+      if (++n >= 60) break;
+    }
+    const lf = AppState.loadFlowResults;
+    if (lf && lf.buses && lf.buses[comp.id]) {
+      const b = lf.buses[comp.id];
+      Object.assign(a, { LF_V_PU: b.voltage_pu?.toFixed(4), LF_V_KV: b.voltage_kv?.toFixed(3), LF_ANGLE_DEG: b.angle_deg?.toFixed(2) });
+    }
+    const br = lf && Array.isArray(lf.branches) ? lf.branches.find(x => x.elementId === comp.id) : null;
+    if (br) Object.assign(a, { LF_P_MW: br.p_mw?.toFixed(4), LF_Q_MVAR: br.q_mvar?.toFixed(4), LF_I_A: br.i_amps?.toFixed(1), LF_LOADING_PCT: br.loading_pct?.toFixed(1) });
+    const fr = AppState.faultResults && AppState.faultResults.buses && AppState.faultResults.buses[comp.id];
+    if (fr) Object.assign(a, { IK3_KA: fr.ik3?.toFixed(2), IK1_KA: fr.ik1?.toFixed(2) });
+    return a;
   },
 
   // ── Export: PNG ──

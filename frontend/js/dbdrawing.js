@@ -189,6 +189,39 @@ const DBDrawing = {
     return idx;
   },
 
+  // The data a way's symbol carries as DXF attributes (identity, device,
+  // cable, load + check) — shared by the single line and the GA.
+  wayDxfAttrs(comp, c, verdict) {
+    const vll = DBSchedule._boardVll(comp);
+    const sec = (typeof DBSections !== 'undefined' && DBSections.has(comp)) ? DBSections.of(comp, c) : null;
+    const elg = String(c.el_group || '').trim();
+    const v = verdict === undefined ? this._verdicts(comp)[c.id] : verdict;
+    return {
+      BOARD: comp.props.name || comp.id, WAY: c.way ?? '', SECTION: sec ? sec.name : '',
+      DESCRIPTION: c.description || '',
+      RATING_A: Number(c.breaker_a) || '', CURVE: c.curve || '', POLES: c.poles || '1P',
+      RCD_GROUP: elg, RCD_MA: elg ? (((comp.props.el_ratings || {})[elg]) || 30) : '',
+      CABLE_MM2: c.cable_mm2 ?? '', CONDUCTOR: c.conductor || 'Cu',
+      ECC_MM2: c.ecc_mm2 != null ? c.ecc_mm2 : 'min', LENGTH_M: Number(c.cable_m) || '',
+      LOAD_VA: Number(c.load_va) || 0, CURRENT_A: DBSchedule._wayFlaA(c, vll).toFixed(1),
+      PHASE: (c.poles === '3P' || c.phase === 'RWB') ? 'RWB' : (c.phase || 'R'),
+      STATUS: v ? v.status : 'not checked',
+    };
+  },
+
+  // An accessory's DXF attributes.
+  accDxfAttrs(comp, acc) {
+    const sec = (typeof DBSections !== 'undefined' && DBSections.has(comp)) ? DBSections.of(comp, acc) : null;
+    return {
+      BOARD: comp.props.name || comp.id, SECTION: sec ? sec.name : '', DESCRIPTION: acc.label || acc.kind,
+      KIND: acc.kind, SPEC: this._accSpec(acc), PHASE: acc.phases || 'RWB',
+      RATING_A: Number(acc.fuse_a) || '', PROTECTION: acc.fuse_type || '', TAP: acc.tap || 'busbar',
+    };
+  },
+
+  // JSON for a data-dxf-attrs attribute (escaped for the SVG string).
+  _dxfData(obj) { return this._esc(JSON.stringify(obj)); },
+
   _sortedWays(comp) {
     return [...(comp.props.circuits || [])].sort((a, b) =>
       String(a.way ?? '').localeCompare(String(b.way ?? ''), undefined, { numeric: true }));
@@ -216,20 +249,20 @@ const DBDrawing = {
       const v = verdicts[c.id] || null;
       const lines = [];
       const dev = `${Number(c.breaker_a) || 0} A${c.curve ? ' ' + c.curve : ''}${c.poles && c.poles !== '1P' ? ' ' + c.poles : ''}`;
-      lines.push({ text: `${/^\d/.test(String(c.way ?? '')) ? 'W' : ''}${c.way ?? ''} · ${dev}`, bold: true });
-      lines.push({ text: this._trunc(c.description || '—', 22) });
+      lines.push({ text: `${/^\d/.test(String(c.way ?? '')) ? 'W' : ''}${c.way ?? ''} · ${dev}`, bold: true, tag: 'WAY_LABEL' });
+      lines.push({ text: this._trunc(c.description || '—', 22), tag: 'DESC_LABEL' });
       // A spare way: nothing on it and no description. A described way with
       // no load yet ("Future geyser") keeps its description.
       const spare = !(Number(c.load_va) > 0) && !(Number(c.cable_m) > 0) && !String(c.description || '').trim();
-      if (spare) lines[1] = { text: 'Spare', dim: true };
+      if (spare) lines[1] = { text: 'Spare', dim: true, tag: 'DESC_LABEL' };
       if (D.cable && !spare) {
         const ecc = c.ecc_mm2 != null ? `${c.ecc_mm2}` : 'min';
-        lines.push({ text: `${c.cable_mm2 || '?'} mm² · ${c.cable_m || 0} m · E ${ecc}`, dim: true });
+        lines.push({ text: `${c.cable_mm2 || '?'} mm² · ${c.cable_m || 0} m · E ${ecc}`, dim: true, tag: 'CABLE_LABEL' });
       }
       if (D.load && !spare) {
         const fla = DBSchedule._wayFlaA(c, vll);
         const kva = (Number(c.load_va) || 0) / 1000;
-        lines.push({ text: `${fla.toFixed(1)} A · ${kva.toFixed(2)} kVA`, dim: true });
+        lines.push({ text: `${fla.toFixed(1)} A · ${kva.toFixed(2)} kVA`, dim: true, tag: 'LOAD_LABEL' });
       }
       const warns = DBSchedule._wayWarnings(c, !!v, vll);
       const tip = [`Way ${c.way ?? ''} — ${c.description || 'no description'}`,
@@ -251,7 +284,7 @@ const DBDrawing = {
         },
         elGroup: D.elgroups ? (c.el_group || '') : '',
         status: v ? v.status : (warns.length ? 'warn' : null),
-        lines, tip,
+        lines, tip, dxf: this.wayDxfAttrs(comp, c, v),
       });
     }
     return items;
@@ -268,7 +301,7 @@ const DBDrawing = {
     const prot = fuseA && acc.fuse_type !== 'none' ? { a: fuseA, type: acc.fuse_type } : null;
     const protText = prot ? `${prot.a} A ${prot.type === 'mcb' ? 'MCB' : prot.type}` : 'unprotected';
     // Spec wrapped onto short lines so it fits the narrow accessory column.
-    const lines = [{ text: this._trunc(acc.label || '', 15), bold: true }];
+    const lines = [{ text: this._trunc(acc.label || '', 15), bold: true, tag: 'NAME_LABEL' }];
     const parts = this._accSpec(acc).replace('Control ', 'Ctl ').split(' · ');
     let cur = '';
     for (const p of parts) {
@@ -276,10 +309,10 @@ const DBDrawing = {
       else cur = cur ? cur + ' · ' + p : p;
     }
     if (cur) lines.push({ text: this._trunc(cur, 17) });
-    lines.push({ text: protText, dim: true });
+    lines.push({ text: protText, dim: true, tag: 'PROT_LABEL' });
     const warns = DBAccessories.warnings(acc, DBAccessories.incomer(comp));
     return {
-      kind: 'acc', w: this.ACC_W, glyph, accKind: acc.kind, prot,
+      kind: 'acc', w: this.ACC_W, glyph, accKind: acc.kind, prot, dxf: this.accDxfAttrs(comp, acc),
       meterLetter: acc.meter === 'ammeter' ? 'A' : (acc.meter === 'both' ? 'VA' : 'V'),
       cells: {
         way: '—', device: protText, desc: this._trunc(acc.label || '', 13),
@@ -522,7 +555,7 @@ const DBDrawing = {
   // project's IEC / classic symbol set) with literal colours: class names are
   // stripped and the stroke set on a wrapper, because an exported SVG carries
   // no stylesheet. `stroke` overrides the symbol's native SLD colour.
-  _sym(type, x, y, P, stroke, comp, scale, rot) {
+  _sym(type, x, y, P, stroke, comp, scale, rot, dxf) {
     const def = (typeof COMPONENT_DEFS !== 'undefined') ? COMPONENT_DEFS[type] : null;
     const fn = (typeof Symbols !== 'undefined' && def) ? Symbols._symbolFor(type) : null;
     if (!fn) return '';
@@ -534,7 +567,8 @@ const DBDrawing = {
       .replace(/fill="white"/g, `fill="${P.surface}"`)
       .replace(/currentColor/g, stroke)
       .replace(/<text((?:(?!fill=)[^>])*)>/g, `<text stroke="none" fill="${stroke}"$1>`);
-    return `<g transform="translate(${x},${y})${scale && scale !== 1 ? ` scale(${scale})` : ''}${rot ? ` rotate(${rot})` : ''}" stroke="${stroke}" stroke-width="1.5" fill="none">${m}</g>`;
+    return `<g transform="translate(${x},${y})${scale && scale !== 1 ? ` scale(${scale})` : ''}${rot ? ` rotate(${rot})` : ''}" stroke="${stroke}" stroke-width="1.5" fill="none"`
+      + ` data-dxf-block="${type}"${dxf ? ` data-dxf-attrs="${this._dxfData(dxf)}"` : ''}>${m}</g>`;
   },
 
   // SLD-native stroke colour per symbol type (neutral ones follow the theme).
@@ -671,21 +705,24 @@ const DBDrawing = {
       let g = `<g><title>${this._esc('Supply-side tap — stays live with the board switched off\n' + item.tip)}</title>`;
       // Current transformer on the riser for an ammeter, just above the tap.
       if (acc.kind === 'metering' && acc.meter !== 'voltmeter') {
-        g += this._sym('ct', x, y - 18, P, this._native('ct', P), null, 0.6)
-          + `<text x="${x - 8}" y="${y - 14}" text-anchor="end" font-size="8" fill="${P.muted}">${this._esc(acc.ct_ratio || 'CT')}</text>`;
+        g += `<g data-dxf-block="ct" data-dxf-at="${x},${y - 18}" data-dxf-attrs="${this._dxfData({ BOARD: comp.props.name || comp.id, DESCRIPTION: `${acc.label || 'Meter'} CT`, RATIO: acc.ct_ratio || '' })}">`
+          + this._sym('ct', x, y - 18, P, this._native('ct', P), null, 0.6)
+          + `<text x="${x - 8}" y="${y - 14}" text-anchor="end" font-size="8" fill="${P.muted}" data-dxf-attr="RATIO_LABEL">${this._esc(acc.ct_ratio || 'CT')}</text></g>`;
       }
       if (pt) {
         g += `<line x1="${x}" y1="${y}" x2="${fx - 14}" y2="${y}" stroke="${P.line}" stroke-width="1.2"/>`
           + `<line x1="${fx + 14}" y1="${y}" x2="${gx}" y2="${y}" stroke="${P.line}" stroke-width="1.2"/>`
-          + this._sym(pt, fx, y, P, this._native(pt, P), null, 0.7, 90);
+          + this._sym(pt, fx, y, P, this._native(pt, P), null, 0.7, 90,
+            { DESCRIPTION: `${item.dxf.DESCRIPTION} protection`, RATING_A: item.prot.a, PROTECTION: item.prot.type });
       } else {
         g += `<line x1="${x}" y1="${y}" x2="${gx}" y2="${y}" stroke="${P.line}" stroke-width="1.2"/>`;
       }
-      g += this._glyph(item.glyph, gx, y, P, stroke, item)
-        + `<text x="${gx + 16}" y="${y - 2}" font-size="9" fill="${P.ink}">${this._esc(this._trunc(acc.label || '', 20))}</text>`
-        + `<text x="${gx + 16}" y="${y + 9}" font-size="8.5" fill="${P.muted}">${this._esc(this._trunc(this._accSpec(acc), 34))}</text>`
-        + `<text x="${gx + 16}" y="${y + 19}" font-size="8.5" fill="${P.muted}">${this._esc(item.prot ? `${item.prot.a} A ${item.prot.type === 'mcb' ? 'MCB' : item.prot.type}` : 'unprotected')}</text>`
-        + `</g>`;
+      g += `<g data-dxf-block="DB_${item.glyph}" data-dxf-at="${gx},${y}" data-dxf-attrs="${this._dxfData(item.dxf)}">`
+        + this._glyph(item.glyph, gx, y, P, stroke, item)
+        + `<text x="${gx + 16}" y="${y - 2}" font-size="9" fill="${P.ink}" data-dxf-attr="NAME_LABEL">${this._esc(this._trunc(acc.label || '', 20))}</text>`
+        + `<text x="${gx + 16}" y="${y + 9}" font-size="8.5" fill="${P.muted}" data-dxf-attr="SPEC_LABEL">${this._esc(this._trunc(this._accSpec(acc), 34))}</text>`
+        + `<text x="${gx + 16}" y="${y + 19}" font-size="8.5" fill="${P.muted}" data-dxf-attr="PROT_LABEL">${this._esc(item.prot ? `${item.prot.a} A ${item.prot.type === 'mcb' ? 'MCB' : item.prot.type}` : 'unprotected')}</text>`
+        + `</g></g>`;
       s += g;
     });
 
@@ -693,17 +730,23 @@ const DBDrawing = {
     const label = inc.device_label || (inc.rating_a ? `${inc.rating_a} A` : 'incomer — rating unknown');
     const glyph = inc.device && inc.device.type === 'fuse' ? 'fuse' : 'mcb';
     const known = inc.rating_a != null;
+    const incData = { BOARD: comp.props.name || comp.id, SECTION: L.sec ? L.sec.name : '', DESCRIPTION: 'Incomer',
+      RATING_A: inc.rating_a != null ? inc.rating_a : '', DEVICE: label, SOURCE: inc.source ? inc.source.name : '',
+      BASIS: inc.basis || '' };
     s += `<g><title>${this._esc(`Incomer: ${label}${inc.basis === 'feeder_way' ? ' (from the feeding board\'s way)' : inc.basis === 'sld' ? ' (from the SLD)' : ''}`)}</title>`
+      + `<g data-dxf-block="DB_INCOMER" data-dxf-at="${x},${L.devY}" data-dxf-attrs="${this._dxfData(incData)}">`
       + this._glyph(glyph, x, L.devY, P, known ? P.line : P.warn)
-      + `<text x="${x + 16}" y="${L.devY + 1}" font-size="10.5" font-weight="700" fill="${known ? P.ink : P.warn}">${this._esc(label)}</text>`
-      + `<text x="${x + 16}" y="${L.devY + 12}" font-size="8.5" fill="${P.muted}">${this._esc(inc.note || (inc.basis === 'sld' ? 'from the SLD' : inc.basis === 'feeder_way' ? 'from the feeding board' : 'not modelled'))}</text>`
-      + `</g>`;
+      + `<text x="${x + 16}" y="${L.devY + 1}" font-size="10.5" font-weight="700" fill="${known ? P.ink : P.warn}" data-dxf-attr="DEVICE_LABEL">${this._esc(label)}</text>`
+      + `<text x="${x + 16}" y="${L.devY + 12}" font-size="8.5" fill="${P.muted}" data-dxf-attr="NOTE_LABEL">${this._esc(inc.note || (inc.basis === 'sld' ? 'from the SLD' : inc.basis === 'feeder_way' ? 'from the feeding board' : 'not modelled'))}</text>`
+      + `</g></g>`;
 
     if (L.isoY) {
+      const isoName = inc.isolator.props.name || 'Main switch';
       s += `<g><title>Board main isolator</title>`
+        + `<g data-dxf-block="DB_ISOLATOR" data-dxf-at="${x},${L.isoY}" data-dxf-attrs="${this._dxfData({ BOARD: comp.props.name || comp.id, DESCRIPTION: isoName, RATING_A: inc.isolator.props.rated_current_a || '' })}">`
         + this._gSwitch(x, L.isoY, P, P.line)
-        + `<text x="${x + 16}" y="${L.isoY + 4}" font-size="10" fill="${P.inkSec}">${this._esc(inc.isolator.props.name || 'Main switch')}</text>`
-        + `</g>`;
+        + `<text x="${x + 16}" y="${L.isoY + 4}" font-size="10" fill="${P.inkSec}" data-dxf-attr="NAME_LABEL">${this._esc(isoName)}</text>`
+        + `</g></g>`;
     }
     return s;
   },
@@ -782,27 +825,35 @@ const DBDrawing = {
       const x = xs[i];
       const stroke = D.status ? this._statusColor(it.status, P) : P.line;
       let g = `<g><title>${this._esc(it.tip)}</title>`;
+      let sym = '';   // the device symbol + its labels: one DXF block with attributes
+      // The conductor stops either side of the label block (a DXF has no
+      // page-coloured patch to hide it behind the text).
+      const lblH = it.lines.length * this.LINE_H + 2;
+      const lblGap = D.table ? [] : [[labelTop - 10 + lblH / 2, lblH / 2 + 1]];
       if (it.kind === 'acc') {
         // Protective device, then the accessory, then its termination: PE for
         // an SPD, N for everything else — the conductor stops there.
         const protY = busY + this.PROT_DY;
         const endY = it.glyph === 'spd' ? peY : barsY;
-        const gaps = [[devY, (it.glyph === 'spd' ? 25 : 14) * this.SYM_SCALE]];
+        const gaps = [[devY, (it.glyph === 'spd' ? 25 : 14) * this.SYM_SCALE], ...lblGap];
         const pt = this._protType(it.prot);
         if (pt) gaps.push([protY, 20 * 0.7]);
         g += this._vline(x, busY, D.bars ? endY : devY + 26, gaps, stroke, 1.4);
-        if (pt) g += this._sym(pt, x, protY, P, this._native(pt, P), null, 0.7);
-        g += this._glyph(it.glyph, x, devY, P, stroke, it);
+        if (pt) g += this._sym(pt, x, protY, P, this._native(pt, P), null, 0.7, 0,
+          { DESCRIPTION: `${it.dxf.DESCRIPTION} protection`, RATING_A: it.prot.a, PROTECTION: it.prot.type });
         if (D.bars) g += `<circle cx="${x}" cy="${endY}" r="2.4" fill="${P.line}"/>`;
+        sym = this._glyph(it.glyph, x, devY, P, stroke, it);
       } else {
         const endY = it.spare ? devY + 30 : (D.bars ? peY : devY + 26) + (D.load ? 14 : 0);
-        g += this._vline(x, busY, endY, [[devY, 20 * this.SYM_SCALE]], stroke, 1.4);
-        g += this._glyph(it.glyph, x, devY, P, stroke, it);
+        g += this._vline(x, busY, endY, [[devY, 20 * this.SYM_SCALE], ...lblGap], stroke, 1.4);
+        sym = this._glyph(it.glyph, x, devY, P, stroke, it);
         if (D.load && !it.spare) {
           const motor = (it.poles === '3P' || it.phase === 'RWB')
             && /pump|motor|fan|compress|aircon|a\/c|hvac|drive/i.test(it.wayDesc || '');
           const lt = motor ? 'motor_induction' : 'static_load';
-          g += this._sym(lt, x, endY + COMPONENT_DEFS[lt].height / 2, P, P.line, null, 1);
+          const d = it.dxf;
+          g += this._sym(lt, x, endY + COMPONENT_DEFS[lt].height / 2, P, P.line, null, 1, 0,
+            { BOARD: d.BOARD, WAY: d.WAY, DESCRIPTION: d.DESCRIPTION, LOAD_VA: d.LOAD_VA, CURRENT_A: d.CURRENT_A, PHASE: d.PHASE });
         }
       }
       if (D.phase && !D.table) {
@@ -810,7 +861,7 @@ const DBDrawing = {
         const pc = P.phase[it.phase] || P.muted;
         const tw = String(it.phase).length * 5.6;
         g += `<rect x="${x - 10 - tw - 11}" y="${devY + this.TICK_DY - 5}" width="9" height="9" rx="2" fill="${pc}"/>`;
-        g += `<text x="${x - 8}" y="${devY + this.TICK_DY + 3}" text-anchor="end" font-size="9" fill="${P.inkSec}">${this._esc(it.phase)}</text>`;
+        sym += `<text x="${x - 8}" y="${devY + this.TICK_DY + 3}" text-anchor="end" font-size="9" fill="${P.inkSec}" data-dxf-attr="PHASE">${this._esc(it.phase)}</text>`;
       }
       if (!D.table) {
         // Labels sit on a page-coloured patch, so the conductor reads as passing
@@ -818,10 +869,11 @@ const DBDrawing = {
         const lw = it.w - 12, lh = it.lines.length * this.LINE_H + 2;
         g += `<rect x="${x - lw / 2}" y="${labelTop - 10}" width="${lw}" height="${lh}" fill="${P.surface}"/>`;
         it.lines.forEach((ln, li) => {
-          g += `<text x="${x}" y="${labelTop + li * this.LINE_H}" text-anchor="middle" font-size="${ln.bold ? 9.5 : 9}"
-          font-weight="${ln.bold ? 700 : 400}" fill="${ln.dim ? P.muted : P.ink}">${this._esc(ln.text)}</text>`;
+          sym += `<text x="${x}" y="${labelTop + li * this.LINE_H}" text-anchor="middle" font-size="${ln.bold ? 9.5 : 9}"
+          font-weight="${ln.bold ? 700 : 400}" fill="${ln.dim ? P.muted : P.ink}" data-dxf-attr="${ln.tag || 'LABEL_' + (li + 1)}">${this._esc(ln.text)}</text>`;
         });
       }
+      g += `<g data-dxf-block="${it.kind === 'acc' ? 'DB_' + it.glyph : 'DB_WAY'}" data-dxf-at="${x},${devY}" data-dxf-attrs="${this._dxfData(it.dxf || {})}">${sym}</g>`;
       g += `</g>`;
       s += g;
     });
@@ -933,14 +985,24 @@ const DBDrawing = {
     this._download(new Blob([str], { type: 'image/svg+xml' }), `${this._fileBase()}_single_line.svg`);
   },
 
-  // Vector DXF (mm, 1 px = 0.25 mm) from the same SVG the screen and PNG use.
+  // DXF (server-built, mm, 1 px = 0.25 mm) from the same SVG the screen and
+  // PNG use: breakers, loads, accessories and the incomer are blocks whose
+  // labels are visible attributes and whose way data are hidden attributes.
+  dxfPayload(board) {
+    const svg = board ? this.buildSVG({ dark: false, board }) : '';
+    if (!svg) return null;
+    return DxfExport.fromSvg(svg, {
+      scale: 0.25, geomLayer: 'SINGLE_LINE', fileName: `${this._fileBase(board)}_single_line`,
+      title: String(board.props.name || board.id),
+      layers: { SINGLE_LINE: null, SYMBOLS: '#d32f2f', TEXT: null },
+    });
+  },
+
   exportDXF() {
     const board = this.board();
-    const svg = board ? this.buildSVG({ dark: false, board }) : '';
-    if (!svg) { UI.alert('Nothing to export — select a board first.'); return; }
-    const dxf = DxfWriter.fromSvg(svg, { scale: 0.25, geomLayer: 'SINGLE_LINE' });
-    if (!dxf) { UI.alert('Could not build the DXF.'); return; }
-    this._download(new Blob([dxf], { type: 'application/dxf' }), `${this._fileBase()}_single_line.dxf`);
+    const payload = this.dxfPayload(board);
+    if (!payload) { UI.alert('Nothing to export — select a board first.'); return; }
+    return DxfExport.download(payload);
   },
 
   exportPNG() {
