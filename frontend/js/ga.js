@@ -96,7 +96,7 @@ const GA = {
       order: Array.isArray(g.order) ? g.order.slice() : [],
       over: (g.over && typeof g.over === 'object') ? g.over : {},
       extras: Array.isArray(g.extras) ? g.extras : [],
-      section_layout: g.section_layout === 'stack' ? 'stack' : 'side',
+      section_layout: g.section_layout === 'stack' ? 'stack' : g.section_layout === 'grid' ? 'grid' : 'side',
       section_dims: (g.section_dims && typeof g.section_dims === 'object') ? g.section_dims : {},
     };
   },
@@ -371,7 +371,10 @@ const GA = {
   // section (ga.section_dims) overrides the fitted size.
   _layoutSections(comp, cfg, items) {
     const secs = DBSections.list(comp);
-    const side = cfg.section_layout !== 'stack';
+    const grid = cfg.section_layout === 'grid';
+    const side = cfg.section_layout === 'side';
+    const gcols = Math.ceil(Math.sqrt(secs.length)) || 1;
+    const grows = Math.ceil(secs.length / gcols) || 1;
     const form = comp.props.segregation || '2b';
     const part = GA_PARTITION_MM[form] != null ? GA_PARTITION_MM[form] : 20;
     const heat = items.reduce((n, i) => n + (i.heat || 0), 0) * 1.1;
@@ -381,6 +384,19 @@ const GA = {
     const fit = (enc) => {
       const comps = [];
       let ok = true;
+      if (grid) {
+        // Equal cells: columns × rows across the enclosure, partitions between.
+        const cw = Math.floor((enc.w - part * (gcols - 1)) / gcols), ch = Math.floor((enc.h - part * (grows - 1)) / grows);
+        secs.forEach((sec, i) => {
+          const its = by.get(sec.id) || [];
+          const col = i % gcols, row = Math.floor(i / gcols);
+          const res = this.pack(its, { w: cw, h: ch }, cfg.spare_pct);
+          if (!res.fits) ok = false;
+          comps.push({ sec, items: its, size: cw, res, manual: false, x: col * (cw + part), y: row * (ch + part),
+            w: cw, h: ch, heat: its.reduce((n, it) => n + (it.heat || 0), 0) * 1.1 });
+        });
+        return { ok, comps, used: enc.w };
+      }
       for (const sec of secs) {
         const its = by.get(sec.id) || [];
         const man = Number((cfg.section_dims[sec.id] || {})[side ? 'w' : 'h']) || 0;
@@ -448,12 +464,12 @@ const GA = {
       for (const w of c.res.warnings) warnings.push(`${c.sec.name}: ${w}`);
       if (!c.res.fits && !c.res.warnings.length) warnings.push(`${c.sec.name}: does not fit its compartment (${c.w} × ${c.h} mm).`);
     }
-    if (r.used > (side ? enc.w : enc.h)) warnings.push(`Compartments need ${r.used} mm ${side ? 'width' : 'height'} incl. partitions; the enclosure has ${side ? enc.w : enc.h} mm.`);
+    if (!grid && r.used > (side ? enc.w : enc.h)) warnings.push(`Compartments need ${r.used} mm ${side ? 'width' : 'height'} incl. partitions; the enclosure has ${side ? enc.w : enc.h} mm.`);
     if (heat > cap) warnings.push(`Heat ${heat.toFixed(0)} W exceeds the ${cap.toFixed(0)} W the enclosure sheds at a ${cfg.delta_t} K rise.`);
     const totalMods = r.comps.reduce((n, c) => n + c.res.perRow * c.res.rowsAvail, 0);
     const usedMods = r.comps.reduce((n, c) => n + c.res.usedModules, 0);
     const first = r.comps[0].res;
-    return { comp, cfg, items, enc, auto, comps: r.comps, part, form, side, heat, capacity: cap,
+    return { comp, cfg, items, enc, auto, comps: r.comps, part, form, side, grid, gcols, grows, heat, capacity: cap,
       placed: [], perRow: first.perRow, rowsAvail: first.rowsAvail,
       rowsNeeded: Math.max(...r.comps.map(c => c.res.rowsNeeded)), colW: 0,
       usedModules: usedMods, spareModules: r.comps.reduce((n, c) => n + c.res.spareModules, 0),
@@ -472,12 +488,18 @@ const GA = {
     }
     // Partitions first, then each compartment's own rails, bars and devices.
     L.comps.forEach((c, i) => {
+      if (L.grid) return;
       if (i && L.part > 0) {
         const px = L.side ? c.x - L.part : 0, py = L.side ? 0 : c.y - L.part;
         s.push({ t: 'rect', x: px, y: py, w: L.side ? L.part : enc.w, h: L.side ? enc.h : L.part, layer: 'PARTITION', kind: 'part',
           title: `Partition — form ${L.form}` });
       }
     });
+    if (L.grid && L.part > 0) {
+      const cw = L.comps[0].w, ch = L.comps[0].h;
+      for (let k = 1; k < L.gcols; k++) s.push({ t: 'rect', x: k * (cw + L.part) - L.part, y: 0, w: L.part, h: enc.h, layer: 'PARTITION', kind: 'part', title: `Partition — form ${L.form}` });
+      for (let k = 1; k < L.grows; k++) s.push({ t: 'rect', x: 0, y: k * (ch + L.part) - L.part, w: enc.w, h: L.part, layer: 'PARTITION', kind: 'part', title: `Partition — form ${L.form}` });
+    }
     for (const c of L.comps) {
       const col = DBSections.color(c.sec);
       s.push({ t: 'rect', x: c.x + 4, y: c.y + 4, w: c.w - 8, h: c.h - 8, layer: 'COMPARTMENT', thin: true, color: col,
@@ -670,16 +692,17 @@ const GA = {
       return `<tr style="--dbs-c:${DBSections.color(c.sec)}">
         <td><span class="dbs-dot"></span>${e(c.sec.name)}</td>
         <td>${c.w} × ${c.h}</td>
-        <td><input type="number" data-ga-dim="${e(c.sec.id)}" value="${m ? e(m) : ''}" placeholder="auto" min="100" step="50" style="width:62px" title="Fix this compartment's ${L.side ? 'width' : 'height'} (mm); blank = fitted to its devices"></td>
+        <td>${L.grid ? '<span class="ga-sub">equal</span>' : `<input type="number" data-ga-dim="${e(c.sec.id)}" value="${m ? e(m) : ''}" placeholder="auto" min="100" step="50" style="width:62px" title="Fix this compartment's ${L.side ? 'width' : 'height'} (mm); blank = fitted to its devices">`}</td>
         <td class="ga-sub">${c.res.usedModules} mod · ${c.heat.toFixed(0)} W${c.res.fits ? '' : ' ⚠'}</td></tr>`;
     }).join('');
     return `
       <h4>Compartments</h4>
       <label>Arrangement <select data-ga-set="section_layout">
         <option value="side"${L.side ? ' selected' : ''}>Side by side</option>
-        <option value="stack"${L.side ? '' : ' selected'}>Stacked</option></select></label>
+        <option value="stack"${!L.side && !L.grid ? ' selected' : ''}>Stacked</option>
+        <option value="grid"${L.grid ? ' selected' : ''}>Grid</option></select></label>
       <div class="ga-sub">Form ${e(L.form)} separation · ${L.part} mm partitions (set on the schedule's Sections panel)</div>
-      <table class="ga-items"><thead><tr><th>Section</th><th>mm</th><th>${L.side ? 'Width' : 'Height'}</th><th>Load</th></tr></thead><tbody>${rows}</tbody></table>`;
+      <table class="ga-items"><thead><tr><th>Section</th><th>mm</th><th>${L.grid ? 'Size' : L.side ? 'Width' : 'Height'}</th><th>Load</th></tr></thead><tbody>${rows}</tbody></table>`;
   },
 
   // ── Events ────────────────────────────────────────────────────────
