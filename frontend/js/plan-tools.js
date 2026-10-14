@@ -294,7 +294,11 @@ PlanTools.register({
       lc.ids.length === ids.length && lc.ids.every((v, i) => v === ids[i]);
     const index = same ? (lc.index + 1) % ids.length : 0;
     this._lastClick = { x: pt.x, y: pt.y, ids, index };
-    if (ids.length > 1 && typeof UI !== 'undefined' && UI.toast) {
+    // Say so only while cycling, or when items of one kind genuinely overlap
+    // (two devices, two cables) — not for every device with its cable under it.
+    const kinds = ids.map(id => (PlanMarkup.findEntityById(id) || {}).kind);
+    const overlap = kinds.some((k, i) => k && kinds.indexOf(k) !== i);
+    if (ids.length > 1 && (index > 0 || overlap) && typeof UI !== 'undefined' && UI.toast) {
       UI.toast(`${ids.length} items here — ${index + 1} of ${ids.length}. Click again to cycle.`, 'info');
     }
     return ids[index];

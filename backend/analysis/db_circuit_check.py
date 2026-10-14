@@ -489,47 +489,98 @@ def _resolve_supply_impedance(project, boards, req_default_ze):
 
 # ─── Main entry point ─────────────────────────────────────────────────────
 
-def _section_contexts(sections, circuits, v_ll, install):
-    """Per-section demand current (A) — what the section's feed cable carries."""
-    out = {}
-    for sec in sections:
-        out[sec.get("id")] = 0.0
+def _section_contexts(sections, circuits, v_ll):
+    """Per-section demand current (A) — what the section's feed cable carries.
+
+    A section fed from another section (or through a changeover from it) also
+    loads the parent's feed cable, so its demand is added up the chain.
+    """
+    own = {sec.get("id"): 0.0 for sec in sections}
     if not sections:
-        return out
+        return own
     first = sections[0].get("id")
     for way in circuits:
-        sid = way.get("section") if way.get("section") in out else first
+        sid = way.get("section") if way.get("section") in own else first
         # 1P ways load one phase; scale to the 3-phase line current they add to.
         i = _way_current_a(way, v_ll)
         three = way.get("poles") == "3P" or way.get("phase") == "RWB"
-        out[sid] = out.get(sid, 0.0) + (i if three else i / 3.0)
-    return out
+        own[sid] += i if three else i / 3.0
+    total = dict(own)
+    for sec in sections:
+        seen = {sec.get("id")}
+        parent = _section_parent(sec, sections)
+        while parent is not None and parent.get("id") not in seen:
+            seen.add(parent.get("id"))
+            total[parent.get("id")] += own[sec.get("id")]
+            parent = _section_parent(parent, sections)
+    return total
 
 
-def _section_supply(sec, demand_a, z_supply, z_basis, vd_upstream_pct, v_ll):
+def _section_parent(sec, sections):
+    """The section this one is fed from (feed 'section' / 'changeover'), or None."""
+    if sec.get("feed") not in ("section", "changeover"):
+        return None
+    fid = sec.get("feed_from")
+    return next((x for x in sections if x.get("id") == fid and x is not sec), None)
+
+
+def _feed_cable(sec, demand_a, v_ll):
+    """(loop impedance, volt drop %, basis text) the section's feed cable adds.
+
+    Line + protective conductor: the PE takes its own size when given (a
+    reduced CPC raises the loop), else the line size; conductor Cu or Al.
+    """
+    mm2, m = _num(sec.get("feed_mm2")), _num(sec.get("feed_m"))
+    if mm2 <= 0 or m <= 0:
+        return 0j, 0.0, ""
+    mat = _cond(sec.get("feed_conductor"))
+    pe = _num(sec.get("feed_pe_mm2")) or mm2
+    r = (_r_hot_per_km(mm2, mat, "PVC") or 0.0) * m / 1000.0
+    r_pe = (_r_hot_per_km(pe, mat, "PVC") or 0.0) * m / 1000.0
+    x = _x_per_km(mm2) * m / 1000.0
+    drop = 0.0
+    if v_ll > 0 and demand_a:
+        drop = math.sqrt(3) * demand_a * (r * 0.85 + x * 0.527) / v_ll * 100.0
+    pe_txt = f", {pe:g} mm² PE" if pe != mm2 else ""
+    return complex(r + r_pe, 2 * x), drop, f"{mm2:g} mm² {mat} feed{pe_txt} ({m:g} m)"
+
+
+def _section_supply(sec, sections, demand, z_supply, z_basis, vd_upstream_pct, v_ll, _seen=None):
     """Supply impedance / upstream drop seen by one section's ways.
 
-    A section may declare its own source Zs (generator or UPS output at its
-    incomer) and a feed cable from the board incomer or source to the section.
-    The cable adds its line + protective-conductor loop to Zs and its own
-    volt drop at the section's demand current to the upstream drop.
+    The base is the board's own supply; a section fed from another section
+    starts from that section's supply instead (its declared source and feed
+    cable included). A changeover takes the worse of its own source and the
+    other section. A declared source Zs (generator / UPS output) replaces the
+    base; the section's feed cable then adds its line + PE loop to Zs and its
+    own volt drop at the demand it carries.
     """
-    z, basis, vd = z_supply, z_basis, vd_upstream_pct
+    seen = (_seen or set()) | {sec.get("id")}
     name = sec.get("name") or "Section"
+    z, basis, vd = z_supply, z_basis, vd_upstream_pct
     zs_decl = _num(sec.get("zs_ohm"))
     if zs_decl > 0:
         z, basis = complex(zs_decl, 0.0), f"{name}: declared source Zs"
-    mm2, m = _num(sec.get("feed_mm2")), _num(sec.get("feed_m"))
-    if mm2 > 0 and m > 0:
-        r_km = _r_hot_per_km(mm2, "Cu", "PVC") or 0.0
-        x_km = _x_per_km(mm2)
-        r, x = r_km * m / 1000.0, x_km * m / 1000.0
+    parent = _section_parent(sec, sections)
+    if parent is not None and parent.get("id") not in seen:
+        pz, pb, pvd = _section_supply(parent, sections, demand, z_supply, z_basis,
+                                      vd_upstream_pct, v_ll, seen)
+        if sec.get("feed") == "section":
+            # A declared Zs is this section's own source (a UPS on the
+            # parent's supply) and stands; otherwise the parent's supply.
+            if zs_decl <= 0:
+                z, basis = pz, f"{pb} → {name}"
+            vd = pvd
+        else:   # changeover: whichever source gives the higher loop / drop
+            if pz is not None and (z is None or abs(pz) > abs(z)):
+                z, basis = pz, f"{pb} via changeover → {name}"
+            vd = max(vd or 0.0, pvd or 0.0)
+    dz, dvd, dtxt = _feed_cable(sec, demand.get(sec.get("id")), v_ll)
+    if dtxt:
         if z is not None:
-            z = z + complex(2 * r, 2 * x)         # line + PE of the feed cable
-            basis = f"{basis} + {mm2:g} mm² feed ({m:g} m)"
-        if v_ll > 0 and demand_a:
-            drop = math.sqrt(3) * demand_a * (r * 0.85 + x * 0.527) / v_ll * 100.0
-            vd = (vd or 0.0) + drop
+            z = z + dz
+            basis = f"{basis} + {dtxt}"
+        vd = (vd or 0.0) + dvd
     return z, basis, vd
 
 
@@ -623,13 +674,13 @@ def run_db_circuit_check(project, ambient_temp_c=None, install_method=None,
 
         counts = {"pass": 0, "warn": 0, "fail": 0, "info": 0}
         sections = [x for x in (board.props.get("sections") or []) if isinstance(x, dict)]
-        sec_ctx = _section_contexts(sections, circuits, v_ll, install)
+        sec_ctx = _section_contexts(sections, circuits, v_ll)
         for way in circuits:
             z_w, basis_w, vd_up_w, sec_name = z_supply, z_basis, vd_upstream_pct, None
             if sections:
                 sec = next((x for x in sections if x.get("id") == way.get("section")), sections[0])
                 sec_name = sec.get("name") or "Section"
-                z_w, basis_w, vd_up_w = _section_supply(sec, sec_ctx.get(sec.get("id")), z_supply,
+                z_w, basis_w, vd_up_w = _section_supply(sec, sections, sec_ctx, z_supply,
                                                         z_basis, vd_upstream_pct, v_ll)
             row = _check_way(way, board, board_name, v_ll, v_ph, install,
                              z_w, basis_w, vd_up_w, lf_ok,

@@ -93,8 +93,13 @@ const ReticDiagram = {
   // Ring ties touching one minisub, for the Demand side bar:
   // [{other, cable, len}] (other = the RMU / minisub at the far end).
   ringTiesFor(msId) {
-    let tree;
-    try { tree = this._tree(); } catch (e) { return []; }
+    // The side bar asks once per minisub row; build the tree once per render.
+    let tree = this._ringTree;
+    if (!tree) {
+      try { tree = this._tree(); } catch (e) { return []; }
+      this._ringTree = tree;
+      Promise.resolve().then(() => { this._ringTree = null; });
+    }
     const name = (id) => tree.rmuById[id] ? (tree.rmuById[id].name || 'RMU') : ((tree.msById[id] || {}).name || '');
     const out = [];
     for (const t of tree.ring || []) {
@@ -255,7 +260,11 @@ const ReticDiagram = {
     const addRoot = (id) => { if (!roots.includes(id)) roots.push(id); };
     const plan = this._planMv();
     const used = new Set();
-    for (const m of minisubs) {
+    // Top minisubs first, so a supply RMU is placed as a root before any
+    // fed-from path through it is walked — in list order the child could come
+    // first, hang the RMU under its parent and leave the group with no root.
+    const ordered = minisubs.filter(m => !msParent(m)).concat(minisubs.filter(m => msParent(m)));
+    for (const m of ordered) {
       const p = msParent(m);
       const path = plan ? plan.path(p || m.id, m.id, !p) : null;
       if (p) {
@@ -345,7 +354,11 @@ const ReticDiagram = {
     const nodes = [];
     let row = 0, maxDepth = 0;
 
+    const seen = new Set();
     const place = (id, depth) => {
+      // Each node once: a malformed tree (a cycle) must not recurse forever.
+      if (seen.has(id)) return null;
+      seen.add(id);
       maxDepth = Math.max(maxDepth, depth);
       const kids = children[id] || [];
       let y;
@@ -353,8 +366,9 @@ const ReticDiagram = {
         y = row * this.ROW_H;
         row++;
       } else {
-        const ys = kids.map(c => place(c, depth + 1));
-        y = (ys[0] + ys[ys.length - 1]) / 2;
+        const ys = kids.map(c => place(c, depth + 1)).filter(v => v != null);
+        if (ys.length) y = (ys[0] + ys[ys.length - 1]) / 2;
+        else { y = row * this.ROW_H; row++; }
       }
       nodes.push({ id, depth, y, isMs: msIds.has(id), isRmu: id.startsWith('rmu:'), x: this.PAD + depth * this.COL_W });
       return y;
