@@ -694,3 +694,23 @@ body.dark-mode .db-con-chip-s.db-con-over { background: #4a1c1c; color: #ffa8a8;
 .smb-menu-item small { color: var(--text-secondary); font-size: 11.5px; }
 .smb-menu hr { border: 0; border-top: 1px solid var(--border-color); margin: 4px 0; }
 @media (min-width: 769px) { .smb-sheet, .smb-menu { display: none !important; } }
+
+/* ── DB sections (compartments) ─────────────────────────────────────── */
+.dbs-panel { margin: 8px 0; border: 1px solid var(--border-color, #ccd); border-radius: 6px; background: var(--bg-secondary, #f7f8fb); }
+.dbs-panel > summary { cursor: pointer; padding: 6px 10px; font-size: 12.5px; font-weight: 600; }
+.dbs-count { font-weight: 400; opacity: .7; margin-left: 6px; }
+.dbs-body { padding: 4px 10px 10px; }
+.dbs-note { font-size: 12px; opacity: .75; margin: 2px 0 8px; }
+.dbs-card { border: 1px solid var(--border-color, #ccd); border-left: 4px solid var(--dbs-c, #888); border-radius: 5px; padding: 6px 8px; margin-bottom: 8px; background: var(--bg-primary, #fff); }
+.dbs-card-h, .dbs-card-b, .dbs-actions { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; font-size: 12px; }
+.dbs-card-b { margin-top: 6px; }
+.dbs-card label { display: inline-flex; align-items: center; gap: 4px; }
+.dbs-sum { margin-left: auto; opacity: .75; }
+.dbs-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--dbs-c, #888); margin-right: 5px; }
+.dbs-warn { margin-top: 6px; font-size: 11.5px; color: #b26a00; }
+.dbs-sep { width: 1px; height: 20px; background: var(--border-color, #ccc); margin: 0 4px; }
+.dbs-tabs { display: flex; flex-wrap: wrap; gap: 4px; margin: 6px 0; }
+.dbs-tab { border: 1px solid var(--border-color, #ccd); background: var(--bg-primary, #fff); border-radius: 14px; padding: 3px 10px; font-size: 12px; cursor: pointer; display: inline-flex; align-items: center; color: inherit; }
+.dbs-tab.active { border-color: var(--dbs-c, #0078d7); box-shadow: inset 0 0 0 1px var(--dbs-c, #0078d7); font-weight: 600; }
+.dbs-n { margin-left: 6px; opacity: .6; font-size: 11px; }
+body.dark-mode .dbs-panel, body.dark-mode .dbs-card, body.dark-mode .dbs-tab { background: #252536; border-color: #3a3a50; }

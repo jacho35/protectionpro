@@ -95,6 +95,7 @@ const SchMobile = {
   _passes(c, st) {
     const q = this._query.trim().toLowerCase();
     if (q && !`${c.way} ${c.description || ''} ${c.el_group || ''}`.toLowerCase().includes(q)) return false;
+    if (this._filter.startsWith('sec:')) return (DBSections.of(this.comp(), c) || {}).id === this._filter.slice(4);
     if (this._filter === 'fail') return st === 'fail' || st === 'warn';
     if (this._filter === 'R' || this._filter === 'W' || this._filter === 'B') {
       return c.poles === '3P' ? false : (c.phase || 'R') === this._filter;
@@ -144,7 +145,8 @@ const SchMobile = {
         <div class="smb-chips" id="smb-chips"></div>`;
     }
     el.querySelector('#smb-chips').innerHTML =
-      chip('all', 'All') + chip('fail', 'Issues') + chip('R', 'R') + chip('W', 'W') + chip('B', 'B');
+      chip('all', 'All') + chip('fail', 'Issues') + chip('R', 'R') + chip('W', 'W') + chip('B', 'B')
+      + (DBSections.has(this.comp()) ? DBSections.list(this.comp()).map(s => chip('sec:' + s.id, this._e(s.name))).join('') : '');
   },
 
   _renderList() {
@@ -160,7 +162,7 @@ const SchMobile = {
       const cable = [c.cable_mm2 ? `${c.cable_mm2} mm²` : '', Number(c.cable_m) > 0 ? `${c.cable_m} m` : ''].filter(Boolean).join(' · ');
       cards.push(`
         <button class="smb-card st-${v.status}" data-smb-way="${this._e(c.id)}" aria-label="Edit way ${this._e(c.way)}">
-          <span class="smb-no">${this._e(c.way ?? i + 1)}</span>
+          <span class="smb-no"${DBSections.has(comp) ? ` style="border-left:4px solid ${DBSections.color(DBSections.of(comp, c))}" title="${this._e(DBSections.of(comp, c).name)}"` : ''}>${this._e(c.way ?? i + 1)}</span>
           <span class="smb-main">
             <span class="smb-title">${this._e(c.description || 'Unnamed way')}</span>
             <span class="smb-meta">${this._e(c.breaker_a ?? '—')} A ${this._e(c.curve || '')} · ${this._e(this._phaseLabel(c))}${cable ? ' · ' + this._e(cable) : ''} · ${kva.toFixed(2)} kVA</span>
@@ -185,7 +187,7 @@ const SchMobile = {
 
   addWay() {
     const comp = this.comp(); if (!comp) return;
-    const w = DBSchedule.newWay(comp.props.circuits.length);
+    const w = DBSchedule.newWay(comp.props.circuits.length, DBSchedule._sectionOverrides(comp));
     comp.props.circuits.push(w);
     this._touch();
     this.render();
@@ -250,6 +252,7 @@ const SchMobile = {
         <div class="smb-result" id="smb-result"></div>
         <section><h4>Circuit</h4>
           <label class="smb-f"><span>Way no.</span><input type="text" data-k="way" value="${e(c.way)}"></label>
+          ${DBSections.has(comp) ? `<label class="smb-f"><span>Section</span><select data-k="section">${DBSections.list(comp).map(s => opt(s.id, DBSections.of(comp, c).id, s.name)).join('')}</select></label>` : ''}
           <label class="smb-f"><span>Description</span>
             <input type="text" data-k="description" list="smb-loads" value="${e(c.description || '')}"></label>
           <datalist id="smb-loads">${loads.map(t => `<option value="${e(t.label)}">`).join('')}</datalist>

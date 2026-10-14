@@ -489,6 +489,50 @@ def _resolve_supply_impedance(project, boards, req_default_ze):
 
 # ─── Main entry point ─────────────────────────────────────────────────────
 
+def _section_contexts(sections, circuits, v_ll, install):
+    """Per-section demand current (A) — what the section's feed cable carries."""
+    out = {}
+    for sec in sections:
+        out[sec.get("id")] = 0.0
+    if not sections:
+        return out
+    first = sections[0].get("id")
+    for way in circuits:
+        sid = way.get("section") if way.get("section") in out else first
+        # 1P ways load one phase; scale to the 3-phase line current they add to.
+        i = _way_current_a(way, v_ll)
+        three = way.get("poles") == "3P" or way.get("phase") == "RWB"
+        out[sid] = out.get(sid, 0.0) + (i if three else i / 3.0)
+    return out
+
+
+def _section_supply(sec, demand_a, z_supply, z_basis, vd_upstream_pct, v_ll):
+    """Supply impedance / upstream drop seen by one section's ways.
+
+    A section may declare its own source Zs (generator or UPS output at its
+    incomer) and a feed cable from the board incomer or source to the section.
+    The cable adds its line + protective-conductor loop to Zs and its own
+    volt drop at the section's demand current to the upstream drop.
+    """
+    z, basis, vd = z_supply, z_basis, vd_upstream_pct
+    name = sec.get("name") or "Section"
+    zs_decl = _num(sec.get("zs_ohm"))
+    if zs_decl > 0:
+        z, basis = complex(zs_decl, 0.0), f"{name}: declared source Zs"
+    mm2, m = _num(sec.get("feed_mm2")), _num(sec.get("feed_m"))
+    if mm2 > 0 and m > 0:
+        r_km = _r_hot_per_km(mm2, "Cu", "PVC") or 0.0
+        x_km = _x_per_km(mm2)
+        r, x = r_km * m / 1000.0, x_km * m / 1000.0
+        if z is not None:
+            z = z + complex(2 * r, 2 * x)         # line + PE of the feed cable
+            basis = f"{basis} + {mm2:g} mm² feed ({m:g} m)"
+        if v_ll > 0 and demand_a:
+            drop = math.sqrt(3) * demand_a * (r * 0.85 + x * 0.527) / v_ll * 100.0
+            vd = (vd or 0.0) + drop
+    return z, basis, vd
+
+
 def run_db_circuit_check(project, ambient_temp_c=None, install_method=None,
                          grouping=None, grouping_circuits=None,
                          vd_limit_lighting_pct=None, vd_limit_general_pct=None,
@@ -578,11 +622,21 @@ def run_db_circuit_check(project, ambient_temp_c=None, install_method=None,
         el_ratings = el_ratings if isinstance(el_ratings, dict) else {}
 
         counts = {"pass": 0, "warn": 0, "fail": 0, "info": 0}
+        sections = [x for x in (board.props.get("sections") or []) if isinstance(x, dict)]
+        sec_ctx = _section_contexts(sections, circuits, v_ll, install)
         for way in circuits:
+            z_w, basis_w, vd_up_w, sec_name = z_supply, z_basis, vd_upstream_pct, None
+            if sections:
+                sec = next((x for x in sections if x.get("id") == way.get("section")), sections[0])
+                sec_name = sec.get("name") or "Section"
+                z_w, basis_w, vd_up_w = _section_supply(sec, sec_ctx.get(sec.get("id")), z_supply,
+                                                        z_basis, vd_upstream_pct, v_ll)
             row = _check_way(way, board, board_name, v_ll, v_ph, install,
-                             z_supply, z_basis, vd_upstream_pct, lf_ok,
+                             z_w, basis_w, vd_up_w, lf_ok,
                              el_ratings, b_light, b_general, earthing)
             row["vd_origin"] = origin_name
+            if sec_name:
+                row["section"] = sec_name
             rows.append(row)
             counts[row["status"]] = counts.get(row["status"], 0) + 1
 

@@ -294,6 +294,8 @@ const DBSchedule = {
       el_ratings: comp.props.el_ratings || {},
       way_install: comp.props.way_install || null,
       ze_ohm: comp.props.ze_ohm ?? null,
+      sections: comp.props.sections || null,
+      segregation: comp.props.segregation || null,
     };
   },
 
@@ -621,6 +623,13 @@ const DBSchedule = {
     }, overrides || {});
   },
 
+  // Section + way number for a way added while the grid is on a section tab.
+  _sectionOverrides(comp) {
+    const sec = DBSections.target(comp);
+    if (!sec) return {};
+    return { section: sec.id, way: DBSections.nextWayNumber(comp, sec) };
+  },
+
   // ── Default load presets ────────────────────────────────────────────
   // Look up a preset from the DB_LOAD_TYPES library (constants.js).
   _loadType(key) {
@@ -665,7 +674,7 @@ const DBSchedule = {
     const circuits = comp.props.circuits;
     const n = Math.max(1, Math.round(repeat) || 1);
     for (let i = 0; i < n; i++) {
-      circuits.push(this._makeCircuit(t, count, circuits.length));
+      circuits.push(Object.assign(this._makeCircuit(t, count, circuits.length), this._sectionOverrides(comp)));
     }
     this.render();
     this._notifyEdited();
@@ -1114,6 +1123,15 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
     // Way numbers are how the schedule and plan devices are read back, so a
     // number already used by another way is refused (EE-7).
     if (k === 'way' && circuits.some(o => o !== c && String(o.way) === String(v).trim())) return 'duplicate';
+    if (k === 'section') {
+      c.section = v;
+      // Keep way numbers unique across the board: renumber into the new section.
+      if (circuits.some(o => o !== c && String(o.way) === String(c.way))) {
+        c.way = DBSections.nextWayNumber(comp, DBSections.get(comp, v));
+      }
+      this._sortByWay(comp);
+      return 'render';
+    }
     // Coerce by FIELD, not by input type: the cable/ECC cells are text
     // inputs but still hold numbers. A blank ECC means "Table 54.7 minimum",
     // so it stays null rather than collapsing to 0.
@@ -1231,10 +1249,17 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
     // data-label on each cell drives the stacked-card layout on phones (see
     // the #db-modal card rules in mobile.css) — on desktop the labels are
     // unused and the table renders normally.
-    const rows = circuits.map((c, i) => `
+    const hasSec = DBSections.has(comp);
+    const actSec = hasSec ? (DBSections._active[comp.id] || '') : '';
+    const secOpts = hasSec ? DBSections.list(comp) : [];
+    const secCell = (c) => hasSec
+      ? `<td data-label="Section" class="db-col-sec"><select data-k="section" style="border-left:3px solid ${DBSections.color(DBSections.of(comp, c))}">${secOpts.map(sc => `<option value="${escHtml(sc.id)}"${DBSections.of(comp, c) === sc ? ' selected' : ''}>${escHtml(sc.name)}</option>`).join('')}</select></td>`
+      : '';
+    const rows = circuits.map((c, i) => (actSec && DBSections.of(comp, c).id !== actSec) ? '' : `
       <tr data-idx="${i}" data-id="${escHtml(c.id)}"${this._selected.has(c.id) ? ' class="db-selected"' : ''}>
         <td data-label="Select" class="db-sel-cell"><input type="checkbox" class="db-row-sel" data-id="${escHtml(c.id)}"${this._selected.has(c.id) ? ' checked' : ''} title="Select for bulk edit — shift-click another row to select the range between them"></td>
         <td data-label="Way" class="db-col-way"><input type="text" data-k="way" value="${escHtml(c.way ?? String(i + 1))}" style="width:44px"></td>
+        ${secCell(c)}
         <td data-label="Description" class="db-col-desc"><input type="text" data-k="description" list="db-load-datalist" value="${escHtml(c.description || '')}" style="width:100%"></td>
         <td data-label="Breaker (A)" class="db-col-breaker"><input type="number" data-k="breaker_a" value="${escHtml(c.breaker_a ?? 20)}" min="1" step="1" style="width:68px"></td>
         <td data-label="Load (VA)" class="db-col-load"><input type="number" data-k="load_va" value="${escHtml(c.load_va ?? 0)}" min="0" step="50" style="width:88px"></td>
@@ -1311,12 +1336,14 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
     this.body.innerHTML = `
       <datalist id="db-load-datalist">${datalistOptions}</datalist>
       <datalist id="db-mm2-datalist">${mm2Options}</datalist>
+      <div id="db-sections-panel">${DBSections.panelHTML(comp)}</div>
+      ${DBSections.tabsHTML(comp)}
       <div class="db-phase-bars">${barsHtml}</div>
       <div id="db-bulk-bar"></div>
       <div class="library-table-wrap db-schedule-grid${foldCls}">
         <table class="library-table" style="width:100%;font-size:13px;">
           <thead><tr class="db-grp-row">
-            <th class="db-sel-cell"></th><th class="db-col-way"></th><th class="db-col-desc"></th>
+            <th class="db-sel-cell"></th><th class="db-col-way"></th>${hasSec ? '<th class="db-col-sec"></th>' : ''}<th class="db-col-desc"></th>
             <th class="db-col-breaker"></th><th class="db-col-load"></th>
             ${this._GROUPS.map(grpHead).join('')}
             <th class="db-fla-h db-grp-check">Check</th>
@@ -1324,7 +1351,7 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
             <th class="db-res-h" data-res="ecc"></th><th></th>
           </tr><tr>
             <th class="db-sel-cell"><input type="checkbox" id="db-select-all" title="Select / deselect all ways. Shift-click a row checkbox to select a range."></th>
-            <th class="db-col-way">Way</th><th class="db-col-desc">Description</th>
+            <th class="db-col-way">Way</th>${hasSec ? '<th class="db-col-sec">Section</th>' : ''}<th class="db-col-desc">Description</th>
             <th class="db-col-breaker">Breaker (A)</th><th class="db-col-load">Load (VA)</th>
             <th data-grp="dev">Poles</th><th data-grp="dev">Ph</th>
             <th data-grp="dev">Curve</th>
@@ -1385,6 +1412,10 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
       <div id="db-el-panel"></div>
       <div id="db-accessories-panel"></div>`;
 
+    DBSections.bind(this.body, comp, (rerender) => {
+      if (rerender) this.render();
+      this._notifyEdited();
+    });
     this._refreshElPanel(comp);
     this._refreshAccessories(comp);
     this._refreshBulkBar();
@@ -1493,7 +1524,7 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
       e.target.value = '';
     });
     this.body.querySelector('#db-add-row').addEventListener('click', () => {
-      circuits.push(this.newWay(circuits.length));
+      circuits.push(this.newWay(circuits.length, this._sectionOverrides(comp)));
       this.render();
       this._notifyEdited();
     });
@@ -1548,7 +1579,7 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
     // Excel-style grid (grid.js): selection, Enter/Tab/arrow navigation,
     // copy, fill-down, no number stepping. Column order is the VISUAL order of
     // the [data-k] cells, which NAV_COLS mirrors for pasted blocks.
-    const NAV_COLS = ['way', 'description', 'breaker_a', 'load_va', 'poles', 'phase',
+    const NAV_COLS = ['way', ...(DBSections.has(comp) ? ['section'] : []), 'description', 'breaker_a', 'load_va', 'poles', 'phase',
       'curve', 'el_group', 'leakage_ma', 'cable_mm2', 'ecc_mm2', 'cable_m',
       'demand_factor', 'power_factor', 'conduit_tag', 'conduit_type', 'conduit_size'];
     this._focusCell = (row, k) => {
@@ -1613,6 +1644,9 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
           else if (['R', 'W', 'B'].includes(p[0])) c.phase = p[0];
         } else if (key === 'curve') {
           if (['B', 'C', 'D'].includes(raw.toUpperCase())) c.curve = raw.toUpperCase();
+        } else if (key === 'section') {
+          const sc = DBSections.list(AppState.components.get(this.currentId)).find(x => x.name.toLowerCase() === raw.toLowerCase() || x.prefix.toLowerCase() === raw.toLowerCase());
+          if (sc) c.section = sc.id; else bad++;
         } else if (key === 'conduit_type') {
           const t = Conduit.parseType(raw);
           if (t || /^(-|—|none)$/i.test(raw)) { c.conduit_type = t; c.conduit_size = ''; } else bad++;
@@ -2074,7 +2108,7 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
   // harmlessly.
   XLSX_HEADERS: ['Way', 'Description', 'Breaker (A)', 'Load (VA)', 'Poles', 'Phase',
     'Curve', 'EL Group', 'Leak (mA)', 'Cable (mm2)', 'ECC (mm2)', 'Length (m)',
-    'Demand Factor', 'Power Factor', 'FLA (A)', 'Conduit Tag', 'Conduit Type', 'Conduit Size'],
+    'Demand Factor', 'Power Factor', 'FLA (A)', 'Conduit Tag', 'Conduit Type', 'Conduit Size', 'Section'],
 
   exportXlsx(comp) {
     if (typeof XLSX === 'undefined') return;
@@ -2087,11 +2121,12 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
       c.demand_factor ?? 1, c.power_factor ?? 0.9,
       Math.round(this._wayFlaA(c, vll) * 10) / 10,
       c.conduit_tag ?? '', (Conduit.type(c.conduit_type) || {}).label ?? '', c.conduit_size ?? '',
+      DBSections.has(comp) ? DBSections.of(comp, c).name : '',
     ]);
     const ws = XLSX.utils.aoa_to_sheet([this.XLSX_HEADERS, ...rows]);
     ws['!cols'] = [{ wch: 5 }, { wch: 28 }, { wch: 11 }, { wch: 10 }, { wch: 6 },
       { wch: 6 }, { wch: 6 }, { wch: 9 }, { wch: 10 }, { wch: 11 }, { wch: 10 },
-      { wch: 10 }, { wch: 13 }, { wch: 12 }, { wch: 9 }, { wch: 12 }, { wch: 13 }, { wch: 12 }];
+      { wch: 10 }, { wch: 13 }, { wch: 12 }, { wch: 9 }, { wch: 12 }, { wch: 13 }, { wch: 12 }, { wch: 14 }];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Circuit Schedule');
     const name = (comp.props.name || 'DB').replace(/[^\w-]+/g, '_');
@@ -2130,6 +2165,7 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
         load_va: col('load', 'va'), demand_factor: col('demand', 'df'),
         power_factor: col('power', 'pf'),
         conduit_tag: col('conduit tag'), conduit_type: col('conduit type'), conduit_size: col('conduit size'),
+        section: col('section'),
       };
       if (idx.load_va === -1 && idx.description === -1) {
         UI.toast('Could not recognise the columns — export a schedule first to get the expected template.', 'error');
@@ -2161,6 +2197,7 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
           conduit_tag: String(get('conduit_tag') || '').trim(),
           conduit_type: Conduit.parseType(get('conduit_type')),
           conduit_size: /^auto$/i.test(String(get('conduit_size'))) ? '' : String(get('conduit_size') || '').trim().replace(/x/i, '×'),
+          _sectionName: String(get('section') || '').trim(),
         });
       }
       if (circuits.length === 0) {
@@ -2182,6 +2219,15 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
       const byWay = new Map();
       for (const c of existing) byWay.set(String(c.way), c);
       const merged = [];
+      // A Section column maps by name; an unknown name adds that section.
+      for (const row of circuits) {
+        const nm = row._sectionName; delete row._sectionName;
+        if (!nm) continue;
+        let sec = DBSections.list(comp).find(x => x.name.toLowerCase() === nm.toLowerCase());
+        if (!sec) sec = DBSections.create(comp, /ups/i.test(nm) ? 'ups' : /ess|gen/i.test(nm) ? 'essential' : /norm|main/i.test(nm) ? 'normal' : 'other');
+        if (sec.name.toLowerCase() !== nm.toLowerCase()) sec.name = nm;
+        row.section = sec.id;
+      }
       for (const row of circuits) {
         const ex = byWay.get(String(row.way));
         if (ex && ex.type !== 'feeder_db') {
@@ -2191,6 +2237,7 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
           ex.ecc_mm2 = row.ecc_mm2; ex.cable_m = row.cable_m;
           ex.load_va = row.load_va; ex.demand_factor = row.demand_factor;
           ex.power_factor = row.power_factor;
+          if (row.section) ex.section = row.section;
           merged.push(ex);
           byWay.delete(String(row.way));
         } else {

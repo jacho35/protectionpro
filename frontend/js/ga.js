@@ -67,6 +67,10 @@ const GA_EXTRA_KINDS = [
   { key: 'custom',   label: 'Other device',       modules: 2, heat_w: 2 },
 ];
 
+// Internal separation between compartments (IEC 61439-2 forms): partition
+// thickness + terminal clearance each side, mm. Indicative.
+const GA_PARTITION_MM = { '1': 0, '2a': 20, '2b': 20, '3a': 40, '3b': 40, '4a': 60, '4b': 60 };
+
 const GA_KIND_FILL = {
   incomer: '#c0392b', mccb: '#8e44ad', mcb: '#2e75b6', rcbo: '#17a2b8', rcd: '#e08a00',
   acc: '#2e8b57', extra: '#7f8c8d', spare: 'none',
@@ -92,6 +96,8 @@ const GA = {
       order: Array.isArray(g.order) ? g.order.slice() : [],
       over: (g.over && typeof g.over === 'object') ? g.over : {},
       extras: Array.isArray(g.extras) ? g.extras : [],
+      section_layout: g.section_layout === 'stack' ? 'stack' : 'side',
+      section_dims: (g.section_dims && typeof g.section_dims === 'object') ? g.section_dims : {},
     };
   },
 
@@ -150,20 +156,37 @@ const GA = {
     const out = [];
     const ov = (key) => cfg.over[key] || {};
 
-    // Incomer: SLD device rating, else the user's number, else estimated from demand.
-    let incA = cfg.incomer_a, basis = 'entered';
-    if (incA == null) {
-      const inc = (typeof DBAccessories !== 'undefined') ? DBAccessories.incomer(comp) : { rating_a: null };
-      if (inc && inc.rating_a) { incA = Number(inc.rating_a); basis = 'SLD'; }
+    const sectioned = (typeof DBSections !== 'undefined') && DBSections.has(comp);
+    const secOf = (o) => sectioned ? (DBSections.of(comp, o) || {}).id : undefined;
+    const demandOf = (list) => list.reduce((n, c) => n + this._wayIb(c, vll), 0) * (Number(comp.props.board_diversity) || 1);
+
+    if (!sectioned) {
+      // Incomer: SLD device rating, else the user's number, else estimated from demand.
+      let incA = cfg.incomer_a, basis = 'entered';
+      if (incA == null) {
+        const inc = (typeof DBAccessories !== 'undefined') ? DBAccessories.incomer(comp) : { rating_a: null };
+        if (inc && inc.rating_a) { incA = Number(inc.rating_a); basis = 'SLD'; }
+      }
+      if (incA == null) {
+        incA = this._stdAmps(Math.max(40, demandOf(ways) * 1.25)); basis = 'estimated';
+      }
+      const incDev = incA > 63
+        ? Object.assign(this._breaker(incA, 3, 'mccb', incA * 0.7), { w: this._frame(incA).w * 1.33 })
+        : { form: 'din', kind: 'mcb', modules: 4, heat: this._mcbLoss(incA) * 3 * 0.5, poles: 4 };
+      out.push(Object.assign(incDev, { key: 'inc', label: 'Incomer', sub: `${incA} A 4P`, role: 'incomer', basis }));
+    } else {
+      // One incomer per section: its declared rating, else estimated from its own demand.
+      for (const sec of DBSections.list(comp)) {
+        const mine = ways.filter(c => secOf(c) === sec.id);
+        let incA = Number(sec.incomer_a) > 0 ? Number(sec.incomer_a) : null, basis = 'section';
+        if (incA == null) { incA = this._stdAmps(Math.max(40, demandOf(mine) * 1.25)); basis = 'estimated'; }
+        const poles = sec.incomer_poles === '3P' ? '3P' : '4P';
+        const incDev = incA > 63
+          ? Object.assign(this._breaker(incA, 3, 'mccb', incA * 0.7), { w: this._frame(incA).w * 1.33 })
+          : { form: 'din', kind: 'mcb', modules: poles === '3P' ? 3 : 4, heat: this._mcbLoss(incA) * 3 * 0.5, poles: poles === '3P' ? 3 : 4 };
+        out.push(Object.assign(incDev, { key: 'inc:' + sec.id, label: 'Incomer', sub: `${incA} A ${poles}`, role: 'incomer', basis, sec: sec.id }));
+      }
     }
-    if (incA == null) {
-      const demand = ways.reduce((n, c) => n + this._wayIb(c, vll), 0) * (Number(comp.props.board_diversity) || 1);
-      incA = this._stdAmps(Math.max(40, demand * 1.25)); basis = 'estimated';
-    }
-    const incDev = incA > 63
-      ? Object.assign(this._breaker(incA, 3, 'mccb', incA * 0.7), { w: this._frame(incA).w * 1.33 })
-      : { form: 'din', kind: 'mcb', modules: 4, heat: this._mcbLoss(incA) * 3 * 0.5, poles: 4 };
-    out.push(Object.assign(incDev, { key: 'inc', label: 'Incomer', sub: `${incA} A 4P`, role: 'incomer', basis }));
 
     // Board accessories (SPDs, indicators, metering, utilities)
     if (typeof DBAccessories !== 'undefined') {
@@ -174,29 +197,30 @@ const GA = {
         else if (a.kind === 'spd') { mods = 4; heat = 0; }
         else if (a.kind === 'metering') { mods = 6; heat = 2; }
         out.push({ key: 'acc:' + a.id, form: 'din', kind: 'acc', modules: mods, heat,
-          label: (kind && kind.label) || a.label || a.kind, sub: '', role: 'accessory' });
+          label: (kind && kind.label) || a.label || a.kind, sub: '', role: 'accessory', sec: secOf(a) });
       }
     }
 
     // Earth-leakage groups → one shared RCD each, ahead of its first way
+    const gk = (c) => String(c.el_group || '').trim() + (sectioned ? '|' + secOf(c) : '');
     const groups = new Map();
     for (const c of ways) {
       const g = String(c.el_group || '').trim();
-      if (g && !groups.has(g)) groups.set(g, []);
-      if (g) groups.get(g).push(c);
+      if (g && !groups.has(gk(c))) groups.set(gk(c), []);
+      if (g) groups.get(gk(c)).push(c);
     }
     const seen = new Set();
     for (const c of ways) {
       const g = String(c.el_group || '').trim();
-      if (g && !seen.has(g)) {
-        seen.add(g);
-        const members = groups.get(g);
+      if (g && !seen.has(gk(c))) {
+        seen.add(gk(c));
+        const members = groups.get(gk(c));
         const three = members.some(m => m.poles === '3P' || m.phase === 'RWB');
         const rated = Math.max(40, ...members.map(m => Number(m.breaker_a) || 0));
         const rating = this._stdAmps(Math.min(100, rated));
-        out.push({ key: 'rcd:' + g, form: 'din', kind: 'rcd', modules: three ? 4 : 2,
+        out.push({ key: 'rcd:' + g + (sectioned ? ':' + secOf(c) : ''), form: 'din', kind: 'rcd', modules: three ? 4 : 2,
           heat: three ? 4 : 2, label: 'RCD ' + g,
-          sub: `${rating} A ${(comp.props.el_ratings && comp.props.el_ratings[g]) || 30} mA`, role: 'rcd' });
+          sub: `${rating} A ${(comp.props.el_ratings && comp.props.el_ratings[g]) || 30} mA`, role: 'rcd', sec: secOf(c) });
       }
       const key = 'way:' + (c.id || c.way);
       const a = Number(c.breaker_a) || 0;
@@ -204,7 +228,7 @@ const GA = {
       const dev = this._breaker(a, is3 ? 3 : 1, ov(key).kind, this._wayIb(c, vll));
       out.push(Object.assign(dev, {
         key, label: String(c.way), sub: `${a} A ${c.curve || ''}${is3 ? ' 3P' : ''}`.trim(),
-        title: `Way ${c.way}: ${c.description || ''}`, role: 'way', way: c,
+        title: `Way ${c.way}: ${c.description || ''}`, role: 'way', way: c, sec: secOf(c),
       }));
     }
 
@@ -212,7 +236,7 @@ const GA = {
       const kd = GA_EXTRA_KINDS.find(k => k.key === x.kind) || GA_EXTRA_KINDS[GA_EXTRA_KINDS.length - 1];
       out.push({ key: 'x:' + x.id, form: 'din', kind: x.kind === 'spare' ? 'spare' : 'extra',
         modules: Math.max(1, Math.round(Number(x.modules) || kd.modules)),
-        heat: Number(x.heat_w) || 0, label: x.label || kd.label, sub: '', role: 'extra', extra: x });
+        heat: Number(x.heat_w) || 0, label: x.label || kd.label, sub: '', role: 'extra', extra: x, sec: secOf(x) });
     }
 
     for (const it of out) it.rowbreak = !!ov(it.key).rowbreak;
@@ -297,6 +321,7 @@ const GA = {
   layout(comp) {
     const cfg = this.cfg(comp);
     const items = this.items(comp);
+    if (typeof DBSections !== 'undefined' && DBSections.has(comp)) return this._layoutSections(comp, cfg, items);
     const heat = items.reduce((n, i) => n + (i.heat || 0), 0) * 1.1;   // +10 % busbars / wiring
     const sorted = GA_ENCLOSURES.slice().sort((a, b) => a.w * a.h * a.d - b.w * b.h * b.d);
     const pool = sorted.filter(e => cfg.mounting === 'any' || e.type === cfg.mounting);
@@ -339,38 +364,157 @@ const GA = {
       totalModules: total, warnings };
   },
 
+  // ── Sectioned boards: one compartment per section ──────────────────
+  // Compartments sit side by side (full height, widths fitted to their
+  // devices) or stacked (full width, heights fitted), separated by a partition
+  // whose thickness follows the form of separation. A manual width/height per
+  // section (ga.section_dims) overrides the fitted size.
+  _layoutSections(comp, cfg, items) {
+    const secs = DBSections.list(comp);
+    const side = cfg.section_layout !== 'stack';
+    const form = comp.props.segregation || '2b';
+    const part = GA_PARTITION_MM[form] != null ? GA_PARTITION_MM[form] : 20;
+    const heat = items.reduce((n, i) => n + (i.heat || 0), 0) * 1.1;
+    const by = new Map(secs.map(sec => [sec.id, items.filter(i => i.sec === sec.id)]));
+    const step = 50;
+
+    const fit = (enc) => {
+      const comps = [];
+      let ok = true;
+      for (const sec of secs) {
+        const its = by.get(sec.id) || [];
+        const man = Number((cfg.section_dims[sec.id] || {})[side ? 'w' : 'h']) || 0;
+        const lim = side ? enc.w : enc.h;
+        let size = man || 0, res = null;
+        if (!size) {
+          for (let v = 200; v <= lim; v += step) {
+            const r = this.pack(its, side ? { w: v, h: enc.h } : { w: enc.w, h: v }, cfg.spare_pct);
+            if (r.fits) { size = v; res = r; break; }
+          }
+        }
+        if (!size) { size = lim; ok = false; }
+        comps.push({ sec, items: its, size, res, manual: !!man });
+      }
+      const used = comps.reduce((n, c) => n + c.size, 0) + part * (comps.length - 1);
+      const lim = side ? enc.w : enc.h;
+      if (used > lim) ok = false;
+      const extra = Math.max(0, lim - used) / comps.length;
+      let pos = 0;
+      for (const c of comps) {
+        c.size = Math.round(c.size + extra);
+        c.x = side ? pos : 0; c.y = side ? 0 : pos;
+        c.w = side ? c.size : enc.w; c.h = side ? enc.h : c.size;
+        c.res = this.pack(c.items, { w: c.w, h: c.h }, cfg.spare_pct);
+        if (!c.res.fits) ok = false;
+        c.heat = c.items.reduce((n, i) => n + (i.heat || 0), 0) * 1.1;
+        pos += c.size + part;
+      }
+      return { ok, comps, used };
+    };
+
+    const sorted = GA_ENCLOSURES.slice().sort((a, b) => a.w * a.h * a.d - b.w * b.h * b.d);
+    const pool = sorted.filter(e => cfg.mounting === 'any' || e.type === cfg.mounting);
+    let enc = null, r = null, auto = false, note = null;
+    if (cfg.enclosure === 'custom') {
+      enc = { key: 'custom', label: `${cfg.custom.w} × ${cfg.custom.h} × ${cfg.custom.d} custom`,
+        w: +cfg.custom.w || 600, h: +cfg.custom.h || 800, d: +cfg.custom.d || 250, type: (+cfg.custom.h || 0) >= 1400 ? 'floor' : 'wall' };
+    } else if (cfg.enclosure !== 'auto') {
+      enc = GA_ENCLOSURES.find(e => e.key === cfg.enclosure) || null;
+    }
+    if (!enc) {
+      auto = true;
+      for (const e of pool) {
+        const t = fit(e);
+        if (t.ok && heat <= this._capacity(e, cfg.delta_t)) { enc = e; r = t; break; }
+      }
+      if (!enc) {
+        for (const e of pool) {
+          const t = fit(e);
+          if (t.ok) { enc = e; r = t; note = 'No listed enclosure also clears the heat limit — ventilate/cool it or split the board.'; break; }
+        }
+      }
+      if (!enc) {
+        enc = pool[pool.length - 1] || sorted[sorted.length - 1];
+        r = fit(enc);
+        note = 'Larger than the biggest listed enclosure — use a custom size or separate enclosures per section.';
+      }
+    }
+    if (!r) r = fit(enc);
+
+    const cap = this._capacity(enc, cfg.delta_t);
+    const warnings = [];
+    if (note) warnings.push(note);
+    for (const c of r.comps) {
+      for (const w of c.res.warnings) warnings.push(`${c.sec.name}: ${w}`);
+      if (!c.res.fits && !c.res.warnings.length) warnings.push(`${c.sec.name}: does not fit its compartment (${c.w} × ${c.h} mm).`);
+    }
+    if (r.used > (side ? enc.w : enc.h)) warnings.push(`Compartments need ${r.used} mm ${side ? 'width' : 'height'} incl. partitions; the enclosure has ${side ? enc.w : enc.h} mm.`);
+    if (heat > cap) warnings.push(`Heat ${heat.toFixed(0)} W exceeds the ${cap.toFixed(0)} W the enclosure sheds at a ${cfg.delta_t} K rise.`);
+    const totalMods = r.comps.reduce((n, c) => n + c.res.perRow * c.res.rowsAvail, 0);
+    const usedMods = r.comps.reduce((n, c) => n + c.res.usedModules, 0);
+    const first = r.comps[0].res;
+    return { comp, cfg, items, enc, auto, comps: r.comps, part, form, side, heat, capacity: cap,
+      placed: [], perRow: first.perRow, rowsAvail: first.rowsAvail,
+      rowsNeeded: Math.max(...r.comps.map(c => c.res.rowsNeeded)), colW: 0,
+      usedModules: usedMods, spareModules: r.comps.reduce((n, c) => n + c.res.spareModules, 0),
+      fits: r.ok, utilisation: totalMods ? Math.min(100, usedMods / totalMods * 100) : 0,
+      totalModules: totalMods, warnings };
+  },
+
   // ── Drawing primitives (one list feeds SVG, PDF and DXF) ───────────
   shapes(L) {
     const s = [];
     const { enc } = L;
     s.push({ t: 'rect', x: 0, y: 0, w: enc.w, h: enc.h, layer: 'ENCLOSURE' });
-    s.push({ t: 'rect', x: 12, y: 12, w: enc.w - 24, h: enc.h - 24, layer: 'ENCLOSURE', thin: true });
-    // DIN rails
-    for (let r = 0; r < L.rowsAvail; r++) {
+    if (!L.comps) {
+      this._boxShapes(s, { w: enc.w, h: enc.h }, L, 0, 0, true);
+      return s;
+    }
+    // Partitions first, then each compartment's own rails, bars and devices.
+    L.comps.forEach((c, i) => {
+      if (i && L.part > 0) {
+        const px = L.side ? c.x - L.part : 0, py = L.side ? 0 : c.y - L.part;
+        s.push({ t: 'rect', x: px, y: py, w: L.side ? L.part : enc.w, h: L.side ? enc.h : L.part, layer: 'PARTITION', kind: 'part',
+          title: `Partition — form ${L.form}` });
+      }
+    });
+    for (const c of L.comps) {
+      const col = DBSections.color(c.sec);
+      s.push({ t: 'rect', x: c.x + 4, y: c.y + 4, w: c.w - 8, h: c.h - 8, layer: 'COMPARTMENT', thin: true, color: col,
+        title: `${c.sec.name} — ${c.w} × ${c.h} mm` });
+      s.push({ t: 'text', x: c.x + 10, y: c.y + 14, s: `${c.sec.name.toUpperCase()}  ${c.w} × ${c.h}`, size: 9, layer: 'TEXT', color: col, bold: true });
+      this._boxShapes(s, { w: c.w, h: c.h }, c.res, c.x, c.y, false, c.sec);
+    }
+    return s;
+  },
+
+  // Rails, N/PE bars and devices of one box (the whole enclosure, or a compartment).
+  _boxShapes(s, box, res, ox, oy, inset, sec) {
+    if (inset) s.push({ t: 'rect', x: 12, y: 12, w: box.w - 24, h: box.h - 24, layer: 'ENCLOSURE', thin: true });
+    for (let r = 0; r < res.rowsAvail; r++) {
       const y = GA_TOP_MM + r * GA_ROW_PITCH + GA_ROW_PITCH / 2 - 10;
-      s.push({ t: 'rect', x: GA_SIDE_MM + L.colW, y: y - 17.5, w: L.perRow * GA_MODULE_MM, h: 35, layer: 'RAIL', thin: true });
+      s.push({ t: 'rect', x: ox + GA_SIDE_MM + res.colW, y: oy + y - 17.5, w: res.perRow * GA_MODULE_MM, h: 35, layer: 'RAIL', thin: true });
     }
-    // N + PE bars
-    const barY = enc.h - GA_BOTTOM_MM + 28;
+    const barY = box.h - GA_BOTTOM_MM + 28;
     for (const [i, n] of ['N', 'PE'].entries()) {
-      s.push({ t: 'rect', x: GA_SIDE_MM, y: barY + i * 30, w: enc.w - 2 * GA_SIDE_MM, h: 14, layer: 'BARS', kind: 'bar' });
-      s.push({ t: 'text', x: GA_SIDE_MM + 4, y: barY + i * 30 + 10.5, s: n + ' bar', size: 8, layer: 'TEXT' });
+      s.push({ t: 'rect', x: ox + GA_SIDE_MM, y: oy + barY + i * 30, w: box.w - 2 * GA_SIDE_MM, h: 14, layer: 'BARS', kind: 'bar' });
+      s.push({ t: 'text', x: ox + GA_SIDE_MM + 4, y: oy + barY + i * 30 + 10.5, s: n + ' bar' + (sec ? ' · ' + sec.name : ''), size: 8, layer: 'TEXT' });
     }
-    for (const p of L.placed) {
+    for (const p of res.placed) {
       const it = p.item;
       const kind = it.role === 'incomer' ? 'incomer' : it.kind;
-      s.push({ t: 'rect', x: p.x, y: p.y, w: p.w, h: p.h, layer: 'DEVICES', kind, dash: kind === 'spare', title: it.title || `${it.label} ${it.sub || ''}`.trim() });
+      const x = ox + p.x, y = oy + p.y;
+      s.push({ t: 'rect', x, y, w: p.w, h: p.h, layer: 'DEVICES', kind, dash: kind === 'spare', title: it.title || `${it.label} ${it.sub || ''}`.trim() });
       if (kind === 'spare') continue;
       const narrow = p.w < 30;
       if (it.role === 'way' || it.role === 'incomer') {
-        s.push({ t: 'text', x: p.x + p.w / 2, y: p.y + 14, s: String(it.role === 'incomer' ? 'INC' : it.label), size: narrow ? 6 : 8, anchor: 'middle', layer: 'TEXT', light: true });
-        s.push({ t: 'text', x: p.x + p.w / 2, y: p.y + p.h - 8, s: String(it.sub || '').split(' ')[0] + (it.sub ? 'A' : ''), size: narrow ? 5.5 : 7, anchor: 'middle', layer: 'TEXT', light: true });
+        s.push({ t: 'text', x: x + p.w / 2, y: y + 14, s: String(it.role === 'incomer' ? 'INC' : it.label), size: narrow ? 6 : 8, anchor: 'middle', layer: 'TEXT', light: true });
+        s.push({ t: 'text', x: x + p.w / 2, y: y + p.h - 8, s: String(it.sub || '').split(' ')[0] + (it.sub ? 'A' : ''), size: narrow ? 5.5 : 7, anchor: 'middle', layer: 'TEXT', light: true });
       } else {
         const lab = narrow ? String(it.label).slice(0, 4) : String(it.label).slice(0, Math.floor(p.w / 5.5));
-        s.push({ t: 'text', x: p.x + p.w / 2, y: p.y + p.h / 2, s: lab, size: 6.5, anchor: 'middle', layer: 'TEXT', light: true });
+        s.push({ t: 'text', x: x + p.w / 2, y: y + p.h / 2, s: lab, size: 6.5, anchor: 'middle', layer: 'TEXT', light: true });
       }
     }
-    return s;
   },
 
   // ── SVG ───────────────────────────────────────────────────────────
@@ -381,14 +525,14 @@ const GA = {
     const W = enc.w + M * 2, H = enc.h + M * 2;
     const bodies = this.shapes(L).map(sh => {
       if (sh.t === 'rect') {
-        const fill = sh.layer === 'ENCLOSURE' ? 'none' : sh.kind === 'bar' ? '#b8b8b8' : sh.layer === 'RAIL' ? '#d6d6d6' : (GA_KIND_FILL[sh.kind] || '#999');
-        const stroke = sh.layer === 'ENCLOSURE' ? '#222' : '#333';
+        const fill = sh.layer === 'ENCLOSURE' || sh.layer === 'COMPARTMENT' ? 'none' : sh.kind === 'part' ? '#8a8a8a' : sh.kind === 'bar' ? '#b8b8b8' : sh.layer === 'RAIL' ? '#d6d6d6' : (GA_KIND_FILL[sh.kind] || '#999');
+        const stroke = sh.color || (sh.layer === 'ENCLOSURE' ? '#222' : '#333');
         return `<rect x="${sh.x + M}" y="${sh.y + M}" width="${sh.w}" height="${sh.h}" fill="${fill}"
           stroke="${stroke}" stroke-width="${sh.thin ? 1 : 2}"${sh.dash ? ' stroke-dasharray="6 4" fill-opacity="0"' : ''}
           ${sh.title ? `><title>${this._esc(sh.title)}</title></rect>` : '/>'}`;
       }
       return `<text x="${sh.x + M}" y="${sh.y + M}" font-size="${sh.size}" font-family="Arial,sans-serif"
-        text-anchor="${sh.anchor || 'start'}" dominant-baseline="middle" fill="${sh.light ? '#fff' : '#222'}">${this._esc(sh.s)}</text>`;
+        text-anchor="${sh.anchor || 'start'}" dominant-baseline="middle"${sh.bold ? ' font-weight="700"' : ''} fill="${sh.color || (sh.light ? '#fff' : '#222')}">${this._esc(sh.s)}</text>`;
     }).join('');
     const dim = (x1, y1, x2, y2, label, rot) => `<g stroke="#555" stroke-width="1" fill="#222" font-size="16" font-family="Arial,sans-serif">
       <line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}"/>
@@ -467,6 +611,7 @@ const GA = {
 
   _sideHTML(L) {
     const cfg = L.cfg, e = this._esc;
+    const comp0 = (LL) => LL.comp;
     const encOpts = [`<option value="auto"${cfg.enclosure === 'auto' ? ' selected' : ''}>Auto — smallest that fits</option>`]
       .concat(GA_ENCLOSURES.map(x => `<option value="${x.key}"${cfg.enclosure === x.key ? ' selected' : ''}>${e(x.label)}</option>`))
       .concat([`<option value="custom"${cfg.enclosure === 'custom' ? ' selected' : ''}>Custom size…</option>`]).join('');
@@ -482,7 +627,7 @@ const GA = {
       const del = it.role === 'extra' ? `<button class="btn-small" data-ga-del="${e(it.extra.id)}" title="Remove">×</button>` : '';
       return `<tr><td>${i ? `<button class="btn-small" data-ga-move="${e(it.key)}:-1" title="Move earlier">↑</button>` : ''}
         <button class="btn-small" data-ga-move="${e(it.key)}:1" title="Move later">↓</button></td>
-        <td title="${e(it.title || '')}">${e(it.role === 'way' ? 'Way ' + it.label : it.label)}<br><span class="ga-sub">${e(it.sub || '')}</span></td>
+        <td title="${e(it.title || '')}">${e(it.role === 'way' ? 'Way ' + it.label : it.label)}<br><span class="ga-sub">${e(it.sub || '')}${it.sec && L.comps ? ' · ' + e((DBSections.get(L.comp, it.sec) || {}).name || '') : ''}</span></td>
         <td>${size}</td><td>${kindSel}</td>
         <td><input type="checkbox" data-ga-break="${e(it.key)}"${it.rowbreak ? ' checked' : ''} title="Start a new rail row here"${it.form === 'frame' ? ' disabled' : ''}></td>
         <td>${del}</td></tr>`;
@@ -492,12 +637,13 @@ const GA = {
       <div class="ga-summary st-${status}">
         <div class="ga-big">${L.enc.w} × ${L.enc.h} × ${L.enc.d} mm</div>
         <div>${e(L.enc.type === 'floor' ? 'Floor-standing' : 'Wall-mounted')}${L.auto ? ' · auto-selected' : ''}</div>
-        <div>${L.rowsNeeded} of ${L.rowsAvail} rail rows · ${L.perRow} modules/row</div>
+        ${L.comps ? '' : `<div>${L.rowsNeeded} of ${L.rowsAvail} rail rows · ${L.perRow} modules/row</div>`}
         <div>Space used ${L.utilisation.toFixed(0)} % · ${L.spareModules} spare modules (${cfg.spare_pct} %)</div>
         <div class="ga-heat"><span style="width:${heatPct}%"></span></div>
         <div>Heat ${L.heat.toFixed(0)} W of ${L.capacity.toFixed(0)} W (${cfg.delta_t} K rise)</div>
         ${L.warnings.map(w => `<div class="ga-warn">⚠ ${e(w)}</div>`).join('')}
       </div>
+      ${L.comps ? this._sectionsSideHTML(L) : ''}
       <h4>Enclosure</h4>
       <label>Mounting <select data-ga-set="mounting">
         ${[['any', 'Any'], ['wall', 'Wall-mounted'], ['floor', 'Floor-standing']].map(([v, l]) => `<option value="${v}"${cfg.mounting === v ? ' selected' : ''}>${l}</option>`).join('')}</select></label>
@@ -506,12 +652,34 @@ const GA = {
         ${num('custom.w', cfg.custom.w, 100, 50)} ${num('custom.h', cfg.custom.h, 100, 50)} ${num('custom.d', cfg.custom.d, 50, 10)}</label>` : ''}
       <label title="Free modules left for future ways">Spare % ${num('spare_pct', cfg.spare_pct, 0, 5, 56)}</label>
       <label title="Allowed temperature rise inside the enclosure">Rise K ${num('delta_t', cfg.delta_t, 5, 5, 56)}</label>
-      <label title="Blank = rating of the incoming device on the SLD (else estimated from demand)">Incomer A ${num('incomer_a', cfg.incomer_a, 0, 10, 72)}</label>
+      ${L.comps ? '' : `<label title="Blank = rating of the incoming device on the SLD (else estimated from demand)">Incomer A ${num('incomer_a', cfg.incomer_a, 0, 10, 72)}</label>`}
       <h4>Devices</h4>
       <table class="ga-items"><tbody>${rows}</tbody></table>
       <div class="ga-add"><select id="ga-add-kind">${GA_EXTRA_KINDS.map(k => `<option value="${k.key}">${e(k.label)}</option>`).join('')}</select>
+        ${(typeof DBSections !== 'undefined' && DBSections.has(comp0(L))) ? `<select id="ga-add-sec" title="Compartment">${DBSections.list(comp0(L)).map(sc => `<option value="${e(sc.id)}">${e(sc.name)}</option>`).join('')}</select>` : ''}
         <button class="btn-small" data-ga="add">Add item</button></div>
       <p class="ga-note">Generic sizes (17.5 mm DIN pole, typical MCCB frames and enclosures) with an indicative heat check — confirm against the manufacturer's catalogue before ordering.</p>`;
+  },
+
+  // Compartment controls: arrangement, partition and per-section size.
+  _sectionsSideHTML(L) {
+    const e = this._esc, cfg = L.cfg;
+    const dim = L.side ? 'w' : 'h';
+    const rows = L.comps.map(c => {
+      const m = (cfg.section_dims[c.sec.id] || {})[dim];
+      return `<tr style="--dbs-c:${DBSections.color(c.sec)}">
+        <td><span class="dbs-dot"></span>${e(c.sec.name)}</td>
+        <td>${c.w} × ${c.h}</td>
+        <td><input type="number" data-ga-dim="${e(c.sec.id)}" value="${m ? e(m) : ''}" placeholder="auto" min="100" step="50" style="width:62px" title="Fix this compartment's ${L.side ? 'width' : 'height'} (mm); blank = fitted to its devices"></td>
+        <td class="ga-sub">${c.res.usedModules} mod · ${c.heat.toFixed(0)} W${c.res.fits ? '' : ' ⚠'}</td></tr>`;
+    }).join('');
+    return `
+      <h4>Compartments</h4>
+      <label>Arrangement <select data-ga-set="section_layout">
+        <option value="side"${L.side ? ' selected' : ''}>Side by side</option>
+        <option value="stack"${L.side ? '' : ' selected'}>Stacked</option></select></label>
+      <div class="ga-sub">Form ${e(L.form)} separation · ${L.part} mm partitions (set on the schedule's Sections panel)</div>
+      <table class="ga-items"><thead><tr><th>Section</th><th>mm</th><th>${L.side ? 'Width' : 'Height'}</th><th>Load</th></tr></thead><tbody>${rows}</tbody></table>`;
   },
 
   // ── Events ────────────────────────────────────────────────────────
@@ -548,6 +716,8 @@ const GA = {
       const kd = GA_EXTRA_KINDS.find(k => k.key === kind);
       const cfg = this.cfg(comp);
       const x = { id: 'x' + Date.now().toString(36) + Math.random().toString(36).slice(2, 4), kind, label: kd.label, modules: kd.modules, heat_w: kd.heat_w };
+      const sel = document.getElementById('ga-add-sec');
+      if (sel && sel.value) x.section = sel.value;
       this._write(comp, { extras: cfg.extras.concat([x]) });
       this.render();
     }
@@ -566,6 +736,12 @@ const GA = {
       const over = JSON.parse(JSON.stringify(cfg.over));
       over[t.dataset.gaBreak] = Object.assign(over[t.dataset.gaBreak] || {}, { rowbreak: t.checked || undefined });
       this._write(comp, { over });
+    } else if (t.dataset.gaDim !== undefined) {
+      const dims = JSON.parse(JSON.stringify(cfg.section_dims));
+      const key = cfg.section_layout === 'stack' ? 'h' : 'w';
+      const v = Number(t.value);
+      dims[t.dataset.gaDim] = Object.assign(dims[t.dataset.gaDim] || {}, { [key]: v > 0 ? v : undefined });
+      this._write(comp, { section_dims: dims });
     } else if (t.dataset.gaSet) {
       const k = t.dataset.gaSet;
       if (k.startsWith('custom.')) {
@@ -643,13 +819,14 @@ const GA = {
     for (const sh of this.shapes(L)) {
       if (sh.t === 'rect') {
         doc.setLineWidth(sh.thin ? 0.15 : 0.3);
+        if (sh.color) { const c = rgb(sh.color); doc.setDrawColor(c[0], c[1], c[2]); } else doc.setDrawColor(0, 0, 0);
         const fill = sh.layer === 'DEVICES' && GA_KIND_FILL[sh.kind] && GA_KIND_FILL[sh.kind] !== 'none' ? GA_KIND_FILL[sh.kind]
-          : sh.kind === 'bar' ? '#b8b8b8' : null;
+          : sh.kind === 'bar' ? '#b8b8b8' : sh.kind === 'part' ? '#8a8a8a' : null;
         if (fill) { doc.setFillColor(...rgb(fill)); doc.rect(ox + sh.x * sc, oy + sh.y * sc, sh.w * sc, sh.h * sc, 'FD'); }
         else doc.rect(ox + sh.x * sc, oy + sh.y * sc, sh.w * sc, sh.h * sc);
       } else {
         doc.setFontSize(Math.max(3.5, sh.size * sc * 2.4));
-        doc.setTextColor(...(sh.light ? [255, 255, 255] : [30, 30, 30]));
+        doc.setTextColor(...(sh.color ? rgb(sh.color) : sh.light ? [255, 255, 255] : [30, 30, 30]));
         doc.text(String(sh.s), ox + sh.x * sc, oy + sh.y * sc, { align: sh.anchor === 'middle' ? 'center' : 'left', baseline: 'middle' });
       }
     }
@@ -661,8 +838,16 @@ const GA = {
     doc.setFontSize(10); doc.text('Parts list', lx, m + 8);
     doc.setFontSize(7);
     let y = m + 14;
+    let lastSec = null;
     for (const it of L.items) {
       if (y > ph - m - tb - 6) break;
+      if (L.comps && it.sec !== lastSec) {
+        lastSec = it.sec;
+        doc.setFontSize(7.5); doc.setFont(undefined, 'bold');
+        doc.text(((DBSections.get(comp, it.sec) || {}).name || 'Section').toUpperCase(), lx, y);
+        doc.setFont(undefined, 'normal'); doc.setFontSize(7);
+        y += 4.6;
+      }
       const sz = it.form === 'frame' ? `${Math.round(it.w)}x${Math.round(it.h)}` : `${it.modules}M`;
       doc.text(`${it.role === 'way' ? 'Way ' : ''}${it.label}  ${it.sub || ''}`.slice(0, 44), lx, y);
       doc.text(sz, lx + listW - 2, y, { align: 'right' });
@@ -673,6 +858,7 @@ const GA = {
     doc.setFontSize(8);
     doc.text(`Project: ${AppState.projectName || 'Untitled'}`, m + 4, tbY + 15);
     doc.text(`Enclosure: ${L.enc.w} x ${L.enc.h} x ${L.enc.d} mm (${L.enc.type === 'floor' ? 'floor' : 'wall'})`, m + 100, tbY + 8);
+    if (L.comps) doc.text(`Compartments: ${L.comps.map(c => `${c.sec.name} ${c.w}x${c.h}`).join(' | ')} · form ${L.form}`, m + 100, tbY + 20);
     doc.text(`Rows ${L.rowsNeeded}/${L.rowsAvail} · space ${L.utilisation.toFixed(0)} % · heat ${L.heat.toFixed(0)}/${L.capacity.toFixed(0)} W`, m + 100, tbY + 15);
     doc.text(`Date: ${new Date().toISOString().slice(0, 10)}`, pw - m - 70, tbY + 8);
     doc.text('Distribution board general arrangement (indicative sizes)', pw - m - 70, tbY + 15);

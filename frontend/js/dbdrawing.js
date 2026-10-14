@@ -35,6 +35,8 @@ const DBDrawing = {
   DROP_W: 118,         // way column pitch
   DROP_X0: 62,
   TABLE_HDR: 74,       // extra left margin for the row headings in table mode
+  STRIP_H: 24,         // section title strip
+  BAND_GAP: 20,        // between section compartments
   ACC_W: 88,           // accessory column pitch (narrower than a way)
   PROT_DY: 28,         // busbar → an accessory's protective device
   TBL_ROW: 14,         // info-table row pitch         // first drop, measured from the left pad
@@ -202,7 +204,9 @@ const DBDrawing = {
     if (D.accessories) {
       for (const acc of DBAccessories.list(comp)) {
         if (acc.tap === 'supply') continue;          // drawn on the incomer riser
-        items.push(this._accItem(acc, comp));
+        const ai = this._accItem(acc, comp);
+        ai.sec = (DBSections.of(comp, acc) || {}).id;
+        items.push(ai);
       }
     }
 
@@ -210,7 +214,7 @@ const DBDrawing = {
       const v = verdicts[c.id] || null;
       const lines = [];
       const dev = `${Number(c.breaker_a) || 0} A${c.curve ? ' ' + c.curve : ''}${c.poles && c.poles !== '1P' ? ' ' + c.poles : ''}`;
-      lines.push({ text: `W${c.way ?? ''} · ${dev}`, bold: true });
+      lines.push({ text: `${/^\d/.test(String(c.way ?? '')) ? 'W' : ''}${c.way ?? ''} · ${dev}`, bold: true });
       lines.push({ text: this._trunc(c.description || '—', 22) });
       const spare = !(Number(c.load_va) > 0) && !(Number(c.cable_m) > 0);
       if (spare) lines[1] = { text: 'Spare', dim: true };
@@ -232,7 +236,7 @@ const DBDrawing = {
         ...warns].join('\n');
 
       items.push({
-        kind: 'way', w: this.DROP_W, glyph: 'mcb', phase: (c.poles === '3P' || c.phase === 'RWB') ? 'RWB' : (c.phase || 'R'),
+        kind: 'way', w: this.DROP_W, glyph: 'mcb', sec: (DBSections.of(comp, c) || {}).id, phase: (c.poles === '3P' || c.phase === 'RWB') ? 'RWB' : (c.phase || 'R'),
         poles: c.poles || '1P', spare, wayDesc: c.description || '',
         cells: {
           way: String(c.way ?? ''), device: dev, desc: this._trunc(c.description || (spare ? 'Spare' : '—'), 19),
@@ -318,43 +322,86 @@ const DBDrawing = {
   _layout(comp, D) {
     this._dropX0 = this.DROP_X0 + (D.table ? this.TABLE_HDR : 0);
     const items = this._items(comp, D);
-    const supply = D.accessories
+    const allSupply = D.accessories
       ? DBAccessories.list(comp).filter(a => a.tap === 'supply')
       : [];
-    const inc = DBAccessories.incomer(comp);
+    const boardInc = DBAccessories.incomer(comp);
+    const sectioned = DBSections.has(comp);
 
-    const rows = [];
-    for (let i = 0; i < items.length; i += this.WAYS_PER_ROW) {
-      rows.push(items.slice(i, i + this.WAYS_PER_ROW));
-    }
-    if (!rows.length) rows.push([]);
+    // One band per section (a single, section-less band for a legacy board).
+    const defs = sectioned
+      ? DBSections.list(comp).map(sec => ({
+        sec,
+        items: items.filter(it => it.sec === sec.id),
+        supply: allSupply.filter(a => DBSections.of(comp, a) === sec),
+        inc: this._sectionIncomer(comp, sec),
+      }))
+      : [{ sec: null, items, supply: allSupply, inc: boardInc }];
 
     const tRows = D.table ? this._tableRows(D) : [];
     const maxLines = D.table ? 0 : items.reduce((n, it) => Math.max(n, it.lines.length), 1);
-    const btd = rows.some(r => r.some(it => it.kind === 'acc')) ? 92 : this.BUS_TO_DEV;
+    const btd = items.some(it => it.kind === 'acc') ? 92 : this.BUS_TO_DEV;
     const rowInner = btd + this.LABEL_DY + maxLines * this.LINE_H
       + (D.bars ? this.BAR_GAP + this.BAR_PITCH + 8 : 8) + (D.load ? this.LOAD_H : 0)
       + (tRows.length ? tRows.length * this.TBL_ROW + 14 : 0);
     const rowH = rowInner + this.ROW_GAP;
 
-    const incTop = this.PAD + this.HEAD_H + 14;
-    const devY = incTop + this.SRC_TO_DEV + supply.length * this.SUPPLY_TAP_H;
-    const isoY = inc.isolator ? devY + 44 : null;
-    const busY = (isoY || devY) + this.DEV_TO_BUS;
-
-    // Column centres per row: ways keep the DROP_W pitch, accessories are narrower.
     const e0 = this._dropX0 - this.DROP_W / 2;
-    const xs = [], rowW = [];
-    for (const r of rows) {
-      let cur = e0; const row = [];
-      for (const it of r) { row.push(cur + it.w / 2); cur += it.w; }
-      xs.push(row); rowW.push(cur);
+    const bands = [];
+    const rowDefs = [];
+    let y = this.PAD + this.HEAD_H;
+    let widest = 0;
+    for (const d of defs) {
+      const y0 = y;
+      const strip = d.sec ? this.STRIP_H : 0;
+      const incTop = y0 + strip + 14;
+      const devY = incTop + this.SRC_TO_DEV + d.supply.length * this.SUPPLY_TAP_H;
+      const isoY = d.inc.isolator ? devY + 44 : null;
+      const busY = (isoY || devY) + this.DEV_TO_BUS;
+      const chunks = [];
+      for (let i = 0; i < d.items.length; i += this.WAYS_PER_ROW) chunks.push(d.items.slice(i, i + this.WAYS_PER_ROW));
+      if (!chunks.length) chunks.push([]);
+      const band = { sec: d.sec, inc: d.inc, supply: d.supply, y0, incTop, devY, isoY, busY, rows: [] };
+      chunks.forEach((r, ci) => {
+        // Column centres: ways keep the DROP_W pitch, accessories are narrower.
+        let cur = e0; const xs = [];
+        for (const it of r) { xs.push(cur + it.w / 2); cur += it.w; }
+        widest = Math.max(widest, cur);
+        const rd = { items: r, xs, rowW: cur, busY: busY + ci * rowH, band,
+          prevBusY: ci > 0 ? busY + (ci - 1) * rowH : null };
+        band.rows.push(rd); rowDefs.push(rd);
+      });
+      band.y1 = busY + chunks.length * rowH - this.ROW_GAP / 2 + (d.sec ? 6 : 0);
+      bands.push(band);
+      y = band.y1 + (d.sec ? this.BAND_GAP : 0);
     }
-    const busW = Math.max(Math.max(...rowW) + this.DROP_W / 2, 460);
+    const busW = Math.max(widest + this.DROP_W / 2, 460);
     const w = this.PAD * 2 + Math.max(busW + 20, 620);
-    const h = busY + rows.length * rowH + this.PAD;
+    const last = bands[bands.length - 1];
+    const h = (sectioned ? last.y1 : last.busY + last.rows.length * rowH) + this.PAD;
 
-    return { xs, rowW, btd, tRows, items, rows, supply, inc, maxLines, rowInner, rowH, incTop, devY, isoY, busY, busW, w, h };
+    return { bands, rowDefs, sectioned, btd, tRows, items, inc: boardInc, maxLines, rowInner, rowH, busW, w, h };
+  },
+
+  // An incomer description for a section, shaped like Components.boardIncomer().
+  _sectionIncomer(comp, sec) {
+    const kindLabel = { normal: 'Mains', essential: 'Generator', ups: 'UPS', other: 'Supply' }[sec.kind] || 'Supply';
+    const own = (sec.source_label || kindLabel) + (Number(sec.source_kva) > 0 ? ` ${sec.source_kva} kVA` : '');
+    const from = DBSections.get(comp, sec.feed_from);
+    const src = sec.feed === 'board' ? 'Board incomer'
+      : sec.feed === 'section' ? `From ${from ? from.name : 'another section'}`
+        : sec.feed === 'changeover' ? `${own} ⇄ ${from ? from.name : '?'}`
+          : own;
+    const a = Number(sec.incomer_a) || null;
+    const bits = [];
+    if (Number(sec.feed_mm2) > 0) bits.push(`${sec.feed_mm2} mm²${Number(sec.feed_m) > 0 ? ' · ' + sec.feed_m + ' m' : ''}`);
+    if (sec.feed === 'changeover') bits.push('changeover');
+    return {
+      basis: 'section', device: { type: 'cb' }, rating_a: a,
+      device_label: a ? `${a} A ${sec.incomer_poles || '4P'}${Number(sec.incomer_ka) > 0 ? ' · ' + sec.incomer_ka + ' kA' : ''}` : null,
+      isolator: null, cable: null, source: { id: sec.id, name: src, type: sec.kind }, way: null,
+      note: bits.join(' · ') || 'section incomer',
+    };
   },
 
   // ── Palette ─────────────────────────────────────────────────────────
@@ -542,10 +589,13 @@ const DBDrawing = {
 
     let svg = `<rect x="0" y="0" width="${L.w}" height="${L.h}" fill="${P.surface}"/>`;
     svg += this._header(comp, L, P, t, vll, x0);
-    svg += this._incomer(comp, L, P, x0);
-
-    L.rows.forEach((row, ri) => {
-      svg += this._busRow(row, ri, L, P, D, x0, comp);
+    const tot = L.sectioned ? DBSections.totals(comp) : null;
+    for (const b of L.bands) {
+      if (b.sec) svg += this._sectionFrame(b, L, P, x0, tot.get(b.sec.id));
+      svg += this._incomer(comp, b, P, x0);
+    }
+    L.rowDefs.forEach((rd) => {
+      svg += this._busRow(rd, L, P, D, x0, comp);
     });
 
     return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${L.w} ${L.h}" width="${L.w}" height="${L.h}"
@@ -639,7 +689,7 @@ const DBDrawing = {
     s += `<g><title>${this._esc(`Incomer: ${label}${inc.basis === 'feeder_way' ? ' (from the feeding board\'s way)' : inc.basis === 'sld' ? ' (from the SLD)' : ''}`)}</title>`
       + this._glyph(glyph, x, L.devY, P, known ? P.line : P.warn)
       + `<text x="${x + 16}" y="${L.devY + 1}" font-size="10.5" font-weight="700" fill="${known ? P.ink : P.warn}">${this._esc(label)}</text>`
-      + `<text x="${x + 16}" y="${L.devY + 12}" font-size="8.5" fill="${P.muted}">${this._esc(inc.basis === 'sld' ? 'from the SLD' : inc.basis === 'feeder_way' ? 'from the feeding board' : 'not modelled')}</text>`
+      + `<text x="${x + 16}" y="${L.devY + 12}" font-size="8.5" fill="${P.muted}">${this._esc(inc.note || (inc.basis === 'sld' ? 'from the SLD' : inc.basis === 'feeder_way' ? 'from the feeding board' : 'not modelled'))}</text>`
       + `</g>`;
 
     if (L.isoY) {
@@ -649,6 +699,23 @@ const DBDrawing = {
         + `</g>`;
     }
     return s;
+  },
+
+  // Compartment outline + title strip for one section.
+  _sectionFrame(b, L, P, x0, t) {
+    const c = DBSections.color(b.sec);
+    const w = L.w - this.PAD * 2 + 0;
+    const kind = DBSections.kind(b.sec.kind).label;
+    const bits = [];
+    if (t) {
+      bits.push(`${t.ways} ways`, `${(t.connectedVa / 1000).toFixed(1)} kVA`, `${t.demandA.toFixed(0)} A demand`);
+    }
+    return `<g><title>${this._esc(`${b.sec.name} — ${kind}`)}</title>`
+      + `<rect x="${x0 - 8}" y="${b.y0}" width="${w + 16}" height="${b.y1 - b.y0}" rx="7" fill="${c}" fill-opacity="0.05" stroke="${c}" stroke-width="1.3" stroke-dasharray="7,4"/>`
+      + `<rect x="${x0 - 8}" y="${b.y0}" width="${w + 16}" height="${this.STRIP_H - 4}" rx="7" fill="${c}" fill-opacity="0.9"/>`
+      + `<text x="${x0}" y="${b.y0 + 13}" font-size="11" font-weight="700" fill="#fff">${this._esc(b.sec.name.toUpperCase())}</text>`
+      + `<text x="${x0 + 12 + b.sec.name.length * 8}" y="${b.y0 + 13}" font-size="9.5" fill="#fff" fill-opacity="0.9">${this._esc(kind + (bits.length ? ' · ' + bits.join(' · ') : ''))}</text>`
+      + `</g>`;
   },
 
   // Row headings of the info table, in drawing order; a row is dropped when
@@ -661,15 +728,16 @@ const DBDrawing = {
     return r;
   },
 
-  _busRow(row, ri, L, P, D, x0, comp) {
-    const busY = L.busY + ri * L.rowH;
-    const xs = L.xs[ri].map(v => x0 + v);
-    const busEndX = x0 + Math.max(L.rowW[ri] + 30, 260);
+  _busRow(rd, L, P, D, x0, comp) {
+    const row = rd.items;
+    const busY = rd.busY;
+    const xs = rd.xs.map(v => x0 + v);
+    const busEndX = x0 + Math.max(rd.rowW + 30, 260);
     let s = `<line x1="${x0}" y1="${busY}" x2="${busEndX}" y2="${busY}" stroke="${P.bus}" stroke-width="3.4" stroke-linecap="round"/>`;
 
     // Riser joining this busbar section to the previous one.
-    if (ri > 0) {
-      const prevY = L.busY + (ri - 1) * L.rowH;
+    if (rd.prevBusY != null) {
+      const prevY = rd.prevBusY;
       s += `<line x1="${x0 + 6}" y1="${prevY}" x2="${x0 + 6}" y2="${busY}" stroke="${P.bus}" stroke-width="1.6" stroke-dasharray="4,3"/>`;
       s += `<text x="${x0 + 12}" y="${busY - 6}" font-size="8.5" fill="${P.muted}">busbar continued</text>`;
     }
@@ -690,6 +758,7 @@ const DBDrawing = {
     }
 
     const devY = busY + L.btd;
+    const secName = rd.band.sec ? rd.band.sec.name : '';
     const labelTop = devY + this.LABEL_DY;
     const barsY = labelTop + L.maxLines * this.LINE_H + this.BAR_GAP;
     const peY = barsY + this.BAR_PITCH;
@@ -782,9 +851,9 @@ const DBDrawing = {
 
     if (D.bars) {
       s += `<line x1="${x0}" y1="${barsY}" x2="${busEndX}" y2="${barsY}" stroke="${P.line}" stroke-width="1.6"/>`
-        + `<text x="${x0 - 2}" y="${barsY - 4}" font-size="9" fill="${P.muted}">N</text>`
+        + `<text x="${busEndX}" y="${barsY - 4}" text-anchor="end" font-size="9" fill="${P.muted}">N${secName ? ' · ' + this._esc(secName) : ''}</text>`
         + `<line x1="${x0}" y1="${peY}" x2="${busEndX}" y2="${peY}" stroke="${P.line}" stroke-width="1.6" stroke-dasharray="6,3"/>`
-        + `<text x="${x0 - 2}" y="${peY + 10}" font-size="9" fill="${P.muted}">PE</text>`;
+        + `<text x="${busEndX}" y="${peY + 10}" text-anchor="end" font-size="9" fill="${P.muted}">PE${secName ? ' · ' + this._esc(secName) : ''}</text>`;
     }
     return s;
   },
