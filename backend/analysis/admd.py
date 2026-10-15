@@ -537,6 +537,8 @@ def feeder_tree_rollup(kiosks, settings):
         rollup[kid] = {
             "feederKVA": d["totalKVA"],
             "feederA": d.get("worstPhaseA", d["currentA"]),
+            # Per-phase design current (Herman-Beta): lets the UI size a breaker.
+            "phaseA": d.get("phaseA"),
             "subtreeConns": d["conns"],
             "subtreeKiosks": len(sub_kiosks),
         }

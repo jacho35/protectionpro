@@ -410,3 +410,13 @@ body.dark-mode .rtcc-fail, body.dark-mode .rtcc-limit { stroke-width: 2.4; }
 .rtcc-devs span { color: var(--text-muted); }
 .rtcc-sw { display: inline-block; width: 14px; height: 3px; margin-right: 6px; vertical-align: middle; border-radius: 2px; }
 .rtcc-dev { font-size: 10px; }
+
+/* String phase currents in the side bar */
+.str-cur { padding: 0 0 6px; margin-top: -2px; font-size: 11px; color: var(--text-secondary); }
+.str-phases { display: flex; gap: 12px; align-items: baseline; }
+.str-phases > span { display: flex; gap: 10px; }
+.str-worst { margin-left: auto; font-size: 13px; color: var(--accent); }
+.str-load { display: flex; align-items: center; gap: 8px; margin-top: 4px; font-weight: 700; }
+.str-load .retic-btn { padding: 2px 8px; font-size: 11px; font-weight: 600; }
+.str-bar { flex: 1; height: 6px; border-radius: 3px; background: var(--bg-tertiary); overflow: hidden; min-width: 40px; }
+.str-bar > div { height: 6px; }
