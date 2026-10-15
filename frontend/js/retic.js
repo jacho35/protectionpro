@@ -659,6 +659,11 @@ const Retic = {
         <span class="retic-hint">${this._riskHint(s.riskZ)}</span>
       </div>
       <div class="retic-field">
+        <label>Transformer confidence (%)</label>
+        <input type="number" step="1" min="1" max="99" placeholder="= Risk z" data-action="setting" data-field="trfrConfidence" value="${s.trfrConfidence != null ? s.trfrConfidence : ''}" ${isHB ? '' : 'disabled'}
+          title="Confidence level for the transformer / minisub total in Herman-Beta, separate from the risk z used for feeders and kiosks.\n50% → z = 0 (expected demand — a transformer's thermal mass rides through short peaks)\n90% → z = 1.28\nBlank → use the risk z everywhere.">
+      </div>
+      <div class="retic-field">
         <label>Max Feeder VD (%)</label>
         <input type="number" step="0.5" data-action="setting" data-field="maxFeederVD" value="${s.maxFeederVD}">
       </div>
@@ -1132,6 +1137,7 @@ const Retic = {
       loadClass: s.loadClass,
       admd: s.admd,
       riskZ: s.riskZ,
+      trfrConfidence: s.trfrConfidence === '' ? null : (s.trfrConfidence != null ? Number(s.trfrConfidence) : null),
       networkDiversity: s.networkDiversity,
       loadClassLib: STANDARD_LOAD_CLASSES,
     };

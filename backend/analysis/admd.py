@@ -32,6 +32,7 @@ risk z = 1.28, default ADMD 4.04 kVA. All rounding matches the source's
 """
 
 import math
+from statistics import NormalDist
 
 from .admd_data import (
     LOAD_CLASSES,
@@ -216,7 +217,7 @@ def herman_beta_demand(n_consumers, cls, risk_z=DEFAULT_RISK_Z):
     """
     if not n_consumers or n_consumers <= 0:
         return {"totalKVA": 0, "currentA": 0, "admdKVA": 0}
-    z = risk_z or DEFAULT_RISK_Z
+    z = DEFAULT_RISK_Z if risk_z is None else risk_z
     bp = beta_params(cls)
     gamma1 = bp["skewness"] / math.sqrt(n_consumers)          # skewness ~ γ₁/√N
     z_cf = z + (z * z - 1) / 6 * gamma1                        # Cornish-Fisher 1st order
@@ -391,7 +392,7 @@ def kiosk_demand(kiosk, settings):
     }
 
 
-def feeder_demand(kiosks, settings):
+def feeder_demand(kiosks, settings, risk_z=None):
     """Aggregate diversified demand across a set of kiosks (a feeder/tree).
 
     Diversity is applied across the *combined* downstream consumer count so the
@@ -412,13 +413,15 @@ def feeder_demand(kiosks, settings):
     corr = settings.get("correctionMethod", "AMEU")
     default_cls = settings.get("loadClass", "urban1")
     project_admd = settings.get("admd", DEFAULT_ADMD)
-    risk_z = settings.get("riskZ") or DEFAULT_RISK_Z
+    if risk_z is None:
+        risk_z = settings.get("riskZ") or DEFAULT_RISK_Z
     lib = settings.get("loadClassLib")
 
     total_kva = 0.0
     override_kva = 0.0
     sl_kva = 0.0
     total_conns = 0
+    phase_i = {}     # Herman-Beta: design current per R/W/B phase (A)
 
     if est == "Herman Beta":
         # key: clsId|phase -> {count, param}
@@ -441,9 +444,11 @@ def feeder_demand(kiosks, settings):
                     if key not in buckets:
                         buckets[key] = {"count": 0, "param": param}
                     buckets[key]["count"] += 1
-        for bk in buckets.values():
-            total_kva += calc_demand(bk["count"], est, corr, bk["param"],
-                                     risk_z)["totalKVA"]
+        for key, bk in buckets.items():
+            r = calc_demand(bk["count"], est, corr, bk["param"], risk_z)
+            total_kva += r["totalKVA"]
+            ph = key.rsplit("|", 1)[1]
+            phase_i[ph] = phase_i.get(ph, 0.0) + r["currentA"]
     else:
         # key: (resolved ADMD value | phase) -> connection count. Per-phase
         # superposition across kiosks — so a single-kiosk feeder equals that
@@ -471,7 +476,7 @@ def feeder_demand(kiosks, settings):
 
     total_kva = _round2(total_kva + override_kva + sl_kva)
     current_a = _round2(total_kva * 1000.0 / (math.sqrt(3) * V_3PH_LINE)) if total_kva else 0
-    return {
+    out = {
         "totalKVA": total_kva,
         "currentA": current_a,
         "overrideKVA": _round2(override_kva),
@@ -479,6 +484,14 @@ def feeder_demand(kiosks, settings):
         "conns": total_conns,
         "numKiosks": len(kiosks),
     }
+    if phase_i:
+        # Herman-Beta is per phase, so the cable / transformer is sized on the
+        # worst-loaded phase, not the three-phase average. Fixed loads are
+        # spread evenly over the phases.
+        fixed_i = (override_kva + sl_kva) * 1000.0 / (3 * V_1PH)
+        out["worstPhaseA"] = _round2(max(phase_i.values()) + fixed_i)
+        out["phaseA"] = {p: _round2(v + fixed_i) for p, v in phase_i.items()}
+    return out
 
 
 def _subtree(kiosk_id, children, seen=None):
@@ -518,7 +531,7 @@ def feeder_tree_rollup(kiosks, settings):
         d = feeder_demand(sub_kiosks, settings)
         rollup[kid] = {
             "feederKVA": d["totalKVA"],
-            "feederA": d["currentA"],
+            "feederA": d.get("worstPhaseA", d["currentA"]),
             "subtreeConns": d["conns"],
             "subtreeKiosks": len(sub_kiosks),
         }
@@ -561,6 +574,17 @@ def run_admd(request):
 
     rollup = feeder_tree_rollup(kiosks, settings)
 
+    # Herman-Beta carries two confidence levels, as in ReticMaster: feeders and
+    # kiosks use ``riskZ`` (LV confidence); the minisub / transformer total uses
+    # ``trfrConfidence`` (% — 50 ⇒ z = 0). Absent ⇒ riskZ at every level.
+    trfr_z = None
+    try:
+        tc = settings.get("trfrConfidence")
+        if tc is not None and 0 < float(tc) < 100:
+            trfr_z = NormalDist().inv_cdf(float(tc) / 100.0)
+    except (TypeError, ValueError):
+        trfr_z = None
+
     kiosk_results = []
     for k in kiosks:
         r = kiosk_demand(k, settings)
@@ -586,7 +610,7 @@ def run_admd(request):
     tot_conns = 0
     for m in minisubs:
         mid = _get(m, "id")
-        d = feeder_demand(groups[mid], settings)
+        d = feeder_demand(groups[mid], settings, trfr_z)
         # Street lighting fed straight from the minisub's own LV board (not
         # through a kiosk): fixed and undiversified, like a kiosk's.
         ms_sl = float(_get(m, "streetLightKVA", 0) or 0)
@@ -594,6 +618,10 @@ def run_admd(request):
             d["totalKVA"] = _round2(d["totalKVA"] + ms_sl)
             d["streetLightKVA"] = _round2(d["streetLightKVA"] + ms_sl)
             d["currentA"] = _round2(d["totalKVA"] * 1000.0 / (math.sqrt(3) * V_3PH_LINE))
+            if "worstPhaseA" in d:
+                d["worstPhaseA"] = _round2(d["worstPhaseA"] + ms_sl * 1000.0 / (3 * V_1PH))
+        if "worstPhaseA" in d:
+            d["currentA"] = d["worstPhaseA"]
         ms_results.append({"minisubId": mid, "name": _get(m, "name", ""), **d})
         sum_kva += d["totalKVA"]
         tot_override += d["overrideKVA"]
@@ -617,6 +645,9 @@ def run_admd(request):
         "sumKVA": _round2(sum_kva),           # Σ minisub demands before NDF
         "networkDiversity": ndf,
     }
+    if len(ms_results) == 1 and "worstPhaseA" in ms_results[0]:
+        total["currentA"] = _round2(ms_results[0]["worstPhaseA"] * ndf)
+        total["trfrZ"] = None if trfr_z is None else round(trfr_z, 4)
 
     return {
         "kiosks": kiosk_results,
@@ -628,6 +659,7 @@ def run_admd(request):
             "loadClass": settings.get("loadClass", "urban1"),
             "admd": settings.get("admd", DEFAULT_ADMD),
             "riskZ": settings.get("riskZ") or DEFAULT_RISK_Z,
+            "trfrConfidence": settings.get("trfrConfidence"),
             "networkDiversity": ndf,
         },
     }

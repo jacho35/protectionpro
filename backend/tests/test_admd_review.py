@@ -62,3 +62,57 @@ def test_single_kiosk_feeder_equals_kiosk():
         s = {"estimationMethod": est, "loadClass": "urban1"}
         assert (feeder_demand([kiosk], s)["totalKVA"]
                 == pytest.approx(kiosk_demand(kiosk, s)["totalKVA"], abs=0.02))
+
+
+def _rmb_project():
+    """R5421-style: 82 consumers, 15 kiosks, feeder F1 = 19 consumers 7/6/6."""
+    cols = ["Red", "White", "Blue"]
+
+    def erfs(n, start):
+        return [{"phase": cols[(start + i) % 3], "length": 10} for i in range(n)]
+
+    def chain(prefix, sizes, start):
+        out, i = [], start
+        for j, n in enumerate(sizes):
+            out.append({"id": f"{prefix}{j}", "name": f"{prefix}{j}",
+                        "fedFrom": "ms" if j == 0 else f"{prefix}{j-1}",
+                        "erfs": erfs(n, i)})
+            i += n
+        return out
+
+    return (chain("A", [3, 3, 6, 7], 0) + chain("B", [6, 6, 6], 19)
+            + chain("C", [6, 6], 37) + chain("D", [6, 6, 6], 49)
+            + chain("E", [5, 5, 5], 67))
+
+
+def test_feeder_current_is_worst_phase_and_trfr_confidence():
+    """ReticMaster R5421 (LV 90 % / TRFR 50 %): feeders sized on the worst
+    phase (F1 163.9 A, F2 143.5 A); the transformer total is at z = 0
+    (332.9 kVA, 486.7 A)."""
+    from backend.analysis.admd import run_admd
+    ks = _rmb_project()
+    base = {"estimationMethod": "Herman Beta", "correctionMethod": "AMEU",
+            "riskZ": 1.28, "loadClass": "urban1"}
+    legacy = run_admd({"settings": base, "kiosks": ks,
+                       "minisubs": [{"id": "ms", "name": "M"}]})
+    rm = run_admd({"settings": {**base, "trfrConfidence": 50}, "kiosks": ks,
+                   "minisubs": [{"id": "ms", "name": "M"}]})
+    fa = {k["name"]: k["feederA"] for k in rm["kiosks"]}
+    assert fa["A0"] == pytest.approx(163.9, abs=0.5)
+    assert fa["B0"] == pytest.approx(143.5, abs=0.5)
+    # Feeder currents don't depend on the transformer confidence.
+    assert fa == {k["name"]: k["feederA"] for k in legacy["kiosks"]}
+    assert rm["total"]["totalKVA"] == pytest.approx(332.9, rel=0.02)
+    assert rm["total"]["currentA"] == pytest.approx(486.7, rel=0.02)
+    assert rm["total"]["totalKVA"] < legacy["total"]["totalKVA"]
+    assert rm["total"]["conns"] == 82 and rm["total"]["numKiosks"] == 15
+
+
+def test_herman_beta_ignores_correction_method():
+    from backend.analysis.admd import run_admd
+    ks = _rmb_project()
+    out = [run_admd({"settings": {"estimationMethod": "Herman Beta",
+                                  "correctionMethod": c, "loadClass": "urban1"},
+                     "kiosks": ks, "minisubs": []})["total"]["totalKVA"]
+           for c in ("AMEU", "British", "None")]
+    assert out[0] == out[1] == out[2]
