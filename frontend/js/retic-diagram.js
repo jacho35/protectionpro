@@ -339,6 +339,24 @@ const ReticDiagram = {
   // Active erf count over a kiosk's subtree, including the kiosk itself.
   // A 3-phase erf counts once here; the weighted figure (3Ø = 3) comes from
   // the backend as `subtreeConns`, so the two are shown side by side.
+  // Active erven per phase over every kiosk fed (transitively) from a minisub.
+  // A child that is not a kiosk (another minisub on the MV side) is not ours.
+  _subtreePhaseCounts(rootId, children, byId) {
+    const out = { Red: 0, White: 0, Blue: 0, '3 Phase': 0, other: 0 };
+    const seen = new Set();
+    const walk = (id) => {
+      for (const c of (children[id] || [])) {
+        if (seen.has(c) || !byId[c]) continue;
+        seen.add(c);
+        const pc = this._phaseCounts(byId[c]);
+        for (const key of Object.keys(out)) out[key] += pc[key];
+        walk(c);
+      }
+    };
+    walk(rootId);
+    return out;
+  },
+
   _subtreeErfCount(kioskId, children, byId, seen) {
     seen = seen || new Set();
     if (seen.has(kioskId)) return 0;
@@ -552,7 +570,7 @@ const ReticDiagram = {
       <rect x="${n.x}" y="${n.y}" width="${W}" height="${H}" rx="6" fill="${P.node}" stroke="${P.rmu}" stroke-width="1.6"/>
       <path d="M ${n.x} ${n.y + 6} a 6 6 0 0 1 6 -6 h ${W - 12} a 6 6 0 0 1 6 6 v 15 h -${W} z" fill="${P.rmu}" opacity="0.18"/>
       <text x="${n.x + 10}" y="${n.y + 15}" font-size="11" font-weight="700" fill="${P.ink}" data-dxf-attr="NAME">${this._esc(name)}</text>
-      <text x="${n.x + 10}" y="${n.y + 42}" font-size="10.5" font-weight="600" fill="${P.rmu}">Ring main unit</text>
+      <text x="${n.x + 10}" y="${n.y + 36}" font-size="10.5" font-weight="600" fill="${P.rmu}">Ring main unit</text>
       <text x="${n.x + 10}" y="${n.y + 53}" font-size="9.5" fill="${P.inkSec}" data-dxf-attr="FEEDS_LABEL">${nOut} MV feed${nOut === 1 ? '' : 's'} out</text>
     </g></g>`;
   },
@@ -565,17 +583,33 @@ const ReticDiagram = {
     const l2 = mr ? `${mr.conns} conns · ${mr.numKiosks} kiosk${mr.numKiosks === 1 ? '' : 's'}` : '—';
     const supply = ms && !ms.mvFedFrom && !tree.mvInfo[n.id] && ms.mvLength
       ? [this._cableShort(ms.mvCable), `${ms.mvLength} m`].filter(Boolean).join(' · ') : '';
+    // Erven per phase, same chips as a kiosk ("?" only when some have no phase set).
+    const pc = this._subtreePhaseCounts(n.id, tree.children, tree.byId);
+    const chips = [
+      ['R', pc.Red, P.phase.Red], ['W', pc.White, P.phase.White],
+      ['B', pc.Blue, P.phase.Blue], ['3Ø', pc['3 Phase'], P.phase['3 Phase']],
+    ];
+    if (pc.other > 0) chips.push(['?', pc.other, P.phase.other]);
+    const step = pc.other > 0 ? 36 : 44;
+    let chipSvg = '';
+    chips.forEach((c, i) => {
+      const cx = n.x + 12 + i * step;
+      chipSvg += `<circle cx="${cx}" cy="${n.y + 52.5}" r="3.2" fill="${c[2]}"/>`
+        + `<text x="${cx + 6}" y="${n.y + 56}" font-size="9.5" fill="${P.inkSec}" data-dxf-attr="ERVEN_${['R', 'W', 'B', '3P', 'UNASSIGNED'][i]}">${c[0]} ${c[1]}</text>`;
+    });
     const dxf = { NAME: (ms && ms.name) || 'Minisub', ID: n.id, KVA: mr ? mr.totalKVA : '', CURRENT_A: mr ? mr.currentA : '',
+      ERVEN_R: pc.Red, ERVEN_W: pc.White, ERVEN_B: pc.Blue, ERVEN_3P: pc['3 Phase'], ERVEN_UNASSIGNED: pc.other,
       CONNS: mr ? mr.conns : '', KIOSKS: mr ? mr.numKiosks : '', EARTHING: (ms && ms.earthing) || 'TN-S',
       MV_FED_FROM: this._nodeName(tree, ms && ms.mvFedFrom) || 'MV supply', MV_CABLE: (ms && ms.mvCable) || '',
       MV_LENGTH_M: (ms && ms.mvLength) || '' };
-    return `<g><title>${this._esc(`${name} — diversified demand ${l1}; ${l2}`)}</title>
+    return `<g><title>${this._esc(`${name} — diversified demand ${l1}; ${l2}\nErven: R ${pc.Red}, W ${pc.White}, B ${pc.Blue}, 3-phase ${pc['3 Phase']}${pc.other ? `, unassigned ${pc.other}` : ''}`)}</title>
       <g data-dxf-block="MINISUB" data-dxf-at="${n.x},${n.y}" data-dxf-attrs="${this._esc(JSON.stringify(dxf))}">
       <rect x="${n.x}" y="${n.y}" width="${W}" height="${H}" rx="6" fill="${P.msBody}" stroke="${P.border}"/>
       <path d="M ${n.x} ${n.y + 6} a 6 6 0 0 1 6 -6 h ${W - 12} a 6 6 0 0 1 6 6 v 15 h -${W} z" fill="${P.msHead}"/>
       <text x="${n.x + 10}" y="${n.y + 15}" font-size="11" font-weight="700" fill="${P.ink}" data-dxf-attr="NAME">${this._esc(name)}</text>
       <text x="${n.x + 10}" y="${n.y + 38}" font-size="10.5" font-weight="600" fill="${P.accent}" data-dxf-attr="DEMAND_LABEL">${this._esc(l1)}</text>
-      <text x="${n.x + 10}" y="${n.y + 60}" font-size="9.5" fill="${P.inkSec}" data-dxf-attr="CONNS_LABEL">${this._esc(l2)}</text>
+      <text x="${n.x + 10}" y="${n.y + 70}" font-size="9.5" fill="${P.inkSec}" data-dxf-attr="CONNS_LABEL">${this._esc(l2)}</text>
+      ${chipSvg}
       ${supply ? `<text x="${n.x + W - 8}" y="${n.y + 15}" text-anchor="end" font-size="8.5" fill="${P.muted}" data-dxf-attr="MV_SUPPLY_LABEL">${this._esc('MV supply · ' + supply)}</text>` : ''}
     </g></g>`;
   },
