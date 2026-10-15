@@ -16,6 +16,8 @@ const Retic = {
   // Build fields are always laid out inline (CSS `display: contents`), so these
   // flags only bite inside the phone media query.
   _settingsOpen: false,
+  // "Load estimation" settings group folded to a one-line summary (per viewer).
+  _estCollapsed: (() => { try { return localStorage.getItem('protectionpro-retic-est-collapsed') === '1'; } catch (e) { return false; } })(),
   _qbOpen: false,
   // Open calculation panels (view state only, never saved): 'k:<kiosk id>'
   // kiosk demand, 'e:<erf id>' service VD, 'f:<kiosk id>' feeder VD.
@@ -363,6 +365,13 @@ const Retic = {
     else if (action === 'sel-kiosk') this._tickKiosk(btn.dataset.kiosk, btn.checked);
     else if (action === 'sel-feeder') this._tickFeeder(btn.dataset.kiosk, btn.checked);
     else if (action === 'bulk-clear') this._clearSel();
+    else if (action === 'sel-all') this._toggleSelectAll();
+    else if (action === 'toggle-estimation') {
+      this._estCollapsed = !this._estCollapsed;
+      try { localStorage.setItem('protectionpro-retic-est-collapsed', this._estCollapsed ? '1' : '0'); } catch (e) { /* per-viewer convenience only */ }
+      this.renderSettingsBar();
+      this.updateBadges();          // the total chips are re-created by the render
+    }
     else if (action === 'bulk-apply') this.applyBulk();
     else if (action === 'add-kiosk') this.addKiosk();
     else if (action === 'quick-build') this.quickBuild();
@@ -636,6 +645,11 @@ const Retic = {
     bar.classList.toggle('open', this._settingsOpen);
     bar.innerHTML = `
       <div class="retic-settings-fields">
+      <div class="retic-estimation${this._estCollapsed ? ' collapsed' : ''}">
+        <button type="button" class="retic-est-head" data-action="toggle-estimation" aria-expanded="${!this._estCollapsed}"
+          title="Show / hide the load estimation settings"><span class="retic-est-caret">${this._estCollapsed ? '▸' : '▾'}</span>Load estimation</button>
+        <span class="retic-est-summary">${escHtml(this._estimationSummary())}</span>
+        <div class="retic-est-fields">
       <div class="retic-field">
         <label>Estimation Method</label>
         <select data-action="setting" data-field="estimationMethod">${methodOpts}</select>
@@ -663,6 +677,8 @@ const Retic = {
         <input type="number" step="1" min="1" max="99" placeholder="= Risk z" data-action="setting" data-field="trfrConfidence" value="${s.trfrConfidence != null ? s.trfrConfidence : ''}" ${isHB ? '' : 'disabled'}
           title="Confidence level for the transformer / minisub total in Herman-Beta, separate from the risk z used for feeders and kiosks.\n50% → z = 0 (expected demand — a transformer's thermal mass rides through short peaks)\n90% → z = 1.28\nBlank → use the risk z everywhere.">
       </div>
+        </div>
+      </div>
       <div class="retic-field">
         <label>Max Feeder VD (%)</label>
         <input type="number" step="0.5" data-action="setting" data-field="maxFeederVD" value="${s.maxFeederVD}">
@@ -689,6 +705,19 @@ const Retic = {
         <button class="retic-btn retic-mobile-only" data-action="toggle-settings"
           title="Show/hide the design settings">${this._settingsOpen ? '✕ Setup' : '⚙ Setup'}</button>
       </div>`;
+  },
+
+  // One-line recap of the load estimation group, shown while it is folded.
+  _estimationSummary() {
+    const s = this.settings;
+    const parts = [s.estimationMethod, this._classLabel(s.loadClass)];
+    if (s.estimationMethod === 'Herman Beta') {
+      parts.push(`z ${s.riskZ}`);
+      if (s.trfrConfidence != null && s.trfrConfidence !== '') parts.push(`transformer ${s.trfrConfidence}%`);
+    } else {
+      parts.push(`${s.correctionMethod} correction`, `ADMD ${s.admd} kVA`);
+    }
+    return parts.join(' · ');
   },
 
   // Human-readable meaning of the Herman-Beta risk factor: the standard-normal
@@ -783,7 +812,11 @@ const Retic = {
         <button class="retic-btn" data-action="redo" title="Redo (reticulation)">Redo ↷</button>
         <button class="retic-btn" data-action="diagram" title="Single-line view of the minisub → kiosk topology, with per-leg and cumulative volt drop and connection counts">◱ Diagram</button>
         <button class="retic-btn" data-action="report" title="Export demand + cable schedule">Export Report</button>
-      </div>` + this._quickBuildBar();
+      </div>` + (this.kiosks.length ? `
+      <div class="retic-selectall">
+        <button type="button" class="retic-btn" id="retic-selectall" data-action="sel-all" aria-pressed="false"></button>
+        <span class="retic-hint" id="retic-selectall-note"></span>
+      </div>` : '') + this._quickBuildBar();
 
     if (this.kiosks.length === 0) {
       host.innerHTML = toolbar + `<div class="retic-empty">No kiosks yet. Use ⚡ Quick Build to rough out the whole network in one click, or add a kiosk and its erven (stands) manually.</div>`;
@@ -1004,6 +1037,7 @@ const Retic = {
       }
       const f = card.querySelector('[data-action="sel-feeder"]'); if (f) f.checked = this._selFeeders.has(k.id);
     });
+    this._syncSelectAll();
   },
 
   _tickErf(cb, shift) {
@@ -1030,6 +1064,34 @@ const Retic = {
     if (on) this._selFeeders.add(kid); else this._selFeeders.delete(kid);
     this._updateBulkBar();
   },
+  // "Select all kiosks": every kiosk's erven + LV feeder, as if each kiosk's own
+  // box were ticked; pressed again (all already selected) it clears.
+  _allKiosksSel() {
+    return this.kiosks.length > 0 && this.kiosks.every(k => this._kioskAllSel(k));
+  },
+  _toggleSelectAll() {
+    if (this._allKiosksSel()) { this._clearSel(); return; }
+    this.kiosks.forEach(k => {
+      k.erfs.forEach(e => this._selErfs.add(e.id));
+      this._selFeeders.add(k.id);
+    });
+    this._lastTick = null;
+    this._updateBulkBar();
+  },
+  _syncSelectAll() {
+    const btn = document.getElementById('retic-selectall');
+    if (!btn) return;
+    const n = this.kiosks.length;
+    const all = this._allKiosksSel();
+    const some = this.kiosks.filter(k => this._kioskAllSel(k)).length;
+    btn.textContent = all ? `☑ All ${n} kiosk${n === 1 ? '' : 's'} selected` : '☐ Select all kiosks';
+    btn.classList.toggle('primary', all);
+    btn.setAttribute('aria-pressed', String(all));
+    btn.title = all ? 'Clear the selection' : 'Tick every kiosk\'s erven and LV feeder to change their cables together';
+    const note = document.getElementById('retic-selectall-note');
+    if (note) note.textContent = all ? 'Click again to clear' : `${some} of ${n} kiosk${n === 1 ? '' : 's'} selected`;
+  },
+
   _clearSel() {
     this._selErfs.clear(); this._selFeeders.clear(); this._lastTick = null;
     this._updateBulkBar();
