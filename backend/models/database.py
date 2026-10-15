@@ -284,6 +284,22 @@ class PasswordReset(Base):
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
+class DeviceAuth(Base):
+    """A pending "sign in with a link" request (device-code flow) from a non-browser
+    client such as the MCP server. Only the SHA-256 of the secret device code is stored;
+    the short user code is what the person sees and approves in the app."""
+    __tablename__ = "device_auths"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    device_hash = Column(String(64), unique=True, nullable=False, index=True)
+    user_code = Column(String(16), unique=True, nullable=False, index=True)
+    client_name = Column(String(80), default="")
+    status = Column(String(12), default="pending")      # pending | approved | denied | used
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True)
+    expires_at = Column(DateTime, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
 class Notification(Base):
     """One in-app notification for one user (the notifications center).
 

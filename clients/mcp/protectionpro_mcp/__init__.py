@@ -11,13 +11,19 @@ Configuration (environment):
                             account to log in as (re-login on expiry). Use a
                             dedicated user for the agent.
     PROTECTIONPRO_TOKEN     alternative: an existing JWT (expires after 7 days)
+    (none of the above)     sign in with a link: the first tool call returns a URL;
+                            open it in the browser where you are signed in to
+                            ProtectionPro and press Approve. The token is cached in
+                            ~/.config/protectionpro-mcp/ and renewed the same way.
     PROTECTIONPRO_READONLY  "1" → register only the read/analysis tools
 """
 
 import copy
+import hashlib
 import json
 import os
 import re
+import time
 from pathlib import Path
 from typing import Any, Optional
 
@@ -34,34 +40,118 @@ mcp = FastMCP("protectionpro")
 _pp: Optional[ProtectionPro] = None
 
 
+class LoginRequired(RuntimeError):
+    """Raised (and shown to the agent) while the person still has to approve the link."""
+
+
+_pending: Optional[dict] = None       # in-flight link sign-in: device_code, user_code, url, expires
+
+
+def _base_url() -> str:
+    return os.environ.get("PROTECTIONPRO_URL", "http://localhost:8000").rstrip("/")
+
+
+def _token_file() -> Path:
+    key = hashlib.sha256(_base_url().encode()).hexdigest()[:12]
+    return Path.home() / ".config" / "protectionpro-mcp" / f"token-{key}.json"
+
+
+def _cached_token() -> Optional[str]:
+    try:
+        return json.loads(_token_file().read_text()).get("access_token")
+    except (OSError, ValueError):
+        return None
+
+
+def _store_token(token: Optional[str]):
+    f = _token_file()
+    try:
+        if token is None:
+            f.unlink(missing_ok=True)
+            return
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text(json.dumps({"access_token": token}))
+        f.chmod(0o600)
+    except OSError:
+        pass          # a read-only home just means signing in again next session
+
+
+def _link_message(p: dict) -> str:
+    return (f"Sign in to ProtectionPro: open {p['url']} in the browser where you are signed in, "
+            f"check the code reads {p['user_code']}, and press Approve. "
+            "Then repeat the request. The link expires in a few minutes.")
+
+
+def _poll_login(pp: ProtectionPro) -> bool:
+    """Check the in-flight link sign-in once. True once a token has been stored."""
+    global _pending
+    p = _pending
+    if p is None:
+        return False
+    if time.time() > p["expires"]:
+        _pending = None
+        return False
+    r = pp._req("POST", "/api/auth/device/poll", json={"device_code": p["device_code"]})
+    if r.get("status") == "approved":
+        pp.token = r["access_token"]
+        _store_token(pp.token)
+        _pending = None
+        return True
+    if r.get("status") in ("denied", "expired"):
+        _pending = None
+        if r["status"] == "denied":
+            raise RuntimeError("The sign-in request was denied in ProtectionPro.")
+    return False
+
+
+def _begin_login(pp: ProtectionPro):
+    """Start (or resume) the link sign-in; always raises LoginRequired with the link."""
+    global _pending
+    if _poll_login(pp):
+        return
+    if _pending is None:
+        r = pp._req("POST", "/api/auth/device/start", json={"client_name": "ProtectionPro MCP"})
+        _pending = {"device_code": r["device_code"], "user_code": r["user_code"],
+                    "url": _base_url() + r["verification_path"],
+                    "expires": time.time() + r["expires_in"]}
+    raise LoginRequired(_link_message(_pending))
+
+
 def _client() -> ProtectionPro:
     global _pp
     if _pp is None:
-        _pp = ProtectionPro(os.environ.get("PROTECTIONPRO_URL", "http://localhost:8000"),
-                            token=os.environ.get("PROTECTIONPRO_TOKEN"))
-        if not _pp.token:
-            _login(_pp)
-    return _pp
+        _pp = ProtectionPro(_base_url(), token=os.environ.get("PROTECTIONPRO_TOKEN") or _cached_token())
+    pp = _pp
+    if not pp.token:
+        if os.environ.get("PROTECTIONPRO_EMAIL") and os.environ.get("PROTECTIONPRO_PASSWORD"):
+            _login(pp)
+        else:
+            _begin_login(pp)
+    return pp
 
 
 def _login(pp: ProtectionPro):
     email, pw = os.environ.get("PROTECTIONPRO_EMAIL"), os.environ.get("PROTECTIONPRO_PASSWORD")
-    if not (email and pw):
-        raise RuntimeError("Set PROTECTIONPRO_EMAIL and PROTECTIONPRO_PASSWORD "
-                           "(or PROTECTIONPRO_TOKEN).")
     pp.login(email, pw)
 
 
 def _call(fn, *args, **kwargs):
-    """Run a client call; on a 401 log in again once and retry."""
+    """Run a client call; on a 401 sign in again once and retry."""
     pp = _client()
     try:
         return fn(pp, *args, **kwargs)
     except ProtectionProError as e:
-        if e.status_code == 401 and os.environ.get("PROTECTIONPRO_EMAIL"):
+        if e.status_code != 401:
+            raise
+        if os.environ.get("PROTECTIONPRO_EMAIL") and os.environ.get("PROTECTIONPRO_PASSWORD"):
             _login(pp)
             return fn(pp, *args, **kwargs)
-        raise
+        if os.environ.get("PROTECTIONPRO_TOKEN"):
+            raise
+        pp.token = None
+        _store_token(None)
+        _begin_login(pp)          # raises LoginRequired with the link
+        return fn(pp, *args, **kwargs)
 
 
 def _out(data: Any) -> str:
@@ -81,6 +171,17 @@ def _find(project: dict, component_id: str) -> dict:
 def _snapshot(project_id: int, label: str):
     _call(lambda pp: pp._req("POST", f"/api/projects/{project_id}/revisions",
                              json={"label": label}))
+
+
+@mcp.tool()
+def login() -> str:
+    """Sign in to ProtectionPro with a link. Returns the URL to open (or confirms
+    you are already signed in). Only needed if a tool reports it can't sign in."""
+    try:
+        who = _call(lambda pp: pp.me())
+    except LoginRequired as e:
+        return str(e)
+    return f"Signed in as {who.get('email')}."
 
 
 # ── read tools ───────────────────────────────────────────────────────
