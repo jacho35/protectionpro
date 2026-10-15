@@ -349,12 +349,17 @@ def kiosk_demand(kiosk, settings):
     diversified_kva = total_kva
     total_kva = _round2(total_kva + override_kva + sl_kva)
     current_a = _round2(total_kva * 1000.0 / (math.sqrt(3) * V_3PH_LINE)) if total_kva else 0
+    # Worst-loaded phase of this kiosk (fixed loads spread evenly over the three).
+    worst_phase_a = _round2(
+        max((b["currentA"] for b in buckets), default=0)
+        + (override_kva + sl_kva) * 1000.0 / (3 * V_1PH))
     cls_label = param["label"] if isinstance(param, dict) else f"ADMD {admd_val} kVA"
     cls_obj = next((c for c in resolve_classes(lib) if c["id"] == cls_id), None)
 
     return {
         "totalKVA": total_kva,
         "currentA": current_a,
+        "worstPhaseA": worst_phase_a,
         "admdKVA": _round2(admd_val),
         # conns is the erf count (a 3-phase erf counts once), matching the
         # source app's kiosk badge; feeder totals use weighted counts (3φ=3).
