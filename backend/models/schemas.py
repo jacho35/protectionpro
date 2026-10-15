@@ -618,7 +618,8 @@ class AdmdSettings(BaseModel):
     correctionMethod: str = "AMEU"          # "AMEU" | "British" | "None"
     loadClass: str = "urban1"               # default class id
     admd: float = 4.04                      # default ADMD (kVA)
-    riskZ: float = 1.28                     # Herman-Beta risk factor
+    riskZ: float = 1.28                     # Herman-Beta risk factor (LV confidence: feeders, kiosks)
+    trfrConfidence: Optional[float] = None  # % — Herman-Beta transformer/minisub total; absent ⇒ riskZ
     networkDiversity: float = 1.0           # applied to Σ minisub demands (NMD)
     loadClassLib: Optional[list[dict]] = None  # project override of default classes
 
@@ -723,6 +724,7 @@ class AdmdFeederTotal(BaseModel):
     numKiosks: int
     sumKVA: float = 0                        # Σ per-minisub diversified demands
     networkDiversity: float = 1.0
+    trfrZ: Optional[float] = None
 
 
 class AdmdResults(BaseModel):
