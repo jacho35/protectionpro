@@ -449,3 +449,37 @@ def test_admin_project_list_transfer_and_heir(client):
     assert client.get(f"/api/projects/{pid}", headers=bh).status_code == 200
     # Bad heir
     assert client.delete(f"/api/auth/users/{bob['user']['id']}?transfer_to={bob['user']['id']}", headers=h).status_code == 400
+
+
+# ── Sign in with a link (device-code flow) ──
+
+def _reg(client):
+    r = client.post("/api/auth/register", json={"email": "dev@example.com", "password": "password123", "name": "Dev"})
+    assert r.status_code == 200, r.text
+    return {"Authorization": f"Bearer {r.json()['access_token']}"}
+
+
+def test_device_flow_approve_issues_token_once(client):
+    h = _reg(client)
+    s = client.post("/api/auth/device/start", json={"client_name": "ProtectionPro MCP"}).json()
+    assert s["verification_path"] == f"/#device={s['user_code']}"
+    poll = {"device_code": s["device_code"]}
+    assert client.post("/api/auth/device/poll", json=poll).json() == {"status": "pending"}
+    info = client.get(f"/api/auth/device/{s['user_code']}", headers=h).json()
+    assert info["client_name"] == "ProtectionPro MCP" and info["email"] == "dev@example.com"
+    assert client.post(f"/api/auth/device/{s['user_code']}/approve", headers=h).json()["status"] == "approved"
+    got = client.post("/api/auth/device/poll", json=poll).json()
+    assert got["status"] == "approved" and got["user"]["email"] == "dev@example.com"
+    me = client.get("/api/auth/me", headers={"Authorization": f"Bearer {got['access_token']}"})
+    assert me.status_code == 200
+    assert client.post("/api/auth/device/poll", json=poll).json() == {"status": "expired"}  # single use
+
+
+def test_device_flow_deny_and_auth_required(client):
+    h = _reg(client)
+    s = client.post("/api/auth/device/start", json={}).json()
+    assert client.post(f"/api/auth/device/{s['user_code']}/approve").status_code == 401
+    assert client.post(f"/api/auth/device/{s['user_code']}/deny", headers=h).json()["status"] == "denied"
+    assert client.post("/api/auth/device/poll", json={"device_code": s["device_code"]}).json()["status"] == "denied"
+    assert client.post(f"/api/auth/device/{s['user_code']}/approve", headers=h).status_code == 409
+    assert client.post("/api/auth/device/poll", json={"device_code": "nope"}).status_code == 404

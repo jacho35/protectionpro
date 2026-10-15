@@ -358,6 +358,14 @@ class LoginRequest(BaseModel):
     password: str
 
 
+class DeviceStartRequest(BaseModel):
+    client_name: str = ""
+
+
+class DevicePollRequest(BaseModel):
+    device_code: str
+
+
 # ── Invites ──
 
 class InviteCreate(BaseModel):

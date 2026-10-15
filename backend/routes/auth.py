@@ -9,10 +9,11 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from .. import mailer
-from ..models.database import get_db, User, Project, Folder, Invite, PasswordReset, SharedLibrary
+from ..models.database import get_db, User, Project, Folder, Invite, PasswordReset, SharedLibrary, DeviceAuth
 from ..models.schemas import (
     RegisterRequest, LoginRequest, Token, UserOut,
     InviteCreate, InviteOut, InviteCreated, ForgotRequest, ResetRequest, ChangePasswordRequest, AdminRoleRequest, ApproverRequest, ActiveRequest, ResetLinkRequest,
+    DeviceStartRequest, DevicePollRequest,
 )
 from ..auth import (
     hash_password, verify_password, create_access_token,
@@ -443,3 +444,106 @@ def reset_password(data: ResetRequest, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(user)
     return _token_for(user)
+
+
+# ── Sign in with a link (device-code flow) ──
+# A non-browser client (the MCP server) starts a request, shows the person a link
+# to /#device=<user_code>, and polls. The person opens the link in the app where
+# they are already signed in and approves; the next poll returns a normal token.
+
+DEVICE_MINUTES = 10
+DEVICE_POLL_SECONDS = 3
+_USER_CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"   # no 0/O/1/I/L
+
+
+def _utc(dt):
+    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+
+
+def _new_user_code(db) -> str:
+    for _ in range(10):
+        raw = "".join(secrets.choice(_USER_CODE_ALPHABET) for _ in range(8))
+        code = f"{raw[:4]}-{raw[4:]}"
+        if not db.query(DeviceAuth).filter(DeviceAuth.user_code == code).first():
+            return code
+    raise HTTPException(status_code=503, detail="Could not allocate a code, try again")
+
+
+def _device_by_code(db, user_code: str) -> DeviceAuth:
+    code = (user_code or "").strip().upper()
+    row = db.query(DeviceAuth).filter(DeviceAuth.user_code == code).first()
+    if row is None or _utc(row.expires_at) < datetime.now(timezone.utc):
+        raise HTTPException(status_code=404, detail="This sign-in request has expired. Start it again from the client.")
+    return row
+
+
+@router.post("/device/start")
+def device_start(data: DeviceStartRequest, db: Session = Depends(get_db)):
+    now = datetime.now(timezone.utc)
+    # Housekeeping, and a cap so an anonymous caller can't fill the table.
+    db.query(DeviceAuth).filter(DeviceAuth.expires_at < now - timedelta(hours=1)).delete()
+    if db.query(DeviceAuth).filter(DeviceAuth.status == "pending",
+                                   DeviceAuth.expires_at > now).count() >= 200:
+        raise HTTPException(status_code=429, detail="Too many pending sign-in requests")
+    device_code = secrets.token_urlsafe(32)
+    user_code = _new_user_code(db)
+    db.add(DeviceAuth(device_hash=hashlib.sha256(device_code.encode()).hexdigest(),
+                      user_code=user_code,
+                      client_name=(data.client_name or "").strip()[:80],
+                      expires_at=now + timedelta(minutes=DEVICE_MINUTES)))
+    db.commit()
+    return {"device_code": device_code, "user_code": user_code,
+            "verification_path": f"/#device={user_code}",
+            "expires_in": DEVICE_MINUTES * 60, "interval": DEVICE_POLL_SECONDS}
+
+
+@router.post("/device/poll")
+def device_poll(data: DevicePollRequest, db: Session = Depends(get_db)):
+    digest = hashlib.sha256((data.device_code or "").encode()).hexdigest()
+    row = db.query(DeviceAuth).filter(DeviceAuth.device_hash == digest).first()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Unknown sign-in request")
+    if row.status == "used" or _utc(row.expires_at) < datetime.now(timezone.utc):
+        return {"status": "expired"}
+    if row.status == "denied":
+        return {"status": "denied"}
+    if row.status != "approved":
+        return {"status": "pending"}
+    user = db.query(User).filter(User.id == row.user_id).first()
+    if user is None or not user.is_active:
+        return {"status": "denied"}
+    row.status = "used"            # a token is handed out exactly once
+    db.commit()
+    tok = _token_for(user)
+    return {"status": "approved", "access_token": tok.access_token,
+            "token_type": "bearer", "user": tok.user}
+
+
+@router.get("/device/{user_code}")
+def device_info(user_code: str, user: User = Depends(get_current_user),
+                db: Session = Depends(get_db)):
+    row = _device_by_code(db, user_code)
+    return {"user_code": row.user_code, "client_name": row.client_name,
+            "status": row.status, "email": user.email}
+
+
+def _device_decide(user_code, status, user, db):
+    row = _device_by_code(db, user_code)
+    if row.status != "pending":
+        raise HTTPException(status_code=409, detail="This request was already answered")
+    row.status = status
+    row.user_id = user.id
+    db.commit()
+    return {"status": status}
+
+
+@router.post("/device/{user_code}/approve")
+def device_approve(user_code: str, user: User = Depends(get_current_user),
+                   db: Session = Depends(get_db)):
+    return _device_decide(user_code, "approved", user, db)
+
+
+@router.post("/device/{user_code}/deny")
+def device_deny(user_code: str, user: User = Depends(get_current_user),
+                db: Session = Depends(get_db)):
+    return _device_decide(user_code, "denied", user, db)

@@ -31,6 +31,23 @@ pip install ./clients/python ./clients/mcp
 
 ## Configure
 
+### Sign in with a link (default)
+
+Set only the URL — no email or password:
+
+```bash
+claude mcp add protectionpro -e PROTECTIONPRO_URL=https://your-server -- protectionpro-mcp
+```
+
+The first tool call (or the `login` tool) returns a link such as
+`https://your-server/#device=ABCD-EFGH`. Open it in the browser where you are
+signed in to ProtectionPro, check the code matches, and press **Approve**; then
+repeat the request. The token (7 days) is cached in
+`~/.config/protectionpro-mcp/` (mode 0600) and the same link flow renews it.
+The agent gets exactly the access of the account that approved.
+
+### Fixed credentials (unattended use)
+
 Create a dedicated user for the agent (admin-minted invite), then:
 
 ```bash

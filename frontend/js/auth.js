@@ -14,9 +14,11 @@ const Auth = {
     this._wireGate();
     this._wireAccount();
     this._parseInviteLink();
+    this._parseDeviceLink();
     // An invite/reset link opened in a tab that already has the app loaded.
     window.addEventListener('hashchange', () => {
       if (/[#&](invite|reset)=/.test(location.hash)) { this._parseInviteLink(); this.showGate(); }
+      if (/[#&]device=/.test(location.hash)) { this._parseDeviceLink(); this._maybeShowDevice(); }
     });
 
     // Start gated: the #auth-modal blocks all interaction with the app behind
@@ -25,7 +27,7 @@ const Auth = {
     const token = API.getToken();
     if (token) {
       API.me()
-        .then(u => { this.user = u; this._applyAuthedState(); this.hideGate(); })
+        .then(u => { this.user = u; this._applyAuthedState(); this.hideGate(); this._maybeShowDevice(); })
         .catch(() => { /* invalid/expired — stay on the gate */ });
     }
   },
@@ -198,6 +200,53 @@ const Auth = {
       Project.refreshProjectViewIfOpen();
     }
     UI.toast && UI.toast(`Signed in as ${this.user.email}`, 'success');
+    this._maybeShowDevice();
+  },
+
+  // ── Approve a sign-in link from another client (the MCP server) ──
+
+  _parseDeviceLink() {
+    const m = /[#&]device=([^&]+)/.exec(location.hash || '');
+    if (!m) return;
+    this._pendingDevice = decodeURIComponent(m[1]);
+    history.replaceState(null, '', location.pathname + location.search);
+  },
+
+  async _maybeShowDevice() {
+    const code = this._pendingDevice;
+    if (!code || !this.user) return;
+    this._pendingDevice = null;
+    let info;
+    try { info = await API.request(`/auth/device/${encodeURIComponent(code)}`); }
+    catch (e) { UI.toast && UI.toast(e.message || 'This sign-in link is no longer valid.', 'warning'); return; }
+    if (info.status !== 'pending') { UI.toast && UI.toast('This sign-in request was already answered.', 'warning'); return; }
+    const esc = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    const m = document.createElement('div');
+    m.className = 'modal';
+    m.setAttribute('role', 'dialog');
+    m.setAttribute('aria-modal', 'true');
+    m.innerHTML = `<div class="modal-content" style="min-width:340px;max-width:420px">
+      <div class="modal-header"><h3>Authorize sign-in</h3></div>
+      <div class="modal-body">
+        <p><b>${esc(info.client_name || 'An application')}</b> is asking to access ProtectionPro as <b>${esc(info.email)}</b> — your projects, with the same access you have.</p>
+        <p>Only approve if the code below matches the one it showed you.</p>
+        <p style="font-size:1.6em;letter-spacing:.15em;text-align:center;font-weight:600">${esc(info.user_code)}</p>
+        <div id="auth-device-error" class="auth-error"></div>
+        <div style="display:flex;gap:8px;justify-content:flex-end">
+          <button class="btn" id="auth-device-deny" type="button">Deny</button>
+          <button class="btn-primary" id="auth-device-approve" type="button">Approve</button>
+        </div>
+      </div></div>`;
+    document.body.appendChild(m);
+    const decide = async verb => {
+      try {
+        await API.request(`/auth/device/${encodeURIComponent(info.user_code)}/${verb}`, 'POST');
+        m.remove();
+        UI.toast && UI.toast(verb === 'approve' ? 'Approved — you can return to your client.' : 'Request denied.', 'success');
+      } catch (e) { m.querySelector('#auth-device-error').textContent = e.message || 'Could not answer the request.'; }
+    };
+    m.querySelector('#auth-device-approve').addEventListener('click', () => decide('approve'));
+    m.querySelector('#auth-device-deny').addEventListener('click', () => decide('deny'));
   },
 
   _applyAuthedState() {
