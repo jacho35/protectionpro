@@ -161,7 +161,7 @@ const DBSections = {
       const t = out.get((this.of(comp, c) || first || {}).id);
       if (!t) continue;
       const va = Number(c.load_va) || 0;
-      const d = va * (Number(c.demand_factor) || 1) * boardDf;
+      const d = va * demandFactorOr1(c.demand_factor) * boardDf;
       t.ways++; t.connectedVa += va; t.demandVa += d;
       if (c.poles === '3P' || c.phase === 'RWB') {
         t.phaseVa.R += d / 3; t.phaseVa.W += d / 3; t.phaseVa.B += d / 3;

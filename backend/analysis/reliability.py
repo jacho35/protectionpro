@@ -33,8 +33,11 @@ DEFAULT_RATES. Results are on-demand (not persisted).
 
 from __future__ import annotations
 
+import math
+
 from ..models.schemas import ProjectData
-from .loadflow import connected_bus_loads_mw, _find_components_at_bus
+from .loadflow import (connected_bus_loads_mw, _find_components_at_bus,
+                       _battery_params, _source_output_mva)
 
 HOURS_PER_YEAR = 8760.0
 
@@ -90,9 +93,38 @@ def _failure_model(comp):
     return lam, rep, 0.0
 
 
-def _energized_buses(project, components, adjacency, removed_id=None):
+def _supply_capacity_mw(comp):
+    """[RL1] Real power (MW) a source can hold on its own once the rest of
+    the network is lost. The utility is unlimited; a generator is its rating
+    × pf; a BESS or hybrid PV inverter its discharge limit; a plain PV or
+    wind plant is grid-following and not firm, so it carries nothing."""
+    if comp.type == "utility":
+        return math.inf
+    if comp.type == "generator":
+        return float(_source_output_mva(comp)[0])
+    if comp.type in ("battery", "solar_pv"):
+        bp = _battery_params(comp)
+        if not bp or not bp.get("can_discharge"):
+            return 0.0
+        # the inverter rating and the stated discharge limit, not the load
+        # flow's headroom left by the PV at the modelled irradiance (the
+        # outage may be at night)
+        rated = (float(_source_output_mva(comp)[3]) if comp.type == "solar_pv"
+                 else float(comp.props.get("rated_kva", 100) or 0) / 1000.0)
+        max_dis = float(comp.props.get("battery_max_discharge_kw", 0) or 0) / 1000.0
+        return max(0.0, min(rated, max_dis))
+    return 0.0
+
+
+def _energized_buses(project, components, adjacency, removed_id=None,
+                     loads_mw=None):
     """Bus ids reachable from any source through closed devices, with
-    `removed_id` (the failed component) blocked."""
+    `removed_id` (the failed component) blocked.
+
+    [RL1] Each connected set of sources and network is judged on its own: it
+    is energised only if its firm source capacity covers the real load on it
+    (all or nothing — no load shedding is assumed). Without this a 5 kW PV
+    plant kept a 1 MW bus "supplied" through every utility outage."""
 
     def blocked(cid):
         if cid == removed_id:
@@ -106,18 +138,31 @@ def _energized_buses(project, components, adjacency, removed_id=None):
         return False
 
     seen = set()
-    stack = [c.id for c in project.components
-             if c.type in SOURCE_TYPES and not blocked(c.id)]
-    seen.update(stack)
-    while stack:
-        cid = stack.pop()
-        for nb in adjacency.get(cid, []):
-            if nb in seen or blocked(nb):
+    energized = set()
+    for seed in project.components:
+        if (seed.type not in SOURCE_TYPES or blocked(seed.id)
+                or seed.id in seen):
+            continue
+        island = {seed.id}
+        stack = [seed.id]
+        while stack:
+            cid = stack.pop()
+            for nb in adjacency.get(cid, []):
+                if nb in island or blocked(nb):
+                    continue
+                island.add(nb)
+                stack.append(nb)
+        if loads_mw is not None:
+            cap = sum(_supply_capacity_mw(components[c]) for c in island
+                      if components[c].type in SOURCE_TYPES)
+            demand = sum(loads_mw.get(c, 0.0) for c in island)
+            if cap + 1e-9 < demand:
+                seen.update(island)          # judged; stays de-energised
                 continue
-            seen.add(nb)
-            stack.append(nb)
+        seen.update(island)
+        energized.update(island)
     return {c.id for c in project.components
-            if c.type in ("bus", "distribution_board") and c.id in seen}
+            if c.type in ("bus", "distribution_board") and c.id in energized}
 
 
 def _bus_customers(project, components, adjacency):
@@ -145,9 +190,10 @@ def run_reliability(project: ProjectData) -> dict:
         adjacency.setdefault(w.fromComponent, []).append(w.toComponent)
         adjacency.setdefault(w.toComponent, []).append(w.fromComponent)
 
-    base_energized = _energized_buses(project, components, adjacency)
-    customers = _bus_customers(project, components, adjacency)
     loads_mw = connected_bus_loads_mw(project)
+    base_energized = _energized_buses(project, components, adjacency,
+                                      loads_mw=loads_mw)
+    customers = _bus_customers(project, components, adjacency)
     # Only customers/loads that are actually served in the base case count.
     served = {b for b in base_energized if customers.get(b, 0) > 0
               or loads_mw.get(b, 0) > 0}
@@ -173,7 +219,7 @@ def run_reliability(project: ProjectData) -> dict:
         if lam <= 0 and mom <= 0:
             continue
         energized = _energized_buses(project, components, adjacency,
-                                     removed_id=comp.id)
+                                     removed_id=comp.id, loads_mw=loads_mw)
         affected = [b for b in served if b in base_energized
                     and b not in energized]
         n_aff = sum(customers.get(b, 0) for b in affected)
@@ -229,7 +275,8 @@ def run_reliability(project: ProjectData) -> dict:
     unserved = [b for b in customers if b not in base_energized]
     if unserved:
         warnings.append(f"{len(unserved)} load bus(es) de-energized in the "
-                        "base case — excluded from the indices.")
+                        "base case (no source, or the firm source capacity is "
+                        "below the load) — excluded from the indices.")
 
     return {
         "converged": True,

@@ -244,6 +244,14 @@ const DBSchedule = {
     return (value !== undefined && value !== null && value !== '' && !Number.isNaN(n)) ? n : fallback;
   },
 
+  // A way's demand factor. 0 is a real value (a way switched off in this
+  // schedule) and must stay 0 — `Number(df) || 1` read it as 1, so the board
+  // roll-up, the auto-balance and Ib counted a way the circuit check
+  // (db_circuit_check._way_current_a, [L4]) treats as carrying nothing.
+  _dfOf(c) {
+    return this._pfOr(c && c.demand_factor, 1);
+  },
+
   // Lazy per-circuit power-factor migration for projects predating the PF
   // column: seed each way's pf from the board's existing power_factor so the
   // rollup reproduces the old board value byte-for-byte. Runs before the
@@ -452,7 +460,7 @@ const DBSchedule = {
     const pfFallback = this._pfOr(comp.props.power_factor, 0.85);
     for (const c of circuits) {
       const va = Number(c.load_va) || 0;
-      const df = Number(c.demand_factor) || 1;
+      const df = this._dfOf(c);
       connectedVa += va;
       const d = va * df;
       demandVa += d;
@@ -582,7 +590,7 @@ const DBSchedule = {
     const circuits = comp.props.circuits || [];
     const singles = circuits
       .filter(c => (c.poles || '1P') !== '3P')
-      .map(c => ({ c, va: (Number(c.load_va) || 0) * (Number(c.demand_factor) || 1) }))
+      .map(c => ({ c, va: (Number(c.load_va) || 0) * this._dfOf(c) }))
       .sort((a, b) => b.va - a.va);
     const totals = { R: 0, W: 0, B: 0 };
     for (const s of singles) {
@@ -740,7 +748,7 @@ const DBSchedule = {
 
   // Diversified design current Ib — mirrors db_circuit_check._way_current_a().
   _wayCurrentA(c, vll) {
-    const va = (Number(c.load_va) || 0) * (Number(c.demand_factor) || 1);
+    const va = (Number(c.load_va) || 0) * this._dfOf(c);
     const v = this._wayVoltage(c, vll);
     let a = (va && v > 0) ? va / v : 0;
     if (c.type === 'feeder_db') a = Math.max(a, Number(c.downstream_a) || 0);

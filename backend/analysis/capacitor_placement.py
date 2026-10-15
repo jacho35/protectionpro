@@ -180,6 +180,11 @@ def run_capacitor_placement(project: ProjectData, bus_ids=None,
         "energy_savings_mwh_yr": round(savings_mwh_yr, 2),
         "savings_per_yr": round(savings_mwh_yr * rate, 0),
         "cost_per_mwh": rate,
+        # [CP1] stated, not hidden: the saving is the modelled-load loss
+        # difference held for every hour of the year, an upper bound — real
+        # feeders average well below the modelled demand (loss load factor)
+        "energy_basis": ("modelled-load losses × 8760 h (upper bound; scale "
+                         "by the feeder's loss load factor)"),
         "lf_evaluations": evals + 2,
         "v_min": v_min, "v_max": v_max,
         "method": ("Greedy loss-sensitivity placement: one standard unit per "

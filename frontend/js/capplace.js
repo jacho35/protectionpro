@@ -117,7 +117,7 @@ const CapPlacement = {
     html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:6px 14px;font-size:12px;margin-bottom:12px">'
       + `<div><strong>Violations</strong><br><span style="color:var(--text-muted,#6d6d6d)">${(b.violations || []).length} → ${(o.violations || []).length}</span></div>`
       + `<div><strong>Energy saved</strong><br><span style="color:var(--text-muted,#6d6d6d)">${r.energy_savings_mwh_yr} MWh/yr</span></div>`
-      + `<div><strong>Value</strong><br><span style="color:var(--text-muted,#6d6d6d)">${r.savings_per_yr} /yr @ ${r.cost_per_mwh}/MWh</span></div>`
+      + `<div><strong>Value</strong><br><span style="color:var(--text-muted,#6d6d6d)">${r.savings_per_yr} /yr @ ${r.cost_per_mwh}/MWh<br>at the modelled load all year — an upper bound</span></div>`
       + '</div>';
 
     if ((r.placements || []).length) {

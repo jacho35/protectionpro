@@ -2365,7 +2365,7 @@ def sync_motor_q_sign(props) -> float:
     return -1.0 if mode == "leading" else 1.0
 
 
-def _connected_bus_loads(project: ProjectData) -> dict:
+def _connected_bus_loads(project: ProjectData, include_vfd: bool = False) -> dict:
     """Per-bus local load ``{bus_id: (p_mw, q_mvar)}``, gathered exactly as
     ``run_load_flow`` does (P = rated·pf·df, Q = rated·√(1−pf²)·df; induction
     motors on the S = kW/(η·pf) convention). Buses with no local load are
@@ -2415,6 +2415,21 @@ def _connected_bus_loads(project: ProjectData) -> dict:
                 p += (rated_kva / 1000) * pf * df
                 q += (sync_motor_q_sign(comp.props) * (rated_kva / 1000)
                       * math.sqrt(max(0.0, 1 - pf ** 2)) * df)   # [MG5]
+            elif comp.type == "vfd" and include_vfd:
+                # [VS1] a VFD is a load in the solver (shaft kW ÷ efficiency at
+                # its displacement pf). The public MW/Mvar helpers below ask
+                # for it (P-V sweep, contingency lost load); the private
+                # callers (filter default size, transient-stability netting)
+                # keep their reviewed behaviour.
+                eff = comp.props.get("efficiency", 0.96) or 0.96
+                load = float(comp.props.get("load_pct", 100) or 0) / 100.0
+                dpf = float(comp.props.get("displacement_pf", 0.98) or 0.98)
+                df = comp.props.get("demand_factor", 1.0)
+                p_mw = comp.props.get("rated_kw", 200) * load / (eff * 1000)
+                q_mvar = (p_mw * math.sqrt(max(0.0, 1 - dpf ** 2)) / dpf
+                          if dpf > 0 else 0.0)
+                p += p_mw * df
+                q += q_mvar * df
         if abs(p) > 1e-12 or abs(q) > 1e-12:
             loads[bus.id] = (p, q)
     return loads
@@ -2428,7 +2443,8 @@ def connected_bus_loads_mw(project: ProjectData) -> dict:
     contingency engine (load lost when a bus de-energizes), so both agree with
     the solver's own load model.
     """
-    return {bid: pq[0] for bid, pq in _connected_bus_loads(project).items()
+    return {bid: pq[0]
+            for bid, pq in _connected_bus_loads(project, include_vfd=True).items()
             if abs(pq[0]) > 1e-12}
 
 
@@ -2438,7 +2454,8 @@ def connected_bus_loads_mvar(project: ProjectData) -> dict:
     consumers convert a net-injection Q figure back to source/condenser output
     (condenser Q = net injection + local Q load).
     """
-    return {bid: pq[1] for bid, pq in _connected_bus_loads(project).items()
+    return {bid: pq[1]
+            for bid, pq in _connected_bus_loads(project, include_vfd=True).items()
             if abs(pq[1]) > 1e-12}
 
 

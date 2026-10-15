@@ -152,7 +152,7 @@ const GA = {
 
   _wayIb(c, vll) {
     if (typeof DBSchedule !== 'undefined' && DBSchedule._wayCurrentA) return DBSchedule._wayCurrentA(c, vll);
-    const va = (Number(c.load_va) || 0) * (Number(c.demand_factor) || 1);
+    const va = (Number(c.load_va) || 0) * demandFactorOr1(c.demand_factor);
     const is3 = c.poles === '3P' || c.phase === 'RWB';
     const v = is3 ? vll : vll / Math.sqrt(3);
     return v > 0 ? va / v : 0;

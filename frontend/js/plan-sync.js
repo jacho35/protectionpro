@@ -767,7 +767,7 @@ const PlanSync = {
     if (lenM) c.cable_m = +lenM.toFixed(2);
     // EE-9: read-only downstream demand carried by this feeder, plus a warning
     // when the sub-board's diversified demand exceeds the feeder breaker.
-    const demandKva = (Number(subComp.props.rated_kva) || 0) * (Number(subComp.props.demand_factor) || 1);
+    const demandKva = (Number(subComp.props.rated_kva) || 0) * demandFactorOr1(subComp.props.demand_factor);
     c.downstream_kva = +demandKva.toFixed(2);
     c.downstream_a = +((demandKva * 1000) / (Math.sqrt(3) * 400)).toFixed(1);
   },

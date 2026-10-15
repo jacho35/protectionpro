@@ -24,8 +24,12 @@ def _project_for_case(base: ProjectData, case: LoadFlowCaseInput) -> ProjectData
     for any field the case did not capture."""
     update = {}
     if case.components:
+        # [LC1] wires belong to the component set they were captured with: a
+        # snapshot's (possibly empty) wire list is used whole, never mixed
+        # with the live network's wires.
         update["components"] = case.components
-    if case.wires:
+        update["wires"] = case.wires
+    elif case.wires:
         update["wires"] = case.wires
     if case.baseMVA is not None:
         update["baseMVA"] = case.baseMVA

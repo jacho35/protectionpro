@@ -101,8 +101,14 @@ def _with_der(project: ProjectData, bus_id: str, mw: float,
 
 
 def _feasible(project, bus_id, mw, power_factor, v_min, v_max,
-             loading_limit_pct, method):
-    """(ok: bool, violations, result) for one trial injection level."""
+             loading_limit_pct, method, base_viol=None):
+    """(ok: bool, violations, result) for one trial injection level.
+
+    [HC1] `base_viol` is {(kind, element_id): excess} of the base case. A
+    violation that is already there and not made worse by the DER is not the
+    DER's: without this one pre-existing low-voltage bus gave EVERY candidate
+    bus a hosting capacity of 0 ("baseline violation"), including buses the
+    DER would have helped."""
     if mw <= 1e-9:
         lf = run_load_flow(project, method)
     else:
@@ -117,6 +123,11 @@ def _feasible(project, bus_id, mw, power_factor, v_min, v_max,
     components = {c.id: c for c in project.components}
     _cost, _loss, violations = _metrics(lf, components, v_min, v_max,
                                         loading_limit_pct)
+    if base_viol:
+        violations = [v for v in violations
+                      if (v["kind"], v["element_id"]) not in base_viol
+                      or v.get("excess", 0.0)
+                      > base_viol[(v["kind"], v["element_id"])] + 1e-4]
     return (len(violations) == 0), violations, lf
 
 
@@ -323,6 +334,14 @@ def run_hosting_capacity(project: ProjectData, bus_ids=None,
 
     comp_map = {c.id: c for c in project.components}
 
+    _c, _l, _bv = _metrics(base_lf, comp_map, v_min, v_max, loading_limit_pct)
+    base_viol = {(v["kind"], v["element_id"]): v.get("excess", 0.0) for v in _bv}
+    if base_viol:
+        warnings.append(
+            f"The base case already has {len(base_viol)} violation(s); they "
+            "are not charged to the DER — a trial counts only violations it "
+            "adds or makes worse.")
+
     # Base-case fault level + duty verdicts, solved once and reused as the
     # comparison point for every candidate bus.
     base_levels = base_duty = None
@@ -340,7 +359,8 @@ def run_hosting_capacity(project: ProjectData, bus_ids=None,
         bus_name = str(comp_map[bus_id].props.get("name", bus_id))
 
         ok0, _v0, _lf0 = _feasible(project, bus_id, 0.0, power_factor,
-                                   v_min, v_max, loading_limit_pct, method)
+                                   v_min, v_max, loading_limit_pct, method,
+                                   base_viol)
         if not ok0:
             row = {
                 "bus_id": bus_id, "bus_name": bus_name,
@@ -363,7 +383,8 @@ def run_hosting_capacity(project: ProjectData, bus_ids=None,
         mw = step_mw
         while mw <= max_mw_per_bus + 1e-9:
             ok, viol, _lf = _feasible(project, bus_id, mw, power_factor,
-                                      v_min, v_max, loading_limit_pct, method)
+                                      v_min, v_max, loading_limit_pct, method,
+                                      base_viol)
             if ok:
                 last_good = mw
                 mw = round(mw + step_mw, 6)
@@ -371,6 +392,27 @@ def run_hosting_capacity(project: ProjectData, bus_ids=None,
                 first_bad = mw
                 first_bad_violations = viol
                 break
+
+        # [HC1] A DER that immediately makes a violation the base case
+        # already has WORSE (first increment, only base violations) has no
+        # headroom: that is the baseline-violation case, not a capacity.
+        if (first_bad is not None and first_bad <= step_mw + 1e-9 and last_good == 0.0
+                and first_bad_violations and base_viol
+                and all((v["kind"], v["element_id"]) in base_viol
+                        for v in first_bad_violations)):
+            row = {
+                "bus_id": bus_id, "bus_name": bus_name,
+                "hosting_capacity_mw": 0.0, "capped": False,
+                "limiting_factor": "baseline_violation",
+                "limiting_element": first_bad_violations[0].get("name", ""),
+                "note": "The network already has a violation that a DER at "
+                        "this bus makes worse — fix the base case first.",
+            }
+            _apply_fault_screen(row, base_levels, base_duty, project, bus_id, 0.0,
+                                power_factor, fault_screen, fault_rise_limit_pct,
+                                der_share_limit_pct)
+            results.append(row)
+            continue
 
         if first_bad is None:
             row = {
@@ -395,7 +437,8 @@ def run_hosting_capacity(project: ProjectData, bus_ids=None,
         for _ in range(BISECT_STEPS):
             mid = (lo + hi) / 2.0
             ok, viol, _lf = _feasible(project, bus_id, mid, power_factor,
-                                      v_min, v_max, loading_limit_pct, method)
+                                      v_min, v_max, loading_limit_pct, method,
+                                      base_viol)
             if ok:
                 lo = mid
             else:

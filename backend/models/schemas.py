@@ -1433,12 +1433,20 @@ class RacewayCable(BaseModel):
     od_mm: float = 0.0           # explicit overall diameter override (mm)
     rated_amps: float = 0.0      # base ampacity before grouping derating
     load_amps: float = 0.0       # operating current, if known (0 = unknown)
+    # Grouping factor already inside rated_amps (a cable whose installed
+    # ampacity was locked from the IEC 60364-5-52 calculator); the raceway then
+    # applies only the ratio, never the whole factor twice.
+    included_grouping_factor: float = 1.0
 
 
 class RacewayDef(BaseModel):
     name: str = "Raceway"
     conduit_nominal_mm: float = 50.0
     conduit_id_mm: float = 0.0   # explicit internal diameter override (mm)
+    # IEC 60364-5-52 grouping basis: a key of IEC_GROUPING. "bunched" is
+    # B.52.17 item 1 (the original behaviour); ducts_mc_* / ducts_sc_* are the
+    # B.52.19 buried-duct tables.
+    grouping: str = "bunched"
     cables: list[RacewayCable] = []
 
 
@@ -1471,6 +1479,7 @@ class RacewayResult(BaseModel):
     jam_ratio: Optional[float] = None
     jam_warning: bool = False
     grouping_factor: float
+    grouping: str = "bunched"
     cables: list[RacewayCableRow] = []
     status: str                  # pass | warning | fail | empty
     warnings: list[str] = []
@@ -1649,6 +1658,7 @@ class ContingencyResult(BaseModel):
     min_v_pu: float = 0.0
     max_v_pu: float = 0.0
     lost_load_mw: float = 0.0
+    inherited_violation_count: int = 0   # base-case violations not made worse
     violations: list[ContingencyViolation] = []
 
 

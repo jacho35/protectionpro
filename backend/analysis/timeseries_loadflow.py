@@ -124,6 +124,7 @@ _PROFILE_TARGET = {
     "motor_induction": ("demand_factor", 1.0),
     "motor_synchronous": ("demand_factor", 1.0),
     "distribution_board": ("demand_factor", 1.0),
+    "vfd": ("demand_factor", 1.0),          # [TS1] a drive is a load too
     "solar_pv": ("irradiance_pct", 100.0),
     "wind_turbine": ("wind_speed_pct", 100.0),
     "generator": ("rated_mva", 10.0),
@@ -135,6 +136,7 @@ DEFAULT_PROFILE_BY_TYPE = {
     "motor_induction": "industrial",
     "motor_synchronous": "industrial",
     "distribution_board": "residential",
+    "vfd": "industrial",
     "solar_pv": "pv_clear_sky",
     "wind_turbine": "flat",
     "generator": "flat",

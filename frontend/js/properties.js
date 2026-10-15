@@ -1727,7 +1727,7 @@ const Properties = {
     } else if (comp.type === 'distribution_board') {
       const circuits = comp.props.circuits || [];
       const connected = comp.props.rated_kva || 0;      // derived: Σ way VA
-      const df = comp.props.demand_factor || 1;         // derived: aggregate diversity
+      const df = demandFactorOr1(comp.props.demand_factor);         // derived: aggregate diversity
       const demand = connected * df;
       html += `<div class="prop-row"><label>Ways</label><span class="pu-value">${circuits.length}</span></div>`;
       html += `<div class="prop-row"><label>Connected Load</label><span class="pu-value">${connected.toFixed(1)} kVA</span></div>`;

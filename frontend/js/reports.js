@@ -251,8 +251,8 @@ const Reports = {
       const name = AppState.components.get(busId)?.props?.name || busId;
       rows.push([
         name,
-        r.v_pu != null ? Number(r.v_pu).toFixed(4) : '\u2014',
-        r.v_kv != null ? Number(r.v_kv).toFixed(2) : '\u2014',
+        r.voltage_pu != null ? Number(r.voltage_pu).toFixed(4) : '\u2014',
+        r.voltage_kv != null ? Number(r.voltage_kv).toFixed(2) : '\u2014',
         r.angle_deg != null ? Number(r.angle_deg).toFixed(2) : '\u2014',
         r.p_mw != null ? Number(r.p_mw).toFixed(4) : '\u2014',
         r.q_mvar != null ? Number(r.q_mvar).toFixed(4) : '\u2014',
@@ -275,15 +275,16 @@ const Reports = {
     if (!lf?.branches || AppState.isResultStale('loadFlowResults')) return;
     const rows = [];
     for (const br of lf.branches) {
-      const comp = AppState.components.get(br.element_id);
-      const name = comp?.props?.name || br.element_name || br.element_id;
+      const comp = AppState.components.get(br.elementId);
+      const name = comp?.props?.name || br.element_name || br.elementId;
       rows.push([
         name,
-        br.from_bus || '\u2014', br.to_bus || '\u2014',
+        AppState.components.get(br.from_bus)?.props?.name || br.from_bus || '\u2014',
+        AppState.components.get(br.to_bus)?.props?.name || br.to_bus || '\u2014',
         br.p_mw != null ? Number(br.p_mw).toFixed(4) : '\u2014',
         br.q_mvar != null ? Number(br.q_mvar).toFixed(4) : '\u2014',
         br.loading_pct != null ? Number(br.loading_pct).toFixed(1) + '%' : '\u2014',
-        br.i_a != null ? Number(br.i_a).toFixed(1) : '\u2014',
+        br.i_amps != null ? Number(br.i_amps).toFixed(1) : '\u2014',
       ]);
     }
     if (rows.length === 0) return;

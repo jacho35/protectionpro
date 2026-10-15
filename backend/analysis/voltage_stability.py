@@ -36,7 +36,7 @@ from .loadflow import (run_load_flow, connected_bus_loads_mw,
 # Load component types scaled by λ in the P-V sweep (power factor preserved
 # because demand_factor scales the rated MVA, so P and Q move together).
 LOAD_SCALE_TYPES = {"static_load", "motor_induction", "motor_synchronous",
-                    "distribution_board"}
+                    "distribution_board", "vfd"}   # [VS1] a VFD is a load too
 
 BISECT_STEPS = 6            # nose-point refinement iterations
 QV_CONDENSER_ID = "__qv_cond__"
@@ -323,10 +323,24 @@ def _qv_curve(project: ProjectData, bus_id: str, method: str, warnings: list):
             # load; the Q the source supplies to hold this voltage.
             points.append(QVCurvePoint(v_pu=round(cb.voltage_pu, 4),
                                        q_mvar=round(cb.q_mvar, 3)))
-            if op_v is not None and op_q is None and cb.voltage_pu <= op_v + 1e-6:
-                op_q = round(cb.q_mvar, 3)
 
     if not points:
         return [], bus_name, None, None, None
+    # [VS2] The operating point's Q on this curve: interpolate at the base-case
+    # voltage. It is ~0 by construction (no condenser is there). Taking the
+    # first swept setpoint below it put the marker up to one 0.025 pu step
+    # away and shaved that off the reported margin (-4.6 vs 0 MVAr at 0.9987).
+    if op_v is not None:
+        pts = sorted(points, key=lambda p: p.v_pu)
+        if op_v <= pts[0].v_pu:
+            op_q = pts[0].q_mvar
+        elif op_v >= pts[-1].v_pu:
+            op_q = pts[-1].q_mvar
+        else:
+            for a, b in zip(pts, pts[1:]):
+                if a.v_pu <= op_v <= b.v_pu:
+                    t = (op_v - a.v_pu) / (b.v_pu - a.v_pu) if b.v_pu > a.v_pu else 0.0
+                    op_q = round(a.q_mvar + t * (b.q_mvar - a.q_mvar), 3)
+                    break
     qv_min = round(min(p.q_mvar for p in points), 3)
     return points, bus_name, qv_min, op_v, op_q

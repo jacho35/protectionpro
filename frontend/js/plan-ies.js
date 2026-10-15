@@ -216,6 +216,14 @@ const PlanIES = {
     const last = hA[n - 1];
     const full = last > 180.001;
     let h = ((hDeg % 360) + 360) % 360;
+    // [IES1] A file measured over 90–270° is bilateral about the 90–270 plane
+    // (LM-63): an azimuth outside the measured span mirrors to 180 − h. It was
+    // treated as a full circle, so 0° read the average of the 90° and 270°
+    // planes instead of the measured 180° plane.
+    if (Math.abs(hA[0] - 90) < 0.001 && Math.abs(last - 270) < 0.001) {
+      if (h < 90 || h > 270) h = (((180 - h) % 360) + 360) % 360;
+      return this._bracket(hA, h);
+    }
     if (last <= 90.001) {
       if (h > 180) h = 360 - h;
       if (h > 90) h = 180 - h;

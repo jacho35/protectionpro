@@ -2136,6 +2136,55 @@ class TestBatterySizing:
             proj, duty_cycle=[{"duration_min": 700, "load_kw": 10.0}])
         assert r10["runtime_to_floor_min"] == pytest.approx(600.0, abs=3.0)
 
+    def test_sizing_agrees_with_simulation_for_lead_acid(self):
+        """[BS1] The sizing used no Peukert penalty while the simulation did:
+        a C10 lead-acid bank sized with no margins for 10 kW x 2 h reported
+        20 kWh and then ran flat at 81 min. Sized for that duty with the same
+        Peukert law, an installed bank of exactly the required size must just
+        last the duty."""
+        kw = dict(chemistry="lead_acid", rt_eff=1.0, dod=100.0,
+                  hour_rating=10.0, max_dis_kw=1000.0)
+        duty = [{"duration_min": 120, "load_kw": 10}]
+        r = run_battery_sizing(self._project(kwh=100.0, **kw), duty_cycle=duty,
+                               aging_factor=1.0, design_margin=1.0)
+        # closed form (rate above the hour rating throughout): C^k = P^k t H^(k-1)
+        k = 1.25
+        c = (10.0 ** k * 2.0 * 10.0 ** (k - 1.0)) ** (1.0 / k)
+        assert r["required_kwh"] == pytest.approx(c, abs=0.01)
+        assert r["required_kwh"] > 20.0
+        r2 = run_battery_sizing(self._project(kwh=r["required_kwh"], **kw),
+                                duty_cycle=duty, aging_factor=1.0,
+                                design_margin=1.0)
+        assert r2["end_soc_pct"] == pytest.approx(0.0, abs=0.2)
+        assert not any(v["kind"] == "capacity" for v in r2["violations"])
+
+    def test_peukert_gives_no_credit_below_hour_rate(self):
+        """[BS2] 1 kW on a 100 kWh C10 bank is 0.1x the hour rate. The bare
+        power law would stretch it past 100 h; the datasheet capacity is the
+        ceiling, so it lasts exactly 100 h at DoD 100 %."""
+        proj = self._project(kwh=100.0, chemistry="lead_acid", rt_eff=1.0,
+                             dod=100.0, hour_rating=10.0, max_dis_kw=1000.0)
+        r = run_battery_sizing(proj, duty_cycle=[
+            {"duration_min": 7200, "load_kw": 1.0}])
+        assert r["runtime_to_floor_min"] == pytest.approx(6000.0, abs=3.0)
+
+    def test_lead_acid_at_one_hour_rating_is_warned(self):
+        """[BS3] The component default of 1 h applies to lead-acid too."""
+        proj = self._project(kwh=100.0, chemistry="lead_acid", hour_rating=1.0)
+        r = run_battery_sizing(proj, duty_cycle=[
+            {"duration_min": 60, "load_kw": 5}])
+        assert any("hour rating" in w.lower() for w in r["warnings"])
+
+    def test_inverter_checked_on_kva(self):
+        """[BS4] 90 kW at 0.8 pf is 112.5 kVA: over a 100 kVA inverter even
+        though 90 kW alone is not."""
+        proj = self._project(kwh=200.0, max_dis_kw=500.0)
+        proj.components[0].props["rated_kva"] = 100.0
+        r = run_battery_sizing(proj, duty_cycle=[
+            {"duration_min": 30, "load_kw": 90, "load_kvar": 67.5}])
+        assert r["peak_kva"] == pytest.approx(112.5, abs=0.01)
+        assert any(v["kind"] == "inverter" for v in r["violations"])
+
     def test_voltage_declines_and_limit_violation_flagged(self):
         """Terminal voltage falls monotonically-ish across the discharge, and
         a duty peak above the discharge limit is flagged."""
@@ -2152,7 +2201,8 @@ class TestBatterySizing:
         r = run_battery_sizing(self._project(load_kva=10.0),
                                autonomy_target_min=60.0)
         assert r["duty_derived"]
-        assert r["duty"] == [{"duration_min": 60.0, "load_kw": 10.0}]
+        assert r["duty"] == [{"duration_min": 60.0, "load_kw": 10.0,
+                              "load_kvar": 0.0}]
         assert r["duty_kwh"] == pytest.approx(10.0, rel=1e-6)
 
     def test_no_battery_note(self):

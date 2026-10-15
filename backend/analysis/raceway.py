@@ -5,12 +5,16 @@ Checks each defined raceway (conduit with assigned cables) for:
 1. Conduit fill — Σ(cable areas) / conduit internal area, against the
    NEC Chapter 9 Table 1 limits (also common IEC/SANS practice):
      1 cable: 53 %,  2 cables: 31 %,  3+ cables: 40 %
+   (SANS 10142-1 and SANS 10198-2 give no numeric fill limit; IEC 61386
+   states none either — the NEC percentages are the basis, not "SANS practice".)
 2. Jam ratio — for exactly 3 cables of similar OD pulled together:
      JR = 1.05 · ID / OD_avg   (1.05 allows for conduit ovality at bends)
    A ratio between 2.8 and 3.2 risks cables jamming in a wedge at bends.
-3. Grouping derating — IEC 60364-5-52 Table B.52.17 reference method
-   (bunched in conduit, item 1): each multicore cable counts as one
-   circuit; the factor applies to every cable's ampacity in the group.
+3. Grouping derating — IEC 60364-5-52: Table B.52.17 item 1 (bunched,
+   enclosed) by default, or a B.52.19 buried-duct column per raceway; each
+   cable counts as one circuit and the factor applies to every cable's
+   ampacity in the group. A cable whose rated current already includes a
+   grouping factor (calculator-applied) is derated only by the ratio.
 
 Cable outside diameters use an explicit ``od_mm`` when supplied, else a
 typical 3/4-core Cu XLPE SWA OD estimated from the conductor size (flagged
@@ -19,6 +23,7 @@ in the result — manufacturer data governs for construction).
 
 import math
 
+from .iec_60364_data import IEC_GROUPING
 from ..models.schemas import (
     RacewayRequest, RacewayResults, RacewayResult, RacewayCableRow,
 )
@@ -50,13 +55,20 @@ TYPICAL_OD_MM = {
 }
 
 
-def grouping_factor(n_circuits: int) -> float:
-    """IEC 60364-5-52 Table B.52.17 item 1; between tabulated counts the
-    next-higher count's factor applies (conservative)."""
+def grouping_factor(n_circuits: int, grouping: str = "bunched") -> float:
+    """IEC 60364-5-52 grouping factor for `n_circuits` in the basis named by
+    `grouping` (a key of IEC_GROUPING; "bunched" = Table B.52.17 item 1).
+    Between tabulated counts the next-higher count's factor applies
+    (conservative); beyond the last tabulated count its factor is held."""
     if n_circuits <= 0:
         return 1.0
-    factor = GROUPING_FACTORS[-1][1]
-    for count, f in GROUPING_FACTORS:
+    table = GROUPING_FACTORS
+    if grouping != "bunched":
+        entry = IEC_GROUPING.get(grouping)
+        if entry:
+            table = sorted(entry["factors"].items())
+    factor = table[-1][1]
+    for count, f in table:
         if n_circuits <= count:
             factor = f
             break
@@ -130,14 +142,25 @@ def run_raceway_analysis(req: RacewayRequest) -> RacewayResults:
                         "cables may wedge at bends during pulling. Change the "
                         "conduit size to move outside the band.")
 
-        gf = grouping_factor(n)
+        basis = rw.grouping if (rw.grouping == "bunched"
+                                or rw.grouping in IEC_GROUPING) else "bunched"
+        if basis != rw.grouping:
+            warnings.append(f"Unknown grouping basis '{rw.grouping}' — "
+                            "B.52.17 bunched used.")
+        gf = grouping_factor(n, basis)
         cable_rows = []
         derate_fail = False
         for r in rows:
             c = r["cable"]
-            derated = (c.rated_amps or 0.0) * gf
+            inc = c.included_grouping_factor if c.included_grouping_factor > 0 else 1.0
+            derated = (c.rated_amps or 0.0) * min(1.0, gf / inc)   # [RW1]
             ok = True
-            if c.load_amps and c.load_amps > 0:
+            if c.load_amps and c.load_amps > 0 and not (c.rated_amps or 0) > 0:
+                # [RW2] no rating to derate: unknown, not a 0 A cable
+                warnings.append(
+                    f"Cable '{c.name or c.cable_id}' has no rated current — "
+                    "grouping derating not checked.")
+            elif c.load_amps and c.load_amps > 0:
                 ok = derated >= c.load_amps
                 if not ok:
                     derate_fail = True
@@ -176,6 +199,7 @@ def run_raceway_analysis(req: RacewayRequest) -> RacewayResults:
             jam_ratio=round(jam_ratio, 2) if jam_ratio is not None else None,
             jam_warning=jam_warning,
             grouping_factor=gf,
+            grouping=basis,
             cables=cable_rows,
             status=status,
             warnings=warnings,

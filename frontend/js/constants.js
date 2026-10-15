@@ -15,7 +15,7 @@
 // App version = 1.<PR number>b — set to the number of the PR that ships the change
 // (CLAUDE.md › Development Workflow). It also stamps saved study results, so
 // every bump marks results from older builds as stale.
-const APP_VERSION = '1.455b';
+const APP_VERSION = '1.456b';
 
 const GRID_SIZE = 20;
 const SNAP_SIZE = 20;
@@ -1211,6 +1211,13 @@ const STANDARD_FUSES = [
 ];
 
 // Interaction modes
+// A demand factor, defaulting to 1 only when ABSENT. `Number(df) || 1` read a
+// real 0 (a way switched off in a schedule) as 1 and counted its full load.
+function demandFactorOr1(v) {
+  const n = Number(v);
+  return (v === undefined || v === null || v === '' || Number.isNaN(n)) ? 1 : n;
+}
+
 const MODE = {
   SELECT: 'select',
   WIRE: 'wire',
