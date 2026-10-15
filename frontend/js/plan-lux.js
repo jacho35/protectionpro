@@ -99,11 +99,17 @@ const PlanLux = {
     if (!factor || !fittings.length) { this._grid = null; return; }
     const box = this._bbox(fittings);
     if (!box) { this._grid = null; return; }
-    const step = this.settings.resM / factor;           // grid pitch in world px
     const marginPx = 1 / factor;                          // 1 m margin
     const minX = box.minX - marginPx, minY = box.minY - marginPx;
-    const cols = Math.min(400, Math.max(1, Math.ceil((box.maxX - box.minX + 2 * marginPx) / step)));
-    const rows = Math.min(400, Math.max(1, Math.ceil((box.maxY - box.minY + 2 * marginPx) / step)));
+    const spanX = box.maxX - box.minX + 2 * marginPx;
+    const spanY = box.maxY - box.minY + 2 * marginPx;
+    // Grid pitch in world px. [LX1] The grid is capped at 400 x 400 cells; the
+    // pitch used to stay fixed, so a plan wider than 400 x resolution (200 m at
+    // 0.5 m) was silently computed only over its first 400 columns / rows.
+    // The pitch now grows to keep the whole extent inside the cap.
+    const step = Math.max(this.settings.resM / factor, spanX / 400, spanY / 400);
+    const cols = Math.min(400, Math.max(1, Math.ceil(spanX / step)));
+    const rows = Math.min(400, Math.max(1, Math.ceil(spanY / step)));
     const h = this.settings.mountH;
     const halfBeam = (this.settings.beamDeg * Math.PI / 180) / 2;
     const cosHalf = Math.cos(halfBeam);

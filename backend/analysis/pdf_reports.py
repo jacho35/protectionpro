@@ -76,6 +76,18 @@ class SafePDF(FPDF):
     def text(self, x, y, txt=""):
         return super().text(x, y, _safe(txt))
 
+    def multi_cell(self, *args, **kwargs):
+        # [PR1] cell() and text() were sanitised but multi_cell() was not, so
+        # any wrapped text with an em dash (the fault study assumptions)
+        # raised FPDFUnicodeEncodingException and lost the whole report.
+        args = list(args)
+        if len(args) > 2 and isinstance(args[2], str):
+            args[2] = _safe(args[2])
+        for k in ("text", "txt"):
+            if k in kwargs and isinstance(kwargs[k], str):
+                kwargs[k] = _safe(kwargs[k])
+        return super().multi_cell(*args, **kwargs)
+
 
 class ReportPDF(SafePDF):
     """Custom PDF with header/footer for ProtectionPro reports."""
@@ -492,12 +504,14 @@ def _render_loadflow_branch(pdf, loadflow_results):
     avail = pdf.w - pdf.l_margin - pdf.r_margin
     widths = [avail * 0.2, avail * 0.15, avail * 0.15, avail * 0.13, avail * 0.13, avail * 0.12, avail * 0.12]
 
+    names = {bid: b.get("bus_name", bid)
+             for bid, b in (loadflow_results.get("buses") or {}).items()}
     rows = []
     for br in branches:
         rows.append([
             br.get("element_name", br.get("elementId", "")),
-            br.get("from_bus", "—"),
-            br.get("to_bus", "—"),
+            names.get(br.get("from_bus"), br.get("from_bus", "—")),
+            names.get(br.get("to_bus"), br.get("to_bus", "—")),
             f"{br.get('p_mw', 0):.4f}",
             f"{br.get('q_mvar', 0):.4f}",
             f"{br.get('loading_pct', 0):.1f}%",
@@ -1095,7 +1109,7 @@ def _calc_fault(pdf, fault_results, base_mva):
                 _calc_body(pdf, f"  3-phase fault current:     I\"k3    = {ik3:.4f} kA")
                 z_ohm = (1.0 * v * 1000) / (math.sqrt(3) * ik3 * 1000)  # Ohm
                 z_pu = z_ohm / ((v ** 2) / base_mva * 1000 / 1000)  # pu
-                _calc_body(pdf, f"  Equiv. short-circuit Zk   = c*U/(sqrt(3)*I\"k3) = 1.0 * {v:.3f}kV / (1.732 * {ik3:.4f}kA) = {z_ohm:.4f} Ohm  ({z_pu:.4f} pu)")
+                _calc_body(pdf, f"  Zk at c = 1 (U/(sqrt(3)*I\"k3); the study's c multiplies this)  = {v:.3f}kV / (1.732 * {ik3:.4f}kA) = {z_ohm:.4f} Ohm  ({z_pu:.4f} pu)")
         if ip and ik3:
             kappa = ip / (math.sqrt(2) * ik3)
             _calc_body(pdf, f"  Peak factor:               kappa   = ip/(sqrt(2)*I\"k3) = {ip:.4f}/{math.sqrt(2)*ik3:.4f} = {kappa:.4f}")
@@ -1214,7 +1228,7 @@ def _calc_arcflash(pdf, arcflash_results):
         _calc_body(pdf, "Step 2 - Incident energy (normalised to 610 mm / 0.2 s, IEEE 1584-2002 Eq. 3-6):")
         _calc_label(pdf, "  lg(E_n) = K1 + K2 + 1.081*lg(I_arc) + 0.0011*G   [E_n in J/cm^2]")
         _calc_label(pdf, "  E = 4.184 * Cf * E_n * (t / 0.2 s) * (610^x / D^x)   [J/cm^2]")
-        _calc_body(pdf, "  where K1 = -0.792 (open air) or -0.555 (enclosed), K2 = 0 (ungrounded/HRG - assumed),")
+        _calc_body(pdf, "  where K1 = -0.792 (open air) or -0.555 (enclosed), K2 = 0 (ungrounded/HRG) or -0.113 (grounded),")
         _calc_body(pdf, "  Cf = 1.5 (V <= 1 kV) or 1.0 (V > 1 kV), D = working distance [mm], t = arcing duration [s],")
         _calc_body(pdf, "  x = distance exponent per IEEE 1584-2002 Table 4.")
         pdf.ln(2)
@@ -1278,15 +1292,15 @@ def _calc_cable(pdf, cable_results):
     _calc_label(pdf, "  I_load <= I_z  where I_z = derating * I_rated_tabulated")
     pdf.ln(1)
     _calc_body(pdf, "Voltage drop check:")
-    _calc_label(pdf, "  dV% = (I * (R*cos(phi) + X*sin(phi)) * L * 2) / U_n * 100%")
-    _calc_body(pdf, "  (single-phase: factor 2; three-phase: factor sqrt(3); limit: 3% for final, 5% total)")
+    _calc_label(pdf, "  dV% = k * I * (R*cos(phi) + X*sin(phi)) * L / U_n * 100%")
+    _calc_body(pdf, "  (k = 2 single-phase, sqrt(3) three-phase; U_n line voltage for 3-phase; limit set in the study, default 5% total)")
     pdf.ln(1)
     _calc_body(pdf, "Overload protection (LV, IEC 60364-4-43 §433.1): Ib <= In <= Iz and I2 <= 1.45 Iz.")
     _calc_body(pdf, "Voltage drop is limited from the origin of the installation (IEC 60364-5-52 §525).")
     _calc_body(pdf, "Fault withstand (adiabatic method, IEC 60364-4-43 §434.5.2), at the largest fault")
     _calc_body(pdf, "current (any type) and at the minimum far-end fault (c_min), each with its own clearing time:")
     _calc_label(pdf, "  S >= sqrt(I^2 * t) / k  [mm^2]")
-    _calc_body(pdf, "  where k = material constant (115 for Cu/PVC, 143 for Cu/XLPE), t = fault clearing time [s].")
+    _calc_body(pdf, "  where k = material constant (IEC 60364-4-43 Table 43A: Cu 115 PVC / 143 XLPE, Al 76 PVC / 94 XLPE), t = fault clearing time [s].")
     pdf.ln(4)
 
     for cable in cable_results.get("cables", []):
@@ -1385,12 +1399,10 @@ def _calc_motor(pdf, motor_results):
 
 def _pdf_safe(text):
     """Coerce engine-sourced text to the cp1252 range of the core fonts."""
-    s = str(text)
-    for src, dst in (("≈", "~"), ("″", '"'), ("′", "'"), ("ω", "w"),
-                     ("∫", "integral "), ("×", "x"),
-                     ("→", "->"), ("≤", "<="), ("≥", ">=")):
-        s = s.replace(src, dst)
-    return s.encode("cp1252", "replace").decode("cp1252")
+    # [PR2] go through the full fallback table first: encoding straight to
+    # cp1252 turned every Greek letter in the engine's assumptions text into
+    # "?" (lambda, kappa, mu ...) although `_UNICODE_FALLBACKS` maps them.
+    return _safe(text)
 
 
 def _calc_dynamic_motor(pdf, dyn_results):

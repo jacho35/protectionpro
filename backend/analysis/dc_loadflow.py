@@ -285,6 +285,7 @@ def run_dc_load_flow(project: ProjectData) -> DCLoadFlowResults:
     energized = {g: False for g in groups}
     src_current = {}     # comp.id -> A (positive = supplying)
     src_limited = {}
+    collapsed_islands = []   # [DC1] (groups, "singular" | "no_convergence")
     iterations = 0
 
     for isl_root, isl_groups in islands.items():
@@ -316,65 +317,108 @@ def run_dc_load_flow(project: ProjectData) -> DCLoadFlowResults:
         lidx = {g: i for i, g in enumerate(local)}
         m = len(local)
 
-        # Iterative nodal solve (constant-power loads + converter current limits).
-        prev = np.array([nominal[g] for g in local], dtype=float)
-        limited = {}  # comp.id -> clamp current
-        for it in range(MAX_ITERATIONS):
-            iterations = max(iterations, it + 1)
-            G = np.zeros((m, m))
-            I = np.zeros(m)
-            # branches
-            for _, ga, gb, r, _ in branches:
-                if ga not in lidx or gb not in lidx:
-                    continue
-                a, b = lidx[ga], lidx[gb]
-                g_ab = 1.0 / r
-                G[a, a] += g_ab
-                G[b, b] += g_ab
-                G[a, b] -= g_ab
-                G[b, a] -= g_ab
-            # sources
-            for g, lst in active.items():
-                i = lidx[g]
-                for (comp, emf, rs, limit) in lst:
-                    if comp.id in limited:
-                        I[i] += limited[comp.id]   # clamped → current source
-                    else:
-                        G[i, i] += 1.0 / rs
-                        I[i] += emf / rs
-            # loads
-            for g, lst in load_by_group.items():
-                if g not in lidx:
-                    continue
-                i = lidx[g]
-                for comp in lst:
-                    model = str(comp.props.get("load_model", "constant_power"))
-                    if model == "constant_resistance":
-                        r = _num(comp.props.get("resistance_ohm", 0), 0)
-                        if r > 0:
-                            G[i, i] += 1.0 / r
-                    else:
-                        I[i] -= _load_current(comp, prev[i])
-            try:
-                v = np.linalg.solve(G, I)
-            except np.linalg.LinAlgError:
-                v = prev
-            # Re-check converter current limits.
-            changed = False
-            for g, lst in active.items():
-                i = lidx[g]
-                for (comp, emf, rs, limit) in lst:
-                    if limit is None:
+        def solve_island(active_map):
+            """Iterative nodal solve (constant-power loads + converter current
+            limits). Returns (v, limited, status): status is "ok",
+            "singular" (no source holds the island's voltage — e.g. its only
+            converter is current-limited) or "no_convergence"."""
+            nonlocal iterations
+            prev = np.array([nominal[g] for g in local], dtype=float)
+            limited = {}  # comp.id -> clamp current
+            for it in range(MAX_ITERATIONS):
+                iterations = max(iterations, it + 1)
+                G = np.zeros((m, m))
+                I = np.zeros(m)
+                # branches
+                for _, ga, gb, r, _ in branches:
+                    if ga not in lidx or gb not in lidx:
                         continue
-                    if comp.id not in limited:
-                        i_out = (emf - v[i]) / rs
-                        if i_out > limit * 1.0001:
-                            limited[comp.id] = limit
-                            changed = True
-            if np.max(np.abs(v - prev)) < TOLERANCE and not changed:
+                    a, b = lidx[ga], lidx[gb]
+                    g_ab = 1.0 / r
+                    G[a, a] += g_ab
+                    G[b, b] += g_ab
+                    G[a, b] -= g_ab
+                    G[b, a] -= g_ab
+                # sources
+                for g, lst in active_map.items():
+                    i = lidx[g]
+                    for (comp, emf, rs, limit) in lst:
+                        if comp.id in limited:
+                            I[i] += limited[comp.id]   # clamped → current source
+                        else:
+                            G[i, i] += 1.0 / rs
+                            I[i] += emf / rs
+                # loads
+                for g, lst in load_by_group.items():
+                    if g not in lidx:
+                        continue
+                    i = lidx[g]
+                    for comp in lst:
+                        model = str(comp.props.get("load_model", "constant_power"))
+                        if model == "constant_resistance":
+                            r = _num(comp.props.get("resistance_ohm", 0), 0)
+                            if r > 0:
+                                G[i, i] += 1.0 / r
+                        else:
+                            I[i] -= _load_current(comp, prev[i])
+                # [DC1] Every clamped source is a current source, so an island
+                # whose only sources are clamped has no node tied to the DC
+                # reference and G is singular. This used to be swallowed
+                # (`v = prev`) and reported as a converged solution that broke
+                # KCL (595 A of load on 400 A of supply).
+                try:
+                    if np.linalg.cond(G) > 1e12:
+                        raise np.linalg.LinAlgError
+                    v = np.linalg.solve(G, I)
+                except np.linalg.LinAlgError:
+                    return prev, limited, "singular"
+                # Re-check converter current limits.
+                changed = False
+                for g, lst in active_map.items():
+                    i = lidx[g]
+                    for (comp, emf, rs, limit) in lst:
+                        if limit is None:
+                            continue
+                        if comp.id not in limited:
+                            i_out = (emf - v[i]) / rs
+                            if i_out > limit * 1.0001:
+                                limited[comp.id] = limit
+                                changed = True
+                if np.max(np.abs(v - prev)) < TOLERANCE and not changed:
+                    return v, limited, "ok"
                 prev = v
-                break
-            prev = v
+            return prev, limited, "no_convergence"
+
+        prev, limited, status = solve_island(active)
+
+        # [DC2] A battery floats only while the converters can carry the load.
+        # Once a converter is current-limited the battery is what holds the
+        # bus in a real DC system, so it joins as a source and the island is
+        # re-solved (the clamped converter stays a current source, so there
+        # is no charger-battery circulating current).
+        floating = [(g, comp, emf, rs, limit)
+                    for g in isl_groups
+                    for (comp, emf, rs, limit, rated) in src_by_group.get(g, [])
+                    if comp.type == "dc_battery" and conv_present]
+        if floating and (limited or status == "singular"):
+            active2 = {g: list(lst) for g, lst in active.items()}
+            for g, comp, emf, rs, limit in floating:
+                active2.setdefault(g, []).append([comp, emf, rs, limit])
+            prev2, limited2, status2 = solve_island(active2)
+            if status2 == "ok":
+                prev, limited, status, active = prev2, limited2, status2, active2
+                for g, comp, emf, rs, limit in floating:
+                    src_limited.pop(comp.id, None)
+
+        if status != "ok":
+            collapsed_islands.append((isl_groups, status))
+            for g in isl_groups:
+                energized[g] = False
+            for g, lst in active.items():
+                for (comp, emf, rs, limit) in lst:
+                    src_current[comp.id] = limited.get(comp.id, 0.0)
+                    src_limited[comp.id] = comp.id in limited
+            continue
 
         for g in local:
             V[g] = float(prev[lidx[g]])
@@ -441,6 +485,17 @@ def run_dc_load_flow(project: ProjectData) -> DCLoadFlowResults:
         ))
 
     # Warnings: de-energized buses, voltage bands, overloaded branches/sources.
+    for groups_c, why in collapsed_islands:
+        names = ", ".join(str(name_of[g]) for g in groups_c)
+        warnings.append(LoadFlowWarning(
+            elementId=groups_c[0], element_name=names,
+            message=("DC island " + names + " cannot be supplied: its source(s) "
+                     "are current-limited and nothing holds the bus voltage "
+                     "(the constant-power load exceeds what they can deliver)."
+                     if why == "singular" else
+                     "DC island " + names + " did not converge — the "
+                     "constant-power load is beyond what the sources can "
+                     "deliver.")))
     for b in dc_buses:
         r = out_buses[b.id]
         if not r.energized:
@@ -468,7 +523,8 @@ def run_dc_load_flow(project: ProjectData) -> DCLoadFlowResults:
 
     return DCLoadFlowResults(
         buses=out_buses, branches=out_branches, sources=out_sources,
-        warnings=warnings, converged=True, iterations=iterations,
+        warnings=warnings, converged=not collapsed_islands,
+        iterations=iterations,
     )
 
 

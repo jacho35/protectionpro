@@ -216,7 +216,10 @@ class TestDegradationOnly:
         assert r["converged"] is True
         offenders = [b for b in r["buses"]
                      if b["limiting_factor"] == "baseline_violation"]
-        assert offenders, "expected a pre-existing violation at this loading"
+        # [HC1] a base violation a DER does not worsen (this low voltage) is
+        # no longer charged to every bus — it is named in a warning, and only a
+        # bus whose DER makes it worse reads baseline_violation.
+        assert any("already has" in w for w in r["warnings"])
         for b in offenders:
             assert b["fault_level_ok"] is None
             assert b["fault_screen"] == "no_capacity"

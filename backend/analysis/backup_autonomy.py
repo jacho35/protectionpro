@@ -94,6 +94,18 @@ def _load_kw_kvar(comp):
         from .loadflow import sync_motor_q_sign   # [MG5] leading motors supply vars
         return (s_kva * pf,
                 sync_motor_q_sign(p) * s_kva * math.sqrt(max(0.0, 1 - pf * pf)))
+    elif comp.type == "vfd":
+        # [BA1] a drive is a load in the solver: shaft kW / efficiency at its
+        # displacement pf (loadflow.py, the vfd branch). It was left out, so a
+        # drive-heavy island looked lightly loaded and the autonomy long.
+        rated_kw = float(p.get("rated_kw", 200) or 0)
+        eff = float(p.get("efficiency", 0.96) or 0.96)
+        load = float(p.get("load_pct", 100) or 0) / 100.0
+        pf = float(p.get("displacement_pf", 0.98) or 0.98)
+        df = float(p.get("demand_factor", 1.0) or 1.0)
+        s_kva = rated_kw * load / eff * df / pf if pf > 0 else 0.0
+        pf = min(1.0, max(0.0, abs(pf)))
+        return s_kva * pf, s_kva * math.sqrt(max(0.0, 1 - pf * pf))
     else:
         return 0.0, 0.0
     pf = min(1.0, max(0.0, abs(pf)))
@@ -167,6 +179,26 @@ def run_backup_autonomy(project: ProjectData) -> dict:
                 "soc_pct": _prop_float(c.props, "battery_soc_pct", 100),
             })
 
+        # [BA2] A generator in the island is a backup source too (fuel-
+        # limited, not energy-limited). The study listed only battery-backed
+        # inverters, so a genset-backed island was reported dark.
+        gen_kw = gen_kva = 0.0
+        for c in comps:
+            if c.type != "generator":
+                continue
+            p_g, _q, s_g, rated_g = _source_output_mva(c)
+            gen_kw += p_g * 1000
+            gen_kva += rated_g * 1000
+            sources.append({
+                "id": c.id,
+                "name": str(c.props.get("name", c.type)),
+                "type": "generator",
+                "inverter_kva": round(rated_g * 1000, 2),
+                "max_discharge_kw": round(p_g * 1000, 2),
+                "available_kwh": None,
+                "pv_kw_now": 0.0,
+                "soc_pct": None,
+            })
         has_backup = len(sources) > 0
         if load_kva < 1e-6 and shed_kw < 1e-6 and not has_backup:
             continue   # nothing to report (e.g. an isolated instrument)
@@ -189,29 +221,36 @@ def run_backup_autonomy(project: ProjectData) -> dict:
             })
             continue
 
-        # 1. Inverter capacity check (kVA)
-        inverter_ok = load_kva <= inverter_kva + 1e-9
+        # 1. Inverter capacity check (kVA) — generator ratings add directly
+        inverter_total_kva = inverter_kva + gen_kva
+        inverter_ok = load_kva <= inverter_total_kva + 1e-9
         # 2. Discharge power checks (kW), night and with PV
-        supply_night_kw = min(discharge_kw, inverter_kva)
-        supply_pv_kw = min(discharge_kw + pv_kw, inverter_kva)
+        supply_night_kw = min(discharge_kw, inverter_kva) + gen_kw
+        supply_pv_kw = min(discharge_kw + pv_kw, inverter_kva) + gen_kw
         power_ok_night = load_kw <= supply_night_kw + 1e-9
         power_ok_pv = load_kw <= supply_pv_kw + 1e-9
-        # 3. Autonomy (h)
-        autonomy_night_h = (energy_kwh_eff / load_kw) if load_kw > 1e-9 else None
-        net_kw_pv = load_kw - min(pv_kw, load_kw)
+        # 3. Autonomy (h): the battery carries what the generator cannot
+        net_kw_night = max(0.0, load_kw - gen_kw)
+        autonomy_night_h = ((energy_kwh_eff / net_kw_night)
+                            if net_kw_night > 1e-9 else None)
+        if gen_kw > 1e-9:
+            notes.append("Generator-backed: duration is set by fuel, and start "
+                         "and transfer time are not modelled.")
+        net_kw_pv = max(0.0, load_kw - gen_kw) - min(pv_kw, max(0.0, load_kw - gen_kw))
         if load_kw <= 1e-9:
             autonomy_pv_h = None
         elif net_kw_pv <= 1e-9:
             autonomy_pv_h = None
-            notes.append("PV output covers the island load — autonomy is "
-                         "unbounded while the modelled irradiance holds.")
+            if gen_kw < load_kw - 1e-9:
+                notes.append("PV output covers the island load — autonomy is "
+                             "unbounded while the modelled irradiance holds.")
         else:
             autonomy_pv_h = energy_kwh_eff / net_kw_pv
 
         if not inverter_ok:
             notes.append(
                 f"Island load {load_kva:.1f} kVA exceeds the backup inverter "
-                f"capacity {inverter_kva:.1f} kVA — shed non-essential load or "
+                f"capacity {inverter_total_kva:.1f} kVA — shed non-essential load or "
                 "add inverter capacity.")
         if not power_ok_night:
             notes.append(
@@ -225,7 +264,8 @@ def run_backup_autonomy(project: ProjectData) -> dict:
             "load_kva": round(load_kva, 2),
             "shed_kw": round(shed_kw, 2),
             "backed_up": True,
-            "inverter_kva": round(inverter_kva, 2),
+            "inverter_kva": round(inverter_total_kva, 2),
+            "generator_kw": round(gen_kw, 2),
             "discharge_kw": round(discharge_kw, 2),
             "pv_kw_available": round(pv_kw, 2),
             "usable_kwh": round(energy_kwh_eff, 2),

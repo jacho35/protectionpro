@@ -84,6 +84,51 @@ def _k_temp(chemistry: str, temperature_c: float) -> float:
     return 1.0 if t >= 10.0 else 1.10
 
 
+def _peukert_factor(p_dc_kw: float, i_rated_kw: float, k: float) -> float:
+    """Capacity-drain multiplier for a discharge at p_dc_kw against the power
+    at the battery's hour rating. [BS2] Never below 1: the Peukert power law
+    is a fit above the rated rate, and extrapolating it below that credits a
+    lightly loaded bank with capacity the datasheet does not give."""
+    if k <= 1.0 or i_rated_kw <= 0 or p_dc_kw <= 0:
+        return 1.0
+    return max(1.0, (p_dc_kw / i_rated_kw) ** (k - 1.0))
+
+
+def _usable_capacity_needed(duty, eta_1way: float, dod: float, hour_rating: float,
+                            k: float) -> float:
+    """[BS1] Smallest rate-corrected bank (kWh, at the hour rating, before the
+    temperature / aging / design factors) whose usable window `dod` covers the
+    duty with the SAME Peukert law the discharge simulation uses.
+
+    With k = 1 this is Σ(P·t)/η/DoD. For k > 1 the drain depends on the bank
+    size itself (a bigger bank runs nearer its hour rate), so solve
+    f(C) = Σ P_dc·t·peukert(P_dc, C/H) = DoD·C; f falls and DoD·C rises with
+    C, so the root is unique and bisection finds it.
+    """
+    steps = [(s["load_kw"] / eta_1way, s["duration_min"] / 60.0) for s in duty
+             if s["load_kw"] > 0]
+    e_dc = sum(p * t for p, t in steps)
+    if e_dc <= 0:
+        return 0.0
+    if k <= 1.0:
+        return e_dc / dod
+
+    def drain(c):
+        return sum(p * t * _peukert_factor(p, c / hour_rating, k) for p, t in steps)
+
+    lo = e_dc / dod                       # no Peukert penalty: a lower bound
+    hi = lo
+    while drain(hi) > dod * hi and hi < lo * 1e6:
+        hi *= 2.0
+    for _ in range(80):
+        mid = 0.5 * (lo + hi)
+        if drain(mid) > dod * mid:
+            lo = mid
+        else:
+            hi = mid
+    return hi
+
+
 def _ocv_pu(chem: dict, soc: float) -> float:
     """Piecewise-linear OCV lookup, per-unit of nominal voltage."""
     pts = chem["ocv"]
@@ -111,13 +156,17 @@ def _default_duty(project, batt, autonomy_target_min):
     island_of = _island_map(project)
     isl = island_of.get(batt.id)
     load_kw = 0.0
+    load_kvar = 0.0
     for comp in project.components:
         if island_of.get(comp.id) != isl:
             continue
         if str(comp.props.get("essential", "yes")).lower() == "no":
             continue
-        load_kw += _load_kw_kvar(comp)[0]
-    return [{"duration_min": float(autonomy_target_min), "load_kw": load_kw}]
+        kw, kvar = _load_kw_kvar(comp)
+        load_kw += kw
+        load_kvar += kvar
+    return [{"duration_min": float(autonomy_target_min), "load_kw": load_kw,
+             "load_kvar": load_kvar}]
 
 
 def run_battery_sizing(project: ProjectData, battery_id: str = "",
@@ -153,6 +202,15 @@ def run_battery_sizing(project: ProjectData, battery_id: str = "",
     hour_rating = max(0.5, float(p.get("battery_hour_rating_h", 10 if chem_key == "lead_acid" else 1) or 1))
     nominal_v = float(p.get("battery_nominal_v", 48) or 48)
 
+    if chem_key == "lead_acid" and hour_rating < 5.0:
+        # [BS3] lead-acid capacity is quoted at C8–C20; the component default
+        # of 1 h applies to every chemistry, so a lead-acid unit left at 1 h
+        # has its Peukert correction referenced to the wrong rate.
+        warnings.append(
+            f"Lead-acid capacity is normally quoted at the 10 h rating but the "
+            f"hour rating is {hour_rating:g} h — the Peukert correction is "
+            f"referenced to that rate. Set the Hour Rating to the datasheet's.")
+
     aging_factor = max(1.0, float(aging_factor or 1.25))
     design_margin = max(1.0, float(design_margin or 1.10))
     k_temp = _k_temp(chem_key, temperature_c)
@@ -163,7 +221,8 @@ def run_battery_sizing(project: ProjectData, battery_id: str = "",
         d = float(step.get("duration_min", 0) or 0)
         kw = float(step.get("load_kw", 0) or 0)
         if d > 0 and kw >= 0:
-            duty.append({"duration_min": d, "load_kw": kw})
+            duty.append({"duration_min": d, "load_kw": kw,
+                         "load_kvar": float(step.get("load_kvar", 0) or 0)})
     derived_duty = False
     if not duty:
         duty = _default_duty(project, batt, autonomy_target_min)
@@ -175,13 +234,19 @@ def run_battery_sizing(project: ProjectData, battery_id: str = "",
     duty_kwh = sum(s["duration_min"] / 60.0 * s["load_kw"] for s in duty)
     duty_min = sum(s["duration_min"] for s in duty)
     peak_kw = max((s["load_kw"] for s in duty), default=0.0)
+    # [BS4] the inverter is rated in kVA: judge it on apparent power, not kW
+    peak_kva = max((math.hypot(s["load_kw"], s.get("load_kvar", 0.0))
+                    for s in duty), default=0.0)
 
     # ── Sizing ──
-    required_kwh = (duty_kwh / eta_1way / dod) * aging_factor * design_margin * k_temp
+    k_peukert = chem["peukert"]
+    usable_kwh = _usable_capacity_needed(duty, eta_1way, dod, hour_rating,
+                                         k_peukert)     # [BS1]
+    required_kwh = usable_kwh * aging_factor * design_margin * k_temp
     required_ah = required_kwh * 1000.0 / nominal_v if nominal_v > 0 else 0.0
     sized_ok = installed_kwh + 1e-9 >= required_kwh
     n_units = (math.ceil(required_kwh / installed_kwh - 1e-9)
-               if installed_kwh > 0 else 0)
+               if installed_kwh > 0 else None)   # [BS5] no installed unit to count
 
     violations = []
     if peak_kw > max_dis_kw + 1e-9 and max_dis_kw > 0:
@@ -189,10 +254,10 @@ def run_battery_sizing(project: ProjectData, battery_id: str = "",
             "kind": "discharge_limit",
             "message": (f"Duty peak {peak_kw:.1f} kW exceeds the battery "
                         f"discharge limit {max_dis_kw:.1f} kW.")})
-    if peak_kw > inverter_kva + 1e-9 and inverter_kva > 0:
+    if peak_kva > inverter_kva + 1e-9 and inverter_kva > 0:
         violations.append({
             "kind": "inverter",
-            "message": (f"Duty peak {peak_kw:.1f} kW exceeds the inverter "
+            "message": (f"Duty peak {peak_kva:.1f} kVA exceeds the inverter "
                         f"rating {inverter_kva:.1f} kVA.")})
 
     # ── Discharge simulation on the INSTALLED battery ──
@@ -216,10 +281,7 @@ def run_battery_sizing(project: ProjectData, battery_id: str = "",
         while remaining > 1e-9:
             dt = min(DT_MIN, remaining)
             # Peukert correction on the DC power draw (rate vs hour rating)
-            if k > 1.0 and i_rated_kw > 0 and p_dc > 0:
-                p_eff = p_dc * (p_dc / i_rated_kw) ** (k - 1.0)
-            else:
-                p_eff = p_dc
+            p_eff = p_dc * _peukert_factor(p_dc, i_rated_kw, k)
             rate_c = p_dc / cap_kwh if cap_kwh > 0 else 0.0   # in 1/h (×1C)
             v_pu = _ocv_pu(chem, soc) - chem["sag_1c"] * rate_c
             ts.append(t); socs.append(soc); vs.append(v_pu); loads.append(p_ac)
@@ -268,11 +330,13 @@ def run_battery_sizing(project: ProjectData, battery_id: str = "",
         "inverter_kva": round(inverter_kva, 2),
         "max_discharge_kw": round(max_dis_kw, 2),
         "duty": [{"duration_min": round(s["duration_min"], 1),
-                  "load_kw": round(s["load_kw"], 2)} for s in duty],
+                  "load_kw": round(s["load_kw"], 2),
+                  "load_kvar": round(s.get("load_kvar", 0.0), 2)} for s in duty],
         "duty_derived": derived_duty,
         "duty_kwh": round(duty_kwh, 3),
         "duty_min": round(duty_min, 1),
         "peak_kw": round(peak_kw, 2),
+        "peak_kva": round(peak_kva, 2),
         "factors": {"eta_inverter_1way": round(eta_1way, 4),
                     "dod": round(dod, 3), "aging": aging_factor,
                     "design_margin": design_margin,

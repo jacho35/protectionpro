@@ -213,6 +213,7 @@ $$E_{req}=\frac{\sum_i P_i\,t_i}{\eta_{inv}\;DoD}\;K_{age}\,K_{design}\,K_{temp}
 <li>$K_{design}=1.10$ — design and growth margin (§6.3.2).</li>
 <li>$K_{temp}$ — low-temperature correction: 1.00 at 25 °C rising toward cold for lead-acid; much flatter for Li-ion (1.00 at ≥10 °C, 1.10 below).</li>
 </ul>
+<p>For lead-acid the usable energy is the bank size $C$ (at the hour rating $H$) that the same Peukert law as the simulation (below) lets cover the duty: $\sum_i P_i t_i\,(P_i H/C)^{k-1}=DoD\cdot C$. A bank sized this way, with no margins, just lasts the duty in the simulation. The correction is never below 1, so a lightly loaded bank gets no more than its datasheet capacity. With $k=1$ (Li-ion) it reduces to the formula above.</p>
 <h4>Discharge simulation</h4>
 <p>One-minute forward steps over the duty cycle. State of charge falls with the energy drawn through $\eta_{inv}$. For lead-acid the drawn current is Peukert-corrected on the battery's hour rating:</p>
 $$I_{eff}=I\left(\frac{I}{I_{rated}}\right)^{k-1},\qquad k=1.25\ (\text{lead-acid}),\ \approx1.0\ (\text{Li-ion})$$

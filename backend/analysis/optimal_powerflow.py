@@ -275,6 +275,54 @@ def run_opf(project: ProjectData, objective: str = "cost",
                     comp.props.pop(ctl["prop"], None)
                 else:
                     comp.props[ctl["prop"]] = old
+        pair = None
+        if best is None and evals < MAX_EVALS:
+            # [OPF-2] No single step improves the score, but two coordinated
+            # steps may: raising a tap to clear an under-voltage while a bank
+            # comes out is the textbook case — each move alone either creates
+            # a violation or costs losses. On a tap + 3-step bank feeder the
+            # single-step climb stopped at 42.5 kW against 20.6 kW for the
+            # exhaustive optimum. Try every pair of one-step moves on two
+            # different controls (within the evaluation budget).
+            nbrs = []
+            for ctl in controls:
+                idx = ctl["values"].index(ctl["current"])
+                for nidx in (idx - 1, idx + 1):
+                    if 0 <= nidx < len(ctl["values"]):
+                        nbrs.append((ctl, ctl["values"][nidx]))
+            for i in range(len(nbrs)):
+                for j in range(i + 1, len(nbrs)):
+                    (c1, v1), (c2, v2) = nbrs[i], nbrs[j]
+                    if c1 is c2:
+                        continue
+                    if evals >= MAX_EVALS:
+                        break
+                    olds = []
+                    for ctl, val in ((c1, v1), (c2, v2)):
+                        cp = wcomps[ctl["id"]]
+                        olds.append((cp, ctl["prop"], cp.props.get(ctl["prop"])))
+                        cp.props[ctl["prop"]] = val
+                    lf = apply_and_solve()
+                    if lf.converged:
+                        c, l, v = _metrics(lf, wcomps, v_min, v_max,
+                                           loading_limit_pct)
+                        sc = _score(c, l, v, objective)
+                        if sc < cur_score and (pair is None or sc < pair["score"]):
+                            pair = {"score": sc, "moves": [(c1, v1), (c2, v2)]}
+                    for cp, prop, old in olds:
+                        if old is None:
+                            cp.props.pop(prop, None)
+                        else:
+                            cp.props[prop] = old
+        if pair is not None:
+            for ctl, val in pair["moves"]:
+                moves.append({"element_id": ctl["id"], "name": ctl["name"],
+                              "prop": ctl["prop"], "unit": ctl["unit"],
+                              "from": ctl["current"], "to": val})
+                wcomps[ctl["id"]].props[ctl["prop"]] = val
+                ctl["current"] = val
+            cur_score = pair["score"]
+            continue
         if best is None or evals >= MAX_EVALS:
             break
         ctl = best["ctl"]
@@ -330,7 +378,9 @@ def run_opf(project: ProjectData, objective: str = "cost",
         "loading_limit_pct": loading_limit_pct,
         "method": ("Merit-order economic dispatch (linear marginal costs) + "
                    "greedy discrete Volt/VAR hill climb (caps / taps / "
-                   "setpoints), each move scored by a full load-flow solve"),
+                   "setpoints; a coordinated pair of steps when no single "
+                   "step improves), each move scored by a full load-flow "
+                   "solve"),
         "warnings": warnings,
         "note": "",
     }

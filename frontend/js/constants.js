@@ -1211,6 +1211,13 @@ const STANDARD_FUSES = [
 ];
 
 // Interaction modes
+// A demand factor, defaulting to 1 only when ABSENT. `Number(df) || 1` read a
+// real 0 (a way switched off in a schedule) as 1 and counted its full load.
+function demandFactorOr1(v) {
+  const n = Number(v);
+  return (v === undefined || v === null || v === '' || Number.isNaN(n)) ? 1 : n;
+}
+
 const MODE = {
   SELECT: 'select',
   WIRE: 'wire',

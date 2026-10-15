@@ -190,7 +190,7 @@ $$Q=Q_{rated}\,V^{2},\qquad B=\frac{Q_{rated}}{S_b}\ \text{(pu)}$$
 <p>The recommended list is therefore directly applicable on the diagram as ordinary capacitor banks.</p>
 <h4>Annualised value</h4>
 $$\text{Value}=\Delta P_{loss}\ [\text{MW}]\times8760\ \text{h}\times c_{\$/MWh}$$
-<p>using the utility's marginal cost (<code>cost_per_mwh</code>, as in <a href="#" data-help="flow-opf">OPF</a>). Placing at the load centre rather than the source is what captures loss savings, because the reactive current is then no longer carried through the feeder.</p>` },
+<p>using the utility's marginal cost (<code>cost_per_mwh</code>, as in <a href="#" data-help="flow-opf">OPF</a>). The loss difference is at the modelled load held for every hour, so the figure is an upper bound — a real feeder averages well below its modelled demand (scale by the feeder's loss load factor). Placing at the load centre rather than the source is what captures loss savings, because the reactive current is then no longer carried through the feeder.</p>` },
 
 { id: 'flow-reliability', group: 'flow', title: 'Reliability (SAIDI / SAIFI)',
   std: 'IEEE 1366 · Billinton & Allan (analytical FMEA) · Analyse ▸ Planning & reliability',
@@ -199,6 +199,7 @@ $$\text{Value}=\Delta P_{loss}\ [\text{MW}]\times8760\ \text{h}\times c_{\$/MWh}
 <p>Estimates how often and how long each load point is interrupted by analysing every failure mode of every component in turn.</p>
 <h4>Method — analytical FMEA</h4>
 <p>Each failable component has a permanent failure rate $\lambda$ (occurrences per year; per-km × length for cables and lines) and a mean repair time $r$ (hours). Each failure is analysed as a sustained outage: the component is removed, and the buses that lose <em>all</em> source paths are the interrupted load points. This is a connectivity walk through closed switching devices — no load-flow solve — using the perfect-selectivity assumption of classic radial FMEA. Sectionalising and restoration through normally-open points is out of scope.</p>
+<p>A generator, battery or hybrid-PV unit keeps an island supplied only if its firm capacity (rating × power factor, or its stated discharge limit) covers the load on that island; plain PV and wind are grid-following and do not hold a network up. An island short of capacity is treated as interrupted in full — no load shedding is assumed.</p>
 <p>Load points carry customer counts $N_k$ (<code>customers</code> on loads and boards, default 1) and demand $P_k$ in MW. Summing over all failure modes $k$:</p>
 $$\text{SAIFI}=\frac{\sum\lambda_kN_k}{N_T},\qquad
 \text{SAIDI}=\frac{\sum\lambda_kr_kN_k}{N_T},\qquad

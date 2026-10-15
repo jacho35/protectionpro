@@ -39,10 +39,23 @@ def _comp_name(comp):
     return str((comp.props or {}).get("name", comp.id))
 
 
-def _project_without(project: ProjectData, remove_ids: set) -> ProjectData:
+def _runs(comp) -> int:
+    try:
+        return max(1, int((comp.props or {}).get("num_parallel", 1) or 1))
+    except (TypeError, ValueError):
+        return 1
+
+
+def _project_without(project: ProjectData, remove_ids: set,
+                     drop_run_ids: set = frozenset()) -> ProjectData:
     """A copy of *project* with the given components (and any wire touching them)
-    removed."""
+    removed. `drop_run_ids` are parallel cables that lose ONE run
+    (num_parallel − 1) instead of the whole bundle."""
     data = project.model_dump()
+    for c in data["components"]:
+        if c["id"] in drop_run_ids:
+            props = c.setdefault("props", {})
+            props["num_parallel"] = max(1, int(props.get("num_parallel", 1)) - 1)
     data["components"] = [c for c in data["components"] if c["id"] not in remove_ids]
     data["wires"] = [w for w in data["wires"]
                      if w["fromComponent"] not in remove_ids
@@ -152,6 +165,18 @@ def _evaluate(project: ProjectData, method, base_loads, base_energ_ids,
     return result, violations, metrics
 
 
+def _worse_than_base(v, base_v) -> bool:
+    """[CT1] Is a post-outage violation worse than the same violation already
+    present in the base case? (overload +1 %, voltage 0.001 pu.)"""
+    if v.kind == "overload":
+        return v.value > base_v.value + 1.0
+    if v.kind == "undervoltage":
+        return v.value < base_v.value - 0.001
+    if v.kind == "overvoltage":
+        return v.value > base_v.value + 0.001
+    return True
+
+
 def _status(metrics, violations):
     if not metrics["converged"]:
         return "non_converged"
@@ -193,19 +218,36 @@ def run_contingency(project: ProjectData, method: str = "newton_raphson",
         components_by_id=components_by_id)
     if base_violations:
         warnings.append(f"Base case already has {len(base_violations)} "
-                        "violation(s) before any outage.")
+                        "violation(s) before any outage; each contingency is "
+                        "judged on the violations it adds or makes worse.")
 
     outageable = [c for c in project.components if c.type in OUTAGEABLE_TYPES]
     by_id = {c.id: c for c in project.components}
     results = []
 
+    # [CT1] Violations already in the base case would otherwise be repeated
+    # in every contingency, turning each into "violations" and the N-1 verdict
+    # into insecure. A contingency is judged on what it adds or worsens.
+    base_by_key = {(v.kind, v.element_id): v for v in base_violations}
+
     def _run_combo(combo):
-        remove = set(combo)
-        names = ", ".join(_comp_name(by_id[cid]) for cid in combo if cid in by_id)
-        p = _project_without(project, remove)
+        # [CT2] one run of a parallel cable bundle, not the whole bundle
+        drop = {cid for cid in combo if cid in by_id
+                and by_id[cid].type == "cable" and _runs(by_id[cid]) >= 2}
+        remove = set(combo) - drop
+        names = ", ".join(
+            _comp_name(by_id[cid]) + (f" (1 of {_runs(by_id[cid])} runs)"
+                                      if cid in drop else "")
+            for cid in combo if cid in by_id)
+        p = _project_without(project, remove, drop)
         _r, violations, metrics = _evaluate(
             p, method, base_loads, base_energ_ids, v_min, v_max, loading_limit,
             components_by_id=components_by_id)
+        kept = [v for v in violations
+                if (v.kind, v.element_id) not in base_by_key
+                or _worse_than_base(v, base_by_key[(v.kind, v.element_id)])]
+        inherited = len(violations) - len(kept)
+        violations = kept
         status = _status(metrics, violations)
         return (
             _severity(status, metrics, violations),
@@ -223,6 +265,7 @@ def run_contingency(project: ProjectData, method: str = "newton_raphson",
                 min_v_pu=metrics["min_v_pu"],
                 max_v_pu=metrics["max_v_pu"],
                 lost_load_mw=metrics["lost_load_mw"],
+                inherited_violation_count=inherited,
                 violations=violations,
             ))
 

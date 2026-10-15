@@ -1033,7 +1033,8 @@ document.addEventListener('DOMContentLoaded', () => {
       const nBus = Object.keys(result.buses || {}).length;
       document.getElementById('status-info').textContent = result.converged
         ? `DC load flow complete — ${nBus} DC bus${nBus === 1 ? '' : 'es'}.`
-        : 'DC load flow: no DC buses found.';
+        : (nBus > 0 ? 'DC load flow: an island cannot be supplied — see the warnings.'
+                    : 'DC load flow: no DC buses found.');
       showDCLoadFlowResults(result);
     } catch (e) {
       console.error('DC load flow error:', e);
@@ -2313,9 +2314,9 @@ document.addEventListener('DOMContentLoaded', () => {
           <th>Discharge (kW)</th><th>Available (kWh)</th><th>SoC</th><th>PV Now (kW)</th>
         </tr></thead><tbody>`;
         for (const s of isl.sources) {
-          html += `<tr><td>${escHtml(s.name)}</td><td>${s.type === 'hybrid_pv' ? 'Hybrid PV' : 'BESS'}</td>
+          html += `<tr><td>${escHtml(s.name)}</td><td>${s.type === 'hybrid_pv' ? 'Hybrid PV' : s.type === 'generator' ? 'Generator' : 'BESS'}</td>
             <td>${s.inverter_kva.toFixed(1)}</td><td>${s.max_discharge_kw.toFixed(1)}</td>
-            <td>${s.available_kwh.toFixed(1)}</td><td>${s.soc_pct.toFixed(0)}%</td>
+            <td>${s.available_kwh == null ? 'fuel' : s.available_kwh.toFixed(1)}</td><td>${s.soc_pct == null ? '—' : s.soc_pct.toFixed(0) + '%'}</td>
             <td>${s.pv_kw_now.toFixed(1)}</td></tr>`;
         }
         html += '</tbody></table>';
@@ -3236,6 +3237,9 @@ document.addEventListener('DOMContentLoaded', () => {
   // ── Raceway / Conduit Fill ──
   const CONDUIT_SIZES = [20, 25, 32, 40, 50, 63, 75, 90, 110, 125, 160];
   let _racewaySeq = 1;
+  // grouping tables that describe cables in a conduit/duct (not trays or direct burial)
+  const RACEWAY_GROUPINGS = ['bunched', 'ducts_mc_touching', 'ducts_mc_025m', 'ducts_mc_05m',
+    'ducts_mc_1m', 'ducts_sc_touching', 'ducts_sc_025m', 'ducts_sc_05m', 'ducts_sc_1m'];
 
   function projectCables() {
     return [...AppState.components.values()].filter(c => c.type === 'cable');
@@ -3266,6 +3270,9 @@ document.addEventListener('DOMContentLoaded', () => {
           <label>Conduit <select data-rw-nominal="${rw.id}">${opts}</select></label>
           <label title="Override internal diameter (0 = typical for nominal size)">ID (mm)
             <input type="number" data-rw-id-mm="${rw.id}" value="${rw.custom_id_mm || ''}" placeholder="auto" style="width:70px" min="0" step="0.1"></label>
+          <label title="IEC 60364-5-52 grouping table for the factor applied to every cable's rating">Grouping
+            <select data-rw-grouping="${rw.id}">${RACEWAY_GROUPINGS.map(k =>
+              `<option value="${k}" ${(rw.grouping || 'bunched') === k ? 'selected' : ''}>${escHtml(IEC_GROUPING_LABELS[k] || k)}</option>`).join('')}</select></label>
           <button class="btn" data-rw-del="${rw.id}" style="margin-left:auto;color:#d32f2f">Delete</button>
         </div>
         <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:4px 12px">${cableChecks}</div>
@@ -3284,6 +3291,10 @@ document.addEventListener('DOMContentLoaded', () => {
     list.querySelectorAll('[data-rw-id-mm]').forEach(el => el.addEventListener('change', () => {
       const rw = AppState.raceways.find(r => r.id === el.dataset.rwIdMm);
       if (rw) rw.custom_id_mm = parseFloat(el.value) || 0;
+    }));
+    list.querySelectorAll('[data-rw-grouping]').forEach(el => el.addEventListener('change', () => {
+      const rw = AppState.raceways.find(r => r.id === el.dataset.rwGrouping);
+      if (rw) rw.grouping = el.value;
     }));
     list.querySelectorAll('[data-rw-del]').forEach(el => el.addEventListener('click', () => {
       AppState.raceways = AppState.raceways.filter(r => r.id !== el.dataset.rwDel);
@@ -3332,6 +3343,7 @@ document.addEventListener('DOMContentLoaded', () => {
       name: rw.name,
       conduit_nominal_mm: rw.nominal_mm,
       conduit_id_mm: rw.custom_id_mm || 0,
+      grouping: rw.grouping || 'bunched',
       cables: rw.cableIds.flatMap(cid => {
         const comp = AppState.components.get(cid);
         if (!comp) return [];
@@ -3348,6 +3360,12 @@ document.addEventListener('DOMContentLoaded', () => {
           od_mm: parseFloat(comp.props.od_mm) || 0,
           rated_amps: parseFloat(comp.props.rated_amps) || 0,
           load_amps: perRun,
+          // a rating locked from the ampacity calculator already carries its
+          // own grouping factor — the raceway must not apply it twice
+          included_grouping_factor: (comp.props.ampacity && comp.props.ampacity.applied)
+            ? (IecAmpacity.groupFactor(comp.props.ampacity.grouping,
+                 comp.props.ampacity.circuits || 1).factor || 1)
+            : 1,
         }));
       }),
     }));

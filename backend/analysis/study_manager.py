@@ -56,7 +56,15 @@ def _run_single_study(key: str, project: ProjectData):
         return run_load_flow(project, method)
     elif key == "fault":
         from .fault import run_fault_analysis
-        return run_fault_analysis(project, fault_bus_id=None, fault_type=None)
+        # [SM1] the same study settings the standalone route applies; only the
+        # bus is left open (a batch screens every bus). The standalone call
+        # passes the project's voltage factor and conductor temperature, and
+        # the batch used to drop them (c_max / 20 °C instead of the minimum
+        # study the user configured).
+        return run_fault_analysis(
+            project, fault_bus_id=None, fault_type=project.faultType,
+            voltage_factor=project.voltageFactor,
+            conductor_temperature_c=project.conductorTemperatureC)
     elif key == "arcflash":
         from .fault import run_fault_analysis
         from .arcflash import run_arc_flash
@@ -275,7 +283,11 @@ def _extract_study_status(key: str, result_data) -> dict:
     elif key == "duty_check":
         devices = result_data.get("devices", [])
         transformers = result_data.get("transformers", [])
-        all_items = devices + transformers
+        # [SM2] relay-fed CTs and VTs are part of the duty study; a failing
+        # CT (saturation) or VT (burden / voltage factor) must fail the batch
+        all_items = (devices + transformers
+                     + (result_data.get("ct_checks") or [])
+                     + (result_data.get("pt_checks") or []))
         n_pass = sum(1 for d in all_items if d.get("status") == "pass")
         n_warn = sum(1 for d in all_items if d.get("status") == "warning")
         n_fail = sum(1 for d in all_items if d.get("status") == "fail")

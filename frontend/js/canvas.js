@@ -1370,7 +1370,7 @@ const Canvas = {
       } else if (comp.type === 'distribution_board') {
         if (p.name && p.name !== 'DB') lines.push(p.name);
         const ways = (p.circuits || []).length;
-        const demand = (p.rated_kva || 0) * (p.demand_factor || 1);
+        const demand = (p.rated_kva || 0) * demandFactorOr1(p.demand_factor);
         lines.push(`${ways} way${ways === 1 ? '' : 's'}`);
         lines.push(`${demand.toFixed(1)} kVA demand`);
         defaultOY = 32;
