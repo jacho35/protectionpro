@@ -65,6 +65,14 @@ const ReticTcc = {
     for (const kr of earth.kiosks) {
       if (!inString.has(kr.kioskId)) continue;
       const kiosk = strKiosks.find(k => k.id === kr.kioskId);
+      // The kiosk's feeder (the LV cable from the string breaker): loop current
+      // at the far end of that cable, cleared by the string breaker.
+      const kl = kr.loop;
+      if (kl && kl.ifA != null && kl.status !== 'info') {
+        tAllow = kl.tAllowS || tAllow;
+        if (kl.iaA != null) ia = kl.iaA;
+        rows.push({ kiosk: kr.name || '', erf: 'feeder cable', feeder: true, ifA: kl.ifA, tS: kl.tS, ok: kl.status === 'pass', dev: devices[0] });
+      }
       for (const e of kr.erfs) {
         const l = e.loop;
         if (!l || l.ifA == null) continue;
@@ -174,6 +182,12 @@ const ReticTcc = {
       const x = X(r.ifA), y = clears ? Y(r.tS) : this.Y0;
       const tip = `${r.kiosk ? r.kiosk + ' · ' : ''}${r.erf}: ${Math.round(r.ifA)} A, `
         + (clears ? `clears in ${r.tS < 1 ? r.tS.toFixed(3) : r.tS.toFixed(1)} s` : 'does not clear');
+      if (r.feeder) {
+        const x0 = f(x), y0 = f(y);
+        const dia = `M${x0} ${f(y - 6)}L${f(x + 6)} ${y0}L${x0} ${f(y + 6)}L${f(x - 6)} ${y0}Z`;
+        marks += `<path class="${r.ok ? 'rtcc-fpass' : 'rtcc-ffail'}" d="${dia}"><title>${escHtml(tip)}</title></path>`;
+        continue;
+      }
       marks += r.ok
         ? `<circle class="rtcc-pass" cx="${f(x)}" cy="${f(y)}" r="5"><title>${escHtml(tip)}</title></circle>`
         : `<path class="rtcc-fail" d="M${f(x - 4)} ${f(y - 4)}L${f(x + 4)} ${f(y + 4)}M${f(x + 4)} ${f(y - 4)}L${f(x - 4)} ${f(y + 4)}"><title>${escHtml(tip)}</title></path>`;
@@ -198,11 +212,12 @@ const ReticTcc = {
     </svg>`;
 
     const sorted = d.rows.slice().sort((a, b) => (a.ok - b.ok) || (a.ifA - b.ifA));
-    const nOk = d.rows.filter(r => r.ok).length;
+    const erfRows = d.rows.filter(r => !r.feeder);
+    const nOk = erfRows.filter(r => r.ok).length;
     const tFmt = (t) => t == null ? 'does not clear' : (t < 1 ? t.toFixed(3) : t.toFixed(1)) + ' s';
     const multi = d.devices.length > 1;
     const rowsHtml = sorted.map(r => `<tr class="${r.ok ? '' : 'rtcc-bad'}">
-        <td>${escHtml(r.kiosk ? r.kiosk + ' · ' : '')}${escHtml(String(r.erf))}${multi ? `<br><span class="rtcc-dev" style="color:${r.dev.color}">${escHtml(r.dev.name)}</span>` : ''}</td>
+        <td>${escHtml(r.kiosk ? r.kiosk + ' · ' : '')}${r.feeder ? '<i>feeder cable</i>' : escHtml(String(r.erf))}${multi ? `<br><span class="rtcc-dev" style="color:${r.dev.color}">${escHtml(r.dev.name)}</span>` : ''}</td>
         <td class="num">${Math.round(r.ifA).toLocaleString('en-US')} A</td>
         <td class="num">${tFmt(r.tS)}</td>
         <td class="${r.ok ? 'rtcc-ok-t' : 'rtcc-fail-t'}">${r.ok ? '✓ pass' : '✕ fail'}</td></tr>`).join('');
@@ -218,12 +233,13 @@ const ReticTcc = {
       `<div><i class="rtcc-sw" style="background:${v.color}"></i><b>${escHtml(v.name)}</b> <span>${i === 0 ? 'string breaker · ' : 'outgoing way · '}${escHtml(specOf(v.device))}</span></div>`).join('')}</div>` : '';
 
     return `<div class="rtcc">
-      <div class="rtcc-sub">${escHtml(spec)} · protects ${d.strSize} kiosk${d.strSize === 1 ? '' : 's'} · ${nOk} of ${d.rows.length} erven clear within ${d.tAllow} s</div>
+      <div class="rtcc-sub">${escHtml(spec)} · protects ${d.strSize} kiosk${d.strSize === 1 ? '' : 's'} · ${nOk} of ${erfRows.length} erven clear within ${d.tAllow} s</div>
       <div class="rtcc-grid">
         <div class="rtcc-plotwrap">${svg}</div>
         <div class="rtcc-side">
           ${devLegend}
           <div class="rtcc-legend"><span><i class="rtcc-dot"></i> Clears within ${d.tAllow} s</span><span><b class="rtcc-x">×</b> Too slow / won't clear</span></div>
+          <div class="rtcc-legend"><span><svg width="14" height="14" viewBox="-7 -7 14 14" aria-hidden="true"><path class="rtcc-fpass" d="M0 -6L6 0L0 6L-6 0Z"/></svg> Kiosk feeder cable, clears</span><span><svg width="14" height="14" viewBox="-7 -7 14 14" aria-hidden="true"><path class="rtcc-ffail" d="M0 -6L6 0L0 6L-6 0Z"/></svg> too slow</span></div>
           <div class="rtcc-tablewrap"><table class="rtcc-table">
             <thead><tr><th>Erf</th><th class="num">Fault current</th><th class="num">Clears in</th><th>Result</th></tr></thead>
             <tbody>${rowsHtml}</tbody></table></div>
