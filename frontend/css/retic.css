@@ -367,3 +367,38 @@ button.kiosk-demand-badge:hover { filter: brightness(.97); box-shadow: inset 0 0
 /* Select all kiosks */
 .retic-selectall { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
 .retic-selectall .retic-hint { font-size: 12px; color: var(--text-muted); }
+
+/* Mini TCC modal (string breaker vs each erf's earth-fault current) */
+.ms-curve { margin-left: 6px; padding: 3px 8px; font-size: 11px; }
+.rtcc-sub { font-size: 12px; color: var(--text-secondary); margin-bottom: 10px; }
+.rtcc-grid { display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-start; }
+.rtcc-plotwrap { flex: 0 1 600px; min-width: 0; overflow-x: auto; }
+.rtcc-plot { max-width: 100%; height: auto; font-family: var(--font-family); }
+.rtcc-side { flex: 1 1 280px; min-width: 260px; display: flex; flex-direction: column; gap: 8px; }
+.rtcc-legend { display: flex; gap: 14px; font-size: 12px; color: var(--text-secondary); align-items: center; }
+.rtcc-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #2e7d32; margin-right: 4px; }
+.rtcc-x { color: #d32f2f; font-size: 14px; margin-right: 2px; }
+.rtcc-tablewrap { max-height: 380px; overflow-y: auto; border: 1px solid var(--border-color); border-radius: 6px; }
+.rtcc-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.rtcc-table th { position: sticky; top: 0; background: var(--bg-tertiary); text-align: left; font-size: 10px;
+  text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); padding: 5px 8px; }
+.rtcc-table td { padding: 5px 8px; border-top: 1px solid var(--border-color); }
+.rtcc-table .num { text-align: right; white-space: nowrap; }
+.rtcc-table tr.rtcc-bad { background: rgba(211, 47, 47, .08); }
+.rtcc-ok-t { color: #2e7d32; font-weight: 700; }
+.rtcc-fail-t { color: #d32f2f; font-weight: 700; }
+.rtcc-foot, .rtcc-empty { font-size: 11px; color: var(--text-muted); margin-top: 10px; line-height: 1.5; }
+.rtcc-frame { fill: var(--bg-primary); stroke: var(--border-color); }
+.rtcc-major { stroke: var(--border-color); stroke-width: 1; fill: none; }
+.rtcc-minor { stroke: var(--bg-tertiary); stroke-width: 1; fill: none; }
+.rtcc-tick, .rtcc-note { font-size: 11px; fill: var(--text-secondary); }
+.rtcc-axis { font-size: 12px; fill: var(--text-primary); }
+.rtcc-limit { stroke: #b45309; stroke-width: 1.5; stroke-dasharray: 6 4; fill: none; }
+.rtcc-limit-t { font-size: 11px; font-weight: 700; fill: #b45309; }
+.rtcc-ia { stroke: var(--text-muted); stroke-width: 1.2; stroke-dasharray: 3 4; fill: none; }
+.rtcc-curve { stroke: var(--accent); stroke-width: 2.5; stroke-linejoin: round; fill: none; }
+.rtcc-pass { fill: #2e7d32; stroke: var(--bg-primary); stroke-width: 1.5; }
+.rtcc-fail { stroke: #d32f2f; stroke-width: 2.2; stroke-linecap: round; fill: none; }
+body.dark-mode .rtcc-dot, body.dark-mode .rtcc-pass { fill: #66bb6a; }
+body.dark-mode .rtcc-ok-t { color: #66bb6a; }
+body.dark-mode .rtcc-fail, body.dark-mode .rtcc-limit { stroke-width: 2.4; }
