@@ -33,9 +33,15 @@ Protection can be set per kiosk (``device`` on the kiosk, at the head of its
 incoming feeder): the device that clears a fault is the nearest one back
 towards the minisub, so a kiosk with none inherits the one above it.
 
+A service cable has its own protection in the kiosk: an erf carries the
+``device`` its outgoing way is protected by (the frontend resolves the erf's
+own pick, else the kiosk's default outgoing protection) and its earth-fault
+loop and ECC are judged against that device. An erf with none falls back to the
+string breaker, as before, and is reported with ``deviceSource: "string"``.
+
 Conventions, echoed on every response in ``basis``: the MV network is an ideal
-source unless ``mvFaultMVA`` is given; the minisub's single LV device protects
-every cable downstream of it (no discrimination with kiosk fuses is modelled);
+source unless ``mvFaultMVA`` is given; the string breaker protects every feeder
+leg downstream of it (no discrimination with kiosk fuses is modelled);
 cable R is the library's operating-temperature value; reactance is the phase
 conductor's; the faulted leg is evaluated at its far end. A cable with no earth
 chosen is checked with an assumed Table 54.7 conductor of the phase metal and
@@ -341,6 +347,9 @@ def run_retic_earth_check(req: dict) -> dict:
         erf_out = []
         for e in (k.get("erfs") or []):
             svc = e.get("service") or {}
+            # The service cable's own way in the kiosk, else the string breaker.
+            edev = e.get("device") or device
+            esrc = (e.get("deviceSource") or "erf") if e.get("device") else "string"
             sleg = leg_of(svc.get("cable"), svc.get("earth"), _num(svc.get("lengthM")), sysm == "TN-C")
             er = {"erfId": e.get("id"), "erfNumber": e.get("erfNumber", "")}
             if sleg is None:
@@ -348,10 +357,11 @@ def run_retic_earth_check(req: dict) -> dict:
                 er["ecc"] = None
             else:
                 z_erf = z + sleg["z"]
-                st, i_min, t, ia, zs_max, note = _loop_status(device, z_erf, u0, t_allow)
+                st, i_min, t, ia, zs_max, note = _loop_status(edev, z_erf, u0, t_allow)
                 er["loop"] = {"status": st, "zsOhm": _round(abs(z_erf)), "ifA": _round(i_min, 0), "tS": _round(t, 3),
-                              "iaA": _round(ia, 0), "zsMaxOhm": _round(zs_max), "tAllowS": t_allow, "note": note}
-                er["ecc"] = _leg_ecc(sleg, z_erf, device)
+                              "iaA": _round(ia, 0), "zsMaxOhm": _round(zs_max), "tAllowS": t_allow, "note": note,
+                              "device": (edev or {}).get("name"), "deviceSource": esrc}
+                er["ecc"] = _leg_ecc(sleg, z_erf, edev)
             erf_out.append(er)
             worst_all = _worst(worst_all, er["loop"]["status"], (er["ecc"] or {}).get("status"))
         res["erfs"] = erf_out
@@ -377,7 +387,7 @@ def run_retic_earth_check(req: dict) -> dict:
         "minisubs": ms_out, "kiosks": out_kiosks,
         "basis": [
             f"TN system, U0 = {u0:g} V; minimum fault current c_min = {C_MIN} (IEC 60909-0 §5.3.1), conductors at operating temperature.",
-            f"Disconnection within {t_allow:g} s (IEC 60364-4-41 Table 41.1, distribution circuits) by the breaker at the head of the string (a kiosk with none of its own uses the nearest one back towards the minisub); no discrimination between devices in series is checked.",
+            f"Disconnection within {t_allow:g} s (IEC 60364-4-41 Table 41.1, distribution circuits). Feeder legs: the breaker at the head of the string (a kiosk with none of its own uses the nearest one back towards the minisub). Service cables: the erf's own outgoing protection, else the kiosk's default, else the string breaker; no discrimination between devices in series is checked.",
             "Earthing per minisub: TN-S separate earth conductor on every LV cable; TN-C PEN throughout (no ECC; PEN minimum 10 mm² Cu / 16 mm² Al); TN-C-S PEN on the feeders, separate earth conductor on the service cables only.",
             "Ze is the transformer's short-circuit impedance on its own rated base; the MV network is an ideal source unless a fault level is given.",
             "ECC: IEC 60364-5-54 Table 54.7 (converted by conductivity for another metal) or the §543.1.2 adiabatic size at c_max = 1.10 and the device's clearing time, k from Table 54.3; the leg is evaluated at its far end.",

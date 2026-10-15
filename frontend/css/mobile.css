@@ -1122,6 +1122,7 @@ body.dark-mode {
       "phase amps"
       "cable cable"
       "earth earth"
+      "prot  prot"
       "vd    ef";
     gap: 8px 10px;
     position: relative;
@@ -1151,6 +1152,7 @@ body.dark-mode {
   .erf-table td[data-cell="amps"]  { grid-area: amps; }
   .erf-table td[data-cell="cable"] { grid-area: cable; }
   .erf-table td[data-cell="earth"] { grid-area: earth; }
+  .erf-table td[data-cell="prot"]  { grid-area: prot; }
   .erf-table td[data-cell="ef"]    { grid-area: ef; text-align: left; }
   .erf-table td[data-cell="vd"] {
     grid-area: vd;

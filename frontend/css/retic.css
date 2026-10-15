@@ -402,3 +402,11 @@ button.kiosk-demand-badge:hover { filter: brightness(.97); box-shadow: inset 0 0
 body.dark-mode .rtcc-dot, body.dark-mode .rtcc-pass { fill: #66bb6a; }
 body.dark-mode .rtcc-ok-t { color: #66bb6a; }
 body.dark-mode .rtcc-fail, body.dark-mode .rtcc-limit { stroke-width: 2.4; }
+
+/* Per-erf outgoing protection: dashed while it is only inheriting the default */
+.erf-table select.prot-default { border-style: dashed; color: var(--text-muted); max-width: 190px; }
+.erf-table td[data-cell="prot"] select { max-width: 190px; }
+.rtcc-devs { display: flex; flex-direction: column; gap: 4px; font-size: 12px; margin-bottom: 4px; }
+.rtcc-devs span { color: var(--text-muted); }
+.rtcc-sw { display: inline-block; width: 14px; height: 3px; margin-right: 6px; vertical-align: middle; border-radius: 2px; }
+.rtcc-dev { font-size: 10px; }

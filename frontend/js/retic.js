@@ -26,7 +26,7 @@ const Retic = {
   // pickers' current values.
   _selErfs: new Set(),
   _selFeeders: new Set(),
-  _bulk: { cableType: '', earthCable: '', feederCable: '', phase: '', renamePrefix: '', renameStart: 1, renameStyle: 'nest', renameTarget: 'erf' },
+  _bulk: { cableType: '', earthCable: '', feederCable: '', phase: '', erfProtection: '', kioskProtection: '', renamePrefix: '', renameStart: 1, renameStyle: 'nest', renameTarget: 'erf' },
   _lastTick: null,
 
   ROTATE: 'Rotate',
@@ -296,7 +296,7 @@ const Retic = {
       this._markDirty();
       if (key === 'feederCable' && typeof PlanSync !== 'undefined') PlanSync.pullCablesFromDemand();   // drawn feeder route follows
       // The kiosk's class sets its effective ADMD — refresh the placeholder.
-      if (key === 'loadClass' || key === 'protection') this.renderKiosks();   // the card and the side-bar Strings list show the same pick
+      if (key === 'loadClass' || key === 'protection' || key === 'outgoingProtection') this.renderKiosks();   // the card and the side-bar Strings list show the same pick
       this.recompute();
       return;
     }
@@ -882,6 +882,8 @@ const Retic = {
               ? `<div class="retic-field"><label title="The breaker at the head of this string of kiosks: every kiosk fed on from this one is protected by it. Used for the earth-fault loop and ECC checks. Also settable in the side bar's Strings list.">String Breaker</label>
               <select data-action="kiosk-field" data-kiosk="${k.id}" data-field="protection" data-cable-select data-ss-placeholder="Type to search devices — e.g. mccb 250, gg 100">${this._protectionOptions(k.protection, '— select breaker —')}</select></div>`
               : `<div class="retic-field"><label>String Breaker</label><div class="earth-pen" title="Set once on the head of the string (${escHtml(this._stringHead(k).name || 'kiosk')}); every kiosk fed on from it shares that breaker.">${escHtml(this._stringBreakerName(k))} <span style="color:var(--text-muted)">— string of ${escHtml(this._stringHead(k).name || 'kiosk')}</span></div></div>`}
+            <div class="retic-field"><label title="The protection on this kiosk's outgoing ways (MCB / MCCB / fuse). It is the default for every erf's service cable in the earth-fault check; an erf can pick its own in its Protection column. Blank: the service cables are checked against the string breaker.">Outgoing protection (default)</label>
+              <select data-action="kiosk-field" data-kiosk="${k.id}" data-field="outgoingProtection" data-cable-select data-ss-placeholder="Outgoing way — e.g. mcb 40 c, mccb 100">${this._protectionOptions(k.outgoingProtection, '— string breaker —')}</select></div>
             ${this._earthingOf(k) === 'TN-S'
               ? `<div class="retic-field"><label title="Earth conductor of the feeder cable (Cu or Al), for the earth-fault loop and ECC size checks">Feeder Earth Cable</label>
               <select data-action="kiosk-field" data-kiosk="${k.id}" data-field="feederEarth" data-cable-select data-ss-placeholder="Earth cable — type to search, e.g. 25 cu, 35 al">${this._earthCableOptions(k.feederEarth)}</select></div>`
@@ -890,7 +892,7 @@ const Retic = {
               <div class="earth-cell" data-earth-kiosk="${k.id}">—</div></div>
           </div>
           <table class="erf-table">
-            <thead><tr><th class="sel-col"></th><th>Erf #</th><th>Length (m)</th><th>Phase</th><th>Service Cable</th><th title="Earth conductor of the service cable (Cu or Al)">Earth Cable</th><th title="Fixed, undiversified load replacing the ADMD for that erf: enter amps or kVA">Override (A / kVA)</th><th>Service VD</th><th title="Earth-fault loop disconnection and ECC size at the end of the service">Earth fault</th><th></th></tr></thead>
+            <thead><tr><th class="sel-col"></th><th>Erf #</th><th>Length (m)</th><th>Phase</th><th>Service Cable</th><th title="Earth conductor of the service cable (Cu or Al)">Earth Cable</th><th title="The breaker or fuse that protects this erf's service cable in the kiosk. Blank uses the kiosk's default outgoing protection; with that blank too, the string breaker is used.">Protection</th><th title="Fixed, undiversified load replacing the ADMD for that erf: enter amps or kVA">Override (A / kVA)</th><th>Service VD</th><th title="Earth-fault loop disconnection and ECC size at the end of the service">Earth fault</th><th></th></tr></thead>
             <tbody>${erfRows}</tbody>
           </table>
           <div class="retic-toolbar" style="margin-top:8px">
@@ -934,6 +936,10 @@ const Retic = {
         <div class="retic-field"><label data-bulk="phaseLabel">Phase</label>
           <select data-action="bulk-field" data-field="phase" aria-label="Phase for the selected erven">${['', ...this.PHASES.map(p => p.id), this.ROTATE].map(v =>
             `<option value="${v}"${b.phase === v ? ' selected' : ''}>${v === '' ? '— leave unchanged —' : v === this.ROTATE ? 'Rotate R-W-B' : v}</option>`).join('')}</select></div>
+        <div class="retic-field"><label data-bulk="erfProtLabel">Erf protection</label>
+          <select data-action="bulk-field" data-field="erfProtection" aria-label="Protection for the selected erven">${['', '__default__'].map(v => `<option value="${v}"${b.erfProtection === v ? ' selected' : ''}>${v === '' ? '— leave unchanged —' : 'Use the kiosk default'}</option>`).join('')}${this._protectionOptions(b.erfProtection, '').replace('<option value=""></option>', '')}</select></div>
+        <div class="retic-field"><label data-bulk="kioskProtLabel">Kiosk default protection</label>
+          <select data-action="bulk-field" data-field="kioskProtection" aria-label="Default outgoing protection for the selected kiosks">${['', '__default__'].map(v => `<option value="${v}"${b.kioskProtection === v ? ' selected' : ''}>${v === '' ? '— leave unchanged —' : 'Clear (use the string breaker)'}</option>`).join('')}${this._protectionOptions(b.kioskProtection, '').replace('<option value=""></option>', '')}</select></div>
         <div class="retic-field"><label data-bulk="renameLabel">Rename</label>
           <div class="bulk-rename">
             <select data-action="bulk-field" data-field="renameTarget" aria-label="What to rename">
@@ -1020,7 +1026,7 @@ const Retic = {
     if (pen) warn.push(`${pen} on a TN-C minisub use the PEN conductor — no earth cable to set.`);
     set('warn', warn.join(' '));
     const apply = bar.querySelector('[data-bulk="apply"]');
-    const any = b.cableType || b.earthCable || (b.feederCable && nF) || (b.phase && nE) || renaming;
+    const any = b.cableType || b.earthCable || (b.feederCable && nF) || (b.phase && nE) || (b.erfProtection && nE) || (b.kioskProtection && nF) || renaming;
     apply.disabled = !any;
     apply.textContent = any ? 'Apply' : 'Pick a change to apply';
     // Row / kiosk tick state follows the model.
@@ -1102,7 +1108,7 @@ const Retic = {
 
   applyBulk() {
     const b = this._bulk, t = this._bulkTargets();
-    let svc = 0, earth = 0, feed = 0, skipped = 0, ph = 0, phSkipped = 0, ren = 0;
+    let svc = 0, earth = 0, feed = 0, skipped = 0, ph = 0, phSkipped = 0, ren = 0, prot = 0;
     const renaming = !!b.renamePrefix.trim();
     t.erfs.forEach((x, i) => {
       const { e, skipSvc, pen } = x;
@@ -1112,17 +1118,19 @@ const Retic = {
       if (renaming && b.renameTarget !== 'kiosk') { e.erfNumber = this._bulkName(i); ren++; }
       if (b.cableType) { if (skipSvc) skipped++; else { e.cableType = b.cableType; svc++; } }
       if (b.earthCable && !pen) { e.earthCable = b.earthCable; earth++; }
+      if (b.erfProtection) { e.protection = b.erfProtection === '__default__' ? '' : b.erfProtection; prot++; }
     });
     t.feeders.forEach((k, i) => {
       if (renaming && b.renameTarget === 'kiosk') { k.name = this._bulkName(i); ren++; }
       if (b.feederCable) { k.feederCable = b.feederCable; feed++; }
       if (b.earthCable && this._earthingOf(k) === 'TN-S') { k.feederEarth = b.earthCable; earth++; }
+      if (b.kioskProtection) { k.outgoingProtection = b.kioskProtection === '__default__' ? '' : b.kioskProtection; prot++; }
     });
-    if (!svc && !earth && !feed && !ph && !ren) { if (typeof UI !== 'undefined') UI.toast('Nothing to change for this selection', 'warning'); return; }
-    this._bulk = { cableType: '', earthCable: '', feederCable: '', phase: '', renamePrefix: '', renameStart: 1, renameStyle: b.renameStyle, renameTarget: b.renameTarget };
+    if (!svc && !earth && !feed && !ph && !ren && !prot) { if (typeof UI !== 'undefined') UI.toast('Nothing to change for this selection', 'warning'); return; }
+    this._bulk = { cableType: '', earthCable: '', feederCable: '', phase: '', erfProtection: '', kioskProtection: '', renamePrefix: '', renameStart: 1, renameStyle: b.renameStyle, renameTarget: b.renameTarget };
     if ((svc || feed) && typeof PlanSync !== 'undefined') PlanSync.pullCablesFromDemand();   // drawn routes follow
     this._afterMutate();
-    const bits = [svc && `${svc} service cable${svc === 1 ? '' : 's'}`, feed && `${feed} feeder`, earth && `${earth} earth`, ph && `${ph} phase`, ren && `${ren} renamed`].filter(Boolean).join(', ');
+    const bits = [svc && `${svc} service cable${svc === 1 ? '' : 's'}`, feed && `${feed} feeder`, earth && `${earth} earth`, ph && `${ph} phase`, prot && `${prot} protection`, ren && `${ren} renamed`].filter(Boolean).join(', ');
     const skips = skipped + phSkipped;
     if (typeof UI !== 'undefined') UI.toast(`Changed: ${bits}${skips ? `; ${skips} skipped (3 Phase needs 4-core)` : ''}. Undo reverts it.`, skips ? 'warning' : 'success');
   },
@@ -1161,12 +1169,13 @@ const Retic = {
         <td data-cell="earth" data-label="Earth Cable">${this._earthingOf(k) === 'TN-C'
           ? '<div class="earth-pen" title="TN-C: the combined PEN conductor is the earth return — no separate earth conductor to size.">PEN (TN-C)</div>'
           : `<select data-action="erf-field" data-kiosk="${k.id}" data-erf="${e.id}" data-field="earthCable" data-cable-select data-ss-placeholder="Earth cable — type to search, e.g. 16 cu, 25 al">${this._earthCableOptions(e.earthCable)}</select>`}</td>
+        <td data-cell="prot" data-label="Protection"><select data-action="erf-field" data-kiosk="${k.id}" data-erf="${e.id}" data-field="protection" aria-label="Protection of this erf's outgoing way"${e.protection ? '' : ' class="prot-default"'}>${this._protectionOptions(e.protection || '', this._defaultProtectionLabel(k))}</select></td>
         <td data-cell="amps" data-label="Override (A / kVA)">${this._erfOverrideCell(k, e)}</td>
         <td class="vd-cell" data-cell="vd" data-label="Service VD" data-erf-vd="${e.id}">—</td>
         <td class="earth-cell" data-cell="ef" data-label="Earth fault" data-earth-erf="${e.id}">—</td>
         <td data-cell="del"><button class="btn-icon-del" data-action="del-erf" data-kiosk="${k.id}" data-erf="${e.id}" title="Delete erf">&times;</button></td>
       </tr>
-      <tr class="calc-row" data-calc-panel="e:${e.id}"${this._calcOpen.has('e:' + e.id) ? '' : ' hidden'}><td colspan="10"><div class="calc-panel" data-calc-body="e:${e.id}"></div></td></tr>`;
+      <tr class="calc-row" data-calc-panel="e:${e.id}"${this._calcOpen.has('e:' + e.id) ? '' : ' hidden'}><td colspan="11"><div class="calc-panel" data-calc-body="e:${e.id}"></div></td></tr>`;
   },
 
   // Fixed-load override cell: type amps OR kVA; the other is derived through
@@ -1879,6 +1888,23 @@ const Retic = {
     }
     if (changed && this._markDirty) this._markDirty();
   },
+  // The label of the empty option on an erf's Protection picker: what it falls back to.
+  _defaultProtectionLabel(k) {
+    const d = k.outgoingProtection ? this._protectionDevice({ protection: k.outgoingProtection }) : null;
+    if (d) return `Kiosk default · ${d.name}`;
+    const sd = this._protectionDevice(this._stringHead(k));
+    return sd ? `String breaker · ${sd.name}` : '— none selected —';
+  },
+  // The device that protects one erf's service cable and where it came from:
+  // the erf's own pick, else the kiosk's default, else null (the engine then
+  // falls back to the string breaker).
+  _erfDevice(k, e) {
+    const own = e.protection ? this._protectionDevice({ protection: e.protection }) : null;
+    if (own) return { device: own, source: 'erf' };
+    const kd = k.outgoingProtection ? this._protectionDevice({ protection: k.outgoingProtection }) : null;
+    if (kd) return { device: kd, source: 'kiosk' };
+    return { device: null, source: 'string' };
+  },
   _earthingOf(k) { const ms = this._minisubOf(k); return (ms && ms.earthing) || 'TN-S'; },
 
   // Every LV cable in the one library, Cu and Al, any construction. "Assumed"
@@ -1920,10 +1946,14 @@ const Retic = {
         id: k.id, name: k.name, fedFrom: k.fedFrom || 'source',
         device: this._stringHead(k) === k ? this._protectionDevice(k) : null,   // one breaker per string, on its head
         feeder: { cable: this._cableDict(k.feederCable), earth: this._cableDict(k.feederEarth), lengthM: Number(k.feederLength) || 0 },
-        erfs: k.erfs.map(e => ({
-          id: e.id, erfNumber: e.erfNumber,
-          service: { cable: this._cableDict(e.cableType), earth: this._cableDict(e.earthCable), lengthM: Number(e.length) || 0 },
-        })),
+        erfs: k.erfs.map(e => {
+          const ed = this._erfDevice(k, e);
+          return {
+            id: e.id, erfNumber: e.erfNumber,
+            device: ed.device, deviceSource: ed.source,        // the service cable's own way; null → string breaker
+            service: { cable: this._cableDict(e.cableType), earth: this._cableDict(e.earthCable), lengthM: Number(e.length) || 0 },
+          };
+        }),
       })),
     };
   },
@@ -1961,7 +1991,8 @@ const Retic = {
 
   _earthTip(item) {
     const l = item.loop || {}, e = item.ecc || {};
-    return [l.note, e.note].filter(Boolean).join('\n');
+    const by = l.device ? `Protected by ${l.device} (${l.deviceSource === 'erf' ? "this erf's own" : l.deviceSource === 'kiosk' ? "the kiosk's default" : 'the string breaker'}).` : '';
+    return [by, l.note, e.note].filter(Boolean).join('\n');
   },
 
   _earthStatus(item) {
@@ -2000,7 +2031,7 @@ const Retic = {
     if (l.zsOhm != null) {
       rows.push({ cls: 'calc-leg', cells: ['Earth-fault loop', 'Ze (transformer) + Σ (R1 + R2 + jX1)·L back to the minisub', `Zs ${f(l.zsOhm, 3)} Ω`] });
       rows.push(['Fault current', `c<sub>min</sub>·U<sub>0</sub> / Zs = 0.95·230 / ${f(l.zsOhm, 3)}`, `${f(l.ifA, 0)} A`]);
-      if (l.tS != null || l.status === 'fail') rows.push(['Clearing time', `minisub device at ${f(l.ifA, 0)} A`, l.tS != null ? `${f(l.tS, 3)} s` : 'does not clear']);
+      if (l.tS != null || l.status === 'fail') rows.push(['Clearing time', `${l.device || 'string breaker'} at ${f(l.ifA, 0)} A`, l.tS != null ? `${f(l.tS, 3)} s` : 'does not clear']);
       if (l.zsMaxOhm != null) rows.push({ cls: 'calc-total ' + (l.status === 'pass' ? 'vd-ok' : l.status === 'fail' ? 'vd-fail' : ''), cells: ['Disconnection', `${l.note || ''} Zs max for ${l.tAllowS} s = ${f(l.zsMaxOhm, 3)} Ω`, l.status === 'pass' ? 'pass' : l.status === 'fail' ? 'FAIL' : '—'] });
     } else rows.push({ cls: 'calc-warn', cells: ['Earth fault', escHtml(l.note || ''), ''] });
     if (e && e.pen) {
