@@ -125,3 +125,13 @@ def test_kiosk_reports_worst_phase_current():
     by = {b["phase"]: b["currentA"] for b in r["calc"]["buckets"]}
     assert r["worstPhaseA"] == pytest.approx(by["Red"], abs=0.01)
     assert r["worstPhaseA"] > r["currentA"]
+
+
+def test_rollup_returns_per_phase_current_for_herman_beta():
+    from backend.analysis.admd import feeder_tree_rollup
+    erfs = [{"length": 1, "phase": p} for p in ["Red"] * 3 + ["White"] * 2 + ["Blue"] * 2]
+    ks = [{"id": "k1", "fedFrom": "source", "erfs": erfs}]
+    hb = feeder_tree_rollup(ks, {"estimationMethod": "Herman Beta", "loadClass": "urban1"})["k1"]
+    assert set(hb["phaseA"]) == {"Red", "White", "Blue"}
+    assert hb["feederA"] == pytest.approx(max(hb["phaseA"].values()), abs=0.01)
+    assert hb["phaseA"]["Red"] > hb["phaseA"]["White"]

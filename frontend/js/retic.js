@@ -366,6 +366,15 @@ const Retic = {
     else if (action === 'sel-feeder') this._tickFeeder(btn.dataset.kiosk, btn.checked);
     else if (action === 'bulk-clear') this._clearSel();
     else if (action === 'sel-all') this._toggleSelectAll();
+    else if (action === 'use-string-breaker') {
+      const k = this.kioskById(btn.dataset.kiosk);
+      if (!k) return;
+      k.protection = btn.dataset.protection;
+      this._snapshot();
+      this._markDirty();
+      this.renderKiosks();      // the card's picker and the side-bar list show the same pick
+      this.recompute();
+    }
     else if (action === 'string-tcc') {
       if (typeof ReticTcc !== 'undefined') ReticTcc.open(btn.dataset.kiosk);
     }
@@ -1866,13 +1875,44 @@ const Retic = {
   // Side-bar rows for one minisub: its strings (a head kiosk and everything
   // fed on from it), each with the breaker picker. Same field as the head
   // kiosk's card, so the two stay in step.
+  // Phase currents of a string and what that means for its breaker: the
+  // worst phase is what the device has to carry, so show R / W / B, the loading
+  // of the chosen breaker's In, and the smallest standard rating that covers it.
+  _stringCurrentRow(h) {
+    const res = AppState.reticResults;
+    const kr = res && res.kiosks && res.kiosks.find(r => r.kioskId === h.id);
+    if (!kr || kr.feederA == null) return '';
+    const worst = Number(kr.feederA);
+    const pa = kr.phaseA;
+    const f1 = (v) => (Math.round(v * 10) / 10).toFixed(1);
+    const dots = pa ? [['Red', 'R', '#dc2626'], ['White', 'W', '#6b7280'], ['Blue', 'B', '#2563eb']].filter(x => pa[x[0]] != null)
+      .map(x => `<span><span style="color:${x[2]}">●</span> ${x[1]} ${Number(pa[x[0]]) >= worst - 0.05 ? `<b style="color:var(--text-primary)">${f1(pa[x[0]])}</b>` : f1(pa[x[0]])}</span>`).join('') : '';
+    const dev = this._protectionDevice(h);
+    const inA = dev ? (dev.kind === 'fuse' ? Number(dev.props.rated_current_a) : Number(dev.props.trip_rating_a)) || 0 : 0;
+    const lv = (x) => !x.rated_voltage_kv || x.rated_voltage_kv <= 1;
+    const fits = STANDARD_CBS.filter(x => lv(x) && (x.cb_type === 'mccb' || x.cb_type === 'acb') && Number(x.trip_rating_a) >= worst)
+      .sort((a, b) => a.trip_rating_a - b.trip_rating_a)[0];
+    let status;
+    if (inA > 0) {
+      const pct = Math.round(worst / inA * 100);
+      const ok = pct <= 100;
+      status = `<div class="str-load"><div class="str-bar"><div style="width:${Math.min(pct, 100)}%;background:${ok ? '#2e7d32' : '#d32f2f'}"></div></div>
+        <span style="color:${ok ? '#2e7d32' : '#d32f2f'}">${ok ? '✓' : '✕'} ${pct}% of In${ok || !fits ? '' : ` — too small, use ≥ ${fits.trip_rating_a} A`}</span></div>`;
+    } else if (fits) {
+      status = `<div class="str-load"><span>Needs In ≥ ${f1(worst)} A →</span>
+        <button type="button" class="retic-btn" data-action="use-string-breaker" data-kiosk="${h.id}" data-protection="cb:${fits.id}">Use ${escHtml(fits.name)}</button></div>`;
+    } else status = '';
+    return `<div class="str-cur" title="Herman-Beta design current of everything this string feeds, per phase. The breaker has to carry the largest.">
+      <div class="str-phases"><span>${dots}</span><b class="str-worst">${f1(worst)} A</b></div>${status}</div>`;
+  },
+
   _stringsRows(ms) {
     const heads = this.kiosks.filter(k => this._stringHead(k) === k && this._minisubOf(k) === ms);
     if (!heads.length) return '<div class="summary-row"><span class="k">Strings</span><span class="v">no kiosks yet</span></div>';
     const size = (h) => this.kiosks.filter(k => this._stringHead(k) === h).length;
     return heads.map(h => `<div class="summary-row"><span class="k" title="One breaker protects this whole string: ${escHtml(h.name || 'Kiosk')} and every kiosk fed on from it. Used for the earth-fault loop and ECC checks.">${escHtml(h.name || 'Kiosk')} string <span style="color:var(--text-muted)">(${size(h)} kiosk${size(h) === 1 ? '' : 's'})</span></span><span class="v">
           <select class="ms-prot" data-action="kiosk-field" data-kiosk="${h.id}" data-field="protection" data-cable-select data-ss-placeholder="String breaker — e.g. mccb 250, gg 100">${this._protectionOptions(h.protection, '— select breaker —')}</select>
-          <button type="button" class="retic-btn ms-curve" data-action="string-tcc" data-kiosk="${h.id}" title="Plot this breaker's curve against each erf's earth-fault current">◔ Curve</button></span></div>`).join('');
+          <button type="button" class="retic-btn ms-curve" data-action="string-tcc" data-kiosk="${h.id}" title="Plot this breaker's curve against each erf's earth-fault current">◔ Curve</button></span></div>${this._stringCurrentRow(h)}`).join('');
   },
 
   // Older projects set one LV protection device on the minisub. Breakers now
