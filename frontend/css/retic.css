@@ -345,3 +345,25 @@ button.kiosk-demand-badge:hover { filter: brightness(.97); box-shadow: inset 0 0
 .bulk-note:empty { display: none; }
 .bulk-warn { flex-basis: 100%; font-size: 12px; color: var(--warning); }
 .bulk-warn:empty { display: none; }
+
+/* Load estimation group (collapsible) */
+.retic-estimation {
+  display: flex; flex-direction: column; gap: 8px;
+  padding: 6px 10px 10px; border: 1px solid var(--border-color);
+  border-radius: 8px; background: var(--bg-secondary);
+}
+.retic-est-head {
+  display: flex; align-items: center; gap: 6px; align-self: flex-start;
+  padding: 0; border: 0; background: transparent; cursor: pointer;
+  font: inherit; font-size: 12px; font-weight: 700; color: var(--text-primary);
+}
+.retic-est-caret { font-size: 11px; color: var(--text-muted); }
+.retic-est-summary { display: none; font-size: 12px; color: var(--text-secondary); }
+.retic-est-fields { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 14px; }
+.retic-estimation.collapsed { flex-direction: row; align-items: center; gap: 10px; padding-bottom: 6px; }
+.retic-estimation.collapsed .retic-est-fields { display: none; }
+.retic-estimation.collapsed .retic-est-summary { display: inline; }
+
+/* Select all kiosks */
+.retic-selectall { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+.retic-selectall .retic-hint { font-size: 12px; color: var(--text-muted); }
