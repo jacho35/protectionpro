@@ -163,3 +163,40 @@ def test_kiosk_device_overrides_and_is_inherited():
     assert k1["erfs"][0]["loop"]["status"] == "pass"
     r2 = req(device=MCCB400)
     assert run_retic_earth_check(r2)["kiosks"][0]["erfs"][0]["loop"]["status"] == "fail"
+
+
+def test_service_cable_is_checked_against_its_own_protection():
+    """Outgoing way protection: the erf's device (not the string breaker)
+    judges the service cable's loop; none given falls back to the string."""
+    from backend.analysis.retic_earth import run_retic_earth_check
+    mccb = {"cb_type": "mccb", "trip_rating_a": 160, "thermal_pickup": 1.0,
+            "magnetic_pickup": 10, "long_time_delay": 10}
+    mcb = {"cb_type": "mcb", "trip_rating_a": 40, "thermal_pickup": 1.0,
+           "magnetic_pickup": 10, "long_time_delay": 10}
+    al = {"name": "120 Al", "size_mm2": 120, "conductor": "Al", "insulation": "PVC",
+          "r_per_km": 0.32, "x_per_km": 0.075}
+    cu = {"name": "16 Cu", "size_mm2": 16, "conductor": "Cu", "insulation": "PVC",
+          "r_per_km": 1.38, "x_per_km": 0.082}
+    string_dev = {"kind": "cb", "name": "MCCB 160A", "props": mccb}
+    own_dev = {"kind": "cb", "name": "MCB 40A (C)", "props": mcb}
+
+    def run(erf_device):
+        e = {"id": "e1", "erfNumber": "1", "service": {"cable": cu, "earth": None, "lengthM": 60}}
+        if erf_device:
+            e["device"] = erf_device
+            e["deviceSource"] = "kiosk"
+        r = run_retic_earth_check({
+            "settings": {},
+            "minisubs": [{"id": "ms", "name": "M", "earthing": "TN-S",
+                          "tx": {"kva": 500, "zPercent": 4.5, "xrRatio": 5, "vLvKv": 0.42}}],
+            "kiosks": [{"id": "k", "name": "K", "fedFrom": "ms", "device": string_dev,
+                        "feeder": {"cable": al, "earth": None, "lengthM": 73}, "erfs": [e]}]})
+        return r["kiosks"][0]["erfs"][0]["loop"]
+
+    up = run(None)
+    own = run(own_dev)
+    assert up["deviceSource"] == "string" and up["device"] == "MCCB 160A"
+    assert own["deviceSource"] == "kiosk" and own["device"] == "MCB 40A (C)"
+    assert up["ifA"] == own["ifA"]                      # same loop, different device
+    assert up["status"] == "fail" and up["tS"] > 5      # 160 A string breaker: thermal region, too slow
+    assert own["status"] == "pass" and own["tS"] < 0.1  # 40 A MCB: past 10 x Ir = 400 A, instantaneous
