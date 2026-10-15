@@ -116,3 +116,12 @@ def test_herman_beta_ignores_correction_method():
                      "kiosks": ks, "minisubs": []})["total"]["totalKVA"]
            for c in ("AMEU", "British", "None")]
     assert out[0] == out[1] == out[2]
+
+
+def test_kiosk_reports_worst_phase_current():
+    from backend.analysis.admd import kiosk_demand
+    erfs = [{"length": 1, "phase": p} for p in ["Red"] * 3 + ["White"] * 1 + ["Blue"] * 1]
+    r = kiosk_demand({"id": "k", "erfs": erfs}, {"estimationMethod": "Herman Beta"})
+    by = {b["phase"]: b["currentA"] for b in r["calc"]["buckets"]}
+    assert r["worstPhaseA"] == pytest.approx(by["Red"], abs=0.01)
+    assert r["worstPhaseA"] > r["currentA"]

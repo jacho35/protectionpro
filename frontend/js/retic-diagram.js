@@ -21,7 +21,7 @@ const ReticDiagram = {
 
   // Geometry (SVG user units, which are CSS px at zoom 1)
   NODE_W: 196,
-  NODE_H: 62,
+  NODE_H: 76,
   COL_W: 296,   // node pitch — leaves a 100 px gutter for the leg labels
   ROW_H: 88,
   GROUP_GAP: 34, // extra vertical space between minisub groups
@@ -478,8 +478,10 @@ const ReticDiagram = {
       edgeSvg += `<g><title>${this._esc(tip)}</title>`
         + `<path d="M ${px} ${py} H ${mx} V ${cy} H ${cx}" fill="none" stroke="${P.edge}" stroke-width="1.4"/>`
         + `<polygon points="${cx - 7},${cy - 4} ${cx - 7},${cy + 4} ${cx},${cy}" fill="${P.edge}"/>`
-        + `<text x="${mx}" y="${cy - 14}" text-anchor="middle" font-size="10" font-weight="700" fill="${P.ink}">${this._esc(this._fmtPct(legVD))}</text>`
-        + (sub ? `<text x="${mx}" y="${cy - 4}" text-anchor="middle" font-size="8.5" fill="${P.muted}">${this._esc(sub)}</text>` : '')
+        + `<text x="${mx}" y="${cy - 24}" text-anchor="middle" font-size="10" font-weight="700" fill="${P.ink}">${this._esc(this._fmtPct(legVD))}</text>`
+        + (amps != null ? `<rect x="${mx - 27}" y="${cy - 8}" width="54" height="16" rx="8" fill="${P.surface}" stroke="${P.accent}" stroke-width="1.2"/>`
+          + `<text x="${mx}" y="${cy + 3.5}" text-anchor="middle" font-size="10" font-weight="700" fill="${P.accent}" data-dxf-attr="FEEDER_A">${this._esc(Math.round(amps * 10) / 10 + ' A')}</text>` : '')
+        + (sub ? `<text x="${mx}" y="${cy - 12}" text-anchor="middle" font-size="8.5" fill="${P.muted}">${this._esc(sub)}</text>` : '')
         + `</g>`;
     }
 
@@ -550,7 +552,7 @@ const ReticDiagram = {
       <rect x="${n.x}" y="${n.y}" width="${W}" height="${H}" rx="6" fill="${P.node}" stroke="${P.rmu}" stroke-width="1.6"/>
       <path d="M ${n.x} ${n.y + 6} a 6 6 0 0 1 6 -6 h ${W - 12} a 6 6 0 0 1 6 6 v 15 h -${W} z" fill="${P.rmu}" opacity="0.18"/>
       <text x="${n.x + 10}" y="${n.y + 15}" font-size="11" font-weight="700" fill="${P.ink}" data-dxf-attr="NAME">${this._esc(name)}</text>
-      <text x="${n.x + 10}" y="${n.y + 38}" font-size="10.5" font-weight="600" fill="${P.rmu}">Ring main unit</text>
+      <text x="${n.x + 10}" y="${n.y + 42}" font-size="10.5" font-weight="600" fill="${P.rmu}">Ring main unit</text>
       <text x="${n.x + 10}" y="${n.y + 53}" font-size="9.5" fill="${P.inkSec}" data-dxf-attr="FEEDS_LABEL">${nOut} MV feed${nOut === 1 ? '' : 's'} out</text>
     </g></g>`;
   },
@@ -573,7 +575,7 @@ const ReticDiagram = {
       <path d="M ${n.x} ${n.y + 6} a 6 6 0 0 1 6 -6 h ${W - 12} a 6 6 0 0 1 6 6 v 15 h -${W} z" fill="${P.msHead}"/>
       <text x="${n.x + 10}" y="${n.y + 15}" font-size="11" font-weight="700" fill="${P.ink}" data-dxf-attr="NAME">${this._esc(name)}</text>
       <text x="${n.x + 10}" y="${n.y + 38}" font-size="10.5" font-weight="600" fill="${P.accent}" data-dxf-attr="DEMAND_LABEL">${this._esc(l1)}</text>
-      <text x="${n.x + 10}" y="${n.y + 53}" font-size="9.5" fill="${P.inkSec}" data-dxf-attr="CONNS_LABEL">${this._esc(l2)}</text>
+      <text x="${n.x + 10}" y="${n.y + 60}" font-size="9.5" fill="${P.inkSec}" data-dxf-attr="CONNS_LABEL">${this._esc(l2)}</text>
       ${supply ? `<text x="${n.x + W - 8}" y="${n.y + 15}" text-anchor="end" font-size="8.5" fill="${P.muted}" data-dxf-attr="MV_SUPPLY_LABEL">${this._esc('MV supply · ' + supply)}</text>` : ''}
     </g></g>`;
   },
@@ -612,6 +614,7 @@ const ReticDiagram = {
     const erven = this._subtreeErfCount(n.id, tree.children, tree.byId);
     const conns = kr && kr.subtreeConns != null ? kr.subtreeConns : null;
     const nk = kr && kr.subtreeKiosks != null ? kr.subtreeKiosks : null;
+    const load = kr ? `Load ${kr.totalKVA} kVA · ${kr.worstPhaseA != null ? kr.worstPhaseA : kr.currentA} A${kr.worstPhaseA != null ? ' worst ph' : ''}` : '';
     const foot = `↓ ${erven} erven` + (conns != null ? ` · ${conns} conns` : '')
       + (nk != null ? ` · ${nk} kiosk${nk === 1 ? '' : 's'}` : '');
 
@@ -622,12 +625,12 @@ const ReticDiagram = {
       + `\nDownstream incl. this kiosk: ${erven} erven`
       + (conns != null ? `, ${conns} connections (3-phase counted as 3)` : '')
       + (nk != null ? `, ${nk} kiosks` : '')
-      + (kr ? `\nDemand at this kiosk: ${kr.totalKVA} kVA; feeder carries ${kr.feederKVA != null ? kr.feederKVA : kr.totalKVA} kVA` : '');
+      + (kr ? `\nDemand at this kiosk: ${kr.totalKVA} kVA, ${kr.currentA} A average, ${kr.worstPhaseA != null ? kr.worstPhaseA : kr.currentA} A on the worst phase; feeder carries ${kr.feederKVA != null ? kr.feederKVA : kr.totalKVA} kVA` : '');
 
     const dxf = { NAME: (k && k.name) || 'Kiosk', ID: n.id, FED_FROM: this._nodeName(tree, k && k.fedFrom),
       FEEDER_CABLE: (k && k.feederCable) || '', FEEDER_LENGTH_M: (k && k.feederLength) || '',
       CUM_VD_PCT: cum != null ? cum.toFixed(2) : '', VD_LIMIT_PCT: limit || '', STATUS: cum == null ? 'not computed' : (fail ? 'fail' : 'pass'),
-      KVA: kr ? kr.totalKVA : '', FEEDER_KVA: kr ? (kr.feederKVA != null ? kr.feederKVA : kr.totalKVA) : '',
+      KVA: kr ? kr.totalKVA : '', WORST_PHASE_A: kr && kr.worstPhaseA != null ? kr.worstPhaseA : '', FEEDER_KVA: kr ? (kr.feederKVA != null ? kr.feederKVA : kr.totalKVA) : '',
       ERVEN_DOWNSTREAM: erven, CONNS_DOWNSTREAM: conns != null ? conns : '', KIOSKS_DOWNSTREAM: nk != null ? nk : '' };
     return `<g><title>${this._esc(tip)}</title><g data-dxf-block="KIOSK" data-dxf-at="${n.x},${n.y}" data-dxf-attrs="${this._esc(JSON.stringify(dxf))}">
       <rect x="${n.x}" y="${n.y}" width="${W}" height="${H}" rx="6" fill="${P.node}" stroke="${P.border}"/>
@@ -637,7 +640,8 @@ const ReticDiagram = {
       <rect x="${pillX}" y="${n.y + 4}" width="${pillW}" height="14" rx="7" fill="${pillFill}" opacity="0.16"/>
       <text x="${pillX + pillW / 2}" y="${n.y + 14.5}" text-anchor="middle" font-size="9.5" font-weight="700" fill="${pillFill}" data-dxf-attr="VD_LABEL">${this._esc(pillTxt)}</text>
       ${chipSvg}
-      <text x="${n.x + 12}" y="${n.y + 52}" font-size="9.5" fill="${P.muted}" data-dxf-attr="DOWNSTREAM_LABEL">${this._esc(foot)}</text>
+      ${load ? `<text x="${n.x + 12}" y="${n.y + 50}" font-size="10" font-weight="700" fill="${P.ink}" data-dxf-attr="LOAD_LABEL">${this._esc(load)}</text>` : ''}
+      <text x="${n.x + 12}" y="${n.y + 66}" font-size="9.5" fill="${P.muted}" data-dxf-attr="DOWNSTREAM_LABEL">${this._esc(foot)}</text>
     </g></g>`;
   },
 
