@@ -12,6 +12,12 @@
  * (cbHasElectronicTrip) so an electronic MCCB gets short-time/instantaneous
  * elements. Breakers without `trip_unit` (saved before this, or set to "None")
  * keep their free-number fields and behave exactly as before.
+ *
+ * A manufacturer's profile also hands the engines facts, written onto the
+ * breaker: `thermal_curve` (its published long-time curve), `trip_tol` (the
+ * published tolerances: pickup zone, break times — the TCC's min/max band) and `pickup_base`
+ * (which pickups are multiples of In rather than Ir — a Schneider / ABB Ii is
+ * fixed against In, so it does not move with the Ir dial).
  */
 
 const TripUnit = {
@@ -22,6 +28,63 @@ const TripUnit = {
   _num(v) {
     const n = typeof v === 'number' ? v : parseFloat(v);
     return Number.isFinite(n) ? n : null;
+  },
+
+  // ── Reference current of the pickup dials ──
+  // Magnetic / short-time / instantaneous multiples are × Ir (In × the Ir
+  // dial) unless the profile's dial says `base: 'In'` — the manufacturer fixes
+  // the element against the trip-unit rating. The non-default ones go onto
+  // the breaker as `pickup_base` for the engines (cbPickupRefA); the stored
+  // multiple is always against that base, so an Ir change never moves it.
+  PICKUP_OF: { magnetic_pickup: 'magnetic', short_time_pickup: 'short_time', instantaneous_pickup: 'instantaneous' },
+
+  // 'In' | 'Ir': what a dial's multiple is of
+  baseOf(key, dial) {
+    if (key === 'thermal_pickup') return 'In';
+    return dial && dial.base === 'In' ? 'In' : 'Ir';
+  },
+
+  // The same for a breaker's own props (absent pickup_base = Ir)
+  baseOfProps(props, key) {
+    if (key === 'thermal_pickup') return 'In';
+    const w = this.PICKUP_OF[key];
+    return w && props && props.pickup_base && props.pickup_base[w] === 'In' ? 'In' : 'Ir';
+  },
+
+  // A profile's non-default bases, { magnetic?, short_time?, instantaneous? }
+  baseMap(prof, cbType) {
+    const out = {};
+    if (!prof) return out;
+    for (const [k, d] of Object.entries(prof.dials)) {
+      const w = this.PICKUP_OF[k];
+      if (w && this.baseOf(k, d) === 'In') out[w] = 'In';
+    }
+    // A mirrored magnetic pickup is a multiple of the same current as the
+    // instantaneous dial
+    if (this._mirrorsMagnetic(prof, cbType)) {
+      if (out.instantaneous) out.magnetic = 'In'; else delete out.magnetic;
+    }
+    return out;
+  },
+
+  // A pickup multiple moved from one reference current to another with its
+  // amps unchanged. Ir = In × thermal_pickup, so only the two Ir dial
+  // positions are needed. Equal bases copy the multiple (as always).
+  rebase(m, from, to, thermalFrom, thermalTo) {
+    if (from === to) return m;
+    const inMult = from === 'In' ? m : m * thermalFrom;
+    return to === 'In' ? inMult : inMult / thermalTo;
+  },
+
+  // Unit text of a dial under its profile ('× In' / '× Ir' for the pickups)
+  unitOf(key, dial) {
+    if (dial && dial.unit) return dial.unit;          // e.g. ABB t1: 's at 3 × I1'
+    return this.PICKUP_OF[key] ? `× ${this.baseOf(key, dial)}` : TRIP_DIALS[key].unit;
+  },
+
+  // A dial's name: the manufacturer's own (ABB I1 / t1 / I2 / t2 / I3) or the generic one
+  labelOf(key, dial) {
+    return (dial && dial.label) || TRIP_DIALS[key].label;
   },
 
   // ── Breakers of an interlocked-breaker-pair changeover ──
@@ -134,6 +197,14 @@ const TripUnit = {
     return profile && profile.kind === 'electronic' && (cbType || 'mccb') === 'mccb';
   },
 
+  // The magnetic pickup follows the instantaneous dial: an electronic MCCB's,
+  // and a manufacturer's electronic ACB (whose instantaneous element IS the
+  // one setting — with it OFF there is none, not a 10 × Ir fallback)
+  _mirrorsMagnetic(profile, cbType) {
+    return this._isElectronicMccb(profile, cbType)
+      || !!(profile && profile.maker && profile.kind === 'electronic' && cbType === 'acb');
+  },
+
   // ── Values ──
 
   // Nearest dial position (fixed dials take any value)
@@ -177,9 +248,10 @@ const TripUnit = {
   // An electronic MCCB's magnetic pickup follows its instantaneous dial, so
   // anything that only knows the thermal-magnetic model sees the same trip.
   _mirrorMagnetic(vals, prof, cbType) {
-    if (this._isElectronicMccb(prof, cbType) && vals.instantaneous_pickup > 0) {
-      vals.magnetic_pickup = vals.instantaneous_pickup;
-    }
+    if (!this._mirrorsMagnetic(prof, cbType)) return;
+    if (vals.instantaneous_pickup > 0) vals.magnetic_pickup = vals.instantaneous_pickup;
+    // a manufacturer's ACB with Ii OFF has no instantaneous element at all
+    else if (prof.maker && prof.dials.instantaneous_pickup && prof.dials.instantaneous_pickup.off) vals.magnetic_pickup = 1000;
   },
 
   // Defaults for the breaker as it stands (its library entry, if any)
@@ -204,6 +276,36 @@ const TripUnit = {
     Object.assign(comp.props, vals);
     comp.props.trip_unit = pid;
     comp.props.trip_unit_kind = TRIP_UNITS[pid].kind;
+    // A manufacturer profile carries its published long-time curve and the
+    // reference current of its pickups; generic ones carry neither
+    const tc = TRIP_UNITS[pid].curve && TRIP_UNITS[pid].curve.thermal;
+    if (tc) comp.props.thermal_curve = JSON.parse(JSON.stringify(tc));
+    else delete comp.props.thermal_curve;
+    const tol = TRIP_UNITS[pid].curve && TRIP_UNITS[pid].curve.tol;
+    if (tol) comp.props.trip_tol = JSON.parse(JSON.stringify(tol));
+    else delete comp.props.trip_tol;
+    const bm = this.baseMap(TRIP_UNITS[pid], comp.props.cb_type);
+    if (Object.keys(bm).length) comp.props.pickup_base = bm;
+    else delete comp.props.pickup_base;
+  },
+
+  // The settings a breaker picked from library entry `e` carries, for the
+  // places that use an entry as a device without placing one (Reticulation
+  // string / outgoing-way protection): the numbers and trip unit resolved the
+  // way picking it on the diagram does — dial defaults, the published
+  // long-time curve, the pickup bases. A generic entry stays as it is (its
+  // own numbers); only a manufacturer's trip unit adds facts to the entry.
+  deviceProps(e) {
+    const pid = this.defaultIdFor(e);
+    const prof = pid && TRIP_UNITS[pid];
+    if (!prof || !prof.maker) return e;
+    const comp = { type: 'cb', props: {
+      cb_type: e.cb_type, trip_rating_a: e.trip_rating_a, rated_current_a: e.trip_rating_a,
+      rated_voltage_kv: e.rated_voltage_kv, breaking_capacity_ka: e.breaking_ka,
+    } };
+    if (e.cb_type === 'mcb') comp.props.mcb_curve = e.mcb_curve || 'C';
+    this.apply(comp, e, pid);
+    return { ...e, ...comp.props };
   },
 
   // Fresh defaults (library pick, Reset all)
@@ -219,12 +321,27 @@ const TripUnit = {
     const entry = this.entryOf(comp) || { cb_type: comp.props.cb_type };
     const vals = this.defaults(entry, pid);
     const p = comp.props;
-    const elecMccb = this._isElectronicMccb(prof, p.cb_type);
+    const elecMccb = this._mirrorsMagnetic(prof, p.cb_type);
+    // The pickups keep their AMPS when the new unit measures them against a
+    // different current (× Ir ↔ × In): re-expressed with the old and the new
+    // Ir position
+    const thOld = this._num(p.thermal_pickup) || 1;
+    const dTh = prof.dials.thermal_pickup;
+    const curTh = this._num(p.thermal_pickup);
+    const thNew = dTh && curTh > 0 ? (dTh.fixed ? curTh : this.snap(dTh, curTh)) : (vals.thermal_pickup || 1);
     for (const [k, d] of Object.entries(prof.dials)) {
       let cur = this._num(p[k]);
+      let from = this.baseOfProps(p, k);
       // A thermal-magnetic MCCB's instantaneous trip is its magnetic pickup
-      if (k === 'instantaneous_pickup' && elecMccb && !(cur > 0)) cur = this._num(p.magnetic_pickup);
+      if (k === 'instantaneous_pickup' && elecMccb && !(cur > 0)) {
+        cur = this._num(p.magnetic_pickup);
+        from = this.baseOfProps(p, 'magnetic_pickup');
+      }
       if (cur === null || (cur <= 0 && !d.off)) continue;
+      // A manufacturer's fixed element is a fact of the unit, not a setting
+      // to carry over: it keeps the library / profile value
+      if (d.fixed && prof.maker) continue;
+      if (this.PICKUP_OF[k]) cur = this.rebase(cur, from, this.baseOf(k, d), thOld, thNew);
       vals[k] = d.fixed ? cur : this.snap(d, cur);
     }
     this._mirrorMagnetic(vals, prof, p.cb_type);
@@ -232,9 +349,18 @@ const TripUnit = {
   },
 
   // Back to free settings. An MCCB drops the electronic-only elements the
-  // thermal-magnetic model can't show.
-  clear(comp) {
+  // thermal-magnetic model can't show. Free numbers are always × Ir, so a
+  // pickup the trip unit measured against In is re-expressed (same amps)
+  // unless `keepAmps` is false — a library pick whose own numbers follow.
+  clear(comp, keepAmps = true) {
     const p = comp.props;
+    if (keepAmps && p.pickup_base) {
+      const th = this._num(p.thermal_pickup) || 1;
+      for (const [k, w] of Object.entries(this.PICKUP_OF)) {
+        const v = this._num(p[k]);
+        if (p.pickup_base[w] === 'In' && v !== null && v > 0) p[k] = +(v / th).toFixed(4);
+      }
+    }
     if ((p.cb_type || 'mccb') === 'mccb' && p.trip_unit_kind === 'electronic') {
       p.short_time_pickup = 0;
       p.short_time_delay = 0;
@@ -242,6 +368,9 @@ const TripUnit = {
     }
     delete p.trip_unit;
     delete p.trip_unit_kind;
+    delete p.thermal_curve;
+    delete p.pickup_base;
+    delete p.trip_tol;
   },
 
   // Settings for a new breaker that keep the changed dials of the old one:
@@ -251,7 +380,11 @@ const TripUnit = {
     const prof = TRIP_UNITS[newPid];
     const vals = this.defaults(newEntry, newPid);
     const newIn = this._num(newEntry.trip_rating_a) || 0;
-    for (const k of editedKeys) {
+    const thOld = this._num(oldProps.thermal_pickup) || 1;
+    // Ir first: the pickups measured against a different current are
+    // re-expressed with it
+    const keys = [...editedKeys].sort((a, b) => (b === 'thermal_pickup') - (a === 'thermal_pickup'));
+    for (const k of keys) {
       const d = prof.dials[k];
       if (!d || d.fixed) continue;
       if (k === 'thermal_pickup' && newIn > 0) {
@@ -259,7 +392,11 @@ const TripUnit = {
         const fit = d.steps.filter(s => s * newIn >= irA - 1e-6);
         vals[k] = fit.length ? Math.min(...fit) : Math.max(...d.steps);
       } else {
-        vals[k] = this.snap(d, oldProps[k]);
+        let v = this._num(oldProps[k]);
+        if (v !== null && this.PICKUP_OF[k]) {
+          v = this.rebase(v, this.baseOfProps(oldProps, k), this.baseOf(k, d), thOld, vals.thermal_pickup || 1);
+        }
+        vals[k] = this.snap(d, v);
       }
     }
     this._mirrorMagnetic(vals, prof, newEntry.cb_type);
@@ -353,33 +490,54 @@ const TripUnit = {
     return String(+(+v).toFixed(3));
   },
 
-  // Amps a dial position trips at (Ir from In; the rest from Ir)
-  amps(comp, key, v) {
+  // Amps a dial position trips at: Ir from In; each pickup from the current
+  // its dial is a multiple of (the profile's `base`, else Ir)
+  amps(comp, key, v, dial) {
     const meta = TRIP_DIALS[key];
     if (!meta || !meta.ampsOf || !(v > 0)) return '';
     const inA = this._num(comp.props.trip_rating_a) || 0;
     const ir = inA * (this._num(comp.props.thermal_pickup) || 1);
-    return this.fmtA(meta.ampsOf === 'In' ? inA * v : ir * v);
+    return this.fmtA(this.baseOf(key, dial) === 'In' ? inA * v : ir * v);
   },
 
-  optionsHtml(dial, value) {
+  // The amps one unit of a dial's multiple stands for on a breaker (its trip
+  // rating, or its Ir for a × Ir pickup): 0 when the dial is not a current
+  refA(props, key, dial) {
+    const meta = TRIP_DIALS[key];
+    if (!meta || !meta.ampsOf) return 0;
+    const inA = this._num(props.trip_rating_a) || 0;
+    return this.baseOf(key, dial) === 'In' ? inA : inA * (this._num(props.thermal_pickup) || 1);
+  },
+
+  // The dial's positions as <option>s; `refA` > 0 adds the amps each one is
+  // ("0.698 · 44 A") — a trip unit's dial is marked in amps, not multiples
+  optionsHtml(dial, value, refA = 0) {
     const steps = [...dial.steps];
     const cur = this._num(value);
     if (cur !== null && !steps.some(s => Math.abs(s - cur) < 1e-9)) steps.push(cur);
     steps.sort((a, b) => a - b);
     return steps.map(s => {
       const sel = cur !== null && Math.abs(s - cur) < 1e-9 ? ' selected' : '';
-      return `<option value="${s}"${sel}>${this.fmtVal(null, s, dial)}</option>`;
+      const amps = refA > 0 && s > 0 ? ` · ${this.fmtA(s * refA)}` : '';
+      return `<option value="${s}"${sel}>${this.fmtVal(null, s, dial)}${amps}</option>`;
     }).join('');
   },
 
   _profileOptions(comp) {
     const entry = this.entryOf(comp);
     const def = entry ? this.defaultIdFor(entry) : null;
-    const ids = this.profilesForType(comp.props.cb_type);
+    // The library entry's own trip units first (a manufacturer's TM-D /
+    // MicroLogic choices), then the generic profiles that fit the type
+    const own = entry && Array.isArray(entry.trip_units) ? entry.trip_units.filter(id => TRIP_UNITS[id]) : [];
+    // A manufacturer's breaker has the functions of its own trip units and no
+    // others: no generic profile, no free settings (a function it lacks is
+    // blocked, not supplied by the generic model). Pick "-- Custom --" in
+    // Standard CB to model a different breaker.
+    const locked = own.some(id => TRIP_UNITS[id].maker);
+    const ids = locked ? [...own] : [...own, ...this.profilesForType(comp.props.cb_type).filter(id => !own.includes(id))];
     const active = this.activeId(comp);
     if (active && !ids.includes(active)) ids.push(active);
-    const opts = [`<option value=""${active ? '' : ' selected'}>None — free settings</option>`];
+    const opts = locked ? [] : [`<option value=""${active ? '' : ' selected'}>None — free settings</option>`];
     for (const id of ids) {
       const tag = id === def ? ' (default)' : '';
       opts.push(`<option value="${id}"${id === active ? ' selected' : ''}>${escHtml(TRIP_UNITS[id].label)}${tag}</option>`);
@@ -423,8 +581,10 @@ const TripUnit = {
     for (const [k, d] of Object.entries(prof.dials)) {
       const meta = TRIP_DIALS[k];
       const v = this._num(p[k]);
-      const label = `${meta.label} <span class="tu-unit">${meta.unit}</span>`;
-      const amps = this.amps(comp, k, v);
+      const unit = this.unitOf(k, d);
+      const nm = this.labelOf(k, d);
+      const label = `${nm} <span class="tu-unit">${unit}</span>`;
+      const amps = this.amps(comp, k, v, d);
       if (d.fixed) {
         html += `<div class="prop-row tu-row"><label>${label}</label><span class="tu-fixed">${this.fmtVal(k, v, d)} (fixed)</span><span class="tu-amps">${amps}</span></div>`;
         continue;
@@ -433,10 +593,10 @@ const TripUnit = {
       const dim = k === 'short_time_delay' && stOff;
       html += `<div class="prop-row tu-row${isEd ? ' tu-row--edited' : ''}">
         <label>${label}</label>
-        <select data-tu-dial="${k}" aria-label="${meta.label} (${meta.unit})"${dim ? ' disabled title="Short-time is off"' : ''}>${this.optionsHtml(d, v)}</select>
+        <select data-tu-dial="${k}" aria-label="${nm} (${unit})"${dim ? ' disabled title="Short-time is off"' : ''}>${this.optionsHtml(d, v, this.refA(p, k, d))}</select>
         <span class="tu-amps">${amps}</span>
         ${isEd
-          ? `<button type="button" class="tu-reset" data-tu-reset="${k}" title="Reset to default (${this.fmtVal(k, def[k], d)})" aria-label="Reset ${meta.label} to default ${this.fmtVal(k, def[k], d)}">&#x21A9;</button>`
+          ? `<button type="button" class="tu-reset" data-tu-reset="${k}" title="Reset to default (${this.fmtVal(k, def[k], d)})" aria-label="Reset ${nm} to default ${this.fmtVal(k, def[k], d)}">&#x21A9;</button>`
           : `<span class="tu-def" title="Default setting">def</span>`}
       </div>`;
     }
@@ -524,23 +684,26 @@ const TripUnit = {
     const defVals = this.defaults(newEntry, newPid);
     const newIn = this._num(newEntry.trip_rating_a) || 0;
     const prof = TRIP_UNITS[newPid];
-    const cell = (props, inA, k) => {
+    // `base` = the current the value is a multiple of: the old breaker's own
+    // pickup_base for "Now", the new profile's dial for the other columns
+    const cell = (props, inA, k, base) => {
       const v = this._num(props[k]);
       const d = prof.dials[k] || this.profile(comp)?.dials[k];
       const meta = TRIP_DIALS[k];
       let amps = '';
       if (meta.ampsOf && v > 0) {
         const ir = inA * (this._num(props.thermal_pickup) || 1);
-        amps = ` → ${this.fmtA(meta.ampsOf === 'In' ? inA * v : ir * v)}`;
+        amps = ` → ${this.fmtA(base === 'In' ? inA * v : ir * v)}`;
       }
-      return `${this.fmtVal(k, v, d)}${amps}`;
+      const unit = this.PICKUP_OF[k] ? ` ${this.unitOf(k, { base })}` : '';
+      return `${this.fmtVal(k, v, d)}${unit}${amps}`;
     };
     const oldIn = this._num(oldProps.trip_rating_a) || 0;
     const rows = editedKeys.map(k => `<tr>
         <th scope="row">${TRIP_DIALS[k].label}</th>
-        <td class="tu-sw-now">${cell(oldProps, oldIn, k)}</td>
-        <td>${prof.dials[k] ? cell(keepVals, newIn, k) : '—'}</td>
-        <td>${cell(defVals, newIn, k)}</td></tr>`).join('');
+        <td class="tu-sw-now">${cell(oldProps, oldIn, k, this.baseOfProps(oldProps, k))}</td>
+        <td>${prof.dials[k] ? cell(keepVals, newIn, k, this.baseOf(k, prof.dials[k])) : '—'}</td>
+        <td>${cell(defVals, newIn, k, this.baseOf(k, prof.dials[k]))}</td></tr>`).join('');
     const name = escHtml(comp.label || comp.props.name || comp.id);
     const irKept = editedKeys.includes('thermal_pickup') && prof.dials.thermal_pickup && !prof.dials.thermal_pickup.fixed;
 
@@ -604,7 +767,9 @@ const TripUnit = {
   afterLibraryPick(comp, swap) {
     const entry = this.entryOf(comp);
     const pid = entry && this.defaultIdFor(entry);
-    if (!pid) { this.clear(comp); return; }
+    // No trip unit: the entry's own numbers (just written) are the settings —
+    // they must not be re-based by the previous breaker's pickup_base
+    if (!pid) { this.clear(comp, false); return; }
     if (swap && swap.keep && swap.editedKeys && swap.editedKeys.length) {
       this._write(comp, pid, this.keepInAmps(swap.oldProps, swap.editedKeys, entry, pid));
     } else {
@@ -625,7 +790,7 @@ const TripUnit = {
       const d = prof.dials.thermal_pickup;
       p.thermal_pickup = d.fixed ? comp.props.thermal_pickup : this.snap(d, p.thermal_pickup);
     } else if (mode === 'magnetic') {
-      if (this._isElectronicMccb(prof, p.cb_type)) {
+      if (this._mirrorsMagnetic(prof, p.cb_type)) {
         p.instantaneous_pickup = this.snap(prof.dials.instantaneous_pickup, p.magnetic_pickup);
         p.magnetic_pickup = p.instantaneous_pickup;
       } else if (prof.dials.magnetic_pickup) {
@@ -641,10 +806,10 @@ const TripUnit = {
     if (!prof) return '';
     return Object.entries(prof.dials).map(([k, d]) => {
       const meta = TRIP_DIALS[k];
-      const label = `${meta.label} (${meta.unit})`;
+      const label = `${this.labelOf(k, d)} (${this.unitOf(k, d)})`;
       const control = d.fixed
         ? `<span class="tu-fixed">${this.fmtVal(k, p[k], d)} (fixed)</span>`
-        : `<select data-sel-field="cb.${k}" data-num="1">${this.optionsHtml(d, p[k])}</select>`;
+        : `<select data-sel-field="cb.${k}" data-num="1">${this.optionsHtml(d, p[k], this.refA(p, k, d))}</select>`;
       return `<div class="tcc-form-row"><label>${label}</label>${control}</div>`;
     }).join('');
   },

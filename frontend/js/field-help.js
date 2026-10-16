@@ -57,10 +57,11 @@ const FIELD_HELP = {
   'cb.cb_type': 'MCB: miniature breaker with a fixed B/C/D curve (IEC 60898-1).\nMCCB: moulded-case breaker with thermal-magnetic or electronic trip.\nACB: air circuit breaker with a short-time (ST) stage for selectivity.\nThe type sets which protection fields show.\nUsed by: TCC, Duty Check.',
   'cb.mounting': 'Fixed or withdrawable. It is recorded for schedules and reports; the studies don\'t use it.',
   'cb.mcb_curve': 'IEC 60898-1 instantaneous trip band: B trips at 3–5×In, C at 5–10×In and D at 10–20×In. Changing the curve sets Magnetic Pickup to the top of its band.\nUsed by: TCC, Compliance.',
-  'cb.trip_rating_a': 'Trip unit rating In. Thermal and magnetic pickups are multiples of it.\nUsed by: TCC, Arc Flash.',
+  'cb.trip_rating_a': 'Trip unit rating In. The thermal pickup is a multiple of it; the magnetic, short-time and instantaneous pickups are multiples of the Ir setting (In × thermal pickup), or of In where a manufacturer\'s trip unit fixes them against it.\nUsed by: TCC, Arc Flash.',
+  'cb.magnetic_pickup': 'Magnetic (instantaneous) pickup as a multiple of Ir, the long-time setting. A trip unit picked from a manufacturer library may fix it against In instead, so it does not move with the Ir dial; its dial then says "× In".\nUsed by: TCC, Arc Flash, Compliance.',
   'cb.short_time_pickup': 'Short-time (ST) pickup as a multiple of Ir. Between this and Instantaneous, the breaker waits for ST Delay, which lets a downstream device clear first.\nUsed by: TCC, Arc Flash.',
   'cb.short_time_delay': 'Short-time delay in seconds: the intentional wait before the breaker trips on the ST stage. It sets the grading margin to downstream devices.\nUsed by: TCC, Arc Flash.',
-  'cb.instantaneous_pickup': 'Instantaneous pickup as a multiple of Ir. Above it the breaker trips with no intentional delay.\nUsed by: TCC, Arc Flash.',
+  'cb.instantaneous_pickup': 'Instantaneous pickup as a multiple of Ir (or of In where the trip unit fixes it against In — its dial then says "× In"). Above it the breaker trips with no intentional delay.\nUsed by: TCC, Arc Flash.',
 
   // ── Relay ──
   'relay.relay_type': 'Protection function (ANSI numbers):\n50/51: phase overcurrent (instantaneous / time-delayed)\n50N/51N: earth-fault overcurrent\n67: directional overcurrent\n87: differential\n21: distance\nThe type sets which setting fields show.\nUsed by: TCC, Arc Flash.',

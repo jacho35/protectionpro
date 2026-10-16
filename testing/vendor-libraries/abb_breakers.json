@@ -1,0 +1,1564 @@
+{
+ "entries": [
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_e1_2_b_630",
+    "name": "ABB E1.2 B 630 A",
+    "cb_type": "acb",
+    "manufacturer": "ABB",
+    "series": "SACE Emax 2",
+    "model": "E1.2 B",
+    "trip_rating_a": 630,
+    "frame_a": 1600,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 42,
+    "icw_ka": 42,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4,
+    "long_time_delay": 144,
+    "trip_units": [
+     "abb_emax2_dip_lsi",
+     "abb_emax2_dip_li",
+     "abb_emax2_touch_lsi"
+    ],
+    "default_trip_unit": "abb_emax2_dip_lsi",
+    "source": "1SDC200023D0204 (SACE Emax 2 technical catalogue, 2015.10)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_e1_2_b_800",
+    "name": "ABB E1.2 B 800 A",
+    "cb_type": "acb",
+    "manufacturer": "ABB",
+    "series": "SACE Emax 2",
+    "model": "E1.2 B",
+    "trip_rating_a": 800,
+    "frame_a": 1600,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 42,
+    "icw_ka": 42,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4,
+    "long_time_delay": 144,
+    "trip_units": [
+     "abb_emax2_dip_lsi",
+     "abb_emax2_dip_li",
+     "abb_emax2_touch_lsi"
+    ],
+    "default_trip_unit": "abb_emax2_dip_lsi",
+    "source": "1SDC200023D0204 (SACE Emax 2 technical catalogue, 2015.10)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_e1_2_b_1000",
+    "name": "ABB E1.2 B 1000 A",
+    "cb_type": "acb",
+    "manufacturer": "ABB",
+    "series": "SACE Emax 2",
+    "model": "E1.2 B",
+    "trip_rating_a": 1000,
+    "frame_a": 1600,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 42,
+    "icw_ka": 42,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4,
+    "long_time_delay": 144,
+    "trip_units": [
+     "abb_emax2_dip_lsi",
+     "abb_emax2_dip_li",
+     "abb_emax2_touch_lsi"
+    ],
+    "default_trip_unit": "abb_emax2_dip_lsi",
+    "source": "1SDC200023D0204 (SACE Emax 2 technical catalogue, 2015.10)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_e1_2_b_1250",
+    "name": "ABB E1.2 B 1250 A",
+    "cb_type": "acb",
+    "manufacturer": "ABB",
+    "series": "SACE Emax 2",
+    "model": "E1.2 B",
+    "trip_rating_a": 1250,
+    "frame_a": 1600,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 42,
+    "icw_ka": 42,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4,
+    "long_time_delay": 144,
+    "trip_units": [
+     "abb_emax2_dip_lsi",
+     "abb_emax2_dip_li",
+     "abb_emax2_touch_lsi"
+    ],
+    "default_trip_unit": "abb_emax2_dip_lsi",
+    "source": "1SDC200023D0204 (SACE Emax 2 technical catalogue, 2015.10)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_e1_2_b_1600",
+    "name": "ABB E1.2 B 1600 A",
+    "cb_type": "acb",
+    "manufacturer": "ABB",
+    "series": "SACE Emax 2",
+    "model": "E1.2 B",
+    "trip_rating_a": 1600,
+    "frame_a": 1600,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 42,
+    "icw_ka": 42,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4,
+    "long_time_delay": 144,
+    "trip_units": [
+     "abb_emax2_dip_lsi",
+     "abb_emax2_dip_li",
+     "abb_emax2_touch_lsi"
+    ],
+    "default_trip_unit": "abb_emax2_dip_lsi",
+    "source": "1SDC200023D0204 (SACE Emax 2 technical catalogue, 2015.10)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_e1_2_c_630",
+    "name": "ABB E1.2 C 630 A",
+    "cb_type": "acb",
+    "manufacturer": "ABB",
+    "series": "SACE Emax 2",
+    "model": "E1.2 C",
+    "trip_rating_a": 630,
+    "frame_a": 1600,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "icw_ka": 42,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4,
+    "long_time_delay": 144,
+    "trip_units": [
+     "abb_emax2_dip_lsi",
+     "abb_emax2_dip_li",
+     "abb_emax2_touch_lsi"
+    ],
+    "default_trip_unit": "abb_emax2_dip_lsi",
+    "source": "1SDC200023D0204 (SACE Emax 2 technical catalogue, 2015.10)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_e1_2_c_800",
+    "name": "ABB E1.2 C 800 A",
+    "cb_type": "acb",
+    "manufacturer": "ABB",
+    "series": "SACE Emax 2",
+    "model": "E1.2 C",
+    "trip_rating_a": 800,
+    "frame_a": 1600,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "icw_ka": 42,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4,
+    "long_time_delay": 144,
+    "trip_units": [
+     "abb_emax2_dip_lsi",
+     "abb_emax2_dip_li",
+     "abb_emax2_touch_lsi"
+    ],
+    "default_trip_unit": "abb_emax2_dip_lsi",
+    "source": "1SDC200023D0204 (SACE Emax 2 technical catalogue, 2015.10)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_e1_2_c_1000",
+    "name": "ABB E1.2 C 1000 A",
+    "cb_type": "acb",
+    "manufacturer": "ABB",
+    "series": "SACE Emax 2",
+    "model": "E1.2 C",
+    "trip_rating_a": 1000,
+    "frame_a": 1600,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "icw_ka": 42,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4,
+    "long_time_delay": 144,
+    "trip_units": [
+     "abb_emax2_dip_lsi",
+     "abb_emax2_dip_li",
+     "abb_emax2_touch_lsi"
+    ],
+    "default_trip_unit": "abb_emax2_dip_lsi",
+    "source": "1SDC200023D0204 (SACE Emax 2 technical catalogue, 2015.10)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_e1_2_c_1250",
+    "name": "ABB E1.2 C 1250 A",
+    "cb_type": "acb",
+    "manufacturer": "ABB",
+    "series": "SACE Emax 2",
+    "model": "E1.2 C",
+    "trip_rating_a": 1250,
+    "frame_a": 1600,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "icw_ka": 42,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4,
+    "long_time_delay": 144,
+    "trip_units": [
+     "abb_emax2_dip_lsi",
+     "abb_emax2_dip_li",
+     "abb_emax2_touch_lsi"
+    ],
+    "default_trip_unit": "abb_emax2_dip_lsi",
+    "source": "1SDC200023D0204 (SACE Emax 2 technical catalogue, 2015.10)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_e1_2_c_1600",
+    "name": "ABB E1.2 C 1600 A",
+    "cb_type": "acb",
+    "manufacturer": "ABB",
+    "series": "SACE Emax 2",
+    "model": "E1.2 C",
+    "trip_rating_a": 1600,
+    "frame_a": 1600,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "icw_ka": 42,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4,
+    "long_time_delay": 144,
+    "trip_units": [
+     "abb_emax2_dip_lsi",
+     "abb_emax2_dip_li",
+     "abb_emax2_touch_lsi"
+    ],
+    "default_trip_unit": "abb_emax2_dip_lsi",
+    "source": "1SDC200023D0204 (SACE Emax 2 technical catalogue, 2015.10)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_e1_2_n_250",
+    "name": "ABB E1.2 N 250 A",
+    "cb_type": "acb",
+    "manufacturer": "ABB",
+    "series": "SACE Emax 2",
+    "model": "E1.2 N",
+    "trip_rating_a": 250,
+    "frame_a": 1600,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 66,
+    "icw_ka": 50,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4,
+    "long_time_delay": 144,
+    "trip_units": [
+     "abb_emax2_dip_lsi",
+     "abb_emax2_dip_li",
+     "abb_emax2_touch_lsi"
+    ],
+    "default_trip_unit": "abb_emax2_dip_lsi",
+    "source": "1SDC200023D0204 (SACE Emax 2 technical catalogue, 2015.10)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_e1_2_n_630",
+    "name": "ABB E1.2 N 630 A",
+    "cb_type": "acb",
+    "manufacturer": "ABB",
+    "series": "SACE Emax 2",
+    "model": "E1.2 N",
+    "trip_rating_a": 630,
+    "frame_a": 1600,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 66,
+    "icw_ka": 50,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4,
+    "long_time_delay": 144,
+    "trip_units": [
+     "abb_emax2_dip_lsi",
+     "abb_emax2_dip_li",
+     "abb_emax2_touch_lsi"
+    ],
+    "default_trip_unit": "abb_emax2_dip_lsi",
+    "source": "1SDC200023D0204 (SACE Emax 2 technical catalogue, 2015.10)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_e1_2_n_800",
+    "name": "ABB E1.2 N 800 A",
+    "cb_type": "acb",
+    "manufacturer": "ABB",
+    "series": "SACE Emax 2",
+    "model": "E1.2 N",
+    "trip_rating_a": 800,
+    "frame_a": 1600,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 66,
+    "icw_ka": 50,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4,
+    "long_time_delay": 144,
+    "trip_units": [
+     "abb_emax2_dip_lsi",
+     "abb_emax2_dip_li",
+     "abb_emax2_touch_lsi"
+    ],
+    "default_trip_unit": "abb_emax2_dip_lsi",
+    "source": "1SDC200023D0204 (SACE Emax 2 technical catalogue, 2015.10)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_e1_2_n_1000",
+    "name": "ABB E1.2 N 1000 A",
+    "cb_type": "acb",
+    "manufacturer": "ABB",
+    "series": "SACE Emax 2",
+    "model": "E1.2 N",
+    "trip_rating_a": 1000,
+    "frame_a": 1600,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 66,
+    "icw_ka": 50,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4,
+    "long_time_delay": 144,
+    "trip_units": [
+     "abb_emax2_dip_lsi",
+     "abb_emax2_dip_li",
+     "abb_emax2_touch_lsi"
+    ],
+    "default_trip_unit": "abb_emax2_dip_lsi",
+    "source": "1SDC200023D0204 (SACE Emax 2 technical catalogue, 2015.10)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_e1_2_n_1250",
+    "name": "ABB E1.2 N 1250 A",
+    "cb_type": "acb",
+    "manufacturer": "ABB",
+    "series": "SACE Emax 2",
+    "model": "E1.2 N",
+    "trip_rating_a": 1250,
+    "frame_a": 1600,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 66,
+    "icw_ka": 50,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4,
+    "long_time_delay": 144,
+    "trip_units": [
+     "abb_emax2_dip_lsi",
+     "abb_emax2_dip_li",
+     "abb_emax2_touch_lsi"
+    ],
+    "default_trip_unit": "abb_emax2_dip_lsi",
+    "source": "1SDC200023D0204 (SACE Emax 2 technical catalogue, 2015.10)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_e1_2_n_1600",
+    "name": "ABB E1.2 N 1600 A",
+    "cb_type": "acb",
+    "manufacturer": "ABB",
+    "series": "SACE Emax 2",
+    "model": "E1.2 N",
+    "trip_rating_a": 1600,
+    "frame_a": 1600,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 66,
+    "icw_ka": 50,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4,
+    "long_time_delay": 144,
+    "trip_units": [
+     "abb_emax2_dip_lsi",
+     "abb_emax2_dip_li",
+     "abb_emax2_touch_lsi"
+    ],
+    "default_trip_unit": "abb_emax2_dip_lsi",
+    "source": "1SDC200023D0204 (SACE Emax 2 technical catalogue, 2015.10)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_e1_2_l_630",
+    "name": "ABB E1.2 L 630 A",
+    "cb_type": "acb",
+    "manufacturer": "ABB",
+    "series": "SACE Emax 2",
+    "model": "E1.2 L",
+    "trip_rating_a": 630,
+    "frame_a": 1600,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 150,
+    "icw_ka": 15,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4,
+    "long_time_delay": 144,
+    "trip_units": [
+     "abb_emax2_dip_lsi",
+     "abb_emax2_dip_li",
+     "abb_emax2_touch_lsi"
+    ],
+    "default_trip_unit": "abb_emax2_dip_lsi",
+    "source": "1SDC200023D0204 (SACE Emax 2 technical catalogue, 2015.10)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_e1_2_l_800",
+    "name": "ABB E1.2 L 800 A",
+    "cb_type": "acb",
+    "manufacturer": "ABB",
+    "series": "SACE Emax 2",
+    "model": "E1.2 L",
+    "trip_rating_a": 800,
+    "frame_a": 1600,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 150,
+    "icw_ka": 15,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4,
+    "long_time_delay": 144,
+    "trip_units": [
+     "abb_emax2_dip_lsi",
+     "abb_emax2_dip_li",
+     "abb_emax2_touch_lsi"
+    ],
+    "default_trip_unit": "abb_emax2_dip_lsi",
+    "source": "1SDC200023D0204 (SACE Emax 2 technical catalogue, 2015.10)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_e1_2_l_1000",
+    "name": "ABB E1.2 L 1000 A",
+    "cb_type": "acb",
+    "manufacturer": "ABB",
+    "series": "SACE Emax 2",
+    "model": "E1.2 L",
+    "trip_rating_a": 1000,
+    "frame_a": 1600,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 150,
+    "icw_ka": 15,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4,
+    "long_time_delay": 144,
+    "trip_units": [
+     "abb_emax2_dip_lsi",
+     "abb_emax2_dip_li",
+     "abb_emax2_touch_lsi"
+    ],
+    "default_trip_unit": "abb_emax2_dip_lsi",
+    "source": "1SDC200023D0204 (SACE Emax 2 technical catalogue, 2015.10)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_e1_2_l_1250",
+    "name": "ABB E1.2 L 1250 A",
+    "cb_type": "acb",
+    "manufacturer": "ABB",
+    "series": "SACE Emax 2",
+    "model": "E1.2 L",
+    "trip_rating_a": 1250,
+    "frame_a": 1600,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 150,
+    "icw_ka": 15,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4,
+    "long_time_delay": 144,
+    "trip_units": [
+     "abb_emax2_dip_lsi",
+     "abb_emax2_dip_li",
+     "abb_emax2_touch_lsi"
+    ],
+    "default_trip_unit": "abb_emax2_dip_lsi",
+    "source": "1SDC200023D0204 (SACE Emax 2 technical catalogue, 2015.10)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_e2_2_b_1600",
+    "name": "ABB E2.2 B 1600 A",
+    "cb_type": "acb",
+    "manufacturer": "ABB",
+    "series": "SACE Emax 2",
+    "model": "E2.2 B",
+    "trip_rating_a": 1600,
+    "frame_a": 2500,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 42,
+    "icw_ka": 42,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4,
+    "long_time_delay": 144,
+    "trip_units": [
+     "abb_emax2_dip_lsi",
+     "abb_emax2_dip_li",
+     "abb_emax2_touch_lsi"
+    ],
+    "default_trip_unit": "abb_emax2_dip_lsi",
+    "source": "1SDC200023D0204 (SACE Emax 2 technical catalogue, 2015.10)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_e2_2_b_2000",
+    "name": "ABB E2.2 B 2000 A",
+    "cb_type": "acb",
+    "manufacturer": "ABB",
+    "series": "SACE Emax 2",
+    "model": "E2.2 B",
+    "trip_rating_a": 2000,
+    "frame_a": 2500,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 42,
+    "icw_ka": 42,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4,
+    "long_time_delay": 144,
+    "trip_units": [
+     "abb_emax2_dip_lsi",
+     "abb_emax2_dip_li",
+     "abb_emax2_touch_lsi"
+    ],
+    "default_trip_unit": "abb_emax2_dip_lsi",
+    "source": "1SDC200023D0204 (SACE Emax 2 technical catalogue, 2015.10)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_e2_2_n_800",
+    "name": "ABB E2.2 N 800 A",
+    "cb_type": "acb",
+    "manufacturer": "ABB",
+    "series": "SACE Emax 2",
+    "model": "E2.2 N",
+    "trip_rating_a": 800,
+    "frame_a": 2500,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 66,
+    "icw_ka": 66,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4,
+    "long_time_delay": 144,
+    "trip_units": [
+     "abb_emax2_dip_lsi",
+     "abb_emax2_dip_li",
+     "abb_emax2_touch_lsi"
+    ],
+    "default_trip_unit": "abb_emax2_dip_lsi",
+    "source": "1SDC200023D0204 (SACE Emax 2 technical catalogue, 2015.10)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_e2_2_n_1000",
+    "name": "ABB E2.2 N 1000 A",
+    "cb_type": "acb",
+    "manufacturer": "ABB",
+    "series": "SACE Emax 2",
+    "model": "E2.2 N",
+    "trip_rating_a": 1000,
+    "frame_a": 2500,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 66,
+    "icw_ka": 66,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4,
+    "long_time_delay": 144,
+    "trip_units": [
+     "abb_emax2_dip_lsi",
+     "abb_emax2_dip_li",
+     "abb_emax2_touch_lsi"
+    ],
+    "default_trip_unit": "abb_emax2_dip_lsi",
+    "source": "1SDC200023D0204 (SACE Emax 2 technical catalogue, 2015.10)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_e2_2_n_1250",
+    "name": "ABB E2.2 N 1250 A",
+    "cb_type": "acb",
+    "manufacturer": "ABB",
+    "series": "SACE Emax 2",
+    "model": "E2.2 N",
+    "trip_rating_a": 1250,
+    "frame_a": 2500,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 66,
+    "icw_ka": 66,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4,
+    "long_time_delay": 144,
+    "trip_units": [
+     "abb_emax2_dip_lsi",
+     "abb_emax2_dip_li",
+     "abb_emax2_touch_lsi"
+    ],
+    "default_trip_unit": "abb_emax2_dip_lsi",
+    "source": "1SDC200023D0204 (SACE Emax 2 technical catalogue, 2015.10)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_e2_2_n_1600",
+    "name": "ABB E2.2 N 1600 A",
+    "cb_type": "acb",
+    "manufacturer": "ABB",
+    "series": "SACE Emax 2",
+    "model": "E2.2 N",
+    "trip_rating_a": 1600,
+    "frame_a": 2500,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 66,
+    "icw_ka": 66,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4,
+    "long_time_delay": 144,
+    "trip_units": [
+     "abb_emax2_dip_lsi",
+     "abb_emax2_dip_li",
+     "abb_emax2_touch_lsi"
+    ],
+    "default_trip_unit": "abb_emax2_dip_lsi",
+    "source": "1SDC200023D0204 (SACE Emax 2 technical catalogue, 2015.10)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_e2_2_n_2000",
+    "name": "ABB E2.2 N 2000 A",
+    "cb_type": "acb",
+    "manufacturer": "ABB",
+    "series": "SACE Emax 2",
+    "model": "E2.2 N",
+    "trip_rating_a": 2000,
+    "frame_a": 2500,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 66,
+    "icw_ka": 66,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4,
+    "long_time_delay": 144,
+    "trip_units": [
+     "abb_emax2_dip_lsi",
+     "abb_emax2_dip_li",
+     "abb_emax2_touch_lsi"
+    ],
+    "default_trip_unit": "abb_emax2_dip_lsi",
+    "source": "1SDC200023D0204 (SACE Emax 2 technical catalogue, 2015.10)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_e2_2_n_2500",
+    "name": "ABB E2.2 N 2500 A",
+    "cb_type": "acb",
+    "manufacturer": "ABB",
+    "series": "SACE Emax 2",
+    "model": "E2.2 N",
+    "trip_rating_a": 2500,
+    "frame_a": 2500,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 66,
+    "icw_ka": 66,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4,
+    "long_time_delay": 144,
+    "trip_units": [
+     "abb_emax2_dip_lsi",
+     "abb_emax2_dip_li",
+     "abb_emax2_touch_lsi"
+    ],
+    "default_trip_unit": "abb_emax2_dip_lsi",
+    "source": "1SDC200023D0204 (SACE Emax 2 technical catalogue, 2015.10)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_e2_2_s_250",
+    "name": "ABB E2.2 S 250 A",
+    "cb_type": "acb",
+    "manufacturer": "ABB",
+    "series": "SACE Emax 2",
+    "model": "E2.2 S",
+    "trip_rating_a": 250,
+    "frame_a": 2500,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 85,
+    "icw_ka": 66,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4,
+    "long_time_delay": 144,
+    "trip_units": [
+     "abb_emax2_dip_lsi",
+     "abb_emax2_dip_li",
+     "abb_emax2_touch_lsi"
+    ],
+    "default_trip_unit": "abb_emax2_dip_lsi",
+    "source": "1SDC200023D0204 (SACE Emax 2 technical catalogue, 2015.10)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_e2_2_s_800",
+    "name": "ABB E2.2 S 800 A",
+    "cb_type": "acb",
+    "manufacturer": "ABB",
+    "series": "SACE Emax 2",
+    "model": "E2.2 S",
+    "trip_rating_a": 800,
+    "frame_a": 2500,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 85,
+    "icw_ka": 66,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4,
+    "long_time_delay": 144,
+    "trip_units": [
+     "abb_emax2_dip_lsi",
+     "abb_emax2_dip_li",
+     "abb_emax2_touch_lsi"
+    ],
+    "default_trip_unit": "abb_emax2_dip_lsi",
+    "source": "1SDC200023D0204 (SACE Emax 2 technical catalogue, 2015.10)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_e2_2_s_1000",
+    "name": "ABB E2.2 S 1000 A",
+    "cb_type": "acb",
+    "manufacturer": "ABB",
+    "series": "SACE Emax 2",
+    "model": "E2.2 S",
+    "trip_rating_a": 1000,
+    "frame_a": 2500,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 85,
+    "icw_ka": 66,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4,
+    "long_time_delay": 144,
+    "trip_units": [
+     "abb_emax2_dip_lsi",
+     "abb_emax2_dip_li",
+     "abb_emax2_touch_lsi"
+    ],
+    "default_trip_unit": "abb_emax2_dip_lsi",
+    "source": "1SDC200023D0204 (SACE Emax 2 technical catalogue, 2015.10)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_e2_2_s_1250",
+    "name": "ABB E2.2 S 1250 A",
+    "cb_type": "acb",
+    "manufacturer": "ABB",
+    "series": "SACE Emax 2",
+    "model": "E2.2 S",
+    "trip_rating_a": 1250,
+    "frame_a": 2500,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 85,
+    "icw_ka": 66,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4,
+    "long_time_delay": 144,
+    "trip_units": [
+     "abb_emax2_dip_lsi",
+     "abb_emax2_dip_li",
+     "abb_emax2_touch_lsi"
+    ],
+    "default_trip_unit": "abb_emax2_dip_lsi",
+    "source": "1SDC200023D0204 (SACE Emax 2 technical catalogue, 2015.10)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_e2_2_s_1600",
+    "name": "ABB E2.2 S 1600 A",
+    "cb_type": "acb",
+    "manufacturer": "ABB",
+    "series": "SACE Emax 2",
+    "model": "E2.2 S",
+    "trip_rating_a": 1600,
+    "frame_a": 2500,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 85,
+    "icw_ka": 66,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4,
+    "long_time_delay": 144,
+    "trip_units": [
+     "abb_emax2_dip_lsi",
+     "abb_emax2_dip_li",
+     "abb_emax2_touch_lsi"
+    ],
+    "default_trip_unit": "abb_emax2_dip_lsi",
+    "source": "1SDC200023D0204 (SACE Emax 2 technical catalogue, 2015.10)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_e2_2_s_2000",
+    "name": "ABB E2.2 S 2000 A",
+    "cb_type": "acb",
+    "manufacturer": "ABB",
+    "series": "SACE Emax 2",
+    "model": "E2.2 S",
+    "trip_rating_a": 2000,
+    "frame_a": 2500,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 85,
+    "icw_ka": 66,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4,
+    "long_time_delay": 144,
+    "trip_units": [
+     "abb_emax2_dip_lsi",
+     "abb_emax2_dip_li",
+     "abb_emax2_touch_lsi"
+    ],
+    "default_trip_unit": "abb_emax2_dip_lsi",
+    "source": "1SDC200023D0204 (SACE Emax 2 technical catalogue, 2015.10)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_e2_2_s_2500",
+    "name": "ABB E2.2 S 2500 A",
+    "cb_type": "acb",
+    "manufacturer": "ABB",
+    "series": "SACE Emax 2",
+    "model": "E2.2 S",
+    "trip_rating_a": 2500,
+    "frame_a": 2500,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 85,
+    "icw_ka": 66,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4,
+    "long_time_delay": 144,
+    "trip_units": [
+     "abb_emax2_dip_lsi",
+     "abb_emax2_dip_li",
+     "abb_emax2_touch_lsi"
+    ],
+    "default_trip_unit": "abb_emax2_dip_lsi",
+    "source": "1SDC200023D0204 (SACE Emax 2 technical catalogue, 2015.10)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_e2_2_h_800",
+    "name": "ABB E2.2 H 800 A",
+    "cb_type": "acb",
+    "manufacturer": "ABB",
+    "series": "SACE Emax 2",
+    "model": "E2.2 H",
+    "trip_rating_a": 800,
+    "frame_a": 2500,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 100,
+    "icw_ka": 85,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4,
+    "long_time_delay": 144,
+    "trip_units": [
+     "abb_emax2_dip_lsi",
+     "abb_emax2_dip_li",
+     "abb_emax2_touch_lsi"
+    ],
+    "default_trip_unit": "abb_emax2_dip_lsi",
+    "source": "1SDC200023D0204 (SACE Emax 2 technical catalogue, 2015.10)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_e2_2_h_1000",
+    "name": "ABB E2.2 H 1000 A",
+    "cb_type": "acb",
+    "manufacturer": "ABB",
+    "series": "SACE Emax 2",
+    "model": "E2.2 H",
+    "trip_rating_a": 1000,
+    "frame_a": 2500,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 100,
+    "icw_ka": 85,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4,
+    "long_time_delay": 144,
+    "trip_units": [
+     "abb_emax2_dip_lsi",
+     "abb_emax2_dip_li",
+     "abb_emax2_touch_lsi"
+    ],
+    "default_trip_unit": "abb_emax2_dip_lsi",
+    "source": "1SDC200023D0204 (SACE Emax 2 technical catalogue, 2015.10)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_e2_2_h_1250",
+    "name": "ABB E2.2 H 1250 A",
+    "cb_type": "acb",
+    "manufacturer": "ABB",
+    "series": "SACE Emax 2",
+    "model": "E2.2 H",
+    "trip_rating_a": 1250,
+    "frame_a": 2500,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 100,
+    "icw_ka": 85,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4,
+    "long_time_delay": 144,
+    "trip_units": [
+     "abb_emax2_dip_lsi",
+     "abb_emax2_dip_li",
+     "abb_emax2_touch_lsi"
+    ],
+    "default_trip_unit": "abb_emax2_dip_lsi",
+    "source": "1SDC200023D0204 (SACE Emax 2 technical catalogue, 2015.10)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_e2_2_h_1600",
+    "name": "ABB E2.2 H 1600 A",
+    "cb_type": "acb",
+    "manufacturer": "ABB",
+    "series": "SACE Emax 2",
+    "model": "E2.2 H",
+    "trip_rating_a": 1600,
+    "frame_a": 2500,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 100,
+    "icw_ka": 85,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4,
+    "long_time_delay": 144,
+    "trip_units": [
+     "abb_emax2_dip_lsi",
+     "abb_emax2_dip_li",
+     "abb_emax2_touch_lsi"
+    ],
+    "default_trip_unit": "abb_emax2_dip_lsi",
+    "source": "1SDC200023D0204 (SACE Emax 2 technical catalogue, 2015.10)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_e2_2_h_2000",
+    "name": "ABB E2.2 H 2000 A",
+    "cb_type": "acb",
+    "manufacturer": "ABB",
+    "series": "SACE Emax 2",
+    "model": "E2.2 H",
+    "trip_rating_a": 2000,
+    "frame_a": 2500,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 100,
+    "icw_ka": 85,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4,
+    "long_time_delay": 144,
+    "trip_units": [
+     "abb_emax2_dip_lsi",
+     "abb_emax2_dip_li",
+     "abb_emax2_touch_lsi"
+    ],
+    "default_trip_unit": "abb_emax2_dip_lsi",
+    "source": "1SDC200023D0204 (SACE Emax 2 technical catalogue, 2015.10)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_e2_2_h_2500",
+    "name": "ABB E2.2 H 2500 A",
+    "cb_type": "acb",
+    "manufacturer": "ABB",
+    "series": "SACE Emax 2",
+    "model": "E2.2 H",
+    "trip_rating_a": 2500,
+    "frame_a": 2500,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 100,
+    "icw_ka": 85,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4,
+    "long_time_delay": 144,
+    "trip_units": [
+     "abb_emax2_dip_lsi",
+     "abb_emax2_dip_li",
+     "abb_emax2_touch_lsi"
+    ],
+    "default_trip_unit": "abb_emax2_dip_lsi",
+    "source": "1SDC200023D0204 (SACE Emax 2 technical catalogue, 2015.10)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_e4_2_n_3200",
+    "name": "ABB E4.2 N 3200 A",
+    "cb_type": "acb",
+    "manufacturer": "ABB",
+    "series": "SACE Emax 2",
+    "model": "E4.2 N",
+    "trip_rating_a": 3200,
+    "frame_a": 4000,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 66,
+    "icw_ka": 66,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4,
+    "long_time_delay": 144,
+    "trip_units": [
+     "abb_emax2_dip_lsi",
+     "abb_emax2_dip_li",
+     "abb_emax2_touch_lsi"
+    ],
+    "default_trip_unit": "abb_emax2_dip_lsi",
+    "source": "1SDC200023D0204 (SACE Emax 2 technical catalogue, 2015.10)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_e4_2_n_4000",
+    "name": "ABB E4.2 N 4000 A",
+    "cb_type": "acb",
+    "manufacturer": "ABB",
+    "series": "SACE Emax 2",
+    "model": "E4.2 N",
+    "trip_rating_a": 4000,
+    "frame_a": 4000,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 66,
+    "icw_ka": 66,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4,
+    "long_time_delay": 144,
+    "trip_units": [
+     "abb_emax2_dip_lsi",
+     "abb_emax2_dip_li",
+     "abb_emax2_touch_lsi"
+    ],
+    "default_trip_unit": "abb_emax2_dip_lsi",
+    "source": "1SDC200023D0204 (SACE Emax 2 technical catalogue, 2015.10)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_e4_2_s_3200",
+    "name": "ABB E4.2 S 3200 A",
+    "cb_type": "acb",
+    "manufacturer": "ABB",
+    "series": "SACE Emax 2",
+    "model": "E4.2 S",
+    "trip_rating_a": 3200,
+    "frame_a": 4000,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 85,
+    "icw_ka": 66,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4,
+    "long_time_delay": 144,
+    "trip_units": [
+     "abb_emax2_dip_lsi",
+     "abb_emax2_dip_li",
+     "abb_emax2_touch_lsi"
+    ],
+    "default_trip_unit": "abb_emax2_dip_lsi",
+    "source": "1SDC200023D0204 (SACE Emax 2 technical catalogue, 2015.10)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_e4_2_s_4000",
+    "name": "ABB E4.2 S 4000 A",
+    "cb_type": "acb",
+    "manufacturer": "ABB",
+    "series": "SACE Emax 2",
+    "model": "E4.2 S",
+    "trip_rating_a": 4000,
+    "frame_a": 4000,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 85,
+    "icw_ka": 66,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4,
+    "long_time_delay": 144,
+    "trip_units": [
+     "abb_emax2_dip_lsi",
+     "abb_emax2_dip_li",
+     "abb_emax2_touch_lsi"
+    ],
+    "default_trip_unit": "abb_emax2_dip_lsi",
+    "source": "1SDC200023D0204 (SACE Emax 2 technical catalogue, 2015.10)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_e4_2_h_3200",
+    "name": "ABB E4.2 H 3200 A",
+    "cb_type": "acb",
+    "manufacturer": "ABB",
+    "series": "SACE Emax 2",
+    "model": "E4.2 H",
+    "trip_rating_a": 3200,
+    "frame_a": 4000,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 100,
+    "icw_ka": 85,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4,
+    "long_time_delay": 144,
+    "trip_units": [
+     "abb_emax2_dip_lsi",
+     "abb_emax2_dip_li",
+     "abb_emax2_touch_lsi"
+    ],
+    "default_trip_unit": "abb_emax2_dip_lsi",
+    "source": "1SDC200023D0204 (SACE Emax 2 technical catalogue, 2015.10)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_e4_2_h_4000",
+    "name": "ABB E4.2 H 4000 A",
+    "cb_type": "acb",
+    "manufacturer": "ABB",
+    "series": "SACE Emax 2",
+    "model": "E4.2 H",
+    "trip_rating_a": 4000,
+    "frame_a": 4000,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 100,
+    "icw_ka": 85,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4,
+    "long_time_delay": 144,
+    "trip_units": [
+     "abb_emax2_dip_lsi",
+     "abb_emax2_dip_li",
+     "abb_emax2_touch_lsi"
+    ],
+    "default_trip_unit": "abb_emax2_dip_lsi",
+    "source": "1SDC200023D0204 (SACE Emax 2 technical catalogue, 2015.10)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_e4_2_v_2000",
+    "name": "ABB E4.2 V 2000 A",
+    "cb_type": "acb",
+    "manufacturer": "ABB",
+    "series": "SACE Emax 2",
+    "model": "E4.2 V",
+    "trip_rating_a": 2000,
+    "frame_a": 4000,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 150,
+    "icw_ka": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4,
+    "long_time_delay": 144,
+    "trip_units": [
+     "abb_emax2_dip_lsi",
+     "abb_emax2_dip_li",
+     "abb_emax2_touch_lsi"
+    ],
+    "default_trip_unit": "abb_emax2_dip_lsi",
+    "source": "1SDC200023D0204 (SACE Emax 2 technical catalogue, 2015.10)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_e4_2_v_2500",
+    "name": "ABB E4.2 V 2500 A",
+    "cb_type": "acb",
+    "manufacturer": "ABB",
+    "series": "SACE Emax 2",
+    "model": "E4.2 V",
+    "trip_rating_a": 2500,
+    "frame_a": 4000,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 150,
+    "icw_ka": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4,
+    "long_time_delay": 144,
+    "trip_units": [
+     "abb_emax2_dip_lsi",
+     "abb_emax2_dip_li",
+     "abb_emax2_touch_lsi"
+    ],
+    "default_trip_unit": "abb_emax2_dip_lsi",
+    "source": "1SDC200023D0204 (SACE Emax 2 technical catalogue, 2015.10)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_e4_2_v_3200",
+    "name": "ABB E4.2 V 3200 A",
+    "cb_type": "acb",
+    "manufacturer": "ABB",
+    "series": "SACE Emax 2",
+    "model": "E4.2 V",
+    "trip_rating_a": 3200,
+    "frame_a": 4000,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 150,
+    "icw_ka": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4,
+    "long_time_delay": 144,
+    "trip_units": [
+     "abb_emax2_dip_lsi",
+     "abb_emax2_dip_li",
+     "abb_emax2_touch_lsi"
+    ],
+    "default_trip_unit": "abb_emax2_dip_lsi",
+    "source": "1SDC200023D0204 (SACE Emax 2 technical catalogue, 2015.10)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_e4_2_v_4000",
+    "name": "ABB E4.2 V 4000 A",
+    "cb_type": "acb",
+    "manufacturer": "ABB",
+    "series": "SACE Emax 2",
+    "model": "E4.2 V",
+    "trip_rating_a": 4000,
+    "frame_a": 4000,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 150,
+    "icw_ka": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4,
+    "long_time_delay": 144,
+    "trip_units": [
+     "abb_emax2_dip_lsi",
+     "abb_emax2_dip_li",
+     "abb_emax2_touch_lsi"
+    ],
+    "default_trip_unit": "abb_emax2_dip_lsi",
+    "source": "1SDC200023D0204 (SACE Emax 2 technical catalogue, 2015.10)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_e6_2_h_4000",
+    "name": "ABB E6.2 H 4000 A",
+    "cb_type": "acb",
+    "manufacturer": "ABB",
+    "series": "SACE Emax 2",
+    "model": "E6.2 H",
+    "trip_rating_a": 4000,
+    "frame_a": 6300,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 100,
+    "icw_ka": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4,
+    "long_time_delay": 144,
+    "trip_units": [
+     "abb_emax2_dip_lsi",
+     "abb_emax2_dip_li",
+     "abb_emax2_touch_lsi"
+    ],
+    "default_trip_unit": "abb_emax2_dip_lsi",
+    "source": "1SDC200023D0204 (SACE Emax 2 technical catalogue, 2015.10)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_e6_2_h_5000",
+    "name": "ABB E6.2 H 5000 A",
+    "cb_type": "acb",
+    "manufacturer": "ABB",
+    "series": "SACE Emax 2",
+    "model": "E6.2 H",
+    "trip_rating_a": 5000,
+    "frame_a": 6300,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 100,
+    "icw_ka": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4,
+    "long_time_delay": 144,
+    "trip_units": [
+     "abb_emax2_dip_lsi",
+     "abb_emax2_dip_li",
+     "abb_emax2_touch_lsi"
+    ],
+    "default_trip_unit": "abb_emax2_dip_lsi",
+    "source": "1SDC200023D0204 (SACE Emax 2 technical catalogue, 2015.10)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_e6_2_h_6300",
+    "name": "ABB E6.2 H 6300 A",
+    "cb_type": "acb",
+    "manufacturer": "ABB",
+    "series": "SACE Emax 2",
+    "model": "E6.2 H",
+    "trip_rating_a": 6300,
+    "frame_a": 6300,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 100,
+    "icw_ka": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4,
+    "long_time_delay": 144,
+    "trip_units": [
+     "abb_emax2_dip_lsi",
+     "abb_emax2_dip_li",
+     "abb_emax2_touch_lsi"
+    ],
+    "default_trip_unit": "abb_emax2_dip_lsi",
+    "source": "1SDC200023D0204 (SACE Emax 2 technical catalogue, 2015.10)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_e6_2_v_4000",
+    "name": "ABB E6.2 V 4000 A",
+    "cb_type": "acb",
+    "manufacturer": "ABB",
+    "series": "SACE Emax 2",
+    "model": "E6.2 V",
+    "trip_rating_a": 4000,
+    "frame_a": 6300,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 150,
+    "icw_ka": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4,
+    "long_time_delay": 144,
+    "trip_units": [
+     "abb_emax2_dip_lsi",
+     "abb_emax2_dip_li",
+     "abb_emax2_touch_lsi"
+    ],
+    "default_trip_unit": "abb_emax2_dip_lsi",
+    "source": "1SDC200023D0204 (SACE Emax 2 technical catalogue, 2015.10)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_e6_2_v_5000",
+    "name": "ABB E6.2 V 5000 A",
+    "cb_type": "acb",
+    "manufacturer": "ABB",
+    "series": "SACE Emax 2",
+    "model": "E6.2 V",
+    "trip_rating_a": 5000,
+    "frame_a": 6300,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 150,
+    "icw_ka": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4,
+    "long_time_delay": 144,
+    "trip_units": [
+     "abb_emax2_dip_lsi",
+     "abb_emax2_dip_li",
+     "abb_emax2_touch_lsi"
+    ],
+    "default_trip_unit": "abb_emax2_dip_lsi",
+    "source": "1SDC200023D0204 (SACE Emax 2 technical catalogue, 2015.10)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_e6_2_v_6300",
+    "name": "ABB E6.2 V 6300 A",
+    "cb_type": "acb",
+    "manufacturer": "ABB",
+    "series": "SACE Emax 2",
+    "model": "E6.2 V",
+    "trip_rating_a": 6300,
+    "frame_a": 6300,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 150,
+    "icw_ka": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4,
+    "long_time_delay": 144,
+    "trip_units": [
+     "abb_emax2_dip_lsi",
+     "abb_emax2_dip_li",
+     "abb_emax2_touch_lsi"
+    ],
+    "default_trip_unit": "abb_emax2_dip_lsi",
+    "source": "1SDC200023D0204 (SACE Emax 2 technical catalogue, 2015.10)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_e6_2_x_4000",
+    "name": "ABB E6.2 X 4000 A",
+    "cb_type": "acb",
+    "manufacturer": "ABB",
+    "series": "SACE Emax 2",
+    "model": "E6.2 X",
+    "trip_rating_a": 4000,
+    "frame_a": 6300,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 150,
+    "icw_ka": 120,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4,
+    "long_time_delay": 144,
+    "trip_units": [
+     "abb_emax2_dip_lsi",
+     "abb_emax2_dip_li",
+     "abb_emax2_touch_lsi"
+    ],
+    "default_trip_unit": "abb_emax2_dip_lsi",
+    "source": "1SDC200023D0204 (SACE Emax 2 technical catalogue, 2015.10)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_e6_2_x_5000",
+    "name": "ABB E6.2 X 5000 A",
+    "cb_type": "acb",
+    "manufacturer": "ABB",
+    "series": "SACE Emax 2",
+    "model": "E6.2 X",
+    "trip_rating_a": 5000,
+    "frame_a": 6300,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 150,
+    "icw_ka": 120,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4,
+    "long_time_delay": 144,
+    "trip_units": [
+     "abb_emax2_dip_lsi",
+     "abb_emax2_dip_li",
+     "abb_emax2_touch_lsi"
+    ],
+    "default_trip_unit": "abb_emax2_dip_lsi",
+    "source": "1SDC200023D0204 (SACE Emax 2 technical catalogue, 2015.10)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_e6_2_x_6300",
+    "name": "ABB E6.2 X 6300 A",
+    "cb_type": "acb",
+    "manufacturer": "ABB",
+    "series": "SACE Emax 2",
+    "model": "E6.2 X",
+    "trip_rating_a": 6300,
+    "frame_a": 6300,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 150,
+    "icw_ka": 120,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4,
+    "long_time_delay": 144,
+    "trip_units": [
+     "abb_emax2_dip_lsi",
+     "abb_emax2_dip_li",
+     "abb_emax2_touch_lsi"
+    ],
+    "default_trip_unit": "abb_emax2_dip_lsi",
+    "source": "1SDC200023D0204 (SACE Emax 2 technical catalogue, 2015.10)"
+   }
+  }
+ ]
+}

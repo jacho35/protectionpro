@@ -935,16 +935,153 @@ function cbHasElectronicTrip(p) {
   return t === 'acb' || (t === 'mccb' && p.trip_unit_kind === 'electronic');
 }
 
+// ─── Reference current of a pickup setting ───
+// The magnetic, short-time and instantaneous pickups are multiples of a
+// reference current: Ir (= In × thermal_pickup), the convention of the free
+// number fields and the generic trip units, or In (the trip-unit rating)
+// where the manufacturer fixes the element against In — the Ii of Schneider's
+// TM-D and MicroLogic, ABB's I3: lowering their Ir dial leaves Ii where it is.
+// A trip-unit profile says which, per dial (`base: 'In'`); TripUnit copies the
+// non-default ones onto the breaker as `pickup_base` ({ instantaneous: 'In' })
+// so every engine reads the same thing. Absent = Ir, so a project saved
+// before this reads exactly as it did. Mirrored by backend/analysis/cb_settings.py.
+function cbPickupBase(params, which) {
+  const b = params && params.pickup_base && params.pickup_base[which];
+  return b === 'In' ? 'In' : 'Ir';
+}
+
+// Amps one unit of a pickup multiple stands for
+function cbPickupRefA(params, which) {
+  const inA = (params && params.trip_rating_a) || 630;
+  return cbPickupBase(params, which) === 'In'
+    ? inA
+    : inA * ((params && params.thermal_pickup) || 1.0);
+}
+
+// A pickup multiple with the current it is a multiple of: '11.9×In', '10×Ir'
+// (an MCB's Ir is its In — shown as the standard words it)
+function cbPickupLabel(params, which, multiple) {
+  const m = +(+multiple).toFixed(3);
+  const base = params && params.cb_type === 'mcb' ? 'In' : cbPickupBase(params, which);
+  return `${m}×${base}`;
+}
+
+// The trip currents (A) of a breaker's elements: Ir, the magnetic Im, and —
+// for an electronic trip unit — the short-time Isd and instantaneous Ii
+// (0 = element off). The ONE place a pickup multiple becomes amps.
+function cbElementsA(params) {
+  const p = params || {};
+  const inA = p.trip_rating_a || 630;
+  const el = cbHasElectronicTrip(p);
+  return {
+    inA,
+    ir: inA * (p.thermal_pickup || 1.0),
+    im: cbPickupRefA(p, 'magnetic') * (p.magnetic_pickup || 10),
+    isd: el && p.short_time_pickup > 0 ? cbPickupRefA(p, 'short_time') * p.short_time_pickup : 0,
+    ii: el && p.instantaneous_pickup > 0 ? cbPickupRefA(p, 'instantaneous') * p.instantaneous_pickup : 0,
+  };
+}
+
+// The trip-unit facts a curve needs besides the numeric settings, as a CB
+// parameter object carries them (only the ones the breaker has, so a plain
+// breaker's saved props stay as they were)
+function cbTripExtras(p) {
+  const out = { trip_unit_kind: (p && p.trip_unit_kind) || '' };
+  if (p && p.thermal_curve) out.thermal_curve = p.thermal_curve;
+  if (p && p.pickup_base) out.pickup_base = p.pickup_base;
+  if (p && p.trip_tol) out.trip_tol = p.trip_tol;
+  return out;
+}
+
+/**
+ * Manufacturer long-time curve from a trip-unit profile (`thermal_curve`):
+ * `{ points: [[M, t], ...] }` or `{ param, tables: { '<value>': [[M, t], ...] } }`
+ * where M is a multiple of Ir and t the published (maximum) trip time in s.
+ * A smooth monotone log-log curve through the points (_cbLogLogCurve); below
+ * the first point the first segment's slope is extended down to the 1.05 Ir
+ * conventional non-trip current; above the last point I²t (t ∝ 1/M²) carries
+ * on. Returns null when the breaker has no tabulated curve (the generic model
+ * applies).
+ * Mirrored in backend/analysis/arcflash.py (`_thermal_curve_time`).
+ */
+function cbThermalCurveTime(params, M) {
+  const tc = params && params.thermal_curve;
+  if (!tc) return null;
+  // Formula curve t = T × (at_m / M)² (ABB Ekip: t1 at 3 × I1, t = k/I²), T the
+  // trip unit's own `param` setting; `floor_s` the self-protection minimum
+  if (tc.i2t) {
+    if (M <= 1.05) return Infinity;
+    const T = Number(params[tc.param]);
+    if (!(T > 0)) return null;
+    return Math.min(Math.max(T * Math.pow(tc.i2t / M, 2), tc.floor_s || 0), 10000);
+  }
+  let pts = tc.points;
+  if (!pts && tc.tables) {
+    const want = Number(params[tc.param]);
+    let best = null;
+    for (const k of Object.keys(tc.tables)) {
+      if (best === null || Math.abs(Number(k) - want) < Math.abs(Number(best) - want)) best = k;
+    }
+    pts = best === null ? null : tc.tables[best];
+  }
+  if (!Array.isArray(pts) || pts.length < 2) return null;
+  if (M <= 1.05) return Infinity;
+  return Math.min(_cbLogLogCurve(pts, M), 10000);
+}
+
+// Smooth curve through published (M, t) points on log-log axes: a monotone
+// cubic (Fritsch–Carlson) — exact at every point, no overshoot, no kink where
+// two published segments meet. Below the first point the first segment's
+// slope carries on (unpublished — drawn dotted); above the last, I²t (slope
+// −2) takes over and the cubic ends on that slope so the join is smooth.
+// Mirrored in backend/analysis/cb_settings.py (`thermal_curve_time`).
+function _cbLogLogCurve(pts, M) {
+  const n = pts.length;
+  const x = pts.map(p => Math.log(p[0])), y = pts.map(p => Math.log(p[1]));
+  const h = [], sec = [];
+  for (let k = 0; k < n - 1; k++) { h.push(x[k + 1] - x[k]); sec.push((y[k + 1] - y[k]) / h[k]); }
+  const d = new Array(n);
+  d[0] = sec[0];
+  for (let k = 1; k < n - 1; k++) {
+    if (sec[k - 1] * sec[k] <= 0) d[k] = 0;
+    else {
+      const w1 = 2 * h[k] + h[k - 1], w2 = h[k] + 2 * h[k - 1];
+      d[k] = (w1 + w2) / (w1 / sec[k - 1] + w2 / sec[k]);
+    }
+  }
+  // end on the I²t slope when the curve falls (keeps it monotone: ≤ 3× the secant)
+  const last = sec[n - 2];
+  d[n - 1] = last < 0 ? Math.max(-2, 3 * last) : last;
+  const lm = Math.log(M);
+  if (lm <= x[0]) return Math.exp(y[0] + d[0] * (lm - x[0]));
+  if (lm >= x[n - 1]) return Math.exp(y[n - 1] - 2 * (lm - x[n - 1]));
+  let k = 0;
+  while (x[k + 1] < lm) k++;
+  const u = (lm - x[k]) / h[k], u2 = u * u, u3 = u2 * u;
+  const ln = (2 * u3 - 3 * u2 + 1) * y[k] + (u3 - 2 * u2 + u) * h[k] * d[k]
+    + (-2 * u3 + 3 * u2) * y[k + 1] + (u3 - u2) * h[k] * d[k + 1];
+  return Math.exp(ln);
+}
+
 /**
  * Calculate CB trip time for a given current.
  * @param {object} params - { cb_type, trip_rating_a, thermal_pickup, magnetic_pickup,
- *                            long_time_delay, short_time_pickup, short_time_delay, instantaneous_pickup }
+ *                            long_time_delay, short_time_pickup, short_time_delay, instantaneous_pickup,
+ *                            [trip_unit_kind, thermal_curve, pickup_base, trip_tol] }
  * @param {number} currentA - Fault/overload current in amps
  * @returns {number} Trip time in seconds, or Infinity if below pickup
  */
 function cbTripTime(params, currentA) {
-  const Ir = (params.trip_rating_a || 630) * (params.thermal_pickup || 1.0);
-  const Im = Ir * (params.magnetic_pickup || 10);  // Magnetic pickup in amps
+  // A manufacturer's published tolerances (trip_tol) make this the datasheet's
+  // MAXIMUM curve — the time the breaker is guaranteed to have cleared by
+  return params && params.trip_tol ? cbTripBand(params, currentA).tMax : _cbTripNominal(params, currentA);
+}
+
+// The nominal single-line model (generic trip units): one curve, pickups taken
+// at their setting. Also the building block of cbTripBand.
+function _cbTripNominal(params, currentA) {
+  // Trip currents in amps — each pickup against its own reference (Ir or In)
+  const { ir: Ir, im: Im, isd: stPickup, ii: instPickup } = cbElementsA(params);
   const M = currentA / Ir;  // Current as multiple of thermal pickup
   const cbType = params.cb_type || 'mccb';
   const Mnt = CB_CONV_NON_TRIP[cbType] || CB_CONV_NON_TRIP.mccb;
@@ -954,9 +1091,7 @@ function cbTripTime(params, currentA) {
   // Electronic trip unit (every ACB, and an MCCB with an electronic trip-unit
   // profile) — short-time and instantaneous regions
   if (cbHasElectronicTrip(params)) {
-    const stPickup = (params.short_time_pickup || 0) * Ir;
     const stDelay = params.short_time_delay || 0.1;
-    const instPickup = (params.instantaneous_pickup || 0) * Ir;
 
     // Instantaneous region (highest priority)
     if (instPickup > 0 && currentA >= instPickup) {
@@ -973,6 +1108,11 @@ function cbTripTime(params, currentA) {
     return cbInstantaneousClearTime(cbType);
   }
 
+  // Manufacturer long-time curve (a trip-unit profile's `thermal_curve`,
+  // copied onto the breaker): tabulated points replace the generic formula
+  const tc = cbThermalCurveTime(params, M);
+  if (tc !== null) return tc;
+
   // Thermal (long-time) region: I²t inverse-time characteristic with its
   // asymptote at the conventional non-tripping current [TC3]
   if (M <= Mnt) return Infinity;
@@ -984,6 +1124,125 @@ function cbTripTime(params, currentA) {
 
   // Clamp to reasonable range
   return Math.min(t, 10000);
+}
+
+// First current (× Ir) a breaker's published long-time curve covers, or null
+// without one — below it the curve is not published
+function cbThermalFirstM(params) {
+  const tc = params && params.thermal_curve;
+  if (!tc) return null;
+  if (tc.i2t) return tc.first_m || null;
+  const pts = tc.points || (tc.tables && Object.values(tc.tables)[0]);
+  return Array.isArray(pts) && pts.length ? pts[0][0] : null;
+}
+
+// A tolerance that is one number, or [[upTo, tol], …, [null, tol]] by `x`
+// (x × In: ±7 % up to 6 × In, ±10 % above)
+function _cbTolAt(spec, x) {
+  if (spec == null) return 0;
+  if (typeof spec === 'number') return spec;
+  for (const [upTo, t] of spec) if (upTo == null || x <= upTo) return t;
+  return 0;
+}
+
+// Value of a manufacturer's table (`{ "<setting>": v }`) at the setting nearest
+// `key`; `dflt` when the table is absent
+function _cbTolLookup(table, key, dflt) {
+  if (!table) return dflt;
+  let best = null;
+  for (const k of Object.keys(table)) {
+    if (best === null || Math.abs(Number(k) - key) < Math.abs(Number(best) - key)) best = k;
+  }
+  return best === null ? dflt : table[best];
+}
+
+/**
+ * Trip-time band of a breaker at a current: { tMin, tMax } in seconds
+ * (Infinity = does not operate).
+ *
+ * A breaker without `trip_tol` has one curve (tMin = tMax = cbTripTime's
+ * nominal). A manufacturer's trip unit carries its published tolerances
+ * (`curve.tol` of its profile, copied onto the breaker as `trip_tol`):
+ *   pickup        [lo, hi] × Ir — the long-time element picks up somewhere in
+ *                 here: it never operates below lo, may not yet above lo,
+ *                 certainly does above hi
+ *   long_time     time_tol (± on the time; a number or [[upTo × In, tol], …]),
+ *                 min_points (the fastest curve, published) or min_factor
+ *                 (a number, or { "<param setting>": f }) × the maximum —
+ *                 the published long-time time is the maximum
+ *   short_time    pickup_tol (± on Isd), hold_s / break_s by tsd setting —
+ *                 the shortest time before it may trip (non-tripping time)
+ *                 and the longest it takes to have opened (maximum break time)
+ *   instantaneous pickup_tol (± on Ii / Im), hold_s, break_s
+ * So an element is *certainly* active above pickup × (1 + tol) and *possibly*
+ * above pickup × (1 − tol): tMax follows the certain ones, tMin the possible
+ * ones. Above a certain short-time / instantaneous pickup the published curve
+ * is that element's break time — the long-time element is not carried on
+ * beyond Isd (as on the manufacturer's own curves) — and the fastest the unit
+ * may be is the shorter of that and the long-time minimum. Mirrored by
+ * backend/analysis/arcflash.py (`_cb_band_max_time`) — the engines' clearing
+ * time.
+ */
+function cbTripBand(params, currentA) {
+  const tol = params && params.trip_tol;
+  if (!tol) {
+    const t = _cbTripNominal(params, currentA);
+    return { tMin: t, tMax: t };
+  }
+  const e = cbElementsA(params);
+  const cbType = params.cb_type || 'mccb';
+  const M = currentA / e.ir;
+  const [puLo, puHi] = tol.pickup || [1.05, 1.05];
+
+  // Long-time element alone (the published curve; the generic model when the
+  // breaker has no table)
+  const ltNom = _cbTripNominal({ ...params, short_time_pickup: 0, instantaneous_pickup: 0, magnetic_pickup: 1e9 }, currentA);
+  // fastest long-time curve: its own published points, else a factor of the
+  // maximum (one number, or one per setting of `param` — a trip unit's
+  // accuracy depends on its tr)
+  const lt = tol.long_time || {};
+  // a time tolerance that depends on the current (ABB: ±10 % up to 6 × In, ±20 % above)
+  const tt = lt.time_tol ? _cbTolAt(lt.time_tol, currentA / e.inA) : 0;
+  const ltMax = M <= puHi ? Infinity : ltNom * (1 + tt);
+  let ltMin;
+  if (M <= puLo) ltMin = Infinity;
+  else if (Array.isArray(lt.min_points) && lt.min_points.length > 1) ltMin = Math.min(_cbLogLogCurve(lt.min_points, M), ltNom, 10000);
+  else {
+    const f = lt.min_factor && typeof lt.min_factor === 'object'
+      ? _cbTolLookup(lt.min_factor, Number(params[lt.param || 'long_time_delay']), 1)
+      : (lt.min_factor || 1);
+    ltMin = ltNom * f * (1 - tt);
+  }
+
+  const st = tol.short_time || {}, ins = tol.instantaneous || {};
+  const tsd = params.short_time_delay || 0;
+  // short-time times: a published table by tsd setting, or the setting ± its
+  // time tolerance (ABB: the better of ±10 % and ±40 ms)
+  let stBreak, stHold;
+  if (st.time_tol) {
+    const d = Math.min(st.time_tol.rel * tsd, st.time_tol.abs);
+    stBreak = tsd + d; stHold = Math.max(tsd - d, 0);
+  } else {
+    stBreak = _cbTolLookup(st.break_s, tsd, params.short_time_delay || 0.1);
+    stHold = _cbTolLookup(st.hold_s, tsd, stBreak);
+  }
+  const instBreak = ins.break_s != null ? ins.break_s : cbInstantaneousClearTime(cbType);
+  const instHold = ins.hold_s != null ? ins.hold_s : instBreak;
+  // the instantaneous element: Ii of an electronic unit, else the magnetic pickup
+  const inst = e.ii > 0 ? e.ii : e.im;
+  // an instantaneous element at or below Isd supersedes the short-time one
+  const hasST = e.isd > 0 && !(e.ii > 0 && e.ii <= e.isd);
+  // the pickup tolerance may depend on the setting (ABB I2: ±7 % up to 6 × In, ±10 % above)
+  const stTol = _cbTolAt(st.pickup_tol, e.isd / e.inA), inTol = _cbTolAt(ins.pickup_tol, inst / e.inA);
+
+  let tMax = ltMax, tMin = ltMin;
+  if (hasST && currentA >= e.isd * (1 + stTol)) tMax = stBreak;
+  if (currentA >= inst * (1 + inTol)) tMax = instBreak;
+  // (as for tMax the long-time curve is not carried on into a short-time /
+  // instantaneous zone: the element's non-tripping time is the floor there)
+  if (hasST && currentA >= e.isd * (1 - stTol)) tMin = stHold;
+  if (currentA >= inst * (1 - inTol)) tMin = instHold;
+  return { tMin: Math.min(tMin, tMax), tMax };
 }
 
 // IEC 60898-1 MCB instantaneous (magnetic) bands: B = 3–5×In, C = 5–10×In,
@@ -1058,10 +1317,14 @@ const CB_FRAME_SIZES = [16, 20, 25, 32, 40, 50, 63, 80, 100, 125, 160, 200, 250,
 // library edits to an entry's settings are its defaults), falling back to the
 // dial's `def`. Keys are the breaker props the engines already read, in the
 // engines' units — Ir = trip_rating_a × thermal_pickup, and magnetic,
-// short-time and instantaneous pickups are × Ir. A value of 0 on a dial with
-// `off` means the element is switched off. `kind` 'electronic' gives an MCCB
-// the ACB short-time / instantaneous behaviour (cbHasElectronicTrip).
-// `maker` / `curve` are placeholders for manufacturer libraries (later).
+// short-time and instantaneous pickups are × Ir unless the dial says
+// `base: 'In'` (× the trip-unit rating, see cbPickupRefA): a manufacturer's Ii
+// is fixed against In, so it does not move with the Ir dial. A value of 0 on a
+// dial with `off` means the element is switched off. `kind` 'electronic' gives
+// an MCCB the ACB short-time / instantaneous behaviour (cbHasElectronicTrip).
+// `maker` names a manufacturer library; `curve.thermal` is its published
+// long-time curve (cbThermalCurveTime). Manufacturer profiles are generated
+// into vendor-trip-units.js.
 const TRIP_DIALS = {
   thermal_pickup:       { label: 'Ir',  unit: '× In',      ampsOf: 'In' },
   long_time_delay:      { label: 'tr',  unit: 's at 6 Ir' },
@@ -2895,7 +3158,7 @@ const COMPONENT_DEFS = {
         showWhen: { field: 'cb_type', values: ['mcb'] } },
       { key: 'trip_rating_a', label: 'Trip Rating', type: 'number', unit: 'A', section: 'protection' },
       { key: 'thermal_pickup', label: 'Thermal Pickup', type: 'number', unit: '×In', section: 'protection' },
-      { key: 'magnetic_pickup', label: 'Magnetic Pickup', type: 'number', unit: '×In', section: 'protection' },
+      { key: 'magnetic_pickup', label: 'Magnetic Pickup', type: 'number', unit: '×Ir', section: 'protection' },
       { key: 'long_time_delay', label: 'LT Delay Class', type: 'number', section: 'protection' },
       { key: 'short_time_pickup', label: 'ST Pickup', type: 'number', unit: '×Ir',
         showWhen: { field: 'cb_type', values: ['acb'] }, section: 'protection' },

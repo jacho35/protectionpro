@@ -1831,7 +1831,10 @@ const Retic = {
     if (!v) return null;
     const [kind, id] = String(v).split(':');
     const e = kind === 'cb' ? STANDARD_CBS.find(c => c.id === id) : kind === 'fuse' ? STANDARD_FUSES.find(f => f.id === id) : null;
-    return e ? { kind, name: e.name, props: e } : null;
+    // A breaker's props carry its trip unit as picking it on the diagram would
+    // (a manufacturer's published curve, Ii held against In): TripUnit.deviceProps
+    const props = e && kind === 'cb' && typeof TripUnit !== 'undefined' ? TripUnit.deviceProps(e) : e;
+    return e ? { kind, name: e.name, props } : null;
   },
 
   _protectionOptions(selected, blank) {

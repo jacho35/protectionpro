@@ -261,6 +261,13 @@ function lvNet({ cF = {}, cS = {}, xf = {}, extra = [], extraWires = [] } = {}) 
   }
   const trip = Compliance._deviceMagneticTripA({ type: 'cb', props: { cb_type: 'mcb', mcb_curve: 'C', rated_current_a: 16 } });
   assert(trip.a === 80, 'L4: type-C MCB is guaranteed to hold only up to 5·In (80 A for 16 A), not 10·In');
+  // An MCCB's instantaneous element is held at the current its multiple is of: Ir (trip rating × the
+  // Ir dial) for a generic unit, In for a trip unit that fixes it so — the amps the engines trip at
+  const mccb = { cb_type: 'mccb', rated_current_a: 100, trip_rating_a: 100, thermal_pickup: 0.5, magnetic_pickup: 8 };
+  const gen = Compliance._deviceMagneticTripA({ type: 'cb', props: mccb });
+  assert(gen.a === 0.8 * 8 * 50, `L4b: generic MCCB Ii = 8 x Ir = 400 A -> no-trip limit ${gen.a} A (was 8 x rated 100 A)`);
+  const mfr = Compliance._deviceMagneticTripA({ type: 'cb', props: { ...mccb, pickup_base: { magnetic: 'In' } } });
+  assert(mfr.a === 0.8 * 8 * 100, `L4c: a trip unit holding Ii against In keeps 800 A when Ir is 50 A (${mfr.a} A)`);
   ctx.Components.validate = () => ({ errors: [], warnings: [{ compId: 'b', msg: 'x' }] });
   state({ components: [comp('b', 'bus', { name: 'BusX', voltage_kv: 11 })] });
   assert(items(/BusX x/, 'Network').length === 1, 'L5: validation findings name their component');

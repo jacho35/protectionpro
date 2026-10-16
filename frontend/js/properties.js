@@ -576,6 +576,7 @@ const Properties = {
 
   renderField(field, value, compId) {
     let inputHtml = '';
+    let preRowHtml = '';   // a row shown above this field's (the breaker library filter)
     let unitHtml = '';
 
     // Lock library-derived fields while a standard type is selected.
@@ -633,9 +634,28 @@ const Properties = {
         : field.library === 'fuse' ? STANDARD_FUSES
         : field.library === 'pv_panel' ? PV_PANELS
         : [];
-      const options = library.map(item =>
+      // Breakers: a manufacturer filter ("Generic Library", "Schneider Electric
+      // Library", …) narrows the list; the breaker already chosen always stays.
+      // `_cbMaker`: undefined follows the chosen breaker's library, '*' is all
+      // libraries, else a manufacturer ('' = the generic library)
+      let shownLib = library, makerHtml = '';
+      if (field.library === 'cb') {
+        const makers = [...new Set(library.map(c => c.manufacturer || ''))].sort((a, b) => (a === '') ? -1 : (b === '') ? 1 : a.localeCompare(b));
+        if (makers.length > 1) {
+          const cur = library.find(c => c.id === value);
+          const pref = this._cbMaker;
+          const sel = pref === '*' ? null : (pref !== undefined ? pref : (cur ? (cur.manufacturer || '') : null));
+          const label = m => m === '' ? 'Generic Library' : `${m} Library`;
+          shownLib = library.filter(c => sel === null || (c.manufacturer || '') === sel || c.id === value);
+          makerHtml = `<div class="prop-row cb-maker-row"><label>Library</label><select class="cb-maker-filter" aria-label="Manufacturer library">` +
+            `<option value="*"${sel === null ? ' selected' : ''}>All libraries</option>` +
+            makers.map(m => `<option value="m:${escHtml(m)}"${sel === m ? ' selected' : ''}>${escHtml(label(m))}</option>`).join('') + `</select></div>`;
+        }
+      }
+      const options = shownLib.map(item =>
         `<option value="${escHtml(item.id)}" ${value === item.id ? 'selected' : ''}>${escHtml(item.name)}</option>`
       ).join('');
+      preRowHtml = makerHtml;
       inputHtml = `<select data-field="${field.key}" data-library="${field.library}">
         <option value="" data-ss-always>-- Custom --</option>${options}</select>`;
     } else if (field.type === 'earth_grid_select') {
@@ -855,7 +875,10 @@ const Properties = {
       if (comp && comp.type === 'cb') {
         const inA = comp.props.trip_rating_a || 630;
         const ir = inA * (comp.props.thermal_pickup || 1.0);
-        const amps = field.key === 'thermal_pickup' ? ir : ir * (comp.props.magnetic_pickup || 10);
+        // magnetic: against its own reference current (Ir, or In for a trip unit that fixes it so)
+        const amps = field.key === 'thermal_pickup'
+          ? ir
+          : cbPickupRefA({ ...comp.props, trip_rating_a: inA }, 'magnetic') * (comp.props.magnetic_pickup || 10);
         const ampStr = amps >= 1000 ? `${(amps / 1000).toFixed(2)} kA` : `${amps.toFixed(0)} A`;
         labelText += ` (${ampStr})`;
       }
@@ -902,7 +925,7 @@ const Properties = {
       }
     }
 
-    return `
+    return `${preRowHtml}
       <div class="prop-row${modifiedClass}">
         <label>${labelText}</label>
         ${inputHtml}
@@ -943,6 +966,13 @@ const Properties = {
       const forField = e.target.dataset.unitFor;
       this.unitSelections[forField] = value;
       this.show(comp.id); // re-render with new unit
+      return;
+    }
+
+    // Manufacturer library filter above the breaker picker
+    if (e.target.classList.contains('cb-maker-filter')) {
+      this._cbMaker = value === '*' ? '*' : value.slice(2);
+      this.show(comp.id);
       return;
     }
 

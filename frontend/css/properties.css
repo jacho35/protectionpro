@@ -900,9 +900,12 @@ body.dark-mode .pw-tip { background: #33374d; border: 1px solid #454a63; }
 }
 .tu-reset-all:hover { border-color: var(--accent); color: var(--accent); }
 .tu-section .prop-row select[data-tu-dial] {
-  flex: 0 0 76px;
+  flex: 0 0 112px;   /* "0.698 · 44 A": a dial is marked in amps */
+  min-width: 0;
   font-family: var(--font-mono);
+  font-size: 11px;
 }
+.cb-maker-row select { flex: 1; min-width: 0; }
 .tu-unit {
   font-size: 10px;
   color: var(--text-muted);

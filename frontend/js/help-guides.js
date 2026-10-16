@@ -446,7 +446,7 @@ const HELP_GUIDES = [
           { sel: '.tu-section', label: 'Trip unit: the dials this breaker really has' },
         ] } },
     { title: 'Turn the dials',
-      html: 'Each dial offers its real positions, with the tripping amps beside it. A dial changed from the library default is marked, and the <strong>reset</strong> button puts one (or all of them) back. The footer says how many dials are changed. Fixed settings are shown as <em>(fixed)</em>.',
+      html: 'Each dial offers its real positions, with the tripping amps beside it. A dial changed from the library default is marked, and the <strong>reset</strong> button puts one (or all of them) back. The footer says how many dials are changed. Fixed settings are shown as <em>(fixed)</em>. The unit beside a dial says what it is a multiple of: <em>× Ir</em>, or <em>× In</em> where the manufacturer fixes the setting against the trip rating (the instantaneous Ii of Schneider’s and ABB’s trip units) — that one stays at the same amps when you change Ir.',
       shot: { file: 'trip-unit-2.png', alt: 'A dial changed from default and its reset button',
         setup: 'trip-edited', clip: '#properties-panel',
         callouts: [
@@ -465,7 +465,7 @@ const HELP_GUIDES = [
     { title: 'Change the breaker later',
       html: 'Picking a different breaker after you changed dials asks whether to keep your changes (the Ir is kept in amps) or take the new defaults. The TCC settings drawer shows the same dial pickers, and dragging a curve moves to the next real dial position.' },
   ],
-  tips: ['Choose <em>None — free settings</em> to type any number. Breakers saved before trip units existed keep their settings until you choose one.', 'The library’s own values are the defaults, so a company or team library edit changes them.'],
+  tips: ['Choose <em>None — free settings</em> to type any number. Breakers saved before trip units existed keep their settings until you choose one.', 'The library’s own values are the defaults, so a company or team library edit changes them.', 'A manufacturer’s breaker lists its own trip units (thermal-magnetic, electronic): pick one in <em>Trip unit</em>. The manufacturer filter above <em>Standard CB</em> narrows the list to one library.'],
   related: [{ help: 'prot-tcc', label: 'Time-current curves & relay settings' }] },
 
 // ───────────────────────────────────────────────────────────────────────────
