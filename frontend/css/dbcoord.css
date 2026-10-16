@@ -1,0 +1,23 @@
+/* Library breakers on a board schedule + the mini TCC (js/dbcoord.js).
+   The plot itself reuses the .rtcc-* rules in retic.css. */
+.db-col-device { min-width: 168px; }
+.db-device-sel { width: 100%; max-width: 220px; }
+td.db-coord { white-space: nowrap; }
+.db-prot-strip { display: flex; flex-wrap: wrap; gap: 14px 22px; align-items: flex-end; margin: 4px 0 10px;
+  padding: 8px 10px; border: 1px solid var(--border-color); border-radius: 6px; background: var(--bg-secondary); font-size: 12px; }
+.db-prot-strip label { display: flex; flex-direction: column; gap: 3px; color: var(--text-secondary); }
+.db-prot-strip select { min-width: 220px; }
+.db-prot-strip input { width: 90px; }
+.db-prot-note { color: var(--text-muted); padding-bottom: 6px; }
+
+.dtcc-card { border: 1px solid var(--border-color); border-left: 4px solid var(--border-color); border-radius: 6px; padding: 8px 10px; background: var(--bg-primary); }
+.dtcc-card.dtcc-pass { border-left-color: #2e7d32; }
+.dtcc-card.dtcc-warn { border-left-color: #b26a00; }
+.dtcc-card.dtcc-fail { border-left-color: #c62828; }
+.dtcc-card-h { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; margin-bottom: 4px; }
+.dtcc-card-b { font-size: 12px; line-height: 1.5; color: var(--text-secondary); }
+.dtcc-card-b ul { margin: 0; padding-left: 16px; }
+.dtcc-warn-t { color: #b26a00; font-weight: 700; }
+.dtcc-info-t { color: var(--text-muted); font-weight: 700; }
+body.dark-mode .dtcc-warn-t { color: #ffb74d; }
+body.dark-mode .dtcc-card.dtcc-pass { border-left-color: #66bb6a; }
