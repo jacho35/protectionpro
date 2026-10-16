@@ -716,7 +716,7 @@ const TCC = {
     const prof = comp && TripUnit.profile(comp);
     if (!prof) return;
     const p = dev.cbParams;
-    const elecMccb = prof.kind === 'electronic' && p.cb_type === 'mccb';
+    const elecMccb = TripUnit._mirrorsMagnetic(prof, p.cb_type);   // the magnetic handle IS the instantaneous dial
     const key = mode === 'thermal' ? 'thermal_pickup' : (elecMccb ? 'instantaneous_pickup' : 'magnetic_pickup');
     const d = prof.dials[key];
     if (!d || d.fixed) { p[key] = comp.props[key]; return; }   // not adjustable: undo the nudge
@@ -745,10 +745,11 @@ const TCC = {
       const newTDS = drag.origValue + deltaY * 0.01;
       dev.tds = Math.max(0.05, Math.min(10, Math.round(newTDS * 20) / 20));
     } else if (drag.mode === 'magnetic') {
-      // Horizontal drag → change CB magnetic pickup multiplier
+      // Horizontal drag → change CB magnetic pickup multiplier (of Ir, or of
+      // In where the trip unit fixes it against In)
       const newCurrent = this._xToCurrent(mx);
-      const Ir = (dev.cbParams.trip_rating_a || 630) * (dev.cbParams.thermal_pickup || 1.0);
-      dev.cbParams.magnetic_pickup = Math.max(2, Math.min(20, Math.round(newCurrent / Ir * 2) / 2));
+      const ref = cbPickupRefA(dev.cbParams, 'magnetic');
+      dev.cbParams.magnetic_pickup = Math.max(2, Math.min(20, Math.round(newCurrent / ref * 2) / 2));
     } else if (drag.mode === 'thermal') {
       // Horizontal drag → change CB thermal pickup multiplier (Ir max = 1.0×In)
       const newCurrent = this._xToCurrent(mx);
@@ -2013,7 +2014,7 @@ const TCC = {
               short_time_pickup: p.short_time_pickup || 0,
               short_time_delay: p.short_time_delay || 0,
               instantaneous_pickup: p.instantaneous_pickup || 0,
-              trip_unit_kind: p.trip_unit_kind || '',
+              ...cbTripExtras(p),
             },
           });
         }
@@ -2035,7 +2036,7 @@ const TCC = {
             short_time_pickup: comp.props?.short_time_pickup || 0,
             short_time_delay: comp.props?.short_time_delay || 0,
             instantaneous_pickup: comp.props?.instantaneous_pickup || 0,
-            trip_unit_kind: comp.props?.trip_unit_kind || '',
+            ...cbTripExtras(comp.props),
           },
         });
         // Integral earth-fault (shunt-trip) release fed by a core-balance CT —
@@ -2650,7 +2651,7 @@ const TCC = {
     // Instantaneous (50) element takes over above its pickup — end the IDMT curve there
     const hasInst = dev.instPickup > 0;
     if (hasInst && dev.instPickup > iStart) iEnd = Math.min(iEnd, dev.instPickup);
-    const steps = 200;
+    const steps = 500;
 
     for (let i = 0; i <= steps; i++) {
       const logI = Math.log10(iStart) + (Math.log10(iEnd) - Math.log10(iStart)) * (i / steps);
@@ -3149,17 +3150,110 @@ const TCC = {
     }
   },
 
+  // The currents a breaker's curve changes character at (A), each against
+  // its own reference current (Ir, or In — cbPickupRefA). `hasST`: the
+  // short-time plateau exists — ACBs with a short-time element have no 20 ms
+  // magnetic region unless an instantaneous pickup is set (cbTripTime returns
+  // the ST delay, not 20 ms, above the ST pickup); an instantaneous element
+  // at or below Isd supersedes it (cbTripTime tests it first). `iInst` is
+  // where the curve drops to the instantaneous time when there is no plateau.
+  _cbCurvePoints(p) {
+    const { ir, im, isd, ii } = cbElementsA(p);
+    const hasST = isd > 0 && !(ii > 0 && ii <= isd);
+    return { ir, im, isd, ii, hasST, iInst: ii > 0 ? Math.min(ii, im) : im };
+  },
+
+  // A manufacturer breaker's published tolerance band (cbTripBand), shaded
+  // between its fastest and slowest curves. The slowest — the datasheet
+  // maximum, which the engines clear on — is the solid line. The long-time
+  // element's pickup zone (1.05–1.20 × Ir) is marked as a zone: the curve is
+  // published from its first point (1.5 × Ir) and only dotted in below that.
+  _drawCBBand(ctx, dev, sc) {
+    const p = dev.cbParams;
+    const tol = p.trip_tol;
+    const e = cbElementsA(p);
+    const [puLo, puHi] = tol.pickup || [1.05, 1.05];
+    const first = cbThermalFirstM(p) || puHi;
+    const iMax = this._scaleCurrentInverse(this.currentMax, dev);
+    const iStart = e.ir * puLo;
+    if (!(iMax > iStart)) return;
+    const clampT = (t) => Math.min(Math.max(t, this.timeMin), this.timeMax);
+
+    // Sample on a log axis plus the currents the band changes at, each as a
+    // vertical step (a hair either side)
+    const cur = new Set();
+    const N = 900;  // dense enough that the curves read as smooth
+    for (let i = 0; i <= N; i++) cur.add(Math.pow(10, Math.log10(iStart) + (Math.log10(iMax) - Math.log10(iStart)) * (i / N)));
+    const st = tol.short_time || {}, ins = tol.instantaneous || {};
+    const inst = e.ii > 0 ? e.ii : e.im;
+    const marks = [e.ir * puLo, e.ir * puHi, e.ir * first, inst * (1 - (ins.pickup_tol || 0)), inst * (1 + (ins.pickup_tol || 0))];
+    if (e.isd > 0) marks.push(e.isd * (1 - (st.pickup_tol || 0)), e.isd * (1 + (st.pickup_tol || 0)));
+    for (const m of marks) if (m > iStart && m < iMax) { cur.add(m * 0.99995); cur.add(m * 1.00005); }
+    const pts = [...cur].filter(i => i >= iStart && i <= iMax).sort((a, b) => a - b).map(i => {
+      const b = cbTripBand(p, i);
+      return { I: i, x: this._currentToX(sc(i)), tMin: b.tMin, tMax: b.tMax };
+    });
+    if (pts.length < 2) return;
+    const xl = (x) => Math.min(Math.max(x, this.plotLeft), this.plotRight);
+
+    ctx.save();
+    // Pickup zone: where the long-time element starts to act
+    const xLo = xl(this._currentToX(sc(e.ir * puLo))), xHi = xl(this._currentToX(sc(e.ir * puHi)));
+    if (xHi > xLo) {
+      ctx.fillStyle = dev.color; ctx.globalAlpha = 0.12;
+      ctx.fillRect(xLo, this.plotTop, Math.max(xHi - xLo, 1), this.plotBottom - this.plotTop);
+    }
+    // The band between the fastest and the slowest curve
+    ctx.globalAlpha = 0.16; ctx.fillStyle = dev.color;
+    ctx.beginPath();
+    pts.forEach((s, i) => { const x = xl(s.x), y = this._timeToY(clampT(s.tMax)); if (i) ctx.lineTo(x, y); else ctx.moveTo(x, y); });
+    for (let i = pts.length - 1; i >= 0; i--) {
+      const s = pts[i];
+      ctx.lineTo(xl(s.x), this._timeToY(clampT(s.tMin)));
+    }
+    ctx.closePath();
+    ctx.fill();
+    // Edges: solid where the curve is published, dotted below its first point
+    ctx.strokeStyle = dev.color;
+    const edge = (key, width, alpha) => {
+      for (const dotted of [true, false]) {
+        ctx.beginPath();
+        ctx.setLineDash(dotted ? [2, 3] : []);
+        ctx.lineWidth = width; ctx.globalAlpha = alpha;
+        let pen = false;
+        for (const s of pts) {
+          const t = s[key];
+          const isDotted = s.I < e.ir * first - 1e-9;
+          if (isDotted !== dotted || !isFinite(t) || t < this.timeMin || t > this.timeMax || s.x < this.plotLeft || s.x > this.plotRight) { pen = false; continue; }
+          const y = this._timeToY(t);
+          if (!pen) { ctx.moveTo(s.x, y); pen = true; } else ctx.lineTo(s.x, y);
+        }
+        ctx.stroke();
+      }
+    };
+    edge('tMin', 1, 0.85);
+    edge('tMax', 2.5, 1);
+    ctx.setLineDash([]);
+    // Name the zone on the curve being looked at
+    const i = this.devices.indexOf(dev);
+    if (xHi > xLo && (i === this.selectedDeviceIndex || this.devices.length <= 2)) {
+      ctx.globalAlpha = 0.9; ctx.fillStyle = dev.color;
+      ctx.font = '9px -apple-system, BlinkMacSystemFont, sans-serif';
+      ctx.textAlign = 'left';
+      ctx.fillText(`pickup ${puLo}–${puHi}×Ir`, xHi + 3, this.plotTop + 11);
+    }
+    ctx.restore();
+  },
+
   _drawCBCurve(ctx, dev) {
     const p = dev.cbParams;
-    const Ir = (p.trip_rating_a || 630) * (p.thermal_pickup || 1.0);
-    const Im = Ir * (p.magnetic_pickup || 10);
+    const { ir: Ir, isd: Isd, ii: Ii, hasST, iInst } = this._cbCurvePoints(p);
     const sc = (amps) => this._scaleCurrent(amps, dev); // shorthand for voltage scaling
 
-    // ACBs with a short-time element have no 20 ms magnetic region unless an
-    // instantaneous pickup is set — must match cbTripTime, which returns the ST
-    // delay (not 20 ms) for all currents above the ST pickup
-    const hasST = cbHasElectronicTrip(p) && p.short_time_pickup > 0;
-
+    if (p.trip_tol) {
+      // A manufacturer's breaker: its published tolerance band, not one nominal line
+      this._drawCBBand(ctx, dev, sc);
+    } else {
     // --- Thermal (long-time inverse) region ---
     ctx.strokeStyle = dev.color;
     ctx.lineWidth = 2.5;
@@ -3167,7 +3261,7 @@ const TCC = {
 
     let started = false;
     const iStart = Ir * 1.05;
-    const iEnd = Math.min(hasST ? Ir * p.short_time_pickup : Im, this._scaleCurrentInverse(this.currentMax, dev));
+    const iEnd = Math.min(hasST ? Isd : iInst, this._scaleCurrentInverse(this.currentMax, dev));
     const steps = 200;
 
     for (let i = 0; i <= steps; i++) {
@@ -3194,8 +3288,8 @@ const TCC = {
       // Draw the vertical drop at magnetic pickup
       ctx.beginPath();
       ctx.lineWidth = 2.5;
-      const thermalTimeAtIm = cbTripTime({ ...p, magnetic_pickup: 9999, short_time_pickup: 0, instantaneous_pickup: 0 }, Im);
-      const xMag = this._currentToX(sc(Im));
+      const thermalTimeAtIm = cbTripTime({ ...p, magnetic_pickup: 9999, short_time_pickup: 0, instantaneous_pickup: 0 }, iInst);
+      const xMag = this._currentToX(sc(iInst));
       if (xMag >= this.plotLeft && xMag <= this.plotRight) {
         const yTop = this._timeToY(Math.min(thermalTimeAtIm, this.timeMax));
         const yBot = this._timeToY(magTime);
@@ -3210,7 +3304,7 @@ const TCC = {
       ctx.beginPath();
       const yMag = this._timeToY(magTime);
       if (yMag >= this.plotTop && yMag <= this.plotBottom) {
-        const xStart = this._currentToX(sc(Im));
+        const xStart = this._currentToX(sc(iInst));
         const xEnd = this._currentToX(sc(Math.min(this._scaleCurrentInverse(this.currentMax, dev), (p.trip_rating_a || 630) * 200)));
         ctx.moveTo(Math.max(xStart, this.plotLeft), yMag);
         ctx.lineTo(Math.min(xEnd, this.plotRight), yMag);
@@ -3220,7 +3314,7 @@ const TCC = {
 
     // --- ACB short-time region ---
     if (hasST) {
-      const stCurrent = Ir * p.short_time_pickup;
+      const stCurrent = Isd;
       const stDelay = p.short_time_delay || 0.1;
       const xST = this._currentToX(sc(stCurrent));
       const yST = this._timeToY(stDelay);
@@ -3241,8 +3335,8 @@ const TCC = {
         // to the chart edge when no instantaneous element is set (ST delay
         // plateau, no 20 ms region — consistent with cbTripTime)
         ctx.beginPath();
-        const instCurrent = p.instantaneous_pickup > 0
-          ? Ir * p.instantaneous_pickup
+        const instCurrent = Ii > 0
+          ? Ii
           : this._scaleCurrentInverse(this.currentMax, dev);
         const xEnd = this._currentToX(sc(instCurrent));
         ctx.moveTo(xST, yST);
@@ -3251,8 +3345,8 @@ const TCC = {
       }
 
       // ACB instantaneous drop
-      if (p.instantaneous_pickup > 0) {
-        const instI = Ir * p.instantaneous_pickup;
+      if (Ii > 0) {
+        const instI = Ii;
         const xInst = this._currentToX(sc(instI));
         if (xInst >= this.plotLeft && xInst <= this.plotRight) {
           ctx.beginPath();
@@ -3268,6 +3362,8 @@ const TCC = {
         }
       }
     }
+
+    }   // end of the nominal-curve drawing
 
     // --- Pickup line (dashed vertical at Ir) ---
     ctx.setLineDash([4, 3]);
@@ -3806,8 +3902,7 @@ const TCC = {
     const devIndex = this.devices.indexOf(dev);
     if (devIndex < 0) return;
     const p = dev.cbParams;
-    const Ir = (p.trip_rating_a || 630) * (p.thermal_pickup || 1.0);
-    const Im = Ir * (p.magnetic_pickup || 10);
+    const { ir: Ir, iInst: Im } = this._cbCurvePoints(p);
 
     // Thermal pickup handle: at Ir on the thermal curve
     const thermalI = Ir * 2;
@@ -4302,8 +4397,8 @@ const TCC = {
       } else if (dev.deviceType === 'cb') {
         const p = dev.cbParams;
         typeLabel = p.cb_type === 'mcb'
-          ? `MCB ${p.trip_rating_a}A curve ${p.mcb_curve || 'C'} | Mag: ${p.magnetic_pickup}×In`
-          : `${(p.cb_type || 'mccb').toUpperCase()} ${p.trip_rating_a}A | Mag: ${p.magnetic_pickup}×In`;
+          ? `MCB ${p.trip_rating_a}A curve ${p.mcb_curve || 'C'} | Mag: ${cbPickupLabel(p, 'magnetic', p.magnetic_pickup)}`
+          : `${(p.cb_type || 'mccb').toUpperCase()} ${p.trip_rating_a}A | Mag: ${cbPickupLabel(p, 'magnetic', p.magnetic_pickup)}`;
       } else if (dev.deviceType === 'xfmr_thermal') {
         typeLabel = `Thermal damage | ${dev.mva} MVA | Ir: ${dev.ratedA.toFixed(0)}A`;
       } else if (dev.deviceType === 'cable_thermal') {
@@ -4579,7 +4674,7 @@ const TCC = {
           <input type="number" data-sel-field="cb.thermal_pickup" value="${p.thermal_pickup}" min="0.4" max="1.0" step="0.05">
         </div>
         <div class="tcc-form-row">
-          <label>Magnetic Pickup (×In)</label>
+          <label>Magnetic Pickup (×${isMCB ? 'In' : cbPickupBase(p, 'magnetic')})</label>
           <input type="number" data-sel-field="cb.magnetic_pickup" value="${p.magnetic_pickup}" min="2" max="20" step="0.5">
         </div>
         <div class="tcc-form-row">
@@ -4590,7 +4685,7 @@ const TCC = {
         </div>
         <div class="tcc-sel-acb-fields" style="display:${isACB ? '' : 'none'}">
           <div class="tcc-form-row">
-            <label>ST Pickup (×Ir)</label>
+            <label>ST Pickup (×${cbPickupBase(p, 'short_time')})</label>
             <input type="number" data-sel-field="cb.short_time_pickup" value="${p.short_time_pickup || 0}" min="0" max="20" step="0.5">
           </div>
           <div class="tcc-form-row">
@@ -4598,7 +4693,7 @@ const TCC = {
             <input type="number" data-sel-field="cb.short_time_delay" value="${p.short_time_delay || 0}" min="0.02" max="1" step="0.01">
           </div>
           <div class="tcc-form-row">
-            <label>Instantaneous (×Ir)</label>
+            <label>Instantaneous (×${cbPickupBase(p, 'instantaneous')})</label>
             <input type="number" data-sel-field="cb.instantaneous_pickup" value="${p.instantaneous_pickup || 0}" min="0" max="25" step="0.5">
           </div>
         </div>`;
@@ -4664,9 +4759,11 @@ const TCC = {
       const cbField = field.slice(3);
       dev.cbParams[cbField] = val;
       // An electronic MCCB's magnetic pickup follows its instantaneous dial
-      if (cbField === 'instantaneous_pickup' && val > 0 && dev.cbParams.cb_type === 'mccb'
-          && dev.cbParams.trip_unit_kind === 'electronic') {
-        dev.cbParams.magnetic_pickup = val;
+      if (cbField === 'instantaneous_pickup' && typeof TripUnit !== 'undefined') {
+        // (also a manufacturer ACB, whose Ii OFF leaves no instantaneous element)
+        const tc = TripUnit.targetOfDev(dev);
+        const tprof = tc && TripUnit.profile(tc);
+        if (tprof) TripUnit._mirrorMagnetic(dev.cbParams, tprof, dev.cbParams.cb_type);
       }
       const root = el.closest('#tcc-selected-settings');
       // Show/hide type-specific fields (ACB bands, MCB curve) when type changes
@@ -4818,7 +4915,7 @@ const TCC = {
         short_time_pickup: cbParams.short_time_pickup || 0,
         short_time_delay: cbParams.short_time_delay || 0,
         instantaneous_pickup: cbParams.instantaneous_pickup || 0,
-        trip_unit_kind: cbParams.trip_unit_kind || '',
+        ...cbTripExtras(cbParams),
       },
     };
     this.devices.push(dev);
@@ -5177,7 +5274,9 @@ const TCC = {
     const iUp = this._referCurrent(tp.amps, tp.voltageKv, devUp);
     const iDown = this._referCurrent(tp.amps, tp.voltageKv, devDown);
     return {
-      tUp: this._deviceTripTime(devUp, iUp),
+      // upstream at its fastest, downstream at its slowest: the margin that
+      // holds across both devices' tolerances
+      tUp: this._deviceTripTime(devUp, iUp, 'min'),
       tDown: this._downstreamClearingTime(devDown, iDown),
     };
   },
@@ -5508,7 +5607,9 @@ const TCC = {
     ctx.restore();
   },
 
-  _deviceTripTime(dev, currentA) {
+  // `edge` 'min': a breaker with published tolerances at its FASTEST (what an
+  // upstream device may do), else the datasheet maximum everywhere
+  _deviceTripTime(dev, currentA, edge) {
     if (dev.deviceType === 'relay') {
       // Account for CT saturation: relay sees reduced current when CT saturates
       const effectiveA = dev.ctSat ? ctEffectiveCurrent(currentA, dev.ctSat) : currentA;
@@ -5524,7 +5625,7 @@ const TCC = {
     } else if (dev.deviceType === 'fuse') {
       return fuseTripTime(dev.fuseRating, currentA) || Infinity;
     } else if (dev.deviceType === 'cb') {
-      return cbTripTime(dev.cbParams, currentA);
+      return edge === 'min' ? cbTripBand(dev.cbParams, currentA).tMin : cbTripTime(dev.cbParams, currentA);
     } else if (dev.deviceType === 'xfmr_thermal') {
       // C57.109 K/I² portion is only valid above ~3.5×Ir
       if (currentA <= dev.ratedA * 3.5) return Infinity;

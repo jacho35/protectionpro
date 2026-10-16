@@ -1403,12 +1403,15 @@ const Canvas = {
         if (p.breaking_capacity_ka) lines.push(`Icu ${p.breaking_capacity_ka}kA`);
         const thPu = p.thermal_pickup || 1.0;
         const magPu = p.magnetic_pickup || 10;
-        // Trip currents in brackets (Ir = In × thermal, Im = Ir × magnetic)
+        // Trip currents in brackets (Ir = In × thermal; Im = Ir × magnetic, or
+        // In × magnetic where the trip unit fixes it against In — the base is
+        // named then: Im=11.9×In)
         const irA = tripA * thPu;
-        const imA = irA * magPu;
+        const imA = cbPickupRefA({ ...p, trip_rating_a: tripA }, 'magnetic') * magPu;
+        const imBase = cbPickupBase(p, 'magnetic') === 'In' ? 'In' : '';
         const fmtA = (a) => a >= 1000 ? `${(a / 1000).toFixed(1)}kA` : `${a.toFixed(0)}A`;
         lines.push(`Ir=${thPu}× (${fmtA(irA)})`);
-        lines.push(`Im=${magPu}× (${fmtA(imA)})`);
+        lines.push(`Im=${magPu}×${imBase} (${fmtA(imA)})`);
         if (cbHasElectronicTrip(p) && p.short_time_pickup) {
           lines.push(`ST=${p.short_time_pickup}×`);
         }

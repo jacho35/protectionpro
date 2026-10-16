@@ -9,6 +9,7 @@ from fpdf import FPDF
 
 from .cable_sizing import STANDARD_CABLES as _CABLE_LIB
 from .arcflash import min_arc_rating_text
+from .cb_settings import pickup_base
 
 
 # Unicode the core (latin-1) PDF fonts cannot encode, mapped to an ASCII
@@ -565,6 +566,22 @@ def _render_equipment(pdf, components):
     _table(pdf, headers, rows, widths, header_color=(80, 80, 80))
 
 
+def _cb_setting_text(p, label, which, key, default):
+    """'Mag: 11.9×In (190 A)' — a breaker pickup with the reference current it
+    is a multiple of (Ir, or In where the trip unit fixes it against In) and
+    the amps it stands for. ``which`` None = the thermal pickup (× In)."""
+    try:
+        mult = float(p.get(key, default) or default)
+        in_a = float(p.get("trip_rating_a") or p.get("rated_current_a") or 0)
+        ir = in_a * (float(p.get("thermal_pickup", 1.0) or 1.0))
+    except (TypeError, ValueError):
+        return f"{label}: {p.get(key, default)}"
+    base = "In" if which is None else pickup_base(p, which)
+    ref = in_a if base == "In" else ir
+    amps = f" ({mult * ref:.0f} A)" if ref > 0 else ""
+    return f"{label}: {mult:g}×{base}{amps}"
+
+
 def _render_settings_schedule(pdf, components):
     if not components:
         return
@@ -586,8 +603,8 @@ def _render_settings_schedule(pdf, components):
             rows.append([
                 name, "CB", sub_type,
                 f"Rating: {p.get('trip_rating_a') or p.get('rated_current_a', '—')} A",
-                f"Thermal: {p.get('thermal_pickup', 1.0)}×In",
-                f"Mag: {p.get('magnetic_pickup', 10)}×In",
+                _cb_setting_text(p, "Thermal", None, "thermal_pickup", 1.0),
+                _cb_setting_text(p, "Mag", "magnetic", "magnetic_pickup", 10),
             ])
         elif ctype == "fuse":
             rows.append([

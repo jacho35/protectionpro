@@ -113,13 +113,9 @@ const ReticTcc = {
   _steps(device) {
     const p = device.props || {};
     if (device.kind === 'fuse') return [];
-    const ir = (Number(p.trip_rating_a) || 0) * (Number(p.thermal_pickup) || 1);
-    const out = [ir * (Number(p.magnetic_pickup) || 10)];
-    if (typeof cbHasElectronicTrip === 'function' && cbHasElectronicTrip(p)) {
-      if (p.short_time_pickup > 0) out.push(p.short_time_pickup * ir);
-      if (p.instantaneous_pickup > 0) out.push(p.instantaneous_pickup * ir);
-    }
-    return out.filter(v => v > 0);
+    // each element at its own reference current (Ir, or In — cbElementsA)
+    const e = cbElementsA(p);
+    return [e.im, e.isd, e.ii].filter(v => v > 0);
   },
 
   // ─── Plot ───
@@ -226,7 +222,7 @@ const ReticTcc = {
       const r = this._rating(dev), q = dev.props || {};
       return dev.kind === 'fuse'
         ? `${r} A fuse, total clearing = pre-arcing × 1.2`
-        : `In ${r} A · Ir ${Math.round(r * (Number(q.thermal_pickup) || 1))} A · Im ${Math.round(r * (Number(q.thermal_pickup) || 1) * (Number(q.magnetic_pickup) || 10))} A · class ${Number(q.long_time_delay) || 10}`;
+        : `In ${r} A · Ir ${Math.round(r * (Number(q.thermal_pickup) || 1))} A · Im ${Math.round(r > 0 ? cbElementsA({ ...q, trip_rating_a: r }).im : 0)} A · class ${Number(q.long_time_delay) || 10}`;
     };
     const spec = multi ? `${d.devices.length} protective devices (string breaker + outgoing ways)` : specOf(d.device);
     const devLegend = multi ? `<div class="rtcc-devs">${d.devices.map((v, i) =>

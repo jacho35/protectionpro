@@ -51,6 +51,7 @@ import math
 from collections import deque
 from dataclasses import dataclass, field
 
+from .cb_settings import pickup_amps, table_lookup, thermal_curve_time, tol_at
 from .ct_model import (ct_saturation_params, ct_effective_current,
                        ct_fundamental_series, ct_transient_saturates,
                        x_r_from_kappa)
@@ -1017,7 +1018,7 @@ def _lv_small_transformer_exemption(bus, components, adjacency, voltage_kv):
 
 
 def _cb_has_electronic_trip(props):
-    """Short-time / instantaneous elements (×Ir) apply: every ACB, and an MCCB
+    """Short-time / instantaneous elements apply: every ACB, and an MCCB
     picked with an electronic trip-unit profile (``trip_unit_kind`` written by
     the frontend TripUnit). Mirrors cbHasElectronicTrip in constants.js; a
     breaker without the prop keeps its thermal-magnetic model."""
@@ -1026,19 +1027,86 @@ def _cb_has_electronic_trip(props):
                                 and props.get("trip_unit_kind") == "electronic")
 
 
+def _cb_thermal_time(props, current_a, ir):
+    """Long-time region of a breaker alone: the manufacturer's published curve
+    when it has one, else the generic I²t model ([TC3], see below)."""
+    cb_type = props.get("cb_type", "mccb") or "mccb"
+    m = current_a / ir if ir > 0 else 0.0
+    tabulated = thermal_curve_time(props.get("thermal_curve"), m, props)
+    if tabulated is not None:
+        return tabulated
+    mnt = _CB_CONV_NON_TRIP.get(cb_type, _CB_CONV_NON_TRIP["mccb"])
+    try:
+        lt_class = float(props.get("long_time_delay", 10) or 10)
+    except (TypeError, ValueError):
+        lt_class = 10.0
+    k = (_MCB_THERMAL_K * (lt_class / 10.0) if cb_type == "mcb"
+         else lt_class * (36.0 - mnt * mnt))
+    if m <= mnt:
+        return 10000.0  # below conventional non-tripping current — no trip
+    return min(k / (m * m - mnt * mnt), 10000.0)
+
+
+def _cb_band_max_time(props, current_a, in_a, ir, magnetic_pickup):
+    """Maximum clearing time (s) of a breaker that carries its manufacturer's
+    published tolerances (``trip_tol``). Mirrors the frontend cbTripBand tMax
+    (constants.js): an element is *certainly* active above pickup × (1 + tol);
+    above a certain short-time / instantaneous pickup the published curve is
+    that element's break time (the long-time element is not carried on beyond
+    Isd, as on the manufacturer's own curves); below, the long-time element's
+    maximum (10000 s = never). Short-time uses the published maximum BREAK
+    time of the tsd setting — it already contains the opening time, so none is
+    added."""
+    tol = props["trip_tol"]
+    cb_type = props.get("cb_type", "mccb") or "mccb"
+    m = current_a / ir if ir > 0 else 0.0
+    pu = tol.get("pickup") or [1.05, 1.05]
+    lt = tol.get("long_time") or {}
+    t = 10000.0
+    if m > pu[1]:
+        # the published time is nominal for a formula curve with a time tolerance
+        # (ABB ±10 % up to 6 x In, ±20 % above): the slowest unit is the maximum
+        t = _cb_thermal_time(props, current_a, ir) * (1 + tol_at(lt.get("time_tol"), current_a / in_a if in_a else 0))
+
+    st = tol.get("short_time") or {}
+    ins = tol.get("instantaneous") or {}
+    electronic = _cb_has_electronic_trip(props)
+    isd = pickup_amps(props, "short_time", float(props.get("short_time_pickup", 0) or 0),
+                      in_a, ir) if electronic else 0.0
+    ii = pickup_amps(props, "instantaneous", float(props.get("instantaneous_pickup", 0) or 0),
+                     in_a, ir) if electronic else 0.0
+    inst = ii if ii > 0 else pickup_amps(props, "magnetic", magnetic_pickup, in_a, ir)
+    has_st = isd > 0 and not (ii > 0 and ii <= isd)
+    if has_st and current_a >= isd * (1 + tol_at(st.get("pickup_tol"), isd / in_a if in_a else 0)):
+        tsd = float(props.get("short_time_delay", 0) or 0)
+        if isinstance(st.get("time_tol"), dict):
+            tt = st["time_tol"]
+            t = tsd + min(float(tt["rel"]) * tsd, float(tt["abs"]))
+        else:
+            default = (tsd or 0.1) + _BREAKER_OPENING_TIME_S
+            t = float(table_lookup(st.get("break_s"), tsd, default))
+    if current_a >= inst * (1 + tol_at(ins.get("pickup_tol"), inst / in_a if in_a else 0)):
+        brk = ins.get("break_s")
+        t = float(brk) if brk is not None else _cb_instantaneous_clear_time(cb_type)
+    return min(t, 10000.0)
+
+
 def _cb_self_clearing_time(props, current_a):
     """Clearing time of a CB from its own trip-unit model.
 
-    [PROT-11] Mirrors the frontend cbTripTime() priority (constants.js):
+    [PROT-11] Mirrors the frontend cbTripTime() priority (constants.js).
+    Each pickup is a multiple of its reference current — Ir = trip_rating ×
+    thermal_pickup, or In = trip_rating where the trip unit fixes the element
+    against In (``pickup_base``, see cb_settings.py):
 
-      ACB (electronic trip unit), referenced to Ir = trip_rating × thermal_pickup:
-        1. instantaneous:  instantaneous_pickup > 0 and I ≥ Ii×Ir → 0.05 s
-        2. short-time:     short_time_pickup > 0 and I ≥ Isd×Ir
+      ACB (electronic trip unit):
+        1. instantaneous:  instantaneous_pickup > 0 and I ≥ Ii → 0.05 s
+        2. short-time:     short_time_pickup > 0 and I ≥ Isd
                            → short_time_delay + breaker opening time
                            (an ST-only ZSI/selectivity setup clears at the
                            intentional ST delay, NOT instantaneously)
       All types (MCCB magnetic / ACB fallback):
-        3. magnetic:       I ≥ magnetic_pickup×Ir → 0.025 s MCB/MCCB,
+        3. magnetic:       I ≥ magnetic_pickup → 0.025 s MCB/MCCB,
                            0.05 s ACB (IEEE 1584 Table 1)
         4. thermal region: I²t inverse-time t = k/(M²−Mnt²) ([TC3]),
            exactly mirroring the frontend cbTripTime() TCC model ([PS-9] —
@@ -1050,11 +1118,21 @@ def _cb_self_clearing_time(props, current_a):
     ir = trip_rating * thermal_pickup  # primary amps at pickup
     magnetic_pickup = float(props.get("magnetic_pickup", 10))
 
-    # Electronic-trip short-time / instantaneous settings (×Ir): every ACB,
-    # and an MCCB with an electronic trip-unit profile
+    # A manufacturer's published tolerances: the MAXIMUM clearing time — the
+    # time the breaker is guaranteed to have cleared by (the conservative
+    # figure for incident energy and for the downstream side of grading)
+    if isinstance(props.get("trip_tol"), dict):
+        return _cb_band_max_time(props, current_a, trip_rating, ir, magnetic_pickup)
+
+    # Electronic-trip short-time / instantaneous settings: every ACB, and an
+    # MCCB with an electronic trip-unit profile
     if _cb_has_electronic_trip(props):
-        inst_pickup = float(props.get("instantaneous_pickup", 0) or 0) * ir
-        st_pickup = float(props.get("short_time_pickup", 0) or 0) * ir
+        inst_pickup = pickup_amps(props, "instantaneous",
+                                  float(props.get("instantaneous_pickup", 0) or 0),
+                                  trip_rating, ir)
+        st_pickup = pickup_amps(props, "short_time",
+                                float(props.get("short_time_pickup", 0) or 0),
+                                trip_rating, ir)
         st_delay = float(props.get("short_time_delay", 0.1) or 0.1)
         if inst_pickup > 0 and current_a >= inst_pickup:
             return _cb_instantaneous_clear_time(props.get("cb_type", "mccb"))
@@ -1062,32 +1140,20 @@ def _cb_self_clearing_time(props, current_a):
             # Intentional short-time delay + breaker opening time
             return st_delay + _BREAKER_OPENING_TIME_S
 
-    inst_threshold = ir * magnetic_pickup  # primary amps
+    inst_threshold = pickup_amps(props, "magnetic", magnetic_pickup,
+                                 trip_rating, ir)  # primary amps
     if current_a > 0 and current_a >= inst_threshold:
         # Instantaneous trip, total clearing per IEEE 1584 Table 1
         return _cb_instantaneous_clear_time(props.get("cb_type", "mccb"))
-    # [PS-9] Thermal (long-time) region: the same I²t inverse-time
-    # characteristic the frontend TCC plots (cbTripTime in constants.js).
-    # [TC3] Asymptote at the conventional non-tripping current — 1.13 In for
-    # an MCB (IEC 60898-1 Table 7), 1.05 Ir for MCCB/ACB (IEC 60947-2
-    # Table 6): t = k/(M² − Mnt²), k = class × (36 − Mnt²) so t(6×Ir) =
-    # class seconds; an MCB is calibrated to t(2.55 In) = 30 s at class 10.
-    # Below it the device never trips on its own — return a large time so
-    # the caller's 2 s IEEE 1584 cap (or an upstream device) governs.
-    cb_type = props.get("cb_type", "mccb") or "mccb"
-    mnt = _CB_CONV_NON_TRIP.get(cb_type, _CB_CONV_NON_TRIP["mccb"])
-    try:
-        lt_class = float(props.get("long_time_delay", 10) or 10)
-    except (TypeError, ValueError):
-        lt_class = 10.0
-    if cb_type == "mcb":
-        k = _MCB_THERMAL_K * (lt_class / 10.0)
-    else:
-        k = lt_class * (36.0 - mnt * mnt)
-    m = current_a / ir if ir > 0 else 0.0
-    if m <= mnt:
-        return 10000.0  # below conventional non-tripping current — no trip
-    return min(k / (m * m - mnt * mnt), 10000.0)
+    # [PS-9] Thermal (long-time) region — _cb_thermal_time: the I²t
+    # characteristic the frontend TCC plots (cbTripTime in constants.js) with
+    # [TC3] its asymptote at the conventional non-tripping current (1.13 In
+    # MCB, IEC 60898-1 Table 7; 1.05 Ir MCCB/ACB, IEC 60947-2 Table 6) and
+    # t = k/(M² − Mnt²), k = class × (36 − Mnt²) so t(6×Ir) = class seconds
+    # (an MCB: t(2.55 In) = 30 s at class 10). Below the non-tripping current
+    # the device never trips on its own — a large time, so the caller's 2 s
+    # IEEE 1584 cap (or an upstream device) governs.
+    return _cb_thermal_time(props, current_a, ir)
 
 
 def _device_clearing_time(comp, current_a, relay_by_ct, relay_by_cb,

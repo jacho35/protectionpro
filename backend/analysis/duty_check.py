@@ -7,6 +7,7 @@ Flags any device whose rating is exceeded.
 
 import math
 from ..models.schemas import ProjectData
+from .cb_settings import pickup_amps
 from .ct_model import ct_saturation_params, ct_time_to_saturation, x_r_from_kappa
 from .pt_model import pt_burden_adequacy, pt_voltage_adequacy, parse_pt_accuracy_limits
 
@@ -370,9 +371,12 @@ def run_duty_check(project: ProjectData):
         st_pickup = float(dp.get("short_time_pickup", 0) or 0)
         i_st_ka = max(prospective_fault_ka, largest_fault_ka) * through_scale
         if device_type == "cb" and st_delay > 0 and st_pickup > 0 and i_st_ka > 0:
-            ir = float(dp.get("trip_rating_a", rated_current_a) or rated_current_a or 0) * \
-                float(dp.get("thermal_pickup", 1.0) or 1.0)
-            inst = float(dp.get("instantaneous_pickup", 0) or 0) * ir
+            in_a = float(dp.get("trip_rating_a", rated_current_a) or rated_current_a or 0)
+            ir = in_a * float(dp.get("thermal_pickup", 1.0) or 1.0)
+            # Ii against its own reference current (Ir, or In for a trip unit
+            # that fixes it against In — cb_settings.pickup_base)
+            inst = pickup_amps(dp, "instantaneous",
+                               float(dp.get("instantaneous_pickup", 0) or 0), in_a, ir)
             if not (inst > 0 and i_st_ka * 1000 >= inst):
                 if icw_ka > 0:
                     t_cw = float(dp.get("icw_time_s", 1.0) or 1.0)

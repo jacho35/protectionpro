@@ -361,11 +361,15 @@ const Reports = {
       } else if (comp.type === 'cb') {
         const type = (p.cb_type || 'mccb').toUpperCase();
         const details = [];
-        details.push(`Thermal: ${p.thermal_pickup || 1.0}\u00d7In`);
-        details.push(`Mag: ${p.magnetic_pickup || 10}\u00d7In`);
+        // Each pickup with the current it is a multiple of (Ir, or In where the
+        // trip unit fixes it against In) and the amps it stands for
+        const el = cbElementsA(p);
+        const aTxt = (a) => a >= 1000 ? `${(a / 1000).toFixed(2)} kA` : `${Math.round(a)} A`;
+        details.push(`Thermal: ${p.thermal_pickup || 1.0}\u00d7In (${aTxt(el.ir)})`);
+        details.push(`Mag: ${cbPickupLabel(p, 'magnetic', p.magnetic_pickup || 10)} (${aTxt(el.im)})`);
         if (cbHasElectronicTrip(p)) {
-          if (p.short_time_pickup) details.push(`ST: ${p.short_time_pickup}\u00d7Ir @ ${p.short_time_delay || 0.1}s`);
-          if (p.instantaneous_pickup) details.push(`Inst: ${p.instantaneous_pickup}\u00d7Ir`);
+          if (p.short_time_pickup) details.push(`ST: ${cbPickupLabel(p, 'short_time', p.short_time_pickup)} @ ${p.short_time_delay || 0.1}s (${aTxt(el.isd)})`);
+          if (p.instantaneous_pickup) details.push(`Inst: ${cbPickupLabel(p, 'instantaneous', p.instantaneous_pickup)} (${aTxt(el.ii)})`);
         }
         rows.push([
           name, 'CB', type,
@@ -591,7 +595,10 @@ const Reports = {
 
   exportSettingsCSV() {
     const lines = [];
-    lines.push('Device,Type,Sub-Type,Pickup (A),TDS / Curve,Thermal (×In),Magnetic (×In),ST Pickup (×In),ST Delay (s),Inst (×In),Rating (A),Breaking (kA),Voltage (kV)');
+    // Magnetic / ST / Inst are multiples of the reference current in the
+    // "ref" columns (Ir, or In where the trip unit fixes the element against
+    // In); the trailing columns give the trip currents in amps
+    lines.push('Device,Type,Sub-Type,Pickup (A),TDS / Curve,Thermal (×In),Magnetic (× ref),ST Pickup (× ref),ST Delay (s),Inst (× ref),Rating (A),Breaking (kA),Voltage (kV),Magnetic ref,ST ref,Inst ref,Ir (A),Im (A),Isd (A),Ii (A)');
     // Proper CSV quoting + formula-injection guard via the shared csvCell
     // helper (project.js) — replaces the old comma→semicolon name mangling
     const row = (cells) => cells.map(csvCell).join(',');
@@ -606,8 +613,11 @@ const Reports = {
           p.pickup_a || '', p.curve || 'IEC SI',
           '', '', '', '', '',
           '', '', p.voltage_kv || '',
+          '', '', '', '', '', '', '',
         ]));
       } else if (comp.type === 'cb') {
+        const el = cbElementsA({ ...p, trip_rating_a: p.trip_rating_a || p.rated_current_a });
+        const amps = (a) => a > 0 ? Math.round(a) : '';
         lines.push(row([
           name, 'CB', (p.cb_type || 'mccb').toUpperCase(),
           '', '',
@@ -616,6 +626,9 @@ const Reports = {
           p.instantaneous_pickup || '',
           p.trip_rating_a || p.rated_current_a || '', '',
           p.voltage_kv || '',
+          cbPickupBase(p, 'magnetic'), p.short_time_pickup ? cbPickupBase(p, 'short_time') : '',
+          p.instantaneous_pickup ? cbPickupBase(p, 'instantaneous') : '',
+          amps(el.ir), amps(el.im), amps(el.isd), amps(el.ii),
         ]));
       } else if (comp.type === 'fuse') {
         lines.push(row([
@@ -623,6 +636,7 @@ const Reports = {
           '', '', '', '', '', '', '',
           p.rated_current_a || '', p.breaking_capacity_ka || '',
           p.voltage_kv || '',
+          '', '', '', '', '', '', '',
         ]));
       }
     }

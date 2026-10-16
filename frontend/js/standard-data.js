@@ -1040,6 +1040,14 @@ const StandardData = {
       html += chip('kv', '', 'All voltages', f.kv == null) + kvs.map(v => chip('kv', v, v + ' kV', String(f.kv) === String(v))).join('') +
         conds.map(c => chip('cond', c, c, f.cond === c)).join('');
     }
+    // Breakers: one chip per manufacturer library once an entry names one
+    if (bodyId === 'cb-library-body') {
+      const makers = [...new Set(this.cbs.map(c => c.manufacturer || ''))].sort((a, b) => (a === '') ? -1 : (b === '') ? 1 : a.localeCompare(b));
+      if (makers.length > 1) {
+        html += chip('mfr', '', 'All libraries', f.mfr == null) +
+          makers.map(m => chip('mfr', 'm:' + escHtml(m), m === '' ? 'Generic Library' : escHtml(m) + ' Library', f.mfr === m)).join('');
+      }
+    }
     // Source chips appear once something other than shipped entries exists
     const origins = new Set(this[cfg.arr].map(e => this.originOf(cfg.arr, e).origin));
     const srcs = [['own', 'Mine'], ['shared', 'Shared'], ['company', 'Company']].filter(([o]) => origins.has(o));
@@ -1049,6 +1057,7 @@ const StandardData = {
       const grp = b.dataset.grp, val = b.dataset.val;
       if (grp === 'kv') f.kv = val === '' ? null : val;
       else if (grp === 'src') f.src = val === '' ? null : val;
+      else if (grp === 'mfr') f.mfr = val === '' ? null : val.slice(2);
       else f.cond = (f.cond === val) ? null : val;
       this._renderLibraryChips(bodyId);
       this._applyLibraryFilter(bodyId);
@@ -1068,6 +1077,7 @@ const StandardData = {
       if (ok && f.kv != null) ok = String(parseFloat(g('voltage_kv'))) === String(parseFloat(f.kv));
       if (ok && f.cond != null) ok = g('conductor') === f.cond;
       if (ok && f.src != null) ok = this.originOf(this._LIB[bodyId].arr, this[this._LIB[bodyId].arr][parseInt(tr.dataset.index)] || {}).origin === f.src;
+      if (ok && f.mfr != null) ok = ((this[this._LIB[bodyId].arr][parseInt(tr.dataset.index)] || {}).manufacturer || '') === f.mfr;
       tr.hidden = !ok;
       if (ok) shown++;
     });
@@ -1433,11 +1443,11 @@ const StandardData = {
         <td><input type="number" value="${c.trip_rating_a}" data-key="trip_rating_a" step="any"></td>
         <td><input type="number" value="${c.rated_voltage_kv}" data-key="rated_voltage_kv" step="any"></td>
         <td><input type="number" value="${c.breaking_ka}" data-key="breaking_ka" step="any"></td>
-        <td><input type="number" value="${c.magnetic_pickup}" data-key="magnetic_pickup" step="any"></td>
+        <td><input type="number" value="${c.magnetic_pickup}" data-key="magnetic_pickup" step="any" title="${this._cbBaseTitle(c, 'magnetic_pickup')}"></td>
         <td><input type="number" value="${c.long_time_delay}" data-key="long_time_delay" step="any"></td>
         <td><select data-key="trip_units" aria-label="Trip unit">${this._cbTripUnitOptions(c)}</select></td>
         ${['short_time_pickup', 'short_time_delay', 'instantaneous_pickup'].map(k =>
-          `<td><input type="number" value="${c[k] ?? ''}" data-key="${k}" data-optional="1" step="any" placeholder="${this._cbTripDefault(c, k)}"></td>`).join('')}
+          `<td><input type="number" value="${c[k] ?? ''}" data-key="${k}" data-optional="1" step="any" placeholder="${this._cbTripDefault(c, k)}" title="${this._cbBaseTitle(c, k)}"></td>`).join('')}
         <td><button class="btn-delete-row" data-index="${i}" title="Delete">&times;</button></td>
       </tr>
     `).join('');
@@ -1450,9 +1460,12 @@ const StandardData = {
         let val = e.target.value;
         const entry = this.cbs[idx];
         if (key === 'trip_units') {
-          // '' = Auto (by type and frame), 'none' = no trip unit, else one profile
+          // '' = Auto (by type and frame), 'none' = no trip unit, else one profile;
+          // a unit the entry already lists just becomes its default (the entry
+          // keeps its other trip units — a manufacturer's TM-D / MicroLogic choices)
           if (val === '') { delete entry.trip_units; delete entry.default_trip_unit; }
           else if (val === 'none') { entry.trip_units = []; delete entry.default_trip_unit; }
+          else if (Array.isArray(entry.trip_units) && entry.trip_units.includes(val)) { entry.default_trip_unit = val; }
           else { entry.trip_units = [val]; entry.default_trip_unit = val; }
           this.renderCBTable();
           this.syncCBLibrary();
@@ -1485,12 +1498,27 @@ const StandardData = {
   // profile that fits the breaker type, or none
   _cbTripUnitOptions(c) {
     const auto = typeof TripUnit !== 'undefined' ? TripUnit.inferFor(c) : null;
-    const cur = Array.isArray(c.trip_units) ? (c.trip_units[0] || 'none') : '';
+    // The entry's default unit is the one shown; its other trip units stay listed
+    const own = Array.isArray(c.trip_units) ? c.trip_units.filter(id => TRIP_UNITS[id]) : [];
+    const cur = Array.isArray(c.trip_units)
+      ? (own.includes(c.default_trip_unit) ? c.default_trip_unit : (own[0] || 'none')) : '';
     const ids = typeof TripUnit !== 'undefined' ? TripUnit.profilesForType(c.cb_type) : [];
-    if (cur && cur !== 'none' && !ids.includes(cur)) ids.push(cur);
+    for (const id of own) if (!ids.includes(id)) ids.push(id);
     return [`<option value=""${cur === '' ? ' selected' : ''}>Auto${auto ? ` (${escHtml(TRIP_UNITS[auto].label)})` : ' (none)'}</option>`]
       .concat(ids.map(id => `<option value="${id}"${cur === id ? ' selected' : ''}>${escHtml(TRIP_UNITS[id].label)}</option>`))
       .concat(`<option value="none"${cur === 'none' ? ' selected' : ''}>None</option>`).join('');
+  },
+
+  // What a pickup value of this row is a multiple of, under the entry's
+  // default trip unit — Ir, or In where that unit fixes the element against In
+  _cbBaseTitle(c, key) {
+    if (typeof TripUnit === 'undefined') return '';
+    const pid = TripUnit.defaultIdFor(c);
+    const prof = pid && TRIP_UNITS[pid];
+    const base = prof ? TripUnit.baseMap(prof, c.cb_type)[TripUnit.PICKUP_OF[key]] || 'Ir' : 'Ir';
+    return base === 'In'
+      ? 'Multiple of In (the trip unit fixes this element against the trip rating — it does not move with the Ir dial)'
+      : 'Multiple of Ir (trip rating × the Ir dial)';
   },
 
   // The profile default shown as the placeholder of a blank setting cell

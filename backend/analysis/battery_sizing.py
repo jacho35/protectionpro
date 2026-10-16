@@ -12,11 +12,14 @@ state of charge and terminal voltage look like over the discharge".
 
   * η_inv — one-way conversion efficiency √(round-trip η) (battery_rt_eff);
   * DoD   — usable depth-of-discharge window (battery_dod_pct);
-  * K_age — aging margin, default 1.25 (IEEE 485 §6.3.3: size so the battery
-    still meets the duty at its 80 % end-of-life capacity);
-  * K_design — design/growth margin, default 1.10 (IEEE 485 §6.3.2);
-  * K_temp — low-temperature capacity correction. Lead-acid from the IEEE 485
-    Table-1 shape (1.00 at 25 °C rising toward cold); Li-ion is much flatter
+  * K_age — aging margin, default 1.25 (IEEE 485-2020 §6.3.4: size so the
+    battery still meets the duty at its 80 % end-of-life capacity);
+  * K_design — design/growth margin, default 1.10 (IEEE 485-2020 §6.3.3
+    recommends adding 10–15 %);
+  * K_temp — low-temperature capacity correction. Lead-acid from a straight
+    line through IEEE 485-2020 Table 1 (§6.3.2): 1.00 at 25 °C, 1.30 at
+    4.4 °C, slightly above the table in between (1.22 vs 1.19 at 10 °C);
+    Li-ion is much flatter
     (1.00 ≥ 10 °C, 1.10 below).
 
 **Discharge simulation** (1-minute RK-free forward steps over the duty cycle):
@@ -77,7 +80,8 @@ def _k_temp(chemistry: str, temperature_c: float) -> float:
     """Low-temperature capacity correction factor (≥ 1)."""
     t = float(temperature_c)
     if chemistry == "lead_acid":
-        # IEEE 485 Table-1 shape: 1.00 at 25 °C, ~1.11 at 15.6 °C, ~1.30 at 4.4 °C
+        # Line through IEEE 485-2020 Table 1: 1.00 at 25 °C, 1.30 at 4.4 °C; the
+        # table is 1.11 at 15.6 °C and 1.19 at 10 °C (line 1.14 / 1.22: conservative)
         if t >= 25.0:
             return 1.0
         return min(1.6, 1.0 + (25.0 - t) * 0.0145)

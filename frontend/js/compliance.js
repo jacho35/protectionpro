@@ -1704,7 +1704,8 @@ const Compliance = {
       short_time_pickup: p.short_time_pickup || 0,
       short_time_delay: p.short_time_delay || 0,
       instantaneous_pickup: p.instantaneous_pickup || 0,
-      trip_unit_kind: p.trip_unit_kind || '',
+      // trip_unit_kind + the manufacturer curve / pickup bases, as the TCC reads them
+      ...cbTripExtras(p),
     };
   },
 
@@ -2043,8 +2044,17 @@ const Compliance = {
       const hi = curve === 'B' ? 5 : curve === 'D' ? 20 : 10;
       return { a: lo * In, desc: `Type-${curve} MCB, no-trip limit ${lo}× In (band ${lo}–${hi}× In)` };
     }
-    const inst = parseFloat(p.instantaneous_pickup) || parseFloat(p.magnetic_pickup) || 0;
-    return inst > 0 ? { a: 0.8 * inst * In, desc: `instantaneous ${inst}× In −20 % tolerance` } : null;
+    // The instantaneous element, at the current its multiple is of — Ir (the
+    // engines' reference: trip rating × Ir dial) or In where the trip unit
+    // fixes it against In. The trip rating is the device's rated current when
+    // the breaker has none of its own.
+    const params = { ...this._cbParams(dev), trip_rating_a: parseFloat(p.trip_rating_a) || In };
+    const which = params.instantaneous_pickup > 0 && cbHasElectronicTrip(params) ? 'instantaneous' : 'magnetic';
+    const mult = which === 'instantaneous' ? params.instantaneous_pickup : (parseFloat(p.magnetic_pickup) || 0);
+    if (!(mult > 0)) return null;
+    const base = cbPickupBase(params, which);
+    const amps = cbPickupRefA(params, which) * mult;
+    return { a: 0.8 * amps, desc: `instantaneous ${+mult.toFixed(3)}× ${base} (${Math.round(amps)} A) −20 % tolerance` };
   },
 
   // Devices at the boundary of a motor's dedicated feeder, and any OTHER loads
