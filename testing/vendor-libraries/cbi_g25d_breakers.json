@@ -1,0 +1,229 @@
+{
+ "entries": [
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_g25d_16",
+    "name": "CBI G25D 16 A",
+    "cb_type": "mccb",
+    "manufacturer": "CBI",
+    "series": "G25D",
+    "model": "G25D",
+    "trip_rating_a": 16,
+    "frame_a": 125,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 37.612,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_g25d_p5_0_16"
+    ],
+    "default_trip_unit": "cbi_g25d_p5_0_16",
+    "source": "CBI MCCB catalogue, G25D data sheet (p. 2)",
+    "check": "instantaneous AC 600 +/- 120 A fixed: curve constructed from the published thermal curve"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_g25d_20",
+    "name": "CBI G25D 20 A",
+    "cb_type": "mccb",
+    "manufacturer": "CBI",
+    "series": "G25D",
+    "model": "G25D",
+    "trip_rating_a": 20,
+    "frame_a": 125,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 30.09,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_g25d_p5_0_20"
+    ],
+    "default_trip_unit": "cbi_g25d_p5_0_20",
+    "source": "CBI MCCB catalogue, G25D data sheet (p. 2)",
+    "check": "instantaneous AC 600 +/- 120 A fixed: curve constructed from the published thermal curve"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_g25d_32",
+    "name": "CBI G25D 32 A",
+    "cb_type": "mccb",
+    "manufacturer": "CBI",
+    "series": "G25D",
+    "model": "G25D",
+    "trip_rating_a": 32,
+    "frame_a": 125,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 18.806,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_g25d_p5_0_32"
+    ],
+    "default_trip_unit": "cbi_g25d_p5_0_32",
+    "source": "CBI MCCB catalogue, G25D data sheet (p. 2)",
+    "check": "instantaneous AC 600 +/- 120 A fixed: curve constructed from the published thermal curve"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_g25d_40",
+    "name": "CBI G25D 40 A",
+    "cb_type": "mccb",
+    "manufacturer": "CBI",
+    "series": "G25D",
+    "model": "G25D",
+    "trip_rating_a": 40,
+    "frame_a": 125,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 16.909,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_g25d_p5_1"
+    ],
+    "default_trip_unit": "cbi_g25d_p5_1",
+    "source": "CBI MCCB catalogue, G25D data sheet (p. 2)",
+    "check": "instantaneous band = where the chart's curves reach their flat times"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_g25d_50",
+    "name": "CBI G25D 50 A",
+    "cb_type": "mccb",
+    "manufacturer": "CBI",
+    "series": "G25D",
+    "model": "G25D",
+    "trip_rating_a": 50,
+    "frame_a": 125,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 16.909,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_g25d_p5_1"
+    ],
+    "default_trip_unit": "cbi_g25d_p5_1",
+    "source": "CBI MCCB catalogue, G25D data sheet (p. 2)",
+    "check": "instantaneous band = where the chart's curves reach their flat times"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_g25d_63",
+    "name": "CBI G25D 63 A",
+    "cb_type": "mccb",
+    "manufacturer": "CBI",
+    "series": "G25D",
+    "model": "G25D",
+    "trip_rating_a": 63,
+    "frame_a": 125,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 16.909,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_g25d_p5_1"
+    ],
+    "default_trip_unit": "cbi_g25d_p5_1",
+    "source": "CBI MCCB catalogue, G25D data sheet (p. 2)",
+    "check": "instantaneous band = where the chart's curves reach their flat times"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_g25d_80",
+    "name": "CBI G25D 80 A",
+    "cb_type": "mccb",
+    "manufacturer": "CBI",
+    "series": "G25D",
+    "model": "G25D",
+    "trip_rating_a": 80,
+    "frame_a": 125,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 16.909,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_g25d_p5_1"
+    ],
+    "default_trip_unit": "cbi_g25d_p5_1",
+    "source": "CBI MCCB catalogue, G25D data sheet (p. 2)",
+    "check": "instantaneous band = where the chart's curves reach their flat times"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_g25d_100",
+    "name": "CBI G25D 100 A",
+    "cb_type": "mccb",
+    "manufacturer": "CBI",
+    "series": "G25D",
+    "model": "G25D",
+    "trip_rating_a": 100,
+    "frame_a": 125,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 16.909,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_g25d_p5_1"
+    ],
+    "default_trip_unit": "cbi_g25d_p5_1",
+    "source": "CBI MCCB catalogue, G25D data sheet (p. 2)",
+    "check": "instantaneous band = where the chart's curves reach their flat times"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_g25d_125",
+    "name": "CBI G25D 125 A",
+    "cb_type": "mccb",
+    "manufacturer": "CBI",
+    "series": "G25D",
+    "model": "G25D",
+    "trip_rating_a": 125,
+    "frame_a": 125,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 13.544,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_g25d_p5_2"
+    ],
+    "default_trip_unit": "cbi_g25d_p5_2",
+    "source": "CBI MCCB catalogue, G25D data sheet (p. 2)",
+    "check": "instantaneous band = where the chart's curves reach their flat times"
+   }
+  }
+ ]
+}

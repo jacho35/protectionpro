@@ -135,3 +135,28 @@ def tm_profile(maker, label, catalogue, mx, mn):
             "magnetic_pickup": {"fixed": True, "def": round((lo + hi) / 2, 3), "base": "In"},
         },
     }
+
+
+def thin_mt(pts, T=10000.0, eps=0.0015):
+    """(x In, s) traced points -> strictly rising x / falling t polyline, clipped to T, with near-vertical drops kept
+    (a vertical run is collapsed to its top and its bottom, the bottom 0.3 % to the right) and thinned on
+    (log x, log t) with Douglas-Peucker."""
+    out, low = [], None                                   # `low`: the lowest t of the vertical run being collapsed
+    for m, t in pts:
+        if t > T:
+            if not out:
+                out.append((m, T))
+            continue
+        if out and m <= out[-1][0] * 1.003:               # still on a vertical stroke
+            low = t if low is None else min(low, t)
+            continue
+        if low is not None and low < out[-1][1] * 0.98:
+            out.append((out[-1][0] * 1.003, low))
+        low = None
+        if out and t >= out[-1][1] * 0.9995:
+            continue
+        out.append((m, t))
+    if low is not None and low < out[-1][1] * 0.98:
+        out.append((out[-1][0] * 1.003, low))
+    thin = _dp([(math.log10(m), math.log10(t)) for m, t in out], eps)
+    return [[round(10 ** a, 4), float(f"{10 ** b:.4g}")] for a, b in thin]
