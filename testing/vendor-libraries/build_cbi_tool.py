@@ -15,7 +15,7 @@ import os
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(HERE))
 JS = os.path.join(ROOT, "frontend", "js")
-ORDER = ["cbi", "qf13", "qf18", "qf26lr", "qf26hr", "g15d", "g25d", "f15d", "f25d", "g35d", "f35d", "k25d", "k35d", "k50d", "jframe"]
+ORDER = ["cbi", "qf13", "qf18", "qf26lr", "qf26hr", "g15d", "g25d", "f15d", "f25d", "g35d", "f35d", "k25d", "k35d", "k50d", "f65dv", "jframe"]
 LABEL = {"cbi": "L Frame (L20B / L40B)", "qf13": "QF(13)", "qf18": "QF(18)", "qf26lr": "QF(26)LR", "qf26hr": "QF(26)HR", "jframe": "J-Series (JS25 / J25S)"}
 
 
