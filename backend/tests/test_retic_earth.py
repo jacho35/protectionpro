@@ -217,3 +217,17 @@ def test_withstand_is_the_weakest_earth_fault_conductor():
     r["minisubs"][0]["earthing"] = "TN-C"
     pen = run_retic_earth_check(r)["kiosks"][0]["erfs"][0]["loop"]["withstand"]
     assert pen["conductor"] == "PEN" and pen["sizeMm2"] == 16 and pen["k"] == 143.0
+
+
+def test_three_phase_max_at_kiosk_and_busbar():
+    """Ik3 max = 1.10·230 / |Ze + Z1| with the phase R taken back to 20 °C
+    (library R / 1.275 for Cu XLPE); the busbar takes Ze alone."""
+    res = run_retic_earth_check(req())
+    ze_mag = 0.045 * 420 ** 2 / 500000
+    r = ze_mag / math.sqrt(1 + 36)
+    ze = complex(r, 6 * r)
+    z1 = ze + complex(0.2461 / 1.275 * 0.1, 0.08 * 0.1)
+    assert res["kiosks"][0]["ik3A"] == pytest.approx(1.10 * 230 / abs(z1), abs=1)
+    ms = res["minisubs"][0]
+    assert ms["ik3A"] == pytest.approx(1.10 * 230 / ze_mag, abs=1)
+    assert ms["ik1A"] == pytest.approx(0.95 * 230 / ze_mag, abs=1)

@@ -499,3 +499,55 @@ body.dark-mode .rtcc-range { fill: #a78bfa; }
   .rtcc-table td { padding: 5px 4px; }
   .rtcc-modal .modal-header h3 { font-size: 14px; }
 }
+
+/* Topology: Volt drop / Fault current view, fault kinds, phone list */
+.rdg-toolbar { flex-wrap: wrap; }
+.rdg-seg, .rdg-views { display: inline-flex; border: 1px solid var(--border-color); border-radius: 6px; overflow: hidden; background: var(--bg-secondary); }
+.rdg-seg button, .rdg-views button { border: 0; border-right: 1px solid var(--border-color); background: transparent; color: var(--text-primary);
+  font: inherit; font-size: 12px; font-weight: 600; padding: 0 12px; min-height: 30px; cursor: pointer; }
+.rdg-seg button:last-child, .rdg-views button:last-child { border-right: 0; }
+.rdg-seg button[aria-pressed="true"] { background: var(--accent); color: #fff; }
+.rdg-views button[aria-pressed="true"] { background: var(--text-primary); color: var(--bg-primary); }
+.rdg-kinds { display: inline-flex; gap: 6px; }
+.rdg-kinds[hidden], .rdg-views[hidden], .rdg-legend[hidden] { display: none; }
+.rdg-kind { display: inline-flex; align-items: center; gap: 6px; min-height: 30px; padding: 0 10px 0 6px; border: 1px solid var(--border-color);
+  border-radius: 6px; background: var(--bg-secondary); color: var(--text-primary); font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
+.rdg-kind i { width: 14px; height: 14px; border-radius: 3px; border: 1.5px solid var(--border-color); background: var(--bg-primary); position: relative; }
+.rdg-kind[aria-pressed="true"] { background: var(--bg-primary); border-color: var(--accent); }
+.rdg-kind[aria-pressed="true"] i { background: var(--accent); border-color: var(--accent); }
+.rdg-kind[aria-pressed="true"] i::after { content: ''; position: absolute; left: 3.5px; top: 0.5px; width: 4px; height: 8px;
+  border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(45deg); }
+.rdg-tag { font-size: 10px; font-weight: 700; color: #fff; padding: 1px 5px; border-radius: 3px; white-space: nowrap; }
+.rdg-tag-3 { background: #334155; }
+.rdg-tag-e { background: #0f766e; }
+.rdg-pill { font-size: 10px; font-weight: 700; padding: 1px 7px; border-radius: 9px; white-space: nowrap; }
+.rdg-pill-ok { color: #2e7d32; background: rgba(46, 125, 50, .14); }
+.rdg-pill-bad { color: #c62828; background: rgba(198, 40, 40, .12); }
+body.dark-mode .rdg-pill-ok { color: #69db7c; }
+body.dark-mode .rdg-pill-bad { color: #ff6b6b; }
+.rdg-views { display: none; }
+.rdg-list { display: flex; flex-direction: column; gap: 8px; }
+.rdg-card { background: var(--bg-primary); border: 1px solid var(--border-color); border-left: 4px solid var(--border-color);
+  border-radius: 6px; padding: 8px 10px; display: flex; flex-direction: column; gap: 5px; }
+.rdg-card-ok { border-left-color: #2e7d32; }
+.rdg-card-bad { border-left-color: #c62828; }
+.rdg-card-ms { background: var(--bg-secondary); }
+.rdg-card-head { display: flex; align-items: center; gap: 6px; }
+.rdg-card-head b { font-size: 13px; flex: 1; }
+.rdg-card-head span { font-size: 11px; color: var(--text-muted); }
+.rdg-card-head em { font-style: normal; font-size: 10px; font-weight: 700; color: var(--text-secondary); border: 1px solid var(--border-color); border-radius: 3px; padding: 0 4px; }
+.rdg-card-row { display: flex; align-items: center; gap: 8px; }
+.rdg-card-row .rdg-tag { min-width: 58px; text-align: center; }
+.rdg-card-row strong { font-size: 14px; flex: 1; }
+.rdg-card-foot { font-size: 11px; color: var(--text-muted); }
+.rdg-card-foot.rdg-bad { color: #c62828; }
+@media (max-width: 640px) {
+  .rdg-views:not([hidden]) { display: inline-flex; }
+  .rdg-seg { flex: 1 1 100%; }
+  .rdg-seg button { flex: 1; min-height: 44px; font-size: 13px; }
+  .rdg-kinds { flex: 1 1 100%; }
+  .rdg-kind { flex: 1; justify-content: center; min-height: 44px; }
+  .rdg-kind .rdg-tag { display: none; }
+  .rdg-views button { min-height: 36px; }
+  #retic-diagram-canvas.rdg-list-mode { background: var(--bg-secondary); }
+}

@@ -9,6 +9,12 @@
  * AppState.reticulation, numbers from AppState.reticResults (the latest
  * /api/analysis/admd response) and Retic's own volt-drop helpers.
  *
+ * "Show: Fault current" swaps the boxes' contents for the earth-fault check's
+ * figures (AppState.reticResults.earth, /api/analysis/retic-earth-check): the
+ * maximum three-phase Ik3 at each busbar, the minimum earth-fault current
+ * (L–PE on TN-S, L–PEN on TN-C / TN-C-S) with its clearing time, and the
+ * lowest erf current per kiosk. On a phone that view also offers a list.
+ *
  * Colours are literal hex from _palette(), not CSS custom properties:
  * Project._rasterizeSVG only resolves `var(--x, fallback)` forms, so bare
  * var() references would rasterize colourless into the PNG/PDF exports.
@@ -17,6 +23,9 @@
 const ReticDiagram = {
   _bound: false,
   _zoom: 1,
+  // View options, kept for the session: what the boxes show, and on a phone
+  // whether the fault view is a list or the diagram.
+  view: { mode: 'vd', show3: true, showE: true, list: true },
   _size: { w: 0, h: 0 },
 
   // Geometry (SVG user units, which are CSS px at zoom 1)
@@ -34,6 +43,7 @@ const ReticDiagram = {
     this._bind();
     modal.style.display = '';
     this._zoom = 1;
+    this._syncControls();
     this.render();
     this.autoZoom();
   },
@@ -67,6 +77,14 @@ const ReticDiagram = {
       else if (a === 'png') this.exportPNG();
       else if (a === 'svg') this.exportSVG();
       else if (a === 'dxf') this.exportDXF();
+      else if (a === 'mode-vd' || a === 'mode-fault') { this.view.mode = a.slice(5); this._rerender(); }
+      else if (a === 'show3' || a === 'showE') {
+        const other = a === 'show3' ? 'showE' : 'show3';
+        if (this.view[a] && !this.view[other]) return;          // one always stays on
+        this.view[a] = !this.view[a];
+        this._rerender();
+      }
+      else if (a === 'view-list' || a === 'view-diagram') { this.view.list = a === 'view-list'; this._rerender(); }
     });
   },
 
@@ -424,12 +442,12 @@ const ReticDiagram = {
     return dark ? {
       surface: '#1e1e2e', node: '#252536', nodeHead: '#2f2f44', msHead: '#1d3a5c', msBody: '#22293a',
       border: '#3a3a50', ink: '#e0e0e8', inkSec: '#a0a0b0', muted: '#7c7c96',
-      edge: '#55556e', rmu: '#f87171', accent: '#4a9eff', pass: '#69db7c', fail: '#ff6b6b',
+      edge: '#55556e', rmu: '#f87171', accent: '#4a9eff', pass: '#69db7c', fail: '#ff6b6b', tag3: '#475569', tagE: '#0f766e',
       phase: { Red: '#f87171', White: '#cbd5e1', Blue: '#60a5fa', '3 Phase': '#c084fc', other: '#7c7c96' },
     } : {
       surface: '#ffffff', node: '#ffffff', nodeHead: '#eef1f5', msHead: '#dbeafe', msBody: '#f5f8ff',
       border: '#c9ced6', ink: '#1a1a2e', inkSec: '#555555', muted: '#7a7a88',
-      edge: '#9aa0aa', rmu: '#dc2626', accent: '#0078d7', pass: '#2e7d32', fail: '#d32f2f',
+      edge: '#9aa0aa', rmu: '#dc2626', accent: '#0078d7', pass: '#2e7d32', fail: '#d32f2f', tag3: '#334155', tagE: '#0f766e',
       phase: { Red: '#dc2626', White: '#6b7280', Blue: '#2563eb', '3 Phase': '#7c3aed', other: '#9ca3af' },
     };
   },
@@ -493,6 +511,15 @@ const ReticDiagram = {
         + `${len ? ', ' + len : ''}${amps != null ? ', carrying ' + amps + ' A' : ''}`
         + `, leg volt drop ${this._fmtPct(legVD)}`;
 
+      if (this._isFault()) {
+        edgeSvg += `<g><title>${this._esc(`${k ? k.name : ''} feeder: ${cable || 'no cable'}${len ? ', ' + len : ''}`)}</title>`
+          + `<path d="M ${px} ${py} H ${mx} V ${cy} H ${cx}" fill="none" stroke="${P.edge}" stroke-width="1.4"/>`
+          + `<polygon points="${cx - 7},${cy - 4} ${cx - 7},${cy + 4} ${cx},${cy}" fill="${P.edge}"/>`
+          + (cable ? `<text x="${mx}" y="${cy - 14}" text-anchor="middle" font-size="10" font-weight="700" fill="${P.inkSec}">${this._esc(cable)}</text>` : '')
+          + (len ? `<text x="${mx}" y="${cy - 4}" text-anchor="middle" font-size="8.5" fill="${P.muted}">${this._esc(len)}</text>` : '')
+          + `</g>`;
+        continue;
+      }
       edgeSvg += `<g><title>${this._esc(tip)}</title>`
         + `<path d="M ${px} ${py} H ${mx} V ${cy} H ${cx}" fill="none" stroke="${P.edge}" stroke-width="1.4"/>`
         + `<polygon points="${cx - 7},${cy - 4} ${cx - 7},${cy + 4} ${cx},${cy}" fill="${P.edge}"/>`
@@ -526,14 +553,16 @@ const ReticDiagram = {
     }
 
     let nodeSvg = '';
+    const F = this._isFault() ? this._faultData() : null;
     for (const n of L.nodes) {
       nodeSvg += n.isRmu ? this._rmuNode(n, tree, P)
+        : F ? this._faultNode(n, tree, F, P)
         : n.isMs ? this._minisubNode(n, msById[n.id], tree, P)
         : this._kioskNode(n, tree, resById, P, limit);
     }
 
     return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${L.w} ${L.h}" width="${L.w}" height="${L.h}"
-        role="img" aria-label="Reticulation topology: ${tree.minisubs.length} minisub(s) feeding ${tree.kiosks.length} kiosk(s), annotated with per-leg and cumulative volt drop and connection counts"
+        role="img" aria-label="Reticulation topology: ${tree.minisubs.length} minisub(s) feeding ${tree.kiosks.length} kiosk(s), annotated with ${F ? 'the three-phase and earth-fault current at each minisub and kiosk' : 'per-leg and cumulative volt drop and connection counts'}"
         font-family="Helvetica, Arial, sans-serif">
       <rect x="0" y="0" width="${L.w}" height="${L.h}" fill="${P.surface}"/>
       ${edgeSvg}
@@ -679,11 +708,198 @@ const ReticDiagram = {
     </g></g>`;
   },
 
+  // ─── Fault current view ───
+  _fmtA(a) { return a == null ? '—' : a >= 1000 ? (a / 1000).toFixed(2) + ' kA' : Math.round(a) + ' A'; },
+  _fmtS(t) { return t == null ? '' : t < 1 ? t.toFixed(2) + ' s' : t.toFixed(1) + ' s'; },
+
+  // Per minisub / kiosk figures from the earth-fault check, or null for a
+  // node it did not reach. {ik3, ik1, earthing, tS, status, tAllow, erf}
+  _faultData() {
+    const earth = AppState.reticResults && AppState.reticResults.earth;
+    const out = { ms: {}, k: {}, any: !!earth };
+    if (!earth) return out;
+    for (const m of earth.minisubs || []) {
+      out.ms[m.minisubId] = { ik3: m.ik3A, ik1: m.ik1A, earthing: m.earthing || 'TN-S', zeOhm: m.zeOhm };
+    }
+    for (const k of earth.kiosks || []) {
+      const l = k.loop || {};
+      // Lowest erf current, a failing erf first.
+      const erfs = (k.erfs || []).filter(e => e.loop && e.loop.ifA != null);
+      const failing = erfs.filter(e => e.loop.status === 'fail');
+      const pick = (failing.length ? failing : erfs).slice().sort((a, b) => a.loop.ifA - b.loop.ifA)[0] || null;
+      out.k[k.kioskId] = {
+        ik3: k.ik3A, ik1: l.ifA, earthing: k.earthing || 'TN-S', tS: l.tS, status: l.status, tAllow: l.tAllowS,
+        erf: pick ? { name: pick.erfNumber || pick.erfId, ifA: pick.loop.ifA, ok: pick.loop.status !== 'fail' } : null,
+        nErfFail: failing.length,
+      };
+    }
+    return out;
+  },
+
+  _faultVerdict(isMs, d) {
+    if (!d || isMs) return null;
+    if (d.status === 'fail' || d.nErfFail) return false;
+    return d.status === 'pass' ? true : null;
+  },
+
+  _faultTip(name, isMs, d) {
+    if (!d) return `${name} — run the Demand calculation to see its fault currents.`;
+    const pen = d.earthing !== 'TN-S';
+    let t = `${name} (${d.earthing})\nThree-phase Ik3 max ${this._fmtA(d.ik3)} (c 1.10, conductors at 20 °C)`
+      + `\nEarth fault ${pen ? 'L–PEN' : 'L–PE'} Ik1 min ${this._fmtA(d.ik1)} (c 0.95, conductors hot)`;
+    if (isMs) return t + (d.zeOhm != null ? `\nAt the LV busbar, Ze ${(d.zeOhm * 1000).toFixed(1)} mΩ` : '');
+    t += d.tS != null ? `, clears in ${this._fmtS(d.tS)}${d.tAllow ? (d.status === 'pass' ? ` — within ${d.tAllow} s` : ` — over ${d.tAllow} s`) : ''}`
+      : (d.status === 'fail' ? ', does not clear' : '');
+    if (d.erf) t += `\nLowest erf: Erf ${d.erf.name}, ${this._fmtA(d.erf.ifA)}${d.erf.ok ? '' : ' — does not clear in time'}`;
+    if (d.nErfFail > 1) t += ` (${d.nErfFail} erven fail)`;
+    return t;
+  },
+
+  // A minisub or kiosk box in the fault view.
+  _faultNode(n, tree, F, P) {
+    const isMs = n.isMs;
+    const el = isMs ? tree.msById[n.id] : tree.byId[n.id];
+    const d = isMs ? F.ms[n.id] : F.k[n.id];
+    const W = this.NODE_W, H = this.NODE_H, x = n.x, y = n.y;
+    const nameFull = (el && el.name) || (isMs ? 'Minisub' : 'Kiosk');
+    const name = this._trunc(nameFull, 18);
+    const ok = this._faultVerdict(isMs, d);
+    const stripe = ok == null ? P.border : ok ? P.pass : P.fail;
+    const earthing = d ? d.earthing : ((isMs ? el && el.earthing : '') || '');
+    const pen = earthing && earthing !== 'TN-S';
+    const rows = [];
+    if (this.view.show3) rows.push('3');
+    if (this.view.showE) rows.push('E');
+    const rowY = (k) => y + (rows.length === 2 ? 26 : 32) + rows.indexOf(k) * 18;
+    const badgeW = earthing ? earthing.length * 6 + 10 : 0;
+    const tag = (ty, fill, label) => `<rect x="${x + 12}" y="${ty}" width="54" height="14" rx="3" fill="${fill}"/>`
+      + `<text x="${x + 39}" y="${ty + 10.5}" text-anchor="middle" font-size="8.5" font-weight="700" fill="#ffffff">${label}</text>`;
+    let body = '';
+    if (!d) {
+      body = `<text x="${x + 12}" y="${y + 46}" font-size="9.5" fill="${P.muted}">Run the Demand calculation</text>`;
+    } else {
+      if (this.view.show3) {
+        const ty = rowY('3');
+        body += tag(ty, P.tag3, '3Φ max')
+          + `<text x="${x + 74}" y="${ty + 11.5}" font-size="12" font-weight="700" fill="${P.ink}" data-dxf-attr="IK3_LABEL">${this._esc(this._fmtA(d.ik3))}</text>`;
+      }
+      if (this.view.showE) {
+        const ty = rowY('E');
+        body += tag(ty, P.tagE, pen ? 'L–PEN min' : 'L–PE min')
+          + `<text x="${x + 74}" y="${ty + 11.5}" font-size="12" font-weight="700" fill="${P.ink}" data-dxf-attr="IK1_LABEL">${this._esc(this._fmtA(d.ik1))}</text>`;
+        if (!isMs && (d.tS != null || d.status === 'fail')) {
+          const good = d.status === 'pass';
+          const c = good ? P.pass : P.fail;
+          body += `<rect x="${x + W - 58}" y="${ty}" width="50" height="14" rx="7" fill="${c}" opacity="0.16"/>`
+            + `<text x="${x + W - 33}" y="${ty + 10.5}" text-anchor="middle" font-size="9" font-weight="700" fill="${c}" data-dxf-attr="CLEAR_LABEL">${this._esc(d.tS != null ? this._fmtS(d.tS) : 'no trip')}</text>`;
+        }
+      }
+      let foot = '', footC = P.muted;
+      if (isMs) foot = d.zeOhm != null ? `LV busbar · Ze ${(d.zeOhm * 1000).toFixed(1)} mΩ` : 'LV busbar';
+      else if (this.view.showE && d.erf) {
+        foot = `Erven min ${this._fmtA(d.erf.ifA)} · Erf ${d.erf.name}${d.erf.ok ? ' ✓' : ' ✕'}`;
+        if (!d.erf.ok) footC = P.fail;
+      } else if (!this.view.showE) foot = '';
+      if (foot) body += `<text x="${x + 12}" y="${y + (rows.length === 2 ? 70 : 64)}" font-size="9.5" fill="${footC}" data-dxf-attr="FAULT_FOOT">${this._esc(this._trunc(foot, 34))}</text>`;
+    }
+    const dxf = { NAME: nameFull, ID: n.id, TYPE: isMs ? 'Minisub' : 'Kiosk', EARTHING: earthing,
+      IK3_MAX_A: d && d.ik3 != null ? d.ik3 : '', IK1_MIN_A: d && d.ik1 != null ? d.ik1 : '',
+      CLEARING_S: d && d.tS != null ? d.tS : '', STATUS: ok == null ? '' : ok ? 'pass' : 'fail',
+      LOWEST_ERF: d && d.erf ? d.erf.name : '', LOWEST_ERF_A: d && d.erf ? d.erf.ifA : '' };
+    return `<g><title>${this._esc(this._faultTip(nameFull, isMs, d))}</title>
+      <g data-dxf-block="${isMs ? 'MINISUB_FAULT' : 'KIOSK_FAULT'}" data-dxf-at="${x},${y}" data-dxf-attrs="${this._esc(JSON.stringify(dxf))}">
+      <rect x="${x}" y="${y}" width="${W}" height="${H}" rx="6" fill="${isMs ? P.msBody : P.node}" stroke="${P.border}"/>
+      <path d="M ${x} ${y + 6} a 6 6 0 0 1 6 -6 h ${W - 12} a 6 6 0 0 1 6 6 v 15 h -${W} z" fill="${isMs ? P.msHead : P.nodeHead}"/>
+      ${isMs ? '' : `<rect x="${x}" y="${y + 3}" width="3.5" height="${H - 6}" fill="${stripe}"/>`}
+      <text x="${x + 12}" y="${y + 15}" font-size="11" font-weight="700" fill="${P.ink}" data-dxf-attr="NAME">${this._esc(name)}</text>
+      ${earthing ? `<rect x="${x + W - 8 - badgeW}" y="${y + 4}" width="${badgeW}" height="14" rx="3" fill="${P.surface}" stroke="${P.border}"/>
+      <text x="${x + W - 8 - badgeW / 2}" y="${y + 14.5}" text-anchor="middle" font-size="9" font-weight="700" fill="${P.inkSec}" data-dxf-attr="EARTHING">${this._esc(earthing)}</text>` : ''}
+      ${body}
+    </g></g>`;
+  },
+
+  // Phone: the fault view as cards in tree order (depth-first from each root).
+  _faultList() {
+    const tree = this._tree();
+    if (!tree.kiosks.length && !tree.minisubs.length) {
+      return '<div class="retic-empty">Nothing to draw yet — add minisubs or kiosks (or use ⚡ Quick Build) and the topology will appear here.</div>';
+    }
+    const F = this._faultData();
+    const items = [], seen = new Set();
+    const walk = (id, depth, fromName) => {
+      if (seen.has(id)) return;
+      seen.add(id);
+      const isMs = !!tree.msById[id], isK = !!tree.byId[id];
+      if (isMs || isK) items.push({ id, depth, isMs, fromName });
+      const nm = this._nodeName(tree, id);
+      for (const c of tree.children[id] || []) walk(c, depth + (isMs || isK ? 1 : 0), nm);
+    };
+    tree.roots.forEach(r => walk(r, 0, ''));
+    const cards = items.map(it => {
+      const el = it.isMs ? tree.msById[it.id] : tree.byId[it.id];
+      const d = it.isMs ? F.ms[it.id] : F.k[it.id];
+      const ok = this._faultVerdict(it.isMs, d);
+      const name = (el && el.name) || (it.isMs ? 'Minisub' : 'Kiosk');
+      const from = it.isMs ? '' : `← ${it.fromName || ''}${el && el.feederLength ? ' · ' + el.feederLength + ' m' : ''}`;
+      let rows = '';
+      if (!d) rows = '<div class="rdg-card-foot">Run the Demand calculation to see its fault currents.</div>';
+      else {
+        const pen = d.earthing !== 'TN-S';
+        if (this.view.show3) rows += `<div class="rdg-card-row"><b class="rdg-tag rdg-tag-3">3Φ max</b><strong>${this._fmtA(d.ik3)}</strong></div>`;
+        if (this.view.showE) {
+          const pill = !it.isMs && (d.tS != null || d.status === 'fail')
+            ? `<b class="rdg-pill ${d.status === 'pass' ? 'rdg-pill-ok' : 'rdg-pill-bad'}">${d.tS != null ? 'clears ' + this._fmtS(d.tS) : 'no trip'}</b>` : '';
+          rows += `<div class="rdg-card-row"><b class="rdg-tag rdg-tag-e">${pen ? 'L–PEN min' : 'L–PE min'}</b><strong>${this._fmtA(d.ik1)}</strong>${pill}</div>`;
+          if (!it.isMs && d.erf) rows += `<div class="rdg-card-foot${d.erf.ok ? '' : ' rdg-bad'}">Erven min ${this._fmtA(d.erf.ifA)} · Erf ${this._esc(d.erf.name)}${d.erf.ok ? ' ✓' : ' ✕ too slow'}</div>`;
+        }
+        if (it.isMs && d.zeOhm != null) rows += `<div class="rdg-card-foot">LV busbar · Ze ${(d.zeOhm * 1000).toFixed(1)} mΩ</div>`;
+      }
+      return `<div class="rdg-card${it.isMs ? ' rdg-card-ms' : ''}${ok === false ? ' rdg-card-bad' : ok ? ' rdg-card-ok' : ''}" style="margin-left:${Math.min(it.depth, 3) * 10}px" title="${this._esc(this._faultTip(name, it.isMs, d))}">
+        <div class="rdg-card-head"><b>${this._esc(name)}</b><span>${this._esc(from)}</span>${d ? `<em>${this._esc(d.earthing)}</em>` : ''}</div>${rows}</div>`;
+    }).join('');
+    return `<div class="rdg-list">${F.any ? '' : '<div class="rdg-card-foot">No earth-fault results yet — run the Demand calculation.</div>'}${cards}</div>`;
+  },
+
   // ─── Render into the modal ───
+  _isFault() { return this.view.mode === 'fault'; },
+  _isPhone() { return !!(window.matchMedia && window.matchMedia('(max-width: 640px)').matches); },
+
+  _rerender() {
+    this._syncControls();
+    this.render();
+  },
+
+  // Toolbar state, title and legend for the current view.
+  _syncControls() {
+    const modal = document.getElementById('retic-diagram-modal');
+    if (!modal) return;
+    const fault = this._isFault();
+    const press = (sel, on) => { const b = modal.querySelector(sel); if (b) b.setAttribute('aria-pressed', String(!!on)); };
+    press('[data-rdg="mode-vd"]', !fault);
+    press('[data-rdg="mode-fault"]', fault);
+    press('[data-rdg="show3"]', this.view.show3);
+    press('[data-rdg="showE"]', this.view.showE);
+    press('[data-rdg="view-list"]', this.view.list);
+    press('[data-rdg="view-diagram"]', !this.view.list);
+    const show = (sel, on) => { const el = modal.querySelector(sel); if (el) el.hidden = !on; };
+    show('.rdg-kinds', fault);
+    show('.rdg-views', fault);
+    show('.rdg-legend-fault', fault);
+    show('.rdg-legend-vd', !fault);
+    const t = document.getElementById('rdg-title');
+    if (t) t.textContent = fault ? 'Reticulation Topology — Fault Current' : 'Reticulation Topology — Volt Drop & Connections';
+  },
+
   render() {
     const host = document.getElementById('retic-diagram-canvas');
     if (!host) return;
     const dark = document.body.classList.contains('dark-mode');
+    if (this._isFault() && this.view.list && this._isPhone()) {
+      host.innerHTML = this._faultList();
+      host.classList.add('rdg-list-mode');
+      return;
+    }
+    host.classList.remove('rdg-list-mode');
     const svg = this.buildSVG({ dark });
     if (!svg) {
       host.innerHTML = '<div class="retic-empty">Nothing to draw yet — add minisubs or kiosks (or use ⚡ Quick Build) and the topology will appear here.</div>';

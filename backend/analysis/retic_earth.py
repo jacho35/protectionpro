@@ -54,6 +54,7 @@ import math
 
 from .arcflash import (_cb_self_clearing_time, _fuse_prearc_time)
 from .cable_sizing import RESISTIVITY
+from .conductor_temp import _HOT_FACTOR
 from .db_circuit_check import (C_MAX, C_MIN, K_PE_IN_CABLE, _cond,
                                adiabatic_ecc_mm2, ecc_required_mm2)
 from .iec_60364_tables import round_up_to_standard
@@ -291,7 +292,10 @@ def run_retic_earth_check(req: dict) -> dict:
                  "r": 0.0, "x": 0.0}
         km = length_m / 1000.0
         z = complex((_r_per_km(phase) + _r_per_km(e)) * km, phase["x"] * km)
-        return {"phase": phase, "earth": e, "assumed": assumed, "pen": bool(pen), "km": km, "z": z, "u0": u0}
+        # Positive-sequence phase impedance at 20 °C for the maximum three-phase
+        # current (IEC 60909-0 §2.4): the library R is the operating-temperature value.
+        z1c = complex(_r_per_km(phase) / _HOT_FACTOR.get((phase["metal"], phase["ins"]), 1.275) * km, phase["x"] * km)
+        return {"phase": phase, "earth": e, "assumed": assumed, "pen": bool(pen), "km": km, "z": z, "z1c": z1c, "u0": u0}
 
     leg_cache = {}
 
@@ -345,11 +349,14 @@ def run_retic_earth_check(req: dict) -> dict:
             out_kiosks.append(res)
             worst_all = _worst(worst_all, "info")
             continue
-        z = ze
+        z, z1 = ze, ze
         for cid in chain:
             lg = own_leg_of(cid)
             if lg:
                 z += lg["z"]
+                z1 += lg["z1c"]
+        # Maximum three-phase current at the kiosk busbar: c_max·U0 / |Ze + ΣZ1(20 °C)|.
+        res["ik3A"] = _round(C_MAX * u0 / abs(z1), 0) if abs(z1) > 0 else None
         # kiosk end
         if own_leg is not None:
             st, i_min, t, ia, zs_max, note = _loop_status(device, z, u0, t_allow)
@@ -391,6 +398,9 @@ def run_retic_earth_check(req: dict) -> dict:
         ze = _source_z(m)
         ms_out.append({"minisubId": mid, "name": m.get("name", ""),
                        "zeOhm": _round(abs(ze)) if ze is not None else None,
+                       # LV busbar: Ik3 max (c_max) and the earth fault min (c_min, loop = Ze)
+                       "ik3A": _round(C_MAX * u0 / abs(ze), 0) if ze else None,
+                       "ik1A": _round(C_MIN * u0 / abs(ze), 0) if ze else None,
                        "device": (m.get("device") or {}).get("name"),
                        "earthing": system_of(m),
                        "status": "info" if (ze is None or not m.get("device")) else "pass"})
@@ -408,6 +418,7 @@ def run_retic_earth_check(req: dict) -> dict:
             f"Disconnection within {t_allow:g} s (IEC 60364-4-41 Table 41.1, distribution circuits). Feeder legs: the breaker at the head of the string (a kiosk with none of its own uses the nearest one back towards the minisub). Service cables: the erf's own outgoing protection, else the kiosk's default, else the string breaker; no discrimination between devices in series is checked.",
             "Earthing per minisub: TN-S separate earth conductor on every LV cable; TN-C PEN throughout (no ECC; PEN minimum 10 mm² Cu / 16 mm² Al); TN-C-S PEN on the feeders, separate earth conductor on the service cables only.",
             "Ze is the transformer's short-circuit impedance on its own rated base; the MV network is an ideal source unless a fault level is given.",
+            f"Three-phase Ik3 (maximum) at each minisub busbar and kiosk: c_max = {C_MAX} · U0 / |Ze + ΣZ1|, phase conductors at 20 °C (IEC 60909-0 §2.4). The busbar earth-fault current uses the loop Ze alone.",
             "ECC: IEC 60364-5-54 Table 54.7 (converted by conductivity for another metal) or the §543.1.2 adiabatic size at c_max = 1.10 and the device's clearing time, k from Table 54.3; the leg is evaluated at its far end.",
         ],
     }
