@@ -200,3 +200,20 @@ def test_service_cable_is_checked_against_its_own_protection():
     assert up["ifA"] == own["ifA"]                      # same loop, different device
     assert up["status"] == "fail" and up["tS"] > 5      # 160 A string breaker: thermal region, too slow
     assert own["status"] == "pass" and own["tS"] < 0.1  # 40 A MCB: past 10 x Ir = 400 A, instantaneous
+
+
+def test_withstand_is_the_weakest_earth_fault_conductor():
+    """Mini TCC cable I²t line: k²S² of the smaller of k·S over phase and earth
+    (Table 54.3 k, as the ECC check), the PEN itself on a PEN leg."""
+    res = run_retic_earth_check(req())
+    k = res["kiosks"][0]
+    feeder = k["loop"]["withstand"]                  # 95 Cu XLPE (143·95) vs 25 Cu PVC earth (115·25)
+    assert feeder["conductor"] == "earth" and feeder["k"] == 115.0
+    assert feeder["k2s2"] == round((115 * 25) ** 2)
+    svc = k["erfs"][0]["loop"]["withstand"]          # 16 Cu XLPE (143·16 = 2288) < 25 Cu PVC (2875)
+    assert svc["conductor"] == "phase" and svc["k2s2"] == round((143 * 16) ** 2)
+
+    r = req()
+    r["minisubs"][0]["earthing"] = "TN-C"
+    pen = run_retic_earth_check(r)["kiosks"][0]["erfs"][0]["loop"]["withstand"]
+    assert pen["conductor"] == "PEN" and pen["sizeMm2"] == 16 and pen["k"] == 143.0

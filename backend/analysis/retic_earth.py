@@ -232,6 +232,22 @@ def _leg_ecc(leg, z_end, device):
     return out
 
 
+def _withstand(leg):
+    """Adiabatic withstand of the leg's weakest earth-fault conductor, for the
+    mini TCC's cable I²t line t = k²S²/I² (IEC 60364-4-43 §434.5.2): the phase
+    conductor or the earth conductor (a PEN leg: its own neutral), k from
+    Table 54.3 as the ECC check uses."""
+    ph, e = leg["phase"], leg["earth"]
+    k_ph = K_PE_IN_CABLE[(ph["metal"], ph["ins"])]
+    if leg.get("pen"):
+        cands = [("PEN", ph, k_ph)]
+    else:
+        cands = [("phase", ph, k_ph), ("earth", e, K_PE_IN_CABLE[(e["metal"], e["ins"])])]
+    role, c, k = min(cands, key=lambda x: x[2] * x[1]["size"])
+    return {"conductor": role, "sizeMm2": c["size"], "metal": c["metal"], "ins": c["ins"], "k": k,
+            "k2s2": round((k * c["size"]) ** 2), "assumed": bool(leg["assumed"] and role == "earth")}
+
+
 # ── Run ──────────────────────────────────────────────────────────────────
 
 def _loop_status(device, z_total, u0, t_allow):
@@ -338,7 +354,8 @@ def run_retic_earth_check(req: dict) -> dict:
         if own_leg is not None:
             st, i_min, t, ia, zs_max, note = _loop_status(device, z, u0, t_allow)
             res["loop"] = {"status": st, "zsOhm": _round(abs(z)), "ifA": _round(i_min, 0), "tS": _round(t, 3),
-                           "iaA": _round(ia, 0), "zsMaxOhm": _round(zs_max), "tAllowS": t_allow, "note": note}
+                           "iaA": _round(ia, 0), "zsMaxOhm": _round(zs_max), "tAllowS": t_allow, "note": note,
+                           "withstand": _withstand(own_leg)}
             res["ecc"] = _leg_ecc(own_leg, z, device)
         else:
             res["loop"] = {"status": "info", "note": "No feeder cable or length — enter them to check this feeder."}
@@ -360,7 +377,8 @@ def run_retic_earth_check(req: dict) -> dict:
                 st, i_min, t, ia, zs_max, note = _loop_status(edev, z_erf, u0, t_allow)
                 er["loop"] = {"status": st, "zsOhm": _round(abs(z_erf)), "ifA": _round(i_min, 0), "tS": _round(t, 3),
                               "iaA": _round(ia, 0), "zsMaxOhm": _round(zs_max), "tAllowS": t_allow, "note": note,
-                              "device": (edev or {}).get("name"), "deviceSource": esrc}
+                              "device": (edev or {}).get("name"), "deviceSource": esrc,
+                              "withstand": _withstand(sleg)}
                 er["ecc"] = _leg_ecc(sleg, z_erf, edev)
             erf_out.append(er)
             worst_all = _worst(worst_all, er["loop"]["status"], (er["ecc"] or {}).get("status"))
