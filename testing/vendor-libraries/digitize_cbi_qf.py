@@ -12,6 +12,7 @@ The trip-time table printed under curve 1 (105 ... 2000 %) is checked against th
 
     python digitize_cbi_qf.py qf26lr "CBI_QF(26)LR_SERIES_DAT_6PAGES_1.52MB_0.pdf"
     python digitize_cbi_qf.py qf26hr "CBI_QF(26)HR_SERIES_DAT_7PAGES_1.29MB_0.pdf"
+    python digitize_cbi_qf.py jframe "CBI_JFRAME_DATASHEET_2605001_ REVA 2026.pdf"   (the charts end at 2000 %)
 """
 import json, os, re, sys
 import cbi_curves as C
@@ -22,12 +23,18 @@ TYPES = {   # type -> (source note, {curve: PDF page})
     "qf26hr": ("CBI QF26HR-SERIES-DAT REV. C April 2022, 30 C", {"1": 5, "2": 6}),
     "qf13": ("CBI QF13-SERIES-DAT REV. G June 2024, 30 C", {"1": 5, "2": 6}),
     "qf18": ("CBI QF18-SERIES-DAT REV. F August 2022, 30 C", {"1": 6, "2": 7, "9": 8}),
+    # J-Series: curve "a" = 225-250 A (page 4), "b" = 12-200 A (page 5); the charts end at 2000 %
+    "jframe": ("CBI J-SERIES-DAT REV.A April 2026, 30 C", {"a": 4, "b": 5}, 2000),
 }
 
 # trip-time tables printed under the charts: % of rated current -> (minimum s, maximum s). The 105 %
 # column is "no trip". The sheets' minimum rows have a few misprints (curve 2: 0.001 s at 600 %,
 # 0.041 s at 900 %), so only the columns that read monotonically are used for the minimum.
 TABLES = {
+    "a": {130: (300, 6000), 135: (264, 2860), 150: (197, 1300), 200: (100, 450), 300: (32, 150), 400: (11, 70),
+          500: (2, 37), 600: (0.4, 15), 700: (0.1, 4.2), 800: (0.03, 1.7), 900: (0.01, 1.11), 1000: (0.005, 1), 2000: (0.004, 1)},
+    "b": {130: (85, 1800), 135: (70, 1200), 150: (47, 500), 200: (23, 105), 300: (7.5, 35), 400: (3.4, 18),
+          500: (1.6, 8.4), 600: (0.4, 5), 700: (0.09, 3.3), 800: (0.02, 1.8), 900: (0.009, 0.6), 1000: (0.005, 0.18), 2000: (0.004, 0.02)},
     "1": {130: (63, 1800), 145: (45, 503), 150: (41, 400), 200: (20, 96), 300: (7.5, 34), 400: (3.8, 17),
           500: (2.3, 10.3), 600: (1.5, 6.8), 700: (1.01, 4.9), 800: (0.7, 3.6), 900: (0.42, 2.8),
           1000: (0.1, 2.2), 2000: (0.005, 0.1)},
@@ -55,11 +62,11 @@ def strokes(P):
     return grid, curve
 
 
-def digitise(pdf, pages, curve):
+def digitise(pdf, pages, curve, xmax=5000):
     P = C.svg_paths(pdf, pages[curve])
     gs, cs = strokes(P)
     xs, ys = C.grid(P, gs)
-    ax = C.Axes(xs[0], xs[-1], 5000, ys[0], ys[-1], 1e5, 1e-3)
+    ax = C.Axes(xs[0], xs[-1], xmax, ys[0], ys[-1], 1e5, 1e-3)
     paths = C.thick_paths(P, cs)
     # the two curves start at the 105 % (minimum) and 130 % (maximum) asymptotes, top of the chart
     tops = sorted(((pl[0] if pl[0][1] < pl[-1][1] else pl[-1]) for pl in paths), key=lambda p: (p[1], p[0]))[:2]
@@ -70,11 +77,12 @@ def digitise(pdf, pages, curve):
 
 if __name__ == "__main__":
     typ, pdf = sys.argv[1], sys.argv[2]
-    note, pages = TYPES[typ]
+    note, pages, *rest = TYPES[typ]
+    xmax = rest[0] if rest else 5000
     out = {"source": note, "curves": {}}
     worst = 0.0
     for c in pages:
-        d = out["curves"][c] = digitise(pdf, pages, c)
+        d = out["curves"][c] = digitise(pdf, pages, c, xmax)
         print("curve", c, {k: (len(v), v[0], v[-1]) for k, v in d.items()})
         for pct, (tmin, tmax) in TABLES[c].items():
             for k, t in (("min", tmin), ("max", tmax)):

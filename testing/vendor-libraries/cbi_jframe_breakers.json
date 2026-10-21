@@ -1,0 +1,412 @@
+{
+ "entries": [
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_js25_80",
+    "name": "CBI JS25 80 A",
+    "cb_type": "mccb",
+    "manufacturer": "CBI",
+    "series": "J-Series",
+    "model": "JS25",
+    "trip_rating_a": 80,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.24,
+    "breaking_ka": 25,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 13.096,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_jframe_b"
+    ],
+    "default_trip_unit": "cbi_jframe_b",
+    "source": "CBI data sheet J-SERIES-DAT REV.A (April 2026)",
+    "check": "1 pole; Icu 25 kA at 240 V; instantaneous band = where the sheet's curves reach their flat times"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_js25_100",
+    "name": "CBI JS25 100 A",
+    "cb_type": "mccb",
+    "manufacturer": "CBI",
+    "series": "J-Series",
+    "model": "JS25",
+    "trip_rating_a": 100,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.24,
+    "breaking_ka": 25,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 13.096,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_jframe_b"
+    ],
+    "default_trip_unit": "cbi_jframe_b",
+    "source": "CBI data sheet J-SERIES-DAT REV.A (April 2026)",
+    "check": "1 pole; Icu 25 kA at 240 V; instantaneous band = where the sheet's curves reach their flat times"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_js25_125",
+    "name": "CBI JS25 125 A",
+    "cb_type": "mccb",
+    "manufacturer": "CBI",
+    "series": "J-Series",
+    "model": "JS25",
+    "trip_rating_a": 125,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.24,
+    "breaking_ka": 25,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 13.096,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_jframe_b"
+    ],
+    "default_trip_unit": "cbi_jframe_b",
+    "source": "CBI data sheet J-SERIES-DAT REV.A (April 2026)",
+    "check": "1 pole; Icu 25 kA at 240 V; instantaneous band = where the sheet's curves reach their flat times"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_js25_150",
+    "name": "CBI JS25 150 A",
+    "cb_type": "mccb",
+    "manufacturer": "CBI",
+    "series": "J-Series",
+    "model": "JS25",
+    "trip_rating_a": 150,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.24,
+    "breaking_ka": 25,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 13.096,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_jframe_b"
+    ],
+    "default_trip_unit": "cbi_jframe_b",
+    "source": "CBI data sheet J-SERIES-DAT REV.A (April 2026)",
+    "check": "1 pole; Icu 25 kA at 240 V; instantaneous band = where the sheet's curves reach their flat times"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_js25_200",
+    "name": "CBI JS25 200 A",
+    "cb_type": "mccb",
+    "manufacturer": "CBI",
+    "series": "J-Series",
+    "model": "JS25",
+    "trip_rating_a": 200,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.24,
+    "breaking_ka": 25,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 13.096,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_jframe_b"
+    ],
+    "default_trip_unit": "cbi_jframe_b",
+    "source": "CBI data sheet J-SERIES-DAT REV.A (April 2026)",
+    "check": "1 pole; Icu 25 kA at 240 V; instantaneous band = where the sheet's curves reach their flat times"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_js25_250",
+    "name": "CBI JS25 250 A",
+    "cb_type": "mccb",
+    "manufacturer": "CBI",
+    "series": "J-Series",
+    "model": "JS25",
+    "trip_rating_a": 250,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.24,
+    "breaking_ka": 25,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 9.629,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_jframe_a"
+    ],
+    "default_trip_unit": "cbi_jframe_a",
+    "source": "CBI data sheet J-SERIES-DAT REV.A (April 2026)",
+    "check": "1 pole; Icu 25 kA at 240 V; the 225-250 A curve never clears faster than 1 s; instantaneous band = where the sheet's curves reach their flat times"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_j25s_50",
+    "name": "CBI J25S 50 A",
+    "cb_type": "mccb",
+    "manufacturer": "CBI",
+    "series": "J-Series",
+    "model": "J25S",
+    "trip_rating_a": 50,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 13.096,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_jframe_b"
+    ],
+    "default_trip_unit": "cbi_jframe_b",
+    "source": "CBI data sheet J-SERIES-DAT REV.A (April 2026)",
+    "check": "3 pole; Icu 25 kA at 400 V; instantaneous band = where the sheet's curves reach their flat times"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_j25s_60",
+    "name": "CBI J25S 60 A",
+    "cb_type": "mccb",
+    "manufacturer": "CBI",
+    "series": "J-Series",
+    "model": "J25S",
+    "trip_rating_a": 60,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 13.096,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_jframe_b"
+    ],
+    "default_trip_unit": "cbi_jframe_b",
+    "source": "CBI data sheet J-SERIES-DAT REV.A (April 2026)",
+    "check": "3 pole; Icu 25 kA at 400 V; instantaneous band = where the sheet's curves reach their flat times"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_j25s_80",
+    "name": "CBI J25S 80 A",
+    "cb_type": "mccb",
+    "manufacturer": "CBI",
+    "series": "J-Series",
+    "model": "J25S",
+    "trip_rating_a": 80,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 13.096,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_jframe_b"
+    ],
+    "default_trip_unit": "cbi_jframe_b",
+    "source": "CBI data sheet J-SERIES-DAT REV.A (April 2026)",
+    "check": "3 pole; Icu 25 kA at 400 V; instantaneous band = where the sheet's curves reach their flat times"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_j25s_100",
+    "name": "CBI J25S 100 A",
+    "cb_type": "mccb",
+    "manufacturer": "CBI",
+    "series": "J-Series",
+    "model": "J25S",
+    "trip_rating_a": 100,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 13.096,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_jframe_b"
+    ],
+    "default_trip_unit": "cbi_jframe_b",
+    "source": "CBI data sheet J-SERIES-DAT REV.A (April 2026)",
+    "check": "3 pole; Icu 25 kA at 400 V; instantaneous band = where the sheet's curves reach their flat times"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_j25s_125",
+    "name": "CBI J25S 125 A",
+    "cb_type": "mccb",
+    "manufacturer": "CBI",
+    "series": "J-Series",
+    "model": "J25S",
+    "trip_rating_a": 125,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 13.096,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_jframe_b"
+    ],
+    "default_trip_unit": "cbi_jframe_b",
+    "source": "CBI data sheet J-SERIES-DAT REV.A (April 2026)",
+    "check": "3 pole; Icu 25 kA at 400 V; instantaneous band = where the sheet's curves reach their flat times"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_j25s_150",
+    "name": "CBI J25S 150 A",
+    "cb_type": "mccb",
+    "manufacturer": "CBI",
+    "series": "J-Series",
+    "model": "J25S",
+    "trip_rating_a": 150,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 13.096,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_jframe_b"
+    ],
+    "default_trip_unit": "cbi_jframe_b",
+    "source": "CBI data sheet J-SERIES-DAT REV.A (April 2026)",
+    "check": "3 pole; Icu 25 kA at 400 V; instantaneous band = where the sheet's curves reach their flat times"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_j25s_160",
+    "name": "CBI J25S 160 A",
+    "cb_type": "mccb",
+    "manufacturer": "CBI",
+    "series": "J-Series",
+    "model": "J25S",
+    "trip_rating_a": 160,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 13.096,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_jframe_b"
+    ],
+    "default_trip_unit": "cbi_jframe_b",
+    "source": "CBI data sheet J-SERIES-DAT REV.A (April 2026)",
+    "check": "3 pole; Icu 25 kA at 400 V; instantaneous band = where the sheet's curves reach their flat times"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_j25s_175",
+    "name": "CBI J25S 175 A",
+    "cb_type": "mccb",
+    "manufacturer": "CBI",
+    "series": "J-Series",
+    "model": "J25S",
+    "trip_rating_a": 175,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 13.096,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_jframe_b"
+    ],
+    "default_trip_unit": "cbi_jframe_b",
+    "source": "CBI data sheet J-SERIES-DAT REV.A (April 2026)",
+    "check": "3 pole; Icu 25 kA at 400 V; instantaneous band = where the sheet's curves reach their flat times"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_j25s_200",
+    "name": "CBI J25S 200 A",
+    "cb_type": "mccb",
+    "manufacturer": "CBI",
+    "series": "J-Series",
+    "model": "J25S",
+    "trip_rating_a": 200,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 13.096,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_jframe_b"
+    ],
+    "default_trip_unit": "cbi_jframe_b",
+    "source": "CBI data sheet J-SERIES-DAT REV.A (April 2026)",
+    "check": "3 pole; Icu 25 kA at 400 V; instantaneous band = where the sheet's curves reach their flat times"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_j25s_225",
+    "name": "CBI J25S 225 A",
+    "cb_type": "mccb",
+    "manufacturer": "CBI",
+    "series": "J-Series",
+    "model": "J25S",
+    "trip_rating_a": 225,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 9.629,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_jframe_a"
+    ],
+    "default_trip_unit": "cbi_jframe_a",
+    "source": "CBI data sheet J-SERIES-DAT REV.A (April 2026)",
+    "check": "3 pole; Icu 25 kA at 400 V; the 225-250 A curve never clears faster than 1 s; instantaneous band = where the sheet's curves reach their flat times"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_j25s_250",
+    "name": "CBI J25S 250 A",
+    "cb_type": "mccb",
+    "manufacturer": "CBI",
+    "series": "J-Series",
+    "model": "J25S",
+    "trip_rating_a": 250,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 9.629,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_jframe_a"
+    ],
+    "default_trip_unit": "cbi_jframe_a",
+    "source": "CBI data sheet J-SERIES-DAT REV.A (April 2026)",
+    "check": "3 pole; Icu 25 kA at 400 V; the 225-250 A curve never clears faster than 1 s; instantaneous band = where the sheet's curves reach their flat times"
+   }
+  }
+ ]
+}
