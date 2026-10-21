@@ -13,28 +13,54 @@ The trip-time table printed under curve 1 (105 ... 2000 %) is checked against th
     python digitize_cbi_qf.py qf26lr "CBI_QF(26)LR_SERIES_DAT_6PAGES_1.52MB_0.pdf"
     python digitize_cbi_qf.py qf26hr "CBI_QF(26)HR_SERIES_DAT_7PAGES_1.29MB_0.pdf"
 """
-import json, os, sys
+import json, os, re, sys
 import cbi_curves as C
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-TYPES = {   # type -> (source note, {curve: (page, grid stroke, curve stroke)})
-    "qf26lr": ("CBI QF26LR-SERIES-DAT REV. B April 2022, 30 C", {"1": (4, "0.376", "0.939"), "2": (5, "0.374", "0.936")}),
-    "qf26hr": ("CBI QF26HR-SERIES-DAT REV. C April 2022, 30 C", {"1": (5, "0.376", "0.939"), "2": (6, "0.374", "0.936")}),
+TYPES = {   # type -> (source note, {curve: PDF page})
+    "qf26lr": ("CBI QF26LR-SERIES-DAT REV. B April 2022, 30 C", {"1": 4, "2": 5}),
+    "qf26hr": ("CBI QF26HR-SERIES-DAT REV. C April 2022, 30 C", {"1": 5, "2": 6}),
+    "qf13": ("CBI QF13-SERIES-DAT REV. G June 2024, 30 C", {"1": 5, "2": 6}),
+    "qf18": ("CBI QF18-SERIES-DAT REV. F August 2022, 30 C", {"1": 6, "2": 7, "9": 8}),
 }
 
-# curve 1 table: % of rated current -> (minimum s, maximum s); the 105 % column is "no trip"
-TABLE1 = {130: (63, 1800), 145: (45, 503), 150: (41, 400), 200: (20, 96), 300: (7.5, 34), 400: (3.8, 17),
+# trip-time tables printed under the charts: % of rated current -> (minimum s, maximum s). The 105 %
+# column is "no trip". The sheets' minimum rows have a few misprints (curve 2: 0.001 s at 600 %,
+# 0.041 s at 900 %), so only the columns that read monotonically are used for the minimum.
+TABLES = {
+    "1": {130: (63, 1800), 145: (45, 503), 150: (41, 400), 200: (20, 96), 300: (7.5, 34), 400: (3.8, 17),
           500: (2.3, 10.3), 600: (1.5, 6.8), 700: (1.01, 4.9), 800: (0.7, 3.6), 900: (0.42, 2.8),
-          1000: (0.1, 2.2), 2000: (0.005, 0.1)}
+          1000: (0.1, 2.2), 2000: (0.005, 0.1)},
+    "2": {130: (22, 660), 145: (15.4, 180), 150: (14, 144), 200: (6.3, 40), 300: (2.1, 12), 400: (0.85, 5.5),
+          500: (0.1, 3), 600: (None, 1.92), 700: (0.006, 1.3), 800: (0.005, 0.86), 900: (None, 0.47),
+          1000: (0.004, 0.1), 2000: (0.004, 0.02)},
+    "9": {130: (75, 1500), 145: (50, 360), 150: (45, 295), 200: (22, 100), 300: (7.6, 38), 400: (3.6, 19),
+          500: (2, 11.8), 600: (1, 7.7), 700: (0.1, 5.3), 800: (0.01, 3.6), 900: (0.008, 2.6),
+          1200: (0.005, 0.06), 2000: (0.005, 0.02)},
+}
+
+
+def strokes(P):
+    """(grid stroke, curve stroke) of a chart page: the width whose full-length lines form the grid, and
+    the width of the ~20 dense paths that are the two curves."""
+    grid = curve = None
+    widths = {m.group(1) for st, _ in P for m in [re.search(r"stroke-width:([0-9.]+)", st)] if m}
+    for w in widths:
+        xs, ys = C.grid(P, w)
+        if len(xs) > 5 and len(ys) > 5:
+            grid = w
+    n = {w: len(C.thick_paths(P, w)) for w in widths}
+    cands = [w for w, c in n.items() if 15 <= c <= 30]
+    curve = max(cands, key=float)
+    return grid, curve
 
 
 def digitise(pdf, pages, curve):
-    page, gs, cs = pages[curve]
-    P = C.svg_paths(pdf, page)
+    P = C.svg_paths(pdf, pages[curve])
+    gs, cs = strokes(P)
     xs, ys = C.grid(P, gs)
     ax = C.Axes(xs[0], xs[-1], 5000, ys[0], ys[-1], 1e5, 1e-3)
     paths = C.thick_paths(P, cs)
-    starts = sorted((min(p[0] for p in pl), pl) for pl in paths)
     # the two curves start at the 105 % (minimum) and 130 % (maximum) asymptotes, top of the chart
     tops = sorted(((pl[0] if pl[0][1] < pl[-1][1] else pl[-1]) for pl in paths), key=lambda p: (p[1], p[0]))[:2]
     tops = sorted(tops, key=lambda p: p[0])
@@ -46,13 +72,20 @@ if __name__ == "__main__":
     typ, pdf = sys.argv[1], sys.argv[2]
     note, pages = TYPES[typ]
     out = {"source": note, "curves": {}}
+    worst = 0.0
     for c in pages:
-        out["curves"][c] = digitise(pdf, pages, c)
-        print("curve", c, {k: (len(v), v[0], v[-1]) for k, v in out["curves"][c].items()})
+        d = out["curves"][c] = digitise(pdf, pages, c)
+        print("curve", c, {k: (len(v), v[0], v[-1]) for k, v in d.items()})
+        for pct, (tmin, tmax) in TABLES[c].items():
+            for k, t in (("min", tmin), ("max", tmax)):
+                v = C.at(d[k], pct / 100)
+                if t is None or v is None or v >= 9999:     # 130 % max: the near-vertical start, clipped
+                    continue
+                err = abs(v / t - 1)
+                worst = max(worst, err)
+                if err > 0.08:
+                    print(f"  curve {c} {k} {pct} %: table {t} chart {v:.4g} ({err:.0%})")
+    print(f"worst chart-vs-table error: {worst:.1%}")
     with open(os.path.join(HERE, "data", f"cbi_{typ}_curves.json"), "w") as f:
         json.dump(out, f)
         f.write("\n")
-    c1 = out["curves"]["1"]
-    for pct, (tmin, tmax) in TABLE1.items():
-        print(f"  {pct:5d} %  min table {tmin:7} chart {C.at(c1['min'], pct / 100) or float('nan'):9.4g}   "
-              f"max table {tmax:7} chart {C.at(c1['max'], pct / 100) or float('nan'):9.4g}")

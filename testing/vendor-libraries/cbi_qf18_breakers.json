@@ -1,0 +1,1204 @@
+{
+ "entries": [
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_qf18_c1_1",
+    "name": "CBI QF18 1 A curve 1",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "CBI",
+    "series": "QF(18)",
+    "model": "QF18 curve 1",
+    "trip_rating_a": 1,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 5,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 22.562,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_qf18_c1"
+    ],
+    "default_trip_unit": "cbi_qf18_c1",
+    "source": "CBI data sheet QF18-SERIES-DAT REV. F (August 2022)",
+    "check": "sheet instantaneous trip point 10-20 x In; modelled pickup band = where the curves reach their flat times"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_qf18_c1_2",
+    "name": "CBI QF18 2 A curve 1",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "CBI",
+    "series": "QF(18)",
+    "model": "QF18 curve 1",
+    "trip_rating_a": 2,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 5,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 22.562,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_qf18_c1"
+    ],
+    "default_trip_unit": "cbi_qf18_c1",
+    "source": "CBI data sheet QF18-SERIES-DAT REV. F (August 2022)",
+    "check": "sheet instantaneous trip point 10-20 x In; modelled pickup band = where the curves reach their flat times"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_qf18_c1_5",
+    "name": "CBI QF18 5 A curve 1",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "CBI",
+    "series": "QF(18)",
+    "model": "QF18 curve 1",
+    "trip_rating_a": 5,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 5,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 22.562,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_qf18_c1"
+    ],
+    "default_trip_unit": "cbi_qf18_c1",
+    "source": "CBI data sheet QF18-SERIES-DAT REV. F (August 2022)",
+    "check": "sheet instantaneous trip point 10-20 x In; modelled pickup band = where the curves reach their flat times"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_qf18_c1_10",
+    "name": "CBI QF18 10 A curve 1",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "CBI",
+    "series": "QF(18)",
+    "model": "QF18 curve 1",
+    "trip_rating_a": 10,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 5,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 22.562,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_qf18_c1"
+    ],
+    "default_trip_unit": "cbi_qf18_c1",
+    "source": "CBI data sheet QF18-SERIES-DAT REV. F (August 2022)",
+    "check": "sheet instantaneous trip point 10-20 x In; modelled pickup band = where the curves reach their flat times"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_qf18_c1_15",
+    "name": "CBI QF18 15 A curve 1",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "CBI",
+    "series": "QF(18)",
+    "model": "QF18 curve 1",
+    "trip_rating_a": 15,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 5,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 22.562,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_qf18_c1"
+    ],
+    "default_trip_unit": "cbi_qf18_c1",
+    "source": "CBI data sheet QF18-SERIES-DAT REV. F (August 2022)",
+    "check": "sheet instantaneous trip point 10-20 x In; modelled pickup band = where the curves reach their flat times"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_qf18_c1_16",
+    "name": "CBI QF18 16 A curve 1",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "CBI",
+    "series": "QF(18)",
+    "model": "QF18 curve 1",
+    "trip_rating_a": 16,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 5,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 22.562,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_qf18_c1"
+    ],
+    "default_trip_unit": "cbi_qf18_c1",
+    "source": "CBI data sheet QF18-SERIES-DAT REV. F (August 2022)",
+    "check": "sheet instantaneous trip point 10-20 x In; modelled pickup band = where the curves reach their flat times"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_qf18_c1_20",
+    "name": "CBI QF18 20 A curve 1",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "CBI",
+    "series": "QF(18)",
+    "model": "QF18 curve 1",
+    "trip_rating_a": 20,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 5,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 22.562,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_qf18_c1"
+    ],
+    "default_trip_unit": "cbi_qf18_c1",
+    "source": "CBI data sheet QF18-SERIES-DAT REV. F (August 2022)",
+    "check": "sheet instantaneous trip point 10-20 x In; modelled pickup band = where the curves reach their flat times"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_qf18_c1_25",
+    "name": "CBI QF18 25 A curve 1",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "CBI",
+    "series": "QF(18)",
+    "model": "QF18 curve 1",
+    "trip_rating_a": 25,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 5,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 22.562,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_qf18_c1"
+    ],
+    "default_trip_unit": "cbi_qf18_c1",
+    "source": "CBI data sheet QF18-SERIES-DAT REV. F (August 2022)",
+    "check": "sheet instantaneous trip point 10-20 x In; modelled pickup band = where the curves reach their flat times"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_qf18_c1_30",
+    "name": "CBI QF18 30 A curve 1",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "CBI",
+    "series": "QF(18)",
+    "model": "QF18 curve 1",
+    "trip_rating_a": 30,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 5,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 22.562,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_qf18_c1"
+    ],
+    "default_trip_unit": "cbi_qf18_c1",
+    "source": "CBI data sheet QF18-SERIES-DAT REV. F (August 2022)",
+    "check": "sheet instantaneous trip point 10-20 x In; modelled pickup band = where the curves reach their flat times"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_qf18_c1_32",
+    "name": "CBI QF18 32 A curve 1",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "CBI",
+    "series": "QF(18)",
+    "model": "QF18 curve 1",
+    "trip_rating_a": 32,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 5,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 22.562,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_qf18_c1"
+    ],
+    "default_trip_unit": "cbi_qf18_c1",
+    "source": "CBI data sheet QF18-SERIES-DAT REV. F (August 2022)",
+    "check": "sheet instantaneous trip point 10-20 x In; modelled pickup band = where the curves reach their flat times"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_qf18_c1_35",
+    "name": "CBI QF18 35 A curve 1",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "CBI",
+    "series": "QF(18)",
+    "model": "QF18 curve 1",
+    "trip_rating_a": 35,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 5,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 22.562,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_qf18_c1"
+    ],
+    "default_trip_unit": "cbi_qf18_c1",
+    "source": "CBI data sheet QF18-SERIES-DAT REV. F (August 2022)",
+    "check": "sheet instantaneous trip point 10-20 x In; modelled pickup band = where the curves reach their flat times"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_qf18_c1_40",
+    "name": "CBI QF18 40 A curve 1",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "CBI",
+    "series": "QF(18)",
+    "model": "QF18 curve 1",
+    "trip_rating_a": 40,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 5,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 22.562,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_qf18_c1"
+    ],
+    "default_trip_unit": "cbi_qf18_c1",
+    "source": "CBI data sheet QF18-SERIES-DAT REV. F (August 2022)",
+    "check": "sheet instantaneous trip point 10-20 x In; modelled pickup band = where the curves reach their flat times"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_qf18_c1_45",
+    "name": "CBI QF18 45 A curve 1",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "CBI",
+    "series": "QF(18)",
+    "model": "QF18 curve 1",
+    "trip_rating_a": 45,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 5,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 22.562,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_qf18_c1"
+    ],
+    "default_trip_unit": "cbi_qf18_c1",
+    "source": "CBI data sheet QF18-SERIES-DAT REV. F (August 2022)",
+    "check": "sheet instantaneous trip point 10-20 x In; modelled pickup band = where the curves reach their flat times"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_qf18_c1_50",
+    "name": "CBI QF18 50 A curve 1",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "CBI",
+    "series": "QF(18)",
+    "model": "QF18 curve 1",
+    "trip_rating_a": 50,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 5,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 22.562,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_qf18_c1"
+    ],
+    "default_trip_unit": "cbi_qf18_c1",
+    "source": "CBI data sheet QF18-SERIES-DAT REV. F (August 2022)",
+    "check": "sheet instantaneous trip point 10-20 x In; modelled pickup band = where the curves reach their flat times"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_qf18_c1_60",
+    "name": "CBI QF18 60 A curve 1",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "CBI",
+    "series": "QF(18)",
+    "model": "QF18 curve 1",
+    "trip_rating_a": 60,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 5,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 22.562,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_qf18_c1"
+    ],
+    "default_trip_unit": "cbi_qf18_c1",
+    "source": "CBI data sheet QF18-SERIES-DAT REV. F (August 2022)",
+    "check": "sheet instantaneous trip point 10-20 x In; modelled pickup band = where the curves reach their flat times"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_qf18_c1_63",
+    "name": "CBI QF18 63 A curve 1",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "CBI",
+    "series": "QF(18)",
+    "model": "QF18 curve 1",
+    "trip_rating_a": 63,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 5,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 22.562,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_qf18_c1"
+    ],
+    "default_trip_unit": "cbi_qf18_c1",
+    "source": "CBI data sheet QF18-SERIES-DAT REV. F (August 2022)",
+    "check": "sheet instantaneous trip point 10-20 x In; modelled pickup band = where the curves reach their flat times"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_qf18_c2_1",
+    "name": "CBI QF18 1 A curve 2",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "CBI",
+    "series": "QF(18)",
+    "model": "QF18 curve 2",
+    "trip_rating_a": 1,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 5,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 12.907,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_qf18_c2"
+    ],
+    "default_trip_unit": "cbi_qf18_c2",
+    "source": "CBI data sheet QF18-SERIES-DAT REV. F (August 2022)",
+    "check": "sheet instantaneous trip point 5-10 x In; modelled pickup band = where the curves reach their flat times"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_qf18_c2_2",
+    "name": "CBI QF18 2 A curve 2",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "CBI",
+    "series": "QF(18)",
+    "model": "QF18 curve 2",
+    "trip_rating_a": 2,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 5,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 12.907,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_qf18_c2"
+    ],
+    "default_trip_unit": "cbi_qf18_c2",
+    "source": "CBI data sheet QF18-SERIES-DAT REV. F (August 2022)",
+    "check": "sheet instantaneous trip point 5-10 x In; modelled pickup band = where the curves reach their flat times"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_qf18_c2_5",
+    "name": "CBI QF18 5 A curve 2",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "CBI",
+    "series": "QF(18)",
+    "model": "QF18 curve 2",
+    "trip_rating_a": 5,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 5,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 12.907,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_qf18_c2"
+    ],
+    "default_trip_unit": "cbi_qf18_c2",
+    "source": "CBI data sheet QF18-SERIES-DAT REV. F (August 2022)",
+    "check": "sheet instantaneous trip point 5-10 x In; modelled pickup band = where the curves reach their flat times"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_qf18_c2_10",
+    "name": "CBI QF18 10 A curve 2",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "CBI",
+    "series": "QF(18)",
+    "model": "QF18 curve 2",
+    "trip_rating_a": 10,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 5,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 12.907,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_qf18_c2"
+    ],
+    "default_trip_unit": "cbi_qf18_c2",
+    "source": "CBI data sheet QF18-SERIES-DAT REV. F (August 2022)",
+    "check": "sheet instantaneous trip point 5-10 x In; modelled pickup band = where the curves reach their flat times"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_qf18_c2_15",
+    "name": "CBI QF18 15 A curve 2",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "CBI",
+    "series": "QF(18)",
+    "model": "QF18 curve 2",
+    "trip_rating_a": 15,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 5,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 12.907,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_qf18_c2"
+    ],
+    "default_trip_unit": "cbi_qf18_c2",
+    "source": "CBI data sheet QF18-SERIES-DAT REV. F (August 2022)",
+    "check": "sheet instantaneous trip point 5-10 x In; modelled pickup band = where the curves reach their flat times"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_qf18_c2_16",
+    "name": "CBI QF18 16 A curve 2",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "CBI",
+    "series": "QF(18)",
+    "model": "QF18 curve 2",
+    "trip_rating_a": 16,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 5,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 12.907,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_qf18_c2"
+    ],
+    "default_trip_unit": "cbi_qf18_c2",
+    "source": "CBI data sheet QF18-SERIES-DAT REV. F (August 2022)",
+    "check": "sheet instantaneous trip point 5-10 x In; modelled pickup band = where the curves reach their flat times"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_qf18_c2_20",
+    "name": "CBI QF18 20 A curve 2",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "CBI",
+    "series": "QF(18)",
+    "model": "QF18 curve 2",
+    "trip_rating_a": 20,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 5,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 12.907,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_qf18_c2"
+    ],
+    "default_trip_unit": "cbi_qf18_c2",
+    "source": "CBI data sheet QF18-SERIES-DAT REV. F (August 2022)",
+    "check": "sheet instantaneous trip point 5-10 x In; modelled pickup band = where the curves reach their flat times"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_qf18_c2_25",
+    "name": "CBI QF18 25 A curve 2",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "CBI",
+    "series": "QF(18)",
+    "model": "QF18 curve 2",
+    "trip_rating_a": 25,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 5,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 12.907,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_qf18_c2"
+    ],
+    "default_trip_unit": "cbi_qf18_c2",
+    "source": "CBI data sheet QF18-SERIES-DAT REV. F (August 2022)",
+    "check": "sheet instantaneous trip point 5-10 x In; modelled pickup band = where the curves reach their flat times"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_qf18_c2_30",
+    "name": "CBI QF18 30 A curve 2",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "CBI",
+    "series": "QF(18)",
+    "model": "QF18 curve 2",
+    "trip_rating_a": 30,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 5,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 12.907,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_qf18_c2"
+    ],
+    "default_trip_unit": "cbi_qf18_c2",
+    "source": "CBI data sheet QF18-SERIES-DAT REV. F (August 2022)",
+    "check": "sheet instantaneous trip point 5-10 x In; modelled pickup band = where the curves reach their flat times"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_qf18_c2_32",
+    "name": "CBI QF18 32 A curve 2",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "CBI",
+    "series": "QF(18)",
+    "model": "QF18 curve 2",
+    "trip_rating_a": 32,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 5,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 12.907,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_qf18_c2"
+    ],
+    "default_trip_unit": "cbi_qf18_c2",
+    "source": "CBI data sheet QF18-SERIES-DAT REV. F (August 2022)",
+    "check": "sheet instantaneous trip point 5-10 x In; modelled pickup band = where the curves reach their flat times"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_qf18_c2_35",
+    "name": "CBI QF18 35 A curve 2",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "CBI",
+    "series": "QF(18)",
+    "model": "QF18 curve 2",
+    "trip_rating_a": 35,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 5,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 12.907,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_qf18_c2"
+    ],
+    "default_trip_unit": "cbi_qf18_c2",
+    "source": "CBI data sheet QF18-SERIES-DAT REV. F (August 2022)",
+    "check": "sheet instantaneous trip point 5-10 x In; modelled pickup band = where the curves reach their flat times"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_qf18_c2_40",
+    "name": "CBI QF18 40 A curve 2",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "CBI",
+    "series": "QF(18)",
+    "model": "QF18 curve 2",
+    "trip_rating_a": 40,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 5,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 12.907,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_qf18_c2"
+    ],
+    "default_trip_unit": "cbi_qf18_c2",
+    "source": "CBI data sheet QF18-SERIES-DAT REV. F (August 2022)",
+    "check": "sheet instantaneous trip point 5-10 x In; modelled pickup band = where the curves reach their flat times"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_qf18_c2_45",
+    "name": "CBI QF18 45 A curve 2",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "CBI",
+    "series": "QF(18)",
+    "model": "QF18 curve 2",
+    "trip_rating_a": 45,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 5,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 12.907,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_qf18_c2"
+    ],
+    "default_trip_unit": "cbi_qf18_c2",
+    "source": "CBI data sheet QF18-SERIES-DAT REV. F (August 2022)",
+    "check": "sheet instantaneous trip point 5-10 x In; modelled pickup band = where the curves reach their flat times"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_qf18_c2_50",
+    "name": "CBI QF18 50 A curve 2",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "CBI",
+    "series": "QF(18)",
+    "model": "QF18 curve 2",
+    "trip_rating_a": 50,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 5,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 12.907,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_qf18_c2"
+    ],
+    "default_trip_unit": "cbi_qf18_c2",
+    "source": "CBI data sheet QF18-SERIES-DAT REV. F (August 2022)",
+    "check": "sheet instantaneous trip point 5-10 x In; modelled pickup band = where the curves reach their flat times"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_qf18_c2_60",
+    "name": "CBI QF18 60 A curve 2",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "CBI",
+    "series": "QF(18)",
+    "model": "QF18 curve 2",
+    "trip_rating_a": 60,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 5,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 12.907,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_qf18_c2"
+    ],
+    "default_trip_unit": "cbi_qf18_c2",
+    "source": "CBI data sheet QF18-SERIES-DAT REV. F (August 2022)",
+    "check": "sheet instantaneous trip point 5-10 x In; modelled pickup band = where the curves reach their flat times"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_qf18_c2_63",
+    "name": "CBI QF18 63 A curve 2",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "CBI",
+    "series": "QF(18)",
+    "model": "QF18 curve 2",
+    "trip_rating_a": 63,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 5,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 12.907,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_qf18_c2"
+    ],
+    "default_trip_unit": "cbi_qf18_c2",
+    "source": "CBI data sheet QF18-SERIES-DAT REV. F (August 2022)",
+    "check": "sheet instantaneous trip point 5-10 x In; modelled pickup band = where the curves reach their flat times"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_qf18_c9_1",
+    "name": "CBI QF18 1 A curve 9",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "CBI",
+    "series": "QF(18)",
+    "model": "QF18 curve 9",
+    "trip_rating_a": 1,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 5,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 15.163,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_qf18_c9"
+    ],
+    "default_trip_unit": "cbi_qf18_c9",
+    "source": "CBI data sheet QF18-SERIES-DAT REV. F (August 2022)",
+    "check": "sheet instantaneous trip point 7-12 x In; modelled pickup band = where the curves reach their flat times"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_qf18_c9_2",
+    "name": "CBI QF18 2 A curve 9",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "CBI",
+    "series": "QF(18)",
+    "model": "QF18 curve 9",
+    "trip_rating_a": 2,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 5,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 15.163,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_qf18_c9"
+    ],
+    "default_trip_unit": "cbi_qf18_c9",
+    "source": "CBI data sheet QF18-SERIES-DAT REV. F (August 2022)",
+    "check": "sheet instantaneous trip point 7-12 x In; modelled pickup band = where the curves reach their flat times"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_qf18_c9_5",
+    "name": "CBI QF18 5 A curve 9",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "CBI",
+    "series": "QF(18)",
+    "model": "QF18 curve 9",
+    "trip_rating_a": 5,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 5,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 15.163,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_qf18_c9"
+    ],
+    "default_trip_unit": "cbi_qf18_c9",
+    "source": "CBI data sheet QF18-SERIES-DAT REV. F (August 2022)",
+    "check": "sheet instantaneous trip point 7-12 x In; modelled pickup band = where the curves reach their flat times"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_qf18_c9_10",
+    "name": "CBI QF18 10 A curve 9",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "CBI",
+    "series": "QF(18)",
+    "model": "QF18 curve 9",
+    "trip_rating_a": 10,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 5,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 15.163,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_qf18_c9"
+    ],
+    "default_trip_unit": "cbi_qf18_c9",
+    "source": "CBI data sheet QF18-SERIES-DAT REV. F (August 2022)",
+    "check": "sheet instantaneous trip point 7-12 x In; modelled pickup band = where the curves reach their flat times"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_qf18_c9_15",
+    "name": "CBI QF18 15 A curve 9",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "CBI",
+    "series": "QF(18)",
+    "model": "QF18 curve 9",
+    "trip_rating_a": 15,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 5,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 15.163,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_qf18_c9"
+    ],
+    "default_trip_unit": "cbi_qf18_c9",
+    "source": "CBI data sheet QF18-SERIES-DAT REV. F (August 2022)",
+    "check": "sheet instantaneous trip point 7-12 x In; modelled pickup band = where the curves reach their flat times"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_qf18_c9_16",
+    "name": "CBI QF18 16 A curve 9",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "CBI",
+    "series": "QF(18)",
+    "model": "QF18 curve 9",
+    "trip_rating_a": 16,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 5,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 15.163,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_qf18_c9"
+    ],
+    "default_trip_unit": "cbi_qf18_c9",
+    "source": "CBI data sheet QF18-SERIES-DAT REV. F (August 2022)",
+    "check": "sheet instantaneous trip point 7-12 x In; modelled pickup band = where the curves reach their flat times"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_qf18_c9_20",
+    "name": "CBI QF18 20 A curve 9",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "CBI",
+    "series": "QF(18)",
+    "model": "QF18 curve 9",
+    "trip_rating_a": 20,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 5,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 15.163,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_qf18_c9"
+    ],
+    "default_trip_unit": "cbi_qf18_c9",
+    "source": "CBI data sheet QF18-SERIES-DAT REV. F (August 2022)",
+    "check": "sheet instantaneous trip point 7-12 x In; modelled pickup band = where the curves reach their flat times"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_qf18_c9_25",
+    "name": "CBI QF18 25 A curve 9",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "CBI",
+    "series": "QF(18)",
+    "model": "QF18 curve 9",
+    "trip_rating_a": 25,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 5,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 15.163,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_qf18_c9"
+    ],
+    "default_trip_unit": "cbi_qf18_c9",
+    "source": "CBI data sheet QF18-SERIES-DAT REV. F (August 2022)",
+    "check": "sheet instantaneous trip point 7-12 x In; modelled pickup band = where the curves reach their flat times"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_qf18_c9_30",
+    "name": "CBI QF18 30 A curve 9",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "CBI",
+    "series": "QF(18)",
+    "model": "QF18 curve 9",
+    "trip_rating_a": 30,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 5,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 15.163,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_qf18_c9"
+    ],
+    "default_trip_unit": "cbi_qf18_c9",
+    "source": "CBI data sheet QF18-SERIES-DAT REV. F (August 2022)",
+    "check": "sheet instantaneous trip point 7-12 x In; modelled pickup band = where the curves reach their flat times"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_qf18_c9_32",
+    "name": "CBI QF18 32 A curve 9",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "CBI",
+    "series": "QF(18)",
+    "model": "QF18 curve 9",
+    "trip_rating_a": 32,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 5,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 15.163,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_qf18_c9"
+    ],
+    "default_trip_unit": "cbi_qf18_c9",
+    "source": "CBI data sheet QF18-SERIES-DAT REV. F (August 2022)",
+    "check": "sheet instantaneous trip point 7-12 x In; modelled pickup band = where the curves reach their flat times"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_qf18_c9_35",
+    "name": "CBI QF18 35 A curve 9",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "CBI",
+    "series": "QF(18)",
+    "model": "QF18 curve 9",
+    "trip_rating_a": 35,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 5,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 15.163,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_qf18_c9"
+    ],
+    "default_trip_unit": "cbi_qf18_c9",
+    "source": "CBI data sheet QF18-SERIES-DAT REV. F (August 2022)",
+    "check": "sheet instantaneous trip point 7-12 x In; modelled pickup band = where the curves reach their flat times"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_qf18_c9_40",
+    "name": "CBI QF18 40 A curve 9",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "CBI",
+    "series": "QF(18)",
+    "model": "QF18 curve 9",
+    "trip_rating_a": 40,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 5,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 15.163,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_qf18_c9"
+    ],
+    "default_trip_unit": "cbi_qf18_c9",
+    "source": "CBI data sheet QF18-SERIES-DAT REV. F (August 2022)",
+    "check": "sheet instantaneous trip point 7-12 x In; modelled pickup band = where the curves reach their flat times"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_qf18_c9_45",
+    "name": "CBI QF18 45 A curve 9",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "CBI",
+    "series": "QF(18)",
+    "model": "QF18 curve 9",
+    "trip_rating_a": 45,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 5,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 15.163,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_qf18_c9"
+    ],
+    "default_trip_unit": "cbi_qf18_c9",
+    "source": "CBI data sheet QF18-SERIES-DAT REV. F (August 2022)",
+    "check": "sheet instantaneous trip point 7-12 x In; modelled pickup band = where the curves reach their flat times"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_qf18_c9_50",
+    "name": "CBI QF18 50 A curve 9",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "CBI",
+    "series": "QF(18)",
+    "model": "QF18 curve 9",
+    "trip_rating_a": 50,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 5,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 15.163,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_qf18_c9"
+    ],
+    "default_trip_unit": "cbi_qf18_c9",
+    "source": "CBI data sheet QF18-SERIES-DAT REV. F (August 2022)",
+    "check": "sheet instantaneous trip point 7-12 x In; modelled pickup band = where the curves reach their flat times"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_qf18_c9_60",
+    "name": "CBI QF18 60 A curve 9",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "CBI",
+    "series": "QF(18)",
+    "model": "QF18 curve 9",
+    "trip_rating_a": 60,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 5,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 15.163,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_qf18_c9"
+    ],
+    "default_trip_unit": "cbi_qf18_c9",
+    "source": "CBI data sheet QF18-SERIES-DAT REV. F (August 2022)",
+    "check": "sheet instantaneous trip point 7-12 x In; modelled pickup band = where the curves reach their flat times"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_qf18_c9_63",
+    "name": "CBI QF18 63 A curve 9",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "CBI",
+    "series": "QF(18)",
+    "model": "QF18 curve 9",
+    "trip_rating_a": 63,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 5,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 15.163,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_qf18_c9"
+    ],
+    "default_trip_unit": "cbi_qf18_c9",
+    "source": "CBI data sheet QF18-SERIES-DAT REV. F (August 2022)",
+    "check": "sheet instantaneous trip point 7-12 x In; modelled pickup band = where the curves reach their flat times"
+   }
+  }
+ ]
+}
