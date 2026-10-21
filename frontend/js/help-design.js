@@ -140,7 +140,36 @@ $$f_{TI} = \frac{65\,L_v}{\bar L^{0.8}}\ \%,\qquad L_v = 9.86\left[1+\left(\tfra
 <p><em>Find max spacing</em> sweeps $S$ and returns the largest spacing that passes every class. <em>Optimise</em> tries every combination of mounting height, tilt, overhang, luminaire and dimming level on all rows, each at its largest passing spacing, and ranks the passing options by W/km, poles/km or PDI. <em>Apply spacing to circuit</em> writes the spacing into a street lighting circuit for its volt drop and earth loop check.</p>
 <h4>Photometry</h4>
 <p>Import the manufacturer's IES (LM-63) or EULUMDAT (.ldt) file. If the file's C90 plane does not point to the street side, correct it with the luminaire's <em>Rotate C-planes</em>. Changing the flux rescales the whole web: same optic, other lumen package. The generic optics are smooth representative distributions for feasibility work, not real products.</p>
-<p>Not modelled yet: wet-road $U_{ow}$, P-class $E_{v}$ / $E_{sc}$, and roads that are not straight (see the backlog).</p>` },
+<p>Not modelled yet: wet-road $U_{ow}$ and P-class $E_{v}$ / $E_{sc}$. Roads that are not straight, with junctions and the actual pole positions, are designed in <a href="#" data-help="design-roadplan">Road plan</a>.</p>` },
+
+{ id: 'design-roadplan', group: 'design', title: 'Road plan — lighting on roads of any shape',
+  std: 'Street lighting ▸ Road plan · EN 13201-3 / CIE 140 · SANS 10098-1/-2 · EN 13201-2 C classes',
+  kw: 'road plan curved road bend junction intersection conflict area centreline alignment chainage kerb trace dxf poles layout heatmap isolux luminance plan view segment tangent arc fillet radius',
+  html: String.raw`
+<p>Street lighting ▸ <em>Road plan</em> runs the road lighting calculation on real road shapes. The road is drawn on a plan in metres, a Lighting design's cross-section is swept along it, and the luminaires stand where the poles actually are. Junctions are checked as conflict areas. The work goes in three steps.</p>
+<h4>1 Road shape</h4>
+<ul>
+<li><b>Draw centreline</b>: click the intersection points. Each corner is rounded with a tangent arc at the <em>Bend radius</em> (one corner can take its own radius in the alignment table). If two arcs need more length than the leg between them, both tangents are shortened and the radii shrink.</li>
+<li><b>Trace kerbs</b>: trace one kerb, then the other. The centreline runs midway between them, and the carriageway width follows the traced kerbs. Strips between the kerbs scale to that width; footpaths and verges outside keep their own.</li>
+<li><b>From DXF</b>: load a site plan or survey as the background and click a line. Connected lines, arcs and polylines on the same layer (ends within 5 cm) are joined. Use it as the centreline, or as the first and then the second kerb.</li>
+</ul>
+<p>The cross-section reads left to right looking up the chainage (the arrow on the road). A road is cut into <b>segments</b>: straights, and bends tighter than R 500 m. Drawn arcs are used exactly; a DXF or traced road takes its bends from the curvature. A junction's area is taken out of the segments it crosses.</p>
+<h4>Junctions</h4>
+<p>A junction is found where a road's end lies on another road, or where two centrelines cross. Its <b>conflict area</b> is the carriageway of both roads, ±(the other road's half width + 6 m) around the crossing point. It is checked on horizontal illuminance, on a 1 m grid, against a C class (EN 13201-2) or an RC class (SANS 10098-2). The starting class is the one comparable to the main road's: M1→C0 … M6→C5, or A1→RC1 … A4→RC4. You can change it in the Junctions list.</p>
+<h4>2 Poles</h4>
+<p>Each luminaire row of the design is laid out along its own pole line (kerb ± setback). The spacing is measured along that line, so poles on the outside of a bend are no further apart than on the inside. On bends tighter than the set radius the spacing is multiplied by a factor; optionally only the row on the outside of the bend is kept. Poles stay out of junction mouths. Drag a pole along its kerb, or Alt-drag it off the pole line. A pole can take its own height, overhang, tilt, flux or luminaire; blank fields follow the row. <em>Send to a circuit</em> makes a street-lighting circuit from the poles in chainage order, with spans equal to the distances between consecutive poles.</p>
+<h4>3 Light on the plan</h4>
+<p>Every segment is cut into calculation fields of at most 40 m. In each field the EN 13201-3 grid is laid out across the road and mapped onto the plan. Along the road there are $N$ points at $D \le 3$ m (10 when the field is 30 m or shorter). Across, there are 3 points per lane for luminance, and $d \le 1.5$ m for illuminance. The same formulas as the Lighting design apply:</p>
+$$E=\text{MF}\sum_i \frac{I_i(C,\gamma)\cos^{3}\gamma_i}{H_i^{2}},\qquad L=\text{MF}\sum_i \frac{I_i(C,\gamma)\;r(\beta_i,\tan\gamma_i)}{H_i^{2}}$$
+<p>On a curve the geometry is what changes:</p>
+<ul>
+<li>A lane's observer stands 60 m before the field, measured along the road on that lane's centre line. The angle $\beta$ comes from the real plan directions.</li>
+<li>Luminaires count within 5H (illuminance), or from 5H behind to 12H beyond the point (luminance), measured along the road's direction at the point.</li>
+<li>The TI eye moves through the field looking along the local driving direction, 1° down.</li>
+<li>Luminaires on every road light every road, so a side road's luminaires count at the junction.</li>
+</ul>
+<p>Each segment reports its worst field. On a straight road with evenly spaced poles the result is exactly the Lighting design's. On a bend the luminance criteria ($\bar L$, $U_o$, $U_l$, TI) are indicative, because EN 13201-3 / CIE 140 define them for a straight road. Tight bends are often designed to a C class on illuminance instead.</p>
+<p>The plan shows the maintained illuminance, or the luminance, as a colour map with iso-lines. In the luminance map each point is seen from 60 m back in its own lane, in that lane's direction of travel. Hover to read a value.</p>` },
 
 { id: 'design-boq', group: 'design', title: 'Bill of quantities, rates & cable schedules',
   std: 'Quantities tab (last step) ▸ Bill of quantities · Cable schedules · Rate library',

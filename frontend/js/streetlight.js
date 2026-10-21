@@ -156,6 +156,7 @@ const StreetLight = {
         <span class="sl-view-toggle" role="tablist" aria-label="Street lighting view">
           <button role="tab" data-sl="view" data-view="circuits" title="Circuits: volt drop per pole, earth loop, phase balance">Circuits</button>
           <button role="tab" data-sl="view" data-view="design" title="Lighting design: lux / luminance on the road cross-section (EN 13201 / SANS 10098-1)">Lighting design</button>
+          <button role="tab" data-sl="view" data-view="plan" title="Road plan: roads of any shape on a plan — poles along them, the light on the road and checks per segment and junction">Road plan</button>
         </span>
         <span class="sl-sep"></span>
         <span class="sl-tb-circuits">
@@ -183,7 +184,8 @@ const StreetLight = {
         <section class="sl-main" id="sl-main"></section>
         <aside class="sl-results" id="sl-results"></aside>
       </div>
-      <div class="sl-body rl-body" id="rl-body" style="display:none"></div>`;
+      <div class="sl-body rl-body" id="rl-body" style="display:none"></div>
+      <div class="sl-body rp-body" id="rp-body" style="display:none"></div>`;
     ws.addEventListener('click', (e) => this._onClick(e));
     ws.addEventListener('change', (e) => this._onChange(e));
   },
@@ -202,27 +204,34 @@ const StreetLight = {
     this._active = false;
     clearTimeout(this._timer);
     if (typeof RoadLight !== 'undefined') RoadLight.deactivate();
+    if (typeof RoadPlan !== 'undefined') RoadPlan.deactivate();
   },
 
-  // Circuits (electrical) or Lighting design (photometric, js/roadlight.js).
+  // Circuits (electrical), Lighting design (photometric, js/roadlight.js) or
+  // Road plan (the design on roads of any shape, js/roadplan.js).
   setView(view) {
-    this._view = view === 'design' ? 'design' : 'circuits';
+    this._view = ['design', 'plan'].includes(view) ? view : 'circuits';
     const ws = document.getElementById('streetlight-workspace');
     if (!ws) return;
-    const design = this._view === 'design';
+    const design = this._view === 'design', plan = this._view === 'plan';
     ws.querySelectorAll('[data-sl="view"]').forEach(b => {
       const on = b.dataset.view === this._view;
       b.classList.toggle('active', on);
       b.setAttribute('aria-selected', on ? 'true' : 'false');
     });
-    ws.querySelector('.sl-tb-circuits').style.display = design ? 'none' : '';
-    ws.querySelector('.sl-body:not(.rl-body)').style.display = design ? 'none' : '';
+    ws.querySelector('.sl-tb-circuits').style.display = design || plan ? 'none' : '';
+    ws.querySelector('.sl-body:not(.rl-body):not(.rp-body)').style.display = design || plan ? 'none' : '';
     const rl = document.getElementById('rl-body');
     rl.style.display = design ? '' : 'none';
+    const rp = document.getElementById('rp-body');
+    rp.style.display = plan ? '' : 'none';
+    if (!design && typeof RoadLight !== 'undefined') RoadLight.deactivate();
+    if (!plan && typeof RoadPlan !== 'undefined') RoadPlan.deactivate();
     if (design && typeof RoadLight !== 'undefined') {
       RoadLight.activate(rl);
+    } else if (plan && typeof RoadPlan !== 'undefined') {
+      RoadPlan.activate(rp);
     } else {
-      if (typeof RoadLight !== 'undefined') RoadLight.deactivate();
       this.render();
       this.recompute(0);
     }
@@ -234,6 +243,7 @@ const StreetLight = {
     this._selId = null;
     if (this._active) { this._selId = this.circuits.length ? this.circuits[0].id : null; this.render(); this.recompute(0); }
     if (typeof RoadLight !== 'undefined') RoadLight.onProjectChanged();
+    if (typeof RoadPlan !== 'undefined') RoadPlan.onProjectChanged();
   },
 
   // ─── Mutations ──────────────────────────────────────────────────────

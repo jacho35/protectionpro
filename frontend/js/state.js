@@ -275,6 +275,25 @@ const AppState = {
       photometry: sl.photometry && typeof sl.photometry === 'object' ? sl.photometry : {},
       _rdSeq: this._maxSeq(sl.roadDesigns, /^rd_(\d+)$/, sl._rdSeq),
       _phSeq: this._maxSeq(Object.keys(sl.photometry || {}).map(id => ({ id })), /^ph_(\d+)$/, sl._phSeq),
+      roadPlan: this._restoreRoadPlan(sl.roadPlan),
+    };
+  },
+  _restoreRoadPlan(rp) {
+    const def = this._defaultRoadPlan();
+    if (!rp || typeof rp !== 'object') return def;
+    const roads = Array.isArray(rp.roads) ? rp.roads.filter(r => r && r.id) : [];
+    // ids are '<prefix>_<n>' from one counter (roads 'rpr', poles 'rpp')
+    let max = 0;
+    for (const r of roads) {
+      if (!Array.isArray(r.poles)) r.poles = [];
+      for (const x of [r, ...r.poles]) { const m = /_(\d+)$/.exec(String(x.id)); if (m) max = Math.max(max, +m[1]); }
+    }
+    return {
+      roads,
+      junctionCls: rp.junctionCls && typeof rp.junctionCls === 'object' ? rp.junctionCls : {},
+      bg: rp.bg && Array.isArray(rp.bg.ents) ? rp.bg : null,
+      settings: rp.settings && typeof rp.settings === 'object' ? rp.settings : {},
+      _seq: Math.max(rp._seq || 1, max + 1),
     };
   },
   _maxSeq(list, re, stored) {
@@ -296,7 +315,11 @@ const AppState = {
       roadDesigns: [],          // lighting designs on a road cross-section (js/roadlight.js)
       photometry: {},           // id → canonical Type C web (IES / LDT / generic)
       _rdSeq: 1, _phSeq: 1,
+      roadPlan: this._defaultRoadPlan(),   // roads of any shape + their poles (js/roadplan.js)
     };
+  },
+  _defaultRoadPlan() {
+    return { roads: [], junctionCls: {}, bg: null, settings: {}, _seq: 1 };
   },
 
   reticGenKioskId() {

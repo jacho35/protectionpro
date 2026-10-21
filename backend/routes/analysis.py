@@ -8,7 +8,7 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException
 from fastapi.routing import APIRoute
 from pydantic import BaseModel
-from ..models.schemas import ProjectData, FaultResults, LoadFlowResults, ArcFlashResults, DCArcFlashResults, UnbalancedLoadFlowResults, AdmdRequest, AdmdResults, ReticEarthRequest, StreetLightingRequest, RoadLightingRequest, PhotometryFileRequest, GenericOpticRequest, LightningRiskRequest, LightningRiskResult, RacewayRequest, RacewayResults, DCLoadFlowResults, DCShortCircuitResults, LoadFlowCasesRequest, LoadFlowCasesResults, VoltageStabilityRequest, VoltageStabilityResults, ContingencyRequest, ContingencyResults, TimeSeriesLoadFlowRequest, TimeSeriesLoadFlowResults, HarmonicsResults, FrequencyScanRequest, FrequencyScanResults, BatterySizingRequest, BatterySizingResults, OPFRequest, OPFResults, ReliabilityResults, FilterSizingRequest, FilterSizingResults, CapacitorPlacementRequest, CapacitorPlacementResults, FlickerAnalysisRequest, FlickerAnalysisResults, HostingCapacityRequest, HostingCapacityResults, OpenConductorResults, TwoConductorOpenResults, SimultaneousFaultResults, WennerTestRequest, WennerTestResults
+from ..models.schemas import ProjectData, FaultResults, LoadFlowResults, ArcFlashResults, DCArcFlashResults, UnbalancedLoadFlowResults, AdmdRequest, AdmdResults, ReticEarthRequest, StreetLightingRequest, RoadLightingRequest, RoadPlanRequest, PhotometryFileRequest, GenericOpticRequest, LightningRiskRequest, LightningRiskResult, RacewayRequest, RacewayResults, DCLoadFlowResults, DCShortCircuitResults, LoadFlowCasesRequest, LoadFlowCasesResults, VoltageStabilityRequest, VoltageStabilityResults, ContingencyRequest, ContingencyResults, TimeSeriesLoadFlowRequest, TimeSeriesLoadFlowResults, HarmonicsResults, FrequencyScanRequest, FrequencyScanResults, BatterySizingRequest, BatterySizingResults, OPFRequest, OPFResults, ReliabilityResults, FilterSizingRequest, FilterSizingResults, CapacitorPlacementRequest, CapacitorPlacementResults, FlickerAnalysisRequest, FlickerAnalysisResults, HostingCapacityRequest, HostingCapacityResults, OpenConductorResults, TwoConductorOpenResults, SimultaneousFaultResults, WennerTestRequest, WennerTestResults
 from ..analysis.loadflow_cases import run_loadflow_cases
 from ..analysis.voltage_stability import run_voltage_stability
 from ..analysis.contingency import run_contingency
@@ -26,6 +26,7 @@ from ..analysis.admd import run_admd
 from ..analysis.retic_earth import run_retic_earth_check
 from ..analysis.street_lighting import run_street_lighting
 from ..analysis.road_lighting import run_road_lighting
+from ..analysis.road_plan import run_road_plan
 from ..analysis.photometry import parse_photometry, generic_optic, GENERIC_OPTICS
 from ..analysis.lightning_risk import run_lightning_risk
 from ..analysis.raceway import run_raceway_analysis
@@ -701,6 +702,21 @@ def road_lighting(data: RoadLightingRequest):
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Road lighting error: {e}")
+
+
+@router.post("/road-plan")
+def road_plan(data: RoadPlanRequest):
+    """Road lighting on the plan: roads of any shape (centreline + swept
+    cross-section) lit by luminaires at their plan positions — per-segment
+    EN 13201-2 / SANS 10098-1 checks, junction conflict areas, and the
+    illuminance / luminance display grids for the plan heatmap."""
+    try:
+        return run_road_plan(data.model_dump())
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Road plan error: {e}")
 
 
 @router.post("/road-lighting/photometry")
