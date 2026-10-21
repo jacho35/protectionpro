@@ -15,8 +15,9 @@ import os
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(HERE))
 JS = os.path.join(ROOT, "frontend", "js")
-ORDER = ["cbi", "qf13", "qf18", "qf26lr", "qf26hr", "g15d", "g25d", "f15d", "f25d", "g35d", "f35d", "k25d", "k35d", "k50d", "f65dv", "jframe"]
-LABEL = {"cbi": "L Frame (L20B / L40B)", "qf13": "QF(13)", "qf18": "QF(18)", "qf26lr": "QF(26)LR", "qf26hr": "QF(26)HR", "jframe": "J-Series (JS25 / J25S)"}
+ORDER = ["cbi", "qf13", "qf18", "qf26lr", "qf26hr", "g15d", "g25d", "f15d", "f25d", "g35d", "f35d", "k25d", "k35d", "k50d", "f65dv", "jframe", "de"]
+DE_TYPES = ["k35de", "k50de", "k70de", "l35de800", "l70de800", "n85de1000", "n85de1250", "n85de1600"]
+LABEL = {"cbi": "L Frame (L20B / L40B)", "qf13": "QF(13)", "qf18": "QF(18)", "qf26lr": "QF(26)LR", "qf26hr": "QF(26)HR", "jframe": "J-Series (JS25 / J25S)", "de": "Electronic DE (K, L, N85)"}
 
 
 def profiles(path):
@@ -28,24 +29,33 @@ def profiles(path):
 def main():
     fams, profs = [], {}
     for key in ORDER:
-        lib = os.path.join(HERE, f"cbi_{'' if key == 'cbi' else key + '_'}breakers.json")
-        pjs = os.path.join(JS, "vendor-trip-units-cbi.js" if key == "cbi" else f"vendor-trip-units-cbi-{key}.js")
-        if not (os.path.exists(lib) and os.path.exists(pjs)):
+        if key == "de":
+            libs = [os.path.join(HERE, f"cbi_{t}_breakers.json") for t in DE_TYPES]
+            pjs = os.path.join(JS, "vendor-trip-units-cbi-de.js")
+        else:
+            libs = [os.path.join(HERE, f"cbi_{'' if key == 'cbi' else key + '_'}breakers.json")]
+            pjs = os.path.join(JS, "vendor-trip-units-cbi.js" if key == "cbi" else f"vendor-trip-units-cbi-{key}.js")
+        if not (all(os.path.exists(x) for x in libs) and os.path.exists(pjs)):
             continue
         pr = profiles(pjs)
         entries = []
-        for e in json.load(open(lib))["entries"]:
-            d = e["data"]
-            pid = d["default_trip_unit"]
-            p = pr[pid]
-            profs[pid] = {"mn": p["curve"]["tol"]["long_time"]["min_points"], "mx": p["curve"]["thermal"]["points"],
-                          "p": p["curve"]["tol"]["pickup"]}
-            lab = f"{d['trip_rating_a']} A" + (f", {d['model'].split(' ', 1)[1]}" if key.startswith("qf") and " " in d["model"] else "")
-            if key == "cbi":
-                lab = f"{d['model']} {d['trip_rating_a']} A"
-            entries.append({"id": d["id"], "name": d["name"], "label": lab, "rating": d["trip_rating_a"], "pid": pid,
-                            "icu": d.get("breaking_ka", 0), "series": f"{d['series']} {d['model']}".strip() if key == "cbi" else d["series"],
-                            "source": d.get("source", ""), "check": d.get("check", "")})
+        for lib in libs:
+            for e in json.load(open(lib))["entries"]:
+                d = e["data"]
+                pid = d["default_trip_unit"]
+                p = pr[pid]
+                tol = p["curve"]["tol"]
+                profs[pid] = {"k": p["kind"], "th": p["curve"]["thermal"], "tol": tol, "d": p["dials"]}
+                lab = f"{d['trip_rating_a']} A" + (f", {d['model'].split(' ', 1)[1]}" if key.startswith("qf") and " " in d["model"] else "")
+                if key in ("cbi", "jframe"):
+                    lab = f"{d['model']} {d['trip_rating_a']} A"
+                if key == "de":
+                    lab = d["name"].replace("CBI ", "")
+                sset = {k: d[k] for k in ("thermal_pickup", "long_time_delay", "short_time_pickup", "short_time_delay", "instantaneous_pickup", "magnetic_pickup") if k in d}
+                entries.append({"id": d["id"], "name": d["name"], "label": lab, "rating": d["trip_rating_a"], "pid": pid,
+                                "icu": d.get("breaking_ka", 0), "ics": d.get("ics_pct"), "s": sset,
+                                "series": f"{d['series']} {d['model']}".strip() if key in ("cbi", "jframe") else d["series"],
+                                "source": d.get("source", ""), "check": d.get("check", "")})
         fams.append({"id": key, "label": LABEL.get(key, key.upper()), "entries": entries})
     data = json.dumps({"families": fams, "profiles": profs}, separators=(",", ":"))
     tpl = open(os.path.join(HERE, "cbi-tool", "template.html")).read()

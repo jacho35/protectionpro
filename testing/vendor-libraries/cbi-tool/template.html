@@ -58,6 +58,10 @@ td i { width: 9px; height: 9px; border-radius: 50%; display: inline-block; margi
 .verdict b { font-weight: 600; }
 .note { color: var(--muted); font-size: 12.5px; max-width: 78ch; }
 .note p { margin: 0 0 6px; }
+.sets { display: grid; gap: 8px; }
+.set { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 8px 12px; display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: end; }
+.set .nm { font-weight: 500; min-width: 12em; align-self: center; }
+.set select { padding: 5px 6px; }
 .steps { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
 @media (max-width: 560px) { input[type=number] { width: 8em; } td.dev { min-width: 10em; } }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
@@ -79,6 +83,8 @@ td i { width: 9px; height: 9px; border-radius: 50%; display: inline-block; margi
   <div class="chips" id="chips" aria-label="Breakers on the plot"></div>
 
   <div class="plotbox"><svg id="plot" viewBox="0 0 1000 560" role="img" aria-label="Time-current curves"></svg></div>
+
+  <div class="sets" id="sets"></div>
 
   <div id="verdict"></div>
 
@@ -110,15 +116,46 @@ function llCurve(pts, M) {
   const u = (lm - x[k]) / h[k], u2 = u * u, u3 = u2 * u;
   return Math.exp((2 * u3 - 3 * u2 + 1) * y[k] + (u3 - 2 * u2 + u) * h[k] * d[k] + (-2 * u3 + 3 * u2) * y[k + 1] + (u3 - u2) * h[k] * d[k + 1]);
 }
-// Fastest / slowest trip time of one breaker at a current (A): infinite below its no-trip / trip limits,
-// the published curve between, the instantaneous (flat) time once a curve has reached its floor.
+// The app's trip-band model (constants.js cbTripBand) for one breaker with its current settings: the long-time curve
+// (published points, or the table of the tL setting) with its tolerance, then the short-time and instantaneous elements.
+function elem(dev) {
+  const P = DATA.profiles[dev.pid], s = dev.s, In = dev.rating, Ir = In * s.thermal_pickup, el = P.k === 'electronic';
+  const ref = d => ((P.d[d] || {}).base === 'In' ? In : Ir);
+  return { In, Ir, el,
+    im: ref('magnetic_pickup') * (s.magnetic_pickup || 10),
+    isd: el && s.short_time_pickup > 0 ? ref('short_time_pickup') * s.short_time_pickup : 0,
+    ii: el && s.instantaneous_pickup > 0 ? ref('instantaneous_pickup') * s.instantaneous_pickup : 0 };
+}
+function tolAt(spec, x) { if (spec == null) return 0; if (typeof spec === 'number') return spec; for (const [u, t] of spec) if (u == null || x <= u) return t; return 0; }
+function lookup(tab, key, dflt) { if (!tab) return dflt; let best = null; for (const k of Object.keys(tab)) if (best === null || Math.abs(+k - key) < Math.abs(+best - key)) best = k; return best === null ? dflt : tab[best]; }
+function ltNominal(dev, M) {
+  const th = DATA.profiles[dev.pid].th;
+  let pts = th.points;
+  if (!pts && th.tables) { const want = Number(dev.s[th.param]); let best = null; for (const k of Object.keys(th.tables)) if (best === null || Math.abs(+k - want) < Math.abs(+best - want)) best = k; pts = th.tables[best]; }
+  if (M <= 1.05) return Infinity;
+  return Math.min(llCurve(pts, M), 10000);
+}
 function band(dev, I) {
-  const P = DATA.profiles[dev.pid], M = I / dev.rating;
-  const mx = P.mx, mn = P.mn;
-  const tmax = M <= P.p[1] ? Infinity : (M >= mx[mx.length - 1][0] ? mx[mx.length - 1][1] : Math.min(llCurve(mx, M), 10000));
-  let tmin = M <= P.p[0] ? Infinity : (M >= mn[mn.length - 1][0] ? mn[mn.length - 1][1] : Math.min(llCurve(mn, M), 10000));
-  if (tmin > tmax && isFinite(tmax)) tmin = tmax;
-  return { M, tmin, tmax };
+  const P = DATA.profiles[dev.pid], tol = P.tol, e = elem(dev), M = I / e.Ir, [puLo, puHi] = tol.pickup || [1.05, 1.05];
+  const lt = tol.long_time || {}, tt = lt.time_tol ? tolAt(lt.time_tol, I / e.In) : 0, nom = ltNominal(dev, M);
+  const ltMax = M <= puHi ? Infinity : nom * (1 + tt);
+  let ltMin;
+  if (M <= puLo) ltMin = Infinity;
+  else if (Array.isArray(lt.min_points) && lt.min_points.length > 1) ltMin = Math.min(llCurve(lt.min_points, M), nom, 10000);
+  else ltMin = nom * 1 * (1 - tt);
+  const st = tol.short_time || {}, ins = tol.instantaneous || {}, tsd = dev.s.short_time_delay || 0;
+  let stBreak, stHold;
+  if (st.time_tol) { const d = Math.min(st.time_tol.rel * tsd, st.time_tol.abs); stBreak = tsd + d; stHold = Math.max(tsd - d, 0); }
+  else { stBreak = lookup(st.break_s, tsd, tsd || 0.1); stHold = lookup(st.hold_s, tsd, stBreak); }
+  const instBreak = ins.break_s != null ? ins.break_s : 0.025, instHold = ins.hold_s != null ? ins.hold_s : instBreak;
+  const inst = e.ii > 0 ? e.ii : e.im, hasST = e.isd > 0 && !(e.ii > 0 && e.ii <= e.isd);
+  const stTol = tolAt(st.pickup_tol, e.isd / e.In), inTol = tolAt(ins.pickup_tol, inst / e.In);
+  let tMax = ltMax, tMin = ltMin, where = 'lt';
+  if (hasST && I >= e.isd * (1 + stTol)) { tMax = stBreak; where = 'st'; }
+  if (I >= inst * (1 + inTol)) { tMax = instBreak; where = 'inst'; }
+  if (hasST && I >= e.isd * (1 - stTol)) tMin = stHold;
+  if (I >= inst * (1 - inTol)) tMin = instHold;
+  return { M, tmin: Math.min(tMin, tMax), tmax: tMax, where, stFrom: hasST ? e.isd * (1 - stTol) : 0, instFrom: inst * (1 - inTol) };
 }
 function fmtT(t) {
   if (!isFinite(t)) return 'no trip';
@@ -129,12 +166,12 @@ function fmtT(t) {
   return (t / 3600).toFixed(1) + ' h';
 }
 function fmtA(a) { return a >= 1000 ? parseFloat((a / 1000).toPrecision(3)) + ' kA' : Math.round(a) + ' A'; }
-function region(dev, b) {
-  const mx = DATA.profiles[dev.pid].mx;
+function region(dev, b, I) {
   if (!isFinite(b.tmin) && !isFinite(b.tmax)) return ['Below pickup, will not trip', 'good'];
   if (!isFinite(b.tmax)) return ['Pickup zone, may trip slowly', 'good'];
-  if (b.M >= mx[mx.length - 1][0]) return ['Instantaneous, clears in ' + fmtT(b.tmax) + ' or less', 'bad'];
-  // the fastest curve has left the overload line while the slowest has not: the magnetic element may or may not act
+  if (b.where === 'inst') return ['Instantaneous, clears in ' + fmtT(b.tmax) + ' or less', 'bad'];
+  if (b.where === 'st') return ['Short-time delay, clears in ' + fmtT(b.tmax) + ' or less', 'warn'];
+  if (b.stFrom && I >= b.stFrom) return ['Short-time pickup zone, may trip at once', 'warn'];
   if (b.tmin < 0.1 && b.tmax > 0.1) return ['Magnetic transition, instant or delayed', 'warn'];
   return ['Overload (thermal) region', 'good'];
 }
@@ -142,7 +179,12 @@ function region(dev, b) {
 // ---- state ----
 const state = { devs: [], cur: 1000 };
 function entryById(id) { for (const f of DATA.families) for (const e of f.entries) if (e.id === id) return e; return null; }
-function mkDev(id) { const e = entryById(id); return e ? { id, name: e.name, rating: e.rating, pid: e.pid, icu: e.icu, ics: e.ics, series: e.series, source: e.source, check: e.check } : null; }
+function mkDev(id) {
+  const e = entryById(id); if (!e) return null;
+  const P = DATA.profiles[e.pid], s = {};
+  ['thermal_pickup', 'long_time_delay', 'short_time_pickup', 'short_time_delay', 'instantaneous_pickup', 'magnetic_pickup'].forEach(k => { s[k] = e.s[k] != null ? e.s[k] : ((P.d[k] || {}).def); });
+  return { id, name: e.name, rating: e.rating, pid: e.pid, icu: e.icu, ics: e.ics, series: e.series, source: e.source, check: e.check, s };
+}
 function addDev(id) {
   if (state.devs.length >= 6 || state.devs.some(d => d.id === id)) return;
   const d = mkDev(id); if (d) { state.devs.push(d); autoRange(); draw(); }
@@ -154,7 +196,7 @@ function autoRange() {
   X0 = Math.max(0, Math.floor(Math.log10(lo * 0.9))); X1 = Math.min(5.3, Math.max(X0 + 2, Math.ceil(Math.log10(hi * 60))));
 }
 const Y0 = -3, Y1 = 4; // log10 seconds: 1 ms .. 10 000 s
-const W = 1000, H = 560, L = 62, R = 18, T = 14, B = 44, PW = W - L - R, PH = H - T - B;
+const W = 1000, H = 560, L = 62, R = 36, T = 14, B = 44, PW = W - L - R, PH = H - T - B;
 const xp = I => L + (Math.log10(I) - X0) / (X1 - X0) * PW;
 const yp = t => T + (Y1 - Math.log10(t)) / (Y1 - Y0) * PH;
 const ix = px => Math.pow(10, X0 + (px - L) / PW * (X1 - X0));
@@ -212,7 +254,7 @@ function draw() {
   const tt = el('text', { x: tx + tw / 2, y: T + 18, 'text-anchor': 'middle', fill: 'var(--bg)', style: 'font:600 12px var(--mono)' }, tag); tt.textContent = lab;
   const hd = el('rect', { x: cx - 9, y: T + PH / 2 - 22, width: 18, height: 44, rx: 5, fill: 'var(--cursor)', 'fill-opacity': 0.9, class: 'handle', tabindex: 0, role: 'slider', 'aria-label': 'Cursor current', 'aria-valuemin': Math.round(i0), 'aria-valuemax': Math.round(i1), 'aria-valuenow': Math.round(state.cur), 'aria-valuetext': lab }, cur);
   hd.addEventListener('keydown', e => { const f = e.shiftKey ? 1.25 : 1.03; if (e.key === 'ArrowRight' || e.key === 'ArrowUp') { setCur(state.cur * f); e.preventDefault(); } if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') { setCur(state.cur / f); e.preventDefault(); } });
-  chips(); readout();
+  chips(); settings(); readout();
 }
 function setCur(I) { state.cur = Math.min(Math.max(I, Math.pow(10, X0)), Math.pow(10, X1)); $('cur').value = Math.round(state.cur * 10) / 10; draw(); const h = document.querySelector('.handle'); if (h && document.activeElement && document.activeElement.id === 'plot') h.focus({ preventScroll: true }); }
 function chips() {
@@ -226,10 +268,35 @@ function chips() {
   });
   if (!state.devs.length) c.innerHTML = '<span class="sub">Pick a range and a breaker, then Add to plot.</span>';
 }
+const SET_LABEL = { thermal_pickup: 'Ir', long_time_delay: 'tL (s at 2 × Ir)', short_time_pickup: 'Is', short_time_delay: 'Ts (s)', instantaneous_pickup: 'Ii (× In)' };
+function fmtSet(dev, k, v) {
+  if (k === 'thermal_pickup') return Math.round(v * dev.rating) + ' A (' + v.toFixed(2) + ' × In)';
+  if (k === 'short_time_pickup') return v + ' × ' + (DATA.profiles[dev.pid].d[k].base === 'In' ? 'In' : 'Ir');
+  return String(v);
+}
+// dial controls for a breaker whose trip unit has adjustable settings (Ir on the thermal-adjustable F65DV, all five on the electronic DE types)
+function settings() {
+  const box = $('sets'); box.textContent = '';
+  state.devs.forEach((d, k) => {
+    const dials = DATA.profiles[d.pid].d, keys = Object.keys(SET_LABEL).filter(x => dials[x] && dials[x].steps && dials[x].steps.length > 1);
+    if (!keys.length) return;
+    const row = document.createElement('div'); row.className = 'set';
+    row.innerHTML = `<span class="nm"><i style="display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:7px;background:${COLORS[k % COLORS.length]}"></i>${d.name} settings</span>`;
+    keys.forEach(key => {
+      const f = document.createElement('div'); f.className = 'field';
+      const id = `set_${k}_${key}`; f.innerHTML = `<label for="${id}">${SET_LABEL[key]}</label>`;
+      const sel = document.createElement('select'); sel.id = id;
+      dials[key].steps.forEach(v => { const o = document.createElement('option'); o.value = v; o.textContent = fmtSet(d, key, v); if (Number(v) === Number(d.s[key])) o.selected = true; sel.appendChild(o); });
+      sel.onchange = () => { d.s[key] = Number(sel.value); draw(); };
+      f.appendChild(sel); row.appendChild(f);
+    });
+    box.appendChild(row);
+  });
+}
 function readout() {
   const tb = $('tbl').tBodies[0]; tb.textContent = '';
   state.devs.forEach((d, k) => {
-    const b = band(d, state.cur), r = region(d, b), tr = document.createElement('tr');
+    const b = band(d, state.cur), r = region(d, b, state.cur), tr = document.createElement('tr');
     const over = state.cur / 1000 > d.icu;
     tr.innerHTML = `<td class="dev"><i style="background:${COLORS[k % COLORS.length]}"></i>${d.name}<small>${d.series}, ${d.rating} A</small></td>
       <td class="n">${b.M.toFixed(b.M < 10 ? 2 : 1)}</td><td class="n">${fmtT(b.tmin)}</td><td class="n">${fmtT(b.tmax)}</td>
@@ -267,7 +334,7 @@ $('up').onclick = () => setCur(state.cur * 1.05); $('dn').onclick = () => setCur
 
 function notes() {
   $('notes').innerHTML = `<p>The shaded band runs from the fastest (dashed) to the slowest (solid) time each breaker may take, as printed in the CBI data sheet at 30 °C. Between the two the actual trip time depends on the individual breaker. The instantaneous region is drawn flat at the sheet's floor times.</p>
-  <p>Discrimination here only compares published curves. It does not use CBI's selectivity or cascading data, which the curves cannot show.</p>`;
+  <p>Adjustable breakers (the F65DV and the electronic types) show their settings under the plot; the instantaneous trip is against In, so the Ir setting does not move it. Discrimination here only compares published curves. It does not use CBI's selectivity or cascading data, which the curves cannot show.</p>`;
 }
 fillFam(); notes();
 ['cbi_l20b_175', 'cbi_qf26hr_c1_80'].forEach(addDev);
