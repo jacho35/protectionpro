@@ -9,7 +9,7 @@
   <link rel="stylesheet" href="css/properties.css?v=3.5.274">
   <link rel="stylesheet" href="css/toolbar.css?v=3.5.274">
   <link rel="stylesheet" href="css/symbols.css?v=3.5.274">
-  <link rel="stylesheet" href="css/retic.css?v=3.5.285">
+  <link rel="stylesheet" href="css/retic.css?v=3.5.286">
   <link rel="stylesheet" href="css/dbcoord.css?v=1.0">
   <link rel="stylesheet" href="css/lightning.css?v=3.5.274">
   <link rel="stylesheet" href="css/rates.css?v=3.5.274">
@@ -1784,7 +1784,7 @@
   <div id="retic-diagram-modal" class="modal" role="dialog" aria-modal="true" aria-label="Reticulation Topology Diagram" style="display:none">
     <div class="modal-content modal-wide">
       <div class="modal-header">
-        <h3>Reticulation Topology — Volt Drop &amp; Connections</h3>
+        <h3 id="rdg-title">Reticulation Topology — Volt Drop &amp; Connections</h3>
         <button class="modal-close" data-rdg="close">&times;</button>
       </div>
       <div class="modal-body">
@@ -1793,13 +1793,31 @@
           <span id="rdg-zoom-label" class="rdg-zoom">100%</span>
           <button class="retic-btn" data-rdg="zoom-in" title="Zoom in">+</button>
           <button class="retic-btn" data-rdg="fit" title="Scale to fit the width">Fit</button>
+          <div class="rdg-seg" role="group" aria-label="Diagram shows">
+            <button type="button" data-rdg="mode-vd" aria-pressed="true">Volt drop</button>
+            <button type="button" data-rdg="mode-fault" aria-pressed="false">Fault current</button>
+          </div>
+          <div class="rdg-kinds" role="group" aria-label="Fault currents shown" hidden>
+            <button type="button" class="rdg-kind" data-rdg="show3" aria-pressed="true" title="Three-phase Ik3, maximum (c 1.10, conductors at 20 °C)"><i aria-hidden="true"></i><b class="rdg-tag rdg-tag-3">3Φ</b>Three-phase (max)</button>
+            <button type="button" class="rdg-kind" data-rdg="showE" aria-pressed="true" title="Earth fault Ik1, minimum (c 0.95, conductors hot): L–PE on TN-S, L–PEN on TN-C / TN-C-S"><i aria-hidden="true"></i><b class="rdg-tag rdg-tag-e">L–PE/PEN</b>Earth fault (min)</button>
+          </div>
+          <div class="rdg-views" role="group" aria-label="View as" hidden>
+            <button type="button" data-rdg="view-list" aria-pressed="true">List</button>
+            <button type="button" data-rdg="view-diagram" aria-pressed="false">Diagram</button>
+          </div>
           <span class="rdg-spacer"></span>
           <button class="retic-btn" data-rdg="png" title="Download the diagram as a PNG image">PNG</button>
           <button class="retic-btn" data-rdg="svg" title="Download the diagram as a vector SVG">SVG</button>
           <button class="retic-btn" data-rdg="dxf" title="Download the diagram as a DXF for CAD (mm) — minisubs, kiosks and RMUs as blocks with attributes">DXF</button>
         </div>
         <div id="retic-diagram-canvas" class="rdg-scroll"></div>
-        <div class="rdg-legend">
+        <div class="rdg-legend rdg-legend-fault" hidden>
+          <span><b class="rdg-tag rdg-tag-3">3Φ max</b>Three-phase Ik3 at the busbar — c = 1.10, conductors at 20 °C (breaking capacity)</span>
+          <span><b class="rdg-tag rdg-tag-e">L–PEN min</b><b class="rdg-tag rdg-tag-e">L–PE min</b>Earth fault Ik1 — c = 0.95, conductors hot; PEN on TN-C / TN-C-S feeders, PE on TN-S</span>
+          <span><b class="rdg-pill rdg-pill-ok">0.02 s</b><b class="rdg-pill rdg-pill-bad">9.4 s</b>Clearing time of that earth fault against the disconnection limit</span>
+          <span class="rdg-note">Bottom line: the lowest earth-fault current among the kiosk's erven, at the end of the service cable (a failing erf is named first). The stripe is red when the kiosk or any of its erven does not clear in time. Figures come from the Demand calculation's earth-fault check — rerun it after changing cables or transformers. Hover a box for the details.</span>
+        </div>
+        <div class="rdg-legend rdg-legend-vd">
           <span><i class="rdg-sw" style="background:#dc2626"></i>Red</span>
           <span><i class="rdg-sw" style="background:#6b7280"></i>White</span>
           <span><i class="rdg-sw" style="background:#2563eb"></i>Blue</span>
@@ -3481,7 +3499,7 @@
   <script src="js/dxfwriter.js?v=3.5.274"></script>
   <script src="js/dbdrawing.js?v=3.5.274"></script>
   <script src="js/ga.js?v=3.5.274"></script>
-  <script src="js/retic-diagram.js?v=3.5.279"></script>
+  <script src="js/retic-diagram.js?v=3.5.280"></script>
   <script src="js/retic-tcc.js?v=3.5.286"></script>
   <script src="js/retic-report.js?v=3.5.274"></script>
   <script src="js/plan-symbols.js?v=3.5.274"></script>
