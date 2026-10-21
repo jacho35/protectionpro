@@ -1,0 +1,276 @@
+<title>CBI Trip Curves</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: one working surface. Controls and device chips on top, the log-log plot filling the width, a readout table under it that follows the cursor. */
+:root {
+  --bg: #f4f5f2; --panel: #ffffff; --ink: #1c2420; --muted: #5d6a63; --line: #d5dbd6; --grid: #e3e8e4; --grid2: #eff2ef;
+  --accent: #0b6e5b; --accent-ink: #ffffff; --warn: #b3541e; --bad: #b3261e; --good: #2f7d32; --cursor: #1c2420;
+  --c1: #1f6fd1; --c2: #c2410c; --c3: #2f7d32; --c4: #7e3fb0; --c5: #a16207; --c6: #0e7490;
+  --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif; --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #121715; --panel: #1a211e; --ink: #e6ece8; --muted: #93a39a; --line: #2c3631; --grid: #26302b; --grid2: #1e2723;
+  --accent: #4fd1b1; --accent-ink: #0d1a16; --warn: #f0a15f; --bad: #ff8a80; --good: #7fd18a; --cursor: #e6ece8;
+  --c1: #6aa9ff; --c2: #ff9a5c; --c3: #7fd18a; --c4: #c79bf2; --c5: #e3b341; --c6: #5fd0e6; color-scheme: dark; } }
+:root[data-theme="dark"] {
+  --bg: #121715; --panel: #1a211e; --ink: #e6ece8; --muted: #93a39a; --line: #2c3631; --grid: #26302b; --grid2: #1e2723;
+  --accent: #4fd1b1; --accent-ink: #0d1a16; --warn: #f0a15f; --bad: #ff8a80; --good: #7fd18a; --cursor: #e6ece8;
+  --c1: #6aa9ff; --c2: #ff9a5c; --c3: #7fd18a; --c4: #c79bf2; --c5: #e3b341; --c6: #5fd0e6; color-scheme: dark; }
+body { background: var(--bg); color: var(--ink); font-family: var(--sans); font-size: 14px; line-height: 1.45;
+  padding-block: 18px 28px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+* { box-sizing: border-box; }
+.wrap { max-width: 1180px; margin: 0 auto; display: grid; gap: 14px; }
+header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 18px; }
+h1 { font-size: 20px; font-weight: 600; margin: 0; letter-spacing: -0.01em; }
+.sub { color: var(--muted); font-size: 13px; }
+.bar { display: flex; flex-wrap: wrap; gap: 10px 12px; align-items: end; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 12px; }
+.field { display: grid; gap: 4px; min-width: 0; }
+.field label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+select, input[type=number] { font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 4px; padding: 7px 8px; min-width: 0; }
+select { max-width: 100%; }
+input[type=number] { width: 9.5em; font-family: var(--mono); font-variant-numeric: tabular-nums; }
+button { font: inherit; cursor: pointer; border-radius: 4px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); padding: 7px 12px; }
+button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 500; }
+button:focus-visible, select:focus-visible, input:focus-visible, .handle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip { display: inline-flex; align-items: center; gap: 8px; background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 4px 6px 4px 10px; font-size: 13px; }
+.chip i { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+.chip button { border: 0; background: transparent; padding: 0 6px; font-size: 16px; line-height: 1; color: var(--muted); }
+.plotbox { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 8px; }
+svg { display: block; width: 100%; height: auto; touch-action: pan-y; user-select: none; -webkit-user-select: none; }
+.tick { fill: var(--muted); font: 11px var(--mono); }
+.axt { fill: var(--muted); font: 11px var(--sans); letter-spacing: 0.04em; }
+.curx { stroke: var(--cursor); stroke-width: 1.25; }
+.handle { cursor: ew-resize; }
+.read { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+th, td { padding: 8px 12px; text-align: left; border-bottom: 1px solid var(--line); white-space: nowrap; }
+tr:last-child td { border-bottom: 0; }
+th { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 500; }
+td.n { font-family: var(--mono); text-align: right; } th.n { text-align: right; }
+td.dev { white-space: normal; min-width: 14em; } td.dev small { display: block; color: var(--muted); }
+td i { width: 9px; height: 9px; border-radius: 50%; display: inline-block; margin-right: 7px; }
+.pill { display: inline-block; font-size: 12px; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--line); }
+.pill.good { color: var(--good); border-color: var(--good); } .pill.warn { color: var(--warn); border-color: var(--warn); } .pill.bad { color: var(--bad); border-color: var(--bad); }
+.verdict { background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--warn); border-radius: 6px; padding: 10px 14px; }
+.verdict.ok { border-left-color: var(--good); }
+.verdict b { font-weight: 600; }
+.note { color: var(--muted); font-size: 12.5px; max-width: 78ch; }
+.note p { margin: 0 0 6px; }
+.steps { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+@media (max-width: 560px) { input[type=number] { width: 8em; } td.dev { min-width: 10em; } }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+<div class="wrap">
+  <header>
+    <h1>CBI Trip Curves</h1>
+    <span class="sub">Published minimum and maximum curves from CBI data sheets. Drag the cursor, or type a current.</span>
+  </header>
+
+  <div class="bar" role="group" aria-label="Add a breaker">
+    <div class="field"><label for="fam">Range</label><select id="fam"></select></div>
+    <div class="field"><label for="ent">Breaker</label><select id="ent"></select></div>
+    <button class="primary" id="add" type="button">Add to plot</button>
+    <div class="field" style="margin-left:auto"><label for="cur">Cursor current (A)</label>
+      <div class="steps"><button type="button" id="dn" aria-label="Decrease current 5%">−</button><input id="cur" type="number" min="1" step="any" inputmode="decimal"><button type="button" id="up" aria-label="Increase current 5%">+</button></div></div>
+  </div>
+
+  <div class="chips" id="chips" aria-label="Breakers on the plot"></div>
+
+  <div class="plotbox"><svg id="plot" viewBox="0 0 1000 560" role="img" aria-label="Time-current curves"></svg></div>
+
+  <div id="verdict"></div>
+
+  <div class="read"><table id="tbl"><thead><tr><th>Breaker</th><th class="n">× In</th><th class="n">Fastest trip</th><th class="n">Slowest trip</th><th>At this current</th><th>Icu</th></tr></thead><tbody></tbody></table></div>
+
+  <div class="note" id="notes"></div>
+</div>
+
+<script>
+const DATA = __DATA__;
+const COLORS = ['var(--c1)', 'var(--c2)', 'var(--c3)', 'var(--c4)', 'var(--c5)', 'var(--c6)'];
+const $ = id => document.getElementById(id);
+const NS = 'http://www.w3.org/2000/svg';
+
+// The app's own log-log interpolation (constants.js _cbLogLogCurve): a monotone cubic through the published points.
+function llCurve(pts, M) {
+  const n = pts.length, x = pts.map(p => Math.log(p[0])), y = pts.map(p => Math.log(p[1])), h = [], sec = [];
+  for (let k = 0; k < n - 1; k++) { h.push(x[k + 1] - x[k]); sec.push((y[k + 1] - y[k]) / h[k]); }
+  const d = new Array(n); d[0] = sec[0];
+  for (let k = 1; k < n - 1; k++) {
+    if (sec[k - 1] * sec[k] <= 0) d[k] = 0;
+    else { const w1 = 2 * h[k] + h[k - 1], w2 = h[k] + 2 * h[k - 1]; d[k] = (w1 + w2) / (w1 / sec[k - 1] + w2 / sec[k]); }
+  }
+  const last = sec[n - 2]; d[n - 1] = last < 0 ? Math.max(-2, 3 * last) : last;
+  const lm = Math.log(M);
+  if (lm <= x[0]) return Math.exp(y[0] + d[0] * (lm - x[0]));
+  if (lm >= x[n - 1]) return Math.exp(y[n - 1] - 2 * (lm - x[n - 1]));
+  let k = 0; while (x[k + 1] < lm) k++;
+  const u = (lm - x[k]) / h[k], u2 = u * u, u3 = u2 * u;
+  return Math.exp((2 * u3 - 3 * u2 + 1) * y[k] + (u3 - 2 * u2 + u) * h[k] * d[k] + (-2 * u3 + 3 * u2) * y[k + 1] + (u3 - u2) * h[k] * d[k + 1]);
+}
+// Fastest / slowest trip time of one breaker at a current (A): infinite below its no-trip / trip limits,
+// the published curve between, the instantaneous (flat) time once a curve has reached its floor.
+function band(dev, I) {
+  const P = DATA.profiles[dev.pid], M = I / dev.rating;
+  const mx = P.mx, mn = P.mn;
+  const tmax = M <= P.p[1] ? Infinity : (M >= mx[mx.length - 1][0] ? mx[mx.length - 1][1] : Math.min(llCurve(mx, M), 10000));
+  let tmin = M <= P.p[0] ? Infinity : (M >= mn[mn.length - 1][0] ? mn[mn.length - 1][1] : Math.min(llCurve(mn, M), 10000));
+  if (tmin > tmax && isFinite(tmax)) tmin = tmax;
+  return { M, tmin, tmax };
+}
+function fmtT(t) {
+  if (!isFinite(t)) return 'no trip';
+  if (t < 0.1) return (t * 1000 < 10 ? (t * 1000).toFixed(1) : Math.round(t * 1000)) + ' ms';
+  if (t < 10) return t.toFixed(2).replace(/0$/, '') + ' s';
+  if (t < 100) return t.toFixed(1) + ' s';
+  if (t < 3600) return t < 600 ? Math.round(t) + ' s' : Math.floor(t / 60) + ' min ' + String(Math.round(t % 60)).padStart(2, '0') + ' s';
+  return (t / 3600).toFixed(1) + ' h';
+}
+function fmtA(a) { return a >= 1000 ? parseFloat((a / 1000).toPrecision(3)) + ' kA' : Math.round(a) + ' A'; }
+function region(dev, b) {
+  const mx = DATA.profiles[dev.pid].mx;
+  if (!isFinite(b.tmin) && !isFinite(b.tmax)) return ['Below pickup, will not trip', 'good'];
+  if (!isFinite(b.tmax)) return ['Pickup zone, may trip slowly', 'good'];
+  if (b.M >= mx[mx.length - 1][0]) return ['Instantaneous, clears in ' + fmtT(b.tmax) + ' or less', 'bad'];
+  // the fastest curve has left the overload line while the slowest has not: the magnetic element may or may not act
+  if (b.tmin < 0.1 && b.tmax > 0.1) return ['Magnetic transition, instant or delayed', 'warn'];
+  return ['Overload (thermal) region', 'good'];
+}
+
+// ---- state ----
+const state = { devs: [], cur: 1000 };
+function entryById(id) { for (const f of DATA.families) for (const e of f.entries) if (e.id === id) return e; return null; }
+function mkDev(id) { const e = entryById(id); return e ? { id, name: e.name, rating: e.rating, pid: e.pid, icu: e.icu, ics: e.ics, series: e.series, source: e.source, check: e.check } : null; }
+function addDev(id) {
+  if (state.devs.length >= 6 || state.devs.some(d => d.id === id)) return;
+  const d = mkDev(id); if (d) { state.devs.push(d); autoRange(); draw(); }
+}
+let X0 = 1, X1 = 5; // log10 amps
+function autoRange() {
+  if (!state.devs.length) { X0 = 1; X1 = 5; return; }
+  const lo = Math.min(...state.devs.map(d => d.rating)), hi = Math.max(...state.devs.map(d => d.rating));
+  X0 = Math.max(0, Math.floor(Math.log10(lo * 0.9))); X1 = Math.min(5.3, Math.max(X0 + 2, Math.ceil(Math.log10(hi * 60))));
+}
+const Y0 = -3, Y1 = 4; // log10 seconds: 1 ms .. 10 000 s
+const W = 1000, H = 560, L = 62, R = 18, T = 14, B = 44, PW = W - L - R, PH = H - T - B;
+const xp = I => L + (Math.log10(I) - X0) / (X1 - X0) * PW;
+const yp = t => T + (Y1 - Math.log10(t)) / (Y1 - Y0) * PH;
+const ix = px => Math.pow(10, X0 + (px - L) / PW * (X1 - X0));
+
+function el(name, attrs, parent) { const e = document.createElementNS(NS, name); for (const k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e; }
+
+function draw() {
+  const svg = $('plot'); svg.textContent = '';
+  const g = el('g', {}, svg);
+  // grid
+  for (let d = Math.floor(X0); d <= Math.ceil(X1); d++) for (let m = 1; m < 10; m++) {
+    const I = m * Math.pow(10, d); if (Math.log10(I) < X0 - 1e-9 || Math.log10(I) > X1 + 1e-9) continue;
+    el('line', { x1: xp(I), x2: xp(I), y1: T, y2: T + PH, stroke: m === 1 ? 'var(--grid)' : 'var(--grid2)', 'stroke-width': m === 1 ? 1.2 : 1 }, g);
+  }
+  for (let d = Y0; d <= Y1; d++) for (let m = 1; m < 10; m++) {
+    const t = m * Math.pow(10, d); if (Math.log10(t) < Y0 - 1e-9 || Math.log10(t) > Y1 + 1e-9) continue;
+    el('line', { x1: L, x2: L + PW, y1: yp(t), y2: yp(t), stroke: m === 1 ? 'var(--grid)' : 'var(--grid2)', 'stroke-width': m === 1 ? 1.2 : 1 }, g);
+  }
+  el('rect', { x: L, y: T, width: PW, height: PH, fill: 'none', stroke: 'var(--line)' }, g);
+  for (let d = Math.ceil(X0); d <= Math.floor(X1); d++) { const I = Math.pow(10, d);
+    const t = el('text', { x: xp(I), y: T + PH + 16, 'text-anchor': 'middle', class: 'tick' }, g); t.textContent = fmtA(I); }
+  const yl = { '-3': '1 ms', '-2': '10 ms', '-1': '0.1 s', '0': '1 s', '1': '10 s', '2': '100 s', '3': '1000 s', '4': '10 000 s' };
+  for (let d = Y0; d <= Y1; d++) { const t = el('text', { x: L - 8, y: yp(Math.pow(10, d)) + 4, 'text-anchor': 'end', class: 'tick' }, g); t.textContent = yl[d]; }
+  const xt = el('text', { x: L + PW / 2, y: H - 6, 'text-anchor': 'middle', class: 'axt' }, g); xt.textContent = 'PROSPECTIVE CURRENT';
+  const yt = el('text', { x: 14, y: T + PH / 2, 'text-anchor': 'middle', class: 'axt', transform: `rotate(-90 14 ${T + PH / 2})` }, g); yt.textContent = 'TRIPPING TIME';
+
+  // clip to the plot area
+  const cid = 'clip' + Math.random().toString(36).slice(2, 7);
+  const cp = el('clipPath', { id: cid }, svg); el('rect', { x: L, y: T, width: PW, height: PH }, cp);
+  const cg = el('g', { 'clip-path': `url(#${cid})` }, svg);
+  const N = 420, i0 = Math.pow(10, X0), i1 = Math.pow(10, X1);
+  state.devs.forEach((dev, k) => {
+    const col = COLORS[k % COLORS.length], up = [], dn = [];
+    for (let s = 0; s <= N; s++) {
+      const I = i0 * Math.pow(i1 / i0, s / N), b = band(dev, I);
+      const top = isFinite(b.tmax) ? b.tmax : 1e4, bot = isFinite(b.tmin) ? b.tmin : 1e4;
+      up.push([xp(I), yp(Math.min(Math.max(top, 1e-3), 1e4))]); dn.push([xp(I), yp(Math.min(Math.max(bot, 1e-3), 1e4))]);
+    }
+    const poly = up.concat(dn.slice().reverse()).map(p => p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' ');
+    el('polygon', { points: poly, fill: col, 'fill-opacity': 0.16, stroke: 'none' }, cg);
+    const line = (pts, dash) => el('polyline', { points: pts.map(p => p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' '), fill: 'none', stroke: col, 'stroke-width': dash ? 1.4 : 2.2, 'stroke-dasharray': dash || 'none', 'stroke-linejoin': 'round' }, cg);
+    line(up); line(dn, '5 3');
+  });
+  // cursor
+  const cx = xp(state.cur);
+  const cur = el('g', {}, svg);
+  el('line', { x1: cx, x2: cx, y1: T, y2: T + PH, class: 'curx' }, cur);
+  state.devs.forEach((dev, k) => {
+    const b = band(dev, state.cur), col = COLORS[k % COLORS.length];
+    [b.tmin, b.tmax].forEach((t, j) => { if (isFinite(t)) el('circle', { cx: cx, cy: yp(Math.min(Math.max(t, 1e-3), 1e4)), r: j ? 4.5 : 3.5, fill: j ? col : 'var(--panel)', stroke: col, 'stroke-width': 2 }, cur); });
+  });
+  const tag = el('g', {}, cur);
+  const lab = fmtA(state.cur), tw = lab.length * 7 + 14, tx = Math.min(Math.max(cx - tw / 2, L), L + PW - tw);
+  el('rect', { x: tx, y: T + 4, width: tw, height: 20, rx: 3, fill: 'var(--cursor)' }, tag);
+  const tt = el('text', { x: tx + tw / 2, y: T + 18, 'text-anchor': 'middle', fill: 'var(--bg)', style: 'font:600 12px var(--mono)' }, tag); tt.textContent = lab;
+  const hd = el('rect', { x: cx - 9, y: T + PH / 2 - 22, width: 18, height: 44, rx: 5, fill: 'var(--cursor)', 'fill-opacity': 0.9, class: 'handle', tabindex: 0, role: 'slider', 'aria-label': 'Cursor current', 'aria-valuemin': Math.round(i0), 'aria-valuemax': Math.round(i1), 'aria-valuenow': Math.round(state.cur), 'aria-valuetext': lab }, cur);
+  hd.addEventListener('keydown', e => { const f = e.shiftKey ? 1.25 : 1.03; if (e.key === 'ArrowRight' || e.key === 'ArrowUp') { setCur(state.cur * f); e.preventDefault(); } if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') { setCur(state.cur / f); e.preventDefault(); } });
+  chips(); readout();
+}
+function setCur(I) { state.cur = Math.min(Math.max(I, Math.pow(10, X0)), Math.pow(10, X1)); $('cur').value = Math.round(state.cur * 10) / 10; draw(); const h = document.querySelector('.handle'); if (h && document.activeElement && document.activeElement.id === 'plot') h.focus({ preventScroll: true }); }
+function chips() {
+  const c = $('chips'); c.textContent = '';
+  state.devs.forEach((d, k) => {
+    const s = document.createElement('span'); s.className = 'chip';
+    s.innerHTML = `<i style="background:${COLORS[k % COLORS.length]}"></i>`;
+    s.appendChild(document.createTextNode(d.name));
+    const x = document.createElement('button'); x.type = 'button'; x.textContent = '×'; x.setAttribute('aria-label', 'Remove ' + d.name);
+    x.onclick = () => { state.devs.splice(k, 1); autoRange(); draw(); }; s.appendChild(x); c.appendChild(s);
+  });
+  if (!state.devs.length) c.innerHTML = '<span class="sub">Pick a range and a breaker, then Add to plot.</span>';
+}
+function readout() {
+  const tb = $('tbl').tBodies[0]; tb.textContent = '';
+  state.devs.forEach((d, k) => {
+    const b = band(d, state.cur), r = region(d, b), tr = document.createElement('tr');
+    const over = state.cur / 1000 > d.icu;
+    tr.innerHTML = `<td class="dev"><i style="background:${COLORS[k % COLORS.length]}"></i>${d.name}<small>${d.series}, ${d.rating} A</small></td>
+      <td class="n">${b.M.toFixed(b.M < 10 ? 2 : 1)}</td><td class="n">${fmtT(b.tmin)}</td><td class="n">${fmtT(b.tmax)}</td>
+      <td><span class="pill ${r[1]}">${r[0]}</span></td><td>${d.icu} kA${over ? ' <span class="pill bad">exceeded</span>' : ''}</td>`;
+    tb.appendChild(tr);
+  });
+  // discrimination: the larger breaker is taken as upstream; its fastest time against the smaller one's slowest
+  const v = $('verdict'); v.textContent = ''; v.className = '';
+  if (state.devs.length >= 2) {
+    const sorted = state.devs.slice().sort((a, b) => b.rating - a.rating), up = sorted[0], dn = sorted[1];
+    const bu = band(up, state.cur), bd = band(dn, state.cur);
+    const ok = isFinite(bd.tmax) && bu.tmin > bd.tmax;
+    const none = !isFinite(bd.tmax);
+    v.className = 'verdict' + (ok ? ' ok' : '');
+    v.innerHTML = none ? `At ${fmtA(state.cur)} the downstream <b>${dn.name}</b> is below its trip limit.`
+      : ok ? `At ${fmtA(state.cur)}: upstream <b>${up.name}</b> is no faster than ${fmtT(bu.tmin)} and downstream <b>${dn.name}</b> clears by ${fmtT(bd.tmax)}. The published curves do not overlap here.`
+      : `At ${fmtA(state.cur)}: upstream <b>${up.name}</b> may trip in ${fmtT(bu.tmin)}, while downstream <b>${dn.name}</b> may take up to ${fmtT(bd.tmax)}. The curves overlap, so time discrimination is not guaranteed.`;
+  }
+}
+
+// ---- pointer: click or drag anywhere on the plot to move the cursor ----
+const svg = $('plot'); let dragging = false;
+function fromEvent(e) { const r = svg.getBoundingClientRect(), px = (e.clientX - r.left) / r.width * W; return ix(Math.min(Math.max(px, L), L + PW)); }
+svg.addEventListener('pointerdown', e => { dragging = true; svg.setPointerCapture(e.pointerId); setCur(fromEvent(e)); });
+svg.addEventListener('pointermove', e => { if (dragging) setCur(fromEvent(e)); });
+['pointerup', 'pointercancel'].forEach(t => svg.addEventListener(t, () => { dragging = false; }));
+
+// ---- pickers ----
+function fillFam() { $('fam').innerHTML = DATA.families.map((f, i) => `<option value="${i}">${f.label}</option>`).join(''); fillEnt(); }
+function fillEnt() { const f = DATA.families[+$('fam').value]; $('ent').innerHTML = f.entries.map(e => `<option value="${e.id}">${e.label}</option>`).join(''); }
+$('fam').onchange = fillEnt;
+$('add').onclick = () => addDev($('ent').value);
+$('cur').addEventListener('change', e => { const v = parseFloat(e.target.value); if (v > 0) setCur(v); });
+$('up').onclick = () => setCur(state.cur * 1.05); $('dn').onclick = () => setCur(state.cur / 1.05);
+
+function notes() {
+  $('notes').innerHTML = `<p>The shaded band runs from the fastest (dashed) to the slowest (solid) time each breaker may take, as printed in the CBI data sheet at 30 °C. Between the two the actual trip time depends on the individual breaker. The instantaneous region is drawn flat at the sheet's floor times.</p>
+  <p>Discrimination here only compares published curves. It does not use CBI's selectivity or cascading data, which the curves cannot show.</p>`;
+}
+fillFam(); notes();
+['cbi_l20b_175', 'cbi_qf26hr_c1_80'].forEach(addDev);
+if (!state.devs.length) addDev(DATA.families[0].entries[0].id);
+autoRange(); setCur(1000);
+</script>

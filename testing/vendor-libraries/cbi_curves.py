@@ -123,7 +123,10 @@ def tm_profile(maker, label, catalogue, mx, mn):
     (which hold the element's break time above the band) read the published curve everywhere.
     """
     lo, hi = flat_from(mn), flat_from(mx)
-    tol = math.floor((hi - lo) / (hi + lo) * 1e5) / 1e5      # rounded DOWN: nominal x (1 + tol) never passes the band's top
+    if hi > lo:
+        tol = math.floor((hi - lo) / (hi + lo) * 1e5) / 1e5  # rounded DOWN: nominal x (1 + tol) never passes the band's top
+    else:                                                    # the maximum curve flattens before the minimum reaches its floor
+        lo = hi; tol = 0.0                                   # (J-Series 225-250 A): one pickup, at the maximum curve's floor
     return {
         "maker": maker, "catalogue": catalogue, "label": label, "kind": "tm",
         "curve": {"model": "points", "thermal": {"points": mx}, "tol": {

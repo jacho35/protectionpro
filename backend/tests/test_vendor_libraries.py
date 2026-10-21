@@ -714,3 +714,50 @@ class TestCbiMccbThermalMagnetic:
             p = prof[ents[f"cbi_{typ}_{inn}"]["default_trip_unit"]]
             d, t = p["dials"]["magnetic_pickup"]["def"], p["curve"]["tol"]["instantaneous"]["pickup_tol"]
             assert d * (1 - t) * inn == pytest.approx(480, rel=0.03) and d * (1 + t) * inn == pytest.approx(720, rel=0.03)
+
+
+# ── CBI J-Series (JS25 / J25S) ───────────────────────────────────────────
+
+class TestCbiJFrame:
+    def test_entries(self):
+        prof, ents = _qf("jframe")
+        assert set(prof) == {"cbi_jframe_a", "cbi_jframe_b"} and len(ents) == 17
+        js, j3 = [e for e in ents.values() if e["model"] == "JS25"], [e for e in ents.values() if e["model"] == "J25S"]
+        assert sorted(e["trip_rating_a"] for e in js) == [80, 100, 125, 150, 200, 250]
+        assert sorted(e["trip_rating_a"] for e in j3) == [50, 60, 80, 100, 125, 150, 160, 175, 200, 225, 250]
+        assert all(e["breaking_ka"] == 25 and e["frame_a"] == 250 and e["cb_type"] == "mccb" for e in ents.values())
+        assert {e["rated_voltage_kv"] for e in js} == {0.24} and {e["rated_voltage_kv"] for e in j3} == {0.4}
+        # 225 and 250 A use the 225-250 A chart, everything below the 12-200 A one
+        assert all(e["default_trip_unit"] == ("cbi_jframe_a" if e["trip_rating_a"] >= 225 else "cbi_jframe_b") for e in ents.values())
+
+    def test_curves_match_the_printed_tables(self):
+        import sys
+        sys.path.insert(0, VL_DIR)
+        from digitize_cbi_qf import TABLES
+        prof, _ = _qf("jframe")
+        for pid, p in prof.items():
+            c = pid.rsplit("_", 1)[1]
+            mx = {"points": p["curve"]["thermal"]["points"]}
+            mn = {"points": p["curve"]["tol"]["long_time"]["min_points"]}
+            inst = p["curve"]["tol"]["instantaneous"]
+            for pct, (tmin, tmax) in TABLES[c].items():
+                for pts, t, flat in ((mn, tmin, inst["hold_s"]), (mx, tmax, inst["break_s"])):
+                    if t is None or (pts is mx and pct == 130):
+                        continue
+                    m = pct / 100
+                    if m * 1.06 > pts["points"][-1][0]:                # past the curve's last point: the flat time
+                        assert t == pytest.approx(flat, rel=0.3), (pid, pct, t, flat)
+                        continue
+                    lo, hi = thermal_curve_time(pts, m * 0.94), thermal_curve_time(pts, m * 1.06)
+                    assert hi * 0.97 <= t <= lo * 1.03, (pid, pct, t, hi, lo)
+
+    def test_profiles(self):
+        prof, _ = _qf("jframe")
+        a, b = prof["cbi_jframe_a"], prof["cbi_jframe_b"]
+        for p in (a, b):
+            assert p["curve"]["tol"]["pickup"] == [1.05, 1.3] and p["dials"]["magnetic_pickup"]["base"] == "In"
+            assert p["curve"]["tol"]["instantaneous"]["pickup_tol"] >= 0
+        # the 225-250 A curve never clears faster than 1 s (its maximum floor); the other floors at 0.02 s
+        assert a["curve"]["tol"]["instantaneous"]["break_s"] == pytest.approx(1.0, rel=0.02)
+        assert b["curve"]["tol"]["instantaneous"]["break_s"] == pytest.approx(0.02, rel=0.03)
+
