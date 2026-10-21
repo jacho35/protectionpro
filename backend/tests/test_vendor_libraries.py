@@ -635,3 +635,49 @@ class TestCbiQf26lr:
         assert all(thermal_curve_time(c2, m) < thermal_curve_time(c1, m) for m in (2, 5, 8))
         d = prof["cbi_qf26lr_c2"]["dials"]["magnetic_pickup"]
         assert d["fixed"] and d["base"] == "In" and d["def"] < prof["cbi_qf26lr_c1"]["dials"]["magnetic_pickup"]["def"]
+
+
+# ── CBI QF(26)HR ─────────────────────────────────────────────────────────
+
+QF26HR_LIB = os.path.join(ROOT, "testing", "vendor-libraries", "cbi_qf26hr_breakers.json")
+QF26HR_JS = os.path.join(ROOT, "frontend", "js", "vendor-trip-units-cbi-qf26hr.js")
+
+
+class TestCbiQf26hr:
+    def _load(self):
+        src = open(QF26HR_JS).read()
+        head = "Object.assign(TRIP_UNITS, "
+        prof = json.loads(src[src.index(head) + len(head):src.rindex(");")])
+        ents = {e["data"]["id"]: e["data"] for e in json.load(open(QF26HR_LIB))["entries"]}
+        return prof, ents
+
+    def test_entries(self):
+        prof, ents = self._load()
+        assert len(ents) == 12 and set(prof) == {"cbi_qf26hr_c1", "cbi_qf26hr_c2"}
+        e = ents["cbi_qf26hr_c1_125"]
+        assert (e["cb_type"], e["mcb_curve"], e["breaking_ka"], e["frame_a"], e["trip_units"]) == ("mcb", "D", 5, 125, ["cbi_qf26hr_c1"])
+        assert ents["cbi_qf26hr_c2_60"]["mcb_curve"] == "C"
+        assert sorted({x["trip_rating_a"] for x in ents.values()}) == [60, 70, 80, 90, 100, 125]
+
+    def test_curve_1_matches_the_published_table(self):
+        # table printed with curve 1: % of rated current -> (minimum s, maximum s)
+        prof, _ = self._load()
+        mx = {"points": prof["cbi_qf26hr_c1"]["curve"]["thermal"]["points"]}
+        mn = {"points": prof["cbi_qf26hr_c1"]["curve"]["tol"]["long_time"]["min_points"]}
+        table = {1.45: (45, 503), 2: (20, 96), 3: (7.5, 34), 4: (3.8, 17), 5: (2.3, 10.3), 6: (1.5, 6.8),
+                 7: (1.01, 4.9), 8: (0.7, 3.6), 9: (0.42, 2.8), 10: (0.1, 2.2), 20: (0.005, 0.1)}
+        for m, (tmin, tmax) in table.items():
+            if m < 20:
+                assert thermal_curve_time(mn, m) == pytest.approx(tmin, rel=0.1), m
+            assert thermal_curve_time(mx, m) == pytest.approx(tmax, rel=0.05), m
+        t = prof["cbi_qf26hr_c1"]["curve"]["tol"]
+        assert t["pickup"] == [1.05, 1.3]
+        assert t["instantaneous"]["hold_s"] == pytest.approx(0.005, rel=0.02) and t["instantaneous"]["break_s"] == pytest.approx(0.02, rel=0.02)
+
+    def test_curve_2_is_faster_than_curve_1(self):
+        prof, _ = self._load()
+        c1 = {"points": prof["cbi_qf26hr_c1"]["curve"]["thermal"]["points"]}
+        c2 = {"points": prof["cbi_qf26hr_c2"]["curve"]["thermal"]["points"]}
+        assert all(thermal_curve_time(c2, m) < thermal_curve_time(c1, m) for m in (2, 5, 8))
+        d = prof["cbi_qf26hr_c2"]["dials"]["magnetic_pickup"]
+        assert d["fixed"] and d["base"] == "In" and d["def"] < prof["cbi_qf26hr_c1"]["dials"]["magnetic_pickup"]["def"]

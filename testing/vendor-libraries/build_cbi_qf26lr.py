@@ -8,7 +8,7 @@ Writes, from data/cbi_qf26lr_curves.json (never edit the outputs by hand):
 Source: CBI data sheet QF26LR-SERIES-DAT REV. B (April 2022) — Technical Data (Icu / Ics), Long Code /
 Ordering Information (time delays 1, 2, 3, 9 and their instantaneous trip points), Time Delay Curve pages
 (curves 1 and 2, minimum + maximum at 30 C, digitised from the PDF's vector charts by
-digitize_cbi_qf26lr.py and checked against the table printed with curve 1: within 3 % at every
+digitize_cbi_qf.py and checked against the table printed with curve 1: within 3 % at every
 column from 130 % to 2000 %).
 
 What the numbers mean
