@@ -1,0 +1,165 @@
+{
+ "entries": [
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_l_100",
+    "name": "CBI L20/L40 100 A",
+    "cb_type": "mccb",
+    "manufacturer": "CBI",
+    "series": "L Frame",
+    "model": "L20 / L40",
+    "trip_rating_a": 100,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_l_tm"
+    ],
+    "default_trip_unit": "cbi_l_tm",
+    "source": "Reticmaster Data Library 2025-11 (CBI L Frame L20/L40 curves)",
+    "check": "Icu not in the data file; magnetic pickup 10 x In inferred from the end of the curve"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_l_125",
+    "name": "CBI L20/L40 125 A",
+    "cb_type": "mccb",
+    "manufacturer": "CBI",
+    "series": "L Frame",
+    "model": "L20 / L40",
+    "trip_rating_a": 125,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_l_tm"
+    ],
+    "default_trip_unit": "cbi_l_tm",
+    "source": "Reticmaster Data Library 2025-11 (CBI L Frame L20/L40 curves)",
+    "check": "Icu not in the data file; magnetic pickup 10 x In inferred from the end of the curve"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_l_150",
+    "name": "CBI L20/L40 150 A",
+    "cb_type": "mccb",
+    "manufacturer": "CBI",
+    "series": "L Frame",
+    "model": "L20 / L40",
+    "trip_rating_a": 150,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_l_tm"
+    ],
+    "default_trip_unit": "cbi_l_tm",
+    "source": "Reticmaster Data Library 2025-11 (CBI L Frame L20/L40 curves)",
+    "check": "Icu not in the data file; magnetic pickup 10 x In inferred from the end of the curve"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_l_175",
+    "name": "CBI L20/L40 175 A",
+    "cb_type": "mccb",
+    "manufacturer": "CBI",
+    "series": "L Frame",
+    "model": "L20 / L40",
+    "trip_rating_a": 175,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_l_tm"
+    ],
+    "default_trip_unit": "cbi_l_tm",
+    "source": "Reticmaster Data Library 2025-11 (CBI L Frame L20/L40 curves)",
+    "check": "Icu not in the data file; magnetic pickup 10 x In inferred from the end of the curve"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_l_200",
+    "name": "CBI L20/L40 200 A",
+    "cb_type": "mccb",
+    "manufacturer": "CBI",
+    "series": "L Frame",
+    "model": "L20 / L40",
+    "trip_rating_a": 200,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_l_tm"
+    ],
+    "default_trip_unit": "cbi_l_tm",
+    "source": "Reticmaster Data Library 2025-11 (CBI L Frame L20/L40 curves)",
+    "check": "Icu not in the data file; magnetic pickup 10 x In inferred from the end of the curve"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_l_225",
+    "name": "CBI L20/L40 225 A",
+    "cb_type": "mccb",
+    "manufacturer": "CBI",
+    "series": "L Frame",
+    "model": "L20 / L40",
+    "trip_rating_a": 225,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_l_tm"
+    ],
+    "default_trip_unit": "cbi_l_tm",
+    "source": "Reticmaster Data Library 2025-11 (CBI L Frame L20/L40 curves)",
+    "check": "Icu not in the data file; magnetic pickup 10 x In inferred from the end of the curve"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_l_250",
+    "name": "CBI L20/L40 250 A",
+    "cb_type": "mccb",
+    "manufacturer": "CBI",
+    "series": "L Frame",
+    "model": "L20 / L40",
+    "trip_rating_a": 250,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_l_tm"
+    ],
+    "default_trip_unit": "cbi_l_tm",
+    "source": "Reticmaster Data Library 2025-11 (CBI L Frame L20/L40 curves)",
+    "check": "Icu not in the data file; magnetic pickup 10 x In inferred from the end of the curve"
+   }
+  }
+ ]
+}
