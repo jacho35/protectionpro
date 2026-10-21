@@ -761,3 +761,38 @@ class TestCbiJFrame:
         assert a["curve"]["tol"]["instantaneous"]["break_s"] == pytest.approx(1.0, rel=0.02)
         assert b["curve"]["tol"]["instantaneous"]["break_s"] == pytest.approx(0.02, rel=0.03)
 
+
+# ── CBI F65DV (thermal-adjustable) ───────────────────────────────────────
+
+class TestCbiF65dv:
+    def test_entries_and_dial(self):
+        prof, ents = _qf("f65dv")
+        assert sorted(e["trip_rating_a"] for e in ents.values()) == [25, 32, 40, 50, 63, 100, 125, 160, 250]
+        assert all(e["breaking_ka"] == 65 and e["ics_pct"] == 100 and e["cb_type"] == "mccb" for e in ents.values())
+        # Ir range from the sheet: e.g. 100 A: 70-100 A -> 0.70 ... 1.00 x In in 1 % steps
+        d = prof["cbi_f65dv_100"]["dials"]["thermal_pickup"]
+        assert d["steps"][0] == 0.7 and d["steps"][-1] == 1.0 and d["def"] == 1.0 and len(d["steps"]) == 31
+        assert prof["cbi_f65dv_25"]["dials"]["thermal_pickup"]["steps"][0] == 0.8
+
+    def test_instantaneous_is_against_in(self):
+        prof, ents = _qf("f65dv")
+        for inn, e in ((e["trip_rating_a"], e) for e in ents.values()):
+            p = prof[e["default_trip_unit"]]
+            d, t = p["dials"]["magnetic_pickup"], p["curve"]["tol"]["instantaneous"]["pickup_tol"]
+            assert d["base"] == "In"
+            lo, hi = d["def"] * (1 - t), d["def"] * (1 + t)
+            if inn <= 50:                  # "AC 600 +/- 120 A" fixed
+                assert lo * inn == pytest.approx(480, rel=0.02) and hi * inn == pytest.approx(720, rel=0.02)
+            else:                          # "AC 1000 +/- 200 %" x In
+                assert lo == pytest.approx(8, rel=0.02) and hi == pytest.approx(12, rel=0.02)
+
+    def test_thermal_curve_only(self):
+        # an adjustable Ir: the points are the thermal part (x Ir), they must not contain the instantaneous drop
+        prof, _ = _qf("f65dv")
+        for p in prof.values():
+            mx = p["curve"]["thermal"]["points"]
+            mn = p["curve"]["tol"]["long_time"]["min_points"]
+            assert all(a[0] < b[0] and a[1] > b[1] for a, b in zip(mx, mx[1:])) and mx[-1][1] > 0.05 and mn[-1][1] > 0.05
+            assert p["curve"]["tol"]["instantaneous"]["hold_s"] == pytest.approx(0.01, rel=0.05)
+            assert p["curve"]["tol"]["instantaneous"]["break_s"] == pytest.approx(0.02, rel=0.05)
+

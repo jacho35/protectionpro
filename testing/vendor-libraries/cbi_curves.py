@@ -115,14 +115,17 @@ def flat_from(pts, tol=1.02):
     return next(m for m, t in pts if t <= floor * tol)
 
 
-def tm_profile(maker, label, catalogue, mx, mn):
+def tm_profile(maker, label, catalogue, mx, mn, band=None):
     """Fixed thermal-magnetic trip unit from a published maximum / minimum curve (x In, s).
 
     The long-time curve the engines clear on is the maximum; the minimum is the TCC band.
     The instantaneous band is where the two curves reach their flat times, so the engines
     (which hold the element's break time above the band) read the published curve everywhere.
+    `band` = (lo, hi, hold_s, break_s) sets it explicitly instead (an adjustable-Ir breaker: the points are then the
+    thermal part only, because the instantaneous trip is against In, not Ir).
     """
-    lo, hi = flat_from(mn), flat_from(mx)
+    lo, hi = band[:2] if band else (flat_from(mn), flat_from(mx))
+    hold, brk = (band[2], band[3]) if band else (mn[-1][1], mx[-1][1])
     if hi > lo:
         tol = math.floor((hi - lo) / (hi + lo) * 1e5) / 1e5  # rounded DOWN: nominal x (1 + tol) never passes the band's top
     else:                                                    # the maximum curve flattens before the minimum reaches its floor
@@ -132,7 +135,7 @@ def tm_profile(maker, label, catalogue, mx, mn):
         "curve": {"model": "points", "thermal": {"points": mx}, "tol": {
             "pickup": [round(mn[0][0], 3), round(mx[0][0], 3)],                  # no trip below / trip above (x In)
             "long_time": {"min_points": mn},
-            "instantaneous": {"pickup_tol": tol, "hold_s": mn[-1][1], "break_s": mx[-1][1]}}},
+            "instantaneous": {"pickup_tol": tol, "hold_s": hold, "break_s": brk}}},
         "dials": {
             "thermal_pickup": {"fixed": True, "def": 1.0},
             "magnetic_pickup": {"fixed": True, "def": round((lo + hi) / 2, 3), "base": "In"},
