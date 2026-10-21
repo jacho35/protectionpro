@@ -546,7 +546,7 @@ class TestAbbEmax2:
         assert _cb_self_clearing_time(p, 80000.0) == pytest.approx(0.33)
 
 
-# ── CBI L-frame (Reticmaster data library) ───────────────────────────────
+# ── CBI L Frame (L20B / L40B) ────────────────────────────────────────────
 
 CBI_LIB = os.path.join(ROOT, "testing", "vendor-libraries", "cbi_breakers.json")
 CBI_JS = os.path.join(ROOT, "frontend", "js", "vendor-trip-units-cbi.js")
@@ -556,23 +556,36 @@ class TestCbiLFrame:
     def _load(self):
         src = open(CBI_JS).read()
         head = "Object.assign(TRIP_UNITS, "
-        prof = json.loads(src[src.index(head) + len(head):src.rindex(");")])
+        prof = json.loads(src[src.index(head) + len(head):src.rindex(");")])["cbi_l_tm"]
         ents = {e["data"]["id"]: e["data"] for e in json.load(open(CBI_LIB))["entries"]}
         return prof, ents
 
-    def test_entries_and_profile(self):
-        prof, ents = self._load()
-        assert sorted(e["trip_rating_a"] for e in ents.values()) == [100, 125, 150, 175, 200, 225, 250]
+    def test_entries(self):
+        _, ents = self._load()
+        assert len(ents) == 26
+        assert sorted({e["trip_rating_a"] for e in ents.values()}) == [100, 125, 150, 175, 200, 225, 250, 300, 350, 400, 450, 500, 600]
+        assert ents["cbi_l20b_250"]["breaking_ka"] == 20 and ents["cbi_l40b_600"]["breaking_ka"] == 40   # Icu @ 415 V
         assert all(e["manufacturer"] == "CBI" and e["trip_units"] == ["cbi_l_tm"] for e in ents.values())
-        pts = prof["cbi_l_tm"]["curve"]["thermal"]["points"]
-        assert pts[0] == [1.3, 6000] and pts[-1] == [10, 0.24] and len(pts) == 88
-        assert all(a[0] < b[0] and a[1] > b[1] for a, b in zip(pts, pts[1:]))
-        assert prof["cbi_l_tm"]["dials"]["magnetic_pickup"]["base"] == "In"
 
-    def test_curve_time(self):
+    def test_curves_match_the_published_table(self):
+        # data sheet "Time Delay Data" (% rated current -> s); the chart is digitised from the vector PDF
         prof, _ = self._load()
-        tc = prof["cbi_l_tm"]["curve"]["thermal"]
-        # a published point: 2 x In -> 50 s
-        pts = dict((m, t) for m, t in tc["points"])
-        m = min(pts, key=lambda x: abs(x - 2.0))
-        assert thermal_curve_time(tc, m) == pytest.approx(pts[m], rel=0.01)
+        mx = prof["curve"]["thermal"]["points"]
+        mn = prof["curve"]["tol"]["long_time"]["min_points"]
+        table_max = {2: 345, 3: 110, 4: 50, 6: 5}
+        table_min = {2: 75, 3: 14, 4: 0.2, 6: 0.005}
+        for tbl, pts in ((table_max, mx), (table_min, mn)):
+            for m, t in tbl.items():
+                assert thermal_curve_time({"points": pts}, m) == pytest.approx(t, rel=0.12)
+        # the sheet prints 0.24 s at 1000 % for the maximum; the chart (and curve corner) say 0.024 s
+        assert thermal_curve_time({"points": mx}, 10) == pytest.approx(0.024, rel=0.05)
+        assert mx[-1][1] == pytest.approx(0.0175, rel=0.01) and mn[-1][1] == pytest.approx(0.004, rel=0.01)
+        assert all(a[0] < b[0] and a[1] > b[1] for a, b in zip(mx[:-1], mx[1:-1]))
+
+    def test_profile(self):
+        prof, _ = self._load()
+        d = prof["dials"]["magnetic_pickup"]
+        assert d["fixed"] and d["base"] == "In" and d["def"] == pytest.approx(10.88, abs=0.01)
+        tol = prof["curve"]["tol"]
+        assert tol["pickup"] == [pytest.approx(1.065, abs=0.001), pytest.approx(1.319, abs=0.001)]
+        assert d["def"] * (1 + tol["instantaneous"]["pickup_tol"]) <= 13.61            # never past the max curve's flat start

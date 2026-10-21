@@ -3,162 +3,599 @@
   {
    "kind": "cbs",
    "data": {
-    "id": "cbi_l_100",
-    "name": "CBI L20/L40 100 A",
+    "id": "cbi_l20b_100",
+    "name": "CBI L20B 100 A",
     "cb_type": "mccb",
     "manufacturer": "CBI",
     "series": "L Frame",
-    "model": "L20 / L40",
+    "model": "L20B",
     "trip_rating_a": 100,
-    "frame_a": 250,
+    "frame_a": 600,
     "rated_voltage_kv": 0.4,
+    "breaking_ka": 20,
     "thermal_pickup": 1.0,
-    "magnetic_pickup": 10,
+    "magnetic_pickup": 10.879,
     "long_time_delay": 10,
     "trip_units": [
      "cbi_l_tm"
     ],
     "default_trip_unit": "cbi_l_tm",
-    "source": "Reticmaster Data Library 2025-11 (CBI L Frame L20/L40 curves)",
-    "check": "Icu not in the data file; magnetic pickup 10 x In inferred from the end of the curve"
+    "source": "CBI data sheet L-SERIES-DAT MAR 2016 (L Frame; time delay curves L20 / L40 AC)"
    }
   },
   {
    "kind": "cbs",
    "data": {
-    "id": "cbi_l_125",
-    "name": "CBI L20/L40 125 A",
+    "id": "cbi_l20b_125",
+    "name": "CBI L20B 125 A",
     "cb_type": "mccb",
     "manufacturer": "CBI",
     "series": "L Frame",
-    "model": "L20 / L40",
+    "model": "L20B",
     "trip_rating_a": 125,
-    "frame_a": 250,
+    "frame_a": 600,
     "rated_voltage_kv": 0.4,
+    "breaking_ka": 20,
     "thermal_pickup": 1.0,
-    "magnetic_pickup": 10,
+    "magnetic_pickup": 10.879,
     "long_time_delay": 10,
     "trip_units": [
      "cbi_l_tm"
     ],
     "default_trip_unit": "cbi_l_tm",
-    "source": "Reticmaster Data Library 2025-11 (CBI L Frame L20/L40 curves)",
-    "check": "Icu not in the data file; magnetic pickup 10 x In inferred from the end of the curve"
+    "source": "CBI data sheet L-SERIES-DAT MAR 2016 (L Frame; time delay curves L20 / L40 AC)"
    }
   },
   {
    "kind": "cbs",
    "data": {
-    "id": "cbi_l_150",
-    "name": "CBI L20/L40 150 A",
+    "id": "cbi_l20b_150",
+    "name": "CBI L20B 150 A",
     "cb_type": "mccb",
     "manufacturer": "CBI",
     "series": "L Frame",
-    "model": "L20 / L40",
+    "model": "L20B",
     "trip_rating_a": 150,
-    "frame_a": 250,
+    "frame_a": 600,
     "rated_voltage_kv": 0.4,
+    "breaking_ka": 20,
     "thermal_pickup": 1.0,
-    "magnetic_pickup": 10,
+    "magnetic_pickup": 10.879,
     "long_time_delay": 10,
     "trip_units": [
      "cbi_l_tm"
     ],
     "default_trip_unit": "cbi_l_tm",
-    "source": "Reticmaster Data Library 2025-11 (CBI L Frame L20/L40 curves)",
-    "check": "Icu not in the data file; magnetic pickup 10 x In inferred from the end of the curve"
+    "source": "CBI data sheet L-SERIES-DAT MAR 2016 (L Frame; time delay curves L20 / L40 AC)"
    }
   },
   {
    "kind": "cbs",
    "data": {
-    "id": "cbi_l_175",
-    "name": "CBI L20/L40 175 A",
+    "id": "cbi_l20b_175",
+    "name": "CBI L20B 175 A",
     "cb_type": "mccb",
     "manufacturer": "CBI",
     "series": "L Frame",
-    "model": "L20 / L40",
+    "model": "L20B",
     "trip_rating_a": 175,
-    "frame_a": 250,
+    "frame_a": 600,
     "rated_voltage_kv": 0.4,
+    "breaking_ka": 20,
     "thermal_pickup": 1.0,
-    "magnetic_pickup": 10,
+    "magnetic_pickup": 10.879,
     "long_time_delay": 10,
     "trip_units": [
      "cbi_l_tm"
     ],
     "default_trip_unit": "cbi_l_tm",
-    "source": "Reticmaster Data Library 2025-11 (CBI L Frame L20/L40 curves)",
-    "check": "Icu not in the data file; magnetic pickup 10 x In inferred from the end of the curve"
+    "source": "CBI data sheet L-SERIES-DAT MAR 2016 (L Frame; time delay curves L20 / L40 AC)"
    }
   },
   {
    "kind": "cbs",
    "data": {
-    "id": "cbi_l_200",
-    "name": "CBI L20/L40 200 A",
+    "id": "cbi_l20b_200",
+    "name": "CBI L20B 200 A",
     "cb_type": "mccb",
     "manufacturer": "CBI",
     "series": "L Frame",
-    "model": "L20 / L40",
+    "model": "L20B",
     "trip_rating_a": 200,
-    "frame_a": 250,
+    "frame_a": 600,
     "rated_voltage_kv": 0.4,
+    "breaking_ka": 20,
     "thermal_pickup": 1.0,
-    "magnetic_pickup": 10,
+    "magnetic_pickup": 10.879,
     "long_time_delay": 10,
     "trip_units": [
      "cbi_l_tm"
     ],
     "default_trip_unit": "cbi_l_tm",
-    "source": "Reticmaster Data Library 2025-11 (CBI L Frame L20/L40 curves)",
-    "check": "Icu not in the data file; magnetic pickup 10 x In inferred from the end of the curve"
+    "source": "CBI data sheet L-SERIES-DAT MAR 2016 (L Frame; time delay curves L20 / L40 AC)"
    }
   },
   {
    "kind": "cbs",
    "data": {
-    "id": "cbi_l_225",
-    "name": "CBI L20/L40 225 A",
+    "id": "cbi_l20b_225",
+    "name": "CBI L20B 225 A",
     "cb_type": "mccb",
     "manufacturer": "CBI",
     "series": "L Frame",
-    "model": "L20 / L40",
+    "model": "L20B",
     "trip_rating_a": 225,
-    "frame_a": 250,
+    "frame_a": 600,
     "rated_voltage_kv": 0.4,
+    "breaking_ka": 20,
     "thermal_pickup": 1.0,
-    "magnetic_pickup": 10,
+    "magnetic_pickup": 10.879,
     "long_time_delay": 10,
     "trip_units": [
      "cbi_l_tm"
     ],
     "default_trip_unit": "cbi_l_tm",
-    "source": "Reticmaster Data Library 2025-11 (CBI L Frame L20/L40 curves)",
-    "check": "Icu not in the data file; magnetic pickup 10 x In inferred from the end of the curve"
+    "source": "CBI data sheet L-SERIES-DAT MAR 2016 (L Frame; time delay curves L20 / L40 AC)"
    }
   },
   {
    "kind": "cbs",
    "data": {
-    "id": "cbi_l_250",
-    "name": "CBI L20/L40 250 A",
+    "id": "cbi_l20b_250",
+    "name": "CBI L20B 250 A",
     "cb_type": "mccb",
     "manufacturer": "CBI",
     "series": "L Frame",
-    "model": "L20 / L40",
+    "model": "L20B",
     "trip_rating_a": 250,
-    "frame_a": 250,
+    "frame_a": 600,
     "rated_voltage_kv": 0.4,
+    "breaking_ka": 20,
     "thermal_pickup": 1.0,
-    "magnetic_pickup": 10,
+    "magnetic_pickup": 10.879,
     "long_time_delay": 10,
     "trip_units": [
      "cbi_l_tm"
     ],
     "default_trip_unit": "cbi_l_tm",
-    "source": "Reticmaster Data Library 2025-11 (CBI L Frame L20/L40 curves)",
-    "check": "Icu not in the data file; magnetic pickup 10 x In inferred from the end of the curve"
+    "source": "CBI data sheet L-SERIES-DAT MAR 2016 (L Frame; time delay curves L20 / L40 AC)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_l20b_300",
+    "name": "CBI L20B 300 A",
+    "cb_type": "mccb",
+    "manufacturer": "CBI",
+    "series": "L Frame",
+    "model": "L20B",
+    "trip_rating_a": 300,
+    "frame_a": 600,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 20,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.879,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_l_tm"
+    ],
+    "default_trip_unit": "cbi_l_tm",
+    "source": "CBI data sheet L-SERIES-DAT MAR 2016 (L Frame; time delay curves L20 / L40 AC)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_l20b_350",
+    "name": "CBI L20B 350 A",
+    "cb_type": "mccb",
+    "manufacturer": "CBI",
+    "series": "L Frame",
+    "model": "L20B",
+    "trip_rating_a": 350,
+    "frame_a": 600,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 20,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.879,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_l_tm"
+    ],
+    "default_trip_unit": "cbi_l_tm",
+    "source": "CBI data sheet L-SERIES-DAT MAR 2016 (L Frame; time delay curves L20 / L40 AC)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_l20b_400",
+    "name": "CBI L20B 400 A",
+    "cb_type": "mccb",
+    "manufacturer": "CBI",
+    "series": "L Frame",
+    "model": "L20B",
+    "trip_rating_a": 400,
+    "frame_a": 600,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 20,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.879,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_l_tm"
+    ],
+    "default_trip_unit": "cbi_l_tm",
+    "source": "CBI data sheet L-SERIES-DAT MAR 2016 (L Frame; time delay curves L20 / L40 AC)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_l20b_450",
+    "name": "CBI L20B 450 A",
+    "cb_type": "mccb",
+    "manufacturer": "CBI",
+    "series": "L Frame",
+    "model": "L20B",
+    "trip_rating_a": 450,
+    "frame_a": 600,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 20,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.879,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_l_tm"
+    ],
+    "default_trip_unit": "cbi_l_tm",
+    "source": "CBI data sheet L-SERIES-DAT MAR 2016 (L Frame; time delay curves L20 / L40 AC)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_l20b_500",
+    "name": "CBI L20B 500 A",
+    "cb_type": "mccb",
+    "manufacturer": "CBI",
+    "series": "L Frame",
+    "model": "L20B",
+    "trip_rating_a": 500,
+    "frame_a": 600,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 20,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.879,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_l_tm"
+    ],
+    "default_trip_unit": "cbi_l_tm",
+    "source": "CBI data sheet L-SERIES-DAT MAR 2016 (L Frame; time delay curves L20 / L40 AC)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_l20b_600",
+    "name": "CBI L20B 600 A",
+    "cb_type": "mccb",
+    "manufacturer": "CBI",
+    "series": "L Frame",
+    "model": "L20B",
+    "trip_rating_a": 600,
+    "frame_a": 600,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 20,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.879,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_l_tm"
+    ],
+    "default_trip_unit": "cbi_l_tm",
+    "source": "CBI data sheet L-SERIES-DAT MAR 2016 (L Frame; time delay curves L20 / L40 AC)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_l40b_100",
+    "name": "CBI L40B 100 A",
+    "cb_type": "mccb",
+    "manufacturer": "CBI",
+    "series": "L Frame",
+    "model": "L40B",
+    "trip_rating_a": 100,
+    "frame_a": 600,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 40,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.879,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_l_tm"
+    ],
+    "default_trip_unit": "cbi_l_tm",
+    "source": "CBI data sheet L-SERIES-DAT MAR 2016 (L Frame; time delay curves L20 / L40 AC)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_l40b_125",
+    "name": "CBI L40B 125 A",
+    "cb_type": "mccb",
+    "manufacturer": "CBI",
+    "series": "L Frame",
+    "model": "L40B",
+    "trip_rating_a": 125,
+    "frame_a": 600,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 40,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.879,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_l_tm"
+    ],
+    "default_trip_unit": "cbi_l_tm",
+    "source": "CBI data sheet L-SERIES-DAT MAR 2016 (L Frame; time delay curves L20 / L40 AC)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_l40b_150",
+    "name": "CBI L40B 150 A",
+    "cb_type": "mccb",
+    "manufacturer": "CBI",
+    "series": "L Frame",
+    "model": "L40B",
+    "trip_rating_a": 150,
+    "frame_a": 600,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 40,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.879,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_l_tm"
+    ],
+    "default_trip_unit": "cbi_l_tm",
+    "source": "CBI data sheet L-SERIES-DAT MAR 2016 (L Frame; time delay curves L20 / L40 AC)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_l40b_175",
+    "name": "CBI L40B 175 A",
+    "cb_type": "mccb",
+    "manufacturer": "CBI",
+    "series": "L Frame",
+    "model": "L40B",
+    "trip_rating_a": 175,
+    "frame_a": 600,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 40,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.879,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_l_tm"
+    ],
+    "default_trip_unit": "cbi_l_tm",
+    "source": "CBI data sheet L-SERIES-DAT MAR 2016 (L Frame; time delay curves L20 / L40 AC)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_l40b_200",
+    "name": "CBI L40B 200 A",
+    "cb_type": "mccb",
+    "manufacturer": "CBI",
+    "series": "L Frame",
+    "model": "L40B",
+    "trip_rating_a": 200,
+    "frame_a": 600,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 40,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.879,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_l_tm"
+    ],
+    "default_trip_unit": "cbi_l_tm",
+    "source": "CBI data sheet L-SERIES-DAT MAR 2016 (L Frame; time delay curves L20 / L40 AC)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_l40b_225",
+    "name": "CBI L40B 225 A",
+    "cb_type": "mccb",
+    "manufacturer": "CBI",
+    "series": "L Frame",
+    "model": "L40B",
+    "trip_rating_a": 225,
+    "frame_a": 600,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 40,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.879,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_l_tm"
+    ],
+    "default_trip_unit": "cbi_l_tm",
+    "source": "CBI data sheet L-SERIES-DAT MAR 2016 (L Frame; time delay curves L20 / L40 AC)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_l40b_250",
+    "name": "CBI L40B 250 A",
+    "cb_type": "mccb",
+    "manufacturer": "CBI",
+    "series": "L Frame",
+    "model": "L40B",
+    "trip_rating_a": 250,
+    "frame_a": 600,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 40,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.879,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_l_tm"
+    ],
+    "default_trip_unit": "cbi_l_tm",
+    "source": "CBI data sheet L-SERIES-DAT MAR 2016 (L Frame; time delay curves L20 / L40 AC)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_l40b_300",
+    "name": "CBI L40B 300 A",
+    "cb_type": "mccb",
+    "manufacturer": "CBI",
+    "series": "L Frame",
+    "model": "L40B",
+    "trip_rating_a": 300,
+    "frame_a": 600,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 40,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.879,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_l_tm"
+    ],
+    "default_trip_unit": "cbi_l_tm",
+    "source": "CBI data sheet L-SERIES-DAT MAR 2016 (L Frame; time delay curves L20 / L40 AC)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_l40b_350",
+    "name": "CBI L40B 350 A",
+    "cb_type": "mccb",
+    "manufacturer": "CBI",
+    "series": "L Frame",
+    "model": "L40B",
+    "trip_rating_a": 350,
+    "frame_a": 600,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 40,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.879,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_l_tm"
+    ],
+    "default_trip_unit": "cbi_l_tm",
+    "source": "CBI data sheet L-SERIES-DAT MAR 2016 (L Frame; time delay curves L20 / L40 AC)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_l40b_400",
+    "name": "CBI L40B 400 A",
+    "cb_type": "mccb",
+    "manufacturer": "CBI",
+    "series": "L Frame",
+    "model": "L40B",
+    "trip_rating_a": 400,
+    "frame_a": 600,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 40,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.879,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_l_tm"
+    ],
+    "default_trip_unit": "cbi_l_tm",
+    "source": "CBI data sheet L-SERIES-DAT MAR 2016 (L Frame; time delay curves L20 / L40 AC)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_l40b_450",
+    "name": "CBI L40B 450 A",
+    "cb_type": "mccb",
+    "manufacturer": "CBI",
+    "series": "L Frame",
+    "model": "L40B",
+    "trip_rating_a": 450,
+    "frame_a": 600,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 40,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.879,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_l_tm"
+    ],
+    "default_trip_unit": "cbi_l_tm",
+    "source": "CBI data sheet L-SERIES-DAT MAR 2016 (L Frame; time delay curves L20 / L40 AC)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_l40b_500",
+    "name": "CBI L40B 500 A",
+    "cb_type": "mccb",
+    "manufacturer": "CBI",
+    "series": "L Frame",
+    "model": "L40B",
+    "trip_rating_a": 500,
+    "frame_a": 600,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 40,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.879,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_l_tm"
+    ],
+    "default_trip_unit": "cbi_l_tm",
+    "source": "CBI data sheet L-SERIES-DAT MAR 2016 (L Frame; time delay curves L20 / L40 AC)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_l40b_600",
+    "name": "CBI L40B 600 A",
+    "cb_type": "mccb",
+    "manufacturer": "CBI",
+    "series": "L Frame",
+    "model": "L40B",
+    "trip_rating_a": 600,
+    "frame_a": 600,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 40,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.879,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_l_tm"
+    ],
+    "default_trip_unit": "cbi_l_tm",
+    "source": "CBI data sheet L-SERIES-DAT MAR 2016 (L Frame; time delay curves L20 / L40 AC)"
    }
   }
  ]

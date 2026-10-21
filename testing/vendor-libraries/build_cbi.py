@@ -1,115 +1,114 @@
 #!/usr/bin/env python3
-"""CBI L-frame (L20 / L40) thermal-magnetic moulded-case breaker library, 100-250 A.
+"""CBI L Frame (L20B / L40B) thermal-magnetic moulded-case breaker library, 100-600 A.
 
-Writes, from the Reticmaster data library (never edit the outputs by hand):
+Writes, from data/cbi_l_curves.json (never edit the outputs by hand):
   testing/vendor-libraries/cbi_breakers.json   import file — {"entries": [{"kind": "cbs", "data": {...}}]}
   frontend/js/vendor-trip-units-cbi.js         the trip-unit profile the entries point at (TRIP_UNITS)
 
-Source: "Reticmaster Data Library 2025-11.ii", the seven `[CBI - L Frame - L20/L40 - <n>A]`
-relay-curve sections (Curve Type = 3, user curve): `Time` (s) against `Current` (kA).
+Source: CBI data sheet L-SERIES-DAT (MAR 2016) — Technical Data / Ordering Information (ratings,
+Icu / Ics at 415 V) and page 5 "Time Delay Curves", L20 / L40 AC, 30 C: the minimum and maximum
+curves digitised from the PDF's vector chart by digitize_cbi.py, and checked against the
+sheet's own "Time Delay Data" table (130 / 200 / 300 / 400 / 600 / 1000 %).
 
 What the numbers mean
 ---------------------
-The seven sections are one curve: dividing `Current` by the rating gives the same
-multiple of In for the same time at every rating (1.3 x In at 6000 s ... 10 x In at
-0.24 s). The 100 A section is the finest, so its points are the library's
-`thermal_curve` (M = I / In, the Ir dial is fixed at 1.0). Thermal-magnetic, fixed.
+One curve serves every rating and both frames (the time depends on the % of rated current).
+The maximum curve is the long-time curve the engines clear on (`thermal_curve`); the minimum
+curve is the fastest the breaker may trip (`long_time.min_points`), so the TCC draws the band.
+The sheet's no-trip / trip limits: no trip below 1.065 x In, trips above 1.32 x In.
+The magnetic element is hydraulic: the curves fall steeply between 3.3 x and 7.8 x In and
+reach their flat instantaneous times at 8.2 x In (minimum, 4 ms) and 13.6 x In (maximum,
+17.5 ms). The fixed pickup is the middle of that band (10.9 x In, +/-24.9 %), a multiple of In.
 
 Known simplifications (recorded, not hidden)
 --------------------------------------------
-* No published tolerance band: `curve.tol` is absent, so the TCC draws the single curve
-  and the engines clear on it.
-* The data file stops at 10 x In. The magnetic pickup is taken as 10 x In (fixed) from
-  where the curve ends; the file's "Instantaneous Trip Setting = 10000" is a
-  Reticmaster placeholder, not a CBI figure.
-* Icu / Icn are not in the data file, so the entries carry no `breaking_ka` — add it
-  from the CBI catalogue before using the duty check.
+* The sheet's table gives 0.24 s for the maximum curve at 1000 %; the chart (and the curve's
+  own corner) says 0.024 s. The chart is used — 0.24 s is a misprint.
+* The Reticmaster data library carries the maximum curve only, ending at that 0.24 s point;
+  it is not used.
+* Only the AC curve is modelled; the L20 / L40 DC curve (a different table) is not.
+* The curve is the 30 C curve; the sheet's temperature-compensation curve is "available on request".
+* Terminations, the 20 kA "N" / DC switch-disconnector variants and Ics 20 kA of the L40B
+  (50 % of Icu) are not otherwise modelled; Ics is not carried.
 
 Run:  python testing/vendor-libraries/build_cbi.py
 """
 import json
+import math
 import os
-import re
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(HERE))
 MAKER = "CBI"
-SOURCE = "Reticmaster Data Library 2025-11 (CBI L Frame L20/L40 curves)"
+SOURCE = "CBI data sheet L-SERIES-DAT MAR 2016 (L Frame; time delay curves L20 / L40 AC)"
 UNIT = "cbi_l_tm"
-II_X_IN = 10
-DEFAULT_SRC = "/mnt/cloud/JachoDevMoore/Scratchpad/R5421 - Reticmaster/Reticmaster Data Library 2025-11.ii"
+RATINGS = [100, 125, 150, 175, 200, 225, 250, 300, 350, 400, 450, 500, 600]
+ICU = {"L20B": 20, "L40B": 40}                          # kA @ 415 V
+FLAT_TOL = 1.02                                         # a curve is "flat" within 2 % of its floor
 
 
-def read_sections(path):
-    text = open(path, encoding="latin1").read().replace("\r", "")
-    out = {}
-    for m in re.finditer(r"\[CBI - L Frame - L20/L40 - (\d+)A\]\n(.*?)(?=\n\[|\Z)", text, re.S):
-        d = dict(l.split(" = ", 1) for l in m.group(2).split("\n") if " = " in l)
-        t, i = [float(x) for x in d["Time"].split()], [float(x) for x in d["Current"].split()]
-        assert len(t) == len(i), m.group(1)
-        out[int(m.group(1))] = list(zip(i, t))     # (kA, s)
-    return out
+def curves():
+    return json.load(open(os.path.join(HERE, "data", "cbi_l_curves.json")))
 
 
-def curve_points(sections):
-    inn = 100
-    pts = [[round(ka * 1000 / inn, 4), t] for ka, t in sections[inn]]
-    # every other rating must trace the same curve in x In
-    from math import log10
-    for r, s in sections.items():
-        for ka, t in s:
-            m = ka * 1000 / r
-            # interpolate on log-log between neighbours
-            lo = max((p for p in pts if p[0] <= m), key=lambda p: p[0], default=pts[0])
-            hi = min((p for p in pts if p[0] >= m), key=lambda p: p[0], default=pts[-1])
-            if hi[0] == lo[0]:
-                ref = lo[1]
-            else:
-                f = (log10(m) - log10(lo[0])) / (log10(hi[0]) - log10(lo[0]))
-                ref = 10 ** (log10(lo[1]) + f * (log10(hi[1]) - log10(lo[1])))
-            assert abs(ref / t - 1) < 0.03, (r, m, t, ref)
-    return pts
+def _flat_from(pts):
+    floor = pts[-1][1]
+    return next(m for m, t in pts if t <= floor * FLAT_TOL)
 
 
-def profiles(pts):
+def profiles():
+    c = curves()
+    lo, hi = _flat_from(c["min"]), _flat_from(c["max"])
+    mid = round((lo + hi) / 2, 3)
+    tol = math.floor((hi - lo) / (hi + lo) * 1e5) / 1e5   # rounded DOWN: nominal x (1 + tol) never passes the band's top
     return {UNIT: {
-        "maker": MAKER, "label": "CBI L-frame thermal-magnetic (L20 / L40)", "kind": "tm",
-        "curve": {"model": "points", "thermal": {"points": pts}},
+        "maker": MAKER, "catalogue": "L-SERIES-DAT MAR 2016", "label": "CBI L-frame thermal-magnetic (L20 / L40)",
+        "kind": "tm",
+        "curve": {"model": "points", "thermal": {"points": c["max"]}, "tol": {
+            "pickup": [c["min"][0][0], c["max"][0][0]],   # no trip below / trip above (x In)
+            "long_time": {"min_points": c["min"]},
+            "instantaneous": {"pickup_tol": tol, "hold_s": c["min"][-1][1], "break_s": c["max"][-1][1]}}},
         "dials": {
             "thermal_pickup": {"fixed": True, "def": 1.0},
-            "magnetic_pickup": {"fixed": True, "def": II_X_IN, "base": "In"},
+            "magnetic_pickup": {"fixed": True, "def": mid, "base": "In"},
         },
     }}
 
 
-def entries(ratings):
-    return [{"kind": "cbs", "data": {
-        "id": f"cbi_l_{inn}", "name": f"CBI L20/L40 {inn} A", "cb_type": "mccb",
-        "manufacturer": MAKER, "series": "L Frame", "model": "L20 / L40",
-        "trip_rating_a": inn, "frame_a": 250, "rated_voltage_kv": 0.4,
-        "thermal_pickup": 1.0, "magnetic_pickup": II_X_IN, "long_time_delay": 10,
-        "trip_units": [UNIT], "default_trip_unit": UNIT, "source": SOURCE,
-        "check": "Icu not in the data file; magnetic pickup 10 x In inferred from the end of the curve",
-    }} for inn in sorted(ratings)]
+def entries(mid):
+    out = []
+    for model, icu in ICU.items():
+        for inn in RATINGS:
+            out.append({"kind": "cbs", "data": {
+                "id": f"cbi_{model.lower()}_{inn}", "name": f"CBI {model} {inn} A", "cb_type": "mccb",
+                "manufacturer": MAKER, "series": "L Frame", "model": model,
+                "trip_rating_a": inn, "frame_a": 600, "rated_voltage_kv": 0.4, "breaking_ka": icu,
+                "thermal_pickup": 1.0, "magnetic_pickup": mid, "long_time_delay": 10,
+                "trip_units": [UNIT], "default_trip_unit": UNIT, "source": SOURCE,
+            }})
+    return out
 
 
 def js_profiles(p):
     return (
         "// GENERATED by testing/vendor-libraries/build_cbi.py — do not edit by hand.\n"
-        "// CBI L-frame (L20 / L40) thermal-magnetic trip-unit profile. `curve.thermal` is the curve digitised\n"
-        "// in the Reticmaster data library, (multiple of In, seconds); copied onto the breaker as `thermal_curve`.\n"
+        "// CBI L-frame (L20B / L40B) thermal-magnetic trip-unit profile. `curve.thermal` is the published maximum\n"
+        "// time-delay curve (x In, s), `curve.tol.long_time.min_points` the minimum curve (copied onto the breaker\n"
+        "// as `thermal_curve` / `trip_tol`, see cbTripBand); the magnetic pickup is a multiple of In.\n"
         f"Object.assign(TRIP_UNITS, {json.dumps(p, indent=1)});\n"
     )
 
 
 if __name__ == "__main__":
-    import sys
-    sec = read_sections(sys.argv[1] if len(sys.argv) > 1 else DEFAULT_SRC)
-    pts = curve_points(sec)
-    ents = entries(sec)
+    prof = profiles()
+    mid = prof[UNIT]["dials"]["magnetic_pickup"]["def"]
+    ents = entries(mid)
+    ids = [e["data"]["id"] for e in ents]
+    assert len(ids) == len(set(ids))
     with open(os.path.join(HERE, "cbi_breakers.json"), "w") as f:
         json.dump({"entries": ents}, f, indent=1)
         f.write("\n")
     with open(os.path.join(ROOT, "frontend", "js", "vendor-trip-units-cbi.js"), "w") as f:
-        f.write(js_profiles(profiles(pts)))
-    print(f"{len(ents)} entries, 1 trip-unit profile, {len(pts)} curve points")
+        f.write(js_profiles(prof))
+    t = prof[UNIT]["curve"]["tol"]
+    print(f"{len(ents)} entries, 1 trip-unit profile; Im {mid} x In +/-{t['instantaneous']['pickup_tol']}, pickup {t['pickup']}")
