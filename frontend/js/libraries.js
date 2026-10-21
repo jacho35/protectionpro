@@ -433,7 +433,8 @@ const Libraries = {
   },
 
   // Import entries from a JSON file — `{"entries": [{"kind": "cbs", "data": {...}}]}` (the vendor library
-  // files) or a company-library export (`kind` + `data` per entry). Create-only: existing ids are skipped.
+  // files) or a company-library export (`kind` + `data` per entry). An id that already exists is skipped,
+  // or — if asked — replaced by the file's entry (a shared library keeps its version history).
   async _importJson() {
     const SD = StandardData;
     const file = await new Promise(resolve => {
@@ -457,32 +458,47 @@ const Libraries = {
       m.setAttribute('role', 'dialog'); m.setAttribute('aria-modal', 'true');
       m.innerHTML = `<div class="modal-content" style="max-width:520px;width:92vw">
         <div class="modal-header"><h3>Import ${escHtml(file.name)}</h3></div>
-        <div class="modal-body"><p style="margin:0 0 10px">${escHtml(counts)} found. Entries whose id already exists in the destination are skipped.</p>
-          <label>Add them to <select data-f="dest" style="width:100%"><option value="mine">My library</option>${editable.map(l => `<option value="${l.id}">Shared library “${escHtml(l.name)}”</option>`).join('')}</select></label></div>
+        <div class="modal-body"><p style="margin:0 0 10px">${escHtml(counts)} found. </p>
+          <label>Add them to <select data-f="dest" style="width:100%"><option value="mine">My library</option>${editable.map(l => `<option value="${l.id}">Shared library “${escHtml(l.name)}”</option>`).join('')}</select></label>
+          <label style="display:block;margin-top:12px"><input type="checkbox" data-f="replace"> Replace entries that already exist (same id)</label>
+          <p class="subm-hint" style="margin:4px 0 0">Unticked, an entry whose id is already in the destination is skipped and left as it is.</p></div>
         <div class="ui-dialog-actions" style="padding:12px 16px;display:flex;gap:8px;justify-content:flex-end">
           <button type="button" class="btn-small" data-a="cancel">Cancel</button><button type="button" class="btn-primary" data-a="ok">Import</button></div></div>`;
       document.body.appendChild(m);
       const end = v => { m.remove(); resolve(v); };
-      m.addEventListener('click', ev => { const a = ev.target.closest('[data-a]'); if (a) end(a.dataset.a === 'ok' ? m.querySelector('[data-f="dest"]').value : null); });
+      m.addEventListener('click', ev => { const a = ev.target.closest('[data-a]'); if (a) end(a.dataset.a === 'ok' ? { dest: m.querySelector('[data-f="dest"]').value, replace: m.querySelector('[data-f="replace"]').checked } : null); });
       m.addEventListener('keydown', ev => { if (ev.key === 'Escape') end(null); });
       m.querySelector('[data-a="ok"]').focus();
     });
     if (!dest) return;
+    const replace = dest.replace;
     try {
-      if (dest === 'mine') {
-        let added = 0;
+      if (dest.dest === 'mine') {
+        let added = 0, replaced = 0, skipped = 0;
         const t = SD._editTarget; SD._editTarget = null;          // your own library, never a shared one being edited
         for (const { key, e } of items) {
-          if (SD[key].some(x => x.id === e.id)) continue;
-          SD[key].push(SD._clone(e)); added++;
+          const at = SD[key].findIndex(x => x.id === e.id);
+          if (at < 0) { SD[key].push(SD._clone(e)); added++; }
+          else if (replace) { SD[key][at] = SD._clone(e); replaced++; }
+          else skipped++;
         }
         SD._syncAll();
         SD._editTarget = t;
-        UI.toast(`Imported ${added}${items.length - added ? `, skipped ${items.length - added} that already exist` : ''}.`, 'success', 5000);
+        UI.toast(`Imported ${added}${replaced ? `, replaced ${replaced}` : ''}${skipped ? `, skipped ${skipped} that already exist` : ''}.`, 'success', 5000);
       } else {
-        const r = await API.importSharedEntries(parseInt(dest), items.map(i => ({ kind: i.key, data: i.e })));
+        const L = (SD._sharedLayers || []).find(l => l.id === parseInt(dest.dest));
+        const have = (key, id) => ((L && L.entries) || []).find(x => x.kind === key && x.data.id === id);
+        let created = 0, replaced = 0, skipped = 0, conflicts = 0;
+        if (replace) {
+          const r = await API.upsertSharedEntries(L.id, items.map(i => { const h = have(i.key, i.e.id); return { kind: i.key, data: i.e, base_version: h ? h.version : null }; }));
+          created = r.created.length; replaced = r.updated.length; conflicts = r.conflicts.length;
+          skipped = items.length - created - replaced - conflicts;      // identical to what is there: no new version
+        } else {
+          const r = await API.importSharedEntries(L.id, items.map(i => ({ kind: i.key, data: i.e })));
+          created = r.created.length; skipped = r.skipped.length;
+        }
         await SD.reloadShared();
-        UI.toast(`Imported ${r.created.length}${r.skipped.length ? `, skipped ${r.skipped.length} that already exist` : ''}.`, 'success', 5000);
+        UI.toast(`Imported ${created}${replaced ? `, replaced ${replaced}` : ''}${skipped ? `, ${replace ? 'unchanged' : 'skipped'} ${skipped}${replace ? '' : ' that already exist'}` : ''}${conflicts ? `, ${conflicts} not replaced (changed by someone else — try again)` : ''}.`, conflicts ? 'warning' : 'success', 6000);
       }
     } catch (err) { UI.toast('Import failed: ' + err.message, 'error', 8000); }
     this._render(); this.refreshBadge();
