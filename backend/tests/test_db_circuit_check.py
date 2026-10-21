@@ -529,3 +529,49 @@ class TestIntegration:
             "T", 100.0, 50, components=components, sections=["db_diagrams"],
             db_diagrams={"no-such-board": "data:image/png;base64," + png}).getvalue()
         assert stray.startswith(b"%PDF")
+
+
+# ── Maximum fault level (mini TCC: breaking capacity, cable I²t) ─────────
+
+class TestMaxFaultLevel:
+    def test_board_ik3_matches_fault_engine(self):
+        """The board's maximum Ik3 must equal run_fault_analysis at c_max."""
+        p = _board_project([_way()])
+        res = run_db_circuit_check(p)
+        r = _rows(res)["w1"]
+        assert r["ik3_basis"] == "thevenin"
+        fr = run_fault_analysis(p, fault_bus_id="db-1", fault_type="3phase",
+                                voltage_factor=1.10)
+        assert r["ik3_max_a"] == pytest.approx(fr.buses["db-1"].ik3 * 1000.0, rel=0.02)
+        assert res["boards"][0]["ik3_max_a"] == r["ik3_max_a"]
+
+    def test_declared_ik_max_wins(self):
+        p = _board_project([_way()], board_props={"ik_max_ka": 10})
+        r = _rows(run_db_circuit_check(p))["w1"]
+        assert r["ik3_basis"] == "declared"
+        assert r["ik3_max_a"] == pytest.approx(10000.0, rel=1e-3)
+
+    def test_unwired_board_has_no_level(self):
+        p = _board_project([_way()], wired=False)
+        r = _rows(run_db_circuit_check(p))["w1"]
+        assert r["ik3_max_a"] is None
+
+    def test_fed_board_chains_through_feeder_cable(self):
+        """A board fed by another board's way sees less than the parent."""
+        parent = _comp("db-1", "distribution_board", {
+            "name": "MDB", "voltage_kv": 0.4, "ik_max_ka": 20,
+            "circuits": [_way(id="f1", cable_mm2=16, cable_m=60, breaker_a=63,
+                              feedsDbId="db-2")]})
+        child = _comp("db-2", "distribution_board", {
+            "name": "DB-2", "voltage_kv": 0.4, "circuits": [_way(id="c1")]})
+        p = ProjectData(name="t", components=[parent, child], wires=[],
+                        baseMVA=100.0, frequency=50)
+        res = run_db_circuit_check(p)
+        c = _rows(res)["c1"]
+        assert c["ik3_basis"] == "chained"
+        assert 0 < c["ik3_max_a"] < 20000.0
+
+    def test_cable_k_follows_insulation(self):
+        p = _board_project([_way()], board_props={
+            "way_install": {"conductor": "Cu", "insulation": "XLPE"}})
+        assert _rows(run_db_circuit_check(p))["w1"]["cable_k"] == 143.0

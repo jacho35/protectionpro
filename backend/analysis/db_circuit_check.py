@@ -487,6 +487,72 @@ def _resolve_supply_impedance(project, boards, req_default_ze):
     return resolved
 
 
+# ─── Supply-side maximum fault level (breaking capacity, cable I²t) ────────
+
+def _thevenin_z1_max_ohm(project, board_id, v_ll):
+    """Positive-sequence impedance looking back from a board at the maximum
+    fault basis (IEC 60909-0 c_max, motor infeeds included), in ohms."""
+    try:
+        from .fault import thevenin_sequence_at_bus
+        z1, _z2, _z0 = thevenin_sequence_at_bus(project, board_id, c=C_MAX)
+    except Exception:
+        return None
+    if z1 is None or abs(z1) >= 1e9 or abs(z1) <= 0:
+        return None
+    base_mva = _num(getattr(project, "baseMVA", 100.0), 100.0) or 100.0
+    z = z1 * ((v_ll / 1000.0) ** 2 / base_mva)
+    return z if math.isfinite(z.real) and math.isfinite(z.imag) else None
+
+
+def _resolve_fault_z1(project, boards):
+    """Per-board ``(z1_ohm, basis)`` for the MAXIMUM three-phase fault level.
+
+    A declared ``ik_max_ka`` wins, then the network behind the board, then the
+    feeding board's level plus the feeder cable (``feedsDbId``), the same order
+    as the Ze resolution. The cable is taken at 20 °C: the maximum fault is the
+    lowest impedance (IEC 60909-0 §2.4).
+    """
+    resolved = {}
+    parents = _feeder_parent_map(boards)
+    by_id = {b.id: b for b in boards}
+
+    def resolve(board_id, seen):
+        if board_id in resolved:
+            return resolved[board_id]
+        if board_id in seen:
+            resolved[board_id] = (None, "cycle")
+            return resolved[board_id]
+        seen.add(board_id)
+        board = by_id[board_id]
+        v_ll = _num(board.props.get("voltage_kv"), 0.4) * 1000.0
+        declared = _num(board.props.get("ik_max_ka"))
+        if declared > 0 and v_ll > 0:
+            out = (complex(C_MAX * (v_ll / math.sqrt(3)) / (declared * 1000.0), 0.0), "declared")
+        else:
+            z = _thevenin_z1_max_ohm(project, board_id, v_ll) if v_ll > 0 else None
+            if z is not None:
+                out = (z, "thevenin")
+            else:
+                out = (None, "unavailable")
+                parent = parents.get(board_id)
+                if parent is not None:
+                    p_board, p_way = parent
+                    p_z, _b = resolve(p_board.id, seen)
+                    size = _num(p_way.get("cable_mm2"))
+                    inst = _board_install(p_board, {})
+                    r_hot = _r_hot_per_km(size, inst["conductor"], inst["insulation"])
+                    if p_z is not None and r_hot is not None:
+                        tc = _temp_correction(_cond(inst["conductor"]), inst["insulation"]) or 1.0
+                        length_km = _num(p_way.get("cable_m")) / 1000.0
+                        out = (p_z + complex(r_hot / tc, _x_per_km(size)) * length_km, "chained")
+        resolved[board_id] = out
+        return out
+
+    for b in boards:
+        resolve(b.id, set())
+    return resolved
+
+
 # ─── Main entry point ─────────────────────────────────────────────────────
 
 def _section_contexts(sections, circuits, v_ll):
@@ -638,6 +704,7 @@ def run_db_circuit_check(project, ambient_temp_c=None, install_method=None,
             "circuit's own contribution only and excludes upstream drop.")
 
     supply = _resolve_supply_impedance(project, boards, default_ze_ohm)
+    fault_z1 = _resolve_fault_z1(project, boards)
 
     rows = []
     board_rows = []
@@ -648,6 +715,8 @@ def run_db_circuit_check(project, ambient_temp_c=None, install_method=None,
         v_ph = v_ll / math.sqrt(3) if v_ll > 0 else 0.0
         install = _board_install(board, req)
         z_supply, z_basis = supply.get(board.id, (None, "unavailable"))
+        z1_max, z1_basis = fault_z1.get(board.id, (None, "unavailable"))
+        ik3_max_a = (C_MAX * v_ph / abs(z1_max)) if (z1_max is not None and v_ph > 0) else None
         # [DB3] Upstream drop from the ORIGIN of the installation (the bus of
         # the board's voltage zone fed by a source or transformer), not from
         # 1.0 p.u.: with the source at 1.05 p.u. a 5.9 % drop to the board
@@ -685,6 +754,9 @@ def run_db_circuit_check(project, ambient_temp_c=None, install_method=None,
             row = _check_way(way, board, board_name, v_ll, v_ph, install,
                              z_w, basis_w, vd_up_w, lf_ok,
                              el_ratings, b_light, b_general, earthing)
+            row["ik3_max_a"] = _round(ik3_max_a, 1)
+            row["ik3_basis"] = z1_basis
+            row["cable_k"] = _round(_k_pe(install), 1)
             row["vd_origin"] = origin_name
             if sec_name:
                 row["section"] = sec_name
@@ -700,6 +772,8 @@ def run_db_circuit_check(project, ambient_temp_c=None, install_method=None,
             if circuits else "pass",
             "z_supply_ohm": _round(abs(z_supply) if z_supply is not None else None, 4),
             "z_supply_basis": z_basis,
+            "ik3_max_a": _round(ik3_max_a, 1),
+            "ik3_basis": z1_basis,
             "earthing_system": earthing,
             "vd_origin": origin_name,
             "vd_limits_pct": [b_light, b_general],

@@ -60,6 +60,7 @@ frontend/
     ├── templates.js        # Pre-built network templates (radial, ring, mesh)
     ├── tcc.js              # Time-current curve coordination plotting
     ├── dynmotor.js         # Dynamic motor starting modal + SVG time-series charts
+    ├── dbcoord.js          # DbCoord — library breaker per schedule way (`way.device` 'cb:<id>'; board `incoming_device`, `ik_max_ka`) and the mini TCC (Coord column → modal): way → incoming → feeder-way breakers on cbTripBand, discrimination / cable I²t / Icu checks against the circuit check's `ik3_max_a` + `ief_a`; plot reuses the .rtcc-* rules
     ├── dbschedule.js       # DB circuit schedule grid — renders into the #db-modal OR the Schedules workspace
     ├── dbsections.js       # DBSections — board sections/compartments (Normal / Essential / UPS): model, schedule panel + tabs, per-section totals; consumed by dbdrawing.js, ga.js and the circuit check
     ├── schedules.js        # Schedules workspace (every board: rail + full-height grid + per-way circuit check)

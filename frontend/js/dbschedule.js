@@ -302,6 +302,8 @@ const DBSchedule = {
       el_ratings: comp.props.el_ratings || {},
       way_install: comp.props.way_install || null,
       ze_ohm: comp.props.ze_ohm ?? null,
+      incoming_device: comp.props.incoming_device || '',
+      ik_max_ka: comp.props.ik_max_ka ?? null,
       sections: comp.props.sections || null,
       segregation: comp.props.segregation || null,
     };
@@ -557,6 +559,36 @@ const DBSchedule = {
       if (req != null) { c.ecc_mm2 = req; n++; }
     }
     return n;
+  },
+
+  // Board-level protection inputs for the mini TCC: the incoming breaker and a
+  // declared maximum fault level. Written only when changed, so merely opening
+  // a board never dirties it (commit() diffs both).
+  _bindProtStrip(comp) {
+    const dev = this.body.querySelector('#db-incoming-dev');
+    const ik = this.body.querySelector('#db-ik-max');
+    if (!dev || !ik) return;
+    dev.addEventListener('change', () => {
+      comp.props.incoming_device = dev.value;
+      this._paintResults();
+      this._notifyEdited();
+    });
+    ik.addEventListener('change', () => {
+      const v = parseFloat(ik.value);
+      comp.props.ik_max_ka = v > 0 ? v : null;
+      this._notifyEdited();
+    });
+    this._paintProtNote(comp);
+  },
+
+  _paintProtNote(comp) {
+    const el = this.body && this.body.querySelector('#db-ik-basis');
+    if (!el) return;
+    const r = DbCoord._boardResult(comp.id);
+    const basis = { declared: 'entered', thevenin: 'from the SLD network', chained: 'feeding board less feeder cable' };
+    el.textContent = r && r.ik3_max_a
+      ? `Ik max ${DbCoord.fmtA(r.ik3_max_a)} (${basis[r.ik3_basis] || r.ik3_basis})`
+      : 'Run the circuit check for the fault level';
   },
 
   // ── Backend circuit check ───────────────────────────────────────────
@@ -988,7 +1020,7 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
     if (!this.body) return;
     const comp = AppState.components.get(this.currentId);
     const byId = new Map((comp ? (comp.props.circuits || []) : []).map(c => [c.id, c]));
-    this.body.querySelectorAll('td.db-res').forEach(td => {
+    this.body.querySelectorAll('td.db-res[data-res]').forEach(td => {
       const row = this._resIndex ? this._resIndex.get(this._resKey(this.currentId, td.dataset.id)) : null;
       const kind = td.dataset.res;
       let text = '—', status = 'none', title = 'Run "Check circuits" to compute';
@@ -1021,8 +1053,17 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
       td.className = `db-res st-${status}`;
       td.title = row ? `${title}\n\nClick for the full calculation.` : title;
     });
+    this.body.querySelectorAll('td.db-coord').forEach(td => {
+      const way = byId.get(td.dataset.id);
+      if (!comp || !way) return;
+      const ch = DbCoord.chip(comp, way);
+      td.textContent = ch.label;
+      td.className = `db-coord db-res st-${ch.status === 'info' ? 'none' : ch.status}`;
+      td.title = ch.title;
+    });
     // The FLA tooltip quotes the backend's Ib once one exists.
     this._paintFla(comp);
+    if (comp) this._paintProtNote(comp);
     // Refresh the ⚠ glyphs, whose tooltips fold in the backend messages.
     this._repaintWarnings();
   },
@@ -1152,6 +1193,10 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
       this._sortByWay(comp);
       return 'render';
     }
+    // A library breaker writes its rating + curve; hand-editing either afterwards
+    // makes the way a generic B/C/D breaker again.
+    if (k === 'device') { DbCoord.applyToWay(c, v); return 'render'; }
+    if ((k === 'breaker_a' || k === 'curve') && c.device) c.device = '';
     // Coerce by FIELD, not by input type: the cable/ECC cells are text
     // inputs but still hold numbers. A blank ECC means "Table 54.7 minimum",
     // so it stays null rather than collapsing to 0.
@@ -1209,6 +1254,7 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
         c.demand_factor = t.df;
         c.breaker_a = t.breaker_a;
         c.curve = t.curve;
+        c.device = '';
         c.cable_mm2 = t.cable_mm2;
         c.ecc_mm2 = t.ecc_mm2 ?? null;
         c.leakage_ma = t.leak_ma || 0;
@@ -1283,6 +1329,7 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
         ${secCell(c)}
         <td data-label="Description" class="db-col-desc"><input type="text" data-k="description" list="db-load-datalist" value="${escHtml(c.description || '')}" style="width:100%"></td>
         <td data-label="Breaker (A)" class="db-col-breaker"><input type="number" data-k="breaker_a" value="${escHtml(c.breaker_a ?? 20)}" min="1" step="1" style="width:68px"></td>
+        <td data-label="Device" class="db-col-device"><select data-k="device" class="db-device-sel" title="Pick a breaker from the library: its rating and curve are written to the way, and the mini TCC plots its published curve. Generic keeps the plain rating + B/C/D curve.">${DbCoord.optionsHtml(c.device || '')}</select></td>
         <td data-label="Load (VA)" class="db-col-load"><input type="number" data-k="load_va" value="${escHtml(c.load_va ?? 0)}" min="0" step="50" style="width:88px"></td>
         <td data-label="Poles" data-grp="dev"><select data-k="poles">${opt('1P', c.poles || '1P')}${opt('3P', c.poles || '1P')}</select></td>
         <td data-label="Phase" data-grp="dev"><select data-k="phase" ${((c.poles || '1P') === '3P') ? 'disabled' : ''}>
@@ -1305,6 +1352,7 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
         <td data-label="Iz (A)" class="db-res st-none" data-res="iz" data-id="${escHtml(c.id)}">—</td>
         <td data-label="%VD" class="db-res st-none" data-res="vd" data-id="${escHtml(c.id)}">—</td>
         <td data-label="ECC ✓" class="db-res st-none" data-res="ecc" data-id="${escHtml(c.id)}">—</td>
+        <td data-label="Coord" class="db-coord st-none" data-id="${escHtml(c.id)}">—</td>
         <td data-label="" class="db-row-actions" style="white-space:nowrap;">${this._wayStatusHtml(c, i, vll)}<button class="btn-small db-del-row" data-idx="${i}" title="Remove way">&times;</button></td>
       </tr>`).join('');
 
@@ -1359,21 +1407,28 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
       <datalist id="db-mm2-datalist">${mm2Options}</datalist>
       <div id="db-sections-panel">${DBSections.panelHTML(comp)}</div>
       ${DBSections.tabsHTML(comp)}
+      <div class="db-prot-strip" id="db-prot-strip">
+        <label title="The board's incoming breaker: the first device above every way in the mini TCC and the discrimination check.">Incoming device
+          <select id="db-incoming-dev">${DbCoord.optionsHtml(comp.props.incoming_device || '', 'None set')}</select></label>
+        <label title="Maximum three-phase fault level at this board. Blank takes it from the network on the SLD, or from the feeding board's level less its feeder cable.">Ik max (kA)
+          <input type="number" id="db-ik-max" min="0" step="0.1" value="${comp.props.ik_max_ka == null ? '' : escHtml(comp.props.ik_max_ka)}" placeholder="auto"></label>
+        <span id="db-ik-basis" class="db-prot-note"></span>
+      </div>
       <div class="db-phase-bars">${barsHtml}</div>
       <div id="db-bulk-bar"></div>
       <div class="library-table-wrap db-schedule-grid${foldCls}">
         <table class="library-table" style="width:100%;font-size:13px;">
           <thead><tr class="db-grp-row">
             <th class="db-sel-cell"></th><th class="db-col-way"></th>${hasSec ? '<th class="db-col-sec"></th>' : ''}<th class="db-col-desc"></th>
-            <th class="db-col-breaker"></th><th class="db-col-load"></th>
+            <th class="db-col-breaker"></th><th class="db-col-device"></th><th class="db-col-load"></th>
             ${this._GROUPS.map(grpHead).join('')}
             <th class="db-fla-h db-grp-check">Check</th>
             <th class="db-res-h" data-res="iz"></th><th class="db-res-h" data-res="vd"></th>
-            <th class="db-res-h" data-res="ecc"></th><th></th>
+            <th class="db-res-h" data-res="ecc"></th><th class="db-res-h"></th><th></th>
           </tr><tr>
             <th class="db-sel-cell"><input type="checkbox" id="db-select-all" title="Select / deselect all ways. Shift-click a row checkbox to select a range."></th>
             <th class="db-col-way">Way</th>${hasSec ? '<th class="db-col-sec">Section</th>' : ''}<th class="db-col-desc">Description</th>
-            <th class="db-col-breaker">Breaker (A)</th><th class="db-col-load">Load (VA)</th>
+            <th class="db-col-breaker">Breaker (A)</th><th class="db-col-device">Device</th><th class="db-col-load">Load (VA)</th>
             <th data-grp="dev">Poles</th><th data-grp="dev">Ph</th>
             <th data-grp="dev">Curve</th>
             <th class="db-grp-sum" data-sum="dev">Poles · Ph · Curve</th>
@@ -1398,6 +1453,7 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
             <th class="db-res-h" data-res="iz" title="Derated current-carrying capacity Iz (IEC 60364-5-52) — compared against the breaker rating In, since SANS 10142-1 / IEC 60364-433 requires Ib ≤ In ≤ Iz. Tooltip also carries the earth-loop (Zs) verdict.">Iz (A)</th>
             <th class="db-res-h" data-res="vd" title="Voltage drop over this way's own length, plus upstream drop when Load Flow has been run. SANS 10142-1 Cl. 6.6: 5 % total, 3 % for lighting.">%VD</th>
             <th class="db-res-h" data-res="ecc" title="Earth continuity conductor verdict against IEC 60364-5-54 Table 54.7. '&lt;n&gt; min' means no ECC is specified and the table minimum is assumed.">ECC ✓</th>
+            <th class="db-res-h" title="Coordination of the way's breaker with the devices above it: discrimination, cable I²t protection and breaking capacity. Needs the circuit check; click a cell for the mini TCC.">Coord</th>
             <th></th>
           </tr></thead>
           <tbody id="db-rows">${rows ||
@@ -1440,6 +1496,7 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
     this._refreshElPanel(comp);
     this._refreshAccessories(comp);
     this._refreshBulkBar();
+    this._bindProtStrip(comp);
     this._paintResults();
     this._wireScrollShadow(this.body.querySelector('.db-schedule-grid'));
 
@@ -1561,6 +1618,9 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
       });
     });
     // Result cells open the full calculation behind the verdict.
+    this.body.querySelectorAll('td.db-coord').forEach(td => {
+      td.addEventListener('click', () => DbCoord.open(this.currentId, td.dataset.id));
+    });
     this.body.querySelectorAll('td.db-res[data-res]').forEach(td => {
       td.addEventListener('click', () => this.showCalc(td.dataset.id, td.dataset.res));
     });
@@ -1602,7 +1662,7 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
     // Excel-style grid (grid.js): selection, Enter/Tab/arrow navigation,
     // copy, fill-down, no number stepping. Column order is the VISUAL order of
     // the [data-k] cells, which NAV_COLS mirrors for pasted blocks.
-    const NAV_COLS = ['way', ...(DBSections.has(comp) ? ['section'] : []), 'description', 'breaker_a', 'load_va', 'poles', 'phase',
+    const NAV_COLS = ['way', ...(DBSections.has(comp) ? ['section'] : []), 'description', 'breaker_a', 'device', 'load_va', 'poles', 'phase',
       'curve', 'el_group', 'leakage_ma', 'cable_mm2', 'ecc_mm2', 'cable_m',
       'demand_factor', 'power_factor', 'conduit_tag', 'conduit_type', 'conduit_size'];
     this._focusCell = (row, k) => {

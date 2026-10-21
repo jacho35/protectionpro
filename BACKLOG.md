@@ -381,6 +381,11 @@ Help ▸ Guides (`frontend/js/help-guides.js`, pictures in `frontend/img/help/`)
 
 ## Completed
 
+### Building schedules: library breakers + mini TCC per way (2026-10-16)
+- **Library device per way.** A way picks a breaker from the CB library (`device: 'cb:<id>'`, a Device column); the rating and MCB curve are written to `breaker_a` / `curve`, so the circuit check is unchanged, and hand-editing either makes the way generic B/C/D again. Boards take an **Incoming device** and an optional declared **Ik max (kA)**.
+- **Fault levels.** `db_circuit_check.py` returns `ik3_max_a` per board (declared, else the SLD network at c_max with motors, else the feeding board plus its feeder cable at 20 °C) and `cable_k` per way; pinned to the fault engine in `test_db_circuit_check.py`.
+- **Mini TCC.** A Coord column (click for the modal, `frontend/js/dbcoord.js`) plots the way's breaker, the board incoming and any feeder-way breakers above it (published tolerance bands), the cable k²S²/I² line and Ik min/max, with three checks: discrimination limit per pair, cable protection from where the cable's own 5 s limit starts, and Icu against the fault level where each device sits. Not done: cascading/back-up ratings, let-through energy below 0.1 s, device columns in the Excel round trip, SLD breaker as the incoming device.
+
 ### DC arc flash review: runs on DC buses with the IEC 61660 fault current, enclosure factor, DC device walk, DA1–DA5 (2026-10-02)
 - **Review.** `reviews/DC_ARCFLASH_REVIEW.md` checks `dc_arcflash.py` against a hand Stokes & Oppenländer solve, the Ammerman/CED spherical energy and NFPA 70E Annex D. The arc physics was right; the study was pointed at the wrong buses.
 - **DA1 (critical).** It ran on every **AC** bus (as a "DC" system at the AC voltage and AC three-phase current) and skipped every DC bus. It now studies DC buses with the IEC 61660-1 short-circuit current (or an entered DC Fault Current, new bus field). **DA2 (non-conservative).** No enclosure factor: enclosed equipment now × 3 (NFPA 70E Annex D arc-in-a-box), open air only for VOA/HOA. **DA3.** The device walk never recognised a battery / rectifier / charger as a source, so every DC bus cleared at 2.0 s; a fused DC panel now clears in 30 ms. **DA4.** The gap field the panel writes (`conductor_gap_mm`) was ignored. **DA5.** Label per NFPA 70E §130.5(H).
