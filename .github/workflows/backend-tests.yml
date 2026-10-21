@@ -59,6 +59,8 @@ jobs:
         run: node frontend/tests/test_compliance.mjs
       - name: Breaker pickup reference current (Ir / In)
         run: node frontend/tests/test_pickup_base.mjs
+      - name: Cascading (back-up protection, IEC 60947-2 Annex A)
+        run: node frontend/tests/test_cascading.mjs
 
   ui-templates:
     # Loads every Verification / Standards template in the real app (headless

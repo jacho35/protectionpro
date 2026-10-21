@@ -111,6 +111,7 @@ $$\Delta t=t_{clear,backup}-t_{clear,primary}\ \ge\ \Delta t_{min}$$</li>
 <li><strong>LV</strong> (IEC 60947-2 Table 2): $I_{cm}=n\,I_{cu}$ with $n=1.41$ ($\le4.5$ kA), 1.5 ($\le6$), 1.7 ($\le10$), 2.0 ($\le20$), 2.1 ($\le50$), 2.2 above.</li>
 </ul>
 <p>Making margin is $(1-i_p/I_{cm})\times100\,\%$. The asymmetrical duty allows for a network whose DC component decays more slowly than the standard $\tau=45$ ms (high $X/R$) — a rating tested at the standard DC component understates such a duty.</p>
+<p>An LV breaker whose own $I_{cu}$ is too low can still pass by cascading with a breaker above it — see <a href="#" data-help="prot-cascading">Cascading</a>.</p>
 <h4>Verdicts</h4>
 <ul>
 <li><strong>Fail</strong> — duty exceeds capability.</li>
@@ -119,6 +120,28 @@ $$\Delta t=t_{clear,backup}-t_{clear,primary}\ \ge\ \Delta t_{min}$$</li>
 </ul>
 <h4>Transformers and busbars</h4>
 <p>Transformer loading from the load flow: fail above 100 %, warning above 80 %. CT saturation and PT burden are reported in their own tables — see <a href="#" data-help="prot-ct-pt">CT &amp; PT</a>.</p>` },
+
+{ id: 'prot-cascading', group: 'protect', title: 'Cascading (back-up protection)',
+  std: 'IEC 60947-2 Annex A · IEC 60364-5-53 §536.4.2 · Settings ▸ System Base',
+  kw: 'cascading back-up backup protection series rating reinforced breaking capacity icu filiation combination schneider',
+  html: String.raw`
+<p>A breaker may be installed where the prospective fault current is above its own breaking capacity when a breaker upstream of it limits and helps break that fault. The pair must have been <strong>tested together</strong>, and the combination's <em>reinforced breaking capacity</em> must cover the fault. That figure comes only from the manufacturer's table. It cannot be calculated from the two breakers' own ratings.</p>
+<h4>When a breaker passes by cascading</h4>
+<ul>
+<li>The breaker and a breaker above it are both picked from a manufacturer library that publishes cascading tables, and the pair is in the table.</li>
+<li>The reinforced breaking capacity is at least the fault level at the downstream breaker.</li>
+<li>The upstream breaker is itself adequate where it is installed: either its own $I_{cu}$ covers its fault level, or it is cascaded with a breaker above it in turn. With three breakers A > B > C, C passes on A + C even when B + C falls short, or on B + C when B is covered by A.</li>
+<li>The system is 380–415 V three-phase, or a 220–240 V phase-to-neutral circuit of one. The 380–415 V figures cover every fault type, including line-to-earth.</li>
+<li>On the diagram, the upstream breaker must carry the whole fault. A board with a second infeed, or one fed from both sides, gets no credit. The walk stops at a transformer.</li>
+</ul>
+<p>The duty check, the compliance report and the DB schedule coordination check (Coord column) all apply the same rule. A cascaded breaker shows the reinforced capacity, marked <em>(cascaded)</em>, and its making capacity is assumed from that capacity (IEC 60947-2 Table 2).</p>
+<h4>What it costs</h4>
+<p>Cascading works because the upstream breaker opens too. At those fault currents the two breakers are <strong>not selective</strong>, so a fault on one circuit can trip the incomer. A replacement must also be the same type as the tested pair. Turn cascading off in <em>Settings ▸ System Base</em> (<em>Allow cascading</em>, saved with the project) when a specification requires each breaker to be rated for its own fault level.</p>
+<h4>Data</h4>
+<p>Schneider Electric, <em>Selectivity, Cascading and Coordination Guide</em> 2025 (LVPED318033EN), 380–415 V tables. Upstream: Acti9 iC60 and C120, NG125, ComPacT NSXm and NSX100–630, ComPacT NS, MasterPacT MTZ1 / MTZ2 L1. Downstream: iC60 N/H/L, C120 N/H, NG125, NSXm, NSX100–630.</p>
+<div class="hc-example"><span class="hc-label">Worked example (from the guide)</span>
+<p>NSX250S (100 kA) at an 80 kA bus, then an NSX100B (25 kA) at 40 kA, then an iC60N (10 kA) at 24 kA. NSX250S + NSX100B = 50 kA ≥ 40 kA, and NSX250S + iC60N = 30 kA ≥ 24 kA, so both pass. NSX100B + iC60N alone gives only 20 kA, which is not needed here.</p></div>
+<p>ABB and CBI breakers get no cascading credit yet: the app's ABB library has no downstream ABB breakers, and CBI publishes no cascading table.</p>` },
 
 { id: 'prot-arcflash', group: 'protect', title: 'Arc flash (IEEE 1584-2002)',
   std: 'IEEE 1584-2002 · NFPA 70E · Analyse ▸ Protection & safety',

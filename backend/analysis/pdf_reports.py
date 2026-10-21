@@ -1605,18 +1605,29 @@ def _calc_duty(pdf, duty_results):
     headers = ["Device", "I_fault (kA)", "I_rated (kA)", "Utilisation (%)", "Status"]
     avail = pdf.w - pdf.l_margin - pdf.r_margin
     widths = [avail * 0.35, avail * 0.15, avail * 0.15, avail * 0.15, avail * 0.20]
-    rows = []
+    rows, cascaded = [], []
     for eq in duty_results.get("devices", []):
         name = eq.get("device_name", eq.get("device_id", ""))
         i_fault = eq.get("prospective_fault_ka", 0) or 0
         i_rated = eq.get("breaking_capacity_ka", 0) or 0
+        casc = eq.get("cascade")
+        rated = f"{casc['reinforced_ka']:.3f} (casc.)" if casc else f"{i_rated:.3f}"
+        if casc:
+            cascaded.append(f"{name}: own {i_rated:g} kA, {casc['reinforced_ka']:g} kA with "
+                            f"{casc['upstream_name']} upstream ({casc['source']})")
         utilisation = eq.get("utilisation_pct", 0) or 0
         ok = eq.get("interrupt_ok", True)
         status = (eq.get("status") or ("pass" if ok else "fail")).upper()
-        rows.append([name, f"{i_fault:.3f}", f"{i_rated:.3f}", f"{utilisation:.1f}%", status])
+        rows.append([name, f"{i_fault:.3f}", rated, f"{utilisation:.1f}%", status])
 
     _table(pdf, headers, rows, widths, header_color=(80, 80, 80))
     pdf.ln(2)
+    if cascaded:
+        # Cascading: the rating is the tested combination's reinforced capacity
+        _calc_body(pdf, "Cascaded (back-up protection, IEC 60947-2 Annex A) - not selective at these currents:")
+        for c in cascaded:
+            _calc_body(pdf, f"  {_pdf_safe(c)}")
+        pdf.ln(2)
 
     warnings = duty_results.get("warnings", [])
     if warnings:

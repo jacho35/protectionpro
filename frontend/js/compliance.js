@@ -135,7 +135,18 @@ const Compliance = {
           continue;
         }
 
-        if (ibKA > breakingKA) {
+        // [Cascading] a tested upstream combination may cover an LV breaker
+        // whose own capacity is too low (IEC 60947-2 Annex A, cascading.js)
+        const casc = (ibKA > breakingKA && devComp.type === 'cb' && !mvCb) ? this._cascadeCover(dev.id) : null;
+        const capKA = casc ? casc.reinforcedKa : breakingKA;
+        if (casc) {
+          section.items.push({
+            status: 'pass',
+            component: devName,
+            message: `Breaking duty ${ibLabel} (${ibKA.toFixed(2)} kA) exceeds its own breaking capacity (${breakingKA} kA) but is covered by cascading with ${casc.upstreamName}: reinforced breaking capacity ${casc.reinforcedKa} kA.`,
+            detail: `At bus ${busName}. ${casc.source}. The two breakers are not selective at these fault currents, and either may only be replaced by the same type.`,
+          });
+        } else if (ibKA > breakingKA) {
           section.items.push({
             status: 'fail',
             component: devName,
@@ -175,11 +186,11 @@ const Compliance = {
             makingFactor = freq === 60 ? 2.6 : 2.5;
             factorLabel = `${makingFactor}× breaking, IEC 62271-100 at ${freq} Hz`;
           } else {
-            const icu = breakingKA;
+            const icu = capKA;   // a cascaded pair is tested for making at its reinforced capacity
             makingFactor = icu <= 4.5 ? 1.41 : icu <= 6 ? 1.5 : icu <= 10 ? 1.7 : icu <= 20 ? 2.0 : icu <= 50 ? 2.1 : 2.2;
             factorLabel = `${makingFactor}× breaking, IEC 60947-2`;
           }
-          const makingKA = explicitMaking || breakingKA * makingFactor;
+          const makingKA = explicitMaking || capKA * makingFactor;
           const makingSrc = explicitMaking ? `${makingKA} kA rated` : `${makingKA.toFixed(1)} kA assumed (${factorLabel})`;
           if (ipKA > makingKA) {
             section.items.push({
@@ -1883,6 +1894,7 @@ const Compliance = {
           const duty = (comp.type === 'cb' && busKv > 1.0 && r.ib != null)
             ? Math.max(r.ib, unbal) : Math.max(r.ik3, unbal);
           if (duty > kaRating + 1e-9) {
+            if (comp.type === 'cb' && busKv <= 1.0 && this._cascadeCover(id)) break;   // cascaded
             add(id, 'fail', `Breaking capacity ${kaRating} kA below fault level ${duty.toFixed(1)} kA`);
             break;
           }
@@ -1924,6 +1936,46 @@ const Compliance = {
     }
     this._adj = adj;
     return adj;
+  },
+
+  // [Cascading] Breaking duty of a device (kA): the largest phase fault of any
+  // type at the buses it touches, the decayed Ib for an MV breaker — the basis
+  // of both breaking-capacity checks. {dutyKa, kv}
+  _breakingDuty(id) {
+    const comp = AppState.components.get(id);
+    let dutyKa = 0, kv = 0;
+    for (const b of this._findConnectedDevices(id, ['bus', 'distribution_board'])) {
+      const r = AppState.faultResults?.buses?.[b.id];
+      if (!r || r.ik3 == null) continue;
+      const busKv = parseFloat(r.voltage_kv) || parseFloat(AppState.components.get(b.id)?.props?.voltage_kv) || 0;
+      const unbal = Math.max(r.ik1 || 0, r.ikLL || 0);
+      const d = (comp?.type === 'cb' && busKv > 1.0 && r.ib != null) ? Math.max(r.ib, unbal) : Math.max(r.ik3, unbal);
+      if (d > dutyKa) dutyKa = d;
+      kv = Math.max(kv, busKv);
+    }
+    return { dutyKa, kv };
+  },
+
+  // [Cascading] Back-up cover of an LV library breaker by a tested upstream
+  // combination (IEC 60947-2 Annex A): {upstreamName, reinforcedKa, source} or null.
+  _cascadeCover(id) {
+    if (typeof Cascading === 'undefined' || !Cascading.enabled()) return null;
+    const c = AppState.components.get(id);
+    const ref = c && c.type === 'cb' ? Cascading.refOfProps(c.props) : null;
+    if (!ref) return null;
+    const own = this._breakingDuty(id);
+    if (!Cascading.appliesAt(own.kv)) return null;
+    const ids = Cascading.supplyChain(id, this._getAdjacency(), x => AppState.components.get(x));
+    const chain = [{ ref, capacityKa: parseFloat(c.props.breaking_capacity_ka) || 0, dutyKa: own.dutyKa }];
+    for (const u of ids) {
+      const uc = AppState.components.get(u);
+      chain.push({ ref: Cascading.refOfProps(uc.props), capacityKa: parseFloat(uc.props?.breaking_capacity_ka) || 0,
+        dutyKa: this._breakingDuty(u).dutyKa });
+    }
+    const hit = Cascading.cover(chain);
+    if (!hit) return null;
+    const up = AppState.components.get(ids[hit.by - 1]);
+    return { upstreamName: up.props?.name || up.id, reinforcedKa: hit.reinforcedKa, source: Cascading.sourceNote() };
   },
 
   // Walk through wires to find components of given types connected to a component

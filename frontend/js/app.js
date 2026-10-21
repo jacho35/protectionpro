@@ -2133,7 +2133,7 @@ document.addEventListener('DOMContentLoaded', () => {
           <td>${d.device_type.toUpperCase()}</td>
           <td>${escHtml(d.location_bus)}</td>
           <td>${d.prospective_fault_ka.toFixed(2)}</td>
-          <td>${d.breaking_capacity_ka.toFixed(2)}</td>
+          <td>${d.cascade ? `${d.cascade.reinforced_ka.toFixed(2)} <span title="Reinforced breaking capacity with ${escHtml(d.cascade.upstream_name)} upstream (cascading, IEC 60947-2 Annex A); own ${d.breaking_capacity_ka.toFixed(2)} kA">(cascaded)</span>` : d.breaking_capacity_ka.toFixed(2)}</td>
           <td>${d.utilisation_pct.toFixed(0)}%</td>
           <td>${contIcon}</td>
           <td>${statusBadge}</td>
@@ -4709,6 +4709,7 @@ document.addEventListener('DOMContentLoaded', () => {
     AppState.frequency = parseInt(document.getElementById('base-freq').value) || DEFAULT_FREQUENCY;
     AppState.voltageFactor = parseFloat(document.getElementById('voltage-factor').value) || DEFAULT_VOLTAGE_FACTOR;
     AppState.defaultLengthUnit = document.getElementById('default-length-unit').value || 'm';
+    AppState.cascading = document.getElementById('allow-cascading').checked;
     AppState.clearResults();
     Canvas.render();
     document.getElementById('settings-modal').style.display = 'none';
