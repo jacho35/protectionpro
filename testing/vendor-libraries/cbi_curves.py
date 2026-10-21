@@ -127,7 +127,7 @@ def tm_profile(maker, label, catalogue, mx, mn):
     return {
         "maker": maker, "catalogue": catalogue, "label": label, "kind": "tm",
         "curve": {"model": "points", "thermal": {"points": mx}, "tol": {
-            "pickup": [mn[0][0], mx[0][0]],                  # no trip below / trip above (x In)
+            "pickup": [round(mn[0][0], 3), round(mx[0][0], 3)],                  # no trip below / trip above (x In)
             "long_time": {"min_points": mn},
             "instantaneous": {"pickup_tol": tol, "hold_s": mn[-1][1], "break_s": mx[-1][1]}}},
         "dials": {
