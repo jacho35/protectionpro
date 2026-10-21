@@ -796,3 +796,49 @@ class TestCbiF65dv:
             assert p["curve"]["tol"]["instantaneous"]["hold_s"] == pytest.approx(0.01, rel=0.05)
             assert p["curve"]["tol"]["instantaneous"]["break_s"] == pytest.approx(0.02, rel=0.05)
 
+
+# ── CBI electronic (DE) MCCBs ────────────────────────────────────────────
+
+DE = {  # type -> (In, Ir low, Ii max x In, STD pickup base, Icu, Ics)
+    "k35de": (400, 200, 16, None, 35, 35), "k50de": (630, 300, 15, None, 50, 50), "k70de": (630, 300, 15, None, 70, 70),
+    "l35de800": (800, 400, 12, None, 36, 18), "l70de800": (800, 400, 12, None, 65, 65),
+    "n85de1000": (1000, 500, 12, "In", 85, 43), "n85de1250": (1250, 600, 12, "In", 85, 43), "n85de1600": (1600, 800, 12, "In", 85, 43),
+}
+
+
+def _de(typ):
+    src = open(os.path.join(ROOT, "frontend", "js", "vendor-trip-units-cbi-de.js")).read()
+    head = "Object.assign(TRIP_UNITS, "
+    prof = json.loads(src[src.index(head) + len(head):src.rindex(");")])
+    ent = json.load(open(os.path.join(VL_DIR, f"cbi_{typ}_breakers.json")))["entries"]
+    assert len(ent) == 1
+    return prof[f"cbi_{typ}"], ent[0]["data"]
+
+
+@pytest.mark.parametrize("typ", sorted(DE))
+class TestCbiDe:
+    def test_entry_and_dials(self, typ):
+        inn, ir_lo, ii_max, st_base, icu, ics = DE[typ]
+        p, e = _de(typ)
+        assert (e["trip_rating_a"], e["breaking_ka"], round(e["breaking_ka"] * e["ics_pct"] / 100), e["cb_type"]) == (inn, icu, ics, "mccb")
+        d = p["dials"]
+        assert p["kind"] == "electronic" and e["trip_unit_kind"] == "electronic" and e["default_trip_unit"] == f"cbi_{typ}"
+        assert d["thermal_pickup"]["steps"][0] == pytest.approx(ir_lo / inn, abs=0.01) and d["thermal_pickup"]["steps"][-1] == 1.0
+        assert d["long_time_delay"]["steps"] == [12, 60, 100, 150]
+        assert d["short_time_pickup"]["steps"] == [2, 2.5, 3, 3.5, 4, 5, 6, 7, 8, 10] and d["short_time_pickup"].get("base") == st_base
+        assert d["short_time_delay"]["steps"] == [0.06, 0.1, 0.2, 0.3]
+        assert d["instantaneous_pickup"]["steps"] == list(range(4, ii_max + 1)) and d["instantaneous_pickup"]["base"] == "In"
+
+    def test_long_time_curve_matches_the_published_times(self, typ):
+        p, _ = _de(typ)
+        tc = p["curve"]["thermal"]
+        for tl, t125 in ((12, 80), (60, 400), (100, 670), (150, 1000)):       # sheet: operating time at 125 % Ir
+            assert thermal_curve_time(tc, 2.0, {"long_time_delay": tl}) == pytest.approx(tl, rel=0.01)
+            assert thermal_curve_time(tc, 1.25, {"long_time_delay": tl}) == pytest.approx(t125, rel=0.06)
+        tol = p["curve"]["tol"]
+        assert tol["long_time"]["time_tol"] == 0.2 and tol["short_time"]["pickup_tol"] == 0.15 and tol["instantaneous"]["pickup_tol"] == 0.15
+        assert tol["instantaneous"]["break_s"] == 0.03 and tol["pickup"][0] < 1.1 < 1.25 < tol["pickup"][1] + 0.01
+        # short-time delay: published 0.06 +/- 0.02, 0.1 +/- 0.03, 0.2 +/- 0.04, 0.3 +/- 0.06 s
+        assert tol["short_time"]["hold_s"] == {"0.06": 0.04, "0.1": 0.07, "0.2": 0.16, "0.3": 0.24}
+        assert tol["short_time"]["break_s"] == {"0.06": 0.08, "0.1": 0.13, "0.2": 0.24, "0.3": 0.36}
+

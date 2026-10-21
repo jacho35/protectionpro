@@ -1,0 +1,33 @@
+{
+ "entries": [
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_k35de",
+    "name": "CBI K35DE 200-400 A",
+    "cb_type": "mccb",
+    "manufacturer": "CBI",
+    "series": "DE electronic",
+    "model": "K35DE",
+    "trip_rating_a": 400,
+    "frame_a": 400,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 35,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10,
+    "long_time_delay": 60,
+    "short_time_pickup": 5,
+    "short_time_delay": 0.1,
+    "instantaneous_pickup": 8,
+    "trip_unit_kind": "electronic",
+    "trip_units": [
+     "cbi_k35de"
+    ],
+    "default_trip_unit": "cbi_k35de",
+    "source": "CBI MCCB catalogue, K35DE data sheet (p. 16)",
+    "check": "Ir 200-400 A; long-time curve is a formula (t = tL x (2/M)^4 to 200 %, (2/M)^2 above) matching the sheet's 125 % / 200 % times"
+   }
+  }
+ ]
+}

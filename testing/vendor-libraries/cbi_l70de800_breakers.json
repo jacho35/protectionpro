@@ -1,0 +1,33 @@
+{
+ "entries": [
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_l70de800",
+    "name": "CBI L70DE800 400-800 A",
+    "cb_type": "mccb",
+    "manufacturer": "CBI",
+    "series": "DE electronic",
+    "model": "L70DE800",
+    "trip_rating_a": 800,
+    "frame_a": 800,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 65,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10,
+    "long_time_delay": 60,
+    "short_time_pickup": 5,
+    "short_time_delay": 0.1,
+    "instantaneous_pickup": 8,
+    "trip_unit_kind": "electronic",
+    "trip_units": [
+     "cbi_l70de800"
+    ],
+    "default_trip_unit": "cbi_l70de800",
+    "source": "CBI MCCB catalogue, L70DE800 data sheet (p. 26)",
+    "check": "Ir 400-800 A; long-time curve is a formula (t = tL x (2/M)^4 to 200 %, (2/M)^2 above) matching the sheet's 125 % / 200 % times; no 415 V row: the 440 V figures (65 / 65 kA)"
+   }
+  }
+ ]
+}
