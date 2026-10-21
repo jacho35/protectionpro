@@ -1,0 +1,54 @@
+{
+ "entries": [
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_k50d_500",
+    "name": "CBI K50D 500 A",
+    "cb_type": "mccb",
+    "manufacturer": "CBI",
+    "series": "K50D",
+    "model": "K50D",
+    "trip_rating_a": 500,
+    "frame_a": 630,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 11.834,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_k50d_p21_0"
+    ],
+    "default_trip_unit": "cbi_k50d_p21_0",
+    "source": "CBI MCCB catalogue, K50D data sheet (p. 18)",
+    "check": "instantaneous band = where the chart's curves reach their flat times; the two K50D charts are unlabelled; assigned 500 A (left) and 630 A (right)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_k50d_630",
+    "name": "CBI K50D 630 A",
+    "cb_type": "mccb",
+    "manufacturer": "CBI",
+    "series": "K50D",
+    "model": "K50D",
+    "trip_rating_a": 630,
+    "frame_a": 630,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 17.014,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_k50d_p21_1"
+    ],
+    "default_trip_unit": "cbi_k50d_p21_1",
+    "source": "CBI MCCB catalogue, K50D data sheet (p. 18)",
+    "check": "instantaneous band = where the chart's curves reach their flat times; the two K50D charts are unlabelled; assigned 500 A (left) and 630 A (right)"
+   }
+  }
+ ]
+}

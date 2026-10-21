@@ -1,0 +1,179 @@
+{
+ "entries": [
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_f25d_125",
+    "name": "CBI F25D 125 A",
+    "cb_type": "mccb",
+    "manufacturer": "CBI",
+    "series": "F25D",
+    "model": "F25D",
+    "trip_rating_a": 125,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 15.826,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_f25d_p7_0"
+    ],
+    "default_trip_unit": "cbi_f25d_p7_0",
+    "source": "CBI MCCB catalogue, F25D data sheet (p. 4)",
+    "check": "instantaneous band = where the chart's curves reach their flat times"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_f25d_150",
+    "name": "CBI F25D 150 A",
+    "cb_type": "mccb",
+    "manufacturer": "CBI",
+    "series": "F25D",
+    "model": "F25D",
+    "trip_rating_a": 150,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 15.826,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_f25d_p7_0"
+    ],
+    "default_trip_unit": "cbi_f25d_p7_0",
+    "source": "CBI MCCB catalogue, F25D data sheet (p. 4)",
+    "check": "instantaneous band = where the chart's curves reach their flat times"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_f25d_160",
+    "name": "CBI F25D 160 A",
+    "cb_type": "mccb",
+    "manufacturer": "CBI",
+    "series": "F25D",
+    "model": "F25D",
+    "trip_rating_a": 160,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 15.826,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_f25d_p7_0"
+    ],
+    "default_trip_unit": "cbi_f25d_p7_0",
+    "source": "CBI MCCB catalogue, F25D data sheet (p. 4)",
+    "check": "instantaneous band = where the chart's curves reach their flat times"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_f25d_175",
+    "name": "CBI F25D 175 A",
+    "cb_type": "mccb",
+    "manufacturer": "CBI",
+    "series": "F25D",
+    "model": "F25D",
+    "trip_rating_a": 175,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 15.826,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_f25d_p7_0"
+    ],
+    "default_trip_unit": "cbi_f25d_p7_0",
+    "source": "CBI MCCB catalogue, F25D data sheet (p. 4)",
+    "check": "instantaneous band = where the chart's curves reach their flat times"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_f25d_200",
+    "name": "CBI F25D 200 A",
+    "cb_type": "mccb",
+    "manufacturer": "CBI",
+    "series": "F25D",
+    "model": "F25D",
+    "trip_rating_a": 200,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 15.826,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_f25d_p7_0"
+    ],
+    "default_trip_unit": "cbi_f25d_p7_0",
+    "source": "CBI MCCB catalogue, F25D data sheet (p. 4)",
+    "check": "instantaneous band = where the chart's curves reach their flat times"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_f25d_225",
+    "name": "CBI F25D 225 A",
+    "cb_type": "mccb",
+    "manufacturer": "CBI",
+    "series": "F25D",
+    "model": "F25D",
+    "trip_rating_a": 225,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 15.826,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_f25d_p7_0"
+    ],
+    "default_trip_unit": "cbi_f25d_p7_0",
+    "source": "CBI MCCB catalogue, F25D data sheet (p. 4)",
+    "check": "instantaneous band = where the chart's curves reach their flat times"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_f25d_250",
+    "name": "CBI F25D 250 A",
+    "cb_type": "mccb",
+    "manufacturer": "CBI",
+    "series": "F25D",
+    "model": "F25D",
+    "trip_rating_a": 250,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 13.85,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_f25d_p7_1"
+    ],
+    "default_trip_unit": "cbi_f25d_p7_1",
+    "source": "CBI MCCB catalogue, F25D data sheet (p. 4)",
+    "check": "instantaneous band = where the chart's curves reach their flat times"
+   }
+  }
+ ]
+}

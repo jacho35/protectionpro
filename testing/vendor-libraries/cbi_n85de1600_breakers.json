@@ -1,0 +1,33 @@
+{
+ "entries": [
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_n85de1600",
+    "name": "CBI N85DE1600 800-1600 A",
+    "cb_type": "mccb",
+    "manufacturer": "CBI",
+    "series": "DE electronic",
+    "model": "N85DE1600",
+    "trip_rating_a": 1600,
+    "frame_a": 1600,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 85,
+    "ics_pct": 51,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10,
+    "long_time_delay": 60,
+    "short_time_pickup": 5,
+    "short_time_delay": 0.1,
+    "instantaneous_pickup": 8,
+    "trip_unit_kind": "electronic",
+    "trip_units": [
+     "cbi_n85de1600"
+    ],
+    "default_trip_unit": "cbi_n85de1600",
+    "source": "CBI MCCB catalogue, N85DE1600 data sheet (p. 30)",
+    "check": "Ir 800-1600 A; long-time curve is a formula (t = tL x (2/M)^4 to 200 %, (2/M)^2 above) matching the sheet's 125 % / 200 % times"
+   }
+  }
+ ]
+}

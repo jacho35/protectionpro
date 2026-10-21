@@ -1,0 +1,154 @@
+{
+ "entries": [
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_k35d_250",
+    "name": "CBI K35D 250 A",
+    "cb_type": "mccb",
+    "manufacturer": "CBI",
+    "series": "K35D",
+    "model": "K35D",
+    "trip_rating_a": 250,
+    "frame_a": 630,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 35,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 11.793,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_k35d_p17_0"
+    ],
+    "default_trip_unit": "cbi_k35d_p17_0",
+    "source": "CBI MCCB catalogue, K35D data sheet (p. 14)",
+    "check": "instantaneous band = where the chart's curves reach their flat times"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_k35d_300",
+    "name": "CBI K35D 300 A",
+    "cb_type": "mccb",
+    "manufacturer": "CBI",
+    "series": "K35D",
+    "model": "K35D",
+    "trip_rating_a": 300,
+    "frame_a": 630,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 35,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 11.793,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_k35d_p17_0"
+    ],
+    "default_trip_unit": "cbi_k35d_p17_0",
+    "source": "CBI MCCB catalogue, K35D data sheet (p. 14)",
+    "check": "instantaneous band = where the chart's curves reach their flat times"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_k35d_350",
+    "name": "CBI K35D 350 A",
+    "cb_type": "mccb",
+    "manufacturer": "CBI",
+    "series": "K35D",
+    "model": "K35D",
+    "trip_rating_a": 350,
+    "frame_a": 630,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 35,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 11.793,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_k35d_p17_0"
+    ],
+    "default_trip_unit": "cbi_k35d_p17_0",
+    "source": "CBI MCCB catalogue, K35D data sheet (p. 14)",
+    "check": "instantaneous band = where the chart's curves reach their flat times"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_k35d_400",
+    "name": "CBI K35D 400 A",
+    "cb_type": "mccb",
+    "manufacturer": "CBI",
+    "series": "K35D",
+    "model": "K35D",
+    "trip_rating_a": 400,
+    "frame_a": 630,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 35,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 11.793,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_k35d_p17_0"
+    ],
+    "default_trip_unit": "cbi_k35d_p17_0",
+    "source": "CBI MCCB catalogue, K35D data sheet (p. 14)",
+    "check": "instantaneous band = where the chart's curves reach their flat times"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_k35d_500",
+    "name": "CBI K35D 500 A",
+    "cb_type": "mccb",
+    "manufacturer": "CBI",
+    "series": "K35D",
+    "model": "K35D",
+    "trip_rating_a": 500,
+    "frame_a": 630,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 36,
+    "ics_pct": 50,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 11.793,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_k35d_p17_0"
+    ],
+    "default_trip_unit": "cbi_k35d_p17_0",
+    "source": "CBI MCCB catalogue, K35D data sheet (p. 14)",
+    "check": "instantaneous band = where the chart's curves reach their flat times"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_k35d_630",
+    "name": "CBI K35D 630 A",
+    "cb_type": "mccb",
+    "manufacturer": "CBI",
+    "series": "K35D",
+    "model": "K35D",
+    "trip_rating_a": 630,
+    "frame_a": 630,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 36,
+    "ics_pct": 50,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 11.793,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_k35d_p17_0"
+    ],
+    "default_trip_unit": "cbi_k35d_p17_0",
+    "source": "CBI MCCB catalogue, K35D data sheet (p. 14)",
+    "check": "instantaneous band = where the chart's curves reach their flat times"
+   }
+  }
+ ]
+}

@@ -115,23 +115,54 @@ def flat_from(pts, tol=1.02):
     return next(m for m, t in pts if t <= floor * tol)
 
 
-def tm_profile(maker, label, catalogue, mx, mn):
+def tm_profile(maker, label, catalogue, mx, mn, band=None):
     """Fixed thermal-magnetic trip unit from a published maximum / minimum curve (x In, s).
 
     The long-time curve the engines clear on is the maximum; the minimum is the TCC band.
     The instantaneous band is where the two curves reach their flat times, so the engines
     (which hold the element's break time above the band) read the published curve everywhere.
+    `band` = (lo, hi, hold_s, break_s) sets it explicitly instead (an adjustable-Ir breaker: the points are then the
+    thermal part only, because the instantaneous trip is against In, not Ir).
     """
-    lo, hi = flat_from(mn), flat_from(mx)
-    tol = math.floor((hi - lo) / (hi + lo) * 1e5) / 1e5      # rounded DOWN: nominal x (1 + tol) never passes the band's top
+    lo, hi = band[:2] if band else (flat_from(mn), flat_from(mx))
+    hold, brk = (band[2], band[3]) if band else (mn[-1][1], mx[-1][1])
+    if hi > lo:
+        tol = math.floor((hi - lo) / (hi + lo) * 1e5) / 1e5  # rounded DOWN: nominal x (1 + tol) never passes the band's top
+    else:                                                    # the maximum curve flattens before the minimum reaches its floor
+        lo = hi; tol = 0.0                                   # (J-Series 225-250 A): one pickup, at the maximum curve's floor
     return {
         "maker": maker, "catalogue": catalogue, "label": label, "kind": "tm",
         "curve": {"model": "points", "thermal": {"points": mx}, "tol": {
             "pickup": [round(mn[0][0], 3), round(mx[0][0], 3)],                  # no trip below / trip above (x In)
             "long_time": {"min_points": mn},
-            "instantaneous": {"pickup_tol": tol, "hold_s": mn[-1][1], "break_s": mx[-1][1]}}},
+            "instantaneous": {"pickup_tol": tol, "hold_s": hold, "break_s": brk}}},
         "dials": {
             "thermal_pickup": {"fixed": True, "def": 1.0},
             "magnetic_pickup": {"fixed": True, "def": round((lo + hi) / 2, 3), "base": "In"},
         },
     }
+
+
+def thin_mt(pts, T=10000.0, eps=0.0015):
+    """(x In, s) traced points -> strictly rising x / falling t polyline, clipped to T, with near-vertical drops kept
+    (a vertical run is collapsed to its top and its bottom, the bottom 0.3 % to the right) and thinned on
+    (log x, log t) with Douglas-Peucker."""
+    out, low = [], None                                   # `low`: the lowest t of the vertical run being collapsed
+    for m, t in pts:
+        if t > T:
+            if not out:
+                out.append((m, T))
+            continue
+        if out and m <= out[-1][0] * 1.003:               # still on a vertical stroke
+            low = t if low is None else min(low, t)
+            continue
+        if low is not None and low < out[-1][1] * 0.98:
+            out.append((out[-1][0] * 1.003, low))
+        low = None
+        if out and t >= out[-1][1] * 0.9995:
+            continue
+        out.append((m, t))
+    if low is not None and low < out[-1][1] * 0.98:
+        out.append((out[-1][0] * 1.003, low))
+    thin = _dp([(math.log10(m), math.log10(t)) for m, t in out], eps)
+    return [[round(10 ** a, 4), float(f"{10 ** b:.4g}")] for a, b in thin]

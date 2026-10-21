@@ -1,0 +1,179 @@
+{
+ "entries": [
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_f35d_125",
+    "name": "CBI F35D 125 A",
+    "cb_type": "mccb",
+    "manufacturer": "CBI",
+    "series": "F35D",
+    "model": "F35D",
+    "trip_rating_a": 125,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 35,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 16.116,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_f35d_p11_0"
+    ],
+    "default_trip_unit": "cbi_f35d_p11_0",
+    "source": "CBI MCCB catalogue, F35D data sheet (p. 8)",
+    "check": "instantaneous band = where the chart's curves reach their flat times"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_f35d_150",
+    "name": "CBI F35D 150 A",
+    "cb_type": "mccb",
+    "manufacturer": "CBI",
+    "series": "F35D",
+    "model": "F35D",
+    "trip_rating_a": 150,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 35,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 16.116,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_f35d_p11_0"
+    ],
+    "default_trip_unit": "cbi_f35d_p11_0",
+    "source": "CBI MCCB catalogue, F35D data sheet (p. 8)",
+    "check": "instantaneous band = where the chart's curves reach their flat times"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_f35d_160",
+    "name": "CBI F35D 160 A",
+    "cb_type": "mccb",
+    "manufacturer": "CBI",
+    "series": "F35D",
+    "model": "F35D",
+    "trip_rating_a": 160,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 35,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 16.116,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_f35d_p11_0"
+    ],
+    "default_trip_unit": "cbi_f35d_p11_0",
+    "source": "CBI MCCB catalogue, F35D data sheet (p. 8)",
+    "check": "instantaneous band = where the chart's curves reach their flat times"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_f35d_175",
+    "name": "CBI F35D 175 A",
+    "cb_type": "mccb",
+    "manufacturer": "CBI",
+    "series": "F35D",
+    "model": "F35D",
+    "trip_rating_a": 175,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 35,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 16.116,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_f35d_p11_0"
+    ],
+    "default_trip_unit": "cbi_f35d_p11_0",
+    "source": "CBI MCCB catalogue, F35D data sheet (p. 8)",
+    "check": "instantaneous band = where the chart's curves reach their flat times"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_f35d_200",
+    "name": "CBI F35D 200 A",
+    "cb_type": "mccb",
+    "manufacturer": "CBI",
+    "series": "F35D",
+    "model": "F35D",
+    "trip_rating_a": 200,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 35,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 16.116,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_f35d_p11_0"
+    ],
+    "default_trip_unit": "cbi_f35d_p11_0",
+    "source": "CBI MCCB catalogue, F35D data sheet (p. 8)",
+    "check": "instantaneous band = where the chart's curves reach their flat times"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_f35d_225",
+    "name": "CBI F35D 225 A",
+    "cb_type": "mccb",
+    "manufacturer": "CBI",
+    "series": "F35D",
+    "model": "F35D",
+    "trip_rating_a": 225,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 35,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 16.116,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_f35d_p11_0"
+    ],
+    "default_trip_unit": "cbi_f35d_p11_0",
+    "source": "CBI MCCB catalogue, F35D data sheet (p. 8)",
+    "check": "instantaneous band = where the chart's curves reach their flat times"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_f35d_250",
+    "name": "CBI F35D 250 A",
+    "cb_type": "mccb",
+    "manufacturer": "CBI",
+    "series": "F35D",
+    "model": "F35D",
+    "trip_rating_a": 250,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 35,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 14.661,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_f35d_p11_1"
+    ],
+    "default_trip_unit": "cbi_f35d_p11_1",
+    "source": "CBI MCCB catalogue, F35D data sheet (p. 8)",
+    "check": "instantaneous band = where the chart's curves reach their flat times"
+   }
+  }
+ ]
+}

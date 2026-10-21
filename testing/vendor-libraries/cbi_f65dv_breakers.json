@@ -1,0 +1,229 @@
+{
+ "entries": [
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_f65dv_25",
+    "name": "CBI F65DV 25 A",
+    "cb_type": "mccb",
+    "manufacturer": "CBI",
+    "series": "F65DV",
+    "model": "F65DV",
+    "trip_rating_a": 25,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 65,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 24.043,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_f65dv_25"
+    ],
+    "default_trip_unit": "cbi_f65dv_25",
+    "source": "CBI MCCB catalogue, F65DV data sheet (p. 10)",
+    "check": "thermal-adjustable Ir 20-25 A; instantaneous AC 600 +/- 120 A fixed; the catalogue's rating ranges and chart legends differ (see the build script)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_f65dv_32",
+    "name": "CBI F65DV 32 A",
+    "cb_type": "mccb",
+    "manufacturer": "CBI",
+    "series": "F65DV",
+    "model": "F65DV",
+    "trip_rating_a": 32,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 65,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 18.784,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_f65dv_32"
+    ],
+    "default_trip_unit": "cbi_f65dv_32",
+    "source": "CBI MCCB catalogue, F65DV data sheet (p. 10)",
+    "check": "thermal-adjustable Ir 25-32 A; instantaneous AC 600 +/- 120 A fixed; the catalogue's rating ranges and chart legends differ (see the build script)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_f65dv_40",
+    "name": "CBI F65DV 40 A",
+    "cb_type": "mccb",
+    "manufacturer": "CBI",
+    "series": "F65DV",
+    "model": "F65DV",
+    "trip_rating_a": 40,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 65,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 15.027,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_f65dv_40"
+    ],
+    "default_trip_unit": "cbi_f65dv_40",
+    "source": "CBI MCCB catalogue, F65DV data sheet (p. 10)",
+    "check": "thermal-adjustable Ir 32-40 A; instantaneous AC 600 +/- 120 A fixed; the catalogue's rating ranges and chart legends differ (see the build script)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_f65dv_50",
+    "name": "CBI F65DV 50 A",
+    "cb_type": "mccb",
+    "manufacturer": "CBI",
+    "series": "F65DV",
+    "model": "F65DV",
+    "trip_rating_a": 50,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 65,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 12.022,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_f65dv_50"
+    ],
+    "default_trip_unit": "cbi_f65dv_50",
+    "source": "CBI MCCB catalogue, F65DV data sheet (p. 10)",
+    "check": "thermal-adjustable Ir 35-50 A; instantaneous AC 600 +/- 120 A fixed; the catalogue's rating ranges and chart legends differ (see the build script)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_f65dv_63",
+    "name": "CBI F65DV 63 A",
+    "cb_type": "mccb",
+    "manufacturer": "CBI",
+    "series": "F65DV",
+    "model": "F65DV",
+    "trip_rating_a": 63,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 65,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.018,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_f65dv_63"
+    ],
+    "default_trip_unit": "cbi_f65dv_63",
+    "source": "CBI MCCB catalogue, F65DV data sheet (p. 10)",
+    "check": "thermal-adjustable Ir 45-63 A; instantaneous AC 1000 +/- 200 % x In; the catalogue's rating ranges and chart legends differ (see the build script)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_f65dv_100",
+    "name": "CBI F65DV 100 A",
+    "cb_type": "mccb",
+    "manufacturer": "CBI",
+    "series": "F65DV",
+    "model": "F65DV",
+    "trip_rating_a": 100,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 65,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.018,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_f65dv_100"
+    ],
+    "default_trip_unit": "cbi_f65dv_100",
+    "source": "CBI MCCB catalogue, F65DV data sheet (p. 10)",
+    "check": "thermal-adjustable Ir 70-100 A; instantaneous AC 1000 +/- 200 % x In; the catalogue's rating ranges and chart legends differ (see the build script)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_f65dv_125",
+    "name": "CBI F65DV 125 A",
+    "cb_type": "mccb",
+    "manufacturer": "CBI",
+    "series": "F65DV",
+    "model": "F65DV",
+    "trip_rating_a": 125,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 65,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.018,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_f65dv_125"
+    ],
+    "default_trip_unit": "cbi_f65dv_125",
+    "source": "CBI MCCB catalogue, F65DV data sheet (p. 10)",
+    "check": "thermal-adjustable Ir 90-125 A; instantaneous AC 1000 +/- 200 % x In; the catalogue's rating ranges and chart legends differ (see the build script)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_f65dv_160",
+    "name": "CBI F65DV 160 A",
+    "cb_type": "mccb",
+    "manufacturer": "CBI",
+    "series": "F65DV",
+    "model": "F65DV",
+    "trip_rating_a": 160,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 65,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.018,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_f65dv_160"
+    ],
+    "default_trip_unit": "cbi_f65dv_160",
+    "source": "CBI MCCB catalogue, F65DV data sheet (p. 10)",
+    "check": "thermal-adjustable Ir 125-160 A; instantaneous AC 1000 +/- 200 % x In; the catalogue's rating ranges and chart legends differ (see the build script)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_f65dv_250",
+    "name": "CBI F65DV 250 A",
+    "cb_type": "mccb",
+    "manufacturer": "CBI",
+    "series": "F65DV",
+    "model": "F65DV",
+    "trip_rating_a": 250,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 65,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.018,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_f65dv_250"
+    ],
+    "default_trip_unit": "cbi_f65dv_250",
+    "source": "CBI MCCB catalogue, F65DV data sheet (p. 10)",
+    "check": "thermal-adjustable Ir 175-250 A; instantaneous AC 1000 +/- 200 % x In; the catalogue's rating ranges and chart legends differ (see the build script)"
+   }
+  }
+ ]
+}
