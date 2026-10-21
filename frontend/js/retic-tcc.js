@@ -168,8 +168,32 @@ const ReticTcc = {
       }
       return path;
     };
+    // A manufacturer's breaker carries its published tolerance band: shade it from the fastest to the slowest trip time and
+    // dash the fastest edge. The solid line stays the slowest edge, the time the breaker is guaranteed to have cleared by.
+    const bandFor = (v) => {
+      const dev = v.device;
+      if (dev.kind === 'fuse' || !(dev.props && dev.props.trip_tol)) return '';
+      const pts = [];
+      for (let n = 0; n <= N; n++) pts.push(xmin * Math.pow(xmax / xmin, n / N));
+      this._steps(dev).forEach(s => { if (s > xmin && s < xmax) { pts.push(s * 0.9999, s); } });
+      pts.sort((a, b) => a - b);
+      const up = [], dn = [];
+      let fast = '', pen = false;
+      for (const I of pts) {
+        const b = cbTripBand(dev.props, I);
+        if (!(b.tMax <= this.T_MAX)) { pen = false; continue; }          // slow edge off the top: no band here
+        const tMin = Math.min(b.tMin, b.tMax);
+        up.push([X(I), Y(b.tMax)]); dn.push([X(I), Y(tMin)]);
+        fast += `${pen ? 'L' : 'M'}${f(X(I))} ${f(Y(tMin))}`; pen = true;
+      }
+      if (up.length < 2) return '';
+      const edge = (a) => a.map(q => f(q[0]) + ' ' + f(q[1])).join('L');
+      return `<path d="M${edge(up)}L${edge(dn.slice().reverse())}Z" fill="${v.color}" fill-opacity=".16" stroke="none"/>`
+        + `<path class="rtcc-curve" style="stroke:${v.color};stroke-width:1.4;stroke-dasharray:5 3" d="${fast}"><title>${escHtml(v.name)}: fastest it may trip</title></path>`;
+    };
+    const banded = d.devices.some(v => bandFor(v));
     const curves = d.devices.map((v, i) =>
-      `<path class="rtcc-curve" style="stroke:${v.color}${i ? ';stroke-dasharray:none' : ''}" d="${curveFor(v.device)}"><title>${escHtml(v.name)}</title></path>`).join('');
+      bandFor(v) + `<path class="rtcc-curve" style="stroke:${v.color}${i ? ';stroke-dasharray:none' : ''}" d="${curveFor(v.device)}"><title>${escHtml(v.name)}${banded && v.device.props && v.device.props.trip_tol ? ': slowest it may trip (clearing time)' : ''}</title></path>`).join('');
 
     // Erf points
     let marks = '';
@@ -241,7 +265,7 @@ const ReticTcc = {
             <tbody>${rowsHtml}</tbody></table></div>
         </div>
       </div>
-      <div class="rtcc-foot">If = 0.95 · 230 V / |Zs| (minimum current, conductors hot). Each erf is plotted on the curve of the device that protects its service cable (its own pick, else the kiosk default, else the string breaker); curves are the library models; no discrimination between devices in series is checked.</div>
+      <div class="rtcc-foot">If = 0.95 · 230 V / |Zs| (minimum current, conductors hot). Each erf is plotted on the curve of the device that protects its service cable (its own pick, else the kiosk default, else the string breaker); curves are the library models (a manufacturer's breaker shows its published band: shaded from the fastest to the slowest it may trip, dashed = fastest, solid = slowest, the clearing time); no discrimination between devices in series is checked.</div>
     </div>`;
   },
 };
