@@ -1,5 +1,5 @@
 // Named screen set-ups for capture.mjs. Each runs on a fresh page of the app.
-import { seedPlan, planPoint } from './lib.mjs';
+import { seedPlan, planPoint, seedBoard } from './lib.mjs';
 const toWorkspace = async (page, id, tab) => {
   await page.evaluate(() => switchWorkspace('schedules'));
   await page.waitForSelector('.sch-tab');
@@ -281,6 +281,38 @@ export const SETUPS = {
     await page.waitForTimeout(900);
   } },
 
+  // Reticulation with a string breaker set and the Demand calculation run, so the earth-fault check has data.
+  'retic-ef': { run: async (page) => { await reticEarthFault(page); await page.evaluate(() => ReticTcc.open(Retic.kiosks[0].id)); await page.waitForTimeout(800); } },
+  'retic-ef-band': { run: async (page) => { await reticEarthFault(page); await page.evaluate(() => ReticTcc.open(Retic.kiosks[0].id)); await page.waitForTimeout(800);
+    await page.evaluate(() => { document.querySelectorAll('#rtcc-body input[type=checkbox]').forEach(c => { if (/i.?t/i.test(c.closest('label')?.textContent || '') && !c.checked) c.click(); }); });
+    await page.waitForTimeout(500); } },
+  'retic-fault-diagram': { run: async (page) => { await reticEarthFault(page); await page.click('[data-action="diagram"]'); await page.waitForTimeout(800);
+    await page.click('.rdg-seg button >> text=Fault current'); await page.waitForTimeout(800); } },
+
+  // A board whose way 1 and incomer are library breakers, checked, with the Coord mini TCC open.
+  'db-coord': { run: async (page) => {
+    const id = await seedBoard(page);
+    await page.evaluate((id) => {
+      const b = AppState.components.get(id);
+      const cb = STANDARD_CBS.find(x => x.cb_type === 'mccb' && x.trip_rating_a >= 100 && (x.rated_voltage_kv || 0.4) <= 1);
+      const mcb = STANDARD_CBS.find(x => x.cb_type === 'mcb' && x.trip_rating_a === 20 && x.mcb_curve === 'C');
+      if (cb) b.props.incoming_device = 'cb:' + cb.id;
+      b.props.ik_max_ka = 10;
+      if (mcb) b.props.circuits.slice(2, 6).forEach(w => { w.device = 'cb:' + mcb.id; });
+    }, id);
+    await toWorkspace(page, id, 'grid');
+    await page.click('#db-check-circuits'); await page.waitForTimeout(4000);
+    await page.click('.db-schedule-grid tbody tr:nth-child(3) td.db-coord'); await page.waitForTimeout(1000);
+  } },
+
+  'lib-import': { run: async (page) => { await openLibs(page); await page.click('[data-lview="export"]'); await page.waitForTimeout(500);
+    const [fc] = await Promise.all([page.waitForEvent('filechooser'), page.click('[data-act="import-json"]')]);
+    await fc.setFiles(new URL('../vendor-libraries/cbi_breakers.json', import.meta.url).pathname);
+    await page.waitForTimeout(600); } },
+
+  'settings-cascading': { run: async (page) => { await page.evaluate(() => { StandardData.openSettings ? StandardData.openSettings() : document.getElementById('btn-settings')?.click(); });
+    await page.waitForTimeout(600); } },
+
   'notifications': { run: async (page) => { await page.click('#btn-notifications'); await page.waitForTimeout(800); } },
 
   'quote-menu': { run: async (page) => {
@@ -299,6 +331,30 @@ export const SETUPS = {
     await page.waitForTimeout(900);
   } },
 };
+
+async function reticEarthFault(page) {
+  await page.evaluate(() => { Workspaces.setType('reticulation', []); switchWorkspace('retic'); });
+  await page.waitForTimeout(500);
+  const ids = await page.evaluate(() => {
+    const lv = STANDARD_CABLES.filter(c => (c.voltage_kv || c.rated_voltage_kv || 0.4) <= 1 && /armou?red|xlpe|pvc/i.test(JSON.stringify(c)));
+    const pick = (cores, mm2) => (lv.find(c => c.cores === cores && Number(c.size_mm2 || c.area_mm2 || c.cross_section_mm2) === mm2) || lv.find(c => c.cores === cores) || {}).id;
+    const nm = (cores, mm2) => (lv.find(c => c.cores === cores && Number(c.size_mm2) === mm2) || lv.find(c => c.cores === cores) || {}).name;
+    return { svc: nm(2, 16), fdr: nm(4, 95) };
+  });
+  await page.evaluate(({ svc, fdr }) => { Retic.settings.quickServiceCable = svc; Retic.settings.quickFeederCable = fdr; }, ids);
+  await page.click('button:has-text("Build")');
+  await page.waitForTimeout(1200);
+  await page.evaluate(() => {
+    const h = Retic.kiosks[0];
+    const cb = STANDARD_CBS.find(x => x.cb_type === 'mccb' && (x.rated_voltage_kv || 0.4) <= 1 && x.trip_rating_a >= 160);
+    Retic.kiosks.forEach((k, i) => { k.fedFrom = i ? Retic.kiosks[i - 1].id : Retic.minisubs[0].id; });
+    const ecc = (STANDARD_CABLES.find(c => c.construction === 'earth' && c.conductor === 'Cu' && c.size_mm2 === 16) || {}).name;
+    Retic.kiosks.forEach(k => { k.feederEarth = ecc; k.erfs.forEach(e => { e.earthCable = ecc; }); });
+    h.protection = 'cb:' + cb.id;
+    Retic.renderKiosks(); Retic.recompute();
+  });
+  await page.waitForTimeout(3500);
+}
 
 async function openLibs(page) {
   await page.click('#menu-file .toolbar-menu-btn');
