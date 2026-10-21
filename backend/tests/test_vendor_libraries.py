@@ -544,3 +544,35 @@ class TestAbbEmax2:
     def test_instantaneous_off_leaves_no_instantaneous(self):
         p = _ekip(instantaneous_pickup=0, magnetic_pickup=1000)
         assert _cb_self_clearing_time(p, 80000.0) == pytest.approx(0.33)
+
+
+# ── CBI L-frame (Reticmaster data library) ───────────────────────────────
+
+CBI_LIB = os.path.join(ROOT, "testing", "vendor-libraries", "cbi_breakers.json")
+CBI_JS = os.path.join(ROOT, "frontend", "js", "vendor-trip-units-cbi.js")
+
+
+class TestCbiLFrame:
+    def _load(self):
+        src = open(CBI_JS).read()
+        head = "Object.assign(TRIP_UNITS, "
+        prof = json.loads(src[src.index(head) + len(head):src.rindex(");")])
+        ents = {e["data"]["id"]: e["data"] for e in json.load(open(CBI_LIB))["entries"]}
+        return prof, ents
+
+    def test_entries_and_profile(self):
+        prof, ents = self._load()
+        assert sorted(e["trip_rating_a"] for e in ents.values()) == [100, 125, 150, 175, 200, 225, 250]
+        assert all(e["manufacturer"] == "CBI" and e["trip_units"] == ["cbi_l_tm"] for e in ents.values())
+        pts = prof["cbi_l_tm"]["curve"]["thermal"]["points"]
+        assert pts[0] == [1.3, 6000] and pts[-1] == [10, 0.24] and len(pts) == 88
+        assert all(a[0] < b[0] and a[1] > b[1] for a, b in zip(pts, pts[1:]))
+        assert prof["cbi_l_tm"]["dials"]["magnetic_pickup"]["base"] == "In"
+
+    def test_curve_time(self):
+        prof, _ = self._load()
+        tc = prof["cbi_l_tm"]["curve"]["thermal"]
+        # a published point: 2 x In -> 50 s
+        pts = dict((m, t) for m, t in tc["points"])
+        m = min(pts, key=lambda x: abs(x - 2.0))
+        assert thermal_curve_time(tc, m) == pytest.approx(pts[m], rel=0.01)
