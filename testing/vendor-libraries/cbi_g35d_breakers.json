@@ -1,0 +1,204 @@
+{
+ "entries": [
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_g35d_16",
+    "name": "CBI G35D 16 A",
+    "cb_type": "mccb",
+    "manufacturer": "CBI",
+    "series": "G35D",
+    "model": "G35D",
+    "trip_rating_a": 16,
+    "frame_a": 100,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 35,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 37.612,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_g35d_p9_0_16"
+    ],
+    "default_trip_unit": "cbi_g35d_p9_0_16",
+    "source": "CBI MCCB catalogue, G35D data sheet (p. 6)",
+    "check": "instantaneous AC 600 +/- 120 A fixed: curve constructed from the published thermal curve"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_g35d_20",
+    "name": "CBI G35D 20 A",
+    "cb_type": "mccb",
+    "manufacturer": "CBI",
+    "series": "G35D",
+    "model": "G35D",
+    "trip_rating_a": 20,
+    "frame_a": 100,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 35,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 30.09,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_g35d_p9_0_20"
+    ],
+    "default_trip_unit": "cbi_g35d_p9_0_20",
+    "source": "CBI MCCB catalogue, G35D data sheet (p. 6)",
+    "check": "instantaneous AC 600 +/- 120 A fixed: curve constructed from the published thermal curve"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_g35d_32",
+    "name": "CBI G35D 32 A",
+    "cb_type": "mccb",
+    "manufacturer": "CBI",
+    "series": "G35D",
+    "model": "G35D",
+    "trip_rating_a": 32,
+    "frame_a": 100,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 35,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 18.806,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_g35d_p9_0_32"
+    ],
+    "default_trip_unit": "cbi_g35d_p9_0_32",
+    "source": "CBI MCCB catalogue, G35D data sheet (p. 6)",
+    "check": "instantaneous AC 600 +/- 120 A fixed: curve constructed from the published thermal curve"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_g35d_40",
+    "name": "CBI G35D 40 A",
+    "cb_type": "mccb",
+    "manufacturer": "CBI",
+    "series": "G35D",
+    "model": "G35D",
+    "trip_rating_a": 40,
+    "frame_a": 100,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 35,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 16.734,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_g35d_p9_1"
+    ],
+    "default_trip_unit": "cbi_g35d_p9_1",
+    "source": "CBI MCCB catalogue, G35D data sheet (p. 6)",
+    "check": "instantaneous band = where the chart's curves reach their flat times"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_g35d_50",
+    "name": "CBI G35D 50 A",
+    "cb_type": "mccb",
+    "manufacturer": "CBI",
+    "series": "G35D",
+    "model": "G35D",
+    "trip_rating_a": 50,
+    "frame_a": 100,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 35,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 16.734,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_g35d_p9_1"
+    ],
+    "default_trip_unit": "cbi_g35d_p9_1",
+    "source": "CBI MCCB catalogue, G35D data sheet (p. 6)",
+    "check": "instantaneous band = where the chart's curves reach their flat times"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_g35d_63",
+    "name": "CBI G35D 63 A",
+    "cb_type": "mccb",
+    "manufacturer": "CBI",
+    "series": "G35D",
+    "model": "G35D",
+    "trip_rating_a": 63,
+    "frame_a": 100,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 35,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 16.734,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_g35d_p9_1"
+    ],
+    "default_trip_unit": "cbi_g35d_p9_1",
+    "source": "CBI MCCB catalogue, G35D data sheet (p. 6)",
+    "check": "instantaneous band = where the chart's curves reach their flat times"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_g35d_80",
+    "name": "CBI G35D 80 A",
+    "cb_type": "mccb",
+    "manufacturer": "CBI",
+    "series": "G35D",
+    "model": "G35D",
+    "trip_rating_a": 80,
+    "frame_a": 100,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 35,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 16.734,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_g35d_p9_1"
+    ],
+    "default_trip_unit": "cbi_g35d_p9_1",
+    "source": "CBI MCCB catalogue, G35D data sheet (p. 6)",
+    "check": "instantaneous band = where the chart's curves reach their flat times"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_g35d_100",
+    "name": "CBI G35D 100 A",
+    "cb_type": "mccb",
+    "manufacturer": "CBI",
+    "series": "G35D",
+    "model": "G35D",
+    "trip_rating_a": 100,
+    "frame_a": 100,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 35,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 16.734,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_g35d_p9_1"
+    ],
+    "default_trip_unit": "cbi_g35d_p9_1",
+    "source": "CBI MCCB catalogue, G35D data sheet (p. 6)",
+    "check": "instantaneous band = where the chart's curves reach their flat times"
+   }
+  }
+ ]
+}

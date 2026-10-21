@@ -663,3 +663,54 @@ class TestCbiQf:
         c1 = {"points": prof[f"cbi_{typ}_c1"]["curve"]["thermal"]["points"]}
         c2 = {"points": prof[f"cbi_{typ}_c2"]["curve"]["thermal"]["points"]}
         assert all(thermal_curve_time(c2, m) < thermal_curve_time(c1, m) for m in (2, 5, 8))
+
+
+# ── CBI thermal-magnetic MCCBs (G15D / G25D / F15D / F25D / G35D / F35D / K25D / K35D / K50D) ─────────
+
+MCCB_TM = {  # type -> ({rating: (Icu, Ics) kA}, fixed-amps ratings)
+    "g15d": ({16: (15, 15), 20: (15, 15), 32: (15, 15), 40: (15, 15), 50: (15, 15), 63: (15, 15), 80: (15, 15), 100: (15, 15), 125: (15, 15)}, [16, 20, 32]),
+    "g25d": ({16: (25, 25), 20: (25, 25), 32: (25, 25), 40: (25, 25), 50: (25, 25), 63: (25, 25), 80: (25, 25), 100: (25, 25), 125: (25, 25)}, [16, 20, 32]),
+    "f15d": ({r: (15, 15) for r in (125, 150, 160, 175, 200, 225, 250)}, []),
+    "f25d": ({r: (25, 25) for r in (125, 150, 160, 175, 200, 225, 250)}, []),
+    "g35d": ({r: (35, 35) for r in (16, 20, 32, 40, 50, 63, 80, 100)}, [16, 20, 32]),
+    "f35d": ({r: (35, 35) for r in (125, 150, 160, 175, 200, 225, 250)}, []),
+    "k25d": ({r: (25, 13) for r in (250, 300, 350, 400)}, []),
+    "k35d": ({**{r: (35, 35) for r in (250, 300, 350, 400)}, 500: (36, 18), 630: (36, 18)}, []),
+    "k50d": ({500: (50, 50), 630: (50, 50)}, []),
+}
+
+
+@pytest.mark.parametrize("typ", sorted(MCCB_TM))
+class TestCbiMccbThermalMagnetic:
+    def test_entries(self, typ):
+        prof, ents = _qf(typ)
+        ratings, _ = MCCB_TM[typ]
+        assert {e["trip_rating_a"]: (e["breaking_ka"], round(e["breaking_ka"] * e["ics_pct"] / 100)) for e in ents.values()} == ratings
+        for e in ents.values():
+            assert (e["cb_type"], e["manufacturer"]) == ("mccb", "CBI")
+            assert e["trip_units"] == [e["default_trip_unit"]] and e["default_trip_unit"] in prof
+
+    def test_profiles(self, typ):
+        prof, _ = _qf(typ)
+        for pid, p in prof.items():
+            t = p["curve"]["tol"]
+            mx = p["curve"]["thermal"]["points"]
+            mn = t["long_time"]["min_points"]
+            assert p["kind"] == "tm" and 1.03 <= t["pickup"][0] <= 1.07 and 1.18 <= t["pickup"][1] <= 1.26     # IEC 60947-2 no-trip / trip
+            d = p["dials"]["magnetic_pickup"]
+            assert d["fixed"] and d["base"] == "In" and 7 < d["def"] < 40
+            assert t["instantaneous"]["hold_s"] == pytest.approx(0.01, rel=0.05) and t["instantaneous"]["break_s"] == pytest.approx(0.02, rel=0.05)
+            for pts in (mx, mn):
+                assert all(a[0] < b[0] and a[1] > b[1] for a, b in zip(pts, pts[1:])), pid
+            assert all(thermal_curve_time({"points": mn}, m) < thermal_curve_time({"points": mx}, m) for m in (1.5, 2, 3, 5))
+            # the band: the instantaneous pickup range sits where the two curves reach their flat times
+            lo, hi = d["def"] * (1 - t["instantaneous"]["pickup_tol"]), d["def"] * (1 + t["instantaneous"]["pickup_tol"])
+            assert mn[-1][0] == pytest.approx(lo, rel=0.02) and mx[-1][0] >= hi * 0.9
+
+    def test_fixed_amps_band(self, typ):
+        # "AC 600 +/- 120 A": 480-720 A of instantaneous trip, whatever the 15-32 A rating
+        prof, ents = _qf(typ)
+        for inn in MCCB_TM[typ][1]:
+            p = prof[ents[f"cbi_{typ}_{inn}"]["default_trip_unit"]]
+            d, t = p["dials"]["magnetic_pickup"]["def"], p["curve"]["tol"]["instantaneous"]["pickup_tol"]
+            assert d * (1 - t) * inn == pytest.approx(480, rel=0.03) and d * (1 + t) * inn == pytest.approx(720, rel=0.03)

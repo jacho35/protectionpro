@@ -1,0 +1,104 @@
+{
+ "entries": [
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_k25d_250",
+    "name": "CBI K25D 250 A",
+    "cb_type": "mccb",
+    "manufacturer": "CBI",
+    "series": "K25D",
+    "model": "K25D",
+    "trip_rating_a": 250,
+    "frame_a": 400,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "ics_pct": 52,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 11.617,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_k25d_p15_0"
+    ],
+    "default_trip_unit": "cbi_k25d_p15_0",
+    "source": "CBI MCCB catalogue, K25D data sheet (p. 12)",
+    "check": "instantaneous band = where the chart's curves reach their flat times; Icu / Ics: the data sheet's 440 V figures (no 415 V row)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_k25d_300",
+    "name": "CBI K25D 300 A",
+    "cb_type": "mccb",
+    "manufacturer": "CBI",
+    "series": "K25D",
+    "model": "K25D",
+    "trip_rating_a": 300,
+    "frame_a": 400,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "ics_pct": 52,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 11.617,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_k25d_p15_0"
+    ],
+    "default_trip_unit": "cbi_k25d_p15_0",
+    "source": "CBI MCCB catalogue, K25D data sheet (p. 12)",
+    "check": "instantaneous band = where the chart's curves reach their flat times; Icu / Ics: the data sheet's 440 V figures (no 415 V row)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_k25d_350",
+    "name": "CBI K25D 350 A",
+    "cb_type": "mccb",
+    "manufacturer": "CBI",
+    "series": "K25D",
+    "model": "K25D",
+    "trip_rating_a": 350,
+    "frame_a": 400,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "ics_pct": 52,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 11.617,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_k25d_p15_0"
+    ],
+    "default_trip_unit": "cbi_k25d_p15_0",
+    "source": "CBI MCCB catalogue, K25D data sheet (p. 12)",
+    "check": "instantaneous band = where the chart's curves reach their flat times; Icu / Ics: the data sheet's 440 V figures (no 415 V row)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_k25d_400",
+    "name": "CBI K25D 400 A",
+    "cb_type": "mccb",
+    "manufacturer": "CBI",
+    "series": "K25D",
+    "model": "K25D",
+    "trip_rating_a": 400,
+    "frame_a": 400,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "ics_pct": 52,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 11.617,
+    "long_time_delay": 10,
+    "trip_units": [
+     "cbi_k25d_p15_0"
+    ],
+    "default_trip_unit": "cbi_k25d_p15_0",
+    "source": "CBI MCCB catalogue, K25D data sheet (p. 12)",
+    "check": "instantaneous band = where the chart's curves reach their flat times; Icu / Ics: the data sheet's 440 V figures (no 415 V row)"
+   }
+  }
+ ]
+}
