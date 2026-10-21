@@ -358,12 +358,13 @@ const Libraries = {
   _renderExport() {
     const co = this._company();
     document.getElementById('lib-main').innerHTML = `<div class="lib-card"><h3>Import / export</h3>
-      <p>Download your libraries as JSON, for backup or to inspect.</p>
+      <p>Download your libraries as JSON, for backup or to inspect, or import library entries from a JSON file (the manufacturer breaker libraries, or an export from another install).</p>
       <div class="subm-actions" style="max-width:420px">
+        <button type="button" class="btn-small" data-act="import-json">Import JSON…</button>
         <button type="button" class="btn-small" data-act="export-mine">Export my overrides (JSON)</button>
         ${co ? '<button type="button" class="btn-small" data-act="export-company">Export the company library (JSON)</button>' : ''}
       </div>
-      <p class="subm-hint" style="margin-top:14px">To bring entries in, add them in a library’s table, or publish a set of your own to a shared library from Team libraries.</p></div>`;
+      <p class="subm-hint" style="margin-top:14px">An import adds entries only: an id that already exists in the destination is skipped, never overwritten. You can also add entries in a library’s table, or publish a set of your own to a shared library from Team libraries.</p></div>`;
   },
 
   _download(name, obj) {
@@ -427,7 +428,64 @@ const Libraries = {
     }
     else if (a === 'export-mine') { this._download('my-libraries.json', SD._payload()); }
     else if (a === 'export-company') { const co = this._company(); this._download('company-library.json', { name: co.name, currency: co.currency, entries: co.entries.map(x => ({ kind: x.kind, id: x.id, version: x.version, retired: !!x.retired, data: x.data })) }); }
+    else if (a === 'import-json') await this._importJson();
     else if (a === 'handover') await this._handover();
+  },
+
+  // Import entries from a JSON file — `{"entries": [{"kind": "cbs", "data": {...}}]}` (the vendor library
+  // files) or a company-library export (`kind` + `data` per entry). Create-only: existing ids are skipped.
+  async _importJson() {
+    const SD = StandardData;
+    const file = await new Promise(resolve => {
+      const inp = document.createElement('input');
+      inp.type = 'file'; inp.accept = '.json,application/json';
+      inp.addEventListener('change', () => resolve(inp.files[0] || null));
+      inp.addEventListener('cancel', () => resolve(null));
+      inp.click();
+    });
+    if (!file) return;
+    let doc;
+    try { doc = JSON.parse(await file.text()); } catch (err) { UI.toast('That file is not valid JSON.', 'error'); return; }
+    const list = Array.isArray(doc) ? doc : (doc && doc.entries);
+    const items = (Array.isArray(list) ? list : []).filter(x => x && SD._LIBKEYS.includes(x.kind) && x.data && x.data.id).map(x => ({ key: x.kind, e: SD._strip(x.data) }));
+    if (!items.length) { UI.toast('No library entries found in that file (expected {"entries": [{"kind", "data"}]}).', 'warning', 6000); return; }
+    const editable = (SD._sharedLayers || []).filter(l => l.role === 'owner' || l.role === 'edit');
+    const counts = SD._LIBKEYS.map(k => [k, items.filter(i => i.key === k).length]).filter(c => c[1]).map(c => `${c[1]} ${SD._LIBNAME[c[0]].toLowerCase()}${c[1] === 1 ? '' : 's'}`).join(', ');
+    const dest = await new Promise(resolve => {
+      const m = document.createElement('div');
+      m.className = 'modal'; m.style.display = 'flex'; m.style.zIndex = '3000';
+      m.setAttribute('role', 'dialog'); m.setAttribute('aria-modal', 'true');
+      m.innerHTML = `<div class="modal-content" style="max-width:520px;width:92vw">
+        <div class="modal-header"><h3>Import ${escHtml(file.name)}</h3></div>
+        <div class="modal-body"><p style="margin:0 0 10px">${escHtml(counts)} found. Entries whose id already exists in the destination are skipped.</p>
+          <label>Add them to <select data-f="dest" style="width:100%"><option value="mine">My library</option>${editable.map(l => `<option value="${l.id}">Shared library “${escHtml(l.name)}”</option>`).join('')}</select></label></div>
+        <div class="ui-dialog-actions" style="padding:12px 16px;display:flex;gap:8px;justify-content:flex-end">
+          <button type="button" class="btn-small" data-a="cancel">Cancel</button><button type="button" class="btn-primary" data-a="ok">Import</button></div></div>`;
+      document.body.appendChild(m);
+      const end = v => { m.remove(); resolve(v); };
+      m.addEventListener('click', ev => { const a = ev.target.closest('[data-a]'); if (a) end(a.dataset.a === 'ok' ? m.querySelector('[data-f="dest"]').value : null); });
+      m.addEventListener('keydown', ev => { if (ev.key === 'Escape') end(null); });
+      m.querySelector('[data-a="ok"]').focus();
+    });
+    if (!dest) return;
+    try {
+      if (dest === 'mine') {
+        let added = 0;
+        const t = SD._editTarget; SD._editTarget = null;          // your own library, never a shared one being edited
+        for (const { key, e } of items) {
+          if (SD[key].some(x => x.id === e.id)) continue;
+          SD[key].push(SD._clone(e)); added++;
+        }
+        SD._syncAll();
+        SD._editTarget = t;
+        UI.toast(`Imported ${added}${items.length - added ? `, skipped ${items.length - added} that already exist` : ''}.`, 'success', 5000);
+      } else {
+        const r = await API.importSharedEntries(parseInt(dest), items.map(i => ({ kind: i.key, data: i.e })));
+        await SD.reloadShared();
+        UI.toast(`Imported ${r.created.length}${r.skipped.length ? `, skipped ${r.skipped.length} that already exist` : ''}.`, 'success', 5000);
+      }
+    } catch (err) { UI.toast('Import failed: ' + err.message, 'error', 8000); }
+    this._render(); this.refreshBadge();
   },
 
   async _handover() {
