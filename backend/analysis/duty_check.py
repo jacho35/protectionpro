@@ -7,6 +7,7 @@ Flags any device whose rating is exceeded.
 
 import math
 from ..models.schemas import ProjectData
+from . import cascading
 from .cb_settings import pickup_amps
 from .ct_model import ct_saturation_params, ct_time_to_saturation, x_r_from_kappa
 from .pt_model import pt_burden_adequacy, pt_voltage_adequacy, parse_pt_accuracy_limits
@@ -61,6 +62,134 @@ def _find_upstream_bus(device_id, adj, comp_map):
     return buses
 
 
+def _apply_cascading(results, adj, comp_map):
+    """[Cascading] Credit an LV breaker whose own breaking capacity is below its
+    duty with a tested upstream combination (IEC 60947-2 Annex A, the
+    manufacturer's table — cascading.py). Interrupt and making duty are then
+    judged against the reinforced capacity; the row gets a `cascade` entry."""
+    by_id = {r["device_id"]: r for r in results if r["device_type"] == "cb"}
+    for r in by_id.values():
+        v = r["_v"]
+        if r["interrupt_ok"] or not v["lv_cb"] or r["breaking_capacity_ka"] <= 0:
+            continue
+        if not cascading.applies_at(v["system_voltage_kv"]):
+            continue
+        ref = cascading.device_ref(v["props"])
+        if not ref:
+            continue
+        ids, _ = cascading.supply_chain(r["device_id"], adj, comp_map)
+        chain = [{"ref": ref, "capacity_ka": r["breaking_capacity_ka"], "duty_ka": r["breaking_duty_ka"]}]
+        for uid in ids:
+            u = by_id.get(uid)
+            if not u:
+                break
+            chain.append({"ref": cascading.device_ref(u["_v"]["props"]),
+                          "capacity_ka": u["breaking_capacity_ka"], "duty_ka": u["breaking_duty_ka"]})
+        hit = cascading.cover(chain)
+        if not hit:
+            continue
+        up = by_id[ids[hit["by"] - 1]]
+        ka = hit["reinforced_ka"]
+        r["interrupt_ok"] = True
+        r["cascade"] = {"upstream_id": up["device_id"], "upstream_name": up["device_name"],
+                        "reinforced_ka": ka, "source": cascading.source_note()}
+        # the combination is tested for making at the reinforced capacity too
+        if not v["explicit_making"]:
+            r["making_capacity_ka"] = lv_making_factor(ka) * ka
+            r["making_ok"] = r["peak_fault_ka"] <= r["making_capacity_ka"]
+            r["making_margin_pct"] = (1 - r["peak_fault_ka"] / r["making_capacity_ka"]) * 100
+
+
+def _verdict(r):
+    """Issues + status of one device row (in place); drops the `_v` inputs."""
+    v = r.pop("_v")
+    cascade = r["cascade"]
+    breaking_capacity_ka = r["breaking_capacity_ka"]
+    breaking_duty_ka, duty_basis = r["breaking_duty_ka"], r["duty_basis"]
+    peak_fault_ka = r["peak_fault_ka"]
+    making_capacity_ka = r["making_capacity_ka"]
+    making_margin_pct = r["making_margin_pct"]
+    interrupt_ok, making_ok, asym_ok = r["interrupt_ok"], r["making_ok"], r["asym_ok"]
+    asym_duty_ka, asym_capability_ka = r["asym_duty_ka"], r["asym_capability_ka"]
+    voltage_ok, voltage_marginal, um_kv = r["voltage_ok"], v["voltage_marginal"], r["um_kv"]
+    system_voltage_kv, rated_voltage_kv = v["system_voltage_kv"], v["rated_voltage_kv"]
+    icw_ok, i_st_ka, st_delay, icw_ka = r["icw_ok"], v["i_st_ka"], v["st_delay"], v["icw_ka"]
+    continuous_ok = r["continuous_ok"]
+    load_current_a, rated_current_a = v["load_current_a"], v["rated_current_a"]
+    fallback_basis = r["thevenin_fallback"]
+
+    # ── Utilisation ── (of the reinforced capacity when cascaded)
+    capacity = cascade["reinforced_ka"] if cascade else breaking_capacity_ka
+    utilisation_pct = 0
+    if capacity > 0:
+        utilisation_pct = (breaking_duty_ka / capacity) * 100
+
+    # ── Status ──
+    issues = []
+    if not interrupt_ok:
+        duty_label = {"ib": "Breaking duty Ib", "ik_unbalanced": "Unbalanced fault I\"k",
+                      }.get(duty_basis.split("+")[0], "Largest prospective fault I\"k")
+        issues.append(f"{duty_label} {breaking_duty_ka:.2f}kA exceeds breaking capacity {breaking_capacity_ka:.2f}kA")
+    if making_ok is False:
+        issues.append(f"Peak fault {peak_fault_ka:.2f}kA exceeds making capacity {making_capacity_ka:.2f}kA")
+    if asym_ok is False:
+        issues.append(
+            f"Asymmetrical breaking duty {asym_duty_ka:.2f}kA exceeds the "
+            f"rated asymmetrical capability {asym_capability_ka:.2f}kA "
+            "(IEC 62271-100 §4.101 — DC component above the standard "
+            "rated value; check the breaker's DC-component rating)")
+    if making_ok and making_margin_pct is not None and making_margin_pct < 10:
+        issues.append(
+            f"Making capacity margin only {making_margin_pct:.0f}% "
+            f"(peak {peak_fault_ka:.2f}kA vs making capacity {making_capacity_ka:.2f}kA)"
+        )
+    if not voltage_ok:
+        issues.append(f"System voltage {system_voltage_kv}kV exceeds device rated voltage {rated_voltage_kv}kV")
+    elif voltage_marginal:
+        issues.append(f"Rated voltage {rated_voltage_kv}kV is below Um {um_kv:g}kV, the highest "
+                      f"voltage of a {system_voltage_kv}kV system (IEC 60038) — IEC 62271-1 "
+                      f"requires Ur ≥ Um; enter the device's IEC rated voltage")
+    if icw_ok is False:
+        issues.append(f"Short-time withstand: {i_st_ka:.2f}kA for the {st_delay:g}s delay exceeds "
+                      f"Icw {icw_ka:g}kA for {v['icw_time_s']:g}s (IEC 60947-2)")
+    if not continuous_ok:
+        issues.append(f"Load current {load_current_a:.1f}A exceeds rated current {rated_current_a:.0f}A")
+    if cascade:
+        issues.append(
+            f"Cascaded with {cascade['upstream_name']}: breaking capacity {breaking_capacity_ka:g}kA is below "
+            f"the {breaking_duty_ka:.2f}kA duty, but the combination's reinforced breaking capacity is "
+            f"{cascade['reinforced_ka']:g}kA ({cascade['source']}). The two breakers are not selective "
+            "at these fault currents, and either may only be replaced by the same type")
+    if utilisation_pct > 80 and interrupt_ok:
+        issues.append(f"High utilisation {utilisation_pct:.0f}% — close to breaking capacity")
+    if fallback_basis:
+        issues.append(
+            "Fault current basis is a per-path fallback on a meshed "
+            "topology (nodal solve failed) — duty figures may be "
+            "overstated; verdict unreliable")
+
+    making_marginal = (making_ok is True and making_margin_pct is not None
+                       and making_margin_pct < 10)
+    if (not interrupt_ok or making_ok is False or asym_ok is False or not voltage_ok
+            or icw_ok is False):
+        status = "fail"
+    elif (utilisation_pct > 80 or not continuous_ok or making_marginal
+          or fallback_basis or voltage_marginal):
+        status = "warning"
+    else:
+        status = "pass"
+
+    r.update({
+        "breaking_duty_ka": round(breaking_duty_ka, 2),
+        "peak_fault_ka": round(peak_fault_ka, 2),
+        "making_capacity_ka": round(making_capacity_ka, 2),
+        "making_margin_pct": round(making_margin_pct, 1) if making_margin_pct is not None else None,
+        "utilisation_pct": round(utilisation_pct, 1),
+        "status": status,
+        "issues": issues,
+    })
+
+
 # [L1] IEC 62271-1 / IEC 60038: the rated voltage of MV equipment must be at
 # least the HIGHEST voltage for equipment Um of the system, not its nominal.
 IEC_UM_KV = [3.6, 7.2, 12, 17.5, 24, 36, 40.5, 52, 72.5, 100, 123, 145, 170,
@@ -89,6 +218,24 @@ def _largest_fault_ka(bus_fault):
     three-phase or the line-to-earth one."""
     vals = [getattr(bus_fault, k, None) for k in ("ik3", "ik1", "ikLL")]
     return max([float(v) for v in vals if v], default=0.0)
+
+
+def lv_making_factor(icu):
+    """IEC 60947-2 Table 2: minimum ratio n = Icm/Icu, stepped by Icu (kA)."""
+    if icu <= 4.5:
+        # [PS-14b] IEC 60947-2 Table 2 bottom rung: n = 1.41 for Icu ≤ 4.5 kA —
+        # the previous ladder lumped these into 1.5 (~6% optimistic on assumed
+        # making capacity for miniature breakers).
+        return 1.41
+    if icu <= 6:
+        return 1.5
+    if icu <= 10:
+        return 1.7
+    if icu <= 20:
+        return 2.0
+    if icu <= 50:
+        return 2.1
+    return 2.2
 
 
 def run_duty_check(project: ProjectData):
@@ -299,25 +446,7 @@ def run_duty_check(project: ProjectData):
                     making_factor = 2.6 if freq == 60 else 2.5
                     making_capacity_ka = making_factor * breaking_capacity_ka
                 else:
-                    # IEC 60947-2 Table 2: minimum ratio n = Icm/Icu
-                    # varies with the ultimate breaking capacity Icu
-                    icu = breaking_capacity_ka
-                    if icu <= 4.5:
-                        # [PS-14b] IEC 60947-2 Table 2 bottom rung: n = 1.41
-                        # for Icu ≤ 4.5 kA — the previous ladder lumped these
-                        # into 1.5 (~6% optimistic on assumed making capacity
-                        # for miniature breakers).
-                        n = 1.41
-                    elif icu <= 6:
-                        n = 1.5
-                    elif icu <= 10:
-                        n = 1.7
-                    elif icu <= 20:
-                        n = 2.0
-                    elif icu <= 50:
-                        n = 2.1
-                    else:
-                        n = 2.2
+                    n = lv_making_factor(breaking_capacity_ka)
                     making_capacity_ka = n * breaking_capacity_ka
             making_ok = peak_fault_ka <= making_capacity_ka
             if making_capacity_ka > 0:
@@ -386,76 +515,22 @@ def run_duty_check(project: ProjectData):
                         f"Device '{device_name}' has a short-time delay but no Icw rating — "
                         "short-time withstand (IEC 60947-2) not checked.")
 
-        # ── Utilisation ──
-        utilisation_pct = 0
-        if breaking_capacity_ka > 0:
-            utilisation_pct = (breaking_duty_ka / breaking_capacity_ka) * 100
-
-        # ── Status ──
-        issues = []
-        if not interrupt_ok:
-            duty_label = {"ib": "Breaking duty Ib", "ik_unbalanced": "Unbalanced fault I\"k",
-                          }.get(duty_basis.split("+")[0], "Largest prospective fault I\"k")
-            issues.append(f"{duty_label} {breaking_duty_ka:.2f}kA exceeds breaking capacity {breaking_capacity_ka:.2f}kA")
-        if making_ok is False:
-            issues.append(f"Peak fault {peak_fault_ka:.2f}kA exceeds making capacity {making_capacity_ka:.2f}kA")
-        if asym_ok is False:
-            issues.append(
-                f"Asymmetrical breaking duty {asym_duty_ka:.2f}kA exceeds the "
-                f"rated asymmetrical capability {asym_capability_ka:.2f}kA "
-                "(IEC 62271-100 §4.101 — DC component above the standard "
-                "rated value; check the breaker's DC-component rating)")
-        if making_ok and making_margin_pct is not None and making_margin_pct < 10:
-            issues.append(
-                f"Making capacity margin only {making_margin_pct:.0f}% "
-                f"(peak {peak_fault_ka:.2f}kA vs making capacity {making_capacity_ka:.2f}kA)"
-            )
-        if not voltage_ok:
-            issues.append(f"System voltage {system_voltage_kv}kV exceeds device rated voltage {rated_voltage_kv}kV")
-        elif voltage_marginal:
-            issues.append(f"Rated voltage {rated_voltage_kv}kV is below Um {um_kv:g}kV, the highest "
-                          f"voltage of a {system_voltage_kv}kV system (IEC 60038) — IEC 62271-1 "
-                          f"requires Ur ≥ Um; enter the device's IEC rated voltage")
-        if icw_ok is False:
-            issues.append(f"Short-time withstand: {i_st_ka:.2f}kA for the {st_delay:g}s delay exceeds "
-                          f"Icw {icw_ka:g}kA for {float(dp.get('icw_time_s', 1.0) or 1.0):g}s (IEC 60947-2)")
-        if not continuous_ok:
-            issues.append(f"Load current {load_current_a:.1f}A exceeds rated current {rated_current_a:.0f}A")
-        if utilisation_pct > 80 and interrupt_ok:
-            issues.append(f"High utilisation {utilisation_pct:.0f}% — close to breaking capacity")
-        if fallback_basis:
-            issues.append(
-                "Fault current basis is a per-path fallback on a meshed "
-                "topology (nodal solve failed) — duty figures may be "
-                "overstated; verdict unreliable")
-
-        making_marginal = (making_ok is True and making_margin_pct is not None
-                           and making_margin_pct < 10)
-        if (not interrupt_ok or making_ok is False or asym_ok is False or not voltage_ok
-                or icw_ok is False):
-            status = "fail"
-        elif (utilisation_pct > 80 or not continuous_ok or making_marginal
-              or fallback_basis or voltage_marginal):
-            status = "warning"
-        else:
-            status = "pass"
-
         results.append({
             "device_id": device.id,
             "device_name": device_name,
             "device_type": device_type,
             "location_bus": location_bus,
             "prospective_fault_ka": round(prospective_fault_ka, 2),
-            "breaking_duty_ka": round(breaking_duty_ka, 2),
+            "breaking_duty_ka": breaking_duty_ka,
             "through_fault_ka": round(through_fault_ka, 2),
             "thevenin_fallback": fallback_basis,
             "duty_basis": duty_basis,
-            "peak_fault_ka": round(peak_fault_ka, 2),
+            "peak_fault_ka": peak_fault_ka,
             "breaking_capacity_ka": round(breaking_capacity_ka, 2),
             "interrupt_ok": interrupt_ok,
             "making_ok": making_ok,
-            "making_capacity_ka": round(making_capacity_ka, 2),
-            "making_margin_pct": round(making_margin_pct, 1) if making_margin_pct is not None else None,
+            "making_capacity_ka": making_capacity_ka,
+            "making_margin_pct": making_margin_pct,
             "asym_ok": asym_ok,
             "asym_duty_ka": round(asym_duty_ka, 2),
             "asym_capability_ka": round(asym_capability_ka, 2),
@@ -464,10 +539,20 @@ def run_duty_check(project: ProjectData):
             "um_kv": round(um_kv, 1) if um_kv else None,
             "icw_ok": icw_ok,
             "largest_fault_ka": round(largest_fault_ka, 2),
-            "utilisation_pct": round(utilisation_pct, 1),
-            "status": status,
-            "issues": issues,
+            "cascade": None,
+            # verdict inputs, dropped once the verdict is made (_verdict)
+            "_v": {"voltage_marginal": voltage_marginal, "system_voltage_kv": system_voltage_kv,
+                   "rated_voltage_kv": rated_voltage_kv, "i_st_ka": i_st_ka, "st_delay": st_delay,
+                   "icw_ka": icw_ka, "icw_time_s": float(dp.get("icw_time_s", 1.0) or 1.0),
+                   "load_current_a": load_current_a, "rated_current_a": rated_current_a,
+                   "explicit_making": float(dp.get("making_capacity_ka", 0) or 0) > 0,
+                   "lv_cb": device_type == "cb" and not is_mv_device, "props": dp},
         })
+
+    if getattr(project, "cascading", None) is not False:
+        _apply_cascading(results, adj, comp_map)
+    for r in results:
+        _verdict(r)
 
     # ── Transformer overload check ──
     transformers = [c for c in project.components if c.type == "transformer"]

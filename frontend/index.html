@@ -2710,6 +2710,12 @@
               <input type="checkbox" id="use-iec-symbols"> Use IEC symbols (IEC 60617)
             </label>
           </div>
+          <div class="form-group">
+            <label for="allow-cascading">Breaking capacity</label>
+            <label class="checkbox-inline" title="Cascading (back-up protection, IEC 60947-2 Annex A): a breaker whose own breaking capacity is below the fault level passes when the manufacturer has tested it with the breaker above it and the combination covers the fault. Used by the duty check, compliance and the DB schedule coordination check. The two breakers are then not selective at those fault currents. Saved with the project.">
+              <input type="checkbox" id="allow-cascading"> Allow cascading (back-up protection)
+            </label>
+          </div>
           <button id="btn-save-settings" class="btn-primary">Apply</button>
         </div>
         <!-- Cable Library Tab -->
@@ -3373,7 +3379,7 @@
   <script src="js/lib/xlsx.full.min.js?v=3.5.274"></script>
   <script src="js/lib/pdf.min.js?v=3.5.274"></script>
   <script src="js/iec-60364-data.js?v=3.5.274"></script>
-  <script src="js/constants.js?v=3.5.299"></script>
+  <script src="js/constants.js?v=3.5.300"></script>
   <script src="js/vendor-trip-units.js?v=1.0"></script>
   <script src="js/vendor-trip-units-abb.js?v=1.0"></script>
   <script src="js/vendor-trip-units-cbi.js?v=1.1"></script>
@@ -3433,6 +3439,8 @@
   <script src="js/revisions.js?v=3.5.274"></script>
   <script src="js/minimap.js?v=3.5.274"></script>
   <script src="js/contextmenu.js?v=3.5.274"></script>
+  <script src="js/vendor-cascading.js?v=1.0"></script>
+  <script src="js/cascading.js?v=1.0"></script>
   <script src="js/dbcoord.js?v=1.0"></script>
   <script src="js/dbschedule.js?v=3.5.274"></script>
   <script src="js/control-sim.js?v=3.5.274"></script>

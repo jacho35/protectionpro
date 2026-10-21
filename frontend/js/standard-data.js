@@ -1608,6 +1608,7 @@ const StandardData = {
     document.getElementById('voltage-factor').value = AppState.voltageFactor ?? DEFAULT_VOLTAGE_FACTOR;
     document.getElementById('default-length-unit').value = AppState.defaultLengthUnit || 'm';
     document.getElementById('use-iec-symbols').checked = AppState.symbolSet === 'iec';
+    document.getElementById('allow-cascading').checked = AppState.cascading !== false;
     document.getElementById('settings-modal').style.display = '';
     // Render the currently active tab's content
     const activeTab = document.querySelector('.settings-tab.active');

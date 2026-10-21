@@ -175,6 +175,22 @@ const DbCoord = {
     return { limitA, hiA: hi, tClearHi: tHi, tAllowHi: allow(hi) };
   },
 
+  // [Cascading] Back-up cover of chain item i by a library breaker above it —
+  // IEC 60947-2 Annex A, the manufacturer's tested combination (cascading.js).
+  // An upstream item whose fault level is unknown cannot be shown adequate, so
+  // it backs nothing up. → {up: item, reinforcedKa} or null.
+  cascade(items, i, board) {
+    if (typeof Cascading === 'undefined' || !Cascading.enabled()) return null;
+    if (!Cascading.appliesAt(board.props.voltage_kv ?? 0.4)) return null;
+    const sub = items.slice(i).map(it => ({
+      ref: it.dev.lib ? Cascading.refOfEntry(it.dev.entry) : null,
+      capacityKa: it.dev.breakingKa || 0,
+      dutyKa: it.ikA ? it.ikA / 1000 : Infinity,
+    }));
+    const hit = Cascading.cover(sub);
+    return hit ? { up: items[i + hit.by], reinforcedKa: hit.reinforcedKa } : null;
+  },
+
   _worst(list) {
     for (const s of ['fail', 'warn', 'pass']) if (list.includes(s)) return s;
     return 'info';
@@ -230,11 +246,14 @@ const DbCoord = {
 
     // breaking capacity of every rated device where it is installed
     const rated = items.filter(it => it.dev.breakingKa);
-    const bc = items.map(it => {
+    const bc = items.map((it, i) => {
       if (!it.dev.breakingKa) return { it, status: 'info', message: `${it.label}: ${it.dev.name} — no breaking capacity (generic).` };
       if (!it.ikA) return { it, status: 'warn', message: `${it.label}: Icu ${it.dev.breakingKa} kA — fault level unknown.` };
-      return it.dev.breakingKa * 1000 >= it.ikA
-        ? { it, status: 'pass', message: `${it.label}: Icu ${it.dev.breakingKa} kA ≥ ${fmt(it.ikA)}.` }
+      if (it.dev.breakingKa * 1000 >= it.ikA) return { it, status: 'pass', message: `${it.label}: Icu ${it.dev.breakingKa} kA ≥ ${fmt(it.ikA)}.` };
+      const casc = this.cascade(items, i, board);
+      return casc
+        ? { it, status: 'pass', cascade: casc,
+          message: `${it.label}: Icu ${it.dev.breakingKa} kA is below the ${fmt(it.ikA)} fault level, but cascading with ${casc.up.label} (${casc.up.dev.name}) gives ${casc.reinforcedKa} kA (${Cascading.sourceNote()}). Not selective at these currents; replace only with the same types.` }
         : { it, status: 'fail', message: `${it.label}: Icu ${it.dev.breakingKa} kA is below the ${fmt(it.ikA)} fault level.` };
     });
     const breaking = rated.length
@@ -409,7 +428,9 @@ const DbCoord = {
       const icu = it.dev.breakingKa ? it.dev.breakingKa * 1000 : 0;
       if (icu > xmin && icu < xmax) {
         const bad = it.ikA && icu < it.ikA;
-        marks += `<path d="M${f(X(icu))} ${this.Y1 - 60}V${this.Y1}" stroke="${this.COLORS[i % this.COLORS.length]}" stroke-width="3.5"><title>${escHtml(it.label)}: Icu ${it.dev.breakingKa} kA${bad ? ' — below the fault level' : ''}</title></path>`;
+        const casc = bad && e.breaking && e.breaking.items[i] ? e.breaking.items[i].cascade : null;
+        const note = casc ? ` — below the fault level, cascaded with ${casc.up.label}: ${casc.reinforcedKa} kA` : bad ? ' — below the fault level' : '';
+        marks += `<path d="M${f(X(icu))} ${this.Y1 - 60}V${this.Y1}" stroke="${this.COLORS[i % this.COLORS.length]}" stroke-width="3.5"><title>${escHtml(it.label)}: Icu ${it.dev.breakingKa} kA${escHtml(note)}</title></path>`;
       }
     });
 

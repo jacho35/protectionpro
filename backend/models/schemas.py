@@ -189,6 +189,10 @@ class ProjectData(BaseModel):
     # Harmonics study limit basis: "ieee519" (IEEE 519-2014, default) or "iec"
     # (IEC 61000-3-6 planning levels at MV/HV, IEC 61000-2-4 Class 2 at LV).
     harmonicsLimits: Optional[str] = None
+    # Cascading (back-up protection, IEC 60947-2 Annex A) in the duty check:
+    # None/True → a tested upstream combination may cover a breaker whose own
+    # capacity is too low (cascading.py); False → own capacity only.
+    cascading: Optional[bool] = None
     # Earth grids of any shape (earth_grid.py): each is a dict — soil, surface
     # layer, conductor, layout generator, rods, fences, extra conductors/rods,
     # calculation method and limit basis. A bus uses one by `earth_grid_id`.

@@ -31,6 +31,7 @@ const AppState = {
   projectId: null,
   projectName: 'Untitled Project',
   symbolSet: 'iec',          // SLD symbol set — see reset()
+  cascading: true,           // credit tested back-up combinations — see reset()
   dirty: false,
 
   // Project details for report covers
@@ -1275,6 +1276,7 @@ const AppState = {
     this.tccGradingMargin = null;
     this.tccFaultOpts = null;      // fault-level display options (kinds, scope, extra buses)
     this.harmonicsLimits = null;   // harmonics limit basis: null/'ieee519' (IEEE 519-2014) or 'iec'
+    this.cascading = true;         // breaking-capacity checks credit tested back-up combinations (cascading.js)
     // Bill-of-quantities rate library — only the entries the user has set
     // (rates.js builds the catalogue of item keys itself).
     this.rateLibrary = null;
@@ -1540,6 +1542,7 @@ const AppState = {
       tccGradingMargin: (typeof this.tccGradingMargin === 'number') ? this.tccGradingMargin : undefined,
       tccFaultOpts: this.tccFaultOpts || undefined,
       harmonicsLimits: this.harmonicsLimits === 'iec' ? 'iec' : undefined,
+      cascading: this.cascading === false ? false : undefined,
       // Pre-assessments field (the active assessment's inputs), still written
       // so an older build of the app opens the project with its inputs.
       lightningRisk: (() => {
@@ -1895,6 +1898,7 @@ const AppState = {
     this.tccGradingMargin = (typeof data.tccGradingMargin === 'number' && data.tccGradingMargin > 0) ? data.tccGradingMargin : null;
     this.tccFaultOpts = (data.tccFaultOpts && typeof data.tccFaultOpts === 'object') ? data.tccFaultOpts : null;
     this.harmonicsLimits = data.harmonicsLimits === 'iec' ? 'iec' : null;
+    this.cascading = data.cascading !== false;
     this.rateLibrary = (data.rateLibrary && typeof data.rateLibrary === 'object') ? data.rateLibrary : null;
     this.quoted = (data.quoted && typeof data.quoted === 'object' && data.quoted.at) ? { at: String(data.quoted.at), by: String(data.quoted.by || ''), note: String(data.quoted.note || '') } : null;
     this.quotedLibrary = (this.quoted && data.quotedLibrary && typeof data.quotedLibrary === 'object') ? data.quotedLibrary : null;
