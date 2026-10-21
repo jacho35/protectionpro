@@ -1130,7 +1130,7 @@ const RoadPlan = {
     el.innerHTML = this.roads.map(r => {
       const g = this.geom(r), des = this._design(r), rr = res.find(x => x.id === r.id);
       const badge = rr && !this._resStale ? (rr.pass === null ? '' : rr.pass ? '<span class="sl-badge ok">✓</span>' : '<span class="sl-badge bad">✗</span>') : '';
-      return `<button class="sl-rail-item${r.id === this._selRoad ? ' active' : ''}" data-rp-road="${r.id}">
+      return `<button class="sl-rail-item${r.id === this._selRoad ? ' active' : ''}" data-rp-road="${escHtml(r.id)}">
         <span class="sl-rail-row"><span class="sl-rail-name">${escHtml(r.name)}</span>${badge}</span>
         <span class="sl-rail-meta">${this._fmt(g.al.length, 1)} m · ${des ? escHtml(des.name) : '<i>no design</i>'} · ${(r.poles || []).length} poles</span></button>`;
     }).join('') || '<div class="sl-empty">No roads yet.</div>';
@@ -1194,8 +1194,8 @@ const RoadPlan = {
     if (bg) {
       const byLayer = new Map();
       for (const e of this._bgVisible()) {
-        let d = `M${e.p[0]} ${e.p[1]}`;
-        for (let i = 2; i < e.p.length; i += 2) d += `L${e.p[i]} ${e.p[i + 1]}`;
+        let d = `M${+e.p[0]} ${+e.p[1]}`;
+        for (let i = 2; i < e.p.length; i += 2) d += `L${+e.p[i]} ${+e.p[i + 1]}`;
         if (e.c) d += 'Z';
         if (!byLayer.has(e.l)) byLayer.set(e.l, []);
         byLayer.get(e.l).push(d);
@@ -1458,7 +1458,7 @@ const RoadPlan = {
     const r = this.selRoad;
     if (!r) return `<div class="sl-empty"><h3>Road plan</h3><p>Draw the road's centreline on the plan — straights joined by tangent arcs — or trace both kerbs, or load a DXF site plan and pick its centreline. The cross-section of a Lighting design is swept along it.</p><p><button class="btn-small btn-primary" data-rp-tool="draw">Draw centreline</button></p></div>`;
     const g = this.geom(r), des = this._design(r);
-    const opts = RoadLight.designs.map(d => `<option value="${d.id}"${d.id === r.designId ? ' selected' : ''}>${escHtml(d.name)}</option>`).join('');
+    const opts = RoadLight.designs.map(d => `<option value="${escHtml(d.id)}"${d.id === r.designId ? ' selected' : ''}>${escHtml(d.name)}</option>`).join('');
     let align = '';
     if (r.mode === 'ip' && g.els) {
       let k = 0;
@@ -1501,14 +1501,14 @@ const RoadPlan = {
       const prev = lastBy.get(key);
       lastBy.set(key, g);
       const gap = prev && g ? Math.hypot(g.bx - prev.bx, g.by - prev.by) : null;
-      return `<tr class="${p.id === this._selPole ? 'sel' : ''}" data-rp-pole="${p.id}"><td>${names.get(p.id)}</td><td class="sl-mono">${this._fmt(p.s, 1)}</td><td>${g ? g.side : '—'}</td><td class="sl-mono">${gap ? this._fmt(gap, 1) : '—'}</td><td>${p.moved ? '<span class="rp-tag edit">moved</span>' : ''}${p.note && p.note.startsWith('bend') ? `<span class="rp-tag bend">${escHtml(p.note)}</span>` : ''}${p.over && Object.keys(p.over).length ? '<span class="rp-tag edit">own settings</span>' : ''}</td></tr>`;
+      return `<tr class="${p.id === this._selPole ? 'sel' : ''}" data-rp-pole="${escHtml(p.id)}"><td>${names.get(p.id)}</td><td class="sl-mono">${this._fmt(p.s, 1)}</td><td>${g ? g.side : '—'}</td><td class="sl-mono">${gap ? this._fmt(gap, 1) : '—'}</td><td>${p.moved ? '<span class="rp-tag edit">moved</span>' : ''}${p.note && p.note.startsWith('bend') ? `<span class="rp-tag bend">${escHtml(p.note)}</span>` : ''}${p.over && Object.keys(p.over).length ? '<span class="rp-tag edit">own settings</span>' : ''}</td></tr>`;
     }).join('');
     const sel = poles.find(p => p.id === this._selPole);
     let selHtml = '';
     if (sel) {
       const g = this.poleGeom(r, sel), o = sel.over || {};
       const row = this._row(r, sel);
-      const lib = RoadLight._libList().map(p => `<option value="${p.id}"${p.id === (o.photometryId || '') ? ' selected' : ''}>${escHtml(RoadLight._lumLabel(p))}</option>`).join('');
+      const lib = RoadLight._libList().map(p => `<option value="${escHtml(p.id)}"${p.id === (o.photometryId || '') ? ' selected' : ''}>${escHtml(RoadLight._lumLabel(p))}</option>`).join('');
       const f = (k, label, step) => `<label class="rp-field">${label}<input type="number" step="${step}" data-rp-pf="${k}" value="${escHtml(o[k] ?? '')}" placeholder="${escHtml(row[k] ?? '')}"></label>`;
       selHtml = `<div class="rp-block rp-selpole"><div class="rp-block-h"><b>${names.get(sel.id)}</b><span class="sl-hint">${g ? g.side === 'L' ? 'left' : 'right' : ''} · offset ${g ? this._fmt(g.d, 2) : '—'} m</span></div>
         <div class="rp-grid2"><label class="rp-field">Chainage m<input type="number" step="0.5" data-rp-pf="s" value="${this._fmt(sel.s, 2)}"></label>

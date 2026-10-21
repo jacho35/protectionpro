@@ -281,7 +281,9 @@ const AppState = {
   _restoreRoadPlan(rp) {
     const def = this._defaultRoadPlan();
     if (!rp || typeof rp !== 'object') return def;
-    const roads = Array.isArray(rp.roads) ? rp.roads.filter(r => r && r.id) : [];
+    // ids end up in markup attributes — keep only well-formed ones
+    const roads = Array.isArray(rp.roads) ? rp.roads.filter(r => r && /^rpr_\d+$/.test(String(r.id))) : [];
+    for (const r of roads) if (Array.isArray(r.poles)) r.poles = r.poles.filter(p => p && /^rpp_\d+$/.test(String(p.id)));
     // ids are '<prefix>_<n>' from one counter (roads 'rpr', poles 'rpp')
     let max = 0;
     for (const r of roads) {
@@ -291,7 +293,11 @@ const AppState = {
     return {
       roads,
       junctionCls: rp.junctionCls && typeof rp.junctionCls === 'object' ? rp.junctionCls : {},
-      bg: rp.bg && Array.isArray(rp.bg.ents) ? rp.bg : null,
+      bg: rp.bg && Array.isArray(rp.bg.ents) ? {
+        ...rp.bg,
+        layers: (Array.isArray(rp.bg.layers) ? rp.bg.layers : []).map(l => ({ name: String(l && l.name), color: String((l && l.color) || '#8a8f98'), hidden: !!(l && l.hidden) })),
+        ents: rp.bg.ents.map(e => ({ l: String(e && e.l), p: (Array.isArray(e && e.p) ? e.p : []).map(Number).filter(isFinite), c: e && e.c ? 1 : 0 })),
+      } : null,
       settings: rp.settings && typeof rp.settings === 'object' ? rp.settings : {},
       _seq: Math.max(rp._seq || 1, max + 1),
     };
