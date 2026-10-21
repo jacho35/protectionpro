@@ -1,0 +1,33 @@
+{
+ "entries": [
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "cbi_n85de1250",
+    "name": "CBI N85DE1250 600-1250 A",
+    "cb_type": "mccb",
+    "manufacturer": "CBI",
+    "series": "DE electronic",
+    "model": "N85DE1250",
+    "trip_rating_a": 1250,
+    "frame_a": 1250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 85,
+    "ics_pct": 51,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10,
+    "long_time_delay": 60,
+    "short_time_pickup": 5,
+    "short_time_delay": 0.1,
+    "instantaneous_pickup": 8,
+    "trip_unit_kind": "electronic",
+    "trip_units": [
+     "cbi_n85de1250"
+    ],
+    "default_trip_unit": "cbi_n85de1250",
+    "source": "CBI MCCB catalogue, N85DE1250 data sheet (p. 28)",
+    "check": "Ir 600-1250 A; long-time curve is a formula (t = tL x (2/M)^4 to 200 %, (2/M)^2 above) matching the sheet's 125 % / 200 % times; no 415 V row: the 440 V / 400 V figures (85 / 43 kA)"
+   }
+  }
+ ]
+}
