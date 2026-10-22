@@ -487,3 +487,6 @@ body.dark-mode .plan-legend-line, body.dark-mode .plan-legend-mark { border-colo
 body.dark-mode .plan-legend-line { background: none; }
 .plan-legend-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; }
 @media (max-width: 768px) { .plan-legend { left: 8px; right: 8px; width: auto; bottom: 8px; } }
+
+/* Fields that carry a hover / long-press explanation (RoomLighting.tipify). */
+.plan-field.has-tip > span:first-child, .plan-field.has-tip > .plan-field-label { text-decoration: underline dotted var(--text-secondary); text-underline-offset: 3px; cursor: help; }
