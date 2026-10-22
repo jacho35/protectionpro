@@ -810,18 +810,32 @@ const RoadPlan = {
     return bg.ents.filter(e => !hidden.has(e.l));
   },
   // Chain the picked entity with connected pieces on its layer (endpoints ≤ 5 cm).
-  _chain(ent) {
+  // Where the line breaks, the nearest piece end within `gapTol` metres that
+  // continues roughly the same way is bridged by a straight segment; each
+  // bridge is returned in `gaps` so it can be shown and checked.
+  _chain(ent, gapTol = 0) {
     const tol = 0.05;
     const pts = (e) => { const o = []; for (let i = 0; i < e.p.length; i += 2) o.push([e.p[i], e.p[i + 1]]); return o; };
     const pool = this._bgVisible().filter(e => e.l === ent.l && e !== ent && !e.c);
     let chain = pts(ent);
-    let grew = true;
-    while (grew) {
-      grew = false;
+    const gaps = [];
+    const dist = (u, v) => Math.hypot(u[0] - v[0], u[1] - v[1]);
+    // direction leaving an end (away from the chain), unit vector
+    const outDir = (atTail) => {
+      const n = chain.length, e = atTail ? chain[n - 1] : chain[0];
+      for (let k = 2; k <= n; k++) {
+        const o = atTail ? chain[n - k] : chain[k - 1];
+        const L = dist(e, o);
+        if (L > 1e-6) return [(e[0] - o[0]) / L, (e[1] - o[1]) / L];
+      }
+      return null;
+    };
+    for (let guard = 0; guard < 5000; guard++) {
+      let grew = false;
       for (let k = 0; k < pool.length; k++) {
         const q = pts(pool[k]);
         const h = chain[0], t = chain[chain.length - 1], a = q[0], b = q[q.length - 1];
-        const near = (u, v) => Math.hypot(u[0] - v[0], u[1] - v[1]) <= tol;
+        const near = (u, v) => dist(u, v) <= tol;
         if (near(t, a)) chain = chain.concat(q.slice(1));
         else if (near(t, b)) chain = chain.concat(q.reverse().slice(1));
         else if (near(h, b)) chain = q.slice(0, -1).concat(chain);
@@ -829,8 +843,62 @@ const RoadPlan = {
         else continue;
         pool.splice(k, 1); grew = true; break;
       }
+      if (grew) continue;
+      if (!(gapTol > 0)) break;
+      // no touching piece left: bridge the shortest forward gap at either end
+      let best = null;
+      for (const atTail of [true, false]) {
+        const e = atTail ? chain[chain.length - 1] : chain[0];
+        const dir = outDir(atTail);
+        for (let k = 0; k < pool.length; k++) {
+          const q = pts(pool[k]);
+          for (const first of [true, false]) {
+            const p = first ? q[0] : q[q.length - 1];
+            const d = dist(e, p);
+            if (d > gapTol) continue;
+            if (dir && d > tol) { const c = ((p[0] - e[0]) * dir[0] + (p[1] - e[1]) * dir[1]) / d; if (c < 0.3) continue; }
+            if (!best || d < best.d) best = { d, atTail, k, first, e, p };
+          }
+        }
+      }
+      if (!best) break;
+      let q = pts(pool[best.k]);
+      if (best.atTail) { if (!best.first) q.reverse(); chain = chain.concat(q); }
+      else { if (best.first) q.reverse(); chain = q.concat(chain); }
+      gaps.push([best.e, best.p]);
+      pool.splice(best.k, 1);
     }
-    return chain;
+    return { pts: chain, gaps };
+  },
+  // Where a world point falls along a polyline: distance along it, the foot point, offset.
+  _alongChain(pts, wx, wy) {
+    let acc = 0, best = { s: 0, pt: pts[0], d: Infinity };
+    for (let i = 0; i + 1 < pts.length; i++) {
+      const [ax, ay] = pts[i], [bx, by] = pts[i + 1];
+      const dx = bx - ax, dy = by - ay, L = Math.hypot(dx, dy), L2 = L * L || 1e-12;
+      const t = Math.max(0, Math.min(1, ((wx - ax) * dx + (wy - ay) * dy) / L2));
+      const px = ax + dx * t, py = ay + dy * t, d = Math.hypot(wx - px, wy - py);
+      if (d < best.d) best = { s: acc + L * t, pt: [px, py], d };
+      acc += L;
+    }
+    return best;
+  },
+  // The part of a polyline between distances s0 ≤ s1.
+  _subChain(pts, s0, s1) {
+    const out = [];
+    let acc = 0;
+    const at = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+    for (let i = 0; i + 1 < pts.length; i++) {
+      const a = pts[i], b = pts[i + 1], L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      const e0 = acc, e1 = acc + L;
+      if (e1 >= s0 && e0 <= s1 && L > 0) {
+        const t0 = Math.max(0, (s0 - e0) / L), t1 = Math.min(1, (s1 - e0) / L);
+        if (!out.length) out.push(at(a, b, t0));
+        out.push(at(a, b, t1));
+      }
+      acc = e1;
+    }
+    return out.length > 1 ? out : pts.slice();
   },
   _pickEnt(wx, wy) {
     const tol = 8 / this._view.z;
@@ -1077,23 +1145,80 @@ const RoadPlan = {
     this.setTool('select');
   },
   _pickAt(wx, wy, e) {
+    if (this._trim && this._picked) { this._trimAt(wx, wy); return; }
     const ent = this._pickEnt(wx, wy);
     if (!ent) { UI.toast('No background line there — zoom in or click closer to a line.', 'info', 2500); return; }
-    const chain = this._chain(ent);
-    this._picked = chain;
-    this.renderScreen();
+    this._pickSrc = ent;
+    this._trim = null;
+    this._rechain();
     const box = document.getElementById('rp-pick');
-    const len = new RPAlign(chain).length;
-    box.innerHTML = this._kerbDraft
-      ? `<b>Second kerb</b><span class="sl-hint">${escHtml(ent.l)} · ${this._fmt(len, 1)} m</span><button class="btn-small btn-primary" data-rp="pick-k2">Use as the other kerb</button><button class="btn-small" data-rp="pick-cancel">Cancel</button>`
-      : `<b>Use this line as</b><span class="sl-hint">${escHtml(ent.l)} · ${this._fmt(len, 1)} m (connected pieces joined)</span>
-         <button class="btn-small btn-primary" data-rp="pick-cl">Centreline</button><button class="btn-small" data-rp="pick-k1">First kerb</button><button class="btn-small" data-rp="pick-cancel">Cancel</button>`;
     box.style.display = 'flex';
     const w = document.getElementById('rp-wrap').getBoundingClientRect();
     box.style.left = Math.min(w.width - 240, Math.max(8, e.clientX - w.left + 12)) + 'px';
     box.style.top = Math.min(w.height - 140, Math.max(8, e.clientY - w.top + 12)) + 'px';
   },
-  _closePick() { const b = document.getElementById('rp-pick'); if (b) b.style.display = 'none'; this._picked = null; },
+  _gapTol: 3,
+  _rechain() {
+    const c = this._chain(this._pickSrc, this._gapTol);
+    this._picked = c.pts; this._pickGaps = c.gaps;
+    this._trim = null;
+    this._pickBox();
+    this.renderScreen();
+  },
+  _pickBox() {
+    const box = document.getElementById('rp-pick');
+    if (!box || !this._picked) return;
+    const ent = this._pickSrc, chain = this._picked;
+    const len = new RPAlign(chain).length;
+    const gaps = this._pickGaps || [];
+    const gapRow = `<label class="rp-gapin">Bridge gaps up to <input type="number" min="0" step="0.5" value="${this._gapTol}" data-rp-gap> m</label>`
+      + (gaps.length ? `<span class="rp-gapnote">${gaps.length} gap${gaps.length === 1 ? '' : 's'} bridged (dashed): ${gaps.map(g => this._fmt(Math.hypot(g[0][0] - g[1][0], g[0][1] - g[1][1]), 2) + ' m').join(', ')}</span>` : '');
+    if (this._trim) {
+      const m = this._trim;
+      box.innerHTML = `<b>Trim the line</b><span class="sl-hint">${m.length ? 'Click the line to move the cut.' : 'Click the line where the cut goes.'} ${this._fmt(len, 1)} m</span>`
+        + (m.length === 1 ? `<button class="btn-small" data-rp="trim-before">Delete the start → cut</button><button class="btn-small" data-rp="trim-after">Delete the cut → end</button>` : '')
+        + (m.length === 2 ? `<button class="btn-small btn-primary" data-rp="trim-between">Keep only between the cuts</button><button class="btn-small" data-rp="trim-outside">Delete between the cuts</button>` : '')
+        + `<button class="btn-small" data-rp="trim-done">${m.length ? 'Cancel trim' : 'Done'}</button>`;
+      return;
+    }
+    const head = this._kerbDraft
+      ? `<b>Second kerb</b><span class="sl-hint">${escHtml(ent.l)} · ${this._fmt(len, 1)} m</span>`
+      : `<b>Use this line as</b><span class="sl-hint">${escHtml(ent.l)} · ${this._fmt(len, 1)} m (connected pieces joined)</span>`;
+    const acts = this._kerbDraft
+      ? `<button class="btn-small btn-primary" data-rp="pick-k2">Use as the other kerb</button>`
+      : `<button class="btn-small btn-primary" data-rp="pick-cl">Centreline</button><button class="btn-small" data-rp="pick-k1">First kerb</button>`;
+    box.innerHTML = head + gapRow + `<span class="rp-pickacts">${acts}<button class="btn-small" data-rp="pick-trim" title="Cut off the start, the end, or keep only a stretch">Trim…</button><button class="btn-small" data-rp="pick-cancel">Cancel</button></span>`;
+  },
+  _trimAt(wx, wy) {
+    const pr = this._alongChain(this._picked, wx, wy);
+    if (pr.d > 12 / this._view.z) { UI.toast('Click on the highlighted line.', 'info', 2000); return; }
+    const m = this._trim;
+    if (m.length >= 2) m.length = 0;
+    m.push(pr);
+    m.sort((a, b) => a.s - b.s);
+    this._pickBox(); this.renderScreen();
+  },
+  _applyTrim(kind) {
+    const m = this._trim || [], L = new RPAlign(this._picked).length;
+    let s0 = 0, s1 = L;
+    if (kind === 'before') s0 = m[0].s;
+    else if (kind === 'after') s1 = m[0].s;
+    else if (kind === 'between') { s0 = m[0].s; s1 = m[1].s; }
+    else if (kind === 'outside') {
+      // delete the stretch between the cuts: keep the longer remaining piece
+      const a = m[0].s, b = m[1].s;
+      if (a >= L - b) s1 = a; else s0 = b;
+      UI.toast('Kept the longer remaining piece — use Trim again to shorten it further.', 'info', 3500);
+    }
+    if (s1 - s0 < 0.1) { UI.toast('Nothing would be left of the line.', 'warning', 2500); return; }
+    const pts = this._subChain(this._picked, s0, s1);
+    const has = (p) => pts.some(q => Math.abs(q[0] - p[0]) < 1e-6 && Math.abs(q[1] - p[1]) < 1e-6);
+    this._pickGaps = (this._pickGaps || []).filter(g => has(g[0]) && has(g[1]));
+    this._picked = pts;
+    this._trim = null;
+    this._pickBox(); this.renderScreen();
+  },
+  _closePick() { const b = document.getElementById('rp-pick'); if (b) b.style.display = 'none'; this._picked = null; this._pickGaps = null; this._pickSrc = null; this._trim = null; },
   async _usePicked(as) {
     const pts = this._picked;
     this._closePick();
@@ -1432,7 +1557,11 @@ const RoadPlan = {
     // kerb picked so far / picked DXF chain
     const poly = (pts, cls) => pts && pts.length > 1 ? `<path d="M${pts.map(q => S(q[0], q[1]).map(t => t.toFixed(1)).join(' ')).join('L')}" class="${cls}"/>` : '';
     if (this._kerbDraft) out.push(poly(this._kerbDraft.a, 'rp-draft done'));
-    if (this._picked) out.push(poly(this._picked, 'rp-picked'));
+    if (this._picked) {
+      out.push(poly(this._picked, 'rp-picked'));
+      for (const g of (this._pickGaps || [])) out.push(poly(g, 'rp-gap'));
+      for (const mk of (this._trim || [])) { const [mx, my] = S(mk.pt[0], mk.pt[1]); out.push(`<circle cx="${mx.toFixed(1)}" cy="${my.toFixed(1)}" r="5" class="rp-mark"/>`); }
+    }
     // draft
     if (this._draft && this._draft.length) {
       const pts = this._draft.slice();
@@ -1622,12 +1751,19 @@ const RoadPlan = {
       case 'pick-cl': this._usePicked('cl'); break;
       case 'pick-k1': this._usePicked('k1'); break;
       case 'pick-k2': this._usePicked('k2'); break;
+      case 'pick-trim': this._trim = []; this._pickBox(); this.renderScreen(); break;
+      case 'trim-before': this._applyTrim('before'); break;
+      case 'trim-after': this._applyTrim('after'); break;
+      case 'trim-between': this._applyTrim('between'); break;
+      case 'trim-outside': this._applyTrim('outside'); break;
+      case 'trim-done': this._trim = null; this._pickBox(); this.renderScreen(); break;
       case 'pick-cancel': this._closePick(); this.renderScreen(); break;
     }
   },
   _onChange(e) {
     const t = e.target, d = t.dataset;
     const r = this.selRoad;
+    if (d.rpGap !== undefined) { this._gapTol = Math.max(0, +t.value || 0); if (this._pickSrc) this._rechain(); return; }
     if (d.rp === 'snap') { this._snap = t.checked; return; }
     if (d.rp === 'iso') { this._showIso = t.checked; this._renderHeat(); return; }
     if (d.rp === 'seg') { this._showSeg = t.checked; this.renderScreen(); return; }
