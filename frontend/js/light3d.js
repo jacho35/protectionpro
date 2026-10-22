@@ -52,7 +52,8 @@ const Light3D = {
   // ─── Geometry ──────────────────────────────────────────────────────────
   f() { return PlanEngine.factor(); },
   rooms() {
-    return (AppState.planMarkup.rooms || []).filter(r => r.points && r.points.length >= 3 && (!r.kind || r.kind === 'room' || r.kind === 'sports'));
+    return (AppState.planMarkup.rooms || []).filter(r => r.points && r.points.length >= 3 && (!r.kind || r.kind === 'room' || r.kind === 'sports')
+      && (typeof LightingWS === 'undefined' || LightingWS.inScope(r.kind)));
   },
   room() {
     const list = this.rooms();

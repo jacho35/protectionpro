@@ -95,6 +95,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const slWs = document.getElementById('streetlight-workspace');
     const qWs = document.getElementById('quantities-workspace');
     const lWs = document.getElementById('lighting-workspace');
+    const loWs = document.getElementById('lightov-workspace');
+    // Rooms ('lighting') and Sports fields ('sports') share the Lighting pane.
+    const lightPane = name === 'lighting' || name === 'sports';
     // Stand down whichever secondary workspace we're leaving.
     if (typeof Retic !== 'undefined' && Retic._active && name !== 'retic') Retic.deactivate();
     if (typeof PlanMarkup !== 'undefined' && PlanMarkup._active && name !== 'plan') PlanMarkup.deactivate();
@@ -102,7 +105,8 @@ document.addEventListener('DOMContentLoaded', () => {
     if (typeof Schedules !== 'undefined' && Schedules._active && name !== 'schedules') Schedules.deactivate();
     if (typeof StreetLight !== 'undefined' && StreetLight._active && name !== 'streetlight') StreetLight.deactivate();
     if (typeof Quantities !== 'undefined' && Quantities._active && name !== 'quantities') Quantities.deactivate();
-    if (typeof LightingWS !== 'undefined' && LightingWS._active && name !== 'lighting') LightingWS.deactivate();
+    if (typeof LightingWS !== 'undefined' && LightingWS._active && !lightPane) LightingWS.deactivate();
+    if (typeof LightOverview !== 'undefined' && LightOverview._active && name !== 'lightov') LightOverview.deactivate();
 
     appc.style.display = (name === 'sld') ? '' : 'none';
     if (reticWs) reticWs.style.display = (name === 'retic') ? 'flex' : 'none';
@@ -111,7 +115,9 @@ document.addEventListener('DOMContentLoaded', () => {
     if (schedWs) schedWs.style.display = (name === 'schedules') ? 'flex' : 'none';
     if (slWs) slWs.style.display = (name === 'streetlight') ? 'flex' : 'none';
     if (qWs) qWs.style.display = (name === 'quantities') ? 'flex' : 'none';
-    if (lWs) lWs.style.display = (name === 'lighting') ? 'flex' : 'none';
+    if (lWs) lWs.style.display = lightPane ? 'flex' : 'none';
+    if (loWs) loWs.style.display = (name === 'lightov') ? 'flex' : 'none';
+    window.activeWorkspace = name;
     // Mobile: flag secondary workspaces so the phone CSS hides SLD-only chrome
     // (FABs, selection bar, Components/Analysis nav) and fits the workspace
     // between the mobile header and bottom nav.
@@ -121,8 +127,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.body.classList.toggle('ws-secondary-active', name !== 'sld');
     if (typeof window.closeAllToolbarMenus === 'function') window.closeAllToolbarMenus();
 
-    const tabs = { sld: 'btn-workspace-sld', retic: 'btn-workspace-retic', streetlight: 'btn-workspace-streetlight', plan: 'btn-workspace-plan', interlock: 'btn-workspace-interlock', schedules: 'btn-workspace-schedules', quantities: 'btn-workspace-quantities', lighting: 'btn-workspace-lighting' };
-    for (const [key, id] of Object.entries(tabs)) {
+    for (const [key, id] of Object.entries(Workspaces.TAB_IDS)) {
       const b = document.getElementById(id);
       if (!b) continue;
       b.classList.toggle('active', key === name);
@@ -136,7 +141,8 @@ document.addEventListener('DOMContentLoaded', () => {
     else if (name === 'schedules' && typeof Schedules !== 'undefined') { Schedules.activate(); }
     else if (name === 'streetlight' && typeof StreetLight !== 'undefined') { StreetLight.activate(); }
     else if (name === 'quantities' && typeof Quantities !== 'undefined') { Quantities.activate(); }
-    else if (name === 'lighting' && typeof LightingWS !== 'undefined') { LightingWS.activate(); }
+    else if (lightPane && typeof LightingWS !== 'undefined') { LightingWS.activate(name === 'sports' ? 'sports' : null); }
+    else if (name === 'lightov' && typeof LightOverview !== 'undefined') { LightOverview.activate(); }
   }
   window.switchWorkspace = switchWorkspace;
   for (const [name, id] of [
@@ -148,6 +154,8 @@ document.addEventListener('DOMContentLoaded', () => {
     ['streetlight', 'btn-workspace-streetlight'],
     ['quantities', 'btn-workspace-quantities'],
     ['lighting', 'btn-workspace-lighting'],
+    ['sports', 'btn-workspace-sports'],
+    ['lightov', 'btn-workspace-lightov'],
   ]) {
     document.getElementById(id)?.addEventListener('click', () => switchWorkspace(name));
   }

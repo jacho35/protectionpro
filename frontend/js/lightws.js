@@ -10,6 +10,10 @@
  * RoomCalc / AreaCalc / EmergCalc; this runs them all (stepping through the
  * floors, then returning to the one you were on) and makes the PDF.
  *
+ * In a Lighting project the workspace is two tabs (`scope`): Rooms (rooms,
+ * outdoor areas, fences, escape routes, obtrusive-light checks) and Sports
+ * fields (fields and obtrusive-light checks). Elsewhere it shows everything.
+ *
  * Results are session-only, like the rest of the lighting calculations: after
  * opening a project, press Calculate all. A room on the floor in view whose
  * inputs changed reads Out of date; on another floor the result is shown as it
@@ -24,9 +28,21 @@ const LightingWS = {
 
   KIND: { room: 'Room', outdoor: 'Outdoor area', perimeter: 'Perimeter', sports: 'Sports field', obtrusive: 'Obtrusive light', escape: 'Escape route' },
 
-  hasData() {
+  // 'all' (one Lighting tab) | 'rooms' | 'sports' (a Lighting project's two tabs).
+  scope: 'all',
+  // Does a zone of this kind belong in the scope?
+  inScope(kind, scope = this.scope) {
+    const k = kind || 'room';
+    if (scope === 'sports') return k === 'sports' || k === 'obtrusive';
+    if (scope === 'rooms') return k !== 'sports';
+    return true;
+  },
+
+  // Any lighting zone (in `scope` when given) on any floor.
+  hasData(scope) {
     try {
-      return AppState.planFloors().some(f => ((f.data && f.data.rooms) || []).some(r => r.lighting || r.kind));
+      return AppState.planFloors().some(f => ((f.data && f.data.rooms) || []).some(r => (r.lighting || r.kind)
+        && (!scope || (scope === 'sports' ? (r.kind === 'sports') : (r.kind || 'room') !== 'sports'))));
     } catch (_) { return false; }
   },
 
@@ -34,10 +50,22 @@ const LightingWS = {
   // re-hosted here); 'table': every zone on every floor with its results.
   view: 'plan',
 
-  activate() {
+  // `scope` 'sports' for the Sports fields tab; otherwise the Lighting tab,
+  // which is Rooms in a Lighting project.
+  activate(scope) {
+    const want = scope === 'sports' ? 'sports'
+      : (typeof Workspaces !== 'undefined' && Workspaces.type() === 'lighting' ? 'rooms' : 'all');
+    if (want !== this.scope && typeof Light3D !== 'undefined' && Light3D.room && Light3D.roomId) {
+      const r = (AppState.planMarkup.rooms || []).find(x => x.id === Light3D.roomId);
+      if (r && !this.inScope(r.kind, want)) Light3D.roomId = null;
+    }
+    const changed = want !== this.scope;
+    this.scope = want;
     this._active = true;
     this._mount();
     this.setView(this.view);
+    // The other tab's drawing tool may be armed: drop it.
+    if (changed && this.view === 'plan' && typeof PlanTools !== 'undefined') PlanTools.set('select');
   },
   deactivate() {
     this._active = false;
@@ -101,17 +129,28 @@ const LightingWS = {
     this._renderBar();
   },
 
+  // The tab a zone opens on: a Lighting project's sports field → Sports fields.
+  _tabFor(id) {
+    const r = (AppState.planMarkup.rooms || []).find(x => x.id === id);
+    return r && r.kind === 'sports' && typeof Workspaces !== 'undefined' && Workspaces.type() === 'lighting' ? 'sports' : 'lighting';
+  },
+  _showTab(tab) {
+    if (typeof Workspaces !== 'undefined' && !Workspaces.isVisible(tab)) {
+      if (tab === 'sports') AppState.lightingKinds = Workspaces.lightingKinds().concat(['sports']);
+      else AppState.extraWorkspaces = (AppState.extraWorkspaces || []).concat(['lighting']);
+      if (Workspaces.refresh) Workspaces.refresh();
+    }
+  },
+
   // A room's panel on the plan → its 3D view.
   open3D(id) {
     if (typeof Light3D === 'undefined') return;
     Light3D.focusRoom(id);
-    if (typeof Workspaces !== 'undefined' && !Workspaces.isVisible('lighting')) {
-      AppState.extraWorkspaces = (AppState.extraWorkspaces || []).concat(['lighting']);
-      if (Workspaces.refresh) Workspaces.refresh();
-    }
+    const tab = this._tabFor(id);
+    this._showTab(tab);
     this.view = '3d';
-    if (this._active) this.setView('3d');
-    else switchWorkspace('lighting');
+    if (this._active && (tab === 'sports') === (this.scope === 'sports')) this.setView('3d');
+    else switchWorkspace(tab);
   },
 
   _renderBar() {
@@ -150,12 +189,10 @@ const LightingWS = {
   // From the Plan tab ("Lighting for this room…") or a table row: show the
   // zone on this tab's plan, selected.
   openOnPlan(id, floorId) {
-    if (typeof Workspaces !== 'undefined' && !Workspaces.isVisible('lighting')) {
-      AppState.extraWorkspaces = (AppState.extraWorkspaces || []).concat(['lighting']);
-      if (Workspaces.refresh) Workspaces.refresh();
-    }
+    const tab = this._tabFor(id);
+    this._showTab(tab);
     this.view = 'plan';
-    switchWorkspace('lighting');
+    switchWorkspace(tab);
     const pm = AppState.planMarkup;
     if (floorId && floorId !== pm.activeFloorId) PlanMarkup.setActiveFloor(floorId);
     const room = (AppState.planMarkup.rooms || []).find(r => r.id === id);
@@ -187,6 +224,7 @@ const LightingWS = {
       for (const r of ((fl.data && fl.data.rooms) || [])) {
         if (!r.points || r.points.length < 2) continue;
         const kind = r.kind || 'room';
+        if (!this.inScope(kind)) continue;
         const f = fl.data && fl.data.scale && fl.data.scale.factor;
         out.push(this._row(r, kind, fl, active, f));
       }
@@ -300,8 +338,8 @@ const LightingWS = {
     const rl = (id, label, n) => `<button class="lw-rail-item${this.filter === id ? ' active' : ''}" data-lw-filter="${escHtml(id)}">${escHtml(label)}<span>${n}</span></button>`;
     rail.innerHTML = rl('all', 'Everything', items.length)
       + floors.slice().sort((a, b) => (b.level || 0) - (a.level || 0)).map(f => rl('floor:' + f.id, f.name || 'Floor', cnt(r => r.floorId === f.id))).join('')
-      + rl('site', 'Site (areas, fences, sports, obtrusive)', cnt(r => r.kind === 'outdoor' || r.kind === 'perimeter' || r.kind === 'sports' || r.kind === 'obtrusive'))
-      + rl('escape', 'Escape routes', cnt(r => r.kind === 'escape'))
+      + (this.scope === 'sports' ? '' : rl('site', `Site (areas, fences, ${this.scope === 'rooms' ? '' : 'sports, '}obtrusive)`, cnt(r => r.kind === 'outdoor' || r.kind === 'perimeter' || r.kind === 'sports' || r.kind === 'obtrusive'))
+        + rl('escape', 'Escape routes', cnt(r => r.kind === 'escape')))
       + '<div class="lw-rail-sep"></div>'
       + rl('failing', 'Failing', cnt(r => r.verdict === 'Fail'))
       + rl('pending', 'Not calculated / out of date', cnt(r => r.verdict === 'Not calculated' || r.verdict === 'No fittings' || r.stale));
@@ -324,7 +362,8 @@ const LightingWS = {
         <td class="${vcls}"><b>${r.verdict}</b>${r.verdictNote ? ` <small>(${r.verdictNote})</small>` : ''}${r.failing.length ? `<small class="lw-why">${escHtml(r.failing.join(', '))}</small>` : ''}</td>
         <td><button class="lw-link" data-lw-locate="${escHtml(r.id)}" data-lw-floor="${escHtml(r.floorId)}">Show on plan</button></td></tr>`;
     };
-    main.innerHTML = `<div class="lw-head"><h1>Lighting</h1></div>
+    const title = { sports: 'Sports fields', rooms: 'Rooms & areas' }[this.scope] || 'Lighting';
+    main.innerHTML = `<div class="lw-head"><h1>${title}</h1></div>
       <div class="lw-tiles">
         <div class="lw-tile"><span>Pass</span><b class="ok">${pass}</b></div>
         <div class="lw-tile"><span>Fail</span><b class="bad">${fail}</b></div>
@@ -335,7 +374,9 @@ const LightingWS = {
       ${items.length ? `<div class="lw-tablewrap"><table class="lw-table"><thead><tr>
         ${th('name', 'Room / area')}${th('floor', 'Floor')}${th('kind', 'Type')}<th>Task</th>${th('em', 'Ēm / target (lx)', 'num')}${th('uo', 'U₀ / U₂', 'num')}<th class="num">UGR / GR</th>${th('wm2', 'W/m²', 'num')}<th>Emergency</th>${th('verdict', 'Verdict')}<th></th>
         </tr></thead><tbody>${shown.map(rowHtml).join('') || '<tr><td colspan="11" class="muted">Nothing matches this filter.</td></tr>'}</tbody></table></div>`
-        : `<div class="lw-empty"><p>No rooms, areas or routes yet.</p><p>In the <b>Plan</b> view, click inside a room with <b>Detect room</b> (or draw one), set its task, place or auto-layout fittings and calculate. They all appear here.</p></div>`}
+        : this.scope === 'sports'
+          ? `<div class="lw-empty"><p>No sports fields yet.</p><p>In the <b>Plan</b> view, pick <b>Sports field</b> and click the centre spot. Set the sport and class, lay out the masts and calculate. Every field appears here.</p></div>`
+          : `<div class="lw-empty"><p>No rooms, areas or routes yet.</p><p>In the <b>Plan</b> view, click inside a room with <b>Detect room</b> (or draw one), set its task, place or auto-layout fittings and calculate. They all appear here.</p></div>`}
       <p class="lw-note">Results belong to this session: open a project and press Calculate all. Targets follow the project's lighting standard (EN 12464-1 / EN 1838, or SANS 10114-1 / -2); outdoor areas use EN 12464-2; sports fields provisional EN 12193 classes; obtrusive light EN 12464-2 Table 4 / 5.</p>`;
   },
 
@@ -395,6 +436,7 @@ const LightingWS = {
       if (UI.setBusy) UI.setBusy(false);
     }
     if (stats.uncal.length) UI.toast(`Not calibrated, so not calculated: ${stats.uncal.join(', ')}.`, 'warn', 7000);
+    if (!this._active) return;   // run from the lighting Overview
     if (this.view === 'table') this.render();
     else if (this.view === '3d') Light3D.render();
     else { if (typeof PlanUI !== 'undefined') { PlanUI.renderPalette(); PlanUI.renderProps(); } PlanEngine.requestDraw({ all: true }); }

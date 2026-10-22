@@ -223,16 +223,20 @@ const PlanUI = {
   // zone on this floor (click to select).
   _lightingPanel() {
     const pm = AppState.planMarkup;
-    let html = `<div class="plan-sec-head"><span>Draw</span></div><div class="plan-pal-list">${PLAN_DEFS.lightingTools().map(it => this._palItem(it)).join('')}</div>`;
+    // A Lighting project's Rooms / Sports fields tab offers its own tools.
+    const scope = typeof LightingWS !== 'undefined' ? LightingWS.scope : 'all';
+    const tools = PLAN_DEFS.lightingTools().filter(it => scope === 'sports' ? (it.type === 'sportsfield' || it.type === 'obtrusive')
+      : scope === 'rooms' ? it.type !== 'sportsfield' : true);
+    let html = `<div class="plan-sec-head"><span>Draw</span></div><div class="plan-pal-list">${tools.map(it => this._palItem(it)).join('')}</div>`;
     const def = PLAN_DEFS.element('bd_light');
-    if (def) {
+    if (def && scope !== 'sports') {
       html += `<div class="plan-sec-head"><span>Fittings</span></div><div class="plan-pal-list">${this._palItem({ type: 'bd_light', kind: 'element', name: def.name, color: def.color, desc: 'Same fittings as on the Plan tab' })}</div>
         <button type="button" class="plan-btn" data-act="photolib">Luminaire library…</button>`;
     }
-    const rooms = (pm.rooms || []).filter(r => r.points && r.points.length >= 2);
+    const rooms = (pm.rooms || []).filter(r => r.points && r.points.length >= 2 && (typeof LightingWS === 'undefined' || LightingWS.inScope(r.kind)));
     const KIND = { room: 'Room', outdoor: 'Outdoor area', perimeter: 'Fence', sports: 'Sports field', obtrusive: 'Obtrusive light', escape: 'Escape route' };
     html += `<div class="plan-sec-head"><span>On this floor</span><small>${rooms.length}</small></div>`;
-    if (!rooms.length) html += `<div class="plan-props-empty">Draw a room, or use Detect room and click inside one.</div>`;
+    if (!rooms.length) html += `<div class="plan-props-empty">${scope === 'sports' ? 'Pick Sports field and click the centre spot.' : 'Draw a room, or use Detect room and click inside one.'}</div>`;
     for (const r of rooms) {
       const v = (typeof LightingWS !== 'undefined' && LightingWS.verdictOf) ? LightingWS.verdictOf(r) : '';
       const cls = v === 'Pass' ? 'ok' : v === 'Fail' ? 'bad' : '';

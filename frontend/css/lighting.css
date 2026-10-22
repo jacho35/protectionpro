@@ -270,3 +270,52 @@ body.dark-mode .l3-chips .warn, body.dark-mode .l3-chip.warn { background: #3d2b
 .sf-stand-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; }
 .sf-stand-grid .plan-field input { width: 100%; min-width: 0; }
 .sf-stand-grid .plan-field small { font-size: 10px; }
+
+/* ── Lighting project › Overview (js/lightov.js) ── */
+#lightov-workspace {
+  position: absolute; top: var(--toolbar-height); left: 0; right: 0; bottom: 0;
+  display: none; flex-direction: column; overflow: hidden;
+  background: var(--bg-secondary); color: var(--text-primary); font-family: var(--font-family);
+}
+.lo-scroll { flex: 1 1 auto; overflow-y: auto; }
+.lo-main { max-width: 1200px; margin: 0 auto; padding: 20px 16px 32px; display: flex; flex-direction: column; gap: 16px; box-sizing: border-box; }
+.lo-head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.lo-head h1 { margin: 0; font-size: 22px; }
+.lo-sum { color: var(--text-secondary); font-size: 13px; }
+.lo-spacer { flex: 1 1 auto; }
+.lo-main .ok { color: #1d6b3a; } .lo-main .bad { color: #a61b1b; }
+.lo-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; }
+.lo-card, .lo-tile { background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: 10px; }
+.lo-card { display: flex; flex-direction: column; min-width: 0; }
+.lo-card-head { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--bg-tertiary); }
+.lo-card-head h2, .lo-tile h2 { margin: 0; font-size: 14px; }
+.lo-card-head > span { color: var(--text-secondary); font-size: 12px; }
+.lo-rows { display: flex; flex-direction: column; }
+.lo-row {
+  display: flex; align-items: center; gap: 8px; width: 100%; min-height: 44px; padding: 6px 14px;
+  border: 0; border-bottom: 1px solid var(--bg-tertiary); background: transparent;
+  color: var(--text-primary); font: inherit; font-size: 13px; text-align: left; cursor: pointer;
+}
+.lo-row:hover { background: var(--bg-secondary); }
+.lo-row-name { display: flex; flex-direction: column; min-width: 0; flex: 1 1 auto; }
+.lo-row-name b { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lo-row-name small { font-size: 11.5px; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lo-row-val { color: var(--text-secondary); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.lo-chip { font-size: 11px; padding: 2px 8px; border-radius: 10px; background: var(--bg-tertiary); color: var(--text-secondary); white-space: nowrap; }
+.lo-main .lo-chip.ok { background: #e3f4e7; color: #0b5d1e; }
+.lo-main .lo-chip.bad { background: #fbe4e4; color: #8a1c1c; }
+.lo-empty { padding: 14px; color: var(--text-secondary); font-size: 13px; }
+.lo-card-foot { margin-top: auto; display: flex; flex-wrap: wrap; gap: 8px; padding: 10px 14px; border-top: 1px solid var(--bg-tertiary); }
+.lo-link { border: 0; background: transparent; color: var(--accent); font: inherit; font-size: 12px; cursor: pointer; padding: 6px 4px; min-height: 32px; text-align: left; }
+.lo-link:hover { text-decoration: underline; }
+.lo-more { padding: 6px 14px; }
+.lo-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; }
+.lo-tile { padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.lo-tile > b { font-size: 16px; }
+.lo-tile > span { font-size: 12px; color: var(--text-secondary); }
+.lo-tile .lo-row { padding: 6px 0; }
+.lo-elec { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 12px 14px; border: 1px dashed var(--border-color); border-radius: 10px; background: var(--bg-primary); }
+.lo-elec > span:not(.lo-spacer) { color: var(--text-secondary); }
+body.dark-mode .lo-main .ok { color: #a5e3b0; } body.dark-mode .lo-main .bad { color: #ffb4ae; }
+body.dark-mode .lo-main .lo-chip.ok { background: #173b24; color: #a5e3b0; }
+body.dark-mode .lo-main .lo-chip.bad { background: #43191a; color: #ffb4ae; }

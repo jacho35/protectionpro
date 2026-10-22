@@ -3,13 +3,24 @@ HELP_ARTICLES.push(
 
 { id: 'design-types', group: 'design', title: 'Project types & workspaces',
   std: 'Project ▸ Project type & workspaces',
-  kw: 'reticulation building network plant workspace tab site plan demand single line schedules interlocking new project',
+  kw: 'reticulation building network plant lighting workspace tab site plan demand single line schedules interlocking new project overview rooms roads sports fields',
   html: String.raw`
-<p>A project is a <strong>Reticulation</strong>, a <strong>Building</strong> or a <strong>Network / plant</strong> project. The type decides which workspace tabs appear, in workflow order:</p>
+<p>A project is a <strong>Reticulation</strong>, a <strong>Building</strong>, a <strong>Network / plant</strong> or a <strong>Lighting</strong> project. The type decides which workspace tabs appear, in workflow order:</p>
 <table class="help-ref-table"><thead><tr><th>Type</th><th>Workspaces, in order</th><th>For</th></tr></thead><tbody>
 <tr><td>Reticulation</td><td>1 Site plan → 2 Demand → 3 Single-line</td><td>A township or site LV network: minisubs, kiosks and erven sized by ADMD (NRS 034-1)</td></tr>
 <tr><td>Building</td><td>1 Floor plans → 2 Single-line → 3 Schedules</td><td>Floors, distribution boards and final circuits down to each way</td></tr>
-<tr><td>Network / plant</td><td>Single-line · Interlocking</td><td>Substations, industrial and utility networks: the studies and breaker interlocking</td></tr></tbody></table>
+<tr><td>Network / plant</td><td>Single-line · Interlocking</td><td>Substations, industrial and utility networks: the studies and breaker interlocking</td></tr>
+<tr><td>Lighting</td><td>1 Overview → 2 Plans → 3 Rooms → 4 Roads → 5 Sports fields (only the ones you pick)</td><td>Lighting design on its own: rooms and areas, roads, sports fields</td></tr></tbody></table>
+<h4>Lighting projects</h4>
+<p>When you pick <strong>Lighting</strong>, tick what you are lighting: <em>Rooms &amp; areas</em>, <em>Roads</em>, <em>Sports fields</em> (one or more). The dialog shows the tabs you will get.</p>
+<ul>
+<li><strong>Overview</strong>: one card per design with every item, its headline result and its verdict; obtrusive light, installed load and the luminaire library. <em>Calculate all</em> runs every room, area, field and obtrusive-light check on every floor and every road cross-section; <em>Lighting report (PDF)</em> covers the rooms, areas and fields (each road design has its own report on the Roads tab).</li>
+<li><strong>Plans</strong>: the floor plans, their backgrounds and scale.</li>
+<li><strong>Rooms</strong>: rooms, outdoor areas, fences, escape routes and obtrusive-light checks, on the plan, as a table or in 3D.</li>
+<li><strong>Roads</strong>: lighting design on a cross-section and the Road plan. There is no Circuits view until you add street-light circuits.</li>
+<li><strong>Sports fields</strong>: fields, masts and aimed floods, stands and TV cameras, on the plan, as a table or in 3D.</li>
+</ul>
+<p>The electrical side (street-light circuits, board schedules, the single line, quantities) is off until you add it: tick <em>Also design the electrical side</em> when creating the project, use the buttons at the foot of the Overview, or Project › Project type &amp; workspaces. A design that already holds items can't be switched off there.</p>
 <p>Extra workspaces can be switched on per project, and <em>a workspace that holds data is never hidden</em>, so a project can never lose sight of its own content. A legacy project with no stored type has its type inferred from its content, so opening an old file changes nothing in it.</p>
 <h4>How the workspaces feed each other</h4>
 <ul>

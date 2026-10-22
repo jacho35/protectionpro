@@ -116,8 +116,8 @@ const Project = {
     document.title = 'ProtectionPro — New Project';
     updateProjectNameDisplay('Untitled Project');
     if (projectType) {
-      AppState.projectType = projectType;
-      Workspaces.refresh();
+      Workspaces.setType(projectType.type, projectType.extras, projectType.lighting);
+      AppState.dirty = false;
       // Open on the first step of the chosen type (e.g. the site plan).
       const first = Workspaces.visible()[0];
       if (first && typeof window.switchWorkspace === 'function') window.switchWorkspace(first);
