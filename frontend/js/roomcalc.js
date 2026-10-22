@@ -77,7 +77,7 @@ const RoomCalc = {
     const f = PlanEngine.factor();
     if (!f) { UI.alert('Calibrate the plan first — the calculation needs real distances.'); return; }
     const pm = AppState.planMarkup;
-    const list = (rooms || pm.rooms || []).filter(r => r.points && r.points.length >= 3 && r.kind !== 'outdoor' && r.kind !== 'perimeter');
+    const list = (rooms || pm.rooms || []).filter(r => r.points && r.points.length >= 3 && r.kind !== 'outdoor' && r.kind !== 'perimeter' && r.kind !== 'escape');
     if (!list.length) {
       if (!(pm.rooms || []).some(r => r.kind === 'outdoor' || r.kind === 'perimeter')) UI.toast('Draw or detect a room first.', 'info');
       return;
@@ -132,6 +132,7 @@ const RoomCalc = {
       ${cur ? '' : '<div style="color:#8a5a00;font-size:12px;margin-bottom:4px">Out of date — the room or its fittings changed.</div>'}
       <table style="width:100%;font-size:12px;border-collapse:collapse"><tbody>${(res.checks || []).map(fmt).join('')}</tbody></table>
       <div style="font-size:12px;color:var(--text-muted);margin:6px 0">${res.luminaires} fitting${res.luminaires === 1 ? '' : 's'} · Emin ${Math.round(wp.Emin || 0)} / Emax ${Math.round(wp.Emax || 0)} lx · ${res.power.wm2} W/m²${res.power.wm2per100lx != null ? ` · ${res.power.wm2per100lx} W/m²/100 lx` : ''}${res.cylindrical ? ` · Ēz ${Math.round(res.cylindrical.Ez)} lx` : ''}</div>
+      ${(() => { const en = RoomLighting.energy(room, res); return en ? `<div style="font-size:12px;margin:2px 0">LENI <b>${en.leni.toFixed(1)}</b> kWh/m²·yr · ${en.kwh.toFixed(0)} kWh/yr${en.lpdPass == null ? '' : ` · <span style="color:${en.lpdPass ? '#1d6b3a' : '#a61b1b'};font-weight:600">${en.wm2.toFixed(1)} W/m² ${en.lpdPass ? '≤' : '>'} ${en.lpd} limit</span>`}</div>` : ''; })()}
       ${(res.warnings || []).concat(res.notes || []).map(w => `<div style="font-size:11px;color:#8a5a00">${escHtml(w)}</div>`).join('')}
       ${btn}</div>`;
   },
@@ -286,6 +287,7 @@ const RoomCalc = {
       ctx.restore();
     }
     if (typeof AreaCalc !== 'undefined') AreaCalc.draw(ctx, zoom);
+    if (typeof EmergCalc !== 'undefined') EmergCalc.draw(ctx, zoom);
     for (const room of (pm.rooms || [])) {
       const lay = this.layouts[room.id];
       if (!lay || !lay.cands[lay.sel]) continue;

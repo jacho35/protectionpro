@@ -39,7 +39,7 @@ const ROOM_TASKS = {
 };
 
 const RoomLighting = {
-  DEFAULTS: { task: 'off_writing', ceilH: 2.7, workH: 0.75, wallZone: 0.5, rhoC: 0.7, rhoW: 0.5, rhoF: 0.2, mf: 0.8, wallE: 75, ceilE: 50 },
+  DEFAULTS: { emerg: 'none', tD: 2250, tN: 250, fo: 1, fd: 1, fc: 1, task: 'off_writing', ceilH: 2.7, workH: 0.75, wallZone: 0.5, rhoC: 0.7, rhoW: 0.5, rhoF: 0.2, mf: 0.8, wallE: 75, ceilE: 50 },
   MF_PRESETS: [[0.8, 'Clean, LED, regular cleaning'], [0.67, 'Normal'], [0.57, 'Dirty, infrequent cleaning']],
 
   _num(v, d, lo, hi) {
@@ -64,6 +64,10 @@ const RoomLighting = {
       wallZone: this._num(L.wallZone, D.wallZone, 0, 2),
       rhoC: this._num(L.rhoC, D.rhoC, 0, 1), rhoW: this._num(L.rhoW, D.rhoW, 0, 1), rhoF: this._num(L.rhoF, D.rhoF, 0, 1),
       mf: this._num(L.mf, D.mf, 0.3, 1),
+      emerg: ['none', 'open', 'highrisk'].includes(L.emerg) ? L.emerg : 'none',
+      tD: this._num(L.tD, D.tD, 0, 8760), tN: this._num(L.tN, D.tN, 0, 8760),
+      fo: this._num(L.fo, D.fo, 0, 1), fd: this._num(L.fd, D.fd, 0, 1), fc: this._num(L.fc, D.fc, 0.5, 1),
+      lpd: this._num(L.lpd, 0, 0, 1000),
       edited: !!L.edited,
     };
   },
@@ -86,16 +90,29 @@ const RoomLighting = {
     room.lighting.edited = L.edited;
   },
 
+  // LENI (kWh/m²·yr) by the EN 15193-1 quick method and the power-density check.
+  energy(room, res) {
+    const L = this.read(room);
+    const watts = res && res.power ? res.power.watts : 0, area = res ? res.area : 0;
+    if (!(watts > 0) || !(area > 0)) return null;
+    const kwh = watts * L.fc * (L.tD * L.fo * L.fd + L.tN * L.fo) / 1000.0;
+    const out = { leni: kwh / area, kwh, wm2: watts / area, lpd: L.lpd };
+    out.lpdPass = L.lpd > 0 ? out.wm2 <= L.lpd + 1e-9 : null;
+    return out;
+  },
+
   // ─── Properties panel section ───
   typeSelect(room) {
     const k = room.kind || 'room';
     return `<label class="plan-field"><span>Type</span><select data-rl-kind style="width:100%">
       <option value="room"${k === 'room' ? ' selected' : ''}>Room (indoor)</option>
       <option value="outdoor"${k === 'outdoor' ? ' selected' : ''}>Outdoor area</option>
-      <option value="perimeter"${k === 'perimeter' ? ' selected' : ''}>Perimeter / fence</option></select></label>`;
+      <option value="perimeter"${k === 'perimeter' ? ' selected' : ''}>Perimeter / fence</option>
+      <option value="escape"${k === 'escape' ? ' selected' : ''}>Escape route</option></select></label>`;
   },
 
   panel(room) {
+    if (room.kind === 'escape' && typeof EmergCalc !== 'undefined') return EmergCalc.routePanel(room);
     if ((room.kind === 'outdoor' || room.kind === 'perimeter') && typeof AreaCalc !== 'undefined') return AreaCalc.panel(room);
     const L = this.read(room);
     const f = PlanEngine.factor();
@@ -124,6 +141,15 @@ const RoomLighting = {
       <label class="plan-field" style="margin-top:6px"><span>Maintenance factor</span>
         <input type="number" data-rl="mf" value="${L.mf}" step="0.01" min="0.3" max="1" style="width:100%">
         <select data-rl-mfpreset style="width:100%"><option value="">Presets…</option>${this.MF_PRESETS.map(([v, n]) => `<option value="${v}">${v} — ${escHtml(n)}</option>`).join('')}</select></label>
+      <div style="margin-top:8px;border-top:1px solid var(--border,#d9dee4);padding-top:8px">
+        <div class="plan-props-title" style="font-size:13px">Energy</div>
+        <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px">
+          ${num('tD', 'Day hours', 'h/yr', 50, 'min="0" max="8760"')}${num('tN', 'Night hours', 'h/yr', 50, 'min="0" max="8760"')}${num('lpd', 'Limit W/m²', '0 = none', 0.5, 'min="0"')}
+          ${num('fo', 'F occupancy', '', 0.05, 'min="0" max="1"')}${num('fd', 'F daylight', '', 0.05, 'min="0" max="1"')}${num('fc', 'F constant-lux', '', 0.05, 'min="0.5" max="1"')}
+        </div>
+        <div style="font-size:11px;color:var(--text-muted)">LENI by the EN 15193-1 quick method, without parasitic and emergency standby energy. Enter the power-density limit from your regulation (e.g. SANS 10400-XA) to have it checked.</div>
+      </div>
+      ${typeof EmergCalc !== 'undefined' ? EmergCalc.roomSection(room) : ''}
       ${typeof RoomCalc !== 'undefined' ? RoomCalc.layoutHtml(room) + RoomCalc.resultHtml(room) : ''}
     </div>`;
   },
@@ -132,6 +158,7 @@ const RoomLighting = {
   bind(propsEl) {
     if (typeof RoomCalc !== 'undefined') RoomCalc.bind(propsEl);
     if (typeof AreaCalc !== 'undefined') AreaCalc.bind(propsEl);
+    if (typeof EmergCalc !== 'undefined') EmergCalc.bind(propsEl);
     if (this._bound || !propsEl) return;
     this._bound = true;
     const commit = (fn) => {

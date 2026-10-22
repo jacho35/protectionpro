@@ -723,6 +723,16 @@ class AreaLightingRequest(BaseModel):
     photometry: dict = {}
 
 
+class EmergencyLightingRequest(BaseModel):
+    """Emergency lighting — floor illuminance from emergency-mode luminaires
+    on escape routes, open areas and high-risk task areas. See
+    analysis/emergency_lighting.py."""
+    model_config = {"extra": "allow"}
+
+    items: list[dict] = []
+    photometry: dict = {}
+
+
 class GenericOpticRequest(BaseModel):
     kind: str = "generic_medium"
     lumens: float = 10000.0
