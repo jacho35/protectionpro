@@ -591,6 +591,7 @@ const PlanUI = {
     html += `<button class="plan-props-delete" data-role="delete">Delete</button>`;
     el.innerHTML = html;
     this._searchifyCables(el);
+    if (typeof RoomLighting !== 'undefined') RoomLighting.tipify(el, kind === 'element' ? item.type : null);
   },
 
   // ─── Bulk edit (several items of one kind + type selected) ───
