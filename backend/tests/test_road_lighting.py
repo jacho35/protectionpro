@@ -357,3 +357,26 @@ class TestSans:
         req["sections"][1]["cls"] = "M4"
         cw = RL.run_road_lighting(req)["result"]["areas"][1]
         assert [c["key"] for c in cw["checks"]] == ["Lav", "Uo", "Ul", "TI", "REI"]
+
+
+# ── generic interior / area optics (room & outdoor lighting) ──
+def test_generic_indoor_optics_flux_and_shape():
+    from backend.analysis.photometry import generic_optic, INDOOR_OPTICS
+    for kind in INDOOR_OPTICS:
+        p = generic_optic(kind, 4000.0, 36.0)
+        assert abs(p["fluxIntegrated"] - 4000.0) / 4000.0 < 0.01, kind
+        assert p["lumens"] == 4000.0 and p["watts"] == 36.0
+        cd = p["cd"]
+        assert max(max(r) for r in cd) > 0
+        # nothing is emitted above the horizontal
+        gi90 = next(i for i, g in enumerate(p["g"]) if g > 90.0)
+        assert max(max(r[gi90:]) for r in cd) < 1e-6, kind
+    # a narrow downlight concentrates more than a wide one on the axis
+    n = generic_optic("generic_downlight_narrow", 1000, 10)["cd"][0][0]
+    w = generic_optic("generic_downlight_wide", 1000, 10)["cd"][0][0]
+    assert n > w
+    # the batten is wider across (C90) than along (C0) the lamp
+    b = generic_optic("generic_batten", 1000, 10)
+    ci90 = b["c"].index(90.0)
+    gi60 = b["g"].index(60.0)
+    assert b["cd"][ci90][gi60] < b["cd"][0][gi60]

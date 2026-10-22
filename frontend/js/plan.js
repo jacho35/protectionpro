@@ -57,6 +57,8 @@ const PlanMarkup = {
             <button class="plan-tool-btn" data-tool="calibrate" title="Set scale from a known distance">📏 Calibrate</button>
             <button class="plan-tool-btn" data-tool="slpath" title="Draw a path → auto-place streetlight poles + circuits">💡 SL Path</button>
             <button class="plan-tool-btn" data-tool="crop" title="Set the export crop rectangle">⬜ Crop</button>
+            <button class="plan-tb-btn" data-action="photolib" title="Luminaire photometry library (IES / LDT, generic optics)">💡 Luminaires</button>
+            <button class="plan-tb-btn" data-action="roomcalc" title="Calculate the lighting of every room (Ēm, U₀, UGR, W/m²)">▶ Calc lighting</button>
           </div>
           <div class="plan-tb-group" id="plan-floor-group" style="display:none">
             <label class="plan-tb-field">Floor
@@ -67,7 +69,6 @@ const PlanMarkup = {
           <div class="plan-tb-group">
             <button class="plan-tb-btn" data-action="import" title="Import a site/floor plan (PNG/JPEG/PDF), a DXF reference, or a Distribution Designer .json project">⬆ Import Plan</button>
             <input type="file" id="plan-file-input" accept="image/png,image/jpeg,image/webp,application/pdf,.dxf,.ies,.json,application/json" style="display:none">
-            <button class="plan-tb-btn" data-action="lux" title="Toggle the lighting (lux) heatmap">💡 Lux</button>
           </div>
           <div class="plan-tb-group">
             <label class="plan-snap-pill"><input type="checkbox" data-snap="showGrid" checked> Grid</label>
@@ -129,7 +130,8 @@ const PlanMarkup = {
       else if (act.dataset.action === 'undo') { this.undo(); return; }
       else if (act.dataset.action === 'redo') { this.redo(); return; }
       else if (act.dataset.action === 'fit') PlanEngine.zoomFit();
-      else if (act.dataset.action === 'lux' && typeof PlanLux !== 'undefined') PlanLux.toggle();
+      else if (act.dataset.action === 'photolib' && typeof PhotoLib !== 'undefined') PhotoLib.open();
+      else if (act.dataset.action === 'roomcalc' && typeof RoomCalc !== 'undefined') RoomCalc.run().then(() => (typeof AreaCalc !== 'undefined') ? AreaCalc.run() : null);
       else if (act.dataset.action === 'push' && typeof PlanSync !== 'undefined') {
         // Reticulation → demand schedules; Building → linked SLD boards/feeders.
         if (AppState.planMarkup.settings.domain === 'building') PlanSync.syncBuildingToSLD();
@@ -156,7 +158,7 @@ const PlanMarkup = {
       else if (act.dataset.action === 'pdf' && typeof PlanExport !== 'undefined') PlanExport.exportPDF();
       // Picking any overflow action closes the ⋯ dropdown (but not the drawer
       // toggles, which live on the primary bar).
-      if (this._isMobile() && /^(floors|fit|lux|push|circuits|csv|dxf|png|pdf|import)$/.test(act.dataset.action)) this._closeOverflow();
+      if (this._isMobile() && /^(floors|fit|push|circuits|csv|dxf|png|pdf|import)$/.test(act.dataset.action)) this._closeOverflow();
     });
     tb.addEventListener('change', (e) => {
       if (e.target.dataset.snap) {
@@ -198,7 +200,7 @@ const PlanMarkup = {
       const f = e.target.files && e.target.files[0];
       if (f) {
         if (/\.dxf$/i.test(f.name) && typeof PlanDxfImport !== 'undefined') PlanDxfImport.importFile(f);
-        else if (/\.ies$/i.test(f.name) && typeof PlanIES !== 'undefined') PlanIES.importFile(f);
+        else if (/\.(ies|ldt)$/i.test(f.name) && typeof PhotoLib !== 'undefined') PhotoLib.importFiles([f]).then(() => UI.toast('Luminaire added to the library (💡 Luminaires).', 'success'));
         else if (/\.json$/i.test(f.name) && typeof PlanDdImport !== 'undefined') PlanDdImport.importFile(f);
         else PlanImages.importFile(f);
       }
@@ -248,7 +250,7 @@ const PlanMarkup = {
     }
   },
 
-  markDirty() { AppState.dirty = true; if (typeof PlanLux !== 'undefined') PlanLux.invalidate(); },
+  markDirty() { AppState.dirty = true; },
 
   // The push/sync button targets a different workspace per domain.
   updatePushButton() {
@@ -774,6 +776,7 @@ const PlanMarkup = {
       case 'trench': return 'Trench — click points; ✓ Done / Enter finishes. Esc cancels.';
       case 'measurement': return 'Measure — click points; ✓ Done / Enter finishes. Esc cancels.';
       case 'room': return 'Room — click ≥3 points; ✓ Done / Enter closes it. Esc cancels.';
+      case 'perimeter': return 'Perimeter — click points along the fence; ✓ Done / Enter finishes. Esc cancels.';
       case 'roomdetect': return 'Detect room — click inside a room. Esc to stop.';
       case 'crossing': return 'Crossing — click two points. Esc cancels.';
       case 'calibrate': return 'Calibrate — click two points a known distance apart.';

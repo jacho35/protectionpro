@@ -700,6 +700,39 @@ class PhotometryFileRequest(BaseModel):
     filename: str = ""
 
 
+class RoomLightingRequest(BaseModel):
+    """Room lighting — direct + interreflected illuminance, UGR and energy for
+    rooms of any outline under a flat ceiling. See analysis/room_lighting.py."""
+    model_config = {"extra": "allow"}
+
+    rooms: list[dict] = []
+    photometry: dict = {}
+    detail: str = "full"
+    room: dict = {}
+    photometryId: str | None = None
+
+
+class AreaLightingRequest(BaseModel):
+    """Outdoor area lighting — ground illuminance + GR on polygons, vertical
+    illuminance along perimeters, from poles/floods. See analysis/area_lighting.py."""
+    model_config = {"extra": "allow"}
+
+    luminaires: list[dict] = []
+    areas: list[dict] = []
+    perimeters: list[dict] = []
+    photometry: dict = {}
+
+
+class EmergencyLightingRequest(BaseModel):
+    """Emergency lighting — floor illuminance from emergency-mode luminaires
+    on escape routes, open areas and high-risk task areas. See
+    analysis/emergency_lighting.py."""
+    model_config = {"extra": "allow"}
+
+    items: list[dict] = []
+    photometry: dict = {}
+
+
 class GenericOpticRequest(BaseModel):
     kind: str = "generic_medium"
     lumens: float = 10000.0

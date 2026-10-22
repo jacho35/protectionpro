@@ -164,6 +164,7 @@ def parse_ies(text: str) -> dict:
         take(nt); take(nt)
     (n_lamps, lm_per_lamp, cd_mult, n_v, n_h, phot_type, _units,
      _w, _l, _h) = take(10)
+    lum_area = _luminous_area_ies(_units, _w, _l)
     ballast, _bp, watts = take(3)
     n_v, n_h = int(n_v), int(n_h)
     if n_v < 1 or n_h < 1:
@@ -192,17 +193,36 @@ def parse_ies(text: str) -> dict:
         c_full, cd_full = _full_circle(hh, rows, lambda c: c)
         return _canonical(meta.get("LUMINAIRE") or meta.get("LUMCAT") or meta.get("TEST") or "",
                           meta.get("MANUFAC", ""), c_full, v, cd_full, lumens, watts, "IES",
-                          _ies_extra(phot_type))
+                          _ies_extra(phot_type, lum_area))
     c_full, cd_full = _full_circle(h, raw, mirror)
     return _canonical(meta.get("LUMINAIRE") or meta.get("LUMCAT") or meta.get("TEST") or "",
                       meta.get("MANUFAC", ""), c_full, v, cd_full, lumens, watts, "IES",
-                      _ies_extra(phot_type))
+                      _ies_extra(phot_type, lum_area))
 
 
-def _ies_extra(phot_type):
+def _luminous_area_ies(units, w, l):
+    """Luminous opening area (m²) from the LM-63 header. Units 1 = feet, 2 = metres;
+    both dimensions negative = a circle/ellipse of that diameter."""
+    k = 0.3048 if int(units) == 1 else 1.0
+    aw, al = abs(w) * k, abs(l) * k
+    if aw <= 0 and al <= 0:
+        return 0.0
+    if w < 0 and l < 0:
+        return math.pi / 4.0 * aw * al
+    if w < 0 and l == 0:
+        return math.pi / 4.0 * aw * aw
+    return aw * al if (aw > 0 and al > 0) else 0.0
+
+
+def _ies_extra(phot_type, area=0.0):
+    out = {}
+    if area and area > 0:
+        out["luminousM2"] = round(float(area), 5)
     if int(phot_type) in (2, 3):
-        return {"warning": f"Type {'B' if int(phot_type) == 2 else 'A'} photometry — evaluated on the Type C convention, so off-axis values are approximate"}
-    return None
+        out["warning"] = f"Type {'B' if int(phot_type) == 2 else 'A'} photometry — evaluated on the Type C convention, so off-axis values are approximate"
+    return out or None
+
+
 
 
 # ─── EULUMDAT ───────────────────────────────────────────────────────────
@@ -279,6 +299,13 @@ def parse_ldt(text: str) -> dict:
     extra = {}
     if abs(tilt) > 1e-6:
         extra["measurementTilt"] = tilt
+    try:
+        la, lw = num(15) / 1000.0, num(16) / 1000.0     # luminous area length/diameter, width (mm)
+        area = math.pi / 4.0 * la * la if (lw <= 0 and la > 0) else (la * lw if la > 0 and lw > 0 else 0.0)
+        if area > 0:
+            extra["luminousM2"] = round(area, 5)
+    except ValueError:
+        pass
     return _canonical(name, company, c_full, g, cd_full, flux_total,
                       sum(watts) if watts else 0, "LDT", extra or None)
 
@@ -307,7 +334,60 @@ GENERIC_OPTICS = {
 }
 
 
+# Interior / area distributions: closed-form relative intensity I(C, γ) on the
+# same canonical web (C = azimuth plane, γ = angle from nadir). Smooth and
+# representative — scaled to the requested flux, never a real product.
+def _smooth_cut(g_deg, full, zero):
+    """1 up to `full` degrees, falling linearly to 0 at `zero`."""
+    return np.clip((zero - g_deg) / max(zero - full, 1e-9), 0.0, 1.0)
+
+
+def _axis_angle(C, G, c_deg, g_deg):
+    cc, gg = math.radians(c_deg), math.radians(g_deg)
+    ax = np.array([math.sin(gg) * math.cos(cc), math.sin(gg) * math.sin(cc), -math.cos(gg)])
+    d = np.stack([np.sin(G) * np.cos(C), np.sin(G) * np.sin(C), -np.cos(G)], axis=-1)
+    return np.degrees(np.arccos(np.clip(d @ ax, -1, 1)))
+
+
+INDOOR_OPTICS = {
+    "generic_downlight_narrow": {"name": "Generic downlight — narrow (≈ 50° beam)", "group": "indoor", "area": 0.0314,
+                                 "fn": lambda C, G: np.clip(np.cos(G), 0, None) ** 8 * _smooth_cut(np.degrees(G), 70, 90)},
+    "generic_downlight_wide": {"name": "Generic downlight — wide (≈ 90° beam)", "group": "indoor", "area": 0.0452,
+                               "fn": lambda C, G: np.clip(np.cos(G), 0, None) ** 3 * _smooth_cut(np.degrees(G), 65, 90)},
+    "generic_panel": {"name": "Generic recessed panel 600 × 600 (low glare)", "group": "indoor", "area": 0.36,
+                      "fn": lambda C, G: np.clip(np.cos(G), 0, None) ** 1.2 * _smooth_cut(np.degrees(G), 55, 80)},
+    "generic_batten": {"name": "Generic linear batten / strip (C0 along the lamp)", "group": "indoor", "area": 0.084,
+                       "fn": lambda C, G: np.clip(np.cos(G), 0, None) ** (1.0 + 1.4 * np.abs(np.sin(C))) * _smooth_cut(np.degrees(G), 70, 90)},
+    "generic_highbay": {"name": "Generic high-bay (narrow, ≈ 60° beam)", "group": "indoor", "area": 0.126,
+                        "fn": lambda C, G: np.clip(np.cos(G), 0, None) ** 5 * _smooth_cut(np.degrees(G), 70, 88)},
+    "generic_flood_sym": {"name": "Generic floodlight — symmetric (≈ 45° beam)", "group": "outdoor", "area": 0.09,
+                          "fn": lambda C, G: np.exp(-(np.degrees(G) / 24.0) ** 2 / 2)},
+    "generic_flood_asym": {"name": "Generic floodlight — asymmetric forward throw", "group": "outdoor", "area": 0.09,
+                           "fn": lambda C, G: np.exp(-(_axis_angle(C, G, 90.0, 42.0) / 26.0) ** 2 / 2)},
+    "generic_area_sym": {"name": "Generic area light — symmetric (Type V, round)", "group": "outdoor", "area": 0.12,
+                         "fn": lambda C, G: np.clip(np.cos(G), 0, None) ** 2.5 * _smooth_cut(np.degrees(G), 65, 88)},
+    "generic_area": {"name": "Generic area light — Type III (poles in car parks)", "group": "outdoor", "area": 0.12,
+                     "fn": lambda C, G: (np.exp(-(_axis_angle(C, G, 90.0, 60.0) / 28.0) ** 2 / 2)
+                                         + 0.25 * np.clip(np.cos(G), 0, None)) * _smooth_cut(np.degrees(G), 75, 90)},
+}
+
+
+def _indoor_optic(kind, spec, lumens, watts):
+    c = np.arange(0.0, 360.0 + 1e-9, 5.0)
+    g = np.arange(0.0, 180.0 + 1e-9, 1.0)
+    C, G = np.meshgrid(np.radians(c), np.radians(g), indexing="ij")
+    rel = np.clip(spec["fn"](C, G), 0.0, None)
+    rel = np.where(G > math.pi / 2, 0.0, rel)
+    flux_rel = total_flux(c, g, rel)
+    cd = rel * (lumens / flux_rel)
+    return _canonical(spec["name"], "Generic", c, g, cd, lumens, watts, "generic",
+                      {"generic": kind, "group": spec["group"], "luminousM2": spec["area"],
+                       "warning": "Generic distribution for feasibility — not a real product. Import the manufacturer's IES/LDT for a compliance design."})
+
+
 def generic_optic(kind: str, lumens: float = 10000.0, watts: float = 80.0) -> dict:
+    if kind in INDOOR_OPTICS:
+        return _indoor_optic(kind, INDOOR_OPTICS[kind], lumens, watts)
     spec = GENERIC_OPTICS.get(kind)
     if not spec:
         raise ValueError(f"Unknown generic optic '{kind}'")

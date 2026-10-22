@@ -87,27 +87,43 @@ $$f=\frac{d_{known}\ [\text{m}]}{d_{px}},\qquad \ell_{route}=f\sum_{k}\left|\mat
 <h4>Auto-circuiting (Building)</h4>
 <p>Devices tagged to a board way ($\texttt{circuitDbId}$, $\texttt{circuitNo}$) let the plan write the way's load and quantity into the linked board schedule. Untagged devices can inherit a tag through connected final-circuit routes, or be distributed across ways with per-type caps. Routed length flows to the way's cable length, unless the way has been pinned manually.</p>
 <h4>Lighting</h4>
-<p>A calibrated plan can show a lux heatmap — see <a href="#" data-help="design-lux">Lighting (lux) heatmap</a>. Road lighting to EN 13201 is under Street lighting — see <a href="#" data-help="design-roadlight">Road lighting design</a>.</p>` },
+<p>Rooms and outdoor areas on a calibrated plan are calculated and shown in false colour — see <a href="#" data-help="design-roomlight">Room, outdoor &amp; emergency lighting</a>. Road lighting to EN 13201 is under Street lighting — see <a href="#" data-help="design-roadlight">Road lighting design</a>.</p>` },
 
-{ id: 'design-lux', group: 'design', title: 'Lighting (lux) heatmap',
-  std: 'Plan ▸ Lux · IES photometry',
-  kw: 'lux illuminance lighting photometric ies candela cosine inverse square beam cone luminaire',
+{ id: 'design-roomlight', group: 'design', title: 'Room, outdoor & emergency lighting',
+  std: 'Plan ▸ Detect room · ▶ Calc lighting · Lighting workspace · EN 12464-1/-2 · EN 1838 · CIE 117 · CIE 112 · EN 15193-1',
+  kw: 'room lighting lux illuminance uniformity ugr glare gr radiosity interreflection reflectance maintenance factor auto layout outdoor car park pole floodlight perimeter fence vertical emergency escape route anti-panic high risk leni energy w/m2 detect room boundary dxf',
   html: String.raw`
-<p>Point-by-point horizontal illuminance over the calibrated plan, summed over every fitting and drawn as a translucent heatmap. It is a <em>direct-illuminance</em> model: no interreflection and no obstruction, so it is design guidance, not a substitute for a photometric tool.</p>
-<h4>The law</h4>
-<p>At a point on the working plane, a fitting of intensity $I(\theta,\varphi)$ mounted at height $h$ over horizontal distance $r$ gives</p>
-$$E=\sum_{i}\frac{I_i(\theta_i,\varphi_i)\,\cos\theta_i}{d_i^{2}},\qquad d=\sqrt{r^{2}+h^{2}},\quad \cos\theta=\frac{h}{d}$$
-<p>so illuminance falls with the inverse square of distance and with the cosine of the incidence angle.</p>
-<h4>Where the intensity comes from</h4>
-<ul>
-<li><strong>Measured</strong> — the fitting references an imported IES photometric file, so $I$ is read from the manufacturer's candela web at the true vertical and azimuth angle, rotated into the fitting's own frame. The accurate path. When a fitting's rated output differs from the tested luminaire's, the file's web is scaled by the lumen ratio.</li>
-<li><strong>Cone</strong> — with no IES file, the fitting is a point source radiating uniformly inside a beam cone $\beta$:
-$$I_0=\frac{\Phi}{2\pi\left(1-\cos\frac{\beta}{2}\right)}$$
-with $\Phi$ from watts × efficacy (default 100 lm/W, beam 120°). Fine for a first pass but it ignores the optic entirely — a narrow optic can differ several-fold.</li>
-</ul>
-<p>Grid resolution (default 0.5 m) and mounting height (default 2.5 m) are settings. The toast on enabling states which model was used.</p>
+<p>Design the lighting of a room, a car park or yard, a fence line and the escape routes on the Plan, then see every one of them — across all floors — in the <strong>Lighting</strong> workspace and in one PDF report.</p>
+<h4>The workflow</h4>
+<ol>
+<li><strong>Make the room.</strong> <em>Detect room (click)</em> finds the boundary from a DXF underlay (its wall layers, closing door openings up to the gap you set) or from a plan image or PDF (dark pixels are walls). Drag the corners to correct it, drag a midpoint to add one, double-click to remove one. Or draw it by hand.</li>
+<li><strong>Set the task.</strong> The room's <em>Lighting</em> section takes a task from a table (targets Ē<sub>m</sub>, U<sub>0</sub>, UGR, walls, ceiling) and the ceiling height, work plane, wall zone, reflectances and maintenance factor. The <em>Standard</em> box picks where the targets come from: EN 12464-1:2021 or SANS 10114-1:2020 (SANS gives only E<sub>m</sub>, UGR and R<sub>a</sub>; U<sub>0</sub>, E<sub>z</sub> and the wall and ceiling targets then stay at the EN 12464-1 values). The choice is for the whole project and also sets the emergency limits. Every target is editable; an edited room keeps what you entered when you change standard.</li>
+<li><strong>Choose luminaires.</strong> <em>Luminaires</em> opens the one library shared with road lighting: import the manufacturer's IES / LDT, or add a generic optic for feasibility.</li>
+<li><strong>Place fittings.</strong> Place Light Fittings and pick the library luminaire, or let <em>Auto layout</em> propose rows × columns that meet the targets: it tests lattices cut to the room outline, re-checks the best on the full calculation, and shows a ghost of the one you pick before you place it.</li>
+<li><strong>Calculate.</strong> <em>▶ Calc lighting</em> (or the room's Calculate) draws the work-plane illuminance in false colour with isolux lines at the target and at the minimum point value, and lists each check. A result reads <em>Out of date</em> as soon as the room or its fittings change.</li>
+</ol>
+<h4>Indoors</h4>
+<p>Direct light from each luminaire's photometric web, plus light reflected between the floor, walls and ceiling by diffuse radiosity. For a point with normal $\mathbf n$:</p>
+$$E=\sum_i\frac{I_i(C,\gamma)\cos\theta_i}{d_i^{2}}+\sum_j\frac{B_j\cos\theta_p\cos\theta_j A_j}{\pi d_j^{2}+A_j},\qquad B=\rho\,(E_{direct}+F\,B)$$
+<p>The form factors are symmetric and balanced so the solution conserves flux (absorbed light equals emitted light). In a room that is not a rectangle, a luminaire or a surface hidden behind a corner contributes nothing. Reported: Ē<sub>m</sub>, E<sub>min</sub>, E<sub>max</sub> and U<sub>0</sub> = E<sub>min</sub>/Ē<sub>m</sub> on the work plane (wall zone left out, grid refined to 0.5 m or finer), mean illuminance on walls, ceiling and floor, cylindrical illuminance at 1.2 m, and W/m². Illuminance is the maintained value (× maintenance factor).</p>
+<h4>Glare</h4>
+<p>UGR to CIE 117 at the middle of each wall, eye 1.2 m, looking along the room axes, with the luminaires' initial flux:</p>
+$$UGR=8\log_{10}\!\left(\frac{0.25}{L_b}\sum\frac{L^{2}\omega}{p^{2}}\right),\qquad L_b=\frac{E_{ind}}{\pi}$$
+<p>$p$ is the Guth position index. Outdoors the glare rating GR to CIE 112 is found at the worst of a grid of observers (eye 1.5 m, eight directions): $GR=27+24\log_{10}\!\left(L_{vl}/L_{ve}^{0.9}\right)$, with the veiling luminance $L_{vl}=10\sum E_{eye}/\theta^{2}$.</p>
+<h4>Outdoors</h4>
+<p><em>Outdoor area</em> (car park, yard, walkway): direct light on the ground from poles and floodlights anywhere on the sheet — each has a mounting height, a tilt towards its front and a heading. <em>Pole layout</em> tries pole lattices from the fewest upward. <em>Perimeter / fence</em>: the vertical illuminance at the fence height on the face you choose (ticks on the plan show which): E<sub>v,min</sub> and E<sub>v,min</sub>/E<sub>v,avg</sub> against your own security targets.</p>
+<h4>Emergency lighting</h4>
+<p>Floor illuminance from the fittings in emergency mode (kind <em>Emergency</em>, or an <em>Emergency output %</em>), direct light only, each at its emergency output; a wall stops the light. An <em>escape route</em> (a drawn line with a width) needs 1 lx on the centre line and E<sub>max</sub>/E<sub>min</sub> ≤ 40:1; EN 1838 adds 0.5 lx across the central band. An <em>open (anti-panic) area</em> needs 0.5 lx with a 0.5 m border left out (EN 1838) or 1 lx up to the perimeter (SANS 10114-2). A <em>high-risk task area</em> needs 10 % of the task illuminance and not less than 15 lx (EN 1838) or 20 lx (SANS 10114-2). The project's standard picks which set applies.</p>
+<h4>Energy</h4>
+<p>Installed W/m² and W/m² per 100 lx for every room, and LENI by the EN 15193-1 quick method:</p>
+$$LENI=\frac{\sum P\,F_C\,\big(t_D F_O F_D+t_N F_O\big)}{1000\,A}\ \ [\text{kWh/m}^2\text{·yr}]$$
+<p>Parasitic and emergency standby energy are not included. Enter the power-density limit from your regulation to have it checked.</p>
+<h4>The Lighting workspace and the PDF</h4>
+<p>One list of every room, area, fence and route on every floor with its results and verdict; filter by floor, site, escape routes or failing; <em>Locate</em> jumps to the item on its floor. <em>Calculate all</em> steps through the floors and returns to the one you were on. Results belong to the session: after opening a project, press Calculate all. <em>PDF report</em> gives the summary, the energy table and one section per item (plot, results, luminaire schedule, assumptions) and a page on method.</p>
+<h4>What it does not model</h4>
+<p>Furniture, partitions, windows, daylight, sloped ceilings and coloured surfaces. A wall stops light only in the emergency calculation and in rooms that are not convex. Generic optics are representative, not products.</p>
 <div class="hc-example"><span class="hc-label">Worked example</span>
-<p>A 3000 lm downlight, 120° cone, directly below (θ = 0), mounted 2.5 m above the working plane: $I_0=3000/(2\pi(1-\cos60^\circ))=3000/3.1416=955$ cd, so $E=955/2.5^2=\mathbf{153\ lx}$ under it.</p></div>` },
+<p>Six 4000 lm panels in a 6 × 5 m room (room index 1.4, reflectances 0.7 / 0.5 / 0.2), maintenance factor 1. The whole-plane utilisation comes out at 0.82, so $\bar E_m\approx 6\times4000\times0.82/30=\mathbf{656\ lx}$ — the tabulated utilisation factor for a near-Lambertian luminaire at this room index is about 0.8. With no reflections at all the same room gives 0.67, about 535 lx.</p></div>` },
 
 { id: 'design-roadlight', group: 'design', title: 'Road lighting design (EN 13201 / SANS 10098-1)',
   std: 'Street lighting ▸ Lighting design · SANS 10098-1/-2 · EN 13201-2/-3/-5 · CIE r-tables',

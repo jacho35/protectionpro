@@ -8,7 +8,7 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException
 from fastapi.routing import APIRoute
 from pydantic import BaseModel
-from ..models.schemas import ProjectData, FaultResults, LoadFlowResults, ArcFlashResults, DCArcFlashResults, UnbalancedLoadFlowResults, AdmdRequest, AdmdResults, ReticEarthRequest, StreetLightingRequest, RoadLightingRequest, RoadPlanRequest, PhotometryFileRequest, GenericOpticRequest, LightningRiskRequest, LightningRiskResult, RacewayRequest, RacewayResults, DCLoadFlowResults, DCShortCircuitResults, LoadFlowCasesRequest, LoadFlowCasesResults, VoltageStabilityRequest, VoltageStabilityResults, ContingencyRequest, ContingencyResults, TimeSeriesLoadFlowRequest, TimeSeriesLoadFlowResults, HarmonicsResults, FrequencyScanRequest, FrequencyScanResults, BatterySizingRequest, BatterySizingResults, OPFRequest, OPFResults, ReliabilityResults, FilterSizingRequest, FilterSizingResults, CapacitorPlacementRequest, CapacitorPlacementResults, FlickerAnalysisRequest, FlickerAnalysisResults, HostingCapacityRequest, HostingCapacityResults, OpenConductorResults, TwoConductorOpenResults, SimultaneousFaultResults, WennerTestRequest, WennerTestResults
+from ..models.schemas import ProjectData, FaultResults, LoadFlowResults, ArcFlashResults, DCArcFlashResults, UnbalancedLoadFlowResults, AdmdRequest, AdmdResults, ReticEarthRequest, StreetLightingRequest, RoadLightingRequest, RoadPlanRequest, RoomLightingRequest, AreaLightingRequest, EmergencyLightingRequest, PhotometryFileRequest, GenericOpticRequest, LightningRiskRequest, LightningRiskResult, RacewayRequest, RacewayResults, DCLoadFlowResults, DCShortCircuitResults, LoadFlowCasesRequest, LoadFlowCasesResults, VoltageStabilityRequest, VoltageStabilityResults, ContingencyRequest, ContingencyResults, TimeSeriesLoadFlowRequest, TimeSeriesLoadFlowResults, HarmonicsResults, FrequencyScanRequest, FrequencyScanResults, BatterySizingRequest, BatterySizingResults, OPFRequest, OPFResults, ReliabilityResults, FilterSizingRequest, FilterSizingResults, CapacitorPlacementRequest, CapacitorPlacementResults, FlickerAnalysisRequest, FlickerAnalysisResults, HostingCapacityRequest, HostingCapacityResults, OpenConductorResults, TwoConductorOpenResults, SimultaneousFaultResults, WennerTestRequest, WennerTestResults
 from ..analysis.loadflow_cases import run_loadflow_cases
 from ..analysis.voltage_stability import run_voltage_stability
 from ..analysis.contingency import run_contingency
@@ -27,7 +27,10 @@ from ..analysis.retic_earth import run_retic_earth_check
 from ..analysis.street_lighting import run_street_lighting
 from ..analysis.road_lighting import run_road_lighting
 from ..analysis.road_plan import run_road_plan
-from ..analysis.photometry import parse_photometry, generic_optic, GENERIC_OPTICS
+from ..analysis.room_lighting import run_room_lighting, suggest_layout
+from ..analysis.area_lighting import run_area_lighting, suggest_area_layout
+from ..analysis.emergency_lighting import run_emergency_lighting
+from ..analysis.photometry import parse_photometry, generic_optic, GENERIC_OPTICS, INDOOR_OPTICS
 from ..analysis.lightning_risk import run_lightning_risk
 from ..analysis.raceway import run_raceway_analysis
 from ..analysis.backup_autonomy import run_backup_autonomy
@@ -732,9 +735,72 @@ def road_lighting_photometry(data: PhotometryFileRequest):
         raise HTTPException(status_code=400, detail=f"Photometry file could not be read: {e}")
 
 
+@router.post("/room-lighting")
+def room_lighting(data: RoomLightingRequest):
+    """Room lighting: direct + radiosity interreflection on a polygon room,
+    work-plane Em/U0, walls/ceiling, cylindrical Ez, UGR (CIE 117) and W/m²."""
+    try:
+        return run_room_lighting(data.model_dump())
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Room lighting error: {e}")
+
+
+@router.post("/room-lighting/layout")
+def room_lighting_layout(data: RoomLightingRequest):
+    """Suggest luminaire grids (rows x columns) that meet a room's targets."""
+    try:
+        return suggest_layout(data.model_dump())
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Layout error: {e}")
+
+
+@router.post("/area-lighting")
+def area_lighting(data: AreaLightingRequest):
+    """Outdoor areas (ground Em, U0, GR to CIE 112) and perimeters (vertical Ev)."""
+    try:
+        return run_area_lighting(data.model_dump())
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Area lighting error: {e}")
+
+
+@router.post("/area-lighting/layout")
+def area_lighting_layout(data: dict):
+    """Suggest pole grids that meet an outdoor area's targets."""
+    try:
+        return suggest_area_layout(data)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Layout error: {e}")
+
+
+@router.post("/emergency-lighting")
+def emergency_lighting(data: EmergencyLightingRequest):
+    """Emergency lighting on escape routes, open areas and high-risk task areas."""
+    try:
+        return run_emergency_lighting(data.model_dump())
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Emergency lighting error: {e}")
+
+
 @router.get("/road-lighting/generic")
 def road_lighting_generic_list():
-    return [{"kind": k, "name": v["name"]} for k, v in GENERIC_OPTICS.items()]
+    out = [{"kind": k, "name": v["name"], "group": "road"} for k, v in GENERIC_OPTICS.items()]
+    out += [{"kind": k, "name": v["name"], "group": v["group"]} for k, v in INDOOR_OPTICS.items()]
+    return out
 
 
 @router.post("/road-lighting/generic")
