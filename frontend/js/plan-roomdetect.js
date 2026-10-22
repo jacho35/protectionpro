@@ -513,8 +513,12 @@ Object.assign(PlanRoomDetect, {
 
   opts() {
     const s = AppState.planMarkup.settings;
-    if (!s.roomDetect) s.roomDetect = { gapM: 1.2, layers: this.DEFAULT_LAYERS };
-    return s.roomDetect;
+    // Saved in the project file, so never trust what comes back from it.
+    const rd = (s.roomDetect && typeof s.roomDetect === 'object') ? s.roomDetect : (s.roomDetect = {});
+    const gap = parseFloat(rd.gapM);
+    rd.gapM = Number.isFinite(gap) ? Math.max(0, Math.min(5, gap)) : 1.2;
+    rd.layers = (typeof rd.layers === 'string' && rd.layers.trim()) ? rd.layers.slice(0, 200) : this.DEFAULT_LAYERS;
+    return rd;
   },
 
   // Returns { ok:true, points:[{x,y}] (world), source, bridged } | { ok:false, reason }
@@ -649,11 +653,13 @@ Object.assign(PlanRoomDetect, {
       <div class="plan-props-body" style="display:flex;flex-direction:column;gap:10px;font-size:13px">
         <p style="margin:0;color:var(--text-muted)">Click inside a room. Esc to stop.</p>
         <label>Door gap to close (m)
-          <input type="number" min="0" max="5" step="0.1" value="${o.gapM}" data-rd="gap" style="width:100%"></label>
+          <input type="number" min="0" max="5" step="0.1" data-rd="gap" style="width:100%"></label>
         <label>Wall layers (DXF, regex)
-          <input type="text" value="${String(o.layers).replace(/"/g, '&quot;')}" data-rd="layers" style="width:100%"></label>
+          <input type="text" data-rd="layers" style="width:100%"></label>
         <p style="margin:0;color:var(--text-muted)">With a plan image the walls are the dark pixels. Drag a corner to reshape the result; drag a midpoint to add a corner; double-click a corner to remove it.</p>
       </div>`;
+    el.querySelector('[data-rd="gap"]').value = o.gapM;
+    el.querySelector('[data-rd="layers"]').value = o.layers;
     el.querySelector('[data-rd="gap"]').addEventListener('change', (e) => { o.gapM = Math.max(0, Math.min(5, parseFloat(e.target.value) || 0)); PlanMarkup.markDirty(); });
     el.querySelector('[data-rd="layers"]').addEventListener('change', (e) => { o.layers = e.target.value || this.DEFAULT_LAYERS; PlanMarkup.markDirty(); });
   },
