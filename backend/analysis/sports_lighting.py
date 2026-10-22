@@ -263,7 +263,7 @@ def _stand(st: dict, lums: _Lums, mf: float, centre, pitch_eav: float, fd: dict)
     nrm[:, 1] /= ln
     ev = lums.illuminance(np.stack([px, py, pz + 1.2], axis=1), nrm) * mf
     out.update({"length": round(Ls, 2), "depth": round(Ds, 2), "zFront": zf, "zBack": zb, "nx": n, "ny": m,
-                "seats": _stats(eh), "faces": _stats(ev)})
+                "seats": _stats(eh), "faces": _stats(ev), "values": [round(float(e), 1) for e in eh]})
     gr = None
     if lums.n and pitch_eav > 0:
         rho = min(max(_f(fd.get("groundRho"), 0.2), 0.01), 0.9)

@@ -19,6 +19,8 @@
  * own grids) or Rendered light (every patch of the calculation drawn as bright
  * as it looks: its illuminance × reflectance). Calculate room runs RoomCalc
  * for this room; anything changed afterwards reads Out of date.
+ * A sports field (kind 'sports') is listed here too and drawn by Sports3D
+ * (sports3d.js): pitch, masts with aimed floods, stands, cameras.
  */
 
 const L3_KIND = {
@@ -50,7 +52,7 @@ const Light3D = {
   // ─── Geometry ──────────────────────────────────────────────────────────
   f() { return PlanEngine.factor(); },
   rooms() {
-    return (AppState.planMarkup.rooms || []).filter(r => r.points && r.points.length >= 3 && (!r.kind || r.kind === 'room'));
+    return (AppState.planMarkup.rooms || []).filter(r => r.points && r.points.length >= 3 && (!r.kind || r.kind === 'room' || r.kind === 'sports'));
   },
   room() {
     const list = this.rooms();
@@ -233,6 +235,12 @@ const Light3D = {
   fit() {
     const r = this.room();
     if (!r || !this.f() || !this.view) return;
+    if (Sports3D.is(r)) {
+      const B = Sports3D.bounds(r);
+      if (B) this.view.fit(B.min, B.max);
+      this._fitted = r.id;
+      return;
+    }
     const G = this.geo(r);
     this.view.fit([G.xmin, G.ymin, 0], [G.xmax, G.ymax, G.H]);
     this._fitted = r.id;
@@ -246,7 +254,7 @@ const Light3D = {
   renderSide() {
     this._renderPalette(); this._renderProps(); this._renderRes(); this._renderTitle(); this._renderLegend();
     const w = document.querySelector('#l3-view [data-l3="walls"]'), c = document.querySelector('#l3-view [data-l3="cones"]');
-    if (w) w.value = this.walls;
+    if (w) { w.value = this.walls; w.closest('label').style.display = Sports3D.is(this.room()) ? 'none' : ''; }
     if (c) c.checked = this.cones;
   },
 
@@ -254,7 +262,7 @@ const Light3D = {
   barHtml() {
     const rooms = this.rooms(), cur = this.room();
     const seg = (key, val, label) => `<button type="button" class="plan-mode-btn${this[key] === val ? ' active' : ''}" data-l3-set="${key}:${val}" aria-pressed="${this[key] === val}">${label}</button>`;
-    return `<label class="plan-tb-field">Room <select data-l3="room" class="plan-tb-select">${rooms.length ? rooms.map(r =>
+    return `<label class="plan-tb-field">${rooms.some(r => Sports3D.is(r)) ? 'Room / field' : 'Room'} <select data-l3="room" class="plan-tb-select">${rooms.length ? rooms.map(r =>
         `<option value="${escHtml(r.id)}"${cur && r.id === cur.id ? ' selected' : ''}>${escHtml(r.name || 'Room')}</option>`).join('') : '<option value="">No rooms on this floor</option>'}</select></label>
       <div class="plan-tb-field">Show <div class="plan-modes" role="group" aria-label="Show">${seg('mode', 'model', 'Model')}${seg('mode', 'colour', 'False colour')}${seg('mode', 'render', 'Rendered light')}</div></div>
       <button class="plan-tb-btn plan-icon-btn" data-lw-act="undo" aria-label="Undo" title="Undo (Ctrl+Z)">${PlanMarkup._icon('undo')}</button>
@@ -271,9 +279,17 @@ const Light3D = {
     return { r, fresh };
   },
 
+  calcLabel() { return Sports3D.is(this.room()) ? 'Calculate field' : 'Calculate room'; },
+
   async calc() {
     const room = this.room();
     if (!room) { UI.toast('Pick a room first.', 'info'); return; }
+    if (Sports3D.is(room)) {
+      await SportsCalc.run([room]);
+      this.render();
+      if (typeof LightingWS !== 'undefined') LightingWS._renderBar();
+      return;
+    }
     this._wantPatches = true;
     try { await RoomCalc.run([room]); } finally { this._wantPatches = false; }
     this.render();
@@ -290,6 +306,7 @@ const Light3D = {
     else if (!room) msg = 'No room on this floor yet. In the Plan view, use Detect room or draw a room, then come back.';
     if (empty) { empty.hidden = !msg; empty.textContent = msg; }
     if (msg) { v.bg = null; return; }
+    if (Sports3D.is(room)) { Sports3D.draw(v, room, this); return; }
     const G = this.geo(room), sc = this.scene(room);
     const { r: rr, fresh } = this._result(room);
     const res = rr ? rr.res : null;
@@ -519,6 +536,7 @@ const Light3D = {
   _pick(id, e) {
     const room = this.room();
     if (!room) return null;
+    if (Sports3D.is(room)) return Sports3D.pick(id, e, this);
     this.sel = id;
     const s = this._selected(room);
     this.renderSide();
@@ -559,8 +577,12 @@ const Light3D = {
 
   _key(e) {
     const room = this.room();
-    const s = this._selected(room);
     if (e.key === 'Escape') { this.sel = null; this.renderSide(); this.view.redraw(); e.stopPropagation(); return; }
+    if (Sports3D.is(room)) {
+      if ((e.key === 'Delete' || e.key === 'Backspace') && this.sel) { e.preventDefault(); e.stopPropagation(); Sports3D.remove(this, room); }
+      return;
+    }
+    const s = this._selected(room);
     if (!s) return;
     if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); e.stopPropagation(); this.remove(); }
     else if ((e.key === 'r' || e.key === 'R') && !e.ctrlKey && !e.metaKey) { e.stopPropagation(); this.rotate90(); }
@@ -651,6 +673,7 @@ const Light3D = {
     if (!el) return;
     const room = this.room();
     if (!room || !this.f()) { el.hidden = true; return; }
+    if (Sports3D.is(room)) { el.innerHTML = Sports3D.title(room); el.hidden = !el.innerHTML; return; }
     const G = this.geo(room);
     el.hidden = false;
     el.innerHTML = `<b>${escHtml(room.name || 'Room')}</b><span>${(G.xmax - G.xmin).toFixed(2)} × ${(G.ymax - G.ymin).toFixed(2)} m · ${G.area.toFixed(1)} m² · ceiling ${G.H.toFixed(2)} m · work plane ${G.wp.toFixed(2)} m</span>`;
@@ -660,6 +683,7 @@ const Light3D = {
     const el = document.getElementById('l3-pal');
     if (!el) return;
     const room = this.room();
+    if (Sports3D.is(room) && this.f()) { el.innerHTML = Sports3D.palette(room, this); return; }
     const btn = (k, D) => `<button type="button" class="l3-pal-btn" data-l3-add="${k}"${room && this.f() ? '' : ' disabled'}><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="${D.icon}"/></svg><span>${D.label}</span></button>`;
     let list = '';
     if (room && this.f()) {
@@ -685,6 +709,7 @@ const Light3D = {
     if (!el) return;
     const room = this.room();
     if (!room || !this.f()) { el.innerHTML = ''; return; }
+    if (Sports3D.is(room)) { el.innerHTML = Sports3D.props(room, this); return; }
     const G = this.geo(room), f = G.f, L = G.L;
     const s = this._selected(room);
     const num = (key, label, val, step, extra = '') => `<label class="l3-field"><span>${label}</span><input type="number" data-l3f="${key}" value="${val}" step="${step}" ${extra}></label>`;
@@ -786,6 +811,7 @@ const Light3D = {
     if (!el) return;
     const room = this.room();
     if (!room || !this.f()) { el.innerHTML = ''; return; }
+    if (Sports3D.is(room)) { el.innerHTML = Sports3D.resStrip(room); return; }
     const L = RoomLighting.read(room);
     const { r: rr, fresh } = this._result(room);
     const chip = (t, cls) => `<span class="l3-chip${cls ? ' ' + cls : ''}">${t}</span>`;
@@ -802,6 +828,7 @@ const Light3D = {
     const el = document.getElementById('l3-legend');
     if (!el) return;
     const room = this.room();
+    if (Sports3D.is(room) && this.f()) { const h = Sports3D.legend(room, this); el.hidden = !h; el.innerHTML = h || ''; return; }
     const { r: rr, fresh } = room ? this._result(room) : {};
     if (!room || !this.f() || this.mode === 'model') { el.hidden = true; return; }
     el.hidden = false;
@@ -836,6 +863,8 @@ const Light3D = {
       else if (k === 'in') v.zoomBy(1.25); else if (k === 'out') v.zoomBy(0.8); else if (k === 'fit') this.fit();
       return;
     }
+    const room = this.room();
+    if (Sports3D.is(room)) { Sports3D.onClick(e, this, room); return; }
     const a = t.closest('[data-l3]');
     if (!a || a.tagName === 'SELECT' || a.tagName === 'INPUT' && a.type !== 'checkbox') return;
     const act = a.dataset.l3;
@@ -853,7 +882,8 @@ const Light3D = {
       this[k] = v;
       if (k === 'mode' && v === 'render') {
         const room = this.room(), { r } = room ? this._result(room) : {};
-        if (room && (!r || !r.res.patches)) UI.toast('Calculate room to render the light in it.', 'info');
+        if (Sports3D.is(room)) { if (!r) UI.toast('Calculate field to render the light on it.', 'info'); }
+        else if (room && (!r || !r.res.patches)) UI.toast('Calculate room to render the light in it.', 'info');
       }
       this.render(); LightingWS._renderBar();
       return true;
@@ -873,6 +903,7 @@ const Light3D = {
     if (!room) return;
     if (t.dataset.l3 === 'cones') { this.cones = t.checked; this.render(); return; }
     if (t.dataset.l3 === 'walls') { this.walls = t.value; this.view.redraw(); return; }
+    if (Sports3D.is(room)) { Sports3D.onChange(e, this, room); return; }
     if (t.dataset.l3r) { RoomLighting.set(room, t.dataset.l3r, t.value); this._commit(); return; }
     const s = this._selected(room);
     if (!s) return;

@@ -194,6 +194,9 @@ def test_stand_seats_faces_and_spectator_glare():
     assert st["length"] == pytest.approx(60.0) and st["depth"] == pytest.approx(12.0)
     assert (st["nx"], st["ny"]) == (30, 6)
     assert st["seats"]["Eav"] > 0 and st["faces"]["Eav"] > 0
+    # the seat grid for the 3D view: row by row from the front, its mean is Ēh on the seats
+    assert len(st["values"]) == 30 * 6
+    assert sum(st["values"]) / len(st["values"]) == pytest.approx(st["seats"]["Eav"], abs=0.1)
     assert st["gr"] and len(st["gr"]["observers"]) == 6
     # the eye rises with the rake: front row 0.5 + 0.15·5.5 + 1.2
     assert st["gr"]["observers"][0]["z"] == pytest.approx(0.5 + 0.15 * 5.5 + 1.2, abs=0.01)
