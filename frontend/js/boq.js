@@ -9,6 +9,9 @@
  *           poles and devices, riser runs, junction-box joints
  *   sld     single-line diagram: cables, transformers, switchgear, CT/VT,
  *           relays, capacitor banks, surge arresters
+ *   streetlight  Street-lighting circuits (Street lighting / Road plan): one cable
+ *           run per circuit — feeder, spans and spurs with the engine's snaking and
+ *           loop-in allowances — and 2 terminations per span
  *   db      DB circuit schedules: board enclosures, final-circuit cable per
  *           way, breakers by poles / rating / curve, earth-leakage units,
  *           board accessories
@@ -18,6 +21,7 @@
  *   • Demand feeders/services  over plan LV feeder / service routes
  *   • SLD cables made from the plan (planLink / riserLink) over those routes
  *   • DB way lengths           over final-circuit routes tagged to that way
+ *   • Street-lighting circuits made from the plan, over its street-lighting routes
  * A feeder-to-sub-board way contributes its breaker only; its cable is the
  * sub-main cable on the SLD.
  *
@@ -41,6 +45,7 @@
 const BOQ = {
   SOURCES: [
     { id: 'demand', label: 'Demand (reticulation)', hint: 'Kiosk feeders, erf services, minisubs, kiosks' },
+    { id: 'streetlight', label: 'Street lighting circuits', hint: 'Circuit cable runs (feeder, spans, spurs) and their terminations' },
     { id: 'plan', label: 'Site / floor plans', hint: 'Routes, trenches, crossings, devices, risers, JB joints' },
     { id: 'sld', label: 'Single-line diagram', hint: 'Cables, transformers, switchgear on the SLD' },
     { id: 'db', label: 'DB circuit schedules', hint: 'Boards, final-circuit cable, breakers, EL units' },
@@ -101,6 +106,9 @@ const BOQ = {
     const R = AppState.reticulation;
     return !!(R && Array.isArray(R.kiosks) && R.kiosks.length);
   },
+  _hasStreet() {
+    return typeof StreetLight !== 'undefined' && !!StreetLight.data && StreetLight.circuits.some(c => c.poles.length && c.cable);
+  },
   _hasPlan() {
     try {
       return (AppState.planFloors() || []).some(fl => ['routes', 'elements', 'trenches', 'crossings']
@@ -118,15 +126,15 @@ const BOQ = {
   // Rules count from what the other sources measure, so an empty project has
   // nothing for them to count either (and no lump sums appear in it).
   available() {
-    const av = { demand: this._hasDemand(), plan: this._hasPlan(), sld: this._hasSLD(), db: this._hasDB() };
-    av.rule = av.demand || av.plan || av.sld || av.db;
+    const av = { demand: this._hasDemand(), streetlight: this._hasStreet(), plan: this._hasPlan(), sld: this._hasSLD(), db: this._hasDB() };
+    av.rule = av.demand || av.streetlight || av.plan || av.sld || av.db;
     return av;
   },
   defaultSources() {
     const av = this.available();
     const t = AppState.projectType;
-    if (t === 'retic') return { demand: av.demand, plan: av.plan, sld: false, db: false, rule: av.rule };
-    if (t === 'building') return { demand: false, plan: av.plan, sld: av.sld, db: av.db, rule: av.rule };
+    if (t === 'retic') return { demand: av.demand, streetlight: av.streetlight, plan: av.plan, sld: false, db: false, rule: av.rule };
+    if (t === 'building') return { demand: false, streetlight: false, plan: av.plan, sld: av.sld, db: av.db, rule: av.rule };
     return av;
   },
 
@@ -137,7 +145,7 @@ const BOQ = {
 
   collect(opts) {
     opts = opts || this.opts || {};
-    const inc = Object.assign({ demand: true, plan: true, sld: true, db: true, rule: true }, opts.sources || {});
+    const inc = Object.assign({ demand: true, streetlight: true, plan: true, sld: true, db: true, rule: true }, opts.sources || {});
     const cat = new Map(Rates.catalogue().map(c => [c.key, c]));
     const lines = new Map();
     const warnings = [], notes = [];
@@ -164,6 +172,19 @@ const BOQ = {
     // Bases for quantity rules; the line-derived ones are filled in at the end.
     const bases = { erven: 0, erven_1ph: 0, erven_3ph: 0, lv_feeders: 0, services: 0, service_m: 0, trench_m: 0, crossings: 0, ways: 0, lights: 0, sockets: 0, switches: 0, floors: 0, fixed: 1 };
     for (const t of Object.keys((typeof PLAN_DEFS !== 'undefined' && PLAN_DEFS.trenchTypes) || {})) bases['trench_m:' + t] = 0;
+
+    // ── Street lighting circuits ──
+    // One cable run per circuit (the engine's length: spans + snaking + loop-in);
+    // every span has two ends. Plan street-lighting routes are not counted again
+    // when circuits made from them exist.
+    const slCircuits = inc.streetlight && this._hasStreet() ? StreetLight.circuits.filter(c => c.poles.length && c.cable) : [];
+    const slFromPlan = slCircuits.some(c => c.planKey);
+    for (const c of slCircuits) {
+      add(this._cable(c.cable), StreetLight.cableLengthM(c), 'streetlight', 'Street lighting circuits');
+      term(this._cable(c.cable), c.poles.length, 'streetlight', 'Street lighting circuits');
+    }
+    const slNoCable = inc.streetlight && typeof StreetLight !== 'undefined' && StreetLight.data ? StreetLight.circuits.filter(c => c.poles.length && !c.cable).length : 0;
+    if (slNoCable) warnings.push(`${slNoCable} street-lighting circuit${slNoCable > 1 ? 's have' : ' has'} no cable chosen, so ${slNoCable > 1 ? 'they are' : 'it is'} not counted.`);
 
     // ── Demand ──
     if (inc.demand && hasDemand) {
@@ -230,13 +251,14 @@ const BOQ = {
           }
         } catch (e) { /* plan helpers unavailable — count the routes */ }
       }
-      let skipDemand = 0, skipSld = 0, skipWay = 0, unscaled = 0;
+      let skipDemand = 0, skipSld = 0, skipWay = 0, skipSl = 0, unscaled = 0;
       for (const fl of floors) {
         const f = PlanCSV._floorFactor(fl);
         const d = fl.data || {};
         for (const r of (d.routes || [])) {
           const et = PlanCSV._effectiveType(r, elById);
           if (inc.demand && hasDemand && (et === 'lv' || et === 'service')) { skipDemand++; continue; }
+          if (slFromPlan && et === 'sl') { skipSl++; continue; }
           if (inc.sld && (sldByRoute.has(r.id) || riserRoutes.has(r.id))) { skipSld++; continue; }
           if (inc.db && CIRCUIT_ROUTES.includes(r.type)) {
             const ids = [r.fromId, r.toId, ...(r.points || []).map(p => p.snappedTo)].filter(Boolean);
@@ -293,6 +315,7 @@ const BOQ = {
           add({ key: 'LAB-JB-TERM' }, j.terminations, 'plan', 'Plan junction boxes');
         } catch (e) { /* no building plan */ }
       }
+      if (skipSl) notes.push(`${skipSl} plan street-lighting route${skipSl > 1 ? 's are' : ' is'} not counted: the street-lighting circuits hold ${skipSl > 1 ? 'their' : 'its'} length.`);
       if (skipDemand) notes.push(`${skipDemand} plan LV feeder / service route${skipDemand > 1 ? 's are' : ' is'} not counted: Demand holds ${skipDemand > 1 ? 'their' : 'its'} length.`);
       if (skipSld) notes.push(`${skipSld} plan route${skipSld > 1 ? 's are' : ' is'} counted from ${skipSld > 1 ? 'their' : 'its'} single-line cable.`);
       if (skipWay) notes.push(`${skipWay} final-circuit route${skipWay > 1 ? 's are' : ' is'} counted from the DB schedule way ${skipWay > 1 ? 'they are' : 'it is'} tagged to.`);

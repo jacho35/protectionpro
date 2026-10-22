@@ -693,32 +693,6 @@ const RoadPlan = {
     this.renderPanel(); this.renderWorld(); this.renderRail();
   },
 
-  // ─── Send poles to a street-lighting circuit ─────────────────────────
-  async sendToCircuit() {
-    const road = this.selRoad;
-    if (!road || !(road.poles || []).length) { UI.alert('This road has no poles yet.'); return; }
-    const existing = road.circuitId ? StreetLight.circuit(road.circuitId) : null;
-    if (existing && !(await UI.confirm(`Replace the poles of circuit ${existing.name} with this road's ${road.poles.length} poles?`))) return;
-    const names = this._poleNames(road);
-    const list = road.poles.slice().sort((a, b) => a.s - b.s).map(p => ({ p, g: this.poleGeom(road, p) })).filter(x => x.g);
-    const c = existing || StreetLight._newCircuit(StreetLight._defaultSource());
-    c.poles = [];
-    let parent = null, prev = null;
-    for (const { p, g } of list) {
-      const ph = RoadLight.library[g.photometryId];
-      const id = StreetLight._genPoleId();
-      c.poles.push({ id, name: names.get(p.id), parent, spacingM: prev ? +Math.hypot(g.bx - prev.bx, g.by - prev.by).toFixed(2) : null,
-        luminaireId: ph && Number(ph.watts) > 0 ? 'ph:' + g.photometryId : null, phase: null });
-      parent = id; prev = g;
-    }
-    if (!existing) { c.name = `${c.name} (${road.name})`; StreetLight.circuits.push(c); }
-    road.circuitId = c.id;
-    StreetLight._selId = c.id;
-    this._commit();
-    UI.toast(`${list.length} poles sent to circuit ${c.name} — spans are the distances between consecutive poles along the road.`, 'success', 6000);
-    this.renderPanel();
-  },
-
   // ─── DXF background ──────────────────────────────────────────────────
   async importDxf(file) {
     UI.setBusy && UI.setBusy(true, 'Reading DXF…');
@@ -1018,6 +992,7 @@ const RoadPlan = {
     }
     if (this._tool === 'pick') { this._pickAt(wx, wy, e); return; }
     if (this._tool === 'addpole') { this._addPoleAt(wx, wy); return; }
+    if (this._tool === 'feed') { this._feedDown(wx, wy); return; }
     // select
     if (this._step === 1) {
       const vi = this._hitVertex(wx, wy);
@@ -1079,6 +1054,7 @@ const RoadPlan = {
     if (d.kind === 'pole' && d.moved) { this._commit(); this.render(); }
   },
   _dbl(e) {
+    if (this._tool === 'feed') { if (this._feedDraft && this._feedDraft.route.length) this._feedDraft.route.pop(); this._feedFinish(); return; }
     if (this._tool === 'draw' || this._tool === 'kerbs') { if (this._draft && this._draft.length > 1) this._draft.pop(); this.finishDraft(); return; }
     if (this._step === 1 && this._tool === 'select') {
       const r = this.selRoad;
@@ -1110,6 +1086,10 @@ const RoadPlan = {
       if (k === 'Escape') { this._draft = null; this.renderScreen(); return true; }
       if (k === 'Backspace') { this._draft.pop(); if (!this._draft.length) this._draft = null; this.renderScreen(); return true; }
     }
+    if (this._tool === 'feed' && this._feedDraft) {
+      if (k === 'Enter') { this._feedFinish(); return true; }
+      if (k === 'Backspace') { if (this._feedDraft.route.length) this._feedDraft.route.pop(); else this._feedDraft = null; this.renderScreen(); return true; }
+    }
     if (k === 'Escape') { this._kerbDraft = null; this._closePick(); this.setTool('select'); return true; }
     if ((k === 'Delete' || k === 'Backspace') && this._step === 2 && this._selPole) { this.deletePole(); return true; }
     if (k === 'f' || k === 'F') { this.fit(); return true; }
@@ -1118,7 +1098,7 @@ const RoadPlan = {
 
   // ─── Tools ───────────────────────────────────────────────────────────
   setTool(t) {
-    this._tool = t; this._draft = null; this._closePick();
+    this._tool = t; this._draft = null; this._feedDraft = null; this._closePick();
     if (t !== 'kerbs' && t !== 'pick') this._kerbDraft = null;
     this.renderToolbar(); this.renderScreen(); this._hint();
   },
@@ -1261,7 +1241,8 @@ const RoadPlan = {
   setStep(n) {
     this._step = n;
     if (n !== 1 && (this._tool === 'draw' || this._tool === 'kerbs' || this._tool === 'pick')) this._tool = 'select';
-    if (n !== 2 && this._tool === 'addpole') this._tool = 'select';
+    if (n !== 2 && (this._tool === 'addpole' || this._tool === 'feed')) this._tool = 'select';
+    this._feedDraft = null;
     this._draft = null; this._kerbDraft = null; this._closePick();
     this.render();
     if (n === 3 && (this._resStale || !this._res)) this.recompute(0);
@@ -1275,6 +1256,7 @@ const RoadPlan = {
     else if (this._tool === 'kerbs') t = this._kerbDraft ? 'Now trace the other kerb (Enter / double-click to finish).' : 'Trace the first kerb (Enter / double-click to finish), then the other one.';
     else if (this._tool === 'pick') t = this._kerbDraft ? 'Click the other kerb line.' : 'Click a DXF line: connected pieces on its layer are joined.';
     else if (this._tool === 'addpole') t = 'Click beside the road: the pole goes on the nearest pole line.';
+    else if (this._tool === 'feed') t = this._feedDraft ? 'Click each bend of the feeder cable, then click the pole it feeds (or Enter to feed the nearest end). Backspace removes the last bend, Esc cancels.' : 'Click where the kiosk or minisub stands, then the bends of its feeder cable to the road.';
     else if (this._step === 1 && this.selRoad && this.selRoad.mode === 'ip') t = 'Drag a square to move an intersection point · double-click a leg to add one · Alt-click to delete · scroll to zoom, Shift-drag or right-drag to pan, F fits.';
     else if (this._step === 2) t = 'Drag a pole along its kerb · Alt-drag moves it off the pole line · Delete removes the selected pole.';
     el.textContent = t;
@@ -1323,7 +1305,7 @@ const RoadPlan = {
         <label class="rl-inline" title="Radius of the tangent arc at each corner of a drawn centreline (a corner can override it)">Bend radius<span class="sl-unit"><input type="number" min="0" step="5" class="sl-in-num" data-rp-road-f="radius" value="${escHtml(r ? (r.radius ?? 50) : 50)}"${r && r.mode === 'ip' ? '' : (r ? ' disabled' : '')}> m</span></label>
         <label class="rl-inline"><input type="checkbox" data-rp="snap"${this._snap ? ' checked' : ''}> Snap</label>`;
     } else if (this._step === 2) {
-      html = `${b('select', 'Select / drag', 'Select and drag poles')}${b('addpole', 'Add pole', 'Click beside a road to add a pole on the nearest pole line')}
+      html = `${b('select', 'Select / drag', 'Select and drag poles')}${b('addpole', 'Add pole', 'Click beside a road to add a pole on the nearest pole line')}${b('feed', 'Feed point', 'Place the kiosk / minisub and draw its feeder cable to the selected road')}
         <button class="btn-small" data-rp="delpole"${this._selPole ? '' : ' disabled'}>Delete pole</button>
         <span class="sl-sep"></span>
         <button class="btn-small" data-rp="relayout" title="Lay the selected road's poles out again from the rules">Lay out again</button>
@@ -1573,6 +1555,7 @@ const RoadPlan = {
       out.push(poly(pts, 'rp-draft'));
       this._draft.forEach(q => { const [x, y] = S(q[0], q[1]); out.push(`<rect x="${x - 4}" y="${y - 4}" width="8" height="8" class="rp-ip"/>`); });
     }
+    if (this._step === 2) this._drawCircuitCables(S, out);
     // scale bar
     const nice = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000];
     const len = nice.find(n => n * v.z >= 70) || 5000;
@@ -1692,7 +1675,8 @@ const RoadPlan = {
         <div class="sl-hint">Mounting height, overhang, tilt and luminaire come from the design's rows (${escHtml(des.name)}: max passing spacing on a straight is found there with <i>Find max spacing</i>).</div>
         <div class="rp-actions"><button class="btn-small btn-primary" data-rp="relayout">Lay out again</button><label class="rl-inline"><input type="checkbox" data-rp="keepmoved"${this._keepMoved === false ? '' : ' checked'}> Keep poles I moved</label></div></div>
       ${selHtml}
-      <div class="rp-block"><div class="rp-block-h"><b>Pole schedule · ${poles.length}</b><button class="btn-small" data-rp="circuit" title="Create (or update) a street-lighting circuit with these poles, spans from their distances">${r.circuitId && StreetLight.circuit(r.circuitId) ? 'Update circuit' : 'Send to a circuit'}</button></div>
+      ${this._panelFeed(r)}
+      <div class="rp-block"><div class="rp-block-h"><b>Pole schedule · ${poles.length}</b><button class="btn-small" data-rp="circuit" title="Create or update street-lighting circuits and their cables from the road plan">Circuits and cables…</button></div>
         <div class="rp-sched"><table class="rl-table"><thead><tr><th>Pole</th><th>Ch m</th><th>Side</th><th title="To the previous pole on the same side">Gap m</th><th></th></tr></thead><tbody>${rows}</tbody></table></div></div>
       <div class="rp-actions"><button class="btn-small" data-rp-step="1">← Road shape</button><button class="btn-small btn-primary" data-rp-step="3">Calculate the light →</button></div></div>`;
   },
@@ -1746,7 +1730,8 @@ const RoadPlan = {
       case 'relayout-all': for (const x of this.roads) this.layoutRoad(x, this._keepMoved !== false); this._commit(); this.render(); break;
       case 'delpole': this.deletePole(); break;
       case 'pole-reset': if (r) { const p = r.poles.find(x => x.id === this._selPole); if (p) { delete p.over; delete p.d; this._commit(); this.render(); } } break;
-      case 'circuit': this.sendToCircuit(); break;
+      case 'circuit': this.openCircuitImport(); break;
+      case 'feed-clear': this._feedClear(); break;
       case 'calc': this.recompute(0); break;
       case 'pick-cl': this._usePicked('cl'); break;
       case 'pick-k1': this._usePicked('k1'); break;
@@ -1763,6 +1748,8 @@ const RoadPlan = {
   _onChange(e) {
     const t = e.target, d = t.dataset;
     const r = this.selRoad;
+    if (d.rpFeed === 'pole') { if (r && r.feed) { if (t.value) r.feed.poleId = t.value; else delete r.feed.poleId; this._commit(); this.render(); } return; }
+    if (d.rpFeed === 'source') { const [k, ...id] = t.value.split(':'); this._feedSrc = { kind: k, id: id.join(':') }; if (r && r.feed) { r.feed.source = this._feedSrc; this._commit(); } this.render(); return; }
     if (d.rpGap !== undefined) { this._gapTol = Math.max(0, +t.value || 0); if (this._pickSrc) this._rechain(); return; }
     if (d.rp === 'snap') { this._snap = t.checked; return; }
     if (d.rp === 'iso') { this._showIso = t.checked; this._renderHeat(); return; }

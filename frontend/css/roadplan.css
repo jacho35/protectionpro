@@ -121,3 +121,21 @@ body.dark-mode #streetlight-workspace {
   .rp-panel { width: auto; flex: 0 0 auto; padding: 10px; }
   .rp-canvas-wrap { min-height: 60vh; }
 }
+
+/* Circuits and cables (js/roadplan-circuits.js) */
+.rp-cable { fill: none; stroke: #b45f06; stroke-width: 2; }
+.rp-cable.link { stroke-dasharray: 5 3; stroke-width: 2.4; }
+.rp-feeder { fill: none; stroke: #b45f06; stroke-width: 2; stroke-dasharray: 2 4; }
+.rp-feeder.draft { stroke: var(--rp-sel); }
+.rp-kiosk { fill: var(--rp-pole); stroke: var(--rp-head); stroke-width: 1.5; }
+.rp-cable-t { font-size: 11px; font-weight: 600; fill: #b45f06; paint-order: stroke; stroke: var(--rp-plan); stroke-width: 3px; }
+.rp-feedline { font-size: 12px; line-height: 1.5; margin: 6px 0; }
+.rp-circ { display: flex; gap: 20px; flex-wrap: wrap; }
+.rp-circ-roads { flex: 1 1 420px; min-width: 0; overflow-x: auto; }
+.rp-circ-set { flex: 0 1 260px; display: flex; flex-direction: column; gap: 10px; }
+.rp-cs { font-size: 12px; }
+.rp-cs.ok { color: #1e6b45; }
+.rp-cs.warn { color: #a15c00; }
+.rp-cs.muted { color: var(--text-secondary, #5b6675); }
+.rp-circ-sum { margin-right: auto; font-size: 13px; }
+.rp-circ-dialog { max-width: 880px; width: 94vw; }
