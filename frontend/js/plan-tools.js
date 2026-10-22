@@ -1,6 +1,6 @@
 /* ProtectionPro — Plan Markup tools + snapping.
  *
- * A tiny tool registry so retic tools (trench, crossing, SL path) and building
+ * A tiny tool registry so retic tools (trench, crossing) and building
  * tools can share one engine: each tool is a state machine over its own
  * `_draft`, receiving world-space pointer events from PlanEngine. Phase 1
  * ships select / place / route / calibrate; later phases register more tools
@@ -610,24 +610,50 @@ PlanTools.register({
 PlanTools.register({
   id: 'calibrate', cursor: 'crosshair',
   _p1: null, _hover: null, _busy: false,
-  onActivate() { this._p1 = null; this._hover = null; this._busy = false; },
+  // opts.dxfId: check that DXF against a known length instead — the DXF is
+  // re-scaled to match, the floor's scale is left alone (unless it came from
+  // that DXF alone).
+  _dxfId: null,
+  onActivate(opts) { this._p1 = null; this._hover = null; this._busy = false; this._dxfId = (opts && opts.dxfId) || null; },
   cancel() { this._p1 = null; this._hover = null; },
 
-  onMove(pt) { this._hover = pt; if (this._p1) PlanEngine.requestDraw({ fg: true }); },
+  // Only DXF geometry snaps here (wall ends, corners): never the grid, which
+  // is measured in the very scale being set.
+  _snapDxf(pt) {
+    if (typeof PlanDxfImport === 'undefined' || AppState.planMarkup.settings.snapDxf === false) return pt;
+    const d = PlanDxfImport.snap(pt, 10 / PlanEngine.view.zoom);
+    return d ? { x: d.x, y: d.y } : pt;
+  },
+  onMove(pt) { this._hover = this._snapDxf(pt); if (this._p1) PlanEngine.requestDraw({ fg: true }); },
 
   async onDown(pt) {
     if (this._busy) return;
+    pt = this._snapDxf(pt);
     if (!this._p1) { this._p1 = { x: pt.x, y: pt.y }; return; }
     const p1 = this._p1, p2 = { x: pt.x, y: pt.y };
     const pxDist = Math.hypot(p2.x - p1.x, p2.y - p1.y);
     if (pxDist < 1) { this._p1 = null; return; }
     this._busy = true;
-    const prev = AppState.planMarkup.scale ? String(AppState.planMarkup.scale.realDist) : '';
-    const ans = await UI.prompt('Real-world distance between the two points (metres):', prev || '');
+    const f0 = PlanEngine.factor();
+    const desc = this._dxfId && typeof PlanDxfImport !== 'undefined' ? PlanDxfImport.byId(this._dxfId) : null;
+    const now = f0 ? ` It measures ${(pxDist * f0).toFixed(2)} m now.` : '';
+    const prev = desc ? (f0 ? (pxDist * f0).toFixed(2) : '') : (AppState.planMarkup.scale ? String(AppState.planMarkup.scale.realDist) : '');
+    const ans = await UI.prompt(`Real distance between the two points (metres):${now}`, prev || '');
     this._busy = false;
     this._p1 = null;
     const realDist = parseFloat(ans);
     if (!ans || !isFinite(realDist) || realDist <= 0) { PlanEngine.requestDraw({ fg: true }); return; }
+    if (desc && f0 && desc.unitM) {
+      const ratio = realDist / (pxDist * f0);
+      PlanDxfImport.setUnits(desc, desc.unitM * ratio, { keepBase: true });
+      PlanMarkup.snapshot(); PlanMarkup.markDirty();
+      PlanMarkup.updateScaleReadout();
+      if (typeof PlanUI !== 'undefined') { PlanUI.renderPalette(); PlanUI.renderProps(); }
+      PlanEngine.requestDraw({ all: true });
+      UI.toast(Math.abs(ratio - 1) < 0.001 ? `"${desc.name}" is to scale.` : `"${desc.name}" re-scaled × ${ratio.toFixed(4)} to match.`, 'success');
+      PlanTools.set('select');
+      return;
+    }
     AppState.planMarkup.scale = { p1, p2, realDist, pxDist, factor: realDist / pxDist };
     PlanMarkup.snapshot(); PlanMarkup.markDirty();
     PlanMarkup.updateScaleReadout();
@@ -796,85 +822,6 @@ PlanTools.register({
     PlanEngine.requestDraw({ fg: true });
   },
   onKey(e) { if (e.key === 'Escape') { PlanTools.set('select'); return true; } return false; },
-});
-
-// ─────────────────────────────────────────────────────────────────────────
-// SL PATH — draw a path, auto-generate evenly-spaced poles + sl routes
-// ─────────────────────────────────────────────────────────────────────────
-PlanTools.register({
-  id: 'slpath', cursor: 'crosshair', _pts: null, _hover: null, _busy: false,
-  onActivate() { this._pts = null; this._hover = null; this._busy = false; },
-  cancel() { this._pts = null; this._hover = null; },
-  onMove(pt) { this._hover = PlanTools.snap(pt); PlanEngine.requestDraw({ fg: true }); },
-  onDown(pt) {
-    const s = PlanTools.snap(pt);
-    if (!this._pts) this._pts = [{ x: s.x, y: s.y, snappedTo: s.targetId || undefined }];
-    else this._pts.push({ x: s.x, y: s.y });
-    PlanEngine.requestDraw({ fg: true });
-  },
-  onKey(e) {
-    if (e.key === 'Escape') { this._pts = null; PlanEngine.requestDraw({ fg: true }); return true; }
-    if (e.key === 'Enter') { this._finish(); return true; }
-    return false;
-  },
-  async _finish() {
-    if (this._busy) return;
-    const pts = this._pts;
-    if (!pts || pts.length < 2) { this._pts = null; PlanEngine.requestDraw({ fg: true }); return; }
-    const factor = PlanEngine.factor();
-    if (!factor) { UI.alert('Calibrate the plan first — pole spacing is measured in metres.'); return; }
-    this._busy = true;
-    const ans = await UI.prompt('Pole spacing (metres):', '40');
-    this._busy = false;
-    const spacingM = parseFloat(ans);
-    if (!ans || !isFinite(spacingM) || spacingM <= 0) { this._pts = null; PlanEngine.requestDraw({ fg: true }); return; }
-    const stepPx = spacingM / factor;
-
-    // Source element under the first vertex (kiosk/minisub) becomes the feed.
-    const sourceEl = PlanEngine.findElementAt(pts[0], 10);
-    let polePts = PlanTools._interpolate(pts, stepPx);
-    if (sourceEl && polePts.length && Math.hypot(polePts[0].x - sourceEl.x, polePts[0].y - sourceEl.y) < stepPx * 0.5) {
-      polePts = polePts.slice(1); // first point coincides with the source
-    }
-    const pm = AppState.planMarkup;
-    const poleIds = [];
-    for (const p of polePts) {
-      const el = { id: AppState.planGenId('pmel'), type: 'pole', x: p.x, y: p.y, rotation: 0, name: PlanMarkup.nextName('pole'), reticId: null, props: {} };
-      pm.elements.push(el); poleIds.push(el.id);
-    }
-    // Chain sl routes: source→pole0→pole1→…
-    const chain = [];
-    if (sourceEl) chain.push(sourceEl.id);
-    chain.push(...poleIds);
-    for (let i = 1; i < chain.length; i++) {
-      const a = pm.elements.find(e => e.id === chain[i - 1]);
-      const b = pm.elements.find(e => e.id === chain[i]);
-      pm.routes.push({
-        id: AppState.planGenId('pmrt'), type: 'sl',
-        fromId: a.id, toId: b.id,
-        points: [{ x: a.x, y: a.y, snappedTo: a.id }, { x: b.x, y: b.y, snappedTo: b.id }],
-        cableType: '', curved: false, props: {},
-      });
-    }
-    this._pts = null;
-    PlanMarkup.clearSelection();
-    PlanMarkup.snapshot(); PlanMarkup.markDirty();
-    PlanEngine.requestDraw({ fg: true });
-    UI.toast(`Placed ${poleIds.length} pole(s).`, 'success');
-  },
-  drawOverlay(ctx, zoom) {
-    if (this._pts) {
-      ctx.save();
-      ctx.strokeStyle = '#f59e0b'; ctx.lineWidth = 1.5 / zoom;
-      ctx.setLineDash([6 / zoom, 4 / zoom]);
-      ctx.beginPath(); ctx.moveTo(this._pts[0].x, this._pts[0].y);
-      for (let i = 1; i < this._pts.length; i++) ctx.lineTo(this._pts[i].x, this._pts[i].y);
-      if (this._hover) ctx.lineTo(this._hover.x, this._hover.y);
-      ctx.stroke(); ctx.setLineDash([]);
-      ctx.restore();
-    }
-    if (this._hover) PlanTools._drawSnapRing(ctx, this._hover.x, this._hover.y, this._hover.snapped, zoom);
-  },
 });
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -1066,24 +1013,12 @@ PlanTools.register({
     const x0 = Math.min(this._start.x, s.x), x1 = Math.max(this._start.x, s.x);
     const y0 = Math.min(this._start.y, s.y), y1 = Math.max(this._start.y, s.y);
     if (Math.hypot(x1 - x0, y1 - y0) < 6) { this._start = null; this._cur = null; PlanEngine.requestDraw({ fg: true }); return; }  // too small — ignore
-    this._busy = true;
-    // UX-8: keep the draft rectangle alive across an invalid entry and re-prompt,
-    // rather than discarding the drawn rectangle before asking.
-    let cols, rows;
-    for (;;) {
-      const ans = await UI.prompt('Array — columns × rows (e.g. 4x3):', '3x3');
-      if (ans == null || ans.trim() === '') { this._busy = false; this._start = null; this._cur = null; PlanEngine.requestDraw({ fg: true }); return; }  // cancelled → drop draft
-      let m = /^(\d+)\s*[x×,\s]\s*(\d+)$/i.exec(ans.trim());
-      if (!m && /^\d+$/.test(ans.trim())) m = [null, ans.trim(), ans.trim()];
-      if (!m) { UI.toast('Enter e.g. 4x3', 'error'); continue; }   // keep draft, ask again
-      cols = Math.max(1, parseInt(m[1], 10)); rows = Math.max(1, parseInt(m[2], 10));
-      break;
-    }
-    this._busy = false;
+    // Columns × rows come from the placing bar (remembered per device type).
+    const o = (typeof PlanUI !== 'undefined' && PlanUI.placeOpts) ? PlanUI.placeOpts(this._type) : { cols: 3, rows: 3 };
     this._start = null; this._cur = null;
-    const placed = PlanTools._placeGrid(this._type, x0, y0, x1, y1, cols, rows);
+    const placed = PlanTools._placeGrid(this._type, x0, y0, x1, y1, Math.max(1, o.cols), Math.max(1, o.rows));
     PlanTools._finishBatch(this._type, placed);
-    PlanTools.set('select');
+    PlanTools.set('array', { type: this._type });   // stay armed for the next area
   },
   onKey(e) { if (e.key === 'Escape') { this._start = null; this._cur = null; PlanTools.set('select'); return true; } return false; },
   drawOverlay(ctx, zoom) {
@@ -1122,23 +1057,12 @@ PlanTools.register({
     if (this._busy) return;
     const pts = this._pts;
     if (!pts || pts.length < 2) { this._pts = null; PlanEngine.requestDraw({ fg: true }); return; }
-    this._busy = true;
-    const ans = await UI.prompt('How many to place along the path?  (or "2m" for metre spacing):', '6');
-    this._busy = false;
-    if (!ans) { this._pts = null; PlanEngine.requestDraw({ fg: true }); return; }
-    let samplePts;
-    const mm = /^([\d.]+)\s*m$/i.exec(ans.trim());
-    if (mm) {
-      const f = PlanEngine.factor();
-      if (!f) { UI.alert('Calibrate the plan first to space by metres.'); this._pts = null; PlanEngine.requestDraw({ fg: true }); return; }
-      const sp = parseFloat(mm[1]);
-      if (!(sp > 0)) { this._pts = null; return; }
-      samplePts = PlanTools._interpolate(pts, sp / f);
-    } else {
-      const n = parseInt(ans, 10);
-      if (!(n >= 1)) { UI.toast('Enter a count, or e.g. 2m', 'error'); return; }
-      samplePts = PlanTools._samplePath(pts, n);
-    }
+    // Spacing or count from the placing bar (remembered per device type).
+    const o = (typeof PlanUI !== 'undefined' && PlanUI.placeOpts) ? PlanUI.placeOpts(this._type) : { by: 'count', count: 6 };
+    const f = PlanEngine.factor();
+    const samplePts = (o.by === 'spacing' && f)
+      ? PlanTools._interpolate(pts, o.spacingM / f)
+      : PlanTools._samplePath(pts, Math.max(1, o.count));
     const type = this._type;
     const pm = AppState.planMarkup;
     const placed = [];
@@ -1159,7 +1083,7 @@ PlanTools.register({
     this._pts = null;
     PlanTools._finishBatch(type, placed);
     if (typeof PlanCircuits !== 'undefined' && PlanCircuits.syncRoutedLengths) PlanCircuits.syncRoutedLengths();
-    PlanTools.set('select');
+    PlanTools.set('devpath', { type });   // stay armed for the next line
   },
   drawOverlay(ctx, zoom) {
     if (this._pts) {

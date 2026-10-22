@@ -32,150 +32,136 @@ const PlanMarkup = {
     this._snapshot(); // baseline
   },
 
+  // The workspace is in one of three modes, each with its own left panel:
+  // Draw (parts), Underlays (imported plans / DXFs + scale), Output (sync,
+  // print area, exports). The same canvas is re-hosted by the Lighting tab
+  // (context 'lighting'), which brings its own bar.
+  mode: 'draw',
+  context: 'plan',
+
+  _icon(name) {
+    const P = {
+      select: '<path d="M3 2l9 5-4 1-2 4z"/>',
+      undo: '<path d="M6 9L3 6l3-3"/><path d="M3 6h7a3 3 0 0 1 0 6H8"/>',
+      redo: '<path d="M10 9l3-3-3-3"/><path d="M13 6H6a3 3 0 0 0 0 6h2"/>',
+      fit: '<path d="M2 6V2h4M14 6V2h-4M2 10v4h4M14 10v4h-4"/>',
+      floors: '<path d="M8 2l6 3-6 3-6-3z"/><path d="M2 8l6 3 6-3M2 11l6 3 6-3"/>',
+      ruler: '<path d="M1.5 10.5l9-9 4 4-9 9z"/><path d="M4 8l1.5 1.5M6 6l1 1M8 4l1.5 1.5"/>',
+      upload: '<path d="M8 11V3M5 6l3-3 3 3M3 13h10"/>',
+    };
+    return `<svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${P[name] || ''}</svg>`;
+  },
+
   buildDOM() {
     const ws = document.getElementById('plan-workspace');
     if (!ws) return;
+    const I = (n) => this._icon(n);
     ws.innerHTML = `
       <div id="plan-toolbar" class="plan-toolbar">
-        <!-- Primary row (always visible; on mobile this is the whole bar). -->
         <div class="plan-tb-group plan-mobile-toggle">
-          <button class="plan-tb-btn" data-action="toggle-palette" title="Show/hide the component palette">☰ Parts</button>
+          <button class="plan-tb-btn" data-action="toggle-palette" title="Show/hide the side panel">☰ Panel</button>
           <button class="plan-tb-btn" data-action="toggle-props" title="Show/hide the properties panel">✎ Props</button>
         </div>
-        <div class="plan-tb-group">
-          <button class="plan-tool-btn active" data-tool="select" title="Select / move (V)">▤ Select</button>
-          <button class="plan-tb-btn" data-action="undo" title="Undo (Ctrl+Z)">↶</button>
-          <button class="plan-tb-btn" data-action="redo" title="Redo (Ctrl+Shift+Z)">↷</button>
+        <div class="plan-modes" role="group" aria-label="Plan mode">
+          <button type="button" class="plan-mode-btn active" data-mode="draw" aria-pressed="true" title="Place devices, draw routes and annotate">Draw</button>
+          <button type="button" class="plan-mode-btn" data-mode="underlays" aria-pressed="false" title="Import plans and DXFs, set the scale, move and align them">Underlays</button>
+          <button type="button" class="plan-mode-btn" data-mode="output" aria-pressed="false" title="Sync with the other workspaces, set the print area and export">Output</button>
         </div>
         <div class="plan-tb-group">
-          <button class="plan-tb-btn" data-action="fit" title="Zoom to fit">⤢ Fit</button>
-          <button class="plan-tb-btn plan-mobile-toggle" data-action="toggle-overflow" title="More tools & options">⋯ More</button>
+          <button class="plan-tool-btn active" data-tool="select" title="Select / move (V)">${I('select')} Select</button>
+          <button class="plan-tb-btn plan-icon-btn" data-action="undo" aria-label="Undo" title="Undo (Ctrl+Z)">${I('undo')}</button>
+          <button class="plan-tb-btn plan-icon-btn" data-action="redo" aria-label="Redo" title="Redo (Ctrl+Shift+Z)">${I('redo')}</button>
+          <button class="plan-tb-btn" data-action="fit" title="Zoom to fit">${I('fit')} Fit</button>
         </div>
-        <!-- Overflow: inline on desktop (display:contents), a dropdown on mobile. -->
-        <div id="plan-tb-overflow">
-          <div class="plan-tb-group">
-            <button class="plan-tool-btn" data-tool="calibrate" title="Set scale from a known distance">📏 Calibrate</button>
-            <button class="plan-tool-btn" data-tool="slpath" title="Draw a path → auto-place streetlight poles + circuits">💡 SL Path</button>
-            <button class="plan-tool-btn" data-tool="crop" title="Set the export crop rectangle">⬜ Crop</button>
-            <button class="plan-tb-btn" data-action="photolib" title="Luminaire photometry library (IES / LDT, generic optics)">💡 Luminaires</button>
-            <button class="plan-tb-btn" data-action="roomcalc" title="Calculate the lighting of every room (Ēm, U₀, UGR, W/m²)">▶ Calc lighting</button>
-          </div>
-          <div class="plan-tb-group" id="plan-floor-group" style="display:none">
-            <label class="plan-tb-field">Floor
-              <select id="plan-floor-select" title="Switch the active floor"></select>
-            </label>
-            <button class="plan-tb-btn" data-action="floors" title="Add / rename / reorder / delete floors">⚙</button>
-          </div>
-          <div class="plan-tb-group">
-            <button class="plan-tb-btn" data-action="import" title="Import a site/floor plan (PNG/JPEG/PDF), a DXF reference, or a Distribution Designer .json project">⬆ Import Plan</button>
-            <input type="file" id="plan-file-input" accept="image/png,image/jpeg,image/webp,application/pdf,.dxf,.ies,.json,application/json" style="display:none">
-          </div>
-          <div class="plan-tb-group">
-            <label class="plan-snap-pill"><input type="checkbox" data-snap="showGrid" checked> Grid</label>
-            <label class="plan-snap-pill"><input type="checkbox" data-snap="snapGrid" checked> Snap grid</label>
-            <label class="plan-snap-pill"><input type="checkbox" data-snap="snapEl" checked> Snap comp</label>
-            <label class="plan-snap-pill"><input type="checkbox" data-snap="snapVtx" checked> Snap vtx</label>
-            <label class="plan-snap-pill" title="Snap to imported DXF geometry: line/polyline ends, midpoints and vertices, circle/arc centres and block insertion points"><input type="checkbox" data-snap="snapDxf" checked> Snap DXF</label>
-            <label class="plan-tb-field">Grid (m) <input type="number" id="plan-grid-size" min="0.1" step="0.1" value="0.5"></label>
-            <label class="plan-tb-field" title="Size of every symbol on this plan (1 = standard). Each item can also be scaled on its own in its properties.">Symbols ×<input type="number" id="plan-symbol-scale" min="0.25" max="5" step="0.25" value="1"></label>
-          </div>
-          <div class="plan-tb-group">
-            <button class="plan-tb-btn" data-action="push" title="Push/sync drawn items to the matching workspace">→ Push to Schedules</button>
-            <button class="plan-tb-btn" id="plan-circuits-btn" data-action="circuits" style="display:none" title="Count plan devices into distribution-board circuits (loads + routed lengths)">⚡ Sync Circuits</button>
-            <button class="plan-tb-btn" data-action="csv" title="Export component schedules (CSV)">⤓ CSV</button>
-            <button class="plan-tb-btn" data-action="dxf" title="Export markup as AutoCAD DXF">⤓ DXF</button>
-            <button class="plan-tb-btn" data-action="png" title="Export the annotated plan as a PNG image">⤓ PNG</button>
-            <button class="plan-tb-btn" data-action="pdf" title="Export the annotated plan as an A3 PDF sheet">⤓ PDF</button>
-          </div>
+        <div class="plan-tb-spacer"></div>
+        <div class="plan-tb-group" id="plan-floor-group" style="display:none">
+          <label class="plan-tb-field">Floor
+            <select id="plan-floor-select" title="Switch the active floor"></select>
+          </label>
+          <button class="plan-tb-btn plan-icon-btn" data-action="floors" aria-label="Manage floors" title="Add, rename, reorder or delete floors">${I('floors')}</button>
         </div>
+        <label class="plan-tb-field" id="plan-layer-field" title="Emphasise one discipline; the rest are dimmed">Show
+          <select id="plan-layer-select"></select>
+        </label>
+        <input type="file" id="plan-file-input" accept="image/png,image/jpeg,image/webp,application/pdf,.dxf,.json,application/json" style="display:none">
       </div>
       <div id="plan-main" class="plan-main">
         <aside id="plan-palette" class="plan-palette"></aside>
-        <div id="plan-stage" class="plan-stage">
-          <canvas id="plan-canvas-bg" class="plan-canvas"></canvas>
-          <canvas id="plan-canvas-fg" class="plan-canvas" tabindex="0" role="application"
-            aria-label="Plan markup canvas. Use arrow keys to move between placed items when focused; R rotates, Delete removes."></canvas>
-          <div id="plan-info" class="plan-info">Import a plan, calibrate the scale, then place components and draw routes.</div>
-          <div id="plan-action-chip" class="plan-action-chip" role="group" aria-label="Finish or cancel the current drawing">
-            <button type="button" data-chip="done" title="Finish (Enter)">✓ Done</button>
-            <button type="button" data-chip="cancel" title="Cancel (Esc)">✕ Cancel</button>
+        <div class="plan-stage-col">
+          <div id="plan-stage" class="plan-stage">
+            <canvas id="plan-canvas-bg" class="plan-canvas"></canvas>
+            <canvas id="plan-canvas-fg" class="plan-canvas" tabindex="0" role="application"
+              aria-label="Plan canvas. Use arrow keys to move between placed items when focused; R rotates, Delete removes."></canvas>
+            <div id="plan-info" class="plan-info">Import a plan, calibrate the scale, then place components and draw routes.</div>
+            <div id="plan-placebar" class="plan-placebar" role="group" hidden></div>
+            <div id="plan-action-chip" class="plan-action-chip" role="group" aria-label="Finish or cancel the current drawing">
+              <button type="button" data-chip="done" title="Finish (Enter)">✓ Done</button>
+              <button type="button" data-chip="cancel" title="Cancel (Esc)">✕ Cancel</button>
+            </div>
           </div>
           <div id="plan-status" class="plan-status">
-            <span id="plan-scale-chip" class="plan-scale-chip" title="Plan scale" tabindex="0" role="button"></span>
-            <span id="plan-status-coords"></span>
+            <button type="button" id="plan-scale-chip" class="plan-chip" title="Plan scale">${I('ruler')}<span></span></button>
+            <button type="button" id="plan-snap-chip" class="plan-chip" aria-expanded="false" aria-controls="plan-snap-pop" title="Snap and grid settings (G toggles grid snap)"></button>
+            <button type="button" class="plan-chip" id="plan-grid-chip" data-pop-focus="plan-grid-size" title="Grid spacing"></button>
+            <button type="button" class="plan-chip" id="plan-sym-chip" data-pop-focus="plan-symbol-scale" title="Size of every symbol on this plan (each item can also be scaled on its own)"></button>
+            <span id="plan-status-coords" class="plan-status-coords"></span>
+            <div id="plan-snap-pop" class="plan-pop" role="dialog" aria-label="Snap and grid" hidden>
+              <div class="plan-pop-title">Snap to</div>
+              <label><input type="checkbox" data-snap="snapGrid"> Grid <kbd>G</kbd></label>
+              <label><input type="checkbox" data-snap="snapEl"> Placed parts</label>
+              <label><input type="checkbox" data-snap="snapVtx"> Route and outline corners</label>
+              <label title="Line/polyline ends, midpoints and vertices, circle/arc centres and block insertion points"><input type="checkbox" data-snap="snapDxf"> DXF geometry <small>ends, midpoints, centres</small></label>
+              <div class="plan-pop-sep"></div>
+              <label><input type="checkbox" data-snap="showGrid"> Show grid</label>
+              <label class="plan-pop-num">Grid size <span><input type="number" id="plan-grid-size" min="0.1" step="0.1" value="0.5"> m</span></label>
+              <label class="plan-pop-num">Symbol size <span>× <input type="number" id="plan-symbol-scale" min="0.25" max="5" step="0.25" value="1"></span></label>
+            </div>
           </div>
         </div>
-        <aside id="plan-props" class="plan-props"></aside>
+        <aside id="plan-props" class="plan-props" aria-label="Properties"></aside>
         <div id="plan-drawer-backdrop"></div>
       </div>`;
+  },
+
+  // Switch Draw / Underlays / Output. Tools that belong to another mode stop.
+  setMode(mode) {
+    if (!['draw', 'underlays', 'output'].includes(mode)) mode = 'draw';
+    this.mode = mode;
+    document.querySelectorAll('#plan-toolbar .plan-mode-btn').forEach(b => {
+      const on = b.dataset.mode === mode;
+      b.classList.toggle('active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    if (typeof PlanTools !== 'undefined' && PlanTools.active && PlanTools.active.id !== 'select') PlanTools.set('select');
+    if (typeof PlanUI !== 'undefined') { PlanUI.renderPalette(); PlanUI.renderProps(); }
+  },
+
+  // Move the canvas + side panels into another workspace (the Lighting tab)
+  // and back. One canvas, one undo stack, one selection.
+  mountIn(host, context) {
+    const main = document.getElementById('plan-main');
+    if (!main || !host) return;
+    if (main.parentElement !== host) host.appendChild(main);
+    this.context = context || 'plan';
+    document.body.classList.toggle('plan-ctx-lighting', this.context === 'lighting');
   },
 
   _bindToolbar() {
     const tb = document.getElementById('plan-toolbar');
     if (!tb) return;
     tb.addEventListener('click', (e) => {
+      const modeBtn = e.target.closest('[data-mode]');
+      if (modeBtn) { this.setMode(modeBtn.dataset.mode); return; }
       const toolBtn = e.target.closest('[data-tool]');
-      if (toolBtn) {
-        PlanTools.set(toolBtn.dataset.tool);
-        if (this._isMobile()) this._closeOverflow();   // picking a tool closes the ⋯ menu
-        return;
-      }
+      if (toolBtn) { PlanTools.set(toolBtn.dataset.tool); return; }
       const act = e.target.closest('[data-action]');
       if (!act) return;
-      if (act.dataset.action === 'import') document.getElementById('plan-file-input').click();
-      else if (act.dataset.action === 'toggle-palette') this._toggleDrawer('palette');
-      else if (act.dataset.action === 'toggle-props') this._toggleDrawer('props');
-      else if (act.dataset.action === 'toggle-overflow') { this._toggleOverflow(); return; }
-      else if (act.dataset.action === 'floors') this._openFloorManager();
-      else if (act.dataset.action === 'undo') { this.undo(); return; }
-      else if (act.dataset.action === 'redo') { this.redo(); return; }
-      else if (act.dataset.action === 'fit') PlanEngine.zoomFit();
-      else if (act.dataset.action === 'photolib' && typeof PhotoLib !== 'undefined') PhotoLib.open();
-      else if (act.dataset.action === 'roomcalc' && typeof RoomCalc !== 'undefined') RoomCalc.run().then(() => (typeof AreaCalc !== 'undefined') ? AreaCalc.run() : null);
-      else if (act.dataset.action === 'push' && typeof PlanSync !== 'undefined') {
-        // Reticulation → demand schedules; Building → linked SLD boards/feeders.
-        if (AppState.planMarkup.settings.domain === 'building') PlanSync.syncBuildingToSLD();
-        else PlanSync.pushToSchedules();
-      }
-      else if (act.dataset.action === 'circuits' && typeof PlanCircuits !== 'undefined') {
-        // An unlinked board has no schedule to write into: link it first. The
-        // SLD sync ends with the same circuit sync, and reports it.
-        if (PlanCircuits.hasUnlinkedBoards() && typeof PlanSync !== 'undefined') {
-          PlanSync.syncBuildingToSLD().then(() => { if (typeof PlanUI !== 'undefined') PlanUI.renderProps(); });
-          if (this._isMobile()) this._closeOverflow();
-          return;
-        }
-        const s = PlanCircuits.syncAll();
-        if (typeof PlanUI !== 'undefined') PlanUI.renderProps();
-        this.markDirty(); this._snapshot();
-        if (typeof UndoManager !== 'undefined' && UndoManager.snapshot) UndoManager.snapshot();   // UX-4: pair the SLD stack
-        UI.alert(`Synced circuits from plan:\n• ${s.ways} way(s) on ${s.boards} board(s) from ${s.devices} tagged device(s)\n• ${s.lengths} way cable length(s) from routes` +
-          (s.unsynced ? `\n• ${s.unsynced} board(s) not yet on the SLD (sync first)` : ''));
-      }
-      else if (act.dataset.action === 'csv' && typeof PlanCSV !== 'undefined') PlanCSV.exportAll();
-      else if (act.dataset.action === 'dxf' && typeof PlanDXF !== 'undefined') PlanDXF.export();
-      else if (act.dataset.action === 'png' && typeof PlanExport !== 'undefined') PlanExport.exportPNG();
-      else if (act.dataset.action === 'pdf' && typeof PlanExport !== 'undefined') PlanExport.exportPDF();
-      // Picking any overflow action closes the ⋯ dropdown (but not the drawer
-      // toggles, which live on the primary bar).
-      if (this._isMobile() && /^(floors|fit|push|circuits|csv|dxf|png|pdf|import)$/.test(act.dataset.action)) this._closeOverflow();
+      this.runAction(act.dataset.action);
     });
     tb.addEventListener('change', (e) => {
-      if (e.target.dataset.snap) {
-        AppState.planMarkup.settings[e.target.dataset.snap] = e.target.checked;
-        PlanEngine.requestDraw({ all: true });
-      } else if (e.target.id === 'plan-grid-size') {
-        const v = parseFloat(e.target.value);
-        if (isFinite(v) && v > 0) { AppState.planMarkup.settings.gridSize = v; PlanEngine.requestDraw({ bg: true }); }
-      } else if (e.target.id === 'plan-symbol-scale') {
-        const v = parseFloat(e.target.value);
-        if (isFinite(v) && v > 0) {
-          AppState.planMarkup.settings.symbolScale = Math.min(5, Math.max(0.25, v));
-          this._snapshot(); this.markDirty();
-          PlanEngine.requestDraw({ all: true });
-        }
-      } else if (e.target.id === 'plan-floor-select') {
-        this.setActiveFloor(e.target.value);
+      if (e.target.id === 'plan-floor-select') this.setActiveFloor(e.target.value);
+      else if (e.target.id === 'plan-layer-select') {
+        AppState.planMarkup.activeLayerId = e.target.value || null;
+        if (typeof PlanEngine !== 'undefined') PlanEngine.requestDraw({ fg: true });
       }
     });
     const backdrop = document.getElementById('plan-drawer-backdrop');
@@ -188,19 +174,12 @@ const PlanMarkup = {
       PlanTools.onKey({ key: b.dataset.chip === 'done' ? 'Enter' : 'Escape' });
       this.onDraftChanged();
     });
-    // Always-visible scale chip — tap to (re)calibrate (UX-14).
-    const scaleChip = document.getElementById('plan-scale-chip');
-    if (scaleChip) {
-      const startCal = () => { if (typeof PlanTools !== 'undefined') PlanTools.set('calibrate'); };
-      scaleChip.addEventListener('click', startCal);
-      scaleChip.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); startCal(); } });
-    }
+    this._bindStatus();
     const fileInput = document.getElementById('plan-file-input');
     if (fileInput) fileInput.addEventListener('change', (e) => {
       const f = e.target.files && e.target.files[0];
       if (f) {
         if (/\.dxf$/i.test(f.name) && typeof PlanDxfImport !== 'undefined') PlanDxfImport.importFile(f);
-        else if (/\.(ies|ldt)$/i.test(f.name) && typeof PhotoLib !== 'undefined') PhotoLib.importFiles([f]).then(() => UI.toast('Luminaire added to the library (💡 Luminaires).', 'success'));
         else if (/\.json$/i.test(f.name) && typeof PlanDdImport !== 'undefined') PlanDdImport.importFile(f);
         else PlanImages.importFile(f);
       }
@@ -208,9 +187,108 @@ const PlanMarkup = {
     });
   },
 
+  // Actions shared by the bar, the mode panels and the Lighting tab's bar.
+  runAction(action) {
+    if (action === 'import') document.getElementById('plan-file-input').click();
+    else if (action === 'toggle-palette') this._toggleDrawer('palette');
+    else if (action === 'toggle-props') this._toggleDrawer('props');
+    else if (action === 'floors') this._openFloorManager();
+    else if (action === 'undo') this.undo();
+    else if (action === 'redo') this.redo();
+    else if (action === 'fit') PlanEngine.zoomFit();
+    else if (action === 'push' && typeof PlanSync !== 'undefined') {
+      // Reticulation → demand schedules; Building → linked SLD boards/feeders.
+      if (AppState.planMarkup.settings.domain === 'building') PlanSync.syncBuildingToSLD();
+      else PlanSync.pushToSchedules();
+    }
+    else if (action === 'circuits' && typeof PlanCircuits !== 'undefined') {
+      // An unlinked board has no schedule to write into: link it first. The
+      // SLD sync ends with the same circuit sync, and reports it.
+      if (PlanCircuits.hasUnlinkedBoards() && typeof PlanSync !== 'undefined') {
+        PlanSync.syncBuildingToSLD().then(() => { if (typeof PlanUI !== 'undefined') { PlanUI.renderProps(); PlanUI.renderPalette(); } });
+        return;
+      }
+      const s = PlanCircuits.syncAll();
+      if (typeof PlanUI !== 'undefined') { PlanUI.renderProps(); PlanUI.renderPalette(); }
+      this.markDirty(); this._snapshot();
+      if (typeof UndoManager !== 'undefined' && UndoManager.snapshot) UndoManager.snapshot();   // UX-4: pair the SLD stack
+      UI.alert(`Synced circuits from plan:\n• ${s.ways} way(s) on ${s.boards} board(s) from ${s.devices} tagged device(s)\n• ${s.lengths} way cable length(s) from routes` +
+        (s.unsynced ? `\n• ${s.unsynced} board(s) not yet on the SLD (sync first)` : ''));
+    }
+    else if (action === 'crop') PlanTools.set('crop');
+    else if (action === 'crop-clear') {
+      AppState.planMarkup.cropBox = null; this._snapshot(); this.markDirty();
+      PlanEngine.requestDraw({ fg: true }); if (typeof PlanUI !== 'undefined') PlanUI.renderPalette();
+    }
+    else if (action === 'calibrate') PlanTools.set('calibrate');
+    else if (action === 'csv' && typeof PlanCSV !== 'undefined') PlanCSV.exportAll();
+    else if (action === 'dxf' && typeof PlanDXF !== 'undefined') PlanDXF.export();
+    else if (action === 'png' && typeof PlanExport !== 'undefined') PlanExport.exportPNG();
+    else if (action === 'pdf' && typeof PlanExport !== 'undefined') PlanExport.exportPDF();
+    if (this._isMobile() && /^(floors|fit|push|circuits|csv|dxf|png|pdf|import|crop|calibrate)$/.test(action)) this._closeDrawers();
+  },
+
+  // Status bar: scale chip, Snap chip + popover, grid and symbol-size chips.
+  _bindStatus() {
+    const st = document.getElementById('plan-status');
+    const pop = document.getElementById('plan-snap-pop');
+    const snapChip = document.getElementById('plan-snap-chip');
+    if (!st || !pop) return;
+    const openPop = (open, focusId) => {
+      pop.hidden = !open;
+      snapChip.setAttribute('aria-expanded', open ? 'true' : 'false');
+      if (open) {
+        this._syncSnapPop();
+        const f = (focusId && document.getElementById(focusId)) || pop.querySelector('input');
+        requestAnimationFrame(() => { try { f.focus(); if (f.select) f.select(); } catch (_) { /* gone */ } });
+      }
+    };
+    st.addEventListener('click', (e) => {
+      if (e.target.closest('#plan-scale-chip')) { PlanTools.set('calibrate'); return; }
+      if (e.target.closest('#plan-snap-chip')) { openPop(pop.hidden); return; }
+      const f = e.target.closest('[data-pop-focus]');
+      if (f) { openPop(true, f.dataset.popFocus); return; }
+    });
+    pop.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.stopPropagation(); openPop(false); snapChip.focus(); } });
+    document.addEventListener('pointerdown', (e) => { if (!pop.hidden && !st.contains(e.target)) openPop(false); });
+    pop.addEventListener('change', (e) => {
+      const s = AppState.planMarkup.settings;
+      if (e.target.dataset.snap) {
+        s[e.target.dataset.snap] = e.target.checked;
+        PlanEngine.requestDraw({ all: true });
+      } else if (e.target.id === 'plan-grid-size') {
+        const v = parseFloat(e.target.value);
+        if (isFinite(v) && v > 0) { s.gridSize = v; PlanEngine.requestDraw({ bg: true }); }
+      } else if (e.target.id === 'plan-symbol-scale') {
+        const v = parseFloat(e.target.value);
+        if (isFinite(v) && v > 0) {
+          s.symbolScale = Math.min(5, Math.max(0.25, v));
+          this._snapshot(); this.markDirty();
+          PlanEngine.requestDraw({ all: true });
+        }
+      }
+      this.updateScaleReadout();
+    });
+  },
+
+  _syncSnapPop() {
+    const s = AppState.planMarkup.settings;
+    document.querySelectorAll('#plan-snap-pop [data-snap]').forEach(cb => { cb.checked = !!s[cb.dataset.snap]; });
+    const g = document.getElementById('plan-grid-size'); if (g) g.value = s.gridSize;
+    const ss = document.getElementById('plan-symbol-scale'); if (ss) ss.value = s.symbolScale || 1;
+  },
+
   // ─── Lifecycle (called by app.js switchWorkspace) ───
-  activate() {
+  // host/context: the Lighting tab passes its own pane and 'lighting'.
+  activate(host, context) {
     this._active = true;
+    const prevCtx = this.context;
+    this.mountIn(host || document.getElementById('plan-workspace'), context || 'plan');
+    // Each tab has its own tools: changing tab drops the armed one.
+    if (typeof PlanTools !== 'undefined') {
+      if (prevCtx !== this.context || !PlanTools.active) PlanTools.set('select');
+      else this.onToolChanged(PlanTools.active.id, PlanTools.opts);
+    }
     if (typeof PlanSync !== 'undefined' && PlanSync.fillEmptyCables) PlanSync.fillEmptyCables();
     if (typeof PlanSync !== 'undefined' && PlanSync.pullNamesFromDemand) PlanSync.pullNamesFromDemand();   // catches any Demand rename that missed the live path
     this.refreshProps();   // Demand may have changed while Plan was hidden
@@ -218,8 +296,9 @@ const PlanMarkup = {
     // width / responsive wrapping) so the workspace tabs stay visible and the
     // user can always switch back. CSS var is only a fallback.
     const tb = document.getElementById('toolbar');
-    const ws = document.getElementById('plan-workspace');
+    const ws = document.getElementById(this.context === 'lighting' ? 'lighting-workspace' : 'plan-workspace');
     if (tb && ws) ws.style.top = tb.offsetHeight + 'px';
+    if (this.context === 'plan') this.setMode(this.mode);
     if (typeof PlanEngine !== 'undefined') { PlanEngine.resize(); PlanEngine.requestDraw({ all: true }); }
     if (typeof PlanImages !== 'undefined') PlanImages.syncCache();
     if (typeof PlanDxfImport !== 'undefined') PlanDxfImport.syncFloor();
@@ -252,17 +331,13 @@ const PlanMarkup = {
 
   markDirty() { AppState.dirty = true; },
 
-  // The push/sync button targets a different workspace per domain.
-  updatePushButton() {
-    const btn = document.querySelector('#plan-toolbar [data-action="push"]');
-    if (!btn) return;
-    const building = AppState.planMarkup.settings.domain === 'building';
-    btn.textContent = building ? '→ Sync with SLD' : '→ Push to Schedules';
-    btn.title = building
-      ? 'Create/link distribution boards + feeder cables on the SLD (both directions)'
-      : 'Push drawn kiosks/erven/feeders into the Reticulation schedules';
+  // The Output panel's sync button names its target per domain; re-render it.
+  updatePushButton() { if (typeof PlanUI !== 'undefined' && this.mode === 'output') PlanUI.renderPalette(); },
+  refreshProps() {
+    if (typeof PlanUI === 'undefined') return;
+    PlanUI.renderProps();
+    if (this.context === 'lighting') PlanUI.renderPalette();   // its zone list marks the selection
   },
-  refreshProps() { if (typeof PlanUI !== 'undefined') PlanUI.renderProps(); },
 
   // ─── Mobile drawers (palette / properties slide over the canvas) ───
   _isMobile() {
@@ -276,36 +351,19 @@ const PlanMarkup = {
     if (!target) return;
     const opening = !target.classList.contains('mobile-open');
     if (other) other.classList.remove('mobile-open');
-    document.getElementById('plan-tb-overflow')?.classList.remove('open');   // mutually exclusive
     target.classList.toggle('mobile-open', opening);
-    this._syncDrawerBackdrop();
-  },
-  _toggleOverflow() {
-    const ov = document.getElementById('plan-tb-overflow');
-    if (!ov) return;
-    const opening = !ov.classList.contains('open');
-    // A drawer and the overflow menu shouldn't be open together.
-    document.getElementById('plan-palette')?.classList.remove('mobile-open');
-    document.getElementById('plan-props')?.classList.remove('mobile-open');
-    ov.classList.toggle('open', opening);
-    this._syncDrawerBackdrop();
-  },
-  _closeOverflow() {
-    document.getElementById('plan-tb-overflow')?.classList.remove('open');
     this._syncDrawerBackdrop();
   },
   _closeDrawers() {
     document.getElementById('plan-palette')?.classList.remove('mobile-open');
     document.getElementById('plan-props')?.classList.remove('mobile-open');
-    document.getElementById('plan-tb-overflow')?.classList.remove('open');
     this._syncDrawerBackdrop();
   },
   _syncDrawerBackdrop() {
     const bd = document.getElementById('plan-drawer-backdrop');
     if (!bd) return;
     const open = document.getElementById('plan-palette')?.classList.contains('mobile-open') ||
-      document.getElementById('plan-props')?.classList.contains('mobile-open') ||
-      document.getElementById('plan-tb-overflow')?.classList.contains('open');
+      document.getElementById('plan-props')?.classList.contains('mobile-open');
     bd.classList.toggle('on', !!open);
   },
 
@@ -317,17 +375,26 @@ const PlanMarkup = {
     const sel = document.getElementById('plan-floor-select');
     if (!group || !sel) return;
     const pm = AppState.planMarkup;
-    const ss = document.getElementById('plan-symbol-scale');
-    if (ss) ss.value = pm.settings.symbolScale || 1;
     const building = pm.settings.domain === 'building';
     group.style.display = building ? '' : 'none';
-    const cbtn = document.getElementById('plan-circuits-btn');
-    if (cbtn) cbtn.style.display = building ? '' : 'none';
+    this._refreshLayerPicker();
+    this.updateScaleReadout();
     if (!building) return;
     // Highest level first, so the list reads top-of-building downward.
     const floors = (pm.floors || []).slice().sort((a, b) => (b.level || 0) - (a.level || 0));
     sel.innerHTML = floors.map(f =>
       `<option value="${f.id}"${f.id === pm.activeFloorId ? ' selected' : ''}>${this._esc(f.name)} (L${f.level})</option>`).join('');
+  },
+
+  // "Show" picker: discipline layers of the plan's domain (dims the rest).
+  _refreshLayerPicker() {
+    const sel = document.getElementById('plan-layer-select');
+    if (!sel) return;
+    const pm = AppState.planMarkup;
+    const building = pm.settings.domain === 'building';
+    const layers = (pm.layers || []).filter(L => building ? L.discipline === 'building' : L.discipline !== 'building');
+    sel.innerHTML = `<option value="">All disciplines</option>` +
+      layers.map(L => `<option value="${this._esc(L.id)}"${pm.activeLayerId === L.id ? ' selected' : ''}>${this._esc(L.name)}</option>`).join('');
   },
 
   _esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); },
@@ -709,6 +776,8 @@ const PlanMarkup = {
     if (e.key === 'g' || e.key === 'G') {
       const s = AppState.planMarkup.settings; s.snapGrid = !s.snapGrid;
       const cb = document.querySelector('[data-snap="snapGrid"]'); if (cb) cb.checked = s.snapGrid;
+      this.updateScaleReadout();
+      if (typeof UI !== 'undefined' && UI.toast) UI.toast(`Grid snap ${s.snapGrid ? 'on' : 'off'}.`, 'info', 1500);
       return true;
     }
     if (e.key === 'r' || e.key === 'R') { if (this.rotateSelected()) return true; }
@@ -741,13 +810,14 @@ const PlanMarkup = {
 
   onToolChanged(id, opts) {
     const PLACERS = (id === 'place' || id === 'route' || id === 'array' || id === 'devpath');
-    document.querySelectorAll('#plan-toolbar .plan-tool-btn').forEach(b =>
+    document.querySelectorAll('.plan-tool-btn[data-tool]').forEach(b =>
       b.classList.toggle('active', b.dataset.tool === id));
     if (!PLACERS && typeof PlanUI !== 'undefined' && PlanUI.paletteEl) {
       PlanUI.paletteEl.querySelectorAll('.plan-pal-item.armed').forEach(b => b.classList.remove('armed'));
     }
     // Live mode/status line (UX-7): what's armed + how to finish/exit.
     this._toolMsg = this._statusFor(id, opts || {});
+    if (typeof PlanUI !== 'undefined' && PlanUI.renderPlaceBar) PlanUI.renderPlaceBar(id, opts || {});
     this.onDraftChanged();
     // Mobile: after arming a placement tool from the palette drawer, close it
     // so the canvas is tappable.
@@ -762,8 +832,12 @@ const PlanMarkup = {
     switch (id) {
       case 'select': {
         const pm = AppState.planMarkup;
+        if (this.context === 'lighting') {
+          if (!pm.plans.length && !(pm.dxfs || []).length && !(pm.rooms || []).length) return 'Import the floor plan on the Plan tab (Underlays), then draw or detect rooms here.';
+          return 'Select a room or fitting to edit it. Pick a tool on the left to draw.';
+        }
         if (!pm.plans.length && !pm.elements.length && !(pm.dxfs || []).length) {
-          return 'Import a plan, calibrate the scale, then place components and draw routes.';
+          return 'Import a plan (Underlays), set the scale, then place parts and draw routes.';
         }
         return 'Select — tap to edit, drag to move. Arrow keys nudge; R rotates.';
       }
@@ -772,7 +846,6 @@ const PlanMarkup = {
       case 'array': return `Array: ${elName(t)} — drag a rectangle, then enter columns × rows.`;
       case 'devpath': return `Path: ${elName(t)} — click points, then ✓ Done / Enter to place. Esc cancels.`;
       case 'route': return `Drawing ${rtName(t)} — click points; ✓ Done / Enter finishes, Esc cancels.`;
-      case 'slpath': return 'SL Path — click a path; ✓ Done / Enter places poles. Esc cancels.';
       case 'trench': return 'Trench — click points; ✓ Done / Enter finishes. Esc cancels.';
       case 'measurement': return 'Measure — click points; ✓ Done / Enter finishes. Esc cancels.';
       case 'room': return 'Room — click ≥3 points; ✓ Done / Enter closes it. Esc cancels.';
@@ -850,16 +923,26 @@ const PlanMarkup = {
   },
 
   updateScaleReadout() {
-    const s = AppState.planMarkup.scale;
+    const pm = AppState.planMarkup;
+    const s = pm.scale;
     const calibrated = !!(s && s.factor);
     const chip = document.getElementById('plan-scale-chip');
     if (chip) {
-      chip.textContent = calibrated
-        ? `📏 1 px = ${s.factor.toFixed(4)} m · grid ${AppState.planMarkup.settings.gridSize} m`
-        : '⚠ Not calibrated — tap to set scale';
+      const txt = chip.querySelector('span') || chip;
+      txt.textContent = calibrated ? (s.source === 'dxf' ? 'Scale from DXF' : 'Scale set') : 'Not calibrated — set scale';
       chip.classList.toggle('warn', !calibrated);
-      chip.title = calibrated ? 'Scale calibrated — tap to recalibrate' : 'Not calibrated — tap to start Calibrate';
+      chip.title = calibrated ? `1 px = ${s.factor.toFixed(4)} m — click to calibrate again` : 'Not calibrated — click, then click two points a known distance apart';
     }
+    const st = pm.settings;
+    const snap = document.getElementById('plan-snap-chip');
+    if (snap) {
+      const on = [st.snapGrid && 'grid', st.snapEl && 'parts', st.snapVtx && 'corners', st.snapDxf && 'DXF'].filter(Boolean);
+      snap.textContent = on.length ? `Snap: ${on.join(' · ')}` : 'Snap: off';
+    }
+    const g = document.getElementById('plan-grid-chip');
+    if (g) g.textContent = st.showGrid === false ? `Grid ${st.gridSize} m (hidden)` : `Grid ${st.gridSize} m`;
+    const sy = document.getElementById('plan-sym-chip');
+    if (sy) sy.textContent = `Symbols × ${st.symbolScale || 1}`;
   },
 
   // ─── Local undo (JSON snapshots of AppState.planMarkup) ───

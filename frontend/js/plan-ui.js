@@ -13,6 +13,8 @@ const PlanUI = {
   init(paletteEl, propsEl) {
     this.paletteEl = paletteEl;
     this.propsEl = propsEl;
+    const clean = document.getElementById('btn-admin-plan-cleanup');
+    if (clean) clean.addEventListener('click', () => this._cleanup());
     paletteEl.addEventListener('click', (e) => this._onPaletteClick(e));
     paletteEl.addEventListener('input', (e) => this._onPaletteInput(e));
     propsEl.addEventListener('change', (e) => this._onPropsChange(e));
@@ -25,6 +27,13 @@ const PlanUI = {
       if (e.target.closest('[data-role="bulk-assign"]')) { this._bulkAssign(); return; }
       if (e.target.closest('[data-role="sync-circuits"]')) { this._syncCircuits(); return; }
       if (e.target.closest('[data-role="open-photolib"]')) { PhotoLib.open(); return; }
+      const ua = e.target.closest('[data-ul-act]');
+      if (ua) { this._onUnderlayAction(ua.dataset.ulAct); return; }
+      if (e.target.closest('[data-role="open-lighting"]')) {
+        const id = [...PlanMarkup.selectedIds][0];
+        if (typeof LightingWS !== 'undefined') LightingWS.openOnPlan(id);
+        return;
+      }
       if (e.target.closest('[data-role="set-default-cable"]')) { this._setDefaultCable(); return; }
       if (e.target.closest('[data-role="balance-phases"]')) { this._balancePhases(); return; }
     });
@@ -37,53 +46,73 @@ const PlanUI = {
       crossing: 'crossing', text: 'text', measurement: 'measurement', room: 'room', roomdetect: 'roomdetect', perimeter: 'perimeter' }[kind];
   },
 
+  // Folded palette groups (session only); the group last used stays open.
+  _folded: null,
+  // The underlay picked in Underlays mode: { kind: 'dxf' | 'plan', id }.
+  _underlay: null,
+
   renderPalette() {
     const el = this.paletteEl; if (!el) return;
+    const ctx = (typeof PlanMarkup !== 'undefined' && PlanMarkup.context) || 'plan';
+    const mode = (typeof PlanMarkup !== 'undefined' && PlanMarkup.mode) || 'draw';
+    let html;
+    if (ctx === 'lighting') { el.setAttribute('aria-label', 'Lighting tools'); html = this._lightingPanel(); }
+    else if (mode === 'underlays') { el.setAttribute('aria-label', 'Underlays'); html = this._underlaysPanel(); }
+    else if (mode === 'output') { el.setAttribute('aria-label', 'Sync and export'); html = this._outputPanel(); }
+    else { el.setAttribute('aria-label', 'Parts'); html = this._drawPanel(); }
+    el.innerHTML = html;
+    this._markArmed();
+  },
+
+  // Re-highlight the armed palette item after a re-render.
+  _markArmed() {
+    const t = (typeof PlanTools !== 'undefined') && PlanTools.active;
+    const type = t && PlanTools.opts && PlanTools.opts.type;
+    if (!t || t.id === 'select' || !type) return;
+    this.paletteEl.querySelectorAll('.plan-pal-item[data-type]').forEach(b => b.classList.toggle('armed', b.dataset.type === type));
+  },
+
+  _palItem(it) {
+    const toolId = this._toolFor(it.kind);
+    const ready = typeof PlanTools !== 'undefined' && PlanTools._tools[toolId];
+    return `<button type="button" class="plan-pal-item${ready ? '' : ' disabled'}" data-kind="${it.kind}" data-type="${escHtml(it.type)}"${ready ? '' : ' disabled'}${it.desc ? ` title="${escHtml(it.desc)}"` : ''}>
+      <span class="plan-pal-swatch" style="background:${it.color}"></span><span class="plan-pal-name">${escHtml(it.name)}</span>${it.desc ? `<small>${escHtml(it.desc)}</small>` : ''}</button>`;
+  },
+
+  _drawPanel() {
     const pm = AppState.planMarkup;
     const domain = pm.settings.domain || 'retic';
     const filter = (this._search || '').toLowerCase();
     const groups = PLAN_DEFS.paletteGroups(domain);
+    if (!this._folded || this._foldedDomain !== domain) { this._folded = new Set(groups.slice(2).map(g => g.label)); this._foldedDomain = domain; }
     // The project type normally fixes the plan's domain (workspaces.js); the
     // selector only appears when it doesn't — a Network project with a plan,
     // or a plan whose content is the other domain's.
     const domainLocked = typeof Workspaces !== 'undefined' && Workspaces.planDomainLocked && Workspaces.planDomainLocked();
-    let html = `
-      <div class="plan-pal-header">
-        ${domainLocked ? '' : `<label class="plan-domain-field" title="Plan type — Site reticulation or Building floor plan">
+    let html = `<div class="plan-pal-header">
+        ${domainLocked ? '' : `<label class="plan-domain-field">
           <span class="plan-domain-cap">Plan type</span>
-          <select class="plan-domain-select" data-role="domain" aria-label="Plan type"
-            title="Plan type — Site reticulation or Building floor plan">
+          <select class="plan-domain-select" data-role="domain">
             ${PLAN_DOMAINS.map(d => `<option value="${d.id}" ${d.id === domain ? 'selected' : ''}>${escHtml(d.name)}</option>`).join('')}
           </select>
         </label>`}
-        <input type="search" class="plan-pal-search" data-role="search" placeholder="Filter…" value="${escHtml(this._search || '')}" aria-label="Filter parts">
-      </div>`;
-    // Placement mode (building only): Single drop / grid Array / along a Path.
-    if (domain === 'building') {
-      const mode = this._placeMode || 'single';
-      const modeBtn = (m, label, title) => `<button class="plan-pal-mode-btn${mode === m ? ' active' : ''}" data-role="placemode" data-mode="${m}" title="${title}">${label}</button>`;
-      html += `<div class="plan-pal-mode" role="group" aria-label="Placement mode">
-        ${modeBtn('single', 'Single', 'Drop one device per click')}
-        ${modeBtn('array', 'Array', 'Drag a rectangle → grid of devices')}
-        ${modeBtn('path', 'Path', 'Draw a path → devices spaced along it')}
-      </div>`;
-    }
+        <label class="plan-domain-field plan-pal-searchfield"><span class="plan-domain-cap">Find a part</span>
+        <input type="search" class="plan-pal-search" data-role="search" placeholder="Socket, DB, smoke…" value="${escHtml(this._search || '')}"></label>
+      </div><div class="plan-pal-groups">`;
     for (const g of groups) {
       const items = g.items.filter(it => !filter || it.name.toLowerCase().includes(filter));
       if (!items.length) continue;
-      html += `<div class="plan-pal-group"><div class="plan-pal-group-label">${escHtml(g.label)}</div>`;
-      for (const it of items) {
-        const toolId = this._toolFor(it.kind);
-        const ready = typeof PlanTools !== 'undefined' && PlanTools._tools[toolId];
-        html += `<button class="plan-pal-item${ready ? '' : ' disabled'}" data-kind="${it.kind}" data-type="${escHtml(it.type)}"${ready ? '' : ' title="Coming in a later phase" disabled'}>
-          <span class="plan-pal-swatch" style="background:${it.color}"></span>${escHtml(it.name)}</button>`;
-      }
+      const open = !!filter || !this._folded.has(g.label);
+      html += `<div class="plan-pal-group">
+        <button type="button" class="plan-pal-group-label" data-role="fold" data-group="${escHtml(g.label)}" aria-expanded="${open}">
+          <span class="plan-pal-chev" aria-hidden="true">${open ? '▾' : '▸'}</span>${escHtml(g.label)}<span class="plan-pal-count">${items.length}</span></button>`;
+      if (open) html += `<div class="plan-pal-grid">${items.map(it => this._palItem(it)).join('')}</div>`;
       html += `</div>`;
     }
-    // "From SLD": adopt existing SLD boards/supply that aren't on the plan yet.
+    html += `</div>`;
+    // "From the single line": adopt SLD boards/supply that aren't on the plan yet.
     if (domain === 'building' && typeof AppState.components !== 'undefined' && PLAN_DEFS.sldLinkTypes) {
       const linkedSld = new Set(pm.elements.filter(e => e.sldId).map(e => e.sldId));
-      // Non-bus linkable comps (DB, transformer, generator, utility) individually.
       const rows = [];
       for (const c of AppState.components.values()) {
         if (!PLAN_DEFS.sldLinkTypes[c.type] || c.type === 'bus' || linkedSld.has(c.id)) continue;
@@ -91,73 +120,126 @@ const PlanUI = {
         const typeName = (typeof COMPONENT_DEFS !== 'undefined' && COMPONENT_DEFS[c.type] && COMPONENT_DEFS[c.type].name) || c.type;
         rows.push({ id: c.id, label: c.props.name || typeName, sub: typeName, color: PLAN_DEFS.elementColor(t, pm.styles) });
       }
-      // Buses grouped into switchboards — one row per group.
       if (typeof PlanSync !== 'undefined' && PlanSync.sldSwitchboardGroups) {
         for (const g of PlanSync.sldSwitchboardGroups()) {
           if (g.busIds.some(id => linkedSld.has(id))) continue;   // already adopted
           rows.push({ id: g.primaryBusId, label: g.name, sub: `Switchboard${g.busIds.length > 1 ? ' · ' + g.busIds.length + ' sections' : ''}`, color: PLAN_DEFS.elementColor('bd_switchboard', pm.styles) });
         }
       }
-      html += `<div class="plan-fromsld"><div class="plan-layers-title">From SLD (unplaced)</div>`;
-      if (!rows.length) {
-        html += `<div class="plan-props-empty" style="padding:2px 2px 6px">No unplaced SLD boards.</div>`;
-      } else {
+      if (rows.length) {
+        html += `<div class="plan-fromsld"><div class="plan-sec-head"><span>From the single line</span><small>${rows.length} not placed</small></div>`;
         for (const r of rows) {
-          html += `<button class="plan-pal-item" data-sld="${escHtml(r.id)}" title="Place ${escHtml(r.label)} from the SLD">
-            <span class="plan-pal-swatch" style="background:${r.color}"></span>${escHtml(r.label)}
-            <span style="color:var(--text-muted);font-size:10px;margin-left:auto">${escHtml(r.sub)}</span></button>`;
+          html += `<button type="button" class="plan-pal-item plan-sld-item" data-sld="${escHtml(r.id)}" title="Place ${escHtml(r.label)} from the single line">
+            <span class="plan-pal-swatch" style="background:${r.color}"></span><span class="plan-pal-name">${escHtml(r.label)}</span><small>${escHtml(r.sub)}</small></button>`;
         }
+        html += `</div>`;
       }
-      html += `</div>`;
     }
+    return html;
+  },
 
-    // Discipline layers: click a name to emphasize that layer (dim the rest);
-    // "Show all" clears the active layer.
-    // Show only the layers relevant to the active domain.
-    const domLayers = pm.layers.filter(L => domain === 'building'
-      ? L.discipline === 'building' : L.discipline !== 'building');
-    html += `<div class="plan-layers"><div class="plan-layers-title">Discipline Layers</div>`;
-    html += `<div class="plan-layer-row${pm.activeLayerId ? '' : ' active'}"><span class="swatch" style="background:#94a3b8"></span><span class="plan-layer-name" data-layer="">Show all</span></div>`;
-    for (const L of domLayers) {
-      html += `<div class="plan-layer-row${pm.activeLayerId === L.id ? ' active' : ''}">
-        <span class="swatch" style="background:${L.color}"></span>
-        <span class="plan-layer-name" data-layer="${escHtml(L.id)}">${escHtml(L.name)}</span></div>`;
-    }
-    html += `</div>`;
-    // Background plans: visibility, opacity, PDF page-nav, remove.
-    html += `<div class="plan-plans"><div class="plan-layers-title">Background Plans
-      <button class="plan-cleanup-btn" data-role="cleanup" title="Delete unclaimed/orphaned plan images on the server">Clean</button></div>`;
+  _underlaysPanel() {
+    const pm = AppState.planMarkup;
+    const s = pm.scale;
     const dxfs = (typeof PlanDxfImport !== 'undefined') ? PlanDxfImport.list() : [];
-    if (!pm.plans.length && !dxfs.length) html += `<div class="plan-props-empty" style="padding:2px">No plan imported.</div>`;
-    // Imported DXF drawings are background layers of this floor too.
+    const scaleSrc = s && s.factor ? (s.source === 'dxf'
+      ? (() => { const d = dxfs.find(x => x.unitM); return d ? `Set from ${escHtml(d.name)}` : 'Set from a DXF'; })()
+      : 'Calibrated from two points') : 'Not set — lengths, areas and cable runs need it';
+    let html = `<div class="plan-ul">
+      <button type="button" class="plan-primary-btn" data-act="import">${PlanMarkup._icon('upload')} Import plan or DXF…</button>
+      <p class="plan-ul-hint">PDF, PNG, JPEG or DXF. You can pick the DXF's units and drawing scale before it lands.</p>
+      <div class="plan-card${s && s.factor ? '' : ' warn'}">
+        <div class="plan-card-head"><b>Floor scale</b><span>${s && s.factor ? `1 px = ${s.factor.toFixed(4)} m` : 'Not set'}</span></div>
+        <small>${scaleSrc}</small>
+        <button type="button" class="plan-btn" data-act="calibrate">Calibrate from a known length…</button>
+      </div>
+      <div class="plan-sec-head"><span>On this floor</span></div>`;
+    if (!pm.plans.length && !dxfs.length) html += `<div class="plan-props-empty">Nothing imported yet.</div>`;
+    const sel = this._underlay || {};
     for (const D of dxfs) {
       const loaded = !!PlanDxfImport.dataOf(D);
-      const id = escHtml(D.id);
-      html += `<div class="plan-plan-row">
-        <label class="plan-plan-vis"><input type="checkbox" data-role="dxf-vis" data-dxf="${id}" ${D.hidden ? '' : 'checked'}></label>
-        <span class="plan-plan-name" title="${escHtml(D.name)} (DXF) — ${D.count} items${loaded ? '' : ' — loading…'}">📐 ${escHtml(D.name)}</span>
-        <input type="range" class="plan-plan-op" data-role="dxf-opacity" data-dxf="${id}" min="0.1" max="1" step="0.1" value="${(typeof D.opacity === 'number' ? D.opacity : 1)}">
-        <button class="plan-plan-mini" data-role="dxf-manage" data-dxf="${id}" title="Layers, blocks &amp; attributes — convert to plan items"${loaded ? '' : ' disabled'}>◫</button>
-        <button class="plan-plan-mini" data-role="dxf-move" data-dxf="${id}" title="Drag to reposition this DXF">✥</button>
-        <button class="plan-plan-mini" data-role="dxf-align" data-dxf="${id}" title="2-point align this DXF${D.unitM ? ' (keeps its true scale)' : ''}">⤢</button>
-        <button class="plan-plan-del" data-role="remove-dxf" data-dxf="${id}" title="Remove this DXF from the floor">✕</button>
-      </div>`;
+      const meta = [this._dxfUnitsText(D), `${D.count} items`, loaded ? '' : 'loading…'].filter(Boolean).join(' · ');
+      html += this._ulCard('dxf', D.id, D.name, 'DXF', meta, !D.hidden, typeof D.opacity === 'number' ? D.opacity : 1, sel.kind === 'dxf' && sel.id === D.id, '');
     }
     for (const P of pm.plans) {
+      const isPdf = !!P.pdfPageCount;
       const nav = (P.pdfPageCount > 1)
-        ? `<span class="plan-pagenav"><button data-role="prev" data-plan="${escHtml(P.id)}">◀</button>${P.pdfPage}/${P.pdfPageCount}<button data-role="next" data-plan="${escHtml(P.id)}">▶</button></span>` : '';
-      html += `<div class="plan-plan-row">
-        <label class="plan-plan-vis"><input type="checkbox" data-role="vis" data-plan="${escHtml(P.id)}" ${P.visible === false ? '' : 'checked'}></label>
-        <span class="plan-plan-name" title="${escHtml(P.name)}">${escHtml(P.name)}</span>
-        ${nav}
-        <input type="range" class="plan-plan-op" data-role="opacity" data-plan="${escHtml(P.id)}" min="0.1" max="1" step="0.1" value="${(typeof P.opacity === 'number' ? P.opacity : 1)}">
-        <button class="plan-plan-mini" data-role="move-plan" data-plan="${escHtml(P.id)}" title="Drag to reposition this plan">✥</button>
-        <button class="plan-plan-mini" data-role="align-plan" data-plan="${escHtml(P.id)}" title="2-point align this plan to the others">⤢</button>
-        <button class="plan-plan-del" data-role="remove-plan" data-plan="${escHtml(P.id)}" title="Remove from project">✕</button>
-      </div>`;
+        ? `<span class="plan-pagenav">Page <button type="button" data-role="prev" data-plan="${escHtml(P.id)}" aria-label="Previous page">◀</button>${P.pdfPage} of ${P.pdfPageCount}<button type="button" data-role="next" data-plan="${escHtml(P.id)}" aria-label="Next page">▶</button></span>` : '';
+      html += this._ulCard('plan', P.id, P.name, isPdf ? 'PDF' : 'Image', isPdf && P.pdfPageCount === 1 ? 'PDF page' : '', P.visible !== false, typeof P.opacity === 'number' ? P.opacity : 1, sel.kind === 'plan' && sel.id === P.id, nav);
     }
-    html += `</div>`;
-    el.innerHTML = html;
+    return html + `</div>`;
+  },
+
+  _dxfUnitsText(D) {
+    if (!D.unitM) return 'units unknown';
+    const base = D.unitBase || D.unitM;
+    const n = D.drawScale && D.drawScale !== 1 ? ` at 1 : ${D.drawScale}` : '';
+    const name = (PlanDxfImport.UNITS.find(u => Math.abs(u[0] - base) < 1e-12) || [0, `${base} m`])[1].toLowerCase();
+    return `${name}${n}${D.unitsGuessed ? ' (chosen)' : ''}`;
+  },
+
+  _ulCard(kind, id, name, badge, meta, visible, opacity, selected, extra) {
+    const k = kind === 'dxf' ? 'data-dxf' : 'data-plan';
+    return `<div class="plan-ul-card${selected ? ' selected' : ''}" data-ul-kind="${kind}" data-ul-id="${escHtml(id)}">
+      <div class="plan-ul-row">
+        <input type="checkbox" data-role="${kind === 'dxf' ? 'dxf-vis' : 'vis'}" ${k}="${escHtml(id)}" ${visible ? 'checked' : ''} aria-label="Show ${escHtml(name)}">
+        <button type="button" class="plan-ul-name" data-role="ul-pick" title="${escHtml(name)} — select to move, align or remove">${escHtml(name)}</button>
+        <span class="plan-badge">${badge}</span>
+      </div>
+      ${meta ? `<small>${meta}</small>` : ''}${extra}
+      <label class="plan-ul-op">Opacity <input type="range" data-role="${kind === 'dxf' ? 'dxf-opacity' : 'opacity'}" ${k}="${escHtml(id)}" min="0.1" max="1" step="0.1" value="${opacity}"></label>
+    </div>`;
+  },
+
+  _outputPanel() {
+    const pm = AppState.planMarkup;
+    const building = pm.settings.domain === 'building';
+    let untagged = 0;
+    if (building && typeof PlanCircuits !== 'undefined' && PlanCircuits.isCircuitDevice) {
+      untagged = pm.elements.filter(e => PlanCircuits.isCircuitDevice(e.type) && !(e.props && e.props.circuitDbId)).length;
+    }
+    const act = (a, title, sub) => `<button type="button" class="plan-act" data-act="${a}"><b>${title}</b><small>${sub}</small></button>`;
+    const exp = (a, ext, title, sub) => `<button type="button" class="plan-act plan-act-x" data-act="${a}"><span class="plan-ext">${ext}</span><span><b>${title}</b><small>${sub}</small></span></button>`;
+    const crop = pm.cropBox;
+    return `<div class="plan-out">
+      <div class="plan-sec-head"><span>Sync</span></div>
+      ${building ? act('push', 'Sync with single line', 'Boards and feeder cables, both directions') : act('push', 'Push to Demand schedules', 'Kiosks, erven and feeders into Reticulation')}
+      ${building ? act('circuits', 'Count circuits into boards', `Loads and routed lengths per way${untagged ? ` · ${untagged} device${untagged > 1 ? 's' : ''} not on a circuit` : ''}`) : ''}
+      <div class="plan-sec-head"><span>Print area</span></div>
+      <div class="plan-card">
+        <div class="plan-card-head"><b>${crop ? 'Set' : 'Whole floor'}</b></div>
+        <small>The part of the plan the PNG and PDF show.</small>
+        <div class="plan-btn-row"><button type="button" class="plan-btn" data-act="crop">${crop ? 'Redraw' : 'Draw'} print area…</button>${crop ? '<button type="button" class="plan-btn" data-act="crop-clear">Clear</button>' : ''}</div>
+      </div>
+      <div class="plan-sec-head"><span>Export</span></div>
+      ${exp('pdf', 'PDF', 'Drawing sheet', 'A3 sheet of the annotated plan')}
+      ${exp('png', 'PNG', 'Image', 'The annotated plan as an image')}
+      ${exp('dxf', 'DXF', 'AutoCAD drawing', 'Markup on named layers and blocks')}
+      ${exp('csv', 'CSV', 'Schedules', 'Every device, route and room, per type')}
+    </div>`;
+  },
+
+  // The Lighting tab's panel: zones to draw, fittings to place, and every
+  // zone on this floor (click to select).
+  _lightingPanel() {
+    const pm = AppState.planMarkup;
+    let html = `<div class="plan-sec-head"><span>Draw</span></div><div class="plan-pal-list">${PLAN_DEFS.lightingTools().map(it => this._palItem(it)).join('')}</div>`;
+    const def = PLAN_DEFS.element('bd_light');
+    if (def) {
+      html += `<div class="plan-sec-head"><span>Fittings</span></div><div class="plan-pal-list">${this._palItem({ type: 'bd_light', kind: 'element', name: def.name, color: def.color, desc: 'Same fittings as on the Plan tab' })}</div>
+        <button type="button" class="plan-btn" data-act="photolib">Luminaire library…</button>`;
+    }
+    const rooms = (pm.rooms || []).filter(r => r.points && r.points.length >= 2);
+    const KIND = { room: 'Room', outdoor: 'Outdoor area', perimeter: 'Fence', escape: 'Escape route' };
+    html += `<div class="plan-sec-head"><span>On this floor</span><small>${rooms.length}</small></div>`;
+    if (!rooms.length) html += `<div class="plan-props-empty">Draw a room, or use Detect room and click inside one.</div>`;
+    for (const r of rooms) {
+      const v = (typeof LightingWS !== 'undefined' && LightingWS.verdictOf) ? LightingWS.verdictOf(r) : '';
+      const cls = v === 'Pass' ? 'ok' : v === 'Fail' ? 'bad' : '';
+      html += `<button type="button" class="plan-zone-row${PlanMarkup.selectedIds.has(r.id) ? ' selected' : ''}" data-plan-zone="${escHtml(r.id)}">
+        <span><b>${escHtml(r.name || KIND[r.kind || 'room'])}</b><small>${KIND[r.kind || 'room']}</small></span>${v ? `<span class="plan-verdict ${cls}">${escHtml(v)}</span>` : ''}</button>`;
+    }
+    return html;
   },
 
   _planById(id) { return AppState.planMarkup.plans.find(p => p.id === id); },
@@ -190,33 +272,38 @@ const PlanUI = {
   },
 
   _onPaletteClick(e) {
-    // Plan controls (page nav / remove / cleanup)
+    const actBtn = e.target.closest('[data-act]');
+    if (actBtn) {
+      const a = actBtn.dataset.act;
+      if (a === 'photolib') { if (typeof PhotoLib !== 'undefined') PhotoLib.open(); return; }
+      PlanMarkup.runAction(a); return;
+    }
+    const fold = e.target.closest('[data-role="fold"]');
+    if (fold) {
+      const g = fold.dataset.group;
+      if (this._folded.has(g)) this._folded.delete(g); else this._folded.add(g);
+      this.renderPalette(); return;
+    }
+    const zone = e.target.closest('[data-plan-zone]');
+    if (zone) {
+      const r = (AppState.planMarkup.rooms || []).find(x => x.id === zone.dataset.planZone);
+      PlanMarkup.selectOnly(zone.dataset.planZone);
+      if (r && PlanEngine.zoomToPoints) PlanEngine.zoomToPoints(r.points);
+      this.renderPalette(); return;
+    }
+    // Underlay cards: pick one (its actions show in the properties panel).
+    const pick = e.target.closest('[data-role="ul-pick"]');
+    if (pick) {
+      const card = pick.closest('[data-ul-kind]');
+      this._underlay = { kind: card.dataset.ulKind, id: card.dataset.ulId };
+      this.renderPalette(); this.renderProps();
+      if (PlanMarkup._isMobile()) PlanMarkup._toggleDrawer('props');
+      return;
+    }
     const planCtl = e.target.closest('[data-role]');
     if (planCtl) {
       const role = planCtl.dataset.role;
-      if (role === 'cleanup') { this._cleanup(); return; }
-      const dxf = planCtl.dataset.dxf && (typeof PlanDxfImport !== 'undefined') && PlanDxfImport.byId(planCtl.dataset.dxf);
-      if (role === 'remove-dxf' && dxf) {
-        PlanDxfImport.remove(dxf.id);
-        this.renderPalette();
-        UI.toast(`DXF "${dxf.name}" removed — press Ctrl+Z or ↶ to undo.`, 'info');
-        return;
-      }
-      if (role === 'dxf-manage' && dxf && typeof PlanDxfManager !== 'undefined') { PlanDxfManager.open(dxf.id); return; }
-      if (role === 'dxf-move' && dxf) { PlanTools.set('nudgeplan', { dxfId: dxf.id }); return; }
-      if (role === 'dxf-align' && dxf) { PlanTools.set('align', { dxfId: dxf.id, keepScale: !!dxf.unitM }); return; }
       const p = planCtl.dataset.plan && this._planById(planCtl.dataset.plan);
-      if (role === 'remove-plan' && p) {
-        const pm = AppState.planMarkup;
-        pm.plans = pm.plans.filter(x => x.id !== p.id);
-        PlanMarkup.snapshot(); PlanMarkup.markDirty();
-        this.renderPalette(); PlanEngine.requestDraw({ all: true });
-        // Removal is undoable (image bytes stay server-side) — surface how (UX-13).
-        UI.toast('Background plan removed — press Ctrl+Z or ↶ to undo.', 'info');
-        return;
-      }
-      if (role === 'move-plan' && p) { PlanTools.set('nudgeplan', { planId: p.id }); return; }
-      if (role === 'align-plan' && p) { PlanTools.set('align', { planId: p.id }); return; }
       if ((role === 'prev' || role === 'next') && p) {
         const np = Math.min(p.pdfPageCount || 1, Math.max(1, (p.pdfPage || 1) + (role === 'next' ? 1 : -1)));
         if (np !== p.pdfPage && typeof PlanImages !== 'undefined') {
@@ -225,14 +312,7 @@ const PlanUI = {
         return;
       }
     }
-    const layerName = e.target.closest('.plan-layer-name');
-    if (layerName) {
-      AppState.planMarkup.activeLayerId = layerName.dataset.layer || null;
-      this.renderPalette();
-      if (typeof PlanEngine !== 'undefined') PlanEngine.requestDraw({ fg: true });
-      return;
-    }
-    // Adopt an existing SLD entity ("From SLD" list) — link + place it.
+    // Adopt an existing SLD entity ("From the single line") — link + place it.
     const sldItem = e.target.closest('[data-sld]');
     if (sldItem) {
       PlanTools.set('placeSld', { sldId: sldItem.dataset.sld });
@@ -240,41 +320,28 @@ const PlanUI = {
       sldItem.classList.add('armed');
       return;
     }
-    const domainSel = e.target.closest('[data-role="domain"]');
-    if (domainSel) return; // domain change handled by the 'change' listener
-    // Placement-mode segmented control (Single / Array / Path).
-    const modeBtn = e.target.closest('[data-role="placemode"]');
-    if (modeBtn) {
-      this._placeMode = modeBtn.dataset.mode;
-      this.paletteEl.querySelectorAll('[data-role="placemode"]').forEach(b => b.classList.toggle('active', b === modeBtn));
-      return;
-    }
     const item = e.target.closest('.plan-pal-item');
     if (!item || item.disabled) return;
     const kind = item.dataset.kind, type = item.dataset.type;
-    const toolId = this._toolFor(kind);
     if (kind === 'element') {
-      // Point-device placement honours the selected mode.
+      // Point devices: the placing bar's choice remembered for this type.
       const byMode = { single: 'place', array: 'array', path: 'devpath' };
-      PlanTools.set(byMode[this._placeMode || 'single'] || 'place', { type });
+      PlanTools.set(byMode[this.placeModeFor(type)] || 'place', { type });
     }
-    else if (kind === 'route') PlanTools.set('route', { type });
-    else if (kind === 'trench') PlanTools.set('trench', { type });
-    else PlanTools.set(toolId, { type });
-    // Highlight the armed item
+    else PlanTools.set(this._toolFor(kind), { type });
     this.paletteEl.querySelectorAll('.plan-pal-item.armed').forEach(b => b.classList.remove('armed'));
     item.classList.add('armed');
   },
 
-  // Palette 'change' handling: domain select + per-plan visibility checkbox.
+  // Palette 'change' handling: domain select + underlay visibility.
   bindDomainChange() {
     this.paletteEl.addEventListener('change', (e) => {
       const role = e.target.dataset.role;
       if (role === 'domain') {
         AppState.planMarkup.settings.domain = e.target.value;
+        this._folded = null;
         this.renderPalette();
         if (typeof Workspaces !== 'undefined' && Workspaces.refresh) Workspaces.refresh();
-        if (typeof PlanMarkup !== 'undefined' && PlanMarkup.updatePushButton) PlanMarkup.updatePushButton();
         if (typeof PlanMarkup !== 'undefined' && PlanMarkup.refreshFloorBar) PlanMarkup.refreshFloorBar();
       } else if (role === 'vis') {
         const p = this._planById(e.target.dataset.plan);
@@ -290,10 +357,157 @@ const PlanUI = {
     });
   },
 
+  // ─── Underlay properties (Underlays mode) ───
+  _renderUnderlayProps(el) {
+    const u = this._underlay;
+    const D = u && u.kind === 'dxf' && typeof PlanDxfImport !== 'undefined' ? PlanDxfImport.byId(u.id) : null;
+    const P = u && u.kind === 'plan' ? this._planById(u.id) : null;
+    if (!D && !P) {
+      this._underlay = null;
+      el.innerHTML = `<div class="plan-props-empty">Pick an underlay on the left to move, align or remove it.</div>`;
+      return;
+    }
+    const btn = (role, label, extra) => `<button type="button" class="plan-btn" data-ul-act="${role}"${extra || ''}>${label}</button>`;
+    let html;
+    if (D) {
+      const data = PlanDxfImport.dataOf(D);
+      const [bx0, by0, bx1, by1] = D.bbox || [0, 0, 0, 0];
+      const fmt = (m) => m >= 1000 ? (m / 1000).toFixed(2) + ' km' : m >= 10 ? m.toFixed(1) + ' m' : m.toFixed(2) + ' m';
+      const size = D.unitM ? `${fmt((bx1 - bx0) * D.unitM)} × ${fmt((by1 - by0) * D.unitM)}` : '—';
+      html = `<div class="plan-props-kicker">DXF underlay</div><div class="plan-props-title">${escHtml(D.name)}</div>
+        <dl class="plan-facts"><dt>Units</dt><dd>${escHtml(this._dxfUnitsText(D))}</dd><dt>Size</dt><dd>${size}</dd>
+        <dt>Contents</dt><dd>${D.count} items${data ? ` · ${data.layers.length} layers` : ''}</dd></dl>
+        ${btn('units', 'Change units or scale…', data ? '' : ' disabled')}
+        <div class="plan-props-sec">Position</div>
+        <div class="plan-btn-row">${btn('move', 'Move')}${btn('align', 'Align 2 points')}</div>
+        <div class="plan-props-sec">Layers &amp; blocks</div>
+        <small class="plan-props-note">Hide layers, or map blocks to plan devices and convert them.</small>
+        ${btn('manage', 'Open layers &amp; blocks…', data ? '' : ' disabled')}
+        <button type="button" class="plan-props-delete" data-ul-act="remove">Remove from floor</button>`;
+    } else {
+      html = `<div class="plan-props-kicker">${P.pdfPageCount ? 'PDF' : 'Image'} underlay</div><div class="plan-props-title">${escHtml(P.name)}</div>
+        <div class="plan-props-sec">Position</div>
+        <div class="plan-btn-row">${btn('move', 'Move')}${btn('align', 'Align 2 points')}</div>
+        <small class="plan-props-note">Align matches two points on this plan to the same points on another underlay.</small>
+        <button type="button" class="plan-props-delete" data-ul-act="remove">Remove from floor</button>`;
+    }
+    el.innerHTML = html;
+  },
+
+  _onUnderlayAction(act) {
+    const u = this._underlay; if (!u) return;
+    if (u.kind === 'dxf') {
+      const D = PlanDxfImport.byId(u.id); if (!D) return;
+      if (act === 'remove') {
+        PlanDxfImport.remove(D.id); this._underlay = null;
+        this.renderPalette(); this.renderProps();
+        UI.toast(`DXF "${D.name}" removed — press Ctrl+Z or ↶ to undo.`, 'info');
+      } else if (act === 'manage' && typeof PlanDxfManager !== 'undefined') PlanDxfManager.open(D.id);
+      else if (act === 'move') PlanTools.set('nudgeplan', { dxfId: D.id });
+      else if (act === 'align') PlanTools.set('align', { dxfId: D.id, keepScale: !!D.unitM });
+      else if (act === 'units') PlanDxfImport.changeUnits(D);
+      return;
+    }
+    const P = this._planById(u.id); if (!P) return;
+    if (act === 'remove') {
+      const pm = AppState.planMarkup;
+      pm.plans = pm.plans.filter(x => x.id !== P.id); this._underlay = null;
+      PlanMarkup.snapshot(); PlanMarkup.markDirty();
+      this.renderPalette(); this.renderProps(); PlanEngine.requestDraw({ all: true });
+      // Removal is undoable (image bytes stay server-side) — surface how (UX-13).
+      UI.toast('Background plan removed — press Ctrl+Z or ↶ to undo.', 'info');
+    } else if (act === 'move') PlanTools.set('nudgeplan', { planId: P.id });
+    else if (act === 'align') PlanTools.set('align', { planId: P.id });
+  },
+
+  // ─── Placing bar ───
+  // Shown over the canvas while a point device is armed: how to place it.
+  // The choice (and its grid / spacing settings) is remembered per device
+  // type in the plan's settings.
+  _placeMem(type) {
+    const s = AppState.planMarkup.settings;
+    if (!s.placeMemory) s.placeMemory = {};
+    if (!s.placeMemory[type]) s.placeMemory[type] = {};
+    return s.placeMemory[type];
+  },
+  placeModeFor(type) {
+    const m = (AppState.planMarkup.settings.placeMemory || {})[type];
+    return (m && m.mode) || 'single';
+  },
+  placeOpts(type) {
+    const m = (AppState.planMarkup.settings.placeMemory || {})[type] || {};
+    return { cols: m.cols || 3, rows: m.rows || 3, by: m.by || 'spacing', spacingM: m.spacingM || 3, count: m.count || 6 };
+  },
+
+  renderPlaceBar(toolId, opts) {
+    const bar = document.getElementById('plan-placebar');
+    const info = document.getElementById('plan-info');
+    if (!bar) return;
+    const type = opts && opts.type;
+    const def = type && PLAN_DEFS.element(type);
+    const show = def && ['place', 'array', 'devpath'].includes(toolId);
+    bar.hidden = !show;
+    if (info) info.hidden = !!show;
+    if (!show) { bar.innerHTML = ''; return; }
+    const mode = { place: 'single', array: 'array', devpath: 'path' }[toolId];
+    const o = this.placeOpts(type);
+    bar.setAttribute('aria-label', `How to place ${def.name}`);
+    const pic = {
+      single: '<circle cx="22" cy="15" r="4.5" class="dv"/><path d="M27 20l6 6" class="ptr"/>',
+      array: '<rect x="5" y="4" width="34" height="22" class="box"/><circle cx="12" cy="10" r="2.8" class="dv"/><circle cx="22" cy="10" r="2.8" class="dv"/><circle cx="32" cy="10" r="2.8" class="dv"/><circle cx="12" cy="20" r="2.8" class="dv"/><circle cx="22" cy="20" r="2.8" class="dv"/><circle cx="32" cy="20" r="2.8" class="dv"/>',
+      path: '<path d="M4 24L18 10h22" class="box"/><circle cx="6" cy="22" r="2.8" class="dv"/><circle cx="14" cy="14" r="2.8" class="dv"/><circle cx="25" cy="10" r="2.8" class="dv"/><circle cx="37" cy="10" r="2.8" class="dv"/>',
+    };
+    const choice = (m, title, how) => `<button type="button" class="plan-place-opt${mode === m ? ' active' : ''}" data-place="${m}" aria-pressed="${mode === m}">
+      <svg width="44" height="30" viewBox="0 0 44 30" aria-hidden="true">${pic[m]}</svg>
+      <span><b>${title}</b><small>${how}</small></span></button>`;
+    let extra = '';
+    if (mode === 'array') {
+      extra = `<div class="plan-place-set">
+        <label>Columns<input type="number" min="1" step="1" data-place-opt="cols" value="${o.cols}"></label>
+        <label>Rows<input type="number" min="1" step="1" data-place-opt="rows" value="${o.rows}"></label></div>`;
+    } else if (mode === 'path') {
+      const cal = !!PlanEngine.factor();
+      const by = cal ? o.by : 'count';
+      extra = `<div class="plan-place-set">
+        <label>Place<select data-place-opt="by">${cal ? `<option value="spacing"${by === 'spacing' ? ' selected' : ''}>every</option>` : ''}<option value="count"${by === 'count' ? ' selected' : ''}>a total of</option></select></label>
+        ${by === 'spacing' ? `<label class="plan-place-unit"><input type="number" min="0.1" step="0.5" data-place-opt="spacingM" value="${o.spacingM}" aria-label="Spacing in metres"> m</label>`
+          : `<label class="plan-place-unit"><input type="number" min="1" step="1" data-place-opt="count" value="${o.count}" aria-label="Number of devices"> devices</label>`}</div>`;
+    }
+    const keys = { single: 'R rotates the selection', array: 'Drag from corner to corner', path: 'Enter finishes the line' }[mode];
+    bar.innerHTML = `<div class="plan-place-what"><small>Placing</small><b><span class="plan-pal-swatch" style="background:${def.color}"></span>${escHtml(def.name)}</b></div>
+      ${choice('single', 'One at a time', 'Click for each one')}
+      ${choice('array', 'Fill an area', 'Drag a box → rows × columns')}
+      ${choice('path', 'Along a line', 'Click points → evenly spaced')}
+      ${extra}
+      <div class="plan-place-end"><button type="button" class="plan-btn" data-place-stop title="${keys}. Esc stops placing.">Stop <kbd>Esc</kbd></button></div>`;
+    if (!bar._bound) {
+      bar._bound = true;
+      bar.addEventListener('click', (e) => {
+        const t = PlanTools.opts && PlanTools.opts.type;
+        if (e.target.closest('[data-place-stop]')) { PlanTools.set('select'); return; }
+        const b = e.target.closest('[data-place]');
+        if (!b || !t) return;
+        this._placeMem(t).mode = b.dataset.place;
+        PlanMarkup.markDirty();
+        PlanTools.set({ single: 'place', array: 'array', path: 'devpath' }[b.dataset.place], { type: t });
+      });
+      bar.addEventListener('change', (e) => {
+        const k = e.target.dataset.placeOpt; const t = PlanTools.opts && PlanTools.opts.type;
+        if (!k || !t) return;
+        const mem = this._placeMem(t);
+        if (k === 'by') mem.by = e.target.value;
+        else { const v = parseFloat(e.target.value); if (isFinite(v) && v > 0) mem[k] = (k === 'spacingM') ? v : Math.round(v); }
+        PlanMarkup.markDirty();
+        if (k === 'by') this.renderPlaceBar(PlanTools.active.id, PlanTools.opts);
+      });
+    }
+  },
+
   // ─── Properties ───
   renderProps() {
     const el = this.propsEl; if (!el) return;
     if (typeof PlanTools !== 'undefined' && PlanTools.active && PlanTools.active.id === 'roomdetect' && typeof PlanRoomDetect !== 'undefined') { PlanRoomDetect.renderOptions(el); return; }
+    if (PlanMarkup.context === 'plan' && PlanMarkup.mode === 'underlays') { this._renderUnderlayProps(el); return; }
     const ids = [...PlanMarkup.selectedIds];
     if (ids.length === 0) { el.innerHTML = `<div class="plan-props-empty">Select an item to edit its properties.</div>`; return; }
     if (ids.length > 1) { this._renderBulk(el, ids); return; }
@@ -357,7 +571,11 @@ const PlanUI = {
       PlanSync.fillEmptyCables(); getVal = (k) => (k === 'cableType') ? item.cableType : (k === 'curved') ? !!item.curved : (item.props ? item.props[k] : undefined);
     }
     for (const f of fields) html += this._field(f, getVal(f.key));
-    if (kind === 'room' && typeof RoomLighting !== 'undefined') { RoomLighting.bind(el); html += RoomLighting.panel(item); }
+    if (kind === 'room' && typeof RoomLighting !== 'undefined') {
+      // The lighting settings are edited on the Lighting tab.
+      if (PlanMarkup.context === 'lighting') { RoomLighting.bind(el); html += RoomLighting.panel(item); }
+      else html += `<button type="button" class="plan-btn" data-role="open-lighting">Lighting for this ${({ escape: 'route', perimeter: 'fence', outdoor: 'area' })[item.kind] || 'room'}…</button>`;
+    }
     html += this._defaultCableButton(item, kind);
     html += this._demandBlock(item, kind);
     html += this._demandLinkField(item, kind);
@@ -552,7 +770,7 @@ const PlanUI = {
     const clsLabel = (k) => { const c = Retic._kioskClass(k); return c ? escHtml(c.label) : '—'; };
     let title = 'From Demand';
     let kioskList = null;
-    const notLinked = () => `<div class="plan-demand"><div class="plan-demand-title">From Demand</div><div class="plan-demand-row"><span>Not in Demand yet — use → Push to Schedules.</span></div></div>`;
+    const notLinked = () => `<div class="plan-demand"><div class="plan-demand-title">From Demand</div><div class="plan-demand-row"><span>Not in Demand yet — Output › Push to Demand schedules.</span></div></div>`;
     // Figures for a kiosk / minisub come from the last Demand calculation; ask
     // for one if none has run this session (it redraws this panel when done).
     if (item.type !== 'erf' && !res && Retic._doCompute && !this._demandAsked) {

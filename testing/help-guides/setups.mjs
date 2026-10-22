@@ -1,5 +1,24 @@
 // Named screen set-ups for capture.mjs. Each runs on a fresh page of the app.
 import { seedPlan, planPoint, seedBoard } from './lib.mjs';
+
+// A building project on the Plan tab with an empty, uncalibrated floor.
+async function seedFloor(page) {
+  await page.evaluate(() => { Workspaces.setType('building', []); switchWorkspace('plan'); });
+  await page.waitForTimeout(600);
+}
+
+// A small floor-plan DXF as the import endpoint returns it: 42.3 × 18 m in
+// millimetres, outer walls, partitions, two off/frozen layers.
+function fakeDxf() {
+  const L = (x1, y1, x2, y2, l) => ({ t: 'l', l: l || 'A-WALL', p: [x1, y1, x2, y2] });
+  const ents = [L(0, 0, 42300, 0), L(42300, 0, 42300, 18000), L(42300, 18000, 0, 18000), L(0, 18000, 0, 0),
+    L(0, 9000, 17000, 9000), L(17000, 0, 17000, 8000), L(17000, 10000, 17000, 18000), L(27000, 0, 27000, 18000),
+    L(27000, 9800, 42300, 9800), L(17000, 8000, 17800, 8800, 'A-DOOR'), L(20000, 4000, 24000, 4000, 'A-FURN'), L(20000, 14000, 24000, 14000, 'A-FURN')];
+  return { format: 2, units: { code: 4, m: 0.001, name: 'mm', metric: true }, origin: [0, 0], bbox: [0, 0, 42300, 18000],
+    layers: [{ name: 'A-WALL', color: '#334155', on: true, frozen: false, n: 9 }, { name: 'A-DOOR', color: '#64748b', on: true, frozen: false, n: 1 },
+      { name: 'A-FURN', color: '#94a3b8', on: false, frozen: false, n: 2 }, { name: 'A-DIMS', color: '#94a3b8', on: true, frozen: true, n: 0 }],
+    blocks: {}, inserts: [], entities: ents, count: ents.length };
+}
 const toWorkspace = async (page, id, tab) => {
   await page.evaluate(() => switchWorkspace('schedules'));
   await page.waitForSelector('.sch-tab');
@@ -255,17 +274,48 @@ export const SETUPS = {
 
   'demand-linked': { run: async (page) => {
     await seedPlan(page);
-    await page.click('[data-action="push"]');
+    await page.click('.plan-mode-btn[data-mode="output"]');
+    await page.click('[data-act="push"]');
     for (let i = 0; i < 3; i++) {   // "not calibrated" confirm, then the "Pushed to Reticulation" notice
       await page.getByRole('button', { name: 'OK', exact: true }).click({ timeout: 2500 }).catch(() => {});
       await page.waitForTimeout(300);
     }
     await page.waitForTimeout(1500);
     if (await page.evaluate(() => !document.getElementById('plan-workspace') || document.getElementById('plan-workspace').style.display === 'none')) await page.evaluate(() => switchWorkspace('plan'));
+    await page.evaluate(() => PlanMarkup.setMode('draw'));
     await page.waitForTimeout(500);
     const p = await planPoint(page, 'K2');
     await page.mouse.click(p.x, p.y);
     await page.waitForTimeout(600);
+  } },
+
+  'plan-dxf-dialog': { run: async (page) => {
+    await seedFloor(page);
+    await page.evaluate((d) => { PlanDxfImport.askImport(d, 'GF-Electrical'); }, fakeDxf());
+    await page.waitForSelector('.dxfi-content');
+    await page.waitForTimeout(300);
+  } },
+
+  'plan-underlays': { run: async (page) => {
+    await seedFloor(page);
+    await page.evaluate((d) => { PlanDxfImport._addUnderlay(d, 'GF-Electrical'); }, fakeDxf());
+    await page.waitForSelector('.dxfi-content');
+    await page.click('.dxfi-actions .btn-primary');
+    await page.waitForTimeout(1500);
+    await page.evaluate(() => { PlanTools.set('select'); document.querySelectorAll('.toast').forEach(t => t.remove()); });
+    await page.click('.plan-ul-name');
+    await page.waitForTimeout(400);
+  } },
+
+  'plan-placebar': { run: async (page) => {
+    await seedFloor(page);
+    await page.evaluate(() => {
+      AppState.planMarkup.settings.placeMemory = { bd_socket: { mode: 'array', cols: 4, rows: 3 } };
+      PlanUI._folded = new Set();
+      PlanUI.renderPalette();
+    });
+    await page.click('.plan-pal-item[data-type="bd_socket"]');
+    await page.waitForTimeout(400);
   } },
 
   'demand-bulk': { run: async (page) => {

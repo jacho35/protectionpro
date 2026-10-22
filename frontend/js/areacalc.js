@@ -238,7 +238,7 @@ const AreaCalc = {
       <button type="button" class="plan-circuit-btn" data-ac-discard>Discard</button></div>` : '';
     return `<div style="margin-top:10px;border-top:1px solid var(--border,#d9dee4);padding-top:8px">
       <div class="plan-props-title" style="font-size:13px">Pole layout</div>
-      <select data-ac-lum style="width:100%">${libs.length ? libs.map(p => `<option value="${escHtml(p.id)}"${p.id === cur ? ' selected' : ''}>${escHtml(PhotoLib.label(p))}</option>`).join('') : '<option value="">Add a luminaire in 💡 Luminaires first</option>'}</select>
+      <select data-ac-lum style="width:100%">${libs.length ? libs.map(p => `<option value="${escHtml(p.id)}"${p.id === cur ? ' selected' : ''}>${escHtml(PhotoLib.label(p))}</option>`).join('') : '<option value="">Add a luminaire in the Luminaire library first</option>'}</select>
       <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;margin-top:4px">
         <label class="plan-field"><span>Pole height (m)</span><input type="number" data-ac-h value="${h}" min="3" step="0.5"></label>
         <label class="plan-field"><span>Tilt (°)</span><input type="number" data-ac-tilt value="${tilt}" min="-45" max="90" step="5"></label></div>
@@ -249,7 +249,7 @@ const AreaCalc = {
     const f = PlanEngine.factor();
     const ph = PhotoLib.get(lumId);
     if (!f) { UI.alert('Calibrate the plan first.'); return; }
-    if (!ph) { UI.toast('Pick a luminaire from the library first (💡 Luminaires).', 'info'); return; }
+    if (!ph) { UI.toast('Pick a luminaire from the library first (Luminaire library on the Lighting tab).', 'info'); return; }
     if (UI.setBusy) UI.setBusy(true, 'Finding pole layouts…');
     try {
       const out = await API.request('/analysis/area-lighting/layout', 'POST', {

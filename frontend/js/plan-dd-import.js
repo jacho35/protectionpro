@@ -61,7 +61,7 @@ const PlanDdImport = {
       const notes = [];
       if (sum.fallbacks) notes.push(`${sum.fallbacks} element(s) mapped to a nearest symbol (original type kept in props._ddType)`);
       if (sum.imagesFailed) notes.push(`${sum.imagesFailed} background image(s) could not be uploaded (geometry imported; overlay missing)`);
-      if (sum.schedulesDropped) notes.push(`${sum.schedulesDropped} board schedule(s) were NOT imported — DD's circuit ratings have no home in the plan; re-derive them with "Sync Circuits" after syncing boards to the SLD`);
+      if (sum.schedulesDropped) notes.push(`${sum.schedulesDropped} board schedule(s) were NOT imported — DD's circuit ratings have no home in the plan; re-derive them with Output › Count circuits into boards after syncing boards to the SLD`);
       UI.alert(
         `Imported from Distribution Designer:\n` +
         `• ${sum.floors} floor(s), ${sum.elements} device(s), ${sum.routes} route(s), ${sum.images} plan image(s)` +

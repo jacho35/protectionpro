@@ -1,6 +1,6 @@
 /* ProtectionPro — DXF manager (Site plan + Floor plans).
  *
- * One dialog per imported DXF (◫ in Background Plans):
+ * One dialog per imported DXF (Underlays › Layers & blocks):
  *   • Drawing — name, units, colours, opacity, move/align, what was read.
  *   • Layers  — per source layer: show/hide, colour override, and "convert
  *               to" a plan route type / trench / rooms / erf boundaries.
@@ -402,8 +402,6 @@ const PlanDxfManager = {
   },
 
   _renderDrawing(desc, data) {
-    const units = [['0.001', 'Millimetres'], ['0.01', 'Centimetres'], ['1', 'Metres'], ['1000', 'Kilometres'], ['0.0254', 'Inches'], ['0.3048', 'Feet']];
-    const known = units.some(([v]) => Math.abs(+v - (desc.unitM || 0)) < 1e-12);
     const f = PlanEngine.factor();
     const [bx0, by0, bx1, by1] = desc.bbox || [0, 0, 0, 0];
     const size = desc.unitM ? `${((bx1 - bx0) * desc.unitM).toFixed(1)} × ${((by1 - by0) * desc.unitM).toFixed(1)} m` : '—';
@@ -413,7 +411,8 @@ const PlanDxfManager = {
     const xrefs = Object.values(data.blocks).filter(b => b.xref).map(b => b.name);
     return `<div class="dxfm-form">
       <label>Name <input data-role="dname" value="${escHtml(desc.name)}"></label>
-      <label>Drawing unit <select data-role="dunits">${known ? '' : `<option value="${desc.unitM || ''}" selected>${desc.unitM ? desc.unitM + ' m' : 'unknown'}</option>`}${units.map(([v, l]) => `<option value="${v}"${Math.abs(+v - (desc.unitM || 0)) < 1e-12 ? ' selected' : ''}>${l}</option>`).join('')}</select></label>
+      <label>Units and scale <span class="dxfm-units"><span>${escHtml(typeof PlanUI !== 'undefined' ? PlanUI._dxfUnitsText(desc) : String(desc.unitM || 'unknown'))}</span>
+        <button type="button" class="btn-small" data-role="dunits">Change…</button></span></label>
       <label>Colours <select data-role="dcolor"><option value="file"${desc.colorMode !== 'mono' ? ' selected' : ''}>From the DXF (by layer / entity)</option><option value="mono"${desc.colorMode === 'mono' ? ' selected' : ''}>Grey trace-over</option></select></label>
       <label>Opacity <input type="range" min="0.1" max="1" step="0.05" data-role="dopacity" value="${typeof desc.opacity === 'number' ? desc.opacity : 1}"></label>
     </div>
@@ -457,6 +456,7 @@ const PlanDxfManager = {
         this._changed(desc, false); this.render(); break;
       }
       case 'lcol-reset': { const st = (desc.layers || {})[el.dataset.layer]; if (st) delete st.color; this._changed(desc, false); this.render(); break; }
+      case 'dunits': PlanDxfImport.changeUnits(desc).then(() => { this._changed(desc, false); this.render(); }); break;
       case 'move': this.close(); PlanTools.set('nudgeplan', { dxfId: desc.id }); break;
       case 'align-keep': this.close(); PlanTools.set('align', { dxfId: desc.id, keepScale: true }); break;
       case 'align-free': this.close(); PlanTools.set('align', { dxfId: desc.id, keepScale: false }); break;
@@ -531,9 +531,6 @@ const PlanDxfManager = {
     } else if (role === 'dname') {
       desc.name = el.value.trim() || desc.name;
       this._changed(desc, false); this.render();
-    } else if (role === 'dunits') {
-      const u = parseFloat(el.value);
-      if (u > 0) { PlanDxfImport.setUnits(desc, u); this._changed(desc, true); if (typeof PlanEngine !== 'undefined') PlanEngine.zoomFit(); this.render(); }
     } else if (role === 'dcolor') {
       desc.colorMode = el.value; this._changed(desc, false);
     }
@@ -586,7 +583,7 @@ const PlanDxfManager = {
     let msg = `Converted ${parts.join(', ')} from "${desc.name}". Press Ctrl+Z to undo.`;
     if (res.relinked) msg += ` ${res.relinked} device${res.relinked === 1 ? '' : 's'} linked to ${res.relinked === 1 ? 'its board' : 'their boards'}.`;
     if (res.unlinked) msg += ` ${res.unlinked} board name${res.unlinked === 1 ? '' : 's'} didn't match any board on the plan.`;
-    if (domain === 'retic' && (res.n || res2.erven)) msg += ' Use → Push to Schedules to send them to Demand.';
+    if (domain === 'retic' && (res.n || res2.erven)) msg += ' Use Output › Push to Demand schedules to send them to Demand.';
     UI.toast(msg, 'success', 7000);
     this.render();
   },
