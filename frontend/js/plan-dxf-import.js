@@ -244,13 +244,12 @@ const PlanDxfImport = {
       return;
     }
     const pm = AppState.planMarkup;
-    let unitM = data.units && data.units.m;
-    let guessed = false;
-    if (!unitM) {
-      unitM = await this.askUnits(data, name);
-      if (!unitM) return;   // cancelled
-      guessed = true;
-    }
+    // Always confirm units + drawing scale: the file's $INSUNITS can be
+    // missing or wrong, and a drawing drawn at paper size needs its 1 : N.
+    const pick = await this.askImport(data, name);
+    if (!pick) return;   // cancelled
+    const unitM = pick.unitM;
+    const guessed = !(data.units && data.units.m) || Math.abs(pick.unitBase - data.units.m) > 1e-12;
     // A layer off/frozen in the source file starts hidden here too — but a
     // CAD session's layer state is often just whatever was toggled while the
     // last person worked on it, not a deliberate "never show this" choice.
@@ -260,7 +259,7 @@ const PlanDxfImport = {
     let hiddenLayers = 0, hiddenRecords = 0, totalRecords = 0;
     for (const ly of data.layers) {
       totalRecords += ly.n || 0;
-      if (!ly.on || ly.frozen) {
+      if ((!ly.on || ly.frozen) && !pick.showAll) {
         layers[ly.name] = { hidden: true };
         hiddenLayers++;
         hiddenRecords += ly.n || 0;
@@ -268,11 +267,11 @@ const PlanDxfImport = {
     }
     const desc = {
       id: AppState.planGenId('pmdxf'), imageId: null, name, count: data.count || 0,
-      unitM, unitsGuessed: guessed, origin: data.origin || [0, 0], bbox: data.bbox,
+      unitM, unitBase: pick.unitBase, drawScale: pick.drawScale, unitsGuessed: guessed, origin: data.origin || [0, 0], bbox: data.bbox,
       k: 1, offX: 0, offY: 0, rotation: 0, scaleAdj: 1,
       hidden: false, opacity: 1, colorMode: 'file', layers, converted: [],
     };
-    const placedHow = this._place(desc);
+    const placedHow = this._place(desc, { centre: pick.place === 'centre' });
 
     // Persist the parsed drawing. A failed upload still leaves a usable
     // session underlay — losing it on reload beats losing the import — but
@@ -301,16 +300,21 @@ const PlanDxfImport = {
     const hiddenFrac = totalRecords > 0 ? hiddenRecords / totalRecords : 0;
     const mostlyHidden = hiddenFrac >= 0.2 && hiddenRecords > 0;
     if (mostlyHidden) {
-      msg.push(`${hiddenLayers} of ${data.layers.length} layers (${Math.round(hiddenFrac * 100)}% of the drawing) came in off/frozen and start hidden — ◫ Background Plans → Layers → "Show all" to see everything.`);
+      msg.push(`${hiddenLayers} of ${data.layers.length} layers (${Math.round(hiddenFrac * 100)}% of the drawing) came in off/frozen and start hidden — Underlays › pick it › Layers & blocks to show them.`);
     }
     UI.toast(msg.join(' '), (!stored || data.truncated || mostlyHidden) ? 'warning' : 'success', mostlyHidden ? 9000 : 6000);
-    if (data.inserts.length && typeof PlanDxfManager !== 'undefined') {
-      UI.toast('Open ◫ in Background Plans to map its blocks to plan devices.', 'info', 5000);
+    if (typeof PlanUI !== 'undefined') PlanUI._underlay = { kind: 'dxf', id: desc.id };
+    if (typeof PlanMarkup !== 'undefined' && PlanMarkup.setMode) PlanMarkup.setMode('underlays');
+    if (pick.checkLength && typeof PlanTools !== 'undefined') {
+      PlanTools.set('calibrate', { dxfId: desc.id });
+      UI.toast('Check the scale: click the two ends of a length you know, then type it.', 'info', 7000);
+    } else if (data.inserts.length && typeof PlanDxfManager !== 'undefined') {
+      UI.toast('Its blocks can be mapped to plan devices: Underlays › Layers & blocks.', 'info', 5000);
     }
   },
 
   // Scale + position a freshly imported DXF. Returns a note for the toast.
-  _place(desc) {
+  _place(desc, opts) {
     const pm = AppState.planMarkup;
     const [bx0, by0, bx1, by1] = desc.bbox;
     let note = '';
@@ -330,7 +334,7 @@ const PlanDxfImport = {
     // Co-register with a DXF already on this floor when both are in real units
     // and their extents are in the same neighbourhood (same project grid).
     const sib = this.list().find(d => d.unitM && d.origin && d.bbox && d.k);
-    if (sib && this._sameGrid(sib, desc)) {
+    if (sib && !(opts && opts.centre) && this._sameGrid(sib, desc)) {
       const u = desc.unitM / sib.unitM;
       desc.rotation = sib.rotation || 0;
       desc.scaleAdj = (sib.scaleAdj || 1) * (sib.k / sib.unitM) / (desc.k / desc.unitM);
@@ -361,60 +365,174 @@ const PlanDxfImport = {
     return Math.max(gapX, gapY) <= 3 * span;
   },
 
-  // Unitless DXF: ask what one drawing unit is. The guess leans on the plan
-  // domain and the drawing's size (buildings are usually drawn in mm, site
-  // plans in metres) and the file's metric/imperial flag.
-  askUnits(data, name) {
+  // Drawing units offered in the import dialog: [metres per unit, name].
+  UNITS: [[0.001, 'Millimetres'], [0.01, 'Centimetres'], [1, 'Metres'], [1000, 'Kilometres'], [0.0254, 'Inches'], [0.3048, 'Feet']],
+  SCALES: [1, 20, 50, 100, 200, 500, 1000],
+
+  // The import dialog: units (the file's, or a guess when it says none) and a
+  // drawing scale, with the size it would land at. `cur` (a placed DXF) makes
+  // it the "Change units or scale" dialog. Resolves {unitM, unitBase,
+  // drawScale, place, checkLength, showAll} or null.
+  askImport(data, name, cur) {
     const [bx0, by0, bx1, by1] = data.bbox;
-    const span = Math.max(bx1 - bx0, by1 - by0);
+    const spanW = bx1 - bx0, spanH = by1 - by0;
     const building = AppState.planMarkup.settings.domain === 'building';
-    let guess = (data.units && data.units.metric === false) ? 0.0254
+    const fileM = data.units && data.units.m;
+    const fileCode = data.units && data.units.code;
+    const span = Math.max(spanW, spanH);
+    const guess = (data.units && data.units.metric === false) ? 0.0254
       : (building ? (span > 300 ? 0.001 : 1) : (span > 20000 ? 0.001 : 1));
-    const opts = [['0.001', 'Millimetres'], ['0.01', 'Centimetres'], ['1', 'Metres'], ['1000', 'Kilometres'], ['0.0254', 'Inches'], ['0.3048', 'Feet']];
+    let unit = cur ? (cur.unitBase || cur.unitM) : (fileM || guess);
+    let scale = cur ? (cur.drawScale || 1) : 1;
+    const known = this.UNITS.some(u => Math.abs(u[0] - unit) < 1e-12);
+    const units = known ? this.UNITS : this.UNITS.concat([[unit, `${unit} m (from file)`]]);
+    const sib = !cur && this.list().find(d => d.unitM && d.origin && d.bbox && d.k);
+    const hidden = (data.layers || []).filter(l => !l.on || l.frozen);
+    const total = (data.layers || []).reduce((n, l) => n + (l.n || 0), 0);
+    const hiddenN = hidden.reduce((n, l) => n + (l.n || 0), 0);
+    const fmt = (m) => m >= 1000 ? (m / 1000).toFixed(2) + ' km' : m >= 10 ? m.toFixed(1) + ' m' : m >= 1 ? m.toFixed(2) + ' m' : Math.round(m * 1000) + ' mm';
+    const unitName = (v) => (this.UNITS.find(u => Math.abs(u[0] - v) < 1e-12) || [0, `${v} m`])[1].toLowerCase();
+    const counts = `${(data.entities || []).length} items · ${(data.inserts || []).length} block references · ${(data.layers || []).length} layers`;
     return new Promise((resolve) => {
       const ov = document.createElement('div');
       ov.className = 'modal plan-floor-modal';
       ov.style.display = 'flex'; ov.style.zIndex = '3000';
-      ov.setAttribute('role', 'dialog'); ov.setAttribute('aria-modal', 'true'); ov.setAttribute('aria-label', 'DXF units');
-      const fmt = (u) => { const m = span * u; return m >= 1000 ? (m / 1000).toFixed(2) + ' km' : m >= 1 ? m.toFixed(1) + ' m' : (m * 1000).toFixed(0) + ' mm'; };
+      ov.setAttribute('role', 'dialog'); ov.setAttribute('aria-modal', 'true'); ov.setAttribute('aria-labelledby', 'dxfi-title');
+      const unitBtns = units.map(([v, l]) => `<button type="button" class="dxfi-chip" data-unit="${v}" aria-pressed="false">${escHtml(l)}${fileM && Math.abs(v - fileM) < 1e-12 ? '<small>from file</small>' : ''}</button>`).join('');
+      const scaleBtns = this.SCALES.map(n => `<button type="button" class="dxfi-chip" data-scale="${n}" aria-pressed="false">${n === 1 ? '1 : 1 real size' : '1 : ' + n}</button>`).join('');
+      const fileNote = fileM
+        ? `The file says ${escHtml(unitName(fileM))}${fileCode ? ` ($INSUNITS = ${fileCode})` : ''}. Change it only if you know the file is wrong.`
+        : `The file doesn't say what unit it is drawn in — ${escHtml(unitName(guess))} is a guess from its size.`;
       ov.innerHTML = `
-        <div class="modal-content plan-floor-content" style="max-width:420px">
-          <div class="modal-header"><h3>DXF units</h3></div>
-          <div class="modal-body">
-            <p style="margin:0 0 10px">"${escHtml(name)}" doesn't say what unit it is drawn in. One drawing unit is:</p>
-            <select data-role="u" style="width:100%">${opts.map(([v, l]) => `<option value="${v}"${Math.abs(+v - guess) < 1e-12 ? ' selected' : ''}>${l}</option>`).join('')}</select>
-            <p data-role="span" style="margin:8px 0 0;color:var(--text-muted);font-size:12px"></p>
-            <div class="ui-dialog-actions">
-              <button class="btn-small" data-role="cancel">Cancel</button>
-              <button class="btn-primary" data-role="ok">Import</button>
+        <div class="modal-content dxfi-content">
+          <div class="modal-header"><div><h3 id="dxfi-title">${cur ? 'Units and scale of' : 'Import'} ${escHtml(name)}</h3><small class="dxfi-sub">${counts}</small></div>
+            <button type="button" class="modal-close" data-role="cancel" aria-label="Close">&times;</button></div>
+          <div class="dxfi-body">
+            <div class="dxfi-preview">
+              <canvas width="340" height="230" aria-hidden="true"></canvas>
+              <div class="dxfi-size" aria-live="polite"><span>Lands at</span><b data-role="size"></b></div>
+              <div class="dxfi-verdict" data-role="verdict"></div>
+              <small>Extents in the file: ${Math.round(spanW).toLocaleString()} × ${Math.round(spanH).toLocaleString()} drawing units. The size is units × scale.</small>
+            </div>
+            <div class="dxfi-form">
+              <fieldset><legend>1 · One drawing unit is</legend>
+                <div class="dxfi-chips dxfi-units">${unitBtns}</div>
+                <small>${fileNote}</small></fieldset>
+              <fieldset><legend>2 · Drawing scale</legend>
+                <div class="dxfi-chips">${scaleBtns}
+                  <label class="dxfi-chip dxfi-custom">1 : <input type="number" min="1" step="1" data-role="custom" aria-label="Your own scale, 1 to"></label></div>
+                <small>1 : 1 for a normal CAD model. Pick a ratio when the drawing was drawn at paper size: at 1 : 100, one millimetre on the drawing is 100 mm on site.</small></fieldset>
+              ${cur ? '' : `<fieldset><legend>3 · Place it</legend>
+                ${sib ? `<label class="dxfi-radio"><input type="radio" name="dxfi-place" value="grid" checked> <span>In the same coordinates as <b>${escHtml(sib.name)}</b><small>When both files share a coordinate grid</small></span></label>` : ''}
+                <label class="dxfi-radio"><input type="radio" name="dxfi-place" value="centre"${sib ? '' : ' checked'}> <span>Centred on this floor</span></label></fieldset>
+              <div class="dxfi-checks">
+                <label class="dxfi-radio"><input type="checkbox" data-role="check"> <span>Check against a known length after import<small>Click two points and type the real distance; the DXF is corrected to match</small></span></label>
+                ${hidden.length ? `<label class="dxfi-radio"><input type="checkbox" data-role="showall"> <span>Show every layer<small>${hidden.length} layer${hidden.length > 1 ? 's' : ''}${total ? ` (${Math.round(hiddenN / total * 100)} % of the drawing)` : ''} are off or frozen in the file</small></span></label>` : ''}
+              </div>`}
             </div>
           </div>
+          <div class="ui-dialog-actions dxfi-actions">
+            <button type="button" class="btn-small" data-role="cancel">Cancel</button>
+            <button type="button" class="btn-primary" data-role="ok"></button>
+          </div>
         </div>`;
-      const sel = ov.querySelector('[data-role="u"]');
-      const showSpan = () => { ov.querySelector('[data-role="span"]').textContent = `The drawing would be ${fmt(+sel.value)} across.`; };
-      showSpan();
-      sel.addEventListener('change', showSpan);
+      const custom = ov.querySelector('[data-role="custom"]');
+      if (!this.SCALES.includes(scale)) custom.value = Math.round(scale * 1000) / 1000;
+      const sizeEl = ov.querySelector('[data-role="size"]'), verdict = ov.querySelector('[data-role="verdict"]');
+      const okBtn = ov.querySelector('[data-role="ok"]');
+      const cv = ov.querySelector('canvas');
+      this._drawPreview(cv, data);
+      const refresh = () => {
+        ov.querySelectorAll('[data-unit]').forEach(b => { const on = Math.abs(+b.dataset.unit - unit) < 1e-12; b.classList.toggle('on', on); b.setAttribute('aria-pressed', on); });
+        const isCustom = !this.SCALES.includes(scale);
+        ov.querySelectorAll('[data-scale]').forEach(b => { const on = !isCustom && +b.dataset.scale === scale; b.classList.toggle('on', on); b.setAttribute('aria-pressed', on); });
+        ov.querySelector('.dxfi-custom').classList.toggle('on', isCustom);
+        const w = spanW * unit * scale, h = spanH * unit * scale;
+        sizeEl.textContent = `${fmt(w)} × ${fmt(h)}`;
+        const lo = building ? 3 : 10, hi = building ? 600 : 20000;
+        const big = Math.max(w, h);
+        let cls = 'ok', msg = building ? 'About the size of a building floor plan.' : 'About the size of a site plan.';
+        if (big > hi) { cls = 'warn'; msg = `That's ${fmt(big)} across — too big for a ${building ? 'floor' : 'site'} plan. Check the units, or whether it really is at 1 : ${scale}.`; }
+        else if (big < lo) { cls = 'warn'; msg = `That's only ${fmt(big)} across. The file may be drawn at paper size: try 1 : 100 or 1 : 50.`; }
+        verdict.className = 'dxfi-verdict ' + cls; verdict.textContent = msg;
+        okBtn.textContent = cur ? 'Apply' : `Import at ${fmt(w)} × ${fmt(h)}`;
+      };
+      refresh();
       const done = (v) => { document.removeEventListener('keydown', onKey, true); ov.remove(); resolve(v); };
+      const result = () => {
+        const place = (ov.querySelector('input[name="dxfi-place"]:checked') || {}).value || 'centre';
+        const ck = ov.querySelector('[data-role="check"]'), sa = ov.querySelector('[data-role="showall"]');
+        return { unitM: unit * scale, unitBase: unit, drawScale: scale, place, checkLength: !!(ck && ck.checked), showAll: !!(sa && sa.checked) };
+      };
       const onKey = (e) => {
         if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); done(null); }
-        else if (e.key === 'Enter') { e.preventDefault(); done(+sel.value); }
+        else if (e.key === 'Enter' && e.target.tagName !== 'BUTTON') { e.preventDefault(); done(result()); }
       };
       document.addEventListener('keydown', onKey, true);
       ov.addEventListener('click', (e) => {
-        const r = e.target.dataset && e.target.dataset.role;
-        if (r === 'ok') done(+sel.value);
-        else if (r === 'cancel' || e.target === ov) done(null);
+        const u = e.target.closest('[data-unit]'); if (u) { unit = +u.dataset.unit; refresh(); return; }
+        const sc = e.target.closest('[data-scale]'); if (sc) { scale = +sc.dataset.scale; custom.value = ''; refresh(); return; }
+        const r = e.target.closest('[data-role]'); const role = r && r.dataset.role;
+        if (role === 'ok') done(result());
+        else if (role === 'cancel' || e.target === ov) done(null);
       });
+      custom.addEventListener('input', () => { const v = parseFloat(custom.value); if (isFinite(v) && v > 0) { scale = v; refresh(); } });
       document.body.appendChild(ov);
-      requestAnimationFrame(() => { try { sel.focus(); } catch (_) {} });
+      requestAnimationFrame(() => { try { (ov.querySelector('.dxfi-chip.on') || okBtn).focus(); } catch (_) { /* gone */ } });
     });
+  },
+
+  // Thumbnail of the drawing's lines for the import dialog (first ~6000).
+  _drawPreview(cv, data) {
+    const ctx = cv.getContext && cv.getContext('2d'); if (!ctx) return;
+    const [bx0, by0, bx1, by1] = data.bbox;
+    const W = cv.width, H = cv.height, pad = 12;
+    const k = Math.min((W - 2 * pad) / Math.max(bx1 - bx0, 1e-9), (H - 2 * pad) / Math.max(by1 - by0, 1e-9));
+    const ox = pad + ((W - 2 * pad) - (bx1 - bx0) * k) / 2, oy = pad + ((H - 2 * pad) - (by1 - by0) * k) / 2;
+    const X = (x) => ox + (x - bx0) * k, Y = (y) => H - (oy + (y - by0) * k);
+    ctx.fillStyle = PlanEngine._cssVar ? PlanEngine._cssVar('--bg-primary', '#ffffff') : '#ffffff';
+    ctx.fillRect(0, 0, W, H);
+    ctx.strokeStyle = PlanEngine._cssVar ? PlanEngine._cssVar('--text-secondary', '#555555') : '#555555';
+    ctx.lineWidth = 0.7;
+    ctx.beginPath();
+    let n = 0;
+    for (const e of (data.entities || [])) {
+      if (++n > 6000) break;
+      const p = e.p || [];
+      if (e.t === 'l') { ctx.moveTo(X(p[0]), Y(p[1])); ctx.lineTo(X(p[2]), Y(p[3])); }
+      else if (e.t === 'p' && p.length >= 4) {
+        ctx.moveTo(X(p[0]), Y(p[1]));
+        for (let i = 2; i + 1 < p.length; i += 2) ctx.lineTo(X(p[i]), Y(p[i + 1]));
+        if (e.c) ctx.lineTo(X(p[0]), Y(p[1]));
+      } else if (e.t === 'c' || e.t === 'a') {
+        const r = p[2] * k; if (r < 0.6) continue;
+        ctx.moveTo(X(p[0]) + r, Y(p[1])); ctx.arc(X(p[0]), Y(p[1]), r, 0, Math.PI * 2);
+      }
+    }
+    ctx.stroke();
+    ctx.strokeStyle = PlanEngine._cssVar ? PlanEngine._cssVar('--accent', '#0078d7') : '#0078d7';
+    ctx.setLineDash([4, 3]); ctx.strokeRect(X(bx0), Y(by1), (bx1 - bx0) * k, (by1 - by0) * k); ctx.setLineDash([]);
+  },
+
+  // Underlays › Change units or scale: the same dialog for a placed DXF.
+  async changeUnits(desc) {
+    const data = this.dataOf(desc); if (!data) return;
+    const pick = await this.askImport(data, desc.name, desc);
+    if (!pick) return;
+    this.setUnits(desc, pick.unitM);
+    desc.unitBase = pick.unitBase; desc.drawScale = pick.drawScale;
+    if (typeof PlanMarkup !== 'undefined') { PlanMarkup.snapshot(); PlanMarkup.markDirty(); PlanMarkup.updateScaleReadout(); }
+    if (typeof PlanUI !== 'undefined') { PlanUI.renderPalette(); PlanUI.renderProps(); }
+    if (typeof PlanEngine !== 'undefined') PlanEngine.requestDraw({ all: true });
   },
 
   // Change a DXF's units after import. When the floor's scale came from this
   // DXF alone, the floor is re-calibrated (the drawing stays put); otherwise
   // the DXF is re-scaled about its centre to stay true to the floor's scale.
-  setUnits(desc, unitM) {
+  setUnits(desc, unitM, opts) {
     const pm = AppState.planMarkup;
+    // A length check keeps the units and folds the correction into the scale.
+    if (opts && opts.keepBase && desc.unitBase) desc.drawScale = unitM / desc.unitBase;
     const others = this.list().filter(d => d !== desc).length + ((pm.plans || []).length);
     if (pm.scale && pm.scale.source === 'dxf' && !others) {
       pm.scale = { factor: pm.scale.factor * unitM / (desc.unitM || unitM), source: 'dxf' };

@@ -113,6 +113,7 @@ export async function seedPlan(page, { scale = 0.5 } = {}) {
     ks.forEach(k => { for (let j = 0; j < 3; j++) { const e = el('erf', k.x - 22 + j * 22, (j % 2 ? 45 : -45), 'E' + (n++)); rt('service', k, e, [[k.x, 0], [e.x, e.y]]); } });
     pm.settings.symbolScale = scale;
     const inp = document.getElementById('plan-symbol-scale'); if (inp) inp.value = String(scale);
+    if (PlanMarkup.updateScaleReadout) PlanMarkup.updateScaleReadout();
     PlanEngine.zoomFit && PlanEngine.zoomFit();
     PlanEngine.requestDraw({ all: true });
   }, scale);

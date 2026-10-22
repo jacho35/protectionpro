@@ -6,7 +6,7 @@
   top: var(--toolbar-height);
   left: 0; right: 0; bottom: 0;
   display: none;
-  flex-direction: row;
+  flex-direction: column;
   background: var(--bg-secondary);
   color: var(--text-primary);
   overflow: hidden;
@@ -73,3 +73,15 @@
   .lw-rail-item.active { box-shadow: none; border-color: var(--accent); }
   .lw-main { padding: 12px; }
 }
+
+/* Bar (Plan | Table + tools) and the two views. The Plan view hosts the Plan
+   tab's #plan-main (plan.css styles it). */
+.lw-bar {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding: 6px 12px; background: var(--bg-primary); border-bottom: 1px solid var(--border-color);
+}
+.lw-bar .btn-primary { min-height: 32px; }
+.lw-body { flex: 1; min-height: 0; display: flex; }
+.lw-plan { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.lw-plan[hidden], .lw-tableview[hidden] { display: none; }
+.lw-tableview { flex: 1; min-width: 0; display: flex; flex-direction: row; overflow: hidden; }

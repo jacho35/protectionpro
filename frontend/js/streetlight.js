@@ -939,7 +939,7 @@ const StreetLight = {
       if (el && el.type === 'pole' && !claimed.has(id)) skipped++;
     }
     if (!made && !updated) {
-      UI.alert('No street-lighting routes from a kiosk or minisub were found. Draw them with the Plan\'s SL Path tool from a kiosk or minisub, and Push to Reticulation first so the source exists in Demand.');
+      UI.alert('No street-lighting routes from a kiosk or minisub were found. Place streetlight poles on the Plan and join them with street-lighting routes from a kiosk or minisub (or lay them out in Road plan), and push to Demand first so the source exists in Demand.');
       return;
     }
     if (!this.selected) this._selId = this.circuits[0].id;

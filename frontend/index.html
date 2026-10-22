@@ -13,12 +13,12 @@
   <link rel="stylesheet" href="css/dbcoord.css?v=1.0">
   <link rel="stylesheet" href="css/lightning.css?v=3.5.274">
   <link rel="stylesheet" href="css/rates.css?v=3.5.274">
-  <link rel="stylesheet" href="css/plan.css?v=3.5.274">
-  <link rel="stylesheet" href="css/mobile.css?v=3.5.282">
+  <link rel="stylesheet" href="css/plan.css?v=3.5.313">
+  <link rel="stylesheet" href="css/mobile.css?v=3.5.313">
   <link rel="stylesheet" href="css/interlocking.css?v=3.5.274">
   <link rel="stylesheet" href="css/schedules.css?v=3.5.274">
   <link rel="stylesheet" href="css/quantities.css?v=3.5.274">
-  <link rel="stylesheet" href="css/lighting.css?v=3.5.274">
+  <link rel="stylesheet" href="css/lighting.css?v=3.5.313">
   <link rel="stylesheet" href="css/streetlight.css?v=3.5.274">
   <link rel="stylesheet" href="css/roadlight.css?v=3.5.274">
   <link rel="stylesheet" href="css/roadplan.css?v=3.5.305">
@@ -988,6 +988,7 @@
           </div>
           <div class="admin-table-head admin-cols-projects"><div>Project</div><div>Owner</div><div>Updated</div><div></div></div>
           <div id="admin-projects-list" class="admin-rows"></div>
+          <div class="admin-note">Plan images uploaded but never saved into a project, or left behind by a deleted one, stay on the server. <button id="btn-admin-plan-cleanup" class="btn-small" type="button">Delete unused plan images</button></div>
         </section>
         <section class="admin-pane" id="admin-pane-invites" hidden>
           <div class="admin-pane-head"><div><h4>Pending invitations</h4><small>Each invite works once.</small></div>
@@ -3304,6 +3305,7 @@
           </table>
 
           <h4>Plan workspace (Distribution Plan)</h4>
+          <p>The bar has three modes: <strong>Draw</strong> (parts, routes, text, measurements), <strong>Underlays</strong> (import plans and DXFs, set the scale, move, align, remove) and <strong>Output</strong> (sync with Demand or the single line, print area, PDF / PNG / DXF / CSV). Snapping, grid and symbol size are in the chips under the canvas. Pick a device and a bar over the canvas sets how it is placed — one at a time, filling an area (rows × columns) or along a line (spacing or count); the choice is remembered for each device type. Rooms, outdoor areas, fences, escape routes and the lighting calculations are on the <strong>Lighting</strong> tab.</p>
           <table class="help-ref-table">
             <thead><tr><th>Shortcut</th><th>Action</th></tr></thead>
             <tbody>
@@ -3316,20 +3318,20 @@
               <tr><td>Double-click / Right-click</td><td>Delete a route vertex</td></tr>
               <tr><td><kbd>Delete</kbd> / <kbd>Backspace</kbd></td><td>Delete selected items</td></tr>
               <tr><td><kbd>Arrow Keys</kbd></td><td>Nudge selection (when canvas focused: move between items)</td></tr>
-              <tr><td><kbd>Ctrl+Z</kbd> / <kbd>Ctrl+Shift+Z</kbd></td><td>Undo / redo (or the ↶ ↷ toolbar buttons)</td></tr>
+              <tr><td><kbd>Ctrl+Z</kbd> / <kbd>Ctrl+Shift+Z</kbd></td><td>Undo / redo (or the undo / redo buttons in the bar)</td></tr>
               <tr><td><kbd>Space</kbd> + Drag</td><td>Pan · <kbd>Scroll</kbd> / pinch to zoom</td></tr>
             </tbody>
           </table>
 
           <h4>DXF drawings (Site plan &amp; Floor plans)</h4>
           <ul>
-            <li><strong>⬆ Import Plan</strong> → pick a <code>.dxf</code>. A floor can hold several (architectural + services, survey + services). Layers, blocks with their attributes and every curve type (arcs, bulged polylines, splines, ellipses, hatches, dimensions) are read. DWG isn't supported — save as DXF from your CAD package.</li>
-            <li><strong>Scale:</strong> a DXF with units lands at true scale; on an uncalibrated floor it sets the scale. A unitless DXF asks what one drawing unit is. DXFs drawn on the same grid line up automatically.</li>
-            <li><strong>Background Plans</strong> row: show/hide, opacity, <strong>◫</strong> manager, <strong>✥</strong> move, <strong>⤢</strong> 2-point align (keeps true scale), <strong>✕</strong> remove (undoable).</li>
-            <li><strong>◫ Layers:</strong> show/hide and recolour each CAD layer; map a layer to a route type, trench, rooms/areas or (Site plan) erf boundaries — erven are numbered from the text inside each boundary.</li>
-            <li><strong>◫ Blocks:</strong> each block with a preview, count and attribute tags. Map a block to a plan device and each attribute to a field (name/erf no., circuit, board, load, cable). <strong>Convert</strong> places editable devices at each block's position and rotation; converted items are hidden from the DXF, the conversion is one undo step, and the mappings are remembered for the next issue of the drawing.</li>
-            <li><strong>Snap DXF</strong> snaps to line ends, midpoints, vertices, circle/arc centres and block insertion points.</li>
-            <li>A DXF exported from ProtectionPro (⤓ DXF) re-imports as editable devices, routes (type, cable, end points), trenches, crossings and rooms, in either plan type.</li>
+            <li><strong>Underlays › Import plan or DXF</strong> → pick a <code>.dxf</code>. A floor can hold several (architectural + services, survey + services). Layers, blocks with their attributes and every curve type (arcs, bulged polylines, splines, ellipses, hatches, dimensions) are read. DWG isn't supported — save as DXF from your CAD package.</li>
+            <li><strong>Units and scale:</strong> before it lands you confirm what one drawing unit is (the file's own units are pre-selected) and the drawing scale — 1 : 1 for a normal CAD model, or 1 : 50 / 1 : 100 / … / your own for a drawing drawn at paper size. The dialog shows the size it will land at and warns when that is implausible for a floor or site plan. Tick <em>Check against a known length</em> to click two points afterwards and type the real distance; the DXF is corrected to match. On an uncalibrated floor the DXF sets the scale; DXFs drawn on the same grid line up automatically. Change it later with <em>Change units or scale…</em>.</li>
+            <li><strong>Underlay card</strong>: show/hide and opacity; pick its name for Move, Align 2 points, Layers &amp; blocks and Remove (undoable).</li>
+            <li><strong>Layers:</strong> show/hide and recolour each CAD layer; map a layer to a route type, trench, rooms/areas or (Site plan) erf boundaries — erven are numbered from the text inside each boundary.</li>
+            <li><strong>Blocks:</strong> each block with a preview, count and attribute tags. Map a block to a plan device and each attribute to a field (name/erf no., circuit, board, load, cable). <strong>Convert</strong> places editable devices at each block's position and rotation; converted items are hidden from the DXF, the conversion is one undo step, and the mappings are remembered for the next issue of the drawing.</li>
+            <li><strong>Snap › DXF geometry</strong> snaps to line ends, midpoints, vertices, circle/arc centres and block insertion points.</li>
+            <li>A DXF exported from ProtectionPro (Output › DXF) re-imports as editable devices, routes (type, cable, end points), trenches, crossings and rooms, in either plan type.</li>
           </ul>
         </div>
 
@@ -3401,7 +3403,7 @@
   <script src="js/lib/xlsx.full.min.js?v=3.5.274"></script>
   <script src="js/lib/pdf.min.js?v=3.5.274"></script>
   <script src="js/iec-60364-data.js?v=3.5.274"></script>
-  <script src="js/constants.js?v=3.5.312"></script>
+  <script src="js/constants.js?v=3.5.313"></script>
   <script src="js/vendor-trip-units.js?v=1.0"></script>
   <script src="js/vendor-trip-units-abb.js?v=1.0"></script>
   <script src="js/vendor-trip-units-cbi.js?v=1.1"></script>
@@ -3423,7 +3425,7 @@
   <script src="js/vendor-trip-units-cbi-de.js?v=1.0"></script>
   <script src="js/cablelib.js?v=3.5.274"></script>
   <script src="js/conduit.js?v=3.5.274"></script>
-  <script src="js/plan-defs.js?v=3.5.274"></script>
+  <script src="js/plan-defs.js?v=3.5.313"></script>
   <script src="js/ui.js?v=3.5.274"></script>
   <script src="js/state.js?v=3.5.304"></script>
   <script src="js/grid.js?v=3.5.274"></script>
@@ -3486,7 +3488,7 @@
   <script src="js/schedule-mobile.js?v=3.5.274"></script>
   <script src="js/schedules.js?v=3.5.274"></script>
   <script src="js/searchselect.js?v=3.5.274"></script>
-  <script src="js/streetlight.js?v=3.5.305"></script>
+  <script src="js/streetlight.js?v=3.5.313"></script>
   <script src="js/roadlight.js?v=3.5.274"></script>
   <script src="js/roadplan.js?v=3.5.305"></script>
   <script src="js/roadplan-circuits.js?v=3.5.305"></script>
@@ -3509,37 +3511,37 @@
   <script src="js/retic-tcc.js?v=3.5.286"></script>
   <script src="js/retic-report.js?v=3.5.274"></script>
   <script src="js/plan-symbols.js?v=3.5.274"></script>
-  <script src="js/plan-engine.js?v=3.5.274"></script>
+  <script src="js/plan-engine.js?v=3.5.313"></script>
   <script src="js/plan-images.js?v=3.5.274"></script>
-  <script src="js/plan-tools.js?v=3.5.274"></script>
-  <script src="js/plan-sync.js?v=3.5.274"></script>
+  <script src="js/plan-tools.js?v=3.5.313"></script>
+  <script src="js/plan-sync.js?v=3.5.313"></script>
   <script src="js/sldgen.js?v=3.5.274"></script>
   <script src="js/plan-csv.js?v=3.5.274"></script>
   <script src="js/plan-dxf.js?v=3.5.274"></script>
   <script src="js/plan-export.js?v=3.5.274"></script>
-  <script src="js/plan-dxf-import.js?v=3.5.274"></script>
+  <script src="js/plan-dxf-import.js?v=3.5.313"></script>
   <script src="js/plan-roomdetect.js?v=3.5.274"></script>
   <script src="js/photolib.js?v=3.5.274"></script>
   <script src="js/roomlighting.js?v=3.5.274"></script>
-  <script src="js/roomcalc.js?v=3.5.274"></script>
-  <script src="js/areacalc.js?v=3.5.274"></script>
+  <script src="js/roomcalc.js?v=3.5.313"></script>
+  <script src="js/areacalc.js?v=3.5.313"></script>
   <script src="js/emergcalc.js?v=3.5.274"></script>
-  <script src="js/lightws.js?v=3.5.274"></script>
+  <script src="js/lightws.js?v=3.5.313"></script>
   <script src="js/lightreport.js?v=3.5.274"></script>
-  <script src="js/plan-dxf-manager.js?v=3.5.274"></script>
-  <script src="js/plan-dd-import.js?v=3.5.274"></script>
+  <script src="js/plan-dxf-manager.js?v=3.5.313"></script>
+  <script src="js/plan-dd-import.js?v=3.5.313"></script>
   <script src="js/plan-circuits.js?v=3.5.274"></script>
-  <script src="js/plan-ui.js?v=3.5.274"></script>
-  <script src="js/plan.js?v=3.5.274"></script>
+  <script src="js/plan-ui.js?v=3.5.313"></script>
+  <script src="js/plan.js?v=3.5.313"></script>
   <script src="js/help.js?v=3.5.274"></script>
   <script src="js/help-faults.js?v=3.5.274"></script>
   <script src="js/help-flow.js?v=3.5.274"></script>
   <script src="js/help-dynamics.js?v=3.5.274"></script>
   <script src="js/help-protect.js?v=3.5.274"></script>
   <script src="js/help-cables.js?v=3.5.274"></script>
-  <script src="js/help-design.js?v=3.5.304"></script>
+  <script src="js/help-design.js?v=3.5.313"></script>
   <script src="js/help-workflow.js?v=3.5.274"></script>
-  <script src="js/help-guides.js?v=3.5.274"></script>
+  <script src="js/help-guides.js?v=3.5.313"></script>
   <script src="js/app.js?v=3.5.304"></script>
   <script src="js/mobile.js?v=3.5.274"></script>
 </body>

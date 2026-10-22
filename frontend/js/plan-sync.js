@@ -1394,7 +1394,7 @@ const PlanSync = {
       }
       if (hit) el.reticId = hit.id;
     }
-    if (!el.reticId) return fail(`this ${what} is not linked to a Demand ${what}. Pick one under "Linked Demand item", or use → Push to Schedules.`);
+    if (!el.reticId) return fail(`this ${what} is not linked to a Demand ${what}. Pick one under "Linked Demand item", or use Output › Push to Demand schedules.`);
     const row = this._demandRow(el);
     if (!row) return fail(`its linked Demand ${what} no longer exists. Pick another under "Linked Demand item".`);
     if (nameOf(row) === newTrim || nameOf(row) === newName) return { status: 'unchanged' };

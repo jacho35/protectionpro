@@ -13,7 +13,7 @@ HELP_ARTICLES.push(
 <p>Extra workspaces can be switched on per project, and <em>a workspace that holds data is never hidden</em>, so a project can never lose sight of its own content. A legacy project with no stored type has its type inferred from its content, so opening an old file changes nothing in it.</p>
 <h4>How the workspaces feed each other</h4>
 <ul>
-<li><strong>Plan → Demand</strong>: <em>Push to Schedules</em> populates minisubs, kiosks, erven, feeder lengths and street-light kVA from the drawing. It is one-way and idempotent — matching is by id, then name, then append, so renaming and re-pushing never duplicates or overwrites entered load data.</li>
+<li><strong>Plan → Demand</strong>: <em>Output › Push to Demand schedules</em> populates minisubs, kiosks, erven, feeder lengths and street-light kVA from the drawing. It is one-way and idempotent — matching is by id, then name, then append, so renaming and re-pushing never duplicates or overwrites entered load data.</li>
 <li><strong>Plan → Single-line</strong>: a route can be made into an SLD cable, keeping the link.</li>
 <li><strong>Plan → Schedules</strong>: devices tagged to a board way write the way's load and quantity, and routed lengths become the way's cable length.</li>
 <li><strong>Everything → Bill of quantities</strong>: see <a href="#" data-help="design-boq">Bill of quantities</a>.</li>
@@ -87,20 +87,20 @@ $$f=\frac{d_{known}\ [\text{m}]}{d_{px}},\qquad \ell_{route}=f\sum_{k}\left|\mat
 <h4>Auto-circuiting (Building)</h4>
 <p>Devices tagged to a board way ($\texttt{circuitDbId}$, $\texttt{circuitNo}$) let the plan write the way's load and quantity into the linked board schedule. Untagged devices can inherit a tag through connected final-circuit routes, or be distributed across ways with per-type caps. Routed length flows to the way's cable length, unless the way has been pinned manually.</p>
 <h4>Lighting</h4>
-<p>Rooms and outdoor areas on a calibrated plan are calculated and shown in false colour — see <a href="#" data-help="design-roomlight">Room, outdoor &amp; emergency lighting</a>. Road lighting to EN 13201 is under Street lighting — see <a href="#" data-help="design-roadlight">Road lighting design</a>.</p>` },
+<p>Rooms and outdoor areas are drawn and calculated on the Lighting tab's plan view and shown there in false colour — see <a href="#" data-help="design-roomlight">Room, outdoor &amp; emergency lighting</a>. Road lighting to EN 13201 is under Street lighting — see <a href="#" data-help="design-roadlight">Road lighting design</a>.</p>` },
 
 { id: 'design-roomlight', group: 'design', title: 'Room, outdoor & emergency lighting',
-  std: 'Plan ▸ Detect room · ▶ Calc lighting · Lighting workspace · EN 12464-1/-2 · EN 1838 · CIE 117 · CIE 112 · EN 15193-1',
+  std: 'Lighting ▸ Plan ▸ Detect room · Calculate all · EN 12464-1/-2 · EN 1838 · CIE 117 · CIE 112 · EN 15193-1',
   kw: 'room lighting lux illuminance uniformity ugr glare gr radiosity interreflection reflectance maintenance factor auto layout outdoor car park pole floodlight perimeter fence vertical emergency escape route anti-panic high risk leni energy w/m2 detect room boundary dxf',
   html: String.raw`
-<p>Design the lighting of a room, a car park or yard, a fence line and the escape routes on the Plan, then see every one of them — across all floors — in the <strong>Lighting</strong> workspace and in one PDF report.</p>
+<p>Design the lighting of a room, a car park or yard, a fence line and the escape routes in the <strong>Lighting</strong> workspace: its <em>Plan</em> view is the floor plan with the lighting tools, its <em>Table</em> view lists every zone across all floors, and one PDF report covers them all. The floor plan itself (underlays, scale, devices) is drawn on the Plan tab; light fittings are the same items on both.</p>
 <h4>The workflow</h4>
 <ol>
-<li><strong>Make the room.</strong> <em>Detect room (click)</em> finds the boundary from a DXF underlay (its wall layers, closing door openings up to the gap you set) or from a plan image or PDF (dark pixels are walls). Drag the corners to correct it, drag a midpoint to add one, double-click to remove one. Or draw it by hand.</li>
+<li><strong>Make the room.</strong> <em>Detect room</em> finds the boundary from a DXF underlay (its wall layers, closing door openings up to the gap you set) or from a plan image or PDF (dark pixels are walls). Drag the corners to correct it, drag a midpoint to add one, double-click to remove one. Or draw it by hand.</li>
 <li><strong>Set the task.</strong> The room's <em>Lighting</em> section takes a task from a table (targets Ē<sub>m</sub>, U<sub>0</sub>, UGR, walls, ceiling) and the ceiling height, work plane, wall zone, reflectances and maintenance factor. The <em>Standard</em> box picks where the targets come from: EN 12464-1:2021 or SANS 10114-1:2020 (SANS gives only E<sub>m</sub>, UGR and R<sub>a</sub>; U<sub>0</sub>, E<sub>z</sub> and the wall and ceiling targets then stay at the EN 12464-1 values). The choice is for the whole project and also sets the emergency limits. Every target is editable; an edited room keeps what you entered when you change standard.</li>
-<li><strong>Choose luminaires.</strong> <em>Luminaires</em> opens the one library shared with road lighting: import the manufacturer's IES / LDT, or add a generic optic for feasibility.</li>
+<li><strong>Choose luminaires.</strong> <em>Luminaire library…</em> opens the one library shared with road lighting: import the manufacturer's IES / LDT, or add a generic optic for feasibility.</li>
 <li><strong>Place fittings.</strong> Place Light Fittings and pick the library luminaire, or let <em>Auto layout</em> propose rows × columns that meet the targets: it tests lattices cut to the room outline, re-checks the best on the full calculation, and shows a ghost of the one you pick before you place it.</li>
-<li><strong>Calculate.</strong> <em>▶ Calc lighting</em> (or the room's Calculate) draws the work-plane illuminance in false colour with isolux lines at the target and at the minimum point value, and lists each check. A result reads <em>Out of date</em> as soon as the room or its fittings change.</li>
+<li><strong>Calculate.</strong> <em>Calculate all</em> (or the room's Calculate) draws the work-plane illuminance in false colour with isolux lines at the target and at the minimum point value, and lists each check. A result reads <em>Out of date</em> as soon as the room or its fittings change.</li>
 </ol>
 <h4>Indoors</h4>
 <p>Direct light from each luminaire's photometric web, plus light reflected between the floor, walls and ceiling by diffuse radiosity. For a point with normal $\mathbf n$:</p>

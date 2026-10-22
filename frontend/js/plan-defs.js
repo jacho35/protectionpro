@@ -333,14 +333,22 @@ const PLAN_DEFS = {
       }
       push('Other', { type: 'crossing', kind: 'crossing', name: 'Road Crossing', color: this.crossings.color });
     }
-    push('Zones', { type: 'room', kind: 'room', name: 'Room / Area', color: this.room.stroke });
-    push('Zones', { type: 'roomdetect', kind: 'roomdetect', name: 'Detect room (click)', color: this.room.stroke });
-    push('Zones', { type: 'outdoor', kind: 'room', name: 'Outdoor area', color: '#16a34a' });
-    push('Zones', { type: 'perimeter', kind: 'perimeter', name: 'Perimeter / fence', color: '#7c3aed' });
-    push('Zones', { type: 'escape', kind: 'perimeter', name: 'Escape route', color: '#dc2626' });
+    // Rooms, areas, fences and escape routes are drawn on the Lighting tab
+    // (lightingTools below); the Plan shows them but does not offer them.
     push('Annotate', { type: 'text', kind: 'text', name: 'Text', color: '#111827' });
     push('Annotate', { type: 'measurement', kind: 'measurement', name: 'Measure', color: this.annotations.measurement.color });
     return [...groups.entries()].map(([label, items]) => ({ label, items }));
+  },
+
+  // The Lighting tab's drawing tools: zones the lighting is calculated over.
+  lightingTools() {
+    return [
+      { type: 'room', kind: 'room', name: 'Room / area', color: this.room.stroke, desc: 'Click the corners' },
+      { type: 'roomdetect', kind: 'roomdetect', name: 'Detect room', color: this.room.stroke, desc: 'Click inside a room' },
+      { type: 'outdoor', kind: 'room', name: 'Outdoor area', color: '#16a34a', desc: 'Car park, yard, sports field' },
+      { type: 'perimeter', kind: 'perimeter', name: 'Fence / perimeter', color: '#7c3aed', desc: 'Vertical lux along a line' },
+      { type: 'escape', kind: 'perimeter', name: 'Escape route', color: '#dc2626', desc: 'Emergency lux along the route' },
+    ];
   },
 
   // Canvas symbol renderer for a point element, in WORLD units (metres if

@@ -318,7 +318,8 @@ const PlanEngine = {
     for (const m of pm.measurements) this._drawMeasurement(ctx, m, sel.has(m.id));
 
     // Lux heatmap overlay (drawn above zones/routes, below tool ghosts)
-    if (typeof RoomCalc !== 'undefined') RoomCalc.draw(ctx, this.view.zoom);
+    // False colour and isolux belong to the Lighting tab's view of the plan.
+    if (typeof RoomCalc !== 'undefined' && typeof PlanMarkup !== 'undefined' && PlanMarkup.context === 'lighting') RoomCalc.draw(ctx, this.view.zoom);
     // Tool overlay (ghosts, rubber-bands, snap ring)
     if (typeof PlanTools !== 'undefined' && PlanTools.drawOverlay) PlanTools.drawOverlay(ctx, z);
     ctx.restore();

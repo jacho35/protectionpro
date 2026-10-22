@@ -431,15 +431,66 @@ const HELP_GUIDES = [
           { sel: '#plan-props', label: 'Properties of the whole selection' },
         ] } },
     { title: 'Make symbols bigger or smaller',
-      html: 'The <strong>Symbols ×</strong> box in the toolbar scales every symbol on the plan (0.25 to 5). A selected item also has its own <strong>Symbol scale ×</strong>, which multiplies with the plan-wide value. Drawing exports keep the standard size.',
-      shot: { file: 'plan-select-4.png', alt: 'The Symbols box in the toolbar and a symbol scale on a selected item',
+      html: 'The <strong>Symbols ×</strong> chip under the canvas scales every symbol on the plan (0.25 to 5). A selected item also has its own <strong>Symbol scale ×</strong>, which multiplies with the plan-wide value. Drawing exports keep the standard size.',
+      shot: { file: 'plan-select-4.png', alt: 'The Symbols chip under the canvas and a symbol scale on a selected item',
         setup: 'plan-scale', clip: '#plan-workspace',
         callouts: [
-          { sel: '#plan-symbol-scale', label: 'Plan-wide symbol size' },
+          { sel: '#plan-sym-chip', label: 'Plan-wide symbol size' },
           { sel: '#plan-props', label: 'Symbol scale for the selected item' },
         ] } },
   ],
   tips: ['Duplicate makes untagged copies of elements that are not linked to Demand.', 'Delete works on the whole selection.'],
+  related: [{ help: 'design-plan', label: 'Plan markup (site & floor plans)' }] },
+
+// ───────────────────────────────────────────────────────────────────────────
+{ id: 'plan-dxf', group: 'retic', title: 'Bring in a DXF at the right scale',
+  where: 'Plan ▸ Underlays', time: '5 min', phone: 'Works on a phone; the dialog stacks',
+  intro: 'A DXF that lands at the wrong size makes every length, area and cable run wrong. Before it lands you confirm its units and drawing scale, and you can check it against a length you know.',
+  steps: [
+    { title: 'Import it',
+      html: 'Switch the bar to <strong>Underlays</strong> and press <strong>Import plan or DXF…</strong>. Pick the <code>.dxf</code>. PDFs and images import the same way and are calibrated from two points.' },
+    { title: 'Confirm the units and the drawing scale',
+      html: '<strong>One drawing unit is</strong> starts on the units the file states (marked <em>from file</em>), or a guess from its size when it states none. <strong>Drawing scale</strong> is 1 : 1 for a normal CAD model; pick 1 : 50, 1 : 100… (or type your own) when the drawing was drawn at paper size. The size it will land at updates as you choose, and turns orange when it is implausible for a floor or site plan.',
+      shot: { file: 'plan-dxf-1.png', alt: 'The DXF import dialog with millimetres from the file, 1 : 1, and the size it lands at',
+        setup: 'plan-dxf-dialog', clip: '.dxfi-content',
+        callouts: [
+          { sel: '.dxfi-units', label: 'One drawing unit — the file’s own is marked' },
+          { sel: '.dxfi-form fieldset:nth-of-type(2) .dxfi-chips', label: 'Drawing scale, or your own 1 : N' },
+          { sel: '.dxfi-size', label: 'The size it will land at' },
+          { sel: '.dxfi-checks', label: 'Check against a known length afterwards' },
+        ] } },
+    { title: 'Check it against a known length',
+      html: 'With <strong>Check against a known length after import</strong> ticked, click the two ends of something you know (a grid line, a door, a wall) and type the real distance. The DXF is re-scaled to match; the floor scale of the other underlays is left alone.' },
+    { title: 'Move, align or change it later',
+      html: 'Each underlay has a card with show/hide and opacity. Pick its name and the properties panel offers <strong>Change units or scale…</strong> (the same dialog), <strong>Move</strong>, <strong>Align 2 points</strong>, <strong>Layers &amp; blocks</strong> and <strong>Remove from floor</strong>.',
+      shot: { file: 'plan-dxf-2.png', alt: 'Underlays mode with a DXF card picked and its actions in the properties panel',
+        setup: 'plan-underlays', clip: '#plan-workspace',
+        callouts: [
+          { sel: '.plan-mode-btn[data-mode="underlays"]', label: 'Underlays mode' },
+          { sel: '.plan-ul-card', label: 'Show, opacity — pick the name' },
+          { sel: '#plan-props', label: 'Units and scale, move, align, layers, remove' },
+        ] } },
+  ],
+  tips: ['DXFs drawn on the same coordinate grid line up with each other automatically.', 'A DXF with units sets the floor scale when the floor has none.'],
+  related: [{ help: 'design-plan', label: 'Plan markup (site & floor plans)' }] },
+
+// ───────────────────────────────────────────────────────────────────────────
+{ id: 'plan-place', group: 'retic', title: 'Place many devices at once',
+  where: 'Plan ▸ Draw', time: '3 min', phone: 'Tap a part, then use the bar over the plan',
+  intro: 'Pick a device and a bar over the plan sets how it is placed. The choice and its settings are remembered for each device type, so downlights can always fill an area and sockets always go along a wall.',
+  steps: [
+    { title: 'Pick a device',
+      html: 'In <strong>Draw</strong> mode, click a part in the panel on the left (type in <strong>Find a part</strong> to narrow the list). The placing bar appears over the plan.' },
+    { title: 'Choose how it is placed',
+      html: '<strong>One at a time</strong>: click for each one. <strong>Fill an area</strong>: drag a box from corner to corner and the columns × rows you set are spread across it. <strong>Along a line</strong>: click the points of a line, press <kbd>Enter</kbd>, and devices are placed every so many metres (or a set number of them), joined by a circuit route. The tool stays armed for the next one; <kbd>Esc</kbd> or <strong>Stop</strong> ends it.',
+      shot: { file: 'plan-place-1.png', alt: 'The placing bar with Fill an area chosen and 4 columns by 3 rows',
+        setup: 'plan-placebar', clip: '#plan-workspace',
+        callouts: [
+          { sel: '.plan-place-opt', label: 'How to place it', all: false },
+          { sel: '.plan-place-set', label: 'Its settings, remembered for this device' },
+        ] } },
+  ],
+  tips: ['On a building plan, a batch is tagged to the nearest board’s next free circuit.'],
   related: [{ help: 'design-plan', label: 'Plan markup (site & floor plans)' }] },
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -450,7 +501,7 @@ const HELP_GUIDES = [
     { title: 'Rough out the network in Demand',
       html: 'In <strong>Demand</strong>, <strong>Quick Build</strong> adds a number of kiosks with erven in one go, using the service and feeder cables and lengths you set. <strong>Feed from</strong> chooses the minisub and <strong>Daisy-chain</strong> feeds each kiosk from the one before. You can also add kiosks and erven by hand.' },
     { title: 'Push the plan into Demand',
-      html: 'Draw the network on the <strong>Plan</strong>, then press <strong>→ Push to Schedules</strong>. Minisubs, kiosks, erven, route lengths and cables become Demand rows. Push again at any time: it updates rows rather than adding duplicates.' },
+      html: 'Draw the network on the <strong>Plan</strong>, then switch the bar to <strong>Output</strong> and press <strong>Push to Demand schedules</strong>. Minisubs, kiosks, erven, route lengths and cables become Demand rows. Push again at any time: it updates rows rather than adding duplicates.' },
     { title: 'See and change the link',
       html: 'Select a kiosk, erf or minisub on the plan. <strong>From Demand</strong> shows what Demand says about it (load, cable, volt drop). <strong>Linked Demand item</strong> lists the unlinked rows of its kind, so an item drawn after the row existed can be attached, or detached. Once linked, editing a name or erf number in Demand updates the label on the plan.',
       shot: { file: 'demand-plan-1.png', alt: 'A kiosk selected on the plan with the From Demand panel and the link picker',
@@ -458,7 +509,7 @@ const HELP_GUIDES = [
         callouts: [
           { sel: '.plan-demand', label: 'What Demand says about this item' },
           { sel: '#plan-props select', label: 'Link or unlink a Demand row' },
-          { sel: '[data-action="push"]', label: 'Push to Schedules' },
+          { sel: '.plan-mode-btn[data-mode="output"]', label: 'Output › Push to Demand schedules' },
         ] } },
     { title: 'Change cables on many erven at once',
       html: 'In Demand, tick erven (<kbd>Shift</kbd>+click for a range), a kiosk’s header box for all its erven and its feeder, or a kiosk’s <em>change feeder</em> box. A bar docks at the bottom with pickers for <strong>Service cable</strong>, <strong>Earth cable</strong> and <strong>LV feeder cable</strong>, plus <strong>Phase</strong> and a quick rename. A picker left on <em>leave unchanged</em> touches nothing. <strong>Apply</strong> is one undo step and updates the drawn routes.',
@@ -1610,7 +1661,7 @@ const HELP_GUIDE_LINKS = [
       if (tab === 'grid' && typeof SchMobile !== 'undefined' && SchMobile.isPhone()) return 'db-phone';
       return { grid: 'db-schedule', drawing: 'db-single-line', ga: 'db-ga' }[tab] || 'db-schedule';
     } },
-  { host: '#plan-toolbar', guide: 'plan-select' },
+  { host: '#plan-toolbar', guide: () => (typeof PlanMarkup === 'undefined' ? 'plan-select' : PlanMarkup.mode === 'underlays' ? 'plan-dxf' : (typeof PlanTools !== 'undefined' && PlanTools.active && /^(place|array|devpath)$/.test(PlanTools.active.id)) ? 'plan-place' : 'plan-select') },
   { after: 'button[data-action="diagram"]', guide: 'demand-plan' },
   { host: '.sl-toolbar', guide: () => (typeof StreetLight !== 'undefined' && StreetLight._view === 'design' ? 'road-lighting' : 'street-light') },
   { host: '.tu-head', guide: 'trip-unit' },

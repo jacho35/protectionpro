@@ -169,7 +169,7 @@ const RoomCalc = {
     const f = PlanEngine.factor();
     if (!f) { UI.alert('Calibrate the plan first — the layout needs real distances.'); return; }
     const ph = PhotoLib.get(lumId);
-    if (!ph) { UI.toast('Pick a luminaire from the library first (💡 Luminaires).', 'info'); return; }
+    if (!ph) { UI.toast('Pick a luminaire from the library first (Luminaire library on the Lighting tab).', 'info'); return; }
     const { req } = this.buildRoom(room, f);
     req.luminaires = [];
     if (UI.setBusy) UI.setBusy(true, 'Finding layouts…');
@@ -229,7 +229,7 @@ const RoomCalc = {
     const lay = this.layouts[room.id];
     const libs = PhotoLib.list();
     const cur = (lay && lay.lumId) || (libs[0] && libs[0].id) || '';
-    const sel = `<select data-rc-lum style="width:100%">${libs.length ? libs.map(p => `<option value="${escHtml(p.id)}"${p.id === cur ? ' selected' : ''}>${escHtml(PhotoLib.label(p))}</option>`).join('') : '<option value="">Add a luminaire in 💡 Luminaires first</option>'}</select>`;
+    const sel = `<select data-rc-lum style="width:100%">${libs.length ? libs.map(p => `<option value="${escHtml(p.id)}"${p.id === cur ? ' selected' : ''}>${escHtml(PhotoLib.label(p))}</option>`).join('') : '<option value="">Add a luminaire in the Luminaire library first</option>'}</select>`;
     let cards = '';
     if (lay) {
       cards = lay.cands.map((c, i) => {

@@ -2,9 +2,11 @@
  *
  * Every room, outdoor area, perimeter and escape route of the project — across
  * all floors — in one list, with what each was calculated to and a verdict.
- * The calculations themselves are Plan's (RoomCalc / AreaCalc / EmergCalc);
- * this lists them, runs them all (stepping through the floors, then returning
- * to the one you were on), jumps to an item on its floor, and makes the PDF.
+ * Two views: Plan (the Plan tab's canvas re-hosted here, with the lighting
+ * tools — rooms, areas, fences, escape routes, fittings — and the room
+ * lighting panel) and Table (every zone on every floor). The calculations are
+ * RoomCalc / AreaCalc / EmergCalc; this runs them all (stepping through the
+ * floors, then returning to the one you were on) and makes the PDF.
  *
  * Results are session-only, like the rest of the lighting calculations: after
  * opening a project, press Calculate all. A room on the floor in view whose
@@ -26,22 +28,121 @@ const LightingWS = {
     } catch (_) { return false; }
   },
 
+  // 'plan': the floor plan with the lighting tools (the Plan tab's canvas,
+  // re-hosted here); 'table': every zone on every floor with its results.
+  view: 'plan',
+
   activate() {
     this._active = true;
     this._mount();
-    this.render();
+    this.setView(this.view);
   },
-  deactivate() { this._active = false; },
-  refresh() { if (this._active) this.render(); },
+  deactivate() {
+    this._active = false;
+    if (typeof PlanMarkup !== 'undefined' && PlanMarkup._active && PlanMarkup.context === 'lighting') PlanMarkup.deactivate();
+  },
+  refresh() {
+    if (!this._active) return;
+    if (this.view === 'table') this.render();
+    else { this._renderBar(); if (typeof PlanUI !== 'undefined') PlanUI.renderPalette(); }
+  },
 
   _mount() {
     if (this._built) return;
     const host = document.getElementById('lighting-workspace');
     if (!host) return;
     this._built = true;
-    host.innerHTML = `<aside class="lw-rail"><div class="lw-rail-head">Show</div><div class="lw-rail-list" id="lw-rail"></div></aside>
-      <section class="lw-main" id="lw-main"></section>`;
+    host.innerHTML = `<div class="lw-bar" id="lw-bar"></div>
+      <div class="lw-body">
+        <div class="lw-plan" id="lw-plan"></div>
+        <div class="lw-tableview" id="lw-tableview" hidden>
+          <aside class="lw-rail"><div class="lw-rail-head">Show</div><div class="lw-rail-list" id="lw-rail"></div></aside>
+          <section class="lw-main" id="lw-main"></section>
+        </div>
+      </div>`;
     host.addEventListener('click', (e) => this._onClick(e));
+    host.addEventListener('change', (e) => {
+      if (e.target.id === 'lw-floor-select') { PlanMarkup.setActiveFloor(e.target.value); this._renderBar(); }
+      else if (e.target.id === 'lw-show') {
+        RoomCalc.enabled = e.target.value !== 'off';
+        PlanEngine.requestDraw({ fg: true });
+      }
+    });
+  },
+
+  setView(view) {
+    this.view = view === 'table' ? 'table' : 'plan';
+    const plan = document.getElementById('lw-plan'), table = document.getElementById('lw-tableview');
+    if (!plan || !table) return;
+    plan.hidden = this.view !== 'plan';
+    table.hidden = this.view !== 'table';
+    if (this.view === 'plan') PlanMarkup.activate(plan, 'lighting');
+    else {
+      if (PlanMarkup._active && PlanMarkup.context === 'lighting') PlanMarkup.deactivate();
+      this.render();
+    }
+    this._renderBar();
+  },
+
+  _renderBar() {
+    const bar = document.getElementById('lw-bar');
+    if (!bar) return;
+    const plan = this.view === 'plan';
+    const I = (n) => PlanMarkup._icon(n);
+    const pm = AppState.planMarkup;
+    const floors = (pm.floors || []).slice().sort((a, b) => (b.level || 0) - (a.level || 0));
+    const n = this._items().length;
+    bar.innerHTML = `
+      ${plan ? `<div class="plan-tb-group plan-mobile-toggle">
+        <button class="plan-tb-btn" data-lw-act="toggle-palette">☰ Tools</button>
+        <button class="plan-tb-btn" data-lw-act="toggle-props">✎ Props</button></div>` : ''}
+      <div class="plan-modes" role="group" aria-label="View">
+        <button type="button" class="plan-mode-btn${plan ? ' active' : ''}" data-lw-view="plan" aria-pressed="${plan}">Plan</button>
+        <button type="button" class="plan-mode-btn${plan ? '' : ' active'}" data-lw-view="table" aria-pressed="${!plan}">Table</button>
+      </div>
+      ${plan ? `<div class="plan-tb-group">
+        <button class="plan-tool-btn${PlanTools.active && PlanTools.active.id === 'select' ? ' active' : ''}" data-tool="select" title="Select / move (V)">${I('select')} Select</button>
+        <button class="plan-tb-btn plan-icon-btn" data-lw-act="undo" aria-label="Undo" title="Undo (Ctrl+Z)">${I('undo')}</button>
+        <button class="plan-tb-btn plan-icon-btn" data-lw-act="redo" aria-label="Redo" title="Redo (Ctrl+Shift+Z)">${I('redo')}</button>
+        <button class="plan-tb-btn" data-lw-act="fit" title="Zoom to fit">${I('fit')} Fit</button>
+      </div>` : ''}
+      <div class="plan-tb-spacer"></div>
+      ${plan && floors.length > 1 ? `<label class="plan-tb-field">Floor <select id="lw-floor-select">${floors.map(f =>
+        `<option value="${escHtml(f.id)}"${f.id === pm.activeFloorId ? ' selected' : ''}>${escHtml(f.name)} (L${f.level})</option>`).join('')}</select></label>` : ''}
+      ${plan ? `<label class="plan-tb-field">Show <select id="lw-show" class="plan-tb-select"><option value="on"${RoomCalc.enabled ? ' selected' : ''}>Results (false colour)</option><option value="off"${RoomCalc.enabled ? '' : ' selected'}>Plan only</option></select></label>` : ''}
+      <button class="plan-tb-btn" data-lw="photolib">Luminaire library…</button>
+      <button class="plan-tb-btn" data-lw="pdf"${n ? '' : ' disabled'}>PDF report</button>
+      <button class="btn-primary" data-lw="calc"${n ? '' : ' disabled'}>Calculate all</button>`;
+  },
+
+  // From the Plan tab ("Lighting for this room…") or a table row: show the
+  // zone on this tab's plan, selected.
+  openOnPlan(id, floorId) {
+    if (typeof Workspaces !== 'undefined' && !Workspaces.isVisible('lighting')) {
+      AppState.extraWorkspaces = (AppState.extraWorkspaces || []).concat(['lighting']);
+      if (Workspaces.refresh) Workspaces.refresh();
+    }
+    this.view = 'plan';
+    switchWorkspace('lighting');
+    const pm = AppState.planMarkup;
+    if (floorId && floorId !== pm.activeFloorId) PlanMarkup.setActiveFloor(floorId);
+    const room = (AppState.planMarkup.rooms || []).find(r => r.id === id);
+    if (!room) return;
+    PlanMarkup.selectOnly(id);
+    if (PlanEngine.zoomToPoints) PlanEngine.zoomToPoints(room.points);
+    PlanUI.renderPalette();
+    PlanEngine.requestDraw({ all: true });
+    this._renderBar();
+  },
+
+  // The verdict shown beside a zone in the plan view's list.
+  verdictOf(room) {
+    const pm = AppState.planMarkup;
+    const fl = (pm.floors || []).find(f => f.id === pm.activeFloorId) || {};
+    try {
+      const v = this._row(room, room.kind || 'room', fl, true, PlanEngine.factor()).verdict;
+      return v === 'Not calculated' ? '' : v;
+    } catch (_) { return ''; }
   },
 
   // ─── Data ───
@@ -176,13 +277,9 @@ const LightingWS = {
         <td class="num">${em}${r.em && r.em.ev ? ' <small>lx min</small>' : ''}</td><td class="num">${num(r.uo, 2)}</td><td class="num">${glare}</td>
         <td class="num">${num(r.wm2, 1)}</td><td>${escHtml(r.emText)}</td>
         <td class="${vcls}"><b>${r.verdict}</b>${r.verdictNote ? ` <small>(${r.verdictNote})</small>` : ''}${r.failing.length ? `<small class="lw-why">${escHtml(r.failing.join(', '))}</small>` : ''}</td>
-        <td><button class="lw-link" data-lw-locate="${escHtml(r.id)}" data-lw-floor="${escHtml(r.floorId)}">Locate</button></td></tr>`;
+        <td><button class="lw-link" data-lw-locate="${escHtml(r.id)}" data-lw-floor="${escHtml(r.floorId)}">Show on plan</button></td></tr>`;
     };
-    main.innerHTML = `<div class="lw-head"><h1>Lighting</h1>
-        <div class="lw-actions">
-          <button class="btn-small" data-lw="photolib">Photometry library</button>
-          <button class="btn-small" data-lw="pdf"${items.length ? '' : ' disabled'}>PDF report</button>
-          <button class="btn-primary" data-lw="calc"${items.length ? '' : ' disabled'}>Calculate all</button></div></div>
+    main.innerHTML = `<div class="lw-head"><h1>Lighting</h1></div>
       <div class="lw-tiles">
         <div class="lw-tile"><span>Pass</span><b class="ok">${pass}</b></div>
         <div class="lw-tile"><span>Fail</span><b class="bad">${fail}</b></div>
@@ -193,11 +290,17 @@ const LightingWS = {
       ${items.length ? `<div class="lw-tablewrap"><table class="lw-table"><thead><tr>
         ${th('name', 'Room / area')}${th('floor', 'Floor')}${th('kind', 'Type')}<th>Task</th>${th('em', 'Ēm / target (lx)', 'num')}${th('uo', 'U₀', 'num')}<th class="num">UGR / GR</th>${th('wm2', 'W/m²', 'num')}<th>Emergency</th>${th('verdict', 'Verdict')}<th></th>
         </tr></thead><tbody>${shown.map(rowHtml).join('') || '<tr><td colspan="11" class="muted">Nothing matches this filter.</td></tr>'}</tbody></table></div>`
-        : `<div class="lw-empty"><p>No rooms, areas or routes yet.</p><p>In Plan, click inside a room with <b>Detect room</b> (or draw one), set its task, place or auto-layout fittings and calculate. They all appear here.</p></div>`}
+        : `<div class="lw-empty"><p>No rooms, areas or routes yet.</p><p>In the <b>Plan</b> view, click inside a room with <b>Detect room</b> (or draw one), set its task, place or auto-layout fittings and calculate. They all appear here.</p></div>`}
       <p class="lw-note">Results belong to this session: open a project and press Calculate all. Targets follow the project's lighting standard (EN 12464-1 / EN 1838, or SANS 10114-1 / -2); outdoor areas use EN 12464-2.</p>`;
   },
 
   _onClick(e) {
+    const v = e.target.closest('[data-lw-view]');
+    if (v) { this.setView(v.dataset.lwView); return; }
+    const t = e.target.closest('#lw-bar [data-tool]');
+    if (t) { PlanTools.set(t.dataset.tool); return; }
+    const la = e.target.closest('[data-lw-act]');
+    if (la) { PlanMarkup.runAction(la.dataset.lwAct); return; }
     const f = e.target.closest('[data-lw-filter]');
     if (f) { this.filter = f.dataset.lwFilter; this.render(); return; }
     const s = e.target.closest('[data-lw-sort]');
@@ -211,17 +314,7 @@ const LightingWS = {
     else if (a.dataset.lw === 'pdf') { if (typeof LightReport !== 'undefined') LightReport.export(); }
   },
 
-  locate(id, floorId) {
-    switchWorkspace('plan');
-    const pm = AppState.planMarkup;
-    if (floorId && floorId !== pm.activeFloorId) PlanMarkup.setActiveFloor(floorId);
-    const room = (pm.rooms || []).find(r => r.id === id);
-    if (!room) return;
-    PlanMarkup.selectOnly(id);
-    PlanMarkup.refreshProps();
-    if (PlanEngine.zoomToPoints) PlanEngine.zoomToPoints(room.points);
-    PlanEngine.requestDraw({ all: true });
-  },
+  locate(id, floorId) { this.openOnPlan(id, floorId); },
 
   // Every floor in turn, then back to the one that was open.
   async calcAll() {
@@ -249,6 +342,8 @@ const LightingWS = {
       if (UI.setBusy) UI.setBusy(false);
     }
     if (stats.uncal.length) UI.toast(`Not calibrated, so not calculated: ${stats.uncal.join(', ')}.`, 'warn', 7000);
-    this.render();
+    if (this.view === 'table') this.render();
+    else { if (typeof PlanUI !== 'undefined') { PlanUI.renderPalette(); PlanUI.renderProps(); } PlanEngine.requestDraw({ all: true }); }
+    this._renderBar();
   },
 };
