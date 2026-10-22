@@ -95,9 +95,24 @@ const PlanImages = {
       if (typeof PlanEngine !== 'undefined') { PlanEngine.zoomFit(); }
     } catch (e) {
       UI.alert('Plan import failed: ' + (e && e.message ? e.message : e));
+      return;
     } finally {
       if (typeof UI !== 'undefined' && UI.setBusy) UI.setBusy(false);
     }
+    this._warnAutoScale();
+  },
+
+  // A floor scaled automatically (a sports field placed on a blank plan) has
+  // no real scale: the drawing just imported must be calibrated, or what is
+  // drawn on it is measured at a made-up scale.
+  _warnAutoScale() {
+    const s = AppState.planMarkup.scale;
+    if (!s || s.source !== 'auto') return;
+    UI.alert('This floor\'s scale was set automatically when a sports field was placed on the blank plan, so the drawing you just imported is not to scale.\n\n'
+      + 'Calibrate it now: click the scale chip at the bottom of the plan, then two points on the drawing a known distance apart. '
+      + 'You will be asked whether the field and anything else already drawn keep their size in metres.\n\n'
+      + 'Until then, lux results on this floor use the automatic scale, not the drawing\'s.',
+      { title: 'Calibrate the imported plan' });
   },
 
   // ─── PDF import (pdf.js) ───
@@ -141,7 +156,9 @@ const PlanImages = {
       if (typeof PlanEngine !== 'undefined') PlanEngine.zoomFit();
     } catch (e) {
       UI.alert('PDF import failed: ' + (e && e.message ? e.message : e));
+      return;
     }
+    this._warnAutoScale();
   },
 
   // Rasterize one PDF page to a PNG blob at PDF_SCALE, capped at MAX_DIM.

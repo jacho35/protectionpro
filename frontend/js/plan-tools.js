@@ -654,11 +654,44 @@ PlanTools.register({
       PlanTools.set('select');
       return;
     }
-    AppState.planMarkup.scale = { p1, p2, realDist, pxDist, factor: realDist / pxDist };
+    const old = AppState.planMarkup.scale;
+    const factor = realDist / pxDist;
+    // Calibrating a floor that was scaled automatically (a sports field on a
+    // blank plan): what was drawn can keep its size in metres, or stretch
+    // with the new scale like everything else on a plan.
+    if (old && old.source === 'auto' && old.factor && Math.abs(old.factor / factor - 1) > 0.001 && this._hasDrawn()) {
+      const keep = await UI.confirm('What is already on this floor was drawn at the automatic scale set on the blank plan.\n\n'
+        + 'Keep it at its size in metres (the sports field stays 105 × 68 m, say) and move it onto the drawing afterwards, '
+        + 'or let it scale with the drawing?', { title: 'Calibrating an automatic scale', okText: 'Keep its size in metres', cancelText: 'Scale with the drawing' });
+      if (keep) this._rescaleDrawn(old.factor / factor);
+    }
+    AppState.planMarkup.scale = { p1, p2, realDist, pxDist, factor };
     PlanMarkup.snapshot(); PlanMarkup.markDirty();
     PlanMarkup.updateScaleReadout();
     PlanEngine.requestDraw({ all: true });
     PlanTools.set('select');
+  },
+
+  // The floor's own markup (not the underlays): zones, devices, routes, text.
+  _drawnLists() {
+    const pm = AppState.planMarkup;
+    return ['rooms', 'elements', 'routes', 'trenches', 'crossings', 'texts', 'measurements'].map(k => pm[k]).filter(Array.isArray);
+  },
+  _hasDrawn() { return this._drawnLists().some(a => a.length); },
+  // Scale every drawn item by k about their common centre, so each keeps its
+  // size in metres when the floor's metres-per-pixel changes by 1/k.
+  _rescaleDrawn(k) {
+    const pts = [];
+    const each = (fn) => {
+      for (const list of this._drawnLists()) for (const it of list) {
+        if (Array.isArray(it.points)) for (const p of it.points) if (p && isFinite(p.x) && isFinite(p.y)) fn(p);
+        if (isFinite(it.x) && isFinite(it.y)) fn(it);
+      }
+    };
+    each(p => pts.push(p));
+    if (!pts.length) return;
+    const cx = pts.reduce((a, p) => a + p.x, 0) / pts.length, cy = pts.reduce((a, p) => a + p.y, 0) / pts.length;
+    each(p => { p.x = cx + (p.x - cx) * k; p.y = cy + (p.y - cy) * k; });
   },
 
   onKey(e) { if (e.key === 'Escape') { this._p1 = null; PlanEngine.requestDraw({ fg: true }); return true; } return false; },
