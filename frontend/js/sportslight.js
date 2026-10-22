@@ -372,10 +372,27 @@ const SportsCalc = {
     return Math.max(10000, Math.ceil(flux / (per * a.n) / 5000) * 5000);
   },
 
+  // A floor with no drawing under it has nothing to calibrate against: give
+  // it a scale (about 180 m across the view, so a full pitch and its masts
+  // fit) and say so. A floor with an image or DXF still needs calibrating.
+  _autoScale() {
+    const pm = AppState.planMarkup;
+    if ((pm.plans || []).length || (pm.dxfs || []).length) return null;
+    const visW = (PlanEngine.cssW || 1000) / ((PlanEngine.view && PlanEngine.view.zoom) || 1);
+    const raw = 180 / visW;
+    const p = Math.pow(10, Math.floor(Math.log10(raw)));
+    const factor = Math.round(raw / p * 10) / 10 * p;   // two significant figures
+    pm.scale = { factor, source: 'auto' };
+    PlanMarkup.markDirty();
+    if (PlanMarkup.updateScaleReadout) PlanMarkup.updateScaleReadout();
+    UI.toast('Blank plan: set to scale automatically. Calibrate if you add a drawing under the field.', 'info', 6000);
+    return factor;
+  },
+
   // opts: { centre: plan point } for a new field, or { room } to replace a field's masts.
   setup(opts) {
-    const f = PlanEngine.factor();
-    if (!f) { UI.alert('Calibrate the plan first — a sports field is drawn to scale.'); return; }
+    const f = PlanEngine.factor() || this._autoScale();
+    if (!f) { UI.alert('Calibrate the plan first: a sports field is drawn to scale, and this floor has a drawing whose scale is not known.'); return; }
     const room = opts.room || null;
     const R = room ? this.read(room) : null;
     const fr = room ? this.frame(room, f) : null;
