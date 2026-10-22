@@ -53,6 +53,9 @@ const SportsCalc = {
   LM_PER_W: 125,
   NOTE: 'Provisional targets — check them against EN 12193 before issue. Every number is editable.',
 
+  // The Lighting tab's 3D view, when it shows a field, follows every change made here.
+  _show3D() { if (typeof Light3D !== 'undefined' && Light3D._active) Light3D.render(); },
+
   // A flood's output % as a number (project data may carry anything).
   _pct(v) { return v == null || v === '' ? 100 : this._num(v, 100, 0, 100); },
   _num(v, d, lo, hi) { const x = parseFloat(v); return Number.isFinite(x) ? Math.max(lo, Math.min(hi, x)) : d; },
@@ -255,6 +258,7 @@ const SportsCalc = {
     PlanEngine.requestDraw({ fg: true });
     PlanMarkup.refreshProps();
     if (this._resultsRoom && list.some(r => r.id === this._resultsRoom)) this._renderResults();
+    this._show3D();
   },
 
   // ─── Masts: layouts, first aiming, the optimiser ───
@@ -347,6 +351,7 @@ const SportsCalc = {
       for (const a of om.floods) { const t = fl.get(a.id); if (t) { t.ax = a.ax; t.ay = a.ay; } }
     }
     PlanMarkup.snapshot(); PlanMarkup.markDirty();
+    this._show3D();
     if (!quiet) UI.toast(`Aiming: U₂ ${out.before.U2.toFixed(2)} → ${out.after.U2.toFixed(2)}, Ēh ${Math.round(out.after.Eav)} lx (this field's own floods only).`, 'success', 6000);
     return out;
   },
@@ -461,6 +466,7 @@ const SportsCalc = {
       PlanMarkup.snapshot(); PlanMarkup.markDirty(); PlanMarkup.refreshProps();
       if (typeof PlanUI !== 'undefined') PlanUI.renderPalette();
       PlanEngine.requestDraw({ all: true });
+      this._show3D();
       if (st.optimise) {
         const o = await this.optimise(target, true);
         await this.run([target]);
@@ -496,6 +502,7 @@ const SportsCalc = {
     return `<div class="rl-room" data-sf-room="${escHtml(room.id)}" style="margin-top:12px;border-top:1px solid var(--border,#d9dee4);padding-top:10px">
       <div class="plan-props-title" style="font-size:13px">Sports lighting${fr ? ` — ${fr.L.toFixed(1)} × ${fr.W.toFixed(1)} m` : ''}</div>
       ${RoomLighting.typeSelect(room)}
+      ${typeof Light3D !== 'undefined' ? '<button type="button" class="plan-circuit-btn" data-sf-3d style="margin:2px 0 6px">View in 3D — masts, aiming, stands, rendered light</button>' : ''}
       <label class="plan-field"><span>Sport</span><select data-sf="sport" style="width:100%">${Object.entries(SPORTS_FIELDS).map(([k, s]) => `<option value="${k}"${k === L.sport ? ' selected' : ''}>${escHtml(s.name)}</option>`).join('')}</select></label>
       <label class="plan-field"><span>Lighting class</span><select data-sf="cls" style="width:100%">${Object.entries(this.CLASSES).map(([k, n]) => `<option value="${k}"${k === L.cls ? ' selected' : ''}>${escHtml(n)}</option>`).join('')}</select></label>
       <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px">
@@ -604,7 +611,8 @@ const SportsCalc = {
       const room = roomOf();
       if (!room) return;
       const hit = (s) => e.target.closest(s);
-      if (hit('[data-sf-run]')) this.run([room]);
+      if (hit('[data-sf-3d]') && typeof LightingWS !== 'undefined') LightingWS.open3D(room.id);
+      else if (hit('[data-sf-run]')) this.run([room]);
       else if (hit('[data-sf-results]')) this.openResults(room);
       else if (hit('[data-sf-layout]')) this.setup({ room });
       else if (hit('[data-sf-opt]')) this.optimise(room).then(o => { if (o) this.run([room]); });
@@ -689,7 +697,7 @@ const SportsCalc = {
         </div></div>`;
     };
     render();
-    const changed = () => { PlanMarkup.markDirty(); PlanEngine.requestDraw({ fg: true }); };
+    const changed = () => { PlanMarkup.markDirty(); PlanEngine.requestDraw({ fg: true }); this._show3D(); };
     const close = (calc) => {
       document.removeEventListener('keydown', onKey, true);
       ov.remove();

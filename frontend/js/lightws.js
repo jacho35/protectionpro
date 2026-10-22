@@ -143,7 +143,7 @@ const LightingWS = {
       ${plan ? `<label class="plan-tb-field">Show <select id="lw-show" class="plan-tb-select"><option value="on"${RoomCalc.enabled ? ' selected' : ''}>Results (false colour)</option><option value="off"${RoomCalc.enabled ? '' : ' selected'}>Plan only</option></select></label>` : ''}
       <button class="plan-tb-btn" data-lw="photolib">Luminaire library…</button>
       <button class="plan-tb-btn" data-lw="pdf">PDF report</button>
-      ${v3 ? '<button class="btn-primary" data-l3="calc">Calculate room</button>'
+      ${v3 ? `<button class="btn-primary" data-l3="calc">${Light3D.calcLabel()}</button>`
         : '<button class="btn-primary" data-lw="calc">Calculate all</button>'}`;
   },
 

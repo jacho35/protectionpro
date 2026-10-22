@@ -130,7 +130,7 @@ $$LENI=\frac{\sum P\,F_C\,\big(t_D F_O F_D+t_N F_O\big)}{1000\,A}\ \ [\text{kWh/
 
 { id: 'design-sportslight', group: 'design', title: 'Sports field lighting (floodlit pitches and courts)',
   std: 'Lighting ▸ Plan ▸ Sports field · EN 12193 classes (provisional) · CIE 112 · EN 12464-2 grid',
-  kw: 'sports field pitch court stadium stand spectator spill aerial ball flight football soccer rugby hockey tennis netball floodlight mast aiming aim point tilt heading class I II III en 12193 uniformity u1 u2 glare gr cie 112 vertical illuminance camera television tv players optimise aiming',
+  kw: 'sports field pitch court stadium 3d three dimensional render stand spectator spill aerial ball flight football soccer rugby hockey tennis netball floodlight mast aiming aim point tilt heading class I II III en 12193 uniformity u1 u2 glare gr cie 112 vertical illuminance camera television tv players optimise aiming',
   html: String.raw`
 <p>A <strong>sports field</strong> is a lighting zone on the Lighting tab's plan: the playing area as a rectangle, with its masts and floodlights. Masts and aim points are kept in the field's own metres (x along the length from the first corner, y across), so moving or turning the field takes them along.</p>
 <h4>The workflow</h4>
@@ -140,6 +140,8 @@ $$LENI=\frac{\sum P\,F_C\,\big(t_D F_O F_D+t_N F_O\big)}{1000\,A}\ \ [\text{kWh/
 <li><strong>Aim.</strong> Each flood starts aimed at a point of an even spread over the pitch, its mast taking the points nearest it. <em>Optimise aiming</em> then moves the aim points until the horizontal illuminance is even (below). <em>Aim…</em> on a mast opens its section and its floods: aim x / y, luminaire, output %, and the throw, tilt and direction that follow. <em>Mirror to opposite mast</em> copies the aiming across the centre line.</li>
 <li><strong>Calculate</strong> and open <em>Results…</em>: the pitch in false colour with the value at every grid point, the checks, the glare observers and the vertical illuminance. The field is also in the Lighting table and the PDF report.</li>
 </ol>
+<h4>In 3D</h4>
+<p><em>View in 3D</em> on the field (or the Lighting tab's <em>3D</em> view, picking the field) shows the pitch with its markings, the masts with their floods turned to their aim points, the stands raked from the front row to the back, and TV cameras. Drag to orbit; drag a mast or camera to move it (its floods stay aimed at the same points). Click a mast to change its height, its output or open <em>Aim floods…</em> — its floods' tilts are listed, any over the limit in red. Click a stand to change its size and rake. <em>Light cones</em> draws every flood's aim line. <em>False colour</em> paints the pitch and the seats on one scale, and with <em>Aerial layers</em> ticked the aerial zone at its heights; <em>Rendered light</em> shows the pitch and the seats at night as bright as they look (illuminance × reflectance), the floods glowing. The floods are drawn in rows on a headframe; the calculation puts them all at the mast top.</p>
 <h4>What is calculated</h4>
 <p>Direct light only. A flood at height $h$ aimed at a point a horizontal distance $d$ away is tilted $\tan^{-1}(d/h)$ from straight down towards it. Horizontal illuminance at the centres of an $n_x\times n_y$ grid over the playing area, maintained (× MF):</p>
 $$E_h=MF\sum_i\frac{I_i(C,\gamma)\cos\theta_i}{d_i^{2}},\qquad U_1=\frac{E_{min}}{E_{max}},\qquad U_2=\frac{E_{min}}{\bar E_h}$$
