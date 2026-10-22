@@ -53,6 +53,8 @@ const SportsCalc = {
   LM_PER_W: 125,
   NOTE: 'Provisional targets — check them against EN 12193 before issue. Every number is editable.',
 
+  // A flood's output % as a number (project data may carry anything).
+  _pct(v) { return v == null || v === '' ? 100 : this._num(v, 100, 0, 100); },
   _num(v, d, lo, hi) { const x = parseFloat(v); return Number.isFinite(x) ? Math.max(lo, Math.min(hi, x)) : d; },
 
   // ─── Settings ───
@@ -152,7 +154,7 @@ const SportsCalc = {
         const a = this.angles(M, h, this.toWorld(fr, +fl.ax || 0, +fl.ay || 0));
         out.push({
           id: `${room.id}/${m.id}/${fl.id}`, x: +M.x.toFixed(4), y: +M.y.toFixed(4), h, rotate: +a.rotate.toFixed(4), tilt: +a.tilt.toFixed(4),
-          photometryId: fl.photoId, fluxPct: fl.fluxPct != null && fl.fluxPct !== '' ? Number(fl.fluxPct) : 100, fieldId: room.id,
+          photometryId: fl.photoId, fluxPct: this._pct(fl.fluxPct), fieldId: room.id,
         });
       }
     }
@@ -291,7 +293,7 @@ const SportsCalc = {
       id: m.id, x: +m.x || 0, y: +m.y || 0, h: +m.h || 20,
       floods: (m.floods || []).filter(fl => PhotoLib.get(fl.photoId)).map(fl => {
         photometry[fl.photoId] = PhotoLib.get(fl.photoId);
-        return { id: fl.id, ax: +fl.ax || 0, ay: +fl.ay || 0, photometryId: fl.photoId, fluxPct: fl.fluxPct != null && fl.fluxPct !== '' ? Number(fl.fluxPct) : 100 };
+        return { id: fl.id, ax: +fl.ax || 0, ay: +fl.ay || 0, photometryId: fl.photoId, fluxPct: this._pct(fl.fluxPct) };
       }),
     }));
     if (!masts.some(m => m.floods.length)) { UI.toast('Add floodlights with a library luminaire first.', 'info'); return null; }
@@ -589,7 +591,7 @@ const SportsCalc = {
             <td><input type="number" data-fl="ax" value="${+fl.ax || 0}" step="0.5" aria-label="F${i + 1} aim x"></td>
             <td><input type="number" data-fl="ay" value="${+fl.ay || 0}" step="0.5" aria-label="F${i + 1} aim y"></td>
             <td><select data-fl="photoId" aria-label="F${i + 1} luminaire">${opts(fl.photoId)}</select></td>
-            <td><input type="number" data-fl="fluxPct" value="${fl.fluxPct != null && fl.fluxPct !== '' ? fl.fluxPct : 100}" min="0" max="100" step="5" aria-label="F${i + 1} output %"></td>
+            <td><input type="number" data-fl="fluxPct" value="${this._pct(fl.fluxPct)}" min="0" max="100" step="5" aria-label="F${i + 1} output %"></td>
             <td class="num">${Math.hypot(d, h).toFixed(1)}</td><td class="num"><b>${tilt.toFixed(1)}</b></td><td class="num">${dir.toFixed(0)}</td>
             <td><button type="button" class="btn-small" data-sf-flrm aria-label="Remove F${i + 1}">×</button></td></tr>`;
         }).join('');
