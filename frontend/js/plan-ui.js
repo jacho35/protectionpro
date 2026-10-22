@@ -34,7 +34,7 @@ const PlanUI = {
   // kind → the tool id that draws it; disabled until that tool is registered.
   _toolFor(kind) {
     return { element: 'place', route: 'route', trench: 'trench',
-      crossing: 'crossing', text: 'text', measurement: 'measurement', room: 'room' }[kind];
+      crossing: 'crossing', text: 'text', measurement: 'measurement', room: 'room', roomdetect: 'roomdetect' }[kind];
   },
 
   renderPalette() {
@@ -293,6 +293,7 @@ const PlanUI = {
   // ─── Properties ───
   renderProps() {
     const el = this.propsEl; if (!el) return;
+    if (typeof PlanTools !== 'undefined' && PlanTools.active && PlanTools.active.id === 'roomdetect' && typeof PlanRoomDetect !== 'undefined') { PlanRoomDetect.renderOptions(el); return; }
     const ids = [...PlanMarkup.selectedIds];
     if (ids.length === 0) { el.innerHTML = `<div class="plan-props-empty">Select an item to edit its properties.</div>`; return; }
     if (ids.length > 1) { this._renderBulk(el, ids); return; }
