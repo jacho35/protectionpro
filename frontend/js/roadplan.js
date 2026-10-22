@@ -733,7 +733,40 @@ const RoadPlan = {
       UI.alert('DXF import failed: ' + (e && e.message ? e.message : e)); return;
     } finally { UI.setBusy && UI.setBusy(false); }
     if (data.mode === 'roundtrip' || !Array.isArray(data.entities)) { UI.alert('That DXF is a ProtectionPro plan export — import the original drawing instead.'); return; }
-    let unitM = data.units && data.units.m;
+    await this._setBackground(data, (file.name || 'DXF').replace(/\.dxf$/i, ''));
+  },
+  // Site plan drawings already in the project (Plan › DXF backgrounds) — pick one
+  // instead of importing the file again.
+  _sitePlanDxfs() {
+    const list = (typeof PlanDxfImport !== 'undefined' && AppState.planMarkup && Array.isArray(AppState.planMarkup.dxfs)) ? AppState.planMarkup.dxfs : [];
+    return list.filter(d => d.imageId != null || PlanDxfImport.dataOf(d));
+  },
+  async useSitePlan() {
+    const list = this._sitePlanDxfs();
+    if (!list.length) { UI.toast('The site plan has no DXF drawing to use — import one there, or load a DXF here.', 'info', 4000); return; }
+    let desc = list[0];
+    if (list.length > 1) {
+      const m = RoadLight._modal('rp-siteplan-modal', 'Use a site plan drawing', `<p class="rl-lead">Pick the drawing to pick road lines from:</p>
+        <div class="rl-form"><label>Drawing<select data-d>${list.map((d, i) => `<option value="${i}">${escHtml(d.name || 'DXF')}</option>`).join('')}</select></label></div>`,
+        '<button class="btn-small" data-m="close">Cancel</button><button class="btn-small btn-primary" data-m="ok">Use</button>');
+      if (!(await RoadLight._modalResult(m))) return;
+      desc = list[+m.querySelector('[data-d]').value];
+    }
+    UI.setBusy && UI.setBusy(true, 'Reading the site plan drawing…');
+    let data = PlanDxfImport.dataOf(desc);
+    try {
+      if (!data) {
+        const resp = await fetch(`${API_BASE}/plan-images/${desc.imageId}`, { headers: API.authHeaders() });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        data = PlanDxfImport._normalise(await resp.json());
+      }
+    } catch (e) {
+      UI.alert('Could not read the site plan drawing: ' + (e && e.message ? e.message : e)); return;
+    } finally { UI.setBusy && UI.setBusy(false); }
+    await this._setBackground(data, desc.name || 'Site plan', desc.unitM);
+  },
+  async _setBackground(data, name, knownUnitM) {
+    let unitM = knownUnitM || (data.units && data.units.m);
     if (!unitM) {
       const m = RoadLight._modal('rp-units-modal', 'Drawing units', `<p class="rl-lead">The DXF does not say what its units are. One drawing unit is:</p>
         <div class="rl-form"><label>Unit<select data-u="m"><option value="1">1 metre</option><option value="0.001">1 millimetre</option><option value="0.01">1 centimetre</option><option value="0.3048">1 foot</option></select></label></div>`,
@@ -764,7 +797,7 @@ const RoadPlan = {
     }
     const layers = (data.layers || []).map(l => ({ name: l.name, color: l.color || '#8a8f98', hidden: !l.on || !!l.frozen }))
       .filter(l => ents.some(e => e.l === l.name));
-    this.rp.bg = { name: (file.name || 'DXF').replace(/\.dxf$/i, ''), unitM, origin: data.origin || [0, 0], layers, ents };
+    this.rp.bg = { name, unitM, origin: data.origin || [0, 0], layers, ents };
     AppState.dirty = true;
     this.fit();
     this.render();
@@ -1138,8 +1171,8 @@ const RoadPlan = {
     const bg = this.rp.bg;
     bgEl.innerHTML = bg ? `<div class="rp-bg-name">${escHtml(bg.name)} <span class="sl-hint">${bg.ents.length} lines</span></div>
       <details class="rp-layers"><summary>Layers (${bg.layers.length})</summary>${bg.layers.map((l, i) => `<label class="rp-layer"><input type="checkbox" data-rp-layer="${i}"${l.hidden ? '' : ' checked'}><i style="background:${escHtml(l.color)}"></i>${escHtml(l.name)}</label>`).join('')}</details>
-      <div class="rp-bg-actions"><button class="btn-small" data-rp="bg">Replace…</button><button class="btn-small" data-rp="bg-remove">Remove</button></div>`
-      : '<button class="btn-small" data-rp="bg">Load a DXF…</button><div class="sl-hint">A site plan or survey in the background; pick road lines from it.</div>';
+      <div class="rp-bg-actions"><button class="btn-small" data-rp="bg">Replace…</button>${this._sitePlanDxfs().length ? '<button class="btn-small" data-rp="bg-site" title="Use a drawing already on the site plan">From site plan…</button>' : ''}<button class="btn-small" data-rp="bg-remove">Remove</button></div>`
+      : `${this._sitePlanDxfs().length ? '<button class="btn-small btn-primary" data-rp="bg-site" title="Use a drawing already on the site plan">Use the site plan…</button> ' : ''}<button class="btn-small" data-rp="bg">Load a DXF…</button><div class="sl-hint">A site plan or survey in the background; pick road lines from it.</div>`;
     const jEl = document.getElementById('rp-junctions');
     const juncs = this.junctions();
     const opts = this._standard() === 'SANS' ? RP_CONFLICT_SANS : RP_CONFLICT_EN;
@@ -1572,6 +1605,7 @@ const RoadPlan = {
     const r = this.selRoad;
     switch (t.dataset.rp) {
       case 'bg': document.getElementById('rp-file').click(); break;
+      case 'bg-site': this.useSitePlan(); break;
       case 'bg-remove': this.rp.bg = null; AppState.dirty = true; this.setTool('select'); this.render(); break;
       case 'undo': this.undo(); break;
       case 'redo': this.redo(); break;
