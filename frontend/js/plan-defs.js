@@ -348,6 +348,7 @@ const PLAN_DEFS = {
       { type: 'outdoor', kind: 'room', name: 'Outdoor area', color: '#16a34a', desc: 'Car park, yard, walkway' },
       { type: 'perimeter', kind: 'perimeter', name: 'Fence / perimeter', color: '#7c3aed', desc: 'Vertical lux along a line' },
       { type: 'sportsfield', kind: 'sportsfield', name: 'Sports field', color: '#15803d', desc: 'Click the centre spot' },
+      { type: 'obtrusive', kind: 'perimeter', name: 'Obtrusive light check', color: '#b45309', desc: 'Property line, windows or a road' },
       { type: 'escape', kind: 'perimeter', name: 'Escape route', color: '#dc2626', desc: 'Emergency lux along the route' },
     ];
   },

@@ -258,3 +258,9 @@ body.dark-mode .l3-chips .warn, body.dark-mode .l3-chip.warn { background: #3d2b
   .sf-grid3, .sf-grid4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .sf-layouts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+.sf-stand { border: 1px solid var(--border-color); border-radius: 6px; padding: 6px; margin: 6px 0; }
+.sf-stand-head { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; gap: 4px; margin-bottom: 4px; }
+.sf-stand-head input, .sf-stand-head select { min-width: 0; font-size: 12px; }
+.sf-stand-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; }
+.sf-stand-grid .plan-field input { width: 100%; min-width: 0; }
+.sf-stand-grid .plan-field small { font-size: 10px; }

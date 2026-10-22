@@ -60,7 +60,7 @@ const PlanTools = {
   // cable's terminals, so they're kept (and a straight 2-point cable has none).
   deleteVertexAt(pt) {
     for (const rm of (AppState.planMarkup.rooms || [])) {
-      if (!PlanMarkup.selectedIds.has(rm.id) || rm.points.length <= ((rm.kind === 'perimeter' || rm.kind === 'escape') ? 2 : 3)) continue;
+      if (!PlanMarkup.selectedIds.has(rm.id) || rm.points.length <= ((rm.kind === 'perimeter' || rm.kind === 'escape' || rm.kind === 'obtrusive') ? 2 : 3)) continue;
       const vi = PlanEngine.findVertexAt(rm.points, pt, 9);
       if (vi < 0) continue;
       rm.points.splice(vi, 1);
@@ -756,9 +756,9 @@ PlanTools.register(makePolylineTool('room', PLAN_DEFS.room.stroke, (pts, opts) =
 
 // PERIMETER — an open (or closed, in its panel) fence line for the lighting calculation
 PlanTools.register(makePolylineTool('perimeter', '#7c3aed', (pts, opts) => {
-  const escape = !!(opts && opts.type === 'escape');
-  if (pts.length < 2) { UI.toast(`${escape ? 'An escape route' : 'A perimeter'} needs at least 2 points.`, 'warn'); return; }
-  const r = { id: AppState.planGenId('pmrm'), name: PlanMarkup.nextCounter(escape ? '_escape' : '_perimeter', escape ? 'Route ' : 'Fence '), points: pts, color: null, kind: escape ? 'escape' : 'perimeter' };
+  const escape = !!(opts && opts.type === 'escape'), obtr = !!(opts && opts.type === 'obtrusive');
+  if (pts.length < 2) { UI.toast(`${escape ? 'An escape route' : obtr ? 'An obtrusive-light check' : 'A perimeter'} needs at least 2 points.`, 'warn'); return; }
+  const r = { id: AppState.planGenId('pmrm'), name: PlanMarkup.nextCounter(escape ? '_escape' : obtr ? '_obtrusive' : '_perimeter', escape ? 'Route ' : obtr ? 'Check ' : 'Fence '), points: pts, color: null, kind: escape ? 'escape' : obtr ? 'obtrusive' : 'perimeter' };
   AppState.planMarkup.rooms.push(r);
   PlanMarkup.selectOnly(r.id);
   PlanMarkup.snapshot(); PlanMarkup.markDirty(); PlanMarkup.refreshProps();

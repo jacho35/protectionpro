@@ -733,6 +733,16 @@ class SportsLightingRequest(BaseModel):
     photometry: dict = {}
 
 
+class ObtrusiveLightRequest(BaseModel):
+    """Obtrusive light — check lines (property / road) against the EN 12464-2
+    environmental zone, from every outdoor luminaire. See analysis/obtrusive_light.py."""
+    model_config = {"extra": "allow"}
+
+    luminaires: list[dict] = []
+    checks: list[dict] = []
+    photometry: dict = {}
+
+
 class EmergencyLightingRequest(BaseModel):
     """Emergency lighting — floor illuminance from emergency-mode luminaires
     on escape routes, open areas and high-risk task areas. See
