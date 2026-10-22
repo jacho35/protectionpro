@@ -59,6 +59,15 @@ const PlanTools = {
   // Delete an interior node (bend) of a route under `pt`. Endpoints are the
   // cable's terminals, so they're kept (and a straight 2-point cable has none).
   deleteVertexAt(pt) {
+    for (const rm of (AppState.planMarkup.rooms || [])) {
+      if (!PlanMarkup.selectedIds.has(rm.id) || rm.points.length <= 3) continue;
+      const vi = PlanEngine.findVertexAt(rm.points, pt, 9);
+      if (vi < 0) continue;
+      rm.points.splice(vi, 1);
+      PlanMarkup.snapshot(); PlanMarkup.markDirty(); PlanMarkup.refreshProps();
+      PlanEngine.requestDraw({ fg: true });
+      return true;
+    }
     const hit = PlanEngine.findRouteVertexAt(pt, 9);
     if (!hit) return false;
     const { route, index } = hit;
@@ -163,6 +172,24 @@ PlanTools.register({
       const vi = PlanEngine.findVertexAt(r.points, pt, 8);
       if (vi >= 0) { this._drag = { kind: 'vertex', route: r, index: vi, moved: false }; return; }
     }
+    // 1b) corner / edge midpoint of a selected room: drag to reshape, drag a
+    // midpoint to add a corner there.
+    for (const rm of (pm.rooms || [])) {
+      if (!PlanMarkup.selectedIds.has(rm.id)) continue;
+      const vi = PlanEngine.findVertexAt(rm.points, pt, 8);
+      if (vi >= 0) { this._drag = { kind: 'roomvertex', room: rm, index: vi, moved: false }; return; }
+      const n = rm.points.length;
+      for (let i = 0; i < n; i++) {
+        const a = rm.points[i], b = rm.points[(i + 1) % n];
+        const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+        if (Math.hypot(pt.x - mx, pt.y - my) <= 7 / z) {
+          rm.points.splice(i + 1, 0, { x: mx, y: my });
+          this._drag = { kind: 'roomvertex', room: rm, index: i + 1, moved: true };
+          PlanEngine.requestDraw({ fg: true });
+          return;
+        }
+      }
+    }
     // 2) shift+click on a route segment inserts a vertex
     const rhShift = e.shiftKey ? PlanEngine.findRouteAt(pt) : null;
     if (rhShift) {
@@ -205,7 +232,8 @@ PlanTools.register({
       return;
     }
     const snapped = PlanTools.snap(pt, {
-      ignoreIds: this._drag.kind === 'vertex' ? new Set([this._drag.route.id]) : new Set([this._drag.el.id]),
+      ignoreIds: this._drag.kind === 'vertex' ? new Set([this._drag.route.id])
+        : this._drag.kind === 'roomvertex' ? new Set() : new Set([this._drag.el.id]),
     });
     if (this._drag.kind === 'element') {
       // Move the whole multi-selection by the same delta.
@@ -219,6 +247,11 @@ PlanTools.register({
       const p = this._drag.route.points[this._drag.index];
       p.x = snapped.x; p.y = snapped.y;
       this._drag.moved = true;
+    } else if (this._drag.kind === 'roomvertex') {
+      const p = this._drag.room.points[this._drag.index];
+      p.x = snapped.x; p.y = snapped.y;
+      this._drag.moved = true;
+      if (typeof PlanLux !== 'undefined') PlanLux.invalidate();
     }
     PlanEngine.requestDraw({ fg: true });
   },
@@ -349,6 +382,20 @@ PlanTools.register({
       ctx.fillRect(r.x, r.y, r.w, r.h);
       ctx.strokeRect(r.x, r.y, r.w, r.h);
       ctx.setLineDash([]);
+      ctx.restore();
+    }
+    for (const rm of (AppState.planMarkup.rooms || [])) {
+      if (!PlanMarkup.selectedIds.has(rm.id) || rm.points.length < 3) continue;
+      ctx.save();
+      ctx.lineWidth = 1.5 / zoom; ctx.strokeStyle = '#2563eb';
+      const n = rm.points.length, h = 5 / zoom;
+      for (let i = 0; i < n; i++) {
+        const a = rm.points[i], b = rm.points[(i + 1) % n];
+        ctx.fillStyle = 'rgba(37,99,235,0.45)';
+        ctx.beginPath(); ctx.arc((a.x + b.x) / 2, (a.y + b.y) / 2, 3.5 / zoom, 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.fillStyle = '#fff';
+      for (const p of rm.points) { ctx.beginPath(); ctx.rect(p.x - h, p.y - h, 2 * h, 2 * h); ctx.fill(); ctx.stroke(); }
       ctx.restore();
     }
     const rot = this._rotateHandle();

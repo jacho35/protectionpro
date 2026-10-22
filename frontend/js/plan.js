@@ -774,6 +774,7 @@ const PlanMarkup = {
       case 'trench': return 'Trench — click points; ✓ Done / Enter finishes. Esc cancels.';
       case 'measurement': return 'Measure — click points; ✓ Done / Enter finishes. Esc cancels.';
       case 'room': return 'Room — click ≥3 points; ✓ Done / Enter closes it. Esc cancels.';
+      case 'roomdetect': return 'Detect room — click inside a room. Esc to stop.';
       case 'crossing': return 'Crossing — click two points. Esc cancels.';
       case 'calibrate': return 'Calibrate — click two points a known distance apart.';
       case 'crop': return 'Crop — drag the export rectangle (tiny drag clears it).';
