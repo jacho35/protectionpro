@@ -27,7 +27,7 @@ from ..analysis.retic_earth import run_retic_earth_check
 from ..analysis.street_lighting import run_street_lighting
 from ..analysis.road_lighting import run_road_lighting
 from ..analysis.road_plan import run_road_plan
-from ..analysis.photometry import parse_photometry, generic_optic, GENERIC_OPTICS
+from ..analysis.photometry import parse_photometry, generic_optic, GENERIC_OPTICS, INDOOR_OPTICS
 from ..analysis.lightning_risk import run_lightning_risk
 from ..analysis.raceway import run_raceway_analysis
 from ..analysis.backup_autonomy import run_backup_autonomy
@@ -734,7 +734,9 @@ def road_lighting_photometry(data: PhotometryFileRequest):
 
 @router.get("/road-lighting/generic")
 def road_lighting_generic_list():
-    return [{"kind": k, "name": v["name"]} for k, v in GENERIC_OPTICS.items()]
+    out = [{"kind": k, "name": v["name"], "group": "road"} for k, v in GENERIC_OPTICS.items()]
+    out += [{"kind": k, "name": v["name"], "group": v["group"]} for k, v in INDOOR_OPTICS.items()]
+    return out
 
 
 @router.post("/road-lighting/generic")

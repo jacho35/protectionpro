@@ -356,6 +356,7 @@ const PlanUI = {
       PlanSync.fillEmptyCables(); getVal = (k) => (k === 'cableType') ? item.cableType : (k === 'curved') ? !!item.curved : (item.props ? item.props[k] : undefined);
     }
     for (const f of fields) html += this._field(f, getVal(f.key));
+    if (kind === 'room' && typeof RoomLighting !== 'undefined') { RoomLighting.bind(el); html += RoomLighting.panel(item); }
     html += this._defaultCableButton(item, kind);
     html += this._demandBlock(item, kind);
     html += this._demandLinkField(item, kind);

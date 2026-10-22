@@ -57,6 +57,7 @@ const PlanMarkup = {
             <button class="plan-tool-btn" data-tool="calibrate" title="Set scale from a known distance">📏 Calibrate</button>
             <button class="plan-tool-btn" data-tool="slpath" title="Draw a path → auto-place streetlight poles + circuits">💡 SL Path</button>
             <button class="plan-tool-btn" data-tool="crop" title="Set the export crop rectangle">⬜ Crop</button>
+            <button class="plan-tb-btn" data-action="photolib" title="Luminaire photometry library (IES / LDT, generic optics)">💡 Luminaires</button>
           </div>
           <div class="plan-tb-group" id="plan-floor-group" style="display:none">
             <label class="plan-tb-field">Floor
@@ -129,6 +130,7 @@ const PlanMarkup = {
       else if (act.dataset.action === 'undo') { this.undo(); return; }
       else if (act.dataset.action === 'redo') { this.redo(); return; }
       else if (act.dataset.action === 'fit') PlanEngine.zoomFit();
+      else if (act.dataset.action === 'photolib' && typeof PhotoLib !== 'undefined') PhotoLib.open();
       else if (act.dataset.action === 'lux' && typeof PlanLux !== 'undefined') PlanLux.toggle();
       else if (act.dataset.action === 'push' && typeof PlanSync !== 'undefined') {
         // Reticulation → demand schedules; Building → linked SLD boards/feeders.
