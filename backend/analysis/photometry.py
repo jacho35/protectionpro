@@ -307,7 +307,58 @@ GENERIC_OPTICS = {
 }
 
 
+# Interior / area distributions: closed-form relative intensity I(C, γ) on the
+# same canonical web (C = azimuth plane, γ = angle from nadir). Smooth and
+# representative — scaled to the requested flux, never a real product.
+def _smooth_cut(g_deg, full, zero):
+    """1 up to `full` degrees, falling linearly to 0 at `zero`."""
+    return np.clip((zero - g_deg) / max(zero - full, 1e-9), 0.0, 1.0)
+
+
+def _axis_angle(C, G, c_deg, g_deg):
+    cc, gg = math.radians(c_deg), math.radians(g_deg)
+    ax = np.array([math.sin(gg) * math.cos(cc), math.sin(gg) * math.sin(cc), -math.cos(gg)])
+    d = np.stack([np.sin(G) * np.cos(C), np.sin(G) * np.sin(C), -np.cos(G)], axis=-1)
+    return np.degrees(np.arccos(np.clip(d @ ax, -1, 1)))
+
+
+INDOOR_OPTICS = {
+    "generic_downlight_narrow": {"name": "Generic downlight — narrow (≈ 50° beam)", "group": "indoor",
+                                 "fn": lambda C, G: np.clip(np.cos(G), 0, None) ** 8 * _smooth_cut(np.degrees(G), 70, 90)},
+    "generic_downlight_wide": {"name": "Generic downlight — wide (≈ 90° beam)", "group": "indoor",
+                               "fn": lambda C, G: np.clip(np.cos(G), 0, None) ** 3 * _smooth_cut(np.degrees(G), 65, 90)},
+    "generic_panel": {"name": "Generic recessed panel 600 × 600 (low glare)", "group": "indoor",
+                      "fn": lambda C, G: np.clip(np.cos(G), 0, None) ** 1.2 * _smooth_cut(np.degrees(G), 55, 80)},
+    "generic_batten": {"name": "Generic linear batten / strip (C0 along the lamp)", "group": "indoor",
+                       "fn": lambda C, G: np.clip(np.cos(G), 0, None) ** (1.0 + 1.4 * np.abs(np.sin(C))) * _smooth_cut(np.degrees(G), 70, 90)},
+    "generic_highbay": {"name": "Generic high-bay (narrow, ≈ 60° beam)", "group": "indoor",
+                        "fn": lambda C, G: np.clip(np.cos(G), 0, None) ** 5 * _smooth_cut(np.degrees(G), 70, 88)},
+    "generic_flood_sym": {"name": "Generic floodlight — symmetric (≈ 45° beam)", "group": "outdoor",
+                          "fn": lambda C, G: np.exp(-(np.degrees(G) / 24.0) ** 2 / 2)},
+    "generic_flood_asym": {"name": "Generic floodlight — asymmetric forward throw", "group": "outdoor",
+                           "fn": lambda C, G: np.exp(-(_axis_angle(C, G, 90.0, 42.0) / 26.0) ** 2 / 2)},
+    "generic_area": {"name": "Generic area light — Type III (poles in car parks)", "group": "outdoor",
+                     "fn": lambda C, G: (np.exp(-(_axis_angle(C, G, 90.0, 60.0) / 28.0) ** 2 / 2)
+                                         + 0.25 * np.clip(np.cos(G), 0, None)) * _smooth_cut(np.degrees(G), 75, 90)},
+}
+
+
+def _indoor_optic(kind, spec, lumens, watts):
+    c = np.arange(0.0, 360.0 + 1e-9, 5.0)
+    g = np.arange(0.0, 180.0 + 1e-9, 1.0)
+    C, G = np.meshgrid(np.radians(c), np.radians(g), indexing="ij")
+    rel = np.clip(spec["fn"](C, G), 0.0, None)
+    rel = np.where(G > math.pi / 2, 0.0, rel)
+    flux_rel = total_flux(c, g, rel)
+    cd = rel * (lumens / flux_rel)
+    return _canonical(spec["name"], "Generic", c, g, cd, lumens, watts, "generic",
+                      {"generic": kind, "group": spec["group"],
+                       "warning": "Generic distribution for feasibility — not a real product. Import the manufacturer's IES/LDT for a compliance design."})
+
+
 def generic_optic(kind: str, lumens: float = 10000.0, watts: float = 80.0) -> dict:
+    if kind in INDOOR_OPTICS:
+        return _indoor_optic(kind, INDOOR_OPTICS[kind], lumens, watts)
     spec = GENERIC_OPTICS.get(kind)
     if not spec:
         raise ValueError(f"Unknown generic optic '{kind}'")
