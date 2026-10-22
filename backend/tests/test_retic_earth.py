@@ -200,3 +200,34 @@ def test_service_cable_is_checked_against_its_own_protection():
     assert up["ifA"] == own["ifA"]                      # same loop, different device
     assert up["status"] == "fail" and up["tS"] > 5      # 160 A string breaker: thermal region, too slow
     assert own["status"] == "pass" and own["tS"] < 0.1  # 40 A MCB: past 10 x Ir = 400 A, instantaneous
+
+
+def test_withstand_is_the_weakest_earth_fault_conductor():
+    """Mini TCC cable I²t line: k²S² of the smaller of k·S over phase and earth
+    (Table 54.3 k, as the ECC check), the PEN itself on a PEN leg."""
+    res = run_retic_earth_check(req())
+    k = res["kiosks"][0]
+    feeder = k["loop"]["withstand"]                  # 95 Cu XLPE (143·95) vs 25 Cu PVC earth (115·25)
+    assert feeder["conductor"] == "earth" and feeder["k"] == 115.0
+    assert feeder["k2s2"] == round((115 * 25) ** 2)
+    svc = k["erfs"][0]["loop"]["withstand"]          # 16 Cu XLPE (143·16 = 2288) < 25 Cu PVC (2875)
+    assert svc["conductor"] == "phase" and svc["k2s2"] == round((143 * 16) ** 2)
+
+    r = req()
+    r["minisubs"][0]["earthing"] = "TN-C"
+    pen = run_retic_earth_check(r)["kiosks"][0]["erfs"][0]["loop"]["withstand"]
+    assert pen["conductor"] == "PEN" and pen["sizeMm2"] == 16 and pen["k"] == 143.0
+
+
+def test_three_phase_max_at_kiosk_and_busbar():
+    """Ik3 max = 1.10·230 / |Ze + Z1| with the phase R taken back to 20 °C
+    (library R / 1.275 for Cu XLPE); the busbar takes Ze alone."""
+    res = run_retic_earth_check(req())
+    ze_mag = 0.045 * 420 ** 2 / 500000
+    r = ze_mag / math.sqrt(1 + 36)
+    ze = complex(r, 6 * r)
+    z1 = ze + complex(0.2461 / 1.275 * 0.1, 0.08 * 0.1)
+    assert res["kiosks"][0]["ik3A"] == pytest.approx(1.10 * 230 / abs(z1), abs=1)
+    ms = res["minisubs"][0]
+    assert ms["ik3A"] == pytest.approx(1.10 * 230 / ze_mag, abs=1)
+    assert ms["ik1A"] == pytest.approx(0.95 * 230 / ze_mag, abs=1)

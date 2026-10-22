@@ -327,6 +327,7 @@ const PLAN_DEFS = {
       push('Other', { type: 'crossing', kind: 'crossing', name: 'Road Crossing', color: this.crossings.color });
     }
     push('Zones', { type: 'room', kind: 'room', name: 'Room / Area', color: this.room.stroke });
+    push('Zones', { type: 'roomdetect', kind: 'roomdetect', name: 'Detect room (click)', color: this.room.stroke });
     push('Annotate', { type: 'text', kind: 'text', name: 'Text', color: '#111827' });
     push('Annotate', { type: 'measurement', kind: 'measurement', name: 'Measure', color: this.annotations.measurement.color });
     return [...groups.entries()].map(([label, items]) => ({ label, items }));

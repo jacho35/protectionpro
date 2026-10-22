@@ -346,6 +346,24 @@ document.addEventListener('DOMContentLoaded', () => {
       if (e.key !== 'Escape' && !(ctrl && (e.key === 's' || e.key === 'S'))) return;
     }
 
+    // Street lighting › Road plan: its own undo stack and drawing keys; the
+    // hidden SLD's shortcuts are suspended (Escape / Ctrl+S stay live).
+    if (typeof RoadPlan !== 'undefined' && RoadPlan._active && !modalIsOpen) {
+      const ctrl = e.ctrlKey || e.metaKey;
+      if (ctrl && (e.key === 'z' || e.key === 'Z')) {
+        e.preventDefault();
+        if (e.shiftKey) RoadPlan.redo(); else RoadPlan.undo();
+        return;
+      }
+      if (ctrl && (e.key === 'y' || e.key === 'Y')) {
+        e.preventDefault();
+        RoadPlan.redo();
+        return;
+      }
+      if (!ctrl && RoadPlan.onKeydown(e)) { e.preventDefault(); return; }
+      if (e.key !== 'Escape' && !(ctrl && (e.key === 's' || e.key === 'S'))) return;
+    }
+
     switch (e.key) {
       case 'v':
       case 'V':

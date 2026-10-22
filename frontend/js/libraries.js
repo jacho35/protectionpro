@@ -364,7 +364,7 @@ const Libraries = {
         <button type="button" class="btn-small" data-act="export-mine">Export my overrides (JSON)</button>
         ${co ? '<button type="button" class="btn-small" data-act="export-company">Export the company library (JSON)</button>' : ''}
       </div>
-      <p class="subm-hint" style="margin-top:14px">An import adds entries only: an id that already exists in the destination is skipped, never overwritten. You can also add entries in a library’s table, or publish a set of your own to a shared library from Team libraries.</p></div>`;
+      <p class="subm-hint" style="margin-top:14px">An import adds entries: an id that already exists in the destination is skipped, unless you tick Replace in the import dialog. You can also add entries in a library’s table, or publish a set of your own to a shared library from Team libraries.</p></div>`;
   },
 
   _download(name, obj) {
