@@ -562,3 +562,148 @@ def run_room_lighting(req: dict) -> dict:
         except ValueError as e:
             out.append({"id": r.get("id"), "name": r.get("name") or "Room", "error": str(e)})
     return {"rooms": out}
+
+
+# ─── Auto layout: a luminaire grid to the room's targets ────────────────
+
+def _rot(P, ang_deg):
+    a = math.radians(ang_deg)
+    c, s = math.cos(a), math.sin(a)
+    return np.stack([P[:, 0] * c + P[:, 1] * s, -P[:, 0] * s + P[:, 1] * c], axis=1)
+
+
+def _unrot(P, ang_deg):
+    return _rot(P, -ang_deg)
+
+
+def _lattices(room: _Room, n_seed: int, angles):
+    """Candidate lattices (axis-aligned in a rotated frame, half-spacing to the
+    bounding box), clipped to the outline and kept ≥ 0.3 m off the walls."""
+    seen, out = set(), []
+    for ang in angles:
+        Q = _rot(room.P, ang)
+        x0, y0 = Q.min(axis=0)
+        x1, y1 = Q.max(axis=0)
+        W, Hh = x1 - x0, y1 - y0
+        for nc in range(1, 16):
+            for nr in range(1, 16):
+                sx, sy = W / nc, Hh / nr
+                if not (0.55 <= sx / sy <= 1.8):
+                    continue
+                xs = x0 + (np.arange(nc) + 0.5) * sx
+                ys = y0 + (np.arange(nr) + 0.5) * sy
+                X, Y = np.meshgrid(xs, ys)
+                pts = _unrot(np.stack([X.ravel(), Y.ravel()], axis=1), ang)
+                ok = _pip(room.P, pts[:, 0], pts[:, 1]) & (_dist_to_edges(room.P, pts[:, 0], pts[:, 1]) >= 0.3)
+                pts = pts[ok]
+                n = len(pts)
+                if n < 1 or n > max(2.2 * n_seed, n_seed + 4) or n < 0.45 * n_seed:
+                    continue
+                key = (round(ang, 1), tuple(sorted((round(p[0], 2), round(p[1], 2)) for p in pts)))
+                if key in seen:
+                    continue
+                seen.add(key)
+                out.append({"angle": ang, "rows": nr, "cols": nc, "sx": sx, "sy": sy, "pts": pts})
+    out.sort(key=lambda c: (abs(len(c["pts"]) - n_seed), abs(math.log(c["sx"] / c["sy"]))))
+    return out
+
+
+def suggest_layout(req: dict) -> dict:
+    """Propose luminaire grids that meet the room's targets.
+
+    req: { room: <a room as in run_room_lighting, no luminaires needed>,
+           photometry: {id: web}, photometryId, mount, drop, fluxPct, maxCandidates }
+    Returns up to four candidates ranked passing-first, then fewest fittings,
+    then lowest power; if nothing passes, the closest ones with `pass: false`."""
+    t0 = time.time()
+    pid = req.get("photometryId")
+    webs = {}
+    for k, v in (req.get("photometry") or {}).items():
+        w = _Web(v)
+        w.luminous_m2 = _f(v.get("luminousM2"), 0.0)
+        webs[k] = w
+    if pid not in webs:
+        raise ValueError("Pick a luminaire for the layout")
+    base_req = dict(req.get("room") or {})
+    base_req["luminaires"] = []
+    room0 = _Room(base_req, webs, "fast")
+    tg = room0.targets
+    em_t = _f(tg.get("em"), 0.0)
+    if em_t <= 0:
+        raise ValueError("Set a target Ēm for the room first")
+    web = webs[pid]
+    flux_pct = max(_f(req.get("fluxPct"), 100.0), 1.0)
+    mount = req.get("mount") or "recessed"
+    drop = _f(req.get("drop"), 0.0)
+
+    def lum_at(pts, rot):
+        return [{"id": f"s{i}", "x": float(p[0]), "y": float(p[1]), "photometryId": pid, "mount": mount,
+                 "drop": drop, "rotate": rot, "fluxPct": flux_pct} for i, p in enumerate(pts)]
+
+    # Seed: one trial lattice at ~1.8 × mounting height, scaled by Ēm_target / Ēm_trial.
+    hm = max(room0.H - room0.workH - (drop if mount == "suspended" else 0.0), 0.5)
+    n_trial = max(int(math.ceil(room0.area / (1.8 * hm) ** 2)), 1)
+    ang_long = 0.0
+    n_e = len(room0.P)
+    best_len = 0.0
+    for i in range(n_e):
+        d = room0.P[(i + 1) % n_e] - room0.P[i]
+        L = float(np.hypot(*d))
+        if L > best_len:
+            best_len, ang_long = L, math.degrees(math.atan2(d[1], d[0])) % 90.0
+    angles = [0.0] if (abs(ang_long) < 1.0 or abs(ang_long - 90.0) < 1.0) else [round(ang_long, 2), 0.0]
+    trial = None
+    for c in _lattices(room0, n_trial, angles[:1]) or []:
+        trial = c
+        break
+    if trial is None:
+        raise ValueError("No luminaire grid fits this room outline")
+    r_trial = _Room(dict(base_req, luminaires=lum_at(trial["pts"], trial["angle"])), webs, "fast")
+    em_trial = evaluate_room(r_trial, webs, with_ugr=False, with_cyl=False)["workplane"]["Em"]
+    if em_trial <= 0:
+        raise ValueError("The luminaire gives no light on the work plane")
+    n_seed = max(int(round(len(trial["pts"]) * em_t / em_trial)), 1)
+
+    cands = _lattices(room0, n_seed, angles)[: int(req.get("maxCandidates") or 18)]
+    def assess(c, detail):
+        room = _Room(dict(base_req, luminaires=lum_at(c["pts"], c["angle"])), webs, detail)
+        res = evaluate_room(room, webs, with_ugr=True, with_cyl=False)
+        res.pop("grid", None)
+        return res
+
+    def rank_key(s):
+        return (0 if s["result"]["pass"] else 1, s["count"] if s["result"]["pass"] else shortfall(s), s["result"]["watts"])
+
+    # Screen every lattice on the coarse mesh, then re-check the best few on the
+    # full one, so the numbers shown are the ones the placed layout will give.
+    screened = []
+    for c in cands:
+        if time.time() - t0 > 10.0:
+            break
+        screened.append((c, assess(c, "fast")))
+    if not screened:
+        raise ValueError("No luminaire grid fits this room outline")
+
+    def shortfall(s):
+        return sum(max(0.0, (k["req"] - k["value"]) / max(abs(k["req"]), 1e-9)) if k["op"] == ">=" else max(0.0, (k["value"] - k["req"]) / max(abs(k["req"]), 1e-9))
+                   for k in s["result"]["checks"] if k["pass"] is False)
+
+    def pack(c, res):
+        return {
+            "angle": c["angle"], "rows": c["rows"], "cols": c["cols"], "count": len(c["pts"]),
+            "spacingX": round(c["sx"], 2), "spacingY": round(c["sy"], 2),
+            "spacingToHeight": round(max(c["sx"], c["sy"]) / hm, 2),
+            "positions": [[round(float(p[0]), 3), round(float(p[1]), 3)] for p in c["pts"]],
+            "rotate": c["angle"],
+            "result": {"Em": res["workplane"]["Em"], "U0": res["workplane"]["U0"], "Emin": res["workplane"]["Emin"],
+                       "ugr": (res["ugr"] or {}).get("max"), "wm2": res["power"]["wm2"], "watts": res["power"]["watts"],
+                       "checks": res["checks"], "pass": res["pass"]},
+        }
+
+    order = sorted(((pack(c, r), c) for c, r in screened), key=lambda t: rank_key(t[0]))
+    scored = []
+    for item, c in order[:6]:
+        scored.append(item if time.time() - t0 > 14.0 else pack(c, assess(c, "full")))
+    scored.sort(key=rank_key)
+    return {"seed": {"count": n_seed, "trialCount": len(trial["pts"]), "trialEm": em_trial, "mountingHeight": round(hm, 2)},
+            "candidates": scored[:4], "evaluated": len(screened), "ms": round((time.time() - t0) * 1000.0)}

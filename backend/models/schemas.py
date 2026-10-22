@@ -708,6 +708,8 @@ class RoomLightingRequest(BaseModel):
     rooms: list[dict] = []
     photometry: dict = {}
     detail: str = "full"
+    room: dict = {}
+    photometryId: str | None = None
 
 
 class GenericOpticRequest(BaseModel):

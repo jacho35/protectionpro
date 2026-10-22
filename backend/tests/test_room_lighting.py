@@ -138,3 +138,38 @@ def test_bad_inputs_are_reported_not_raised():
     assert "error" in out["rooms"][0]
     r = out["rooms"][1]
     assert r["luminaires"] == 1 and len(r["warnings"]) == 2
+
+
+def test_suggest_layout_meets_targets_and_fits_the_outline():
+    webs, prof = _webs(lumens=3600.0, watts=34.0)
+    room = _room([[0, 0], [8, 0], [8, 6], [0, 6]], [], targets={"em": 500, "uo": 0.6, "ugr": 19, "wallE": 75, "ceilE": 50})
+    out = RL.suggest_layout({"room": room, "photometry": {"p": prof}, "photometryId": "p"})
+    c = out["candidates"][0]
+    assert c["result"]["pass"] is True
+    assert c["result"]["Em"] >= 500 and c["result"]["U0"] >= 0.6 and c["result"]["ugr"] <= 19
+    P = np.array(room["polygon"], float)
+    assert all(RL._pip(P, np.array([x]), np.array([y]))[0] for x, y in c["positions"])
+    assert c["count"] == len(c["positions"]) == c["rows"] * c["cols"]
+    # ranked: a passing layout never comes after a failing one, and counts rise among passers
+    flags = [x["result"]["pass"] for x in out["candidates"]]
+    assert flags == sorted(flags, reverse=True)
+    counts = [x["count"] for x in out["candidates"] if x["result"]["pass"]]
+    assert counts == sorted(counts)
+    # the suggestion re-evaluated with the full engine still passes on Em
+    full = _run(dict(room, luminaires=[_lum(x, y) for x, y in c["positions"]]), webs)
+    assert full["workplane"]["Em"] >= 0.95 * 500
+
+
+def test_suggest_layout_l_shape_stays_inside_and_errors_are_clear():
+    webs, prof = _webs(lumens=3600.0, watts=34.0)
+    poly = [[0, 0], [10, 0], [10, 4], [4, 4], [4, 8], [0, 8]]
+    room = _room(poly, [], targets={"em": 300, "uo": 0.4})
+    out = RL.suggest_layout({"room": room, "photometry": {"p": prof}, "photometryId": "p"})
+    P = np.array(poly, float)
+    for cand in out["candidates"]:
+        assert all(RL._pip(P, np.array([x]), np.array([y]))[0] for x, y in cand["positions"])
+    import pytest
+    with pytest.raises(ValueError):
+        RL.suggest_layout({"room": _room(poly, [], targets={}), "photometry": {"p": prof}, "photometryId": "p"})
+    with pytest.raises(ValueError):
+        RL.suggest_layout({"room": room, "photometry": {"p": prof}, "photometryId": "zz"})

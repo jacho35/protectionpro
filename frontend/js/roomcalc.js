@@ -13,9 +13,10 @@ const RoomCalc = {
   enabled: true,        // draw the grid for rooms that have a result
   _busy: false,
   _pmRef: null,
+  layouts: {},          // room id → { lumId, cands, sel, seed }
 
   // Results belong to the project in memory; a different project object means a new project.
-  _sync() { if (this._pmRef !== AppState.planMarkup) { this._pmRef = AppState.planMarkup; this.results = {}; } },
+  _sync() { if (this._pmRef !== AppState.planMarkup) { this._pmRef = AppState.planMarkup; this.results = {}; this.layouts = {}; } },
 
   _isCalcLight(el) {
     const def = PLAN_DEFS.element(el.type);
@@ -140,6 +141,107 @@ const RoomCalc = {
       const room = wrap && (AppState.planMarkup.rooms || []).find(r => r.id === wrap.dataset.rlRoom);
       if (room) this.run([room]);
     });
+    propsEl.addEventListener('click', (e) => {
+      const wrap = propsEl.querySelector('[data-rl-room]');
+      const room = wrap && (AppState.planMarkup.rooms || []).find(r => r.id === wrap.dataset.rlRoom);
+      if (!room) return;
+      const lay = this.layouts[room.id];
+      if (e.target.closest('[data-rc-suggest]')) {
+        const sel = propsEl.querySelector('[data-rc-lum]');
+        this.suggest(room, sel && sel.value);
+      } else if (e.target.closest('[data-rc-pick]') && lay) {
+        lay.sel = +e.target.closest('[data-rc-pick]').dataset.rcPick;
+        PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true });
+      } else if (e.target.closest('[data-rc-place]')) this.place(room);
+      else if (e.target.closest('[data-rc-discard]')) { delete this.layouts[room.id]; PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true }); }
+    });
+  },
+
+  // ─── Auto layout ───
+  async suggest(room, lumId) {
+    this._sync();
+    const f = PlanEngine.factor();
+    if (!f) { UI.alert('Calibrate the plan first — the layout needs real distances.'); return; }
+    const ph = PhotoLib.get(lumId);
+    if (!ph) { UI.toast('Pick a luminaire from the library first (💡 Luminaires).', 'info'); return; }
+    const { req } = this.buildRoom(room, f);
+    req.luminaires = [];
+    if (UI.setBusy) UI.setBusy(true, 'Finding layouts…');
+    try {
+      const out = await API.request('/analysis/room-lighting/layout', 'POST', {
+        room: req, photometry: { [lumId]: ph }, photometryId: lumId, mount: 'recessed', fluxPct: 100,
+      });
+      this.layouts[room.id] = { lumId, cands: out.candidates, sel: 0, seed: out.seed };
+    } catch (e) {
+      UI.alert('Could not suggest a layout: ' + (e && e.message ? e.message : e));
+      delete this.layouts[room.id];
+    } finally {
+      if (UI.setBusy) UI.setBusy(false);
+    }
+    PlanMarkup.refreshProps();
+    PlanEngine.requestDraw({ fg: true });
+  },
+
+  _fittingsIn(room) {
+    const P = room.points;
+    return AppState.planMarkup.elements.filter(el => this._isCalcLight(el) && PlanEngine._pointInPoly({ x: el.x, y: el.y }, P));
+  },
+
+  async place(room) {
+    const lay = this.layouts[room.id];
+    const f = PlanEngine.factor();
+    if (!lay || !f) return;
+    const cand = lay.cands[lay.sel];
+    const ph = PhotoLib.get(lay.lumId);
+    if (!cand || !ph) return;
+    const old = this._fittingsIn(room);
+    if (old.length) {
+      const ok = await UI.confirm(`Replace the ${old.length} fitting${old.length === 1 ? '' : 's'} already in ${room.name || 'this room'} with this layout?`, { okText: 'Replace', cancelText: 'Cancel' });
+      if (!ok) return;
+      PlanMarkup.selectedIds.clear();
+      old.forEach(e => PlanMarkup.selectedIds.add(e.id));
+      PlanMarkup.deleteSelected();
+    }
+    const pm = AppState.planMarkup;
+    const base = PLAN_DEFS.defaults('bd_light');
+    for (const [x, y] of cand.positions) {
+      pm.elements.push({
+        id: AppState.planGenId('pmel'), type: 'bd_light', x: x / f, y: -y / f,
+        rotation: -(cand.rotate || 0), name: PlanMarkup.nextName('bd_light'), reticId: null,
+        props: Object.assign({}, base, { photoId: lay.lumId, watts: Math.round(ph.watts || base.watts || 0), lumens: '', mount: 'recessed', fluxPct: 100 }),
+      });
+    }
+    delete this.layouts[room.id];
+    PlanMarkup.selectOnly(room.id);
+    PlanMarkup.snapshot(); PlanMarkup.markDirty();
+    PlanEngine.requestDraw({ all: true });
+    await this.run([room]);
+  },
+
+  layoutHtml(room) {
+    this._sync();
+    const lay = this.layouts[room.id];
+    const libs = PhotoLib.list();
+    const cur = (lay && lay.lumId) || (libs[0] && libs[0].id) || '';
+    const sel = `<select data-rc-lum style="width:100%">${libs.length ? libs.map(p => `<option value="${escHtml(p.id)}"${p.id === cur ? ' selected' : ''}>${escHtml(PhotoLib.label(p))}</option>`).join('') : '<option value="">Add a luminaire in 💡 Luminaires first</option>'}</select>`;
+    let cards = '';
+    if (lay) {
+      cards = lay.cands.map((c, i) => {
+        const r = c.result, ok = r.pass === true;
+        return `<button type="button" data-rc-pick="${i}" style="display:block;width:100%;text-align:left;margin-top:6px;padding:8px;border-radius:8px;cursor:pointer;
+            border:${i === lay.sel ? '2px solid #1d4ed8' : '1px solid var(--border,#d9dee4)'};background:${i === lay.sel ? 'rgba(29,78,216,.08)' : 'transparent'};color:inherit">
+          <b style="color:${ok ? '#1d6b3a' : '#a61b1b'}">${String.fromCharCode(65 + i)} · ${c.cols} × ${c.rows} = ${c.count}${ok ? ' · passes' : ' · short'}</b><br>
+          <span style="font-family:monospace;font-size:11px">${Math.round(r.Em)} lx · U₀ ${r.U0.toFixed(2)}${r.ugr != null ? ` · UGR ${r.ugr.toFixed(1)}` : ''} · ${r.wm2} W/m²</span><br>
+          <span style="font-size:11px;color:var(--text-muted)">spacing ${c.spacingX} × ${c.spacingY} m</span></button>`;
+      }).join('');
+      cards += `<div style="display:flex;gap:6px;margin-top:8px">
+        <button type="button" class="plan-circuit-btn" data-rc-place style="flex:1">Place layout ${String.fromCharCode(65 + lay.sel)}</button>
+        <button type="button" class="plan-circuit-btn" data-rc-discard>Discard</button></div>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:4px">Layouts are checked with a coarse mesh; placing runs the full calculation.</div>`;
+    }
+    return `<div class="rc-layout" style="margin-top:10px;border-top:1px solid var(--border,#d9dee4);padding-top:8px">
+      <div class="plan-props-title" style="font-size:13px">Auto layout</div>${sel}
+      <button type="button" class="plan-circuit-btn" data-rc-suggest style="margin-top:6px">${lay ? '↻ Suggest again' : 'Suggest layouts'}</button>${cards}</div>`;
   },
 
   // ─── Drawing ───
@@ -177,6 +279,17 @@ const RoomCalc = {
       const L = RoomLighting.read(room);
       this._contour(ctx, g, f, L.em, zoom, false);
       this._contour(ctx, g, f, L.em * L.uo, zoom, true);
+      ctx.restore();
+    }
+    for (const room of (pm.rooms || [])) {
+      const lay = this.layouts[room.id];
+      if (!lay || !lay.cands[lay.sel]) continue;
+      ctx.save();
+      ctx.strokeStyle = '#1d4ed8'; ctx.fillStyle = 'rgba(29,78,216,0.18)'; ctx.lineWidth = 1.5 / zoom;
+      const r = Math.max(0.15 / f, 5 / zoom);
+      for (const [x, y] of lay.cands[lay.sel].positions) {
+        ctx.beginPath(); ctx.arc(x / f, -y / f, r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      }
       ctx.restore();
     }
   },

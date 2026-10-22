@@ -27,7 +27,7 @@ from ..analysis.retic_earth import run_retic_earth_check
 from ..analysis.street_lighting import run_street_lighting
 from ..analysis.road_lighting import run_road_lighting
 from ..analysis.road_plan import run_road_plan
-from ..analysis.room_lighting import run_room_lighting
+from ..analysis.room_lighting import run_room_lighting, suggest_layout
 from ..analysis.photometry import parse_photometry, generic_optic, GENERIC_OPTICS, INDOOR_OPTICS
 from ..analysis.lightning_risk import run_lightning_risk
 from ..analysis.raceway import run_raceway_analysis
@@ -744,6 +744,18 @@ def room_lighting(data: RoomLightingRequest):
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Room lighting error: {e}")
+
+
+@router.post("/room-lighting/layout")
+def room_lighting_layout(data: RoomLightingRequest):
+    """Suggest luminaire grids (rows x columns) that meet a room's targets."""
+    try:
+        return suggest_layout(data.model_dump())
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Layout error: {e}")
 
 
 @router.get("/road-lighting/generic")
