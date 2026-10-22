@@ -18,6 +18,7 @@
   <link rel="stylesheet" href="css/interlocking.css?v=3.5.274">
   <link rel="stylesheet" href="css/schedules.css?v=3.5.274">
   <link rel="stylesheet" href="css/quantities.css?v=3.5.274">
+  <link rel="stylesheet" href="css/lighting.css?v=3.5.274">
   <link rel="stylesheet" href="css/streetlight.css?v=3.5.274">
   <link rel="stylesheet" href="css/roadlight.css?v=3.5.274">
   <link rel="stylesheet" href="css/roadplan.css?v=3.5.304">
@@ -73,6 +74,7 @@
           <button id="btn-workspace-plan" class="workspace-tab" role="tab" aria-selected="false" title="Plan markup — site &amp; floor-plan drawings">Plan</button>
           <button id="btn-workspace-interlock" class="workspace-tab" role="tab" aria-selected="false" title="Circuit-breaker interlocking logic — boolean gates + simulation">Interlock</button>
           <button id="btn-workspace-schedules" class="workspace-tab" role="tab" aria-selected="false" title="Distribution-board circuit schedules — full-screen editor for every board, with per-way cable checks">Schedules</button>
+          <button id="btn-workspace-lighting" class="workspace-tab" role="tab" aria-selected="false" title="Room and outdoor lighting: every room, area, fence and escape route with results, energy and a PDF report">Lighting</button>
           <button id="btn-workspace-quantities" class="workspace-tab" role="tab" aria-selected="false" title="Bill of quantities, cable schedules and the rate library">Quantities</button>
         </div>
       <div class="toolbar-right">
@@ -584,6 +586,7 @@
   </div>
 
   <!-- QUANTITIES WORKSPACE — rail + docked BOQ / cable schedules / rate library, built by js/quantities.js -->
+  <div id="lighting-workspace" style="display:none"></div>
   <div id="quantities-workspace" style="display:none"></div>
 
   <!-- STREET LIGHTING WORKSPACE (Reticulation) — built by js/streetlight.js -->
@@ -3522,6 +3525,8 @@
   <script src="js/roomcalc.js?v=3.5.274"></script>
   <script src="js/areacalc.js?v=3.5.274"></script>
   <script src="js/emergcalc.js?v=3.5.274"></script>
+  <script src="js/lightws.js?v=3.5.274"></script>
+  <script src="js/lightreport.js?v=3.5.274"></script>
   <script src="js/plan-dxf-manager.js?v=3.5.274"></script>
   <script src="js/plan-dd-import.js?v=3.5.274"></script>
   <script src="js/plan-circuits.js?v=3.5.274"></script>

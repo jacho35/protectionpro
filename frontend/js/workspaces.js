@@ -4,7 +4,7 @@
  * and that decides which workspace tabs it shows, in workflow order:
  *
  *   Reticulation  1 Site plan › 2 Demand › 3 Street lighting › 4 Single-line
- *   Building      1 Floor plans › 2 Single-line › 3 Schedules
+ *   Building      1 Floor plans › 2 Single-line › 3 Schedules › 4 Lighting › 5 Quantities
  *   Network       Single-line · Interlocking
  *
  * Extra workspaces can be switched on per project (Project type & workspaces
@@ -30,7 +30,7 @@ const Workspaces = {
     building: {
       label: 'Building',
       desc: 'Floors, distribution boards and final circuits, down to each way.',
-      core: ['plan', 'sld', 'schedules', 'quantities'],
+      core: ['plan', 'sld', 'schedules', 'lighting', 'quantities'],
       planDomain: 'building',
     },
     network: {
@@ -41,10 +41,10 @@ const Workspaces = {
     },
   },
   // Canonical order for workspaces outside a type's core set.
-  ORDER: ['plan', 'retic', 'streetlight', 'sld', 'schedules', 'interlock', 'quantities'],
+  ORDER: ['plan', 'retic', 'streetlight', 'sld', 'schedules', 'lighting', 'interlock', 'quantities'],
   TAB_IDS: {
     sld: 'btn-workspace-sld', retic: 'btn-workspace-retic', streetlight: 'btn-workspace-streetlight', plan: 'btn-workspace-plan',
-    interlock: 'btn-workspace-interlock', schedules: 'btn-workspace-schedules', quantities: 'btn-workspace-quantities',
+    interlock: 'btn-workspace-interlock', schedules: 'btn-workspace-schedules', quantities: 'btn-workspace-quantities', lighting: 'btn-workspace-lighting',
   },
   DESCS: {
     plan: 'Site or floor plans with devices, routes and circuits',
@@ -54,6 +54,7 @@ const Workspaces = {
     schedules: 'Distribution-board circuit schedules and checks',
     interlock: 'Breaker interlocking logic, simulated against the single-line',
     quantities: 'Bill of quantities, cable schedules and the rate library',
+    lighting: 'Rooms, outdoor areas, fences and escape routes: lux, glare, energy and emergency lighting',
   },
 
   // ── Type ────────────────────────────────────────────────────────────
@@ -94,6 +95,7 @@ const Workspaces = {
       case 'plan': return typeof AppState._planMarkupIsEmpty === 'function' && !AppState._planMarkupIsEmpty();
       case 'interlock': return !!(AppState.interlockLogic && AppState.interlockLogic.nodes && AppState.interlockLogic.nodes.length);
       case 'schedules': return this._schedulesHaveData();
+      case 'lighting': return typeof LightingWS !== 'undefined' && LightingWS.hasData();
       // A project that already priced something keeps its Quantities tab.
       case 'quantities': { const L = AppState.rateLibrary; return !!(L && ((L.items && Object.keys(L.items).length) || (L.custom && Object.keys(L.custom).length))); }
       default: return false;
@@ -126,7 +128,7 @@ const Workspaces = {
       const d = AppState.planMarkup && AppState.planMarkup.settings && AppState.planMarkup.settings.domain;
       return d === 'building' ? 'Floor plans' : 'Site plan';
     }
-    return { sld: 'Single-line', retic: 'Demand', streetlight: 'Street lighting', schedules: 'Schedules', interlock: 'Interlocking', quantities: 'Quantities' }[ws] || ws;
+    return { sld: 'Single-line', retic: 'Demand', streetlight: 'Street lighting', schedules: 'Schedules', interlock: 'Interlocking', quantities: 'Quantities', lighting: 'Lighting' }[ws] || ws;
   },
 
   // ── Plan domain follows the type ────────────────────────────────────
@@ -252,7 +254,7 @@ const Workspaces = {
   // Label a core workspace as it will read in a project of `type`.
   _coreLabel(type, ws) {
     if (ws === 'plan') return type === 'building' ? 'Floor plans' : 'Site plan';
-    return { sld: 'Single-line', retic: 'Demand', streetlight: 'Street lighting', schedules: 'Schedules', interlock: 'Interlocking', quantities: 'Quantities' }[ws];
+    return { sld: 'Single-line', retic: 'Demand', streetlight: 'Street lighting', schedules: 'Schedules', interlock: 'Interlocking', quantities: 'Quantities', lighting: 'Lighting' }[ws];
   },
 
   // New project: pick the type. Resolves to a type id, or null if cancelled.

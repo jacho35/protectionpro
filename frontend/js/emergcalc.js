@@ -113,7 +113,7 @@ const EmergCalc = {
       RoomCalc.results['em:' + r.id] = { res: r, sig: b ? this.signature(b.room) : '' };
       if (r.pass) pass++; else fail++;
     }
-    UI.toast(`Emergency lighting: ${pass} pass, ${fail} fail.`, fail ? 'warn' : 'success', 5000);
+    if (!RoomCalc.quiet) UI.toast(`Emergency lighting: ${pass} pass, ${fail} fail.`, fail ? 'warn' : 'success', 5000);
     PlanEngine.requestDraw({ fg: true });
     PlanMarkup.refreshProps();
   },

@@ -13,6 +13,7 @@ const RoomCalc = {
   enabled: true,        // draw the grid for rooms that have a result
   _busy: false,
   _pmRef: null,
+  quiet: false,         // the Lighting workspace's Calculate all silences the per-run toasts
   layouts: {},          // room id → { lumId, cands, sel, seed }
 
   // Results belong to the project in memory; a different project object means a new project.
@@ -106,7 +107,7 @@ const RoomCalc = {
       if (r.pass === true) pass++; else if (r.pass === false) fail++; else none++;
     }
     const skipped = built.reduce((n, b) => n + b.skipped.length, 0);
-    UI.toast(`Lighting: ${pass} pass, ${fail} fail${none ? `, ${none} without fittings` : ''}${skipped ? ` · ${skipped} fitting${skipped === 1 ? ' has' : 's have'} no library luminaire (pick one in its properties)` : ''}.`,
+    if (!RoomCalc.quiet) UI.toast(`Lighting: ${pass} pass, ${fail} fail${none ? `, ${none} without fittings` : ''}${skipped ? ` · ${skipped} fitting${skipped === 1 ? ' has' : 's have'} no library luminaire (pick one in its properties)` : ''}.`,
       fail ? 'warn' : 'success', 6000);
     PlanEngine.requestDraw({ fg: true });
     PlanMarkup.refreshProps();
