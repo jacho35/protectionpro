@@ -1256,9 +1256,13 @@ const AppState = {
   reset() {
     this.projectId = null;
     this.projectName = 'Untitled Project';
-    // Project type ('retic' | 'building' | 'network') decides the workspace
-    // tabs (workspaces.js). null = never chosen: inferred from the content.
+    // Project type ('retic' | 'building' | 'network' | 'lighting') decides the
+    // workspace tabs (workspaces.js). null = never chosen: inferred from the content.
     this.projectType = null;
+    // A Lighting project: which designs it shows (rooms / roads / sports;
+    // null = all) and whether its Roads tab has street-light circuits.
+    this.lightingKinds = null;
+    this.roadCircuits = false;
     // SLD symbol set: 'iec' (IEC 60617 contacts/qualifiers) or 'classic'.
     // New projects start IEC; fromJSON keeps a save without the field on
     // 'classic' so drawings issued before the setting don't change.
@@ -1476,11 +1480,8 @@ const AppState = {
   // pan + zoom. Restored by fromJSON so a project opens where it was left.
   _lastViewToJSON() {
     const r = (n) => Math.round(n * 100) / 100;
-    let workspace = 'sld';
-    for (const ws of ['retic', 'streetlight', 'plan', 'interlock', 'schedules', 'quantities', 'lighting']) {
-      const el = typeof document !== 'undefined' && document.getElementById(ws + '-workspace');
-      if (el && el.style.display === 'flex') { workspace = ws; break; }
-    }
+    // switchWorkspace() records the tab (two tabs can share a workspace pane).
+    let workspace = (typeof window !== 'undefined' && window.activeWorkspace) || 'sld';
     const v = { workspace, zoom: r(this.zoom), panX: r(this.panX), panY: r(this.panY) };
     if (typeof PlanEngine !== 'undefined' && PlanEngine.view && !this._planMarkupIsEmpty()) {
       v.plan = { zoom: r(PlanEngine.view.zoom), panX: r(PlanEngine.view.panX), panY: r(PlanEngine.view.panY) };
@@ -1514,6 +1515,8 @@ const AppState = {
       dataVersion: 2,
       projectName: this.projectName,
       projectType: this.projectType || undefined,
+      lightingKinds: this.projectType === 'lighting' && this.lightingKinds ? this.lightingKinds : undefined,
+      roadCircuits: this.projectType === 'lighting' && this.roadCircuits ? true : undefined,
       symbolSet: this.symbolSet,
       extraWorkspaces: (this.extraWorkspaces && this.extraWorkspaces.length) ? this.extraWorkspaces : undefined,
       projectDetails: this.projectDetails,
@@ -1946,7 +1949,9 @@ const AppState = {
     // Cable rate keys come from library ids now; move name-keyed rates once.
     if (this.rateLibrary && typeof Rates !== 'undefined' && Rates._migrateKeys) Rates._migrateKeys(this.rateLibrary);
     this.raceways = Array.isArray(data.raceways) ? data.raceways : [];
-    this.projectType = ['retic', 'building', 'network'].includes(data.projectType) ? data.projectType : null;
+    this.projectType = ['retic', 'building', 'network', 'lighting'].includes(data.projectType) ? data.projectType : null;
+    this.lightingKinds = Array.isArray(data.lightingKinds) ? data.lightingKinds.filter(k => ['rooms', 'roads', 'sports'].includes(k)) : null;
+    this.roadCircuits = data.roadCircuits === true;
     this.extraWorkspaces = Array.isArray(data.extraWorkspaces) ? data.extraWorkspaces.filter(w => typeof w === 'string') : [];
     // One cable library: rewrite retired names. Custom/edited library entries the project
     // uses are compared with YOUR libraries and offered, never applied silently.

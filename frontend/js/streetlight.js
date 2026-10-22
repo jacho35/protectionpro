@@ -211,8 +211,15 @@ const StreetLight = {
     const ws = document.getElementById('streetlight-workspace');
     if (tb && ws) ws.style.top = tb.offsetHeight + 'px';
     if (!this.selected) this._selId = this.circuits.length ? this.circuits[0].id : null;
-    this.setView(this._view || 'circuits');
+    // A Lighting project's Roads tab: no Circuits view unless it was asked for.
+    const circ = this._circuitsOn();
+    if (ws) {
+      ws.querySelector('.sl-title').textContent = circ && Workspaces.type() !== 'lighting' ? 'Street lighting' : 'Roads';
+      ws.querySelector('[data-view="circuits"]').hidden = !circ;
+    }
+    this.setView(this._view || (circ ? 'circuits' : 'design'));
   },
+  _circuitsOn() { return typeof Workspaces === 'undefined' || Workspaces.roadCircuitsOn(); },
 
   deactivate() {
     this._active = false;
@@ -224,7 +231,7 @@ const StreetLight = {
   // Circuits (electrical), Lighting design (photometric, js/roadlight.js) or
   // Road plan (the design on roads of any shape, js/roadplan.js).
   setView(view) {
-    this._view = ['design', 'plan'].includes(view) ? view : 'circuits';
+    this._view = ['design', 'plan'].includes(view) ? view : this._circuitsOn() ? 'circuits' : 'design';
     const ws = document.getElementById('streetlight-workspace');
     if (!ws) return;
     const design = this._view === 'design', plan = this._view === 'plan';

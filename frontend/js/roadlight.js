@@ -507,6 +507,20 @@ const RoadLight = {
     this._afterMutate();
   },
 
+  // Every design that can be calculated (the lighting Overview's Calculate all).
+  async computeAll() {
+    for (const des of this.designs) {
+      if (this._problems(des).length) continue;
+      try {
+        const r = await API.request('/analysis/road-lighting', 'POST', this._payload(des));
+        this._results[des.id] = r.result;
+      } catch (e) {
+        this._results[des.id] = { error: e.message || String(e) };
+      }
+    }
+    if (this._built) this.render();
+  },
+
   // ─── Render ──────────────────────────────────────────────────────────
   _status(t) { const el = document.getElementById('sl-status'); if (el) el.textContent = t; },
 
