@@ -461,3 +461,29 @@ body.dark-mode .dxfi-verdict.warn { background: #45300f; color: #ffd8a1; border-
 .dxfi-actions { padding: 12px 18px; border-top: 1px solid var(--border-color); margin: 0; }
 .dxfm-units { display: flex; align-items: center; gap: 8px; color: var(--text-primary); }
 @media (max-width: 640px) { .dxfi-units { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* ─── Lighting legend (Lighting tab's plan view) ───────────────── */
+.plan-legend {
+  position: absolute; right: 10px; bottom: 10px; z-index: 30; width: 250px;
+  display: flex; flex-direction: column; gap: 5px; padding: 9px 11px;
+  background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: 8px;
+  box-shadow: 0 4px 14px rgba(0,0,0,.12); color: var(--text-primary); font-size: 12px; pointer-events: none;
+}
+.plan-legend[hidden] { display: none; }
+body:not(.plan-ctx-lighting) .plan-legend { display: none; }
+.plan-legend-title { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.plan-legend small { font-size: 11px; color: var(--text-secondary); }
+.plan-legend-bar {
+  position: relative; height: 12px; border-radius: 3px;
+  background: linear-gradient(90deg, hsl(240,80%,50%), hsl(180,80%,50%), hsl(120,80%,50%), hsl(60,80%,50%), hsl(0,80%,50%));
+}
+.plan-legend-mark { position: absolute; top: -3px; bottom: -3px; width: 2px; margin-left: -1px; background: #111827; }
+.plan-legend-scale { display: flex; justify-content: space-between; font-size: 11px; font-variant-numeric: tabular-nums; color: var(--text-secondary); }
+.plan-legend-rows { display: flex; flex-direction: column; gap: 3px; }
+.plan-legend-rows > span { display: inline-flex; align-items: center; gap: 6px; }
+.plan-legend-line { display: inline-block; width: 18px; border-top: 2px solid #111827; }
+.plan-legend-line.dashed { border-top-style: dashed; }
+body.dark-mode .plan-legend-line, body.dark-mode .plan-legend-mark { border-color: #e0e0e8; background: #e0e0e8; }
+body.dark-mode .plan-legend-line { background: none; }
+.plan-legend-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; }
+@media (max-width: 768px) { .plan-legend { left: 8px; right: 8px; width: auto; bottom: 8px; } }

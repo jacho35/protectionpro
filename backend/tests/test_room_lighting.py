@@ -173,3 +173,24 @@ def test_suggest_layout_l_shape_stays_inside_and_errors_are_clear():
         RL.suggest_layout({"room": _room(poly, [], targets={}), "photometry": {"p": prof}, "photometryId": "p"})
     with pytest.raises(ValueError):
         RL.suggest_layout({"room": room, "photometry": {"p": prof}, "photometryId": "zz"})
+
+
+def test_grid_step_set_by_the_user():
+    webs, _ = _webs()
+    poly = [[0, 0], [6, 0], [6, 4], [0, 4]]
+    auto = _run(_room(poly, [_lum(3, 2)]), webs)
+    assert auto["workplane"]["step"] <= 0.5 and not any("Grid" in n for n in auto["notes"])
+    fine = _run(_room(poly, [_lum(3, 2)], gridStep=0.2), webs)
+    assert fine["workplane"]["step"] == 0.2 and fine["grid"]["dx"] < 0.21
+    assert fine["workplane"]["n"] > auto["workplane"]["n"]
+    # same light, finer grid: the mean moves only by sampling (one peaked fitting)
+    assert abs(fine["workplane"]["Em"] - auto["workplane"]["Em"]) / auto["workplane"]["Em"] < 0.1
+    coarse = _run(_room(poly, [_lum(3, 2)], gridStep=1.0), webs)
+    assert coarse["workplane"]["step"] == 1.0
+    assert any("coarser than the EN 12464-1 maximum" in n for n in coarse["notes"])
+    # too fine for the point limit: coarsened and said so
+    big = _run(_room([[0, 0], [40, 0], [40, 30], [0, 30]], [_lum(20, 15)], gridStep=0.1), webs)
+    assert big["workplane"]["step"] > 0.1 and any("9000 points" in n for n in big["notes"])
+    # the layout screen keeps its own coarse grid
+    fast = RL._Room(_room(poly, [_lum(3, 2)], gridStep=0.2), webs, "fast")
+    assert RL._grid_step(fast, "fast") >= 0.5

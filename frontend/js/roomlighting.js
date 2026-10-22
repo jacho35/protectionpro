@@ -60,7 +60,7 @@ const LIGHTING_STANDARDS = {
 };
 
 const RoomLighting = {
-  DEFAULTS: { emerg: 'none', tD: 2250, tN: 250, fo: 1, fd: 1, fc: 1, task: 'off_writing', ceilH: 2.7, workH: 0.75, wallZone: 0.5, rhoC: 0.7, rhoW: 0.5, rhoF: 0.2, mf: 0.8, wallE: 75, ceilE: 50 },
+  DEFAULTS: { emerg: 'none', tD: 2250, tN: 250, fo: 1, fd: 1, fc: 1, task: 'off_writing', ceilH: 2.7, workH: 0.75, wallZone: 0.5, rhoC: 0.7, rhoW: 0.5, rhoF: 0.2, mf: 0.8, wallE: 75, ceilE: 50, grid: 0 },
 
   // The project's lighting standard ('EN' unless set to 'SANS').
   standard() {
@@ -109,6 +109,7 @@ const RoomLighting = {
       wallZone: this._num(L.wallZone, D.wallZone, 0, 2),
       rhoC: this._num(L.rhoC, D.rhoC, 0, 1), rhoW: this._num(L.rhoW, D.rhoW, 0, 1), rhoF: this._num(L.rhoF, D.rhoF, 0, 1),
       mf: this._num(L.mf, D.mf, 0.3, 1),
+      grid: this._num(L.grid, 0, 0, 5),   // calculation grid (m); 0 = automatic
       emerg: ['none', 'open', 'highrisk'].includes(L.emerg) ? L.emerg : 'none',
       tD: this._num(L.tD, D.tD, 0, 8760), tN: this._num(L.tN, D.tN, 0, 8760),
       fo: this._num(L.fo, D.fo, 0, 1), fd: this._num(L.fd, D.fd, 0, 1), fc: this._num(L.fc, D.fc, 0.5, 1),
@@ -194,6 +195,9 @@ const RoomLighting = {
       <label class="plan-field" style="margin-top:6px"><span>Maintenance factor</span>
         <input type="number" data-rl="mf" value="${L.mf}" step="0.01" min="0.3" max="1" style="width:100%">
         <select data-rl-mfpreset style="width:100%"><option value="">Presets…</option>${this.MF_PRESETS.map(([v, n]) => `<option value="${v}">${v} — ${escHtml(n)}</option>`).join('')}</select></label>
+      <label class="plan-field" style="margin-top:6px"><span>Calculation grid</span>
+        <input type="number" data-rl="grid" value="${L.grid > 0 ? L.grid : ''}" step="0.05" min="0.05" max="5" placeholder="automatic" style="width:100%"><small>m — blank = automatic</small></label>
+      <div style="font-size:11px;color:var(--text-muted)">Automatic follows the EN 12464-1 maximum for the room's size, at most 0.5 m.</div>
       <div style="margin-top:8px;border-top:1px solid var(--border,#d9dee4);padding-top:8px">
         <div class="plan-props-title" style="font-size:13px">Energy</div>
         <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px">
