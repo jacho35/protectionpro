@@ -611,7 +611,7 @@ const ReticTcc = {
     doc.text(view.join('    ·    '), m, m + 25);
 
     const imgW = 165, imgH = imgW * this.H / this.W, top = m + 29;
-    doc.addImage(png, 'PNG', m, top, imgW, imgH, 'rtcc-plot', 'FAST');
+    doc.addImage(png, 'PNG', m, top, imgW, imgH, 'rtcc-plot-' + doc.internal.getNumberOfPages() + '-' + Date.now(), 'FAST');   // jsPDF reuses an image by alias — one per page
 
     // Legend + table to the right of the plot
     const x0 = m + imgW + 6;

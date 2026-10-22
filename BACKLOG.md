@@ -405,6 +405,7 @@ Help ▸ Guides (`frontend/js/help-guides.js`, pictures in `frontend/img/help/`)
 - Road plan background can also be a DXF drawing already on the Site plan (*Use the site plan…* / *From site plan…*), no second import.
 - Road plan *From DXF* picking bridges gaps in broken kerb/centreline lines (adjustable distance, default 3 m, only forward-continuing ends; bridges drawn dashed and listed) and *Trim…* cuts the picked line (delete start → cut, cut → end, keep only between two cuts).
 - Reticulation › Demand: *Export all curves (PDF)* on each minisub's strings section — one earth-fault mini-TCC page per string (the ◔ Curve plot) behind an optional summary table; dialog picks the strings, points plotted (all / kiosk feeders / erven) and the I²t lines. `ReticTcc.openAll` / `exportAll`; the single-curve PDF now shares `_pdfPage` / `_pdfFinish`.
+- Fix: *Export all curves* drew the first string's plot on every page (jsPDF reuses an image by alias) — each page now has its own image alias.
 - Help: *Road plan — lighting on roads of any shape* article. Not yet: a Road plan PDF report and a Help guide with screenshots; luminance on bends is reported as indicative.
 
 ### Building schedules: library breakers + mini TCC per way (2026-10-16)
