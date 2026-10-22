@@ -929,9 +929,12 @@ const PlanMarkup = {
     const chip = document.getElementById('plan-scale-chip');
     if (chip) {
       const txt = chip.querySelector('span') || chip;
-      txt.textContent = calibrated ? (s.source === 'dxf' ? 'Scale from DXF' : 'Scale set') : 'Not calibrated — set scale';
-      chip.classList.toggle('warn', !calibrated);
-      chip.title = calibrated ? `1 px = ${s.factor.toFixed(4)} m — click to calibrate again` : 'Not calibrated — click, then click two points a known distance apart';
+      const auto = calibrated && s.source === 'auto';
+      // An automatic scale (blank plan) only matters once a drawing is under it.
+      const autoWarn = auto && ((pm.plans || []).length > 0);
+      txt.textContent = calibrated ? (auto ? (autoWarn ? 'Automatic scale — calibrate the drawing' : 'Scale automatic') : s.source === 'dxf' ? 'Scale from DXF' : 'Scale set') : 'Not calibrated — set scale';
+      chip.classList.toggle('warn', !calibrated || autoWarn);
+      chip.title = calibrated ? (auto ? `Set automatically on a blank plan (1 px = ${s.factor.toFixed(4)} m). An imported drawing is not to scale until you calibrate it: click, then two points a known distance apart.` : `1 px = ${s.factor.toFixed(4)} m — click to calibrate again`) : 'Not calibrated — click, then click two points a known distance apart';
     }
     const st = pm.settings;
     const snap = document.getElementById('plan-snap-chip');
