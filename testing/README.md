@@ -206,6 +206,8 @@ equations worked by hand, or an independent closed-form solve). **Consistency on
 | Raceway | `raceway.py` | NEC fill, IEC 60364-5-52 B.52.17 hand calc | `TestRaceway` |
 | Backup autonomy | `backup_autonomy.py` | Usable-energy hand calc | `TestBackupAutonomy` |
 | DB circuit check | `db_circuit_check.py` | IEC 60364-5-52 table values, VD / Zs hand calc | `test_db_circuit_check.py` |
+| Room & outdoor lighting | `room_lighting.py`, `area_lighting.py` | CIE 171:2006 analytical cases TC5.2 (point-source direct, ±0.1 %), TC5.4 (closed-room flux, ±1 %), TC5.8 (interreflection 0–95 % reflectance, ±1 %) | `test_lighting_reference.py` |
+| Road lighting | `road_lighting.py` | Closed forms: line-source illuminance with the 5H range rule, cos³γ, L = I·r/H², Lambertian L = Q0·E, published S1 per r-table class. No third-party numeric case (CIE 140's test data is a separate part of the report) | `test_lighting_reference.py`, `test_road_lighting.py` |
 | *Consistency only* | | | |
 | Harmonic penetration | `harmonics.py` | Trends + IEEE 519 limit tables | `TestHarmonics` |
 | SVC / STATCOM | `loadflow.py` | Set-point hold, Q clamp, Q ∝ V² | `TestSVC` |
