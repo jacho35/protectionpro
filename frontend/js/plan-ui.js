@@ -25,6 +25,7 @@ const PlanUI = {
       if (e.target.closest('[data-role="bulk-assign"]')) { this._bulkAssign(); return; }
       if (e.target.closest('[data-role="sync-circuits"]')) { this._syncCircuits(); return; }
       if (e.target.closest('[data-role="import-ies"]')) { this._importIes(); return; }
+      if (e.target.closest('[data-role="open-photolib"]')) { PhotoLib.open(); return; }
       if (e.target.closest('[data-role="set-default-cable"]')) { this._setDefaultCable(); return; }
       if (e.target.closest('[data-role="balance-phases"]')) { this._balancePhases(); return; }
     });
@@ -484,6 +485,12 @@ const PlanUI = {
           if (commit && typeof PlanSync !== 'undefined' && PlanSync.pushRouteCable) PlanSync.pushRouteCable(item);
         } else if (key === 'curved') item.curved = val;
         else { item.props = item.props || {}; item.props[key] = val; }
+      if (key === 'photoId' && commit && typeof PhotoLib !== 'undefined') {
+        // Taking a library luminaire: its watts replace the nameplate guess and any flux override goes.
+        const ph = PhotoLib.get(val);
+        if (ph) { item.props.watts = Math.round(ph.watts || item.props.watts || 0); item.props.lumens = ''; }
+        this.renderProps();
+      }
       } else {
         item[key] = val;
       }
@@ -823,6 +830,13 @@ const PlanUI = {
       return `<div class="plan-field">${label}<select data-key="${f.key}">${opts}</select></div>`;
     }
     if (f.type === 'ies_select') return this._iesField(f, v, label);
+    if (f.type === 'photo_select') {
+      const libs = (typeof PhotoLib !== 'undefined') ? PhotoLib.list() : [];
+      const opts = ['<option value="">— none (not calculated) —</option>'].concat(libs.map(p =>
+        `<option value="${escHtml(p.id)}"${p.id === v ? ' selected' : ''}>${escHtml(PhotoLib.label(p))}</option>`)).join('');
+      return `<div class="plan-field">${label}<select data-key="${f.key}">${opts}</select></div>
+        <button class="plan-circuit-btn" data-role="open-photolib">💡 Luminaire library…</button>`;
+    }
     if (f.type === 'number') {
       const attrs = [f.min != null ? `min="${f.min}"` : '', f.max != null ? `max="${f.max}"` : '', f.step != null ? `step="${f.step}"` : ''].join(' ');
       return `<div class="plan-field">${label}<input type="number" data-key="${f.key}" value="${escHtml(v)}" ${attrs}></div>`;

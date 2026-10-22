@@ -110,7 +110,7 @@ const PLAN_DEFS = {
       name: 'Light Fitting', domain: 'building', group: 'Lighting', color: '#d29922', scale: 1,
       symbol: 'circle', dxf: { shape: 'circle', sizeM: 0.3 }, rotatable: true, schedule: null, namePrefix: 'L',
       dxfBlock: 'LUMINAIRE', dxfLayer: 'E-LIGHTING',
-      defaults: { kind: 'ceiling', watts: 20 },
+      defaults: { kind: 'ceiling', watts: 20, mount: 'recessed', fluxPct: 100 },
       fields: [
         { key: 'name', label: 'Ref', type: 'text' },
         { key: 'kind', label: 'Type', type: 'select', options: [
@@ -121,6 +121,11 @@ const PLAN_DEFS = {
         ] },
         { key: 'watts', label: 'Load', type: 'number', unit: 'W' },
         { key: 'lumens', label: 'Output', type: 'number', unit: 'lm' },
+        { key: 'photoId', label: 'Luminaire (library)', type: 'photo_select' },
+        { key: 'mount', label: 'Mounting', type: 'select', options: [
+          { value: 'recessed', label: 'Recessed' }, { value: 'surface', label: 'Surface' }, { value: 'suspended', label: 'Suspended' } ] },
+        { key: 'drop', label: 'Suspension drop', type: 'number', unit: 'm', min: 0, step: 0.1 },
+        { key: 'fluxPct', label: 'Flux / dimming', type: 'number', unit: '%', min: 0, max: 100, step: 5 },
         { key: 'iesId', label: 'Photometry', type: 'ies_select' },
       ],
     },

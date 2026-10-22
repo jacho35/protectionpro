@@ -114,11 +114,13 @@ const RoomLighting = {
       <label class="plan-field" style="margin-top:6px"><span>Maintenance factor</span>
         <input type="number" data-rl="mf" value="${L.mf}" step="0.01" min="0.3" max="1" style="width:100%">
         <select data-rl-mfpreset style="width:100%"><option value="">Presets…</option>${this.MF_PRESETS.map(([v, n]) => `<option value="${v}">${v} — ${escHtml(n)}</option>`).join('')}</select></label>
+      ${typeof RoomCalc !== 'undefined' ? RoomCalc.resultHtml(room) : ''}
     </div>`;
   },
 
   _bound: false,
   bind(propsEl) {
+    if (typeof RoomCalc !== 'undefined') RoomCalc.bind(propsEl);
     if (this._bound || !propsEl) return;
     this._bound = true;
     const commit = (fn) => {

@@ -700,6 +700,16 @@ class PhotometryFileRequest(BaseModel):
     filename: str = ""
 
 
+class RoomLightingRequest(BaseModel):
+    """Room lighting — direct + interreflected illuminance, UGR and energy for
+    rooms of any outline under a flat ceiling. See analysis/room_lighting.py."""
+    model_config = {"extra": "allow"}
+
+    rooms: list[dict] = []
+    photometry: dict = {}
+    detail: str = "full"
+
+
 class GenericOpticRequest(BaseModel):
     kind: str = "generic_medium"
     lumens: float = 10000.0
