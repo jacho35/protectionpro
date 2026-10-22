@@ -277,7 +277,7 @@ const LightReport = {
       'UGR follows CIE 117 with the Guth position index, evaluated at the standard observer positions with the initial luminaire flux. GR follows CIE 112.',
       'Furniture, partitions, windows and daylight are not modelled; a wall stops light only in the emergency and non-convex-room calculations.',
       'Generic optics are representative distributions for feasibility, not products. Use the manufacturer\'s IES / LDT for a compliance design.',
-      'The targets (task tables, emergency limits) are provisional values entered from memory: confirm every one against the standard you design to before issuing this report as a result.',
+      'Targets and emergency limits are those of the project\'s lighting standard: indoor EN 12464-1:2021 or SANS 10114-1:2020 (SANS gives only Em, UGR and Ra; Uo, Ez, wall and ceiling targets follow EN 12464-1), emergency EN 1838:1999 or SANS 10114-2:2020, outdoor EN 12464-2:2024. Confirm they are the edition your project requires.',
     ];
     doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5); doc.setTextColor(40);
     let by = y + 5;

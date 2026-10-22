@@ -6,7 +6,7 @@ Direct light only (an outdoor surface has no enclosure to interreflect with):
     E = I(C, γ)·cos θ / d², maintained (× MF). Reports Ēm, Emin, Emax, U₀ and
     the glare rating GR of CIE 112:1994 at a grid of observers (eye 1.5 m,
     eight viewing directions): GR = 27 + 24·log10(Lvl / Lve^0.9) with the
-    veiling luminance Lvl = 10·Σ E_eye,i / θ_i² (θ in degrees) and the
+    veiling luminance Lvl = 10·Σ E_eye,i / θ_i² (θ in degrees, 1.5° < θ ≤ 60°) and the
     environment's Lve = 0.035·Lav, Lav = ρ·Ēm/π.
   • Perimeters — vertical illuminance at the fence height (default 1.5 m) on a
     plane facing out of (or into) the site, every `step` metres along the line:
@@ -174,7 +174,7 @@ def evaluate_area(a: dict, lums: _Lums, with_gr: bool = True) -> dict:
                 vx, vy = math.cos(a_v), math.sin(a_v)
                 cos_t = (dx * vx + dy * vy) / dist
                 theta = np.degrees(np.arccos(np.clip(cos_t, -1, 1)))
-                use = (cos_t > 0.0) & (theta <= 90.0)
+                use = (cos_t > 0.0) & (theta <= 60.0)           # CIE 112 eq. 3.1: 1.5° < Θ ≤ 60°
                 th = np.maximum(theta, 1.5)
                 e_eye = np.where(use, I * np.clip(cos_t, 0, 1) / (dist * dist), 0.0)
                 lvl = 10.0 * float((e_eye / (th * th)).sum())

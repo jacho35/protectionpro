@@ -8,23 +8,26 @@
  * answer comes from /api/analysis/area-lighting and is kept in RoomCalc.results
  * so the indoor and outdoor results share one store, stale marker and drawing.
  *
- * The task table is PROVISIONAL (EN 12464-2 values entered from memory):
- * every number is editable and the panel says to confirm it.
+ * The task table is EN 12464-2:2024 (Table 7 traffic zones, Table 8 parking areas,
+ * Table 18 storage areas): required Ēm, Uo, glare limit RGL (the `gr` field; the
+ * engine's CIE 112 glare rating is compared with it) and Ra. SANS has no outdoor
+ * workplace standard, so these apply whichever indoor standard the project uses.
+ * Every number is editable.
  */
 
 const OUTDOOR_TASKS = {
-  car_light:    { group: 'Car parks', name: 'Light traffic (shops, apartments)', em: 5, uo: 0.25, gr: 55, ra: 20 },
-  car_medium:   { group: 'Car parks', name: 'Medium traffic (stores, sports complexes)', em: 10, uo: 0.25, gr: 50, ra: 20 },
-  car_heavy:    { group: 'Car parks', name: 'Heavy traffic (schools, churches)', em: 20, uo: 0.25, gr: 50, ra: 20 },
-  walk_ped:     { group: 'Walkways', name: 'Pedestrians only', em: 5, uo: 0.25, gr: 50, ra: 20 },
-  yard_storage: { group: 'Yards', name: 'Storage and general yards', em: 20, uo: 0.25, gr: 55, ra: 20 },
-  yard_loading: { group: 'Yards', name: 'Loading and unloading', em: 50, uo: 0.40, gr: 50, ra: 20 },
+  car_light:    { group: 'Car parks', name: 'Light traffic (shops, apartments, cycle parks)', em: 5, uo: 0.25, gr: 55, ra: 70 },
+  car_medium:   { group: 'Car parks', name: 'Medium traffic (department stores, offices, plants, sports)', em: 10, uo: 0.25, gr: 50, ra: 70 },
+  car_heavy:    { group: 'Car parks', name: 'Heavy traffic (major shopping centres and sports complexes)', em: 20, uo: 0.25, gr: 50, ra: 70 },
+  walk_ped:     { group: 'Walkways', name: 'Pedestrians only', em: 5, uo: 0.20, gr: 50, ra: 70 },
+  yard_storage: { group: 'Yards', name: 'Storage areas with occasional traffic', em: 20, uo: 0.25, gr: 55, ra: 70 },
+  yard_loading: { group: 'Yards', name: 'Mixed traffic, loading and unloading points', em: 50, uo: 0.40, gr: 50, ra: 70 },
 };
 
 const AreaCalc = {
   DEFAULT_TASK: 'car_medium',
   PERIM_DEFAULTS: { evMin: 2, evRatio: 0.25, height: 1.5, side: 'out', step: 1, mf: 0.8, closed: false },
-  NOTE: 'Targets are provisional table values — confirm them against the standard you design to.',
+  NOTE: 'Targets: EN 12464-2:2024, the required (not the modified) Ēm; glare limit RGL.',
 
   _num(v, d, lo, hi) { const x = parseFloat(v); return Number.isFinite(x) ? Math.max(lo, Math.min(hi, x)) : d; },
 

@@ -194,7 +194,7 @@ const LightingWS = {
         ${th('name', 'Room / area')}${th('floor', 'Floor')}${th('kind', 'Type')}<th>Task</th>${th('em', 'Ēm / target (lx)', 'num')}${th('uo', 'U₀', 'num')}<th class="num">UGR / GR</th>${th('wm2', 'W/m²', 'num')}<th>Emergency</th>${th('verdict', 'Verdict')}<th></th>
         </tr></thead><tbody>${shown.map(rowHtml).join('') || '<tr><td colspan="11" class="muted">Nothing matches this filter.</td></tr>'}</tbody></table></div>`
         : `<div class="lw-empty"><p>No rooms, areas or routes yet.</p><p>In Plan, click inside a room with <b>Detect room</b> (or draw one), set its task, place or auto-layout fittings and calculate. They all appear here.</p></div>`}
-      <p class="lw-note">Results belong to this session: open a project and press Calculate all. Targets come from provisional task tables — confirm them against the standard you design to.</p>`;
+      <p class="lw-note">Results belong to this session: open a project and press Calculate all. Targets follow the project's lighting standard (EN 12464-1 / EN 1838, or SANS 10114-1 / -2); outdoor areas use EN 12464-2.</p>`;
   },
 
   _onClick(e) {

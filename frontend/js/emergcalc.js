@@ -7,12 +7,18 @@
  * Only direct light on the floor counts, and a luminaire lights only the room it
  * is in. Results sit in RoomCalc.results under 'em:<id>'.
  *
- * The limits (1 lx centre line, 0.5 lx band / open area, 40:1, 15 lx or 10 % for
- * high risk) are provisional — the panel says so.
+ * The limits follow the project's lighting standard (RoomLighting.standard()):
+ * EN 1838:1999 (1 lx centre line, 0.5 lx central band, 0.5 lx open area with a
+ * 0.5 m border left out, 40:1, 10 % but ≥ 15 lx for high risk) or SANS 10114-2:2020
+ * (1 lx centre line, no band, 1 lx open area to the perimeter, 40:1, 10 % or
+ * 20 lx whichever is greater). The engine holds the numbers (emergency_lighting.py).
  */
 
 const EmergCalc = {
-  NOTE: 'Limits are provisional EN 1838 values — confirm them against the standard you design to.',
+  note() {
+    const S = LIGHTING_STANDARDS[RoomLighting.standard()];
+    return `Limits: ${S.emerg}.`;
+  },
 
   _pct(el) {
     const pr = el.props || {};
@@ -57,12 +63,12 @@ const EmergCalc = {
         const reach = 8 / f;
         els = pm.elements.filter(el => this._isEm(el) && room.points.some(p => Math.hypot(p.x - el.x, p.y - el.y) <= reach));
       }
-      return { req: { id: room.id, name: room.name, type: 'route', line: room.points.map(p => [p.x * f, -p.y * f]), width: L.width, mf: L.mf,
+      return { req: { id: room.id, name: room.name, type: 'route', standard: RoomLighting.standard(), line: room.points.map(p => [p.x * f, -p.y * f]), width: L.width, mf: L.mf,
         luminaires: pick(els, h), bounds }, missing };
     }
     const R = RoomLighting.read(room);
     const els = pm.elements.filter(el => this._isEm(el) && PlanEngine._pointInPoly({ x: el.x, y: el.y }, room.points));
-    return { req: { id: room.id, name: room.name, type: R.emerg === 'highrisk' ? 'highrisk' : 'open', polygon: room.points.map(p => [p.x * f, -p.y * f]),
+    return { req: { id: room.id, name: room.name, standard: RoomLighting.standard(), type: R.emerg === 'highrisk' ? 'highrisk' : 'open', polygon: room.points.map(p => [p.x * f, -p.y * f]),
       taskE: R.em, mf: R.mf, luminaires: pick(els, R.ceilH), bounds: room.points.map(p => [p.x * f, -p.y * f]) }, missing };
   },
 
@@ -150,7 +156,7 @@ const EmergCalc = {
         <option value="open"${R.emerg === 'open' ? ' selected' : ''}>Open area (anti-panic)</option>
         <option value="highrisk"${R.emerg === 'highrisk' ? ' selected' : ''}>High-risk task area</option></select></label>
       ${R.emerg !== 'none' ? this.resultHtml(room) : ''}
-      <div style="font-size:11px;color:var(--text-muted)">${this.NOTE} Fittings count with an Emergency output % or kind Emergency.</div></div>`;
+      <div style="font-size:11px;color:var(--text-muted)">${this.note()} Fittings count with an Emergency output % or kind Emergency.</div></div>`;
   },
 
   // Panel for an escape route (room kind 'escape').
@@ -160,11 +166,12 @@ const EmergCalc = {
     return `<div class="rl-room" data-em-room="${escHtml(room.id)}" style="margin-top:12px;border-top:1px solid var(--border,#d9dee4);padding-top:10px">
       <div class="plan-props-title" style="font-size:13px">Escape route${f ? ` — ${(PlanEngine._polyLen(room.points) * f).toFixed(0)} m` : ''}</div>
       ${RoomLighting.typeSelect(room)}
+      ${RoomLighting.standardSelect()}
       <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px">
         <label class="plan-field"><span>Width (m)</span><input type="number" data-em="width" value="${L.width}" min="0.3" max="20" step="0.1"></label>
         <label class="plan-field"><span>Maintenance factor</span><input type="number" data-em="mf" value="${L.mf}" min="0.3" max="1" step="0.01"></label></div>
       ${this.resultHtml(room)}
-      <div style="font-size:11px;color:var(--text-muted)">${this.NOTE}</div></div>`;
+      <div style="font-size:11px;color:var(--text-muted)">${this.note()}</div></div>`;
   },
 
   bind(propsEl) {

@@ -2,18 +2,18 @@
 judged against the EN 1838 / SANS 10114-2 criteria for the three kinds of area:
 
   • escape route — a centre line of width w (≤ 2 m): at least 1 lx on the centre
-    line, 0.5 lx across the central band (the middle half of the width), and
-    Emax / Emin ≤ 40 : 1 along the centre line;
-  • open area (anti-panic, over 60 m²) — at least 0.5 lx over the floor with a
-    0.5 m border left out, Emax / Emin ≤ 40 : 1;
+    line, (EN 1838 only) 0.5 lx across the central band (the middle half of the
+    width), and Emax / Emin ≤ 40 : 1 along the centre line;
+  • open area (anti-panic, over 60 m²) — EN 1838: 0.5 lx over the floor with a
+    0.5 m border left out; SANS 10114-2: 1 lx up to the perimeter; Emax / Emin ≤ 40 : 1;
   • high-risk task area — at least 10 % of the maintained task illuminance and
-    never less than 15 lx, Emin / Emax ≥ 0.1.
+    never less than 15 lx (EN 1838) or 20 lx (SANS 10114-2), Emin / Emax ≥ 0.1.
 
 Only direct light counts (no reflected component), on the floor, with each
 luminaire at its emergency output. Obstruction: where a `bounds` polygon is
 given (the room the item sits in) a luminaire only lights points it can see
 inside that outline — it does not shine through walls. The limits are
-provisional table values; confirm them against the standard you design to.
+values of the standard named by the request (EN 1838:1999 or SANS 10114-2:2020).
 
 Request (camelCase): { items:[{ id, name, type:'route'|'open'|'highrisk',
 line:[[x,y]…] + width (route) | polygon (open, highrisk), taskE (highrisk),
@@ -31,12 +31,22 @@ from .road_lighting import _Web
 from .room_lighting import _pip, _dist_to_edges, _signed_area, _f, _clear, _is_convex
 
 ROUTE_CENTRE_LX = 1.0
-ROUTE_BAND_LX = 0.5
-OPEN_LX = 0.5
-OPEN_BORDER = 0.5
 RATIO_MAX = 40.0
 HIGHRISK_FRAC = 0.10
-HIGHRISK_MIN_LX = 15.0
+
+# The two standards differ, so the request names one (`standard`; absent ⇒ EN).
+#   EN   EN 1838:1999 — 4.2 route (central band ≥ half the width at 0.5 lx), 4.3 open area
+#        0.5 lx with a 0.5 m border left out, 4.4 high risk 10 % of the task level, ≥ 15 lx
+#   SANS SANS 10114-2:2020 — 5.2 route (no band requirement), 5.3 open area 1 lx up to the
+#        perimeter, 5.4 high risk 10 % or 20 lx whichever is greater
+LIMITS = {
+    "EN":   {"label": "EN 1838", "band": 0.5, "open": 0.5, "border": 0.5, "highrisk_min": 15.0},
+    "SANS": {"label": "SANS 10114-2", "band": None, "open": 1.0, "border": 0.0, "highrisk_min": 20.0},
+}
+
+
+def _limits(it: dict) -> dict:
+    return LIMITS["SANS" if str(it.get("standard") or "EN").upper().startswith("SANS") else "EN"]
 
 
 def _floor_lx(webs, lums, pts, bounds, mf):
@@ -98,7 +108,8 @@ def evaluate_item(it: dict, webs: dict) -> dict:
         B = np.array([(_f(p[0], 0.0), _f(p[1], 0.0)) for p in it["bounds"]], float)
         if len(B) >= 3 and abs(_signed_area(B)) > 1e-6 and not _is_convex(B if _signed_area(B) > 0 else B[::-1]):
             bounds = B if _signed_area(B) > 0 else B[::-1].copy()
-    res = {"id": it.get("id"), "name": name, "type": typ, "luminaires": len(lums), "notes": []}
+    lim = _limits(it)
+    res = {"id": it.get("id"), "name": name, "type": typ, "luminaires": len(lums), "notes": [], "standard": lim["label"]}
     if not lums:
         res["notes"].append("No luminaires in emergency mode here — set an emergency output on the fittings")
     checks = []
@@ -108,7 +119,7 @@ def evaluate_item(it: dict, webs: dict) -> dict:
             raise ValueError(f"{name}: a route needs at least 2 points")
         width = min(max(_f(it.get("width"), 1.2), 0.3), 20.0)
         if width > 2.0:
-            res["notes"].append("Wider than 2 m: EN 1838 treats this as several 2 m strips or an open area")
+            res["notes"].append(f"Wider than 2 m: {lim['label']} treats this as several 2 m strips or an open area")
         step = 0.5
         cl, bands, s_acc = [], [], []
         s0 = 0.0
@@ -139,15 +150,16 @@ def evaluate_item(it: dict, webs: dict) -> dict:
         res["ratio"] = None if ratio is None else round(ratio, 1)
         res["profile"] = [{"s": round(float(s), 2), "x": round(float(c[0]), 3), "y": round(float(c[1]), 3), "E": round(float(e), 3)}
                           for s, c, e in zip(s_acc, cl, Ec)]
-        checks = [_check("centre", "Centre line Emin", e_min, ROUTE_CENTRE_LX, ">=", "lx"),
-                  _check("band", "Central band Emin", res["band"]["Emin"], ROUTE_BAND_LX, ">=", "lx"),
-                  _check("ratio", "Emax / Emin", ratio if ratio is not None else 1e9, RATIO_MAX, "<=", ":1")]
+        checks = [_check("centre", "Centre line Emin", e_min, ROUTE_CENTRE_LX, ">=", "lx")]
+        if lim["band"] is not None:
+            checks.append(_check("band", "Central band Emin", res["band"]["Emin"], lim["band"], ">=", "lx"))
+        checks.append(_check("ratio", "Emax / Emin", ratio if ratio is not None else 1e9, RATIO_MAX, "<=", ":1"))
     elif typ in ("open", "highrisk"):
         P = np.array([(_f(p[0], 0.0), _f(p[1], 0.0)) for p in (it.get("polygon") or [])], float)
         if len(P) < 3 or abs(_signed_area(P)) < 1e-6:
             raise ValueError(f"{name}: an area needs an outline with at least 3 corners")
         area = abs(_signed_area(P))
-        border = OPEN_BORDER if typ == "open" else 0.0
+        border = lim["border"] if typ == "open" else 0.0
         step = 0.5 if area < 400 else 1.0
         xmin, ymin = P.min(axis=0); xmax, ymax = P.max(axis=0)
         nx = max(int(math.ceil((xmax - xmin) / step)), 1); ny = max(int(math.ceil((ymax - ymin) / step)), 1)
@@ -170,11 +182,11 @@ def evaluate_item(it: dict, webs: dict) -> dict:
         res["ratio"] = None if ratio is None else round(ratio, 1)
         if typ == "open":
             if area < 60.0:
-                res["notes"].append("Under 60 m²: not an anti-panic area by EN 1838 — checked as one anyway")
-            checks = [_check("open", "Floor Emin", e_min, OPEN_LX, ">=", "lx"),
+                res["notes"].append(f"Under 60 m²: not an anti-panic area by {lim['label']} — checked as one anyway")
+            checks = [_check("open", "Floor Emin", e_min, lim["open"], ">=", "lx"),
                       _check("ratio", "Emax / Emin", ratio if ratio is not None else 1e9, RATIO_MAX, "<=", ":1")]
         else:
-            need = max(HIGHRISK_MIN_LX, HIGHRISK_FRAC * _f(it.get("taskE"), 0.0))
+            need = max(lim["highrisk_min"], HIGHRISK_FRAC * _f(it.get("taskE"), 0.0))
             res["required"] = round(need, 1)
             checks = [_check("highrisk", "Floor Emin", e_min, need, ">=", "lx"),
                       _check("ratio", "Emax / Emin", ratio if ratio is not None else 1e9, 10.0, "<=", ":1")]

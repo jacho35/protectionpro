@@ -6,40 +6,82 @@
  * maintenance factor). Stored flat on the room as `room.lighting`; a room
  * without it behaves exactly as before.
  *
- * The task table below is a PROVISIONAL transcription of the common rows of
- * EN 12464-1:2021 (SANS 10114-1 follows the same values). Every value is
- * editable, and the panel says so; confirm it against the standard you design
- * to before issuing a result.
+ * The project picks the standard the targets come from
+ * (`AppState.planMarkup.settings.lightingStandard`: 'EN' = EN 12464-1:2021,
+ * 'SANS' = SANS 10114-1:2020; absent ⇒ EN). ROOM_TASKS holds the EN 12464-1
+ * rows: Ēm (required), Uo, Ra, UGR and the Ēz / wall / ceiling targets of
+ * the chapter 7 tables. SANS 10114-1 Table 1 gives only Ēm, UGR and Ra, so
+ * ROOM_TASKS_SANS overrides just those where they differ and every other
+ * target (Uo, Ēz, walls, ceiling) stays the EN 12464-1 value. A task with
+ * no SANS row of its own (archives) uses the EN row.
  */
 
-const ROOM_TASK_TABLE_NOTE = 'Targets are provisional table values — confirm them against the standard you design to.';
-
-// key → { group, name, em (lx maintained), uo, ugr (limit), ra (min), ez (lx, 0 = none) }
+// key → { group, name, em (lx maintained), uo, ugr (limit), ra (min), ez (lx, 0 = none), wall, ceil (lx) }
 const ROOM_TASKS = {
-  off_filing:    { group: 'Offices', name: 'Filing, copying, circulation', em: 300, uo: 0.40, ugr: 19, ra: 80, ez: 0 },
-  off_writing:   { group: 'Offices', name: 'Writing, typing, reading, data processing', em: 500, uo: 0.60, ugr: 19, ra: 80, ez: 150 },
-  off_cad:       { group: 'Offices', name: 'CAD workstations', em: 500, uo: 0.60, ugr: 19, ra: 80, ez: 150 },
-  off_drawing:   { group: 'Offices', name: 'Technical drawing', em: 750, uo: 0.70, ugr: 16, ra: 80, ez: 150 },
-  off_meeting:   { group: 'Offices', name: 'Conference and meeting rooms', em: 500, uo: 0.60, ugr: 19, ra: 80, ez: 150 },
-  off_reception: { group: 'Offices', name: 'Reception desk', em: 300, uo: 0.60, ugr: 22, ra: 80, ez: 0 },
-  off_archive:   { group: 'Offices', name: 'Archives', em: 200, uo: 0.40, ugr: 25, ra: 80, ez: 0 },
-  edu_class:     { group: 'Education', name: 'Classrooms, tutorial rooms', em: 300, uo: 0.60, ugr: 19, ra: 80, ez: 0 },
-  retail_sales:  { group: 'Retail', name: 'Sales area', em: 300, uo: 0.40, ugr: 22, ra: 80, ez: 0 },
-  ind_rough:     { group: 'Industry', name: 'Rough work and assembly', em: 300, uo: 0.40, ugr: 25, ra: 60, ez: 0 },
-  ind_medium:    { group: 'Industry', name: 'Medium bench and machine work', em: 500, uo: 0.60, ugr: 22, ra: 80, ez: 0 },
-  ind_fine:      { group: 'Industry', name: 'Fine assembly and inspection', em: 750, uo: 0.60, ugr: 19, ra: 80, ez: 0 },
-  gen_corridor:  { group: 'General areas', name: 'Circulation areas and corridors', em: 100, uo: 0.40, ugr: 28, ra: 40, ez: 0 },
-  gen_stairs:    { group: 'General areas', name: 'Stairs', em: 150, uo: 0.40, ugr: 25, ra: 40, ez: 0 },
-  gen_lobby:     { group: 'General areas', name: 'Entrance halls', em: 100, uo: 0.40, ugr: 22, ra: 60, ez: 0 },
-  gen_canteen:   { group: 'General areas', name: 'Canteens, pantries', em: 200, uo: 0.40, ugr: 22, ra: 80, ez: 0 },
-  gen_wc:        { group: 'General areas', name: 'Washrooms, bathrooms, toilets', em: 200, uo: 0.40, ugr: 25, ra: 80, ez: 0 },
-  gen_store:     { group: 'General areas', name: 'Storage rooms', em: 100, uo: 0.40, ugr: 25, ra: 60, ez: 0 },
-  gen_plant:     { group: 'General areas', name: 'Plant rooms, switchgear', em: 200, uo: 0.40, ugr: 25, ra: 60, ez: 0 },
-  gen_carpark:   { group: 'General areas', name: 'Car park (indoor)', em: 75, uo: 0.40, ugr: 25, ra: 40, ez: 0 },
+  off_filing:    { group: 'Offices', name: 'Filing, copying, circulation', em: 300, uo: 0.40, ugr: 19, ra: 80, ez: 100, wall: 100, ceil: 75 },
+  off_writing:   { group: 'Offices', name: 'Writing, typing, reading, data processing', em: 500, uo: 0.60, ugr: 19, ra: 80, ez: 150, wall: 150, ceil: 100 },
+  off_cad:       { group: 'Offices', name: 'CAD workstations', em: 500, uo: 0.60, ugr: 19, ra: 80, ez: 150, wall: 150, ceil: 100 },
+  off_drawing:   { group: 'Offices', name: 'Technical drawing', em: 750, uo: 0.70, ugr: 16, ra: 80, ez: 150, wall: 150, ceil: 100 },
+  off_meeting:   { group: 'Offices', name: 'Conference and meeting rooms', em: 500, uo: 0.60, ugr: 19, ra: 80, ez: 150, wall: 150, ceil: 100 },
+  off_reception: { group: 'Offices', name: 'Reception desk', em: 300, uo: 0.60, ugr: 22, ra: 80, ez: 100, wall: 100, ceil: 75 },
+  off_archive:   { group: 'Offices', name: 'Archives', em: 200, uo: 0.40, ugr: 25, ra: 80, ez: 75, wall: 75, ceil: 50 },
+  edu_class:     { group: 'Education', name: 'Classrooms, tutorial rooms', em: 500, uo: 0.60, ugr: 19, ra: 80, ez: 150, wall: 150, ceil: 100 },
+  retail_sales:  { group: 'Retail', name: 'Sales area', em: 300, uo: 0.40, ugr: 22, ra: 80, ez: 75, wall: 75, ceil: 30 },
+  ind_rough:     { group: 'Industry', name: 'Rough assembly', em: 300, uo: 0.60, ugr: 25, ra: 80, ez: 100, wall: 100, ceil: 50 },
+  ind_medium:    { group: 'Industry', name: 'Medium assembly', em: 500, uo: 0.60, ugr: 22, ra: 80, ez: 150, wall: 150, ceil: 100 },
+  ind_fine:      { group: 'Industry', name: 'Fine assembly', em: 750, uo: 0.70, ugr: 19, ra: 80, ez: 150, wall: 150, ceil: 100 },
+  gen_corridor:  { group: 'General areas', name: 'Circulation areas and corridors', em: 100, uo: 0.40, ugr: 28, ra: 40, ez: 50, wall: 50, ceil: 30 },
+  gen_stairs:    { group: 'General areas', name: 'Stairs', em: 100, uo: 0.40, ugr: 25, ra: 40, ez: 50, wall: 50, ceil: 30 },
+  gen_lobby:     { group: 'General areas', name: 'Entrance halls', em: 100, uo: 0.40, ugr: 22, ra: 80, ez: 50, wall: 50, ceil: 30 },
+  gen_canteen:   { group: 'General areas', name: 'Canteens, pantries', em: 200, uo: 0.40, ugr: 22, ra: 80, ez: 75, wall: 75, ceil: 50 },
+  gen_wc:        { group: 'General areas', name: 'Washrooms, bathrooms, toilets', em: 200, uo: 0.40, ugr: 25, ra: 80, ez: 75, wall: 75, ceil: 50 },
+  gen_store:     { group: 'General areas', name: 'Storage rooms', em: 100, uo: 0.40, ugr: 25, ra: 80, ez: 50, wall: 50, ceil: 30 },
+  gen_plant:     { group: 'General areas', name: 'Plant rooms, switchgear', em: 200, uo: 0.40, ugr: 25, ra: 80, ez: 50, wall: 50, ceil: 30 },
+  gen_carpark:   { group: 'General areas', name: 'Car park (indoor) — traffic lanes', em: 75, uo: 0.40, ugr: 25, ra: 40, ez: 50, wall: 50, ceil: 30 },
+  gen_parking:   { group: 'General areas', name: 'Car park (indoor) — parking areas', em: 75, uo: 0.25, ugr: 40, ra: 40, ez: 50, wall: 30, ceil: 15 },
+};
+
+// SANS 10114-1:2020 Table 1 where it differs from EN 12464-1 (Ēm, UGR, Ra only).
+const ROOM_TASKS_SANS = {
+  off_filing:   { ugr: 22 },
+  edu_class:    { em: 300 },
+  gen_corridor: { ra: 60 },
+  gen_stairs:   { em: 150, ra: 60 },
+  gen_lobby:    { ra: 60 },
+  gen_store:    { ra: 60 },
+  gen_plant:    { ra: 60 },
+  gen_carpark:  { ra: 60 },
+  gen_parking:  { ugr: 28, ra: 60 },
+};
+
+const LIGHTING_STANDARDS = {
+  EN:   { label: 'EN 12464-1:2021 / EN 1838', room: 'EN 12464-1:2021', emerg: 'EN 1838:1999' },
+  SANS: { label: 'SANS 10114-1:2020 / SANS 10114-2', room: 'SANS 10114-1:2020', emerg: 'SANS 10114-2:2020' },
 };
 
 const RoomLighting = {
   DEFAULTS: { emerg: 'none', tD: 2250, tN: 250, fo: 1, fd: 1, fc: 1, task: 'off_writing', ceilH: 2.7, workH: 0.75, wallZone: 0.5, rhoC: 0.7, rhoW: 0.5, rhoF: 0.2, mf: 0.8, wallE: 75, ceilE: 50 },
+
+  // The project's lighting standard ('EN' unless set to 'SANS').
+  standard() {
+    const s = typeof AppState !== 'undefined' && AppState.planMarkup && AppState.planMarkup.settings;
+    return s && s.lightingStandard === 'SANS' ? 'SANS' : 'EN';
+  },
+  setStandard(std) {
+    AppState.planMarkup.settings.lightingStandard = std === 'SANS' ? 'SANS' : 'EN';
+  },
+  // The task row under the project's standard (EN row with the SANS differences laid over it).
+  task(key) {
+    const T = ROOM_TASKS[key];
+    if (!T) return null;
+    return this.standard() === 'SANS' ? Object.assign({}, T, ROOM_TASKS_SANS[key] || {}) : T;
+  },
+  tableNote() {
+    const S = LIGHTING_STANDARDS[this.standard()];
+    return this.standard() === 'SANS'
+      ? `Targets: ${S.room} Table 1 (Ēm, UGR, Ra); Uo, Ēz, wall and ceiling targets are not given there and follow EN 12464-1:2021.`
+      : `Targets: ${S.room}, the required (not the modified) Ēm.`;
+  },
   MF_PRESETS: [[0.8, 'Clean, LED, regular cleaning'], [0.67, 'Normal'], [0.57, 'Dirty, infrequent cleaning']],
 
   _num(v, d, lo, hi) {
@@ -53,13 +95,16 @@ const RoomLighting = {
     const L = (room && room.lighting && typeof room.lighting === 'object') ? room.lighting : {};
     const D = this.DEFAULTS;
     const task = (L.task === 'custom' || ROOM_TASKS[L.task]) ? L.task : D.task;
-    const T = ROOM_TASKS[task] || ROOM_TASKS[D.task];
+    const T = this.task(task) || this.task(D.task);
+    // A table task that has not been edited follows the table (so a change of standard moves it);
+    // an edited or custom room keeps what was entered.
+    const S = (task !== 'custom' && !L.edited) ? {} : L;
     return {
       task,
-      em: this._num(L.em, T.em, 1, 20000), uo: this._num(L.uo, T.uo, 0, 1),
-      ugr: this._num(L.ugr, T.ugr, 10, 40), ra: this._num(L.ra, T.ra, 0, 100),
-      ez: this._num(L.ez, T.ez, 0, 5000),
-      wallE: this._num(L.wallE, D.wallE, 0, 5000), ceilE: this._num(L.ceilE, D.ceilE, 0, 5000),
+      em: this._num(S.em, T.em, 1, 20000), uo: this._num(S.uo, T.uo, 0, 1),
+      ugr: this._num(S.ugr, T.ugr, 10, 40), ra: this._num(S.ra, T.ra, 0, 100),
+      ez: this._num(S.ez, T.ez, 0, 5000),
+      wallE: this._num(S.wallE, task === 'custom' ? D.wallE : T.wall, 0, 5000), ceilE: this._num(S.ceilE, task === 'custom' ? D.ceilE : T.ceil, 0, 5000),
       ceilH: this._num(L.ceilH, D.ceilH, 1.5, 30), workH: this._num(L.workH, D.workH, 0, 5),
       wallZone: this._num(L.wallZone, D.wallZone, 0, 2),
       rhoC: this._num(L.rhoC, D.rhoC, 0, 1), rhoW: this._num(L.rhoW, D.rhoW, 0, 1), rhoF: this._num(L.rhoF, D.rhoF, 0, 1),
@@ -75,9 +120,9 @@ const RoomLighting = {
   // Task change: targets come from the table; geometry/finish are kept.
   applyTask(room, key) {
     const cur = this.read(room);
-    const T = ROOM_TASKS[key];
+    const T = this.task(key);
     room.lighting = Object.assign({}, room.lighting || {}, cur, { task: key, edited: false });
-    if (T) Object.assign(room.lighting, { em: T.em, uo: T.uo, ugr: T.ugr, ra: T.ra, ez: T.ez });
+    if (T) Object.assign(room.lighting, { em: T.em, uo: T.uo, ugr: T.ugr, ra: T.ra, ez: T.ez, wallE: T.wall, ceilE: T.ceil });
   },
 
   set(room, field, value) {
@@ -85,7 +130,7 @@ const RoomLighting = {
     const cur = this.read(room);
     if (!(field in cur) || field === 'edited' || field === 'task') return;
     const L = Object.assign({}, cur, { [field]: value });
-    L.edited = ['em', 'uo', 'ugr', 'ra', 'ez'].includes(field) ? true : cur.edited;
+    L.edited = ['em', 'uo', 'ugr', 'ra', 'ez', 'wallE', 'ceilE'].includes(field) ? true : cur.edited;
     room.lighting = this.read({ lighting: L });
     room.lighting.edited = L.edited;
   },
@@ -111,6 +156,13 @@ const RoomLighting = {
       <option value="escape"${k === 'escape' ? ' selected' : ''}>Escape route</option></select></label>`;
   },
 
+  // Project-wide: the standard the indoor targets and the emergency limits come from.
+  standardSelect() {
+    const cur = this.standard();
+    return `<label class="plan-field"><span>Standard</span><select data-rl-standard style="width:100%">${Object.entries(LIGHTING_STANDARDS).map(([k, v]) =>
+      `<option value="${k}"${k === cur ? ' selected' : ''}>${escHtml(v.label)}</option>`).join('')}</select></label>`;
+  },
+
   panel(room) {
     if (room.kind === 'escape' && typeof EmergCalc !== 'undefined') return EmergCalc.routePanel(room);
     if ((room.kind === 'outdoor' || room.kind === 'perimeter') && typeof AreaCalc !== 'undefined') return AreaCalc.panel(room);
@@ -127,13 +179,14 @@ const RoomLighting = {
     return `<div class="rl-room" data-rl-room="${escHtml(room.id)}" style="margin-top:12px;border-top:1px solid var(--border,#d9dee4);padding-top:10px">
       <div class="plan-props-title" style="font-size:13px">Lighting${area != null ? ` — ${(area).toFixed(1)} m²` : ''}</div>
       ${this.typeSelect(room)}
+      ${this.standardSelect()}
       <label class="plan-field"><span>Task</span><select data-rl="task" style="width:100%">${opts}</select></label>
       <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px">
         ${num('em', 'Ēm', 'lx', 10, 'min="1"')}${num('uo', 'U₀', '', 0.05, 'min="0" max="1"')}
         ${num('ugr', 'UGR limit', '', 1, 'min="10" max="40"')}${num('ra', 'Ra min', '', 5, 'min="0" max="100"')}
         ${num('wallE', 'Walls Ēm', 'lx', 5, 'min="0"')}${num('ceilE', 'Ceiling Ēm', 'lx', 5, 'min="0"')}
       </div>
-      <div style="font-size:11px;color:var(--text-muted);margin:4px 0 8px">${L.edited ? 'Edited. ' : ''}${ROOM_TASK_TABLE_NOTE}${L.edited && L.task !== 'custom' ? ' <button type="button" class="btn-small" data-rl-reset>Reset to table</button>' : ''}</div>
+      <div style="font-size:11px;color:var(--text-muted);margin:4px 0 8px">${L.edited ? 'Edited. ' : ''}${escHtml(this.tableNote())}${L.edited && L.task !== 'custom' ? ' <button type="button" class="btn-small" data-rl-reset>Reset to table</button>' : ''}</div>
       <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px">
         ${num('ceilH', 'Ceiling', 'm', 0.1, 'min="1.5"')}${num('workH', 'Work plane', 'm', 0.05, 'min="0"')}${num('wallZone', 'Wall zone', 'm', 0.1, 'min="0"')}
         ${num('rhoC', 'ρ ceiling', '', 0.05, 'min="0" max="1"')}${num('rhoW', 'ρ walls', '', 0.05, 'min="0" max="1"')}${num('rhoF', 'ρ floor', '', 0.05, 'min="0" max="1"')}
@@ -178,6 +231,12 @@ const RoomLighting = {
           if (room.kind === 'perimeter' && room.lighting && room.lighting.closed == null) room.lighting.closed = false;
           PlanMarkup.snapshot(); PlanMarkup.markDirty(); PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true });
         }
+        return;
+      }
+      if (t.dataset && 'rlStandard' in t.dataset) {
+        this.setStandard(t.value);
+        PlanMarkup.snapshot(); PlanMarkup.markDirty(); PlanMarkup.refreshProps();
+        PlanEngine.requestDraw({ fg: true });
         return;
       }
       if (t.dataset && t.dataset.rl) commit(room => this.set(room, t.dataset.rl, t.value));

@@ -82,3 +82,31 @@ def test_errors_are_reported():
     out = EM.run_emergency_lighting({"items": [{"id": "x", "type": "route", "line": [[0, 0]]}, {"id": "y", "type": "nope"}],
                                      "photometry": {"p": _prof()}})
     assert all("error" in i for i in out["items"])
+
+
+def test_sans_10114_2_limits_differ_from_en_1838():
+    poly = [[0, 0], [4, 0], [4, 4], [0, 4]]
+    hr = {"id": "h", "name": "Machine", "type": "highrisk", "polygon": poly, "mf": 1.0, "taskE": 100,
+          "luminaires": [_lum(1.0, 1.0), _lum(3.0, 1.0), _lum(1.0, 3.0), _lum(3.0, 3.0)]}
+    en = _run(hr, _prof(lm=400))
+    sans = _run(dict(hr, standard="SANS"), _prof(lm=400))
+    assert en["required"] == 15.0 and en["standard"] == "EN 1838"          # EN 1838 4.4.1: 10 % but ≥ 15 lx
+    assert sans["required"] == 20.0 and sans["standard"] == "SANS 10114-2"  # SANS 10114-2 5.4.1: 10 % or 20 lx
+
+    hall = {"id": "o", "name": "Hall", "type": "open", "polygon": [[0, 0], [10, 0], [10, 8], [0, 8]], "mf": 1.0,
+            "luminaires": [_lum(2.5, 2.0), _lum(7.5, 2.0), _lum(2.5, 6.0), _lum(7.5, 6.0)]}
+    prof = _prof(lm=300)
+    en_o = _run(hall, prof)
+    sans_o = _run(dict(hall, standard="SANS 10114-2"), prof)
+    assert next(c for c in en_o["checks"] if c["key"] == "open")["req"] == 0.5
+    assert next(c for c in sans_o["checks"] if c["key"] == "open")["req"] == 1.0
+    # SANS measures up to the perimeter (no border left out), so it samples more floor
+    assert sans_o["floor"]["n"] > en_o["floor"]["n"]
+
+
+def test_sans_route_has_no_central_band_check():
+    route = {"id": "r", "name": "Corridor", "type": "route", "line": [[0, 0], [24, 0]], "width": 1.2, "mf": 1.0,
+             "luminaires": [_lum(x, 0.0, pct=100) for x in range(2, 24, 4)]}
+    prof = _prof(lm=600)
+    assert any(c["key"] == "band" for c in _run(route, prof)["checks"])
+    assert not any(c["key"] == "band" for c in _run(dict(route, standard="SANS"), prof)["checks"])
