@@ -65,11 +65,17 @@ body.dark-mode #streetlight-workspace {
 .rp-draft { fill: none; stroke: var(--rp-sel); stroke-width: 1.5; stroke-dasharray: 4 3; }
 .rp-draft.arc { stroke-dasharray: none; stroke-width: 2; opacity: .8; }
 .rp-draft.done { stroke-dasharray: none; stroke: var(--rp-conflict); stroke-width: 2.5; }
+.rp-gap { fill: none; stroke: var(--rp-conflict); stroke-width: 3; stroke-dasharray: 5 4; }
+.rp-mark { fill: var(--rp-conflict); stroke: #fff; stroke-width: 1.5; }
+.rp-gapin { display: flex; align-items: center; gap: 4px; font-size: 12px; }
+.rp-gapin input { width: 56px; }
+.rp-gapnote { font-size: 11px; color: var(--rp-conflict); max-width: 260px; }
+.rp-pickacts { display: flex; gap: 6px; flex-wrap: wrap; }
 .rp-picked { fill: none; stroke: var(--rp-sel); stroke-width: 4; opacity: .7; }
 .rp-scale path { fill: none; stroke: var(--text-primary); stroke-width: 1.5; }
 .rp-scale text { font-size: 11px; fill: var(--text-primary); font-family: var(--font-family); }
 
-.rp-legend, .rp-readout, .rp-hint, .rp-pick { position: absolute; background: color-mix(in srgb, var(--bg-primary) 94%, transparent); border: 1px solid var(--border-color); border-radius: 6px; font-size: 12px; }
+.rp-legend, .rp-readout, .rp-hint, .rp-pick { flex-wrap: wrap; position: absolute; background: color-mix(in srgb, var(--bg-primary) 94%, transparent); border: 1px solid var(--border-color); border-radius: 6px; font-size: 12px; }
 .rp-legend { left: 10px; top: 10px; padding: 8px 10px; display: flex; flex-direction: column; gap: 4px; max-width: 280px; }
 .rp-ramp { width: 240px; height: 10px; border-radius: 2px; }
 .rp-ramp-ax { display: flex; justify-content: space-between; width: 240px; font-size: 11px; color: var(--text-secondary); }
@@ -115,3 +121,21 @@ body.dark-mode #streetlight-workspace {
   .rp-panel { width: auto; flex: 0 0 auto; padding: 10px; }
   .rp-canvas-wrap { min-height: 60vh; }
 }
+
+/* Circuits and cables (js/roadplan-circuits.js) */
+.rp-cable { fill: none; stroke: #b45f06; stroke-width: 2; }
+.rp-cable.link { stroke-dasharray: 5 3; stroke-width: 2.4; }
+.rp-feeder { fill: none; stroke: #b45f06; stroke-width: 2; stroke-dasharray: 2 4; }
+.rp-feeder.draft { stroke: var(--rp-sel); }
+.rp-kiosk { fill: var(--rp-pole); stroke: var(--rp-head); stroke-width: 1.5; }
+.rp-cable-t { font-size: 11px; font-weight: 600; fill: #b45f06; paint-order: stroke; stroke: var(--rp-plan); stroke-width: 3px; }
+.rp-feedline { font-size: 12px; line-height: 1.5; margin: 6px 0; }
+.rp-circ { display: flex; gap: 20px; flex-wrap: wrap; }
+.rp-circ-roads { flex: 1 1 420px; min-width: 0; overflow-x: auto; }
+.rp-circ-set { flex: 0 1 260px; display: flex; flex-direction: column; gap: 10px; }
+.rp-cs { font-size: 12px; }
+.rp-cs.ok { color: #1e6b45; }
+.rp-cs.warn { color: #a15c00; }
+.rp-cs.muted { color: var(--text-secondary, #5b6675); }
+.rp-circ-sum { margin-right: auto; font-size: 13px; }
+.rp-circ-dialog { max-width: 880px; width: 94vw; }

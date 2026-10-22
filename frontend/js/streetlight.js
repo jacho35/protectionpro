@@ -117,6 +117,19 @@ const StreetLight = {
   _num(v, d) { const x = parseFloat(v); return isFinite(x) ? x : d; },
   _blank(v) { return v === null || v === undefined || v === ''; },
 
+  // A circuit's cable length as the engine counts it: each pole's span (its own,
+  // else the circuit's) × (1 + snaking %) + the loop-in allowance. The first
+  // pole's span is the feeder from the source.
+  cableLengthM(c) {
+    const d = this.defaults, sn = this._num(d.snakingPct, 0), loop = Math.max(0, this._num(d.loopInM, 0));
+    let m = 0;
+    for (const p of c.poles) {
+      const span = this._blank(p.spacingM) ? this._num(c.spacingM, d.spacingM) : this._num(p.spacingM, 0);
+      m += Math.max(0, span) * (1 + sn / 100) + loop;
+    }
+    return m;
+  },
+
   _genCircuitId() { return 'slc_' + (this.data._circSeq++); },
   _genPoleId() { return 'slp_' + (this.data._poleSeq++); },
 
@@ -162,7 +175,8 @@ const StreetLight = {
         <span class="sl-tb-circuits">
         <button class="btn-small btn-primary" data-sl="new">+ New circuit</button>
         <button class="btn-small" data-sl="quick" title="Size a uniform string before drawing it — save it as a circuit when it works">Quick calc</button>
-        <button class="btn-small" data-sl="sync" title="Create / update circuits from the Plan's street-lighting routes (poles, spans and spurs)">Sync from plan</button>
+        <button class="btn-small" data-sl="sync" title="Create / update circuits from the Plan's street-lighting routes (poles, spans and spurs)">Sync from site plan</button>
+        <button class="btn-small" data-sl="sync-road" title="Create / update circuits and their cables from the Road plan: poles, spans, feeder and spurs">Import from road plan</button>
         <span class="sl-sep"></span>
         <label title="Volt-drop limit measured from the source kiosk or minisub">VD from source
           <input type="number" step="0.5" data-df="vdLimitPct"> %</label>
@@ -325,9 +339,9 @@ const StreetLight = {
     const copy = JSON.parse(JSON.stringify(c));
     copy.id = this._genCircuitId();
     copy.name = c.name + ' (copy)';
-    delete copy.planKey;
+    delete copy.planKey; delete copy.roadKey;
     const map = {};
-    for (const p of copy.poles) { map[p.id] = this._genPoleId(); delete p.planId; }
+    for (const p of copy.poles) { map[p.id] = this._genPoleId(); delete p.planId; delete p.roadPoleId; }
     for (const p of copy.poles) { p.id = map[p.id]; if (p.parent) p.parent = map[p.parent] || null; }
     this.circuits.push(copy);
     this._selId = copy.id;
@@ -782,6 +796,7 @@ const StreetLight = {
     else if (act === 'new') this.newCircuit();
     else if (act === 'quick') this.openQuickCalc();
     else if (act === 'sync') this.syncFromPlan();
+    else if (act === 'sync-road') { if (typeof RoadPlan !== 'undefined') RoadPlan.openCircuitImport(); }
     else if (act === 'select') { this._selId = b.dataset.id; this.renderRail(); this.renderMain(); this.renderResults(); }
     else if (act === 'diagram' && c) SLDiagram.open(c.id);
     else if (act === 'dup' && c) this.duplicateCircuit(c.id);

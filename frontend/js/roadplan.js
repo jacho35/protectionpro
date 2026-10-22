@@ -693,32 +693,6 @@ const RoadPlan = {
     this.renderPanel(); this.renderWorld(); this.renderRail();
   },
 
-  // ─── Send poles to a street-lighting circuit ─────────────────────────
-  async sendToCircuit() {
-    const road = this.selRoad;
-    if (!road || !(road.poles || []).length) { UI.alert('This road has no poles yet.'); return; }
-    const existing = road.circuitId ? StreetLight.circuit(road.circuitId) : null;
-    if (existing && !(await UI.confirm(`Replace the poles of circuit ${existing.name} with this road's ${road.poles.length} poles?`))) return;
-    const names = this._poleNames(road);
-    const list = road.poles.slice().sort((a, b) => a.s - b.s).map(p => ({ p, g: this.poleGeom(road, p) })).filter(x => x.g);
-    const c = existing || StreetLight._newCircuit(StreetLight._defaultSource());
-    c.poles = [];
-    let parent = null, prev = null;
-    for (const { p, g } of list) {
-      const ph = RoadLight.library[g.photometryId];
-      const id = StreetLight._genPoleId();
-      c.poles.push({ id, name: names.get(p.id), parent, spacingM: prev ? +Math.hypot(g.bx - prev.bx, g.by - prev.by).toFixed(2) : null,
-        luminaireId: ph && Number(ph.watts) > 0 ? 'ph:' + g.photometryId : null, phase: null });
-      parent = id; prev = g;
-    }
-    if (!existing) { c.name = `${c.name} (${road.name})`; StreetLight.circuits.push(c); }
-    road.circuitId = c.id;
-    StreetLight._selId = c.id;
-    this._commit();
-    UI.toast(`${list.length} poles sent to circuit ${c.name} — spans are the distances between consecutive poles along the road.`, 'success', 6000);
-    this.renderPanel();
-  },
-
   // ─── DXF background ──────────────────────────────────────────────────
   async importDxf(file) {
     UI.setBusy && UI.setBusy(true, 'Reading DXF…');
@@ -733,7 +707,40 @@ const RoadPlan = {
       UI.alert('DXF import failed: ' + (e && e.message ? e.message : e)); return;
     } finally { UI.setBusy && UI.setBusy(false); }
     if (data.mode === 'roundtrip' || !Array.isArray(data.entities)) { UI.alert('That DXF is a ProtectionPro plan export — import the original drawing instead.'); return; }
-    let unitM = data.units && data.units.m;
+    await this._setBackground(data, (file.name || 'DXF').replace(/\.dxf$/i, ''));
+  },
+  // Site plan drawings already in the project (Plan › DXF backgrounds) — pick one
+  // instead of importing the file again.
+  _sitePlanDxfs() {
+    const list = (typeof PlanDxfImport !== 'undefined' && AppState.planMarkup && Array.isArray(AppState.planMarkup.dxfs)) ? AppState.planMarkup.dxfs : [];
+    return list.filter(d => d.imageId != null || PlanDxfImport.dataOf(d));
+  },
+  async useSitePlan() {
+    const list = this._sitePlanDxfs();
+    if (!list.length) { UI.toast('The site plan has no DXF drawing to use — import one there, or load a DXF here.', 'info', 4000); return; }
+    let desc = list[0];
+    if (list.length > 1) {
+      const m = RoadLight._modal('rp-siteplan-modal', 'Use a site plan drawing', `<p class="rl-lead">Pick the drawing to pick road lines from:</p>
+        <div class="rl-form"><label>Drawing<select data-d>${list.map((d, i) => `<option value="${i}">${escHtml(d.name || 'DXF')}</option>`).join('')}</select></label></div>`,
+        '<button class="btn-small" data-m="close">Cancel</button><button class="btn-small btn-primary" data-m="ok">Use</button>');
+      if (!(await RoadLight._modalResult(m))) return;
+      desc = list[+m.querySelector('[data-d]').value];
+    }
+    UI.setBusy && UI.setBusy(true, 'Reading the site plan drawing…');
+    let data = PlanDxfImport.dataOf(desc);
+    try {
+      if (!data) {
+        const resp = await fetch(`${API_BASE}/plan-images/${desc.imageId}`, { headers: API.authHeaders() });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        data = PlanDxfImport._normalise(await resp.json());
+      }
+    } catch (e) {
+      UI.alert('Could not read the site plan drawing: ' + (e && e.message ? e.message : e)); return;
+    } finally { UI.setBusy && UI.setBusy(false); }
+    await this._setBackground(data, desc.name || 'Site plan', desc.unitM);
+  },
+  async _setBackground(data, name, knownUnitM) {
+    let unitM = knownUnitM || (data.units && data.units.m);
     if (!unitM) {
       const m = RoadLight._modal('rp-units-modal', 'Drawing units', `<p class="rl-lead">The DXF does not say what its units are. One drawing unit is:</p>
         <div class="rl-form"><label>Unit<select data-u="m"><option value="1">1 metre</option><option value="0.001">1 millimetre</option><option value="0.01">1 centimetre</option><option value="0.3048">1 foot</option></select></label></div>`,
@@ -764,7 +771,7 @@ const RoadPlan = {
     }
     const layers = (data.layers || []).map(l => ({ name: l.name, color: l.color || '#8a8f98', hidden: !l.on || !!l.frozen }))
       .filter(l => ents.some(e => e.l === l.name));
-    this.rp.bg = { name: (file.name || 'DXF').replace(/\.dxf$/i, ''), unitM, origin: data.origin || [0, 0], layers, ents };
+    this.rp.bg = { name, unitM, origin: data.origin || [0, 0], layers, ents };
     AppState.dirty = true;
     this.fit();
     this.render();
@@ -777,18 +784,32 @@ const RoadPlan = {
     return bg.ents.filter(e => !hidden.has(e.l));
   },
   // Chain the picked entity with connected pieces on its layer (endpoints ≤ 5 cm).
-  _chain(ent) {
+  // Where the line breaks, the nearest piece end within `gapTol` metres that
+  // continues roughly the same way is bridged by a straight segment; each
+  // bridge is returned in `gaps` so it can be shown and checked.
+  _chain(ent, gapTol = 0) {
     const tol = 0.05;
     const pts = (e) => { const o = []; for (let i = 0; i < e.p.length; i += 2) o.push([e.p[i], e.p[i + 1]]); return o; };
     const pool = this._bgVisible().filter(e => e.l === ent.l && e !== ent && !e.c);
     let chain = pts(ent);
-    let grew = true;
-    while (grew) {
-      grew = false;
+    const gaps = [];
+    const dist = (u, v) => Math.hypot(u[0] - v[0], u[1] - v[1]);
+    // direction leaving an end (away from the chain), unit vector
+    const outDir = (atTail) => {
+      const n = chain.length, e = atTail ? chain[n - 1] : chain[0];
+      for (let k = 2; k <= n; k++) {
+        const o = atTail ? chain[n - k] : chain[k - 1];
+        const L = dist(e, o);
+        if (L > 1e-6) return [(e[0] - o[0]) / L, (e[1] - o[1]) / L];
+      }
+      return null;
+    };
+    for (let guard = 0; guard < 5000; guard++) {
+      let grew = false;
       for (let k = 0; k < pool.length; k++) {
         const q = pts(pool[k]);
         const h = chain[0], t = chain[chain.length - 1], a = q[0], b = q[q.length - 1];
-        const near = (u, v) => Math.hypot(u[0] - v[0], u[1] - v[1]) <= tol;
+        const near = (u, v) => dist(u, v) <= tol;
         if (near(t, a)) chain = chain.concat(q.slice(1));
         else if (near(t, b)) chain = chain.concat(q.reverse().slice(1));
         else if (near(h, b)) chain = q.slice(0, -1).concat(chain);
@@ -796,8 +817,62 @@ const RoadPlan = {
         else continue;
         pool.splice(k, 1); grew = true; break;
       }
+      if (grew) continue;
+      if (!(gapTol > 0)) break;
+      // no touching piece left: bridge the shortest forward gap at either end
+      let best = null;
+      for (const atTail of [true, false]) {
+        const e = atTail ? chain[chain.length - 1] : chain[0];
+        const dir = outDir(atTail);
+        for (let k = 0; k < pool.length; k++) {
+          const q = pts(pool[k]);
+          for (const first of [true, false]) {
+            const p = first ? q[0] : q[q.length - 1];
+            const d = dist(e, p);
+            if (d > gapTol) continue;
+            if (dir && d > tol) { const c = ((p[0] - e[0]) * dir[0] + (p[1] - e[1]) * dir[1]) / d; if (c < 0.3) continue; }
+            if (!best || d < best.d) best = { d, atTail, k, first, e, p };
+          }
+        }
+      }
+      if (!best) break;
+      let q = pts(pool[best.k]);
+      if (best.atTail) { if (!best.first) q.reverse(); chain = chain.concat(q); }
+      else { if (best.first) q.reverse(); chain = q.concat(chain); }
+      gaps.push([best.e, best.p]);
+      pool.splice(best.k, 1);
     }
-    return chain;
+    return { pts: chain, gaps };
+  },
+  // Where a world point falls along a polyline: distance along it, the foot point, offset.
+  _alongChain(pts, wx, wy) {
+    let acc = 0, best = { s: 0, pt: pts[0], d: Infinity };
+    for (let i = 0; i + 1 < pts.length; i++) {
+      const [ax, ay] = pts[i], [bx, by] = pts[i + 1];
+      const dx = bx - ax, dy = by - ay, L = Math.hypot(dx, dy), L2 = L * L || 1e-12;
+      const t = Math.max(0, Math.min(1, ((wx - ax) * dx + (wy - ay) * dy) / L2));
+      const px = ax + dx * t, py = ay + dy * t, d = Math.hypot(wx - px, wy - py);
+      if (d < best.d) best = { s: acc + L * t, pt: [px, py], d };
+      acc += L;
+    }
+    return best;
+  },
+  // The part of a polyline between distances s0 ≤ s1.
+  _subChain(pts, s0, s1) {
+    const out = [];
+    let acc = 0;
+    const at = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+    for (let i = 0; i + 1 < pts.length; i++) {
+      const a = pts[i], b = pts[i + 1], L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      const e0 = acc, e1 = acc + L;
+      if (e1 >= s0 && e0 <= s1 && L > 0) {
+        const t0 = Math.max(0, (s0 - e0) / L), t1 = Math.min(1, (s1 - e0) / L);
+        if (!out.length) out.push(at(a, b, t0));
+        out.push(at(a, b, t1));
+      }
+      acc = e1;
+    }
+    return out.length > 1 ? out : pts.slice();
   },
   _pickEnt(wx, wy) {
     const tol = 8 / this._view.z;
@@ -917,6 +992,7 @@ const RoadPlan = {
     }
     if (this._tool === 'pick') { this._pickAt(wx, wy, e); return; }
     if (this._tool === 'addpole') { this._addPoleAt(wx, wy); return; }
+    if (this._tool === 'feed') { this._feedDown(wx, wy); return; }
     // select
     if (this._step === 1) {
       const vi = this._hitVertex(wx, wy);
@@ -978,6 +1054,7 @@ const RoadPlan = {
     if (d.kind === 'pole' && d.moved) { this._commit(); this.render(); }
   },
   _dbl(e) {
+    if (this._tool === 'feed') { if (this._feedDraft && this._feedDraft.route.length) this._feedDraft.route.pop(); this._feedFinish(); return; }
     if (this._tool === 'draw' || this._tool === 'kerbs') { if (this._draft && this._draft.length > 1) this._draft.pop(); this.finishDraft(); return; }
     if (this._step === 1 && this._tool === 'select') {
       const r = this.selRoad;
@@ -1009,6 +1086,10 @@ const RoadPlan = {
       if (k === 'Escape') { this._draft = null; this.renderScreen(); return true; }
       if (k === 'Backspace') { this._draft.pop(); if (!this._draft.length) this._draft = null; this.renderScreen(); return true; }
     }
+    if (this._tool === 'feed' && this._feedDraft) {
+      if (k === 'Enter') { this._feedFinish(); return true; }
+      if (k === 'Backspace') { if (this._feedDraft.route.length) this._feedDraft.route.pop(); else this._feedDraft = null; this.renderScreen(); return true; }
+    }
     if (k === 'Escape') { this._kerbDraft = null; this._closePick(); this.setTool('select'); return true; }
     if ((k === 'Delete' || k === 'Backspace') && this._step === 2 && this._selPole) { this.deletePole(); return true; }
     if (k === 'f' || k === 'F') { this.fit(); return true; }
@@ -1017,7 +1098,7 @@ const RoadPlan = {
 
   // ─── Tools ───────────────────────────────────────────────────────────
   setTool(t) {
-    this._tool = t; this._draft = null; this._closePick();
+    this._tool = t; this._draft = null; this._feedDraft = null; this._closePick();
     if (t !== 'kerbs' && t !== 'pick') this._kerbDraft = null;
     this.renderToolbar(); this.renderScreen(); this._hint();
   },
@@ -1044,23 +1125,80 @@ const RoadPlan = {
     this.setTool('select');
   },
   _pickAt(wx, wy, e) {
+    if (this._trim && this._picked) { this._trimAt(wx, wy); return; }
     const ent = this._pickEnt(wx, wy);
     if (!ent) { UI.toast('No background line there — zoom in or click closer to a line.', 'info', 2500); return; }
-    const chain = this._chain(ent);
-    this._picked = chain;
-    this.renderScreen();
+    this._pickSrc = ent;
+    this._trim = null;
+    this._rechain();
     const box = document.getElementById('rp-pick');
-    const len = new RPAlign(chain).length;
-    box.innerHTML = this._kerbDraft
-      ? `<b>Second kerb</b><span class="sl-hint">${escHtml(ent.l)} · ${this._fmt(len, 1)} m</span><button class="btn-small btn-primary" data-rp="pick-k2">Use as the other kerb</button><button class="btn-small" data-rp="pick-cancel">Cancel</button>`
-      : `<b>Use this line as</b><span class="sl-hint">${escHtml(ent.l)} · ${this._fmt(len, 1)} m (connected pieces joined)</span>
-         <button class="btn-small btn-primary" data-rp="pick-cl">Centreline</button><button class="btn-small" data-rp="pick-k1">First kerb</button><button class="btn-small" data-rp="pick-cancel">Cancel</button>`;
     box.style.display = 'flex';
     const w = document.getElementById('rp-wrap').getBoundingClientRect();
     box.style.left = Math.min(w.width - 240, Math.max(8, e.clientX - w.left + 12)) + 'px';
     box.style.top = Math.min(w.height - 140, Math.max(8, e.clientY - w.top + 12)) + 'px';
   },
-  _closePick() { const b = document.getElementById('rp-pick'); if (b) b.style.display = 'none'; this._picked = null; },
+  _gapTol: 3,
+  _rechain() {
+    const c = this._chain(this._pickSrc, this._gapTol);
+    this._picked = c.pts; this._pickGaps = c.gaps;
+    this._trim = null;
+    this._pickBox();
+    this.renderScreen();
+  },
+  _pickBox() {
+    const box = document.getElementById('rp-pick');
+    if (!box || !this._picked) return;
+    const ent = this._pickSrc, chain = this._picked;
+    const len = new RPAlign(chain).length;
+    const gaps = this._pickGaps || [];
+    const gapRow = `<label class="rp-gapin">Bridge gaps up to <input type="number" min="0" step="0.5" value="${this._gapTol}" data-rp-gap> m</label>`
+      + (gaps.length ? `<span class="rp-gapnote">${gaps.length} gap${gaps.length === 1 ? '' : 's'} bridged (dashed): ${gaps.map(g => this._fmt(Math.hypot(g[0][0] - g[1][0], g[0][1] - g[1][1]), 2) + ' m').join(', ')}</span>` : '');
+    if (this._trim) {
+      const m = this._trim;
+      box.innerHTML = `<b>Trim the line</b><span class="sl-hint">${m.length ? 'Click the line to move the cut.' : 'Click the line where the cut goes.'} ${this._fmt(len, 1)} m</span>`
+        + (m.length === 1 ? `<button class="btn-small" data-rp="trim-before">Delete the start → cut</button><button class="btn-small" data-rp="trim-after">Delete the cut → end</button>` : '')
+        + (m.length === 2 ? `<button class="btn-small btn-primary" data-rp="trim-between">Keep only between the cuts</button><button class="btn-small" data-rp="trim-outside">Delete between the cuts</button>` : '')
+        + `<button class="btn-small" data-rp="trim-done">${m.length ? 'Cancel trim' : 'Done'}</button>`;
+      return;
+    }
+    const head = this._kerbDraft
+      ? `<b>Second kerb</b><span class="sl-hint">${escHtml(ent.l)} · ${this._fmt(len, 1)} m</span>`
+      : `<b>Use this line as</b><span class="sl-hint">${escHtml(ent.l)} · ${this._fmt(len, 1)} m (connected pieces joined)</span>`;
+    const acts = this._kerbDraft
+      ? `<button class="btn-small btn-primary" data-rp="pick-k2">Use as the other kerb</button>`
+      : `<button class="btn-small btn-primary" data-rp="pick-cl">Centreline</button><button class="btn-small" data-rp="pick-k1">First kerb</button>`;
+    box.innerHTML = head + gapRow + `<span class="rp-pickacts">${acts}<button class="btn-small" data-rp="pick-trim" title="Cut off the start, the end, or keep only a stretch">Trim…</button><button class="btn-small" data-rp="pick-cancel">Cancel</button></span>`;
+  },
+  _trimAt(wx, wy) {
+    const pr = this._alongChain(this._picked, wx, wy);
+    if (pr.d > 12 / this._view.z) { UI.toast('Click on the highlighted line.', 'info', 2000); return; }
+    const m = this._trim;
+    if (m.length >= 2) m.length = 0;
+    m.push(pr);
+    m.sort((a, b) => a.s - b.s);
+    this._pickBox(); this.renderScreen();
+  },
+  _applyTrim(kind) {
+    const m = this._trim || [], L = new RPAlign(this._picked).length;
+    let s0 = 0, s1 = L;
+    if (kind === 'before') s0 = m[0].s;
+    else if (kind === 'after') s1 = m[0].s;
+    else if (kind === 'between') { s0 = m[0].s; s1 = m[1].s; }
+    else if (kind === 'outside') {
+      // delete the stretch between the cuts: keep the longer remaining piece
+      const a = m[0].s, b = m[1].s;
+      if (a >= L - b) s1 = a; else s0 = b;
+      UI.toast('Kept the longer remaining piece — use Trim again to shorten it further.', 'info', 3500);
+    }
+    if (s1 - s0 < 0.1) { UI.toast('Nothing would be left of the line.', 'warning', 2500); return; }
+    const pts = this._subChain(this._picked, s0, s1);
+    const has = (p) => pts.some(q => Math.abs(q[0] - p[0]) < 1e-6 && Math.abs(q[1] - p[1]) < 1e-6);
+    this._pickGaps = (this._pickGaps || []).filter(g => has(g[0]) && has(g[1]));
+    this._picked = pts;
+    this._trim = null;
+    this._pickBox(); this.renderScreen();
+  },
+  _closePick() { const b = document.getElementById('rp-pick'); if (b) b.style.display = 'none'; this._picked = null; this._pickGaps = null; this._pickSrc = null; this._trim = null; },
   async _usePicked(as) {
     const pts = this._picked;
     this._closePick();
@@ -1103,7 +1241,8 @@ const RoadPlan = {
   setStep(n) {
     this._step = n;
     if (n !== 1 && (this._tool === 'draw' || this._tool === 'kerbs' || this._tool === 'pick')) this._tool = 'select';
-    if (n !== 2 && this._tool === 'addpole') this._tool = 'select';
+    if (n !== 2 && (this._tool === 'addpole' || this._tool === 'feed')) this._tool = 'select';
+    this._feedDraft = null;
     this._draft = null; this._kerbDraft = null; this._closePick();
     this.render();
     if (n === 3 && (this._resStale || !this._res)) this.recompute(0);
@@ -1117,6 +1256,7 @@ const RoadPlan = {
     else if (this._tool === 'kerbs') t = this._kerbDraft ? 'Now trace the other kerb (Enter / double-click to finish).' : 'Trace the first kerb (Enter / double-click to finish), then the other one.';
     else if (this._tool === 'pick') t = this._kerbDraft ? 'Click the other kerb line.' : 'Click a DXF line: connected pieces on its layer are joined.';
     else if (this._tool === 'addpole') t = 'Click beside the road: the pole goes on the nearest pole line.';
+    else if (this._tool === 'feed') t = this._feedDraft ? 'Click each bend of the feeder cable, then click the pole it feeds (or Enter to feed the nearest end). Backspace removes the last bend, Esc cancels.' : 'Click where the kiosk or minisub stands, then the bends of its feeder cable to the road.';
     else if (this._step === 1 && this.selRoad && this.selRoad.mode === 'ip') t = 'Drag a square to move an intersection point · double-click a leg to add one · Alt-click to delete · scroll to zoom, Shift-drag or right-drag to pan, F fits.';
     else if (this._step === 2) t = 'Drag a pole along its kerb · Alt-drag moves it off the pole line · Delete removes the selected pole.';
     el.textContent = t;
@@ -1138,8 +1278,8 @@ const RoadPlan = {
     const bg = this.rp.bg;
     bgEl.innerHTML = bg ? `<div class="rp-bg-name">${escHtml(bg.name)} <span class="sl-hint">${bg.ents.length} lines</span></div>
       <details class="rp-layers"><summary>Layers (${bg.layers.length})</summary>${bg.layers.map((l, i) => `<label class="rp-layer"><input type="checkbox" data-rp-layer="${i}"${l.hidden ? '' : ' checked'}><i style="background:${escHtml(l.color)}"></i>${escHtml(l.name)}</label>`).join('')}</details>
-      <div class="rp-bg-actions"><button class="btn-small" data-rp="bg">Replace…</button><button class="btn-small" data-rp="bg-remove">Remove</button></div>`
-      : '<button class="btn-small" data-rp="bg">Load a DXF…</button><div class="sl-hint">A site plan or survey in the background; pick road lines from it.</div>';
+      <div class="rp-bg-actions"><button class="btn-small" data-rp="bg">Replace…</button>${this._sitePlanDxfs().length ? '<button class="btn-small" data-rp="bg-site" title="Use a drawing already on the site plan">From site plan…</button>' : ''}<button class="btn-small" data-rp="bg-remove">Remove</button></div>`
+      : `${this._sitePlanDxfs().length ? '<button class="btn-small btn-primary" data-rp="bg-site" title="Use a drawing already on the site plan">Use the site plan…</button> ' : ''}<button class="btn-small" data-rp="bg">Load a DXF…</button><div class="sl-hint">A site plan or survey in the background; pick road lines from it.</div>`;
     const jEl = document.getElementById('rp-junctions');
     const juncs = this.junctions();
     const opts = this._standard() === 'SANS' ? RP_CONFLICT_SANS : RP_CONFLICT_EN;
@@ -1165,7 +1305,7 @@ const RoadPlan = {
         <label class="rl-inline" title="Radius of the tangent arc at each corner of a drawn centreline (a corner can override it)">Bend radius<span class="sl-unit"><input type="number" min="0" step="5" class="sl-in-num" data-rp-road-f="radius" value="${escHtml(r ? (r.radius ?? 50) : 50)}"${r && r.mode === 'ip' ? '' : (r ? ' disabled' : '')}> m</span></label>
         <label class="rl-inline"><input type="checkbox" data-rp="snap"${this._snap ? ' checked' : ''}> Snap</label>`;
     } else if (this._step === 2) {
-      html = `${b('select', 'Select / drag', 'Select and drag poles')}${b('addpole', 'Add pole', 'Click beside a road to add a pole on the nearest pole line')}
+      html = `${b('select', 'Select / drag', 'Select and drag poles')}${b('addpole', 'Add pole', 'Click beside a road to add a pole on the nearest pole line')}${b('feed', 'Feed point', 'Place the kiosk / minisub and draw its feeder cable to the selected road')}
         <button class="btn-small" data-rp="delpole"${this._selPole ? '' : ' disabled'}>Delete pole</button>
         <span class="sl-sep"></span>
         <button class="btn-small" data-rp="relayout" title="Lay the selected road's poles out again from the rules">Lay out again</button>
@@ -1399,7 +1539,11 @@ const RoadPlan = {
     // kerb picked so far / picked DXF chain
     const poly = (pts, cls) => pts && pts.length > 1 ? `<path d="M${pts.map(q => S(q[0], q[1]).map(t => t.toFixed(1)).join(' ')).join('L')}" class="${cls}"/>` : '';
     if (this._kerbDraft) out.push(poly(this._kerbDraft.a, 'rp-draft done'));
-    if (this._picked) out.push(poly(this._picked, 'rp-picked'));
+    if (this._picked) {
+      out.push(poly(this._picked, 'rp-picked'));
+      for (const g of (this._pickGaps || [])) out.push(poly(g, 'rp-gap'));
+      for (const mk of (this._trim || [])) { const [mx, my] = S(mk.pt[0], mk.pt[1]); out.push(`<circle cx="${mx.toFixed(1)}" cy="${my.toFixed(1)}" r="5" class="rp-mark"/>`); }
+    }
     // draft
     if (this._draft && this._draft.length) {
       const pts = this._draft.slice();
@@ -1411,6 +1555,7 @@ const RoadPlan = {
       out.push(poly(pts, 'rp-draft'));
       this._draft.forEach(q => { const [x, y] = S(q[0], q[1]); out.push(`<rect x="${x - 4}" y="${y - 4}" width="8" height="8" class="rp-ip"/>`); });
     }
+    if (this._step === 2) this._drawCircuitCables(S, out);
     // scale bar
     const nice = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000];
     const len = nice.find(n => n * v.z >= 70) || 5000;
@@ -1530,7 +1675,8 @@ const RoadPlan = {
         <div class="sl-hint">Mounting height, overhang, tilt and luminaire come from the design's rows (${escHtml(des.name)}: max passing spacing on a straight is found there with <i>Find max spacing</i>).</div>
         <div class="rp-actions"><button class="btn-small btn-primary" data-rp="relayout">Lay out again</button><label class="rl-inline"><input type="checkbox" data-rp="keepmoved"${this._keepMoved === false ? '' : ' checked'}> Keep poles I moved</label></div></div>
       ${selHtml}
-      <div class="rp-block"><div class="rp-block-h"><b>Pole schedule · ${poles.length}</b><button class="btn-small" data-rp="circuit" title="Create (or update) a street-lighting circuit with these poles, spans from their distances">${r.circuitId && StreetLight.circuit(r.circuitId) ? 'Update circuit' : 'Send to a circuit'}</button></div>
+      ${this._panelFeed(r)}
+      <div class="rp-block"><div class="rp-block-h"><b>Pole schedule · ${poles.length}</b><button class="btn-small" data-rp="circuit" title="Create or update street-lighting circuits and their cables from the road plan">Circuits and cables…</button></div>
         <div class="rp-sched"><table class="rl-table"><thead><tr><th>Pole</th><th>Ch m</th><th>Side</th><th title="To the previous pole on the same side">Gap m</th><th></th></tr></thead><tbody>${rows}</tbody></table></div></div>
       <div class="rp-actions"><button class="btn-small" data-rp-step="1">← Road shape</button><button class="btn-small btn-primary" data-rp-step="3">Calculate the light →</button></div></div>`;
   },
@@ -1572,6 +1718,7 @@ const RoadPlan = {
     const r = this.selRoad;
     switch (t.dataset.rp) {
       case 'bg': document.getElementById('rp-file').click(); break;
+      case 'bg-site': this.useSitePlan(); break;
       case 'bg-remove': this.rp.bg = null; AppState.dirty = true; this.setTool('select'); this.render(); break;
       case 'undo': this.undo(); break;
       case 'redo': this.redo(); break;
@@ -1583,17 +1730,27 @@ const RoadPlan = {
       case 'relayout-all': for (const x of this.roads) this.layoutRoad(x, this._keepMoved !== false); this._commit(); this.render(); break;
       case 'delpole': this.deletePole(); break;
       case 'pole-reset': if (r) { const p = r.poles.find(x => x.id === this._selPole); if (p) { delete p.over; delete p.d; this._commit(); this.render(); } } break;
-      case 'circuit': this.sendToCircuit(); break;
+      case 'circuit': this.openCircuitImport(); break;
+      case 'feed-clear': this._feedClear(); break;
       case 'calc': this.recompute(0); break;
       case 'pick-cl': this._usePicked('cl'); break;
       case 'pick-k1': this._usePicked('k1'); break;
       case 'pick-k2': this._usePicked('k2'); break;
+      case 'pick-trim': this._trim = []; this._pickBox(); this.renderScreen(); break;
+      case 'trim-before': this._applyTrim('before'); break;
+      case 'trim-after': this._applyTrim('after'); break;
+      case 'trim-between': this._applyTrim('between'); break;
+      case 'trim-outside': this._applyTrim('outside'); break;
+      case 'trim-done': this._trim = null; this._pickBox(); this.renderScreen(); break;
       case 'pick-cancel': this._closePick(); this.renderScreen(); break;
     }
   },
   _onChange(e) {
     const t = e.target, d = t.dataset;
     const r = this.selRoad;
+    if (d.rpFeed === 'pole') { if (r && r.feed) { if (t.value) r.feed.poleId = t.value; else delete r.feed.poleId; this._commit(); this.render(); } return; }
+    if (d.rpFeed === 'source') { const [k, ...id] = t.value.split(':'); this._feedSrc = { kind: k, id: id.join(':') }; if (r && r.feed) { r.feed.source = this._feedSrc; this._commit(); } this.render(); return; }
+    if (d.rpGap !== undefined) { this._gapTol = Math.max(0, +t.value || 0); if (this._pickSrc) this._rechain(); return; }
     if (d.rp === 'snap') { this._snap = t.checked; return; }
     if (d.rp === 'iso') { this._showIso = t.checked; this._renderHeat(); return; }
     if (d.rp === 'seg') { this._showSeg = t.checked; this.renderScreen(); return; }

@@ -378,6 +378,9 @@ const Retic = {
     else if (action === 'string-tcc') {
       if (typeof ReticTcc !== 'undefined') ReticTcc.open(btn.dataset.kiosk);
     }
+    else if (action === 'strings-tcc-all') {
+      if (typeof ReticTcc !== 'undefined') ReticTcc.openAll(btn.dataset.ms);
+    }
     else if (action === 'toggle-estimation') {
       this._estCollapsed = !this._estCollapsed;
       try { localStorage.setItem('protectionpro-retic-est-collapsed', this._estCollapsed ? '1' : '0'); } catch (e) { /* per-viewer convenience only */ }
@@ -1913,7 +1916,8 @@ const Retic = {
     const heads = this.kiosks.filter(k => this._stringHead(k) === k && this._minisubOf(k) === ms);
     if (!heads.length) return '<div class="summary-row"><span class="k">Strings</span><span class="v">no kiosks yet</span></div>';
     const size = (h) => this.kiosks.filter(k => this._stringHead(k) === h).length;
-    return heads.map(h => `<div class="summary-row"><span class="k" title="One breaker protects this whole string: ${escHtml(h.name || 'Kiosk')} and every kiosk fed on from it. Used for the earth-fault loop and ECC checks.">${escHtml(h.name || 'Kiosk')} string <span style="color:var(--text-muted)">(${size(h)} kiosk${size(h) === 1 ? '' : 's'})</span></span><span class="v">
+    const exportRow = `<div class="summary-row"><span class="k">Earth-fault curves</span><span class="v"><button type="button" class="retic-btn ms-curve" data-action="strings-tcc-all" data-ms="${ms.id}" title="One PDF with a curve page for every string of this minisub">⬇ Export all curves (PDF)</button></span></div>`;
+    return exportRow + heads.map(h => `<div class="summary-row"><span class="k" title="One breaker protects this whole string: ${escHtml(h.name || 'Kiosk')} and every kiosk fed on from it. Used for the earth-fault loop and ECC checks.">${escHtml(h.name || 'Kiosk')} string <span style="color:var(--text-muted)">(${size(h)} kiosk${size(h) === 1 ? '' : 's'})</span></span><span class="v">
           <select class="ms-prot" data-action="kiosk-field" data-kiosk="${h.id}" data-field="protection" data-cable-select data-ss-placeholder="String breaker — e.g. mccb 250, gg 100">${this._protectionOptions(h.protection, '— select breaker —')}</select>
           <button type="button" class="retic-btn ms-curve" data-action="string-tcc" data-kiosk="${h.id}" title="Plot this breaker's curve against each erf's earth-fault current">◔ Curve</button></span></div>${this._stringCurrentRow(h)}`).join('');
   },
