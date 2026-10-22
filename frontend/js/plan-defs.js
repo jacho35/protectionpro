@@ -345,8 +345,9 @@ const PLAN_DEFS = {
     return [
       { type: 'room', kind: 'room', name: 'Room / area', color: this.room.stroke, desc: 'Click the corners' },
       { type: 'roomdetect', kind: 'roomdetect', name: 'Detect room', color: this.room.stroke, desc: 'Click inside a room' },
-      { type: 'outdoor', kind: 'room', name: 'Outdoor area', color: '#16a34a', desc: 'Car park, yard, sports field' },
+      { type: 'outdoor', kind: 'room', name: 'Outdoor area', color: '#16a34a', desc: 'Car park, yard, walkway' },
       { type: 'perimeter', kind: 'perimeter', name: 'Fence / perimeter', color: '#7c3aed', desc: 'Vertical lux along a line' },
+      { type: 'sportsfield', kind: 'sportsfield', name: 'Sports field', color: '#15803d', desc: 'Click the centre spot' },
       { type: 'escape', kind: 'perimeter', name: 'Escape route', color: '#dc2626', desc: 'Emergency lux along the route' },
     ];
   },

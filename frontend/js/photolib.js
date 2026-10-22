@@ -27,6 +27,9 @@ const PhotoLib = {
     for (const el of (AppState.planMarkup.elements || [])) if (el.props && el.props.photoId === id) out.push(el.name || el.type);
     const rd = (this._d.roadDesigns || []);
     for (const d of rd) if ((d.rows || []).some(r => r.photometryId === id)) out.push('road design ' + d.name);
+    for (const r of (AppState.planMarkup.rooms || [])) {
+      if (r.kind === 'sports' && r.lighting && (r.lighting.masts || []).some(m => (m.floods || []).some(fl => fl.photoId === id))) out.push('sports field ' + (r.name || ''));
+    }
     return out;
   },
 

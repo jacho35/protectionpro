@@ -105,6 +105,35 @@ class _Lums:
         return E
 
 
+def glare_rating(lums: _Lums, ox: float, oy: float, mf: float, lve: float, dirs=None):
+    """CIE 112 GR at one observer (eye EYE_H above (ox, oy)), worst of the viewing
+    directions `dirs` (plan degrees, default every 45°; horizontal line of sight).
+    Returns (GR, direction) or (None, None) when no luminaire is within 60° of any
+    line of sight."""
+    dx = lums.x - ox
+    dy = lums.y - oy
+    dz = lums.z - EYE_H
+    dist = np.maximum(np.sqrt(dx * dx + dy * dy + dz * dz), 1e-6)
+    # intensity from the luminaire towards the eye
+    I = lums.intensity((-dx)[None, :], (-dy)[None, :], (-dz)[None, :])[0] * mf
+    worst, worst_dir = None, None
+    for a_deg in (dirs if dirs is not None else [k * 45.0 for k in range(8)]):
+        a_v = math.radians(a_deg)
+        vx, vy = math.cos(a_v), math.sin(a_v)
+        cos_t = (dx * vx + dy * vy) / dist
+        theta = np.degrees(np.arccos(np.clip(cos_t, -1, 1)))
+        use = (cos_t > 0.0) & (theta <= 60.0)           # CIE 112 eq. 3.1: 1.5° < Θ ≤ 60°
+        th = np.maximum(theta, 1.5)
+        e_eye = np.where(use, I * np.clip(cos_t, 0, 1) / (dist * dist), 0.0)
+        lvl = 10.0 * float((e_eye / (th * th)).sum())
+        if lvl <= 0:
+            continue
+        g = 27.0 + 24.0 * math.log10(lvl / lve ** 0.9)
+        if worst is None or g > worst:
+            worst, worst_dir = g, a_deg
+    return worst, worst_dir
+
+
 def _grid(P, step):
     xmin, ymin = P.min(axis=0)
     xmax, ymax = P.max(axis=0)
@@ -169,26 +198,9 @@ def evaluate_area(a: dict, lums: _Lums, with_gr: bool = True) -> dict:
             obs = obs[np.linspace(0, len(obs) - 1, 150).astype(int)]
         worst, worst_at = None, None
         for ox, oy in obs:
-            dx = lums.x - ox
-            dy = lums.y - oy
-            dz = lums.z - EYE_H
-            dist = np.maximum(np.sqrt(dx * dx + dy * dy + dz * dz), 1e-6)
-            # intensity from the luminaire towards the eye
-            I = lums.intensity((-dx)[None, :], (-dy)[None, :], (-dz)[None, :])[0] * mf
-            for k in range(8):
-                a_v = math.radians(k * 45.0)
-                vx, vy = math.cos(a_v), math.sin(a_v)
-                cos_t = (dx * vx + dy * vy) / dist
-                theta = np.degrees(np.arccos(np.clip(cos_t, -1, 1)))
-                use = (cos_t > 0.0) & (theta <= 60.0)           # CIE 112 eq. 3.1: 1.5° < Θ ≤ 60°
-                th = np.maximum(theta, 1.5)
-                e_eye = np.where(use, I * np.clip(cos_t, 0, 1) / (dist * dist), 0.0)
-                lvl = 10.0 * float((e_eye / (th * th)).sum())
-                if lvl <= 0:
-                    continue
-                g = 27.0 + 24.0 * math.log10(lvl / lve ** 0.9)
-                if worst is None or g > worst:
-                    worst, worst_at = g, (float(ox), float(oy), k * 45.0)
+            g, a_deg = glare_rating(lums, ox, oy, mf, lve)
+            if g is not None and (worst is None or g > worst):
+                worst, worst_at = g, (float(ox), float(oy), a_deg)
         if worst is not None:
             gr = {"max": round(worst, 1), "at": {"x": round(worst_at[0], 2), "y": round(worst_at[1], 2), "dir": worst_at[2]},
                   "observers": int(len(obs)), "note": "CIE 112 worst observer, eye 1.5 m, eight directions, ground reflectance %.2f" % rho}

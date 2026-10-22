@@ -154,6 +154,7 @@ const RoomLighting = {
       <option value="room"${k === 'room' ? ' selected' : ''}>Room (indoor)</option>
       <option value="outdoor"${k === 'outdoor' ? ' selected' : ''}>Outdoor area</option>
       <option value="perimeter"${k === 'perimeter' ? ' selected' : ''}>Perimeter / fence</option>
+      <option value="sports"${k === 'sports' ? ' selected' : ''}>Sports field</option>
       <option value="escape"${k === 'escape' ? ' selected' : ''}>Escape route</option></select></label>`;
   },
 
@@ -167,6 +168,7 @@ const RoomLighting = {
   panel(room) {
     if (room.kind === 'escape' && typeof EmergCalc !== 'undefined') return EmergCalc.routePanel(room);
     if ((room.kind === 'outdoor' || room.kind === 'perimeter') && typeof AreaCalc !== 'undefined') return AreaCalc.panel(room);
+    if (room.kind === 'sports' && typeof SportsCalc !== 'undefined') return SportsCalc.panel(room);
     const L = this.read(room);
     const f = PlanEngine.factor();
     const area = f ? PlanEngine._polyArea(room.points) * f * f : null;
@@ -255,6 +257,22 @@ const RoomLighting = {
       height: 'Height above the ground of the measured line, in metres. 1.5 m is face height.',
       step: 'Distance between measurement points along the line, in metres.',
     },
+    sf: {
+      sport: 'The sport. Sets the field size offered and the lighting-class targets.',
+      cls: 'EN 12193 lighting class: I for top-level competition, II for mid-level competition and high-level training, III for local competition, training and school sport. Picks the targets below.',
+      em: 'Maintained average horizontal illuminance required on the playing area, in lux.',
+      u2: 'Uniformity U₂ = lowest ÷ average horizontal illuminance on the playing area (0–1).',
+      u1: 'Uniformity U₁ = lowest ÷ highest horizontal illuminance (0–1). Some leagues and broadcasters ask for it; 0 = not checked.',
+      gr: 'Glare Rating limit (CIE 112): the worst GR at the observers on the pitch must not exceed this.',
+      ra: 'Minimum colour rendering index of the floodlights. Not calculated: check it on the luminaire data sheet.',
+      maxTilt: 'Steepest a floodlight may be aimed, measured from straight down. 70° keeps the beam below the horizontal; flatter aiming spills light and glare.',
+      mf: 'Maintenance factor (0.3–1): the share of the initial light still delivered after ageing and dirt. About 0.8 for LED floodlights.',
+      groundRho: 'Reflectance of the playing surface, for the glare rating. Grass about 0.2; synthetic turf and courts vary.',
+      grid: 'Spacing of the calculation points, in metres. Blank = automatic (the EN 12464-2 formula on the field length, about 5 m for a football pitch). Type the grid your sport\'s standard asks for.',
+      tv: 'Tick for a televised field: vertical illuminance is then calculated on planes facing each camera and checked against the targets you enter.',
+      evCam: 'Average vertical illuminance required towards each camera, in lux, from the broadcaster or league. 0 = not checked.',
+      evCamU2: 'Required lowest ÷ average vertical illuminance towards each camera (0–1). 0 = not checked.',
+    },
     em: {
       width: 'Clear width of the escape route in metres. Sets the band either side of the centre line over which emergency illuminance is checked.',
       mf: 'Maintenance factor (0.3–1) for the emergency fittings: the share of light still delivered at the end of the battery duration.',
@@ -274,7 +292,7 @@ const RoomLighting = {
       tilt: 'Tilt of an outdoor fitting from straight down, in degrees, towards the front of the fitting. 0 = pointing straight down.',
     },
     misc: {
-      'data-rl-kind': 'What this shape is assessed as: an indoor room, an outdoor area, a fence line (vertical lux) or an escape route.',
+      'data-rl-kind': 'What this shape is assessed as: an indoor room, an outdoor area, a fence line (vertical lux), a sports field or an escape route.',
       'data-rl-standard': 'Project-wide. Chooses where the task targets and emergency limits come from: EN 12464-1 / EN 1838, or SANS 10114-1 / -2.',
       'data-rl-mfpreset': 'Fills in the maintenance factor for a typical environment and cleaning interval. You can still edit the number.',
       'data-rc-lum': 'The luminaire from the library that the suggested layouts use.',
@@ -295,9 +313,9 @@ const RoomLighting = {
       if (lab) { lab.title = tip; (lab.closest('.plan-field') || lab).classList.add('has-tip'); }
     };
     const T = this.TIPS;
-    root.querySelectorAll('[data-rl], [data-ac], [data-em]').forEach(c => {
+    root.querySelectorAll('[data-rl], [data-ac], [data-em], [data-sf]').forEach(c => {
       const d = c.dataset;
-      set(c, d.rl !== undefined ? T.rl[d.rl] : d.ac !== undefined ? T.ac[d.ac] : T.em[d.em]);
+      set(c, d.rl !== undefined ? T.rl[d.rl] : d.ac !== undefined ? T.ac[d.ac] : d.sf !== undefined ? T.sf[d.sf] : T.em[d.em]);
     });
     for (const [attr, tip] of Object.entries(T.misc)) root.querySelectorAll('[' + attr + ']').forEach(c => set(c, tip));
     root.querySelectorAll('[data-key]').forEach(c => {
@@ -311,6 +329,7 @@ const RoomLighting = {
     if (typeof RoomCalc !== 'undefined') RoomCalc.bind(propsEl);
     if (typeof AreaCalc !== 'undefined') AreaCalc.bind(propsEl);
     if (typeof EmergCalc !== 'undefined') EmergCalc.bind(propsEl);
+    if (typeof SportsCalc !== 'undefined') SportsCalc.bind(propsEl);
     if (this._bound || !propsEl) return;
     this._bound = true;
     const commit = (fn) => {
@@ -323,8 +342,8 @@ const RoomLighting = {
     propsEl.addEventListener('change', (e) => {
       const t = e.target;
       if (t.dataset && 'rlKind' in t.dataset) {
-        const w = propsEl.querySelector('[data-rl-room], [data-ac-room]');
-        const room = w && (AppState.planMarkup.rooms || []).find(r => r.id === (w.dataset.rlRoom || w.dataset.acRoom));
+        const w = propsEl.querySelector('[data-rl-room], [data-ac-room], [data-sf-room]');
+        const room = w && (AppState.planMarkup.rooms || []).find(r => r.id === (w.dataset.rlRoom || w.dataset.acRoom || w.dataset.sfRoom));
         if (room) {
           room.kind = t.value === 'room' ? undefined : t.value;
           if (room.kind === 'perimeter' && room.lighting && room.lighting.closed == null) room.lighting.closed = false;

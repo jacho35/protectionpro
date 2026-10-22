@@ -86,7 +86,6 @@ section and adding the `## Completed` entry.
 
 ### Room & outdoor lighting — follow-ups
 
-78. **Sports lighting** — EN 12193 lighting classes I/II/III per sport, mast floodlighting with aiming, horizontal + vertical illuminance towards the cameras/players, uniformity and GR. *(Room & Outdoor Lighting Enhancements)*
 79. **Obtrusive light** — EN 12464-2 / CIE 150 environmental zones E0–E4: vertical illuminance at windows and the site boundary, luminous intensity towards observers, upward light ratio, sky glow. *(Room & Outdoor Lighting Enhancements)*
 80. **Road classes: remaining EN 13201-2 criteria** *(pending)* — fTI limits for the C and P classes (Annex C: C 15–20 %, P 20–35 %), the wet-road Uow ≥ 0.15, P-class Ev,min / Esc,min where facial recognition is needed, the SC and EV classes (Tables 5–6). M1–M6 / C0–C5 / P1–P6 values already match the standard. *(Room & Outdoor Lighting Enhancements)*
 81. **Lighting: sources still missing** *(pending)* — the CIE 117 Guth position-index table (UGR), the maintenance-factor presets and the 0.09 m² luminaire-area fallback have no copy of a standard behind them. *(Room & Outdoor Lighting Enhancements)*
@@ -406,7 +405,7 @@ The Street lighting workspace (Reticulation) solves each circuit with phasors �
 
 Room and outdoor lighting design (Plan › Lighting mode + Lighting workspace) covers rooms with interreflection/UGR, outdoor work areas (car parks, yards, walkways) and security perimeters. Left out of the first build by choice:
 
-- **Sports lighting.** EN 12193 classes per sport, masts with aimed floods, horizontal and vertical E grids, uniformity, GR; needs the field templates and camera-direction vertical E.
+- ~~**Sports lighting.** EN 12193 classes per sport, masts with aimed floods, horizontal and vertical E grids, uniformity, GR; needs the field templates and camera-direction vertical E.~~ Done 2026-10-22.
 - **Obtrusive light.** EN 12464-2 / CIE 150 limits per environmental zone: Ev at windows, intensity towards observers, ULR, building-facade luminance; evaluated from the same outdoor-luminaire positions.
 - **Boundary detection follow-ups.** Inset / offset of a whole detected boundary (wall finish) and a highlighted leak location when a click is not in a closed region (today the message says to raise the door gap or draw by hand); wall-thickness-aware boundaries from DXF solid hatches.
 - **Calculation follow-ups.** UGR at observer positions beyond the four mid-wall ones (a grid, per CIE 190); ~~windows, doors and furniture as obstructions~~ (done 2026-10-22 — the 3D view, see Completed); per-row emergency luminaires with the battery duration and the end-of-duration flux; parasitic and standby energy in LENI; a SANS 10400-XA power-density table by occupancy.
@@ -421,6 +420,13 @@ Help ▸ Guides (`frontend/js/help-guides.js`, pictures in `frontend/img/help/`)
 **Still to write** (index items 82–92): Quantities, Reticulation/Demand, Interlock, revisions and sharing, accounts and admin, reports and export, scenarios, control circuits / changeover / off-page, Plan basics, notifications, plus deeper coverage of the Study Manager, Settings and the ampacity / compliance / Wenner dialogs. Road lighting and the core single line are done (see Completed). The MCP server and Python client are API tools, so they probably don't belong in Help.
 
 ## Completed
+
+### Lighting: sports field lighting (2026-10-22)
+- **Sports field zone** (`kind: 'sports'`, js/sportslight.js `SportsCalc`): Lighting tab › Draw › *Sports field*, click the centre spot → setup dialog (sport with its standard size — football, rugby, hockey, tennis, netball, custom — lighting class I/II/III, turn, mast layout 4 corner / 4, 6, 8 side, setback, mast height suggested from the 25° rule, floods per mast from coverage (1 per 150 m²) and flux (UF 0.75), generic medium / narrow sports flood sized to the target or a library luminaire). Masts and aim points live on the field in field metres (`room.lighting.masts[].floods[]`), so moving / turning / resizing the field carries them (setbacks kept).
+- **Engine** `backend/analysis/sports_lighting.py`, `POST /api/analysis/sports-lighting`: Eh grid on the PA (EN 12464-2 step formula on the length unless a step is typed), U1 / U2, vertical E at 1.5 m towards each camera (televised) and the four player directions, CIE 112 GR at 15 observers every 45° (shared `area_lighting.glare_rating`), steepest-tilt check, own power / W/m². `POST /sports-lighting/aim` moves aim points (weighted-footprint-centroid shift, weight (Ē/E)², tilt limit − 2°) — U2 0.85–0.9 for a 6-mast pitch with medium beams. New generic optics `generic_sports_medium` / `_narrow`.
+- **UI**: properties panel (targets, provisional EN 12193 class table, size / turn / *Size for* sport, MF, ground ρ, grid, masts with *Aim…*, *Optimise aiming*, televised cameras), aiming dialog (mast section, flood table with throw / tilt / direction, mirror to opposite mast, add / remove masts and floods), results dialog (false-colour pitch with values, checks, installation, GR observers, vertical E), plan drawing (grid, masts, aim lines, cameras, legend), Lighting table row, *Calculate all*, PDF section, help article. Field floods also light outdoor areas and fences.
+- Tests: `backend/tests/test_sports_lighting.py` (10: grid, exact aimed-flood peak, frame rotation, uniformities, vertical planes, GR vs the area engine, own-flood checks, optimiser limits + agreement with the full calculation).
+- Not done: EN 12193 values are provisional (no copy of the standard); obtrusive light (#79), stand spill, aerial-sport vertical grids, masts → SLD loads.
 
 ### Lighting: tooltips on every entry box (2026-10-22)
 - Every input in the room, outdoor area, fence and escape-route lighting panels, the room's emergency section, the suggested-layout pickers and a Light Fitting's properties explains itself on hover / long-press (`RoomLighting.TIPS`, applied by `RoomLighting.tipify` after each properties render, also read out as the field's description). Labels with a tip are dotted-underlined. Ra is called out as not calculated.

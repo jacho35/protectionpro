@@ -382,7 +382,7 @@ const PlanEngine = {
     ctx.moveTo(rm.points[0].x, rm.points[0].y);
     for (let i = 1; i < rm.points.length; i++) ctx.lineTo(rm.points[i].x, rm.points[i].y);
     if (!perim || (rm.lighting && rm.lighting.closed)) ctx.closePath();
-    const outdoor = rm.kind === 'outdoor';
+    const outdoor = rm.kind === 'outdoor' || rm.kind === 'sports';
     if (!perim) { ctx.fillStyle = rm.color || (outdoor ? 'rgba(34,197,94,0.13)' : PLAN_DEFS.room.fill); ctx.fill(); }
     ctx.strokeStyle = selected ? '#2563eb' : (rm.kind === 'escape' ? '#dc2626' : perim ? '#7c3aed' : outdoor ? '#16a34a' : PLAN_DEFS.room.stroke);
     ctx.lineWidth = (selected ? 2.2 : (perim ? 2 : 1.2)) / this.view.zoom;
