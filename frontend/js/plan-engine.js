@@ -354,7 +354,7 @@ const PlanEngine = {
     const rooms = AppState.planMarkup.rooms || [];
     for (let i = rooms.length - 1; i >= 0; i--) {
       const r = rooms[i];
-      if (r.kind === 'perimeter' || r.kind === 'escape') {
+      if (r.kind === 'perimeter' || r.kind === 'escape' || r.kind === 'obtrusive') {
         if (this._nearPolyline(pt, r.points, !!(r.lighting && r.lighting.closed), 8 / this.view.zoom)) return r;
         continue;
       }
@@ -375,7 +375,7 @@ const PlanEngine = {
   },
 
   _drawRoom(ctx, rm, selected) {
-    const perim = rm.kind === 'perimeter' || rm.kind === 'escape';
+    const perim = rm.kind === 'perimeter' || rm.kind === 'escape' || rm.kind === 'obtrusive';
     if (!rm.points || rm.points.length < (perim ? 2 : 3)) return;
     ctx.save();
     ctx.beginPath();
@@ -384,7 +384,7 @@ const PlanEngine = {
     if (!perim || (rm.lighting && rm.lighting.closed)) ctx.closePath();
     const outdoor = rm.kind === 'outdoor' || rm.kind === 'sports';
     if (!perim) { ctx.fillStyle = rm.color || (outdoor ? 'rgba(34,197,94,0.13)' : PLAN_DEFS.room.fill); ctx.fill(); }
-    ctx.strokeStyle = selected ? '#2563eb' : (rm.kind === 'escape' ? '#dc2626' : perim ? '#7c3aed' : outdoor ? '#16a34a' : PLAN_DEFS.room.stroke);
+    ctx.strokeStyle = selected ? '#2563eb' : (rm.kind === 'escape' ? '#dc2626' : rm.kind === 'obtrusive' ? '#b45309' : perim ? '#7c3aed' : outdoor ? '#16a34a' : PLAN_DEFS.room.stroke);
     ctx.lineWidth = (selected ? 2.2 : (perim ? 2 : 1.2)) / this.view.zoom;
     if (perim) ctx.setLineDash([8 / this.view.zoom, 5 / this.view.zoom]);
     ctx.stroke();

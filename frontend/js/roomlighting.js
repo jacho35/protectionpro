@@ -155,6 +155,7 @@ const RoomLighting = {
       <option value="outdoor"${k === 'outdoor' ? ' selected' : ''}>Outdoor area</option>
       <option value="perimeter"${k === 'perimeter' ? ' selected' : ''}>Perimeter / fence</option>
       <option value="sports"${k === 'sports' ? ' selected' : ''}>Sports field</option>
+      <option value="obtrusive"${k === 'obtrusive' ? ' selected' : ''}>Obtrusive light check</option>
       <option value="escape"${k === 'escape' ? ' selected' : ''}>Escape route</option></select></label>`;
   },
 
@@ -169,6 +170,7 @@ const RoomLighting = {
     if (room.kind === 'escape' && typeof EmergCalc !== 'undefined') return EmergCalc.routePanel(room);
     if ((room.kind === 'outdoor' || room.kind === 'perimeter') && typeof AreaCalc !== 'undefined') return AreaCalc.panel(room);
     if (room.kind === 'sports' && typeof SportsCalc !== 'undefined') return SportsCalc.panel(room);
+    if (room.kind === 'obtrusive' && typeof ObtrusiveCalc !== 'undefined') return ObtrusiveCalc.panel(room);
     const L = this.read(room);
     const f = PlanEngine.factor();
     const area = f ? PlanEngine._polyArea(room.points) * f * f : null;
@@ -273,6 +275,18 @@ const RoomLighting = {
       evCam: 'Average vertical illuminance required towards each camera, in lux, from the broadcaster or league. 0 = not checked.',
       evCamU2: 'Required lowest ÷ average vertical illuminance towards each camera (0–1). 0 = not checked.',
     },
+    ob: {
+      check: 'Property: a site boundary, a row of windows or a building facade — light falling on it and luminaires seen from it. Road: glare to drivers on the road (threshold increment).',
+      zone: 'Environmental zone of the surroundings (EN 12464-2 Table 4): E0 dark-sky areas up to E4 town centres. Sets every limit.',
+      curfew: 'Pre-curfew limits apply in the evening; stricter post-curfew limits after the curfew time set by the local authority. With no curfew rule, meet the pre-curfew values and aim for the post-curfew ones.',
+      postPct: 'Light output of every outdoor luminaire after the curfew, as a percentage of full (sports floods switched off = 0).',
+      heights: 'Heights above the ground at which the face is checked, in metres, separated by commas — for windows, the sill or middle of each floor.',
+      step: 'Distance between the check points along the line, in metres.',
+      side: 'Which face of the line is checked: the one turned towards the lighting. Ticks on the plan show it.',
+      closed: 'Tick when the line goes all the way round (a site boundary).',
+      facadeRho: 'Reflectance of the building facade (0–1) to check its average luminance Lb = ρ·Ev/π. 0 when the line is not a facade.',
+      roadClass: 'Lighting class of the road the drivers are on. Sets the adaptation luminance the 15 % TI limit is based on (EN 12464-2 Table 5).',
+    },
     em: {
       width: 'Clear width of the escape route in metres. Sets the band either side of the centre line over which emergency illuminance is checked.',
       mf: 'Maintenance factor (0.3–1) for the emergency fittings: the share of light still delivered at the end of the battery duration.',
@@ -292,7 +306,7 @@ const RoomLighting = {
       tilt: 'Tilt of an outdoor fitting from straight down, in degrees, towards the front of the fitting. 0 = pointing straight down.',
     },
     misc: {
-      'data-rl-kind': 'What this shape is assessed as: an indoor room, an outdoor area, a fence line (vertical lux), a sports field or an escape route.',
+      'data-rl-kind': 'What this shape is assessed as: an indoor room, an outdoor area, a fence line (vertical lux), a sports field, an obtrusive-light check or an escape route.',
       'data-rl-standard': 'Project-wide. Chooses where the task targets and emergency limits come from: EN 12464-1 / EN 1838, or SANS 10114-1 / -2.',
       'data-rl-mfpreset': 'Fills in the maintenance factor for a typical environment and cleaning interval. You can still edit the number.',
       'data-rc-lum': 'The luminaire from the library that the suggested layouts use.',
@@ -313,9 +327,9 @@ const RoomLighting = {
       if (lab) { lab.title = tip; (lab.closest('.plan-field') || lab).classList.add('has-tip'); }
     };
     const T = this.TIPS;
-    root.querySelectorAll('[data-rl], [data-ac], [data-em], [data-sf]').forEach(c => {
+    root.querySelectorAll('[data-rl], [data-ac], [data-em], [data-sf], [data-ob]').forEach(c => {
       const d = c.dataset;
-      set(c, d.rl !== undefined ? T.rl[d.rl] : d.ac !== undefined ? T.ac[d.ac] : d.sf !== undefined ? T.sf[d.sf] : T.em[d.em]);
+      set(c, d.rl !== undefined ? T.rl[d.rl] : d.ac !== undefined ? T.ac[d.ac] : d.sf !== undefined ? T.sf[d.sf] : d.ob !== undefined ? T.ob[d.ob] : T.em[d.em]);
     });
     for (const [attr, tip] of Object.entries(T.misc)) root.querySelectorAll('[' + attr + ']').forEach(c => set(c, tip));
     root.querySelectorAll('[data-key]').forEach(c => {
@@ -330,6 +344,7 @@ const RoomLighting = {
     if (typeof AreaCalc !== 'undefined') AreaCalc.bind(propsEl);
     if (typeof EmergCalc !== 'undefined') EmergCalc.bind(propsEl);
     if (typeof SportsCalc !== 'undefined') SportsCalc.bind(propsEl);
+    if (typeof ObtrusiveCalc !== 'undefined') ObtrusiveCalc.bind(propsEl);
     if (this._bound || !propsEl) return;
     this._bound = true;
     const commit = (fn) => {
@@ -342,8 +357,8 @@ const RoomLighting = {
     propsEl.addEventListener('change', (e) => {
       const t = e.target;
       if (t.dataset && 'rlKind' in t.dataset) {
-        const w = propsEl.querySelector('[data-rl-room], [data-ac-room], [data-sf-room]');
-        const room = w && (AppState.planMarkup.rooms || []).find(r => r.id === (w.dataset.rlRoom || w.dataset.acRoom || w.dataset.sfRoom));
+        const w = propsEl.querySelector('[data-rl-room], [data-ac-room], [data-sf-room], [data-ob-room]');
+        const room = w && (AppState.planMarkup.rooms || []).find(r => r.id === (w.dataset.rlRoom || w.dataset.acRoom || w.dataset.sfRoom || w.dataset.obRoom));
         if (room) {
           room.kind = t.value === 'room' ? undefined : t.value;
           if (room.kind === 'perimeter' && room.lighting && room.lighting.closed == null) room.lighting.closed = false;

@@ -53,6 +53,9 @@ const SportsCalc = {
   LM_PER_W: 125,
   NOTE: 'Provisional targets — check them against EN 12193 before issue. Every number is editable.',
 
+  // The Lighting tab's 3D view, when it shows a field, follows every change made here.
+  _show3D() { if (typeof Light3D !== 'undefined' && Light3D._active) Light3D.render(); },
+
   // A flood's output % as a number (project data may carry anything).
   _pct(v) { return v == null || v === '' ? 100 : this._num(v, 100, 0, 100); },
   _num(v, d, lo, hi) { const x = parseFloat(v); return Number.isFinite(x) ? Math.max(lo, Math.min(hi, x)) : d; },
@@ -69,7 +72,12 @@ const SportsCalc = {
       maxTilt: n('maxTilt', 70, 10, 89), mf: n('mf', 0.8, 0.3, 1), groundRho: n('groundRho', 0.2, 0.01, 0.9), grid: n('grid', 0, 0, 20),
       evHeight: n('evHeight', 1.5, 0, 10), tv: !!L.tv, evCam: n('evCam', 0, 0, 10000), evCamU2: n('evCamU2', 0, 0, 1), edited: !!L.edited,
       masts: Array.isArray(L.masts) ? L.masts : [], cameras: Array.isArray(L.cameras) ? L.cameras : [],
+      stands: Array.isArray(L.stands) ? L.stands : [], aerial: !!L.aerial, aerialEv: n('aerialEv', 0, 0, 10000),
+      aerialHeights: this.parseHeights(L.aerialHeights != null ? L.aerialHeights : '2, 5, 10, 15'),
     };
+  },
+  parseHeights(v) {
+    return [...new Set(String(v).split(/[,;\s]+/).map(Number).filter(h => Number.isFinite(h) && h > 0 && h <= 100))].sort((a, b) => a - b);
   },
   _L(room) {
     if (!room.lighting || typeof room.lighting !== 'object') room.lighting = {};
@@ -84,9 +92,10 @@ const SportsCalc = {
   set(room, field, value) {
     const L = this._L(room);
     if (field === 'sport' || field === 'cls') { L[field] = value; this.applyClass(room); return; }
-    if (field === 'tv') { L.tv = !!value; return; }
+    if (field === 'tv' || field === 'aerial') { L[field] = !!value; return; }
+    if (field === 'aerialHeights') { L.aerialHeights = this.parseHeights(value).join(', '); return; }
     const R = this.read(room);
-    if (!(field in R) || ['masts', 'cameras', 'edited', 'sport', 'cls'].includes(field)) return;
+    if (!(field in R) || ['masts', 'cameras', 'stands', 'edited', 'sport', 'cls'].includes(field)) return;
     L[field] = value;
     if (['em', 'u2', 'gr', 'ra'].includes(field)) L.edited = true;
     const N = this.read(room);
@@ -117,6 +126,20 @@ const SportsCalc = {
   },
   angleOf(fr) { return Math.atan2(fr.u.y, fr.u.x) * 180 / Math.PI; },
 
+  // ─── Stands: a sloped rectangle beside one side or end, in field metres ───
+  STAND_SIDES: { near: 'Near side (y < 0)', far: 'Far side (y > W)', left: 'End at x = 0', right: 'End at x = L' },
+  // Corners in field metres, the front edge (nearest the pitch) first.
+  standCorners(st, fr) {
+    const off = Math.max(0, +st.offset || 0), d = Math.max(0.5, +st.depth || 10);
+    const end = st.side === 'left' || st.side === 'right';
+    const span = end ? fr.W : fr.L;
+    const a = st.from != null && st.from !== '' ? +st.from : 0, b = st.to != null && st.to !== '' ? +st.to : span;
+    if (st.side === 'far') return [[a, fr.W + off], [b, fr.W + off], [b, fr.W + off + d], [a, fr.W + off + d]];
+    if (st.side === 'left') return [[-off, a], [-off, b], [-off - d, b], [-off - d, a]];
+    if (st.side === 'right') return [[fr.L + off, a], [fr.L + off, b], [fr.L + off + d, b], [fr.L + off + d, a]];
+    return [[a, -off], [b, -off], [b, -off - d], [a, -off - d]];
+  },
+
   // New size or turn, about the field's centre. Masts and aim points scale with
   // the pitch; a mast behind a touchline or goal line keeps its setback.
   reshape(room, Lm, Wm, angleDeg) {
@@ -133,6 +156,11 @@ const SportsCalc = {
     for (const m of this.read(room).masts) {
       m.x = +sx(+m.x || 0, fr.L, Lm).toFixed(2); m.y = +sx(+m.y || 0, fr.W, Wm).toFixed(2);
       for (const fl of (m.floods || [])) { fl.ax = +((+fl.ax || 0) * Lm / fr.L).toFixed(2); fl.ay = +((+fl.ay || 0) * Wm / fr.W).toFixed(2); }
+    }
+    for (const st of this.read(room).stands) {
+      const k = (st.side === 'left' || st.side === 'right') ? Wm / fr.W : Lm / fr.L;
+      if (st.from != null && st.from !== '') st.from = +((+st.from) * k).toFixed(2);
+      if (st.to != null && st.to !== '') st.to = +((+st.to) * k).toFixed(2);
     }
     for (const cam of this.read(room).cameras) { cam.x = +sx(+cam.x || 0, fr.L, Lm).toFixed(2); cam.y = +sx(+cam.y || 0, fr.W, Wm).toFixed(2); }
     room.points = this._rect(c.x, c.y, Lm, Wm, u, v, f);
@@ -180,7 +208,14 @@ const SportsCalc = {
     if (L.u1 > 0) targets.u1 = L.u1;
     if (L.tv && L.evCam > 0) targets.evCam = L.evCam;
     if (L.tv && L.evCamU2 > 0) targets.evCamU2 = L.evCamU2;
+    if (L.aerial && L.aerialEv > 0) targets.aerialEv = L.aerialEv;
+    const stands = L.stands.map(st => ({
+      id: st.id, name: st.name || 'Stand', zFront: +st.zFront || 0, zBack: +st.zBack || 0,
+      corners: this.standCorners(st, fr).map(([x, y]) => { const w = this.toWorld(fr, x, y); return [r4(w.x), r4(w.y)]; }),
+      targets: { em: +st.em > 0 ? +st.em : undefined, gr: +st.gr > 0 ? +st.gr : undefined },
+    }));
     return {
+      stands, aerial: L.aerial ? { heights: L.aerialHeights } : null,
       id: room.id, name: room.name || 'Field', origin: [r4(fr.O.x), r4(fr.O.y)], axis: [r4(fr.u.x), r4(fr.u.y)], side: [r4(fr.v.x), r4(fr.v.y)],
       length: r4(fr.L), width: r4(fr.W), gridStep: L.grid > 0 ? L.grid : 0, mf: L.mf, groundRho: L.groundRho, evHeight: L.evHeight, cameras: cams, targets,
     };
@@ -223,6 +258,7 @@ const SportsCalc = {
     PlanEngine.requestDraw({ fg: true });
     PlanMarkup.refreshProps();
     if (this._resultsRoom && list.some(r => r.id === this._resultsRoom)) this._renderResults();
+    this._show3D();
   },
 
   // ─── Masts: layouts, first aiming, the optimiser ───
@@ -315,6 +351,7 @@ const SportsCalc = {
       for (const a of om.floods) { const t = fl.get(a.id); if (t) { t.ax = a.ax; t.ay = a.ay; } }
     }
     PlanMarkup.snapshot(); PlanMarkup.markDirty();
+    this._show3D();
     if (!quiet) UI.toast(`Aiming: U₂ ${out.before.U2.toFixed(2)} → ${out.after.U2.toFixed(2)}, Ēh ${Math.round(out.after.Eav)} lx (this field's own floods only).`, 'success', 6000);
     return out;
   },
@@ -429,6 +466,7 @@ const SportsCalc = {
       PlanMarkup.snapshot(); PlanMarkup.markDirty(); PlanMarkup.refreshProps();
       if (typeof PlanUI !== 'undefined') PlanUI.renderPalette();
       PlanEngine.requestDraw({ all: true });
+      this._show3D();
       if (st.optimise) {
         const o = await this.optimise(target, true);
         await this.run([target]);
@@ -464,6 +502,7 @@ const SportsCalc = {
     return `<div class="rl-room" data-sf-room="${escHtml(room.id)}" style="margin-top:12px;border-top:1px solid var(--border,#d9dee4);padding-top:10px">
       <div class="plan-props-title" style="font-size:13px">Sports lighting${fr ? ` — ${fr.L.toFixed(1)} × ${fr.W.toFixed(1)} m` : ''}</div>
       ${RoomLighting.typeSelect(room)}
+      ${typeof Light3D !== 'undefined' ? '<button type="button" class="plan-circuit-btn" data-sf-3d style="margin:2px 0 6px">View in 3D — masts, aiming, stands, rendered light</button>' : ''}
       <label class="plan-field"><span>Sport</span><select data-sf="sport" style="width:100%">${Object.entries(SPORTS_FIELDS).map(([k, s]) => `<option value="${k}"${k === L.sport ? ' selected' : ''}>${escHtml(s.name)}</option>`).join('')}</select></label>
       <label class="plan-field"><span>Lighting class</span><select data-sf="cls" style="width:100%">${Object.entries(this.CLASSES).map(([k, n]) => `<option value="${k}"${k === L.cls ? ' selected' : ''}>${escHtml(n)}</option>`).join('')}</select></label>
       <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px">
@@ -487,6 +526,23 @@ const SportsCalc = {
           <button type="button" class="plan-circuit-btn" data-sf-layout>${L.masts.length ? 'New mast layout…' : 'Add masts…'}</button>
           ${L.masts.length ? '<button type="button" class="plan-circuit-btn" data-sf-opt>Optimise aiming</button>' : ''}
         </div></div>
+      <div class="sf-sec"><div class="plan-props-title" style="font-size:13px">Stands — spill light and spectator glare</div>
+        ${L.stands.map(st => `<div class="sf-stand" data-sf-st="${escHtml(st.id)}">
+          <div class="sf-stand-head"><input type="text" data-st="name" value="${escHtml(st.name || 'Stand')}" aria-label="Stand name">
+            <select data-st="side" aria-label="Where the stand is">${Object.entries(this.STAND_SIDES).map(([k, n]) => `<option value="${k}"${k === (st.side || 'near') ? ' selected' : ''}>${n}</option>`).join('')}</select>
+            <button type="button" class="btn-small" data-sf-st-rm aria-label="Remove stand">×</button></div>
+          <div class="sf-stand-grid">
+            ${[['offset', 'Gap to line', 'm'], ['depth', 'Depth', 'm'], ['zFront', 'Front row', 'm high'], ['zBack', 'Back row', 'm high'],
+               ['from', 'From', 'm, blank = whole'], ['to', 'To', 'm'], ['em', 'Ēh min', 'lx, 0 = none'], ['gr', 'GR max', '0 = none']].map(([k, lab, unit]) =>
+              `<label class="plan-field"><span>${lab}</span><input type="number" data-st="${k}" value="${st[k] == null || st[k] === '' ? '' : +st[k]}" step="0.5"><small>${unit}</small></label>`).join('')}
+          </div></div>`).join('')}
+        <button type="button" class="btn-small" data-sf-st-add>+ Stand</button>
+        <div class="sf-note">Seat illuminance, Ev on spectators' faces turned to the pitch, and GR for a spectator looking down at the pitch (eye 1.2 m above the row).</div></div>
+      <div class="sf-sec"><label class="plan-field-check"><input type="checkbox" data-sf="aerial"${L.aerial ? ' checked' : ''}> Aerial zone — light on a ball in flight</label>
+        ${L.aerial ? `<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px">
+          <label class="plan-field"><span>Heights</span><input type="text" data-sf="aerialHeights" value="${escHtml(L.aerialHeights.join(', '))}" style="width:100%"><small>m above the pitch</small></label>
+          ${num('aerialEv', 'Ēv min at each height', 'lx, 0 = none', 10, 'min="0"')}</div>
+          <div class="sf-note">The pitch grid repeated at each height: horizontal illuminance and the mean of four vertical planes (a ball seen from any side).</div>` : ''}</div>
       <div class="sf-sec"><label class="plan-field-check"><input type="checkbox" data-sf="tv"${L.tv ? ' checked' : ''}> Televised — vertical illuminance to cameras</label>${cams}</div>
       ${this.resultHtml(room)}
     </div>`;
@@ -534,6 +590,15 @@ const SportsCalc = {
         else if (t.dataset.sfDim === 'W') this.reshape(room, fr.L, Math.max(1, x), null);
         else this.reshape(room, fr.L, fr.W, x);
         done();
+      } else if (t.dataset.st) {
+        const row = t.closest('[data-sf-st]');
+        const st = row && this.read(room).stands.find(x => x.id === row.dataset.sfSt);
+        if (!st) return;
+        const k = t.dataset.st;
+        if (k === 'name' || k === 'side') st[k] = t.value;
+        else if ((k === 'from' || k === 'to') && t.value === '') st[k] = null;
+        else st[k] = parseFloat(t.value) || 0;
+        done();
       } else if (t.dataset.sfC) {
         const row = t.closest('[data-sf-cam]');
         const cam = row && this.read(room).cameras.find(c => c.id === row.dataset.sfCam);
@@ -546,7 +611,8 @@ const SportsCalc = {
       const room = roomOf();
       if (!room) return;
       const hit = (s) => e.target.closest(s);
-      if (hit('[data-sf-run]')) this.run([room]);
+      if (hit('[data-sf-3d]') && typeof LightingWS !== 'undefined') LightingWS.open3D(room.id);
+      else if (hit('[data-sf-run]')) this.run([room]);
       else if (hit('[data-sf-results]')) this.openResults(room);
       else if (hit('[data-sf-layout]')) this.setup({ room });
       else if (hit('[data-sf-opt]')) this.optimise(room).then(o => { if (o) this.run([room]); });
@@ -556,6 +622,15 @@ const SportsCalc = {
       else if (hit('[data-sf-cam-add]')) {
         const fr = this.frame(room, PlanEngine.factor()), L = this._L(room);
         L.cameras = (Array.isArray(L.cameras) ? L.cameras : []).concat([{ id: this._seq(room, 'c'), name: L.cameras && L.cameras.length ? 'Camera ' + (L.cameras.length + 1) : 'Main camera', x: fr ? +(fr.L / 2).toFixed(1) : 0, y: -25, z: 12 }]);
+        done();
+      } else if (hit('[data-sf-st-add]')) {
+        const L = this._L(room), cur = this.read(room).stands;
+        L.stands = cur.concat([{ id: this._seq(room, 's'), name: 'Stand ' + (cur.length + 1), side: cur.some(x => (x.side || 'near') === 'near') ? 'far' : 'near',
+          offset: 3, depth: 15, zFront: 0.5, zBack: 8, from: null, to: null, em: 0, gr: 0 }]);
+        done();
+      } else if (hit('[data-sf-st-rm]')) {
+        const row = hit('[data-sf-st-rm]').closest('[data-sf-st]'), L = this._L(room);
+        L.stands = this.read(room).stands.filter(x => x.id !== row.dataset.sfSt);
         done();
       } else if (hit('[data-sf-cam-rm]')) {
         const row = hit('[data-sf-cam-rm]').closest('[data-sf-cam]'), L = this._L(room);
@@ -622,7 +697,7 @@ const SportsCalc = {
         </div></div>`;
     };
     render();
-    const changed = () => { PlanMarkup.markDirty(); PlanEngine.requestDraw({ fg: true }); };
+    const changed = () => { PlanMarkup.markDirty(); PlanEngine.requestDraw({ fg: true }); this._show3D(); };
     const close = (calc) => {
       document.removeEventListener('keydown', onKey, true);
       ov.remove();
@@ -767,6 +842,17 @@ const SportsCalc = {
               <tbody>${cams}${players}</tbody></table>
             <div class="sf-note">${L.tv ? 'Cameras: planes turned towards each camera.' : 'Not televised — tick Televised in the field\'s panel to add cameras.'} Players: planes facing each end and side.</div></div>
         </div>
+        ${(res.stands || []).length || res.aerial ? `<div class="sf-res">
+          ${(res.stands || []).length ? `<div class="sf-res-side"><h4>Stands</h4>
+            <table class="sf-table"><thead><tr><th>Stand</th><th class="num">Seats Ēh</th><th class="num">Emin</th><th class="num">Faces Ēv</th><th class="num">GR max</th></tr></thead>
+            <tbody>${res.stands.map(st => st.error ? `<tr><td>${escHtml(st.name)}</td><td colspan="4">${escHtml(st.error)}</td></tr>`
+              : `<tr><td>${escHtml(st.name)} <small>${st.length} × ${st.depth} m</small></td><td class="num">${fmt(st.seats.Eav, 0)}</td><td class="num">${fmt(st.seats.Emin, 0)}</td><td class="num">${fmt(st.faces.Eav, 0)}</td><td class="num">${st.gr ? fmt(st.gr.max, 1) : '—'}</td></tr>`).join('')}</tbody></table>
+            <div class="sf-note">Seats: horizontal on the rows. Faces: vertical at eye height, turned to the pitch centre. GR: spectators looking at the pitch centre and 30° either side.</div></div>` : ''}
+          ${res.aerial ? `<div class="sf-res-side"><h4>Aerial zone</h4>
+            <table class="sf-table"><thead><tr><th class="num">Height</th><th class="num">Ēh</th><th class="num">Ēv (4 planes)</th><th class="num">Ev min</th><th class="num">U₂</th><th class="num">Weakest plane Ē</th></tr></thead>
+            <tbody>${res.aerial.layers.map(l => `<tr><td class="num">${l.height} m${l.aboveMasts ? ' <small>(above the masts)</small>' : ''}</td><td class="num">${fmt(l.Ehavg, 0)}</td><td class="num"><b>${fmt(l.Evavg, 0)}</b></td><td class="num">${fmt(l.Evmin, 0)}</td><td class="num">${fmt(l.U2, 2)}</td><td class="num">${fmt(l.dirMin, 0)}</td></tr>`).join('')}</tbody></table>
+            <div class="sf-note">${escHtml(res.aerial.note)}.</div></div>` : ''}
+        </div>` : ''}
         ${(res.warnings || []).concat(res.notes || []).map(w => `<div class="sf-note" style="color:#8a5a00">${escHtml(w)}</div>`).join('')}
         <div class="ui-dialog-actions"><button class="btn-primary" data-r="close">Close</button></div>
       </div></div>`;
@@ -780,7 +866,8 @@ const SportsCalc = {
     const fr = this.frame(room, o.f || PlanEngine.factor());
     if (!fr || !res || !res.horizontal) return null;
     const L = this.read(room), hz = res.horizontal;
-    const pts = [[0, 0], [fr.L, fr.W]].concat(L.masts.map(m => [+m.x || 0, +m.y || 0]));
+    const stands = L.stands.map(st => this.standCorners(st, fr));
+    const pts = [[0, 0], [fr.L, fr.W]].concat(L.masts.map(m => [+m.x || 0, +m.y || 0]), ...stands);
     const x0 = Math.min(...pts.map(p => p[0])) - 4, x1 = Math.max(...pts.map(p => p[0])) + 4;
     const y0 = Math.min(...pts.map(p => p[1])) - 4, y1 = Math.max(...pts.map(p => p[1])) + 4;
     const dpr = o.dpr || Math.min(window.devicePixelRatio || 1, 2);
@@ -811,6 +898,12 @@ const SportsCalc = {
       const pw = Math.min(40.32, fr.W * 0.6), pd = Math.min(16.5, fr.L * 0.16);
       ctx.strokeRect(X(0), Y(fr.W / 2 + pw / 2), pd * s, pw * s);
       ctx.strokeRect(X(fr.L - pd), Y(fr.W / 2 + pw / 2), pd * s, pw * s);
+    }
+    // stands
+    for (const C of stands) {
+      ctx.fillStyle = 'rgba(100,116,139,0.28)'; ctx.strokeStyle = '#475569'; ctx.lineWidth = 1.5;
+      ctx.beginPath(); C.forEach(([x, y], i) => (i ? ctx.lineTo(X(x), Y(y)) : ctx.moveTo(X(x), Y(y)))); ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(X(C[0][0]), Y(C[0][1])); ctx.lineTo(X(C[1][0]), Y(C[1][1])); ctx.stroke();
     }
     // values
     if (o.values && hz.dx * s >= 24 && hz.dy * s >= 13) {
@@ -897,6 +990,15 @@ const SportsCalc = {
         ctx.beginPath(); ctx.arc(M.x, M.y, rad, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
         ctx.fillStyle = '#111827'; ctx.font = `bold ${11 / zoom}px system-ui, sans-serif`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
         ctx.fillText(`${m.name || ''}`, M.x + rad * 1.4, M.y);
+      }
+      for (const st of L.stands) {
+        const C = this.standCorners(st, fr).map(([x, y]) => P(x, y));
+        ctx.fillStyle = 'rgba(100,116,139,0.22)'; ctx.strokeStyle = '#475569'; ctx.lineWidth = 1.5 / zoom;
+        ctx.beginPath(); C.forEach((q, i) => (i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y))); ctx.closePath(); ctx.fill(); ctx.stroke();
+        ctx.lineWidth = 3 / zoom; ctx.beginPath(); ctx.moveTo(C[0].x, C[0].y); ctx.lineTo(C[1].x, C[1].y); ctx.stroke();
+        const c = { x: (C[0].x + C[2].x) / 2, y: (C[0].y + C[2].y) / 2 };
+        ctx.fillStyle = '#334155'; ctx.font = `${11 / zoom}px system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText(st.name || 'Stand', c.x, c.y);
       }
       if (L.tv) {
         ctx.fillStyle = '#1d4ed8';

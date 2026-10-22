@@ -105,22 +105,25 @@ class _Lums:
         return E
 
 
-def glare_rating(lums: _Lums, ox: float, oy: float, mf: float, lve: float, dirs=None):
-    """CIE 112 GR at one observer (eye EYE_H above (ox, oy)), worst of the viewing
-    directions `dirs` (plan degrees, default every 45°; horizontal line of sight).
-    Returns (GR, direction) or (None, None) when no luminaire is within 60° of any
-    line of sight."""
+def glare_rating(lums: _Lums, ox: float, oy: float, mf: float, lve: float, dirs=None, eye_z: float = EYE_H, down=None):
+    """CIE 112 GR at one observer (eye `eye_z` above the ground at (ox, oy)),
+    worst of the viewing directions `dirs` (plan degrees, default every 45°).
+    The line of sight is horizontal, or `down` degrees below it (a spectator
+    looking down at the pitch). Returns (GR, direction) or (None, None) when no
+    luminaire is within 60° of any line of sight."""
     dx = lums.x - ox
     dy = lums.y - oy
-    dz = lums.z - EYE_H
+    dz = lums.z - eye_z
     dist = np.maximum(np.sqrt(dx * dx + dy * dy + dz * dz), 1e-6)
     # intensity from the luminaire towards the eye
     I = lums.intensity((-dx)[None, :], (-dy)[None, :], (-dz)[None, :])[0] * mf
     worst, worst_dir = None, None
+    cd = math.cos(math.radians(down)) if down else 1.0
+    sd = -math.sin(math.radians(down)) if down else 0.0
     for a_deg in (dirs if dirs is not None else [k * 45.0 for k in range(8)]):
         a_v = math.radians(a_deg)
-        vx, vy = math.cos(a_v), math.sin(a_v)
-        cos_t = (dx * vx + dy * vy) / dist
+        vx, vy = math.cos(a_v) * cd, math.sin(a_v) * cd
+        cos_t = (dx * vx + dy * vy + dz * sd) / dist if down else (dx * vx + dy * vy) / dist
         theta = np.degrees(np.arccos(np.clip(cos_t, -1, 1)))
         use = (cos_t > 0.0) & (theta <= 60.0)           # CIE 112 eq. 3.1: 1.5° < Θ ≤ 60°
         th = np.maximum(theta, 1.5)

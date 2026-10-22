@@ -40,7 +40,7 @@ const LightReport = {
     const path = () => {
       ctx.beginPath(); ctx.moveTo(room.points[0].x, room.points[0].y);
       for (let i = 1; i < room.points.length; i++) ctx.lineTo(room.points[i].x, room.points[i].y);
-      if (kind !== 'perimeter' && kind !== 'escape') ctx.closePath();
+      if (kind !== 'perimeter' && kind !== 'escape' && kind !== 'obtrusive') ctx.closePath();
     };
     const grid = (it.res && it.res.grid) || (it.eres && it.eres.grid);
     if (grid && (kind === 'room' || kind === 'outdoor')) {
@@ -60,8 +60,15 @@ const LightReport = {
       RoomCalc._contour(ctx, grid, f, L.em * L.uo, sc, true);
       ctx.restore();
     }
-    path(); ctx.lineWidth = 2.5 / sc; ctx.strokeStyle = kind === 'escape' ? '#dc2626' : kind === 'perimeter' ? '#7c3aed' : '#1f2933'; ctx.stroke();
+    path(); ctx.lineWidth = 2.5 / sc; ctx.strokeStyle = kind === 'escape' ? '#dc2626' : kind === 'perimeter' ? '#7c3aed' : kind === 'obtrusive' ? '#b45309' : '#1f2933'; ctx.stroke();
     const dot = Math.max(3 / sc, 0.1 / f);
+    if (kind === 'obtrusive') {
+      const lim = ObtrusiveCalc.limit(room).v;
+      for (const q of (res && res.profile) || []) {
+        ctx.fillStyle = q.E <= lim + 1e-9 ? '#16a34a' : '#dc2626';
+        ctx.beginPath(); ctx.arc(q.x / f, -q.y / f, dot * 1.1, 0, Math.PI * 2); ctx.fill();
+      }
+    }
     if (kind === 'perimeter' || kind === 'escape') {
       const lim = kind === 'perimeter' ? AreaCalc.readPerim(room).evMin : 1;
       for (const q of (res && res.profile) || []) {
@@ -77,7 +84,7 @@ const LightReport = {
       const outdoorLum = AreaCalc._isOutdoorLight(el), em = EmergCalc._isEm(el);
       let draw = false;
       if (kind === 'room') draw = PlanEngine._pointInPoly({ x: el.x, y: el.y }, P) && !outdoorLum;
-      else if (kind === 'outdoor' || kind === 'perimeter') draw = outdoorLum;
+      else if (kind === 'outdoor' || kind === 'perimeter' || kind === 'obtrusive') draw = outdoorLum;
       else if (kind === 'escape') draw = em;
       if (!draw) continue;
       ctx.beginPath(); ctx.arc(el.x, el.y, dot * 1.6, 0, Math.PI * 2);
@@ -104,13 +111,13 @@ const LightReport = {
       if (!def || def.group !== 'Lighting') continue;
       const outdoorLum = AreaCalc._isOutdoorLight(el), em = EmergCalc._isEm(el);
       const mine = it.kind === 'room' ? (PlanEngine._pointInPoly({ x: el.x, y: el.y }, P) && !outdoorLum && (el.props || {}).kind !== 'emergency' && (el.props || {}).kind !== 'exit')
-        : (it.kind === 'outdoor' || it.kind === 'perimeter') ? outdoorLum : em;
+        : (it.kind === 'outdoor' || it.kind === 'perimeter' || it.kind === 'obtrusive') ? outdoorLum : em;
       if (!mine) continue;
       const pr = el.props || {}, ph = PhotoLib.get(pr.photoId);
       const key = pr.photoId || 'none';
       const g = groups[key] || (groups[key] = { name: ph ? ph.name : '(no library luminaire)', n: 0, lm: ph ? ph.lumens : 0, w: Number(pr.watts) || (ph ? ph.watts : 0), extra: [] });
       g.n++;
-      if (it.kind === 'outdoor' || it.kind === 'perimeter') g.extra = [`${pr.mountH || 8} m high, tilt ${pr.tilt || 0} deg`];
+      if (it.kind === 'outdoor' || it.kind === 'perimeter' || it.kind === 'obtrusive') g.extra = [`${pr.mountH || 8} m high, tilt ${pr.tilt || 0} deg`];
       if (it.kind === 'escape' || (em && it.kind !== 'room')) g.extra = [`emergency output ${EmergCalc._pct(el)} %`];
     }
     return Object.values(groups);
@@ -243,7 +250,7 @@ const LightReport = {
       startY: y + 1,
       head: [['Room / area', 'Floor', 'Type', 'Em lx (target)', 'U0', 'UGR / GR', 'W/m2', 'Emergency', 'Verdict']],
       body: items.map(r => [t(r.name), t(r.floor), LightingWS.KIND[r.kind],
-        r.em ? `${f1(r.em.v, r.em.v < 10 ? 1 : 0)} (${r.em.t})${r.em.ev ? ' min' : ''}` : '-', f1(r.uo, 2),
+        r.em ? `${f1(r.em.v, r.em.v < 10 ? 1 : 0)} (${r.em.t})${r.em.ev ? (r.em.max ? ' max' : ' min') : ''}` : '-', f1(r.uo, 2),
         r.glare ? `${r.glare.label} ${f1(r.glare.v)} (${r.glare.t})` : '-', f1(r.wm2), t(r.emText), r.verdict + (r.stale ? ' *' : '')]),
       styles: { fontSize: 8, cellPadding: 1.4 },
       didParseCell: (d) => { if (d.section === 'body' && d.column.index === 8) d.cell.styles.textColor = verdictColor(String(d.cell.raw).replace(' *', '')); },
@@ -302,6 +309,8 @@ const LightReport = {
           doc.setFontSize(7.5); doc.setTextColor(110);
           doc.text(t(it.kind === 'sports'
             ? 'False colour = horizontal illuminance on the playing area (blue low, red high), values in lux at each grid point. Circles = masts; numbered diamonds = glare observers.'
+            : it.kind === 'obtrusive'
+            ? 'Dots along the check line: green within the zone limit (Ev on a property, TI on a road), red above it. Circles = outdoor luminaires.'
             : it.kind === 'room' || it.kind === 'outdoor'
             ? 'False colour = illuminance on the work plane / ground (blue low, red high). Solid line = target Em, dashed = minimum point value (Em x U0). Circles = luminaires.'
             : 'Dots: green meets the requirement, red does not (amber on a route = between 0.5 and 1 lx). Circles = luminaires.'), M, y + 1, { maxWidth: W });
@@ -327,6 +336,12 @@ const LightReport = {
       if (res && res.walls) rows.push(['Walls / ceiling / floor mean', `${f1(res.walls.Em, 0)} / ${f1(res.ceiling.Em, 0)} / ${f1(res.floor.Em, 0)} lx`]);
       if (res && res.cylindrical) rows.push(['Cylindrical Ez (mean / min)', `${f1(res.cylindrical.Ez, 0)} / ${f1(res.cylindrical.Ezmin, 0)} lx`]);
       if (res && res.vertical) rows.push(['Vertical Ev min / avg / max', `${res.vertical.Evmin} / ${res.vertical.Evavg} / ${res.vertical.Evmax} lx over ${res.length} m`]);
+      if (res && res.kind === 'property' && it.kind === 'obtrusive') {
+        rows.push(['Ev max / average', `${f1(res.Evmax, 2)} / ${f1(res.Evavg, 2)} lx at ${res.heights.join(', ')} m`], ['I max towards the property', `${Math.round(res.Imax)} cd`],
+          ['Upward light ratio (installation / worst luminaire)', `${f1(res.rul.rul, 2)} / ${f1(res.rul.worst, 1)} %`]);
+        if (res.Lb != null) rows.push(['Facade luminance Lb', `${f1(res.Lb, 2)} cd/m2`]);
+      }
+      if (res && res.kind === 'road' && it.kind === 'obtrusive') rows.push(['TI max', `${f1(res.TImax, 1)} % at La ${res.La} cd/m2`]);
       if (res && res.horizontal) {
         const hz = res.horizontal;
         rows.push(['Horizontal Eh avg / min / max', `${f1(hz.Eav, 0)} / ${f1(hz.Emin, 0)} / ${f1(hz.Emax, 0)} lx`], ['U1 / U2', `${f1(hz.U1, 2)} / ${f1(hz.U2, 2)}`],
@@ -336,6 +351,8 @@ const LightReport = {
         const pl = (res.players && res.players.directions) || [];
         if (pl.length) rows.push([`Ev players (${res.players.height} m), lowest of 4 directions`, `${f1(Math.min(...pl.map(p => p.Eav)), 0)} lx avg`]);
         if (res.aiming && res.aiming.maxTilt != null) rows.push(['Steepest flood tilt', `${f1(res.aiming.maxTilt, 1)} deg from vertical`]);
+        for (const st of (res.stands || [])) if (!st.error) rows.push([`Stand ${st.name}: seats Eh / faces Ev / GR`, `${f1(st.seats.Eav, 0)} lx / ${f1(st.faces.Eav, 0)} lx / ${st.gr ? f1(st.gr.max, 1) : '-'}`]);
+        for (const l of ((res.aerial && res.aerial.layers) || [])) rows.push([`Aerial ${l.height} m: Eh / Ev (4 planes) / U2`, `${f1(l.Ehavg, 0)} lx / ${f1(l.Evavg, 0)} lx / ${f1(l.U2, 2)}`]);
       }
       if (res && res.power && it.kind !== 'perimeter') rows.push(['Installed power', `${f1(res.power.watts, 0)} W  (${f1(res.power.wm2, 2)} W/m2)`]);
       if (it.eres && it.eres.floor) rows.push(['Emergency floor Emin / Emax', `${f1(it.eres.floor.Emin, 2)} / ${f1(it.eres.floor.Emax, 2)} lx`]);
@@ -366,6 +383,11 @@ const LightReport = {
       } else if (it.kind === 'outdoor') {
         const L = AreaCalc.readArea(it.room);
         a.push(['Maintenance factor', L.mf], ['Ground reflectance (GR)', L.groundRho], ['Calculation', `Direct light on the ground, grid ${res && res.workplane ? res.workplane.step + ' m' : ''}; GR to CIE 112 at the worst of ${res && res.gr ? res.gr.observers : '-'} observers (eye 1.5 m, eight directions)`]);
+      } else if (it.kind === 'obtrusive') {
+        const L = ObtrusiveCalc.read(it.room);
+        a.push(['Check', L.check === 'road' ? `Road (${L.roadClass === 'none' ? 'no road lighting' : L.roadClass})` : `Property, face ${L.side}, heights ${L.heights.join(', ')} m`],
+          ['Environmental zone', `${OBTRUSIVE_ZONES[L.zone].name}, ${L.curfew}-curfew${L.curfew === 'post' ? `, output ${L.postPct} %` : ''}`],
+          ['Calculation', 'Initial flux (no maintenance factor), direct light from every outdoor luminaire on the floor; limits EN 12464-2:2024 Table 4 / Table 5']);
       } else if (it.kind === 'sports') {
         const L = SportsCalc.read(it.room);
         a.push(['Sport and class', `${SPORTS_FIELDS[L.sport].name}, Class ${L.cls} (provisional EN 12193 targets, edited: ${L.edited ? 'yes' : 'no'})`],

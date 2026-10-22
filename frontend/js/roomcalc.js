@@ -63,6 +63,7 @@ const RoomCalc = {
   signature(room) {
     if ((room.kind === 'outdoor' || room.kind === 'perimeter') && typeof AreaCalc !== 'undefined') return AreaCalc.signature(room);
     if (room.kind === 'sports' && typeof SportsCalc !== 'undefined') return SportsCalc.signature(room);
+    if (room.kind === 'obtrusive' && typeof ObtrusiveCalc !== 'undefined') return ObtrusiveCalc.signature(room);
     const f = PlanEngine.factor();
     if (!f) return '';
     const b = this.buildRoom(room, f).req;
@@ -82,9 +83,9 @@ const RoomCalc = {
     const f = PlanEngine.factor();
     if (!f) { UI.alert('Calibrate the plan first — the calculation needs real distances.'); return; }
     const pm = AppState.planMarkup;
-    const list = (rooms || pm.rooms || []).filter(r => r.points && r.points.length >= 3 && r.kind !== 'outdoor' && r.kind !== 'perimeter' && r.kind !== 'escape' && r.kind !== 'sports');
+    const list = (rooms || pm.rooms || []).filter(r => r.points && r.points.length >= 3 && r.kind !== 'outdoor' && r.kind !== 'perimeter' && r.kind !== 'escape' && r.kind !== 'sports' && r.kind !== 'obtrusive');
     if (!list.length) {
-      if (!(pm.rooms || []).some(r => r.kind === 'outdoor' || r.kind === 'perimeter' || r.kind === 'sports')) UI.toast('Draw or detect a room first.', 'info');
+      if (!(pm.rooms || []).some(r => r.kind === 'outdoor' || r.kind === 'perimeter' || r.kind === 'sports' || r.kind === 'obtrusive')) UI.toast('Draw or detect a room first.', 'info');
       return;
     }
     if (this._busy) return;
@@ -267,6 +268,7 @@ const RoomCalc = {
     this._sync();
     if (typeof Light3D !== 'undefined') Light3D.drawPlan(ctx, zoom);   // objects, windows, doors from the 3D view
     if (typeof SportsCalc !== 'undefined') SportsCalc.draw(ctx, zoom, this.enabled);   // masts always; the pitch grid with the results
+    if (typeof ObtrusiveCalc !== 'undefined') ObtrusiveCalc.draw(ctx, zoom);
     if (!this.enabled) return;
     const f = PlanEngine.factor();
     if (!f) return;
@@ -351,6 +353,10 @@ const RoomCalc = {
       const L = AreaCalc.readPerim(zone);
       title = `Fence — ${name}`;
       body = `<div class="plan-legend-rows">${dot('#16a34a', `Ev ≥ ${L.evMin} lx`)}${dot('#dc2626', `below ${L.evMin} lx`)}</div>`;
+    } else if (zone.kind === 'obtrusive') {
+      const lim = ObtrusiveCalc.limit(zone);
+      title = `Obtrusive light — ${name}`;
+      body = `<div class="plan-legend-rows">${dot('#16a34a', `${lim.label} ≤ ${lim.v} ${lim.unit}`)}${dot('#dc2626', `above ${lim.v} ${lim.unit}`)}</div>`;
     } else if (zone.kind === 'sports') {
       const hz = r.res.horizontal, L = SportsCalc.read(zone);
       const top = Math.max(hz.Emax || 0, 1);

@@ -14,6 +14,11 @@ Direct light only, from floodlights on masts aimed at points on the pitch:
     over the PA (ends, quarter lines, halfway; touchlines and centre line),
     eye 1.5 m, viewing directions every 45°, Lve from the ground reflectance
     and Ēh — CIE 112 §5 allows observers on a grid and directions in equal steps.
+  • Aerial zone (optional): the grid repeated at heights above the pitch —
+    horizontal and the mean of four vertical planes, for a ball in flight.
+  • Stands (optional): sloped rectangles beside the pitch — illuminance on the
+    seats and on spectators' faces turned to the pitch, and GR for a spectator
+    looking down at the pitch (eye 1.2 m above the tread).
   • Aiming: the steepest flood (tilt from the downward vertical) of the field's
     own masts against a limit (70° keeps the beam below the horizontal).
 
@@ -153,6 +158,9 @@ def evaluate_field(fd: dict, lums: _Lums) -> dict:
                   "note": "CIE 112 at 15 observers (ends, quarter lines, halfway × touchlines, centre line), eye 1.5 m, every 45°; ground reflectance %.2f" % rho}
     res["gr"] = gr
 
+    res["aerial"] = _aerial(fd, lums, mf, O, u, v, wx, wy, nx, ny)
+    res["stands"] = [_stand(st, lums, mf, O + u * L / 2 + v * W / 2, hz["Eav"], fd) for st in (fd.get("stands") or [])]
+
     # Aiming and power: the field's own floodlights.
     tilts = [float(lums.tilt[i]) for i in own]
     res["aiming"] = {"maxTilt": round(max(tilts), 1) if tilts else None}
@@ -176,11 +184,105 @@ def evaluate_field(fd: dict, lums: _Lums) -> dict:
             checks.append(_chk("evCam", f"Ēv → {c['name']}", c["Eav"], _f(tg.get("evCam"), None), ">=", "lx"))
         if tg.get("evCamU2") is not None:
             checks.append(_chk("evCamU2", f"U₂ v → {c['name']}", c["U2"], _f(tg.get("evCamU2"), None), ">=", ""))
+    for lay in (res["aerial"] or {}).get("layers", []):
+        if tg.get("aerialEv") is not None:
+            checks.append(_chk("aerialEv", f"Ēv at {lay['height']:g} m (aerial)", lay["Evavg"], _f(tg.get("aerialEv"), None), ">=", "lx"))
+    for st in res["stands"]:
+        st_t = st.pop("_targets", {})
+        if st.get("error"):
+            continue
+        if st_t.get("em") is not None:
+            checks.append(_chk("standEm", f"Ēh on {st['name']}", st["seats"]["Eav"], _f(st_t.get("em"), None), ">=", "lx"))
+        if st_t.get("gr") is not None and st.get("gr"):
+            checks.append(_chk("standGr", f"GR on {st['name']}", st["gr"]["max"], _f(st_t.get("gr"), None), "<=", ""))
     res["checks"] = checks
     known = [c for c in checks if c["pass"] is not None]
     res["pass"] = (all(c["pass"] for c in known) if known and lums.n else None)
     res["ms"] = round((time.time() - t0) * 1000.0, 1)
     return res
+
+
+def _aerial(fd, lums, mf, O, u, v, wx, wy, nx, ny):
+    """Light on a ball in flight: the pitch grid repeated at each height. At every
+    point the horizontal illuminance (plane facing up) and the vertical
+    illuminance on four planes facing the ends and sides; their mean is a
+    cylindrical-style figure for a ball seen from any side."""
+    a = fd.get("aerial") or {}
+    hs = sorted({round(min(max(_f(h, 0.0), 0.0), 100.0), 2) for h in (a.get("heights") or []) if _f(h, -1.0) > 0})
+    if not hs or not lums.n:
+        return None
+    n = len(wx)
+    top = float(lums.z.max())
+    layers = []
+    for h in hs:
+        P = np.stack([wx, wy, np.full(n, h)], axis=1)
+        eh = lums.illuminance(P, np.tile([0.0, 0.0, 1.0], (n, 1))) * mf
+        ev = [lums.illuminance(P, np.tile([d[0], d[1], 0.0], (n, 1))) * mf for d in (u, -u, v, -v)]
+        cyl = np.mean(ev, axis=0)
+        s = _stats(cyl)
+        layers.append({"height": h, "Ehavg": round(float(eh.mean()), 2), "Evavg": s["Eav"], "Evmin": s["Emin"], "Evmax": s["Emax"],
+                       "U1": s["U1"], "U2": s["U2"], "dirMin": round(float(min(e.mean() for e in ev)), 2), "aboveMasts": bool(h >= top - 1e-9),
+                       "values": [round(float(e), 1) for e in cyl]})
+    return {"layers": layers, "nx": nx, "ny": ny,
+            "note": "Mean of the vertical illuminance on four planes (facing the ends and the sides) at each grid point; horizontal on a plane facing up"}
+
+
+def _stand(st: dict, lums: _Lums, mf: float, centre, pitch_eav: float, fd: dict) -> dict:
+    """A spectator stand: a sloped rectangle, front edge first (corners 0→1),
+    rising from zFront to zBack towards corners 3 / 2. Illuminance on the seats
+    (horizontal), on the spectators' faces (vertical, turned to the pitch centre,
+    seated eye 1.2 m above the tread) and GR for a spectator looking at the
+    pitch centre and 30° either side, with the pitch as the background."""
+    name = st.get("name") or "Stand"
+    C = [(_f(p[0], 0.0), _f(p[1], 0.0)) for p in (st.get("corners") or [])]
+    out = {"id": st.get("id"), "name": name, "_targets": st.get("targets") or {}}
+    if len(C) != 4:
+        out["error"] = "a stand needs four corners"
+        return out
+    A, B, D = np.array(C[0]), np.array(C[1]), np.array(C[3])
+    along, back = B - A, D - A
+    Ls, Ds = float(np.hypot(*along)), float(np.hypot(*back))
+    if Ls < 0.5 or Ds < 0.5:
+        out["error"] = "the stand has no size"
+        return out
+    zf, zb = _f(st.get("zFront"), 0.5), _f(st.get("zBack"), 0.5)
+    step = 2.0
+    n, m = max(int(math.ceil(Ls / step)), 2), max(int(math.ceil(Ds / step)), 2)
+    ti = (np.arange(n) + 0.5) / n
+    tj = (np.arange(m) + 0.5) / m
+    TI, TJ = np.meshgrid(ti, tj)
+    ti_f, tj_f = TI.ravel(), TJ.ravel()
+    px = A[0] + ti_f * along[0] + tj_f * back[0]
+    py = A[1] + ti_f * along[1] + tj_f * back[1]
+    pz = zf + (zb - zf) * tj_f
+    k = len(px)
+    eh = lums.illuminance(np.stack([px, py, pz], axis=1), np.tile([0.0, 0.0, 1.0], (k, 1))) * mf
+    nrm = np.stack([centre[0] - px, centre[1] - py, np.zeros(k)], axis=1)
+    ln = np.maximum(np.hypot(nrm[:, 0], nrm[:, 1]), 1e-9)
+    nrm[:, 0] /= ln
+    nrm[:, 1] /= ln
+    ev = lums.illuminance(np.stack([px, py, pz + 1.2], axis=1), nrm) * mf
+    out.update({"length": round(Ls, 2), "depth": round(Ds, 2), "zFront": zf, "zBack": zb, "nx": n, "ny": m,
+                "seats": _stats(eh), "faces": _stats(ev), "values": [round(float(e), 1) for e in eh]})
+    gr = None
+    if lums.n and pitch_eav > 0:
+        rho = min(max(_f(fd.get("groundRho"), 0.2), 0.01), 0.9)
+        lve = max(0.035 * rho * pitch_eav / math.pi, 1e-4)
+        obs = []
+        for a in (0.1, 0.5, 0.9):
+            for b in (0.15, 0.85):
+                ox, oy = A + a * along + b * back
+                ez = zf + (zb - zf) * b + 1.2
+                to = math.degrees(math.atan2(centre[1] - oy, centre[0] - ox))
+                down = math.degrees(math.atan2(ez, math.hypot(centre[0] - ox, centre[1] - oy)))
+                g, d = glare_rating(lums, ox, oy, mf, lve, dirs=[to - 30.0, to, to + 30.0], eye_z=ez, down=down)
+                obs.append({"x": round(float(ox), 2), "y": round(float(oy), 2), "z": round(ez, 2), "gr": None if g is None else round(g, 1)})
+        vals = [o for o in obs if o["gr"] is not None]
+        if vals:
+            w = max(vals, key=lambda o: o["gr"])
+            gr = {"max": w["gr"], "at": w, "observers": obs}
+    out["gr"] = gr
+    return out
 
 
 def run_sports_lighting(req: dict) -> dict:

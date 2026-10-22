@@ -169,3 +169,37 @@ def test_aim_optimiser_evens_the_pitch_and_respects_limits():
 def test_aim_optimiser_needs_floods():
     with pytest.raises(ValueError):
         SL.optimise_aiming({"field": {"length": 10, "width": 10}, "masts": [], "photometry": _photo()})
+
+
+def test_aerial_layers_are_the_mean_of_four_vertical_planes():
+    photo = _photo()
+    lums = [_flood("a", 5.0, -6.0, 18.0, 5.0, 3.0), _flood("b", 5.0, 16.0, 18.0, 5.0, 7.0)]
+    r = _run(lums, _field(aerial={"heights": [10, 2, 2]}, targets={"aerialEv": 1.0}), photo)
+    layers = r["aerial"]["layers"]
+    assert [l["height"] for l in layers] == [2.0, 10.0]
+    L = _Lums(lums, _webs(photo))
+    P = np.array([[x, y, 10.0] for y in (2.5, 7.5) for x in (2.5, 7.5)])
+    ev = [L.illuminance(P, np.tile([d[0], d[1], 0.0], (4, 1))) * 0.8 for d in ((1, 0), (-1, 0), (0, 1), (0, -1))]
+    assert layers[1]["Evavg"] == pytest.approx(float(np.mean(ev)), rel=1e-3)
+    assert [c["key"] for c in r["checks"]].count("aerialEv") == 2
+
+
+def test_stand_seats_faces_and_spectator_glare():
+    photo = _photo()
+    lums = [_flood("a", 50.0, -8.0, 25.0, 50.0, 20.0), _flood("b", 50.0, 58.0, 25.0, 50.0, 30.0)]
+    stand = {"id": "s", "name": "Main stand", "corners": [[20, -3], [80, -3], [80, -15], [20, -15]], "zFront": 0.5, "zBack": 6.0,
+             "targets": {"em": 0.1, "gr": 99}}
+    r = _run(lums, _field(length=100.0, width=50.0, gridStep=0, stands=[stand]), photo)
+    st = r["stands"][0]
+    assert st["length"] == pytest.approx(60.0) and st["depth"] == pytest.approx(12.0)
+    assert (st["nx"], st["ny"]) == (30, 6)
+    assert st["seats"]["Eav"] > 0 and st["faces"]["Eav"] > 0
+    # the seat grid for the 3D view: row by row from the front, its mean is Ēh on the seats
+    assert len(st["values"]) == 30 * 6
+    assert sum(st["values"]) / len(st["values"]) == pytest.approx(st["seats"]["Eav"], abs=0.1)
+    assert st["gr"] and len(st["gr"]["observers"]) == 6
+    # the eye rises with the rake: front row 0.5 + 0.15·5.5 + 1.2
+    assert st["gr"]["observers"][0]["z"] == pytest.approx(0.5 + 0.15 * 5.5 + 1.2, abs=0.01)
+    keys = [c["key"] for c in r["checks"]]
+    assert "standEm" in keys and "standGr" in keys
+    assert "_targets" not in st

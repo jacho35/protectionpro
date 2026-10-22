@@ -166,6 +166,12 @@ body.dark-mode .lrp-v.ok { color: #a5e3b0; } body.dark-mode .lrp-v.bad { color: 
 .l3-check { display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; }
 .l3-check input { width: 18px; height: 18px; }
 .l3-muted { margin: 0; font-size: 12px; color: var(--text-secondary); line-height: 1.45; }
+.l3-btns { display: flex; flex-wrap: wrap; gap: 6px; }
+.l3-table { width: 100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
+.l3-table th { text-align: left; font-weight: 600; color: var(--text-secondary); border-bottom: 1px solid var(--border-color); padding: 3px 4px; }
+.l3-table td { padding: 3px 4px; border-bottom: 1px solid var(--border-color); }
+.l3-table .l3-bad { color: #a61b1b; font-weight: 700; }
+body.dark-mode .l3-table .l3-bad { color: #ffb4ae; }
 .l3-chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .l3-chips span, .l3-chip { padding: 4px 9px; border-radius: 6px; background: var(--bg-tertiary); font-size: 12px; font-variant-numeric: tabular-nums; }
 .l3-chip small { color: var(--text-secondary); }
@@ -258,3 +264,9 @@ body.dark-mode .l3-chips .warn, body.dark-mode .l3-chip.warn { background: #3d2b
   .sf-grid3, .sf-grid4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .sf-layouts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+.sf-stand { border: 1px solid var(--border-color); border-radius: 6px; padding: 6px; margin: 6px 0; }
+.sf-stand-head { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; gap: 4px; margin-bottom: 4px; }
+.sf-stand-head input, .sf-stand-head select { min-width: 0; font-size: 12px; }
+.sf-stand-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; }
+.sf-stand-grid .plan-field input { width: 100%; min-width: 0; }
+.sf-stand-grid .plan-field small { font-size: 10px; }
