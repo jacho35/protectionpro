@@ -211,6 +211,100 @@ const RoomLighting = {
     </div>`;
   },
 
+  // ─── Tooltips ───
+  // What each entry box means, shown on hover / long-press and read out as the
+  // field's description. Keyed by the control's data attribute, per panel.
+  TIPS: {
+    rl: {
+      task: 'The visual task done in this room. Picks the target average lux, uniformity, glare limit and Ra from the standard\'s table. Change a value below to override it.',
+      em: 'Maintained average illuminance required on the work plane, in lux. Comes from the task table; editing it makes the targets your own.',
+      uo: 'Minimum uniformity U₀ = lowest ÷ average illuminance on the work plane (0–1). Typical targets are 0.4 to 0.7.',
+      ugr: 'Glare limit: the calculated Unified Glare Rating (CIE 117) must not exceed this. Lower means less glare; offices are usually 19.',
+      ra: 'Minimum colour rendering index (0–100) the light source must have. Not calculated here: check it on the luminaire data sheet.',
+      wallE: 'Required average illuminance on the walls, in lux. Leave at 0 if the standard sets no wall requirement for this task.',
+      ceilE: 'Required average illuminance on the ceiling, in lux. Leave at 0 if there is no ceiling requirement.',
+      ceilH: 'Floor-to-ceiling height in metres. Recessed and surface fittings are taken to be at this height.',
+      workH: 'Height above the floor of the plane where the task is done, in metres. 0.75 for a desk; 0 for floor-level tasks.',
+      wallZone: 'Strip along the walls, in metres, left out of the average and uniformity. Standards usually allow 0.5 m. 0 includes the whole room.',
+      rhoC: 'Ceiling reflectance (0–1): the share of light the surface reflects. White ceiling about 0.7.',
+      rhoW: 'Wall reflectance (0–1). Light-coloured walls about 0.5, dark about 0.2.',
+      rhoF: 'Floor reflectance (0–1). Typical floors are 0.2.',
+      mf: 'Maintenance factor (0.3–1): the share of the initial light still delivered after lamp ageing and dirt. All results are maintained values. About 0.8 for LED in a clean room.',
+      grid: 'Spacing of the calculation points, in metres. Blank = automatic (the EN 12464 maximum for the room, at most 0.5 m). A finer grid is more exact and slower.',
+      tD: 'Hours per year the lighting is on during daylight hours. Used for the energy figure (LENI). Offices: about 2250.',
+      tN: 'Hours per year the lighting is on outside daylight hours. Offices: about 250.',
+      lpd: 'Power-density limit in W/m² from your regulation (e.g. SANS 10400-XA). The result is checked against it. 0 = no limit checked.',
+      fo: 'Occupancy factor (0–1): the share of the time the lights are on when the room is occupied. 1 = no presence control.',
+      fd: 'Daylight factor (0–1): 1 = no daylight control; lower values mean daylight dims or switches the lights.',
+      fc: 'Constant-illuminance factor (0.5–1): 1 = no control. About 0.9 when the output is dimmed to hold the maintained level.',
+      emerg: 'Check this room\'s emergency lighting: as an open (anti-panic) area, or as a high-risk task area. Emergency fittings are those with an Emergency output % or kind Emergency.',
+    },
+    ac: {
+      task: 'The outdoor task. Picks the target illuminance, uniformity and glare limit from the EN 12464-2 table. Change a value to override it.',
+      em: 'Maintained average illuminance required on the ground, in lux.',
+      uo: 'Minimum uniformity U₀ = lowest ÷ average ground illuminance (0–1).',
+      gr: 'Glare Rating limit (CIE 112): the calculated GR must not exceed this.',
+      groundRho: 'Reflectance of the ground (0.01–0.9). Dark asphalt about 0.07; light concrete about 0.3.',
+      mf: 'Maintenance factor (0.3–1): the share of the initial light still delivered after ageing and dirt. About 0.8 for LED.',
+      grid: 'Spacing of the calculation points, in metres. Blank = automatic (the EN 12464-2 maximum for the size, 0.5–2 m).',
+      closed: 'Tick when the fence or boundary goes all the way round (a ring). Leave unticked for an open line.',
+      side: 'Which face of the fence is measured: outward or inward for a ring, left or right of the drawn direction for an open line. Ticks on the plan show it.',
+      evMin: 'Minimum vertical illuminance required on the measured face, in lux. A site-security target you set.',
+      evRatio: 'Required minimum ÷ average vertical illuminance (0–1), a uniformity along the line.',
+      height: 'Height above the ground of the measured line, in metres. 1.5 m is face height.',
+      step: 'Distance between measurement points along the line, in metres.',
+    },
+    em: {
+      width: 'Clear width of the escape route in metres. Sets the band either side of the centre line over which emergency illuminance is checked.',
+      mf: 'Maintenance factor (0.3–1) for the emergency fittings: the share of light still delivered at the end of the battery duration.',
+    },
+    key: {
+      name: 'A label for this item, shown on the plan and in the reports.',
+      symScale: 'Draws this one symbol larger or smaller on the plan (1 = standard). It does not change the calculation.',
+      kind: 'What the fitting is. Outdoor kinds (Floodlight, Area light) count in outdoor areas and fences; Emergency and Exit count in emergency lighting; the rest count in the room they are inside.',
+      watts: 'Electrical load of the fitting in watts, including the driver. Used for circuits, energy and W/m².',
+      lumens: 'Luminous flux of the fitting in lumens. Leave blank to use the luminaire library entry\'s flux.',
+      photoId: 'The luminaire from the library whose light distribution is used in the calculation. A fitting with none is not calculated.',
+      mount: 'How the fitting is mounted. Recessed and surface sit at ceiling height; suspended hangs below it by the drop.',
+      drop: 'How far a suspended fitting hangs below the ceiling, in metres.',
+      fluxPct: 'Light output as a percentage of full output (100 = undimmed). Use it for dimmed or reduced-output fittings.',
+      emergPct: 'Output on battery as a percentage of full output. 0 = not an emergency fitting. Fittings above 0 count in the emergency calculation.',
+      mountH: 'Height of an outdoor fitting above the ground, in metres (pole or mast height).',
+      tilt: 'Tilt of an outdoor fitting from straight down, in degrees, towards the front of the fitting. 0 = pointing straight down.',
+    },
+    misc: {
+      'data-rl-kind': 'What this shape is assessed as: an indoor room, an outdoor area, a fence line (vertical lux) or an escape route.',
+      'data-rl-standard': 'Project-wide. Chooses where the task targets and emergency limits come from: EN 12464-1 / EN 1838, or SANS 10114-1 / -2.',
+      'data-rl-mfpreset': 'Fills in the maintenance factor for a typical environment and cleaning interval. You can still edit the number.',
+      'data-rc-lum': 'The luminaire from the library that the suggested layouts use.',
+      'data-ac-lum': 'The luminaire from the library that the suggested layouts use.',
+      'data-ac-h': 'Mounting height of the poles in the suggested layout, in metres.',
+      'data-ac-tilt': 'Tilt of the luminaires in the suggested layout from straight down, in degrees.',
+    },
+  },
+
+  // Put the tips on the controls (and their labels) under `root`. `itemType`
+  // is set for a placed element's panel, whose fields use data-key.
+  tipify(root, itemType) {
+    if (!root) return;
+    const set = (ctl, tip) => {
+      if (!tip) return;
+      ctl.title = tip;
+      const lab = ctl.closest('label') || (ctl.parentElement && ctl.parentElement.querySelector('.plan-field-label'));
+      if (lab) { lab.title = tip; (lab.closest('.plan-field') || lab).classList.add('has-tip'); }
+    };
+    const T = this.TIPS;
+    root.querySelectorAll('[data-rl], [data-ac], [data-em]').forEach(c => {
+      const d = c.dataset;
+      set(c, d.rl !== undefined ? T.rl[d.rl] : d.ac !== undefined ? T.ac[d.ac] : T.em[d.em]);
+    });
+    for (const [attr, tip] of Object.entries(T.misc)) root.querySelectorAll('[' + attr + ']').forEach(c => set(c, tip));
+    root.querySelectorAll('[data-key]').forEach(c => {
+      const k = c.dataset.key;
+      set(c, k === 'name' ? T.key.name : itemType === 'bd_light' ? T.key[k] : (k === 'symScale' ? T.key[k] : null));
+    });
+  },
+
   _bound: false,
   bind(propsEl) {
     if (typeof RoomCalc !== 'undefined') RoomCalc.bind(propsEl);
