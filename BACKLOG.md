@@ -421,6 +421,10 @@ Help ▸ Guides (`frontend/js/help-guides.js`, pictures in `frontend/img/help/`)
 
 ## Completed
 
+### Lighting: PDF report options dialog + disabled-button fix (2026-10-22)
+- **Fix:** on the Lighting tab, *PDF report* and *Calculate all* were rendered disabled when the tab was opened with no zones and never re-enabled after a room was drawn, so the PDF could not be made. They are always enabled now (Calculate all says to draw a room first when there is none).
+- **Report options.** *PDF report* opens a dialog (`LightReport.askOptions`): which zones (grouped by floor, All / None / Failing only; a zone without a result is listed but can't be ticked), which sections (summary table, energy table, a page per zone, method page) and what each zone's page holds (false-colour plot, results against the requirement, luminaire schedule, assumptions and notes). The last choice is kept for the session. Section numbers follow what is included.
+
 ### Lighting: calculation grid size per zone, heat-map legend (2026-10-22)
 - **Calculation grid** box on a room's and an outdoor area's lighting panel (blank = automatic, the EN 12464-1/-2 maximum for the size; rooms at most 0.5 m). Sent as `gridStep` to `room_lighting.py`, `area_lighting.py` and the emergency open/high-risk area check; the auto layout's quick screen keeps its own grid. The result line shows the grid and point count; notes say when the grid is coarser than the standard's maximum or was widened to stay under the point limit. Tests in `test_room_lighting.py` / `test_area_lighting.py`.
 - **Legend** over the Lighting tab's plan: the selected zone's scale (0 → its Emax, blue → red) with the target Ēm and required Emin marked and the isolux line styles; escape routes and fences show their dot colours.
