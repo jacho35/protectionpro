@@ -679,6 +679,21 @@ class RoadLightingRequest(BaseModel):
     mode: str = "verify"
 
 
+class RoadPlanRequest(BaseModel):
+    """Road lighting on plan geometry (EN 13201-3 / SANS 10098-1) — roads
+    (centreline, swept cross-section, optional kerb-to-kerb width profile,
+    segments), luminaires at their plan positions, junction conflict areas
+    and the photometry webs. See analysis/road_plan.py."""
+    model_config = {"extra": "allow"}
+
+    roads: list[dict] = []
+    luminaires: list[dict] = []
+    conflictAreas: list[dict] = []
+    photometry: dict = {}
+    standard: str = "EN"
+    mf: float = 0.8
+
+
 class PhotometryFileRequest(BaseModel):
     """An IES LM-63 or EULUMDAT file's text, parsed into a canonical Type C web."""
     text: str
