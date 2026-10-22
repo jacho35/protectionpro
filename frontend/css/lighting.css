@@ -1,0 +1,75 @@
+/* ProtectionPro — Lighting workspace (js/lightws.js). Same shell recipe as the
+   Quantities / Schedules workspaces: a rail on the left, the pane on the right. */
+
+#lighting-workspace {
+  position: absolute;
+  top: var(--toolbar-height);
+  left: 0; right: 0; bottom: 0;
+  display: none;
+  flex-direction: row;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  overflow: hidden;
+  font-family: var(--font-family);
+}
+
+.lw-rail {
+  width: 250px; flex: 0 0 250px;
+  display: flex; flex-direction: column;
+  background: var(--bg-primary);
+  border-right: 1px solid var(--border-color);
+  min-height: 0; overflow-y: auto;
+}
+.lw-rail-head { padding: 12px 14px 8px; font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--text-secondary); }
+.lw-rail-list { display: flex; flex-direction: column; gap: 2px; padding: 0 8px 12px; }
+.lw-rail-item {
+  display: flex; justify-content: space-between; align-items: center; gap: 8px; width: 100%;
+  min-height: 40px; padding: 8px 10px; border: 0; border-radius: 7px; background: transparent;
+  color: var(--text-primary); font: inherit; font-size: 13px; text-align: left; cursor: pointer;
+}
+.lw-rail-item span { font-size: 12px; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.lw-rail-item:hover { background: var(--bg-tertiary); }
+.lw-rail-item.active { background: var(--bg-tertiary); color: var(--accent); font-weight: 600; box-shadow: inset 3px 0 0 var(--accent); }
+.lw-rail-sep { height: 1px; background: var(--border-color); margin: 8px 6px; }
+
+.lw-main { flex: 1; min-width: 0; padding: 18px 22px; overflow: auto; display: flex; flex-direction: column; gap: 14px; }
+.lw-head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.lw-head h1 { margin: 0; font-size: 22px; }
+.lw-actions { margin-left: auto; display: flex; flex-wrap: wrap; gap: 8px; }
+.lw-actions button { min-height: 38px; }
+
+.lw-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.lw-tile { background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: 10px; padding: 12px 14px; display: flex; flex-direction: column; gap: 4px; }
+.lw-tile span { font-size: 12px; color: var(--text-secondary); }
+.lw-tile b { font-size: 24px; font-variant-numeric: tabular-nums; }
+.lw-tile small { font-size: 12px; font-weight: 500; color: var(--text-secondary); }
+
+.lw-tablewrap { background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: 10px; overflow-x: auto; }
+.lw-table { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 900px; }
+.lw-table th { text-align: left; font-size: 12px; color: var(--text-secondary); background: var(--bg-tertiary); padding: 0; white-space: nowrap; }
+.lw-table th button { background: none; border: 0; font: inherit; color: inherit; font-weight: 600; padding: 10px 12px; cursor: pointer; width: 100%; text-align: inherit; }
+.lw-table th:not(:has(button)) { padding: 10px 12px; font-weight: 600; }
+.lw-table td { padding: 9px 12px; border-top: 1px solid var(--border-color); vertical-align: top; }
+.lw-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+.lw-table small { color: var(--text-secondary); font-weight: 400; }
+.lw-table .lw-task { max-width: 220px; color: var(--text-secondary); }
+.lw-table .lw-why { display: block; margin-top: 2px; }
+.lw-table .ok { color: #1d6b3a; }
+.lw-table .bad { color: #a61b1b; }
+.lw-table .muted, .lw-note, .lw-empty { color: var(--text-secondary); }
+.lw-link { background: none; border: 0; color: var(--accent); font: inherit; cursor: pointer; padding: 6px 4px; min-height: 32px; }
+.lw-note { font-size: 12px; margin: 0; }
+.lw-empty { background: var(--bg-primary); border: 1px dashed var(--border-color); border-radius: 10px; padding: 28px; line-height: 1.6; }
+.lw-empty p { margin: 0 0 8px; }
+
+.lw-main > * { flex-shrink: 0; }
+
+@media (max-width: 768px) {
+  #lighting-workspace { flex-direction: column; }
+  .lw-rail { width: auto; flex: 0 0 auto; border-right: 0; border-bottom: 1px solid var(--border-color); overflow: visible; }
+  .lw-rail-head, .lw-rail-sep { display: none; }
+  .lw-rail-list { flex-direction: row; overflow-x: auto; padding: 8px; gap: 6px; }
+  .lw-rail-item { width: auto; white-space: nowrap; gap: 10px; border: 1px solid var(--border-color); border-radius: 999px; }
+  .lw-rail-item.active { box-shadow: none; border-color: var(--accent); }
+  .lw-main { padding: 12px; }
+}

@@ -1465,7 +1465,7 @@ const AppState = {
   _lastViewToJSON() {
     const r = (n) => Math.round(n * 100) / 100;
     let workspace = 'sld';
-    for (const ws of ['retic', 'streetlight', 'plan', 'interlock', 'schedules', 'quantities']) {
+    for (const ws of ['retic', 'streetlight', 'plan', 'interlock', 'schedules', 'quantities', 'lighting']) {
       const el = typeof document !== 'undefined' && document.getElementById(ws + '-workspace');
       if (el && el.style.display === 'flex') { workspace = ws; break; }
     }

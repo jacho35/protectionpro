@@ -75,6 +75,14 @@ frontend/
     ├── help.js             # Help 'Calculations & tools' viewer: ranked search, KaTeX (js/lib/katex) lazy-loaded; articles are data in help-{faults,flow,dynamics,protect,cables,design,workflow}.js (TeX between $…$ / $$…$$; never a literal $ in text)
     ├── header.js           # Two-row header behaviours: Results menu lists only studies with results; Ctrl K command search (index built from the menus)
     ├── earthgrid.js        # Earth grid editor (AppState.earthGrids): grid list, layout/rods/fences/added metal/calculation form, live plan / 3-D preview via /earth-grid/preview, click-to-place conductors + rods on the plan; edits a working copy — Save/Revert, discard prompt on close; buses pick a grid in their grounding section
+    ├── plan-roomdetect.js  # PlanRoomDetect — Plan › Zones › Detect room (click): boundary of the room under the click, exact from DXF wall layers (planar-graph faces, door gaps bridged, columns skipped) or traced from a plan image/PDF (dark pixels = walls, flood fill); pure geometry (node-testable, `testing/unit/roomdetect.test.js`) + the tool + options panel; a selected room's corners drag / midpoints add / double-click removes (plan-tools.js select tool)
+    ├── photolib.js         # PhotoLib — the ONE project luminaire library (IES/LDT import, generic optics incl. indoor/flood/area, remove-if-unused), shared with road lighting: it lives in `reticulation.streetLighting.photometry`, nothing is copied
+    ├── roomlighting.js     # RoomLighting — a room's lighting data (`room.lighting`: task from the PROVISIONAL ROOM_TASKS table, ceiling/work plane/wall zone, reflectances, MF, emergency mode, energy hours/factors); the room panel; `typeSelect` switches `room.kind` (room | outdoor | perimeter | escape); `energy()` = LENI + W/m² check
+    ├── roomcalc.js         # RoomCalc — builds the indoor request (fittings inside the room), runs /api/analysis/room-lighting, keeps results session-only in `RoomCalc.results` (signature → Out of date), draws false colour + isolux, auto layout (suggest → ghost → place); `quiet` silences toasts for Calculate all
+    ├── areacalc.js         # AreaCalc — outdoor areas (`kind:'outdoor'`, EN 12464-2 OUTDOOR_TASKS, provisional) and perimeters (`kind:'perimeter'`): outdoor luminaires = Light Fittings of kind Floodlight / Area light anywhere on the sheet (mountH, tilt); /api/analysis/area-lighting, pole layout, measured-face ticks
+    ├── emergcalc.js        # EmergCalc — emergency lighting: escape routes (`kind:'escape'`, width) and rooms checked as open / high-risk areas; fittings count with `emergPct` or kind Emergency; /api/analysis/emergency-lighting; results under `RoomCalc.results['em:<id>']`
+    ├── lightws.js          # LightingWS — the Lighting workspace tab: every room/area/fence/route on every floor with results + verdict, filters, Locate, Calculate all (steps through the floors, returns to the one you were on)
+    ├── lightreport.js      # LightReport — the lighting PDF (summary, energy, a section per item with false-colour plot, luminaire schedule, assumptions, method)
     ├── lightning.js        # Lightning risk (IEC 62305-2, edition per assessment: 2024 default / 2010, absent ⇒ 2010): named assessments saved in the project (AppState.lightningAssessments), 4 guided steps (data-lr-ed fields per edition), live strike estimate, verdict-first results (2024: per zone + frequency F), PDF report (LightningReport)
     ├── lfstudy.js          # Load Flow Study Manager (named full-snapshot cases, attribute grid, comparison)
     ├── voltage-stability.js # Voltage stability UI (P-V / Q-V setup + charts)
@@ -125,6 +133,9 @@ backend/
 │   ├── hosting_capacity.py # Nodal DER hosting capacity — voltage-rise/thermal limited PV injection sweep per bus
 │   ├── cb_settings.py      # Breaker trip-unit settings shared by the engines: `pickup_base` (a pickup is × Ir or × In), `thermal_curve` (a manufacturer's long-time points); mirrors constants.js cbPickupRefA / cbThermalCurveTime
 │   ├── arcflash.py         # Arc flash incident energy — IEEE 1584-2002 and 1584-2018
+│   ├── room_lighting.py    # Indoor room lighting: direct (Type C web, visibility around corners) + diffuse radiosity (symmetric, row-balanced form factors, conserves flux), work-plane Em/U0, walls/ceiling/floor, Ez, UGR (CIE 117), W/m²; `suggest_layout` = luminaire lattices tested to the targets (coarse screen, best re-checked full)
+│   ├── area_lighting.py    # Outdoor areas (ground Em/U0 + GR to CIE 112) and perimeter vertical Ev from poles/floods (height, tilt, heading — road_lighting's frame); `suggest_area_layout` = pole lattices from the fewest upward
+│   ├── emergency_lighting.py # Emergency floor lux (direct only, emergency output, walls stop light) vs EN 1838 criteria: escape route 1 lx / band 0.5 lx / 40:1, open area 0.5 lx, high-risk max(15 lx, 10 % task)
 │   ├── lightning_risk.py   # IEC 62305-2:2010 R1 (the default for a request with no `edition`); dispatches edition "2024" →
 │   ├── lightning_risk_2024.py # IEC 62305-2:2024 — R = R_L1 + R_L2 per zone, frequency of damage F, N_SG = k·N_G; pinned to Annex F (house/office/hospital)
 │   ├── cable_sizing.py     # IEC 60364 thermal, voltage drop, fault withstand
@@ -243,6 +254,9 @@ Key behaviors: snap-to-grid (20px), zoom 10%-500%, pan via middle-click/scroll, 
 | `/api/analysis/grounding` | Grounding grid (optional `groundingBusIds` = selected buses only) | IEEE 80 per bus; buses on an earth grid object: numerical (method of moments) with IEEE 80 or EN 50522:2022 limits; conductor size (mm²) checked against Onderdonk |
 | `/api/analysis/earth-grid/preview` | Earth grid geometry for the editor (`{grid}`, not ProjectData) | plan, element count, connectivity, IEEE 80 applicability — no solve |
 | `/api/analysis/lightning-risk` | Lightning risk (form, not ProjectData) | IEC 62305-2:2024 (`edition: "2024"`, R + F per zone) or 2010 (R1; absent `edition`) |
+| `/api/analysis/room-lighting` (+ `/layout`) | Room lighting (form, not ProjectData: rooms with outline, targets, luminaires; photometry) | Direct + diffuse radiosity interreflection, work-plane Ēm / U₀, walls / ceiling, cylindrical Ēz, UGR (CIE 117), W/m²; `/layout` proposes luminaire grids that meet the targets |
+| `/api/analysis/area-lighting` (+ `/layout`) | Outdoor areas and perimeters (form: luminaires with height / tilt / heading, areas, perimeters; photometry) | Ground Ēm / U₀ and GR (CIE 112); vertical Ev along a fence; `/layout` proposes pole grids |
+| `/api/analysis/emergency-lighting` | Emergency lighting (form: routes, open / high-risk areas, emergency luminaires; photometry) | Floor lux vs EN 1838 / SANS 10114-2: route 1 lx / 0.5 lx band / 40:1, open area 0.5 lx, high risk max(15 lx, 10 %) |
 | `/api/analysis/study-manager` | Batch all studies | Runs selected analyses |
 
 ### Projects (CRUD)

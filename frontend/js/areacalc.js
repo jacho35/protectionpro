@@ -145,7 +145,7 @@ const AreaCalc = {
       RoomCalc.results[r.id] = { res: r, sig: room ? this.signature(room) : '' };
       if (r.pass === true) pass++; else if (r.pass === false) fail++;
     }
-    UI.toast(`Outdoor lighting: ${pass} pass, ${fail} fail${skipped.length ? ` · ${skipped.length} outdoor fitting${skipped.length === 1 ? ' has' : 's have'} no library luminaire` : ''}${!lums.length ? ' · no outdoor luminaires placed (Light Fitting → Floodlight / Area light)' : ''}.`,
+    if (!RoomCalc.quiet) UI.toast(`Outdoor lighting: ${pass} pass, ${fail} fail${skipped.length ? ` · ${skipped.length} outdoor fitting${skipped.length === 1 ? ' has' : 's have'} no library luminaire` : ''}${!lums.length ? ' · no outdoor luminaires placed (Light Fitting → Floodlight / Area light)' : ''}.`,
       fail ? 'warn' : 'success', 6000);
     PlanEngine.requestDraw({ fg: true });
     PlanMarkup.refreshProps();
