@@ -38,7 +38,8 @@ const AreaCalc = {
     return {
       task, em: this._num(L.em, T.em, 0.1, 5000), uo: this._num(L.uo, T.uo, 0, 1),
       gr: this._num(L.gr, T.gr, 0, 100), ra: this._num(L.ra, T.ra, 0, 100),
-      mf: this._num(L.mf, 0.8, 0.3, 1), groundRho: this._num(L.groundRho, 0.07, 0.01, 0.9), edited: !!L.edited,
+      mf: this._num(L.mf, 0.8, 0.3, 1), groundRho: this._num(L.groundRho, 0.07, 0.01, 0.9),
+      grid: this._num(L.grid, 0, 0, 10), edited: !!L.edited,   // grid: calculation grid (m), 0 = automatic
     };
   },
   readPerim(room) {
@@ -102,7 +103,7 @@ const AreaCalc = {
   _areaReq(room, f) {
     const L = this.readArea(room);
     return { id: room.id, name: room.name, polygon: room.points.map(p => [p.x * f, -p.y * f]), mf: L.mf, groundRho: L.groundRho,
-      targets: { em: L.em, uo: L.uo, gr: L.gr } };
+      gridStep: L.grid > 0 ? L.grid : undefined, targets: { em: L.em, uo: L.uo, gr: L.gr } };
   },
   _perimReq(room, f) {
     const L = this.readPerim(room);
@@ -190,7 +191,9 @@ const AreaCalc = {
           ${this._num_(room, 'gr', 'GR limit', '', 1, 'min="0" max="100"', L)}${this._num_(room, 'groundRho', 'Ground ρ', '', 0.01, 'min="0.01" max="0.9"', L)}
         </div>
         ${this._num_(room, 'mf', 'Maintenance factor', '', 0.01, 'min="0.3" max="1"', L)}
-        <div style="font-size:11px;color:var(--text-muted);margin:2px 0 6px">${L.edited ? 'Edited. ' : ''}${this.NOTE}</div>`;
+      <label class="plan-field" style="margin-top:6px"><span>Calculation grid</span>
+        <input type="number" data-ac="grid" value="${L.grid > 0 ? L.grid : ''}" step="0.1" min="0.1" max="10" placeholder="automatic" style="width:100%"><small>m — blank = automatic</small></label>
+        <div style="font-size:11px;color:var(--text-muted);margin:2px 0 6px">${L.edited ? 'Edited. ' : ''}${this.NOTE} Automatic grid: the EN 12464-2 maximum for the area's size, 0.5–2 m.</div>`;
     }
     return `<div class="rl-room" data-ac-room="${escHtml(room.id)}" style="margin-top:12px;border-top:1px solid var(--border,#d9dee4);padding-top:10px">
       <div class="plan-props-title" style="font-size:13px">${perim ? 'Perimeter lighting' : 'Outdoor lighting'}</div>
@@ -211,7 +214,7 @@ const AreaCalc = {
     }).join('');
     const extra = res.vertical
       ? `Ev ${res.vertical.Evmin} / ${res.vertical.Evavg} / ${res.vertical.Evmax} lx (min / avg / max) · ${res.length} m`
-      : `Emin ${res.workplane.Emin} / Emax ${res.workplane.Emax} lx · ${res.power.watts} W${res.gr ? ` · GR worst at ${res.gr.at.x.toFixed(0)}, ${res.gr.at.y.toFixed(0)} m` : ''}`;
+      : `Emin ${res.workplane.Emin} / Emax ${res.workplane.Emax} lx · ${res.power.watts} W · grid ${res.workplane.step} m, ${res.workplane.n} points${res.gr ? ` · GR worst at ${res.gr.at.x.toFixed(0)}, ${res.gr.at.y.toFixed(0)} m` : ''}`;
     return `<div style="margin-top:8px">
       ${cur ? '' : '<div style="color:#8a5a00;font-size:12px;margin-bottom:4px">Out of date — the area or the outdoor luminaires changed.</div>'}
       <table style="width:100%;font-size:12px;border-collapse:collapse"><tbody>${rows}</tbody></table>

@@ -153,6 +153,8 @@ class _Room:
                     "f": min(max(_f(r.get("rhoF"), 0.2), 0.0), 0.99)}
         self.mf = min(max(_f(r.get("mf"), 0.8), 0.05), 1.0)
         self.targets = r.get("targets") or {}
+        # Calculation grid size (m) the user asked for; 0 / absent = automatic.
+        self.gridStep = max(_f(r.get("gridStep"), 0.0), 0.0)
         self.detail = detail
         self.warnings: list[str] = []
         self.lum = self._luminaires(r.get("luminaires") or [], webs)
@@ -337,11 +339,26 @@ def _indirect(room, S, pts, nrm, chunk=300):
 
 # ─── Work-plane grid, cylindrical, UGR ──────────────────────────────────
 
-def _grid_step(room, detail):
+def _en_max_step(room):
     d = max(room.xmax - room.xmin, room.ymax - room.ymin)
-    p = 0.2 * 5.0 ** math.log10(max(d, 1.0))               # EN 12464-1 maximum grid size
-    step = min(p, 0.5 if detail != "fast" else 1.0)
+    return 0.2 * 5.0 ** math.log10(max(d, 1.0))            # EN 12464-1 maximum grid size
+
+
+def _grid_step(room, detail):
+    # A grid size the user set is used as given on a full calculation; the
+    # layout screen ("fast") never goes finer than the automatic grid.
+    if room.gridStep > 0 and detail != "fast":
+        return float(np.clip(room.gridStep, 0.05, 5.0))
+    step = min(_en_max_step(room), 0.5 if detail != "fast" else 1.0)
     return float(np.clip(step, 0.1, 2.0))
+
+
+def _grid_notes(asked, used, en_max, notes):
+    """Say when the grid differs from what was asked, or is coarser than EN 12464-1 allows."""
+    if asked > 0 and used > asked * 1.001:
+        notes.append(f"Grid {asked:g} m would need more than 9000 points here — calculated at {used:.2f} m")
+    if used > en_max * 1.001:
+        notes.append(f"Grid {used:.2f} m is coarser than the EN 12464-1 maximum of {en_max:.2f} m for this size")
 
 
 def _work_grid(room, step):
@@ -466,6 +483,8 @@ def evaluate_room(room: _Room, webs: dict, with_ugr: bool = True, with_cyl: bool
                             "step": round(step, 3), "height": room.workH}
         if not room.lum["n"]:
             res["notes"].append("No luminaires in this room")
+    if room.detail != "fast":
+        _grid_notes(room.gridStep, step, _en_max_step(room), res["notes"])
     res["walls"] = {"Em": round(float((E_surf[kind == 2] * S["area"][kind == 2]).sum() / S["area"][kind == 2].sum()), 1)}
     res["ceiling"] = {"Em": round(float((E_surf[kind == 1] * S["area"][kind == 1]).sum() / S["area"][kind == 1].sum()), 1)}
     res["floor"] = {"Em": round(float((E_surf[kind == 0] * S["area"][kind == 0]).sum() / S["area"][kind == 0].sum()), 1)}

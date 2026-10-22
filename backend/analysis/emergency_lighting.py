@@ -160,7 +160,8 @@ def evaluate_item(it: dict, webs: dict) -> dict:
             raise ValueError(f"{name}: an area needs an outline with at least 3 corners")
         area = abs(_signed_area(P))
         border = lim["border"] if typ == "open" else 0.0
-        step = 0.5 if area < 400 else 1.0
+        asked = max(_f(it.get("gridStep"), 0.0), 0.0)     # the room's grid size; 0 = automatic
+        step = float(np.clip(asked, 0.05, 5.0)) if asked > 0 else (0.5 if area < 400 else 1.0)
         xmin, ymin = P.min(axis=0); xmax, ymax = P.max(axis=0)
         nx = max(int(math.ceil((xmax - xmin) / step)), 1); ny = max(int(math.ceil((ymax - ymin) / step)), 1)
         while nx * ny > 8000:

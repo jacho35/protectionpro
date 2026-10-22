@@ -51,6 +51,7 @@ const RoomCalc = {
         id: room.id, name: room.name, polygon: poly, ceilH: L.ceilH, workH: L.workH, wallZone: L.wallZone,
         rhoC: L.rhoC, rhoW: L.rhoW, rhoF: L.rhoF, mf: L.mf,
         targets: { em: L.em, uo: L.uo, ugr: L.ugr, wallE: L.wallE, ceilE: L.ceilE, ez: L.ez || undefined },
+        gridStep: L.grid > 0 ? L.grid : undefined,
         luminaires: lums,
       },
       skipped,
@@ -132,7 +133,7 @@ const RoomCalc = {
     return `<div class="rc-res" style="margin-top:8px">
       ${cur ? '' : '<div style="color:#8a5a00;font-size:12px;margin-bottom:4px">Out of date — the room or its fittings changed.</div>'}
       <table style="width:100%;font-size:12px;border-collapse:collapse"><tbody>${(res.checks || []).map(fmt).join('')}</tbody></table>
-      <div style="font-size:12px;color:var(--text-muted);margin:6px 0">${res.luminaires} fitting${res.luminaires === 1 ? '' : 's'} · Emin ${Math.round(wp.Emin || 0)} / Emax ${Math.round(wp.Emax || 0)} lx · ${res.power.wm2} W/m²${res.power.wm2per100lx != null ? ` · ${res.power.wm2per100lx} W/m²/100 lx` : ''}${res.cylindrical ? ` · Ēz ${Math.round(res.cylindrical.Ez)} lx` : ''}</div>
+      <div style="font-size:12px;color:var(--text-muted);margin:6px 0">${res.luminaires} fitting${res.luminaires === 1 ? '' : 's'} · grid ${wp.step} m, ${wp.n} points · Emin ${Math.round(wp.Emin || 0)} / Emax ${Math.round(wp.Emax || 0)} lx · ${res.power.wm2} W/m²${res.power.wm2per100lx != null ? ` · ${res.power.wm2per100lx} W/m²/100 lx` : ''}${res.cylindrical ? ` · Ēz ${Math.round(res.cylindrical.Ez)} lx` : ''}</div>
       ${(() => { const en = RoomLighting.energy(room, res); return en ? `<div style="font-size:12px;margin:2px 0">LENI <b>${en.leni.toFixed(1)}</b> kWh/m²·yr · ${en.kwh.toFixed(0)} kWh/yr${en.lpdPass == null ? '' : ` · <span style="color:${en.lpdPass ? '#1d6b3a' : '#a61b1b'};font-weight:600">${en.wm2.toFixed(1)} W/m² ${en.lpdPass ? '≤' : '>'} ${en.lpd} limit</span>`}</div>` : ''; })()}
       ${(res.warnings || []).concat(res.notes || []).map(w => `<div style="font-size:11px;color:#8a5a00">${escHtml(w)}</div>`).join('')}
       ${btn}</div>`;
@@ -289,6 +290,7 @@ const RoomCalc = {
     }
     if (typeof AreaCalc !== 'undefined') AreaCalc.draw(ctx, zoom);
     if (typeof EmergCalc !== 'undefined') EmergCalc.draw(ctx, zoom);
+    this.updateLegend();
     for (const room of (pm.rooms || [])) {
       const lay = this.layouts[room.id];
       if (!lay || !lay.cands[lay.sel]) continue;
@@ -300,6 +302,63 @@ const RoomCalc = {
       }
       ctx.restore();
     }
+  },
+
+  // ─── Legend (over the canvas, Lighting tab only) ───
+  // Each zone is coloured from 0 lx (blue) to its own maximum (red), so the
+  // legend reads the selected zone — or, with none selected, the first one
+  // with a result on this floor.
+  _legendZone() {
+    const pm = AppState.planMarkup;
+    const has = (r) => {
+      const a = this.results[r.id], e = this.results['em:' + r.id];
+      return (a && (a.res.grid || a.res.profile)) || (r.kind === 'escape' && e && e.res.profile);
+    };
+    const rooms = (pm.rooms || []).filter(has);
+    const sel = rooms.find(r => PlanMarkup.selectedIds.has(r.id));
+    return { zone: sel || rooms[0] || null, picked: !!sel, many: rooms.length > 1 };
+  },
+
+  updateLegend() {
+    const stage = document.getElementById('plan-stage');
+    if (!stage) return;
+    let el = document.getElementById('plan-legend');
+    const { zone, picked, many } = this.enabled ? this._legendZone() : { zone: null };
+    if (!zone) { if (el) el.hidden = true; this._legendKey = ''; return; }
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'plan-legend'; el.className = 'plan-legend';
+      el.setAttribute('role', 'group'); el.setAttribute('aria-label', 'Lighting legend');
+      stage.appendChild(el);
+    }
+    const r = this.results[zone.id], e = this.results['em:' + zone.id];
+    const fmt = (v) => v >= 100 ? Math.round(v) : v >= 10 ? v.toFixed(0) : v.toFixed(1);
+    const dot = (c, t) => `<span class="plan-legend-dot" style="background:${c}"></span>${t}`;
+    let body, title;
+    const name = escHtml(zone.name || 'Zone');
+    if (zone.kind === 'escape') {
+      title = `Escape route — ${name}`;
+      body = `<div class="plan-legend-rows">${dot('#16a34a', '≥ 1 lx on the centre line')}${dot('#f59e0b', '0.5 – 1 lx')}${dot('#dc2626', 'below 0.5 lx')}</div>`;
+    } else if (zone.kind === 'perimeter') {
+      const L = AreaCalc.readPerim(zone);
+      title = `Fence — ${name}`;
+      body = `<div class="plan-legend-rows">${dot('#16a34a', `Ev ≥ ${L.evMin} lx`)}${dot('#dc2626', `below ${L.evMin} lx`)}</div>`;
+    } else {
+      const res = r.res, wp = res.workplane || {};
+      const top = Math.max(wp.Emax || 0, 1);
+      const L = zone.kind === 'outdoor' ? AreaCalc.readArea(zone) : RoomLighting.read(zone);
+      const tick = (v, label) => v > 0 && v <= top ? `<span class="plan-legend-mark" style="left:${(v / top * 100).toFixed(1)}%" title="${label}"></span>` : '';
+      title = `${zone.kind === 'outdoor' ? 'Ground' : 'Work plane'} illuminance — ${name}`;
+      body = `<div class="plan-legend-bar" aria-hidden="true">${tick(L.em, 'Target Ēm')}${tick(L.em * L.uo, 'Required Emin')}</div>
+        <div class="plan-legend-scale"><span>0</span><span>${fmt(top / 2)}</span><span>${fmt(top)} lx</span></div>
+        <div class="plan-legend-rows"><span><span class="plan-legend-line"></span>Target Ēm ${fmt(L.em)} lx</span>
+          <span><span class="plan-legend-line dashed"></span>Required Emin ${fmt(L.em * L.uo)} lx</span></div>
+        <small>Grid ${wp.step} m · Ēm ${fmt(wp.Em || 0)} lx · Emin ${fmt(wp.Emin || 0)} lx${r.sig === this.signature(zone) ? '' : ' · out of date'}</small>`;
+    }
+    const foot = many && !picked ? '<small>Each zone has its own scale — select one to read it.</small>' : '';
+    const html = `<div class="plan-legend-title">${title}</div>${body}${foot}`;
+    if (html !== this._legendKey) { el.innerHTML = html; this._legendKey = html; }
+    el.hidden = false;
   },
 
   // Marching squares on cell centres at one level.

@@ -131,3 +131,15 @@ def test_pole_layout_suggestion_meets_targets_inside_the_outline():
     assert flags == sorted(flags, reverse=True)
     with pytest.raises(ValueError):
         AL.suggest_area_layout({"area": _area(poly), "photometry": {"p": prof}, "photometryId": "p"})
+
+
+def test_area_grid_step_set_by_the_user():
+    webs, prof = _webs()
+    poly = [[0, 0], [40, 0], [40, 30], [0, 30]]
+    lums = [_lum(20, 15)]
+    run = lambda **kw: AL.run_area_lighting({"luminaires": lums, "areas": [_area(poly, **kw)], "photometry": {"p": prof}})["areas"][0]
+    auto, fine = run(), run(gridStep=0.5)
+    assert fine["workplane"]["step"] == 0.5 and fine["workplane"]["n"] > auto["workplane"]["n"]
+    assert not any("Grid" in n for n in auto["notes"])
+    coarse = run(gridStep=5)
+    assert coarse["workplane"]["step"] == 5 and any("coarser than the EN 12464-2 maximum" in n for n in coarse["notes"])

@@ -131,7 +131,9 @@ def evaluate_area(a: dict, lums: _Lums, with_gr: bool = True) -> dict:
     area = abs(_signed_area(P))
     mf = min(max(_f(a.get("mf"), 0.8), 0.05), 1.0)
     d = max(np.ptp(P[:, 0]), np.ptp(P[:, 1]))
-    step = float(np.clip(0.2 * 5.0 ** math.log10(max(d, 1.0)), 0.5, 2.0))
+    en_max = 0.2 * 5.0 ** math.log10(max(d, 1.0))         # EN 12464-2 maximum grid size
+    asked = max(_f(a.get("gridStep"), 0.0), 0.0)           # the user's grid size; 0 = automatic
+    step = float(np.clip(asked, 0.1, 10.0)) if asked > 0 else float(np.clip(en_max, 0.5, 2.0))
     X, Y, xs, ys, step = _grid(P, step)
     fx, fy = X.ravel(), Y.ravel()
     inside = _pip(P, fx, fy)
@@ -140,6 +142,10 @@ def evaluate_area(a: dict, lums: _Lums, with_gr: bool = True) -> dict:
            "warnings": list(lums.warnings), "notes": []}
     if not lums.n:
         res["notes"].append("No luminaires on the sheet")
+    if asked > 0 and step > asked * 1.001:
+        res["notes"].append(f"Grid {asked:g} m would need too many points here — calculated at {step:.2f} m")
+    if asked > 0 and step > en_max * 1.001:
+        res["notes"].append(f"Grid {step:.2f} m is coarser than the EN 12464-2 maximum of {en_max:.2f} m for this size")
     E = lums.illuminance(pts, np.tile([0.0, 0.0, 1.0], (len(pts), 1))) * mf if len(pts) else np.array([])
     if len(E) and lums.n:
         em = float(E.mean())

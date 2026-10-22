@@ -421,6 +421,10 @@ Help ▸ Guides (`frontend/js/help-guides.js`, pictures in `frontend/img/help/`)
 
 ## Completed
 
+### Lighting: calculation grid size per zone, heat-map legend (2026-10-22)
+- **Calculation grid** box on a room's and an outdoor area's lighting panel (blank = automatic, the EN 12464-1/-2 maximum for the size; rooms at most 0.5 m). Sent as `gridStep` to `room_lighting.py`, `area_lighting.py` and the emergency open/high-risk area check; the auto layout's quick screen keeps its own grid. The result line shows the grid and point count; notes say when the grid is coarser than the standard's maximum or was widened to stay under the point limit. Tests in `test_room_lighting.py` / `test_area_lighting.py`.
+- **Legend** over the Lighting tab's plan: the selected zone's scale (0 → its Emax, blue → red) with the target Ēm and required Emin marked and the isolux line styles; escape routes and fences show their dot colours.
+
 ### Plan workspace: Draw / Underlays / Output modes, DXF units + drawing scale, lighting on the Lighting tab (2026-10-22)
 - **Plan bar.** Three modes, each with its own left panel: *Draw* (find a part, folding groups, From the single line), *Underlays* (Import plan or DXF, floor-scale card with Calibrate, one card per underlay with show/hide and opacity; picking it puts Change units or scale / Move / Align 2 points / Layers & blocks / Remove in the properties panel as named buttons) and *Output* (Push to Demand schedules or Sync with single line, Count circuits into boards with the untagged count, Print area, PDF / PNG / DXF / CSV with what each holds). Select, Undo/Redo, Fit, Floor and a *Show* discipline picker stay in the bar. The five snap pills, grid size and symbol size moved to chips under the canvas with a Snap popover. Phone: the bar wraps; the overflow menu is gone.
 - **Placing bar.** Picking a point device shows *One at a time / Fill an area / Along a line* over the canvas, each with a picture and its own settings (columns × rows; every N m or a total count) — no more prompts. The choice and settings are remembered per device type (`planMarkup.settings.placeMemory`); the tool stays armed after a batch.

@@ -69,7 +69,7 @@ const EmergCalc = {
     const R = RoomLighting.read(room);
     const els = pm.elements.filter(el => this._isEm(el) && PlanEngine._pointInPoly({ x: el.x, y: el.y }, room.points));
     return { req: { id: room.id, name: room.name, standard: RoomLighting.standard(), type: R.emerg === 'highrisk' ? 'highrisk' : 'open', polygon: room.points.map(p => [p.x * f, -p.y * f]),
-      taskE: R.em, mf: R.mf, luminaires: pick(els, R.ceilH), bounds: room.points.map(p => [p.x * f, -p.y * f]) }, missing };
+      taskE: R.em, mf: R.mf, gridStep: R.grid > 0 ? R.grid : undefined, luminaires: pick(els, R.ceilH), bounds: room.points.map(p => [p.x * f, -p.y * f]) }, missing };
   },
 
   readRoute(room) {
