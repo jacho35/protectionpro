@@ -353,34 +353,58 @@ const PlanEngine = {
   findRoomAt(pt) {
     const rooms = AppState.planMarkup.rooms || [];
     for (let i = rooms.length - 1; i >= 0; i--) {
-      if (rooms[i].points.length >= 3 && this._pointInPoly(pt, rooms[i].points)) return rooms[i];
+      const r = rooms[i];
+      if (r.kind === 'perimeter') {
+        if (this._nearPolyline(pt, r.points, !!(r.lighting && r.lighting.closed), 8 / this.view.zoom)) return r;
+        continue;
+      }
+      if (r.points.length >= 3 && this._pointInPoly(pt, r.points)) return r;
     }
     return null;
   },
 
+  _nearPolyline(pt, pts, closed, tol) {
+    const n = pts.length;
+    for (let i = 0; i < (closed ? n : n - 1); i++) {
+      const a = pts[i], b = pts[(i + 1) % n];
+      const dx = b.x - a.x, dy = b.y - a.y, L2 = dx * dx + dy * dy;
+      const t = L2 > 0 ? Math.max(0, Math.min(1, ((pt.x - a.x) * dx + (pt.y - a.y) * dy) / L2)) : 0;
+      if (Math.hypot(pt.x - (a.x + t * dx), pt.y - (a.y + t * dy)) <= tol) return true;
+    }
+    return false;
+  },
+
   _drawRoom(ctx, rm, selected) {
-    if (!rm.points || rm.points.length < 3) return;
+    const perim = rm.kind === 'perimeter';
+    if (!rm.points || rm.points.length < (perim ? 2 : 3)) return;
     ctx.save();
     ctx.beginPath();
     ctx.moveTo(rm.points[0].x, rm.points[0].y);
     for (let i = 1; i < rm.points.length; i++) ctx.lineTo(rm.points[i].x, rm.points[i].y);
-    ctx.closePath();
-    ctx.fillStyle = rm.color || PLAN_DEFS.room.fill;
-    ctx.fill();
-    ctx.strokeStyle = selected ? '#2563eb' : PLAN_DEFS.room.stroke;
-    ctx.lineWidth = (selected ? 2 : 1.2) / this.view.zoom;
+    if (!perim || (rm.lighting && rm.lighting.closed)) ctx.closePath();
+    const outdoor = rm.kind === 'outdoor';
+    if (!perim) { ctx.fillStyle = rm.color || (outdoor ? 'rgba(34,197,94,0.13)' : PLAN_DEFS.room.fill); ctx.fill(); }
+    ctx.strokeStyle = selected ? '#2563eb' : (perim ? '#7c3aed' : outdoor ? '#16a34a' : PLAN_DEFS.room.stroke);
+    ctx.lineWidth = (selected ? 2.2 : (perim ? 2 : 1.2)) / this.view.zoom;
+    if (perim) ctx.setLineDash([8 / this.view.zoom, 5 / this.view.zoom]);
     ctx.stroke();
-    // Label: name + area
-    const c = this._polyCentroid(rm.points);
+    ctx.setLineDash([]);
+    // Label: name + area (or length for a perimeter)
+    const c = perim ? rm.points[Math.floor(rm.points.length / 2)] : this._polyCentroid(rm.points);
     const f = this.factor();
-    const area = f ? (this._polyArea(rm.points) * f * f) : null;
+    let size = '';
+    if (f) {
+      if (perim) size = `  ${(this._polyLen(rm.points) * f).toFixed(0)} m`;
+      else size = `  ${(this._polyArea(rm.points) * f * f).toFixed(1)} m²`;
+    }
     const fpx = 12 / this.view.zoom;
     ctx.font = `${fpx}px system-ui, sans-serif`;
     ctx.fillStyle = this._cssVar('--plan-label', '#334155');
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText((rm.name || '') + (area != null ? `  ${area.toFixed(1)} m²` : ''), c.x, c.y);
+    ctx.fillText((rm.name || '') + size, c.x, c.y);
     ctx.restore();
   },
+
 
   _emphasis(entityTypeKey, type) {
     // Dim entities not primary on the active discipline layer (source-app feel).

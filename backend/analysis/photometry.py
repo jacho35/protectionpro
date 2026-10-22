@@ -364,6 +364,8 @@ INDOOR_OPTICS = {
                           "fn": lambda C, G: np.exp(-(np.degrees(G) / 24.0) ** 2 / 2)},
     "generic_flood_asym": {"name": "Generic floodlight — asymmetric forward throw", "group": "outdoor", "area": 0.09,
                            "fn": lambda C, G: np.exp(-(_axis_angle(C, G, 90.0, 42.0) / 26.0) ** 2 / 2)},
+    "generic_area_sym": {"name": "Generic area light — symmetric (Type V, round)", "group": "outdoor", "area": 0.12,
+                         "fn": lambda C, G: np.clip(np.cos(G), 0, None) ** 2.5 * _smooth_cut(np.degrees(G), 65, 88)},
     "generic_area": {"name": "Generic area light — Type III (poles in car parks)", "group": "outdoor", "area": 0.12,
                      "fn": lambda C, G: (np.exp(-(_axis_angle(C, G, 90.0, 60.0) / 28.0) ** 2 / 2)
                                          + 0.25 * np.clip(np.cos(G), 0, None)) * _smooth_cut(np.degrees(G), 75, 90)},

@@ -712,6 +712,17 @@ class RoomLightingRequest(BaseModel):
     photometryId: str | None = None
 
 
+class AreaLightingRequest(BaseModel):
+    """Outdoor area lighting — ground illuminance + GR on polygons, vertical
+    illuminance along perimeters, from poles/floods. See analysis/area_lighting.py."""
+    model_config = {"extra": "allow"}
+
+    luminaires: list[dict] = []
+    areas: list[dict] = []
+    perimeters: list[dict] = []
+    photometry: dict = {}
+
+
 class GenericOpticRequest(BaseModel):
     kind: str = "generic_medium"
     lumens: float = 10000.0

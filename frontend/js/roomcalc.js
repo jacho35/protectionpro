@@ -16,13 +16,13 @@ const RoomCalc = {
   layouts: {},          // room id → { lumId, cands, sel, seed }
 
   // Results belong to the project in memory; a different project object means a new project.
-  _sync() { if (this._pmRef !== AppState.planMarkup) { this._pmRef = AppState.planMarkup; this.results = {}; this.layouts = {}; } },
+  _sync() { if (this._pmRef !== AppState.planMarkup) { this._pmRef = AppState.planMarkup; this.results = {}; this.layouts = {}; if (typeof AreaCalc !== 'undefined') AreaCalc.layouts = {}; } },
 
   _isCalcLight(el) {
     const def = PLAN_DEFS.element(el.type);
     if (!def || def.group !== 'Lighting') return false;
     const k = el.props && el.props.kind;
-    return k !== 'emergency' && k !== 'exit';
+    return k !== 'emergency' && k !== 'exit' && k !== 'floodlight' && k !== 'area';
   },
 
   // Request for one room (metres, y up) + the photometry it needs.
@@ -57,6 +57,7 @@ const RoomCalc = {
   },
 
   signature(room) {
+    if ((room.kind === 'outdoor' || room.kind === 'perimeter') && typeof AreaCalc !== 'undefined') return AreaCalc.signature(room);
     const f = PlanEngine.factor();
     if (!f) return '';
     const b = this.buildRoom(room, f).req;
@@ -76,8 +77,11 @@ const RoomCalc = {
     const f = PlanEngine.factor();
     if (!f) { UI.alert('Calibrate the plan first — the calculation needs real distances.'); return; }
     const pm = AppState.planMarkup;
-    const list = (rooms || pm.rooms || []).filter(r => r.points && r.points.length >= 3 && r.kind !== 'outdoor');
-    if (!list.length) { UI.toast('Draw or detect a room first.', 'info'); return; }
+    const list = (rooms || pm.rooms || []).filter(r => r.points && r.points.length >= 3 && r.kind !== 'outdoor' && r.kind !== 'perimeter');
+    if (!list.length) {
+      if (!(pm.rooms || []).some(r => r.kind === 'outdoor' || r.kind === 'perimeter')) UI.toast('Draw or detect a room first.', 'info');
+      return;
+    }
     if (this._busy) return;
     const built = list.map(r => ({ room: r, ...this.buildRoom(r, f) })).filter(b => b.req.luminaires.length || true);
     const photometry = {};
@@ -276,11 +280,12 @@ const RoomCalc = {
         ctx.fillRect(gx / f, -(gy + g.dy) / f, dxp + 0.5, dyp + 0.5);
       }
       ctx.globalAlpha = 1;
-      const L = RoomLighting.read(room);
+      const L = room.kind === 'outdoor' && typeof AreaCalc !== 'undefined' ? AreaCalc.readArea(room) : RoomLighting.read(room);
       this._contour(ctx, g, f, L.em, zoom, false);
       this._contour(ctx, g, f, L.em * L.uo, zoom, true);
       ctx.restore();
     }
+    if (typeof AreaCalc !== 'undefined') AreaCalc.draw(ctx, zoom);
     for (const room of (pm.rooms || [])) {
       const lay = this.layouts[room.id];
       if (!lay || !lay.cands[lay.sel]) continue;
