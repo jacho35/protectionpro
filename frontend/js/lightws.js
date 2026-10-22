@@ -91,7 +91,6 @@ const LightingWS = {
     const I = (n) => PlanMarkup._icon(n);
     const pm = AppState.planMarkup;
     const floors = (pm.floors || []).slice().sort((a, b) => (b.level || 0) - (a.level || 0));
-    const n = this._items().length;
     bar.innerHTML = `
       ${plan ? `<div class="plan-tb-group plan-mobile-toggle">
         <button class="plan-tb-btn" data-lw-act="toggle-palette">☰ Tools</button>
@@ -111,8 +110,8 @@ const LightingWS = {
         `<option value="${escHtml(f.id)}"${f.id === pm.activeFloorId ? ' selected' : ''}>${escHtml(f.name)} (L${f.level})</option>`).join('')}</select></label>` : ''}
       ${plan ? `<label class="plan-tb-field">Show <select id="lw-show" class="plan-tb-select"><option value="on"${RoomCalc.enabled ? ' selected' : ''}>Results (false colour)</option><option value="off"${RoomCalc.enabled ? '' : ' selected'}>Plan only</option></select></label>` : ''}
       <button class="plan-tb-btn" data-lw="photolib">Luminaire library…</button>
-      <button class="plan-tb-btn" data-lw="pdf"${n ? '' : ' disabled'}>PDF report</button>
-      <button class="btn-primary" data-lw="calc"${n ? '' : ' disabled'}>Calculate all</button>`;
+      <button class="plan-tb-btn" data-lw="pdf">PDF report</button>
+      <button class="btn-primary" data-lw="calc">Calculate all</button>`;
   },
 
   // From the Plan tab ("Lighting for this room…") or a table row: show the
@@ -318,6 +317,7 @@ const LightingWS = {
 
   // Every floor in turn, then back to the one that was open.
   async calcAll() {
+    if (!this._items().length) { UI.toast('Draw or detect a room first (Room / area or Detect room on the left).', 'info'); return; }
     const pm = AppState.planMarkup;
     const start = pm.activeFloorId;
     const floors = AppState.planFloors().slice();

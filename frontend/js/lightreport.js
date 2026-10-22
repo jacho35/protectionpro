@@ -105,11 +105,94 @@ const LightReport = {
     return Object.values(groups);
   },
 
-  async export() {
+  // What the dialog remembers between reports (this session).
+  _last: null,
+
+  // The export dialog: which zones, which sections, what each zone's page holds.
+  // Resolves the options, or null when cancelled.
+  askOptions(all) {
+    const L = this._last || { summary: true, energy: true, detail: true, plot: true, checks: true, lums: true, assump: true, method: true };
+    const ready = (r) => !!(r.res || r.eres);
+    const sel = new Set(this._last && this._last.ids ? this._last.ids.filter(id => all.some(r => r.id === id && ready(r))) : all.filter(ready).map(r => r.id));
+    const floors = [...new Set(all.map(r => r.floor))];
+    return new Promise((resolve) => {
+      const ov = document.createElement('div');
+      ov.className = 'modal plan-floor-modal';
+      ov.style.display = 'flex'; ov.style.zIndex = '3000';
+      ov.setAttribute('role', 'dialog'); ov.setAttribute('aria-modal', 'true'); ov.setAttribute('aria-labelledby', 'lrp-title');
+      const chk = (k, label, sub) => `<label class="lrp-check"><input type="checkbox" data-opt="${k}"${L[k] ? ' checked' : ''}><span>${label}${sub ? `<small>${sub}</small>` : ''}</span></label>`;
+      const zoneRows = floors.map(fl => `<div class="lrp-floor">${escHtml(fl || 'Floor')}</div>` + all.filter(r => r.floor === fl).map(r => {
+        const ok = ready(r), vc = r.verdict === 'Pass' ? 'ok' : r.verdict === 'Fail' ? 'bad' : '';
+        return `<label class="lrp-zone${ok ? '' : ' off'}"><input type="checkbox" data-zone="${escHtml(r.id)}"${ok ? '' : ' disabled'}${sel.has(r.id) ? ' checked' : ''}>
+          <span><b>${escHtml(r.name)}</b><small>${LightingWS.KIND[r.kind]}${ok ? '' : ' · not calculated'}</small></span>
+          <span class="lrp-v ${vc}">${ok ? escHtml(r.verdict) + (r.stale ? ' (out of date)' : '') : ''}</span></label>`;
+      }).join('')).join('');
+      ov.innerHTML = `<div class="modal-content lrp-content">
+        <div class="modal-header"><h3 id="lrp-title">Lighting report</h3>
+          <button type="button" class="modal-close" data-role="cancel" aria-label="Close">&times;</button></div>
+        <div class="lrp-body">
+          <div class="lrp-col">
+            <div class="lrp-head"><b>Zones to include</b>
+              <span><button type="button" class="lw-link" data-role="all">All</button> · <button type="button" class="lw-link" data-role="none">None</button> · <button type="button" class="lw-link" data-role="failing">Failing only</button></span></div>
+            <div class="lrp-zones">${zoneRows}</div>
+            <small class="lrp-note">A zone with no result can't be reported: press Calculate all first.</small>
+          </div>
+          <div class="lrp-col">
+            <div class="lrp-head"><b>Sections</b></div>
+            ${chk('summary', 'Summary table', 'Every selected zone with its verdict')}
+            ${chk('energy', 'Energy table', 'Installed power, W/m², LENI (rooms)')}
+            ${chk('detail', 'A page for each zone')}
+            <div class="lrp-sub" data-sub>
+              ${chk('plot', 'False-colour plot', 'With luminaires and isolux lines')}
+              ${chk('checks', 'Results against the requirement', 'Checks and extra figures')}
+              ${chk('lums', 'Luminaire schedule')}
+              ${chk('assump', 'Assumptions and notes')}
+            </div>
+            ${chk('method', 'Method and limits', 'Closing page')}
+          </div>
+        </div>
+        <div class="lrp-foot"><span class="lrp-count" data-role="count" aria-live="polite"></span>
+          <button type="button" class="btn-small" data-role="cancel">Cancel</button>
+          <button type="button" class="btn-primary" data-role="ok">Create PDF</button></div>
+      </div>`;
+      const zones = () => [...ov.querySelectorAll('[data-zone]:not(:disabled)')];
+      const opts = () => { const o = {}; ov.querySelectorAll('[data-opt]').forEach(c => { o[c.dataset.opt] = c.checked; }); o.ids = zones().filter(c => c.checked).map(c => c.dataset.zone); return o; };
+      const refresh = () => {
+        const o = opts();
+        ov.querySelector('[data-sub]').classList.toggle('dim', !o.detail);
+        ov.querySelectorAll('[data-sub] input').forEach(c => { c.disabled = !o.detail; });
+        const bad = !o.ids.length || !(o.summary || o.energy || o.detail || o.method);
+        ov.querySelector('[data-role="ok"]').disabled = bad;
+        ov.querySelector('[data-role="count"]').textContent = o.ids.length ? `${o.ids.length} zone${o.ids.length === 1 ? '' : 's'} selected` : 'Select at least one zone';
+      };
+      refresh();
+      const done = (v) => { document.removeEventListener('keydown', onKey, true); ov.remove(); resolve(v); };
+      const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); done(null); } };
+      document.addEventListener('keydown', onKey, true);
+      ov.addEventListener('change', refresh);
+      ov.addEventListener('click', (e) => {
+        const r = e.target.closest('[data-role]'); const role = r && r.dataset.role;
+        if (role === 'all' || role === 'none' || role === 'failing') {
+          zones().forEach(c => { const it = all.find(x => x.id === c.dataset.zone); c.checked = role === 'all' || (role === 'failing' && it.verdict === 'Fail'); });
+          refresh();
+        } else if (role === 'ok') { const o = opts(); this._last = o; done(o); }
+        else if (role === 'cancel' || e.target === ov) done(null);
+      });
+      document.body.appendChild(ov);
+      requestAnimationFrame(() => { try { ov.querySelector('[data-role="ok"]').focus(); } catch (_) { /* gone */ } });
+    });
+  },
+
+  async export(opts) {
     if (!window.jspdf) { await UI.alert('PDF library not loaded.'); return; }
-    const items = LightingWS._items();
+    const all = LightingWS._items();
+    if (!all.some(r => r.res || r.eres)) { await UI.alert('Calculate first: the report needs at least one result. Open Lighting and press Calculate all.'); return; }
+    if (!opts) opts = await this.askOptions(all);
+    if (!opts) return;
+    const ids = new Set(opts.ids);
+    const items = all.filter(r => ids.has(r.id));
     const done = items.filter(r => r.res || r.eres);
-    if (!done.length) { await UI.alert('Calculate first: the report needs at least one result. Open Lighting and press Calculate all.'); return; }
+    if (!done.length) return;
     const t = (s) => this._t(s);
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
@@ -142,7 +225,9 @@ const LightReport = {
     const pend = items.length - pass - fail;
     doc.text(t(`${items.length} item${items.length === 1 ? '' : 's'}: ${pass} pass, ${fail} fail${pend ? `, ${pend} not calculated` : ''}. Illuminance values are maintained values.`), M, y);
     y += 3;
-    y = heading('1. Summary', y + 7, 30);
+    let sec = 0;
+    if (opts.summary) {
+    y = heading(`${++sec}. Summary`, y + 7, 30);
     tbl({
       startY: y + 1,
       head: [['Room / area', 'Floor', 'Type', 'Em lx (target)', 'U0', 'UGR / GR', 'W/m2', 'Emergency', 'Verdict']],
@@ -153,11 +238,12 @@ const LightReport = {
       didParseCell: (d) => { if (d.section === 'body' && d.column.index === 8) d.cell.styles.textColor = verdictColor(String(d.cell.raw).replace(' *', '')); },
     });
     if (items.some(r => r.stale)) { doc.setFontSize(8); doc.setTextColor(120); doc.text('* The room or its fittings changed after this result was calculated.', M, next(4)); doc.setTextColor(26, 26, 46); }
+    }
 
     // ── Energy ──
     const rooms = items.filter(r => r.kind === 'room' && r.res);
-    if (rooms.length) {
-      y = heading('2. Energy', next(9), 40);
+    if (opts.energy && rooms.length) {
+      y = heading(`${++sec}. Energy`, opts.summary ? next(9) : y + 7, 40);
       let tw = 0, ta = 0, tk = 0;
       const body = rooms.map(r => {
         const L = RoomLighting.read(r.room);
@@ -178,13 +264,16 @@ const LightReport = {
     // ── One section per item ──
     let n = 0;
     const floorById = {}; for (const fl of AppState.planFloors()) floorById[fl.id] = fl;
-    for (const it of done) {
+    const detailSec = opts.detail ? ++sec : 0;
+    let fresh = !(opts.summary || (opts.energy && rooms.length));   // nothing but the title on page 1 yet
+    for (const it of (opts.detail ? done : [])) {
       const fl = floorById[it.floorId];
       if (!fl) continue;
       n++;
-      doc.addPage(); doc.lastAutoTable = null; y = M + 4;
+      if (fresh) { fresh = false; y += 10; } else { doc.addPage(); y = M + 4; }
+      doc.lastAutoTable = null;
       doc.setFont('helvetica', 'bold'); doc.setFontSize(13); doc.setTextColor(26, 26, 46);
-      doc.text(t(`${rooms.length ? 3 : 2}.${n}  ${it.name}`), M, y);
+      doc.text(t(`${detailSec}.${n}  ${it.name}`), M, y);
       doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(90);
       y += 5;
       doc.text(t(`${LightingWS.KIND[it.kind]}  |  ${it.floor}${it.task ? '  |  ' + it.task : ''}`), M, y);
@@ -194,7 +283,7 @@ const LightReport = {
       doc.setTextColor(26, 26, 46);
       y += 5;
       try {
-        const p = this._plot(it, fl);
+        const p = opts.plot ? this._plot(it, fl) : null;
         if (p) {
           const h = Math.min(W * p.h / p.w, 80);
           doc.addImage(p.png, 'PNG', M, y, h === 80 ? 80 * p.w / p.h : W, h);
@@ -209,7 +298,7 @@ const LightReport = {
       } catch (_) { /* the tables carry the data */ }
 
       // results
-      const checks = [].concat((it.res && it.res.checks) || [], (it.eres && it.eres.checks) || []);
+      const checks = opts.checks ? [].concat((it.res && it.res.checks) || [], (it.eres && it.eres.checks) || []) : [];
       if (checks.length) {
         y = heading('Results against the requirement', y, 40, 10);
         tbl({
@@ -228,15 +317,15 @@ const LightReport = {
       if (res && res.power && it.kind !== 'perimeter') rows.push(['Installed power', `${f1(res.power.watts, 0)} W  (${f1(res.power.wm2, 2)} W/m2)`]);
       if (it.eres && it.eres.floor) rows.push(['Emergency floor Emin / Emax', `${f1(it.eres.floor.Emin, 2)} / ${f1(it.eres.floor.Emax, 2)} lx`]);
       if (it.eres && it.eres.centre) rows.push(['Emergency centre line min / max', `${f1(it.eres.centre.Emin, 2)} / ${f1(it.eres.centre.Emax, 2)} lx`]);
-      if (rows.length) tbl({ startY: next(3), head: [['Quantity', 'Value']], body: rows, columnStyles: { 0: { cellWidth: 60, fontStyle: 'bold' } } });
+      if (opts.checks && rows.length) tbl({ startY: next(3), head: [['Quantity', 'Value']], body: rows, columnStyles: { 0: { cellWidth: 60, fontStyle: 'bold' } } });
 
       // luminaires
-      const lums = this._lumSchedule(it, fl);
-      y = heading('Luminaires', next(7), 35, 10);
-      if (lums.length) {
+      const lums = opts.lums ? this._lumSchedule(it, fl) : [];
+      if (opts.lums) y = heading('Luminaires', next(7), 35, 10);
+      if (opts.lums && lums.length) {
         tbl({ startY: y + 1, head: [['Luminaire', 'Qty', 'Flux each', 'Power each', 'Notes']],
           body: lums.map(g => [t(g.name), g.n, g.lm ? `${Math.round(g.lm)} lm` : '-', g.w ? `${Math.round(g.w)} W` : '-', t(g.extra.join('; '))]) });
-      } else { doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.text('None placed.', M, y + 5); }
+      } else if (opts.lums) { doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.text('None placed.', M, y + 5); }
 
       // assumptions
       const a = [];
@@ -258,9 +347,11 @@ const LightReport = {
         const L = EmergCalc.readRoute(it.room);
         a.push(['Width', `${L.width} m`], ['Calculation', 'Floor illuminance, direct light only, luminaires at their emergency output, a wall stops the light']);
       }
+      if (opts.assump) {
       y = heading('Assumptions', next(7), 35, 10);
       tbl({ startY: y + 1, head: [['Item', 'Value']], body: a.map(r => [t(r[0]), t(r[1])]), columnStyles: { 0: { cellWidth: 60, fontStyle: 'bold' } } });
-      const warns = [].concat((res && res.warnings) || [], (res && res.notes) || [], (it.eres && it.eres.notes) || []);
+      }
+      const warns = !opts.assump ? [] : [].concat((res && res.warnings) || [], (res && res.notes) || [], (it.eres && it.eres.notes) || []);
       if (warns.length) {
         doc.setFontSize(8); doc.setTextColor(138, 90, 0);
         doc.text(warns.map(w => t('Note: ' + w)), M, next(5), { maxWidth: W });
@@ -269,7 +360,9 @@ const LightReport = {
     }
 
     // ── Method ──
-    doc.addPage(); doc.lastAutoTable = null; y = M + 4;
+    if (opts.method) {
+    if (!(opts.summary || (opts.energy && rooms.length) || (opts.detail && n))) { y += 10; } else { doc.addPage(); y = M + 4; }
+    doc.lastAutoTable = null;
     y = heading('Method and limits of this report', y, 30, 13);
     const bullets = [
       'Illuminance is calculated from each luminaire\'s photometric data (IES / LDT or a generic optic) as E = I x cos(theta) / d2, multiplied by the maintenance factor.',
@@ -282,6 +375,7 @@ const LightReport = {
     doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5); doc.setTextColor(40);
     let by = y + 5;
     for (const b of bullets) { const lines = doc.splitTextToSize('- ' + t(b), W); doc.text(lines, M, by); by += lines.length * 4.6 + 2; }
+    }
 
     // page numbers
     const pages = doc.getNumberOfPages();

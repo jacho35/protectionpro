@@ -85,3 +85,27 @@
 .lw-plan { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .lw-plan[hidden], .lw-tableview[hidden] { display: none; }
 .lw-tableview { flex: 1; min-width: 0; display: flex; flex-direction: row; overflow: hidden; }
+
+/* PDF report options dialog (lightreport.js) */
+.lrp-content { width: min(780px, 96vw); max-width: none; max-height: 90vh; display: flex; flex-direction: column; }
+.lrp-body { display: flex; flex-wrap: wrap; gap: 0; overflow: auto; }
+.lrp-col { flex: 1 1 320px; min-width: 0; padding: 14px 18px; display: flex; flex-direction: column; gap: 6px; }
+.lrp-col + .lrp-col { border-left: 1px solid var(--border-color); }
+.lrp-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-size: 13px; }
+.lrp-head .lw-link { font-size: 12px; }
+.lrp-zones { max-height: 46vh; overflow: auto; border: 1px solid var(--border-color); border-radius: 8px; }
+.lrp-floor { padding: 6px 10px; font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--text-secondary); background: var(--bg-secondary); position: sticky; top: 0; }
+.lrp-zone { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-top: 1px solid var(--bg-tertiary); font-size: 13px; cursor: pointer; }
+.lrp-zone.off { opacity: .55; cursor: default; }
+.lrp-zone > span:nth-child(2) { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.lrp-zone small, .lrp-check small, .lrp-note { font-size: 11px; color: var(--text-secondary); }
+.lrp-v { font-size: 11px; font-weight: 700; white-space: nowrap; color: var(--text-secondary); }
+.lrp-v.ok { color: #1b5e20; } .lrp-v.bad { color: #a12622; }
+body.dark-mode .lrp-v.ok { color: #a5e3b0; } body.dark-mode .lrp-v.bad { color: #ffb4ae; }
+.lrp-check { display: flex; align-items: flex-start; gap: 8px; font-size: 13px; padding: 3px 0; cursor: pointer; }
+.lrp-check input, .lrp-zone input { margin-top: 2px; }
+.lrp-check > span { display: flex; flex-direction: column; }
+.lrp-sub { margin-left: 22px; padding-left: 10px; border-left: 2px solid var(--bg-tertiary); display: flex; flex-direction: column; }
+.lrp-sub.dim { opacity: .5; }
+.lrp-foot { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 12px 18px; border-top: 1px solid var(--border-color); }
+.lrp-count { margin-right: auto; font-size: 12px; color: var(--text-secondary); }
