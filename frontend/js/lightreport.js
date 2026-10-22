@@ -13,7 +13,7 @@ const LightReport = {
     return String(s == null ? '' : s)
       .replace(/<sub>(.*?)<\/sub>/g, '$1').replace(/<[^>]+>/g, '')
       .replace(/≤/g, '<=').replace(/≥/g, '>=').replace(/→/g, '->').replace(/←/g, '<-')
-      .replace(/Ē/g, 'E').replace(/ρ/g, 'rho').replace(/₀/g, '0').replace(/γ/g, 'gamma').replace(/θ/g, 'theta')
+      .replace(/Ē/g, 'E').replace(/ρ/g, 'rho').replace(/₀/g, '0').replace(/₁/g, '1').replace(/₂/g, '2').replace(/γ/g, 'gamma').replace(/θ/g, 'theta')
       .replace(/–/g, '-').replace(/—/g, '-').replace(/✓/g, 'ok');
   },
 
@@ -21,6 +21,7 @@ const LightReport = {
 
   // False-colour plot of one item on its floor → PNG data URL (null if nothing to draw).
   _plot(it, fl) {
+    if (it.kind === 'sports') return typeof SportsCalc !== 'undefined' && it.res ? SportsCalc.plotPng(it.room, it.res, it.factor) : null;
     const room = it.room, f = it.factor;
     if (!f || !room.points || room.points.length < 2) return null;
     const xs = room.points.map(p => p.x), ys = room.points.map(p => p.y);
@@ -87,6 +88,16 @@ const LightReport = {
   },
 
   _lumSchedule(it, fl) {
+    if (it.kind === 'sports') {
+      const groups = {};
+      for (const m of SportsCalc.read(it.room).masts) for (const x of (m.floods || [])) {
+        const ph = PhotoLib.get(x.photoId), key = (x.photoId || 'none') + '|' + (+m.h || 0);
+        const g = groups[key] || (groups[key] = { name: ph ? ph.name : '(no library luminaire)', n: 0, lm: ph ? ph.lumens : 0, w: ph ? ph.watts : 0, masts: new Set(), extra: [] });
+        g.n++; g.masts.add(m.name || m.id);
+        g.extra = [`on ${g.masts.size} mast${g.masts.size === 1 ? '' : 's'}, ${+m.h || 0} m high, aimed`];
+      }
+      return Object.values(groups);
+    }
     const P = it.room.points, groups = {};
     for (const el of ((fl.data && fl.data.elements) || [])) {
       const def = PLAN_DEFS.element(el.type);
@@ -289,7 +300,9 @@ const LightReport = {
           doc.addImage(p.png, 'PNG', M, y, h === 80 ? 80 * p.w / p.h : W, h);
           y += h + 2;
           doc.setFontSize(7.5); doc.setTextColor(110);
-          doc.text(t(it.kind === 'room' || it.kind === 'outdoor'
+          doc.text(t(it.kind === 'sports'
+            ? 'False colour = horizontal illuminance on the playing area (blue low, red high), values in lux at each grid point. Circles = masts; numbered diamonds = glare observers.'
+            : it.kind === 'room' || it.kind === 'outdoor'
             ? 'False colour = illuminance on the work plane / ground (blue low, red high). Solid line = target Em, dashed = minimum point value (Em x U0). Circles = luminaires.'
             : 'Dots: green meets the requirement, red does not (amber on a route = between 0.5 and 1 lx). Circles = luminaires.'), M, y + 1, { maxWidth: W });
           doc.setTextColor(26, 26, 46);
@@ -314,6 +327,16 @@ const LightReport = {
       if (res && res.walls) rows.push(['Walls / ceiling / floor mean', `${f1(res.walls.Em, 0)} / ${f1(res.ceiling.Em, 0)} / ${f1(res.floor.Em, 0)} lx`]);
       if (res && res.cylindrical) rows.push(['Cylindrical Ez (mean / min)', `${f1(res.cylindrical.Ez, 0)} / ${f1(res.cylindrical.Ezmin, 0)} lx`]);
       if (res && res.vertical) rows.push(['Vertical Ev min / avg / max', `${res.vertical.Evmin} / ${res.vertical.Evavg} / ${res.vertical.Evmax} lx over ${res.length} m`]);
+      if (res && res.horizontal) {
+        const hz = res.horizontal;
+        rows.push(['Horizontal Eh avg / min / max', `${f1(hz.Eav, 0)} / ${f1(hz.Emin, 0)} / ${f1(hz.Emax, 0)} lx`], ['U1 / U2', `${f1(hz.U1, 2)} / ${f1(hz.U2, 2)}`],
+          ['Grid', `${hz.nx} x ${hz.ny} points, ${f1(hz.dx, 2)} x ${f1(hz.dy, 2)} m`]);
+        if (res.gr) rows.push(['GR max', `${f1(res.gr.max, 1)} at ${f1(res.gr.at.x, 1)}, ${f1(res.gr.at.y, 1)} m`]);
+        for (const c of (res.cameras || [])) rows.push([`Ev towards ${c.name}`, `${f1(c.Eav, 0)} lx avg, min/avg ${f1(c.U2, 2)}`]);
+        const pl = (res.players && res.players.directions) || [];
+        if (pl.length) rows.push([`Ev players (${res.players.height} m), lowest of 4 directions`, `${f1(Math.min(...pl.map(p => p.Eav)), 0)} lx avg`]);
+        if (res.aiming && res.aiming.maxTilt != null) rows.push(['Steepest flood tilt', `${f1(res.aiming.maxTilt, 1)} deg from vertical`]);
+      }
       if (res && res.power && it.kind !== 'perimeter') rows.push(['Installed power', `${f1(res.power.watts, 0)} W  (${f1(res.power.wm2, 2)} W/m2)`]);
       if (it.eres && it.eres.floor) rows.push(['Emergency floor Emin / Emax', `${f1(it.eres.floor.Emin, 2)} / ${f1(it.eres.floor.Emax, 2)} lx`]);
       if (it.eres && it.eres.centre) rows.push(['Emergency centre line min / max', `${f1(it.eres.centre.Emin, 2)} / ${f1(it.eres.centre.Emax, 2)} lx`]);
@@ -343,6 +366,12 @@ const LightReport = {
       } else if (it.kind === 'outdoor') {
         const L = AreaCalc.readArea(it.room);
         a.push(['Maintenance factor', L.mf], ['Ground reflectance (GR)', L.groundRho], ['Calculation', `Direct light on the ground, grid ${res && res.workplane ? res.workplane.step + ' m' : ''}; GR to CIE 112 at the worst of ${res && res.gr ? res.gr.observers : '-'} observers (eye 1.5 m, eight directions)`]);
+      } else if (it.kind === 'sports') {
+        const L = SportsCalc.read(it.room);
+        a.push(['Sport and class', `${SPORTS_FIELDS[L.sport].name}, Class ${L.cls} (provisional EN 12193 targets, edited: ${L.edited ? 'yes' : 'no'})`],
+          ['Playing area', res ? `${f1(res.length, 1)} x ${f1(res.width, 1)} m` : '-'], ['Maintenance factor', L.mf], ['Ground reflectance (GR)', L.groundRho],
+          ['Calculation', 'Direct light from aimed floodlights on the playing area; vertical planes at ' + L.evHeight + ' m; GR to CIE 112 at 15 observers (eye 1.5 m, every 45 deg)'],
+          ['Ra', `>= ${L.ra} required - check the floodlight data sheet`]);
       } else if (it.kind === 'perimeter') {
         const L = AreaCalc.readPerim(it.room);
         a.push(['Face measured', L.closed ? (L.side === 'in' ? 'inward' : 'outward') : (L.side === 'left' ? 'left of the line as drawn' : 'right of the line as drawn')],
@@ -374,7 +403,7 @@ const LightReport = {
       'UGR follows CIE 117 with the Guth position index, evaluated at the standard observer positions with the initial luminaire flux. GR follows CIE 112.',
       'Furniture, partitions and columns entered in the 3D view cast shadows and reflect light with their own reflectance; work-plane points inside them are left out. Windows and doors take their own reflectance in the interreflection. Daylight is not modelled; a wall stops light in the emergency and non-convex-room calculations.',
       'Generic optics are representative distributions for feasibility, not products. Use the manufacturer\'s IES / LDT for a compliance design.',
-      'Targets and emergency limits are those of the project\'s lighting standard: indoor EN 12464-1:2021 or SANS 10114-1:2020 (SANS gives only Em, UGR and Ra; Uo, Ez, wall and ceiling targets follow EN 12464-1), emergency EN 1838:1999 or SANS 10114-2:2020, outdoor EN 12464-2:2024. Confirm they are the edition your project requires.',
+      'Targets and emergency limits are those of the project\'s lighting standard: indoor EN 12464-1:2021 or SANS 10114-1:2020 (SANS gives only Em, UGR and Ra; Uo, Ez, wall and ceiling targets follow EN 12464-1), emergency EN 1838:1999 or SANS 10114-2:2020, outdoor EN 12464-2:2024; sports fields use provisional EN 12193 class targets. Confirm they are the edition your project requires.',
     ];
     doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5); doc.setTextColor(40);
     let by = y + 5;

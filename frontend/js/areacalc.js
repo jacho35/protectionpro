@@ -97,6 +97,8 @@ const AreaCalc = {
         lumens: Number(pr.lumens) > 0 ? Number(pr.lumens) : undefined, watts: Number(pr.watts) > 0 ? Number(pr.watts) : undefined,
       });
     }
+    // sports-field floodlights light the areas and fences round them too
+    if (typeof SportsCalc !== 'undefined') { const s = SportsCalc.allFloods(f); out.push(...s.lums); skipped.push(...s.skipped); }
     return { lums: out, skipped };
   },
 

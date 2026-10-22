@@ -364,6 +364,12 @@ INDOOR_OPTICS = {
                           "fn": lambda C, G: np.exp(-(np.degrees(G) / 24.0) ** 2 / 2)},
     "generic_flood_asym": {"name": "Generic floodlight — asymmetric forward throw", "group": "outdoor", "area": 0.09,
                            "fn": lambda C, G: np.exp(-(_axis_angle(C, G, 90.0, 42.0) / 26.0) ** 2 / 2)},
+    # Sports floodlights: round beams aimed at a point on the pitch (tilt + heading
+    # put the peak there); ≈ 16° / 30° full width at half maximum.
+    "generic_sports_narrow": {"name": "Generic sports floodlight — narrow (≈ 16° beam)", "group": "outdoor", "area": 0.25,
+                              "fn": lambda C, G: np.exp(-(np.degrees(G) / 6.8) ** 2 / 2)},
+    "generic_sports_medium": {"name": "Generic sports floodlight — medium (≈ 30° beam)", "group": "outdoor", "area": 0.25,
+                              "fn": lambda C, G: np.exp(-(np.degrees(G) / 12.7) ** 2 / 2)},
     "generic_area_sym": {"name": "Generic area light — symmetric (Type V, round)", "group": "outdoor", "area": 0.12,
                          "fn": lambda C, G: np.clip(np.cos(G), 0, None) ** 2.5 * _smooth_cut(np.degrees(G), 65, 88)},
     "generic_area": {"name": "Generic area light — Type III (poles in car parks)", "group": "outdoor", "area": 0.12,

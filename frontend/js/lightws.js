@@ -22,7 +22,7 @@ const LightingWS = {
   filter: 'all',           // all | failing | pending | site | escape | floor:<id>
   sort: { key: 'name', dir: 1 },
 
-  KIND: { room: 'Room', outdoor: 'Outdoor area', perimeter: 'Perimeter', escape: 'Escape route' },
+  KIND: { room: 'Room', outdoor: 'Outdoor area', perimeter: 'Perimeter', sports: 'Sports field', escape: 'Escape route' },
 
   hasData() {
     try {
@@ -225,6 +225,14 @@ const LightingWS = {
         row.glare = res.gr ? { label: 'GR', v: res.gr.max, t: L.gr } : null;
         row.wm2 = res.power ? res.power.wm2 : null; row.watts = res.power ? res.power.watts : 0; row.area = res.area || 0;
       }
+    } else if (kind === 'sports') {
+      const L = SportsCalc.read(r);
+      row.task = `${SPORTS_FIELDS[L.sport].name}, Class ${L.cls}`;
+      if (res && res.horizontal) {
+        row.em = { v: res.horizontal.Eav, t: L.em }; row.uo = res.horizontal.U2;
+        row.glare = res.gr ? { label: 'GR', v: res.gr.max, t: L.gr } : null;
+        row.wm2 = res.power ? res.power.wm2 : null; row.watts = res.power ? res.power.watts : 0; row.area = res.area || 0;
+      }
     } else if (kind === 'perimeter') {
       const L = AreaCalc.readPerim(r);
       row.task = L.closed ? 'Ring, ' + (L.side === 'in' ? 'inward' : 'outward') : 'Open line';
@@ -262,7 +270,7 @@ const LightingWS = {
     const f = this.filter;
     if (f === 'failing') return items.filter(r => r.verdict === 'Fail');
     if (f === 'pending') return items.filter(r => r.verdict === 'Not calculated' || r.verdict === 'No fittings' || r.stale);
-    if (f === 'site') return items.filter(r => r.kind === 'outdoor' || r.kind === 'perimeter');
+    if (f === 'site') return items.filter(r => r.kind === 'outdoor' || r.kind === 'perimeter' || r.kind === 'sports');
     if (f === 'escape') return items.filter(r => r.kind === 'escape');
     if (f.startsWith('floor:')) return items.filter(r => r.floorId === f.slice(6));
     return items;
@@ -287,7 +295,7 @@ const LightingWS = {
     const rl = (id, label, n) => `<button class="lw-rail-item${this.filter === id ? ' active' : ''}" data-lw-filter="${escHtml(id)}">${escHtml(label)}<span>${n}</span></button>`;
     rail.innerHTML = rl('all', 'Everything', items.length)
       + floors.slice().sort((a, b) => (b.level || 0) - (a.level || 0)).map(f => rl('floor:' + f.id, f.name || 'Floor', cnt(r => r.floorId === f.id))).join('')
-      + rl('site', 'Site (areas and fences)', cnt(r => r.kind === 'outdoor' || r.kind === 'perimeter'))
+      + rl('site', 'Site (areas, fences, sports)', cnt(r => r.kind === 'outdoor' || r.kind === 'perimeter' || r.kind === 'sports'))
       + rl('escape', 'Escape routes', cnt(r => r.kind === 'escape'))
       + '<div class="lw-rail-sep"></div>'
       + rl('failing', 'Failing', cnt(r => r.verdict === 'Fail'))
@@ -320,10 +328,10 @@ const LightingWS = {
         <div class="lw-tile"><span>LENI, rooms</span><b>${ia > 0 ? (kwh / ia).toFixed(1) : '—'} <small>kWh/m²·yr</small></b></div>
       </div>
       ${items.length ? `<div class="lw-tablewrap"><table class="lw-table"><thead><tr>
-        ${th('name', 'Room / area')}${th('floor', 'Floor')}${th('kind', 'Type')}<th>Task</th>${th('em', 'Ēm / target (lx)', 'num')}${th('uo', 'U₀', 'num')}<th class="num">UGR / GR</th>${th('wm2', 'W/m²', 'num')}<th>Emergency</th>${th('verdict', 'Verdict')}<th></th>
+        ${th('name', 'Room / area')}${th('floor', 'Floor')}${th('kind', 'Type')}<th>Task</th>${th('em', 'Ēm / target (lx)', 'num')}${th('uo', 'U₀ / U₂', 'num')}<th class="num">UGR / GR</th>${th('wm2', 'W/m²', 'num')}<th>Emergency</th>${th('verdict', 'Verdict')}<th></th>
         </tr></thead><tbody>${shown.map(rowHtml).join('') || '<tr><td colspan="11" class="muted">Nothing matches this filter.</td></tr>'}</tbody></table></div>`
         : `<div class="lw-empty"><p>No rooms, areas or routes yet.</p><p>In the <b>Plan</b> view, click inside a room with <b>Detect room</b> (or draw one), set its task, place or auto-layout fittings and calculate. They all appear here.</p></div>`}
-      <p class="lw-note">Results belong to this session: open a project and press Calculate all. Targets follow the project's lighting standard (EN 12464-1 / EN 1838, or SANS 10114-1 / -2); outdoor areas use EN 12464-2.</p>`;
+      <p class="lw-note">Results belong to this session: open a project and press Calculate all. Targets follow the project's lighting standard (EN 12464-1 / EN 1838, or SANS 10114-1 / -2); outdoor areas use EN 12464-2; sports fields provisional EN 12193 classes.</p>`;
   },
 
   _onClick(e) {
@@ -372,6 +380,7 @@ const LightingWS = {
         if (lab) lab.textContent = `Calculating ${fl.name || 'floor'}…`;
         await RoomCalc.run();
         await AreaCalc.run();
+        await SportsCalc.run();
         await EmergCalc.run();
       }
     } finally {

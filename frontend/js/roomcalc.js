@@ -62,6 +62,7 @@ const RoomCalc = {
 
   signature(room) {
     if ((room.kind === 'outdoor' || room.kind === 'perimeter') && typeof AreaCalc !== 'undefined') return AreaCalc.signature(room);
+    if (room.kind === 'sports' && typeof SportsCalc !== 'undefined') return SportsCalc.signature(room);
     const f = PlanEngine.factor();
     if (!f) return '';
     const b = this.buildRoom(room, f).req;
@@ -81,9 +82,9 @@ const RoomCalc = {
     const f = PlanEngine.factor();
     if (!f) { UI.alert('Calibrate the plan first — the calculation needs real distances.'); return; }
     const pm = AppState.planMarkup;
-    const list = (rooms || pm.rooms || []).filter(r => r.points && r.points.length >= 3 && r.kind !== 'outdoor' && r.kind !== 'perimeter' && r.kind !== 'escape');
+    const list = (rooms || pm.rooms || []).filter(r => r.points && r.points.length >= 3 && r.kind !== 'outdoor' && r.kind !== 'perimeter' && r.kind !== 'escape' && r.kind !== 'sports');
     if (!list.length) {
-      if (!(pm.rooms || []).some(r => r.kind === 'outdoor' || r.kind === 'perimeter')) UI.toast('Draw or detect a room first.', 'info');
+      if (!(pm.rooms || []).some(r => r.kind === 'outdoor' || r.kind === 'perimeter' || r.kind === 'sports')) UI.toast('Draw or detect a room first.', 'info');
       return;
     }
     if (this._busy) return;
@@ -265,6 +266,7 @@ const RoomCalc = {
   draw(ctx, zoom) {
     this._sync();
     if (typeof Light3D !== 'undefined') Light3D.drawPlan(ctx, zoom);   // objects, windows, doors from the 3D view
+    if (typeof SportsCalc !== 'undefined') SportsCalc.draw(ctx, zoom, this.enabled);   // masts always; the pitch grid with the results
     if (!this.enabled) return;
     const f = PlanEngine.factor();
     if (!f) return;
@@ -318,7 +320,7 @@ const RoomCalc = {
     const pm = AppState.planMarkup;
     const has = (r) => {
       const a = this.results[r.id], e = this.results['em:' + r.id];
-      return (a && (a.res.grid || a.res.profile)) || (r.kind === 'escape' && e && e.res.profile);
+      return (a && (a.res.grid || a.res.profile || a.res.horizontal)) || (r.kind === 'escape' && e && e.res.profile);
     };
     const rooms = (pm.rooms || []).filter(has);
     const sel = rooms.find(r => PlanMarkup.selectedIds.has(r.id));
@@ -349,6 +351,14 @@ const RoomCalc = {
       const L = AreaCalc.readPerim(zone);
       title = `Fence — ${name}`;
       body = `<div class="plan-legend-rows">${dot('#16a34a', `Ev ≥ ${L.evMin} lx`)}${dot('#dc2626', `below ${L.evMin} lx`)}</div>`;
+    } else if (zone.kind === 'sports') {
+      const hz = r.res.horizontal, L = SportsCalc.read(zone);
+      const top = Math.max(hz.Emax || 0, 1);
+      const tick = (v, label) => v > 0 && v <= top ? `<span class="plan-legend-mark" style="left:${(v / top * 100).toFixed(1)}%" title="${label}"></span>` : '';
+      title = `Pitch illuminance Ēh — ${name}`;
+      body = `<div class="plan-legend-bar" aria-hidden="true">${tick(L.em, 'Target Ēh')}${tick(L.em * L.u2, 'Required Emin')}</div>
+        <div class="plan-legend-scale"><span>0</span><span>${fmt(top / 2)}</span><span>${fmt(top)} lx</span></div>
+        <small>Ēh ${fmt(hz.Eav)} lx · U₂ ${hz.U2.toFixed(2)} · target ${fmt(L.em)} lx, U₂ ${L.u2}${r.sig === this.signature(zone) ? '' : ' · out of date'}</small>`;
     } else {
       const res = r.res, wp = res.workplane || {};
       const top = Math.max(wp.Emax || 0, 1);

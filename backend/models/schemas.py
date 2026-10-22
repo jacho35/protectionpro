@@ -723,6 +723,16 @@ class AreaLightingRequest(BaseModel):
     photometry: dict = {}
 
 
+class SportsLightingRequest(BaseModel):
+    """Sports field lighting — horizontal E grid, vertical E to cameras and
+    players, GR, aiming, from masts of aimed floodlights. See analysis/sports_lighting.py."""
+    model_config = {"extra": "allow"}
+
+    luminaires: list[dict] = []
+    fields: list[dict] = []
+    photometry: dict = {}
+
+
 class EmergencyLightingRequest(BaseModel):
     """Emergency lighting — floor illuminance from emergency-mode luminaires
     on escape routes, open areas and high-risk task areas. See

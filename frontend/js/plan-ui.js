@@ -43,7 +43,7 @@ const PlanUI = {
   // kind → the tool id that draws it; disabled until that tool is registered.
   _toolFor(kind) {
     return { element: 'place', route: 'route', trench: 'trench',
-      crossing: 'crossing', text: 'text', measurement: 'measurement', room: 'room', roomdetect: 'roomdetect', perimeter: 'perimeter' }[kind];
+      crossing: 'crossing', text: 'text', measurement: 'measurement', room: 'room', roomdetect: 'roomdetect', perimeter: 'perimeter', sportsfield: 'sportsfield' }[kind];
   },
 
   // Folded palette groups (session only); the group last used stays open.
@@ -230,7 +230,7 @@ const PlanUI = {
         <button type="button" class="plan-btn" data-act="photolib">Luminaire library…</button>`;
     }
     const rooms = (pm.rooms || []).filter(r => r.points && r.points.length >= 2);
-    const KIND = { room: 'Room', outdoor: 'Outdoor area', perimeter: 'Fence', escape: 'Escape route' };
+    const KIND = { room: 'Room', outdoor: 'Outdoor area', perimeter: 'Fence', sports: 'Sports field', escape: 'Escape route' };
     html += `<div class="plan-sec-head"><span>On this floor</span><small>${rooms.length}</small></div>`;
     if (!rooms.length) html += `<div class="plan-props-empty">Draw a room, or use Detect room and click inside one.</div>`;
     for (const r of rooms) {
@@ -544,7 +544,7 @@ const PlanUI = {
       const f = PlanEngine.factor();
       const area = f ? (PlanEngine._polyArea(item.points) * f * f) : null;
       title = item.kind === 'perimeter' ? 'Perimeter / fence' + (f ? ` — ${(PlanEngine._polyLen(item.points) * f).toFixed(0)} m` : '')
-        : (item.kind === 'outdoor' ? 'Outdoor area' : 'Room / Area') + (area != null ? ` — ${area.toFixed(1)} m²` : '');
+        : (item.kind === 'outdoor' ? 'Outdoor area' : item.kind === 'sports' ? 'Sports field' : 'Room / Area') + (area != null ? ` — ${area.toFixed(1)} m²` : '');
       fields = PLAN_DEFS.room.fields;
       getVal = (k) => item[k];
     } else if (kind === 'text') {
@@ -574,7 +574,7 @@ const PlanUI = {
     if (kind === 'room' && typeof RoomLighting !== 'undefined') {
       // The lighting settings are edited on the Lighting tab.
       if (PlanMarkup.context === 'lighting') { RoomLighting.bind(el); html += RoomLighting.panel(item); }
-      else html += `<button type="button" class="plan-btn" data-role="open-lighting">Lighting for this ${({ escape: 'route', perimeter: 'fence', outdoor: 'area' })[item.kind] || 'room'}…</button>`;
+      else html += `<button type="button" class="plan-btn" data-role="open-lighting">Lighting for this ${({ escape: 'route', perimeter: 'fence', outdoor: 'area', sports: 'field' })[item.kind] || 'room'}…</button>`;
     }
     html += this._defaultCableButton(item, kind);
     html += this._demandBlock(item, kind);
