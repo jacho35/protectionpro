@@ -319,6 +319,7 @@ const PlanEngine = {
 
     // Lux heatmap overlay (drawn above zones/routes, below tool ghosts)
     if (typeof PlanLux !== 'undefined' && PlanLux.enabled) PlanLux.draw(ctx, this.view.zoom);
+    if (typeof RoomCalc !== 'undefined') RoomCalc.draw(ctx, this.view.zoom);
     // Tool overlay (ghosts, rubber-bands, snap ring)
     if (typeof PlanTools !== 'undefined' && PlanTools.drawOverlay) PlanTools.drawOverlay(ctx, z);
     ctx.restore();
