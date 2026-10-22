@@ -741,7 +741,7 @@ const Light3D = {
           <label class="l3-field"><span>Mount</span><select data-l3l="mount">${['recessed', 'surface', 'suspended'].map(m => `<option value="${m}"${(pr.mount || 'recessed') === m ? ' selected' : ''}>${m[0].toUpperCase() + m.slice(1)}</option>`).join('')}</select></label>
           ${pr.mount === 'suspended' ? `<label class="l3-field"><span>Drop, m</span><input type="number" data-l3l="drop" value="${Number(pr.drop) || 0}" step="0.05" min="0"></label>` : '<span></span>'}
           <label class="l3-field"><span>Rotation, °</span><input type="number" data-l3l="rotation" value="${Math.round(it.rotation || 0)}" step="15"></label>
-          <label class="l3-field"><span>Output, %</span><input type="number" data-l3l="fluxPct" value="${pr.fluxPct != null && pr.fluxPct !== '' ? pr.fluxPct : 100}" step="5" min="0" max="200"></label>
+          <label class="l3-field"><span>Output, %</span><input type="number" data-l3l="fluxPct" value="${pr.fluxPct !== '' && Number.isFinite(+pr.fluxPct) ? +pr.fluxPct : 100}" step="5" min="0" max="200"></label>
         </div>
         <label class="l3-check"><input type="checkbox" data-l3="cones"${this.cones ? ' checked' : ''}> Show light cones</label>
         <p class="l3-muted">This is the plan's own fitting: moving it here moves it on the plan.</p>
