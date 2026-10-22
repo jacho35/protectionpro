@@ -22,7 +22,88 @@ async function earthGrid(page) {
   await page.waitForSelector('#eg-preview .eg-plan', { timeout: 15000 });
 }
 
+
+// Road lighting: Street lighting ▸ Lighting design with a generic optic and a new design.
+const roadDesign = async (page, { sweep = false, optimise = false, spacing } = {}) => {
+  await page.evaluate(() => { Workspaces.setType('reticulation', []); switchWorkspace('streetlight'); });
+  await page.waitForTimeout(500);
+  await page.click('[data-sl="view"][data-view="design"]');
+  await page.waitForTimeout(600);
+  await page.click('[data-rl="new"]');
+  await page.waitForSelector('#rl-main .rl-card', { timeout: 15000 });
+  await page.waitForSelector('#rl-results .rl-verdict', { timeout: 20000 });
+  if (spacing) {
+    await page.fill('[data-dz="spacing"]', String(spacing));
+    await page.dispatchEvent('[data-dz="spacing"]', 'change');
+    await page.waitForTimeout(1500);
+  }
+  if (sweep) { await page.click('[data-rl="sweep"]'); await page.waitForSelector('.rl-best', { timeout: 30000 }); }
+};
+
+
+// A small radial single line: utility → CB → transformer → bus → CB → motor, drawn in the page.
+const seedSld = async (page, { wired = true, select = null } = {}) => {
+  await page.evaluate(() => { Workspaces.setType('network', []); switchWorkspace('sld'); });
+  await page.waitForTimeout(500);
+  return page.evaluate(({ wired, select }) => {
+    const P = (t, x, y, props = {}) => { const c = Canvas.placeComponent(t, x, y); Object.assign(c.props, props); return c; };
+    const u = P('utility', 560, 140, { name: 'Grid', voltage_kv: 11, fault_mva: 250 });
+    const cb1 = P('cb', 560, 230, { name: 'CB1' });
+    const t = P('transformer', 560, 330, { name: 'T1', rated_mva: 1, voltage_hv_kv: 11, voltage_lv_kv: 0.4 });
+    const bus = P('bus', 560, 440, { name: 'LV Bus', voltage_kv: 0.4 });
+    const cb2 = P('cb', 440, 520, { name: 'CB2' });
+    const m = P('motor_induction', 440, 620, { name: 'M1' });
+    if (wired) {
+      AppState.addWire(u.id, 'out', cb1.id, 'top', true);
+      AppState.addWire(cb1.id, 'bottom', t.id, 'primary', true);
+      AppState.addWire(t.id, 'secondary', bus.id, 'at_0', true);
+      AppState.addWire(bus.id, 'at_-120', cb2.id, 'top', true);
+      AppState.addWire(cb2.id, 'bottom', m.id, 'in', true);
+    }
+    if (AppState.clearSelection) AppState.clearSelection();
+    Properties.clear();
+    Canvas.render();
+    return { u: u.id, cb1: cb1.id, t: t.id, bus: bus.id, cb2: cb2.id, m: m.id };
+  }, { wired, select });
+};
+
 export const SETUPS = {
+  'sld-palette': { run: async (page) => {
+    await page.evaluate(() => { Workspaces.setType('network', []); switchWorkspace('sld'); });
+    await page.waitForTimeout(400);
+    await page.fill('#component-search', 'trans');
+    await page.waitForTimeout(500);
+  } },
+  'sld-drawn': { run: async (page) => { await seedSld(page); await page.waitForTimeout(400); }, viewport: { width: 1440, height: 900 } },
+  'sld-wire': { run: async (page) => {
+    const ids = await seedSld(page, { wired: false });
+    await page.click('#btn-wire');
+    await page.waitForTimeout(400);
+    // Halfway through a drag: transformer secondary toward the bus bar.
+    const box = async (id, port) => (await page.locator(`.sld-component[data-id="${id}"] [data-port="${port}"]:not(.conn-port)`).first().boundingBox());
+    const a = await box(ids.t, 'secondary'), bus = await page.locator(`.sld-component[data-id="${ids.bus}"]`).first().boundingBox();
+    await page.mouse.move(a.x + a.width / 2, a.y + a.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(bus.x + bus.width / 2, bus.y - 8, { steps: 8 });
+    await page.waitForTimeout(400);
+  }, viewport: { width: 1440, height: 760 } },
+  'sld-props': { run: async (page) => {
+    const ids = await seedSld(page);
+    await page.evaluate((id) => { AppState.select(id); Canvas.render(); Properties.show(id); }, ids.t);
+    await page.waitForTimeout(600);
+  } },
+  'sld-multi': { run: async (page) => {
+    const ids = await seedSld(page);
+    await page.evaluate((ids) => { AppState.select(ids.cb1); AppState.toggleSelect(ids.t); AppState.toggleSelect(ids.bus); Canvas.render(); }, ids);
+    await page.click('#menu-edit .toolbar-menu-btn');
+    await page.waitForTimeout(500);
+  }, viewport: { width: 1440, height: 900 } },
+  'x-sld': { run: async (page) => { await seedSld(page); await page.evaluate(() => Canvas.zoomFit && Canvas.zoomFit()); await page.waitForTimeout(500); } },
+  'road-design': { run: (page) => roadDesign(page), viewport: { width: 1500, height: 1000 } },
+  'road-fail': { run: (page) => roadDesign(page, { spacing: 50 }), viewport: { width: 1500, height: 1000 } },
+  'road-sweep': { run: (page) => roadDesign(page, { sweep: true, spacing: 50 }), viewport: { width: 1500, height: 1060 } },
+  'road-suggest': { run: async (page) => { await roadDesign(page); await page.click('[data-rl-suggest="1"]'); await page.waitForTimeout(800); } },
+  'road-opt': { run: async (page) => { await roadDesign(page); await page.click('[data-rl="optimise"]'); await page.waitForSelector('#rl-opt-modal [data-m="run"]'); await page.click('#rl-opt-modal [data-m="run"]'); await page.waitForSelector('#rl-opt-modal .rl-opt-table', { timeout: 60000 }); await page.waitForTimeout(500); } },
   'schedule-grid': { run: grid({ sections: false }) },
 
   'schedule-bulk': { run: async (page, h) => {
