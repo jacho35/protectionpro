@@ -333,7 +333,11 @@ const LightReport = {
         const L = RoomLighting.read(it.room);
         a.push(['Ceiling / work plane / wall zone', `${L.ceilH} m / ${L.workH} m / ${L.wallZone} m`],
           ['Reflectances (ceiling / walls / floor)', `${L.rhoC} / ${L.rhoW} / ${L.rhoF}`], ['Maintenance factor', L.mf],
-          ['Calculation', `Direct light from the photometric data plus diffuse interreflection (radiosity); grid ${res && res.workplane ? res.workplane.step + ' m, ' + res.workplane.n + ' points' : ''}; furniture, windows and doors not modelled`],
+          ['Calculation', `Direct light from the photometric data plus diffuse interreflection (radiosity); grid ${res && res.workplane ? res.workplane.step + ' m, ' + res.workplane.n + ' points' : ''}; ${(() => {
+            const sc = it.room.scene || {};
+            const nb = (sc.objects || []).filter(o => o.blocks !== false).length, no = (sc.openings || []).length;
+            return nb || no ? `${nb} object${nb === 1 ? '' : 's'} casting shadows, ${no} window${no === 1 ? '' : 's'} / door${no === 1 ? '' : 's'} (no daylight)` : 'no furniture, windows or doors entered';
+          })()}`],
           ['UGR', 'CIE 117 at the middle of each wall, eye 1.2 m, initial luminaire flux']);
         if (L.emerg !== 'none') a.push(['Emergency', L.emerg === 'open' ? 'Checked as an open (anti-panic) area' : 'Checked as a high-risk task area']);
       } else if (it.kind === 'outdoor') {
@@ -368,7 +372,7 @@ const LightReport = {
       'Illuminance is calculated from each luminaire\'s photometric data (IES / LDT or a generic optic) as E = I x cos(theta) / d2, multiplied by the maintenance factor.',
       'Indoors, light reflected between the floor, walls and ceiling is included by diffuse (Lambertian) radiosity; the solution conserves the emitted flux. Outdoors and for emergency lighting only direct light counts.',
       'UGR follows CIE 117 with the Guth position index, evaluated at the standard observer positions with the initial luminaire flux. GR follows CIE 112.',
-      'Furniture, partitions, windows and daylight are not modelled; a wall stops light only in the emergency and non-convex-room calculations.',
+      'Furniture, partitions and columns entered in the 3D view cast shadows and reflect light with their own reflectance; work-plane points inside them are left out. Windows and doors take their own reflectance in the interreflection. Daylight is not modelled; a wall stops light in the emergency and non-convex-room calculations.',
       'Generic optics are representative distributions for feasibility, not products. Use the manufacturer\'s IES / LDT for a compliance design.',
       'Targets and emergency limits are those of the project\'s lighting standard: indoor EN 12464-1:2021 or SANS 10114-1:2020 (SANS gives only Em, UGR and Ra; Uo, Ez, wall and ceiling targets follow EN 12464-1), emergency EN 1838:1999 or SANS 10114-2:2020, outdoor EN 12464-2:2024. Confirm they are the edition your project requires.',
     ];

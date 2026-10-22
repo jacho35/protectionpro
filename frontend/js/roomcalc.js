@@ -53,6 +53,8 @@ const RoomCalc = {
         targets: { em: L.em, uo: L.uo, ugr: L.ugr, wallE: L.wallE, ceilE: L.ceilE, ez: L.ez || undefined },
         gridStep: L.grid > 0 ? L.grid : undefined,
         luminaires: lums,
+        // objects, windows / doors and calculation surfaces from the 3D view
+        ...((typeof Light3D !== 'undefined' && Light3D.requestParts(room, f)) || {}),
       },
       skipped,
     };
@@ -92,7 +94,9 @@ const RoomCalc = {
     if (UI.setBusy) UI.setBusy(true, 'Calculating lighting…');
     let out;
     try {
-      out = await API.request('/analysis/room-lighting', 'POST', { rooms: built.map(b => b.req), photometry, detail: 'full' });
+      // the 3D view's rendered light needs every surface patch of the room it shows
+      const patches = (r) => typeof Light3D !== 'undefined' && (Light3D._wantPatches || Light3D._active) && r.id === Light3D.roomId;
+      out = await API.request('/analysis/room-lighting', 'POST', { rooms: built.map(b => (patches(b.req) ? Object.assign({}, b.req, { patches: true }) : b.req)), photometry, detail: 'full' });
     } catch (e) {
       UI.alert('Lighting calculation failed: ' + (e && e.message ? e.message : e));
       return;
@@ -101,10 +105,11 @@ const RoomCalc = {
       if (UI.setBusy) UI.setBusy(false);
     }
     const sigs = new Map(built.map(b => [b.room.id, this.signature(b.room)]));
+    const obsIds = new Map(built.map(b => [b.room.id, (b.req.obstacles || []).map(o => o.id)]));
     let pass = 0, fail = 0, none = 0;
     for (const r of out.rooms) {
       if (r.error) { UI.toast(`${r.name}: ${r.error}`, 'warn', 6000); continue; }
-      this.results[r.id] = { res: r, sig: sigs.get(r.id) };
+      this.results[r.id] = { res: r, sig: sigs.get(r.id), obsIds: obsIds.get(r.id) };
       if (r.pass === true) pass++; else if (r.pass === false) fail++; else none++;
     }
     const skipped = built.reduce((n, b) => n + b.skipped.length, 0);
@@ -259,6 +264,7 @@ const RoomCalc = {
 
   draw(ctx, zoom) {
     this._sync();
+    if (typeof Light3D !== 'undefined') Light3D.drawPlan(ctx, zoom);   // objects, windows, doors from the 3D view
     if (!this.enabled) return;
     const f = PlanEngine.factor();
     if (!f) return;

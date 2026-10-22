@@ -332,6 +332,20 @@ document.addEventListener('DOMContentLoaded', () => {
       if (e.key !== 'Escape' && !(ctrl && (e.key === 's' || e.key === 'S'))) return;
     }
 
+    // The Lighting tab's and the Road plan's 3D views: Ctrl+Z/Y drive the
+    // plan's undo stack, the view's own keys (Delete, R, Ctrl+D) are handled
+    // on its canvas, and the hidden SLD's shortcuts are suspended.
+    if (typeof Light3D !== 'undefined' && Light3D._active && !modalIsOpen) {
+      const ctrl = e.ctrlKey || e.metaKey;
+      if (ctrl && (e.key === 'z' || e.key === 'Z' || e.key === 'y' || e.key === 'Y')) {
+        e.preventDefault();
+        if (e.shiftKey || e.key === 'y' || e.key === 'Y') PlanMarkup.redo(); else PlanMarkup.undo();
+        Light3D.render();
+        return;
+      }
+      if (e.key !== 'Escape' && !(ctrl && (e.key === 's' || e.key === 'S'))) return;
+    }
+
     // Same treatment for the Plan Markup workspace: Ctrl+Z/Y drive its local
     // undo stack, other editing keys are handed to it, and the SLD shortcuts
     // are suspended (Escape / Ctrl+S stay live).

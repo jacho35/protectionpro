@@ -2,9 +2,11 @@
  *
  * Every room, outdoor area, perimeter and escape route of the project — across
  * all floors — in one list, with what each was calculated to and a verdict.
- * Two views: Plan (the Plan tab's canvas re-hosted here, with the lighting
+ * Three views: Plan (the Plan tab's canvas re-hosted here, with the lighting
  * tools — rooms, areas, fences, escape routes, fittings — and the room
- * lighting panel) and Table (every zone on every floor). The calculations are
+ * lighting panel), Table (every zone on every floor) and 3D (one room,
+ * rotatable, with objects, windows, doors and calculation surfaces —
+ * js/light3d.js). The calculations are
  * RoomCalc / AreaCalc / EmergCalc; this runs them all (stepping through the
  * floors, then returning to the one you were on) and makes the PDF.
  *
@@ -39,11 +41,13 @@ const LightingWS = {
   },
   deactivate() {
     this._active = false;
+    if (typeof Light3D !== 'undefined') Light3D.deactivate();
     if (typeof PlanMarkup !== 'undefined' && PlanMarkup._active && PlanMarkup.context === 'lighting') PlanMarkup.deactivate();
   },
   refresh() {
     if (!this._active) return;
     if (this.view === 'table') this.render();
+    else if (this.view === '3d') { this._renderBar(); Light3D.render(); }
     else { this._renderBar(); if (typeof PlanUI !== 'undefined') PlanUI.renderPalette(); }
   },
 
@@ -55,6 +59,7 @@ const LightingWS = {
     host.innerHTML = `<div class="lw-bar" id="lw-bar"></div>
       <div class="lw-body">
         <div class="lw-plan" id="lw-plan"></div>
+        <div class="lw-3d" id="lw-3d" hidden></div>
         <div class="lw-tableview" id="lw-tableview" hidden>
           <aside class="lw-rail"><div class="lw-rail-head">Show</div><div class="lw-rail-list" id="lw-rail"></div></aside>
           <section class="lw-main" id="lw-main"></section>
@@ -62,7 +67,12 @@ const LightingWS = {
       </div>`;
     host.addEventListener('click', (e) => this._onClick(e));
     host.addEventListener('change', (e) => {
-      if (e.target.id === 'lw-floor-select') { PlanMarkup.setActiveFloor(e.target.value); this._renderBar(); }
+      if (this.view === '3d' && e.target.closest('#lw-bar') && Light3D.onBarChange(e)) { this._renderBar(); return; }
+      if (e.target.id === 'lw-floor-select') {
+        PlanMarkup.setActiveFloor(e.target.value);
+        if (this.view === '3d') { Light3D.focusRoom(null); Light3D.roomId = null; Light3D.fit(); Light3D.render(); }
+        this._renderBar();
+      }
       else if (e.target.id === 'lw-show') {
         RoomCalc.enabled = e.target.value !== 'off';
         PlanEngine.requestDraw({ fg: true });
@@ -71,23 +81,43 @@ const LightingWS = {
   },
 
   setView(view) {
-    this.view = view === 'table' ? 'table' : 'plan';
-    const plan = document.getElementById('lw-plan'), table = document.getElementById('lw-tableview');
+    this.view = view === 'table' || view === '3d' ? view : 'plan';
+    const plan = document.getElementById('lw-plan'), table = document.getElementById('lw-tableview'), v3 = document.getElementById('lw-3d');
     if (!plan || !table) return;
     plan.hidden = this.view !== 'plan';
     table.hidden = this.view !== 'table';
+    if (v3) v3.hidden = this.view !== '3d';
+    if (this.view !== '3d' && typeof Light3D !== 'undefined') Light3D.deactivate();
     if (this.view === 'plan') PlanMarkup.activate(plan, 'lighting');
     else {
-      if (PlanMarkup._active && PlanMarkup.context === 'lighting') PlanMarkup.deactivate();
-      this.render();
+      if (PlanMarkup._active && PlanMarkup.context === 'lighting') {
+        // the 3D view opens on the room picked on the plan
+        if (this.view === '3d') { const sel = (AppState.planMarkup.rooms || []).find(r => PlanMarkup.selectedIds.has(r.id)); if (sel && sel.id !== Light3D.roomId) Light3D.focusRoom(sel.id); }
+        PlanMarkup.deactivate();
+      }
+      if (this.view === 'table') this.render();
+      else Light3D.activate(v3);
     }
     this._renderBar();
+  },
+
+  // A room's panel on the plan → its 3D view.
+  open3D(id) {
+    if (typeof Light3D === 'undefined') return;
+    Light3D.focusRoom(id);
+    if (typeof Workspaces !== 'undefined' && !Workspaces.isVisible('lighting')) {
+      AppState.extraWorkspaces = (AppState.extraWorkspaces || []).concat(['lighting']);
+      if (Workspaces.refresh) Workspaces.refresh();
+    }
+    this.view = '3d';
+    if (this._active) this.setView('3d');
+    else switchWorkspace('lighting');
   },
 
   _renderBar() {
     const bar = document.getElementById('lw-bar');
     if (!bar) return;
-    const plan = this.view === 'plan';
+    const plan = this.view === 'plan', v3 = this.view === '3d';
     const I = (n) => PlanMarkup._icon(n);
     const pm = AppState.planMarkup;
     const floors = (pm.floors || []).slice().sort((a, b) => (b.level || 0) - (a.level || 0));
@@ -97,8 +127,10 @@ const LightingWS = {
         <button class="plan-tb-btn" data-lw-act="toggle-props">✎ Props</button></div>` : ''}
       <div class="plan-modes" role="group" aria-label="View">
         <button type="button" class="plan-mode-btn${plan ? ' active' : ''}" data-lw-view="plan" aria-pressed="${plan}">Plan</button>
-        <button type="button" class="plan-mode-btn${plan ? '' : ' active'}" data-lw-view="table" aria-pressed="${!plan}">Table</button>
+        <button type="button" class="plan-mode-btn${this.view === 'table' ? ' active' : ''}" data-lw-view="table" aria-pressed="${this.view === 'table'}">Table</button>
+        <button type="button" class="plan-mode-btn${v3 ? ' active' : ''}" data-lw-view="3d" aria-pressed="${v3}">3D</button>
       </div>
+      ${v3 ? Light3D.barHtml() : ''}
       ${plan ? `<div class="plan-tb-group">
         <button class="plan-tool-btn${PlanTools.active && PlanTools.active.id === 'select' ? ' active' : ''}" data-tool="select" title="Select / move (V)">${I('select')} Select</button>
         <button class="plan-tb-btn plan-icon-btn" data-lw-act="undo" aria-label="Undo" title="Undo (Ctrl+Z)">${I('undo')}</button>
@@ -106,12 +138,13 @@ const LightingWS = {
         <button class="plan-tb-btn" data-lw-act="fit" title="Zoom to fit">${I('fit')} Fit</button>
       </div>` : ''}
       <div class="plan-tb-spacer"></div>
-      ${plan && floors.length > 1 ? `<label class="plan-tb-field">Floor <select id="lw-floor-select">${floors.map(f =>
+      ${(plan || v3) && floors.length > 1 ? `<label class="plan-tb-field">Floor <select id="lw-floor-select">${floors.map(f =>
         `<option value="${escHtml(f.id)}"${f.id === pm.activeFloorId ? ' selected' : ''}>${escHtml(f.name)} (L${f.level})</option>`).join('')}</select></label>` : ''}
       ${plan ? `<label class="plan-tb-field">Show <select id="lw-show" class="plan-tb-select"><option value="on"${RoomCalc.enabled ? ' selected' : ''}>Results (false colour)</option><option value="off"${RoomCalc.enabled ? '' : ' selected'}>Plan only</option></select></label>` : ''}
       <button class="plan-tb-btn" data-lw="photolib">Luminaire library…</button>
       <button class="plan-tb-btn" data-lw="pdf">PDF report</button>
-      <button class="btn-primary" data-lw="calc">Calculate all</button>`;
+      ${v3 ? '<button class="btn-primary" data-l3="calc">Calculate room</button>'
+        : '<button class="btn-primary" data-lw="calc">Calculate all</button>'}`;
   },
 
   // From the Plan tab ("Lighting for this room…") or a table row: show the
@@ -296,6 +329,11 @@ const LightingWS = {
   _onClick(e) {
     const v = e.target.closest('[data-lw-view]');
     if (v) { this.setView(v.dataset.lwView); return; }
+    if (this.view === '3d' && e.target.closest('#lw-bar')) {
+      if (Light3D.onBar(e)) return;
+      const ua = e.target.closest('[data-lw-act]');
+      if (ua) { PlanMarkup.runAction(ua.dataset.lwAct); Light3D.render(); return; }
+    }
     const t = e.target.closest('#lw-bar [data-tool]');
     if (t) { PlanTools.set(t.dataset.tool); return; }
     const la = e.target.closest('[data-lw-act]');
@@ -343,6 +381,7 @@ const LightingWS = {
     }
     if (stats.uncal.length) UI.toast(`Not calibrated, so not calculated: ${stats.uncal.join(', ')}.`, 'warn', 7000);
     if (this.view === 'table') this.render();
+    else if (this.view === '3d') Light3D.render();
     else { if (typeof PlanUI !== 'undefined') { PlanUI.renderPalette(); PlanUI.renderProps(); } PlanEngine.requestDraw({ all: true }); }
     this._renderBar();
   },

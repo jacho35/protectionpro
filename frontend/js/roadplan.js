@@ -21,9 +21,14 @@
  * reading as the Lighting design. Junctions are found where a road's end
  * lies on another road, or where two centrelines cross.
  *
+ * A Plan | 3D switch shows the same roads in 3D (js/road3d.js), with trees,
+ * buildings, shelters and gantries that shade the road, facade checks and
+ * measurement points.
+ *
  * State (saved with the project), inside AppState.reticulation.streetLighting:
  *   roadPlan { roads[], junctionCls {key → class}, bg (DXF background in
- *              metres), settings { standard, mf }, _seq }
+ *              metres), settings { standard, mf, shadows }, scene { objects[],
+ *              surfaces[], points[] } (road3d.js), _seq }
  * Results are on demand (this._res, never saved).
  */
 
@@ -116,6 +121,7 @@ const RoadPlan = {
   _drag: null,
   _hover: null,
   _snap: true,
+  _view3d: false,        // the 3D view (js/road3d.js) instead of the plan
 
   // ─── Data ────────────────────────────────────────────────────────────
   get rp() {
@@ -137,7 +143,7 @@ const RoadPlan = {
   _design(road) { return road && typeof RoadLight !== 'undefined' ? RoadLight.design(road.designId) : null; },
 
   // ─── Undo (road data only; the background is not snapshotted) ────────
-  _snapshot() { return JSON.stringify({ roads: this.roads, junctionCls: this.rp.junctionCls, settings: this.rp.settings }); },
+  _snapshot() { return JSON.stringify({ roads: this.roads, junctionCls: this.rp.junctionCls, settings: this.rp.settings, scene: this.rp.scene || null }); },
   _commit() {
     this._undo.push(this._last || this._snapshot());
     if (this._undo.length > 50) this._undo.shift();
@@ -146,16 +152,17 @@ const RoadPlan = {
     AppState.dirty = true;
     this._resStale = true;
     this._geo.clear();
-    if (this._step === 3) this.recompute();
+    if (this._step === 3 || (this._view3d && this._res)) this.recompute();
   },
   _restore(snap) {
     const o = JSON.parse(snap);
     this.rp.roads = o.roads; this.rp.junctionCls = o.junctionCls || {}; this.rp.settings = o.settings || {};
+    if (o.scene) this.rp.scene = o.scene; else delete this.rp.scene;
     this._last = snap; this._geo.clear(); this._resStale = true; AppState.dirty = true;
     if (!this.selRoad) this._selRoad = this.roads.length ? this.roads[0].id : null;
     this._selPole = null;
     this.render();
-    if (this._step === 3) this.recompute();
+    if (this._step === 3 || (this._view3d && this._res)) this.recompute();
   },
   undo() { if (!this._undo.length) return; this._redo.push(this._snapshot()); this._restore(this._undo.pop()); },
   redo() { if (!this._redo.length) return; this._undo.push(this._snapshot()); this._restore(this._redo.pop()); },
@@ -191,6 +198,7 @@ const RoadPlan = {
           <div class="rp-hint" id="rp-hint"></div>
           <div class="rp-pick" id="rp-pick" style="display:none"></div>
         </div>
+        <div class="rp-3d" id="rp-3d" hidden></div>
       </section>
       <aside class="sl-results rp-panel" id="rp-panel"></aside>`;
     host.addEventListener('click', (e) => this._onClick(e));
@@ -668,7 +676,8 @@ const RoadPlan = {
       id: j.key, name: j.name, cls: this._junctionCls(j),
       polygons: this._junctionRanges(j).map(r => this._kerbPolygon(this.road(r.road), r.s0, r.s1)),
     }));
-    return { standard: this._standard(), mf: this._mf(), photometry, roads, luminaires, conflictAreas, hoursPerYear: 4100 };
+    const scene = typeof Road3D !== 'undefined' ? Road3D.requestParts() : {};
+    return { standard: this._standard(), mf: this._mf(), photometry, roads, luminaires, conflictAreas, hoursPerYear: 4100, ...scene };
   },
   recompute(delay = 400) {
     clearTimeout(this._timer);
@@ -677,7 +686,11 @@ const RoadPlan = {
   async _compute() {
     if (!this._active) return;
     const pr = this._problems();
-    if (pr.length) { this._res = { problems: pr }; this._resStale = false; this.renderPanel(); this.renderWorld(); return; }
+    if (pr.length) {
+      this._res = { problems: pr }; this._resStale = false; this.renderPanel(); this.renderWorld();
+      if (this._view3d && typeof Road3D !== 'undefined') Road3D.render();
+      return;
+    }
     const req = ++this._req;
     this._busy = true; this.renderPanel();
     try {
@@ -691,6 +704,7 @@ const RoadPlan = {
     this._busy = false; this._resStale = false;
     this._heatKey = null;
     this.renderPanel(); this.renderWorld(); this.renderRail();
+    if (this._view3d && typeof Road3D !== 'undefined') Road3D.render();
   },
 
   // ─── DXF background ──────────────────────────────────────────────────
@@ -1079,7 +1093,7 @@ const RoadPlan = {
   },
   _relayoutUnmoved(r) { if (r) { this._geo.delete(r.id); this.layoutRoad(r, true); } },
   onKeydown(e) {
-    if (!this._active) return false;
+    if (!this._active || this._view3d) return false;   // the 3D view takes its keys on its canvas
     const k = e.key;
     if ((this._tool === 'draw' || this._tool === 'kerbs') && this._draft) {
       if (k === 'Enter') { this.finishDraft(); return true; }
@@ -1232,11 +1246,27 @@ const RoadPlan = {
   // ─── Render ──────────────────────────────────────────────────────────
   render() {
     if (!this._built) return;
+    const wrap = document.getElementById('rp-wrap'), v3 = document.getElementById('rp-3d'), steps = document.querySelector('.rp-steps');
+    if (wrap) wrap.hidden = this._view3d;
+    if (v3) v3.hidden = !this._view3d;
+    if (steps) steps.hidden = this._view3d;
+    if (this._view3d && typeof Road3D !== 'undefined') {
+      Road3D.mount(v3);
+      this.renderRail(); this.renderToolbar(); this.renderPanel(); Road3D.render();
+      return;
+    }
     document.querySelectorAll('[data-rp-step]').forEach(b => {
       const on = +b.dataset.rpStep === this._step;
       b.classList.toggle('active', on); b.setAttribute('aria-selected', on ? 'true' : 'false');
     });
     this.renderRail(); this.renderToolbar(); this.renderPanel(); this.renderWorld(); this.applyView(); this._hint();
+  },
+  // Plan | 3D
+  setView3d(on) {
+    this._view3d = !!on && typeof Road3D !== 'undefined';
+    this._draft = null; this._kerbDraft = null; this._closePick();
+    this.render();
+    if (!this._view3d) this.applyView();
   },
   setStep(n) {
     this._step = n;
@@ -1298,7 +1328,9 @@ const RoadPlan = {
     const b = (tool, label, title) => `<button class="btn-small${this._tool === tool ? ' active' : ''}" data-rp-tool="${tool}" title="${escHtml(title)}">${label}</button>`;
     const r = this.selRoad;
     let html = '';
-    if (this._step === 1) {
+    if (this._view3d) {
+      html = Road3D.toolbarHtml();
+    } else if (this._step === 1) {
       html = `${b('select', 'Select', 'Select a road, drag its intersection points')}${b('draw', 'Draw centreline', 'Click intersection points; corners are rounded with tangent arcs')}${b('kerbs', 'Trace kerbs', 'Trace both kerbs: the carriageway width follows them')}
         ${this.rp.bg ? b('pick', 'From DXF', 'Pick a centreline or two kerbs from the background drawing') : ''}
         <span class="sl-sep"></span>
@@ -1320,7 +1352,9 @@ const RoadPlan = {
         <label class="rl-inline" title="Maintenance factor">MF<input type="number" step="0.01" min="0.05" max="1" class="sl-in-num" data-rp-set="mf" value="${this._mf()}"></label>
         <button class="btn-small btn-primary" data-rp="calc">${this._busy ? 'Calculating…' : 'Recalculate'}</button>`;
     }
-    html += `<span class="rp-tb-right"><button class="btn-small" data-rp="undo" title="Undo (Ctrl+Z)"${this._undo.length ? '' : ' disabled'}>Undo</button><button class="btn-small" data-rp="redo" title="Redo (Ctrl+Y)"${this._redo.length ? '' : ' disabled'}>Redo</button><button class="btn-small" data-rp="fit" title="Fit the plan (F)">Fit</button></span>`;
+    const v3 = this._view3d;
+    html += `<span class="rp-tb-right"><button class="btn-small" data-rp="undo" title="Undo (Ctrl+Z)"${this._undo.length ? '' : ' disabled'}>Undo</button><button class="btn-small" data-rp="redo" title="Redo (Ctrl+Y)"${this._redo.length ? '' : ' disabled'}>Redo</button>${v3 ? '' : '<button class="btn-small" data-rp="fit" title="Fit the plan (F)">Fit</button>'}
+      ${typeof Road3D !== 'undefined' ? `<span class="sl-view-toggle" role="group" aria-label="View"><button class="${v3 ? '' : 'active'}" data-rp-view="plan" aria-pressed="${!v3}">Plan</button><button class="${v3 ? 'active' : ''}" data-rp-view="3d" aria-pressed="${v3}">3D</button></span>` : ''}</span>`;
     el.innerHTML = html;
   },
 
@@ -1589,7 +1623,8 @@ const RoadPlan = {
   renderPanel() {
     const el = document.getElementById('rp-panel');
     if (!el) return;
-    if (this._step === 1) el.innerHTML = this._panelShape();
+    if (this._view3d) el.innerHTML = Road3D.panelHtml();
+    else if (this._step === 1) el.innerHTML = this._panelShape();
     else if (this._step === 2) el.innerHTML = this._panelPoles();
     else el.innerHTML = this._panelResults();
     this.renderToolbar();
@@ -1707,13 +1742,16 @@ const RoadPlan = {
 
   // ─── Events ──────────────────────────────────────────────────────────
   _onClick(e) {
+    const vb = e.target.closest('[data-rp-view]');
+    if (vb) { this.setView3d(vb.dataset.rpView === '3d'); return; }
+    if (this._view3d && Road3D.onClick(e)) return;
     const t = e.target.closest('[data-rp], [data-rp-step], [data-rp-tool], [data-rp-road], [data-rp-qty], [data-rp-pole]');
     if (!t) return;
     if (t.tagName === 'INPUT' && t.type !== 'checkbox') return;
     if (t.dataset.rpStep) { this.setStep(+t.dataset.rpStep); return; }
     if (t.dataset.rpTool) { this.setTool(t.dataset.rpTool); return; }
     if (t.dataset.rpRoad) { this._selRoad = t.dataset.rpRoad; this._selPole = null; this.render(); return; }
-    if (t.dataset.rpQty) { this._qty = t.dataset.rpQty; this._heatKey = null; this.renderToolbar(); this._renderHeat(); return; }
+    if (t.dataset.rpQty) { this._qty = t.dataset.rpQty; this._heatKey = null; this.renderToolbar(); if (this._view3d) Road3D.render(); else this._renderHeat(); return; }
     if (t.dataset.rpPole) { this._selPole = t.dataset.rpPole; this.renderPanel(); this.renderScreen(); return; }
     const r = this.selRoad;
     switch (t.dataset.rp) {
@@ -1746,6 +1784,7 @@ const RoadPlan = {
     }
   },
   _onChange(e) {
+    if (this._view3d && Road3D.onChange(e)) return;
     const t = e.target, d = t.dataset;
     const r = this.selRoad;
     if (d.rpFeed === 'pole') { if (r && r.feed) { if (t.value) r.feed.poleId = t.value; else delete r.feed.poleId; this._commit(); this.render(); } return; }
