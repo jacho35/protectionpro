@@ -19,6 +19,7 @@
  */
 
 const HELP_GUIDE_GROUPS = [
+  { id: 'sld', title: 'Single-line diagram basics' },
   { id: 'boards', title: 'Distribution boards' },
   { id: 'retic', title: 'Reticulation & plans' },
   { id: 'protection', title: 'Protection devices' },
@@ -30,6 +31,85 @@ const HELP_GUIDE_GROUPS = [
 ];
 
 const HELP_GUIDES = [
+
+// ───────────────────────────────────────────────────────────────────────────
+{ id: 'sld-draw', group: 'sld', title: 'Draw a single-line diagram',
+  where: 'Single-line ▸ Components palette', time: '15 min', phone: 'Use a wider screen to draw; the diagram can be read on a phone',
+  intro: 'Every study in the app runs on the single-line diagram: sources, transformers, buses, protection and loads, joined by wires. Place the components, wire them, give each its ratings, and the diagram is ready to analyse.',
+  steps: [
+    { title: 'Find a component and place it',
+      html: 'Open the <strong>Single-line</strong> workspace. The <strong>Components</strong> palette on the left lists everything by category: sources, distribution, protection, instruments, loads and more. Type in <strong>Search components</strong> to filter it, then <strong>drag</strong> a symbol onto the canvas. It snaps to the grid. Place the first components in the order power flows, from the source down to the loads.',
+      shot: { file: 'sld-draw-1.png', alt: 'The Components palette filtered by the word trans',
+        setup: 'sld-palette', clip: '#sidebar',
+        callouts: [
+          { sel: '#component-search', label: 'Type part of a name to filter the palette' },
+          { sel: '.palette-item', label: 'Drag a symbol onto the canvas' },
+        ] } },
+    { title: 'Wire the components together',
+      html: 'Press <strong>Wire</strong> (or <kbd>W</kbd>). Press on a component’s <strong>port</strong>, drag to the port of the next one and let go; the wire routes itself at right angles. A <strong>bus</strong> has no fixed ports: drop the wire anywhere along its bar. Press <kbd>V</kbd> or <kbd>Esc</kbd> to go back to selecting. <strong>Double-click</strong> a wire to add a bend you can drag, and double-click the bend to remove it. To make a bus longer, select it and drag its end handles.',
+      shot: { file: 'sld-draw-2.png', alt: 'Wire mode with a wire being dragged from a transformer to a bus bar',
+        setup: 'sld-wire', clip: 'viewport',
+        callouts: [
+          { sel: '#btn-wire', label: 'Wire mode — W' },
+          { sel: '#canvas-mode-indicator', label: 'The mode you are in; click it to switch' },
+          { sel: '.sld-component[data-id^="bus"]', label: 'A bus takes a wire anywhere along its bar' },
+        ] } },
+    { title: 'Give each component its ratings',
+      html: 'Switch back to <strong>Select</strong> and click a component. Its <strong>properties panel</strong> opens on the right, grouped by what the value is for: general, fault analysis, load flow, grounding, and so on. A <strong>default</strong> tag marks a typical value the app has filled in; type your own figure to replace it. The <em>i</em> beside a field says what it means. Where a library exists (transformers, cables, breakers, fuses) pick a <strong>Standard type</strong> and the ratings are filled in for you. <strong>View Calculations</strong> shows how the component’s values are used.',
+      shot: { file: 'sld-draw-3.png', alt: 'The properties panel of a transformer with ratings and default tags',
+        setup: 'sld-props', clip: '#properties-panel',
+        callouts: [
+          { sel: '[data-field="name"]', label: 'Name — appears on the diagram and in every result' },
+          { sel: '[data-field="standard_type"] + .ss', label: 'Pick a standard type to fill the ratings' },
+          { sel: '.prop-default-flag', label: 'A typical default — replace it with your own value' },
+          { sel: '#btn-show-calc', label: 'How the values are used' },
+        ] } },
+    { title: 'Check the drawing',
+      html: 'The diagram shows each component’s name and key ratings beside it. <strong>View</strong> turns cable labels, device labels and the component ribbon on or off. <strong>Connection Warnings</strong> marks any port that is still open, so a missing wire shows before you run a study. The <strong>minimap</strong> at the bottom right shows where you are on a large diagram, and <strong>Fit</strong> in the toolbar brings the whole diagram into view.',
+      shot: { file: 'sld-draw-4.png', alt: 'A finished single-line diagram of a source, transformer, bus and motor',
+        setup: 'sld-drawn', clip: '#canvas-container',
+        callouts: [
+          { sel: '#minimap', label: 'Minimap of the whole diagram' },
+          { sel: '#page-tab-bar', label: 'Sheets — add one for a big diagram' },
+        ] } },
+    { title: 'Save, then analyse',
+      html: 'Press <strong>Save</strong> (<kbd>Ctrl</kbd>+<kbd>S</kbd>) to keep the project in your account; <strong>Auto Save</strong> in the header also keeps it up to date. To start from a worked example instead of a blank page, use <strong>Project ▸ Templates</strong>. Then run a study from the <strong>Analyse</strong> menu, or press <strong>Run All Studies</strong>; the results appear as boxes you can drag on the diagram.' },
+  ],
+  tips: ['Components snap to a 20-unit grid. Arrow keys nudge a selection by one grid step, and <kbd>Shift</kbd>+arrow by five.', 'Rename components early: the names appear in the TCC, the result tables and the reports.'],
+  related: [{ help: 'wf-studies', label: 'Run All Studies, scenarios & load-flow cases' }, { help: 'wf-files', label: 'Saving, revisions & sharing' }] },
+
+// ───────────────────────────────────────────────────────────────────────────
+{ id: 'sld-edit', group: 'sld', title: 'Select, tidy and undo on the single line',
+  where: 'Single-line ▸ Edit menu', time: '8 min', phone: 'Multi-select toggle instead of Shift',
+  intro: 'A diagram rarely comes out right the first time. These are the tools for moving things about, copying a section, lining it up and taking a step back.',
+  steps: [
+    { title: 'Select what you want to change',
+      html: 'Click a component or wire to select it. <kbd>Shift</kbd>+click adds to the selection, and dragging a box on empty canvas selects everything inside it. <kbd>Ctrl</kbd>+<kbd>A</kbd> selects all. A selected component shows a blue outline, and its properties open on the right.' },
+    { title: 'Move, copy and delete',
+      html: 'Drag to move; wires follow. <kbd>Ctrl</kbd>+<kbd>C</kbd> and <kbd>Ctrl</kbd>+<kbd>V</kbd> copy and paste, <kbd>Ctrl</kbd>+<kbd>D</kbd> duplicates, <kbd>Ctrl</kbd>+<kbd>X</kbd> cuts, <kbd>R</kbd> rotates a quarter turn and <kbd>Delete</kbd> removes. Pasted wires between copied components come with them. <strong>Right-click</strong> a component, wire or empty space for the menu that fits it, such as opening or closing a breaker, or running a fault study at a bus.' },
+    { title: 'Line things up',
+      html: 'Select two or more components, open <strong>Edit</strong> and choose from <strong>Arrange selection</strong>: align left, centre or right, align top, middle or bottom, or distribute horizontally or vertically so the gaps are equal. <strong>Auto-arrange diagram</strong> lays the whole network out in layers with the sources on top and the loads below, and <strong>Auto-arrange from selection down</strong> tidies only what hangs below the selection. <strong>Pin / unpin selection</strong> locks components where they are so an auto-arrange leaves them alone.',
+      shot: { file: 'sld-edit-1.png', alt: 'The Edit menu with three components selected and the Arrange selection items',
+        setup: 'sld-multi', clip: 'viewport',
+        callouts: [
+          { sel: '#menu-edit .toolbar-menu-panel', label: 'Edit menu: copy, group and arrange the selection' },
+        ] } },
+    { title: 'Group related parts',
+      html: 'Select a few components and press <kbd>Ctrl</kbd>+<kbd>G</kbd> to group them, for instance a motor and its starter. A group moves, copies and selects as one. <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>G</kbd> ungroups.' },
+    { title: 'Undo and redo',
+      html: 'Press <kbd>Ctrl</kbd>+<kbd>Z</kbd> to undo and <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd> (or <kbd>Ctrl</kbd>+<kbd>Y</kbd>) to redo; the toolbar has the same two buttons. The last 50 states are kept, and the status bar says how far back you can go.',
+      shot: { file: 'sld-edit-2.png', alt: 'The toolbar with the undo and redo buttons and the status bar undo counter',
+        setup: 'sld-drawn', clip: 'viewport',
+        callouts: [
+          { sel: '#btn-undo', label: 'Undo — Ctrl+Z' },
+          { sel: '#btn-redo', label: 'Redo — Ctrl+Shift+Z' },
+          { sel: '#status-bar', label: 'Mode, cursor position and undo depth' },
+        ] } },
+    { title: 'Spread a big diagram over sheets',
+      html: 'Press <strong>+</strong> beside the <strong>Sheet</strong> tabs to add a sheet. Each sheet is a page of the same network, so a feeder drawn on sheet 2 is still part of the one study. Join sheets with a pair of <strong>Off-page connectors</strong> linked to each other.' },
+  ],
+  tips: ['<kbd>Esc</kbd> cancels a wire or a drag in progress, and clears the selection.', 'The mouse wheel zooms and dragging with the middle button pans; <strong>Fit</strong> shows the whole diagram and <strong>1:1</strong> returns to full size.', 'Each align, distribute and auto-arrange is a single undo step.'],
+  related: [{ help: 'wf-files', label: 'Saving, revisions & sharing' }] },
 
 // ───────────────────────────────────────────────────────────────────────────
 { id: 'db-schedule', group: 'boards', title: 'Build a board’s circuit schedule',
@@ -439,6 +519,78 @@ const HELP_GUIDES = [
   ],
   tips: ['<strong>Diagram</strong> draws the circuit as a schematic you can export as PNG, SVG or DXF.', 'Snaking and loop-in allowances are set in the toolbar and add to every span.'],
   related: [{ help: 'design-roadlight', label: 'Road lighting design' }] },
+
+// ───────────────────────────────────────────────────────────────────────────
+{ id: 'road-lighting', group: 'retic', title: 'Check a road’s lighting (lux and luminance)',
+  where: 'Street lighting ▸ Lighting design', time: '15 min', phone: 'Use a wider screen',
+  intro: 'Describe the road as a cross-section, choose a luminaire and a spacing, and the design is checked against its lighting category: average and minimum lux or luminance, uniformity and glare. When it passes, send the spacing to a street-lighting circuit for its volt-drop and earth-loop check.',
+  steps: [
+    { title: 'Start a design and pick a luminaire',
+      html: 'Open <strong>Street lighting ▸ Lighting design</strong> and press <strong>+ New design</strong>. It starts as a two-lane road with a footpath each side and one row of luminaires on the left verge. For a real check, press <strong>Import IES / LDT</strong> and add the manufacturer’s photometry file. <strong>+ Generic</strong> adds a representative optic (narrow, medium or wide) for early feasibility; it is not a real product.',
+      shot: { file: 'road-lighting-1.png', alt: 'A new lighting design with its cross-section, luminaire library and verdict',
+        setup: 'road-design', clip: '#streetlight-workspace',
+        callouts: [
+          { sel: '#rl-rail-list .sl-rail-item', label: 'Your designs — each shows pass or fail' },
+          { sel: '.rl-lib-actions', label: 'Import the manufacturer’s IES / LDT file, or add a generic optic' },
+          { sel: '#rl-xs', label: 'The road drawn as you describe it, with the mounting height' },
+          { sel: '.rl-verdict', label: 'Verdict against every class' },
+        ] } },
+    { title: 'Describe the road',
+      html: 'Pick the <strong>Standard</strong> (SANS 10098 or EN 13201), then a <strong>Template</strong> to start from, or add strips one by one: carriageways, footpaths, cycle tracks, verges and medians. Give each strip its width, and for a carriageway its lanes, <strong>road surface</strong> and direction of travel. Each strip’s <strong>Class</strong> is the lighting category it must meet. <strong>Suggest</strong> proposes one from the road’s function and speed.',
+      shot: { file: 'road-lighting-2.png', alt: 'The cross-section table with a category for the carriageway',
+        setup: 'road-design', clip: '#rl-main .rl-card:has(#rl-sec-body)',
+        callouts: [
+          { sel: '[data-dz="standard"]', label: 'Standard — SANS 10098 or EN 13201' },
+          { sel: '[data-dz="template"]', label: 'Start from a template' },
+          { sel: '#rl-sec-body tr:nth-child(2) .rl-cls-cell', label: 'The category the carriageway must meet' },
+          { sel: '#rl-sec-body tr:nth-child(2) [data-sec="surface"]', label: 'Road surface — reflection of the asphalt' },
+        ] } },
+    { title: 'Let the app suggest a category',
+      html: 'Press <strong>Suggest</strong> beside a strip. For a road, give the functional road class, speed limit and night-time traffic; for a junction or a cycle or pedestrian way the questions change. It names the category and the reason. <strong>Use this category</strong> writes it into the strip. It is a starting point: the road authority’s classification governs.',
+      shot: { file: 'road-lighting-3.png', alt: 'The Suggest a category dialog',
+        setup: 'road-suggest', clip: 'viewport',
+        callouts: [
+          { sel: '#rl-suggest-modal .modal-content', label: 'Road class, speed and traffic give the category' },
+        ] } },
+    { title: 'Place the luminaires',
+      html: 'Choose an <strong>Arrangement</strong> (single-sided, staggered, opposite, twin central) and the <strong>Spacing</strong> between poles in a row. <strong>MF</strong> is the maintenance factor and <strong>Hours/yr</strong> the burning hours for the energy figure. In the row table set the luminaire, setback from the kerb, mounting height, overhang, tilt and flux percentage. Choose <em>Custom rows</em> to set each row on its own.',
+      shot: { file: 'road-lighting-4.png', alt: 'The Luminaires card with arrangement, spacing and the luminaire row',
+        setup: 'road-design', clip: '#rl-main .rl-card:has(#rl-row-body)',
+        callouts: [
+          { sel: '[data-dz="arrangement"]', label: 'Arrangement' },
+          { sel: '[data-dz="spacing"]', label: 'Spacing between poles' },
+          { sel: '#rl-row-body tr', label: 'Luminaire, setback, height, overhang, tilt and flux' },
+        ] } },
+    { title: 'Read the results',
+      html: 'The right-hand column updates as you type. The top box says whether every class is met. Each strip then shows what it requires against what the design delivers (average luminance or lux, uniformity, glare), with a tick or cross, and a note on how the observer and points were taken. <strong>Energy &amp; quantities</strong> gives watts and poles per kilometre and the EN 13201-5 indicators, and the <strong>plan view</strong> shows the lux over one field between two poles. <em>Grid values</em> lists every calculation point.',
+      shot: { file: 'road-lighting-5.png', alt: 'A failing design: the verdict, the carriageway check with a failed uniformity, and the energy figures',
+        setup: 'road-fail', clip: '#rl-results',
+        callouts: [
+          { sel: '.rl-verdict', label: 'Does it meet every class?' },
+          { sel: '.rl-chk', label: 'Required against calculated, with the failing line marked', },
+          { sel: '.rl-isolux', label: 'Lux over one field between two poles' },
+        ] } },
+    { title: 'Find the spacing that works',
+      html: 'If the design fails, press <strong>Find max spacing</strong>. It tries every spacing from <em>From</em> to <em>to</em> and reports the largest that passes every class, with the power and poles per kilometre it gives. The strip shows which spacings pass and which fail. <strong>Use</strong> puts that spacing in the design.',
+      shot: { file: 'road-lighting-6.png', alt: 'The Max spacing result with the pass and fail strip',
+        setup: 'road-sweep', clip: '#rl-results',
+        callouts: [
+          { sel: '.rl-best', label: 'The largest spacing that passes, and what it costs in W/km' },
+          { sel: '.rl-sw-strip', label: 'Pass or fail at each spacing tried' },
+        ] } },
+    { title: 'Let it optimise the layout',
+      html: '<strong>Optimise…</strong> tries every combination of mounting height, tilt, overhang, luminaire and dimming level, each at its largest passing spacing, and ranks the passing options by W/km, poles per kilometre, PDI or spacing. Press <strong>Run</strong>, then <strong>Use</strong> on the option you want; it is written into every row.',
+      shot: { file: 'road-lighting-7.png', alt: 'The Optimise dialog with ranked options',
+        setup: 'road-opt', clip: 'viewport',
+        callouts: [
+          { sel: '#rl-opt-modal .rl-form', label: 'The heights, tilts, overhangs and flux levels to try' },
+          { sel: '#rl-opt-modal .rl-grid-scroll', label: 'Passing options, best first — Use applies one' },
+        ] } },
+    { title: 'Use the result',
+      html: '<strong>Apply spacing to circuit…</strong> (shown when the project has street-lighting circuits) writes the pole spacing, and the luminaire’s wattage if it has one, into the circuit you pick, so its volt drop and earth-loop check use the same layout. <strong>PDF report</strong> prints the design, the checks and the isolux plot.' },
+  ],
+  tips: ['<strong>Classes &amp; surfaces</strong> lists every category with its limits and the road-surface tables.', 'Changing a row’s height, tilt or luminaire in a preset arrangement applies it to every row; choose <em>Custom rows</em> to set rows apart.', 'A generic optic is for feasibility only. Import the product’s IES or LDT file before relying on a pass.', 'If the file’s C90 plane does not face the street, set the luminaire’s <em>Rotate C-planes</em> in the rail.'],
+  related: [{ help: 'design-roadlight', label: 'Road lighting design' }, { help: 'design-roomlight', label: 'Room, outdoor & emergency lighting' }] },
 
 // ───────────────────────────────────────────────────────────────────────────
 { id: 'trip-unit', group: 'protection', title: 'Set up a breaker’s trip unit',
@@ -1460,7 +1612,7 @@ const HELP_GUIDE_LINKS = [
     } },
   { host: '#plan-toolbar', guide: 'plan-select' },
   { after: 'button[data-action="diagram"]', guide: 'demand-plan' },
-  { host: '.sl-toolbar', guide: 'street-light' },
+  { host: '.sl-toolbar', guide: () => (typeof StreetLight !== 'undefined' && StreetLight._view === 'design' ? 'road-lighting' : 'street-light') },
   { host: '.tu-head', guide: 'trip-unit' },
   { after: '#lr-tag-scope', guide: 'lightning' },
   { after: '#btn-eg-save', guide: 'earth-grid' },
