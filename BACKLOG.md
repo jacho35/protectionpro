@@ -421,6 +421,9 @@ Help ▸ Guides (`frontend/js/help-guides.js`, pictures in `frontend/img/help/`)
 
 ## Completed
 
+### Lighting: tooltips on every entry box (2026-10-22)
+- Every input in the room, outdoor area, fence and escape-route lighting panels, the room's emergency section, the suggested-layout pickers and a Light Fitting's properties explains itself on hover / long-press (`RoomLighting.TIPS`, applied by `RoomLighting.tipify` after each properties render, also read out as the field's description). Labels with a tip are dotted-underlined. Ra is called out as not calculated.
+
 ### Lighting: PDF report options dialog + disabled-button fix (2026-10-22)
 - **Fix:** on the Lighting tab, *PDF report* and *Calculate all* were rendered disabled when the tab was opened with no zones and never re-enabled after a room was drawn, so the PDF could not be made. They are always enabled now (Calculate all says to draw a room first when there is none).
 - **Report options.** *PDF report* opens a dialog (`LightReport.askOptions`): which zones (grouped by floor, All / None / Failing only; a zone without a result is listed but can't be ticked), which sections (summary table, energy table, a page per zone, method page) and what each zone's page holds (false-colour plot, results against the requirement, luminaire schedule, assumptions and notes). The last choice is kept for the session. Section numbers follow what is included.
