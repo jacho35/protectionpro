@@ -32,7 +32,8 @@ const CableSchedules = {
 
   reticRows() {
     const R = AppState.reticulation;
-    if (!R || !Array.isArray(R.kiosks) || !R.kiosks.length || typeof Retic === 'undefined') return null;
+    const street = this.streetRows();
+    if (!R || !Array.isArray(R.kiosks) || typeof Retic === 'undefined' || (!R.kiosks.length && !street.length)) return null;
     const res = AppState.reticResults;
     const byId = {};
     if (res && Array.isArray(res.kiosks)) for (const kr of res.kiosks) byId[kr.kioskId] = kr;
@@ -90,11 +91,39 @@ const CableSchedules = {
       }
     }
     return {
-      kind: 'retic', rows: [...feeders, ...services],
-      groups: [{ id: 'feeder', label: 'Kiosk feeders', n: feeders.length }, { id: 'service', label: 'Erf services', n: services.length }],
+      kind: 'retic', rows: [...feeders, ...services, ...street],
+      groups: [{ id: 'feeder', label: 'Kiosk feeders', n: feeders.length }, { id: 'service', label: 'Erf services', n: services.length }, ...(street.length ? [{ id: 'street', label: 'Street lighting', n: street.length }] : [])],
       limits: `Limits: feeder VD ${fLimit}% cumulative · service VD ${sLimit}% (set in Demand)`,
       stale: !res,
     };
+  },
+
+  // One row per street-lighting circuit: its whole cable run (feeder, spans and
+  // spurs, with the snaking and loop-in allowances the engine uses), checked
+  // against the circuit's own result (volt drop, earth loop, cable rating).
+  streetRows() {
+    if (typeof StreetLight === 'undefined' || !StreetLight.data) return [];
+    const rows = [];
+    for (const c of StreetLight.circuits) {
+      if (!c.poles.length) continue;
+      const r = StreetLight._results[c.id];
+      const rx = c.cable ? Retic._cableRX(c.cable) : null;
+      const rating = rx ? rx.rating : null;
+      const ib = r ? Math.max(...Object.values(r.phaseA || {}), r.neutralA || 0) : null;
+      const loading = ib != null && rating ? ib / rating * 100 : null;
+      let st;
+      if (!c.cable) st = this._status('gry', 'No cable', 'Choose a cable for the circuit in Street lighting');
+      else if (!r) st = this._status('gry', 'No result', 'Open Street lighting to calculate the circuit');
+      else if (!r.pass) {
+        const why = { vd: `volt drop ${r.worstVdPct.toFixed(1)}% over ${r.vdLimitPct}%`, cumVd: `cumulative ${r.worstCumVdPct.toFixed(1)}% over ${r.cumVdLimitPct}%`, zs: 'earth loop', rating: 'cable rating', cable: 'no cable' };
+        st = this._status('bad', 'Fails', (r.fails || []).map(f => why[f] || f).join(', '));
+      } else st = this._judge(loading, r.worstCumVdPct, r.cumVdLimitPct);
+      rows.push({
+        group: 'street', ref: c.name, from: StreetLight._sourceName(c.source), to: `${c.poles.length} poles`, cable: c.cable ? Rates.cableDesc(c.cable) : '',
+        length: StreetLight.cableLengthM(c), ib, rating, loading, vdLeg: r ? r.worstVdPct : null, vdCum: r ? r.worstCumVdPct : null, status: st,
+      });
+    }
+    return rows;
   },
 
   _endName(compId, port) {
@@ -312,8 +341,8 @@ const CableSchedules = {
         <td class="rt-num">${f(r.length, 0)}</td><td class="rt-num">${f(r.ib)}</td><td class="rt-num">${f(r.rating, 0)}</td><td>${bar(r.loading)}</td>
         <td class="rt-num">${r.vdLeg == null ? '—' : f(r.vdLeg, 2) + '%'}</td><td class="rt-num"><b>${r.vdCum == null ? '—' : f(r.vdCum, 2) + '%'}</b></td><td>${pill(r.status)}</td></tr>`).join('');
       const head = '<thead><tr><th style="width:120px">Ref</th><th>From</th><th>To</th><th style="width:170px">Cable</th><th class="rt-num" style="width:78px">Length (m)</th><th class="rt-num" style="width:84px">Design I (A)</th><th class="rt-num" style="width:78px">Rating (A)</th><th style="width:120px">Loading</th><th class="rt-num" style="width:70px">VD leg</th><th class="rt-num" style="width:78px">VD cum.</th><th style="width:110px">Status</th></tr></thead>';
-      const fr = rows('feeder'), sr = rows('service');
-      html = `<table class="rt-tbl rt-ro-tbl bq-tbl cs-tbl">${head}<tbody>${fr ? `<tr class="bq-grp"><td colspan="11">Kiosk feeders</td></tr>${fr}` : ''}${sr ? `<tr class="bq-grp"><td colspan="11">Erf services</td></tr>${sr}` : ''}${!fr && !sr ? '<tr><td colspan="11" class="rt-empty-row">Nothing matches the filter.</td></tr>' : ''}</tbody></table>`;
+      const fr = rows('feeder'), sr = rows('service'), lr = rows('street');
+      html = `<table class="rt-tbl rt-ro-tbl bq-tbl cs-tbl">${head}<tbody>${fr ? `<tr class="bq-grp"><td colspan="11">Kiosk feeders</td></tr>${fr}` : ''}${sr ? `<tr class="bq-grp"><td colspan="11">Erf services</td></tr>${sr}` : ''}${lr ? `<tr class="bq-grp"><td colspan="11">Street lighting circuits</td></tr>${lr}` : ''}${!fr && !sr && !lr ? '<tr><td colspan="11" class="rt-empty-row">Nothing matches the filter.</td></tr>' : ''}</tbody></table>`;
     } else {
       const sm = vis.filter(r => r.group === 'submain').map(r => `<tr><td class="rt-code">${escHtml(r.ref)}</td><td>${escHtml(r.from)}</td><td>${escHtml(r.to)}</td><td title="${escHtml(r.cable)}">${escHtml(r.cable)}${r.par > 1 ? ` <span class="rt-note-i">×${r.par}</span>` : ''}</td>
         <td class="rt-num">${f(r.length, 0)}</td><td>${escHtml(r.protection || '—')}</td><td class="rt-num">${f(r.ib)}</td><td class="rt-num">${f(r.rating, 0)}</td><td>${bar(r.loading)}</td><td class="rt-num">${r.vdLeg == null ? '—' : f(r.vdLeg, 2) + '%'}</td><td>${pill(r.status)}</td></tr>`).join('');
@@ -343,7 +372,7 @@ const CableSchedules = {
     const n = (v, k = 2) => v == null || isNaN(v) ? '' : +Number(v).toFixed(k);
     if (d.kind === 'retic') {
       const rows = [['Type', 'Ref', 'From', 'To', 'Cable', 'Length (m)', 'Design I (A)', 'Rating (A)', 'Loading %', 'VD leg %', 'VD cumulative %', 'Status']];
-      for (const r of d.rows) rows.push([r.group === 'feeder' ? 'Feeder' : 'Service', r.ref, r.from, r.to, r.cable, n(r.length, 1), n(r.ib), n(r.rating, 0), n(r.loading, 1), n(r.vdLeg), n(r.vdCum), r.status.text]);
+      for (const r of d.rows) rows.push([{ feeder: 'Feeder', service: 'Service', street: 'Street lighting' }[r.group], r.ref, r.from, r.to, r.cable, n(r.length, 1), n(r.ib), n(r.rating, 0), n(r.loading, 1), n(r.vdLeg), n(r.vdCum), r.status.text]);
       return rows;
     }
     const rows = [['Type', 'Ref / Board', 'Way', 'From / Description', 'To', 'Cable', 'Live mm²', 'ECC mm²', 'Length (m)', 'Protection', 'Ib (A)', 'Iz (A)', 'Loading %', 'VD %', 'Status', 'Notes']];
