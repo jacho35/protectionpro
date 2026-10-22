@@ -35,7 +35,7 @@ const PlanUI = {
   // kind → the tool id that draws it; disabled until that tool is registered.
   _toolFor(kind) {
     return { element: 'place', route: 'route', trench: 'trench',
-      crossing: 'crossing', text: 'text', measurement: 'measurement', room: 'room', roomdetect: 'roomdetect' }[kind];
+      crossing: 'crossing', text: 'text', measurement: 'measurement', room: 'room', roomdetect: 'roomdetect', perimeter: 'perimeter' }[kind];
   },
 
   renderPalette() {
@@ -330,7 +330,8 @@ const PlanUI = {
     } else if (kind === 'room') {
       const f = PlanEngine.factor();
       const area = f ? (PlanEngine._polyArea(item.points) * f * f) : null;
-      title = 'Room / Area' + (area != null ? ` — ${area.toFixed(1)} m²` : '');
+      title = item.kind === 'perimeter' ? 'Perimeter / fence' + (f ? ` — ${(PlanEngine._polyLen(item.points) * f).toFixed(0)} m` : '')
+        : (item.kind === 'outdoor' ? 'Outdoor area' : 'Room / Area') + (area != null ? ` — ${area.toFixed(1)} m²` : '');
       fields = PLAN_DEFS.room.fields;
       getVal = (k) => item[k];
     } else if (kind === 'text') {

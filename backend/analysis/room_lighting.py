@@ -576,7 +576,7 @@ def _unrot(P, ang_deg):
     return _rot(P, -ang_deg)
 
 
-def _lattices(room: _Room, n_seed: int, angles):
+def _lattices(room: _Room, n_seed: int, angles, hi: float = 2.2, lo: float = 0.45):
     """Candidate lattices (axis-aligned in a rotated frame, half-spacing to the
     bounding box), clipped to the outline and kept ≥ 0.3 m off the walls."""
     seen, out = set(), []
@@ -597,7 +597,7 @@ def _lattices(room: _Room, n_seed: int, angles):
                 ok = _pip(room.P, pts[:, 0], pts[:, 1]) & (_dist_to_edges(room.P, pts[:, 0], pts[:, 1]) >= 0.3)
                 pts = pts[ok]
                 n = len(pts)
-                if n < 1 or n > max(2.2 * n_seed, n_seed + 4) or n < 0.45 * n_seed:
+                if n < 1 or n > max(hi * n_seed, n_seed + 4) or n < lo * n_seed:
                     continue
                 key = (round(ang, 1), tuple(sorted((round(p[0], 2), round(p[1], 2)) for p in pts)))
                 if key in seen:

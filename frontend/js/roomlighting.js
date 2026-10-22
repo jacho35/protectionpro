@@ -87,7 +87,16 @@ const RoomLighting = {
   },
 
   // ─── Properties panel section ───
+  typeSelect(room) {
+    const k = room.kind || 'room';
+    return `<label class="plan-field"><span>Type</span><select data-rl-kind style="width:100%">
+      <option value="room"${k === 'room' ? ' selected' : ''}>Room (indoor)</option>
+      <option value="outdoor"${k === 'outdoor' ? ' selected' : ''}>Outdoor area</option>
+      <option value="perimeter"${k === 'perimeter' ? ' selected' : ''}>Perimeter / fence</option></select></label>`;
+  },
+
   panel(room) {
+    if ((room.kind === 'outdoor' || room.kind === 'perimeter') && typeof AreaCalc !== 'undefined') return AreaCalc.panel(room);
     const L = this.read(room);
     const f = PlanEngine.factor();
     const area = f ? PlanEngine._polyArea(room.points) * f * f : null;
@@ -100,6 +109,7 @@ const RoomLighting = {
       <input type="number" data-rl="${key}" value="${L[key]}" step="${step}" ${extra || ''} style="width:100%"><small>${unit}</small></label>`;
     return `<div class="rl-room" data-rl-room="${escHtml(room.id)}" style="margin-top:12px;border-top:1px solid var(--border,#d9dee4);padding-top:10px">
       <div class="plan-props-title" style="font-size:13px">Lighting${area != null ? ` — ${(area).toFixed(1)} m²` : ''}</div>
+      ${this.typeSelect(room)}
       <label class="plan-field"><span>Task</span><select data-rl="task" style="width:100%">${opts}</select></label>
       <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px">
         ${num('em', 'Ēm', 'lx', 10, 'min="1"')}${num('uo', 'U₀', '', 0.05, 'min="0" max="1"')}
@@ -121,6 +131,7 @@ const RoomLighting = {
   _bound: false,
   bind(propsEl) {
     if (typeof RoomCalc !== 'undefined') RoomCalc.bind(propsEl);
+    if (typeof AreaCalc !== 'undefined') AreaCalc.bind(propsEl);
     if (this._bound || !propsEl) return;
     this._bound = true;
     const commit = (fn) => {
@@ -132,6 +143,16 @@ const RoomLighting = {
     };
     propsEl.addEventListener('change', (e) => {
       const t = e.target;
+      if (t.dataset && 'rlKind' in t.dataset) {
+        const w = propsEl.querySelector('[data-rl-room], [data-ac-room]');
+        const room = w && (AppState.planMarkup.rooms || []).find(r => r.id === (w.dataset.rlRoom || w.dataset.acRoom));
+        if (room) {
+          room.kind = t.value === 'room' ? undefined : t.value;
+          if (room.kind === 'perimeter' && room.lighting && room.lighting.closed == null) room.lighting.closed = false;
+          PlanMarkup.snapshot(); PlanMarkup.markDirty(); PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true });
+        }
+        return;
+      }
       if (t.dataset && t.dataset.rl) commit(room => this.set(room, t.dataset.rl, t.value));
       else if (t.dataset && 'rlMfpreset' in t.dataset && t.value) commit(room => this.set(room, 'mf', t.value));
     });

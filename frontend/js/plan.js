@@ -132,7 +132,7 @@ const PlanMarkup = {
       else if (act.dataset.action === 'redo') { this.redo(); return; }
       else if (act.dataset.action === 'fit') PlanEngine.zoomFit();
       else if (act.dataset.action === 'photolib' && typeof PhotoLib !== 'undefined') PhotoLib.open();
-      else if (act.dataset.action === 'roomcalc' && typeof RoomCalc !== 'undefined') RoomCalc.run();
+      else if (act.dataset.action === 'roomcalc' && typeof RoomCalc !== 'undefined') RoomCalc.run().then(() => (typeof AreaCalc !== 'undefined') ? AreaCalc.run() : null);
       else if (act.dataset.action === 'lux' && typeof PlanLux !== 'undefined') PlanLux.toggle();
       else if (act.dataset.action === 'push' && typeof PlanSync !== 'undefined') {
         // Reticulation → demand schedules; Building → linked SLD boards/feeders.
@@ -778,6 +778,7 @@ const PlanMarkup = {
       case 'trench': return 'Trench — click points; ✓ Done / Enter finishes. Esc cancels.';
       case 'measurement': return 'Measure — click points; ✓ Done / Enter finishes. Esc cancels.';
       case 'room': return 'Room — click ≥3 points; ✓ Done / Enter closes it. Esc cancels.';
+      case 'perimeter': return 'Perimeter — click points along the fence; ✓ Done / Enter finishes. Esc cancels.';
       case 'roomdetect': return 'Detect room — click inside a room. Esc to stop.';
       case 'crossing': return 'Crossing — click two points. Esc cancels.';
       case 'calibrate': return 'Calibrate — click two points a known distance apart.';

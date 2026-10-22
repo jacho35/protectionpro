@@ -60,7 +60,7 @@ const PlanTools = {
   // cable's terminals, so they're kept (and a straight 2-point cable has none).
   deleteVertexAt(pt) {
     for (const rm of (AppState.planMarkup.rooms || [])) {
-      if (!PlanMarkup.selectedIds.has(rm.id) || rm.points.length <= 3) continue;
+      if (!PlanMarkup.selectedIds.has(rm.id) || rm.points.length <= (rm.kind === 'perimeter' ? 2 : 3)) continue;
       const vi = PlanEngine.findVertexAt(rm.points, pt, 9);
       if (vi < 0) continue;
       rm.points.splice(vi, 1);
@@ -717,10 +717,22 @@ PlanTools.register(makePolylineTool('measurement', '#0ea5e9', (pts) => {
   PlanMarkup.snapshot(); PlanMarkup.markDirty();
 }));
 
-// ROOM — closed-polygon zone (Enter closes; needs ≥3 points)
-PlanTools.register(makePolylineTool('room', PLAN_DEFS.room.stroke, (pts) => {
+// ROOM — closed-polygon zone (Enter closes; needs ≥3 points). opts.type 'outdoor'
+// makes it an outdoor area for the lighting calculation.
+PlanTools.register(makePolylineTool('room', PLAN_DEFS.room.stroke, (pts, opts) => {
   if (pts.length < 3) { UI.toast('A room needs at least 3 points.', 'warn'); return; }
-  const r = { id: AppState.planGenId('pmrm'), name: PlanMarkup.nextCounter('_room', 'Room '), points: pts, color: null };
+  const outdoor = !!(opts && opts.type === 'outdoor');
+  const r = { id: AppState.planGenId('pmrm'), name: PlanMarkup.nextCounter(outdoor ? '_outdoor' : '_room', outdoor ? 'Area ' : 'Room '), points: pts, color: null };
+  if (outdoor) r.kind = 'outdoor';
+  AppState.planMarkup.rooms.push(r);
+  PlanMarkup.selectOnly(r.id);
+  PlanMarkup.snapshot(); PlanMarkup.markDirty(); PlanMarkup.refreshProps();
+}));
+
+// PERIMETER — an open (or closed, in its panel) fence line for the lighting calculation
+PlanTools.register(makePolylineTool('perimeter', '#7c3aed', (pts) => {
+  if (pts.length < 2) { UI.toast('A perimeter needs at least 2 points.', 'warn'); return; }
+  const r = { id: AppState.planGenId('pmrm'), name: PlanMarkup.nextCounter('_perimeter', 'Fence '), points: pts, color: null, kind: 'perimeter' };
   AppState.planMarkup.rooms.push(r);
   PlanMarkup.selectOnly(r.id);
   PlanMarkup.snapshot(); PlanMarkup.markDirty(); PlanMarkup.refreshProps();
