@@ -27,8 +27,27 @@ lighting-design chain:
   • Energy — installed W, W/m² and W/m² per 100 lx.
 
 Illuminance is reported maintained (× the room's maintenance factor); UGR is
-not. Everything is diffuse, empty and obstruction-free: furniture, windows and
-doors are not modelled.
+not. Every surface is diffuse.
+
+Objects (the 3D view, all optional — a room without them is calculated
+exactly as before):
+  • obstacles — boxes (desks, shelving, partitions, columns) on the plan,
+    turned by `rot`, from z0 up h. A box that blocks light casts shadows in
+    the direct light, hides patches from each other in the interreflection
+    and is itself meshed into patches with its own reflectance. Floor,
+    ceiling and wall patches it covers drop out; work-plane points inside it
+    are left out of the statistics.
+  • openings — windows and doors, a rectangle on a wall (plan end points a, b,
+    sill, height). The wall patches they cover take the opening's
+    reflectance (area-weighted where a patch is only partly covered). No
+    daylight: a window is a surface that reflects little and lets the rest
+    out.
+  • surfaces — calculation surfaces (a task area on a desk, a vertical board):
+    a rectangle facing up, down or sideways, gridded and reported like the
+    work plane (Ē, Emin, Emax, U₀ against its own target).
+  • patches: true returns every patch (centre, half-extents, maintained
+    illuminance, reflectance) so the 3D view can draw the surfaces as bright
+    as they are.
 
 Geometry: plan metres with y up; z up from the floor. A luminaire's C0 axis
 points along +x rotated by `rotate` degrees counter-clockwise.
@@ -36,7 +55,10 @@ points along +x rotated by `rotate` degrees counter-clockwise.
 Request (camelCase): { rooms:[{ id, name, polygon:[[x,y]…], ceilH, workH,
 wallZone, rhoC, rhoW, rhoF, mf, targets:{em,uo,ugr,wallE,ceilE,ez},
 luminaires:[{ id, x, y, photometryId, mount:'recessed'|'surface'|'suspended',
-drop, rotate, fluxPct, lumens?, watts? }] }], photometry:{id: web}, detail }.
+drop, rotate, fluxPct, lumens?, watts? }], obstacles:[{ id, cx, cy, w, d, rot,
+z0, h, rho, blocks }], openings:[{ id, kind, a:[x,y], b:[x,y], sill, h, rho }],
+surfaces:[{ id, name, cx, cy, w, d, rot, z, h, face:'up'|'down'|'vertical',
+target }], patches }], photometry:{id: web}, detail }.
 """
 
 from __future__ import annotations
@@ -158,6 +180,10 @@ class _Room:
         self.detail = detail
         self.warnings: list[str] = []
         self.lum = self._luminaires(r.get("luminaires") or [], webs)
+        self.boxes = [b for b in (_Box(o) for o in (r.get("obstacles") or []) if o.get("blocks", True) is not False) if b.ok]
+        self.openings = [o for o in (r.get("openings") or []) if isinstance(o, dict)]
+        self.surfaces = [o for o in (r.get("surfaces") or []) if isinstance(o, dict)]
+        self.want_patches = bool(r.get("patches"))
 
     def _luminaires(self, items, webs):
         xs, ys, zs, rot, sc, wt, pid, ids, area = [], [], [], [], [], [], [], [], []
@@ -186,6 +212,89 @@ class _Room:
         return {"x": np.array(xs), "y": np.array(ys), "z": np.array(zs), "rot": np.array(rot),
                 "scale": np.array(sc), "watts": np.array(wt), "web": np.array(pid, dtype=object),
                 "id": ids, "area": np.array(area), "n": len(xs)}
+
+
+# ─── Obstacles ──────────────────────────────────────────────────────────
+
+class _Box:
+    """A box on the plan: centre (cx, cy), w along its own x (turned `rot`°
+    counter-clockwise), d along its y, from z0 to z0 + h."""
+
+    def __init__(self, o: dict):
+        self.id = o.get("id")
+        self.cx, self.cy = _f(o.get("cx"), math.nan), _f(o.get("cy"), math.nan)
+        self.hw = max(_f(o.get("w"), 0.0), 0.0) / 2.0
+        self.hd = max(_f(o.get("d"), 0.0), 0.0) / 2.0
+        self.z0 = max(_f(o.get("z0"), 0.0), 0.0)
+        self.z1 = self.z0 + max(_f(o.get("h"), 0.0), 0.0)
+        a = math.radians(_f(o.get("rot"), 0.0))
+        self.c, self.s = math.cos(a), math.sin(a)
+        self.rho = min(max(_f(o.get("rho"), 0.5), 0.0), 0.99)
+        self.ok = (math.isfinite(self.cx) and math.isfinite(self.cy) and self.hw > 1e-3 and self.hd > 1e-3
+                   and self.z1 - self.z0 > 1e-3)
+
+    def local(self, x, y):
+        dx, dy = x - self.cx, y - self.cy
+        return dx * self.c + dy * self.s, -dx * self.s + dy * self.c
+
+    def world(self, u, v):
+        return self.cx + u * self.c - v * self.s, self.cy + u * self.s + v * self.c
+
+    def contains(self, x, y, z, pad=0.0):
+        u, v = self.local(x, y)
+        return ((np.abs(u) < self.hw - pad) & (np.abs(v) < self.hd - pad)
+                & (z > self.z0 + pad) & (z < self.z1 - pad))
+
+    def covers(self, x, y):
+        u, v = self.local(x, y)
+        return (np.abs(u) < self.hw) & (np.abs(v) < self.hd)
+
+
+def _seg_box(b: _Box, ax, ay, az, bx, by, bz):
+    """The segment A→B passes through the inside of box b (arrays broadcast)."""
+    pu, pv = b.local(ax, ay)
+    qu, qv = b.local(bx, by)
+    t0 = np.zeros(np.broadcast(pu, qu, az, bz).shape)
+    t1 = np.ones(t0.shape)
+    for p, q, lo, hi in ((pu, qu, -b.hw, b.hw), (pv, qv, -b.hd, b.hd), (az, bz, b.z0, b.z1)):
+        d = q - p
+        par = np.abs(d) < 1e-12
+        with np.errstate(divide="ignore", invalid="ignore"):
+            ta = (lo - p) / d
+            tb = (hi - p) / d
+        inside = (p > lo) & (p < hi)
+        tmin = np.where(par, np.where(inside, -np.inf, np.inf), np.minimum(ta, tb))
+        tmax = np.where(par, np.where(inside, np.inf, -np.inf), np.maximum(ta, tb))
+        t0 = np.maximum(t0, tmin)
+        t1 = np.minimum(t1, tmax)
+    return (t1 - t0) > 1e-6
+
+
+def _blocked(room, ax, ay, az, bx, by, bz):
+    """Any blocking obstacle of the room on the segment A→B. Only the segments
+    whose bounding box meets a box's bounding box are traced through it."""
+    ax, ay, az, bx, by, bz = np.broadcast_arrays(ax, ay, az, bx, by, bz)
+    shape = ax.shape
+    ax, ay, az, bx, by, bz = (a.ravel() for a in (ax, ay, az, bx, by, bz))
+    lox, hix = np.minimum(ax, bx), np.maximum(ax, bx)
+    loy, hiy = np.minimum(ay, by), np.maximum(ay, by)
+    loz, hiz = np.minimum(az, bz), np.maximum(az, bz)
+    out = np.zeros(ax.shape, bool)
+    for b in room.boxes:
+        r = abs(b.hw * b.c) + abs(b.hd * b.s), abs(b.hw * b.s) + abs(b.hd * b.c)
+        cand = ((hiz > b.z0) & (loz < b.z1) & (hix > b.cx - r[0]) & (lox < b.cx + r[0])
+                & (hiy > b.cy - r[1]) & (loy < b.cy + r[1]) & ~out)
+        k = np.flatnonzero(cand)
+        if len(k):
+            out[k] = _seg_box(b, ax[k], ay[k], az[k], bx[k], by[k], bz[k])
+    return out.reshape(shape)
+
+
+def _in_boxes(room, x, y, z):
+    m = np.zeros(np.shape(x), bool)
+    for b in room.boxes:
+        m |= b.contains(x, y, z)
+    return m
 
 
 # ─── Direct light ───────────────────────────────────────────────────────
@@ -222,6 +331,10 @@ def _direct(room, webs, pts, nrm, chunk=400):
         if not room.convex:
             vis = _clear(room.P, p[:, 0:1], p[:, 1:2], lum["x"][None, :], lum["y"][None, :])
             e = np.where(vis, e, 0.0)
+        if room.boxes:
+            pe = p + q * 1e-3
+            blk = _blocked(room, pe[:, 0:1], pe[:, 1:2], pe[:, 2:3], lum["x"][None, :], lum["y"][None, :], lum["z"][None, :])
+            e = np.where(blk, 0.0, e)
         E[s:s + chunk] = e.sum(axis=1)
     return E
 
@@ -244,14 +357,30 @@ def _patches(room: _Room):
     if len(X) == 0:                       # a sliver: use the centroid
         X, Y = np.array([room.P[:, 0].mean()]), np.array([room.P[:, 1].mean()])
     cell_a = room.area / len(X)           # patches share the true area exactly
-    pos, nrm, area, rho, kind = [], [], [], [], []
+    hx, hy = (room.xmax - room.xmin) / nx / 2.0, (room.ymax - room.ymin) / ny / 2.0
+    pos, nrm, area, rho, kind, du, dv, src = [], [], [], [], [], [], [], []
+
+    def add(p, n, a, r, k, u, v, o=-1):
+        m = len(p)
+        pos.append(p); nrm.append(np.tile(n, (m, 1)) if np.ndim(n) == 1 else n)
+        area.append(np.full(m, a) if np.ndim(a) == 0 else a)
+        rho.append(np.full(m, r) if np.ndim(r) == 0 else r)
+        kind.append(np.full(m, k)); du.append(np.tile(u, (m, 1))); dv.append(np.tile(v, (m, 1)))
+        src.append(np.full(m, o))
+
     for z, nz, r, k in ((0.0, 1.0, room.rho["f"], 0), (room.H, -1.0, room.rho["c"], 1)):
-        pos.append(np.stack([X, Y, np.full(len(X), z)], axis=1))
-        nrm.append(np.tile([0.0, 0.0, nz], (len(X), 1)))
-        area.append(np.full(len(X), cell_a)); rho.append(np.full(len(X), r)); kind.append(np.full(len(X), k))
+        keep = np.ones(len(X), bool)
+        for b in room.boxes:                # floor under a box standing on it, ceiling above one reaching it
+            if (k == 0 and b.z0 < 0.01) or (k == 1 and b.z1 > room.H - 0.01):
+                keep &= ~b.covers(X, Y)
+        if not keep.any():
+            keep[0] = True
+        add(np.stack([X[keep], Y[keep], np.full(int(keep.sum()), z)], axis=1), [0.0, 0.0, nz], cell_a, r, k,
+            [hx, 0.0, 0.0], [0.0, hy, 0.0])
     ws = cs * 1.5
     nv = max(int(math.ceil(room.H / ws)), 2)
     n = len(room.P)
+    zs = (np.arange(nv) + 0.5) / nv * room.H
     for i in range(n):
         p0, p1 = room.P[i], room.P[(i + 1) % n]
         L = float(np.hypot(*(p1 - p0)))
@@ -263,17 +392,88 @@ def _patches(room: _Room):
         inx, iny = -ey, ex                                  # inward normal (outline is CCW)
         px = p0[0] + t * (p1[0] - p0[0])
         py = p0[1] + t * (p1[1] - p0[1])
-        zs = (np.arange(nv) + 0.5) / nv * room.H
         PX = np.repeat(px, nv); PY = np.repeat(py, nv); PZ = np.tile(zs, ns)
-        pos.append(np.stack([PX, PY, PZ], axis=1))
-        nrm.append(np.tile([inx, iny, 0.0], (len(PX), 1)))
-        area.append(np.full(len(PX), (L / ns) * (room.H / nv)))
-        rho.append(np.full(len(PX), room.rho["w"])); kind.append(np.full(len(PX), 2))
+        r = np.full(len(PX), room.rho["w"])
+        if room.openings:
+            r = _opening_rho(room, r, p0, ex, ey, L, np.repeat(t * L, nv), PZ, L / ns / 2.0, room.H / nv / 2.0)
+        keep = np.ones(len(PX), bool)
+        if room.boxes:                      # a box pushed against the wall hides that piece of it
+            keep = ~_in_boxes(room, PX + inx * 1e-2, PY + iny * 1e-2, PZ)
+            if not keep.any():
+                keep[0] = True
+        add(np.stack([PX[keep], PY[keep], PZ[keep]], axis=1), [inx, iny, 0.0], (L / ns) * (room.H / nv), r[keep], 2,
+            [ex * L / ns / 2.0, ey * L / ns / 2.0, 0.0], [0.0, 0.0, room.H / nv / 2.0])
+    for bi, b in enumerate(room.boxes):
+        _box_patches(room, b, bi, cs, add)
     pos = np.vstack(pos); nrm = np.vstack(nrm)
     area = np.concatenate(area); rho = np.concatenate(rho); kind = np.concatenate(kind)
+    du = np.vstack(du); dv = np.vstack(dv); src = np.concatenate(src)
     if len(pos) > MAX_PATCHES:
         room.warnings.append(f"{len(pos)} surface patches — coarse mesh recommended for a room this large")
-    return pos, nrm, area, rho, kind
+    return pos, nrm, area, rho, kind, du, dv, src
+
+
+def _opening_rho(room, r, p0, ex, ey, L, t, z, ht, hz):
+    """Wall reflectance with the windows and doors on this wall laid over it,
+    weighted by how much of each patch they cover."""
+    cover = np.zeros(len(r))
+    rho_open = np.zeros(len(r))
+    for o in room.openings:
+        try:
+            ax, ay = float(o["a"][0]), float(o["a"][1])
+            bx, by = float(o["b"][0]), float(o["b"][1])
+        except (KeyError, IndexError, TypeError, ValueError):
+            continue
+        # both ends on this wall's line (within 10 cm)
+        na = abs((ax - p0[0]) * ey - (ay - p0[1]) * ex)
+        nb = abs((bx - p0[0]) * ey - (by - p0[1]) * ex)
+        if na > 0.1 or nb > 0.1:
+            continue
+        ta = (ax - p0[0]) * ex + (ay - p0[1]) * ey
+        tb = (bx - p0[0]) * ex + (by - p0[1]) * ey
+        t0, t1 = max(min(ta, tb), 0.0), min(max(ta, tb), L)
+        if t1 - t0 < 1e-3:
+            continue
+        z0 = max(_f(o.get("sill"), 0.0), 0.0)
+        z1 = min(z0 + max(_f(o.get("h"), 0.0), 0.0), room.H)
+        ro = min(max(_f(o.get("rho"), 0.1 if o.get("kind") == "window" else 0.4), 0.0), 0.99)
+        ov = (np.clip(np.minimum(t + ht, t1) - np.maximum(t - ht, t0), 0.0, None)
+              * np.clip(np.minimum(z + hz, z1) - np.maximum(z - hz, z0), 0.0, None)) / (4.0 * ht * hz)
+        ov = np.minimum(ov, 1.0 - cover)
+        rho_open += ov * ro
+        cover += ov
+    return r * (1.0 - cover) + rho_open
+
+
+def _box_patches(room, b: _Box, bi, cs, add):
+    """Patches on the faces of one box (its base only when lifted, its top only
+    when below the ceiling); faces outside the outline are left out."""
+    def grid(n_u, n_v):
+        u = (np.arange(n_u) + 0.5) / n_u * 2.0 - 1.0
+        v = (np.arange(n_v) + 0.5) / n_v * 2.0 - 1.0
+        U, V = np.meshgrid(u, v)
+        return U.ravel(), V.ravel()
+
+    ux = np.array([b.c, b.s, 0.0]); uy = np.array([-b.s, b.c, 0.0]); uz = np.array([0.0, 0.0, 1.0])
+    hz = (b.z1 - b.z0) / 2.0
+    ctr = np.array([b.cx, b.cy, b.z0 + hz])
+    faces = []
+    if b.z1 < room.H - 0.01:
+        faces.append((ctr + uz * hz, uz, ux * b.hw, uy * b.hd))
+    if b.z0 > 0.01:
+        faces.append((ctr - uz * hz, -uz, ux * b.hw, uy * b.hd))
+    faces += [(ctr + ux * b.hw, ux, uy * b.hd, uz * hz), (ctr - ux * b.hw, -ux, uy * b.hd, uz * hz),
+              (ctr + uy * b.hd, uy, ux * b.hw, uz * hz), (ctr - uy * b.hd, -uy, ux * b.hw, uz * hz)]
+    for c, n, eu, ev in faces:
+        lu, lv = float(np.linalg.norm(eu)) * 2.0, float(np.linalg.norm(ev)) * 2.0
+        n_u, n_v = max(int(math.ceil(lu / cs)), 1), max(int(math.ceil(lv / cs)), 1)
+        U, V = grid(n_u, n_v)
+        P = c[None, :] + U[:, None] * eu[None, :] + V[:, None] * ev[None, :]
+        q = P + n[None, :] * 1e-2
+        keep = _pip(room.P, q[:, 0], q[:, 1]) & (q[:, 2] > 0.0) & (q[:, 2] < room.H)
+        if not keep.any():
+            continue
+        add(P[keep], n, (lu / n_u) * (lv / n_v), b.rho, 3, eu / n_u, ev / n_v, bi)
 
 
 def _balanced_form_factors(room, pos, nrm, area):
@@ -293,6 +493,10 @@ def _balanced_form_factors(room, pos, nrm, area):
         if not room.convex:
             vis = _clear(room.P, xy_eff[i, None, 0], xy_eff[i, None, 1], xy_eff[None, :, 0], xy_eff[None, :, 1])
             k = np.where(vis, k, 0.0)
+        if room.boxes:
+            pe = pos + nrm * 1e-3
+            blk = _blocked(room, pe[i, None, 0], pe[i, None, 1], pe[i, None, 2], pe[None, :, 0], pe[None, :, 1], pe[None, :, 2])
+            k = np.where(blk, 0.0, k)
         K[i] = k
     np.fill_diagonal(K, 0.0)
     K = 0.5 * (K + K.T)
@@ -305,13 +509,14 @@ def _balanced_form_factors(room, pos, nrm, area):
 
 
 def _solve(room, webs):
-    pos, nrm, area, rho, kind = _patches(room)
+    pos, nrm, area, rho, kind, du, dv, src = _patches(room)
     Ed = _direct(room, webs, pos, nrm)
     F = _balanced_form_factors(room, pos, nrm, area)
     N = len(pos)
     B = np.linalg.solve(np.eye(N) - rho[:, None] * F, rho * Ed)
     E_tot = Ed + F @ B
-    return {"pos": pos, "nrm": nrm, "area": area, "rho": rho, "kind": kind, "Ed": Ed, "B": B, "E": E_tot, "F": F}
+    return {"pos": pos, "nrm": nrm, "area": area, "rho": rho, "kind": kind, "Ed": Ed, "B": B, "E": E_tot, "F": F,
+            "du": du, "dv": dv, "src": src}
 
 
 def _indirect(room, S, pts, nrm, chunk=300):
@@ -333,6 +538,11 @@ def _indirect(room, S, pts, nrm, chunk=300):
         if not room.convex:
             vis = _clear(room.P, p[:, None, 0], p[:, None, 1], xy_eff[None, :, 0], xy_eff[None, :, 1])
             e = np.where(vis, e, 0.0)
+        if room.boxes:
+            pe = p + q * 1e-3
+            qe = pos + pn * 1e-3
+            blk = _blocked(room, pe[:, None, 0], pe[:, None, 1], pe[:, None, 2], qe[None, :, 0], qe[None, :, 1], qe[None, :, 2])
+            e = np.where(blk, 0.0, e)
         out[s:s + chunk] = e.sum(axis=1)
     return out
 
@@ -398,6 +608,10 @@ def _ugr_at(room, webs, S, ox, oy, view_deg):
         use &= _clear(room.P, np.array(ox), np.array(oy), lum["x"], lum["y"])
         if not use.any():
             return None
+    if room.boxes:
+        use &= ~_blocked(room, np.array(ox), np.array(oy), np.array(EYE_H), lum["x"], lum["y"], lum["z"])
+        if not use.any():
+            return None
     dd = np.maximum(d, 1e-6)
     # candela from the luminaire towards the eye
     g = np.degrees(np.arccos(np.clip(dz / dd, -1, 1)))
@@ -458,6 +672,11 @@ def evaluate_room(room: _Room, webs: dict, with_ugr: bool = True, with_cyl: bool
     X, Y, xs, ys, step = _work_grid(room, step)
     flat_x, flat_y = X.ravel(), Y.ravel()
     inside = _pip(room.P, flat_x, flat_y)
+    n_hidden = 0
+    if room.boxes:                       # points inside furniture are not on the work plane
+        hid = inside & _in_boxes(room, flat_x, flat_y, np.full(len(flat_x), room.workH))
+        n_hidden = int(hid.sum())
+        inside &= ~hid
     pts = np.stack([flat_x[inside], flat_y[inside], np.full(int(inside.sum()), room.workH)], axis=1)
     up = np.tile([0.0, 0.0, 1.0], (len(pts), 1))
     E_wp = _direct(room, webs, pts, up) + _indirect(room, S, pts, up) if len(pts) else np.array([])
@@ -485,6 +704,8 @@ def evaluate_room(room: _Room, webs: dict, with_ugr: bool = True, with_cyl: bool
             res["notes"].append("No luminaires in this room")
     if room.detail != "fast":
         _grid_notes(room.gridStep, step, _en_max_step(room), res["notes"])
+    if n_hidden:
+        res["notes"].append(f"{n_hidden} work-plane point{'s' if n_hidden != 1 else ''} inside objects left out")
     res["walls"] = {"Em": round(float((E_surf[kind == 2] * S["area"][kind == 2]).sum() / S["area"][kind == 2].sum()), 1)}
     res["ceiling"] = {"Em": round(float((E_surf[kind == 1] * S["area"][kind == 1]).sum() / S["area"][kind == 1].sum()), 1)}
     res["floor"] = {"Em": round(float((E_surf[kind == 0] * S["area"][kind == 0]).sum() / S["area"][kind == 0].sum()), 1)}
@@ -499,6 +720,8 @@ def evaluate_room(room: _Room, webs: dict, with_ugr: bool = True, with_cyl: bool
         idx = np.flatnonzero(zone)
         if len(idx) > 300:
             idx = idx[np.linspace(0, len(idx) - 1, 300).astype(int)]
+        if room.boxes:
+            idx = idx[~_in_boxes(room, pts[idx, 0], pts[idx, 1], np.full(len(idx), CYL_H))]
         cp = np.stack([pts[idx, 0], pts[idx, 1], np.full(len(idx), CYL_H)], axis=1)
         tot = np.zeros(len(idx))
         for k in range(8):
@@ -507,7 +730,7 @@ def evaluate_room(room: _Room, webs: dict, with_ugr: bool = True, with_cyl: bool
             ev = _direct(room, webs, cp, nv) + _indirect(room, S, cp, nv)
             tot += np.maximum(ev, 0.0)
         ezp = tot / 8.0 * room.mf
-        ez = {"Ez": round(float(ezp.mean()), 1), "Ezmin": round(float(ezp.min()), 1)}
+        ez = {"Ez": round(float(ezp.mean()), 1), "Ezmin": round(float(ezp.min()), 1)} if len(idx) else None
     res["cylindrical"] = ez
 
     # UGR
@@ -562,8 +785,72 @@ def evaluate_room(room: _Room, webs: dict, with_ugr: bool = True, with_cyl: bool
                        "dy": float(ys[1] - ys[0]) if len(ys) > 1 else float(room.ymax - room.ymin),
                        "nx": int(len(xs)), "ny": int(len(ys)),
                        "values": [None if not math.isfinite(v) else round(float(v), 1) for v in flat]}
+    if room.surfaces:
+        res["surfaces"] = [x for x in (_surface(room, webs, S, o) for o in room.surfaces) if x]
+        for x in res["surfaces"]:
+            if x.get("pass") is not None:
+                checks.append(_chk("surf:" + str(x["id"]), f"Ē {x['name']}", x["Em"], x["target"], ">=", "lx"))
+        known = [c for c in checks if c["pass"] is not None]
+        res["pass"] = (all(c["pass"] for c in known) if known and room.lum["n"] else None)
+    if room.want_patches:
+        E = S["E"] * room.mf
+        r3 = lambda a: np.round(a, 3).tolist()
+        res["patches"] = {"c": r3(S["pos"]), "u": r3(S["du"]), "v": r3(S["dv"]), "E": np.round(E, 1).tolist(),
+                          "rho": np.round(S["rho"], 3).tolist(), "kind": S["kind"].astype(int).tolist(),
+                          "src": S["src"].astype(int).tolist()}
     res["ms"] = round((time.time() - t0) * 1000.0, 1)
     return res
+
+
+def _surface(room, webs, S, o):
+    """One calculation surface: grid, Ē, Emin, Emax, U₀ (maintained)."""
+    cx, cy = _f(o.get("cx"), math.nan), _f(o.get("cy"), math.nan)
+    w, d = max(_f(o.get("w"), 0.0), 0.0), max(_f(o.get("d"), 0.0), 0.0)
+    face = o.get("face") if o.get("face") in ("up", "down", "vertical") else "up"
+    z = _f(o.get("z"), room.workH)
+    hgt = max(_f(o.get("h"), d), 0.0) if face == "vertical" else 0.0
+    if not (math.isfinite(cx) and math.isfinite(cy)) or w < 0.02 or (d < 0.02 if face != "vertical" else hgt < 0.02):
+        return None
+    a = math.radians(_f(o.get("rot"), 0.0))
+    ex = np.array([math.cos(a), math.sin(a), 0.0])
+    if face == "vertical":
+        ev, lu, lv = np.array([0.0, 0.0, 1.0]), w, hgt
+        nrm = np.array([-math.sin(a), math.cos(a), 0.0])        # faces the left of its x axis
+        org = np.array([cx, cy, z]) - ex * w / 2.0
+    else:
+        ev, lu, lv = np.array([-math.sin(a), math.cos(a), 0.0]), w, d
+        nrm = np.array([0.0, 0.0, 1.0 if face == "up" else -1.0])
+        org = np.array([cx, cy, z]) - ex * w / 2.0 - ev * d / 2.0
+    step = _f(o.get("grid"), 0.0)
+    if step <= 0:
+        step = float(np.clip(0.2 * 5.0 ** math.log10(max(lu, lv, 1e-3)), 0.05, 0.5))
+    nu = int(min(max(math.ceil(lu / step), 1), 60))
+    nv = int(min(max(math.ceil(lv / step), 1), 60))
+    U = (np.arange(nu) + 0.5) / nu * lu
+    V = (np.arange(nv) + 0.5) / nv * lv
+    UU, VV = np.meshgrid(U, V)
+    P = org[None, :] + UU.ravel()[:, None] * ex[None, :] + VV.ravel()[:, None] * ev[None, :]
+    ok = _pip(room.P, P[:, 0], P[:, 1]) & (P[:, 2] >= 0.0) & (P[:, 2] <= room.H)
+    if room.boxes:
+        ok &= ~_in_boxes(room, P[:, 0], P[:, 1], P[:, 2])
+    vals = np.full(len(P), np.nan)
+    if ok.any():
+        Q = P[ok]
+        nn = np.tile(nrm, (len(Q), 1))
+        vals[ok] = (_direct(room, webs, Q, nn) + _indirect(room, S, Q, nn)) * room.mf
+    good = vals[np.isfinite(vals)]
+    target = _f(o.get("target"), 0.0)
+    out = {"id": o.get("id"), "name": o.get("name") or "Surface", "face": face, "n": int(len(good)),
+           "nu": nu, "nv": nv, "values": [None if not math.isfinite(v) else round(float(v), 1) for v in vals],
+           "target": target if target > 0 else None}
+    if len(good):
+        em = float(good.mean())
+        out.update({"Em": round(em, 1), "Emin": round(float(good.min()), 1), "Emax": round(float(good.max()), 1),
+                    "U0": round(float(good.min() / em), 3) if em > 0 else 0.0})
+    else:
+        out.update({"Em": 0.0, "Emin": 0.0, "Emax": 0.0, "U0": 0.0})
+    out["pass"] = (out["Em"] >= target - 1e-9) if (target > 0 and len(good) and room.lum["n"]) else None
+    return out
 
 
 def run_room_lighting(req: dict) -> dict:

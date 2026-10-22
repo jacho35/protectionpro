@@ -45,6 +45,17 @@ illuminance (EN C classes / SANS 10098-2 RC classes) over a ≤ 1 m grid.
 
 The display grids (heatmap + isolux, luminance map) cover every road at
 ≈ 0.5 m; a luminance display point is seen from 60 m back in its own lane.
+
+Objects (the 3D view, optional). `obstacles` — buildings, walls, shelters,
+gantries (boxes) and trees (a trunk box and an ellipsoid crown that lets
+`1 − opacity` of the light through) — shade the light from a luminaire to a
+road point: every illuminance and luminance figure, the segment checks, the
+junctions and the display grids then include those shadows (`shadows: true`
+in the answer; EN 13201-3 itself assumes an unobstructed road). `surfaces`
+are vertical checks on a facade or fence line: vertical illuminance Ev on
+a grid from z0 to z1, facing one side of the line a→b, against a target.
+`points` are single measurement points (horizontal, or vertical facing an
+azimuth).
 """
 
 from __future__ import annotations
@@ -239,6 +250,87 @@ def _near_box(lum, px, py, reach):
     return _subset(lum, m)
 
 
+# ─── Obstacles ──────────────────────────────────────────────────────────
+
+class _Crown:
+    """A tree crown: an ellipsoid (radius r across, rz up) at (cx, cy, zc)."""
+
+    def __init__(self, cx, cy, zc, r, rz, opacity):
+        self.cx, self.cy, self.zc, self.r, self.rz = cx, cy, zc, r, rz
+        self.opacity = min(max(opacity, 0.0), 1.0)
+
+    def hits(self, ax, ay, az, bx, by, bz):
+        # scale z so the ellipsoid becomes a sphere, then a segment–sphere test
+        k = self.r / self.rz
+        px, py, pz = ax - self.cx, ay - self.cy, (az - self.zc) * k
+        dx, dy, dz = bx - ax, by - ay, (bz - az) * k
+        a = dx * dx + dy * dy + dz * dz
+        b = 2.0 * (px * dx + py * dy + pz * dz)
+        c = px * px + py * py + pz * pz - self.r * self.r
+        disc = b * b - 4.0 * a * c
+        with np.errstate(invalid="ignore", divide="ignore"):
+            sq = np.sqrt(np.maximum(disc, 0.0))
+            t0 = (-b - sq) / (2.0 * a)
+            t1 = (-b + sq) / (2.0 * a)
+        return (disc > 0) & (t1 > 1e-6) & (t0 < 1.0 - 1e-6)
+
+
+def _obstacles(items):
+    """Boxes (fully opaque) and crowns (opacity) from the request."""
+    from .room_lighting import _Box
+    boxes, crowns = [], []
+    for o in items or []:
+        if not isinstance(o, dict) or o.get("blocks", True) is False:
+            continue
+        if o.get("kind") == "tree":
+            cx, cy = _f(o.get("cx"), math.nan), _f(o.get("cy"), math.nan)
+            h = max(_f(o.get("h"), 8.0), 0.5)
+            r = max(_f(o.get("crownR"), 3.0), 0.1)
+            base = min(max(_f(o.get("crownBase"), h * 0.35), 0.0), h - 0.1)
+            if not (math.isfinite(cx) and math.isfinite(cy)):
+                continue
+            crowns.append(_Crown(cx, cy, (base + h) / 2.0, r, max((h - base) / 2.0, 0.05), _f(o.get("opacity"), 0.8)))
+            tw = max(_f(o.get("trunk"), 0.4), 0.05)
+            b = _Box({"cx": cx, "cy": cy, "w": tw, "d": tw, "z0": 0.0, "h": base + 0.1})
+            if b.ok:
+                boxes.append(b)
+        else:
+            b = _Box(o)
+            if b.ok:
+                boxes.append(b)
+    return boxes, crowns
+
+
+def _shade(ctx, px, py, pz, lx, ly, lz):
+    """Share of each luminaire's light that reaches each point [n, m] (1 = clear)."""
+    boxes, crowns = getattr(ctx, "boxes", None) or [], getattr(ctx, "crowns", None) or []
+    shape = np.broadcast(px, lx).shape
+    f = np.ones(shape)
+    if not boxes and not crowns:
+        return f
+    from .room_lighting import _seg_box
+    ax, ay, az, bx, by, bz = (np.broadcast_to(np.asarray(a, float), shape) for a in (px, py, pz, lx, ly, lz))
+    for b in boxes:
+        r = abs(b.hw * b.c) + abs(b.hd * b.s), abs(b.hw * b.s) + abs(b.hd * b.c)
+        cand = ((np.maximum(az, bz) > b.z0) & (np.minimum(az, bz) < b.z1)
+                & (np.maximum(ax, bx) > b.cx - r[0]) & (np.minimum(ax, bx) < b.cx + r[0])
+                & (np.maximum(ay, by) > b.cy - r[1]) & (np.minimum(ay, by) < b.cy + r[1]) & (f > 0))
+        k = np.nonzero(cand)
+        if len(k[0]):
+            hit = _seg_box(b, ax[k], ay[k], az[k], bx[k], by[k], bz[k])
+            f[tuple(i[hit] for i in k)] = 0.0
+    for c in crowns:
+        cand = ((np.maximum(ax, bx) > c.cx - c.r) & (np.minimum(ax, bx) < c.cx + c.r)
+                & (np.maximum(ay, by) > c.cy - c.r) & (np.minimum(ay, by) < c.cy + c.r)
+                & (np.maximum(az, bz) > c.zc - c.rz) & (f > 0))
+        k = np.nonzero(cand)
+        if len(k[0]):
+            hit = c.hits(ax[k], ay[k], az[k], bx[k], by[k], bz[k])
+            idx = tuple(i[hit] for i in k)
+            f[idx] *= (1.0 - c.opacity)
+    return f
+
+
 # ─── Point calculations (plan geometry) ────────────────────────────────
 
 def _illum(ctx, lum, px, py, tx, ty):
@@ -260,6 +352,8 @@ def _illum(ctx, lum, px, py, tx, ty):
         along = -(dx * tx[sl, None] + dy * ty[sl, None])
         near = np.abs(along) <= LUM_RANGE_H * h
         I = _intensity_to(ctx, lm, dx, dy, -np.broadcast_to(h, dx.shape))
+        if getattr(ctx, "boxes", None) or getattr(ctx, "crowns", None):
+            I = I * _shade(ctx, px[sl, None], py[sl, None], 0.0, lm["x"][None, :], lm["y"][None, :], h)
         d3 = (dx * dx + dy * dy + h * h) ** 1.5
         out[sl] = np.where(near, I * h / d3, 0.0).sum(axis=1)
     return out * ctx.mf
@@ -284,6 +378,8 @@ def _lumin(ctx, lum, px, py, rt, ox, oy, vx, vy):
         beyond = dx * vx[sl, None] + dy * vy[sl, None]
         near = (beyond >= -LUM_NEAR_H * h) & (beyond <= LUM_FAR_H * h)
         I = _intensity_to(ctx, lm, -dx, -dy, -np.broadcast_to(h, dx.shape))
+        if getattr(ctx, "boxes", None) or getattr(ctx, "crowns", None):
+            I = I * _shade(ctx, px[sl, None], py[sl, None], 0.0, lm["x"][None, :], lm["y"][None, :], h)
         rho = np.hypot(dx, dy)
         tan_g = rho / h
         vox = (px[sl] - ox[sl])[:, None]; voy = (py[sl] - oy[sl])[:, None]
@@ -639,6 +735,75 @@ def evaluate_conflict(ctx, lum, area: dict, roads):
             "checks": checks, "pass": (all(c["pass"] for c in checks) if checks else None)}
 
 
+# ─── Facades and measurement points ────────────────────────────────────
+
+def _point_E(ctx, lum, P, N):
+    """Maintained illuminance at points P [n, 3] on planes with unit normals N
+    [n, 3], from every luminaire, with shadows."""
+    out = np.zeros(len(P))
+    if not len(P):
+        return out
+    for k0 in range(0, len(P), CHUNK):
+        p, n = P[k0:k0 + CHUNK], N[k0:k0 + CHUNK]
+        dx = p[:, 0:1] - lum["x"][None, :]                 # luminaire → point
+        dy = p[:, 1:2] - lum["y"][None, :]
+        dz = p[:, 2:3] - lum["h"][None, :]
+        d = np.maximum(np.sqrt(dx * dx + dy * dy + dz * dz), 1e-6)
+        I = _intensity_to(ctx, lum, dx, dy, dz)
+        I = I * _shade(ctx, p[:, 0:1], p[:, 1:2], p[:, 2:3] + 1e-3, lum["x"][None, :], lum["y"][None, :], lum["h"][None, :])
+        cos = -(n[:, 0:1] * dx + n[:, 1:2] * dy + n[:, 2:3] * dz) / d
+        out[k0:k0 + CHUNK] = np.where(cos > 1e-9, I * cos / (d * d), 0.0).sum(axis=1)
+    return out * ctx.mf
+
+
+def evaluate_surface(ctx, lum, o: dict):
+    """Vertical illuminance on a facade / fence line a→b from z0 to z1, facing
+    the left of a→b (or the right with side: 'right')."""
+    try:
+        ax, ay = float(o["a"][0]), float(o["a"][1])
+        bx, by = float(o["b"][0]), float(o["b"][1])
+    except (KeyError, IndexError, TypeError, ValueError):
+        return None
+    L = math.hypot(bx - ax, by - ay)
+    z0 = max(_f(o.get("z0"), 0.0), 0.0)
+    z1 = max(_f(o.get("z1"), z0 + 3.0), z0 + 0.1)
+    if L < 0.1:
+        return None
+    ex, ey = (bx - ax) / L, (by - ay) / L
+    sgn = -1.0 if o.get("side") == "right" else 1.0
+    nx, ny = -ey * sgn, ex * sgn
+    step = max(_f(o.get("grid"), 0.0), 0.0) or min(max(L / 30.0, 0.5), 2.0)
+    nu = int(min(max(math.ceil(L / step), 1), 120))
+    nv = int(min(max(math.ceil((z1 - z0) / step), 1), 20))
+    U = (np.arange(nu) + 0.5) / nu * L
+    V = z0 + (np.arange(nv) + 0.5) / nv * (z1 - z0)
+    UU, VV = np.meshgrid(U, V)
+    P = np.stack([ax + UU.ravel() * ex + nx * 0.02, ay + UU.ravel() * ey + ny * 0.02, VV.ravel()], axis=1)
+    E = _point_E(ctx, lum, P, np.tile([nx, ny, 0.0], (len(P), 1)))
+    ev = float(E.mean())
+    target = _f(o.get("target"), 0.0)
+    return {"id": o.get("id") or "", "name": o.get("name") or "Facade", "nu": nu, "nv": nv,
+            "values": np.round(E, 2).tolist(), "Ev": _r(ev), "Evmin": _r(float(E.min())), "Evmax": _r(float(E.max())),
+            "target": target if target > 0 else None,
+            "pass": (float(E.min()) >= target - 1e-9) if target > 0 else None}
+
+
+def evaluate_point(ctx, lum, o: dict):
+    x, y = _f(o.get("x"), math.nan), _f(o.get("y"), math.nan)
+    if not (math.isfinite(x) and math.isfinite(y)):
+        return None
+    z = max(_f(o.get("z"), 0.0), 0.0)
+    if o.get("face") == "vertical":
+        a = math.radians(_f(o.get("dir"), 0.0))
+        n = [math.cos(a), math.sin(a), 0.0]
+    else:
+        n = [0.0, 0.0, 1.0]
+    E = float(_point_E(ctx, lum, np.array([[x, y, z]]), np.array([n]))[0])
+    target = _f(o.get("target"), 0.0)
+    return {"id": o.get("id") or "", "name": o.get("name") or "Point", "E": _r(E), "face": o.get("face") or "up",
+            "target": target if target > 0 else None, "pass": (E >= target - 1e-9) if target > 0 else None}
+
+
 # ─── Display grids ──────────────────────────────────────────────────────
 
 def display_grid(ctx, road: _Road, lum, with_luminance=True):
@@ -679,6 +844,7 @@ def run_road_plan(req: dict) -> dict:
     standard = "SANS" if str(req.get("standard") or "EN").upper().startswith("SANS") else "EN"
     webs = {k: _Web(v) for k, v in (req.get("photometry") or {}).items()}
     ctx = SimpleNamespace(webs=webs, mf=min(max(_f(req.get("mf"), 0.8), 0.05), 1.0), standard=standard)
+    ctx.boxes, ctx.crowns = _obstacles(req.get("obstacles"))
     roads = [_Road(r, standard) for r in (req.get("roads") or [])]
     if not roads:
         raise ValueError("No roads on the plan")
@@ -707,5 +873,8 @@ def run_road_plan(req: dict) -> dict:
         out_roads.append(entry)
     conflicts = [x for x in (evaluate_conflict(ctx, lum, a, roads) for a in (req.get("conflictAreas") or [])) if x]
     ok = [r["pass"] for r in out_roads if r["pass"] is not None] + [c["pass"] for c in conflicts if c["pass"] is not None]
+    surfaces = [x for x in (evaluate_surface(ctx, lum, o) for o in (req.get("surfaces") or []) if isinstance(o, dict)) if x]
+    points = [x for x in (evaluate_point(ctx, lum, o) for o in (req.get("points") or []) if isinstance(o, dict)) if x]
     return {"standard": standard, "mf": ctx.mf, "roads": out_roads, "conflictAreas": conflicts,
+            "surfaces": surfaces, "points": points, "shadows": bool(ctx.boxes or ctx.crowns),
             "pass": all(ok) if ok else None, "fieldMaxM": field_max}

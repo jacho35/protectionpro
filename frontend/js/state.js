@@ -299,7 +299,21 @@ const AppState = {
         ents: rp.bg.ents.map(e => ({ l: String(e && e.l), p: (Array.isArray(e && e.p) ? e.p : []).map(Number).filter(isFinite), c: e && e.c ? 1 : 0 })),
       } : null,
       settings: rp.settings && typeof rp.settings === 'object' ? rp.settings : {},
-      _seq: Math.max(rp._seq || 1, max + 1),
+      scene: this._restoreRoadScene(rp.scene),
+      _seq: Math.max(rp._seq || 1, max + 1, this._maxSeq([].concat(...['objects', 'surfaces', 'points'].map(k => (rp.scene && Array.isArray(rp.scene[k]) ? rp.scene[k] : []))), /^rp[osq]_(\d+)$/, 1)),
+    };
+  },
+  // The road plan's 3D objects (js/road3d.js): ids end up in markup attributes,
+  // numbers are numbers.
+  _restoreRoadScene(sc) {
+    if (!sc || typeof sc !== 'object') return undefined;
+    const num = (o, keys) => { for (const k of keys) if (o[k] !== undefined) o[k] = Number(o[k]) || 0; return o; };
+    const keep = (list, re, keys) => (Array.isArray(list) ? list : []).filter(o => o && re.test(String(o.id)))
+      .map(o => num(Object.assign({}, o, { name: String(o.name || '') }), keys));
+    return {
+      objects: keep(sc.objects, /^rpo_\d+$/, ['x', 'y', 'w', 'd', 'h', 'z', 'rot', 'crownR', 'crownBase', 'trunk', 'opacity']),
+      surfaces: keep(sc.surfaces, /^rps_\d+$/, ['x', 'y', 'w', 'rot', 'z0', 'z1', 'target']),
+      points: keep(sc.points, /^rpq_\d+$/, ['x', 'y', 'z', 'dir', 'target']),
     };
   },
   _maxSeq(list, re, stored) {

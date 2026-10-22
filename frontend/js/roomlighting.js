@@ -180,6 +180,7 @@ const RoomLighting = {
     return `<div class="rl-room" data-rl-room="${escHtml(room.id)}" style="margin-top:12px;border-top:1px solid var(--border,#d9dee4);padding-top:10px">
       <div class="plan-props-title" style="font-size:13px">Lighting${area != null ? ` — ${(area).toFixed(1)} m²` : ''}</div>
       ${this.typeSelect(room)}
+      ${typeof Light3D !== 'undefined' ? '<button type="button" class="plan-circuit-btn" data-rl-3d style="margin:2px 0 6px">View in 3D — add desks, shelving, windows…</button>' : ''}
       ${this.standardSelect()}
       <label class="plan-field"><span>Task</span><select data-rl="task" style="width:100%">${opts}</select></label>
       <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px">
@@ -342,6 +343,10 @@ const RoomLighting = {
     });
     propsEl.addEventListener('click', (e) => {
       if (e.target.closest('[data-rl-reset]')) commit(room => this.applyTask(room, this.read(room).task));
+      if (e.target.closest('[data-rl-3d]') && typeof LightingWS !== 'undefined') {
+        const wrap = propsEl.querySelector('[data-rl-room]');
+        if (wrap) LightingWS.open3D(wrap.dataset.rlRoom);
+      }
     });
   },
 };
