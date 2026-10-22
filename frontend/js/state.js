@@ -396,8 +396,6 @@ const AppState = {
       layers,             // discipline layers (filter by entity type) — shared
       activeLayerId: null,
       styles: {},         // sparse overrides merged over PLAN_DEFS defaults — shared
-      iesProfiles: [],    // imported IES photometric webs, shared across floors;
-                          //   a light fitting references one by props.iesId
       settings: {
         domain: 'retic', gridSize: 0.5,
         snapGrid: true, snapEl: true, snapVtx: true, snapRoute: true, snapDxf: true,
@@ -1815,7 +1813,6 @@ const AppState = {
         layers: (Array.isArray(p.layers) && p.layers.length) ? p.layers : pdef.layers,
         activeLayerId: p.activeLayerId || null,
         styles: (p.styles && typeof p.styles === 'object') ? p.styles : {},
-        iesProfiles: Array.isArray(p.iesProfiles) ? p.iesProfiles : [],
         settings,
         _seq: p._seq || 1,
         nameCounters: (p.nameCounters && typeof p.nameCounters === 'object') ? p.nameCounters : {},

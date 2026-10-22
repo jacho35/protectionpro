@@ -24,7 +24,6 @@ const PlanUI = {
       if (e.target.closest('[data-role="edit-schedule"]')) { this._editBoardSchedule(); return; }
       if (e.target.closest('[data-role="bulk-assign"]')) { this._bulkAssign(); return; }
       if (e.target.closest('[data-role="sync-circuits"]')) { this._syncCircuits(); return; }
-      if (e.target.closest('[data-role="import-ies"]')) { this._importIes(); return; }
       if (e.target.closest('[data-role="open-photolib"]')) { PhotoLib.open(); return; }
       if (e.target.closest('[data-role="set-default-cable"]')) { this._setDefaultCable(); return; }
       if (e.target.closest('[data-role="balance-phases"]')) { this._balancePhases(); return; }
@@ -425,7 +424,7 @@ const PlanUI = {
     let html = `<div class="plan-props-title">${n} × ${escHtml(spec.title)}</div>`;
     const mixed = [];
     for (const f of spec.fields) {
-      if (f.key === 'name' || f.type === 'ies_select') continue;
+      if (f.key === 'name') continue;
       const vals = items.map(x => spec.get(x.item, f.key));
       const first = vals[0];
       const isMixed = vals.some(v => String(v == null ? '' : v) !== String(first == null ? '' : first));
@@ -830,7 +829,6 @@ const PlanUI = {
       const opts = (f.options || []).map(o => `<option value="${escHtml(o.value)}" ${String(o.value) === String(v) ? 'selected' : ''}>${escHtml(o.label)}</option>`).join('');
       return `<div class="plan-field">${label}<select data-key="${f.key}">${opts}</select></div>`;
     }
-    if (f.type === 'ies_select') return this._iesField(f, v, label);
     if (f.type === 'photo_select') {
       const libs = (typeof PhotoLib !== 'undefined') ? PhotoLib.list() : [];
       const opts = ['<option value="">— none (not calculated) —</option>'].concat(libs.map(p =>
@@ -865,52 +863,6 @@ const PlanUI = {
     this.renderProps();
     if (typeof Canvas !== 'undefined' && Canvas.render) Canvas.render();
     UI.toast(`Balanced ${r.assigned} fixture(s) across ${r.ways} three-phase circuit(s) — R ${Math.round(r.load.R)} · W ${Math.round(r.load.W)} · B ${Math.round(r.load.B)} VA, imbalance ${r.load.imbalancePct}%.`, 'success');
-  },
-
-  // Import an IES file and attach it to the selected fitting straight away —
-  // picking the file then having to pick it again from the list is a pointless
-  // second step when there is exactly one fitting selected.
-  _importIes() {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = '.ies,.IES,text/plain';
-    input.addEventListener('change', async () => {
-      const file = input.files && input.files[0];
-      if (!file || typeof PlanIES === 'undefined') return;
-      const before = new Set(PlanIES.profiles().map(p => p.id));
-      await PlanIES.importFile(file);
-      const added = PlanIES.profiles().find(p => !before.has(p.id)) || PlanIES.profiles().slice(-1)[0];
-      const sel = [...PlanMarkup.selectedIds];
-      if (added && sel.length === 1) {
-        const el = AppState.planMarkup.elements.find(x => x.id === sel[0]);
-        if (el) {
-          el.props = el.props || {};
-          el.props.iesId = added.id;
-          if (typeof PlanLux !== 'undefined') PlanLux.invalidate();
-          PlanMarkup.snapshot(); PlanMarkup.markDirty();
-        }
-      }
-      this.renderProps();
-      if (typeof PlanEngine !== 'undefined') PlanEngine.requestDraw({ fg: true });
-    });
-    input.click();
-  },
-
-  // Photometry picker: the project's imported IES profiles plus an import
-  // button. Shows the selected profile's flux/watts/peak candela so the user can
-  // tell at a glance which luminaire the heatmap is actually using.
-  _iesField(f, v, label) {
-    const libs = (typeof PlanIES !== 'undefined') ? PlanIES.profiles() : [];
-    const opts = ['<option value="">— cone approximation —</option>']
-      .concat(libs.map(p => `<option value="${escHtml(p.id)}" ${p.id === v ? 'selected' : ''}>${escHtml(p.name)}</option>`))
-      .join('');
-    const sel = libs.find(p => p.id === v);
-    const note = sel
-      ? `<div class="plan-circuit-note">${Math.round(sel.lumens)} lm · ${sel.watts || '?'} W · peak ${Math.round(sel.maxCd)} cd${sel.resampled ? ' · resampled' : ''}${sel.warning ? ` · ${escHtml(sel.warning)}` : ''}</div>`
-      : `<div class="plan-circuit-note">No photometry — the heatmap uses the beam-cone fallback.</div>`;
-    return `<div class="plan-field">${label}<select data-key="${f.key}">${opts}</select></div>
-      ${note}
-      <button class="plan-circuit-btn" data-role="import-ies">📈 Import IES file…</button>`;
   },
 
   // Build <option>s for a cable_select field from the one cable library.

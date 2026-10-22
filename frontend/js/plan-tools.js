@@ -251,7 +251,6 @@ PlanTools.register({
       const p = this._drag.room.points[this._drag.index];
       p.x = snapped.x; p.y = snapped.y;
       this._drag.moved = true;
-      if (typeof PlanLux !== 'undefined') PlanLux.invalidate();
     }
     PlanEngine.requestDraw({ fg: true });
   },

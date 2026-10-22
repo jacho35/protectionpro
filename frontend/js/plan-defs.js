@@ -129,7 +129,6 @@ const PLAN_DEFS = {
         { key: 'emergPct', label: 'Emergency output (0 = not on battery)', type: 'number', unit: '%', min: 0, max: 100, step: 5 },
         { key: 'mountH', label: 'Mounting height (outdoor)', type: 'number', unit: 'm', min: 0.5, step: 0.5 },
         { key: 'tilt', label: 'Tilt towards front (outdoor)', type: 'number', unit: '°', min: -90, max: 90, step: 5 },
-        { key: 'iesId', label: 'Photometry', type: 'ies_select' },
       ],
     },
     // Small power

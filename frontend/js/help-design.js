@@ -87,27 +87,7 @@ $$f=\frac{d_{known}\ [\text{m}]}{d_{px}},\qquad \ell_{route}=f\sum_{k}\left|\mat
 <h4>Auto-circuiting (Building)</h4>
 <p>Devices tagged to a board way ($\texttt{circuitDbId}$, $\texttt{circuitNo}$) let the plan write the way's load and quantity into the linked board schedule. Untagged devices can inherit a tag through connected final-circuit routes, or be distributed across ways with per-type caps. Routed length flows to the way's cable length, unless the way has been pinned manually.</p>
 <h4>Lighting</h4>
-<p>A calibrated plan can show a lux heatmap — see <a href="#" data-help="design-lux">Lighting (lux) heatmap</a>. Road lighting to EN 13201 is under Street lighting — see <a href="#" data-help="design-roadlight">Road lighting design</a>.</p>` },
-
-{ id: 'design-lux', group: 'design', title: 'Lighting (lux) heatmap',
-  std: 'Plan ▸ Lux · IES photometry',
-  kw: 'lux illuminance lighting photometric ies candela cosine inverse square beam cone luminaire',
-  html: String.raw`
-<p>Point-by-point horizontal illuminance over the calibrated plan, summed over every fitting and drawn as a translucent heatmap. It is a <em>direct-illuminance</em> model: no interreflection and no obstruction, so it is design guidance, not a substitute for a photometric tool. For a result you can compare with a standard — interreflection, UGR, uniformity, a verdict — use <a href="#" data-help="design-roomlight">Room, outdoor &amp; emergency lighting</a>.</p>
-<h4>The law</h4>
-<p>At a point on the working plane, a fitting of intensity $I(\theta,\varphi)$ mounted at height $h$ over horizontal distance $r$ gives</p>
-$$E=\sum_{i}\frac{I_i(\theta_i,\varphi_i)\,\cos\theta_i}{d_i^{2}},\qquad d=\sqrt{r^{2}+h^{2}},\quad \cos\theta=\frac{h}{d}$$
-<p>so illuminance falls with the inverse square of distance and with the cosine of the incidence angle.</p>
-<h4>Where the intensity comes from</h4>
-<ul>
-<li><strong>Measured</strong> — the fitting references an imported IES photometric file, so $I$ is read from the manufacturer's candela web at the true vertical and azimuth angle, rotated into the fitting's own frame. The accurate path. When a fitting's rated output differs from the tested luminaire's, the file's web is scaled by the lumen ratio.</li>
-<li><strong>Cone</strong> — with no IES file, the fitting is a point source radiating uniformly inside a beam cone $\beta$:
-$$I_0=\frac{\Phi}{2\pi\left(1-\cos\frac{\beta}{2}\right)}$$
-with $\Phi$ from watts × efficacy (default 100 lm/W, beam 120°). Fine for a first pass but it ignores the optic entirely — a narrow optic can differ several-fold.</li>
-</ul>
-<p>Grid resolution (default 0.5 m) and mounting height (default 2.5 m) are settings. The toast on enabling states which model was used.</p>
-<div class="hc-example"><span class="hc-label">Worked example</span>
-<p>A 3000 lm downlight, 120° cone, directly below (θ = 0), mounted 2.5 m above the working plane: $I_0=3000/(2\pi(1-\cos60^\circ))=3000/3.1416=955$ cd, so $E=955/2.5^2=\mathbf{153\ lx}$ under it.</p></div>` },
+<p>Rooms and outdoor areas on a calibrated plan are calculated and shown in false colour — see <a href="#" data-help="design-roomlight">Room, outdoor &amp; emergency lighting</a>. Road lighting to EN 13201 is under Street lighting — see <a href="#" data-help="design-roadlight">Road lighting design</a>.</p>` },
 
 { id: 'design-roomlight', group: 'design', title: 'Room, outdoor & emergency lighting',
   std: 'Plan ▸ Detect room · ▶ Calc lighting · Lighting workspace · EN 12464-1/-2 · EN 1838 · CIE 117 · CIE 112 · EN 15193-1',
