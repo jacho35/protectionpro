@@ -551,3 +551,22 @@ body.dark-mode .rdg-pill-bad { color: #ff6b6b; }
   .rdg-views button { min-height: 36px; }
   #retic-diagram-canvas.rdg-list-mode { background: var(--bg-secondary); }
 }
+
+/* Export all curves dialog */
+.rtcc-all { max-width: 640px; width: 94vw; }
+.rtcc-all-h { display: flex; justify-content: space-between; margin-bottom: 6px; }
+.rtcc-all-h span { color: var(--text-muted); }
+.rtcc-all-list { border: 1px solid var(--border-color); border-radius: 8px; }
+.rtcc-all-row { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 0 12px; border-bottom: 1px solid var(--border-color); cursor: pointer; }
+.rtcc-all-row:last-child { border-bottom: 0; }
+.rtcc-all-n { flex: 1; min-width: 0; }
+.rtcc-all-n span { color: var(--text-muted); }
+.rtcc-all-note { font-size: 12px; color: #9a6700; }
+.rtcc-all-opts { display: flex; flex-wrap: wrap; gap: 12px 28px; margin-top: 14px; }
+.rtcc-all-opts > div { display: flex; flex-direction: column; gap: 6px; }
+.rtcc-all-opts label { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+.rtcc-all-seg { display: flex; }
+.rtcc-seg-b { min-height: 34px; padding: 0 12px; border: 1px solid var(--border-color); background: var(--bg-primary); color: var(--text-primary); cursor: pointer; }
+.rtcc-seg-b.on { background: var(--accent); border-color: var(--accent-hover); color: #fff; }
+.rtcc-all-info { margin-top: 14px; padding: 10px 12px; border-radius: 8px; background: var(--bg-secondary); color: var(--text-secondary); line-height: 1.45; }
+.rtcc-all-foot { display: flex; justify-content: flex-end; gap: 10px; padding: 12px 18px; border-top: 1px solid var(--border-color); }

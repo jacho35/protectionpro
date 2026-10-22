@@ -590,26 +590,20 @@ const ReticTcc = {
     return [n >> 16 & 255, n >> 8 & 255, n & 255];
   },
 
-  async exportPdf() {
-    const d = this._d, g = this._g;
-    if (!d || !g) return;
-    const Ctor = window.jspdf && window.jspdf.jsPDF;
-    if (!Ctor) { UI.alert('PDF library not loaded.'); return; }
+  // One page of the PDF: the plot as displayed plus legend and table.
+  async _pdfPage(doc, d, g, title, cursorI) {
     const sh = this._shown(d);
     const str = this._plotSvg(d, g, sh).replace('<rect class="rtcc-frame"', `<style>${this._exportStyle()}</style><rect class="rtcc-frame"`);
     const node = new DOMParser().parseFromString(str, 'image/svg+xml').documentElement;
     const png = await new Promise(res => Project._rasterizeSVG(node, this.W, this.H, 3, (c) => res(c.toDataURL('image/png'))));
-
-    const doc = new Ctor({ orientation: 'landscape', unit: 'mm', format: 'a4' });
-    const pw = doc.internal.pageSize.getWidth(), ph = doc.internal.pageSize.getHeight(), m = 12;
-    const title = document.getElementById('rtcc-title').textContent;
+    const pw = doc.internal.pageSize.getWidth(), m = 12;
     doc.setFont('helvetica', 'bold'); doc.setFontSize(15);
     doc.text(title, m, m + 5);
     doc.setFont('helvetica', 'normal'); doc.setFontSize(9);
     doc.setTextColor(85);
     doc.text(`Project: ${AppState.projectName || 'Untitled'}    Date: ${new Date().toLocaleDateString()}`, m, m + 11);
     doc.text(doc.splitTextToSize(this._summary(d, sh), pw - 2 * m), m, m + 16);
-    const I = this._cur.i;
+    const I = cursorI;
     const view = [`Showing: ${this._filterName()}`, `Cable I²t: ${this.view.i2t && d.cables.length ? 'on' : 'off'}`];
     if (I != null) view.push(`Cursor: ${this._fmtA(I)} — ${d.devices.length > 1 ? 'string breaker' : 'breaker'} ${this._fmtT(this._time(d.devices[0].device, I))}`);
     if (sh.rows.length) view.push(`Min ${this._fmtA(Math.min(...sh.rows.map(r => r.ifA)))}`, `Max ${this._fmtA(Math.max(...sh.rows.map(r => r.ifA)))}`);
@@ -659,6 +653,10 @@ const ReticTcc = {
       },
     });
 
+  },
+
+  _pdfFinish(doc, showI2t, filename) {
+    const pw = doc.internal.pageSize.getWidth(), ph = doc.internal.pageSize.getHeight(), m = 12;
     const pages = doc.internal.getNumberOfPages();
     const note = 'If = 0.95 · 230 V / |Zs| (minimum current, conductors hot); clearing times from the library device models.'
       + (showI2t ? ' Cable withstand t = k²S²/I² of the weakest earth-fault conductor (IEC 60364-4-43 §434.5.2), solid up to 5 s; a cable is protected when the device clears before its line.' : '')
@@ -669,8 +667,163 @@ const ReticTcc = {
       doc.text(doc.splitTextToSize(note, pw - 2 * m - 50), m, ph - 9);
       doc.text(`ProtectionPro ${typeof APP_VERSION !== 'undefined' ? APP_VERSION : ''} · page ${p} of ${pages}`, pw - m, ph - 9, { align: 'right' });
     }
+    doc.save(filename);
+  },
+
+
+  async exportPdf() {
+    const d = this._d, g = this._g;
+    if (!d || !g) return;
+    const Ctor = window.jspdf && window.jspdf.jsPDF;
+    if (!Ctor) { UI.alert('PDF library not loaded.'); return; }
+    const doc = new Ctor({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+    await this._pdfPage(doc, d, g, document.getElementById('rtcc-title').textContent, this._cur.i);
     const base = String(AppState.projectName || 'project').replace(/[^a-z0-9]+/gi, '_');
     const dev = String(d.device.name || 'breaker').replace(/[^a-z0-9]+/gi, '_');
-    doc.save(`${base}_${dev}_earth_fault_tcc.pdf`);
+    this._pdfFinish(doc, this.view.i2t && d.cables.length > 0, `${base}_${dev}_earth_fault_tcc.pdf`);
+  },
+
+  // ─── Export every string of a minisub ───
+  // One page per string (the same plot as ◔ Curve), optionally behind a summary
+  // table. The view controls are set in the dialog and applied for the export
+  // only; the session view of the single-string modal is put back afterwards.
+  openAll(msId) {
+    const ms = Retic.minisubs.find(m => m.id === msId);
+    if (!ms) return;
+    const heads = Retic.kiosks.filter(k => Retic._stringHead(k) === k && Retic._minisubOf(k) === ms);
+    this._all = {
+      ms,
+      filter: this.view.filter, i2t: this.view.i2t, summary: true,
+      items: heads.map(h => {
+        const dev = Retic._protectionDevice(h);
+        const data = dev ? this._data(h.id) : null;
+        const size = Retic.kiosks.filter(k => Retic._stringHead(k) === h).length;
+        return { head: h, dev, data, size, on: !!data,
+          note: !dev ? 'No breaker chosen — skipped' : !data ? 'No earth-fault results — skipped' : '' };
+      }),
+    };
+    if (!this._all.items.length) { UI.toast('This minisub has no strings yet.', 'info'); return; }
+    this._paintAll();
+    document.getElementById('retic-tcc-all-modal').style.display = '';
+  },
+
+  _ensureAll() {
+    let m = document.getElementById('retic-tcc-all-modal');
+    if (m) return m;
+    m = document.createElement('div');
+    m.id = 'retic-tcc-all-modal';
+    m.className = 'modal';
+    m.setAttribute('role', 'dialog');
+    m.setAttribute('aria-modal', 'true');
+    m.setAttribute('aria-labelledby', 'rtcc-all-title');
+    m.style.display = 'none';
+    m.innerHTML = `<div class="modal-content rtcc-all">
+      <div class="modal-header"><h3 id="rtcc-all-title">Export all curves</h3>
+        <button class="modal-close" data-rtcc-all="close" aria-label="Close">&times;</button></div>
+      <div class="modal-body" id="rtcc-all-body"></div>
+      <div class="rtcc-all-foot"><button type="button" class="btn-small" data-rtcc-all="close">Cancel</button>
+        <button type="button" class="btn-small btn-primary" id="rtcc-all-go" data-rtcc-all="go">Export PDF</button></div></div>`;
+    document.body.appendChild(m);
+    m.addEventListener('click', (e) => {
+      if (e.target === m || e.target.closest('[data-rtcc-all="close"]')) { m.style.display = 'none'; return; }
+      if (e.target.closest('[data-rtcc-all="go"]')) { this.exportAll(); return; }
+      const f = e.target.closest('[data-rtcc-all-filter]');
+      if (f) { this._all.filter = f.dataset.rtccAllFilter; this._paintAll(); }
+    });
+    m.addEventListener('change', (e) => {
+      const t = e.target, a = this._all;
+      if (!a) return;
+      if (t.dataset.rtccAllItem !== undefined) a.items[+t.dataset.rtccAllItem].on = t.checked;
+      else if (t.dataset.rtccAllOpt === 'i2t') a.i2t = t.checked;
+      else if (t.dataset.rtccAllOpt === 'summary') a.summary = t.checked;
+      this._paintAll();
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && m.style.display !== 'none') m.style.display = 'none';
+    });
+    return m;
+  },
+
+  _paintAll() {
+    const m = this._ensureAll(), a = this._all;
+    const n = a.items.filter(i => i.on).length;
+    const pages = n + (a.summary && n ? 1 : 0);
+    const seg = (k, l) => `<button type="button" class="rtcc-seg-b${a.filter === k ? ' on' : ''}" data-rtcc-all-filter="${k}" aria-pressed="${a.filter === k}">${l}</button>`;
+    m.querySelector('#rtcc-all-title').textContent = `Export all curves — ${a.ms.name || 'Minisub'}`;
+    m.querySelector('#rtcc-all-body').innerHTML = `
+      <div class="rtcc-all-h"><b>Strings to include</b><span>${n} of ${a.items.length} selected</span></div>
+      <div class="rtcc-all-list">${a.items.map((it, i) => `<label class="rtcc-all-row">
+        <input type="checkbox" data-rtcc-all-item="${i}"${it.on ? ' checked' : ''}${it.data ? '' : ' disabled'}>
+        <span class="rtcc-all-n"><b>${escHtml(it.head.name || 'Kiosk')} string</b> <span>${it.size} kiosk${it.size === 1 ? '' : 's'}${it.dev ? ' · ' + escHtml(it.dev.name) : ''}</span></span>
+        ${it.note ? `<span class="rtcc-all-note">${escHtml(it.note)}</span>` : ''}</label>`).join('')}</div>
+      <div class="rtcc-all-opts">
+        <div><b>Points plotted</b><div class="rtcc-all-seg">${seg('all', 'All points')}${seg('kiosks', 'Kiosk feeders')}${seg('erven', 'Erven')}</div></div>
+        <div><b>Layout</b>
+          <label><input type="checkbox" data-rtcc-all-opt="i2t"${a.i2t ? ' checked' : ''}> Cable withstand lines (I²t)</label>
+          <label><input type="checkbox" data-rtcc-all-opt="summary"${a.summary ? ' checked' : ''}> Summary table up front</label></div>
+      </div>
+      <div class="rtcc-all-info">One page per string, the same plot as ◔ Curve, with each erf marked at its minimum earth-fault current. ${pages} page${pages === 1 ? '' : 's'}.</div>`;
+    m.querySelector('#rtcc-all-go').disabled = !n;
+  },
+
+  async exportAll() {
+    const a = this._all;
+    const Ctor = window.jspdf && window.jspdf.jsPDF;
+    if (!a) return;
+    if (!Ctor) { UI.alert('PDF library not loaded.'); return; }
+    const picked = a.items.filter(i => i.on);
+    if (!picked.length) return;
+    const savedView = { ...this.view };
+    this.view.filter = a.filter; this.view.i2t = a.i2t;
+    if (UI.setBusy) UI.setBusy(true, 'Building the PDF…');
+    try {
+      const doc = new Ctor({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+      const msName = a.ms.name || 'Minisub';
+      let first = true, anyI2t = false;
+      if (a.summary) {
+        const m = 12;
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(15);
+        doc.text(`${msName} — earth-fault protection of every string`, m, m + 5);
+        doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(85);
+        doc.text(`Project: ${AppState.projectName || 'Untitled'}    Date: ${new Date().toLocaleDateString()}`, m, m + 11);
+        doc.setTextColor(26, 26, 46);
+        const body = picked.map(it => {
+          const rows = it.data.rows, bad = rows.filter(r => !r.ok).length;
+          const worst = Math.max(...rows.map(r => (r.tS == null || r.tS === Infinity) ? Infinity : r.tS));
+          return [`${it.head.name || 'Kiosk'} string`, it.dev.name, String(it.size), String(rows.length),
+            this._fmtA(Math.min(...rows.map(r => r.ifA))), this._fmtT(worst), bad ? `${bad} fail` : 'pass'];
+        });
+        doc.autoTable({
+          startY: m + 16, head: [['String', 'Breaker', 'Kiosks', 'Points', 'Lowest fault I', 'Slowest clearing', 'Result']], body,
+          margin: { left: m, right: m, bottom: 16 }, styles: { fontSize: 9, cellPadding: 1.8 },
+          headStyles: { fillColor: [235, 237, 240], textColor: [60, 60, 70] },
+          columnStyles: { 2: { halign: 'right' }, 3: { halign: 'right' }, 4: { halign: 'right' }, 5: { halign: 'right' } },
+          didParseCell: (c) => {
+            if (c.section === 'body' && c.column.index === 6) {
+              c.cell.styles.textColor = /fail/.test(c.cell.raw) ? [183, 28, 28] : [27, 94, 32];
+              c.cell.styles.fontStyle = 'bold';
+            }
+          },
+        });
+        first = false;
+      }
+      for (const it of picked) {
+        const d = this._data(it.head.id);
+        if (!d) continue;
+        if (!first) doc.addPage();
+        first = false;
+        if (a.i2t && d.cables.length) anyI2t = true;
+        await this._pdfPage(doc, d, this._geometry(d), `${msName} — ${it.head.name || 'Kiosk'} string: earth-fault check (${d.device.name})`, null);
+      }
+      const base = String(AppState.projectName || 'project').replace(/[^a-z0-9]+/gi, '_');
+      const ms = String(msName).replace(/[^a-z0-9]+/gi, '_');
+      this._pdfFinish(doc, anyI2t, `${base}_${ms}_all_strings_earth_fault_tcc.pdf`);
+      document.getElementById('retic-tcc-all-modal').style.display = 'none';
+    } catch (e) {
+      UI.alert('Could not build the PDF: ' + (e && e.message ? e.message : e));
+    } finally {
+      this.view = savedView;
+      if (UI.setBusy) UI.setBusy(false);
+    }
   },
 };
