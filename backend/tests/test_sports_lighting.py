@@ -203,3 +203,149 @@ def test_stand_seats_faces_and_spectator_glare():
     keys = [c["key"] for c in r["checks"]]
     assert "standEm" in keys and "standGr" in keys
     assert "_targets" not in st
+
+
+# ─── Aiming patterns, the multi-target optimiser, trimming, comparison ───
+
+from backend.analysis import sports_aiming as SA  # noqa: E402
+
+
+def _pitch_req(pattern=None, **kw):
+    L, W = 105.0, 68.0
+    masts = []
+    for side, y in (("S", -5.0), ("N", W + 5.0)):
+        for fx in (0.1, 0.5, 0.9):
+            masts.append({"id": f"{side}{fx}", "name": f"{side}{fx}", "x": fx * L, "y": y, "h": 25.0,
+                          "floods": [{"id": f"{side}{fx}-{k}", "ax": L / 2, "ay": W / 2, "photometryId": "p"} for k in range(8)]})
+    req = {"field": {"length": L, "width": W, "mf": 0.8, "maxTilt": 70.0, "groundRho": 0.2, "evHeight": 1.5,
+                     "targets": {"em": 200, "u2": 0.6, "gr": 50}, "cameras": [{"name": "Main", "x": L / 2, "y": -25.0}]},
+           "masts": masts, "photometry": _photo("generic_sports_medium", 120000.0, 1000.0), "pattern": pattern, "budget": 4}
+    req.update(kw)
+    return req
+
+
+def _lums_of(req, out):
+    by = {m["id"]: m for m in req["masts"]}
+    lums = []
+    for m in out["masts"]:
+        M = by[m["id"]]
+        lums += [dict(_flood(fl["id"], M["x"], M["y"], M["h"], fl["ax"], fl["ay"]), fluxPct=fl["fluxPct"]) for fl in m["floods"]]
+    return lums
+
+
+def _zone_of(L, W, masts, i, pattern):
+    S = SA._Samples(L, W)
+    geo = [{"x": m["x"], "y": m["y"], "h": m["h"], "id": m["id"]} for m in masts]
+    masks, _ = SA.zone_masks(S, geo, [pattern] * len(masts), 70.0)
+    return S, masks[i]
+
+
+@pytest.mark.parametrize("pattern", ["near", "scatter", "cross", "band"])
+def test_pattern_places_every_flood_in_its_zone_within_the_tilt_limit(pattern):
+    req = _pitch_req(pattern, optimise=False)
+    out = SA.aim(req)
+    L, W = 105.0, 68.0
+    for i, m in enumerate(out["masts"]):
+        assert m["pattern"] == pattern
+        M = req["masts"][i]
+        S, z = _zone_of(L, W, req["masts"], i, pattern)
+        pts = S.xy[z]
+        assert len(m["floods"]) == 8
+        for fl in m["floods"]:
+            assert math.degrees(math.atan2(math.hypot(fl["ax"] - M["x"], fl["ay"] - M["y"]), M["h"])) <= 68.0 + 0.05
+            assert np.min(np.hypot(pts[:, 0] - fl["ax"], pts[:, 1] - fl["ay"])) <= S.ds   # on a sample of its zone
+        # the floods of one mast are spread out, not stacked
+        P = np.array([(fl["ax"], fl["ay"]) for fl in m["floods"]])
+        d = np.hypot(P[:, None, 0] - P[None, :, 0], P[:, None, 1] - P[None, :, 1]) + np.eye(len(P)) * 1e9
+        assert d.min() > 2.0
+
+
+def test_pattern_shapes():
+    req = _pitch_req(None, optimise=False)
+    W = 68.0
+    south = [i for i, m in enumerate(req["masts"]) if m["y"] < 0]
+    near = SA.aim(dict(req, pattern="near"))
+    cross = SA.aim(dict(req, pattern="cross"))
+    scatter = SA.aim(dict(req, pattern="scatter"))
+    band = SA.aim(dict(req, pattern="band"))
+    for i in south:
+        assert all(fl["ay"] <= W / 2 + 1 for fl in near["masts"][i]["floods"])       # own half
+        assert all(fl["ay"] >= W / 2 - 1 for fl in cross["masts"][i]["floods"])      # the far half
+        ys = [fl["ay"] for fl in band["masts"][i]["floods"]]
+        assert max(ys) - min(ys) > W / 2                                             # well across the width
+        x0 = req["masts"][i]["x"]
+        opp = [j for j, m in enumerate(req["masts"]) if m["y"] > W and abs(m["x"] - x0) < 1][0]
+        both = ys + [fl["ay"] for fl in band["masts"][opp]["floods"]]
+        assert min(both) < W / 4 and max(both) > 3 * W / 4                           # the strip, touchline to touchline
+        assert all(abs(fl["ax"] - x0) <= 105.0 / 3 + 1 for fl in band["masts"][i]["floods"])   # its third
+    # scattered: a mast's floods reach well past its own near zone, along and across
+    xs = [fl["ax"] for fl in scatter["masts"][0]["floods"]]
+    ys = [fl["ay"] for fl in scatter["masts"][0]["floods"]]
+    assert max(xs) - min(xs) > 40 and max(ys) - min(ys) > 30
+
+
+def test_optimiser_keeps_the_pattern_and_meets_the_targets():
+    req = _pitch_req("near")
+    out = SA.aim(req)
+    a = out["after"]
+    assert a["pass"] is True and a["U2"] >= 0.6 and a["GR"] <= 50
+    for i, m in enumerate(out["masts"]):
+        S, z = _zone_of(105.0, 68.0, req["masts"], i, "near")
+        pts = S.xy[z]
+        for fl in m["floods"]:
+            assert np.min(np.hypot(pts[:, 0] - fl["ax"], pts[:, 1] - fl["ay"])) <= S.ds
+    # the optimiser's figures are the full calculation's (this field's floods only)
+    cam = {"name": "Main", "x": 52.5, "y": -25.0, "z": 10.0}
+    r = _run(_lums_of(req, out), _field(length=105.0, width=68.0, gridStep=0, groundRho=0.2, cameras=[cam]),
+             _photo("generic_sports_medium", 120000.0, 1000.0))
+    assert r["horizontal"]["U2"] == pytest.approx(a["U2"], abs=2e-3)
+    assert r["horizontal"]["U1"] == pytest.approx(a["U1"], abs=2e-3)
+    assert r["horizontal"]["Eav"] == pytest.approx(a["Eav"], rel=1e-3)
+    assert r["gr"]["max"] == pytest.approx(a["GR"], abs=0.1)
+    assert r["cameras"][0]["Eav"] == pytest.approx(a["cameras"][0]["Eav"], rel=1e-3)
+
+
+def test_dimming_meets_the_illuminance_target_with_two_percent_in_hand():
+    out = SA.aim(_pitch_req("band", trim="dim"))
+    a = out["after"]
+    pcts = {fl["fluxPct"] for m in out["masts"] for fl in m["floods"]}
+    assert len(pcts) == 1 and next(iter(pcts)) < 100
+    assert 200.0 <= a["Eav"] <= 200.0 * 1.02 * (1 + 1.0 / next(iter(pcts)))   # 2 % margin, whole per cent up
+    assert a["watts"] < 48 * 1000.0 * 0.6
+
+
+def test_removing_floods_keeps_every_target_and_a_flood_on_every_mast():
+    out = SA.aim(_pitch_req("near", trim="remove", budget=6))
+    a = out["after"]
+    assert out["removed"] and a["count"] == 48 - len(out["removed"])
+    assert a["pass"] is True
+    assert all(len(m["floods"]) >= 1 for m in out["masts"])
+    left = {fl["id"] for m in out["masts"] for fl in m["floods"]}
+    assert not (left & set(out["removed"]))
+
+
+def test_one_mast_only_moves_and_others_keep_their_aims():
+    req = _pitch_req("near", apply=["S0.1"], move=["S0.1"])
+    out = SA.aim(req)
+    assert out["masts"][0]["pattern"] == "near"
+    for m in out["masts"][1:]:
+        assert m["pattern"] is None
+        assert all((fl["ax"], fl["ay"]) == (52.5, 34.0) for fl in m["floods"])
+
+
+def test_pattern_without_photometry_still_places_floods():
+    req = _pitch_req("scatter", optimise=False, photometry={})
+    out = SA.aim(req)
+    assert out["after"] is None and len(out["masts"][0]["floods"]) == 8
+    with pytest.raises(ValueError):
+        SA.aim(dict(req, optimise=True))
+    with pytest.raises(ValueError):
+        SA.aim(dict(req, pattern="spiral"))
+
+
+def test_compare_gives_a_row_per_pattern_and_the_current_aiming():
+    out = SA.compare(_pitch_req(None, budget=1.5))
+    rows = out["options"]
+    assert [r["pattern"] for r in rows] == [None, "near", "scatter", "cross", "band"]
+    assert rows[0]["before"]["U2"] == pytest.approx(rows[0]["after"]["U2"])
+    assert all(r["after"]["U2"] > rows[0]["after"]["U2"] for r in rows[1:])
