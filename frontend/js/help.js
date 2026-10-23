@@ -588,3 +588,10 @@ const HelpMobile = {
 };
 
 document.addEventListener('DOMContentLoaded', () => HelpMobile.init());
+// Links written as <a data-help-open="article-id"> open that Help article (no inline handlers: CSP).
+document.addEventListener('click', (e) => {
+  const a = e.target.closest && e.target.closest('[data-help-open]');
+  if (!a) return;
+  e.preventDefault();
+  HelpCenter.open(a.dataset.helpOpen);
+});

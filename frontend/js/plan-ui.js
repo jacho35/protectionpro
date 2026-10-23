@@ -467,15 +467,15 @@ const PlanUI = {
     let extra = '';
     if (mode === 'array') {
       extra = `<div class="plan-place-set">
-        <label>Columns<input type="number" min="1" step="1" data-place-opt="cols" value="${o.cols}"></label>
-        <label>Rows<input type="number" min="1" step="1" data-place-opt="rows" value="${o.rows}"></label></div>`;
+        <label>Columns<input type="number" min="1" step="1" data-place-opt="cols" value="${numAttr(o.cols)}"></label>
+        <label>Rows<input type="number" min="1" step="1" data-place-opt="rows" value="${numAttr(o.rows)}"></label></div>`;
     } else if (mode === 'path') {
       const cal = !!PlanEngine.factor();
       const by = cal ? o.by : 'count';
       extra = `<div class="plan-place-set">
         <label>Place<select data-place-opt="by">${cal ? `<option value="spacing"${by === 'spacing' ? ' selected' : ''}>every</option>` : ''}<option value="count"${by === 'count' ? ' selected' : ''}>a total of</option></select></label>
-        ${by === 'spacing' ? `<label class="plan-place-unit"><input type="number" min="0.1" step="0.5" data-place-opt="spacingM" value="${o.spacingM}" aria-label="Spacing in metres"> m</label>`
-          : `<label class="plan-place-unit"><input type="number" min="1" step="1" data-place-opt="count" value="${o.count}" aria-label="Number of devices"> devices</label>`}</div>`;
+        ${by === 'spacing' ? `<label class="plan-place-unit"><input type="number" min="0.1" step="0.5" data-place-opt="spacingM" value="${numAttr(o.spacingM)}" aria-label="Spacing in metres"> m</label>`
+          : `<label class="plan-place-unit"><input type="number" min="1" step="1" data-place-opt="count" value="${numAttr(o.count)}" aria-label="Number of devices"> devices</label>`}</div>`;
     }
     const keys = { single: 'R rotates the selection', array: 'Drag from corner to corner', path: 'Enter finishes the line' }[mode];
     bar.innerHTML = `<div class="plan-place-what"><small>Placing</small><b><span class="plan-pal-swatch" style="background:${def.color}"></span>${escHtml(def.name)}</b></div>

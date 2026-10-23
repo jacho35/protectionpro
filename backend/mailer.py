@@ -113,11 +113,19 @@ def _friendly(exc: Exception, cfg: dict) -> str:
     return f"Sending failed: {str(exc)[:160]}"
 
 
+def _one_line(value) -> str:
+    """Header text: line breaks and control characters become spaces."""
+    return "".join(c if c.isprintable() else " " for c in str(value or "")).strip()
+
+
 def send_email(cfg: dict, to: str, subject: str, text: str, html: str = None):
     msg = EmailMessage()
-    msg["Subject"] = subject
-    msg["From"] = formataddr((cfg.get("from_name") or "ProtectionPro", cfg["from_address"]))
-    msg["To"] = to
+    try:
+        msg["Subject"] = _one_line(subject)
+        msg["From"] = formataddr((_one_line(cfg.get("from_name")) or "ProtectionPro", cfg["from_address"]))
+        msg["To"] = to
+    except ValueError as exc:   # e.g. a line break in an address
+        raise MailError("That email address isn't valid.") from exc
     msg.set_content(text)
     if html:
         msg.add_alternative(html, subtype="html")
@@ -150,7 +158,7 @@ def _shell(title_html: str, body_html: str, button: str, link: str, foot: str) -
 
 
 def invite_message(inviter: str, link: str, days: int, note: str = ""):
-    subject = f"{inviter} invited you to ProtectionPro"
+    subject = f"{_one_line(inviter)} invited you to ProtectionPro"
     note_txt = f'\n"{note}"\n' if note else ""
     text = (f"{inviter} has invited you to join ProtectionPro.\n{note_txt}\n"
             f"Accept the invitation: {link}\n\n"

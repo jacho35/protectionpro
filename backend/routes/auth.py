@@ -5,7 +5,7 @@ import secrets
 import time
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from .. import mailer
@@ -23,6 +23,66 @@ from ..auth import (
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
+# ── Rate limiting ──
+# In-process sliding windows (one uvicorn worker, no extra dependency); nginx adds a
+# coarse second layer. Only failed sign-ins count toward the login limits.
+
+_WINDOW = 900
+_LOGIN_EMAIL_MAX = 10
+_LOGIN_IP_MAX = 30
+_IP_MAX = 20
+_hits: dict[str, list[float]] = {}
+
+
+def _now() -> float:
+    return time.time()
+
+
+def _reset_limits():
+    _hits.clear()
+    _forgot_hits.clear()
+
+
+def _client_ip(request: Request) -> str:
+    ip = request.headers.get("x-real-ip") or (request.client.host if request.client else "")
+    return (ip or "unknown").strip()[:64]
+
+
+def _recent(key: str) -> list[float]:
+    now = _now()
+    hits = [t for t in _hits.get(key, []) if now - t < _WINDOW]
+    if hits:
+        _hits[key] = hits
+    else:
+        _hits.pop(key, None)
+    return hits
+
+
+def _count(key: str):
+    _hits[key] = _recent(key) + [_now()]
+
+
+def _throttled(key: str, limit: int) -> bool:
+    return len(_recent(key)) >= limit
+
+
+def _too_many(msg: str = "Too many attempts. Try again in a few minutes."):
+    raise HTTPException(status_code=429, detail=msg, headers={"Retry-After": str(_WINDOW)})
+
+
+def _ip_limit(request: Request, bucket: str):
+    """Count every call to `bucket` from this IP and refuse past the limit."""
+    key = f"{bucket}:{_client_ip(request)}"
+    if _throttled(key, _IP_MAX):
+        _too_many()
+    _count(key)
+
+
+def _clean_text(value: str, limit: int) -> str:
+    """Printable characters only (no control or line-break characters), capped."""
+    return "".join(c for c in (value or "") if c.isprintable()).strip()[:limit]
+
+
 def _norm_email(email: str) -> str:
     return (email or "").strip().lower()
 
@@ -33,7 +93,9 @@ def _token_for(user: User) -> Token:
 
 
 @router.post("/register", response_model=Token)
-def register(data: RegisterRequest, background: BackgroundTasks, db: Session = Depends(get_db)):
+def register(data: RegisterRequest, background: BackgroundTasks, request: Request,
+             db: Session = Depends(get_db)):
+    _ip_limit(request, "register")
     email = _norm_email(data.email)
     if "@" not in email or len(email) < 3:
         raise HTTPException(status_code=400, detail="A valid email is required")
@@ -96,12 +158,18 @@ def _send_welcome(cfg, name, email):
 
 
 @router.post("/login", response_model=Token)
-def login(data: LoginRequest, db: Session = Depends(get_db)):
+def login(data: LoginRequest, request: Request, db: Session = Depends(get_db)):
     email = _norm_email(data.email)
+    ip_key, email_key = f"login-ip:{_client_ip(request)}", f"login:{email}"
+    if _throttled(ip_key, _LOGIN_IP_MAX) or _throttled(email_key, _LOGIN_EMAIL_MAX):
+        _too_many("Too many sign-in attempts. Try again in a few minutes.")
     user = db.query(User).filter(User.email == email).first()
     # Generic error for both unknown email and bad password (no enumeration).
     if user is None or not verify_password(data.password, user.password_hash):
+        _count(ip_key)
+        _count(email_key)
         raise HTTPException(status_code=401, detail="Invalid email or password")
+    _hits.pop(email_key, None)
     if not user.is_active:
         raise HTTPException(status_code=403, detail="This account has been deactivated")
     return _token_for(user)
@@ -127,7 +195,7 @@ def search_users(q: str = "", user: User = Depends(get_current_user),
     return [{"id": u.id, "email": u.email, "name": u.name} for u in rows]
 
 
-@router.post("/change-password")
+@router.post("/change-password", response_model=Token)
 def change_password(data: ChangePasswordRequest, user: User = Depends(get_current_user),
                     db: Session = Depends(get_db)):
     """Any signed-in user can change their own password (needs the current one)."""
@@ -136,8 +204,10 @@ def change_password(data: ChangePasswordRequest, user: User = Depends(get_curren
     if data.current_password == data.new_password:
         raise HTTPException(status_code=400, detail="Choose a password different from the current one")
     user.password_hash = hash_password(data.new_password)
+    user.token_version = (user.token_version or 0) + 1   # every other session ends
     db.commit()
-    return {"ok": True}
+    db.refresh(user)
+    return _token_for(user)   # this session carries on under the new version
 
 
 @router.post("/logout")
@@ -281,6 +351,8 @@ def set_admin(user_id: int, data: AdminRoleRequest, admin: User = Depends(requir
             raise HTTPException(status_code=400, detail="There must be at least one administrator.")
     if data.is_admin and not user.is_active:
         raise HTTPException(status_code=400, detail="That account is deactivated.")
+    if user.is_admin and not data.is_admin:
+        user.token_version = (user.token_version or 0) + 1
     user.is_admin = data.is_admin
     db.commit()
     return {"id": user.id, "is_admin": user.is_admin}
@@ -322,6 +394,8 @@ def set_active(user_id: int, data: ActiveRequest, admin: User = Depends(require_
         db.query(User).filter(User.id == user_id).first())
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
+    if user.is_active and not data.is_active:
+        user.token_version = (user.token_version or 0) + 1
     user.is_active = data.is_active
     db.commit()
     return {"id": user.id, "is_active": user.is_active}
@@ -383,8 +457,9 @@ def send_welcome(user_id: int, admin: User = Depends(require_admin), db: Session
 
 
 @router.post("/forgot")
-def forgot_password(data: ForgotRequest, db: Session = Depends(get_db)):
+def forgot_password(data: ForgotRequest, request: Request, db: Session = Depends(get_db)):
     """Always answers the same way (no account enumeration)."""
+    _ip_limit(request, "forgot")
     cfg = mailer.get_config(db)
     out = {"ok": True, "email_enabled": cfg is not None}
     if not cfg:
@@ -428,7 +503,8 @@ def admin_reset_link(user_id: int, data: ResetLinkRequest, admin: User = Depends
 
 
 @router.post("/reset", response_model=Token)
-def reset_password(data: ResetRequest, db: Session = Depends(get_db)):
+def reset_password(data: ResetRequest, request: Request, db: Session = Depends(get_db)):
+    _ip_limit(request, "reset")
     h = hashlib.sha256(data.token.strip().encode()).hexdigest()
     row = db.query(PasswordReset).filter(PasswordReset.token_hash == h).first()
     now = datetime.now(timezone.utc)
@@ -440,6 +516,7 @@ def reset_password(data: ResetRequest, db: Session = Depends(get_db)):
     if not user or not user.is_active:
         raise HTTPException(status_code=400, detail="This reset link is invalid or has expired")
     user.password_hash = hash_password(data.password)
+    user.token_version = (user.token_version or 0) + 1
     row.used_at = now
     db.commit()
     db.refresh(user)
@@ -478,7 +555,8 @@ def _device_by_code(db, user_code: str) -> DeviceAuth:
 
 
 @router.post("/device/start")
-def device_start(data: DeviceStartRequest, db: Session = Depends(get_db)):
+def device_start(data: DeviceStartRequest, request: Request, db: Session = Depends(get_db)):
+    _ip_limit(request, "device")
     now = datetime.now(timezone.utc)
     # Housekeeping, and a cap so an anonymous caller can't fill the table.
     db.query(DeviceAuth).filter(DeviceAuth.expires_at < now - timedelta(hours=1)).delete()
@@ -489,7 +567,7 @@ def device_start(data: DeviceStartRequest, db: Session = Depends(get_db)):
     user_code = _new_user_code(db)
     db.add(DeviceAuth(device_hash=hashlib.sha256(device_code.encode()).hexdigest(),
                       user_code=user_code,
-                      client_name=(data.client_name or "").strip()[:80],
+                      client_name=_clean_text(data.client_name, 40),
                       expires_at=now + timedelta(minutes=DEVICE_MINUTES)))
     db.commit()
     return {"device_code": device_code, "user_code": user_code,
@@ -514,7 +592,8 @@ def device_poll(data: DevicePollRequest, db: Session = Depends(get_db)):
         return {"status": "denied"}
     row.status = "used"            # a token is handed out exactly once
     db.commit()
-    tok = _token_for(user)
+    tok = Token(access_token=create_access_token(user, amr="device"), token_type="bearer",
+                user=UserOut.model_validate(user))
     return {"status": "approved", "access_token": tok.access_token,
             "token_type": "bearer", "user": tok.user}
 

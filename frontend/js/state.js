@@ -1657,7 +1657,7 @@ const AppState = {
         revisionNumber: data.projectDetails.revisionNumber || '',
         date: data.projectDetails.date || '',
         description: data.projectDetails.description || '',
-        companyLogo: data.projectDetails.companyLogo || null,
+        companyLogo: (typeof data.projectDetails.companyLogo === 'string' && /^data:image\/(png|jpe?g|gif|webp);base64,[A-Za-z0-9+/=]+$/.test(data.projectDetails.companyLogo)) ? data.projectDetails.companyLogo : null,
       };
     }
     this.baseMVA = data.baseMVA || DEFAULT_BASE_MVA;
@@ -2069,6 +2069,14 @@ AppState.staleBannerHTML = function (slot) {
 // Snap coordinate to grid
 function snapToGrid(val) {
   return Math.round(val / SNAP_SIZE) * SNAP_SIZE;
+}
+
+// A number for a value="…" attribute: anything that is not a finite number (text or markup that
+// arrived in a project file where a number belongs) becomes empty.
+function numAttr(v) {
+  if (v === '' || v == null) return '';
+  const n = Number(v);
+  return Number.isFinite(n) ? String(n) : '';
 }
 
 // Escape a string for safe interpolation into HTML/SVG markup

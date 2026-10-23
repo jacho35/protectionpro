@@ -205,6 +205,8 @@ def run_timeseries_loadflow(project: ProjectData, method: str = "newton_raphson"
     step_minutes = max(1.0, float(step_minutes or 60.0))
     horizon_hours = max(step_minutes / 60.0, float(horizon_hours or 24.0))
     n_steps = max(1, round(horizon_hours * 60.0 / step_minutes))
+    if n_steps > 8784 * 4:
+        raise ValueError(f"Too many time steps ({n_steps}); the limit is {8784 * 4}")
     dt_h = step_minutes / 60.0
 
     base_components = {c.id: c for c in project.components}

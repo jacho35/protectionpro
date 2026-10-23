@@ -4,7 +4,8 @@ import csv
 import io
 import json
 from typing import Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
+from ._http import content_disposition
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
@@ -22,6 +23,9 @@ router = APIRouter(prefix="/projects", tags=["reports"])
 
 # ── New POST-based PDF endpoints (use current app state, no project ID needed) ──
 
+_MAX_IMAGE_CHARS = 28_000_000   # ~20 MB of image once decoded
+
+
 class ReportRequest(BaseModel):
     """Request body for server-side PDF generation."""
     projectName: str = "Untitled Project"
@@ -36,6 +40,20 @@ class ReportRequest(BaseModel):
     diagramImage: Optional[str] = None  # base64-encoded PNG of the single-line diagram
     dbDiagrams: Optional[dict] = None  # board id -> base64 PNG of its DB single line
     projectDetails: Optional[dict] = None  # project metadata for cover page
+
+    @field_validator("diagramImage")
+    @classmethod
+    def _image_size(cls, v):
+        if v is not None and len(v) > _MAX_IMAGE_CHARS:
+            raise ValueError("diagramImage is too large")
+        return v
+
+    @field_validator("dbDiagrams")
+    @classmethod
+    def _images_size(cls, v):
+        if v is not None and sum(len(x) for x in v.values() if isinstance(x, str)) > _MAX_IMAGE_CHARS:
+            raise ValueError("dbDiagrams are too large")
+        return v
 
 
 class CalculationsReportRequest(BaseModel):
@@ -77,11 +95,11 @@ def generate_pdf_report(req: ReportRequest):
         db_check_results=req.dbCheckResults,
         db_diagrams=req.dbDiagrams,
     )
-    filename = f"{req.projectName.replace(' ', '_')}_report.pdf"
+    disposition = content_disposition(f"{req.projectName}_report", "pdf")
     return StreamingResponse(
         buf,
         media_type="application/pdf",
-        headers={"Content-Disposition": f"attachment; filename={filename}"}
+        headers={"Content-Disposition": disposition}
     )
 
 
@@ -108,11 +126,11 @@ def generate_calculations_pdf(req: CalculationsReportRequest):
         )
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Calculations report generation failed: {exc}") from exc
-    filename = f"{req.projectName.replace(' ', '_')}_calculations.pdf"
+    disposition = content_disposition(f"{req.projectName}_calculations", "pdf")
     return StreamingResponse(
         buf,
         media_type="application/pdf",
-        headers={"Content-Disposition": f"attachment; filename={filename}"}
+        headers={"Content-Disposition": disposition}
     )
 
 
@@ -128,11 +146,11 @@ def generate_arcflash_labels_pdf(req: ReportRequest):
     )
     if not buf:
         raise HTTPException(status_code=400, detail="No arc flash results to generate labels.")
-    filename = f"{req.projectName.replace(' ', '_')}_ArcFlash_Labels.pdf"
+    disposition = content_disposition(f"{req.projectName}_ArcFlash_Labels", "pdf")
     return StreamingResponse(
         buf,
         media_type="application/pdf",
-        headers={"Content-Disposition": f"attachment; filename={filename}"}
+        headers={"Content-Disposition": disposition}
     )
 
 

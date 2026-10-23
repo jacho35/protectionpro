@@ -105,6 +105,10 @@ class PlanImage(Base):
     # rather than cascade-deleted (older revisions may still reference them).
     project_id = Column(Integer, ForeignKey("projects.id", ondelete="SET NULL"),
                         nullable=True, index=True)
+    # The uploader. Access to an image = its uploader, or anyone with access to
+    # its project. NULL only on rows that predate the column and had no project.
+    owner_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"),
+                      nullable=True, index=True)
     kind = Column(String(16), nullable=False, default="raster")   # 'raster' | 'pdf'
     name = Column(String(255), nullable=False, default="")
     mime = Column(String(64), nullable=False, default="image/png")
@@ -127,6 +131,9 @@ class User(Base):
     # Library approver: may review company-library submissions without being an administrator.
     is_approver = Column(Boolean, nullable=False, default=False)
     is_active = Column(Boolean, nullable=False, default=True)
+    # Bumped on password change/reset, deactivation and demotion: tokens carry the
+    # value they were issued under and stop working once it moves on.
+    token_version = Column(Integer, nullable=False, default=0)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     owned_projects = relationship("Project", back_populates="owner",
@@ -394,6 +401,8 @@ def init_db():
     _migrate_add_library_currency()
     _migrate_add_entry_retired()
     _migrate_add_user_approver()
+    _migrate_add_user_token_version()
+    _migrate_add_plan_image_owner()
 
 
 def _migrate_add_folder_id():
@@ -462,6 +471,31 @@ def _migrate_add_user_approver():
         if "is_approver" not in [c["name"] for c in insp.get_columns("users")]:
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE users ADD COLUMN is_approver BOOLEAN NOT NULL DEFAULT 0"))
+
+
+def _migrate_add_user_token_version():
+    """Add users.token_version to an existing DB (idempotent; no Alembic here)."""
+    from sqlalchemy import inspect, text
+    insp = inspect(engine)
+    if "users" in insp.get_table_names():
+        if "token_version" not in [c["name"] for c in insp.get_columns("users")]:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE users ADD COLUMN token_version INTEGER NOT NULL DEFAULT 0"))
+
+
+def _migrate_add_plan_image_owner():
+    """Add plan_images.owner_id and backfill it from the project owner (idempotent)."""
+    from sqlalchemy import inspect, text
+    insp = inspect(engine)
+    if "plan_images" in insp.get_table_names():
+        if "owner_id" not in [c["name"] for c in insp.get_columns("plan_images")]:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE plan_images ADD COLUMN owner_id INTEGER REFERENCES users(id)"))
+        with engine.begin() as conn:
+            conn.execute(text(
+                "UPDATE plan_images SET owner_id = (SELECT owner_id FROM projects "
+                "WHERE projects.id = plan_images.project_id) "
+                "WHERE owner_id IS NULL AND project_id IS NOT NULL"))
 
 
 def get_db():

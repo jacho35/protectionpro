@@ -45,7 +45,7 @@ const Auth = {
       this._showTab('register');
     } else {
       API.request('/health').then(h => {
-        if (h && h.users === 0 && typeof Setup !== 'undefined') {
+        if (h && h.setup_done === false && typeof Setup !== 'undefined') {
           if (m) m.style.display = 'none';
           Setup.open();
         } else this._showTab('login');
@@ -228,8 +228,8 @@ const Auth = {
     m.innerHTML = `<div class="modal-content" style="min-width:340px;max-width:420px">
       <div class="modal-header"><h3>Authorize sign-in</h3></div>
       <div class="modal-body">
-        <p><b>${esc(info.client_name || 'An application')}</b> is asking to access ProtectionPro as <b>${esc(info.email)}</b> — your projects, with the same access you have.</p>
-        <p>Only approve if the code below matches the one it showed you.</p>
+        <p>A client that calls itself <b>${esc(info.client_name || 'an application')}</b> (it chose that name) is asking to access ProtectionPro as <b>${esc(info.email)}</b> — your projects, with the same access you have.</p>
+        <p>Only approve a request you started yourself in the ProtectionPro MCP client, and only if the code below matches the one it showed you. We will never send you this link.</p>
         <p style="font-size:1.6em;letter-spacing:.15em;text-align:center;font-weight:600">${esc(info.user_code)}</p>
         <div id="auth-device-error" class="auth-error"></div>
         <div style="display:flex;gap:8px;justify-content:flex-end">
@@ -349,7 +349,8 @@ const Auth = {
     if (nw.value.length < 8) { msg.textContent = 'The new password must be at least 8 characters.'; return; }
     if (nw.value !== cf.value) { msg.textContent = 'The two new passwords don’t match.'; return; }
     try {
-      await API.changePassword(cur.value, nw.value);
+      const res = await API.changePassword(cur.value, nw.value);
+      if (res && res.access_token) API.setToken(res.access_token);   // other sessions end; this one continues
       cur.value = nw.value = cf.value = '';
       msg.className = 'auth-hint';
       msg.textContent = 'Password changed.';

@@ -1165,7 +1165,7 @@ const RoadPlan = {
     const ent = this._pickSrc, chain = this._picked;
     const len = new RPAlign(chain).length;
     const gaps = this._pickGaps || [];
-    const gapRow = `<label class="rp-gapin">Bridge gaps up to <input type="number" min="0" step="0.5" value="${this._gapTol}" data-rp-gap> m</label>`
+    const gapRow = `<label class="rp-gapin">Bridge gaps up to <input type="number" min="0" step="0.5" value="${numAttr(this._gapTol)}" data-rp-gap> m</label>`
       + (gaps.length ? `<span class="rp-gapnote">${gaps.length} gap${gaps.length === 1 ? '' : 's'} bridged (dashed): ${gaps.map(g => this._fmt(Math.hypot(g[0][0] - g[1][0], g[0][1] - g[1][1]), 2) + ' m').join(', ')}</span>` : '');
     if (this._trim) {
       const m = this._trim;

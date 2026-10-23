@@ -358,6 +358,7 @@ const Retic = {
   },
 
   _onClick(e) {
+    if (e.target.closest('.kiosk-name')) return;   // typing a name never folds the card
     const btn = e.target.closest('[data-action]');
     if (!btn) return;
     const action = btn.dataset.action;
@@ -864,7 +865,7 @@ const Retic = {
         <div class="kiosk-head" data-action="toggle-kiosk" data-kiosk="${k.id}">
           <input type="checkbox" class="sel-box" data-action="sel-kiosk" data-kiosk="${k.id}" aria-label="Select this kiosk's erven and feeder for a bulk cable change" title="Select this kiosk's erven and LV feeder to change their cables together"${this._kioskAllSel(k) ? ' checked' : ''}>
           <span class="toggle">${k.collapsed ? '▸' : '▾'}</span>
-          <input class="kiosk-name" data-action="kiosk-field" data-kiosk="${k.id}" data-field="name" value="${escHtml(k.name)}" onclick="event.stopPropagation()">
+          <input class="kiosk-name" data-action="kiosk-field" data-kiosk="${k.id}" data-field="name" value="${escHtml(k.name)}">
           <button type="button" class="kiosk-vd-badge" data-kiosk-vd="${k.id}" data-action="toggle-calc" data-calc="f:${k.id}"
             aria-expanded="${this._calcOpen.has('f:' + k.id)}" title="Cumulative feeder volt drop from the minisub — click for the leg-by-leg working">Feeder VD —</button>
           <button type="button" class="kiosk-demand-badge" data-kiosk="${k.id}" data-action="toggle-calc" data-calc="k:${k.id}"
@@ -958,7 +959,7 @@ const Retic = {
               <option value="erf"${b.renameTarget === 'erf' ? ' selected' : ''}>Erven</option>
               <option value="kiosk"${b.renameTarget === 'kiosk' ? ' selected' : ''}>Kiosks</option></select>
             <input type="text" data-action="bulk-field" data-field="renamePrefix" value="${escHtml(b.renamePrefix)}" placeholder="Prefix: K1 or K" aria-label="Erf name prefix" size="9">
-            <input type="number" min="1" step="1" data-action="bulk-field" data-field="renameStart" value="${b.renameStart}" aria-label="Start numbering at" title="Start at">
+            <input type="number" min="1" step="1" data-action="bulk-field" data-field="renameStart" value="${numAttr(b.renameStart)}" aria-label="Start numbering at" title="Start at">
             <select data-action="bulk-field" data-field="renameStyle" aria-label="Numbering style">
               <option value="nest"${b.renameStyle === 'nest' ? ' selected' : ''}>Prefix.1, .2 (K1.1, K1.2)</option>
               <option value="seq"${b.renameStyle === 'seq' ? ' selected' : ''}>Prefix + 1, 2 (K1, K2, K3)</option></select>

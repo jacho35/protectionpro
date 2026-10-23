@@ -1253,8 +1253,18 @@ const TCC = {
       h2{margin:0 0 2px} p{margin:0 0 8px;color:#555;font-size:13px} img{width:100%;max-height:70vh;object-fit:contain}
       table{font-size:12px;border-collapse:collapse;margin-top:8px} td{padding:2px 10px 2px 0}
       @media print{@page{size:landscape;margin:10mm}}</style></head><body>${pages.join('')}
-      <script>window.onload=function(){window.print();}<\/script></body></html>`);
+      </body></html>`);
     win.document.close();
+    this._printWhenReady(win, false);
+  },
+
+  // Print a popup once its images have loaded. Driven from here, not from a script inside
+  // the popup (the page's content-security-policy allows no inline script).
+  _printWhenReady(win, closeAfter) {
+    const imgs = Array.from(win.document.images);
+    const ready = Promise.all(imgs.map(i => i.complete ? Promise.resolve()
+      : new Promise(r => { i.addEventListener('load', r); i.addEventListener('error', r); })));
+    ready.then(() => { win.focus(); win.print(); if (closeAfter) win.close(); });
   },
 
   // ── Persisted extras: custom devices and the grading margin ──
@@ -6965,10 +6975,11 @@ const TCC = {
     const dataUrl = this.canvas.toDataURL('image/png');
     const win = window.open('', '_blank');
     if (!win) return;
-    win.document.write(`<!DOCTYPE html><html><head><title>TCC - ${tabName}</title>
+    win.document.write(`<!DOCTYPE html><html><head><title>TCC - ${escHtml(tabName)}</title>
       <style>@media print { body { margin: 0; } img { width: 100%; max-height: 100vh; } }</style>
-      </head><body><img src="${dataUrl}" onload="window.print(); window.close();"></body></html>`);
+      </head><body><img src="${dataUrl}"></body></html>`);
     win.document.close();
+    this._printWhenReady(win, true);
   },
 
   exportCSV() {

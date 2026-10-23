@@ -971,6 +971,7 @@ const StreetLight = {
       m.setAttribute('aria-label', 'Street light quick calc');
       document.body.appendChild(m);
       m.addEventListener('change', (e) => this._qcChange(e));
+      m.addEventListener('submit', (e) => e.preventDefault());
       m.addEventListener('click', (e) => {
         // No backdrop close: a form you are typing / picking in must not vanish
         // on a stray click or a drag that ends outside it (× or Esc close it).
@@ -1014,7 +1015,7 @@ const StreetLight = {
           <span class="sl-k">uniform string · 230 V · limits ${d.vdLimitPct} % from source, ${d.cumVdLimitPct} % cumulative · snaking ${d.snakingPct} %, loop-in ${d.loopInM} m</span>
           <button class="modal-close" data-qc="close" aria-label="Close">&times;</button></div>
         <div class="sl-qc-body">
-          <form class="sl-qc-form" onsubmit="return false">
+          <form class="sl-qc-form">
             <label>System<select data-q="system">
               <option value="3ph"${q.system !== '1ph' ? ' selected' : ''}>3Φ alternating R-W-B</option>
               <option value="1ph"${q.system === '1ph' ? ' selected' : ''}>1Φ string</option></select></label>

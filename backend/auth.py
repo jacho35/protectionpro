@@ -71,14 +71,17 @@ def verify_password(password: str, password_hash: str) -> bool:
 
 # ── JWT ──
 
-def create_access_token(user: User) -> str:
+def create_access_token(user: User, amr: str | None = None) -> str:
     now = datetime.now(timezone.utc)
     payload = {
         "sub": str(user.id),
         "email": user.email,
+        "tv": user.token_version or 0,
         "iat": now,
         "exp": now + TOKEN_TTL,
     }
+    if amr:
+        payload["amr"] = amr   # how the token was obtained (e.g. "device")
     return jwt.encode(payload, _load_or_create_secret(), algorithm=ALGORITHM)
 
 
@@ -113,6 +116,8 @@ def get_current_user(
     user = db.query(User).filter(User.id == user_id).first()
     if user is None or not user.is_active:
         raise _unauthorized("User not found or deactivated")
+    if int(payload.get("tv", 0) or 0) != (user.token_version or 0):
+        raise _unauthorized("Session expired — sign in again")
     return user
 
 

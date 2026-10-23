@@ -1,6 +1,7 @@
 """Pydantic schemas for API request/response validation."""
 
-from pydantic import BaseModel, PrivateAttr, field_serializer, model_validator, Field
+import re
+from pydantic import BaseModel, PrivateAttr, field_serializer, field_validator, model_validator, Field
 from typing import Optional, Literal
 from datetime import datetime
 
@@ -139,6 +140,9 @@ class Scenario(BaseModel):
     nextId: int = 1
 
 
+_LOGO_RE = re.compile(r"^data:image/(png|jpe?g|gif|webp);base64,[A-Za-z0-9+/=]+$")
+
+
 class ProjectDetails(BaseModel):
     projectNumber: str = ""
     client: str = ""
@@ -150,6 +154,14 @@ class ProjectDetails(BaseModel):
     date: str = ""
     description: str = ""
     companyLogo: Optional[str] = None  # base64 data URL
+
+    @field_validator("companyLogo", mode="before")
+    @classmethod
+    def _logo_is_a_raster_data_url(cls, v):
+        """Only a raster image data URL (<= 2 MB) is kept; anything else becomes None."""
+        if isinstance(v, str) and len(v) <= 3_000_000 and _LOGO_RE.match(v):
+            return v
+        return None
 
 
 class ProjectData(BaseModel):
@@ -164,8 +176,8 @@ class ProjectData(BaseModel):
     projectDetails: Optional[ProjectDetails] = None
     baseMVA: float = 100.0
     frequency: int = 50
-    components: list[Component] = []
-    wires: list[Wire] = []
+    components: list[Component] = Field(default=[], max_length=20000)
+    wires: list[Wire] = Field(default=[], max_length=60000)
     nextId: int = 1
     scenarios: list[Scenario] = []
     loadFlowMethod: Optional[str] = None
@@ -1710,8 +1722,8 @@ class VoltageStabilityResults(BaseModel):
 class VoltageStabilityRequest(ProjectData):
     """ProjectData plus voltage-stability sweep options (all optional)."""
     qv_bus_id: Optional[str] = None          # None → auto (weakest bus)
-    step: Optional[float] = None             # λ increment (default 0.10)
-    lambda_max: Optional[float] = None       # λ cap (default 4.0)
+    step: Optional[float] = Field(default=None, ge=0.005, le=1.0)    # λ increment (default 0.10)
+    lambda_max: Optional[float] = Field(default=None, gt=0, le=50)   # λ cap (default 4.0)
     v_floor: Optional[float] = None          # collapse floor p.u. (default 0.40)
 
 
@@ -1767,7 +1779,7 @@ class ContingencyRequest(ProjectData):
     v_min: Optional[float] = None            # default 0.95
     v_max: Optional[float] = None            # default 1.05
     loading_limit_pct: Optional[float] = None  # default 100
-    max_contingencies: Optional[int] = None  # N-2 pair cap (default 400)
+    max_contingencies: Optional[int] = Field(default=None, ge=0, le=5000)  # N-2 pair cap (default 400)
 
 
 # ── Time-series / quasi-dynamic load flow ──
@@ -1832,13 +1844,21 @@ class TimeSeriesLoadFlowResults(BaseModel):
 
 class TimeSeriesLoadFlowRequest(ProjectData):
     """ProjectData plus time-series sweep options (all optional)."""
-    horizon_hours: Optional[float] = None    # default 24
-    step_minutes: Optional[float] = None     # default 60
+    horizon_hours: Optional[float] = Field(default=None, ge=0.25, le=8784)   # default 24; up to a leap year
+    step_minutes: Optional[float] = Field(default=None, ge=1, le=1440)       # default 60
     default_profile: Optional[str] = None    # overrides the per-type default
     profile_overrides: dict[str, str] = {}   # component_id -> built-in profile name
     v_min: Optional[float] = None            # default 0.95 (violation counting only)
     v_max: Optional[float] = None            # default 1.05
     loading_limit_pct: Optional[float] = None  # default 100
+
+    @model_validator(mode="after")
+    def _bounded_step_count(self):
+        h = self.horizon_hours if self.horizon_hours is not None else 24.0
+        s = self.step_minutes if self.step_minutes is not None else 60.0
+        if h * 60.0 / s > 8784 * 4:
+            raise ValueError("Too many time steps: use at most 35,136 (a leap year at 15-minute steps)")
+        return self
 
 
 # ── Harmonic Analysis (IEEE 519-2014) ──
@@ -1860,7 +1880,7 @@ class FilterSizingRequest(ProjectData):
     filter_bus_id: Optional[str] = None    # None → worst-THD bus
     total_kvar: Optional[float] = None     # None → island reactive demand
     quality_factor: Optional[float] = None # default 30
-    max_branches: Optional[int] = None     # default 3 (≤4)
+    max_branches: Optional[int] = Field(default=None, ge=1, le=8)     # default 3 (≤4)
 
 
 class FilterSizingResults(BaseModel):
@@ -1887,8 +1907,8 @@ class HostingCapacityRequest(ProjectData):
     v_min: Optional[float] = None              # default 0.95
     v_max: Optional[float] = None              # default 1.05
     loading_limit_pct: Optional[float] = None  # default 100
-    step_mw: Optional[float] = None            # sweep resolution (default 0.5)
-    max_mw_per_bus: Optional[float] = None     # search cap (default 10.0)
+    step_mw: Optional[float] = Field(default=None, ge=0.01, le=100)         # sweep resolution (default 0.5)
+    max_mw_per_bus: Optional[float] = Field(default=None, gt=0, le=1000)    # search cap (default 10.0)
     # Fault-level / protection screen (Fault Analysis + Duty Check re-run at
     # each bus's discovered capacity). On by default — a hosting-capacity
     # answer that ignores switchgear duty is not a usable answer.
@@ -1975,7 +1995,7 @@ class OPFRequest(ProjectData):
     use_capacitors: Optional[bool] = None      # cap steps control (default on)
     use_taps: Optional[bool] = None            # transformer taps (default on)
     use_setpoints: Optional[bool] = None       # gen/utility V setpoints (default on)
-    max_moves: Optional[int] = None            # hill-climb move budget (default 25)
+    max_moves: Optional[int] = Field(default=None, ge=0, le=500)            # hill-climb move budget (default 25)
 
 
 class OPFResults(BaseModel):
@@ -2033,8 +2053,8 @@ class BatterySizingResults(BaseModel):
 class FrequencyScanRequest(ProjectData):
     """ProjectData plus frequency-scan sweep options (all optional)."""
     scan_bus_ids: Optional[list[str]] = None   # None → all (non-synthetic) buses
-    h_max: Optional[float] = None              # top harmonic order (default 25)
-    h_step: Optional[float] = None             # sweep resolution (default 0.05)
+    h_max: Optional[float] = Field(default=None, gt=0, le=500)              # top harmonic order (default 25)
+    h_step: Optional[float] = Field(default=None, ge=0.005, le=50)          # sweep resolution (default 0.05)
 
 
 class FrequencyScanResults(BaseModel):
