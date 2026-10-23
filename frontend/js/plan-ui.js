@@ -43,7 +43,7 @@ const PlanUI = {
   // kind → the tool id that draws it; disabled until that tool is registered.
   _toolFor(kind) {
     return { element: 'place', route: 'route', trench: 'trench',
-      crossing: 'crossing', text: 'text', measurement: 'measurement', room: 'room', roomdetect: 'roomdetect', perimeter: 'perimeter', sportsfield: 'sportsfield' }[kind];
+      crossing: 'crossing', text: 'text', measurement: 'measurement', room: 'room', roomdetect: 'roomdetect', roomshape: 'roomshape', perimeter: 'perimeter', sportsfield: 'sportsfield' }[kind];
   },
 
   // Folded palette groups (session only); the group last used stays open.
@@ -236,7 +236,7 @@ const PlanUI = {
     const rooms = (pm.rooms || []).filter(r => r.points && r.points.length >= 2 && (typeof LightingWS === 'undefined' || LightingWS.inScope(r.kind)));
     const KIND = { room: 'Room', outdoor: 'Outdoor area', perimeter: 'Fence', sports: 'Sports field', obtrusive: 'Obtrusive light', escape: 'Escape route' };
     html += `<div class="plan-sec-head"><span>On this floor</span><small>${rooms.length}</small></div>`;
-    if (!rooms.length) html += `<div class="plan-props-empty">${scope === 'sports' ? 'Pick Sports field and click the centre spot.' : 'Draw a room, or use Detect room and click inside one.'}</div>`;
+    if (!rooms.length) html += `<div class="plan-props-empty">${scope === 'sports' ? 'Pick Sports field and click the centre spot.' : 'Draw a room, use Detect room and click inside one, or start from a shape (no plan needed).'}</div>`;
     for (const r of rooms) {
       const v = (typeof LightingWS !== 'undefined' && LightingWS.verdictOf) ? LightingWS.verdictOf(r) : '';
       const cls = v === 'Pass' ? 'ok' : v === 'Fail' ? 'bad' : '';

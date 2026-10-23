@@ -123,8 +123,11 @@ const PLAN_DEFS = {
         { key: 'lumens', label: 'Output', type: 'number', unit: 'lm' },
         { key: 'photoId', label: 'Luminaire (library)', type: 'photo_select' },
         { key: 'mount', label: 'Mounting', type: 'select', options: [
-          { value: 'recessed', label: 'Recessed' }, { value: 'surface', label: 'Surface' }, { value: 'suspended', label: 'Suspended' } ] },
+          { value: 'recessed', label: 'Recessed' }, { value: 'surface', label: 'Surface' }, { value: 'suspended', label: 'Suspended' },
+          { value: 'pendant', label: 'Pendant at a height' }, { value: 'wall', label: 'On the wall' } ] },
         { key: 'drop', label: 'Suspension drop', type: 'number', unit: 'm', min: 0, step: 0.1 },
+        { key: 'hangH', label: 'Height above floor (pendant, wall)', type: 'number', unit: 'm', min: 0.1, step: 0.1 },
+        { key: 'wallAim', label: 'Wall light aim (0 down, 90 across, 180 up)', type: 'number', unit: '°', min: 0, max: 180, step: 15 },
         { key: 'fluxPct', label: 'Flux / dimming', type: 'number', unit: '%', min: 0, max: 100, step: 5 },
         { key: 'emergPct', label: 'Emergency output (0 = not on battery)', type: 'number', unit: '%', min: 0, max: 100, step: 5 },
         { key: 'mountH', label: 'Mounting height (outdoor)', type: 'number', unit: 'm', min: 0.5, step: 0.5 },
@@ -344,6 +347,7 @@ const PLAN_DEFS = {
   lightingTools() {
     return [
       { type: 'room', kind: 'room', name: 'Room / area', color: this.room.stroke, desc: 'Click the corners' },
+      { type: 'roomshape', kind: 'roomshape', name: 'Room from a shape', color: this.room.stroke, desc: 'Rectangle, L, T, U or any outline — no plan needed' },
       { type: 'roomdetect', kind: 'roomdetect', name: 'Detect room', color: this.room.stroke, desc: 'Click inside a room' },
       { type: 'outdoor', kind: 'room', name: 'Outdoor area', color: '#16a34a', desc: 'Car park, yard, walkway' },
       { type: 'perimeter', kind: 'perimeter', name: 'Fence / perimeter', color: '#7c3aed', desc: 'Vertical lux along a line' },

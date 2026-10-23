@@ -79,7 +79,7 @@ const LightOverview = {
     const todo = shown.length - n('Pass') - n('Fail');
     const cards = [];
     if (kinds.includes('rooms') || rooms.length) cards.push(this._card('rooms', 'Rooms & areas', rooms.map(r => this._zoneItem(r)),
-      `<button class="btn-small" data-lo-add="room">+ Room</button><button class="btn-small" data-lo-add="outdoor">+ Outdoor area</button>`,
+      `<button class="btn-small" data-lo-add="room">+ Room</button><button class="btn-small" data-lo-add="roomshape">+ Room from a shape</button><button class="btn-small" data-lo-add="outdoor">+ Outdoor area</button>`,
       'No rooms or areas yet.'));
     if (kinds.includes('roads') || roads.length) cards.push(this._card('roads', 'Roads', roads.map(r => this._roadItem(r)),
       `<button class="btn-small" data-lo-add="design">+ Cross-section</button><button class="btn-small" data-lo-add="road">+ Road on plan</button>`,

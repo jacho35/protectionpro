@@ -714,7 +714,7 @@ class PhotometryFileRequest(BaseModel):
 
 class RoomLightingRequest(BaseModel):
     """Room lighting — direct + interreflected illuminance, UGR and energy for
-    rooms of any outline under a flat ceiling. See analysis/room_lighting.py."""
+    rooms of any outline, flat ceiling or a ceiling section. See analysis/room_lighting.py."""
     model_config = {"extra": "allow"}
 
     rooms: list[dict] = []
