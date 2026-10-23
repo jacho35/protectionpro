@@ -371,7 +371,9 @@ const LightReport = {
       const a = [];
       if (it.kind === 'room') {
         const L = RoomLighting.read(it.room);
-        a.push(['Ceiling / work plane / wall zone', `${L.ceilH} m / ${L.workH} m / ${L.wallZone} m`],
+        const sec = typeof RoomSection !== 'undefined' ? RoomSection.get(it.room) : { type: 'flat' };
+        const ch = sec.type !== 'flat' && res && res.ceilingHeight;
+        a.push(['Ceiling / work plane / wall zone', `${ch ? `${RoomSection.TYPES[sec.type]}, ${ch.min.toFixed(2)}–${ch.max.toFixed(2)} m` : L.ceilH + ' m'} / ${L.workH} m / ${L.wallZone} m`],
           ['Reflectances (ceiling / walls / floor)', `${L.rhoC} / ${L.rhoW} / ${L.rhoF}`], ['Maintenance factor', L.mf],
           ['Calculation', `Direct light from the photometric data plus diffuse interreflection (radiosity); grid ${res && res.workplane ? res.workplane.step + ' m, ' + res.workplane.n + ' points' : ''}; ${(() => {
             const sc = it.room.scene || {};
