@@ -9,7 +9,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from .. import mailer
-from ..models.database import get_db, User, Project, Folder, Invite, PasswordReset, SharedLibrary, DeviceAuth
+from ..models.database import get_db, User, Project, Folder, Invite, PasswordReset, SharedLibrary, DeviceAuth, PlanImage
 from ..models.schemas import (
     RegisterRequest, LoginRequest, Token, UserOut,
     InviteCreate, InviteOut, InviteCreated, ForgotRequest, ResetRequest, ChangePasswordRequest, AdminRoleRequest, ApproverRequest, ActiveRequest, ResetLinkRequest,
@@ -417,6 +417,7 @@ def delete_user(user_id: int, transfer_to: int = None, admin: User = Depends(req
     db.query(Project).filter(Project.owner_id == user.id).update({Project.owner_id: heir.id}, synchronize_session=False)
     db.query(Folder).filter(Folder.owner_id == user.id).update({Folder.owner_id: heir.id}, synchronize_session=False)
     db.query(SharedLibrary).filter(SharedLibrary.owner_id == user.id).update({SharedLibrary.owner_id: heir.id}, synchronize_session=False)
+    db.query(PlanImage).filter(PlanImage.owner_id == user.id).update({PlanImage.owner_id: heir.id}, synchronize_session=False)
     db.query(Invite).filter(Invite.created_by == user.id).update({Invite.created_by: heir.id}, synchronize_session=False)
     db.query(Invite).filter(Invite.used_by == user.id).update({Invite.used_by: None}, synchronize_session=False)
     db.delete(user)

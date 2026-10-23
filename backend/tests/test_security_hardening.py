@@ -271,3 +271,11 @@ def test_report_image_size_is_capped(client):
     a = _reg(client, "a@x.com").json()["access_token"]
     r = client.post("/api/reports/pdf", json={"projectName": "R", "diagramImage": "A" * 28_000_001}, headers=_h(a))
     assert r.status_code == 422
+
+
+def test_deleting_a_user_who_uploaded_plan_images(client):
+    a, b = _users(client)
+    uid_b = client.get("/api/auth/me", headers=_h(b)).json()["id"]
+    iid = _upload(client, b).json()["id"]
+    assert client.delete(f"/api/auth/users/{uid_b}", headers=_h(a)).status_code == 200
+    assert client.get(f"/api/plan-images/{iid}", headers=_h(a)).status_code == 200   # the heir has it
