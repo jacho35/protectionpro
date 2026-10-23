@@ -347,7 +347,7 @@ const PLAN_DEFS = {
   lightingTools() {
     return [
       { type: 'room', kind: 'room', name: 'Room / area', color: this.room.stroke, desc: 'Click the corners' },
-      { type: 'roomshape', kind: 'roomshape', name: 'Room from a shape', color: this.room.stroke, desc: 'Rectangle, L, T or U — no plan needed' },
+      { type: 'roomshape', kind: 'roomshape', name: 'Room from a shape', color: this.room.stroke, desc: 'Rectangle, L, T, U or any outline — no plan needed' },
       { type: 'roomdetect', kind: 'roomdetect', name: 'Detect room', color: this.room.stroke, desc: 'Click inside a room' },
       { type: 'outdoor', kind: 'room', name: 'Outdoor area', color: '#16a34a', desc: 'Car park, yard, walkway' },
       { type: 'perimeter', kind: 'perimeter', name: 'Fence / perimeter', color: '#7c3aed', desc: 'Vertical lux along a line' },
