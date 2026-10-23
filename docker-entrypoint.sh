@@ -5,6 +5,6 @@ set -e
 # Only the server drops privileges; other commands (tests, shells) run as given.
 if [ "$(id -u)" = "0" ] && [ "$1" = "uvicorn" ]; then
     chown -R app:app /data 2>/dev/null || true
-    exec setpriv --reuid=app --regid=app --init-groups "$@"
+    exec setpriv --reuid=app --regid=app --init-groups env HOME=/home/app "$@"
 fi
 exec "$@"
