@@ -224,6 +224,7 @@ const PlanUI = {
   // The Lighting tab's panel: zones to draw, fittings to place, and every
   // zone on this floor (click to select).
   _lightingPanel() {
+    if (typeof LightingWS !== 'undefined' && LightingWS.paletteHtml) return LightingWS.paletteHtml();
     const pm = AppState.planMarkup;
     // A Lighting project's Rooms / Sports fields tab offers its own tools.
     const scope = typeof LightingWS !== 'undefined' ? LightingWS.scope : 'all';
@@ -278,6 +279,7 @@ const PlanUI = {
   },
 
   _onPaletteClick(e) {
+    if (PlanMarkup.context === 'lighting' && typeof LightingWS !== 'undefined' && LightingWS.onPaletteClick && LightingWS.onPaletteClick(e)) return;
     const actBtn = e.target.closest('[data-act]');
     if (actBtn) {
       const a = actBtn.dataset.act;
@@ -303,7 +305,8 @@ const PlanUI = {
       const card = pick.closest('[data-ul-kind]');
       this._underlay = { kind: card.dataset.ulKind, id: card.dataset.ulId };
       this.renderPalette(); this.renderProps();
-      if (PlanMarkup._isMobile()) PlanMarkup._toggleDrawer('props');
+      if (PlanMarkup.context === 'lighting' && typeof LightingWS !== 'undefined') LightingWS.setSheet('item');
+      else if (PlanMarkup._isMobile()) PlanMarkup._toggleDrawer('props');
       return;
     }
     const planCtl = e.target.closest('[data-role]');
@@ -514,6 +517,8 @@ const PlanUI = {
     const el = this.propsEl; if (!el) return;
     if (typeof PlanTools !== 'undefined' && PlanTools.active && PlanTools.active.id === 'roomdetect' && typeof PlanRoomDetect !== 'undefined') { PlanRoomDetect.renderOptions(el); return; }
     if (PlanMarkup.context === 'plan' && PlanMarkup.mode === 'underlays') { this._renderUnderlayProps(el); return; }
+    // The Lighting tab's Space step: a picked underlay shows its actions until something else is selected.
+    if (PlanMarkup.context === 'lighting' && this._underlay && !PlanMarkup.selectedIds.size) { this._renderUnderlayProps(el); return; }
     const ids = [...PlanMarkup.selectedIds];
     if (ids.length === 0) { el.innerHTML = `<div class="plan-props-empty">Select an item to edit its properties.</div>`; return; }
     if (ids.length > 1) { this._renderBulk(el, ids); return; }
@@ -580,7 +585,11 @@ const PlanUI = {
     for (const f of fields) html += this._field(f, getVal(f.key));
     if (kind === 'room' && typeof RoomLighting !== 'undefined') {
       // The lighting settings are edited on the Lighting tab.
-      if (PlanMarkup.context === 'lighting') { RoomLighting.bind(el); html += RoomLighting.panel(item); }
+      if (PlanMarkup.context === 'lighting') {
+        RoomLighting.bind(el);
+        if (typeof LightingWS !== 'undefined') html = html.replace('</div>', '</div>' + LightingWS.stripHtml(item));
+        html += RoomLighting.panel(item);
+      }
       else html += `<button type="button" class="plan-btn" data-role="open-lighting">Lighting for this ${({ escape: 'route', perimeter: 'fence', outdoor: 'area', sports: 'field', obtrusive: 'check' })[item.kind] || 'room'}…</button>`;
     }
     html += this._defaultCableButton(item, kind);

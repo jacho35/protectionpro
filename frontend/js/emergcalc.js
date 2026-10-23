@@ -104,14 +104,14 @@ const EmergCalc = {
     const built = list.map(r => ({ room: r, ...this.item(r, f) }));
     const photometry = {};
     for (const b of built) for (const l of b.req.luminaires) photometry[l.photometryId] = PhotoLib.get(l.photometryId);
-    if (UI.setBusy) UI.setBusy(true, 'Checking emergency lighting…');
+    RoomCalc.busy(true, 'Checking emergency lighting…');
     let out;
     try {
       out = await API.request('/analysis/emergency-lighting', 'POST', { items: built.map(b => b.req), photometry });
     } catch (e) {
-      UI.alert('Emergency lighting check failed: ' + (e && e.message ? e.message : e));
+      RoomCalc.fail('Emergency lighting check failed: ' + (e && e.message ? e.message : e));
       return;
-    } finally { if (UI.setBusy) UI.setBusy(false); }
+    } finally { RoomCalc.busy(false); }
     let pass = 0, fail = 0;
     for (const r of out.items) {
       if (r.error) { UI.toast(`${r.name}: ${r.error}`, 'warn', 6000); continue; }

@@ -99,6 +99,25 @@ const PhotoView = {
   // The polar diagram (cd/klm): C0–C180 solid, C90–C270 dashed, beam and field angles in
   // C0–C180. Only the lower half is drawn when the fitting sends no light upwards.
   // o: { R (px), fixed (draw at R px instead of filling the width), beams }
+  // A small C0–C180 / C90–C270 outline for a list, no scale or labels.
+  thumbSvg(p, size = 36) {
+    const k = Number(p.lumens) > 0 ? 1000 / p.lumens : 1;
+    let mx = 0;
+    for (const C of [0, 90, 180, 270]) for (let g = 0; g <= 180; g += 5) mx = Math.max(mx, this.cd(p, C, g) * k);
+    if (!(mx > 0)) return `<svg width="${size}" height="${size}" aria-hidden="true"></svg>`;
+    const r = size / 2 - 2, cx = size / 2, cy = size / 2;
+    const outlineHtml = (Ca, Cb) => {
+      const pts = [];
+      for (let g = 180; g >= 0; g -= 5) pts.push([-Math.sin(g * Math.PI / 180), Math.cos(g * Math.PI / 180), this.cd(p, Cb, g) * k]);
+      for (let g = 5; g <= 180; g += 5) pts.push([Math.sin(g * Math.PI / 180), Math.cos(g * Math.PI / 180), this.cd(p, Ca, g) * k]);
+      return pts.map(([sx, cy0, v], i) => `${i ? 'L' : 'M'}${(cx + sx * v / mx * r).toFixed(1)} ${(cy + cy0 * v / mx * r).toFixed(1)}`).join('') + 'Z';
+    };
+    return `<svg class="pv-thumb" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" aria-hidden="true">
+      <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="currentColor" stroke-opacity="0.2"/>
+      <path d="${outlineHtml(90, 270)}" fill="none" stroke="#c2410c" stroke-width="1" stroke-dasharray="2 2"/>
+      <path d="${outlineHtml(0, 180)}" fill="rgba(0,120,215,0.14)" stroke="#0078d7" stroke-width="1.3"/></svg>`;
+  },
+
   polarSvg(p, o = {}) {
     const R = o.R || 150, D = this.D, f = this._f;
     const k1 = 1000 / (Number(p.lumens) || 1);
@@ -113,7 +132,7 @@ const PhotoView = {
     const step = this._nice(mx / 4), top = Math.ceil(mx / step - 1e-9) * step, s = R / top;
     const W = 2 * R + 64, cx = W / 2, cy = up ? R + 30 : 30, H = up ? 2 * R + 60 : R + 58;
     const gMax = up ? 180 : 90;
-    const curve = (cp, cn) => {
+    const curveHtml = (cp, cn) => {
       const pts = [];
       for (let g = gMax; g >= 0; g -= 1) pts.push([-g, this.cd(p, cn, g) * k1]);
       for (let g = 1; g <= gMax; g += 1) pts.push([g, this.cd(p, cp, g) * k1]);
@@ -133,16 +152,17 @@ const PhotoView = {
     if (!up) grid += `<line class="pv-spoke" x1="${cx - R}" y1="${cy}" x2="${cx + R}" y2="${cy}"/>`;
     let rays = '';
     if (o.beams !== false) {
-      const ray = (th, cls) => `<line class="${cls}" x1="${cx}" y1="${cy}" x2="${f(cx + R * Math.sin(th * D))}" y2="${f(cy + R * Math.cos(th * D))}"/>`;
+      const ray = (th, cls) => `<line class="${escHtml(cls)}" x1="${cx}" y1="${cy}" x2="${f(cx + R * Math.sin(th * D))}" y2="${f(cy + R * Math.cos(th * D))}"/>`;
       const b = this.beam(p, 0, 180, 0.5), fl = this.beam(p, 0, 180, 0.1);
       const show = (th) => up || Math.abs(th) <= 90;
       if (fl) [fl.a, fl.b].filter(show).forEach(th => { rays += ray(th, 'pv-field'); });
       if (b) [b.a, b.b].filter(show).forEach(th => { rays += ray(th, 'pv-beam'); });
     }
-    return `<svg class="pv-svg" viewBox="0 0 ${W} ${H}"${o.fixed ? ` width="${W}" height="${H}"` : ''} role="img" aria-label="Polar curve of ${escHtml(p.name || 'the luminaire')}, cd/klm: C0–C180 solid, C90–C270 dashed">
+    const sizeHtml = o.fixed ? ` width="${W}" height="${H}"` : '';
+    return `<svg class="pv-svg" viewBox="0 0 ${W} ${H}"${sizeHtml} role="img" aria-label="Polar curve of ${escHtml(p.name || 'the luminaire')}, cd/klm: C0–C180 solid, C90–C270 dashed">
       ${grid}${rays}
-      <path class="pv-c90" d="${curve(90, 270)}"/>
-      <path class="pv-c0" d="${curve(0, 180)}"/></svg>`;
+      <path class="pv-c90" d="${curveHtml(90, 270)}"/>
+      <path class="pv-c0" d="${curveHtml(0, 180)}"/></svg>`;
   },
 
   // Key for the polar curve. `names` overrides the plane labels (road: along / across).

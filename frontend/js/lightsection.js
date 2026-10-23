@@ -94,11 +94,7 @@ const LightSection = {
     ov.innerHTML = `<div class="modal-content plan-floor-content ls-content">
       <div class="modal-header"><h3>Section — ${escHtml(room.name || 'Room')}</h3></div>
       <div class="modal-body">
-        <div class="ls-ctl">
-          <label>Cut <select data-ls="dir"><option value="along"${this.dir === 'along' ? ' selected' : ''}>Along the longest wall</option><option value="across"${this.dir === 'across' ? ' selected' : ''}>Across it</option></select></label>
-          <label class="ls-pos">Position <input type="range" data-ls="pos" min="0" max="100" step="1" value="${Math.round(this.pos * 100)}"></label>
-          <label>Fittings within <input type="number" data-ls="band" min="0.1" max="20" step="0.25" value="${this.band}"> m</label>
-        </div>
+        ${this._ctlHtml()}
         <div data-ls-body></div>
         <div class="ui-dialog-actions"><button class="btn-primary" data-ls-close>Done</button></div>
       </div></div>`;
@@ -109,15 +105,38 @@ const LightSection = {
     const upd = (e) => {
       const k = e.target.dataset && e.target.dataset.ls;
       if (!k) return;
-      if (k === 'dir') this.dir = e.target.value === 'across' ? 'across' : 'along';
-      else if (k === 'pos') this.pos = (+e.target.value || 0) / 100;
-      else if (k === 'band') { const b = +e.target.value; if (b > 0) this.band = Math.min(b, 20); }
+      this.onInput(k, e.target.value);
       this.render(ov);
     };
     ov.addEventListener('input', upd);
     ov.addEventListener('change', upd);
     document.body.appendChild(ov);
     this.render(ov);
+  },
+
+  _ctlHtml() {
+    return `<div class="ls-ctl">
+          <label>Cut <select data-ls="dir"><option value="along"${this.dir === 'along' ? ' selected' : ''}>Along the longest wall</option><option value="across"${this.dir === 'across' ? ' selected' : ''}>Across it</option></select></label>
+          <label class="ls-pos">Position <input type="range" data-ls="pos" min="0" max="100" step="1" value="${Math.round(this.pos * 100)}"></label>
+          <label>Fittings within <input type="number" data-ls="band" min="0.1" max="20" step="0.25" value="${numAttr(this.band)}"> m</label>
+        </div>`;
+  },
+  onInput(k, v) {
+    if (k === 'dir') this.dir = v === 'across' ? 'across' : 'along';
+    else if (k === 'pos') this.pos = (+v || 0) / 100;
+    else if (k === 'band') { const b = +v; if (b > 0) this.band = Math.min(b, 20); }
+  },
+
+  // The Lighting workspace's Section view: the same controls and drawing in a
+  // pane under the plan, so the cut stays in sight while it moves.
+  mountIn(host, room) {
+    if (!host || !room) return;
+    if (host.dataset.lsRoom !== room.id || !host.querySelector('[data-ls-body]')) {
+      host.dataset.lsRoom = room.id;
+      host.innerHTML = `<div class="ls-dock-head"><b>Section — ${escHtml(room.name || 'Room')}</b>${this._ctlHtml()}</div><div class="ls-dock-body" data-ls-body></div>`;
+    }
+    this.roomId = room.id;
+    this.render(host);
   },
 
   render(ov) {
@@ -152,28 +171,29 @@ const LightSection = {
     let room$ = '', walls = '', wp = '';
     G.spans.forEach(([a, b], i) => {
       const c = ceil[i];
-      room$ += `M${n(X(a))} ${n(Z(0))}` + c.map(([s, z]) => `L${n(X(s))} ${n(Z(z))}`).join('') + `L${n(X(b))} ${n(Z(0))}Z`;
-      walls += `M${n(X(a))} ${n(Z(0))}L${n(X(a))} ${n(Z(c[0][1]))}M${n(X(b))} ${n(Z(0))}L${n(X(b))} ${n(Z(c[c.length - 1][1]))}`
-        + `M${n(X(a) - 4)} ${n(Z(0))}H${n(X(b) + 4)}` + `M${n(X(c[0][0]))} ${n(Z(c[0][1]))}` + c.map(([s, z]) => `L${n(X(s))} ${n(Z(z))}`).join('');
-      wp += `M${n(X(a))} ${n(Z(L.workH))}H${n(X(b))}`;
+      room$ += `M${(+(X(a))).toFixed(1)} ${(+(Z(0))).toFixed(1)}` + c.map(([s, z]) => `L${(+(X(s))).toFixed(1)} ${(+(Z(z))).toFixed(1)}`).join('') + `L${(+(X(b))).toFixed(1)} ${(+(Z(0))).toFixed(1)}Z`;
+      walls += `M${(+(X(a))).toFixed(1)} ${(+(Z(0))).toFixed(1)}L${(+(X(a))).toFixed(1)} ${(+(Z(c[0][1]))).toFixed(1)}M${(+(X(b))).toFixed(1)} ${(+(Z(0))).toFixed(1)}L${(+(X(b))).toFixed(1)} ${(+(Z(c[c.length - 1][1]))).toFixed(1)}`
+        + `M${(+(X(a) - 4)).toFixed(1)} ${(+(Z(0))).toFixed(1)}H${(+(X(b) + 4)).toFixed(1)}` + `M${(+(X(c[0][0]))).toFixed(1)} ${(+(Z(c[0][1]))).toFixed(1)}` + c.map(([s, z]) => `L${(+(X(s))).toFixed(1)} ${(+(Z(z))).toFixed(1)}`).join('');
+      wp += `M${(+(X(a))).toFixed(1)} ${(+(Z(L.workH))).toFixed(1)}H${(+(X(b))).toFixed(1)}`;
     });
     let curves = '', bodies = '', names = '';
     for (const x of fits) {
       const cx = X(x.s), cz = Z(x.z);
-      curves += `<path class="ls-curve" d="${x.curve.map(([a, b], i) => `${i ? 'L' : 'M'}${n(cx + a * kS * sc)} ${n(cz - b * kS * sc)}`).join('')}Z"/>`;
-      bodies += x.mount === 'wall' ? `<rect class="ls-lum" x="${n(cx - 3)}" y="${n(cz - 6)}" width="6" height="12"/>` : `<rect class="ls-lum" x="${n(cx - 9)}" y="${n(cz - 2)}" width="18" height="5"/>`;
-      if (x.mount === 'pendant' || x.mount === 'suspended') bodies += `<line class="ls-cord" x1="${n(cx)}" y1="${n(Z(x.ceil))}" x2="${n(cx)}" y2="${n(cz - 2)}"/>`;
-      names += `<text class="pv-txt" text-anchor="middle" x="${n(cx)}" y="${n(Math.min(cz, Z(x.ceil)) - 6)}">${escHtml(x.el.name || '')}</text>`;
+      const curveHtml = x.curve.map(([a, b], i) => `${i ? 'L' : 'M'}${(+(cx + a * kS * sc)).toFixed(1)} ${(+(cz - b * kS * sc)).toFixed(1)}`).join('');
+      curves += `<path class="ls-curve" d="${curveHtml}Z"/>`;
+      bodies += x.mount === 'wall' ? `<rect class="ls-lum" x="${(+(cx - 3)).toFixed(1)}" y="${(+(cz - 6)).toFixed(1)}" width="6" height="12"/>` : `<rect class="ls-lum" x="${(+(cx - 9)).toFixed(1)}" y="${(+(cz - 2)).toFixed(1)}" width="18" height="5"/>`;
+      if (x.mount === 'pendant' || x.mount === 'suspended') bodies += `<line class="ls-cord" x1="${(+(cx)).toFixed(1)}" y1="${(+(Z(x.ceil))).toFixed(1)}" x2="${(+(cx)).toFixed(1)}" y2="${(+(cz - 2)).toFixed(1)}"/>`;
+      names += `<text class="pv-txt" text-anchor="middle" x="${(+(cx)).toFixed(1)}" y="${(+(Math.min(cz, Z(x.ceil)) - 6)).toFixed(1)}">${escHtml(x.el.name || '')}</text>`;
     }
     const cdPerM = kS > 0 ? Math.round(1 / kS) : 0;
     const head = `<p class="ls-note">${fits.length ? `${fits.length} fitting${fits.length === 1 ? '' : 's'} within ${this.band} m of the cut · curves to one scale: 1 m = ${cdPerM} cd` : `No fittings with a library luminaire within ${this.band} m of the cut — widen the band or move the cut.`}</p>`;
     const sec = `<svg class="ls-svg" viewBox="0 0 ${W} ${Hs}" role="img" aria-label="Room section with each fitting's polar curve in the plane of the cut">
       <path class="ls-room" d="${room$}"/>
       <path class="ls-wp" d="${wp}"/>
-      <text class="pv-txt" x="${n(X(G.s0) + 6)}" y="${n(Z(L.workH) - 5)}">Work plane ${L.workH.toFixed(2)} m</text>
+      <text class="pv-txt" x="${(+(X(G.s0) + 6)).toFixed(1)}" y="${(+(Z(L.workH) - 5)).toFixed(1)}">Work plane ${L.workH.toFixed(2)} m</text>
       ${curves}<path class="ls-wall" d="${walls}"/>${bodies}${names}
-      <text class="pv-txt" text-anchor="middle" x="${n(X(G.s0))}" y="${Hs - 6}">A</text><text class="pv-txt" text-anchor="middle" x="${n(X(G.s1))}" y="${Hs - 6}">A′</text>
-      <text class="pv-txt" text-anchor="middle" x="${n((X(G.s0) + X(G.s1)) / 2)}" y="${Hs - 6}">${(G.s1 - G.s0).toFixed(2)} m</text></svg>`;
+      <text class="pv-txt" text-anchor="middle" x="${(+(X(G.s0))).toFixed(1)}" y="${Hs - 6}">A</text><text class="pv-txt" text-anchor="middle" x="${(+(X(G.s1))).toFixed(1)}" y="${Hs - 6}">A′</text>
+      <text class="pv-txt" text-anchor="middle" x="${(+((X(G.s0) + X(G.s1)) / 2)).toFixed(1)}" y="${Hs - 6}">${(G.s1 - G.s0).toFixed(2)} m</text></svg>`;
     return head + sec + this._profile(room, G, X, W, L);
   },
 
@@ -200,13 +220,13 @@ const LightSection = {
     const Y = (v) => y1 - (v / top) * (y1 - y0);
     const step = PhotoView._nice(top / 4);
     let grid = '';
-    for (let v = 0; v <= top + 1e-9; v += step) grid += `<line class="pv-grid" x1="${n(X(G.s0))}" y1="${n(Y(v))}" x2="${n(X(G.s1))}" y2="${n(Y(v))}"/><text class="pv-txt" text-anchor="end" x="${n(X(G.s0) - 6)}" y="${n(Y(v) + 4)}">${Math.round(v)}</text>`;
-    const line = pts.map(run => run.map(([s, v], i) => `${i ? 'L' : 'M'}${n(X(s))} ${n(Y(v))}`).join('')).join('');
+    for (let v = 0; v <= top + 1e-9; v += step) grid += `<line class="pv-grid" x1="${(+(X(G.s0))).toFixed(1)}" y1="${(+(Y(v))).toFixed(1)}" x2="${(+(X(G.s1))).toFixed(1)}" y2="${(+(Y(v))).toFixed(1)}"/><text class="pv-txt" text-anchor="end" x="${(+(X(G.s0) - 6)).toFixed(1)}" y="${(+(Y(v) + 4)).toFixed(1)}">${Math.round(v)}</text>`;
+    const line = pts.map(run => run.map(([s, v], i) => `${i ? 'L' : 'M'}${(+(X(s))).toFixed(1)} ${(+(Y(v))).toFixed(1)}`).join('')).join('');
     const cur = r.sig === RoomCalc.signature(room);
     return `<p class="ls-note">Work-plane illuminance along the cut, lx${cur ? '' : ' · <b>out of date</b> — the room or its fittings changed'}</p>
       <svg class="ls-svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="Work-plane illuminance along the cut">
-      ${grid}<line class="ls-target" x1="${n(X(G.s0))}" y1="${n(Y(L.em))}" x2="${n(X(G.s1))}" y2="${n(Y(L.em))}"/>
-      <text class="ls-target-t" text-anchor="end" x="${n(X(G.s1))}" y="${n(Y(L.em) - 4)}">Target ${Math.round(L.em)} lx</text>
+      ${grid}<line class="ls-target" x1="${(+(X(G.s0))).toFixed(1)}" y1="${(+(Y(L.em))).toFixed(1)}" x2="${(+(X(G.s1))).toFixed(1)}" y2="${(+(Y(L.em))).toFixed(1)}"/>
+      <text class="ls-target-t" text-anchor="end" x="${(+(X(G.s1))).toFixed(1)}" y="${(+(Y(L.em) - 4)).toFixed(1)}">Target ${Math.round(L.em)} lx</text>
       <path class="ls-prof" d="${line}"/></svg>`;
   },
 

@@ -6,7 +6,8 @@
  *   Reticulation  1 Site plan › 2 Demand › 3 Street lighting › 4 Single-line
  *   Building      1 Floor plans › 2 Single-line › 3 Schedules › 4 Lighting › 5 Quantities
  *   Network       Single-line · Interlocking
- *   Lighting      1 Overview › 2 Plans › 3 Rooms › 4 Roads › 5 Sports fields
+ *   Lighting      1 Overview › 2 Rooms › 3 Roads › 4 Sports fields (the plan is drawn inside them;
+ *                 an Electrical plan tab only once there is electrical work on it)
  *
  * A Lighting project shows only the designs it was set up for
  * (`AppState.lightingKinds`: rooms / roads / sports). Its tabs are existing
@@ -58,9 +59,9 @@ const Workspaces = {
   },
   // What a Lighting project designs, and the tabs each one brings.
   KINDS: {
-    rooms: { label: 'Rooms & areas', desc: 'Indoor rooms, outdoor areas, fences, escape routes. Em, U₀, UGR, LENI, emergency.', ws: ['plan', 'lighting'] },
+    rooms: { label: 'Rooms & areas', desc: 'Indoor rooms, outdoor areas, fences, escape routes. Em, U₀, UGR, LENI, emergency.', ws: ['lighting'] },
     roads: { label: 'Roads', desc: 'Cross-sections and road plans. SANS 10098 or EN 13201, junctions, TI.', ws: ['streetlight'] },
-    sports: { label: 'Sports fields', desc: 'Pitches, masts and aimed floods. Eh, U₂, GR, stands, TV.', ws: ['plan', 'sports'] },
+    sports: { label: 'Sports fields', desc: 'Pitches, masts and aimed floods. Eh, U₂, GR, stands, TV.', ws: ['sports'] },
   },
   // Workspaces that exist only in a Lighting project.
   LIGHTING_ONLY: ['lightov', 'sports'],
@@ -135,6 +136,16 @@ const Workspaces = {
     const R = AppState.reticulation;
     return !!(R && Array.isArray(R.kiosks) && R.kiosks.length);
   },
+  // Anything on any floor that isn't lighting: boards, devices, cable routes, trenches.
+  _planHasElectrical() {
+    if (!AppState.planMarkup || typeof PLAN_DEFS === 'undefined') return false;
+    for (const fl of AppState.planFloors()) {
+      const d = fl.data || {};
+      if ((d.routes || []).length || (d.trenches || []).length || (d.crossings || []).length) return true;
+      if ((d.elements || []).some(e => { const def = PLAN_DEFS.element(e.type); return !def || def.group !== 'Lighting'; })) return true;
+    }
+    return false;
+  },
   _schedulesHaveData() {
     for (const c of AppState.components.values()) {
       if (c.type === 'distribution_board' && Array.isArray(c.props && c.props.circuits) && c.props.circuits.length) return true;
@@ -146,7 +157,10 @@ const Workspaces = {
       case 'sld': return this.type() !== 'lighting' || AppState.components.size > 0;
       case 'retic': return this._reticHasData();
       case 'streetlight': { const sl = AppState.reticulation && AppState.reticulation.streetLighting; return !!(sl && ((sl.circuits && sl.circuits.length) || (sl.roadDesigns && sl.roadDesigns.length))); }
-      case 'plan': return typeof AppState._planMarkupIsEmpty === 'function' && !AppState._planMarkupIsEmpty();
+      // A Lighting project draws on the plan inside its own tabs (drawings,
+      // rooms, fittings): the plan tab itself only shows for electrical work.
+      case 'plan': return this.type() === 'lighting' ? this._planHasElectrical()
+        : typeof AppState._planMarkupIsEmpty === 'function' && !AppState._planMarkupIsEmpty();
       case 'interlock': return !!(AppState.interlockLogic && AppState.interlockLogic.nodes && AppState.interlockLogic.nodes.length);
       case 'schedules': return this._schedulesHaveData();
       case 'lighting': return typeof LightingWS !== 'undefined' && LightingWS.hasData(this.type() === 'lighting' ? 'rooms' : undefined);
@@ -320,7 +334,7 @@ const Workspaces = {
   // Label a core workspace as it will read in a project of `type`.
   _coreLabel(type, ws) {
     if (type === 'lighting') {
-      const l = { lightov: 'Overview', plan: 'Plans', lighting: 'Rooms', streetlight: 'Roads', sports: 'Sports fields' }[ws];
+      const l = { lightov: 'Overview', plan: 'Electrical plan', lighting: 'Rooms', streetlight: 'Roads', sports: 'Sports fields' }[ws];
       if (l) return l;
     }
     if (ws === 'plan') return type === 'building' ? 'Floor plans' : 'Site plan';
@@ -411,7 +425,7 @@ const Workspaces = {
     const extras = [];
     if (lighting.circuits) {
       extras.push('sld');
-      if (lighting.kinds.includes('rooms')) extras.push('schedules');
+      if (lighting.kinds.includes('rooms')) extras.push('plan', 'schedules');
     }
     lighting.circuits = lighting.circuits && lighting.kinds.includes('roads');
     return { type, lighting, extras };
@@ -449,6 +463,7 @@ const Workspaces = {
             <span class="ws-row-text"><span class="ws-row-name">Street-light circuits</span>
             <span class="ws-row-desc">Adds Circuits to Roads: poles to circuits, volt drop, earth loop</span></span>
             <span class="ws-row-note">${circData ? 'Holds data, so it stays visible' : ''}</span></label>
+          ${row(type, 'plan', 'Electrical plan', 'Boards, cable routes and circuits drawn over the rooms')}
           ${row(type, 'schedules', 'Schedules', 'Board schedules for the room fittings')}
           ${row(type, 'sld', 'Single line', 'Supply, mast and pole feeders, studies')}
           ${row(type, 'quantities', 'Quantities', 'Bill of quantities from luminaires, poles and masts')}

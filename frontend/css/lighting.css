@@ -430,3 +430,157 @@ body.dark-mode .ls-target-t { fill: #4a9eff; }
 .plan-photo-peek { margin: 4px 0 6px; padding: 4px; border: 1px solid var(--border-color); border-radius: 6px; }
 .plan-photo-peek .pv-svg { max-width: 220px; }
 .plan-photo-peek .pv-txt { font-size: 10px; }
+
+/* ─── Workflow steps (lightws.js): Space › Luminaires › Results ─── */
+.lw-steps { display: flex; align-items: center; gap: 4px; }
+.lw-step {
+  display: inline-flex; align-items: center; gap: 8px; min-height: 36px; padding: 2px 12px 2px 4px;
+  border: 1px solid var(--border-color); border-radius: 999px; background: var(--bg-primary); color: var(--text-primary);
+  font: inherit; font-size: 12px; cursor: pointer; text-align: left;
+}
+.lw-step:hover { background: var(--bg-tertiary); }
+.lw-step.on { border: 2px solid var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--bg-primary)); }
+.lw-step-n {
+  width: 24px; height: 24px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;
+  font-weight: 700; background: var(--bg-tertiary); color: var(--text-secondary); flex: 0 0 auto;
+}
+.lw-step.on .lw-step-n { background: var(--accent); color: #fff; }
+.lw-step.done .lw-step-n { background: #1d6b3a; color: #fff; }
+.lw-step-t { display: flex; flex-direction: column; line-height: 1.15; }
+.lw-step-t small { font-size: 10px; color: var(--text-secondary); }
+.lw-steps-bottom { display: none; }
+.lw-live input, .lw-show input[type="checkbox"] { width: auto; margin: 0 4px 0 0; }
+
+/* The plan view's pieces: the plan, the docked section, the phone sheet header. */
+.lw-plan { position: relative; }
+.lw-plan > .plan-main { order: 1; }
+.lw-section {
+  order: 2; flex: 0 0 auto; height: 42%; min-height: 220px; overflow: auto;
+  border-top: 2px solid var(--border-color); background: var(--bg-primary); padding: 8px 14px 12px;
+}
+.lw-section[hidden] { display: none; }
+.lw-section:not([hidden]) { display: flex; flex-direction: column; }
+.ls-dock-body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+.ls-dock-body .ls-svg { flex: 1 1 auto; min-height: 0; width: 100%; height: 100%; }
+.ls-dock-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 18px; margin-bottom: 4px; }
+.ls-dock-head .ls-ctl { margin: 0; }
+.lw-section-empty { margin: 16px 0; }
+.lw-sheethead { display: none; }
+
+/* The panel per step */
+.plan-palette > .plan-props-empty { margin: 0 10px 8px; font-size: 12px; line-height: 1.45; }
+.lw-hint { font-size: 12px; color: var(--text-secondary); margin: 4px 10px 8px; line-height: 1.45; }
+.lw-lums { display: flex; flex-direction: column; gap: 4px; margin: 0 10px 6px; }
+.lw-lum {
+  display: flex; align-items: center; gap: 8px; padding: 4px 8px; min-height: 44px; text-align: left; cursor: pointer;
+  border: 1px solid var(--bg-tertiary); border-radius: 6px; background: var(--bg-primary); color: var(--text-primary); font: inherit; font-size: 13px;
+}
+.lw-lum span { display: flex; flex-direction: column; min-width: 0; }
+.lw-lum small { font-size: 11px; color: var(--text-secondary); }
+.lw-lum.on { border: 2px solid var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--bg-primary)); }
+.lw-lum .pv-thumb { flex: 0 0 auto; color: var(--text-primary); }
+.plan-palette > .plan-btn-row { margin: 0 10px 6px; display: flex; flex-wrap: wrap; gap: 6px; }
+.plan-palette > .plan-field-check { margin: 4px 10px; display: flex; align-items: center; gap: 6px; font-size: 13px; }
+.lw-show { margin: 0 10px 8px; display: flex; flex-direction: column; gap: 6px; }
+.lw-show .plan-tb-field { font-size: 13px; color: var(--text-primary); }
+.lw-drawing { margin: 10px 10px 8px; border: 1px solid var(--border-color); border-radius: 8px; padding: 8px 0 4px; }
+.lw-drawing > summary { cursor: pointer; padding: 0 10px 4px; display: flex; flex-direction: column; list-style-position: inside; }
+.lw-drawing > summary small { font-size: 11px; color: var(--text-secondary); margin-left: 16px; }
+.lw-drawing-note { font-size: 12px; color: var(--text-secondary); margin: 4px 10px 6px; }
+.lw-drawing .plan-ul { padding: 0 2px; }
+
+/* Verdict strip: the selected item's result against its targets, pinned to the top of its panel. */
+.lw-strip {
+  position: sticky; top: -10px; z-index: 2; margin: 0 -10px 10px; padding: 8px 10px;
+  background: color-mix(in srgb, #1d6b3a 6%, var(--bg-primary)); border-bottom: 1px solid var(--border-color);
+}
+.lw-strip.stale { background: color-mix(in srgb, #b45309 7%, var(--bg-primary)); }
+.lw-strip-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 4px; }
+.lw-strip-cells { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; text-align: center; }
+.lw-strip-cell { display: flex; flex-direction: column; }
+.lw-strip-cell span { font-size: 10px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lw-strip-cell b { font-family: ui-monospace, Consolas, monospace; font-size: 15px; }
+.lw-strip-cell b.ok { color: #1d6b3a; }
+.lw-strip-cell b.bad { color: #a61b1b; }
+.lw-strip-state { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 4px; font-size: 11px; color: var(--text-secondary); }
+.lw-chip { padding: 1px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+.lw-chip.ok { background: #e3f1e7; color: #1d6b3a; }
+.lw-chip.bad { background: #f8e3e3; color: #a61b1b; }
+body.dark-mode .lw-strip-cell b.ok { color: #6fcf8e; }
+body.dark-mode .lw-strip-cell b.bad { color: #f08080; }
+body.dark-mode .lw-chip.ok { background: rgba(29,107,58,.35); color: #b7ebc6; }
+body.dark-mode .lw-chip.bad { background: rgba(166,27,27,.35); color: #f5c2c2; }
+
+/* Room panel: the step's block, then the settings tabs */
+.rl-room { margin-top: 10px; }
+.rl-step-block { margin: 6px 0 10px; padding: 8px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-secondary); }
+.rl-step-block .rc-layout { margin-top: 0 !important; border-top: 0 !important; padding-top: 0 !important; }
+.rl-tabs { display: flex; border-bottom: 1px solid var(--border-color); margin: 6px 0 8px; overflow-x: auto; }
+.rl-tab {
+  flex: 1 1 0; min-height: 36px; padding: 0 6px; border: 0; background: none; color: var(--text-secondary);
+  font: inherit; font-size: 12px; cursor: pointer; white-space: nowrap;
+}
+.rl-tab.on { color: var(--accent); font-weight: 600; box-shadow: inset 0 -2px 0 var(--accent); }
+.rl-energy-out { margin-top: 8px; padding: 6px 8px; background: var(--bg-secondary); border-radius: 6px; font-size: 12px; }
+
+/* Sports: the picked mast's floods */
+.sf-ftable { width: 100%; border-collapse: collapse; font-size: 12px; margin: 4px 0; }
+.sf-ftable th { text-align: left; font-weight: 600; color: var(--text-secondary); padding: 2px 3px; }
+.sf-ftable td { padding: 2px 3px; }
+.sf-ftable input { width: 100%; box-sizing: border-box; }
+.sf-ftable tr.on td { background: color-mix(in srgb, #e8590c 10%, transparent); }
+.sf-ftable .num { text-align: right; }
+.sf-ftable .bad { color: #a61b1b; font-weight: 600; }
+.sf-nudge { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; margin: 6px 0; }
+.sf-nudge .btn-small { min-height: 36px; }
+
+/* ─── Phone: steps at the bottom, the two panels as one bottom sheet ─── */
+@media (max-width: 768px) {
+  .lw-bar { gap: 6px; padding: 6px 8px; }
+  .lw-bar .lw-steps-top, .lw-bar .lw-bar-extra, .lw-fit-label, .lw-sel-label { display: none; }
+  /* Calculate all is in the Results step's panel; live results recalculate the item you work on */
+  .lw-bar:has(.lw-steps-top) .btn-primary[data-lw="calc"] { display: none; }
+  .lw-plan.lw-phone { --lw-sheet-h: 38vh; }
+  .lw-plan.lw-phone .lw-steps-bottom {
+    order: 3; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0; flex: 0 0 60px;
+    background: var(--bg-primary); border-top: 1px solid var(--border-color); z-index: 70;
+  }
+  .lw-plan.lw-phone .lw-step {
+    border: 0; border-radius: 0; background: none; flex-direction: column; justify-content: center; gap: 2px; padding: 0; min-height: 60px;
+  }
+  .lw-plan.lw-phone .lw-step.on { color: var(--accent); box-shadow: inset 0 3px 0 var(--accent); background: none; }
+  .lw-plan.lw-phone .lw-step-t small { display: none; }
+  .lw-plan.lw-phone .lw-step-t { align-items: center; font-size: 12px; }
+  .lw-plan.lw-phone .lw-section { order: 0; height: 34vh; min-height: 0; padding: 6px 10px 8px; }
+  .lw-plan.lw-phone .ls-dock-head { gap: 4px 10px; }
+  .lw-plan.lw-phone .plan-info { display: none; }
+  .lw-plan.lw-phone .plan-legend { top: 8px; bottom: auto; }
+
+  /* the sheet header: grip, verdict strip, which panel */
+  .lw-plan.lw-phone .lw-sheethead {
+    display: block; position: absolute; left: 0; right: 0; bottom: 60px; z-index: 72;
+    background: var(--bg-primary); border-radius: 14px 14px 0 0; box-shadow: 0 -4px 18px rgba(0,0,0,0.16); padding: 0 12px 8px;
+  }
+  .lw-plan.lw-phone:not([data-sheet="peek"]) .lw-sheethead { bottom: calc(60px + var(--lw-sheet-h)); border-bottom: 1px solid var(--border-color); }
+  .lw-sheet-grip { display: flex; justify-content: center; align-items: center; width: 100%; min-height: 26px; border: 0; background: none; padding: 0; cursor: pointer; }
+  .lw-sheet-grip span { width: 40px; height: 5px; border-radius: 3px; background: var(--border-color); }
+  .lw-sheethead .lw-strip { position: static; margin: 0 0 6px; padding: 0; background: none; border: 0; }
+  .lw-sheethead .lw-strip-head { display: none; }
+  .lw-sheet-empty { margin: 0 0 8px; text-align: center; }
+  .lw-sheet-tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); border: 1px solid var(--border-color); border-radius: 8px; overflow: hidden; }
+  .lw-sheet-tab { min-height: 40px; border: 0; background: var(--bg-primary); color: var(--text-primary); font: inherit; font-size: 13px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 0 8px; }
+  .lw-sheet-tab + .lw-sheet-tab { border-left: 1px solid var(--border-color); }
+  .lw-sheet-tab.on { background: var(--accent); color: #fff; font-weight: 600; }
+
+  /* the sheet body: the step's tools or the selected item's panel */
+  .lw-plan.lw-phone .plan-palette, .lw-plan.lw-phone .plan-props {
+    top: auto; left: 0; right: 0; bottom: 0; width: auto; height: var(--lw-sheet-h);
+    transform: translateY(105%); box-shadow: none; z-index: 71; transition: transform .2s ease;
+  }
+  .lw-plan.lw-phone[data-sheet="tools"] .plan-palette, .lw-plan.lw-phone[data-sheet="item"] .plan-props { transform: translateY(0); }
+  .lw-plan.lw-phone .plan-props [data-lw-strip] { display: none; }
+  .lw-plan.lw-phone #plan-drawer-backdrop { display: none !important; }
+  .lw-plan.lw-phone > .plan-main { overflow: hidden; }
+  .lw-plan.lw-phone .plan-zone-row, .lw-plan.lw-phone .lw-lum, .lw-plan.lw-phone .plan-btn { min-height: 44px; }
+  .lw-plan.lw-phone .rl-tab { min-height: 44px; }
+}
