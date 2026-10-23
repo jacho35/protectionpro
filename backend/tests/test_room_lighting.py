@@ -4,7 +4,7 @@ import math
 
 import numpy as np
 
-from backend.analysis.photometry import generic_optic
+from backend.analysis.photometry import generic_optic, total_flux
 from backend.analysis.road_lighting import _Web
 from backend.analysis import room_lighting as RL
 
@@ -194,3 +194,22 @@ def test_grid_step_set_by_the_user():
     # the layout screen keeps its own coarse grid
     fast = RL._Room(_room(poly, [_lum(3, 2)], gridStep=0.2), webs, "fast")
     assert RL._grid_step(fast, "fast") >= 0.5
+
+
+def test_flush_fitting_up_light_reaches_the_ceiling():
+    """A batten flush with a flat ceiling sends its upward share to the ceiling: all of the
+    luminaire flux is accounted for (Relux VAPOURLINE reference: 7.7 % up-light)."""
+    prof = generic_optic("generic_panel", 4000.0, 36.0)
+    g = np.array(prof["g"])
+    cd = np.array(prof["cd"], float)
+    cd[:, g > 90] = cd[:, g <= 90].max() * 0.1            # an up-light on every plane
+    cd *= 4000.0 / total_flux(prof["c"], prof["g"], cd.tolist())     # back to the rated lumens
+    prof["cd"] = cd.tolist()
+    w = _Web(prof)
+    w.luminous_m2 = 0.0
+    lum = [_lum(x, y) for x in (1.5, 4.5) for y in (1.25, 3.75)]
+    room = _room([[0, 0], [6, 0], [6, 5], [0, 5]], lum, wallZone=0)
+    res = RL.evaluate_room(RL._Room(room, {"p": w}, "full"), {"p": w})
+    fb = res["fluxBalance"]
+    assert abs(fb["absorbed"] - fb["emitted"]) / fb["emitted"] < 0.01
+    assert res["ceiling"]["Em"] > 0
