@@ -1,5 +1,5 @@
 """Room lighting — direct + interreflected illuminance, UGR and energy for an
-interior of any polygon outline under a flat ceiling.
+interior of any polygon outline, under a flat ceiling or a ceiling section.
 
 The room is the polygon extruded to the ceiling height. Its floor, ceiling and
 wall surfaces are meshed into patches. The calculation follows the usual
@@ -49,13 +49,34 @@ exactly as before):
     illuminance, reflectance) so the 3D view can draw the surfaces as bright
     as they are.
 
+Ceiling section (optional — absent ⇒ the flat ceiling at ceilH, calculated
+exactly as before): `ceiling: { angle, s0, points:[[s, z]…] }` gives the
+ceiling height as a profile z(s) across the room, s measured along the plan
+direction `angle` (degrees, counter-clockwise from +x) from s0, the profile
+extruded along the other direction — pitched, mono-pitch, barrel or any
+polyline. s must not decrease (two points at the same s make a vertical step,
+e.g. a clerestory); beyond its ends the profile stays level. The ceiling is
+meshed into tilted patches (true area, own normal) plus the step faces; walls
+are cut to the ceiling above them (gable ends); where the section is not
+convex from below, light paths through the ceiling are blocked (exact for a
+piecewise-linear profile). A level section is the flat ceiling. Luminaires:
+`recessed` / `surface` sit on the ceiling and tilt with it (the light leaving
+5 cm below it; at a ridge or valley facing the bisector of the slopes);
+`suspended` hang `drop` below it; `pendant` hang at `mountH` above the floor,
+pointing down; `wall` sit 10 cm off the nearest wall at `mountH`, `tilt`
+degrees from pointing down (0 down, 90 across the room, 180 up). Patches
+close to these fittings get their direct light integrated over sub-samples
+(a fitting near a surface is otherwise seen only by patch centres); flat
+rooms with ceiling fittings are calculated exactly as before.
+
 Geometry: plan metres with y up; z up from the floor. A luminaire's C0 axis
 points along +x rotated by `rotate` degrees counter-clockwise.
 
 Request (camelCase): { rooms:[{ id, name, polygon:[[x,y]…], ceilH, workH,
 wallZone, rhoC, rhoW, rhoF, mf, targets:{em,uo,ugr,wallE,ceilE,ez},
-luminaires:[{ id, x, y, photometryId, mount:'recessed'|'surface'|'suspended',
-drop, rotate, fluxPct, lumens?, watts? }], obstacles:[{ id, cx, cy, w, d, rot,
+luminaires:[{ id, x, y, photometryId, mount:'recessed'|'surface'|'suspended'|
+'pendant'|'wall', drop, mountH, tilt, rotate, fluxPct, lumens?, watts? }],
+ceiling:{ angle, s0, points }, obstacles:[{ id, cx, cy, w, d, rot,
 z0, h, rho, blocks }], openings:[{ id, kind, a:[x,y], b:[x,y], sill, h, rho }],
 surfaces:[{ id, name, cx, cy, w, d, rot, z, h, face:'up'|'down'|'vertical',
 target }], patches }], photometry:{id: web}, detail }.
@@ -145,6 +166,106 @@ def _clear(P, ax, ay, bx, by):
     return ~blocked & mid
 
 
+# ─── Ceiling section ────────────────────────────────────────────────────
+
+class _Ceiling:
+    """Ceiling height z(s) along the plan direction u = (cos a, sin a), s = p·u − s0."""
+
+    def __init__(self, spec: dict):
+        a = math.radians(_f(spec.get("angle"), 0.0))
+        self.ux, self.uy = math.cos(a), math.sin(a)
+        self.s0 = _f(spec.get("s0"), 0.0)
+        pts = []
+        for q in spec.get("points") or []:
+            try:
+                sv, zv = float(q[0]), float(q[1])
+            except (TypeError, ValueError, IndexError):
+                continue
+            if math.isfinite(sv) and math.isfinite(zv):
+                pts.append((sv, min(max(zv, 0.3), 40.0)))
+        self.ok = len(pts) >= 2 and all(pts[i + 1][0] >= pts[i][0] - 1e-9 for i in range(len(pts) - 1)) \
+            and pts[-1][0] - pts[0][0] > 1e-6
+        if not self.ok:
+            return
+        self.S = np.array([q[0] for q in pts])
+        self.Z = np.array([q[1] for q in pts])
+        # Convex from below (no light path can leave through it): slopes never
+        # rise again and there are no steps.
+        dS, dZ = np.diff(self.S), np.diff(self.Z)
+        steps = dS < 1e-9
+        slopes = dZ[~steps] / dS[~steps]
+        self.concave = (not steps.any()) and bool(np.all(np.diff(slopes) <= 1e-9))
+        # Breakpoints for the visibility test: the lowest height at each s.
+        bs, bz = [], []
+        for sv, zv in zip(self.S, self.Z):
+            if bs and abs(sv - bs[-1]) < 1e-9:
+                bz[-1] = min(bz[-1], zv)
+            else:
+                bs.append(sv); bz.append(zv)
+        self.bS, self.bZ = np.array(bs), np.array(bz)
+        # Vertical steps: (s, z on the low-s side, z on the high-s side).
+        self.steps = [(float(self.S[i]), float(self.Z[i]), float(self.Z[i + 1]))
+                      for i in range(len(dS)) if steps[i] and abs(dZ[i]) > 1e-6]
+
+    def s_of(self, x, y):
+        return np.asarray(x) * self.ux + np.asarray(y) * self.uy - self.s0
+
+    def height(self, x, y):
+        return np.interp(self.s_of(x, y), self.S, self.Z)
+
+    def slope(self, x, y):
+        """dz/ds of the ceiling segment over each point (0 beyond the ends)."""
+        s = self.s_of(x, y)
+        dS, dZ = np.diff(self.S), np.diff(self.Z)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            k = np.where(dS > 1e-9, dZ / np.where(dS > 1e-9, dS, 1.0), 0.0)
+        i = np.clip(np.searchsorted(self.S, s, side="right") - 1, 0, len(dS) - 1)
+        inside = (s > self.S[0]) & (s < self.S[-1])
+        return np.where(inside, k[i], 0.0)
+
+    def normal(self, x, y):
+        """Unit normals of the ceiling over the points, pointing down into the room [n, 3]."""
+        k = np.atleast_1d(self.slope(x, y))
+        nz = 1.0 / np.sqrt(1.0 + k * k)
+        return np.stack([k * self.ux * nz, k * self.uy * nz, -nz], axis=-1)
+
+    def mount_normal(self, x, y):
+        """The normal a fitting at (x, y) faces: at a ridge or valley the bisector of the two slopes."""
+        e = 1e-4
+        n = self.normal(np.array([x - self.ux * e, x + self.ux * e]), np.array([y - self.uy * e, y + self.uy * e]))
+        m = n.sum(axis=0)
+        return m / np.linalg.norm(m)
+
+    def clear(self, ax, ay, az, bx, by, bz):
+        """The segment A→B stays under the ceiling (arrays broadcast). Between
+        breakpoints both the segment and the profile are linear in s, so it is
+        enough to test the segment's height where it crosses each breakpoint."""
+        shape = np.broadcast(ax, ay, az, bx, by, bz).shape
+        if self.concave:
+            return np.ones(shape, bool)
+        sa, sb = self.s_of(ax, ay), self.s_of(bx, by)
+        ds = sb - sa
+        ok = np.ones(shape, bool)
+        for sk, zk in zip(self.bS, self.bZ):
+            with np.errstate(divide="ignore", invalid="ignore"):
+                t = (sk - sa) / ds
+            cross = (np.abs(ds) > 1e-12) & (t > 1e-6) & (t < 1 - 1e-6)
+            zt = az + t * (bz - az)
+            ok &= ~(cross & (zt > zk + 1e-6))
+        return ok
+
+
+def _under(room, ax, ay, az, bx, by, bz):
+    """True where the path A→B is not cut by the ceiling (always for a flat one)."""
+    if room.ceil is None or room.ceil.concave:
+        return True
+    return room.ceil.clear(ax, ay, az, bx, by, bz)
+
+
+def _height_at(room, x, y):
+    return room.ceil.height(x, y) if room.ceil is not None else np.full(np.shape(x), room.H)
+
+
 # ─── Room model ─────────────────────────────────────────────────────────
 
 class _Room:
@@ -168,7 +289,22 @@ class _Room:
         self.xmin, self.ymin = P.min(axis=0)
         self.xmax, self.ymax = P.max(axis=0)
         self.H = min(max(_f(r.get("ceilH"), 2.7), 1.5), 40.0)
-        self.workH = min(max(_f(r.get("workH"), 0.75), 0.0), self.H - 0.2)
+        self.warnings: list[str] = []
+        self.ceil = None
+        if isinstance(r.get("ceiling"), dict):
+            c = _Ceiling(r["ceiling"])
+            if c.ok and float(np.ptp(c.Z)) < 1e-9:      # a level section is a flat ceiling
+                self.H = min(max(float(c.Z[0]), 1.5), 40.0)
+            elif c.ok:
+                self.ceil = c
+                hs = c.height(P[:, 0], P[:, 1])
+                self.H = float(max(c.Z.max(), 0.3))       # highest point (clamps, openings)
+                self.Hmin = float(min(c.Z.min(), hs.min()))
+            else:
+                self.warnings.append("Ceiling section not understood (points must run one way across the room) — flat ceiling used")
+        if self.ceil is None:
+            self.Hmin = self.H
+        self.workH = min(max(_f(r.get("workH"), 0.75), 0.0), max(self.Hmin - 0.2, 0.0))
         self.wallZone = min(max(_f(r.get("wallZone"), 0.5), 0.0), 3.0)
         self.rho = {"c": min(max(_f(r.get("rhoC"), 0.7), 0.0), 0.99),
                     "w": min(max(_f(r.get("rhoW"), 0.5), 0.0), 0.99),
@@ -178,20 +314,44 @@ class _Room:
         # Calculation grid size (m) the user asked for; 0 / absent = automatic.
         self.gridStep = max(_f(r.get("gridStep"), 0.0), 0.0)
         self.detail = detail
-        self.warnings: list[str] = []
         self.lum = self._luminaires(r.get("luminaires") or [], webs)
         self.boxes = [b for b in (_Box(o) for o in (r.get("obstacles") or []) if o.get("blocks", True) is not False) if b.ok]
         self.openings = [o for o in (r.get("openings") or []) if isinstance(o, dict)]
         self.surfaces = [o for o in (r.get("surfaces") or []) if isinstance(o, dict)]
         self.want_patches = bool(r.get("patches"))
 
+    def _wall_spot(self, x, y):
+        """The nearest wall: the point 10 cm in front of it (a fitting projects from the wall) and the angle of its inward normal."""
+        best, out = math.inf, (x, y, 0.0)
+        n = len(self.P)
+        for i in range(n):
+            (x1, y1), (x2, y2) = self.P[i], self.P[(i + 1) % n]
+            dx, dy = x2 - x1, y2 - y1
+            L2 = dx * dx + dy * dy
+            if L2 < 1e-12:
+                continue
+            t = min(max(((x - x1) * dx + (y - y1) * dy) / L2, 0.02), 0.98)
+            px, py = x1 + t * dx, y1 + t * dy
+            d = math.hypot(x - px, y - py)
+            if d < best:
+                L = math.sqrt(L2)
+                nx, ny = -dy / L, dx / L                  # inward (outline is CCW)
+                best, out = d, (px + nx * 0.10, py + ny * 0.10, math.degrees(math.atan2(ny, nx)))
+        return out
+
     def _luminaires(self, items, webs):
-        xs, ys, zs, rot, sc, wt, pid, ids, area = [], [], [], [], [], [], [], [], []
+        xs, ys, zs, rot, sc, wt, pid, ids, area, frames, near = [], [], [], [], [], [], [], [], [], [], []
+        framed = False
         for it in items:
             x, y = _f(it.get("x"), math.nan), _f(it.get("y"), math.nan)
             p = it.get("photometryId")
             if not (math.isfinite(x) and math.isfinite(y)):
                 continue
+            mount = it.get("mount") or "recessed"
+            r_deg = _f(it.get("rotate"), 0.0)
+            wall_ang = None
+            if mount == "wall":
+                x, y, wall_ang = self._wall_spot(x, y)
             if p not in webs:
                 self.warnings.append(f"Luminaire {it.get('id') or ''}: no photometry '{p}' — left out")
                 continue
@@ -202,16 +362,50 @@ class _Room:
             flux_pct = max(_f(it.get("fluxPct"), 100.0), 0.0)
             lm = _f(it.get("lumens"), 0.0) or w.lumens
             watts = _f(it.get("watts"), 0.0) or w.watts
-            drop = max(_f(it.get("drop"), 0.0), 0.0) if (it.get("mount") == "suspended") else 0.0
-            xs.append(x); ys.append(y); zs.append(max(self.H - drop, 0.3))
-            rot.append(_f(it.get("rotate"), 0.0))
+            drop = max(_f(it.get("drop"), 0.0), 0.0) if (mount == "suspended") else 0.0
+            frame = None
+            if self.ceil is None and mount not in ("pendant", "wall"):
+                z = max(self.H - drop, 0.3)
+            else:
+                hc = float(_height_at(self, np.array([x]), np.array([y]))[0])
+                if mount == "pendant":
+                    z = min(max(_f(it.get("mountH"), hc - 0.5), 0.3), hc - 0.02)
+                elif mount == "wall":
+                    z = min(max(_f(it.get("mountH"), 2.0), 0.1), hc - 0.05)
+                    th = math.radians(min(max(_f(it.get("tilt"), 0.0), 0.0), 180.0))
+                    rr = math.radians(wall_ang - 90.0)             # C90 faces into the room
+                    ex = np.array([math.cos(rr), math.sin(rr), 0.0])
+                    ey0 = np.array([-math.sin(rr), math.cos(rr), 0.0])
+                    frame = np.stack([ex, ey0 * math.cos(th) + np.array([0, 0, math.sin(th)]),
+                                      -ey0 * math.sin(th) + np.array([0, 0, math.cos(th)])])
+                    r_deg = wall_ang - 90.0
+                else:
+                    # under a section a ceiling fitting's light leaves 5 cm below the ceiling
+                    z = max(hc - (drop if mount == "suspended" else 0.05), 0.3)
+                    if mount in ("recessed", "surface") and self.ceil is not None:
+                        ez = -self.ceil.mount_normal(x, y)          # up, square to the ceiling (bisector at a ridge)
+                        if abs(ez[2]) < 1.0 - 1e-12:
+                            a = math.radians(r_deg)
+                            e0 = np.array([math.cos(a), math.sin(a), 0.0])
+                            ex = e0 - ez * float(e0 @ ez)
+                            ex /= np.linalg.norm(ex)
+                            frame = np.stack([ex, np.cross(ez, ex), ez])
+            if frame is None:
+                a = math.radians(r_deg)
+                frame = np.array([[math.cos(a), math.sin(a), 0.0], [-math.sin(a), math.cos(a), 0.0], [0.0, 0.0, 1.0]])
+            else:
+                framed = True
+            xs.append(x); ys.append(y); zs.append(z)
+            rot.append(r_deg); frames.append(frame)
+            near.append(self.ceil is not None or mount in ("pendant", "wall"))
             sc.append((lm / w.lumens) * flux_pct / 100.0)
             wt.append(watts * flux_pct / 100.0)
             pid.append(p); ids.append(it.get("id"))
             area.append(_f(getattr(w, "luminous_m2", 0.0), 0.0))
         return {"x": np.array(xs), "y": np.array(ys), "z": np.array(zs), "rot": np.array(rot),
                 "scale": np.array(sc), "watts": np.array(wt), "web": np.array(pid, dtype=object),
-                "id": ids, "area": np.array(area), "n": len(xs)}
+                "id": ids, "area": np.array(area), "n": len(xs),
+                "frame": np.array(frames).reshape(-1, 3, 3), "framed": framed, "near": np.array(near, bool)}
 
 
 # ─── Obstacles ──────────────────────────────────────────────────────────
@@ -308,6 +502,20 @@ def _intensity(webs, lum, c_deg, g_deg):
     return out * lum["scale"][None, :]
 
 
+def _cg(lum, vx, vy, vz, d):
+    """C and γ (degrees) of the directions (vx, vy, vz) [n, M] from each luminaire,
+    in its own photometric frame (C0 along its x, γ from its nadir)."""
+    if not lum["framed"]:
+        g = np.degrees(np.arccos(np.clip(-vz / d, -1, 1)))
+        c = np.degrees(np.arctan2(vy, vx)) - lum["rot"][None, :]
+        return c, g
+    F = lum["frame"]
+    u = vx * F[None, :, 0, 0] + vy * F[None, :, 0, 1] + vz * F[None, :, 0, 2]
+    v = vx * F[None, :, 1, 0] + vy * F[None, :, 1, 1] + vz * F[None, :, 1, 2]
+    w = vx * F[None, :, 2, 0] + vy * F[None, :, 2, 1] + vz * F[None, :, 2, 2]
+    return np.degrees(np.arctan2(v, u)), np.degrees(np.arccos(np.clip(-w / d, -1, 1)))
+
+
 def _direct(room, webs, pts, nrm, chunk=400):
     """Initial direct illuminance (lx) at points [n,3] with unit normals [n,3]."""
     lum = room.lum
@@ -323,8 +531,7 @@ def _direct(room, webs, pts, nrm, chunk=400):
         vz = p[:, 2:3] - lum["z"][None, :]
         d = np.sqrt(vx * vx + vy * vy + vz * vz)
         d = np.maximum(d, 1e-6)
-        g = np.degrees(np.arccos(np.clip(-vz / d, -1, 1)))
-        c = np.degrees(np.arctan2(vy, vx)) - lum["rot"][None, :]
+        c, g = _cg(lum, vx, vy, vz, d)
         I = _intensity(webs, lum, c, g)
         cos_p = -(q[:, 0:1] * vx + q[:, 1:2] * vy + q[:, 2:3] * vz) / d
         e = np.where(cos_p > 1e-9, I * cos_p / (d * d), 0.0)
@@ -335,6 +542,9 @@ def _direct(room, webs, pts, nrm, chunk=400):
             pe = p + q * 1e-3
             blk = _blocked(room, pe[:, 0:1], pe[:, 1:2], pe[:, 2:3], lum["x"][None, :], lum["y"][None, :], lum["z"][None, :])
             e = np.where(blk, 0.0, e)
+        if room.ceil is not None and not room.ceil.concave:
+            pe = p + q * 1e-3
+            e = np.where(_under(room, pe[:, 0:1], pe[:, 1:2], pe[:, 2:3], lum["x"][None, :], lum["y"][None, :], lum["z"][None, :]), e, 0.0)
         E[s:s + chunk] = e.sum(axis=1)
     return E
 
@@ -360,23 +570,41 @@ def _patches(room: _Room):
     hx, hy = (room.xmax - room.xmin) / nx / 2.0, (room.ymax - room.ymin) / ny / 2.0
     pos, nrm, area, rho, kind, du, dv, src = [], [], [], [], [], [], [], []
 
-    def add(p, n, a, r, k, u, v, o=-1):
+    def add(p, n, a, r, k, u, v, o=-1, du_dv=None):
         m = len(p)
         pos.append(p); nrm.append(np.tile(n, (m, 1)) if np.ndim(n) == 1 else n)
         area.append(np.full(m, a) if np.ndim(a) == 0 else a)
         rho.append(np.full(m, r) if np.ndim(r) == 0 else r)
-        kind.append(np.full(m, k)); du.append(np.tile(u, (m, 1))); dv.append(np.tile(v, (m, 1)))
+        kind.append(np.full(m, k))
+        if du_dv is not None:
+            du.append(du_dv[0]); dv.append(du_dv[1])
+        else:
+            du.append(np.tile(u, (m, 1)) if np.ndim(u) == 1 else u); dv.append(np.tile(v, (m, 1)) if np.ndim(v) == 1 else v)
         src.append(np.full(m, o))
 
     for z, nz, r, k in ((0.0, 1.0, room.rho["f"], 0), (room.H, -1.0, room.rho["c"], 1)):
         keep = np.ones(len(X), bool)
+        Hc = _height_at(room, X, Y)
         for b in room.boxes:                # floor under a box standing on it, ceiling above one reaching it
-            if (k == 0 and b.z0 < 0.01) or (k == 1 and b.z1 > room.H - 0.01):
+            if k == 0 and b.z0 < 0.01:
                 keep &= ~b.covers(X, Y)
+            elif k == 1:
+                keep &= ~(b.covers(X, Y) & (b.z1 > Hc - 0.01))
         if not keep.any():
             keep[0] = True
+        if k == 1 and room.ceil is not None:     # tilted patches: true area, own normal
+            Xk, Yk = X[keep], Y[keep]
+            sl = np.atleast_1d(room.ceil.slope(Xk, Yk))
+            g = np.sqrt(1.0 + sl * sl)
+            add(np.stack([Xk, Yk, room.ceil.height(Xk, Yk)], axis=1), room.ceil.normal(Xk, Yk), cell_a * g, r, k,
+                None, None, du_dv=(
+                    np.stack([np.full(len(sl), hx), np.zeros(len(sl)), hx * sl * room.ceil.ux], axis=1),
+                    np.stack([np.zeros(len(sl)), np.full(len(sl), hy), hy * sl * room.ceil.uy], axis=1)))
+            continue
         add(np.stack([X[keep], Y[keep], np.full(int(keep.sum()), z)], axis=1), [0.0, 0.0, nz], cell_a, r, k,
             [hx, 0.0, 0.0], [0.0, hy, 0.0])
+    if room.ceil is not None:
+        _step_patches(room, cs, add)
     ws = cs * 1.5
     nv = max(int(math.ceil(room.H / ws)), 2)
     n = len(room.P)
@@ -392,17 +620,30 @@ def _patches(room: _Room):
         inx, iny = -ey, ex                                  # inward normal (outline is CCW)
         px = p0[0] + t * (p1[0] - p0[0])
         py = p0[1] + t * (p1[1] - p0[1])
-        PX = np.repeat(px, nv); PY = np.repeat(py, nv); PZ = np.tile(zs, ns)
+        if room.ceil is None:
+            PX = np.repeat(px, nv); PY = np.repeat(py, nv); PZ = np.tile(zs, ns)
+            TT = np.repeat(t * L, nv)
+            HZ = np.full(len(PX), room.H / nv / 2.0)
+        else:                               # each column of the wall up to the ceiling above it
+            top = room.ceil.height(px + inx * 1e-3, py + iny * 1e-3)
+            cols = [max(int(math.ceil(h / ws)), 2) for h in top]
+            PX = np.concatenate([np.full(c, x) for c, x in zip(cols, px)])
+            PY = np.concatenate([np.full(c, y) for c, y in zip(cols, py)])
+            PZ = np.concatenate([(np.arange(c) + 0.5) / c * h for c, h in zip(cols, top)])
+            TT = np.concatenate([np.full(c, tt * L) for c, tt in zip(cols, t)])
+            HZ = np.concatenate([np.full(c, h / c / 2.0) for c, h in zip(cols, top)])
         r = np.full(len(PX), room.rho["w"])
         if room.openings:
-            r = _opening_rho(room, r, p0, ex, ey, L, np.repeat(t * L, nv), PZ, L / ns / 2.0, room.H / nv / 2.0)
+            r = _opening_rho(room, r, p0, ex, ey, L, TT, PZ, L / ns / 2.0, HZ)
         keep = np.ones(len(PX), bool)
         if room.boxes:                      # a box pushed against the wall hides that piece of it
             keep = ~_in_boxes(room, PX + inx * 1e-2, PY + iny * 1e-2, PZ)
             if not keep.any():
                 keep[0] = True
-        add(np.stack([PX[keep], PY[keep], PZ[keep]], axis=1), [inx, iny, 0.0], (L / ns) * (room.H / nv), r[keep], 2,
-            [ex * L / ns / 2.0, ey * L / ns / 2.0, 0.0], [0.0, 0.0, room.H / nv / 2.0])
+        m = int(keep.sum())
+        add(np.stack([PX[keep], PY[keep], PZ[keep]], axis=1), [inx, iny, 0.0], (L / ns) * 2.0 * HZ[keep], r[keep], 2,
+            np.tile([ex * L / ns / 2.0, ey * L / ns / 2.0, 0.0], (m, 1)),
+            np.stack([np.zeros(m), np.zeros(m), HZ[keep]], axis=1))
     for bi, b in enumerate(room.boxes):
         _box_patches(room, b, bi, cs, add)
     pos = np.vstack(pos); nrm = np.vstack(nrm)
@@ -458,7 +699,7 @@ def _box_patches(room, b: _Box, bi, cs, add):
     hz = (b.z1 - b.z0) / 2.0
     ctr = np.array([b.cx, b.cy, b.z0 + hz])
     faces = []
-    if b.z1 < room.H - 0.01:
+    if b.z1 < float(_height_at(room, np.array([b.cx]), np.array([b.cy]))[0]) - 0.01:
         faces.append((ctr + uz * hz, uz, ux * b.hw, uy * b.hd))
     if b.z0 > 0.01:
         faces.append((ctr - uz * hz, -uz, ux * b.hw, uy * b.hd))
@@ -470,10 +711,54 @@ def _box_patches(room, b: _Box, bi, cs, add):
         U, V = grid(n_u, n_v)
         P = c[None, :] + U[:, None] * eu[None, :] + V[:, None] * ev[None, :]
         q = P + n[None, :] * 1e-2
-        keep = _pip(room.P, q[:, 0], q[:, 1]) & (q[:, 2] > 0.0) & (q[:, 2] < room.H)
+        keep = _pip(room.P, q[:, 0], q[:, 1]) & (q[:, 2] > 0.0) & (q[:, 2] < _height_at(room, q[:, 0], q[:, 1]))
         if not keep.any():
             continue
         add(P[keep], n, (lu / n_u) * (lv / n_v), b.rho, 3, eu / n_u, ev / n_v, bi)
+
+
+def _chords(P, ux, uy, s_abs):
+    """Pieces of the plan line p·u = s_abs that lie inside the outline: [(a, b)] points."""
+    vx, vy = -uy, ux
+    hits = []
+    n = len(P)
+    for i in range(n):
+        (x1, y1), (x2, y2) = P[i], P[(i + 1) % n]
+        f1, f2 = x1 * ux + y1 * uy - s_abs, x2 * ux + y2 * uy - s_abs
+        if (f1 > 0) != (f2 > 0):
+            t = f1 / (f1 - f2)
+            hits.append((x1 + t * (x2 - x1), y1 + t * (y2 - y1)))
+    hits.sort(key=lambda q: q[0] * vx + q[1] * vy)
+    out = []
+    for i in range(0, len(hits) - 1):
+        a, b = hits[i], hits[i + 1]
+        mx, my = (a[0] + b[0]) / 2.0, (a[1] + b[1]) / 2.0
+        if bool(_pip(P, np.array([mx]), np.array([my]))[0]):
+            out.append((a, b))
+    return out
+
+
+def _step_patches(room, cs, add):
+    """The vertical faces of the ceiling's steps, across the room, facing into the higher part."""
+    c = room.ceil
+    for sk, z_lo_side, z_hi_side in c.steps:
+        z0, z1 = min(z_lo_side, z_hi_side), max(z_lo_side, z_hi_side)
+        sgn = 1.0 if z_hi_side > z_lo_side else -1.0           # faces the high side: +u when the ceiling rises going +s
+        n = np.array([sgn * c.ux, sgn * c.uy, 0.0])
+        for (ax, ay), (bx, by) in _chords(room.P, c.ux, c.uy, sk + c.s0):
+            L = math.hypot(bx - ax, by - ay)
+            if L < 1e-6:
+                continue
+            ns = max(int(math.ceil(L / (cs * 1.5))), 1)
+            nv = max(int(math.ceil((z1 - z0) / (cs * 1.5))), 1)
+            t = (np.arange(ns) + 0.5) / ns
+            zs = z0 + (np.arange(nv) + 0.5) / nv * (z1 - z0)
+            PX = np.repeat(ax + t * (bx - ax), nv) + n[0] * 1e-4
+            PY = np.repeat(ay + t * (by - ay), nv) + n[1] * 1e-4
+            PZ = np.tile(zs, ns)
+            ex, ey = (bx - ax) / L, (by - ay) / L
+            add(np.stack([PX, PY, PZ], axis=1), n, (L / ns) * ((z1 - z0) / nv), room.rho["c"], 1,
+                [ex * L / ns / 2.0, ey * L / ns / 2.0, 0.0], [0.0, 0.0, (z1 - z0) / nv / 2.0])
 
 
 def _balanced_form_factors(room, pos, nrm, area):
@@ -497,6 +782,9 @@ def _balanced_form_factors(room, pos, nrm, area):
             pe = pos + nrm * 1e-3
             blk = _blocked(room, pe[i, None, 0], pe[i, None, 1], pe[i, None, 2], pe[None, :, 0], pe[None, :, 1], pe[None, :, 2])
             k = np.where(blk, 0.0, k)
+        if room.ceil is not None and not room.ceil.concave:
+            pe = pos + nrm * 1e-3
+            k = np.where(_under(room, pe[i, None, 0], pe[i, None, 1], pe[i, None, 2], pe[None, :, 0], pe[None, :, 1], pe[None, :, 2]), k, 0.0)
         K[i] = k
     np.fill_diagonal(K, 0.0)
     K = 0.5 * (K + K.T)
@@ -508,9 +796,54 @@ def _balanced_form_factors(room, pos, nrm, area):
     return F
 
 
+def _lum_subset(lum, idx):
+    out = dict(lum)
+    for k in ("x", "y", "z", "rot", "scale", "watts", "web", "area", "frame"):
+        out[k] = lum[k][idx]
+    out["id"] = [lum["id"][i] for i in idx]
+    out["n"] = len(idx)
+    return out
+
+
+def _near_field(room, webs, pos, nrm, du, dv, Ed):
+    """Direct light on the patches close to a wall, pendant or sloped-ceiling
+    fitting, integrated over sub-samples of each patch instead of its centre:
+    a fitting a few centimetres from a surface would otherwise light that
+    surface's patches by their centre point alone."""
+    lum = room.lum
+    if not lum["n"] or not lum["near"].any() or room.detail == "fast":   # the layout screen stays quick
+        return Ed
+    half = np.sqrt((du * du).sum(axis=1) + (dv * dv).sum(axis=1))      # patch half-diagonal
+    Ed = Ed.copy()
+    full = room.lum
+    for j in np.flatnonzero(lum["near"]):
+        L = np.array([lum["x"][j], lum["y"][j], lum["z"][j]])
+        d = np.sqrt(((pos - L[None, :]) ** 2).sum(axis=1))
+        close = np.flatnonzero(d < 6.0 * half)
+        if not len(close):
+            continue
+        one = _lum_subset(full, [j])
+        room.lum = one
+        try:
+            centre = _direct(room, webs, pos[close], nrm[close])
+            ns = np.clip(np.ceil(8.0 * half[close] / np.maximum(d[close], 0.02)), 3, 16).astype(int)
+            for n in np.unique(ns):
+                k = close[ns == n]
+                a = (np.arange(n) + 0.5) / n * 2.0 - 1.0
+                U, V = (g.ravel() for g in np.meshgrid(a, a))
+                sub_p = (pos[k][:, None, :] + U[None, :, None] * du[k][:, None, :] + V[None, :, None] * dv[k][:, None, :]).reshape(-1, 3)
+                sub_n = np.repeat(nrm[k], len(U), axis=0)
+                acc = _direct(room, webs, sub_p, sub_n).reshape(len(k), len(U)).mean(axis=1)
+                Ed[k] += acc - centre[ns == n]
+        finally:
+            room.lum = full
+    return Ed
+
+
 def _solve(room, webs):
     pos, nrm, area, rho, kind, du, dv, src = _patches(room)
     Ed = _direct(room, webs, pos, nrm)
+    Ed = _near_field(room, webs, pos, nrm, du, dv, Ed)
     F = _balanced_form_factors(room, pos, nrm, area)
     N = len(pos)
     B = np.linalg.solve(np.eye(N) - rho[:, None] * F, rho * Ed)
@@ -543,6 +876,10 @@ def _indirect(room, S, pts, nrm, chunk=300):
             qe = pos + pn * 1e-3
             blk = _blocked(room, pe[:, None, 0], pe[:, None, 1], pe[:, None, 2], qe[None, :, 0], qe[None, :, 1], qe[None, :, 2])
             e = np.where(blk, 0.0, e)
+        if room.ceil is not None and not room.ceil.concave:
+            pe = p + q * 1e-3
+            qe = pos + pn * 1e-3
+            e = np.where(_under(room, pe[:, None, 0], pe[:, None, 1], pe[:, None, 2], qe[None, :, 0], qe[None, :, 1], qe[None, :, 2]), e, 0.0)
         out[s:s + chunk] = e.sum(axis=1)
     return out
 
@@ -612,13 +949,19 @@ def _ugr_at(room, webs, S, ox, oy, view_deg):
         use &= ~_blocked(room, np.array(ox), np.array(oy), np.array(EYE_H), lum["x"], lum["y"], lum["z"])
         if not use.any():
             return None
+    if room.ceil is not None and not room.ceil.concave:
+        use &= _under(room, np.array(ox), np.array(oy), np.array(EYE_H), lum["x"], lum["y"], lum["z"])
+        if not use.any():
+            return None
     dd = np.maximum(d, 1e-6)
     # candela from the luminaire towards the eye
-    g = np.degrees(np.arccos(np.clip(dz / dd, -1, 1)))
-    c = np.degrees(np.arctan2(-dy, -dx)) - lum["rot"]
+    c, g = _cg(lum, -dx[None, :], -dy[None, :], -dz[None, :], dd[None, :])
+    c, g = c[0], g[0]
     I = _intensity(webs, lum, c[None, :], g[None, :])[0]
     area = np.where(lum["area"] > 0, lum["area"], 0.09)
-    a_proj = area * np.maximum(dz / dd, 0.1)
+    # luminous area seen from the eye: cos of the angle off the luminaire's own axis
+    cos_axis = np.cos(np.radians(g)) if lum["framed"] else dz / dd
+    a_proj = area * np.maximum(cos_axis, 0.1)
     # position index: σ off the line of sight, τ the azimuth between the two vertical planes
     sigma = np.degrees(np.arccos(np.clip((dx * vx + dy * vy) / dd, -1, 1)))
     tau = np.abs(np.degrees(np.arctan2(dx * vy - dy * vx, dx * vx + dy * vy)))
@@ -688,6 +1031,8 @@ def evaluate_room(room: _Room, webs: dict, with_ugr: bool = True, with_cyl: bool
         zone = np.ones(len(pts), bool)
     res: dict = {"id": room.id, "name": room.name, "area": round(room.area, 3), "convex": room.convex,
                  "luminaires": room.lum["n"], "warnings": room.warnings, "notes": []}
+    if room.ceil is not None:
+        res["ceilingHeight"] = {"min": round(room.Hmin, 3), "max": round(room.H, 3)}
     kind = S["kind"]
     E_surf = S["E"] * room.mf
     if len(pts) and room.lum["n"]:
@@ -830,7 +1175,7 @@ def _surface(room, webs, S, o):
     V = (np.arange(nv) + 0.5) / nv * lv
     UU, VV = np.meshgrid(U, V)
     P = org[None, :] + UU.ravel()[:, None] * ex[None, :] + VV.ravel()[:, None] * ev[None, :]
-    ok = _pip(room.P, P[:, 0], P[:, 1]) & (P[:, 2] >= 0.0) & (P[:, 2] <= room.H)
+    ok = _pip(room.P, P[:, 0], P[:, 1]) & (P[:, 2] >= 0.0) & (P[:, 2] <= _height_at(room, P[:, 0], P[:, 1]))
     if room.boxes:
         ok &= ~_in_boxes(room, P[:, 0], P[:, 1], P[:, 2])
     vals = np.full(len(P), np.nan)
@@ -947,7 +1292,8 @@ def suggest_layout(req: dict) -> dict:
                  "drop": drop, "rotate": rot, "fluxPct": flux_pct} for i, p in enumerate(pts)]
 
     # Seed: one trial lattice at ~1.8 × mounting height, scaled by Ēm_target / Ēm_trial.
-    hm = max(room0.H - room0.workH - (drop if mount == "suspended" else 0.0), 0.5)
+    h_ceil = room0.H if room0.ceil is None else float(_height_at(room0, room0.P[:, 0], room0.P[:, 1]).mean() + room0.H) / 2.0
+    hm = max(h_ceil - room0.workH - (drop if mount == "suspended" else 0.0), 0.5)
     n_trial = max(int(math.ceil(room0.area / (1.8 * hm) ** 2)), 1)
     ang_long = 0.0
     n_e = len(room0.P)

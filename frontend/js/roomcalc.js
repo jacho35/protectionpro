@@ -41,6 +41,7 @@ const RoomCalc = {
       lums.push({
         id: el.id, x: +(el.x * f).toFixed(4), y: +(-el.y * f).toFixed(4), photometryId: pr.photoId,
         mount: pr.mount || 'recessed', drop: Number(pr.drop) || 0, rotate: -(el.rotation || 0),
+        mountH: Number(pr.hangH) > 0 ? Number(pr.hangH) : undefined, tilt: pr.mount === 'wall' ? (Number(pr.wallAim) || 0) : undefined,
         fluxPct: pr.fluxPct != null && pr.fluxPct !== '' ? Number(pr.fluxPct) : 100,
         lumens: Number(pr.lumens) > 0 ? Number(pr.lumens) : undefined,
         watts: Number(pr.watts) > 0 ? Number(pr.watts) : undefined,
@@ -52,6 +53,7 @@ const RoomCalc = {
         rhoC: L.rhoC, rhoW: L.rhoW, rhoF: L.rhoF, mf: L.mf,
         targets: { em: L.em, uo: L.uo, ugr: L.ugr, wallE: L.wallE, ceilE: L.ceilE, ez: L.ez || undefined },
         gridStep: L.grid > 0 ? L.grid : undefined,
+        ceiling: typeof RoomSection !== 'undefined' ? RoomSection.request(room, poly, L.ceilH) : undefined,
         luminaires: lums,
         // objects, windows / doors and calculation surfaces from the 3D view
         ...((typeof Light3D !== 'undefined' && Light3D.requestParts(room, f)) || {}),

@@ -17,6 +17,7 @@ const RoomShape = {
     U: { name: 'U shape', fields: [['w', 'Width'], ['d', 'Depth'], ['a', 'Opening width'], ['b', 'Opening depth']], dims: { w: 10, d: 8, a: 4, b: 4 } },
   },
   TURNS: [0, 90, 180, 270],
+  CEILINGS: { flat: 'Flat', gable: 'Pitched (gable)', mono: 'Mono-pitch', barrel: 'Barrel vault' },
 
   // Why the sizes don't make a shape, or '' when they do.
   problem(shape, d) {
@@ -87,7 +88,8 @@ const RoomShape = {
       UI.alert('Calibrate the plan first: the room is drawn to scale, and this floor has a drawing whose scale is not known.');
       return;
     }
-    const st = { shape: 'rect', turn: 0, name: PlanMarkup.nextCounter('_room', 'Room '), task: RoomLighting.DEFAULTS.task, ceilH: RoomLighting.DEFAULTS.ceilH, dims: {} };
+    const st = { shape: 'rect', turn: 0, name: PlanMarkup.nextCounter('_room', 'Room '), task: RoomLighting.DEFAULTS.task, ceilH: RoomLighting.DEFAULTS.ceilH, dims: {},
+      ceil: 'flat', top: +(RoomLighting.DEFAULTS.ceilH + 1.5).toFixed(2), ridge: 'w' };
     for (const [k, S] of Object.entries(this.SHAPES)) st.dims[k] = Object.assign({}, S.dims);
     const groups = {};
     for (const [k, t] of Object.entries(ROOM_TASKS)) (groups[t.group] = groups[t.group] || []).push([k, t.name]);
@@ -126,7 +128,14 @@ const RoomShape = {
             <label class="plan-field" style="grid-column:span 2"><span>Task</span><select data-rs="task" style="width:100%">${Object.entries(groups).map(([g, items]) =>
               `<optgroup label="${escHtml(g)}">${items.map(([k, n]) => `<option value="${k}"${k === st.task ? ' selected' : ''}>${escHtml(n)}</option>`).join('')}</optgroup>`).join('')}</select></label>
           </div>
-          <div class="sf-grid3">${num('ceilH', 'Ceiling height', st.ceilH, 'min="1.5" max="30" step="0.1"')}</div>
+          <div class="sf-grid3">
+            <label class="plan-field"><span>Ceiling</span><select data-rs="ceil" style="width:100%">${Object.entries(this.CEILINGS).map(([k, n]) => `<option value="${k}"${k === st.ceil ? ' selected' : ''}>${n}</option>`).join('')}</select></label>
+            ${num('ceilH', st.ceil === 'flat' ? 'Ceiling height' : st.ceil === 'mono' ? 'Low side' : 'Eaves height', st.ceilH, 'min="1" max="30" step="0.1"')}
+            ${st.ceil === 'flat' ? '' : num('top', st.ceil === 'mono' ? 'High side' : st.ceil === 'barrel' ? 'Crown' : 'Apex', st.top, 'min="1" max="40" step="0.1"')}
+          </div>
+          ${st.ceil === 'flat' ? '' : `<div class="sf-grid3"><label class="plan-field"><span>Ridge runs along</span><select data-rs="ridge" style="width:100%">
+            <option value="w"${st.ridge === 'w' ? ' selected' : ''}>the width</option><option value="d"${st.ridge === 'd' ? ' selected' : ''}>the depth</option></select></label>
+            <div class="sf-note" style="grid-column:span 2;align-self:end">Any other section — steps, a flat centre, a clerestory — can be drawn in the room's panel afterwards (<b>Draw the section…</b>).</div></div>`}
           <div class="sf-note">The room goes on the current floor${PlanEngine.factor() ? '' : ', which is given a scale because nothing is drawn on it'}. Then place fittings, or use <b>Suggest layouts</b> in the room's panel, and calculate.</div>
           <div class="ui-dialog-actions"><button class="btn-small" data-rs-act="cancel">Cancel</button><button class="btn-primary" data-rs-act="ok"${why ? ' disabled' : ''}>Create room</button></div>
         </div></div>`;
@@ -143,7 +152,9 @@ const RoomShape = {
       else if (k === 'turn') st.turn = parseInt(v, 10) || 0;
       else if (k === 'name') st.name = v;
       else if (k === 'task') st.task = v;
-      else if (k === 'ceilH') { const x = parseFloat(v); if (Number.isFinite(x)) st.ceilH = x; }
+      else if (k === 'ceilH' || k === 'top') { const x = parseFloat(v); if (Number.isFinite(x)) st[k] = x; }
+      else if (k === 'ridge') st.ridge = v;
+      else if (k === 'ceil') { st.ceil = v; render(); return; }
       else { const x = parseFloat(v); st.dims[st.shape][k] = Number.isFinite(x) ? x : 0; }
       if (k === 'shape') render(); else refresh();
     });
@@ -182,6 +193,12 @@ const RoomShape = {
     };
     RoomLighting.applyTask(room, st.task);
     RoomLighting.set(room, 'ceilH', st.ceilH);
+    if (st.ceil && st.ceil !== 'flat' && typeof RoomSection !== 'undefined') {
+      // edge 0 of every shape runs along its width, edge 1 along its depth (turned with it)
+      const lo = st.ceilH, hi = Math.max(st.top, lo);
+      room.section = Object.assign({ type: st.ceil, wall: st.ridge === 'd' ? 1 : 0 },
+        st.ceil === 'gable' ? { eaves: lo, apex: hi, apexAt: 0.5 } : st.ceil === 'mono' ? { low: lo, high: hi } : { eaves: lo, crown: hi });
+    }
     pm.rooms.push(room);
     PlanMarkup.selectOnly(room.id);
     PlanMarkup.snapshot(); PlanMarkup.markDirty(); PlanMarkup.refreshProps();

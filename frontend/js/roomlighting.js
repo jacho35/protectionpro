@@ -174,6 +174,7 @@ const RoomLighting = {
     const L = this.read(room);
     const f = PlanEngine.factor();
     const area = f ? PlanEngine._polyArea(room.points) * f * f : null;
+    const sectioned = typeof RoomSection !== 'undefined' && RoomSection.get(room).type !== 'flat';
     const groups = {};
     for (const [k, t] of Object.entries(ROOM_TASKS)) (groups[t.group] = groups[t.group] || []).push([k, t.name]);
     const opts = Object.entries(groups).map(([g, items]) =>
@@ -194,9 +195,10 @@ const RoomLighting = {
       </div>
       <div style="font-size:11px;color:var(--text-muted);margin:4px 0 8px">${L.edited ? 'Edited. ' : ''}${escHtml(this.tableNote())}${L.edited && L.task !== 'custom' ? ' <button type="button" class="btn-small" data-rl-reset>Reset to table</button>' : ''}</div>
       <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px">
-        ${num('ceilH', 'Ceiling', 'm', 0.1, 'min="1.5"')}${num('workH', 'Work plane', 'm', 0.05, 'min="0"')}${num('wallZone', 'Wall zone', 'm', 0.1, 'min="0"')}
+        ${num('ceilH', sectioned ? 'Ceiling (lowest)' : 'Ceiling', 'm', 0.1, sectioned ? 'min="1.5" disabled title="Set by the ceiling section below"' : 'min="1.5"')}${num('workH', 'Work plane', 'm', 0.05, 'min="0"')}${num('wallZone', 'Wall zone', 'm', 0.1, 'min="0"')}
         ${num('rhoC', 'ρ ceiling', '', 0.05, 'min="0" max="1"')}${num('rhoW', 'ρ walls', '', 0.05, 'min="0" max="1"')}${num('rhoF', 'ρ floor', '', 0.05, 'min="0" max="1"')}
       </div>
+      ${typeof RoomSection !== 'undefined' ? RoomSection.panel(room) : ''}
       <label class="plan-field" style="margin-top:6px"><span>Maintenance factor</span>
         <input type="number" data-rl="mf" value="${L.mf}" step="0.01" min="0.3" max="1" style="width:100%">
         <select data-rl-mfpreset style="width:100%"><option value="">Presets…</option>${this.MF_PRESETS.map(([v, n]) => `<option value="${v}">${v} — ${escHtml(n)}</option>`).join('')}</select></label>
@@ -345,6 +347,7 @@ const RoomLighting = {
     if (typeof EmergCalc !== 'undefined') EmergCalc.bind(propsEl);
     if (typeof SportsCalc !== 'undefined') SportsCalc.bind(propsEl);
     if (typeof ObtrusiveCalc !== 'undefined') ObtrusiveCalc.bind(propsEl);
+    if (typeof RoomSection !== 'undefined') RoomSection.bind(propsEl);
     if (this._bound || !propsEl) return;
     this._bound = true;
     const commit = (fn) => {
