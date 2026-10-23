@@ -340,7 +340,7 @@ class _Room:
         return out
 
     def _luminaires(self, items, webs):
-        xs, ys, zs, rot, sc, wt, pid, ids, area, frames, near = [], [], [], [], [], [], [], [], [], [], []
+        xs, ys, zs, rot, sc, wt, pid, ids, area, frames, near, lift = [], [], [], [], [], [], [], [], [], [], [], []
         framed = False
         for it in items:
             x, y = _f(it.get("x"), math.nan), _f(it.get("y"), math.nan)
@@ -397,7 +397,11 @@ class _Room:
                 framed = True
             xs.append(x); ys.append(y); zs.append(z)
             rot.append(r_deg); frames.append(frame)
-            near.append(self.ceil is not None or mount in ("pendant", "wall"))
+            # A fitting flush with a flat ceiling still sends its upward light (a batten's up-light) to
+            # the ceiling: it leaves just below it, as under a section — `lift`, used for ceiling points only.
+            flush = self.ceil is None and mount in ("recessed", "surface")
+            lift.append(_FLUSH_LIFT if flush else 0.0)
+            near.append(self.ceil is not None or flush or mount in ("pendant", "wall"))
             sc.append((lm / w.lumens) * flux_pct / 100.0)
             wt.append(watts * flux_pct / 100.0)
             pid.append(p); ids.append(it.get("id"))
@@ -405,7 +409,11 @@ class _Room:
         return {"x": np.array(xs), "y": np.array(ys), "z": np.array(zs), "rot": np.array(rot),
                 "scale": np.array(sc), "watts": np.array(wt), "web": np.array(pid, dtype=object),
                 "id": ids, "area": np.array(area), "n": len(xs),
-                "frame": np.array(frames).reshape(-1, 3, 3), "framed": framed, "near": np.array(near, bool)}
+                "frame": np.array(frames).reshape(-1, 3, 3), "framed": framed, "near": np.array(near, bool),
+                "lift": np.array(lift, float)}
+
+
+_FLUSH_LIFT = 0.05                              # m below a flat ceiling that a flush fitting's up-light leaves
 
 
 # ─── Obstacles ──────────────────────────────────────────────────────────
@@ -528,7 +536,8 @@ def _direct(room, webs, pts, nrm, chunk=400):
         q = nrm[s:s + chunk]
         vx = p[:, 0:1] - lum["x"][None, :]
         vy = p[:, 1:2] - lum["y"][None, :]
-        vz = p[:, 2:3] - lum["z"][None, :]
+        zl = lum["z"][None, :] - np.where(np.abs(p[:, 2:3] - room.H) < 1e-6, lum.get("lift", 0.0 * lum["z"])[None, :], 0.0)
+        vz = p[:, 2:3] - zl
         d = np.sqrt(vx * vx + vy * vy + vz * vz)
         d = np.maximum(d, 1e-6)
         c, g = _cg(lum, vx, vy, vz, d)
@@ -798,7 +807,7 @@ def _balanced_form_factors(room, pos, nrm, area):
 
 def _lum_subset(lum, idx):
     out = dict(lum)
-    for k in ("x", "y", "z", "rot", "scale", "watts", "web", "area", "frame"):
+    for k in ("x", "y", "z", "rot", "scale", "watts", "web", "area", "frame", "lift"):
         out[k] = lum[k][idx]
     out["id"] = [lum["id"][i] for i in idx]
     out["n"] = len(idx)
@@ -817,7 +826,7 @@ def _near_field(room, webs, pos, nrm, du, dv, Ed):
     Ed = Ed.copy()
     full = room.lum
     for j in np.flatnonzero(lum["near"]):
-        L = np.array([lum["x"][j], lum["y"][j], lum["z"][j]])
+        L = np.array([lum["x"][j], lum["y"][j], lum["z"][j] - (lum["lift"][j] if "lift" in lum else 0.0)])
         d = np.sqrt(((pos - L[None, :]) ** 2).sum(axis=1))
         close = np.flatnonzero(d < 6.0 * half)
         if not len(close):

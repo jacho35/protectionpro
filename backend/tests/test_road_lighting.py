@@ -275,6 +275,16 @@ def test_ldt_rotational_symmetry_and_scaling():
     assert p["fluxIntegrated"] == pytest.approx(200.0 * 2 * math.pi * (1 - math.cos(math.radians(90))), rel=0.01)
 
 
+def test_ldt_two_lamp_sets_written_one_block_per_set():
+    """Relux writes each lamp set as its own six-line block rather than field by field."""
+    std = ldt_text().split("\n")
+    head, tail = std[:26], std[26 + 4 + 0:]
+    sets = ["1", "LED", "4577", "4000K", ">70", "27", "1", "LED", "7122", "4000K", ">70", "41"]
+    txt = "\n".join(head[:25] + ["2"] + sets + tail)
+    p = parse_ldt(txt)
+    assert p["lumens"] == 4577 + 7122 and p["watts"] == 27 + 41
+
+
 def test_ldt_c0_c180_symmetry():
     txt = ldt_text(isym=2, mc=4, dc=90, planes=3)
     p = parse_ldt(txt)

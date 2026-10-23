@@ -333,11 +333,33 @@ const RoomLighting = {
   // is set for a placed element's panel, whose fields use data-key.
   tipify(root, itemType) {
     if (!root) return;
+    const touch = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
     const set = (ctl, tip) => {
       if (!tip) return;
       ctl.title = tip;
       const lab = ctl.closest('label') || (ctl.parentElement && ctl.parentElement.querySelector('.plan-field-label'));
-      if (lab) { lab.title = tip; (lab.closest('.plan-field') || lab).classList.add('has-tip'); }
+      if (lab) {
+        lab.title = tip; (lab.closest('.plan-field') || lab).classList.add('has-tip');
+        // A touch screen has no hover for the title: give the label an ⓘ to tap, as the property windows do
+        if (touch && !lab.querySelector(':scope > .rl-tip-btn')) {
+          const b = document.createElement('button');
+          b.type = 'button'; b.className = 'prop-info-btn rl-tip-btn'; b.textContent = 'i';
+          b.setAttribute('aria-label', 'About ' + (lab.textContent || '').trim().slice(0, 40));
+          b.addEventListener('click', (e) => {
+            e.preventDefault(); e.stopPropagation();       // not a click on the label's own control
+            Properties._showInfoPopup(b, escHtml(tip));
+            // the shared popup hangs from the button's right edge; these buttons sit at the left
+            const pop = document.querySelector('.prop-info-popup');
+            if (pop) {
+              const r = b.getBoundingClientRect();
+              pop.style.right = 'auto';
+              pop.style.left = Math.max(8, Math.min(r.left, window.innerWidth - pop.offsetWidth - 8)) + 'px';
+            }
+          });
+          const head = lab.querySelector(':scope > span');
+          if (head) head.after(b); else lab.appendChild(b);
+        }
+      }
     };
     const T = this.TIPS;
     root.querySelectorAll('[data-rl], [data-ac], [data-em], [data-sf], [data-ob]').forEach(c => {
