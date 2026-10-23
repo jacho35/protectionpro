@@ -420,6 +420,8 @@ Help ▸ Guides (`frontend/js/help-guides.js`, pictures in `frontend/img/help/`)
 
 ## Completed
 
+- **Room from a shape** (2026-10-23): Lighting tab › Draw › *Room from a shape* (and Overview › *+ Room from a shape*) makes a rectangle, L, T or U room from its sizes in metres, turned 0 / 90 / 180 / 270°, with its name, task and ceiling height, for a quick calculation with no plan (new `frontend/js/roomshape.js`; outline maths node-tested in `testing/unit/roomshape.test.js`). A floor with nothing drawn on it gets a scale automatically, as a sports field does; one with an uncalibrated drawing asks for a calibration. The room goes at the centre of the view, or 2 m to the right of the rooms already there.
+
 ### Security follow-ups (2026-10-23)
 - **Sign-in limits behind one proxy**: nginx takes the client address from the proxy's forwarded header (trusted only from private addresses); the backend believes `X-Real-IP` only when `PP_TRUST_PROXY` is set (docker-compose sets it), so a bare uvicorn can't be talked into a fresh allowance. The README says the upstream proxy must send `X-Forwarded-For`.
 - **Raw HTML interpolation sweep**: about 500 attribute values were escaped (`escHtml`) or coerced to numbers (`numAttr`) across the frontend; `escHtml` has a fast path for text with nothing to escape. `testing/lint/raw-interp.mjs` now understands the safe patterns, can apply the plain cases itself (`--fix`), and CI fails if the unreviewed count grows (`--max`). What is left is drawing geometry, literal-only conditionals and already-escaped fragments.
