@@ -253,14 +253,14 @@ const SportsCalc = {
     const { lums, skipped } = AreaCalc.luminaires(f);
     const photometry = {};
     for (const l of lums) photometry[l.photometryId] = PhotoLib.get(l.photometryId);
-    if (UI.setBusy) UI.setBusy(true, 'Calculating sports lighting…');
+    RoomCalc.busy(true, 'Calculating sports lighting…');
     let out;
     try {
       out = await API.request('/analysis/sports-lighting', 'POST', { luminaires: lums, photometry, fields: list.map(r => this.fieldReq(r, f)) });
     } catch (e) {
-      UI.alert('Sports lighting calculation failed: ' + (e && e.message ? e.message : e));
+      RoomCalc.fail('Sports lighting calculation failed: ' + (e && e.message ? e.message : e));
       return;
-    } finally { if (UI.setBusy) UI.setBusy(false); }
+    } finally { RoomCalc.busy(false); }
     let pass = 0, fail = 0;
     for (const r of out.fields) {
       if (r.error) { UI.toast(`${r.name}: ${r.error}`, 'warn', 6000); continue; }
@@ -659,9 +659,10 @@ const SportsCalc = {
   // ─── Properties panel (Lighting tab) ───
   panel(room) {
     const L = this.read(room), f = PlanEngine.factor(), fr = this.frame(room, f);
+    const step = typeof LightingWS !== 'undefined' ? LightingWS.step : 'space';
     const num = (k, label, unit, step, extra) => `<label class="plan-field"><span>${label}</span><input type="number" data-sf="${k}" value="${escHtml(L[k])}" step="${step}" ${extra || ''} style="width:100%"><small>${unit}</small></label>`;
     const masts = L.masts.map(m => `<div class="sf-mast-row"><span><b>${escHtml(m.name || 'Mast')}</b> · ${+m.h || 0} m · ${(m.floods || []).length} floods · ${this.AIM_PATTERNS[m.pattern] ? this.AIM_PATTERNS[m.pattern].name : 'custom'}</span>
-      <button type="button" class="btn-small" data-sf-aim="${escHtml(m.id)}">Aim…</button></div>`).join('');
+      <button type="button" class="btn-small" data-sf-focus="${escHtml(m.id)}" aria-pressed="${!!(this.focus && this.focus.roomId === room.id && this.focus.mastId === m.id)}">Pick</button><button type="button" class="btn-small" data-sf-aim="${escHtml(m.id)}">Aim…</button></div>`).join('');
     const cams = L.tv ? `<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px">
         ${num('evCam', 'Ēv to camera', 'lx, 0 = none', 10, 'min="0"')}${num('evCamU2', 'Ev min / Ēv', '0 = none', 0.05, 'min="0" max="1"')}</div>
       ${L.cameras.map(c => `<div class="sf-cam-row" data-sf-cam="${escHtml(c.id)}">
@@ -676,6 +677,7 @@ const SportsCalc = {
       <div class="plan-props-title" style="font-size:13px">Sports lighting${fr ? ` — ${fr.L.toFixed(1)} × ${fr.W.toFixed(1)} m` : ''}</div>
       ${RoomLighting.typeSelect(room)}
       ${typeof Light3D !== 'undefined' ? '<button type="button" class="plan-circuit-btn" data-sf-3d style="margin:2px 0 6px">View in 3D — masts, aiming, stands, rendered light</button>' : ''}
+      ${step === 'space' ? `
       <label class="plan-field"><span>Sport</span><select data-sf="sport" style="width:100%">${Object.entries(SPORTS_FIELDS).map(([k, s]) => `<option value="${k}"${k === L.sport ? ' selected' : ''}>${escHtml(s.name)}</option>`).join('')}</select></label>
       <label class="plan-field"><span>Lighting class</span><select data-sf="cls" style="width:100%">${Object.entries(this.CLASSES).map(([k, n]) => `<option value="${k}"${k === L.cls ? ' selected' : ''}>${escHtml(n)}</option>`).join('')}</select></label>
       <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px">
@@ -693,6 +695,8 @@ const SportsCalc = {
         ${num('mf', 'Maint. factor', '', 0.01, 'min="0.3" max="1"')}${num('groundRho', 'Ground ρ', 'grass 0.2', 0.01, 'min="0.01" max="0.9"')}
         <label class="plan-field"><span>Grid</span><input type="number" data-sf="grid" value="${L.grid > 0 ? L.grid : ''}" step="0.5" min="0.5" max="20" placeholder="auto" style="width:100%"><small>m</small></label>
       </div>
+      ` : ''}
+      ${step === 'fit' ? `
       <div class="sf-sec"><div class="plan-props-title" style="font-size:13px">Masts — ${L.masts.length} masts, ${this.floodCount(room)} floods</div>
         ${masts || '<div class="sf-note">No masts yet.</div>'}
         <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">
@@ -700,6 +704,8 @@ const SportsCalc = {
           ${L.masts.length ? '<button type="button" class="plan-circuit-btn" data-sf-opt>Optimise aiming</button><button type="button" class="plan-circuit-btn" data-sf-cmp>Compare patterns…</button>' : ''}
         </div>
         ${L.masts.length ? `<label class="plan-field" style="margin-top:6px"><span>After aiming</span><select data-sf="aimTrim" style="width:100%">${Object.entries(this.TRIMS).map(([k, n]) => `<option value="${k}"${k === L.aimTrim ? ' selected' : ''}>${n}</option>`).join('')}</select></label>` : ''}</div>
+      ${this.focusHtml(room)}` : ''}
+      ${step === 'space' ? `
       <div class="sf-sec"><div class="plan-props-title" style="font-size:13px">Stands — spill light and spectator glare</div>
         ${L.stands.map(st => `<div class="sf-stand" data-sf-st="${escHtml(st.id)}">
           <div class="sf-stand-head"><input type="text" data-st="name" value="${escHtml(st.name || 'Stand')}" aria-label="Stand name">
@@ -718,7 +724,8 @@ const SportsCalc = {
           ${num('aerialEv', 'Ēv min at each height', 'lx, 0 = none', 10, 'min="0"')}</div>
           <div class="sf-note">The pitch grid repeated at each height: horizontal illuminance and the mean of four vertical planes (a ball seen from any side).</div>` : ''}</div>
       <div class="sf-sec"><label class="plan-field-check"><input type="checkbox" data-sf="tv"${L.tv ? ' checked' : ''}> Televised — vertical illuminance to cameras</label>${cams}</div>
-      ${this.resultHtml(room)}
+      ` : ''}
+      ${step === 'results' ? this.resultHtml(room) : ''}
     </div>`;
   },
 
@@ -764,6 +771,13 @@ const SportsCalc = {
         else if (t.dataset.sfDim === 'W') this.reshape(room, fr.L, Math.max(1, x), null);
         else this.reshape(room, fr.L, fr.W, x);
         done();
+      } else if (t.dataset.sfFa) {
+        const m = this._focusMast(room), row = t.closest('[data-sf-fid]');
+        const fl = m && row && (m.floods || []).find(x => x.id === row.dataset.sfFid);
+        const x = parseFloat(t.value);
+        if (!fl || !Number.isFinite(x)) return;
+        fl[t.dataset.sfFa] = x; delete m.pattern; this.focus.floodId = fl.id;
+        done();
       } else if (t.dataset.st) {
         const row = t.closest('[data-sf-st]');
         const st = row && this.read(room).stands.find(x => x.id === row.dataset.sfSt);
@@ -792,6 +806,16 @@ const SportsCalc = {
       else if (hit('[data-sf-opt]')) this.optimise(room).then(o => { if (o) this.run([room]); });
       else if (hit('[data-sf-cmp]')) this.openCompare(room);
       else if (hit('[data-sf-aim]')) this.openAim(room, hit('[data-sf-aim]').dataset.sfAim);
+      else if (hit('[data-sf-focus]')) { this.focus = { roomId: room.id, mastId: hit('[data-sf-focus]').dataset.sfFocus, floodId: null }; PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true }); }
+      else if (hit('[data-sf-ff]')) { if (this.focus) this.focus.floodId = hit('[data-sf-ff]').closest('[data-sf-fid]').dataset.sfFid; PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true }); }
+      else if (hit('[data-sf-nudge]')) {
+        const m = this._focusMast(room), fl = m && (m.floods || []).find(x => x.id === this.focus.floodId);
+        if (!fl) return;
+        const [dx, dy] = hit('[data-sf-nudge]').dataset.sfNudge.split(',').map(Number);
+        fl.ax = +((+fl.ax || 0) + dx).toFixed(1); fl.ay = +((+fl.ay || 0) + dy).toFixed(1);
+        delete m.pattern;
+        done();
+      }
       else if (hit('[data-sf-reset]')) { this.applyClass(room); done(); }
       else if (hit('[data-sf-fit]')) { const S = SPORTS_FIELDS[this.read(room).sport]; this.reshape(room, S.length, S.width, null); done(); }
       else if (hit('[data-sf-cam-add]')) {
@@ -813,6 +837,74 @@ const SportsCalc = {
         done();
       }
     });
+  },
+
+  // ─── Aiming on the plan (Lighting › Masts & aiming) ───
+  // The mast picked on the plan; its aim points drag across the pitch.
+  focus: null,        // { roomId, mastId, floodId }
+  toField(fr, pt) {
+    const dx = pt.x * fr.f - fr.O.x, dy = -pt.y * fr.f - fr.O.y;
+    return { x: dx * fr.u.x + dy * fr.u.y, y: dx * fr.v.x + dy * fr.v.y };
+  },
+  _focusMast(room) {
+    const F = this.focus;
+    return F && F.roomId === room.id ? this.read(room).masts.find(m => m.id === F.mastId) || null : null;
+  },
+  // A press on the plan: an aim point of the picked mast, or a mast. Returns a drag for the select tool.
+  pickAt(pt, zoom) {
+    if (typeof LightingWS === 'undefined' || !LightingWS._active || LightingWS.step !== 'fit') return null;
+    const f = PlanEngine.factor();
+    if (!f) return null;
+    const hit = (q, px) => Math.hypot(pt.x - q.x, pt.y - q.y) <= px / zoom;
+    for (const room of (AppState.planMarkup.rooms || [])) {
+      if (room.kind !== 'sports') continue;
+      const fr = this.frame(room, f);
+      if (!fr) continue;
+      const m = this._focusMast(room);
+      if (m) {
+        for (const fl of (m.floods || [])) {
+          if (hit(this.toPlan(fr, +fl.ax || 0, +fl.ay || 0), 10)) {
+            this.focus.floodId = fl.id;
+            PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true });
+            return { kind: 'aim', room, mast: m, fl, fr, moved: false };
+          }
+        }
+      }
+      for (const mm of this.read(room).masts) {
+        if (!hit(this.toPlan(fr, +mm.x || 0, +mm.y || 0), 12)) continue;
+        this.focus = { roomId: room.id, mastId: mm.id, floodId: null };
+        PlanMarkup.selectOnly(room.id);
+        return { kind: 'mastpick', moved: false };
+      }
+    }
+    return null;
+  },
+  dragAim(d, pt) {
+    const q = this.toField(d.fr, pt);
+    d.fl.ax = +q.x.toFixed(1); d.fl.ay = +q.y.toFixed(1);
+    delete d.mast.pattern;          // aiming by hand is the user's own
+    d.moved = true;
+  },
+  // The picked mast's floods in the field's panel: aim points to type or nudge.
+  focusHtml(room) {
+    const m = this._focusMast(room), L = this.read(room);
+    if (!m) return `<div class="sf-sec sf-note">${L.masts.length ? 'Click a mast on the plan to aim its floods there: drag an aim point, or type or nudge it here.' : ''}</div>`;
+    const M = { x: +m.x || 0, y: +m.y || 0 }, h = Math.max(+m.h || 20, 0.5), F = this.focus;
+    const rows = (m.floods || []).map((fl, i) => {
+      const d = Math.hypot((+fl.ax || 0) - M.x, (+fl.ay || 0) - M.y), tilt = Math.atan2(d, h) * 180 / Math.PI;
+      const on = F.floodId === fl.id;
+      return `<tr data-sf-fid="${escHtml(fl.id)}"${on ? ' class="on"' : ''}><td><button type="button" class="btn-small" data-sf-ff aria-pressed="${on}">F${i + 1}</button></td>
+        <td><input type="number" data-sf-fa="ax" value="${+fl.ax || 0}" step="0.5" aria-label="F${i + 1} aim x, m"></td>
+        <td><input type="number" data-sf-fa="ay" value="${+fl.ay || 0}" step="0.5" aria-label="F${i + 1} aim y, m"></td>
+        <td class="num${tilt > L.maxTilt + 1e-9 ? ' bad' : ''}">${tilt.toFixed(0)}°</td></tr>`;
+    }).join('');
+    const sel = (m.floods || []).findIndex(x => x.id === F.floodId);
+    return `<div class="sf-sec sf-focus"><div class="plan-props-title" style="font-size:13px">${escHtml(m.name || 'Mast')} · ${h} m · ${this.AIM_PATTERNS[m.pattern] ? this.AIM_PATTERNS[m.pattern].name : 'custom'}</div>
+      <table class="sf-ftable"><thead><tr><th>Flood</th><th>Aim x, m</th><th>Aim y, m</th><th class="num">Tilt</th></tr></thead><tbody>${rows}</tbody></table>
+      ${sel >= 0 ? `<div class="sf-nudge" role="group" aria-label="Nudge F${sel + 1} by 1 m">
+        <button type="button" class="btn-small" data-sf-nudge="-1,0">x −1</button><button type="button" class="btn-small" data-sf-nudge="1,0">x +1</button>
+        <button type="button" class="btn-small" data-sf-nudge="0,-1">y −1</button><button type="button" class="btn-small" data-sf-nudge="0,1">y +1</button></div>` : '<div class="sf-note">Pick a flood (or its aim point on the plan) to nudge it 1 m at a time.</div>'}
+      <button type="button" class="btn-small" data-sf-aim="${escHtml(m.id)}">All aiming tools…</button></div>`;
   },
 
   // ─── Aiming dialog ───
@@ -1176,16 +1268,23 @@ const SportsCalc = {
       const rad = Math.max(0.9 / f, 5 / zoom);
       for (const m of L.masts) {
         const M = P(+m.x || 0, +m.y || 0);
-        const focus = this._aim && this._aim.roomId === room.id ? this._aim.mastId === m.id : sel;
+        const picked = this.focus && this.focus.roomId === room.id ? this.focus.mastId === m.id : null;
+        const focus = this._aim && this._aim.roomId === room.id ? this._aim.mastId === m.id : picked != null ? picked : sel;
         if (focus) {
           ctx.strokeStyle = 'rgba(232,89,12,0.85)'; ctx.lineWidth = 1.2 / zoom; ctx.setLineDash([5 / zoom, 4 / zoom]);
           ctx.beginPath();
           for (const fl of (m.floods || [])) { const A = P(+fl.ax || 0, +fl.ay || 0); ctx.moveTo(M.x, M.y); ctx.lineTo(A.x, A.y); }
           ctx.stroke(); ctx.setLineDash([]);
           ctx.fillStyle = '#e8590c';
-          for (const fl of (m.floods || [])) { const A = P(+fl.ax || 0, +fl.ay || 0); ctx.beginPath(); ctx.arc(A.x, A.y, rad * 0.45, 0, Math.PI * 2); ctx.fill(); }
+          for (const fl of (m.floods || [])) {
+            const A = P(+fl.ax || 0, +fl.ay || 0);
+            // the picked mast's aim points are handles: big enough to grab
+            const hr = picked ? Math.max(rad * 0.45, 6 / zoom) : rad * 0.45;
+            ctx.beginPath(); ctx.arc(A.x, A.y, hr, 0, Math.PI * 2); ctx.fill();
+            if (picked && this.focus.floodId === fl.id) { ctx.save(); ctx.strokeStyle = '#e8590c'; ctx.lineWidth = 2 / zoom; ctx.beginPath(); ctx.arc(A.x, A.y, hr * 2.2, 0, Math.PI * 2); ctx.stroke(); ctx.restore(); }
+          }
         }
-        ctx.fillStyle = this._aim && this._aim.mastId === m.id ? '#e8590c' : '#ffffff'; ctx.strokeStyle = '#111827'; ctx.lineWidth = 2 / zoom;
+        ctx.fillStyle = (this._aim && this._aim.mastId === m.id) || picked ? '#e8590c' : '#ffffff'; ctx.strokeStyle = '#111827'; ctx.lineWidth = 2 / zoom;
         ctx.beginPath(); ctx.arc(M.x, M.y, rad, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
         ctx.fillStyle = '#111827'; ctx.font = `bold ${11 / zoom}px system-ui, sans-serif`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
         ctx.fillText(`${m.name || ''}`, M.x + rad * 1.4, M.y);

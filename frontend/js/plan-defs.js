@@ -302,7 +302,10 @@ const PLAN_DEFS = {
   // Default props object for a freshly placed element/route of `type`.
   defaults(type) {
     const d = (this.elements[type] || this.routes[type] || {}).defaults;
-    return d ? { ...d } : {};
+    const out = d ? { ...d } : {};
+    // A light placed on the Lighting tab takes the luminaire picked in its Luminaires step.
+    if (type === 'bd_light' && typeof LightingWS !== 'undefined' && LightingWS.placeDefaults) LightingWS.placeDefaults(out);
+    return out;
   },
 
   // Resolved fill colour for an element type, honoring project style overrides.

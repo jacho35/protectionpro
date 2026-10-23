@@ -166,6 +166,11 @@ PlanTools.register({
       this._drag = { kind: 'rotate', el: rot.el, moved: false };
       return;
     }
+    // 0b) Lighting › Masts & aiming: a mast, or an aim point of the picked one
+    if (typeof SportsCalc !== 'undefined' && SportsCalc.pickAt) {
+      const d = SportsCalc.pickAt(pt, z);
+      if (d) { this._drag = d; return; }
+    }
     // 1) route vertex of an already-selected route (fine control)
     for (const r of pm.routes) {
       if (!PlanMarkup.selectedIds.has(r.id)) continue;
@@ -223,6 +228,8 @@ PlanTools.register({
   onMove(pt) {
     if (this._marquee) { this._marquee.cur = { x: pt.x, y: pt.y }; PlanEngine.requestDraw({ fg: true }); return; }
     if (!this._drag) return;
+    if (this._drag.kind === 'mastpick') return;
+    if (this._drag.kind === 'aim') { SportsCalc.dragAim(this._drag, pt); PlanEngine.requestDraw({ fg: true }); return; }
     if (this._drag.kind === 'rotate') {
       const el = this._drag.el;
       let deg = Math.atan2(pt.x - el.x, -(pt.y - el.y)) * 180 / Math.PI; // 0 = straight up

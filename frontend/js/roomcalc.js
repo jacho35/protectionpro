@@ -16,11 +16,16 @@ const RoomCalc = {
   _busy: false,
   _pmRef: null,
   quiet: false,         // the Lighting workspace's Calculate all silences the per-run toasts
+  live: false,          // a live recalculation (LightingWS.liveKick): no busy overlay, failures as a toast
   layouts: {},          // room id → { lumId, cands, sel, seed }
   display: 'fc',        // results on the plan: 'fc' false colour · 'iso' isolux lines · 'isoval' lines + values · 'val' values
   isoStep: 0,           // lx between isolux lines; 0 = automatic
   showDist: false,      // the light distribution of every fitting, seen from above
   _distCache: new Map(),
+
+  // Every lighting calculator's busy overlay and failure message, so a live run stays out of the way.
+  busy(on, label) { if (!this.live && UI.setBusy) UI.setBusy(on, label); },
+  fail(msg) { if (this.live) UI.toast(msg, 'warn', 6000); else UI.alert(msg); },
 
   // Results belong to the project in memory; a different project object means a new project.
   _sync() { if (this._pmRef !== AppState.planMarkup) { this._pmRef = AppState.planMarkup; this.results = {}; this.layouts = {}; if (typeof AreaCalc !== 'undefined') AreaCalc.layouts = {}; } },
@@ -101,18 +106,18 @@ const RoomCalc = {
     const photometry = {};
     for (const b of built) for (const l of b.req.luminaires) photometry[l.photometryId] = PhotoLib.get(l.photometryId);
     this._busy = true;
-    if (UI.setBusy) UI.setBusy(true, 'Calculating lighting…');
+    RoomCalc.busy(true, 'Calculating lighting…');
     let out;
     try {
       // the 3D view's rendered light needs every surface patch of the room it shows
       const patches = (r) => typeof Light3D !== 'undefined' && (Light3D._wantPatches || Light3D._active) && r.id === Light3D.roomId;
       out = await API.request('/analysis/room-lighting', 'POST', { rooms: built.map(b => (patches(b.req) ? Object.assign({}, b.req, { patches: true }) : b.req)), photometry, detail: 'full' });
     } catch (e) {
-      UI.alert('Lighting calculation failed: ' + (e && e.message ? e.message : e));
+      RoomCalc.fail('Lighting calculation failed: ' + (e && e.message ? e.message : e));
       return;
     } finally {
       this._busy = false;
-      if (UI.setBusy) UI.setBusy(false);
+      RoomCalc.busy(false);
     }
     const sigs = new Map(built.map(b => [b.room.id, this.signature(b.room)]));
     const obsIds = new Map(built.map(b => [b.room.id, (b.req.obstacles || []).map(o => o.id)]));
@@ -273,16 +278,19 @@ const RoomCalc = {
     return `hsl(${hue}, 80%, 50%)`;
   },
 
+  // Results show on the plan when switched on and the Lighting workspace is on its Results step.
+  shown() { return this.enabled && (typeof LightingWS === 'undefined' || LightingWS.resultsVisible()); },
+
   draw(ctx, zoom) {
     this._sync();
     if (typeof Light3D !== 'undefined') Light3D.drawPlan(ctx, zoom);   // objects, windows, doors from the 3D view
-    if (typeof SportsCalc !== 'undefined') SportsCalc.draw(ctx, zoom, this.enabled);   // masts always; the pitch grid with the results
+    const on = this.shown();
+    if (typeof SportsCalc !== 'undefined') SportsCalc.draw(ctx, zoom, on);   // masts always; the pitch grid with the results
     if (typeof ObtrusiveCalc !== 'undefined') ObtrusiveCalc.draw(ctx, zoom);
     const f = PlanEngine.factor();
     if (f && this.showDist) this._drawDist(ctx, zoom, f);
     if (typeof LightSection !== 'undefined') LightSection.drawPlan(ctx, zoom);
-    if (!this.enabled) { this.updateLegend(); return; }
-    if (!f) return;
+    if (!on || !f) { this.updateLegend(); if (f) this._drawLayouts(ctx, zoom, f); return; }
     const pm = AppState.planMarkup;
     const mode = this.display;
     for (const room of (pm.rooms || [])) {
@@ -321,7 +329,12 @@ const RoomCalc = {
     if (typeof AreaCalc !== 'undefined') AreaCalc.draw(ctx, zoom);
     if (typeof EmergCalc !== 'undefined') EmergCalc.draw(ctx, zoom);
     this.updateLegend();
-    for (const room of (pm.rooms || [])) {
+    this._drawLayouts(ctx, zoom, f);
+  },
+
+  // The suggested layout being looked at, as ghosts.
+  _drawLayouts(ctx, zoom, f) {
+    for (const room of (AppState.planMarkup.rooms || [])) {
       const lay = this.layouts[room.id];
       if (!lay || !lay.cands[lay.sel]) continue;
       ctx.save();
@@ -353,7 +366,7 @@ const RoomCalc = {
     const stage = document.getElementById('plan-stage');
     if (!stage) return;
     let el = document.getElementById('plan-legend');
-    const { zone, picked, many } = this.enabled ? this._legendZone() : { zone: null };
+    const { zone, picked, many } = this.shown() ? this._legendZone() : { zone: null };
     if (!zone) { if (el) el.hidden = true; this._legendKey = ''; return; }
     if (!el) {
       el = document.createElement('div');

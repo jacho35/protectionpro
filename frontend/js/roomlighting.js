@@ -182,20 +182,18 @@ const RoomLighting = {
       + `<option value="custom"${L.task === 'custom' ? ' selected' : ''}>Custom targets</option>`;
     const num = (key, label, unit, step, extra) => `<label class="plan-field"><span>${label}</span>
       <input type="number" data-rl="${escHtml(key)}" value="${escHtml(L[key])}" step="${step}" ${extra || ''} style="width:100%"><small>${unit}</small></label>`;
-    return `<div class="rl-room" data-rl-room="${escHtml(room.id)}" style="margin-top:12px;border-top:1px solid var(--border,#d9dee4);padding-top:10px">
-      <div class="plan-props-title" style="font-size:13px">Lighting${area != null ? ` — ${(area).toFixed(1)} m²` : ''}</div>
-      ${this.typeSelect(room)}
-      ${typeof Light3D !== 'undefined' ? '<button type="button" class="plan-circuit-btn" data-rl-3d style="margin:2px 0 6px">View in 3D — add desks, shelving, windows…</button>' : ''}
-      ${typeof LightSection !== 'undefined' ? '<button type="button" class="plan-circuit-btn" data-rl-section style="margin:0 0 6px">Section — polar curves of the fittings</button>' : ''}
-      ${this.standardSelect()}
+    const step = typeof LightingWS !== 'undefined' ? LightingWS.step : 'results';
+    const tab = this.TABS.some(t => t[0] === this.tab) ? this.tab : 'targets';
+    let pane = '';
+    if (tab === 'targets') pane = `${this.standardSelect()}
       <label class="plan-field"><span>Task</span><select data-rl="task" style="width:100%">${opts}</select></label>
       <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px">
         ${num('em', 'Ēm', 'lx', 10, 'min="1"')}${num('uo', 'U₀', '', 0.05, 'min="0" max="1"')}
         ${num('ugr', 'UGR limit', '', 1, 'min="10" max="40"')}${num('ra', 'Ra min', '', 5, 'min="0" max="100"')}
         ${num('wallE', 'Walls Ēm', 'lx', 5, 'min="0"')}${num('ceilE', 'Ceiling Ēm', 'lx', 5, 'min="0"')}
       </div>
-      <div style="font-size:11px;color:var(--text-muted);margin:4px 0 8px">${L.edited ? 'Edited. ' : ''}${escHtml(this.tableNote())}${L.edited && L.task !== 'custom' ? ' <button type="button" class="btn-small" data-rl-reset>Reset to table</button>' : ''}</div>
-      <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px">
+      <div style="font-size:11px;color:var(--text-muted);margin:4px 0 8px">${L.edited ? 'Edited. ' : ''}${escHtml(this.tableNote())}${L.edited && L.task !== 'custom' ? ' <button type="button" class="btn-small" data-rl-reset>Reset to table</button>' : ''}</div>`;
+    else if (tab === 'surfaces') pane = `<div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px">
         ${num('ceilH', sectioned ? 'Ceiling (lowest)' : 'Ceiling', 'm', 0.1, sectioned ? 'min="1.5" disabled title="Set by the ceiling section below"' : 'min="1.5"')}${num('workH', 'Work plane', 'm', 0.05, 'min="0"')}${num('wallZone', 'Wall zone', 'm', 0.1, 'min="0"')}
         ${num('rhoC', 'ρ ceiling', '', 0.05, 'min="0" max="1"')}${num('rhoW', 'ρ walls', '', 0.05, 'min="0" max="1"')}${num('rhoF', 'ρ floor', '', 0.05, 'min="0" max="1"')}
       </div>
@@ -206,18 +204,30 @@ const RoomLighting = {
       <label class="plan-field" style="margin-top:6px"><span>Calculation grid</span>
         <input type="number" data-rl="grid" value="${L.grid > 0 ? L.grid : ''}" step="0.05" min="0.05" max="5" placeholder="automatic" style="width:100%"><small>m — blank = automatic</small></label>
       <div style="font-size:11px;color:var(--text-muted)">Automatic follows the EN 12464-1 maximum for the room's size, at most 0.5 m.</div>
-      <div style="margin-top:8px;border-top:1px solid var(--border,#d9dee4);padding-top:8px">
-        <div class="plan-props-title" style="font-size:13px">Energy</div>
-        <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px">
+      ${typeof Light3D !== 'undefined' ? '<button type="button" class="plan-circuit-btn" data-rl-3d style="margin:8px 0 0">Desks, shelving, windows, doors… (3D)</button>' : ''}`;
+    else if (tab === 'energy') pane = `<div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px">
           ${num('tD', 'Day hours', 'h/yr', 50, 'min="0" max="8760"')}${num('tN', 'Night hours', 'h/yr', 50, 'min="0" max="8760"')}${num('lpd', 'Limit W/m²', '0 = none', 0.5, 'min="0"')}
           ${num('fo', 'F occupancy', '', 0.05, 'min="0" max="1"')}${num('fd', 'F daylight', '', 0.05, 'min="0" max="1"')}${num('fc', 'F constant-lux', '', 0.05, 'min="0.5" max="1"')}
         </div>
         <div style="font-size:11px;color:var(--text-muted)">LENI by the EN 15193-1 quick method, without parasitic and emergency standby energy. Enter the power-density limit from your regulation (e.g. SANS 10400-XA) to have it checked.</div>
-      </div>
-      ${typeof EmergCalc !== 'undefined' ? EmergCalc.roomSection(room) : ''}
-      ${typeof RoomCalc !== 'undefined' ? RoomCalc.layoutHtml(room) + RoomCalc.resultHtml(room) : ''}
+        ${(() => { const r = typeof RoomCalc !== 'undefined' && RoomCalc.results[room.id]; const en = r && this.energy(room, r.res); return en ? `<div class="rl-energy-out">LENI <b>${en.leni.toFixed(1)}</b> kWh/m²·yr · ${en.kwh.toFixed(0)} kWh/yr</div>` : ''; })()}`;
+    else pane = typeof EmergCalc !== 'undefined' ? EmergCalc.roomSection(room) : '';
+    // The block for the step you are on: layouts while placing luminaires, the checks with the results.
+    const block = step === 'fit' ? (typeof RoomCalc !== 'undefined' ? RoomCalc.layoutHtml(room) : '')
+      : step === 'results' ? `${typeof RoomCalc !== 'undefined' ? RoomCalc.resultHtml(room) : ''}
+        <div class="plan-btn-row" style="margin-top:6px">${typeof LightSection !== 'undefined' ? '<button type="button" class="plan-btn" data-lw-goview="section">Section</button>' : ''}${typeof Light3D !== 'undefined' ? '<button type="button" class="plan-btn" data-rl-3d>3D</button>' : ''}</div>` : '';
+    return `<div class="rl-room" data-rl-room="${escHtml(room.id)}">
+      <div class="plan-props-title" style="font-size:13px">Lighting${area != null ? ` — ${(area).toFixed(1)} m²` : ''}</div>
+      ${this.typeSelect(room)}
+      ${block ? `<div class="rl-step-block">${block}</div>` : ''}
+      <div class="rl-tabs" role="tablist" aria-label="Room settings">${this.TABS.map(([k, n]) => `<button type="button" role="tab" class="rl-tab${k === tab ? ' on' : ''}" aria-selected="${k === tab}" data-rl-tab="${k}">${n}</button>`).join('')}</div>
+      <div class="rl-pane" role="tabpanel">${pane}</div>
     </div>`;
   },
+
+  // The room panel's tabs (session-only, shared by every room).
+  TABS: [['targets', 'Targets'], ['surfaces', 'Surfaces'], ['energy', 'Energy'], ['emerg', 'Emergency']],
+  tab: 'targets',
 
   // ─── Tooltips ───
   // What each entry box means, shown on hover / long-press and read out as the
@@ -380,6 +390,8 @@ const RoomLighting = {
       else if (t.dataset && 'rlMfpreset' in t.dataset && t.value) commit(room => this.set(room, 'mf', t.value));
     });
     propsEl.addEventListener('click', (e) => {
+      const tb = e.target.closest('[data-rl-tab]');
+      if (tb) { this.tab = tb.dataset.rlTab; PlanMarkup.refreshProps(); return; }
       if (e.target.closest('[data-rl-reset]')) commit(room => this.applyTask(room, this.read(room).task));
       if (e.target.closest('[data-rl-3d]') && typeof LightingWS !== 'undefined') {
         const wrap = propsEl.querySelector('[data-rl-room]');

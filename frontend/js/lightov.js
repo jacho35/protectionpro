@@ -210,6 +210,7 @@ const LightOverview = {
     const tab = what === 'sportsfield' || (what === 'obtrusive' && !this._kinds().includes('rooms')) ? 'sports' : 'lighting';
     if (!Workspaces.isVisible(tab)) LightingWS._showTab(tab);
     LightingWS.view = 'plan';
+    LightingWS._steps[tab === 'sports' ? 'sports' : 'rooms'] = 'space';   // the drawing tools live in the Space / Field step
     switchWorkspace(tab);
     const btn = document.querySelector(`#lighting-workspace .plan-pal-item[data-type="${what}"]`);
     if (btn) btn.click();

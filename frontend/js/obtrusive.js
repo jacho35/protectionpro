@@ -79,14 +79,14 @@ const ObtrusiveCalc = {
     const { lums } = AreaCalc.luminaires(f);
     const photometry = {};
     for (const l of lums) photometry[l.photometryId] = PhotoLib.get(l.photometryId);
-    if (UI.setBusy) UI.setBusy(true, 'Calculating obtrusive light…');
+    RoomCalc.busy(true, 'Calculating obtrusive light…');
     let out;
     try {
       out = await API.request('/analysis/obtrusive-light', 'POST', { luminaires: lums, photometry, checks: list.map(r => this._req(r, f)) });
     } catch (e) {
-      UI.alert('Obtrusive light calculation failed: ' + (e && e.message ? e.message : e));
+      RoomCalc.fail('Obtrusive light calculation failed: ' + (e && e.message ? e.message : e));
       return;
-    } finally { if (UI.setBusy) UI.setBusy(false); }
+    } finally { RoomCalc.busy(false); }
     let pass = 0, fail = 0;
     for (const r of out.checks) {
       if (r.error) { UI.toast(r.error, 'warn', 6000); continue; }
