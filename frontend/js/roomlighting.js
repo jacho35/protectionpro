@@ -180,7 +180,7 @@ const RoomLighting = {
       `<optgroup label="${escHtml(g)}">${items.map(([k, n]) => `<option value="${k}"${k === L.task ? ' selected' : ''}>${escHtml(n)}</option>`).join('')}</optgroup>`).join('')
       + `<option value="custom"${L.task === 'custom' ? ' selected' : ''}>Custom targets</option>`;
     const num = (key, label, unit, step, extra) => `<label class="plan-field"><span>${label}</span>
-      <input type="number" data-rl="${key}" value="${L[key]}" step="${step}" ${extra || ''} style="width:100%"><small>${unit}</small></label>`;
+      <input type="number" data-rl="${escHtml(key)}" value="${escHtml(L[key])}" step="${step}" ${extra || ''} style="width:100%"><small>${unit}</small></label>`;
     return `<div class="rl-room" data-rl-room="${escHtml(room.id)}" style="margin-top:12px;border-top:1px solid var(--border,#d9dee4);padding-top:10px">
       <div class="plan-props-title" style="font-size:13px">Lighting${area != null ? ` — ${(area).toFixed(1)} m²` : ''}</div>
       ${this.typeSelect(room)}

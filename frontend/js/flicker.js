@@ -35,11 +35,11 @@ const Flicker = {
         result by measurement.</p>
       <div style="display:grid;grid-template-columns:auto 1fr;gap:8px 12px;align-items:center;font-size:13px">
         <label for="flk-pst">Pst limit</label>
-        <input id="flk-pst" type="number" min="0.1" step="0.05" placeholder="by voltage" value="${c.pst_limit ?? ''}">
+        <input id="flk-pst" type="number" min="0.1" step="0.05" placeholder="by voltage" value="${escHtml(c.pst_limit ?? '')}">
         <label for="flk-plt">Plt limit</label>
-        <input id="flk-plt" type="number" min="0.1" step="0.05" placeholder="by voltage" value="${c.plt_limit ?? ''}">
+        <input id="flk-plt" type="number" min="0.1" step="0.05" placeholder="by voltage" value="${escHtml(c.plt_limit ?? '')}">
         <label for="flk-shape">Shape factor F</label>
-        <input id="flk-shape" type="number" min="0.05" max="1" step="0.05" value="${c.shape_factor}">
+        <input id="flk-shape" type="number" min="0.05" max="1" step="0.05" value="${escHtml(c.shape_factor)}">
       </div>
       <p style="font-size:11px;color:var(--text-muted,#6d6d6d);margin:12px 0 0">
         Limits left blank follow the connection voltage: LV Pst ≤ 1.0, Plt ≤ 0.65 with

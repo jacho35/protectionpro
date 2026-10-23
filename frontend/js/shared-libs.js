@@ -57,7 +57,7 @@ const SharedLibs = {
 
   _membersHtml(L) {
     const ms = this._members[L.id] || [];
-    const rows = ms.length ? ms.map(m => `<div class="shl-member" data-uid="${m.user_id}"><span>${escHtml(m.email)}${m.name ? ' <small>' + escHtml(m.name) + '</small>' : ''}</span>
+    const rows = ms.length ? ms.map(m => `<div class="shl-member" data-uid="${escHtml(m.user_id)}"><span>${escHtml(m.email)}${m.name ? ' <small>' + escHtml(m.name) + '</small>' : ''}</span>
         <select data-act="member-role" aria-label="Role of ${escHtml(m.email)}"><option value="view"${m.role === 'view' ? ' selected' : ''}>View only</option><option value="edit"${m.role === 'edit' ? ' selected' : ''}>Can edit</option></select>
         <button type="button" class="btn-small" data-act="member-remove">Remove</button></div>`).join('')
       : '<div class="shl-note">Only you so far.</div>';

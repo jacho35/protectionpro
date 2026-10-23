@@ -87,13 +87,13 @@ const Sharing = {
         return;
       }
       list.innerHTML = rows.map(s => `
-        <div class="share-row" data-uid="${s.user_id}">
+        <div class="share-row" data-uid="${escHtml(s.user_id)}">
           <span class="share-user">${this._esc(s.name || s.email)}<small>${this._esc(s.email)}</small></span>
-          <select class="share-role-select" data-uid="${s.user_id}">
+          <select class="share-role-select" data-uid="${escHtml(s.user_id)}">
             <option value="view"${s.role === 'view' ? ' selected' : ''}>View</option>
             <option value="edit"${s.role === 'edit' ? ' selected' : ''}>Edit</option>
           </select>
-          <button class="btn-small share-remove" data-uid="${s.user_id}">Remove</button>
+          <button class="btn-small share-remove" data-uid="${escHtml(s.user_id)}">Remove</button>
         </div>`).join('');
       list.querySelectorAll('.share-role-select').forEach(sel => {
         sel.addEventListener('change', async () => {

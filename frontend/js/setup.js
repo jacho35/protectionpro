@@ -35,7 +35,7 @@ const Setup = {
     for (let i = 1; i <= 4; i++) document.getElementById(`setup-pane-${i}`).hidden = i !== n;
     document.getElementById('setup-steps').innerHTML = this.LABELS.map((l, i) => {
       const k = i + 1, cls = k < n ? 'done' : k === n ? 'cur' : '';
-      return `<li class="${cls}"><span class="dot">${k < n ? '✓' : k}</span><span>${l}<br><small style="font-weight:400;color:#9fb3c2">${this.SUBS[i]}</small></span></li>`;
+      return `<li class="${escHtml(cls)}"><span class="dot">${k < n ? '✓' : k}</span><span>${l}<br><small style="font-weight:400;color:#9fb3c2">${this.SUBS[i]}</small></span></li>`;
     }).join('');
     // The admin account exists from step 3 on, so there is no going back to it.
     document.getElementById('setup-back').hidden = n !== 2;

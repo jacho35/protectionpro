@@ -8,6 +8,7 @@ Revision row on every save). The project JSON references rows by integer id.
 from datetime import datetime, timezone, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Response
+from sqlalchemy import true
 from sqlalchemy.orm import Session
 
 from ..auth import get_current_user, resolve_access
@@ -164,12 +165,12 @@ def cleanup_plan_images(db: Session = Depends(get_db),
 
     Images whose project was deleted have project_id set NULL by the FK
     (ondelete="SET NULL"), so this one rule covers both never-saved uploads
-    and images left behind by a deleted project. Each caller sweeps their own.
+    and images left behind by a deleted project. Each caller sweeps their own; an admin sweeps everyone's.
     """
     cutoff = datetime.now(timezone.utc) - ORPHAN_TTL
     mine = PlanImage.owner_id == user.id
-    if user.is_admin:   # rows from before ownership existed belong to nobody
-        mine = mine | PlanImage.owner_id.is_(None)
+    if user.is_admin:   # an admin's sweep also clears other users' stale orphans and ownerless old rows
+        mine = true()
     orphans = (
         db.query(PlanImage)
         .filter(PlanImage.project_id.is_(None), PlanImage.created_at < cutoff, mine)

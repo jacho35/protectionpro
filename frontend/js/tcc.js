@@ -1239,7 +1239,7 @@ const TCC = {
       this._applyView(v, { markDirty: false });
       const ep = this.devices[this._miniSLDEndpointDeviceIdx];
       const rows = this.devices.filter(d => d.visible && this._inPathView(d, this._pathIdSet()))
-        .map(d => `<tr><td><span style="display:inline-block;width:10px;height:10px;background:${d.color};border-radius:2px"></span></td><td>${escHtml(d.name)}</td><td>${escHtml(this._deviceSummary(d))}</td></tr>`).join('');
+        .map(d => `<tr><td><span style="display:inline-block;width:10px;height:10px;background:${escHtml(d.color)};border-radius:2px"></span></td><td>${escHtml(d.name)}</td><td>${escHtml(this._deviceSummary(d))}</td></tr>`).join('');
       pages.push(`<section><h2>${escHtml(v.name)}</h2><p>${ep ? 'Grading point: ' + escHtml(ep.name) : 'All devices'}${this._pathOnly ? ' · path only' : ''}</p>` +
         `<img src="${this.canvas.toDataURL('image/png')}"><table>${rows}</table></section>`);
     }
@@ -1356,7 +1356,7 @@ const TCC = {
     const levels = this._faultLevelsForView();
     sel.style.display = levels.length ? '' : 'none';
     sel.innerHTML = '<option value="">Fault level…</option>' +
-      levels.map(f => `<option value="${f.amps}">${escHtml(f.label)}</option>`).join('');
+      levels.map(f => `<option value="${escHtml(f.amps)}">${escHtml(f.label)}</option>`).join('');
   },
 
   // Trip time of every visible device at the cursor current (display amps)
@@ -1411,7 +1411,7 @@ const TCC = {
       .sort((a, b) => (a.t ?? Infinity) - (b.t ?? Infinity));
     rowsEl.innerHTML = rows.length ? rows.map(({ dev, t }) => {
       const limit = dev.deviceType === 'xfmr_thermal' || dev.deviceType === 'cable_thermal';
-      return `<div class="tcc-cursor-row"><span class="tcc-device-color" style="background:${dev.color}"></span>` +
+      return `<div class="tcc-cursor-row"><span class="tcc-device-color" style="background:${escHtml(dev.color)}"></span>` +
         `<span class="tcc-cursor-name">${escHtml(dev.name)}</span>` +
         (t == null ? '<span class="tcc-cursor-time tcc-muted">no trip</span>'
                    : `<span class="tcc-cursor-time">${limit ? 'limit ' : ''}${fmt(t)}</span>`) + '</div>';
@@ -1520,7 +1520,7 @@ const TCC = {
         const idx = this.devices.indexOf(d);
         const limit = d.deviceType === 'cable_thermal' || d.deviceType === 'xfmr_thermal';
         html += `<tr class="tcc-fault-row" data-dev="${idx}" tabindex="0" role="button" aria-label="Select ${escHtml(d.name)}">
-          <td data-label="Device"><span class="tcc-device-color" style="display:inline-block;margin-right:6px;background:${d.color}"></span>${escHtml(d.name)}</td>
+          <td data-label="Device"><span class="tcc-device-color" style="display:inline-block;margin-right:6px;background:${escHtml(d.color)}"></span>${escHtml(d.name)}</td>
           <td data-label="Lowest fault">${this._fmtKA(r.iMin)} <span class="tcc-coord-info">${escHtml(r.minBus)} ${r.minKind}</span></td>${cellT(tMin, true, limit)}
           <td data-label="Highest fault">${this._fmtKA(r.iMax)} <span class="tcc-coord-info">${escHtml(r.maxBus)}</span></td>${cellT(tMax, false, limit)}</tr>`;
       }
@@ -1529,7 +1529,7 @@ const TCC = {
     // Fault levels
     const entries = this._faultEntriesFor(this._faultPaneAll ? 'all' : undefined).sort((a, b) => (b.ik3 || 0) - (a.ik3 || 0));
     const extra = new Set(o.extra);
-    html += `<div class="tcc-fault-title">Fault levels <button class="btn-small" id="btn-tcc-fault-all" aria-pressed="${this._faultPaneAll}">${this._faultPaneAll ? 'Buses in scope' : 'All buses'}</button></div>`;
+    html += `<div class="tcc-fault-title">Fault levels <button class="btn-small" id="btn-tcc-fault-all" aria-pressed="${escHtml(this._faultPaneAll)}">${this._faultPaneAll ? 'Buses in scope' : 'All buses'}</button></div>`;
     if (!entries.length) {
       html += '<div class="tcc-coord-info">No buses in scope.</div>';
     } else {
@@ -4423,14 +4423,14 @@ const TCC = {
       const selected = i === this.selectedDeviceIndex;
       const isEndpoint = i === this._miniSLDEndpointDeviceIdx;
       return `${groupHeader}<div class="tcc-device-item ${dev.visible ? '' : 'tcc-hidden'} ${selected ? 'tcc-selected' : ''}" data-index="${i}" title="${escHtml(dev.name + (typeLabel ? ' \u2014 ' + typeLabel : ''))}">
-        <div class="tcc-device-color" style="background:${dev.color}"></div>
+        <div class="tcc-device-color" style="background:${escHtml(dev.color)}"></div>
         <div class="tcc-device-info">
           <div class="tcc-device-name">${escHtml(dev.name)}</div>
           <div class="tcc-device-detail">${escHtml(this._deviceSummary(dev))}</div>
         </div>
         <button class="tcc-device-endpoint ${isEndpoint ? 'active' : ''}" data-index="${i}" aria-pressed="${isEndpoint}" aria-label="Furthest grading point" title="${isEndpoint ? 'Clear path endpoint' : 'Set as furthest grading point — the Protection Path panel shows the path from source to this device'}">\u21E5</button>
         <button class="tcc-device-solo ${i === this._soloIdx ? 'active' : ''}" data-index="${i}" aria-pressed="${i === this._soloIdx}" aria-label="Show only ${escHtml(dev.name)}" title="${i === this._soloIdx ? 'Restore the other curves' : 'Show only this curve'}">\u25CE</button>
-        <button class="tcc-device-toggle" data-index="${i}" aria-pressed="${dev.visible}" aria-label="${dev.visible ? 'Hide' : 'Show'} ${escHtml(dev.name)} curve" title="${dev.visible ? 'Hide curve' : 'Show curve'}">${dev.visible ? eyeOn : eyeOff}</button>
+        <button class="tcc-device-toggle" data-index="${i}" aria-pressed="${escHtml(dev.visible)}" aria-label="${dev.visible ? 'Hide' : 'Show'} ${escHtml(dev.name)} curve" title="${dev.visible ? 'Hide curve' : 'Show curve'}">${dev.visible ? eyeOn : eyeOff}</button>
       </div>`;
     }).join('');
 
@@ -4595,19 +4595,19 @@ const TCC = {
         </div>
         <div class="tcc-form-row">
           <label>Pickup (A)</label>
-          <input type="number" data-sel-field="pickup" value="${dev.pickup}" min="1" step="1">
+          <input type="number" data-sel-field="pickup" value="${escHtml(dev.pickup)}" min="1" step="1">
         </div>
         <div class="tcc-form-row">
           <label>Time Dial (TDS)</label>
-          <input type="number" data-sel-field="tds" value="${dev.tds}" min="0.05" max="10" step="0.05">
+          <input type="number" data-sel-field="tds" value="${escHtml(dev.tds)}" min="0.05" max="10" step="0.05">
         </div>
         <div class="tcc-form-row">
           <label>Inst. (50) Pickup (A)</label>
-          <input type="number" data-sel-field="instPickup" value="${dev.instPickup || 0}" min="0" step="1" title="0 = instantaneous element disabled">
+          <input type="number" data-sel-field="instPickup" value="${escHtml(dev.instPickup || 0)}" min="0" step="1" title="0 = instantaneous element disabled">
         </div>
         <div class="tcc-form-row">
           <label>Inst. Delay (s)</label>
-          <input type="number" data-sel-field="instDelay" value="${dev.instDelay ?? 0.05}" min="0" step="0.01">
+          <input type="number" data-sel-field="instDelay" value="${escHtml(dev.instDelay ?? 0.05)}" min="0" step="0.01">
         </div>` + (dev.directional ? `
         <div class="tcc-form-row">
           <label>Direction</label>
@@ -4618,21 +4618,21 @@ const TCC = {
         </div>
         <div class="tcc-form-row">
           <label>Char. Angle (RCA)</label>
-          <input type="number" data-sel-field="charAngle" value="${dev.charAngle || 45}" min="-90" max="90" step="1" unit="\u00B0">
+          <input type="number" data-sel-field="charAngle" value="${escHtml(dev.charAngle || 45)}" min="-90" max="90" step="1" unit="\u00B0">
         </div>` : '') + ctSatHtml;
     } else if (dev.deviceType === 'distance_relay') {
       html = dev.zones.map((z, i) => `
         <div class="tcc-form-row">
           <label>${z.name} Reach (\u03A9)</label>
-          <input type="number" data-sel-field="zone_reach_${i}" value="${z.reach_ohm}" min="0.01" step="0.1">
+          <input type="number" data-sel-field="zone_reach_${i}" value="${escHtml(z.reach_ohm)}" min="0.01" step="0.1">
         </div>
         <div class="tcc-form-row">
           <label>${z.name} Delay (s)</label>
-          <input type="number" data-sel-field="zone_delay_${i}" value="${z.delay_s}" min="0" step="0.01">
+          <input type="number" data-sel-field="zone_delay_${i}" value="${escHtml(z.delay_s)}" min="0" step="0.01">
         </div>`).join('') + `
         <div class="tcc-form-row">
           <label>Voltage (kV)</label>
-          <input type="number" data-sel-field="voltage_kv" value="${dev.voltage_kv}" min="0.1" step="0.1">
+          <input type="number" data-sel-field="voltage_kv" value="${escHtml(dev.voltage_kv)}" min="0.1" step="0.1">
         </div>`;
     } else if (dev.deviceType === 'fuse') {
       html = `
@@ -4677,15 +4677,15 @@ const TCC = {
         </div>
         <div class="tcc-form-row">
           <label>Trip Rating (A)</label>
-          <input type="number" data-sel-field="cb.trip_rating_a" value="${p.trip_rating_a}" min="1" step="1">
+          <input type="number" data-sel-field="cb.trip_rating_a" value="${escHtml(p.trip_rating_a)}" min="1" step="1">
         </div>
         <div class="tcc-form-row">
           <label>Thermal Pickup (×In)</label>
-          <input type="number" data-sel-field="cb.thermal_pickup" value="${p.thermal_pickup}" min="0.4" max="1.0" step="0.05">
+          <input type="number" data-sel-field="cb.thermal_pickup" value="${escHtml(p.thermal_pickup)}" min="0.4" max="1.0" step="0.05">
         </div>
         <div class="tcc-form-row">
           <label>Magnetic Pickup (×${isMCB ? 'In' : cbPickupBase(p, 'magnetic')})</label>
-          <input type="number" data-sel-field="cb.magnetic_pickup" value="${p.magnetic_pickup}" min="2" max="20" step="0.5">
+          <input type="number" data-sel-field="cb.magnetic_pickup" value="${escHtml(p.magnetic_pickup)}" min="2" max="20" step="0.5">
         </div>
         <div class="tcc-form-row">
           <label>LT Delay Class</label>
@@ -4696,40 +4696,40 @@ const TCC = {
         <div class="tcc-sel-acb-fields" style="display:${isACB ? '' : 'none'}">
           <div class="tcc-form-row">
             <label>ST Pickup (×${cbPickupBase(p, 'short_time')})</label>
-            <input type="number" data-sel-field="cb.short_time_pickup" value="${p.short_time_pickup || 0}" min="0" max="20" step="0.5">
+            <input type="number" data-sel-field="cb.short_time_pickup" value="${escHtml(p.short_time_pickup || 0)}" min="0" max="20" step="0.5">
           </div>
           <div class="tcc-form-row">
             <label>ST Delay (s)</label>
-            <input type="number" data-sel-field="cb.short_time_delay" value="${p.short_time_delay || 0}" min="0.02" max="1" step="0.01">
+            <input type="number" data-sel-field="cb.short_time_delay" value="${escHtml(p.short_time_delay || 0)}" min="0.02" max="1" step="0.01">
           </div>
           <div class="tcc-form-row">
             <label>Instantaneous (×${cbPickupBase(p, 'instantaneous')})</label>
-            <input type="number" data-sel-field="cb.instantaneous_pickup" value="${p.instantaneous_pickup || 0}" min="0" max="25" step="0.5">
+            <input type="number" data-sel-field="cb.instantaneous_pickup" value="${escHtml(p.instantaneous_pickup || 0)}" min="0" max="25" step="0.5">
           </div>
         </div>`;
     } else if (dev.deviceType === 'xfmr_thermal') {
       html = `
         <div class="tcc-form-row">
           <label>MVA Rating</label>
-          <input type="number" data-sel-field="mva" value="${dev.mva}" min="0.01" step="0.01" readonly>
+          <input type="number" data-sel-field="mva" value="${escHtml(dev.mva)}" min="0.01" step="0.01" readonly>
         </div>
         <div class="tcc-form-row">
           <label>Z (%)</label>
-          <input type="number" data-sel-field="zPercent" value="${dev.zPercent || 8}" min="1" max="30" step="0.5">
+          <input type="number" data-sel-field="zPercent" value="${escHtml(dev.zPercent || 8)}" min="1" max="30" step="0.5">
         </div>`;
     } else if (dev.deviceType === 'cable_thermal') {
       html = `
         <div class="tcc-form-row">
           <label>Size (mm²)</label>
-          <input type="number" data-sel-field="sizeMm2" value="${dev.sizeMm2}" min="1" step="0.5" readonly>
+          <input type="number" data-sel-field="sizeMm2" value="${escHtml(dev.sizeMm2)}" min="1" step="0.5" readonly>
         </div>
         <div class="tcc-form-row">
           <label>k Factor</label>
-          <input type="number" data-sel-field="kFactor" value="${dev.kFactor}" min="50" max="250" step="1">
+          <input type="number" data-sel-field="kFactor" value="${escHtml(dev.kFactor)}" min="50" max="250" step="1">
         </div>
         <div class="tcc-form-row">
           <label>Rated (A)</label>
-          <input type="number" data-sel-field="ratedAmps" value="${dev.ratedAmps}" min="1" step="1">
+          <input type="number" data-sel-field="ratedAmps" value="${escHtml(dev.ratedAmps)}" min="1" step="1">
         </div>`;
     } else if (dev.deviceType === 'custom_curve') {
       html = `
@@ -5460,7 +5460,7 @@ const TCC = {
       const grouped = !this._coordShowAll && shownRows.length > 12;
       html += `<div class="tcc-coord-summary"><strong>${nFail}</strong> fail · ${nWarn} note · ${nPass} pass${pathSet ? ' on this path' : ''}${orderNote} — click a row to show the pair on the chart.</div>`;
       html += `<div class="tcc-coord-controls">
-        <button class="btn-small ${this._coordFailsOnly ? 'active' : ''}" data-coord-act="fails" aria-pressed="${this._coordFailsOnly}">Fails only</button>
+        <button class="btn-small ${this._coordFailsOnly ? 'active' : ''}" data-coord-act="fails" aria-pressed="${escHtml(this._coordFailsOnly)}">Fails only</button>
         ${shownRows.length > 12 || this._coordShowAll ? `<button class="btn-small ${grouped ? 'active' : ''}" data-coord-act="group" aria-pressed="${grouped}" title="Group the pairs under their upstream device">Group by upstream</button>` : ''}
         ${!pathSet && this._miniSLDEndpointDeviceIdx < 0 && rows.length > 12 ? '<span class="tcc-coord-info">Tip: set a furthest grading point (\u21E5) to check one path at a time.</span>' : ''}
       </div>`;
@@ -6200,7 +6200,7 @@ const TCC = {
       if (result.infeedFactor != null) {
         html += `<tr><td colspan="5" class="tcc-coord-info">Infeed factor at remote bus: ${result.infeedFactor.toFixed(2)}× (from solved fault results)</td></tr>`;
       }
-      html += `<tr><td colspan="5"><button class="btn-small tcc-apply-distance-zones" data-relay-id="${relay.id}" data-z1="${result.z1Computed}" data-z2="${result.z2Computed}" data-z3="${result.z3Computed}">Apply Computed Zones to ${name}</button></td></tr>`;
+      html += `<tr><td colspan="5"><button class="btn-small tcc-apply-distance-zones" data-relay-id="${relay.id}" data-z1="${escHtml(result.z1Computed)}" data-z2="${escHtml(result.z2Computed)}" data-z3="${escHtml(result.z3Computed)}">Apply Computed Zones to ${name}</button></td></tr>`;
     }
     html += '</tbody></table>';
     resultsDiv.innerHTML = html;
@@ -6721,7 +6721,7 @@ const TCC = {
         const icon = roleIcon[op.role] || '';
         const cls = roleClass[op.role] || '';
         const timeStr = op.operates ? this._fmtTime(op.tripTime) : 'NO TRIP';
-        html += `<span class="tcc-seq-device ${cls}" title="${op.deviceType}">${icon} ${escHtml(op.name)}: ${timeStr}</span>`;
+        html += `<span class="tcc-seq-device ${escHtml(cls)}" title="${escHtml(op.deviceType)}">${icon} ${escHtml(op.name)}: ${timeStr}</span>`;
         if (op !== bus.sequence[bus.sequence.length - 1]) {
           html += '<span class="tcc-seq-arrow">\u2192</span>';
         }
@@ -6733,7 +6733,7 @@ const TCC = {
         html += '<div class="tcc-seq-violations">';
         for (const v of bus.violations) {
           const icon = sevIcon[v.severity] || '';
-          html += `<div class="tcc-seq-violation tcc-sev-${v.severity}">${icon} ${escHtml(v.message)}</div>`;
+          html += `<div class="tcc-seq-violation tcc-sev-${escHtml(v.severity)}">${icon} ${escHtml(v.message)}</div>`;
         }
         html += '</div>';
       }
@@ -6862,7 +6862,7 @@ const TCC = {
     const resultsDiv = document.getElementById('tcc-coord-results');
     if (!resultsDiv) return;
     const cls = type === 'success' ? 'tcc-coord-pass' : 'tcc-coord-info';
-    resultsDiv.innerHTML = `<div class="${cls}" style="white-space:pre-wrap">${escHtml(msg)}</div>`;
+    resultsDiv.innerHTML = `<div class="${escHtml(cls)}" style="white-space:pre-wrap">${escHtml(msg)}</div>`;
   },
 
   _showMiscoordResults(message, violations) {
@@ -6887,7 +6887,7 @@ const TCC = {
     for (const v of violations) {
       const fmtT = (t) => t >= 1 ? t.toFixed(2) + 's' : (t * 1000).toFixed(0) + 'ms';
       html += `<tr>
-        <td class="${sevClass[v.severity] || ''}">${sevIcon[v.severity] || ''}</td>
+        <td class="${escHtml(sevClass[v.severity] || '')}">${sevIcon[v.severity] || ''}</td>
         <td>${escHtml(v.issue)}</td>
         <td>${v.current != null ? (v.current >= 1000 ? (v.current / 1000).toFixed(1) + 'kA' : Math.round(v.current) + 'A') : '\u2014'}</td>
         <td>${v.tUpstream != null ? `\u2191${fmtT(v.tUpstream)} \u2193${fmtT(v.tDownstream)}` : '\u2014'}</td>
@@ -7289,7 +7289,7 @@ const TCC = {
       if (isSelected) classes.push('mini-sld-selected');
       if (isHidden) classes.push('mini-sld-hidden');
 
-      svgContent += `<g class="${classes.join(' ')}" data-comp-id="${node.compId}" data-tcc-idx="${node.tccDevIndex}">`;
+      svgContent += `<g class="${classes.join(' ')}" data-comp-id="${escHtml(node.compId)}" data-tcc-idx="${escHtml(node.tccDevIndex)}">`;
 
       // Highlight rect for selected state
       if (isSelected) {

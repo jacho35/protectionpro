@@ -190,14 +190,14 @@ const SchMobile = {
       const kva = (Number(c.load_va) || 0) / 1000;
       const cable = [c.cable_mm2 ? `${c.cable_mm2} mm²` : '', Number(c.cable_m) > 0 ? `${c.cable_m} m` : ''].filter(Boolean).join(' · ');
       cards.push(`
-        <button class="smb-card st-${v.status}" data-smb-way="${this._e(c.id)}" aria-label="Edit way ${this._e(c.way)}">
+        <button class="smb-card st-${escHtml(v.status)}" data-smb-way="${this._e(c.id)}" aria-label="Edit way ${this._e(c.way)}">
           <span class="smb-no"${DBSections.has(comp) ? ` style="border-left:4px solid ${DBSections.color(DBSections.of(comp, c))}" title="${this._e(DBSections.of(comp, c).name)}"` : ''}>${this._e(c.way ?? i + 1)}</span>
           <span class="smb-main">
             <span class="smb-title">${this._e(c.description || 'Unnamed way')}</span>
             <span class="smb-meta">${this._e(c.breaker_a ?? '—')} A ${this._e(c.curve || '')} · ${this._e(this._phaseLabel(c))}${cable ? ' · ' + this._e(cable) : ''} · ${kva.toFixed(2)} kVA</span>
             ${v.reason ? `<span class="smb-reason">${this._e(v.reason)}</span>` : ''}
           </span>
-          <span class="smb-dot st-${v.status}" aria-hidden="true"></span>
+          <span class="smb-dot st-${escHtml(v.status)}" aria-hidden="true"></span>
         </button>`);
     });
     list.innerHTML = cards.join('') || `<div class="smb-empty">${ways.length

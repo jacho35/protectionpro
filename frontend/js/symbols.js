@@ -567,7 +567,7 @@ const Symbols = {
     const color = (comp && comp.props && comp.props.color) || 'green';
     const k = r * Math.SQRT1_2;
     return `
-      <g class="symbol-control" data-lamp-color="${color}">
+      <g class="symbol-control" data-lamp-color="${escHtml(color)}">
         <line x1="0" y1="${-hh}" x2="0" y2="${-r}"/>
         <line x1="0" y1="${r}" x2="0" y2="${hh}"/>
         <circle class="symbol-fill ctl-lamp-glass" cx="0" cy="0" r="${r}" fill="none"/>
@@ -759,7 +759,7 @@ const Symbols = {
         <line x1="${-px}" y1="${-hh}" x2="${-px}" y2="${fix}"/>
         <line x1="${px}" y1="${-hh}" x2="${px}" y2="${fix}"/>
         <line x1="0" y1="${hh}" x2="0" y2="${piv}"/>
-        <line x1="0" y1="${piv}" x2="${tip[0]}" y2="${tip[1]}"/>
+        <line x1="0" y1="${piv}" x2="${escHtml(tip[0])}" y2="${escHtml(tip[1])}"/>
         ${dot(0, piv, true)}${dot(-px, fix, pos === 'in_1')}${dot(px, fix, pos === 'in_2')}`;
     return `
       <g class="symbol-changeover ${pos === 'off' ? 'symbol-open' : 'symbol-closed'}" fill="none">
@@ -916,7 +916,7 @@ const Symbols = {
         if (pts.length < 2) continue;
         pts.sort((a, b2) => a[0] - b2[0]);
         const [a, z] = [pts[0], pts[pts.length - 1]];
-        hatch += `<line x1="${a[0]}" y1="${a[1]}" x2="${z[0]}" y2="${z[1]}" stroke-width="0.8"/>`;
+        hatch += `<line x1="${escHtml(a[0])}" y1="${escHtml(a[1])}" x2="${escHtml(z[0])}" y2="${escHtml(z[1])}" stroke-width="0.8"/>`;
       }
       return `
         <g class="symbol-utility symbol-iec">
@@ -961,7 +961,7 @@ const Symbols = {
         <g class="symbol-pt symbol-iec">
           <line x1="0" y1="${-hh}" x2="0" y2="${-d - r}"/>
           <circle cx="0" cy="${-d}" r="${r}"/>
-          <circle cx="0" cy="${d}" r="${r}"/>
+          <circle cx="0" cy="${escHtml(d)}" r="${r}"/>
           <line x1="0" y1="${d + r}" x2="0" y2="${hh}"/>
         </g>`;
     },
@@ -988,7 +988,7 @@ const Symbols = {
       const labels = Symbols._changeoverLabels(w, h, p);
       const flip = Symbols.changeoverFlipped(p);
       if (p.co_type === 'breaker_pair') {
-        return `<g class="${cls}" fill="none">${Symbols._changeoverFlip(p, this._breakerPair(h, pos))}${labels}</g>`;
+        return `<g class="${escHtml(cls)}" fill="none">${Symbols._changeoverFlip(p, this._breakerPair(h, pos))}${labels}</g>`;
       }
       const hh = h / 2, px = 20, piv = hh * 0.5, fix = -hh * 0.45;
       const kind = ['disconnector', 'load_break'].includes(p.contact_duty) ? p.contact_duty : 'switch_disconnector';
@@ -1000,7 +1000,7 @@ const Symbols = {
         s += `<g transform="translate(${x} 0)">${this._qualifier(h, kind)}</g>`;
       }
       s += `<line x1="0" y1="${hh}" x2="0" y2="${piv}"/>`;
-      s += `<line x1="0" y1="${piv}" x2="${tip[0]}" y2="${tip[1]}"/>`;
+      s += `<line x1="0" y1="${piv}" x2="${escHtml(tip[0])}" y2="${escHtml(tip[1])}"/>`;
       let text = '';
       if (p.co_type === 'ats') {
         const my = (piv + tip[1]) / 2, mx = tip[0] / 2;
@@ -1010,7 +1010,7 @@ const Symbols = {
         const ty = (flip ? -my : my) + 3;
         text = `<text x="28.5" y="${ty}" text-anchor="middle" font-size="7" font-weight="700" fill="currentColor" stroke="none" font-family="sans-serif">M</text>`;
       }
-      return `<g class="${cls}">${Symbols._changeoverFlip(p, s)}${text}${labels}</g>`;
+      return `<g class="${escHtml(cls)}">${Symbols._changeoverFlip(p, s)}${text}${labels}</g>`;
     },
       _breakerPair(h, pos) {
       const hh = h / 2, px = 20, piv = hh * 0.4, fix = -hh * 0.45, a = 3.3, busY = hh * 0.75;
@@ -1028,10 +1028,10 @@ const Symbols = {
 
     _machine(h, r, letter, kind, colour, cls) {
       return `
-        <g class="${cls} symbol-iec">
+        <g class="${escHtml(cls)} symbol-iec">
           <circle cx="0" cy="0" r="${r}"/>
-          <text x="0" y="${-r * 0.05}" text-anchor="middle" font-size="${letter.length > 1 ? 11 : 13}" font-weight="bold" fill="${colour}" stroke="none" font-family="serif">${letter}</text>
-          <text x="0" y="${r * 0.62}" text-anchor="middle" font-size="8" font-weight="bold" fill="${colour}" stroke="none" font-family="sans-serif">${kind}</text>
+          <text x="0" y="${-r * 0.05}" text-anchor="middle" font-size="${letter.length > 1 ? 11 : 13}" font-weight="bold" fill="${escHtml(colour)}" stroke="none" font-family="serif">${letter}</text>
+          <text x="0" y="${r * 0.62}" text-anchor="middle" font-size="8" font-weight="bold" fill="${escHtml(colour)}" stroke="none" font-family="sans-serif">${kind}</text>
           <line x1="0" y1="${-r}" x2="0" y2="${-h / 2}"/>
         </g>`;
     },
@@ -1191,15 +1191,15 @@ const Symbols = {
             : (wire.toComponent === comp.id ? wire.toPort : null);
           if (pid == null) continue;
           const loc = this.getBusPortLocal(comp, pid);
-          if (loc) dots.push(`<circle class="bus-attach-dot" cx="${loc.x}" cy="${loc.y}" r="3.5"/>`);
+          if (loc) dots.push(`<circle class="bus-attach-dot" cx="${numAttr(loc.x)}" cy="${numAttr(loc.y)}" r="3.5"/>`);
         }
       }
       portsHtml = dots.join('');
     } else {
       portsHtml = this.portsFor(comp).map(p => {
         const pos = this.getPortPosition(p, w, h);
-        return `<circle class="conn-port-hit" data-port="${p.id}" cx="${pos.x}" cy="${pos.y}" r="14" fill="transparent" stroke="none" cursor="crosshair"/>
-              <circle class="conn-port" data-port="${p.id}" cx="${pos.x}" cy="${pos.y}"/>`;
+        return `<circle class="conn-port-hit" data-port="${p.id}" cx="${numAttr(pos.x)}" cy="${numAttr(pos.y)}" r="14" fill="transparent" stroke="none" cursor="crosshair"/>
+              <circle class="conn-port" data-port="${p.id}" cx="${numAttr(pos.x)}" cy="${numAttr(pos.y)}"/>`;
       }).join('');
     }
 
@@ -1220,7 +1220,7 @@ const Symbols = {
         </g>` : '';
 
     return `
-      <g class="sld-component${lfPreviewOverride ? ' lf-preview-override' : ''}" data-id="${comp.id}" transform="translate(${comp.x},${comp.y}) rotate(${comp.rotation || 0})">
+      <g class="sld-component${lfPreviewOverride ? ' lf-preview-override' : ''}" data-id="${comp.id}" transform="translate(${numAttr(comp.x)},${numAttr(comp.y)}) rotate(${escHtml(comp.rotation || 0)})">
         <rect class="comp-outline" x="${-w / 2 - 4}" y="${-h / 2 - 4}" width="${w + 8}" height="${h + 8}" fill="transparent" stroke="transparent" stroke-width="1"/>
         <g class="comp-body">
           ${symbolSvg}

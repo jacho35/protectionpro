@@ -553,7 +553,7 @@ const TripUnit = {
     if (!types.length && !prof) return '';
     const p = comp.props;
     const entry = this.entryOf(comp);
-    let html = `<div class="prop-section tu-section" data-trip-unit="${comp.coLeg || ''}">
+    let html = `<div class="prop-section tu-section" data-trip-unit="${escHtml(comp.coLeg || '')}">
       <div class="prop-section-title tu-head"><span>Trip unit</span>${prof ? `<button type="button" class="tu-reset-all" data-tu-reset-all title="Put every dial back to the ${entry ? escHtml(entry.name) : 'profile'} default">Reset all</button>` : ''}</div>
       <div class="prop-row"><label>Trip unit</label><select data-tu-profile aria-label="Trip unit">${this._profileOptions(comp)}</select></div>`;
     if (!prof) {
@@ -572,7 +572,7 @@ const TripUnit = {
       html += sug.problem
         ? `<div class="tu-suggest tu-suggest--warn" role="status">${basis} ${escHtml(sug.problem)}</div>`
         : `<div class="tu-suggest" role="status">${basis} <strong>Ir ${this.fmtVal(null, sug.step)} (${this.fmtA(sug.amps)})</strong> fits.
-            <button type="button" class="tu-apply" data-tu-apply-ir="${sug.step}">Apply</button></div>`;
+            <button type="button" class="tu-apply" data-tu-apply-ir="${escHtml(sug.step)}">Apply</button></div>`;
     }
 
     const def = this.currentDefaults(comp);
@@ -593,7 +593,7 @@ const TripUnit = {
       const dim = k === 'short_time_delay' && stOff;
       html += `<div class="prop-row tu-row${isEd ? ' tu-row--edited' : ''}">
         <label>${label}</label>
-        <select data-tu-dial="${k}" aria-label="${nm} (${unit})"${dim ? ' disabled title="Short-time is off"' : ''}>${this.optionsHtml(d, v, this.refA(p, k, d))}</select>
+        <select data-tu-dial="${k}" aria-label="${nm} (${escHtml(unit)})"${dim ? ' disabled title="Short-time is off"' : ''}>${this.optionsHtml(d, v, this.refA(p, k, d))}</select>
         <span class="tu-amps">${amps}</span>
         ${isEd
           ? `<button type="button" class="tu-reset" data-tu-reset="${k}" title="Reset to default (${this.fmtVal(k, def[k], d)})" aria-label="Reset ${nm} to default ${this.fmtVal(k, def[k], d)}">&#x21A9;</button>`

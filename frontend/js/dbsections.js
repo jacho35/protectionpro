@@ -218,7 +218,7 @@ const DBSections = {
     const secs = this.list(comp);
     const tot = this.has(comp) ? this.totals(comp) : new Map();
     const inp = (s, k, type, w, extra) =>
-      `<input type="${type}" data-dbs-k="${k}" data-dbs-id="${this._e(s.id)}" value="${this._e(s[k])}" style="width:${w}px"${extra || ''}>`;
+      `<input type="${escHtml(type)}" data-dbs-k="${k}" data-dbs-id="${this._e(s.id)}" value="${this._e(s[k])}" style="width:${w}px"${extra || ''}>`;
     const sel = (s, k, opts) =>
       `<select data-dbs-k="${k}" data-dbs-id="${this._e(s.id)}">${opts.map(o =>
         `<option value="${this._e(o.key)}"${String(s[k] ?? '') === String(o.key) ? ' selected' : ''}>${this._e(o.label)}</option>`).join('')}</select>`;
@@ -265,7 +265,7 @@ const DBSections = {
           ${cards}
           <div class="dbs-actions">
             <span>Add section:</span>
-            ${this.KINDS.map(k => `<button type="button" class="btn-small" data-dbs-add="${k.key}" style="--dbs-c:${k.color}"><span class="dbs-dot"></span>${this._e(k.label)}</button>`).join('')}
+            ${this.KINDS.map(k => `<button type="button" class="btn-small" data-dbs-add="${escHtml(k.key)}" style="--dbs-c:${escHtml(k.color)}"><span class="dbs-dot"></span>${this._e(k.label)}</button>`).join('')}
             <span class="dbs-sep"></span>
             <label title="IEC 61439-2 form of internal separation between compartments — sets the partition allowance in the GA">Form of separation
               <select id="dbs-form">${this.FORMS.map(f => `<option value="${f}"${f === form ? ' selected' : ''}>Form ${f}</option>`).join('')}</select></label>

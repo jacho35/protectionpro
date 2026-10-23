@@ -506,64 +506,64 @@ const DBDrawing = {
   // drop line is drawn continuously behind them.
   _gMcb(x, y, P, stroke) {
     const s = 8;
-    return `<rect x="${x - s}" y="${y - s}" width="${s * 2}" height="${s * 2}" fill="${P.surface}" stroke="${stroke}" stroke-width="1.4"/>`
-      + `<line x1="${x - s}" y1="${y - s}" x2="${x + s}" y2="${y + s}" stroke="${stroke}" stroke-width="1.4"/>`
-      + `<line x1="${x + s}" y1="${y - s}" x2="${x - s}" y2="${y + s}" stroke="${stroke}" stroke-width="1.4"/>`;
+    return `<rect x="${x - s}" y="${y - s}" width="${s * 2}" height="${s * 2}" fill="${P.surface}" stroke="${escHtml(stroke)}" stroke-width="1.4"/>`
+      + `<line x1="${x - s}" y1="${y - s}" x2="${x + s}" y2="${y + s}" stroke="${escHtml(stroke)}" stroke-width="1.4"/>`
+      + `<line x1="${x + s}" y1="${y - s}" x2="${x - s}" y2="${y + s}" stroke="${escHtml(stroke)}" stroke-width="1.4"/>`;
   },
 
   _gFuse(x, y, P, stroke) {
     const w = 6, h = 10;
-    return `<rect x="${x - w}" y="${y - h}" width="${w * 2}" height="${h * 2}" rx="2" fill="${P.surface}" stroke="${stroke}" stroke-width="1.4"/>`
-      + `<line x1="${x - w}" y1="${y}" x2="${x + w}" y2="${y}" stroke="${stroke}" stroke-width="1.4"/>`;
+    return `<rect x="${x - w}" y="${y - h}" width="${w * 2}" height="${h * 2}" rx="2" fill="${P.surface}" stroke="${escHtml(stroke)}" stroke-width="1.4"/>`
+      + `<line x1="${x - w}" y1="${y}" x2="${x + w}" y2="${y}" stroke="${escHtml(stroke)}" stroke-width="1.4"/>`;
   },
 
   _gSwitch(x, y, P, stroke) {
-    return `<circle cx="${x}" cy="${y + 8}" r="2.6" fill="${stroke}"/>`
-      + `<circle cx="${x}" cy="${y - 8}" r="2.6" fill="none" stroke="${stroke}" stroke-width="1.4"/>`
-      + `<line x1="${x}" y1="${y + 8}" x2="${x + 9}" y2="${y - 9}" stroke="${stroke}" stroke-width="1.6"/>`;
+    return `<circle cx="${x}" cy="${y + 8}" r="2.6" fill="${escHtml(stroke)}"/>`
+      + `<circle cx="${x}" cy="${y - 8}" r="2.6" fill="none" stroke="${escHtml(stroke)}" stroke-width="1.4"/>`
+      + `<line x1="${x}" y1="${y + 8}" x2="${x + 9}" y2="${y - 9}" stroke="${escHtml(stroke)}" stroke-width="1.6"/>`;
   },
 
   _gSpd(x, y, P, stroke) {
     const w = 7, h = 10;
-    return `<rect x="${x - w}" y="${y - h}" width="${w * 2}" height="${h * 2}" fill="${P.surface}" stroke="${stroke}" stroke-width="1.4"/>`
-      + `<polyline points="${x - 4},${y - 5} ${x + 4},${y} ${x - 4},${y + 5}" fill="none" stroke="${stroke}" stroke-width="1.4"/>`;
+    return `<rect x="${x - w}" y="${y - h}" width="${w * 2}" height="${h * 2}" fill="${P.surface}" stroke="${escHtml(stroke)}" stroke-width="1.4"/>`
+      + `<polyline points="${x - 4},${y - 5} ${x + 4},${y} ${x - 4},${y + 5}" fill="none" stroke="${escHtml(stroke)}" stroke-width="1.4"/>`;
   },
 
   _gLamp(x, y, P, stroke) {
     const r = 8, k = r * Math.SQRT1_2;
-    return `<circle cx="${x}" cy="${y}" r="${r}" fill="${P.surface}" stroke="${stroke}" stroke-width="1.4"/>`
-      + `<line x1="${x - k}" y1="${y - k}" x2="${x + k}" y2="${y + k}" stroke="${stroke}" stroke-width="1.3"/>`
-      + `<line x1="${x + k}" y1="${y - k}" x2="${x - k}" y2="${y + k}" stroke="${stroke}" stroke-width="1.3"/>`;
+    return `<circle cx="${x}" cy="${y}" r="${r}" fill="${P.surface}" stroke="${escHtml(stroke)}" stroke-width="1.4"/>`
+      + `<line x1="${x - k}" y1="${y - k}" x2="${x + k}" y2="${y + k}" stroke="${escHtml(stroke)}" stroke-width="1.3"/>`
+      + `<line x1="${x + k}" y1="${y - k}" x2="${x - k}" y2="${y + k}" stroke="${escHtml(stroke)}" stroke-width="1.3"/>`;
   },
 
   _gMeter(x, y, P, stroke, letter) {
-    return `<circle cx="${x}" cy="${y}" r="9" fill="${P.surface}" stroke="${stroke}" stroke-width="1.4"/>`
-      + `<text x="${x}" y="${y + 3.5}" text-anchor="middle" font-size="${String(letter).length > 1 ? 8 : 10}" font-weight="700" fill="${stroke}">${letter}</text>`;
+    return `<circle cx="${x}" cy="${y}" r="9" fill="${P.surface}" stroke="${escHtml(stroke)}" stroke-width="1.4"/>`
+      + `<text x="${x}" y="${y + 3.5}" text-anchor="middle" font-size="${String(letter).length > 1 ? 8 : 10}" font-weight="700" fill="${escHtml(stroke)}">${letter}</text>`;
   },
 
   _gSocket(x, y, P, stroke) {
-    return `<circle cx="${x}" cy="${y}" r="8" fill="${P.surface}" stroke="${stroke}" stroke-width="1.4"/>`
-      + `<line x1="${x - 3}" y1="${y - 4}" x2="${x - 3}" y2="${y + 4}" stroke="${stroke}" stroke-width="1.4"/>`
-      + `<line x1="${x + 3}" y1="${y - 4}" x2="${x + 3}" y2="${y + 4}" stroke="${stroke}" stroke-width="1.4"/>`;
+    return `<circle cx="${x}" cy="${y}" r="8" fill="${P.surface}" stroke="${escHtml(stroke)}" stroke-width="1.4"/>`
+      + `<line x1="${x - 3}" y1="${y - 4}" x2="${x - 3}" y2="${y + 4}" stroke="${escHtml(stroke)}" stroke-width="1.4"/>`
+      + `<line x1="${x + 3}" y1="${y - 4}" x2="${x + 3}" y2="${y + 4}" stroke="${escHtml(stroke)}" stroke-width="1.4"/>`;
   },
 
   _gLight(x, y, P, stroke) {
     const k = 8 * Math.SQRT1_2;
     let r = '';
     for (const [dx, dy] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) {
-      r += `<line x1="${x + dx * k}" y1="${y + dy * k}" x2="${x + dx * (k + 4)}" y2="${y + dy * (k + 4)}" stroke="${stroke}" stroke-width="1.2"/>`;
+      r += `<line x1="${x + dx * k}" y1="${y + dy * k}" x2="${x + dx * (k + 4)}" y2="${y + dy * (k + 4)}" stroke="${escHtml(stroke)}" stroke-width="1.2"/>`;
     }
     return this._gLamp(x, y, P, stroke) + r;
   },
 
   _gHour(x, y, P, stroke) {
-    return `<circle cx="${x}" cy="${y}" r="9" fill="${P.surface}" stroke="${stroke}" stroke-width="1.4"/>`
-      + `<text x="${x}" y="${y + 3.5}" text-anchor="middle" font-size="10" font-weight="700" fill="${stroke}">h</text>`;
+    return `<circle cx="${x}" cy="${y}" r="9" fill="${P.surface}" stroke="${escHtml(stroke)}" stroke-width="1.4"/>`
+      + `<text x="${x}" y="${y + 3.5}" text-anchor="middle" font-size="10" font-weight="700" fill="${escHtml(stroke)}">h</text>`;
   },
 
   _gCtlTx(x, y, P, stroke) {
-    return `<circle cx="${x}" cy="${y - 5}" r="7" fill="none" stroke="${stroke}" stroke-width="1.4"/>`
-      + `<circle cx="${x}" cy="${y + 5}" r="7" fill="none" stroke="${stroke}" stroke-width="1.4"/>`;
+    return `<circle cx="${x}" cy="${y - 5}" r="7" fill="none" stroke="${escHtml(stroke)}" stroke-width="1.4"/>`
+      + `<circle cx="${x}" cy="${y + 5}" r="7" fill="none" stroke="${escHtml(stroke)}" stroke-width="1.4"/>`;
   },
 
   // Protective device type for an accessory (SLD symbol key), or null.
@@ -573,8 +573,8 @@ const DBDrawing = {
   },
 
   _gUtility(x, y, P, stroke) {
-    return `<rect x="${x - 8}" y="${y - 8}" width="16" height="16" rx="3" fill="${P.surface}" stroke="${stroke}" stroke-width="1.4"/>`
-      + `<circle cx="${x}" cy="${y}" r="3" fill="none" stroke="${stroke}" stroke-width="1.3"/>`;
+    return `<rect x="${x - 8}" y="${y - 8}" width="16" height="16" rx="3" fill="${P.surface}" stroke="${escHtml(stroke)}" stroke-width="1.4"/>`
+      + `<circle cx="${x}" cy="${y}" r="3" fill="none" stroke="${escHtml(stroke)}" stroke-width="1.3"/>`;
   },
 
   // The main single line's own symbol, drawn by Symbols (so it follows the
@@ -592,8 +592,8 @@ const DBDrawing = {
       .replace(/var\(--[a-z-]+,\s*[^)]+\)/g, P.surface)
       .replace(/fill="white"/g, `fill="${P.surface}"`)
       .replace(/currentColor/g, stroke)
-      .replace(/<text((?:(?!fill=)[^>])*)>/g, `<text stroke="none" fill="${stroke}"$1>`);
-    return `<g transform="translate(${x},${y})${scale && scale !== 1 ? ` scale(${scale})` : ''}${rot ? ` rotate(${rot})` : ''}" stroke="${stroke}" stroke-width="1.5" fill="none"`
+      .replace(/<text((?:(?!fill=)[^>])*)>/g, `<text stroke="none" fill="${escHtml(stroke)}"$1>`);
+    return `<g transform="translate(${x},${y})${scale && scale !== 1 ? ` scale(${scale})` : ''}${rot ? ` rotate(${rot})` : ''}" stroke="${escHtml(stroke)}" stroke-width="1.5" fill="none"`
       + ` data-dxf-block="${type}"${dxf ? ` data-dxf-attrs="${this._dxfData(dxf)}"` : ''}>${m}</g>`;
   },
 
@@ -609,10 +609,10 @@ const DBDrawing = {
   _vline(x, y1, y2, gaps, stroke, w) {
     let out = '', cur = y1;
     for (const [c, hh] of gaps.slice().sort((a, b) => a[0] - b[0])) {
-      if (c - hh > cur) out += `<line x1="${x}" y1="${cur}" x2="${x}" y2="${c - hh}" stroke="${stroke}" stroke-width="${w}"/>`;
+      if (c - hh > cur) out += `<line x1="${x}" y1="${cur}" x2="${x}" y2="${c - hh}" stroke="${escHtml(stroke)}" stroke-width="${w}"/>`;
       cur = Math.max(cur, c + hh);
     }
-    if (y2 > cur) out += `<line x1="${x}" y1="${cur}" x2="${x}" y2="${y2}" stroke="${stroke}" stroke-width="${w}"/>`;
+    if (y2 > cur) out += `<line x1="${x}" y1="${cur}" x2="${x}" y2="${y2}" stroke="${escHtml(stroke)}" stroke-width="${w}"/>`;
     return out;
   },
 
@@ -757,7 +757,7 @@ const DBDrawing = {
           sym += `<text x="${X}" y="${lblTop + li * this.LINE_H}" text-anchor="middle" font-size="${ln.bold ? 9.5 : 9}"
             font-weight="${ln.bold ? 700 : 400}" fill="${ln.dim ? P.muted : P.ink}" data-dxf-attr="${ln.tag || 'LABEL_' + (li + 1)}">${this._esc(ln.text)}</text>`;
         });
-        g += `<g data-dxf-block="DB_${item.glyph}" data-dxf-at="${X},${gY}" data-dxf-attrs="${this._dxfData(item.dxf)}">${sym}</g>`;
+        g += `<g data-dxf-block="DB_${escHtml(item.glyph)}" data-dxf-at="${X},${gY}" data-dxf-attrs="${this._dxfData(item.dxf)}">${sym}</g>`;
         if (!isSpd) {
           g += `<circle cx="${X}" cy="${endY}" r="2.4" fill="${P.line}"/>`
             + `<text x="${X + 6}" y="${endY + 4}" font-size="8.5" fill="${P.muted}">N</text>`;
@@ -801,8 +801,8 @@ const DBDrawing = {
       bits.push(`${t.ways} ways`, `${(t.connectedVa / 1000).toFixed(1)} kVA`, `${t.demandA.toFixed(0)} A demand`);
     }
     return `<g><title>${this._esc(`${b.sec.name} — ${kind}`)}</title>`
-      + `<rect x="${x0 - 8}" y="${b.y0}" width="${w + 16}" height="${b.y1 - b.y0}" rx="7" fill="${c}" fill-opacity="0.05" stroke="${c}" stroke-width="1.3" stroke-dasharray="7,4"/>`
-      + `<rect x="${x0 - 8}" y="${b.y0}" width="${w + 16}" height="${this.STRIP_H - 4}" rx="7" fill="${c}" fill-opacity="0.9"/>`
+      + `<rect x="${x0 - 8}" y="${escHtml(b.y0)}" width="${w + 16}" height="${b.y1 - b.y0}" rx="7" fill="${c}" fill-opacity="0.05" stroke="${c}" stroke-width="1.3" stroke-dasharray="7,4"/>`
+      + `<rect x="${x0 - 8}" y="${escHtml(b.y0)}" width="${w + 16}" height="${this.STRIP_H - 4}" rx="7" fill="${c}" fill-opacity="0.9"/>`
       + `<text x="${x0}" y="${b.y0 + 13}" font-size="11" font-weight="700" fill="#fff">${this._esc(b.sec.name.toUpperCase())}</text>`
       + `<text x="${x0 + 12 + b.sec.name.length * 8}" y="${b.y0 + 13}" font-size="9.5" fill="#fff" fill-opacity="0.9">${this._esc(kind + (bits.length ? ' · ' + bits.join(' · ') : ''))}</text>`
       + `</g>`;

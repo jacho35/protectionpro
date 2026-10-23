@@ -10,6 +10,8 @@ services:
       # is generated once and persisted in the DB, so every copy of the database
       # (backups included) also carries the key that signs sign-in tokens.
       - SECRET_KEY=${SECRET_KEY:-}
+      # nginx (the only thing that reaches this port) sets X-Real-IP to the client address.
+      - PP_TRUST_PROXY=1
     volumes:
       - db-data:/data
     expose:

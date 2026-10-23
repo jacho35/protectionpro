@@ -436,8 +436,8 @@ const PlanMarkup = {
       const rows = floors.map(f => `
         <tr data-floor="${f.id}">
           <td><input class="plan-floor-name" data-role="name" value="${this._esc(f.name)}"></td>
-          <td><input class="plan-floor-num" type="number" step="1" data-role="level" value="${f.level}"></td>
-          <td><input class="plan-floor-num" type="number" step="0.1" min="0" data-role="height" value="${f.height}"></td>
+          <td><input class="plan-floor-num" type="number" step="1" data-role="level" value="${escHtml(f.level)}"></td>
+          <td><input class="plan-floor-num" type="number" step="0.1" min="0" data-role="height" value="${escHtml(f.height)}"></td>
           <td class="plan-floor-acts">
             <button data-role="up" title="Move up (raise level)">▲</button>
             <button data-role="down" title="Move down (lower level)">▼</button>
@@ -450,9 +450,9 @@ const PlanMarkup = {
           <div class="modal-body">
             <div class="plan-floor-settings">
               <label>Default floor height (m)
-                <input id="plan-floor-defh" type="number" step="0.1" min="0" value="${pm.settings.floorHeight}"></label>
+                <input id="plan-floor-defh" type="number" step="0.1" min="0" value="${escHtml(pm.settings.floorHeight)}"></label>
               <label>Riser factor
-                <input id="plan-floor-riser" type="number" step="0.05" min="1" value="${pm.settings.riserFactor}"
+                <input id="plan-floor-riser" type="number" step="0.05" min="1" value="${escHtml(pm.settings.riserFactor)}"
                   title="Vertical-run slack multiplier for bends/terminations"></label>
             </div>
             <table class="plan-floor-table">

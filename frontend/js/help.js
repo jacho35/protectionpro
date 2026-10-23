@@ -267,7 +267,7 @@ const HelpCenter = {
     this._guideHits = gh;
     const guideHtml = gh.length
       ? `<div class="hc-group">Guides</div>` + gh.map(r =>
-        `<button type="button" class="hc-item hc-result hc-guide-hit" data-guide="${r.a.guideId}">` +
+        `<button type="button" class="hc-item hc-result hc-guide-hit" data-guide="${escHtml(r.a.guideId)}">` +
         `<span class="hc-rtitle">${this._mark(r.a.title, terms)}</span>` +
         `<span class="hc-rgroup">Guide · ${this._esc(r.a._where)}</span>` +
         (this._snippet(r, terms) ? `<span class="hc-snip">${this._snippet(r, terms)}</span>` : '') +
@@ -482,7 +482,7 @@ const HelpMobile = {
       const btn = document.querySelector(`.help-tab[data-tab="${t.tab}"]`);
       if (!btn) continue;
       if (t.group !== last) { html += `<div class="help-home-group">${t.group}</div>`; last = t.group; }
-      html += `<button type="button" class="help-home-row" data-go="${t.tab}"><span class="help-home-text"><span class="help-home-title">${btn.textContent.trim()}</span><span class="help-home-sub">${t.sub}</span></span>${t.count ? `<span class="help-home-count">${t.count()}</span>` : ''}<span class="help-home-chev" aria-hidden="true">›</span></button>`;
+      html += `<button type="button" class="help-home-row" data-go="${escHtml(t.tab)}"><span class="help-home-text"><span class="help-home-title">${btn.textContent.trim()}</span><span class="help-home-sub">${t.sub}</span></span>${t.count ? `<span class="help-home-count">${t.count()}</span>` : ''}<span class="help-home-chev" aria-hidden="true">›</span></button>`;
     }
     home.innerHTML = html + '</div>';
     home.querySelector('#help-home-q').addEventListener('input', (e) => this._search(e.target.value));
@@ -513,7 +513,7 @@ const HelpMobile = {
     let html = `<div class="help-home-count-line">${arts.length + comps.length + guides.length ? `${guides.length ? guides.length + ' guide' + (guides.length === 1 ? '' : 's') + ' · ' : ''}${arts.length} article${arts.length === 1 ? '' : 's'} · ${comps.length} component${comps.length === 1 ? '' : 's'}` : 'Nothing matches'}</div>`;
     if (guides.length) {
       html += '<div class="help-home-group">Guides</div>' + guides.map(r =>
-        `<button type="button" class="help-home-row" data-guide="${r.a.guideId}"><span class="help-home-text"><span class="help-home-title">${r.a.title}</span><span class="help-home-sub">Guide · ${r.a._where}</span></span></button>`
+        `<button type="button" class="help-home-row" data-guide="${escHtml(r.a.guideId)}"><span class="help-home-text"><span class="help-home-title">${r.a.title}</span><span class="help-home-sub">Guide · ${r.a._where}</span></span></button>`
       ).join('');
     }
     if (arts.length) {

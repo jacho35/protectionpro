@@ -349,7 +349,7 @@ const LightingWS = {
     const indoor = items.filter(r => r.kind === 'room' && r.leni != null);
     const kwh = indoor.reduce((s, r) => s + (r.kwh || 0), 0), ia = indoor.reduce((s, r) => s + (r.area || 0), 0);
     const shown = this._sorted(this._visible(items));
-    const th = (key, label, cls) => `<th class="${cls || ''}"><button data-lw-sort="${key}">${label}${this.sort.key === key ? (this.sort.dir > 0 ? ' ▲' : ' ▼') : ''}</button></th>`;
+    const th = (key, label, cls) => `<th class="${cls || ''}"><button data-lw-sort="${escHtml(key)}">${label}${this.sort.key === key ? (this.sort.dir > 0 ? ' ▲' : ' ▼') : ''}</button></th>`;
     const num = (v, dp) => v == null ? '—' : Number(v).toFixed(dp);
     const rowHtml = (r) => {
       const em = r.em ? `${num(r.em.v, r.em.v < 10 ? 1 : 0)} <small>/ ${r.em.t}</small>` : '—';

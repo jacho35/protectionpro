@@ -193,7 +193,7 @@ if (typeof RoadPlan !== 'undefined') Object.assign(RoadPlan, {
     const srcs = StreetLight._sources();
     const cur = this._feedSrcPick(r);
     const sel = srcs.length
-      ? `<label class="rp-field rp-span2">Fed from<select data-rp-feed="source">${srcs.map(s => `<option value="${s.kind}:${escHtml(s.id)}"${cur && cur.kind === s.kind && cur.id === s.id ? ' selected' : ''}>${escHtml(s.name)} (${s.kind})</option>`).join('')}</select></label>`
+      ? `<label class="rp-field rp-span2">Fed from<select data-rp-feed="source">${srcs.map(s => `<option value="${escHtml(s.kind)}:${escHtml(s.id)}"${cur && cur.kind === s.kind && cur.id === s.id ? ' selected' : ''}>${escHtml(s.name)} (${s.kind})</option>`).join('')}</select></label>`
       : '<div class="sl-hint">No kiosk or minisub yet — add one in Demand.</div>';
     let line = '<div class="sl-hint">No feed point. Place the source and draw the feeder route to this road: a road with one starts a circuit; a side road joins the circuit of the road it leaves.</div>';
     if (r.feed) {

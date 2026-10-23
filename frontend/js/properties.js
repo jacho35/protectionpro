@@ -114,7 +114,7 @@ const Properties = {
 
       if (isCollapsible) {
         html += `<div class="prop-section">`;
-        html += `<div class="prop-section-header${isCollapsed ? ' collapsed' : ''}" data-section="${secKey}">`;
+        html += `<div class="prop-section-header${isCollapsed ? ' collapsed' : ''}" data-section="${escHtml(secKey)}">`;
         html += `<span class="chevron">\u25B8</span>`;
         html += `<span>${label}</span>`;
         html += `</div>`;
@@ -154,11 +154,11 @@ const Properties = {
         <div class="prop-section-title">Position</div>
         <div class="prop-row">
           <label>X</label>
-          <input type="number" data-field="__x" value="${comp.x}" step="${SNAP_SIZE}">
+          <input type="number" data-field="__x" value="${numAttr(comp.x)}" step="${SNAP_SIZE}">
         </div>
         <div class="prop-row">
           <label>Y</label>
-          <input type="number" data-field="__y" value="${comp.y}" step="${SNAP_SIZE}">
+          <input type="number" data-field="__y" value="${numAttr(comp.y)}" step="${SNAP_SIZE}">
         </div>
         <div class="prop-row">
           <label>Rotation</label>
@@ -319,7 +319,7 @@ const Properties = {
           const otherName = other ? (other.props?.name || other.id) : '—';
           const pct = e.cable.thermal_loading_pct;
           return `<div class="cf-prop-row" data-cable-id="${this._esc(e.cable.cable_id)}" title="Select ${this._esc(e.cable.cable_name)}">
-            <span class="cf-dot ${dot[e.cable.status] || 'cf-dot-unknown'}"></span>
+            <span class="cf-dot ${escHtml(dot[e.cable.status] || 'cf-dot-unknown')}"></span>
             <span class="cf-prop-name">${this._esc(e.cable.cable_name)}</span>
             <span class="cf-prop-other">${e.dir === 'in' ? 'from' : 'to'} ${this._esc(otherName)}</span>
             <span class="cf-prop-pct${e.cable.status === 'fail' ? ' cf-fail' : ''}">${pct != null ? pct.toFixed(0) + '%' : ''}</span>
@@ -623,8 +623,8 @@ const Properties = {
         optionsHtml += `<div class="searchable-select-option${sel}" data-value="${escHtml(item.id)}">${escHtml(item.name)}</div>`;
       }
 
-      inputHtml = `<div class="searchable-select" data-field="${field.key}" data-library="${field.library}" data-value="${escHtml(value || '')}">
-        <input type="text" class="searchable-select-input" placeholder="${placeholder}" value="${escHtml(displayText)}" autocomplete="off">
+      inputHtml = `<div class="searchable-select" data-field="${escHtml(field.key)}" data-library="${escHtml(field.library)}" data-value="${escHtml(value || '')}">
+        <input type="text" class="searchable-select-input" placeholder="${escHtml(placeholder)}" value="${escHtml(displayText)}" autocomplete="off">
         <div class="searchable-select-dropdown">${hintHtml}${optionsHtml}</div>
       </div>`;
     } else if (field.type === 'standard_select') {
@@ -656,7 +656,7 @@ const Properties = {
         `<option value="${escHtml(item.id)}" ${value === item.id ? 'selected' : ''}>${escHtml(item.name)}</option>`
       ).join('');
       preRowHtml = makerHtml;
-      inputHtml = `<select data-field="${field.key}" data-library="${field.library}">
+      inputHtml = `<select data-field="${escHtml(field.key)}" data-library="${escHtml(field.library)}">
         <option value="" data-ss-always>-- Custom --</option>${options}</select>`;
     } else if (field.type === 'earth_grid_select') {
       // Project earth grids (earthgrid.js), listed at render time, plus the
@@ -666,7 +666,7 @@ const Properties = {
       const opts = [`<option value="" ${!value ? 'selected' : ''}>None — use the fields below</option>`]
         .concat(grids.map(g => `<option value="${escHtml(g.id)}" ${value === g.id ? 'selected' : ''}>${escHtml(g.name || g.id)}</option>`));
       if (!known) opts.push(`<option value="${escHtml(value)}" selected>${escHtml(value)} (missing)</option>`);
-      inputHtml = `<div class="prop-eg-pick"><select data-field="${field.key}">${opts.join('')}</select>
+      inputHtml = `<div class="prop-eg-pick"><select data-field="${escHtml(field.key)}">${opts.join('')}</select>
         <button type="button" class="prop-eg-edit-btn" title="Create and edit the project's earth grids">Edit earth grids…</button></div>`;
     } else if (field.type === 'component_select') {
       // Dynamic dropdown listing components of a specific type
@@ -678,7 +678,7 @@ const Properties = {
         const name = comp.props?.name || `${comp.type} ${id}`;
         options.push(`<option value="${id}" ${value === id ? 'selected' : ''}>${escHtml(name)}</option>`);
       }
-      inputHtml = `<select data-field="${field.key}">${options.join('')}</select>`;
+      inputHtml = `<select data-field="${escHtml(field.key)}">${options.join('')}</select>`;
     } else if (field.type === 'offpage_link') {
       // Connectors on OTHER pages, grouped by page. A connector already joined
       // to a third one is tagged; picking it re-links (see _linkOffpage).
@@ -697,7 +697,7 @@ const Properties = {
       const status = target
         ? `<div class="prop-ampacity-summary">Joined to ${escHtml(target.props.name || target.id)} on ${escHtml((AppState.pages.find(p => p.id === (target.pageId || 'page_1')) || {}).name || '?')}</div>`
         : `<div class="prop-ampacity-summary prop-ampacity-summary--empty">Not linked — studies stop at this connector</div>`;
-      inputHtml = `<select data-field="${field.key}"><option value="" ${target ? '' : 'selected'}>-- Not linked --</option>${groups}</select>${status}`;
+      inputHtml = `<select data-field="${escHtml(field.key)}"><option value="" ${target ? '' : 'selected'}>-- Not linked --</option>${groups}</select>${status}`;
     } else if (field.type === 'ampacity_calc') {
       // Launch button for the per-cable IEC 60364-5-52 ampacity calculator.
       // Not a real prop — shows a summary of the applied derating (if any)
@@ -744,9 +744,9 @@ const Properties = {
         // Compare via String(): the backend coerces numeric-looking string
         // props to numbers on save, so a strict === would fail to re-select
         // (e.g. stored 12 vs option '12') and silently show the first option.
-        return `<option value="${val}" ${String(value) === String(val) ? 'selected' : ''}>${label}</option>`;
+        return `<option value="${escHtml(val)}" ${String(value) === String(val) ? 'selected' : ''}>${label}</option>`;
       }).join('');
-      inputHtml = `<select data-field="${field.key}"${dis}${lockTitle}>${options}</select>`;
+      inputHtml = `<select data-field="${escHtml(field.key)}"${dis}${lockTitle}>${options}</select>`;
     } else {
       // Number or text input — handle unit conversion for display
       let displayValue = value;
@@ -781,7 +781,7 @@ const Properties = {
       const phFrom = field.placeholderFrom && _comp ? _comp.props[field.placeholderFrom] : undefined;
       const placeholder = phFrom !== undefined && phFrom !== '' ? String(phFrom) : field.placeholder;
       const placeholderHtml = placeholder ? ` placeholder="${escHtml(placeholder)}"` : '';
-      inputHtml = `<input type="${field.type}" data-field="${field.key}" value="${escHtml(displayValue)}"${placeholderHtml}${constraints}${dis}${lockTitle}>`;
+      inputHtml = `<input type="${escHtml(field.type)}" data-field="${escHtml(field.key)}" value="${escHtml(displayValue)}"${placeholderHtml}${constraints}${dis}${lockTitle}>`;
     }
 
     // Unit display: selectable dropdown if unitOptions, else static text
@@ -790,9 +790,9 @@ const Properties = {
       if (field.key === 'length_km' && AppState.defaultLengthUnit) defaultUnit = AppState.defaultLengthUnit;
       const selectedUnit = this.unitSelections[field.key] || defaultUnit;
       const opts = field.unitOptions.map(u =>
-        `<option value="${u.label}" ${u.label === selectedUnit ? 'selected' : ''}>${u.label}</option>`
+        `<option value="${escHtml(u.label)}" ${u.label === selectedUnit ? 'selected' : ''}>${u.label}</option>`
       ).join('');
-      unitHtml = `<select class="unit-select" data-unit-for="${field.key}">${opts}</select>`;
+      unitHtml = `<select class="unit-select" data-unit-for="${escHtml(field.key)}">${opts}</select>`;
     } else if (field.unit) {
       unitHtml = `<span class="unit">${field.unit}</span>`;
     }
@@ -810,7 +810,7 @@ const Properties = {
     const hasInfo = !!resolvedInfoKey;
     const helpKey = resolvedInfoKey
       || [infoKey, field.key, field.helpKey].find(k => k && typeof FIELD_HELP !== 'undefined' && FIELD_HELP[k]) || null;
-    const infoHtml = helpKey ? `<button type="button" class="prop-info-btn" data-info-key="${helpKey}" title="About ${escHtml(field.label)}" aria-label="About ${escHtml(field.label)}">i</button>` : '';
+    const infoHtml = helpKey ? `<button type="button" class="prop-info-btn" data-info-key="${escHtml(helpKey)}" title="About ${escHtml(field.label)}" aria-label="About ${escHtml(field.label)}">i</button>` : '';
 
     // "Default" flag: the field still holds its typical/standard (often IEC)
     // default — shown so the engineer knows it's an assumed value they can
@@ -850,7 +850,7 @@ const Properties = {
           const defaultVal = parseFloat(stdCable[field.key]);
           if (!isNaN(currentVal) && !isNaN(defaultVal) && Math.abs(currentVal - defaultVal) > 1e-9) {
             modifiedClass = ' prop-row--modified';
-            resetHtml = `<button class="prop-reset-btn" data-reset-field="${field.key}" data-reset-value="${defaultVal}" title="Reset to ${escHtml(stdCable.name)} default (${defaultVal})">&#x21A9;</button>`;
+            resetHtml = `<button class="prop-reset-btn" data-reset-field="${escHtml(field.key)}" data-reset-value="${defaultVal}" title="Reset to ${escHtml(stdCable.name)} default (${defaultVal})">&#x21A9;</button>`;
           }
         }
       }
@@ -864,7 +864,7 @@ const Properties = {
     let clearHtml = '';
     if (field.clearable && value !== '' && value !== undefined && value !== null) {
       const revertTo = field.placeholder || 'default';
-      clearHtml = `<button class="prop-clear-btn" data-clear-field="${field.key}" title="Clear override — revert to ${escHtml(revertTo)}">&#x2715;</button>`;
+      clearHtml = `<button class="prop-clear-btn" data-clear-field="${escHtml(field.key)}" title="Clear override — revert to ${escHtml(revertTo)}">&#x2715;</button>`;
     }
 
     // CB pickup settings: show the resulting trip current in brackets
@@ -1409,11 +1409,11 @@ const Properties = {
         </div>
         <div class="iec-calc-row">
           <div class="iec-calc-field" style="flex:2"><label>Installation method</label><select id="amp-method">${methodOpts}</select></div>
-          <div class="iec-calc-field"><label>Ambient temp (°C)</label><input type="number" id="amp-temp" value="${b.ambient}" min="10" max="80" step="5"></div>
+          <div class="iec-calc-field"><label>Ambient temp (°C)</label><input type="number" id="amp-temp" value="${escHtml(b.ambient)}" min="10" max="80" step="5"></div>
         </div>
         <div class="iec-calc-row">
           <div class="iec-calc-field" style="flex:2"><label>Grouping</label><select id="amp-grouping" data-sel="${escHtml(String(b.grouping || 'bunched'))}"></select></div>
-          <div class="iec-calc-field"><label>No. of circuits</label><input type="number" id="amp-circuits" value="${b.circuits}" min="1" max="20" step="1"></div>
+          <div class="iec-calc-field"><label>No. of circuits</label><input type="number" id="amp-circuits" value="${escHtml(b.circuits)}" min="1" max="20" step="1"></div>
           <div class="iec-calc-field" id="amp-soil-group" style="display:none"><label>Soil ρ (K·m/W)</label><select id="amp-soil">${soilOpts}</select></div>
         </div>
         <div class="iec-calc-row">
@@ -2877,10 +2877,10 @@ I_base = S_base / (√3 × V) = ${base * 1000} / (√3 × ${vkv}) = ${Ibase.toFi
       const boxOn = rb[t.key] !== false;
       // Only offer per-value control when there's more than one line to choose.
       const fieldHtml = t.fields.length >= 2 ? `
-        <div class="display-field-list${boxOn ? '' : ' disabled'}" data-field-group="${t.key}">
+        <div class="display-field-list${boxOn ? '' : ' disabled'}" data-field-group="${escHtml(t.key)}">
           ${t.fields.map(f => `
             <label class="display-field-item">
-              <input type="checkbox" data-result-field="${t.key}" data-field-name="${f.key}"
+              <input type="checkbox" data-result-field="${escHtml(t.key)}" data-field-name="${escHtml(f.key)}"
                 ${Annotations.fieldVisible(t.key, f.key) ? ' checked' : ''}${boxOn ? '' : ' disabled'} />
               <span>${f.label}</span>
             </label>`).join('')}
@@ -2888,7 +2888,7 @@ I_base = S_base / (√3 × V) = ${base * 1000} / (√3 × ${vkv}) = ${Ibase.toFi
       return `
         <div class="display-type-block">
           <label class="display-result-item">
-            <input type="checkbox" data-result-box="${t.key}"${boxOn ? ' checked' : ''} />
+            <input type="checkbox" data-result-box="${escHtml(t.key)}"${boxOn ? ' checked' : ''} />
             <span>${t.label}</span>
           </label>
           ${fieldHtml}

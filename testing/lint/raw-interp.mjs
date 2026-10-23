@@ -4,6 +4,8 @@
 //
 //   node testing/lint/raw-interp.mjs            report every finding not in the allow-list
 //   node testing/lint/raw-interp.mjs --strict   same, exit 1 if there are any (CI)
+//   node testing/lint/raw-interp.mjs --max N    exit 1 if there are more than N (CI ratchet)
+//   node testing/lint/raw-interp.mjs --fix      wrap plain attribute-value reads in escHtml(...)
 //   node testing/lint/raw-interp.mjs --all      ignore the allow-list
 //   node testing/lint/raw-interp.mjs --text     also report values placed in element text
 //                                               (default: attribute values only — the part that
@@ -25,7 +27,10 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '.
 const jsDir = path.join(root, 'frontend', 'js');
 const allowFile = path.join(path.dirname(fileURLToPath(import.meta.url)), 'raw-interp-allow.txt');
 const strict = process.argv.includes('--strict');
+const maxArg = process.argv.indexOf('--max');
+const maxAllowed = maxArg > 0 ? Number(process.argv[maxArg + 1]) : null;   // ratchet: fail if the count grows past this
 const ignoreAllow = process.argv.includes('--all');
+const fix = process.argv.includes('--fix');   // wrap plain property reads inside quoted attribute values in escHtml(...)
 const textToo = process.argv.includes('--text');   // also report values placed in element text
 
 const allow = new Set();
@@ -37,9 +42,9 @@ if (!ignoreAllow && fs.existsSync(allowFile)) {
 }
 
 const SAFE = [
-  /^(this\.)?(escHtml|escapeHtml|esc|_esc|escAttr|safeHtml)\(/,
+  /^(this\.|RoadLight\.|[A-Z]\w*\.)?(escHtml|escapeHtml|esc|_esc|_e|e|escAttr|safeHtml|numAttr)\(/,
   /^(Number|Math\.[a-zA-Z]+|parseInt|parseFloat|Number\.isFinite|String\(Number)\(/,
-  /^\+[\w.\[\]]+$/,
+  /^\+[\w.\[\]]+( \|\| \d+)?$/,
   /\.(toFixed|toPrecision)\([^)]*\)$/,
   /\.length$/,
   /^[\w.$]*(Html|HTML)\b/,
@@ -137,20 +142,62 @@ function worthReporting(e) {
   if (/\b(escHtml|escapeHtml|_esc|esc)\(/.test(e)) return false;   // composite expression that escapes its text
   if (INTERNAL_CONST.test(e) && !/[(\[]/.test(e.split('.').slice(0, 1)[0])) return /\[/.test(e);
   if (/[.\[(]/.test(e)) return true;
-  return TEXTY_NAME.test(e);
+  return TEXTY_NAME.test(e) || /(Id|ID|Name|Key|Label|Title)$/.test(e);
+}
+
+// Coordinate helpers of the drawing code: they return numbers.
+const GEOM_CALL = /^(X|Y|S|f|px|py|sx|sy|tx|ty|r2|n1|n2)\(/;
+// `a * b`, `a / b`, `a - b`, `-a`: the result is a number (or NaN), never text.
+function arithmeticOnly(e) {
+  if (/['"`]/.test(e)) return false;
+  return /[*\/%]|(^|[\s(])-\s*[\w(]|\w\s-\s\w/.test(e) && !/\bfunction\b|=>|\?/.test(e);
+}
+
+// Whatever the branches, a ternary whose branches are all literals / numbers / palette
+// constants (P.x, this.SEC_FILL[..] fallbacks excluded) produces fixed text.
+const LITERAL_BRANCH = /^(['"][^'"`$\\]*['"]|[+-]?[\d.]+|P\.\w+|\d+ \|\| \d+)$/;
+function literalTernary(e) {
+  const q = e.indexOf('?');
+  if (q < 0 || /[`]/.test(e)) return false;
+  const branches = e.slice(q + 1).split(/ : (?![^()]*\))/).map(x => x.trim());
+  return branches.length >= 2 && branches.every(b => LITERAL_BRANCH.test(b) || literalTernary(b));
+}
+// A comparison / negation is a boolean.
+function booleanExpr(e) {
+  return !/['"`?]/.test(e.replace(/(===|!==)\s*(['"])[^'"]*\2/g, '')) && /(===|!==|>=|<=|\bhas\()/.test(e) || /^!+[\w.$]+$/.test(e);
 }
 
 function topLevelSafe(expr) {
   const e = expr.replace(/\s+/g, ' ').trim();
+  if (literalTernary(e) || booleanExpr(e)) return true;
+  if (GEOM_CALL.test(e) && !/['"`]/.test(e.replace(/toFixed\([^)]*\)/g, ''))) return true;
+  if (arithmeticOnly(e)) return true;
   if (STRING_ONLY.test(e) || LITERAL_TERNARY.test(e)) return true;
   if (/^[\d.]+$/.test(e) || numericArith(e)) return true;
   return SAFE.some(r => r.test(e));
 }
 
+// True when `${` at `pos` is inside a quoted attribute value of the tag being written.
+function inQuotedValue(text, pos) {
+  const before = text.slice(0, pos).replace(/\$\{[^{}]*\}/g, '0');
+  let q = null;
+  for (let i = before.lastIndexOf('<') + 1; i < before.length; i++) {
+    const c = before[i];
+    if (q) { if (c === q) q = null; } else if (c === '"' || c === "'") q = c;
+  }
+  return !!q;
+}
+// `a.b.c` / `a.b[c]` — a plain read of a field, safe to escape (a bare local might already be escaped).
+const READ = String.raw`[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*|\[[\w$.'"]+\])+`;
+const LIT = String.raw`(?:[\d.]+|''|'[\w -]*')`;
+// `a.b`, `a.b || 0`, `a.b ?? ''`, `a.b || c.d`
+const PLAIN_READ = new RegExp(`^${READ}(?:\\s*(?:\\|\\||\\?\\?)\\s*(?:${LIT}|${READ}))*$`);
+
 const files = fs.readdirSync(jsDir).filter(f => f.endsWith('.js') && !f.startsWith('vendor-') && f !== 'verification-templates.js').sort();
-let total = 0;
+let total = 0, fixed = 0;
 for (const f of files) {
-  const src = fs.readFileSync(path.join(jsDir, f), 'utf8');
+  let src = fs.readFileSync(path.join(jsDir, f), 'utf8');
+  const edits = [];
   const lineAt = pos => src.slice(0, pos).split('\n').length;
   for (const t of findTemplates(src)) {
     if (!/<[a-zA-Z][^>`]*/.test(t.text.replace(/\$\{[\s\S]*?\}/g, ''))) continue;   // not HTML
@@ -158,6 +205,15 @@ for (const f of files) {
       if (topLevelSafe(p.expr)) continue;
       if (!worthReporting(p.expr.replace(/\s+/g, ' ').trim())) continue;
       if (!textToo && !inTag(t.text, p.pos - t.start)) continue;
+      if (fix && inQuotedValue(t.text, p.pos - t.start)) {
+        if (PLAIN_READ.test(p.expr)) { edits.push(p); continue; }
+        // A bare local: wrap it unless it was just built from an escaping call.
+        if (/^[A-Za-z_$][\w$]*$/.test(p.expr)) {
+          const back = src.slice(Math.max(0, p.pos - 2500), p.pos);
+          const lastAssign = [...back.matchAll(new RegExp(`\\b${p.expr.replace('$', '\\$')}\\s*=\\s*([^;\\n]*)`, 'g'))].pop();
+          if (!(lastAssign && /(escHtml|escapeHtml|_esc|\be|\b_e|numAttr)\(/.test(lastAssign[1]))) { edits.push(p); continue; }
+        }
+      }
       const line = lineAt(p.pos);
       const id = `${f}:${line}`;
       if (allow.has(id)) continue;
@@ -165,6 +221,15 @@ for (const f of files) {
       console.log(`${id}  \${${p.expr.length > 90 ? p.expr.slice(0, 87) + '...' : p.expr}}`);
     }
   }
+  if (edits.length) {
+    for (const p of edits.sort((a, b) => b.pos - a.pos)) {
+      src = src.slice(0, p.pos) + `escHtml(${p.expr})` + src.slice(p.pos + p.expr.length);
+      fixed++;
+    }
+    fs.writeFileSync(path.join(jsDir, f), src);
+  }
 }
+if (fix) console.error(`${fixed} attribute value(s) wrapped in escHtml`);
 console.error(`${total} unreviewed interpolation(s)`);
 if (strict && total) process.exit(1);
+if (maxAllowed !== null && total > maxAllowed) { console.error(`more than the ${maxAllowed} reviewed interpolations — escape the new ones (escHtml / numAttr)`); process.exit(1); }

@@ -262,7 +262,7 @@ const Light3D = {
   // The Lighting tab's bar in the 3D view.
   barHtml() {
     const rooms = this.rooms(), cur = this.room();
-    const seg = (key, val, label) => `<button type="button" class="plan-mode-btn${this[key] === val ? ' active' : ''}" data-l3-set="${key}:${val}" aria-pressed="${this[key] === val}">${label}</button>`;
+    const seg = (key, val, label) => `<button type="button" class="plan-mode-btn${this[key] === val ? ' active' : ''}" data-l3-set="${escHtml(key)}:${escHtml(val)}" aria-pressed="${this[key] === val}">${label}</button>`;
     return `<label class="plan-tb-field">${rooms.some(r => Sports3D.is(r)) ? 'Room / field' : 'Room'} <select data-l3="room" class="plan-tb-select">${rooms.length ? rooms.map(r =>
         `<option value="${escHtml(r.id)}"${cur && r.id === cur.id ? ' selected' : ''}>${escHtml(r.name || 'Room')}</option>`).join('') : '<option value="">No rooms on this floor</option>'}</select></label>
       <div class="plan-tb-field">Show <div class="plan-modes" role="group" aria-label="Show">${seg('mode', 'model', 'Model')}${seg('mode', 'colour', 'False colour')}${seg('mode', 'render', 'Rendered light')}</div></div>
@@ -713,7 +713,7 @@ const Light3D = {
     if (Sports3D.is(room)) { el.innerHTML = Sports3D.props(room, this); return; }
     const G = this.geo(room), f = G.f, L = G.L;
     const s = this._selected(room);
-    const num = (key, label, val, step, extra = '') => `<label class="l3-field"><span>${label}</span><input type="number" data-l3f="${key}" value="${val}" step="${step}" ${extra}></label>`;
+    const num = (key, label, val, step, extra = '') => `<label class="l3-field"><span>${label}</span><input type="number" data-l3f="${escHtml(key)}" value="${escHtml(val)}" step="${step}" ${extra}></label>`;
     const fx = (v) => (+v).toFixed(2);
     const counts = (() => {
       const sc = this.scene(room);
@@ -777,7 +777,7 @@ const Light3D = {
       const side = (ed) => { const o = [-ed.nIn[0], -ed.nIn[1]]; return Math.abs(o[0]) > Math.abs(o[1]) ? (o[0] > 0 ? 'east' : 'west') : (o[1] > 0 ? 'north' : 'south'); };
       body = head(it.name, it.kind === 'window' ? 'Window' : 'Door', it.kind === 'window' ? '#8cc8f0' : '#b08a60', true) + `<div class="l3-props-body">
         <label class="l3-field l3-wide"><span>Name</span><input type="text" data-l3f="name" value="${escHtml(it.name || '')}"></label>
-        <label class="l3-field l3-wide"><span>Wall</span><select data-l3f="edge">${G.edges.map(ed => `<option value="${ed.i}"${ed.i === it.edge ? ' selected' : ''}>Wall ${ed.i + 1} · ${ed.len.toFixed(2)} m · ${side(ed)} side</option>`).join('')}</select></label>
+        <label class="l3-field l3-wide"><span>Wall</span><select data-l3f="edge">${G.edges.map(ed => `<option value="${escHtml(ed.i)}"${ed.i === it.edge ? ' selected' : ''}>Wall ${ed.i + 1} · ${ed.len.toFixed(2)} m · ${side(ed)} side</option>`).join('')}</select></label>
         <div class="l3-grid2">
           ${num('off', 'From corner, m', fx(it.off || 0), 0.05, 'min="0"')}${num('w', 'Width, m', fx(it.w), 0.05, 'min="0.2"')}
           ${num('h', 'Height, m', fx(it.h), 0.05, 'min="0.2"')}${num('sill', 'Sill, m', fx(it.sill || 0), 0.05, 'min="0"')}
@@ -844,7 +844,7 @@ const Light3D = {
       el.innerHTML = '<b>Rendered light</b><span>Calculate the room in this view to render it.</span>';
     } else {
       el.innerHTML = `<b>Rendered light</b><span>Every surface as bright as it looks — its illuminance × reflectance from the calculation, with the shadows of objects that block light. No daylight: windows are dark.${fresh ? '' : ' <b>Out of date</b> — showing the last calculation.'}</span>
-        <label class="l3-expo">Exposure <input type="range" min="0.2" max="4" step="0.1" value="${this.expo}" data-l3="expo"></label>`;
+        <label class="l3-expo">Exposure <input type="range" min="0.2" max="4" step="0.1" value="${escHtml(this.expo)}" data-l3="expo"></label>`;
     }
   },
 

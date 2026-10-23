@@ -61,7 +61,7 @@ const DbCoord = {
       ? `<option value="${escHtml(selected)}" selected>(removed from library)</option>` : '';
     const group = (label, type) => {
       const xs = list.filter(x => x.cb_type === type);
-      return xs.length ? `<optgroup label="${label}">${xs.map(x =>
+      return xs.length ? `<optgroup label="${escHtml(label)}">${xs.map(x =>
         `<option value="cb:${escHtml(x.id)}"${selected === 'cb:' + x.id ? ' selected' : ''}>${escHtml(x.name)}</option>`).join('')}</optgroup>` : '';
     };
     return `<option value="">${escHtml(blank || 'Generic (B/C/D)')}</option>${gone}`
@@ -390,8 +390,8 @@ const DbCoord = {
       }
       const banded = !!it.dev.props.trip_tol && up.length > 1;
       const poly = banded
-        ? `<path d="M${up.map(p => f(p[0]) + ' ' + f(p[1])).join('L')}L${dn.slice().reverse().map(p => f(p[0]) + ' ' + f(p[1])).join('L')}Z" fill="${color}" fill-opacity=".16" stroke="none"/>` : '';
-      return poly + `<path class="rtcc-curve" style="stroke:${color}" d="${line}"><title>${escHtml(it.label + ' — ' + it.dev.name)}</title></path>`;
+        ? `<path d="M${up.map(p => f(p[0]) + ' ' + f(p[1])).join('L')}L${dn.slice().reverse().map(p => f(p[0]) + ' ' + f(p[1])).join('L')}Z" fill="${escHtml(color)}" fill-opacity=".16" stroke="none"/>` : '';
+      return poly + `<path class="rtcc-curve" style="stroke:${escHtml(color)}" d="${line}"><title>${escHtml(it.label + ' — ' + it.dev.name)}</title></path>`;
     };
     const curves = items.map((it, i) => draw(it, this.COLORS[i % this.COLORS.length])).join('');
 
@@ -449,7 +449,7 @@ const DbCoord = {
     // Side panel
     const ST = { pass: ['✓', 'rtcc-ok-t'], warn: ['⚠', 'dtcc-warn-t'], fail: ['✕', 'rtcc-fail-t'], info: ['ℹ', 'dtcc-info-t'] };
     const card = (title, st, body) => `<div class="dtcc-card dtcc-${st}">
-        <div class="dtcc-card-h"><b>${escHtml(title)}</b><span class="${ST[st][1]}">${ST[st][0]} ${({ pass: 'Pass', warn: 'Partial', fail: 'Fail', info: 'Not evaluated' })[st]}</span></div>
+        <div class="dtcc-card-h"><b>${escHtml(title)}</b><span class="${escHtml(ST[st][1])}">${ST[st][0]} ${({ pass: 'Pass', warn: 'Partial', fail: 'Fail', info: 'Not evaluated' })[st]}</span></div>
         <div class="dtcc-card-b">${body}</div></div>`;
     const li = (arr) => `<ul>${arr.map(x => `<li>${escHtml(x)}</li>`).join('')}</ul>`;
     const dev = items.map((it, i) => `<div><i class="rtcc-sw" style="background:${this.COLORS[i % this.COLORS.length]}"></i><b>${escHtml(it.label)}</b> <span>${escHtml(it.dev.name)}${it.dev.lib ? '' : ' · no library device'}${it.dev.props.trip_tol ? ' · published tolerance band' : ''}</span></div>`).join('');

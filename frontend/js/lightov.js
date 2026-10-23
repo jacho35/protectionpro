@@ -145,7 +145,7 @@ const LightOverview = {
 
   _chip(verdict, note) {
     const cls = verdict === 'Pass' ? 'ok' : verdict === 'Fail' ? 'bad' : '';
-    return `<span class="lo-chip ${cls}">${escHtml(verdict)}${note ? ` · ${escHtml(note)}` : ''}</span>`;
+    return `<span class="lo-chip ${escHtml(cls)}">${escHtml(verdict)}${note ? ` · ${escHtml(note)}` : ''}</span>`;
   },
 
   _zoneItem(r) {

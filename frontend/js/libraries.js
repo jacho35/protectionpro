@@ -228,7 +228,7 @@ const Libraries = {
       const v = e[k]; return `<tr><td>${escHtml(k)}</td><td>${escHtml(v === null || v === undefined ? '—' : typeof v === 'object' ? JSON.stringify(v) : String(v))}</td></tr>`;
     }).join('');
     host.innerHTML = `
-      <div class="subm-kind">${escHtml(this.LABELS[key])} <span class="subm-pill ${s.cls}">${escHtml(s.t)}</span>${e._retired ? ' <span class="subm-pill gry">Retired</span>' : ''}</div>
+      <div class="subm-kind">${escHtml(this.LABELS[key])} <span class="subm-pill ${escHtml(s.cls)}">${escHtml(s.t)}</span>${e._retired ? ' <span class="subm-pill gry">Retired</span>' : ''}</div>
       <h3>${escHtml(SD._label(e))}</h3><div class="subm-id">${escHtml(e.id)}</div>
       ${d ? `<div class="subm-warn">Your edit was made against ${d.kind === 'shipped' ? 'an older shipped value' : d.kind === 'removed' ? 'an entry that has been removed' : `v${d.since} of ${d.company ? 'the company standard' : '“' + escHtml(d.name) + '”'}, now v${d.now}`}.</div>` : ''}
       ${e._retired ? '<div class="subm-hint">Retired: hidden from pickers; projects that already use it are unaffected.</div>' : ''}
@@ -292,7 +292,7 @@ const Libraries = {
     const what = d => d.kind === 'removed' ? 'its base entry was removed' : d.kind === 'shipped' ? 'the shipped value was corrected' : `v${d.since} → v${d.now} of ${d.company ? 'the company standard' : '“' + escHtml(d.name) + '”'}`;
     main.innerHTML = `<div class="lib-card"><h3>Edited entries that are out of date</h3>
       ${list.length ? `<p>You edited these, and the entry underneath has changed or been removed since. Your edit stays in effect until you decide.</p>
-        <table class="subm-tbl"><thead><tr><th>Library</th><th>Entry</th><th>What changed</th></tr></thead><tbody>${list.map(x => `<tr><td>${escHtml(this.LABELS[x.key])}</td><td><button type="button" class="subm-link" data-gopick="${x.key}|${escHtml(x.e.id)}"><b>${escHtml(StandardData._label(x.e))}</b><small>${escHtml(x.e.id)}</small></button></td><td>${what(x.d)}</td></tr>`).join('')}</tbody></table>
+        <table class="subm-tbl"><thead><tr><th>Library</th><th>Entry</th><th>What changed</th></tr></thead><tbody>${list.map(x => `<tr><td>${escHtml(this.LABELS[x.key])}</td><td><button type="button" class="subm-link" data-gopick="${escHtml(x.key)}|${escHtml(x.e.id)}"><b>${escHtml(StandardData._label(x.e))}</b><small>${escHtml(x.e.id)}</small></button></td><td>${what(x.d)}</td></tr>`).join('')}</tbody></table>
         <div style="margin-top:12px"><button type="button" class="btn-primary" data-act="review-all">Review all…</button></div>` : '<p>Nothing is out of date.</p>'}</div>`;
   },
 

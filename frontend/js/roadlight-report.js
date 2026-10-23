@@ -84,7 +84,7 @@ const RoadLightReport = {
     // ── Cross-section drawing ──
     try {
       const xs = RL._sectionSvg(des, { width: 760, height: 230 });
-      const png = await this._png(`<svg viewBox="0 0 ${xs.W} ${xs.H}">${xs.svg}</svg>`, xs.W, xs.H);
+      const png = await this._png(`<svg viewBox="0 0 ${escHtml(xs.W)} ${escHtml(xs.H)}">${xs.svg}</svg>`, xs.W, xs.H);
       const h = W * xs.H / xs.W;
       doc.addImage(png, 'PNG', M, y, W, h);
       y += h + 4;

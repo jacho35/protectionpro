@@ -275,7 +275,7 @@ const SLDiagram = {
       const neut = rp && rp.iNeutralA > 0.05 ? `N ${this._f(rp.iNeutralA)} A` : '';
       const hot = rp && !rp.ampOk;
       edges += `<g><title>${this._esc(`Span to ${p.name || p.id}: ${len}${amps ? ', ' + amps + ' on the busiest phase' : ''}${neut ? ', neutral ' + neut.slice(2) : ''}`)}</title>
-        <path d="${path}" fill="none" stroke="${hot ? P.fail : P.edge}" stroke-width="1.6"/>
+        <path d="${escHtml(path)}" fill="none" stroke="${hot ? P.fail : P.edge}" stroke-width="1.6"/>
         <polygon points="${tx - 7},${ty - 4} ${tx - 7},${ty + 4} ${tx},${ty}" fill="${hot ? P.fail : P.edge}"/>
         <text x="${lx}" y="${ly - 16}" text-anchor="middle" font-size="9" font-weight="600" fill="${P.ink}" data-dxf-attr="SPAN_LABEL" data-dxf-owner="${this._esc(p.id)}">${this._esc(len)}</text>
         <text x="${lx}" y="${ly - 6}" text-anchor="middle" font-size="8.5" fill="${hot ? P.fail : P.muted}" data-dxf-attr="SPAN_CURRENT_LABEL" data-dxf-owner="${this._esc(p.id)}">${this._esc(amps)}</text>

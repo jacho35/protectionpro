@@ -289,7 +289,7 @@ const MobileUI = {
     const def = COMPONENT_DEFS[type];
     const iconSvg = Symbols.renderPaletteIcon(type);
     return `
-      <button class="mobile-component-item" data-type="${type}">
+      <button class="mobile-component-item" data-type="${escHtml(type)}">
         ${iconSvg}
         <span class="mobile-component-label">${escHtml(def.name)}</span>
       </button>`;
@@ -1181,7 +1181,7 @@ const MobileUI = {
       for (const [key, def] of Object.entries(this.MENU_PAGES)) {
         const n = this._pageItems(key).length + (def.route && document.getElementById('wire-route-mode') ? 1 : 0);
         if (!n) continue;
-        html += `<button class="mm-item mm-nav" data-page="${key}"><span class="mm-text"><span class="mm-label">${escHtml(def.title)}</span><span class="mm-sub">${escHtml(def.sub)}</span></span><span class="mm-count-badge">${n}</span><span class="mm-chev" aria-hidden="true">›</span></button>`;
+        html += `<button class="mm-item mm-nav" data-page="${escHtml(key)}"><span class="mm-text"><span class="mm-label">${escHtml(def.title)}</span><span class="mm-sub">${escHtml(def.sub)}</span></span><span class="mm-count-badge">${n}</span><span class="mm-chev" aria-hidden="true">›</span></button>`;
       }
       html += '</div>';
       // App

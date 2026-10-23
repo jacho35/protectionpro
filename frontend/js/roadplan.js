@@ -1317,7 +1317,7 @@ const RoadPlan = {
       const cls = this._junctionCls(j);
       const ca = this._res && this._res.conflictAreas ? this._res.conflictAreas.find(c => c.id === j.key) : null;
       return `<div class="rp-junc"><span><b>${j.name}</b> ${escHtml((this.road(j.main) || {}).name || '')} × ${escHtml((this.road(j.side) || {}).name || '')}</span>
-        <span class="rp-junc-row"><select data-rp-jcls="${escHtml(j.key)}" aria-label="Lighting class of ${j.name}">${opts.map(c => `<option${c === cls ? ' selected' : ''}>${c}</option>`).join('')}</select>
+        <span class="rp-junc-row"><select data-rp-jcls="${escHtml(j.key)}" aria-label="Lighting class of ${escHtml(j.name)}">${opts.map(c => `<option${c === cls ? ' selected' : ''}>${c}</option>`).join('')}</select>
         ${ca && !this._resStale ? (ca.pass ? '<span class="sl-badge ok">✓</span>' : ca.pass === false ? '<span class="sl-badge bad">✗</span>' : '') : ''}</span></div>`;
     }).join('') : '<div class="sl-hint">None. A road whose end lies on another road, or two crossing centrelines, make a junction — lit as a conflict area.</div>';
   },
@@ -1389,7 +1389,7 @@ const RoadPlan = {
         if (!(sec.width > 0)) continue;
         const a = ss.map(s => g.al.at(s, g.xs.off(s, sec.y0))), b = ss.map(s => g.al.at(s, g.xs.off(s, sec.y1)));
         const d = 'M' + a.map(p => `${p.x.toFixed(2)} ${p.y.toFixed(2)}`).join('L') + 'L' + b.reverse().map(p => `${p.x.toFixed(2)} ${p.y.toFixed(2)}`).join('L') + 'Z';
-        out.push(`<path d="${d}" fill="${RoadLight.SEC_FILL[sec.type] || 'var(--rl-verge)'}" class="rp-strip${r.id === this._selRoad ? ' sel' : ''}"/>`);
+        out.push(`<path d="${escHtml(d)}" fill="${RoadLight.SEC_FILL[sec.type] || 'var(--rl-verge)'}" class="rp-strip${r.id === this._selRoad ? ' sel' : ''}"/>`);
       }
       for (const y of [g.xs.kl, g.xs.kr]) {
         const pts = ss.map(s => g.al.at(s, g.xs.off(s, y)));
@@ -1471,7 +1471,7 @@ const RoadPlan = {
     const unit = q === 'E' ? 'lx' : 'cd/m²';
     leg.style.display = '';
     leg.innerHTML = `<b>${q === 'E' ? 'Illuminance, maintained' : 'Luminance (each point seen from 60 m back in its lane)'}</b>
-      <div class="rp-ramp" style="background:linear-gradient(90deg,${RP_RAMP.join(',')})" role="img" aria-label="Colour scale 0 to ${this._fmt(vmax, 1)} ${unit}"></div>
+      <div class="rp-ramp" style="background:linear-gradient(90deg,${RP_RAMP.join(',')})" role="img" aria-label="Colour scale 0 to ${this._fmt(vmax, 1)} ${escHtml(unit)}"></div>
       <div class="rp-ramp-ax"><span>0</span><span>${this._fmt(vmax / 2, q === 'E' ? 1 : 2)}</span><span>${this._fmt(vmax, q === 'E' ? 1 : 2)} ${unit}</span></div>
       ${this._showIso ? `<div class="sl-hint">Lines at ${levels.map(v => +v.toFixed(2)).join(', ')} ${unit}</div>` : ''}`;
   },
@@ -1532,7 +1532,7 @@ const RoadPlan = {
           const [px, py] = S(p.x, p.y);
           const rs = res.find(x => x.id === sg.id);
           const cls = rs ? (rs.pass ? ' ok' : ' bad') : '';
-          if (v.z > 0.6) out.push(`<g class="rp-seglab${cls}" transform="translate(${px.toFixed(1)} ${py.toFixed(1)})"><rect x="-14" y="-9" width="28" height="18" rx="4"/><text text-anchor="middle" y="4">${sg.name}</text></g>`);
+          if (v.z > 0.6) out.push(`<g class="rp-seglab${escHtml(cls)}" transform="translate(${px.toFixed(1)} ${py.toFixed(1)})"><rect x="-14" y="-9" width="28" height="18" rx="4"/><text text-anchor="middle" y="4">${sg.name}</text></g>`);
         }
         // direction of chainage
         const m = g.al.at(g.al.length * 0.5);
@@ -1571,7 +1571,7 @@ const RoadPlan = {
       }
     }
     // kerb picked so far / picked DXF chain
-    const poly = (pts, cls) => pts && pts.length > 1 ? `<path d="M${pts.map(q => S(q[0], q[1]).map(t => t.toFixed(1)).join(' ')).join('L')}" class="${cls}"/>` : '';
+    const poly = (pts, cls) => pts && pts.length > 1 ? `<path d="M${pts.map(q => S(q[0], q[1]).map(t => t.toFixed(1)).join(' ')).join('L')}" class="${escHtml(cls)}"/>` : '';
     if (this._kerbDraft) out.push(poly(this._kerbDraft.a, 'rp-draft done'));
     if (this._picked) {
       out.push(poly(this._picked, 'rp-picked'));
@@ -1632,7 +1632,7 @@ const RoadPlan = {
   _xsBar(des) {
     const lay = RoadLight._layout(des);
     return `<div class="rp-xs" role="img" aria-label="Cross-section, left to right looking up the chainage">${lay.secs.filter(s => s.width > 0).map(s =>
-      `<div style="flex:${s.width};background:${RoadLight.SEC_FILL[s.type] || 'var(--rl-verge)'}" class="rp-xs-s ${s.type}" title="${escHtml((s.name || RoadLight._secName(s, des)) + ' ' + s.width + ' m' + (s.cls ? ' · ' + s.cls : ''))}"><span>${this._fmt(s.width, 1)}${s.cls ? ' · ' + escHtml(s.cls) : ''}</span></div>`).join('')}</div>`;
+      `<div style="flex:${escHtml(s.width)};background:${RoadLight.SEC_FILL[s.type] || 'var(--rl-verge)'}" class="rp-xs-s ${escHtml(s.type)}" title="${escHtml((s.name || RoadLight._secName(s, des)) + ' ' + s.width + ' m' + (s.cls ? ' · ' + s.cls : ''))}"><span>${this._fmt(s.width, 1)}${s.cls ? ' · ' + escHtml(s.cls) : ''}</span></div>`).join('')}</div>`;
   },
   _panelShape() {
     const r = this.selRoad;
@@ -1646,7 +1646,7 @@ const RoadPlan = {
         k++;
         if (e.type === 'line') return `<tr><td>${k}</td><td>Straight</td><td class="sl-mono">${this._fmt(e.s1 - e.s0, 1)}</td><td>—</td><td>—</td></tr>`;
         const v = r.ip[e.vertex];
-        return `<tr><td>${k}</td><td>Arc</td><td class="sl-mono">${this._fmt(e.s1 - e.s0, 1)}</td><td><input type="number" min="0" step="5" class="sl-in-num" data-rp-ipr="${e.vertex}" value="${escHtml(v.r ?? '')}" placeholder="${Math.round(e.R)}" aria-label="Radius at corner ${e.vertex}"></td><td>${this._fmt(e.turn, 0)}° ${e.dir}</td></tr>`;
+        return `<tr><td>${k}</td><td>Arc</td><td class="sl-mono">${this._fmt(e.s1 - e.s0, 1)}</td><td><input type="number" min="0" step="5" class="sl-in-num" data-rp-ipr="${escHtml(e.vertex)}" value="${escHtml(v.r ?? '')}" placeholder="${Math.round(e.R)}" aria-label="Radius at corner ${escHtml(e.vertex)}"></td><td>${this._fmt(e.turn, 0)}° ${e.dir}</td></tr>`;
       }).join('')}</tbody><tfoot><tr><td></td><td><b>Total</b></td><td class="sl-mono"><b>${this._fmt(g.al.length, 1)}</b></td><td></td><td></td></tr></tfoot></table>
       <div class="sl-hint">A blank radius takes the road's bend radius; a radius that does not fit between two corners is reduced.</div>`;
     } else {
@@ -1716,7 +1716,7 @@ const RoadPlan = {
       <div class="rp-actions"><button class="btn-small" data-rp-step="1">← Road shape</button><button class="btn-small btn-primary" data-rp-step="3">Calculate the light →</button></div></div>`;
   },
   _chips(checks) {
-    return (checks || []).map(c => `<span class="rp-chip ${c.pass ? 'ok' : 'bad'}" title="Required ${c.op === '>=' ? '≥' : '≤'} ${c.req} ${escHtml(c.unit || '')}">${escHtml(c.label)} ${this._fmt(c.value, c.key === 'TI' ? 1 : 2)}</span>`).join('');
+    return (checks || []).map(c => `<span class="rp-chip ${c.pass ? 'ok' : 'bad'}" title="Required ${c.op === '>=' ? '≥' : '≤'} ${escHtml(c.req)} ${escHtml(c.unit || '')}">${escHtml(c.label)} ${this._fmt(c.value, c.key === 'TI' ? 1 : 2)}</span>`).join('');
   },
   _panelResults() {
     const res = this._res;

@@ -188,21 +188,21 @@ const PropWindow = {
     if (!sections.some(s => s.key === this._section)) this._section = sections[0].key;
 
     this.navEl.innerHTML = `<div class="pw-nav-title">Sections</div>` + sections.map(s =>
-      `<button type="button" class="pw-nav-item" data-sec="${s.key}">
+      `<button type="button" class="pw-nav-item" data-sec="${escHtml(s.key)}">
         <span class="pw-nav-label">${escHtml(s.label)}</span>
         <span class="pw-nav-count">${s.key.startsWith('__') ? '' : s.fields.length}</span>
       </button>`).join('');
 
     this.mainEl.innerHTML = sections.map(s => {
       if (s.html) {
-        return `<section class="pw-section" data-sec="${s.key}">
+        return `<section class="pw-section" data-sec="${escHtml(s.key)}">
         <h3 class="pw-section-title">${escHtml(s.label)}</h3>
         <div class="pw-field pw-field--wide" data-search="trip unit ir tr im isd tsd ii long time short time instantaneous magnetic thermal pickup">${s.html}</div></section>`;
       }
       const blurb = PROP_SECTION_BLURBS[multi ? s.key : '__single'] || '';
       const body = s.key === '__position' ? this._positionHtml(comp)
         : s.fields.map(f => this._fieldHtml(comp, def, f)).join('');
-      return `<section class="pw-section" data-sec="${s.key}">
+      return `<section class="pw-section" data-sec="${escHtml(s.key)}">
         <h3 class="pw-section-title">${escHtml(s.label)}</h3>
         ${blurb ? `<p class="pw-blurb">${escHtml(blurb)}</p>` : ''}
         <div class="pw-grid">${body}</div>
@@ -320,8 +320,8 @@ const PropWindow = {
     const rot = [0, 90, 180, 270].map(r =>
       `<option value="${r}" ${comp.rotation === r ? 'selected' : ''}>${r}°</option>`).join('');
     return `
-      <div class="pw-field"><div class="prop-row"><label>X</label><input type="number" data-field="__x" value="${comp.x}" step="${SNAP_SIZE}"></div></div>
-      <div class="pw-field"><div class="prop-row"><label>Y</label><input type="number" data-field="__y" value="${comp.y}" step="${SNAP_SIZE}"></div></div>
+      <div class="pw-field"><div class="prop-row"><label>X</label><input type="number" data-field="__x" value="${numAttr(comp.x)}" step="${SNAP_SIZE}"></div></div>
+      <div class="pw-field"><div class="prop-row"><label>Y</label><input type="number" data-field="__y" value="${numAttr(comp.y)}" step="${SNAP_SIZE}"></div></div>
       <div class="pw-field"><div class="prop-row"><label>Rotation</label><select data-field="__rotation">${rot}</select></div></div>`;
   },
 

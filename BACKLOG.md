@@ -420,6 +420,12 @@ Help ▸ Guides (`frontend/js/help-guides.js`, pictures in `frontend/img/help/`)
 
 ## Completed
 
+### Security follow-ups (2026-10-23)
+- **Sign-in limits behind one proxy**: nginx takes the client address from the proxy's forwarded header (trusted only from private addresses); the backend believes `X-Real-IP` only when `PP_TRUST_PROXY` is set (docker-compose sets it), so a bare uvicorn can't be talked into a fresh allowance. The README says the upstream proxy must send `X-Forwarded-For`.
+- **Raw HTML interpolation sweep**: about 500 attribute values were escaped (`escHtml`) or coerced to numbers (`numAttr`) across the frontend; `escHtml` has a fast path for text with nothing to escape. `testing/lint/raw-interp.mjs` now understands the safe patterns, can apply the plain cases itself (`--fix`), and CI fails if the unreviewed count grows (`--max`). What is left is drawing geometry, literal-only conditionals and already-escaped fragments.
+- Plan-image clean-up: an administrator's sweep clears every user's stale orphans; the sign-in limiter forgets idle keys.
+- Known limit: a copy of another user's project ("Save as") keeps pointing at that user's plan images, which stop loading for the copy's owner if their access to the original ends.
+
 ### Security hardening (2026-10-23)
 - **Plan images are private** to the uploader and the people the project is shared with (`PlanImage.owner_id`, backfilled from the project owner; view for reading, edit for changing/deleting; unreachable images answer 404; an attached image is never moved by a later claim; clean-up sweeps only the caller's own orphans; `nosniff`).
 - **Sign-in throttle**: failed sign-ins per account and per address, plus a per-address limit on register / forgot / reset / device start, with a second layer in nginx on `/api/auth/`.

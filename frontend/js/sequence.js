@@ -182,7 +182,7 @@ const SOO = {
       const sev = { critical: '⛔', warning: '⚠', marginal: '△' };
       h += '<div class="soo-viol">';
       for (const v of bus.violations) {
-        h += `<div class="soo-viol-item soo-sev-${v.severity}">${sev[v.severity] || ''} ${escHtml(v.message)}</div>`;
+        h += `<div class="soo-viol-item soo-sev-${escHtml(v.severity)}">${sev[v.severity] || ''} ${escHtml(v.message)}</div>`;
       }
       h += '</div>';
     }
@@ -243,7 +243,7 @@ const SOO = {
       const color = roleColor[o.role] || '#616161';
       const faded = o.resets ? ' opacity="0.4"' : '';
       s += `<text x="${padL - 8}" y="${y + barH - 1}" font-size="10" text-anchor="end" fill="currentColor">${escHtml(o.name)}</text>`;
-      s += `<rect x="${xa}" y="${y}" width="${xb - xa}" height="${barH}" rx="2" fill="${color}"${faded}/>`;
+      s += `<rect x="${xa}" y="${y}" width="${xb - xa}" height="${barH}" rx="2" fill="${escHtml(color)}"${faded}/>`;
       if (o.resets) {
         s += `<text x="${xb + 4}" y="${y + barH - 1}" font-size="9" fill="currentColor" opacity="0.6">resets</text>`;
       } else if (o.name === bus.clearedBy) {

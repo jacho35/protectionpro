@@ -2081,6 +2081,7 @@ function numAttr(v) {
 
 // Escape a string for safe interpolation into HTML/SVG markup
 function escHtml(str) {
+  if (typeof str === 'string' && !/[&<>"']/.test(str)) return str;   // nothing to escape: the common case
   return String(str ?? '')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')

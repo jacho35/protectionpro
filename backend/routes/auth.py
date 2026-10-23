@@ -1,6 +1,7 @@
 """Authentication and invite routes."""
 
 import hashlib
+import os
 import secrets
 import time
 from datetime import datetime, timedelta, timezone
@@ -43,8 +44,14 @@ def _reset_limits():
     _forgot_hits.clear()
 
 
+# X-Real-IP is only believed when the deployment says a proxy sets it (docker-compose does:
+# nginx puts the real client address there). Run bare, a caller could send any value.
+_TRUST_PROXY = os.environ.get("PP_TRUST_PROXY", "") not in ("", "0", "false")
+
+
 def _client_ip(request: Request) -> str:
-    ip = request.headers.get("x-real-ip") or (request.client.host if request.client else "")
+    peer = request.client.host if request.client else ""
+    ip = (request.headers.get("x-real-ip") if _TRUST_PROXY else None) or peer
     return (ip or "unknown").strip()[:64]
 
 
@@ -59,6 +66,9 @@ def _recent(key: str) -> list[float]:
 
 
 def _count(key: str):
+    if len(_hits) > 5000:   # keys nobody comes back to would otherwise sit there for good
+        for k in list(_hits):
+            _recent(k)
     _hits[key] = _recent(key) + [_now()]
 
 

@@ -103,7 +103,7 @@ const UI = {
       const okLabel = okText || (kind === 'alert' ? 'OK' : kind === 'prompt' ? 'OK' : 'OK');
       const cancelLabel = cancelText || 'Cancel';
 
-      let bodyHtml = `<div class="modal-header"><h3 id="${titleId}"></h3></div>`;
+      let bodyHtml = `<div class="modal-header"><h3 id="${escHtml(titleId)}"></h3></div>`;
       bodyHtml += `<div class="modal-body"><p class="ui-dialog-message"></p>`;
       if (kind === 'prompt') {
         bodyHtml += `<input type="text" class="ui-dialog-input" />`;

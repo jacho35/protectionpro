@@ -661,12 +661,12 @@ const Transient = {
     (spec.markers || []).forEach((mk, mi) => {
       if (mk.t == null || mk.t < xMin || mk.t > xMax) return;
       const x = X(mk.t);
-      g += `<line x1="${x}" y1="${padT}" x2="${x}" y2="${padT + plotH}" stroke="${mk.color || P.tickText}" stroke-width="1" opacity="0.6"${mk.dashed ? ' stroke-dasharray="3 2"' : ''}/>`;
-      g += `<text x="${x + 3}" y="${padT + 9 + (mi % 3) * 9}" font-size="8" fill="${mk.color || P.tickText}">${this._esc(mk.label)}</text>`;
+      g += `<line x1="${x}" y1="${padT}" x2="${x}" y2="${padT + plotH}" stroke="${escHtml(mk.color || P.tickText)}" stroke-width="1" opacity="0.6"${mk.dashed ? ' stroke-dasharray="3 2"' : ''}/>`;
+      g += `<text x="${x + 3}" y="${padT + 9 + (mi % 3) * 9}" font-size="8" fill="${escHtml(mk.color || P.tickText)}">${this._esc(mk.label)}</text>`;
     });
     for (const s of spec.series) {
       const pts = s.values.map((v, i) => `${X(xs[i]).toFixed(1)},${Y(v).toFixed(1)}`).join(' ');
-      g += `<polyline points="${pts}" fill="none" stroke="${s.color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
+      g += `<polyline points="${pts}" fill="none" stroke="${escHtml(s.color)}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
     }
     // direct end-labels, nudged apart
     const ends = spec.series.map(s => ({ y: Y(s.values[s.values.length - 1]), name: s.name, color: s.color }))
@@ -675,8 +675,8 @@ const Transient = {
     for (const e of ends) { e.ly = Math.max(e.y, prev + 12); prev = e.ly; }
     for (const e of ends) {
       const x0 = W - padR;
-      if (Math.abs(e.ly - e.y) > 2) g += `<line x1="${x0 + 2}" y1="${e.y}" x2="${x0 + 12}" y2="${e.ly}" stroke="${e.color}" stroke-width="1" opacity="0.7"/>`;
-      g += `<line x1="${x0 + 13}" y1="${e.ly}" x2="${x0 + 25}" y2="${e.ly}" stroke="${e.color}" stroke-width="2"/>`;
+      if (Math.abs(e.ly - e.y) > 2) g += `<line x1="${x0 + 2}" y1="${numAttr(e.y)}" x2="${x0 + 12}" y2="${numAttr(e.ly)}" stroke="${escHtml(e.color)}" stroke-width="1" opacity="0.7"/>`;
+      g += `<line x1="${x0 + 13}" y1="${numAttr(e.ly)}" x2="${x0 + 25}" y2="${numAttr(e.ly)}" stroke="${escHtml(e.color)}" stroke-width="2"/>`;
       g += `<text x="${x0 + 29}" y="${e.ly + 3}" font-size="9" fill="${P.inkSec}">${this._esc(e.name)}</text>`;
     }
     g += `<line class="ts-xhair" x1="0" y1="${padT}" x2="0" y2="${padT + plotH}" stroke="${P.tickText}" stroke-width="1" visibility="hidden"/>`;

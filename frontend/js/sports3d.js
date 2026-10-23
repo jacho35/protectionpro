@@ -323,7 +323,7 @@ const Sports3D = {
     if (!C) return '';
     const { fr, L } = C, s = this._selected(room, L3.sel);
     const fx = (v) => (+v || 0).toFixed(2);
-    const num = (attr, key, label, val, step, extra = '') => `<label class="l3-field"><span>${label}</span><input type="number" data-${attr}="${key}" value="${val}" step="${step}" ${extra}></label>`;
+    const num = (attr, key, label, val, step, extra = '') => `<label class="l3-field"><span>${label}</span><input type="number" data-${attr}="${escHtml(key)}" value="${escHtml(val)}" step="${step}" ${extra}></label>`;
     const head = (name, kind, dot) => `<div class="l3-props-head"><i style="background:${dot}"></i><div><b>${escHtml(name || '')}</b><small>${kind}</small></div>
       <button type="button" class="l3-icon l3-del" data-l3="del" aria-label="Delete" title="Delete">✕</button></div>`;
     const foot = `<div class="l3-props-foot"><span>On this field</span><b>${L.masts.length} masts · ${SportsCalc.floodCount(room)} floods · ${L.stands.length} stands</b></div>`;

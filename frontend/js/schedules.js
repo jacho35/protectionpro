@@ -43,7 +43,7 @@ const Schedules = {
     const ws = document.getElementById('schedules-workspace');
     if (!ws || this._built) return;
     const methodOpts = IEC_INSTALLATION_METHODS
-      .map(m => `<option value="${m.code}"${m.code === 'B1' ? ' selected' : ''}>${escHtml(m.code)} — ${escHtml(m.description)}</option>`)
+      .map(m => `<option value="${escHtml(m.code)}"${m.code === 'B1' ? ' selected' : ''}>${escHtml(m.code)} — ${escHtml(m.description)}</option>`)
       .join('');
     const groupOpts = IecAmpacity.groupingOptions('B1')
       .map(([k, l]) => `<option value="${k}">${escHtml(l)}</option>`)

@@ -159,7 +159,7 @@ const AreaCalc = {
 
   // ─── Panels ───
   _num_(room, key, label, unit, step, extra, L) {
-    return `<label class="plan-field"><span>${label}</span><input type="number" data-ac="${key}" value="${L[key]}" step="${step}" ${extra || ''} style="width:100%"><small>${unit}</small></label>`;
+    return `<label class="plan-field"><span>${label}</span><input type="number" data-ac="${escHtml(key)}" value="${escHtml(L[key])}" step="${step}" ${extra || ''} style="width:100%"><small>${unit}</small></label>`;
   },
 
   panel(room) {

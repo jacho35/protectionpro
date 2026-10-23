@@ -328,7 +328,7 @@ const Interlocking = {
       const v = !!this._values[l.fromNode];
       const sel = this._selectedLink === l.id;
       const c1x = a.x + 50, c2x = b.x - 50;
-      parts.push(`<path class="il-link" data-link="${l.id}" d="M${a.x},${a.y} C${c1x},${a.y} ${c2x},${b.y} ${b.x},${b.y}" stroke="${sel ? '#3498db' : this._color(v)}" stroke-width="${sel ? 3.5 : 2.5}" fill="none"/>`);
+      parts.push(`<path class="il-link" data-link="${l.id}" d="M${numAttr(a.x)},${numAttr(a.y)} C${c1x},${numAttr(a.y)} ${c2x},${numAttr(b.y)} ${numAttr(b.x)},${numAttr(b.y)}" stroke="${sel ? '#3498db' : this._color(v)}" stroke-width="${sel ? 3.5 : 2.5}" fill="none"/>`);
     });
 
     // Pending wire
@@ -336,7 +336,7 @@ const Interlocking = {
       const from = this._node(this._pending.fromNode);
       if (from) {
         const a = this._outPort(from);
-        parts.push(`<path d="M${a.x},${a.y} L${this._pending.x},${this._pending.y}" stroke="#3498db" stroke-width="2" stroke-dasharray="5 4" fill="none"/>`);
+        parts.push(`<path d="M${numAttr(a.x)},${numAttr(a.y)} L${numAttr(this._pending.x)},${numAttr(this._pending.y)}" stroke="#3498db" stroke-width="2" stroke-dasharray="5 4" fill="none"/>`);
       }
     }
 
@@ -378,12 +378,12 @@ const Interlocking = {
     const clickable = this._sim ? ' il-clickable' : '';
     return `
       <g class="il-node il-input${clickable}" data-node="${n.id}" data-kind="input">
-        <rect x="${n.x}" y="${n.y}" width="${d.w}" height="${d.h}" rx="17"
+        <rect x="${n.x}" y="${n.y}" width="${numAttr(d.w)}" height="${numAttr(d.h)}" rx="17"
               fill="${v ? '#1e3a2a' : '#2a2f3a'}" stroke="${sel ? '#3498db' : this._color(v)}" stroke-width="${sel ? 2.5 : 1.8}"/>
         <circle cx="${n.x + 14}" cy="${n.y + d.h / 2}" r="5" fill="${this._color(v)}"/>
         <text x="${n.x + 26}" y="${n.y + d.h / 2 + 4}" fill="#e6e9ef" font-size="12">${this._esc(label)}${n.invert ? ' (¬)' : ''}</text>
         <text x="${n.x + d.w - 8}" y="${n.y + 12}" fill="#8892a0" font-size="8" text-anchor="end">${n.src === 'cb' ? 'CB' : 'MAN'}</text>
-        <circle class="il-port il-port-out" data-node="${n.id}" cx="${p.x}" cy="${p.y}" r="6" fill="${this._color(v)}" stroke="#11151c" stroke-width="1.5"/>
+        <circle class="il-port il-port-out" data-node="${n.id}" cx="${numAttr(p.x)}" cy="${numAttr(p.y)}" r="6" fill="${this._color(v)}" stroke="#11151c" stroke-width="1.5"/>
       </g>`;
   },
 
@@ -410,10 +410,10 @@ const Interlocking = {
     const k = n.arity || (n.op === 'NOT' ? 1 : 2);
     for (let i = 0; i < k; i++) {
       const ip = this._inPort(n, i);
-      ports += `<circle class="il-port il-port-in" data-node="${n.id}" data-port="${i}" cx="${ip.x}" cy="${ip.y}" r="6" fill="#2a2f3a" stroke="#8892a0" stroke-width="1.5"/>`;
+      ports += `<circle class="il-port il-port-in" data-node="${n.id}" data-port="${i}" cx="${numAttr(ip.x)}" cy="${numAttr(ip.y)}" r="6" fill="#2a2f3a" stroke="#8892a0" stroke-width="1.5"/>`;
     }
     const op = this._outPort(n);
-    ports += `<circle class="il-port il-port-out" data-node="${n.id}" cx="${op.x}" cy="${op.y}" r="6" fill="${this._color(v)}" stroke="#11151c" stroke-width="1.5"/>`;
+    ports += `<circle class="il-port il-port-out" data-node="${n.id}" cx="${numAttr(op.x)}" cy="${numAttr(op.y)}" r="6" fill="${this._color(v)}" stroke="#11151c" stroke-width="1.5"/>`;
     return `
       <g class="il-node il-gate-node" data-node="${n.id}" data-kind="gate">
         ${shape}${bubble}
@@ -438,9 +438,9 @@ const Interlocking = {
     const activeFill = v ? meta.color : '#2a2f3a';
     return `
       <g class="il-node il-output" data-node="${n.id}" data-kind="output">
-        <rect x="${n.x}" y="${n.y}" width="${d.w}" height="${d.h}" rx="6"
+        <rect x="${n.x}" y="${n.y}" width="${numAttr(d.w)}" height="${numAttr(d.h)}" rx="6"
               fill="${activeFill}" stroke="${sel ? '#3498db' : (v ? meta.color : '#8892a0')}" stroke-width="${sel ? 2.5 : 1.8}"/>
-        <circle class="il-port il-port-in" data-node="${n.id}" data-port="0" cx="${ip.x}" cy="${ip.y}" r="6" fill="#2a2f3a" stroke="#8892a0" stroke-width="1.5"/>
+        <circle class="il-port il-port-in" data-node="${n.id}" data-port="0" cx="${numAttr(ip.x)}" cy="${numAttr(ip.y)}" r="6" fill="#2a2f3a" stroke="#8892a0" stroke-width="1.5"/>
         <text x="${n.x + 14}" y="${n.y + 16}" fill="${v ? '#11151c' : '#8892a0'}" font-size="8" font-weight="bold">${this._esc(meta.tag)}</text>
         <text x="${n.x + 14}" y="${n.y + 32}" fill="${v ? '#11151c' : '#e6e9ef'}" font-size="11">${this._esc(label)}</text>
       </g>`;
@@ -706,7 +706,7 @@ const Interlocking = {
     outputs.forEach(o => {
       const meta = this.OUTPUT_TYPES[o.otype] || this.OUTPUT_TYPES.alarm;
       const lbl = o.label || (((o.otype === 'block_close' || o.otype === 'trip') && o.cbId && AppState.components.get(o.cbId)) ? `${meta.label}: ${AppState.components.get(o.cbId).props?.name || o.cbId}` : meta.label);
-      html += `<li><span class="il-badge" style="background:${meta.color}">${this._esc(meta.tag)}</span> ${this._esc(lbl)} — <b>${blockStats[o.id]}</b> / ${total}</li>`;
+      html += `<li><span class="il-badge" style="background:${escHtml(meta.color)}">${this._esc(meta.tag)}</span> ${this._esc(lbl)} — <b>${blockStats[o.id]}</b> / ${total}</li>`;
     });
     html += `</ul>`;
     body.innerHTML = html;
