@@ -355,17 +355,20 @@ const Light3D = {
     v.line({ pts: G.P.concat([G.P[0]]).map(p => [p[0], p[1], 0]), stroke: rendered ? '#3a3f48' : '#6b7280', lw: 1.2, layer: 0.6 });
     if (!rendered) v.line({ pts: G.P.concat([G.P[0]]).map(p => [p[0], p[1], G.H]), stroke: '#8a919b', lw: 1, dash: [5, 4], layer: 2 });
 
-    // objects
-    if (rendered) this._patches(v, res.patches, 3, rr, G);
+    // objects (rendered: an object moved or resized since the calculation is drawn as a
+    // plain box where it now is, its old patches dropped)
+    const moved = rendered ? this._movedObjs(room, rr) : null;
+    if (rendered) this._patches(v, res.patches, 3, rr, G, moved);
     for (const o of sc.objects) {
       const on = this.sel === 'o:' + o.id;
       const ghost = o.blocks === false;
-      if (rendered && !ghost && !on) continue;
+      const plain = rendered && moved.has(o.id) && !ghost;
+      if (rendered && !ghost && !on && !plain) continue;
       const k = L3_KIND[o.kind] || L3_KIND.box;
       const c = this.M(o, f), h = this._objH(o, G), z0 = +o.z || 0;
       V3D.box(v, c, o.w, o.d, z0, h, o.rot || 0, {
         color: k.color, pick: 'o:' + o.id, stroke: on ? selStroke : 'rgba(26,26,46,.35)', lw: on ? 2 : 0.8,
-        alpha: ghost ? 0.45 : (rendered ? 0 : 1), dash: ghost ? [4, 3] : null, outline: rendered && on,
+        alpha: ghost ? 0.45 : (rendered && !plain ? 0 : 1), dash: ghost ? [4, 3] : null, outline: rendered && on && !plain,
       });
       if (o.kind === 'desk' && z0 > 0.2 && !rendered) this._legs(v, c, o, z0);
     }
@@ -455,8 +458,14 @@ const Light3D = {
         fill: RoomCalc._color(val / top), alpha: fresh ? 0.92 : 0.4, layer: 0, bias: -1e5 });
     }
   },
-  // Rendered light: patches of one kind (0 floor, 2 walls, 3 objects).
-  _patches(v, P, kind, rr, G) {
+  // Ids of the room's objects whose obstacle geometry differs from the calculated one.
+  _movedObjs(room, rr) {
+    const was = new Set(rr.obsGeo || []);
+    const now = (this.requestParts(room, this.f()) || {}).obstacles || [];
+    return new Set(now.filter(o => !was.has(JSON.stringify(o))).map(o => o.id));
+  },
+  // Rendered light: patches of one kind (0 floor, 2 walls, 3 objects); `skip` = object ids left out (with it, deleted objects too).
+  _patches(v, P, kind, rr, G, skip) {
     const sc = this.scene(this.room());
     const ids = rr.obsIds || [];
     const byIdx = ids.map(id => sc.objects.find(x => x.id === id) || null);
@@ -464,6 +473,7 @@ const Light3D = {
     if (kind === 2 && this.walls === 'none') return;
     for (let i = 0; i < P.E.length; i++) {
       if (P.kind[i] !== kind) continue;
+      if (skip && kind === 3 && (!byIdx[P.src[i]] || skip.has(byIdx[P.src[i]].id))) continue;
       const c = P.c[i], u = P.u[i], w = P.v[i];
       let n = null, col = base[kind];
       if (kind === 2 || kind === 3) {
