@@ -20,18 +20,39 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,   # bearer-token auth: no cookies, so nothing for a cross-site page to ride on
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+_SECURITY_HEADERS = {
+    "Content-Security-Policy": (
+        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'"
+    ),
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "same-origin",
+    "X-Frame-Options": "DENY",
+}
+
+
+@app.middleware("http")
+async def security_headers(request, call_next):
+    response = await call_next(request)
+    docs = request.url.path in ("/docs", "/redoc", "/docs/oauth2-redirect")   # Swagger loads from a CDN
+    for k, v in _SECURITY_HEADERS.items():
+        if docs and k == "Content-Security-Policy":
+            continue
+        response.headers.setdefault(k, v)
+    return response
+
+
 # Public liveness/first-run endpoint. Unauthenticated on purpose (the
-# docker-compose healthcheck hits it, and the frontend uses `users` to decide
+# docker-compose healthcheck hits it, and the frontend uses `setup_done` to decide
 # whether to show first-run admin signup vs login).
 @app.get("/api/health")
 def health(db: Session = Depends(get_db)):
     from . import mailer
-    return {"ok": True, "users": db.query(User).count(),
+    return {"ok": True, "setup_done": db.query(User).count() > 0,
             "email_configured": mailer.get_config(db) is not None}
 
 

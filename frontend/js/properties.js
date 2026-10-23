@@ -2842,18 +2842,18 @@ I_base = S_base / (√3 × V) = ${base * 1000} / (√3 × ${vkv}) = ${Ibase.toFi
           </div>
           <div class="prop-row">
             <label>Date</label>
-            <input type="date" data-project-field="date" value="${d.date || ''}" />
+            <input type="date" data-project-field="date" value="${this._esc(d.date || '')}" />
           </div>
         </div>
         <div class="prop-section">
           <div class="prop-section-title">Company Logo</div>
           <div class="logo-upload-area">
-            ${d.companyLogo
-              ? `<div class="logo-preview"><img src="${d.companyLogo}" alt="Company Logo" /><button class="btn-remove-logo" title="Remove logo">&times;</button></div>`
+            ${this._safeLogo(d.companyLogo)
+              ? `<div class="logo-preview"><img src="${this._esc(this._safeLogo(d.companyLogo))}" alt="Company Logo" /><button class="btn-remove-logo" title="Remove logo">&times;</button></div>`
               : '<div class="logo-placeholder">No logo uploaded</div>'}
             <label class="btn btn-small btn-secondary logo-upload-btn">
-              ${d.companyLogo ? 'Change Logo' : 'Upload Logo'}
-              <input type="file" accept="image/*" id="logo-file-input" hidden />
+              ${this._safeLogo(d.companyLogo) ? 'Change Logo' : 'Upload Logo'}
+              <input type="file" accept="image/png,image/jpeg,image/gif,image/webp" id="logo-file-input" hidden />
             </label>
           </div>
         </div>
@@ -2917,6 +2917,11 @@ I_base = S_base / (√3 × V) = ${base * 1000} / (√3 × ${vkv}) = ${Ibase.toFi
       </div>`;
   },
 
+  // A logo is only ever a raster data URL; anything else in the project JSON is ignored.
+  _safeLogo(v) {
+    return typeof v === 'string' && /^data:image\/(png|jpe?g|gif|webp);base64,[A-Za-z0-9+/=]+$/.test(v) ? v : '';
+  },
+
   _esc(val) {
     if (!val) return '';
     return String(val).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -2949,6 +2954,7 @@ I_base = S_base / (√3 × V) = ${base * 1000} / (√3 × ${vkv}) = ${Ibase.toFi
         }
         const reader = new FileReader();
         reader.onload = () => {
+          if (!this._safeLogo(reader.result)) { UI.toast('The logo must be a PNG, JPEG, GIF or WebP image.', 'error'); return; }
           AppState.projectDetails.companyLogo = reader.result;
           AppState.dirty = true;
           this.clear(); // re-render to show preview

@@ -1223,9 +1223,9 @@ document.addEventListener('DOMContentLoaded', () => {
       const withstandIcon = c.fault_withstand_ok ? '✓' : '✗';
       const cum = c.cumulative_voltage_drop_pct;
       const vdropCell = `${vdropIcon} ${c.voltage_drop_pct.toFixed(2)}%` + (cum != null
-        ? ` <span style="cursor:help;border-bottom:1px dotted #888;font-size:10px;color:#888" title="From ${(c.voltage_drop_origin || 'origin').replace(/"/g, '&quot;')}">Σ ${cum.toFixed(2)}%</span>` : '');
+        ? ` <span style="cursor:help;border-bottom:1px dotted #888;font-size:10px;color:#888" title="From ${escHtml(c.voltage_drop_origin || 'origin')}">Σ ${cum.toFixed(2)}%</span>` : '');
       const olCell = c.overload_protection_ok == null ? '<span style="color:#9e9e9e">—</span>'
-        : `<span style="cursor:help" title="${(c.overload_protection_note || '').replace(/"/g, '&quot;')}">${c.overload_protection_ok ? '✓' : '✗'}</span>`;
+        : `<span style="cursor:help" title="${escHtml(c.overload_protection_note || '')}">${c.overload_protection_ok ? '✓' : '✗'}</span>`;
       const wsTitle = c.clearing_time_s != null ? ` title="cleared in ${(c.clearing_time_s * 1000).toFixed(0)} ms"` : '';
       const statusBadge = c.status === 'pass' ? '<span style="color:#4caf50;font-weight:600">PASS</span>'
         : c.status === 'warning' ? '<span style="color:#f57c00;font-weight:600">WARN</span>'
@@ -1236,14 +1236,14 @@ document.addEventListener('DOMContentLoaded', () => {
         <td>${ends}</td>
         <td>${c.load_current_a.toFixed(1)}</td>
         <td>${thermalIcon} ${c.thermal_loading_pct.toFixed(0)}%${c.ampacity_derated
-          ? ` <span style="cursor:help;border-bottom:1px dotted #888;font-size:10px;color:#888" title="${(c.ampacity_conditions || '').replace(/"/g, '&quot;')}">↓ ${c.derated_ampacity_a}A</span>`
+          ? ` <span style="cursor:help;border-bottom:1px dotted #888;font-size:10px;color:#888" title="${escHtml(c.ampacity_conditions || '')}">↓ ${c.derated_ampacity_a}A</span>`
           : ''}</td>
         <td>${vdropCell}</td>
         <td>${olCell}</td>
         <td${wsTitle}>${withstandIcon}</td>
         <td>${statusBadge}</td>
         <td>${(c.status === 'warning' || c.status === 'unknown') && c.warning_reasons && c.warning_reasons.length > 0
-          ? `<span style="cursor:help;border-bottom:1px dotted ${c.status === 'unknown' ? '#9e9e9e' : '#f57c00'};color:${c.status === 'unknown' ? '#9e9e9e' : '#f57c00'}" title="${c.warning_reasons.join('; ').replace(/"/g, '&quot;')}">ⓘ ${c.status === 'unknown' ? 'Needs load flow' : 'Near limits'}</span>`
+          ? `<span style="cursor:help;border-bottom:1px dotted ${c.status === 'unknown' ? '#9e9e9e' : '#f57c00'};color:${c.status === 'unknown' ? '#9e9e9e' : '#f57c00'}" title="${escHtml(c.warning_reasons.join('; '))}">ⓘ ${c.status === 'unknown' ? 'Needs load flow' : 'Near limits'}</span>`
           : (c.recommended_cable || '—')}</td>
       </tr>`;
       if (c.issues.length > 0) {

@@ -62,10 +62,10 @@ def _register(client, email, password="password123", invite=None, name=""):
     return client.post("/api/auth/register", json=body)
 
 
-def test_health_reports_user_count(client):
+def test_health_reports_setup_state(client):
     r = client.get("/api/health")
     assert r.status_code == 200
-    assert r.json() == {"ok": True, "users": 0, "email_configured": False}
+    assert r.json() == {"ok": True, "setup_done": False, "email_configured": False}
 
 
 def test_first_user_is_admin_and_claims_legacy_data(client):

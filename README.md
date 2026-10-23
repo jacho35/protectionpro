@@ -20,6 +20,12 @@ Then open **http://localhost:8000** in your browser.
 docker-compose up --build
 ```
 
+**Before exposing it to a network**
+- The first account registered on an empty database becomes the administrator. Create it yourself before the server is reachable by anyone else (and again after wiping the data volume).
+- The server speaks plain HTTP on port 8095. Put it behind a reverse proxy that terminates TLS; sign-in tokens and passwords cross the wire in the clear otherwise.
+- Set `SECRET_KEY` (a long random string) in the environment. Without it the token-signing key is kept in the database, so every backup of the database also contains it.
+- The container runs as an unprivileged user and takes ownership of the `/data` volume on start.
+
 ---
 
 ## Features

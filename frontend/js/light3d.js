@@ -727,10 +727,10 @@ const Light3D = {
         <p class="l3-muted">Nothing selected. Click an object in the view or the list to edit it.</p>
         <p class="l3-muted">${escHtml(T)} · ${L.em} lx · U₀ ≥ ${L.uo.toFixed(2)} · UGR ≤ ${L.ugr}</p>
         <div class="l3-grid2">
-          <label class="l3-field"><span>Ceiling, m</span><input type="number" data-l3r="ceilH" value="${L.ceilH}" step="0.1" min="1.5"></label>
-          <label class="l3-field"><span>Work plane, m</span><input type="number" data-l3r="workH" value="${L.workH}" step="0.05" min="0"></label>
-          <label class="l3-field"><span>ρ walls</span><input type="number" data-l3r="rhoW" value="${L.rhoW}" step="0.05" min="0" max="1"></label>
-          <label class="l3-field"><span>ρ floor</span><input type="number" data-l3r="rhoF" value="${L.rhoF}" step="0.05" min="0" max="1"></label>
+          <label class="l3-field"><span>Ceiling, m</span><input type="number" data-l3r="ceilH" value="${numAttr(L.ceilH)}" step="0.1" min="1.5"></label>
+          <label class="l3-field"><span>Work plane, m</span><input type="number" data-l3r="workH" value="${numAttr(L.workH)}" step="0.05" min="0"></label>
+          <label class="l3-field"><span>ρ walls</span><input type="number" data-l3r="rhoW" value="${numAttr(L.rhoW)}" step="0.05" min="0" max="1"></label>
+          <label class="l3-field"><span>ρ floor</span><input type="number" data-l3r="rhoF" value="${numAttr(L.rhoF)}" step="0.05" min="0" max="1"></label>
         </div>
         <p class="l3-muted">The task, targets and the rest of the room's lighting settings are in its properties on the Plan view.</p>
       </div>${foot}`;

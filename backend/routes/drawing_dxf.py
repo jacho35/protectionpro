@@ -1,4 +1,5 @@
 """Drawing DXF export — SLD, Demand topology, street-light schematic, DB single line, GA."""
+from ._http import content_disposition
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import Response
 
@@ -16,6 +17,6 @@ async def drawing_dxf_export(request: Request):
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:  # pragma: no cover - defensive
         raise HTTPException(status_code=500, detail=f"DXF export failed: {e}")
-    name = "".join(c if c.isalnum() or c in "-_ ." else "_" for c in str(payload.get("fileName") or "drawing"))[:120]
+    disposition = content_disposition(payload.get("fileName") or "drawing", "dxf", "drawing")
     return Response(content=data, media_type="application/dxf",
-                    headers={"Content-Disposition": f'attachment; filename="{name}.dxf"'})
+                    headers={"Content-Disposition": disposition})

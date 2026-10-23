@@ -1,4 +1,5 @@
 """Plan Markup DXF export/import endpoints (ezdxf-backed AC1015)."""
+from ._http import content_disposition
 from fastapi import APIRouter, HTTPException, UploadFile, File, Request
 from fastapi.responses import Response, JSONResponse
 
@@ -16,11 +17,11 @@ async def dxf_export(request: Request):
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:  # pragma: no cover - defensive
         raise HTTPException(status_code=500, detail=f"DXF export failed: {e}")
-    name = (payload.get("fileName") or "plan_markup").replace("/", "_")
+    disposition = content_disposition(payload.get("fileName") or "plan_markup", "dxf", "plan_markup")
     return Response(
         content=data,
         media_type="application/dxf",
-        headers={"Content-Disposition": f'attachment; filename="{name}.dxf"'},
+        headers={"Content-Disposition": disposition},
     )
 
 

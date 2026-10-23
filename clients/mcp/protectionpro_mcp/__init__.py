@@ -69,9 +69,12 @@ def _store_token(token: Optional[str]):
         if token is None:
             f.unlink(missing_ok=True)
             return
-        f.parent.mkdir(parents=True, exist_ok=True)
-        f.write_text(json.dumps({"access_token": token}))
-        f.chmod(0o600)
+        f.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        # Created 0600 from the start, so the token is never briefly readable by others.
+        fd = os.open(f, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w") as fh:
+            fh.write(json.dumps({"access_token": token}))
+        f.chmod(0o600)   # a file left over from an older version
     except OSError:
         pass          # a read-only home just means signing in again next session
 

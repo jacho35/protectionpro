@@ -169,7 +169,7 @@ const EmergCalc = {
       ${RoomLighting.standardSelect()}
       <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px">
         <label class="plan-field"><span>Width (m)</span><input type="number" data-em="width" value="${L.width}" min="0.3" max="20" step="0.1"></label>
-        <label class="plan-field"><span>Maintenance factor</span><input type="number" data-em="mf" value="${L.mf}" min="0.3" max="1" step="0.01"></label></div>
+        <label class="plan-field"><span>Maintenance factor</span><input type="number" data-em="mf" value="${numAttr(L.mf)}" min="0.3" max="1" step="0.01"></label></div>
       ${this.resultHtml(room)}
       <div style="font-size:11px;color:var(--text-muted)">${this.note()}</div></div>`;
   },

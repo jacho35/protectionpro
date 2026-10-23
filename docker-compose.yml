@@ -6,8 +6,9 @@ services:
     container_name: protectionpro-backend
     environment:
       - DATABASE_URL=sqlite:////data/protectionpro.db
-      # Optional: set to pin the JWT signing secret. If unset, a random secret
-      # is generated once and persisted in the DB (tokens survive restarts).
+      # Recommended: set to pin the JWT signing secret. If unset, a random secret
+      # is generated once and persisted in the DB, so every copy of the database
+      # (backups included) also carries the key that signs sign-in tokens.
       - SECRET_KEY=${SECRET_KEY:-}
     volumes:
       - db-data:/data

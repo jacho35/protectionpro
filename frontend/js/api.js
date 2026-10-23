@@ -28,14 +28,18 @@ const API = {
   // Shared 401 handler: an expired/invalid token clears itself and re-shows
   // the login gate — but NOT for the /auth/* endpoints, where a 401 is a
   // legitimate result (bad login) whose real message the caller should see.
-  _handleUnauthorized(endpoint) {
+  _handleUnauthorized(endpoint, sentToken) {
     if (endpoint.startsWith('/auth/')) return false;
+    // A reply to a request sent under an older token must not sign out a newer session
+    // (e.g. one that has just changed its password).
+    if (sentToken !== undefined && this.getToken() !== sentToken) return false;
     this.clearToken();
     if (typeof Auth !== 'undefined' && Auth.onUnauthorized) Auth.onUnauthorized(endpoint);
     return true;
   },
 
   async request(endpoint, method = 'GET', body = null) {
+    const sentToken = this.getToken();
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.REQUEST_TIMEOUT_MS);
     const opts = {
@@ -50,7 +54,7 @@ const API = {
     try {
       const resp = await fetch(`${API_BASE}${endpoint}`, opts);
       if (!resp.ok) {
-        if (resp.status === 401 && this._handleUnauthorized(endpoint)) {
+        if (resp.status === 401 && this._handleUnauthorized(endpoint, sentToken)) {
           throw new Error('Your session has expired — please sign in again.');
         }
         let detail = `HTTP ${resp.status}`;
@@ -101,6 +105,7 @@ const API = {
     const timer = setTimeout(() => controller.abort(), this.REQUEST_TIMEOUT_MS);
     const opts = { method, headers: {}, signal: controller.signal };
     const token = this.getToken();
+    const sentToken = token;
     if (token) opts.headers['Authorization'] = `Bearer ${token}`;
     if (body) {
       opts.headers['Content-Type'] = 'application/json';
@@ -109,7 +114,7 @@ const API = {
     try {
       const resp = await fetch(`${API_BASE}${endpoint}`, opts);
       if (!resp.ok) {
-        if (resp.status === 401 && this._handleUnauthorized(endpoint)) {
+        if (resp.status === 401 && this._handleUnauthorized(endpoint, sentToken)) {
           throw new Error('Your session has expired — please sign in again.');
         }
         const err = await resp.json().catch(() => ({ detail: errorLabel }));

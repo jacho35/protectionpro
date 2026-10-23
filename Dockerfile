@@ -12,11 +12,14 @@ COPY backend/ ./backend/
 # Copy frontend for static serving
 COPY frontend/ ./frontend/
 
-# Create data directory for SQLite
-RUN mkdir -p /data
+# Create data directory for SQLite, and the unprivileged user the server runs as
+RUN useradd --system --uid 10001 --no-create-home app && mkdir -p /data && chown app:app /data
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
 ENV PYTHONUNBUFFERED=1
 
 EXPOSE 8000
 
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]

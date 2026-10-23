@@ -1285,7 +1285,7 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
     const vll = this._boardVll(comp);
 
     const opt = (v, cur, label) =>
-      `<option value="${v}"${v === cur ? ' selected' : ''}>${label ?? v}</option>`;
+      `<option value="${escHtml(v)}"${v === cur ? ' selected' : ''}>${escHtml(label ?? v)}</option>`;
 
     // Column groups (Device / Earth leakage / Cable / Demand) fold to one
     // summary cell each. Every cell stays in the DOM — folding is CSS only —

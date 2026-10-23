@@ -358,6 +358,7 @@ const Retic = {
   },
 
   _onClick(e) {
+    if (e.target.closest('.kiosk-name')) return;   // typing a name never folds the card
     const btn = e.target.closest('[data-action]');
     if (!btn) return;
     const action = btn.dataset.action;
@@ -679,28 +680,28 @@ const Retic = {
       </div>
       <div class="retic-field">
         <label>Default ADMD (kVA${this._classIs3ph(STANDARD_LOAD_CLASSES.find(c => c.id === s.loadClass)) ? '/phase' : ''})</label>
-        <input type="number" step="0.01" data-action="setting" data-field="admd" value="${s.admd}" ${isHB ? 'disabled' : ''} title="${isHB ? 'ADMD is derived from the load class in Herman-Beta' : 'Empirical per-consumer ADMD'}">
+        <input type="number" step="0.01" data-action="setting" data-field="admd" value="${numAttr(s.admd)}" ${isHB ? 'disabled' : ''} title="${isHB ? 'ADMD is derived from the load class in Herman-Beta' : 'Empirical per-consumer ADMD'}">
       </div>
       <div class="retic-field">
         <label>Risk z (Herman-Beta)</label>
-        <input type="number" step="0.01" min="0.5" max="4" data-action="setting" data-field="riskZ" value="${s.riskZ}" ${isHB ? '' : 'disabled'}
+        <input type="number" step="0.01" min="0.5" max="4" data-action="setting" data-field="riskZ" value="${numAttr(s.riskZ)}" ${isHB ? '' : 'disabled'}
           title="Design risk factor: the standard-normal z in I = Nµ + z√Nσ — the probability that actual maximum demand exceeds the design value.\nz = 1.28 → 10% risk (NRS 034-1 convention)\nz = 1.64 → 5% risk\nz = 2.33 → 1% risk\nHigher z = more conservative design. Herman-Beta only — the Empirical method carries its margin in the ADMD and correction factors.">
         <span class="retic-hint">${this._riskHint(s.riskZ)}</span>
       </div>
       <div class="retic-field">
         <label>Transformer confidence (%)</label>
-        <input type="number" step="1" min="1" max="99" placeholder="= Risk z" data-action="setting" data-field="trfrConfidence" value="${s.trfrConfidence != null ? s.trfrConfidence : ''}" ${isHB ? '' : 'disabled'}
+        <input type="number" step="1" min="1" max="99" placeholder="= Risk z" data-action="setting" data-field="trfrConfidence" value="${numAttr(s.trfrConfidence)}" ${isHB ? '' : 'disabled'}
           title="Confidence level for the transformer / minisub total in Herman-Beta, separate from the risk z used for feeders and kiosks.\n50% → z = 0 (expected demand — a transformer's thermal mass rides through short peaks)\n90% → z = 1.28\nBlank → use the risk z everywhere.">
       </div>
         </div>
       </div>
       <div class="retic-field">
         <label>Max Feeder VD (%)</label>
-        <input type="number" step="0.5" data-action="setting" data-field="maxFeederVD" value="${s.maxFeederVD}">
+        <input type="number" step="0.5" data-action="setting" data-field="maxFeederVD" value="${numAttr(s.maxFeederVD)}">
       </div>
       <div class="retic-field">
         <label>Max Service VD (%)</label>
-        <input type="number" step="0.5" data-action="setting" data-field="maxRunVD" value="${s.maxRunVD}">
+        <input type="number" step="0.5" data-action="setting" data-field="maxRunVD" value="${numAttr(s.maxRunVD)}">
       </div>
       <div class="retic-field">
         <label>LV Conductor</label>
@@ -860,16 +861,16 @@ const Retic = {
     host.innerHTML = toolbar + this.kiosks.map(k => {
       const erfRows = k.erfs.map(e => this._erfRow(k, e)).join('');
       return `
-      <div class="kiosk-card" data-kiosk="${k.id}">
-        <div class="kiosk-head" data-action="toggle-kiosk" data-kiosk="${k.id}">
-          <input type="checkbox" class="sel-box" data-action="sel-kiosk" data-kiosk="${k.id}" aria-label="Select this kiosk's erven and feeder for a bulk cable change" title="Select this kiosk's erven and LV feeder to change their cables together"${this._kioskAllSel(k) ? ' checked' : ''}>
+      <div class="kiosk-card" data-kiosk="${escHtml(k.id)}">
+        <div class="kiosk-head" data-action="toggle-kiosk" data-kiosk="${escHtml(k.id)}">
+          <input type="checkbox" class="sel-box" data-action="sel-kiosk" data-kiosk="${escHtml(k.id)}" aria-label="Select this kiosk's erven and feeder for a bulk cable change" title="Select this kiosk's erven and LV feeder to change their cables together"${this._kioskAllSel(k) ? ' checked' : ''}>
           <span class="toggle">${k.collapsed ? '▸' : '▾'}</span>
-          <input class="kiosk-name" data-action="kiosk-field" data-kiosk="${k.id}" data-field="name" value="${escHtml(k.name)}" onclick="event.stopPropagation()">
-          <button type="button" class="kiosk-vd-badge" data-kiosk-vd="${k.id}" data-action="toggle-calc" data-calc="f:${k.id}"
+          <input class="kiosk-name" data-action="kiosk-field" data-kiosk="${escHtml(k.id)}" data-field="name" value="${escHtml(k.name)}">
+          <button type="button" class="kiosk-vd-badge" data-kiosk-vd="${escHtml(k.id)}" data-action="toggle-calc" data-calc="f:${escHtml(k.id)}"
             aria-expanded="${this._calcOpen.has('f:' + k.id)}" title="Cumulative feeder volt drop from the minisub — click for the leg-by-leg working">Feeder VD —</button>
-          <button type="button" class="kiosk-demand-badge" data-kiosk="${k.id}" data-action="toggle-calc" data-calc="k:${k.id}"
+          <button type="button" class="kiosk-demand-badge" data-kiosk="${escHtml(k.id)}" data-action="toggle-calc" data-calc="k:${escHtml(k.id)}"
             aria-expanded="${this._calcOpen.has('k:' + k.id)}" title="Show how this demand is calculated">— kVA</button>
-          <button class="btn-icon-del" data-action="del-kiosk" data-kiosk="${k.id}" title="Delete kiosk">&times;</button>
+          <button class="btn-icon-del" data-action="del-kiosk" data-kiosk="${escHtml(k.id)}" title="Delete kiosk">&times;</button>
         </div>
         <div class="calc-panel" data-calc-panel="f:${k.id}"${this._calcOpen.has('f:' + k.id) ? '' : ' hidden'}></div>
         <div class="calc-panel" data-calc-panel="k:${k.id}"${this._calcOpen.has('k:' + k.id) ? '' : ' hidden'}></div>
@@ -877,28 +878,28 @@ const Retic = {
         <div class="kiosk-body">
           <div class="kiosk-meta">
             <div class="retic-field"><label>Fed From</label>
-              <select data-action="kiosk-field" data-kiosk="${k.id}" data-field="fedFrom">${fedFromOptsFor(k)}</select></div>
+              <select data-action="kiosk-field" data-kiosk="${escHtml(k.id)}" data-field="fedFrom">${fedFromOptsFor(k)}</select></div>
             <div class="retic-field"><label>Load Class</label>
-              <select data-action="kiosk-field" data-kiosk="${k.id}" data-field="loadClass">${classOptsFor(k.loadClass)}</select></div>
+              <select data-action="kiosk-field" data-kiosk="${escHtml(k.id)}" data-field="loadClass">${classOptsFor(k.loadClass)}</select></div>
             <div class="retic-field"><label>ADMD Override (kVA${this._classIs3ph(this._kioskClass(k)) ? '/phase' : ''})</label>
-              <input type="number" step="0.01" data-action="kiosk-field" data-kiosk="${k.id}" data-field="admdOverride" value="${k.admdOverride || ''}" placeholder="${this._kioskAdmd(k, true)}"></div>
+              <input type="number" step="0.01" data-action="kiosk-field" data-kiosk="${escHtml(k.id)}" data-field="admdOverride" value="${numAttr(k.admdOverride || '')}" placeholder="${this._kioskAdmd(k, true)}"></div>
             <div class="retic-field"><label>Street Lighting (kVA)</label>
               ${k.streetLightFromCircuits
-                ? `<input type="number" value="${k.streetLightKVA || 0}" readonly title="From this kiosk's circuits in the Street lighting workspace (fixed, undiversified). Edit the circuits there.">`
-                : `<input type="number" step="0.1" data-action="kiosk-field" data-kiosk="${k.id}" data-field="streetLightKVA" value="${k.streetLightKVA || ''}" placeholder="0" title="Fixed, undiversified street-lighting load">`}</div>
-            <div class="retic-field"><label>Feeder Cable <span class="sel-feeder" title="Include this kiosk's LV feeder cable in the bulk cable change"><input type="checkbox" data-action="sel-feeder" data-kiosk="${k.id}" aria-label="Include this kiosk's feeder in the bulk cable change"${this._selFeeders.has(k.id) ? ' checked' : ''}> change</span></label>
-              <select data-action="kiosk-field" data-kiosk="${k.id}" data-field="feederCable" data-cable-select>${this._cableOptions(k.feederCable)}</select></div>
+                ? `<input type="number" value="${numAttr(k.streetLightKVA || 0)}" readonly title="From this kiosk's circuits in the Street lighting workspace (fixed, undiversified). Edit the circuits there.">`
+                : `<input type="number" step="0.1" data-action="kiosk-field" data-kiosk="${escHtml(k.id)}" data-field="streetLightKVA" value="${numAttr(k.streetLightKVA || '')}" placeholder="0" title="Fixed, undiversified street-lighting load">`}</div>
+            <div class="retic-field"><label>Feeder Cable <span class="sel-feeder" title="Include this kiosk's LV feeder cable in the bulk cable change"><input type="checkbox" data-action="sel-feeder" data-kiosk="${escHtml(k.id)}" aria-label="Include this kiosk's feeder in the bulk cable change"${this._selFeeders.has(k.id) ? ' checked' : ''}> change</span></label>
+              <select data-action="kiosk-field" data-kiosk="${escHtml(k.id)}" data-field="feederCable" data-cable-select>${this._cableOptions(k.feederCable)}</select></div>
             <div class="retic-field"><label>Feeder Length (m)</label>
-              <input type="number" step="1" data-action="kiosk-field" data-kiosk="${k.id}" data-field="feederLength" value="${k.feederLength || ''}"></div>
+              <input type="number" step="1" data-action="kiosk-field" data-kiosk="${escHtml(k.id)}" data-field="feederLength" value="${numAttr(k.feederLength || '')}"></div>
             ${this._stringHead(k) === k
               ? `<div class="retic-field"><label title="The breaker at the head of this string of kiosks: every kiosk fed on from this one is protected by it. Used for the earth-fault loop and ECC checks. Also settable in the side bar's Strings list.">String Breaker</label>
-              <select data-action="kiosk-field" data-kiosk="${k.id}" data-field="protection" data-cable-select data-ss-placeholder="Type to search devices — e.g. mccb 250, gg 100">${this._protectionOptions(k.protection, '— select breaker —')}</select></div>`
+              <select data-action="kiosk-field" data-kiosk="${escHtml(k.id)}" data-field="protection" data-cable-select data-ss-placeholder="Type to search devices — e.g. mccb 250, gg 100">${this._protectionOptions(k.protection, '— select breaker —')}</select></div>`
               : `<div class="retic-field"><label>String Breaker</label><div class="earth-pen" title="Set once on the head of the string (${escHtml(this._stringHead(k).name || 'kiosk')}); every kiosk fed on from it shares that breaker.">${escHtml(this._stringBreakerName(k))} <span style="color:var(--text-muted)">— string of ${escHtml(this._stringHead(k).name || 'kiosk')}</span></div></div>`}
             <div class="retic-field"><label title="The protection on this kiosk's outgoing ways (MCB / MCCB / fuse). It is the default for every erf's service cable in the earth-fault check; an erf can pick its own in its Protection column. Blank: the service cables are checked against the string breaker.">Outgoing protection (default)</label>
-              <select data-action="kiosk-field" data-kiosk="${k.id}" data-field="outgoingProtection" data-cable-select data-ss-placeholder="Outgoing way — e.g. mcb 40 c, mccb 100">${this._protectionOptions(k.outgoingProtection, '— string breaker —')}</select></div>
+              <select data-action="kiosk-field" data-kiosk="${escHtml(k.id)}" data-field="outgoingProtection" data-cable-select data-ss-placeholder="Outgoing way — e.g. mcb 40 c, mccb 100">${this._protectionOptions(k.outgoingProtection, '— string breaker —')}</select></div>
             ${this._earthingOf(k) === 'TN-S'
               ? `<div class="retic-field"><label title="Earth conductor of the feeder cable (Cu or Al), for the earth-fault loop and ECC size checks">Feeder Earth Cable</label>
-              <select data-action="kiosk-field" data-kiosk="${k.id}" data-field="feederEarth" data-cable-select data-ss-placeholder="Earth cable — type to search, e.g. 25 cu, 35 al">${this._earthCableOptions(k.feederEarth)}</select></div>`
+              <select data-action="kiosk-field" data-kiosk="${escHtml(k.id)}" data-field="feederEarth" data-cable-select data-ss-placeholder="Earth cable — type to search, e.g. 25 cu, 35 al">${this._earthCableOptions(k.feederEarth)}</select></div>`
               : `<div class="retic-field"><label>Feeder Earth</label><div class="earth-pen" title="${this._earthingOf(k)}: the combined PEN conductor (the cable's neutral) is the earth return on the feeders — no separate earth conductor to size.">PEN (${this._earthingOf(k)})</div></div>`}
             <div class="retic-field"><label>Earth fault / ECC (feeder)</label>
               <div class="earth-cell" data-earth-kiosk="${k.id}">—</div></div>
@@ -908,8 +909,8 @@ const Retic = {
             <tbody>${erfRows}</tbody>
           </table>
           <div class="retic-toolbar" style="margin-top:8px">
-            <button class="retic-btn" data-action="add-erf" data-kiosk="${k.id}">+ Erf</button>
-            <button class="retic-btn" data-action="add-erf-n" data-kiosk="${k.id}" title="Batch size follows the Quick Build 'Erven / Kiosk' setting">+ ${Math.max(1, Math.round(Number(s.quickErven) || 5))} Erven</button>
+            <button class="retic-btn" data-action="add-erf" data-kiosk="${escHtml(k.id)}">+ Erf</button>
+            <button class="retic-btn" data-action="add-erf-n" data-kiosk="${escHtml(k.id)}" title="Batch size follows the Quick Build 'Erven / Kiosk' setting">+ ${Math.max(1, Math.round(Number(s.quickErven) || 5))} Erven</button>
           </div>
         </div>`}
       </div>`;
@@ -958,7 +959,7 @@ const Retic = {
               <option value="erf"${b.renameTarget === 'erf' ? ' selected' : ''}>Erven</option>
               <option value="kiosk"${b.renameTarget === 'kiosk' ? ' selected' : ''}>Kiosks</option></select>
             <input type="text" data-action="bulk-field" data-field="renamePrefix" value="${escHtml(b.renamePrefix)}" placeholder="Prefix: K1 or K" aria-label="Erf name prefix" size="9">
-            <input type="number" min="1" step="1" data-action="bulk-field" data-field="renameStart" value="${b.renameStart}" aria-label="Start numbering at" title="Start at">
+            <input type="number" min="1" step="1" data-action="bulk-field" data-field="renameStart" value="${numAttr(b.renameStart)}" aria-label="Start numbering at" title="Start at">
             <select data-action="bulk-field" data-field="renameStyle" aria-label="Numbering style">
               <option value="nest"${b.renameStyle === 'nest' ? ' selected' : ''}>Prefix.1, .2 (K1.1, K1.2)</option>
               <option value="seq"${b.renameStyle === 'seq' ? ' selected' : ''}>Prefix + 1, 2 (K1, K2, K3)</option></select>
@@ -1048,7 +1049,7 @@ const Retic = {
       const cb = tr.querySelector('[data-action="sel-erf"]'); if (cb) cb.checked = on;
     });
     this.kiosks.forEach(k => {
-      const card = document.querySelector(`.kiosk-card[data-kiosk="${k.id}"]`);
+      const card = document.querySelector(`.kiosk-card[data-kiosk="${escHtml(k.id)}"]`);
       if (!card) return;
       const all = card.querySelector('[data-action="sel-kiosk"]');
       if (all) {
@@ -1172,20 +1173,20 @@ const Retic = {
     // data-cell / data-label drive the mobile card layout (grid areas + the
     // ::before field captions that replace the hidden <thead>).
     return `
-      <tr data-erf="${e.id}"${this._selErfs.has(e.id) ? ' class="erf-selected"' : ''}>
-        <td data-cell="sel" class="sel-col"><input type="checkbox" class="sel-box" data-action="sel-erf" data-kiosk="${k.id}" data-erf="${e.id}" aria-label="Select this erf for a bulk cable change"${this._selErfs.has(e.id) ? ' checked' : ''}></td>
-        <td data-cell="erf" data-label="Erf #"><input type="text" data-action="erf-field" data-kiosk="${k.id}" data-erf="${e.id}" data-field="erfNumber" value="${escHtml(e.erfNumber || '')}"></td>
-        <td data-cell="len" data-label="Length (m)"><input type="number" step="1" data-action="erf-field" data-kiosk="${k.id}" data-erf="${e.id}" data-field="length" value="${e.length || ''}"></td>
-        <td data-cell="phase" data-label="Phase"${this._erfPhaseMismatch(k, e) ? ` class="erf-phase-warn" title="${escHtml(this._mixedPhaseText(this._kioskClass(k)))}"` : ''}><select data-action="erf-field" data-kiosk="${k.id}" data-erf="${e.id}" data-field="phase">${phaseOpts}</select></td>
-        <td data-cell="cable" data-label="Service Cable"${this._erfCableMismatch(k, e) ? ` class="erf-phase-warn" title="${escHtml(this._erfCableMismatch(k, e))}"` : ''}><select data-action="erf-field" data-kiosk="${k.id}" data-erf="${e.id}" data-field="cableType" data-cable-select>${this._cableOptions(e.cableType)}</select></td>
+      <tr data-erf="${escHtml(e.id)}"${this._selErfs.has(e.id) ? ' class="erf-selected"' : ''}>
+        <td data-cell="sel" class="sel-col"><input type="checkbox" class="sel-box" data-action="sel-erf" data-kiosk="${escHtml(k.id)}" data-erf="${escHtml(e.id)}" aria-label="Select this erf for a bulk cable change"${this._selErfs.has(e.id) ? ' checked' : ''}></td>
+        <td data-cell="erf" data-label="Erf #"><input type="text" data-action="erf-field" data-kiosk="${escHtml(k.id)}" data-erf="${escHtml(e.id)}" data-field="erfNumber" value="${escHtml(e.erfNumber || '')}"></td>
+        <td data-cell="len" data-label="Length (m)"><input type="number" step="1" data-action="erf-field" data-kiosk="${escHtml(k.id)}" data-erf="${escHtml(e.id)}" data-field="length" value="${numAttr(e.length || '')}"></td>
+        <td data-cell="phase" data-label="Phase"${this._erfPhaseMismatch(k, e) ? ` class="erf-phase-warn" title="${escHtml(this._mixedPhaseText(this._kioskClass(k)))}"` : ''}><select data-action="erf-field" data-kiosk="${escHtml(k.id)}" data-erf="${escHtml(e.id)}" data-field="phase">${phaseOpts}</select></td>
+        <td data-cell="cable" data-label="Service Cable"${this._erfCableMismatch(k, e) ? ` class="erf-phase-warn" title="${escHtml(this._erfCableMismatch(k, e))}"` : ''}><select data-action="erf-field" data-kiosk="${escHtml(k.id)}" data-erf="${escHtml(e.id)}" data-field="cableType" data-cable-select>${this._cableOptions(e.cableType)}</select></td>
         <td data-cell="earth" data-label="Earth Cable">${this._earthingOf(k) === 'TN-C'
           ? '<div class="earth-pen" title="TN-C: the combined PEN conductor is the earth return — no separate earth conductor to size.">PEN (TN-C)</div>'
-          : `<select data-action="erf-field" data-kiosk="${k.id}" data-erf="${e.id}" data-field="earthCable" data-cable-select data-ss-placeholder="Earth cable — type to search, e.g. 16 cu, 25 al">${this._earthCableOptions(e.earthCable)}</select>`}</td>
-        <td data-cell="prot" data-label="Protection"><select data-action="erf-field" data-kiosk="${k.id}" data-erf="${e.id}" data-field="protection" aria-label="Protection of this erf's outgoing way"${e.protection ? '' : ' class="prot-default"'}>${this._protectionOptions(e.protection || '', this._defaultProtectionLabel(k))}</select></td>
+          : `<select data-action="erf-field" data-kiosk="${escHtml(k.id)}" data-erf="${escHtml(e.id)}" data-field="earthCable" data-cable-select data-ss-placeholder="Earth cable — type to search, e.g. 16 cu, 25 al">${this._earthCableOptions(e.earthCable)}</select>`}</td>
+        <td data-cell="prot" data-label="Protection"><select data-action="erf-field" data-kiosk="${escHtml(k.id)}" data-erf="${escHtml(e.id)}" data-field="protection" aria-label="Protection of this erf's outgoing way"${e.protection ? '' : ' class="prot-default"'}>${this._protectionOptions(e.protection || '', this._defaultProtectionLabel(k))}</select></td>
         <td data-cell="amps" data-label="Override (A / kVA)">${this._erfOverrideCell(k, e)}</td>
         <td class="vd-cell" data-cell="vd" data-label="Service VD" data-erf-vd="${e.id}">—</td>
         <td class="earth-cell" data-cell="ef" data-label="Earth fault" data-earth-erf="${e.id}">—</td>
-        <td data-cell="del"><button class="btn-icon-del" data-action="del-erf" data-kiosk="${k.id}" data-erf="${e.id}" title="Delete erf">&times;</button></td>
+        <td data-cell="del"><button class="btn-icon-del" data-action="del-erf" data-kiosk="${escHtml(k.id)}" data-erf="${escHtml(e.id)}" title="Delete erf">&times;</button></td>
       </tr>
       <tr class="calc-row" data-calc-panel="e:${e.id}"${this._calcOpen.has('e:' + e.id) ? '' : ' hidden'}><td colspan="11"><div class="calc-panel" data-calc-body="e:${e.id}"></div></td></tr>`;
   },
@@ -1198,8 +1199,8 @@ const Retic = {
     const kVal = o ? (o.unit === 'kVA' ? String(o.kva) : o.kva.toFixed(2)) : '';
     const tip = 'Fixed, undiversified load that replaces the ADMD for this erf. Enter amps or kVA; the other is calculated at the erf\'s own voltage (230 V, or √3·400 V for 3 Phase).';
     return `<div class="erf-ov" title="${tip}">
-      <input type="number" step="any" min="0" aria-label="Override current (A)" data-action="erf-field" data-kiosk="${k.id}" data-erf="${e.id}" data-field="ampsOverride" value="${aVal}" placeholder="A"${o && o.unit !== 'A' ? ' class="derived"' : ''}><span class="erf-ov-u">A</span>
-      <input type="number" step="any" min="0" aria-label="Override load (kVA)" data-action="erf-field" data-kiosk="${k.id}" data-erf="${e.id}" data-field="kvaOverride" value="${kVal}" placeholder="kVA"${o && o.unit !== 'kVA' ? ' class="derived"' : ''}><span class="erf-ov-u">kVA</span>
+      <input type="number" step="any" min="0" aria-label="Override current (A)" data-action="erf-field" data-kiosk="${escHtml(k.id)}" data-erf="${escHtml(e.id)}" data-field="ampsOverride" value="${aVal}" placeholder="A"${o && o.unit !== 'A' ? ' class="derived"' : ''}><span class="erf-ov-u">A</span>
+      <input type="number" step="any" min="0" aria-label="Override load (kVA)" data-action="erf-field" data-kiosk="${escHtml(k.id)}" data-erf="${escHtml(e.id)}" data-field="kvaOverride" value="${kVal}" placeholder="kVA"${o && o.unit !== 'kVA' ? ' class="derived"' : ''}><span class="erf-ov-u">kVA</span>
     </div>`;
   },
 
@@ -1329,7 +1330,7 @@ const Retic = {
   },
   // Show the entered value as typed and the other one derived (muted).
   _renderErfOverrideInputs(k, e) {
-    const row = document.querySelector(`tr[data-erf="${e.id}"]`);
+    const row = document.querySelector(`tr[data-erf="${escHtml(e.id)}"]`);
     if (!row) return;
     const o = this._erfOverride(e);
     const a = row.querySelector('[data-field="ampsOverride"]');
@@ -1364,14 +1365,14 @@ const Retic = {
     return '';
   },
   _refreshErfCableFlag(k, e) {
-    const td = document.querySelector(`tr[data-erf="${e.id}"] td[data-cell="cable"]`);
+    const td = document.querySelector(`tr[data-erf="${escHtml(e.id)}"] td[data-cell="cable"]`);
     if (!td) return;
     const msg = this._erfCableMismatch(k, e);
     td.classList.toggle('erf-phase-warn', !!msg);
     if (msg) td.title = msg; else td.removeAttribute('title');
   },
   _refreshErfPhaseFlag(k, e) {
-    const td = document.querySelector(`tr[data-erf="${e.id}"] td[data-cell="phase"]`);
+    const td = document.querySelector(`tr[data-erf="${escHtml(e.id)}"] td[data-cell="phase"]`);
     if (!td) return;
     const on = this._erfPhaseMismatch(k, e);
     td.classList.toggle('erf-phase-warn', on);
@@ -1640,7 +1641,7 @@ const Retic = {
         if (!vc) { cell.textContent = '—'; cell.className = 'vd-cell'; continue; }
         const vd = vc.vd;
         const open = this._calcOpen.has('e:' + e.id);
-        cell.innerHTML = `<button type="button" class="calc-link" data-action="toggle-calc" data-calc="e:${e.id}" aria-expanded="${open}" title="Show how this volt drop is calculated">${vd.toFixed(2)}% <span class="calc-caret">${open ? '▴' : '▾'}</span></button>`;
+        cell.innerHTML = `<button type="button" class="calc-link" data-action="toggle-calc" data-calc="e:${escHtml(e.id)}" aria-expanded="${open}" title="Show how this volt drop is calculated">${vd.toFixed(2)}% <span class="calc-caret">${open ? '▴' : '▾'}</span></button>`;
         cell.className = 'vd-cell ' + (vd > limit ? 'vd-fail' : 'vd-ok');
       }
     }
@@ -1669,31 +1670,31 @@ const Retic = {
       return `
       <div class="summary-block minisub-block">
         <div class="ms-head">
-          <input class="ms-name" data-action="minisub-field" data-ms="${ms.id}" data-field="name" value="${escHtml(ms.name)}" title="Minisub / transformer name">
-          ${this.minisubs.length > 1 ? `<button class="btn-icon-del" data-action="del-minisub" data-ms="${ms.id}" title="Delete minisub (its kiosks move to the first minisub)">&times;</button>` : ''}
+          <input class="ms-name" data-action="minisub-field" data-ms="${escHtml(ms.id)}" data-field="name" value="${escHtml(ms.name)}" title="Minisub / transformer name">
+          ${this.minisubs.length > 1 ? `<button class="btn-icon-del" data-action="del-minisub" data-ms="${escHtml(ms.id)}" title="Delete minisub (its kiosks move to the first minisub)">&times;</button>` : ''}
         </div>
         <div class="summary-row"><span class="k">Diversified demand</span><span class="v">${has ? r.totalKVA + ' kVA' : '—'}</span></div>
         <div class="summary-row"><span class="k">Current / Conns / Kiosks</span><span class="v">${has ? `${r.currentA} A / ${r.conns} / ${r.numKiosks}` : (r ? `— / ${r.conns} / ${r.numKiosks}` : '—')}</span></div>
         <div class="summary-row"><span class="k">Transformer</span><span class="v">
-          <select class="ms-tx" data-action="minisub-field" data-ms="${ms.id}" data-field="txTypeId"
+          <select class="ms-tx" data-action="minisub-field" data-ms="${escHtml(ms.id)}" data-field="txTypeId"
             title="Minisub transformer rating pushed to the SLD. Auto picks the smallest standard unit covering the diversified demand.">
             <option value=""${!ms.txTypeId ? ' selected' : ''}>Auto${autoTx ? ' — ' + escHtml(autoTx.label) : ''}</option>
             ${txOpts.map(o => `<option value="${o.id}"${ms.txTypeId === o.id ? ' selected' : ''}>${escHtml(o.name)}</option>`).join('')}
           </select></span></div>
         <div class="summary-row"><span class="k" title="TN-S: separate earth conductor on every LV cable. TN-C: combined PEN throughout, no separate earth conductor. TN-C-S: PEN on the feeders, separate earth conductor on the service cables only.">Earthing system</span><span class="v">
-          <select class="ms-earthing" data-action="minisub-field" data-ms="${ms.id}" data-field="earthing">
+          <select class="ms-earthing" data-action="minisub-field" data-ms="${escHtml(ms.id)}" data-field="earthing">
             ${['TN-S', 'TN-C', 'TN-C-S'].map(t => `<option value="${t}"${(ms.earthing || 'TN-S') === t ? ' selected' : ''}>${t}</option>`).join('')}
           </select></span></div>
         <div class="summary-row"><span class="k" title="The upstream transformer / minisub this one is fed from on the MV network (none = the MV supply).">MV fed from</span><span class="v">
-          <select class="ms-mvfrom" data-action="minisub-field" data-ms="${ms.id}" data-field="mvFedFrom">
+          <select class="ms-mvfrom" data-action="minisub-field" data-ms="${escHtml(ms.id)}" data-field="mvFedFrom">
             <option value=""${!ms.mvFedFrom ? ' selected' : ''}>— MV supply —</option>
             ${this.minisubs.filter(o => o.id !== ms.id).map(o => `<option value="${o.id}"${ms.mvFedFrom === o.id ? ' selected' : ''}>${escHtml(o.name)}</option>`).join('')}
           </select></span></div>
         ${ms.mvFedFrom || ms.mvLength ? `
         <div class="summary-row"><span class="k">MV cable</span><span class="v">
-          <select class="ms-mvcable" data-action="minisub-field" data-ms="${ms.id}" data-field="mvCable" data-cable-select>${this._mvCableOptions(ms.mvCable)}</select></span></div>
+          <select class="ms-mvcable" data-action="minisub-field" data-ms="${escHtml(ms.id)}" data-field="mvCable" data-cable-select>${this._mvCableOptions(ms.mvCable)}</select></span></div>
         <div class="summary-row"><span class="k">MV length (m)</span><span class="v">
-          <input type="number" step="1" min="0" class="ms-mvlen" data-action="minisub-field" data-ms="${ms.id}" data-field="mvLength" value="${ms.mvLength || ''}" placeholder="0"></span></div>` : ''}
+          <input type="number" step="1" min="0" class="ms-mvlen" data-action="minisub-field" data-ms="${escHtml(ms.id)}" data-field="mvLength" value="${numAttr(ms.mvLength || '')}" placeholder="0"></span></div>` : ''}
         ${(typeof ReticDiagram !== 'undefined' ? ReticDiagram.ringTiesFor(ms.id) : []).map(t => `
         <div class="summary-row"><span class="k" title="MV ring tie: a drawn MV route closing the ring back to ${escHtml(t.other)}. Shown on the diagram; not part of the MV fed-from chain.">Ring tie to</span><span class="v">${escHtml(t.other)}${t.cable ? ' · ' + escHtml(t.cable) : ''}${t.len ? ' · ' + t.len + ' m' : ''}</span></div>`).join('')}
         ${this._stringsRows(ms)}
@@ -1916,7 +1917,7 @@ const Retic = {
     const heads = this.kiosks.filter(k => this._stringHead(k) === k && this._minisubOf(k) === ms);
     if (!heads.length) return '<div class="summary-row"><span class="k">Strings</span><span class="v">no kiosks yet</span></div>';
     const size = (h) => this.kiosks.filter(k => this._stringHead(k) === h).length;
-    const exportRow = `<div class="summary-row"><span class="k">Earth-fault curves</span><span class="v"><button type="button" class="retic-btn ms-curve" data-action="strings-tcc-all" data-ms="${ms.id}" title="One PDF with a curve page for every string of this minisub">⬇ Export all curves (PDF)</button></span></div>`;
+    const exportRow = `<div class="summary-row"><span class="k">Earth-fault curves</span><span class="v"><button type="button" class="retic-btn ms-curve" data-action="strings-tcc-all" data-ms="${escHtml(ms.id)}" title="One PDF with a curve page for every string of this minisub">⬇ Export all curves (PDF)</button></span></div>`;
     return exportRow + heads.map(h => `<div class="summary-row"><span class="k" title="One breaker protects this whole string: ${escHtml(h.name || 'Kiosk')} and every kiosk fed on from it. Used for the earth-fault loop and ECC checks.">${escHtml(h.name || 'Kiosk')} string <span style="color:var(--text-muted)">(${size(h)} kiosk${size(h) === 1 ? '' : 's'})</span></span><span class="v">
           <select class="ms-prot" data-action="kiosk-field" data-kiosk="${h.id}" data-field="protection" data-cable-select data-ss-placeholder="String breaker — e.g. mccb 250, gg 100">${this._protectionOptions(h.protection, '— select breaker —')}</select>
           <button type="button" class="retic-btn ms-curve" data-action="string-tcc" data-kiosk="${h.id}" title="Plot this breaker's curve against each erf's earth-fault current">◔ Curve</button></span></div>${this._stringCurrentRow(h)}`).join('');
