@@ -110,10 +110,11 @@ const RoomCalc = {
     }
     const sigs = new Map(built.map(b => [b.room.id, this.signature(b.room)]));
     const obsIds = new Map(built.map(b => [b.room.id, (b.req.obstacles || []).map(o => o.id)]));
+    const obsGeo = new Map(built.map(b => [b.room.id, (b.req.obstacles || []).map(o => JSON.stringify(o))]));
     let pass = 0, fail = 0, none = 0;
     for (const r of out.rooms) {
       if (r.error) { UI.toast(`${r.name}: ${r.error}`, 'warn', 6000); continue; }
-      this.results[r.id] = { res: r, sig: sigs.get(r.id), obsIds: obsIds.get(r.id) };
+      this.results[r.id] = { res: r, sig: sigs.get(r.id), obsIds: obsIds.get(r.id), obsGeo: obsGeo.get(r.id) };
       if (r.pass === true) pass++; else if (r.pass === false) fail++; else none++;
     }
     const skipped = built.reduce((n, b) => n + b.skipped.length, 0);
