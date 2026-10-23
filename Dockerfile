@@ -13,7 +13,7 @@ COPY backend/ ./backend/
 COPY frontend/ ./frontend/
 
 # Create data directory for SQLite, and the unprivileged user the server runs as
-RUN useradd --system --uid 10001 --no-create-home app && mkdir -p /data && chown app:app /data
+RUN useradd --system --uid 10001 --create-home --home-dir /home/app app && mkdir -p /data && chown app:app /data
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
