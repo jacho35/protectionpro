@@ -44,6 +44,7 @@ import numpy as np
 from .area_lighting import _Lums, glare_rating
 from .road_lighting import _Web
 from .room_lighting import _f, _chk
+from .sports_aiming import aim_angles, aim as _aim  # noqa: F401 (aim_angles re-exported)
 
 
 def _unit(v, fallback):
@@ -307,113 +308,10 @@ def run_sports_lighting(req: dict) -> dict:
     return {"fields": out}
 
 
-# ─── Aiming: move aim points until the pitch is even ─────────────────────
-
-def _contrib(lums: _Lums, pts):
-    """Horizontal illuminance from each luminaire [n, M] at ground points [n, 3]."""
-    dx = pts[:, 0:1] - lums.x[None, :]
-    dy = pts[:, 1:2] - lums.y[None, :]
-    dz = pts[:, 2:3] - lums.z[None, :]
-    d = np.maximum(np.sqrt(dx * dx + dy * dy + dz * dz), 1e-6)
-    I = lums.intensity(dx, dy, dz)
-    cos_p = -dz / d
-    return np.where(cos_p > 1e-9, I * cos_p / (d * d), 0.0)
-
-
-def aim_angles(mx, my, h, ax, ay):
-    """Heading (`rotate`) and tilt that put a flood's beam axis on (ax, ay) at
-    ground level from a mast at (mx, my) of height h — the _Lums frame: the
-    front is (-sin r, cos r), tilt from the downward vertical towards it."""
-    dx, dy = ax - mx, ay - my
-    return math.degrees(math.atan2(-dx, dy)), math.degrees(math.atan2(math.hypot(dx, dy), max(h, 0.5)))
+# ─── Aiming: patterns and the optimiser live in sports_aiming.py ─────────
 
 
 def optimise_aiming(req: dict) -> dict:
-    """Move each flood's aim point so the horizontal illuminance on the field
-    evens out. Field-local metres (origin a corner, x along the length).
-
-    Each step weights the grid by (Ēh / E)^2 and shifts every aim point by the
-    difference between its footprint's weighted and unweighted centroids — the
-    flood follows the dark side of its own patch of light. A medium beam
-    (≈ 30°) reaches U₂ 0.85–0.9 on a 6-mast football pitch; a narrow beam on a
-    short throw leaves a bright spot no aiming removes. Aim points stay on
-    the field and within `maxTilt` − 2° of the vertical; the best (highest U₂)
-    set seen is returned. req: { field:{ length, width, gridStep, mf, maxTilt },
-    masts:[{ id, x, y, h, floods:[{ id, ax, ay, photometryId, fluxPct, lumens? }] }],
-    photometry, iterations }."""
-    t0 = time.time()
-    webs = {k: _Web(v) for k, v in (req.get("photometry") or {}).items()}
-    fd = req.get("field") or {}
-    L, W = _f(fd.get("length"), 0.0), _f(fd.get("width"), 0.0)
-    if not (L > 0.5 and W > 0.5):
-        raise ValueError("The field needs a length and a width")
-    mf = min(max(_f(fd.get("mf"), 0.8), 0.05), 1.0)
-    max_tilt = min(max(_f(fd.get("maxTilt"), 70.0), 10.0), 89.0)
-    asked = max(_f(fd.get("gridStep"), 0.0), 0.0)
-    step = float(np.clip(asked, 0.5, 20.0)) if asked > 0 else grid_step(L)
-    nx, ny = max(int(math.ceil(L / step - 1e-9)), 2), max(int(math.ceil(W / step - 1e-9)), 2)
-    gx = (np.arange(nx) + 0.5) * L / nx
-    gy = (np.arange(ny) + 0.5) * W / ny
-    G = np.array([(x, y, 0.0) for y in gy for x in gx])
-
-    floods = []                                          # (mast, flood dict)
-    for m in (req.get("masts") or []):
-        for fl in (m.get("floods") or []):
-            if fl.get("photometryId") in webs:
-                floods.append((m, fl))
-    if not floods:
-        raise ValueError("No floodlights with a luminaire to aim")
-    mx = np.array([_f(m.get("x"), 0.0) for m, _ in floods])
-    my = np.array([_f(m.get("y"), 0.0) for m, _ in floods])
-    mh = np.array([max(_f(m.get("h"), 20.0), 0.5) for m, _ in floods])
-    aims = np.array([(_f(fl.get("ax"), L / 2), _f(fl.get("ay"), W / 2)) for _, fl in floods], float)
-    reach = mh * math.tan(math.radians(max_tilt - 2.0))
-
-    def clamp(a):
-        a[:, 0] = np.clip(a[:, 0], 0.0, L)
-        a[:, 1] = np.clip(a[:, 1], 0.0, W)
-        v = a - np.stack([mx, my], axis=1)
-        d = np.hypot(v[:, 0], v[:, 1])
-        far = d > reach
-        a[far] = np.stack([mx, my], axis=1)[far] + v[far] / d[far, None] * reach[far, None]
-        return a
-
-    def evaluate(a):
-        items = []
-        for i, (m, fl) in enumerate(floods):
-            rot, tilt = aim_angles(mx[i], my[i], mh[i], a[i, 0], a[i, 1])
-            items.append({"id": i, "x": mx[i], "y": my[i], "h": mh[i], "rotate": rot, "tilt": tilt,
-                          "photometryId": fl.get("photometryId"), "fluxPct": fl.get("fluxPct", 100), "lumens": fl.get("lumens")})
-        C = _contrib(_Lums(items, webs), G) * mf
-        return C, C.sum(axis=1)
-
-    aims = clamp(aims)
-    first = None
-    best = None
-    iters = int(min(max(_f(req.get("iterations"), 40), 0), 120))
-    for it in range(iters + 1):
-        C, E = evaluate(aims)
-        avg = float(E.mean())
-        u2 = float(E.min() / avg) if avg > 0 else 0.0
-        if first is None:
-            first = (u2, avg)
-        if best is None or u2 > best[0]:
-            best = (u2, avg, it, aims.copy(), float(E.min()), float(E.max()))
-        if it == iters or avg <= 0 or time.time() - t0 > 12.0:
-            break
-        w = (avg / np.maximum(E, avg * 1e-3)) ** 2
-        tot = np.maximum(C.sum(axis=0), 1e-12)
-        cen = (C.T @ G[:, :2]) / tot[:, None]
-        cw = C * w[:, None]
-        cen_w = (cw.T @ G[:, :2]) / np.maximum(cw.sum(axis=0), 1e-12)[:, None]
-        aims = clamp(aims + (cen_w - cen))
-
-    u2, avg, it, a, emin, emax = best
-    out, k = {}, 0
-    for (m, fl) in floods:
-        out.setdefault(m.get("id"), []).append({"id": fl.get("id"), "ax": round(float(a[k, 0]), 2), "ay": round(float(a[k, 1]), 2)})
-        k += 1
-    return {"masts": [{"id": mid, "floods": fls} for mid, fls in out.items()],
-            "before": {"U2": round(first[0], 3), "Eav": round(first[1], 1)},
-            "after": {"U2": round(u2, 3), "Eav": round(avg, 1), "Emin": round(emin, 1), "Emax": round(emax, 1)},
-            "iteration": it, "grid": {"nx": nx, "ny": ny}, "ms": round((time.time() - t0) * 1000.0)}
+    """Move each flood's aim point so the pitch is even and the field's targets
+    are met; optionally apply a standard pattern first (sports_aiming.aim)."""
+    return _aim(req)

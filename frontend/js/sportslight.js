@@ -12,7 +12,10 @@
  * tilt) and is kept in RoomCalc.results like the other lighting zones. Every
  * field's floods also count as outdoor luminaires for outdoor areas and fences
  * (AreaCalc.luminaires), and every outdoor luminaire lights every field.
- * /api/analysis/sports-lighting/aim moves the aim points until the pitch is even.
+ * /api/analysis/sports-lighting/aim applies a standard aiming pattern (near,
+ * scattered, opposite, banded — `mast.pattern`, kept while optimising) and moves
+ * the aim points until the field's targets are met; `/aim/compare` tries every
+ * pattern. `lighting.aimTrim` dims the floods or removes spare ones afterwards.
  *
  * The class targets below are PROVISIONAL — check them against EN 12193 before
  * issue. Every number is editable on the field.
@@ -50,6 +53,15 @@ const SportsCalc = {
     __medium: { kind: 'generic_sports_medium', name: 'Generic sports floodlight — medium beam (≈ 30°), sized for the target' },
     __narrow: { kind: 'generic_sports_narrow', name: 'Generic sports floodlight — narrow beam (≈ 16°, long throws), sized for the target' },
   },
+  // Standard aiming patterns (backend/analysis/sports_aiming.py). A mast keeps its
+  // pattern's zone while the optimiser evens the light; no pattern = custom, free.
+  AIM_PATTERNS: {
+    near: { name: 'Near', note: 'Each mast lights the part of the pitch nearest it. Short throws, least glare.' },
+    scatter: { name: 'Scattered', note: 'Every mast over the whole pitch, interleaved: light from many sides.' },
+    cross: { name: 'Opposite', note: 'Each mast lights the far side. Long throws, light on faces; more glare.' },
+    band: { name: 'Banded', note: 'Strips across the width, touchline to touchline. Usual for side masts.' },
+  },
+  TRIMS: { none: 'Keep the output as it is', dim: 'Dim to the target', remove: 'Remove spare floods, then dim' },
   LM_PER_W: 125,
   NOTE: 'Provisional targets — check them against EN 12193 before issue. Every number is editable.',
 
@@ -74,6 +86,7 @@ const SportsCalc = {
       masts: Array.isArray(L.masts) ? L.masts : [], cameras: Array.isArray(L.cameras) ? L.cameras : [],
       stands: Array.isArray(L.stands) ? L.stands : [], aerial: !!L.aerial, aerialEv: n('aerialEv', 0, 0, 10000),
       aerialHeights: this.parseHeights(L.aerialHeights != null ? L.aerialHeights : '2, 5, 10, 15'),
+      aimTrim: this.TRIMS[L.aimTrim] ? L.aimTrim : 'none',
     };
   },
   parseHeights(v) {
@@ -95,6 +108,7 @@ const SportsCalc = {
     if (field === 'tv' || field === 'aerial') { L[field] = !!value; return; }
     if (field === 'aerialHeights') { L.aerialHeights = this.parseHeights(value).join(', '); return; }
     const R = this.read(room);
+    if (field === 'aimTrim') { L.aimTrim = this.TRIMS[value] ? value : 'none'; return; }
     if (!(field in R) || ['masts', 'cameras', 'stands', 'edited', 'sport', 'cls'].includes(field)) return;
     L[field] = value;
     if (['em', 'u2', 'gr', 'ra'].includes(field)) L.edited = true;
@@ -321,39 +335,144 @@ const SportsCalc = {
       floods: aims[i].map(([ax, ay]) => ({ id: this._seq(room, 'f'), ax: +ax.toFixed(2), ay: +ay.toFixed(2), photoId: o.photoId, fluxPct: 100 })),
     }));
   },
-  async optimise(room, quiet) {
-    const f = PlanEngine.factor(), fr = this.frame(room, f), L = this.read(room);
+  // The /aim request: field-local metres, the field's targets and cameras. Floods
+  // without a library luminaire still get a pattern's aim point; only the rest are lit.
+  _aimReq(room, o) {
+    const fr = this.frame(room, PlanEngine.factor()), L = this.read(room);
     if (!fr) return null;
     const photometry = {};
     const masts = L.masts.map(m => ({
-      id: m.id, x: +m.x || 0, y: +m.y || 0, h: +m.h || 20,
-      floods: (m.floods || []).filter(fl => PhotoLib.get(fl.photoId)).map(fl => {
-        photometry[fl.photoId] = PhotoLib.get(fl.photoId);
-        return { id: fl.id, ax: +fl.ax || 0, ay: +fl.ay || 0, photometryId: fl.photoId, fluxPct: this._pct(fl.fluxPct) };
+      id: m.id, name: m.name || m.id, x: +m.x || 0, y: +m.y || 0, h: +m.h || 20, pattern: this.AIM_PATTERNS[m.pattern] ? m.pattern : null,
+      floods: (m.floods || []).map(fl => {
+        const ph = PhotoLib.get(fl.photoId);
+        if (ph) photometry[fl.photoId] = ph;
+        return { id: fl.id, ax: +fl.ax || 0, ay: +fl.ay || 0, photometryId: ph ? fl.photoId : null, fluxPct: this._pct(fl.fluxPct) };
       }),
     }));
-    if (!masts.some(m => m.floods.length)) { UI.toast('Add floodlights with a library luminaire first.', 'info'); return null; }
+    const targets = { em: L.em, u2: L.u2, gr: L.gr };
+    if (L.u1 > 0) targets.u1 = L.u1;
+    if (L.tv && L.evCam > 0) targets.evCam = L.evCam;
+    if (L.tv && L.evCamU2 > 0) targets.evCamU2 = L.evCamU2;
+    const cameras = L.tv ? L.cameras.map(c => ({ name: c.name || 'Camera', x: +c.x || 0, y: +c.y || 0 })) : [];
+    return Object.assign({
+      field: { length: fr.L, width: fr.W, gridStep: L.grid > 0 ? L.grid : 0, mf: L.mf, maxTilt: L.maxTilt, groundRho: L.groundRho, evHeight: L.evHeight, targets, cameras },
+      masts, photometry,
+    }, o);
+  },
+  // An /aim answer onto the field: aim points, output %, patterns, floods removed.
+  _applyAim(room, out) {
+    const removed = new Set(out.removed || []);
+    const byId = new Map(this.read(room).masts.map(m => [m.id, m]));
+    for (const om of out.masts || []) {
+      const m = byId.get(om.id);
+      if (!m) continue;
+      if (om.pattern) m.pattern = om.pattern; else delete m.pattern;
+      const by = new Map((om.floods || []).map(a => [a.id, a]));
+      m.floods = (m.floods || []).filter(x => !removed.has(x.id));
+      for (const x of m.floods) {
+        const a = by.get(x.id);
+        if (a) { x.ax = a.ax; x.ay = a.ay; if (a.fluxPct != null) x.fluxPct = a.fluxPct; }
+      }
+    }
+  },
+  _aimText(out) {
+    const a = out.after, b = out.before;
+    if (!a) return 'Aim points placed (no library luminaire to calculate with).';
+    const pcts = [...new Set((out.masts || []).flatMap(m => m.floods.map(fl => fl.fluxPct)))];
+    return `Aiming: U₂ ${b ? b.U2.toFixed(2) + ' → ' : ''}${a.U2.toFixed(2)}, U₁ ${a.U1.toFixed(2)}, Ēh ${Math.round(a.Eav)} lx${a.GR != null ? `, GR ${a.GR.toFixed(0)}` : ''}`
+      + (a.pass === true ? ' — every target met' : a.pass === false ? ' — not every target met' : '')
+      + ((out.removed || []).length ? ` · ${out.removed.length} flood${out.removed.length === 1 ? '' : 's'} removed` : '')
+      + (pcts.length === 1 && pcts[0] < 100 ? ` · output ${pcts[0]} %` : '')
+      + ' (this field\'s own floods only).';
+  },
+  // o: { pattern, apply: [mast ids], move: [mast ids], optimise (default true), trim, quiet }
+  async aim(room, o = {}) {
+    const req = this._aimReq(room, { pattern: o.pattern || null, apply: o.apply || null, move: o.move || null, optimise: o.optimise !== false, trim: o.trim || 'none' });
+    if (!req) return null;
+    if (!req.masts.some(m => m.floods.length)) { UI.toast('Add floods to the masts first.', 'info'); return null; }
+    if ((req.optimise || req.trim !== 'none') && !req.masts.some(m => m.floods.some(fl => fl.photometryId))) { UI.toast('Add floodlights with a library luminaire first.', 'info'); return null; }
     if (UI.setBusy) UI.setBusy(true, 'Aiming the floodlights…');
     let out;
     try {
-      out = await API.request('/analysis/sports-lighting/aim', 'POST', {
-        field: { length: fr.L, width: fr.W, gridStep: L.grid > 0 ? L.grid : 0, mf: L.mf, maxTilt: L.maxTilt }, masts, photometry,
-      });
+      out = await API.request('/analysis/sports-lighting/aim', 'POST', req);
     } catch (e) {
-      UI.alert('Could not optimise the aiming: ' + (e && e.message ? e.message : e));
+      UI.alert('Could not aim the floodlights: ' + (e && e.message ? e.message : e));
       return null;
     } finally { if (UI.setBusy) UI.setBusy(false); }
-    const byId = new Map(L.masts.map(m => [m.id, m]));
-    for (const om of out.masts) {
-      const m = byId.get(om.id);
-      if (!m) continue;
-      const fl = new Map((m.floods || []).map(x => [x.id, x]));
-      for (const a of om.floods) { const t = fl.get(a.id); if (t) { t.ax = a.ax; t.ay = a.ay; } }
-    }
+    this._applyAim(room, out);
     PlanMarkup.snapshot(); PlanMarkup.markDirty();
     this._show3D();
-    if (!quiet) UI.toast(`Aiming: U₂ ${out.before.U2.toFixed(2)} → ${out.after.U2.toFixed(2)}, Ēh ${Math.round(out.after.Eav)} lx (this field's own floods only).`, 'success', 6000);
+    if (!o.quiet) {
+      UI.toast(this._aimText(out), out.after && out.after.pass === false ? 'warn' : 'success', 8000);
+      if ((out.warnings || []).length) UI.toast(out.warnings.join(' · '), 'warn', 9000);
+    }
     return out;
+  },
+  optimise(room, quiet) { return this.aim(room, { trim: this.read(room).aimTrim, quiet }); },
+
+  // Every pattern tried and optimised beside the current aiming; pick one to use.
+  // `onUse` runs after a pattern is applied (the aiming dialog redraws).
+  async openCompare(room, onUse) {
+    if (!this.frame(room, PlanEngine.factor())) { UI.alert('Calibrate the plan and draw the field first.'); return; }
+    const ov = document.createElement('div');
+    ov.className = 'modal plan-floor-modal';
+    ov.style.display = 'flex'; ov.style.zIndex = '3100';
+    ov.setAttribute('role', 'dialog'); ov.setAttribute('aria-modal', 'true'); ov.setAttribute('aria-labelledby', 'sf-cmp-title');
+    let rows = null, err = '';
+    const render = () => {
+      const L = this.read(room), tv = L.tv && L.cameras.length;
+      const f1 = (x, d) => x == null ? '—' : (+x).toFixed(d);
+      const body = err ? `<p class="sf-note">${escHtml(err)}</p>` : !rows ? '<p class="sf-note">Trying every pattern…</p>' : `<div class="sf-tablewrap"><table class="sf-table sf-cmp">
+        <thead><tr><th>Aiming</th><th class="num">Ēh (lx)</th><th class="num">U₁</th><th class="num">U₂</th><th class="num">GR</th>${tv ? '<th class="num">Ēv camera (lx)</th>' : ''}<th class="num">Steepest tilt</th><th class="num">Floods</th><th class="num">kW</th><th>Targets</th><th></th></tr></thead>
+        <tbody>${rows.map((r, i) => {
+          const a = r.after || {};
+          const cam = (a.cameras || []).map(c => Math.round(c.Eav)).join(' / ') || '—';
+          return `<tr><td><b>${escHtml(r.pattern ? this.AIM_PATTERNS[r.pattern].name : 'Current aiming')}</b>${(r.warnings || []).length ? `<div class="sf-note">${escHtml(r.warnings.join(' · '))}</div>` : ''}</td>
+            <td class="num">${f1(a.Eav, 0)}</td><td class="num">${f1(a.U1, 2)}</td><td class="num">${f1(a.U2, 2)}</td><td class="num">${f1(a.GR, 0)}</td>${tv ? `<td class="num">${cam}</td>` : ''}
+            <td class="num">${f1(a.maxTilt, 1)}°</td><td class="num">${a.count != null ? a.count : '—'}</td><td class="num">${a.watts != null ? (a.watts / 1000).toFixed(1) : '—'}</td>
+            <td class="${a.pass === true ? 'ok' : ''}${a.pass === false ? 'bad' : ''}">${a.pass === true ? 'All met' : a.pass === false ? 'Not met' : '—'}</td>
+            <td>${r.pattern ? `<button type="button" class="btn-small" data-cmp-use="${i}">Use</button>` : ''}</td></tr>`;
+        }).join('')}</tbody></table></div>`;
+      ov.innerHTML = `<div class="modal-content plan-floor-content sf-dialog" style="max-width:960px">
+        <div class="modal-header"><h3 id="sf-cmp-title">Compare aiming patterns — ${escHtml(room.name || 'Field')}</h3></div>
+        <div class="modal-body">
+          <div class="sf-toolbar"><label class="plan-field" style="margin:0"><span>After aiming</span><select data-cmp-trim>${Object.entries(this.TRIMS).map(([k, n]) => `<option value="${k}"${k === L.aimTrim ? ' selected' : ''}>${n}</option>`).join('')}</select></label></div>
+          ${body}
+          <div class="sf-note">Every pattern is applied to every mast and optimised against the field's targets (Ēh, U₂${L.u1 > 0 ? ', U₁' : ''}, GR${tv ? ', the cameras' : ''}), keeping to its zones. Figures are this field's own floods on the calculation grid; light from other fields and the plan's floodlights is added when you calculate.</div>
+          <div class="ui-dialog-actions"><button class="btn-small" data-cmp-close>Close</button></div>
+        </div></div>`;
+    };
+    const run = async () => {
+      rows = null; err = ''; render();
+      const req = this._aimReq(room, { trim: this.read(room).aimTrim });
+      if (!req.masts.some(m => m.floods.some(fl => fl.photometryId))) { err = 'Add masts with floodlights that have a library luminaire first.'; render(); return; }
+      if (UI.setBusy) UI.setBusy(true, 'Trying every aiming pattern…');
+      try { rows = (await API.request('/analysis/sports-lighting/aim/compare', 'POST', req)).options; }
+      catch (e) { err = 'Could not compare the patterns: ' + (e && e.message ? e.message : e); }
+      finally { if (UI.setBusy) UI.setBusy(false); }
+      if (document.body.contains(ov)) render();
+    };
+    const close = () => { document.removeEventListener('keydown', onKey, true); ov.remove(); };
+    const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); } };
+    document.addEventListener('keydown', onKey, true);
+    ov.addEventListener('change', (e) => {
+      if (e.target.matches('[data-cmp-trim]')) { this.set(room, 'aimTrim', e.target.value); PlanMarkup.markDirty(); run(); }
+    });
+    ov.addEventListener('click', (e) => {
+      if (e.target === ov || e.target.closest('[data-cmp-close]')) { close(); return; }
+      const use = e.target.closest('[data-cmp-use]');
+      if (!use || !rows) return;
+      const r = rows[+use.dataset.cmpUse];
+      this._applyAim(room, r);
+      PlanMarkup.snapshot(); PlanMarkup.markDirty(); PlanMarkup.refreshProps(); PlanEngine.requestDraw({ all: true });
+      this._show3D();
+      close();
+      UI.toast(`${this.AIM_PATTERNS[r.pattern].name}: ` + this._aimText(r), r.after && r.after.pass === false ? 'warn' : 'success', 8000);
+      if (onUse) onUse();
+      this.run([room]);
+    });
+    document.body.appendChild(ov);
+    run();
   },
 
   // ─── The new-field / mast-layout dialog ───
@@ -403,6 +522,7 @@ const SportsCalc = {
       length: fr ? +fr.L.toFixed(2) : SPORTS_FIELDS.football.length, width: fr ? +fr.W.toFixed(2) : SPORTS_FIELDS.football.width, angle: fr ? +this.angleOf(fr).toFixed(1) : 0,
       layout: 'side6', setback: 5, h: null, perMast: null,
       photo: (firstFlood && firstFlood.photoId) || '__medium', optimise: true,
+      pattern: (R && R.masts[0] && this.AIM_PATTERNS[R.masts[0].pattern] && R.masts[0].pattern) || 'band', trim: R ? R.aimTrim : 'none',
     };
     const auto = () => {
       const T = SPORTS_FIELDS[st.sport].classes[st.cls];
@@ -437,7 +557,13 @@ const SportsCalc = {
             ${field('perMast', `Floods per mast — suggested ${a.perMast}`, per, 'min="1" max="60" step="1"')}
           </div>
           <label class="plan-field"><span>Floodlight</span><select data-s="photo" style="width:100%">${this._photoOptions(st.photo)}</select></label>
-          <label class="plan-field-check"><input type="checkbox" data-s="optimise"${st.optimise ? ' checked' : ''}> Optimise the aiming and calculate</label>
+          <div class="plan-props-title" style="font-size:13px;margin-top:8px">Aiming</div>
+          <div class="sf-layouts" role="radiogroup" aria-label="Aiming pattern">${Object.entries(this.AIM_PATTERNS).map(([k, p]) => `<label class="sf-layout${k === st.pattern ? ' on' : ''}">
+            <input type="radio" name="sf-pattern" data-s="pattern" value="${k}"${k === st.pattern ? ' checked' : ''}>${this._patternThumb(k)}<b>${p.name}</b><small>${p.note}</small></label>`).join('')}</div>
+          <div class="sf-grid3" style="align-items:end">
+            <label class="plan-field-check" style="grid-column:span 2"><input type="checkbox" data-s="optimise"${st.optimise ? ' checked' : ''}> Optimise the aiming (keeping the pattern) and calculate</label>
+            <label class="plan-field"><span>After aiming</span><select data-s="trim" style="width:100%"${st.optimise ? '' : ' disabled'}>${Object.entries(this.TRIMS).map(([k, n]) => `<option value="${k}"${k === st.trim ? ' selected' : ''}>${n}</option>`).join('')}</select></label>
+          </div>
           <div class="sf-note">${a.n} masts × ${per} floods = ${a.n * per} floodlights${this.GENERIC[st.photo] ? ` of ${this._genLumens(a, per).toLocaleString()} lm / ${Math.round(this._genLumens(a, per) / this.LM_PER_W)} W each (for Ēh ${a.em} lx)` : ''}. The suggested height sees the pitch at 25° or more from the ${st.layout === 'corner4' ? 'centre spot' : 'centre line'}; the counts assume 75 % of the light lands on the pitch and one flood per 150 m² for an even spread.${room && R.masts.length ? ' <b>Replaces the field\'s ' + R.masts.length + ' masts.</b>' : ''}</div>
           <div class="ui-dialog-actions"><button class="btn-small" data-s-act="cancel">Cancel</button><button class="btn-primary" data-s-act="ok">${room ? 'Replace masts' : 'Create field'}</button></div>
         </div></div>`;
@@ -453,6 +579,7 @@ const SportsCalc = {
       if (k === 'sport') { st.sport = v; st.length = SPORTS_FIELDS[v].length; st.width = SPORTS_FIELDS[v].width; st.h = null; st.perMast = null; }
       else if (k === 'name' || k === 'cls' || k === 'layout' || k === 'photo') { st[k] = v; if (k !== 'name') { st.h = k === 'layout' ? null : st.h; st.perMast = null; } }
       else if (k === 'optimise') st.optimise = v;
+      else if (k === 'pattern' || k === 'trim') st[k] = v;
       else { const x = parseFloat(v); if (Number.isFinite(x)) st[k] = x; if (k === 'length' || k === 'width' || k === 'setback') { st.h = null; st.perMast = null; } }
       render();
     });
@@ -479,19 +606,48 @@ const SportsCalc = {
         AppState.planMarkup.rooms.push(target);
       }
       this.createMasts(target, { layout: st.layout, setback: st.setback, h, perMast: per, photoId });
+      this.set(target, 'aimTrim', st.trim);
       PlanMarkup.selectOnly(target.id);
       PlanMarkup.snapshot(); PlanMarkup.markDirty(); PlanMarkup.refreshProps();
       if (typeof PlanUI !== 'undefined') PlanUI.renderPalette();
       PlanEngine.requestDraw({ all: true });
       this._show3D();
+      // the pattern's aim points (the even spread from createMasts stays if this fails)
+      const o = await this.aim(target, { pattern: st.pattern, optimise: st.optimise, trim: st.optimise ? st.trim : 'none', quiet: true });
+      PlanMarkup.refreshProps();
+      PlanEngine.requestDraw({ all: true });
       if (st.optimise) {
-        const o = await this.optimise(target, true);
         await this.run([target]);
-        if (o) UI.toast(`Aimed: U₂ ${o.before.U2.toFixed(2)} → ${o.after.U2.toFixed(2)}.`, 'success', 5000);
+        if (o) {
+          UI.toast(`${this.AIM_PATTERNS[st.pattern].name}: ` + this._aimText(o), o.after && o.after.pass === false ? 'warn' : 'success', 8000);
+          if ((o.warnings || []).length) UI.toast(o.warnings.join(' · '), 'warn', 9000);
+        }
         PlanEngine.requestDraw({ all: true });
       }
     });
     document.body.appendChild(ov);
+  },
+
+  // A sketch of a pattern: four side masts and where each one's floods point.
+  _patternThumb(k) {
+    const P = {
+      near: [[0.1, 0.12], [0.32, 0.2], [0.2, 0.4]],
+      scatter: [[0.12, 0.3], [0.55, 0.78], [0.88, 0.22]],
+      cross: [[0.12, 0.62], [0.36, 0.86], [0.24, 0.7]],
+      band: [[0.25, 0.12], [0.28, 0.5], [0.22, 0.88]],
+    }[k] || [];
+    const masts = [[0.2, -0.14, false, false], [0.8, -0.14, true, false], [0.2, 1.14, false, true], [0.8, 1.14, true, true]];
+    const X = (x) => (14 + x * 100).toFixed(1), Y = (y) => (76 - y * 64).toFixed(1);
+    let lines = '', dots = '';
+    for (const [mx, my, fx, fy] of masts) {
+      for (const [ax, ay] of P) {
+        const x = fx ? 1 - ax : ax, y = fy ? 1 - ay : ay;
+        lines += `<line x1="${X(mx)}" y1="${Y(my)}" x2="${X(x)}" y2="${Y(y)}"></line>`;
+        dots += `<circle cx="${X(x)}" cy="${Y(y)}" r="2"></circle>`;
+      }
+    }
+    const m = masts.map(([x, y]) => `<circle cx="${X(x)}" cy="${Y(y)}" r="4"></circle>`).join('');
+    return `<svg viewBox="0 0 128 88" width="128" height="88" aria-hidden="true"><rect x="14" y="12" width="100" height="64" class="sf-thumb-pitch"></rect><line x1="64" y1="12" x2="64" y2="76" class="sf-thumb-line"></line><g class="sf-thumb-aim">${lines}${dots}</g><g class="sf-thumb-mast">${m}</g></svg>`;
   },
 
   _layoutThumb(k) {
@@ -504,7 +660,7 @@ const SportsCalc = {
   panel(room) {
     const L = this.read(room), f = PlanEngine.factor(), fr = this.frame(room, f);
     const num = (k, label, unit, step, extra) => `<label class="plan-field"><span>${label}</span><input type="number" data-sf="${k}" value="${escHtml(L[k])}" step="${step}" ${extra || ''} style="width:100%"><small>${unit}</small></label>`;
-    const masts = L.masts.map(m => `<div class="sf-mast-row"><span><b>${escHtml(m.name || 'Mast')}</b> · ${+m.h || 0} m · ${(m.floods || []).length} floods</span>
+    const masts = L.masts.map(m => `<div class="sf-mast-row"><span><b>${escHtml(m.name || 'Mast')}</b> · ${+m.h || 0} m · ${(m.floods || []).length} floods · ${this.AIM_PATTERNS[m.pattern] ? this.AIM_PATTERNS[m.pattern].name : 'custom'}</span>
       <button type="button" class="btn-small" data-sf-aim="${escHtml(m.id)}">Aim…</button></div>`).join('');
     const cams = L.tv ? `<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px">
         ${num('evCam', 'Ēv to camera', 'lx, 0 = none', 10, 'min="0"')}${num('evCamU2', 'Ev min / Ēv', '0 = none', 0.05, 'min="0" max="1"')}</div>
@@ -541,8 +697,9 @@ const SportsCalc = {
         ${masts || '<div class="sf-note">No masts yet.</div>'}
         <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">
           <button type="button" class="plan-circuit-btn" data-sf-layout>${L.masts.length ? 'New mast layout…' : 'Add masts…'}</button>
-          ${L.masts.length ? '<button type="button" class="plan-circuit-btn" data-sf-opt>Optimise aiming</button>' : ''}
-        </div></div>
+          ${L.masts.length ? '<button type="button" class="plan-circuit-btn" data-sf-opt>Optimise aiming</button><button type="button" class="plan-circuit-btn" data-sf-cmp>Compare patterns…</button>' : ''}
+        </div>
+        ${L.masts.length ? `<label class="plan-field" style="margin-top:6px"><span>After aiming</span><select data-sf="aimTrim" style="width:100%">${Object.entries(this.TRIMS).map(([k, n]) => `<option value="${k}"${k === L.aimTrim ? ' selected' : ''}>${n}</option>`).join('')}</select></label>` : ''}</div>
       <div class="sf-sec"><div class="plan-props-title" style="font-size:13px">Stands — spill light and spectator glare</div>
         ${L.stands.map(st => `<div class="sf-stand" data-sf-st="${escHtml(st.id)}">
           <div class="sf-stand-head"><input type="text" data-st="name" value="${escHtml(st.name || 'Stand')}" aria-label="Stand name">
@@ -633,6 +790,7 @@ const SportsCalc = {
       else if (hit('[data-sf-results]')) this.openResults(room);
       else if (hit('[data-sf-layout]')) this.setup({ room });
       else if (hit('[data-sf-opt]')) this.optimise(room).then(o => { if (o) this.run([room]); });
+      else if (hit('[data-sf-cmp]')) this.openCompare(room);
       else if (hit('[data-sf-aim]')) this.openAim(room, hit('[data-sf-aim]').dataset.sfAim);
       else if (hit('[data-sf-reset]')) { this.applyClass(room); done(); }
       else if (hit('[data-sf-fit]')) { const S = SPORTS_FIELDS[this.read(room).sport]; this.reshape(room, S.length, S.width, null); done(); }
@@ -662,7 +820,8 @@ const SportsCalc = {
   openAim(room, mastId) {
     const f = PlanEngine.factor();
     if (!this.frame(room, f)) { UI.alert('Calibrate the plan and draw the field first.'); return; }
-    this._aim = { roomId: room.id, mastId: mastId || (this.read(room).masts[0] || {}).id };
+    const first = this.read(room).masts.find(x => x.id === mastId) || this.read(room).masts[0] || {};
+    this._aim = { roomId: room.id, mastId: first.id, pattern: this.AIM_PATTERNS[first.pattern] ? first.pattern : 'band', optimise: true };
     const ov = document.createElement('div');
     ov.className = 'modal plan-floor-modal';
     ov.style.display = 'flex'; ov.style.zIndex = '3000';
@@ -692,6 +851,7 @@ const SportsCalc = {
             <label class="plan-field"><span>x along (m)</span><input type="number" data-m="x" value="${+m.x || 0}" step="0.5"></label>
             <label class="plan-field"><span>y across (m)</span><input type="number" data-m="y" value="${+m.y || 0}" step="0.5"></label>
             <label class="plan-field"><span>Height (m)</span><input type="number" data-m="h" value="${h}" step="0.5" min="1"></label></div>
+          <div class="sf-note">Pattern: ${this.AIM_PATTERNS[m.pattern] ? `<b>${this.AIM_PATTERNS[m.pattern].name}</b> — the optimiser keeps this mast's floods in the pattern's zone. Typing an aim point makes the mast custom.` : '<b>custom</b> — the optimiser may move this mast\'s floods anywhere on the pitch.'}</div>
           ${this._sectionSvg(m, fr, L)}
           <div class="sf-tablewrap"><table class="sf-table"><thead><tr><th>Flood</th><th>Aim x (m)</th><th>Aim y (m)</th><th>Luminaire</th><th>Output %</th><th class="num">Throw (m)</th><th class="num">Tilt (°)</th><th class="num">Direction (°)</th><th></th></tr></thead>
             <tbody>${rows || '<tr><td colspan="9" class="sf-note">No floods on this mast.</td></tr>'}</tbody></table></div>
@@ -706,9 +866,18 @@ const SportsCalc = {
             <button type="button" class="btn-small" data-a="mirror"${m ? '' : ' disabled'} title="Copy this mast's aiming to the mast opposite, mirrored about the centre line">Mirror to opposite mast</button>
             <button type="button" class="btn-small" data-a="mast-add">+ Mast</button>
             <button type="button" class="btn-small" data-a="mast-rm"${m ? '' : ' disabled'}>Remove mast</button>
-            <span style="flex:1"></span>
-            <button type="button" class="btn-small" data-a="optimise">Optimise aiming (all masts)</button>
           </div>
+          <div class="sf-toolbar sf-aimbar">
+            <label class="plan-field" style="margin:0"><span>Pattern</span><select data-sf-pat>${Object.entries(this.AIM_PATTERNS).map(([k, p]) => `<option value="${k}"${k === this._aim.pattern ? ' selected' : ''} title="${escHtml(p.note)}">${p.name}</option>`).join('')}</select></label>
+            <button type="button" class="btn-small" data-a="pat-all"${L.masts.length ? '' : ' disabled'}>Apply to all masts</button>
+            <button type="button" class="btn-small" data-a="pat-one"${m ? '' : ' disabled'}>Apply to this mast</button>
+            <label class="plan-field-check" style="margin:0 0 4px"><input type="checkbox" data-sf-patopt${this._aim.optimise ? ' checked' : ''}> then optimise</label>
+            <span style="flex:1"></span>
+            <label class="plan-field" style="margin:0"><span>After aiming</span><select data-sf-trim>${Object.entries(this.TRIMS).map(([k, n]) => `<option value="${k}"${k === L.aimTrim ? ' selected' : ''}>${n}</option>`).join('')}</select></label>
+            <button type="button" class="btn-small" data-a="optimise">Optimise aiming (all masts)</button>
+            <button type="button" class="btn-small" data-a="compare"${L.masts.length ? '' : ' disabled'}>Compare patterns…</button>
+          </div>
+          <div class="sf-note">${escHtml(this.AIM_PATTERNS[this._aim.pattern].note)} <em>Apply to this mast</em> moves only this mast's floods; <em>After aiming</em> applies to the whole field.</div>
           ${body}
           <div class="ui-dialog-actions"><button class="btn-primary" data-a="done">Done — calculate</button></div>
         </div></div>`;
@@ -726,13 +895,17 @@ const SportsCalc = {
     document.addEventListener('keydown', onKey, true);
     ov.addEventListener('change', (e) => {
       const t = e.target, m = mast();
-      if (t.matches('[data-sf-pick]')) { this._aim.mastId = t.value; render(); PlanEngine.requestDraw({ fg: true }); return; }
+      if (t.matches('[data-sf-pick]')) { this._aim.mastId = t.value; const pm = (mast() || {}).pattern; if (this.AIM_PATTERNS[pm]) this._aim.pattern = pm; render(); PlanEngine.requestDraw({ fg: true }); return; }
+      if (t.matches('[data-sf-pat]')) { this._aim.pattern = t.value; render(); return; }
+      if (t.matches('[data-sf-patopt]')) { this._aim.optimise = t.checked; return; }
+      if (t.matches('[data-sf-trim]')) { this.set(room, 'aimTrim', t.value); PlanMarkup.markDirty(); return; }
       if (!m) return;
       if (t.dataset.m) { m[t.dataset.m] = t.dataset.m === 'name' ? t.value : (parseFloat(t.value) || 0); if (t.dataset.m === 'h') m.h = Math.max(1, m.h); }
       else if (t.dataset.fl) {
         const fl = (m.floods || []).find(x => x.id === t.closest('[data-sf-fl]').dataset.sfFl);
         if (!fl) return;
         fl[t.dataset.fl] = t.dataset.fl === 'photoId' ? t.value : Math.max(t.dataset.fl === 'fluxPct' ? 0 : -1e6, Math.min(t.dataset.fl === 'fluxPct' ? 100 : 1e6, parseFloat(t.value) || 0));
+        if (t.dataset.fl === 'ax' || t.dataset.fl === 'ay') delete m.pattern;     // typed aiming is the user's own
       }
       render(); changed();
     });
@@ -754,6 +927,7 @@ const SportsCalc = {
         const opp = this.read(room).masts.filter(x => x !== m).sort((p, q) => Math.hypot(p.x - tx, p.y - ty) - Math.hypot(q.x - tx, q.y - ty))[0];
         if (!opp || Math.hypot(opp.x - tx, opp.y - ty) > Math.max(3, fr.W * 0.1)) { UI.toast('No mast opposite this one (mirrored about the centre line).', 'info'); return; }
         opp.floods = (m.floods || []).map(fl => ({ id: this._seq(room, 'f'), ax: fl.ax, ay: +(fr.W - (+fl.ay || 0)).toFixed(2), photoId: fl.photoId, fluxPct: fl.fluxPct }));
+        if (m.pattern) opp.pattern = m.pattern; else delete opp.pattern;
         UI.toast(`${opp.name || 'The opposite mast'} now has ${opp.floods.length} floods mirrored from ${m.name || 'this mast'}.`, 'success');
       } else if (a === 'mast-add') {
         const nm = 'M' + (this.read(room).masts.length + 1), s = 5;
@@ -765,6 +939,14 @@ const SportsCalc = {
         this._aim.mastId = (L.masts[0] || {}).id;
       } else if (a === 'optimise') {
         await this.optimise(room);
+      } else if (a === 'pat-all') {
+        const L2 = this.read(room);
+        await this.aim(room, { pattern: this._aim.pattern, optimise: this._aim.optimise, trim: this._aim.optimise ? L2.aimTrim : 'none' });
+      } else if (a === 'pat-one' && m) {
+        await this.aim(room, { pattern: this._aim.pattern, apply: [m.id], move: [m.id], optimise: this._aim.optimise });
+      } else if (a === 'compare') {
+        this.openCompare(room, () => { if (document.body.contains(ov)) { render(); changed(); } });
+        return;
       }
       render(); changed();
     });

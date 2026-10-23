@@ -31,6 +31,7 @@ from ..analysis.room_lighting import run_room_lighting, suggest_layout
 from ..analysis.area_lighting import run_area_lighting, suggest_area_layout
 from ..analysis.emergency_lighting import run_emergency_lighting
 from ..analysis.sports_lighting import run_sports_lighting, optimise_aiming
+from ..analysis.sports_aiming import compare as compare_aiming
 from ..analysis.obtrusive_light import run_obtrusive_light
 from ..analysis.photometry import parse_photometry, generic_optic, GENERIC_OPTICS, INDOOR_OPTICS
 from ..analysis.lightning_risk import run_lightning_risk
@@ -803,6 +804,18 @@ def sports_lighting_aim(data: dict):
     """Move a sports field's flood aim points until the horizontal illuminance is even."""
     try:
         return optimise_aiming(data)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Aiming error: {e}")
+
+
+@router.post("/sports-lighting/aim/compare")
+def sports_lighting_aim_compare(data: dict):
+    """Every standard aiming pattern applied and optimised, beside the current aiming."""
+    try:
+        return compare_aiming(data)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:

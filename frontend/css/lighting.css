@@ -319,3 +319,7 @@ body.dark-mode .l3-chips .warn, body.dark-mode .l3-chip.warn { background: #3d2b
 body.dark-mode .lo-main .ok { color: #a5e3b0; } body.dark-mode .lo-main .bad { color: #ffb4ae; }
 body.dark-mode .lo-main .lo-chip.ok { background: #173b24; color: #a5e3b0; }
 body.dark-mode .lo-main .lo-chip.bad { background: #43191a; color: #ffb4ae; }
+.sf-thumb-aim line { stroke: #e8590c; stroke-width: 0.8; opacity: 0.7; }
+.sf-thumb-aim circle { fill: #e8590c; }
+.sf-aimbar { padding-top: 6px; border-top: 1px solid var(--border-color); }
+.sf-cmp td { vertical-align: top; }
