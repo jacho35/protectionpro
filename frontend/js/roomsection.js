@@ -153,7 +153,7 @@ const RoomSection = {
     const h = poly && this.heights(room, poly);
     const W = poly ? this.axis(sec, poly).W : 0;
     const why = poly ? this.problem(sec, W) : '';
-    const num = (k, label, v, extra) => `<label class="plan-field"><span>${label}</span><input type="number" data-rsec="${k}" value="${numAttr(v)}" ${extra || 'step="0.1" min="1"'} style="width:100%"><small>m</small></label>`;
+    const num = (k, label, v) => `<label class="plan-field"><span>${label}</span><input type="number" data-rsec="${k}" value="${numAttr(v)}" step="0.1" min="1" style="width:100%"><small>m</small></label>`;
     let fields = '';
     if (sec.type === 'gable') fields = num('eaves', 'Eaves', sec.eaves) + num('apex', 'Apex', sec.apex)
       + `<label class="plan-field"><span>Apex at</span><input type="number" data-rsec="apexAt" value="${numAttr(Math.round(this._num(sec.apexAt, 0.5) * 100))}" step="5" min="0" max="100" style="width:100%"><small>% across</small></label>`;
@@ -244,8 +244,8 @@ const RoomSection = {
     const cx = xs.reduce((a, b) => a + b, 0) / xs.length, cy = ys.reduce((a, b) => a + b, 0) / ys.length;
     const L = sp * 0.35, a = P(cx - ax.ux * L, cy - ax.uy * L), b = P(cx + ax.ux * L, cy + ax.uy * L);
     return `<svg viewBox="0 0 140 140" class="rsec-thumb" aria-label="Plan: the section is cut along the arrow, 0 m at its tail">
-      <polygon points="${poly.map(p => P(p[0], p[1]).join(',')).join(' ')}" class="rs-poly"/>
-      <line x1="${a[0]}" y1="${a[1]}" x2="${b[0]}" y2="${b[1]}" class="rsec-arrow" marker-end="url(#rsec-ah)"/>
+      <polygon points="${escHtml(poly.map(p => P(p[0], p[1]).join(',')).join(' '))}" class="rs-poly"/>
+      <line x1="${numAttr(a[0])}" y1="${numAttr(a[1])}" x2="${numAttr(b[0])}" y2="${numAttr(b[1])}" class="rsec-arrow" marker-end="url(#rsec-ah)"/>
       <defs><marker id="rsec-ah" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="rsec-ahead"/></marker></defs></svg>`;
   },
 
@@ -265,7 +265,7 @@ const RoomSection = {
     ov.setAttribute('role', 'dialog'); ov.setAttribute('aria-modal', 'true'); ov.setAttribute('aria-labelledby', 'rsec-title');
     const sec = () => ({ type: 'poly', points: st.pts, width: W });
     const why = () => this.problem(sec(), W);
-    const table = () => st.pts.map((p, i) => `<tr${i === st.sel ? ' class="on"' : ''}><td>${i + 1}</td>
+    const table = () => st.pts.map((p, i) => `<tr class="${i === st.sel ? 'on' : ''}"><td>${i + 1}</td>
       <td><input type="number" data-rsec-pt="${i}:0" value="${numAttr(p[0])}" step="0.05" min="0" max="${numAttr(W)}"${i === 0 || i === st.pts.length - 1 ? ' disabled' : ''} aria-label="Point ${i + 1} across"></td>
       <td><input type="number" data-rsec-pt="${i}:1" value="${numAttr(p[1])}" step="0.05" min="1" aria-label="Point ${i + 1} height"></td>
       <td>${i === 0 || i === st.pts.length - 1 ? '' : `<button type="button" class="btn-small" data-rsec-del="${i}" aria-label="Remove point ${i + 1}">✕</button>`}</td></tr>`).join('');
