@@ -425,3 +425,8 @@ body.dark-mode .ls-curve { stroke: #f59e0b; }
 .ls-target-t { font-size: 11px; fill: #0b63b6; }
 body.dark-mode .ls-target { stroke: #4a9eff; }
 body.dark-mode .ls-target-t { fill: #4a9eff; }
+
+/* A fitting's properties: the chosen luminaire's polar curve */
+.plan-photo-peek { margin: 4px 0 6px; padding: 4px; border: 1px solid var(--border-color); border-radius: 6px; }
+.plan-photo-peek .pv-svg { max-width: 220px; }
+.plan-photo-peek .pv-txt { font-size: 10px; }

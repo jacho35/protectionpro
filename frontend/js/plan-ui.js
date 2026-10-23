@@ -27,6 +27,8 @@ const PlanUI = {
       if (e.target.closest('[data-role="bulk-assign"]')) { this._bulkAssign(); return; }
       if (e.target.closest('[data-role="sync-circuits"]')) { this._syncCircuits(); return; }
       if (e.target.closest('[data-role="open-photolib"]')) { PhotoLib.open(); return; }
+      const pd = e.target.closest('[data-role="open-photodata"]');
+      if (pd) { PhotoLib.open(pd.dataset.photo); return; }
       const ua = e.target.closest('[data-ul-act]');
       if (ua) { this._onUnderlayAction(ua.dataset.ulAct); return; }
       if (e.target.closest('[data-role="open-lighting"]')) {
@@ -1057,8 +1059,12 @@ const PlanUI = {
       const libs = (typeof PhotoLib !== 'undefined') ? PhotoLib.list() : [];
       const opts = ['<option value="">— none (not calculated) —</option>'].concat(libs.map(p =>
         `<option value="${escHtml(p.id)}"${p.id === v ? ' selected' : ''}>${escHtml(PhotoLib.label(p))}</option>`)).join('');
+      // the chosen luminaire: a small polar curve and a button to its full data
+      const ph = v && typeof PhotoLib !== 'undefined' ? PhotoLib.get(v) : null;
+      const data = ph && typeof PhotoView !== 'undefined' ? `<div class="plan-photo-peek">${PhotoView.polarSvg(ph, { R: 80, beams: false })}</div>
+        <button class="plan-circuit-btn" data-role="open-photodata" data-photo="${escHtml(v)}">Luminaire data — polar curve, isolux, cone diagram…</button>` : '';
       return `<div class="plan-field">${label}<select data-key="${escHtml(f.key)}">${opts}</select></div>
-        <button class="plan-circuit-btn" data-role="open-photolib">💡 Luminaire library…</button>`;
+        ${data}<button class="plan-circuit-btn" data-role="open-photolib">💡 Luminaire library…</button>`;
     }
     if (f.type === 'number') {
       const attrs = [f.min != null ? `min="${f.min}"` : '', f.max != null ? `max="${f.max}"` : '', f.step != null ? `step="${f.step}"` : ''].join(' ');
