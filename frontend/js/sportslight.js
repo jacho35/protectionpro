@@ -430,7 +430,7 @@ const SportsCalc = {
           return `<tr><td><b>${escHtml(r.pattern ? this.AIM_PATTERNS[r.pattern].name : 'Current aiming')}</b>${(r.warnings || []).length ? `<div class="sf-note">${escHtml(r.warnings.join(' · '))}</div>` : ''}</td>
             <td class="num">${f1(a.Eav, 0)}</td><td class="num">${f1(a.U1, 2)}</td><td class="num">${f1(a.U2, 2)}</td><td class="num">${f1(a.GR, 0)}</td>${tv ? `<td class="num">${cam}</td>` : ''}
             <td class="num">${f1(a.maxTilt, 1)}°</td><td class="num">${a.count != null ? a.count : '—'}</td><td class="num">${a.watts != null ? (a.watts / 1000).toFixed(1) : '—'}</td>
-            <td class="${a.pass === true ? 'ok' : a.pass === false ? 'bad' : ''}">${a.pass === true ? 'All met' : a.pass === false ? 'Not met' : '—'}</td>
+            <td class="${a.pass === true ? 'ok' : ''}${a.pass === false ? 'bad' : ''}">${a.pass === true ? 'All met' : a.pass === false ? 'Not met' : '—'}</td>
             <td>${r.pattern ? `<button type="button" class="btn-small" data-cmp-use="${i}">Use</button>` : ''}</td></tr>`;
         }).join('')}</tbody></table></div>`;
       ov.innerHTML = `<div class="modal-content plan-floor-content sf-dialog" style="max-width:960px">
