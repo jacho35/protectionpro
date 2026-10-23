@@ -69,6 +69,35 @@ const PhotoLib = {
 
   // ─── Manager dialog ───
   _kinds: null,
+  _sel: null,           // luminaire shown in the detail pane
+  _viewH: 2.5,          // mounting height (m) of the one-fitting isolux and nothing else
+
+  // The detail pane: polar curve, floor isolux of one fitting, cone diagram, key figures.
+  detailHtml(p) {
+    if (!p) return '<p class="pv-none">Import an IES / LDT file or add a generic optic to see its light distribution.</p>';
+    const h = this._viewH;
+    const iso = PhotoView.isoluxSvg(p, h);
+    const cone = PhotoView.symmetric(p) ? PhotoView.cone(p) : null;
+    const coneBody = cone ? `<p>Beam ${Math.round(cone.angle)}° (50 % of the peak) · Emax on the axis</p>${PhotoView.coneSvg(cone)}
+        <table class="pl-cone-t"><thead><tr><th scope="col">Height</th><th scope="col">Spot Ø</th><th scope="col">Emax</th></tr></thead>
+        <tbody>${cone.rows.map(r => `<tr><td>${r.h.toFixed(1)} m</td><td>${r.d.toFixed(2)} m</td><td>${PhotoView._num(r.e)} lx</td></tr>`).join('')}</tbody></table>`
+      : '<p class="pv-none">A cone diagram needs a downlight that throws the same way in every plane. This one doesn\'t — the isolux plot shows how far it reaches in each direction.</p>';
+    const where = this.usedBy(p.id);
+    return `<div style="display:flex;flex-wrap:wrap;justify-content:space-between;gap:6px;margin-bottom:8px">
+        <div><b>${escHtml(p.name)}</b>${p.manufacturer ? ` <span style="color:var(--text-secondary)">· ${escHtml(p.manufacturer)}</span>` : ''}
+          <div style="font-size:11px;color:var(--text-muted)">${escHtml(p.generic ? 'Generic optic — feasibility only' : [p.format, p.fileName].filter(Boolean).join(' · '))}${where.length ? ` · used by ${where.length} item${where.length === 1 ? '' : 's'}` : ''}</div></div>
+      </div>
+      <div class="pl-cards">
+        <section class="pl-card" aria-label="Polar curve"><h4>Polar curve</h4><p>Luminous intensity in the two main planes</p>
+          ${PhotoView.polarSvg(p)}${PhotoView.polarLegend()}</section>
+        <section class="pl-card" aria-label="Isolux of one fitting"><h4>Isolux on the floor — one fitting</h4>
+          <p><label class="pl-h">Mounting height <input type="number" data-pl-h value="${h}" min="0.5" max="40" step="0.1"> m</label>
+            ${iso.none ? '' : ` · ${Math.round(p.lumens)} lm · ${iso.grid} m grid · lux`}</p>${iso.svg}</section>
+        <section class="pl-card" aria-label="Cone diagram"><h4>Cone diagram</h4>${coneBody}</section>
+        <section class="pl-card" aria-label="Key figures"><h4>Key figures</h4>
+          <dl class="pl-facts">${PhotoView.facts(p).map(([k, v]) => `<div><dt>${escHtml(k)}</dt><dd>${escHtml(v)}</dd></div>`).join('')}</dl></section>
+      </div>`;
+  },
   async _genericKinds() {
     if (!this._kinds) {
       try { this._kinds = await API.request('/analysis/road-lighting/generic', 'GET'); } catch (_) { this._kinds = []; }
@@ -83,15 +112,20 @@ const PhotoLib = {
     ov.style.display = 'flex'; ov.style.zIndex = '3000';
     ov.setAttribute('role', 'dialog'); ov.setAttribute('aria-modal', 'true'); ov.setAttribute('aria-label', 'Luminaire photometry');
     const render = () => {
-      const rows = this.list().map(p => `<tr>
-        <td>${escHtml(p.name)}${p.generic ? ' <small>(generic)</small>' : ''}</td>
-        <td style="text-align:right">${Math.round(p.lumens)} lm</td><td style="text-align:right">${Math.round(p.watts || 0)} W</td>
-        <td><button class="btn-small" data-rm="${escHtml(p.id)}" title="Remove from the library">Remove</button></td></tr>`).join('');
-      ov.innerHTML = `<div class="modal-content plan-floor-content" style="max-width:640px">
+      const list = this.list();
+      if (!this.get(this._sel)) this._sel = list[0] ? list[0].id : null;
+      const rows = list.map(p => `<div class="pl-item">
+        <button type="button" class="pl-pick" data-pick="${escHtml(p.id)}" aria-pressed="${p.id === this._sel}">${escHtml(p.name)}${p.generic ? ' <small style="display:inline">(generic)</small>' : ''}
+          <small>${Math.round(p.lumens)} lm · ${Math.round(p.watts || 0)} W</small></button>
+        <button class="btn-small" data-rm="${escHtml(p.id)}" title="Remove from the library" aria-label="Remove ${escHtml(p.name)}">Remove</button></div>`).join('');
+      ov.innerHTML = `<div class="modal-content plan-floor-content pl-content">
         <div class="modal-header"><h3>Luminaire photometry</h3></div>
         <div class="modal-body">
           <p style="margin:0 0 8px;color:var(--text-muted);font-size:12px">One library for road, room and outdoor lighting. Import the manufacturer's IES / LDT for a compliance design; a generic optic is for feasibility only.</p>
-          <div style="max-height:280px;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><tbody>${rows || '<tr><td style="color:var(--text-muted)">No luminaires yet.</td></tr>'}</tbody></table></div>
+          <div class="pl-body">
+            <div class="pl-list" role="group" aria-label="Luminaires">${rows || '<p style="color:var(--text-muted);font-size:13px">No luminaires yet.</p>'}</div>
+            <div class="pl-detail" data-pl-detail>${this.detailHtml(this.get(this._sel))}</div>
+          </div>
           <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:end;margin-top:12px">
             <button class="btn-small" data-act="import">Import IES / LDT…</button>
             <label style="font-size:12px">Generic<br><select data-g="kind">${kinds.map(k => `<option value="${escHtml(k.kind)}">${escHtml(k.name)}</option>`).join('')}</select></label>
@@ -109,20 +143,34 @@ const PhotoLib = {
     document.addEventListener('keydown', onKey, true);
     ov.addEventListener('click', async (e) => {
       const rm = e.target.closest('[data-rm]');
+      const pick = e.target.closest('[data-pick]');
       const act = e.target.dataset && e.target.dataset.act;
-      if (rm) {
+      if (pick) {
+        this._sel = pick.dataset.pick;
+        ov.querySelectorAll('[data-pick]').forEach(b => b.setAttribute('aria-pressed', String(b === pick)));
+        ov.querySelector('[data-pl-detail]').innerHTML = this.detailHtml(this.get(this._sel));
+      } else if (rm) {
         const used = this.remove(rm.dataset.rm);
         if (used) UI.toast('In use by ' + used.slice(0, 4).join(', ') + (used.length > 4 ? '…' : '') + ' — reassign it first.', 'warn', 5000);
         render();
       } else if (act === 'import') ov.querySelector('[data-act="file"]').click();
       else if (act === 'generic') {
         const v = (k) => ov.querySelector(`[data-g="${k}"]`).value;
-        try { await this.addGeneric(v('kind'), Math.max(1, +v('lumens') || 4000), Math.max(0, +v('watts') || 0)); } catch (err) { UI.alert('Could not add the optic: ' + (err.message || err)); }
+        try { this._sel = await this.addGeneric(v('kind'), Math.max(1, +v('lumens') || 4000), Math.max(0, +v('watts') || 0)); } catch (err) { UI.alert('Could not add the optic: ' + (err.message || err)); }
         render();
       } else if (act === 'close' || e.target === ov) close();
     });
     ov.addEventListener('change', async (e) => {
-      if (e.target.dataset && e.target.dataset.act === 'file') { await this.importFiles(e.target.files); render(); }
+      if (e.target.dataset && e.target.dataset.act === 'file') {
+        const added = await this.importFiles(e.target.files);
+        if (added.length) this._sel = added[0];
+        render();
+      } else if (e.target.matches('[data-pl-h]')) {
+        const h = +e.target.value;
+        if (h > 0) this._viewH = Math.min(Math.max(h, 0.5), 40);
+        ov.querySelector('[data-pl-detail]').innerHTML = this.detailHtml(this.get(this._sel));
+        const inp = ov.querySelector('[data-pl-h]'); if (inp) inp.focus();
+      }
     });
     document.body.appendChild(ov);
   },
