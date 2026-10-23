@@ -125,7 +125,7 @@ const RoomShape = {
       return L > 0.3 ? `<text x="${X((a[0] + b[0]) / 2)}" y="${Y((a[1] + b[1]) / 2)}" class="rs-dim rs-len" text-anchor="middle" dy="-4">${+L.toFixed(2)}</text>` : '';
     }).join('');
     return `<svg viewBox="0 0 ${V.vw} ${V.vh}" class="rs-polysvg" role="img" aria-label="Room outline, ${n} corners">${grid}
-      <polygon points="${pts.map(p => `${X(p[0])},${Y(p[1])}`).join(' ')}" class="rs-poly"/>${lens}
+      <polygon points="${escHtml(pts.map(p => `${X(p[0])},${Y(p[1])}`).join(' '))}" class="rs-poly"/>${lens}
       ${pts.map((p, i) => `<circle cx="${X(p[0])}" cy="${Y(p[1])}" r="7" class="rsec-h${i === sel ? ' on' : ''}" data-ci="${i}"/><text x="${X(p[0])}" y="${Y(p[1])}" dx="9" dy="-8" class="rs-dim">${i + 1}</text>`).join('')}
       <text x="6" y="${V.vh - 6}" class="rs-dim">grid ${step} m</text></svg>`;
   },
@@ -179,7 +179,7 @@ const RoomShape = {
       ov.querySelector('.rs-draw').innerHTML = this._polySvg(pts, st.view, st.sel);
       if (full) ov.querySelector('.rs-tbody').innerHTML = pts.map((p, i) => {
         const b = pts[(i + 1) % n], L = Math.hypot(b[0] - p[0], b[1] - p[1]);
-        return `<tr${i === st.sel ? ' class="on"' : ''}><td>${i + 1}</td>
+        return `<tr class="${i === st.sel ? 'on' : ''}"><td>${i + 1}</td>
           <td><input type="number" data-rs-c="${i}:0" value="${numAttr(+p[0].toFixed(3))}" step="0.1" aria-label="Corner ${i + 1} X"></td>
           <td><input type="number" data-rs-c="${i}:1" value="${numAttr(+p[1].toFixed(3))}" step="0.1" aria-label="Corner ${i + 1} Y"></td>
           <td><input type="number" data-rs-len="${i}" value="${numAttr(+L.toFixed(3))}" step="0.1" min="0.1"${i === n - 1 ? ' disabled title="The last wall closes the room"' : ''} aria-label="Wall ${i + 1} length"></td>
