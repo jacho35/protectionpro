@@ -105,7 +105,9 @@ const PhotoLib = {
     return this._kinds;
   },
 
-  async open() {
+  // `selId` opens on that luminaire's data (a fitting's "Luminaire data" button).
+  async open(selId) {
+    if (selId && this.get(selId)) this._sel = selId;
     const kinds = (await this._genericKinds()).filter(k => k.group !== 'road');
     const ov = document.createElement('div');
     ov.className = 'modal plan-floor-modal';

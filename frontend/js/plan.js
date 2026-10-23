@@ -722,6 +722,9 @@ const PlanMarkup = {
           items.push({ label: `Select similar: ${c.label} (${c.ids.length})`, disabled: c.ids.length < 2,
             action: () => this.selectSimilar(c.ids) });
         }
+        // a light fitting with a library luminaire → its photometry
+        const ph = f.kind === 'element' && f.item.props && typeof PhotoLib !== 'undefined' ? PhotoLib.get(f.item.props.photoId) : null;
+        if (ph) items.push({ label: 'Luminaire data…', action: () => PhotoLib.open(ph.id) });
         items.push('---');
       }
       const canRotate = [...this.selectedIds].some(id => {
