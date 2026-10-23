@@ -592,16 +592,43 @@ const Light3D = {
     // the plane the beam lands on, and the longest ray drawn (80° off that plane's normal)
     const zT = up ? G.hAt(c[0], c[1]) : G.wp, h = Math.max(0.05, Math.abs(z - zT));
     const tMax = h / Math.cos(80 * Math.PI / 180);
-    const ring = cs.map((C, k) => {
+    // each edge ray stops at the plane or at the first wall it crosses (`e` = that wall)
+    const hits = cs.map((C, k) => {
       const g = gs[k] * Math.PI / 180, a = C * Math.PI / 180;
       const l = [Math.sin(g) * Math.cos(a), Math.sin(g) * Math.sin(a), -Math.cos(g)];
       const d = [0, 1, 2].map(i => l[0] * F[0][i] + l[1] * F[1][i] + l[2] * F[2][i]);
       const dz = up ? d[2] : -d[2];
-      const t = dz > 1e-6 ? Math.min(h / dz, tMax) : tMax;
-      return [c[0] + d[0] * t, c[1] + d[1] * t, z + d[2] * t];
+      let t = dz > 1e-6 ? Math.min(h / dz, tMax) : tMax, e = null;
+      for (const w of G.edges) {
+        const out = -(d[0] * w.nIn[0] + d[1] * w.nIn[1]);           // heading out through this wall
+        if (out < 1e-9) continue;
+        const tw = ((c[0] - w.a[0]) * w.nIn[0] + (c[1] - w.a[1]) * w.nIn[1]) / out;
+        if (tw < 0 || tw >= t) continue;
+        const s = (c[0] + d[0] * tw - w.a[0]) * w.dir[0] + (c[1] + d[1] * tw - w.a[1]) * w.dir[1];
+        if (s >= -1e-6 && s <= w.len + 1e-6) { t = tw; e = w; }
+      }
+      const p = [c[0] + d[0] * t, c[1] + d[1] * t, z + d[2] * t];
+      return { p, e, base: [p[0], p[1], zT] };
     });
-    v.face({ pts: ring, fill: 'rgba(255,214,90,.16)', stroke: 'rgba(214,150,20,.55)', lw: 1, layer: 2 });
-    for (let k = 0; k < N; k += N / 4) v.line({ pts: [[c[0], c[1], z], ring[k]], stroke: 'rgba(214,150,20,.45)', lw: 1, layer: 2 });
+    const fill = 'rgba(255,214,90,.16)', edge = 'rgba(214,150,20,.55)';
+    v.face({ pts: hits.map(q => q.base), fill, layer: 2 });
+    // the outline: on the plane, up the wall where the beam reaches it, along the wall, back down
+    for (let k = 0; k < N; k++) {
+      const q = hits[k], r = hits[(k + 1) % N];
+      v.line({ pts: [q.e ? q.p : q.base, r.e ? r.p : r.base], stroke: edge, lw: 1, layer: 2 });
+      if (!q.e !== !r.e) { const w = q.e ? q : r; v.line({ pts: [w.base, w.p], stroke: edge, lw: 1, layer: 2 }); }
+    }
+    // the light on each wall: a run of rays landing on the same wall, down to the plane
+    const wallOn = (w) => this.walls === 'all' || (this.walls !== 'none' && v.facing([w.nIn[0], w.nIn[1], 0]));
+    const k0 = hits.findIndex((q, k) => !q.e || q.e !== hits[(k + N - 1) % N].e);
+    if (k0 < 0 && hits[0].e && wallOn(hits[0].e)) v.face({ pts: hits.map(q => q.p), fill, layer: 2 });
+    for (let k = 0, run = []; k0 >= 0 && k <= N; k++) {
+      const q = hits[(k0 + k) % N];
+      if (k < N && q.e && (!run.length || run[0].e === q.e)) { run.push(q); continue; }
+      if (run.length > 1 && wallOn(run[0].e)) v.face({ pts: run.map(x => x.p).concat(run.map(x => x.base).reverse()), fill, layer: 2 });
+      run = k < N && q.e ? [q] : [];
+    }
+    for (let k = 0; k < N; k += N / 4) v.line({ pts: [[c[0], c[1], z], hits[k].p], stroke: 'rgba(214,150,20,.45)', lw: 1, layer: 2 });
   },
   // γ (°) of the beam edge in plane C: the furthest γ from nadir (from zenith for an uplight)
   // whose intensity is still ≥ `lim`, interpolated between the web's own samples.
