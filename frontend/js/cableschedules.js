@@ -329,7 +329,7 @@ const CableSchedules = {
     const vis = d.rows.filter(r => this.filter === 'all' || (this.filter === 'problems' ? this._problem(r) : r.group === this.filter))
       .filter(r => !q || [r.ref, r.from, r.to, r.cable, r.board, r.desc].some(x => x && String(x).toLowerCase().includes(q)));
     const f = (v, n = 1) => v == null || isNaN(v) ? '—' : Number(v).toFixed(n);
-    const pill = s => `<span class="rt-pill ${s.kind}" title="${escHtml(s.why)}">${escHtml(s.text)}</span>`;
+    const pill = s => `<span class="rt-pill ${escHtml(s.kind)}" title="${escHtml(s.why)}">${escHtml(s.text)}</span>`;
     const bar = (p) => {
       if (p == null) return '—';
       const col = p > 100 ? 'var(--danger)' : p > 85 ? 'var(--warning)' : 'var(--success)';

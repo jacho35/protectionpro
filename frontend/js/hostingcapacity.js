@@ -39,27 +39,27 @@ const HostingCapacity = {
         screening, not a stochastic (Monte Carlo) study.</p>
       <div style="display:grid;grid-template-columns:auto 1fr;gap:8px 12px;align-items:center;font-size:13px">
         <label for="hc-pf">DER power factor</label>
-        <input id="hc-pf" type="number" min="0" max="1" step="0.01" value="${c.power_factor}">
+        <input id="hc-pf" type="number" min="0" max="1" step="0.01" value="${escHtml(c.power_factor)}">
         <label for="hc-vband">Voltage band (p.u.)</label>
         <div style="display:flex;gap:8px;align-items:center">
-          <input id="hc-vmin" type="number" min="0.8" max="1" step="0.01" value="${c.v_min}" style="width:80px"> –
-          <input id="hc-vmax" type="number" min="1" max="1.2" step="0.01" value="${c.v_max}" style="width:80px">
+          <input id="hc-vmin" type="number" min="0.8" max="1" step="0.01" value="${escHtml(c.v_min)}" style="width:80px"> –
+          <input id="hc-vmax" type="number" min="1" max="1.2" step="0.01" value="${escHtml(c.v_max)}" style="width:80px">
         </div>
         <label for="hc-loading">Thermal loading limit (%)</label>
-        <input id="hc-loading" type="number" min="50" max="150" step="5" value="${c.loading_limit_pct}">
+        <input id="hc-loading" type="number" min="50" max="150" step="5" value="${escHtml(c.loading_limit_pct)}">
         <label for="hc-step">Sweep step (MW)</label>
-        <input id="hc-step" type="number" min="0.01" step="0.1" value="${c.step_mw}">
+        <input id="hc-step" type="number" min="0.01" step="0.1" value="${escHtml(c.step_mw)}">
         <label for="hc-cap">Search cap per bus (MW)</label>
-        <input id="hc-cap" type="number" min="0.1" step="0.5" value="${c.max_mw_per_bus}">
+        <input id="hc-cap" type="number" min="0.1" step="0.5" value="${escHtml(c.max_mw_per_bus)}">
         <label for="hc-fault">Fault-level screen</label>
         <label style="display:flex;gap:6px;align-items:center;font-weight:400">
           <input id="hc-fault" type="checkbox" ${c.fault_screen === false ? '' : 'checked'}>
           Re-run Fault Analysis + Duty Check at each bus's capacity
         </label>
         <label for="hc-rise" title="Prospective fault-level rise at which switchgear ratings must be re-checked">Fault-rise limit (%)</label>
-        <input id="hc-rise" type="number" min="0" step="1" value="${c.fault_rise_limit_pct}">
+        <input id="hc-rise" type="number" min="0" step="1" value="${escHtml(c.fault_rise_limit_pct)}">
         <label for="hc-share" title="DER share of the fault current at its own bus that triggers an overcurrent re-grade">Coordination-review share (%)</label>
-        <input id="hc-share" type="number" min="0" step="1" value="${c.der_share_limit_pct}">
+        <input id="hc-share" type="number" min="0" step="1" value="${escHtml(c.der_share_limit_pct)}">
       </div>`;
     document.getElementById('hc-config-modal').style.display = '';
   },

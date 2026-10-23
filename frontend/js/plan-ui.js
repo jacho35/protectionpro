@@ -75,8 +75,8 @@ const PlanUI = {
   _palItem(it) {
     const toolId = this._toolFor(it.kind);
     const ready = typeof PlanTools !== 'undefined' && PlanTools._tools[toolId];
-    return `<button type="button" class="plan-pal-item${ready ? '' : ' disabled'}" data-kind="${it.kind}" data-type="${escHtml(it.type)}"${ready ? '' : ' disabled'}${it.desc ? ` title="${escHtml(it.desc)}"` : ''}>
-      <span class="plan-pal-swatch" style="background:${it.color}"></span><span class="plan-pal-name">${escHtml(it.name)}</span>${it.desc ? `<small>${escHtml(it.desc)}</small>` : ''}</button>`;
+    return `<button type="button" class="plan-pal-item${ready ? '' : ' disabled'}" data-kind="${escHtml(it.kind)}" data-type="${escHtml(it.type)}"${ready ? '' : ' disabled'}${it.desc ? ` title="${escHtml(it.desc)}"` : ''}>
+      <span class="plan-pal-swatch" style="background:${escHtml(it.color)}"></span><span class="plan-pal-name">${escHtml(it.name)}</span>${it.desc ? `<small>${escHtml(it.desc)}</small>` : ''}</button>`;
   },
 
   _drawPanel() {
@@ -130,7 +130,7 @@ const PlanUI = {
         html += `<div class="plan-fromsld"><div class="plan-sec-head"><span>From the single line</span><small>${rows.length} not placed</small></div>`;
         for (const r of rows) {
           html += `<button type="button" class="plan-pal-item plan-sld-item" data-sld="${escHtml(r.id)}" title="Place ${escHtml(r.label)} from the single line">
-            <span class="plan-pal-swatch" style="background:${r.color}"></span><span class="plan-pal-name">${escHtml(r.label)}</span><small>${escHtml(r.sub)}</small></button>`;
+            <span class="plan-pal-swatch" style="background:${escHtml(r.color)}"></span><span class="plan-pal-name">${escHtml(r.label)}</span><small>${escHtml(r.sub)}</small></button>`;
         }
         html += `</div>`;
       }
@@ -180,7 +180,7 @@ const PlanUI = {
 
   _ulCard(kind, id, name, badge, meta, visible, opacity, selected, extra) {
     const k = kind === 'dxf' ? 'data-dxf' : 'data-plan';
-    return `<div class="plan-ul-card${selected ? ' selected' : ''}" data-ul-kind="${kind}" data-ul-id="${escHtml(id)}">
+    return `<div class="plan-ul-card${selected ? ' selected' : ''}" data-ul-kind="${escHtml(kind)}" data-ul-id="${escHtml(id)}">
       <div class="plan-ul-row">
         <input type="checkbox" data-role="${kind === 'dxf' ? 'dxf-vis' : 'vis'}" ${k}="${escHtml(id)}" ${visible ? 'checked' : ''} aria-label="Show ${escHtml(name)}">
         <button type="button" class="plan-ul-name" data-role="ul-pick" title="${escHtml(name)} — select to move, align or remove">${escHtml(name)}</button>
@@ -241,7 +241,7 @@ const PlanUI = {
       const v = (typeof LightingWS !== 'undefined' && LightingWS.verdictOf) ? LightingWS.verdictOf(r) : '';
       const cls = v === 'Pass' ? 'ok' : v === 'Fail' ? 'bad' : '';
       html += `<button type="button" class="plan-zone-row${PlanMarkup.selectedIds.has(r.id) ? ' selected' : ''}" data-plan-zone="${escHtml(r.id)}">
-        <span><b>${escHtml(r.name || KIND[r.kind || 'room'])}</b><small>${KIND[r.kind || 'room']}</small></span>${v ? `<span class="plan-verdict ${cls}">${escHtml(v)}</span>` : ''}</button>`;
+        <span><b>${escHtml(r.name || KIND[r.kind || 'room'])}</b><small>${KIND[r.kind || 'room']}</small></span>${v ? `<span class="plan-verdict ${escHtml(cls)}">${escHtml(v)}</span>` : ''}</button>`;
     }
     return html;
   },
@@ -478,7 +478,7 @@ const PlanUI = {
           : `<label class="plan-place-unit"><input type="number" min="1" step="1" data-place-opt="count" value="${numAttr(o.count)}" aria-label="Number of devices"> devices</label>`}</div>`;
     }
     const keys = { single: 'R rotates the selection', array: 'Drag from corner to corner', path: 'Enter finishes the line' }[mode];
-    bar.innerHTML = `<div class="plan-place-what"><small>Placing</small><b><span class="plan-pal-swatch" style="background:${def.color}"></span>${escHtml(def.name)}</b></div>
+    bar.innerHTML = `<div class="plan-place-what"><small>Placing</small><b><span class="plan-pal-swatch" style="background:${escHtml(def.color)}"></span>${escHtml(def.name)}</b></div>
       ${choice('single', 'One at a time', 'Click for each one')}
       ${choice('array', 'Fill an area', 'Drag a box → rows × columns')}
       ${choice('path', 'Along a line', 'Click points → evenly spaced')}
@@ -1043,28 +1043,28 @@ const PlanUI = {
     const v = (value == null) ? '' : value;
     const label = `<label class="plan-field-label">${escHtml(f.label)}${f.unit ? ` <span class="plan-field-unit">(${escHtml(f.unit)})</span>` : ''}</label>`;
     if (f.type === 'checkbox') {
-      return `<div class="plan-field plan-field-check"><label><input type="checkbox" data-key="${f.key}" ${value ? 'checked' : ''}> ${escHtml(f.label)}</label></div>`;
+      return `<div class="plan-field plan-field-check"><label><input type="checkbox" data-key="${escHtml(f.key)}" ${value ? 'checked' : ''}> ${escHtml(f.label)}</label></div>`;
     }
     if (f.type === 'cable_select') {
       // The size in use is also spelled out under the box, so it reads at a glance.
-      return `<div class="plan-field">${label}<select data-key="${f.key}" data-cable-select>${this._cableOptions(v, f)}</select><div class="plan-field-current">${v ? 'Current: <b>' + escHtml(v) + '</b>' : 'No cable chosen'}</div></div>`;
+      return `<div class="plan-field">${label}<select data-key="${escHtml(f.key)}" data-cable-select>${this._cableOptions(v, f)}</select><div class="plan-field-current">${v ? 'Current: <b>' + escHtml(v) + '</b>' : 'No cable chosen'}</div></div>`;
     }
     if (f.type === 'select') {
       const opts = (f.options || []).map(o => `<option value="${escHtml(o.value)}" ${String(o.value) === String(v) ? 'selected' : ''}>${escHtml(o.label)}</option>`).join('');
-      return `<div class="plan-field">${label}<select data-key="${f.key}">${opts}</select></div>`;
+      return `<div class="plan-field">${label}<select data-key="${escHtml(f.key)}">${opts}</select></div>`;
     }
     if (f.type === 'photo_select') {
       const libs = (typeof PhotoLib !== 'undefined') ? PhotoLib.list() : [];
       const opts = ['<option value="">— none (not calculated) —</option>'].concat(libs.map(p =>
         `<option value="${escHtml(p.id)}"${p.id === v ? ' selected' : ''}>${escHtml(PhotoLib.label(p))}</option>`)).join('');
-      return `<div class="plan-field">${label}<select data-key="${f.key}">${opts}</select></div>
+      return `<div class="plan-field">${label}<select data-key="${escHtml(f.key)}">${opts}</select></div>
         <button class="plan-circuit-btn" data-role="open-photolib">💡 Luminaire library…</button>`;
     }
     if (f.type === 'number') {
       const attrs = [f.min != null ? `min="${f.min}"` : '', f.max != null ? `max="${f.max}"` : '', f.step != null ? `step="${f.step}"` : ''].join(' ');
-      return `<div class="plan-field">${label}<input type="number" data-key="${f.key}" value="${escHtml(v)}" ${attrs}></div>`;
+      return `<div class="plan-field">${label}<input type="number" data-key="${escHtml(f.key)}" value="${escHtml(v)}" ${attrs}></div>`;
     }
-    return `<div class="plan-field">${label}<input type="text" data-key="${f.key}" value="${escHtml(v)}"></div>`;
+    return `<div class="plan-field">${label}<input type="text" data-key="${escHtml(f.key)}" value="${escHtml(v)}"></div>`;
   },
 
   // Balance the selected board's 3P+N tap phases. Unassigned fixtures are

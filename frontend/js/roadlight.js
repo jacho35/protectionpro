@@ -578,7 +578,7 @@ const RoadLight = {
     }
     const opt = (list, sel) => list.map(x => `<option value="${x.id}"${x.id === sel ? ' selected' : ''}>${escHtml(x.name)}</option>`).join('');
     const clsOpts = (sel) => `<option value=""${!sel ? ' selected' : ''}>— not lit / not checked</option>` +
-      this._classGroups(des).map(g => `<optgroup label="${g.label}">${g.list.map(c => `<option value="${c}"${c === sel ? ' selected' : ''} title="${escHtml(this._clsName(des, c) + ': ' + this._clsReq(des, c, null))}">${c}${this._std(des) === 'SANS' ? ' — ' + escHtml(RL_SANS_NAMES[c]) : ''}</option>`).join('')}</optgroup>`).join('');
+      this._classGroups(des).map(g => `<optgroup label="${escHtml(g.label)}">${g.list.map(c => `<option value="${c}"${c === sel ? ' selected' : ''} title="${escHtml(this._clsName(des, c) + ': ' + this._clsReq(des, c, null))}">${c}${this._std(des) === 'SANS' ? ' — ' + escHtml(RL_SANS_NAMES[c]) : ''}</option>`).join('')}</optgroup>`).join('');
     const libOpts = (sel) => (this.library[sel] ? '' : '<option value="" selected>— pick a luminaire —</option>') +
       this._libList().map(p => `<option value="${p.id}"${p.id === sel ? ' selected' : ''}>${escHtml(this._lumLabel(p))}</option>`).join('');
     const circuits = StreetLight.circuits;
@@ -794,11 +794,11 @@ const RoadLight = {
     if (!s) return '';
     if (s.error) return `<div class="rl-block"><div class="rl-block-h">Max spacing</div><div class="rl-err">${escHtml(s.error)}</div></div>`;
     const lo = s.sweep[0], hi = s.sweep[s.sweep.length - 1];
-    const cells = s.sweep.map(p => `<span class="rl-sw ${p.pass ? 'ok' : 'bad'}${p.spacing === s.best ? ' best' : ''}" title="${p.spacing} m — ${p.pass ? 'passes' : 'fails: ' + escHtml((p.worst || []).join(', '))}"></span>`).join('');
+    const cells = s.sweep.map(p => `<span class="rl-sw ${p.pass ? 'ok' : 'bad'}${p.spacing === s.best ? ' best' : ''}" title="${escHtml(p.spacing)} m — ${p.pass ? 'passes' : 'fails: ' + escHtml((p.worst || []).join(', '))}"></span>`).join('');
     return `<div class="rl-block"><div class="rl-block-h">Max spacing</div>
       ${s.best !== null && s.best !== undefined
         ? `<div class="rl-best">Largest passing spacing <b class="sl-mono">${s.best} m</b>${s.result ? ` · ${Math.round(s.result.energy.wPerKm).toLocaleString()} W/km · ${this._fmt(s.result.energy.polesPerKm, 1)} poles/km` : ''}
-           <button class="btn-small btn-primary" data-rl-use="${s.best}">Use ${s.best} m</button></div>
+           <button class="btn-small btn-primary" data-rl-use="${escHtml(s.best)}">Use ${s.best} m</button></div>
            ${hi && s.best === hi.spacing ? '<div class="sl-hint">It still passes at the top of the range — raise <i>to</i> to find the real limit.</div>' : ''}`
         : '<div class="rl-best bad">No spacing in the range passes — raise the flux, mounting height or tilt, or change the luminaire.</div>'}
       <div class="rl-sw-strip" role="img" aria-label="Pass or fail at each spacing">${cells}</div>
@@ -867,18 +867,18 @@ const RoadLight = {
         const v = g.v[i][j];
         const x0 = X(Math.max(0, g.x[i] - dx / 2)), x1 = X(Math.min(S, g.x[i] + dx / 2));
         const y0 = Yp(Math.max(g.y[0], g.y[j] - dy / 2)), y1 = Yp(Math.min(g.y[ny - 1], g.y[j] + dy / 2));
-        cells.push(`<rect x="${x0.toFixed(1)}" y="${y0.toFixed(1)}" width="${(x1 - x0 + 0.3).toFixed(1)}" height="${(y1 - y0 + 0.3).toFixed(1)}" fill="${colour(bandOf(v))}" data-v="${v}" data-x="${g.x[i]}" data-y="${g.y[j]}"/>`);
+        cells.push(`<rect x="${x0.toFixed(1)}" y="${y0.toFixed(1)}" width="${(x1 - x0 + 0.3).toFixed(1)}" height="${(y1 - y0 + 0.3).toFixed(1)}" fill="${colour(bandOf(v))}" data-v="${v}" data-x="${escHtml(g.x[i])}" data-y="${escHtml(g.y[j])}"/>`);
       }
     }
     const lines = levels.map(lv => this._contour(g, lv, X, Yp)).join('');
     const des = this.selected;
     const lay = des ? this._layout(des) : null;
-    const edges = lay ? lay.secs.slice(1).map(s => `<line x1="${pad.l}" x2="${pad.l + pw}" y1="${Yp(s.y0)}" y2="${Yp(s.y0)}" stroke="var(--bg-primary)" stroke-width="1" stroke-dasharray="4 3" opacity=".8"/>`).join('') : '';
+    const edges = lay ? lay.secs.slice(1).map(s => `<line x1="${escHtml(pad.l)}" x2="${pad.l + pw}" y1="${Yp(s.y0)}" y2="${Yp(s.y0)}" stroke="var(--bg-primary)" stroke-width="1" stroke-dasharray="4 3" opacity=".8"/>`).join('') : '';
     const lums = (r.luminaires || []).map(l => `<circle cx="${X(l.x)}" cy="${Yp(Math.min(g.y[ny - 1], Math.max(g.y[0], l.y)))}" r="4" fill="var(--accent)" stroke="var(--bg-primary)" stroke-width="2"/>`).join('');
     const legend = [0, ...levels].map((lv, k) => `<span class="rl-leg"><i style="background:${colour(k)}"></i>${k === 0 ? '< ' + (levels[0] ?? '') : '≥ ' + lv}</span>`).join('');
     return `<svg viewBox="0 0 ${W} ${H}" width="100%" class="rl-iso-svg" role="img" aria-label="Isolux plot">
         <g class="rl-iso-cells" shape-rendering="crispEdges">${cells.join('')}</g>${edges}${lines}${lums}
-        <text x="${pad.l}" y="${H - 6}" class="rl-xs-s">0</text><text x="${pad.l + pw}" y="${H - 6}" text-anchor="end" class="rl-xs-s">${S} m along the road</text>
+        <text x="${escHtml(pad.l)}" y="${H - 6}" class="rl-xs-s">0</text><text x="${pad.l + pw}" y="${H - 6}" text-anchor="end" class="rl-xs-s">${S} m along the road</text>
         <text x="${pad.l - 4}" y="${pad.t + 9}" text-anchor="end" class="rl-xs-s">${g.y[0]}</text><text x="${pad.l - 4}" y="${pad.t + ph}" text-anchor="end" class="rl-xs-s">${this._fmt(g.y[ny - 1], 1)}</text>
       </svg><div class="rl-legend">${legend} <span class="sl-hint">lx · max ${this._fmt(max, 1)}</span></div>`;
   },
@@ -1407,7 +1407,7 @@ const RoadLight = {
       m.setAttribute('aria-modal', 'true');
       document.body.appendChild(m);
     }
-    m.innerHTML = `<div class="modal-content rl-dialog ${cls}">
+    m.innerHTML = `<div class="modal-content rl-dialog ${escHtml(cls)}">
       <div class="modal-header"><h3>${title}</h3><button class="modal-close" data-m="close" aria-label="Close">&times;</button></div>
       <div class="rl-dialog-body">${body}</div>
       <div class="rl-dialog-foot">${foot}</div></div>`;

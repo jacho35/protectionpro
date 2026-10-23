@@ -1198,7 +1198,7 @@ const Retic = {
     const aVal = o ? (o.unit === 'A' ? String(o.amps) : o.amps.toFixed(1)) : '';
     const kVal = o ? (o.unit === 'kVA' ? String(o.kva) : o.kva.toFixed(2)) : '';
     const tip = 'Fixed, undiversified load that replaces the ADMD for this erf. Enter amps or kVA; the other is calculated at the erf\'s own voltage (230 V, or √3·400 V for 3 Phase).';
-    return `<div class="erf-ov" title="${tip}">
+    return `<div class="erf-ov" title="${escHtml(tip)}">
       <input type="number" step="any" min="0" aria-label="Override current (A)" data-action="erf-field" data-kiosk="${escHtml(k.id)}" data-erf="${escHtml(e.id)}" data-field="ampsOverride" value="${aVal}" placeholder="A"${o && o.unit !== 'A' ? ' class="derived"' : ''}><span class="erf-ov-u">A</span>
       <input type="number" step="any" min="0" aria-label="Override load (kVA)" data-action="erf-field" data-kiosk="${escHtml(k.id)}" data-erf="${escHtml(e.id)}" data-field="kvaOverride" value="${kVal}" placeholder="kVA"${o && o.unit !== 'kVA' ? ' class="derived"' : ''}><span class="erf-ov-u">kVA</span>
     </div>`;
@@ -1509,7 +1509,7 @@ const Retic = {
   _calcTable(rows, head) {
     const h = head ? `<thead><tr>${head.map(x => `<th>${x}</th>`).join('')}</tr></thead>` : '';
     return `<table class="calc-table">${h}<tbody>${rows.map(r =>
-      `<tr${r.cls ? ` class="${r.cls}"` : ''}>${(r.cells || r).map((c, i) => `<td${i === (r.cells || r).length - 1 ? ' class="calc-val"' : ''}>${c}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
+      `<tr${r.cls ? ` class="${escHtml(r.cls)}"` : ''}>${(r.cells || r).map((c, i) => `<td${i === (r.cells || r).length - 1 ? ' class="calc-val"' : ''}>${c}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
   },
 
   _kioskCalcHtml(kr) {
@@ -1843,7 +1843,7 @@ const Retic = {
 
   _protectionOptions(selected, blank) {
     const lv = (x) => !x.rated_voltage_kv || x.rated_voltage_kv <= 1;
-    const opt = (kind, x) => `<option value="${kind}:${x.id}"${selected === kind + ':' + x.id ? ' selected' : ''}>${escHtml(x.name)}</option>`;
+    const opt = (kind, x) => `<option value="${escHtml(kind)}:${x.id}"${selected === kind + ':' + x.id ? ' selected' : ''}>${escHtml(x.name)}</option>`;
     return `<option value="">${blank || '— none selected —'}</option>`
       + `<optgroup label="Circuit breakers (LV)">${STANDARD_CBS.filter(lv).map(x => opt('cb', x)).join('')}</optgroup>`
       + `<optgroup label="Fuses">${STANDARD_FUSES.filter(lv).map(x => opt('fuse', x)).join('')}</optgroup>`;
@@ -1893,7 +1893,7 @@ const Retic = {
     const pa = kr.phaseA;
     const f1 = (v) => (Math.round(v * 10) / 10).toFixed(1);
     const dots = pa ? [['Red', 'R', '#dc2626'], ['White', 'W', '#6b7280'], ['Blue', 'B', '#2563eb']].filter(x => pa[x[0]] != null)
-      .map(x => `<span><span style="color:${x[2]}">●</span> ${x[1]} ${Number(pa[x[0]]) >= worst - 0.05 ? `<b style="color:var(--text-primary)">${f1(pa[x[0]])}</b>` : f1(pa[x[0]])}</span>`).join('') : '';
+      .map(x => `<span><span style="color:${escHtml(x[2])}">●</span> ${x[1]} ${Number(pa[x[0]]) >= worst - 0.05 ? `<b style="color:var(--text-primary)">${f1(pa[x[0]])}</b>` : f1(pa[x[0]])}</span>`).join('') : '';
     const dev = this._protectionDevice(h);
     const inA = dev ? (dev.kind === 'fuse' ? Number(dev.props.rated_current_a) : Number(dev.props.trip_rating_a)) || 0 : 0;
     const lv = (x) => !x.rated_voltage_kv || x.rated_voltage_kv <= 1;
@@ -2024,7 +2024,7 @@ const Retic = {
   _earthPill(status, text, title) {
     const cls = status === 'pass' ? 'pass' : status === 'fail' ? 'fail' : 'info';
     const mark = status === 'pass' ? '✓' : status === 'fail' ? '✗' : '•';
-    return `<span class="status-pill ${cls}" title="${escHtml(title || '')}">${mark} ${escHtml(text)}</span>`;
+    return `<span class="status-pill ${escHtml(cls)}" title="${escHtml(title || '')}">${mark} ${escHtml(text)}</span>`;
   },
 
   _earthText(item) {
@@ -2060,7 +2060,7 @@ const Retic = {
         if (!c) continue;
         const st = this._earthStatus(e);
         const open = this._calcOpen.has('e:' + e.erfId);
-        c.innerHTML = `<button type="button" class="calc-link" data-action="toggle-calc" data-calc="e:${e.erfId}" aria-expanded="${open}" title="${escHtml(this._earthTip(e))}">${this._earthPill(st, this._earthText(e))} <span class="calc-caret">${open ? '▴' : '▾'}</span></button>`;
+        c.innerHTML = `<button type="button" class="calc-link" data-action="toggle-calc" data-calc="e:${escHtml(e.erfId)}" aria-expanded="${open}" title="${escHtml(this._earthTip(e))}">${this._earthPill(st, this._earthText(e))} <span class="calc-caret">${open ? '▴' : '▾'}</span></button>`;
       }
     }
     this.updateVD();     // the expandable panel carries the earth working too

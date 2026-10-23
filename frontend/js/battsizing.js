@@ -47,11 +47,11 @@ const BatterySizing = {
         <label for="bsz-batt">Battery</label>
         <select id="bsz-batt">${opt}</select>
         <label for="bsz-aging">Aging factor</label>
-        <input id="bsz-aging" type="number" min="1" max="2" step="0.05" value="${c.aging}">
+        <input id="bsz-aging" type="number" min="1" max="2" step="0.05" value="${escHtml(c.aging)}">
         <label for="bsz-margin">Design margin</label>
-        <input id="bsz-margin" type="number" min="1" max="2" step="0.05" value="${c.margin}">
+        <input id="bsz-margin" type="number" min="1" max="2" step="0.05" value="${escHtml(c.margin)}">
         <label for="bsz-temp">Electrolyte / cell temperature (°C)</label>
-        <input id="bsz-temp" type="number" min="-20" max="50" step="1" value="${c.temp_c}">
+        <input id="bsz-temp" type="number" min="-20" max="50" step="1" value="${escHtml(c.temp_c)}">
       </div>
       <div style="margin-top:12px;font-size:13px"><strong>Duty cycle</strong>
         <span style="font-size:11px;color:var(--text-muted,#6d6d6d)">— leave one 0 kW row to derive from the island's essential load</span></div>
@@ -70,8 +70,8 @@ const BatterySizing = {
     const rows = this._cfg.duty.map((s, i) => `
       <div style="display:flex;gap:8px;align-items:center;margin-bottom:4px;font-size:12px" data-duty-row="${i}">
         <span style="width:44px;color:var(--text-muted,#6d6d6d)">Step ${i + 1}</span>
-        <input type="number" data-duty-min min="1" step="1" value="${s.duration_min}" style="width:90px"> min at
-        <input type="number" data-duty-kw min="0" step="0.5" value="${s.load_kw}" style="width:90px"> kW
+        <input type="number" data-duty-min min="1" step="1" value="${escHtml(s.duration_min)}" style="width:90px"> min at
+        <input type="number" data-duty-kw min="0" step="0.5" value="${escHtml(s.load_kw)}" style="width:90px"> kW
         <button class="btn" type="button" data-duty-del title="Remove step" style="font-size:11px;padding:1px 7px">✕</button>
       </div>`).join('');
     const host = document.getElementById('bsz-duty-rows');

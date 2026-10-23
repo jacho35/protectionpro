@@ -758,7 +758,7 @@ const Rates = {
     }
     const tip = { norate: 'Items this project uses with neither a material nor a labour rate', notcounted: 'Items with a rate that no rule counts and nothing in this project measures' };
     m.querySelector('#rt-seg').innerHTML = seg.map(([v, l, x]) =>
-      `<button type="button" class="rt-sg${this.filter === v ? ' on' : ''}" aria-pressed="${this.filter === v}" data-rt="filter" data-v="${v}" ${tip[v] ? `title="${tip[v]}"` : ''}>${l}${x}</button>`).join('');
+      `<button type="button" class="rt-sg${this.filter === v ? ' on' : ''}" aria-pressed="${this.filter === v}" data-rt="filter" data-v="${v}" ${tip[v] ? `title="${escHtml(tip[v])}"` : ''}>${l}${x}</button>`).join('');
   },
 
   _renderBanner() {
@@ -869,7 +869,7 @@ const Rates = {
       const rule = this.getRule(r.key);
       if (pct) {
         const f = rule && rule.basis === 'pct' && rule.factor != null ? this._num(rule.factor) : '';
-        return `<tr data-key="${escHtml(r.key)}" data-cat="${r.cat}">${head}
+        return `<tr data-key="${escHtml(r.key)}" data-cat="${escHtml(r.cat)}">${head}
           <td class="rt-ofc"><button type="button" class="rt-of" data-rt="of" data-key="${escHtml(r.key)}" aria-haspopup="dialog" aria-label="Percentage of, for ${d}"><span>${escHtml(this._ofLabel(rule))}</span>${this._icon('<path d="m4 6 4 4 4-4"/>', 10)}</button></td>
           <td><input class="rt-gc rt-num" data-f="pct" inputmode="decimal" value="${escHtml(f)}" placeholder="Off" aria-label="Percent for ${d}"></td>
           <td class="rt-ro rt-num" data-td="inbill">${this._inBill(r.key)}</td>
@@ -881,7 +881,7 @@ const Rates = {
       const lab = this.priceIn(r.key) === 'labour';
       const ph = (isLab) => this.priced(v) ? '—' : (isLab === lab ? 'No rate' : '—');
       const on = !!rule && rule.basis !== 'pct';
-      return `<tr data-key="${escHtml(r.key)}" data-cat="${r.cat}">${head}
+      return `<tr data-key="${escHtml(r.key)}" data-cat="${escHtml(r.cat)}">${head}
         <td class="rt-qf"><select class="rt-gc rt-sel${on ? ' rt-rule' : ''}" data-f="basis" aria-label="Quantity from, for ${d}">${this._basisOptions(on ? rule.basis : '')}</select></td>
         <td class="${on ? '' : 'rt-dis'}"><input class="rt-gc rt-num" data-f="factor" inputmode="decimal" value="${on ? this._num(rule.factor) : ''}" ${on ? '' : 'disabled'} aria-label="Factor for ${d}"></td>
         <td data-td="rate" class="${nr}"><input class="rt-gc rt-num" data-f="rate" inputmode="decimal" value="${this._rateText(v.rate)}" placeholder="${ph(false)}" aria-label="Material rate for ${d}"></td>

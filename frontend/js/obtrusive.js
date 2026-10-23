@@ -103,7 +103,7 @@ const ObtrusiveCalc = {
   panel(room) {
     const L = this.read(room), Z = OBTRUSIVE_ZONES[L.zone], road = L.check === 'road';
     const sel = (k, opts, cur) => `<select data-ob="${k}" style="width:100%">${opts.map(([v, n]) => `<option value="${v}"${v === cur ? ' selected' : ''}>${escHtml(n)}</option>`).join('')}</select>`;
-    const num = (k, label, unit, step, extra) => `<label class="plan-field"><span>${label}</span><input type="number" data-ob="${k}" value="${L[k]}" step="${step}" ${extra || ''} style="width:100%"><small>${unit}</small></label>`;
+    const num = (k, label, unit, step, extra) => `<label class="plan-field"><span>${label}</span><input type="number" data-ob="${k}" value="${escHtml(L[k])}" step="${step}" ${extra || ''} style="width:100%"><small>${unit}</small></label>`;
     const j = L.curfew === 'post' ? 1 : 0;
     const body = road ? `
         <label class="plan-field"><span>Road lighting class</span>${sel('roadClass', this.ROAD_CLASSES, L.roadClass)}</label>

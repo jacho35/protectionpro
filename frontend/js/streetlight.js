@@ -574,7 +574,7 @@ const StreetLight = {
       return;
     }
     const srcOpts = this._sources().map(s =>
-      `<option value="${s.kind}:${escHtml(s.id)}"${this._sourceKey(s) === this._sourceKey(c.source) ? ' selected' : ''}>${escHtml(s.name)} (${s.kind})</option>`).join('');
+      `<option value="${escHtml(s.kind)}:${escHtml(s.id)}"${this._sourceKey(s) === this._sourceKey(c.source) ? ' selected' : ''}>${escHtml(s.name)} (${s.kind})</option>`).join('');
     const lumOpts = (sel, withDefault) => this._lumOptions(sel, withDefault);
     const protOpts = SL_PROTECTION.map(p => `<option value="${p.id}"${p.id === c.protection ? ' selected' : ''}>${escHtml(p.name)}${p.ia ? ` (Ia ${p.ia} A)` : ''}</option>`).join('');
     const phOpts = (sel) => ['R', 'W', 'B'].map(p => `<option value="${p}"${p === sel ? ' selected' : ''}>${p}</option>`).join('');
@@ -781,7 +781,7 @@ const StreetLight = {
     const maxD = Math.max(1, ...pts.map(p => p.distM));
     const yMax = Math.max(r.vdLimitPct * 1.25, ...pts.map(p => p.vdPct * 1.08));
     const X = d => L + d / maxD * (W - L - 6), Y = v => T + (1 - v / yMax) * (H - T - B);
-    const dots = pts.map(p => `<circle cx="${X(p.distM).toFixed(1)}" cy="${Y(p.vdPct).toFixed(1)}" r="2.6" fill="${this.PH_COLOR[p.phase]}"><title>${escHtml(p.name || p.id)} ${p.phase}: ${p.vdPct.toFixed(2)} %</title></circle>`).join('');
+    const dots = pts.map(p => `<circle cx="${X(p.distM).toFixed(1)}" cy="${Y(p.vdPct).toFixed(1)}" r="2.6" fill="${escHtml(this.PH_COLOR[p.phase])}"><title>${escHtml(p.name || p.id)} ${p.phase}: ${p.vdPct.toFixed(2)} %</title></circle>`).join('');
     const yl = Y(r.vdLimitPct).toFixed(1);
     return `<svg class="sl-chart" viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Volt drop against distance from the source">
       <line x1="${L}" y1="${T}" x2="${L}" y2="${H - B}" class="sl-axis"/><line x1="${L}" y1="${H - B}" x2="${W - 6}" y2="${H - B}" class="sl-axis"/>
@@ -1007,7 +1007,7 @@ const StreetLight = {
       filter: (x) => CableLib.isDistribution(x) && !CableLib.isMV(x) && (q.system === '1ph' || Number(x.cores) >= 4),
       groups: CableLib.reticGroups(), prefer: CableLib.reticPrefer('lv'), showAll: true,
     });
-    const srcOpts = this._sources().map(s => `<option value="${s.kind}:${escHtml(s.id)}">${escHtml(s.name)} (${s.kind})</option>`).join('');
+    const srcOpts = this._sources().map(s => `<option value="${escHtml(s.kind)}:${escHtml(s.id)}">${escHtml(s.name)} (${s.kind})</option>`).join('');
     const num = (k, step, unit, label, title) => `<label${title ? ` title="${escHtml(title)}"` : ''}>${label}<span class="sl-unit"><input type="number" step="${step}" data-q="${k}" value="${escHtml(q[k] ?? '')}"> ${unit}</span></label>`;
     m.innerHTML = `
       <div class="modal-content sl-qc">

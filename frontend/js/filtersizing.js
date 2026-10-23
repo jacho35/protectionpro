@@ -46,11 +46,11 @@ const FilterSizing = {
         <label for="flt-bus">Filter bus</label>
         <select id="flt-bus"><option value="">Auto — worst THD bus</option>${opt}</select>
         <label for="flt-kvar">Total filter size (kvar)</label>
-        <input id="flt-kvar" type="number" min="0" step="50" value="${c.total_kvar || ''}" placeholder="auto — network reactive demand">
+        <input id="flt-kvar" type="number" min="0" step="50" value="${escHtml(c.total_kvar || '')}" placeholder="auto — network reactive demand">
         <label for="flt-q">Quality factor Q</label>
-        <input id="flt-q" type="number" min="5" max="150" step="5" value="${c.quality_factor}">
+        <input id="flt-q" type="number" min="5" max="150" step="5" value="${escHtml(c.quality_factor)}">
         <label for="flt-branches">Max branches</label>
-        <input id="flt-branches" type="number" min="1" max="4" step="1" value="${c.max_branches}">
+        <input id="flt-branches" type="number" min="1" max="4" step="1" value="${escHtml(c.max_branches)}">
       </div>`;
     document.getElementById('flt-config-modal').style.display = '';
   },

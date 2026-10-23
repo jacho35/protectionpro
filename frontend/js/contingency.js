@@ -43,11 +43,11 @@ const Contingency = {
           <option value="1"${c.include_n2 ? ' selected' : ''}>N-1 + N-2 (pairs — slower)</option>
         </select>
         <label for="cont-vmin">Min voltage (p.u.)</label>
-        <input id="cont-vmin" type="number" min="0.5" max="1" step="0.01" value="${c.v_min}">
+        <input id="cont-vmin" type="number" min="0.5" max="1" step="0.01" value="${escHtml(c.v_min)}">
         <label for="cont-vmax">Max voltage (p.u.)</label>
-        <input id="cont-vmax" type="number" min="1" max="1.5" step="0.01" value="${c.v_max}">
+        <input id="cont-vmax" type="number" min="1" max="1.5" step="0.01" value="${escHtml(c.v_max)}">
         <label for="cont-load">Loading limit (%)</label>
-        <input id="cont-load" type="number" min="50" max="200" step="5" value="${c.loading_limit_pct}">
+        <input id="cont-load" type="number" min="50" max="200" step="5" value="${escHtml(c.loading_limit_pct)}">
       </div>
       <p style="font-size:11px;color:var(--text-muted,#6d6d6d);margin:12px 0 0">
         N-2 pairs grow quadratically; the run is capped and any skipped pairs are
@@ -135,14 +135,14 @@ const Contingency = {
       const hasDetail = (c.violations || []).length > 0;
       let detail = '';
       if (hasDetail) {
-        detail = `<tr id="${detailId}" style="display:none"><td colspan="7" style="background:var(--bg-secondary,#f7f7fa);padding:6px 10px">
+        detail = `<tr id="${escHtml(detailId)}" style="display:none"><td colspan="7" style="background:var(--bg-secondary,#f7f7fa);padding:6px 10px">
           <ul style="margin:4px 0;padding-left:18px;font-size:11px">${
             c.violations.map(v => `<li>${this._esc(v.detail)}</li>`).join('')}</ul></td></tr>`;
       }
       return `<tr${hasDetail ? ` data-toggle="${detailId}" style="cursor:pointer"` : ''}>
         <td>${c.order === 2 ? 'N-2' : 'N-1'}</td>
         <td>${this._esc(c.label)}${hasDetail ? ' <span style="color:var(--text-muted,#6d6d6d)">▸</span>' : ''}</td>
-        <td><span style="color:${st.c};font-weight:600">${this._esc(st.label)}</span></td>
+        <td><span style="color:${escHtml(st.c)};font-weight:600">${this._esc(st.label)}</span></td>
         <td style="text-align:right">${c.violation_count || ''}</td>
         <td style="text-align:right">${c.converged ? c.max_loading_pct.toFixed(0) + '%' : '—'}</td>
         <td style="text-align:right">${c.converged && c.min_v_pu ? c.min_v_pu.toFixed(3) : '—'}</td>

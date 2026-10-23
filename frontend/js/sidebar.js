@@ -38,7 +38,7 @@ const Sidebar = {
         <div class="ribbon-group">
           <div class="ribbon-group-items">
             ${items.map(type => `
-              <div class="palette-item ribbon-item" data-type="${type}" draggable="true" title="${COMPONENT_DEFS[type].name}">
+              <div class="palette-item ribbon-item" data-type="${escHtml(type)}" draggable="true" title="${escHtml(COMPONENT_DEFS[type].name)}">
                 ${Symbols.renderPaletteIcon(type)}
               </div>`).join('')}
           </div>
@@ -78,7 +78,7 @@ const Sidebar = {
     const def = COMPONENT_DEFS[type];
     const iconSvg = Symbols.renderPaletteIcon(type);
     return `
-      <div class="palette-item" data-type="${type}" draggable="true">
+      <div class="palette-item" data-type="${escHtml(type)}" draggable="true">
         <div class="item-icon">${iconSvg}</div>
         <div class="item-label">${def.name}</div>
       </div>`;

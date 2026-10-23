@@ -59,9 +59,9 @@ const FrequencyScan = {
         <label for="fscan-bus">Scan bus</label>
         <select id="fscan-bus"><option value="">All buses</option>${opt(buses)}</select>
         <label for="fscan-hmax">Top harmonic order</label>
-        <input id="fscan-hmax" type="number" min="2" max="100" step="1" value="${c.h_max}">
+        <input id="fscan-hmax" type="number" min="2" max="100" step="1" value="${escHtml(c.h_max)}">
         <label for="fscan-hstep">Resolution (Δh)</label>
-        <input id="fscan-hstep" type="number" min="0.01" max="1" step="0.01" value="${c.h_step}">
+        <input id="fscan-hstep" type="number" min="0.01" max="1" step="0.01" value="${escHtml(c.h_step)}">
       </div>
       <p style="font-size:11px;color:var(--text-muted,#6d6d6d);margin:12px 0 0">
         Rule of thumb: a capacitor bank Q<sub>c</sub> on a bus with fault level S<sub>sc</sub>
@@ -268,12 +268,12 @@ const FrequencyScan = {
     (spec.markers || []).forEach(mk => {
       if (mk.x == null || mk.x < xLo || mk.x > xHi) return;
       const x = X(mk.x);
-      g += `<line x1="${x}" y1="${padT}" x2="${x}" y2="${padT + plotH}" stroke="${mk.color || P.tickText}" stroke-width="1.2" opacity="0.7"${mk.dashed ? ' stroke-dasharray="4 3"' : ''}/>`;
-      if (mk.label) g += `<text x="${x + 3}" y="${padT + 10}" font-size="8" fill="${mk.color || P.tickText}">${this._esc(mk.label)}</text>`;
+      g += `<line x1="${x}" y1="${padT}" x2="${x}" y2="${padT + plotH}" stroke="${escHtml(mk.color || P.tickText)}" stroke-width="1.2" opacity="0.7"${mk.dashed ? ' stroke-dasharray="4 3"' : ''}/>`;
+      if (mk.label) g += `<text x="${x + 3}" y="${padT + 10}" font-size="8" fill="${escHtml(mk.color || P.tickText)}">${this._esc(mk.label)}</text>`;
     });
     for (const s of spec.series) {
       let seg = [];
-      const flush = () => { if (seg.length > 1) g += `<polyline points="${seg.join(' ')}" fill="none" stroke="${s.color}" stroke-width="${s.width || 1.8}" stroke-linejoin="round" stroke-linecap="round"/>`; seg = []; };
+      const flush = () => { if (seg.length > 1) g += `<polyline points="${seg.join(' ')}" fill="none" stroke="${escHtml(s.color)}" stroke-width="${escHtml(s.width || 1.8)}" stroke-linejoin="round" stroke-linecap="round"/>`; seg = []; };
       s.values.forEach((v, i) => {
         if (v == null) { flush(); return; }
         seg.push(`${X(xs[i]).toFixed(1)},${Y(Math.min(yMax, Math.max(yMin, v))).toFixed(1)}`);
@@ -289,7 +289,7 @@ const FrequencyScan = {
     for (const e of ends) { e.ly = Math.max(e.y, prev + 12); prev = e.ly; }
     for (const e of ends) {
       const x0 = W - padR;
-      g += `<line x1="${x0 + 2}" y1="${e.ly}" x2="${x0 + 14}" y2="${e.ly}" stroke="${e.color}" stroke-width="2"/>`;
+      g += `<line x1="${x0 + 2}" y1="${numAttr(e.ly)}" x2="${x0 + 14}" y2="${numAttr(e.ly)}" stroke="${escHtml(e.color)}" stroke-width="2"/>`;
       g += `<text x="${x0 + 18}" y="${e.ly + 3}" font-size="9" fill="${P.inkSec}">${this._esc(e.name)}</text>`;
     }
     const title = `<text x="${padL}" y="14" font-size="11" font-weight="600" fill="${P.ink}">${this._esc(spec.title)}</text>`;

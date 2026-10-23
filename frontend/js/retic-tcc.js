@@ -305,12 +305,12 @@ const ReticTcc = {
       }
       if (up.length < 2) return '';
       const edge = (a) => a.map(q => f(q[0]) + ' ' + f(q[1])).join('L');
-      return `<path d="M${edge(up)}L${edge(dn.slice().reverse())}Z" fill="${v.color}" fill-opacity=".16" stroke="none"/>`
-        + `<path class="rtcc-curve" style="stroke:${v.color};stroke-width:1.4;stroke-dasharray:5 3" d="${fast}"><title>${escHtml(v.name)}: fastest it may trip</title></path>`;
+      return `<path d="M${edge(up)}L${edge(dn.slice().reverse())}Z" fill="${escHtml(v.color)}" fill-opacity=".16" stroke="none"/>`
+        + `<path class="rtcc-curve" style="stroke:${escHtml(v.color)};stroke-width:1.4;stroke-dasharray:5 3" d="${fast}"><title>${escHtml(v.name)}: fastest it may trip</title></path>`;
     };
     const banded = d.devices.some(v => bandFor(v));
     const curves = d.devices.map((v, i) =>
-      bandFor(v) + `<path class="rtcc-curve" style="stroke:${v.color}${i ? ';stroke-dasharray:none' : ''}" d="${curveFor(v.device)}"><title>${escHtml(v.name)}${banded && v.device.props && v.device.props.trip_tol ? ': slowest it may trip (clearing time)' : ''}</title></path>`).join('');
+      bandFor(v) + `<path class="rtcc-curve" style="stroke:${escHtml(v.color)}${i ? ';stroke-dasharray:none' : ''}" d="${curveFor(v.device)}"><title>${escHtml(v.name)}${banded && v.device.props && v.device.props.trip_tol ? ': slowest it may trip (clearing time)' : ''}</title></path>`).join('');
 
     // Cable adiabatic withstand t = k²S²/I²: straight in log-log; solid up to
     // 5 s, dotted beyond where the adiabatic assumption no longer holds.
@@ -326,15 +326,15 @@ const ReticTcc = {
       // Label just inside where the line leaves the frame (right edge or bottom).
       if (tAt(iEnd) <= this.T_MAX) labels.push({ c, x: X(iEnd) - 6, y: Y(tAt(iEnd)) - 6 });
       const tip = `${c.label} withstand: k²S² = ${Math.round(c.k2s2).toLocaleString('en-US')} A²s`;
-      return (solid ? `<path class="rtcc-cable" style="stroke:${c.color}" d="${solid}"><title>${escHtml(tip)}</title></path>` : '')
-        + (dot ? `<path class="rtcc-cable-dot" style="stroke:${c.color}" d="${dot}"><title>${escHtml(tip)} (beyond 5 s the adiabatic assumption no longer holds)</title></path>` : '');
+      return (solid ? `<path class="rtcc-cable" style="stroke:${escHtml(c.color)}" d="${solid}"><title>${escHtml(tip)}</title></path>` : '')
+        + (dot ? `<path class="rtcc-cable-dot" style="stroke:${escHtml(c.color)}" d="${dot}"><title>${escHtml(tip)} (beyond 5 s the adiabatic assumption no longer holds)</title></path>` : '');
     }).join('');
     // Keep labels that end up near each other from overprinting: step them up.
     labels.sort((a, b) => b.y - a.y);
     labels.forEach((l, i) => {
       for (const o of labels.slice(0, i)) if (Math.abs(o.x - l.x) < 70 && l.y > o.y - 14) l.y = o.y - 14;
       l.y = Math.max(l.y, this.Y0 + 12);
-      cableLines += `<text class="rtcc-cable-t" style="fill:${l.c.color}" x="${f(l.x)}" y="${f(l.y)}" text-anchor="end">${escHtml(l.c.short)}</text>`;
+      cableLines += `<text class="rtcc-cable-t" style="fill:${escHtml(l.c.color)}" x="${f(l.x)}" y="${f(l.y)}" text-anchor="end">${escHtml(l.c.short)}</text>`;
     });
 
     // Points
@@ -428,12 +428,12 @@ const ReticTcc = {
       const name = d.devices.length > 1 ? v.name : 'Breaker';
       lines.push({ txt: t === Infinity ? `${name} does not trip` : `${name} trips in ${this._fmtT(t)}${i ? '' : (t <= d.tAllow ? ` (within ${d.tAllow} s)` : ` (over ${d.tAllow} s)`)}`,
         color: d.devices.length > 1 ? v.color : null });
-      if (i && t <= this.T_MAX) dots += `<circle class="rtcc-cdot" style="stroke:${v.color}" cx="${f(x)}" cy="${f(Y(t))}" r="4"/>`;
+      if (i && t <= this.T_MAX) dots += `<circle class="rtcc-cdot" style="stroke:${escHtml(v.color)}" cx="${f(x)}" cy="${f(Y(t))}" r="4"/>`;
     });
     sh.cables.slice(0, 4).forEach(c => {
       const tc = c.k2s2 / (I * I);
       lines.push({ txt: `${c.short} withstands ${this._fmtT(tc)}${t0 <= tc ? ' ✓' : ' ✕'}`, color: c.color, bold: true });
-      if (tc >= this.T_MIN && tc <= this.T_MAX) dots += `<circle class="rtcc-cdot" style="stroke:${c.color}" cx="${f(x)}" cy="${f(Y(tc))}" r="3.5"/>`;
+      if (tc >= this.T_MIN && tc <= this.T_MAX) dots += `<circle class="rtcc-cdot" style="stroke:${escHtml(c.color)}" cx="${f(x)}" cy="${f(Y(tc))}" r="3.5"/>`;
     });
     if (sh.cables.length > 4) lines.push({ txt: `+ ${sh.cables.length - 4} more cables` });
     const near = this._near(g, sh);
@@ -445,7 +445,7 @@ const ReticTcc = {
     const bh = 10 * fs + lines.length * lh;
     const bx = x + 12 + bw > this.X1 ? Math.max(x - 12 - bw, 2) : x + 12;
     const by = Math.min(Math.max(y - bh - 10, this.Y0 + 4), this.Y1 - bh - 4);
-    const text = lines.map((l, i) => `<text class="rtcc-cbox-t ${l.cls || ''}" x="${f(8 * fs)}" y="${f(10 * fs + (i + 0.75) * lh)}"${l.color ? ` style="fill:${l.color}"` : ''}${l.bold ? ' font-weight="600"' : ''}>${escHtml(l.txt)}</text>`).join('');
+    const text = lines.map((l, i) => `<text class="rtcc-cbox-t ${escHtml(l.cls || '')}" x="${f(8 * fs)}" y="${f(10 * fs + (i + 0.75) * lh)}"${l.color ? ` style="fill:${escHtml(l.color)}"` : ''}${l.bold ? ' font-weight="600"' : ''}>${escHtml(l.txt)}</text>`).join('');
     const tagW = 66, xTag = Math.min(Math.max(x - tagW / 2, this.X0 - 20), this.X1 - tagW + 20);
     return `<path class="rtcc-cline${this._cur.pinned ? ' rtcc-pinned' : ''}" d="M${f(x)} ${this.Y0}V${this.Y1}"/>`
       + (on ? `<path class="rtcc-cline rtcc-pinned" style="stroke-dasharray:3 3" d="M${this.X0} ${f(y)}H${f(x)}"/>`
@@ -453,7 +453,7 @@ const ReticTcc = {
         + `<text class="rtcc-ctag-t" x="30" y="${f(y + 4)}" text-anchor="middle">${this._fmtT(t0)}</text>` : '')
       + (near ? `<path class="rtcc-near" d="M${f(X(near.ifA) - 12)} ${f(near.tS != null ? Y(near.tS) : this.Y0)}a12 12 0 1 0 24 0a12 12 0 1 0 -24 0"/>` : '')
       + dots
-      + (on ? `<circle class="rtcc-cdot" style="stroke:${main.color}" cx="${f(x)}" cy="${f(y)}" r="4.5"/>` : '')
+      + (on ? `<circle class="rtcc-cdot" style="stroke:${escHtml(main.color)}" cx="${f(x)}" cy="${f(y)}" r="4.5"/>` : '')
       + `<rect class="rtcc-ctag" x="${f(xTag)}" y="${this.Y1 + 4}" width="${tagW}" height="18" rx="3"/>`
       + `<text class="rtcc-ctag-t" x="${f(xTag + tagW / 2)}" y="${this.Y1 + 17}" text-anchor="middle">${this._fmtAShort(I)}</text>`
       + `<g transform="translate(${f(bx)} ${f(by)})"><rect class="rtcc-cbox" width="${f(bw)}" height="${f(bh)}" rx="5"/>${text}</g>`;
@@ -522,7 +522,7 @@ const ReticTcc = {
       const tag = r.ifA === iMin ? `<b class="rtcc-tag" style="color:${this.MIN_COLOR}">MIN</b>`
         : r.ifA === iMax ? `<b class="rtcc-tag" style="color:${this.MAX_COLOR}">MAX</b>` : '';
       return `<tr data-rid="${r.id}" class="${good ? '' : 'rtcc-bad'}">
-        <td>${escHtml(r.kiosk ? r.kiosk + ' · ' : '')}${r.feeder ? '<i>feeder cable</i>' : escHtml(String(r.erf))}${multi ? `<br><span class="rtcc-dev" style="color:${r.dev.color}">${escHtml(r.dev.name)}</span>` : ''}${showI2t && r.cable ? `<br><span class="rtcc-dev" style="color:${r.cable.color}">${escHtml(r.cable.label)}</span>` : ''}</td>
+        <td>${escHtml(r.kiosk ? r.kiosk + ' · ' : '')}${r.feeder ? '<i>feeder cable</i>' : escHtml(String(r.erf))}${multi ? `<br><span class="rtcc-dev" style="color:${escHtml(r.dev.color)}">${escHtml(r.dev.name)}</span>` : ''}${showI2t && r.cable ? `<br><span class="rtcc-dev" style="color:${escHtml(r.cable.color)}">${escHtml(r.cable.label)}</span>` : ''}</td>
         <td class="num">${Math.round(r.ifA).toLocaleString('en-US')} A ${tag}</td>
         <td class="num">${this._fmtT(r.tS)}</td>
         ${showI2t ? `<td class="num ${r.cableOk == null ? '' : r.cableOk ? 'rtcc-ok-t' : 'rtcc-fail-t'}">${r.cableOk == null ? '—' : (r.cableOk ? '✓ ' : '✕ ') + this._fmtT(r.tC)}</td>` : ''}
@@ -530,9 +530,9 @@ const ReticTcc = {
     }).join('');
 
     const devLegend = multi ? `<div class="rtcc-devs">${d.devices.map((v, i) =>
-      `<div><i class="rtcc-sw" style="background:${v.color}"></i><b>${escHtml(v.name)}</b> <span>${i === 0 ? 'string breaker · ' : 'outgoing way · '}${escHtml(this._specOf(v.device))}</span></div>`).join('')}</div>` : '';
+      `<div><i class="rtcc-sw" style="background:${escHtml(v.color)}"></i><b>${escHtml(v.name)}</b> <span>${i === 0 ? 'string breaker · ' : 'outgoing way · '}${escHtml(this._specOf(v.device))}</span></div>`).join('')}</div>` : '';
     const cableLegend = sh.cables.length ? `<div class="rtcc-devs">${sh.cables.map(c =>
-      `<div><svg width="22" height="6" viewBox="0 0 22 6" aria-hidden="true"><path class="rtcc-cable" style="stroke:${c.color}" d="M0 3H22"/></svg> <b>${escHtml(c.label)}</b> <span>k ${c.k} · ${[...c.uses].join(', ')}</span></div>`).join('')}</div>` : '';
+      `<div><svg width="22" height="6" viewBox="0 0 22 6" aria-hidden="true"><path class="rtcc-cable" style="stroke:${escHtml(c.color)}" d="M0 3H22"/></svg> <b>${escHtml(c.label)}</b> <span>k ${c.k} · ${[...c.uses].join(', ')}</span></div>`).join('')}</div>` : '';
     const filterBtn = (k, label) => `<button type="button" data-rtcc-filter="${k}" aria-pressed="${this.view.filter === k}" ${counts[k] ? '' : 'disabled'}>${label} <span>${counts[k]}</span></button>`;
     const range = iMin != null
       ? `<span class="rtcc-mm"><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M0 1h12L6 11z" style="fill:${this.MIN_COLOR}"/></svg><b style="color:${this.MIN_COLOR}">Min</b> ${this._fmtA(iMin)}</span>`

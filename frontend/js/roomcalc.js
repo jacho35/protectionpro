@@ -134,7 +134,7 @@ const RoomCalc = {
       const cls = c.pass === true ? '#1d6b3a' : c.pass === false ? '#a61b1b' : '#616e7c';
       return `<tr><td>${escHtml(c.label)}</td><td style="text-align:right;font-family:monospace">${val}</td>
         <td style="text-align:right;color:var(--text-muted);font-family:monospace">${c.op === '>=' ? '≥' : '≤'} ${c.req}</td>
-        <td style="color:${cls};font-weight:600">${c.pass === true ? 'Pass' : c.pass === false ? 'Fail' : '—'}</td></tr>`;
+        <td style="color:${escHtml(cls)};font-weight:600">${c.pass === true ? 'Pass' : c.pass === false ? 'Fail' : '—'}</td></tr>`;
     };
     const wp = res.workplane || {};
     return `<div class="rc-res" style="margin-top:8px">
@@ -360,7 +360,7 @@ const RoomCalc = {
     } else if (zone.kind === 'sports') {
       const hz = r.res.horizontal, L = SportsCalc.read(zone);
       const top = Math.max(hz.Emax || 0, 1);
-      const tick = (v, label) => v > 0 && v <= top ? `<span class="plan-legend-mark" style="left:${(v / top * 100).toFixed(1)}%" title="${label}"></span>` : '';
+      const tick = (v, label) => v > 0 && v <= top ? `<span class="plan-legend-mark" style="left:${(v / top * 100).toFixed(1)}%" title="${escHtml(label)}"></span>` : '';
       title = `Pitch illuminance Ēh — ${name}`;
       body = `<div class="plan-legend-bar" aria-hidden="true">${tick(L.em, 'Target Ēh')}${tick(L.em * L.u2, 'Required Emin')}</div>
         <div class="plan-legend-scale"><span>0</span><span>${fmt(top / 2)}</span><span>${fmt(top)} lx</span></div>
@@ -369,7 +369,7 @@ const RoomCalc = {
       const res = r.res, wp = res.workplane || {};
       const top = Math.max(wp.Emax || 0, 1);
       const L = zone.kind === 'outdoor' ? AreaCalc.readArea(zone) : RoomLighting.read(zone);
-      const tick = (v, label) => v > 0 && v <= top ? `<span class="plan-legend-mark" style="left:${(v / top * 100).toFixed(1)}%" title="${label}"></span>` : '';
+      const tick = (v, label) => v > 0 && v <= top ? `<span class="plan-legend-mark" style="left:${(v / top * 100).toFixed(1)}%" title="${escHtml(label)}"></span>` : '';
       title = `${zone.kind === 'outdoor' ? 'Ground' : 'Work plane'} illuminance — ${name}`;
       body = `<div class="plan-legend-bar" aria-hidden="true">${tick(L.em, 'Target Ēm')}${tick(L.em * L.uo, 'Required Emin')}</div>
         <div class="plan-legend-scale"><span>0</span><span>${fmt(top / 2)}</span><span>${fmt(top)} lx</span></div>

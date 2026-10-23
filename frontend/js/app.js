@@ -1231,7 +1231,7 @@ document.addEventListener('DOMContentLoaded', () => {
         : c.status === 'warning' ? '<span style="color:#f57c00;font-weight:600">WARN</span>'
         : c.status === 'unknown' ? '<span style="color:#9e9e9e;font-weight:600">UNKNOWN</span>'
         : '<span style="color:#d32f2f;font-weight:600">FAIL</span>';
-      html += `<tr class="${rowClass}" data-cable-id="${c.cable_id}" style="cursor:pointer">
+      html += `<tr class="${rowClass}" data-cable-id="${escHtml(c.cable_id)}" style="cursor:pointer">
         <td>${escHtml(c.cable_name)}</td>
         <td>${ends}</td>
         <td>${c.load_current_a.toFixed(1)}</td>
@@ -2141,7 +2141,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const statusBadge = t.status === 'pass' ? '<span style="color:#4caf50;font-weight:600">PASS</span>'
           : t.status === 'warning' ? '<span style="color:#f57c00;font-weight:600">WARN</span>'
           : '<span style="color:#d32f2f;font-weight:600">FAIL</span>';
-        html += `<tr class="${rowClass}" data-device-id="${t.device_id}" style="cursor:pointer">
+        html += `<tr class="${rowClass}" data-device-id="${escHtml(t.device_id)}" style="cursor:pointer">
           <td>${escHtml(t.device_name)}</td>
           <td>${escHtml(t.location_bus)}</td>
           <td>${t.rated_mva.toFixed(3)}</td>
@@ -2173,7 +2173,7 @@ document.addEventListener('DOMContentLoaded', () => {
           : d.status === 'warning' ? '<span style="color:#f57c00;font-weight:600">WARN</span>'
           : '<span style="color:#d32f2f;font-weight:600">FAIL</span>';
         const contIcon = d.continuous_ok ? '✓' : '✗';
-        html += `<tr class="${rowClass}" data-device-id="${d.device_id}" style="cursor:pointer">
+        html += `<tr class="${rowClass}" data-device-id="${escHtml(d.device_id)}" style="cursor:pointer">
           <td>${escHtml(d.device_name)}</td>
           <td>${d.device_type.toUpperCase()}</td>
           <td>${escHtml(d.location_bus)}</td>
@@ -2205,7 +2205,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const statusBadge = c.status === 'pass' ? '<span style="color:#4caf50;font-weight:600">PASS</span>'
           : c.status === 'warning' ? '<span style="color:#f57c00;font-weight:600">WARN</span>'
           : '<span style="color:#d32f2f;font-weight:600">FAIL</span>';
-        html += `<tr class="${rowClass}" data-device-id="${c.device_id}" style="cursor:pointer">
+        html += `<tr class="${rowClass}" data-device-id="${escHtml(c.device_id)}" style="cursor:pointer">
           <td>${escHtml(c.device_name)}</td>
           <td>${escHtml(c.location_bus)}</td>
           <td>${escHtml(String(c.ratio))}</td>
@@ -2242,7 +2242,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const statusBadge = c.status === 'pass' ? '<span style="color:#4caf50;font-weight:600">PASS</span>'
           : c.status === 'warning' ? '<span style="color:#f57c00;font-weight:600">WARN</span>'
           : '<span style="color:#d32f2f;font-weight:600">FAIL</span>';
-        html += `<tr class="${rowClass}" data-device-id="${c.device_id}" style="cursor:pointer">
+        html += `<tr class="${rowClass}" data-device-id="${escHtml(c.device_id)}" style="cursor:pointer">
           <td>${escHtml(c.device_name)}</td>
           <td>${escHtml(c.location_bus)}</td>
           <td>${escHtml(String(c.ratio))}</td>
@@ -3014,8 +3014,8 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!tbody) return;
     tbody.innerHTML = wennerReadings.map((r, i) => `
       <tr>
-        <td><input type="number" step="0.1" min="0" value="${r.a}" data-wenner-field="a" data-wenner-idx="${i}" style="width:90px"></td>
-        <td><input type="number" step="0.1" min="0" value="${r.rhoa}" data-wenner-field="rhoa" data-wenner-idx="${i}" style="width:110px"></td>
+        <td><input type="number" step="0.1" min="0" value="${escHtml(r.a)}" data-wenner-field="a" data-wenner-idx="${i}" style="width:90px"></td>
+        <td><input type="number" step="0.1" min="0" value="${escHtml(r.rhoa)}" data-wenner-field="rhoa" data-wenner-idx="${i}" style="width:110px"></td>
         <td><button class="modal-close" style="font-size:14px" data-wenner-remove="${i}" title="Remove reading">&times;</button></td>
       </tr>`).join('');
   }
@@ -3314,7 +3314,7 @@ document.addEventListener('DOMContentLoaded', () => {
           <input type="text" data-rw-name="${rw.id}" value="${escHtml(rw.name)}" style="width:140px">
           <label>Conduit <select data-rw-nominal="${rw.id}">${opts}</select></label>
           <label title="Override internal diameter (0 = typical for nominal size)">ID (mm)
-            <input type="number" data-rw-id-mm="${rw.id}" value="${rw.custom_id_mm || ''}" placeholder="auto" style="width:70px" min="0" step="0.1"></label>
+            <input type="number" data-rw-id-mm="${rw.id}" value="${escHtml(rw.custom_id_mm || '')}" placeholder="auto" style="width:70px" min="0" step="0.1"></label>
           <label title="IEC 60364-5-52 grouping table for the factor applied to every cable's rating">Grouping
             <select data-rw-grouping="${rw.id}">${RACEWAY_GROUPINGS.map(k =>
               `<option value="${k}" ${(rw.grouping || 'bunched') === k ? 'selected' : ''}>${escHtml(IEC_GROUPING_LABELS[k] || k)}</option>`).join('')}</select></label>
@@ -3440,10 +3440,10 @@ document.addEventListener('DOMContentLoaded', () => {
     for (const rw of res.raceways) {
       const color = rw.status === 'fail' ? '#d32f2f' : rw.status === 'warning' ? '#f57c00'
                   : rw.status === 'empty' ? '#888' : '#4caf50';
-      html += `<div style="border:1px solid var(--border-color);border-left:4px solid ${color};border-radius:6px;padding:10px 12px;margin-bottom:8px">
+      html += `<div style="border:1px solid var(--border-color);border-left:4px solid ${escHtml(color)};border-radius:6px;padding:10px 12px;margin-bottom:8px">
         <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px">
           <strong>${escHtml(rw.name)} — ${rw.conduit_nominal_mm} mm conduit (ID ${rw.conduit_id_mm} mm)</strong>
-          <span style="color:${color};font-weight:600">${rw.status.toUpperCase()}</span>
+          <span style="color:${escHtml(color)};font-weight:600">${rw.status.toUpperCase()}</span>
         </div>
         <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:4px 16px;font-size:12px">
           <div>Fill: <strong style="color:${rw.fill_ok ? 'inherit' : '#d32f2f'}">${rw.fill_pct}%</strong> (limit ${rw.fill_limit_pct}%)</div>

@@ -94,7 +94,7 @@ const PhotoLib = {
           <div style="max-height:280px;overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><tbody>${rows || '<tr><td style="color:var(--text-muted)">No luminaires yet.</td></tr>'}</tbody></table></div>
           <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:end;margin-top:12px">
             <button class="btn-small" data-act="import">Import IES / LDT…</button>
-            <label style="font-size:12px">Generic<br><select data-g="kind">${kinds.map(k => `<option value="${k.kind}">${escHtml(k.name)}</option>`).join('')}</select></label>
+            <label style="font-size:12px">Generic<br><select data-g="kind">${kinds.map(k => `<option value="${escHtml(k.kind)}">${escHtml(k.name)}</option>`).join('')}</select></label>
             <label style="font-size:12px">lm<br><input type="number" data-g="lumens" value="4000" step="100" style="width:80px"></label>
             <label style="font-size:12px">W<br><input type="number" data-g="watts" value="36" step="1" style="width:64px"></label>
             <button class="btn-small" data-act="generic">Add generic</button>

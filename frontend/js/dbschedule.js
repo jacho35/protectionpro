@@ -139,7 +139,7 @@ const DBSchedule = {
       if (!r || r.status === 'none') return '<span class="db-con-none">No conduit</span>';
       const t = Conduit.type(r.type);
       return `<span class="db-con-tag">${escHtml(r.tag || 'own')}</span>${escHtml(t.label)} ${escHtml(r.size)}${dot}${r.fillPct.toFixed(1)} %`
-        + ` <span class="db-con-chip-s db-con-${r.status}">${escHtml(Conduit.statusLabel(r))}</span>`;
+        + ` <span class="db-con-chip-s db-con-${escHtml(r.status)}">${escHtml(Conduit.statusLabel(r))}</span>`;
     }
     return '';
   },
@@ -150,12 +150,12 @@ const DBSchedule = {
       return { n: '—', fill: '<span class="db-con-none">—</span>', check: '', auto: '' };
     }
     const w = Math.min(100, r.fillPct / (Conduit.LIMIT_PCT * 1.5) * 100);
-    const fill = `<span class="db-con-bar" title="${escHtml(Conduit.tooltip(r))}"><i class="db-con-${r.status}" style="width:${w.toFixed(1)}%"></i><b></b></span>`
+    const fill = `<span class="db-con-bar" title="${escHtml(Conduit.tooltip(r))}"><i class="db-con-${escHtml(r.status)}" style="width:${w.toFixed(1)}%"></i><b></b></span>`
       + `<span class="db-con-pct">${r.fillPct.toFixed(1)} %</span>`;
     const lbl = escHtml(Conduit.statusLabel(r));
     const check = (r.status === 'over' && r.suggest)
       ? `<button type="button" class="db-con-chip-s db-con-over" data-con-apply="${escHtml(r.suggest)}" title="Use ${escHtml(r.suggest)} for this conduit">${lbl}</button>`
-      : `<span class="db-con-chip-s db-con-${r.status}">${lbl}</span>`;
+      : `<span class="db-con-chip-s db-con-${escHtml(r.status)}">${lbl}</span>`;
     return { n: String(r.n), fill, check, auto: r.auto ? `Auto · ${r.size}` : '' };
   },
   _paintConduit(comp) {
@@ -1142,7 +1142,7 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
     const colour = (row && row.status === 'warn') ? '#b26a00'
       : (row && row.status === 'info' && all.every(m => (row.messages || []).includes(m))) ? '#888'
       : '#d32f2f';
-    return `<span class="db-warn" title="${escHtml(all.length > 1 ? all.map(m => '• ' + m).join('\n') : all[0])}" style="color:${colour};margin-right:4px;cursor:help;">⚠</span>`;
+    return `<span class="db-warn" title="${escHtml(all.length > 1 ? all.map(m => '• ' + m).join('\n') : all[0])}" style="color:${escHtml(colour)};margin-right:4px;cursor:help;">⚠</span>`;
   },
 
   _wayStatusHtml(c, i, vll) {
@@ -1293,7 +1293,7 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
     // cells) are untouched.
     const fold = this._foldState();
     const grpLabel = Object.fromEntries(this._GROUPS.map(G => [G.g, G.label]));
-    const sumCell = (c, g) => `<td class="db-grp-sum" data-sum="${g}" data-label="${grpLabel[g]}"><button type="button" class="db-grp-chip" data-grp-open="${g}" title="${grpLabel[g]} — click to unfold and edit">${this._sumHtml(c, g)}</button></td>`;
+    const sumCell = (c, g) => `<td class="db-grp-sum" data-sum="${g}" data-label="${escHtml(grpLabel[g])}"><button type="button" class="db-grp-chip" data-grp-open="${g}" title="${escHtml(grpLabel[g])} — click to unfold and edit">${this._sumHtml(c, g)}</button></td>`;
     const grpHead = (G) => `<th class="db-grp-h" data-grp-h="${G.g}" colspan="${fold[G.g] ? 1 : G.keys.length}"><button type="button" class="db-grp-btn" data-grp-toggle="${G.g}" aria-expanded="${!fold[G.g]}" title="Fold or unfold the ${G.label.toLowerCase()} columns"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M2 3.5l3 3 3-3"/></svg>${G.label}<span class="db-grp-n">${G.keys.length}</span></button></th>`;
     const foldCls = this._GROUPS.filter(G => fold[G.g]).map(G => ` db-fold-${G.g}`).join('');
 
@@ -1307,7 +1307,7 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
       return `
         <td data-label="Conduit tag" data-grp="con"><input type="text" data-k="conduit_tag" value="${escHtml(c.conduit_tag || '')}" style="width:68px" placeholder="own" title="Ways with the same tag share one conduit — their cables are added together. Blank = this way has its own conduit."></td>
         <td data-label="Conduit type" data-grp="con"><select data-k="conduit_type" style="width:104px"><option value="">—</option>${Conduit.TYPES.map(t => opt(t.id, typeId, t.label)).join('')}</select></td>
-        <td data-label="Conduit size" data-grp="con"><select data-k="conduit_size" data-type="${typeId}" style="width:92px" ${typeId ? '' : 'disabled'}><option value="">${cells.auto || 'Auto'}</option>${sizeOpts}</select></td>
+        <td data-label="Conduit size" data-grp="con"><select data-k="conduit_size" data-type="${escHtml(typeId)}" style="width:92px" ${typeId ? '' : 'disabled'}><option value="">${cells.auto || 'Auto'}</option>${sizeOpts}</select></td>
         <td data-label="Cables" data-grp="con" class="db-con-n" data-con="n">${cells.n}</td>
         <td data-label="Fill" data-grp="con" class="db-con-fill" data-con="fill">${cells.fill}</td>
         <td data-label="Conduit check" data-grp="con" class="db-con-check" data-con="check">${cells.check}</td>`;
@@ -1379,9 +1379,9 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
       const st = PHASE_STYLES[p];
       return `
         <div class="db-phase-row">
-          <span class="db-phase-tag" style="background:${st.color};color:${st.text}">${p}</span>
+          <span class="db-phase-tag" style="background:${escHtml(st.color)};color:${escHtml(st.text)}">${p}</span>
           <div class="db-phase-track">
-            <div class="db-phase-fill" style="width:${width}%;background:${st.color}"></div>
+            <div class="db-phase-fill" style="width:${width}%;background:${escHtml(st.color)}"></div>
           </div>
           <span class="db-phase-val">${kva.toFixed(2)} kVA (${pct.toFixed(0)}%)</span>
         </div>`;
@@ -1391,7 +1391,7 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
     // default wattage + demand factor) plus one-click quick-add chips.
     const loadTypes = (typeof DB_LOAD_TYPES !== 'undefined') ? DB_LOAD_TYPES : [];
     const typeOptions = loadTypes.map(t =>
-      `<option value="${t.key}">${escHtml(t.label)}${t.va ? ` — ${t.va} VA/${t.unit}, DF ${t.df}` : ''}</option>`).join('');
+      `<option value="${escHtml(t.key)}">${escHtml(t.label)}${t.va ? ` — ${t.va} VA/${t.unit}, DF ${t.df}` : ''}</option>`).join('');
     const datalistOptions = loadTypes.filter(t => t.va)
       .map(t => `<option value="${escHtml(t.label)}"></option>`).join('');
 
@@ -1879,18 +1879,18 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
     const title = f.title ? ` title="${escHtml(f.title)}"` : '';
     let ctl;
     if (f.type === 'select') {
-      ctl = `<select data-bk="${f.k}"${title}><option value="">—</option>${f.opts
+      ctl = `<select data-bk="${escHtml(f.k)}"${title}><option value="">—</option>${f.opts
         .map(o => `<option value="${o}">${o}</option>`).join('')}</select>`;
     } else if (f.type === 'number' && (f.k === 'cable_mm2' || f.k === 'ecc_mm2')) {
       // Same searchable preferred-size combobox as the grid cells.
-      ctl = `<input type="text" inputmode="decimal" list="db-mm2-datalist" data-bk="${f.k}"
-        style="width:${f.width}px" placeholder="—"${title}>`;
+      ctl = `<input type="text" inputmode="decimal" list="db-mm2-datalist" data-bk="${escHtml(f.k)}"
+        style="width:${escHtml(f.width)}px" placeholder="—"${title}>`;
     } else if (f.type === 'number') {
       const step = (f.k === 'demand_factor' || f.k === 'power_factor') ? '0.05' : '1';
-      ctl = `<input type="number" data-bk="${f.k}" step="${step}"
-        style="width:${f.width}px" placeholder="—"${title}>`;
+      ctl = `<input type="number" data-bk="${escHtml(f.k)}" step="${step}"
+        style="width:${escHtml(f.width)}px" placeholder="—"${title}>`;
     } else {
-      ctl = `<input type="text" data-bk="${f.k}"
+      ctl = `<input type="text" data-bk="${escHtml(f.k)}"
         style="${f.full ? 'flex:1;min-width:220px' : `width:${f.width || 120}px`}" placeholder="—"${title}>`;
     }
     return `<label class="db-bulk-f${f.full ? ' db-bulk-f-full' : ''}">

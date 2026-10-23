@@ -227,14 +227,14 @@ const LFStudy = {
         const ol = (o && typeof o === 'object') ? o.label : o;
         return `<option value="${this._esc(ov)}"${String(ov) === String(val) ? ' selected' : ''}>${this._esc(ol)}</option>`;
       }).join('');
-      return `<select class="${cls}" ${da}${dis}>${opts}</select>`;
+      return `<select class="${escHtml(cls)}" ${da}${dis}>${opts}</select>`;
     }
     if (f.type === 'number') {
       const attrs = [f.min != null ? `min="${f.min}"` : '', f.max != null ? `max="${f.max}"` : '',
                      f.step != null ? `step="${f.step}"` : ''].filter(Boolean).join(' ');
-      return `<input type="number" class="${cls}" ${da} value="${this._esc(val != null ? val : '')}" ${attrs}${dis}>`;
+      return `<input type="number" class="${escHtml(cls)}" ${da} value="${this._esc(val != null ? val : '')}" ${attrs}${dis}>`;
     }
-    return `<input type="text" class="${cls}" ${da} value="${this._esc(val != null ? val : '')}"${dis}>`;
+    return `<input type="text" class="${escHtml(cls)}" ${da} value="${this._esc(val != null ? val : '')}"${dis}>`;
   },
 
   _renderResults() {

@@ -167,7 +167,7 @@ const DBAccessories = {
       </div>`;
 
     const boardNotes = warns.filter(w => !w.accId)
-      .map(w => `<div class="dba-note ${w.level}">${w.level === 'warn' ? '⚠' : 'ⓘ'} ${escHtml(w.text)}</div>`).join('');
+      .map(w => `<div class="dba-note ${escHtml(w.level)}">${w.level === 'warn' ? '⚠' : 'ⓘ'} ${escHtml(w.text)}</div>`).join('');
 
     const body = `<div class="dba-body">${addBar}<div class="dba-rows">${rows}</div>${boardNotes}</div>`;
 
@@ -209,12 +209,12 @@ const DBAccessories = {
     const kind = this._kind(acc.kind);
     if (!kind) return '';
     const tapOpts = (typeof DB_ACCESSORY_TAPS !== 'undefined' ? DB_ACCESSORY_TAPS : [])
-      .map(t => `<option value="${t.value}"${acc.tap === t.value ? ' selected' : ''}>${escHtml(t.label)}</option>`).join('');
+      .map(t => `<option value="${escHtml(t.value)}"${acc.tap === t.value ? ' selected' : ''}>${escHtml(t.label)}</option>`).join('');
 
     const fields = (kind.fields || []).map(f => this._fieldHtml(acc, f)).join('');
     const warns = this.warnings(acc, inc);
     const warnHtml = warns.map(w =>
-      `<div class="dba-note ${w.level}">${w.level === 'warn' ? '⚠' : 'ⓘ'} ${escHtml(w.text)}</div>`).join('');
+      `<div class="dba-note ${escHtml(w.level)}">${w.level === 'warn' ? '⚠' : 'ⓘ'} ${escHtml(w.text)}</div>`).join('');
     const guide = (acc.kind === 'spd' && typeof DB_SPD_TYPE_GUIDANCE !== 'undefined')
       ? `<div class="dba-guide">${escHtml(DB_SPD_TYPE_GUIDANCE[Number(acc.spd_type)] || '')}</div>` : '';
 

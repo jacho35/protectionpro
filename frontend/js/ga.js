@@ -812,8 +812,8 @@ const GA = {
       const vert = b.axis === 'x';
       const x = M + b.pos, y = M + b.pos;
       const inner = vert
-        ? `<rect x="${x - 9 * u}" y="${M}" width="${18 * u}" height="${enc.h}" fill="transparent"/><line class="ga-handle-line" vector-effect="non-scaling-stroke" x1="${x}" y1="${M}" x2="${x}" y2="${M + enc.h}"/>`
-        : `<rect x="${M}" y="${y - 9 * u}" width="${enc.w}" height="${18 * u}" fill="transparent"/><line class="ga-handle-line" vector-effect="non-scaling-stroke" x1="${M}" y1="${y}" x2="${M + enc.w}" y2="${y}"/>`;
+        ? `<rect x="${x - 9 * u}" y="${M}" width="${18 * u}" height="${numAttr(enc.h)}" fill="transparent"/><line class="ga-handle-line" vector-effect="non-scaling-stroke" x1="${x}" y1="${M}" x2="${x}" y2="${M + enc.h}"/>`
+        : `<rect x="${M}" y="${y - 9 * u}" width="${numAttr(enc.w)}" height="${18 * u}" fill="transparent"/><line class="ga-handle-line" vector-effect="non-scaling-stroke" x1="${M}" y1="${y}" x2="${M + enc.w}" y2="${y}"/>`;
       return head(b, inner);
     }).join('');
     const grips = all.map(b => {
@@ -826,7 +826,7 @@ const GA = {
         const txt = `${b.sizes[b.k - 1]} mm  |  ${b.sizes[b.k]} mm`;
         const ly = vert ? g.y - 56 * u : g.y - 38 * u;
         inner += `<g class="ga-drag-label"><rect x="${g.x - 80 * u}" y="${ly}" width="${160 * u}" height="${24 * u}" rx="${4 * u}"/>`
-          + `<text x="${g.x}" y="${ly + 17 * u}" text-anchor="middle" font-size="${13 * u}">${txt}</text></g>`;
+          + `<text x="${numAttr(g.x)}" y="${ly + 17 * u}" text-anchor="middle" font-size="${13 * u}">${txt}</text></g>`;
       }
       return head(b, inner, ' ga-handle-grip');
     }).join('');
@@ -856,7 +856,7 @@ const GA = {
       const i = r * gcols + c, mine = owner[i] === brush;
       out += `<rect class="ga-cell${mine ? ' mine' : ''}" data-ga-cell="${i}" data-dxf-skip tabindex="0" role="button"
         aria-label="Cell row ${r + 1}, column ${c + 1}: ${this._esc(this._ownerName(L, owner[i]))}. Enter paints it ${this._esc(bn)}"
-        x="${at(cws, c) + M}" y="${at(chs, r) + M}" width="${cws[c]}" height="${chs[r]}" style="--brush:${bc};touch-action:none"><title>${this._esc(this._ownerName(L, owner[i]))} — click or drag to paint ${this._esc(bn)}</title></rect>`;
+        x="${at(cws, c) + M}" y="${at(chs, r) + M}" width="${escHtml(cws[c])}" height="${escHtml(chs[r])}" style="--brush:${bc};touch-action:none"><title>${this._esc(this._ownerName(L, owner[i]))} — click or drag to paint ${this._esc(bn)}</title></rect>`;
     }
     return out;
   },
@@ -1023,17 +1023,17 @@ const GA = {
   // One shape → SVG. Labels inside a device group carry their attribute tag.
   _shapeSvg(sh, M) {
     if (sh.t === 'rect' && sh.kind === 'tint') {
-      return `<rect x="${sh.x + M}" y="${sh.y + M}" width="${sh.w}" height="${sh.h}" fill="${sh.color}" fill-opacity="0.09" stroke="none"/>`;
+      return `<rect x="${sh.x + M}" y="${sh.y + M}" width="${numAttr(sh.w)}" height="${numAttr(sh.h)}" fill="${escHtml(sh.color)}" fill-opacity="0.09" stroke="none"/>`;
     }
     if (sh.t === 'rect') {
       const fill = sh.layer === 'ENCLOSURE' || sh.layer === 'COMPARTMENT' ? 'none' : sh.kind === 'part' ? '#8a8a8a' : sh.kind === 'bar' ? '#b8b8b8' : sh.layer === 'RAIL' ? '#d6d6d6' : (GA_KIND_FILL[sh.kind] || '#999');
       const stroke = sh.color || (sh.layer === 'ENCLOSURE' ? '#222' : '#333');
-      return `<rect x="${sh.x + M}" y="${sh.y + M}" width="${sh.w}" height="${sh.h}" fill="${fill}"
-        stroke="${stroke}" stroke-width="${sh.thin ? 1 : 2}"${sh.dash ? ' stroke-dasharray="6 4" fill-opacity="0"' : ''} data-dxf-layer="${sh.layer}"
+      return `<rect x="${sh.x + M}" y="${sh.y + M}" width="${numAttr(sh.w)}" height="${numAttr(sh.h)}" fill="${escHtml(fill)}"
+        stroke="${escHtml(stroke)}" stroke-width="${sh.thin ? 1 : 2}"${sh.dash ? ' stroke-dasharray="6 4" fill-opacity="0"' : ''} data-dxf-layer="${escHtml(sh.layer)}"
         ${sh.title ? `><title>${this._esc(sh.title)}</title></rect>` : '/>'}`;
     }
-    return `<text x="${sh.x + M}" y="${sh.y + M}" font-size="${sh.size}" font-family="Arial,sans-serif"
-      text-anchor="${sh.anchor || 'start'}" dominant-baseline="middle"${sh.bold ? ' font-weight="700"' : ''} fill="${sh.color || (sh.light ? '#fff' : '#222')}"${sh.attr ? ` data-dxf-attr="${sh.attr}"` : ''}>${this._esc(sh.s)}</text>`;
+    return `<text x="${sh.x + M}" y="${sh.y + M}" font-size="${escHtml(sh.size)}" font-family="Arial,sans-serif"
+      text-anchor="${escHtml(sh.anchor || 'start')}" dominant-baseline="middle"${sh.bold ? ' font-weight="700"' : ''} fill="${escHtml(sh.color) || (sh.light ? '#fff' : '#222')}"${sh.attr ? ` data-dxf-attr="${escHtml(sh.attr)}"` : ''}>${this._esc(sh.s)}</text>`;
   },
 
   // DXF attributes of one placed GA item.
@@ -1108,7 +1108,7 @@ const GA = {
     const cfg = L.cfg, e = this._esc;
     const comp0 = (LL) => LL.comp;
     const encOpts = [`<option value="auto"${cfg.enclosure === 'auto' ? ' selected' : ''}>Auto — smallest that fits</option>`]
-      .concat(GA_ENCLOSURES.map(x => `<option value="${x.key}"${cfg.enclosure === x.key ? ' selected' : ''}>${e(x.label)}</option>`))
+      .concat(GA_ENCLOSURES.map(x => `<option value="${escHtml(x.key)}"${cfg.enclosure === x.key ? ' selected' : ''}>${e(x.label)}</option>`))
       .concat([`<option value="custom"${cfg.enclosure === 'custom' ? ' selected' : ''}>Custom size…</option>`]).join('');
     const num = (k, v, min, step, w) => `<input type="number" data-ga-set="${k}" value="${v == null ? '' : e(v)}" min="${min}" step="${step}" style="width:${w || 64}px">`;
     const status = L.warnings.length ? 'fail' : 'pass';
@@ -1150,7 +1150,7 @@ const GA = {
       ${L.comps ? '' : `<label title="Blank = rating of the incoming device on the SLD (else estimated from demand)">Incomer A ${num('incomer_a', cfg.incomer_a, 0, 10, 72)}</label>`}
       <h4>Devices</h4>
       <table class="ga-items"><tbody>${rows}</tbody></table>
-      <div class="ga-add"><select id="ga-add-kind">${GA_EXTRA_KINDS.map(k => `<option value="${k.key}">${e(k.label)}</option>`).join('')}</select>
+      <div class="ga-add"><select id="ga-add-kind">${GA_EXTRA_KINDS.map(k => `<option value="${escHtml(k.key)}">${e(k.label)}</option>`).join('')}</select>
         ${(typeof DBSections !== 'undefined' && DBSections.has(comp0(L))) ? `<select id="ga-add-sec" title="Compartment">${DBSections.list(comp0(L)).map(sc => `<option value="${e(sc.id)}">${e(sc.name)}</option>`).join('')}</select>` : ''}
         <button class="btn-small" data-ga="add">Add item</button></div>
       <p class="ga-note">Generic sizes (17.5 mm DIN pole, typical MCCB frames and enclosures) with an indicative heat check — confirm against the manufacturer's catalogue before ordering.</p>`;
@@ -1160,7 +1160,7 @@ const GA = {
   _paintHTML(L) {
     const e = this._esc, brush = this._brush;
     const chip = (id, name, color) => `<button type="button" class="btn-small ga-brush${brush === id ? ' active' : ''}" data-ga-brush="${e(id)}"
-      style="--dbs-c:${color}" aria-pressed="${brush === id}" title="Paint cells as ${e(name)}"><span class="dbs-dot"></span>${e(name)}</button>`;
+      style="--dbs-c:${escHtml(color)}" aria-pressed="${brush === id}" title="Paint cells as ${e(name)}"><span class="dbs-dot"></span>${e(name)}</button>`;
     const chips = L.comps.map(c => chip(c.sec.id, c.sec.name, DBSections.color(c.sec))).join('') + chip('spare', 'Spare', '#9e9e9e');
     return `<div class="ga-paint"><span class="ga-sub">Paint cells:</span>${chips}
       ${brush ? '<button type="button" class="btn-small btn-primary" data-ga="paint-done">Done</button>' : ''}
@@ -1187,8 +1187,8 @@ const GA = {
         <option value="side"${L.side ? ' selected' : ''}>Side by side</option>
         <option value="stack"${!L.side && !L.grid ? ' selected' : ''}>Stacked</option>
         <option value="grid"${L.grid ? ' selected' : ''}>Grid</option></select></label>
-      ${L.grid ? `<label>Columns <input type="number" data-ga-set="grid_cols" min="1" max="8" step="1" value="${cfg.grid_cols || ''}" placeholder="auto" style="width:56px"></label>
-      <label>Rows <input type="number" data-ga-set="grid_rows" min="1" max="8" step="1" value="${cfg.grid_rows || ''}" placeholder="auto" style="width:56px"></label>
+      ${L.grid ? `<label>Columns <input type="number" data-ga-set="grid_cols" min="1" max="8" step="1" value="${escHtml(cfg.grid_cols || '')}" placeholder="auto" style="width:56px"></label>
+      <label>Rows <input type="number" data-ga-set="grid_rows" min="1" max="8" step="1" value="${escHtml(cfg.grid_rows || '')}" placeholder="auto" style="width:56px"></label>
       <div class="ga-sub">${L.gcols} × ${L.grows} grid · sections fill left→right, top→bottom in schedule order</div>` : ''}
       <div class="ga-sub">Form ${e(L.form)} separation · ${L.part} mm partitions (set on the schedule's Sections panel)</div>
       ${L.comps.length > 1 ? `<div class="ga-sub ga-drag-hint">Drag a partition on the drawing to resize the compartments either side of it (or focus it and use the arrow keys).</div>` : ''}

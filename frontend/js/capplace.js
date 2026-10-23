@@ -28,15 +28,15 @@ const CapPlacement = {
         undervoltage first; a unit that would breach the upper band is never chosen.</p>
       <div style="display:grid;grid-template-columns:auto 1fr;gap:8px 12px;align-items:center;font-size:13px">
         <label for="cpl-unit">Standard unit (kvar)</label>
-        <input id="cpl-unit" type="number" min="10" step="10" value="${c.unit_kvar}">
+        <input id="cpl-unit" type="number" min="10" step="10" value="${escHtml(c.unit_kvar)}">
         <label for="cpl-maxbus">Max per bus (kvar)</label>
-        <input id="cpl-maxbus" type="number" min="50" step="50" value="${c.max_bus}">
+        <input id="cpl-maxbus" type="number" min="50" step="50" value="${escHtml(c.max_bus)}">
         <label for="cpl-maxtotal">Total budget (kvar)</label>
-        <input id="cpl-maxtotal" type="number" min="50" step="50" value="${c.max_total}">
+        <input id="cpl-maxtotal" type="number" min="50" step="50" value="${escHtml(c.max_total)}">
         <label for="cpl-vmin">Voltage band (p.u.)</label>
         <div style="display:flex;gap:8px;align-items:center">
-          <input id="cpl-vmin" type="number" min="0.8" max="1" step="0.01" value="${c.v_min}" style="width:80px"> –
-          <input id="cpl-vmax" type="number" min="1" max="1.2" step="0.01" value="${c.v_max}" style="width:80px">
+          <input id="cpl-vmin" type="number" min="0.8" max="1" step="0.01" value="${escHtml(c.v_min)}" style="width:80px"> –
+          <input id="cpl-vmax" type="number" min="1" max="1.2" step="0.01" value="${escHtml(c.v_max)}" style="width:80px">
         </div>
       </div>`;
     document.getElementById('cpl-config-modal').style.display = '';

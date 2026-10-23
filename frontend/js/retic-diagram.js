@@ -623,7 +623,7 @@ const ReticDiagram = {
     let chipSvg = '';
     chips.forEach((c, i) => {
       const cx = n.x + 12 + i * step;
-      chipSvg += `<circle cx="${cx}" cy="${n.y + 52.5}" r="3.2" fill="${c[2]}"/>`
+      chipSvg += `<circle cx="${cx}" cy="${n.y + 52.5}" r="3.2" fill="${escHtml(c[2])}"/>`
         + `<text x="${cx + 6}" y="${n.y + 56}" font-size="9.5" fill="${P.inkSec}" data-dxf-attr="ERVEN_${['R', 'W', 'B', '3P', 'UNASSIGNED'][i]}">${c[0]} ${c[1]}</text>`;
     });
     const dxf = { NAME: (ms && ms.name) || 'Minisub', ID: n.id, KVA: mr ? mr.totalKVA : '', CURRENT_A: mr ? mr.currentA : '',
@@ -668,7 +668,7 @@ const ReticDiagram = {
     let chipSvg = '';
     chips.forEach((c, i) => {
       const cx = n.x + 12 + i * step;
-      chipSvg += `<circle cx="${cx}" cy="${n.y + 33}" r="3.2" fill="${c[2]}"/>`
+      chipSvg += `<circle cx="${cx}" cy="${n.y + 33}" r="3.2" fill="${escHtml(c[2])}"/>`
         + `<text x="${cx + 6}" y="${n.y + 36.5}" font-size="9.5" fill="${P.inkSec}" data-dxf-attr="ERVEN_${['R', 'W', 'B', '3P', 'UNASSIGNED'][i]}">${c[0]} ${c[1]}</text>`;
     });
 
@@ -772,7 +772,7 @@ const ReticDiagram = {
     if (this.view.showE) rows.push('E');
     const rowY = (k) => y + (rows.length === 2 ? 26 : 32) + rows.indexOf(k) * 18;
     const badgeW = earthing ? earthing.length * 6 + 10 : 0;
-    const tag = (ty, fill, label) => `<rect x="${x + 12}" y="${ty}" width="54" height="14" rx="3" fill="${fill}"/>`
+    const tag = (ty, fill, label) => `<rect x="${x + 12}" y="${ty}" width="54" height="14" rx="3" fill="${escHtml(fill)}"/>`
       + `<text x="${x + 39}" y="${ty + 10.5}" text-anchor="middle" font-size="8.5" font-weight="700" fill="#ffffff">${label}</text>`;
     let body = '';
     if (!d) {

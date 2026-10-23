@@ -609,7 +609,7 @@ const Annotations = {
     const busId = key.split(':')[1] || '';
     const busLabel = escHtml(result.bus_name || busId);
     return `
-      <g class="annotation-group fault-annotation draggable-annotation" data-annotation-key="${key}" data-bus-id="${busId}" cursor="move">
+      <g class="annotation-group fault-annotation draggable-annotation" data-annotation-key="${escHtml(key)}" data-bus-id="${escHtml(busId)}" cursor="move">
         <rect class="annotation-badge annotation-hit" x="${x}" y="${y}" width="${boxW}" height="${boxH}"/>
         <text class="annotation-label" x="${x + 6}" y="${y - 3}" font-size="8">FAULT — ${busLabel}</text>
         ${textHtml}
@@ -653,7 +653,7 @@ const Annotations = {
     const busId = key.split(':')[1] || '';
     const busLabel = escHtml(result.bus_name || busId);
     return `
-      <g class="annotation-group loadflow-annotation draggable-annotation" data-annotation-key="${key}" data-bus-id="${busId}" cursor="move">
+      <g class="annotation-group loadflow-annotation draggable-annotation" data-annotation-key="${escHtml(key)}" data-bus-id="${escHtml(busId)}" cursor="move">
         <rect class="annotation-badge annotation-hit" x="${x}" y="${y}" width="${boxW}" height="${boxH}"/>
         <text class="annotation-label" x="${x + 6}" y="${y - 3}" font-size="8">LOAD FLOW — ${busLabel}</text>
         ${textHtml}
@@ -682,7 +682,7 @@ const Annotations = {
     const busId = key.split(':')[1] || '';
     const busLabel = escHtml(result.bus_name || busId);
     return `
-      <g class="annotation-group loadflow-annotation draggable-annotation" data-annotation-key="${key}" data-bus-id="${busId}" cursor="move">
+      <g class="annotation-group loadflow-annotation draggable-annotation" data-annotation-key="${escHtml(key)}" data-bus-id="${escHtml(busId)}" cursor="move">
         <rect class="annotation-badge annotation-hit" x="${x}" y="${y}" width="${boxW}" height="${boxH}"/>
         <text class="annotation-label" x="${x + 6}" y="${y - 3}" font-size="8">DC LOAD FLOW — ${busLabel}</text>
         ${textHtml}
@@ -711,7 +711,7 @@ const Annotations = {
     const busId = key.split(':')[1] || '';
     const busLabel = escHtml(result.bus_name || busId);
     return `
-      <g class="annotation-group fault-annotation draggable-annotation" data-annotation-key="${key}" data-bus-id="${busId}" cursor="move">
+      <g class="annotation-group fault-annotation draggable-annotation" data-annotation-key="${escHtml(key)}" data-bus-id="${escHtml(busId)}" cursor="move">
         <rect class="annotation-badge annotation-hit" x="${x}" y="${y}" width="${boxW}" height="${boxH}"/>
         <text class="annotation-label" x="${x + 6}" y="${y - 3}" font-size="8">DC SC (IEC 61660) — ${busLabel}</text>
         ${textHtml}
@@ -752,7 +752,7 @@ const Annotations = {
     const busId = key.split(':')[1] || '';
     const busLabel = escHtml(result.bus_name || busId);
     return `
-      <g class="annotation-group unbalanced-lf-annotation draggable-annotation" data-annotation-key="${key}" data-bus-id="${busId}" cursor="move">
+      <g class="annotation-group unbalanced-lf-annotation draggable-annotation" data-annotation-key="${escHtml(key)}" data-bus-id="${escHtml(busId)}" cursor="move">
         <rect class="annotation-badge annotation-hit" x="${x}" y="${y}" width="${boxW}" height="${boxH}"/>
         <text class="annotation-label" x="${x + 6}" y="${y - 3}" font-size="8">UNBALANCED LF — ${busLabel}</text>
         ${textHtml}
@@ -786,7 +786,7 @@ const Annotations = {
       <rect x="${ringX}" y="${ringY}" width="${ringW}" height="${ringH}"
             fill="none" stroke="#d32f2f" stroke-width="2.5" stroke-dasharray="5,3" rx="6" ry="6"
             class="voltage-error-ring" pointer-events="none"/>
-      <g class="annotation-group error-annotation draggable-annotation" data-annotation-key="${key}" cursor="move">
+      <g class="annotation-group error-annotation draggable-annotation" data-annotation-key="${escHtml(key)}" cursor="move">
         <rect class="annotation-badge annotation-hit" x="${x}" y="${y}" width="${boxW}" height="${boxH}"/>
         <text class="annotation-label" x="${x + 6}" y="${y - 3}" font-size="8">VOLTAGE ERROR</text>
         ${textHtml}
@@ -820,7 +820,7 @@ const Annotations = {
     ).join('');
 
     return `
-      <g class="annotation-group vdep-annotation draggable-annotation" data-annotation-key="${key}" cursor="move">
+      <g class="annotation-group vdep-annotation draggable-annotation" data-annotation-key="${escHtml(key)}" cursor="move">
         <rect class="annotation-badge" x="${x}" y="${y}" width="${boxW}" height="${boxH}"
               fill="${fillColor}" fill-opacity="0.12" stroke="${fillColor}" stroke-width="1.5" rx="4" ry="4"/>
         <text class="annotation-label" x="${x + 6}" y="${y - 3}" font-size="8" fill="${fillColor}">RETAINED V</text>
@@ -856,7 +856,7 @@ const Annotations = {
     const busId = key.split(':')[1] || '';
     const busLabel = escHtml(result.bus_name || busId);
     return `
-      <g class="annotation-group arcflash-annotation draggable-annotation" data-annotation-key="${key}" data-bus-id="${busId}" cursor="move">
+      <g class="annotation-group arcflash-annotation draggable-annotation" data-annotation-key="${escHtml(key)}" data-bus-id="${escHtml(busId)}" cursor="move">
         <rect class="annotation-badge af-badge" x="${x}" y="${y}" width="${boxW}" height="${boxH}"
               fill="${fillColor}" fill-opacity="0.15" stroke="${fillColor}" stroke-width="1.5"/>
         <text class="annotation-label" x="${x + 6}" y="${y - 3}" font-size="8" fill="${fillColor}">${title} — ${busLabel}</text>
@@ -892,7 +892,7 @@ const Annotations = {
     const titleEl = tooltipText ? `<title>${tooltipText.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</title>` : '';
 
     return `
-      <g class="annotation-group cable-sizing-annotation draggable-annotation" data-annotation-key="${key}" data-bus-id="${cable.cable_id}" cursor="move">
+      <g class="annotation-group cable-sizing-annotation draggable-annotation" data-annotation-key="${escHtml(key)}" data-bus-id="${escHtml(cable.cable_id)}" cursor="move">
         ${titleEl}
         <rect class="annotation-badge" x="${x}" y="${y}" width="${boxW}" height="${boxH}"
               fill="${fillColor}" fill-opacity="0.12" stroke="${fillColor}" stroke-width="1.5" rx="4" ry="4"/>
@@ -922,7 +922,7 @@ const Annotations = {
     ).join('');
 
     return `
-      <g class="annotation-group motor-starting-annotation draggable-annotation" data-annotation-key="${key}" cursor="move">
+      <g class="annotation-group motor-starting-annotation draggable-annotation" data-annotation-key="${escHtml(key)}" cursor="move">
         <rect class="annotation-badge" x="${x}" y="${y}" width="${boxW}" height="${boxH}"
               fill="${fillColor}" fill-opacity="0.12" stroke="${fillColor}" stroke-width="1.5" rx="4" ry="4"/>
         <text class="annotation-label" x="${x + 6}" y="${y - 3}" font-size="8" fill="${fillColor}">MOTOR START</text>
@@ -952,7 +952,7 @@ const Annotations = {
     ).join('');
 
     return `
-      <g class="annotation-group dynamic-motor-annotation draggable-annotation" data-annotation-key="${key}" cursor="move">
+      <g class="annotation-group dynamic-motor-annotation draggable-annotation" data-annotation-key="${escHtml(key)}" cursor="move">
         <rect class="annotation-badge" x="${x}" y="${y}" width="${boxW}" height="${boxH}"
               fill="${fillColor}" fill-opacity="0.12" stroke="${fillColor}" stroke-width="1.5" rx="4" ry="4"/>
         <text class="annotation-label" x="${x + 6}" y="${y - 3}" font-size="8" fill="${fillColor}">DYN START</text>
@@ -975,7 +975,7 @@ const Annotations = {
     ).join('');
 
     return `
-      <g class="annotation-group duty-check-annotation draggable-annotation" data-annotation-key="${key}" cursor="move">
+      <g class="annotation-group duty-check-annotation draggable-annotation" data-annotation-key="${escHtml(key)}" cursor="move">
         <rect class="annotation-badge" x="${x}" y="${y}" width="${boxW}" height="${boxH}"
               fill="${fillColor}" fill-opacity="0.12" stroke="${fillColor}" stroke-width="1.5" rx="4" ry="4"/>
         <text class="annotation-label" x="${x + 6}" y="${y - 3}" font-size="8" fill="${fillColor}">DUTY</text>
@@ -1003,7 +1003,7 @@ const Annotations = {
     ).join('');
 
     return `
-      <g class="annotation-group grounding-annotation draggable-annotation" data-annotation-key="${key}" cursor="move">
+      <g class="annotation-group grounding-annotation draggable-annotation" data-annotation-key="${escHtml(key)}" cursor="move">
         <rect class="annotation-badge" x="${x}" y="${y}" width="${boxW}" height="${boxH}"
               fill="${fillColor}" fill-opacity="0.12" stroke="${fillColor}" stroke-width="1.5" rx="4" ry="4"/>
         <text class="annotation-label" x="${x + 6}" y="${y - 3}" font-size="8" fill="${fillColor}">GROUNDING</text>
@@ -1028,7 +1028,7 @@ const Annotations = {
     ).join('');
 
     return `
-      <g class="annotation-group load-diversity-annotation draggable-annotation" data-annotation-key="${key}" cursor="move">
+      <g class="annotation-group load-diversity-annotation draggable-annotation" data-annotation-key="${escHtml(key)}" cursor="move">
         <rect class="annotation-badge" x="${x}" y="${y}" width="${boxW}" height="${boxH}"
               fill="${fillColor}" fill-opacity="0.12" stroke="${fillColor}" stroke-width="1.5" rx="4" ry="4"/>
         <text class="annotation-label" x="${x + 6}" y="${y - 3}" font-size="8" fill="${fillColor}">DEMAND</text>
@@ -1074,7 +1074,7 @@ const Annotations = {
     ).join('');
 
     return `
-      <g class="annotation-group retic-annotation draggable-annotation" data-annotation-key="${key}" cursor="move">
+      <g class="annotation-group retic-annotation draggable-annotation" data-annotation-key="${escHtml(key)}" cursor="move">
         <rect class="annotation-badge" x="${x}" y="${y}" width="${boxW}" height="${boxH}"
               fill="${fillColor}" fill-opacity="0.12" stroke="${fillColor}" stroke-width="1.5" rx="4" ry="4"/>
         <text class="annotation-label" x="${x + 6}" y="${y - 3}" font-size="8" fill="${fillColor}">RETIC</text>

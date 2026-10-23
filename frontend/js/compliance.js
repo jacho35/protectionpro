@@ -2171,7 +2171,7 @@ const Compliance = {
           <tbody>`;
 
       for (const item of section.items) {
-        html += `<tr class="compliance-row compliance-${item.status}">
+        html += `<tr class="compliance-row compliance-${escHtml(item.status)}">
           <td class="compliance-status-cell">${statusIcon[item.status]}</td>
           <td class="compliance-comp-cell">${escHtml(item.component)}</td>
           <td>${escHtml(item.message)}</td>

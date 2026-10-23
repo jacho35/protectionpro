@@ -59,7 +59,7 @@ const TimeSeries = {
     }
     const body = document.getElementById('tsl-config-body');
     const profOpt = (sel) => this._PROFILES.map(p =>
-      `<option value="${p.v}"${p.v === sel ? ' selected' : ''}>${this._esc(p.label)}</option>`).join('');
+      `<option value="${escHtml(p.v)}"${p.v === sel ? ' selected' : ''}>${this._esc(p.label)}</option>`).join('');
     const rows = comps.map(o => `
       <tr data-comp="${this._esc(o.id)}">
         <td style="padding:2px 6px">${this._esc(o.name)}</td>
@@ -87,11 +87,11 @@ const TimeSeries = {
         <label for="tsl-default-profile">Default profile</label>
         <select id="tsl-default-profile">${profOpt(c.default_profile).replace('Use default', 'Per-type built-in')}</select>
         <label for="tsl-vmin">Min voltage (p.u.)</label>
-        <input id="tsl-vmin" type="number" min="0.5" max="1" step="0.01" value="${c.v_min}">
+        <input id="tsl-vmin" type="number" min="0.5" max="1" step="0.01" value="${escHtml(c.v_min)}">
         <label for="tsl-vmax">Max voltage (p.u.)</label>
-        <input id="tsl-vmax" type="number" min="1" max="1.5" step="0.01" value="${c.v_max}">
+        <input id="tsl-vmax" type="number" min="1" max="1.5" step="0.01" value="${escHtml(c.v_max)}">
         <label for="tsl-load">Loading limit (%)</label>
-        <input id="tsl-load" type="number" min="50" max="200" step="5" value="${c.loading_limit_pct}">
+        <input id="tsl-load" type="number" min="50" max="200" step="5" value="${escHtml(c.loading_limit_pct)}">
       </div>
       <p style="font-size:11px;color:var(--text-muted,#6d6d6d);margin:14px 0 4px">
         A 15-minute / 8760 h combination is 35,040 solves — consider 1-hour steps

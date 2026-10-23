@@ -42,11 +42,11 @@ const OPF = {
         </select>
         <label for="opf-vmin">Voltage band (p.u.)</label>
         <div style="display:flex;gap:8px;align-items:center">
-          <input id="opf-vmin" type="number" min="0.8" max="1" step="0.01" value="${c.v_min}" style="width:80px"> –
-          <input id="opf-vmax" type="number" min="1" max="1.2" step="0.01" value="${c.v_max}" style="width:80px">
+          <input id="opf-vmin" type="number" min="0.8" max="1" step="0.01" value="${escHtml(c.v_min)}" style="width:80px"> –
+          <input id="opf-vmax" type="number" min="1" max="1.2" step="0.01" value="${escHtml(c.v_max)}" style="width:80px">
         </div>
         <label for="opf-loading">Loading limit (%)</label>
-        <input id="opf-loading" type="number" min="50" max="150" step="5" value="${c.loading}" style="width:80px">
+        <input id="opf-loading" type="number" min="50" max="150" step="5" value="${escHtml(c.loading)}" style="width:80px">
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:12px">
         ${chk('opf-dispatch', c.dispatch, 'Economic dispatch')}

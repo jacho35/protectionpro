@@ -1187,12 +1187,12 @@ const Canvas = {
           path = `M${from.x},${from.y} L${from.x},${midY} L${to.x},${midY} L${to.x},${to.y}`;
         }
       }
-      wiresHtml += `<path class="sld-wire${selected}" data-id="${id}" d="${path}"/>`;
+      wiresHtml += `<path class="sld-wire${selected}" data-id="${id}" d="${escHtml(path)}"/>`;
 
       // Draw bend point handles for selected wires
       if (AppState.selectedIds.has(id) && wire.bendPoints) {
         wire.bendPoints.forEach((bp, i) => {
-          wiresHtml += `<circle class="wire-bend-point" data-wire-id="${id}" data-bend-index="${i}" cx="${bp.x}" cy="${bp.y}" r="5" fill="#0078d7" stroke="#fff" stroke-width="1.5" style="cursor:move"/>`;
+          wiresHtml += `<circle class="wire-bend-point" data-wire-id="${id}" data-bend-index="${i}" cx="${numAttr(bp.x)}" cy="${numAttr(bp.y)}" r="5" fill="#0078d7" stroke="#fff" stroke-width="1.5" style="cursor:move"/>`;
         });
       }
     }
@@ -1209,7 +1209,7 @@ const Canvas = {
       if (!onPage) continue;
       const anySelected = [...group.memberIds].some(cid => AppState.selectedIds.has(cid));
       const cls = anySelected ? 'sld-group selected' : 'sld-group';
-      compsHtml += `<rect class="${cls}" data-group-id="${gid}" x="${bounds.x}" y="${bounds.y}" width="${bounds.w}" height="${bounds.h}" rx="6"/>`;
+      compsHtml += `<rect class="${escHtml(cls)}" data-group-id="${gid}" x="${numAttr(bounds.x)}" y="${numAttr(bounds.y)}" width="${numAttr(bounds.w)}" height="${numAttr(bounds.h)}" rx="6"/>`;
       compsHtml += `<text class="sld-group-label" x="${bounds.x + 4}" y="${bounds.y - 3}" font-size="10" fill="#6a1b9a">${escHtml(group.name)}</text>`;
     }
     for (const [id, comp] of pageComps) {
@@ -1755,7 +1755,7 @@ const Canvas = {
     const lx = mid.x - s * 0.6 * c + s * 0.7 * sn, ly = mid.y - s * 0.6 * sn - s * 0.7 * c;
     const rx = mid.x - s * 0.6 * c - s * 0.7 * sn, ry = mid.y - s * 0.6 * sn + s * 0.7 * c;
 
-    return `<polygon class="flow-arrow ${cssClass}" data-wire-id="${wireId}" ` +
+    return `<polygon class="flow-arrow ${cssClass}" data-wire-id="${escHtml(wireId)}" ` +
            `points="${tx},${ty} ${lx},${ly} ${rx},${ry}" ` +
            `fill="${color}" stroke="#fff" stroke-width="0.5" style="pointer-events:none;opacity:0.92"/>`;
   },

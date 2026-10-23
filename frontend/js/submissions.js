@@ -192,7 +192,7 @@ const Submissions = {
   },
   _pill(status) {
     const t = { pending: ['Waiting', 'amb'], changes_requested: ['Changes requested', 'amb'], approved: ['Approved', 'ok'], rejected: ['Rejected', 'gry'] }[status] || [status, 'gry'];
-    return `<span class="subm-pill ${t[1]}">${t[0]}</span>`;
+    return `<span class="subm-pill ${escHtml(t[1])}">${t[0]}</span>`;
   },
 
   _renderTable() {

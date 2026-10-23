@@ -660,7 +660,7 @@ const BOQ = {
     const miss = res.missing;
     const warnHtml = miss.length ? `<div class="rt-banner warn" role="status"><span><b>${miss.length} item${miss.length > 1 ? 's have' : ' has'} no rate</b> and ${miss.length > 1 ? 'are' : 'is'} left out of the total: ${miss.slice(0, 4).map(l => escHtml(l.desc)).join(', ')}${miss.length > 4 ? ` and ${miss.length - 4} more` : ''}.</span><span class="rt-grow"></span><button type="button" class="rt-lk" data-bq="set-rates">Set rates →</button></div>` : '';
     const issues = [...res.warnings.map(w => ({ w, t: 'warn' })), ...res.notes.map(w => ({ w, t: 'note' }))];
-    const issuesHtml = issues.length ? `<details class="bq-issues"${res.warnings.length ? ' open' : ''}><summary>${res.warnings.length ? `${res.warnings.length} data issue${res.warnings.length > 1 ? 's' : ''}` : ''}${res.warnings.length && res.notes.length ? ' · ' : ''}${res.notes.length ? `${res.notes.length} note${res.notes.length > 1 ? 's' : ''} on how runs were counted` : ''}</summary><ul>${issues.map(i => `<li class="${i.t}">${escHtml(i.w)}</li>`).join('')}</ul></details>` : '';
+    const issuesHtml = issues.length ? `<details class="bq-issues"${res.warnings.length ? ' open' : ''}><summary>${res.warnings.length ? `${res.warnings.length} data issue${res.warnings.length > 1 ? 's' : ''}` : ''}${res.warnings.length && res.notes.length ? ' · ' : ''}${res.notes.length ? `${res.notes.length} note${res.notes.length > 1 ? 's' : ''} on how runs were counted` : ''}</summary><ul>${issues.map(i => `<li class="${escHtml(i.t)}">${numAttr(i.w)}</li>`).join('')}</ul></details>` : '';
     // Money cells for one line / one subtotal row, in the columns the Price option shows.
     const lineCells = (l) => {
       const out = [];

@@ -584,14 +584,14 @@ const EarthGridEditor = {
     let html = '';
     for (const sec of this._sections()) {
       const open = this._openSecs[sec.id] ? ' open' : '';
-      const count = sec.table ? ` <span class="eg-count" data-eg-count="${sec.table}">${g[sec.table].length || ''}</span>` : '';
+      const count = sec.table ? ` <span class="eg-count" data-eg-count="${escHtml(sec.table)}">${g[sec.table].length || ''}</span>` : '';
       html += `<details class="eg-sec" data-eg-sec="${sec.id}"${open}><summary>${sec.title}${count}</summary><div class="eg-sec-body">`;
       if (sec.table) {
         const T = this.TABLES[sec.table];
         html += `<div class="eg-hint">${escHtml(T.hint)}</div>
           <div class="eg-table-wrap"><table class="eg-table data-table"><thead><tr>${T.cols.map(c => `<th>${escHtml(c.label)}</th>`).join('')}<th></th></tr></thead>
-          <tbody data-eg-tbody="${sec.table}"></tbody></table></div>
-          <button type="button" class="lr-mini" data-eg-row-add="${sec.table}">+ ${T.add}</button>`;
+          <tbody data-eg-tbody="${escHtml(sec.table)}"></tbody></table></div>
+          <button type="button" class="lr-mini" data-eg-row-add="${escHtml(sec.table)}">+ ${T.add}</button>`;
       } else {
         const plain = sec.fields.filter(f => !f.advanced);
         const adv = sec.fields.filter(f => f.advanced);
@@ -610,22 +610,22 @@ const EarthGridEditor = {
     const id = 'eg-f-' + f.p.replace(/\./g, '-');
     let input;
     if (f.type === 'select') {
-      input = `<select id="${id}" data-eg-p="${f.p}"${f.num ? ' data-eg-num' : ''}>${f.options.map(([val, lab]) =>
+      input = `<select id="${id}" data-eg-p="${escHtml(f.p)}"${f.num ? ' data-eg-num' : ''}>${f.options.map(([val, lab]) =>
         `<option value="${escHtml(String(val))}"${String(v) === String(val) ? ' selected' : ''}>${escHtml(lab)}</option>`).join('')}</select>`;
     } else if (f.type === 'lines') {
       const txt = Array.isArray(v) ? v.join(', ') : '';
-      input = `<input type="text" id="${id}" data-eg-p="${f.p}" data-eg-lines value="${escHtml(txt)}" placeholder="equal spacing" inputmode="decimal">`;
+      input = `<input type="text" id="${id}" data-eg-p="${escHtml(f.p)}" data-eg-lines value="${escHtml(txt)}" placeholder="equal spacing" inputmode="decimal">`;
     } else if (f.type === 'text') {
-      input = `<input type="text" id="${id}" data-eg-p="${f.p}" value="${escHtml(v == null ? '' : String(v))}">`;
+      input = `<input type="text" id="${id}" data-eg-p="${escHtml(f.p)}" value="${escHtml(v == null ? '' : String(v))}">`;
     } else {
       const shown = v == null || v === '' ? '' : this._disp(v, f.scale);
       const list = f.sizes ? ` list="eg-sizes-list"` : '';
       const dl = f.sizes ? `<datalist id="eg-sizes-list">${this.SIZES_MM2.map(a => `<option value="${a}">`).join('')}</datalist>` : '';
-      input = `<input type="number" id="${id}" data-eg-p="${f.p}" value="${escHtml(String(shown))}" step="${f.step || 'any'}"${f.min != null ? ` min="${f.min}"` : ''}${f.max != null ? ` max="${f.max}"` : ''}${f.optional ? ' data-eg-opt' : ''}${f.ph ? ` placeholder="${escHtml(f.ph)}"` : ''}${list} inputmode="decimal">${dl}`;
+      input = `<input type="number" id="${id}" data-eg-p="${escHtml(f.p)}" value="${escHtml(String(shown))}" step="${escHtml(f.step || 'any')}"${f.min != null ? ` min="${f.min}"` : ''}${f.max != null ? ` max="${f.max}"` : ''}${f.optional ? ' data-eg-opt' : ''}${f.ph ? ` placeholder="${escHtml(f.ph)}"` : ''}${list} inputmode="decimal">${dl}`;
     }
     const unit = f.unit ? `<span class="eg-u">${escHtml(f.unit)}</span>` : '';
     const hint = f.hint ? `<div class="eg-hint">${escHtml(f.hint)}</div>` : '';
-    return `<div class="eg-fld${f.type === 'lines' ? ' eg-fld-wide' : ''}" data-eg-fld="${f.p}"><label for="${id}">${escHtml(f.label)}</label>
+    return `<div class="eg-fld${f.type === 'lines' ? ' eg-fld-wide' : ''}" data-eg-fld="${escHtml(f.p)}"><label for="${id}">${escHtml(f.label)}</label>
       <div class="eg-in">${input}${unit}</div>${hint}</div>`;
   },
 
@@ -834,7 +834,7 @@ const EarthGridEditor = {
   _toolbarHtml() {
     const v = this.view, t = this.tool;
     const seg = (attr, val, label, on, title) =>
-      `<button type="button" class="eg-tb-btn${on ? ' on' : ''}" ${attr}="${val}" aria-pressed="${on}"${title ? ` title="${escHtml(title)}"` : ''}>${label}</button>`;
+      `<button type="button" class="eg-tb-btn${on ? ' on' : ''}" ${attr}="${escHtml(val)}" aria-pressed="${on}"${title ? ` title="${escHtml(title)}"` : ''}>${label}</button>`;
     let tools;
     if (v === 'plan') {
       tools = `<div class="eg-tb-seg" role="group" aria-label="Plan tools">
@@ -1354,12 +1354,12 @@ const EarthGridEditor = {
     if (H_ && map && map.v && map.nx && map.ny && H_.F && H_.limit > 0) {
       const img = this._heatImage(map, H_.F, H_.rings, H_.limit, H_.maxT);
       if (img) {
-        svg += `<image href="${img.url}" x="${X(img.x0)}" y="${Y(img.y1)}" width="${((img.x1 - img.x0) * s).toFixed(1)}" height="${((img.y1 - img.y0) * s).toFixed(1)}" preserveAspectRatio="none"/>`;
+        svg += `<image href="${escHtml(img.url)}" x="${X(img.x0)}" y="${Y(img.y1)}" width="${((img.x1 - img.x0) * s).toFixed(1)}" height="${((img.y1 - img.y0) * s).toFixed(1)}" preserveAspectRatio="none"/>`;
       }
       if (H_.maxT > H_.limit) {
         const segs = this._limitContour(map, H_.F, H_.rings, H_.limit);
         const d = segs.map(q => `M${X(q[0])} ${Y(q[1])}L${X(q[2])} ${Y(q[3])}`).join('');
-        if (d) svg += `<path d="${d}" class="eg-p-limit-halo"/><path d="${d}" class="eg-p-limit"/>`;
+        if (d) svg += `<path d="${escHtml(d)}" class="eg-p-limit-halo"/><path d="${escHtml(d)}" class="eg-p-limit"/>`;
       }
       for (const ring of H_.rings || []) svg += `<polygon points="${poly(ring)}" class="eg-p-touch-edge"/>`;
     } else {
@@ -1372,7 +1372,7 @@ const EarthGridEditor = {
     for (const c of plan.conductors || []) {
       const kind = c[4] || 'grid', grp = +c[5] || 0;
       const cls = `eg-p-c eg-p-${kind}${grp ? ' eg-p-unb' : ''}`;
-      svg += `<line x1="${X(c[0])}" y1="${Y(c[1])}" x2="${X(c[2])}" y2="${Y(c[3])}" class="${cls}"/>`;
+      svg += `<line x1="${X(c[0])}" y1="${Y(c[1])}" x2="${X(c[2])}" y2="${Y(c[3])}" class="${escHtml(cls)}"/>`;
     }
     for (const r of plan.rods || []) {
       const kind = r[2] || 'rod', grp = +r[3] || 0;
@@ -1426,9 +1426,9 @@ const EarthGridEditor = {
     const has = (arr, f) => arr.some(f);
     const items = [];
     const sw = (cls, shape) => shape === 'line'
-      ? `<svg width="22" height="10" aria-hidden="true"><line x1="1" y1="5" x2="21" y2="5" class="${cls}"/></svg>`
-      : shape === 'sq' ? `<svg width="10" height="10" aria-hidden="true"><rect x="2.5" y="2.5" width="5" height="5" class="${cls}"/></svg>`
-        : `<svg width="10" height="10" aria-hidden="true"><circle cx="5" cy="5" r="3.4" class="${cls}"/></svg>`;
+      ? `<svg width="22" height="10" aria-hidden="true"><line x1="1" y1="5" x2="21" y2="5" class="${escHtml(cls)}"/></svg>`
+      : shape === 'sq' ? `<svg width="10" height="10" aria-hidden="true"><rect x="2.5" y="2.5" width="5" height="5" class="${escHtml(cls)}"/></svg>`
+        : `<svg width="10" height="10" aria-hidden="true"><circle cx="5" cy="5" r="3.4" class="${escHtml(cls)}"/></svg>`;
     if (has(cs, c => c[4] === 'grid' && !+c[5])) items.push(`${sw('eg-p-c eg-p-grid', 'line')} Grid conductor`);
     if (has(cs, c => c[4] === 'diagonal')) items.push(`${sw('eg-p-c eg-p-diagonal', 'line')} Diagonal`);
     if (has(cs, c => c[4] === 'extra' && !+c[5])) items.push(`${sw('eg-p-c eg-p-extra', 'line')} Added conductor`);

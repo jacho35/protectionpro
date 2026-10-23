@@ -62,8 +62,8 @@ jobs:
       - name: Cascading (back-up protection, IEC 60947-2 Annex A)
         run: node frontend/tests/test_cascading.mjs
 
-      - name: Raw HTML interpolation report (advisory)
-        run: node testing/lint/raw-interp.mjs | tail -n 40
+      - name: Raw HTML interpolation ratchet (new unescaped attribute values fail)
+        run: node testing/lint/raw-interp.mjs --max 208
 
   ui-templates:
     # Loads every Verification / Standards template in the real app (headless

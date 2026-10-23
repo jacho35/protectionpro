@@ -415,7 +415,7 @@ const SportsCalc = {
     ov.className = 'modal plan-floor-modal';
     ov.style.display = 'flex'; ov.style.zIndex = '3000';
     ov.setAttribute('role', 'dialog'); ov.setAttribute('aria-modal', 'true'); ov.setAttribute('aria-labelledby', 'sf-setup-title');
-    const field = (k, label, val, extra) => `<label class="plan-field"><span>${label}</span><input type="number" data-s="${k}" value="${val}" ${extra || ''} style="width:100%"></label>`;
+    const field = (k, label, val, extra) => `<label class="plan-field"><span>${label}</span><input type="number" data-s="${k}" value="${escHtml(val)}" ${extra || ''} style="width:100%"></label>`;
     const render = () => {
       const a = auto(), h = st.h != null ? st.h : a.h, per = st.perMast != null ? st.perMast : a.perMast;
       const T = SPORTS_FIELDS[st.sport].classes[st.cls];
@@ -503,7 +503,7 @@ const SportsCalc = {
   // ─── Properties panel (Lighting tab) ───
   panel(room) {
     const L = this.read(room), f = PlanEngine.factor(), fr = this.frame(room, f);
-    const num = (k, label, unit, step, extra) => `<label class="plan-field"><span>${label}</span><input type="number" data-sf="${k}" value="${L[k]}" step="${step}" ${extra || ''} style="width:100%"><small>${unit}</small></label>`;
+    const num = (k, label, unit, step, extra) => `<label class="plan-field"><span>${label}</span><input type="number" data-sf="${k}" value="${escHtml(L[k])}" step="${step}" ${extra || ''} style="width:100%"><small>${unit}</small></label>`;
     const masts = L.masts.map(m => `<div class="sf-mast-row"><span><b>${escHtml(m.name || 'Mast')}</b> · ${+m.h || 0} m · ${(m.floods || []).length} floods</span>
       <button type="button" class="btn-small" data-sf-aim="${escHtml(m.id)}">Aim…</button></div>`).join('');
     const cams = L.tv ? `<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px">
@@ -833,7 +833,7 @@ const SportsCalc = {
         ${cur ? '' : '<div class="sf-stale">Out of date — the field, its masts or the luminaires changed since this was calculated. <button class="btn-small" data-r="calc">Recalculate</button></div>'}
         <div class="sf-res">
           <div class="sf-res-plot">
-            <div class="sf-toolbar"><b>Ēh on the pitch (lx)</b><span style="flex:1"></span><button class="btn-small" data-r="values" aria-pressed="${this._showValues}">${this._showValues ? 'Hide' : 'Show'} values</button></div>
+            <div class="sf-toolbar"><b>Ēh on the pitch (lx)</b><span style="flex:1"></span><button class="btn-small" data-r="values" aria-pressed="${escHtml(this._showValues)}">${this._showValues ? 'Hide' : 'Show'} values</button></div>
             <div class="sf-canvas-wrap"></div>
             <div class="sf-legend"><span>0</span><span class="sf-legend-bar" aria-hidden="true"></span><span>${Math.round(hz.Emax)} lx</span><small>Grid ${hz.nx} × ${hz.ny} (${hz.dx.toFixed(2)} × ${hz.dy.toFixed(2)} m). Circles: masts; numbered diamonds: glare observers.</small></div>
           </div>

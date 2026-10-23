@@ -356,7 +356,7 @@ const PlanDxfManager = {
         const tgts = m.type ? this._fieldTargets(m.type) : [];
         attrs = g.tags.map(t => {
           const vals = (g.values.get(t) || []).map(v => escHtml(v)).join(', ');
-          const sel = m.type ? `<select data-role="battr" data-block="${key}" data-tag="${escHtml(t)}"><option value="">ignore</option>${tgts.map(f => `<option value="${f.key}"${(m.attrs || {})[t] === f.key ? ' selected' : ''}>${escHtml(f.label)}</option>`).join('')}</select>` : '';
+          const sel = m.type ? `<select data-role="battr" data-block="${key}" data-tag="${escHtml(t)}"><option value="">ignore</option>${tgts.map(f => `<option value="${escHtml(f.key)}"${(m.attrs || {})[t] === f.key ? ' selected' : ''}>${escHtml(f.label)}</option>`).join('')}</select>` : '';
           return `<div class="dxfm-attr"><code>${escHtml(t)}</code>${vals ? `<span class="dxfm-vals" title="${vals}">${vals}</span>` : ''}${sel}</div>`;
         }).join('');
       } else attrs = '<span class="dxfm-muted">no attributes</span>';

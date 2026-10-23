@@ -416,7 +416,7 @@ const Road3D = {
 
   // ─── Toolbar, panel, results ───────────────────────────────────────────
   toolbarHtml() {
-    const seg = (val, label) => `<button class="${this.mode === val ? 'active' : ''}" data-r3-mode="${val}" aria-pressed="${this.mode === val}">${label}</button>`;
+    const seg = (val, label) => `<button class="${this.mode === val ? 'active' : ''}" data-r3-mode="${escHtml(val)}" aria-pressed="${this.mode === val}">${label}</button>`;
     return `<span class="sl-view-toggle" role="group" aria-label="Show">${seg('model', 'Model')}${seg('colour', 'False colour')}${seg('render', 'Rendered light')}</span>
       ${this.mode === 'colour' ? `<span class="sl-view-toggle" role="group" aria-label="Quantity"><button class="${RoadPlan._qty === 'E' ? 'active' : ''}" data-rp-qty="E">Illuminance</button><button class="${RoadPlan._qty === 'L' ? 'active' : ''}" data-rp-qty="L">Luminance</button></span>` : ''}
       <label class="rl-inline" title="Trees, buildings, shelters and gantries shade the road in the calculation"><input type="checkbox" data-r3="shadows"${this.shadows() ? ' checked' : ''}> Shadows from objects</label>
@@ -444,7 +444,7 @@ const Road3D = {
   _propsHtml() {
     const s = this._selected();
     if (!s) return '';
-    const num = (k, label, val, step, extra = '') => `<label class="rp-field">${label}<input type="number" step="${step}" data-r3f="${k}" value="${val}" ${extra}></label>`;
+    const num = (k, label, val, step, extra = '') => `<label class="rp-field">${label}<input type="number" step="${step}" data-r3f="${k}" value="${escHtml(val)}" ${extra}></label>`;
     const f2 = (x) => (+x || 0).toFixed(2);
     const it = s.item;
     const head = (title, kind) => `<div class="rp-block-h"><b>${escHtml(title || '')}</b><span class="sl-hint">${kind}</span></div>`;
@@ -528,7 +528,7 @@ const Road3D = {
         <span>${res.shadows ? 'With shadows from objects.' : 'Unobstructed.'}${RoadPlan._resStale ? ' Out of date.' : ''}</span>`;
     } else {
       el.innerHTML = `<b>Rendered light</b><span>The road as bright as it looks at night: luminance on the carriageway, illuminance × reflectance on footways and verges${res.shadows ? ', with the shadows of objects' : ''}.${RoadPlan._resStale ? ' <b>Out of date.</b>' : ''}</span>
-        <label class="l3-expo">Exposure <input type="range" min="2" max="120" step="1" value="${this.expo}" data-r3="expo"></label>`;
+        <label class="l3-expo">Exposure <input type="range" min="2" max="120" step="1" value="${escHtml(this.expo)}" data-r3="expo"></label>`;
     }
   },
 

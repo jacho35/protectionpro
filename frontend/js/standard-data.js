@@ -897,7 +897,7 @@ const StandardData = {
       if (!wrap) continue;
       const bar = document.createElement('div');
       bar.className = 'lib-searchbar';
-      bar.innerHTML = `<input type="search" class="lib-search" data-lib="${bodyId}" placeholder="Search" aria-label="Search this library"><div class="lib-chips" data-lib="${bodyId}"></div><button type="button" class="btn-small lib-submit" data-lib-key="${cfg.arr}" hidden title="Propose your own entries for the company library">Submit to company…</button><div class="lib-target" hidden></div><div class="lib-drift" hidden></div>`;
+      bar.innerHTML = `<input type="search" class="lib-search" data-lib="${escHtml(bodyId)}" placeholder="Search" aria-label="Search this library"><div class="lib-chips" data-lib="${escHtml(bodyId)}"></div><button type="button" class="btn-small lib-submit" data-lib-key="${escHtml(cfg.arr)}" hidden title="Propose your own entries for the company library">Submit to company…</button><div class="lib-target" hidden></div><div class="lib-drift" hidden></div>`;
       bar.querySelector('.lib-submit').addEventListener('click', () => Submissions.pickAndSubmit(cfg.arr));
       bar.querySelector('.lib-drift').addEventListener('click', (e) => { if (e.target.closest('[data-drift-review]')) this.reviewDrift(); });
       bar.querySelector('.lib-target').addEventListener('click', (e) => { if (e.target.closest('[data-stop-edit]')) this.setEditTarget(null); });
@@ -1032,7 +1032,7 @@ const StandardData = {
     if (!box) return;
     const cfg = this._LIB[bodyId];
     const f = this._libFilter[bodyId] = this._libFilter[bodyId] || {};
-    const chip = (grp, val, text, on) => `<button type="button" class="lib-chip${on ? ' active' : ''}" data-grp="${grp}" data-val="${val}" aria-pressed="${on}">${text}</button>`;
+    const chip = (grp, val, text, on) => `<button type="button" class="lib-chip${on ? ' active' : ''}" data-grp="${grp}" data-val="${escHtml(val)}" aria-pressed="${on}">${text}</button>`;
     let html = '';
     if (bodyId === 'cable-library-body') {
       const kvs = [...new Set(this.cables.map(c => c.voltage_kv))].sort((a, b) => a - b);
@@ -1132,7 +1132,7 @@ const StandardData = {
       if (!tab || tab.hidden) continue;
       if (sec.group !== last) { html += `<div class="settings-home-group">${sec.group}</div>`; last = sec.group; }
       const n = sec.count ? sec.count(this) : null;
-      html += `<button type="button" class="settings-home-row" data-go="${sec.tab}"><span class="settings-home-text"><span class="settings-home-title">${escHtml(tab.textContent.trim())}</span><span class="settings-home-sub">${escHtml(sec.sub())}</span></span>${n != null ? `<span class="settings-home-count">${n}</span>` : ''}<span class="settings-home-chev" aria-hidden="true">›</span></button>`;
+      html += `<button type="button" class="settings-home-row" data-go="${escHtml(sec.tab)}"><span class="settings-home-text"><span class="settings-home-title">${escHtml(tab.textContent.trim())}</span><span class="settings-home-sub">${escHtml(sec.sub())}</span></span>${n != null ? `<span class="settings-home-count">${n}</span>` : ''}<span class="settings-home-chev" aria-hidden="true">›</span></button>`;
     }
     home.innerHTML = html;
     home.querySelectorAll('[data-go]').forEach(b => b.addEventListener('click', () => this._showScreen(b.dataset.go)));
@@ -1220,14 +1220,14 @@ const StandardData = {
           <option value="EPR" ${c.insulation === 'EPR' ? 'selected' : ''}>EPR</option>
         </select></td>
         <td><select data-key="construction">${CableLib.CONSTRUCTIONS.map(k => `<option value="${k.id}" ${(c.construction || 'armoured') === k.id ? 'selected' : ''}>${escHtml(k.label)}</option>`).join('')}</select></td>
-        <td><input type="number" value="${c.cores || ''}" data-key="cores" step="1" min="1"></td>
-        <td><input type="number" value="${c.size_mm2}" data-key="size_mm2" step="any"></td>
-        <td><input type="number" value="${c.voltage_kv}" data-key="voltage_kv" step="any"></td>
-        <td><input type="number" value="${c.r_per_km}" data-key="r_per_km" step="any"></td>
-        <td><input type="number" value="${c.x_per_km}" data-key="x_per_km" step="any"></td>
-        <td><input type="number" value="${c.r0_per_km || 0}" data-key="r0_per_km" step="any"></td>
-        <td><input type="number" value="${c.x0_per_km || 0}" data-key="x0_per_km" step="any"></td>
-        <td><input type="number" value="${c.rated_amps}" data-key="rated_amps" step="any"></td>
+        <td><input type="number" value="${escHtml(c.cores || '')}" data-key="cores" step="1" min="1"></td>
+        <td><input type="number" value="${escHtml(c.size_mm2)}" data-key="size_mm2" step="any"></td>
+        <td><input type="number" value="${escHtml(c.voltage_kv)}" data-key="voltage_kv" step="any"></td>
+        <td><input type="number" value="${escHtml(c.r_per_km)}" data-key="r_per_km" step="any"></td>
+        <td><input type="number" value="${escHtml(c.x_per_km)}" data-key="x_per_km" step="any"></td>
+        <td><input type="number" value="${escHtml(c.r0_per_km || 0)}" data-key="r0_per_km" step="any"></td>
+        <td><input type="number" value="${escHtml(c.x0_per_km || 0)}" data-key="x0_per_km" step="any"></td>
+        <td><input type="number" value="${escHtml(c.rated_amps)}" data-key="rated_amps" step="any"></td>
         <td><button class="btn-delete-row" data-index="${i}" title="Delete">&times;</button></td>
       </tr>
     `).join('');
@@ -1297,12 +1297,12 @@ const StandardData = {
       <tr data-index="${i}">
         <td><input type="text" value="${escHtml(c.label)}" data-key="label"></td>
         <td><input type="text" value="${escHtml(c.lsm || '')}" data-key="lsm" style="width:48px"></td>
-        <td><input type="number" value="${c.a}" data-key="a" step="any" style="width:64px"></td>
-        <td><input type="number" value="${c.b}" data-key="b" step="any" style="width:64px"></td>
-        <td><input type="number" value="${c.c}" data-key="c" step="any" style="width:64px"></td>
-        <td><input type="number" value="${c.admd}" data-key="admd" step="any" style="width:72px"></td>
-        <td><input type="number" value="${c.mu}" data-key="mu" step="any" style="width:64px"></td>
-        <td><input type="number" value="${c.sigma}" data-key="sigma" step="any" style="width:64px"></td>
+        <td><input type="number" value="${escHtml(c.a)}" data-key="a" step="any" style="width:64px"></td>
+        <td><input type="number" value="${escHtml(c.b)}" data-key="b" step="any" style="width:64px"></td>
+        <td><input type="number" value="${escHtml(c.c)}" data-key="c" step="any" style="width:64px"></td>
+        <td><input type="number" value="${escHtml(c.admd)}" data-key="admd" step="any" style="width:72px"></td>
+        <td><input type="number" value="${escHtml(c.mu)}" data-key="mu" step="any" style="width:64px"></td>
+        <td><input type="number" value="${escHtml(c.sigma)}" data-key="sigma" step="any" style="width:64px"></td>
         <td><select data-key="phase">
           <option value="1" ${Number(c.phase) === 1 ? 'selected' : ''}>1Φ</option>
           <option value="3" ${Number(c.phase) === 3 ? 'selected' : ''}>3Φ</option>
@@ -1366,11 +1366,11 @@ const StandardData = {
     tbody.innerHTML = this.transformers.map((t, i) => `
       <tr data-index="${i}">
         <td><input type="text" value="${escHtml(t.name)}" data-key="name"></td>
-        <td><input type="number" value="${t.rated_mva}" data-key="rated_mva" step="any"></td>
-        <td><input type="number" value="${t.voltage_hv_kv}" data-key="voltage_hv_kv" step="any"></td>
-        <td><input type="number" value="${t.voltage_lv_kv}" data-key="voltage_lv_kv" step="any"></td>
-        <td><input type="number" value="${t.z_percent}" data-key="z_percent" step="any"></td>
-        <td><input type="number" value="${t.x_r_ratio}" data-key="x_r_ratio" step="any"></td>
+        <td><input type="number" value="${escHtml(t.rated_mva)}" data-key="rated_mva" step="any"></td>
+        <td><input type="number" value="${escHtml(t.voltage_hv_kv)}" data-key="voltage_hv_kv" step="any"></td>
+        <td><input type="number" value="${escHtml(t.voltage_lv_kv)}" data-key="voltage_lv_kv" step="any"></td>
+        <td><input type="number" value="${escHtml(t.z_percent)}" data-key="z_percent" step="any"></td>
+        <td><input type="number" value="${escHtml(t.x_r_ratio)}" data-key="x_r_ratio" step="any"></td>
         <td><select data-key="vector_group">
           ${vectors.map(v => `<option value="${v}" ${t.vector_group === v ? 'selected' : ''}>${v}</option>`).join('')}
         </select></td>
@@ -1440,14 +1440,14 @@ const StandardData = {
           <option value="mccb" ${c.cb_type === 'mccb' ? 'selected' : ''}>MCCB</option>
           <option value="acb" ${c.cb_type === 'acb' ? 'selected' : ''}>ACB</option>
         </select></td>
-        <td><input type="number" value="${c.trip_rating_a}" data-key="trip_rating_a" step="any"></td>
-        <td><input type="number" value="${c.rated_voltage_kv}" data-key="rated_voltage_kv" step="any"></td>
-        <td><input type="number" value="${c.breaking_ka}" data-key="breaking_ka" step="any"></td>
-        <td><input type="number" value="${c.magnetic_pickup}" data-key="magnetic_pickup" step="any" title="${this._cbBaseTitle(c, 'magnetic_pickup')}"></td>
-        <td><input type="number" value="${c.long_time_delay}" data-key="long_time_delay" step="any"></td>
+        <td><input type="number" value="${escHtml(c.trip_rating_a)}" data-key="trip_rating_a" step="any"></td>
+        <td><input type="number" value="${escHtml(c.rated_voltage_kv)}" data-key="rated_voltage_kv" step="any"></td>
+        <td><input type="number" value="${escHtml(c.breaking_ka)}" data-key="breaking_ka" step="any"></td>
+        <td><input type="number" value="${escHtml(c.magnetic_pickup)}" data-key="magnetic_pickup" step="any" title="${this._cbBaseTitle(c, 'magnetic_pickup')}"></td>
+        <td><input type="number" value="${escHtml(c.long_time_delay)}" data-key="long_time_delay" step="any"></td>
         <td><select data-key="trip_units" aria-label="Trip unit">${this._cbTripUnitOptions(c)}</select></td>
         ${['short_time_pickup', 'short_time_delay', 'instantaneous_pickup'].map(k =>
-          `<td><input type="number" value="${c[k] ?? ''}" data-key="${k}" data-optional="1" step="any" placeholder="${this._cbTripDefault(c, k)}" title="${this._cbBaseTitle(c, k)}"></td>`).join('')}
+          `<td><input type="number" value="${escHtml(c[k] ?? '')}" data-key="${k}" data-optional="1" step="any" placeholder="${this._cbTripDefault(c, k)}" title="${this._cbBaseTitle(c, k)}"></td>`).join('')}
         <td><button class="btn-delete-row" data-index="${i}" title="Delete">&times;</button></td>
       </tr>
     `).join('');
@@ -1565,9 +1565,9 @@ const StandardData = {
           <option value="gG" ${f.fuse_type === 'gG' ? 'selected' : ''}>gG</option>
           <option value="aM" ${f.fuse_type === 'aM' ? 'selected' : ''}>aM</option>
         </select></td>
-        <td><input type="number" value="${f.rated_current_a}" data-key="rated_current_a" step="any"></td>
-        <td><input type="number" value="${f.rated_voltage_kv}" data-key="rated_voltage_kv" step="any"></td>
-        <td><input type="number" value="${f.breaking_ka}" data-key="breaking_ka" step="any"></td>
+        <td><input type="number" value="${escHtml(f.rated_current_a)}" data-key="rated_current_a" step="any"></td>
+        <td><input type="number" value="${escHtml(f.rated_voltage_kv)}" data-key="rated_voltage_kv" step="any"></td>
+        <td><input type="number" value="${escHtml(f.breaking_ka)}" data-key="breaking_ka" step="any"></td>
         <td><button class="btn-delete-row" data-index="${i}" title="Delete">&times;</button></td>
       </tr>
     `).join('');
@@ -1856,7 +1856,7 @@ const StandardData = {
           ${results.map(r => {
             const cls = r.adequate ? (r.size === selectedSize ? 'iec-selected-row' : 'iec-ok-row') : 'iec-fail-row';
             const status = r.adequate ? (r.size === selectedSize ? 'SELECTED' : 'OK') : 'Too small';
-            return `<tr class="${cls}">
+            return `<tr class="${escHtml(cls)}">
               <td class="num-cell">${r.size}</td>
               <td class="num-cell">${r.baseAmpacity}</td>
               <td class="num-cell">${r.deratedAmpacity.toFixed(1)}</td>

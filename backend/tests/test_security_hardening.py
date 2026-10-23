@@ -279,3 +279,27 @@ def test_deleting_a_user_who_uploaded_plan_images(client):
     iid = _upload(client, b).json()["id"]
     assert client.delete(f"/api/auth/users/{uid_b}", headers=_h(a)).status_code == 200
     assert client.get(f"/api/plan-images/{iid}", headers=_h(a)).status_code == 200   # the heir has it
+
+
+def test_client_address_comes_from_the_proxy_only_when_trusted(client, monkeypatch):
+    start = lambda ip: client.post("/api/auth/device/start", json={}, headers={"X-Real-IP": ip}).status_code
+    monkeypatch.setattr(auth_routes, "_TRUST_PROXY", True)
+    assert [start("10.1.1.1") for _ in range(20)] == [200] * 20
+    assert start("10.1.1.1") == 429
+    assert start("10.2.2.2") == 200          # another client behind the same proxy
+    monkeypatch.setattr(auth_routes, "_TRUST_PROXY", False)
+    auth_routes._reset_limits()
+    assert [start(f"9.9.9.{i}") for i in range(20)] == [200] * 20
+    assert start("9.9.9.99") == 429          # a changing header does not buy a fresh allowance
+
+
+def test_admin_cleanup_sweeps_every_users_stale_orphans(client):
+    a, b = _users(client)
+    ib = _upload(client, b).json()["id"]
+    s = client._session()
+    for img in s.query(PlanImage).all():
+        img.created_at = datetime.now(timezone.utc) - timedelta(days=3)
+    s.commit()
+    s.close()
+    assert client.post("/api/plan-images/cleanup", headers=_h(a)).json() == {"deleted": 1}
+    assert client.get(f"/api/plan-images/{ib}", headers=_h(b)).status_code == 404
