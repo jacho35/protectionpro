@@ -103,8 +103,12 @@ const LightingWS = {
       }
       else if (e.target.id === 'lw-show') {
         RoomCalc.enabled = e.target.value !== 'off';
+        if (RoomCalc.enabled) RoomCalc.display = e.target.value;
         PlanEngine.requestDraw({ fg: true });
+        this._renderBar();
       }
+      else if (e.target.id === 'lw-isostep') { RoomCalc.isoStep = +e.target.value || 0; PlanEngine.requestDraw({ fg: true }); }
+      else if (e.target.id === 'lw-dist') { RoomCalc.showDist = e.target.checked; PlanEngine.requestDraw({ fg: true }); }
     });
   },
 
@@ -179,11 +183,23 @@ const LightingWS = {
       <div class="plan-tb-spacer"></div>
       ${(plan || v3) && floors.length > 1 ? `<label class="plan-tb-field">Floor <select id="lw-floor-select">${floors.map(f =>
         `<option value="${escHtml(f.id)}"${f.id === pm.activeFloorId ? ' selected' : ''}>${escHtml(f.name)} (L${f.level})</option>`).join('')}</select></label>` : ''}
-      ${plan ? `<label class="plan-tb-field">Show <select id="lw-show" class="plan-tb-select"><option value="on"${RoomCalc.enabled ? ' selected' : ''}>Results (false colour)</option><option value="off"${RoomCalc.enabled ? '' : ' selected'}>Plan only</option></select></label>` : ''}
+      ${plan ? this._showHtml() : ''}
       <button class="plan-tb-btn" data-lw="photolib">Luminaire library…</button>
       <button class="plan-tb-btn" data-lw="pdf">PDF report</button>
       ${v3 ? `<button class="btn-primary" data-l3="calc">${Light3D.calcLabel()}</button>`
         : '<button class="btn-primary" data-lw="calc">Calculate all</button>'}`;
+  },
+
+  // Plan toolbar: how results show (false colour / isolux lines / values), the line step, and
+  // each fitting's light distribution.
+  _showHtml() {
+    const cur = RoomCalc.enabled ? RoomCalc.display : 'off';
+    const opt = (v, t) => `<option value="${v}"${cur === v ? ' selected' : ''}>${t}</option>`;
+    const iso = cur === 'iso' || cur === 'isoval';
+    const steps = [0, 10, 25, 50, 100, 200, 500];
+    return `<label class="plan-tb-field">Show <select id="lw-show" class="plan-tb-select">${opt('fc', 'False colour')}${opt('iso', 'Isolux lines')}${opt('isoval', 'Isolux lines + values')}${opt('val', 'Values')}${opt('off', 'Plan only')}</select></label>
+      ${iso ? `<label class="plan-tb-field">Every <select id="lw-isostep" class="plan-tb-select">${steps.map(v => `<option value="${v}"${RoomCalc.isoStep === v ? ' selected' : ''}>${v ? v + ' lx' : 'Auto'}</option>`).join('')}</select></label>` : ''}
+      <label class="plan-tb-field" title="Each fitting's light distribution seen from above — how far it throws light in every direction"><input type="checkbox" id="lw-dist"${RoomCalc.showDist ? ' checked' : ''}> Light distribution</label>`;
   },
 
   // From the Plan tab ("Lighting for this room…") or a table row: show the
