@@ -570,18 +570,77 @@ const Light3D = {
       v.face({ pts, fill, cull: n, layer: kind === 0 ? 0 : (kind === 2 ? 0.5 : 1), bias: kind === 0 ? -1e6 : 0 });
     }
   },
+  // The beam: the half-peak contour of the fitting's own web (every C plane), turned into the
+  // room by the same photometric frame the engine uses (rotation; wall fittings face into the
+  // room, tilted by their aim) and run out to the work plane (to the ceiling for an uplight).
   _cone(v, el, c, z, G) {
     const ph = PhotoLib.get(el.props && el.props.photoId);
-    let half = 40;
-    try {
-      const row = ph.cd[0], gs = ph.g, mx = Math.max(...row);
-      for (let i = 0; i < gs.length; i++) if (row[i] < 0.5 * mx) { half = gs[i]; break; }
-    } catch (_) { /* no web: 40° */ }
-    const r = Math.max(0.05, (z - G.wp) * Math.tan(Math.min(80, half) * Math.PI / 180));
-    const ring = [];
-    for (let a = 0; a < 24; a++) ring.push([c[0] + r * Math.cos(a * Math.PI / 12), c[1] + r * Math.sin(a * Math.PI / 12), G.wp]);
+    const F = this._lumFrame(el, c, G);
+    const N = 36, cs = [], gs = [];
+    const web = ph && Array.isArray(ph.c) && Array.isArray(ph.g) && Array.isArray(ph.cd) && ph.cd.length ? ph : null;
+    let up = false;
+    if (web) {
+      let mx = 0, gPk = 0;
+      web.cd.forEach(row => row.forEach((x, j) => { if (x > mx) { mx = x; gPk = web.g[j]; } }));
+      up = gPk > 90;
+      for (let k = 0; k < N; k++) {
+        const C = k * 360 / N;
+        cs.push(C);
+        gs.push(mx > 0 ? this._halfGamma(web, C, 0.5 * mx, up) : (up ? 140 : 40));
+      }
+    } else for (let k = 0; k < N; k++) { cs.push(k * 360 / N); gs.push(40); }
+    // the plane the beam lands on, and the longest ray drawn (80° off that plane's normal)
+    const zT = up ? G.hAt(c[0], c[1]) : G.wp, h = Math.max(0.05, Math.abs(z - zT));
+    const tMax = h / Math.cos(80 * Math.PI / 180);
+    const ring = cs.map((C, k) => {
+      const g = gs[k] * Math.PI / 180, a = C * Math.PI / 180;
+      const l = [Math.sin(g) * Math.cos(a), Math.sin(g) * Math.sin(a), -Math.cos(g)];
+      const d = [0, 1, 2].map(i => l[0] * F[0][i] + l[1] * F[1][i] + l[2] * F[2][i]);
+      const dz = up ? d[2] : -d[2];
+      const t = dz > 1e-6 ? Math.min(h / dz, tMax) : tMax;
+      return [c[0] + d[0] * t, c[1] + d[1] * t, z + d[2] * t];
+    });
     v.face({ pts: ring, fill: 'rgba(255,214,90,.16)', stroke: 'rgba(214,150,20,.55)', lw: 1, layer: 2 });
-    for (const a of [0, 6, 12, 18]) v.line({ pts: [[c[0], c[1], z], ring[a]], stroke: 'rgba(214,150,20,.45)', lw: 1, layer: 2 });
+    for (let k = 0; k < N; k += N / 4) v.line({ pts: [[c[0], c[1], z], ring[k]], stroke: 'rgba(214,150,20,.45)', lw: 1, layer: 2 });
+  },
+  // γ (°) of the beam edge in plane C: the furthest γ from nadir (from zenith for an uplight)
+  // whose intensity is still ≥ `lim`, interpolated between the web's own samples.
+  _halfGamma(web, C, lim, up) {
+    const cA = web.c, n = cA.length;
+    let Cm = ((C % 360) + 360) % 360;
+    // a web without a full circle (one plane, or 0–180) is symmetric about C0
+    if (cA[n - 1] < 360 - 1e-6 && Cm > cA[n - 1]) Cm = Math.min(360 - Cm, cA[n - 1]);
+    let j = 0;
+    while (j < n - 1 && cA[j + 1] < Cm) j++;
+    const j2 = Math.min(j + 1, n - 1), t = j2 > j && cA[j2] > cA[j] ? Math.min(1, Math.max(0, (Cm - cA[j]) / (cA[j2] - cA[j]))) : 0;
+    const gA = web.g, I = gA.map((_, i) => web.cd[j][i] * (1 - t) + web.cd[j2][i] * t);
+    const idx = gA.map((g, i) => i).filter(i => (up ? gA[i] >= 90 : gA[i] <= 90));
+    if (up) idx.reverse();
+    let last = -1;
+    for (let q = 0; q < idx.length; q++) if (I[idx[q]] >= lim) last = q;
+    if (last < 0) return up ? 180 : 0;
+    const i0 = idx[last], i1 = idx[last + 1];
+    if (i1 == null || I[i0] <= I[i1]) return gA[i0];
+    return gA[i0] + (gA[i1] - gA[i0]) * (I[i0] - lim) / (I[i0] - I[i1]);
+  },
+  // The fitting's photometric frame in the 3D view's metres: rows = its x (C0), y (C90) and up,
+  // as backend room_lighting._luminaires builds it.
+  _lumFrame(el, c, G) {
+    const pr = el.props || {};
+    if (pr.mount === 'wall' && G.edges.length) {
+      let best = Infinity, nIn = [0, 1];
+      for (const e of G.edges) {
+        const t = Math.min(Math.max(((c[0] - e.a[0]) * e.dir[0] + (c[1] - e.a[1]) * e.dir[1]) / e.len, 0.02), 0.98);
+        const d = Math.hypot(c[0] - e.a[0] - e.dir[0] * e.len * t, c[1] - e.a[1] - e.dir[1] * e.len * t);
+        if (d < best) { best = d; nIn = e.nIn; }
+      }
+      const th = Math.min(Math.max(Number(pr.wallAim) || 0, 0), 180) * Math.PI / 180;
+      const ey0 = [nIn[0], nIn[1], 0], ex = [nIn[1], -nIn[0], 0];      // C90 faces into the room
+      return [ex, [ey0[0] * Math.cos(th), ey0[1] * Math.cos(th), Math.sin(th)],
+        [-ey0[0] * Math.sin(th), -ey0[1] * Math.sin(th), Math.cos(th)]];
+    }
+    const a = -(el.rotation || 0) * Math.PI / 180;
+    return [[Math.cos(a), Math.sin(a), 0], [-Math.sin(a), Math.cos(a), 0], [0, 0, 1]];
   },
   _selLabel(room, G) {
     const s = this._selected(room);
