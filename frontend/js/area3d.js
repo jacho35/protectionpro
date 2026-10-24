@@ -18,7 +18,19 @@ const Area3D = {
   is(room) { return !!room && (room.kind === 'outdoor' || room.kind === 'perimeter'); },
 
   _pts(room, f) { return (room.points || []).map(p => [p.x * f, -p.y * f]); },
-  _lums(f) { return AreaCalc.luminaires(f).lums; },
+  // Every outdoor luminaire drawn — also one with no library luminaire yet (the
+  // calculation skips it, the picture shouldn't) — plus the sports-field floods.
+  _lums(f) {
+    const out = [];
+    for (const el of AppState.planMarkup.elements || []) {
+      if (!AreaCalc._isOutdoorLight(el)) continue;
+      const pr = el.props || {};
+      out.push({ id: el.id, x: el.x * f, y: -el.y * f, h: Number(pr.mountH) > 0 ? Number(pr.mountH) : 8, rotate: -(el.rotation || 0),
+        tilt: Number(pr.tilt) || 0, fluxPct: pr.fluxPct != null && pr.fluxPct !== '' ? Number(pr.fluxPct) : 100 });
+    }
+    if (typeof SportsCalc !== 'undefined') out.push(...SportsCalc.allFloods(f).lums);
+    return out;
+  },
   _result(room) {
     RoomCalc._sync();
     const r = RoomCalc.results[room.id];
