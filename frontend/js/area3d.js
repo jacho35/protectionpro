@@ -31,6 +31,15 @@ const Area3D = {
     if (typeof SportsCalc !== 'undefined') out.push(...SportsCalc.allFloods(f).lums);
     return out;
   },
+  // Light fittings standing in the area whose kind is not Floodlight / Area light
+  // (a ceiling downlight, say): the calculation ignores them, so say so.
+  _strays(room) {
+    if (!room.points || room.points.length < 3) return [];
+    return (AppState.planMarkup.elements || []).filter(el => {
+      const def = PLAN_DEFS.element(el.type);
+      return def && def.group === 'Lighting' && !AreaCalc._isOutdoorLight(el) && PlanEngine._pointInPoly({ x: el.x, y: el.y }, room.points);
+    });
+  },
   _result(room) {
     RoomCalc._sync();
     const r = RoomCalc.results[room.id];
@@ -102,6 +111,13 @@ const Area3D = {
       }
     }
 
+    // fittings of another kind inside the area: shown grey, not counted
+    if (!perim) for (const el of this._strays(room)) {
+      const x = el.x * f, y = -el.y * f, h = Math.max(1, Number((el.props || {}).mountH) || 8);
+      v.line({ pts: [[x, y, 0], [x, y, h]], stroke: night ? '#4b5563' : '#9ca3af', lw: 2, dash: [4, 3], layer: 1.3 });
+      V3D.box(v, [x, y], 0.5, 0.5, h - 0.1, 0.15, 0, { color: '#9ca3af', stroke: 'rgba(26,26,46,.4)', lw: 0.8, layer: 1.5 });
+    }
+
     // luminaires on poles
     const lums = this._lums(f).filter(l => l.x > B.min[0] - 1 && l.x < B.max[0] + 1 && l.y > B.min[1] - 1 && l.y < B.max[1] + 1);
     for (const l of lums) {
@@ -166,6 +182,12 @@ const Area3D = {
   },
 
   // ─── Panels ────────────────────────────────────────────────────────────
+  _strayNote(room) {
+    const n = this._strays(room).length;
+    return n ? `<p class="l3-muted"><b>${n} light fitting${n === 1 ? '' : 's'} in this area ${n === 1 ? 'is' : 'are'} not Floodlight / Area light</b> (shown grey), so ${n === 1 ? 'it is' : 'they are'} left out of the calculation.</p>
+      <div class="l3-btns"><button type="button" class="plan-tb-btn" data-a3="outdoor">Make ${n === 1 ? 'it an' : 'them'} Area light${n === 1 ? '' : 's'}</button></div>` : '';
+  },
+
   title(room) {
     const f = PlanEngine.factor();
     if (!f) return '';
@@ -183,7 +205,7 @@ const Area3D = {
     const row = (e) => `<button type="button" class="l3-row${L3.sel === 'l:' + e.id ? ' active' : ''}" data-l3-sel="${escHtml('l:' + e.id)}"><i style="background:#fff2b8"></i><span>${escHtml(e.name || 'Luminaire')}</span><small>${Number(e.props.mountH) > 0 ? Number(e.props.mountH) : 8} m</small></button>`;
     return `<div class="l3-pal-head">Outdoor luminaires</div>
       <div class="l3-pal-note">Drag a pole across the ground to move it. Add or lay out poles in the Plan view (Fittings › Floodlight / Area light, or Suggest poles in the area's properties).</div>
-      <div class="l3-list">${els.map(row).join('') || '<div class="l3-pal-note">No outdoor luminaires yet.</div>'}</div>`;
+      <div class="l3-list">${els.map(row).join('') || '<div class="l3-pal-note">No outdoor luminaires yet.</div>'}</div>${room.kind === 'outdoor' ? this._strayNote(room) : ''}`;
   },
 
   props(room, L3) {
@@ -193,6 +215,7 @@ const Area3D = {
       return `<div class="l3-props-body">
         <div class="l3-props-title">${escHtml(room.name || 'Outdoor')}</div>
         <p class="l3-muted">Nothing selected. Click a pole in the view or the list to edit it.</p>
+        ${this._strayNote(room)}
         <div class="l3-btns"><button type="button" class="plan-tb-btn" data-a3="calc">${r ? 'Recalculate' : 'Calculate'}</button></div>
         <p class="l3-muted">Targets, task and the calculation grid are in the area's properties on the Plan view.</p>
       </div>`;
@@ -241,6 +264,11 @@ const Area3D = {
     const a = e.target.closest('[data-a3], [data-l3="del"]');
     if (!a || a.tagName === 'INPUT') return false;
     if (a.dataset.a3 === 'calc') L3.calc();
+    else if (a.dataset.a3 === 'outdoor') {
+      for (const el of this._strays(room)) el.props = Object.assign({}, el.props, { kind: 'area' });
+      this._commit(L3);
+      UI.toast('Now Area lights. Pick a library luminaire for each (Luminaires step) so they can be calculated.', 'info', 7000);
+    }
     else if (a.dataset.l3 === 'del') this.remove(L3, room);
     else return false;
     return true;
