@@ -1245,37 +1245,7 @@ const RoadLight = {
 
   // Polar intensity curves in the C0–C180 (along the road) and C90–C270 (across) planes.
   _polarSvg(p, R = 120) {
-    const W = 2 * R + 40, cx = W / 2, cy = 20 + R * 0.35, H = Math.round(cy + R + 26);
-    const cdk = p.cd.map(row => row.map(v => v / p.lumens * 1000));
-    let max = 0;
-    for (const row of cdk) for (const v of row) if (v > max) max = v;
-    const ringMax = Math.ceil(max / 100) * 100 || 100;
-    const plane = (cDeg) => {
-      const i = p.c.findIndex(c => Math.abs(c - cDeg) < 1e-6);
-      if (i >= 0) return cdk[i];
-      let j = p.c.findIndex(c => c > cDeg); if (j <= 0) j = 1;
-      const t = (cDeg - p.c[j - 1]) / (p.c[j] - p.c[j - 1]);
-      return cdk[j - 1].map((v, k) => v * (1 - t) + cdk[j][k] * t);
-    };
-    const curve = (cA, cB) => {
-      const a = plane(cA), b = plane(cB);
-      const pts = [];
-      p.g.forEach((g, k) => { if (g <= 90) pts.push([-g, b[k]]); });
-      pts.reverse();
-      p.g.forEach((g, k) => { if (g <= 90) pts.push([g, a[k]]); });
-      return pts.map(([g, v], k) => {
-        const r = v / ringMax * R, th = g * Math.PI / 180;
-        return `${k ? 'L' : 'M'}${(cx + r * Math.sin(th)).toFixed(1)} ${(cy + r * Math.cos(th)).toFixed(1)}`;
-      }).join('');
-    };
-    const rings = [0.25, 0.5, 0.75, 1].map(f => `<path d="M${cx - f * R} ${cy} A${f * R} ${f * R} 0 0 0 ${cx + f * R} ${cy}" fill="none" stroke="var(--border-color)"/><text x="${cx + 3}" y="${cy + f * R - 3}" class="rl-xs-s">${Math.round(f * ringMax)}</text>`).join('');
-    const spokes = [30, 60, 90].map(g => [-g, g]).flat().map(g => { const th = g * Math.PI / 180; return `<line x1="${cx}" y1="${cy}" x2="${cx + R * Math.sin(th)}" y2="${cy + R * Math.cos(th)}" stroke="var(--border-color)" stroke-dasharray="2 3"/><text x="${cx + (R + 10) * Math.sin(th)}" y="${cy + (R + 10) * Math.cos(th) + 4}" text-anchor="middle" class="rl-xs-s">${Math.abs(g)}°</text>`; }).join('');
-    return `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="Polar intensity diagram">
-      ${rings}${spokes}
-      <path d="${curve(0, 180)}" fill="none" stroke="var(--rl-s1)" stroke-width="2"/>
-      <path d="${curve(90, 270)}" fill="none" stroke="var(--rl-s2)" stroke-width="2" stroke-dasharray="6 3"/>
-      </svg>
-      <div class="rl-legend"><span class="rl-leg"><i style="background:var(--rl-s1)"></i>C0–C180 along the road</span><span class="rl-leg"><i class="dash" style="background:var(--rl-s2)"></i>C90 street side (right) – C270 house side</span><span class="sl-hint">cd/klm</span></div>`;
+    return PhotoView.polarSvg(p, { R, fixed: true }) + PhotoView.polarLegend(['C0–C180 along the road', 'C90 street side (right) – C270 house side']);
   },
 
   // ─── Optimiser ───────────────────────────────────────────────────────

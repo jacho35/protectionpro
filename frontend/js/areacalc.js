@@ -133,7 +133,7 @@ const AreaCalc = {
     for (const l of lums) photometry[l.photometryId] = PhotoLib.get(l.photometryId);
     const areas = list.filter(r => r.kind === 'outdoor' && r.points.length >= 3);
     const perims = list.filter(r => r.kind === 'perimeter' && r.points.length >= 2);
-    if (UI.setBusy) UI.setBusy(true, 'Calculating outdoor lighting…');
+    RoomCalc.busy(true, 'Calculating outdoor lighting…');
     let out;
     try {
       out = await API.request('/analysis/area-lighting', 'POST', {
@@ -141,9 +141,9 @@ const AreaCalc = {
         areas: areas.map(r => this._areaReq(r, f)), perimeters: perims.map(r => this._perimReq(r, f)),
       });
     } catch (e) {
-      UI.alert('Outdoor lighting calculation failed: ' + (e && e.message ? e.message : e));
+      RoomCalc.fail('Outdoor lighting calculation failed: ' + (e && e.message ? e.message : e));
       return;
-    } finally { if (UI.setBusy) UI.setBusy(false); }
+    } finally { RoomCalc.busy(false); }
     let pass = 0, fail = 0;
     for (const r of out.areas.concat(out.perimeters)) {
       if (r.error) { UI.toast(`${r.name}: ${r.error}`, 'warn', 6000); continue; }

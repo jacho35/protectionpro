@@ -2,8 +2,10 @@
  *
  * Collects each room's outline and the fittings inside it (bd_light elements
  * bound to a library luminaire), sends them to /api/analysis/room-lighting,
- * keeps the answer for the session and draws it: a false-colour work-plane
- * grid with isolux lines at the target and at the minimum point value. The
+ * keeps the answer for the session and draws it on the plan as a false-colour
+ * work-plane grid (isolux lines at the target and the minimum point value),
+ * labelled isolux lines at a step, point values, or both (`display`). With
+ * `showDist` each fitting also shows the top view of its photometric solid. The
  * result is stamped with a signature of its inputs, so a room whose fittings
  * or settings have changed since reads "out of date" instead of lying.
  */
@@ -14,7 +16,16 @@ const RoomCalc = {
   _busy: false,
   _pmRef: null,
   quiet: false,         // the Lighting workspace's Calculate all silences the per-run toasts
+  live: false,          // a live recalculation (LightingWS.liveKick): no busy overlay, failures as a toast
   layouts: {},          // room id → { lumId, cands, sel, seed }
+  display: 'fc',        // results on the plan: 'fc' false colour · 'iso' isolux lines · 'isoval' lines + values · 'val' values
+  isoStep: 0,           // lx between isolux lines; 0 = automatic
+  showDist: false,      // the light distribution of every fitting, seen from above
+  _distCache: new Map(),
+
+  // Every lighting calculator's busy overlay and failure message, so a live run stays out of the way.
+  busy(on, label) { if (!this.live && UI.setBusy) UI.setBusy(on, label); },
+  fail(msg) { if (this.live) UI.toast(msg, 'warn', 6000); else UI.alert(msg); },
 
   // Results belong to the project in memory; a different project object means a new project.
   _sync() { if (this._pmRef !== AppState.planMarkup) { this._pmRef = AppState.planMarkup; this.results = {}; this.layouts = {}; if (typeof AreaCalc !== 'undefined') AreaCalc.layouts = {}; } },
@@ -41,6 +52,7 @@ const RoomCalc = {
       lums.push({
         id: el.id, x: +(el.x * f).toFixed(4), y: +(-el.y * f).toFixed(4), photometryId: pr.photoId,
         mount: pr.mount || 'recessed', drop: Number(pr.drop) || 0, rotate: -(el.rotation || 0),
+        mountH: Number(pr.hangH) > 0 ? Number(pr.hangH) : undefined, tilt: pr.mount === 'wall' ? (Number(pr.wallAim) || 0) : undefined,
         fluxPct: pr.fluxPct != null && pr.fluxPct !== '' ? Number(pr.fluxPct) : 100,
         lumens: Number(pr.lumens) > 0 ? Number(pr.lumens) : undefined,
         watts: Number(pr.watts) > 0 ? Number(pr.watts) : undefined,
@@ -52,6 +64,7 @@ const RoomCalc = {
         rhoC: L.rhoC, rhoW: L.rhoW, rhoF: L.rhoF, mf: L.mf,
         targets: { em: L.em, uo: L.uo, ugr: L.ugr, wallE: L.wallE, ceilE: L.ceilE, ez: L.ez || undefined },
         gridStep: L.grid > 0 ? L.grid : undefined,
+        ceiling: typeof RoomSection !== 'undefined' ? RoomSection.request(room, poly, L.ceilH) : undefined,
         luminaires: lums,
         // objects, windows / doors and calculation surfaces from the 3D view
         ...((typeof Light3D !== 'undefined' && Light3D.requestParts(room, f)) || {}),
@@ -93,18 +106,18 @@ const RoomCalc = {
     const photometry = {};
     for (const b of built) for (const l of b.req.luminaires) photometry[l.photometryId] = PhotoLib.get(l.photometryId);
     this._busy = true;
-    if (UI.setBusy) UI.setBusy(true, 'Calculating lighting…');
+    RoomCalc.busy(true, 'Calculating lighting…');
     let out;
     try {
       // the 3D view's rendered light needs every surface patch of the room it shows
       const patches = (r) => typeof Light3D !== 'undefined' && (Light3D._wantPatches || Light3D._active) && r.id === Light3D.roomId;
       out = await API.request('/analysis/room-lighting', 'POST', { rooms: built.map(b => (patches(b.req) ? Object.assign({}, b.req, { patches: true }) : b.req)), photometry, detail: 'full' });
     } catch (e) {
-      UI.alert('Lighting calculation failed: ' + (e && e.message ? e.message : e));
+      RoomCalc.fail('Lighting calculation failed: ' + (e && e.message ? e.message : e));
       return;
     } finally {
       this._busy = false;
-      if (UI.setBusy) UI.setBusy(false);
+      RoomCalc.busy(false);
     }
     const sigs = new Map(built.map(b => [b.room.id, this.signature(b.room)]));
     const obsIds = new Map(built.map(b => [b.room.id, (b.req.obstacles || []).map(o => o.id)]));
@@ -265,44 +278,63 @@ const RoomCalc = {
     return `hsl(${hue}, 80%, 50%)`;
   },
 
+  // Results show on the plan when switched on and the Lighting workspace is on its Results step.
+  shown() { return this.enabled && (typeof LightingWS === 'undefined' || LightingWS.resultsVisible()); },
+
   draw(ctx, zoom) {
     this._sync();
     if (typeof Light3D !== 'undefined') Light3D.drawPlan(ctx, zoom);   // objects, windows, doors from the 3D view
-    if (typeof SportsCalc !== 'undefined') SportsCalc.draw(ctx, zoom, this.enabled);   // masts always; the pitch grid with the results
+    const on = this.shown();
+    if (typeof SportsCalc !== 'undefined') SportsCalc.draw(ctx, zoom, on);   // masts always; the pitch grid with the results
     if (typeof ObtrusiveCalc !== 'undefined') ObtrusiveCalc.draw(ctx, zoom);
-    if (!this.enabled) return;
     const f = PlanEngine.factor();
-    if (!f) return;
+    if (f && this.showDist) this._drawDist(ctx, zoom, f);
+    if (typeof LightSection !== 'undefined') LightSection.drawPlan(ctx, zoom);
+    if (!on || !f) { this.updateLegend(); if (f) this._drawLayouts(ctx, zoom, f); return; }
     const pm = AppState.planMarkup;
+    const mode = this.display;
     for (const room of (pm.rooms || [])) {
       const r = this.results[room.id];
       if (!r || !r.res.grid) continue;
       const g = r.res.grid, wp = r.res.workplane || {};
       const top = Math.max(wp.Emax || 0, 1);
+      const cur = r.sig === this.signature(room);
       ctx.save();
       ctx.beginPath();
       ctx.moveTo(room.points[0].x, room.points[0].y);
       for (let i = 1; i < room.points.length; i++) ctx.lineTo(room.points[i].x, room.points[i].y);
       ctx.closePath(); ctx.clip();
-      ctx.globalAlpha = r.sig === this.signature(room) ? 0.5 : 0.22;
-      const dxp = g.dx / f, dyp = g.dy / f;
-      for (let j = 0; j < g.ny; j++) for (let i = 0; i < g.nx; i++) {
-        const v = g.values[j * g.nx + i];
-        if (v == null) continue;
-        ctx.fillStyle = this._color(v / top);
-        const gx = g.x0 + i * g.dx, gy = g.y0 + j * g.dy;           // metres, y up (cell lower-left)
-        ctx.fillRect(gx / f, -(gy + g.dy) / f, dxp + 0.5, dyp + 0.5);
-      }
-      ctx.globalAlpha = 1;
       const L = room.kind === 'outdoor' && typeof AreaCalc !== 'undefined' ? AreaCalc.readArea(room) : RoomLighting.read(room);
-      this._contour(ctx, g, f, L.em, zoom, false);
-      this._contour(ctx, g, f, L.em * L.uo, zoom, true);
+      if (mode === 'fc') {
+        ctx.globalAlpha = cur ? 0.5 : 0.22;
+        const dxp = g.dx / f, dyp = g.dy / f;
+        for (let j = 0; j < g.ny; j++) for (let i = 0; i < g.nx; i++) {
+          const v = g.values[j * g.nx + i];
+          if (v == null) continue;
+          ctx.fillStyle = this._color(v / top);
+          const gx = g.x0 + i * g.dx, gy = g.y0 + j * g.dy;           // metres, y up (cell lower-left)
+          ctx.fillRect(gx / f, -(gy + g.dy) / f, dxp + 0.5, dyp + 0.5);
+        }
+        ctx.globalAlpha = 1;
+        this._contour(ctx, g, f, L.em, zoom, false);
+        this._contour(ctx, g, f, L.em * L.uo, zoom, true);
+      } else {
+        ctx.globalAlpha = cur ? 1 : 0.45;
+        if (mode === 'iso' || mode === 'isoval') this._isoLines(ctx, g, f, zoom, L.em);
+        if (mode === 'val' || mode === 'isoval') this._values(ctx, g, f, zoom, mode === 'isoval');
+        ctx.globalAlpha = 1;
+      }
       ctx.restore();
     }
     if (typeof AreaCalc !== 'undefined') AreaCalc.draw(ctx, zoom);
     if (typeof EmergCalc !== 'undefined') EmergCalc.draw(ctx, zoom);
     this.updateLegend();
-    for (const room of (pm.rooms || [])) {
+    this._drawLayouts(ctx, zoom, f);
+  },
+
+  // The suggested layout being looked at, as ghosts.
+  _drawLayouts(ctx, zoom, f) {
+    for (const room of (AppState.planMarkup.rooms || [])) {
       const lay = this.layouts[room.id];
       if (!lay || !lay.cands[lay.sel]) continue;
       ctx.save();
@@ -334,7 +366,7 @@ const RoomCalc = {
     const stage = document.getElementById('plan-stage');
     if (!stage) return;
     let el = document.getElementById('plan-legend');
-    const { zone, picked, many } = this.enabled ? this._legendZone() : { zone: null };
+    const { zone, picked, many } = this.shown() ? this._legendZone() : { zone: null };
     if (!zone) { if (el) el.hidden = true; this._legendKey = ''; return; }
     if (!el) {
       el = document.createElement('div');
@@ -366,6 +398,19 @@ const RoomCalc = {
       body = `<div class="plan-legend-bar" aria-hidden="true">${tick(L.em, 'Target Ēh')}${tick(L.em * L.u2, 'Required Emin')}</div>
         <div class="plan-legend-scale"><span>0</span><span>${fmt(top / 2)}</span><span>${fmt(top)} lx</span></div>
         <small>Ēh ${fmt(hz.Eav)} lx · U₂ ${hz.U2.toFixed(2)} · target ${fmt(L.em)} lx, U₂ ${L.u2}${r.sig === this.signature(zone) ? '' : ' · out of date'}</small>`;
+    } else if (this.display !== 'fc' && r.res.grid) {
+      const res = r.res, wp = res.workplane || {}, g = res.grid;
+      const L = zone.kind === 'outdoor' ? AreaCalc.readArea(zone) : RoomLighting.read(zone);
+      const st = this._isoSet(g, L.em), vs = this._valueStride(g);
+      title = `${zone.kind === 'outdoor' ? 'Ground' : 'Work plane'} illuminance — ${name}`;
+      const rows = [];
+      if (this.display !== 'val') {
+        rows.push(`<span><span class="plan-legend-line"></span>Isolux line every ${fmt(st.step)} lx</span>`);
+        rows.push(`<span><span class="plan-legend-line target"></span>Target Ēm ${fmt(L.em)} lx</span>`);
+      }
+      if (this.display !== 'iso') rows.push(`<span>Values in lx every ${fmt(Math.max(vs.sx, Math.ceil(vs.sy * g.dy / g.dx)) * g.dx)} m</span>`);
+      body = `<div class="plan-legend-rows">${rows.join('')}</div>
+        <small>Grid ${wp.step} m · Ēm ${fmt(wp.Em || 0)} lx · Emin ${fmt(wp.Emin || 0)} lx · Emax ${fmt(wp.Emax || 0)} lx${r.sig === this.signature(zone) ? '' : ' · out of date'}</small>`;
     } else {
       const res = r.res, wp = res.workplane || {};
       const top = Math.max(wp.Emax || 0, 1);
@@ -384,16 +429,11 @@ const RoomCalc = {
     el.hidden = false;
   },
 
-  // Marching squares on cell centres at one level.
-  _contour(ctx, g, f, level, zoom, dashed) {
-    if (!(level > 0)) return;
+  // Marching squares on cell centres at one level → segments [[x0, y0], [x1, y1]] in plan px.
+  _segs(g, f, level) {
+    const out = [];
     const at = (i, j) => { const v = g.values[j * g.nx + i]; return v == null ? NaN : v; };
     const X = (i) => (g.x0 + (i + 0.5) * g.dx) / f, Y = (j) => -(g.y0 + (j + 0.5) * g.dy) / f;
-    ctx.save();
-    ctx.strokeStyle = dashed ? 'rgba(17,24,39,0.7)' : '#111827';
-    ctx.lineWidth = 1.2 / zoom;
-    if (dashed) ctx.setLineDash([5 / zoom, 4 / zoom]);
-    ctx.beginPath();
     const lerp = (a, b, va, vb) => a + (b - a) * ((level - va) / (vb - va));
     for (let j = 0; j + 1 < g.ny; j++) for (let i = 0; i + 1 < g.nx; i++) {
       const v = [at(i, j), at(i + 1, j), at(i + 1, j + 1), at(i, j + 1)];
@@ -404,10 +444,184 @@ const RoomCalc = {
       };
       const x0 = X(i), x1 = X(i + 1), y0 = Y(j), y1 = Y(j + 1);
       edge(0, 1, x0, y0, x1, y0); edge(1, 2, x1, y0, x1, y1); edge(2, 3, x1, y1, x0, y1); edge(3, 0, x0, y1, x0, y0);
-      if (pts.length === 2) { ctx.moveTo(pts[0][0], pts[0][1]); ctx.lineTo(pts[1][0], pts[1][1]); }
-      else if (pts.length === 4) { ctx.moveTo(pts[0][0], pts[0][1]); ctx.lineTo(pts[1][0], pts[1][1]); ctx.moveTo(pts[2][0], pts[2][1]); ctx.lineTo(pts[3][0], pts[3][1]); }
+      if (pts.length === 2) out.push([pts[0], pts[1]]);
+      else if (pts.length === 4) out.push([pts[0], pts[1]], [pts[2], pts[3]]);
     }
+    return out;
+  },
+
+  _contour(ctx, g, f, level, zoom, dashed) {
+    if (!(level > 0)) return;
+    ctx.save();
+    ctx.strokeStyle = dashed ? 'rgba(17,24,39,0.7)' : '#111827';
+    ctx.lineWidth = 1.2 / zoom;
+    if (dashed) ctx.setLineDash([5 / zoom, 4 / zoom]);
+    ctx.beginPath();
+    for (const [a, b] of this._segs(g, f, level)) { ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); }
     ctx.stroke();
+    ctx.restore();
+  },
+
+  // Isolux levels for a result grid: every `step` lx between its lowest and highest
+  // point (step = isoStep, or a 1-2-5 value giving about eight lines), plus the target.
+  _isoSet(g, target) {
+    let lo = Infinity, hi = -Infinity;
+    for (const v of g.values) if (v != null) { if (v < lo) lo = v; if (v > hi) hi = v; }
+    if (!(hi > lo)) return { step: this.isoStep || 100, levels: [] };
+    const step = this.isoStep > 0 ? this.isoStep : PhotoView._nice((hi - lo) / 8);
+    const levels = [];
+    for (let L = Math.floor(lo / step + 1) * step; L < hi && levels.length < 60; L += step) levels.push(+L.toFixed(6));
+    if (target > lo && target < hi && !levels.some(L => Math.abs(L - target) < 1e-6)) levels.push(target);
+    return { step, levels: levels.sort((a, b) => a - b) };
+  },
+
+  _halo(ctx, text, x, y, zoom, color) {
+    ctx.lineWidth = 3 / zoom; ctx.strokeStyle = 'rgba(255,255,255,0.92)'; ctx.lineJoin = 'round';
+    ctx.strokeText(text, x, y);
+    ctx.fillStyle = color; ctx.fillText(text, x, y);
+  },
+
+  // Labelled isolux lines; the target level drawn heavier in blue.
+  _isoLines(ctx, g, f, zoom, target) {
+    const { levels } = this._isoSet(g, target);
+    const placed = [], gap = 120 / zoom;
+    ctx.save();
+    ctx.lineCap = 'round';
+    const lines = levels.map(L => ({ L, segs: this._segs(g, f, L), tgt: Math.abs(L - target) < 1e-6 }));
+    for (const ln of lines) {
+      ctx.strokeStyle = ln.tgt ? '#0b63b6' : '#111827';
+      ctx.lineWidth = (ln.tgt ? 2.4 : 1.1) / zoom;
+      ctx.beginPath();
+      for (const [a, b] of ln.segs) { ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); }
+      ctx.stroke();
+    }
+    ctx.font = `600 ${11 / zoom}px system-ui, sans-serif`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    // target first, so it always gets a label; up to three per line, spread out
+    for (const ln of lines.slice().sort((a, b) => b.tgt - a.tgt)) {
+      let n = 0;
+      const stride = Math.max(1, Math.floor(ln.segs.length / 12));
+      for (let k = Math.floor(stride / 2); k < ln.segs.length && n < 3; k += stride) {
+        const [a, b] = ln.segs[k], x = (a[0] + b[0]) / 2, y = (a[1] + b[1]) / 2;
+        if (placed.some(q => Math.hypot(q[0] - x, q[1] - y) < gap)) continue;
+        placed.push([x, y]); n++;
+        this._halo(ctx, PhotoView._num(ln.L), x, y, zoom, ln.tgt ? '#0b63b6' : '#111827');
+      }
+    }
+    ctx.restore();
+  },
+
+  // Grid points to print: every n-th, so neighbouring values sit at least 34 px apart on screen.
+  // Among isolux lines the values are spread further (48 px), so both stay readable.
+  _valueStride(g, zoom) {
+    const z = zoom || (PlanEngine.view && PlanEngine.view.zoom) || 1, f = PlanEngine.factor() || 1;
+    const gap = this.display === 'isoval' ? 48 : 34;
+    return { sx: Math.max(1, Math.ceil(gap / (g.dx / f * z))), sy: Math.max(1, Math.ceil(18 / (g.dy / f * z))) };
+  },
+
+  _values(ctx, g, f, zoom, withLines) {
+    const { sx, sy } = this._valueStride(g, zoom);
+    const step = Math.max(sx, Math.ceil(sy * g.dy / g.dx));     // square spacing
+    ctx.save();
+    ctx.font = `${10 / zoom}px ui-monospace, Consolas, monospace`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    const o = Math.floor(step / 2);
+    for (let j = o; j < g.ny; j += step) for (let i = o; i < g.nx; i += step) {
+      const v = g.values[j * g.nx + i];
+      if (v == null) continue;
+      const x = (g.x0 + (i + 0.5) * g.dx) / f, y = -(g.y0 + (j + 0.5) * g.dy) / f;
+      this._halo(ctx, String(Math.round(v)), x, y, zoom, withLines ? '#4b5563' : '#111827');
+    }
+    ctx.restore();
+  },
+
+  // ─── Light distribution of each fitting (top view of its photometric solid) ───
+  // The fitting's photometric frame in plan metres (y up), as the engine builds it:
+  // rows = C0, C90 and up. A wall fitting faces into the room from its nearest wall.
+  _planFrame(el, f) {
+    const pr = el.props || {}, D = Math.PI / 180;
+    if (pr.mount === 'wall') {
+      const room = (AppState.planMarkup.rooms || []).find(r => r.points && r.points.length >= 3 && PlanEngine._pointInPoly({ x: el.x, y: el.y }, r.points));
+      if (room) {
+        const P = room.points.map(p => [p.x * f, -p.y * f]), c = [el.x * f, -el.y * f];
+        let best = Infinity, nIn = [0, 1];
+        P.forEach((a, i) => {
+          const b = P[(i + 1) % P.length], L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+          if (L < 1e-9) return;
+          const u = [(b[0] - a[0]) / L, (b[1] - a[1]) / L];
+          const t = Math.min(Math.max((c[0] - a[0]) * u[0] + (c[1] - a[1]) * u[1], 0), L);
+          const q = [a[0] + u[0] * t, a[1] + u[1] * t], d = Math.hypot(c[0] - q[0], c[1] - q[1]);
+          if (d < best) {
+            best = d;
+            let n = [-u[1], u[0]];
+            const probe = { x: (q[0] + n[0] * 0.05) / f, y: -(q[1] + n[1] * 0.05) / f };
+            if (!PlanEngine._pointInPoly(probe, room.points)) n = [-n[0], -n[1]];
+            nIn = n;
+          }
+        });
+        const th = Math.min(Math.max(Number(pr.wallAim) || 0, 0), 180) * D;
+        const ey0 = [nIn[0], nIn[1], 0];
+        return [[nIn[1], -nIn[0], 0], [ey0[0] * Math.cos(th), ey0[1] * Math.cos(th), Math.sin(th)],
+          [-ey0[0] * Math.sin(th), -ey0[1] * Math.sin(th), Math.cos(th)]];
+      }
+    }
+    const a = -(el.rotation || 0) * D;
+    return [[Math.cos(a), Math.sin(a), 0], [-Math.sin(a), Math.cos(a), 0], [0, 0, 1]];
+  },
+
+  // Flux scale of one fitting against its web (rated lumens override × flux %).
+  _fluxScale(el, ph) {
+    const pr = el.props || {};
+    const lm = Number(pr.lumens) > 0 ? Number(pr.lumens) : ph.lumens;
+    const pct = pr.fluxPct != null && pr.fluxPct !== '' ? Number(pr.fluxPct) : 100;
+    return (lm / (ph.lumens || 1)) * Math.max(pct, 0) / 100;
+  },
+
+  _distFittings() {
+    return (AppState.planMarkup.elements || []).filter(el => {
+      const def = PLAN_DEFS.element(el.type);
+      const k = el.props && el.props.kind;
+      return def && def.group === 'Lighting' && k !== 'floodlight' && k !== 'area' && PhotoLib.get(el.props.photoId);
+    });
+  },
+
+  // Every fitting on the floor to one scale: the widest-reaching one is drawn 1.2 m across its
+  // furthest throw, so a stronger or wider fitting reads bigger than its neighbours.
+  _drawDist(ctx, zoom, f) {
+    const items = [];
+    let maxR = 0;
+    for (const el of this._distFittings()) {
+      const ph = PhotoLib.get(el.props.photoId), F = this._planFrame(el, f), k = this._fluxScale(el, ph);
+      const key = JSON.stringify([F.map(r => r.map(v => +v.toFixed(4))), k]);
+      let c = this._distCache.get(el.id);
+      if (!c || c.key !== key || c.ph !== ph || c.cd !== ph.cd) {
+        c = { key, ph, cd: ph.cd, pts: PhotoView.outline(ph, F).map(([x, y]) => [x * k, y * k]) };
+        this._distCache.set(el.id, c);
+      }
+      for (const [x, y] of c.pts) maxR = Math.max(maxR, Math.hypot(x, y));
+      items.push({ el, F, pts: c.pts });
+    }
+    if (!(maxR > 0)) return;
+    const s = 1.2 / maxR / f;            // cd·m → plan px
+    ctx.save();
+    ctx.fillStyle = 'rgba(245,158,11,0.14)'; ctx.strokeStyle = 'rgba(180,83,9,0.9)';
+    for (const it of items) {
+      const { el, pts, F } = it;
+      ctx.lineWidth = 1.2 / zoom;
+      ctx.beginPath();
+      pts.forEach(([x, y], i) => (i ? ctx.lineTo(el.x + x * s, el.y - y * s) : ctx.moveTo(el.x + x * s, el.y - y * s)));
+      ctx.closePath(); ctx.fill(); ctx.stroke();
+      // C0 direction, where it lies in the plan
+      const hx = F[0][0], hy = F[0][1], hl = Math.hypot(hx, hy);
+      if (hl > 0.3) {
+        const L = 16 / zoom, ux = hx / hl, uy = -hy / hl, tx = el.x + ux * L, ty = el.y + uy * L, a = 5 / zoom;
+        ctx.lineWidth = 1 / zoom;
+        ctx.beginPath(); ctx.moveTo(el.x, el.y); ctx.lineTo(tx, ty);
+        ctx.moveTo(tx, ty); ctx.lineTo(tx - ux * a - uy * a * 0.6, ty - uy * a + ux * a * 0.6);
+        ctx.moveTo(tx, ty); ctx.lineTo(tx - ux * a + uy * a * 0.6, ty - uy * a - ux * a * 0.6);
+        ctx.stroke();
+      }
+    }
     ctx.restore();
   },
 };

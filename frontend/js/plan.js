@@ -329,14 +329,21 @@ const PlanMarkup = {
     }
   },
 
-  markDirty() { AppState.dirty = true; },
+  markDirty() {
+    AppState.dirty = true;
+    // The Lighting tab recalculates the item being worked on (Live results).
+    if (this.context === 'lighting' && typeof LightingWS !== 'undefined' && LightingWS.liveKick) LightingWS.liveKick();
+  },
 
   // The Output panel's sync button names its target per domain; re-render it.
   updatePushButton() { if (typeof PlanUI !== 'undefined' && this.mode === 'output') PlanUI.renderPalette(); },
   refreshProps() {
     if (typeof PlanUI === 'undefined') return;
     PlanUI.renderProps();
-    if (this.context === 'lighting') PlanUI.renderPalette();   // its zone list marks the selection
+    if (this.context === 'lighting') {
+      PlanUI.renderPalette();   // its zone list marks the selection
+      if (typeof LightingWS !== 'undefined' && LightingWS.onSelection) LightingWS.onSelection();
+    }
   },
 
   // ─── Mobile drawers (palette / properties slide over the canvas) ───
@@ -722,6 +729,9 @@ const PlanMarkup = {
           items.push({ label: `Select similar: ${c.label} (${c.ids.length})`, disabled: c.ids.length < 2,
             action: () => this.selectSimilar(c.ids) });
         }
+        // a light fitting with a library luminaire → its photometry
+        const ph = f.kind === 'element' && f.item.props && typeof PhotoLib !== 'undefined' ? PhotoLib.get(f.item.props.photoId) : null;
+        if (ph) items.push({ label: 'Luminaire data…', action: () => PhotoLib.open(ph.id) });
         items.push('---');
       }
       const canRotate = [...this.selectedIds].some(id => {
@@ -833,8 +843,8 @@ const PlanMarkup = {
       case 'select': {
         const pm = AppState.planMarkup;
         if (this.context === 'lighting') {
-          if (!pm.plans.length && !(pm.dxfs || []).length && !(pm.rooms || []).length) return 'Import the floor plan on the Plan tab (Underlays), then draw or detect rooms here.';
-          return 'Select a room or fitting to edit it. Pick a tool on the left to draw.';
+          if (!pm.plans.length && !(pm.dxfs || []).length && !(pm.rooms || []).length) return typeof LightingWS !== 'undefined' && LightingWS.scope === 'sports' ? 'Pick Sports field and click the centre spot — no drawing needed.' : 'Start with Room from a shape — no drawing needed — or import one in Space › Drawing and trace the rooms.';
+          return 'Select a room or fitting to edit it. Pick a tool in the step\'s panel to draw.';
         }
         if (!pm.plans.length && !pm.elements.length && !(pm.dxfs || []).length) {
           return 'Import a plan (Underlays), set the scale, then place parts and draw routes.';
@@ -877,6 +887,7 @@ const PlanMarkup = {
   // tool's pointer-UP when the gesture didn't move (UX-6).
   openPropsForTap() {
     if (!this._isMobile()) return;
+    if (this.context === 'lighting' && typeof LightingWS !== 'undefined') { if (LightingWS.sheet === 'tools') LightingWS.setSheet('item'); return; }
     const props = document.getElementById('plan-props');
     if (props && !props.classList.contains('mobile-open')) {
       document.getElementById('plan-palette')?.classList.remove('mobile-open');

@@ -227,6 +227,14 @@ def _ies_extra(phot_type, area=0.0):
 
 # ─── EULUMDAT ───────────────────────────────────────────────────────────
 
+def _is_number(t: str) -> bool:
+    try:
+        float(t.replace(",", "."))
+        return True
+    except ValueError:
+        return False
+
+
 def parse_ldt(text: str) -> dict:
     """EULUMDAT (.ldt). Intensities are cd/klm of the lamp set's total flux."""
     if not text or not text.strip():
@@ -249,12 +257,20 @@ def parse_ldt(text: str) -> dict:
     if mc < 1 or ng < 1 or n_sets < 1:
         raise ValueError("Bad EULUMDAT header (plane / angle / lamp-set counts)")
     base = 26
-    lamps = [num(base + s) for s in range(n_sets)]
-    base += n_sets * 2                     # number of lamps, lamp type (text)
-    fluxes = [num(base + s) for s in range(n_sets)]
-    base += n_sets * 3                     # flux, colour temperature, CRI (text)
-    watts = [num(base + s) for s in range(n_sets)]
-    base += n_sets
+    # The standard lists each field for every set in turn (all lamp counts, all types, …); some
+    # exporters (Relux) write one block of six lines per set instead — spotted by a text line
+    # where the second lamp count belongs.
+    interleaved = n_sets > 1 and base + 1 < len(lines) and not _is_number(lines[base + 1])
+    if interleaved:
+        fluxes = [num(base + 6 * s + 2) for s in range(n_sets)]
+        watts = [num(base + 6 * s + 5) for s in range(n_sets)]
+        base += n_sets * 6
+    else:
+        base += n_sets * 2                 # number of lamps, lamp type (text)
+        fluxes = [num(base + s) for s in range(n_sets)]
+        base += n_sets * 3                 # flux, colour temperature, CRI (text)
+        watts = [num(base + s) for s in range(n_sets)]
+        base += n_sets
     base += 10                             # direct ratios
     c_all = [num(base + s) for s in range(mc)]
     base += mc

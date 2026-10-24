@@ -483,10 +483,17 @@ body:not(.plan-ctx-lighting) .plan-legend { display: none; }
 .plan-legend-rows > span { display: inline-flex; align-items: center; gap: 6px; }
 .plan-legend-line { display: inline-block; width: 18px; border-top: 2px solid #111827; }
 .plan-legend-line.dashed { border-top-style: dashed; }
+.plan-legend-line.target { border-top: 3px solid #0b63b6; }
 body.dark-mode .plan-legend-line, body.dark-mode .plan-legend-mark { border-color: #e0e0e8; background: #e0e0e8; }
 body.dark-mode .plan-legend-line { background: none; }
+body.dark-mode .plan-legend-line.target { border-color: #4a9eff; }
 .plan-legend-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; }
 @media (max-width: 768px) { .plan-legend { left: 8px; right: 8px; width: auto; bottom: 8px; } }
 
 /* Fields that carry a hover / long-press explanation (RoomLighting.tipify). */
 .plan-field.has-tip > span:first-child, .plan-field.has-tip > .plan-field-label { text-decoration: underline dotted var(--text-secondary); text-underline-offset: 3px; cursor: help; }
+/* ⓘ on a tipped field label (touch screens only — roomlighting.js tipify): a thumb-sized target
+   at the right end of the label row, so it never pushes the control down */
+.plan-field.has-tip { position: relative; }
+.rl-tip-btn { position: absolute; right: 0; top: -5px; margin: 0; }
+@media (pointer: coarse) { .rl-tip-btn { width: 26px; height: 26px; min-width: 26px; font-size: 13px; } }

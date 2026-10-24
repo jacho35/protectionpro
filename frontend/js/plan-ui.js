@@ -27,6 +27,8 @@ const PlanUI = {
       if (e.target.closest('[data-role="bulk-assign"]')) { this._bulkAssign(); return; }
       if (e.target.closest('[data-role="sync-circuits"]')) { this._syncCircuits(); return; }
       if (e.target.closest('[data-role="open-photolib"]')) { PhotoLib.open(); return; }
+      const pd = e.target.closest('[data-role="open-photodata"]');
+      if (pd) { PhotoLib.open(pd.dataset.photo); return; }
       const ua = e.target.closest('[data-ul-act]');
       if (ua) { this._onUnderlayAction(ua.dataset.ulAct); return; }
       if (e.target.closest('[data-role="open-lighting"]')) {
@@ -43,7 +45,7 @@ const PlanUI = {
   // kind → the tool id that draws it; disabled until that tool is registered.
   _toolFor(kind) {
     return { element: 'place', route: 'route', trench: 'trench',
-      crossing: 'crossing', text: 'text', measurement: 'measurement', room: 'room', roomdetect: 'roomdetect', perimeter: 'perimeter', sportsfield: 'sportsfield' }[kind];
+      crossing: 'crossing', text: 'text', measurement: 'measurement', room: 'room', roomdetect: 'roomdetect', roomshape: 'roomshape', perimeter: 'perimeter', sportsfield: 'sportsfield' }[kind];
   },
 
   // Folded palette groups (session only); the group last used stays open.
@@ -222,6 +224,7 @@ const PlanUI = {
   // The Lighting tab's panel: zones to draw, fittings to place, and every
   // zone on this floor (click to select).
   _lightingPanel() {
+    if (typeof LightingWS !== 'undefined' && LightingWS.paletteHtml) return LightingWS.paletteHtml();
     const pm = AppState.planMarkup;
     // A Lighting project's Rooms / Sports fields tab offers its own tools.
     const scope = typeof LightingWS !== 'undefined' ? LightingWS.scope : 'all';
@@ -236,7 +239,7 @@ const PlanUI = {
     const rooms = (pm.rooms || []).filter(r => r.points && r.points.length >= 2 && (typeof LightingWS === 'undefined' || LightingWS.inScope(r.kind)));
     const KIND = { room: 'Room', outdoor: 'Outdoor area', perimeter: 'Fence', sports: 'Sports field', obtrusive: 'Obtrusive light', escape: 'Escape route' };
     html += `<div class="plan-sec-head"><span>On this floor</span><small>${rooms.length}</small></div>`;
-    if (!rooms.length) html += `<div class="plan-props-empty">${scope === 'sports' ? 'Pick Sports field and click the centre spot.' : 'Draw a room, or use Detect room and click inside one.'}</div>`;
+    if (!rooms.length) html += `<div class="plan-props-empty">${scope === 'sports' ? 'Pick Sports field and click the centre spot.' : 'Draw a room, use Detect room and click inside one, or start from a shape (no plan needed).'}</div>`;
     for (const r of rooms) {
       const v = (typeof LightingWS !== 'undefined' && LightingWS.verdictOf) ? LightingWS.verdictOf(r) : '';
       const cls = v === 'Pass' ? 'ok' : v === 'Fail' ? 'bad' : '';
@@ -276,6 +279,7 @@ const PlanUI = {
   },
 
   _onPaletteClick(e) {
+    if (PlanMarkup.context === 'lighting' && typeof LightingWS !== 'undefined' && LightingWS.onPaletteClick && LightingWS.onPaletteClick(e)) return;
     const actBtn = e.target.closest('[data-act]');
     if (actBtn) {
       const a = actBtn.dataset.act;
@@ -301,7 +305,8 @@ const PlanUI = {
       const card = pick.closest('[data-ul-kind]');
       this._underlay = { kind: card.dataset.ulKind, id: card.dataset.ulId };
       this.renderPalette(); this.renderProps();
-      if (PlanMarkup._isMobile()) PlanMarkup._toggleDrawer('props');
+      if (PlanMarkup.context === 'lighting' && typeof LightingWS !== 'undefined') LightingWS.setSheet('item');
+      else if (PlanMarkup._isMobile()) PlanMarkup._toggleDrawer('props');
       return;
     }
     const planCtl = e.target.closest('[data-role]');
@@ -512,6 +517,8 @@ const PlanUI = {
     const el = this.propsEl; if (!el) return;
     if (typeof PlanTools !== 'undefined' && PlanTools.active && PlanTools.active.id === 'roomdetect' && typeof PlanRoomDetect !== 'undefined') { PlanRoomDetect.renderOptions(el); return; }
     if (PlanMarkup.context === 'plan' && PlanMarkup.mode === 'underlays') { this._renderUnderlayProps(el); return; }
+    // The Lighting tab's Space step: a picked underlay shows its actions until something else is selected.
+    if (PlanMarkup.context === 'lighting' && this._underlay && !PlanMarkup.selectedIds.size) { this._renderUnderlayProps(el); return; }
     const ids = [...PlanMarkup.selectedIds];
     if (ids.length === 0) { el.innerHTML = `<div class="plan-props-empty">Select an item to edit its properties.</div>`; return; }
     if (ids.length > 1) { this._renderBulk(el, ids); return; }
@@ -578,7 +585,11 @@ const PlanUI = {
     for (const f of fields) html += this._field(f, getVal(f.key));
     if (kind === 'room' && typeof RoomLighting !== 'undefined') {
       // The lighting settings are edited on the Lighting tab.
-      if (PlanMarkup.context === 'lighting') { RoomLighting.bind(el); html += RoomLighting.panel(item); }
+      if (PlanMarkup.context === 'lighting') {
+        RoomLighting.bind(el);
+        if (typeof LightingWS !== 'undefined') html = html.replace('</div>', '</div>' + LightingWS.stripHtml(item));
+        html += RoomLighting.panel(item);
+      }
       else html += `<button type="button" class="plan-btn" data-role="open-lighting">Lighting for this ${({ escape: 'route', perimeter: 'fence', outdoor: 'area', sports: 'field', obtrusive: 'check' })[item.kind] || 'room'}…</button>`;
     }
     html += this._defaultCableButton(item, kind);
@@ -1057,8 +1068,12 @@ const PlanUI = {
       const libs = (typeof PhotoLib !== 'undefined') ? PhotoLib.list() : [];
       const opts = ['<option value="">— none (not calculated) —</option>'].concat(libs.map(p =>
         `<option value="${escHtml(p.id)}"${p.id === v ? ' selected' : ''}>${escHtml(PhotoLib.label(p))}</option>`)).join('');
+      // the chosen luminaire: a small polar curve and a button to its full data
+      const ph = v && typeof PhotoLib !== 'undefined' ? PhotoLib.get(v) : null;
+      const data = ph && typeof PhotoView !== 'undefined' ? `<div class="plan-photo-peek">${PhotoView.polarSvg(ph, { R: 80, beams: false })}</div>
+        <button class="plan-circuit-btn" data-role="open-photodata" data-photo="${escHtml(v)}">Luminaire data — polar curve, isolux, cone diagram…</button>` : '';
       return `<div class="plan-field">${label}<select data-key="${escHtml(f.key)}">${opts}</select></div>
-        <button class="plan-circuit-btn" data-role="open-photolib">💡 Luminaire library…</button>`;
+        ${data}<button class="plan-circuit-btn" data-role="open-photolib">💡 Luminaire library…</button>`;
     }
     if (f.type === 'number') {
       const attrs = [f.min != null ? `min="${f.min}"` : '', f.max != null ? `max="${f.max}"` : '', f.step != null ? `step="${f.step}"` : ''].join(' ');

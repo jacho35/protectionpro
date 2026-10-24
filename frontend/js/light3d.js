@@ -83,7 +83,58 @@ const Light3D = {
       return { i, a: p, b: q, len, dir, nIn };
     });
     const xs = P.map(p => p[0]), ys = P.map(p => p[1]);
-    return { f, L, P, edges, H: L.ceilH, wp: L.workH, xmin: Math.min(...xs), xmax: Math.max(...xs), ymin: Math.min(...ys), ymax: Math.max(...ys), area: Math.abs(a) / 2 };
+    const G = { f, L, P, edges, H: L.ceilH, wp: L.workH, xmin: Math.min(...xs), xmax: Math.max(...xs), ymin: Math.min(...ys), ymax: Math.max(...ys), area: Math.abs(a) / 2 };
+    // A ceiling section: height over any plan point, and the highest point.
+    const C = typeof RoomSection !== 'undefined' ? RoomSection.request(room, P) : null;
+    G.ceil = C || null;
+    if (C) {
+      const t = C.angle * Math.PI / 180;
+      G.ux = Math.cos(t); G.uy = Math.sin(t);
+      G.sOf = (x, y) => x * G.ux + y * G.uy - C.s0;
+      G.Hmin = Math.min(...C.points.map(q => q[1]));
+      G.H = Math.max(...C.points.map(q => q[1]));
+    }
+    G.hAt = (x, y) => (C ? this._interp(C.points, G.sOf(x, y)) : G.H);
+    return G;
+  },
+  _interp(pts, s) {
+    if (s <= pts[0][0]) return pts[0][1];
+    for (let i = 1; i < pts.length; i++) {
+      const [s0, z0] = pts[i - 1], [s1, z1] = pts[i];
+      if (s <= s1) return s1 > s0 ? z0 + (z1 - z0) * (s - s0) / (s1 - s0) : z1;
+    }
+    return pts[pts.length - 1][1];
+  },
+  // The ceiling's line along a wall a→b: [[x, y, z]…], with the profile's corners
+  // (both heights at a step) where the wall crosses them.
+  _topAlong(G, a, b) {
+    if (!G.ceil) return [[a[0], a[1], G.H], [b[0], b[1], G.H]];
+    const sa = G.sOf(a[0], a[1]), sb = G.sOf(b[0], b[1]);
+    const out = [[a[0], a[1], G.hAt(a[0], a[1])]];
+    const pts = G.ceil.points, lo = Math.min(sa, sb), hi = Math.max(sa, sb);
+    const brk = pts.map((q, i) => [q[0], i]).filter(([sv]) => sv > lo + 1e-6 && sv < hi - 1e-6);
+    if (sb < sa) brk.reverse();
+    for (const [sv, i] of brk) {
+      const t = (sv - sa) / (sb - sa);
+      out.push([a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1]), pts[i][1]]);
+    }
+    out.push([b[0], b[1], G.hAt(b[0], b[1])]);
+    return out;
+  },
+  // Plan chords p·u = s across the outline (for the ridge and step lines).
+  _chords(G, sv) {
+    const hits = [];
+    for (const e of G.edges) {
+      const fa = G.sOf(e.a[0], e.a[1]) - sv, fb = G.sOf(e.b[0], e.b[1]) - sv;
+      if ((fa > 0) !== (fb > 0)) { const t = fa / (fa - fb); hits.push([e.a[0] + t * (e.b[0] - e.a[0]), e.a[1] + t * (e.b[1] - e.a[1])]); }
+    }
+    hits.sort((p, q) => (-G.uy * p[0] + G.ux * p[1]) - (-G.uy * q[0] + G.ux * q[1]));
+    const out = [];
+    for (let i = 0; i + 1 < hits.length; i++) {
+      const m = [(hits[i][0] + hits[i + 1][0]) / 2, (hits[i][1] + hits[i + 1][1]) / 2];
+      if (this._inside(G, m[0], m[1])) out.push([hits[i], hits[i + 1]]);
+    }
+    return out;
   },
   _inside(G, x, y) {
     let ins = false;
@@ -120,7 +171,11 @@ const Light3D = {
   _gen(prefix) { return prefix + '_' + Date.now().toString(36) + (this._seq++); },
 
   // Object height: a column with no height of its own runs to the ceiling.
-  _objH(o, G) { return o.kind === 'column' && !(o.h > 0) ? Math.max(0.05, G.H - (o.z || 0)) : Math.max(0.01, +o.h || 0.01); },
+  _objH(o, G) {
+    if (!(o.kind === 'column' && !(o.h > 0))) return Math.max(0.01, +o.h || 0.01);
+    const c = G.f ? this.M(o, G.f) : null;
+    return Math.max(0.05, (c ? G.hAt(c[0], c[1]) : G.H) - (o.z || 0));
+  },
 
   // Light fittings of the room (the plan's own elements).
   lums(room) {
@@ -132,7 +187,10 @@ const Light3D = {
   },
   _lumZ(el, G) {
     const pr = el.props || {};
-    return pr.mount === 'suspended' ? Math.max(0.3, G.H - (Number(pr.drop) || 0)) : G.H;
+    const c = this.M(el, G.f), hc = G.hAt(c[0], c[1]);
+    if (pr.mount === 'pendant') return Math.min(Math.max(Number(pr.hangH) > 0 ? +pr.hangH : hc - 0.5, 0.3), hc - 0.02);
+    if (pr.mount === 'wall') return Math.min(Math.max(Number(pr.hangH) > 0 ? +pr.hangH : 2, 0.1), hc - 0.05);
+    return pr.mount === 'suspended' ? Math.max(0.3, hc - (Number(pr.drop) || 0)) : hc;
   },
   _lumSize(el) {
     const ph = PhotoLib.get(el.props && el.props.photoId);
@@ -330,7 +388,7 @@ const Light3D = {
     for (const e of G.edges) {
       const n = [e.nIn[0], e.nIn[1], 0];
       const show = this.walls !== 'none' && v.facing(n);
-      const quad = [[e.a[0], e.a[1], 0], [e.b[0], e.b[1], 0], [e.b[0], e.b[1], G.H], [e.a[0], e.a[1], G.H]];
+      const quad = [[e.a[0], e.a[1], 0], [e.b[0], e.b[1], 0]].concat(this._topAlong(G, e.a, e.b).reverse());
       if (show && !rendered) v.face({ pts: quad, fill: V3D.shade('#eef0f3', 0.86 + 0.12 * Math.abs(e.dir[0])), stroke: '#b9bec6', lw: 1, layer: 0.5 });
       if (show && rendered) v.face({ pts: quad, fill: V3D.tone(res.walls ? res.walls.Em : 0, G.L.rhoW, '#f4f0e8', expo), layer: 0.5, bias: -1e5 });
       if (!show && this.walls === 'all') v.face({ pts: quad, fill: 'rgba(238,240,243,.22)', stroke: '#9aa1ab', lw: 1, layer: 2.5 });
@@ -353,7 +411,15 @@ const Light3D = {
     if (rendered) this._patches(v, res.patches, 2, rr, G);
     // room edges
     v.line({ pts: G.P.concat([G.P[0]]).map(p => [p[0], p[1], 0]), stroke: rendered ? '#3a3f48' : '#6b7280', lw: 1.2, layer: 0.6 });
-    if (!rendered) v.line({ pts: G.P.concat([G.P[0]]).map(p => [p[0], p[1], G.H]), stroke: '#8a919b', lw: 1, dash: [5, 4], layer: 2 });
+    if (!rendered && !G.ceil) v.line({ pts: G.P.concat([G.P[0]]).map(p => [p[0], p[1], G.H]), stroke: '#8a919b', lw: 1, dash: [5, 4], layer: 2 });
+    if (!rendered && G.ceil) {
+      // the ceiling: its line along every wall, and a line across at each ridge, valley or step
+      for (const e of G.edges) v.line({ pts: this._topAlong(G, e.a, e.b), stroke: '#8a919b', lw: 1, dash: [5, 4], layer: 2 });
+      const pts = G.ceil.points;
+      for (let i = 1; i < pts.length - 1; i++) {
+        for (const [a, b] of this._chords(G, pts[i][0])) v.line({ pts: [[a[0], a[1], pts[i][1]], [b[0], b[1], pts[i][1]]], stroke: '#8a919b', lw: 1, dash: [5, 4], layer: 2 });
+      }
+    }
 
     // objects (rendered: an object moved or resized since the calculation is drawn as a
     // plain box where it now is, its old patches dropped)
@@ -381,7 +447,8 @@ const Light3D = {
         color: rendered ? '#fffdf4' : (emerg ? '#d6f5d6' : '#e4e6ea'), under: rendered ? '#fffdf4' : (emerg ? '#a8e6a8' : '#fff6cf'), pick: 'l:' + el.id,
         stroke: on ? selStroke : 'rgba(26,26,46,.45)', lw: on ? 2 : 0.8, noCull: true,
       });
-      if (z < G.H - 0.01 && !rendered) v.line({ pts: [[c[0], c[1], z], [c[0], c[1], G.H]], stroke: '#8a919b', lw: 1, layer: 1 });
+      const hc = G.hAt(c[0], c[1]);
+      if (z < hc - 0.01 && !rendered && !(el.props && el.props.mount === 'wall')) v.line({ pts: [[c[0], c[1], z], [c[0], c[1], hc]], stroke: '#8a919b', lw: 1, layer: 1 });
       if (rendered) {
         v.glow({ at: [c[0], c[1], z - 0.06], r: s * 1.6, color: 'rgba(255,248,226,.55)' });
         v.glow({ at: [c[0], c[1], z - 0.06], r: s * 0.8, color: 'rgba(255,253,240,.9)' });
@@ -494,23 +561,113 @@ const Light3D = {
         if (flip) n = [-n[0], -n[1], -n[2]];
       }
       const fill = V3D.tone(P.E[i], P.rho[i], col, this.expo);
-      v.face({ pts: [[c[0] - u[0] - w[0], c[1] - u[1] - w[1], c[2] - u[2] - w[2]], [c[0] + u[0] - w[0], c[1] + u[1] - w[1], c[2] + u[2] - w[2]],
-        [c[0] + u[0] + w[0], c[1] + u[1] + w[1], c[2] + u[2] + w[2]], [c[0] - u[0] + w[0], c[1] - u[1] + w[1], c[2] - u[2] + w[2]]],
-        fill, cull: n, layer: kind === 0 ? 0 : (kind === 2 ? 0.5 : 1), bias: kind === 0 ? -1e6 : 0 });
+      const pts = [[c[0] - u[0] - w[0], c[1] - u[1] - w[1], c[2] - u[2] - w[2]], [c[0] + u[0] - w[0], c[1] + u[1] - w[1], c[2] + u[2] - w[2]],
+        [c[0] + u[0] + w[0], c[1] + u[1] + w[1], c[2] + u[2] + w[2]], [c[0] - u[0] + w[0], c[1] - u[1] + w[1], c[2] - u[2] + w[2]]];
+      // under a ceiling section the top patch of a wall column meets the ceiling's own line (no saw-tooth gable)
+      if (kind === 2 && G.ceil && pts[2][2] >= G.hAt(c[0], c[1]) - 1e-3) {
+        for (const q of [pts[2], pts[3]]) q[2] = G.hAt(q[0] - (n ? n[0] : 0) * 1e-3, q[1] - (n ? n[1] : 0) * 1e-3);
+      }
+      v.face({ pts, fill, cull: n, layer: kind === 0 ? 0 : (kind === 2 ? 0.5 : 1), bias: kind === 0 ? -1e6 : 0 });
     }
   },
+  // The beam: the half-peak contour of the fitting's own web (every C plane), turned into the
+  // room by the same photometric frame the engine uses (rotation; wall fittings face into the
+  // room, tilted by their aim) and run out to the work plane (to the ceiling for an uplight).
   _cone(v, el, c, z, G) {
     const ph = PhotoLib.get(el.props && el.props.photoId);
-    let half = 40;
-    try {
-      const row = ph.cd[0], gs = ph.g, mx = Math.max(...row);
-      for (let i = 0; i < gs.length; i++) if (row[i] < 0.5 * mx) { half = gs[i]; break; }
-    } catch (_) { /* no web: 40° */ }
-    const r = Math.max(0.05, (z - G.wp) * Math.tan(Math.min(80, half) * Math.PI / 180));
-    const ring = [];
-    for (let a = 0; a < 24; a++) ring.push([c[0] + r * Math.cos(a * Math.PI / 12), c[1] + r * Math.sin(a * Math.PI / 12), G.wp]);
-    v.face({ pts: ring, fill: 'rgba(255,214,90,.16)', stroke: 'rgba(214,150,20,.55)', lw: 1, layer: 2 });
-    for (const a of [0, 6, 12, 18]) v.line({ pts: [[c[0], c[1], z], ring[a]], stroke: 'rgba(214,150,20,.45)', lw: 1, layer: 2 });
+    const F = this._lumFrame(el, c, G);
+    const N = 36, cs = [], gs = [];
+    const web = ph && Array.isArray(ph.c) && Array.isArray(ph.g) && Array.isArray(ph.cd) && ph.cd.length ? ph : null;
+    let up = false;
+    if (web) {
+      let mx = 0, gPk = 0;
+      web.cd.forEach(row => row.forEach((x, j) => { if (x > mx) { mx = x; gPk = web.g[j]; } }));
+      up = gPk > 90;
+      for (let k = 0; k < N; k++) {
+        const C = k * 360 / N;
+        cs.push(C);
+        gs.push(mx > 0 ? this._halfGamma(web, C, 0.5 * mx, up) : (up ? 140 : 40));
+      }
+    } else for (let k = 0; k < N; k++) { cs.push(k * 360 / N); gs.push(40); }
+    // the plane the beam lands on, and the longest ray drawn (80° off that plane's normal)
+    const zT = up ? G.hAt(c[0], c[1]) : G.wp, h = Math.max(0.05, Math.abs(z - zT));
+    const tMax = h / Math.cos(80 * Math.PI / 180);
+    // each edge ray stops at the plane or at the first wall it crosses (`e` = that wall)
+    const hits = cs.map((C, k) => {
+      const g = gs[k] * Math.PI / 180, a = C * Math.PI / 180;
+      const l = [Math.sin(g) * Math.cos(a), Math.sin(g) * Math.sin(a), -Math.cos(g)];
+      const d = [0, 1, 2].map(i => l[0] * F[0][i] + l[1] * F[1][i] + l[2] * F[2][i]);
+      const dz = up ? d[2] : -d[2];
+      let t = dz > 1e-6 ? Math.min(h / dz, tMax) : tMax, e = null;
+      for (const w of G.edges) {
+        const out = -(d[0] * w.nIn[0] + d[1] * w.nIn[1]);           // heading out through this wall
+        if (out < 1e-9) continue;
+        const tw = ((c[0] - w.a[0]) * w.nIn[0] + (c[1] - w.a[1]) * w.nIn[1]) / out;
+        if (tw < 0 || tw >= t) continue;
+        const s = (c[0] + d[0] * tw - w.a[0]) * w.dir[0] + (c[1] + d[1] * tw - w.a[1]) * w.dir[1];
+        if (s >= -1e-6 && s <= w.len + 1e-6) { t = tw; e = w; }
+      }
+      const p = [c[0] + d[0] * t, c[1] + d[1] * t, z + d[2] * t];
+      return { p, e, base: [p[0], p[1], zT] };
+    });
+    const fill = 'rgba(255,214,90,.16)', edge = 'rgba(214,150,20,.55)';
+    v.face({ pts: hits.map(q => q.base), fill, layer: 2 });
+    // the outline: on the plane, up the wall where the beam reaches it, along the wall, back down
+    for (let k = 0; k < N; k++) {
+      const q = hits[k], r = hits[(k + 1) % N];
+      v.line({ pts: [q.e ? q.p : q.base, r.e ? r.p : r.base], stroke: edge, lw: 1, layer: 2 });
+      if (!q.e !== !r.e) { const w = q.e ? q : r; v.line({ pts: [w.base, w.p], stroke: edge, lw: 1, layer: 2 }); }
+    }
+    // the light on each wall: a run of rays landing on the same wall, down to the plane
+    const wallOn = (w) => this.walls === 'all' || (this.walls !== 'none' && v.facing([w.nIn[0], w.nIn[1], 0]));
+    const k0 = hits.findIndex((q, k) => !q.e || q.e !== hits[(k + N - 1) % N].e);
+    if (k0 < 0 && hits[0].e && wallOn(hits[0].e)) v.face({ pts: hits.map(q => q.p), fill, layer: 2 });
+    for (let k = 0, run = []; k0 >= 0 && k <= N; k++) {
+      const q = hits[(k0 + k) % N];
+      if (k < N && q.e && (!run.length || run[0].e === q.e)) { run.push(q); continue; }
+      if (run.length > 1 && wallOn(run[0].e)) v.face({ pts: run.map(x => x.p).concat(run.map(x => x.base).reverse()), fill, layer: 2 });
+      run = k < N && q.e ? [q] : [];
+    }
+    for (let k = 0; k < N; k += N / 4) v.line({ pts: [[c[0], c[1], z], hits[k].p], stroke: 'rgba(214,150,20,.45)', lw: 1, layer: 2 });
+  },
+  // γ (°) of the beam edge in plane C: the furthest γ from nadir (from zenith for an uplight)
+  // whose intensity is still ≥ `lim`, interpolated between the web's own samples.
+  _halfGamma(web, C, lim, up) {
+    const cA = web.c, n = cA.length;
+    let Cm = ((C % 360) + 360) % 360;
+    // a web without a full circle (one plane, or 0–180) is symmetric about C0
+    if (cA[n - 1] < 360 - 1e-6 && Cm > cA[n - 1]) Cm = Math.min(360 - Cm, cA[n - 1]);
+    let j = 0;
+    while (j < n - 1 && cA[j + 1] < Cm) j++;
+    const j2 = Math.min(j + 1, n - 1), t = j2 > j && cA[j2] > cA[j] ? Math.min(1, Math.max(0, (Cm - cA[j]) / (cA[j2] - cA[j]))) : 0;
+    const gA = web.g, I = gA.map((_, i) => web.cd[j][i] * (1 - t) + web.cd[j2][i] * t);
+    const idx = gA.map((g, i) => i).filter(i => (up ? gA[i] >= 90 : gA[i] <= 90));
+    if (up) idx.reverse();
+    let last = -1;
+    for (let q = 0; q < idx.length; q++) if (I[idx[q]] >= lim) last = q;
+    if (last < 0) return up ? 180 : 0;
+    const i0 = idx[last], i1 = idx[last + 1];
+    if (i1 == null || I[i0] <= I[i1]) return gA[i0];
+    return gA[i0] + (gA[i1] - gA[i0]) * (I[i0] - lim) / (I[i0] - I[i1]);
+  },
+  // The fitting's photometric frame in the 3D view's metres: rows = its x (C0), y (C90) and up,
+  // as backend room_lighting._luminaires builds it.
+  _lumFrame(el, c, G) {
+    const pr = el.props || {};
+    if (pr.mount === 'wall' && G.edges.length) {
+      let best = Infinity, nIn = [0, 1];
+      for (const e of G.edges) {
+        const t = Math.min(Math.max(((c[0] - e.a[0]) * e.dir[0] + (c[1] - e.a[1]) * e.dir[1]) / e.len, 0.02), 0.98);
+        const d = Math.hypot(c[0] - e.a[0] - e.dir[0] * e.len * t, c[1] - e.a[1] - e.dir[1] * e.len * t);
+        if (d < best) { best = d; nIn = e.nIn; }
+      }
+      const th = Math.min(Math.max(Number(pr.wallAim) || 0, 0), 180) * Math.PI / 180;
+      const ey0 = [nIn[0], nIn[1], 0], ex = [nIn[1], -nIn[0], 0];      // C90 faces into the room
+      return [ex, [ey0[0] * Math.cos(th), ey0[1] * Math.cos(th), Math.sin(th)],
+        [-ey0[0] * Math.sin(th), -ey0[1] * Math.sin(th), Math.cos(th)]];
+    }
+    const a = -(el.rotation || 0) * Math.PI / 180;
+    return [[Math.cos(a), Math.sin(a), 0], [-Math.sin(a), Math.cos(a), 0], [0, 0, 1]];
   },
   _selLabel(room, G) {
     const s = this._selected(room);
@@ -687,7 +844,7 @@ const Light3D = {
     if (Sports3D.is(room)) { el.innerHTML = Sports3D.title(room); el.hidden = !el.innerHTML; return; }
     const G = this.geo(room);
     el.hidden = false;
-    el.innerHTML = `<b>${escHtml(room.name || 'Room')}</b><span>${(G.xmax - G.xmin).toFixed(2)} × ${(G.ymax - G.ymin).toFixed(2)} m · ${G.area.toFixed(1)} m² · ceiling ${G.H.toFixed(2)} m · work plane ${G.wp.toFixed(2)} m</span>`;
+    el.innerHTML = `<b>${escHtml(room.name || 'Room')}</b><span>${(G.xmax - G.xmin).toFixed(2)} × ${(G.ymax - G.ymin).toFixed(2)} m · ${G.area.toFixed(1)} m² · ceiling ${G.ceil ? `${G.Hmin.toFixed(2)}–${G.H.toFixed(2)}` : G.H.toFixed(2)} m · work plane ${G.wp.toFixed(2)} m</span>`;
   },
 
   _renderPalette() {
@@ -737,7 +894,9 @@ const Light3D = {
         <p class="l3-muted">Nothing selected. Click an object in the view or the list to edit it.</p>
         <p class="l3-muted">${escHtml(T)} · ${L.em} lx · U₀ ≥ ${L.uo.toFixed(2)} · UGR ≤ ${L.ugr}</p>
         <div class="l3-grid2">
-          <label class="l3-field"><span>Ceiling, m</span><input type="number" data-l3r="ceilH" value="${numAttr(L.ceilH)}" step="0.1" min="1.5"></label>
+          ${typeof RoomSection !== 'undefined' && RoomSection.get(room).type !== 'flat'
+            ? `<label class="l3-field"><span>Ceiling</span><input type="text" value="${escHtml(RoomSection.TYPES[RoomSection.get(room).type])}" disabled title="Change the section in the room's properties on the Plan view"></label>`
+            : `<label class="l3-field"><span>Ceiling, m</span><input type="number" data-l3r="ceilH" value="${numAttr(L.ceilH)}" step="0.1" min="1.5"></label>`}
           <label class="l3-field"><span>Work plane, m</span><input type="number" data-l3r="workH" value="${numAttr(L.workH)}" step="0.05" min="0"></label>
           <label class="l3-field"><span>ρ walls</span><input type="number" data-l3r="rhoW" value="${numAttr(L.rhoW)}" step="0.05" min="0" max="1"></label>
           <label class="l3-field"><span>ρ floor</span><input type="number" data-l3r="rhoF" value="${numAttr(L.rhoF)}" step="0.05" min="0" max="1"></label>
