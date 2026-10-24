@@ -863,9 +863,11 @@ const PlanEngine = {
   },
 
   _isActive() { return typeof PlanMarkup !== 'undefined' && PlanMarkup._active; },
+  // A UI.alert/confirm/prompt is open: the plan takes no pointer input behind it.
+  _dialogOpen() { return !!document.querySelector('.ui-dialog'); },
 
   _onDown(e) {
-    if (!this._isActive()) return;
+    if (!this._isActive() || this._dialogOpen()) return;
     this.fg.setPointerCapture && this.fg.setPointerCapture(e.pointerId);
     if (e.pointerType === 'touch') {
       this.touchPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
@@ -891,7 +893,7 @@ const PlanEngine = {
   },
 
   _onMove(e) {
-    if (!this._isActive()) return;
+    if (!this._isActive() || this._dialogOpen()) return;
     if (e.pointerType === 'touch' && this.touchPointers.has(e.pointerId)) {
       this.touchPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
       if (this.touchPointers.size >= 2) { this._pinchMove(); return; }
@@ -914,7 +916,7 @@ const PlanEngine = {
       if (this.touchPointers.size < 2) this._pinch = null;
     }
     if (this.isPanning) { this.isPanning = false; this.panStart = null; this._restoreCursor(); return; }
-    if (!this._isActive()) return;
+    if (!this._isActive() || this._dialogOpen()) return;
     const pt = this.screenToWorld(e.clientX, e.clientY);
     if (typeof PlanTools !== 'undefined' && PlanTools.onUp) PlanTools.onUp(pt, e);
   },
