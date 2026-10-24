@@ -641,6 +641,13 @@ PlanTools.register({
     const pxDist = Math.hypot(p2.x - p1.x, p2.y - p1.y);
     if (pxDist < 1) { this._p1 = null; return; }
     this._busy = true;
+    // Ask once this touch has lifted, so its pointerup / emulated mouse events
+    // finish on the plan rather than on the dialog.
+    await new Promise((res) => {
+      const done = () => { document.removeEventListener('pointerup', done, true); document.removeEventListener('pointercancel', done, true); res(); };
+      document.addEventListener('pointerup', done, true); document.addEventListener('pointercancel', done, true);
+      setTimeout(done, 600);
+    });
     const f0 = PlanEngine.factor();
     const desc = this._dxfId && typeof PlanDxfImport !== 'undefined' ? PlanDxfImport.byId(this._dxfId) : null;
     const now = f0 ? ` It measures ${(pxDist * f0).toFixed(2)} m now.` : '';
