@@ -555,6 +555,8 @@ body.dark-mode .lw-chip.bad { background: rgba(166,27,27,.35); color: #f5c2c2; }
   .lw-plan.lw-phone .ls-dock-head { gap: 4px 10px; }
   .lw-plan.lw-phone .plan-info { display: none; }
   .lw-plan.lw-phone .plan-legend { top: 8px; bottom: auto; }
+  /* the sheet header covers the stage's bottom edge: keep Done / Cancel above it */
+  .lw-plan.lw-phone .plan-action-chip { bottom: auto; top: 10px; z-index: 80; }
 
   /* the sheet header: grip, verdict strip, which panel */
   .lw-plan.lw-phone .lw-sheethead {
