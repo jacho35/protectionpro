@@ -93,6 +93,7 @@ const PlanMarkup = {
             <canvas id="plan-canvas-fg" class="plan-canvas" tabindex="0" role="application"
               aria-label="Plan canvas. Use arrow keys to move between placed items when focused; R rotates, Delete removes."></canvas>
             <div id="plan-info" class="plan-info">Import a plan, calibrate the scale, then place components and draw routes.</div>
+            <button type="button" id="plan-calibrate-btn" class="plan-calibrate-btn" hidden>${I('ruler')}<span>Calibrate plan</span></button>
             <div id="plan-placebar" class="plan-placebar" role="group" hidden></div>
             <div id="plan-action-chip" class="plan-action-chip" role="group" aria-label="Finish or cancel the current drawing">
               <button type="button" data-chip="done" title="Finish (Enter)">✓ Done</button>
@@ -937,6 +938,12 @@ const PlanMarkup = {
     const pm = AppState.planMarkup;
     const s = pm.scale;
     const calibrated = !!(s && s.factor);
+    const cal = document.getElementById('plan-calibrate-btn');
+    if (cal) {
+      if (!cal._wired) { cal._wired = true; cal.addEventListener('click', () => PlanTools.set('calibrate')); }
+      const autoW = calibrated && s.source === 'auto' && (pm.plans || []).length > 0;
+      cal.hidden = calibrated && !autoW;
+    }
     const chip = document.getElementById('plan-scale-chip');
     if (chip) {
       const txt = chip.querySelector('span') || chip;
