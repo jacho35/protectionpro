@@ -156,8 +156,11 @@ const UI = {
       okBtn.addEventListener('click', confirmResult);
       if (cancelBtn) cancelBtn.addEventListener('click', cancelResult);
       // Click on the backdrop cancels (same as Escape)
+      // (not in the first moments: a dialog opened from a touch pointerdown gets
+      // that touch's emulated mousedown on its backdrop and would close at once)
+      const openedAt = Date.now();
       overlay.addEventListener('mousedown', (e) => {
-        if (e.target === overlay) cancelResult();
+        if (e.target === overlay && Date.now() - openedAt > 500) cancelResult();
       });
 
       // Focus trap: keep Tab within the dialog, Esc cancels, Enter confirms

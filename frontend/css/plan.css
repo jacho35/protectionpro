@@ -497,3 +497,12 @@ body.dark-mode .plan-legend-line.target { border-color: #4a9eff; }
 .plan-field.has-tip { position: relative; }
 .rl-tip-btn { position: absolute; right: 0; top: -5px; margin: 0; }
 @media (pointer: coarse) { .rl-tip-btn { width: 26px; height: 26px; min-width: 26px; font-size: 13px; } }
+
+.plan-calibrate-btn {
+  position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 70;
+  display: flex; align-items: center; gap: 6px; min-height: 38px; padding: 6px 14px;
+  background: #f59e0b; border: 1px solid #d97706; border-radius: 19px; color: #1f1300;
+  font-weight: 600; font-size: 13px; cursor: pointer; box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+}
+.plan-calibrate-btn[hidden] { display: none; }
+.plan-calibrate-btn:hover { filter: brightness(1.06); }
