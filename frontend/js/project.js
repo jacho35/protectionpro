@@ -163,7 +163,24 @@ const Project = {
 
     document.getElementById('status-info').textContent = 'Saving...';
     try {
-      const result = await API.saveProject();
+      let result;
+      try {
+        result = await API.saveProject();
+      } catch (e) {
+        if (e.status !== 409) throw e;
+        // Someone else saved since this copy was opened — never overwrite silently.
+        const overwrite = await UI.confirm(
+          'Someone else saved this project since you opened it.\n\n' +
+          'Overwrite their changes with yours? Cancel keeps your changes unsaved — ' +
+          'use Save As to keep your version as a copy.',
+          { danger: true, okText: 'Overwrite' });
+        if (!overwrite) {
+          document.getElementById('status-info').textContent =
+            'NOT SAVED — the project changed on the server. Use Save As to keep your copy.';
+          return;
+        }
+        result = await API.saveProject({ overwrite: true });
+      }
       AppState.projectId = result.id;
       // Attach any plan-markup images uploaded before this project had an id.
       if (typeof PlanImages !== 'undefined') await PlanImages.claimOrphans(result.id);
@@ -751,6 +768,13 @@ const Project = {
         await RevisionTimeline.show();
         this._statusMsg('Auto-saved.');
       } catch (e) {
+        if (e.status === 409) {
+          // Never auto-overwrite another editor; the manual Save asks what to do.
+          this._saveToLocalBackup();
+          document.getElementById('status-info').textContent =
+            'Auto-save paused — someone else saved this project. Press Save to choose what to keep.';
+          return;
+        }
         // Silently fall back to localStorage on API failure
         this._saveToLocalBackup();
         await RevisionTimeline.createRevision('Auto-save (local)');
