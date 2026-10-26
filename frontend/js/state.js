@@ -29,8 +29,9 @@ const RESULT_SLOT_LABELS = {
 const AppState = {
   // Project
   projectId: null,
+  projectVersion: null,      // server save counter we last loaded/saved (edit-conflict check); not cleared by reset()
   projectName: 'Untitled Project',
-  symbolSet: 'iec',          // SLD symbol set — see reset()
+  symbolSet: 'iec',         // SLD symbol set — see reset()
   cascading: true,           // credit tested back-up combinations — see reset()
   dirty: false,
 

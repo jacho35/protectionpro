@@ -48,6 +48,8 @@ frontend/
     ├── annotations.js      # Draggable fault/loadflow result badges
     ├── cablefocus.js       # CableFocus — cable-sizing result boxes filtered to the selected bus's incoming/outgoing cables (Results menu / bus properties button / results-table 'At bus'), rest of the sheet dimmed; session-only
     ├── project.js          # Save/load/export (JSON/SVG/PNG/CSV/PDF)
+    ├── collab.js           # Collab — live co-editing engine: WS /api/projects/{id}/live, `AppState.dirty` accessor wakes a debounced id-keyed diff (SLD components / wires / sheets, project-level `misc` values, plus the collections below) sent as `ops`; remote ops are applied in place (never `fromJSON`), selection presence + soft-lock notice, seq-based replay on reconnect, ids strided by server `slot` (`genId` + the counters in collab-data.js), `saved` broadcast keeps `AppState.projectVersion` current (save-conflict guard: PUT `X-Base-Version` → 409)
+    ├── collab-data.js      # CollabData — what Collab syncs per element: `collections()` descriptors (list / map / value; `immutable`, `exclude`+`fresh`, `structural`) for Demand (minisubs, kiosks), street lighting, road designs/photometry, road plan + scene, plan markup (floors metadata, layers, each floor's elements/routes/rooms/…); id `counters()`; `refresh()` redraws only the visible workspace. A new synced collection = a descriptor here
     ├── api.js              # HTTP client for backend endpoints
     ├── constants.js        # Component definitions, cable/transformer libraries
     ├── cablelib.js         # CableLib — the ONE cable library (STANDARD_CABLES): construction/cores, name aliases, pickers (Demand/plan/SLD), project conductor preference, custom cables carried in the project
@@ -177,6 +179,7 @@ backend/
     ├── email_settings.py   # GET/PUT /api/settings/email, POST /test (admin only)
     ├── user_libraries.py   # GET/PUT/DELETE /api/user-libraries (+ /default-rates) — the signed-in user's own libraries and default rates
     ├── shared_libraries.py # /api/shared-libraries — team libraries: members (view/edit), per-entry versioned saves (409 on stale), admin company standard
+    ├── collab.py           # WS /api/projects/{id}/live — in-memory relay per project (single worker): first-message JWT auth, view/edit roles, presence, `saved` broadcast, last-500 op log with `since` replay / `resync`
     ├── drawing_dxf.py      # POST /api/drawing/dxf-export — drawing payload → DXF download
     └── reports.py          # CSV & PDF export endpoints
 ```

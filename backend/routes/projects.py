@@ -1,7 +1,8 @@
 """Project and Folder CRUD routes (auth-gated, owner-scoped + sharing)."""
 
 import json
-from fastapi import APIRouter, Depends, HTTPException
+from typing import Optional
+from fastapi import APIRouter, Depends, Header, HTTPException, Response
 from sqlalchemy.orm import Session
 from ..models.database import get_db, Project, Folder, Revision, User, ProjectShare
 from ..models.schemas import (
@@ -12,6 +13,7 @@ from ..models.schemas import (
 )
 from ..auth import get_current_user, require_project
 from ..notifications import notify, display_name
+from .collab import notify_saved
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 
@@ -143,16 +145,29 @@ def create_project(data: ProjectData, db: Session = Depends(get_db),
 
 
 @router.get("/{project_id}")
-def get_project(project_id: int, ctx=Depends(require_project("view"))):
+def get_project(project_id: int, response: Response, ctx=Depends(require_project("view"))):
     project, _level = ctx
+    response.headers["X-Project-Version"] = str(project.version or 1)
     return json.loads(project.data)
 
 
 @router.put("/{project_id}")
-def update_project(project_id: int, data: ProjectData,
+def update_project(project_id: int, data: ProjectData, response: Response,
                    ctx=Depends(require_project("edit")), db: Session = Depends(get_db),
-                   user: User = Depends(get_current_user)):
+                   user: User = Depends(get_current_user),
+                   x_base_version: Optional[int] = Header(default=None)):
     project, _level = ctx
+    current = project.version or 1
+    # Clients that send the version they loaded are refused if someone saved since.
+    # No header (scripts, the Python client, older tabs) keeps last-write-wins.
+    if x_base_version is not None and x_base_version != current:
+        raise HTTPException(status_code=409, detail={
+            "code": "version_conflict",
+            "message": "Someone else saved this project since you opened it.",
+            "current_version": current,
+        })
+    project.version = current + 1
+    response.headers["X-Project-Version"] = str(project.version)
     project.name = data.projectName
     project.data = json.dumps(data.model_dump())
     project.base_mva = data.baseMVA
@@ -169,7 +184,8 @@ def update_project(project_id: int, data: ProjectData,
            message_many=f"{who} saved changes to “{project.name}” ({{count}} saves).",
            link={"type": "project", "id": project.id}, group_key=f"proj-edit:{project.id}")
     db.commit()
-    return {"id": project.id, "name": project.name}
+    notify_saved(project.id, project.version, user)
+    return {"id": project.id, "name": project.name, "version": project.version}
 
 
 @router.delete("/{project_id}")
@@ -186,6 +202,7 @@ def rename_project(project_id: int, data: ProjectRename,
                    ctx=Depends(require_project("edit")), db: Session = Depends(get_db)):
     project, _level = ctx
     project.name = data.name
+    project.version = (project.version or 1) + 1
     # Also update the name inside the stored JSON data
     try:
         proj_data = json.loads(project.data)

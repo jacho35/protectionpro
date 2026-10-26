@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from pathlib import Path
 
 from .models.database import init_db, get_db, User
-from .routes import projects, analysis, reports, plan_images, plan_dxf, drawing_dxf, auth, user_libraries, shared_libraries, email_settings, admin, notifications, library_submissions
+from .routes import projects, analysis, reports, plan_images, plan_dxf, drawing_dxf, auth, user_libraries, shared_libraries, email_settings, admin, notifications, library_submissions, collab
 from .auth import get_current_user
 
 app = FastAPI(
@@ -62,6 +62,8 @@ def health(db: Session = Depends(get_db)):
 _auth_gate = [Depends(get_current_user)]
 app.include_router(auth.router, prefix="/api")
 app.include_router(projects.router, prefix="/api")
+# WebSocket relay authenticates itself (first message), so it sits outside the bearer gate.
+app.include_router(collab.router, prefix="/api")
 app.include_router(reports.router, prefix="/api")
 from .routes.reports import report_router
 app.include_router(analysis.router, prefix="/api", dependencies=_auth_gate)

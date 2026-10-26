@@ -64,6 +64,9 @@ class Project(Base):
     # Owner of the project. Nullable so legacy rows and the bootstrap-claim
     # (assign existing projects to the first admin) work; set on create.
     owner_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    # Bumped on every save; a client that sends the version it loaded is refused
+    # (409) if someone else saved in between, instead of overwriting them.
+    version = Column(Integer, nullable=False, default=1, server_default="1")
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc),
                         onupdate=lambda: datetime.now(timezone.utc))
@@ -403,6 +406,18 @@ def init_db():
     _migrate_add_user_approver()
     _migrate_add_user_token_version()
     _migrate_add_plan_image_owner()
+    _migrate_add_project_version()
+
+
+def _migrate_add_project_version():
+    """Add projects.version (optimistic-concurrency counter) to a legacy DB."""
+    from sqlalchemy import inspect, text
+    insp = inspect(engine)
+    if "projects" in insp.get_table_names():
+        columns = [c["name"] for c in insp.get_columns("projects")]
+        if "version" not in columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE projects ADD COLUMN version INTEGER NOT NULL DEFAULT 1"))
 
 
 def _migrate_add_folder_id():

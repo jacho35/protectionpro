@@ -181,6 +181,39 @@ def test_no_access_project_is_404_not_403(client):
     assert client.get(f"/api/projects/{pid}", headers=_hdr(bob)).status_code == 404
 
 
+def test_save_with_stale_version_is_refused(client):
+    admin, bob, pid = _two_users(client)
+    client.post(f"/api/projects/{pid}/shares",
+                json={"email": "bob@x.com", "role": "edit"}, headers=_hdr(admin))
+    body = {"projectName": "P1", "components": [], "wires": []}
+
+    # Both open the project at the same version.
+    v_admin = client.get(f"/api/projects/{pid}", headers=_hdr(admin)).headers["X-Project-Version"]
+    v_bob = client.get(f"/api/projects/{pid}", headers=_hdr(bob)).headers["X-Project-Version"]
+    assert v_admin == v_bob
+
+    # The first save wins and bumps the version.
+    r = client.put(f"/api/projects/{pid}", json=body,
+                   headers={**_hdr(admin), "X-Base-Version": v_admin})
+    assert r.status_code == 200
+    assert r.json()["version"] == int(v_admin) + 1
+    assert r.headers["X-Project-Version"] == str(int(v_admin) + 1)
+
+    # The second, from the old version, is refused with the current version.
+    r = client.put(f"/api/projects/{pid}", json={**body, "projectName": "Bob"},
+                   headers={**_hdr(bob), "X-Base-Version": v_bob})
+    assert r.status_code == 409
+    assert r.json()["detail"]["code"] == "version_conflict"
+    assert r.json()["detail"]["current_version"] == int(v_admin) + 1
+    assert client.get(f"/api/projects/{pid}", headers=_hdr(admin)).json()["projectName"] == "P1"
+
+    # Re-based on the current version it goes through; no header stays last-write-wins.
+    assert client.put(f"/api/projects/{pid}", json={**body, "projectName": "Bob"},
+                      headers={**_hdr(bob), "X-Base-Version": r.json()["detail"]["current_version"].__str__()}
+                      ).status_code == 200
+    assert client.put(f"/api/projects/{pid}", json=body, headers=_hdr(admin)).status_code == 200
+
+
 def test_user_search_lists_registered_users(client):
     admin = _register(client, "owner@x.com", name="Owner").json()["access_token"]
     code = client.post("/api/auth/invites", json={}, headers=_hdr(admin)).json()["code"]

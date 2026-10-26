@@ -38,13 +38,14 @@ const API = {
     return true;
   },
 
-  async request(endpoint, method = 'GET', body = null) {
+  // extra: { headers } added to the request, { onResponse(resp) } called on success
+  async request(endpoint, method = 'GET', body = null, extra = null) {
     const sentToken = this.getToken();
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.REQUEST_TIMEOUT_MS);
     const opts = {
       method,
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...((extra && extra.headers) || {}) },
       signal: controller.signal,
     };
     const token = this.getToken();
@@ -83,6 +84,7 @@ const API = {
         failure.body = body;
         throw failure;
       }
+      if (extra && extra.onResponse) extra.onResponse(resp);
       return await resp.json();
     } catch (e) {
       if (e.name === 'AbortError') {
@@ -494,18 +496,31 @@ const API = {
   },
 
   // Save project
-  async saveProject() {
+  async saveProject({ overwrite = false } = {}) {
     const data = AppState.toJSON();
     if (AppState.projectId) {
-      return this.request(`/projects/${AppState.projectId}`, 'PUT', data);
+      // Send the version we loaded/last saved: the server refuses (409) if someone
+      // else saved since. Overwrite = pass overwrite:true to skip the check.
+      const headers = {};
+      if (AppState.projectVersion != null && !overwrite) headers['X-Base-Version'] = String(AppState.projectVersion);
+      const r = await this.request(`/projects/${AppState.projectId}`, 'PUT', data, { headers });
+      if (r && r.version != null) AppState.projectVersion = r.version;
+      return r;
     } else {
-      return this.request('/projects', 'POST', data);
+      const r = await this.request('/projects', 'POST', data);
+      AppState.projectVersion = 1;
+      return r;
     }
   },
 
-  // Load project
+  // Load project; remembers the server version for the save-conflict check
   async loadProject(id) {
-    return this.request(`/projects/${id}`);
+    let version = null;
+    const data = await this.request(`/projects/${id}`, 'GET', null, {
+      onResponse: resp => { const v = resp.headers.get('X-Project-Version'); if (v) version = Number(v); },
+    });
+    AppState.projectVersion = version;
+    return data;
   },
 
   // The signed-in user's component libraries (cables, transformers, CBs, fuses, load classes)
