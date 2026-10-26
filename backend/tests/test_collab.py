@@ -132,3 +132,16 @@ def test_reconnect_replays_only_what_was_missed(client):
     finally:
         wa.__exit__(None, None, None)
         wb.__exit__(None, None, None)
+
+
+def test_refusing_a_client_that_already_left_does_not_raise():
+    """A reload or dropped link before the first message leaves a closed socket; closing it
+    raises in uvicorn, which logged a traceback for every such client."""
+    import asyncio
+    from backend.routes.collab import _refuse
+
+    class Gone:
+        async def close(self, code):
+            raise RuntimeError("Cannot call 'send' once a close message has been sent.")
+
+    asyncio.run(_refuse(Gone(), 4400))

@@ -98,6 +98,14 @@ def notify_saved(project_id: int, version: int, user: User):
         pass  # not running under a worker thread (scripts/tests); nobody to tell
 
 
+async def _refuse(ws: WebSocket, code: int):
+    """Close with a reason code; the client may already be gone (reload, dropped link)."""
+    try:
+        await ws.close(code=code)
+    except Exception:
+        pass
+
+
 async def _recv(ws: WebSocket, timeout: float) -> str:
     with anyio.fail_after(timeout):
         return await ws.receive_text()
@@ -114,16 +122,16 @@ async def live(ws: WebSocket, project_id: int, db: Session = Depends(get_db)):
         if hello.get("type") != "hello":
             raise ValueError
     except Exception:
-        await ws.close(code=4400)
+        await _refuse(ws, 4400)
         return
     user = _user_from_token(db, hello.get("token"))
     if user is None:
-        await ws.close(code=4401)
+        await _refuse(ws, 4401)
         return
     project = db.query(Project).filter(Project.id == project_id).first()
     level = resolve_access(db, project, user) if project else None
     if level is None:
-        await ws.close(code=4404)   # no access looks like no project
+        await _refuse(ws, 4404)   # no access looks like no project
         return
     version = project.version or 1
     name = display_name(user)
@@ -139,7 +147,7 @@ async def live(ws: WebSocket, project_id: int, db: Session = Depends(get_db)):
     taken = {p.slot for p in room.values()}
     slot = next((i for i in range(MAX_SLOTS) if i not in taken), None)
     if slot is None:
-        await ws.close(code=4429)   # room full
+        await _refuse(ws, 4429)   # room full
         return
     peer = Peer(ws, client_id, uid, name, "edit" if level in ("edit", "owner") else "view",
                 _COLORS[uid % len(_COLORS)], slot, str(hello.get("session") or "")[:64])
