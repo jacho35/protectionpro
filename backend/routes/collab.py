@@ -9,18 +9,21 @@ connected editors adopt it instead of tripping each other's save-conflict check.
 Presence and edits never touch the database.
 
 Messages (JSON):
-  client -> server  {type:"hello", token}                     first message, required
+  client -> server  {type:"hello", token, session, since?}    first message, required;
+                                                              since = last op seq seen (reconnect)
                     {type:"ops", ops:[...]}                   edit access only
                     {type:"presence", ...}                    any role; relayed as-is
                     {type:"ping"}
-  server -> client  {type:"welcome", client_id, role, version, peers:[...]}
+  server -> client  {type:"welcome", client_id, role, slot, version, seq, resync, peers:[...]}
+                    {type:"replay", batches:[{seq, from, ops}]}   edits missed while disconnected
                     {type:"peer_join"|"peer_leave", peer|client_id}
-                    {type:"ops"|"presence", from, ...}
+                    {type:"ops", from, seq, ops} / {type:"presence", from, ...}
                     {type:"saved", version, by}
                     {type:"error", message}
 """
 
 import json
+from collections import deque
 
 import anyio
 import jwt
@@ -34,6 +37,7 @@ from ..notifications import display_name
 router = APIRouter()
 
 MAX_SLOTS = 16
+LOG_BATCHES = 500   # op batches kept per live project for reconnect replay
 MAX_MESSAGE_BYTES = 2_000_000
 HELLO_TIMEOUT_S = 10
 _COLORS = ["#e6194b", "#3cb44b", "#4363d8", "#f58231", "#911eb4", "#008080",
@@ -41,12 +45,14 @@ _COLORS = ["#e6194b", "#3cb44b", "#4363d8", "#f58231", "#911eb4", "#008080",
 
 # project_id -> {client_id: Peer}
 _rooms: dict[int, dict[str, "Peer"]] = {}
+# project_id -> [last seq, deque[(seq, client_id, session, ops)]]; lives as long as the room
+_logs: dict[int, list] = {}
 _next_client = 0
 
 
 class Peer:
-    def __init__(self, ws, client_id, user_id, name, role, color, slot):
-        self.ws, self.client_id, self.user_id = ws, client_id, user_id
+    def __init__(self, ws, client_id, user_id, name, role, color, slot, session=None):
+        self.ws, self.client_id, self.user_id, self.session = ws, client_id, user_id, session
         self.name, self.role, self.color, self.slot = name, role, color, slot
 
     def info(self):
@@ -127,6 +133,7 @@ async def live(ws: WebSocket, project_id: int, db: Session = Depends(get_db)):
     _next_client += 1
     client_id = f"c{_next_client}"
     room = _rooms.setdefault(project_id, {})
+    log = _logs.setdefault(project_id, [0, deque(maxlen=LOG_BATCHES)])
     # Lowest free 0..MAX_SLOTS-1: the client strides its generated ids by it so two
     # editors never mint the same `bus_12` (see collab.js).
     taken = {p.slot for p in room.values()}
@@ -135,11 +142,26 @@ async def live(ws: WebSocket, project_id: int, db: Session = Depends(get_db)):
         await ws.close(code=4429)   # room full
         return
     peer = Peer(ws, client_id, uid, name, "edit" if level in ("edit", "owner") else "view",
-                _COLORS[uid % len(_COLORS)], slot)
+                _COLORS[uid % len(_COLORS)], slot, str(hello.get("session") or "")[:64])
     others = [p.info() for p in room.values()]
     room[client_id] = peer
+    # A reconnecting client says the last seq it saw: replay what it missed if the log
+    # still covers it, otherwise tell it to resync from the saved project.
+    since = hello.get("since")
+    seq, batches = log
+    resync, missed = False, []
+    if isinstance(since, int) and not isinstance(since, bool) and since != seq:
+        missed = [b for b in batches if b[0] > since]
+        covered = since < seq and missed and missed[0][0] == since + 1
+        if not covered:
+            resync, missed = True, []
     await _send(peer, {"type": "welcome", "client_id": client_id, "role": peer.role, "slot": slot,
-                       "version": version, "peers": others})
+                       "version": version, "seq": seq, "resync": resync, "peers": others})
+    # Own edits made before the drop are already in this client's state; don't replay them.
+    missed = [{"seq": b[0], "from": b[1], "ops": b[3]} for b in missed
+              if not (peer.session and b[2] == peer.session)]
+    if missed:
+        await _send(peer, {"type": "replay", "batches": missed})
     await _broadcast(project_id, {"type": "peer_join", "peer": peer.info()}, exclude=client_id)
     try:
         while True:
@@ -158,8 +180,11 @@ async def live(ws: WebSocket, project_id: int, db: Session = Depends(get_db)):
                 if peer.role != "edit":
                     await _send(peer, {"type": "error", "message": "view-only"})
                     continue
-                await _broadcast(project_id, {"type": "ops", "from": client_id,
-                                              "ops": msg.get("ops") or []}, exclude=client_id)
+                ops = msg.get("ops") or []
+                log[0] += 1
+                log[1].append((log[0], client_id, peer.session, ops))
+                await _broadcast(project_id, {"type": "ops", "from": client_id, "seq": log[0],
+                                              "ops": ops}, exclude=client_id)
             elif kind == "presence":
                 msg = {k: v for k, v in msg.items() if k != "type"}
                 await _broadcast(project_id, {"type": "presence", "from": client_id, **msg},
@@ -170,4 +195,5 @@ async def live(ws: WebSocket, project_id: int, db: Session = Depends(get_db)):
         room.pop(client_id, None)
         if not room:
             _rooms.pop(project_id, None)
+            _logs.pop(project_id, None)
         await _broadcast(project_id, {"type": "peer_leave", "client_id": client_id})

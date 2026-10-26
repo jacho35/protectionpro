@@ -15,11 +15,22 @@
  *  - Saving: the server announces each save; we adopt its version so editors on the same
  *    live session don't trip each other's save-conflict check (API.saveProject).
  *
- * Not synced yet: project settings, scenarios, groups, plan/retic/lighting data.
+ * - Reconnect: the server keeps the last 500 edit batches; we send the last `seq` we saw and
+ *   it replays what we missed (our own edits are skipped via `session`), or says `resync`
+ *   when it can't — then a clean copy is reloaded, a dirty one is told to save and reload.
+ * - Selection: each editor's selection is relayed as presence and outlined in their colour;
+ *   picking something a colleague has selected shows a heads-up (a soft lock — never blocks).
+ * - Project-level data (settings, project details, scenarios, groups, earth grids) travels as
+ *   whole-value `misc` ops, last writer wins per key.
+ *
+ * Not synced yet: plan / reticulation / lighting data (large nested objects).
  */
 
 const Collab = {
   PAGES_KEY: 'pages',
+  // Project-level values synced whole (key → AppState field of the same name; groups are Maps).
+  MISC_KEYS: ['projectDetails', 'baseMVA', 'frequency', 'voltageFactor', 'defaultLengthUnit',
+              'voltageDisplayUnit', 'symbolSet', 'wireRouteMode', 'earthGrids', 'scenarios', 'groups'],
   DEBOUNCE_MS: 250,
   HEARTBEAT_MS: 25000,
 
@@ -35,9 +46,13 @@ const Collab = {
   _retry: 0,
   _retryTimer: null,
   _wasConnected: false,
-  _dirty: false,
   _origGenId: null,
   _redrawTimer: null,
+  _session: Math.random().toString(36).slice(2) + Date.now().toString(36),  // survives reconnects
+  _seq: 0,               // last server op-batch number seen
+  _remoteSel: new Map(), // client_id → [ids that person has selected]
+  _lastSel: '',
+  _warned: new Map(),    // id → time of the last "also working on" heads-up
 
   init() {
     // Wrap AppState.dirty so every existing `AppState.dirty = true` also wakes the differ.
@@ -51,6 +66,10 @@ const Collab = {
     // The open project changes through many paths (open, recent list, file manager,
     // first save, Save As): follow AppState.projectId instead of hooking each one.
     setInterval(() => this._follow(), 1000);
+    setInterval(() => this._selTick(), 300);
+    // Remote selection outlines live on the rendered SVG, so repaint them after each render.
+    const render = Canvas.render;
+    Canvas.render = function () { const r = render.apply(this, arguments); Collab._paintRemote(); return r; };
     window.addEventListener('beforeunload', () => this._close());
   },
 
@@ -79,9 +98,13 @@ const Collab = {
     this.clientId = null;
     this.slot = null;
     this.peers.clear();
+    this._remoteSel.clear();
     this._wasConnected = false;
+    this._seq = 0;
+    this._lastSel = '';
     this._restoreGenId();
     this._renderPeers();
+    this._paintRemote();
     this.projectId = null;
   },
 
@@ -93,7 +116,10 @@ const Collab = {
     try { ws = new WebSocket(`${proto}://${location.host}${API_BASE}/projects/${pid}/live`); }
     catch (_) { return this._scheduleRetry(); }
     this.ws = ws;
-    ws.onopen = () => ws.send(JSON.stringify({ type: 'hello', token: API.getToken() }));
+    ws.onopen = () => ws.send(JSON.stringify({
+      type: 'hello', token: API.getToken(), session: this._session,
+      since: this._wasConnected ? this._seq : undefined,   // a reconnect asks for what it missed
+    }));
     ws.onmessage = ev => {
       let msg;
       try { msg = JSON.parse(ev.data); } catch (_) { return; }
@@ -105,8 +131,10 @@ const Collab = {
       this.clientId = null;
       clearInterval(this._hb);
       this.peers.clear();
+      this._remoteSel.clear();
       this._restoreGenId();
       this._renderPeers();
+      this._paintRemote();
       // 44xx = refused (auth / no access / room full): don't hammer the server.
       if (ev.code >= 4400 && ev.code < 4500) return;
       if (this._wasConnected) UI.toast('Live editing connection lost — reconnecting…', 'warning');
@@ -131,15 +159,32 @@ const Collab = {
         this.peers.set(msg.peer.client_id, msg.peer);
         this._renderPeers();
         UI.toast(`${msg.peer.name} joined this project`, 'info');
+        this._sendSel(true);   // show them what we have selected
         return;
       case 'peer_leave': {
         const p = this.peers.get(msg.client_id);
         this.peers.delete(msg.client_id);
+        this._remoteSel.delete(msg.client_id);
         this._renderPeers();
+        this._paintRemote();
         if (p) UI.toast(`${p.name} left this project`, 'info');
         return;
       }
-      case 'ops': return this._applyOps(msg.ops || [], msg.from);
+      case 'ops':
+        if (Number.isFinite(msg.seq)) this._seq = Math.max(this._seq, msg.seq);
+        return this._applyOps(msg.ops || [], msg.from);
+      case 'replay':
+        for (const b of msg.batches || []) {
+          if (Number.isFinite(b.seq)) this._seq = Math.max(this._seq, b.seq);
+          this._applyOps(b.ops || [], b.from);
+        }
+        return;
+      case 'presence':
+        if (Array.isArray(msg.sel)) {
+          this._remoteSel.set(msg.from, msg.sel.filter(x => typeof x === 'string').slice(0, 300));
+          this._paintRemote();
+        }
+        return;
       case 'saved':
         // Someone saved while we are in the same live session: their file holds the
         // edits we have already received, so move our base version up to it.
@@ -161,19 +206,21 @@ const Collab = {
     this.peers = new Map((msg.peers || []).map(p => [p.client_id, p]));
     this._installGenId();
     this._hb = setInterval(() => this._send({ type: 'ping' }), this.HEARTBEAT_MS);
+    this._seq = msg.seq || 0;   // a replay (if any) follows and covers up to here
     if (!reconnect) {
       this._base = this._snapshot();   // everything open now counts as already shared
-    } else if (msg.version > (AppState.projectVersion || 0)) {
-      // Saves landed while we were offline, and we missed the live edits that came with them.
+    } else if (msg.resync) {
+      // The server can't say what we missed (restarted, or too long offline).
       if (!AppState.dirty && typeof Project !== 'undefined') {
         Project.openById(this.projectId).then(() => { this._base = this._snapshot(); });
       } else {
-        UI.toast('Reconnected. The project was saved by someone else while you were offline — ' +
-                 'save and reload to merge.', 'warning', 6000);
+        UI.toast('Reconnected, but edits made by others while you were offline could not be ' +
+                 'replayed. Save your work and reload the project to merge.', 'warning', 8000);
       }
     }
     this._wasConnected = true;
     this._renderPeers();
+    this._lastSel = '';           // let _selTick announce our selection
     if (reconnect) this.kick();   // send whatever changed while offline
   },
 
@@ -199,6 +246,9 @@ const Collab = {
         }
         this._base.set(this.PAGES_KEY, JSON.stringify(op.v));
         touched = true;
+      } else if (op.k === 'misc' && this.MISC_KEYS.includes(op.key) && this._setMisc(op.key, op.v)) {
+        this._base.set('m:' + op.key, JSON.stringify(op.v));
+        touched = true;
       }
     }
     if (!touched) return;
@@ -212,6 +262,49 @@ const Collab = {
     }
     this._redraw();
     if (who) this._flash(who);
+  },
+
+  // Apply a received project-level value; false when it fails validation.
+  _setMisc(key, v) {
+    const num = x => typeof x === 'number' && Number.isFinite(x) && x > 0;
+    const obj = x => x && typeof x === 'object' && !Array.isArray(x);
+    switch (key) {
+      case 'baseMVA': case 'frequency': case 'voltageFactor':
+        if (!num(v)) return false; AppState[key] = v; return true;
+      case 'defaultLengthUnit': case 'wireRouteMode':
+        if (typeof v !== 'string') return false; AppState[key] = v; return true;
+      case 'voltageDisplayUnit':
+        if (v !== 'V' && v !== 'kV') return false; AppState[key] = v; return true;
+      case 'symbolSet':
+        if (v !== 'iec' && v !== 'classic') return false;
+        AppState.symbolSet = v;
+        if (typeof Sidebar !== 'undefined') Sidebar.syncSymbolSet();
+        return true;
+      case 'projectDetails':
+        if (!obj(v)) return false; AppState.projectDetails = v; return true;
+      case 'earthGrids':
+        if (!Array.isArray(v)) return false; AppState.earthGrids = v; return true;
+      case 'scenarios':
+        if (!Array.isArray(v)) return false;
+        AppState.scenarios = v;
+        AppState._scenarioNextId = v.length
+          ? Math.max(...v.map(x => parseInt(String(x.id).replace('scenario_', '')) || 0)) + 1 : 1;
+        return true;
+      case 'groups':
+        if (!Array.isArray(v)) return false;
+        AppState.groups.clear();
+        for (const g of v) if (g && g.id) AppState.groups.set(g.id, { ...g, memberIds: new Set(g.memberIds || []) });
+        AppState._groupNextId = v.length
+          ? Math.max(...v.map(g => parseInt(String(g.id).replace('group_', '')) || 0)) + 1 : 1;
+        return true;
+      default: return false;
+    }
+  },
+
+  _miscValue(key) {
+    return key === 'groups'
+      ? [...AppState.groups.values()].map(g => ({ ...g, memberIds: [...g.memberIds] }))
+      : AppState[key];
   },
 
   _redraw() {
@@ -243,6 +336,7 @@ const Collab = {
     for (const [id, c] of AppState.components) m.set('c:' + id, JSON.stringify(c));
     for (const [id, w] of AppState.wires) m.set('w:' + id, JSON.stringify(w));
     m.set(this.PAGES_KEY, JSON.stringify(AppState.pages));
+    for (const k of this.MISC_KEYS) m.set('m:' + k, JSON.stringify(this._miscValue(k)));
     return m;
   },
 
@@ -261,7 +355,7 @@ const Collab = {
     walk(AppState.components, 'c:', 'comp');
     walk(AppState.wires, 'w:', 'wire');
     for (const key of [...this._base.keys()]) {
-      if (key === this.PAGES_KEY || seen.has(key)) continue;
+      if (key === this.PAGES_KEY || key.startsWith('m:') || seen.has(key)) continue;
       if (this._base.get(key) === undefined) { this._base.delete(key); continue; }   // already gone
       this._base.set(key, undefined);
       ops.push({ k: key[0] === 'c' ? 'comp' : 'wire', id: key.slice(2), v: null });
@@ -271,7 +365,65 @@ const Collab = {
       this._base.set(this.PAGES_KEY, pages);
       ops.push({ k: 'pages', v: AppState.pages });
     }
+    if (!AppState.dragState) {   // whole-value compares can be large; not while dragging
+      for (const k of this.MISC_KEYS) {
+        const v = this._miscValue(k), str = JSON.stringify(v);
+        if (this._base.get('m:' + k) !== str) { this._base.set('m:' + k, str); ops.push({ k: 'misc', key: k, v }); }
+      }
+    }
     if (ops.length) this._send({ type: 'ops', ops });
+  },
+
+  // ── Selection presence ──
+
+  _selIds() { return [...AppState.selectedIds].sort(); },
+
+  _selTick() {
+    if (!this.live) return;
+    const ids = this._selIds(), key = ids.join(',');
+    if (key === this._lastSel) return;
+    const prev = new Set(this._lastSel ? this._lastSel.split(',') : []);
+    this._lastSel = key;
+    this._sendSel();
+    // Soft lock: say so when you pick something a colleague already has selected.
+    const now = Date.now();
+    for (const id of ids) {
+      if (prev.has(id) || ids.length > 3) continue;
+      for (const [cid, sel] of this._remoteSel) {
+        const peer = this.peers.get(cid);
+        if (!peer || !sel.includes(id) || now - (this._warned.get(id) || 0) < 10000) continue;
+        this._warned.set(id, now);
+        const comp = AppState.components.get(id);
+        UI.toast(`${peer.name} also has ${comp && comp.props && comp.props.name || id} selected`, 'warning');
+      }
+    }
+  },
+
+  _sendSel(force) {
+    if (!this.live) return;
+    if (force && !this._lastSel) return;   // nothing selected: nothing to announce
+    this._send({ type: 'presence', sel: this._selIds() });
+  },
+
+  // Outline what each colleague has selected, in their colour.
+  _paintRemote() {
+    for (const el of document.querySelectorAll('[data-collab-sel]')) {
+      el.style.filter = '';
+      el.removeAttribute('data-collab-sel');
+    }
+    if (!this._remoteSel.size) return;
+    const colour = new Map();
+    for (const [cid, sel] of this._remoteSel) {
+      const peer = this.peers.get(cid);
+      if (peer) for (const id of sel) if (!colour.has(id)) colour.set(id, peer.color);
+    }
+    if (!colour.size) return;
+    for (const el of document.querySelectorAll('#sld-canvas [data-id]')) {
+      const c = colour.get(el.getAttribute('data-id'));
+      if (!c) continue;
+      el.style.filter = `drop-shadow(0 0 3px ${c}) drop-shadow(0 0 2px ${c})`;
+      el.setAttribute('data-collab-sel', '1');
+    }
   },
 
   _send(msg) {
