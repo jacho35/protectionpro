@@ -13,6 +13,7 @@ from ..models.schemas import (
 )
 from ..auth import get_current_user, require_project
 from ..notifications import notify, display_name
+from .collab import notify_saved
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 
@@ -183,6 +184,7 @@ def update_project(project_id: int, data: ProjectData, response: Response,
            message_many=f"{who} saved changes to “{project.name}” ({{count}} saves).",
            link={"type": "project", "id": project.id}, group_key=f"proj-edit:{project.id}")
     db.commit()
+    notify_saved(project.id, project.version, user)
     return {"id": project.id, "name": project.name, "version": project.version}
 
 
