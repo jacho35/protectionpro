@@ -23,7 +23,13 @@
  * - Project-level data (settings, project details, scenarios, groups, earth grids) travels as
  *   whole-value `misc` ops, last writer wins per key.
  *
- * Not synced yet: plan / reticulation / lighting data (large nested objects).
+ * - Per-element data (collab-data.js lists the collections): Demand minisubs / kiosks,
+ *   street-lighting circuits, road designs, the road plan and its scene. Each entity is
+ *   compared by id and sent alone (`ent` ops, `order` when a list is re-sequenced, `val`
+ *   for whole values such as settings); remote changes are spliced into the live arrays
+ *   in place and only the visible screen is redrawn, after the user stops typing.
+ *
+ * Not synced yet: the plan-markup workspace (floors, elements, routes, rooms, …).
  */
 
 const Collab = {
@@ -41,6 +47,10 @@ const Collab = {
   role: null,
   peers: new Map(),      // client_id → {client_id, user_id, name, color, role}
   _base: new Map(),      // 'c:<id>' | 'w:<id>' | 'pages' → JSON string last synced
+  _cb: new Map(),        // collection key → {ents: Map(id → JSON), order, val} last synced
+  _strCache: new WeakMap(),   // immutable entity → its JSON
+  _pendingGroups: new Set(),
+  _refreshTimer: null,
   _timer: null,
   _hb: null,
   _retry: 0,
@@ -208,11 +218,11 @@ const Collab = {
     this._hb = setInterval(() => this._send({ type: 'ping' }), this.HEARTBEAT_MS);
     this._seq = msg.seq || 0;   // a replay (if any) follows and covers up to here
     if (!reconnect) {
-      this._base = this._snapshot();   // everything open now counts as already shared
+      this._resetBase();   // everything open now counts as already shared
     } else if (msg.resync) {
       // The server can't say what we missed (restarted, or too long offline).
       if (!AppState.dirty && typeof Project !== 'undefined') {
-        Project.openById(this.projectId).then(() => { this._base = this._snapshot(); });
+        Project.openById(this.projectId).then(() => this._resetBase());
       } else {
         UI.toast('Reconnected, but edits made by others while you were offline could not be ' +
                  'replayed. Save your work and reload the project to merge.', 'warning', 8000);
@@ -228,7 +238,15 @@ const Collab = {
     if (!ops.length) return;
     const who = this.peers.get(from);
     let touched = false;
+    const groups = new Set();
+    let descs = null;
     for (const op of ops) {
+      if (op.k === 'ent' || op.k === 'order' || op.k === 'val') {
+        descs = descs || new Map(CollabData.collections().map(d => [d.key, d]));
+        const d = descs.get(op.c);
+        if (d && this._cApply(d, op)) groups.add(d.group);
+        continue;
+      }
       if (op.k === 'comp' && typeof op.id === 'string') {
         if (op.v) AppState.components.set(op.id, op.v);
         else { AppState.components.delete(op.id); AppState.selectedIds.delete(op.id); }
@@ -251,9 +269,11 @@ const Collab = {
         touched = true;
       }
     }
-    if (!touched) return;
+    if (!touched && !groups.size) return;
     if (!AppState.readOnly) AppState.dirty = true;   // the file on the server no longer matches
     if (typeof AppState.invalidateResults === 'function') AppState.invalidateResults();
+    if (groups.size) this._refreshData(groups);
+    if (!touched) return;
     // Not while the local user is mid-drag: finish applying once they let go.
     if (AppState.dragState || (typeof Canvas !== 'undefined' && (Canvas.isPanning || Canvas.busResize))) {
       clearTimeout(this._redrawTimer);
@@ -262,6 +282,131 @@ const Collab = {
     }
     this._redraw();
     if (who) this._flash(who);
+  },
+
+  // ── Per-element collections (descriptors in collab-data.js) ──
+
+  _cstate(key) {
+    let st = this._cb.get(key);
+    if (!st) this._cb.set(key, st = { ents: new Map(), order: '', val: undefined });
+    return st;
+  },
+
+  _ser(d, e) {
+    if (!d.immutable || !e || typeof e !== 'object') return JSON.stringify(e);
+    let str = this._strCache.get(e);
+    if (str === undefined) this._strCache.set(e, str = JSON.stringify(e));
+    return str;
+  },
+
+  _cGet(d) { try { return d.get(); } catch (_) { return undefined; } },
+
+  // [id, entity] pairs of a list / map collection
+  _cEntries(d) {
+    const col = this._cGet(d);
+    if (d.kind === 'list') return Array.isArray(col) ? col.filter(e => e && typeof e.id === 'string').map(e => [e.id, e]) : [];
+    return col && typeof col === 'object' ? Object.entries(col) : [];
+  },
+
+  _resetBase() {
+    this._base = this._snapshot();
+    this._cb = new Map();
+    for (const d of CollabData.collections()) {
+      const st = this._cstate(d.key);
+      if (d.kind === 'value') { st.val = this._ser(d, this._cGet(d)); continue; }
+      const ents = this._cEntries(d);
+      for (const [id, e] of ents) st.ents.set(id, this._ser(d, e));
+      st.order = d.kind === 'list' ? ents.map(x => x[0]).join('|') : '';
+    }
+  },
+
+  _cDiff(ops) {
+    for (const d of CollabData.collections()) {
+      const st = this._cstate(d.key);
+      if (d.kind === 'value') {
+        const v = this._cGet(d), str = this._ser(d, v);
+        if (str !== st.val) { st.val = str; ops.push({ k: 'val', c: d.key, v: v === undefined ? null : v }); }
+        continue;
+      }
+      const ents = this._cEntries(d), seen = new Set();
+      for (const [id, e] of ents) {
+        seen.add(id);
+        const str = this._ser(d, e);
+        if (st.ents.get(id) !== str) { st.ents.set(id, str); ops.push({ k: 'ent', c: d.key, id, v: e }); }
+      }
+      const prev = st.order ? st.order.split('|') : [];
+      for (const id of [...st.ents.keys()]) {
+        if (!seen.has(id)) { st.ents.delete(id); ops.push({ k: 'ent', c: d.key, id, v: null }); }
+      }
+      if (d.kind === 'list') {
+        const ids = ents.map(x => x[0]);
+        // What a peer ends up with from the ent ops alone: kept ids in old order, new ones appended.
+        const had = new Set(prev);
+        const expected = prev.filter(id => seen.has(id)).concat(ids.filter(id => !had.has(id)));
+        if (expected.join('|') !== ids.join('|')) ops.push({ k: 'order', c: d.key, ids });
+        st.order = ids.join('|');
+      }
+    }
+  },
+
+  // Apply one received collection op in place; true when something changed.
+  _cApply(d, op) {
+    const st = this._cstate(d.key);
+    const okId = id => typeof id === 'string' && id.length < 128 && id !== '__proto__' && id !== 'constructor' && id !== 'prototype';
+    if (op.k === 'val') {
+      if (!d.set) return false;
+      d.set(op.v === undefined ? null : op.v);
+      st.val = this._ser(d, this._cGet(d));
+      return true;
+    }
+    let col = this._cGet(d);
+    if (!col && d.ensure) col = d.ensure();
+    if (!col || d.kind === 'value') return false;
+    if (op.k === 'order') {
+      if (d.kind !== 'list' || !Array.isArray(op.ids)) return false;
+      const byId = new Map(col.map(e => [e.id, e]));
+      const next = op.ids.map(id => byId.get(id)).filter(Boolean);
+      const used = new Set(next);
+      for (const e of col) if (!used.has(e)) next.push(e);
+      col.splice(0, col.length, ...next);
+      st.order = col.map(e => e.id).join('|');
+      return true;
+    }
+    if (!okId(op.id)) return false;
+    if (d.kind === 'list') {
+      const i = col.findIndex(e => e && e.id === op.id);
+      if (op.v) {
+        if (typeof op.v !== 'object' || op.v.id !== op.id) return false;
+        if (i >= 0) col.splice(i, 1, op.v); else col.push(op.v);
+        st.ents.set(op.id, this._ser(d, op.v));
+      } else {
+        if (i >= 0) col.splice(i, 1);
+        st.ents.delete(op.id);
+      }
+      st.order = col.map(e => e && e.id).join('|');
+    } else {
+      if (op.v) { col[op.id] = op.v; st.ents.set(op.id, this._ser(d, op.v)); }
+      else { delete col[op.id]; st.ents.delete(op.id); }
+    }
+    return true;
+  },
+
+  // Redraw the workspaces a remote change touched, not while someone is typing in one.
+  _refreshData(groups) {
+    for (const g of groups) this._pendingGroups.add(g);
+    const busy = () => {
+      const a = document.activeElement;
+      return a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) &&
+        a.closest('#retic-workspace, #streetlight-workspace, #plan-workspace, #lighting-workspace');
+    };
+    const attempt = n => {
+      if (busy() && n < 40) { this._refreshTimer = setTimeout(() => attempt(n + 1), 500); return; }
+      const gs = this._pendingGroups;
+      this._pendingGroups = new Set();
+      CollabData.refresh(gs);
+    };
+    clearTimeout(this._refreshTimer);
+    attempt(0);
   },
 
   // Apply a received project-level value; false when it fails validation.
@@ -371,7 +516,20 @@ const Collab = {
         if (this._base.get('m:' + k) !== str) { this._base.set('m:' + k, str); ops.push({ k: 'misc', key: k, v }); }
       }
     }
-    if (ops.length) this._send({ type: 'ops', ops });
+    CollabData.installCounters(this.slot);   // a load / undo may have replaced the holders
+    this._cDiff(ops);
+    this._sendOps(ops);
+  },
+
+  // Keep each message well under the server's size limit.
+  _sendOps(ops) {
+    let batch = [], size = 0;
+    for (const op of ops) {
+      const n = JSON.stringify(op).length;
+      if (batch.length && size + n > 400000) { this._send({ type: 'ops', ops: batch }); batch = []; size = 0; }
+      batch.push(op); size += n;
+    }
+    if (batch.length) this._send({ type: 'ops', ops: batch });
   },
 
   // ── Selection presence ──
@@ -434,6 +592,7 @@ const Collab = {
 
   _installGenId() {
     const stride = 16, slot = this.slot;
+    CollabData.installCounters(slot);
     AppState.genId = function (prefix) {
       let n = this.nextId;
       n += (slot - (n % stride) + stride) % stride;
@@ -443,6 +602,7 @@ const Collab = {
   },
 
   _restoreGenId() {
+    CollabData.removeCounters();
     if (this._origGenId) AppState.genId = this._origGenId;
   },
 
