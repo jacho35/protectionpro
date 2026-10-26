@@ -11,7 +11,10 @@
  * doesn't exist yet) and remote changes are applied to it IN PLACE, so anything that
  * aliases the array keeps working. `immutable` entities are never edited after creation
  * (large photometric webs): they are compared by reference, not re-serialised every tick.
- * `group` picks the screen refresh below.
+ * `group` picks the screen refresh below. `exclude` lists entity keys that are NOT synced with
+ * the entity itself (a floor's drawing `data` has its own collections); `fresh(v)` gives a new
+ * local entity its excluded keys; `structural` collections create the keys of others, so the
+ * engine looks the descriptors up again after one of their ops.
  *
  * Counters (`_kioskSeq` …) mint ids with `x._seq++`; while connected they are strided by
  * the server-assigned slot (id ≡ slot mod 16) so two editors never mint the same id.
@@ -40,6 +43,7 @@ const CollabData = {
       ensure: () => { const sc = ensureScene(); if (sc && !Array.isArray(sc[k])) sc[k] = []; return sc && sc[k]; },
     });
     return [
+      ...this.planCollections(),
       { key: 'retic.settings', kind: 'value', group: 'retic', get: () => R() && R().settings,
         set: v => { if (R() && v && typeof v === 'object') R().settings = v; } },
       { key: 'retic.minisubs', kind: 'list', group: 'retic', get: () => R() && R().minisubs },
@@ -63,6 +67,74 @@ const CollabData = {
     ];
   },
 
+  // Plan markup: the floor list (metadata only), the shared layers / styles / settings, and
+  // each floor's own collections. The active floor's arrays are mirrored on planMarkup.<key>
+  // (AppState._stashActiveFloor), so read and edit THAT copy for the active floor.
+  planCollections() {
+    const pm = () => AppState.planMarkup;
+    const floor = id => { const p = pm(); return p && Array.isArray(p.floors) ? p.floors.find(f => f.id === id) : undefined; };
+    const p0 = pm();
+    if (!p0 || !Array.isArray(p0.floors)) return [];
+    const out = [
+      { key: 'plan.floors', kind: 'list', group: 'plan', structural: true, exclude: ['data'],
+        fresh: () => ({ data: AppState._newPlanFloorData() }), get: () => pm() && pm().floors },
+      { key: 'plan.layers', kind: 'list', group: 'plan', get: () => pm() && pm().layers },
+      { key: 'plan.styles', kind: 'value', group: 'plan', get: () => pm() && pm().styles,
+        set: v => { if (pm() && v && typeof v === 'object') pm().styles = v; } },
+      { key: 'plan.settings', kind: 'value', group: 'plan', get: () => pm() && pm().settings,
+        set: v => { if (pm() && v && typeof v === 'object') pm().settings = v; } },
+      { key: 'plan.nameCounters', kind: 'value', group: 'plan', get: () => pm() && pm().nameCounters,
+        set: v => { if (pm() && v && typeof v === 'object') pm().nameCounters = v; } },
+    ];
+    const live = (id, k) => {
+      const p = pm(), fl = floor(id);
+      if (!fl) return undefined;
+      if (p.activeFloorId === id) return p[k];
+      fl.data = fl.data || AppState._newPlanFloorData();
+      return fl.data[k];
+    };
+    for (const fl of p0.floors) {
+      const id = fl.id;
+      for (const k of AppState._PLAN_FLOOR_KEYS) {
+        const key = `plan.${id}.${k}`;
+        if (k === 'scale' || k === 'cropBox') {
+          out.push({ key, kind: 'value', group: 'plan', get: () => live(id, k),
+            set: v => {
+              const p = pm(), f = floor(id);
+              if (!f) return;
+              f.data = f.data || AppState._newPlanFloorData();
+              f.data[k] = v;
+              if (p.activeFloorId === id) p[k] = v;
+            } });
+        } else {
+          out.push({ key, kind: 'list', group: 'plan', get: () => live(id, k),
+            ensure: () => {
+              const p = pm(), f = floor(id);
+              if (!f) return undefined;
+              f.data = f.data || AppState._newPlanFloorData();
+              if (!Array.isArray(f.data[k])) f.data[k] = [];
+              if (p.activeFloorId === id) p[k] = f.data[k];
+              return f.data[k];
+            } });
+        }
+      }
+    }
+    return out;
+  },
+
+  // After remote ops: keep the local view valid (the active floor may have been deleted).
+  afterApply(groups) {
+    if (!groups.has('plan')) return;
+    const p = AppState.planMarkup;
+    if (p && Array.isArray(p.floors) && p.floors.length && !p.floors.some(f => f.id === p.activeFloorId)) {
+      p.activeFloorId = p.floors[0].id;
+      AppState._hydrateActiveFloor();
+    }
+    if (typeof PlanMarkup !== 'undefined' && PlanMarkup.selectedIds && PlanMarkup.findEntityById) {
+      for (const id of [...PlanMarkup.selectedIds]) if (!PlanMarkup.findEntityById(id)) PlanMarkup.selectedIds.delete(id);
+    }
+  },
+
   // Id counters: [holder, name]. Holders are replaced when a project loads or an undo
   // restores, so Collab re-installs on every tick.
   counters() {
@@ -70,6 +142,7 @@ const CollabData = {
     if (r) for (const n of ['_kioskSeq', '_erfSeq', '_msSeq']) out.push([r, n]);
     if (sl) for (const n of ['_circSeq', '_poleSeq', '_rdSeq', '_phSeq']) out.push([sl, n]);
     if (rp) out.push([rp, '_seq']);
+    if (AppState.planMarkup) out.push([AppState.planMarkup, '_seq']);
     return out;
   },
 
@@ -101,6 +174,17 @@ const CollabData = {
       Retic.render();
       clearTimeout(this._recomputeTimer);
       this._recomputeTimer = setTimeout(() => { if (Retic._active) Retic.recompute(); }, 600);
+    }
+    if (groups.has('plan')) {
+      if (typeof PlanImages !== 'undefined' && PlanImages.syncCache) PlanImages.syncCache();
+      if (typeof PlanDxfImport !== 'undefined' && PlanDxfImport.syncFloor) PlanDxfImport.syncFloor();
+      if (typeof PlanMarkup !== 'undefined' && PlanMarkup._active) {
+        if (typeof PlanUI !== 'undefined') { PlanUI.renderPalette(); PlanUI.renderProps(); }
+        PlanMarkup.updateScaleReadout();
+        PlanMarkup.refreshFloorBar();
+        if (typeof PlanEngine !== 'undefined') PlanEngine.requestDraw({ all: true });
+      }
+      if (typeof LightingWS !== 'undefined' && LightingWS._active) LightingWS.refresh();
     }
     if (groups.has('sl') && typeof StreetLight !== 'undefined' && StreetLight._active) StreetLight.render();
     if (groups.has('rp') && typeof RoadPlan !== 'undefined' && RoadPlan._active) RoadPlan.render();

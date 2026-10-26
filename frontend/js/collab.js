@@ -244,7 +244,10 @@ const Collab = {
       if (op.k === 'ent' || op.k === 'order' || op.k === 'val') {
         descs = descs || new Map(CollabData.collections().map(d => [d.key, d]));
         const d = descs.get(op.c);
-        if (d && this._cApply(d, op)) groups.add(d.group);
+        if (d && this._cApply(d, op)) {
+          groups.add(d.group);
+          if (d.structural) descs = null;   // new floors bring new collections
+        }
         continue;
       }
       if (op.k === 'comp' && typeof op.id === 'string') {
@@ -272,7 +275,7 @@ const Collab = {
     if (!touched && !groups.size) return;
     if (!AppState.readOnly) AppState.dirty = true;   // the file on the server no longer matches
     if (typeof AppState.invalidateResults === 'function') AppState.invalidateResults();
-    if (groups.size) this._refreshData(groups);
+    if (groups.size) { CollabData.afterApply(groups); this._refreshData(groups); }
     if (!touched) return;
     // Not while the local user is mid-drag: finish applying once they let go.
     if (AppState.dragState || (typeof Canvas !== 'undefined' && (Canvas.isPanning || Canvas.busResize))) {
@@ -293,10 +296,18 @@ const Collab = {
   },
 
   _ser(d, e) {
+    if (e && typeof e === 'object' && d.exclude) e = this._strip(d, e);
     if (!d.immutable || !e || typeof e !== 'object') return JSON.stringify(e);
     let str = this._strCache.get(e);
     if (str === undefined) this._strCache.set(e, str = JSON.stringify(e));
     return str;
+  },
+
+  // The entity as synced: without the keys that have collections of their own.
+  _strip(d, e) {
+    const out = {};
+    for (const k of Object.keys(e)) if (!d.exclude.includes(k)) out[k] = e[k];
+    return out;
   },
 
   _cGet(d) { try { return d.get(); } catch (_) { return undefined; } },
@@ -332,7 +343,10 @@ const Collab = {
       for (const [id, e] of ents) {
         seen.add(id);
         const str = this._ser(d, e);
-        if (st.ents.get(id) !== str) { st.ents.set(id, str); ops.push({ k: 'ent', c: d.key, id, v: e }); }
+        if (st.ents.get(id) !== str) {
+          st.ents.set(id, str);
+          ops.push({ k: 'ent', c: d.key, id, v: d.exclude ? this._strip(d, e) : e });
+        }
       }
       const prev = st.order ? st.order.split('|') : [];
       for (const id of [...st.ents.keys()]) {
@@ -377,7 +391,13 @@ const Collab = {
       const i = col.findIndex(e => e && e.id === op.id);
       if (op.v) {
         if (typeof op.v !== 'object' || op.v.id !== op.id) return false;
-        if (i >= 0) col.splice(i, 1, op.v); else col.push(op.v);
+        if (d.exclude) {
+          // keep the excluded keys (a floor's drawing) of the entity we already have
+          if (i >= 0) {
+            for (const k of Object.keys(col[i])) if (!d.exclude.includes(k)) delete col[i][k];
+            Object.assign(col[i], op.v);
+          } else col.push(Object.assign({}, d.fresh ? d.fresh(op.v) : {}, op.v));
+        } else if (i >= 0) col.splice(i, 1, op.v); else col.push(op.v);
         st.ents.set(op.id, this._ser(d, op.v));
       } else {
         if (i >= 0) col.splice(i, 1);
