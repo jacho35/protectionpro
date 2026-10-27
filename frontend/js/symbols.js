@@ -1179,6 +1179,12 @@ const Symbols = {
       }
     }
 
+    // Export option "all breakers open": draw every circuit breaker open
+    // (the live component is untouched).
+    if (comp.type === 'cb' && this.exportBreakersOpen && renderComp.props.state !== 'open') {
+      renderComp = { ...renderComp, props: { ...renderComp.props, state: 'open' } };
+    }
+
     const symbolSvg = symbolFn(w, h, renderComp);
     let portsHtml;
     if (isBus) {

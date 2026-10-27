@@ -27,6 +27,17 @@ const Project = {
 
     // Export actions (items live inside the File menu)
     document.getElementById('btn-export-json').addEventListener('click', () => { window.closeAllToolbarMenus?.(); this.exportJSON(); });
+    // Export option: draw all breakers open, or as set on the diagram
+    try { this.exportBreakersOpen = localStorage.getItem('protectionpro-export-breakers-open') === '1'; } catch (e) { this.exportBreakersOpen = false; }
+    const brkBtn = document.getElementById('btn-export-breakers');
+    const brkLabel = () => { brkBtn.textContent = 'Breakers in drawings: ' + (this.exportBreakersOpen ? 'all open' : 'as shown'); };
+    brkLabel();
+    brkBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.exportBreakersOpen = !this.exportBreakersOpen;
+      try { localStorage.setItem('protectionpro-export-breakers-open', this.exportBreakersOpen ? '1' : '0'); } catch (err) { /* private mode */ }
+      brkLabel();
+    });
     document.getElementById('btn-export-svg').addEventListener('click', () => { window.closeAllToolbarMenus?.(); this.exportSVG(); });
     document.getElementById('btn-export-png').addEventListener('click', () => { window.closeAllToolbarMenus?.(); this.exportPNG(); });
     document.getElementById('btn-export-dxf').addEventListener('click', () => { window.closeAllToolbarMenus?.(); this.exportDXF(); });
@@ -398,6 +409,25 @@ const Project = {
 
     clone.setAttribute('viewBox', `${minX} ${minY} ${svgW} ${svgH}`);
     clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+
+    // "Breakers open" export option: redraw each breaker open in the clone
+    if (this.exportBreakersOpen) {
+      const pageComps = AppState.getActivePageComponents ? AppState.getActivePageComponents() : AppState.components;
+      Symbols.exportBreakersOpen = true;
+      try {
+        for (const comp of pageComps.values()) {
+          if (comp.type !== 'cb' || (comp.props && comp.props.state === 'open')) continue;
+          const g = clone.querySelector(`.sld-component[data-id="${CSS.escape(comp.id)}"]`);
+          if (!g) continue;
+          const tpl = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+          tpl.innerHTML = Symbols.renderComponent(comp);
+          const fresh = tpl.firstElementChild;
+          if (!fresh) continue;
+          fresh.classList.remove('selected');
+          g.replaceWith(fresh);
+        }
+      } finally { Symbols.exportBreakersOpen = false; }
+    }
 
     // Strip non-diagram layers
     const grid = clone.querySelector('#grid-bg');
