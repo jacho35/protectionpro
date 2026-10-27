@@ -226,6 +226,12 @@ const ContextMenu = {
       },
     });
 
+    items.push('---');
+    items.push({
+      label: many ? `Export selection (${selCount})…` : 'Export selection…',
+      action: () => { if (!AppState.selectedIds.has(comp.id)) AppState.select(comp.id); ExportSelection.open(); },
+    });
+
     // Group / ungroup
     const anyGrouped = [...AppState.selectedIds]
       .some(id => AppState.components.get(id)?.groupId);
@@ -442,6 +448,11 @@ const ContextMenu = {
       {
         label: 'Zoom to Fit',
         action: () => Canvas.zoomToFit(),
+      },
+      '---',
+      {
+        label: 'Draw print window…',
+        action: () => PrintWindow.start(),
       },
     ];
     this.open(items, clientX, clientY);

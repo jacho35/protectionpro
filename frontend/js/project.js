@@ -55,6 +55,11 @@ const Project = {
     document.getElementById('btn-export-dxf').addEventListener('click', () => { window.closeAllToolbarMenus?.(); this.exportDXF(); });
     document.getElementById('btn-export-diagram-pdf').addEventListener('click', () => { window.closeAllToolbarMenus?.(); this.exportDiagramPDF(); });
     document.getElementById('btn-export-sheets').addEventListener('click', () => { window.closeAllToolbarMenus?.(); SheetPrint.open(); });
+    document.getElementById('btn-export-selection').addEventListener('click', () => {
+      window.closeAllToolbarMenus?.();
+      ExportSelection.open();
+    });
+    document.getElementById('btn-print-window').addEventListener('click', () => { window.closeAllToolbarMenus?.(); PrintWindow.start(); });
     document.getElementById('btn-export-csv').addEventListener('click', () => { window.closeAllToolbarMenus?.(); this.exportResultsCSV(); });
     document.getElementById('btn-export-pdf').addEventListener('click', () => { window.closeAllToolbarMenus?.(); this.exportPDF(); });
     document.getElementById('btn-export-template').addEventListener('click', () => { window.closeAllToolbarMenus?.(); Reports.showTemplateEditor(); });
@@ -648,8 +653,9 @@ const Project = {
   // The same export clone as SVG/PNG. Each component is a block (one per
   // symbol variant) carrying its name and data label as visible attributes
   // and its properties + latest results as hidden attributes.
-  dxfPayload() {
-    const { clone } = this._prepareExportSVG();
+  // `pre` = {clone, suffix}: a prepared export clone (e.g. a selection crop)
+  dxfPayload(pre) {
+    const { clone } = pre || this._prepareExportSVG();
     const layer = (sel, name) => { const g = clone.querySelector(sel); if (g) g.setAttribute('data-dxf-layer', name); };
     layer('#wires-layer', 'WIRES');
     layer('#annotations-layer', 'ANNOTATIONS');
@@ -670,7 +676,7 @@ const Project = {
       t.setAttribute('data-dxf-owner', t.getAttribute('data-comp-id'));
     });
     return DxfExport.fromSvg(clone, {
-      scale: 0.25, geomLayer: 'DIAGRAM', fileName: `${AppState.projectName || 'diagram'}_SLD`,
+      scale: 0.25, geomLayer: 'DIAGRAM', fileName: `${AppState.projectName || 'diagram'}_SLD${pre && pre.suffix ? '_' + pre.suffix : ''}`,
       title: AppState.projectName || '',
       layers: { WIRES: null, SYMBOLS: null, ANNOTATIONS: '#0078d7', TEXT: null },
     });

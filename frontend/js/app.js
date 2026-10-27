@@ -501,6 +501,8 @@ document.addEventListener('DOMContentLoaded', () => {
             TCC.close();
           } else if (openModal.id === 'db-modal' && typeof DBSchedule !== 'undefined') {
             DBSchedule.close(); // commits circuit edits + undo snapshot (only if changed)
+          } else if (openModal.id === 'ds-modal' && typeof DrawingSet !== 'undefined') {
+            DrawingSet.close();
           } else if (openModal.id === 'earth-grid-modal' && typeof EarthGridEditor !== 'undefined') {
             EarthGridEditor.close(); // asks before discarding unsaved grid edits
           } else {

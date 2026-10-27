@@ -163,6 +163,11 @@ const AppState = {
   // Raceway/conduit-fill study definitions: {id, name, nominal_mm,
   // custom_id_mm, cableIds: []} — persisted with the project.
   raceways: [],
+  // Drawing sets (drawingset.js): named sheet sets of the single line, each for one
+  // diagram tab — sheets of buses or saved views, set options, revisions.
+  drawingSets: [],
+  // Saved views of the single line: {id, name, pageId, kind:'parts'|'window', parts, window}
+  sldViews: [],
   // Quoted-project freeze (quote.js); reset() and fromJSON() keep these in step.
   quoted: null,
   quotedLibrary: null,
@@ -1333,6 +1338,8 @@ const AppState = {
     this.quotedLibrary = null;
     this.quoteLog = [];
     this.raceways = [];
+    this.drawingSets = [];
+    this.sldViews = [];
     // Clear annotation drag offsets + hidden result boxes
     if (typeof Annotations !== 'undefined') {
       Annotations.offsets.clear();
@@ -1607,6 +1614,8 @@ const AppState = {
       quotedLibrary: this.quoted && this.quotedLibrary ? this.quotedLibrary : undefined,
       quoteLog: this.quoteLog.length ? this.quoteLog : undefined,
       raceways: this.raceways.length ? this.raceways : undefined,
+      drawingSets: this.drawingSets.length ? this.drawingSets : undefined,
+      sldViews: this.sldViews.length ? this.sldViews : undefined,
     };
   },
 
@@ -1950,6 +1959,8 @@ const AppState = {
     // Cable rate keys come from library ids now; move name-keyed rates once.
     if (this.rateLibrary && typeof Rates !== 'undefined' && Rates._migrateKeys) Rates._migrateKeys(this.rateLibrary);
     this.raceways = Array.isArray(data.raceways) ? data.raceways : [];
+    this.drawingSets = Array.isArray(data.drawingSets) ? data.drawingSets.filter(d => d && d.id && Array.isArray(d.sheets)) : [];
+    this.sldViews = Array.isArray(data.sldViews) ? data.sldViews.filter(v => v && v.id) : [];
     this.projectType = ['retic', 'building', 'network', 'lighting'].includes(data.projectType) ? data.projectType : null;
     this.lightingKinds = Array.isArray(data.lightingKinds) ? data.lightingKinds.filter(k => ['rooms', 'roads', 'sports'].includes(k)) : null;
     this.roadCircuits = data.roadCircuits === true;
