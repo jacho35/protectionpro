@@ -36,6 +36,16 @@ const CableBulk = {
     });
   },
 
+  // The master is the cable whose properties are open in the right-hand panel
+  // (that is where its parameters are edited); with none open, the first
+  // selected cable. The others are the rest of the selected cables.
+  master() {
+    const open = this._comp(Properties.currentId);
+    const sel = this.selected().cables;
+    const src = this._isCable(open) ? open : (sel[0] || null);
+    return { src, others: sel.filter(c => c !== src) };
+  },
+
   selected() {
     const comps = [...AppState.selectedIds].map(id => this._comp(id)).filter(Boolean);
     return { cables: comps.filter(c => this._isCable(c)), cbs: comps.filter(c => this._isCb(c)) };
@@ -44,7 +54,8 @@ const CableBulk = {
   // ── selection bar ────────────────────────────────────────────────────────
   updateBar() {
     const { cables, cbs } = this.selected();
-    const show = cables.length >= 2 || cbs.length >= 2;
+    const m = this.master();
+    const show = (m.src && m.others.length >= 1) || cbs.length >= 2;
     if (!show) {
       if (this._bar) this._bar.style.display = 'none';
       return;
@@ -58,8 +69,8 @@ const CableBulk = {
         if (!b) return;
         const sel = this.selected();
         if (b.dataset.act === 'cable') {
-          const src = sel.cables.find(c => c.id === Properties.currentId) || sel.cables[0];
-          this.openCables(src.id, sel.cables.filter(c => c !== src).map(c => c.id));
+          const m = this.master();
+          if (m.src) this.openCables(m.src.id, m.others.map(c => c.id));
         } else if (b.dataset.act === 'cb') {
           this.openBreakers(sel.cbs.map(c => c.id));
         } else if (b.dataset.act === 'clear') {
@@ -73,10 +84,10 @@ const CableBulk = {
     const parts = [];
     if (cables.length) parts.push(`${cables.length} cable${cables.length === 1 ? '' : 's'}`);
     if (cbs.length) parts.push(`${cbs.length} breaker${cbs.length === 1 ? '' : 's'}`);
-    const src = cables.find(c => c.id === Properties.currentId) || cables[0];
+    const src = m.src;
     this._bar.innerHTML =
       `<strong>${parts.join(' and ')} selected</strong>` +
-      (cables.length >= 2 ? `<button type="button" data-act="cable" title="Copy ${escHtml(this._name(src))}'s cable and installation onto the other selected cables">Apply ${escHtml(this._name(src))} to ${cables.length - 1} other${cables.length === 2 ? '' : 's'}…</button>` : '') +
+      (m.src && m.others.length >= 1 ? `<button type="button" data-act="cable" title="${escHtml(this._name(src))} is the master: the cable open in the properties panel. Its settings are copied onto the other selected cables.">Copy ${escHtml(this._name(src))} (open in properties) to ${m.others.length} other${m.others.length === 1 ? '' : 's'}…</button>` : '') +
       (cbs.length >= 2 ? `<button type="button" data-act="cb">Set breaker type…</button>` : '') +
       `<button type="button" data-act="clear" class="cbk-bar-clear">Clear</button>`;
     this._bar.style.display = '';
@@ -162,7 +173,7 @@ const CableBulk = {
     const targets = [...AppState.components.values()]
       .filter(c => this._isCable(c) && c.id !== src.id && this._isMV(c) === mv);
     const pre = new Set(preselect);
-    const state = { copyCable: !!srcEntry, copyInst: !!srcAmp, sel: new Set(preselect.filter(id => targets.some(t => t.id === id))) };
+    const state = { copyCable: !!srcEntry, copyInst: !!srcAmp, copyPar: true, sel: new Set(preselect.filter(id => targets.some(t => t.id === id))) };
 
     const sub = `Source: <strong>${escHtml(this._name(src))}</strong> · ${srcEntry ? escHtml(CableLib.label(srcEntry)) : 'custom cable'}` +
       (srcAmp ? ` · method ${escHtml(srcAmp.method)} · ${escHtml(String(srcAmp.ambient_c))} °C · ${escHtml(String(srcAmp.circuits))} circuit${Number(srcAmp.circuits) === 1 ? '' : 's'} · factor ${Number(srcAmp.derating).toFixed(2)}` : ' · no installation derating set');
@@ -170,6 +181,7 @@ const CableBulk = {
       <div class="cbk-row">
         <strong>Copy</strong>
         <label class="cbk-check"><input type="checkbox" id="bk-cable" ${state.copyCable ? 'checked' : 'disabled'}> Cable type and size${srcEntry ? '' : ' (source is a custom cable)'}</label>
+        <label class="cbk-check"><input type="checkbox" id="bk-par" checked> Parallel cables and sizing settings (${escHtml(String(src.props.num_parallel || 1))} parallel)</label>
         <label class="cbk-check"><input type="checkbox" id="bk-inst" ${state.copyInst ? 'checked' : 'disabled'}> Installation conditions${srcAmp ? '' : ' (source has none)'}</label>
       </div>
       <div class="cbk-row">
@@ -208,14 +220,15 @@ const CableBulk = {
           const low = ib > 0 && p.iz < ib;
           if (low) { bad++; cls = ' class="cbk-bad"'; }
           const cab = p.entry ? CableLib.label(p.entry) : (now ? CableLib.label(now) : 'custom');
-          after = `${escHtml(cab)}<br>Iz ${Math.round(p.iz)} A${ib > 0 ? ` (design ${Math.round(ib)} A) ${low ? '✕ too small' : '✓'}` : ''}`;
+          const np = state.copyPar ? (src.props.num_parallel || 1) : (t.props.num_parallel || 1);
+          after = `${escHtml(cab)}${Number(np) > 1 ? ' × ' + escHtml(String(np)) + ' parallel' : ''}<br>Iz ${Math.round(p.iz)} A${ib > 0 ? ` (design ${Math.round(ib)} A) ${low ? '✕ too small' : '✓'}` : ''}`;
         }
         return `<tr${on ? (cls || ' class="cbk-on"') : ''}><td><input type="checkbox" data-id="${escHtml(t.id)}" aria-label="Select ${escHtml(this._name(t))}" ${on ? 'checked' : ''}></td>` +
           `<td>${escHtml(this._name(t))}</td><td>${escHtml(routeOf(t))}</td>` +
-          `<td>${escHtml(now ? CableLib.label(now) : 'custom')}<br>Iz ${Math.round(Number(t.props.rated_amps) || 0)} A</td><td>${after}</td></tr>`;
+          `<td>${escHtml(now ? CableLib.label(now) : 'custom')}${Number(t.props.num_parallel) > 1 ? ' × ' + escHtml(String(t.props.num_parallel)) + ' parallel' : ''}<br>Iz ${Math.round(Number(t.props.rated_amps) || 0)} A</td><td>${after}</td></tr>`;
       }).join('');
       applyBtn.textContent = n ? `Apply to ${n} cable${n === 1 ? '' : 's'}` : 'Apply';
-      applyBtn.disabled = !n || (!state.copyCable && !state.copyInst);
+      applyBtn.disabled = !n || (!state.copyCable && !state.copyInst && !state.copyPar);
       warnEl.textContent = !n ? 'Select at least one cable.' : bad ? `${bad} cable${bad === 1 ? '' : 's'} would be below design current. You can still apply.` : '';
       warnEl.className = 'cbk-warn' + (bad ? ' cbk-warn-on' : '');
     };
@@ -223,6 +236,7 @@ const CableBulk = {
     el.addEventListener('change', (e) => {
       if (e.target.id === 'bk-cable') state.copyCable = e.target.checked;
       else if (e.target.id === 'bk-inst') state.copyInst = e.target.checked;
+      else if (e.target.id === 'bk-par') state.copyPar = e.target.checked;
       else if (e.target.dataset.id) { e.target.checked ? state.sel.add(e.target.dataset.id) : state.sel.delete(e.target.dataset.id); }
       render();
     });
@@ -245,10 +259,16 @@ const CableBulk = {
           t.props.standard_type = srcEntry.id;
           Properties.applyStandardType(t, 'cable', srcEntry.id);
         }
+        if (state.copyPar) {
+          // Parallel cables per circuit and the cable-sizing settings that go with them
+          for (const k of ['num_parallel', 'ampacity_standard', 'adiabatic_basis']) {
+            if (src.props[k] !== undefined) t.props[k] = src.props[k];
+          }
+        }
         const p = this._plan(src, t, state.copyCable, state.copyInst);
         if (p.s && p.s.baseA != null) Properties._writeAmpacity(t, p.s);
       }
-      this._finish(`Applied ${this._name(src)}'s ${[state.copyCable && 'cable', state.copyInst && 'installation'].filter(Boolean).join(' and ')} to ${ids.length} cable${ids.length === 1 ? '' : 's'}.`);
+      this._finish(`Applied ${this._name(src)}'s ${[state.copyCable && 'cable', state.copyInst && 'installation', state.copyPar && 'parallel settings'].filter(Boolean).join(' and ')} to ${ids.length} cable${ids.length === 1 ? '' : 's'}.`);
     });
     render();
   },

@@ -66,6 +66,7 @@ const Properties = {
   // Show properties for a component
   show(id) {
     this.currentId = id;
+    if (typeof CableBulk !== 'undefined') CableBulk.updateBar();   // the open cable is the bulk-apply master
     const comp = AppState.components.get(id);
     if (!comp) {
       this.clear();
