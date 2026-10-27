@@ -487,6 +487,41 @@ const Properties = {
       });
     });
 
+    // Copy this cable (and its installation) onto other cables
+    root.querySelectorAll('.prop-ampacity-bulk').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const sel = [...AppState.selectedIds].filter(id => id !== this.currentId);
+        CableBulk.openCables(this.currentId, sel);
+      });
+    });
+    root.querySelectorAll('.prop-ampacity-clear').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const c = AppState.components.get(this.currentId);
+        if (c) this._clearAmpacity(c);
+      });
+    });
+
+    // Conductor / insulation filter buttons above the cable type list
+    root.querySelectorAll('.cable-filt-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const id = this.currentId;
+        const c = AppState.components.get(id);
+        const sel = c && c.props.standard_type ? CableLib.byId(c.props.standard_type) : null;
+        this._cableFilt = this._cableFilt || {};
+        const st = this._cableFilt[id] || {
+          cond: sel ? (String(sel.conductor || '').toUpperCase() === 'AL' ? 'Al' : 'Cu') : null,
+          ins: sel ? (String(sel.insulation || '').toUpperCase() === 'PVC' ? 'PVC' : 'XLPE') : null,
+        };
+        const k = btn.dataset.k;
+        st[k] = st[k] === btn.dataset.v ? null : btn.dataset.v;
+        this._cableFilt[id] = st;
+        this.show(id);
+      });
+    });
+
     // Bind the cable flow-direction flip button (swaps reported from/to)
     root.querySelectorAll('.prop-flip-btn').forEach(btn => {
       btn.addEventListener('click', (e) => {
@@ -581,8 +616,10 @@ const Properties = {
 
     // Lock library-derived fields while a standard type is selected.
     const _comp = AppState.components.get(compId);
-    const dis = this._lockedByStandard(_comp, field.key) ? ' disabled' : '';
-    const lockTitle = dis ? ' title="Set by the selected standard — choose Custom to edit"' : '';
+    const ampLocked = !!(_comp && _comp.type === 'cable' && field.key === 'rated_amps' && _comp.props.ampacity && _comp.props.ampacity.applied);
+    const dis = (ampLocked || this._lockedByStandard(_comp, field.key)) ? ' disabled' : '';
+    const lockTitle = ampLocked ? ' title="Worked out from the installed ampacity below — use Edit installation, or Clear, to change it"'
+      : dis ? ' title="Set by the selected standard — choose Custom to edit"' : '';
 
     if (field.type === 'standard_select' && (field.library === 'cable' || field.library === 'overhead')) {
       // Searchable conductor selector. Underground cables filter the library by
@@ -602,6 +639,24 @@ const Properties = {
         filtered.sort((a, b) => a.voltage_kv - b.voltage_kv);   // stable: library order within a class
       }
       const selectedItem = library.find(c => c.id === value);
+      // Conductor / insulation filter above the list. It starts on the chosen
+      // cable's own type; a click switches it, a second click clears it (all
+      // cables). The chosen cable always stays in the list.
+      let shown = filtered;
+      if (!isOverhead) {
+        const st = (this._cableFilt && this._cableFilt[compId]) || {
+          cond: selectedItem ? String(selectedItem.conductor || '').toUpperCase() === 'AL' ? 'Al' : 'Cu' : null,
+          ins: selectedItem ? String(selectedItem.insulation || '').toUpperCase() === 'PVC' ? 'PVC' : 'XLPE' : null,
+        };
+        const fits = c => (!st.cond || String(c.conductor || 'Cu').toUpperCase() === st.cond.toUpperCase())
+          && (!st.ins || String(c.insulation || 'XLPE').toUpperCase() === st.ins.toUpperCase());
+        shown = filtered.filter(c => c.id === value || fits(c));
+        const btn = (k, v) => `<button type="button" class="cable-filt-btn${st[k] === v ? ' on' : ''}" data-k="${k}" data-v="${v}" aria-pressed="${st[k] === v}">${v}</button>`;
+        preRowHtml = `<div class="prop-row cable-filt-row"><label>Filter</label><span class="cable-filt-groups">` +
+          `<span role="group" aria-label="Conductor">${btn('cond', 'Cu')}${btn('cond', 'Al')}</span>` +
+          `<span role="group" aria-label="Insulation">${btn('ins', 'XLPE')}${btn('ins', 'PVC')}</span>` +
+          `<span class="info-tip" tabindex="0" role="note" aria-label="How the cable filter works" data-tip="These buttons narrow the Cable Type list. They start on this cable’s own conductor and insulation. Click one to switch it, click it again to clear it. With neither lit the list shows every cable. Choosing a cable lights its buttons. Type in the box to search with * as a wildcard.">i</span></span></div>`;
+      }
       const displayText = value ? (selectedItem ? selectedItem.name : value) : '';
       const hintHtml = voltageFilter ? `<div class="searchable-select-hint">Showing ${voltageFilter.label} cables</div>` : '';
       const placeholder = isOverhead ? 'Search conductors…' : 'Search cables…';
@@ -618,7 +673,7 @@ const Properties = {
         const tag = why ? `not for SLD use — ${why}` : 'voltage mismatch';
         optionsHtml += `<div class="searchable-select-option mismatch selected" data-value="${escHtml(selectedItem.id)}">${escHtml(selectedItem.name)} (${escHtml(tag)})</div>`;
       }
-      for (const item of filtered) {
+      for (const item of shown) {
         const sel = item.id === value ? ' selected' : '';
         optionsHtml += `<div class="searchable-select-option${sel}" data-value="${escHtml(item.id)}">${escHtml(item.name)}</div>`;
       }
@@ -704,18 +759,24 @@ const Properties = {
       // and opens the calculator modal to (re)compute the installed rating.
       const comp = AppState.components.get(compId);
       const amp = comp && comp.props && comp.props.ampacity;
-      let summary;
+      let summary, buttons;
       if (amp && amp.applied) {
-        const env = String(amp.method || '').startsWith('D') ? 'buried' : 'air';
-        summary = `<div class="prop-ampacity-summary">Method ${escHtml(amp.method || '?')} · ${env} · derate ${Number(amp.derating).toFixed(2)} → <strong>${Number(amp.derated_a).toFixed(0)} A</strong></div>`;
+        const env = String(amp.method || '').startsWith('D') ? 'buried' : 'in air';
+        summary = `<div class="prop-ampacity-sum"><span>Tabulated <strong>${Number(amp.base_a).toFixed(0)} A</strong></span><span>&times; <strong>${Number(amp.derating).toFixed(2)}</strong></span><span>= <strong class="prop-ampacity-iz">${Number(amp.derated_a).toFixed(0)} A</strong></span></div>` +
+          `<div class="prop-ampacity-summary">Method ${escHtml(amp.method || '?')} · ${env} · ${escHtml(String(amp.ambient_c))} °C · ${escHtml(String(amp.circuits))} circuit${Number(amp.circuits) === 1 ? '' : 's'}. Studies use ${Number(amp.derated_a).toFixed(0)} A.</div>`;
+        buttons = `<button class="prop-ampacity-btn" type="button">Edit installation…</button>` +
+          `<button class="prop-ampacity-bulk" type="button">Apply to other cables…</button>` +
+          `<button class="prop-ampacity-clear" type="button">Clear</button>`;
       } else {
         summary = `<div class="prop-ampacity-summary prop-ampacity-summary--empty">Not derated for install conditions</div>`;
+        buttons = `<button class="prop-ampacity-btn" type="button">⚡ Calculate installed ampacity…</button>` +
+          `<button class="prop-ampacity-bulk" type="button">Apply to other cables…</button>`;
       }
       // Return a full-width row directly (bypasses the standard label/input grid)
       return `
         <div class="prop-row prop-row--ampacity">
           ${summary}
-          <button class="prop-ampacity-btn" type="button">⚡ Calculate installed ampacity…</button>
+          <div class="prop-ampacity-btns">${buttons}</div>
         </div>`;
     } else if (field.type === 'cable_direction') {
       // Show the cable's from→to orientation (used for reported P/Q flow sign)
@@ -1372,16 +1433,78 @@ const Properties = {
     const modal = document.getElementById('ampacity-modal');
     if (!modal) return;
     const basics = this._resolveCableBasics(comp);
+    this._ampPick = { id: this._ampInitialPick(comp, basics), q: '' };
     document.getElementById('ampacity-modal-body').innerHTML = this._buildAmpacityForm(basics);
-    ['amp-size', 'amp-conductor', 'amp-insulation', 'amp-method', 'amp-temp',
-     'amp-grouping', 'amp-circuits', 'amp-soil', 'amp-loaded', 'amp-current'].forEach(id => {
+    ['amp-method', 'amp-temp', 'amp-grouping', 'amp-circuits', 'amp-soil', 'amp-loaded', 'amp-current'].forEach(id => {
       const el = document.getElementById(id);
       if (!el) return;
       el.addEventListener('change', () => this._recalcAmpacity());
       el.addEventListener('input', () => this._recalcAmpacity());
     });
+    this._bindAmpPicker();
     this._recalcAmpacity();
     modal.style.display = '';
+  },
+
+  // Library cables the ampacity dialog can switch this cable to: armoured
+  // distribution cable of the same voltage class (the connected system's, else
+  // the cable's own).
+  _ampCandidates(comp) {
+    const vf = this._getCableVoltageFilter(comp.id);
+    const cur = comp.props.standard_type ? CableLib.byId(comp.props.standard_type) : null;
+    const mv = cur ? CableLib.isMV(cur) : Number(comp.props.voltage_kv) > 1;
+    return STANDARD_CABLES.filter(c => CableLib.isSldEligible(c) && Number(c.size_mm2) > 0
+      && (vf ? vf.fn(c) : CableLib.isMV(c) === mv));
+  },
+
+  // The library cable the dialog starts on: the cable's own, else the entry
+  // matching its resolved conductor / insulation / size, else '' (keep the
+  // custom cable and only derate it).
+  _ampInitialPick(comp, b) {
+    const cands = this._ampCandidates(comp);
+    if (comp.props.standard_type && cands.some(c => c.id === comp.props.standard_type)) return comp.props.standard_type;
+    if (comp.props.standard_type) return '';
+    const hit = cands.find(c => String(c.conductor).toLowerCase() === b.conductor
+      && String(c.insulation).toLowerCase() === b.insulation && Number(c.size_mm2) === Number(b.size)
+      && Number(CableLib.normalize(c).cores) === (b.loaded === 2 ? 2 : 4));
+    return hit ? hit.id : '';
+  },
+
+  _bindAmpPicker() {
+    const q = document.getElementById('amp-q');
+    const list = document.getElementById('amp-list');
+    if (!q || !list) return;
+    q.addEventListener('input', () => { this._ampPick.q = q.value; this._renderAmpList(); });
+    list.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-cab]');
+      if (!b) return;
+      this._ampPick.id = b.dataset.cab;
+      const entry = CableLib.byId(b.dataset.cab);
+      const loaded = document.getElementById('amp-loaded');
+      if (entry && loaded) loaded.value = Number(CableLib.normalize(entry).cores) === 2 ? '2' : '3';
+      this._renderAmpList();
+      this._recalcAmpacity();
+    });
+    this._renderAmpList();
+  },
+
+  _renderAmpList() {
+    const comp = AppState.components.get(this.currentId);
+    const list = document.getElementById('amp-list');
+    if (!comp || !list) return;
+    const { id, q } = this._ampPick;
+    const found = this._ampCandidates(comp).filter(c => CableBulk.match(CableLib.label(c), q));
+    const MAX = 120;
+    const keep = !comp.props.standard_type && CableBulk.match('keep current custom cable', q);
+    list.innerHTML =
+      (keep ? `<button type="button" role="option" aria-selected="${id === ''}" class="cbk-opt${id === '' ? ' on' : ''}" data-cab="">Keep this cable (custom) — only derate it</button>` : '') +
+      found.slice(0, MAX).map(c => `<button type="button" role="option" aria-selected="${c.id === id}" class="cbk-opt${c.id === id ? ' on' : ''}" data-cab="${escHtml(c.id)}">${escHtml(CableLib.label(c))}<span>${Math.round(c.rated_amps)} A</span></button>`).join('') +
+      (found.length > MAX ? `<div class="cbk-more">${found.length - MAX} more — keep typing to narrow the list.</div>` : '') +
+      (found.length || keep ? '' : `<div class="cbk-more">No cable matches “${escHtml(q)}”.</div>`);
+    const cnt = document.getElementById('amp-count');
+    if (cnt) cnt.textContent = q ? `${found.length} cable${found.length === 1 ? '' : 's'} match` : `${found.length} cables`;
+    const on = list.querySelector('.cbk-opt.on');
+    if (on && on.scrollIntoView) on.scrollIntoView({ block: 'nearest' });
   },
 
   _hideAmpacityModal() {
@@ -1392,8 +1515,6 @@ const Properties = {
 
   _buildAmpacityForm(b) {
     const opt = (v, label, sel) => `<option value="${escHtml(String(v))}"${String(sel) === String(v) ? ' selected' : ''}>${label}</option>`;
-    const sizeOpts = (typeof IEC_STANDARD_SIZES !== 'undefined' ? IEC_STANDARD_SIZES : [])
-      .map(s => opt(s, `${s} mm²`, b.size || 95)).join('');
     const method = b.method || 'C';
     const methodOpts = IEC_INSTALLATION_METHODS
       .map(m => opt(m.code, `${m.code} — ${escHtml(m.description)}`, method)).join('');
@@ -1402,9 +1523,12 @@ const Properties = {
     return `
       <div class="iec-calc-form">
         <div class="iec-calc-row">
-          <div class="iec-calc-field"><label>Conductor size</label><select id="amp-size">${sizeOpts}</select></div>
-          <div class="iec-calc-field"><label>Conductor</label><select id="amp-conductor">${opt('cu', 'Copper', b.conductor)}${opt('al', 'Aluminium', b.conductor)}</select></div>
-          <div class="iec-calc-field"><label>Insulation</label><select id="amp-insulation">${opt('xlpe', 'XLPE (90°C)', b.insulation)}${opt('pvc', 'PVC (70°C)', b.insulation)}</select></div>
+          <div class="iec-calc-field" style="flex:3">
+            <label for="amp-q">Cable <span class="info-tip" tabindex="0" role="note" aria-label="How the cable filter works" data-tip="Type to filter the cable library. * matches any text and words narrow together, for example 95*al or *pvc. Picking a cable changes this cable on the diagram when you apply.">i</span></label>
+            <input type="search" id="amp-q" placeholder="Type to filter, e.g. 95*al or *pvc" autocomplete="off">
+            <div class="amp-count" id="amp-count"></div>
+            <div class="cbk-list amp-list" id="amp-list" role="listbox" aria-label="Cables"></div>
+          </div>
           <div class="iec-calc-field"><label title="IEC 60364-5-52 rates a single-phase circuit on two loaded conductors (Tables B.52.2/.3) and a three-phase circuit on three (B.52.4/.5)">Loaded conductors</label><select id="amp-loaded">${opt(3, '3 — three-phase', b.loaded || 3)}${opt(2, '2 — single-phase', b.loaded || 3)}</select></div>
         </div>
         <div class="iec-calc-row">
@@ -1437,32 +1561,42 @@ const Properties = {
     }
   },
 
+  // IEC 60364-5-52 installed rating of one cable under given conditions. Pure:
+  // shared by the dialog, the "Apply to other cables" dialog and _writeAmpacity.
+  _ampCompute(o) {
+    const isBuried = IecAmpacity.isBuried(o.method);
+    const soil = isBuried ? (o.soil != null ? o.soil : 2.5) : 2.5;
+    const ambient = parseFloat(o.ambient) || 30;
+    const circuits = parseInt(o.circuits, 10) || 1;
+    const d = IecAmpacity.derating({ method: o.method, ambient, insulation: o.insulation, grouping: o.grouping, circuits, soil });
+    const baseA = IecAmpacity.base(o.size, o.method, o.conductor, o.insulation, o.loaded);
+    return {
+      conductor: o.conductor, insulation: o.insulation, method: o.method, size: o.size, loaded: o.loaded,
+      ambient, grouping: d.groupName, circuits, soil, current: o.current || 0, baseA, derating: d.combined,
+      groupNote: d.groupNote, beyond: d.beyond, tempFactor: d.temp, groupFactor: d.group, soilFactor: d.soil,
+      isBuried, env: d.env,
+    };
+  },
+
   _recalcAmpacity() {
+    const comp = AppState.components.get(this.currentId);
     const val = (id) => { const el = document.getElementById(id); return el ? el.value : ''; };
-    const conductor = val('amp-conductor');
-    const insulation = val('amp-insulation');
     const method = val('amp-method');
     this._syncGroupingOptions('amp-grouping', method);
-    const size = parseFloat(val('amp-size'));
-    const loaded = parseInt(val('amp-loaded'), 10) === 2 ? 2 : 3;
-    const ambient = parseFloat(val('amp-temp')) || 30;
-    const grouping = val('amp-grouping');
-    const circuits = parseInt(val('amp-circuits'), 10) || 1;
-    const isBuried = IecAmpacity.isBuried(method);
-    const soil = isBuried ? parseFloat(val('amp-soil')) : 2.5;
-    const current = parseFloat(val('amp-current')) || 0;
-
+    const basics = this._resolveCableBasics(comp);
+    const entry = this._ampPick && this._ampPick.id ? CableLib.byId(this._ampPick.id) : null;
+    const conductor = entry ? (String(entry.conductor).toLowerCase() === 'al' ? 'al' : 'cu') : basics.conductor;
+    const insulation = entry ? (String(entry.insulation).toUpperCase() === 'PVC' ? 'pvc' : 'xlpe') : basics.insulation;
+    const size = entry ? Number(entry.size_mm2) : basics.size;
+    this._ampState = this._ampCompute({
+      conductor, insulation, size, method,
+      loaded: parseInt(val('amp-loaded'), 10) === 2 ? 2 : 3,
+      ambient: val('amp-temp'), grouping: val('amp-grouping'), circuits: val('amp-circuits'),
+      soil: parseFloat(val('amp-soil')), current: parseFloat(val('amp-current')) || 0,
+    });
+    this._ampState.entry = entry;
     const soilGroup = document.getElementById('amp-soil-group');
-    if (soilGroup) soilGroup.style.display = isBuried ? '' : 'none';
-
-    const d = IecAmpacity.derating({ method, ambient, insulation, grouping, circuits, soil });
-    const baseA = IecAmpacity.base(size, method, conductor, insulation, loaded);
-
-    this._ampState = {
-      conductor, insulation, method, size, loaded, ambient, grouping: d.groupName, circuits,
-      soil, current, baseA, derating: d.combined, groupNote: d.groupNote, beyond: d.beyond,
-      tempFactor: d.temp, groupFactor: d.group, soilFactor: d.soil, isBuried, env: d.env,
-    };
+    if (soilGroup) soilGroup.style.display = this._ampState.isBuried ? '' : 'none';
     this._renderAmpacityResults();
   },
 
@@ -1510,15 +1644,23 @@ const Properties = {
       </div>`;
     }
 
-    html += `<p class="iec-calc-note">Applying writes <strong>${deratedA.toFixed(1)} A</strong> to this cable's Rated Current and records the install conditions, so the Cable Sizing study uses this derated rating directly.</p>`;
+    const comp = AppState.components.get(this.currentId);
+    const curE = comp && comp.props.standard_type ? CableLib.byId(comp.props.standard_type) : null;
+    const newE = s.entry;
+    const changes = [];
+    if (newE && (!curE || curE.id !== newE.id)) {
+      changes.push(`<li>Cable: ${escHtml(curE ? CableLib.label(curE) : 'custom cable')} &rarr; <strong>${escHtml(CableLib.label(newE))}</strong></li>`);
+      changes.push(`<li>R<sub>1</sub>: ${comp ? Number(comp.props.r_per_km) : '?'} &rarr; <strong>${newE.r_per_km}</strong> &Omega;/km</li>`);
+    }
+    changes.push(`<li>Rated current: ${comp ? Number(comp.props.rated_amps) : '?'} A &rarr; <strong>${deratedA.toFixed(1)} A</strong></li>`);
+    html += `<h4>What Apply changes</h4><ul class="iec-calc-changes">${changes.join('')}</ul>`;
+    html += `<p class="iec-calc-note">The install conditions are recorded too, so the Cable Sizing study uses this derated rating directly.</p>`;
     resultsDiv.innerHTML = html;
   },
 
-  _applyAmpacity() {
-    const s = this._ampState;
-    if (!s || s.baseA == null) return;
-    const comp = AppState.components.get(this.currentId);
-    if (!comp) return;
+  // Record the install conditions on the cable and lock its Rated Current to
+  // the derated result (the Cable Sizing study uses it directly).
+  _writeAmpacity(comp, s) {
     const deratedA = s.baseA * s.derating;
     comp.props.rated_amps = Math.round(deratedA * 10) / 10;
     comp.props.conductor = s.conductor === 'al' ? 'Al' : 'Cu';
@@ -1539,12 +1681,39 @@ const Properties = {
       derating: Math.round(s.derating * 1000) / 1000,
       derated_a: Math.round(deratedA * 10) / 10,
     };
+  },
+
+  _applyAmpacity() {
+    const s = this._ampState;
+    if (!s || s.baseA == null) return;
+    const comp = AppState.components.get(this.currentId);
+    if (!comp) return;
+    // The cable picked in the dialog becomes the cable on the diagram
+    // (library entry, R / X, voltage class) before it is derated.
+    if (s.entry && s.entry.id !== comp.props.standard_type) {
+      comp.props.standard_type = s.entry.id;
+      this.applyStandardType(comp, 'cable', s.entry.id);
+    }
+    this._writeAmpacity(comp, s);
     AppState.dirty = true;
     this._notifyResultsCleared();
     AppState.clearResults();
     if (typeof UndoManager !== 'undefined') UndoManager.snapshot();
     Canvas.render();
     this._hideAmpacityModal();
+    this.show(comp.id);
+  },
+
+  // Remove the installation derating: the cable goes back to its library rating.
+  _clearAmpacity(comp) {
+    delete comp.props.ampacity;
+    const e = comp.props.standard_type ? CableLib.byId(comp.props.standard_type) : null;
+    if (e) comp.props.rated_amps = e.rated_amps;
+    AppState.dirty = true;
+    this._notifyResultsCleared();
+    AppState.clearResults();
+    if (typeof UndoManager !== 'undefined') UndoManager.snapshot();
+    Canvas.render();
     this.show(comp.id);
   },
 
@@ -2345,6 +2514,7 @@ ${br.loading_pct > 0 ? `Loading = ${br.loading_pct.toFixed(1)}%${br.loading_pct 
       };
 
       const selectOption = (val) => {
+        if (this._cableFilt) delete this._cableFilt[comp.id];   // buttons follow the new cable
         wrapper.dataset.value = val;
         comp.props[fieldKey] = val;
         if (val) {
