@@ -36,8 +36,8 @@ Known simplifications (recorded, not hidden)
   out its columns (E1.2: B / C 630-1600, N 250-1600, L 630-1250; E2.2: B
   1600-2000, N / H 800-2500, S 250-2500; E4.2: N / S / H 3200-4000, V
   2000-4000; E6.2: H / V / X 4000-6300).
-* Not included: Tmax XT (the only catalogue obtained is the 2011 preliminary
-  edition, with its trip curves as coloured bitmaps) and Tmax T / S200 MCBs.
+* Not included here: Tmax XT is build_abb_xt.py (abb_xt_breakers.json);
+  Tmax T and S200 MCBs are not carried.
 
 Run:  python testing/vendor-libraries/build_abb.py
 """

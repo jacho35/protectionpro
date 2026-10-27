@@ -1,0 +1,7774 @@
+{
+ "entries": [
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt1b_16",
+    "name": "ABB XT1B 16 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT1B",
+    "trip_rating_a": 16,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 18,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 28.125,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt1_16"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt1_16",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt1b_20",
+    "name": "ABB XT1B 20 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT1B",
+    "trip_rating_a": 20,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 18,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 22.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt1_20"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt1_20",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt1b_25",
+    "name": "ABB XT1B 25 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT1B",
+    "trip_rating_a": 25,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 18,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 18.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt1_25"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt1_25",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt1b_32",
+    "name": "ABB XT1B 32 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT1B",
+    "trip_rating_a": 32,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 18,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 14.0625,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt1_32"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt1_32",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt1b_40",
+    "name": "ABB XT1B 40 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT1B",
+    "trip_rating_a": 40,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 18,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 11.25,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt1_40"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt1_40",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt1b_50",
+    "name": "ABB XT1B 50 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT1B",
+    "trip_rating_a": 50,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 18,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt1_50"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt1_50",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt1b_63",
+    "name": "ABB XT1B 63 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT1B",
+    "trip_rating_a": 63,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 18,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt1_63"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt1_63",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt1b_80",
+    "name": "ABB XT1B 80 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT1B",
+    "trip_rating_a": 80,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 18,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt1_80"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt1_80",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt1b_100",
+    "name": "ABB XT1B 100 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT1B",
+    "trip_rating_a": 100,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 18,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt1_100"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt1_100",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt1b_125",
+    "name": "ABB XT1B 125 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT1B",
+    "trip_rating_a": 125,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 18,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt1_125"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt1_125",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt1b_160",
+    "name": "ABB XT1B 160 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT1B",
+    "trip_rating_a": 160,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 18,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt1_160"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt1_160",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt1c_16",
+    "name": "ABB XT1C 16 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT1C",
+    "trip_rating_a": 16,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 28.125,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt1_16"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt1_16",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt1c_20",
+    "name": "ABB XT1C 20 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT1C",
+    "trip_rating_a": 20,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 22.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt1_20"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt1_20",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt1c_25",
+    "name": "ABB XT1C 25 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT1C",
+    "trip_rating_a": 25,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 18.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt1_25"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt1_25",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt1c_32",
+    "name": "ABB XT1C 32 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT1C",
+    "trip_rating_a": 32,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 14.0625,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt1_32"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt1_32",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt1c_40",
+    "name": "ABB XT1C 40 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT1C",
+    "trip_rating_a": 40,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 11.25,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt1_40"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt1_40",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt1c_50",
+    "name": "ABB XT1C 50 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT1C",
+    "trip_rating_a": 50,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt1_50"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt1_50",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt1c_63",
+    "name": "ABB XT1C 63 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT1C",
+    "trip_rating_a": 63,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt1_63"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt1_63",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt1c_80",
+    "name": "ABB XT1C 80 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT1C",
+    "trip_rating_a": 80,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt1_80"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt1_80",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt1c_100",
+    "name": "ABB XT1C 100 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT1C",
+    "trip_rating_a": 100,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt1_100"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt1_100",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt1c_125",
+    "name": "ABB XT1C 125 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT1C",
+    "trip_rating_a": 125,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt1_125"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt1_125",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt1c_160",
+    "name": "ABB XT1C 160 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT1C",
+    "trip_rating_a": 160,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt1_160"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt1_160",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt1n_16",
+    "name": "ABB XT1N 16 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT1N",
+    "trip_rating_a": 16,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 36,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 28.125,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt1_16"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt1_16",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt1n_20",
+    "name": "ABB XT1N 20 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT1N",
+    "trip_rating_a": 20,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 36,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 22.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt1_20"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt1_20",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt1n_25",
+    "name": "ABB XT1N 25 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT1N",
+    "trip_rating_a": 25,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 36,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 18.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt1_25"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt1_25",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt1n_32",
+    "name": "ABB XT1N 32 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT1N",
+    "trip_rating_a": 32,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 36,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 14.0625,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt1_32"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt1_32",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt1n_40",
+    "name": "ABB XT1N 40 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT1N",
+    "trip_rating_a": 40,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 36,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 11.25,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt1_40"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt1_40",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt1n_50",
+    "name": "ABB XT1N 50 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT1N",
+    "trip_rating_a": 50,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 36,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt1_50"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt1_50",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt1n_63",
+    "name": "ABB XT1N 63 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT1N",
+    "trip_rating_a": 63,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 36,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt1_63"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt1_63",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt1n_80",
+    "name": "ABB XT1N 80 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT1N",
+    "trip_rating_a": 80,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 36,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt1_80"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt1_80",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt1n_100",
+    "name": "ABB XT1N 100 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT1N",
+    "trip_rating_a": 100,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 36,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt1_100"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt1_100",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt1n_125",
+    "name": "ABB XT1N 125 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT1N",
+    "trip_rating_a": 125,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 36,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt1_125"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt1_125",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt1n_160",
+    "name": "ABB XT1N 160 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT1N",
+    "trip_rating_a": 160,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 36,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt1_160"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt1_160",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt1s_16",
+    "name": "ABB XT1S 16 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT1S",
+    "trip_rating_a": 16,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "ics_pct": 75,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 28.125,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt1_16"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt1_16",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt1s_20",
+    "name": "ABB XT1S 20 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT1S",
+    "trip_rating_a": 20,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "ics_pct": 75,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 22.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt1_20"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt1_20",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt1s_25",
+    "name": "ABB XT1S 25 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT1S",
+    "trip_rating_a": 25,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "ics_pct": 75,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 18.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt1_25"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt1_25",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt1s_32",
+    "name": "ABB XT1S 32 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT1S",
+    "trip_rating_a": 32,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "ics_pct": 75,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 14.0625,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt1_32"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt1_32",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt1s_40",
+    "name": "ABB XT1S 40 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT1S",
+    "trip_rating_a": 40,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "ics_pct": 75,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 11.25,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt1_40"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt1_40",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt1s_50",
+    "name": "ABB XT1S 50 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT1S",
+    "trip_rating_a": 50,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "ics_pct": 75,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt1_50"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt1_50",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt1s_63",
+    "name": "ABB XT1S 63 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT1S",
+    "trip_rating_a": 63,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "ics_pct": 75,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt1_63"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt1_63",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt1s_80",
+    "name": "ABB XT1S 80 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT1S",
+    "trip_rating_a": 80,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "ics_pct": 75,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt1_80"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt1_80",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt1s_100",
+    "name": "ABB XT1S 100 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT1S",
+    "trip_rating_a": 100,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "ics_pct": 75,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt1_100"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt1_100",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt1s_125",
+    "name": "ABB XT1S 125 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT1S",
+    "trip_rating_a": 125,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "ics_pct": 75,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt1_125"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt1_125",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt1s_160",
+    "name": "ABB XT1S 160 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT1S",
+    "trip_rating_a": 160,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "ics_pct": 75,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt1_160"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt1_160",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt1h_16",
+    "name": "ABB XT1H 16 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT1H",
+    "trip_rating_a": 16,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 70,
+    "ics_pct": 50,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 28.125,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt1_16"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt1_16",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt1h_20",
+    "name": "ABB XT1H 20 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT1H",
+    "trip_rating_a": 20,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 70,
+    "ics_pct": 50,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 22.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt1_20"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt1_20",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt1h_25",
+    "name": "ABB XT1H 25 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT1H",
+    "trip_rating_a": 25,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 70,
+    "ics_pct": 50,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 18.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt1_25"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt1_25",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt1h_32",
+    "name": "ABB XT1H 32 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT1H",
+    "trip_rating_a": 32,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 70,
+    "ics_pct": 50,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 14.0625,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt1_32"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt1_32",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt1h_40",
+    "name": "ABB XT1H 40 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT1H",
+    "trip_rating_a": 40,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 70,
+    "ics_pct": 50,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 11.25,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt1_40"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt1_40",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt1h_50",
+    "name": "ABB XT1H 50 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT1H",
+    "trip_rating_a": 50,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 70,
+    "ics_pct": 50,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt1_50"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt1_50",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt1h_63",
+    "name": "ABB XT1H 63 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT1H",
+    "trip_rating_a": 63,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 70,
+    "ics_pct": 50,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt1_63"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt1_63",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt1h_80",
+    "name": "ABB XT1H 80 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT1H",
+    "trip_rating_a": 80,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 70,
+    "ics_pct": 50,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt1_80"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt1_80",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt1h_100",
+    "name": "ABB XT1H 100 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT1H",
+    "trip_rating_a": 100,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 70,
+    "ics_pct": 50,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt1_100"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt1_100",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt1h_125",
+    "name": "ABB XT1H 125 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT1H",
+    "trip_rating_a": 125,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 70,
+    "ics_pct": 50,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt1_125"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt1_125",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt1h_160",
+    "name": "ABB XT1H 160 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT1H",
+    "trip_rating_a": 160,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 70,
+    "ics_pct": 50,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt1_160"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt1_160",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2n_1_6",
+    "name": "ABB XT2N 1.6 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2N",
+    "trip_rating_a": 1.6,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 36,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_1_6"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_1_6",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2n_2",
+    "name": "ABB XT2N 2 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2N",
+    "trip_rating_a": 2,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 36,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_2"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_2",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2n_2_5",
+    "name": "ABB XT2N 2.5 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2N",
+    "trip_rating_a": 2.5,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 36,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_2_5"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_2_5",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2n_3_2",
+    "name": "ABB XT2N 3.2 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2N",
+    "trip_rating_a": 3.2,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 36,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_3_2"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_3_2",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2n_4",
+    "name": "ABB XT2N 4 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2N",
+    "trip_rating_a": 4,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 36,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_4"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_4",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2n_5",
+    "name": "ABB XT2N 5 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2N",
+    "trip_rating_a": 5,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 36,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_5"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_5",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2n_6_3",
+    "name": "ABB XT2N 6.3 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2N",
+    "trip_rating_a": 6.3,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 36,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_6_3"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_6_3",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2n_8",
+    "name": "ABB XT2N 8 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2N",
+    "trip_rating_a": 8,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 36,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_8"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_8",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2n_10",
+    "name": "ABB XT2N 10 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2N",
+    "trip_rating_a": 10,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 36,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_10",
+     "abb_xt_dip_lsi_xt24",
+     "abb_xt_dip_ls_xt24",
+     "abb_xt_dip_li_xt24"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_10",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2n_12_5",
+    "name": "ABB XT2N 12.5 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2N",
+    "trip_rating_a": 12.5,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 36,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_12_5"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_12_5",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2n_16",
+    "name": "ABB XT2N 16 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2N",
+    "trip_rating_a": 16,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 36,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 18.75,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_16"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_16",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2n_20",
+    "name": "ABB XT2N 20 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2N",
+    "trip_rating_a": 20,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 36,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 15.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_20"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_20",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2n_25",
+    "name": "ABB XT2N 25 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2N",
+    "trip_rating_a": 25,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 36,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 12.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_25",
+     "abb_xt_dip_lsi_xt24",
+     "abb_xt_dip_ls_xt24",
+     "abb_xt_dip_li_xt24"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_25",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2n_32",
+    "name": "ABB XT2N 32 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2N",
+    "trip_rating_a": 32,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 36,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_32"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_32",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2n_40",
+    "name": "ABB XT2N 40 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2N",
+    "trip_rating_a": 40,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 36,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_40",
+     "abb_xt_touch_xt24"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_40",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2n_50",
+    "name": "ABB XT2N 50 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2N",
+    "trip_rating_a": 50,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 36,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_50"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_50",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2n_63",
+    "name": "ABB XT2N 63 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2N",
+    "trip_rating_a": 63,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 36,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_63",
+     "abb_xt_dip_lsi_xt24",
+     "abb_xt_dip_ls_xt24",
+     "abb_xt_dip_li_xt24",
+     "abb_xt_touch_xt24"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_63",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2n_80",
+    "name": "ABB XT2N 80 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2N",
+    "trip_rating_a": 80,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 36,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_80"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_80",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2n_100",
+    "name": "ABB XT2N 100 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2N",
+    "trip_rating_a": 100,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 36,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_100",
+     "abb_xt_dip_lsi_xt24",
+     "abb_xt_dip_ls_xt24",
+     "abb_xt_dip_li_xt24",
+     "abb_xt_touch_xt24"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_100",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2n_125",
+    "name": "ABB XT2N 125 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2N",
+    "trip_rating_a": 125,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 36,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_125"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_125",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2n_160",
+    "name": "ABB XT2N 160 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2N",
+    "trip_rating_a": 160,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 36,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_160",
+     "abb_xt_dip_lsi_xt24",
+     "abb_xt_dip_ls_xt24",
+     "abb_xt_dip_li_xt24",
+     "abb_xt_touch_xt24"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_160",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2s_1_6",
+    "name": "ABB XT2S 1.6 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2S",
+    "trip_rating_a": 1.6,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_1_6"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_1_6",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2s_2",
+    "name": "ABB XT2S 2 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2S",
+    "trip_rating_a": 2,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_2"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_2",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2s_2_5",
+    "name": "ABB XT2S 2.5 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2S",
+    "trip_rating_a": 2.5,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_2_5"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_2_5",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2s_3_2",
+    "name": "ABB XT2S 3.2 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2S",
+    "trip_rating_a": 3.2,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_3_2"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_3_2",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2s_4",
+    "name": "ABB XT2S 4 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2S",
+    "trip_rating_a": 4,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_4"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_4",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2s_5",
+    "name": "ABB XT2S 5 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2S",
+    "trip_rating_a": 5,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_5"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_5",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2s_6_3",
+    "name": "ABB XT2S 6.3 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2S",
+    "trip_rating_a": 6.3,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_6_3"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_6_3",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2s_8",
+    "name": "ABB XT2S 8 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2S",
+    "trip_rating_a": 8,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_8"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_8",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2s_10",
+    "name": "ABB XT2S 10 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2S",
+    "trip_rating_a": 10,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_10",
+     "abb_xt_dip_lsi_xt24",
+     "abb_xt_dip_ls_xt24",
+     "abb_xt_dip_li_xt24"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_10",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2s_12_5",
+    "name": "ABB XT2S 12.5 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2S",
+    "trip_rating_a": 12.5,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_12_5"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_12_5",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2s_16",
+    "name": "ABB XT2S 16 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2S",
+    "trip_rating_a": 16,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 18.75,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_16"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_16",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2s_20",
+    "name": "ABB XT2S 20 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2S",
+    "trip_rating_a": 20,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 15.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_20"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_20",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2s_25",
+    "name": "ABB XT2S 25 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2S",
+    "trip_rating_a": 25,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 12.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_25",
+     "abb_xt_dip_lsi_xt24",
+     "abb_xt_dip_ls_xt24",
+     "abb_xt_dip_li_xt24"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_25",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2s_32",
+    "name": "ABB XT2S 32 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2S",
+    "trip_rating_a": 32,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_32"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_32",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2s_40",
+    "name": "ABB XT2S 40 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2S",
+    "trip_rating_a": 40,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_40",
+     "abb_xt_touch_xt24"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_40",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2s_50",
+    "name": "ABB XT2S 50 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2S",
+    "trip_rating_a": 50,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_50"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_50",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2s_63",
+    "name": "ABB XT2S 63 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2S",
+    "trip_rating_a": 63,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_63",
+     "abb_xt_dip_lsi_xt24",
+     "abb_xt_dip_ls_xt24",
+     "abb_xt_dip_li_xt24",
+     "abb_xt_touch_xt24"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_63",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2s_80",
+    "name": "ABB XT2S 80 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2S",
+    "trip_rating_a": 80,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_80"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_80",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2s_100",
+    "name": "ABB XT2S 100 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2S",
+    "trip_rating_a": 100,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_100",
+     "abb_xt_dip_lsi_xt24",
+     "abb_xt_dip_ls_xt24",
+     "abb_xt_dip_li_xt24",
+     "abb_xt_touch_xt24"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_100",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2s_125",
+    "name": "ABB XT2S 125 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2S",
+    "trip_rating_a": 125,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_125"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_125",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2s_160",
+    "name": "ABB XT2S 160 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2S",
+    "trip_rating_a": 160,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_160",
+     "abb_xt_dip_lsi_xt24",
+     "abb_xt_dip_ls_xt24",
+     "abb_xt_dip_li_xt24",
+     "abb_xt_touch_xt24"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_160",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2h_1_6",
+    "name": "ABB XT2H 1.6 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2H",
+    "trip_rating_a": 1.6,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 70,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_1_6"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_1_6",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2h_2",
+    "name": "ABB XT2H 2 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2H",
+    "trip_rating_a": 2,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 70,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_2"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_2",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2h_2_5",
+    "name": "ABB XT2H 2.5 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2H",
+    "trip_rating_a": 2.5,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 70,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_2_5"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_2_5",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2h_3_2",
+    "name": "ABB XT2H 3.2 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2H",
+    "trip_rating_a": 3.2,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 70,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_3_2"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_3_2",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2h_4",
+    "name": "ABB XT2H 4 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2H",
+    "trip_rating_a": 4,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 70,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_4"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_4",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2h_5",
+    "name": "ABB XT2H 5 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2H",
+    "trip_rating_a": 5,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 70,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_5"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_5",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2h_6_3",
+    "name": "ABB XT2H 6.3 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2H",
+    "trip_rating_a": 6.3,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 70,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_6_3"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_6_3",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2h_8",
+    "name": "ABB XT2H 8 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2H",
+    "trip_rating_a": 8,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 70,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_8"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_8",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2h_10",
+    "name": "ABB XT2H 10 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2H",
+    "trip_rating_a": 10,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 70,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_10",
+     "abb_xt_dip_lsi_xt24",
+     "abb_xt_dip_ls_xt24",
+     "abb_xt_dip_li_xt24"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_10",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2h_12_5",
+    "name": "ABB XT2H 12.5 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2H",
+    "trip_rating_a": 12.5,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 70,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_12_5"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_12_5",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2h_16",
+    "name": "ABB XT2H 16 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2H",
+    "trip_rating_a": 16,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 70,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 18.75,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_16"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_16",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2h_20",
+    "name": "ABB XT2H 20 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2H",
+    "trip_rating_a": 20,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 70,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 15.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_20"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_20",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2h_25",
+    "name": "ABB XT2H 25 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2H",
+    "trip_rating_a": 25,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 70,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 12.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_25",
+     "abb_xt_dip_lsi_xt24",
+     "abb_xt_dip_ls_xt24",
+     "abb_xt_dip_li_xt24"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_25",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2h_32",
+    "name": "ABB XT2H 32 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2H",
+    "trip_rating_a": 32,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 70,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_32"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_32",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2h_40",
+    "name": "ABB XT2H 40 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2H",
+    "trip_rating_a": 40,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 70,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_40",
+     "abb_xt_touch_xt24"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_40",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2h_50",
+    "name": "ABB XT2H 50 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2H",
+    "trip_rating_a": 50,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 70,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_50"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_50",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2h_63",
+    "name": "ABB XT2H 63 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2H",
+    "trip_rating_a": 63,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 70,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_63",
+     "abb_xt_dip_lsi_xt24",
+     "abb_xt_dip_ls_xt24",
+     "abb_xt_dip_li_xt24",
+     "abb_xt_touch_xt24"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_63",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2h_80",
+    "name": "ABB XT2H 80 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2H",
+    "trip_rating_a": 80,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 70,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_80"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_80",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2h_100",
+    "name": "ABB XT2H 100 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2H",
+    "trip_rating_a": 100,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 70,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_100",
+     "abb_xt_dip_lsi_xt24",
+     "abb_xt_dip_ls_xt24",
+     "abb_xt_dip_li_xt24",
+     "abb_xt_touch_xt24"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_100",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2h_125",
+    "name": "ABB XT2H 125 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2H",
+    "trip_rating_a": 125,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 70,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_125"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_125",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2h_160",
+    "name": "ABB XT2H 160 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2H",
+    "trip_rating_a": 160,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 70,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_160",
+     "abb_xt_dip_lsi_xt24",
+     "abb_xt_dip_ls_xt24",
+     "abb_xt_dip_li_xt24",
+     "abb_xt_touch_xt24"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_160",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2l_1_6",
+    "name": "ABB XT2L 1.6 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2L",
+    "trip_rating_a": 1.6,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 120,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_1_6"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_1_6",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2l_2",
+    "name": "ABB XT2L 2 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2L",
+    "trip_rating_a": 2,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 120,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_2"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_2",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2l_2_5",
+    "name": "ABB XT2L 2.5 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2L",
+    "trip_rating_a": 2.5,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 120,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_2_5"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_2_5",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2l_3_2",
+    "name": "ABB XT2L 3.2 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2L",
+    "trip_rating_a": 3.2,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 120,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_3_2"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_3_2",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2l_4",
+    "name": "ABB XT2L 4 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2L",
+    "trip_rating_a": 4,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 120,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_4"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_4",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2l_5",
+    "name": "ABB XT2L 5 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2L",
+    "trip_rating_a": 5,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 120,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_5"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_5",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2l_6_3",
+    "name": "ABB XT2L 6.3 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2L",
+    "trip_rating_a": 6.3,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 120,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_6_3"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_6_3",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2l_8",
+    "name": "ABB XT2L 8 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2L",
+    "trip_rating_a": 8,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 120,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_8"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_8",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2l_10",
+    "name": "ABB XT2L 10 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2L",
+    "trip_rating_a": 10,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 120,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_10",
+     "abb_xt_dip_lsi_xt24",
+     "abb_xt_dip_ls_xt24",
+     "abb_xt_dip_li_xt24"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_10",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2l_12_5",
+    "name": "ABB XT2L 12.5 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2L",
+    "trip_rating_a": 12.5,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 120,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_12_5"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_12_5",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2l_16",
+    "name": "ABB XT2L 16 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2L",
+    "trip_rating_a": 16,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 120,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 18.75,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_16"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_16",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2l_20",
+    "name": "ABB XT2L 20 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2L",
+    "trip_rating_a": 20,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 120,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 15.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_20"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_20",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2l_25",
+    "name": "ABB XT2L 25 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2L",
+    "trip_rating_a": 25,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 120,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 12.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_25",
+     "abb_xt_dip_lsi_xt24",
+     "abb_xt_dip_ls_xt24",
+     "abb_xt_dip_li_xt24"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_25",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2l_32",
+    "name": "ABB XT2L 32 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2L",
+    "trip_rating_a": 32,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 120,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_32"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_32",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2l_40",
+    "name": "ABB XT2L 40 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2L",
+    "trip_rating_a": 40,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 120,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_40",
+     "abb_xt_touch_xt24"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_40",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2l_50",
+    "name": "ABB XT2L 50 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2L",
+    "trip_rating_a": 50,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 120,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_50"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_50",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2l_63",
+    "name": "ABB XT2L 63 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2L",
+    "trip_rating_a": 63,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 120,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_63",
+     "abb_xt_dip_lsi_xt24",
+     "abb_xt_dip_ls_xt24",
+     "abb_xt_dip_li_xt24",
+     "abb_xt_touch_xt24"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_63",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2l_80",
+    "name": "ABB XT2L 80 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2L",
+    "trip_rating_a": 80,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 120,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_80"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_80",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2l_100",
+    "name": "ABB XT2L 100 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2L",
+    "trip_rating_a": 100,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 120,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_100",
+     "abb_xt_dip_lsi_xt24",
+     "abb_xt_dip_ls_xt24",
+     "abb_xt_dip_li_xt24",
+     "abb_xt_touch_xt24"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_100",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2l_125",
+    "name": "ABB XT2L 125 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2L",
+    "trip_rating_a": 125,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 120,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_125"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_125",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2l_160",
+    "name": "ABB XT2L 160 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2L",
+    "trip_rating_a": 160,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 120,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_160",
+     "abb_xt_dip_lsi_xt24",
+     "abb_xt_dip_ls_xt24",
+     "abb_xt_dip_li_xt24",
+     "abb_xt_touch_xt24"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_160",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2v_1_6",
+    "name": "ABB XT2V 1.6 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2V",
+    "trip_rating_a": 1.6,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 150,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_1_6"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_1_6",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2v_2",
+    "name": "ABB XT2V 2 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2V",
+    "trip_rating_a": 2,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 150,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_2"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_2",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2v_2_5",
+    "name": "ABB XT2V 2.5 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2V",
+    "trip_rating_a": 2.5,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 150,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_2_5"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_2_5",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2v_3_2",
+    "name": "ABB XT2V 3.2 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2V",
+    "trip_rating_a": 3.2,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 150,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_3_2"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_3_2",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2v_4",
+    "name": "ABB XT2V 4 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2V",
+    "trip_rating_a": 4,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 150,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_4"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_4",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2v_5",
+    "name": "ABB XT2V 5 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2V",
+    "trip_rating_a": 5,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 150,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_5"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_5",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2v_6_3",
+    "name": "ABB XT2V 6.3 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2V",
+    "trip_rating_a": 6.3,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 150,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_6_3"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_6_3",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2v_8",
+    "name": "ABB XT2V 8 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2V",
+    "trip_rating_a": 8,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 150,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_8"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_8",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2v_10",
+    "name": "ABB XT2V 10 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2V",
+    "trip_rating_a": 10,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 150,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_10",
+     "abb_xt_dip_ls_xt24",
+     "abb_xt_dip_li_xt24"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_10",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2v_12_5",
+    "name": "ABB XT2V 12.5 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2V",
+    "trip_rating_a": 12.5,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 150,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_12_5"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_12_5",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2v_16",
+    "name": "ABB XT2V 16 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2V",
+    "trip_rating_a": 16,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 150,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 18.75,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_16"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_16",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2v_20",
+    "name": "ABB XT2V 20 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2V",
+    "trip_rating_a": 20,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 150,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 15.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_20"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_20",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2v_25",
+    "name": "ABB XT2V 25 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2V",
+    "trip_rating_a": 25,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 150,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 12.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_25",
+     "abb_xt_dip_ls_xt24",
+     "abb_xt_dip_li_xt24"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_25",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2v_32",
+    "name": "ABB XT2V 32 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2V",
+    "trip_rating_a": 32,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 150,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_32"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_32",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2v_40",
+    "name": "ABB XT2V 40 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2V",
+    "trip_rating_a": 40,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 150,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_40",
+     "abb_xt_touch_xt24"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_40",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2v_50",
+    "name": "ABB XT2V 50 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2V",
+    "trip_rating_a": 50,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 150,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_50"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_50",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2v_63",
+    "name": "ABB XT2V 63 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2V",
+    "trip_rating_a": 63,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 150,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_63",
+     "abb_xt_dip_ls_xt24",
+     "abb_xt_dip_li_xt24",
+     "abb_xt_touch_xt24"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_63",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2v_80",
+    "name": "ABB XT2V 80 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2V",
+    "trip_rating_a": 80,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 150,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_80"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_80",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2v_100",
+    "name": "ABB XT2V 100 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2V",
+    "trip_rating_a": 100,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 150,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_100",
+     "abb_xt_dip_ls_xt24",
+     "abb_xt_dip_li_xt24",
+     "abb_xt_touch_xt24"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_100",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2v_125",
+    "name": "ABB XT2V 125 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2V",
+    "trip_rating_a": 125,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 150,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_125"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_125",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt2v_160",
+    "name": "ABB XT2V 160 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT2V",
+    "trip_rating_a": 160,
+    "frame_a": 160,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 150,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt2_160",
+     "abb_xt_dip_ls_xt24",
+     "abb_xt_dip_li_xt24",
+     "abb_xt_touch_xt24"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt2_160",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt3n_63",
+    "name": "ABB XT3N 63 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT3N",
+    "trip_rating_a": 63,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 36,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt3_63"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt3_63",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt3n_80",
+    "name": "ABB XT3N 80 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT3N",
+    "trip_rating_a": 80,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 36,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt3_80"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt3_80",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt3n_100",
+    "name": "ABB XT3N 100 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT3N",
+    "trip_rating_a": 100,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 36,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt3_100"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt3_100",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt3n_125",
+    "name": "ABB XT3N 125 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT3N",
+    "trip_rating_a": 125,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 36,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt3_125"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt3_125",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt3n_160",
+    "name": "ABB XT3N 160 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT3N",
+    "trip_rating_a": 160,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 36,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt3_160"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt3_160",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt3n_200",
+    "name": "ABB XT3N 200 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT3N",
+    "trip_rating_a": 200,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 36,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt3_200"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt3_200",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt3n_250",
+    "name": "ABB XT3N 250 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT3N",
+    "trip_rating_a": 250,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 36,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt3_250"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt3_250",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt3s_63",
+    "name": "ABB XT3S 63 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT3S",
+    "trip_rating_a": 63,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "ics_pct": 50,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt3_63"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt3_63",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt3s_80",
+    "name": "ABB XT3S 80 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT3S",
+    "trip_rating_a": 80,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "ics_pct": 50,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt3_80"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt3_80",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt3s_100",
+    "name": "ABB XT3S 100 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT3S",
+    "trip_rating_a": 100,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "ics_pct": 50,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt3_100"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt3_100",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt3s_125",
+    "name": "ABB XT3S 125 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT3S",
+    "trip_rating_a": 125,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "ics_pct": 50,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt3_125"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt3_125",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt3s_160",
+    "name": "ABB XT3S 160 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT3S",
+    "trip_rating_a": 160,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "ics_pct": 50,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt3_160"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt3_160",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt3s_200",
+    "name": "ABB XT3S 200 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT3S",
+    "trip_rating_a": 200,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "ics_pct": 50,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt3_200"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt3_200",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt3s_250",
+    "name": "ABB XT3S 250 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT3S",
+    "trip_rating_a": 250,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "ics_pct": 50,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt3_250"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt3_250",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt4n_16",
+    "name": "ABB XT4N 16 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT4N",
+    "trip_rating_a": 16,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 36,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 18.75,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt4_16"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt4_16",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt4n_20",
+    "name": "ABB XT4N 20 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT4N",
+    "trip_rating_a": 20,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 36,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 15.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt4_20"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt4_20",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt4n_25",
+    "name": "ABB XT4N 25 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT4N",
+    "trip_rating_a": 25,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 36,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 12.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt4_25"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt4_25",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt4n_32",
+    "name": "ABB XT4N 32 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT4N",
+    "trip_rating_a": 32,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 36,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt4_32"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt4_32",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt4n_40",
+    "name": "ABB XT4N 40 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT4N",
+    "trip_rating_a": 40,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 36,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt4_40",
+     "abb_xt_dip_lsi_xt24",
+     "abb_xt_dip_ls_xt24",
+     "abb_xt_dip_li_xt24"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt4_40",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt4n_50",
+    "name": "ABB XT4N 50 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT4N",
+    "trip_rating_a": 50,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 36,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt4_50"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt4_50",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt4n_63",
+    "name": "ABB XT4N 63 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT4N",
+    "trip_rating_a": 63,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 36,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt4_63",
+     "abb_xt_dip_lsi_xt24",
+     "abb_xt_dip_ls_xt24",
+     "abb_xt_dip_li_xt24"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt4_63",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt4n_80",
+    "name": "ABB XT4N 80 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT4N",
+    "trip_rating_a": 80,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 36,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt4_80"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt4_80",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt4n_100",
+    "name": "ABB XT4N 100 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT4N",
+    "trip_rating_a": 100,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 36,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt4_100",
+     "abb_xt_dip_lsi_xt24",
+     "abb_xt_dip_ls_xt24",
+     "abb_xt_dip_li_xt24",
+     "abb_xt_touch_xt24"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt4_100",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt4n_125",
+    "name": "ABB XT4N 125 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT4N",
+    "trip_rating_a": 125,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 36,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt4_125"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt4_125",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt4n_160",
+    "name": "ABB XT4N 160 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT4N",
+    "trip_rating_a": 160,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 36,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt4_160",
+     "abb_xt_dip_lsi_xt24",
+     "abb_xt_dip_ls_xt24",
+     "abb_xt_dip_li_xt24",
+     "abb_xt_touch_xt24"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt4_160",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt4n_200",
+    "name": "ABB XT4N 200 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT4N",
+    "trip_rating_a": 200,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 36,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt4_200"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt4_200",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt4n_225",
+    "name": "ABB XT4N 225 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT4N",
+    "trip_rating_a": 225,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 36,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt4_225"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt4_225",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt4n_250",
+    "name": "ABB XT4N 250 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT4N",
+    "trip_rating_a": 250,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 36,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt4_250",
+     "abb_xt_dip_lsi_xt24",
+     "abb_xt_dip_ls_xt24",
+     "abb_xt_dip_li_xt24",
+     "abb_xt_touch_xt24"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt4_250",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt4s_16",
+    "name": "ABB XT4S 16 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT4S",
+    "trip_rating_a": 16,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 18.75,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt4_16"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt4_16",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt4s_20",
+    "name": "ABB XT4S 20 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT4S",
+    "trip_rating_a": 20,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 15.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt4_20"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt4_20",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt4s_25",
+    "name": "ABB XT4S 25 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT4S",
+    "trip_rating_a": 25,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 12.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt4_25"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt4_25",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt4s_32",
+    "name": "ABB XT4S 32 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT4S",
+    "trip_rating_a": 32,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt4_32"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt4_32",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt4s_40",
+    "name": "ABB XT4S 40 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT4S",
+    "trip_rating_a": 40,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt4_40",
+     "abb_xt_dip_lsi_xt24",
+     "abb_xt_dip_ls_xt24",
+     "abb_xt_dip_li_xt24"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt4_40",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt4s_50",
+    "name": "ABB XT4S 50 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT4S",
+    "trip_rating_a": 50,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt4_50"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt4_50",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt4s_63",
+    "name": "ABB XT4S 63 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT4S",
+    "trip_rating_a": 63,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt4_63",
+     "abb_xt_dip_lsi_xt24",
+     "abb_xt_dip_ls_xt24",
+     "abb_xt_dip_li_xt24"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt4_63",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt4s_80",
+    "name": "ABB XT4S 80 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT4S",
+    "trip_rating_a": 80,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt4_80"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt4_80",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt4s_100",
+    "name": "ABB XT4S 100 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT4S",
+    "trip_rating_a": 100,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt4_100",
+     "abb_xt_dip_lsi_xt24",
+     "abb_xt_dip_ls_xt24",
+     "abb_xt_dip_li_xt24",
+     "abb_xt_touch_xt24"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt4_100",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt4s_125",
+    "name": "ABB XT4S 125 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT4S",
+    "trip_rating_a": 125,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt4_125"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt4_125",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt4s_160",
+    "name": "ABB XT4S 160 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT4S",
+    "trip_rating_a": 160,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt4_160",
+     "abb_xt_dip_lsi_xt24",
+     "abb_xt_dip_ls_xt24",
+     "abb_xt_dip_li_xt24",
+     "abb_xt_touch_xt24"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt4_160",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt4s_200",
+    "name": "ABB XT4S 200 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT4S",
+    "trip_rating_a": 200,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt4_200"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt4_200",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt4s_225",
+    "name": "ABB XT4S 225 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT4S",
+    "trip_rating_a": 225,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt4_225"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt4_225",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt4s_250",
+    "name": "ABB XT4S 250 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT4S",
+    "trip_rating_a": 250,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt4_250",
+     "abb_xt_dip_lsi_xt24",
+     "abb_xt_dip_ls_xt24",
+     "abb_xt_dip_li_xt24",
+     "abb_xt_touch_xt24"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt4_250",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt4h_16",
+    "name": "ABB XT4H 16 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT4H",
+    "trip_rating_a": 16,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 70,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 18.75,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt4_16"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt4_16",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt4h_20",
+    "name": "ABB XT4H 20 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT4H",
+    "trip_rating_a": 20,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 70,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 15.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt4_20"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt4_20",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt4h_25",
+    "name": "ABB XT4H 25 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT4H",
+    "trip_rating_a": 25,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 70,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 12.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt4_25"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt4_25",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt4h_32",
+    "name": "ABB XT4H 32 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT4H",
+    "trip_rating_a": 32,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 70,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt4_32"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt4_32",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt4h_40",
+    "name": "ABB XT4H 40 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT4H",
+    "trip_rating_a": 40,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 70,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt4_40",
+     "abb_xt_dip_lsi_xt24",
+     "abb_xt_dip_ls_xt24",
+     "abb_xt_dip_li_xt24"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt4_40",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt4h_50",
+    "name": "ABB XT4H 50 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT4H",
+    "trip_rating_a": 50,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 70,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt4_50"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt4_50",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt4h_63",
+    "name": "ABB XT4H 63 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT4H",
+    "trip_rating_a": 63,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 70,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt4_63",
+     "abb_xt_dip_lsi_xt24",
+     "abb_xt_dip_ls_xt24",
+     "abb_xt_dip_li_xt24"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt4_63",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt4h_80",
+    "name": "ABB XT4H 80 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT4H",
+    "trip_rating_a": 80,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 70,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt4_80"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt4_80",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt4h_100",
+    "name": "ABB XT4H 100 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT4H",
+    "trip_rating_a": 100,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 70,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt4_100",
+     "abb_xt_dip_lsi_xt24",
+     "abb_xt_dip_ls_xt24",
+     "abb_xt_dip_li_xt24",
+     "abb_xt_touch_xt24"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt4_100",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt4h_125",
+    "name": "ABB XT4H 125 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT4H",
+    "trip_rating_a": 125,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 70,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt4_125"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt4_125",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt4h_160",
+    "name": "ABB XT4H 160 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT4H",
+    "trip_rating_a": 160,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 70,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt4_160",
+     "abb_xt_dip_lsi_xt24",
+     "abb_xt_dip_ls_xt24",
+     "abb_xt_dip_li_xt24",
+     "abb_xt_touch_xt24"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt4_160",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt4h_200",
+    "name": "ABB XT4H 200 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT4H",
+    "trip_rating_a": 200,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 70,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt4_200"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt4_200",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt4h_225",
+    "name": "ABB XT4H 225 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT4H",
+    "trip_rating_a": 225,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 70,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt4_225"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt4_225",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt4h_250",
+    "name": "ABB XT4H 250 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT4H",
+    "trip_rating_a": 250,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 70,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt4_250",
+     "abb_xt_dip_lsi_xt24",
+     "abb_xt_dip_ls_xt24",
+     "abb_xt_dip_li_xt24",
+     "abb_xt_touch_xt24"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt4_250",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt4l_16",
+    "name": "ABB XT4L 16 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT4L",
+    "trip_rating_a": 16,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 120,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 18.75,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt4_16"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt4_16",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt4l_20",
+    "name": "ABB XT4L 20 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT4L",
+    "trip_rating_a": 20,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 120,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 15.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt4_20"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt4_20",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt4l_25",
+    "name": "ABB XT4L 25 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT4L",
+    "trip_rating_a": 25,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 120,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 12.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt4_25"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt4_25",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt4l_32",
+    "name": "ABB XT4L 32 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT4L",
+    "trip_rating_a": 32,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 120,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt4_32"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt4_32",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt4l_40",
+    "name": "ABB XT4L 40 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT4L",
+    "trip_rating_a": 40,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 120,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt4_40",
+     "abb_xt_dip_lsi_xt24",
+     "abb_xt_dip_ls_xt24",
+     "abb_xt_dip_li_xt24"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt4_40",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt4l_50",
+    "name": "ABB XT4L 50 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT4L",
+    "trip_rating_a": 50,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 120,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt4_50"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt4_50",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt4l_63",
+    "name": "ABB XT4L 63 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT4L",
+    "trip_rating_a": 63,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 120,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt4_63",
+     "abb_xt_dip_lsi_xt24",
+     "abb_xt_dip_ls_xt24",
+     "abb_xt_dip_li_xt24"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt4_63",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt4l_80",
+    "name": "ABB XT4L 80 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT4L",
+    "trip_rating_a": 80,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 120,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt4_80"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt4_80",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt4l_100",
+    "name": "ABB XT4L 100 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT4L",
+    "trip_rating_a": 100,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 120,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt4_100",
+     "abb_xt_dip_lsi_xt24",
+     "abb_xt_dip_ls_xt24",
+     "abb_xt_dip_li_xt24",
+     "abb_xt_touch_xt24"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt4_100",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt4l_125",
+    "name": "ABB XT4L 125 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT4L",
+    "trip_rating_a": 125,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 120,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt4_125"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt4_125",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt4l_160",
+    "name": "ABB XT4L 160 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT4L",
+    "trip_rating_a": 160,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 120,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt4_160",
+     "abb_xt_dip_lsi_xt24",
+     "abb_xt_dip_ls_xt24",
+     "abb_xt_dip_li_xt24",
+     "abb_xt_touch_xt24"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt4_160",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt4l_200",
+    "name": "ABB XT4L 200 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT4L",
+    "trip_rating_a": 200,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 120,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt4_200"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt4_200",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt4l_225",
+    "name": "ABB XT4L 225 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT4L",
+    "trip_rating_a": 225,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 120,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt4_225"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt4_225",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt4l_250",
+    "name": "ABB XT4L 250 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT4L",
+    "trip_rating_a": 250,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 120,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt4_250",
+     "abb_xt_dip_lsi_xt24",
+     "abb_xt_dip_ls_xt24",
+     "abb_xt_dip_li_xt24",
+     "abb_xt_touch_xt24"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt4_250",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt4v_16",
+    "name": "ABB XT4V 16 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT4V",
+    "trip_rating_a": 16,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 150,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 18.75,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt4_16"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt4_16",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt4v_20",
+    "name": "ABB XT4V 20 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT4V",
+    "trip_rating_a": 20,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 150,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 15.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt4_20"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt4_20",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt4v_25",
+    "name": "ABB XT4V 25 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT4V",
+    "trip_rating_a": 25,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 150,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 12.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt4_25"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt4_25",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt4v_32",
+    "name": "ABB XT4V 32 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT4V",
+    "trip_rating_a": 32,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 150,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt4_32"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt4_32",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt4v_40",
+    "name": "ABB XT4V 40 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT4V",
+    "trip_rating_a": 40,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 150,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt4_40",
+     "abb_xt_dip_lsi_xt24",
+     "abb_xt_dip_ls_xt24",
+     "abb_xt_dip_li_xt24"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt4_40",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt4v_50",
+    "name": "ABB XT4V 50 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT4V",
+    "trip_rating_a": 50,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 150,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt4_50"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt4_50",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt4v_63",
+    "name": "ABB XT4V 63 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT4V",
+    "trip_rating_a": 63,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 150,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt4_63",
+     "abb_xt_dip_lsi_xt24",
+     "abb_xt_dip_ls_xt24",
+     "abb_xt_dip_li_xt24"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt4_63",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt4v_80",
+    "name": "ABB XT4V 80 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT4V",
+    "trip_rating_a": 80,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 150,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt4_80"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt4_80",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt4v_100",
+    "name": "ABB XT4V 100 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT4V",
+    "trip_rating_a": 100,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 150,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt4_100",
+     "abb_xt_dip_lsi_xt24",
+     "abb_xt_dip_ls_xt24",
+     "abb_xt_dip_li_xt24",
+     "abb_xt_touch_xt24"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt4_100",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt4v_125",
+    "name": "ABB XT4V 125 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT4V",
+    "trip_rating_a": 125,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 150,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt4_125"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt4_125",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt4v_160",
+    "name": "ABB XT4V 160 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT4V",
+    "trip_rating_a": 160,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 150,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt4_160",
+     "abb_xt_dip_lsi_xt24",
+     "abb_xt_dip_ls_xt24",
+     "abb_xt_dip_li_xt24",
+     "abb_xt_touch_xt24"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt4_160",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt4v_200",
+    "name": "ABB XT4V 200 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT4V",
+    "trip_rating_a": 200,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 150,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt4_200"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt4_200",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt4v_225",
+    "name": "ABB XT4V 225 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT4V",
+    "trip_rating_a": 225,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 150,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt4_225"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt4_225",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt4v_250",
+    "name": "ABB XT4V 250 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT4V",
+    "trip_rating_a": 250,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 150,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt4_250",
+     "abb_xt_dip_lsi_xt24",
+     "abb_xt_dip_ls_xt24",
+     "abb_xt_dip_li_xt24",
+     "abb_xt_touch_xt24"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt4_250",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt4x_32",
+    "name": "ABB XT4X 32 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT4X",
+    "trip_rating_a": 32,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 200,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt4_32"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt4_32",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt4x_40",
+    "name": "ABB XT4X 40 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT4X",
+    "trip_rating_a": 40,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 200,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt4_40",
+     "abb_xt_dip_lsi_xt24",
+     "abb_xt_dip_ls_xt24",
+     "abb_xt_dip_li_xt24"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt4_40",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt4x_50",
+    "name": "ABB XT4X 50 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT4X",
+    "trip_rating_a": 50,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 200,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt4_50"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt4_50",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt4x_63",
+    "name": "ABB XT4X 63 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT4X",
+    "trip_rating_a": 63,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 200,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt4_63",
+     "abb_xt_dip_lsi_xt24",
+     "abb_xt_dip_ls_xt24",
+     "abb_xt_dip_li_xt24"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt4_63",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt4x_80",
+    "name": "ABB XT4X 80 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT4X",
+    "trip_rating_a": 80,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 200,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt4_80"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt4_80",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt4x_100",
+    "name": "ABB XT4X 100 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT4X",
+    "trip_rating_a": 100,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 200,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt4_100",
+     "abb_xt_dip_lsi_xt24",
+     "abb_xt_dip_ls_xt24",
+     "abb_xt_dip_li_xt24",
+     "abb_xt_touch_xt24"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt4_100",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt4x_125",
+    "name": "ABB XT4X 125 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT4X",
+    "trip_rating_a": 125,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 200,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt4_125"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt4_125",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt4x_160",
+    "name": "ABB XT4X 160 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT4X",
+    "trip_rating_a": 160,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 200,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt4_160",
+     "abb_xt_dip_lsi_xt24",
+     "abb_xt_dip_ls_xt24",
+     "abb_xt_dip_li_xt24",
+     "abb_xt_touch_xt24"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt4_160",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt4x_200",
+    "name": "ABB XT4X 200 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT4X",
+    "trip_rating_a": 200,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 200,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt4_200"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt4_200",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt4x_225",
+    "name": "ABB XT4X 225 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT4X",
+    "trip_rating_a": 225,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 200,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt4_225"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt4_225",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt4x_250",
+    "name": "ABB XT4X 250 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT4X",
+    "trip_rating_a": 250,
+    "frame_a": 250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 200,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt4_250",
+     "abb_xt_dip_lsi_xt24",
+     "abb_xt_dip_ls_xt24",
+     "abb_xt_dip_li_xt24",
+     "abb_xt_touch_xt24"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt4_250",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt5n_250",
+    "name": "ABB XT5N 250 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT5N",
+    "trip_rating_a": 250,
+    "frame_a": 400,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 36,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10,
+    "long_time_delay": 12,
+    "trip_units": [
+     "abb_xt_dip_lsi_xt5",
+     "abb_xt_dip_ls_xt5",
+     "abb_xt_dip_li_xt5",
+     "abb_xt_touch_xt5"
+    ],
+    "default_trip_unit": "abb_xt_dip_lsi_xt5",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt5n_320",
+    "name": "ABB XT5N 320 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT5N",
+    "trip_rating_a": 320,
+    "frame_a": 400,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 36,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt5_320",
+     "abb_xt_dip_lsi_xt5",
+     "abb_xt_dip_ls_xt5",
+     "abb_xt_dip_li_xt5",
+     "abb_xt_touch_xt5"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt5_320",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt5n_400",
+    "name": "ABB XT5N 400 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT5N",
+    "trip_rating_a": 400,
+    "frame_a": 400,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 36,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt5_400",
+     "abb_xt_dip_lsi_xt5",
+     "abb_xt_dip_ls_xt5",
+     "abb_xt_dip_li_xt5",
+     "abb_xt_touch_xt5"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt5_400",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt5n_500",
+    "name": "ABB XT5N 500 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT5N",
+    "trip_rating_a": 500,
+    "frame_a": 630,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 36,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt5_500"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt5_500",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt5n_630",
+    "name": "ABB XT5N 630 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT5N",
+    "trip_rating_a": 630,
+    "frame_a": 630,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 36,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt5_630",
+     "abb_xt_dip_lsi_xt5",
+     "abb_xt_dip_ls_xt5",
+     "abb_xt_dip_li_xt5",
+     "abb_xt_touch_xt5"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt5_630",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt5s_250",
+    "name": "ABB XT5S 250 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT5S",
+    "trip_rating_a": 250,
+    "frame_a": 400,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10,
+    "long_time_delay": 12,
+    "trip_units": [
+     "abb_xt_dip_lsi_xt5",
+     "abb_xt_dip_ls_xt5",
+     "abb_xt_dip_li_xt5",
+     "abb_xt_touch_xt5"
+    ],
+    "default_trip_unit": "abb_xt_dip_lsi_xt5",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt5s_320",
+    "name": "ABB XT5S 320 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT5S",
+    "trip_rating_a": 320,
+    "frame_a": 400,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt5_320",
+     "abb_xt_dip_lsi_xt5",
+     "abb_xt_dip_ls_xt5",
+     "abb_xt_dip_li_xt5",
+     "abb_xt_touch_xt5"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt5_320",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt5s_400",
+    "name": "ABB XT5S 400 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT5S",
+    "trip_rating_a": 400,
+    "frame_a": 400,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt5_400",
+     "abb_xt_dip_lsi_xt5",
+     "abb_xt_dip_ls_xt5",
+     "abb_xt_dip_li_xt5",
+     "abb_xt_touch_xt5"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt5_400",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt5s_500",
+    "name": "ABB XT5S 500 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT5S",
+    "trip_rating_a": 500,
+    "frame_a": 630,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt5_500"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt5_500",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt5s_630",
+    "name": "ABB XT5S 630 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT5S",
+    "trip_rating_a": 630,
+    "frame_a": 630,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt5_630",
+     "abb_xt_dip_lsi_xt5",
+     "abb_xt_dip_ls_xt5",
+     "abb_xt_dip_li_xt5",
+     "abb_xt_touch_xt5"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt5_630",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt5h_250",
+    "name": "ABB XT5H 250 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT5H",
+    "trip_rating_a": 250,
+    "frame_a": 400,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 70,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10,
+    "long_time_delay": 12,
+    "trip_units": [
+     "abb_xt_dip_lsi_xt5",
+     "abb_xt_dip_ls_xt5",
+     "abb_xt_dip_li_xt5",
+     "abb_xt_touch_xt5"
+    ],
+    "default_trip_unit": "abb_xt_dip_lsi_xt5",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt5h_320",
+    "name": "ABB XT5H 320 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT5H",
+    "trip_rating_a": 320,
+    "frame_a": 400,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 70,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt5_320",
+     "abb_xt_dip_lsi_xt5",
+     "abb_xt_dip_ls_xt5",
+     "abb_xt_dip_li_xt5",
+     "abb_xt_touch_xt5"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt5_320",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt5h_400",
+    "name": "ABB XT5H 400 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT5H",
+    "trip_rating_a": 400,
+    "frame_a": 400,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 70,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt5_400",
+     "abb_xt_dip_lsi_xt5",
+     "abb_xt_dip_ls_xt5",
+     "abb_xt_dip_li_xt5",
+     "abb_xt_touch_xt5"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt5_400",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt5h_500",
+    "name": "ABB XT5H 500 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT5H",
+    "trip_rating_a": 500,
+    "frame_a": 630,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 70,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt5_500"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt5_500",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt5h_630",
+    "name": "ABB XT5H 630 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT5H",
+    "trip_rating_a": 630,
+    "frame_a": 630,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 70,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt5_630",
+     "abb_xt_dip_lsi_xt5",
+     "abb_xt_dip_ls_xt5",
+     "abb_xt_dip_li_xt5",
+     "abb_xt_touch_xt5"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt5_630",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt5l_250",
+    "name": "ABB XT5L 250 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT5L",
+    "trip_rating_a": 250,
+    "frame_a": 400,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 120,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10,
+    "long_time_delay": 12,
+    "trip_units": [
+     "abb_xt_dip_lsi_xt5",
+     "abb_xt_dip_ls_xt5",
+     "abb_xt_dip_li_xt5",
+     "abb_xt_touch_xt5"
+    ],
+    "default_trip_unit": "abb_xt_dip_lsi_xt5",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt5l_320",
+    "name": "ABB XT5L 320 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT5L",
+    "trip_rating_a": 320,
+    "frame_a": 400,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 120,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt5_320",
+     "abb_xt_dip_lsi_xt5",
+     "abb_xt_dip_ls_xt5",
+     "abb_xt_dip_li_xt5",
+     "abb_xt_touch_xt5"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt5_320",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt5l_400",
+    "name": "ABB XT5L 400 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT5L",
+    "trip_rating_a": 400,
+    "frame_a": 400,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 120,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt5_400",
+     "abb_xt_dip_lsi_xt5",
+     "abb_xt_dip_ls_xt5",
+     "abb_xt_dip_li_xt5",
+     "abb_xt_touch_xt5"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt5_400",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt5l_500",
+    "name": "ABB XT5L 500 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT5L",
+    "trip_rating_a": 500,
+    "frame_a": 630,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 120,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt5_500"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt5_500",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt5l_630",
+    "name": "ABB XT5L 630 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT5L",
+    "trip_rating_a": 630,
+    "frame_a": 630,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 120,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt5_630",
+     "abb_xt_dip_lsi_xt5",
+     "abb_xt_dip_ls_xt5",
+     "abb_xt_dip_li_xt5",
+     "abb_xt_touch_xt5"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt5_630",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt5v_250",
+    "name": "ABB XT5V 250 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT5V",
+    "trip_rating_a": 250,
+    "frame_a": 400,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 200,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10,
+    "long_time_delay": 12,
+    "trip_units": [
+     "abb_xt_dip_lsi_xt5",
+     "abb_xt_dip_ls_xt5",
+     "abb_xt_dip_li_xt5",
+     "abb_xt_touch_xt5"
+    ],
+    "default_trip_unit": "abb_xt_dip_lsi_xt5",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt5v_320",
+    "name": "ABB XT5V 320 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT5V",
+    "trip_rating_a": 320,
+    "frame_a": 400,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 200,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt5_320",
+     "abb_xt_dip_lsi_xt5",
+     "abb_xt_dip_ls_xt5",
+     "abb_xt_dip_li_xt5",
+     "abb_xt_touch_xt5"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt5_320",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt5v_400",
+    "name": "ABB XT5V 400 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT5V",
+    "trip_rating_a": 400,
+    "frame_a": 400,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 200,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt5_400",
+     "abb_xt_dip_lsi_xt5",
+     "abb_xt_dip_ls_xt5",
+     "abb_xt_dip_li_xt5",
+     "abb_xt_touch_xt5"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt5_400",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt5v_500",
+    "name": "ABB XT5V 500 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT5V",
+    "trip_rating_a": 500,
+    "frame_a": 630,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 200,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt5_500"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt5_500",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt5v_630",
+    "name": "ABB XT5V 630 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT5V",
+    "trip_rating_a": 630,
+    "frame_a": 630,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 200,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt5_630",
+     "abb_xt_dip_lsi_xt5",
+     "abb_xt_dip_ls_xt5",
+     "abb_xt_dip_li_xt5",
+     "abb_xt_touch_xt5"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt5_630",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt5x_250",
+    "name": "ABB XT5X 250 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT5X",
+    "trip_rating_a": 250,
+    "frame_a": 400,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 200,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10,
+    "long_time_delay": 12,
+    "trip_units": [
+     "abb_xt_dip_lsi_xt5",
+     "abb_xt_dip_ls_xt5",
+     "abb_xt_dip_li_xt5",
+     "abb_xt_touch_xt5"
+    ],
+    "default_trip_unit": "abb_xt_dip_lsi_xt5",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt5x_320",
+    "name": "ABB XT5X 320 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT5X",
+    "trip_rating_a": 320,
+    "frame_a": 400,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 200,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt5_320",
+     "abb_xt_dip_lsi_xt5",
+     "abb_xt_dip_ls_xt5",
+     "abb_xt_dip_li_xt5",
+     "abb_xt_touch_xt5"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt5_320",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt5x_400",
+    "name": "ABB XT5X 400 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT5X",
+    "trip_rating_a": 400,
+    "frame_a": 400,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 200,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt5_400",
+     "abb_xt_dip_lsi_xt5",
+     "abb_xt_dip_ls_xt5",
+     "abb_xt_dip_li_xt5",
+     "abb_xt_touch_xt5"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt5_400",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt5x_500",
+    "name": "ABB XT5X 500 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT5X",
+    "trip_rating_a": 500,
+    "frame_a": 630,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 200,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt5_500"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt5_500",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt5x_630",
+    "name": "ABB XT5X 630 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT5X",
+    "trip_rating_a": 630,
+    "frame_a": 630,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 200,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt5_630",
+     "abb_xt_dip_lsi_xt5",
+     "abb_xt_dip_ls_xt5",
+     "abb_xt_dip_li_xt5",
+     "abb_xt_touch_xt5"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt5_630",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt6n_630",
+    "name": "ABB XT6N 630 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT6N",
+    "trip_rating_a": 630,
+    "frame_a": 800,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 36,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt6_630",
+     "abb_xt_dip_lsi_xt6_800",
+     "abb_xt_dip_ls_xt6_800",
+     "abb_xt_dip_li_xt6_800"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt6_630",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt6n_800",
+    "name": "ABB XT6N 800 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT6N",
+    "trip_rating_a": 800,
+    "frame_a": 800,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 36,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt6_800",
+     "abb_xt_dip_lsi_xt6_800",
+     "abb_xt_dip_ls_xt6_800",
+     "abb_xt_dip_li_xt6_800"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt6_800",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt6n_1000",
+    "name": "ABB XT6N 1000 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT6N",
+    "trip_rating_a": 1000,
+    "frame_a": 1000,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 36,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10,
+    "long_time_delay": 12,
+    "trip_units": [
+     "abb_xt_dip_lsi_xt6_1000",
+     "abb_xt_dip_ls_xt6_1000",
+     "abb_xt_dip_li_xt6_1000"
+    ],
+    "default_trip_unit": "abb_xt_dip_lsi_xt6_1000",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt6s_630",
+    "name": "ABB XT6S 630 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT6S",
+    "trip_rating_a": 630,
+    "frame_a": 800,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt6_630",
+     "abb_xt_dip_lsi_xt6_800",
+     "abb_xt_dip_ls_xt6_800",
+     "abb_xt_dip_li_xt6_800"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt6_630",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt6s_800",
+    "name": "ABB XT6S 800 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT6S",
+    "trip_rating_a": 800,
+    "frame_a": 800,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt6_800",
+     "abb_xt_dip_lsi_xt6_800",
+     "abb_xt_dip_ls_xt6_800",
+     "abb_xt_dip_li_xt6_800"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt6_800",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt6s_1000",
+    "name": "ABB XT6S 1000 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT6S",
+    "trip_rating_a": 1000,
+    "frame_a": 1000,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10,
+    "long_time_delay": 12,
+    "trip_units": [
+     "abb_xt_dip_lsi_xt6_1000",
+     "abb_xt_dip_ls_xt6_1000",
+     "abb_xt_dip_li_xt6_1000"
+    ],
+    "default_trip_unit": "abb_xt_dip_lsi_xt6_1000",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt6h_630",
+    "name": "ABB XT6H 630 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT6H",
+    "trip_rating_a": 630,
+    "frame_a": 800,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 70,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt6_630",
+     "abb_xt_dip_lsi_xt6_800",
+     "abb_xt_dip_ls_xt6_800",
+     "abb_xt_dip_li_xt6_800"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt6_630",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt6h_800",
+    "name": "ABB XT6H 800 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT6H",
+    "trip_rating_a": 800,
+    "frame_a": 800,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 70,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_xt_tm_xt6_800",
+     "abb_xt_dip_lsi_xt6_800",
+     "abb_xt_dip_ls_xt6_800",
+     "abb_xt_dip_li_xt6_800"
+    ],
+    "default_trip_unit": "abb_xt_tm_xt6_800",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt6h_1000",
+    "name": "ABB XT6H 1000 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT6H",
+    "trip_rating_a": 1000,
+    "frame_a": 1000,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 70,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10,
+    "long_time_delay": 12,
+    "trip_units": [
+     "abb_xt_dip_lsi_xt6_1000",
+     "abb_xt_dip_ls_xt6_1000",
+     "abb_xt_dip_li_xt6_1000"
+    ],
+    "default_trip_unit": "abb_xt_dip_lsi_xt6_1000",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt7s_630",
+    "name": "ABB XT7S 630 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT7S",
+    "trip_rating_a": 630,
+    "frame_a": 800,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10,
+    "long_time_delay": 12,
+    "trip_units": [
+     "abb_xt_dip_lsi_xt7",
+     "abb_xt_dip_ls_xt7",
+     "abb_xt_dip_li_xt7"
+    ],
+    "default_trip_unit": "abb_xt_dip_lsi_xt7",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt7s_800",
+    "name": "ABB XT7S 800 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT7S",
+    "trip_rating_a": 800,
+    "frame_a": 800,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10,
+    "long_time_delay": 12,
+    "trip_units": [
+     "abb_xt_dip_lsi_xt7",
+     "abb_xt_dip_ls_xt7",
+     "abb_xt_dip_li_xt7",
+     "abb_xt_touch_xt7"
+    ],
+    "default_trip_unit": "abb_xt_dip_lsi_xt7",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt7s_1000",
+    "name": "ABB XT7S 1000 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT7S",
+    "trip_rating_a": 1000,
+    "frame_a": 1000,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10,
+    "long_time_delay": 12,
+    "trip_units": [
+     "abb_xt_dip_lsi_xt7",
+     "abb_xt_dip_ls_xt7",
+     "abb_xt_dip_li_xt7",
+     "abb_xt_touch_xt7"
+    ],
+    "default_trip_unit": "abb_xt_dip_lsi_xt7",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt7s_1250",
+    "name": "ABB XT7S 1250 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT7S",
+    "trip_rating_a": 1250,
+    "frame_a": 1250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10,
+    "long_time_delay": 12,
+    "trip_units": [
+     "abb_xt_dip_lsi_xt7",
+     "abb_xt_dip_ls_xt7",
+     "abb_xt_dip_li_xt7",
+     "abb_xt_touch_xt7"
+    ],
+    "default_trip_unit": "abb_xt_dip_lsi_xt7",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt7s_1600",
+    "name": "ABB XT7S 1600 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT7S",
+    "trip_rating_a": 1600,
+    "frame_a": 1600,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10,
+    "long_time_delay": 12,
+    "trip_units": [
+     "abb_xt_dip_lsi_xt7",
+     "abb_xt_dip_ls_xt7",
+     "abb_xt_dip_li_xt7",
+     "abb_xt_touch_xt7"
+    ],
+    "default_trip_unit": "abb_xt_dip_lsi_xt7",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt7h_630",
+    "name": "ABB XT7H 630 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT7H",
+    "trip_rating_a": 630,
+    "frame_a": 800,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 70,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10,
+    "long_time_delay": 12,
+    "trip_units": [
+     "abb_xt_dip_lsi_xt7",
+     "abb_xt_dip_ls_xt7",
+     "abb_xt_dip_li_xt7"
+    ],
+    "default_trip_unit": "abb_xt_dip_lsi_xt7",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt7h_800",
+    "name": "ABB XT7H 800 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT7H",
+    "trip_rating_a": 800,
+    "frame_a": 800,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 70,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10,
+    "long_time_delay": 12,
+    "trip_units": [
+     "abb_xt_dip_lsi_xt7",
+     "abb_xt_dip_ls_xt7",
+     "abb_xt_dip_li_xt7",
+     "abb_xt_touch_xt7"
+    ],
+    "default_trip_unit": "abb_xt_dip_lsi_xt7",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt7h_1000",
+    "name": "ABB XT7H 1000 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT7H",
+    "trip_rating_a": 1000,
+    "frame_a": 1000,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 70,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10,
+    "long_time_delay": 12,
+    "trip_units": [
+     "abb_xt_dip_lsi_xt7",
+     "abb_xt_dip_ls_xt7",
+     "abb_xt_dip_li_xt7",
+     "abb_xt_touch_xt7"
+    ],
+    "default_trip_unit": "abb_xt_dip_lsi_xt7",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt7h_1250",
+    "name": "ABB XT7H 1250 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT7H",
+    "trip_rating_a": 1250,
+    "frame_a": 1250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 70,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10,
+    "long_time_delay": 12,
+    "trip_units": [
+     "abb_xt_dip_lsi_xt7",
+     "abb_xt_dip_ls_xt7",
+     "abb_xt_dip_li_xt7",
+     "abb_xt_touch_xt7"
+    ],
+    "default_trip_unit": "abb_xt_dip_lsi_xt7",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt7h_1600",
+    "name": "ABB XT7H 1600 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT7H",
+    "trip_rating_a": 1600,
+    "frame_a": 1600,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 70,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10,
+    "long_time_delay": 12,
+    "trip_units": [
+     "abb_xt_dip_lsi_xt7",
+     "abb_xt_dip_ls_xt7",
+     "abb_xt_dip_li_xt7",
+     "abb_xt_touch_xt7"
+    ],
+    "default_trip_unit": "abb_xt_dip_lsi_xt7",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt7l_630",
+    "name": "ABB XT7L 630 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT7L",
+    "trip_rating_a": 630,
+    "frame_a": 800,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 120,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10,
+    "long_time_delay": 12,
+    "trip_units": [
+     "abb_xt_dip_lsi_xt7",
+     "abb_xt_dip_ls_xt7",
+     "abb_xt_dip_li_xt7"
+    ],
+    "default_trip_unit": "abb_xt_dip_lsi_xt7",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt7l_800",
+    "name": "ABB XT7L 800 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT7L",
+    "trip_rating_a": 800,
+    "frame_a": 800,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 120,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10,
+    "long_time_delay": 12,
+    "trip_units": [
+     "abb_xt_dip_lsi_xt7",
+     "abb_xt_dip_ls_xt7",
+     "abb_xt_dip_li_xt7",
+     "abb_xt_touch_xt7"
+    ],
+    "default_trip_unit": "abb_xt_dip_lsi_xt7",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt7l_1000",
+    "name": "ABB XT7L 1000 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT7L",
+    "trip_rating_a": 1000,
+    "frame_a": 1000,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 120,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10,
+    "long_time_delay": 12,
+    "trip_units": [
+     "abb_xt_dip_lsi_xt7",
+     "abb_xt_dip_ls_xt7",
+     "abb_xt_dip_li_xt7",
+     "abb_xt_touch_xt7"
+    ],
+    "default_trip_unit": "abb_xt_dip_lsi_xt7",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt7l_1250",
+    "name": "ABB XT7L 1250 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT7L",
+    "trip_rating_a": 1250,
+    "frame_a": 1250,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 120,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10,
+    "long_time_delay": 12,
+    "trip_units": [
+     "abb_xt_dip_lsi_xt7",
+     "abb_xt_dip_ls_xt7",
+     "abb_xt_dip_li_xt7",
+     "abb_xt_touch_xt7"
+    ],
+    "default_trip_unit": "abb_xt_dip_lsi_xt7",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_xt7l_1600",
+    "name": "ABB XT7L 1600 A",
+    "cb_type": "mccb",
+    "manufacturer": "ABB",
+    "series": "SACE Tmax XT",
+    "model": "XT7L",
+    "trip_rating_a": 1600,
+    "frame_a": 1600,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 120,
+    "ics_pct": 100,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 10,
+    "long_time_delay": 12,
+    "trip_units": [
+     "abb_xt_dip_lsi_xt7",
+     "abb_xt_dip_ls_xt7",
+     "abb_xt_dip_li_xt7",
+     "abb_xt_touch_xt7"
+    ],
+    "default_trip_unit": "abb_xt_dip_lsi_xt7",
+    "source": "1SDC210100D0206 (SACE Tmax XT catalogue, IEC, 08/2024)"
+   }
+  }
+ ]
+}
