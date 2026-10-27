@@ -1960,7 +1960,14 @@ const AppState = {
     if (this.rateLibrary && typeof Rates !== 'undefined' && Rates._migrateKeys) Rates._migrateKeys(this.rateLibrary);
     this.raceways = Array.isArray(data.raceways) ? data.raceways : [];
     this.drawingSets = Array.isArray(data.drawingSets) ? data.drawingSets.filter(d => d && d.id && Array.isArray(d.sheets)) : [];
-    this.sldViews = Array.isArray(data.sldViews) ? data.sldViews.filter(v => v && v.id) : [];
+    this.sldViews = Array.isArray(data.sldViews) ? data.sldViews.filter(v => v && typeof v.id === 'string').map(v => {
+      // geometry goes into SVG markup: numbers only
+      const n = (x) => (Number.isFinite(+x) ? +x : 0);
+      const out = Object.assign({}, v, { name: String(v.name || 'View'), kind: v.kind === 'window' ? 'window' : 'parts' });
+      if (out.kind === 'window') out.window = { x: n(v.window && v.window.x), y: n(v.window && v.window.y), w: Math.max(20, n(v.window && v.window.w)), h: Math.max(20, n(v.window && v.window.h)) };
+      else out.parts = Array.isArray(v.parts) ? v.parts.filter(id => typeof id === 'string') : [];
+      return out;
+    }) : [];
     this.projectType = ['retic', 'building', 'network', 'lighting'].includes(data.projectType) ? data.projectType : null;
     this.lightingKinds = Array.isArray(data.lightingKinds) ? data.lightingKinds.filter(k => ['rooms', 'roads', 'sports'].includes(k)) : null;
     this.roadCircuits = data.roadCircuits === true;

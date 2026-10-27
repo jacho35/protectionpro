@@ -159,6 +159,20 @@ const DrawingSet = {
     for (const s of set.sheets) if (s.kind === 'buses') s.buses = (s.buses || []).filter(b => this._comps.has(b) && this._comps.get(b).type === 'bus');
     set.sheets = set.sheets.filter(s => s.kind !== 'view' || this.viewOf(s.viewId));
     set.opts = Object.assign(this.defaultOpts(), set.opts || {});
+    // options come from the project file / Collab: hold them to their allowed values
+    const o = set.opts, pick = (v, ok, d) => (ok.includes(v) ? v : d);
+    o.paper = SheetPrint.PAPERS[o.paper] ? o.paper : 'a3';
+    o.landscape = o.landscape !== false;
+    o.minPt = Math.min(14, Math.max(4, +o.minPt || 8));
+    o.maxBuses = Math.min(30, Math.max(1, Math.round(+o.maxBuses) || 6));
+    o.scale = pick(o.scale, ['uniform', 'fit'], 'uniform');
+    o.titleBlock = pick(o.titleBlock, ['standard', 'formal'], 'standard');
+    o.oversize = pick(o.oversize, ['split', 'keep'], 'split');
+    o.cut = pick(o.cut, ['tags', 'edge'], 'tags');
+    o.keyPlan = o.keyPlan !== false;
+    o.numbering = typeof o.numbering === 'string' ? o.numbering : '';
+    o.status = typeof o.status === 'string' ? o.status : '';
+    if (typeof set.name !== 'string') set.name = 'Drawing set';
     if (!Array.isArray(set.revisions)) set.revisions = [];
   },
 
@@ -223,8 +237,8 @@ const DrawingSet = {
     }
     if (P.oversized.length) {
       const bigger = this._biggerPaper(set);
-      warn.push(`<div class="ds-warn" role="status"><b>Too big for one ${set.opts.paper.toUpperCase()} sheet at ${set.opts.minPt} pt:</b> ${e(P.oversized.map(o => `${o.title} (${o.pt.toFixed(1)} pt${o.tall ? ', too tall' : ''})`).join('; '))}.
-        <span class="ds-warnbtns">${bigger ? `<button type="button" class="btn-small" data-act="paper-up" data-paper="${bigger}">Use ${bigger.toUpperCase()}</button>` : ''}${set.opts.landscape && P.oversized.some(o => o.tall) ? '<button type="button" class="btn-small" data-act="portrait">Portrait</button>' : ''}</span></div>`);
+      warn.push(`<div class="ds-warn" role="status"><b>Too big for one ${e(String(set.opts.paper).toUpperCase())} sheet at ${Number(set.opts.minPt)} pt:</b> ${e(P.oversized.map(o => `${o.title} (${o.pt.toFixed(1)} pt${o.tall ? ', too tall' : ''})`).join('; '))}.
+        <span class="ds-warnbtns">${bigger ? `<button type="button" class="btn-small" data-act="paper-up" data-paper="${e(bigger)}">Use ${e(bigger.toUpperCase())}</button>` : ''}${set.opts.landscape && P.oversized.some(o => o.tall) ? '<button type="button" class="btn-small" data-act="portrait">Portrait</button>' : ''}</span></div>`);
     }
 
     const views = this.views();
