@@ -1439,7 +1439,27 @@ body.dark-mode {
      full width. Reveal the per-item actions since touch has no hover. */
   #calc-modal .fm-sidebar { display: none; }
   #calc-modal .fm-main { padding-left: 0; }
-  #calc-modal .fm-item-actions { opacity: 1; }
+  #calc-modal .fm-item-actions { display: none; }
+
+  /* Full-screen sheet, not a floating modal: the list gets the whole height */
+  #calc-modal:has(.fm-layout) { align-items: stretch; padding: 0; }
+  #calc-modal:has(.fm-layout) .modal-content {
+    width: 100%; min-width: 0; max-width: none; height: 100%; max-height: none;
+    border-radius: 0; display: flex; flex-direction: column;
+  }
+  #calc-modal:has(.fm-layout) #calc-modal-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  #calc-modal .fm-layout, #calc-modal .fm-main { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  #calc-modal .fm-toolbar { flex-wrap: wrap; }
+  #calc-modal .fm-search { flex: 1 0 100%; height: 48px; font-size: 16px; border-radius: 12px; }
+  #calc-modal .fm-toolbar .btn-small { flex: 1; height: 48px; font-size: 15px; font-weight: 600; border-radius: 12px; }
+  #calc-modal .fm-crumb, #calc-modal .fm-crumb-current { padding: 10px 4px; display: inline-block; }
+  #calc-modal .fm-list { flex: 1; max-height: none; border: 0; }
+  #calc-modal .fm-item { min-height: 64px; padding: 4px 0 4px 4px; }
+  #calc-modal .fm-item-icon { width: 40px; height: 40px; margin-right: 12px; }
+  #calc-modal .fm-item-info { flex-direction: column; align-items: flex-start; gap: 2px; min-height: 56px; justify-content: center; }
+  #calc-modal .fm-item-name { font-size: 16px; white-space: normal; overflow-wrap: anywhere; }
+  #calc-modal .fm-item-date { font-size: 13px; white-space: normal; }
+  #calc-modal .fm-more { display: flex; }
 
 } /* end @media (max-width: 768px) */
 
@@ -1879,3 +1899,13 @@ body.dark-mode {
 @media (max-width: 768px) {
   .erf-table td[data-cell="sel"], .erf-table th.sel-col { display: none; }
 }
+
+/* File Manager bottom sheet (phones) */
+.fm-sheet-backdrop { position: fixed; inset: 0; z-index: 10000; background: rgba(5,6,12,.6); display: flex; align-items: flex-end; }
+.fm-sheet { width: 100%; box-sizing: border-box; background: var(--bg-secondary); border-radius: 24px 24px 0 0; padding: 10px 12px calc(20px + env(safe-area-inset-bottom)); }
+.fm-sheet-grip { width: 40px; height: 4px; border-radius: 2px; background: var(--border-color); margin: 0 auto 12px; }
+.fm-sheet-title { font-size: 17px; font-weight: 700; padding: 4px 12px 12px; border-bottom: 1px solid var(--border-color); margin-bottom: 6px; overflow-wrap: anywhere; }
+.fm-sheet-item { display: flex; align-items: center; gap: 16px; width: 100%; height: 52px; border: 0; background: transparent; color: var(--text-primary); font: inherit; font-size: 16px; text-align: left; padding: 0 12px; border-radius: 12px; }
+.fm-sheet-item:active { background: var(--bg-tertiary); }
+.fm-sheet-sep { height: 1px; background: var(--border-color); margin: 6px 0; }
+.fm-sheet-danger { color: var(--danger); font-weight: 600; }
