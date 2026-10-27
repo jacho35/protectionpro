@@ -546,6 +546,110 @@ class TestAbbEmax2:
         assert _cb_self_clearing_time(p, 80000.0) == pytest.approx(0.33)
 
 
+# ── ABB SACE Tmax XT ─────────────────────────────────────────────────────
+
+XT_LIB = os.path.join(ROOT, "testing", "vendor-libraries", "abb_xt_breakers.json")
+XT_JS = os.path.join(ROOT, "frontend", "js", "vendor-trip-units-abb-xt.js")
+
+
+def _xt():
+    src = open(XT_JS).read()
+    head = "Object.assign(TRIP_UNITS, "
+    prof = json.loads(src[src.index(head) + len(head):src.rindex(");")])
+    ents = {e["data"]["id"]: e["data"] for e in json.load(open(XT_LIB))["entries"]}
+    return prof, ents
+
+
+def _xt_cb(unit, inn, **kw):
+    prof, _ = _xt()
+    pr = prof[unit]
+    p = {"cb_type": "mccb", "trip_rating_a": inn, "trip_unit_kind": pr["kind"],
+         "thermal_curve": pr["curve"]["thermal"], "trip_tol": pr["curve"]["tol"]}
+    for k, d in pr["dials"].items():
+        p[k] = d["def"]
+    p["pickup_base"] = {w: "In" for k, w in (("magnetic_pickup", "magnetic"), ("short_time_pickup", "short_time"),
+                                            ("instantaneous_pickup", "instantaneous")) if pr["dials"].get(k, {}).get("base") == "In"}
+    if pr["kind"] == "electronic":
+        p["pickup_base"]["magnetic"] = "In"
+        p["magnetic_pickup"] = p.get("instantaneous_pickup") or 1000
+    p.update(kw)
+    return p
+
+
+class TestAbbTmaxXt:
+    def test_entries(self):
+        prof, ents = _xt()
+        assert len(ents) == 309
+        for e in ents.values():
+            assert e["manufacturer"] == "ABB" and e["series"] == "SACE Tmax XT"
+            assert all(u in prof for u in e["trip_units"]) and e["default_trip_unit"] == e["trip_units"][0]
+        # catalogue 2/2-2/7: Icu at 415 V, Ics
+        assert [ents[f"abb_xt1{l}_100"]["breaking_ka"] for l in "bcnsh"] == [18, 25, 36, 50, 70]
+        assert ents["abb_xt1h_100"]["ics_pct"] == 50 and ents["abb_xt3s_250"]["ics_pct"] == 50
+        assert [ents[f"abb_xt4{l}_250"]["breaking_ka"] for l in "nshlvx"] == [36, 50, 70, 120, 150, 200]
+        assert [ents[f"abb_xt7{l}_1600"]["breaking_ka"] for l in "shl"] == [50, 70, 120]
+        # ordering codes: no TMD 16-25 A on XT4 X, no Ekip Dip LSI on XT2 V
+        assert "abb_xt4x_16" not in ents and ents["abb_xt4x_32"]["trip_units"] == ["abb_xt_tm_xt4_32"]
+        assert "abb_xt_dip_lsi_xt24" not in ents["abb_xt2v_100"]["trip_units"]
+        assert ents["abb_xt5n_630"]["trip_units"] == ["abb_xt_tm_xt5_630", "abb_xt_dip_lsi_xt5", "abb_xt_dip_ls_xt5",
+                                                    "abb_xt_dip_li_xt5", "abb_xt_touch_xt5"]
+        assert ents["abb_xt5n_400"]["frame_a"] == 400 and ents["abb_xt5n_500"]["frame_a"] == 630
+
+    def test_thermal_magnetic_settings(self):
+        prof, _ = _xt()
+        # catalogue 3/20: I3 in amps on the device, held against In
+        d = prof["abb_xt_tm_xt1_50"]["dials"]["magnetic_pickup"]
+        assert d["fixed"] and d["base"] == "In" and d["def"] * 50 == pytest.approx(500)
+        d = prof["abb_xt_tm_xt4_63"]["dials"]["magnetic_pickup"]          # TMA 315 / 473 / 630 A
+        assert round(d["steps"][0] * 63) == 315 and round(d["steps"][-1] * 63) == 630 == round(d["def"] * 63)
+        assert any(abs(s * 63 - 473) < 0.01 for s in d["steps"])
+        assert prof["abb_xt_tm_xt1_16"]["dials"]["thermal_pickup"]["fixed"]
+        assert prof["abb_xt_tm_xt3_250"]["dials"]["thermal_pickup"]["steps"][0] == 0.7
+        assert prof["abb_xt_tm_xt5_400"]["dials"]["thermal_pickup"]["steps"] == [0.7, 0.775, 0.85, 0.925, 1.0]
+
+    def test_thermal_magnetic_curve(self):
+        # XT4 TMA 250 A: the digitised band (1SDC210033D0704 p.4/5); I1 moves the curve, I3 (amps) does not
+        p = _xt_cb("abb_xt_tm_xt4_250", 250)
+        t3 = _cb_self_clearing_time(p, 3 * 250)
+        assert 150 < t3 < 300
+        assert _cb_self_clearing_time(p, 1.29 * 250) == 10000.0                        # certain trip only above 1.3 x I1
+        q = _xt_cb("abb_xt_tm_xt4_250", 250, thermal_pickup=0.7)
+        assert _cb_self_clearing_time(q, 3 * 0.7 * 250) == pytest.approx(t3)
+        assert _cb_self_clearing_time(p, 10 * 250 * 1.21) == pytest.approx(0.0157)      # I3 2500 A + 20 %
+        assert _cb_self_clearing_time(q, 10 * 250 * 1.21) == pytest.approx(0.0157)
+        assert _cb_self_clearing_time(p, 10 * 250 * 1.19) > 1.0
+        # XT5 TMA (ABB US sheet): maximum clearing just above the I3 band
+        assert _cb_self_clearing_time(_xt_cb("abb_xt_tm_xt5_630", 630), 13 * 630) == pytest.approx(0.079, rel=0.01)
+
+    def test_ekip_dip(self):
+        p = _xt_cb("abb_xt_dip_lsi_xt24", 250, short_time_pickup=5.5, short_time_delay=0.2, instantaneous_pickup=0,
+                   magnetic_pickup=1000)
+        # t1 = 12 s at 3 x I1, +/-10 % up to 4 x In, +/-20 % above
+        assert _cb_self_clearing_time(p, 3 * 250) == pytest.approx(12 * 1.1)
+        assert _cb_self_clearing_time(p, 5 * 250) == pytest.approx(12 * 0.36 * 1.2)
+        assert _cb_self_clearing_time(p, 1.29 * 250) == 10000.0                        # trips between 1.05 and 1.3 x I1
+        assert _cb_self_clearing_time(p, 5.5 * 250 * 1.11) == pytest.approx(0.2 * 1.2)  # I2 +10 %, t2 +20 %
+        q = _xt_cb("abb_xt_dip_lsi_xt24", 250)                                         # I3 10 x In, <= 40 ms
+        assert _cb_self_clearing_time(q, 10 * 250 * 1.11) == pytest.approx(0.040)
+        r = _xt_cb("abb_xt_dip_li_xt24", 250)                                          # LS/I as L-I: <= 20 ms
+        assert _cb_self_clearing_time(r, 10 * 250 * 1.11) == pytest.approx(0.020)
+        s = _xt_cb("abb_xt_dip_ls_xt24", 250)                                          # as L-S: no I, t2 +/-15 %
+        assert s["instantaneous_pickup"] == 0
+        assert _cb_self_clearing_time(s, 50 * 250) == pytest.approx(0.1 * 1.15)
+        prof, _ = _xt()
+        assert prof["abb_xt_dip_lsi_xt6_800"]["dials"]["long_time_delay"]["steps"][-1] == 72
+        assert prof["abb_xt_dip_lsi_xt6_1000"]["dials"]["long_time_delay"]["steps"][-1] == 42
+        assert prof["abb_xt_dip_lsi_xt7"]["dials"]["instantaneous_pickup"]["steps"][-1] == 15
+
+    def test_ekip_touch(self):
+        p = _xt_cb("abb_xt_touch_xt7", 1600, short_time_pickup=4, short_time_delay=0.2)
+        assert _cb_self_clearing_time(p, 3 * 1600) == pytest.approx(12 * 1.1)
+        assert _cb_self_clearing_time(p, 4 * 1600 * 1.071) == pytest.approx(0.2 + 0.02)  # I2 +7 %, t2 + 10 %
+        assert _cb_self_clearing_time(p, 10 * 1600 * 1.101) == pytest.approx(0.030)
+        prof, _ = _xt()
+        assert "off" not in prof["abb_xt_touch_xt24"]["dials"]["instantaneous_pickup"]   # I cannot be excluded
+
+
 # ── CBI L Frame (L20B / L40B) ────────────────────────────────────────────
 
 CBI_LIB = os.path.join(ROOT, "testing", "vendor-libraries", "cbi_breakers.json")

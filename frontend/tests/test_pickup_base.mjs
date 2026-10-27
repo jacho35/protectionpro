@@ -22,9 +22,11 @@ const lib = JSON.parse(readFileSync(join(here, '..', '..', 'testing', 'vendor-li
 const ctx = { console, Math, escHtml: (x) => String(x) };
 vm.createContext(ctx);
 const abb = JSON.parse(readFileSync(join(here, '..', '..', 'testing', 'vendor-libraries', 'abb_breakers.json'), 'utf8'));
-const exp = vm.runInContext(`${js('constants.js')}\n${js('vendor-trip-units.js')}\n${js('vendor-trip-units-abb.js')}\n${js('tripunit.js')}
+const xt = JSON.parse(readFileSync(join(here, '..', '..', 'testing', 'vendor-libraries', 'abb_xt_breakers.json'), 'utf8'));
+const exp = vm.runInContext(`${js('constants.js')}\n${js('vendor-trip-units.js')}\n${js('vendor-trip-units-abb.js')}\n${js('vendor-trip-units-abb-xt.js')}\n${js('tripunit.js')}
   for (const e of ${JSON.stringify(lib.entries.map(e => e.data))}) STANDARD_CBS.push(e);
   for (const e of ${JSON.stringify(abb.entries.map(e => e.data))}) STANDARD_CBS.push(e);
+  for (const e of ${JSON.stringify(xt.entries.map(e => e.data))}) STANDARD_CBS.push(e);
   ({ cbTripTime, cbElementsA, cbPickupBase, cbPickupRefA, cbPickupLabel, cbTripExtras, cbTripBand, TripUnit, TRIP_UNITS, STANDARD_CBS });`, ctx);
 const { cbTripTime, cbElementsA, cbPickupBase, cbPickupRefA, cbPickupLabel, cbTripExtras, cbTripBand, TripUnit, TRIP_UNITS, STANDARD_CBS } = exp;
 
@@ -279,6 +281,25 @@ assert(near(cbTripBand(abp, 9600 * 0.93).tMin, 0.27, 1e-9), 'I2 - 7 %: the short
 assert(near(cbTripBand(abp, 16000 * 1.1001).tMax, 0.03, 1e-9), 'I3 + 10 %: at most 30 ms');
 TripUnit.adopt(ab, 'abb_emax2_dip_li');
 assert(ab.props.short_time_pickup === 0 && near(ab.props.instantaneous_pickup, 10), 'Ekip Dip LI has no S: it is blocked, not supplied by the generic model');
+
+// ── ABB Tmax XT: TMA I3 in amps against In; Ekip Dip LS/I as two profiles ──
+const x4 = breaker('abb_xt4s_250');
+assert(x4.props.trip_unit === 'abb_xt_tm_xt4_250' && x4.props.trip_unit_kind === 'tm' && x4.props.pickup_base.magnetic === 'In',
+  'XT4 TMA: I3 is held against In');
+TripUnit.setDial(x4, 'thermal_pickup', 0.7);
+const x4p = params(x4);
+assert(near(cbElementsA(x4p).ir, 175) && near(cbElementsA(x4p).im, 2500), 'I1 0.7 x In = 175 A; I3 stays 2500 A');
+assert(near(cbTripBand(x4p, 2500 * 1.21).tMax, 0.0157, 1e-9) && cbTripBand(x4p, 2500 * 1.19).tMax > 1, 'I3 +/-20 %, 0.016 s break');
+assert(cbTripBand(x4p, 1.29 * 175).tMax === Infinity && isFinite(cbTripBand(x4p, 1.29 * 175).tMin), 'TM pickup zone 1.05-1.3 x I1');
+TripUnit.adopt(x4, 'abb_xt_dip_ls_xt24');
+assert(x4.props.trip_unit_kind === 'electronic' && x4.props.instantaneous_pickup === 0 && x4.props.magnetic_pickup === 1000
+  && near(x4.props.short_time_pickup, 10), 'Ekip Dip LS/I set as L-S: S on, no instantaneous element');
+const lsp = params(x4);
+assert(near(cbTripBand(lsp, 50 * 250).tMax, 0.1 * 1.15, 1e-9), 'L-S: t2 0.1 s +/-15 % even at 50 x In');
+TripUnit.adopt(x4, 'abb_xt_dip_lsi_xt24');
+TripUnit.setDial(x4, 'thermal_pickup', 1.0);
+assert(near(cbTripBand(params(x4), 3 * 250).tMax, 12 * 1.1, 1e-9) && near(cbTripBand(params(x4), 5 * 250).tMax, 12 * 0.36 * 1.2, 1e-9),
+  'Ekip Dip: t1 12 s at 3 x I1, +/-10 % up to 4 x In, +/-20 % above');
 
 // ── dial units name the base ───────────────────────────────────────────────
 assert(TripUnit.unitOf('instantaneous_pickup', TRIP_UNITS.se_nsx_ml567_100.dials.instantaneous_pickup) === '× In', 'Ii unit reads × In');
