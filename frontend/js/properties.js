@@ -1778,6 +1778,28 @@ const Properties = {
     }
   },
 
+  // A cable that was derated for its installation keeps those conditions when
+  // its type changes: the new cable's tabulated rating is derated the same way
+  // (rated_amps was just reset to the library value above). If IEC 60364-5-52
+  // tabulates nothing for the new size / method the derating is dropped and
+  // the library rating stands.
+  _reapplyAmpacity(comp, cable) {
+    const a = comp.props.ampacity;
+    if (!a || !a.applied) return;
+    const s = this._ampCompute({
+      conductor: String(cable.conductor || 'Cu').toLowerCase() === 'al' ? 'al' : 'cu',
+      insulation: String(cable.insulation || 'XLPE').toUpperCase() === 'PVC' ? 'pvc' : 'xlpe',
+      size: Number(cable.size_mm2),
+      loaded: Number(cable.cores) === 2 ? 2 : 3,
+      method: a.method, ambient: a.ambient_c, circuits: a.circuits,
+      grouping: (typeof IecAmpacity !== 'undefined' && IecAmpacity.LEGACY && IecAmpacity.LEGACY[a.grouping]) || a.grouping || 'bunched',
+      soil: a.soil_kmw != null ? a.soil_kmw : 2.5,
+      current: a.design_current_a || 0,
+    });
+    if (s.baseA != null) this._writeAmpacity(comp, s);
+    else delete comp.props.ampacity;
+  },
+
   applyStandardType(comp, libraryType, typeId) {
     if (libraryType === 'cable') {
       const cable = STANDARD_CABLES.find(c => c.id === typeId);
@@ -1795,6 +1817,7 @@ const Properties = {
         const sysV = vf ? vf.systemVoltage : null;
         const fits = sysV && (sysV <= 1.0 ? cable.voltage_kv <= 1.0 : cable.voltage_kv >= sysV - 1e-9);
         comp.props.voltage_kv = fits && sysV > 1.0 ? sysV : cable.voltage_kv;
+        this._reapplyAmpacity(comp, cable);
       }
     } else if (libraryType === 'overhead') {
       const line = STANDARD_OVERHEAD_LINES.find(c => c.id === typeId);

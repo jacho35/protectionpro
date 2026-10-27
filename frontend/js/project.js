@@ -38,6 +38,18 @@ const Project = {
       try { localStorage.setItem('protectionpro-export-breakers-open', this.exportBreakersOpen ? '1' : '0'); } catch (err) { /* private mode */ }
       brkLabel();
     });
+    // Export option: how much of each device's data prints beside its symbol
+    try { this.exportDetail = JSON.parse(localStorage.getItem('protectionpro-export-detail') || 'null') || null; } catch (e) { this.exportDetail = null; }
+    if (!this.exportDetail) this.exportDetail = { level: 'all', groups: { ratings: true, protection: false, results: false, cable: false }, schedule: false };
+    const detBtn = document.getElementById('btn-export-detail');
+    if (detBtn) {
+      this._detailBtnLabel = () => {
+        const names = { tags: 'tags only', essential: 'essential', all: 'everything', custom: 'custom' };
+        detBtn.textContent = 'Diagram detail: ' + names[this.exportDetail.level] + '…';
+      };
+      this._detailBtnLabel();
+      detBtn.addEventListener('click', (e) => { e.stopPropagation(); window.closeAllToolbarMenus?.(); this.openExportDetail(); });
+    }
     document.getElementById('btn-export-svg').addEventListener('click', () => { window.closeAllToolbarMenus?.(); this.exportSVG(); });
     document.getElementById('btn-export-png').addEventListener('click', () => { window.closeAllToolbarMenus?.(); this.exportPNG(); });
     document.getElementById('btn-export-dxf').addEventListener('click', () => { window.closeAllToolbarMenus?.(); this.exportDXF(); });
@@ -359,6 +371,105 @@ const Project = {
   // Clone the live SVG, strip grid/overlay, inject full CSS, resolve CSS
   // variables in inline attributes, and compute the bounding box.
   // Returns { clone, svgW, svgH, minX, minY }
+  // ── Export detail level ──
+  // Filters each device's data label (.comp-data-label tspans) by group:
+  //   results = coloured / load-flow lines, protection = Ir / Im / ST / E/F / Icu,
+  //   cable = a cable's length + ampacity, ratings = everything else.
+  // 'essential' keeps one defining line per device. Returns the removed
+  // lines as schedule rows ({tag, data}).
+  _applyExportDetail(clone) {
+    const d = this.exportDetail || { level: 'all' };
+    const rows = [];
+    if (d.level === 'all') return rows;
+    const pageComps = AppState.getActivePageComponents ? AppState.getActivePageComponents() : AppState.components;
+    const showResults = d.level === 'custom' && d.groups.results;
+    const unitRe = /\d\s*(k?W\b|k?VA\b|MVA|MW|kV|Vdc|V\b|A\b|Ah|mm)/i;
+    const resultRe = /^(P|Q|S|I|V|Loss|Load)\b[:=\s]|MVAr|\bpu\b|^──/;
+    const protRe = /^(Ir=|Im=|ST=|E\/F|Icu\b)/;
+    clone.querySelectorAll('.comp-data-label[data-comp-id]').forEach(el => {
+      const id = el.getAttribute('data-comp-id');
+      const comp = pageComps.get(id) || AppState.components.get(id);
+      const tspans = Array.from(el.querySelectorAll('tspan'));
+      const info = tspans.map((t, i) => {
+        const txt = t.textContent;
+        let group = 'ratings';
+        if (t.hasAttribute('fill') || resultRe.test(txt)) group = 'results';
+        else if (protRe.test(txt)) group = 'protection';
+        else if (comp && comp.type === 'cable' && i > 0) group = 'cable';
+        return { t, txt, group };
+      });
+      let keepFirst = null;
+      if (d.level === 'essential') keepFirst = info.find(x => x.group !== 'results' && x.group !== 'protection' && unitRe.test(x.txt));
+      const kept = info.filter(x => {
+        if (d.level === 'tags') return false;
+        if (d.level === 'essential') return x === keepFirst;
+        return d.groups[x.group];
+      });
+      const dropped = info.filter(x => !kept.includes(x));
+      if (dropped.length) {
+        const nm = clone.querySelector(`.sld-component[data-id="${CSS.escape(id)}"] .comp-name-label`);
+        const dropText = dropped.filter(x => x.group !== 'results' || !/^[─\s]*(FAULT)?[─\s]*$/.test(x.txt)).map(x => x.txt.trim()).join(' · ');
+        if (dropText) rows.push({ tag: (nm && nm.textContent) || id, data: dropText });
+      }
+      dropped.forEach(x => x.t.remove());
+      if (!kept.length) { el.remove(); return; }
+      kept.forEach((x, i) => x.t.setAttribute('dy', i === 0 ? 0 : 12));
+    });
+    if (!showResults) clone.querySelectorAll('.annotation-group').forEach(g => g.remove());
+    return rows;
+  },
+
+  openExportDetail() {
+    const d = this.exportDetail;
+    const old = document.getElementById('export-detail-modal');
+    if (old) old.remove();
+    const wrap = document.createElement('div');
+    wrap.id = 'export-detail-modal';
+    wrap.setAttribute('style', 'position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:10000;display:flex;align-items:center;justify-content:center');
+    const presets = [
+      ['tags', 'Tags only', 'Names and nothing else'],
+      ['essential', 'Essential', 'Tag plus one defining value per device'],
+      ['all', 'Everything', 'Every property, as exported before'],
+      ['custom', 'Custom', 'Choose the groups below']
+    ];
+    const groups = [
+      ['ratings', 'Ratings', 'kV, kVA, A, kW'],
+      ['protection', 'Protection settings', 'Ir, Im, ST, E/F, Icu'],
+      ['results', 'Study results', 'fault / load flow lines and result boxes'],
+      ['cable', 'Cable details', 'length, ampacity']
+    ];
+    const radios = presets.map(([id, l, h]) => `<label style="display:flex;gap:10px;align-items:flex-start;padding:8px 10px;border:1px solid var(--border-color,#ccc);border-radius:6px;cursor:pointer"><input type="radio" name="exd-level" value="${id}" style="margin-top:3px"><span><b>${l}</b><br><span style="font-size:12px;opacity:.75">${h}</span></span></label>`).join('');
+    const checks = groups.map(([id, l, h]) => `<label style="display:flex;gap:10px;align-items:center;min-height:28px"><input type="checkbox" data-grp="${id}"><b>${l}</b><span style="font-size:12px;opacity:.75">${h}</span></label>`).join('');
+    wrap.innerHTML = `<div role="dialog" aria-label="Diagram export detail" style="background:var(--bg-primary,#fff);color:var(--text-primary,#222);border-radius:10px;padding:22px;width:460px;max-width:92vw;max-height:90vh;overflow:auto;display:flex;flex-direction:column;gap:14px;font-size:14px">
+      <div><div style="font-size:18px;font-weight:700">Diagram export detail</div><div style="font-size:12px;opacity:.75">Applies to the diagram PDF, PNG, SVG and DXF</div></div>
+      <div style="display:flex;flex-direction:column;gap:6px">${radios}</div>
+      <div style="display:flex;flex-direction:column;gap:2px"><div style="font-weight:700;margin-bottom:4px">Show beside symbols (Custom)</div>${checks}</div>
+      <label style="display:flex;gap:10px;align-items:center"><input type="checkbox" id="exd-schedule"><span><b>Add equipment schedule</b><br><span style="font-size:12px;opacity:.75">Hidden data listed under the drawing, keyed by tag</span></span></label>
+      <div style="display:flex;justify-content:flex-end;gap:8px"><button type="button" id="exd-cancel" class="btn">Cancel</button><button type="button" id="exd-ok" class="btn btn-primary">Save</button></div></div>`;
+    document.body.appendChild(wrap);
+    const q = (s) => wrap.querySelector(s);
+    wrap.querySelectorAll('input[name="exd-level"]').forEach(r => { r.checked = r.value === d.level; });
+    wrap.querySelectorAll('input[data-grp]').forEach(c => {
+      c.checked = !!d.groups[c.dataset.grp];
+      c.addEventListener('change', () => { q('input[name="exd-level"][value="custom"]').checked = true; });
+    });
+    q('#exd-schedule').checked = !!d.schedule;
+    const close = () => wrap.remove();
+    q('#exd-cancel').addEventListener('click', close);
+    wrap.addEventListener('click', (e) => { if (e.target === wrap) close(); });
+    wrap.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
+    q('#exd-ok').addEventListener('click', () => {
+      const lvl = q('input[name="exd-level"]:checked');
+      const groupsOn = {};
+      wrap.querySelectorAll('input[data-grp]').forEach(c => { groupsOn[c.dataset.grp] = c.checked; });
+      this.exportDetail = { level: lvl ? lvl.value : 'all', groups: groupsOn, schedule: q('#exd-schedule').checked };
+      try { localStorage.setItem('protectionpro-export-detail', JSON.stringify(this.exportDetail)); } catch (err) { /* private mode */ }
+      if (this._detailBtnLabel) this._detailBtnLabel();
+      close();
+    });
+    q('#exd-ok').focus();
+  },
+
   _prepareExportSVG(pad = 50) {
     const svg = document.getElementById('sld-canvas');
 
@@ -403,7 +514,7 @@ const Project = {
     }
     minX -= pad; minY -= pad; maxX += pad; maxY += pad;
     const svgW = maxX - minX;
-    const svgH = maxY - minY;
+    let svgH = maxY - minY;
 
     const clone = svg.cloneNode(true);
 
@@ -427,6 +538,33 @@ const Project = {
           g.replaceWith(fresh);
         }
       } finally { Symbols.exportBreakersOpen = false; }
+    }
+
+    // Detail level: drop the data lines the export options turn off
+    const scheduleRows = this._applyExportDetail(clone);
+    if (this.exportDetail && this.exportDetail.schedule && scheduleRows.length) {
+      const NS = 'http://www.w3.org/2000/svg';
+      const rowH = 16, top = maxY + 30;
+      const g = document.createElementNS(NS, 'g');
+      g.setAttribute('class', 'export-schedule');
+      const add = (txt, x, y, bold) => {
+        const t = document.createElementNS(NS, 'text');
+        t.setAttribute('x', x); t.setAttribute('y', y); t.setAttribute('font-size', '11');
+        t.setAttribute('font-family', 'Courier New, Courier, monospace'); t.setAttribute('fill', '#222');
+        if (bold) t.setAttribute('font-weight', '700');
+        t.textContent = txt; g.appendChild(t);
+      };
+      add('Equipment schedule', minX + pad, top, true);
+      add('Tag', minX + pad, top + rowH, true);
+      add('Data', minX + pad + 160, top + rowH, true);
+      scheduleRows.forEach((r, i) => {
+        add(r.tag, minX + pad, top + rowH * (i + 2));
+        add(r.data, minX + pad + 160, top + rowH * (i + 2));
+      });
+      clone.appendChild(g);
+      svgH = (top + rowH * (scheduleRows.length + 2)) - minY + pad / 2;
+      maxY = minY + svgH;
+      clone.setAttribute('viewBox', `${minX} ${minY} ${svgW} ${svgH}`);
     }
 
     // Strip non-diagram layers
