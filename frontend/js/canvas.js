@@ -1139,6 +1139,7 @@ const Canvas = {
   // Full re-render of all components and wires
   render() {
     if (typeof CableFocus !== 'undefined') CableFocus.syncFromSelection();
+    if (typeof CableBulk !== 'undefined') CableBulk.updateBar();
     // Get page-filtered components and wires
     const pageComps = AppState.getActivePageComponents();
     const pageWires = AppState.getActivePageWires();
