@@ -54,6 +54,7 @@ const Project = {
     document.getElementById('btn-export-png').addEventListener('click', () => { window.closeAllToolbarMenus?.(); this.exportPNG(); });
     document.getElementById('btn-export-dxf').addEventListener('click', () => { window.closeAllToolbarMenus?.(); this.exportDXF(); });
     document.getElementById('btn-export-diagram-pdf').addEventListener('click', () => { window.closeAllToolbarMenus?.(); this.exportDiagramPDF(); });
+    document.getElementById('btn-export-sheets').addEventListener('click', () => { window.closeAllToolbarMenus?.(); SheetPrint.open(); });
     document.getElementById('btn-export-csv').addEventListener('click', () => { window.closeAllToolbarMenus?.(); this.exportResultsCSV(); });
     document.getElementById('btn-export-pdf').addEventListener('click', () => { window.closeAllToolbarMenus?.(); this.exportPDF(); });
     document.getElementById('btn-export-template').addEventListener('click', () => { window.closeAllToolbarMenus?.(); Reports.showTemplateEditor(); });
