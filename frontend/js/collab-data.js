@@ -64,6 +64,9 @@ const CollabData = {
       sceneList('rp.objects', 'objects'),
       sceneList('rp.surfaces', 'surfaces'),
       sceneList('rp.points', 'points'),
+
+      { key: 'sld.drawingSets', kind: 'list', group: 'sld', get: () => AppState.drawingSets },
+      { key: 'sld.views', kind: 'list', group: 'sld', get: () => AppState.sldViews },
     ];
   },
 
@@ -188,5 +191,6 @@ const CollabData = {
     }
     if (groups.has('sl') && typeof StreetLight !== 'undefined' && StreetLight._active) StreetLight.render();
     if (groups.has('rp') && typeof RoadPlan !== 'undefined' && RoadPlan._active) RoadPlan.render();
+    if (groups.has('sld') && typeof DrawingSet !== 'undefined') DrawingSet.refresh();
   },
 };

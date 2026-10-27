@@ -89,18 +89,18 @@ ok('breaker and cable IDs ride on the connector', () => {
   assert.strictEqual(c.cable, 'C-301');
 });
 
-ok('the transformer is drawn on both sheets: whole on the receiving one, a ghost on the sending one', () => {
-  const p = SP.plan(network(), { paper: 'a3', minPt: 8 });
-  const lvPage = p.pages.find(pg => pg.buses.includes('lv1') && !pg.buses.includes('b11'));
-  assert.ok(lvPage, 'lv1 has its own sheet');
-  assert.ok(lvPage.ids.has('tx2'), 'real on the receiving sheet');
+ok('the transformer is drawn once, on the receiving sheet; the sending tag names it', () => {
+  const p = SP.plan(network(), { paper: 'a3', minPt: 8, maxBuses: 1 });
+  const lvPage = p.pages.find(pg => pg.buses.includes('lv1'));
   const hv = p.pages.find(pg => pg.buses.includes('b11'));
-  assert.ok(hv.ghosts.has('tx2') && !hv.ids.has('tx2'), 'ghost on the sending sheet');
-  assert.ok(hv.ghostLines.length >= 1);
+  assert.ok(lvPage.ids.has('tx2'), 'real on the receiving sheet');
+  assert.ok(!hv.ids.has('tx2'), 'not on the sending sheet');
+  const to = hv.tags.find(t => t.dir === 'TO' && t.farPage === lvPage);
+  assert.ok(to && /LV 1/.test(to.lines.join(' ')), JSON.stringify(to && to.lines));
 });
 
 ok('regions are centred on the drawing and match the page aspect', () => {
-  const p = SP.plan(network(), { paper: 'a3', minPt: 8 });
+  const p = SP.plan(network(), { paper: 'a3', minPt: 8, scale: 'fit' });
   for (const pg of p.pages) {
     const cx = (pg.bbox.x0 + pg.bbox.x1) / 2, cy = (pg.bbox.y0 + pg.bbox.y1) / 2;
     assert.ok(Math.abs(pg.region.x + pg.region.w / 2 - cx) < 1e-6);
@@ -138,10 +138,128 @@ ok('a larger paper size is found when asked for', () => {
 });
 
 ok('sheets are numbered after the key plan', () => {
-  const a = SP.plan(network(), { paper: 'a4', minPt: 8, keyPlan: true });
-  const b = SP.plan(network(), { paper: 'a4', minPt: 8, keyPlan: false });
+  const a = SP.plan(network(), { paper: 'a3', minPt: 8, keyPlan: true });
+  const b = SP.plan(network(), { paper: 'a3', minPt: 8, keyPlan: false });
   assert.strictEqual(a.pages[0].no, 2);
   assert.strictEqual(b.pages[0].no, 1);
+});
+
+// 11 kV board feeding four load buses through breaker + cable (the substation template's shape)
+const board = (n = 4, gap = 140) => {
+  const m = mk();
+  m.add('u', 'utility', 400, -100, 'Grid');
+  m.add('b11', 'bus', 400, 0, '11kV Bus', { w: 600 });
+  m.link('u', 'b11');
+  for (let i = 0; i < n; i++) {
+    const x = 120 + i * gap;
+    m.add('cb' + i, 'cb', x, 60, 'CB-F' + (i + 1));
+    m.add('c' + i, 'cable', x, 140, 'Feeder ' + (i + 1));
+    m.add('lb' + i, 'bus', x, 220, 'Load Bus ' + (i + 1), { w: 90 });
+    m.add('ld' + i, 'static_load', x, 300, 'Load ' + (i + 1));
+    m.link('b11', 'cb' + i); m.link('cb' + i, 'c' + i); m.link('c' + i, 'lb' + i); m.link('lb' + i, 'ld' + i);
+  }
+  return m;
+};
+
+ok('sibling buses share a sheet (not one page each)', () => {
+  const p = SP.plan(board(), { paper: 'a4', minPt: 10, maxBuses: 4 });
+  const loadSheets = new Set(['lb0', 'lb1', 'lb2', 'lb3'].map(b => p.pages.find(pg => pg.buses.includes(b)).index));
+  assert.ok(loadSheets.size < 4, `load buses on ${loadSheets.size} sheets`);
+});
+
+ok('a sheet that fits is never split (the fit test counts the real tags)', () => {
+  const p = SP.plan(board(), { paper: 'a3', minPt: 8 });
+  p.pages.forEach(pg => assert.strictEqual(pg.part, undefined, pg.title));
+  assert.strictEqual(p.oversized.length, 0);
+});
+
+ok('a wide bus is cut across, so its feeders stay with it', () => {
+  const m = mk();
+  m.add('src', 'utility', 600, -80, 'Src');
+  m.add('big', 'bus', 600, 0, 'BIG', { w: 1800 });
+  m.link('src', 'big');
+  for (let i = 0; i < 12; i++) { m.add('l' + i, 'motor_induction', 20 + i * 150, 400); m.link('big', 'l' + i); }
+  const p = SP.plan(m, { paper: 'a4', minPt: 8 });
+  const parts = p.pages.filter(pg => pg.part);
+  assert.ok(parts.length >= 2);
+  parts.forEach(pg => {
+    assert.ok(isFinite(pg.clip.x0) || isFinite(pg.clip.x1), 'cut along x');
+    assert.ok(!isFinite(pg.clip.y0) && !isFinite(pg.clip.y1), 'never along y');
+    assert.ok(pg.ids.has('big'));
+    assert.ok([...pg.ids].some(id => id[0] === 'l'), 'feeders on every part');
+  });
+});
+
+ok('one scale for the whole set; "fit" sizes each sheet', () => {
+  const u = SP.plan(network(), { paper: 'a3', minPt: 6, maxBuses: 1 });
+  assert.ok(u.pages.length > 1);
+  u.pages.forEach(pg => assert.ok(Math.abs(pg.k - u.pages[0].k) < 1e-12));
+  const f = SP.plan(network(), { paper: 'a3', minPt: 6, maxBuses: 1, scale: 'fit' });
+  assert.ok(new Set(f.pages.map(pg => pg.k.toFixed(6))).size > 1);
+});
+
+ok('connectors name the grid zone of the other end', () => {
+  const p = SP.plan(network(), { paper: 'a3', minPt: 8, maxBuses: 1 });
+  for (const c of p.connectors) {
+    assert.ok(/^[A-Z]\d+$/.test(c.from.zone) && /^[A-Z]\d+$/.test(c.to.zone), JSON.stringify(c));
+    const to = p.pages.flatMap(pg => pg.tags).find(t => t.id === c.id && t.dir === 'TO');
+    assert.ok(to.lines[0].endsWith(c.to.zone), to.lines[0] + ' ' + c.to.zone);
+  }
+});
+
+ok('a drawing set lays out the sheets as arranged and reports buses on no sheet', () => {
+  const p = SP.plan(board(), { paper: 'a3', sheets: [
+    { id: 's1', kind: 'buses', buses: ['b11'] },
+    { id: 's2', kind: 'buses', buses: ['lb0', 'lb1', 'lb2'] },
+  ] });
+  assert.deepStrictEqual(p.pages.map(pg => pg.id), ['s1', 's2']);
+  assert.deepStrictEqual(p.unassigned, ['lb3']);
+  const t = p.pages[0].tags.find(x => x.wire && /Load Bus 4/.test(x.lines.join(' ')));
+  assert.ok(t && /not on a sheet/.test(t.lines[0]));
+});
+
+ok('a proposal keeps fixed groups as they are', () => {
+  const p = SP.plan(board(), { paper: 'a1', minPt: 6, fixed: [{ id: 'mine', buses: ['lb0', 'lb3'] }] });
+  const mine = p.pages.find(pg => pg.id === 'mine');
+  assert.deepStrictEqual(mine.buses.sort(), ['lb0', 'lb3']);
+  assert.ok(p.pages.every(pg => pg === mine || (!pg.buses.includes('lb0') && !pg.buses.includes('lb3'))));
+});
+
+ok('a selection view shows only its parts; wires leaving it end in grey tags', () => {
+  const p = SP.plan(board(), { paper: 'a3', keyPlan: false, sheets: [
+    { id: 'v', kind: 'view', title: 'Feeder 1', view: { kind: 'parts', parts: ['cb0', 'c0', 'lb0', 'ld0'] } },
+  ] });
+  const pg = p.pages[0];
+  assert.deepStrictEqual([...pg.ids].sort(), ['c0', 'cb0', 'lb0', 'ld0']);
+  assert.ok(pg.tags.length === 1 && pg.tags[0].kind === 'grey');
+  assert.ok(/11kV Bus/.test(pg.tags[0].lines.join(' ')));
+  const edge = SP.plan(board(), { paper: 'a3', keyPlan: false, cut: 'edge', sheets: [{ id: 'v', kind: 'view', view: { kind: 'parts', parts: ['cb0', 'c0'] } }] });
+  assert.strictEqual(edge.pages[0].tags.length, 0);
+});
+
+ok('a window view: whole parts centred inside (tags), or a viewport cut at the frame (edge)', () => {
+  const sheets = [{ id: 'w', kind: 'view', view: { kind: 'window', window: { x: 60, y: 30, w: 200, h: 180 } } }];
+  const t = SP.plan(board(), { paper: 'a3', keyPlan: false, sheets }).pages[0];
+  assert.ok(t.ids.has('cb0') && t.ids.has('c1') && !t.ids.has('lb0') && !t.ids.has('ld3'));
+  assert.strictEqual(t.clip, null);
+  assert.ok(t.tags.some(x => x.kind === 'grey'));
+  const e = SP.plan(board(), { paper: 'a3', keyPlan: false, cut: 'edge', sheets }).pages[0];
+  assert.ok(e.ids.has('lb0'), 'overlapping parts are in a viewport');
+  assert.deepStrictEqual(e.clip, { x0: 60, y0: 30, x1: 260, y1: 210 });
+  assert.strictEqual(e.tags.length, 0);
+});
+
+ok('a long connector index continues on more key plan pages', () => {
+  const L = SP.layout({ paper: 'a4', landscape: true, titleBlock: 'standard' });
+  assert.strictEqual(SP.keyPageCount(L, 3, 5), 1);
+  assert.ok(SP.keyPageCount(L, 10, 120) > 1);
+});
+
+ok('captions wrap instead of being cut off', () => {
+  const lines = SP.wrap('Fuse-Zone A Incomer · Cable Zone A Main Feeder · LV Zone A');
+  assert.ok(lines.length >= 2);
+  assert.ok(lines.join(' ').includes('Cable Zone A Main Feeder'));
+  assert.ok(!lines.join('').includes('…'));
 });
 
 console.log(`${n} passed`);
