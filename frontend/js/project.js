@@ -1237,6 +1237,7 @@ const Project = {
               <svg width="12" height="12" viewBox="0 0 16 16"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5"/></svg>
             </button>
           </div>
+          <button class="fm-more" aria-label="More actions" title="More actions"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="12" cy="19" r="1.8"/></svg></button>
         </div>`;
     }
 
@@ -1275,6 +1276,7 @@ const Project = {
             <small class="fm-item-date">${new Date(p.updated_at).toLocaleDateString()}${query && isOwner ? ' · ' + this._esc(this._fmPath(p.folder_id || null)) : ''}${ownerTag}</small>
           </div>
           <div class="fm-item-actions">${actions}</div>
+          <button class="fm-more" aria-label="More actions" title="More actions"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="12" cy="19" r="1.8"/></svg></button>
         </div>`;
     };
 
@@ -1314,7 +1316,7 @@ const Project = {
         <div class="fm-main">
           <div class="fm-breadcrumb">${breadcrumbHtml}</div>
           <div class="fm-toolbar">
-            <input id="fm-search" type="search" class="fm-search" placeholder="Search all projects (* and ? wildcards)" aria-label="Search projects and folders" autocomplete="off" value="${this._esc(this._fmQuery || '')}">
+            <input id="fm-search" type="search" class="fm-search" placeholder="Search all projects" aria-label="Search projects and folders" autocomplete="off" value="${this._esc(this._fmQuery || '')}">
             <button id="fm-new-folder" class="btn-small">New Folder</button>
             <button id="fm-import-json" class="btn-small btn-primary">Import JSON...</button>
           </div>
@@ -1529,6 +1531,15 @@ const Project = {
       });
     });
 
+    // Phones: one ⋯ button per row opens a bottom sheet of labelled actions
+    // that delegate to the row's own (CSS-hidden) icon buttons.
+    modal.querySelectorAll('.fm-more').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this._fmActionSheet(btn.closest('.fm-item'));
+      });
+    });
+
     // Move project buttons
     modal.querySelectorAll('.fm-btn-move').forEach(btn => {
       btn.addEventListener('click', (e) => {
@@ -1537,6 +1548,37 @@ const Project = {
         this._showMoveDialog(id);
       });
     });
+  },
+
+  _fmActionSheet(row) {
+    if (!row) return;
+    const defs = [
+      ['export', 'Download JSON', 'M12 4v11M7.5 10.5L12 15l4.5-4.5M5 19h14'],
+      ['rename', 'Rename', 'M4 20h4L19 9l-4-4L4 16zM13 7l4 4'],
+      ['move', 'Move to folder…', 'M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2zM12 11v5M9.5 13.5h5'],
+      ['share', 'Share…', 'M18 8a3 3 0 100-6 3 3 0 000 6zM6 15a3 3 0 100-6 3 3 0 000 6zM18 22a3 3 0 100-6 3 3 0 000 6zM8.6 13.5l6.8 4M15.4 6.5l-6.8 4'],
+    ];
+    const name = row.querySelector('.fm-item-name')?.textContent || '';
+    const item = (act, label, d, cls = '') => `<button class="fm-sheet-item${cls}" data-act="${act}">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${d}"/></svg>${label}</button>`;
+    const items = defs.filter(([a]) => row.querySelector('.fm-btn-' + a))
+      .map(([a, l, d]) => item(a, l, d)).join('');
+    const del = row.querySelector('.fm-btn-delete')
+      ? '<div class="fm-sheet-sep"></div>' + item('delete', 'Delete', 'M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3', ' fm-sheet-danger') : '';
+    const wrap = document.createElement('div');
+    wrap.className = 'fm-sheet-backdrop';
+    wrap.innerHTML = `<div class="fm-sheet" role="dialog" aria-label="Actions for ${this._esc(name)}">
+      <div class="fm-sheet-grip"></div>
+      <div class="fm-sheet-title">${this._esc(name)}</div>${items}${del}</div>`;
+    const close = () => wrap.remove();
+    wrap.addEventListener('click', (e) => {
+      if (e.target === wrap) return close();
+      const b = e.target.closest('.fm-sheet-item');
+      if (!b) return;
+      close();
+      row.querySelector('.fm-btn-' + b.dataset.act)?.click();
+    });
+    document.body.appendChild(wrap);
   },
 
   _showMoveDialog(projectId) {

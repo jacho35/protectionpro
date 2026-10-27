@@ -1426,6 +1426,8 @@ body.dark-mode .compliance-row.compliance-pass td { background: #1f321f; }
   color: #fff;
 }
 
+.fm-more { display: none; width: 44px; height: 44px; flex: none; align-items: center; justify-content: center; border: 0; background: transparent; color: var(--text-secondary); border-radius: 12px; cursor: pointer; }
+
 .fm-empty {
   color: var(--text-muted);
   padding: 24px;
