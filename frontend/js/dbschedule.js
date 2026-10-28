@@ -1819,9 +1819,9 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
     // The side panel shows bulk edit OR the board settings, never both.
     const side = this.body.querySelector('#db-side');
     if (side) side.classList.toggle('db-side-bulk', n > 0);
+    if (side && typeof Schedules !== 'undefined' && Schedules._syncSide) Schedules._syncSide(n > 0);
     if (n === 0) { wrap.innerHTML = ''; wrap.style.display = 'none'; return; }
     wrap.style.display = '';
-    if (typeof Schedules !== 'undefined' && Schedules.setSidePanel) Schedules.setSidePanel(true);
 
     // Already open: only the count changed. Patch the text rather than rebuild
     // the panel — rebuilding would blur whatever field is being typed into.

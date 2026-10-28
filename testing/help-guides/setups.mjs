@@ -27,6 +27,12 @@ const toWorkspace = async (page, id, tab) => {
   await page.waitForTimeout(700);
 };
 
+// Board settings side panel (closed by default), optionally with one of its sections open.
+const openSide = async (page, section) => {
+  if (await page.getAttribute('#sch-side-toggle', 'aria-expanded') !== 'true') await page.click('#sch-side-toggle');
+  if (section) await page.evaluate((k) => { const d = document.querySelector(`details[data-side="${k}"]`); if (d) d.open = true; }, section);
+  await page.waitForTimeout(200);
+};
 const grid = (o) => async (page, h) => { const id = await h.seedBoard(page, o); await toWorkspace(page, id, 'grid'); return id; };
 
 async function earthGrid(page) {
@@ -124,6 +130,10 @@ export const SETUPS = {
   'road-suggest': { run: async (page) => { await roadDesign(page); await page.click('[data-rl-suggest="1"]'); await page.waitForTimeout(800); } },
   'road-opt': { run: async (page) => { await roadDesign(page); await page.click('[data-rl="optimise"]'); await page.waitForSelector('#rl-opt-modal [data-m="run"]'); await page.click('#rl-opt-modal [data-m="run"]'); await page.waitForSelector('#rl-opt-modal .rl-opt-table', { timeout: 60000 }); await page.waitForTimeout(500); } },
   'schedule-grid': { run: grid({ sections: false }) },
+  'schedule-presets': { run: async (page, h) => {
+    await grid({ sections: false })(page, h);
+    await openSide(page, 'presets');
+  } },
 
   'schedule-bulk': { run: async (page, h) => {
     await grid({ sections: false })(page, h);
@@ -141,9 +151,11 @@ export const SETUPS = {
     await page.waitForTimeout(4000);
   } },
 
-  'sections-panel': { run: async (page, h) => {
+  // Taller window: the section cards are long in the side panel, and the add buttons sit below them.
+  'sections-panel': { viewport: { width: 1440, height: 1300 }, run: async (page, h) => {
     await grid({ sections: true })(page, h);
-    await page.click('#dbs-panel > summary');
+    await openSide(page);
+    if (!(await page.evaluate(() => document.querySelector('#dbs-panel')?.open))) await page.click('#dbs-panel > summary');
     await page.waitForSelector('.dbs-card');
   } },
 
