@@ -217,6 +217,7 @@ const SchMobile = {
   addWay() {
     const comp = this.comp(); if (!comp) return;
     const w = DBSchedule.newWay(comp.props.circuits.length, DBSchedule._sectionOverrides(comp));
+    BreakerSet.fillNew(comp, w);
     comp.props.circuits.push(w);
     this._touch();
     this.render();
@@ -529,6 +530,7 @@ const SchMobile = {
       { label: 'Auto balance phases', run: () => { DBSchedule.autoBalance(comp); this._touch(); this.render(); } },
       { label: 'Fill missing ECC', run: () => { DBSchedule.fillEcc(comp); this._touch(); this.render(); } },
       { label: 'Size cables…', run: () => CableSize.open(comp) },
+      { label: 'Set manufacturer…', run: () => BreakerSet.open(comp) },
       {},
       { label: 'Export Excel', run: () => DBSchedule.exportXlsx(comp) },
       { label: 'Import Excel…', run: () => this._importPick(comp) },

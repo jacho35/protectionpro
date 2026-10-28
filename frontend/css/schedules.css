@@ -922,3 +922,13 @@ body.dark-mode .csz-warn { background: #433210; color: #ffd98a; }
   .csz-body { flex-direction: column; overflow: auto; }
   .csz-rules { flex: 0 0 auto; border-right: 0; border-bottom: 1px solid var(--border-color); }
 }
+
+/* ── Set manufacturer (dbbreakers.js) — the dialog reuses the .csz layout ── */
+.bks-types { display: grid; grid-template-columns: 1fr 1.6fr 0.7fr; gap: 6px 8px; align-items: center; font-size: 12.5px; }
+.bks-types select { width: 100%; min-width: 0; }
+.bks-types .bks-wide { grid-column: span 2; }
+.bks-h { font-size: 11px; color: var(--text-secondary); }
+.bks-ik { display: block; margin-top: 6px; font-size: 11.5px; color: var(--text-secondary); line-height: 1.4; }
+.csz-rules #bks-maker { width: 100%; }
+.bks-other { font-size: 10px; font-weight: 600; padding: 1px 5px; border-radius: 3px; background: #fdf0d5; color: #7a4a00; }
+body.dark-mode .bks-other { background: #433210; color: #ffd98a; }
