@@ -23,10 +23,12 @@ const ctx = { console, Math, escHtml: (x) => String(x) };
 vm.createContext(ctx);
 const abb = JSON.parse(readFileSync(join(here, '..', '..', 'testing', 'vendor-libraries', 'abb_breakers.json'), 'utf8'));
 const xt = JSON.parse(readFileSync(join(here, '..', '..', 'testing', 'vendor-libraries', 'abb_xt_breakers.json'), 'utf8'));
-const exp = vm.runInContext(`${js('constants.js')}\n${js('vendor-trip-units.js')}\n${js('vendor-trip-units-abb.js')}\n${js('vendor-trip-units-abb-xt.js')}\n${js('tripunit.js')}
+const abbMcb = JSON.parse(readFileSync(join(here, '..', '..', 'testing', 'vendor-libraries', 'abb_mcb_breakers.json'), 'utf8'));
+const exp = vm.runInContext(`${js('constants.js')}\n${js('vendor-trip-units.js')}\n${js('vendor-trip-units-abb.js')}\n${js('vendor-trip-units-abb-xt.js')}\n${js('vendor-trip-units-abb-mcb.js')}\n${js('tripunit.js')}
   for (const e of ${JSON.stringify(lib.entries.map(e => e.data))}) STANDARD_CBS.push(e);
   for (const e of ${JSON.stringify(abb.entries.map(e => e.data))}) STANDARD_CBS.push(e);
   for (const e of ${JSON.stringify(xt.entries.map(e => e.data))}) STANDARD_CBS.push(e);
+  for (const e of ${JSON.stringify(abbMcb.entries.map(e => e.data))}) STANDARD_CBS.push(e);
   ({ cbTripTime, cbElementsA, cbPickupBase, cbPickupRefA, cbPickupLabel, cbTripExtras, cbTripBand, TripUnit, TRIP_UNITS, STANDARD_CBS });`, ctx);
 const { cbTripTime, cbElementsA, cbPickupBase, cbPickupRefA, cbPickupLabel, cbTripExtras, cbTripBand, TripUnit, TRIP_UNITS, STANDARD_CBS } = exp;
 
@@ -300,6 +302,21 @@ TripUnit.adopt(x4, 'abb_xt_dip_lsi_xt24');
 TripUnit.setDial(x4, 'thermal_pickup', 1.0);
 assert(near(cbTripBand(params(x4), 3 * 250).tMax, 12 * 1.1, 1e-9) && near(cbTripBand(params(x4), 5 * 250).tMax, 12 * 0.36 * 1.2, 1e-9),
   'Ekip Dip: t1 12 s at 3 x I1, +/-10 % up to 4 x In, +/-20 % above');
+
+// ── ABB S200 / S800 MCBs: the published IEC 60898-1 chart, magnetic band against In ──
+{
+  const s2 = breaker('abb_s200_c_16');
+  assert(s2.props.trip_unit === 'abb_mcb_s200_c_6_63' && s2.props.cb_type === 'mcb' && s2.props.pickup_base.magnetic === 'In',
+    'S200 C16 carries the S200 6-63 A curve C, magnetic pickup against In');
+  assert(optVals(s2).join() === 'abb_mcb_s200_c_6_63', 'an ABB MCB offers its one curve');
+  const b = (i) => cbTripBand(params(s2), i);
+  assert(b(16 * 1.13).tMax === Infinity && b(16 * 1.46).tMax <= 3600, 'IEC 60898-1: no trip at 1.13 In, trip within 1 h at 1.45 In');
+  assert(b(16 * 4.9).tMin > 0.1 && b(16 * 5.05).tMin === 0.01, 'C curve (ABB chart): the magnetic element may act from 5 x In');
+  assert(b(16 * 7.95).tMax > 1 && b(16 * 8).tMax === 0.01, 'C curve (ABB chart): certain from 8 x In, 10 ms');
+  const s8 = params(breaker('abb_s800s_d_32'));
+  assert(cbTripBand(s8, 32 * 19.9).tMax > 0.5 && cbTripBand(s8, 32 * 20).tMax === 0.01, 'S800 D: certain from 20 x In');
+  assert(near(cbElementsA(s8).im, 32 * 15), 'S800 D: Im 15 x In (band 10-20 x In)');
+}
 
 // ── dial units name the base ───────────────────────────────────────────────
 assert(TripUnit.unitOf('instantaneous_pickup', TRIP_UNITS.se_nsx_ml567_100.dials.instantaneous_pickup) === '× In', 'Ii unit reads × In');

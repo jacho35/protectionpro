@@ -650,6 +650,102 @@ class TestAbbTmaxXt:
         assert "off" not in prof["abb_xt_touch_xt24"]["dials"]["instantaneous_pickup"]   # I cannot be excluded
 
 
+# ── ABB S200 / S200M / S300P / S800 MCBs ─────────────────────────────────
+
+MCB_LIB = os.path.join(ROOT, "testing", "vendor-libraries", "abb_mcb_breakers.json")
+MCB_JS = os.path.join(ROOT, "frontend", "js", "vendor-trip-units-abb-mcb.js")
+VL_DIR_ABB = os.path.join(ROOT, "testing", "vendor-libraries")
+
+
+def _abb_mcb(eid=None):
+    src = open(MCB_JS).read()
+    head = "Object.assign(TRIP_UNITS, "
+    prof = json.loads(src[src.index(head) + len(head):src.rindex(");")])
+    ents = {e["data"]["id"]: e["data"] for e in json.load(open(MCB_LIB))["entries"]}
+    if eid is None:
+        return prof, ents
+    e = ents[eid]
+    c = prof[e["trip_units"][0]]["curve"]
+    return e, {"cb_type": "mcb", "mcb_curve": e["mcb_curve"], "trip_rating_a": e["trip_rating_a"],
+               "thermal_pickup": 1.0, "magnetic_pickup": e["magnetic_pickup"], "long_time_delay": 10,
+               "trip_unit_kind": "tm", "pickup_base": {"magnetic": "In"},
+               "thermal_curve": c["thermal"], "trip_tol": c["tol"]}
+
+
+class TestAbbMcb:
+    def test_entries(self):
+        prof, ents = _abb_mcb()
+        assert len(ents) == 261
+        for e in ents.values():
+            assert e["manufacturer"] == "ABB" and e["cb_type"] == "mcb" and e["mcb_curve"] in "BCD"
+            assert e["trip_units"] == [e["default_trip_unit"]] and e["default_trip_unit"] in prof
+        # A01 ordering tables: S200 B from 6 A and to 100 A, C 80 / 100 A not carried (no chart), no S200 D 80 A
+        assert "abb_s200_b_4" not in ents and ents["abb_s200_b_100"]["frame_a"] == 100
+        assert "abb_s200_c_80" not in ents and "abb_s200_d_80" not in ents
+        assert ents["abb_s200_c_0_5"]["trip_rating_a"] == 0.5 and "abb_s200m_b_8" not in ents
+        assert "abb_s800c_c_8" not in ents and ents["abb_s800s_d_2_5"]["trip_rating_a"] == 2.5
+        assert ents["abb_s800p_c_125"]["frame_a"] == 125
+
+    def test_published_breaking_capacities(self):
+        _, ents = _abb_mcb()
+        # (id, Icn = breaking_ka, Icu, Ics kA) — A01 pp. 28-31, 108, 142-150
+        for eid, icn, icu, ics in (("abb_s200_c_16", 6, 10, 7.5), ("abb_s200_c_2", 6, 50, 7.5),
+                                   ("abb_s200_b_80", 6, 6, 6),
+                                   ("abb_s200m_c_40", 10, 15, 11.2), ("abb_s200m_c_63", 10, 10, 7.5),
+                                   ("abb_s300p_c_4", 25, 100, 100), ("abb_s300p_c_25", 25, 25, 12.5),
+                                   ("abb_s300p_c_40", 20, 25, 10), ("abb_s300p_d_63", 15, 25, 7.5),
+                                   ("abb_s800c_c_32", 15, 25, 25), ("abb_s800n_c_32", 20, 36, 30),
+                                   ("abb_s800n_c_8", 36, 36, 30), ("abb_s800s_c_63", 25, 50, 40),
+                                   ("abb_s800s_b_5", 50, 50, 40), ("abb_s800p_d_80", 25, 50, 40),
+                                   ("abb_s800p_d_125", 15, 50, 40)):
+            e = ents[eid]
+            assert (e["breaking_ka"], e["icu_ka"]) == (icn, icu), eid
+            assert e["ics_pct"] * icu / 100 == pytest.approx(ics, abs=0.06), eid
+        assert all(("check" in e) == (e["series"] == "S800") for e in ents.values())
+
+    def test_magnetic_bands(self):
+        # drawn on the IEC 60898-1 charts: S200 / S200M / S300P B 3-5, C 5-8, D 10-15; S800 B 3-5, C 5-10, D 10-20 x In
+        for eid, lo, hi in (("abb_s200_b_16", 3, 5), ("abb_s200_c_16", 5, 8), ("abb_s200_d_16", 10, 15),
+                            ("abb_s200m_c_2", 5, 8), ("abb_s300p_d_32", 10, 15), ("abb_s200_b_100", 3, 5),
+                            ("abb_s800s_c_32", 5, 10), ("abb_s800n_d_16", 10, 20)):
+            e, p = _abb_mcb(eid)
+            inn = e["trip_rating_a"]
+            assert e["magnetic_pickup"] == pytest.approx((lo + hi) / 2)
+            assert _cb_self_clearing_time(p, hi * inn * 0.995) > 0.1, eid            # still on the thermal curve
+            assert _cb_self_clearing_time(p, hi * inn) == pytest.approx(0.01), eid   # chart floor, < 0.1 s
+            assert pickup_ref_a(p, "magnetic", inn, inn) == inn
+
+    def test_iec_60898_gates(self):
+        # IEC 60898-1: no trip at 1.13 In within 1 h, trip at 1.45 In within 1 h, 2.55 In: 1-60 s (In <= 32 A),
+        # 1-120 s (In > 32 A); the S200 charts pass through the 60 s gate (read off within 1 %); ABB's S300P chart
+        # allows ~130 s at 2.55 In for 6-63 A (the chart is used)
+        for eid, gate in (("abb_s200_c_16", 60), ("abb_s200_d_2", 60), ("abb_s200m_b_63", 120),
+                          ("abb_s300p_c_16", 131), ("abb_s200_b_80", 120), ("abb_s800s_c_16", 60)):
+            e, p = _abb_mcb(eid)
+            inn = e["trip_rating_a"]
+            assert _cb_self_clearing_time(p, 1.13 * inn) == 10000.0, eid
+            assert _cb_self_clearing_time(p, 1.46 * inn) <= 3600, eid
+            assert 1.0 <= _cb_self_clearing_time(p, 2.55 * inn) <= gate * 1.01, eid
+
+    def test_curves_read_off_the_charts(self):
+        # B01 p.11 (S200 C 6-63 A): the maximum curve meets the 8 x In edge at ~3.6 s, the minimum the 5 x In
+        # edge at ~0.7 s; p.13 (S200 B 80-100 A): 8.5 s / 2 s at the 5 / 3 x In corners
+        data = json.load(open(os.path.join(VL_DIR_ABB, "data", "abb_mcb_curves.json")))["charts"]
+        c = data["s200_c_6_63"]
+        assert c["max"][-1] == [pytest.approx(8, rel=0.002), pytest.approx(3.6, rel=0.02)]
+        assert c["min"][-1] == [pytest.approx(5, rel=0.002), pytest.approx(0.70, rel=0.02)]
+        b = data["s200_b_80_100"]
+        assert b["max"][-1][1] == pytest.approx(8.5, rel=0.02) and b["min"][-1][1] == pytest.approx(2.0, rel=0.02)
+        for k, ch in data.items():
+            for pts in (ch["max"], ch["min"]):
+                assert pts[0][1] == 10000.0, k
+                assert all(a[0] < b[0] and a[1] > b[1] for a, b in zip(pts, pts[1:])), k
+        # the engine reads the maximum curve exactly
+        e, p = _abb_mcb("abb_s200_c_16")
+        for m, t in c["max"][1:-1]:
+            assert _cb_self_clearing_time(p, m * 16) == pytest.approx(t, rel=1e-6)
+
+
 # ── CBI L Frame (L20B / L40B) ────────────────────────────────────────────
 
 CBI_LIB = os.path.join(ROOT, "testing", "vendor-libraries", "cbi_breakers.json")
