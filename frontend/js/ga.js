@@ -239,7 +239,7 @@ const GA = {
       if (g && !seen.has(gk(c))) {
         seen.add(gk(c));
         const members = groups.get(gk(c));
-        const three = members.some(m => m.poles === '3P' || m.phase === 'RWB');
+        const three = DBSchedule.elPoles(comp, g) === '3P' || members.some(m => m.poles === '3P' || m.phase === 'RWB');
         const rated = Math.max(40, ...members.map(m => Number(m.breaker_a) || 0));
         const rating = this._stdAmps(Math.min(100, rated));
         out.push({ key: 'rcd:' + g + (sectioned ? ':' + secOf(c) : ''), form: 'din', kind: 'rcd', modules: three ? 4 : 2,

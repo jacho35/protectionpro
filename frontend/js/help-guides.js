@@ -145,6 +145,8 @@ const HELP_GUIDES = [
           { sel: '.db-schedule-grid tbody tr:nth-child(3) .db-sel-cell input', label: 'Tick the ways to change' },
           { sel: '#db-bulk-bar', label: 'Bulk edit — blank means leave unchanged' },
         ] } },
+    { title: 'Balance the phases',
+      html: '<strong>Auto balance</strong> spreads the single-phase ways over R, W and B, section by section. Ways on earth leakage are balanced first, among themselves, so each phase gets a fair share; then it rebuilds the single-phase EL groups from where the ways landed — one unit per phase (<em>EL-R</em>, <em>EL-W</em>, <em>EL-B</em>), split in two when the standing leakage would pass 30 % of IΔn, and never mixing ratings. In <strong>Board settings</strong> ▸ <strong>Standing earth leakage</strong> each group is a <strong>1-phase</strong> or <strong>3-phase</strong> unit: a 1-phase group’s ways share one phase, so changing one way’s phase moves the whole group, and a way that joins the group takes its phase.' },
     { title: 'Check the circuits',
       html: 'Press <strong>Check circuits</strong>. Each way is checked for breaker against load and cable, volt drop from the origin, earth conductor and earth-fault loop, and the result columns fill in with a pass, warning or fail mark. A change after the check marks the results stale; press the button again.',
       shot: { file: 'db-schedule-4.png', alt: 'The schedule after Check circuits, with the result columns filled in',

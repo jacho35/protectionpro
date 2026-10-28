@@ -282,6 +282,7 @@ const DBSchedule = {
       accessories: comp.props.accessories || [],
       board_diversity: comp.props.board_diversity ?? 1.0,
       el_ratings: comp.props.el_ratings || {},
+      el_poles: comp.props.el_poles || null,
       way_install: comp.props.way_install || null,
       ze_ohm: comp.props.ze_ohm ?? null,
       incoming_device: comp.props.incoming_device || '',
@@ -490,6 +491,59 @@ const DBSchedule = {
   _normalizeElRatings(comp) {
     const { ratings } = this._leakageGroups(comp);
     comp.props.el_ratings = ratings;
+    const poles = comp.props.el_poles;
+    if (poles && typeof poles === 'object') {
+      for (const g of Object.keys(poles)) if (!(g in ratings)) delete poles[g];
+      if (!Object.keys(poles).length) delete comp.props.el_poles;
+    }
+  },
+
+  // ── Earth-leakage units and phases ──────────────────────────────────
+  // An EL group is one earth-leakage unit. '1P' = a single-phase (2-pole)
+  // unit: every way in it sits on that unit's phase. '3P' = a 4-pole unit
+  // feeding ways on all three phases. comp.props.el_poles holds a choice made
+  // by hand; otherwise a group with a 3P way is 3-phase, else single-phase.
+  _elGroupOf(c) { return String(c.el_group || '').trim(); },
+
+  elPoles(comp, g) {
+    const set = comp.props.el_poles && comp.props.el_poles[g];
+    if (set === '1P' || set === '3P') return set;
+    return (comp.props.circuits || []).some(c => this._elGroupOf(c) === g && (c.poles || '1P') === '3P') ? '3P' : '1P';
+  },
+
+  // Put every single-phase way of each single-phase EL group on one phase.
+  // `pinned` (group → phase) wins; otherwise the phase most of the group's
+  // ways NOT in `changed` (way ids just edited) are on, so a way that joins
+  // a group takes the group's phase rather than dragging the group to its own.
+  _syncElPhases(comp, pinned, changed) {
+    const by = new Map();
+    for (const c of comp.props.circuits || []) {
+      const g = this._elGroupOf(c);
+      if (!g || (c.poles || '1P') === '3P') continue;
+      if (!by.has(g)) by.set(g, []);
+      by.get(g).push(c);
+    }
+    let moved = 0;
+    for (const [g, ways] of by) {
+      if (this.elPoles(comp, g) !== '1P') continue;
+      let ph = pinned && pinned.get(g);
+      if (!ph) {
+        const count = (list) => {
+          const n = {};
+          for (const c of list) if (/^[RWB]$/.test(c.phase)) n[c.phase] = (n[c.phase] || 0) + 1;
+          return Object.keys(n).sort((a, b) => n[b] - n[a])[0];
+        };
+        ph = count(ways.filter(c => !(changed && changed.has(c.id)))) || count(ways);
+      }
+      if (!ph) continue;
+      for (const c of ways) {
+        if (c.phase === ph) continue;
+        c.phase = ph;
+        if (Number(c.plan_qty) > 0) c._polesManual = true;
+        moved++;
+      }
+    }
+    return moved;
   },
 
   // ── ECC (earth continuity conductor) ────────────────────────────────
@@ -577,20 +631,98 @@ const DBSchedule = {
     }
   },
 
-  // Reassign 1P ways across R/W/B for best balance (largest-first greedy).
-  // 3P ways are inherently balanced and left untouched.
+  // Reassign 1P ways across R/W/B for best balance (largest-first greedy),
+  // section by section (each section can have its own supply). 3P ways are
+  // inherently balanced and left untouched.
+  //
+  // Earth leakage: a single-phase EL unit can only feed ways on its own
+  // phase, so balancing ways one by one would scatter a group over three
+  // phases. Instead the EL-protected ways are balanced first, among
+  // themselves, so each phase carries a fair share of them; the ways with no
+  // EL group then fill in around them. The single-phase EL groups are then
+  // rebuilt from the result — one unit per phase per rated IΔn, split again
+  // when its standing leakage would pass 30 % of IΔn. 3-phase (4-pole) groups
+  // keep their name; their ways move like any other.
+  // Returns the number of ways placed; this._balanceNote describes the result.
   autoBalance(comp) {
     const circuits = comp.props.circuits || [];
-    const singles = circuits
-      .filter(c => (c.poles || '1P') !== '3P')
-      .map(c => ({ c, va: (Number(c.load_va) || 0) * this._dfOf(c) }))
-      .sort((a, b) => b.va - a.va);
-    const totals = { R: 0, W: 0, B: 0 };
-    for (const s of singles) {
-      const phase = Object.keys(totals).reduce((min, p) => totals[p] < totals[min] ? p : min, 'R');
-      s.c.phase = phase;
-      totals[phase] += s.va;
+    const singles = circuits.filter(c => (c.poles || '1P') !== '3P');
+    const vaOf = (c) => (Number(c.load_va) || 0) * this._dfOf(c);
+    const leakOf = (c) => (Number(c.leakage_ma) || 0) + (Number(c.cable_m) || 0) * DB_CABLE_LEAK_MA_PER_M;
+    const ratings = (comp.props.el_ratings && typeof comp.props.el_ratings === 'object') ? comp.props.el_ratings : {};
+    const idnOf = (g) => (Number(ratings[g]) > 0 ? Number(ratings[g]) : 30);
+    const sectioned = typeof DBSections !== 'undefined' && DBSections.has(comp);
+    const secOf = (c) => (sectioned ? DBSections.of(comp, c) : null);
+    const oneP = new Set();
+    for (const c of singles) { const g = this._elGroupOf(c); if (g && this.elPoles(comp, g) === '1P') oneP.add(g); }
+
+    const bySec = new Map();
+    for (const c of singles) {
+      const sec = secOf(c);
+      const key = sec ? sec.id : '';
+      if (!bySec.has(key)) bySec.set(key, { sec, ways: [] });
+      bySec.get(key).ways.push(c);
     }
+
+    const units = [];
+    const taken = new Set(Object.keys(ratings).filter(g => !oneP.has(g)));
+    for (const { sec, ways } of bySec.values()) {
+      const totals = { R: 0, W: 0, B: 0 };
+      const place = (list) => {
+        for (const c of [...list].sort((x, y) => vaOf(y) - vaOf(x))) {
+          const ph = Object.keys(totals).reduce((min, p) => (totals[p] < totals[min] ? p : min), 'R');
+          c.phase = ph;
+          if (Number(c.plan_qty) > 0) c._polesManual = true;
+          totals[ph] += vaOf(c);
+        }
+      };
+      place(ways.filter(c => this._elGroupOf(c)));
+      place(ways.filter(c => !this._elGroupOf(c)));
+
+      // Rebuild the single-phase EL units from where their ways landed.
+      const need = ways.filter(c => oneP.has(this._elGroupOf(c)));
+      const buckets = new Map();
+      for (const c of need) {
+        const idn = idnOf(this._elGroupOf(c));
+        const key = c.phase + '|' + idn;
+        if (!buckets.has(key)) buckets.set(key, { phase: c.phase, idn, ways: [] });
+        buckets.get(key).ways.push(c);
+      }
+      const phaseRatings = {};
+      for (const bk of buckets.values()) (phaseRatings[bk.phase] = phaseRatings[bk.phase] || new Set()).add(bk.idn);
+      for (const bk of [...buckets.values()].sort((x, y) => 'RWB'.indexOf(x.phase) - 'RWB'.indexOf(y.phase) || x.idn - y.idn)) {
+        // First-fit decreasing on standing leakage: as few units as the limit allows.
+        const limit = bk.idn * DB_EL_STANDING_LIMIT;
+        const bins = [];
+        for (const c of [...bk.ways].sort((x, y) => leakOf(y) - leakOf(x))) {
+          const bin = bins.find(b => b.ma + leakOf(c) <= limit) || (bins.push({ ma: 0, ways: [] }), bins[bins.length - 1]);
+          bin.ma += leakOf(c); bin.ways.push(c);
+        }
+        bins.forEach((bin, i) => {
+          const tags = [sec && (sec.prefix || sec.name), phaseRatings[bk.phase].size > 1 ? `${bk.idn} mA` : ''].filter(Boolean);
+          let name = `EL-${bk.phase}${bins.length > 1 ? i + 1 : ''}${tags.length ? ` (${tags.join(', ')})` : ''}`;
+          for (let n = 2; taken.has(name); n++) name = `EL-${bk.phase}${bins.length > 1 ? i + 1 : ''}.${n}${tags.length ? ` (${tags.join(', ')})` : ''}`;
+          taken.add(name);
+          for (const c of bin.ways) c.el_group = name;
+          units.push({ name, phase: bk.phase, idn: bk.idn, ways: bin.ways.length, ma: bin.ma, limit });
+        });
+      }
+    }
+
+    // Ratings for the new unit names; the old single-phase names are gone.
+    if (units.length || oneP.size) {
+      const next = {};
+      for (const [g, v] of Object.entries(ratings)) if (!oneP.has(g)) next[g] = v;
+      for (const u of units) next[u.name] = u.idn;
+      comp.props.el_ratings = next;
+      if (comp.props.el_poles) {
+        for (const g of oneP) delete comp.props.el_poles[g];
+        if (!Object.keys(comp.props.el_poles).length) delete comp.props.el_poles;
+      }
+    }
+    this._balanceNote = units.length
+      ? ` Earth leakage regrouped: ${units.map(u => `${u.name} (${u.ways} way${u.ways === 1 ? '' : 's'})`).join(', ')}.`
+      : '';
     return singles.length;
   },
 
@@ -1202,7 +1334,21 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
     if (k === 'poles') {
       if (c.poles === '3P') c.phase = 'RWB';
       else if (c.phase === 'RWB') c.phase = 'R';
+      this._syncElPhases(comp, null, new Set([c.id]));
       return 'render';
+    }
+    // A single-phase EL unit feeds one phase: moving one of its ways moves
+    // the whole group, and a way joining a group takes the group's phase.
+    if (k === 'phase' && (c.poles || '1P') !== '3P') {
+      const g = this._elGroupOf(c);
+      if (g && this.elPoles(comp, g) === '1P') {
+        this._syncElPhases(comp, new Map([[g, c.phase]]));
+        return 'render';
+      }
+    }
+    if (k === 'el_group') {
+      c.el_group = String(v).trim();
+      if (this._syncElPhases(comp, null, new Set([c.id]))) return 'render';
     }
     if (k === 'description' && !(Number(c.load_va) > 0)) {
       // Picked a known load type into an empty way → fill its defaults
@@ -1584,7 +1730,7 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
       const n = this.autoBalance(comp);
       this.render();
       this._notifyEdited();
-      this._status(n > 0 ? `Auto-balanced ${n} single-phase way(s) across R/W/B.`
+      this._status(n > 0 ? `Auto-balanced ${n} single-phase way(s) across R/W/B.${this._balanceNote || ''}`
                          : 'No single-phase ways to balance.');
     });
     this.body.querySelector('#db-fill-ecc').addEventListener('click', () => {
@@ -2049,6 +2195,19 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
       for (const ch of changes) this._applyBulkField(c, ch.f.k, ch.val);
       count++;
     }
+    // Single-phase EL groups stay on one phase: a phase set here moves each
+    // touched group whole; ways that joined a group take its phase.
+    const keys = new Set(changes.map(ch => ch.f.k));
+    if (keys.has('phase') || keys.has('el_group') || keys.has('poles')) {
+      const pinned = new Map();
+      if (keys.has('phase')) {
+        for (const c of comp.props.circuits || []) {
+          const g = this._elGroupOf(c);
+          if (this._selected.has(c.id) && g && (c.poles || '1P') !== '3P') pinned.set(g, c.phase);
+        }
+      }
+      this._syncElPhases(comp, pinned, this._selected);
+    }
     this.render();          // selection and the typed draft survive on the module
     this._notifyEdited();
     const set = changes.map(ch => ch.f.label).join(', ');
@@ -2214,9 +2373,18 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
         if (over) overCount++;
         const opts = ratingList.map(r =>
           `<option value="${r}"${r === idn ? ' selected' : ''}>${r} mA</option>`).join('');
+        const poles = this.elPoles(comp, g);
+        const phases = [...new Set((comp.props.circuits || [])
+          .filter(c => this._elGroupOf(c) === g && (c.poles || '1P') !== '3P').map(c => c.phase))].filter(Boolean).sort();
+        const split = poles === '1P' && phases.length > 1;
+        const where = poles === '3P' ? 'all phases'
+          : split ? `⚠ ways on ${phases.join(' + ')} — a single-phase unit feeds one phase` : (phases[0] ? `on ${phases[0]}` : '');
         return `
-          <div style="display:flex;align-items:center;gap:10px;font-size:12px;">
-            <span style="min-width:56px;"><strong>EL ${escHtml(g)}</strong></span>
+          <div style="display:flex;align-items:center;gap:6px 10px;font-size:12px;flex-wrap:wrap;">
+            <span style="min-width:56px;"><strong>${/^el\b/i.test(g) ? '' : 'EL '}${escHtml(g)}</strong></span>
+            <select data-elp="${escHtml(g)}" title="Single-phase (2-pole) unit: every way in the group is on its phase, and changing one way's phase moves the group. Three-phase (4-pole) unit: its ways can be on any phase.">
+              <option value="1P"${poles === '1P' ? ' selected' : ''}>1-phase</option><option value="3P"${poles === '3P' ? ' selected' : ''}>3-phase</option></select>
+            <span style="${split ? 'color:#d32f2f;font-weight:600;' : 'opacity:0.75;'}">${escHtml(where)}</span>
             <select data-elg="${escHtml(g)}" title="Rated residual current (IΔn) of this group's earth-leakage unit">${opts}</select>
             <span style="min-width:170px;${over ? 'color:#d32f2f;font-weight:600;' : ''}">${ma.toFixed(1)} mA standing / ${limit.toFixed(1)} mA limit</span>
             <span style="${over ? 'color:#d32f2f;' : 'opacity:0.65;'}">${over
@@ -2250,6 +2418,15 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
     // Remember the open/closed state so an in-place refresh (every keystroke
     // in the grid re-renders this panel) never collapses it under the user.
     if (det) det.addEventListener('toggle', () => { this._elOpen = det.open; });
+    wrap.querySelectorAll('select[data-elp]').forEach(sel => {
+      sel.addEventListener('change', () => {
+        comp.props.el_poles = { ...(comp.props.el_poles || {}), [sel.dataset.elp]: sel.value };
+        // Turning a group single-phase gathers its ways onto one phase.
+        if (sel.value === '1P') this._syncElPhases(comp);
+        this.render();
+        this._notifyEdited();
+      });
+    });
     wrap.querySelectorAll('select[data-elg]').forEach(sel => {
       sel.addEventListener('change', () => {
         if (!comp.props.el_ratings || typeof comp.props.el_ratings !== 'object') {
