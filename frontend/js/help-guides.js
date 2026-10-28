@@ -145,6 +145,8 @@ const HELP_GUIDES = [
           { sel: '.db-schedule-grid tbody tr:nth-child(3) .db-sel-cell input', label: 'Tick the ways to change' },
           { sel: '#db-bulk-bar', label: 'Bulk edit — blank means leave unchanged' },
         ] } },
+    { title: 'Size the cables',
+      html: '<strong>Size cables</strong> (above the grid) picks, for every way, the smallest cable that passes the circuit check: current (Ib ≤ In ≤ Iz with the board’s derating), volt drop from the origin, earth-fault loop, and the breaker’s I²t where it takes 0.1 s or more to clear. Choose all, failing or selected ways, the smallest size for lighting and power and the largest to try; the preview shows each change and what set it (<em>Iz</em>, <em>VD</em>, <em>Zs</em>, <em>I²t</em> or <em>Min</em>), and untick any you want to keep. A way no size fits says what it would need. A size you type into the grid is locked (shown with a lock) and left alone; type <code>auto</code> in a cable cell to size just that way.' },
     { title: 'Check the circuits',
       html: 'Press <strong>Check circuits</strong>. Each way is checked for breaker against load and cable, volt drop from the origin, earth conductor and earth-fault loop, and the result columns fill in with a pass, warning or fail mark. A change after the check marks the results stale; press the button again.',
       shot: { file: 'db-schedule-4.png', alt: 'The schedule after Check circuits, with the result columns filled in',

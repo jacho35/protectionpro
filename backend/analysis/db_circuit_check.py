@@ -44,6 +44,7 @@ import math
 from .cable_sizing import RESISTIVITY, STANDARD_CABLES, _temp_correction
 from .iec_60364_tables import (
     IEC_INSTALLATION_METHODS,
+    IEC_STANDARD_SIZES,
     installed_ampacity,
     round_up_to_standard,
 )
@@ -650,32 +651,22 @@ def _section_supply(sec, sections, demand, z_supply, z_basis, vd_upstream_pct, v
     return z, basis, vd
 
 
-def run_db_circuit_check(project, ambient_temp_c=None, install_method=None,
-                         grouping=None, grouping_circuits=None,
-                         vd_limit_lighting_pct=None, vd_limit_general_pct=None,
-                         default_ze_ohm=None):
-    """Check every way of every distribution board in the project.
+def _prepare_boards(project, req, vd_limit_lighting_pct, vd_limit_general_pct,
+                    default_ze_ohm):
+    """Everything a way check needs that belongs to its board: one load flow
+    for the run, the supply and fault impedances, and per board the
+    installation conditions, limits and section contexts. Shared by the
+    circuit check and cable sizing so both judge a way identically.
 
-    All keyword options are overrides — omitted values fall back to each
-    board's own ``way_install`` prop and then to the engine defaults, so a
-    project that has never set installation conditions still gets a sensible
-    (and clearly labelled) result.
-    """
-    req = {
-        "ambient_c": ambient_temp_c,
-        "method": install_method,
-        "grouping": grouping,
-        "circuits": grouping_circuits,
-    }
+    Returns (contexts, warnings, lf_ok); one context dict per board."""
     vd_light = _num(vd_limit_lighting_pct, VD_LIMIT_LIGHTING_PCT) \
         if vd_limit_lighting_pct is not None else VD_LIMIT_LIGHTING_PCT
     vd_general = _num(vd_limit_general_pct, VD_LIMIT_GENERAL_PCT) \
         if vd_limit_general_pct is not None else VD_LIMIT_GENERAL_PCT
-
     boards = [c for c in project.components if c.type == "distribution_board"]
     warnings = []
     if not boards:
-        return _envelope([], [], warnings, req, vd_light, vd_general, False)
+        return [], warnings, False
 
     # One load flow for the whole run, best-effort — it only supplies the
     # upstream voltage for the cumulative drop figure.
@@ -706,11 +697,9 @@ def run_db_circuit_check(project, ambient_temp_c=None, install_method=None,
     supply = _resolve_supply_impedance(project, boards, default_ze_ohm)
     fault_z1 = _resolve_fault_z1(project, boards)
 
-    rows = []
-    board_rows = []
+    contexts = []
     for board in boards:
         circuits = board.props.get("circuits") or []
-        board_name = board.props.get("name") or board.id
         v_ll = _num(board.props.get("voltage_kv"), 0.4) * 1000.0
         v_ph = v_ll / math.sqrt(3) if v_ll > 0 else 0.0
         install = _board_install(board, req)
@@ -730,53 +719,104 @@ def run_db_circuit_check(project, ambient_temp_c=None, install_method=None,
             origin_name = comp_map[origin].props.get("name", origin) if origin in comp_map else origin
         else:
             vd_upstream_pct, origin_name = None, ""
-        earthing = _zone_earthing(board, project)
         # [L5] Limits for the board's supply type, unless the request set them
         b_light, b_general = VD_LIMITS_BY_SUPPLY[install["supply"]]
         if vd_limit_lighting_pct is not None:
             b_light = vd_light
         if vd_limit_general_pct is not None:
             b_general = vd_general
-
         el_ratings = board.props.get("el_ratings")
-        el_ratings = el_ratings if isinstance(el_ratings, dict) else {}
-
-        counts = {"pass": 0, "warn": 0, "fail": 0, "info": 0}
         sections = [x for x in (board.props.get("sections") or []) if isinstance(x, dict)]
-        sec_ctx = _section_contexts(sections, circuits, v_ll)
+        contexts.append({
+            "board": board, "circuits": circuits,
+            "board_name": board.props.get("name") or board.id,
+            "v_ll": v_ll, "v_ph": v_ph, "install": install,
+            "z_supply": z_supply, "z_basis": z_basis,
+            "ik3_max_a": ik3_max_a, "z1_basis": z1_basis,
+            "vd_upstream_pct": vd_upstream_pct, "origin_name": origin_name,
+            "earthing": _zone_earthing(board, project),
+            "b_light": b_light, "b_general": b_general,
+            "el_ratings": el_ratings if isinstance(el_ratings, dict) else {},
+            "sections": sections, "sec_ctx": _section_contexts(sections, circuits, v_ll),
+            "lf_ok": lf_ok,
+        })
+    return contexts, warnings, lf_ok
+
+
+def _check_way_in(ctx, way):
+    """_check_way for one way of a prepared board (its section's supply
+    applied). Returns (row, section name or None)."""
+    z_w, basis_w, vd_up_w, sec_name = ctx["z_supply"], ctx["z_basis"], ctx["vd_upstream_pct"], None
+    sections = ctx["sections"]
+    if sections:
+        sec = next((x for x in sections if x.get("id") == way.get("section")), sections[0])
+        sec_name = sec.get("name") or "Section"
+        z_w, basis_w, vd_up_w = _section_supply(sec, sections, ctx["sec_ctx"], ctx["z_supply"],
+                                                ctx["z_basis"], ctx["vd_upstream_pct"], ctx["v_ll"])
+    row = _check_way(way, ctx["board"], ctx["board_name"], ctx["v_ll"], ctx["v_ph"], ctx["install"],
+                     z_w, basis_w, vd_up_w, ctx["lf_ok"],
+                     ctx["el_ratings"], ctx["b_light"], ctx["b_general"], ctx["earthing"])
+    return row, sec_name
+
+
+def run_db_circuit_check(project, ambient_temp_c=None, install_method=None,
+                         grouping=None, grouping_circuits=None,
+                         vd_limit_lighting_pct=None, vd_limit_general_pct=None,
+                         default_ze_ohm=None):
+    """Check every way of every distribution board in the project.
+
+    All keyword options are overrides — omitted values fall back to each
+    board's own ``way_install`` prop and then to the engine defaults, so a
+    project that has never set installation conditions still gets a sensible
+    (and clearly labelled) result.
+    """
+    req = {
+        "ambient_c": ambient_temp_c,
+        "method": install_method,
+        "grouping": grouping,
+        "circuits": grouping_circuits,
+    }
+    vd_light = _num(vd_limit_lighting_pct, VD_LIMIT_LIGHTING_PCT) \
+        if vd_limit_lighting_pct is not None else VD_LIMIT_LIGHTING_PCT
+    vd_general = _num(vd_limit_general_pct, VD_LIMIT_GENERAL_PCT) \
+        if vd_limit_general_pct is not None else VD_LIMIT_GENERAL_PCT
+
+    contexts, warnings, lf_ok = _prepare_boards(
+        project, req, vd_limit_lighting_pct, vd_limit_general_pct, default_ze_ohm)
+    if not contexts:
+        return _envelope([], [], warnings, req, vd_light, vd_general, False)
+
+    rows = []
+    board_rows = []
+    for ctx in contexts:
+        board, circuits, install = ctx["board"], ctx["circuits"], ctx["install"]
+        counts = {"pass": 0, "warn": 0, "fail": 0, "info": 0}
         for way in circuits:
-            z_w, basis_w, vd_up_w, sec_name = z_supply, z_basis, vd_upstream_pct, None
-            if sections:
-                sec = next((x for x in sections if x.get("id") == way.get("section")), sections[0])
-                sec_name = sec.get("name") or "Section"
-                z_w, basis_w, vd_up_w = _section_supply(sec, sections, sec_ctx, z_supply,
-                                                        z_basis, vd_upstream_pct, v_ll)
-            row = _check_way(way, board, board_name, v_ll, v_ph, install,
-                             z_w, basis_w, vd_up_w, lf_ok,
-                             el_ratings, b_light, b_general, earthing)
-            row["ik3_max_a"] = _round(ik3_max_a, 1)
-            row["ik3_basis"] = z1_basis
+            row, sec_name = _check_way_in(ctx, way)
+            row["ik3_max_a"] = _round(ctx["ik3_max_a"], 1)
+            row["ik3_basis"] = ctx["z1_basis"]
             row["cable_k"] = _round(_k_pe(install), 1)
-            row["vd_origin"] = origin_name
+            row["vd_origin"] = ctx["origin_name"]
             if sec_name:
                 row["section"] = sec_name
             rows.append(row)
             counts[row["status"]] = counts.get(row["status"], 0) + 1
 
+        z_supply = ctx["z_supply"]
         board_rows.append({
             "id": board.id,
-            "name": board_name,
+            "name": ctx["board_name"],
             "way_count": len(circuits),
             "counts": counts,
             "worst_status": _worst(*[r["status"] for r in rows[-len(circuits):]])
             if circuits else "pass",
             "z_supply_ohm": _round(abs(z_supply) if z_supply is not None else None, 4),
-            "z_supply_basis": z_basis,
-            "ik3_max_a": _round(ik3_max_a, 1),
-            "ik3_basis": z1_basis,
-            "earthing_system": earthing,
-            "vd_origin": origin_name,
-            "vd_limits_pct": [b_light, b_general],
+            "z_supply_basis": ctx["z_basis"],
+            "ik3_max_a": _round(ctx["ik3_max_a"], 1),
+            "ik3_basis": ctx["z1_basis"],
+            "earthing_system": ctx["earthing"],
+            "vd_origin": ctx["origin_name"],
+            "vd_limits_pct": [ctx["b_light"], ctx["b_general"]],
             "install": install,
         })
 
@@ -1163,3 +1203,122 @@ def _envelope(rows, board_rows, warnings, req, vd_light, vd_general, lf_ok):
             "load_flow_converged": bool(lf_ok),
         },
     }
+
+
+# ── Cable sizing ─────────────────────────────────────────────────────────
+# Size a way's cable: the smallest IEC preferred size, from the circuit type's
+# minimum up, that passes the checks asked for, judged by _check_way itself so
+# a proposed size is exactly one the circuit check then passes. A larger
+# conductor never does worse on current, volt drop or loop impedance, so the
+# first size that passes is the smallest.
+
+SIZING_CHECKS = ("iz", "vd", "zs")
+_CHECK_STATUS = {"iz": "coordination_status", "vd": "vd_status", "zs": "zs_status"}
+
+
+def _sizing_failures(row, checks):
+    """Which of the asked checks fail for this row. A check that cannot be
+    evaluated (info) is not a failure — there is nothing a cable size fixes."""
+    bad = [k for k in checks if row.get(_CHECK_STATUS[k]) == "fail"]
+    if "iz" in checks and row.get("ampacity_status") == "info":
+        bad.insert(0, "iz")          # no ampacity data for this size: skip it
+    return bad
+
+
+def size_db_cables(project, board_id, way_ids=None, min_lighting_mm2=1.5,
+                   min_power_mm2=2.5, max_mm2=16.0, checks=SIZING_CHECKS,
+                   set_ecc=True, ambient_temp_c=None, install_method=None,
+                   grouping=None, grouping_circuits=None,
+                   vd_limit_lighting_pct=None, vd_limit_general_pct=None,
+                   default_ze_ohm=None):
+    """Propose a cable size for ways of one board.
+
+    Per way: the smallest preferred size ≥ the minimum for its type (lighting
+    or power) and ≤ ``max_mm2`` whose check passes every check in ``checks``
+    ("iz": Ib ≤ In ≤ Iz, "vd": volt drop from the origin, "zs": earth-fault
+    loop). ``set_ecc`` judges each size with the Table 54.7 ECC for it (and
+    proposes that ECC); otherwise the way's own ECC is kept. ``governed_by``
+    names what set the size: the check that fails one size down, or "min".
+    A way no size passes gets ``proposed_mm2`` None, the checks that still
+    fail at ``max_mm2``, and the size that would pass (up to the largest
+    preferred size), if any.
+    """
+    req = {"ambient_c": ambient_temp_c, "method": install_method,
+           "grouping": grouping, "circuits": grouping_circuits}
+    checks = [k for k in SIZING_CHECKS if k in set(checks or ())]
+    contexts, warnings, _ = _prepare_boards(
+        project, req, vd_limit_lighting_pct, vd_limit_general_pct, default_ze_ohm)
+    ctx = next((c for c in contexts if c["board"].id == board_id), None)
+    if ctx is None:
+        return {"board_id": board_id, "ways": [], "warnings": warnings + ["Board not found."]}
+    wanted = set(way_ids) if way_ids is not None else None
+
+    def trial(way, size):
+        w = dict(way)
+        w["cable_mm2"] = size
+        if set_ecc:
+            w["ecc_mm2"] = ecc_required_mm2(size)
+        row, _ = _check_way_in(ctx, w)
+        return row
+
+    out = []
+    for way in ctx["circuits"]:
+        if wanted is not None and way.get("id") not in wanted:
+            continue
+        current = _num(way.get("cable_mm2")) or None
+        lighting = _is_lighting(way.get("description"))
+        smallest = _num(min_lighting_mm2 if lighting else min_power_mm2, 1.5)
+        sizes = [s for s in IEC_STANDARD_SIZES if s >= smallest - 1e-9]
+        tried = [s for s in sizes if s <= _num(max_mm2, 16.0) + 1e-9]
+        entry = {"way_id": way.get("id"), "way": str(way.get("way") or ""),
+                 "description": way.get("description") or "",
+                 "current_mm2": current, "proposed_mm2": None, "ecc_mm2": None,
+                 "governed_by": None, "failing": [], "needs_mm2": None,
+                 "iz_a": None, "vd_pct": None, "zs_status": None, "message": ""}
+        if _num(way.get("breaker_a")) <= 0 and _num(way.get("load_va")) <= 0:
+            entry["message"] = "No breaker rating or load — nothing to size against."
+            out.append(entry)
+            continue
+        prev_fail = None
+        found = None
+        for s in tried:
+            row = trial(way, s)
+            bad = _sizing_failures(row, checks)
+            if not bad:
+                found = (s, row)
+                break
+            prev_fail = bad
+        if found:
+            s, row = found
+            entry.update({
+                "proposed_mm2": s,
+                "ecc_mm2": ecc_required_mm2(s) if set_ecc else None,
+                "governed_by": prev_fail[0] if prev_fail else "min",
+                "iz_a": row.get("iz_derated_a"),
+                "vd_pct": row.get("vd_total_pct") if row.get("vd_total_pct") is not None else row.get("vd_pct"),
+                "zs_status": row.get("zs_status"),
+            })
+        else:
+            last = trial(way, tried[-1]) if tried else None
+            entry["failing"] = prev_fail or []
+            needs = None
+            for s in sizes:
+                if tried and s <= tried[-1] + 1e-9:
+                    continue
+                if not _sizing_failures(trial(way, s), checks):
+                    needs = s
+                    break
+            entry["needs_mm2"] = needs
+            names = {"iz": "current (In ≤ Iz)", "vd": "volt drop", "zs": "earth-fault loop"}
+            top = tried[-1] if tried else smallest
+            msg = (f"No size up to {top:g} mm² passes "
+                   + " and ".join(names[k] for k in entry["failing"]) + ".")
+            if needs:
+                msg += f" It needs {needs:g} mm²."
+            elif last is not None:
+                msg += " No preferred size passes — check the breaker, length or supply."
+            entry["message"] = msg
+        out.append(entry)
+    return {"board_id": board_id, "ways": out, "warnings": warnings,
+            "checks": checks, "cable_k": _round(_k_pe(ctx["install"]), 1),
+            "ik3_max_a": _round(ctx["ik3_max_a"], 1)}

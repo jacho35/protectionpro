@@ -1161,6 +1161,13 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
     // Coerce by FIELD, not by input type: the cable/ECC cells are text
     // inputs but still hold numbers. A blank ECC means "Table 54.7 minimum",
     // so it stays null rather than collapsing to 0.
+    // A cable size typed by hand is locked against Size cables; "auto" asks
+    // for the smallest size that passes (sized on the server, then re-rendered).
+    if (k === 'cable_mm2' && /^\s*auto\s*$/i.test(String(v))) {
+      CableSize.sizeOne(comp, c);
+      return 'totals';
+    }
+    if (k === 'cable_mm2') { c.cable_locked = true; delete c.cable_by; }
     if (k === 'ecc_mm2') {
       c[k] = String(v).trim() === '' ? null : (parseFloat(v) || 0);
     } else if (NUMERIC_KEYS.has(k)) {
@@ -1300,7 +1307,7 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
         <td data-label="EL Grp" data-grp="el"><input type="text" data-k="el_group" value="${escHtml(c.el_group || '')}" style="width:70px" placeholder="—"></td>
         <td data-label="Leak (mA)" data-grp="el"><input type="number" data-k="leakage_ma" value="${escHtml(c.leakage_ma ?? 0)}" min="0" step="0.1" style="width:64px"></td>
         ${sumCell(c, 'el')}
-        <td data-label="Cable mm²" data-grp="cab"><input type="text" inputmode="decimal" list="db-mm2-datalist" data-k="cable_mm2" value="${escHtml(c.cable_mm2 ?? 2.5)}" style="width:76px" title="Live conductor size. Type to filter the IEC preferred sizes, or enter any value."></td>
+        <td data-label="Cable mm²" data-grp="cab" class="db-cab-cell"><input type="text" inputmode="decimal" list="db-mm2-datalist" data-k="cable_mm2" value="${escHtml(c.cable_mm2 ?? 2.5)}" style="width:76px" title="Live conductor size. Type to filter the IEC preferred sizes, or enter any value — a typed size is locked against Size cables. Type auto for the smallest size that passes the circuit check.">${CableSize.cellTag(c)}</td>
         <td data-label="ECC mm²" data-grp="cab"><input type="text" inputmode="decimal" list="db-mm2-datalist" data-k="ecc_mm2" value="${c.ecc_mm2 == null ? '' : escHtml(c.ecc_mm2)}" style="width:76px" placeholder="auto" title="Earth continuity conductor. Type to filter the IEC preferred sizes. Leave blank and the check assumes the smallest compliant size (Table 54.7 or the IEC 60364-5-54 §543.1.2 adiabatic check), warning when a twin-and-earth CPC would fail."></td>
         <td data-label="Len (m)" data-grp="cab"><input type="number" data-k="cable_m" value="${escHtml(c.cable_m ?? 10)}" min="0" step="1" style="width:68px"></td>
         ${sumCell(c, 'cab')}
@@ -1361,7 +1368,8 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
     // (a non-preferred size is legal, just unusual).
     const mm2Sizes = (typeof IEC_STANDARD_SIZES !== 'undefined')
       ? IEC_STANDARD_SIZES : [1.5, 2.5, 4, 6, 10, 16, 25, 35, 50, 70, 95, 120, 150, 185, 240, 300, 400];
-    const mm2Options = mm2Sizes.map(s => `<option value="${s}">${s} mm²</option>`).join('');
+    const mm2Options = '<option value="auto">Auto — smallest that passes</option>'
+      + mm2Sizes.map(s => `<option value="${s}">${s} mm²</option>`).join('');
 
     const incDev = DbCoord.deviceById(comp.props.incoming_device);
     const protSum = [incDev ? incDev.name : 'No incoming device',
@@ -1397,6 +1405,7 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
         <button class="btn-small" id="db-add-row" title="Add an empty way">+ Add way</button>
         <button class="btn-small" id="db-auto-balance" title="Reassign single-phase ways across R/W/B for best balance (3-phase ways untouched)">Auto balance</button>
         <button class="btn-small" id="db-fill-ecc" title="Set every blank ECC to the IEC 60364-5-54 Table 54.7 minimum for its live conductor">Fill ECC</button>
+        <button class="btn-small" id="db-size-cables" title="Pick the smallest cable for each way that passes the circuit check — current, volt drop, earth loop and I²t — with a preview before anything changes">Size cables</button>
         <span class="db-tools-end">
           <button class="btn-small" id="db-import-xlsx" title="Import ways from an Excel/CSV file — matched by way number, with a preview of every change before it is written">Import Excel</button>
           <button class="btn-small" id="db-export-xlsx" title="Export the schedule as an Excel workbook">Export Excel</button>
@@ -1595,6 +1604,7 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
         ? `Set the Table 54.7 minimum ECC on ${n} way(s).`
         : 'Every way already has an ECC size.');
     });
+    this.body.querySelector('#db-size-cables').addEventListener('click', () => CableSize.open(comp));
     this.body.querySelector('#db-export-xlsx').addEventListener('click', () => this.exportXlsx(comp));
     const fileInput = this.body.querySelector('#db-import-file');
     this.body.querySelector('#db-import-xlsx').addEventListener('click', () => fileInput.click());
@@ -1982,6 +1992,7 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
   // Write one field onto one way, applying exactly the consistency rules the
   // per-cell change handler uses (poles↔phase, plan-sync pin flags).
   _applyBulkField(c, key, val) {
+    if (key === 'cable_mm2') { c.cable_locked = true; delete c.cable_by; }
     if (key === 'device') {
       // 'generic' is the explicit "no library device" pick ('' means no change).
       if (val === 'generic') c.device = ''; else DbCoord.applyToWay(c, val);

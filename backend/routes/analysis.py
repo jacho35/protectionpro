@@ -4,7 +4,7 @@ and study manager."""
 
 import functools
 import traceback
-from typing import Optional
+from typing import List, Optional
 from fastapi import APIRouter, HTTPException
 from fastapi.routing import APIRoute
 from pydantic import BaseModel
@@ -49,7 +49,7 @@ from ..analysis.dc_shortcircuit import run_dc_short_circuit
 from ..analysis.arcflash import run_arc_flash
 from ..analysis.dc_arcflash import run_dc_arc_flash
 from ..analysis.cable_sizing import run_cable_sizing
-from ..analysis.db_circuit_check import run_db_circuit_check
+from ..analysis.db_circuit_check import run_db_circuit_check, size_db_cables
 from ..analysis.motor_starting import run_motor_starting
 from ..analysis.dynamic_motor_starting import run_dynamic_motor_starting
 from ..analysis.transient_stability import run_transient_stability
@@ -535,6 +535,38 @@ def db_circuit_check(data: DbCircuitCheckRequest):
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"DB circuit check error: {e}")
+
+
+class DbCableSizeRequest(DbCircuitCheckRequest):
+    """DB circuit-check options plus what to size: one board, optionally
+    only some of its ways, the size range and the checks a size must pass."""
+    board_id: str
+    way_ids: Optional[List[str]] = None
+    min_lighting_mm2: float = 1.5
+    min_power_mm2: float = 2.5
+    max_mm2: float = 16.0
+    checks: List[str] = ["iz", "vd", "zs"]
+    set_ecc: bool = True
+
+
+@router.post("/db-cable-size")
+def db_cable_size(data: DbCableSizeRequest):
+    """Smallest cable per way that passes the circuit check's current, volt
+    drop and earth-loop checks (the frontend adds the breaker I²t check)."""
+    try:
+        return size_db_cables(
+            data, data.board_id, way_ids=data.way_ids,
+            min_lighting_mm2=data.min_lighting_mm2, min_power_mm2=data.min_power_mm2,
+            max_mm2=data.max_mm2, checks=data.checks, set_ecc=data.set_ecc,
+            ambient_temp_c=data.ambient_temp_c, install_method=data.install_method,
+            grouping=data.grouping, grouping_circuits=data.grouping_circuits,
+            vd_limit_lighting_pct=data.vd_limit_lighting_pct,
+            vd_limit_general_pct=data.vd_limit_general_pct,
+            default_ze_ohm=data.default_ze_ohm,
+        )
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"DB cable sizing error: {e}")
 
 
 @router.post("/motor-starting")
