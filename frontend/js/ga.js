@@ -270,7 +270,17 @@ const GA = {
     const ctl = this.controlItems(comp, secOf);
     if (cfg.control_gear === 'beside') {
       for (const it of ctl) {
-        const ways = it.ctrId ? DBControls.waysOf(comp, DBControls.contactor(comp, it.ctrId)) : [];
+        const k = it.ctrId ? DBControls.contactor(comp, it.ctrId) : null;
+        const ways = k ? DBControls.waysOf(comp, k) : [];
+        // A switched section's gear goes ahead of its ways — it feeds them.
+        const first = k && k.arrangement === 'section' && ways.length
+          ? out.findIndex(o => o.key === 'way:' + (ways[0].id || ways[0].way)) : -1;
+        if (first >= 0) {
+          let after = -1;
+          for (let i = out.length - 1; i >= 0; i--) if (out[i].role === 'control' && out[i].ctrId === it.ctrId) { after = i; break; }
+          out.splice(after >= 0 ? after + 1 : first, 0, it);
+          continue;
+        }
         const lastWay = ways.length ? 'way:' + (ways[ways.length - 1].id || ways[ways.length - 1].way) : null;
         let at = -1;
         for (let i = out.length - 1; i >= 0; i--) {

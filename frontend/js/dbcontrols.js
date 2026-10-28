@@ -9,9 +9,11 @@
  *                    breaker_a, phase: 'R'|'W'|'B', voltage: '230 V AC', note }],
  *     contactors: [{ id, tag: 'K1', label, arrangement: 'single'|'poles'|'section',
  *                    poles: '2P'|'3P'|'4P', rating_a, category: 'AC-1'|'AC-3'|…,
- *                    coil: '230 V AC', switches: [{ kind, tag, setting }],
+ *                    coil: '230 V AC', switches: [{ kind, tag, setting,
+ *                      device, mount: 'din'|'door'|'field', contact }],
  *                    combine: 'series'|'parallel', selector: 'hoa'|'oa'|'none',
- *                    selector_tag, supply: <supply id>, lamp }],
+ *                    selector_tag, supply: <supply id>,
+ *                    lamp, lamp_tag: 'H1', lamp_color: 'green'|…, lamp_shows: 'on'|'off' }],
  *   }
  *   way.contactor = <contactor id>   (in props.circuits)
  *
@@ -23,6 +25,10 @@
  * photocell PC1 switching K1 and K5): drawn on both control rungs, fitted and
  * priced once. A board can have any number of control supplies; each contactor
  * names the one its coil runs from.
+ *
+ * A switch's `device` / `mount` / `contact` and a lamp's tag / colour / what it
+ * shows are optional: blank reads as the kind's default (switchMount,
+ * lampTag …), so records saved before they existed draw as they did.
  *
  * Absent `controls` ⇒ nothing changes anywhere — reads go through peek(), which
  * never writes, so a board that is only looked at stays byte-identical. Sizes
@@ -65,6 +71,29 @@ const CTL_SUPPLY_KINDS = [
   { v: 'external', label: 'External / UPS supply', modules: 0, heat_w: 0 },
 ];
 const CTL_COILS = ['230 V AC', '24 V AC', '24 V DC', '110 V AC', '400 V AC'];
+const CTL_MOUNTS = [
+  { v: 'din', label: 'DIN rail in the board' },
+  { v: 'door', label: 'Board door' },
+  { v: 'field', label: 'Outside the board' },
+];
+const CTL_LAMP_COLOURS = [
+  { v: 'green', label: 'Green', hex: '#2e7d32' },
+  { v: 'red', label: 'Red', hex: '#c62828' },
+  { v: 'amber', label: 'Amber', hex: '#e08a00' },
+  { v: 'white', label: 'White', hex: '#8a8f98' },
+  { v: 'blue', label: 'Blue', hex: '#1565c0' },
+];
+// What a door lamp shows, and the auxiliary contact it is wired through.
+const CTL_LAMP_SHOWS = [
+  { v: 'on', label: 'Lit when the contactor is closed', aux: '13-14', nc: false },
+  { v: 'off', label: 'Lit when the contactor is open', aux: '21-22', nc: true },
+];
+// The "?" beside each arrangement in the editor: a small diagram and what it means.
+const CTL_ARRANGEMENT_HELP = {
+  single: 'The contactor sits after the way’s MCB and switches that one circuit. Use it for a single heater, pump or lighting circuit.',
+  poles: 'Each circuit keeps its own MCB. One pole of the contactor sits in each circuit and they all switch together — up to as many circuits as the contactor has poles.',
+  section: 'The contactor sits ahead of the circuits and feeds a small bus; their MCBs hang from it. Use it when there are more circuits than poles, or a whole group must go off together.',
+};
 
 const DBControls = {
   _seq: 0,
@@ -318,17 +347,19 @@ const DBControls = {
         if (seen.has(key)) continue;
         seen.add(key);
         const kd = CTL_SWITCH_KINDS.find(x => x.key === s.kind) || CTL_SWITCH_KINDS[CTL_SWITCH_KINDS.length - 1];
+        const mods = this.switchModules(s);
+        const mount = this.switchMount(s);
         out.push({ id: 'sw:' + k.id + ':' + key, group: k.id, tag: s.tag, kind: s.kind, label: s.tag,
-          spec: `${kd.label}${s.setting ? ' · ' + s.setting : ''}${kd.field ? ' · ' + kd.field : ''}`,
-          modules: kd.modules, heat_w: kd.heat_w, field: !kd.modules });
+          spec: `${this.switchDevice(s)}${s.setting ? ' · ' + s.setting : ''}${mount === 'din' ? (kd.field ? ' · ' + kd.field : '') : ' · ' + this.mountLabel(mount).toLowerCase()}`,
+          modules: mods, heat_w: mods ? kd.heat_w : 0, field: !mods });
       }
       if ((k.selector || 'hoa') !== 'none') {
         out.push({ id: 'sel:' + k.id, group: k.id, tag: k.selector_tag || 'S', kind: 'selector', label: k.selector_tag || 'S',
           spec: `Selector ${(CTL_SELECTORS.find(x => x.v === k.selector) || CTL_SELECTORS[0]).label}`, modules: 1, heat_w: 0 });
       }
       if (k.lamp) {
-        out.push({ id: 'lamp:' + k.id, group: k.id, tag: 'H-' + k.tag, kind: 'lamp', label: 'H-' + k.tag,
-          spec: `Indicator lamp (door) — ${k.tag} on`, modules: 0, heat_w: 0.5, field: true });
+        out.push({ id: 'lamp:' + k.id, group: k.id, tag: this.lampTag(k), kind: 'lamp', label: this.lampTag(k),
+          spec: `Indicator lamp (door) — ${this.lampSpec(k)}`, modules: 0, heat_w: 0.5, field: true });
       }
     }
     return out;
@@ -350,7 +381,13 @@ const DBControls = {
         continue;
       }
       const kd = CTL_SWITCH_KINDS.find(x => x.key === dv.kind);
-      const label = dv.kind === 'selector' ? 'Selector switch' : dv.kind === 'lamp' ? 'Indicator lamp' : (kd ? kd.label : dv.kind);
+      if (dv.kind === 'lamp') {
+        const k = this.contactors(comp).find(x => 'lamp:' + x.id === dv.id);
+        const col = k ? this.lampColour(k) : CTL_LAMP_COLOURS[0];
+        out.push({ key: 'CTL-LAMP', desc: `Indicator lamp, ${col.label.toLowerCase()} LED 22 mm` });
+        continue;
+      }
+      const label = dv.kind === 'selector' ? 'Selector switch' : (kd ? kd.label : dv.kind);
       out.push({ key: `CTL-${slug(dv.kind)}`, desc: label });
     }
     return out;
@@ -363,6 +400,92 @@ const DBControls = {
     const sw = (k.switches || []).map(s => s.tag || this.switchKind(s.kind).label);
     if (!sw.length) return k.selector === 'hoa' ? 'Hand only' : '—';
     return sw.join(k.combine === 'parallel' ? ' or ' : ' + ');
+  },
+
+  // A switching device's details, blank fields falling back to its kind.
+  switchMount(s) {
+    if (s.mount) return s.mount;
+    const kd = this.switchKind(s.kind);
+    return kd.modules ? 'din' : kd.key === 'pushbutton' ? 'door' : 'field';
+  },
+  switchModules(s) { return this.switchMount(s) === 'din' ? (this.switchKind(s.kind).modules || 1) : 0; },
+  switchDevice(s) { return String(s.device || '').trim() || this.switchKind(s.kind).label; },
+  switchContact(s) { return String(s.contact || '').trim() || (s.kind === 'fire' ? 'NC' : 'NO'); },
+  mountLabel(v) { return (CTL_MOUNTS.find(x => x.v === v) || CTL_MOUNTS[0]).label; },
+
+  // The door lamp: 'H-K1' for records saved before lamps had their own tag.
+  lampTag(k) { return String(k.lamp_tag || '').trim() || 'H-' + k.tag; },
+  lampColour(k) { return CTL_LAMP_COLOURS.find(x => x.v === k.lamp_color) || CTL_LAMP_COLOURS[0]; },
+  lampShows(k) { return CTL_LAMP_SHOWS.find(x => x.v === k.lamp_shows) || CTL_LAMP_SHOWS[0]; },
+  lampSpec(k) {
+    const sh = this.lampShows(k);
+    return `${this.lampColour(k).label} LED 22 mm · lit when ${k.tag} ${sh.nc ? 'open' : 'closed'}`;
+  },
+  _nextLampTag(comp, k) {
+    return this._nextTag(this.contactors(comp).filter(x => x.id !== k.id && x.lamp).map(x => this.lampTag(x)), 'H');
+  },
+
+  // The control device schedule (drawing table): selectors, switching devices
+  // (one row per tag, listing every contactor it switches) and door lamps.
+  deviceSchedule(comp) {
+    const rows = [];
+    const byTag = new Map();
+    for (const k of this.contactors(comp)) {
+      const sup = this.supply(comp, k.supply);
+      const volts = sup ? (sup.voltage || '') : (k.coil || '');
+      if ((k.selector || 'hoa') !== 'none') {
+        rows.push({ tag: k.selector_tag || 'S', device: `Selector ${(CTL_SELECTORS.find(x => x.v === k.selector) || CTL_SELECTORS[0]).label}`,
+          setting: '', contact: k.selector === 'hoa' ? 'Hand 13-14 · Auto 23-24' : 'Auto 13-14',
+          mount: this.mountLabel('din'), modules: 1, ctrs: [k.tag] });
+      }
+      for (const s of (k.switches || [])) {
+        const key = String(s.tag || '').trim().toLowerCase();
+        const seen = key && byTag.get(key);
+        if (seen) { if (!seen.ctrs.includes(k.tag)) seen.ctrs.push(k.tag); continue; }
+        const r = { tag: s.tag || '', device: this.switchDevice(s), setting: s.setting || '', contact: this.switchContact(s),
+          mount: this.mountLabel(this.switchMount(s)), modules: this.switchModules(s), ctrs: [k.tag] };
+        if (key) byTag.set(key, r);
+        rows.push(r);
+      }
+      if (k.lamp) {
+        const sh = this.lampShows(k);
+        rows.push({ tag: this.lampTag(k), device: `Indicator, ${this.lampColour(k).label.toLowerCase()} LED 22 mm${volts ? ', ' + volts : ''}`,
+          setting: `Lit when ${k.tag} ${sh.nc ? 'open' : 'closed'}`, contact: `via ${k.tag} ${sh.aux}`,
+          mount: this.mountLabel('door'), modules: 0, ctrs: [k.tag] });
+      }
+    }
+    return rows;
+  },
+
+  // Puts `ways` on contactor k (taking them off any other); one circuit
+  // becomes "a pole each" once it has more than one way.
+  assign(comp, k, ways) {
+    for (const w of ways) w.contactor = k.id;
+    if (k.arrangement === 'single' && this.waysOf(comp, k).length > 1) k.arrangement = 'poles';
+  },
+  unassign(ways) { for (const w of ways) delete w.contactor; },
+
+  // Small single-line sketch of an arrangement (the editor's "?" tip).
+  arrangementSvg(v) {
+    const mcb = (x, y) => `M ${x} ${y} v 18 M ${x - 4} ${y + 14} l 8 8 M ${x + 4} ${y + 14} l -8 8 M ${x - 9} ${y + 21} L ${x} ${y + 39}`;
+    const pole = (x, y) => `M ${x - 4} ${y} a 4 4 0 0 0 8 0 M ${x - 9} ${y + 4} L ${x} ${y + 22}`;
+    const arrow = (x) => `M ${x - 4} 96 L ${x} 104 L ${x + 4} 96 Z`;
+    let ink = '', ctl = '', fill = '', txt = '';
+    if (v === 'section') {
+      ink = `M 40 12 H 260 M 150 12 V 22 M 150 44 V 52 M 80 52 H 220 ` + [90, 150, 210].map(x => `${mcb(x, 52)} V 96`).join(' ');
+      ctl = pole(150, 22);
+      fill = [90, 150, 210].map(arrow).join(' ');
+      txt = '<text x="162" y="38" class="dbc-tip-k">K1</text><text x="226" y="74">MCBs</text>';
+    } else {
+      const xs = v === 'poles' ? [90, 150, 210] : [150];
+      ink = `M ${v === 'poles' ? 40 : 110} 12 H ${v === 'poles' ? 260 : 190} ` + xs.map(x => `${mcb(x, 12)} V 60 M ${x} 82 V 96`).join(' ');
+      ctl = xs.map(x => pole(x, 60)).join(' ') + (v === 'poles' ? ' M 86 73 H 206' : '');
+      fill = xs.map(arrow).join(' ');
+      const tx = xs[xs.length - 1] + 12;
+      txt = `<text x="${tx}" y="40">${v === 'poles' ? 'MCB each' : 'MCB'}</text><text x="${tx}" y="76" class="dbc-tip-k">K1</text>`;
+    }
+    return `<svg class="dbc-tip-svg" viewBox="0 0 300 110" width="300" height="110" aria-hidden="true">
+      <path d="${ink}" class="dbc-tip-ink"/><path d="${ctl}" class="dbc-tip-ctl${v === 'poles' ? ' dbc-tip-link' : ''}"/><path d="${fill}" class="dbc-tip-fill"/>${txt}</svg>`;
   },
 
   // ── Rendering: the Controls section under the schedule grid ─────────
@@ -525,6 +648,7 @@ const DBControls = {
     const circuits = comp.props.circuits || [];
     const picked = new Set(opts.ways || circuits.filter(c => this.wayContactor(comp, c) === k0).map(c => c.id));
     const sized = { auto: !!opts.isNew };          // follow the suggestion until a size is typed
+    let tip = null;                                // arrangement whose "?" diagram is open
 
     const m = document.createElement('div');
     m.className = 'modal dbc-modal';
@@ -548,15 +672,20 @@ const DBControls = {
           <b>${e(c.way ?? '')}</b> ${e(c.description || '—')} <span class="dbc-dim">${e(`${c.breaker_a || 0} A ${c.poles || '1P'}`)}${others.has(c.id) ? ' · now ' + e(others.get(c.id)) : ''}</span></label>`).join('');
       const sw = k.switches.map((s, i) => `<div class="dbc-swrow">
         <input type="text" data-sw="${i}" data-swk="tag" value="${e(s.tag || '')}" aria-label="Tag" class="dbc-swtag">
-        <select data-sw="${i}" data-swk="kind" aria-label="Device">${CTL_SWITCH_KINDS.map(x => opt(x.key, s.kind, x.label)).join('')}</select>
+        <select data-sw="${i}" data-swk="kind" aria-label="Kind">${CTL_SWITCH_KINDS.map(x => opt(x.key, s.kind, x.label)).join('')}</select>
         <input type="text" data-sw="${i}" data-swk="setting" value="${e(s.setting || '')}" placeholder="Setting / program" aria-label="Setting">
-        <button type="button" class="btn-small" data-sw-del="${i}" aria-label="Remove ${e(s.tag || '')}">✕</button></div>`).join('');
+        <button type="button" class="btn-small" data-sw-del="${i}" aria-label="Remove ${e(s.tag || '')}">✕</button>
+        <div class="dbc-swmore">
+          <label>Device <input type="text" data-sw="${i}" data-swk="device" value="${e(s.device || '')}" placeholder="${e(this.switchKind(s.kind).label)}"></label>
+          <label>Mounting <select data-sw="${i}" data-swk="mount">${CTL_MOUNTS.map(x => opt(x.v, this.switchMount(s), x.label)).join('')}</select></label>
+          <label>Contact <input type="text" data-sw="${i}" data-swk="contact" value="${e(s.contact || '')}" placeholder="${e(this.switchContact({ kind: s.kind }))} (e.g. NO 15-18)"></label>
+        </div></div>`).join('');
       const tmp = Object.assign({}, k);
       const warnList = this._draftWarnings(comp, tmp, ways);
       const din = (() => {
         const sz = this.contactorSize(k);
         const parts = [`${k.tag} ${sz.modules}`];
-        for (const s of k.switches) { const kd = this.switchKind(s.kind); if (kd.modules) parts.push(`${s.tag} ${kd.modules}`); }
+        for (const s of k.switches) { const n = this.switchModules(s); if (n) parts.push(`${s.tag} ${n}`); }
         if (k.selector !== 'none') parts.push(`${k.selector_tag || 'S'} 1`);
         return parts.join(' · ');
       })();
@@ -570,7 +699,10 @@ const DBControls = {
             <label>Duty <input type="text" data-kk="label" value="${e(k.label || '')}" placeholder="e.g. External lighting"></label>
           </div>
           <fieldset><legend>What it switches</legend>
-            <div class="dbc-arr">${CTL_ARRANGEMENTS.map(a => `<label class="${k.arrangement === a.v ? 'on' : ''}"><input type="radio" name="dbc-arr" value="${a.v}"${k.arrangement === a.v ? ' checked' : ''}><span>${e(a.label)}<small>${e(a.hint)}</small></span></label>`).join('')}</div>
+            <div class="dbc-arr">${CTL_ARRANGEMENTS.map(a => `<div class="dbc-arr-opt${k.arrangement === a.v ? ' on' : ''}">
+              <label><input type="radio" name="dbc-arr" value="${a.v}"${k.arrangement === a.v ? ' checked' : ''}><span>${e(a.label)}<small>${e(a.hint)}</small></span></label>
+              <button type="button" class="dbc-tipbtn" data-dbc-tip="${a.v}" aria-expanded="${tip === a.v}" aria-label="What “${e(a.label)}” means"><span aria-hidden="true">?</span></button></div>`).join('')}</div>
+            ${tip ? `<div class="dbc-tip" role="note"><strong>${e((CTL_ARRANGEMENTS.find(a => a.v === tip) || {}).label || '')}</strong>${this.arrangementSvg(tip)}<p>${e(CTL_ARRANGEMENT_HELP[tip] || '')}</p></div>` : ''}
             <div class="dbc-ways">${wayList || '<span class="dbc-dim">This board has no ways yet.</span>'}</div>
           </fieldset>
           <fieldset><legend>Contactor</legend>
@@ -601,6 +733,11 @@ const DBControls = {
               <label>Control supply <select data-kk="supply">${opt('', k.supply, '— none')}${supplies.map(s => opt(s.id, k.supply, `${s.tag} · ${s.voltage || ''}`)).join('')}${opt('__new', '', '+ New supply…')}</select></label>
               <label class="dbc-chk"><input type="checkbox" data-kk="lamp"${k.lamp ? ' checked' : ''}> Indicator lamp on the door</label>
             </div>
+            ${k.lamp ? `<div class="dbc-grid4 dbc-lamp">
+              <label>Lamp tag <input type="text" data-kk="lamp_tag" value="${e(k.lamp_tag || '')}" placeholder="${e(this.lampTag(k))}"></label>
+              <label>Colour <select data-kk="lamp_color">${CTL_LAMP_COLOURS.map(x => opt(x.v, this.lampColour(k).v, x.label)).join('')}</select></label>
+              <label class="dbc-span2">Lit when <select data-kk="lamp_shows">${CTL_LAMP_SHOWS.map(x => opt(x.v, this.lampShows(k).v, `${x.label} (aux ${x.aux})`)).join('')}</select></label>
+            </div>` : ''}
           </fieldset>
           ${warnList.length ? `<div class="dbc-warns">${warnList.map(w => `<div class="dba-note ${e(w.level)}">${w.level === 'warn' ? '⚠' : 'ⓘ'} ${e(w.text)}</div>`).join('')}</div>` : ''}
           <div class="dbc-where"><div><small>Schedule</small>${ways.length ? `Ways ${e(ways.map(w => w.way).join(', '))} show ${e(k.tag)}` : 'No ways'}</div>
@@ -637,12 +774,16 @@ const DBControls = {
           const kd = this.switchKind(t.value);
           s.tag = this._nextTag(this._allSwitchTags(comp).concat(k.switches.map(x => x.tag)), kd.prefix);
           s.setting = kd.setting || '';
+          delete s.device; delete s.mount; delete s.contact;
         }
         draw(); return;
       }
       const kk = t.dataset.kk;
       if (!kk) return;
-      if (kk === 'lamp') k.lamp = t.checked;
+      if (kk === 'lamp') {
+        k.lamp = t.checked;
+        if (k.lamp && !k.lamp_tag) k.lamp_tag = this._nextLampTag(comp, k);
+      }
       else if (kk === 'rating_a') { k.rating_a = parseFloat(t.value) || 0; sized.auto = false; }
       else if (kk === 'poles' || kk === 'category') { k[kk] = t.value; sized.auto = false; }
       else if (kk === 'supply' && t.value === '__new') {
@@ -654,6 +795,8 @@ const DBControls = {
     });
     m.addEventListener('click', (ev) => {
       if (ev.target === m) return finish();
+      const tb = ev.target.closest('[data-dbc-tip]');
+      if (tb) { tip = tip === tb.dataset.dbcTip ? null : tb.dataset.dbcTip; draw(); return; }
       const del = ev.target.closest('[data-sw-del]');
       if (del) { k.switches.splice(Number(del.dataset.swDel), 1); draw(); return; }
       const b = ev.target.closest('[data-dbc-x]');
@@ -711,5 +854,6 @@ const DBControls = {
   _afterSave(comp, opts) {
     this._changed(opts.onSave);
     this._refreshSchedule(comp);
+    if (typeof SchMobile !== 'undefined' && SchMobile.comp() === comp) SchMobile.refresh();
   },
 };
