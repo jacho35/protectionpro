@@ -69,9 +69,10 @@ const Schedules = {
         <span class="sch-status" id="sch-status"></span>
         <button class="btn-small btn-primary" id="sch-run-check"
           title="Run the per-way cable check on every board — derated ampacity, Ib ≤ In ≤ Iz, voltage drop, ECC size and earth-fault loop Zs">Check circuits</button>
-        <button class="btn-small sch-icon-btn" id="sch-side-toggle" aria-expanded="true"
-          title="Show or hide the side panel (board settings and bulk edit)" aria-label="Show or hide the side panel">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"></rect><path d="M15 4v16"></path></svg></button>
+        <button class="btn-small sch-icon-btn" id="sch-side-toggle" aria-expanded="false"
+          title="Board settings: incoming protection, common circuits, sections, earth leakage and accessories. Ticking ways opens it as bulk edit.">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"></rect><path d="M15 4v16"></path></svg>
+          Board settings</button>
         <div class="sch-install" id="sch-install" role="dialog" aria-label="Installation conditions">
           <div class="sch-install-title">Installation conditions
             <span>Used for the cable derating, voltage-drop limits and grouping of every way on this board</span></div>
@@ -113,6 +114,9 @@ const Schedules = {
       e.currentTarget.setAttribute('aria-expanded', String(!hidden));
     });
     ws.querySelector('#sch-side-toggle').addEventListener('click', () => this.setSidePanel(ws.classList.contains('sch-side-hidden')));
+    this._sidePinned = false;
+    try { this._sidePinned = localStorage.getItem('protectionpro-sch-side') === '1'; } catch (e) { /* storage blocked */ }
+    this._syncSide(false);
     ws.querySelector('#sch-install-done').addEventListener('click', () => this._toggleInstall(false));
     document.addEventListener('pointerdown', (e) => {
       if (!this._installOpen || !this._installEl) return;
@@ -433,14 +437,25 @@ const Schedules = {
     }
   },
 
-  // The right-hand side panel (DBSchedule's .db-side). Hidden by the header
-  // button; ticking a way brings it back, since bulk edit lives in it.
+  // The right-hand side panel (DBSchedule's .db-side). Closed by default:
+  // with it open beside the board rail, the grid's frozen columns on both
+  // edges leave almost nothing for the middle ones. The header button opens it
+  // for the board settings (remembered per browser); ticking ways opens it as
+  // bulk edit until the selection is cleared.
+  _sidePinned: false,
   setSidePanel(show) {
+    this._sidePinned = !!show;
+    try { localStorage.setItem('protectionpro-sch-side', show ? '1' : '0'); } catch (e) { /* storage blocked */ }
+    this._syncSide(typeof DBSchedule !== 'undefined' && DBSchedule._selected && DBSchedule._selected.size > 0 && show);
+  },
+
+  _syncSide(hasSelection) {
     const ws = document.getElementById('schedules-workspace');
     if (!ws) return;
+    const show = this._sidePinned || !!hasSelection;
     ws.classList.toggle('sch-side-hidden', !show);
     const b = document.getElementById('sch-side-toggle');
-    if (b) b.setAttribute('aria-expanded', String(!!show));
+    if (b) b.setAttribute('aria-expanded', String(show));
   },
 
   // One quiet line: the conditions in force, in words.

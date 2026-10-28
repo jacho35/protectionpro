@@ -66,8 +66,12 @@
 .sch-chip svg { color: var(--text-secondary); flex: 0 0 auto; }
 .sch-icon-btn { display: inline-flex; align-items: center; justify-content: center; padding: 4px 6px; }
 .sch-icon-btn[aria-expanded="false"] { color: var(--text-secondary); }
-.sch-status { font-size: 12px; color: var(--text-secondary); margin-left: auto; min-width: 0;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 320px; }
+/* Grows into the free space and truncates, so a long message never pushes
+   the buttons after it onto a second header line. */
+.sch-status { flex: 1 1 0; min-width: 0; text-align: right; font-size: 12px; color: var(--text-secondary);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#sch-side-toggle { gap: 6px; padding: 4px 10px; }
+#sch-side-toggle[aria-expanded="true"] { border-color: var(--accent); color: var(--accent); }
 
 .sch-body { flex: 1; display: flex; min-height: 0; }
 
@@ -494,7 +498,7 @@ body.dark-mode .dba-note.warn { color: #ef5350; }
     border-right: none; border-bottom: 1px solid var(--border-color);
   }
   .sch-toolbar { gap: 8px; padding: 6px 8px; }
-  .sch-status { margin-left: 0; width: 100%; max-width: none; }
+  .sch-status { flex: 1 1 100%; text-align: left; }
   #sch-rail-toggle, #sch-side-toggle { display: none; }
   .sch-tab { min-height: 32px; }
 }

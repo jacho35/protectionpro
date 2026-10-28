@@ -117,20 +117,20 @@ const HELP_GUIDES = [
   intro: 'The schedule is one row per way: breaker, cable, load and phase. Everything else on the board (single line, front view, bill of quantities, circuit check) is drawn from it.',
   steps: [
     { title: 'Open the board',
-      html: 'Open the <strong>Schedules</strong> workspace and pick the board in the rail on the left (the button beside <strong>← Single line</strong> hides the rail). The grid fills the window; the board’s own settings — incoming protection, sections, earth leakage, accessories — are in the side panel on the right, and the installation conditions open from the chip in the header. Boards come from <em>Distribution Board</em> symbols on the single-line diagram. Double-clicking a board on the diagram opens its schedule here, and <strong>← Single line</strong> takes you back.',
+      html: 'Open the <strong>Schedules</strong> workspace and pick the board in the rail on the left (the button beside <strong>← Single line</strong> hides the rail). The grid fills the window. The board’s own settings — incoming protection, common circuits, sections, earth leakage, accessories — open in a side panel from <strong>Board settings</strong>, and the installation conditions from the chip in the header. Boards come from <em>Distribution Board</em> symbols on the single-line diagram. Double-clicking a board on the diagram opens its schedule here, and <strong>← Single line</strong> takes you back.',
       shot: { file: 'db-schedule-1.png', alt: 'The Schedules workspace with a board selected and its circuit schedule',
         setup: 'schedule-grid', clip: '#schedules-workspace',
         callouts: [
           { sel: '#sch-board-list', label: 'Board rail — every distribution board in the project' },
           { sel: '.sch-grid-head .sch-tabs', label: 'Schedule, Single Line and Layout (GA) views of the same board' },
           { sel: '.db-phase-bars', label: 'Load on each phase — R / W / B' },
-          { sel: '#db-side', label: 'Side panel — board settings, or bulk edit while ways are ticked' },
+          { sel: '#sch-side-toggle', label: 'Board settings — protection, sections, earth leakage, accessories' },
           { sel: '.db-schedule-grid thead th.db-grp-h', label: 'Column groups — click a group heading to fold it' },
         ] } },
     { title: 'Add the loads',
-      html: 'In the side panel, open <strong>Add common circuits</strong>, choose a load type, set how many, and press <strong>+ Add circuit</strong>. The quick buttons add a batch (10 lights, 5 sockets). <strong>+ Add way</strong> above the grid adds an empty way. Each new way takes the next way number and the next phase, so the board stays balanced as you add.',
+      html: 'Open <strong>Board settings</strong> ▸ <strong>Add common circuits</strong>, choose a load type, set how many, and press <strong>+ Add circuit</strong>. The quick buttons add a batch (10 lights, 5 sockets). <strong>+ Add way</strong> above the grid adds an empty way. Each new way takes the next way number and the next phase, so the board stays balanced as you add.',
       shot: { file: 'db-schedule-2.png', alt: 'The add-load presets and quick buttons in the side panel',
-        setup: 'schedule-grid', clip: '#schedules-workspace',
+        setup: 'schedule-presets', clip: '#schedules-workspace',
         callouts: [
           { sel: '#db-load-type', label: 'Load type — sets a typical load, breaker and cable' },
           { sel: '#db-quick-lights', label: 'Quick batches' },
@@ -138,7 +138,7 @@ const HELP_GUIDES = [
     { title: 'Edit like a spreadsheet',
       html: 'Click a cell and type. Arrow keys move, <kbd>Enter</kbd> goes down, <kbd>Tab</kbd> goes right, <kbd>F2</kbd> edits inside a cell. Select a block with <kbd>Shift</kbd>+arrows or by dragging, then <kbd>Ctrl</kbd>+<kbd>C</kbd> / <kbd>Ctrl</kbd>+<kbd>V</kbd> to copy to and from Excel, and <kbd>Ctrl</kbd>+<kbd>D</kbd> to fill down. Text pasted into a number cell is refused and marked, never turned into zero.' },
     { title: 'Change many ways at once',
-      html: 'Tick the boxes at the left of several ways. The side panel turns into <strong>Bulk edit</strong> with the fields you can set for all of them — leave a field blank to keep each way’s own value — then press <strong>Apply</strong>. The <strong>Device</strong> list shows only library breakers at the Breaker (A) and Curve entered (or the ones the ticked ways share); narrow it further by manufacturer and by MCB / MCCB / ACB.',
+      html: 'Tick the boxes at the left of several ways. A side panel opens as <strong>Bulk edit</strong> with the fields you can set for all of them — leave a field blank to keep each way’s own value — then press <strong>Apply</strong>. The <strong>Device</strong> list shows only library breakers at the Breaker (A) and Curve entered (or the ones the ticked ways share); narrow it further by manufacturer and by MCB / MCCB / ACB.',
       shot: { file: 'db-schedule-3.png', alt: 'Two ways ticked and the bulk edit panel showing',
         setup: 'schedule-bulk', clip: '#schedules-workspace',
         callouts: [
@@ -151,10 +151,10 @@ const HELP_GUIDES = [
         setup: 'schedule-checked', clip: '#schedules-workspace',
         callouts: [
           { sel: '#sch-run-check', label: 'Check circuits' },
-          { sel: '.db-schedule-grid thead th[data-label="FLA (A)"], .db-schedule-grid thead th:nth-last-child(5)', label: 'Results — current, rating, volt drop, earth conductor' },
+          { sel: '.db-schedule-grid thead tr:not(.db-grp-row) th.db-fla-h', label: 'Results — current, rating, volt drop, earth conductor' },
         ] } },
     { title: 'Pick library breakers and read the mini TCC',
-      html: 'In the <strong>Device</strong> column pick a breaker from the library: its rating and curve are written to the way. Set the board’s <strong>incoming device</strong> and its maximum fault level under the grid. After <strong>Check circuits</strong>, click a <strong>Coord</strong> cell to open the mini TCC: the way’s breaker, the incomer and any breaker above it on their published bands, with checks for discrimination, the cable’s I²t withstand and breaking capacity (cascading counts where allowed).',
+      html: 'In the <strong>Device</strong> column pick a breaker from the library: its rating and curve are written to the way. Set the board’s <strong>incoming device</strong> and its maximum fault level in <strong>Board settings</strong> ▸ <strong>Incoming protection</strong>. After <strong>Check circuits</strong>, click a <strong>Coord</strong> cell to open the mini TCC: the way’s breaker, the incomer and any breaker above it on their published bands, with checks for discrimination, the cable’s I²t withstand and breaking capacity (cascading counts where allowed).',
       shot: { file: 'db-schedule-5.png', alt: 'The mini TCC of a way: its breaker and the incomer on their curves with the discrimination, cable and breaking-capacity verdicts',
         setup: 'db-coord', clip: 'viewport',
         callouts: [
@@ -172,11 +172,11 @@ const HELP_GUIDES = [
 
 // ───────────────────────────────────────────────────────────────────────────
 { id: 'db-sections', group: 'boards', title: 'Split a board into Normal, Essential and UPS sections',
-  where: 'Schedules ▸ board ▸ Schedule ▸ Sections / compartments', time: '5 min', phone: 'Sections sheet from the ⋯ menu or the Sections chip',
+  where: 'Schedules ▸ board ▸ Board settings ▸ Sections / compartments', time: '5 min', phone: 'Sections sheet from the ⋯ menu or the Sections chip',
   intro: 'One board can hold physically separate compartments, each with its own supply, incomer, busbar and N/PE bars. Ways belong to a section, and the single line, front view, circuit check and bill of quantities all follow.',
   steps: [
     { title: 'Open the Sections panel',
-      html: 'Above the grid, open <strong>Sections / compartments</strong>. A board with no sections is one compartment; the first section you add takes all its existing ways.',
+      html: 'Open <strong>Board settings</strong> ▸ <strong>Sections / compartments</strong>. A board with no sections is one compartment; the first section you add takes all its existing ways.',
       shot: { file: 'db-sections-1.png', alt: 'The Sections panel with three section cards and the add buttons',
         setup: 'sections-panel', clip: '#schedules-workspace',
         callouts: [
