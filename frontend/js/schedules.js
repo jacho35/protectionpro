@@ -168,6 +168,8 @@ const Schedules = {
     const tb = document.getElementById('toolbar');
     const ws = document.getElementById('schedules-workspace');
     if (tb && ws) ws.style.top = tb.offsetHeight + 'px';
+    // Sub-board feeders drawn on the SLD since the last visit.
+    if (typeof DBFeeders !== 'undefined') DBFeeders.syncAll();
     const boards = this._boards();
     if (!boards.some(b => b.id === this._boardId)) {
       this._boardId = boards.length ? boards[0].id : null;
@@ -218,6 +220,13 @@ const Schedules = {
     this._syncBack();
   },
 
+  // " · Fed from DB-MH, way 61" — the board feeding this one, as a link.
+  _fedFromHtml(comp) {
+    const p = typeof DBFeeders !== 'undefined' ? DBFeeders.parentOf(comp.id) : null;
+    if (!p) return '';
+    return ` · <button type="button" class="sch-fed-from" data-fed-from="${escHtml(p.board.id)}" title="Open the board that feeds this one">Fed from ${escHtml(p.board.props.name || p.board.id)}, way ${escHtml(String(p.way.way ?? ''))}</button>`;
+  },
+
   _BACK_LABELS: { sld: 'Single line', plan: 'Plan', retic: 'Demand', streetlight: 'Street lighting',
     interlock: 'Interlocking', quantities: 'Quantities', lighting: 'Lighting', sports: 'Sports fields', lightov: 'Overview' },
 
@@ -256,11 +265,33 @@ const Schedules = {
   },
 
   // ── Boards ───
+  // Boards in supply order: each board followed by the sub-boards it feeds
+  // (a feeder way's feedsDbId), by name at every level. `_depth` = nesting.
   _boards() {
-    return [...AppState.components.values()]
-      .filter(c => c.type === 'distribution_board')
-      .sort((a, b) => String(a.props.name || a.id)
-        .localeCompare(String(b.props.name || b.id), undefined, { numeric: true }));
+    const byName = (a, b) => String(a.props.name || a.id)
+      .localeCompare(String(b.props.name || b.id), undefined, { numeric: true });
+    const all = [...AppState.components.values()].filter(c => c.type === 'distribution_board').sort(byName);
+    const ids = new Set(all.map(b => b.id));
+    const kids = new Map();
+    const fed = new Set();
+    for (const b of all) {
+      for (const w of b.props.circuits || []) {
+        if (w.type !== 'feeder_db' || !ids.has(w.feedsDbId) || w.feedsDbId === b.id || fed.has(w.feedsDbId)) continue;
+        fed.add(w.feedsDbId);
+        if (!kids.has(b.id)) kids.set(b.id, []);
+        kids.get(b.id).push(AppState.components.get(w.feedsDbId));
+      }
+    }
+    const out = [];
+    this._depth = new Map();
+    const walk = (b, d) => {
+      if (this._depth.has(b.id)) return;
+      this._depth.set(b.id, d); out.push(b);
+      for (const k of (kids.get(b.id) || []).sort(byName)) walk(k, d + 1);
+    };
+    for (const b of all) if (!fed.has(b.id)) walk(b, 0);
+    for (const b of all) walk(b, 0);           // a loop of feeders: still listed
+    return out;
   },
 
   selectBoard(id) {
@@ -548,8 +579,9 @@ const Schedules = {
       if (r && r.counts.fail) bits.push(`${r.counts.fail} fail`);
       else if (r && r.counts.warn) bits.push(`${r.counts.warn} warn`);
       return `
-        <li class="sch-board${b.id === this._boardId ? ' active' : ''}" data-id="${escHtml(b.id)}"
-            role="option" aria-selected="${b.id === this._boardId}">
+        <li class="sch-board${b.id === this._boardId ? ' active' : ''}${(this._depth.get(b.id) || 0) ? ' sch-board-child' : ''}" data-id="${escHtml(b.id)}"
+            role="option" aria-selected="${b.id === this._boardId}"
+            style="${(this._depth.get(b.id) || 0) ? `padding-left:${10 + Math.min(4, this._depth.get(b.id)) * 14}px` : ''}">
           <span class="sch-board-name"><span class="sch-dot st-${status}"></span>${escHtml(b.props.name || b.id)}</span>
           <span class="sch-board-meta">${escHtml(bits.join(' · '))}</span>
         </li>`;
@@ -596,7 +628,7 @@ const Schedules = {
              role="tab" aria-selected="${this._tab === id}"${title ? ` title="${escHtml(title)}"` : ''}>${label}</button>`;
     head.innerHTML = comp
       ? `<span class="sch-board-title"><strong>${escHtml(comp.props.name || comp.id)}</strong>
-           <span class="sch-board-sub">${(comp.props.circuits || []).length} ways · ${Number(comp.props.voltage_kv || 0.4) * 1000} V</span></span>
+           <span class="sch-board-sub">${(comp.props.circuits || []).length} ways · ${Number(comp.props.voltage_kv || 0.4) * 1000} V${this._fedFromHtml(comp)}</span></span>
          <span class="sch-tabs" role="tablist">
            ${tab('grid', 'Schedule')}
            ${tab('coord', 'Coordination', 'Mini TCC: a way against the breakers above it — discrimination, cable protection, breaking capacity')}
@@ -611,6 +643,9 @@ const Schedules = {
     if (ed) ed.addEventListener('click', () => this._toggleInstall());
     if (!comp && this._installOpen) this._toggleInstall(false);
     this._renderInstallSummary();
+    head.querySelectorAll('[data-fed-from]').forEach(btn => {
+      btn.addEventListener('click', () => this.selectBoard(btn.dataset.fedFrom));
+    });
     head.querySelectorAll('[data-sch-tab]').forEach(btn => {
       btn.addEventListener('click', () => this.selectTab(btn.dataset.schTab));
     });

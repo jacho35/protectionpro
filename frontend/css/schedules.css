@@ -613,6 +613,7 @@ body.dark-mode .db-con-chip-s.db-con-over { background: #4a1c1c; color: #ffa8a8;
 .ga-side { width: 340px; overflow: auto; font-size: 12px; }
 .ga-side h4 { margin: 12px 0 4px; font-size: 12px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: .04em; }
 .ga-side label { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin: 4px 0; }
+.ga-side label.ga-check { justify-content: flex-start; }
 .ga-side input, .ga-side select { font-size: 12px; padding: 2px 4px; background: var(--bg-primary); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 4px; }
 .ga-summary { padding: 8px 10px; border: 1px solid var(--border-color); border-left: 4px solid #2e8b57; border-radius: 6px; background: var(--bg-primary); }
 .ga-summary.st-fail { border-left-color: #c0392b; }
@@ -932,3 +933,20 @@ body.dark-mode .csz-warn { background: #433210; color: #ffd98a; }
 .csz-rules #bks-maker { width: 100%; }
 .bks-other { font-size: 10px; font-weight: 600; padding: 1px 5px; border-radius: 3px; background: #fdf0d5; color: #7a4a00; }
 body.dark-mode .bks-other { background: #433210; color: #ffd98a; }
+
+/* ── Sub-board feeders drawn on the SLD (dbfeeders.js) ───────────────── */
+.db-schedule-grid .library-table td.db-col-breaker { white-space: nowrap; }
+.db-sld-tag {
+  display: inline-flex; align-items: center; margin-left: 4px; padding: 0 4px; height: 16px;
+  border-radius: 3px; font-size: 10px; font-weight: 600; vertical-align: middle; cursor: help;
+  background: color-mix(in srgb, #14b8a6 18%, var(--bg-primary)); color: #0f8f82;
+}
+body.dark-mode .db-sld-tag { color: #5fd4c6; }
+.db-schedule-grid td.db-desc-feeder { display: flex; align-items: center; gap: 6px; }
+.db-sub-open, .sch-fed-from {
+  background: none; border: 0; padding: 2px 4px; font: inherit; font-size: 12px;
+  color: var(--accent); cursor: pointer; white-space: nowrap; border-radius: 3px;
+}
+.db-sub-open:hover, .sch-fed-from:hover { text-decoration: underline; }
+.db-sub-open:focus-visible, .sch-fed-from:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.sch-board.sch-board-child .sch-board-name::before { content: '└'; color: var(--text-muted); margin-right: 2px; }

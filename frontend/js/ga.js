@@ -11,7 +11,10 @@
  *   { mounting: 'any'|'wall'|'floor', enclosure: 'auto'|<GA_ENCLOSURES key>|'custom',
  *     custom: {w,h,d}, spare_pct, delta_t, incomer_a,
  *     order: [item keys], over: { <item key>: { kind, rowbreak } },
- *     extras: [{ id, kind, label, modules, heat_w }] }
+ *     extras: [{ id, kind, label, modules, heat_w }], phase_rows }
+ * `phase_rows`: the single-phase ways grouped by phase, each phase on rails of
+ * its own (R, then W, then B, then the three-phase ways) — how a board is
+ * usually built, even though it takes more rail.
  * Absent ⇒ defaults, so boards never visited stay byte-identical.
  *
  * Item keys: 'inc' · 'acc:<id>' · 'way:<id>' · 'rcd:<el group>' · 'x:<id>'.
@@ -107,6 +110,7 @@ const GA = {
       order: Array.isArray(g.order) ? g.order.slice() : [],
       over: (g.over && typeof g.over === 'object') ? g.over : {},
       extras: Array.isArray(g.extras) ? g.extras : [],
+      phase_rows: !!g.phase_rows,
       section_layout: g.section_layout === 'stack' ? 'stack' : g.section_layout === 'grid' ? 'grid' : 'side',
       grid_cols: Number(g.grid_cols) > 0 ? Math.min(8, Math.floor(Number(g.grid_cols))) : null,
       grid_rows: Number(g.grid_rows) > 0 ? Math.min(8, Math.floor(Number(g.grid_rows))) : null,
@@ -243,7 +247,7 @@ const GA = {
         const rated = Math.max(40, ...members.map(m => Number(m.breaker_a) || 0));
         const rating = this._stdAmps(Math.min(100, rated));
         out.push({ key: 'rcd:' + g + (sectioned ? ':' + secOf(c) : ''), form: 'din', kind: 'rcd', modules: three ? 4 : 2,
-          heat: three ? 4 : 2, label: 'RCD ' + g,
+          heat: three ? 4 : 2, label: 'RCD ' + g, pgroup: this._phaseGroup(members[0]),
           sub: `${rating} A ${(comp.props.el_ratings && comp.props.el_ratings[g]) || 30} mA`, role: 'rcd', sec: secOf(c) });
       }
       const key = 'way:' + (c.id || c.way);
@@ -252,7 +256,7 @@ const GA = {
       const dev = this._breaker(a, is3 ? 3 : 1, ov(key).kind, this._wayIb(c, vll));
       out.push(Object.assign(dev, {
         key, label: String(c.way), sub: `${a} A ${c.curve || ''}${is3 ? ' 3P' : ''}`.trim(),
-        title: `Way ${c.way}: ${c.description || ''}`, role: 'way', way: c, sec: secOf(c),
+        title: `Way ${c.way}: ${c.description || ''}`, role: 'way', way: c, sec: secOf(c), pgroup: this._phaseGroup(c),
       }));
     }
 
@@ -264,7 +268,33 @@ const GA = {
     }
 
     for (const it of out) it.rowbreak = !!ov(it.key).rowbreak;
-    return this._ordered(out, cfg.order);
+    const ordered = this._ordered(out, cfg.order);
+    return cfg.phase_rows ? this._phaseRows(ordered) : ordered;
+  },
+
+  // R / W / B for a single-phase way, '3P' for a three-phase one.
+  _phaseGroup(c) {
+    if (!c) return null;
+    return (c.poles === '3P' || c.phase === 'RWB') ? '3P' : (['R', 'W', 'B'].includes(c.phase) ? c.phase : 'R');
+  },
+  PHASE_ROW_ORDER: { R: 1, W: 2, B: 3, '3P': 4 },
+
+  // Phase rows: incomer + accessories first, then the ways (each RCD with the
+  // phase of its first way) grouped R, W, B, three-phase — keeping their order
+  // inside a group — and each group starts a new rail row (per section).
+  _phaseRows(items) {
+    const rank = (it) => it.role === 'extra' ? 9 : (this.PHASE_ROW_ORDER[it.pgroup] || 0);
+    const sorted = items.map((it, i) => ({ it, i }))
+      .sort((a, b) => rank(a.it) - rank(b.it) || a.i - b.i).map(x => x.it);
+    const last = new Map();
+    for (const it of sorted) {
+      if (it.form !== 'din') continue;
+      const k = it.sec || '';
+      const g = rank(it);
+      if (last.has(k) && last.get(k) !== g && g > 0 && g < 9) it.rowbreak = true;
+      last.set(k, g);
+    }
+    return sorted;
   },
 
   _ordered(items, order) {
@@ -703,6 +733,18 @@ const GA = {
     for (const [i, n] of (res.noBars ? [] : ['N', 'PE']).entries()) {
       s.push({ t: 'rect', x: ox + GA_SIDE_MM, y: oy + barY + i * 30, w: box.w - 2 * GA_SIDE_MM, h: 14, layer: 'BARS', kind: 'bar' });
       s.push({ t: 'text', x: ox + GA_SIDE_MM + 4, y: oy + barY + i * 30 + 10.5, s: n + ' bar' + (sec ? ' · ' + sec.name : ''), size: 8, layer: 'TEXT' });
+    }
+    if (comp && this.cfg(comp).phase_rows) {
+      // Phase rows: name each rail by the phase its first way is on.
+      const named = new Set();
+      for (const p of res.placed) {
+        const g = p.item.pgroup;
+        if (!g || p.row == null || named.has(p.row)) continue;
+        named.add(p.row);
+        const y = GA_TOP_MM + p.row * GA_ROW_PITCH + GA_ROW_PITCH / 2 - 10;
+        s.push({ t: 'text', x: ox + GA_SIDE_MM - 6, y: oy + y + 3, s: g === '3P' ? '3Φ' : g, size: 9, anchor: 'end', layer: 'TEXT',
+          bold: true, color: { R: '#dc2626', W: '#a16207', B: '#2563eb' }[g] || '#222' });
+      }
     }
     for (const p of res.placed) {
       const it = p.item;
@@ -1147,6 +1189,7 @@ const GA = {
         ${num('custom.w', cfg.custom.w, 100, 50)} ${num('custom.h', cfg.custom.h, 100, 50)} ${num('custom.d', cfg.custom.d, 50, 10)}</label>` : ''}
       <label title="Free modules left for future ways">Spare % ${num('spare_pct', cfg.spare_pct, 0, 5, 56)}</label>
       <label title="Allowed temperature rise inside the enclosure">Rise K ${num('delta_t', cfg.delta_t, 5, 5, 56)}</label>
+      <label class="ga-check" title="Each phase on rails of its own: red-phase ways first, then white (yellow), then blue, then the three-phase ways. Takes more rail, but is how a board is usually built."><input type="checkbox" data-ga-phase-rows${cfg.phase_rows ? ' checked' : ''}> Group ways by phase</label>
       ${L.comps ? '' : `<label title="Blank = rating of the incoming device on the SLD (else estimated from demand)">Incomer A ${num('incomer_a', cfg.incomer_a, 0, 10, 72)}</label>`}
       <h4>Devices</h4>
       <table class="ga-items"><tbody>${rows}</tbody></table>
@@ -1258,6 +1301,8 @@ const GA = {
       const over = JSON.parse(JSON.stringify(cfg.over));
       over[t.dataset.gaKind] = Object.assign(over[t.dataset.gaKind] || {}, { kind: t.value || undefined });
       this._write(comp, { over });
+    } else if (t.dataset.gaPhaseRows !== undefined) {
+      this._write(comp, { phase_rows: t.checked || undefined });
     } else if (t.dataset.gaBreak !== undefined) {
       const over = JSON.parse(JSON.stringify(cfg.over));
       over[t.dataset.gaBreak] = Object.assign(over[t.dataset.gaBreak] || {}, { rowbreak: t.checked || undefined });
