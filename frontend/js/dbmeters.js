@@ -312,7 +312,7 @@ const DBMeters = {
           what: meas ? `${meas.props.name || meas.id}` : 'not linked', type: p.meter_type, cls: p.cls,
           system: p.system, conn: p.conn, ct_ratio: this.sldCtRatio(comp), protocol: p.protocol, network: p.network,
           address: p.address, gateway: p.gateway, points: this.pointsOf({ points: p.points }), count: 1,
-          addresses: this._addresses(p.address, 1), prefix: this._slug(p.name || comp.id),
+          addresses: this._addresses(p.address, 1), prefix: this._slug(p.name || comp.id), model: p.model || '',
         });
       } else if (this.has(comp)) {
         const board = comp.props.name || comp.id;
@@ -324,7 +324,7 @@ const DBMeters = {
             what: this.measuresText(comp, m, ways), type: m.type, cls: m.cls, system: m.system, conn: m.conn,
             ct_ratio: this.conn(m.conn).ct ? m.ct_ratio : '', protocol: m.protocol, network: m.network,
             address: m.address, gateway: m.gateway, points: this.pointsOf(m), count: n,
-            addresses: this._addresses(m.address, n), prefix: `${this._slug(board)}.${this._slug(m.tag)}`,
+            addresses: this._addresses(m.address, n), prefix: `${this._slug(board)}.${this._slug(m.tag)}`, model: m.model || '',
           });
         }
       }
@@ -468,6 +468,40 @@ const DBMeters = {
     return `${pr.short} · ${where} → ${this.gatewayLabel(m.gateway)}`;
   },
 
+  // ── Register map ────────────────────────────────────────────────────
+  // The meter's register (or object) per BMS point, typed from the maker's
+  // register map: { 'kWh': '30073', 'V_L1': '30001', … } keyed by the point's
+  // last name part, so the meters of a virtual group share one map. Stored on
+  // the board meter, or on the SLD meter's props.
+  registers(r) {
+    const o = r.src === 'sld' ? r.comp.props.registers : r.m.registers;
+    return o && typeof o === 'object' ? o : {};
+  },
+  setRegister(r, key, value) {
+    const host = r.src === 'sld' ? r.comp.props : r.m;
+    if (!host.registers || typeof host.registers !== 'object') host.registers = {};
+    const v = String(value || '').trim();
+    if (v) host.registers[key] = v; else delete host.registers[key];
+    if (!Object.keys(host.registers).length) delete host.registers;
+    AppState.dirty = true;
+  },
+  // Copies a meter's register map to every other meter of the same type and
+  // make / model. Returns how many were updated.
+  copyRegisters(r) {
+    const model = String(r.model || '').trim().toLowerCase();
+    if (!model) return 0;
+    const src = this.registers(r);
+    let n = 0;
+    for (const o of this.all()) {
+      if (o.id === r.id || o.type !== r.type || String(o.model || '').trim().toLowerCase() !== model) continue;
+      const host = o.src === 'sld' ? o.comp.props : o.m;
+      host.registers = Object.assign({}, src);
+      n++;
+    }
+    if (n) AppState.dirty = true;
+    return n;
+  },
+
   // ── BOQ ─────────────────────────────────────────────────────────────
   // One line per physical item: meters, their CTs, a sub-bus isolator.
   boqLines(comp) {
@@ -545,6 +579,7 @@ const DBMeters = {
         <button type="button" class="btn-small${hasInc ? ' btn-primary' : ''}" data-dbm="add">+ Meter</button>
         ${sel ? `<button type="button" class="btn-small" data-dbm="add-sel" title="One meter for the ways ticked in the grid">+ Meter for ${sel} ticked way${sel === 1 ? '' : 's'}</button>` : ''}
         <button type="button" class="btn-small" data-dbm="schedule" title="Every meter in the project with its BMS points">Meter schedule…</button>
+        <a href="#" class="dbm-help" data-help-open="design-metering">How metering works</a>
         <span class="dbc-dim">${e(summary)}</span>
       </div>
       ${list.length ? (panel ? `<div class="dbc-cards">${rows}</div>` : `<div class="dbc-table-wrap"><table class="dbc-table">
@@ -851,16 +886,18 @@ const MeterSchedule = {
     if (pr.bus === 'none') return [];
     const out = [];
     const base = (addr) => (parseInt(addr, 10) || 0) * 100;
+    const regs = DBMeters.registers(r);
+    const withReg = (p) => { p.key = p.name.slice(p.name.lastIndexOf('.') + 1); p.reg = regs[p.key] || ''; return p; };
     if (r.count > 1) {
       const ways = DBMeters.waysOf(r.comp, r.m);
       ways.forEach((w, i) => {
         const sub = `${r.prefix}${String.fromCharCode(97 + (i % 26))}`;
-        DBMeters.pointList(m, sub, DBMeters._is3(w)).forEach((p, j) => out.push(Object.assign(p, { meter: `${r.tag}${String.fromCharCode(97 + (i % 26))} · way ${w.way}`, inst: r.addresses[i] ? `${p.obj} ${base(r.addresses[i]) + j + 1}` : '' })));
+        DBMeters.pointList(m, sub, DBMeters._is3(w)).forEach((p, j) => out.push(Object.assign(p, { meter: `${r.tag}${String.fromCharCode(97 + (i % 26))} · way ${w.way}`, inst: r.addresses[i] ? `${p.obj} ${base(r.addresses[i]) + j + 1}` : '' }, withReg(p))));
       });
       out.push({ name: `${r.prefix}.kWh`, desc: `Total of ${ways.length} meters (BMS sum)`, unit: 'kWh', obj: 'AV', meter: `${r.tag} total`, inst: '' });
       return out;
     }
-    return DBMeters.pointList(m, r.prefix, three).map((p, j) => Object.assign(p, { meter: r.tag, inst: r.addresses[0] && /^\d+$/.test(r.addresses[0]) ? `${p.obj} ${base(r.addresses[0]) + j + 1}` : '' }));
+    return DBMeters.pointList(m, r.prefix, three).map((p, j) => Object.assign(withReg(p), { meter: r.tag, inst: r.addresses[0] && /^\d+$/.test(r.addresses[0]) ? `${p.obj} ${base(r.addresses[0]) + j + 1}` : '' }));
   },
 
   open() {
@@ -899,10 +936,11 @@ const MeterSchedule = {
         </div>
       </main>
       <footer class="rt-foot">
-        <span class="rt-note-i">Point instance numbers are suggested (address × 100 + point) — check them against the meter's register map</span>
+        <span class="rt-note-i">Registers are typed from the maker's register map (once per model, then copied) · object instances are suggested (address × 100 + point)</span>
         <span class="rt-grow"></span>
         <button type="button" class="rt-btn" data-ms="csv">${I_DOWN}Points CSV</button>
-        <button type="button" class="rt-btn primary" data-ms="xlsx">${I_DOWN}Excel</button>
+        <button type="button" class="rt-btn" data-ms="xlsx">${I_DOWN}Excel</button>
+        <button type="button" class="rt-btn primary" data-ms="pdf">${I_DOWN}PDF</button>
       </footer>
     </div>`;
     document.body.appendChild(m);
@@ -915,6 +953,18 @@ const MeterSchedule = {
       else if (a === 'csv') this.exportCsv();
       else if (a === 'xlsx') this.exportXlsx();
       else if (a === 'goto') this._goto(b.dataset.id);
+      else if (a === 'pdf') this.exportPDF();
+      else if (a === 'copyregs') {
+        const r = DBMeters.all().find(x => x.id === b.dataset.id);
+        const n = r ? DBMeters.copyRegisters(r) : 0;
+        UI.toast(n ? `Registers copied to ${n} other meter${n === 1 ? '' : 's'}.` : 'No other meter of that type and model.', n ? 'success' : 'info');
+      }
+    });
+    m.addEventListener('change', (e) => {
+      const t = e.target.closest('[data-ms-reg]');
+      if (!t) return;
+      const r = DBMeters.all().find(x => x.id === t.dataset.id);
+      if (r) DBMeters.setRegister(r, t.dataset.msReg, t.value);
     });
     m.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.stopPropagation(); this.close(); } });
   },
@@ -981,23 +1031,25 @@ const MeterSchedule = {
         <button type="button" class="btn-small" data-ms="goto" data-id="${e(r.id)}">${r.src === 'sld' ? 'Show on single line' : 'Edit meter'}</button></div>
       <div class="dbc-dim">${e(r.what)} · ${e(DBMeters.comms(r))}</div>
       ${r.warns.length ? `<div class="ms-warns">${r.warns.map(w => `<div class="dba-note ${e(w.level)}">${w.level === 'warn' ? '⚠' : 'ⓘ'} ${e(w.text)}</div>`).join('')}</div>` : ''}
-      ${P.length ? `<table class="ms-table ms-pts"><thead><tr><th>Point</th><th>Unit</th><th>Object</th><th>Description</th></tr></thead><tbody>
-        ${P.map(p => `<tr><td><code>${e(p.name)}</code></td><td>${e(p.unit)}</td><td>${e(p.inst || p.obj)}</td><td>${e(p.desc)}</td></tr>`).join('')}</tbody></table>`
+      ${P.length ? `<div class="ms-regbar"><span class="dbc-dim">Registers from the ${r.model ? e(r.model) : 'meter'}'s register map${r.count > 1 ? ' — shared by its ' + r.count + ' meters' : ''}</span>
+        ${r.model ? `<button type="button" class="btn-small" data-ms="copyregs" data-id="${e(r.id)}" title="Give every other ${e(DBMeters.type(r.type).short)} ${e(r.model)} in the project these registers">Copy to all ${e(r.model)}</button>` : '<span class="dbc-dim">· set its make / model to copy them to the others</span>'}</div>
+        <table class="ms-table ms-pts"><thead><tr><th>Point</th><th>Unit</th><th>Register</th><th>Object</th><th>Description</th></tr></thead><tbody>
+        ${P.map(p => `<tr><td><code>${e(p.name)}</code></td><td>${e(p.unit)}</td><td>${p.obj === 'AV' ? '<span class="dbc-dim">BMS</span>' : `<input type="text" class="ms-reg" data-ms-reg="${e(p.key)}" data-id="${e(r.id)}" value="${e(p.reg)}" placeholder="e.g. 30073" aria-label="Register for ${e(p.name)}">`}</td><td>${e(p.inst || p.obj)}</td><td>${e(p.desc)}</td></tr>`).join('')}</tbody></table>`
         : '<div class="csz-empty">No BMS points — the meter is local only.</div>'}` : '';
   },
 
   _scheduleAoa() {
-    const head = ['Tag', 'Where', 'Measures', 'Type', 'Class', 'System', 'Quantity', 'Connection', 'CT ratio', 'Mounting', 'Protocol', 'Network', 'Address', 'Gateway', 'Points', 'Check'];
-    return [head, ...this.rows().map(r => [r.tag, r.board, r.what, DBMeters.type(r.type).label, r.cls || '', r.system || '', r.count,
+    const head = ['Tag', 'Where', 'Measures', 'Type', 'Make / model', 'Class', 'System', 'Quantity', 'Connection', 'CT ratio', 'Mounting', 'Protocol', 'Network', 'Address', 'Gateway', 'Points', 'Check'];
+    return [head, ...this.rows().map(r => [r.tag, r.board, r.what, DBMeters.type(r.type).label, r.model || '', r.cls || '', r.system || '', r.count,
       DBMeters.conn(r.conn).label, r.ct_ratio || '', r.src === 'board' ? DBMeters.mount(r.m.mount).label : '',
       DBMeters.protocol(r.protocol).label, r.network || '', r.address || '', DBMeters.gatewayLabel(r.gateway),
       this.points(r).length, r.warns.filter(w => w.level === 'warn').map(w => w.text).join('; ')])];
   },
   _pointsAoa() {
-    const out = [['Point', 'Meter', 'Where', 'Description', 'Unit', 'Object', 'Protocol', 'Network', 'Address', 'Gateway']];
+    const out = [['Point', 'Meter', 'Where', 'Description', 'Unit', 'Register', 'Object', 'Protocol', 'Network', 'Address', 'Gateway']];
     for (const r of this.rows()) {
       for (const p of this.points(r)) {
-        out.push([p.name, p.meter, r.board, p.desc, p.unit, p.inst || p.obj, DBMeters.protocol(r.protocol).short, r.network || '', r.address || '', DBMeters.gatewayLabel(r.gateway)]);
+        out.push([p.name, p.meter, r.board, p.desc, p.unit, p.reg || '', p.inst || p.obj, DBMeters.protocol(r.protocol).short, r.network || '', r.address || '', DBMeters.gatewayLabel(r.gateway)]);
       }
     }
     return out;
@@ -1013,14 +1065,58 @@ const MeterSchedule = {
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   },
+  // Meter schedule then the BMS points list, landscape A4 (as the cable schedules).
+  exportPDF() {
+    if (!window.jspdf) { UI.alert('PDF library not loaded.'); return; }
+    const sched = this._scheduleAoa();
+    if (sched.length < 2) { UI.toast('No meters to export.', 'info'); return; }
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+    const margin = 12;
+    const head = (title, sub) => {
+      doc.setFontSize(16); doc.setFont('helvetica', 'bold');
+      doc.text(title, margin, margin + 4);
+      doc.setFontSize(10); doc.setFont('helvetica', 'normal');
+      doc.text(`Project: ${AppState.projectName || 'Untitled Project'}    Date: ${new Date().toLocaleDateString()}`, margin, margin + 11);
+      if (sub) doc.text(sub, margin, margin + 16);
+    };
+    const style = {
+      margin: { left: margin, right: margin },
+      styles: { fontSize: 7, cellPadding: 1.2 },
+      headStyles: { fillColor: [11, 110, 105], textColor: 255, fontStyle: 'bold' },
+      alternateRowStyles: { fillColor: [245, 245, 245] },
+    };
+    const rows = this.rows();
+    const gws = DBMeters.gateways();
+    head('Meter schedule', `${rows.reduce((s, r) => s + r.count, 0)} meters · ${gws.length} BMS gateway${gws.length === 1 ? '' : 's'}${gws.length ? ': ' + gws.map(g => `${g.props.name || g.id} (${g.props.from_protocol || ''} → ${g.props.to_protocol || ''})`).join(', ') : ''}`);
+    const checkCol = sched[0].length - 1;
+    doc.autoTable(Object.assign({}, style, {
+      startY: margin + 21, head: [sched[0]], body: sched.slice(1),
+      didParseCell: (c) => { if (c.section === 'body' && c.column.index === checkCol && c.cell.raw) c.cell.styles.textColor = [200, 30, 30]; },
+    }));
+    const pts = this._pointsAoa();
+    if (pts.length > 1) {
+      doc.addPage();
+      head('BMS points list', 'Registers from the meter maker\'s register map · object instances suggested (address × 100 + point) · AV = calculated by the BMS');
+      doc.autoTable(Object.assign({}, style, { startY: margin + 21, head: [pts[0]], body: pts.slice(1) }));
+    }
+    const pages = doc.getNumberOfPages();
+    for (let i = 1; i <= pages; i++) {
+      doc.setPage(i); doc.setFontSize(8); doc.setTextColor(120);
+      doc.text(`ProtectionPro · Meter schedule · page ${i} of ${pages}`, margin, 204);
+      doc.setTextColor(0);
+    }
+    doc.save(this._fname('pdf', 'meter_schedule'));
+  },
+
   exportXlsx() {
     if (typeof XLSX === 'undefined') { UI.toast('The Excel library did not load. Export CSV instead.', 'error'); return; }
     const wb = XLSX.utils.book_new();
     const s1 = XLSX.utils.aoa_to_sheet(this._scheduleAoa());
-    s1['!cols'] = [8, 16, 30, 24, 8, 8, 8, 18, 10, 18, 20, 10, 12, 16, 7, 40].map(wch => ({ wch }));
+    s1['!cols'] = [8, 16, 30, 24, 16, 8, 8, 8, 18, 10, 18, 20, 10, 12, 16, 7, 40].map(wch => ({ wch }));
     XLSX.utils.book_append_sheet(wb, s1, 'Meter schedule');
     const s2 = XLSX.utils.aoa_to_sheet(this._pointsAoa());
-    s2['!cols'] = [30, 14, 16, 26, 7, 10, 14, 10, 12, 16].map(wch => ({ wch }));
+    s2['!cols'] = [30, 14, 16, 26, 7, 10, 10, 14, 10, 12, 16].map(wch => ({ wch }));
     XLSX.utils.book_append_sheet(wb, s2, 'BMS points');
     XLSX.writeFile(wb, this._fname('xlsx', 'meter_schedule'));
   },

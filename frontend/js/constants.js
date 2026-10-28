@@ -3493,6 +3493,7 @@ const COMPONENT_DEFS = {
       system: '3P4W',
       conn: 'ct5',
       ct_ratio: '',
+      model: '',
       protocol: 'modbus_rtu',
       network: 'Loop A',
       address: '1',
@@ -3514,6 +3515,7 @@ const COMPONENT_DEFS = {
         { value: 'direct63', label: 'Direct ≤ 63 A' }, { value: 'direct125', label: 'Direct ≤ 125 A' },
         { value: 'ct5', label: 'CT-operated, /5 A' }, { value: 'ct1', label: 'CT-operated, /1 A' }, { value: 'rogowski', label: 'Rogowski coils' }] },
       { key: 'ct_ratio', label: 'CT Ratio', type: 'text', placeholder: 'From its CT', showWhen: { field: 'conn', values: ['ct5', 'ct1', 'rogowski'] } },
+      { key: 'model', label: 'Make / Model', type: 'text', placeholder: 'Optional' },
       { key: 'protocol', label: 'Protocol', type: 'select', section: 'comms', options: [
         { value: 'modbus_rtu', label: 'Modbus RTU (RS-485)' }, { value: 'modbus_tcp', label: 'Modbus TCP' },
         { value: 'bacnet_ip', label: 'BACnet/IP' }, { value: 'bacnet_mstp', label: 'BACnet MS/TP (RS-485)' },
