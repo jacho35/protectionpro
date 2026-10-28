@@ -102,6 +102,8 @@ const Schedules = {
         </section>
       </div>`;
     this._installEl = ws.querySelector('#sch-install');
+    // Every dropdown on the page searches with wildcards (one shared popup).
+    if (typeof SearchSelect !== 'undefined') SearchSelect.delegate(ws);
 
     // Phone: the rail head folds the board list away (CSS shows it as a
     // drop-down); on a desktop the header button collapses the rail.
@@ -120,7 +122,8 @@ const Schedules = {
     ws.querySelector('#sch-install-done').addEventListener('click', () => this._toggleInstall(false));
     document.addEventListener('pointerdown', (e) => {
       if (!this._installOpen || !this._installEl) return;
-      if (this._installEl.contains(e.target) || (e.target.closest && e.target.closest('#sch-install-edit'))) return;
+      // .ss-pop: a dropdown's search popup lives on <body>, not in the panel.
+      if (this._installEl.contains(e.target) || (e.target.closest && e.target.closest('#sch-install-edit, .ss-pop'))) return;
       this._toggleInstall(false);
     });
     this._installEl.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.stopPropagation(); this._toggleInstall(false); } });
