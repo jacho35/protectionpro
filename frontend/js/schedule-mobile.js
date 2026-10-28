@@ -7,7 +7,10 @@
  *     way is flagged),
  *   · a bottom edit SHEET for one way, its fields in small groups, with
  *     Prev / Next / Duplicate / Delete,
- *   · a sticky action bar (+ Way, Add load, ⋯ more).
+ *   · a sticky action bar (+ Way, Add load, Select, ⋯ more),
+ *   · contactors (DBControls): a tag on each switched way's card, a Control
+ *     group in the way sheet, Select mode to put ticked ways on a contactor,
+ *     and a Controls sheet (contactors + control supplies).
  *
  * It owns NO model logic. Field writes go through DBSchedule._setWayField (the
  * same path as the grid's change handler: coercion, plan pins, poles/phase
@@ -23,6 +26,8 @@ const SchMobile = {
   _filter: 'all',        // all | fail | R | W | B
   _query: '',
   _mq: null,
+  _selecting: false,     // Select mode: cards are tick boxes for a contactor
+  _sel: new Set(),
 
   // Same breakpoint as the stylesheet's phone rules.
   isPhone() {
@@ -44,12 +49,10 @@ const SchMobile = {
         <div class="smb-summary" id="smb-summary"></div>
         <div class="smb-filters" id="smb-filters"></div>
         <div class="smb-list" id="smb-list"></div>
-        <div class="smb-bar">
-          <button class="btn-small btn-primary" data-smb="add-way">+ Way</button>
-          <button class="btn-small" data-smb="add-load">Add load</button>
-          <button class="btn-small" data-smb="more" aria-haspopup="menu">⋯</button>
-        </div>
+        <div class="smb-bar" id="smb-bar"></div>
       </div>`;
+    this._selecting = false;
+    this._sel.clear();
     host.onclick = (e) => this._click(e);
     host.oninput = (e) => {
       if (e.target.id === 'smb-q') { this._query = e.target.value; this._renderList(); }
@@ -59,6 +62,8 @@ const SchMobile = {
 
   unmount() {
     this.closeSheet();
+    const cs = document.getElementById('smb-ctl-sheet');
+    if (cs) cs.classList.remove('open');
     this._closeMenu();
     if (this._host) { this._host.onclick = null; this._host.oninput = null; }
     this._boardId = null;
@@ -110,7 +115,42 @@ const SchMobile = {
     this._renderSummary();
     this._renderFilters();
     this._renderList();
+    this._renderBar();
     if (this._sheetId) this._refreshSheetResults();
+  },
+
+  // After an edit made elsewhere (the contactor editor): the list, an open
+  // way sheet and an open Controls sheet.
+  refresh() {
+    if (!this._host || !this.comp()) return;
+    this.render();
+    if (this._sheetId) this._renderSheet();
+    const cs = document.getElementById('smb-ctl-sheet');
+    if (cs && cs.classList.contains('open')) this._paintControls();
+  },
+
+  _renderBar() {
+    const bar = this._host.querySelector('#smb-bar');
+    if (!bar) return;
+    if (!this._selecting) {
+      bar.className = 'smb-bar';
+      bar.innerHTML = `
+        <button class="btn-small btn-primary" data-smb="add-way">+ Way</button>
+        <button class="btn-small" data-smb="add-load">Add load</button>
+        <button class="btn-small" data-smb="select">Select</button>
+        <button class="btn-small" data-smb="more" aria-haspopup="menu" aria-label="More">⋯</button>`;
+      return;
+    }
+    const n = this._sel.size;
+    const has = DBControls.has(this.comp());
+    bar.className = 'smb-bar smb-selbar';
+    bar.innerHTML = `
+      <div class="smb-selbar-row"><span class="smb-selcount" role="status">${n} way${n === 1 ? '' : 's'} selected</span>
+        <button class="btn-small" data-smb="sel-cancel">Cancel</button></div>
+      <div class="smb-selbar-row"><button class="btn-small" data-smb="sel-new"${n ? '' : ' disabled'}>Switch with a new contactor…</button></div>
+      <div class="smb-selbar-row">
+        ${has ? `<button class="btn-small" data-smb="sel-add" aria-haspopup="menu"${n ? '' : ' disabled'}>Add to contactor…</button>` : ''}
+        <button class="btn-small" data-smb="sel-off"${n ? '' : ' disabled'}>Take off contactor</button></div>`;
   },
 
   _renderSummary() {
@@ -145,7 +185,12 @@ const SchMobile = {
         <div class="smb-chips" id="smb-chips"></div>`;
     }
     el.querySelector('#smb-chips').innerHTML =
-      chip('all', 'All') + chip('fail', 'Issues') + chip('R', 'R') + chip('W', 'W') + chip('B', 'B')
+      chip('all', 'All') + chip('fail', 'Issues')
+      + (() => {
+        const n = DBControls.contactors(this.comp()).length;
+        return `<button class="smb-chip${n ? ' smb-chip-ctl' : ''}" data-smb="controls">${n ? `Controls · ${n} K` : '+ Controls'}</button>`;
+      })()
+      + chip('R', 'R') + chip('W', 'W') + chip('B', 'B')
       + (DBSections.has(this.comp()) ? DBSections.list(this.comp()).map(s => chip('sec:' + s.id, this._e(s.name))).join('') : '')
       + `<button class="smb-chip" data-smb="sections">${DBSections.has(this.comp()) ? '⚙ Sections' : '+ Sections'}</button>`;
   },
@@ -189,14 +234,24 @@ const SchMobile = {
       if (!this._passes(c, v.status)) return;
       const kva = (Number(c.load_va) || 0) / 1000;
       const cable = [c.cable_mm2 ? `${c.cable_mm2} mm²` : '', Number(c.cable_m) > 0 ? `${c.cable_m} m` : ''].filter(Boolean).join(' · ');
+      const k = DBControls.wayContactor(comp, c);
+      const pole = k ? DBControls.poleLabel(comp, k, c) : '';
+      const ctlLine = k ? `${k.tag}${pole ? ' pole ' + pole : ''} · ${DBControls.switchedBy(k)}${k.selector !== 'none' ? ' · ' + (k.selector === 'hoa' ? 'H-O-A' : 'O-A') : ''}` : '';
+      const sel = this._selecting;
+      const on = sel && this._sel.has(c.id);
       cards.push(`
-        <button class="smb-card st-${escHtml(v.status)}" data-smb-way="${this._e(c.id)}" aria-label="Edit way ${this._e(c.way)}">
+        <button class="smb-card st-${escHtml(v.status)}${sel ? ' smb-sel' : ''}${on ? ' on' : ''}" ${sel
+          ? `data-smb-pick="${this._e(c.id)}" aria-pressed="${on}" aria-label="Select way ${this._e(c.way)}"`
+          : `data-smb-way="${this._e(c.id)}" aria-label="Edit way ${this._e(c.way)}"`}>
+          ${sel ? `<input type="checkbox" tabindex="-1" aria-hidden="true"${on ? ' checked' : ''}>` : ''}
           <span class="smb-no"${DBSections.has(comp) ? ` style="border-left:4px solid ${DBSections.color(DBSections.of(comp, c))}" title="${this._e(DBSections.of(comp, c).name)}"` : ''}>${this._e(c.way ?? i + 1)}</span>
           <span class="smb-main">
             <span class="smb-title">${this._e(c.description || 'Unnamed way')}</span>
             <span class="smb-meta">${this._e(c.breaker_a ?? '—')} A ${this._e(c.curve || '')} · ${this._e(this._phaseLabel(c))}${cable ? ' · ' + this._e(cable) : ''} · ${kva.toFixed(2)} kVA</span>
+            ${ctlLine ? `<span class="smb-ctl">${this._e(ctlLine)}</span>` : ''}
             ${v.reason ? `<span class="smb-reason">${this._e(v.reason)}</span>` : ''}
           </span>
+          ${k ? `<span class="dbc-tag">${this._e(k.tag)}</span>` : ''}
           <span class="smb-dot st-${escHtml(v.status)}" aria-hidden="true"></span>
         </button>`);
     });
@@ -315,6 +370,7 @@ const SchMobile = {
           ${pins.length ? `<p class="smb-pin">📌 Pinned: ${e(pins.join(', '))} — protected from the plan sync.
             <button class="btn-small" data-sh="unpin">Unpin</button></p>` : ''}
         </section>
+        ${this._ctlSectionHTML(comp, c)}
         <section><h4>Device</h4>
           ${num('breaker_a', 'Breaker (A)', 'min="1" step="1"')}
           <label class="smb-f"><span>Curve</span><select data-k="curve">${['B', 'C', 'D'].map(v => opt(v, c.curve || 'C')).join('')}</select></label>
@@ -350,6 +406,81 @@ const SchMobile = {
         </div>
       </div>`;
     this._refreshSheetResults();
+  },
+
+  // The way's contactor: pick one (or a new one), a summary of it, Edit / Take off.
+  _ctlSectionHTML(comp, c) {
+    const e = this._e;
+    const k = DBControls.wayContactor(comp, c);
+    const list = DBControls.contactors(comp);
+    const opt = (v, l) => `<option value="${e(v)}"${k ? (v === k.id ? ' selected' : '') : (v === '' ? ' selected' : '')}>${e(l)}</option>`;
+    let sum = '';
+    if (k) {
+      const others = DBControls.waysOf(comp, k).filter(w => w !== c).map(w => w.way);
+      const pole = DBControls.poleLabel(comp, k, c);
+      const sup = DBControls.supply(comp, k.supply);
+      const sel = k.selector === 'none' ? '' : `${k.selector === 'hoa' ? 'Hand–Off–Auto' : 'Off–Auto'} ${k.selector_tag || ''}`;
+      const sw = (k.switches || []).map(s => `${DBControls.switchKind(s.kind).label.toLowerCase()} ${s.tag}`);
+      const by = sw.length ? sw.join(k.combine === 'parallel' ? ' or ' : ' and ') + (sw.length > 1 ? (k.combine === 'parallel' ? ' in parallel' : ' in series') : '') : 'no switching device';
+      const bad = DBControls.warnings(comp, k).filter(w => w.level === 'warn');
+      sum = `<div class="smb-ctlsum">
+          <div class="smb-ctlsum-head"><span class="dbc-tag">${e(k.tag)}</span><strong>${e(`${k.poles} ${k.rating_a} A ${k.category}`)}</strong>
+            ${pole ? `<span class="dbc-dim">pole ${e(pole)} of ${e(String(DBControls._polesN(k)))}</span>` : ''}</div>
+          <div>${e(by.charAt(0).toUpperCase() + by.slice(1))}${sel ? ' · ' + e(sel) : ''}${sup ? ' · supply ' + e(sup.tag) : ''}${k.lamp ? ' · door lamp ' + e(DBControls.lampTag(k)) : ''}</div>
+          ${others.length ? `<div class="dbc-dim">Also switches way${others.length === 1 ? '' : 's'} ${e(others.join(', '))}</div>` : ''}
+          ${bad.length ? `<div class="dbc-bad">⚠ ${e(bad[0].text)}</div>` : ''}
+        </div>
+        <div class="smb-ctlbtns">
+          <button class="btn-small smb-ctl-edit" data-sh="ctl-edit">Edit ${e(k.tag)}</button>
+          <button class="btn-small" data-sh="ctl-off">Take off ${e(k.tag)}</button>
+        </div>`;
+    }
+    return `<section class="smb-ctlsec"><h4>Control</h4>
+        <label class="smb-f"><span>Switched by</span><select data-k="contactor">
+          ${opt('', '— not switched')}${list.map(x => opt(x.id, `${x.tag}${x.label ? ' · ' + x.label : ''}`)).join('')}
+          <option value="__new">New contactor…</option></select></label>
+        ${sum}</section>`;
+  },
+
+  // ── Controls sheet (contactors + control supplies) ────────────────
+  openControls() {
+    if (!this.comp()) return;
+    let sh = document.getElementById('smb-ctl-sheet');
+    if (!sh) {
+      sh = document.createElement('div');
+      sh.id = 'smb-ctl-sheet';
+      sh.className = 'smb-sheet smb-ctlsheet';
+      sh.setAttribute('role', 'dialog');
+      sh.setAttribute('aria-modal', 'true');
+      sh.setAttribute('aria-label', 'Controls');
+      document.getElementById('schedules-workspace').appendChild(sh);
+      sh.addEventListener('click', (e) => {
+        if (e.target.closest('[data-ctl-close]')) { sh.classList.remove('open'); this.render(); }
+      });
+    }
+    this._paintControls();
+    sh.classList.add('open');
+  },
+
+  _paintControls() {
+    const sh = document.getElementById('smb-ctl-sheet');
+    const c = this.comp();
+    if (!sh || !c) return;
+    sh.innerHTML = `
+      <div class="smb-sheet-head"><strong>Controls · ${this._e(c.props.name || c.id)}</strong><span style="flex:1"></span>
+        <button class="btn-small btn-primary" data-ctl-close>Done</button></div>
+      <div class="smb-sheet-body" id="smb-ctl-body"></div>`;
+    DBControls.render(c, sh.querySelector('#smb-ctl-body'), () => { this._touch(); this.render(); }, { mode: 'panel' });
+  },
+
+  // ── Select mode → contactor ───────────────────────────────────────
+  _selWays() { const c = this.comp(); return c ? (c.props.circuits || []).filter(w => this._sel.has(w.id)) : []; },
+
+  _endSelect() {
+    this._selecting = false;
+    this._sel.clear();
+    this._renderList();
+    this._renderBar();
   },
 
   // Check verdicts + conduit fill — repainted without rebuilding the form, so
@@ -393,6 +524,13 @@ const SchMobile = {
   _click(e) {
     const f = e.target.closest('[data-smb-filter]');
     if (f) { this._filter = f.dataset.smbFilter; this._renderFilters(); this._renderList(); return; }
+    const pick = e.target.closest('[data-smb-pick]');
+    if (pick) {
+      const id = pick.dataset.smbPick;
+      if (this._sel.has(id)) this._sel.delete(id); else this._sel.add(id);
+      this._renderList(); this._renderBar();
+      return;
+    }
     const card = e.target.closest('[data-smb-way]');
     if (card) { this.openSheet(card.dataset.smbWay); return; }
     const b = e.target.closest('[data-smb]');
@@ -402,6 +540,29 @@ const SchMobile = {
     else if (a === 'add-load') this._loadMenu(b);
     else if (a === 'more') this._moreMenu(b);
     else if (a === 'sections') this.openSections();
+    else if (a === 'controls') this.openControls();
+    else if (a === 'select') { this._selecting = true; this._sel.clear(); this._renderList(); this._renderBar(); }
+    else if (a === 'sel-cancel') this._endSelect();
+    else if (a === 'sel-new') {
+      const comp = this.comp();
+      const ways = this._selWays();
+      if (!ways.length) return;
+      const k = DBControls.newContactor(comp, ways);
+      this._endSelect();
+      DBControls.edit(comp, k, { isNew: true, ways: ways.map(w => w.id) });
+    } else if (a === 'sel-add') {
+      const comp = this.comp();
+      this._menu(b, DBControls.contactors(comp).map(k => ({
+        label: `${k.tag}${k.label ? ' · ' + k.label : ''}`,
+        sub: `${k.poles} ${k.rating_a} A · ${DBControls.waysOf(comp, k).length} way(s)`,
+        run: () => { DBControls.assign(comp, k, this._selWays()); this._touch(); this._endSelect(); this.render(); },
+      })));
+    } else if (a === 'sel-off') {
+      DBControls.unassign(this._selWays());
+      this._touch();
+      this._endSelect();
+      this.render();
+    }
   },
 
   _sheetClick(e) {
@@ -445,6 +606,14 @@ const SchMobile = {
       this._renderSheet();
     } else if (a === 'calc') {
       DBSchedule.showCalc(c.id);
+    } else if (a === 'ctl-edit') {
+      const k = DBControls.wayContactor(comp, c);
+      if (k) DBControls.edit(comp, k, {});
+    } else if (a === 'ctl-off') {
+      DBSchedule._setWayField(comp, c, 'contactor', '');
+      this._touch();
+      this.render();
+      this._renderSheet();
     }
   },
 
@@ -525,6 +694,7 @@ const SchMobile = {
     const comp = this.comp();
     this._menu(anchor, [
       { label: 'Board sections (Normal / Essential / UPS)…', run: () => this.openSections() },
+      { label: 'Controls (contactors, supplies)…', run: () => this.openControls() },
       {},
       { label: 'Check circuits', run: () => Schedules.runCheck(true) },
       { label: 'Auto balance phases', run: () => { DBSchedule.autoBalance(comp); this._touch(); this.render(); } },

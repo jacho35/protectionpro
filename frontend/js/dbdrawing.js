@@ -63,9 +63,12 @@ const DBDrawing = {
   SYM_SCALE: 1.3,      // device symbols are drawn this much larger than the SLD's
   CTR_OFF: 62,         // device centre → contactor pole centre
   CTR_DY: 56,          // extra drop length when a row carries contactor poles
-  SEC_CTR_DY: 26,      // extra busbar → device room for a switched-section bracket
-  CTL_BW: 440,         // control-circuit block width (one per control supply)
+  SEC_CTR_DY: 60,      // extra busbar → device room for a switched section (riser, contactor, sub-bus)
+  SEC_CTR_Y: 28,       // busbar → a switched section's contactor
+  SEC_BUS_Y: 56,       // busbar → its sub-bus, where the section's ways start
+  CTL_BW: 560,         // control-circuit block width (one per control supply)
   CTL_GAP: 24,
+  CTL_PAR: 68,         // pitch of parallel switching branches (operator + three label lines)
 
   DETAIL_DEFAULTS: {
     cable: true, load: true, phase: true, elgroups: true,
@@ -313,7 +316,20 @@ const DBDrawing = {
         lines, tip, dxf,
       });
     }
-    return items;
+    // A switched section's ways hang together off its sub-bus: they are drawn
+    // side by side where the first of them falls, in schedule order.
+    // (Per board section: each band draws its own part of the group.)
+    const out = [];
+    const done = new Set();
+    for (const it of items) {
+      const k = it.ctr;
+      if (!k || k.arrangement !== 'section') { out.push(it); continue; }
+      const key = k.id + '|' + (it.sec || '');
+      if (done.has(key)) continue;
+      done.add(key);
+      out.push(...items.filter(o => o.ctr === k && o.sec === it.sec));
+    }
+    return out;
   },
 
   // `comp` is passed explicitly rather than read from this.board(): an export
@@ -382,11 +398,15 @@ const DBDrawing = {
     return out;
   },
 
-  // Contactors along one busbar row: consecutive ways on the same contactor
-  // share one dashed outline with a mechanical link between their poles; a
-  // switched section is a bracket under the busbar, like an EL unit.
-  // `sections`: false = the pole outlines (drawn under the drops), true = the
-  // switched-section brackets (drawn over them, like a device on the drop).
+  // Contactors along one busbar row, drawn as devices in line:
+  //  · 'single' / 'poles' — the pole sits on the way's drop under its breaker
+  //    (drawn with the way); consecutive poles of one contactor are joined by
+  //    a dashed mechanical link, the tag and size beside the last pole;
+  //  · 'section' — the contactor sits on its own riser off the busbar and
+  //    feeds a short sub-bus; the section's ways hang from that (_items keeps
+  //    them side by side).
+  // `sections`: false = the pole links (drawn under the drops), true = the
+  // section risers (over them).
   _ctrBrackets(row, xs, busY, ctrY, P, comp, sections) {
     let s = '';
     const runs = [];
@@ -400,40 +420,51 @@ const DBDrawing = {
       const k = r.k;
       if ((k.arrangement === 'section') !== !!sections) continue;
       const spec = `${k.poles} ${k.rating_a} A ${k.category}`;
+      const by = DBControls.switchedBy(k);
       const attrs = this._dxfData({ BOARD: comp.props.name || comp.id, TAG: k.tag, DESCRIPTION: k.label || '',
-        SPEC: spec, ARRANGEMENT: k.arrangement, SWITCHED_BY: DBControls.switchedBy(k) });
-      const tip = `${k.tag} — contactor ${spec}${k.label ? ', ' + k.label : ''}\nSwitched by ${DBControls.switchedBy(k)}`;
+        SPEC: spec, ARRANGEMENT: k.arrangement, SWITCHED_BY: by });
+      const tip = `${k.tag} — contactor ${spec}${k.label ? ', ' + k.label : ''}\nSwitched by ${by}`;
+      const label = (x, y) => `<text x="${x}" y="${y}" font-size="9.5" font-weight="700" fill="${P.ctl}" data-dxf-attr="TAG_LABEL">${this._esc(this._trunc(k.tag, 6))}</text>`
+        + `<text x="${x}" y="${y + 10}" font-size="7.5" fill="${P.ctl}" data-dxf-attr="SPEC_LABEL">${this._esc(k.arrangement === 'section' ? spec : `${k.rating_a} A ${k.category}`)}</text>`
+        + `<text x="${x}" y="${y + 19}" font-size="7.5" fill="${P.inkSec}" data-dxf-attr="SWITCHED_LABEL">${this._esc(this._trunc(by, 16))}</text>`;
       if (k.arrangement === 'section') {
-        const txt = `${k.tag} · ${spec} · switched section`;
-        const txtW = txt.length * 5.4 + 30;
         const mid = (xs[r.from] + xs[r.to]) / 2;
-        const half = Math.max((xs[r.to] - xs[r.from]) / 2 + 26, txtW / 2);
-        const y = busY + this.BUS_TO_RCD + this.RCD_H + 6;
-        s += `<g><title>${this._esc(tip)}</title><g data-dxf-block="DB_CONTACTOR" data-dxf-at="${mid},${y + 9}" data-dxf-attrs="${attrs}">`
-          + `<rect x="${mid - half}" y="${y}" width="${half * 2}" height="18" rx="4" fill="${P.surface}" stroke="${P.ctl}" stroke-width="1.3"/>`
-          + `<text x="${mid}" y="${y + 12.5}" text-anchor="middle" font-size="9.5" font-weight="600" fill="${P.ctl}" data-dxf-attr="TAG_LABEL">${this._esc(txt)}</text>`
+        const ry = busY + this.SEC_CTR_Y, sy = busY + this.SEC_BUS_Y;
+        s += `<g><title>${this._esc(tip + '\nSwitched section — its ways hang from the sub-bus')}</title>`
+          + this._vline(mid, busY, sy, [[ry, 12]], P.line, 1.4)
+          + `<line x1="${xs[r.from] - 22}" y1="${sy}" x2="${xs[r.to] + 22}" y2="${sy}" stroke="${P.bus}" stroke-width="2.4" stroke-linecap="round"/>`
+          + `<g data-dxf-block="DB_CONTACTOR" data-dxf-at="${mid},${ry}" data-dxf-attrs="${attrs}">`
+          + this._gContactor(mid, ry, P, P.ctl) + label(mid + 10, ry - 4)
           + `</g></g>`;
         continue;
       }
-      const left = xs[r.from] - 52, right = xs[r.to] + 18;
-      s += `<g><title>${this._esc(tip)}</title><g data-dxf-block="DB_CONTACTOR" data-dxf-at="${xs[r.from]},${ctrY}" data-dxf-attrs="${attrs}">`
-        + `<rect x="${left}" y="${ctrY - 17}" width="${right - left}" height="34" rx="4" fill="none" stroke="${P.ctl}" stroke-width="1.1" stroke-dasharray="5,3"/>`
-        + (r.to > r.from ? `<line x1="${xs[r.from] - 5}" y1="${ctrY}" x2="${xs[r.to] - 5}" y2="${ctrY}" stroke="${P.ctl}" stroke-width="1" stroke-dasharray="3,3"/>` : '')
-        + `<text x="${left + 4}" y="${ctrY - 2}" font-size="9.5" font-weight="700" fill="${P.ctl}" data-dxf-attr="TAG_LABEL">${this._esc(this._trunc(k.tag, 6))}</text>`
-        + `<text x="${left + 4}" y="${ctrY + 9}" font-size="7.5" fill="${P.ctl}" data-dxf-attr="SPEC_LABEL">${this._esc(`${k.rating_a} A ${k.category}`)}</text>`
-        + `</g></g>`;
+      const lx = xs[r.to] + 10;
+      s += `<g><title>${this._esc(tip)}</title>`
+        + (r.to > r.from ? `<line x1="${xs[r.from] - 4.5}" y1="${ctrY}" x2="${xs[r.to] - 4.5}" y2="${ctrY}" stroke="${P.ctl}" stroke-width="1" stroke-dasharray="3,3"/>` : '')
+        + `<g data-dxf-block="DB_CONTACTOR" data-dxf-at="${xs[r.from]},${ctrY}" data-dxf-attrs="${attrs}">${label(lx, ctrY - 4)}</g></g>`;
     }
     return s;
   },
 
   // ── Control circuit ─────────────────────────────────────────────────
   // One ladder per control supply (and one for contactors with none): the
-  // supply's MCB on the L rail, a rung per contactor — selector, switching
-  // contacts in series or in parallel, coil — to N.
-  _ctlRungH(k) {
+  // supply's MCB (and control transformer) on the L rail, then per contactor
+  //  · the coil rung — selector Auto contact, the switching contacts in series
+  //    or as parallel branches, the coil (A1–A2) to N; Hand–Off–Auto adds a
+  //    Hand branch round the contacts;
+  //  · a door-lamp rung through the contactor's auxiliary contact.
+  // Every contact is drawn with its operator (handle, light, clock, θ …) and
+  // its tag, device and setting under it. Under the ladders: the control
+  // device schedule.
+  _ctlDims(k) {
     const n = (k.switches || []).length;
-    return 48 + (k.combine === 'parallel' && n > 1 ? (n - 1) * 26 : 0);
+    const auto = 52 + (k.combine === 'parallel' && n > 1 ? (n - 1) * this.CTL_PAR : 0);
+    const hand = k.selector === 'hoa' ? 34 : 0;
+    const lamp = k.lamp ? 50 : 0;
+    return { auto, hand, lamp, h: auto + hand + lamp + 10 };
   },
+  _ctlRungH(k) { return this._ctlDims(k).h; },
+  _ctlHeadH(sup) { return 56 + (sup && sup.kind === 'transformer' ? 22 : 0); },
 
   _ctlLayout(comp, w, bottom) {
     if (typeof DBControls === 'undefined' || !DBControls.has(comp)) return null;
@@ -451,91 +482,188 @@ const DBDrawing = {
     let y = y0 + 14, x = 0, rowH = 0, col = 0;
     const blocks = [];
     for (const g of groups) {
-      const h = 66 + g.ctrs.reduce((n, k) => n + this._ctlRungH(k), 0);
+      const h = this._ctlHeadH(g.supply) + 18 + g.ctrs.reduce((n, k) => n + this._ctlRungH(k), 0);
       if (col >= perRow) { y += rowH + this.CTL_GAP; x = 0; rowH = 0; col = 0; }
       blocks.push(Object.assign({ x, y, h }, g));
       x += this.CTL_BW + this.CTL_GAP; rowH = Math.max(rowH, h); col++;
     }
-    return { y0, blocks, y1: y + rowH };
+    const rows = DBControls.deviceSchedule(comp);
+    const table = rows.length ? { y: y + rowH + 34, rows, w: Math.min(avail, 980) } : null;
+    return { y0, blocks, table, y1: table ? table.y + 18 + rows.length * 15 : y + rowH };
+  },
+
+  // A control contact on a horizontal rung, centred on x: make (NO) or break
+  // (NC), with its operator drawn above and joined by a dashed link.
+  _ctlContact(x, y, P, op, nc) {
+    const st = `fill="none" stroke="${P.line}" stroke-width="1.3"`;
+    let s = `<path d="M ${x - 12} ${y} L ${x + 10} ${y - 9} M ${x + 12} ${y} V ${y - (nc ? 12 : 5)}" ${st}/>`;
+    if (!op) return s;
+    const oy = y - 21;
+    const box = (t) => `<rect x="${x - 8}" y="${oy - 5}" width="14" height="10" rx="1.5" fill="${P.surface}" stroke="${P.line}" stroke-width="1"/>`
+      + `<text x="${x - 1}" y="${oy + 2.5}" text-anchor="middle" font-size="6.5" fill="${P.ink}">${t}</text>`;
+    s += `<line x1="${x - 1}" y1="${y - 5}" x2="${x - 1}" y2="${oy + 5}" stroke="${P.line}" stroke-width="0.9" stroke-dasharray="2,1.5"/>`;
+    if (op === 'hand') s += `<path d="M ${x - 7} ${oy + 5} H ${x + 5} M ${x - 7} ${oy + 1} V ${oy + 5}" ${st}/>`;
+    else if (op === 'push') s += `<path d="M ${x - 7} ${oy + 5} H ${x + 5} M ${x - 1} ${oy + 5} V ${oy} M ${x - 5} ${oy} H ${x + 3}" ${st}/>`;
+    else if (op === 'clock') s += `<circle cx="${x - 1}" cy="${oy}" r="5" fill="${P.surface}" stroke="${P.line}" stroke-width="1"/><path d="M ${x - 1} ${oy} V ${oy - 3.5} M ${x - 1} ${oy} H ${x + 2}" fill="none" stroke="${P.line}" stroke-width="0.9"/>`;
+    else s += box({ light: 'lx', theta: 'θ', bms: 'B', fire: 'F' }[op] || '?');
+    return s;
+  },
+
+  _ctlOp(kind) {
+    return { photocell: 'light', timer: 'clock', astro: 'clock', thermostat: 'theta', bms: 'bms', pushbutton: 'push', fire: 'fire' }[kind] || null;
   },
 
   _ctlSvg(comp, L, P, x0) {
     const C = L.ctl;
     const esc = (v) => this._esc(v);
+    const board = comp.props.name || comp.id;
     let s = `<text x="${x0}" y="${C.y0}" font-size="12" font-weight="700" fill="${P.ink}">Control circuits</text>`;
+    const line = (x1, y1, x2, y2) => `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${P.line}" stroke-width="1.3"/>`;
+    const dot = (x, y) => `<circle cx="${x}" cy="${y}" r="2.2" fill="${P.line}"/>`;
+    // Up to three centred label lines under a contact or coil.
+    const labels = (x, y, cw, ls) => ls.filter(l => l && l.t).map((l, i) =>
+      `<text x="${x}" y="${y + i * 10}" text-anchor="middle" font-size="${l.b ? 8.5 : 8}" font-weight="${l.b ? 700 : 400}" fill="${l.c || (l.b ? P.ink : P.inkSec)}">${esc(this._trunc(l.t, Math.max(6, Math.floor(cw / 4.7))))}</text>`).join('');
     for (const b of C.blocks) {
       const bx = x0 + b.x, by = b.y, BW = this.CTL_BW;
       const Lx = bx + 30, Nx = bx + BW - 24;
       const sup = b.supply;
-      const supKind = sup ? (CTL_SUPPLY_KINDS.find(x => x.v === sup.kind) || CTL_SUPPLY_KINDS[0]) : null;
+      const tx = sup && sup.kind === 'transformer';
       const head = sup
-        ? (sup.kind === 'external' ? `${sup.voltage || ''} external supply` : `${sup.breaker_a || '?'} A · ${sup.phase || 'R'} · ${sup.voltage || ''}${sup.kind === 'transformer' ? ' via control transformer' : ''}`)
+        ? (sup.kind === 'external' ? `${sup.voltage || ''} external supply` : `MCB ${sup.breaker_a || '?'} A · ${sup.phase || 'R'}${tx ? ' → control transformer' : ''} · ${sup.voltage || ''}`)
         : 'Pick a control supply for these contactors';
       s += `<rect x="${bx}" y="${by}" width="${BW}" height="${b.h}" rx="6" fill="${P.panel}" stroke="${P.border}"/>`
         + `<text x="${bx + 12}" y="${by + 18}" font-size="10.5" font-weight="700" fill="${sup ? P.ink : P.warn}">${esc(sup ? sup.tag : 'No control supply')}</text>`
-        + `<text x="${bx + 12 + (sup ? String(sup.tag).length * 6.6 + 8 : 120)}" y="${by + 18}" font-size="9" fill="${P.inkSec}">${esc(this._trunc(head + (sup && sup.note ? ' · ' + sup.note : ''), 58))}</text>`;
-      const top = by + 30, railTop = by + 54;
-      const last = by + 66 + b.ctrs.reduce((n, k) => n + this._ctlRungH(k), 0) - this._ctlRungH(b.ctrs[b.ctrs.length - 1]);
+        + `<text x="${bx + 12 + (sup ? String(sup.tag).length * 6.6 + 8 : 120)}" y="${by + 18}" font-size="9" fill="${P.inkSec}">${esc(this._trunc(head + (sup && sup.note ? ' · ' + sup.note : ''), 74))}</text>`;
+      const top = by + 30, railTop = by + this._ctlHeadH(sup);
       if (sup && sup.kind !== 'external') {
-        s += this._vline(Lx, top, railTop, [[top + 12, 10]], P.line, 1.4)
+        s += this._vline(Lx, top, railTop, [[top + 12, 10], ...(tx ? [[top + 36, 13]] : [])], P.line, 1.4)
           + this._sym('cb', Lx, top + 12, P, this._native('cb', P), null, 0.5, 0,
-            { BOARD: comp.props.name || comp.id, TAG: sup.tag, DESCRIPTION: 'Control supply', RATING_A: sup.breaker_a || '', PHASE: sup.phase || '' });
+            { BOARD: board, TAG: sup.tag, DESCRIPTION: 'Control supply', RATING_A: sup.breaker_a || '', PHASE: sup.phase || '' })
+          + (tx ? this._gCtlTx(Lx, top + 36, P, P.line) : '');
       } else {
         s += `<line x1="${Lx}" y1="${top}" x2="${Lx}" y2="${railTop}" stroke="${P.line}" stroke-width="1.4" stroke-dasharray="4,3"/>`;
       }
-      s += `<line x1="${Lx}" y1="${railTop}" x2="${Lx}" y2="${last}" stroke="${P.line}" stroke-width="1.6"/>`
-        + `<line x1="${Nx}" y1="${railTop}" x2="${Nx}" y2="${last}" stroke="${P.line}" stroke-width="1.6"/>`
-        + `<text x="${Lx - 12}" y="${railTop + 4}" font-size="9" font-weight="700" fill="${P.muted}">L</text>`
+      s += `<text x="${Lx - 12}" y="${railTop + 4}" font-size="9" font-weight="700" fill="${P.muted}">L</text>`
         + `<text x="${Nx + 5}" y="${railTop + 4}" font-size="9" font-weight="700" fill="${P.muted}">N</text>`;
 
-      let ry = by + 66;
+      let ry = railTop + 30, lastY = ry;
       for (const k of b.ctrs) {
+        const dm = this._ctlDims(k);
         const sw = k.switches || [];
         const par = k.combine === 'parallel' && sw.length > 1;
-        const coilX = Nx - 32;
-        let cx = Lx + 12;
-        const elems = [];
-        const box = (x, y, bw, label, tip) => `<g><title>${esc(tip)}</title><rect x="${x}" y="${y - 9}" width="${bw}" height="18" rx="3" fill="${P.surface}" stroke="${P.line}" stroke-width="1.1"/>`
-          + `<text x="${x + bw / 2}" y="${y + 3.5}" text-anchor="middle" font-size="8.5" font-weight="600" fill="${P.ink}">${esc(this._trunc(label, Math.max(3, Math.floor(bw / 5.4))))}</text></g>`;
-        s += `<circle cx="${Lx}" cy="${ry}" r="2.2" fill="${P.line}"/><circle cx="${Nx}" cy="${ry}" r="2.2" fill="${P.line}"/>`;
-        const n = (k.selector !== 'none' ? 1 : 0) + (par ? 1 : sw.length);
-        const avail = coilX - 18 - cx;
-        const bw = Math.max(30, Math.min(70, (n ? avail / n : avail) - 10));
-        if (k.selector !== 'none') {
-          elems.push(box(cx, ry, bw, `${k.selector_tag || 'S'} ${k.selector === 'hoa' ? 'HOA' : 'OA'}`,
-            `${k.selector_tag || 'Selector'}: ${k.selector === 'hoa' ? 'Hand – Off – Auto (Hand bypasses the contacts)' : 'Off – Auto'}`));
-          cx += bw + 10;
+        const hasSel = (k.selector || 'hoa') !== 'none';
+        const coilX = Nx - 34;
+        const colL = Lx + 16;
+        const nCols = (hasSel ? 1 : 0) + (par ? 1 : sw.length);
+        const CW = nCols ? Math.max(58, Math.min(112, (coilX - 34 - colL) / nCols)) : 0;
+        const cx = (i) => colL + CW * (i + 0.5);
+        const gaps = [];                 // [from, to] stretches of the rung the elements fill
+        let g = '';
+        let col = 0;
+        const selTag = k.selector_tag || 'S';
+        if (hasSel) {
+          const x = cx(col++);
+          gaps.push([x - 12, x + 12]);
+          g += this._ctlContact(x, ry, P, 'hand', false)
+            + labels(x, ry + 18, CW, [{ t: `${selTag} ${k.selector === 'hoa' ? 'H-O-A' : 'O-A'}`, b: true }, { t: 'Auto' }]);
         }
-        const swTip = (x) => `${x.tag}: ${DBControls.switchKind(x.kind).label}${x.setting ? ' — ' + x.setting : ''}`;
+        const swAttrs = (x) => this._dxfData({ BOARD: board, TAG: x.tag || '', KIND: DBControls.switchKind(x.kind).label,
+          DEVICE: DBControls.switchDevice(x), SETTING: x.setting || '', CONTACT: DBControls.switchContact(x),
+          MOUNTING: DBControls.mountLabel(DBControls.switchMount(x)), CONTACTOR: k.tag });
+        const swLabels = (x) => [{ t: `${x.tag || ''} ${DBControls.switchKind(x.kind).label.toLowerCase()}`, b: true },
+          { t: x.device ? x.device : DBControls.switchMount(x) === 'din' ? '' : DBControls.mountLabel(DBControls.switchMount(x)).toLowerCase() },
+          { t: x.setting || '' }];
+        const swTip = (x) => `${x.tag}: ${DBControls.switchDevice(x)}${x.setting ? ' — ' + x.setting : ''} · ${DBControls.switchContact(x)} · ${DBControls.mountLabel(DBControls.switchMount(x))}`;
+        const contact = (x, xx, yy) => `<g><title>${esc(swTip(x))}</title><g data-dxf-block="DB_CTL_CONTACT" data-dxf-at="${xx},${yy}" data-dxf-attrs="${swAttrs(x)}">`
+          + this._ctlContact(xx, yy, P, this._ctlOp(x.kind), /^NC/i.test(DBControls.switchContact(x)))
+          + `</g></g>` + labels(xx, yy + 18, CW, swLabels(x));
         if (par) {
-          const gx0 = cx - 4, gx1 = Math.min(coilX - 18, cx + Math.max(bw, 70) + 4);
-          const pw = gx1 - gx0 - 8;
-          s += `<line x1="${Lx}" y1="${ry}" x2="${gx0}" y2="${ry}" stroke="${P.line}" stroke-width="1.3"/>`
-            + `<line x1="${gx1}" y1="${ry}" x2="${Nx}" y2="${ry}" stroke="${P.line}" stroke-width="1.3"/>`
-            + `<line x1="${gx0}" y1="${ry}" x2="${gx0}" y2="${ry + (sw.length - 1) * 26}" stroke="${P.line}" stroke-width="1.3"/>`
-            + `<line x1="${gx1}" y1="${ry}" x2="${gx1}" y2="${ry + (sw.length - 1) * 26}" stroke="${P.line}" stroke-width="1.3"/>`;
-          sw.forEach((x, i) => {
-            const yy = ry + i * 26;
-            if (i) s += `<line x1="${gx0}" y1="${yy}" x2="${gx1}" y2="${yy}" stroke="${P.line}" stroke-width="1.3"/>`;
-            elems.push(box(gx0 + 4, yy, pw, x.tag, swTip(x)));
+          const x = cx(col++);
+          const gx0 = x - CW / 2 + 5, gx1 = x + CW / 2 - 5;
+          const yl = ry + (sw.length - 1) * this.CTL_PAR;
+          gaps.push([x - 12, x + 12]);
+          g += line(gx0, ry, gx0, yl) + line(gx1, ry, gx1, yl) + dot(gx0, ry) + dot(gx1, ry);
+          sw.forEach((x2, i) => {
+            const yy = ry + i * this.CTL_PAR;
+            if (i) g += line(gx0, yy, x - 12, yy) + line(x + 12, yy, gx1, yy);
+            g += contact(x2, x, yy);
           });
         } else {
-          s += `<line x1="${Lx}" y1="${ry}" x2="${Nx}" y2="${ry}" stroke="${P.line}" stroke-width="1.3"/>`;
-          for (const x of sw) { elems.push(box(cx, ry, bw, x.tag, swTip(x))); cx += bw + 10; }
+          for (const x2 of sw) { const x = cx(col++); gaps.push([x - 12, x + 12]); g += contact(x2, x, ry); }
         }
-        s += elems.join('');
-        const attrs = this._dxfData({ BOARD: comp.props.name || comp.id, TAG: k.tag, DESCRIPTION: k.label || '',
-          SPEC: `${k.poles} ${k.rating_a} A ${k.category}`, COIL: k.coil || '', SWITCHED_BY: DBControls.switchedBy(k), SUPPLY: sup ? sup.tag : '' });
-        s += `<g><title>${esc(`${k.tag} coil (${k.coil || ''}) — ${k.label || 'contactor'}`)}</title><g data-dxf-block="DB_CONTACTOR_COIL" data-dxf-at="${coilX},${ry}" data-dxf-attrs="${attrs}">`
-          + `<circle cx="${coilX}" cy="${ry}" r="11" fill="${P.surface}" stroke="${P.ctl}" stroke-width="1.6"/>`
-          + `<text x="${coilX}" y="${ry + 3.5}" text-anchor="middle" font-size="8.5" font-weight="700" fill="${P.ctl}" data-dxf-attr="TAG_LABEL">${esc(this._trunc(k.tag, 4))}</text></g></g>`;
-        const sets = sw.filter(x => x.setting).map(x => `${x.tag} ${x.setting}`).join('; ');
+        gaps.push([coilX - 18, coilX + 18]);
+        // The rung itself, broken where each element sits.
+        let cur = Lx;
+        for (const [a, z] of gaps) { if (a > cur) g += line(cur, ry, a, ry); cur = z; }
+        g += line(cur, ry, Nx, ry) + dot(Lx, ry) + dot(Nx, ry);
+        // Hand: a branch round the Auto contact and the switching contacts.
+        if (k.selector === 'hoa') {
+          const hy = ry + dm.auto;
+          const nL = Lx + 8, nR = colL + CW * nCols + 6, hx = cx(0);
+          g += `<path d="M ${nL} ${ry} V ${hy} H ${hx - 12} M ${hx + 12} ${hy} H ${nR} V ${ry}" fill="none" stroke="${P.line}" stroke-width="1.3"/>`
+            + dot(nL, ry) + dot(nR, ry)
+            + this._ctlContact(hx, hy, P, null, false)
+            // The selector's link, broken round the Auto contact's labels.
+            + `<path d="M ${hx - 1} ${hy - 5} V ${ry + 34} M ${hx - 1} ${ry + 6} V ${ry - 5}" fill="none" stroke="${P.line}" stroke-width="0.9" stroke-dasharray="2,1.5"/>`
+            + labels(hx, hy + 16, CW, [{ t: `${selTag} Hand` }]);
+          lastY = hy;
+        }
+        // The coil.
         const ways = DBControls.waysOf(comp, k).map(c => c.way).join(', ');
-        const cap = `${k.label ? k.label + ' — ' : ''}${ways ? 'ways ' + ways : 'no ways'}${sets ? ' · ' + sets : ''}${k.lamp ? ' · door lamp' : ''}`;
-        const capY = ry + (par ? (sw.length - 1) * 26 : 0) + 22;
-        s += `<text x="${Lx + 12}" y="${capY}" font-size="8.5" fill="${P.muted}">${esc(this._trunc(cap, 76))}</text>`;
-        ry += this._ctlRungH(k);
+        const attrs = this._dxfData({ BOARD: board, TAG: k.tag, DESCRIPTION: k.label || '',
+          SPEC: `${k.poles} ${k.rating_a} A ${k.category}`, COIL: k.coil || '', SWITCHED_BY: DBControls.switchedBy(k), SUPPLY: sup ? sup.tag : '' });
+        g += `<g><title>${esc(`${k.tag} coil (${k.coil || ''}) — ${k.label || 'contactor'}${ways ? ', ways ' + ways : ''}`)}</title><g data-dxf-block="DB_CONTACTOR_COIL" data-dxf-at="${coilX},${ry}" data-dxf-attrs="${attrs}">`
+          + `<rect x="${coilX - 18}" y="${ry - 9}" width="36" height="18" fill="${P.surface}" stroke="${P.ctl}" stroke-width="1.6"/>`
+          + `<text x="${coilX}" y="${ry + 3.5}" text-anchor="middle" font-size="9" font-weight="700" fill="${P.ctl}" data-dxf-attr="TAG_LABEL">${esc(this._trunc(k.tag, 5))}</text></g></g>`
+          + `<text x="${coilX - 20}" y="${ry - 12}" text-anchor="end" font-size="7" fill="${P.muted}">A1</text><text x="${coilX + 20}" y="${ry - 12}" font-size="7" fill="${P.muted}">A2</text>`
+          + labels(coilX, ry + 20, 92, [{ t: `coil ${k.coil || ''}` }, { t: ways ? `ways ${ways}` : 'no ways' }, { t: k.label || '' }]);
+        // Door lamp, through the contactor's own auxiliary contact.
+        if (k.lamp) {
+          const ly = ry + dm.auto + dm.hand + 8;
+          const sh = DBControls.lampShows(k);
+          const col2 = DBControls.lampColour(k);
+          const ax = colL + 30;
+          const lattrs = this._dxfData({ BOARD: board, TAG: DBControls.lampTag(k), COLOUR: col2.label, SHOWS: sh.label, CONTACTOR: k.tag, CONTACT: sh.aux });
+          g += line(Lx, ly, ax - 12, ly) + line(ax + 12, ly, coilX - 9, ly) + line(coilX + 9, ly, Nx, ly) + dot(Lx, ly) + dot(Nx, ly)
+            + this._ctlContact(ax, ly, P, null, sh.nc)
+            + labels(ax, ly + 16, 80, [{ t: `${k.tag} ${sh.aux}`, c: P.ctl }])
+            + `<g><title>${esc(`${DBControls.lampTag(k)}: ${DBControls.lampSpec(k)}`)}</title><g data-dxf-block="DB_CTL_LAMP" data-dxf-at="${coilX},${ly}" data-dxf-attrs="${lattrs}">`
+            + `<circle cx="${coilX}" cy="${ly}" r="9" fill="${P.surface}" stroke="${col2.hex}" stroke-width="1.6"/>`
+            + `<path d="M ${coilX - 6.4} ${ly - 6.4} L ${coilX + 6.4} ${ly + 6.4} M ${coilX + 6.4} ${ly - 6.4} L ${coilX - 6.4} ${ly + 6.4}" stroke="${col2.hex}" stroke-width="1.3"/></g></g>`
+            + labels(coilX, ly + 20, 110, [{ t: `${DBControls.lampTag(k)} ${col2.label.toLowerCase()} LED`, b: true }, { t: `door · lit when ${sh.nc ? 'open' : 'closed'}` }]);
+          lastY = ly;
+        } else lastY = Math.max(lastY, ry);
+        s += g;
+        ry += dm.h;
       }
+      s += `<line x1="${Lx}" y1="${railTop}" x2="${Lx}" y2="${lastY}" stroke="${P.line}" stroke-width="1.6"/>`
+        + `<line x1="${Nx}" y1="${railTop}" x2="${Nx}" y2="${lastY}" stroke="${P.line}" stroke-width="1.6"/>`;
+    }
+
+    // The control device schedule.
+    const T = C.table;
+    if (T) {
+      const cols = [['tag', 'Tag', 0.08], ['device', 'Device', 0.25], ['setting', 'Setting', 0.19], ['contact', 'Contact', 0.15],
+        ['mount', 'Mounting', 0.15], ['modules', 'Mod.', 0.06], ['ctrs', 'Switches', 0.12]];
+      const tx0 = x0, tw = T.w, rh = 15;
+      s += `<text x="${tx0}" y="${T.y - 8}" font-size="11" font-weight="700" fill="${P.ink}">Control devices</text>`
+        + `<rect x="${tx0}" y="${T.y}" width="${tw}" height="${18 + T.rows.length * rh}" fill="none" stroke="${P.border}"/>`
+        + `<rect x="${tx0}" y="${T.y}" width="${tw}" height="18" fill="${P.panel}" stroke="${P.border}"/>`;
+      let cx = tx0;
+      for (const [, h, f] of cols) {
+        s += `<text x="${cx + 5}" y="${T.y + 12.5}" font-size="8.5" font-weight="700" fill="${P.inkSec}">${esc(h)}</text>`;
+        cx += f * tw;
+      }
+      T.rows.forEach((r, i) => {
+        const y = T.y + 18 + i * rh;
+        if (i) s += `<line x1="${tx0}" y1="${y}" x2="${tx0 + tw}" y2="${y}" stroke="${P.border}"/>`;
+        let x = tx0;
+        for (const [key, , f] of cols) {
+          const v = key === 'ctrs' ? r.ctrs.join(', ') : key === 'modules' ? (r.modules ? String(r.modules) : '—') : (r[key] || '—');
+          s += `<text x="${x + 5}" y="${y + 10.5}" font-size="8.5" font-weight="${key === 'tag' ? 700 : 400}" fill="${P.ink}">${esc(this._trunc(v, Math.max(4, Math.floor((f * tw - 8) / 4.6))))}</text>`;
+          x += f * tw;
+        }
+      });
     }
     return s;
   },
@@ -562,7 +690,8 @@ const DBDrawing = {
     const tRows = D.table ? this._tableRows(D) : [];
     const maxLines = D.table ? 0 : items.reduce((n, it) => Math.max(n, it.lines.length), 1);
     // Contactor poles sit under the way's breaker (the drop gets longer); a
-    // switched section is a bracket under the busbar (the breakers drop lower).
+    // switched section's contactor and sub-bus sit under the busbar (the
+    // breakers — and the earth-leakage brackets — drop lower).
     const ctrDY = items.some(it => it.ctr && it.ctr.arrangement !== 'section') ? this.CTR_DY : 0;
     const secDY = items.some(it => it.ctr && it.ctr.arrangement === 'section') ? this.SEC_CTR_DY : 0;
     const btd = (items.some(it => it.kind === 'acc') ? 92 : this.BUS_TO_DEV) + secDY;
@@ -606,9 +735,10 @@ const DBDrawing = {
     }
     const busW = Math.max(widest + this.DROP_W / 2, 460);
     const tapW = Math.max(0, ...defs.map(d => d.supply.length ? this.INCOMER_X + this.TAP_X0 + d.supply.length * this.ACC_W : 0));
-    const w = this.PAD * 2 + Math.max(busW + 20, tapW + 20, 620);
+    let w = this.PAD * 2 + Math.max(busW + 20, tapW + 20, 620);
     const last = bands[bands.length - 1];
     let h = (sectioned ? last.y1 : last.busY + last.rows.length * rowH) + this.PAD;
+    if (D.controls && typeof DBControls !== 'undefined' && DBControls.has(comp)) w = Math.max(w, this.PAD * 2 + this.CTL_BW);
     const ctl = D.controls ? this._ctlLayout(comp, w, h) : null;
     if (ctl) h = ctl.y1 + this.PAD;
 
@@ -1066,7 +1196,7 @@ const DBDrawing = {
         const mid = (xs[br.from] + xs[br.to]) / 2;
         const half = Math.max((xs[br.to] - xs[br.from]) / 2 + 26, txtW / 2);
         const ax = mid - half, bx = mid + half;
-        const y = busY + this.BUS_TO_RCD;
+        const y = busY + this.BUS_TO_RCD + (L.secDY || 0);
         s += `<g><title>${this._esc(`Earth-leakage group ${br.group} — IΔn ${idn} mA, shared by ${br.to - br.from + 1} way(s)`)}</title>`
           + `<rect x="${ax}" y="${y}" width="${bx - ax}" height="${this.RCD_H}" rx="4" fill="${P.panel}" stroke="${P.accent}" stroke-width="1.2"/>`
           + `<text x="${(ax + bx) / 2}" y="${y + 14}" text-anchor="middle" font-size="9.5" font-weight="600" fill="${P.accent}">${this._esc(`EL ${br.group} · ${idn} mA`)}</text>`
@@ -1115,7 +1245,8 @@ const DBDrawing = {
       } else {
         const endY = it.spare ? devY + 30 + (L.ctrDY || 0) : (D.bars ? peY : devY + 26) + (D.load ? 14 : 0);
         const pole = it.ctr && it.ctr.arrangement !== 'section';
-        g += this._vline(x, busY, endY, [[devY, 20 * this.SYM_SCALE], ...(pole ? [[ctrY, 12]] : []), ...lblGap], stroke, 1.4);
+        const top = it.ctr && it.ctr.arrangement === 'section' ? busY + this.SEC_BUS_Y : busY;
+        g += this._vline(x, top, endY, [[devY, 20 * this.SYM_SCALE], ...(pole ? [[ctrY, 12]] : []), ...lblGap], stroke, 1.4);
         sym = this._glyph(it.glyph, x, devY, P, stroke, it);
         if (pole) g += this._gContactor(x, ctrY, P, P.ctl);
         if (D.load && !it.spare) {
