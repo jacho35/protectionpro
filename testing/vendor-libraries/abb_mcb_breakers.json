@@ -1,0 +1,6916 @@
+{
+ "entries": [
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s200_b_6",
+    "name": "ABB S200 B6",
+    "cb_type": "mcb",
+    "mcb_curve": "B",
+    "manufacturer": "ABB",
+    "series": "S200",
+    "model": "S200",
+    "trip_rating_a": 6,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 6,
+    "icu_ka": 10,
+    "ics_pct": 75.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s200_b_6_63"
+    ],
+    "default_trip_unit": "abb_mcb_s200_b_6_63",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s200_b_10",
+    "name": "ABB S200 B10",
+    "cb_type": "mcb",
+    "mcb_curve": "B",
+    "manufacturer": "ABB",
+    "series": "S200",
+    "model": "S200",
+    "trip_rating_a": 10,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 6,
+    "icu_ka": 10,
+    "ics_pct": 75.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s200_b_6_63"
+    ],
+    "default_trip_unit": "abb_mcb_s200_b_6_63",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s200_b_13",
+    "name": "ABB S200 B13",
+    "cb_type": "mcb",
+    "mcb_curve": "B",
+    "manufacturer": "ABB",
+    "series": "S200",
+    "model": "S200",
+    "trip_rating_a": 13,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 6,
+    "icu_ka": 10,
+    "ics_pct": 75.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s200_b_6_63"
+    ],
+    "default_trip_unit": "abb_mcb_s200_b_6_63",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s200_b_16",
+    "name": "ABB S200 B16",
+    "cb_type": "mcb",
+    "mcb_curve": "B",
+    "manufacturer": "ABB",
+    "series": "S200",
+    "model": "S200",
+    "trip_rating_a": 16,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 6,
+    "icu_ka": 10,
+    "ics_pct": 75.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s200_b_6_63"
+    ],
+    "default_trip_unit": "abb_mcb_s200_b_6_63",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s200_b_20",
+    "name": "ABB S200 B20",
+    "cb_type": "mcb",
+    "mcb_curve": "B",
+    "manufacturer": "ABB",
+    "series": "S200",
+    "model": "S200",
+    "trip_rating_a": 20,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 6,
+    "icu_ka": 10,
+    "ics_pct": 75.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s200_b_6_63"
+    ],
+    "default_trip_unit": "abb_mcb_s200_b_6_63",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s200_b_25",
+    "name": "ABB S200 B25",
+    "cb_type": "mcb",
+    "mcb_curve": "B",
+    "manufacturer": "ABB",
+    "series": "S200",
+    "model": "S200",
+    "trip_rating_a": 25,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 6,
+    "icu_ka": 10,
+    "ics_pct": 75.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s200_b_6_63"
+    ],
+    "default_trip_unit": "abb_mcb_s200_b_6_63",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s200_b_32",
+    "name": "ABB S200 B32",
+    "cb_type": "mcb",
+    "mcb_curve": "B",
+    "manufacturer": "ABB",
+    "series": "S200",
+    "model": "S200",
+    "trip_rating_a": 32,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 6,
+    "icu_ka": 10,
+    "ics_pct": 75.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s200_b_6_63"
+    ],
+    "default_trip_unit": "abb_mcb_s200_b_6_63",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s200_b_40",
+    "name": "ABB S200 B40",
+    "cb_type": "mcb",
+    "mcb_curve": "B",
+    "manufacturer": "ABB",
+    "series": "S200",
+    "model": "S200",
+    "trip_rating_a": 40,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 6,
+    "icu_ka": 10,
+    "ics_pct": 75.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s200_b_6_63"
+    ],
+    "default_trip_unit": "abb_mcb_s200_b_6_63",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s200_b_50",
+    "name": "ABB S200 B50",
+    "cb_type": "mcb",
+    "mcb_curve": "B",
+    "manufacturer": "ABB",
+    "series": "S200",
+    "model": "S200",
+    "trip_rating_a": 50,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 6,
+    "icu_ka": 10,
+    "ics_pct": 75.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s200_b_6_63"
+    ],
+    "default_trip_unit": "abb_mcb_s200_b_6_63",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s200_b_63",
+    "name": "ABB S200 B63",
+    "cb_type": "mcb",
+    "mcb_curve": "B",
+    "manufacturer": "ABB",
+    "series": "S200",
+    "model": "S200",
+    "trip_rating_a": 63,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 6,
+    "icu_ka": 10,
+    "ics_pct": 75.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s200_b_6_63"
+    ],
+    "default_trip_unit": "abb_mcb_s200_b_6_63",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s200_b_80",
+    "name": "ABB S200 B80",
+    "cb_type": "mcb",
+    "mcb_curve": "B",
+    "manufacturer": "ABB",
+    "series": "S200",
+    "model": "S200",
+    "trip_rating_a": 80,
+    "frame_a": 100,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 6,
+    "icu_ka": 6,
+    "ics_pct": 100.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s200_b_80_100"
+    ],
+    "default_trip_unit": "abb_mcb_s200_b_80_100",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s200_b_100",
+    "name": "ABB S200 B100",
+    "cb_type": "mcb",
+    "mcb_curve": "B",
+    "manufacturer": "ABB",
+    "series": "S200",
+    "model": "S200",
+    "trip_rating_a": 100,
+    "frame_a": 100,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 6,
+    "icu_ka": 6,
+    "ics_pct": 100.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s200_b_80_100"
+    ],
+    "default_trip_unit": "abb_mcb_s200_b_80_100",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s200_c_0_5",
+    "name": "ABB S200 C0.5",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "ABB",
+    "series": "S200",
+    "model": "S200",
+    "trip_rating_a": 0.5,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 6,
+    "icu_ka": 50,
+    "ics_pct": 15.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 6.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s200_c_le4"
+    ],
+    "default_trip_unit": "abb_mcb_s200_c_le4",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s200_c_1",
+    "name": "ABB S200 C1",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "ABB",
+    "series": "S200",
+    "model": "S200",
+    "trip_rating_a": 1,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 6,
+    "icu_ka": 50,
+    "ics_pct": 15.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 6.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s200_c_le4"
+    ],
+    "default_trip_unit": "abb_mcb_s200_c_le4",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s200_c_1_6",
+    "name": "ABB S200 C1.6",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "ABB",
+    "series": "S200",
+    "model": "S200",
+    "trip_rating_a": 1.6,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 6,
+    "icu_ka": 50,
+    "ics_pct": 15.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 6.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s200_c_le4"
+    ],
+    "default_trip_unit": "abb_mcb_s200_c_le4",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s200_c_2",
+    "name": "ABB S200 C2",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "ABB",
+    "series": "S200",
+    "model": "S200",
+    "trip_rating_a": 2,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 6,
+    "icu_ka": 50,
+    "ics_pct": 15.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 6.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s200_c_le4"
+    ],
+    "default_trip_unit": "abb_mcb_s200_c_le4",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s200_c_3",
+    "name": "ABB S200 C3",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "ABB",
+    "series": "S200",
+    "model": "S200",
+    "trip_rating_a": 3,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 6,
+    "icu_ka": 10,
+    "ics_pct": 75.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 6.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s200_c_le4"
+    ],
+    "default_trip_unit": "abb_mcb_s200_c_le4",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s200_c_4",
+    "name": "ABB S200 C4",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "ABB",
+    "series": "S200",
+    "model": "S200",
+    "trip_rating_a": 4,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 6,
+    "icu_ka": 10,
+    "ics_pct": 75.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 6.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s200_c_le4"
+    ],
+    "default_trip_unit": "abb_mcb_s200_c_le4",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s200_c_6",
+    "name": "ABB S200 C6",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "ABB",
+    "series": "S200",
+    "model": "S200",
+    "trip_rating_a": 6,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 6,
+    "icu_ka": 10,
+    "ics_pct": 75.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 6.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s200_c_6_63"
+    ],
+    "default_trip_unit": "abb_mcb_s200_c_6_63",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s200_c_8",
+    "name": "ABB S200 C8",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "ABB",
+    "series": "S200",
+    "model": "S200",
+    "trip_rating_a": 8,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 6,
+    "icu_ka": 10,
+    "ics_pct": 75.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 6.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s200_c_6_63"
+    ],
+    "default_trip_unit": "abb_mcb_s200_c_6_63",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s200_c_10",
+    "name": "ABB S200 C10",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "ABB",
+    "series": "S200",
+    "model": "S200",
+    "trip_rating_a": 10,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 6,
+    "icu_ka": 10,
+    "ics_pct": 75.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 6.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s200_c_6_63"
+    ],
+    "default_trip_unit": "abb_mcb_s200_c_6_63",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s200_c_13",
+    "name": "ABB S200 C13",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "ABB",
+    "series": "S200",
+    "model": "S200",
+    "trip_rating_a": 13,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 6,
+    "icu_ka": 10,
+    "ics_pct": 75.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 6.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s200_c_6_63"
+    ],
+    "default_trip_unit": "abb_mcb_s200_c_6_63",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s200_c_16",
+    "name": "ABB S200 C16",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "ABB",
+    "series": "S200",
+    "model": "S200",
+    "trip_rating_a": 16,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 6,
+    "icu_ka": 10,
+    "ics_pct": 75.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 6.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s200_c_6_63"
+    ],
+    "default_trip_unit": "abb_mcb_s200_c_6_63",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s200_c_20",
+    "name": "ABB S200 C20",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "ABB",
+    "series": "S200",
+    "model": "S200",
+    "trip_rating_a": 20,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 6,
+    "icu_ka": 10,
+    "ics_pct": 75.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 6.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s200_c_6_63"
+    ],
+    "default_trip_unit": "abb_mcb_s200_c_6_63",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s200_c_25",
+    "name": "ABB S200 C25",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "ABB",
+    "series": "S200",
+    "model": "S200",
+    "trip_rating_a": 25,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 6,
+    "icu_ka": 10,
+    "ics_pct": 75.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 6.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s200_c_6_63"
+    ],
+    "default_trip_unit": "abb_mcb_s200_c_6_63",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s200_c_32",
+    "name": "ABB S200 C32",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "ABB",
+    "series": "S200",
+    "model": "S200",
+    "trip_rating_a": 32,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 6,
+    "icu_ka": 10,
+    "ics_pct": 75.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 6.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s200_c_6_63"
+    ],
+    "default_trip_unit": "abb_mcb_s200_c_6_63",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s200_c_40",
+    "name": "ABB S200 C40",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "ABB",
+    "series": "S200",
+    "model": "S200",
+    "trip_rating_a": 40,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 6,
+    "icu_ka": 10,
+    "ics_pct": 75.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 6.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s200_c_6_63"
+    ],
+    "default_trip_unit": "abb_mcb_s200_c_6_63",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s200_c_50",
+    "name": "ABB S200 C50",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "ABB",
+    "series": "S200",
+    "model": "S200",
+    "trip_rating_a": 50,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 6,
+    "icu_ka": 10,
+    "ics_pct": 75.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 6.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s200_c_6_63"
+    ],
+    "default_trip_unit": "abb_mcb_s200_c_6_63",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s200_c_63",
+    "name": "ABB S200 C63",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "ABB",
+    "series": "S200",
+    "model": "S200",
+    "trip_rating_a": 63,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 6,
+    "icu_ka": 10,
+    "ics_pct": 75.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 6.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s200_c_6_63"
+    ],
+    "default_trip_unit": "abb_mcb_s200_c_6_63",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s200_d_0_5",
+    "name": "ABB S200 D0.5",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "ABB",
+    "series": "S200",
+    "model": "S200",
+    "trip_rating_a": 0.5,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 6,
+    "icu_ka": 50,
+    "ics_pct": 15.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 12.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s200_d_le4"
+    ],
+    "default_trip_unit": "abb_mcb_s200_d_le4",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s200_d_1",
+    "name": "ABB S200 D1",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "ABB",
+    "series": "S200",
+    "model": "S200",
+    "trip_rating_a": 1,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 6,
+    "icu_ka": 50,
+    "ics_pct": 15.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 12.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s200_d_le4"
+    ],
+    "default_trip_unit": "abb_mcb_s200_d_le4",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s200_d_1_6",
+    "name": "ABB S200 D1.6",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "ABB",
+    "series": "S200",
+    "model": "S200",
+    "trip_rating_a": 1.6,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 6,
+    "icu_ka": 50,
+    "ics_pct": 15.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 12.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s200_d_le4"
+    ],
+    "default_trip_unit": "abb_mcb_s200_d_le4",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s200_d_2",
+    "name": "ABB S200 D2",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "ABB",
+    "series": "S200",
+    "model": "S200",
+    "trip_rating_a": 2,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 6,
+    "icu_ka": 50,
+    "ics_pct": 15.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 12.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s200_d_le4"
+    ],
+    "default_trip_unit": "abb_mcb_s200_d_le4",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s200_d_3",
+    "name": "ABB S200 D3",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "ABB",
+    "series": "S200",
+    "model": "S200",
+    "trip_rating_a": 3,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 6,
+    "icu_ka": 10,
+    "ics_pct": 75.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 12.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s200_d_le4"
+    ],
+    "default_trip_unit": "abb_mcb_s200_d_le4",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s200_d_4",
+    "name": "ABB S200 D4",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "ABB",
+    "series": "S200",
+    "model": "S200",
+    "trip_rating_a": 4,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 6,
+    "icu_ka": 10,
+    "ics_pct": 75.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 12.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s200_d_le4"
+    ],
+    "default_trip_unit": "abb_mcb_s200_d_le4",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s200_d_6",
+    "name": "ABB S200 D6",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "ABB",
+    "series": "S200",
+    "model": "S200",
+    "trip_rating_a": 6,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 6,
+    "icu_ka": 10,
+    "ics_pct": 75.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 12.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s200_d_6_63"
+    ],
+    "default_trip_unit": "abb_mcb_s200_d_6_63",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s200_d_8",
+    "name": "ABB S200 D8",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "ABB",
+    "series": "S200",
+    "model": "S200",
+    "trip_rating_a": 8,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 6,
+    "icu_ka": 10,
+    "ics_pct": 75.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 12.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s200_d_6_63"
+    ],
+    "default_trip_unit": "abb_mcb_s200_d_6_63",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s200_d_10",
+    "name": "ABB S200 D10",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "ABB",
+    "series": "S200",
+    "model": "S200",
+    "trip_rating_a": 10,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 6,
+    "icu_ka": 10,
+    "ics_pct": 75.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 12.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s200_d_6_63"
+    ],
+    "default_trip_unit": "abb_mcb_s200_d_6_63",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s200_d_13",
+    "name": "ABB S200 D13",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "ABB",
+    "series": "S200",
+    "model": "S200",
+    "trip_rating_a": 13,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 6,
+    "icu_ka": 10,
+    "ics_pct": 75.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 12.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s200_d_6_63"
+    ],
+    "default_trip_unit": "abb_mcb_s200_d_6_63",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s200_d_16",
+    "name": "ABB S200 D16",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "ABB",
+    "series": "S200",
+    "model": "S200",
+    "trip_rating_a": 16,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 6,
+    "icu_ka": 10,
+    "ics_pct": 75.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 12.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s200_d_6_63"
+    ],
+    "default_trip_unit": "abb_mcb_s200_d_6_63",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s200_d_20",
+    "name": "ABB S200 D20",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "ABB",
+    "series": "S200",
+    "model": "S200",
+    "trip_rating_a": 20,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 6,
+    "icu_ka": 10,
+    "ics_pct": 75.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 12.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s200_d_6_63"
+    ],
+    "default_trip_unit": "abb_mcb_s200_d_6_63",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s200_d_25",
+    "name": "ABB S200 D25",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "ABB",
+    "series": "S200",
+    "model": "S200",
+    "trip_rating_a": 25,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 6,
+    "icu_ka": 10,
+    "ics_pct": 75.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 12.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s200_d_6_63"
+    ],
+    "default_trip_unit": "abb_mcb_s200_d_6_63",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s200_d_32",
+    "name": "ABB S200 D32",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "ABB",
+    "series": "S200",
+    "model": "S200",
+    "trip_rating_a": 32,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 6,
+    "icu_ka": 10,
+    "ics_pct": 75.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 12.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s200_d_6_63"
+    ],
+    "default_trip_unit": "abb_mcb_s200_d_6_63",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s200_d_40",
+    "name": "ABB S200 D40",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "ABB",
+    "series": "S200",
+    "model": "S200",
+    "trip_rating_a": 40,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 6,
+    "icu_ka": 10,
+    "ics_pct": 75.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 12.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s200_d_6_63"
+    ],
+    "default_trip_unit": "abb_mcb_s200_d_6_63",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s200_d_50",
+    "name": "ABB S200 D50",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "ABB",
+    "series": "S200",
+    "model": "S200",
+    "trip_rating_a": 50,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 6,
+    "icu_ka": 10,
+    "ics_pct": 75.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 12.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s200_d_6_63"
+    ],
+    "default_trip_unit": "abb_mcb_s200_d_6_63",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s200_d_63",
+    "name": "ABB S200 D63",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "ABB",
+    "series": "S200",
+    "model": "S200",
+    "trip_rating_a": 63,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 6,
+    "icu_ka": 10,
+    "ics_pct": 75.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 12.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s200_d_6_63"
+    ],
+    "default_trip_unit": "abb_mcb_s200_d_6_63",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s200m_b_6",
+    "name": "ABB S200M B6",
+    "cb_type": "mcb",
+    "mcb_curve": "B",
+    "manufacturer": "ABB",
+    "series": "S200M",
+    "model": "S200M",
+    "trip_rating_a": 6,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 10,
+    "icu_ka": 15,
+    "ics_pct": 74.7,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s200m_b_6_63"
+    ],
+    "default_trip_unit": "abb_mcb_s200m_b_6_63",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s200m_b_10",
+    "name": "ABB S200M B10",
+    "cb_type": "mcb",
+    "mcb_curve": "B",
+    "manufacturer": "ABB",
+    "series": "S200M",
+    "model": "S200M",
+    "trip_rating_a": 10,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 10,
+    "icu_ka": 15,
+    "ics_pct": 74.7,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s200m_b_6_63"
+    ],
+    "default_trip_unit": "abb_mcb_s200m_b_6_63",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s200m_b_13",
+    "name": "ABB S200M B13",
+    "cb_type": "mcb",
+    "mcb_curve": "B",
+    "manufacturer": "ABB",
+    "series": "S200M",
+    "model": "S200M",
+    "trip_rating_a": 13,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 10,
+    "icu_ka": 15,
+    "ics_pct": 74.7,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s200m_b_6_63"
+    ],
+    "default_trip_unit": "abb_mcb_s200m_b_6_63",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s200m_b_16",
+    "name": "ABB S200M B16",
+    "cb_type": "mcb",
+    "mcb_curve": "B",
+    "manufacturer": "ABB",
+    "series": "S200M",
+    "model": "S200M",
+    "trip_rating_a": 16,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 10,
+    "icu_ka": 15,
+    "ics_pct": 74.7,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s200m_b_6_63"
+    ],
+    "default_trip_unit": "abb_mcb_s200m_b_6_63",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s200m_b_20",
+    "name": "ABB S200M B20",
+    "cb_type": "mcb",
+    "mcb_curve": "B",
+    "manufacturer": "ABB",
+    "series": "S200M",
+    "model": "S200M",
+    "trip_rating_a": 20,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 10,
+    "icu_ka": 15,
+    "ics_pct": 74.7,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s200m_b_6_63"
+    ],
+    "default_trip_unit": "abb_mcb_s200m_b_6_63",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s200m_b_25",
+    "name": "ABB S200M B25",
+    "cb_type": "mcb",
+    "mcb_curve": "B",
+    "manufacturer": "ABB",
+    "series": "S200M",
+    "model": "S200M",
+    "trip_rating_a": 25,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 10,
+    "icu_ka": 15,
+    "ics_pct": 74.7,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s200m_b_6_63"
+    ],
+    "default_trip_unit": "abb_mcb_s200m_b_6_63",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s200m_b_32",
+    "name": "ABB S200M B32",
+    "cb_type": "mcb",
+    "mcb_curve": "B",
+    "manufacturer": "ABB",
+    "series": "S200M",
+    "model": "S200M",
+    "trip_rating_a": 32,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 10,
+    "icu_ka": 15,
+    "ics_pct": 74.7,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s200m_b_6_63"
+    ],
+    "default_trip_unit": "abb_mcb_s200m_b_6_63",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s200m_b_40",
+    "name": "ABB S200M B40",
+    "cb_type": "mcb",
+    "mcb_curve": "B",
+    "manufacturer": "ABB",
+    "series": "S200M",
+    "model": "S200M",
+    "trip_rating_a": 40,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 10,
+    "icu_ka": 15,
+    "ics_pct": 74.7,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s200m_b_6_63"
+    ],
+    "default_trip_unit": "abb_mcb_s200m_b_6_63",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s200m_b_50",
+    "name": "ABB S200M B50",
+    "cb_type": "mcb",
+    "mcb_curve": "B",
+    "manufacturer": "ABB",
+    "series": "S200M",
+    "model": "S200M",
+    "trip_rating_a": 50,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 10,
+    "icu_ka": 10,
+    "ics_pct": 75.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s200m_b_6_63"
+    ],
+    "default_trip_unit": "abb_mcb_s200m_b_6_63",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s200m_b_63",
+    "name": "ABB S200M B63",
+    "cb_type": "mcb",
+    "mcb_curve": "B",
+    "manufacturer": "ABB",
+    "series": "S200M",
+    "model": "S200M",
+    "trip_rating_a": 63,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 10,
+    "icu_ka": 10,
+    "ics_pct": 75.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s200m_b_6_63"
+    ],
+    "default_trip_unit": "abb_mcb_s200m_b_6_63",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s200m_c_0_5",
+    "name": "ABB S200M C0.5",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "ABB",
+    "series": "S200M",
+    "model": "S200M",
+    "trip_rating_a": 0.5,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 10,
+    "icu_ka": 50,
+    "ics_pct": 22.4,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 6.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s200m_c_le4"
+    ],
+    "default_trip_unit": "abb_mcb_s200m_c_le4",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s200m_c_1",
+    "name": "ABB S200M C1",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "ABB",
+    "series": "S200M",
+    "model": "S200M",
+    "trip_rating_a": 1,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 10,
+    "icu_ka": 50,
+    "ics_pct": 22.4,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 6.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s200m_c_le4"
+    ],
+    "default_trip_unit": "abb_mcb_s200m_c_le4",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s200m_c_1_6",
+    "name": "ABB S200M C1.6",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "ABB",
+    "series": "S200M",
+    "model": "S200M",
+    "trip_rating_a": 1.6,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 10,
+    "icu_ka": 50,
+    "ics_pct": 22.4,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 6.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s200m_c_le4"
+    ],
+    "default_trip_unit": "abb_mcb_s200m_c_le4",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s200m_c_2",
+    "name": "ABB S200M C2",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "ABB",
+    "series": "S200M",
+    "model": "S200M",
+    "trip_rating_a": 2,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 10,
+    "icu_ka": 50,
+    "ics_pct": 22.4,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 6.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s200m_c_le4"
+    ],
+    "default_trip_unit": "abb_mcb_s200m_c_le4",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s200m_c_3",
+    "name": "ABB S200M C3",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "ABB",
+    "series": "S200M",
+    "model": "S200M",
+    "trip_rating_a": 3,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 10,
+    "icu_ka": 15,
+    "ics_pct": 74.7,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 6.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s200m_c_le4"
+    ],
+    "default_trip_unit": "abb_mcb_s200m_c_le4",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s200m_c_4",
+    "name": "ABB S200M C4",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "ABB",
+    "series": "S200M",
+    "model": "S200M",
+    "trip_rating_a": 4,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 10,
+    "icu_ka": 15,
+    "ics_pct": 74.7,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 6.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s200m_c_le4"
+    ],
+    "default_trip_unit": "abb_mcb_s200m_c_le4",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s200m_c_6",
+    "name": "ABB S200M C6",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "ABB",
+    "series": "S200M",
+    "model": "S200M",
+    "trip_rating_a": 6,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 10,
+    "icu_ka": 15,
+    "ics_pct": 74.7,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 6.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s200m_c_6_63"
+    ],
+    "default_trip_unit": "abb_mcb_s200m_c_6_63",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s200m_c_8",
+    "name": "ABB S200M C8",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "ABB",
+    "series": "S200M",
+    "model": "S200M",
+    "trip_rating_a": 8,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 10,
+    "icu_ka": 15,
+    "ics_pct": 74.7,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 6.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s200m_c_6_63"
+    ],
+    "default_trip_unit": "abb_mcb_s200m_c_6_63",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s200m_c_10",
+    "name": "ABB S200M C10",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "ABB",
+    "series": "S200M",
+    "model": "S200M",
+    "trip_rating_a": 10,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 10,
+    "icu_ka": 15,
+    "ics_pct": 74.7,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 6.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s200m_c_6_63"
+    ],
+    "default_trip_unit": "abb_mcb_s200m_c_6_63",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s200m_c_13",
+    "name": "ABB S200M C13",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "ABB",
+    "series": "S200M",
+    "model": "S200M",
+    "trip_rating_a": 13,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 10,
+    "icu_ka": 15,
+    "ics_pct": 74.7,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 6.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s200m_c_6_63"
+    ],
+    "default_trip_unit": "abb_mcb_s200m_c_6_63",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s200m_c_16",
+    "name": "ABB S200M C16",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "ABB",
+    "series": "S200M",
+    "model": "S200M",
+    "trip_rating_a": 16,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 10,
+    "icu_ka": 15,
+    "ics_pct": 74.7,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 6.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s200m_c_6_63"
+    ],
+    "default_trip_unit": "abb_mcb_s200m_c_6_63",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s200m_c_20",
+    "name": "ABB S200M C20",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "ABB",
+    "series": "S200M",
+    "model": "S200M",
+    "trip_rating_a": 20,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 10,
+    "icu_ka": 15,
+    "ics_pct": 74.7,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 6.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s200m_c_6_63"
+    ],
+    "default_trip_unit": "abb_mcb_s200m_c_6_63",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s200m_c_25",
+    "name": "ABB S200M C25",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "ABB",
+    "series": "S200M",
+    "model": "S200M",
+    "trip_rating_a": 25,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 10,
+    "icu_ka": 15,
+    "ics_pct": 74.7,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 6.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s200m_c_6_63"
+    ],
+    "default_trip_unit": "abb_mcb_s200m_c_6_63",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s200m_c_32",
+    "name": "ABB S200M C32",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "ABB",
+    "series": "S200M",
+    "model": "S200M",
+    "trip_rating_a": 32,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 10,
+    "icu_ka": 15,
+    "ics_pct": 74.7,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 6.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s200m_c_6_63"
+    ],
+    "default_trip_unit": "abb_mcb_s200m_c_6_63",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s200m_c_40",
+    "name": "ABB S200M C40",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "ABB",
+    "series": "S200M",
+    "model": "S200M",
+    "trip_rating_a": 40,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 10,
+    "icu_ka": 15,
+    "ics_pct": 74.7,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 6.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s200m_c_6_63"
+    ],
+    "default_trip_unit": "abb_mcb_s200m_c_6_63",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s200m_c_50",
+    "name": "ABB S200M C50",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "ABB",
+    "series": "S200M",
+    "model": "S200M",
+    "trip_rating_a": 50,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 10,
+    "icu_ka": 10,
+    "ics_pct": 75.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 6.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s200m_c_6_63"
+    ],
+    "default_trip_unit": "abb_mcb_s200m_c_6_63",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s200m_c_63",
+    "name": "ABB S200M C63",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "ABB",
+    "series": "S200M",
+    "model": "S200M",
+    "trip_rating_a": 63,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 10,
+    "icu_ka": 10,
+    "ics_pct": 75.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 6.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s200m_c_6_63"
+    ],
+    "default_trip_unit": "abb_mcb_s200m_c_6_63",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s200m_d_0_5",
+    "name": "ABB S200M D0.5",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "ABB",
+    "series": "S200M",
+    "model": "S200M",
+    "trip_rating_a": 0.5,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 10,
+    "icu_ka": 50,
+    "ics_pct": 22.4,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 12.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s200m_d_le4"
+    ],
+    "default_trip_unit": "abb_mcb_s200m_d_le4",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s200m_d_1",
+    "name": "ABB S200M D1",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "ABB",
+    "series": "S200M",
+    "model": "S200M",
+    "trip_rating_a": 1,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 10,
+    "icu_ka": 50,
+    "ics_pct": 22.4,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 12.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s200m_d_le4"
+    ],
+    "default_trip_unit": "abb_mcb_s200m_d_le4",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s200m_d_1_6",
+    "name": "ABB S200M D1.6",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "ABB",
+    "series": "S200M",
+    "model": "S200M",
+    "trip_rating_a": 1.6,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 10,
+    "icu_ka": 50,
+    "ics_pct": 22.4,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 12.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s200m_d_le4"
+    ],
+    "default_trip_unit": "abb_mcb_s200m_d_le4",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s200m_d_2",
+    "name": "ABB S200M D2",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "ABB",
+    "series": "S200M",
+    "model": "S200M",
+    "trip_rating_a": 2,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 10,
+    "icu_ka": 50,
+    "ics_pct": 22.4,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 12.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s200m_d_le4"
+    ],
+    "default_trip_unit": "abb_mcb_s200m_d_le4",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s200m_d_3",
+    "name": "ABB S200M D3",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "ABB",
+    "series": "S200M",
+    "model": "S200M",
+    "trip_rating_a": 3,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 10,
+    "icu_ka": 15,
+    "ics_pct": 74.7,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 12.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s200m_d_le4"
+    ],
+    "default_trip_unit": "abb_mcb_s200m_d_le4",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s200m_d_4",
+    "name": "ABB S200M D4",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "ABB",
+    "series": "S200M",
+    "model": "S200M",
+    "trip_rating_a": 4,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 10,
+    "icu_ka": 15,
+    "ics_pct": 74.7,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 12.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s200m_d_le4"
+    ],
+    "default_trip_unit": "abb_mcb_s200m_d_le4",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s200m_d_6",
+    "name": "ABB S200M D6",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "ABB",
+    "series": "S200M",
+    "model": "S200M",
+    "trip_rating_a": 6,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 10,
+    "icu_ka": 15,
+    "ics_pct": 74.7,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 12.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s200m_d_6_63"
+    ],
+    "default_trip_unit": "abb_mcb_s200m_d_6_63",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s200m_d_8",
+    "name": "ABB S200M D8",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "ABB",
+    "series": "S200M",
+    "model": "S200M",
+    "trip_rating_a": 8,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 10,
+    "icu_ka": 15,
+    "ics_pct": 74.7,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 12.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s200m_d_6_63"
+    ],
+    "default_trip_unit": "abb_mcb_s200m_d_6_63",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s200m_d_10",
+    "name": "ABB S200M D10",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "ABB",
+    "series": "S200M",
+    "model": "S200M",
+    "trip_rating_a": 10,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 10,
+    "icu_ka": 15,
+    "ics_pct": 74.7,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 12.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s200m_d_6_63"
+    ],
+    "default_trip_unit": "abb_mcb_s200m_d_6_63",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s200m_d_13",
+    "name": "ABB S200M D13",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "ABB",
+    "series": "S200M",
+    "model": "S200M",
+    "trip_rating_a": 13,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 10,
+    "icu_ka": 15,
+    "ics_pct": 74.7,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 12.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s200m_d_6_63"
+    ],
+    "default_trip_unit": "abb_mcb_s200m_d_6_63",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s200m_d_16",
+    "name": "ABB S200M D16",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "ABB",
+    "series": "S200M",
+    "model": "S200M",
+    "trip_rating_a": 16,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 10,
+    "icu_ka": 15,
+    "ics_pct": 74.7,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 12.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s200m_d_6_63"
+    ],
+    "default_trip_unit": "abb_mcb_s200m_d_6_63",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s200m_d_20",
+    "name": "ABB S200M D20",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "ABB",
+    "series": "S200M",
+    "model": "S200M",
+    "trip_rating_a": 20,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 10,
+    "icu_ka": 15,
+    "ics_pct": 74.7,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 12.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s200m_d_6_63"
+    ],
+    "default_trip_unit": "abb_mcb_s200m_d_6_63",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s200m_d_25",
+    "name": "ABB S200M D25",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "ABB",
+    "series": "S200M",
+    "model": "S200M",
+    "trip_rating_a": 25,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 10,
+    "icu_ka": 15,
+    "ics_pct": 74.7,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 12.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s200m_d_6_63"
+    ],
+    "default_trip_unit": "abb_mcb_s200m_d_6_63",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s200m_d_32",
+    "name": "ABB S200M D32",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "ABB",
+    "series": "S200M",
+    "model": "S200M",
+    "trip_rating_a": 32,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 10,
+    "icu_ka": 15,
+    "ics_pct": 74.7,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 12.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s200m_d_6_63"
+    ],
+    "default_trip_unit": "abb_mcb_s200m_d_6_63",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s200m_d_40",
+    "name": "ABB S200M D40",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "ABB",
+    "series": "S200M",
+    "model": "S200M",
+    "trip_rating_a": 40,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 10,
+    "icu_ka": 15,
+    "ics_pct": 74.7,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 12.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s200m_d_6_63"
+    ],
+    "default_trip_unit": "abb_mcb_s200m_d_6_63",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s200m_d_50",
+    "name": "ABB S200M D50",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "ABB",
+    "series": "S200M",
+    "model": "S200M",
+    "trip_rating_a": 50,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 10,
+    "icu_ka": 10,
+    "ics_pct": 75.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 12.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s200m_d_6_63"
+    ],
+    "default_trip_unit": "abb_mcb_s200m_d_6_63",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s200m_d_63",
+    "name": "ABB S200M D63",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "ABB",
+    "series": "S200M",
+    "model": "S200M",
+    "trip_rating_a": 63,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 10,
+    "icu_ka": 10,
+    "ics_pct": 75.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 12.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s200m_d_6_63"
+    ],
+    "default_trip_unit": "abb_mcb_s200m_d_6_63",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s300p_b_6",
+    "name": "ABB S300P B6",
+    "cb_type": "mcb",
+    "mcb_curve": "B",
+    "manufacturer": "ABB",
+    "series": "S300P",
+    "model": "S300P",
+    "trip_rating_a": 6,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "icu_ka": 100,
+    "ics_pct": 100.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s300p_b_6_63"
+    ],
+    "default_trip_unit": "abb_mcb_s300p_b_6_63",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s300p_b_8",
+    "name": "ABB S300P B8",
+    "cb_type": "mcb",
+    "mcb_curve": "B",
+    "manufacturer": "ABB",
+    "series": "S300P",
+    "model": "S300P",
+    "trip_rating_a": 8,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "icu_ka": 25,
+    "ics_pct": 50.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s300p_b_6_63"
+    ],
+    "default_trip_unit": "abb_mcb_s300p_b_6_63",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s300p_b_10",
+    "name": "ABB S300P B10",
+    "cb_type": "mcb",
+    "mcb_curve": "B",
+    "manufacturer": "ABB",
+    "series": "S300P",
+    "model": "S300P",
+    "trip_rating_a": 10,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "icu_ka": 25,
+    "ics_pct": 50.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s300p_b_6_63"
+    ],
+    "default_trip_unit": "abb_mcb_s300p_b_6_63",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s300p_b_13",
+    "name": "ABB S300P B13",
+    "cb_type": "mcb",
+    "mcb_curve": "B",
+    "manufacturer": "ABB",
+    "series": "S300P",
+    "model": "S300P",
+    "trip_rating_a": 13,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "icu_ka": 25,
+    "ics_pct": 50.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s300p_b_6_63"
+    ],
+    "default_trip_unit": "abb_mcb_s300p_b_6_63",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s300p_b_16",
+    "name": "ABB S300P B16",
+    "cb_type": "mcb",
+    "mcb_curve": "B",
+    "manufacturer": "ABB",
+    "series": "S300P",
+    "model": "S300P",
+    "trip_rating_a": 16,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "icu_ka": 25,
+    "ics_pct": 50.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s300p_b_6_63"
+    ],
+    "default_trip_unit": "abb_mcb_s300p_b_6_63",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s300p_b_20",
+    "name": "ABB S300P B20",
+    "cb_type": "mcb",
+    "mcb_curve": "B",
+    "manufacturer": "ABB",
+    "series": "S300P",
+    "model": "S300P",
+    "trip_rating_a": 20,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "icu_ka": 25,
+    "ics_pct": 50.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s300p_b_6_63"
+    ],
+    "default_trip_unit": "abb_mcb_s300p_b_6_63",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s300p_b_25",
+    "name": "ABB S300P B25",
+    "cb_type": "mcb",
+    "mcb_curve": "B",
+    "manufacturer": "ABB",
+    "series": "S300P",
+    "model": "S300P",
+    "trip_rating_a": 25,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "icu_ka": 25,
+    "ics_pct": 50.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s300p_b_6_63"
+    ],
+    "default_trip_unit": "abb_mcb_s300p_b_6_63",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s300p_b_32",
+    "name": "ABB S300P B32",
+    "cb_type": "mcb",
+    "mcb_curve": "B",
+    "manufacturer": "ABB",
+    "series": "S300P",
+    "model": "S300P",
+    "trip_rating_a": 32,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 20,
+    "icu_ka": 25,
+    "ics_pct": 40.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s300p_b_6_63"
+    ],
+    "default_trip_unit": "abb_mcb_s300p_b_6_63",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s300p_b_40",
+    "name": "ABB S300P B40",
+    "cb_type": "mcb",
+    "mcb_curve": "B",
+    "manufacturer": "ABB",
+    "series": "S300P",
+    "model": "S300P",
+    "trip_rating_a": 40,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 20,
+    "icu_ka": 25,
+    "ics_pct": 40.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s300p_b_6_63"
+    ],
+    "default_trip_unit": "abb_mcb_s300p_b_6_63",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s300p_b_50",
+    "name": "ABB S300P B50",
+    "cb_type": "mcb",
+    "mcb_curve": "B",
+    "manufacturer": "ABB",
+    "series": "S300P",
+    "model": "S300P",
+    "trip_rating_a": 50,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 15,
+    "icu_ka": 25,
+    "ics_pct": 30.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s300p_b_6_63"
+    ],
+    "default_trip_unit": "abb_mcb_s300p_b_6_63",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s300p_b_63",
+    "name": "ABB S300P B63",
+    "cb_type": "mcb",
+    "mcb_curve": "B",
+    "manufacturer": "ABB",
+    "series": "S300P",
+    "model": "S300P",
+    "trip_rating_a": 63,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 15,
+    "icu_ka": 25,
+    "ics_pct": 30.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s300p_b_6_63"
+    ],
+    "default_trip_unit": "abb_mcb_s300p_b_6_63",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s300p_c_0_5",
+    "name": "ABB S300P C0.5",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "ABB",
+    "series": "S300P",
+    "model": "S300P",
+    "trip_rating_a": 0.5,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "icu_ka": 100,
+    "ics_pct": 100.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 6.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s300p_c_le4"
+    ],
+    "default_trip_unit": "abb_mcb_s300p_c_le4",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s300p_c_1",
+    "name": "ABB S300P C1",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "ABB",
+    "series": "S300P",
+    "model": "S300P",
+    "trip_rating_a": 1,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "icu_ka": 100,
+    "ics_pct": 100.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 6.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s300p_c_le4"
+    ],
+    "default_trip_unit": "abb_mcb_s300p_c_le4",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s300p_c_1_6",
+    "name": "ABB S300P C1.6",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "ABB",
+    "series": "S300P",
+    "model": "S300P",
+    "trip_rating_a": 1.6,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "icu_ka": 100,
+    "ics_pct": 100.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 6.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s300p_c_le4"
+    ],
+    "default_trip_unit": "abb_mcb_s300p_c_le4",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s300p_c_2",
+    "name": "ABB S300P C2",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "ABB",
+    "series": "S300P",
+    "model": "S300P",
+    "trip_rating_a": 2,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "icu_ka": 100,
+    "ics_pct": 100.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 6.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s300p_c_le4"
+    ],
+    "default_trip_unit": "abb_mcb_s300p_c_le4",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s300p_c_3",
+    "name": "ABB S300P C3",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "ABB",
+    "series": "S300P",
+    "model": "S300P",
+    "trip_rating_a": 3,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "icu_ka": 100,
+    "ics_pct": 100.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 6.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s300p_c_le4"
+    ],
+    "default_trip_unit": "abb_mcb_s300p_c_le4",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s300p_c_4",
+    "name": "ABB S300P C4",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "ABB",
+    "series": "S300P",
+    "model": "S300P",
+    "trip_rating_a": 4,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "icu_ka": 100,
+    "ics_pct": 100.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 6.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s300p_c_le4"
+    ],
+    "default_trip_unit": "abb_mcb_s300p_c_le4",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s300p_c_6",
+    "name": "ABB S300P C6",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "ABB",
+    "series": "S300P",
+    "model": "S300P",
+    "trip_rating_a": 6,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "icu_ka": 100,
+    "ics_pct": 100.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 6.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s300p_c_6_63"
+    ],
+    "default_trip_unit": "abb_mcb_s300p_c_6_63",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s300p_c_8",
+    "name": "ABB S300P C8",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "ABB",
+    "series": "S300P",
+    "model": "S300P",
+    "trip_rating_a": 8,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "icu_ka": 25,
+    "ics_pct": 50.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 6.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s300p_c_6_63"
+    ],
+    "default_trip_unit": "abb_mcb_s300p_c_6_63",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s300p_c_10",
+    "name": "ABB S300P C10",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "ABB",
+    "series": "S300P",
+    "model": "S300P",
+    "trip_rating_a": 10,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "icu_ka": 25,
+    "ics_pct": 50.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 6.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s300p_c_6_63"
+    ],
+    "default_trip_unit": "abb_mcb_s300p_c_6_63",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s300p_c_13",
+    "name": "ABB S300P C13",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "ABB",
+    "series": "S300P",
+    "model": "S300P",
+    "trip_rating_a": 13,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "icu_ka": 25,
+    "ics_pct": 50.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 6.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s300p_c_6_63"
+    ],
+    "default_trip_unit": "abb_mcb_s300p_c_6_63",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s300p_c_16",
+    "name": "ABB S300P C16",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "ABB",
+    "series": "S300P",
+    "model": "S300P",
+    "trip_rating_a": 16,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "icu_ka": 25,
+    "ics_pct": 50.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 6.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s300p_c_6_63"
+    ],
+    "default_trip_unit": "abb_mcb_s300p_c_6_63",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s300p_c_20",
+    "name": "ABB S300P C20",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "ABB",
+    "series": "S300P",
+    "model": "S300P",
+    "trip_rating_a": 20,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "icu_ka": 25,
+    "ics_pct": 50.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 6.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s300p_c_6_63"
+    ],
+    "default_trip_unit": "abb_mcb_s300p_c_6_63",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s300p_c_25",
+    "name": "ABB S300P C25",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "ABB",
+    "series": "S300P",
+    "model": "S300P",
+    "trip_rating_a": 25,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "icu_ka": 25,
+    "ics_pct": 50.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 6.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s300p_c_6_63"
+    ],
+    "default_trip_unit": "abb_mcb_s300p_c_6_63",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s300p_c_32",
+    "name": "ABB S300P C32",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "ABB",
+    "series": "S300P",
+    "model": "S300P",
+    "trip_rating_a": 32,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 20,
+    "icu_ka": 25,
+    "ics_pct": 40.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 6.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s300p_c_6_63"
+    ],
+    "default_trip_unit": "abb_mcb_s300p_c_6_63",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s300p_c_40",
+    "name": "ABB S300P C40",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "ABB",
+    "series": "S300P",
+    "model": "S300P",
+    "trip_rating_a": 40,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 20,
+    "icu_ka": 25,
+    "ics_pct": 40.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 6.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s300p_c_6_63"
+    ],
+    "default_trip_unit": "abb_mcb_s300p_c_6_63",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s300p_c_50",
+    "name": "ABB S300P C50",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "ABB",
+    "series": "S300P",
+    "model": "S300P",
+    "trip_rating_a": 50,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 15,
+    "icu_ka": 25,
+    "ics_pct": 30.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 6.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s300p_c_6_63"
+    ],
+    "default_trip_unit": "abb_mcb_s300p_c_6_63",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s300p_c_63",
+    "name": "ABB S300P C63",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "ABB",
+    "series": "S300P",
+    "model": "S300P",
+    "trip_rating_a": 63,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 15,
+    "icu_ka": 25,
+    "ics_pct": 30.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 6.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s300p_c_6_63"
+    ],
+    "default_trip_unit": "abb_mcb_s300p_c_6_63",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s300p_d_0_5",
+    "name": "ABB S300P D0.5",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "ABB",
+    "series": "S300P",
+    "model": "S300P",
+    "trip_rating_a": 0.5,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "icu_ka": 100,
+    "ics_pct": 100.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 12.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s300p_d_le4"
+    ],
+    "default_trip_unit": "abb_mcb_s300p_d_le4",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s300p_d_1",
+    "name": "ABB S300P D1",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "ABB",
+    "series": "S300P",
+    "model": "S300P",
+    "trip_rating_a": 1,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "icu_ka": 100,
+    "ics_pct": 100.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 12.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s300p_d_le4"
+    ],
+    "default_trip_unit": "abb_mcb_s300p_d_le4",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s300p_d_1_6",
+    "name": "ABB S300P D1.6",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "ABB",
+    "series": "S300P",
+    "model": "S300P",
+    "trip_rating_a": 1.6,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "icu_ka": 100,
+    "ics_pct": 100.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 12.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s300p_d_le4"
+    ],
+    "default_trip_unit": "abb_mcb_s300p_d_le4",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s300p_d_2",
+    "name": "ABB S300P D2",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "ABB",
+    "series": "S300P",
+    "model": "S300P",
+    "trip_rating_a": 2,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "icu_ka": 100,
+    "ics_pct": 100.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 12.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s300p_d_le4"
+    ],
+    "default_trip_unit": "abb_mcb_s300p_d_le4",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s300p_d_3",
+    "name": "ABB S300P D3",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "ABB",
+    "series": "S300P",
+    "model": "S300P",
+    "trip_rating_a": 3,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "icu_ka": 100,
+    "ics_pct": 100.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 12.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s300p_d_le4"
+    ],
+    "default_trip_unit": "abb_mcb_s300p_d_le4",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s300p_d_4",
+    "name": "ABB S300P D4",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "ABB",
+    "series": "S300P",
+    "model": "S300P",
+    "trip_rating_a": 4,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "icu_ka": 100,
+    "ics_pct": 100.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 12.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s300p_d_le4"
+    ],
+    "default_trip_unit": "abb_mcb_s300p_d_le4",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s300p_d_6",
+    "name": "ABB S300P D6",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "ABB",
+    "series": "S300P",
+    "model": "S300P",
+    "trip_rating_a": 6,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "icu_ka": 100,
+    "ics_pct": 100.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 12.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s300p_d_6_63"
+    ],
+    "default_trip_unit": "abb_mcb_s300p_d_6_63",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s300p_d_8",
+    "name": "ABB S300P D8",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "ABB",
+    "series": "S300P",
+    "model": "S300P",
+    "trip_rating_a": 8,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "icu_ka": 25,
+    "ics_pct": 50.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 12.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s300p_d_6_63"
+    ],
+    "default_trip_unit": "abb_mcb_s300p_d_6_63",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s300p_d_10",
+    "name": "ABB S300P D10",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "ABB",
+    "series": "S300P",
+    "model": "S300P",
+    "trip_rating_a": 10,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "icu_ka": 25,
+    "ics_pct": 50.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 12.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s300p_d_6_63"
+    ],
+    "default_trip_unit": "abb_mcb_s300p_d_6_63",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s300p_d_13",
+    "name": "ABB S300P D13",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "ABB",
+    "series": "S300P",
+    "model": "S300P",
+    "trip_rating_a": 13,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "icu_ka": 25,
+    "ics_pct": 50.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 12.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s300p_d_6_63"
+    ],
+    "default_trip_unit": "abb_mcb_s300p_d_6_63",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s300p_d_16",
+    "name": "ABB S300P D16",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "ABB",
+    "series": "S300P",
+    "model": "S300P",
+    "trip_rating_a": 16,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "icu_ka": 25,
+    "ics_pct": 50.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 12.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s300p_d_6_63"
+    ],
+    "default_trip_unit": "abb_mcb_s300p_d_6_63",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s300p_d_20",
+    "name": "ABB S300P D20",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "ABB",
+    "series": "S300P",
+    "model": "S300P",
+    "trip_rating_a": 20,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "icu_ka": 25,
+    "ics_pct": 50.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 12.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s300p_d_6_63"
+    ],
+    "default_trip_unit": "abb_mcb_s300p_d_6_63",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s300p_d_25",
+    "name": "ABB S300P D25",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "ABB",
+    "series": "S300P",
+    "model": "S300P",
+    "trip_rating_a": 25,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "icu_ka": 25,
+    "ics_pct": 50.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 12.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s300p_d_6_63"
+    ],
+    "default_trip_unit": "abb_mcb_s300p_d_6_63",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s300p_d_32",
+    "name": "ABB S300P D32",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "ABB",
+    "series": "S300P",
+    "model": "S300P",
+    "trip_rating_a": 32,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 20,
+    "icu_ka": 25,
+    "ics_pct": 40.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 12.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s300p_d_6_63"
+    ],
+    "default_trip_unit": "abb_mcb_s300p_d_6_63",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s300p_d_40",
+    "name": "ABB S300P D40",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "ABB",
+    "series": "S300P",
+    "model": "S300P",
+    "trip_rating_a": 40,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 20,
+    "icu_ka": 25,
+    "ics_pct": 40.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 12.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s300p_d_6_63"
+    ],
+    "default_trip_unit": "abb_mcb_s300p_d_6_63",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s300p_d_50",
+    "name": "ABB S300P D50",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "ABB",
+    "series": "S300P",
+    "model": "S300P",
+    "trip_rating_a": 50,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 15,
+    "icu_ka": 25,
+    "ics_pct": 30.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 12.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s300p_d_6_63"
+    ],
+    "default_trip_unit": "abb_mcb_s300p_d_6_63",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s300p_d_63",
+    "name": "ABB S300P D63",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "ABB",
+    "series": "S300P",
+    "model": "S300P",
+    "trip_rating_a": 63,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 15,
+    "icu_ka": 25,
+    "ics_pct": 30.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 12.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s300p_d_6_63"
+    ],
+    "default_trip_unit": "abb_mcb_s300p_d_6_63",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800c_b_10",
+    "name": "ABB S800C B10",
+    "cb_type": "mcb",
+    "mcb_curve": "B",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800C",
+    "trip_rating_a": 10,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 15,
+    "icu_ka": 25,
+    "ics_pct": 100.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_b"
+    ],
+    "default_trip_unit": "abb_mcb_s800_b",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800c_b_13",
+    "name": "ABB S800C B13",
+    "cb_type": "mcb",
+    "mcb_curve": "B",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800C",
+    "trip_rating_a": 13,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 15,
+    "icu_ka": 25,
+    "ics_pct": 100.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_b"
+    ],
+    "default_trip_unit": "abb_mcb_s800_b",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800c_b_16",
+    "name": "ABB S800C B16",
+    "cb_type": "mcb",
+    "mcb_curve": "B",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800C",
+    "trip_rating_a": 16,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 15,
+    "icu_ka": 25,
+    "ics_pct": 100.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_b"
+    ],
+    "default_trip_unit": "abb_mcb_s800_b",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800c_b_20",
+    "name": "ABB S800C B20",
+    "cb_type": "mcb",
+    "mcb_curve": "B",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800C",
+    "trip_rating_a": 20,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 15,
+    "icu_ka": 25,
+    "ics_pct": 100.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_b"
+    ],
+    "default_trip_unit": "abb_mcb_s800_b",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800c_b_25",
+    "name": "ABB S800C B25",
+    "cb_type": "mcb",
+    "mcb_curve": "B",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800C",
+    "trip_rating_a": 25,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 15,
+    "icu_ka": 25,
+    "ics_pct": 100.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_b"
+    ],
+    "default_trip_unit": "abb_mcb_s800_b",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800c_b_32",
+    "name": "ABB S800C B32",
+    "cb_type": "mcb",
+    "mcb_curve": "B",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800C",
+    "trip_rating_a": 32,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 15,
+    "icu_ka": 25,
+    "ics_pct": 100.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_b"
+    ],
+    "default_trip_unit": "abb_mcb_s800_b",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800c_b_40",
+    "name": "ABB S800C B40",
+    "cb_type": "mcb",
+    "mcb_curve": "B",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800C",
+    "trip_rating_a": 40,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 15,
+    "icu_ka": 25,
+    "ics_pct": 100.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_b"
+    ],
+    "default_trip_unit": "abb_mcb_s800_b",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800c_b_50",
+    "name": "ABB S800C B50",
+    "cb_type": "mcb",
+    "mcb_curve": "B",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800C",
+    "trip_rating_a": 50,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 15,
+    "icu_ka": 25,
+    "ics_pct": 100.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_b"
+    ],
+    "default_trip_unit": "abb_mcb_s800_b",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800c_b_63",
+    "name": "ABB S800C B63",
+    "cb_type": "mcb",
+    "mcb_curve": "B",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800C",
+    "trip_rating_a": 63,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 15,
+    "icu_ka": 25,
+    "ics_pct": 100.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_b"
+    ],
+    "default_trip_unit": "abb_mcb_s800_b",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800c_c_10",
+    "name": "ABB S800C C10",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800C",
+    "trip_rating_a": 10,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 15,
+    "icu_ka": 25,
+    "ics_pct": 100.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 7.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_c"
+    ],
+    "default_trip_unit": "abb_mcb_s800_c",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800c_c_13",
+    "name": "ABB S800C C13",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800C",
+    "trip_rating_a": 13,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 15,
+    "icu_ka": 25,
+    "ics_pct": 100.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 7.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_c"
+    ],
+    "default_trip_unit": "abb_mcb_s800_c",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800c_c_16",
+    "name": "ABB S800C C16",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800C",
+    "trip_rating_a": 16,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 15,
+    "icu_ka": 25,
+    "ics_pct": 100.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 7.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_c"
+    ],
+    "default_trip_unit": "abb_mcb_s800_c",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800c_c_20",
+    "name": "ABB S800C C20",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800C",
+    "trip_rating_a": 20,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 15,
+    "icu_ka": 25,
+    "ics_pct": 100.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 7.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_c"
+    ],
+    "default_trip_unit": "abb_mcb_s800_c",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800c_c_25",
+    "name": "ABB S800C C25",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800C",
+    "trip_rating_a": 25,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 15,
+    "icu_ka": 25,
+    "ics_pct": 100.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 7.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_c"
+    ],
+    "default_trip_unit": "abb_mcb_s800_c",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800c_c_32",
+    "name": "ABB S800C C32",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800C",
+    "trip_rating_a": 32,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 15,
+    "icu_ka": 25,
+    "ics_pct": 100.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 7.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_c"
+    ],
+    "default_trip_unit": "abb_mcb_s800_c",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800c_c_40",
+    "name": "ABB S800C C40",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800C",
+    "trip_rating_a": 40,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 15,
+    "icu_ka": 25,
+    "ics_pct": 100.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 7.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_c"
+    ],
+    "default_trip_unit": "abb_mcb_s800_c",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800c_c_50",
+    "name": "ABB S800C C50",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800C",
+    "trip_rating_a": 50,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 15,
+    "icu_ka": 25,
+    "ics_pct": 100.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 7.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_c"
+    ],
+    "default_trip_unit": "abb_mcb_s800_c",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800c_c_63",
+    "name": "ABB S800C C63",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800C",
+    "trip_rating_a": 63,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 15,
+    "icu_ka": 25,
+    "ics_pct": 100.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 7.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_c"
+    ],
+    "default_trip_unit": "abb_mcb_s800_c",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800c_d_10",
+    "name": "ABB S800C D10",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800C",
+    "trip_rating_a": 10,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 15,
+    "icu_ka": 25,
+    "ics_pct": 100.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 15.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_d"
+    ],
+    "default_trip_unit": "abb_mcb_s800_d",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800c_d_13",
+    "name": "ABB S800C D13",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800C",
+    "trip_rating_a": 13,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 15,
+    "icu_ka": 25,
+    "ics_pct": 100.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 15.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_d"
+    ],
+    "default_trip_unit": "abb_mcb_s800_d",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800c_d_16",
+    "name": "ABB S800C D16",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800C",
+    "trip_rating_a": 16,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 15,
+    "icu_ka": 25,
+    "ics_pct": 100.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 15.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_d"
+    ],
+    "default_trip_unit": "abb_mcb_s800_d",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800c_d_20",
+    "name": "ABB S800C D20",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800C",
+    "trip_rating_a": 20,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 15,
+    "icu_ka": 25,
+    "ics_pct": 100.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 15.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_d"
+    ],
+    "default_trip_unit": "abb_mcb_s800_d",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800c_d_25",
+    "name": "ABB S800C D25",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800C",
+    "trip_rating_a": 25,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 15,
+    "icu_ka": 25,
+    "ics_pct": 100.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 15.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_d"
+    ],
+    "default_trip_unit": "abb_mcb_s800_d",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800c_d_32",
+    "name": "ABB S800C D32",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800C",
+    "trip_rating_a": 32,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 15,
+    "icu_ka": 25,
+    "ics_pct": 100.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 15.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_d"
+    ],
+    "default_trip_unit": "abb_mcb_s800_d",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800c_d_40",
+    "name": "ABB S800C D40",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800C",
+    "trip_rating_a": 40,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 15,
+    "icu_ka": 25,
+    "ics_pct": 100.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 15.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_d"
+    ],
+    "default_trip_unit": "abb_mcb_s800_d",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800c_d_50",
+    "name": "ABB S800C D50",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800C",
+    "trip_rating_a": 50,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 15,
+    "icu_ka": 25,
+    "ics_pct": 100.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 15.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_d"
+    ],
+    "default_trip_unit": "abb_mcb_s800_d",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800c_d_63",
+    "name": "ABB S800C D63",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800C",
+    "trip_rating_a": 63,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 15,
+    "icu_ka": 25,
+    "ics_pct": 100.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 15.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_d"
+    ],
+    "default_trip_unit": "abb_mcb_s800_d",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800n_b_6",
+    "name": "ABB S800N B6",
+    "cb_type": "mcb",
+    "mcb_curve": "B",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800N",
+    "trip_rating_a": 6,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 36,
+    "icu_ka": 36,
+    "ics_pct": 83.3,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_b"
+    ],
+    "default_trip_unit": "abb_mcb_s800_b",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800n_b_8",
+    "name": "ABB S800N B8",
+    "cb_type": "mcb",
+    "mcb_curve": "B",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800N",
+    "trip_rating_a": 8,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 36,
+    "icu_ka": 36,
+    "ics_pct": 83.3,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_b"
+    ],
+    "default_trip_unit": "abb_mcb_s800_b",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800n_b_10",
+    "name": "ABB S800N B10",
+    "cb_type": "mcb",
+    "mcb_curve": "B",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800N",
+    "trip_rating_a": 10,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 20,
+    "icu_ka": 36,
+    "ics_pct": 83.3,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_b"
+    ],
+    "default_trip_unit": "abb_mcb_s800_b",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800n_b_13",
+    "name": "ABB S800N B13",
+    "cb_type": "mcb",
+    "mcb_curve": "B",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800N",
+    "trip_rating_a": 13,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 20,
+    "icu_ka": 36,
+    "ics_pct": 83.3,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_b"
+    ],
+    "default_trip_unit": "abb_mcb_s800_b",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800n_b_16",
+    "name": "ABB S800N B16",
+    "cb_type": "mcb",
+    "mcb_curve": "B",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800N",
+    "trip_rating_a": 16,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 20,
+    "icu_ka": 36,
+    "ics_pct": 83.3,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_b"
+    ],
+    "default_trip_unit": "abb_mcb_s800_b",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800n_b_20",
+    "name": "ABB S800N B20",
+    "cb_type": "mcb",
+    "mcb_curve": "B",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800N",
+    "trip_rating_a": 20,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 20,
+    "icu_ka": 36,
+    "ics_pct": 83.3,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_b"
+    ],
+    "default_trip_unit": "abb_mcb_s800_b",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800n_b_25",
+    "name": "ABB S800N B25",
+    "cb_type": "mcb",
+    "mcb_curve": "B",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800N",
+    "trip_rating_a": 25,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 20,
+    "icu_ka": 36,
+    "ics_pct": 83.3,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_b"
+    ],
+    "default_trip_unit": "abb_mcb_s800_b",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800n_b_32",
+    "name": "ABB S800N B32",
+    "cb_type": "mcb",
+    "mcb_curve": "B",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800N",
+    "trip_rating_a": 32,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 20,
+    "icu_ka": 36,
+    "ics_pct": 83.3,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_b"
+    ],
+    "default_trip_unit": "abb_mcb_s800_b",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800n_b_40",
+    "name": "ABB S800N B40",
+    "cb_type": "mcb",
+    "mcb_curve": "B",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800N",
+    "trip_rating_a": 40,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 20,
+    "icu_ka": 36,
+    "ics_pct": 83.3,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_b"
+    ],
+    "default_trip_unit": "abb_mcb_s800_b",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800n_b_50",
+    "name": "ABB S800N B50",
+    "cb_type": "mcb",
+    "mcb_curve": "B",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800N",
+    "trip_rating_a": 50,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 20,
+    "icu_ka": 36,
+    "ics_pct": 83.3,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_b"
+    ],
+    "default_trip_unit": "abb_mcb_s800_b",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800n_b_63",
+    "name": "ABB S800N B63",
+    "cb_type": "mcb",
+    "mcb_curve": "B",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800N",
+    "trip_rating_a": 63,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 20,
+    "icu_ka": 36,
+    "ics_pct": 83.3,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_b"
+    ],
+    "default_trip_unit": "abb_mcb_s800_b",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800n_c_6",
+    "name": "ABB S800N C6",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800N",
+    "trip_rating_a": 6,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 36,
+    "icu_ka": 36,
+    "ics_pct": 83.3,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 7.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_c"
+    ],
+    "default_trip_unit": "abb_mcb_s800_c",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800n_c_8",
+    "name": "ABB S800N C8",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800N",
+    "trip_rating_a": 8,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 36,
+    "icu_ka": 36,
+    "ics_pct": 83.3,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 7.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_c"
+    ],
+    "default_trip_unit": "abb_mcb_s800_c",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800n_c_10",
+    "name": "ABB S800N C10",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800N",
+    "trip_rating_a": 10,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 20,
+    "icu_ka": 36,
+    "ics_pct": 83.3,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 7.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_c"
+    ],
+    "default_trip_unit": "abb_mcb_s800_c",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800n_c_13",
+    "name": "ABB S800N C13",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800N",
+    "trip_rating_a": 13,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 20,
+    "icu_ka": 36,
+    "ics_pct": 83.3,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 7.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_c"
+    ],
+    "default_trip_unit": "abb_mcb_s800_c",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800n_c_16",
+    "name": "ABB S800N C16",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800N",
+    "trip_rating_a": 16,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 20,
+    "icu_ka": 36,
+    "ics_pct": 83.3,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 7.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_c"
+    ],
+    "default_trip_unit": "abb_mcb_s800_c",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800n_c_20",
+    "name": "ABB S800N C20",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800N",
+    "trip_rating_a": 20,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 20,
+    "icu_ka": 36,
+    "ics_pct": 83.3,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 7.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_c"
+    ],
+    "default_trip_unit": "abb_mcb_s800_c",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800n_c_25",
+    "name": "ABB S800N C25",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800N",
+    "trip_rating_a": 25,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 20,
+    "icu_ka": 36,
+    "ics_pct": 83.3,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 7.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_c"
+    ],
+    "default_trip_unit": "abb_mcb_s800_c",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800n_c_32",
+    "name": "ABB S800N C32",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800N",
+    "trip_rating_a": 32,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 20,
+    "icu_ka": 36,
+    "ics_pct": 83.3,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 7.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_c"
+    ],
+    "default_trip_unit": "abb_mcb_s800_c",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800n_c_40",
+    "name": "ABB S800N C40",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800N",
+    "trip_rating_a": 40,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 20,
+    "icu_ka": 36,
+    "ics_pct": 83.3,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 7.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_c"
+    ],
+    "default_trip_unit": "abb_mcb_s800_c",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800n_c_50",
+    "name": "ABB S800N C50",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800N",
+    "trip_rating_a": 50,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 20,
+    "icu_ka": 36,
+    "ics_pct": 83.3,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 7.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_c"
+    ],
+    "default_trip_unit": "abb_mcb_s800_c",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800n_c_63",
+    "name": "ABB S800N C63",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800N",
+    "trip_rating_a": 63,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 20,
+    "icu_ka": 36,
+    "ics_pct": 83.3,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 7.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_c"
+    ],
+    "default_trip_unit": "abb_mcb_s800_c",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800n_d_6",
+    "name": "ABB S800N D6",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800N",
+    "trip_rating_a": 6,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 36,
+    "icu_ka": 36,
+    "ics_pct": 83.3,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 15.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_d"
+    ],
+    "default_trip_unit": "abb_mcb_s800_d",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800n_d_8",
+    "name": "ABB S800N D8",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800N",
+    "trip_rating_a": 8,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 36,
+    "icu_ka": 36,
+    "ics_pct": 83.3,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 15.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_d"
+    ],
+    "default_trip_unit": "abb_mcb_s800_d",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800n_d_10",
+    "name": "ABB S800N D10",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800N",
+    "trip_rating_a": 10,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 20,
+    "icu_ka": 36,
+    "ics_pct": 83.3,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 15.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_d"
+    ],
+    "default_trip_unit": "abb_mcb_s800_d",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800n_d_13",
+    "name": "ABB S800N D13",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800N",
+    "trip_rating_a": 13,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 20,
+    "icu_ka": 36,
+    "ics_pct": 83.3,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 15.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_d"
+    ],
+    "default_trip_unit": "abb_mcb_s800_d",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800n_d_16",
+    "name": "ABB S800N D16",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800N",
+    "trip_rating_a": 16,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 20,
+    "icu_ka": 36,
+    "ics_pct": 83.3,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 15.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_d"
+    ],
+    "default_trip_unit": "abb_mcb_s800_d",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800n_d_20",
+    "name": "ABB S800N D20",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800N",
+    "trip_rating_a": 20,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 20,
+    "icu_ka": 36,
+    "ics_pct": 83.3,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 15.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_d"
+    ],
+    "default_trip_unit": "abb_mcb_s800_d",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800n_d_25",
+    "name": "ABB S800N D25",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800N",
+    "trip_rating_a": 25,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 20,
+    "icu_ka": 36,
+    "ics_pct": 83.3,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 15.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_d"
+    ],
+    "default_trip_unit": "abb_mcb_s800_d",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800n_d_32",
+    "name": "ABB S800N D32",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800N",
+    "trip_rating_a": 32,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 20,
+    "icu_ka": 36,
+    "ics_pct": 83.3,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 15.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_d"
+    ],
+    "default_trip_unit": "abb_mcb_s800_d",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800n_d_40",
+    "name": "ABB S800N D40",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800N",
+    "trip_rating_a": 40,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 20,
+    "icu_ka": 36,
+    "ics_pct": 83.3,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 15.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_d"
+    ],
+    "default_trip_unit": "abb_mcb_s800_d",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800n_d_50",
+    "name": "ABB S800N D50",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800N",
+    "trip_rating_a": 50,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 20,
+    "icu_ka": 36,
+    "ics_pct": 83.3,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 15.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_d"
+    ],
+    "default_trip_unit": "abb_mcb_s800_d",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800n_d_63",
+    "name": "ABB S800N D63",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800N",
+    "trip_rating_a": 63,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 20,
+    "icu_ka": 36,
+    "ics_pct": 83.3,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 15.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_d"
+    ],
+    "default_trip_unit": "abb_mcb_s800_d",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800s_b_0_5",
+    "name": "ABB S800S B0.5",
+    "cb_type": "mcb",
+    "mcb_curve": "B",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800S",
+    "trip_rating_a": 0.5,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "icu_ka": 50,
+    "ics_pct": 80.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_b"
+    ],
+    "default_trip_unit": "abb_mcb_s800_b",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800s_b_1",
+    "name": "ABB S800S B1",
+    "cb_type": "mcb",
+    "mcb_curve": "B",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800S",
+    "trip_rating_a": 1,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "icu_ka": 50,
+    "ics_pct": 80.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_b"
+    ],
+    "default_trip_unit": "abb_mcb_s800_b",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800s_b_1_6",
+    "name": "ABB S800S B1.6",
+    "cb_type": "mcb",
+    "mcb_curve": "B",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800S",
+    "trip_rating_a": 1.6,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "icu_ka": 50,
+    "ics_pct": 80.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_b"
+    ],
+    "default_trip_unit": "abb_mcb_s800_b",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800s_b_2",
+    "name": "ABB S800S B2",
+    "cb_type": "mcb",
+    "mcb_curve": "B",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800S",
+    "trip_rating_a": 2,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "icu_ka": 50,
+    "ics_pct": 80.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_b"
+    ],
+    "default_trip_unit": "abb_mcb_s800_b",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800s_b_2_5",
+    "name": "ABB S800S B2.5",
+    "cb_type": "mcb",
+    "mcb_curve": "B",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800S",
+    "trip_rating_a": 2.5,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "icu_ka": 50,
+    "ics_pct": 80.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_b"
+    ],
+    "default_trip_unit": "abb_mcb_s800_b",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800s_b_3",
+    "name": "ABB S800S B3",
+    "cb_type": "mcb",
+    "mcb_curve": "B",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800S",
+    "trip_rating_a": 3,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "icu_ka": 50,
+    "ics_pct": 80.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_b"
+    ],
+    "default_trip_unit": "abb_mcb_s800_b",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800s_b_4",
+    "name": "ABB S800S B4",
+    "cb_type": "mcb",
+    "mcb_curve": "B",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800S",
+    "trip_rating_a": 4,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "icu_ka": 50,
+    "ics_pct": 80.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_b"
+    ],
+    "default_trip_unit": "abb_mcb_s800_b",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800s_b_5",
+    "name": "ABB S800S B5",
+    "cb_type": "mcb",
+    "mcb_curve": "B",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800S",
+    "trip_rating_a": 5,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "icu_ka": 50,
+    "ics_pct": 80.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_b"
+    ],
+    "default_trip_unit": "abb_mcb_s800_b",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800s_b_6",
+    "name": "ABB S800S B6",
+    "cb_type": "mcb",
+    "mcb_curve": "B",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800S",
+    "trip_rating_a": 6,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "icu_ka": 50,
+    "ics_pct": 80.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_b"
+    ],
+    "default_trip_unit": "abb_mcb_s800_b",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800s_b_8",
+    "name": "ABB S800S B8",
+    "cb_type": "mcb",
+    "mcb_curve": "B",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800S",
+    "trip_rating_a": 8,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "icu_ka": 50,
+    "ics_pct": 80.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_b"
+    ],
+    "default_trip_unit": "abb_mcb_s800_b",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800s_b_10",
+    "name": "ABB S800S B10",
+    "cb_type": "mcb",
+    "mcb_curve": "B",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800S",
+    "trip_rating_a": 10,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "icu_ka": 50,
+    "ics_pct": 80.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_b"
+    ],
+    "default_trip_unit": "abb_mcb_s800_b",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800s_b_13",
+    "name": "ABB S800S B13",
+    "cb_type": "mcb",
+    "mcb_curve": "B",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800S",
+    "trip_rating_a": 13,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "icu_ka": 50,
+    "ics_pct": 80.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_b"
+    ],
+    "default_trip_unit": "abb_mcb_s800_b",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800s_b_16",
+    "name": "ABB S800S B16",
+    "cb_type": "mcb",
+    "mcb_curve": "B",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800S",
+    "trip_rating_a": 16,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "icu_ka": 50,
+    "ics_pct": 80.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_b"
+    ],
+    "default_trip_unit": "abb_mcb_s800_b",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800s_b_20",
+    "name": "ABB S800S B20",
+    "cb_type": "mcb",
+    "mcb_curve": "B",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800S",
+    "trip_rating_a": 20,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "icu_ka": 50,
+    "ics_pct": 80.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_b"
+    ],
+    "default_trip_unit": "abb_mcb_s800_b",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800s_b_25",
+    "name": "ABB S800S B25",
+    "cb_type": "mcb",
+    "mcb_curve": "B",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800S",
+    "trip_rating_a": 25,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "icu_ka": 50,
+    "ics_pct": 80.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_b"
+    ],
+    "default_trip_unit": "abb_mcb_s800_b",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800s_b_32",
+    "name": "ABB S800S B32",
+    "cb_type": "mcb",
+    "mcb_curve": "B",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800S",
+    "trip_rating_a": 32,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "icu_ka": 50,
+    "ics_pct": 80.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_b"
+    ],
+    "default_trip_unit": "abb_mcb_s800_b",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800s_b_40",
+    "name": "ABB S800S B40",
+    "cb_type": "mcb",
+    "mcb_curve": "B",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800S",
+    "trip_rating_a": 40,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "icu_ka": 50,
+    "ics_pct": 80.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_b"
+    ],
+    "default_trip_unit": "abb_mcb_s800_b",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800s_b_50",
+    "name": "ABB S800S B50",
+    "cb_type": "mcb",
+    "mcb_curve": "B",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800S",
+    "trip_rating_a": 50,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "icu_ka": 50,
+    "ics_pct": 80.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_b"
+    ],
+    "default_trip_unit": "abb_mcb_s800_b",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800s_b_63",
+    "name": "ABB S800S B63",
+    "cb_type": "mcb",
+    "mcb_curve": "B",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800S",
+    "trip_rating_a": 63,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "icu_ka": 50,
+    "ics_pct": 80.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_b"
+    ],
+    "default_trip_unit": "abb_mcb_s800_b",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800s_c_0_5",
+    "name": "ABB S800S C0.5",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800S",
+    "trip_rating_a": 0.5,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "icu_ka": 50,
+    "ics_pct": 80.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 7.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_c"
+    ],
+    "default_trip_unit": "abb_mcb_s800_c",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800s_c_1",
+    "name": "ABB S800S C1",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800S",
+    "trip_rating_a": 1,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "icu_ka": 50,
+    "ics_pct": 80.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 7.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_c"
+    ],
+    "default_trip_unit": "abb_mcb_s800_c",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800s_c_1_6",
+    "name": "ABB S800S C1.6",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800S",
+    "trip_rating_a": 1.6,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "icu_ka": 50,
+    "ics_pct": 80.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 7.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_c"
+    ],
+    "default_trip_unit": "abb_mcb_s800_c",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800s_c_2",
+    "name": "ABB S800S C2",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800S",
+    "trip_rating_a": 2,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "icu_ka": 50,
+    "ics_pct": 80.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 7.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_c"
+    ],
+    "default_trip_unit": "abb_mcb_s800_c",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800s_c_2_5",
+    "name": "ABB S800S C2.5",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800S",
+    "trip_rating_a": 2.5,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "icu_ka": 50,
+    "ics_pct": 80.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 7.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_c"
+    ],
+    "default_trip_unit": "abb_mcb_s800_c",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800s_c_3",
+    "name": "ABB S800S C3",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800S",
+    "trip_rating_a": 3,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "icu_ka": 50,
+    "ics_pct": 80.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 7.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_c"
+    ],
+    "default_trip_unit": "abb_mcb_s800_c",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800s_c_4",
+    "name": "ABB S800S C4",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800S",
+    "trip_rating_a": 4,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "icu_ka": 50,
+    "ics_pct": 80.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 7.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_c"
+    ],
+    "default_trip_unit": "abb_mcb_s800_c",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800s_c_5",
+    "name": "ABB S800S C5",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800S",
+    "trip_rating_a": 5,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "icu_ka": 50,
+    "ics_pct": 80.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 7.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_c"
+    ],
+    "default_trip_unit": "abb_mcb_s800_c",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800s_c_6",
+    "name": "ABB S800S C6",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800S",
+    "trip_rating_a": 6,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "icu_ka": 50,
+    "ics_pct": 80.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 7.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_c"
+    ],
+    "default_trip_unit": "abb_mcb_s800_c",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800s_c_8",
+    "name": "ABB S800S C8",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800S",
+    "trip_rating_a": 8,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "icu_ka": 50,
+    "ics_pct": 80.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 7.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_c"
+    ],
+    "default_trip_unit": "abb_mcb_s800_c",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800s_c_10",
+    "name": "ABB S800S C10",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800S",
+    "trip_rating_a": 10,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "icu_ka": 50,
+    "ics_pct": 80.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 7.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_c"
+    ],
+    "default_trip_unit": "abb_mcb_s800_c",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800s_c_13",
+    "name": "ABB S800S C13",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800S",
+    "trip_rating_a": 13,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "icu_ka": 50,
+    "ics_pct": 80.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 7.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_c"
+    ],
+    "default_trip_unit": "abb_mcb_s800_c",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800s_c_16",
+    "name": "ABB S800S C16",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800S",
+    "trip_rating_a": 16,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "icu_ka": 50,
+    "ics_pct": 80.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 7.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_c"
+    ],
+    "default_trip_unit": "abb_mcb_s800_c",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800s_c_20",
+    "name": "ABB S800S C20",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800S",
+    "trip_rating_a": 20,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "icu_ka": 50,
+    "ics_pct": 80.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 7.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_c"
+    ],
+    "default_trip_unit": "abb_mcb_s800_c",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800s_c_25",
+    "name": "ABB S800S C25",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800S",
+    "trip_rating_a": 25,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "icu_ka": 50,
+    "ics_pct": 80.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 7.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_c"
+    ],
+    "default_trip_unit": "abb_mcb_s800_c",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800s_c_32",
+    "name": "ABB S800S C32",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800S",
+    "trip_rating_a": 32,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "icu_ka": 50,
+    "ics_pct": 80.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 7.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_c"
+    ],
+    "default_trip_unit": "abb_mcb_s800_c",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800s_c_40",
+    "name": "ABB S800S C40",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800S",
+    "trip_rating_a": 40,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "icu_ka": 50,
+    "ics_pct": 80.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 7.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_c"
+    ],
+    "default_trip_unit": "abb_mcb_s800_c",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800s_c_50",
+    "name": "ABB S800S C50",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800S",
+    "trip_rating_a": 50,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "icu_ka": 50,
+    "ics_pct": 80.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 7.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_c"
+    ],
+    "default_trip_unit": "abb_mcb_s800_c",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800s_c_63",
+    "name": "ABB S800S C63",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800S",
+    "trip_rating_a": 63,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "icu_ka": 50,
+    "ics_pct": 80.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 7.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_c"
+    ],
+    "default_trip_unit": "abb_mcb_s800_c",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800s_d_0_5",
+    "name": "ABB S800S D0.5",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800S",
+    "trip_rating_a": 0.5,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "icu_ka": 50,
+    "ics_pct": 80.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 15.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_d"
+    ],
+    "default_trip_unit": "abb_mcb_s800_d",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800s_d_1",
+    "name": "ABB S800S D1",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800S",
+    "trip_rating_a": 1,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "icu_ka": 50,
+    "ics_pct": 80.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 15.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_d"
+    ],
+    "default_trip_unit": "abb_mcb_s800_d",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800s_d_1_6",
+    "name": "ABB S800S D1.6",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800S",
+    "trip_rating_a": 1.6,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "icu_ka": 50,
+    "ics_pct": 80.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 15.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_d"
+    ],
+    "default_trip_unit": "abb_mcb_s800_d",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800s_d_2",
+    "name": "ABB S800S D2",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800S",
+    "trip_rating_a": 2,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "icu_ka": 50,
+    "ics_pct": 80.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 15.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_d"
+    ],
+    "default_trip_unit": "abb_mcb_s800_d",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800s_d_2_5",
+    "name": "ABB S800S D2.5",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800S",
+    "trip_rating_a": 2.5,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "icu_ka": 50,
+    "ics_pct": 80.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 15.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_d"
+    ],
+    "default_trip_unit": "abb_mcb_s800_d",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800s_d_3",
+    "name": "ABB S800S D3",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800S",
+    "trip_rating_a": 3,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "icu_ka": 50,
+    "ics_pct": 80.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 15.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_d"
+    ],
+    "default_trip_unit": "abb_mcb_s800_d",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800s_d_4",
+    "name": "ABB S800S D4",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800S",
+    "trip_rating_a": 4,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "icu_ka": 50,
+    "ics_pct": 80.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 15.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_d"
+    ],
+    "default_trip_unit": "abb_mcb_s800_d",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800s_d_5",
+    "name": "ABB S800S D5",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800S",
+    "trip_rating_a": 5,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "icu_ka": 50,
+    "ics_pct": 80.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 15.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_d"
+    ],
+    "default_trip_unit": "abb_mcb_s800_d",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800s_d_6",
+    "name": "ABB S800S D6",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800S",
+    "trip_rating_a": 6,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "icu_ka": 50,
+    "ics_pct": 80.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 15.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_d"
+    ],
+    "default_trip_unit": "abb_mcb_s800_d",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800s_d_8",
+    "name": "ABB S800S D8",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800S",
+    "trip_rating_a": 8,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 50,
+    "icu_ka": 50,
+    "ics_pct": 80.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 15.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_d"
+    ],
+    "default_trip_unit": "abb_mcb_s800_d",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800s_d_10",
+    "name": "ABB S800S D10",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800S",
+    "trip_rating_a": 10,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "icu_ka": 50,
+    "ics_pct": 80.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 15.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_d"
+    ],
+    "default_trip_unit": "abb_mcb_s800_d",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800s_d_13",
+    "name": "ABB S800S D13",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800S",
+    "trip_rating_a": 13,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "icu_ka": 50,
+    "ics_pct": 80.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 15.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_d"
+    ],
+    "default_trip_unit": "abb_mcb_s800_d",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800s_d_16",
+    "name": "ABB S800S D16",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800S",
+    "trip_rating_a": 16,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "icu_ka": 50,
+    "ics_pct": 80.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 15.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_d"
+    ],
+    "default_trip_unit": "abb_mcb_s800_d",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800s_d_20",
+    "name": "ABB S800S D20",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800S",
+    "trip_rating_a": 20,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "icu_ka": 50,
+    "ics_pct": 80.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 15.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_d"
+    ],
+    "default_trip_unit": "abb_mcb_s800_d",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800s_d_25",
+    "name": "ABB S800S D25",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800S",
+    "trip_rating_a": 25,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "icu_ka": 50,
+    "ics_pct": 80.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 15.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_d"
+    ],
+    "default_trip_unit": "abb_mcb_s800_d",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800s_d_32",
+    "name": "ABB S800S D32",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800S",
+    "trip_rating_a": 32,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "icu_ka": 50,
+    "ics_pct": 80.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 15.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_d"
+    ],
+    "default_trip_unit": "abb_mcb_s800_d",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800s_d_40",
+    "name": "ABB S800S D40",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800S",
+    "trip_rating_a": 40,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "icu_ka": 50,
+    "ics_pct": 80.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 15.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_d"
+    ],
+    "default_trip_unit": "abb_mcb_s800_d",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800s_d_50",
+    "name": "ABB S800S D50",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800S",
+    "trip_rating_a": 50,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "icu_ka": 50,
+    "ics_pct": 80.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 15.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_d"
+    ],
+    "default_trip_unit": "abb_mcb_s800_d",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800s_d_63",
+    "name": "ABB S800S D63",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800S",
+    "trip_rating_a": 63,
+    "frame_a": 63,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "icu_ka": 50,
+    "ics_pct": 80.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 15.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_d"
+    ],
+    "default_trip_unit": "abb_mcb_s800_d",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800p_b_80",
+    "name": "ABB S800P B80",
+    "cb_type": "mcb",
+    "mcb_curve": "B",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800P",
+    "trip_rating_a": 80,
+    "frame_a": 125,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "icu_ka": 50,
+    "ics_pct": 80.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_b"
+    ],
+    "default_trip_unit": "abb_mcb_s800_b",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800p_b_100",
+    "name": "ABB S800P B100",
+    "cb_type": "mcb",
+    "mcb_curve": "B",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800P",
+    "trip_rating_a": 100,
+    "frame_a": 125,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 15,
+    "icu_ka": 50,
+    "ics_pct": 80.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_b"
+    ],
+    "default_trip_unit": "abb_mcb_s800_b",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800p_b_125",
+    "name": "ABB S800P B125",
+    "cb_type": "mcb",
+    "mcb_curve": "B",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800P",
+    "trip_rating_a": 125,
+    "frame_a": 125,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 15,
+    "icu_ka": 50,
+    "ics_pct": 80.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 4.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_b"
+    ],
+    "default_trip_unit": "abb_mcb_s800_b",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800p_c_80",
+    "name": "ABB S800P C80",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800P",
+    "trip_rating_a": 80,
+    "frame_a": 125,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "icu_ka": 50,
+    "ics_pct": 80.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 7.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_c"
+    ],
+    "default_trip_unit": "abb_mcb_s800_c",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800p_c_100",
+    "name": "ABB S800P C100",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800P",
+    "trip_rating_a": 100,
+    "frame_a": 125,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 15,
+    "icu_ka": 50,
+    "ics_pct": 80.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 7.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_c"
+    ],
+    "default_trip_unit": "abb_mcb_s800_c",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800p_c_125",
+    "name": "ABB S800P C125",
+    "cb_type": "mcb",
+    "mcb_curve": "C",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800P",
+    "trip_rating_a": 125,
+    "frame_a": 125,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 15,
+    "icu_ka": 50,
+    "ics_pct": 80.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 7.5,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_c"
+    ],
+    "default_trip_unit": "abb_mcb_s800_c",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800p_d_80",
+    "name": "ABB S800P D80",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800P",
+    "trip_rating_a": 80,
+    "frame_a": 125,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 25,
+    "icu_ka": 50,
+    "ics_pct": 80.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 15.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_d"
+    ],
+    "default_trip_unit": "abb_mcb_s800_d",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800p_d_100",
+    "name": "ABB S800P D100",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800P",
+    "trip_rating_a": 100,
+    "frame_a": 125,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 15,
+    "icu_ka": 50,
+    "ics_pct": 80.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 15.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_d"
+    ],
+    "default_trip_unit": "abb_mcb_s800_d",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  },
+  {
+   "kind": "cbs",
+   "data": {
+    "id": "abb_s800p_d_125",
+    "name": "ABB S800P D125",
+    "cb_type": "mcb",
+    "mcb_curve": "D",
+    "manufacturer": "ABB",
+    "series": "S800",
+    "model": "S800P",
+    "trip_rating_a": 125,
+    "frame_a": 125,
+    "rated_voltage_kv": 0.4,
+    "breaking_ka": 15,
+    "icu_ka": 50,
+    "ics_pct": 80.0,
+    "thermal_pickup": 1.0,
+    "magnetic_pickup": 15.0,
+    "long_time_delay": 10,
+    "trip_units": [
+     "abb_mcb_s800_d"
+    ],
+    "default_trip_unit": "abb_mcb_s800_d",
+    "source": "ABB 9AKK107991A8329 (A01 MCBs) + 9AKK108468A3912 (B01 MCBs, tripping characteristics)",
+    "check": "S800 band chart (B01 p.28) is schematic: read on a regular log scale, its 10 s grid line is 0.075 decade off"
+   }
+  }
+ ]
+}
