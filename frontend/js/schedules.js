@@ -54,28 +54,40 @@ const Schedules = {
       .map(([k, l]) => `<option value="${k}">${escHtml(l)}</option>`)
       .join('');
 
+    // One header row: back, the board rail toggle, the board + its view tabs
+    // (#sch-grid-head, rendered by render()), the status line and the check.
+    // Everything the board itself needs (bulk edit, protection, sections, EL,
+    // accessories) is DBSchedule's side panel, so the grid gets the window.
     ws.innerHTML = `
       <div class="sch-toolbar">
         <button class="btn-small" id="sch-back" style="display:none"
           title="Return to where you opened this schedule from"></button>
-        <span class="sch-title">Circuit Schedules</span>
-        <span class="sch-sep"></span>
+        <button class="btn-small sch-icon-btn" id="sch-rail-toggle" aria-expanded="true"
+          title="Show or hide the board list" aria-label="Show or hide the board list">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"></rect><path d="M9 4v16"></path></svg></button>
+        <div class="sch-grid-head" id="sch-grid-head"></div>
+        <span class="sch-status" id="sch-status"></span>
         <button class="btn-small btn-primary" id="sch-run-check"
           title="Run the per-way cable check on every board — derated ampacity, Ib ≤ In ≤ Iz, voltage drop, ECC size and earth-fault loop Zs">Check circuits</button>
-        <button class="btn-small sch-tb-toggle" id="sch-tb-toggle" aria-expanded="false"
-          title="Show the installation conditions (ambient, method, supply, grouping)">Settings ▾</button>
-        <span class="sch-status" id="sch-status"></span>
-        <div class="sch-install" id="sch-install" aria-label="Installation conditions">
-        <label title="Ambient temperature used for the IEC 60364-5-52 derating">Ambient
-          <input type="number" id="sch-ambient" value="30" min="10" max="60" step="5"> °C</label>
-        <label title="IEC 60364-5-52 reference installation method">Method
-          <select id="sch-method">${methodOpts}</select></label>
-        <label title="IEC 60364-5-52 Table G.52.1 voltage-drop limits from the origin: public LV supply 3 % lighting / 5 % other; private supply (own transformer or generator) 6 % / 8 %">Supply
-          <select id="sch-supply"><option value="public">Public LV (3/5 %)</option><option value="private">Private (6/8 %)</option></select></label>
-        <label title="Grouping arrangement and the number of circuits sharing the route">Grouping
-          <select id="sch-grouping">${groupOpts}</select>
-          <input type="number" id="sch-group-n" value="0" min="0" step="1"
-            title="Circuits per group. 0 = use the board's own way count."></label>
+        <button class="btn-small sch-icon-btn" id="sch-side-toggle" aria-expanded="true"
+          title="Show or hide the side panel (board settings and bulk edit)" aria-label="Show or hide the side panel">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"></rect><path d="M15 4v16"></path></svg></button>
+        <div class="sch-install" id="sch-install" role="dialog" aria-label="Installation conditions">
+          <div class="sch-install-title">Installation conditions
+            <span>Used for the cable derating, voltage-drop limits and grouping of every way on this board</span></div>
+          <label title="Ambient temperature used for the IEC 60364-5-52 derating">Ambient (°C)
+            <input type="number" id="sch-ambient" value="30" min="10" max="60" step="5"></label>
+          <label title="IEC 60364-5-52 reference installation method">Method
+            <select id="sch-method">${methodOpts}</select></label>
+          <label title="IEC 60364-5-52 Table G.52.1 voltage-drop limits from the origin: public LV supply 3 % lighting / 5 % other; private supply (own transformer or generator) 6 % / 8 %">Supply
+            <select id="sch-supply"><option value="public">Public LV (3/5 %)</option><option value="private">Private (6/8 %)</option></select></label>
+          <div class="sch-install-row">
+            <label title="Grouping arrangement">Grouping
+              <select id="sch-grouping">${groupOpts}</select></label>
+            <label title="Circuits per group. 0 = use the board's own way count.">Circuits
+              <input type="number" id="sch-group-n" value="0" min="0" step="1"></label>
+          </div>
+          <div class="sch-install-foot"><button class="btn-small btn-primary" id="sch-install-done">Done</button></div>
         </div>
       </div>
       <div class="sch-body">
@@ -85,23 +97,29 @@ const Schedules = {
           <div class="sch-rail-foot" id="sch-rail-foot"></div>
         </aside>
         <section class="sch-grid-pane">
-          <div class="sch-grid-head" id="sch-grid-head"></div>
           <div id="sch-grid-host"></div>
         </section>
       </div>`;
+    this._installEl = ws.querySelector('#sch-install');
 
-    // Phone only (the controls are CSS-hidden above 768 px): installation
-    // settings and the board list fold away so the schedule / drawing gets the screen.
-    const tbToggle = ws.querySelector('#sch-tb-toggle');
-    tbToggle.addEventListener('click', () => {
-      const open = ws.querySelector('.sch-toolbar').classList.toggle('sch-tb-open');
-      tbToggle.setAttribute('aria-expanded', String(open));
-      tbToggle.textContent = open ? 'Settings ▴' : 'Settings ▾';
-    });
+    // Phone: the rail head folds the board list away (CSS shows it as a
+    // drop-down); on a desktop the header button collapses the rail.
     const railHead = ws.querySelector('#sch-rail-head');
     const toggleRail = () => ws.querySelector('.sch-rail').classList.toggle('open');
     railHead.addEventListener('click', toggleRail);
     railHead.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleRail(); } });
+    ws.querySelector('#sch-rail-toggle').addEventListener('click', (e) => {
+      const hidden = ws.classList.toggle('sch-rail-hidden');
+      e.currentTarget.setAttribute('aria-expanded', String(!hidden));
+    });
+    ws.querySelector('#sch-side-toggle').addEventListener('click', () => this.setSidePanel(ws.classList.contains('sch-side-hidden')));
+    ws.querySelector('#sch-install-done').addEventListener('click', () => this._toggleInstall(false));
+    document.addEventListener('pointerdown', (e) => {
+      if (!this._installOpen || !this._installEl) return;
+      if (this._installEl.contains(e.target) || (e.target.closest && e.target.closest('#sch-install-edit'))) return;
+      this._toggleInstall(false);
+    });
+    this._installEl.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.stopPropagation(); this._toggleInstall(false); } });
 
     ws.querySelector('#sch-run-check').addEventListener('click', () => this.runCheck(true));
     ws.querySelector('#sch-back').addEventListener('click', () => this.goBack());
@@ -369,12 +387,13 @@ const Schedules = {
 
   // ── Installation conditions ───
   _installControls() {
+    const q = (id) => (this._installEl ? this._installEl.querySelector('#' + id) : null);
     return {
-      ambient: document.getElementById('sch-ambient'),
-      method: document.getElementById('sch-method'),
-      grouping: document.getElementById('sch-grouping'),
-      groupN: document.getElementById('sch-group-n'),
-      supply: document.getElementById('sch-supply'),
+      ambient: q('sch-ambient'),
+      method: q('sch-method'),
+      grouping: q('sch-grouping'),
+      groupN: q('sch-group-n'),
+      supply: q('sch-supply'),
     };
   },
 
@@ -402,11 +421,26 @@ const Schedules = {
       .map(([k, l]) => `<option value="${k}"${k === keep ? ' selected' : ''}>${escHtml(l)}</option>`).join('');
   },
 
-  _toggleInstall() {
-    this._installOpen = !this._installOpen;
-    const box = document.getElementById('sch-install');
-    if (box) box.classList.toggle('open', this._installOpen);
-    this.render();
+  // The conditions open as a small panel under the header chip.
+  _toggleInstall(open) {
+    this._installOpen = open == null ? !this._installOpen : !!open;
+    if (this._installEl) this._installEl.classList.toggle('open', this._installOpen);
+    const chip = document.getElementById('sch-install-edit');
+    if (chip) chip.setAttribute('aria-expanded', String(this._installOpen));
+    if (this._installOpen) {
+      const first = this._installControls().ambient;
+      if (first) first.focus();
+    }
+  },
+
+  // The right-hand side panel (DBSchedule's .db-side). Hidden by the header
+  // button; ticking a way brings it back, since bulk edit lives in it.
+  setSidePanel(show) {
+    const ws = document.getElementById('schedules-workspace');
+    if (!ws) return;
+    ws.classList.toggle('sch-side-hidden', !show);
+    const b = document.getElementById('sch-side-toggle');
+    if (b) b.setAttribute('aria-expanded', String(!!show));
   },
 
   // One quiet line: the conditions in force, in words.
@@ -419,9 +453,12 @@ const Schedules = {
     const m = (typeof IEC_INSTALLATION_METHODS !== 'undefined' ? IEC_INSTALLATION_METHODS : []).find(x => x.code === method);
     const gName = IecAmpacity.resolveGrouping(inst.grouping || 'bunched', method).name;
     const g = (IecAmpacity.groupingOptions(method).find(([k]) => k === gName) || [])[1] || gName;
-    el.textContent = `Ambient ${inst.ambient_c ?? 30} °C · Method ${method}${m ? ' ' + m.description : ''} · `
-      + `${inst.supply === 'private' ? 'Private supply (6/8 %)' : 'Public LV (3/5 %)'} · Grouping ${g}`
-      + (inst.circuits ? ` (${inst.circuits} circuits)` : '');
+    el.textContent = `${method} · ${inst.ambient_c ?? 30} °C · ${inst.supply === 'private' ? 'Private 6/8 %' : 'Public 3/5 %'}`
+      + (inst.circuits ? ` · ${inst.circuits} grouped` : '');
+    const chip = el.closest('button');
+    if (chip) chip.title = `Installation conditions: ambient ${inst.ambient_c ?? 30} °C · method ${method}${m ? ' ' + m.description : ''} · `
+      + `${inst.supply === 'private' ? 'private supply (6/8 %)' : 'public LV (3/5 %)'} · grouping ${g}`
+      + (inst.circuits ? ` (${inst.circuits} circuits)` : '') + '. Click to edit.';
   },
 
   // Writes only when something actually differs, so merely visiting a board
@@ -537,32 +574,24 @@ const Schedules = {
       railHead.textContent = comp
         ? `Board: ${comp.props.name || comp.id} (${boards.length})` : 'Boards';
     }
+    const tab = (id, label, title) => `<button class="sch-tab${this._tab === id ? ' active' : ''}" data-sch-tab="${id}"
+             role="tab" aria-selected="${this._tab === id}"${title ? ` title="${escHtml(title)}"` : ''}>${label}</button>`;
     head.innerHTML = comp
-      ? `<strong>${escHtml(comp.props.name || comp.id)}</strong>
-         <span style="color:var(--text-secondary);font-size:12px;">
-           ${(comp.props.circuits || []).length} ways · ${Number(comp.props.voltage_kv || 0.4) * 1000} V
-         </span>
-         <span class="sch-install-line">
-           <span class="sch-install-sum" id="sch-install-sum"></span>
-           <button class="btn-small" id="sch-install-edit" aria-expanded="${this._installOpen}"
-             title="Edit the installation conditions used for the cable derating, voltage-drop limits and grouping">${this._installOpen ? 'Done' : 'Edit'}</button>
-         </span>
+      ? `<span class="sch-board-title"><strong>${escHtml(comp.props.name || comp.id)}</strong>
+           <span class="sch-board-sub">${(comp.props.circuits || []).length} ways · ${Number(comp.props.voltage_kv || 0.4) * 1000} V</span></span>
          <span class="sch-tabs" role="tablist">
-           <button class="sch-tab${this._tab === 'grid' ? ' active' : ''}" data-sch-tab="grid"
-             role="tab" aria-selected="${this._tab === 'grid'}">Schedule</button>
-           <button class="sch-tab${this._tab === 'coord' ? ' active' : ''}" data-sch-tab="coord"
-             role="tab" aria-selected="${this._tab === 'coord'}"
-             title="Mini TCC: a way against the breakers above it — discrimination, cable protection, breaking capacity">Coordination</button>
-           <button class="sch-tab${this._tab === 'drawing' ? ' active' : ''}" data-sch-tab="drawing"
-             role="tab" aria-selected="${this._tab === 'drawing'}"
-             title="Single-line drawing generated from this schedule">Single Line</button>
-           <button class="sch-tab${this._tab === 'ga' ? ' active' : ''}" data-sch-tab="ga"
-             role="tab" aria-selected="${this._tab === 'ga'}"
-             title="General arrangement: physical front view and enclosure size">Layout (GA)</button>
-         </span>`
+           ${tab('grid', 'Schedule')}
+           ${tab('coord', 'Coordination', 'Mini TCC: a way against the breakers above it — discrimination, cable protection, breaking capacity')}
+           ${tab('drawing', 'Single Line', 'Single-line drawing generated from this schedule')}
+           ${tab('ga', 'Layout (GA)', 'General arrangement: physical front view and enclosure size')}
+         </span>
+         <button class="sch-chip" id="sch-install-edit" aria-expanded="${this._installOpen}" aria-haspopup="dialog">
+           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M12 2v3M12 19v3M2 12h3M19 12h3"></path></svg>
+           <span class="sch-install-sum" id="sch-install-sum"></span></button>`
       : '';
     const ed = head.querySelector('#sch-install-edit');
     if (ed) ed.addEventListener('click', () => this._toggleInstall());
+    if (!comp && this._installOpen) this._toggleInstall(false);
     this._renderInstallSummary();
     head.querySelectorAll('[data-sch-tab]').forEach(btn => {
       btn.addEventListener('click', () => this.selectTab(btn.dataset.schTab));

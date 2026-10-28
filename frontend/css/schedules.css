@@ -21,11 +21,12 @@
 }
 
 .sch-toolbar {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   flex-wrap: wrap;
-  padding: 6px 12px;
+  padding: 0 12px;
   background: var(--bg-primary);
   border-bottom: 1px solid var(--border-color);
   min-height: var(--toolbar-height);
@@ -39,17 +40,40 @@
   border: 1px solid var(--border-color); border-radius: 4px;
 }
 .sch-toolbar input[type="number"] { width: 62px; }
-.sch-install { display: none; flex: 1 1 100%; align-items: center; gap: 12px; flex-wrap: wrap; }
+/* Installation conditions: a small panel dropped from the header chip. */
+.sch-install {
+  display: none; position: absolute; z-index: 30; top: calc(100% + 4px); right: 12px;
+  width: 340px; max-width: calc(100vw - 24px); box-sizing: border-box;
+  flex-direction: column; gap: 10px; padding: 14px;
+  background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .16);
+}
 .sch-install.open { display: flex; }
-.sch-install-line { display: inline-flex; align-items: center; gap: 8px; flex: 1 1 320px; min-width: 0; }
-.sch-install-sum { font-size: 12px; color: var(--text-secondary); min-width: 0; }
-.sch-status { font-size: 12px; color: var(--text-secondary); margin-left: auto; }
+.sch-toolbar .sch-install label { display: flex; flex-direction: column; align-items: stretch; gap: 3px; }
+.sch-install select, .sch-install input { width: 100%; box-sizing: border-box; }
+.sch-install-title { font-size: 13px; font-weight: 600; color: var(--text-primary); }
+.sch-install-title span { display: block; font-weight: 400; font-size: 11.5px; color: var(--text-secondary); margin-top: 2px; }
+.sch-install-row { display: grid; grid-template-columns: 2fr 1fr; gap: 10px; }
+.sch-install-foot { display: flex; justify-content: flex-end; }
+.sch-install-sum { font-size: 12px; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sch-chip {
+  display: inline-flex; align-items: center; gap: 6px; max-width: 300px;
+  height: 28px; padding: 0 10px; border-radius: 14px; cursor: pointer;
+  background: var(--bg-secondary); color: var(--text-primary);
+  border: 1px solid var(--border-color); font: inherit; font-size: 12px;
+}
+.sch-chip:hover, .sch-chip[aria-expanded="true"] { border-color: var(--accent); }
+.sch-chip svg { color: var(--text-secondary); flex: 0 0 auto; }
+.sch-icon-btn { display: inline-flex; align-items: center; justify-content: center; padding: 4px 6px; }
+.sch-icon-btn[aria-expanded="false"] { color: var(--text-secondary); }
+.sch-status { font-size: 12px; color: var(--text-secondary); margin-left: auto; min-width: 0;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 320px; }
 
 .sch-body { flex: 1; display: flex; min-height: 0; }
 
 /* ── Board rail ──────────────────────────────────────────────────────── */
 .sch-rail {
-  width: 250px; flex: 0 0 250px;
+  width: 200px; flex: 0 0 200px;
   display: flex; flex-direction: column;
   border-right: 1px solid var(--border-color);
   background: var(--bg-primary);
@@ -81,14 +105,15 @@
 
 /* ── Grid pane ───────────────────────────────────────────────────────── */
 .sch-grid-pane { flex: 1; min-width: 0; display: flex; flex-direction: column; min-height: 0; }
-.sch-grid-head {
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--border-color);
-  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
-  font-size: 13px;
-}
-.sch-grid-head strong { font-size: 14px; }
+/* The board title + view tabs + conditions chip, inside the header row. */
+.sch-grid-head { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; font-size: 13px; min-width: 0; align-self: stretch; }
+.sch-grid-head:empty { display: none; }
+.sch-board-title { display: inline-flex; align-items: baseline; gap: 8px; white-space: nowrap; }
+.sch-board-title strong { font-size: 14px; }
+.sch-board-sub { color: var(--text-secondary); font-size: 12px; }
 #sch-grid-host { flex: 1; min-height: 0; overflow: auto; padding: 10px 12px; display: flex; flex-direction: column; }
+/* Board rail collapsed from the header button (desktop). */
+#schedules-workspace.sch-rail-hidden .sch-rail { display: none; }
 
 .sch-empty {
   margin: auto; text-align: center; max-width: 420px;
@@ -364,17 +389,15 @@ body.dark-mode .db-el-badge.st-pass { color: #81c784; }
 body.dark-mode .db-el-badge.st-fail { color: #ef5350; }
 
 /* ── Schedule / Single Line tabs ─────────────────────────────────────── */
-.sch-tabs { margin-left: auto; display: flex; gap: 4px; }
+/* View tabs: underlined, sitting on the header's bottom edge. */
+.sch-tabs { display: flex; gap: 2px; align-self: stretch; }
 .sch-tab {
-  padding: 4px 12px; font-size: 12px; cursor: pointer;
-  background: var(--bg-secondary); color: var(--text-secondary);
-  border: 1px solid var(--border-color); border-radius: 4px;
+  padding: 0 12px; min-height: 40px; font-size: 13px; cursor: pointer;
+  background: transparent; color: var(--text-secondary);
+  border: 0; border-bottom: 2px solid transparent; border-radius: 0;
 }
-.sch-tab:hover { background: var(--bg-tertiary); }
-.sch-tab.active {
-  background: var(--accent); border-color: var(--accent);
-  color: #fff; font-weight: 600;
-}
+.sch-tab:hover { color: var(--text-primary); background: var(--bg-tertiary); }
+.sch-tab.active { color: var(--text-primary); border-bottom-color: var(--accent); font-weight: 600; }
 
 /* ── Single-line drawing view ────────────────────────────────────────── */
 .dbd-wrap { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 8px; }
@@ -471,7 +494,9 @@ body.dark-mode .dba-note.warn { color: #ef5350; }
     border-right: none; border-bottom: 1px solid var(--border-color);
   }
   .sch-toolbar { gap: 8px; padding: 6px 8px; }
-  .sch-status { margin-left: 0; width: 100%; }
+  .sch-status { margin-left: 0; width: 100%; max-width: none; }
+  #sch-rail-toggle, #sch-side-toggle { display: none; }
+  .sch-tab { min-height: 32px; }
 }
 
 /* ── Column groups ───────────────────────────────────────────────────── */
@@ -634,15 +659,10 @@ body.dark-mode .db-con-chip-s.db-con-over { background: #4a1c1c; color: #ffa8a8;
   .dbd-side, .ga-side { width: 100%; flex: 0 0 auto; max-height: none; overflow: visible; }
 }
 
-/* ── Phone: fold the board list + installation settings away ─────────── */
-.sch-tb-toggle { display: none; }
+/* ── Phone: fold the board list away ─────────────────────────────────── */
 @media (max-width: 768px) {
-  .sch-title { display: none; }
-  .sch-tb-toggle { display: inline-block; }
   .sch-toolbar { gap: 6px; min-height: 0; }
-  .sch-toolbar:not(.sch-tb-open) .sch-install { display: none; }
-  .sch-toolbar.sch-tb-open .sch-install { display: flex; }
-  .sch-install-line { display: none; }
+  .sch-install { position: fixed; top: 96px; left: 12px; right: 12px; width: auto; max-height: calc(100dvh - 120px); overflow: auto; }
   .sch-rail { flex: 0 0 auto; max-height: none; }
   .sch-rail-head { cursor: pointer; padding: 8px 12px; }
   .sch-rail-head::after { content: ' ▾'; }
@@ -736,3 +756,105 @@ body.dark-mode .db-con-chip-s.db-con-over { background: #4a1c1c; color: #ffa8a8;
 .dbs-tab.active { border-color: var(--dbs-c, #0078d7); box-shadow: inset 0 0 0 1px var(--dbs-c, #0078d7); font-weight: 600; }
 .dbs-n { margin-left: 6px; opacity: .6; font-size: 11px; }
 body.dark-mode .dbs-panel, body.dark-mode .dbs-card, body.dark-mode .dbs-tab { background: #252536; border-color: #3a3a50; }
+
+/* Device picker: filtered by the way's Breaker (A) + Curve; the "i" marks the tooltip. */
+.db-info {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 13px; height: 13px; border-radius: 50%; border: 1px solid var(--text-muted);
+  font: 600 9px/1 sans-serif; color: var(--text-secondary); cursor: help; vertical-align: 1px;
+}
+.db-bulk-dev > em { font-size: 11px; }
+
+/* ── Schedule layout: the grid fills the window, the board's settings and the
+   bulk edit share one side panel (DBSchedule.render) ─────────────────────── */
+.db-layout { flex: 1; min-height: 0; display: flex; margin: -10px -12px; }
+.db-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; padding: 8px 12px 12px; }
+.db-strip { display: flex; align-items: center; gap: 8px 18px; flex-wrap: wrap; font-size: 12px; color: var(--text-secondary); }
+.db-strip strong { color: var(--text-primary); }
+#db-totals-strip { display: flex; gap: 14px; flex-wrap: wrap; margin-left: auto; }
+/* The phase bars shrink to one line: R / W / B side by side. */
+.db-strip .db-phase-bars { flex-direction: row; gap: 12px; margin: 0; padding: 0; border: 0; background: none; }
+.db-strip .db-phase-row { gap: 5px; }
+.db-strip .db-phase-tag { width: 16px; height: 16px; flex: 0 0 16px; font-size: 10px; }
+.db-strip .db-phase-track { flex: 0 0 56px; height: 8px; }
+.db-strip .db-phase-val { flex: none; min-width: 0; width: auto; font-size: 11.5px; white-space: nowrap; }
+.db-tools { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.db-tools .dbs-tabs { margin: 0 6px 0 0; }
+.db-tools-end { margin-left: auto; display: flex; gap: 6px; }
+#schedules-workspace .db-main .db-schedule-grid { border: 1px solid var(--border-color); border-radius: 6px; }
+
+.db-side {
+  flex: 0 0 340px; width: 340px; min-height: 0; overflow-y: auto;
+  background: var(--bg-primary); border-left: 1px solid var(--border-color);
+  font-size: 12px;
+}
+#schedules-workspace.sch-side-hidden .db-side { display: none; }
+.db-side.db-side-bulk .db-side-board { display: none; }
+.db-side-head { display: flex; align-items: baseline; gap: 8px; padding: 12px 14px 4px; }
+.db-side-head strong { font-size: 14px; }
+.db-side-head span { color: var(--text-secondary); }
+.db-side-hint { margin: 0; padding: 0 14px 10px; color: var(--text-secondary); border-bottom: 1px solid var(--border-color); }
+.db-side-sec { border-bottom: 1px solid var(--border-color); }
+.db-side-sec > summary {
+  cursor: pointer; list-style: none; display: flex; align-items: center; gap: 8px;
+  padding: 11px 14px; font-size: 13px; font-weight: 600;
+}
+.db-side-sec > summary::-webkit-details-marker { display: none; }
+.db-side-sec > summary::before { content: '▸'; color: var(--text-secondary); font-size: 11px; transition: transform .12s; }
+.db-side-sec[open] > summary::before { transform: rotate(90deg); }
+.db-side-sec > summary:hover { background: var(--bg-tertiary); }
+.db-side-sec > summary em { font-style: normal; font-weight: 400; font-size: 12px; color: var(--text-secondary);
+  margin-left: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 180px; }
+.db-side-sec-b { padding: 2px 14px 14px; }
+.db-side .db-prot-strip { flex-direction: column; align-items: stretch; gap: 10px; margin: 0; }
+.db-side .db-prot-strip select { min-width: 0; width: 100%; }
+.db-side .db-prot-strip input { width: 100%; box-sizing: border-box; }
+.db-presets { display: flex; flex-direction: column; gap: 8px; }
+.db-presets label { display: flex; flex-direction: column; gap: 3px; color: var(--text-secondary); }
+.db-presets select { width: 100%; }
+.db-presets-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+/* The sections, earth-leakage and accessories panels keep their own markup;
+   in the side panel they read as flat sections like the ones above. */
+.db-side .dbs-panel, .db-side .db-el-details, .db-side .dba-panel {
+  margin: 0; border: 0; border-bottom: 1px solid var(--border-color); border-radius: 0; background: none;
+}
+.db-side .dbs-panel > summary, .db-side .db-el-details > summary { padding: 11px 14px; font-size: 13px; }
+.db-side .dbs-body, .db-side .db-el-body, .db-side .dba-body { padding: 2px 14px 14px; }
+.db-side .dba-head { padding: 11px 14px; background: none; border-bottom: 0; }
+.db-side .db-el-ref { margin-left: 0; width: 100%; }
+
+/* Bulk edit, as the side panel. */
+.db-side .db-bulk { margin: 0; padding: 0; border: 0; border-radius: 0; background: none; font-size: 12px; }
+body.dark-mode .db-side .db-bulk { background: none; }
+.db-side .db-bulk-head { flex-wrap: wrap; gap: 4px 8px; padding: 12px 14px 10px; margin: 0; border-bottom: 1px solid var(--border-color); }
+.db-side .db-bulk-head strong { font-size: 14px; }
+.db-bulk-n { padding: 1px 8px; border-radius: 10px; font-weight: 600;
+  background: color-mix(in srgb, var(--accent) 14%, var(--bg-primary)); color: var(--accent); }
+.db-side .db-bulk-hint { flex: 1 1 100%; }
+.db-side .db-bulk-fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; padding: 4px 14px 14px; align-items: start; }
+.db-bulk-grp { grid-column: 1 / -1; margin: 10px 0 -2px; font-size: 11px; font-weight: 600; letter-spacing: .05em;
+  text-transform: uppercase; color: var(--text-secondary); }
+.db-side .db-bulk-f { display: flex; flex-direction: column; align-items: stretch; gap: 3px; white-space: normal; min-width: 0; }
+.db-side .db-bulk-f-full { grid-column: 1 / -1; }
+.db-side .db-bulk-f input, .db-side .db-bulk-f select { width: 100% !important; min-width: 0 !important; box-sizing: border-box; }
+.db-side .db-bulk-f > em { font-size: 11px; margin-top: -2px; }
+.db-side .db-bulk-actions { position: sticky; bottom: 0; flex-wrap: wrap; gap: 6px; margin: 0; padding: 12px 14px;
+  background: var(--bg-primary); border-top: 1px solid var(--border-color); }
+.db-side #db-bulk-apply { flex: 1 1 100%; padding: 7px; font-size: 13px; }
+.db-side .db-bulk-sep { display: none; }
+.db-side .db-xfer { flex: 1 1 100%; flex-wrap: wrap; }
+.db-devfilter { display: flex; flex-direction: column; gap: 8px; padding: 8px; border-radius: 6px;
+  background: var(--bg-secondary); border: 1px solid var(--border-color); }
+.db-devfilter label { display: flex; flex-direction: column; gap: 3px; color: var(--text-secondary); }
+.db-devtype { display: flex; gap: 2px; padding: 2px; border-radius: 6px; background: var(--bg-tertiary); }
+.db-devtype-b { flex: 1; padding: 4px 0; border: 0; border-radius: 4px; background: none; cursor: pointer;
+  font: inherit; font-size: 12px; color: var(--text-secondary); }
+.db-devtype-b[aria-pressed="true"] { background: var(--bg-primary); color: var(--text-primary); font-weight: 600;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .15); }
+.db-bulk-dev > em { color: var(--accent); }
+.db-bulk-dev select[data-bk="device"] { max-width: none; }
+
+@media (max-width: 1100px) {
+  .db-side { flex-basis: 300px; width: 300px; }
+  .db-side .db-bulk-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
