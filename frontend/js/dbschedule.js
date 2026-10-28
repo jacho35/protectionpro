@@ -5,12 +5,12 @@
  *     breaker_a, curve ('B'|'C'|'D'), el_group, load_va, demand_factor,
  *     power_factor, cable_mm2, ecc_mm2, cable_m, leakage_ma }
  *
- * TWO HOSTS, ONE RENDERER. render() writes into whatever `this.body` points
- * at, so the same grid serves both the #db-modal (quick look at one board)
- * and the full-screen Schedules workspace (every board, board rail on the
- * left). _setHost() switches between them; open()/close() drive the modal,
- * openInline()/commit() drive the workspace. Only one host may hold a
- * populated grid at a time — render() emits fixed element ids.
+ * ONE SURFACE. The grid renders into the Schedules workspace only (every
+ * board, board rail on the left); open(id) is the one door every entry point
+ * uses and hands over to Schedules.openBoard(). render() writes into whatever
+ * `this.body` points at (_setHost) and emits fixed element ids, so only one
+ * host holds a populated grid at a time. openInline()/commit() drive the
+ * workspace.
  *
  * The Iz / %VD / ECC result columns are filled from the backend
  * db-circuit-check engine (AppState.dbCheckResults), indexed by stable way id
@@ -41,8 +41,6 @@ const NUMERIC_KEYS = new Set(['breaker_a', 'leakage_ma', 'cable_mm2', 'ecc_mm2',
 const DBSchedule = {
   modal: null,
   body: null,             // the ACTIVE host container (modal body or workspace grid)
-  _modalBody: null,       // #db-modal-body, cached at init
-  mode: 'modal',          // 'modal' | 'workspace'
   currentId: null,
   _openCommitted: null,   // JSON of the committed fields at open time
   _openDerived: null,     // derived lumped-load props at open time (pre-render)
@@ -266,27 +264,6 @@ const DBSchedule = {
     }
   },
 
-  init() {
-    this.modal = document.getElementById('db-modal');
-    this._modalBody = document.getElementById('db-modal-body');
-    this.body = this._modalBody;
-    document.getElementById('db-modal-close').addEventListener('click', () => this.close());
-    this.modal.addEventListener('click', (e) => {
-      if (e.target === this.modal) this.close();
-    });
-    // Escape must work while focus is in a schedule cell: the global app.js
-    // handler returns early for INPUT/SELECT targets, so the editor needs its
-    // own scoped listener. Same close (diff-aware commit) as every other
-    // close path; stopPropagation keeps the global handler from double-acting.
-    this.modal.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        e.stopPropagation();
-        this.close();
-      }
-    });
-  },
-
   // What commit() diffs against the open-time copy so a read-only look at the
   // schedule doesn't clear results or push an undo snapshot. `circuits` covers
   // every per-way field (including ecc_mm2); the board-level install
@@ -312,10 +289,9 @@ const DBSchedule = {
   // Point the renderer at a container. Exactly one host may hold a populated
   // grid — render() emits fixed ids (#db-rows, #db-select-all, …), so the
   // outgoing host is cleared first.
-  _setHost(el, mode) {
+  _setHost(el) {
     if (this.body && this.body !== el) this.body.innerHTML = '';
     this.body = el;
-    this.mode = mode || 'modal';
   },
 
   // Announce a model change the workspace can't see. Schedules listens for
@@ -324,7 +300,7 @@ const DBSchedule = {
   // preset) fires no such event, so without this the verdict columns keep
   // showing a stale number and the idle commit is never scheduled.
   _notifyEdited() {
-    if (this.mode === 'workspace' && typeof Schedules !== 'undefined' && Schedules._onGridEdit) {
+    if (typeof Schedules !== 'undefined' && Schedules._onGridEdit) {
       Schedules._onGridEdit();
     }
   },
@@ -333,7 +309,7 @@ const DBSchedule = {
   // switchWorkspace() hides — so in a workspace the message must go to that
   // workspace's own chip or it is written to an invisible element.
   _status(msg) {
-    if (this.mode === 'workspace' && typeof Schedules !== 'undefined' && Schedules._status) {
+    if (typeof Schedules !== 'undefined' && Schedules._status) {
       Schedules._status(msg);
       return;
     }
@@ -342,7 +318,6 @@ const DBSchedule = {
   },
 
   // Begin an edit session on a board: lazy migrations + the diff baseline.
-  // Shared by the modal (open) and the workspace (openInline).
   _beginEdit(compId) {
     const comp = AppState.components.get(compId);
     if (!comp || comp.type !== 'distribution_board') return null;
@@ -370,23 +345,18 @@ const DBSchedule = {
     }
   },
 
+  // The one door to a board's circuit schedule: every entry point (properties
+  // button, context menu, double-click, plan editor, phone) calls this.
   open(compId) {
-    const comp = this._beginEdit(compId);
-    if (!comp) return;
-    this._setHost(this._modalBody, 'modal');
-    document.getElementById('db-modal-title').textContent =
-      `Circuit Schedule — ${comp.props.name || compId}`;
-    this.render();
-    this.modal.style.display = '';
+    if (typeof Schedules !== 'undefined') Schedules.openBoard(compId);
   },
 
-  // Render the same grid into an arbitrary container (the Schedules
-  // workspace). No modal chrome, no title write — the host owns those.
+  // Render the grid into the Schedules workspace's grid host.
   openInline(compId, hostEl) {
     if (!hostEl) return;
     const comp = this._beginEdit(compId);
     if (!comp) { hostEl.innerHTML = ''; return; }
-    this._setHost(hostEl, 'workspace');
+    this._setHost(hostEl);
     this.render();
   },
 
@@ -425,22 +395,6 @@ const DBSchedule = {
     }
     this._rebaseline(comp);
     return true;
-  },
-
-  close(commit = true) {
-    if (this.modal) this.modal.style.display = 'none';
-    if (commit) this.commit();
-    this.currentId = null;
-    this._openCommitted = null;
-    this._openDerived = null;
-    this._selected = new Set();
-    this._selAnchor = null;
-    this._bulkDraft = {};
-    // When the editor was opened from the Plan workspace, refresh its board
-    // panel so the way count reflects any edits. Deliberately in close() and
-    // not commit() — the workspace commits often and must not poke the plan
-    // panel on every idle tick.
-    if (typeof PlanMarkup !== 'undefined' && PlanMarkup._active && PlanMarkup.refreshProps) PlanMarkup.refreshProps();
   },
 
   // ── Derived lumped-load equivalents ────────────────────────────────
@@ -972,7 +926,7 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
       + step('ecc', 'Protective conductor (ECC)', row.ecc_status, ecc, row.ecc_message);
 
     const modal = document.getElementById('calc-modal');
-    // #db-modal comes later in the page; keep this one on top of it.
+    // Keep this dialog last in the page so it sits on top.
     document.body.appendChild(modal);
     modal.querySelector('#calc-modal-title').textContent = `Circuit check — way ${row.way}`;
     modal.querySelector('#calc-modal-body').innerHTML = html;
@@ -1314,7 +1268,7 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
     };
 
     // data-label on each cell drives the stacked-card layout on phones (see
-    // the #db-modal card rules in mobile.css) — on desktop the labels are
+    // the card rules in mobile.css) — on desktop the labels are
     // unused and the table renders normally.
     const hasSec = DBSections.has(comp);
     const actSec = hasSec ? (DBSections._active[comp.id] || '') : '';
@@ -1484,7 +1438,6 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
           &nbsp; Demand (× diversity ${comp.props.board_diversity || 1}): <strong>${demand.toFixed(2)} kVA</strong> (${ampsLabel})
           &nbsp; Board PF: <strong>${totals.pf.toFixed(3)}</strong>
           &nbsp; Phase R/W/B: <strong>${comp.props.phase_a_pct.toFixed(0)}/${comp.props.phase_b_pct.toFixed(0)}/${comp.props.phase_c_pct.toFixed(0)} %</strong></span>
-        ${this.mode === 'modal' ? '<button class="btn-primary" id="db-done" style="margin-left:auto;">Done</button>' : ''}
       </div>
       <div id="db-el-panel"></div>
       <div id="db-accessories-panel"></div>`;
@@ -1608,8 +1561,6 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
       this.render();
       this._notifyEdited();
     });
-    const doneBtn = this.body.querySelector('#db-done');
-    if (doneBtn) doneBtn.addEventListener('click', () => this.close());
     this.body.querySelectorAll('.db-del-row').forEach(btn => {
       btn.addEventListener('click', () => {
         circuits.splice(parseInt(btn.dataset.idx), 1);
@@ -2092,7 +2043,7 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
     this._selected.clear();
     this._selAnchor = null;
     this.render();
-    if (this.mode === 'workspace' && typeof Schedules !== 'undefined') {
+    if (typeof Schedules !== 'undefined') {
       Schedules.render();
       if (Schedules._checkRan && Schedules._scheduleCheck) Schedules._scheduleCheck();
     }

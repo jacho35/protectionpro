@@ -91,8 +91,7 @@
   color: var(--text-secondary); font-size: 13px; line-height: 1.6;
 }
 
-/* The grid wrapper is capped inside the modal, but fills the workspace pane. */
-#db-modal .db-schedule-grid { max-height: 62vh; overflow: auto; }
+/* The grid wrapper fills the workspace pane. */
 #schedules-workspace .db-schedule-grid { max-height: none; flex: 1; min-height: 0; overflow: auto; }
 
 /* ── Circuit-check result cells (both hosts) ─────────────────────────── */
@@ -198,13 +197,10 @@ body.dark-mode .sch-dot.st-fail { background: #ef5350; }
 /* The grid is entered like a spreadsheet — the up/down steppers eat width in
    already-narrow cells and invite a mis-click that silently changes a rating.
    Arrow keys still navigate rows (see the #db-rows keydown handler). */
-#db-modal input[type="number"],
 #schedules-workspace input[type="number"] {
   -moz-appearance: textfield;
   appearance: textfield;
 }
-#db-modal input[type="number"]::-webkit-outer-spin-button,
-#db-modal input[type="number"]::-webkit-inner-spin-button,
 #schedules-workspace input[type="number"]::-webkit-outer-spin-button,
 #schedules-workspace input[type="number"]::-webkit-inner-spin-button {
   -webkit-appearance: none;
@@ -213,7 +209,6 @@ body.dark-mode .sch-dot.st-fail { background: #ef5350; }
 
 /* The datalist drop-down marker on the cable/ECC cells is drawn by the UA in a
    near-black; invert it in dark mode so the field still reads as a list. */
-body.dark-mode #db-modal input[list]::-webkit-calendar-picker-indicator,
 body.dark-mode #schedules-workspace input[list]::-webkit-calendar-picker-indicator {
   filter: invert(1);
 }

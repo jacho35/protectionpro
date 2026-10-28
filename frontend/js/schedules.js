@@ -2,11 +2,13 @@
  *
  * A full-screen view of every distribution board in the project: a board rail
  * on the left, the selected board's circuit schedule filling the pane on the
- * right. The #db-modal remains for a quick look at one board from the SLD;
- * this is the surface for actually working through a set of schedules.
+ * right. This is the ONE circuit-schedule surface: every entry point (the
+ * board's properties button, right-click, double-click, the plan editor, the
+ * phone) goes through openBoard(), and a "back" button returns to wherever
+ * the user came from.
  *
  * It owns NO grid rendering. DBSchedule.openInline() points the same renderer
- * the modal uses at #sch-grid-host, so every grid feature (keyboard nav, TSV
+ * at #sch-grid-host, so every grid feature (keyboard nav, TSV
  * paste, bulk edit, presets, XLSX, EL panel, phase bars, result columns) is
  * shared rather than reimplemented.
  *
@@ -21,6 +23,7 @@ const Schedules = {
   _built: false,
   _boardId: null,
   _tab: 'grid',         // 'grid' | 'drawing' | 'ga'
+  _returnTo: null,      // workspace key to go back to after openBoard() from elsewhere
   _commitTimer: null,
   _checkTimer: null,
   _checkRan: false,     // has the user asked for a check at least once?
@@ -51,12 +54,12 @@ const Schedules = {
 
     ws.innerHTML = `
       <div class="sch-toolbar">
+        <button class="btn-small" id="sch-back" style="display:none"
+          title="Return to where you opened this schedule from"></button>
         <span class="sch-title">Circuit Schedules</span>
         <span class="sch-sep"></span>
         <button class="btn-small btn-primary" id="sch-run-check"
           title="Run the per-way cable check on every board — derated ampacity, Ib ≤ In ≤ Iz, voltage drop, ECC size and earth-fault loop Zs">Check circuits</button>
-        <button class="btn-small" id="sch-generate-sld"
-          title="Build a bus + one breaker + one feeder per way for the selected board on the main SLD canvas — safe to re-run after schedule edits">Generate SLD</button>
         <button class="btn-small sch-tb-toggle" id="sch-tb-toggle" aria-expanded="false"
           title="Show the installation conditions (ambient, method, supply, grouping)">Settings ▾</button>
         <span class="sch-sep"></span>
@@ -98,11 +101,7 @@ const Schedules = {
     railHead.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleRail(); } });
 
     ws.querySelector('#sch-run-check').addEventListener('click', () => this.runCheck(true));
-    ws.querySelector('#sch-generate-sld').addEventListener('click', () => {
-      if (!this._boardId) { if (typeof UI !== 'undefined') UI.alert('Select a board first.'); return; }
-      this._commitCurrent();
-      if (typeof SLDGen !== 'undefined') SLDGen.generateForBoard(this._boardId);
-    });
+    ws.querySelector('#sch-back').addEventListener('click', () => this.goBack());
     for (const id of ['sch-ambient', 'sch-method', 'sch-grouping', 'sch-group-n', 'sch-supply']) {
       ws.querySelector('#' + id).addEventListener('change', () => {
         if (id === 'sch-method') {
@@ -147,6 +146,7 @@ const Schedules = {
     }
     this.render();
     this._openCurrent();
+    this._syncBack();
   },
 
   deactivate() {
@@ -157,6 +157,45 @@ const Schedules = {
     SchMobile.unmount();
     clearTimeout(this._commitTimer);
     clearTimeout(this._checkTimer);
+    this._returnTo = null;
+    // Opened from the Plan workspace: its board panel shows the way count.
+    if (typeof PlanMarkup !== 'undefined' && PlanMarkup._active && PlanMarkup.refreshProps) PlanMarkup.refreshProps();
+  },
+
+  // The one door to a board's schedule. From another workspace it remembers
+  // where it came from so goBack() can return there with the board selected.
+  openBoard(id) {
+    const comp = AppState.components.get(id);
+    if (!comp || comp.type !== 'distribution_board') return;
+    const from = window.activeWorkspace || 'sld';
+    if (from && from !== 'schedules') this._returnTo = from;
+    this._boardId = id;
+    this._tab = 'grid';
+    if (typeof switchWorkspace === 'function') switchWorkspace('schedules');
+    this._syncBack();
+  },
+
+  _BACK_LABELS: { sld: 'Single line', plan: 'Plan', retic: 'Demand', streetlight: 'Street lighting',
+    interlock: 'Interlocking', quantities: 'Quantities', lighting: 'Lighting', sports: 'Sports fields', lightov: 'Overview' },
+
+  _syncBack() {
+    const b = document.getElementById('sch-back');
+    if (!b) return;
+    b.style.display = this._returnTo ? '' : 'none';
+    if (this._returnTo) b.textContent = '← ' + (this._BACK_LABELS[this._returnTo] || 'Back');
+  },
+
+  goBack() {
+    const to = this._returnTo;
+    if (!to) return;
+    const id = this._boardId;
+    this._commitCurrent();
+    switchWorkspace(to);
+    if (to === 'sld' && id && AppState.components.has(id)) {
+      AppState.select(id);
+      if (typeof Canvas !== 'undefined') Canvas.render();
+      if (typeof Properties !== 'undefined') Properties.show(id);
+    }
   },
 
   // New / loaded / undone project: the board set may have changed entirely.
@@ -225,7 +264,7 @@ const Schedules = {
       DBDrawing.unmount();
       GA.unmount();
       DBSchedule._beginEdit(this._boardId);
-      DBSchedule._setHost(document.createElement('div'), 'workspace');
+      DBSchedule._setHost(document.createElement('div'));
       SchMobile.mount(this._boardId, host);
       this._readInstallFromBoard();
       return;
@@ -236,7 +275,7 @@ const Schedules = {
       // session stays open so a schedule edit made elsewhere still commits.
       DBDrawing.unmount();
       DBSchedule._beginEdit(this._boardId);
-      DBSchedule._setHost(document.createElement('div'), 'workspace');
+      DBSchedule._setHost(document.createElement('div'));
       GA.mount(this._boardId, host);
       this._readInstallFromBoard();
       return;
@@ -249,7 +288,7 @@ const Schedules = {
       // pointed at a detached node so its in-place painters (result columns,
       // totals strip) find nothing to paint instead of touching the drawing.
       DBSchedule._beginEdit(this._boardId);
-      DBSchedule._setHost(document.createElement('div'), 'workspace');
+      DBSchedule._setHost(document.createElement('div'));
       DBDrawing.mount(this._boardId, host);
       this._readInstallFromBoard();
       return;
@@ -410,6 +449,23 @@ const Schedules = {
         const rail = document.querySelector('#schedules-workspace .sch-rail');
         if (rail) rail.classList.remove('open');
         this.selectBoard(li.dataset.id);
+      });
+    });
+
+    list.querySelectorAll('.sch-board[data-id]').forEach(li => {
+      li.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        const id = li.dataset.id;
+        if (typeof ContextMenu === 'undefined') return;
+        ContextMenu.open([
+          { label: 'Open schedule', action: () => this.selectBoard(id) },
+          { label: 'Properties…', action: () => {
+            if (typeof PropWindow !== 'undefined') PropWindow.open(id);
+            else Properties.show(id);
+          } },
+          '---',
+          { label: 'Check circuits', action: () => { this.selectBoard(id); this.runCheck(true); } },
+        ], e.clientX, e.clientY);
       });
     });
 

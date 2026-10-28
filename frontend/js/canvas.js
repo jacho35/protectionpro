@@ -499,7 +499,7 @@ const Canvas = {
       Properties.show(id);
 
       // Second mouse press on the same component in quick succession: open
-      // its properties window. Detected here, not with 'dblclick' — render()
+      // its properties window (a distribution board: its circuit schedule). Detected here, not with 'dblclick' — render()
       // above rebuilds the component's DOM, so the browser never pairs the
       // two clicks into a dblclick.
       const last = this._lastCompPress;
@@ -508,7 +508,11 @@ const Canvas = {
           && Math.hypot(e.clientX - last.x, e.clientY - last.y) < 6 && typeof PropWindow !== 'undefined') {
         this._lastCompPress = null;
         AppState.dragState = null;
-        PropWindow.open(id);
+        // A distribution board opens its circuit schedule; its properties are
+        // on the right-click menu.
+        const pressed = AppState.components.get(id);
+        if (pressed && pressed.type === 'distribution_board' && typeof Schedules !== 'undefined') Schedules.openBoard(id);
+        else PropWindow.open(id);
         return;
       }
       this._lastCompPress = { id, t: now, x: e.clientX, y: e.clientY };

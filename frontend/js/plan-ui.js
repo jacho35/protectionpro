@@ -1043,7 +1043,7 @@ const PlanUI = {
     return `<div class="plan-circuit-box">
       <div class="plan-circuit-h">Circuits</div>
       <div class="plan-circuit-note">${ways} way(s) on this board${linked}</div>
-      <button class="plan-circuit-btn" data-role="edit-schedule">📋 Edit Circuit Schedule</button>
+      <button class="plan-circuit-btn" data-role="edit-schedule">📋 Open Circuit Schedule</button>
       <button class="plan-circuit-btn" data-role="bulk-assign">⚡ Auto-assign connected devices</button>
       <button class="plan-circuit-btn" data-role="sync-circuits">🔄 Sync loads from plan</button>
       ${phase}

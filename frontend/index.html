@@ -581,8 +581,7 @@
        SCHEDULES WORKSPACE
        Hidden until the "Schedules" workspace tab is selected. Interior
        (toolbar, board rail, grid pane) is built by js/schedules.js; the ways
-       grid itself is rendered into it by DBSchedule, the same renderer the
-       #db-modal uses.
+       grid itself is rendered into it by DBSchedule.
        ═══════════════════════════════════════════════════════════════════ -->
   <div id="schedules-workspace" style="display:none">
     <!-- Populated by Schedules.buildDOM() -->
@@ -1129,17 +1128,6 @@
         <button class="btn" id="btn-ampacity-cancel">Cancel</button>
         <button class="btn btn-primary" id="btn-ampacity-apply">Apply to cable</button>
       </div>
-    </div>
-  </div>
-
-  <!-- Distribution Board Circuit Schedule Modal -->
-  <div id="db-modal" class="modal" role="dialog" aria-modal="true" aria-label="Circuit Schedule" style="display:none">
-    <div class="modal-content db-modal-content">
-      <div class="modal-header">
-        <h3 id="db-modal-title">Circuit Schedule</h3>
-        <button class="modal-close" id="db-modal-close">&times;</button>
-      </div>
-      <div id="db-modal-body" class="modal-body"></div>
     </div>
   </div>
 
@@ -3530,7 +3518,6 @@
   <script src="js/plan-images.js?v=3.5.324"></script>
   <script src="js/plan-tools.js?v=3.5.529"></script>
   <script src="js/plan-sync.js?v=3.5.313"></script>
-  <script src="js/sldgen.js?v=3.5.274"></script>
   <script src="js/plan-csv.js?v=3.5.274"></script>
   <script src="js/plan-dxf.js?v=3.5.274"></script>
   <script src="js/plan-export.js?v=3.5.274"></script>
