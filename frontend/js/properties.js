@@ -289,6 +289,7 @@ const Properties = {
     if (comp.type === 'distribution_board') {
       html += `
         <div class="prop-section prop-tcc-section">
+          ${this._boardSummaryHtml(comp)}
           <button class="prop-action-btn" id="btn-edit-db" title="Open the board's circuit schedule (ways, breakers, phases, loads) — or double-click the board">
             <svg width="14" height="14" viewBox="0 0 14 14" style="vertical-align:-2px;margin-right:4px"><rect x="1.5" y="1.5" width="11" height="11" rx="1" fill="none" stroke="currentColor" stroke-width="1.3"/><line x1="1.5" y1="5" x2="12.5" y2="5" stroke="currentColor" stroke-width="1.3"/><line x1="1.5" y1="8" x2="12.5" y2="8" stroke="currentColor" stroke-width="1.3"/><line x1="1.5" y1="11" x2="12.5" y2="11" stroke="currentColor" stroke-width="1.3"/></svg>
             Open Circuit Schedule
@@ -340,6 +341,28 @@ const Properties = {
       }
     }
     return html;
+  },
+
+  // Read-only look at a distribution board's schedule: ways, load, phase
+  // balance and the last circuit check. Editing happens on the Schedules page.
+  _boardSummaryHtml(comp) {
+    const ways = Array.isArray(comp.props.circuits) ? comp.props.circuits : [];
+    const kva = ways.reduce((n, c) => n + (Number(c.load_va) || 0), 0) / 1000;
+    const pct = (k) => Number(comp.props[k]);
+    const phases = [pct('phase_a_pct'), pct('phase_b_pct'), pct('phase_c_pct')];
+    const phaseTxt = phases.every(Number.isFinite) && kva > 0
+      ? `R ${phases[0].toFixed(0)} / W ${phases[1].toFixed(0)} / B ${phases[2].toFixed(0)} %` : '—';
+    const res = AppState.dbCheckResults;
+    const r = res && Array.isArray(res.boards) ? res.boards.find(b => b.id === comp.id) : null;
+    let check = 'Not run';
+    if (r && r.counts) {
+      check = r.counts.fail ? `${r.counts.fail} failing` + (r.counts.warn ? `, ${r.counts.warn} warning` : '')
+        : r.counts.warn ? `${r.counts.warn} warning${r.counts.warn === 1 ? '' : 's'}` : 'All ways pass';
+    }
+    const row = (k, v) => `<div style="display:flex;justify-content:space-between;gap:8px;font-size:12px;padding:2px 0"><span style="color:var(--text-secondary)">${k}</span><span>${escHtml(String(v))}</span></div>`;
+    return `<div class="prop-board-summary" style="margin-bottom:8px">`
+      + row('Ways', ways.length) + row('Connected load', kva.toFixed(1) + ' kVA')
+      + row('Phase balance', phaseTxt) + row('Circuit check', check) + `</div>`;
   },
 
   // Bind every control inside a rendered properties container (the sidebar,

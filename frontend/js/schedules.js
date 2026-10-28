@@ -23,6 +23,8 @@ const Schedules = {
   _built: false,
   _boardId: null,
   _tab: 'grid',         // 'grid' | 'drawing' | 'ga'
+  _installOpen: false,  // installation-conditions editor expanded under the board title
+  _coordWay: null,      // way id shown on the Coordination tab
   _returnTo: null,      // workspace key to go back to after openBoard() from elsewhere
   _commitTimer: null,
   _checkTimer: null,
@@ -62,7 +64,8 @@ const Schedules = {
           title="Run the per-way cable check on every board — derated ampacity, Ib ≤ In ≤ Iz, voltage drop, ECC size and earth-fault loop Zs">Check circuits</button>
         <button class="btn-small sch-tb-toggle" id="sch-tb-toggle" aria-expanded="false"
           title="Show the installation conditions (ambient, method, supply, grouping)">Settings ▾</button>
-        <span class="sch-sep"></span>
+        <span class="sch-status" id="sch-status"></span>
+        <div class="sch-install" id="sch-install" aria-label="Installation conditions">
         <label title="Ambient temperature used for the IEC 60364-5-52 derating">Ambient
           <input type="number" id="sch-ambient" value="30" min="10" max="60" step="5"> °C</label>
         <label title="IEC 60364-5-52 reference installation method">Method
@@ -73,7 +76,7 @@ const Schedules = {
           <select id="sch-grouping">${groupOpts}</select>
           <input type="number" id="sch-group-n" value="0" min="0" step="1"
             title="Circuits per group. 0 = use the board's own way count."></label>
-        <span class="sch-status" id="sch-status"></span>
+        </div>
       </div>
       <div class="sch-body">
         <aside class="sch-rail">
@@ -144,6 +147,8 @@ const Schedules = {
     if (!boards.some(b => b.id === this._boardId)) {
       this._boardId = boards.length ? boards[0].id : null;
     }
+    const box = document.getElementById('sch-install');
+    if (box) box.classList.toggle('open', this._installOpen);
     this.render();
     this._openCurrent();
     this._syncBack();
@@ -160,6 +165,19 @@ const Schedules = {
     this._returnTo = null;
     // Opened from the Plan workspace: its board panel shows the way count.
     if (typeof PlanMarkup !== 'undefined' && PlanMarkup._active && PlanMarkup.refreshProps) PlanMarkup.refreshProps();
+  },
+
+  // The Coordination tab for one way (the grid's Coord chip is the door).
+  openCoord(boardId, wayId) {
+    const from = window.activeWorkspace || 'sld';
+    if (from !== 'schedules') this._returnTo = from;
+    this._coordWay = wayId;
+    this._boardId = boardId;
+    this._tab = 'coord';
+    if (window.activeWorkspace === 'schedules') {
+      this._commitCurrent(); this.render(); this._openCurrent();
+    } else if (typeof switchWorkspace === 'function') switchWorkspace('schedules');
+    this._syncBack();
   },
 
   // The one door to a board's schedule. From another workspace it remembers
@@ -270,6 +288,19 @@ const Schedules = {
       return;
     }
     SchMobile.unmount();
+    if (this._tab === 'coord') {
+      // Same detached-grid arrangement as the other tabs: the edit session
+      // stays open so a schedule edit made elsewhere still commits.
+      DBDrawing.unmount();
+      GA.unmount();
+      DBSchedule._beginEdit(this._boardId);
+      DBSchedule._setHost(document.createElement('div'));
+      DbCoord.mount(this._boardId, host, this._coordWay);
+      this._coordWay = DbCoord._wayId;
+      this._readInstallFromBoard();
+      return;
+    }
+    DbCoord.unmount();
     if (this._tab === 'ga') {
       // Same detached-grid arrangement as the single-line tab: the edit
       // session stays open so a schedule edit made elsewhere still commits.
@@ -358,6 +389,7 @@ const Schedules = {
     this._fillGrouping(c.method.value, inst.grouping || 'bunched');
     c.groupN.value = inst.circuits ?? 0;
     if (c.supply) c.supply.value = inst.supply === 'private' ? 'private' : 'public';
+    this._renderInstallSummary();
   },
 
   // Grouping rows for the method's family (air B.52.17, ducts B.52.19, direct
@@ -368,6 +400,28 @@ const Schedules = {
     const keep = IecAmpacity.resolveGrouping(wanted || 'bunched', method).name;
     sel.innerHTML = IecAmpacity.groupingOptions(method)
       .map(([k, l]) => `<option value="${k}"${k === keep ? ' selected' : ''}>${escHtml(l)}</option>`).join('');
+  },
+
+  _toggleInstall() {
+    this._installOpen = !this._installOpen;
+    const box = document.getElementById('sch-install');
+    if (box) box.classList.toggle('open', this._installOpen);
+    this.render();
+  },
+
+  // One quiet line: the conditions in force, in words.
+  _renderInstallSummary() {
+    const el = document.getElementById('sch-install-sum');
+    const comp = AppState.components.get(this._boardId);
+    if (!el || !comp) return;
+    const inst = (comp.props.way_install && typeof comp.props.way_install === 'object') ? comp.props.way_install : {};
+    const method = inst.method || 'B1';
+    const m = (typeof IEC_INSTALLATION_METHODS !== 'undefined' ? IEC_INSTALLATION_METHODS : []).find(x => x.code === method);
+    const gName = IecAmpacity.resolveGrouping(inst.grouping || 'bunched', method).name;
+    const g = (IecAmpacity.groupingOptions(method).find(([k]) => k === gName) || [])[1] || gName;
+    el.textContent = `Ambient ${inst.ambient_c ?? 30} °C · Method ${method}${m ? ' ' + m.description : ''} · `
+      + `${inst.supply === 'private' ? 'Private supply (6/8 %)' : 'Public LV (3/5 %)'} · Grouping ${g}`
+      + (inst.circuits ? ` (${inst.circuits} circuits)` : '');
   },
 
   // Writes only when something actually differs, so merely visiting a board
@@ -388,6 +442,7 @@ const Schedules = {
     const cur = comp.props.way_install || null;
     if (JSON.stringify(cur) === JSON.stringify(next)) return;
     comp.props.way_install = next;
+    this._renderInstallSummary();
     this._onGridEdit();
   },
 
@@ -400,6 +455,7 @@ const Schedules = {
       if (host) host.classList.remove('db-res-stale');
       // The drawing colours its way drops by the same verdicts.
       if (this._tab === 'drawing') DBDrawing.render();
+      if (this._tab === 'coord') DbCoord.refresh();
     });
   },
 
@@ -486,9 +542,17 @@ const Schedules = {
          <span style="color:var(--text-secondary);font-size:12px;">
            ${(comp.props.circuits || []).length} ways · ${Number(comp.props.voltage_kv || 0.4) * 1000} V
          </span>
+         <span class="sch-install-line">
+           <span class="sch-install-sum" id="sch-install-sum"></span>
+           <button class="btn-small" id="sch-install-edit" aria-expanded="${this._installOpen}"
+             title="Edit the installation conditions used for the cable derating, voltage-drop limits and grouping">${this._installOpen ? 'Done' : 'Edit'}</button>
+         </span>
          <span class="sch-tabs" role="tablist">
            <button class="sch-tab${this._tab === 'grid' ? ' active' : ''}" data-sch-tab="grid"
              role="tab" aria-selected="${this._tab === 'grid'}">Schedule</button>
+           <button class="sch-tab${this._tab === 'coord' ? ' active' : ''}" data-sch-tab="coord"
+             role="tab" aria-selected="${this._tab === 'coord'}"
+             title="Mini TCC: a way against the breakers above it — discrimination, cable protection, breaking capacity">Coordination</button>
            <button class="sch-tab${this._tab === 'drawing' ? ' active' : ''}" data-sch-tab="drawing"
              role="tab" aria-selected="${this._tab === 'drawing'}"
              title="Single-line drawing generated from this schedule">Single Line</button>
@@ -497,6 +561,9 @@ const Schedules = {
              title="General arrangement: physical front view and enclosure size">Layout (GA)</button>
          </span>`
       : '';
+    const ed = head.querySelector('#sch-install-edit');
+    if (ed) ed.addEventListener('click', () => this._toggleInstall());
+    this._renderInstallSummary();
     head.querySelectorAll('[data-sch-tab]').forEach(btn => {
       btn.addEventListener('click', () => this.selectTab(btn.dataset.schTab));
     });
