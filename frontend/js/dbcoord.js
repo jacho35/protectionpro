@@ -53,18 +53,79 @@ const DbCoord = {
     };
   },
 
-  optionsHtml(selected, blank) {
-    const lv = (x) => !x.rated_voltage_kv || x.rated_voltage_kv <= 1;
-    const list = STANDARD_CBS.filter(lv);
-    const known = list.some(x => 'cb:' + x.id === selected);
-    const gone = selected && !known
+  // The device list is filtered by the way's rating and curve: a library holding
+  // every manufacturer's catalogue is over a thousand breakers, and repeating
+  // all of them in every row's <select> is what made a large board slow.
+  // `filter` = { a, curve }; a blank a / curve doesn't narrow. Curve narrows
+  // MCBs only — an MCCB or ACB has no B/C/D curve, so it is kept at its rating.
+  FILTER_TIP: 'Only library breakers rated at the Breaker (A) value, with the same Curve, are listed '
+    + '(in bulk edit, also of the Manufacturer and Type picked). '
+    + 'Curve narrows MCBs only: MCCBs and ACBs at that rating are listed whatever the curve. '
+    + 'Change Breaker (A) or Curve to see other devices. Picking a device writes its rating and curve '
+    + 'to the way, and the coordination check uses its published trip curve. Generic keeps the plain rating + B/C/D curve.',
+
+  _lvList() {
+    return STANDARD_CBS.filter(x => !x.rated_voltage_kv || x.rated_voltage_kv <= 1);
+  },
+
+  // Manufacturers in the library right now, for the Manufacturer filter.
+  // Entries with no maker (the shipped generic breakers, custom ones) are
+  // grouped as "Generic library".
+  NO_MAKER: '__none',
+  makers() {
+    const list = this._lvList();
+    const names = [...new Set(list.map(x => String(x.manufacturer || '').trim()).filter(Boolean))]
+      .sort((a, b) => a.localeCompare(b));
+    const out = names.map(n => ({ key: n, label: n }));
+    if (list.some(x => !String(x.manufacturer || '').trim())) out.push({ key: this.NO_MAKER, label: 'Generic library' });
+    return out;
+  },
+
+  matches(x, filter) {
+    if (filter && filter.type && x.cb_type !== filter.type) return false;
+    if (filter && filter.maker) {
+      const m = String(x.manufacturer || '').trim();
+      if (filter.maker === this.NO_MAKER ? m !== '' : m !== filter.maker) return false;
+    }
+    const a = filter ? Number(filter.a) : 0;
+    const curve = filter && filter.curve ? String(filter.curve).toUpperCase() : '';
+    if (a > 0 && Number(x.trip_rating_a) !== a) return false;
+    if (curve && x.cb_type === 'mcb' && String(x.mcb_curve || '').toUpperCase() !== curve) return false;
+    return true;
+  },
+
+  filtered(filter) { return this._lvList().filter(x => this.matches(x, filter)); },
+
+  // "4 devices rated 20 A · curve C" — the line under a filtered picker.
+  filterNote(filter) {
+    const a = filter ? Number(filter.a) : 0;
+    const curve = filter && filter.curve ? String(filter.curve).toUpperCase() : '';
+    const type = filter && filter.type ? String(filter.type).toUpperCase() : '';
+    const maker = filter && filter.maker ? (filter.maker === this.NO_MAKER ? 'generic library' : filter.maker) : '';
+    if (!(a > 0) && !curve && !type && !maker) return 'All devices. Set Breaker (A) and Curve to narrow the list.';
+    const n = this.filtered(filter).length;
+    const what = [a > 0 ? `rated ${a} A` : '', curve ? `curve ${curve}` : '', type, maker].filter(Boolean).join(' · ');
+    return n ? `${n} device${n === 1 ? '' : 's'} ${what}` : `No library device ${what}.`;
+  },
+
+  // opts.lead = options placed first (the bulk panel's "no change");
+  // opts.genericValue = the Generic option's value ('' unless that is taken).
+  optionsHtml(selected, blank, filter, opts) {
+    const o = opts || {};
+    const all = this._lvList();
+    const list = filter ? all.filter(x => this.matches(x, filter)) : all;
+    const cur = selected ? all.find(x => 'cb:' + x.id === selected) : null;
+    // The way's own pick stays listed even when it no longer fits the filter.
+    const kept = cur && !list.includes(cur)
+      ? `<option value="${escHtml(selected)}" selected>${escHtml(cur.name)} (does not match)</option>` : '';
+    const gone = selected && !cur
       ? `<option value="${escHtml(selected)}" selected>(removed from library)</option>` : '';
     const group = (label, type) => {
       const xs = list.filter(x => x.cb_type === type);
       return xs.length ? `<optgroup label="${escHtml(label)}">${xs.map(x =>
         `<option value="cb:${escHtml(x.id)}"${selected === 'cb:' + x.id ? ' selected' : ''}>${escHtml(x.name)}</option>`).join('')}</optgroup>` : '';
     };
-    return `<option value="">${escHtml(blank || 'Generic (B/C/D)')}</option>${gone}`
+    return (o.lead || '') + `<option value="${escHtml(o.genericValue || '')}">${escHtml(blank || 'Generic (B/C/D)')}</option>${gone}${kept}`
       + group('MCB', 'mcb') + group('MCCB', 'mccb') + group('ACB', 'acb');
   },
 

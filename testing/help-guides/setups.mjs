@@ -133,9 +133,11 @@ export const SETUPS = {
 
   'schedule-checked': { run: async (page, h) => {
     await grid({ sections: false })(page, h);
+    await page.click('#sch-install-edit');
     await page.fill('#sch-group-n', '1'); await page.press('#sch-group-n', 'Enter');
+    await page.click('#sch-install-done');
     await page.waitForTimeout(500);
-    await page.click('#db-check-circuits');
+    await page.click('#sch-run-check');
     await page.waitForTimeout(4000);
   } },
 
@@ -432,7 +434,7 @@ export const SETUPS = {
       if (mcb) b.props.circuits.slice(2, 6).forEach(w => { w.device = 'cb:' + mcb.id; });
     }, id);
     await toWorkspace(page, id, 'grid');
-    await page.click('#db-check-circuits'); await page.waitForTimeout(4000);
+    await page.click('#sch-run-check'); await page.waitForTimeout(4000);
     await page.click('.db-schedule-grid tbody tr:nth-child(3) td.db-coord'); await page.waitForTimeout(1000);
   } },
 

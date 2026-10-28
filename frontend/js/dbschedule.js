@@ -47,6 +47,7 @@ const DBSchedule = {
   _selected: new Set(),   // way ids checked for bulk editing (stable across sort/render)
   _selAnchor: null,       // way id the last plain click landed on — shift-click range origin
   _bulkDraft: {},         // field key → typed bulk-panel value, survives re-render
+  _sideOpen: { prot: true }, // side-panel sections left open (survive re-render)
   _resIndex: null,        // Map('board id|way id' → backend check row), or null before any run
 
   // Lumped-load props recompute() derives from the committed fields
@@ -58,21 +59,25 @@ const DBSchedule = {
   // phase to RWB, and applying phase afterwards must be the one that settles it.
   // `way` is absent on purpose — way numbers have to stay unique.
   _BULK_FIELDS: [
-    { k: 'poles', label: 'Poles', type: 'select', opts: ['1P', '3P'] },
+    { k: 'poles', label: 'Poles', type: 'select', opts: ['1P', '3P'], grp: 'Protection' },
     { k: 'phase', label: 'Phase', type: 'select', opts: ['R', 'W', 'B'] },
     { k: 'curve', label: 'Curve', type: 'select', opts: ['B', 'C', 'D'] },
     { k: 'breaker_a', label: 'Breaker (A)', type: 'number', unit: 'A', width: 62 },
-    { k: 'el_group', label: 'EL Group', type: 'text', width: 70 },
-    { k: 'cable_mm2', label: 'Cable', type: 'number', unit: 'mm²', width: 74 },
-    { k: 'ecc_mm2', label: 'ECC', type: 'number', unit: 'mm²', width: 74,
-      title: 'Earth continuity conductor. Blank leaves it unchanged; type "auto" to clear it (the check then assumes the smallest compliant size and warns if a twin-and-earth CPC would fail).' },
+    // After breaker_a + curve: a picked device writes its own rating and curve,
+    // so it has the last word. Its list is filtered by those two plus the
+    // manufacturer / type picked beside it (see _bulkDeviceFilter).
+    { k: 'device', label: 'Device', type: 'device', full: true },
     { k: 'disconnect_time_s', label: 'Disc. t', type: 'number', unit: 's', width: 62,
       title: 'Disconnection time at the earth-fault current, read off the device\'s curve — lets a way that does not reach the magnetic trip pass within the IEC 60364-4-41 limit (0.4 s final, 5 s distribution). Type "auto" to clear.' },
+    { k: 'cable_mm2', label: 'Cable', type: 'number', unit: 'mm²', width: 74, grp: 'Cable' },
+    { k: 'ecc_mm2', label: 'ECC', type: 'number', unit: 'mm²', width: 74,
+      title: 'Earth continuity conductor. Blank leaves it unchanged; type "auto" to clear it (the check then assumes the smallest compliant size and warns if a twin-and-earth CPC would fail).' },
     { k: 'cable_m', label: 'Length', type: 'number', unit: 'm', width: 62 },
-    { k: 'leakage_ma', label: 'Leak', type: 'number', unit: 'mA', width: 62 },
-    { k: 'load_va', label: 'Load', type: 'number', unit: 'VA', width: 80 },
+    { k: 'load_va', label: 'Load', type: 'number', unit: 'VA', width: 80, grp: 'Load' },
     { k: 'demand_factor', label: 'DF', type: 'number', width: 62 },
     { k: 'power_factor', label: 'PF', type: 'number', width: 62 },
+    { k: 'el_group', label: 'EL Group', type: 'text', width: 70 },
+    { k: 'leakage_ma', label: 'Leak', type: 'number', unit: 'mA', width: 62 },
     { k: 'description', label: 'Description', type: 'text', full: true },
   ],
 
@@ -524,6 +529,8 @@ const DBSchedule = {
     if (!dev || !ik) return;
     dev.addEventListener('change', () => {
       comp.props.incoming_device = dev.value;
+      const sum = this.body.querySelector('details[data-side="prot"] > summary > em');
+      if (sum) sum.textContent = dev.value ? dev.options[dev.selectedIndex].textContent : 'No incoming device';
       this._paintResults();
       this._notifyEdited();
     });
@@ -1283,7 +1290,7 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
         ${secCell(c)}
         <td data-label="Description" class="db-col-desc"><input type="text" data-k="description" list="db-load-datalist" value="${escHtml(c.description || '')}" style="width:100%"></td>
         <td data-label="Breaker (A)" class="db-col-breaker"><input type="number" data-k="breaker_a" value="${escHtml(c.breaker_a ?? 20)}" min="1" step="1" style="width:68px"></td>
-        <td data-label="Device" class="db-col-device"><select data-k="device" class="db-device-sel" title="Pick a breaker from the library: its rating and curve are written to the way, and the mini TCC plots its published curve. Generic keeps the plain rating + B/C/D curve.">${DbCoord.optionsHtml(c.device || '')}</select></td>
+        <td data-label="Device" class="db-col-device"><select data-k="device" class="db-device-sel" title="${escHtml(DbCoord.filterNote({ a: c.breaker_a, curve: c.curve }) + ' — ' + DbCoord.FILTER_TIP)}">${DbCoord.optionsHtml(c.device || '', null, { a: c.breaker_a, curve: c.curve })}</select></td>
         <td data-label="Load (VA)" class="db-col-load"><input type="number" data-k="load_va" value="${escHtml(c.load_va ?? 0)}" min="0" step="50" style="width:88px"></td>
         <td data-label="Poles" data-grp="dev"><select data-k="poles">${opt('1P', c.poles || '1P')}${opt('3P', c.poles || '1P')}</select></td>
         <td data-label="Phase" data-grp="dev"><select data-k="phase" ${((c.poles || '1P') === '3P') ? 'disabled' : ''}>
@@ -1356,20 +1363,37 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
       ? IEC_STANDARD_SIZES : [1.5, 2.5, 4, 6, 10, 16, 25, 35, 50, 70, 95, 120, 150, 185, 240, 300, 400];
     const mm2Options = mm2Sizes.map(s => `<option value="${s}">${s} mm²</option>`).join('');
 
+    const incDev = DbCoord.deviceById(comp.props.incoming_device);
+    const protSum = [incDev ? incDev.name : 'No incoming device',
+      comp.props.ik_max_ka ? `${comp.props.ik_max_ka} kA` : ''].filter(Boolean).join(' · ');
+    const side = (key, title, sum, body) => `
+      <details class="db-side-sec" data-side="${key}"${this._sideOpen[key] ? ' open' : ''}>
+        <summary>${escHtml(title)}${sum ? `<em>${escHtml(sum)}</em>` : ''}</summary>
+        <div class="db-side-sec-b">${body}</div>
+      </details>`;
+
+    // Two columns: the grid gets the window; everything else about the board
+    // sits in the side panel, which swaps to bulk edit while ways are ticked.
     this.body.innerHTML = `
       <datalist id="db-load-datalist">${datalistOptions}</datalist>
       <datalist id="db-mm2-datalist">${mm2Options}</datalist>
-      <div id="db-sections-panel">${DBSections.panelHTML(comp)}</div>
-      ${DBSections.tabsHTML(comp)}
-      <div class="db-prot-strip" id="db-prot-strip">
-        <label title="The board's incoming breaker: the first device above every way in the mini TCC and the discrimination check.">Incoming device
-          <select id="db-incoming-dev">${DbCoord.optionsHtml(comp.props.incoming_device || '', 'None set')}</select></label>
-        <label title="Maximum three-phase fault level at this board. Blank takes it from the network on the SLD, or from the feeding board's level less its feeder cable.">Ik max (kA)
-          <input type="number" id="db-ik-max" min="0" step="0.1" value="${comp.props.ik_max_ka == null ? '' : escHtml(comp.props.ik_max_ka)}" placeholder="auto"></label>
-        <span id="db-ik-basis" class="db-prot-note"></span>
+      <div class="db-layout">
+      <div class="db-main">
+      <div class="db-strip">
+        <div class="db-phase-bars" title="Load on each phase — R / W / B">${barsHtml}</div>
+        <span id="db-totals-strip">${this._totalsHtml(comp, totals)}</span>
       </div>
-      <div class="db-phase-bars">${barsHtml}</div>
-      <div id="db-bulk-bar"></div>
+      <div class="db-tools">
+        ${DBSections.tabsHTML(comp)}
+        <button class="btn-small" id="db-add-row" title="Add an empty way">+ Add way</button>
+        <button class="btn-small" id="db-auto-balance" title="Reassign single-phase ways across R/W/B for best balance (3-phase ways untouched)">Auto balance</button>
+        <button class="btn-small" id="db-fill-ecc" title="Set every blank ECC to the IEC 60364-5-54 Table 54.7 minimum for its live conductor">Fill ECC</button>
+        <span class="db-tools-end">
+          <button class="btn-small" id="db-import-xlsx" title="Import ways from an Excel/CSV file — matched by way number, with a preview of every change before it is written">Import Excel</button>
+          <button class="btn-small" id="db-export-xlsx" title="Export the schedule as an Excel workbook">Export Excel</button>
+        </span>
+        <input type="file" id="db-import-file" accept=".xlsx,.xls,.csv" style="display:none">
+      </div>
       <div class="library-table-wrap db-schedule-grid${foldCls}">
         <table class="library-table" style="width:100%;font-size:13px;">
           <thead><tr class="db-grp-row">
@@ -1382,7 +1406,7 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
           </tr><tr>
             <th class="db-sel-cell"><input type="checkbox" id="db-select-all" title="Select / deselect all ways. Shift-click a row checkbox to select a range."></th>
             <th class="db-col-way">Way</th>${hasSec ? '<th class="db-col-sec">Section</th>' : ''}<th class="db-col-desc">Description</th>
-            <th class="db-col-breaker">Breaker (A)</th><th class="db-col-device">Device</th><th class="db-col-load">Load (VA)</th>
+            <th class="db-col-breaker">Breaker (A)</th><th class="db-col-device" title="${escHtml(DbCoord.FILTER_TIP)}">Device <span class="db-info" aria-hidden="true">i</span></th><th class="db-col-load">Load (VA)</th>
             <th data-grp="dev">Poles</th><th data-grp="dev">Ph</th>
             <th data-grp="dev">Curve</th>
             <th class="db-grp-sum" data-sum="dev">Poles · Ph · Curve</th>
@@ -1414,33 +1438,41 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
             '<tr><td colspan="30" style="text-align:center;opacity:0.6;padding:16px;">No ways yet — add the first circuit below.</td></tr>'}</tbody>
         </table>
       </div>
-      <div style="display:flex;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap;">
-        <span style="font-size:12px;opacity:0.8;">Add load:</span>
-        <select id="db-load-type" title="Common load types with default wattage and demand factor">${typeOptions}</select>
-        <input type="number" id="db-load-count" value="1" min="1" step="1" style="width:56px" title="Number of units (points / sockets / …)">
-        <span style="font-size:12px;opacity:0.8;">×</span>
-        <button class="btn-small" id="db-add-load" title="Add one way pre-filled from the selected load type">+ Add circuit</button>
-        <span style="width:1px;height:20px;background:var(--border-color,#ccc);margin:0 4px;"></span>
-        <button class="btn-small" id="db-quick-lights" title="Add one lighting way with 10 points">+ 10 Lights</button>
-        <button class="btn-small" id="db-quick-sockets" title="Add one socket way with 5 sockets">+ 5 Sockets</button>
-        <button class="btn-small" id="db-multi-lights" title="Add 4 lighting circuits (10 points each)">+ 4 Light circuits</button>
-        <button class="btn-small" id="db-multi-sockets" title="Add 6 socket circuits (6 sockets each)">+ 6 Socket circuits</button>
       </div>
-      <div style="display:flex;align-items:center;gap:16px;margin-top:10px;flex-wrap:wrap;">
-        <button class="btn-small" id="db-add-row">+ Add Way</button>
-        <button class="btn-small" id="db-auto-balance" title="Reassign single-phase ways across R/W/B for best balance (3-phase ways untouched)">Auto Balance</button>
-        <button class="btn-small" id="db-fill-ecc" title="Set every blank ECC to the IEC 60364-5-54 Table 54.7 minimum for its live conductor">Fill ECC</button>
-        <button class="btn-small" id="db-check-circuits" title="Run the per-way cable check on every board — derated ampacity, Ib ≤ In ≤ Iz, voltage drop, ECC and earth-fault loop Zs">Check circuits</button>
-        <button class="btn-small" id="db-export-xlsx" title="Export the schedule as an Excel workbook">Export Excel</button>
-        <button class="btn-small" id="db-import-xlsx" title="Import ways from an Excel/CSV file — matched by way number, with a preview of every change before it is written">Import Excel</button>
-        <input type="file" id="db-import-file" accept=".xlsx,.xls,.csv" style="display:none">
-        <span id="db-totals-strip" style="font-size:12px;">Connected: <strong>${connected.toFixed(2)} kVA</strong>
-          &nbsp; Demand (× diversity ${comp.props.board_diversity || 1}): <strong>${demand.toFixed(2)} kVA</strong> (${ampsLabel})
-          &nbsp; Board PF: <strong>${totals.pf.toFixed(3)}</strong>
-          &nbsp; Phase R/W/B: <strong>${comp.props.phase_a_pct.toFixed(0)}/${comp.props.phase_b_pct.toFixed(0)}/${comp.props.phase_c_pct.toFixed(0)} %</strong></span>
-      </div>
-      <div id="db-el-panel"></div>
-      <div id="db-accessories-panel"></div>`;
+      <aside class="db-side" id="db-side" aria-label="Board side panel">
+        <div id="db-bulk-bar"></div>
+        <div class="db-side-board">
+          <div class="db-side-head"><strong>Board settings</strong><span>${escHtml(comp.props.name || comp.id)}</span></div>
+          <p class="db-side-hint">Tick ways in the schedule to bulk-edit them here.</p>
+          ${side('prot', 'Incoming protection', protSum, `
+          <div class="db-prot-strip" id="db-prot-strip">
+            <label title="The board's incoming breaker: the first device above every way in the mini TCC and the discrimination check.">Incoming device
+              <select id="db-incoming-dev">${DbCoord.optionsHtml(comp.props.incoming_device || '', 'None set')}</select></label>
+            <label title="Maximum three-phase fault level at this board. Blank takes it from the network on the SLD, or from the feeding board's level less its feeder cable.">Ik max (kA)
+              <input type="number" id="db-ik-max" min="0" step="0.1" value="${comp.props.ik_max_ka == null ? '' : escHtml(comp.props.ik_max_ka)}" placeholder="auto"></label>
+            <span id="db-ik-basis" class="db-prot-note"></span>
+          </div>`)}
+          ${side('presets', 'Add common circuits', 'presets', `
+          <div class="db-presets">
+            <label>Load type <select id="db-load-type" title="Common load types with default wattage and demand factor">${typeOptions}</select></label>
+            <div class="db-presets-row">
+              <input type="number" id="db-load-count" value="1" min="1" step="1" style="width:56px" title="Number of units (points / sockets / …)">
+              <span>×</span>
+              <button class="btn-small" id="db-add-load" title="Add one way pre-filled from the selected load type">+ Add circuit</button>
+            </div>
+            <div class="db-presets-row">
+              <button class="btn-small" id="db-quick-lights" title="Add one lighting way with 10 points">+ 10 Lights</button>
+              <button class="btn-small" id="db-quick-sockets" title="Add one socket way with 5 sockets">+ 5 Sockets</button>
+              <button class="btn-small" id="db-multi-lights" title="Add 4 lighting circuits (10 points each)">+ 4 Light circuits</button>
+              <button class="btn-small" id="db-multi-sockets" title="Add 6 socket circuits (6 sockets each)">+ 6 Socket circuits</button>
+            </div>
+          </div>`)}
+          <div id="db-sections-panel">${DBSections.panelHTML(comp)}</div>
+          <div id="db-el-panel"></div>
+          <div id="db-accessories-panel"></div>
+        </div>
+      </aside>
+      </div>`;
 
     DBSections.bind(this.body, comp, (rerender) => {
       if (rerender) this.render();
@@ -1450,6 +1482,9 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
     this._refreshAccessories(comp);
     this._refreshBulkBar();
     this._bindProtStrip(comp);
+    this.body.querySelectorAll('details.db-side-sec').forEach(d => {
+      d.addEventListener('toggle', () => { this._sideOpen[d.dataset.side] = d.open; });
+    });
     this._paintResults();
     this._wireScrollShadow(this.body.querySelector('.db-schedule-grid'));
 
@@ -1547,7 +1582,6 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
         ? `Set the Table 54.7 minimum ECC on ${n} way(s).`
         : 'Every way already has an ECC size.');
     });
-    this.body.querySelector('#db-check-circuits').addEventListener('click', () => this.runCheck());
     this.body.querySelector('#db-export-xlsx').addEventListener('click', () => this.exportXlsx(comp));
     const fileInput = this.body.querySelector('#db-import-file');
     this.body.querySelector('#db-import-xlsx').addEventListener('click', () => fileInput.click());
@@ -1603,6 +1637,7 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
           return;
         }
         if (out === 'conduit') { this._paintConduit(comp); this._notifyEdited(); return; }
+        if (k === 'breaker_a' || k === 'curve') this._refreshDeviceCell(tr, c);
         if (out === 'render') this.render();
         else this.refreshTotals(comp);
         this._paintConduit(comp);
@@ -1715,15 +1750,16 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
       row.querySelector('.db-phase-val').textContent =
         `${(ph[p] / 1000).toFixed(2)} kVA (${pct.toFixed(0)}%)`;
     });
-    const ampsLabel = this._ampsLabel(comp, totals);
     const strip = this.body.querySelector('#db-totals-strip');
-    if (strip) {
-      strip.innerHTML = `Connected: <strong>${totals.connectedKva.toFixed(2)} kVA</strong>
-        &nbsp; Demand (× diversity ${comp.props.board_diversity || 1}):
-        <strong>${totals.demandKva.toFixed(2)} kVA</strong> (${ampsLabel})
-        &nbsp; Board PF: <strong>${totals.pf.toFixed(3)}</strong>
-        &nbsp; Phase R/W/B: <strong>${comp.props.phase_a_pct.toFixed(0)}/${comp.props.phase_b_pct.toFixed(0)}/${comp.props.phase_c_pct.toFixed(0)} %</strong>`;
-    }
+    if (strip) strip.innerHTML = this._totalsHtml(comp, totals);
+  },
+
+  // The board totals on the line above the grid (the phase split is the bars).
+  _totalsHtml(comp, totals) {
+    const div = comp.props.board_diversity || 1;
+    return `<span>Connected <strong>${totals.connectedKva.toFixed(2)} kVA</strong></span>
+      <span title="Diversified demand: connected load × each way's demand factor × the board diversity (${div})">Demand <strong>${totals.demandKva.toFixed(2)} kVA</strong> · ${this._ampsLabel(comp, totals)}</span>
+      <span>PF <strong>${totals.pf.toFixed(3)}</strong></span>`;
   },
 
   // ── Sort by way number ─────────────────────────────────────────────
@@ -1763,6 +1799,16 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
     this._refreshBulkBar();
   },
 
+  // A way's Device list is filtered by its own Breaker (A) + Curve, so editing
+  // either rebuilds just that cell's options instead of re-rendering the grid.
+  _refreshDeviceCell(tr, c) {
+    const sel = tr && tr.querySelector('.db-device-sel');
+    if (!sel) return;
+    const f = { a: c.breaker_a, curve: c.curve };
+    sel.innerHTML = DbCoord.optionsHtml(c.device || '', null, f);
+    sel.title = DbCoord.filterNote(f) + ' — ' + DbCoord.FILTER_TIP;
+  },
+
   // The bulk-edit panel appears only while ≥1 way is selected. Every editable
   // field is present at once — blank means "leave unchanged" — so setting a run
   // of ways to 20 A / curve C / 2.5 mm² / 25 m is one Apply, not four.
@@ -1770,25 +1816,32 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
     const wrap = this.body && this.body.querySelector('#db-bulk-bar');
     if (!wrap) return;
     const n = this._selected.size;
+    // The side panel shows bulk edit OR the board settings, never both.
+    const side = this.body.querySelector('#db-side');
+    if (side) side.classList.toggle('db-side-bulk', n > 0);
     if (n === 0) { wrap.innerHTML = ''; wrap.style.display = 'none'; return; }
     wrap.style.display = '';
+    if (typeof Schedules !== 'undefined' && Schedules.setSidePanel) Schedules.setSidePanel(true);
 
     // Already open: only the count changed. Patch the text rather than rebuild
     // the panel — rebuilding would blur whatever field is being typed into.
     const countEl = wrap.querySelector('#db-bulk-count');
     if (countEl) {
       countEl.textContent = n;
+      this._refreshBulkDevice(wrap);
       const applyBtn = wrap.querySelector('#db-bulk-apply');
       if (applyBtn) applyBtn.textContent = `Apply to ${n} way${n === 1 ? '' : 's'}`;
       return;
     }
 
-    const fields = this._BULK_FIELDS.map(f => this._bulkFieldHtml(f)).join('');
+    const fields = this._BULK_FIELDS.map(f =>
+      (f.grp ? `<h4 class="db-bulk-grp">${escHtml(f.grp)}</h4>` : '') + this._bulkFieldHtml(f)).join('');
     wrap.innerHTML = `
       <div class="db-bulk">
         <div class="db-bulk-head">
-          <strong><span id="db-bulk-count">${n}</span> selected</strong>
-          <span class="db-bulk-hint">blank = leave unchanged</span>
+          <strong>Bulk edit</strong>
+          <span class="db-bulk-n"><span id="db-bulk-count">${n}</span> selected</span>
+          <span class="db-bulk-hint">Blank fields leave the ways unchanged.</span>
         </div>
         <div class="db-bulk-fields">${fields}</div>
         <div class="db-bulk-actions">
@@ -1806,10 +1859,21 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
     wrap.querySelectorAll('[data-bk]').forEach(el => {
       const k = el.dataset.bk;
       if (this._bulkDraft[k] != null) el.value = this._bulkDraft[k];
-      const remember = () => { this._bulkDraft[k] = el.value; };
+      const remember = () => {
+        this._bulkDraft[k] = el.value;
+        if (k === 'breaker_a' || k === 'curve') this._refreshBulkDevice(wrap);
+      };
       el.addEventListener('input', remember);
       el.addEventListener('change', remember);
     });
+    // Manufacturer / type narrow the Device list only — they are not fields.
+    const maker = wrap.querySelector('[data-bkf="maker"]');
+    if (maker) maker.addEventListener('change', () => { this._bulkDraft.dev_maker = maker.value; this._refreshBulkDevice(wrap); });
+    wrap.querySelectorAll('[data-bkt]').forEach(btn => btn.addEventListener('click', () => {
+      this._bulkDraft.dev_type = btn.dataset.bkt;
+      this._refreshBulkDevice(wrap);
+    }));
+    this._refreshBulkDevice(wrap);
     wrap.querySelector('#db-bulk-apply').addEventListener('click', () => this._applyBulkAll());
     wrap.querySelector('#db-bulk-delete').addEventListener('click', () => this._bulkDelete());
     const xferTarget = wrap.querySelector('#db-xfer-target');
@@ -1824,11 +1888,65 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
     });
   },
 
+  // The bulk Device list is filtered by the Breaker (A) + Curve typed in the
+  // panel, else by the value every selected way already shares.
+  _bulkDeviceFilter(wrap) {
+    const comp = AppState.components.get(this.currentId);
+    const ways = ((comp && comp.props.circuits) || []).filter(c => this._selected.has(c.id));
+    const common = (k) => {
+      const vs = new Set(ways.map(c => String(c[k] ?? '')));
+      return vs.size === 1 ? [...vs][0] : '';
+    };
+    const typed = (k) => {
+      const el = wrap.querySelector(`[data-bk="${k}"]`);
+      return el ? String(el.value).trim() : '';
+    };
+    return { a: typed('breaker_a') || common('breaker_a'), curve: typed('curve') || common('curve'),
+      maker: this._bulkDraft.dev_maker || '', type: this._bulkDraft.dev_type || '' };
+  },
+
+  _refreshBulkDevice(wrap) {
+    const sel = wrap.querySelector('[data-bk="device"]');
+    if (!sel) return;
+    const f = this._bulkDeviceFilter(wrap);
+    const keep = sel.value || this._bulkDraft.device || '';
+    sel.innerHTML = DbCoord.optionsHtml('', null, f,
+      { lead: '<option value="">—</option>', genericValue: 'generic' });
+    // A draft pick that the new filter dropped falls back to "no change".
+    sel.value = [...sel.options].some(o => o.value === keep) ? keep : '';
+    if (sel.value !== keep) this._bulkDraft.device = sel.value;
+    const note = wrap.querySelector('#db-bulk-devnote');
+    if (note) note.textContent = DbCoord.filterNote(f);
+    // The manufacturer list is read from the library each time, so a newly
+    // imported maker shows up without any change here.
+    const maker = wrap.querySelector('[data-bkf="maker"]');
+    if (maker) {
+      const makers = DbCoord.makers();
+      if (f.maker && !makers.some(m => m.key === f.maker)) { f.maker = ''; this._bulkDraft.dev_maker = ''; }
+      maker.innerHTML = '<option value="">All manufacturers</option>' + makers.map(m =>
+        `<option value="${escHtml(m.key)}"${m.key === f.maker ? ' selected' : ''}>${escHtml(m.label)}</option>`).join('');
+    }
+    wrap.querySelectorAll('[data-bkt]').forEach(btn => btn.setAttribute('aria-pressed', String(btn.dataset.bkt === f.type)));
+  },
+
   // One labelled control. Selects carry a leading blank "—" option so "no
   // change" is expressible; text/number fields use empty for the same.
   _bulkFieldHtml(f) {
     const title = f.title ? ` title="${escHtml(f.title)}"` : '';
     let ctl;
+    if (f.type === 'device') {
+      // Options are filled by _refreshBulkDevice once the panel is in the DOM.
+      const types = [['', 'All'], ['mcb', 'MCB'], ['mccb', 'MCCB'], ['acb', 'ACB']];
+      return `<div class="db-bulk-f db-bulk-f-full db-bulk-dev">
+        <span title="${escHtml(DbCoord.FILTER_TIP)}">Device <span class="db-info" aria-hidden="true">i</span></span>
+        <div class="db-devfilter">
+          <label>Manufacturer <select data-bkf="maker" title="Narrow the Device list to one manufacturer"><option value="">All manufacturers</option></select></label>
+          <div class="db-devtype" role="group" aria-label="Breaker type">${types.map(([k, l]) =>
+            `<button type="button" class="db-devtype-b" data-bkt="${k}" aria-pressed="false">${l}</button>`).join('')}</div>
+        </div>
+        <select data-bk="device" class="db-device-sel" aria-label="Device" title="${escHtml(DbCoord.FILTER_TIP)}"><option value="">—</option></select>
+        <em id="db-bulk-devnote"></em></div>`;
+    }
     if (f.type === 'select') {
       ctl = `<select data-bk="${escHtml(f.k)}"${title}><option value="">—</option>${f.opts
         .map(o => `<option value="${o}">${o}</option>`).join('')}</select>`;
@@ -1851,7 +1969,14 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
   // Write one field onto one way, applying exactly the consistency rules the
   // per-cell change handler uses (poles↔phase, plan-sync pin flags).
   _applyBulkField(c, key, val) {
+    if (key === 'device') {
+      // 'generic' is the explicit "no library device" pick ('' means no change).
+      if (val === 'generic') c.device = ''; else DbCoord.applyToWay(c, val);
+      return;
+    }
     c[key] = val;
+    // Same rule as a cell edit: a hand-set rating or curve drops the library pick.
+    if ((key === 'breaker_a' || key === 'curve') && c.device) c.device = '';
     if (key === 'poles') {
       if (val === '3P') c.phase = 'RWB';
       else if (c.phase === 'RWB') c.phase = 'R';
