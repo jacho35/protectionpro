@@ -54,7 +54,6 @@ document.addEventListener('DOMContentLoaded', () => {
   RevisionTimeline.init();
   MiniMap.init();
   ContextMenu.init();
-  DBSchedule.init();
   ControlSim.init();
   Retic.init();
   if (typeof PlanMarkup !== 'undefined') PlanMarkup.init();
@@ -499,8 +498,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (openModal) {
           if (openModal.id === 'tcc-modal' && typeof TCC !== 'undefined') {
             TCC.close();
-          } else if (openModal.id === 'db-modal' && typeof DBSchedule !== 'undefined') {
-            DBSchedule.close(); // commits circuit edits + undo snapshot (only if changed)
           } else if (openModal.id === 'ds-modal' && typeof DrawingSet !== 'undefined') {
             DrawingSet.close();
           } else if (openModal.id === 'earth-grid-modal' && typeof EarthGridEditor !== 'undefined') {

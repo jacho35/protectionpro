@@ -289,9 +289,9 @@ const Properties = {
     if (comp.type === 'distribution_board') {
       html += `
         <div class="prop-section prop-tcc-section">
-          <button class="prop-action-btn" id="btn-edit-db" title="Edit the board's circuit schedule (ways, breakers, phases, loads)">
+          <button class="prop-action-btn" id="btn-edit-db" title="Open the board's circuit schedule (ways, breakers, phases, loads) — or double-click the board">
             <svg width="14" height="14" viewBox="0 0 14 14" style="vertical-align:-2px;margin-right:4px"><rect x="1.5" y="1.5" width="11" height="11" rx="1" fill="none" stroke="currentColor" stroke-width="1.3"/><line x1="1.5" y1="5" x2="12.5" y2="5" stroke="currentColor" stroke-width="1.3"/><line x1="1.5" y1="8" x2="12.5" y2="8" stroke="currentColor" stroke-width="1.3"/><line x1="1.5" y1="11" x2="12.5" y2="11" stroke="currentColor" stroke-width="1.3"/></svg>
-            Edit Circuit Schedule
+            Open Circuit Schedule
           </button>
         </div>`;
     }

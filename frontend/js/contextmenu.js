@@ -150,7 +150,7 @@ const ContextMenu = {
 
     if (comp.type === 'distribution_board' && typeof DBSchedule !== 'undefined') {
       items.push({
-        label: 'Edit Circuit Schedule',
+        label: 'Open Circuit Schedule',
         action: () => DBSchedule.open(comp.id),
       });
     }

@@ -199,9 +199,6 @@ body.lf-bar-visible.ribbon-mode #app-container {
 .ui-dialog-danger { background: var(--danger); }
 .ui-dialog-danger:hover { background: #b71c1c; }
 
-/* Distribution board schedule modal: wide table, comfortable entry boxes */
-.modal-content.db-modal-content { max-width: 1280px; width: 96%; }
-
 /* Scenario "applies" checkboxes */
 .scenario-applies {
   display: flex;
@@ -261,14 +258,6 @@ body.lf-bar-visible.ribbon-mode #app-container {
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
-#db-modal .library-table input,
-#db-modal .library-table select {
-  font-size: 13px;
-  padding: 6px 8px;
-  min-height: 32px;
-  box-sizing: border-box;
-}
-#db-modal .library-table td { padding: 4px 6px; }
 
 /* ── Collapsible side panels ── */
 body.sidebar-collapsed #sidebar,

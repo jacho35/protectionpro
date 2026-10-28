@@ -117,7 +117,7 @@ const HELP_GUIDES = [
   intro: 'The schedule is one row per way: breaker, cable, load and phase. Everything else on the board (single line, front view, bill of quantities, circuit check) is drawn from it.',
   steps: [
     { title: 'Open the board',
-      html: 'Open the <strong>Schedules</strong> workspace and pick the board in the rail on the left. Boards come from <em>Distribution Board</em> symbols on the single-line diagram; <strong>Generate SLD</strong> draws the other direction.',
+      html: 'Open the <strong>Schedules</strong> workspace and pick the board in the rail on the left. Boards come from <em>Distribution Board</em> symbols on the single-line diagram. Double-clicking a board on the diagram opens its schedule here, and <strong>← Single line</strong> takes you back.',
       shot: { file: 'db-schedule-1.png', alt: 'The Schedules workspace with a board selected and its circuit schedule',
         setup: 'schedule-grid', clip: '#schedules-workspace',
         callouts: [
