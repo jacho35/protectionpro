@@ -3,7 +3,8 @@
  * A read-only DB single line generated from the board's circuit schedule: the
  * incomer, the busbar, every way with its protective device and cable, the
  * earth-leakage groupings, the board accessories (indicators, SPDs, metering,
- * utilities) and the N/PE bars.
+ * utilities), the contactors that switch ways with their control circuit
+ * (DBControls) and the N/PE bars.
  *
  * Everything is derived — the only state this view owns is the detail-toggle
  * set, which lives in localStorage, not the project. Ways come from
@@ -60,10 +61,15 @@ const DBDrawing = {
   RISER_GUTTER: 18,    // left lane for the "busbar continued" riser when a busbar wraps
   LOAD_H: 62,          // PE bar → load symbol block
   SYM_SCALE: 1.3,      // device symbols are drawn this much larger than the SLD's
+  CTR_OFF: 62,         // device centre → contactor pole centre
+  CTR_DY: 56,          // extra drop length when a row carries contactor poles
+  SEC_CTR_DY: 26,      // extra busbar → device room for a switched-section bracket
+  CTL_BW: 440,         // control-circuit block width (one per control supply)
+  CTL_GAP: 24,
 
   DETAIL_DEFAULTS: {
     cable: true, load: true, phase: true, elgroups: true,
-    bars: true, status: true, accessories: true,
+    bars: true, status: true, accessories: true, controls: true,
     table: false,        // way info as a table under the load arrows instead of beside the device
     phaserows: false,    // a busbar row per phase: R ways, then W, then B, then three-phase
   },
@@ -107,6 +113,7 @@ const DBDrawing = {
           ${toggle('bars', 'N + PE bars', 'Draw the neutral and protective earth bars')}
           ${toggle('status', 'Check status', 'Colour each way by its circuit-check verdict')}
           ${toggle('accessories', 'Accessories', 'Draw the board accessories on the single line')}
+          ${toggle('controls', 'Controls', 'Draw the contactors on their ways and the control circuit that switches them')}
           ${toggle('table', 'Info table', 'Show each way\'s information as a table below its load, instead of beside the device')}
           ${toggle('phaserows', 'Phase rows', 'Group the ways by phase, a row each: red, then white (yellow), then blue, then three-phase — how a board is usually built, though it takes more space')}
           <span class="sch-sep"></span>
@@ -161,7 +168,9 @@ const DBDrawing = {
     const side = document.getElementById('dbd-accessories');
     const comp = this.board();
     if (side) {
-      DBAccessories.render(comp, side, () => this.render(), { mode: 'panel' });
+      if (!side.querySelector('#dbd-acc-host')) side.innerHTML = '<div id="dbd-acc-host"></div><div id="dbd-ctl-host"></div>';
+      DBAccessories.render(comp, side.querySelector('#dbd-acc-host'), () => this.render(), { mode: 'panel' });
+      if (typeof DBControls !== 'undefined') DBControls.render(comp, side.querySelector('#dbd-ctl-host'), () => this.render(), { mode: 'panel' });
     }
     if (!canvas) return;
     if (!comp) { canvas.innerHTML = '<div class="sch-empty">No board selected.</div>'; return; }
@@ -277,15 +286,19 @@ const DBDrawing = {
         lines.push({ text: `${fla.toFixed(1)} A · ${wayKva.toFixed(2)} kVA`, dim: true, tag: 'LOAD_LABEL' });
       }
       const warns = DBSchedule._wayWarnings(c, !!v, vll);
-      const tip = [`Way ${c.way ?? ''} — ${c.description || 'no description'}`,
+      let tip = [`Way ${c.way ?? ''} — ${c.description || 'no description'}`,
         `${dev} ${c.poles || '1P'} on ${c.phase || 'R'}`,
         `${c.cable_mm2 || '?'} mm², ${c.cable_m || 0} m`,
         c.el_group ? `Earth leakage group ${c.el_group}` : 'No earth-leakage protection',
         ...(v && v.messages ? v.messages : []),
         ...warns].join('\n');
 
+      const ctr = D.controls && typeof DBControls !== 'undefined' ? DBControls.wayContactor(comp, c) : null;
+      if (ctr) tip += `\nSwitched by contactor ${ctr.tag} (${ctr.poles} ${ctr.rating_a} A ${ctr.category}) — ${DBControls.switchedBy(ctr)}`;
+      const dxf = this.wayDxfAttrs(comp, c, v);
+      if (ctr) dxf.CONTACTOR = ctr.tag;
       items.push({
-        kind: 'way', w: this.DROP_W, glyph: 'mcb', sec: (DBSections.of(comp, c) || {}).id, phase: (c.poles === '3P' || c.phase === 'RWB') ? 'RWB' : (c.phase || 'R'),
+        kind: 'way', w: this.DROP_W, glyph: 'mcb', ctr, sec: (DBSections.of(comp, c) || {}).id, phase: (c.poles === '3P' || c.phase === 'RWB') ? 'RWB' : (c.phase || 'R'),
         poles: c.poles || '1P', spare, wayDesc: c.description || '',
         feeds: sub ? (sub.props.name || sub.id) : (c.type === 'feeder_db' ? 'Sub-board' : null),
         cells: {
@@ -297,7 +310,7 @@ const DBDrawing = {
         },
         elGroup: D.elgroups ? (c.el_group || '') : '',
         status: v ? v.status : (warns.length ? 'warn' : null),
-        lines, tip, dxf: this.wayDxfAttrs(comp, c, v),
+        lines, tip, dxf,
       });
     }
     return items;
@@ -369,6 +382,164 @@ const DBDrawing = {
     return out;
   },
 
+  // Contactors along one busbar row: consecutive ways on the same contactor
+  // share one dashed outline with a mechanical link between their poles; a
+  // switched section is a bracket under the busbar, like an EL unit.
+  // `sections`: false = the pole outlines (drawn under the drops), true = the
+  // switched-section brackets (drawn over them, like a device on the drop).
+  _ctrBrackets(row, xs, busY, ctrY, P, comp, sections) {
+    let s = '';
+    const runs = [];
+    row.forEach((it, i) => {
+      const k = it.ctr || null;
+      const cur = runs[runs.length - 1];
+      if (k && cur && cur.k === k && cur.to === i - 1) cur.to = i;
+      else if (k) runs.push({ k, from: i, to: i });
+    });
+    for (const r of runs) {
+      const k = r.k;
+      if ((k.arrangement === 'section') !== !!sections) continue;
+      const spec = `${k.poles} ${k.rating_a} A ${k.category}`;
+      const attrs = this._dxfData({ BOARD: comp.props.name || comp.id, TAG: k.tag, DESCRIPTION: k.label || '',
+        SPEC: spec, ARRANGEMENT: k.arrangement, SWITCHED_BY: DBControls.switchedBy(k) });
+      const tip = `${k.tag} — contactor ${spec}${k.label ? ', ' + k.label : ''}\nSwitched by ${DBControls.switchedBy(k)}`;
+      if (k.arrangement === 'section') {
+        const txt = `${k.tag} · ${spec} · switched section`;
+        const txtW = txt.length * 5.4 + 30;
+        const mid = (xs[r.from] + xs[r.to]) / 2;
+        const half = Math.max((xs[r.to] - xs[r.from]) / 2 + 26, txtW / 2);
+        const y = busY + this.BUS_TO_RCD + this.RCD_H + 6;
+        s += `<g><title>${this._esc(tip)}</title><g data-dxf-block="DB_CONTACTOR" data-dxf-at="${mid},${y + 9}" data-dxf-attrs="${attrs}">`
+          + `<rect x="${mid - half}" y="${y}" width="${half * 2}" height="18" rx="4" fill="${P.surface}" stroke="${P.ctl}" stroke-width="1.3"/>`
+          + `<text x="${mid}" y="${y + 12.5}" text-anchor="middle" font-size="9.5" font-weight="600" fill="${P.ctl}" data-dxf-attr="TAG_LABEL">${this._esc(txt)}</text>`
+          + `</g></g>`;
+        continue;
+      }
+      const left = xs[r.from] - 52, right = xs[r.to] + 18;
+      s += `<g><title>${this._esc(tip)}</title><g data-dxf-block="DB_CONTACTOR" data-dxf-at="${xs[r.from]},${ctrY}" data-dxf-attrs="${attrs}">`
+        + `<rect x="${left}" y="${ctrY - 17}" width="${right - left}" height="34" rx="4" fill="none" stroke="${P.ctl}" stroke-width="1.1" stroke-dasharray="5,3"/>`
+        + (r.to > r.from ? `<line x1="${xs[r.from] - 5}" y1="${ctrY}" x2="${xs[r.to] - 5}" y2="${ctrY}" stroke="${P.ctl}" stroke-width="1" stroke-dasharray="3,3"/>` : '')
+        + `<text x="${left + 4}" y="${ctrY - 2}" font-size="9.5" font-weight="700" fill="${P.ctl}" data-dxf-attr="TAG_LABEL">${this._esc(this._trunc(k.tag, 6))}</text>`
+        + `<text x="${left + 4}" y="${ctrY + 9}" font-size="7.5" fill="${P.ctl}" data-dxf-attr="SPEC_LABEL">${this._esc(`${k.rating_a} A ${k.category}`)}</text>`
+        + `</g></g>`;
+    }
+    return s;
+  },
+
+  // ── Control circuit ─────────────────────────────────────────────────
+  // One ladder per control supply (and one for contactors with none): the
+  // supply's MCB on the L rail, a rung per contactor — selector, switching
+  // contacts in series or in parallel, coil — to N.
+  _ctlRungH(k) {
+    const n = (k.switches || []).length;
+    return 48 + (k.combine === 'parallel' && n > 1 ? (n - 1) * 26 : 0);
+  },
+
+  _ctlLayout(comp, w, bottom) {
+    if (typeof DBControls === 'undefined' || !DBControls.has(comp)) return null;
+    const ctrs = DBControls.contactors(comp);
+    const groups = [];
+    for (const sup of DBControls.supplies(comp)) {
+      const mine = ctrs.filter(k => k.supply === sup.id);
+      if (mine.length) groups.push({ supply: sup, ctrs: mine });
+    }
+    const orphans = ctrs.filter(k => !DBControls.supply(comp, k.supply));
+    if (orphans.length) groups.push({ supply: null, ctrs: orphans });
+    const avail = w - this.PAD * 2;
+    const perRow = Math.max(1, Math.floor((avail + this.CTL_GAP) / (this.CTL_BW + this.CTL_GAP)));
+    const y0 = bottom - this.PAD + 34;
+    let y = y0 + 14, x = 0, rowH = 0, col = 0;
+    const blocks = [];
+    for (const g of groups) {
+      const h = 66 + g.ctrs.reduce((n, k) => n + this._ctlRungH(k), 0);
+      if (col >= perRow) { y += rowH + this.CTL_GAP; x = 0; rowH = 0; col = 0; }
+      blocks.push(Object.assign({ x, y, h }, g));
+      x += this.CTL_BW + this.CTL_GAP; rowH = Math.max(rowH, h); col++;
+    }
+    return { y0, blocks, y1: y + rowH };
+  },
+
+  _ctlSvg(comp, L, P, x0) {
+    const C = L.ctl;
+    const esc = (v) => this._esc(v);
+    let s = `<text x="${x0}" y="${C.y0}" font-size="12" font-weight="700" fill="${P.ink}">Control circuits</text>`;
+    for (const b of C.blocks) {
+      const bx = x0 + b.x, by = b.y, BW = this.CTL_BW;
+      const Lx = bx + 30, Nx = bx + BW - 24;
+      const sup = b.supply;
+      const supKind = sup ? (CTL_SUPPLY_KINDS.find(x => x.v === sup.kind) || CTL_SUPPLY_KINDS[0]) : null;
+      const head = sup
+        ? (sup.kind === 'external' ? `${sup.voltage || ''} external supply` : `${sup.breaker_a || '?'} A · ${sup.phase || 'R'} · ${sup.voltage || ''}${sup.kind === 'transformer' ? ' via control transformer' : ''}`)
+        : 'Pick a control supply for these contactors';
+      s += `<rect x="${bx}" y="${by}" width="${BW}" height="${b.h}" rx="6" fill="${P.panel}" stroke="${P.border}"/>`
+        + `<text x="${bx + 12}" y="${by + 18}" font-size="10.5" font-weight="700" fill="${sup ? P.ink : P.warn}">${esc(sup ? sup.tag : 'No control supply')}</text>`
+        + `<text x="${bx + 12 + (sup ? String(sup.tag).length * 6.6 + 8 : 120)}" y="${by + 18}" font-size="9" fill="${P.inkSec}">${esc(this._trunc(head + (sup && sup.note ? ' · ' + sup.note : ''), 58))}</text>`;
+      const top = by + 30, railTop = by + 54;
+      const last = by + 66 + b.ctrs.reduce((n, k) => n + this._ctlRungH(k), 0) - this._ctlRungH(b.ctrs[b.ctrs.length - 1]);
+      if (sup && sup.kind !== 'external') {
+        s += this._vline(Lx, top, railTop, [[top + 12, 10]], P.line, 1.4)
+          + this._sym('cb', Lx, top + 12, P, this._native('cb', P), null, 0.5, 0,
+            { BOARD: comp.props.name || comp.id, TAG: sup.tag, DESCRIPTION: 'Control supply', RATING_A: sup.breaker_a || '', PHASE: sup.phase || '' });
+      } else {
+        s += `<line x1="${Lx}" y1="${top}" x2="${Lx}" y2="${railTop}" stroke="${P.line}" stroke-width="1.4" stroke-dasharray="4,3"/>`;
+      }
+      s += `<line x1="${Lx}" y1="${railTop}" x2="${Lx}" y2="${last}" stroke="${P.line}" stroke-width="1.6"/>`
+        + `<line x1="${Nx}" y1="${railTop}" x2="${Nx}" y2="${last}" stroke="${P.line}" stroke-width="1.6"/>`
+        + `<text x="${Lx - 12}" y="${railTop + 4}" font-size="9" font-weight="700" fill="${P.muted}">L</text>`
+        + `<text x="${Nx + 5}" y="${railTop + 4}" font-size="9" font-weight="700" fill="${P.muted}">N</text>`;
+
+      let ry = by + 66;
+      for (const k of b.ctrs) {
+        const sw = k.switches || [];
+        const par = k.combine === 'parallel' && sw.length > 1;
+        const coilX = Nx - 32;
+        let cx = Lx + 12;
+        const elems = [];
+        const box = (x, y, bw, label, tip) => `<g><title>${esc(tip)}</title><rect x="${x}" y="${y - 9}" width="${bw}" height="18" rx="3" fill="${P.surface}" stroke="${P.line}" stroke-width="1.1"/>`
+          + `<text x="${x + bw / 2}" y="${y + 3.5}" text-anchor="middle" font-size="8.5" font-weight="600" fill="${P.ink}">${esc(this._trunc(label, Math.max(3, Math.floor(bw / 5.4))))}</text></g>`;
+        s += `<circle cx="${Lx}" cy="${ry}" r="2.2" fill="${P.line}"/><circle cx="${Nx}" cy="${ry}" r="2.2" fill="${P.line}"/>`;
+        const n = (k.selector !== 'none' ? 1 : 0) + (par ? 1 : sw.length);
+        const avail = coilX - 18 - cx;
+        const bw = Math.max(30, Math.min(70, (n ? avail / n : avail) - 10));
+        if (k.selector !== 'none') {
+          elems.push(box(cx, ry, bw, `${k.selector_tag || 'S'} ${k.selector === 'hoa' ? 'HOA' : 'OA'}`,
+            `${k.selector_tag || 'Selector'}: ${k.selector === 'hoa' ? 'Hand – Off – Auto (Hand bypasses the contacts)' : 'Off – Auto'}`));
+          cx += bw + 10;
+        }
+        const swTip = (x) => `${x.tag}: ${DBControls.switchKind(x.kind).label}${x.setting ? ' — ' + x.setting : ''}`;
+        if (par) {
+          const gx0 = cx - 4, gx1 = Math.min(coilX - 18, cx + Math.max(bw, 70) + 4);
+          const pw = gx1 - gx0 - 8;
+          s += `<line x1="${Lx}" y1="${ry}" x2="${gx0}" y2="${ry}" stroke="${P.line}" stroke-width="1.3"/>`
+            + `<line x1="${gx1}" y1="${ry}" x2="${Nx}" y2="${ry}" stroke="${P.line}" stroke-width="1.3"/>`
+            + `<line x1="${gx0}" y1="${ry}" x2="${gx0}" y2="${ry + (sw.length - 1) * 26}" stroke="${P.line}" stroke-width="1.3"/>`
+            + `<line x1="${gx1}" y1="${ry}" x2="${gx1}" y2="${ry + (sw.length - 1) * 26}" stroke="${P.line}" stroke-width="1.3"/>`;
+          sw.forEach((x, i) => {
+            const yy = ry + i * 26;
+            if (i) s += `<line x1="${gx0}" y1="${yy}" x2="${gx1}" y2="${yy}" stroke="${P.line}" stroke-width="1.3"/>`;
+            elems.push(box(gx0 + 4, yy, pw, x.tag, swTip(x)));
+          });
+        } else {
+          s += `<line x1="${Lx}" y1="${ry}" x2="${Nx}" y2="${ry}" stroke="${P.line}" stroke-width="1.3"/>`;
+          for (const x of sw) { elems.push(box(cx, ry, bw, x.tag, swTip(x))); cx += bw + 10; }
+        }
+        s += elems.join('');
+        const attrs = this._dxfData({ BOARD: comp.props.name || comp.id, TAG: k.tag, DESCRIPTION: k.label || '',
+          SPEC: `${k.poles} ${k.rating_a} A ${k.category}`, COIL: k.coil || '', SWITCHED_BY: DBControls.switchedBy(k), SUPPLY: sup ? sup.tag : '' });
+        s += `<g><title>${esc(`${k.tag} coil (${k.coil || ''}) — ${k.label || 'contactor'}`)}</title><g data-dxf-block="DB_CONTACTOR_COIL" data-dxf-at="${coilX},${ry}" data-dxf-attrs="${attrs}">`
+          + `<circle cx="${coilX}" cy="${ry}" r="11" fill="${P.surface}" stroke="${P.ctl}" stroke-width="1.6"/>`
+          + `<text x="${coilX}" y="${ry + 3.5}" text-anchor="middle" font-size="8.5" font-weight="700" fill="${P.ctl}" data-dxf-attr="TAG_LABEL">${esc(this._trunc(k.tag, 4))}</text></g></g>`;
+        const sets = sw.filter(x => x.setting).map(x => `${x.tag} ${x.setting}`).join('; ');
+        const ways = DBControls.waysOf(comp, k).map(c => c.way).join(', ');
+        const cap = `${k.label ? k.label + ' — ' : ''}${ways ? 'ways ' + ways : 'no ways'}${sets ? ' · ' + sets : ''}${k.lamp ? ' · door lamp' : ''}`;
+        const capY = ry + (par ? (sw.length - 1) * 26 : 0) + 22;
+        s += `<text x="${Lx + 12}" y="${capY}" font-size="8.5" fill="${P.muted}">${esc(this._trunc(cap, 76))}</text>`;
+        ry += this._ctlRungH(k);
+      }
+    }
+    return s;
+  },
+
   _layout(comp, D) {
     this._dropX0 = this.DROP_X0 + (D.table ? this.TABLE_HDR : 0);
     const items = this._items(comp, D);
@@ -390,8 +561,12 @@ const DBDrawing = {
 
     const tRows = D.table ? this._tableRows(D) : [];
     const maxLines = D.table ? 0 : items.reduce((n, it) => Math.max(n, it.lines.length), 1);
-    const btd = items.some(it => it.kind === 'acc') ? 92 : this.BUS_TO_DEV;
-    const rowInner = btd + this.LABEL_DY + maxLines * this.LINE_H
+    // Contactor poles sit under the way's breaker (the drop gets longer); a
+    // switched section is a bracket under the busbar (the breakers drop lower).
+    const ctrDY = items.some(it => it.ctr && it.ctr.arrangement !== 'section') ? this.CTR_DY : 0;
+    const secDY = items.some(it => it.ctr && it.ctr.arrangement === 'section') ? this.SEC_CTR_DY : 0;
+    const btd = (items.some(it => it.kind === 'acc') ? 92 : this.BUS_TO_DEV) + secDY;
+    const rowInner = btd + this.LABEL_DY + ctrDY + maxLines * this.LINE_H
       + (D.bars ? this.BAR_GAP + this.BAR_PITCH + 8 : 8) + (D.load ? this.LOAD_H : 0)
       + (tRows.length ? tRows.length * this.TBL_ROW + 14 : 0);
     const rowH = rowInner + this.ROW_GAP;
@@ -433,9 +608,11 @@ const DBDrawing = {
     const tapW = Math.max(0, ...defs.map(d => d.supply.length ? this.INCOMER_X + this.TAP_X0 + d.supply.length * this.ACC_W : 0));
     const w = this.PAD * 2 + Math.max(busW + 20, tapW + 20, 620);
     const last = bands[bands.length - 1];
-    const h = (sectioned ? last.y1 : last.busY + last.rows.length * rowH) + this.PAD;
+    let h = (sectioned ? last.y1 : last.busY + last.rows.length * rowH) + this.PAD;
+    const ctl = D.controls ? this._ctlLayout(comp, w, h) : null;
+    if (ctl) h = ctl.y1 + this.PAD;
 
-    return { bands, rowDefs, sectioned, btd, tRows, items, inc: boardInc, maxLines, rowInner, rowH, busW, w, h, gutter };
+    return { bands, rowDefs, sectioned, btd, ctrDY, secDY, ctl, tRows, items, inc: boardInc, maxLines, rowInner, rowH, busW, w, h, gutter };
   },
 
   // The busbar rows of one band: WAYS_PER_ROW columns a row; with phase rows
@@ -506,13 +683,13 @@ const DBDrawing = {
     return dark ? {
       surface: '#1e1e2e', panel: '#252536', ink: '#e0e0e8', inkSec: '#a0a0b0',
       muted: '#7c7c96', line: '#8a8aa4', bus: '#c9c9e0', border: '#3a3a50',
-      accent: '#4a9eff', head: '#2f2f44',
+      accent: '#4a9eff', head: '#2f2f44', ctl: '#ffa94d',
       pass: '#69db7c', warn: '#ffc078', fail: '#ff6b6b',
       phase: { R: '#f87171', W: '#cbd5e1', B: '#60a5fa', RWB: '#c084fc' },
     } : {
       surface: '#ffffff', panel: '#f5f8ff', ink: '#1a1a2e', inkSec: '#555555',
       muted: '#7a7a88', line: '#44444f', bus: '#1a1a2e', border: '#c9ced6',
-      accent: '#0078d7', head: '#eef1f5',
+      accent: '#0078d7', head: '#eef1f5', ctl: '#b85c00',
       pass: '#2e7d32', warn: '#b26a00', fail: '#d32f2f',
       phase: { R: '#dc2626', W: '#6b7280', B: '#2563eb', RWB: '#7c3aed' },
     };
@@ -596,6 +773,13 @@ const DBDrawing = {
   _gCtlTx(x, y, P, stroke) {
     return `<circle cx="${x}" cy="${y - 5}" r="7" fill="none" stroke="${escHtml(stroke)}" stroke-width="1.4"/>`
       + `<circle cx="${x}" cy="${y + 5}" r="7" fill="none" stroke="${escHtml(stroke)}" stroke-width="1.4"/>`;
+  },
+
+  // Contactor main pole (IEC 60617 07-13-02): an open make contact with the
+  // semicircle on its fixed contact.
+  _gContactor(x, y, P, stroke) {
+    return `<path d="M ${x - 4.5} ${y - 11} A 4.5 4.5 0 0 0 ${x + 4.5} ${y - 11}" fill="none" stroke="${escHtml(stroke)}" stroke-width="1.4"/>`
+      + `<line x1="${x}" y1="${y + 12}" x2="${x - 9}" y2="${y - 8}" stroke="${escHtml(stroke)}" stroke-width="1.6"/>`;
   },
 
   // Protective device type for an accessory (SLD symbol key), or null.
@@ -696,6 +880,7 @@ const DBDrawing = {
     L.rowDefs.forEach((rd) => {
       svg += this._busRow(rd, L, P, D, x0, comp);
     });
+    if (L.ctl) svg += this._ctlSvg(comp, L, P, x0);
 
     return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${L.w} ${L.h}" width="${L.w}" height="${L.h}"
         role="img" aria-label="${this._esc(`Single line of ${comp.props.name || comp.id}: ${(comp.props.circuits || []).length} ways`)}"
@@ -891,7 +1076,9 @@ const DBDrawing = {
 
     const devY = busY + L.btd;
     const secName = rd.band.sec ? rd.band.sec.name : '';
-    const labelTop = devY + this.LABEL_DY;
+    const labelTop = devY + this.LABEL_DY + (L.ctrDY || 0);
+    const ctrY = devY + this.CTR_OFF;
+    s += this._ctrBrackets(row, xs, busY, ctrY, P, comp, false);
     const barsY = labelTop + L.maxLines * this.LINE_H + this.BAR_GAP;
     const peY = barsY + this.BAR_PITCH;
 
@@ -926,9 +1113,11 @@ const DBDrawing = {
         if (D.bars) g += `<circle cx="${x}" cy="${endY}" r="2.4" fill="${P.line}"/>`;
         sym = this._glyph(it.glyph, x, devY, P, stroke, it);
       } else {
-        const endY = it.spare ? devY + 30 : (D.bars ? peY : devY + 26) + (D.load ? 14 : 0);
-        g += this._vline(x, busY, endY, [[devY, 20 * this.SYM_SCALE], ...lblGap], stroke, 1.4);
+        const endY = it.spare ? devY + 30 + (L.ctrDY || 0) : (D.bars ? peY : devY + 26) + (D.load ? 14 : 0);
+        const pole = it.ctr && it.ctr.arrangement !== 'section';
+        g += this._vline(x, busY, endY, [[devY, 20 * this.SYM_SCALE], ...(pole ? [[ctrY, 12]] : []), ...lblGap], stroke, 1.4);
         sym = this._glyph(it.glyph, x, devY, P, stroke, it);
+        if (pole) g += this._gContactor(x, ctrY, P, P.ctl);
         if (D.load && !it.spare) {
           const motor = (it.poles === '3P' || it.phase === 'RWB')
             && /pump|motor|fan|compress|aircon|a\/c|hvac|drive/i.test(it.wayDesc || '');
@@ -965,6 +1154,8 @@ const DBDrawing = {
       g += `</g>`;
       s += g;
     });
+
+    s += this._ctrBrackets(row, xs, busY, ctrY, P, comp, true);
 
     if (L.tRows.length) {
       const top = peY + 14 + (D.load ? 56 : 0);

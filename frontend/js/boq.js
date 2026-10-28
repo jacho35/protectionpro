@@ -14,7 +14,7 @@
  *           loop-in allowances — and 2 terminations per span
  *   db      DB circuit schedules: board enclosures, final-circuit cable per
  *           way, breakers by poles / rating / curve, earth-leakage units,
- *           board accessories
+ *           board accessories, contactors and their control gear
  *
  * One cable is counted once. When two sources describe the same run, the
  * schedule wins over the drawing:
@@ -408,6 +408,10 @@ const BOQ = {
         for (const acc of (comp.props.accessories || [])) {
           const k = (typeof DB_ACCESSORY_KINDS !== 'undefined') && DB_ACCESSORY_KINDS.find(x => x.key === acc.kind);
           add({ key: Rates.accKey(acc.kind), desc: k ? k.label : acc.kind, unit: 'ea', cat: 'prot' }, 1, 'db', 'DB accessories');
+        }
+        // Contactors, time switches, photocells, selectors and control supplies (DBControls).
+        if (typeof DBControls !== 'undefined') {
+          for (const l of DBControls.boqLines(comp)) add({ key: l.key, desc: l.desc, unit: 'ea', cat: 'prot' }, 1, 'db', 'DB controls');
         }
       }
     }

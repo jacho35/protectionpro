@@ -85,6 +85,7 @@ const DBSchedule = {
   // visual order. Which groups are folded is a per-browser view preference
   // (localStorage), never project data.
   _GROUPS: [
+    { g: 'ctl', label: 'Control', keys: ['contactor'] },
     { g: 'dev', label: 'Device', keys: ['poles', 'phase', 'curve'] },
     { g: 'el',  label: 'Earth leakage', keys: ['el_group', 'leakage_ma'] },
     { g: 'cab', label: 'Cable', keys: ['cable_mm2', 'ecc_mm2', 'cable_m'] },
@@ -130,6 +131,10 @@ const DBSchedule = {
       const poles = c.poles || '1P';
       const ph = poles === '3P' ? 'RWB' : (c.phase || 'R');
       return `${escHtml(poles)}${dot}<span class="db-ph-dot db-ph-${escHtml(ph)}"></span>${escHtml(ph)}${dot}${escHtml(c.curve || 'C')}`;
+    }
+    if (g === 'ctl') {
+      const k = DBControls.wayContactor(AppState.components.get(this.currentId), c);
+      return k ? `<span class="dbc-tag">${escHtml(k.tag)}</span>` : '—';
     }
     if (g === 'el') return `${escHtml(c.el_group || '—')}${dot}${escHtml(String(Number(c.leakage_ma) || 0))} mA`;
     if (g === 'cab') {
@@ -280,6 +285,7 @@ const DBSchedule = {
     return {
       circuits: comp.props.circuits || [],
       accessories: comp.props.accessories || [],
+      controls: comp.props.controls || null,
       board_diversity: comp.props.board_diversity ?? 1.0,
       el_ratings: comp.props.el_ratings || {},
       el_poles: comp.props.el_poles || null,
@@ -1299,6 +1305,16 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
     // A library breaker writes its rating + curve; hand-editing either afterwards
     // makes the way a generic B/C/D breaker again.
     if (k === 'device') { DbCoord.applyToWay(c, v); return 'render'; }
+    // The contactor switching the way: picked, cleared, or a new one for it
+    // (opened in the editor). The Controls section re-renders with the grid.
+    if (k === 'contactor') {
+      if (v === '__new') {
+        const kNew = DBControls.newContactor(comp, [c]);
+        DBControls.edit(comp, kNew, { isNew: true, ways: [c.id] });
+      } else if (v) c.contactor = v;
+      else delete c.contactor;
+      return 'render';
+    }
     // A library device follows a new rating or curve to the same range (or the
     // board's breaker rules); with no match the way falls back to Generic.
     if ((k === 'breaker_a' || k === 'curve') && c.device) {
@@ -1463,6 +1479,16 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
       const sub = c.type === 'feeder_db' && c.feedsDbId ? AppState.components.get(c.feedsDbId) : null;
       return sub ? `<button type="button" class="db-sub-open" data-open-board="${escHtml(sub.id)}" title="Open the ${escHtml(sub.props.name || sub.id)} schedule">→ ${escHtml(sub.props.name || sub.id)}</button>` : '';
     };
+    // Control: the contactor that switches the way (DBControls), picked here
+    // or made new for it; its pole on a shared contactor beside the pick.
+    const ctrs = DBControls.contactors(comp);
+    const ctlCell = (c) => {
+      const k = DBControls.wayContactor(comp, c);
+      const pole = DBControls.poleLabel(comp, k, c);
+      const opts = `<option value="">—</option>${ctrs.map(x => `<option value="${escHtml(x.id)}"${k === x ? ' selected' : ''}>${escHtml(x.tag)}</option>`).join('')}<option value="__new">New contactor…</option>`;
+      const tip = k ? `${k.tag}${k.label ? ' (' + k.label + ')' : ''}: ${k.poles} ${k.rating_a} A ${k.category} — switched by ${DBControls.switchedBy(k)}` : 'Switch this way through a contactor (photocell, timer, thermostat, BMS…)';
+      return `<td data-label="Control" data-grp="ctl" class="db-ctl-cell${k ? ' on' : ''}"><select data-k="contactor" title="${escHtml(tip)}">${opts}</select>${pole ? `<span class="db-ctl-pole" title="Contactor pole">p${escHtml(pole)}</span>` : ''}</td>`;
+    };
     const rows = circuits.map((c, i) => (actSec && DBSections.of(comp, c).id !== actSec) ? '' : `
       <tr data-idx="${i}" data-id="${escHtml(c.id)}"${this._selected.has(c.id) ? ' class="db-selected"' : ''}>
         <td data-label="Select" class="db-sel-cell"><input type="checkbox" class="db-row-sel" data-id="${escHtml(c.id)}"${this._selected.has(c.id) ? ' checked' : ''} title="Select for bulk edit — shift-click another row to select the range between them"></td>
@@ -1472,6 +1498,8 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
         <td data-label="Breaker (A)" class="db-col-breaker"><input type="number" data-k="breaker_a" value="${escHtml(c.breaker_a ?? 20)}" min="1" step="1" style="width:68px"${lock(c, 'breaker_a')}>${sldTag(c, 'breaker_a')}</td>
         <td data-label="Device" class="db-col-device"><select data-k="device" class="db-device-sel"${lock(c, 'device')} title="${escHtml(DbCoord.filterNote({ a: c.breaker_a, curve: c.curve }) + ' — ' + DbCoord.FILTER_TIP)}">${DbCoord.optionsHtml(c.device || '', null, { a: c.breaker_a, curve: c.curve })}</select></td>
         <td data-label="Load (VA)" class="db-col-load"><input type="number" data-k="load_va" value="${escHtml(c.load_va ?? 0)}" min="0" step="50" style="width:88px"></td>
+        ${ctlCell(c)}
+        ${sumCell(c, 'ctl')}
         <td data-label="Poles" data-grp="dev"><select data-k="poles"${lock(c, 'poles')}>${opt('1P', c.poles || '1P')}${opt('3P', c.poles || '1P')}</select></td>
         <td data-label="Phase" data-grp="dev"><select data-k="phase" ${((c.poles || '1P') === '3P') ? 'disabled' : ''}${lock(c, 'phase') && (c.poles || '1P') !== '3P' ? lock(c, 'phase') : ''}>
           ${opt('R', c.phase || 'R')}${opt('W', c.phase || 'R')}${opt('B', c.phase || 'R')}</select></td>
@@ -1599,6 +1627,8 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
             <th class="db-sel-cell"><input type="checkbox" id="db-select-all" title="Select / deselect all ways. Shift-click a row checkbox to select a range."></th>
             <th class="db-col-way">Way</th>${hasSec ? '<th class="db-col-sec">Section</th>' : ''}<th class="db-col-desc">Description</th>
             <th class="db-col-breaker">Breaker (A)</th><th class="db-col-device" title="${escHtml(DbCoord.FILTER_TIP)}">Device <span class="db-info" aria-hidden="true">i</span></th><th class="db-col-load">Load (VA)</th>
+            <th data-grp="ctl" title="The contactor that switches this way — set up in the Controls section below the grid">Switched by</th>
+            <th class="db-grp-sum" data-sum="ctl">Contactor</th>
             <th data-grp="dev">Poles</th><th data-grp="dev">Ph</th>
             <th data-grp="dev">Curve</th>
             <th class="db-grp-sum" data-sum="dev">Poles · Ph · Curve</th>
@@ -1630,6 +1660,7 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
             '<tr><td colspan="30" style="text-align:center;opacity:0.6;padding:16px;">No ways yet — add the first circuit below.</td></tr>'}</tbody>
         </table>
       </div>
+      <div id="db-controls-panel" class="db-controls-host"></div>
       </div>
       <aside class="db-side" id="db-side" aria-label="Board side panel">
         <div id="db-bulk-bar"></div>
@@ -1680,6 +1711,7 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
     }, () => this.render());
     this._refreshElPanel(comp);
     this._refreshAccessories(comp);
+    this._refreshControls(comp);
     this._refreshBulkBar();
     this._bindProtStrip(comp);
     this.body.querySelectorAll('details.db-side-sec').forEach(d => {
@@ -1868,7 +1900,7 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
     // Excel-style grid (grid.js): selection, Enter/Tab/arrow navigation,
     // copy, fill-down, no number stepping. Column order is the VISUAL order of
     // the [data-k] cells, which NAV_COLS mirrors for pasted blocks.
-    const NAV_COLS = ['way', ...(DBSections.has(comp) ? ['section'] : []), 'description', 'breaker_a', 'device', 'load_va', 'poles', 'phase',
+    const NAV_COLS = ['way', ...(DBSections.has(comp) ? ['section'] : []), 'description', 'breaker_a', 'device', 'load_va', 'contactor', 'poles', 'phase',
       'curve', 'el_group', 'leakage_ma', 'cable_mm2', 'ecc_mm2', 'cable_m',
       'demand_factor', 'power_factor', 'conduit_tag', 'conduit_type', 'conduit_size'];
     this._focusCell = (row, k) => {
@@ -1935,6 +1967,10 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
           else if (['R', 'W', 'B'].includes(p[0])) c.phase = p[0];
         } else if (key === 'curve') {
           if (['B', 'C', 'D'].includes(raw.toUpperCase())) c.curve = raw.toUpperCase();
+        } else if (key === 'contactor') {
+          const board = AppState.components.get(this.currentId);
+          const k = /^(-|—|none)$/i.test(raw) ? null : DBControls.wayContactor(board, { contactor: raw });
+          if (k) c.contactor = k.id; else if (/^(-|—|none)$/i.test(raw)) delete c.contactor; else bad++;
         } else if (key === 'section') {
           const sc = DBSections.list(AppState.components.get(this.currentId)).find(x => String(x.name || '').toLowerCase() === raw.toLowerCase() || (x.prefix && String(x.prefix).toLowerCase() === raw.toLowerCase()));
           if (sc) c.section = sc.id; else bad++;
@@ -2019,6 +2055,8 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
     });
     this._syncSelectAll();
     this._refreshBulkBar();
+    // "+ Contactor for the ticked ways" follows the selection.
+    if (this.currentId) this._refreshControls(AppState.components.get(this.currentId));
   },
 
   // A way's Device list is filtered by its own Breaker (A) + Curve, so editing
@@ -2519,6 +2557,15 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
     DBAccessories.render(comp, wrap, null, { mode: 'section' });
   },
 
+  // ── Controls ────────────────────────────────────────────────────────
+  // Contactors and their control supplies, under the grid. A change re-renders
+  // the grid too, since its Control column shows the contactor per way.
+  _refreshControls(comp) {
+    const wrap = this.body && this.body.querySelector('#db-controls-panel');
+    if (!wrap || typeof DBControls === 'undefined') return;
+    DBControls.render(comp, wrap, () => this.render(), { mode: 'section' });
+  },
+
   // ── Excel export / import ───────────────────────────────────────────
 
   // 'FLA (A)' is a CALCULATED trailing column — exported for the deliverable
@@ -2527,7 +2574,7 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
   // harmlessly.
   XLSX_HEADERS: ['Way', 'Description', 'Breaker (A)', 'Load (VA)', 'Poles', 'Phase',
     'Curve', 'EL Group', 'Leak (mA)', 'Cable (mm2)', 'ECC (mm2)', 'Length (m)',
-    'Demand Factor', 'Power Factor', 'FLA (A)', 'Conduit Tag', 'Conduit Type', 'Conduit Size', 'Section'],
+    'Demand Factor', 'Power Factor', 'FLA (A)', 'Conduit Tag', 'Conduit Type', 'Conduit Size', 'Section', 'Contactor'],
 
   exportXlsx(comp) {
     if (typeof XLSX === 'undefined') return;
@@ -2541,11 +2588,12 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
       Math.round(this._wayFlaA(c, vll) * 10) / 10,
       c.conduit_tag ?? '', (Conduit.type(c.conduit_type) || {}).label ?? '', c.conduit_size ?? '',
       DBSections.has(comp) ? DBSections.of(comp, c).name : '',
+      (DBControls.wayContactor(comp, c) || {}).tag ?? '',
     ]);
     const ws = XLSX.utils.aoa_to_sheet([this.XLSX_HEADERS, ...rows]);
     ws['!cols'] = [{ wch: 5 }, { wch: 28 }, { wch: 11 }, { wch: 10 }, { wch: 6 },
       { wch: 6 }, { wch: 6 }, { wch: 9 }, { wch: 10 }, { wch: 11 }, { wch: 10 },
-      { wch: 10 }, { wch: 13 }, { wch: 12 }, { wch: 9 }, { wch: 12 }, { wch: 13 }, { wch: 12 }, { wch: 14 }];
+      { wch: 10 }, { wch: 13 }, { wch: 12 }, { wch: 9 }, { wch: 12 }, { wch: 13 }, { wch: 12 }, { wch: 14 }, { wch: 10 }];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Circuit Schedule');
     const name = (comp.props.name || 'DB').replace(/[^\w-]+/g, '_');

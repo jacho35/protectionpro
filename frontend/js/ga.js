@@ -11,13 +11,18 @@
  *   { mounting: 'any'|'wall'|'floor', enclosure: 'auto'|<GA_ENCLOSURES key>|'custom',
  *     custom: {w,h,d}, spare_pct, delta_t, incomer_a,
  *     order: [item keys], over: { <item key>: { kind, rowbreak } },
- *     extras: [{ id, kind, label, modules, heat_w }], phase_rows }
+ *     extras: [{ id, kind, label, modules, heat_w }], phase_rows,
+ *     control_gear: 'row'|'beside'|'separate' }
+ * `control_gear`: where the contactors, timers, photocell relays, selectors and
+ * control MCBs from DBControls go — a rail row of their own (default), each
+ * contactor's set right after its last way, or a separate enclosure (left off
+ * this GA). Field devices (thermostats, BMS contacts) take no rail.
  * `phase_rows`: the single-phase ways grouped by phase, each phase on rails of
  * its own (R, then W, then B, then the three-phase ways) — how a board is
  * usually built, even though it takes more rail.
  * Absent ⇒ defaults, so boards never visited stay byte-identical.
  *
- * Item keys: 'inc' · 'acc:<id>' · 'way:<id>' · 'rcd:<el group>' · 'x:<id>'.
+ * Item keys: 'inc' · 'acc:<id>' · 'way:<id>' · 'rcd:<el group>' · 'ctl:<device id>' · 'x:<id>'.
  *
  * Sizes are GENERIC (17.5 mm DIN module, typical MCCB frames and enclosure
  * sizes) and the heat check is the indicative surface-area method — confirm
@@ -83,7 +88,7 @@ const GA_PARTITION_MM = { '1': 0, '2a': 20, '2b': 20, '3a': 40, '3b': 40, '4a': 
 
 const GA_KIND_FILL = {
   incomer: '#c0392b', mccb: '#8e44ad', mcb: '#2e75b6', rcbo: '#17a2b8', rcd: '#e08a00',
-  acc: '#2e8b57', extra: '#7f8c8d', spare: 'none',
+  acc: '#2e8b57', extra: '#7f8c8d', ctl: '#c0661a', spare: 'none',
 };
 
 const GA = {
@@ -111,6 +116,7 @@ const GA = {
       over: (g.over && typeof g.over === 'object') ? g.over : {},
       extras: Array.isArray(g.extras) ? g.extras : [],
       phase_rows: !!g.phase_rows,
+      control_gear: ['beside', 'separate'].includes(g.control_gear) ? g.control_gear : 'row',
       section_layout: g.section_layout === 'stack' ? 'stack' : g.section_layout === 'grid' ? 'grid' : 'side',
       grid_cols: Number(g.grid_cols) > 0 ? Math.min(8, Math.floor(Number(g.grid_cols))) : null,
       grid_rows: Number(g.grid_rows) > 0 ? Math.min(8, Math.floor(Number(g.grid_rows))) : null,
@@ -260,6 +266,26 @@ const GA = {
       }));
     }
 
+    // Control gear (contactors and what switches them) — see `control_gear`.
+    const ctl = this.controlItems(comp, secOf);
+    if (cfg.control_gear === 'beside') {
+      for (const it of ctl) {
+        const ways = it.ctrId ? DBControls.waysOf(comp, DBControls.contactor(comp, it.ctrId)) : [];
+        const lastWay = ways.length ? 'way:' + (ways[ways.length - 1].id || ways[ways.length - 1].way) : null;
+        let at = -1;
+        for (let i = out.length - 1; i >= 0; i--) {
+          if (lastWay ? out[i].key === lastWay || (out[i].role === 'control' && out[i].ctrId === it.ctrId) : out[i].role === 'way') { at = i; break; }
+        }
+        if (!lastWay) {             // a supply: ahead of the first contactor's gear
+          const first = out.findIndex(o => o.role === 'way');
+          at = first >= 0 ? first - 1 : out.length - 1;
+        } else if (at < 0) at = out.length - 1;      // a contactor with no ways yet
+        out.splice(at + 1, 0, it);
+      }
+    } else if (cfg.control_gear === 'row') {
+      out.push(...ctl);
+    }
+
     for (const x of cfg.extras) {
       const kd = GA_EXTRA_KINDS.find(k => k.key === x.kind) || GA_EXTRA_KINDS[GA_EXTRA_KINDS.length - 1];
       out.push({ key: 'x:' + x.id, form: 'din', kind: x.kind === 'spare' ? 'spare' : 'extra',
@@ -268,8 +294,26 @@ const GA = {
     }
 
     for (const it of out) it.rowbreak = !!ov(it.key).rowbreak;
+    if (cfg.control_gear === 'row' && ctl.length) ctl[0].rowbreak = true;   // the control row starts a rail
     const ordered = this._ordered(out, cfg.order);
     return cfg.phase_rows ? this._phaseRows(ordered) : ordered;
+  },
+
+  // DIN items for the board's control gear (DBControls.devices), grouped per
+  // contactor; field devices (no rail) are left out. `ctrId` ties a contactor's
+  // own gear together.
+  controlItems(comp, secOf) {
+    if (typeof DBControls === 'undefined' || !DBControls.has(comp)) return [];
+    const out = [];
+    for (const dv of DBControls.devices(comp)) {
+      if (!(dv.modules > 0)) continue;
+      const k = dv.group !== 'supply' ? DBControls.contactor(comp, dv.group) : null;
+      const first = k ? DBControls.waysOf(comp, k)[0] : null;
+      out.push({ key: 'ctl:' + dv.id, form: 'din', kind: 'ctl', modules: dv.modules, heat: dv.heat_w,
+        label: dv.label, sub: dv.spec, title: `${dv.label}: ${dv.spec}`, role: 'control', ctrId: k ? k.id : null,
+        sec: secOf ? secOf(first || {}) : undefined });
+    }
+    return out;
   },
 
   // R / W / B for a single-phase way, '3P' for a three-phase one.
@@ -283,7 +327,7 @@ const GA = {
   // phase of its first way) grouped R, W, B, three-phase — keeping their order
   // inside a group — and each group starts a new rail row (per section).
   _phaseRows(items) {
-    const rank = (it) => it.role === 'extra' ? 9 : (this.PHASE_ROW_ORDER[it.pgroup] || 0);
+    const rank = (it) => it.role === 'extra' ? 9 : it.role === 'control' ? 8 : (this.PHASE_ROW_ORDER[it.pgroup] || 0);
     const sorted = items.map((it, i) => ({ it, i }))
       .sort((a, b) => rank(a.it) - rank(b.it) || a.i - b.i).map(x => x.it);
     const last = new Map();
@@ -1190,6 +1234,7 @@ const GA = {
       <label title="Free modules left for future ways">Spare % ${num('spare_pct', cfg.spare_pct, 0, 5, 56)}</label>
       <label title="Allowed temperature rise inside the enclosure">Rise K ${num('delta_t', cfg.delta_t, 5, 5, 56)}</label>
       <label class="ga-check" title="Each phase on rails of its own: red-phase ways first, then white (yellow), then blue, then the three-phase ways. Takes more rail, but is how a board is usually built."><input type="checkbox" data-ga-phase-rows${cfg.phase_rows ? ' checked' : ''}> Group ways by phase</label>
+      ${typeof DBControls !== 'undefined' && DBControls.has(L.comp) ? this._controlSideHTML(L) : ''}
       ${L.comps ? '' : `<label title="Blank = rating of the incoming device on the SLD (else estimated from demand)">Incomer A ${num('incomer_a', cfg.incomer_a, 0, 10, 72)}</label>`}
       <h4>Devices</h4>
       <table class="ga-items"><tbody>${rows}</tbody></table>
@@ -1197,6 +1242,20 @@ const GA = {
         ${(typeof DBSections !== 'undefined' && DBSections.has(comp0(L))) ? `<select id="ga-add-sec" title="Compartment">${DBSections.list(comp0(L)).map(sc => `<option value="${e(sc.id)}">${e(sc.name)}</option>`).join('')}</select>` : ''}
         <button class="btn-small" data-ga="add">Add item</button></div>
       <p class="ga-note">Generic sizes (17.5 mm DIN pole, typical MCCB frames and enclosures) with an indicative heat check — confirm against the manufacturer's catalogue before ordering.</p>`;
+  },
+
+  // Where the control gear goes, and what of it is not on the rail.
+  _controlSideHTML(L) {
+    const e = this._esc, cfg = L.cfg;
+    const devs = DBControls.devices(L.comp);
+    const din = devs.filter(d => d.modules > 0);
+    const mods = din.reduce((n, d) => n + d.modules, 0);
+    const heat = din.reduce((n, d) => n + d.heat_w, 0);
+    const field = devs.filter(d => !(d.modules > 0));
+    return `<label title="Contactors, time switches, photocell relays, selectors and control MCBs (from the schedule's Controls)">Control gear <select data-ga-set="control_gear">
+        ${[['row', 'Own rail row'], ['beside', 'Beside its circuits'], ['separate', 'Separate enclosure']].map(([v, l]) => `<option value="${v}"${cfg.control_gear === v ? ' selected' : ''}>${l}</option>`).join('')}</select></label>
+      <div class="ga-sub">${din.length} control devices · ${mods} modules · ${heat.toFixed(0)} W${cfg.control_gear === 'separate' ? ' — in a separate enclosure, not on this GA' : ''}</div>
+      ${field.length ? `<div class="ga-sub" title="${e(field.map(d => `${d.label}: ${d.spec}`).join('\n'))}">Outside the board (wired to terminals): ${e(field.map(d => d.label).join(', '))}</div>` : ''}`;
   },
 
   // Brush chips for painting grid cells: each section, plus Spare.
