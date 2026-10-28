@@ -136,7 +136,7 @@ const HELP_GUIDES = [
           { sel: '#db-quick-lights', label: 'Quick batches' },
         ] } },
     { title: 'Edit like a spreadsheet',
-      html: 'Click a cell and type. Arrow keys move, <kbd>Enter</kbd> goes down, <kbd>Tab</kbd> goes right, <kbd>F2</kbd> edits inside a cell. Select a block with <kbd>Shift</kbd>+arrows or by dragging, then <kbd>Ctrl</kbd>+<kbd>C</kbd> / <kbd>Ctrl</kbd>+<kbd>V</kbd> to copy to and from Excel, and <kbd>Ctrl</kbd>+<kbd>D</kbd> to fill down. Text pasted into a number cell is refused and marked, never turned into zero.' },
+      html: 'Click a cell and type. Arrow keys move, <kbd>Enter</kbd> goes down, <kbd>Tab</kbd> goes right, <kbd>F2</kbd> edits inside a cell. Select a block with <kbd>Shift</kbd>+arrows or by dragging, then <kbd>Ctrl</kbd>+<kbd>C</kbd> / <kbd>Ctrl</kbd>+<kbd>V</kbd> to copy to and from Excel, and <kbd>Ctrl</kbd>+<kbd>D</kbd> to fill down. Text pasted into a number cell is refused and marked, never turned into zero. Every drop-down on the page is searchable: click it, or start typing on it, and filter the list — words in any order, <code>*</code> for any run of characters, <code>?</code> for one (e.g. <code>abb*c20</code>).' },
     { title: 'Change many ways at once',
       html: 'Tick the boxes at the left of several ways. A side panel opens as <strong>Bulk edit</strong> with the fields you can set for all of them — leave a field blank to keep each way’s own value — then press <strong>Apply</strong>. The <strong>Device</strong> list shows only library breakers at the Breaker (A) and Curve entered (or the ones the ticked ways share); narrow it further by manufacturer and by MCB / MCCB / ACB.',
       shot: { file: 'db-schedule-3.png', alt: 'Two ways ticked and the bulk edit panel showing',

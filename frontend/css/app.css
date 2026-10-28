@@ -3399,6 +3399,11 @@ select.ss-native { display: none !important; }
 .ss-opt.act { background: color-mix(in srgb, var(--accent) 16%, transparent); }
 .ss-opt.sel { font-weight: 600; }
 .ss-opt.dis { color: var(--text-muted, #999); cursor: not-allowed; }
+/* SearchSelect.delegate — one shared search popup for every select in a container */
+.ss-pop { position: fixed; z-index: 10050; display: flex; flex-direction: column; box-sizing: border-box; background: var(--bg-primary); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 6px; box-shadow: 0 6px 20px rgba(0, 0, 0, .18); font-size: 12px; font-family: var(--font-family); }
+.ss-pop[hidden] { display: none; }
+.ss-pop-input { margin: 6px; padding: 5px 8px; font-size: 12px; border: 1px solid var(--accent); border-radius: 4px; background: var(--bg-primary); color: var(--text-primary); outline: none; }
+.ss-pop-list { overflow: auto; min-height: 0; padding: 0 0 4px; }
 .ss-empty { padding: 8px 10px; color: var(--text-secondary); }
 @media (max-width: 768px) {
   .ss-list { font-size: 14px; }

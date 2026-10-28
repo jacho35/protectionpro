@@ -1374,6 +1374,15 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
 
     // Two columns: the grid gets the window; everything else about the board
     // sits in the side panel, which swaps to bulk edit while ways are ticked.
+    // Re-rendering the same board (a device pick, bulk apply, add way, …) must
+    // not throw the user back to the top of a long schedule: keep where the
+    // grid and the side panel were scrolled to.
+    const keepScroll = this._renderedId === comp.id ? ['.db-schedule-grid', '#db-side'].map(sel => {
+      const el = this.body.querySelector(sel);
+      return el && { sel, top: el.scrollTop, left: el.scrollLeft };
+    }).filter(Boolean) : [];
+    this._renderedId = comp.id;
+
     this.body.innerHTML = `
       <datalist id="db-load-datalist">${datalistOptions}</datalist>
       <datalist id="db-mm2-datalist">${mm2Options}</datalist>
@@ -1486,6 +1495,10 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
       d.addEventListener('toggle', () => { this._sideOpen[d.dataset.side] = d.open; });
     });
     this._paintResults();
+    for (const k of keepScroll) {
+      const el = this.body.querySelector(k.sel);
+      if (el) { el.scrollTop = k.top; el.scrollLeft = k.left; }
+    }
     this._wireScrollShadow(this.body.querySelector('.db-schedule-grid'));
 
     // ── Column groups ──
