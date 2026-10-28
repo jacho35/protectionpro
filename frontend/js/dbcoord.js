@@ -291,47 +291,57 @@ const DbCoord = {
     return { label, status: e.status, title: lines.join('\n') + '\n\nClick for the mini TCC.' };
   },
 
-  // ─── Modal ───
+  // ─── Coordination tab ───
+  // The mini TCC is a tab of the Schedules page (no modal): a way picker above
+  // the plot. `open` is the door the grid's Coord chip uses.
+  _host: null, _boardId: null, _wayId: null,
+
   open(boardId, wayId) {
+    if (typeof Schedules !== 'undefined') Schedules.openCoord(boardId, wayId);
+  },
+
+  mount(boardId, host, wayId) {
+    this._host = host;
+    this._boardId = boardId;
     const board = AppState.components.get(boardId);
-    const way = board && (board.props.circuits || []).find(c => c.id === wayId);
-    if (!way) return;
-    const m = this._ensure();
+    const ways = board ? (board.props.circuits || []) : [];
+    if (!ways.some(w => w.id === wayId)) wayId = (ways.find(w => w.device || Number(w.breaker_a) > 0) || ways[0] || {}).id;
+    this._wayId = wayId;
+    this.refresh();
+  },
+
+  unmount() { this._host = null; },
+
+  refresh() {
+    const host = this._host;
+    if (!host) return;
+    const board = AppState.components.get(this._boardId);
+    const ways = board ? (board.props.circuits || []) : [];
+    const way = ways.find(c => c.id === this._wayId);
+    if (!board || !way) {
+      host.innerHTML = '<div class="rtcc-empty" style="margin:16px">This board has no ways yet. Add a way on the Schedule tab.</div>';
+      return;
+    }
     const e = this.evaluate(board, way);
-    m.querySelector('#dtcc-title').textContent = `Mini TCC — ${board.props.name || board.id} way ${way.way}${way.description ? ' · ' + way.description : ''}`;
-    m.querySelector('#dtcc-body').innerHTML = e.items && e.items.length && e.row
-      ? this._render(board, way, e)
-      : `<div class="rtcc-empty">${escHtml(e.note || 'Nothing to plot.')}</div>`;
-    m.style.display = '';
-  },
-
-  close() {
-    const m = document.getElementById('db-coord-modal');
-    if (m) m.style.display = 'none';
-  },
-
-  _ensure() {
-    let m = document.getElementById('db-coord-modal');
-    if (m) return m;
-    m = document.createElement('div');
-    m.id = 'db-coord-modal';
-    m.className = 'modal';
-    m.setAttribute('role', 'dialog');
-    m.setAttribute('aria-modal', 'true');
-    m.setAttribute('aria-labelledby', 'dtcc-title');
-    m.style.display = 'none';
-    m.innerHTML = `<div class="modal-content modal-wide">
-      <div class="modal-header"><h3 id="dtcc-title"></h3>
-        <button class="modal-close" data-dtcc="close" aria-label="Close">&times;</button></div>
-      <div class="modal-body" id="dtcc-body"></div></div>`;
-    document.body.appendChild(m);
-    m.addEventListener('click', (ev) => {
-      if (ev.target === m || ev.target.closest('[data-dtcc="close"]')) this.close();
-    });
-    document.addEventListener('keydown', (ev) => {
-      if (ev.key === 'Escape' && m.style.display !== 'none') this.close();
-    });
-    return m;
+    const opts = ways.map(w => `<option value="${escHtml(w.id)}"${w.id === way.id ? ' selected' : ''}>Way ${escHtml(String(w.way))}${w.description ? ' · ' + escHtml(w.description) : ''}</option>`).join('');
+    host.innerHTML = `<div class="dtcc-tab" style="overflow:auto;flex:1;min-height:0">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px">
+        <label style="font-size:12px;color:var(--text-secondary)">Way
+          <select id="dtcc-way" style="margin-left:4px">${opts}</select></label>
+        <button class="btn-small" id="dtcc-prev" aria-label="Previous way">&larr;</button>
+        <button class="btn-small" id="dtcc-next" aria-label="Next way">&rarr;</button>
+      </div>
+      ${e.items && e.items.length && e.row
+        ? this._render(board, way, e)
+        : `<div class="rtcc-empty">${escHtml(e.note || 'Nothing to plot.')}</div>`}
+    </div>`;
+    const go = (i) => { if (ways[i]) { this._wayId = ways[i].id; if (typeof Schedules !== 'undefined') Schedules._coordWay = this._wayId; this.refresh(); } };
+    const idx = ways.findIndex(w => w.id === way.id);
+    host.querySelector('#dtcc-way').addEventListener('change', (ev) => go(ways.findIndex(w => w.id === ev.target.value)));
+    host.querySelector('#dtcc-prev').addEventListener('click', () => go(idx - 1));
+    host.querySelector('#dtcc-next').addEventListener('click', () => go(idx + 1));
+    host.querySelector('#dtcc-prev').disabled = idx <= 0;
+    host.querySelector('#dtcc-next').disabled = idx >= ways.length - 1;
   },
 
   // ─── Plot ───

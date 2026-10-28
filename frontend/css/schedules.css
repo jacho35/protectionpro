@@ -39,6 +39,10 @@
   border: 1px solid var(--border-color); border-radius: 4px;
 }
 .sch-toolbar input[type="number"] { width: 62px; }
+.sch-install { display: none; flex: 1 1 100%; align-items: center; gap: 12px; flex-wrap: wrap; }
+.sch-install.open { display: flex; }
+.sch-install-line { display: inline-flex; align-items: center; gap: 8px; flex: 1 1 320px; min-width: 0; }
+.sch-install-sum { font-size: 12px; color: var(--text-secondary); min-width: 0; }
 .sch-status { font-size: 12px; color: var(--text-secondary); margin-left: auto; }
 
 .sch-body { flex: 1; display: flex; min-height: 0; }
@@ -636,7 +640,9 @@ body.dark-mode .db-con-chip-s.db-con-over { background: #4a1c1c; color: #ffa8a8;
   .sch-title { display: none; }
   .sch-tb-toggle { display: inline-block; }
   .sch-toolbar { gap: 6px; min-height: 0; }
-  .sch-toolbar:not(.sch-tb-open) label { display: none; }
+  .sch-toolbar:not(.sch-tb-open) .sch-install { display: none; }
+  .sch-toolbar.sch-tb-open .sch-install { display: flex; }
+  .sch-install-line { display: none; }
   .sch-rail { flex: 0 0 auto; max-height: none; }
   .sch-rail-head { cursor: pointer; padding: 8px 12px; }
   .sch-rail-head::after { content: ' ▾'; }

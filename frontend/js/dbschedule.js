@@ -1432,7 +1432,7 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
         <button class="btn-small" id="db-fill-ecc" title="Set every blank ECC to the IEC 60364-5-54 Table 54.7 minimum for its live conductor">Fill ECC</button>
         <button class="btn-small" id="db-check-circuits" title="Run the per-way cable check on every board — derated ampacity, Ib ≤ In ≤ Iz, voltage drop, ECC and earth-fault loop Zs">Check circuits</button>
         <button class="btn-small" id="db-export-xlsx" title="Export the schedule as an Excel workbook">Export Excel</button>
-        <button class="btn-small" id="db-import-xlsx" title="Import ways from an Excel/CSV file (replaces the current schedule)">Import Excel</button>
+        <button class="btn-small" id="db-import-xlsx" title="Import ways from an Excel/CSV file — matched by way number, with a preview of every change before it is written">Import Excel</button>
         <input type="file" id="db-import-file" accept=".xlsx,.xls,.csv" style="display:none">
         <span id="db-totals-strip" style="font-size:12px;">Connected: <strong>${connected.toFixed(2)} kVA</strong>
           &nbsp; Demand (× diversity ${comp.props.board_diversity || 1}): <strong>${demand.toFixed(2)} kVA</strong> (${ampsLabel})
@@ -2167,6 +2167,168 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
     XLSX.writeFile(wb, `${name}_circuit_schedule.xlsx`);
   },
 
+  // ── Excel import: plan → preview → apply ────────────────────────────
+  // Rows are matched to ways by Way number. Nothing is written until the user
+  // applies the preview. Feeder-to-sub-board ways and plan-driven ways are
+  // never changed or removed by an import.
+  IMPORT_FIELDS: [
+    ['description', 'Description'], ['poles', 'Poles'], ['phase', 'Phase'], ['breaker_a', 'Breaker (A)'],
+    ['curve', 'Curve'], ['el_group', 'EL group'], ['leakage_ma', 'Leak (mA)'], ['cable_mm2', 'Cable (mm²)'],
+    ['ecc_mm2', 'ECC (mm²)'], ['cable_m', 'Length (m)'], ['load_va', 'Load (VA)'],
+    ['demand_factor', 'Demand factor'], ['power_factor', 'Power factor'],
+    ['conduit_tag', 'Conduit tag'], ['conduit_type', 'Conduit type'], ['conduit_size', 'Conduit size'],
+  ],
+
+  _importNorm(v) {
+    if (v === null || v === undefined || v === '') return '';
+    return typeof v === 'number' ? String(+v) : String(v).trim();
+  },
+
+  _importPlan(comp, rows, have) {
+    const existing = comp.props.circuits || [];
+    const byWay = new Map(existing.map(c => [String(c.way), c]));
+    const protectedWay = (c) => c.type === 'feeder_db' || Number(c.plan_qty) > 0;
+    const sectioned = DBSections.has(comp);
+    const secName = (c) => (sectioned ? (DBSections.of(comp, c) || {}).name || '' : '');
+    const plan = { added: [], changed: [], unchanged: 0, protectedHit: [], missing: [], fresh: [], rows };
+    const seen = new Set();
+    for (const row of rows) {
+      const key = String(row.way);
+      seen.add(key);
+      const ex = byWay.get(key);
+      if (!ex) { plan.added.push(row); continue; }
+      if (ex.type === 'feeder_db') { plan.protectedHit.push(ex); continue; }
+      const diffs = [];
+      for (const [k, label] of this.IMPORT_FIELDS) {
+        if (!have.has(k)) continue;
+        const a = this._importNorm(ex[k]), b = this._importNorm(row[k]);
+        if (a !== b) diffs.push({ k, label, was: a, now: b });
+      }
+      const nm = row._sectionName;
+      if (have.has('section') && nm && nm.toLowerCase() !== secName(ex).toLowerCase()) {
+        diffs.push({ k: 'section', label: 'Section', was: secName(ex), now: nm });
+      }
+      if (diffs.length) plan.changed.push({ ex, row, diffs }); else plan.unchanged++;
+    }
+    plan.missing = existing.filter(c => !seen.has(String(c.way)));
+    plan.removable = plan.missing.filter(c => !protectedWay(c));
+    const known = (nm) => DBSections.list(comp).find(x => String(x.name || '').toLowerCase() === nm.toLowerCase());
+    plan.fresh = [...new Set(rows.map(r => r._sectionName).filter(nm => nm && !known(nm)))];
+    plan.known = known;
+    return plan;
+  },
+
+  // Resolves with { choice: Map('<way>|<field>' → 'file'|'mine'), remove, addSections } or null (cancelled).
+  _importPreview(comp, plan, fileName) {
+    return new Promise((resolve) => {
+      const esc = escHtml;
+      const m = document.createElement('div');
+      m.className = 'modal';
+      m.setAttribute('role', 'dialog'); m.setAttribute('aria-modal', 'true');
+      m.setAttribute('aria-labelledby', 'dbimp-title');
+      m.style.display = 'flex'; m.style.zIndex = '3000';
+      const tag = (txt, bg, fg) => `<span style="font-size:12px;font-weight:500;padding:2px 8px;border-radius:10px;background:${bg};color:${fg}">${txt}</span>`;
+      const th = 'text-align:left;font-size:12px;padding:5px 8px;border-bottom:1px solid var(--border-color)';
+      const td = 'font-size:13px;padding:4px 8px;border-bottom:1px solid var(--border-color)';
+      const changedRows = plan.changed.map((c, ci) => c.diffs.map((d, di) => {
+        const name = `imp-${ci}-${d.k}`;
+        return `<tr><td style="${td}">${esc(String(c.row.way))}</td><td style="${td}">${esc(d.label)}</td>
+          <td style="${td}">${esc(d.was || '—')}</td><td style="${td};font-weight:600">${esc(d.now || '—')}</td>
+          <td style="${td};white-space:nowrap"><label><input type="radio" name="${name}" value="file" checked> File</label>
+            &nbsp;<label><input type="radio" name="${name}" value="mine"> Mine</label></td></tr>`;
+      }).join('')).join('');
+      const tbl = (head, body) => `<table style="border-collapse:collapse;width:100%"><thead><tr>${head.map(h => `<th style="${th}">${h}</th>`).join('')}</tr></thead><tbody>${body}</tbody></table>`;
+      const addedRows = plan.added.map(r => `<tr><td style="${td}">${esc(String(r.way))}</td><td style="${td}">${esc(r.description)}</td><td style="${td}">${esc(r.curve + String(r.breaker_a))} · ${esc(r.poles)}</td><td style="${td}">${esc(String(r.load_va))}</td></tr>`).join('');
+      const missRows = plan.missing.map(c => `<tr><td style="${td}">${esc(String(c.way))}</td><td style="${td}">${esc(c.description || '')}</td><td style="${td}">${plan.removable.includes(c) ? 'Kept' : 'Kept (feeder / plan way)'}</td></tr>`).join('');
+      m.innerHTML = `<div class="modal-content modal-wide" style="max-height:90vh;display:flex;flex-direction:column">
+        <div class="modal-header"><h3 id="dbimp-title">Import preview — ${esc(comp.props.name || comp.id)}</h3>
+          <button class="modal-close" data-imp="cancel" aria-label="Close">&times;</button></div>
+        <div class="modal-body" style="overflow:auto;display:flex;flex-direction:column;gap:16px">
+          <div style="font-size:13px;color:var(--text-secondary)">${esc(fileName)} · matched to ways by Way number · nothing is written until you apply</div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap">${tag(plan.added.length + ' new', '#d9efe2', '#14633a')}${tag(plan.changed.length + ' changed', '#fdf0d5', '#7a4a00')}${tag(plan.unchanged + ' unchanged', '#e5e8ed', '#374151')}${tag(plan.missing.length + ' not in file', '#e5e8ed', '#374151')}</div>
+          ${plan.changed.length ? `<div><div style="display:flex;align-items:center;gap:8px;margin-bottom:4px"><b>Changed ways</b><span style="flex:1"></span>
+            <span style="font-size:13px">Apply to all:</span><button class="btn-small" data-imp="all-file">Use file</button><button class="btn-small" data-imp="all-mine">Keep mine</button></div>
+            ${tbl(['Way', 'Field', 'On the board', 'In the file', 'Use'], changedRows)}</div>` : ''}
+          ${plan.added.length ? `<div><b>New ways</b>${tbl(['Way', 'Description', 'Device', 'Load VA'], addedRows)}</div>` : ''}
+          ${plan.missing.length ? `<div><b>On the board, not in the file</b>${tbl(['Way', 'Description', 'Result'], missRows)}
+            ${plan.removable.length ? `<label style="display:flex;gap:8px;align-items:center;margin-top:6px;font-size:13px"><input type="checkbox" data-imp="remove"> Remove the ${plan.removable.length} way${plan.removable.length === 1 ? '' : 's'} not in the file (feeder and plan-driven ways are always kept)</label>` : ''}</div>` : ''}
+          ${plan.protectedHit.length ? `<div style="font-size:13px;color:var(--text-secondary)">${plan.protectedHit.length} feeder-to-sub-board way${plan.protectedHit.length === 1 ? '' : 's'} in the file match${plan.protectedHit.length === 1 ? 'es' : ''} a way that stays as it is.</div>` : ''}
+          ${plan.fresh.length ? `<label style="display:flex;gap:8px;align-items:center;font-size:13px;padding:8px 10px;background:#fdf0d5;color:#5c3800;border-radius:6px"><input type="checkbox" data-imp="sections" checked> Add section${plan.fresh.length === 1 ? '' : 's'} named in the file: ${esc(plan.fresh.join(', '))}${DBSections.has(comp) ? '' : ' (the board becomes sectioned; its existing ways go to the first section)'}. Unticked, those ways import without a section.</label>` : ''}
+          ${!plan.added.length && !plan.changed.length && !plan.removable.length ? '<div style="font-size:13px">The file matches the board. Nothing to import.</div>' : ''}
+        </div>
+        <div class="modal-footer" style="display:flex;gap:8px;justify-content:flex-end;padding:12px 16px;border-top:1px solid var(--border-color)">
+          <button class="btn-small" data-imp="cancel">Cancel</button>
+          <button class="btn-small btn-primary" data-imp="apply">Apply import</button></div></div>`;
+      document.body.appendChild(m);
+      const finish = (val) => { document.removeEventListener('keydown', onKey, true); m.remove(); resolve(val); };
+      const onKey = (ev) => { if (ev.key === 'Escape') { ev.stopPropagation(); finish(null); } };
+      document.addEventListener('keydown', onKey, true);
+      m.addEventListener('click', (ev) => {
+        const t = ev.target.closest('[data-imp]');
+        if (ev.target === m) return finish(null);
+        if (!t) return;
+        const act = t.dataset.imp;
+        if (act === 'cancel') return finish(null);
+        if (act === 'all-file' || act === 'all-mine') {
+          const v = act === 'all-file' ? 'file' : 'mine';
+          m.querySelectorAll(`input[type=radio][value=${v}]`).forEach(r => { r.checked = true; });
+          return;
+        }
+        if (act === 'apply') {
+          const choice = new Map();
+          plan.changed.forEach((c, ci) => c.diffs.forEach(d => {
+            const r = m.querySelector(`input[name="imp-${ci}-${d.k}"]:checked`);
+            choice.set(`${ci}|${d.k}`, r ? r.value : 'file');
+          }));
+          const rm = m.querySelector('[data-imp=remove]'), sc = m.querySelector('[data-imp=sections]');
+          finish({ choice, remove: !!(rm && rm.checked), addSections: !!(sc && sc.checked) });
+        }
+      });
+      const first = m.querySelector('[data-imp=apply]'); if (first) first.focus();
+    });
+  },
+
+  _importApply(comp, plan, decision) {
+    const out = { added: 0, updated: 0, kept: 0, removed: 0 };
+    // Sections named in the file: only become sections when the user agreed.
+    const secByName = {};
+    for (const nm of plan.rows.map(r => r._sectionName).filter(Boolean)) {
+      let sec = plan.known(nm) || secByName[nm.toLowerCase()];
+      if (!sec && decision.addSections) {
+        sec = DBSections.create(comp, /ups/i.test(nm) ? 'ups' : /ess|gen/i.test(nm) ? 'essential' : /norm|main/i.test(nm) ? 'normal' : 'other');
+        sec.name = nm;
+      }
+      if (sec) secByName[nm.toLowerCase()] = sec;
+    }
+    const secId = (nm) => { const x = nm && secByName[nm.toLowerCase()]; return x ? x.id : undefined; };
+    const circuits = comp.props.circuits = comp.props.circuits || [];
+    plan.changed.forEach((c, ci) => {
+      let touched = false;
+      for (const d of c.diffs) {
+        if (decision.choice.get(`${ci}|${d.k}`) !== 'file') continue;
+        if (d.k === 'section') { const id = secId(c.row._sectionName); if (id) { c.ex.section = id; touched = true; } continue; }
+        c.ex[d.k] = c.row[d.k];
+        touched = true;
+      }
+      if (touched) out.updated++; else out.kept++;
+    });
+    out.kept += plan.unchanged;
+    for (const row of plan.added) {
+      const id = secId(row._sectionName);
+      delete row._sectionName;
+      if (id) row.section = id;
+      row.id = this._wayId();
+      circuits.push(row);
+      out.added++;
+    }
+    if (decision.remove) {
+      const drop = new Set(plan.removable);
+      comp.props.circuits = circuits.filter(c => !drop.has(c));
+      out.removed = drop.size;
+    }
+    return out;
+  },
+
   importXlsx(comp, file) {
     if (typeof XLSX === 'undefined') return;
     const reader = new FileReader();
@@ -2238,68 +2400,18 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
         UI.toast('No circuit rows could be read from the file.', 'error');
         return;
       }
-      const existing = comp.props.circuits || [];
-      const planLinked = !!comp.planLink;
-      if (existing.length > 0) {
-        const msg = planLinked
-          ? `Merge ${circuits.length} imported way(s) into this plan-linked board? Rows are matched by way number; plan-integration fields (feeder links, plan quantities, pinned edits) are preserved.`
-          : `Merge ${circuits.length} imported way(s) into the current ${existing.length} way(s) (matched by way number)?`;
-        if (!await UI.confirm(msg)) return;
-      }
-      // SD-2: merge by way number instead of a wholesale replace, so a
-      // plan-linked board keeps its stable way ids, "Feeder to Sub-board" ways
-      // (type/feedsDbId), plan_qty and pin flags — otherwise the next sync
-      // re-mints duplicates and collides way numbers (compounding EE-7).
-      const byWay = new Map();
-      for (const c of existing) byWay.set(String(c.way), c);
-      const merged = [];
-      // A Section column maps by name. Names the board doesn't have yet only
-      // become sections once the user agrees; otherwise the column is ignored.
-      const known = (nm) => DBSections.list(comp).find(x => String(x.name || '').toLowerCase() === nm.toLowerCase());
-      const fresh = [...new Set(circuits.map(r => r._sectionName).filter(nm => nm && !known(nm)))];
-      let makeNew = false;
-      if (fresh.length) {
-        makeNew = await UI.confirm(`The sheet names section${fresh.length === 1 ? '' : 's'} this board doesn't have: ${fresh.join(', ')}. Add ${fresh.length === 1 ? 'it' : 'them'}?`
-          + (DBSections.has(comp) ? '' : ' The board becomes sectioned; its existing ways go to the first section.')
-          + ' Cancel imports the ways without those sections.');
-      }
-      for (const row of circuits) {
-        const nm = row._sectionName; delete row._sectionName;
-        if (!nm) continue;
-        let sec = known(nm);
-        if (!sec && makeNew) {
-          sec = DBSections.create(comp, /ups/i.test(nm) ? 'ups' : /ess|gen/i.test(nm) ? 'essential' : /norm|main/i.test(nm) ? 'normal' : 'other');
-          sec.name = nm;
-        }
-        if (sec) row.section = sec.id;
-      }
-      for (const row of circuits) {
-        const ex = byWay.get(String(row.way));
-        if (ex && ex.type !== 'feeder_db') {
-          ex.description = row.description; ex.poles = row.poles; ex.phase = row.phase;
-          ex.breaker_a = row.breaker_a; ex.curve = row.curve; ex.el_group = row.el_group;
-          ex.leakage_ma = row.leakage_ma; ex.cable_mm2 = row.cable_mm2;
-          ex.ecc_mm2 = row.ecc_mm2; ex.cable_m = row.cable_m;
-          ex.load_va = row.load_va; ex.demand_factor = row.demand_factor;
-          ex.power_factor = row.power_factor;
-          if (row.section) ex.section = row.section;
-          merged.push(ex);
-          byWay.delete(String(row.way));
-        } else {
-          row.id = this._wayId();
-          merged.push(row);
-        }
-      }
-      // Keep surviving integration ways (feeders + plan-driven ways) that no
-      // imported row matched, so the plan↔SLD link stays intact.
-      for (const c of existing) {
-        if (merged.indexOf(c) !== -1) continue;
-        if (c.type === 'feeder_db' || Number(c.plan_qty) > 0) merged.push(c);
-      }
-      comp.props.circuits = merged;
+      const have = new Set(Object.keys(idx).filter(k => idx[k] >= 0));
+      const plan = this._importPlan(comp, circuits, have);
+      const decision = await this._importPreview(comp, plan, file.name);
+      if (!decision) return;
+      const done = this._importApply(comp, plan, decision);
       this.render();
       this._notifyEdited();
-      this._status(`Imported ${circuits.length} circuit(s) from ${file.name} (merged by way number).`);
+      // One undo step for the whole import: commit now, not on the idle timer.
+      if (typeof Schedules !== 'undefined' && Schedules._commitCurrent) Schedules._commitCurrent();
+      const msg = `Imported from ${file.name}: ${done.added} added, ${done.updated} updated, ${done.kept} kept as on the board, ${done.removed} removed. Ctrl+Z undoes the whole import.`;
+      this._status(msg);
+      if (typeof UI !== 'undefined' && UI.toast) UI.toast(msg, 'success');
     };
     reader.readAsArrayBuffer(file);
   },
