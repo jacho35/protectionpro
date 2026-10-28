@@ -758,6 +758,7 @@ const PlanSync = {
       circuits.push(c);
     }
     c.description = 'Feeder to ' + (subComp.props.name || 'Sub-board');
+    if (typeof BreakerSet !== 'undefined') BreakerSet.fillNew(dbComp, c);
     if (cableType) {
       c.cable = cableType;
       // EE-9: size the feeder conductor from the chosen cable type.

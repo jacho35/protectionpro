@@ -393,7 +393,11 @@ const PlanCircuits = {
         // number that has no schedule row yet → mint one.
         let c = a.wayId ? comp.props.circuits.find(x => x.id === a.wayId) : null;
         if (!c) c = comp.props.circuits.find(x => String(x.way) === a.num && x.type !== 'feeder_db');
-        if (!c) { c = this._newWay(comp, a.num, a.classes); this._insertWay(comp, c); }
+        if (!c) {
+          c = this._newWay(comp, a.num, a.classes);
+          if (typeof BreakerSet !== 'undefined') BreakerSet.fillNew(comp, c);
+          this._insertWay(comp, c);
+        }
         if (!c.id) c.id = this._genWayId();
         // Backfill device tags with the resolved id so future renumbering can
         // never redirect their load; keep circuitNo in sync for display.

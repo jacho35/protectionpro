@@ -283,6 +283,7 @@ const DBSchedule = {
       board_diversity: comp.props.board_diversity ?? 1.0,
       el_ratings: comp.props.el_ratings || {},
       el_poles: comp.props.el_poles || null,
+      breaker_set: comp.props.breaker_set || null,
       way_install: comp.props.way_install || null,
       ze_ohm: comp.props.ze_ohm ?? null,
       incoming_device: comp.props.incoming_device || '',
@@ -814,7 +815,9 @@ const DBSchedule = {
     const circuits = comp.props.circuits;
     const n = Math.max(1, Math.round(repeat) || 1);
     for (let i = 0; i < n; i++) {
-      circuits.push(Object.assign(this._makeCircuit(t, count, circuits.length), this._sectionOverrides(comp)));
+      const w = Object.assign(this._makeCircuit(t, count, circuits.length), this._sectionOverrides(comp));
+      BreakerSet.fillNew(comp, w);
+      circuits.push(w);
     }
     this.render();
     this._notifyEdited();
@@ -1289,7 +1292,12 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
     // A library breaker writes its rating + curve; hand-editing either afterwards
     // makes the way a generic B/C/D breaker again.
     if (k === 'device') { DbCoord.applyToWay(c, v); return 'render'; }
-    if ((k === 'breaker_a' || k === 'curve') && c.device) c.device = '';
+    // A library device follows a new rating or curve to the same range (or the
+    // board's breaker rules); with no match the way falls back to Generic.
+    if ((k === 'breaker_a' || k === 'curve') && c.device) {
+      c[k] = k === 'breaker_a' ? (parseFloat(v) || 0) : v;
+      BreakerSet.follow(comp, c);
+    }
     // Coerce by FIELD, not by input type: the cable/ECC cells are text
     // inputs but still hold numbers. A blank ECC means "Table 54.7 minimum",
     // so it stays null rather than collapsing to 0.
@@ -1551,6 +1559,7 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
         <button class="btn-small" id="db-add-row" title="Add an empty way">+ Add way</button>
         <button class="btn-small" id="db-auto-balance" title="Reassign single-phase ways across R/W/B for best balance (3-phase ways untouched)">Auto balance</button>
         <button class="btn-small" id="db-fill-ecc" title="Set every blank ECC to the IEC 60364-5-54 Table 54.7 minimum for its live conductor">Fill ECC</button>
+        <button class="btn-small" id="db-set-maker" title="Set every breaker to one manufacturer — a range and curve per circuit type (lighting, sockets, fixed appliances, motors), previewed before anything changes">Set manufacturer…</button>
         <button class="btn-small" id="db-size-cables" title="Pick the smallest cable for each way that passes the circuit check — current, volt drop, earth loop and I²t — with a preview before anything changes">Size cables</button>
         <span class="db-tools-end">
           <button class="btn-small" id="db-import-xlsx" title="Import ways from an Excel/CSV file — matched by way number, with a preview of every change before it is written">Import Excel</button>
@@ -1615,6 +1624,14 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
             <label title="Maximum three-phase fault level at this board. Blank takes it from the network on the SLD, or from the feeding board's level less its feeder cable.">Ik max (kA)
               <input type="number" id="db-ik-max" min="0" step="0.1" value="${comp.props.ik_max_ka == null ? '' : escHtml(comp.props.ik_max_ka)}" placeholder="auto"></label>
             <span id="db-ik-basis" class="db-prot-note"></span>
+          </div>`)}
+          ${side('breakers', 'Breakers', BreakerSet.summary(comp), `
+          <div class="db-presets">
+            <span class="db-prot-note">The manufacturer, range and curve for each circuit type. New ways take their breaker from it, and a changed rating keeps the same range.</span>
+            <div class="db-presets-row">
+              <button class="btn-small btn-primary" id="db-bks-open">${comp.props.breaker_set ? 'Change / apply…' : 'Set manufacturer…'}</button>
+              ${comp.props.breaker_set ? '<button class="btn-small" id="db-bks-copy" title="Give every other board the same breaker rules (their existing breakers are not changed)">Copy to all boards</button>' : ''}
+            </div>
           </div>`)}
           ${side('presets', 'Add common circuits', 'presets', `
           <div class="db-presets">
@@ -1751,6 +1768,13 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
         : 'Every way already has an ECC size.');
     });
     this.body.querySelector('#db-size-cables').addEventListener('click', () => CableSize.open(comp));
+    this.body.querySelector('#db-set-maker').addEventListener('click', () => BreakerSet.open(comp));
+    this.body.querySelector('#db-bks-open').addEventListener('click', () => BreakerSet.open(comp));
+    const bksCopy = this.body.querySelector('#db-bks-copy');
+    if (bksCopy) bksCopy.addEventListener('click', () => {
+      const n = BreakerSet.copyToAll(comp);
+      this._status(n ? `Breaker rules copied to ${n} other board${n === 1 ? '' : 's'}.` : 'No other boards.');
+    });
     this.body.querySelector('#db-export-xlsx').addEventListener('click', () => this.exportXlsx(comp));
     const fileInput = this.body.querySelector('#db-import-file');
     this.body.querySelector('#db-import-xlsx').addEventListener('click', () => fileInput.click());
@@ -1760,7 +1784,9 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
       e.target.value = '';
     });
     this.body.querySelector('#db-add-row').addEventListener('click', () => {
-      circuits.push(this.newWay(circuits.length, this._sectionOverrides(comp)));
+      const w = this.newWay(circuits.length, this._sectionOverrides(comp));
+      BreakerSet.fillNew(comp, w);
+      circuits.push(w);
       this.render();
       this._notifyEdited();
     });
@@ -1829,7 +1855,9 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
       // Enter on the last row appends a way and lands in the same column.
       onAddRow: (cell) => {
         const k = cell.dataset.k;
-        circuits.push(this.newWay(circuits.length));
+        const w = this.newWay(circuits.length);
+        BreakerSet.fillNew(comp, w);
+        circuits.push(w);
         this.render();
         this._focusCell(circuits.length - 1, k);
       },
@@ -2019,6 +2047,7 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
           <span class="db-bulk-sep"></span>
           <button class="btn-small" id="db-bulk-delete" title="Remove all selected ways">Delete selected</button>
           <button class="btn-small" id="db-bulk-clear" title="Clear the selection">Clear</button>
+          <button class="btn-small" id="db-bulk-maker" title="Set the ticked ways to one manufacturer's breakers">Set manufacturer…</button>
           ${this._xferHtml()}
         </div>
       </div>`;
@@ -2050,6 +2079,8 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
       wrap.querySelector('#db-xfer-move').addEventListener('click', () => this.transferSelected(xferTarget.value, true));
       wrap.querySelector('#db-xfer-copy').addEventListener('click', () => this.transferSelected(xferTarget.value, false));
     }
+    wrap.querySelector('#db-bulk-maker').addEventListener('click', () =>
+      BreakerSet.open(AppState.components.get(this.currentId), { ways: 'selected' }));
     wrap.querySelector('#db-bulk-clear').addEventListener('click', () => {
       this._selected.clear();
       this._selAnchor = null;
@@ -2146,7 +2177,7 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
     }
     c[key] = val;
     // Same rule as a cell edit: a hand-set rating or curve drops the library pick.
-    if ((key === 'breaker_a' || key === 'curve') && c.device) c.device = '';
+    if ((key === 'breaker_a' || key === 'curve') && c.device) BreakerSet.follow(AppState.components.get(this.currentId), c);
     if (key === 'poles') {
       if (val === '3P') c.phase = 'RWB';
       else if (c.phase === 'RWB') c.phase = 'R';
@@ -2644,6 +2675,7 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
       delete row._sectionName;
       if (id) row.section = id;
       row.id = this._wayId();
+      BreakerSet.fillNew(comp, row);
       circuits.push(row);
       out.added++;
     }
