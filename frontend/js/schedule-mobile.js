@@ -528,6 +528,7 @@ const SchMobile = {
       { label: 'Check circuits', run: () => Schedules.runCheck(true) },
       { label: 'Auto balance phases', run: () => { DBSchedule.autoBalance(comp); this._touch(); this.render(); } },
       { label: 'Fill missing ECC', run: () => { DBSchedule.fillEcc(comp); this._touch(); this.render(); } },
+      { label: 'Size cables…', run: () => CableSize.open(comp) },
       {},
       { label: 'Export Excel', run: () => DBSchedule.exportXlsx(comp) },
       { label: 'Import Excel…', run: () => this._importPick(comp) },

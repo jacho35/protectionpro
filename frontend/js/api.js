@@ -238,6 +238,13 @@ const API = {
     return this.request('/analysis/db-circuit-check', 'POST', data);
   },
 
+  // Size the cables of one board's ways (smallest that passes the circuit
+  // check) — options: board_id, way_ids, min/max sizes, checks, set_ecc
+  async runDbCableSize(options = {}) {
+    const data = { ...AppState.toJSON(), ...options };
+    return this.request('/analysis/db-cable-size', 'POST', data);
+  },
+
   // Run motor starting voltage dip analysis
   async runMotorStarting() {
     const data = AppState.toJSON();
