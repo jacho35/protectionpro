@@ -191,7 +191,12 @@ const Components = {
         isolator: chain.find(c => c.type === 'switch' || c.type === 'changeover') || null,
         cable: this._feedCableInfo(chain.find(c => c.type === 'cable') || null),
         source: source ? { id: source.id, name: source.props.name || source.id, type: source.type } : null,
-        way: null,
+        // Fed from another board: that board's feeder way (DBFeeders keeps it).
+        way: (() => {
+          if (!source || source.type !== 'distribution_board') return null;
+          const w = (source.props.circuits || []).find(x => x.type === 'feeder_db' && x.feedsDbId === boardId);
+          return w && w.way != null ? String(w.way) : null;
+        })(),
       };
     }
 

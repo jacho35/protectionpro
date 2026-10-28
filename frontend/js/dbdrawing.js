@@ -65,6 +65,7 @@ const DBDrawing = {
     cable: true, load: true, phase: true, elgroups: true,
     bars: true, status: true, accessories: true,
     table: false,        // way info as a table under the load arrows instead of beside the device
+    phaserows: false,    // a busbar row per phase: R ways, then W, then B, then three-phase
   },
 
   // ── Detail toggles ──────────────────────────────────────────────────
@@ -107,6 +108,7 @@ const DBDrawing = {
           ${toggle('status', 'Check status', 'Colour each way by its circuit-check verdict')}
           ${toggle('accessories', 'Accessories', 'Draw the board accessories on the single line')}
           ${toggle('table', 'Info table', 'Show each way\'s information as a table below its load, instead of beside the device')}
+          ${toggle('phaserows', 'Phase rows', 'Group the ways by phase, a row each: red, then white (yellow), then blue, then three-phase — how a board is usually built, though it takes more space')}
           <span class="sch-sep"></span>
           <button class="btn-small" data-dbd="svg" title="Download the drawing as a vector SVG">SVG</button>
           <button class="btn-small" data-dbd="png" title="Download the drawing as a PNG">PNG</button>
@@ -256,12 +258,15 @@ const DBDrawing = {
     for (const c of this._sortedWays(comp)) {
       const v = verdicts[c.id] || null;
       const lines = [];
+      // A feeder way: its load is the sub-board, drawn as a board with its name.
+      const sub = c.type === 'feeder_db' && c.feedsDbId ? AppState.components.get(c.feedsDbId) : null;
+      const wayKva = sub || c.type === 'feeder_db' ? (Number(c.downstream_kva) || 0) : (Number(c.load_va) || 0) / 1000;
       const dev = `${Number(c.breaker_a) || 0} A${c.curve ? ' ' + c.curve : ''}${c.poles && c.poles !== '1P' ? ' ' + c.poles : ''}`;
       lines.push({ text: `${/^\d/.test(String(c.way ?? '')) ? 'W' : ''}${c.way ?? ''} · ${dev}`, bold: true, tag: 'WAY_LABEL' });
       lines.push({ text: this._trunc(c.description || '—', 22), tag: 'DESC_LABEL' });
       // A spare way: nothing on it and no description. A described way with
       // no load yet ("Future geyser") keeps its description.
-      const spare = !(Number(c.load_va) > 0) && !(Number(c.cable_m) > 0) && !String(c.description || '').trim();
+      const spare = !(Number(c.load_va) > 0) && !(Number(c.cable_m) > 0) && !String(c.description || '').trim() && c.type !== 'feeder_db';
       if (spare) lines[1] = { text: 'Spare', dim: true, tag: 'DESC_LABEL' };
       if (D.cable && !spare) {
         const ecc = c.ecc_mm2 != null ? `${c.ecc_mm2}` : 'min';
@@ -269,8 +274,7 @@ const DBDrawing = {
       }
       if (D.load && !spare) {
         const fla = DBSchedule._wayFlaA(c, vll);
-        const kva = (Number(c.load_va) || 0) / 1000;
-        lines.push({ text: `${fla.toFixed(1)} A · ${kva.toFixed(2)} kVA`, dim: true, tag: 'LOAD_LABEL' });
+        lines.push({ text: `${fla.toFixed(1)} A · ${wayKva.toFixed(2)} kVA`, dim: true, tag: 'LOAD_LABEL' });
       }
       const warns = DBSchedule._wayWarnings(c, !!v, vll);
       const tip = [`Way ${c.way ?? ''} — ${c.description || 'no description'}`,
@@ -283,12 +287,13 @@ const DBDrawing = {
       items.push({
         kind: 'way', w: this.DROP_W, glyph: 'mcb', sec: (DBSections.of(comp, c) || {}).id, phase: (c.poles === '3P' || c.phase === 'RWB') ? 'RWB' : (c.phase || 'R'),
         poles: c.poles || '1P', spare, wayDesc: c.description || '',
+        feeds: sub ? (sub.props.name || sub.id) : (c.type === 'feeder_db' ? 'Sub-board' : null),
         cells: {
           way: String(c.way ?? ''), device: dev, desc: this._trunc(c.description || (spare ? 'Spare' : '—'), 19),
           cable: spare ? '' : `${c.cable_mm2 || '?'}`, len: spare ? '' : `${c.cable_m || 0}`,
           ecc: spare ? '' : (c.ecc_mm2 != null ? `${c.ecc_mm2}` : 'min'),
           amps: spare ? '' : DBSchedule._wayFlaA(c, vll).toFixed(1),
-          kva: spare ? '' : ((Number(c.load_va) || 0) / 1000).toFixed(2),
+          kva: spare ? '' : wayKva.toFixed(2),
         },
         elGroup: D.elgroups ? (c.el_group || '') : '',
         status: v ? v.status : (warns.length ? 'warn' : null),
@@ -394,7 +399,8 @@ const DBDrawing = {
     // A busbar that wraps onto further rows gets a lane at the left for the
     // continuation riser: busbars, N/PE bars and columns start after it, so
     // the riser never crosses a bar or the accessory bay.
-    const gutter = defs.some(d => d.items.length > this.WAYS_PER_ROW) ? this.RISER_GUTTER : 0;
+    for (const d of defs) d.chunks = this._rowChunks(d.items, D);
+    const gutter = defs.some(d => d.chunks.length > 1) ? this.RISER_GUTTER : 0;
     this._dropX0 += gutter;
     const e0 = this._dropX0 - this.DROP_W / 2;
     const bands = [];
@@ -408,16 +414,14 @@ const DBDrawing = {
       const devY = incTop + this.SRC_TO_DEV + this._supplyBlockH(comp, d.supply);
       const isoY = d.inc.isolator ? devY + 44 : null;
       const busY = (isoY || devY) + this.DEV_TO_BUS;
-      const chunks = [];
-      for (let i = 0; i < d.items.length; i += this.WAYS_PER_ROW) chunks.push(d.items.slice(i, i + this.WAYS_PER_ROW));
-      if (!chunks.length) chunks.push([]);
+      const chunks = d.chunks;
       const band = { sec: d.sec, inc: d.inc, supply: d.supply, y0, incTop, devY, isoY, busY, rows: [] };
       chunks.forEach((r, ci) => {
         // Column centres: ways keep the DROP_W pitch, accessories are narrower.
         let cur = e0; const xs = [];
         for (const it of r) { xs.push(cur + it.w / 2); cur += it.w; }
         widest = Math.max(widest, cur);
-        const rd = { items: r, xs, rowW: cur, busY: busY + ci * rowH, band,
+        const rd = { items: r, xs, rowW: cur, busY: busY + ci * rowH, band, phase: r.phase || null,
           prevBusY: ci > 0 ? busY + (ci - 1) * rowH : null };
         band.rows.push(rd); rowDefs.push(rd);
       });
@@ -432,6 +436,34 @@ const DBDrawing = {
     const h = (sectioned ? last.y1 : last.busY + last.rows.length * rowH) + this.PAD;
 
     return { bands, rowDefs, sectioned, btd, tRows, items, inc: boardInc, maxLines, rowInner, rowH, busW, w, h, gutter };
+  },
+
+  // The busbar rows of one band: WAYS_PER_ROW columns a row; with phase rows
+  // the ways are grouped R, W, B, three-phase (schedule order inside each)
+  // and every group starts a row of its own — accessories lead the first.
+  // Each row array carries `.phase` (null without phase rows).
+  _rowChunks(items, D) {
+    const out = [];
+    const push = (list, phase) => {
+      for (let i = 0; i < list.length; i += this.WAYS_PER_ROW) {
+        const r = list.slice(i, i + this.WAYS_PER_ROW);
+        r.phase = phase;
+        out.push(r);
+      }
+    };
+    if (!D.phaserows) push(items, null);
+    else {
+      const acc = items.filter(it => it.kind === 'acc');
+      const ways = items.filter(it => it.kind !== 'acc');
+      const groups = ['R', 'W', 'B', 'RWB'].map(ph => ways.filter(it => (it.phase || 'R') === ph));
+      groups.forEach((g, gi) => {
+        const lead = gi === groups.findIndex(x => x.length) ? acc : [];
+        if (g.length) push(lead.concat(g), ['R', 'W', 'B', 'RWB'][gi]);
+      });
+      if (!ways.length && acc.length) push(acc, null);
+    }
+    if (!out.length) { const r = []; r.phase = null; out.push(r); }
+    return out;
   },
 
   // Extra riser height the supply-side tap block takes (0 without taps): tap
@@ -833,6 +865,14 @@ const DBDrawing = {
       s += `<path d="M ${xb} ${prevY} H ${rx} V ${busY} H ${xb}" fill="none" stroke="${P.bus}" stroke-width="1.6" stroke-dasharray="4,3"/>`;
       s += `<text x="${xb + 6}" y="${busY - 6}" font-size="8.5" fill="${P.muted}">busbar continued</text>`;
     }
+    if (rd.phase) {
+      // Phase rows: the row's phase at the right-hand end of its busbar.
+      const name = { R: 'Red phase (R)', W: 'White / yellow phase (W)', B: 'Blue phase (B)', RWB: 'Three-phase (RWB)' }[rd.phase];
+      const pc = P.phase[rd.phase] || P.muted;
+      const tw = name.length * 5.3;
+      s += `<rect x="${busEndX - tw - 14}" y="${busY - 15}" width="9" height="9" rx="2" fill="${pc}"/>`
+        + `<text x="${busEndX}" y="${busY - 7}" text-anchor="end" font-size="9" font-weight="600" fill="${P.inkSec}">${this._esc(name)}</text>`;
+    }
 
     if (D.elgroups) {
       for (const br of this._elBrackets(row)) {
@@ -892,10 +932,16 @@ const DBDrawing = {
         if (D.load && !it.spare) {
           const motor = (it.poles === '3P' || it.phase === 'RWB')
             && /pump|motor|fan|compress|aircon|a\/c|hvac|drive/i.test(it.wayDesc || '');
-          const lt = motor ? 'motor_induction' : 'static_load';
+          const lt = it.feeds ? 'distribution_board' : motor ? 'motor_induction' : 'static_load';
           const d = it.dxf;
-          g += this._sym(lt, x, endY + COMPONENT_DEFS[lt].height / 2, P, P.line, null, 1, 0,
-            { BOARD: d.BOARD, WAY: d.WAY, DESCRIPTION: d.DESCRIPTION, LOAD_VA: d.LOAD_VA, CURRENT_A: d.CURRENT_A, PHASE: d.PHASE });
+          const sc = it.feeds ? 0.75 : 1;
+          const lh = COMPONENT_DEFS[lt].height * sc;
+          g += this._sym(lt, x, endY + lh / 2, P, P.line, null, sc, 0,
+            { BOARD: d.BOARD, WAY: d.WAY, DESCRIPTION: d.DESCRIPTION, LOAD_VA: d.LOAD_VA, CURRENT_A: d.CURRENT_A, PHASE: d.PHASE,
+              ...(it.feeds ? { FEEDS: it.feeds } : {}) });
+          if (it.feeds) {
+            g += `<text x="${x}" y="${endY + lh + 10}" text-anchor="middle" font-size="9" font-weight="700" fill="${P.ink}">${this._esc(this._trunc(it.feeds, 18))}</text>`;
+          }
         }
       }
       if (D.phase && !D.table) {

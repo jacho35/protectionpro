@@ -335,6 +335,9 @@ const DBSchedule = {
     if (!Array.isArray(comp.props.circuits)) comp.props.circuits = [];
     this._ensureWayIds(comp);   // lazy EE-7 migration for existing projects
     this._ensurePf(comp);       // lazy per-circuit PF migration for old projects
+    // Sub-board feeders drawn on the SLD → linked feeder ways (marks the
+    // project dirty itself when one changed, so it is saved, not diffed).
+    if (typeof DBFeeders !== 'undefined') DBFeeders.syncAll();
     // Snapshot BEFORE render() (whose recompute() writes the derived props)
     this._rebaseline(comp);
     return comp;
@@ -390,6 +393,9 @@ const DBSchedule = {
     }
     this.recompute(comp);
     this._normalizeElRatings(comp);
+    // A rating / curve / length typed on a linked feeder way goes onto the
+    // drawn breaker and cable.
+    if (typeof DBFeeders !== 'undefined') DBFeeders.pushBoard(comp);
     AppState.dirty = true;
     if (typeof Properties !== 'undefined') {
       Properties._notifyResultsCleared();
@@ -615,6 +621,7 @@ const DBSchedule = {
     this._checkInFlight = true;
     this._status('Checking circuits…');
     try {
+      if (typeof DBFeeders !== 'undefined') DBFeeders.syncAll();
       const res = await API.runDbCircuitCheck();
       AppState.dbCheckResults = res;
       this.syncResults();
@@ -1444,26 +1451,38 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
     const secCell = (c) => hasSec
       ? `<td data-label="Section" class="db-col-sec"><select data-k="section" style="border-left:3px solid ${DBSections.color(DBSections.of(comp, c))}">${secOpts.map(sc => `<option value="${escHtml(sc.id)}"${DBSections.of(comp, c) === sc ? ' selected' : ''}>${escHtml(sc.name)}</option>`).join('')}</select></td>`
       : '';
+    // A sub-board feeder drawn on the SLD: fields the drawn part owns are
+    // locked (with the reason as the tooltip), linked cells carry an SLD tag.
+    const F = typeof DBFeeders !== 'undefined' ? DBFeeders : null;
+    const lock = (c, k) => {
+      const why = F ? F.lockReason(c, k) : '';
+      return why ? ` disabled title="${escHtml(why)}"` : '';
+    };
+    const sldTag = (c, k) => F ? F.cellTag(c, k) : '';
+    const subLink = (c) => {
+      const sub = c.type === 'feeder_db' && c.feedsDbId ? AppState.components.get(c.feedsDbId) : null;
+      return sub ? `<button type="button" class="db-sub-open" data-open-board="${escHtml(sub.id)}" title="Open the ${escHtml(sub.props.name || sub.id)} schedule">→ ${escHtml(sub.props.name || sub.id)}</button>` : '';
+    };
     const rows = circuits.map((c, i) => (actSec && DBSections.of(comp, c).id !== actSec) ? '' : `
       <tr data-idx="${i}" data-id="${escHtml(c.id)}"${this._selected.has(c.id) ? ' class="db-selected"' : ''}>
         <td data-label="Select" class="db-sel-cell"><input type="checkbox" class="db-row-sel" data-id="${escHtml(c.id)}"${this._selected.has(c.id) ? ' checked' : ''} title="Select for bulk edit — shift-click another row to select the range between them"></td>
         <td data-label="Way" class="db-col-way"><input type="text" data-k="way" value="${escHtml(c.way ?? String(i + 1))}" style="width:44px"></td>
         ${secCell(c)}
-        <td data-label="Description" class="db-col-desc"><input type="text" data-k="description" list="db-load-datalist" value="${escHtml(c.description || '')}" style="width:100%"></td>
-        <td data-label="Breaker (A)" class="db-col-breaker"><input type="number" data-k="breaker_a" value="${escHtml(c.breaker_a ?? 20)}" min="1" step="1" style="width:68px"></td>
-        <td data-label="Device" class="db-col-device"><select data-k="device" class="db-device-sel" title="${escHtml(DbCoord.filterNote({ a: c.breaker_a, curve: c.curve }) + ' — ' + DbCoord.FILTER_TIP)}">${DbCoord.optionsHtml(c.device || '', null, { a: c.breaker_a, curve: c.curve })}</select></td>
+        <td data-label="Description" class="db-col-desc${subLink(c) ? ' db-desc-feeder' : ''}"><input type="text" data-k="description" list="db-load-datalist" value="${escHtml(c.description || '')}" style="width:100%">${subLink(c)}</td>
+        <td data-label="Breaker (A)" class="db-col-breaker"><input type="number" data-k="breaker_a" value="${escHtml(c.breaker_a ?? 20)}" min="1" step="1" style="width:68px"${lock(c, 'breaker_a')}>${sldTag(c, 'breaker_a')}</td>
+        <td data-label="Device" class="db-col-device"><select data-k="device" class="db-device-sel"${lock(c, 'device')} title="${escHtml(DbCoord.filterNote({ a: c.breaker_a, curve: c.curve }) + ' — ' + DbCoord.FILTER_TIP)}">${DbCoord.optionsHtml(c.device || '', null, { a: c.breaker_a, curve: c.curve })}</select></td>
         <td data-label="Load (VA)" class="db-col-load"><input type="number" data-k="load_va" value="${escHtml(c.load_va ?? 0)}" min="0" step="50" style="width:88px"></td>
-        <td data-label="Poles" data-grp="dev"><select data-k="poles">${opt('1P', c.poles || '1P')}${opt('3P', c.poles || '1P')}</select></td>
-        <td data-label="Phase" data-grp="dev"><select data-k="phase" ${((c.poles || '1P') === '3P') ? 'disabled' : ''}>
+        <td data-label="Poles" data-grp="dev"><select data-k="poles"${lock(c, 'poles')}>${opt('1P', c.poles || '1P')}${opt('3P', c.poles || '1P')}</select></td>
+        <td data-label="Phase" data-grp="dev"><select data-k="phase" ${((c.poles || '1P') === '3P') ? 'disabled' : ''}${lock(c, 'phase') && (c.poles || '1P') !== '3P' ? lock(c, 'phase') : ''}>
           ${opt('R', c.phase || 'R')}${opt('W', c.phase || 'R')}${opt('B', c.phase || 'R')}</select></td>
-        <td data-label="Curve" data-grp="dev"><select data-k="curve">${opt('B', c.curve || 'C')}${opt('C', c.curve || 'C')}${opt('D', c.curve || 'C')}</select></td>
+        <td data-label="Curve" data-grp="dev"><select data-k="curve"${lock(c, 'curve')}>${opt('B', c.curve || 'C')}${opt('C', c.curve || 'C')}${opt('D', c.curve || 'C')}</select></td>
         ${sumCell(c, 'dev')}
         <td data-label="EL Grp" data-grp="el"><input type="text" data-k="el_group" value="${escHtml(c.el_group || '')}" style="width:70px" placeholder="—"></td>
         <td data-label="Leak (mA)" data-grp="el"><input type="number" data-k="leakage_ma" value="${escHtml(c.leakage_ma ?? 0)}" min="0" step="0.1" style="width:64px"></td>
         ${sumCell(c, 'el')}
-        <td data-label="Cable mm²" data-grp="cab" class="db-cab-cell"><input type="text" inputmode="decimal" list="db-mm2-datalist" data-k="cable_mm2" value="${escHtml(c.cable_mm2 ?? 2.5)}" style="width:76px" title="Live conductor size. Type to filter the IEC preferred sizes, or enter any value — a typed size is locked against Size cables. Type auto for the smallest size that passes the circuit check.">${CableSize.cellTag(c)}</td>
+        <td data-label="Cable mm²" data-grp="cab" class="db-cab-cell"><input type="text" inputmode="decimal" list="db-mm2-datalist" data-k="cable_mm2" value="${escHtml(c.cable_mm2 ?? 2.5)}" style="width:76px"${lock(c, 'cable_mm2') || ' title="Live conductor size. Type to filter the IEC preferred sizes, or enter any value — a typed size is locked against Size cables. Type auto for the smallest size that passes the circuit check."'}>${sldTag(c, 'cable_mm2') || CableSize.cellTag(c)}</td>
         <td data-label="ECC mm²" data-grp="cab"><input type="text" inputmode="decimal" list="db-mm2-datalist" data-k="ecc_mm2" value="${c.ecc_mm2 == null ? '' : escHtml(c.ecc_mm2)}" style="width:76px" placeholder="auto" title="Earth continuity conductor. Type to filter the IEC preferred sizes. Leave blank and the check assumes the smallest compliant size (Table 54.7 or the IEC 60364-5-54 §543.1.2 adiabatic check), warning when a twin-and-earth CPC would fail."></td>
-        <td data-label="Len (m)" data-grp="cab"><input type="number" data-k="cable_m" value="${escHtml(c.cable_m ?? 10)}" min="0" step="1" style="width:68px"></td>
+        <td data-label="Len (m)" data-grp="cab"><input type="number" data-k="cable_m" value="${escHtml(c.cable_m ?? 10)}" min="0" step="1" style="width:68px">${sldTag(c, 'cable_m')}</td>
         ${sumCell(c, 'cab')}
         <td data-label="DF" data-grp="dem"><input type="number" data-k="demand_factor" value="${escHtml(c.demand_factor ?? 1)}" min="0" max="1" step="0.05" style="width:64px"></td>
         <td data-label="PF" data-grp="dem"><input type="number" data-k="power_factor" value="${escHtml(c.power_factor ?? 0.9)}" min="0.05" max="1" step="0.01" style="width:64px"></td>
@@ -1475,7 +1494,7 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
         <td data-label="%VD" class="db-res st-none" data-res="vd" data-id="${escHtml(c.id)}">—</td>
         <td data-label="ECC ✓" class="db-res st-none" data-res="ecc" data-id="${escHtml(c.id)}">—</td>
         <td data-label="Coord" class="db-coord st-none" data-id="${escHtml(c.id)}">—</td>
-        <td data-label="" class="db-row-actions" style="white-space:nowrap;">${this._wayStatusHtml(c, i, vll)}<button class="btn-small db-del-row" data-idx="${i}" title="Remove way">&times;</button></td>
+        <td data-label="" class="db-row-actions" style="white-space:nowrap;">${this._wayStatusHtml(c, i, vll)}<button class="btn-small db-del-row" data-idx="${i}"${c.type === 'feeder_db' && c.sld ? ' disabled title="Drawn on the single line — remove the feeder there"' : ' title="Remove way"'}>&times;</button></td>
       </tr>`).join('');
 
     // Live totals (exact, not via the rounded aggregate demand factor)
@@ -1795,6 +1814,12 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
         circuits.splice(parseInt(btn.dataset.idx), 1);
         this.render();
         this._notifyEdited();
+      });
+    });
+    this.body.querySelectorAll('.db-sub-open[data-open-board]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        if (typeof Schedules !== 'undefined' && Schedules._active) Schedules.selectBoard(btn.dataset.openBoard);
+        else this.open(btn.dataset.openBoard);
       });
     });
     // Result cells open the full calculation behind the verdict.
@@ -2169,6 +2194,7 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
   // Write one field onto one way, applying exactly the consistency rules the
   // per-cell change handler uses (poles↔phase, plan-sync pin flags).
   _applyBulkField(c, key, val) {
+    if (typeof DBFeeders !== 'undefined' && DBFeeders.lockReason(c, key)) return;   // the SLD owns it
     if (key === 'cable_mm2') { c.cable_locked = true; delete c.cable_by; }
     if (key === 'device') {
       // 'generic' is the explicit "no library device" pick ('' means no change).
@@ -2260,7 +2286,9 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
   _bulkDelete() {
     const comp = AppState.components.get(this.currentId);
     if (!comp) return;
-    const keep = (comp.props.circuits || []).filter(c => !this._selected.has(c.id));
+    // A feeder drawn on the SLD stays: it is removed on the single line.
+    const drawn = (c) => c.type === 'feeder_db' && c.sld;
+    const keep = (comp.props.circuits || []).filter(c => !this._selected.has(c.id) || drawn(c));
     const removed = comp.props.circuits.length - keep.length;
     // Mutate in place so the render-time closures keep their array reference.
     comp.props.circuits.length = 0;

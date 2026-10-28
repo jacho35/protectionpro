@@ -380,7 +380,9 @@ const BOQ = {
         for (const w of ways) {
           const a = Number(w.breaker_a) || 0;
           const poles = POLES[w.poles] ? w.poles : '1P';
-          if (a > 0) {
+          // A feeder drawn on the SLD: its breaker is the SLD part, counted there.
+          const onSld = inc.sld && w.type === 'feeder_db' && w.sld && w.sld.device && AppState.components.has(w.sld.device);
+          if (a > 0 && !onSld) {
             if (a <= 125) add({ key: Rates.mcbKey(poles, a, w.curve || 'C'), desc: `MCB ${poles} ${a} A curve ${w.curve || 'C'}`, unit: 'ea', cat: 'prot' }, 1, 'db', w.type === 'feeder_db' ? 'DB feeders' : 'DB circuits');
             else add({ key: `CB-MCCB-${poles}-${a}A`, desc: `MCCB ${poles} ${a} A`, unit: 'ea', cat: 'prot' }, 1, 'db', w.type === 'feeder_db' ? 'DB feeders' : 'DB circuits');
           }
@@ -460,6 +462,7 @@ const BOQ = {
   // Take-off + rates → priced, sectioned bill.
   compute(opts) {
     opts = opts || this.opts || this._defaultOpts();
+    if (typeof DBFeeders !== 'undefined') DBFeeders.syncAll();   // feeders drawn on the SLD
     const { lines, warnings, notes, bases } = this.collect(opts);
     const order = Rates.CATS.map(c => c.id);
     const price = opts.price || 'both';

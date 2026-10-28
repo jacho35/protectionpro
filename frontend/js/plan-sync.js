@@ -781,6 +781,7 @@ const PlanSync = {
       const outBus = db.outBusId ? AppState.components.get(db.outBusId) : null;
       db.props.circuits = db.props.circuits.filter(c => {
         if (c.type !== 'feeder_db') return true;
+        if (c.sld) return true;   // drawn on the SLD — DBFeeders keeps it
         if (!outBus) return false;
         // keep only if a cable still links this bus to c.feedsDbId
         return [...AppState.components.values()].some(cab => {
