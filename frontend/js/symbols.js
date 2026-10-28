@@ -348,6 +348,29 @@ const Symbols = {
       </g>`;
   },
 
+  // Energy meter (no power ports): a box carrying "kWh" — drawn the same in
+  // both symbol sets. Its links to what it measures / its gateway are drawn
+  // by Canvas.renderMeterLinks.
+  energy_meter(w, h) {
+    const bw = w * 0.42, bh = h * 0.42;
+    return `
+      <g class="symbol-meter">
+        <rect x="${-bw}" y="${-bh}" width="${bw * 2}" height="${bh * 2}" rx="2" fill="var(--bg-primary, #fff)" stroke="#0b6e69" stroke-width="1.8"/>
+        <text x="0" y="3.5" text-anchor="middle" font-size="10" font-weight="700" fill="#0b6e69" stroke="none" font-family="sans-serif">kWh</text>
+      </g>`;
+  },
+
+  bms_gateway(w, h) {
+    const bw = w * 0.44, bh = h * 0.4;
+    return `
+      <g class="symbol-gateway">
+        <rect x="${-bw}" y="${-bh}" width="${bw * 2}" height="${bh * 2}" rx="3" fill="var(--bg-primary, #fff)" stroke="#6741d9" stroke-width="1.8"/>
+        <path d="M${-bw + 6} 0 H${bw - 6}" stroke="#6741d9" stroke-width="1.4" stroke-dasharray="3 2" fill="none"/>
+        <path d="M${bw - 10} -3 L${bw - 6} 0 L${bw - 10} 3" stroke="#6741d9" stroke-width="1.4" fill="none"/>
+        <text x="0" y="${-bh + 8}" text-anchor="middle" font-size="7" font-weight="700" fill="#6741d9" stroke="none" font-family="sans-serif">BMS</text>
+      </g>`;
+  },
+
   switch(w, h, comp) {
     const hh = h / 2;
     const sw = w * 0.3;

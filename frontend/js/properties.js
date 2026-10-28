@@ -1,6 +1,6 @@
 /* ProtectionPro — Properties Panel */
 
-const SECTION_ORDER = ['General', 'pv', 'battery', 'fault', 'loadflow', 'harmonics', 'dynamic', 'stability', 'arcflash', 'grounding', 'cable_sizing', 'protection', 'co_breaker_1', 'co_breaker_2'];
+const SECTION_ORDER = ['General', 'pv', 'battery', 'fault', 'loadflow', 'harmonics', 'dynamic', 'stability', 'arcflash', 'grounding', 'cable_sizing', 'protection', 'co_breaker_1', 'co_breaker_2', 'comms'];
 const SECTION_LABELS = {
   General: 'General',
   fault: 'Fault Analysis',
@@ -18,6 +18,7 @@ const SECTION_LABELS = {
   pv: 'PV Array / DC Strings',
   reliability: 'Reliability',
   flicker: 'Voltage Flicker',
+  comms: 'BMS / Control Connection',
 };
 
 // The result-box type/field schema lives in RESULT_TYPE_DEFS (annotations.js),
@@ -749,15 +750,32 @@ const Properties = {
         <button type="button" class="prop-eg-edit-btn" title="Create and edit the project's earth grids">Edit earth grids…</button></div>`;
     } else if (field.type === 'component_select') {
       // Dynamic dropdown listing components of a specific type
-      const filterType = field.filter || '';
+      const types = Array.isArray(field.filter) ? field.filter : (field.filter ? [field.filter] : []);
       const options = [];
       options.push(`<option value="" ${!value ? 'selected' : ''}>-- None --</option>`);
       for (const [id, comp] of AppState.components) {
-        if (filterType && comp.type !== filterType) continue;
+        if (types.length && !types.includes(comp.type)) continue;
         const name = comp.props?.name || `${comp.type} ${id}`;
         options.push(`<option value="${id}" ${value === id ? 'selected' : ''}>${escHtml(name)}</option>`);
       }
       inputHtml = `<select data-field="${escHtml(field.key)}">${options.join('')}</select>`;
+    } else if (field.type === 'meter_check') {
+      // Read-only: an Energy Meter's checks, or the meters reporting through a gateway (DBMeters).
+      const self = AppState.components.get(compId);
+      let html = '';
+      if (self && typeof DBMeters !== 'undefined') {
+        if (self.type === 'bms_gateway') {
+          const rows = DBMeters.all().filter(r => r.gateway === compId);
+          const n = rows.reduce((t, r) => t + r.count, 0);
+          html = n ? `<div class="prop-ampacity-summary">${n} meter${n === 1 ? '' : 's'}: ${escHtml(rows.map(r => r.src === 'sld' ? r.tag : `${r.board} ${r.tag}`).join(', '))}</div>`
+            : '<div class="prop-ampacity-summary prop-ampacity-summary--empty">No meters report through it yet — pick it as a meter\'s gateway</div>';
+        } else {
+          const w = DBMeters.sldWarnings(self);
+          html = w.length ? w.map(x => `<div class="dba-note ${escHtml(x.level)}">${x.level === 'warn' ? '⚠' : 'ⓘ'} ${escHtml(x.text)}</div>`).join('')
+            : '<div class="prop-ampacity-summary">✓ No problems found</div>';
+        }
+      }
+      inputHtml = `<div class="prop-meter-check">${html}</div>`;
     } else if (field.type === 'offpage_link') {
       // Connectors on OTHER pages, grouped by page. A connector already joined
       // to a third one is tagged; picking it re-links (see _linkOffpage).

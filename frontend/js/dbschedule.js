@@ -86,6 +86,7 @@ const DBSchedule = {
   // (localStorage), never project data.
   _GROUPS: [
     { g: 'ctl', label: 'Control', keys: ['contactor'] },
+    { g: 'mtr', label: 'Metering', keys: ['meter'] },
     { g: 'dev', label: 'Device', keys: ['poles', 'phase', 'curve'] },
     { g: 'el',  label: 'Earth leakage', keys: ['el_group', 'leakage_ma'] },
     { g: 'cab', label: 'Cable', keys: ['cable_mm2', 'ecc_mm2', 'cable_m'] },
@@ -135,6 +136,10 @@ const DBSchedule = {
     if (g === 'ctl') {
       const k = DBControls.wayContactor(AppState.components.get(this.currentId), c);
       return k ? `<span class="dbc-tag">${escHtml(k.tag)}</span>` : '—';
+    }
+    if (g === 'mtr') {
+      const m = DBMeters.wayMeter(AppState.components.get(this.currentId), c);
+      return m ? `<span class="dbm-tag${DBMeters.isGroup(m) ? ' grp' : ''}">${escHtml(m.tag)}</span>` : '—';
     }
     if (g === 'el') return `${escHtml(c.el_group || '—')}${dot}${escHtml(String(Number(c.leakage_ma) || 0))} mA`;
     if (g === 'cab') {
@@ -1315,6 +1320,18 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
       else delete c.contactor;
       return 'render';
     }
+    // The meter measuring the way (DBMeters): picked, cleared, or a new one for
+    // it. A circuit meter already on another way moves to this one.
+    if (k === 'meter') {
+      if (v === '__new') {
+        DBMeters.edit(comp, DBMeters.newMeter(comp, 'way', [c]), { isNew: true, ways: [c.id] });
+      } else if (v) {
+        const m = DBMeters.meter(comp, v);
+        if (m && m.scope === 'way') for (const o of DBMeters.waysOf(comp, m)) if (o !== c) delete o.meter;
+        c.meter = v;
+      } else delete c.meter;
+      return 'render';
+    }
     // A library device follows a new rating or curve to the same range (or the
     // board's breaker rules); with no match the way falls back to Generic.
     if ((k === 'breaker_a' || k === 'curve') && c.device) {
@@ -1489,6 +1506,17 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
       const tip = k ? `${k.tag}${k.label ? ' (' + k.label + ')' : ''}: ${k.poles} ${k.rating_a} A ${k.category} — switched by ${DBControls.switchedBy(k)}` : 'Switch this way through a contactor (photocell, timer, thermostat, BMS…)';
       return `<td data-label="Control" data-grp="ctl" class="db-ctl-cell${k ? ' on' : ''}"><select data-k="contactor" title="${escHtml(tip)}">${opts}</select>${pole ? `<span class="db-ctl-pole" title="Contactor pole">p${escHtml(pole)}</span>` : ''}</td>`;
     };
+    // Metering: the meter that measures the way (DBMeters) — a circuit meter
+    // or a group; the incomer meter covers every way without one.
+    const mtrs = DBMeters.list(comp).filter(m => m.scope !== 'incomer');
+    const incM = DBMeters.list(comp).find(m => m.scope === 'incomer');
+    const mtrCell = (c) => {
+      const m = DBMeters.wayMeter(comp, c);
+      const free = (x) => x === m || x.scope === 'group' || !DBMeters.waysOf(comp, x).length;
+      const opts = `<option value="">${incM ? 'via ' + escHtml(incM.tag) : '—'}</option>${mtrs.filter(free).map(x => `<option value="${escHtml(x.id)}"${m === x ? ' selected' : ''}>${escHtml(x.tag)}${x.scope === 'group' ? ' (group)' : ''}</option>`).join('')}<option value="__new">New meter…</option>`;
+      const tip = m ? `${m.tag}: ${DBMeters.spec(m)} — ${DBMeters.comms(m)}` : incM ? `Measured by the incomer meter ${incM.tag} only` : 'Meter this way — on its own, or in a group (Metering section below the grid)';
+      return `<td data-label="Metering" data-grp="mtr" class="db-ctl-cell dbm-cell dbm-scope${m ? ' on' : ''}"><select data-k="meter" title="${escHtml(tip)}">${opts}</select></td>`;
+    };
     const rows = circuits.map((c, i) => (actSec && DBSections.of(comp, c).id !== actSec) ? '' : `
       <tr data-idx="${i}" data-id="${escHtml(c.id)}"${this._selected.has(c.id) ? ' class="db-selected"' : ''}>
         <td data-label="Select" class="db-sel-cell"><input type="checkbox" class="db-row-sel" data-id="${escHtml(c.id)}"${this._selected.has(c.id) ? ' checked' : ''} title="Select for bulk edit — shift-click another row to select the range between them"></td>
@@ -1500,6 +1528,8 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
         <td data-label="Load (VA)" class="db-col-load"><input type="number" data-k="load_va" value="${escHtml(c.load_va ?? 0)}" min="0" step="50" style="width:88px"></td>
         ${ctlCell(c)}
         ${sumCell(c, 'ctl')}
+        ${mtrCell(c)}
+        ${sumCell(c, 'mtr')}
         <td data-label="Poles" data-grp="dev"><select data-k="poles"${lock(c, 'poles')}>${opt('1P', c.poles || '1P')}${opt('3P', c.poles || '1P')}</select></td>
         <td data-label="Phase" data-grp="dev"><select data-k="phase" ${((c.poles || '1P') === '3P') ? 'disabled' : ''}${lock(c, 'phase') && (c.poles || '1P') !== '3P' ? lock(c, 'phase') : ''}>
           ${opt('R', c.phase || 'R')}${opt('W', c.phase || 'R')}${opt('B', c.phase || 'R')}</select></td>
@@ -1629,6 +1659,8 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
             <th class="db-col-breaker">Breaker (A)</th><th class="db-col-device" title="${escHtml(DbCoord.FILTER_TIP)}">Device <span class="db-info" aria-hidden="true">i</span></th><th class="db-col-load">Load (VA)</th>
             <th data-grp="ctl" title="The contactor that switches this way — set up in the Controls section below the grid">Switched by</th>
             <th class="db-grp-sum" data-sum="ctl">Contactor</th>
+            <th data-grp="mtr" title="The energy meter that measures this way — set up in the Metering section below the grid">Metered by</th>
+            <th class="db-grp-sum" data-sum="mtr">Meter</th>
             <th data-grp="dev">Poles</th><th data-grp="dev">Ph</th>
             <th data-grp="dev">Curve</th>
             <th class="db-grp-sum" data-sum="dev">Poles · Ph · Curve</th>
@@ -1661,6 +1693,7 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
         </table>
       </div>
       <div id="db-controls-panel" class="db-controls-host"></div>
+      <div id="db-meters-panel" class="db-controls-host"></div>
       </div>
       <aside class="db-side" id="db-side" aria-label="Board side panel">
         <div id="db-bulk-bar"></div>
@@ -1712,6 +1745,7 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
     this._refreshElPanel(comp);
     this._refreshAccessories(comp);
     this._refreshControls(comp);
+    this._refreshMeters(comp);
     this._refreshBulkBar();
     this._bindProtStrip(comp);
     this.body.querySelectorAll('details.db-side-sec').forEach(d => {
@@ -1900,7 +1934,7 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
     // Excel-style grid (grid.js): selection, Enter/Tab/arrow navigation,
     // copy, fill-down, no number stepping. Column order is the VISUAL order of
     // the [data-k] cells, which NAV_COLS mirrors for pasted blocks.
-    const NAV_COLS = ['way', ...(DBSections.has(comp) ? ['section'] : []), 'description', 'breaker_a', 'device', 'load_va', 'contactor', 'poles', 'phase',
+    const NAV_COLS = ['way', ...(DBSections.has(comp) ? ['section'] : []), 'description', 'breaker_a', 'device', 'load_va', 'contactor', 'meter', 'poles', 'phase',
       'curve', 'el_group', 'leakage_ma', 'cable_mm2', 'ecc_mm2', 'cable_m',
       'demand_factor', 'power_factor', 'conduit_tag', 'conduit_type', 'conduit_size'];
     this._focusCell = (row, k) => {
@@ -1971,6 +2005,10 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
           const board = AppState.components.get(this.currentId);
           const k = /^(-|—|none)$/i.test(raw) ? null : DBControls.wayContactor(board, { contactor: raw });
           if (k) c.contactor = k.id; else if (/^(-|—|none)$/i.test(raw)) delete c.contactor; else bad++;
+        } else if (key === 'meter') {
+          const board = AppState.components.get(this.currentId);
+          const m = /^(-|—|none)$/i.test(raw) ? null : DBMeters.wayMeter(board, { meter: raw });
+          if (m) c.meter = m.id; else if (/^(-|—|none)$/i.test(raw)) delete c.meter; else bad++;
         } else if (key === 'section') {
           const sc = DBSections.list(AppState.components.get(this.currentId)).find(x => String(x.name || '').toLowerCase() === raw.toLowerCase() || (x.prefix && String(x.prefix).toLowerCase() === raw.toLowerCase()));
           if (sc) c.section = sc.id; else bad++;
@@ -2566,6 +2604,13 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
     DBControls.render(comp, wrap, () => this.render(), { mode: 'section' });
   },
 
+  // Energy meters (DBMeters), under the Controls section.
+  _refreshMeters(comp) {
+    const wrap = this.body && this.body.querySelector('#db-meters-panel');
+    if (!wrap || typeof DBMeters === 'undefined') return;
+    DBMeters.render(comp, wrap, () => this.render(), { mode: 'section' });
+  },
+
   // ── Excel export / import ───────────────────────────────────────────
 
   // 'FLA (A)' is a CALCULATED trailing column — exported for the deliverable
@@ -2574,7 +2619,7 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
   // harmlessly.
   XLSX_HEADERS: ['Way', 'Description', 'Breaker (A)', 'Load (VA)', 'Poles', 'Phase',
     'Curve', 'EL Group', 'Leak (mA)', 'Cable (mm2)', 'ECC (mm2)', 'Length (m)',
-    'Demand Factor', 'Power Factor', 'FLA (A)', 'Conduit Tag', 'Conduit Type', 'Conduit Size', 'Section', 'Contactor'],
+    'Demand Factor', 'Power Factor', 'FLA (A)', 'Conduit Tag', 'Conduit Type', 'Conduit Size', 'Section', 'Contactor', 'Meter'],
 
   exportXlsx(comp) {
     if (typeof XLSX === 'undefined') return;
@@ -2589,11 +2634,12 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
       c.conduit_tag ?? '', (Conduit.type(c.conduit_type) || {}).label ?? '', c.conduit_size ?? '',
       DBSections.has(comp) ? DBSections.of(comp, c).name : '',
       (DBControls.wayContactor(comp, c) || {}).tag ?? '',
+      (DBMeters.wayMeter(comp, c) || {}).tag ?? '',
     ]);
     const ws = XLSX.utils.aoa_to_sheet([this.XLSX_HEADERS, ...rows]);
     ws['!cols'] = [{ wch: 5 }, { wch: 28 }, { wch: 11 }, { wch: 10 }, { wch: 6 },
       { wch: 6 }, { wch: 6 }, { wch: 9 }, { wch: 10 }, { wch: 11 }, { wch: 10 },
-      { wch: 10 }, { wch: 13 }, { wch: 12 }, { wch: 9 }, { wch: 12 }, { wch: 13 }, { wch: 12 }, { wch: 14 }, { wch: 10 }];
+      { wch: 10 }, { wch: 13 }, { wch: 12 }, { wch: 9 }, { wch: 12 }, { wch: 13 }, { wch: 12 }, { wch: 14 }, { wch: 10 }, { wch: 8 }];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Circuit Schedule');
     const name = (comp.props.name || 'DB').replace(/[^\w-]+/g, '_');

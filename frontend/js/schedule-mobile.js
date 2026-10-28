@@ -371,6 +371,7 @@ const SchMobile = {
             <button class="btn-small" data-sh="unpin">Unpin</button></p>` : ''}
         </section>
         ${this._ctlSectionHTML(comp, c)}
+        ${this._mtrSectionHTML(comp, c)}
         <section><h4>Device</h4>
           ${num('breaker_a', 'Breaker (A)', 'min="1" step="1"')}
           <label class="smb-f"><span>Curve</span><select data-k="curve">${['B', 'C', 'D'].map(v => opt(v, c.curve || 'C')).join('')}</select></label>
@@ -439,6 +440,32 @@ const SchMobile = {
         <label class="smb-f"><span>Switched by</span><select data-k="contactor">
           ${opt('', '— not switched')}${list.map(x => opt(x.id, `${x.tag}${x.label ? ' · ' + x.label : ''}`)).join('')}
           <option value="__new">New contactor…</option></select></label>
+        ${sum}</section>`;
+  },
+
+  // The way's meter (DBMeters): pick one (or a new one), a summary, Edit.
+  _mtrSectionHTML(comp, c) {
+    const e = this._e;
+    const m = DBMeters.wayMeter(comp, c);
+    const inc = DBMeters.list(comp).find(x => x.scope === 'incomer');
+    const list = DBMeters.list(comp).filter(x => x.scope !== 'incomer' && (x === m || x.scope === 'group' || !DBMeters.waysOf(comp, x).length));
+    const opt = (v, l) => `<option value="${e(v)}"${(m ? m.id : '') === v ? ' selected' : ''}>${e(l)}</option>`;
+    let sum = '';
+    if (m) {
+      const bad = DBMeters.warnings(comp, m).filter(w => w.level === 'warn');
+      sum = `<div class="smb-ctlsum">
+          <div class="smb-ctlsum-head"><span class="dbm-tag${DBMeters.isGroup(m) ? ' grp' : ''}">${e(m.tag)}</span><strong>${e(DBMeters.type(m.type).short)}${m.cls ? ' · cl ' + e(m.cls) : ''}</strong></div>
+          <div>${e(DBMeters.measuresText(comp, m))}</div>
+          <div class="dbc-dim">${e(DBMeters.spec(m))}</div>
+          <div class="dbc-dim">${e(DBMeters.comms(m))}</div>
+          ${bad.length ? `<div class="dbc-bad">⚠ ${e(bad[0].text)}</div>` : ''}
+        </div>
+        <div class="smb-ctlbtns"><button class="btn-small smb-ctl-edit" data-sh="mtr-edit">Edit ${e(m.tag)}</button></div>`;
+    }
+    return `<section class="smb-ctlsec dbm-scope"><h4>Metering</h4>
+        <label class="smb-f"><span>Metered by</span><select data-k="meter">
+          ${opt('', inc ? `— via ${inc.tag} (incomer)` : '— not metered')}${list.map(x => opt(x.id, `${x.tag}${x.scope === 'group' ? ' · group' : ''}${x.label ? ' · ' + x.label : ''}`)).join('')}
+          <option value="__new">New meter…</option></select></label>
         ${sum}</section>`;
   },
 
@@ -609,6 +636,9 @@ const SchMobile = {
     } else if (a === 'ctl-edit') {
       const k = DBControls.wayContactor(comp, c);
       if (k) DBControls.edit(comp, k, {});
+    } else if (a === 'mtr-edit') {
+      const m = DBMeters.wayMeter(comp, c);
+      if (m) DBMeters.edit(comp, m, {});
     } else if (a === 'ctl-off') {
       DBSchedule._setWayField(comp, c, 'contactor', '');
       this._touch();

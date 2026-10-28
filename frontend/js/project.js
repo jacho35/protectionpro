@@ -68,6 +68,8 @@ const Project = {
     // Header › Quantities (every tab). Badges are counted when the menu opens.
     document.getElementById('btn-q-boq').addEventListener('click', () => { window.closeAllToolbarMenus?.(); Quantities.open('boq'); });
     document.getElementById('btn-q-cables').addEventListener('click', () => { window.closeAllToolbarMenus?.(); Quantities.open('cables'); });
+    document.getElementById('btn-q-meters').addEventListener('click', () => { window.closeAllToolbarMenus?.(); Quantities.open('meters'); });
+    document.getElementById('btn-meter-schedule').addEventListener('click', () => { window.closeAllToolbarMenus?.(); Quantities.open('meters'); });
     document.getElementById('btn-q-rates').addEventListener('click', () => { window.closeAllToolbarMenus?.(); Quantities.open('rates'); });
     document.querySelector('#menu-quantities .toolbar-menu-btn').addEventListener('click', () => BOQ.refreshMenuBadges());
     document.getElementById('btn-rates').addEventListener('click', () => { window.closeAllToolbarMenus?.(); Quantities.open('rates'); });

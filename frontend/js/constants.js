@@ -1507,8 +1507,8 @@ const COMPONENT_CATEGORIES = [
   },
   {
     id: 'instruments',
-    name: 'Instrument Transformers',
-    items: ['ct', 'pt'],
+    name: 'Instruments & Metering',
+    items: ['ct', 'pt', 'energy_meter', 'bms_gateway'],
   },
   {
     id: 'loads',
@@ -3472,6 +3472,81 @@ const COMPONENT_DEFS = {
         { value: '1.9/30s', label: '1.9 for 30 s' },
         { value: '1.9/8h', label: '1.9 for 8 h' },
       ] },
+    ],
+  },
+
+  // Energy meter: no power ports, like a relay — it names what it measures
+  // (`measures`: the CT, or the breaker / cable it sits on) and the BMS Gateway
+  // it reports through. Transparent to every study (no engine sees it). Board
+  // meters live in the schedule instead (dbmeters.js); both are read by DBMeters.all().
+  energy_meter: {
+    name: 'Energy Meter',
+    category: 'instruments',
+    ports: [],
+    width: 40,
+    height: 30,
+    defaults: {
+      name: 'M-1',
+      measures: '',
+      meter_type: 'multifunction',
+      cls: '0.5S',
+      system: '3P4W',
+      conn: 'ct5',
+      ct_ratio: '',
+      protocol: 'modbus_rtu',
+      network: 'Loop A',
+      address: '1',
+      gateway: '',
+      points: 'kWh, kW, kVAr, PF, V, I, MD',
+    },
+    fields: [
+      { key: 'name', label: 'Tag', type: 'text' },
+      { key: 'measures', label: 'Measures', type: 'component_select', filter: ['ct', 'cb', 'fuse', 'switch', 'cable', 'transformer', 'bus_duct'] },
+      { key: 'meter_type', label: 'Type', type: 'select', options: [
+        { value: 'multifunction', label: 'Multi-function power meter' },
+        { value: 'kwh', label: 'kWh sub-meter' },
+        { value: 'mid', label: 'MID billing meter' },
+        { value: 'pulse', label: 'Pulse-output kWh meter' }] },
+      { key: 'cls', label: 'Accuracy Class', type: 'select', options: ['0.2S', '0.5S', '1', '2', 'A (MID)', 'B (MID)', 'C (MID)'] },
+      { key: 'system', label: 'System', type: 'select', options: [
+        { value: '3P4W', label: '3P4W (3Φ + N)' }, { value: '1P2W', label: '1P2W (1Φ + N)' }, { value: '3P3W', label: '3P3W (3Φ, no N)' }] },
+      { key: 'conn', label: 'Connection', type: 'select', options: [
+        { value: 'direct63', label: 'Direct ≤ 63 A' }, { value: 'direct125', label: 'Direct ≤ 125 A' },
+        { value: 'ct5', label: 'CT-operated, /5 A' }, { value: 'ct1', label: 'CT-operated, /1 A' }, { value: 'rogowski', label: 'Rogowski coils' }] },
+      { key: 'ct_ratio', label: 'CT Ratio', type: 'text', placeholder: 'From its CT', showWhen: { field: 'conn', values: ['ct5', 'ct1', 'rogowski'] } },
+      { key: 'protocol', label: 'Protocol', type: 'select', section: 'comms', options: [
+        { value: 'modbus_rtu', label: 'Modbus RTU (RS-485)' }, { value: 'modbus_tcp', label: 'Modbus TCP' },
+        { value: 'bacnet_ip', label: 'BACnet/IP' }, { value: 'bacnet_mstp', label: 'BACnet MS/TP (RS-485)' },
+        { value: 'mbus', label: 'M-Bus' }, { value: 'pulse', label: 'Pulse output to a BMS input' }, { value: 'none', label: 'None — local only' }] },
+      { key: 'network', label: 'Network', type: 'text', section: 'comms', showWhen: { field: 'protocol', values: ['modbus_rtu', 'bacnet_mstp', 'mbus'] } },
+      { key: 'address', label: 'Address', type: 'text', section: 'comms', showWhen: { field: 'protocol', values: ['modbus_rtu', 'modbus_tcp', 'bacnet_ip', 'bacnet_mstp', 'mbus', 'pulse'] } },
+      { key: 'gateway', label: 'Gateway', type: 'component_select', filter: 'bms_gateway', section: 'comms', showWhen: { field: 'protocol', values: ['modbus_rtu', 'modbus_tcp', 'bacnet_ip', 'bacnet_mstp', 'mbus', 'pulse'] } },
+      { key: 'points', label: 'BMS Points', type: 'text', section: 'comms' },
+      { key: '_meter_check', label: 'Checks', type: 'meter_check', section: 'comms' },
+    ],
+  },
+  // BMS / control-system gateway: the end of the meters' comms network. Comms
+  // only — no power ports, no part in any study.
+  bms_gateway: {
+    name: 'BMS Gateway',
+    category: 'instruments',
+    ports: [],
+    width: 50,
+    height: 30,
+    defaults: {
+      name: 'GW-1',
+      from_protocol: 'Modbus RTU',
+      to_protocol: 'BACnet/IP',
+      ip_address: '',
+      bms: 'BMS',
+    },
+    fields: [
+      { key: 'name', label: 'Tag', type: 'text' },
+      { key: 'from_protocol', label: 'Field side', type: 'select', options: ['Modbus RTU', 'Modbus TCP', 'M-Bus', 'BACnet MS/TP', 'Pulse inputs'] },
+      { key: 'to_protocol', label: 'BMS side', type: 'select', options: ['BACnet/IP', 'Modbus TCP', 'OPC UA', 'MQTT', 'KNX', 'Other'] },
+      { key: 'ip_address', label: 'IP Address', type: 'text', placeholder: 'e.g. 10.20.4.10' },
+      { key: 'bms', label: 'Reports to', type: 'text' },
+      { key: '_meter_check', label: 'Meters', type: 'meter_check' },
     ],
   },
 

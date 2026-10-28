@@ -73,6 +73,7 @@ frontend/
     ├── dbbreakers.js       # BreakerSet — Schedules ▸ Set manufacturer: board breaker rules `comp.props.breaker_set` (maker, range + curve per circuit type, range above 63 A) → each way's library device at its rating; dialog with preview; new ways take it (`fillNew`), a rating / curve edit keeps the range (`follow`)
     ├── dbfeeders.js        # DBFeeders — sub-board feeders drawn on the SLD (board out → breaker / cable → board in) kept as linked "Feeder to Sub-board" ways (`way.sld = {device, cable}`, `feedsDbId`): `syncBoard` / `syncAll` pull rating, curve, cable, length + downstream demand; `pushBoard` (schedule commit) writes a typed rating / curve / length back onto the drawn part; `lockReason` = fields the SLD owns; `parentOf` = the board feeding a board
     ├── dbcontrols.js       # DBControls — contactors per board (`comp.props.controls`: contactors + control supplies, several allowed; ways point at theirs with `way.contactor`): arrangement one circuit / a pole each / switched section, switching devices (photocell, timer, thermostat, BMS…, one device per tag; device / mounting / contact), door lamp (tag, colour, aux contact), `deviceSchedule`, advisory checks, editor dialog ("?" arrangement diagrams, full screen on a phone), Controls section under the schedule; schedule-mobile.js (way sheet, Select mode, Controls sheet); read by dbdrawing.js (poles in line, section riser + sub-bus, control-circuit ladder + device table), ga.js (`control_gear` row / beside / separate) and boq.js; `peek()` never writes
+    ├── dbmeters.js         # DBMeters — energy meters per board (`comp.props.meters`: scope one circuit / incomer / group — metered sub-busbar or BMS sum of a meter per way; type, class, direct or CT, protocol, network, address, gateway, BMS points; ways point at theirs with `way.meter`), editor + Metering section, checks (sizing, phases, project-wide duplicate addresses / segment size / no gateway), `all()` = every meter in the project incl. SLD `energy_meter` components (no power ports, `measures` + `gateway` → `bms_gateway`; transparent to every engine), BOQ lines; `MeterSchedule` = Quantities ▸ Meter schedule (BMS points list, CSV / Excel)
     ├── dbsections.js       # DBSections — board sections/compartments (Normal / Essential / UPS): model, schedule panel + tabs, per-section totals; consumed by dbdrawing.js, ga.js and the circuit check
     ├── schedules.js        # Schedules workspace (every board: rail + full-height grid + per-way circuit check)
     ├── sl-diagram.js       # Street lighting circuit schematic (SLDiagram): source → main run, spurs on rows below, per-pole phase/VD/Zs, span length/current/neutral; zoom, PNG/SVG export
@@ -326,14 +327,14 @@ Project:
 
 DB path: `DATABASE_URL` env var, defaults to `sqlite:///./protectionpro.db`
 
-## Component Types (40 — 31 power + 9 control-circuit)
+## Component Types (42 — 33 power + 9 control-circuit)
 
 | Category | Components |
 |---|---|
 | **Sources** | Utility Source, Generator, Solar PV, Wind Turbine, Battery Storage |
 | **Distribution** | Bus, Transformer, Autotransformer, Cable/Feeder, Bus Duct |
 | **Protection** | Circuit Breaker, Fuse, Relay, Switch, Changeover Switch (3-port: in_1 / in_2 / out) |
-| **Instruments** | Current Transformer (CT), Potential Transformer (PT) |
+| **Instruments & Metering** | Current Transformer (CT), Potential Transformer (PT), Energy Meter, BMS Gateway (no power ports, like a relay) |
 | **Loads** | Induction Motor, Synchronous Motor, Static Load, Distribution Board, DC Load, Variable Frequency Drive |
 | **DC systems** | UPS, Rectifier, Battery Charger, DC Battery |
 | **Other** | SVC / STATCOM, Capacitor Bank, Surge Arrester, Off-page Connector |

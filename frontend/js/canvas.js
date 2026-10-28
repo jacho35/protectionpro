@@ -1201,6 +1201,7 @@ const Canvas = {
         });
       }
     }
+    wiresHtml += this.renderMeterLinks(pageComps);
     this.wiresLayer.innerHTML = wiresHtml;
 
     // Render components (page-filtered)
@@ -1263,6 +1264,31 @@ const Canvas = {
 
     // Update mini-map
     if (typeof MiniMap !== 'undefined') MiniMap.render();
+  },
+
+  // Energy meters' links (no wires — they have no power ports): a thin teal
+  // line to what the meter measures, a dashed purple comms line to its BMS
+  // gateway; boards with meters reporting to a gateway on this page get one too.
+  // Display only: not selectable, never part of any study.
+  renderMeterLinks(pageComps) {
+    let out = '';
+    const comms = (a, b) => {
+      const midX = b.x;
+      return `<path class="sld-comms-link" d="M${numAttr(a.x)},${numAttr(a.y)} L${numAttr(midX)},${numAttr(a.y)} L${numAttr(b.x)},${numAttr(b.y)}" fill="none" stroke="#6741d9" stroke-width="1.4" stroke-dasharray="6 4" pointer-events="none"/>`;
+    };
+    for (const [, c] of pageComps) {
+      if (c.type === 'energy_meter') {
+        const p = c.props || {};
+        const meas = p.measures ? pageComps.get(p.measures) : null;
+        if (meas) out += `<line class="sld-meter-link" x1="${numAttr(c.x)}" y1="${numAttr(c.y)}" x2="${numAttr(meas.x)}" y2="${numAttr(meas.y)}" stroke="#0b6e69" stroke-width="1.2" pointer-events="none"/>`;
+        const gw = p.gateway && p.protocol !== 'none' ? pageComps.get(p.gateway) : null;
+        if (gw) out += comms(c, gw);
+      } else if (typeof DBMeters !== 'undefined' && DBMeters.has(c)) {
+        const gws = new Set(DBMeters.list(c).filter(m => m.protocol !== 'none').map(m => m.gateway).filter(Boolean));
+        for (const g of gws) { const gw = pageComps.get(g); if (gw) out += comms(c, gw); }
+      }
+    }
+    return out;
   },
 
   // Show key data labels next to cables, transformers, and other components
