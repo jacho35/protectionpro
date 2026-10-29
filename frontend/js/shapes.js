@@ -54,7 +54,7 @@ const SldShapes = {
   // Whatever was loaded (project file, remote op) is clamped to the shape's own fields:
   // geometry and colours go into SVG markup.
   sanitize(s) {
-    if (!s || typeof s.id !== 'string') return null;
+    if (!s || typeof s.id !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(s.id)) return null;
     const n = (x, d) => (Number.isFinite(+x) ? +x : d);
     const kind = ['rect', 'ellipse', 'note'].includes(s.kind) ? s.kind : 'rect';
     const out = {
@@ -431,14 +431,14 @@ const SldShapes = {
   _handles(s) {
     const hs = 8 / (AppState.zoom || 1), half = hs / 2, sw = 1.5 / (AppState.zoom || 1);
     const box = (id, x, y, name, cur) =>
-      `<rect class="shape-handle" data-shape-id="${id}" data-shape-handle="${name}" x="${x - half}" y="${y - half}" width="${hs}" height="${hs}" fill="#ffffff" stroke="#1d4ed8" stroke-width="${sw}" style="cursor:${cur}"/>`;
+      `<rect class="shape-handle" data-shape-id="${escHtml(id)}" data-shape-handle="${name}" x="${x - half}" y="${y - half}" width="${hs}" height="${hs}" fill="#ffffff" stroke="#1d4ed8" stroke-width="${sw}" style="cursor:${cur}"/>`;
     const x1 = s.x + s.w, y1 = s.y + s.h, mx = s.x + s.w / 2, my = s.y + s.h / 2;
     const pad = 4 / (AppState.zoom || 1);
     let h = `<rect class="shape-handle" x="${s.x - pad}" y="${s.y - pad}" width="${s.w + 2 * pad}" height="${s.h + 2 * pad}" fill="none" stroke="#1d4ed8" stroke-width="${sw}" pointer-events="none"/>`;
     if (s.locked) return h;
     if (s.kind === 'note') {
       h += box(s.id, x1, my, 'e', 'ew-resize');
-      if (s.leader) h += `<circle class="shape-handle" data-shape-id="${s.id}" data-shape-handle="lead" cx="${s.leader.x}" cy="${s.leader.y}" r="${hs * 0.9}" fill="#ffffff" stroke="#1d4ed8" stroke-width="${sw}" style="cursor:move"/>`;
+      if (s.leader) h += `<circle class="shape-handle" data-shape-id="${escHtml(s.id)}" data-shape-handle="lead" cx="${s.leader.x}" cy="${s.leader.y}" r="${hs * 0.9}" fill="#ffffff" stroke="#1d4ed8" stroke-width="${sw}" style="cursor:move"/>`;
       return h;
     }
     return h
