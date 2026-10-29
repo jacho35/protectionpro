@@ -489,6 +489,31 @@ const DBDrawing = {
     return s;
   },
 
+  // A group summed by the BMS: each way carries its own meter (drawn on its
+  // drop); a dashed bracket over the group's devices says they add up.
+  _mtrSumBrackets(row, xs, devY, P) {
+    let s = '';
+    const runs = [];
+    row.forEach((it, i) => {
+      const m = it.mtr && DBMeters.isVirtual(it.mtr) ? it.mtr : null;
+      const cur = runs[runs.length - 1];
+      if (m && cur && cur.m === m && cur.to === i - 1) cur.to = i;
+      else if (m) runs.push({ m, from: i, to: i });
+    });
+    for (const r of runs) {
+      const y = devY - 30;
+      const ax = xs[r.from] - 26, bx = xs[r.to] + 26;
+      const label = `Σ ${r.m.tag} — summed by the BMS`;
+      const tw = label.length * 5 + 12;
+      const lx = (ax + bx) / 2;
+      s += `<g><title>${this._esc(`${r.m.tag}: a meter on each of these ways, added into one total by the BMS`)}</title>`
+        + `<path d="M${ax} ${y + 6} V${y} H${bx} V${y + 6}" fill="none" stroke="${P.mtr}" stroke-width="1.2" stroke-dasharray="4,3"/>`
+        + `<rect x="${lx - tw / 2}" y="${y - 7}" width="${tw}" height="12" rx="3" fill="${P.surface}"/>`
+        + `<text x="${lx}" y="${y + 2}" text-anchor="middle" font-size="8.5" font-weight="700" fill="${P.mtr}">${this._esc(label)}</text></g>`;
+    }
+    return s;
+  },
+
   _ctrBrackets(row, xs, busY, ctrY, P, comp, sections) {
     let s = '';
     const runs = [];
@@ -1375,6 +1400,7 @@ const DBDrawing = {
 
     s += this._ctrBrackets(row, xs, busY, ctrY, P, comp, true);
     s += this._mtrSubbus(row, xs, busY, P, comp);
+    s += this._mtrSumBrackets(row, xs, devY, P);
 
     if (L.tRows.length) {
       const top = peY + 14 + (D.load ? 56 : 0);

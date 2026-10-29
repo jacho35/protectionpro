@@ -299,6 +299,39 @@ $$\text{Line}=Q\times\left(r_{material}+r_{labour}\right),\qquad \text{Total}=\s
 <tr><td><code>5% of material in cable</code></td><td>an allowance on the material part of one section</td></tr></tbody></table>
 <p>Rates round-trip as CSV or XLSX with an import preview that shows what will change before it is applied.</p>
 <h4>Cable schedules</h4>
-<p>One row per cable, from results the project already has: <em>Reticulation</em> — feeders and services from Demand (design current, rating, loading, volt drop from the Demand functions); <em>Building</em> — sub-mains from the load flow (current, loading, volt drop) and final circuits from the <a href="#" data-help="cable-dbcheck">per-way circuit check</a>. Nothing is recomputed with different maths; a missing result shows as "—" with a way to run it.</p>` }
+<p>One row per cable, from results the project already has: <em>Reticulation</em> — feeders and services from Demand (design current, rating, loading, volt drop from the Demand functions); <em>Building</em> — sub-mains from the load flow (current, loading, volt drop) and final circuits from the <a href="#" data-help="cable-dbcheck">per-way circuit check</a>. Nothing is recomputed with different maths; a missing result shows as "—" with a way to run it.</p>` },
+
+{ id: 'design-metering', group: 'design', title: 'Energy metering & BMS connection',
+  std: 'Schedules ▸ Metering · Single line ▸ Energy Meter / BMS Gateway · Quantities ▸ Meter schedule',
+  kw: 'energy meter metering kwh sub-meter mid billing pulse ct rogowski bms building management gateway modbus rtu tcp bacnet ms/tp m-bus rs-485 address register points list incomer group sub-bus virtual sum',
+  html: String.raw`
+<p>Meters that report to a BMS or control system can sit on <strong>one circuit</strong>, on a board's <strong>incomer</strong>, or on a <strong>group of circuits</strong>. They are set up in the board schedule or drawn on the single line, and every one of them appears in the <em>Meter schedule</em> (Quantities) with its BMS points.</p>
+<h4>Meters in a board</h4>
+<ul>
+<li>Pick a meter in a way's <strong>Metered by</strong> cell (or <em>New meter…</em>), or tick ways and use <em>+ Meter for ticked ways</em> in the <strong>Metering</strong> section under the grid. <em>+ Meter on incomer</em> meters the whole board; ways with no meter of their own read "via M1".</li>
+<li>A <strong>group</strong> is measured one of two ways:
+  <ul><li><em>Metered sub-busbar</em> — one meter ahead of a sub-bus the group's ways hang from, with its own isolator. The board drawing shows the riser, isolator, meter and sub-bus; the BOQ adds the sub-bus.</li>
+  <li><em>Sum of circuit meters</em> — a meter on each way (M2a, M2b…), added into one total by the BMS. No change to the board wiring; the points list carries each meter and the total.</li></ul></li>
+<li>The editor suggests the connection from the current the meter carries — the breaker rating for one way, the diversified phase sum for a sub-bus, the incomer rating: direct up to 63 A, otherwise CT-operated with the next standard primary at or above that current.</li>
+</ul>
+<h4>Meters on the single line</h4>
+<p>Drag an <strong>Energy Meter</strong> and a <strong>BMS Gateway</strong> from <em>Instruments &amp; Metering</em>. A meter has no power connections (like a relay): pick what it <em>Measures</em> — the CT, or the breaker, cable or transformer it sits on — and its <em>Gateway</em>. The canvas draws a teal line to what it measures and a dashed comms line to the gateway; a board whose meters report to a gateway gets one too. Meters and gateways take no part in any study.</p>
+<h4>BMS connection</h4>
+<table class="help-ref-table"><thead><tr><th>Protocol</th><th>Network</th><th>Checked</th></tr></thead><tbody>
+<tr><td>Modbus RTU, BACnet MS/TP</td><td>RS-485 segment (name + address 1–247) to a gateway</td><td>Unique address per segment; no more than 32 devices on one segment without a repeater</td></tr>
+<tr><td>M-Bus</td><td>M-Bus segment to a gateway</td><td>Unique address; no more than 250 devices</td></tr>
+<tr><td>Modbus TCP, BACnet/IP</td><td>IP address</td><td>Unique IP address in the project</td></tr>
+<tr><td>Pulse output</td><td>A BMS input (e.g. DI-07)</td><td>Energy only</td></tr></tbody></table>
+<p>A segment is the protocol + gateway + network name, so "Loop A" behind two different gateways is two segments. An RS-485 or M-Bus meter with no gateway is flagged: the BMS cannot read it.</p>
+<h4>Other checks</h4>
+<ul>
+<li>CT primary below the current the meter carries (fails), or more than four times it (accuracy at light load suffers).</li>
+<li>A direct meter on more than its rating (63 or 125 A); a CT secondary that does not match the meter input (/5 or /1 A).</li>
+<li>Ways on more than one phase, or a three-phase way, on a single-phase meter.</li>
+<li>A sub-bus isolator smaller than the largest breaker in the group.</li>
+<li>On the single line: a meter not linked to anything, a meter on a core-balance CT.</li>
+</ul>
+<h4>Meter schedule and points list</h4>
+<p>Quantities ▸ <strong>Meter schedule</strong> lists every meter with its comms and checks. The selected meter's BMS points are named <code>Board.Tag.Point</code>; per-phase points (V, I, THD) become L1–L3 on a three-phase meter. Type each point's <em>Register</em> from the meter maker's register map once, then <em>Copy to all</em> meters of the same type and make / model. Object instances are suggested as address × 100 + point. Export the schedule and points list as CSV, Excel or PDF.</p>` },
 
 );
