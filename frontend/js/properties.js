@@ -720,10 +720,11 @@ const Properties = {
       // `_cbMaker`: undefined follows the chosen breaker's library, '*' is all
       // libraries, else a manufacturer ('' = the generic library)
       let shownLib = library, makerHtml = '';
-      if (field.library === 'cb' && _comp && _comp.type === 'cb') {
-        // A main-SLD breaker: the list narrows by type, library, voltage, rating,
-        // curve, poles and breaking capacity — see _cbPickerHtml.
-        const pk = this._cbPickerHtml(_comp, library, value);
+      const coLegPick = _comp && _comp.type === 'changeover' && field.library === 'cb' ? /^cb([12])_standard_type$/.exec(field.key) : null;
+      if (field.library === 'cb' && _comp && (_comp.type === 'cb' || coLegPick)) {
+        // A main-SLD breaker (or a breaker of an interlocked pair): the list narrows by type,
+        // library, voltage, rating, curve, poles and breaking capacity — see _cbPickerHtml.
+        const pk = this._cbPickerHtml(_comp, library, value, coLegPick ? +coLegPick[1] : 0);
         shownLib = pk.shown; makerHtml = pk.html;
       } else if (field.library === 'cb') {
         const makers = [...new Set(library.map(c => c.manufacturer || ''))].sort((a, b) => (a === '') ? -1 : (b === '') ? 1 : a.localeCompare(b));
@@ -1112,7 +1113,7 @@ const Properties = {
           this.applyStandardType(comp, 'cb', value);
           TripUnit.afterLibraryPick(comp, swap);
         }
-        if (this._cbPick[comp.id]) Object.assign(this._cbPick[comp.id], { rating: undefined, curve: undefined, poles: undefined });   // the picked device's values are the new starting point
+        this._cbPickReset(comp, 0);   // the picked device's values are the new starting point
         AppState.dirty = true;
         this._notifyResultsCleared();
         AppState.clearResults();
@@ -1134,6 +1135,7 @@ const Properties = {
           this.applyStandardType(leg, 'cb', value);
           TripUnit.afterLibraryPick(leg, swap);
         }
+        this._cbPickReset(comp, +coLeg[1]);
         AppState.dirty = true;
         this._notifyResultsCleared();
         AppState.clearResults();
@@ -2527,7 +2529,12 @@ ${br.loading_pct > 0 ? `Loading = ${br.loading_pct.toFixed(1)}%${br.loading_pct 
   _cbPick: {},
   // rating / curve / poles: undefined follows the breaker's own field, 'any' does not narrow,
   // a value narrows to it. They change what is listed, never the breaker.
-  _cbState(comp) { return this._cbPick[comp.id] || (this._cbPick[comp.id] = { volt: 'auto', ka: null, all: false }); },
+  // A changeover's breakers (n = 1, 2) each keep their own state.
+  _cbState(comp, n = 0) { const k = n ? `${comp.id}#${n}` : comp.id; return this._cbPick[k] || (this._cbPick[k] = { volt: 'auto', ka: null, all: false }); },
+  _cbPickReset(comp, n = 0) {
+    const st = this._cbPick[n ? `${comp.id}#${n}` : comp.id];
+    if (st) Object.assign(st, { rating: undefined, curve: undefined, poles: undefined });
+  },
 
   _cbBusInfo(comp) {
     let kv = 0, ik = 0, name = '';
@@ -2543,8 +2550,8 @@ ${br.loading_pct > 0 ? `Loading = ${br.loading_pct.toFixed(1)}%${br.loading_pct 
   },
 
   // The effective filter: what the breaker's own fields say plus the pick state.
-  _cbFilterOf(comp) {
-    const st = this._cbState(comp), bus = this._cbBusInfo(comp), p = comp.props;
+  _cbFilterOf(comp, n = 0) {
+    const st = this._cbState(comp, n), bus = this._cbBusInfo(comp), p = n ? TripUnit.leg(comp, n).props : comp.props;
     const auto = bus.ik > 0 ? Math.ceil(bus.ik * 10) / 10 : 0;
     // cb_type / mcb_curve come from the project file: allow-listed before they reach any HTML.
     const type = ['mcb', 'mccb', 'acb'].includes(p.cb_type) ? p.cb_type : 'mccb';
@@ -2584,8 +2591,8 @@ ${br.loading_pct > 0 ? `Loading = ${br.loading_pct.toFixed(1)}%${br.loading_pct 
     return [...by.entries()].sort((a, b) => a[0] - b[0]);
   },
 
-  _cbPickerHtml(comp, library, value) {
-    const e = escHtml, st = this._cbState(comp), f = this._cbFilterOf(comp);
+  _cbPickerHtml(comp, library, value, leg = 0) {
+    const e = escHtml, st = this._cbState(comp, leg), f = this._cbFilterOf(comp, leg);
     // Library (manufacturer): same behaviour as before.
     const makers = [...new Set(library.map(c => c.manufacturer || ''))].sort((a, b) => (a === '') ? -1 : (b === '') ? 1 : a.localeCompare(b));
     const cur = library.find(c => c.id === value);
@@ -2633,30 +2640,32 @@ ${br.loading_pct > 0 ? `Loading = ${br.loading_pct.toFixed(1)}%${br.loading_pct 
       + `<div class="prop-row"><label>Breaking ≥</label><div class="cbp-ka"><input type="number" data-cbp="ka" min="0" step="0.1" value="${f.ka > 0 ? f.ka : ''}" placeholder="kA" aria-label="Minimum breaking capacity, kA"><span class="cbp-dim">kA</span></div></div>`
       + `<div class="prop-row cbp-kahint"><label></label><div>${kaHint}</div></div>`
       + `<div class="prop-hint cbp-note" title="${e('Rating, Curve and Poles here only change which devices are listed; the breaker keeps its own values until you pick a device. The breaker already chosen is always listed.')}">${note}</div>`;
-    return { html, shown };
+    // Each control carries its breaker (0 = the CB itself, 1 / 2 = a changeover's breaker)
+    return { html: html.replace(/data-cbp="/g, `data-cbleg="${leg}" data-cbp="`), shown };
   },
 
   _bindCbPicker(root, comp) {
-    if (comp.type !== 'cb') return;
-    const st = this._cbState(comp);
+    if (comp.type !== 'cb' && comp.type !== 'changeover') return;
     const again = () => this.show(comp.id);
     root.querySelectorAll('[data-cbp]').forEach(el => {
-      const k = el.dataset.cbp;
+      const k = el.dataset.cbp, n = +el.dataset.cbleg || 0;
+      const st = this._cbState(comp, n);
+      const pre = n ? `cb${n}_` : '';
       if (k === 'type') el.addEventListener('click', () => {
-        const fld = root.querySelector('select[data-field="cb_type"]');
+        const fld = root.querySelector(`select[data-field="${pre}cb_type"]`);
         if (fld && fld.value !== el.dataset.v) { fld.value = el.dataset.v; fld.dispatchEvent(new Event('change', { bubbles: true })); }
       });
       else if (k === 'volt') el.addEventListener('change', () => { st.volt = el.value; again(); });
       else if (k === 'rating') el.addEventListener('change', () => { st.rating = el.value === 'any' ? 'any' : Number(el.value); again(); });
       else if (k === 'rating-dec' || k === 'rating-inc') el.addEventListener('click', () => {
-        const f = this._cbFilterOf(comp);
+        const f = this._cbFilterOf(comp, n);
         const lib = typeof STANDARD_CBS !== 'undefined' ? STANDARD_CBS : [];
         const pref = this._cbMaker;
-        const chosen = lib.find(c => c.id === comp.props.standard_type);
+        const chosen = lib.find(c => c.id === comp.props[`${pre}standard_type`]);
         const sel = pref === '*' ? null : (pref !== undefined ? pref : (chosen ? (chosen.manufacturer || '') : null));
         const rs = this._cbRatings(comp, lib, f, c => sel === null || (c.manufacturer || '') === sel).map(([r]) => r);
         if (!rs.length) return;
-        const cur = f.a > 0 ? f.a : Number(comp.props.rated_current_a) || 0;
+        const cur = f.a > 0 ? f.a : Number(n ? TripUnit.leg(comp, n).props.rated_current_a : comp.props.rated_current_a) || 0;
         const next = k === 'rating-inc' ? rs.find(r => r > cur) : [...rs].reverse().find(r => r < cur);
         if (next) { st.rating = next; again(); }
       });
