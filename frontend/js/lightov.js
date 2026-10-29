@@ -156,7 +156,7 @@ const LightOverview = {
   },
 
   _roadItem(r) {
-    return `<button class="lo-row" data-lo-${r.kind}="${escHtml(r.id)}">
+    return `<button class="lo-row" data-lo-${escHtml(r.kind)}="${escHtml(r.id)}">
       <span class="lo-row-name"><b>${escHtml(r.name)}</b><small>${escHtml(r.sub)}</small></span>
       <span class="lo-row-val">${escHtml(r.value)}</span>${this._chip(r.verdict)}</button>`;
   },

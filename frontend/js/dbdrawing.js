@@ -629,7 +629,7 @@ const DBDrawing = {
     const dot = (x, y) => `<circle cx="${x}" cy="${y}" r="2.2" fill="${P.line}"/>`;
     // Up to three centred label lines under a contact or coil.
     const labels = (x, y, cw, ls) => ls.filter(l => l && l.t).map((l, i) =>
-      `<text x="${x}" y="${y + i * 10}" text-anchor="middle" font-size="${l.b ? 8.5 : 8}" font-weight="${l.b ? 700 : 400}" fill="${l.c || (l.b ? P.ink : P.inkSec)}">${esc(this._trunc(l.t, Math.max(6, Math.floor(cw / 4.7))))}</text>`).join('');
+      `<text x="${x}" y="${y + i * 10}" text-anchor="middle" font-size="${l.b ? 8.5 : 8}" font-weight="${l.b ? 700 : 400}" fill="${esc(l.c || (l.b ? P.ink : P.inkSec))}">${esc(this._trunc(l.t, Math.max(6, Math.floor(cw / 4.7))))}</text>`).join('');
     for (const b of C.blocks) {
       const bx = x0 + b.x, by = b.y, BW = this.CTL_BW;
       const Lx = bx + 30, Nx = bx + BW - 24;
@@ -1209,7 +1209,7 @@ const DBDrawing = {
         let sym = this._glyph(item.glyph, X, gY, P, stroke, item);
         item.lines.forEach((ln, li) => {
           sym += `<text x="${X}" y="${lblTop + li * this.LINE_H}" text-anchor="middle" font-size="${ln.bold ? 9.5 : 9}"
-            font-weight="${ln.bold ? 700 : 400}" fill="${ln.dim ? P.muted : P.ink}" data-dxf-attr="${ln.tag || 'LABEL_' + (li + 1)}">${this._esc(ln.text)}</text>`;
+            font-weight="${ln.bold ? 700 : 400}" fill="${ln.dim ? P.muted : P.ink}" data-dxf-attr="${this._esc(ln.tag || 'LABEL_' + (li + 1))}">${this._esc(ln.text)}</text>`;
         });
         g += `<g data-dxf-block="DB_${escHtml(item.glyph)}" data-dxf-at="${X},${gY}" data-dxf-attrs="${this._dxfData(item.dxf)}">${sym}</g>`;
         if (!isSpd) {
@@ -1390,7 +1390,7 @@ const DBDrawing = {
         g += `<rect x="${x - lw / 2}" y="${labelTop - 10}" width="${lw}" height="${lh}" fill="${P.surface}"/>`;
         it.lines.forEach((ln, li) => {
           sym += `<text x="${x}" y="${labelTop + li * this.LINE_H}" text-anchor="middle" font-size="${ln.bold ? 9.5 : 9}"
-          font-weight="${ln.bold ? 700 : 400}" fill="${ln.dim ? P.muted : P.ink}" data-dxf-attr="${ln.tag || 'LABEL_' + (li + 1)}">${this._esc(ln.text)}</text>`;
+          font-weight="${ln.bold ? 700 : 400}" fill="${ln.dim ? P.muted : P.ink}" data-dxf-attr="${this._esc(ln.tag || 'LABEL_' + (li + 1))}">${this._esc(ln.text)}</text>`;
         });
       }
       g += `<g data-dxf-block="${it.kind === 'acc' ? 'DB_' + it.glyph : 'DB_WAY'}" data-dxf-at="${x},${devY}" data-dxf-attrs="${this._dxfData(it.dxf || {})}">${sym}</g>`;

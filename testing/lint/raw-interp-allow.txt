@@ -1,0 +1,172 @@
+# Interpolations reviewed by hand: internal markup helpers, literal toggles, numeric path data, palette lookups.
+# Key = file::expression (stable across line moves). Anything NOT here must be escHtml / numAttr.
+# Regenerate candidates with: node testing/lint/raw-interp.mjs --list-keys
+annotations.js::color
+app.js::b.warning ? ' class="af-medium"' : ''
+app.js::wsTitle
+area3d.js::extra
+boq.js::c === 'am' ? 112 : c.endsWith('r') ? 100 : 104
+boq.js::l.priced ? '' : ' class="bq-miss"'
+cablebulk.js::cls
+cablebulk.js::on ? (cls || ' class="cbk-on"') : ''
+cableschedules.js::worst.status.kind === 'bad' ? 'rt-bad' : worst.status.kind === 'amb' ? 'rt-amb' : ''
+canvas.js::arrow ? ' marker-end="url(#ppc-arrow)"' : ''
+canvas.js::bounds.x + 4
+canvas.js::fill
+dbaccessories.js::attrs
+dbcoord.js::dn.slice().reverse().map(p => f(p[0]) + ' ' + f(p[1])).join('L')
+dbcoord.js::up.map(p => f(p[0]) + ' ' + f(p[1])).join('L')
+dbdrawing.js::bx + 12 + (sup ? String(sup.tag).length * 6.6 + 8 : 120)
+dbdrawing.js::ctY(j)
+dbdrawing.js::(D.bars ? peY + 8 : devY + 60) - busY - 6
+dbdrawing.js::it.kind === 'acc' ? 'DB_' + it.glyph : 'DB_WAY'
+dbdrawing.js::rot ? ` rotate(${rot})` : ''
+dbdrawing.js::scale && scale !== 1 ? ` scale(${scale})` : ''
+dbdrawing.js::swAttrs(x)
+dbdrawing.js::this._dxfData({ BOARD: comp.props.name || comp.id, DESCRIPTION: `${acc.label || 'Meter'} CT`, RATIO: acc.ct_ratio || '' })
+dbdrawing.js::this._dxfData({ BOARD: comp.props.name || comp.id, DESCRIPTION: isoName, RATING_A: inc.isolator.props.rated_current_a || '' })
+dbdrawing.js::this._dxfData(incData)
+dbdrawing.js::this._dxfData(it.dxf || {})
+dbdrawing.js::this._dxfData(item.dxf)
+dbdrawing.js::this._mtrDxf(comp, m)
+dbmeters.js::m.points.includes(p.k)
+dbmeters.js::pr.bus === 'ip' ? 'e.g. 10.20.4.21' : pr.bus === 'pulse' ? 'e.g. DI-07' : '1–247'
+dbmeters.js::String(v) === String(cur ?? '') ? ' selected' : ''
+dbschedule.js::c.type === 'feeder_db' && c.sld ? ' disabled title="Drawn on the single line — remove the feeder there"' : ' title="Remove way"'
+dbschedule.js::f.full ? 'flex:1;min-width:220px' : `width:${f.width || 120}px`
+dbschedule.js::!fold[G.g]
+dbschedule.js::lock(c, 'breaker_a')
+dbschedule.js::lock(c, 'cable_mm2') || ' title="Live conductor size. Type to filter the IEC preferred sizes, or enter any value — a typed size is locked against Size cables. Type auto for the smallest size that passes the circuit check."'
+dbschedule.js::lock(c, 'curve')
+dbschedule.js::lock(c, 'device')
+dbschedule.js::lock(c, 'phase') && (c.poles || '1P') !== '3P' ? lock(c, 'phase') : ''
+dbschedule.js::lock(c, 'poles')
+dbschedule.js::this._selected.has(c.id) ? ' class="db-selected"' : ''
+dbschedule.js::title
+dbsections.js::String(s[k] ?? '') === String(o.key) ? ' selected' : ''
+dynmotor.js::active ? col : 'var(--border-color,#d0d0d0)'
+dynmotor.js::e.ly + 3
+earthgrid.js::attrs
+earthgrid.js::f.max != null ? ` max="${f.max}"` : ''
+earthgrid.js::f.min != null ? ` min="${f.min}"` : ''
+earthgrid.js::over ? `left:${wIn.toFixed(0)}%` : 'right:0'
+earthgrid.js::poly(f.line)
+earthgrid.js::poly(plan.outline)
+earthgrid.js::poly(ring)
+earthgrid.js::this._gradCss(this.RAMP_IN)
+earthgrid.js::this._gradCss(this.RAMP_OVER)
+freqscan.js::e.ly + 3
+freqscan.js::mk.dashed ? ' stroke-dasharray="4 3"' : ''
+freqscan.js::seg.join(' ')
+ga.js::cls ? '' : ` tabindex="0" role="separator" aria-orientation="${vert ? 'vertical' : 'horizontal'}" aria-label="Drag to change the compartment ${what}s (arrow keys: 10 mm, Shift: 50 mm)"`
+ga.js::m ? e(m) : ''
+ga.js::rot ? ` transform="rotate(-90 ${(x1 + x2) / 2} ${(y1 + y2) / 2})"` : ''
+ga.js::sh.bold ? ' font-weight="700"' : ''
+ga.js::sh.dash ? ' stroke-dasharray="6 4" fill-opacity="0"' : ''
+ga.js::v == null ? '' : e(v)
+interlocking.js::sel ? '#3498db' : this._color(v)
+interlocking.js::sel ? '#3498db' : (v ? meta.color : '#8892a0')
+interlocking.js::this._color(v)
+lfstudy.js::attrs
+lfstudy.js::res.length + 1
+libraries.js::this.view === v ? ' aria-current="page"' : ''
+light3d.js::extra
+light3d.js::pr.fluxPct !== '' && Number.isFinite(+pr.fluxPct) ? +pr.fluxPct : 100
+mobile.js::els.push({ run: () => Header.openSearch() }) - 1
+plan-dxf-manager.js::key
+plan-dxf-manager.js::paths(blk, 0)
+plan-dxf-manager.js::paths(nb, 1)
+plan-dxf-manager.js::typeof desc.opacity === 'number' ? desc.opacity : 1
+plan-ui.js::attrs
+plan-ui.js::fi.cumVD != null ? (fi.cumVD > limit ? 'bad' : 'ok') : ''
+properties.js::b.current != null ? b.current : ''
+properties.js::lockTitle
+rates.js::d
+rates.js::on ? this._num(rule.factor) : ''
+rates.js::ph(false)
+rates.js::ph(true)
+rates.js::(rule.part || 'all') === v
+rates.js::state.addNew ? '' : ' class="rt-off"'
+rates.js::this._rateText(v.labour)
+rates.js::this._rateText(v.rate)
+retic-diagram.js::['R', 'W', 'B', '3P', 'UNASSIGNED'][i]
+retic-diagram.js::ty + 10.5
+retic-diagram.js::ty + 11.5
+retic-diagram.js::y + (rows.length === 2 ? 70 : 64)
+retic.js::e.protection ? '' : ' class="prot-default"'
+retic.js::i === (r.cells || r).length - 1 ? ' class="calc-val"' : ''
+retic.js::o && o.unit !== 'A' ? ' class="derived"' : ''
+retic.js::o && o.unit !== 'kVA' ? ' class="derived"' : ''
+retic.js::this._calcOpen.has('f:' + k.id)
+retic.js::this._calcOpen.has('k:' + k.id)
+retic.js::this._earthingOf(k)
+retic.js::this._kioskAdmd(k, true)
+retic.js::this._selErfs.has(e.id) ? ' class="erf-selected"' : ''
+retic-tcc.js::curveFor(v.device)
+retic-tcc.js::edge(dn.slice().reverse())
+retic-tcc.js::edge(up)
+retic-tcc.js::l.bold ? ' font-weight="600"' : ''
+retic-tcc.js::r.cableOk == null ? '' : r.cableOk ? 'rtcc-ok-t' : 'rtcc-fail-t'
+retic-tcc.js::ring(x, y, 9.5)
+retic-tcc.js::tri(xa)
+retic-tcc.js::tri(xb)
+road3d.js::extra
+roadlight.js::colour(bandOf(v))
+roadlight.js::colour(k)
+roadlight.js::k === 'xOffset' ? 0.05 : k === 'fluxPct' ? 5 : k === 'tilt' || k === 'rotate' ? 1 : 0.1
+roadlight.js::pad.l + pw
+roadlight.js::pad.t + 9
+roadlight.js::pad.t + ph
+roadlight.js::segs.join('')
+roadlight.js::{ setback: 'Setback m', height: 'Height m', overhang: 'Overhang m', tilt: 'Tilt °', xOffset: 'Offset ×S', fluxPct: 'Flux %', rotate: 'Rotate °' }[k]
+roadlight.js::this.SEC_FILL[s.type] || 'var(--rl-verge)'
+roadlight.js::usedBy.length || usedByCircuits.length ? ' disabled title="In use by a design or a circuit"' : ''
+roadlight.js::Yp(s.y0)
+roadlight.js::Z(hMax)
+roadlight.js::Z(hMax) + 4
+roadlight.js::Z(r.height)
+roadlight.js::Z(r.height + 0.3)
+roadlight.js::Z(r.height + 0.6)
+roadlight-report.js::a.replace(/\swidth="[^"]*"/, '').replace(/\sheight="[^"]*"/, '')
+roadplan-circuits.js::pts.map(q => S(q[0], q[1]).map(t => t.toFixed(1)).join(' ')).join('L')
+roadplan.js::ca ? (ca.pass ? ' ok' : ' bad') : ''
+roadplan.js::ds.join('')
+roadplan.js::g.al.pts.map(p => `${p[0].toFixed(2)} ${p[1].toFixed(2)}`).join('L')
+roadplan.js::gl.join('')
+roadplan.js::ip.map(q => S(q.x, q.y).map(t => t.toFixed(1)).join(' ')).join('L')
+roadplan.js::poly.map(p => p.join(' ')).join('L')
+roadplan.js::pts.map(p => `${p.x.toFixed(2)} ${p.y.toFixed(2)}`).join('L')
+roadplan.js::pts.map(q => S(q[0], q[1]).map(t => t.toFixed(1)).join(' ')).join('L')
+roadplan.js::RoadLight.SEC_FILL[sec.type] || 'var(--rl-verge)'
+roadplan.js::RoadLight.SEC_FILL[s.type] || 'var(--rl-verge)'
+roadplan.js::r && r.mode === 'ip' ? '' : (r ? ' disabled' : '')
+roadplan.js::segs.join('')
+roadplan.js::this._fmt(sel.s, 2)
+roadplan.js::this._fmt(vmax, 1)
+roadplan.js::this._mf()
+schedule-mobile.js::extra
+schedule-mobile.js::k ? (v === k.id ? ' selected' : '') : (v === '' ? ' selected' : '')
+schedule-mobile.js::(m ? m.id : '') === v ? ' selected' : ''
+schedule-mobile.js::sel ? `data-smb-pick="${this._e(c.id)}" aria-pressed="${on}" aria-label="Select way ${this._e(c.way)}"` : `data-smb-way="${this._e(c.id)}" aria-label="Edit way ${this._e(c.way)}"`
+schedules.js::(this._depth.get(b.id) || 0) ? `padding-left:${10 + Math.min(4, this._depth.get(b.id)) * 14}px` : ''
+sl-diagram.js::P.onPhase[ph] || '#fff'
+sports3d.js::extra
+sportslight.js::c.pass ? 'ok' : c.pass === false ? 'bad' : ''
+sportslight.js::ds.map(d => d.toFixed(0)).join(', ')
+sportslight.js::st[k] == null || st[k] === '' ? '' : +st[k]
+sportslight.js::this._pct(fl.fluxPct)
+standard-data.js::this._cbBaseTitle(c, k)
+standard-data.js::this._cbBaseTitle(c, 'magnetic_pickup')
+standard-data.js::this._cbTripDefault(c, k)
+submissions.js::s.submitter_id === this._me() ? 'disabled title="You cannot decide your own submission"' : ''
+submissions.js::this.view === v ? ' aria-current="page"' : ''
+symbols.js::cbct ? r * 1.2 : r
+symbols.js::on ? 'fill="currentColor" stroke="none"' : 'fill="var(--bg-primary, #fff)"'
+symbols.js::ringed ? fix - 4.8 : fix
+tcc.js::classes.join(' ')
+tcc.js::groupNames[g].toLowerCase()
+tcc.js::this.canvas.toDataURL('image/png')
+transient.js::mk.dashed ? ' stroke-dasharray="3 2"' : ''
+tripunit.js::this.fmtVal(k, def[k], d)
+voltage-stability.js::mk.dashed ? ' stroke-dasharray="4 3"' : ''
+voltage-stability.js::seg.join(' ')
