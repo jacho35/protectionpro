@@ -3907,8 +3907,9 @@ class TestBatteryLoadFlow:
 
 class TestBatteryFault:
     def test_bess_inverter_limited_contribution(self):
-        """400 kVA BESS at 0.4 kV, k=1.2: Ik'' = c × 1.2 × Irated
-        = 1.1 × 1.2 × 577.4 A ≈ 0.762 kA (X/R=10 detail shifts it slightly)."""
+        """400 kVA BESS at 0.4 kV, k=1.2: Ik'' = 1.2 × Irated = 0.693 kA.
+        [CR-F17] A current limit is a current: the voltage factor c no longer
+        scales it (it used to give c × 1.2 × Irated ≈ 0.762 kA)."""
         p = ProjectData(name="t", baseMVA=100, frequency=50, components=[
             _comp("bus-1", "bus", {"name": "Main", "voltage_kv": 0.4}),
             _comp("batt-1", "battery", {
@@ -3917,7 +3918,7 @@ class TestBatteryFault:
         ], wires=[_wire("w1", "batt-1", "bus-1")])
         r = run_fault_analysis(p)
         i_rated_ka = 400 / (math.sqrt(3) * 400)
-        assert r.buses["bus-1"].ik3 == pytest.approx(1.1 * 1.2 * i_rated_ka, rel=0.01)
+        assert r.buses["bus-1"].ik3 == pytest.approx(1.2 * i_rated_ka, rel=0.01)
 
 
 class TestBackupAutonomy:

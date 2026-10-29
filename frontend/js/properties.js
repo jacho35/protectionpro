@@ -2233,7 +2233,7 @@ const Properties = {
         const vkv = busResult.voltage_kv || 11;
         const iBaseKA = AppState.baseMVA / (Math.sqrt(3) * vkv);
         // c_max per IEC 60909 Table 1: 1.10 (+10% tolerance) — matches fault.py
-        const cFactor = 1.1;
+        const cFactor = Number(AppState.voltageFactor) || DEFAULT_VOLTAGE_FACTOR;   // the study's c (Settings)
         const zBase = (vkv * vkv) / AppState.baseMVA;
 
         // Z_eq display
@@ -2299,7 +2299,9 @@ Z0 model per IEC 60909:
 • Dyn / YNd: far-side Δ provides Z0 circulation → Xfmr is Z0 source
   Z0_xfmr = Z_t(leakage) + 3×Z_n(grounding)
 • YNyn: Z0 passes through — walk continues to find grounded source
-• Yyn / Dd: no Z0 path (ungrounded star or delta on bus side)` : ''}
+• Yyn (one neutral earthed): only through the core's Z0 magnetising branch (three-limb core)
+• Yzn: an earthed zigzag is a Z0 source at its own terminals
+• Dd / unearthed star on the bus side: no Z0 path` : ''}
 
 ─── Single Line-to-Ground Fault (I"k1) ───
 I"k1 = 3c × V_n / (√3 × |Z1 + Z2 + Z0|)

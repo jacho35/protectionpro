@@ -273,16 +273,18 @@ def build(project, c=1.1, opts=None):
             continue
         if t in ("solar_pv", "battery", "wind_turbine"):
             n = portnode(cid, pl[0]); Un = un(n)
+            # current-limited converters deliver exactly k × I_r (IEC 60909-0:2016
+            # treats full-converter units as current sources): |Z| = c/k
             if t == "solar_pv":
                 S = _f(p, "rated_kw", 100) * _f(p, "num_inverters", 1) / 1000; k = _f(p, "fault_contribution_pu", 1.1)
-                z = (1 / max(k, 0.1)) * Un ** 2 / S * complex(0.1, 1)
+                z = (c / max(k, 0.1)) * Un ** 2 / S * _ang(10.0)
             elif t == "battery":
                 S = _f(p, "rated_kva", 100) / 1000; k = _f(p, "fault_contribution_pu", 1.1)
-                z = (1 / max(k, 0.1)) * Un ** 2 / S * complex(0.1, 1)
+                z = (c / max(k, 0.1)) * Un ** 2 / S * _ang(10.0)
             else:
                 S = _f(p, "rated_mva", 2.0) * _f(p, "num_turbines", 1)
                 if p.get("turbine_type", "type3_dfig") == "type4_frc":
-                    z = (1 / max(_f(p, "fault_contribution_pu", 1.1), 0.1)) * Un ** 2 / S * complex(0.1, 1)
+                    z = (c / max(_f(p, "fault_contribution_pu", 1.1), 0.1)) * Un ** 2 / S * _ang(10.0)
                 else:
                     xr = _f(p, "x_r_ratio", 30)
                     z = _f(p, "xd_pp", 0.2) * Un ** 2 / S * complex(1 / xr, 1)

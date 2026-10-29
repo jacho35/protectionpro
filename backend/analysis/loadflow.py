@@ -277,6 +277,55 @@ def _reaches_series_element(comp_id, adjacency, components):
     return False
 
 
+# [CR-F11] Two-port terminal elements and the port that faces the supply.
+TWO_PORT_TERMINALS = {"vfd": "in"}
+
+
+def _terminal_zone_kv(term, wires, components, only_port=None):
+    """[CR-F13] Nominal voltage of the node a dangling terminal sits on: a
+    bus or board reached through cables and closed transparent devices, else
+    the winding of the transformer it reaches, else None."""
+    adj = {}
+    for w in wires:
+        adj.setdefault(w.fromComponent, []).append((w.toComponent, w.toPort, w.fromPort))
+        adj.setdefault(w.toComponent, []).append((w.fromComponent, w.fromPort, w.toPort))
+    start = [(nb, nport) for nb, nport, own in adj.get(term.id, [])
+             if only_port is None or own == only_port]
+    seen, xf_kv = {term.id}, None
+    queue = list(start)
+    while queue:
+        nid, port = queue.pop(0)
+        if nid in seen:
+            continue
+        seen.add(nid)
+        c = components.get(nid)
+        if not c:
+            continue
+        if c.type in ("bus", "distribution_board"):
+            v = c.props.get("voltage_kv")
+            try:
+                if v and float(v) > 0:
+                    return float(v)
+            except (TypeError, ValueError):
+                pass
+            continue
+        if c.type in ("transformer", "autotransformer"):
+            if xf_kv is None:
+                step_up = c.props.get("winding_config") == "step_up"
+                hv_port = "secondary" if step_up else "primary"
+                key = "voltage_hv_kv" if port == hv_port else "voltage_lv_kv"
+                if c.type == "autotransformer" and port == "tertiary":
+                    key = "voltage_tv_kv"
+                try:
+                    xf_kv = float(c.props.get(key) or 0) or None
+                except (TypeError, ValueError):
+                    xf_kv = None
+            continue
+        if c.type == "cable" or _is_transparent_and_closed(c):
+            queue.extend((nb, nport) for nb, nport, _own in adj.get(nid, []))
+    return xf_kv
+
+
 def insert_implicit_load_buses(project: ProjectData) -> ProjectData:
     """Return a copy of *project* with a synthetic terminal bus inserted at
     every dangling load OR source — one wired to the rest of the network only
@@ -299,6 +348,18 @@ def insert_implicit_load_buses(project: ProjectData) -> ProjectData:
         adjacency.setdefault(w.fromComponent, []).append(w.toComponent)
         adjacency.setdefault(w.toComponent, []).append(w.fromComponent)
 
+    # [CR-F11] A drive is a two-port: only its SUPPLY port is a load
+    # terminal. Its output side (the motor) keeps its own wiring, so the
+    # converter stays between the network and the motor.
+    supply_nbrs = {}
+    for w in project.wires:
+        for cid, port, other in ((w.fromComponent, w.fromPort, w.toComponent),
+                                 (w.toComponent, w.toPort, w.fromComponent)):
+            comp = components.get(cid)
+            if comp is not None and comp.type in TWO_PORT_TERMINALS \
+                    and port == TWO_PORT_TERMINALS[comp.type]:
+                supply_nbrs.setdefault(cid, []).append(other)
+
     dangling = []
     for c in project.components:
         if c.type not in TERMINAL_BUS_TYPES:
@@ -307,7 +368,12 @@ def insert_implicit_load_buses(project: ProjectData) -> ProjectData:
             continue  # DC loads/sources belong to the DC solver
         if not adjacency.get(c.id):
             continue  # truly isolated — nothing to attach
-        if _load_reaches_bus(c.id, adjacency, components):
+        if c.type in TWO_PORT_TERMINALS:
+            if not supply_nbrs.get(c.id):
+                continue
+            if _load_reaches_bus(c.id, {**adjacency, c.id: supply_nbrs[c.id]}, components):
+                continue
+        elif _load_reaches_bus(c.id, adjacency, components):
             continue  # already has a terminal bus
         if (c.type in SOURCE_TERMINAL_TYPES
                 and not _reaches_series_element(c.id, adjacency, components)):
@@ -325,20 +391,20 @@ def insert_implicit_load_buses(project: ProjectData) -> ProjectData:
     wires = data["wires"]
     for term in dangling:
         syn_id = f"{SYNTHETIC_BUS_PREFIX}{term.id}"
-        # Terminal voltage base: the element's own rating, else a series
-        # neighbour's rating, else an LV default.
-        v_kv = term.props.get("voltage_kv")
-        if not v_kv:
-            for nb in adjacency.get(term.id, []):
-                nc = components.get(nb)
-                if nc and nc.type in ("cable", "transformer", "autotransformer"):
-                    v_kv = nc.props.get("voltage_lv_kv") or nc.props.get("voltage_kv")
-                    if v_kv:
-                        break
+        only_port = TWO_PORT_TERMINALS.get(term.type)
+        # [CR-F13] Terminal voltage base: the nominal voltage of the network
+        # the element hangs on (a bus reached along cables, else the facing
+        # transformer winding), not the element's nameplate — a 380 V motor
+        # on a 400 V cable is on a 400 V node.
+        v_kv = _terminal_zone_kv(term, project.wires, components, only_port) \
+            or term.props.get("voltage_kv")
         # Rewire: the element hangs off the new bus, and everything it used to
         # touch now hangs off the new bus instead (elem → syn → cable → …).
-        term_port = "in"
+        term_port = only_port or "in"
         for w in wires:
+            if only_port and not ((w["fromComponent"] == term.id and w.get("fromPort") == only_port)
+                                  or (w["toComponent"] == term.id and w.get("toPort") == only_port)):
+                continue
             if w["fromComponent"] == term.id:
                 term_port = w.get("fromPort", "in")
                 w["fromComponent"], w["fromPort"] = syn_id, "at_0"
@@ -435,7 +501,12 @@ def insert_junction_buses(project: ProjectData) -> ProjectData:
             continue   # a switching device wired on this port only — ambiguous
         if str(members[0].props.get("system", "ac")).lower() == "dc":
             continue
-        if sum(1 for m in members if m.type in SERIES_TYPES) < 2:
+        n_series = sum(1 for m in members if m.type in SERIES_TYPES)
+        # [CR-F12] also a node where one series element feeds two or more
+        # loads/sources with no bus: each would otherwise get its own terminal
+        # bus and reach the other through the cable.
+        n_terms = sum(1 for m in members if m.type in TERMINAL_BUS_TYPES)
+        if n_series < 2 and not (n_series >= 1 and n_terms >= 2):
             continue
         junctions.append((endpoints, members))
     if not junctions:

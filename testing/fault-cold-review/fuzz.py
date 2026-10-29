@@ -5,9 +5,9 @@
 Sets: 'base' (3 voltage levels, rings, open breakers, off-nominal ratios),
 'mesh' (heavily meshed, step-up units, no motor fractions), 'conv'
 (converters, inverters, autotransformers, parallel transformers with unequal
-ratios, board chains), 'seq' (Z2 ≠ Z1, generator X2 / X0, engine's no-K_G
-convention so only structure is compared). Every disagreement > 0.1 % is
-printed. At the review date all of them traced to findings F02 and F10."""
+ratios, board chains), 'seq' (Z2 ≠ Z1, generator X2 / X0 with
+K_G on both per IEC 60909-0 §6.6.1). Every disagreement > 0.1 % is
+printed. Before the fixes every one traced to findings F02 and F10; after them none remain."""
 import contextlib
 import io
 import random
@@ -59,4 +59,4 @@ def seq(seed):
 run("base", randnet.make)
 run("mesh", mesh)
 run("conv", randnet.make2)
-run("seq", seq, {"engine_x2x0": True})
+run("seq", seq)

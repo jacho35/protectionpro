@@ -99,7 +99,7 @@ def f03():
     return errs
 
 
-@check("F04", "LV utility earthing system TT / IT is ignored")
+@check("F04", "LV utility earthing system TT / IT is ignored", tol=5.0)
 def f04():
     U = 0.4
     zb, ib = U ** 2 / BASE, BASE / (SQ3 * U)
@@ -109,6 +109,7 @@ def f04():
                     earth_electrode_r_source=1.0, earth_electrode_r_installation=20.0),
                   C("b", "bus", voltage_kv=U)], [W("u", "b")])
         return quiet(F.run_fault_analysis, proj, fault_type="slg").buses["b"].ik1
+    # the engine rounds kA to 3 decimals: compare in amps with a 5 % band
     e = [cmp("TT: Ik1 with 3·(R_A + R_B) = 63 ohm in the loop (kA)",
              3 * c / abs(3 * ZQ + 3 * 21.0 / zb) * ib, run("TT"))]
     print(f"     IT: engine Ik1 = {run('IT')} kA, expected about 0")
@@ -270,8 +271,10 @@ def f12():
                        locked_rotor_current=6, x_r_ratio=10, voltage_kv=U))
     p = P(comps, [W("u", "A"), W("A", "k", "out", "from"), W("k", "m1", "to", "in"), W("k", "m2", "to", "in")])
     e = quiet(F.run_fault_analysis, p, fault_type="3phase").buses
+    # the common node is a junction bus once fixed, else each motor's own terminal bus
+    node = next((k for k in e if k.startswith("__tee__")), "__term__m1")
     return [cmp("Ik3 at the motors' common terminal (kA)", c / abs(par(ZQ + Zc, zm(2000), zm(1500))) * ib,
-                e["__term__m1"].ik3)]
+                e[node].ik3)]
 
 
 @check("F13", "Synthetic terminal bus takes the load's nameplate voltage, not the network's")
