@@ -1117,3 +1117,6 @@ body.dark-mode .pw-tip { background: #33374d; border: 1px solid #454a63; }
 .cbp-kahint { margin-top: -4px; }
 .cbp-link { background: none; border: 0; padding: 0; color: var(--accent, #0f6e6e); text-decoration: underline; font: inherit; font-size: 11px; cursor: pointer; }
 .cbp-note { line-height: 1.5; }
+.cbp-step { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0; }
+.cbp-step select { flex: 1; min-width: 0; }
+.cbp-stepbtn { min-width: 30px; min-height: 30px; border: 1px solid var(--border-color, #b9bcc2); background: var(--bg-primary, #fff); color: var(--text-primary, #1c1d1f); border-radius: 6px; font: inherit; font-size: 15px; cursor: pointer; }

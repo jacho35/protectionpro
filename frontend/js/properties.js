@@ -1112,6 +1112,7 @@ const Properties = {
           this.applyStandardType(comp, 'cb', value);
           TripUnit.afterLibraryPick(comp, swap);
         }
+        if (this._cbPick[comp.id]) Object.assign(this._cbPick[comp.id], { rating: undefined, curve: undefined, poles: undefined });   // the picked device's values are the new starting point
         AppState.dirty = true;
         this._notifyResultsCleared();
         AppState.clearResults();
@@ -2524,6 +2525,8 @@ ${br.loading_pct > 0 ? `Loading = ${br.loading_pct.toFixed(1)}%${br.loading_pct 
   // the last fault study at it; both can be overridden. State is per breaker and
   // session-only. The device already chosen always stays listed.
   _cbPick: {},
+  // rating / curve / poles: undefined follows the breaker's own field, 'any' does not narrow,
+  // a value narrows to it. They change what is listed, never the breaker.
   _cbState(comp) { return this._cbPick[comp.id] || (this._cbPick[comp.id] = { volt: 'auto', ka: null, all: false }); },
 
   _cbBusInfo(comp) {
@@ -2546,8 +2549,10 @@ ${br.loading_pct > 0 ? `Loading = ${br.loading_pct.toFixed(1)}%${br.loading_pct 
     // cb_type / mcb_curve come from the project file: allow-listed before they reach any HTML.
     const type = ['mcb', 'mccb', 'acb'].includes(p.cb_type) ? p.cb_type : 'mccb';
     const curve = /^[A-Z]{1,2}$/.test(String(p.mcb_curve || '').toUpperCase()) ? String(p.mcb_curve).toUpperCase() : '';
-    return { type, a: Number(p.rated_current_a) || 0, curve,
-      poles: parseInt(String(p.poles || ''), 10) || 0, kv: bus.kv, volt: st.volt, all: st.all,
+    const own = parseInt(String(p.poles || ''), 10) || 0;
+    return { type, a: st.rating === 'any' ? 0 : (typeof st.rating === 'number' ? st.rating : Number(p.rated_current_a) || 0),
+      curve: st.curve === 'any' ? '' : (st.curve || curve),
+      poles: st.poles === 'any' ? 0 : (typeof st.poles === 'number' ? st.poles : own), kv: bus.kv, volt: st.volt, all: st.all,
       ka: st.ka != null ? st.ka : auto, kaAuto: auto, bus };
   },
 
@@ -2566,6 +2571,19 @@ ${br.loading_pct > 0 ? `Loading = ${br.loading_pct.toFixed(1)}%${br.loading_pct 
     return true;
   },
 
+  // The ratings the library holds for the chosen type, library and voltage, with the
+  // number of devices at each (every other filter except rating applied).
+  _cbRatings(comp, library, f, inMaker) {
+    const g = Object.assign({}, f, { a: 0 });
+    const by = new Map();
+    for (const x of library) {
+      if (!inMaker(x) || !this._cbMatches(x, g)) continue;
+      const r = Number(x.trip_rating_a);
+      if (r > 0) by.set(r, (by.get(r) || 0) + 1);
+    }
+    return [...by.entries()].sort((a, b) => a[0] - b[0]);
+  },
+
   _cbPickerHtml(comp, library, value) {
     const e = escHtml, st = this._cbState(comp), f = this._cbFilterOf(comp);
     // Library (manufacturer): same behaviour as before.
@@ -2578,6 +2596,12 @@ ${br.loading_pct > 0 ? `Loading = ${br.loading_pct.toFixed(1)}%${br.loading_pct 
     const hits = library.filter(c => inMaker(c) && this._cbMatches(c, f));
     const shown = library.filter(c => (inMaker(c) && this._cbMatches(c, f)) || c.id === value)
       .map(c => (c.id === value && !hits.includes(c)) ? Object.assign({}, c, { _cbMiss: true }) : c);
+    const ratings = this._cbRatings(comp, library, f, inMaker);
+    const ratingOpts = [`<option value="any"${f.a > 0 ? '' : ' selected'}>Any rating</option>`]
+      .concat(ratings.map(([r, n]) => `<option value="${r}"${f.a === r ? ' selected' : ''}>${r} A · ${n} device${n === 1 ? '' : 's'}</option>`));
+    if (f.a > 0 && !ratings.some(([r]) => r === f.a)) ratingOpts.splice(1, 0, `<option value="${f.a}" selected>${f.a} A · no library device</option>`);
+    const curveOpts = ['any', 'B', 'C', 'D'].map(c => `<option value="${c}"${(c === 'any' ? !f.curve : f.curve === c) ? ' selected' : ''}>${c === 'any' ? 'Any curve' : c}</option>`).join('');
+    const polesOpts = ['any', 1, 2, 3, 4].map(n => `<option value="${n}"${(n === 'any' ? !f.poles : f.poles === n) ? ' selected' : ''}>${n === 'any' ? 'Any poles' : n + 'P'}</option>`).join('');
     const seg = ['mcb', 'mccb', 'acb'].map(t =>
       `<button type="button" class="cbp-seg-btn${f.type === t ? ' on' : ''}" data-cbp="type" data-v="${t}" aria-pressed="${f.type === t}">${t.toUpperCase()}</button>`).join('');
     const bus = f.bus;
@@ -2603,9 +2627,12 @@ ${br.loading_pct > 0 ? `Loading = ${br.loading_pct.toFixed(1)}%${br.loading_pct 
         + `<option value="*"${sel === null ? ' selected' : ''}>All libraries</option>`
         + makers.map(m => `<option value="m:${e(m)}"${sel === m ? ' selected' : ''}>${e(mlabel(m))}</option>`).join('') + `</select></div>` : '')
       + `<div class="prop-row"><label>Voltage</label><select data-cbp="volt" aria-label="Voltage class">${voltOpts}</select></div>`
+      + `<div class="prop-row"><label>Rating</label><div class="cbp-step"><button type="button" class="cbp-stepbtn" data-cbp="rating-dec" aria-label="Previous rating">−</button><select data-cbp="rating" aria-label="Rating">${ratingOpts.join('')}</select><button type="button" class="cbp-stepbtn" data-cbp="rating-inc" aria-label="Next rating">+</button></div></div>`
+      + (f.type === 'mcb' ? `<div class="prop-row"><label>Curve</label><select data-cbp="curve" aria-label="Curve">${curveOpts}</select></div>` : '')
+      + `<div class="prop-row"><label>Poles</label><select data-cbp="poles" aria-label="Poles">${polesOpts}</select></div>`
       + `<div class="prop-row"><label>Breaking ≥</label><div class="cbp-ka"><input type="number" data-cbp="ka" min="0" step="0.1" value="${f.ka > 0 ? f.ka : ''}" placeholder="kA" aria-label="Minimum breaking capacity, kA"><span class="cbp-dim">kA</span></div></div>`
       + `<div class="prop-row cbp-kahint"><label></label><div>${kaHint}</div></div>`
-      + `<div class="prop-hint cbp-note" title="${e('Narrowed by the Type, Library, Voltage and Breaking fields here, and by the Rated Current, Curve and Poles fields below. The breaker already chosen is always listed.')}">${note}</div>`;
+      + `<div class="prop-hint cbp-note" title="${e('Rating, Curve and Poles here only change which devices are listed; the breaker keeps its own values until you pick a device. The breaker already chosen is always listed.')}">${note}</div>`;
     return { html, shown };
   },
 
@@ -2620,6 +2647,21 @@ ${br.loading_pct > 0 ? `Loading = ${br.loading_pct.toFixed(1)}%${br.loading_pct 
         if (fld && fld.value !== el.dataset.v) { fld.value = el.dataset.v; fld.dispatchEvent(new Event('change', { bubbles: true })); }
       });
       else if (k === 'volt') el.addEventListener('change', () => { st.volt = el.value; again(); });
+      else if (k === 'rating') el.addEventListener('change', () => { st.rating = el.value === 'any' ? 'any' : Number(el.value); again(); });
+      else if (k === 'rating-dec' || k === 'rating-inc') el.addEventListener('click', () => {
+        const f = this._cbFilterOf(comp);
+        const lib = typeof STANDARD_CBS !== 'undefined' ? STANDARD_CBS : [];
+        const pref = this._cbMaker;
+        const chosen = lib.find(c => c.id === comp.props.standard_type);
+        const sel = pref === '*' ? null : (pref !== undefined ? pref : (chosen ? (chosen.manufacturer || '') : null));
+        const rs = this._cbRatings(comp, lib, f, c => sel === null || (c.manufacturer || '') === sel).map(([r]) => r);
+        if (!rs.length) return;
+        const cur = f.a > 0 ? f.a : Number(comp.props.rated_current_a) || 0;
+        const next = k === 'rating-inc' ? rs.find(r => r > cur) : [...rs].reverse().find(r => r < cur);
+        if (next) { st.rating = next; again(); }
+      });
+      else if (k === 'curve') el.addEventListener('change', () => { st.curve = el.value; again(); });
+      else if (k === 'poles') el.addEventListener('change', () => { st.poles = el.value === 'any' ? 'any' : Number(el.value); again(); });
       else if (k === 'ka') el.addEventListener('change', () => { const v = parseFloat(el.value); st.ka = Number.isFinite(v) && v >= 0 ? v : null; again(); });
       else if (k === 'ka-auto') el.addEventListener('click', () => { st.ka = null; again(); });
       else if (k === 'all') el.addEventListener('click', () => { st.all = !st.all; again(); });
