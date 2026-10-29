@@ -172,7 +172,7 @@ const DBControls = {
     return '';
   },
 
-  _is3(c) { return c.poles === '3P' || c.phase === 'RWB'; },
+  _is3(c) { return wayIs3(c); },
   _isLighting(c) { return /light|lamp|lumin|flood|fa[cç]ade|sign|street|parking/i.test(String(c.description || '')); },
   _isMotor(c) { return /pump|motor|fan|compress|hvac|aircon|a\/c|ahu|condens|chiller|drive|extract|fcu|split/i.test(String(c.description || '')); },
   _polesN(k) { return parseInt(String(k.poles || '3P'), 10) || 3; },

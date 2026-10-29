@@ -15,7 +15,25 @@
 // App version = 1.<PR number>b — set to the number of the PR that ships the change
 // (CLAUDE.md › Development Workflow). It also stamps saved study results, so
 // every bump marks results from older builds as stale.
-const APP_VERSION = '1.562b';
+const APP_VERSION = '1.563b';
+
+// Way poles (DB schedule, GA, drawings): '1P' live + neutral; '2P' live + neutral, or two
+// phases (L–L) when `phase` is a pair RW / WB / BR; '3P' R W B; '4P' R W B + neutral.
+// Legacy ways hold only 1P / 3P, so every helper reads a missing field as before.
+const WAY_LL_PHASES = ['RW', 'WB', 'BR'];
+function wayIsLL(c) { return !!c && c.poles === '2P' && WAY_LL_PHASES.includes(c.phase); }
+function wayIs3(c) { return !!c && (c.poles === '3P' || c.poles === '4P' || c.phase === 'RWB'); }
+// Not single-phase: three-phase, or two phases line-to-line.
+function wayIsMulti(c) { return wayIs3(c) || wayIsLL(c); }
+function wayPoleCount(c) {
+  if (!c) return 1;
+  const n = parseInt(String(c.poles || ''), 10);
+  return n >= 1 && n <= 4 ? n : (wayIs3(c) ? 3 : 1);
+}
+// R / W / B for a single-phase way, 'RWB' for anything on more than one phase.
+function wayPhaseKey(c) { return wayIsMulti(c) ? 'RWB' : ((c && c.phase) || 'R'); }
+// What the schedule and drawings print: R, R–W, RWB.
+function wayPhaseLabel(c) { return wayIsLL(c) ? c.phase[0] + '–' + c.phase[1] : wayIs3(c) ? 'RWB' : ((c && c.phase) || 'R'); }
 
 const GRID_SIZE = 20;
 const SNAP_SIZE = 20;
@@ -3119,6 +3137,7 @@ const COMPONENT_DEFS = {
       breaking_capacity_ka: 25,
       circuit_type: '',
       state: 'closed',
+      poles: '3P',
       cb_type: 'mccb',
       mounting: 'fixed',
       mcb_curve: 'C',
@@ -3137,6 +3156,7 @@ const COMPONENT_DEFS = {
       { key: 'standard_type', label: 'Standard CB', type: 'standard_select', library: 'cb' },
       { key: 'rated_voltage_kv', label: 'Rated Voltage', type: 'number', unit: 'kV' },
       { key: 'rated_current_a', label: 'Rated Current', type: 'number', unit: 'A' },
+      { key: 'poles', label: 'Poles', type: 'select', options: [{ value: '1P', label: '1P' }, { value: '2P', label: '2P' }, { value: '3P', label: '3P' }, { value: '4P', label: '4P' }] },
       { key: 'breaking_capacity_ka', label: 'Breaking Cap.', type: 'number', unit: 'kA' },
       { key: 'k_factor', label: 'ANSI K Factor', type: 'number', min: 1, step: 0.01, section: 'fault' },
       { key: 'contact_parting_cycles', label: 'ANSI Contact Parting (cycles)', type: 'number', min: 0, step: 0.5, section: 'fault' },
@@ -3352,6 +3372,7 @@ const COMPONENT_DEFS = {
       breaking_capacity_ka: 25,
       transfer_delay_s: 5,
       retransfer_delay_s: 300,
+      cb1_poles: '3P', cb2_poles: '3P',
       cb1_cb_type: 'acb', cb1_thermal_pickup: 1.0, cb1_magnetic_pickup: 10, cb1_long_time_delay: 10,
       cb1_short_time_pickup: 0, cb1_short_time_delay: 0, cb1_instantaneous_pickup: 0,
       cb2_cb_type: 'acb', cb2_thermal_pickup: 1.0, cb2_magnetic_pickup: 10, cb2_long_time_delay: 10,

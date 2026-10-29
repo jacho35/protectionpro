@@ -370,6 +370,7 @@ const Properties = {
   // or the properties window). infoPopups=false leaves the ⓘ buttons to the
   // caller.
   _bindContent(root, comp, { infoPopups = true } = {}) {
+    this._bindCbPicker(root, comp);
     // Bind TCC Grading button
     const btnTcc = root.querySelector('#btn-view-tcc');
     if (btnTcc) {
@@ -719,7 +720,12 @@ const Properties = {
       // `_cbMaker`: undefined follows the chosen breaker's library, '*' is all
       // libraries, else a manufacturer ('' = the generic library)
       let shownLib = library, makerHtml = '';
-      if (field.library === 'cb') {
+      if (field.library === 'cb' && _comp && _comp.type === 'cb') {
+        // A main-SLD breaker: the list narrows by type, library, voltage, rating,
+        // curve, poles and breaking capacity — see _cbPickerHtml.
+        const pk = this._cbPickerHtml(_comp, library, value);
+        shownLib = pk.shown; makerHtml = pk.html;
+      } else if (field.library === 'cb') {
         const makers = [...new Set(library.map(c => c.manufacturer || ''))].sort((a, b) => (a === '') ? -1 : (b === '') ? 1 : a.localeCompare(b));
         if (makers.length > 1) {
           const cur = library.find(c => c.id === value);
@@ -733,7 +739,7 @@ const Properties = {
         }
       }
       const options = shownLib.map(item =>
-        `<option value="${escHtml(item.id)}" ${value === item.id ? 'selected' : ''}>${escHtml(item.name)}</option>`
+        `<option value="${escHtml(item.id)}" ${value === item.id ? 'selected' : ''}>${escHtml(item.name)}${item._cbMiss ? ' (does not match)' : ''}</option>`
       ).join('');
       preRowHtml = makerHtml;
       inputHtml = `<select data-field="${escHtml(field.key)}" data-library="${escHtml(field.library)}">
@@ -1913,6 +1919,7 @@ const Properties = {
         comp.props.trip_rating_a = cb.trip_rating_a;
         comp.props.rated_current_a = cb.trip_rating_a;
         comp.props.rated_voltage_kv = cb.rated_voltage_kv;
+        if (cb.poles) comp.props.poles = /^[1-4]P$/.test(cb.poles) ? cb.poles : comp.props.poles;
         comp.props.breaking_capacity_ka = cb.breaking_ka;
         comp.props.thermal_pickup = cb.thermal_pickup;
         comp.props.magnetic_pickup = cb.magnetic_pickup;
@@ -2510,6 +2517,115 @@ ${br.loading_pct > 0 ? `Loading = ${br.loading_pct.toFixed(1)}%${br.loading_pct 
   },
 
   // Find bus IDs connected to a component via wires
+  // ── Breaker picker (a CB on the main SLD) ───────────────────────────
+  // The library list narrows itself the way the schedule's device list does
+  // (rating, curve) and also by type, library, voltage class, poles and breaking
+  // capacity. Voltage follows the connected bus and the breaking capacity follows
+  // the last fault study at it; both can be overridden. State is per breaker and
+  // session-only. The device already chosen always stays listed.
+  _cbPick: {},
+  _cbState(comp) { return this._cbPick[comp.id] || (this._cbPick[comp.id] = { volt: 'auto', ka: null, all: false }); },
+
+  _cbBusInfo(comp) {
+    let kv = 0, ik = 0, name = '';
+    const ids = this._getConnectedBusIds(comp.id);
+    for (const id of ids) {
+      const b = AppState.components.get(id);
+      const v = Number(b && b.props.voltage_kv) || 0;
+      if (v > kv) { kv = v; name = (b.props && b.props.name) || id; }
+      const fr = AppState.faultResults && AppState.faultResults.buses && AppState.faultResults.buses[id];
+      if (fr && Number(fr.ik3) > ik) ik = Number(fr.ik3);
+    }
+    return { kv, ik, name, n: ids.length };
+  },
+
+  // The effective filter: what the breaker's own fields say plus the pick state.
+  _cbFilterOf(comp) {
+    const st = this._cbState(comp), bus = this._cbBusInfo(comp), p = comp.props;
+    const auto = bus.ik > 0 ? Math.ceil(bus.ik * 10) / 10 : 0;
+    // cb_type / mcb_curve come from the project file: allow-listed before they reach any HTML.
+    const type = ['mcb', 'mccb', 'acb'].includes(p.cb_type) ? p.cb_type : 'mccb';
+    const curve = /^[A-Z]{1,2}$/.test(String(p.mcb_curve || '').toUpperCase()) ? String(p.mcb_curve).toUpperCase() : '';
+    return { type, a: Number(p.rated_current_a) || 0, curve,
+      poles: parseInt(String(p.poles || ''), 10) || 0, kv: bus.kv, volt: st.volt, all: st.all,
+      ka: st.ka != null ? st.ka : auto, kaAuto: auto, bus };
+  },
+
+  _cbMatches(x, f) {
+    if (x.cb_type !== f.type) return false;
+    if (f.all) return true;
+    const xv = Number(x.rated_voltage_kv) || 0.4;
+    if (f.volt === 'lv' && xv > 1) return false;
+    if (f.volt === 'mv' && xv <= 1) return false;
+    if (f.volt === 'auto' && f.kv > 0 && ((f.kv <= 1) !== (xv <= 1) || xv < f.kv - 1e-9)) return false;
+    if (f.a > 0 && !(Number(x.trip_rating_a) === f.a || (x.cb_type !== 'mcb' && Number(x.frame_a) === f.a))) return false;
+    if (f.type === 'mcb' && f.curve && String(x.mcb_curve || '').toUpperCase() !== f.curve) return false;
+    const xp = parseInt(String(x.poles || ''), 10);
+    if (xp && f.poles && xp !== f.poles) return false;     // an entry with no poles fits any
+    if (f.ka > 0 && x.breaking_ka != null && Number(x.breaking_ka) < f.ka) return false;
+    return true;
+  },
+
+  _cbPickerHtml(comp, library, value) {
+    const e = escHtml, st = this._cbState(comp), f = this._cbFilterOf(comp);
+    // Library (manufacturer): same behaviour as before.
+    const makers = [...new Set(library.map(c => c.manufacturer || ''))].sort((a, b) => (a === '') ? -1 : (b === '') ? 1 : a.localeCompare(b));
+    const cur = library.find(c => c.id === value);
+    const pref = this._cbMaker;
+    const sel = pref === '*' ? null : (pref !== undefined ? pref : (cur ? (cur.manufacturer || '') : null));
+    const mlabel = m => m === '' ? 'Generic Library' : `${m} Library`;
+    const inMaker = c => sel === null || (c.manufacturer || '') === sel;
+    const hits = library.filter(c => inMaker(c) && this._cbMatches(c, f));
+    const shown = library.filter(c => (inMaker(c) && this._cbMatches(c, f)) || c.id === value)
+      .map(c => (c.id === value && !hits.includes(c)) ? Object.assign({}, c, { _cbMiss: true }) : c);
+    const seg = ['mcb', 'mccb', 'acb'].map(t =>
+      `<button type="button" class="cbp-seg-btn${f.type === t ? ' on' : ''}" data-cbp="type" data-v="${t}" aria-pressed="${f.type === t}">${t.toUpperCase()}</button>`).join('');
+    const bus = f.bus;
+    const cls = bus.kv > 0 ? (bus.kv <= 1 ? 'LV' : 'MV') : '';
+    const voltOpts = [['auto', bus.kv > 0 ? `Auto — ${bus.name || 'bus'} ${bus.kv} kV (${cls})` : 'Auto — not wired to a bus (all)'], ['lv', 'LV (up to 1 kV)'], ['mv', 'MV (above 1 kV)'], ['all', 'All voltages']]
+      .map(([v, l]) => `<option value="${v}"${st.volt === v ? ' selected' : ''}>${e(l)}</option>`).join('');
+    const kaOver = st.ka != null;
+    const kaHint = bus.ik > 0
+      ? (kaOver ? `<button type="button" class="cbp-link" data-cbp="ka-auto">Use the fault study (${f.kaAuto} kA)</button>` : `<span class="cbp-dim">from the fault study at ${e(bus.name)}</span>`)
+      : '<span class="cbp-dim">run a fault study to fill this</span>';
+    const parts = [`${shown.filter(c => !c._cbMiss).length} device${shown.filter(c => !c._cbMiss).length === 1 ? '' : 's'}`, e(f.type.toUpperCase())];
+    if (!f.all) {
+      if (f.a > 0) parts.push(`rated ${f.a} A`);
+      if (f.type === 'mcb' && f.curve) parts.push(`curve ${e(f.curve)}`);
+      if (f.poles) parts.push(`${f.poles}P`);
+      if (f.ka > 0) parts.push(`≥ ${f.ka} kA`);
+    }
+    const note = f.all ? `Showing every ${e(f.type.toUpperCase())} in the chosen library. <button type="button" class="cbp-link" data-cbp="all">Narrow again</button>`
+      : (hits.length ? `${parts.join(' · ')}. <button type="button" class="cbp-link" data-cbp="all">Show all</button>`
+        : `No library device ${parts.slice(1).join(' · ')}. <button type="button" class="cbp-link" data-cbp="all">Show all</button>`);
+    const html = `<div class="prop-row"><label>Type</label><div class="cbp-seg" role="group" aria-label="Breaker type">${seg}</div></div>`
+      + (makers.length > 1 ? `<div class="prop-row cb-maker-row"><label>Library</label><select class="cb-maker-filter" aria-label="Manufacturer library">`
+        + `<option value="*"${sel === null ? ' selected' : ''}>All libraries</option>`
+        + makers.map(m => `<option value="m:${e(m)}"${sel === m ? ' selected' : ''}>${e(mlabel(m))}</option>`).join('') + `</select></div>` : '')
+      + `<div class="prop-row"><label>Voltage</label><select data-cbp="volt" aria-label="Voltage class">${voltOpts}</select></div>`
+      + `<div class="prop-row"><label>Breaking ≥</label><div class="cbp-ka"><input type="number" data-cbp="ka" min="0" step="0.1" value="${f.ka > 0 ? f.ka : ''}" placeholder="kA" aria-label="Minimum breaking capacity, kA"><span class="cbp-dim">kA</span></div></div>`
+      + `<div class="prop-row cbp-kahint"><label></label><div>${kaHint}</div></div>`
+      + `<div class="prop-hint cbp-note" title="${e('Narrowed by the Type, Library, Voltage and Breaking fields here, and by the Rated Current, Curve and Poles fields below. The breaker already chosen is always listed.')}">${note}</div>`;
+    return { html, shown };
+  },
+
+  _bindCbPicker(root, comp) {
+    if (comp.type !== 'cb') return;
+    const st = this._cbState(comp);
+    const again = () => this.show(comp.id);
+    root.querySelectorAll('[data-cbp]').forEach(el => {
+      const k = el.dataset.cbp;
+      if (k === 'type') el.addEventListener('click', () => {
+        const fld = root.querySelector('select[data-field="cb_type"]');
+        if (fld && fld.value !== el.dataset.v) { fld.value = el.dataset.v; fld.dispatchEvent(new Event('change', { bubbles: true })); }
+      });
+      else if (k === 'volt') el.addEventListener('change', () => { st.volt = el.value; again(); });
+      else if (k === 'ka') el.addEventListener('change', () => { const v = parseFloat(el.value); st.ka = Number.isFinite(v) && v >= 0 ? v : null; again(); });
+      else if (k === 'ka-auto') el.addEventListener('click', () => { st.ka = null; again(); });
+      else if (k === 'all') el.addEventListener('click', () => { st.all = !st.all; again(); });
+    });
+  },
+
   _getConnectedBusIds(compId) {
     const busIds = [];
     for (const wire of AppState.wires.values()) {
