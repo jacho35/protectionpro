@@ -236,7 +236,7 @@ const CableSize = {
       const tag = e.governed_by ? `<span class="csz-gov${e.governed_by === 'min' ? ' min' : ''}" title="${escHtml(this.WHY[e.governed_by] || '')}">${escHtml(this.TAG[e.governed_by] || e.governed_by)}</span>` : '';
       const nw = p.kind === 'none' ? '<span class="csz-bad">—</span>'
         : p.kind === 'kept' ? '<span class="csz-muted">kept</span>'
-        : `<span class="csz-${p.kind}">${mm(e.proposed_mm2)}</span>${e.keptLarger ? ' <span class="csz-muted" title="Larger than needed; Never make a cable smaller is on">kept</span>' : ''}`;
+        : `<span class="csz-${escHtml(p.kind)}">${mm(e.proposed_mm2)}</span>${e.keptLarger ? ' <span class="csz-muted" title="Larger than needed; Never make a cable smaller is on">kept</span>' : ''}`;
       const vd = e.vd_pct != null ? `${Number(e.vd_pct).toFixed(2)}` : '—';
       const msg = p.kind === 'none' ? `<tr class="csz-msg"><td></td><td colspan="9">${escHtml(e.message || '')}</td></tr>` : '';
       return `<tr class="${change || p.kind === 'none' ? 'csz-chg' : 'csz-same'}">

@@ -439,7 +439,7 @@ const DBDrawing = {
     const sub = ct ? (m.ct_ratio || 'CT') : 'direct';
     return `<g><title>${this._esc(tip)}</title><g data-dxf-block="DB_METER" data-dxf-at="${x},${y}" data-dxf-attrs="${this._mtrDxf(comp, m)}">`
       + (ct ? `<circle cx="${x}" cy="${y}" r="5" fill="none" stroke="${P.line}" stroke-width="1.3"/>` : `<circle cx="${x}" cy="${y}" r="1.8" fill="${P.mtr}"/>`)
-      + `<line x1="${x + (ct ? 5 : 0)}" y1="${y}" x2="${x + 9}" y2="${y}" stroke="${P.mtr}" stroke-width="1"/>`
+      + `<line x1="${numAttr(x + (ct ? 5 : 0))}" y1="${y}" x2="${x + 9}" y2="${y}" stroke="${P.mtr}" stroke-width="1"/>`
       + this._gMeterBox(x + 9, y, P, label, sub) + `</g></g>`;
   },
   // The incomer meter(s): on the riser between the incomer device (or the
@@ -454,7 +454,7 @@ const DBDrawing = {
       s += `<g><title>${this._esc(`${m.tag} — incomer meter: ${DBMeters.spec(m)}\n${DBMeters.comms(m)}`)}</title>`
         + `<g data-dxf-block="DB_METER" data-dxf-at="${x},${y}" data-dxf-attrs="${this._mtrDxf(comp, m)}">`
         + (ct ? `<circle cx="${x}" cy="${y}" r="6" fill="${P.surface}" stroke="${P.line}" stroke-width="1.4"/>` : '')
-        + `<line x1="${x + (ct ? 6 : 0)}" y1="${y}" x2="${x + 12 + j * 70}" y2="${y}" stroke="${P.mtr}" stroke-width="1"/>`
+        + `<line x1="${numAttr(x + (ct ? 6 : 0))}" y1="${y}" x2="${x + 12 + j * 70}" y2="${y}" stroke="${P.mtr}" stroke-width="1"/>`
         + this._gMeterBox(x + 12 + j * 70, y, P, m.tag, ct ? (m.ct_ratio || 'CT') : 'direct') + `</g></g>`;
     });
     return s;
@@ -479,10 +479,10 @@ const DBDrawing = {
         + this._vline(mid, busY, sy, [[isoY, 9], ...(ct ? [[mY, 5]] : [])], P.line, 1.4)
         + this._gSwitch(mid, isoY, P, P.line)
         + `<text x="${mid - 12}" y="${isoY + 3}" text-anchor="end" font-size="8" fill="${P.inkSec}">${this._esc((m.iso_a || 63) + ' A')}</text>`
-        + `<line x1="${xs[r.from] - 22}" y1="${sy}" x2="${xs[r.to] + 22}" y2="${sy}" stroke="${P.bus}" stroke-width="2.4" stroke-linecap="round"/>`
+        + `<line x1="${xs[r.from] - 22}" y1="${sy}" x2="${numAttr(xs[r.to] + 22)}" y2="${sy}" stroke="${P.bus}" stroke-width="2.4" stroke-linecap="round"/>`
         + `<g data-dxf-block="DB_METER" data-dxf-at="${mid},${mY}" data-dxf-attrs="${this._mtrDxf(comp, m)}">`
         + (ct ? `<circle cx="${mid}" cy="${mY}" r="5" fill="none" stroke="${P.line}" stroke-width="1.3"/>` : `<circle cx="${mid}" cy="${mY}" r="1.8" fill="${P.mtr}"/>`)
-        + `<line x1="${mid + (ct ? 5 : 0)}" y1="${mY}" x2="${mid + 9}" y2="${mY}" stroke="${P.mtr}" stroke-width="1"/>`
+        + `<line x1="${numAttr(mid + (ct ? 5 : 0))}" y1="${mY}" x2="${mid + 9}" y2="${mY}" stroke="${P.mtr}" stroke-width="1"/>`
         + this._gMeterBox(mid + 9, mY, P, m.tag, 'group · ' + (ct ? (m.ct_ratio || 'CT') : 'direct'))
         + `</g></g>`;
     }
@@ -539,8 +539,8 @@ const DBDrawing = {
         const ry = busY + this.SEC_CTR_Y, sy = busY + this.SEC_BUS_Y;
         s += `<g><title>${this._esc(tip + '\nSwitched section — its ways hang from the sub-bus')}</title>`
           + this._vline(mid, busY, sy, [[ry, 12]], P.line, 1.4)
-          + `<line x1="${xs[r.from] - 22}" y1="${sy}" x2="${xs[r.to] + 22}" y2="${sy}" stroke="${P.bus}" stroke-width="2.4" stroke-linecap="round"/>`
-          + `<g data-dxf-block="DB_CONTACTOR" data-dxf-at="${mid},${ry}" data-dxf-attrs="${attrs}">`
+          + `<line x1="${xs[r.from] - 22}" y1="${sy}" x2="${numAttr(xs[r.to] + 22)}" y2="${sy}" stroke="${P.bus}" stroke-width="2.4" stroke-linecap="round"/>`
+          + `<g data-dxf-block="DB_CONTACTOR" data-dxf-at="${mid},${ry}" data-dxf-attrs="${escHtml(attrs)}">`
           + this._gContactor(mid, ry, P, P.ctl) + label(mid + 10, ry - 4)
           + `</g></g>`;
         continue;
@@ -548,7 +548,7 @@ const DBDrawing = {
       const lx = xs[r.to] + 10;
       s += `<g><title>${this._esc(tip)}</title>`
         + (r.to > r.from ? `<line x1="${xs[r.from] - 4.5}" y1="${ctrY}" x2="${xs[r.to] - 4.5}" y2="${ctrY}" stroke="${P.ctl}" stroke-width="1" stroke-dasharray="3,3"/>` : '')
-        + `<g data-dxf-block="DB_CONTACTOR" data-dxf-at="${xs[r.from]},${ctrY}" data-dxf-attrs="${attrs}">${label(lx, ctrY - 4)}</g></g>`;
+        + `<g data-dxf-block="DB_CONTACTOR" data-dxf-at="${escHtml(xs[r.from])},${ctrY}" data-dxf-attrs="${escHtml(attrs)}">${label(lx, ctrY - 4)}</g></g>`;
     }
     return s;
   },
@@ -603,11 +603,11 @@ const DBDrawing = {
   // (NC), with its operator drawn above and joined by a dashed link.
   _ctlContact(x, y, P, op, nc) {
     const st = `fill="none" stroke="${P.line}" stroke-width="1.3"`;
-    let s = `<path d="M ${x - 12} ${y} L ${x + 10} ${y - 9} M ${x + 12} ${y} V ${y - (nc ? 12 : 5)}" ${st}/>`;
+    let s = `<path d="M ${x - 12} ${y} L ${x + 10} ${y - 9} M ${x + 12} ${y} V ${numAttr(y - (nc ? 12 : 5))}" ${st}/>`;
     if (!op) return s;
     const oy = y - 21;
     const box = (t) => `<rect x="${x - 8}" y="${oy - 5}" width="14" height="10" rx="1.5" fill="${P.surface}" stroke="${P.line}" stroke-width="1"/>`
-      + `<text x="${x - 1}" y="${oy + 2.5}" text-anchor="middle" font-size="6.5" fill="${P.ink}">${t}</text>`;
+      + `<text x="${x - 1}" y="${numAttr(oy + 2.5)}" text-anchor="middle" font-size="6.5" fill="${P.ink}">${t}</text>`;
     s += `<line x1="${x - 1}" y1="${y - 5}" x2="${x - 1}" y2="${oy + 5}" stroke="${P.line}" stroke-width="0.9" stroke-dasharray="2,1.5"/>`;
     if (op === 'hand') s += `<path d="M ${x - 7} ${oy + 5} H ${x + 5} M ${x - 7} ${oy + 1} V ${oy + 5}" ${st}/>`;
     else if (op === 'push') s += `<path d="M ${x - 7} ${oy + 5} H ${x + 5} M ${x - 1} ${oy + 5} V ${oy} M ${x - 5} ${oy} H ${x + 3}" ${st}/>`;
@@ -638,7 +638,7 @@ const DBDrawing = {
       const head = sup
         ? (sup.kind === 'external' ? `${sup.voltage || ''} external supply` : `MCB ${sup.breaker_a || '?'} A · ${sup.phase || 'R'}${tx ? ' → control transformer' : ''} · ${sup.voltage || ''}`)
         : 'Pick a control supply for these contactors';
-      s += `<rect x="${bx}" y="${by}" width="${BW}" height="${b.h}" rx="6" fill="${P.panel}" stroke="${P.border}"/>`
+      s += `<rect x="${bx}" y="${by}" width="${BW}" height="${escHtml(b.h)}" rx="6" fill="${P.panel}" stroke="${P.border}"/>`
         + `<text x="${bx + 12}" y="${by + 18}" font-size="10.5" font-weight="700" fill="${sup ? P.ink : P.warn}">${esc(sup ? sup.tag : 'No control supply')}</text>`
         + `<text x="${bx + 12 + (sup ? String(sup.tag).length * 6.6 + 8 : 120)}" y="${by + 18}" font-size="9" fill="${P.inkSec}">${esc(this._trunc(head + (sup && sup.note ? ' · ' + sup.note : ''), 74))}</text>`;
       const top = by + 30, railTop = by + this._ctlHeadH(sup);
@@ -719,9 +719,9 @@ const DBDrawing = {
         const ways = DBControls.waysOf(comp, k).map(c => c.way).join(', ');
         const attrs = this._dxfData({ BOARD: board, TAG: k.tag, DESCRIPTION: k.label || '',
           SPEC: `${k.poles} ${k.rating_a} A ${k.category}`, COIL: k.coil || '', SWITCHED_BY: DBControls.switchedBy(k), SUPPLY: sup ? sup.tag : '' });
-        g += `<g><title>${esc(`${k.tag} coil (${k.coil || ''}) — ${k.label || 'contactor'}${ways ? ', ways ' + ways : ''}`)}</title><g data-dxf-block="DB_CONTACTOR_COIL" data-dxf-at="${coilX},${ry}" data-dxf-attrs="${attrs}">`
+        g += `<g><title>${esc(`${k.tag} coil (${k.coil || ''}) — ${k.label || 'contactor'}${ways ? ', ways ' + ways : ''}`)}</title><g data-dxf-block="DB_CONTACTOR_COIL" data-dxf-at="${coilX},${ry}" data-dxf-attrs="${escHtml(attrs)}">`
           + `<rect x="${coilX - 18}" y="${ry - 9}" width="36" height="18" fill="${P.surface}" stroke="${P.ctl}" stroke-width="1.6"/>`
-          + `<text x="${coilX}" y="${ry + 3.5}" text-anchor="middle" font-size="9" font-weight="700" fill="${P.ctl}" data-dxf-attr="TAG_LABEL">${esc(this._trunc(k.tag, 5))}</text></g></g>`
+          + `<text x="${coilX}" y="${numAttr(ry + 3.5)}" text-anchor="middle" font-size="9" font-weight="700" fill="${P.ctl}" data-dxf-attr="TAG_LABEL">${esc(this._trunc(k.tag, 5))}</text></g></g>`
           + `<text x="${coilX - 20}" y="${ry - 12}" text-anchor="end" font-size="7" fill="${P.muted}">A1</text><text x="${coilX + 20}" y="${ry - 12}" font-size="7" fill="${P.muted}">A2</text>`
           + labels(coilX, ry + 20, 92, [{ t: `coil ${k.coil || ''}` }, { t: ways ? `ways ${ways}` : 'no ways' }, { t: k.label || '' }]);
         // Door lamp, through the contactor's own auxiliary contact.
@@ -735,8 +735,8 @@ const DBDrawing = {
             + this._ctlContact(ax, ly, P, null, sh.nc)
             + labels(ax, ly + 16, 80, [{ t: `${k.tag} ${sh.aux}`, c: P.ctl }])
             + `<g><title>${esc(`${DBControls.lampTag(k)}: ${DBControls.lampSpec(k)}`)}</title><g data-dxf-block="DB_CTL_LAMP" data-dxf-at="${coilX},${ly}" data-dxf-attrs="${lattrs}">`
-            + `<circle cx="${coilX}" cy="${ly}" r="9" fill="${P.surface}" stroke="${col2.hex}" stroke-width="1.6"/>`
-            + `<path d="M ${coilX - 6.4} ${ly - 6.4} L ${coilX + 6.4} ${ly + 6.4} M ${coilX + 6.4} ${ly - 6.4} L ${coilX - 6.4} ${ly + 6.4}" stroke="${col2.hex}" stroke-width="1.3"/></g></g>`
+            + `<circle cx="${coilX}" cy="${ly}" r="9" fill="${P.surface}" stroke="${escHtml(col2.hex)}" stroke-width="1.6"/>`
+            + `<path d="M ${coilX - 6.4} ${ly - 6.4} L ${numAttr(coilX + 6.4)} ${numAttr(ly + 6.4)} M ${numAttr(coilX + 6.4)} ${ly - 6.4} L ${coilX - 6.4} ${numAttr(ly + 6.4)}" stroke="${escHtml(col2.hex)}" stroke-width="1.3"/></g></g>`
             + labels(coilX, ly + 20, 110, [{ t: `${DBControls.lampTag(k)} ${col2.label.toLowerCase()} LED`, b: true }, { t: `door · lit when ${sh.nc ? 'open' : 'closed'}` }]);
           lastY = ly;
         } else lastY = Math.max(lastY, ry);
@@ -1176,7 +1176,7 @@ const DBDrawing = {
       s += `<g><title>${this._esc(`${acc.label || 'Meter'} — current transformer ${acc.ct_ratio || ''}`)}</title>`
         + `<g data-dxf-block="ct" data-dxf-at="${x},${ctY(j)}" data-dxf-attrs="${this._dxfData({ BOARD: comp.props.name || comp.id, DESCRIPTION: `${acc.label || 'Meter'} CT`, RATIO: acc.ct_ratio || '' })}">`
         + this._sym('ct', x, ctY(j), P, this._native('ct', P), null, 0.6)
-        + `<text x="${x - 10}" y="${ctY(j) + 4}" text-anchor="end" font-size="8" fill="${P.muted}" data-dxf-attr="RATIO_LABEL">${this._esc(acc.ct_ratio || 'CT')}</text></g></g>`;
+        + `<text x="${x - 10}" y="${numAttr(ctY(j) + 4)}" text-anchor="end" font-size="8" fill="${P.muted}" data-dxf-attr="RATIO_LABEL">${this._esc(acc.ct_ratio || 'CT')}</text></g></g>`;
     });
 
     // Supply-side taps — stay live with the board switched off. A tap
@@ -1259,8 +1259,8 @@ const DBDrawing = {
     return `<g><title>${this._esc(`${b.sec.name} — ${kind}`)}</title>`
       + `<rect x="${x0 - 8}" y="${escHtml(b.y0)}" width="${w + 16}" height="${b.y1 - b.y0}" rx="7" fill="${c}" fill-opacity="0.05" stroke="${c}" stroke-width="1.3" stroke-dasharray="7,4"/>`
       + `<rect x="${x0 - 8}" y="${escHtml(b.y0)}" width="${w + 16}" height="${this.STRIP_H - 4}" rx="7" fill="${c}" fill-opacity="0.9"/>`
-      + `<text x="${x0}" y="${b.y0 + 13}" font-size="11" font-weight="700" fill="#fff">${this._esc(b.sec.name.toUpperCase())}</text>`
-      + `<text x="${x0 + 12 + b.sec.name.length * 8}" y="${b.y0 + 13}" font-size="9.5" fill="#fff" fill-opacity="0.9">${this._esc(kind + (bits.length ? ' · ' + bits.join(' · ') : ''))}</text>`
+      + `<text x="${x0}" y="${numAttr(b.y0 + 13)}" font-size="11" font-weight="700" fill="#fff">${this._esc(b.sec.name.toUpperCase())}</text>`
+      + `<text x="${x0 + 12 + b.sec.name.length * 8}" y="${numAttr(b.y0 + 13)}" font-size="9.5" fill="#fff" fill-opacity="0.9">${this._esc(kind + (bits.length ? ' · ' + bits.join(' · ') : ''))}</text>`
       + `</g>`;
   },
 
@@ -1381,7 +1381,7 @@ const DBDrawing = {
         const pc = P.phase[it.phase] || P.muted;
         const tw = String(it.phase).length * 5.6;
         g += `<rect x="${x - 10 - tw - 11}" y="${devY + this.TICK_DY - 5}" width="9" height="9" rx="2" fill="${pc}"/>`;
-        sym += `<text x="${x - 8}" y="${devY + this.TICK_DY + 3}" text-anchor="end" font-size="9" fill="${P.inkSec}" data-dxf-attr="PHASE">${this._esc(it.phase)}</text>`;
+        sym += `<text x="${x - 8}" y="${numAttr(devY + this.TICK_DY + 3)}" text-anchor="end" font-size="9" fill="${P.inkSec}" data-dxf-attr="PHASE">${this._esc(it.phase)}</text>`;
       }
       if (!D.table) {
         // Labels sit on a page-coloured patch, so the conductor reads as passing

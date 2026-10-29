@@ -635,7 +635,7 @@ const Schedules = {
            ${tab('drawing', 'Single Line', 'Single-line drawing generated from this schedule')}
            ${tab('ga', 'Layout (GA)', 'General arrangement: physical front view and enclosure size')}
          </span>
-         <button class="sch-chip" id="sch-install-edit" aria-expanded="${this._installOpen}" aria-haspopup="dialog">
+         <button class="sch-chip" id="sch-install-edit" aria-expanded="${escHtml(this._installOpen)}" aria-haspopup="dialog">
            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M12 2v3M12 19v3M2 12h3M19 12h3"></path></svg>
            <span class="sch-install-sum" id="sch-install-sum"></span></button>`
       : '';

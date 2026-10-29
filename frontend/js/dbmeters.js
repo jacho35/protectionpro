@@ -726,13 +726,13 @@ const DBMeters = {
           </div>
           <fieldset><legend>What it measures</legend>
             <div class="dbc-arr">${MTR_SCOPES.map(s => `<div class="dbc-arr-opt${m.scope === s.v ? ' on' : ''}">
-              <label><input type="radio" name="dbm-scope" value="${s.v}"${m.scope === s.v ? ' checked' : ''}><span>${e(s.label)}<small>${e(s.hint)}</small></span></label></div>`).join('')}</div>
+              <label><input type="radio" name="dbm-scope" value="${escHtml(s.v)}"${m.scope === s.v ? ' checked' : ''}><span>${e(s.label)}<small>${e(s.hint)}</small></span></label></div>`).join('')}</div>
             ${m.scope === 'incomer'
               ? `<div class="dbc-sug">Incomer ${e(inc && inc.device_label ? inc.device_label : (a ? a + ' A' : 'rating not known'))} — the whole board.</div>`
               : `<div class="dbc-ways">${wayList || '<span class="dbc-dim">This board has no ways yet.</span>'}</div>`}
             ${m.scope === 'group' ? `<div class="dbm-gm"><span class="dbm-gm-h">How the group is measured</span>
               <div class="dbc-arr dbm-arr2">${MTR_GROUP_MODES.map(g => `<div class="dbc-arr-opt${(m.group_mode || 'subbus') === g.v ? ' on' : ''}">
-                <label><input type="radio" name="dbm-gm" value="${g.v}"${(m.group_mode || 'subbus') === g.v ? ' checked' : ''}><span>${e(g.label)}<small>${e(g.hint)}</small></span></label></div>`).join('')}</div>
+                <label><input type="radio" name="dbm-gm" value="${escHtml(g.v)}"${(m.group_mode || 'subbus') === g.v ? ' checked' : ''}><span>${e(g.label)}<small>${e(g.hint)}</small></span></label></div>`).join('')}</div>
               ${m.group_mode !== 'virtual' ? `<div class="dbc-grid4"><label>Sub-bus isolator (A) <select data-mk="iso_a">${MTR_ISO_RATINGS.map(r => opt(r, m.iso_a)).join('')}</select></label></div>` : ''}
             </div>` : ''}
           </fieldset>

@@ -221,7 +221,7 @@ const Area3D = {
       </div>`;
     }
     const p = el.props || {};
-    const num = (key, label, val, step, extra = '') => `<label class="l3-field"><span>${label}</span><input type="number" data-a3p="${key}" value="${escHtml(val)}" step="${step}" ${extra}></label>`;
+    const num = (key, label, val, step, extra = '') => `<label class="l3-field"><span>${label}</span><input type="number" data-a3p="${escHtml(key)}" value="${escHtml(val)}" step="${step}" ${extra}></label>`;
     return `<div class="l3-props-head"><i style="background:#fff2b8"></i><div><b>${escHtml(el.name || 'Luminaire')}</b><small>Outdoor luminaire</small></div>
         <button type="button" class="l3-icon l3-del" data-l3="del" aria-label="Delete" title="Delete">✕</button></div>
       <div class="l3-props-body"><div class="l3-grid2">

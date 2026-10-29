@@ -1606,7 +1606,7 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
     const protSum = [incDev ? incDev.name : 'No incoming device',
       comp.props.ik_max_ka ? `${comp.props.ik_max_ka} kA` : ''].filter(Boolean).join(' · ');
     const side = (key, title, sum, body) => `
-      <details class="db-side-sec" data-side="${key}"${this._sideOpen[key] ? ' open' : ''}>
+      <details class="db-side-sec" data-side="${escHtml(key)}"${this._sideOpen[key] ? ' open' : ''}>
         <summary>${escHtml(title)}${sum ? `<em>${escHtml(sum)}</em>` : ''}</summary>
         <div class="db-side-sec-b">${body}</div>
       </details>`;
@@ -2713,8 +2713,8 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
         const name = `imp-${ci}-${d.k}`;
         return `<tr><td style="${td}">${esc(String(c.row.way))}</td><td style="${td}">${esc(d.label)}</td>
           <td style="${td}">${esc(d.was || '—')}</td><td style="${td};font-weight:600">${esc(d.now || '—')}</td>
-          <td style="${td};white-space:nowrap"><label><input type="radio" name="${name}" value="file" checked> File</label>
-            &nbsp;<label><input type="radio" name="${name}" value="mine"> Mine</label></td></tr>`;
+          <td style="${td};white-space:nowrap"><label><input type="radio" name="${escHtml(name)}" value="file" checked> File</label>
+            &nbsp;<label><input type="radio" name="${escHtml(name)}" value="mine"> Mine</label></td></tr>`;
       }).join('')).join('');
       const tbl = (head, body) => `<table style="border-collapse:collapse;width:100%"><thead><tr>${head.map(h => `<th style="${th}">${h}</th>`).join('')}</tr></thead><tbody>${body}</tbody></table>`;
       const addedRows = plan.added.map(r => `<tr><td style="${td}">${esc(String(r.way))}</td><td style="${td}">${esc(r.description)}</td><td style="${td}">${esc(r.curve + String(r.breaker_a))} · ${esc(r.poles)}</td><td style="${td}">${esc(String(r.load_va))}</td></tr>`).join('');

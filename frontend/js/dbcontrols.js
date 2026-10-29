@@ -485,7 +485,7 @@ const DBControls = {
       txt = `<text x="${tx}" y="40">${v === 'poles' ? 'MCB each' : 'MCB'}</text><text x="${tx}" y="76" class="dbc-tip-k">K1</text>`;
     }
     return `<svg class="dbc-tip-svg" viewBox="0 0 300 110" width="300" height="110" aria-hidden="true">
-      <path d="${ink}" class="dbc-tip-ink"/><path d="${ctl}" class="dbc-tip-ctl${v === 'poles' ? ' dbc-tip-link' : ''}"/><path d="${fill}" class="dbc-tip-fill"/>${txt}</svg>`;
+      <path d="${ink}" class="dbc-tip-ink"/><path d="${ctl}" class="dbc-tip-ctl${v === 'poles' ? ' dbc-tip-link' : ''}"/><path d="${escHtml(fill)}" class="dbc-tip-fill"/>${txt}</svg>`;
   },
 
   // ── Rendering: the Controls section under the schedule grid ─────────
@@ -537,7 +537,7 @@ const DBControls = {
 
     const supRows = supplies.map(s => {
       const users = contactors.filter(k => k.supply === s.id).map(k => k.tag);
-      const kindOpts = CTL_SUPPLY_KINDS.map(x => `<option value="${x.v}"${s.kind === x.v ? ' selected' : ''}>${e(x.label)}</option>`).join('');
+      const kindOpts = CTL_SUPPLY_KINDS.map(x => `<option value="${escHtml(x.v)}"${s.kind === x.v ? ' selected' : ''}>${e(x.label)}</option>`).join('');
       const phOpts = ['R', 'W', 'B'].map(p => `<option${(s.phase || 'R') === p ? ' selected' : ''}>${p}</option>`).join('');
       const vOpts = CTL_COILS.map(v => `<option${s.voltage === v ? ' selected' : ''}>${e(v)}</option>`).join('');
       return `<div class="dbc-sup" data-dbc-sup="${e(s.id)}">
@@ -700,8 +700,8 @@ const DBControls = {
           </div>
           <fieldset><legend>What it switches</legend>
             <div class="dbc-arr">${CTL_ARRANGEMENTS.map(a => `<div class="dbc-arr-opt${k.arrangement === a.v ? ' on' : ''}">
-              <label><input type="radio" name="dbc-arr" value="${a.v}"${k.arrangement === a.v ? ' checked' : ''}><span>${e(a.label)}<small>${e(a.hint)}</small></span></label>
-              <button type="button" class="dbc-tipbtn" data-dbc-tip="${a.v}" aria-expanded="${tip === a.v}" aria-label="What “${e(a.label)}” means"><span aria-hidden="true">?</span></button></div>`).join('')}</div>
+              <label><input type="radio" name="dbc-arr" value="${escHtml(a.v)}"${k.arrangement === a.v ? ' checked' : ''}><span>${e(a.label)}<small>${e(a.hint)}</small></span></label>
+              <button type="button" class="dbc-tipbtn" data-dbc-tip="${escHtml(a.v)}" aria-expanded="${tip === a.v}" aria-label="What “${e(a.label)}” means"><span aria-hidden="true">?</span></button></div>`).join('')}</div>
             ${tip ? `<div class="dbc-tip" role="note"><strong>${e((CTL_ARRANGEMENTS.find(a => a.v === tip) || {}).label || '')}</strong>${this.arrangementSvg(tip)}<p>${e(CTL_ARRANGEMENT_HELP[tip] || '')}</p></div>` : ''}
             <div class="dbc-ways">${wayList || '<span class="dbc-dim">This board has no ways yet.</span>'}</div>
           </fieldset>
