@@ -176,6 +176,32 @@ body.dark-mode {
     background: var(--accent);
     color: #fff;
   }
+  #mobile-annot-pop:not([hidden]) {
+    display: flex !important;
+    flex-direction: column;
+    position: fixed;
+    top: calc(var(--mobile-header-height) + 58px);
+    left: 10px;
+    min-width: 180px;
+    padding: 4px;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    box-shadow: 0 4px 16px rgba(20, 20, 40, 0.18);
+    z-index: 460;
+  }
+  #mobile-annot-pop button {
+    height: 44px;
+    padding: 0 14px;
+    border: none;
+    border-radius: 9px;
+    background: transparent;
+    color: var(--text-primary);
+    font-size: 14px;
+    text-align: left;
+    cursor: pointer;
+  }
+  #mobile-annot-pop button:active { background: var(--bg-secondary); }
 
   /* ─── View buttons (top-right) ────────────────────── */
   #mobile-fab-group {
@@ -1002,6 +1028,7 @@ body.dark-mode {
   #interlock-workspace .il-title { width: 100%; }
   body.mobile-ws-secondary #mobile-fab-group,
   body.mobile-ws-secondary #mobile-mode-toggle,
+  body.mobile-ws-secondary #mobile-annot-pop,
   body.mobile-ws-secondary #mobile-selection-bar,
   body.mobile-ws-secondary #mobile-btn-undo,
   body.mobile-ws-secondary #mobile-btn-redo,
@@ -1474,6 +1501,7 @@ body.dark-mode {
 #mobile-header,
 #mobile-nav,
 #mobile-mode-toggle,
+#mobile-annot-pop,
 #mobile-fab-group,
 #mobile-sheet-backdrop,
 .mobile-sheet,

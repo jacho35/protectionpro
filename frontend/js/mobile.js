@@ -440,7 +440,8 @@ const MobileUI = {
     const wireBtn = document.getElementById('fab-mode-wire');
     if (!selBtn || !wireBtn) return;
     const isWire = typeof AppState !== 'undefined' && AppState.mode === MODE.WIRE;
-    selBtn.classList.toggle('fab-active', !isWire);
+    const drawing = typeof SldShapes !== 'undefined' && !!SldShapes.tool;
+    selBtn.classList.toggle('fab-active', !isWire && !drawing);
     wireBtn.classList.toggle('fab-active', isWire);
     selBtn.setAttribute('aria-pressed', String(!isWire));
     wireBtn.setAttribute('aria-pressed', String(isWire));
