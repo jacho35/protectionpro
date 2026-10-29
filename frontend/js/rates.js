@@ -872,7 +872,7 @@ const Rates = {
         const f = rule && rule.basis === 'pct' && rule.factor != null ? this._num(rule.factor) : '';
         return `<tr data-key="${escHtml(r.key)}" data-cat="${escHtml(r.cat)}">${head}
           <td class="rt-ofc"><button type="button" class="rt-of" data-rt="of" data-key="${escHtml(r.key)}" aria-haspopup="dialog" aria-label="Percentage of, for ${d}"><span>${escHtml(this._ofLabel(rule))}</span>${this._icon('<path d="m4 6 4 4 4-4"/>', 10)}</button></td>
-          <td><input class="rt-gc rt-num" data-f="pct" inputmode="decimal" value="${escHtml(f)}" placeholder="Off" aria-label="Percent for ${d}"></td>
+          <td><input class="rt-gc rt-num" data-f="pct" inputmode="decimal" value="${escHtml(f)}" placeholder="Off" aria-label="Percent for ${escHtml(d)}"></td>
           <td class="rt-ro rt-num" data-td="inbill">${this._inBill(r.key)}</td>
           <td class="rt-ro" data-td="st">${this._pill(r)}</td></tr>`;
       }
@@ -883,13 +883,13 @@ const Rates = {
       const ph = (isLab) => this.priced(v) ? '—' : (isLab === lab ? 'No rate' : '—');
       const on = !!rule && rule.basis !== 'pct';
       return `<tr data-key="${escHtml(r.key)}" data-cat="${escHtml(r.cat)}">${head}
-        <td class="rt-qf"><select class="rt-gc rt-sel${on ? ' rt-rule' : ''}" data-f="basis" aria-label="Quantity from, for ${d}">${this._basisOptions(on ? rule.basis : '')}</select></td>
-        <td class="${on ? '' : 'rt-dis'}"><input class="rt-gc rt-num" data-f="factor" inputmode="decimal" value="${on ? this._num(rule.factor) : ''}" ${on ? '' : 'disabled'} aria-label="Factor for ${d}"></td>
-        <td data-td="rate" class="${nr}"><input class="rt-gc rt-num" data-f="rate" inputmode="decimal" value="${this._rateText(v.rate)}" placeholder="${ph(false)}" aria-label="Material rate for ${d}"></td>
-        <td data-td="labour" class="${nr}"><input class="rt-gc rt-num" data-f="labour" inputmode="decimal" value="${this._rateText(v.labour)}" placeholder="${ph(true)}" aria-label="Labour rate for ${d}"></td>
+        <td class="rt-qf"><select class="rt-gc rt-sel${on ? ' rt-rule' : ''}" data-f="basis" aria-label="Quantity from, for ${escHtml(d)}">${this._basisOptions(on ? rule.basis : '')}</select></td>
+        <td class="${on ? '' : 'rt-dis'}"><input class="rt-gc rt-num" data-f="factor" inputmode="decimal" value="${on ? this._num(rule.factor) : ''}" ${on ? '' : 'disabled'} aria-label="Factor for ${escHtml(d)}"></td>
+        <td data-td="rate" class="${nr}"><input class="rt-gc rt-num" data-f="rate" inputmode="decimal" value="${this._rateText(v.rate)}" placeholder="${ph(false)}" aria-label="Material rate for ${escHtml(d)}"></td>
+        <td data-td="labour" class="${nr}"><input class="rt-gc rt-num" data-f="labour" inputmode="decimal" value="${this._rateText(v.labour)}" placeholder="${ph(true)}" aria-label="Labour rate for ${escHtml(d)}"></td>
         ${r.cat === 'term' ? '<td class="rt-ro rt-num" title="Terminations are counted per cable end; no waste allowance">—</td>'
-          : `<td><input class="rt-gc rt-num" data-f="waste" inputmode="decimal" value="${escHtml(v.waste)}" aria-label="Waste % for ${d}"></td>`}
-        <td><input class="rt-gc" data-f="supplier" value="${escHtml(v.supplier)}" aria-label="Supplier code for ${d}"></td>
+          : `<td><input class="rt-gc rt-num" data-f="waste" inputmode="decimal" value="${escHtml(v.waste)}" aria-label="Waste % for ${escHtml(d)}"></td>`}
+        <td><input class="rt-gc" data-f="supplier" value="${escHtml(v.supplier)}" aria-label="Supplier code for ${escHtml(d)}"></td>
         <td class="rt-ro rt-src" data-td="src">${this._srcText(v, r.key)}</td>
         <td class="rt-ro" data-td="st">${this._pill(r)}</td></tr>`;
     }).join('');

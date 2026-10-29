@@ -1299,7 +1299,7 @@ const Canvas = {
     let out = '';
     const link = (a, b, arrow) => {
       const d = `M${numAttr(a.x)},${numAttr(a.y)} L${numAttr(b.x)},${numAttr(a.y)} L${numAttr(b.x)},${numAttr(b.y)}`;
-      return `<path class="sld-ppc-link" d="${d}" fill="none" stroke="#0f766e" stroke-width="1.4" stroke-dasharray="6 4"${arrow ? ' marker-end="url(#ppc-arrow)"' : ''} pointer-events="none"/>`;
+      return `<path class="sld-ppc-link" d="${escHtml(d)}" fill="none" stroke="#0f766e" stroke-width="1.4" stroke-dasharray="6 4"${arrow ? ' marker-end="url(#ppc-arrow)"' : ''} pointer-events="none"/>`;
     };
     for (const [, c] of pageComps) {
       if (c.type !== 'plant_controller') continue;

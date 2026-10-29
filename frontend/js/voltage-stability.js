@@ -292,7 +292,7 @@ const VoltageStability = {
     for (const e of ends) {
       const x0 = W - padR;
       g += `<line x1="${x0 + 2}" y1="${numAttr(e.ly)}" x2="${x0 + 14}" y2="${numAttr(e.ly)}" stroke="${escHtml(e.color)}" stroke-width="2"/>`;
-      g += `<text x="${x0 + 18}" y="${e.ly + 3}" font-size="9" fill="${P.inkSec}">${this._esc(e.name)}</text>`;
+      g += `<text x="${x0 + 18}" y="${numAttr(e.ly + 3)}" font-size="9" fill="${P.inkSec}">${this._esc(e.name)}</text>`;
     }
     const title = `<text x="${padL}" y="14" font-size="11" font-weight="600" fill="${P.ink}">${this._esc(spec.title)}</text>`;
     const yLab = `<text x="${padL}" y="${padT - 6}" font-size="9" fill="${P.tickText}">${this._esc(spec.yLabel)}</text>`;

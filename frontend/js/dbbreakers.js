@@ -196,7 +196,7 @@ const BreakerSet = {
       const opts = (cur) => rs.map(r => `<option value="${escHtml(r.series)}" title="${escHtml(`${r.aMin}–${r.aMax} A${r.curves.size ? ', curves ' + [...r.curves].sort().join(' ') : ''}`)}"${r.series === cur ? ' selected' : ''}>${escHtml(this.rangeLabel(r, ik))}</option>`).join('');
       const curves = (cur) => ['keep', 'B', 'C', 'D'].map(c => `<option value="${c}"${c === cur ? ' selected' : ''}>${c === 'keep' ? 'Keep' : c}</option>`).join('');
       return `<span class="bks-h">Type</span><span class="bks-h">Range</span><span class="bks-h">Curve</span>`
-        + this.TYPES.map(t => `<span>${t.label}</span><select data-bks-series="${t.k}">${opts(cfg.types[t.k].series)}</select><select data-bks-curve="${t.k}">${curves(cfg.types[t.k].curve)}</select>`).join('')
+        + this.TYPES.map(t => `<span>${t.label}</span><select data-bks-series="${escHtml(t.k)}">${opts(cfg.types[t.k].series)}</select><select data-bks-curve="${escHtml(t.k)}">${curves(cfg.types[t.k].curve)}</select>`).join('')
         + `<span>Above ${this.MCB_MAX_A} A</span><select data-bks-above class="bks-wide">${opts(cfg.above)}</select>`;
     };
     const run = () => {
@@ -302,7 +302,7 @@ const BreakerSet = {
         : `<span class="csz-bad">— no match</span>`;
       const msg = p.kind === 'none' ? `<tr class="csz-msg"><td></td><td colspan="8">${escHtml(p.r.reason || '')} The ${p.incoming ? 'device' : 'way'} is left as it is.</td></tr>` : '';
       return `<tr class="${p.kind === 'same' ? 'csz-same' : 'csz-chg'}">
-        <td><input type="checkbox" data-bks-row="${escHtml(p.key)}" aria-label="Apply to ${label}"${p.kind === 'set' ? ' checked' : ' disabled'}></td>
+        <td><input type="checkbox" data-bks-row="${escHtml(p.key)}" aria-label="Apply to ${escHtml(label)}"${p.kind === 'set' ? ' checked' : ' disabled'}></td>
         <td><b>${multi ? escHtml(p.board.props.name || p.board.id) + ' · ' : ''}${label}</b></td><td>${desc}</td>
         <td class="csz-muted">${p.incoming ? '' : escHtml(typeLabel[p.r.type] || '')}</td><td class="num">${escHtml(String(a))} A</td><td>${curve}</td>
         <td class="csz-muted">${p.now ? escHtml(p.now.name) : 'Generic'}</td><td>${dev}</td>

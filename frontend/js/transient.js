@@ -677,7 +677,7 @@ const Transient = {
       const x0 = W - padR;
       if (Math.abs(e.ly - e.y) > 2) g += `<line x1="${x0 + 2}" y1="${numAttr(e.y)}" x2="${x0 + 12}" y2="${numAttr(e.ly)}" stroke="${escHtml(e.color)}" stroke-width="1" opacity="0.7"/>`;
       g += `<line x1="${x0 + 13}" y1="${numAttr(e.ly)}" x2="${x0 + 25}" y2="${numAttr(e.ly)}" stroke="${escHtml(e.color)}" stroke-width="2"/>`;
-      g += `<text x="${x0 + 29}" y="${e.ly + 3}" font-size="9" fill="${P.inkSec}">${this._esc(e.name)}</text>`;
+      g += `<text x="${x0 + 29}" y="${numAttr(e.ly + 3)}" font-size="9" fill="${P.inkSec}">${this._esc(e.name)}</text>`;
     }
     g += `<line class="ts-xhair" x1="0" y1="${padT}" x2="0" y2="${padT + plotH}" stroke="${P.tickText}" stroke-width="1" visibility="hidden"/>`;
     const title = `<text x="${padL}" y="14" font-size="11" font-weight="600" fill="${P.ink}">${this._esc(spec.title)}</text>`;

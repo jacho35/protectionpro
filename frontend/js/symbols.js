@@ -262,7 +262,7 @@ const Symbols = {
       // Solid earth: filled lines
       earthSvg = `
         <line x1="${earthX - 5}" y1="${cy + 2}" x2="${earthX + 5}" y2="${cy + 2}" stroke="#333" stroke-width="1.2"/>
-        <line x1="${earthX - 3.5}" y1="${cy + 5}" x2="${earthX + 3.5}" y2="${cy + 5}" stroke="#333" stroke-width="1.2"/>
+        <line x1="${earthX - 3.5}" y1="${cy + 5}" x2="${numAttr(earthX + 3.5)}" y2="${cy + 5}" stroke="#333" stroke-width="1.2"/>
         <line x1="${earthX - 2}" y1="${cy + 8}" x2="${earthX + 2}" y2="${cy + 8}" stroke="#333" stroke-width="1.2"/>`;
     } else {
       // Impedance grounded: earth with a zigzag (resistor/reactor) inline
@@ -272,7 +272,7 @@ const Symbols = {
       earthSvg = `
         <polyline points="${zx},${cy} ${zx + za},${cy - 3} ${zx + za * 2},${cy + 3} ${zx + za * 3},${cy - 3} ${zx + za * 4},${cy}" fill="none" stroke="#333" stroke-width="1"/>
         <line x1="${earthX - 4}" y1="${cy + 3}" x2="${earthX + 4}" y2="${cy + 3}" stroke="#333" stroke-width="1.2"/>
-        <line x1="${earthX - 2.5}" y1="${cy + 5.5}" x2="${earthX + 2.5}" y2="${cy + 5.5}" stroke="#333" stroke-width="1.2"/>
+        <line x1="${earthX - 2.5}" y1="${cy + 5.5}" x2="${numAttr(earthX + 2.5)}" y2="${cy + 5.5}" stroke="#333" stroke-width="1.2"/>
         <line x1="${earthX - 1}" y1="${cy + 8}" x2="${earthX + 1}" y2="${cy + 8}" stroke="#333" stroke-width="1.2"/>`;
     }
 

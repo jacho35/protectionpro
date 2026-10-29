@@ -1417,7 +1417,7 @@ const EarthGridEditor = {
     // data-*: the drawing scale, so a click can be turned back into metres
     const edit = o.edit || o.hover ? ` data-minx="${minX}" data-maxy="${maxY}" data-s="${s}" data-pad="${PAD}" data-spanx="${spanX}" data-spany="${spanY}"` : '';
     return `<svg class="eg-plan" viewBox="0 0 ${W.toFixed(1)} ${H.toFixed(1)}" width="100%" preserveAspectRatio="xMidYMid meet" role="img"${edit}
-      aria-label="Plan${label}: ${this._n(oMaxX - oMinX)} by ${this._n(oMaxY - oMinY)} metres, ${(plan.conductors || []).length} conductors, ${(plan.rods || []).filter(r => r[2] !== 'post').length} rods">${svg}</svg>`;
+      aria-label="Plan${escHtml(label)}: ${this._n(oMaxX - oMinX)} by ${this._n(oMaxY - oMinY)} metres, ${(plan.conductors || []).length} conductors, ${(plan.rods || []).filter(r => r[2] !== 'post').length} rods">${svg}</svg>`;
   },
 
   // Key of what the plan shows — only the kinds actually present.

@@ -834,7 +834,7 @@ const GA = {
       if (open && (!sh.grp || sh.grp !== open)) { pre += '</g>'; open = null; }
       if (sh.grp && sh.grp !== open) {
         open = sh.grp;
-        pre += `<g data-dxf-block="${this._esc(sh.grp.block)}" data-dxf-at="${sh.grp.at[0] + M},${sh.grp.at[1] + M}"`
+        pre += `<g data-dxf-block="${this._esc(sh.grp.block)}" data-dxf-at="${numAttr(sh.grp.at[0] + M)},${numAttr(sh.grp.at[1] + M)}"`
           + `${sh.grp.attrs ? ` data-dxf-attrs="${this._esc(JSON.stringify(sh.grp.attrs))}"` : ''} data-dxf-layer="DEVICES">`;
       }
       return pre + body(sh);
@@ -908,8 +908,8 @@ const GA = {
       const vert = b.axis === 'x';
       const x = M + b.pos, y = M + b.pos;
       const inner = vert
-        ? `<rect x="${x - 9 * u}" y="${M}" width="${18 * u}" height="${numAttr(enc.h)}" fill="transparent"/><line class="ga-handle-line" vector-effect="non-scaling-stroke" x1="${x}" y1="${M}" x2="${x}" y2="${M + enc.h}"/>`
-        : `<rect x="${M}" y="${y - 9 * u}" width="${numAttr(enc.w)}" height="${18 * u}" fill="transparent"/><line class="ga-handle-line" vector-effect="non-scaling-stroke" x1="${M}" y1="${y}" x2="${M + enc.w}" y2="${y}"/>`;
+        ? `<rect x="${x - 9 * u}" y="${M}" width="${18 * u}" height="${numAttr(enc.h)}" fill="transparent"/><line class="ga-handle-line" vector-effect="non-scaling-stroke" x1="${x}" y1="${M}" x2="${x}" y2="${numAttr(M + enc.h)}"/>`
+        : `<rect x="${M}" y="${y - 9 * u}" width="${numAttr(enc.w)}" height="${18 * u}" fill="transparent"/><line class="ga-handle-line" vector-effect="non-scaling-stroke" x1="${M}" y1="${y}" x2="${numAttr(M + enc.w)}" y2="${y}"/>`;
       return head(b, inner);
     }).join('');
     const grips = all.map(b => {
@@ -952,7 +952,7 @@ const GA = {
       const i = r * gcols + c, mine = owner[i] === brush;
       out += `<rect class="ga-cell${mine ? ' mine' : ''}" data-ga-cell="${i}" data-dxf-skip tabindex="0" role="button"
         aria-label="Cell row ${r + 1}, column ${c + 1}: ${this._esc(this._ownerName(L, owner[i]))}. Enter paints it ${this._esc(bn)}"
-        x="${at(cws, c) + M}" y="${at(chs, r) + M}" width="${escHtml(cws[c])}" height="${escHtml(chs[r])}" style="--brush:${bc};touch-action:none"><title>${this._esc(this._ownerName(L, owner[i]))} — click or drag to paint ${this._esc(bn)}</title></rect>`;
+        x="${numAttr(at(cws, c) + M)}" y="${numAttr(at(chs, r) + M)}" width="${escHtml(cws[c])}" height="${escHtml(chs[r])}" style="--brush:${bc};touch-action:none"><title>${this._esc(this._ownerName(L, owner[i]))} — click or drag to paint ${this._esc(bn)}</title></rect>`;
     }
     return out;
   },
@@ -1119,16 +1119,16 @@ const GA = {
   // One shape → SVG. Labels inside a device group carry their attribute tag.
   _shapeSvg(sh, M) {
     if (sh.t === 'rect' && sh.kind === 'tint') {
-      return `<rect x="${sh.x + M}" y="${sh.y + M}" width="${numAttr(sh.w)}" height="${numAttr(sh.h)}" fill="${escHtml(sh.color)}" fill-opacity="0.09" stroke="none"/>`;
+      return `<rect x="${numAttr(sh.x + M)}" y="${numAttr(sh.y + M)}" width="${numAttr(sh.w)}" height="${numAttr(sh.h)}" fill="${escHtml(sh.color)}" fill-opacity="0.09" stroke="none"/>`;
     }
     if (sh.t === 'rect') {
       const fill = sh.layer === 'ENCLOSURE' || sh.layer === 'COMPARTMENT' ? 'none' : sh.kind === 'part' ? '#8a8a8a' : sh.kind === 'bar' ? '#b8b8b8' : sh.layer === 'RAIL' ? '#d6d6d6' : (GA_KIND_FILL[sh.kind] || '#999');
       const stroke = sh.color || (sh.layer === 'ENCLOSURE' ? '#222' : '#333');
-      return `<rect x="${sh.x + M}" y="${sh.y + M}" width="${numAttr(sh.w)}" height="${numAttr(sh.h)}" fill="${escHtml(fill)}"
+      return `<rect x="${numAttr(sh.x + M)}" y="${numAttr(sh.y + M)}" width="${numAttr(sh.w)}" height="${numAttr(sh.h)}" fill="${escHtml(fill)}"
         stroke="${escHtml(stroke)}" stroke-width="${sh.thin ? 1 : 2}"${sh.dash ? ' stroke-dasharray="6 4" fill-opacity="0"' : ''} data-dxf-layer="${escHtml(sh.layer)}"
         ${sh.title ? `><title>${this._esc(sh.title)}</title></rect>` : '/>'}`;
     }
-    return `<text x="${sh.x + M}" y="${sh.y + M}" font-size="${escHtml(sh.size)}" font-family="Arial,sans-serif"
+    return `<text x="${numAttr(sh.x + M)}" y="${numAttr(sh.y + M)}" font-size="${escHtml(sh.size)}" font-family="Arial,sans-serif"
       text-anchor="${escHtml(sh.anchor || 'start')}" dominant-baseline="middle"${sh.bold ? ' font-weight="700"' : ''} fill="${escHtml(sh.color) || (sh.light ? '#fff' : '#222')}"${sh.attr ? ` data-dxf-attr="${escHtml(sh.attr)}"` : ''}>${this._esc(sh.s)}</text>`;
   },
 
