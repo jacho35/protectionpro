@@ -745,7 +745,7 @@ const Annotations = {
     const boxW = Math.max(140, maxLen * 6.2 + 14);
 
     const textHtml = entries.map((e, i) => {
-      const color = e.color ? ` fill="${e.color}"` : '';
+      const color = e.color ? ` fill="${escHtml(e.color)}"` : '';
       return `<text class="annotation-text"${color} x="${x + 6}" y="${y + 14 + i * lineHeight}">${e.t}</text>`;
     }).join('');
 
