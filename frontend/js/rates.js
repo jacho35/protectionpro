@@ -191,6 +191,7 @@ const Rates = {
     add('EQ-CT', 'Current transformer', 'ea', 'equip');
     add('EQ-VT', 'Voltage transformer', 'ea', 'equip');
     add('EQ-RELAY', 'Protection relay', 'ea', 'equip');
+    add('EQ-PPC', 'Plant controller', 'ea', 'equip');
     if (typeof PLAN_DEFS !== 'undefined') {
       for (const [t, d] of Object.entries(PLAN_DEFS.elements || {})) {
         if (this.PLAN_SKIP.includes(t)) continue;

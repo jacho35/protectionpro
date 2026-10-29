@@ -759,6 +759,13 @@ const Properties = {
         options.push(`<option value="${id}" ${value === id ? 'selected' : ''}>${escHtml(name)}</option>`);
       }
       inputHtml = `<select data-field="${escHtml(field.key)}">${options.join('')}</select>`;
+    } else if (field.type === 'component_checks') {
+      // Tick list of components of the listed types; the value is an array of ids.
+      const types = Array.isArray(field.filter) ? field.filter : [];
+      const chosen = Array.isArray(value) ? value : [];
+      const rows = [...AppState.components].filter(([, comp]) => types.includes(comp.type)).map(([id, comp]) =>
+        `<label class="prop-check-row"><input type="checkbox" data-check-field="${escHtml(field.key)}" data-check-id="${escHtml(id)}" ${chosen.includes(id) ? 'checked' : ''}> ${escHtml(comp.props?.name || id)}</label>`);
+      inputHtml = `<div class="prop-checks">${rows.join('') || '<div class="prop-ampacity-summary prop-ampacity-summary--empty">No generation on the diagram yet</div>'}</div>`;
     } else if (field.type === 'meter_check') {
       // Read-only: an Energy Meter's checks, or the meters reporting through a gateway (DBMeters).
       const self = AppState.components.get(compId);
@@ -1061,6 +1068,16 @@ const Properties = {
   },
 
   onFieldChange(e, comp, commit = true) {
+    if (e.target.dataset.checkId) {
+      const k = e.target.dataset.checkField;
+      const set = new Set(Array.isArray(comp.props[k]) ? comp.props[k] : []);
+      if (e.target.checked) set.add(e.target.dataset.checkId); else set.delete(e.target.dataset.checkId);
+      comp.props[k] = [...set];
+      AppState.dirty = true;
+      if (typeof UndoManager !== 'undefined') UndoManager.snapshot();
+      Canvas.render();
+      return;
+    }
     const field = e.target.dataset.field;
     let value = e.target.value;
 

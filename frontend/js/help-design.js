@@ -334,4 +334,16 @@ $$\text{Line}=Q\times\left(r_{material}+r_{labour}\right),\qquad \text{Total}=\s
 <h4>Meter schedule and points list</h4>
 <p>Quantities ▸ <strong>Meter schedule</strong> lists every meter with its comms and checks. The selected meter's BMS points are named <code>Board.Tag.Point</code>; per-phase points (V, I, THD) become L1–L3 on a three-phase meter. Type each point's <em>Register</em> from the meter maker's register map once, then <em>Copy to all</em> meters of the same type and make / model. Object instances are suggested as address × 100 + point. Export the schedule and points list as CSV, Excel or PDF.</p>` },
 
+{ id: 'design-plant-controller', group: 'design', title: 'Plant controller on the single line',
+  std: 'Single line ▸ Instruments & Metering ▸ Plant Controller',
+  kw: 'plant controller ppc power plant controller generation solar wind battery pcc point of connection scada utility setpoint export limit power factor reactive modbus iec 61850 104 dnp3',
+  html: String.raw`
+<p>A generation plant is usually run by a <strong>plant controller</strong> that measures at the point of connection (PCC), holds the plant to the utility's limits, and sends setpoints to the inverters, turbines or batteries. Drag a <strong>Plant Controller</strong> from <em>Instruments &amp; Metering</em> to show it on the single line.</p>
+<ul>
+<li><strong>Measures at (PCC)</strong> — the breaker, CT, VT, meter, bus or other device the controller reads. A dashed teal line with an arrow runs from it to the controller.</li>
+<li><strong>Controls</strong> — tick the solar, wind, battery, generator or SVC components it sets. A dashed line with an arrow runs from the controller to each.</li>
+<li><strong>Control</strong> — P limit only, or with reactive power, power factor or voltage control. <strong>Make / Model</strong>, <strong>Protocol</strong> (Modbus, IEC 61850, IEC 60870-5-104, DNP3, OPC UA), <strong>IP address</strong> and <strong>Reports to</strong> (SCADA or utility) are recorded on the controller.</li>
+</ul>
+<p>Like a relay or meter, the controller has no power connections and takes no part in any study; the lines are for the drawing. It is counted in the bill of quantities as a plant controller.</p>` },
+
 );

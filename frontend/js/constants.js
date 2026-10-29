@@ -15,7 +15,7 @@
 // App version = 1.<PR number>b — set to the number of the PR that ships the change
 // (CLAUDE.md › Development Workflow). It also stamps saved study results, so
 // every bump marks results from older builds as stale.
-const APP_VERSION = '1.557b';
+const APP_VERSION = '1.558b';
 
 const GRID_SIZE = 20;
 const SNAP_SIZE = 20;
@@ -1508,7 +1508,7 @@ const COMPONENT_CATEGORIES = [
   {
     id: 'instruments',
     name: 'Instruments & Metering',
-    items: ['ct', 'pt', 'energy_meter', 'bms_gateway'],
+    items: ['ct', 'pt', 'energy_meter', 'bms_gateway', 'plant_controller'],
   },
   {
     id: 'loads',
@@ -3549,6 +3549,40 @@ const COMPONENT_DEFS = {
       { key: 'ip_address', label: 'IP Address', type: 'text', placeholder: 'e.g. 10.20.4.10' },
       { key: 'bms', label: 'Reports to', type: 'text' },
       { key: '_meter_check', label: 'Meters', type: 'meter_check' },
+    ],
+  },
+
+  // Power plant controller (PPC) for a generation plant: measures at the point
+  // of connection, sets P / Q / PF / V on the plant's sources, talks to the
+  // SCADA / utility. Signals only — no power ports, no part in any study; its
+  // dashed links are drawn by Canvas.renderControllerLinks.
+  plant_controller: {
+    name: 'Plant Controller',
+    category: 'instruments',
+    ports: [],
+    width: 70,
+    height: 44,
+    defaults: {
+      name: 'PPC-1',
+      model: '',
+      control_mode: 'pq',
+      measures: '',
+      controlled: [],
+      protocol: 'Modbus TCP',
+      ip_address: '',
+      remote: 'SCADA / utility',
+    },
+    fields: [
+      { key: 'name', label: 'Tag', type: 'text' },
+      { key: 'model', label: 'Make / Model', type: 'text', placeholder: 'e.g. plant controller make and model' },
+      { key: 'control_mode', label: 'Control', type: 'select', options: [
+        { value: 'p', label: 'Active power limit (P)' }, { value: 'pq', label: 'P limit + reactive power (Q)' },
+        { value: 'pf', label: 'P limit + power factor (PF)' }, { value: 'pv', label: 'P limit + voltage (V)' }] },
+      { key: 'measures', label: 'Measures at (PCC)', type: 'component_select', filter: ['bus', 'cb', 'ct', 'pt', 'energy_meter', 'cable', 'transformer', 'utility'] },
+      { key: 'controlled', label: 'Controls', type: 'component_checks', filter: ['solar_pv', 'wind_turbine', 'battery', 'generator', 'svc'] },
+      { key: 'protocol', label: 'Protocol', type: 'select', section: 'comms', options: ['Modbus TCP', 'Modbus RTU', 'IEC 61850', 'IEC 60870-5-104', 'DNP3', 'OPC UA', 'Other'] },
+      { key: 'ip_address', label: 'IP Address', type: 'text', section: 'comms', placeholder: 'e.g. 10.20.4.20' },
+      { key: 'remote', label: 'Reports to', type: 'text', section: 'comms' },
     ],
   },
 

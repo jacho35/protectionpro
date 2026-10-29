@@ -594,6 +594,7 @@
    "system": "3P4W",
    "conn": "ct5",
    "ct_ratio": "",
+   "model": "",
    "protocol": "modbus_rtu",
    "network": "Loop A",
    "address": "1",
@@ -612,6 +613,22 @@
    "to_protocol": "BACnet/IP",
    "ip_address": "",
    "bms": "BMS"
+  }
+ },
+ "plant_controller": {
+  "name": "Plant Controller",
+  "category": "instruments",
+  "ports": [],
+  "dynamicPorts": false,
+  "defaults": {
+   "name": "PPC-1",
+   "model": "",
+   "control_mode": "pq",
+   "measures": "",
+   "controlled": [],
+   "protocol": "Modbus TCP",
+   "ip_address": "",
+   "remote": "SCADA / utility"
   }
  },
  "motor_induction": {

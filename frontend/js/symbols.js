@@ -371,6 +371,18 @@ const Symbols = {
       </g>`;
   },
 
+  // Plant controller (no power ports): teal box tagged "PPC". Its signal links
+  // are drawn by Canvas.renderControllerLinks.
+  plant_controller(w, h) {
+    const bw = w * 0.45, bh = h * 0.42;
+    return `
+      <g class="symbol-ppc">
+        <rect x="${-bw}" y="${-bh}" width="${bw * 2}" height="${bh * 2}" rx="3" fill="#e3f2ef" stroke="#0f766e" stroke-width="2"/>
+        <text x="0" y="-2" text-anchor="middle" font-size="12" font-weight="700" fill="#0f766e" stroke="none" font-family="sans-serif">PPC</text>
+        <path d="M${-bw + 8} 9 H${bw - 8}" stroke="#0f766e" stroke-width="1.4" stroke-dasharray="3 2" fill="none"/>
+      </g>`;
+  },
+
   switch(w, h, comp) {
     const hh = h / 2;
     const sw = w * 0.3;

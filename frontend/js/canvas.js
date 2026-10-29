@@ -1202,6 +1202,7 @@ const Canvas = {
       }
     }
     wiresHtml += this.renderMeterLinks(pageComps);
+    wiresHtml += this.renderControllerLinks(pageComps);
     this.wiresLayer.innerHTML = wiresHtml;
 
     // Render components (page-filtered)
@@ -1289,6 +1290,29 @@ const Canvas = {
       }
     }
     return out;
+  },
+
+  // Plant controllers' signal lines (no wires — no power ports): measurement in
+  // from the PCC device, setpoints out to each controlled source. Dashed teal,
+  // display only: not selectable, never part of any study.
+  renderControllerLinks(pageComps) {
+    let out = '';
+    const link = (a, b, arrow) => {
+      const d = `M${numAttr(a.x)},${numAttr(a.y)} L${numAttr(b.x)},${numAttr(a.y)} L${numAttr(b.x)},${numAttr(b.y)}`;
+      return `<path class="sld-ppc-link" d="${d}" fill="none" stroke="#0f766e" stroke-width="1.4" stroke-dasharray="6 4"${arrow ? ' marker-end="url(#ppc-arrow)"' : ''} pointer-events="none"/>`;
+    };
+    for (const [, c] of pageComps) {
+      if (c.type !== 'plant_controller') continue;
+      const p = c.props || {};
+      const meas = p.measures ? pageComps.get(p.measures) : null;
+      if (meas) out += link(meas, c, true);
+      for (const id of Array.isArray(p.controlled) ? p.controlled : []) {
+        const t = pageComps.get(id);
+        if (t) out += link(c, t, true);
+      }
+    }
+    if (!out) return '';
+    return `<defs><marker id="ppc-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L8 4 L0 8 Z" fill="#0f766e"/></marker></defs>${out}`;
   },
 
   // Show key data labels next to cables, transformers, and other components
