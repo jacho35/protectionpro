@@ -48,7 +48,12 @@ const CTL_ARRANGEMENTS = [
   { v: 'single', label: 'One circuit', hint: 'MCB → contactor → circuit' },
   { v: 'poles', label: 'Several circuits, a pole each', hint: 'each circuit keeps its own MCB' },
   { v: 'section', label: 'Switched section', hint: 'the contactor feeds a group of ways' },
+  { v: 'direct', label: 'Switched direct (no contactor)', hint: 'MCB → timer / photocell contact → circuit' },
 ];
+// A directly switched circuit runs through the switching device's own output contact.
+const CTL_DIRECT_RATINGS = [6, 10, 16, 20, 25, 32, 40, 63];
+// Switching devices that can carry a load through their own contact.
+const CTL_DIRECT_KINDS = ['photocell', 'timer', 'astro', 'thermostat'];
 // modules = DIN width in the board; 0 = a field / door device wired to terminals.
 const CTL_SWITCH_KINDS = [
   { key: 'photocell', label: 'Photocell', prefix: 'PC', modules: 1, heat_w: 1, field: 'sensor head mounted outside', setting: 'On at 50 lx' },
@@ -92,6 +97,7 @@ const CTL_LAMP_SHOWS = [
 const CTL_ARRANGEMENT_HELP = {
   single: 'The contactor sits after the way’s MCB and switches that one circuit. Use it for a single heater, pump or lighting circuit.',
   poles: 'Each circuit keeps its own MCB. One pole of the contactor sits in each circuit and they all switch together — up to as many circuits as the contactor has poles.',
+  direct: 'No contactor: the circuit’s load current runs through the output contact of the timer, astronomical clock or photocell itself, after the way’s MCB. Use it for small loads — the contact rating must cover the MCB, and lighting or motor loads need the AC-5 / AC-3 contact rating.',
   section: 'The contactor sits ahead of the circuits and feeds a small bus; their MCBs hang from it. Use it when there are more circuits than poles, or a whole group must go off together.',
 };
 
@@ -121,6 +127,11 @@ const DBControls = {
     return d;
   },
 
+  isDirect(k) { return !!k && k.arrangement === 'direct'; },
+  // 'Contactor 2P 25 A AC-1' or, for a directly switched circuit, 'Direct contact 16 A AC-5a'.
+  specText(k) { return this.isDirect(k) ? `${k.poles} ${k.rating_a} A ${k.category} contact` : `${k.poles} ${k.rating_a} A ${k.category}`; },
+  noun(k) { return this.isDirect(k) ? 'direct switching' : 'contactor'; },
+
   has(comp) { return this.peek(comp).contactors.length > 0; },
   contactors(comp) { return this.peek(comp).contactors; },
   supplies(comp) { return this.peek(comp).supplies; },
@@ -143,7 +154,7 @@ const DBControls = {
 
   // Pole numbers a way takes on a 'poles' contactor ('1' or '2–4'), else ''.
   poleLabel(comp, k, c) {
-    if (!k || k.arrangement !== 'poles') return '';
+    if (!k || (k.arrangement !== 'poles' && k.arrangement !== 'direct')) return '';
     let n = 0;
     for (const w of this.waysOf(comp, k)) {
       const p = this._is3(w) ? 3 : 1;
@@ -170,7 +181,7 @@ const DBControls = {
     const out = [];
     for (const k of this.contactors(comp)) {
       for (const s of (k.switches || [])) out.push(s.tag);
-      out.push(k.selector_tag);
+      if (!this.isDirect(k)) out.push(k.selector_tag);
     }
     return out;
   },
@@ -196,28 +207,32 @@ const DBControls = {
 
   // A new contactor for `ways` (circuit objects), sized from them, on the
   // board's first control supply (one is made when the board has none).
-  newContactor(comp, ways) {
+  newContactor(comp, ways, arrangement) {
     const d = this.peek(comp);
+    const direct = arrangement === 'direct';
     const k = {
-      id: this._uid('k'), tag: this._nextTag(d.contactors.map(x => x.tag), 'K'),
+      id: this._uid('k'), tag: this._nextTag(d.contactors.map(x => x.tag), direct ? 'SW' : 'K'),
       label: ways && ways.length ? String(ways[0].description || '').trim() : '',
-      arrangement: ways && ways.length > 1 ? 'poles' : 'single',
+      arrangement: direct ? 'direct' : ways && ways.length > 1 ? 'poles' : 'single',
       poles: '2P', rating_a: 25, category: 'AC-1', coil: '230 V AC',
       switches: [], combine: 'series', selector: 'hoa', selector_tag: '', supply: d.supplies.length ? d.supplies[0].id : '',
       lamp: false,
     };
     k.selector_tag = this._nextTag(this._allSwitchTags(comp), 'S');
+    if (direct) { k.selector = 'none'; k.supply = ''; }
     Object.assign(k, this.suggest(comp, k, ways || []));
     if (ways && ways.some(w => this._isLighting(w))) k.switches.push(this.newSwitch(comp, 'photocell'));
     return k;
   },
 
   // Adds a contactor (with a control supply if the board has none) and links `ways`.
-  addContactor(comp, ways) {
+  addContactor(comp, ways, arrangement) {
     const d = this.data(comp);
-    if (!d.supplies.length) this.addSupply(comp);
-    const k = this.newContactor(comp, ways);
-    if (!k.supply) k.supply = d.supplies[0].id;
+    const k = this.newContactor(comp, ways, arrangement);
+    if (!this.isDirect(k)) {
+      if (!d.supplies.length) this.addSupply(comp);
+      if (!k.supply) k.supply = d.supplies[0].id;
+    }
     d.contactors.push(k);
     for (const w of ways || []) w.contactor = k.id;
     return k;
@@ -231,10 +246,26 @@ const DBControls = {
     }
   },
 
+  // Moves a record between contactor and direct switching: a direct circuit has
+  // no coil, selector, lamp or control supply; going back gives it a selector.
+  setArrangement(comp, k, v) {
+    const wasDirect = this.isDirect(k);
+    k.arrangement = v;
+    if (v === 'direct' && !wasDirect) {
+      k.selector = 'none'; k.lamp = false; k.supply = '';
+      if (/^K\d+$/i.test(String(k.tag || ''))) k.tag = this._nextTag(this.contactors(comp).filter(x => x.id !== k.id).map(x => x.tag), 'SW');
+    } else if (v !== 'direct' && wasDirect) {
+      k.selector = 'hoa';
+      const d = this.peek(comp);
+      if (!k.supply && d.supplies.length) k.supply = d.supplies[0].id;
+      if (/^SW\d+$/i.test(String(k.tag || ''))) k.tag = this._nextTag(this.contactors(comp).filter(x => x.id !== k.id).map(x => x.tag), 'K');
+    }
+  },
+
   // ── Sizing ──────────────────────────────────────────────────────────
   polesNeeded(k, ways) {
     if (!ways.length) return 0;
-    if (k.arrangement === 'poles') return ways.reduce((n, w) => n + (this._is3(w) ? 3 : 1), 0);
+    if (k.arrangement === 'poles' || k.arrangement === 'direct') return ways.reduce((n, w) => n + (this._is3(w) ? 3 : 1), 0);
     if (k.arrangement === 'section') {
       const phases = new Set(ways.map(w => this._is3(w) ? 'RWB' : (w.phase || 'R')));
       return phases.has('RWB') || phases.size > 1 ? 4 : 2;
@@ -259,12 +290,14 @@ const DBControls = {
 
   suggest(comp, k, ways) {
     const n = this.polesNeeded(k, ways);
-    const poles = n <= 2 ? '2P' : n === 3 ? '3P' : '4P';
+    const direct = this.isDirect(k);
+    const poles = direct ? (n <= 1 ? '1P' : n === 2 ? '2P' : n === 3 ? '3P' : '4P') : n <= 2 ? '2P' : n === 3 ? '3P' : '4P';
     const duty = this.dutyA(comp, k, ways);
-    const rating_a = CTL_RATINGS.find(r => r >= duty) || CTL_RATINGS[CTL_RATINGS.length - 1];
+    const sizes = direct ? CTL_DIRECT_RATINGS : CTL_RATINGS;
+    const rating_a = sizes.find(r => r >= duty) || sizes[sizes.length - 1];
     const category = ways.some(w => this._isMotor(w)) ? 'AC-3'
       : ways.length && ways.every(w => this._isLighting(w)) ? 'AC-5a' : 'AC-1';
-    return { poles, rating_a: Math.max(16, rating_a), category };
+    return { poles, rating_a: direct ? rating_a : Math.max(16, rating_a), category };
   },
 
   // ── Checks (advisory) ───────────────────────────────────────────────
@@ -281,6 +314,7 @@ const DBControls = {
     } else if (need > have) {
       out.push({ level: 'warn', text: `Needs ${need} poles for its ways but is ${k.poles}.` });
     }
+    if (this.isDirect(k)) return out.concat(this._directWarnings(k, ways, rating, cat));
     if (ways.length && rating) {
       if (k.arrangement === 'section') {
         const duty = this.dutyA(comp, k, ways);
@@ -305,6 +339,32 @@ const DBControls = {
     if (!sup) out.push({ level: 'warn', text: 'No control supply — pick the one its coil runs from.' });
     else if (sup.voltage && k.coil && String(sup.voltage).replace(/\s/g, '') !== String(k.coil).replace(/\s/g, '')) {
       out.push({ level: 'warn', text: `Coil is ${k.coil} but ${sup.tag} supplies ${sup.voltage}.` });
+    }
+    return out;
+  },
+
+  // A directly switched circuit: the device's own contact carries the load.
+  _directWarnings(k, ways, rating, cat) {
+    const out = [];
+    const sw = k.switches || [];
+    if (!sw.length) out.push({ level: 'warn', text: 'Nothing switches it — add a photocell, time switch or thermostat.' });
+    for (const s of sw) {
+      if (!CTL_DIRECT_KINDS.includes(s.kind)) {
+        out.push({ level: 'warn', text: `${s.tag}: a ${this.switchKind(s.kind).label.toLowerCase()} is a control contact — it cannot carry a load; use a contactor.` });
+      }
+    }
+    if (sw.length > 1 && k.combine === 'parallel') {
+      out.push({ level: 'info', text: 'Devices in parallel each carry the full load current — rate every contact for it.' });
+    }
+    if (ways.length && rating) {
+      for (const w of ways) {
+        const a = Number(w.breaker_a) || 0;
+        if (a > rating) out.push({ level: 'warn', text: `Way ${w.way}: the ${rating} A ${cat} contact is below its ${a} A breaker — the breaker does not protect the contact; fit a contactor or a bigger contact.` });
+      }
+    }
+    if (ways.some(w => this._isMotor(w))) out.push({ level: 'warn', text: 'Switches a motor load directly — use a contactor, or check the contact’s AC-3 rating.' });
+    if (ways.some(w => this._isLighting(w)) && !/^AC-5/.test(cat)) {
+      out.push({ level: 'info', text: 'Switches lighting — use the contact’s AC-5a (LED / discharge) or AC-5b (incandescent) rating; LED drivers draw a high inrush.' });
     }
     return out;
   },
@@ -339,9 +399,12 @@ const DBControls = {
         modules: kd.modules, heat_w: kd.heat_w });
     }
     for (const k of this.contactors(comp)) {
-      const sz = this.contactorSize(k);
-      out.push({ id: 'k:' + k.id, group: k.id, tag: k.tag, kind: 'contactor', label: k.tag,
-        spec: `Contactor ${k.poles} ${k.rating_a} A ${k.category}`, modules: sz.modules, heat_w: sz.heat_w });
+      const direct = this.isDirect(k);
+      if (!direct) {
+        const sz = this.contactorSize(k);
+        out.push({ id: 'k:' + k.id, group: k.id, tag: k.tag, kind: 'contactor', label: k.tag,
+          spec: `Contactor ${k.poles} ${k.rating_a} A ${k.category}`, modules: sz.modules, heat_w: sz.heat_w });
+      }
       for (const s of (k.switches || [])) {
         const key = String(s.tag || '').trim().toLowerCase() || ('?' + out.length);
         if (seen.has(key)) continue;
@@ -350,14 +413,14 @@ const DBControls = {
         const mods = this.switchModules(s);
         const mount = this.switchMount(s);
         out.push({ id: 'sw:' + k.id + ':' + key, group: k.id, tag: s.tag, kind: s.kind, label: s.tag,
-          spec: `${this.switchDevice(s)}${s.setting ? ' · ' + s.setting : ''}${mount === 'din' ? (kd.field ? ' · ' + kd.field : '') : ' · ' + this.mountLabel(mount).toLowerCase()}`,
+          spec: `${this.switchDevice(s)}${direct ? ` · ${k.rating_a} A ${k.category} contact` : ''}${s.setting ? ' · ' + s.setting : ''}${mount === 'din' ? (kd.field ? ' · ' + kd.field : '') : ' · ' + this.mountLabel(mount).toLowerCase()}`,
           modules: mods, heat_w: mods ? kd.heat_w : 0, field: !mods });
       }
-      if ((k.selector || 'hoa') !== 'none') {
+      if (!direct && (k.selector || 'hoa') !== 'none') {
         out.push({ id: 'sel:' + k.id, group: k.id, tag: k.selector_tag || 'S', kind: 'selector', label: k.selector_tag || 'S',
           spec: `Selector ${(CTL_SELECTORS.find(x => x.v === k.selector) || CTL_SELECTORS[0]).label}`, modules: 1, heat_w: 0 });
       }
-      if (k.lamp) {
+      if (!direct && k.lamp) {
         out.push({ id: 'lamp:' + k.id, group: k.id, tag: this.lampTag(k), kind: 'lamp', label: this.lampTag(k),
           spec: `Indicator lamp (door) — ${this.lampSpec(k)}`, modules: 0, heat_w: 0.5, field: true });
       }
@@ -370,6 +433,7 @@ const DBControls = {
     const slug = (s) => String(s).toUpperCase().replace(/[^A-Z0-9]+/g, '');
     const out = [];
     for (const k of this.contactors(comp)) {
+      if (this.isDirect(k)) continue;
       out.push({ key: `CTL-K-${k.poles}-${k.rating_a}A-${slug(k.category)}`, desc: `Contactor ${k.poles} ${k.rating_a} A ${k.category}, ${k.coil || ''} coil` });
     }
     for (const dv of this.devices(comp)) {
@@ -398,7 +462,7 @@ const DBControls = {
 
   switchedBy(k) {
     const sw = (k.switches || []).map(s => s.tag || this.switchKind(s.kind).label);
-    if (!sw.length) return k.selector === 'hoa' ? 'Hand only' : '—';
+    if (!sw.length) return this.isDirect(k) ? '—' : k.selector === 'hoa' ? 'Hand only' : '—';
     return sw.join(k.combine === 'parallel' ? ' or ' : ' + ');
   },
 
@@ -433,7 +497,7 @@ const DBControls = {
     for (const k of this.contactors(comp)) {
       const sup = this.supply(comp, k.supply);
       const volts = sup ? (sup.voltage || '') : (k.coil || '');
-      if ((k.selector || 'hoa') !== 'none') {
+      if (!this.isDirect(k) && (k.selector || 'hoa') !== 'none') {
         rows.push({ tag: k.selector_tag || 'S', device: `Selector ${(CTL_SELECTORS.find(x => x.v === k.selector) || CTL_SELECTORS[0]).label}`,
           setting: '', contact: k.selector === 'hoa' ? 'Hand 13-14 · Auto 23-24' : 'Auto 13-14',
           mount: this.mountLabel('din'), modules: 1, ctrs: [k.tag] });
@@ -442,12 +506,12 @@ const DBControls = {
         const key = String(s.tag || '').trim().toLowerCase();
         const seen = key && byTag.get(key);
         if (seen) { if (!seen.ctrs.includes(k.tag)) seen.ctrs.push(k.tag); continue; }
-        const r = { tag: s.tag || '', device: this.switchDevice(s), setting: s.setting || '', contact: this.switchContact(s),
+        const r = { tag: s.tag || '', device: this.switchDevice(s), setting: s.setting || '', contact: this.switchContact(s) + (this.isDirect(k) ? ` · ${k.rating_a} A ${k.category}` : ''),
           mount: this.mountLabel(this.switchMount(s)), modules: this.switchModules(s), ctrs: [k.tag] };
         if (key) byTag.set(key, r);
         rows.push(r);
       }
-      if (k.lamp) {
+      if (!this.isDirect(k) && k.lamp) {
         const sh = this.lampShows(k);
         rows.push({ tag: this.lampTag(k), device: `Indicator, ${this.lampColour(k).label.toLowerCase()} LED 22 mm${volts ? ', ' + volts : ''}`,
           setting: `Lit when ${k.tag} ${sh.nc ? 'open' : 'closed'}`, contact: `via ${k.tag} ${sh.aux}`,
@@ -476,6 +540,11 @@ const DBControls = {
       ctl = pole(150, 22);
       fill = [90, 150, 210].map(arrow).join(' ');
       txt = '<text x="162" y="38" class="dbc-tip-k">K1</text><text x="226" y="74">MCBs</text>';
+    } else if (v === 'direct') {
+      ink = `M 110 12 H 190 ${mcb(150, 12)} V 60 M 150 82 V 96`;
+      ctl = pole(150, 60);
+      fill = arrow(150);
+      txt = '<text x="162" y="40">MCB</text><text x="162" y="76" class="dbc-tip-k">PC1 / T1 contact</text>';
     } else {
       const xs = v === 'poles' ? [90, 150, 210] : [150];
       ink = `M ${v === 'poles' ? 40 : 110} 12 H ${v === 'poles' ? 260 : 190} ` + xs.map(x => `${mcb(x, 12)} V 60 M ${x} 82 V 96`).join(' ');
@@ -516,7 +585,7 @@ const DBControls = {
       if (panel) {
         return `<div class="dbc-card${bad.length ? ' dbc-card-bad' : ''}">
           <div class="dbc-card-head">${chip(k.tag)}<span>${e(k.label || '')}</span><button type="button" class="btn-small" data-dbc-edit="${e(k.id)}">Edit</button></div>
-          <div class="dbc-dim">${e(`${k.poles} ${k.rating_a} A ${k.category} · ways ${ways.map(x => x.way).join(', ') || '—'}`)}</div>
+          <div class="dbc-dim">${e(`${this.isDirect(k) ? 'direct ' : ''}${this.specText(k)} · ways ${ways.map(x => x.way).join(', ') || '—'}`)}</div>
           <div class="dbc-dim">${e(this.switchedBy(k))}${sup ? ' · ' + e(sup.tag) : ''}</div>
           ${bad.length ? `<div class="dbc-bad">⚠ ${e(bad[0].text)}</div>` : ''}</div>`;
       }
@@ -524,7 +593,7 @@ const DBControls = {
         <td>${chip(k.tag)}</td>
         <td>${e(k.label || '—')}</td>
         <td>${e(arr)}</td>
-        <td>${e(`${k.poles} ${k.rating_a} A · ${k.category}`)}<br><span class="dbc-dim">coil ${e(k.coil || '')}${k.arrangement === 'poles' ? ` · ${this.polesNeeded(k, ways)} of ${this._polesN(k)} poles` : ''}</span></td>
+        <td>${e(`${k.poles} ${k.rating_a} A · ${k.category}`)}<br><span class="dbc-dim">${this.isDirect(k) ? 'contact on the device' : 'coil ' + e(k.coil || '')}${k.arrangement === 'poles' || this.isDirect(k) ? ` · ${this.polesNeeded(k, ways)} of ${this._polesN(k)} poles` : ''}</span></td>
         <td><div class="dbc-sws">${sw || '<span class="dbc-dim">—</span>'}</div></td>
         <td>${e(k.selector === 'none' ? '—' : `${sel.label} ${k.selector_tag || ''}`)}</td>
         <td>${e(sup ? sup.tag : '—')}</td>
@@ -536,7 +605,7 @@ const DBControls = {
     }).join('');
 
     const supRows = supplies.map(s => {
-      const users = contactors.filter(k => k.supply === s.id).map(k => k.tag);
+      const users = contactors.filter(k => !this.isDirect(k) && k.supply === s.id).map(k => k.tag);
       const kindOpts = CTL_SUPPLY_KINDS.map(x => `<option value="${escHtml(x.v)}"${s.kind === x.v ? ' selected' : ''}>${e(x.label)}</option>`).join('');
       const phOpts = ['R', 'W', 'B'].map(p => `<option${(s.phase || 'R') === p ? ' selected' : ''}>${p}</option>`).join('');
       const vOpts = CTL_COILS.map(v => `<option${s.voltage === v ? ' selected' : ''}>${e(v)}</option>`).join('');
@@ -555,20 +624,24 @@ const DBControls = {
     const nDev = this.devices(comp);
     const mods = nDev.reduce((n, d) => n + d.modules, 0);
     const heat = nDev.reduce((n, d) => n + d.heat_w, 0);
+    const nDirect = contactors.filter(k => this.isDirect(k)).length;
+    const nCtr = contactors.length - nDirect;
     const summary = contactors.length
-      ? `${contactors.length} contactor${contactors.length === 1 ? '' : 's'} · ${supplies.length} control suppl${supplies.length === 1 ? 'y' : 'ies'} · ${mods} DIN modules, ${heat.toFixed(0)} W`
+      ? [nCtr ? `${nCtr} contactor${nCtr === 1 ? '' : 's'}` : '', nDirect ? `${nDirect} switched direct` : '',
+        supplies.length ? `${supplies.length} control suppl${supplies.length === 1 ? 'y' : 'ies'}` : '', `${mods} DIN modules, ${heat.toFixed(0)} W`].filter(Boolean).join(' · ')
       : 'none';
 
     const body = `<div class="dbc-body">
       <div class="dbc-bar">
         <button type="button" class="btn-small btn-primary" data-dbc="add">+ Contactor</button>
+        <button type="button" class="btn-small" data-dbc="add-direct" title="A timer or photocell contact wired straight into the circuit, no contactor">+ Direct switching</button>
         ${DBSchedule._selected && DBSchedule._selected.size && !panel ? `<button type="button" class="btn-small" data-dbc="add-sel" title="One contactor switching the ways ticked in the grid">+ Contactor for ${DBSchedule._selected.size} ticked way${DBSchedule._selected.size === 1 ? '' : 's'}</button>` : ''}
         <span class="dbc-dim">${e(summary)}</span>
       </div>
       ${contactors.length ? (panel ? `<div class="dbc-cards">${rows}</div>` : `<div class="dbc-table-wrap"><table class="dbc-table">
         <thead><tr><th>Tag</th><th>Duty</th><th>Arrangement</th><th>Contactor</th><th>Switched by</th><th>Override</th><th>Supply</th><th>Ways</th><th>DIN</th><th>Check</th><th></th></tr></thead>
         <tbody>${rows}</tbody></table></div>`)
-        : `<div class="dba-empty">No contactors yet. Add one to switch outdoor lights on a photocell or timer, HVAC on a thermostat or BMS enable — or tick ways in the grid and add one for them. They appear on the single line and take space on the GA.</div>`}
+        : `<div class="dba-empty">No contactors yet. Add one to switch outdoor lights on a photocell or timer, HVAC on a thermostat or BMS enable — or tick ways in the grid and add one for them. A small circuit wired straight through a timer or photocell contact, with no contactor, is “Direct switching”. They appear on the single line and take space on the GA.</div>`}
       <div class="dbc-sup-head"><strong>Control supplies</strong>
         <button type="button" class="btn-small" data-dbc="add-sup">+ Supply</button>
         <span class="dbc-dim">Each contactor’s coil runs from one of these — a board may have several (a 230 V MCB, a 24 V transformer, a UPS-backed supply).</span></div>
@@ -601,6 +674,9 @@ const DBControls = {
       const a = b.dataset.dbc;
       if (a === 'add') {
         const k = this.newContactor(comp, []);
+        this.edit(comp, k, { isNew: true, onSave: onChange });
+      } else if (a === 'add-direct') {
+        const k = this.newContactor(comp, [], 'direct');
         this.edit(comp, k, { isNew: true, onSave: onChange });
       } else if (a === 'add-sel') {
         const ways = (comp.props.circuits || []).filter(c => DBSchedule._selected.has(c.id));
@@ -680,18 +756,19 @@ const DBControls = {
           <label>Mounting <select data-sw="${i}" data-swk="mount">${CTL_MOUNTS.map(x => opt(x.v, this.switchMount(s), x.label)).join('')}</select></label>
           <label>Contact <input type="text" data-sw="${i}" data-swk="contact" value="${e(s.contact || '')}" placeholder="${e(this.switchContact({ kind: s.kind }))} (e.g. NO 15-18)"></label>
         </div></div>`).join('');
+      const direct = this.isDirect(k);
       const tmp = Object.assign({}, k);
       const warnList = this._draftWarnings(comp, tmp, ways);
       const din = (() => {
-        const sz = this.contactorSize(k);
-        const parts = [`${k.tag} ${sz.modules}`];
+        const parts = [];
+        if (!direct) parts.push(`${k.tag} ${this.contactorSize(k).modules}`);
         for (const s of k.switches) { const n = this.switchModules(s); if (n) parts.push(`${s.tag} ${n}`); }
-        if (k.selector !== 'none') parts.push(`${k.selector_tag || 'S'} 1`);
+        if (!direct && k.selector !== 'none') parts.push(`${k.selector_tag || 'S'} 1`);
         return parts.join(' · ');
       })();
 
       m.innerHTML = `<div class="modal-content dbc-dialog">
-        <div class="modal-header"><h3 id="dbc-title"><span class="dbc-tag">${e(k.tag)}</span> Contactor — ${e(comp.props.name || comp.id)}</h3>
+        <div class="modal-header"><h3 id="dbc-title"><span class="dbc-tag">${e(k.tag)}</span> ${direct ? 'Direct switching' : 'Contactor'} — ${e(comp.props.name || comp.id)}</h3>
           <button class="modal-close" data-dbc-x="cancel" aria-label="Close">&times;</button></div>
         <div class="dbc-dlg-body">
           <div class="dbc-grid2">
@@ -705,12 +782,12 @@ const DBControls = {
             ${tip ? `<div class="dbc-tip" role="note"><strong>${e((CTL_ARRANGEMENTS.find(a => a.v === tip) || {}).label || '')}</strong>${this.arrangementSvg(tip)}<p>${e(CTL_ARRANGEMENT_HELP[tip] || '')}</p></div>` : ''}
             <div class="dbc-ways">${wayList || '<span class="dbc-dim">This board has no ways yet.</span>'}</div>
           </fieldset>
-          <fieldset><legend>Contactor</legend>
+          <fieldset><legend>${direct ? 'Switching contact' : 'Contactor'}</legend>
             <div class="dbc-grid4">
-              <label>Poles <select data-kk="poles">${['2P', '3P', '4P'].map(p => opt(p, k.poles)).join('')}</select></label>
-              <label>Rating (A) <input type="number" data-kk="rating_a" value="${e(k.rating_a)}" min="1" step="1"></label>
+              <label>Poles <select data-kk="poles">${(direct ? ['1P', '2P', '3P', '4P'] : ['2P', '3P', '4P']).map(p => opt(p, k.poles)).join('')}</select></label>
+              <label>${direct ? 'Contact rating (A)' : 'Rating (A)'} <input type="number" data-kk="rating_a" value="${e(k.rating_a)}" min="1" step="1"></label>
               <label>Utilisation <select data-kk="category">${CTL_CATEGORIES.map(c => opt(c.v, k.category, c.label)).join('')}</select></label>
-              <label>Coil <select data-kk="coil">${CTL_COILS.map(c => opt(c, k.coil)).join('')}</select></label>
+              ${direct ? '' : `<label>Coil <select data-kk="coil">${CTL_COILS.map(c => opt(c, k.coil)).join('')}</select></label>`}
             </div>
             <div class="dbc-sug${sized.auto ? ' on' : ''}">${ways.length
               ? `Suggested ${e(`${sug.poles} ${sug.rating_a} A ${sug.category}`)} — ${e(k.arrangement === 'section' ? `${this.dutyA(comp, k, ways).toFixed(1)} A per phase (diversified)` : `largest breaker ${this.dutyA(comp, k, ways)} A`)}, ${this.polesNeeded(k, ways)} pole${this.polesNeeded(k, ways) === 1 ? '' : 's'} used.
@@ -724,9 +801,9 @@ const DBControls = {
               <button type="button" class="btn-small" data-dbc-x="sw-add">+ Add</button>
               ${k.switches.length > 1 ? `<label>Combine <select data-kk="combine">${opt('series', k.combine, 'In series — all must close')}${opt('parallel', k.combine, 'In parallel — any one closes')}</select></label>` : ''}
             </div>
-            <div class="dbc-dim">A tag used on another contactor is the same device (one photocell switching several contactors).</div>
+            <div class="dbc-dim">${direct ? 'The device’s own output contact carries the circuit current — enter its rating above.' : 'A tag used on another contactor is the same device (one photocell switching several contactors).'}</div>
           </fieldset>
-          <fieldset><legend>Override and supply</legend>
+          ${direct ? '' : `<fieldset><legend>Override and supply</legend>
             <div class="dbc-grid4">
               <label>Selector <select data-kk="selector">${CTL_SELECTORS.map(x => opt(x.v, k.selector, x.label)).join('')}</select></label>
               <label>Selector tag <input type="text" data-kk="selector_tag" value="${e(k.selector_tag || '')}"${k.selector === 'none' ? ' disabled' : ''}></label>
@@ -738,17 +815,17 @@ const DBControls = {
               <label>Colour <select data-kk="lamp_color">${CTL_LAMP_COLOURS.map(x => opt(x.v, this.lampColour(k).v, x.label)).join('')}</select></label>
               <label class="dbc-span2">Lit when <select data-kk="lamp_shows">${CTL_LAMP_SHOWS.map(x => opt(x.v, this.lampShows(k).v, `${x.label} (aux ${x.aux})`)).join('')}</select></label>
             </div>` : ''}
-          </fieldset>
+          </fieldset>`}
           ${warnList.length ? `<div class="dbc-warns">${warnList.map(w => `<div class="dba-note ${e(w.level)}">${w.level === 'warn' ? '⚠' : 'ⓘ'} ${e(w.text)}</div>`).join('')}</div>` : ''}
           <div class="dbc-where"><div><small>Schedule</small>${ways.length ? `Ways ${e(ways.map(w => w.way).join(', '))} show ${e(k.tag)}` : 'No ways'}</div>
-            <div><small>Single line</small>${ways.length ? `${e(k.tag)} on ${ways.length} way${ways.length === 1 ? '' : 's'} + control rung` : 'Control rung only'}</div>
+            <div><small>Single line</small>${ways.length ? `${e(k.tag)} on ${ways.length} way${ways.length === 1 ? '' : 's'}${direct ? ' (contact in the circuit)' : ' + control rung'}` : direct ? 'No ways' : 'Control rung only'}</div>
             <div><small>GA</small>${e(din)} modules</div></div>
         </div>
         <div class="modal-footer dbc-foot">
           ${opts.isNew ? '' : '<button type="button" class="btn-small dbc-del" data-dbc-x="delete">Delete</button>'}
           <span style="flex:1"></span>
           <button type="button" class="btn-small" data-dbc-x="cancel">Cancel</button>
-          <button type="button" class="btn-small btn-primary" data-dbc-x="save">${opts.isNew ? 'Add contactor' : 'Save'}</button>
+          <button type="button" class="btn-small btn-primary" data-dbc-x="save">${opts.isNew ? (direct ? 'Add' : 'Add contactor') : 'Save'}</button>
         </div></div>`;
     };
     draw();
@@ -759,7 +836,12 @@ const DBControls = {
 
     m.addEventListener('change', (ev) => {
       const t = ev.target;
-      if (t.name === 'dbc-arr') { k.arrangement = t.value; draw(); return; }
+      if (t.name === 'dbc-arr') {
+        const was = this.isDirect(k);
+        this.setArrangement(comp, k, t.value);
+        if (this.isDirect(k) !== was) sized.auto = true;      // the other kind of device is sized differently
+        draw(); return;
+      }
       if (t.dataset.dbcWay) {
         if (t.checked) picked.add(t.dataset.dbcWay); else picked.delete(t.dataset.dbcWay);
         if (picked.size > 1 && k.arrangement === 'single') k.arrangement = 'poles';
@@ -823,7 +905,7 @@ const DBControls = {
           return;
         }
         k.tag = tag;
-        if (!k.supply && !d.supplies.length) k.supply = this.addSupply(comp).id;   // the board's first control supply
+        if (!this.isDirect(k) && !k.supply && !d.supplies.length) k.supply = this.addSupply(comp).id;   // the board's first control supply
         const i = d.contactors.findIndex(x => x.id === k.id);
         if (i >= 0) d.contactors[i] = k; else d.contactors.push(k);
         for (const c of circuits) {

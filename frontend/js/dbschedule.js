@@ -1313,8 +1313,8 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
     // The contactor switching the way: picked, cleared, or a new one for it
     // (opened in the editor). The Controls section re-renders with the grid.
     if (k === 'contactor') {
-      if (v === '__new') {
-        const kNew = DBControls.newContactor(comp, [c]);
+      if (v === '__new' || v === '__newdirect') {
+        const kNew = DBControls.newContactor(comp, [c], v === '__newdirect' ? 'direct' : undefined);
         DBControls.edit(comp, kNew, { isNew: true, ways: [c.id] });
       } else if (v) c.contactor = v;
       else delete c.contactor;
@@ -1502,8 +1502,8 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
     const ctlCell = (c) => {
       const k = DBControls.wayContactor(comp, c);
       const pole = DBControls.poleLabel(comp, k, c);
-      const opts = `<option value="">—</option>${ctrs.map(x => `<option value="${escHtml(x.id)}"${k === x ? ' selected' : ''}>${escHtml(x.tag)}</option>`).join('')}<option value="__new">New contactor…</option>`;
-      const tip = k ? `${k.tag}${k.label ? ' (' + k.label + ')' : ''}: ${k.poles} ${k.rating_a} A ${k.category} — switched by ${DBControls.switchedBy(k)}` : 'Switch this way through a contactor (photocell, timer, thermostat, BMS…)';
+      const opts = `<option value="">—</option>${ctrs.map(x => `<option value="${escHtml(x.id)}"${k === x ? ' selected' : ''}>${escHtml(x.tag)}</option>`).join('')}<option value="__new">New contactor…</option><option value="__newdirect">New direct switching…</option>`;
+      const tip = k ? `${k.tag}${k.label ? ' (' + k.label + ')' : ''}: ${DBControls.specText(k)} — switched ${DBControls.isDirect(k) ? 'direct (no contactor) ' : ''}by ${DBControls.switchedBy(k)}` : 'Switch this way through a contactor, or direct through a timer / photocell contact';
       return `<td data-label="Control" data-grp="ctl" class="db-ctl-cell${k ? ' on' : ''}"><select data-k="contactor" title="${escHtml(tip)}">${opts}</select>${pole ? `<span class="db-ctl-pole" title="Contactor pole">p${escHtml(pole)}</span>` : ''}</td>`;
     };
     // Metering: the meter that measures the way (DBMeters) — a circuit meter
