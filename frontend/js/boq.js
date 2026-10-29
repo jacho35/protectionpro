@@ -365,6 +365,8 @@ const BOQ = {
           const m = { type: p.meter_type, system: p.system, conn: p.conn, protocol: p.protocol };
           const l = DBMeters.boqLines({ props: { meters: [m], circuits: [] } })[0];
           if (l) add({ key: l.key, desc: l.desc, unit: 'ea', cat: 'equip' }, 1, 'sld', 'SLD meters');
+        } else if (c.type === 'plant_controller') {
+          add({ key: 'EQ-PPC', desc: `Plant controller${p.model ? ' ' + p.model : ''}`, unit: 'ea', cat: 'equip' }, 1, 'sld', 'SLD plant controllers');
         } else if (c.type === 'bms_gateway') add({ key: `MTR-GATEWAY`, desc: `BMS gateway ${p.from_protocol || ''} → ${p.to_protocol || ''}`.trim(), unit: 'ea', cat: 'equip' }, 1, 'sld', 'SLD BMS gateways');
         else if (c.type === 'capacitor_bank') add({ key: 'EQ-CAPACITOR-BANK' }, 1, 'sld', 'SLD capacitor banks');
         else if (c.type === 'surge_arrester') add({ key: 'EQ-SURGE-ARRESTER' }, 1, 'sld', 'SLD surge arresters');

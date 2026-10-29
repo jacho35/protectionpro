@@ -327,14 +327,14 @@ Project:
 
 DB path: `DATABASE_URL` env var, defaults to `sqlite:///./protectionpro.db`
 
-## Component Types (42 — 33 power + 9 control-circuit)
+## Component Types (43 — 34 power + 9 control-circuit)
 
 | Category | Components |
 |---|---|
 | **Sources** | Utility Source, Generator, Solar PV, Wind Turbine, Battery Storage |
 | **Distribution** | Bus, Transformer, Autotransformer, Cable/Feeder, Bus Duct |
 | **Protection** | Circuit Breaker, Fuse, Relay, Switch, Changeover Switch (3-port: in_1 / in_2 / out) |
-| **Instruments & Metering** | Current Transformer (CT), Potential Transformer (PT), Energy Meter, BMS Gateway (no power ports, like a relay) |
+| **Instruments & Metering** | Current Transformer (CT), Potential Transformer (PT), Energy Meter, BMS Gateway and Plant Controller (no power ports, like a relay; the controller's dashed lines to the PCC device it measures and the sources it controls are drawn by `Canvas.renderControllerLinks`) |
 | **Loads** | Induction Motor, Synchronous Motor, Static Load, Distribution Board, DC Load, Variable Frequency Drive |
 | **DC systems** | UPS, Rectifier, Battery Charger, DC Battery |
 | **Other** | SVC / STATCOM, Capacitor Bank, Surge Arrester, Off-page Connector |

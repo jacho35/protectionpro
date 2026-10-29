@@ -1101,3 +1101,7 @@ body.dark-mode .pw-tip { background: #33374d; border: 1px solid #454a63; }
 }
 .cbk-bar button { padding: 6px 12px; border: 1px solid #64748b; border-radius: 6px; background: #3b82f6; color: #fff; font-size: 12px; cursor: pointer; }
 .cbk-bar .cbk-bar-clear { background: transparent; }
+
+/* Plant controller: tick list of the sources it controls */
+.prop-checks { display: flex; flex-direction: column; gap: 4px; }
+.prop-check-row { display: flex; align-items: center; gap: 6px; font-size: 12px; cursor: pointer; }
