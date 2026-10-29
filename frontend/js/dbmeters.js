@@ -137,7 +137,7 @@ const DBMeters = {
   isVirtual(m) { return this.isGroup(m) && m.group_mode === 'virtual'; },
   isSubbus(m) { return this.isGroup(m) && m.group_mode !== 'virtual'; },
 
-  _is3(c) { return c.poles === '3P' || c.phase === 'RWB'; },
+  _is3(c) { return wayIsMulti(c); },
 
   _nextTag(tags, prefix) {
     const used = new Set(tags.map(t => String(t || '').toUpperCase()));

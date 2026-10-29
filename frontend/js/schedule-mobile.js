@@ -94,7 +94,7 @@ const SchMobile = {
   },
 
   _phaseLabel(c) {
-    return (c.poles === '3P' || c.phase === 'RWB') ? '3P' : `1P ${c.phase || 'R'}`;
+    return wayIs3(c) ? (c.poles === '4P' ? '4P' : '3P') : wayIsLL(c) ? `2P ${wayPhaseLabel(c)}` : `${c.poles === '2P' ? '2P' : '1P'} ${c.phase || 'R'}`;
   },
 
   _passes(c, st) {
@@ -103,7 +103,7 @@ const SchMobile = {
     if (this._filter.startsWith('sec:')) return (DBSections.of(this.comp(), c) || {}).id === this._filter.slice(4);
     if (this._filter === 'fail') return st === 'fail' || st === 'warn';
     if (this._filter === 'R' || this._filter === 'W' || this._filter === 'B') {
-      return c.poles === '3P' ? false : (c.phase || 'R') === this._filter;
+      return wayIsMulti(c) ? false : (c.phase || 'R') === this._filter;
     }
     return true;
   },
@@ -338,7 +338,7 @@ const SchMobile = {
     const ways = comp.props.circuits;
     const idx = ways.indexOf(c);
     const e = this._e;
-    const is3 = c.poles === '3P';
+    const is3 = wayIs3(c);
     const opt = (v, cur, l) => `<option value="${e(v)}"${String(v) === String(cur) ? ' selected' : ''}>${e(l ?? v)}</option>`;
     const num = (k, label, extra = '') => `
       <label class="smb-f"><span>${label}</span>
@@ -375,9 +375,9 @@ const SchMobile = {
         <section><h4>Device</h4>
           ${num('breaker_a', 'Breaker (A)', 'min="1" step="1"')}
           <label class="smb-f"><span>Curve</span><select data-k="curve">${['B', 'C', 'D'].map(v => opt(v, c.curve || 'C')).join('')}</select></label>
-          <label class="smb-f"><span>Poles</span><select data-k="poles">${opt('1P', c.poles || '1P')}${opt('3P', c.poles || '1P')}</select></label>
+          <label class="smb-f"><span>Poles</span><select data-k="poles">${(() => { const cur = wayIsLL(c) ? '2PLL' : (c.poles || '1P'); return [['1P', '1P'], ['2P', '2P · L+N'], ['2PLL', '2P · L–L'], ['3P', '3P'], ['4P', '4P']].map(([v, l]) => opt(v, cur, l)).join(''); })()}</select></label>
           <label class="smb-f"><span>Phase</span><select data-k="phase" ${is3 ? 'disabled' : ''}>
-            ${is3 ? opt('RWB', 'RWB') : ['R', 'W', 'B'].map(v => opt(v, c.phase || 'R')).join('')}</select></label>
+            ${is3 ? opt('RWB', 'RWB') : wayIsLL(c) ? ['RW', 'WB', 'BR'].map(v => opt(v, c.phase, v[0] + '–' + v[1])).join('') : ['R', 'W', 'B'].map(v => opt(v, c.phase || 'R')).join('')}</select></label>
         </section>
         <section><h4>Load</h4>
           ${num('load_va', 'Load (VA)', 'min="0" step="50"')}

@@ -59,7 +59,7 @@ const DBSchedule = {
   // phase to RWB, and applying phase afterwards must be the one that settles it.
   // `way` is absent on purpose — way numbers have to stay unique.
   _BULK_FIELDS: [
-    { k: 'poles', label: 'Poles', type: 'select', opts: ['1P', '3P'], grp: 'Protection' },
+    { k: 'poles', label: 'Poles', type: 'select', opts: ['1P', '2P', '2PLL', '3P', '4P'], grp: 'Protection' },
     { k: 'phase', label: 'Phase', type: 'select', opts: ['R', 'W', 'B'] },
     { k: 'curve', label: 'Curve', type: 'select', opts: ['B', 'C', 'D'] },
     { k: 'breaker_a', label: 'Breaker (A)', type: 'number', unit: 'A', width: 62 },
@@ -130,8 +130,7 @@ const DBSchedule = {
     const dot = '<span class="db-grp-dotsep">·</span>';
     if (g === 'dev') {
       const poles = c.poles || '1P';
-      const ph = poles === '3P' ? 'RWB' : (c.phase || 'R');
-      return `${escHtml(poles)}${dot}<span class="db-ph-dot db-ph-${escHtml(ph)}"></span>${escHtml(ph)}${dot}${escHtml(c.curve || 'C')}`;
+      return `${escHtml(poles)}${dot}<span class="db-ph-dot db-ph-${escHtml(wayPhaseKey(c))}"></span>${escHtml(wayPhaseLabel(c))}${dot}${escHtml(c.curve || 'C')}`;
     }
     if (g === 'ctl') {
       const k = DBControls.wayContactor(AppState.components.get(this.currentId), c);
@@ -447,8 +446,12 @@ const DBSchedule = {
       const pf = Math.min(1, Math.max(0.05, this._pfOr(c.power_factor, pfFallback)));
       sumP += d * pf;
       sumQ += d * Math.sqrt(Math.max(0, 1 - pf * pf));
-      if (c.poles === '3P' || c.phase === 'RWB') {
+      if (wayIs3(c)) {
         phaseVa.R += d / 3; phaseVa.W += d / 3; phaseVa.B += d / 3;
+      } else if (wayIsLL(c)) {
+        // Line-to-line: the load current flows in both phases (S / V_LL each).
+        const f = d / Math.sqrt(3);
+        phaseVa[c.phase[0]] += f; phaseVa[c.phase[1]] += f;
       } else {
         phaseVa[c.phase || 'R'] = (phaseVa[c.phase || 'R'] || 0) + d;
       }
@@ -526,7 +529,7 @@ const DBSchedule = {
   elPoles(comp, g) {
     const set = comp.props.el_poles && comp.props.el_poles[g];
     if (set === '1P' || set === '3P') return set;
-    return (comp.props.circuits || []).some(c => this._elGroupOf(c) === g && (c.poles || '1P') === '3P') ? '3P' : '1P';
+    return (comp.props.circuits || []).some(c => this._elGroupOf(c) === g && wayIsMulti(c)) ? '3P' : '1P';
   },
 
   // Put every single-phase way of each single-phase EL group on one phase.
@@ -537,7 +540,7 @@ const DBSchedule = {
     const by = new Map();
     for (const c of comp.props.circuits || []) {
       const g = this._elGroupOf(c);
-      if (!g || (c.poles || '1P') === '3P') continue;
+      if (!g || wayIsMulti(c)) continue;
       if (!by.has(g)) by.set(g, []);
       by.get(g).push(c);
     }
@@ -665,7 +668,7 @@ const DBSchedule = {
   // Returns the number of ways placed; this._balanceNote describes the result.
   autoBalance(comp) {
     const circuits = comp.props.circuits || [];
-    const singles = circuits.filter(c => (c.poles || '1P') !== '3P');
+    const singles = circuits.filter(c => !wayIsMulti(c));
     const vaOf = (c) => (Number(c.load_va) || 0) * this._dfOf(c);
     const leakOf = (c) => (Number(c.leakage_ma) || 0) + (Number(c.cable_m) || 0) * DB_CABLE_LEAK_MA_PER_M;
     const ratings = (comp.props.el_ratings && typeof comp.props.el_ratings === 'object') ? comp.props.el_ratings : {};
@@ -851,7 +854,7 @@ const DBSchedule = {
   // the 3φ current plus the worst-phase current so imbalance is visible.
   _allSinglePhase(comp) {
     const cc = comp.props.circuits || [];
-    return cc.length > 0 && cc.every(c => (c.poles || '1P') !== '3P' && c.phase !== 'RWB');
+    return cc.length > 0 && cc.every(c => !wayIsMulti(c));
   },
   _ampsLabel(comp, totals) {
     const vll = this._boardVll(comp);
@@ -873,10 +876,34 @@ const DBSchedule = {
     return (Number(comp && comp.props.voltage_kv) || 0.4) * 1000;
   },
 
-  // Volts this way is connected across: line-to-line for 3P, phase-neutral for 1P.
+  // Volts this way is connected across (current = VA / this): 3P / 4P → √3·V_LL,
+  // two phases line-to-line → V_LL, phase-neutral (1P, 2P L+N) → V_LL/√3.
   _wayVoltage(c, vll) {
-    const is3P = c.poles === '3P' || c.phase === 'RWB';
-    return is3P ? Math.sqrt(3) * vll : vll / Math.sqrt(3);
+    if (wayIsLL(c)) return vll;
+    return wayIs3(c) ? Math.sqrt(3) * vll : vll / Math.sqrt(3);
+  },
+
+  // Poles dropdown → the way's poles + a phase that fits. val: '1P' | '2P' (L+N) |
+  // '2PLL' (two phases) | '3P' | '4P'.
+  _applyPoles(c, val) {
+    const single = ['R', 'W', 'B'].includes(c.phase) ? c.phase : (wayIsLL(c) ? c.phase[0] : 'R');
+    if (val === '3P' || val === '4P') { c.poles = val; c.phase = 'RWB'; }
+    else if (val === '2PLL') { c.poles = '2P'; c.phase = { R: 'RW', W: 'WB', B: 'BR' }[single]; }
+    else { c.poles = val === '2P' ? '2P' : '1P'; c.phase = single; }
+  },
+
+  // Poles / phase text typed, pasted or imported → { poles, phase }. Accepts 1P–4P,
+  // 'L-L' / 'LL', phase letters R W B, a pair (R-W, W/B, BR …) or RWB.
+  _parsePolesPhase(polesRaw, phaseRaw) {
+    const pr = String(polesRaw || '').toUpperCase(), ph = String(phaseRaw || '').toUpperCase().replace(/[\s\-–—\/+]/g, '');
+    let n = parseInt((pr.match(/[1-4]/) || [])[0], 10);
+    const norm = (a, b) => ({ RW: 'RW', WR: 'RW', WB: 'WB', BW: 'WB', BR: 'BR', RB: 'BR' }[a + b]);
+    const pair = ph.length === 2 && ph[0] !== ph[1] && /^[RWB]{2}$/.test(ph) ? norm(ph[0], ph[1]) : null;
+    if (ph === 'RWB' || ph === 'RWBN') n = n >= 3 ? n : 3;
+    if (!n) n = (pair || /L\s*-?\s*L/.test(pr)) ? 2 : 1;
+    if (n >= 3) return { poles: n + 'P', phase: 'RWB' };
+    if (n === 2 && (pair || /L\s*-?\s*L/.test(pr))) return { poles: '2P', phase: pair || 'RW' };
+    return { poles: n + 'P', phase: ['R', 'W', 'B'].includes(ph[0]) ? ph[0] : 'R' };
   },
 
   // FLA — connected full-load current, WITHOUT the demand factor. This is the
@@ -1204,9 +1231,9 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
 
   _flaTitle(c, vll, fla) {
     if (!(fla > 0)) return 'No load on this way.';
-    const is3P = c.poles === '3P' || c.phase === 'RWB';
+    const is3P = wayIs3(c);
     const v = Math.round(this._wayVoltage(c, vll) / (is3P ? Math.sqrt(3) : 1));
-    const bits = [`${Number(c.load_va) || 0} VA at ${v} V (${is3P ? '3P' : '1P'})`];
+    const bits = [`${Number(c.load_va) || 0} VA at ${v} V (${wayIsLL(c) ? '2P L–L' : (c.poles || '1P')})`];
     if (c.type === 'feeder_db' && Number(c.downstream_a) > 0) {
       bits.push(`Feeder to a sub-board — carries its ${Number(c.downstream_a).toFixed(1)} A demand`);
     }
@@ -1387,14 +1414,13 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
       return 'render';
     }
     if (k === 'poles') {
-      if (c.poles === '3P') c.phase = 'RWB';
-      else if (c.phase === 'RWB') c.phase = 'R';
+      this._applyPoles(c, v);
       this._syncElPhases(comp, null, new Set([c.id]));
       return 'render';
     }
     // A single-phase EL unit feeds one phase: moving one of its ways moves
     // the whole group, and a way joining a group takes the group's phase.
-    if (k === 'phase' && (c.poles || '1P') !== '3P') {
+    if (k === 'phase' && !wayIsMulti(c)) {
       const g = this._elGroupOf(c);
       if (g && this.elPoles(comp, g) === '1P') {
         this._syncElPhases(comp, new Map([[g, c.phase]]));
@@ -1530,9 +1556,10 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
         ${sumCell(c, 'ctl')}
         ${mtrCell(c)}
         ${sumCell(c, 'mtr')}
-        <td data-label="Poles" data-grp="dev"><select data-k="poles"${lock(c, 'poles')}>${opt('1P', c.poles || '1P')}${opt('3P', c.poles || '1P')}</select></td>
-        <td data-label="Phase" data-grp="dev"><select data-k="phase" ${((c.poles || '1P') === '3P') ? 'disabled' : ''}${lock(c, 'phase') && (c.poles || '1P') !== '3P' ? lock(c, 'phase') : ''}>
-          ${opt('R', c.phase || 'R')}${opt('W', c.phase || 'R')}${opt('B', c.phase || 'R')}</select></td>
+        <td data-label="Poles" data-grp="dev"><select data-k="poles"${lock(c, 'poles')} title="2P L+N switches a live and the neutral; 2P L–L switches two phases; 4P adds the neutral to three phases">${(() => { const cur = wayIsLL(c) ? '2PLL' : (c.poles || '1P'); return [['1P', '1P'], ['2P', '2P · L+N'], ['2PLL', '2P · L–L'], ['3P', '3P'], ['4P', '4P']].map(([v, l]) => `<option value="${v}"${v === cur ? ' selected' : ''}>${l}</option>`).join(''); })()}</select></td>
+        <td data-label="Phase" data-grp="dev"><select data-k="phase" ${wayIs3(c) ? 'disabled' : ''}${lock(c, 'phase') && !wayIs3(c) ? lock(c, 'phase') : ''}>
+          ${wayIsLL(c) ? ['RW', 'WB', 'BR'].map(v => `<option value="${v}"${v === c.phase ? ' selected' : ''}>${v[0]}–${v[1]}</option>`).join('')
+            : wayIs3(c) ? '<option selected>RWB</option>' : opt('R', c.phase || 'R') + opt('W', c.phase || 'R') + opt('B', c.phase || 'R')}</select></td>
         <td data-label="Curve" data-grp="dev"><select data-k="curve"${lock(c, 'curve')}>${opt('B', c.curve || 'C')}${opt('C', c.curve || 'C')}${opt('D', c.curve || 'C')}</select></td>
         ${sumCell(c, 'dev')}
         <td data-label="EL Grp" data-grp="el"><input type="text" data-k="el_group" value="${escHtml(c.el_group || '')}" style="width:70px" placeholder="—"></td>
@@ -1993,12 +2020,13 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
           else if (key === 'power_factor') c[key] = Math.min(1, Math.max(0.05, n));
           else c[key] = n;
         } else if (key === 'poles') {
-          c.poles = raw.toUpperCase().includes('3') ? '3P' : '1P';
-          if (c.poles === '3P') c.phase = 'RWB';
+          const r = this._parsePolesPhase(raw, wayIsLL(c) ? c.phase : wayIs3(c) ? 'RWB' : c.phase);
+          c.poles = r.poles; c.phase = r.phase;
         } else if (key === 'phase') {
-          const p = raw.toUpperCase();
-          if (p === 'RWB') { c.poles = '3P'; c.phase = 'RWB'; }
-          else if (['R', 'W', 'B'].includes(p[0])) c.phase = p[0];
+          const r = this._parsePolesPhase(c.poles, raw);
+          if (raw.toUpperCase().replace(/[^RWB]/g, '').length >= 2 && r.poles === '2P') { c.poles = '2P'; c.phase = r.phase; }
+          else if (r.phase === 'RWB') { c.poles = r.poles; c.phase = 'RWB'; }
+          else if (!wayIsMulti(c)) c.phase = r.phase;
         } else if (key === 'curve') {
           if (['B', 'C', 'D'].includes(raw.toUpperCase())) c.curve = raw.toUpperCase();
         } else if (key === 'contactor') {
@@ -2281,9 +2309,8 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
     // Same rule as a cell edit: a hand-set rating or curve drops the library pick.
     if ((key === 'breaker_a' || key === 'curve') && c.device) BreakerSet.follow(AppState.components.get(this.currentId), c);
     if (key === 'poles') {
-      if (val === '3P') c.phase = 'RWB';
-      else if (c.phase === 'RWB') c.phase = 'R';
-    } else if (key === 'phase' && c.poles === '3P') {
+      this._applyPoles(c, val);
+    } else if (key === 'phase' && wayIs3(c)) {
       c.phase = 'RWB';   // 3-phase ways stay RWB regardless of the picked phase
     }
     // Mirror the per-cell pin behaviour so a plan sync can't overwrite the
@@ -2347,7 +2374,7 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
       if (keys.has('phase')) {
         for (const c of comp.props.circuits || []) {
           const g = this._elGroupOf(c);
-          if (this._selected.has(c.id) && g && (c.poles || '1P') !== '3P') pinned.set(g, c.phase);
+          if (this._selected.has(c.id) && g && !wayIsMulti(c)) pinned.set(g, c.phase);
         }
       }
       this._syncElPhases(comp, pinned, this._selected);
@@ -2521,7 +2548,7 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
           `<option value="${r}"${r === idn ? ' selected' : ''}>${r} mA</option>`).join('');
         const poles = this.elPoles(comp, g);
         const phases = [...new Set((comp.props.circuits || [])
-          .filter(c => this._elGroupOf(c) === g && (c.poles || '1P') !== '3P').map(c => c.phase))].filter(Boolean).sort();
+          .filter(c => this._elGroupOf(c) === g && !wayIsMulti(c)).map(c => c.phase))].filter(Boolean).sort();
         const split = poles === '1P' && phases.length > 1;
         const where = poles === '3P' ? 'all phases'
           : split ? `⚠ ways on ${phases.join(' + ')} — a single-phase unit feeds one phase` : (phases[0] ? `on ${phases[0]}` : '');
@@ -2626,7 +2653,7 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
     const vll = this._boardVll(comp);
     const rows = (comp.props.circuits || []).map(c => [
       c.way ?? '', c.description ?? '', c.breaker_a ?? '', c.load_va ?? '',
-      c.poles ?? '1P', (c.poles === '3P') ? 'RWB' : (c.phase ?? 'R'),
+      c.poles ?? '1P', wayPhaseLabel(c),
       c.curve ?? 'C', c.el_group ?? '', c.leakage_ma ?? 0,
       c.cable_mm2 ?? '', c.ecc_mm2 ?? '', c.cable_m ?? '',
       c.demand_factor ?? 1, c.power_factor ?? 0.9,
@@ -2854,12 +2881,13 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
         const num = (k, d) => { const v = parseFloat(get(k)); return isNaN(v) ? d : v; };
         const polesRaw = String(get('poles')).toUpperCase();
         const phaseRaw = String(get('phase')).trim().toUpperCase();
-        const poles = polesRaw.includes('3') || phaseRaw === 'RWB' ? '3P' : '1P';
+        const pp = this._parsePolesPhase(polesRaw, phaseRaw);
+        const poles = pp.poles;
         circuits.push({
           way: String(get('way') || circuits.length + 1),
           description: String(get('description') || ''),
           poles,
-          phase: poles === '3P' ? 'RWB' : (['R', 'W', 'B'].includes(phaseRaw[0]) ? phaseRaw[0] : 'R'),
+          phase: pp.phase,
           breaker_a: num('breaker_a', 20),
           curve: ['B', 'C', 'D'].includes(String(get('curve')).toUpperCase()) ? String(get('curve')).toUpperCase() : 'C',
           el_group: String(get('el_group') || ''),

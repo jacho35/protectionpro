@@ -163,22 +163,21 @@ const GA = {
   _wayIb(c, vll) {
     if (typeof DBSchedule !== 'undefined' && DBSchedule._wayCurrentA) return DBSchedule._wayCurrentA(c, vll);
     const va = (Number(c.load_va) || 0) * demandFactorOr1(c.demand_factor);
-    const is3 = c.poles === '3P' || c.phase === 'RWB';
-    const v = is3 ? vll : vll / Math.sqrt(3);
+    const v = wayIsLL(c) ? vll : wayIs3(c) ? Math.sqrt(3) * vll : vll / Math.sqrt(3);
     return v > 0 ? va / v : 0;
   },
 
   // Device for a protective rating: DIN MCB up to 63 A, a frame above.
   _breaker(a, poles, kind, ib) {
-    const n = poles === 3 ? 3 : 1;
+    const n = Math.min(4, Math.max(1, Math.round(Number(poles)) || 1));
     const loadRatio = a > 0 ? Math.min(1.5, (ib || 0) / a) : 0;
     if (a > 63 || kind === 'mccb') {
       const f = this._frame(a);
-      const w = f.w * (n === 1 ? 0.34 : 1);
+      const w = f.w * ({ 1: 0.34, 2: 0.6, 3: 1, 4: 1.2 }[n]);
       return { form: 'frame', kind: 'mccb', w, h: f.h, heat: f.loss * n * loadRatio * loadRatio, poles: n };
     }
     const rcbo = kind === 'rcbo';
-    const mods = (n === 3 ? 3 : 1) + (rcbo ? 1 : 0);
+    const mods = n + (rcbo ? 1 : 0);
     const loss = this._mcbLoss(a) * n * loadRatio * loadRatio + (rcbo ? 1 : 0);
     return { form: 'din', kind: rcbo ? 'rcbo' : 'mcb', modules: mods, heat: loss, poles: n };
   },
@@ -249,7 +248,7 @@ const GA = {
       if (g && !seen.has(gk(c))) {
         seen.add(gk(c));
         const members = groups.get(gk(c));
-        const three = DBSchedule.elPoles(comp, g) === '3P' || members.some(m => m.poles === '3P' || m.phase === 'RWB');
+        const three = DBSchedule.elPoles(comp, g) === '3P' || members.some(m => wayIsMulti(m));
         const rated = Math.max(40, ...members.map(m => Number(m.breaker_a) || 0));
         const rating = this._stdAmps(Math.min(100, rated));
         out.push({ key: 'rcd:' + g + (sectioned ? ':' + secOf(c) : ''), form: 'din', kind: 'rcd', modules: three ? 4 : 2,
@@ -258,10 +257,10 @@ const GA = {
       }
       const key = 'way:' + (c.id || c.way);
       const a = Number(c.breaker_a) || 0;
-      const is3 = c.poles === '3P' || c.phase === 'RWB';
-      const dev = this._breaker(a, is3 ? 3 : 1, ov(key).kind, this._wayIb(c, vll));
+      const nP = wayPoleCount(c);
+      const dev = this._breaker(a, nP, ov(key).kind, this._wayIb(c, vll));
       out.push(Object.assign(dev, {
-        key, label: String(c.way), sub: `${a} A ${c.curve || ''}${is3 ? ' 3P' : ''}`.trim(),
+        key, label: String(c.way), sub: `${a} A ${c.curve || ''}${nP > 1 ? ' ' + nP + 'P' : ''}`.trim(),
         title: `Way ${c.way}: ${c.description || ''}`, role: 'way', way: c, sec: secOf(c), pgroup: this._phaseGroup(c),
       }));
     }
@@ -329,7 +328,7 @@ const GA = {
   // R / W / B for a single-phase way, '3P' for a three-phase one.
   _phaseGroup(c) {
     if (!c) return null;
-    return (c.poles === '3P' || c.phase === 'RWB') ? '3P' : (['R', 'W', 'B'].includes(c.phase) ? c.phase : 'R');
+    return wayIsMulti(c) ? '3P' : (['R', 'W', 'B'].includes(c.phase) ? c.phase : 'R');
   },
   PHASE_ROW_ORDER: { R: 1, W: 2, B: 3, '3P': 4 },
 

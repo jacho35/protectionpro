@@ -163,8 +163,10 @@ const DBSections = {
       const va = Number(c.load_va) || 0;
       const d = va * demandFactorOr1(c.demand_factor) * boardDf;
       t.ways++; t.connectedVa += va; t.demandVa += d;
-      if (c.poles === '3P' || c.phase === 'RWB') {
+      if (wayIs3(c)) {
         t.phaseVa.R += d / 3; t.phaseVa.W += d / 3; t.phaseVa.B += d / 3;
+      } else if (wayIsLL(c)) {
+        t.phaseVa[c.phase[0]] += d / Math.sqrt(3); t.phaseVa[c.phase[1]] += d / Math.sqrt(3);
       } else {
         t.phaseVa[c.phase || 'R'] = (t.phaseVa[c.phase || 'R'] || 0) + d;
       }

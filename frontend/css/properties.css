@@ -1105,3 +1105,15 @@ body.dark-mode .pw-tip { background: #33374d; border: 1px solid #454a63; }
 /* Plant controller: tick list of the sources it controls */
 .prop-checks { display: flex; flex-direction: column; gap: 4px; }
 .prop-check-row { display: flex; align-items: center; gap: 6px; font-size: 12px; cursor: pointer; }
+
+/* Breaker picker (main SLD CB): type chips, breaking-capacity field, count note */
+.cbp-seg { display: flex; flex: 1; min-width: 0; border-radius: 6px; overflow: hidden; }
+.cbp-seg-btn { flex: 1; min-height: 30px; border: 1px solid var(--border-color, #b9bcc2); background: var(--bg-primary, #fff); color: var(--text-primary, #1c1d1f); font: inherit; font-size: 12px; cursor: pointer; border-radius: 0; }
+.cbp-seg-btn + .cbp-seg-btn { border-left: 0; }
+.cbp-seg-btn.on { background: var(--accent, #0f6e6e); border-color: var(--accent, #0f6e6e); color: #fff; font-weight: 600; }
+.cbp-ka { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0; }
+.cbp-ka input { flex: 1; min-width: 0; }
+.cbp-dim { color: var(--text-secondary, #55595f); font-size: 11px; }
+.cbp-kahint { margin-top: -4px; }
+.cbp-link { background: none; border: 0; padding: 0; color: var(--accent, #0f6e6e); text-decoration: underline; font: inherit; font-size: 11px; cursor: pointer; }
+.cbp-note { line-height: 1.5; }

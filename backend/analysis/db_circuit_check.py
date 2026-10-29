@@ -321,6 +321,16 @@ def _board_install(board, req):
     }
 
 
+def _is_3p(way):
+    """Three-phase way: 3P / 4P (3P + neutral) or phase RWB."""
+    return way.get("poles") in ("3P", "4P") or way.get("phase") == "RWB"
+
+
+def _is_ll(way):
+    """Two-pole way across two phases (line-to-line): phase RW / WB / BR."""
+    return way.get("poles") == "2P" and way.get("phase") in ("RW", "WB", "BR")
+
+
 def _way_current_a(way, v_ll):
     """Diversified design current Ib for a way.
 
@@ -333,9 +343,10 @@ def _way_current_a(way, v_ll):
     df_raw = way.get("demand_factor")
     df = 1.0 if df_raw in (None, "") else _num(df_raw, 1.0)
     va = _num(way.get("load_va")) * df
-    is_3p = way.get("poles") == "3P" or way.get("phase") == "RWB"
-    if is_3p:
+    if _is_3p(way):
         ib = va / (math.sqrt(3) * v_ll) if v_ll > 0 else 0.0
+    elif _is_ll(way):
+        ib = va / v_ll if v_ll > 0 else 0.0     # one load across two phases: I = S / V_LL
     else:
         v_ph = v_ll / math.sqrt(3)
         ib = va / v_ph if v_ph > 0 else 0.0
@@ -570,8 +581,8 @@ def _section_contexts(sections, circuits, v_ll):
         sid = way.get("section") if way.get("section") in own else first
         # 1P ways load one phase; scale to the 3-phase line current they add to.
         i = _way_current_a(way, v_ll)
-        three = way.get("poles") == "3P" or way.get("phase") == "RWB"
-        own[sid] += i if three else i / 3.0
+        # A line-to-line way loads two phases: 2/3 of the balanced three-phase current.
+        own[sid] += i if _is_3p(way) else (2.0 * i / 3.0 if _is_ll(way) else i / 3.0)
     total = dict(own)
     for sec in sections:
         seen = {sec.get("id")}
@@ -830,7 +841,8 @@ def _check_way(way, board, board_name, v_ll, v_ph, install, z_supply, z_basis,
     length_m = _num(way.get("cable_m"))
     in_a = _num(way.get("breaker_a"))
     curve = str(way.get("curve") or "C").upper()
-    is_3p = way.get("poles") == "3P" or way.get("phase") == "RWB"
+    is_3p = _is_3p(way)
+    is_ll = _is_ll(way)
     ib = _way_current_a(way, v_ll)
     messages = []
 
@@ -894,7 +906,8 @@ def _check_way(way, board, board_name, v_ll, v_ph, install, z_supply, z_basis,
             vd_pct = vd_v / v_ll * 100.0
         else:
             vd_v = 2.0 * ib * length_km * z_eff
-            vd_pct = vd_v / v_ph * 100.0 if v_ph > 0 else 0.0
+            v_base = v_ll if is_ll else v_ph      # a line-to-line way drops against V_LL
+            vd_pct = vd_v / v_base * 100.0 if v_base > 0 else 0.0
         vd_total = (vd_pct + vd_upstream_pct) if vd_upstream_pct is not None else None
         gate = vd_total if vd_total is not None else vd_pct
         basis_note = ("total from the point of supply" if vd_total is not None
@@ -1061,7 +1074,7 @@ def _check_way(way, board, board_name, v_ll, v_ph, install, z_supply, z_basis,
     calc = {
         # Every intermediate value behind the verdicts, for the "how was this
         # calculated" view — the same numbers the checks above used.
-        "v_ll": _round(v_ll, 2), "v_ph": _round(v_ph, 2), "is_3p": bool(is_3p),
+        "v_ll": _round(v_ll, 2), "v_ph": _round(v_ph, 2), "is_3p": bool(is_3p), "is_ll": bool(is_ll),
         "load_va": _round(_num(way.get("load_va")), 2),
         "demand_factor": _round(1.0 if df_raw in (None, "") else _num(df_raw, 1.0), 4),
         "feeder": way.get("type") == "feeder_db",

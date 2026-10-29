@@ -301,11 +301,24 @@ const Symbols = {
       </g>`;
   },
 
+  // One short line per pole, across the conductor above the breaker (classic
+  // symbol set). No `poles` on the component ⇒ nothing drawn.
+  _poleTicksLead(n, yFrom) {
+    let o = '';
+    for (let i = 0; i < n; i++) {
+      const y = yFrom - 4 - i * 3.4;
+      o += `<line x1="-3.5" y1="${y + 2}" x2="3.5" y2="${y - 2}" stroke-width="1.2"/>`;
+    }
+    return o;
+  },
+
   cb(w, h, comp) {
     // Circuit breaker: square with X (closed) or gap (open)
     const s = Math.min(w, h) * 0.35;
     const hh = h / 2;
     const isOpen = comp && comp.props && comp.props.state === 'open';
+    const nPoles = Symbols._poleN(comp);
+    const ticks = nPoles ? Symbols._poleTicksLead(nPoles, -s - 1) : '';
     if (isOpen) {
       return `
         <g class="symbol-cb symbol-open">
@@ -315,6 +328,7 @@ const Symbols = {
           <line x1="0" y1="${-s}" x2="0" y2="${-hh}"/>
           <line x1="0" y1="${s}" x2="0" y2="${hh}"/>
           <line x1="${-s - 2}" y1="${-s - 1}" x2="${s + 2}" y2="${-s - 1}" stroke="red" stroke-width="2"/>
+          ${ticks}
         </g>`;
     }
     return `
@@ -324,7 +338,16 @@ const Symbols = {
         <line x1="${s}" y1="${-s}" x2="${-s}" y2="${s}"/>
         <line x1="0" y1="${-s}" x2="0" y2="${-hh}"/>
         <line x1="0" y1="${s}" x2="0" y2="${hh}"/>
+        ${ticks}
       </g>`;
+  },
+
+  // Poles drawn on a breaker: 1–4 from the component's `poles` ('1P'…'4P' or a
+  // number); none when it has no such field (older projects draw as before).
+  _poleN(comp) {
+    const v = comp && comp.props && comp.props.poles;
+    const n = parseInt(String(v || ''), 10);
+    return n >= 1 && n <= 4 ? n : 0;
   },
 
   fuse(w, h) {
@@ -891,12 +914,31 @@ const Symbols = {
       return chev(-(hh - 1), -1) + chev(-(hh - 3.5), -1) + chev(hh - 1, 1) + chev(hh - 3.5, 1);
     },
 
+    // One short line across the blade per pole (IEC multi-pole indication), centred
+    // along the blade and square to it, open (rotated) or closed.
+    _poleTicks(h, isOpen, n) {
+      if (!n) return '';
+      const hh = h / 2, piv = hh * 0.5, fix = -hh * 0.45;
+      const len = piv - fix;
+      const ang = isOpen ? -Math.PI / 6 : 0;
+      const dx = Math.sin(ang), dy = -Math.cos(ang);      // along the blade, pivot → free end
+      const px = -dy, py = dx;                              // square to it
+      let o = '';
+      for (let i = 0; i < n; i++) {
+        const t = len * 0.5 + (i - (n - 1) / 2) * 3.4;
+        const cx = dx * t, cy = piv + dy * t;
+        o += `<line x1="${(cx - px * 3.6).toFixed(2)}" y1="${(cy - py * 3.6).toFixed(2)}" x2="${(cx + px * 3.6).toFixed(2)}" y2="${(cy + py * 3.6).toFixed(2)}" stroke-width="1.2"/>`;
+      }
+      return o;
+    },
+
     cb(w, h, comp) {
       const p = (comp && comp.props) || {};
       const isOpen = p.state === 'open';
       return `
         <g class="symbol-cb symbol-iec ${isOpen ? 'symbol-open' : 'symbol-closed'}" fill="none">
           ${this._contact(h, isOpen, 'cb')}
+          ${this._poleTicks(h, isOpen, Symbols._poleN(comp))}
           ${p.mounting === 'withdrawable' ? this._withdrawable(h) : ''}
         </g>`;
     },

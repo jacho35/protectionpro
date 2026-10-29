@@ -230,7 +230,7 @@ const DBDrawing = {
       CABLE_MM2: c.cable_mm2 ?? '', CONDUCTOR: c.conductor || 'Cu',
       ECC_MM2: c.ecc_mm2 != null ? c.ecc_mm2 : 'min', LENGTH_M: Number(c.cable_m) || '',
       LOAD_VA: Number(c.load_va) || 0, CURRENT_A: DBSchedule._wayFlaA(c, vll).toFixed(1),
-      PHASE: (c.poles === '3P' || c.phase === 'RWB') ? 'RWB' : (c.phase || 'R'),
+      PHASE: wayPhaseLabel(c), POLES: c.poles || '1P',
       STATUS: v ? v.status : 'not checked',
     };
   },
@@ -318,7 +318,7 @@ const DBDrawing = {
       items.push({
         kind: 'way', w: br ? Math.max(this.DROP_W, br.length * this.BR_W) : this.DROP_W, glyph: 'mcb', ctr, br, mtr: msub ? null : mtr, msub,
         mtrLabel: mtr && !msub ? (DBMeters.isVirtual(mtr) ? mtr.tag + String.fromCharCode(97 + DBMeters.waysOf(comp, mtr).indexOf(c) % 26) : mtr.tag) : '',
-        sec: (DBSections.of(comp, c) || {}).id, phase: (c.poles === '3P' || c.phase === 'RWB') ? 'RWB' : (c.phase || 'R'),
+        sec: (DBSections.of(comp, c) || {}).id, phase: wayPhaseKey(c), phaseText: wayPhaseLabel(c),
         poles: c.poles || '1P', spare, wayDesc: c.description || '',
         feeds: sub ? (sub.props.name || sub.id) : (c.type === 'feeder_db' ? 'Sub-board' : null),
         cells: {
@@ -1207,7 +1207,9 @@ const DBDrawing = {
     if (t) {
       // Verdict colouring wins; otherwise the symbol keeps its SLD colour.
       const c = (stroke && stroke !== P.line) ? stroke : this._native(t, P);
-      const g = this._sym(t, x, y, P, c, null, this.SYM_SCALE);
+      // A way's breaker carries its pole count as ticks across the blade.
+      const pc = name === 'mcb' && item && item.poles ? { type: 'cb', props: { state: 'open', poles: item.poles } } : null;
+      const g = this._sym(t, x, y, P, c, pc, this.SYM_SCALE);
       if (g) return g;
     }
     switch (name) {
@@ -1496,7 +1498,7 @@ const DBDrawing = {
         if (it.mtr) g += this._gWayMeter(comp, it.mtr, it.mtrLabel, x, mY, P, mCt);
         if (it.br) g += this._branchTier(it, x, endY, P, D.load);
         if (D.load && !it.spare && !it.br) {
-          const motor = (it.poles === '3P' || it.phase === 'RWB')
+          const motor = (it.poles === '3P' || it.poles === '4P' || it.phase === 'RWB')
             && /pump|motor|fan|compress|aircon|a\/c|hvac|drive/i.test(it.wayDesc || '');
           const lt = it.feeds ? 'distribution_board' : motor ? 'motor_induction' : 'static_load';
           const d = it.dxf;
@@ -1513,9 +1515,9 @@ const DBDrawing = {
       if (D.phase && !D.table) {
         // Phase chip sits left of the drop so the conductor never crosses it.
         const pc = P.phase[it.phase] || P.muted;
-        const tw = String(it.phase).length * 5.6;
+        const tw = String(it.phaseText || it.phase).length * 5.6;
         g += `<rect x="${x - 10 - tw - 11}" y="${devY + this.TICK_DY - 5}" width="9" height="9" rx="2" fill="${pc}"/>`;
-        sym += `<text x="${x - 8}" y="${numAttr(devY + this.TICK_DY + 3)}" text-anchor="end" font-size="9" fill="${P.inkSec}" data-dxf-attr="PHASE">${this._esc(it.phase)}</text>`;
+        sym += `<text x="${x - 8}" y="${numAttr(devY + this.TICK_DY + 3)}" text-anchor="end" font-size="9" fill="${P.inkSec}" data-dxf-attr="PHASE">${this._esc(it.phaseText || it.phase)}</text>`;
       }
       if (!D.table) {
         // Labels sit on a page-coloured patch, so the conductor reads as passing
@@ -1555,9 +1557,9 @@ const DBDrawing = {
           const y = top + ri2 * this.TBL_ROW + 10;
           if (r.k === 'phase') {
             const pc = P.phase[it.phase] || P.muted;
-            const tw = String(it.phase).length * 5.4;
+            const tw = String(it.phaseText || it.phase).length * 5.4;
             s += `<rect x="${x - tw / 2 - 7}" y="${y - 8}" width="8" height="8" rx="2" fill="${pc}"/>`
-              + `<text x="${x - tw / 2 + 4}" y="${y}" font-size="9" fill="${P.ink}">${this._esc(it.phase)}</text>`;
+              + `<text x="${x - tw / 2 + 4}" y="${y}" font-size="9" fill="${P.ink}">${this._esc(it.phaseText || it.phase)}</text>`;
             return;
           }
           const v = it.cells ? it.cells[r.k] : '';
