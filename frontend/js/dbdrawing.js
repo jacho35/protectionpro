@@ -299,7 +299,9 @@ const DBDrawing = {
         ...warns].join('\n');
 
       const ctr = D.controls && typeof DBControls !== 'undefined' ? DBControls.wayContactor(comp, c) : null;
-      if (ctr) tip += `\nSwitched by contactor ${ctr.tag} (${ctr.poles} ${ctr.rating_a} A ${ctr.category}) — ${DBControls.switchedBy(ctr)}`;
+      if (ctr) tip += DBControls.isDirect(ctr)
+        ? `\nSwitched direct by ${DBControls.switchedBy(ctr)} (${DBControls.specText(ctr)}) — no contactor`
+        : `\nSwitched by contactor ${ctr.tag} (${ctr.poles} ${ctr.rating_a} A ${ctr.category}) — ${DBControls.switchedBy(ctr)}`;
       // Its meter: a metered sub-bus group hangs the way from the sub-bus (as a
       // switched section does — a way already on one keeps it, its meter then
       // drawn on the drop); everything else is drawn on the way's drop.
@@ -526,11 +528,13 @@ const DBDrawing = {
     for (const r of runs) {
       const k = r.k;
       if ((k.arrangement === 'section') !== !!sections) continue;
+      const direct = DBControls.isDirect(k);
       const spec = `${k.poles} ${k.rating_a} A ${k.category}`;
       const by = DBControls.switchedBy(k);
       const attrs = this._dxfData({ BOARD: comp.props.name || comp.id, TAG: k.tag, DESCRIPTION: k.label || '',
         SPEC: spec, ARRANGEMENT: k.arrangement, SWITCHED_BY: by });
-      const tip = `${k.tag} — contactor ${spec}${k.label ? ', ' + k.label : ''}\nSwitched by ${by}`;
+      const tip = direct ? `${k.tag} — direct switching, ${spec} contact${k.label ? ', ' + k.label : ''}\nSwitched by ${by} (no contactor)`
+        : `${k.tag} — contactor ${spec}${k.label ? ', ' + k.label : ''}\nSwitched by ${by}`;
       const label = (x, y) => `<text x="${x}" y="${y}" font-size="9.5" font-weight="700" fill="${P.ctl}" data-dxf-attr="TAG_LABEL">${this._esc(this._trunc(k.tag, 6))}</text>`
         + `<text x="${x}" y="${y + 10}" font-size="7.5" fill="${P.ctl}" data-dxf-attr="SPEC_LABEL">${this._esc(k.arrangement === 'section' ? spec : `${k.rating_a} A ${k.category}`)}</text>`
         + `<text x="${x}" y="${y + 19}" font-size="7.5" fill="${P.inkSec}" data-dxf-attr="SWITCHED_LABEL">${this._esc(this._trunc(by, 16))}</text>`;
@@ -575,7 +579,7 @@ const DBDrawing = {
 
   _ctlLayout(comp, w, bottom) {
     if (typeof DBControls === 'undefined' || !DBControls.has(comp)) return null;
-    const ctrs = DBControls.contactors(comp);
+    const ctrs = DBControls.contactors(comp).filter(k => !DBControls.isDirect(k));   // direct switching has no coil
     const groups = [];
     for (const sup of DBControls.supplies(comp)) {
       const mine = ctrs.filter(k => k.supply === sup.id);

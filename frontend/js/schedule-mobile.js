@@ -236,7 +236,7 @@ const SchMobile = {
       const cable = [c.cable_mm2 ? `${c.cable_mm2} mm²` : '', Number(c.cable_m) > 0 ? `${c.cable_m} m` : ''].filter(Boolean).join(' · ');
       const k = DBControls.wayContactor(comp, c);
       const pole = k ? DBControls.poleLabel(comp, k, c) : '';
-      const ctlLine = k ? `${k.tag}${pole ? ' pole ' + pole : ''} · ${DBControls.switchedBy(k)}${k.selector !== 'none' ? ' · ' + (k.selector === 'hoa' ? 'H-O-A' : 'O-A') : ''}` : '';
+      const ctlLine = k ? `${k.tag}${pole ? ' pole ' + pole : ''} · ${DBControls.switchedBy(k)}${!DBControls.isDirect(k) && k.selector !== 'none' ? ' · ' + (k.selector === 'hoa' ? 'H-O-A' : 'O-A') : ''}` : '';
       const sel = this._selecting;
       const on = sel && this._sel.has(c.id);
       cards.push(`
@@ -425,7 +425,7 @@ const SchMobile = {
       const by = sw.length ? sw.join(k.combine === 'parallel' ? ' or ' : ' and ') + (sw.length > 1 ? (k.combine === 'parallel' ? ' in parallel' : ' in series') : '') : 'no switching device';
       const bad = DBControls.warnings(comp, k).filter(w => w.level === 'warn');
       sum = `<div class="smb-ctlsum">
-          <div class="smb-ctlsum-head"><span class="dbc-tag">${e(k.tag)}</span><strong>${e(`${k.poles} ${k.rating_a} A ${k.category}`)}</strong>
+          <div class="smb-ctlsum-head"><span class="dbc-tag">${e(k.tag)}</span><strong>${e(DBControls.specText(k))}</strong>
             ${pole ? `<span class="dbc-dim">pole ${e(pole)} of ${e(String(DBControls._polesN(k)))}</span>` : ''}</div>
           <div>${e(by.charAt(0).toUpperCase() + by.slice(1))}${sel ? ' · ' + e(sel) : ''}${sup ? ' · supply ' + e(sup.tag) : ''}${k.lamp ? ' · door lamp ' + e(DBControls.lampTag(k)) : ''}</div>
           ${others.length ? `<div class="dbc-dim">Also switches way${others.length === 1 ? '' : 's'} ${e(others.join(', '))}</div>` : ''}
