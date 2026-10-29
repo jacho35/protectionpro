@@ -176,6 +176,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function setMode(mode) {
     AppState.mode = mode;
+    if (typeof SldShapes !== 'undefined' && SldShapes.tool) SldShapes.setTool(SldShapes.tool);
     const isWire = mode === MODE.WIRE;
     btnSelect.classList.toggle('active', mode === MODE.SELECT);
     btnWire.classList.toggle('active', isWire);

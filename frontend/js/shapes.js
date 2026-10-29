@@ -39,6 +39,18 @@ const SldShapes = {
       const b = document.getElementById(id);
       if (b) b.addEventListener('click', () => this.setTool(tool));
     }
+    // phone: Annotate beside Select / Wire opens a small shape picker
+    const fab = document.getElementById('fab-mode-annotate'), pop = document.getElementById('mobile-annot-pop');
+    if (fab && pop) {
+      fab.addEventListener('click', (e) => { e.stopPropagation(); pop.hidden = !pop.hidden; });
+      pop.addEventListener('click', (e) => {
+        const b = e.target.closest('[data-shape-tool]');
+        if (!b) return;
+        pop.hidden = true;
+        this.setTool(b.dataset.shapeTool);
+      });
+      document.addEventListener('click', () => { pop.hidden = true; });
+    }
     this.render();
   },
 
@@ -96,6 +108,7 @@ const SldShapes = {
     this.tool = this.tool === tool ? null : tool;
     if (this.tool) AppState.mode = MODE.SELECT;
     Canvas.svg.classList.toggle('shape-drawing', !!this.tool);
+    this._syncFab();
     const info = document.getElementById('status-info');
     if (info) info.textContent = this.tool
       ? (this.tool === 'note' ? 'Click where the note goes.' : 'Drag on the diagram to draw the shape. Esc cancels.')
@@ -103,10 +116,20 @@ const SldShapes = {
     window.closeAllToolbarMenus?.();
   },
 
+  _syncFab() {
+    const fab = document.getElementById('fab-mode-annotate');
+    if (!fab) return;
+    fab.classList.toggle('fab-active', !!this.tool);
+    fab.setAttribute('aria-pressed', String(!!this.tool));
+    const sel = document.getElementById('fab-mode-select');
+    if (sel && this.tool) { sel.classList.remove('fab-active'); sel.setAttribute('aria-pressed', 'false'); }
+  },
+
   escape() {
     const had = !!this.tool || !!this.selId;
     this.tool = null;
     Canvas.svg.classList.remove('shape-drawing');
+    this._syncFab();
     this._drag = null; this._draft = null;
     if (this.selId) { this.selId = null; this.render(); }
     return had;
@@ -114,6 +137,7 @@ const SldShapes = {
 
   // ── Pointer ──
 
+  _touch() { return typeof MobileUI !== 'undefined' && MobileUI.isMobile; },
   _worldPt(e) { return Canvas.screenToWorld(e.clientX, e.clientY); },
   _snap(v) { return typeof snapToGrid === 'function' ? snapToGrid(v) : Math.round(v / 20) * 20; },
 
@@ -122,9 +146,10 @@ const SldShapes = {
     if (!Canvas.svg.contains(e.target)) return;
     if (AppState.mode === MODE.WIRE || AppState.wireStart) return;
     const p = this._worldPt(e);
+    const grab = () => { if (e.pointerType === 'touch') { try { Canvas.svg.setPointerCapture(e.pointerId); } catch (_) {} } };
 
     if (this.tool) {
-      e.preventDefault(); e.stopImmediatePropagation();
+      e.preventDefault(); e.stopImmediatePropagation(); grab();
       const sx = this._snap(p.x), sy = this._snap(p.y);
       this._drag = { mode: 'draw', kind: this.tool, sx, sy };
       this._draft = this._create(this.tool, sx, sy, 0, 0);
@@ -138,7 +163,7 @@ const SldShapes = {
       if (this.selId) { this.selId = null; this.render(); }
       return;
     }
-    e.preventDefault(); e.stopImmediatePropagation();
+    e.preventDefault(); e.stopImmediatePropagation(); grab();
     const id = (handleEl || shapeEl).dataset.shapeId;
     const s = this.get(id);
     if (!s) return;
@@ -198,6 +223,7 @@ const SldShapes = {
       this._draft = null;
       this.tool = null;
       Canvas.svg.classList.remove('shape-drawing');
+      this._syncFab();
       const info = document.getElementById('status-info');
       if (info) info.textContent = '';
       // a click without a drag drops the shape at its default size
@@ -263,9 +289,10 @@ const SldShapes = {
 
   showPanel() {
     const s = this.get(this.selId);
-    const host = document.getElementById('properties-content');
+    const mobile = typeof MobileUI !== 'undefined' && MobileUI.isMobile;
+    const host = document.getElementById(mobile ? 'mobile-properties-content' : 'properties-content');
     if (!s || !host) return;
-    const title = document.getElementById('properties-title');
+    const title = document.getElementById(mobile ? 'mobile-prop-title' : 'properties-title');
     if (title) title.textContent = s.kind === 'note' ? 'Annotation — text note' : (s.kind === 'ellipse' ? 'Annotation — ellipse' : 'Annotation — rectangle');
     const seg = (field, opts) => `<div class="shape-seg">${opts.map(([v, t]) =>
       `<button type="button" class="shape-seg-btn${s[field] === v ? ' active' : ''}" data-shape-set="${field}" data-v="${v}">${t}</button>`).join('')}</div>`;
@@ -301,7 +328,13 @@ const SldShapes = {
           <button type="button" class="shape-act danger" data-shape-act="del">Delete</button>
         </div>
       </div>`;
-    this._bindPanel(host);
+    this._bindPanel(host.querySelector('.shape-panel'));
+    if (mobile) {
+      const sub = document.getElementById('mobile-prop-sub'); if (sub) sub.textContent = 'Annotation';
+      for (const id of ['mobile-prop-prev', 'mobile-prop-next']) { const b = document.getElementById(id); if (b) b.disabled = true; }
+      if (this._panelFor !== this.selId) MobileUI.openSheet('mobile-sheet-properties');
+    }
+    this._panelFor = this.selId;
   },
 
   _bindPanel(host) {
@@ -406,7 +439,7 @@ const SldShapes = {
       : (extra) => `<rect x="${s.x}" y="${s.y}" width="${s.w}" height="${s.h}" ${extra}/>`;
     g += body(`fill="${s.color}" fill-opacity="${s.fill}" stroke="${s.color}" stroke-width="2"${da} pointer-events="none"`);
     // only the outline (and label) are grabbable, so the interior still box-selects what is under it
-    g += body('fill="none" stroke="transparent" stroke-width="14" pointer-events="stroke" style="cursor:move"');
+    g += body('fill="none" stroke="transparent" stroke-width="${this._touch() ? 30 : 14}" pointer-events="stroke" style="cursor:move"');
 
     if (s.label) {
       const tw = Math.ceil(s.label.length * 7.4 + 16);
@@ -429,7 +462,7 @@ const SldShapes = {
   },
 
   _handles(s) {
-    const hs = 8 / (AppState.zoom || 1), half = hs / 2, sw = 1.5 / (AppState.zoom || 1);
+    const hs = (this._touch() ? 18 : 8) / (AppState.zoom || 1), half = hs / 2, sw = 1.5 / (AppState.zoom || 1);
     const box = (id, x, y, name, cur) =>
       `<rect class="shape-handle" data-shape-id="${escHtml(id)}" data-shape-handle="${name}" x="${x - half}" y="${y - half}" width="${hs}" height="${hs}" fill="#ffffff" stroke="#1d4ed8" stroke-width="${sw}" style="cursor:${cur}"/>`;
     const x1 = s.x + s.w, y1 = s.y + s.h, mx = s.x + s.w / 2, my = s.y + s.h / 2;
@@ -454,6 +487,7 @@ const SldShapes = {
     // remote ops and loaded files bypass sanitize(): clamp what goes into the markup
     for (const s of list) { const c = this.sanitize(s); if (c) Object.assign(s, c); }
     if (this.selId && !list.some(s => s.id === this.selId)) this.selId = null;
+    if (!this.selId) this._panelFor = null;
     let html = list.map(s => this._svg(s, s.id === this.selId)).join('');
     if (this._draft) html += this._svg(this._draft, false);
     const sel = this.selId && this.get(this.selId);
