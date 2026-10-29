@@ -128,6 +128,14 @@ const DBControls = {
   },
 
   isDirect(k) { return !!k && k.arrangement === 'direct'; },
+  // A direct circuit that splits into one branch per switching device, each
+  // device feeding its own equipment (switch `contact_a`, `load_a`, `feeds`).
+  isBranched(k) { return this.isDirect(k) && k.combine === 'branches' && (k.switches || []).length > 1; },
+  branches(k) {
+    return (k.switches || []).map(s => ({ s, tag: s.tag || '', label: this.switchKind(s.kind).label,
+      rating: Number(s.contact_a) || Number(k.rating_a) || 0, cat: k.category, terms: this.switchContact(s),
+      load_a: Number(s.load_a) || 0, feeds: String(s.feeds || '').trim() }));
+  },
   // 'Contactor 2P 25 A AC-1' or, for a directly switched circuit, 'Direct contact 16 A AC-5a'.
   specText(k) { return this.isDirect(k) ? `${k.poles} ${k.rating_a} A ${k.category} contact` : `${k.poles} ${k.rating_a} A ${k.category}`; },
   noun(k) { return this.isDirect(k) ? 'direct switching' : 'contactor'; },
@@ -256,6 +264,7 @@ const DBControls = {
       if (/^K\d+$/i.test(String(k.tag || ''))) k.tag = this._nextTag(this.contactors(comp).filter(x => x.id !== k.id).map(x => x.tag), 'SW');
     } else if (v !== 'direct' && wasDirect) {
       k.selector = 'hoa';
+      if (k.combine === 'branches') k.combine = 'series';
       const d = this.peek(comp);
       if (!k.supply && d.supplies.length) k.supply = d.supplies[0].id;
       if (/^SW\d+$/i.test(String(k.tag || ''))) k.tag = this._nextTag(this.contactors(comp).filter(x => x.id !== k.id).map(x => x.tag), 'K');
@@ -353,10 +362,25 @@ const DBControls = {
         out.push({ level: 'warn', text: `${s.tag}: a ${this.switchKind(s.kind).label.toLowerCase()} is a control contact — it cannot carry a load; use a contactor.` });
       }
     }
-    if (sw.length > 1 && k.combine === 'parallel') {
+    const pcs = sw.filter(s => s.kind === 'photocell').map(s => s.tag).join(', ');
+    if (pcs) out.push({ level: 'info', text: `${pcs}: a photocell has three terminals — Line, Load and Neutral — so take its neutral from the circuit’s neutral bar as well as the live.` });
+    if (sw.length > 1 && k.combine === 'parallel' && !this.isBranched(k)) {
       out.push({ level: 'info', text: 'Devices in parallel each carry the full load current — rate every contact for it.' });
     }
-    if (ways.length && rating) {
+    if (this.isBranched(k)) {
+      const brs = this.branches(k);
+      for (const w of ways) {
+        const a = Number(w.breaker_a) || 0;
+        let sum = 0, known = true;
+        for (const b of brs) {
+          if (b.load_a > 0) sum += b.load_a; else known = false;
+          const need = b.load_a > 0 ? b.load_a : a;
+          if (need && b.rating < need) out.push({ level: 'warn', text: `${b.tag}: the ${b.rating} A contact is below its ${b.load_a > 0 ? b.load_a + ' A load' : a + ' A breaker (enter its load to size it on that)'}.` });
+        }
+        if (known && a && sum > a) out.push({ level: 'warn', text: `Way ${w.way}: the branch loads add up to ${sum.toFixed(1)} A, above its ${a} A breaker.` });
+      }
+      for (const b of brs) if (!b.feeds) out.push({ level: 'info', text: `${b.tag}: say what it feeds so the branch is labelled on the single line.` });
+    } else if (ways.length && rating) {
       for (const w of ways) {
         const a = Number(w.breaker_a) || 0;
         if (a > rating) out.push({ level: 'warn', text: `Way ${w.way}: the ${rating} A ${cat} contact is below its ${a} A breaker — the breaker does not protect the contact; fit a contactor or a bigger contact.` });
@@ -413,10 +437,12 @@ const DBControls = {
         const mods = this.switchModules(s);
         const mount = this.switchMount(s);
         out.push({ id: 'sw:' + k.id + ':' + key, group: k.id, tag: s.tag, kind: s.kind, label: s.tag,
-          spec: `${this.switchDevice(s)}${direct ? ` · ${k.rating_a} A ${k.category} contact` : ''}${s.setting ? ' · ' + s.setting : ''}${mount === 'din' ? (kd.field ? ' · ' + kd.field : '') : ' · ' + this.mountLabel(mount).toLowerCase()}`,
+          spec: `${this.switchDevice(s)}${direct ? ` · ${this.branchRating(k, s)} A ${k.category} contact` : ''}${direct && k.combine === 'branches' && s.feeds ? ' · feeds ' + s.feeds : ''}${s.setting ? ' · ' + s.setting : ''}${mount === 'din' ? (kd.field ? ' · ' + kd.field : '') : ' · ' + this.mountLabel(mount).toLowerCase()}`,
           modules: mods, heat_w: mods ? kd.heat_w : 0, field: !mods });
       }
-      if (!direct && (k.selector || 'hoa') !== 'none') {
+      const selKey = 'sel|' + String(k.selector_tag || 'S').trim().toLowerCase() + '|' + k.selector;
+      if (!direct && (k.selector || 'hoa') !== 'none' && !seen.has(selKey)) {
+        seen.add(selKey);       // one selector switching several contactors is fitted once
         out.push({ id: 'sel:' + k.id, group: k.id, tag: k.selector_tag || 'S', kind: 'selector', label: k.selector_tag || 'S',
           spec: `Selector ${(CTL_SELECTORS.find(x => x.v === k.selector) || CTL_SELECTORS[0]).label}`, modules: 1, heat_w: 0 });
       }
@@ -463,7 +489,7 @@ const DBControls = {
   switchedBy(k) {
     const sw = (k.switches || []).map(s => s.tag || this.switchKind(s.kind).label);
     if (!sw.length) return this.isDirect(k) ? '—' : k.selector === 'hoa' ? 'Hand only' : '—';
-    return sw.join(k.combine === 'parallel' ? ' or ' : ' + ');
+    return sw.join(k.combine === 'parallel' ? ' or ' : k.combine === 'branches' && this.isDirect(k) ? ', ' : ' + ');
   },
 
   // A switching device's details, blank fields falling back to its kind.
@@ -472,9 +498,11 @@ const DBControls = {
     const kd = this.switchKind(s.kind);
     return kd.modules ? 'din' : kd.key === 'pushbutton' ? 'door' : 'field';
   },
+  branchRating(k, s) { return (k.combine === 'branches' && Number(s.contact_a)) || Number(k.rating_a) || 0; },
   switchModules(s) { return this.switchMount(s) === 'din' ? (this.switchKind(s.kind).modules || 1) : 0; },
   switchDevice(s) { return String(s.device || '').trim() || this.switchKind(s.kind).label; },
-  switchContact(s) { return String(s.contact || '').trim() || (s.kind === 'fire' ? 'NC' : 'NO'); },
+  // A photocell is wired Line / Load / Neutral, not as a NO / NC contact.
+  switchContact(s) { return String(s.contact || '').trim() || (s.kind === 'photocell' ? 'L · Load · N' : s.kind === 'fire' ? 'NC' : 'NO'); },
   mountLabel(v) { return (CTL_MOUNTS.find(x => x.v === v) || CTL_MOUNTS[0]).label; },
 
   // The door lamp: 'H-K1' for records saved before lamps had their own tag.
@@ -494,19 +522,24 @@ const DBControls = {
   deviceSchedule(comp) {
     const rows = [];
     const byTag = new Map();
+    const selRows = new Map();
     for (const k of this.contactors(comp)) {
       const sup = this.supply(comp, k.supply);
       const volts = sup ? (sup.voltage || '') : (k.coil || '');
-      if (!this.isDirect(k) && (k.selector || 'hoa') !== 'none') {
-        rows.push({ tag: k.selector_tag || 'S', device: `Selector ${(CTL_SELECTORS.find(x => x.v === k.selector) || CTL_SELECTORS[0]).label}`,
+      const selKey = 'sel|' + String(k.selector_tag || 'S').trim().toLowerCase() + '|' + k.selector;
+      if (!this.isDirect(k) && (k.selector || 'hoa') !== 'none' && selRows.has(selKey)) selRows.get(selKey).ctrs.push(k.tag);
+      else if (!this.isDirect(k) && (k.selector || 'hoa') !== 'none') {
+        const r = { tag: k.selector_tag || 'S', device: `Selector ${(CTL_SELECTORS.find(x => x.v === k.selector) || CTL_SELECTORS[0]).label}`,
           setting: '', contact: k.selector === 'hoa' ? 'Hand 13-14 · Auto 23-24' : 'Auto 13-14',
-          mount: this.mountLabel('din'), modules: 1, ctrs: [k.tag] });
+          mount: this.mountLabel('din'), modules: 1, ctrs: [k.tag] };
+        selRows.set(selKey, r);
+        rows.push(r);
       }
       for (const s of (k.switches || [])) {
         const key = String(s.tag || '').trim().toLowerCase();
         const seen = key && byTag.get(key);
         if (seen) { if (!seen.ctrs.includes(k.tag)) seen.ctrs.push(k.tag); continue; }
-        const r = { tag: s.tag || '', device: this.switchDevice(s), setting: s.setting || '', contact: this.switchContact(s) + (this.isDirect(k) ? ` · ${k.rating_a} A ${k.category}` : ''),
+        const r = { tag: s.tag || '', device: this.switchDevice(s), setting: s.setting || '', contact: this.switchContact(s) + (this.isDirect(k) ? ` · ${this.branchRating(k, s)} A ${k.category}` : ''),
           mount: this.mountLabel(this.switchMount(s)), modules: this.switchModules(s), ctrs: [k.tag] };
         if (key) byTag.set(key, r);
         rows.push(r);
@@ -738,6 +771,7 @@ const DBControls = {
 
     const draw = () => {
       const ways = pickedWays();
+      const branched = this.isDirect(k) && k.combine === 'branches' && k.switches.length > 1;
       if (sized.auto) Object.assign(k, this.suggest(comp, k, ways));
       const sug = this.suggest(comp, k, ways);
       const supplies = this.supplies(comp);
@@ -754,7 +788,10 @@ const DBControls = {
         <div class="dbc-swmore">
           <label>Device <input type="text" data-sw="${i}" data-swk="device" value="${e(s.device || '')}" placeholder="${e(this.switchKind(s.kind).label)}"></label>
           <label>Mounting <select data-sw="${i}" data-swk="mount">${CTL_MOUNTS.map(x => opt(x.v, this.switchMount(s), x.label)).join('')}</select></label>
-          <label>Contact <input type="text" data-sw="${i}" data-swk="contact" value="${e(s.contact || '')}" placeholder="${e(this.switchContact({ kind: s.kind }))} (e.g. NO 15-18)"></label>
+          ${branched ? `<label>Contact (A) <input type="number" data-sw="${i}" data-swk="contact_a" value="${e(s.contact_a ?? '')}" placeholder="${e(k.rating_a)}" min="1" step="1"></label>
+          <label>Load (A) <input type="number" data-sw="${i}" data-swk="load_a" value="${e(s.load_a ?? '')}" min="0" step="0.1"></label>
+          <label>Feeds <input type="text" data-sw="${i}" data-swk="feeds" value="${e(s.feeds || '')}" placeholder="e.g. Car park"></label>` : ''}
+          <label>${s.kind === 'photocell' ? 'Terminals' : 'Contact'} <input type="text" data-sw="${i}" data-swk="contact" value="${e(s.contact || '')}" placeholder="${e(this.switchContact({ kind: s.kind }))}${s.kind === 'photocell' ? '' : ' (e.g. NO 15-18)'}"></label>
         </div></div>`).join('');
       const direct = this.isDirect(k);
       const tmp = Object.assign({}, k);
@@ -799,7 +836,7 @@ const DBControls = {
             <div class="dbc-swadd">
               <select id="dbc-swkind" aria-label="Device to add">${CTL_SWITCH_KINDS.map(x => opt(x.key, '', x.label)).join('')}</select>
               <button type="button" class="btn-small" data-dbc-x="sw-add">+ Add</button>
-              ${k.switches.length > 1 ? `<label>Combine <select data-kk="combine">${opt('series', k.combine, 'In series — all must close')}${opt('parallel', k.combine, 'In parallel — any one closes')}</select></label>` : ''}
+              ${k.switches.length > 1 ? `<label>Combine <select data-kk="combine">${opt('series', k.combine, 'In series — all must close')}${opt('parallel', k.combine, 'In parallel — any one closes')}${direct ? opt('branches', k.combine, 'Separate branches — each feeds its own equipment') : ''}</select></label>` : ''}
             </div>
             <div class="dbc-dim">${direct ? 'The device’s own output contact carries the circuit current — enter its rating above.' : 'A tag used on another contactor is the same device (one photocell switching several contactors).'}</div>
           </fieldset>
