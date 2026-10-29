@@ -30,13 +30,14 @@ const strict = process.argv.includes('--strict');
 const maxArg = process.argv.indexOf('--max');
 const maxAllowed = maxArg > 0 ? Number(process.argv[maxArg + 1]) : null;   // ratchet: fail if the count grows past this
 const ignoreAllow = process.argv.includes('--all');
+const listAll = process.argv.includes('--list-keys');   // print allow-list keys (file::expression) for the findings
 const fix = process.argv.includes('--fix');   // wrap plain property reads inside quoted attribute values in escHtml(...)
 const textToo = process.argv.includes('--text');   // also report values placed in element text
 
 const allow = new Set();
 if (!ignoreAllow && fs.existsSync(allowFile)) {
   for (const l of fs.readFileSync(allowFile, 'utf8').split('\n')) {
-    const t = l.split('#')[0].trim();
+    const t = l.replace(/(^|\s)#(\s.*)?$/, "").trim();
     if (t) allow.add(t);
   }
 }
@@ -216,7 +217,9 @@ for (const f of files) {
       }
       const line = lineAt(p.pos);
       const id = `${f}:${line}`;
-      if (allow.has(id)) continue;
+      const norm = p.expr.replace(/\s+/g, ' ').trim();
+      if (allow.has(id) || allow.has(`${f}::${norm}`)) continue;
+      if (listAll) { console.log(`${f}::${norm}`); total++; continue; }
       total++;
       console.log(`${id}  \${${p.expr.length > 90 ? p.expr.slice(0, 87) + '...' : p.expr}}`);
     }
