@@ -41,6 +41,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Initialize all modules
   Canvas.init();
+  if (typeof SldShapes !== 'undefined') SldShapes.init();
   Sidebar.init();
   Wiring.init();
   Properties.init();
@@ -484,6 +485,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       case 'Delete':
       case 'Backspace':
+        if (typeof SldShapes !== 'undefined' && SldShapes.deleteSelected()) break;
         AppState.deleteSelected();
         Canvas.render();
         Properties.clear();
@@ -514,6 +516,7 @@ document.addEventListener('DOMContentLoaded', () => {
           Wiring.cancelWire();
         }
         if (typeof CableFocus !== 'undefined') CableFocus.disable();
+        if (typeof SldShapes !== 'undefined') SldShapes.escape();
         AppState.clearSelection();
         setMode(MODE.SELECT);
         Canvas.render();

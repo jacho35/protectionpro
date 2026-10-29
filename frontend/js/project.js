@@ -582,6 +582,8 @@ const Project = {
     if (overlay) overlay.remove();
     const diagram = clone.querySelector('#diagram-layer');
     if (diagram) diagram.setAttribute('transform', '');
+    // annotation shapes: drop the ones marked not to print, and the selection handles
+    clone.querySelectorAll('.sld-shape-noprint, .shape-handle').forEach(n => n.remove());
 
     // Resolve CSS variables in inline attributes (e.g. var(--bg-primary, #fff))
     // This is critical — canvas/PDF renderers cannot resolve CSS vars.

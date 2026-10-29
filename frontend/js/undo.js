@@ -40,6 +40,7 @@ const UndoManager = {
       groupNextId: AppState._groupNextId,
       // Project-level earth grids (a bus's earth_grid_id points into them)
       earthGrids: JSON.parse(JSON.stringify(AppState.earthGrids || [])),
+      sldShapes: JSON.parse(JSON.stringify(AppState.sldShapes || [])),
     };
     this._stack.push(JSON.stringify(state));
     this._index = this._stack.length - 1;
@@ -112,6 +113,7 @@ const UndoManager = {
       if (state.groupNextId) AppState._groupNextId = state.groupNextId;
     }
     if (Array.isArray(state.earthGrids)) AppState.earthGrids = state.earthGrids;
+    if (Array.isArray(state.sldShapes)) AppState.sldShapes = state.sldShapes;
     AppState.dirty = true;
     if (typeof EarthGridEditor !== 'undefined') EarthGridEditor.onStateRestored();
     if (typeof window !== 'undefined' && typeof window.renderPageTabs === 'function') {
