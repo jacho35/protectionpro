@@ -168,6 +168,8 @@ const AppState = {
   drawingSets: [],
   // Saved views of the single line: {id, name, pageId, kind:'parts'|'window', parts, window}
   sldViews: [],
+  // Information-only annotation shapes on the single line (shapes.js): rectangles, ellipses, notes
+  sldShapes: [],
   // Quoted-project freeze (quote.js); reset() and fromJSON() keep these in step.
   quoted: null,
   quotedLibrary: null,
@@ -1187,6 +1189,7 @@ const AppState = {
     for (const [cid, comp] of this.components) {
       if (comp.pageId === pageId) this.removeComponent(cid);
     }
+    this.sldShapes = this.sldShapes.filter(s => (s.pageId || 'page_1') !== pageId);
     this.pages = this.pages.filter(p => p.id !== pageId);
     if (this.activePageId === pageId) this.activePageId = this.pages[0].id;
     this.dirty = true;
@@ -1340,6 +1343,7 @@ const AppState = {
     this.raceways = [];
     this.drawingSets = [];
     this.sldViews = [];
+    this.sldShapes = [];
     // Clear annotation drag offsets + hidden result boxes
     if (typeof Annotations !== 'undefined') {
       Annotations.offsets.clear();
@@ -1616,6 +1620,7 @@ const AppState = {
       raceways: this.raceways.length ? this.raceways : undefined,
       drawingSets: this.drawingSets.length ? this.drawingSets : undefined,
       sldViews: this.sldViews.length ? this.sldViews : undefined,
+      sldShapes: this.sldShapes.length ? this.sldShapes : undefined,
     };
   },
 
@@ -1968,6 +1973,7 @@ const AppState = {
       else out.parts = Array.isArray(v.parts) ? v.parts.filter(id => typeof id === 'string') : [];
       return out;
     }) : [];
+    this.sldShapes = Array.isArray(data.sldShapes) && typeof SldShapes !== 'undefined' ? data.sldShapes.map(s => SldShapes.sanitize(s)).filter(Boolean) : [];
     this.projectType = ['retic', 'building', 'network', 'lighting'].includes(data.projectType) ? data.projectType : null;
     this.lightingKinds = Array.isArray(data.lightingKinds) ? data.lightingKinds.filter(k => ['rooms', 'roads', 'sports'].includes(k)) : null;
     this.roadCircuits = data.roadCircuits === true;

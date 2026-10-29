@@ -1120,3 +1120,19 @@ body.dark-mode .pw-tip { background: #33374d; border: 1px solid #454a63; }
 .cbp-step { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0; }
 .cbp-step select { flex: 1; min-width: 0; }
 .cbp-stepbtn { min-width: 30px; min-height: 30px; border: 1px solid var(--border-color, #b9bcc2); background: var(--bg-primary, #fff); color: var(--text-primary, #1c1d1f); border-radius: 6px; font: inherit; font-size: 15px; cursor: pointer; }
+
+/* Annotation shapes (shapes.js) */
+.sld-shape .shape-handle { pointer-events: all; }
+#sld-canvas.shape-drawing, #sld-canvas.shape-drawing * { cursor: crosshair !important; }
+.shape-panel textarea, .shape-panel input[type="text"] { width: 100%; box-sizing: border-box; }
+.shape-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.shape-chip, .shape-seg-btn, .shape-act { border: 1px solid var(--border-color, #9ca3af); background: var(--bg-primary, #fff); color: var(--text-primary); border-radius: 6px; font-size: 12px; cursor: pointer; }
+.shape-chip { height: 28px; padding: 0 10px; border-radius: 14px; }
+.shape-chip.active, .shape-seg-btn.active { border-color: #1d4ed8; background: #dbeafe; color: #1e3a8a; font-weight: 600; }
+.shape-seg { display: flex; gap: 6px; flex: 1; }
+.shape-seg-btn { flex: 1; height: 28px; }
+.shape-chk { display: flex; align-items: center; gap: 8px; min-height: 28px; font-size: 13px; }
+.shape-hint { margin-top: 6px; font-size: 12px; color: var(--text-secondary, #4b5563); }
+.shape-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; padding: 8px 0; }
+.shape-act { height: 30px; }
+.shape-act.danger { border-color: #b91c1c; color: #b91c1c; }

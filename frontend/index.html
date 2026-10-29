@@ -119,6 +119,7 @@
               <svg width="14" height="14" viewBox="0 0 16 16"><path d="M2 14L8 8l6-6" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
               Wire <span class="dropdown-shortcut">W</span>
             </button></div>
+        <div class="toolbar-menu" id="menu-annotate"><button type="button" class="toolbar-menu-btn" aria-haspopup="menu" title="Draw information-only shapes and notes on the diagram">Annotate <svg width="8" height="8" viewBox="0 0 8 8" aria-hidden="true"><path d="M1 3l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.2"/></svg></button><div class="toolbar-menu-panel"><span class="dropdown-label">Information shapes</span><button type="button" id="btn-shape-rect" class="dropdown-item" title="Drag on the diagram to draw a rectangle"><svg width="14" height="14" viewBox="0 0 16 16"><rect x="1.5" y="3" width="13" height="10" fill="none" stroke="currentColor" stroke-width="1.4" stroke-dasharray="3 2"/></svg>Rectangle</button><button type="button" id="btn-shape-ellipse" class="dropdown-item" title="Drag on the diagram to draw an ellipse"><svg width="14" height="14" viewBox="0 0 16 16"><ellipse cx="8" cy="8" rx="6.5" ry="5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-dasharray="3 2"/></svg>Ellipse</button><button type="button" id="btn-shape-note" class="dropdown-item" title="Click to place a text note, with an optional leader line"><svg width="14" height="14" viewBox="0 0 16 16"><rect x="1.5" y="2" width="13" height="8" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M5 10l-2 4" stroke="currentColor" stroke-width="1.4"/></svg>Text note</button></div></div>
         <span class="toolbar-separator"></span>
         <button id="btn-undo" class="tb-icon" title="Undo (Ctrl+Z)" disabled>
               <svg width="14" height="14" viewBox="0 0 16 16"><path d="M4 7l-3-3 3-3M1 4h9a4 4 0 010 8H6" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
@@ -450,6 +451,8 @@
         <!-- Main diagram layer -->
         <g id="diagram-layer">
           <!-- Wires layer (below components) -->
+          <!-- Annotation shapes (below everything: information only) -->
+          <g id="shapes-layer"></g>
           <g id="wires-layer"></g>
           <!-- Components layer -->
           <g id="components-layer"></g>
@@ -3452,6 +3455,7 @@
   <script src="js/sheetprint.js?v=1.542b"></script>
   <script src="js/drawingset.js?v=1.542b"></script>
   <script src="js/sldexport.js?v=1.542b"></script>
+  <script src="js/shapes.js?v=1.566b"></script>
   <script src="js/collab-data.js?v=3.5.533"></script>
   <script src="js/collab.js?v=3.5.533"></script>
   <script src="js/reports.js?v=3.5.274"></script>

@@ -251,6 +251,7 @@ const Canvas = {
       `translate(${AppState.panX},${AppState.panY}) scale(${AppState.zoom})`);
     this.overlayLayer.setAttribute('transform',
       `translate(${AppState.panX},${AppState.panY}) scale(${AppState.zoom})`);
+    if (typeof SldShapes !== 'undefined' && SldShapes.selId) SldShapes.render(); // handles keep their screen size
 
     // Update grid pattern scale
     const gridSmall = document.getElementById('grid-small');
@@ -1204,6 +1205,7 @@ const Canvas = {
     wiresHtml += this.renderMeterLinks(pageComps);
     wiresHtml += this.renderControllerLinks(pageComps);
     this.wiresLayer.innerHTML = wiresHtml;
+    if (typeof SldShapes !== 'undefined') SldShapes.render();
 
     // Render components (page-filtered)
     let compsHtml = '';
