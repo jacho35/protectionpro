@@ -720,7 +720,7 @@ const DBDrawing = {
             return `<g><title>${esc(swTip(x))}</title><g data-dxf-block="DB_CTL_PHOTOCELL" data-dxf-at="${xx},${yy}" data-dxf-attrs="${swAttrs(x)}">`
               + `<rect x="${xx - 22}" y="${yy - 14}" width="44" height="28" rx="3" fill="${P.surface}" stroke="${P.line}" stroke-width="1.3"/>`
               + `<circle cx="${xx}" cy="${yy + 1}" r="5" fill="none" stroke="${P.line}" stroke-width="1"/>`
-              + `<path d="M ${xx} ${yy - 8} V ${yy - 5.5} M ${xx - 7} ${yy + 1} H ${xx - 9.5} M ${xx + 7} ${yy + 1} H ${xx + 9.5}" stroke="${P.line}" stroke-width="1" fill="none"/>`
+              + `<path d="M ${xx} ${yy - 8} V ${yy - 5.5} M ${xx - 7} ${yy + 1} H ${xx - 9.5} M ${xx + 7} ${yy + 1} H ${numAttr(xx + 9.5)}" stroke="${P.line}" stroke-width="1" fill="none"/>`
               + `<text x="${xx - 19}" y="${yy - 4}" font-size="6.5" fill="${P.muted}">L</text>`
               + `<text x="${xx + 19}" y="${yy - 4}" text-anchor="end" font-size="6.5" fill="${P.muted}">Load</text>`
               + `<text x="${xx}" y="${yy + 12}" text-anchor="middle" font-size="6.5" fill="${P.muted}">N</text>`
@@ -812,7 +812,7 @@ const DBDrawing = {
           const attrs = this._dxfData({ BOARD: board, TAG: k.tag, DESCRIPTION: k.label || '',
             SPEC: `${k.poles} ${k.rating_a} A ${k.category}`, COIL: k.coil || '', SWITCHED_BY: DBControls.switchedBy(k), SUPPLY: b.supply ? b.supply.tag : '' });
           leg += line(coilX + 18, y, Nx, y) + dot(Nx, y)
-            + `<g><title>${esc(`${k.tag} coil (${k.coil || ''}) — ${k.label || 'contactor'}${ways ? ', ways ' + ways : ''}`)}</title><g data-dxf-block="DB_CONTACTOR_COIL" data-dxf-at="${coilX},${y}" data-dxf-attrs="${attrs}">`
+            + `<g><title>${esc(`${k.tag} coil (${k.coil || ''}) — ${k.label || 'contactor'}${ways ? ', ways ' + ways : ''}`)}</title><g data-dxf-block="DB_CONTACTOR_COIL" data-dxf-at="${coilX},${y}" data-dxf-attrs="${esc(attrs)}">`
             + `<rect x="${coilX - 18}" y="${y - 9}" width="36" height="18" fill="${P.surface}" stroke="${P.ctl}" stroke-width="1.6"/>`
             + `<text x="${coilX}" y="${numAttr(y + 3.5)}" text-anchor="middle" font-size="9" font-weight="700" fill="${P.ctl}" data-dxf-attr="TAG_LABEL">${esc(this._trunc(k.tag, 5))}</text></g></g>`
             + `<text x="${coilX - 20}" y="${y - 12}" text-anchor="end" font-size="7" fill="${P.muted}">A1</text><text x="${coilX + 20}" y="${y - 12}" font-size="7" fill="${P.muted}">A2</text>`
@@ -1124,7 +1124,7 @@ const DBDrawing = {
     const xb = (i) => x + (i - (n - 1) / 2) * W;
     const cy = y0 + 46;
     let s = `<circle cx="${x}" cy="${y0}" r="2.4" fill="${P.line}"/>`;
-    if (n > 1) s += `<line x1="${xb(0)}" y1="${y0}" x2="${xb(n - 1)}" y2="${y0}" stroke="${P.line}" stroke-width="1.4"/>`;
+    if (n > 1) s += `<line x1="${numAttr(xb(0))}" y1="${y0}" x2="${numAttr(xb(n - 1))}" y2="${y0}" stroke="${P.line}" stroke-width="1.4"/>`;
     const lh = COMPONENT_DEFS.static_load.height * 0.75;
     const loadY = y0 + 100;
     br.forEach((b, i) => {
@@ -1132,9 +1132,9 @@ const DBDrawing = {
       const attrs = this._dxfData({ TAG: b.tag, KIND: b.label, RATING_A: b.rating, UTILISATION: b.cat, TERMINALS: b.terms,
         LOAD_A: b.load_a || '', FEEDS: b.feeds, WAY: it.dxf ? it.dxf.WAY : '' });
       s += `<line x1="${bx}" y1="${y0}" x2="${bx}" y2="${cy - 14}" stroke="${P.line}" stroke-width="1.4"/>`
-        + `<line x1="${bx}" y1="${cy + 14}" x2="${bx}" y2="${loadY + (withLoad ? 0 : 10)}" stroke="${P.line}" stroke-width="1.4"/>`
+        + `<line x1="${bx}" y1="${cy + 14}" x2="${bx}" y2="${numAttr(loadY + (withLoad ? 0 : 10))}" stroke="${P.line}" stroke-width="1.4"/>`
         + `<g><title>${this._esc(`${b.tag}: ${b.label}, ${b.rating} A ${b.cat} contact${b.load_a ? ', ' + b.load_a + ' A' : ''}${b.feeds ? ' — feeds ' + b.feeds : ''}`)}</title>`
-        + `<g data-dxf-block="DB_BRANCH_CONTACT" data-dxf-at="${bx},${cy}" data-dxf-attrs="${attrs}">`
+        + `<g data-dxf-block="DB_BRANCH_CONTACT" data-dxf-at="${bx},${cy}" data-dxf-attrs="${esc(attrs)}">`
         + this._gContactor(bx, cy, P, P.ctl)
         + `<rect x="${bx - 12}" y="${cy - 17}" width="24" height="34" rx="3" fill="none" stroke="${P.ctl}" stroke-width="1" stroke-dasharray="3,2"/>`
         + `<text x="${bx + 17}" y="${cy - 6}" font-size="9.5" font-weight="700" fill="${P.ctl}" data-dxf-attr="TAG_LABEL">${this._esc(this._trunc(b.tag, 8))}</text>`

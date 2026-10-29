@@ -311,7 +311,7 @@ const SldShapes = {
         <div class="prop-section">
           <div class="prop-section-title">Appearance</div>
           <div class="prop-row"><label>Outline</label>${seg('dash', [['solid', 'Solid'], ['dashed', 'Dashed'], ['dotted', 'Dotted']])}</div>
-          <div class="prop-row"><label for="shape-color">Colour</label><input id="shape-color" type="color" value="${s.color}"></div>
+          <div class="prop-row"><label for="shape-color">Colour</label><input id="shape-color" type="color" value="${escHtml(s.color)}"></div>
           ${s.kind === 'note' ? '' : `<div class="prop-row"><label for="shape-fill">Fill</label><input id="shape-fill" type="range" min="0" max="40" value="${Math.round(s.fill * 100)}"> <span id="shape-fill-val">${Math.round(s.fill * 100)}%</span></div>
           <div class="prop-row"><label>Label position</label>${seg('labelPos', [['tl', 'Top left'], ['tr', 'Top right'], ['c', 'Centre']])}</div>`}
         </div>
@@ -416,27 +416,27 @@ const SldShapes = {
     const dash = this._dashArray(s.dash);
     const da = dash ? ` stroke-dasharray="${dash}"` : '';
     const cls = `sld-shape${s.print === false ? ' sld-shape-noprint' : ''}${selected ? ' selected' : ''}`;
-    let g = `<g class="${cls}" data-shape-id="${e(s.id)}">`;
+    let g = `<g class="${escHtml(cls)}" data-shape-id="${e(s.id)}">`;
 
     if (s.kind === 'note') {
       const lines = this._wrap(s.note, Math.max(8, Math.floor((s.w - 24) / 6.4)));
       s.h = Math.max(36, 12 + (s.label ? 16 : 0) + lines.length * 15 + 8);
       if (s.leader) {
         const ax = Math.min(s.x + s.w, Math.max(s.x, s.leader.x)), ay = Math.min(s.y + s.h, Math.max(s.y, s.leader.y));
-        g += `<line x1="${ax}" y1="${ay}" x2="${s.leader.x}" y2="${s.leader.y}" stroke="${s.color}" stroke-width="2"/>`
-          + `<circle cx="${s.leader.x}" cy="${s.leader.y}" r="4" fill="${s.color}"/>`;
+        g += `<line x1="${ax}" y1="${ay}" x2="${escHtml(s.leader.x)}" y2="${escHtml(s.leader.y)}" stroke="${escHtml(s.color)}" stroke-width="2"/>`
+          + `<circle cx="${escHtml(s.leader.x)}" cy="${escHtml(s.leader.y)}" r="4" fill="${escHtml(s.color)}"/>`;
       }
-      g += `<rect x="${s.x}" y="${s.y}" width="${s.w}" height="${s.h}" rx="3" fill="#fef3c7" stroke="${s.color}" stroke-width="1.5"${da}/>`;
+      g += `<rect x="${escHtml(s.x)}" y="${escHtml(s.y)}" width="${escHtml(s.w)}" height="${escHtml(s.h)}" rx="3" fill="#fef3c7" stroke="${escHtml(s.color)}" stroke-width="1.5"${da}/>`;
       let ty = s.y + 16;
-      if (s.label) { g += `<text x="${s.x + 12}" y="${ty}" font-size="11" font-weight="700" letter-spacing="0.6" fill="#78350f" font-family="Arial, Helvetica, sans-serif">${e(s.label)}</text>`; ty += 16; }
-      lines.forEach((ln, i) => { g += `<text x="${s.x + 12}" y="${ty + i * 15}" font-size="12" fill="#1f2937" font-family="Arial, Helvetica, sans-serif">${e(ln)}</text>`; });
+      if (s.label) { g += `<text x="${numAttr(s.x + 12)}" y="${ty}" font-size="11" font-weight="700" letter-spacing="0.6" fill="#78350f" font-family="Arial, Helvetica, sans-serif">${e(s.label)}</text>`; ty += 16; }
+      lines.forEach((ln, i) => { g += `<text x="${numAttr(s.x + 12)}" y="${ty + i * 15}" font-size="12" fill="#1f2937" font-family="Arial, Helvetica, sans-serif">${e(ln)}</text>`; });
       return g + '</g>';
     }
 
     const rx = s.x + s.w / 2, ry = s.y + s.h / 2;
     const body = s.kind === 'ellipse'
-      ? (extra) => `<ellipse cx="${rx}" cy="${ry}" rx="${s.w / 2}" ry="${s.h / 2}" ${extra}/>`
-      : (extra) => `<rect x="${s.x}" y="${s.y}" width="${s.w}" height="${s.h}" ${extra}/>`;
+      ? (extraHtml) => `<ellipse cx="${rx}" cy="${ry}" rx="${s.w / 2}" ry="${s.h / 2}" ${extraHtml}/>`
+      : (extraHtml) => `<rect x="${escHtml(s.x)}" y="${escHtml(s.y)}" width="${escHtml(s.w)}" height="${escHtml(s.h)}" ${extraHtml}/>`;
     g += body(`fill="${s.color}" fill-opacity="${s.fill}" stroke="${s.color}" stroke-width="2"${da} pointer-events="none"`);
     // only the outline (and label) are grabbable, so the interior still box-selects what is under it
     g += body('fill="none" stroke="transparent" stroke-width="${this._touch() ? 30 : 14}" pointer-events="stroke" style="cursor:move"');
@@ -444,10 +444,10 @@ const SldShapes = {
     if (s.label) {
       const tw = Math.ceil(s.label.length * 7.4 + 16);
       if (s.labelPos === 'c') {
-        g += `<text x="${rx}" y="${ry + 5}" text-anchor="middle" font-size="14" font-weight="700" letter-spacing="0.6" fill="${s.color}" stroke="var(--bg-primary, #ffffff)" stroke-width="3" paint-order="stroke" font-family="Arial, Helvetica, sans-serif" style="cursor:move">${e(s.label)}</text>`;
+        g += `<text x="${rx}" y="${ry + 5}" text-anchor="middle" font-size="14" font-weight="700" letter-spacing="0.6" fill="${escHtml(s.color)}" stroke="var(--bg-primary, #ffffff)" stroke-width="3" paint-order="stroke" font-family="Arial, Helvetica, sans-serif" style="cursor:move">${e(s.label)}</text>`;
       } else {
         const tx = s.labelPos === 'tr' ? s.x + s.w - tw + 1 : s.x - 1;
-        g += `<rect x="${tx}" y="${s.y - 23}" width="${tw}" height="22" fill="${s.color}" style="cursor:move"/>`
+        g += `<rect x="${tx}" y="${s.y - 23}" width="${tw}" height="22" fill="${escHtml(s.color)}" style="cursor:move"/>`
           + `<text x="${tx + 8}" y="${s.y - 8}" font-size="11" font-weight="700" letter-spacing="0.6" fill="#ffffff" font-family="Arial, Helvetica, sans-serif" pointer-events="none">${e(s.label)}</text>`;
       }
     }
@@ -464,14 +464,14 @@ const SldShapes = {
   _handles(s) {
     const hs = (this._touch() ? 18 : 8) / (AppState.zoom || 1), half = hs / 2, sw = 1.5 / (AppState.zoom || 1);
     const box = (id, x, y, name, cur) =>
-      `<rect class="shape-handle" data-shape-id="${escHtml(id)}" data-shape-handle="${name}" x="${x - half}" y="${y - half}" width="${hs}" height="${hs}" fill="#ffffff" stroke="#1d4ed8" stroke-width="${sw}" style="cursor:${cur}"/>`;
+      `<rect class="shape-handle" data-shape-id="${escHtml(id)}" data-shape-handle="${escHtml(name)}" x="${x - half}" y="${y - half}" width="${hs}" height="${hs}" fill="#ffffff" stroke="#1d4ed8" stroke-width="${sw}" style="cursor:${cur}"/>`;
     const x1 = s.x + s.w, y1 = s.y + s.h, mx = s.x + s.w / 2, my = s.y + s.h / 2;
     const pad = 4 / (AppState.zoom || 1);
     let h = `<rect class="shape-handle" x="${s.x - pad}" y="${s.y - pad}" width="${s.w + 2 * pad}" height="${s.h + 2 * pad}" fill="none" stroke="#1d4ed8" stroke-width="${sw}" pointer-events="none"/>`;
     if (s.locked) return h;
     if (s.kind === 'note') {
       h += box(s.id, x1, my, 'e', 'ew-resize');
-      if (s.leader) h += `<circle class="shape-handle" data-shape-id="${escHtml(s.id)}" data-shape-handle="lead" cx="${s.leader.x}" cy="${s.leader.y}" r="${hs * 0.9}" fill="#ffffff" stroke="#1d4ed8" stroke-width="${sw}" style="cursor:move"/>`;
+      if (s.leader) h += `<circle class="shape-handle" data-shape-id="${escHtml(s.id)}" data-shape-handle="lead" cx="${escHtml(s.leader.x)}" cy="${escHtml(s.leader.y)}" r="${hs * 0.9}" fill="#ffffff" stroke="#1d4ed8" stroke-width="${sw}" style="cursor:move"/>`;
       return h;
     }
     return h

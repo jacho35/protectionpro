@@ -2610,9 +2610,9 @@ ${br.loading_pct > 0 ? `Loading = ${br.loading_pct.toFixed(1)}%${br.loading_pct 
     const ratings = this._cbRatings(comp, library, f, inMaker);
     const ratingOpts = [`<option value="any"${f.a > 0 ? '' : ' selected'}>Any rating</option>`]
       .concat(ratings.map(([r, n]) => `<option value="${r}"${f.a === r ? ' selected' : ''}>${r} A · ${n} device${n === 1 ? '' : 's'}</option>`));
-    if (f.a > 0 && !ratings.some(([r]) => r === f.a)) ratingOpts.splice(1, 0, `<option value="${f.a}" selected>${f.a} A · no library device</option>`);
-    const curveOpts = ['any', 'B', 'C', 'D'].map(c => `<option value="${c}"${(c === 'any' ? !f.curve : f.curve === c) ? ' selected' : ''}>${c === 'any' ? 'Any curve' : c}</option>`).join('');
-    const polesOpts = ['any', 1, 2, 3, 4].map(n => `<option value="${n}"${(n === 'any' ? !f.poles : f.poles === n) ? ' selected' : ''}>${n === 'any' ? 'Any poles' : n + 'P'}</option>`).join('');
+    if (f.a > 0 && !ratings.some(([r]) => r === f.a)) ratingOpts.splice(1, 0, `<option value="${numAttr(f.a)}" selected>${f.a} A · no library device</option>`);
+    const curveOpts = ['any', 'B', 'C', 'D'].map(c => `<option value="${c}"${escHtml((c === 'any' ? !f.curve : f.curve === c) ? ' selected' : '')}>${c === 'any' ? 'Any curve' : c}</option>`).join('');
+    const polesOpts = ['any', 1, 2, 3, 4].map(n => `<option value="${n}"${escHtml((n === 'any' ? !f.poles : f.poles === n) ? ' selected' : '')}>${n === 'any' ? 'Any poles' : n + 'P'}</option>`).join('');
     const seg = ['mcb', 'mccb', 'acb'].map(t =>
       `<button type="button" class="cbp-seg-btn${f.type === t ? ' on' : ''}" data-cbp="type" data-v="${t}" aria-pressed="${f.type === t}">${t.toUpperCase()}</button>`).join('');
     const bus = f.bus;
@@ -2641,7 +2641,7 @@ ${br.loading_pct > 0 ? `Loading = ${br.loading_pct.toFixed(1)}%${br.loading_pct 
       + `<div class="prop-row"><label>Rating</label><div class="cbp-step"><button type="button" class="cbp-stepbtn" data-cbp="rating-dec" aria-label="Previous rating">−</button><select data-cbp="rating" aria-label="Rating">${ratingOpts.join('')}</select><button type="button" class="cbp-stepbtn" data-cbp="rating-inc" aria-label="Next rating">+</button></div></div>`
       + (f.type === 'mcb' ? `<div class="prop-row"><label>Curve</label><select data-cbp="curve" aria-label="Curve">${curveOpts}</select></div>` : '')
       + `<div class="prop-row"><label>Poles</label><select data-cbp="poles" aria-label="Poles">${polesOpts}</select></div>`
-      + `<div class="prop-row"><label>Breaking ≥</label><div class="cbp-ka"><input type="number" data-cbp="ka" min="0" step="0.1" value="${f.ka > 0 ? f.ka : ''}" placeholder="kA" aria-label="Minimum breaking capacity, kA"><span class="cbp-dim">kA</span></div></div>`
+      + `<div class="prop-row"><label>Breaking ≥</label><div class="cbp-ka"><input type="number" data-cbp="ka" min="0" step="0.1" value="${numAttr(f.ka > 0 ? f.ka : "")}" placeholder="kA" aria-label="Minimum breaking capacity, kA"><span class="cbp-dim">kA</span></div></div>`
       + `<div class="prop-row cbp-kahint"><label></label><div>${kaHint}</div></div>`
       + `<div class="prop-hint cbp-note" title="${e('Rating, Curve and Poles here only change which devices are listed; the breaker keeps its own values until you pick a device. The breaker already chosen is always listed.')}">${note}</div>`;
     // Each control carries its breaker (0 = the CB itself, 1 / 2 = a changeover's breaker)

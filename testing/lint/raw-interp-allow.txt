@@ -170,3 +170,4 @@ transient.js::mk.dashed ? ' stroke-dasharray="3 2"' : ''
 tripunit.js::this.fmtVal(k, def[k], d)
 voltage-stability.js::mk.dashed ? ' stroke-dasharray="4 3"' : ''
 voltage-stability.js::seg.join(' ')
+dbschedule.js::lock(c, 'phase') && !wayIs3(c) ? lock(c, 'phase') : ''  # lock() returns an already-escaped attribute string
