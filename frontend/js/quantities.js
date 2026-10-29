@@ -22,6 +22,8 @@ const Quantities = {
       desc: 'Priced take-off from Demand, plans, single-line and DB schedules' },
     { id: 'cables', label: 'Cable schedules', modal: 'cables-modal', mod: () => CableSchedules,
       desc: 'Every feeder and service with current, loading and volt drop' },
+    { id: 'meters', label: 'Meter schedule', modal: 'meters-modal', mod: () => MeterSchedule,
+      desc: 'Every energy meter with its BMS points and comms checks' },
     { id: 'rates', label: 'Rate library', modal: 'rates-modal', mod: () => Rates,
       desc: 'Rates, waste % and supplier codes · round trip with Excel' },
   ],
@@ -35,6 +37,7 @@ const Quantities = {
     const icons = {
       boq: I('<rect x="3" y="2" width="10" height="12" rx="1.5"/><path d="M5.5 5.5h5M5.5 8h5M5.5 10.5h3"/>'),
       cables: I('<path d="M2 5h5a2 2 0 0 1 2 2v2a2 2 0 0 0 2 2h3"/><circle cx="2.5" cy="5" r="1"/><circle cx="13.5" cy="11" r="1"/>'),
+      meters: I('<circle cx="8" cy="9" r="5"/><path d="M8 9l2.5-2.5M6 2.5h4"/>'),
       rates: I('<path d="M8 2v12M11 4.5c0-1.2-1.3-2-3-2s-3 .8-3 2 1.3 1.8 3 2.2 3 1 3 2.3-1.3 2-3 2-3-.8-3-2"/>'),
     };
     ws.innerHTML = `
@@ -134,6 +137,10 @@ const Quantities = {
       const n = rows.filter(r => r.status && r.status.kind === 'bad').length;
       set('q-rail-badge-cables', n, 'bad', `${n} ${n === 1 ? 'problem' : 'problems'}`);
     } catch (e) { set('q-rail-badge-cables', 0, 'bad', ''); }
+    try {
+      const n = typeof MeterSchedule !== 'undefined' ? MeterSchedule.rows().filter(r => r.warns.some(w => w.level === 'warn')).length : 0;
+      set('q-rail-badge-meters', n, 'bad', `${n} to check`);
+    } catch (e) { set('q-rail-badge-meters', 0, 'bad', ''); }
   },
 
   onProjectChanged() {

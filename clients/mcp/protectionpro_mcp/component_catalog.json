@@ -581,6 +581,39 @@
    "voltage_factor": ""
   }
  },
+ "energy_meter": {
+  "name": "Energy Meter",
+  "category": "instruments",
+  "ports": [],
+  "dynamicPorts": false,
+  "defaults": {
+   "name": "M-1",
+   "measures": "",
+   "meter_type": "multifunction",
+   "cls": "0.5S",
+   "system": "3P4W",
+   "conn": "ct5",
+   "ct_ratio": "",
+   "protocol": "modbus_rtu",
+   "network": "Loop A",
+   "address": "1",
+   "gateway": "",
+   "points": "kWh, kW, kVAr, PF, V, I, MD"
+  }
+ },
+ "bms_gateway": {
+  "name": "BMS Gateway",
+  "category": "instruments",
+  "ports": [],
+  "dynamicPorts": false,
+  "defaults": {
+   "name": "GW-1",
+   "from_protocol": "Modbus RTU",
+   "to_protocol": "BACnet/IP",
+   "ip_address": "",
+   "bms": "BMS"
+  }
+ },
  "motor_induction": {
   "name": "Induction Motor",
   "category": "loads",

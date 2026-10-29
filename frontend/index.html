@@ -17,7 +17,7 @@
   <link rel="stylesheet" href="css/drawingset.css?v=1.542b">
   <link rel="stylesheet" href="css/mobile.css?v=3.5.541">
   <link rel="stylesheet" href="css/interlocking.css?v=3.5.274">
-  <link rel="stylesheet" href="css/schedules.css?v=3.5.554">
+  <link rel="stylesheet" href="css/schedules.css?v=3.5.555">
   <link rel="stylesheet" href="css/quantities.css?v=3.5.274">
   <link rel="stylesheet" href="css/lighting.css?v=3.5.527">
   <link rel="stylesheet" href="css/streetlight.css?v=3.5.274">
@@ -66,7 +66,7 @@
             </button><button id="btn-libraries" class="dropdown-item" title="Cables, breakers, fuses, transformers, load classes and prices: company standard, your edits, submissions and history" style="position:relative">
               <svg width="14" height="14" viewBox="0 0 16 16"><path d="M2 3h3v10H2zM6.5 3h3v10h-3zM11 4l3 .8-2.2 8.7L9 12.8z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>
               Libraries…<span class="notif-badge drift" id="libraries-badge" hidden style="position:static;margin-left:8px"></span>
-            </button></div></div><div class="toolbar-menu" id="menu-quantities"><button type="button" class="toolbar-menu-btn" aria-haspopup="menu" title="Bill of quantities, cable schedules and the rate library"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="2" width="10" height="12" rx="1.5"/><path d="M5.5 5.5h5M5.5 8h5M5.5 10.5h3"/></svg> Quantities <svg width="8" height="8" viewBox="0 0 8 8" aria-hidden="true"><path d="M1 3l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.2"/></svg></button><div class="toolbar-menu-panel q-panel" role="menu" aria-label="Quantities"><button id="btn-q-boq" class="dropdown-item q-item" role="menuitem"><span class="q-ic q-blue"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="2" width="10" height="12" rx="1.5"/><path d="M5.5 5.5h5M5.5 8h5M5.5 10.5h3"/></svg></span><span class="q-txt"><span class="q-t">Bill of quantities…</span><span class="q-d">Priced take-off from Demand, plans, single-line and DB schedules</span></span><span class="q-badge" id="q-badge-boq" hidden></span></button><button id="btn-q-cables" class="dropdown-item q-item" role="menuitem"><span class="q-ic q-amb"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 5h5a2 2 0 0 1 2 2v2a2 2 0 0 0 2 2h3"/><circle cx="2.5" cy="5" r="1"/><circle cx="13.5" cy="11" r="1"/></svg></span><span class="q-txt"><span class="q-t">Cable schedules…</span><span class="q-d">Every feeder and service with current, loading and volt drop</span></span><span class="q-badge" id="q-badge-cables" hidden></span></button><div class="dropdown-divider"></div><button id="btn-q-rates" class="dropdown-item q-item" role="menuitem"><span class="q-ic q-green"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2v12M11 4.5c0-1.2-1.3-2-3-2s-3 .8-3 2 1.3 1.8 3 2.2 3 1 3 2.3-1.3 2-3 2-3-.8-3-2"/></svg></span><span class="q-txt"><span class="q-t">Rate library…</span><span class="q-d">Rates, waste % and supplier codes · round trip with Excel</span></span></button><div class="q-foot"><span>On every tab</span><span>Also in <kbd>Ctrl K</kbd></span></div></div></div>
+            </button></div></div><div class="toolbar-menu" id="menu-quantities"><button type="button" class="toolbar-menu-btn" aria-haspopup="menu" title="Bill of quantities, cable schedules and the rate library"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="2" width="10" height="12" rx="1.5"/><path d="M5.5 5.5h5M5.5 8h5M5.5 10.5h3"/></svg> Quantities <svg width="8" height="8" viewBox="0 0 8 8" aria-hidden="true"><path d="M1 3l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.2"/></svg></button><div class="toolbar-menu-panel q-panel" role="menu" aria-label="Quantities"><button id="btn-q-boq" class="dropdown-item q-item" role="menuitem"><span class="q-ic q-blue"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="2" width="10" height="12" rx="1.5"/><path d="M5.5 5.5h5M5.5 8h5M5.5 10.5h3"/></svg></span><span class="q-txt"><span class="q-t">Bill of quantities…</span><span class="q-d">Priced take-off from Demand, plans, single-line and DB schedules</span></span><span class="q-badge" id="q-badge-boq" hidden></span></button><button id="btn-q-cables" class="dropdown-item q-item" role="menuitem"><span class="q-ic q-amb"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 5h5a2 2 0 0 1 2 2v2a2 2 0 0 0 2 2h3"/><circle cx="2.5" cy="5" r="1"/><circle cx="13.5" cy="11" r="1"/></svg></span><span class="q-txt"><span class="q-t">Cable schedules…</span><span class="q-d">Every feeder and service with current, loading and volt drop</span></span><span class="q-badge" id="q-badge-cables" hidden></span></button><button id="btn-q-meters" class="dropdown-item q-item" role="menuitem"><span class="q-ic q-blue"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="9" r="5"/><path d="M8 9l2.5-2.5M6 2.5h4"/></svg></span><span class="q-txt"><span class="q-t">Meter schedule…</span><span class="q-d">Every energy meter with its BMS points and comms checks</span></span></button><div class="dropdown-divider"></div><button id="btn-q-rates" class="dropdown-item q-item" role="menuitem"><span class="q-ic q-green"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2v12M11 4.5c0-1.2-1.3-2-3-2s-3 .8-3 2 1.3 1.8 3 2.2 3 1 3 2.3-1.3 2-3 2-3-.8-3-2"/></svg></span><span class="q-txt"><span class="q-t">Rate library…</span><span class="q-d">Rates, waste % and supplier codes · round trip with Excel</span></span></button><div class="q-foot"><span>On every tab</span><span>Also in <kbd>Ctrl K</kbd></span></div></div></div>
       </div>
       <div class="workspace-switch" role="tablist" aria-label="Workspace">
           <button id="btn-workspace-lightov" class="workspace-tab" role="tab" aria-selected="false" title="Every lighting design with its verdict, Calculate all and the report" hidden>Overview</button>
@@ -382,7 +382,7 @@
               <svg width="14" height="14" viewBox="0 0 16 16"><path d="M2 3h12M2 7h12M2 11h12" stroke="currentColor" stroke-width="1.3" fill="none"/><path d="M11 2l3 1.5L11 5M11 6l3 1.5L11 9M11 10l3 1.5L11 13" fill="currentColor" stroke="none"/></svg>
               Run All Studies
             </button>
-        <div class="toolbar-menu" id="menu-export"><button type="button" class="toolbar-menu-btn" aria-haspopup="menu">Output <svg width="8" height="8" viewBox="0 0 8 8" aria-hidden="true"><path d="M1 3l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.2"/></svg></button><div class="toolbar-menu-panel panel-right"><span class="dropdown-label">Reports</span><button id="btn-export-pdf" class="dropdown-item">Analysis Report (PDF)</button><button id="btn-export-calculations" class="dropdown-item">Detailed Calculations (PDF)</button><button id="btn-export-aflabels" class="dropdown-item">Arc Flash Labels (PDF)</button><button id="btn-export-template" class="dropdown-item">Report Templates…</button><div class="dropdown-divider"></div><span class="dropdown-label">Quantities</span><button id="btn-boq" class="dropdown-item" data-search-skip>Bill of Quantities…</button><button id="btn-cable-schedules" class="dropdown-item" data-search-skip>Cable Schedules…</button><button id="btn-rates" class="dropdown-item" data-search-skip>Rate Library…</button><div class="dropdown-divider"></div><span class="dropdown-label">Data</span><button id="btn-export-csv" class="dropdown-item">Results (CSV)</button><button id="btn-export-settings" class="dropdown-item">Settings Schedule (CSV)</button><button id="btn-export-json" class="dropdown-item">Project (JSON)</button><div class="dropdown-divider"></div><span class="dropdown-label">Drawing</span><button id="btn-export-diagram-pdf" class="dropdown-item">Diagram (PDF)</button><button id="btn-export-sheets" class="dropdown-item" title="The diagram as a set of sheets you arrange: buses per sheet, saved views, one scale, title blocks, off-page connectors and a key plan">Drawing set — sheets (PDF)…</button><button id="btn-export-selection" class="dropdown-item" title="The selected parts, or a window on the diagram, as a PDF sheet, PNG, SVG or DXF">Export selection…</button><button id="btn-print-window" class="dropdown-item" title="Drag an area on the diagram to print or save as a view">Draw print window…</button><button id="btn-export-png" class="dropdown-item">Diagram (PNG)</button><button id="btn-export-svg" class="dropdown-item">Diagram (SVG)</button><button id="btn-export-dxf" class="dropdown-item">Diagram (DXF)</button><button id="btn-export-breakers" class="dropdown-item" data-search-skip title="Applies to the diagram PDF, PNG, SVG, DXF, print and the report diagram">Breakers in drawings: as shown</button><button id="btn-export-detail" class="dropdown-item" data-search-skip title="How much data prints beside each symbol in the diagram PDF, PNG, SVG and DXF">Diagram detail: everything…</button><button id="btn-print" class="dropdown-item">
+        <div class="toolbar-menu" id="menu-export"><button type="button" class="toolbar-menu-btn" aria-haspopup="menu">Output <svg width="8" height="8" viewBox="0 0 8 8" aria-hidden="true"><path d="M1 3l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.2"/></svg></button><div class="toolbar-menu-panel panel-right"><span class="dropdown-label">Reports</span><button id="btn-export-pdf" class="dropdown-item">Analysis Report (PDF)</button><button id="btn-export-calculations" class="dropdown-item">Detailed Calculations (PDF)</button><button id="btn-export-aflabels" class="dropdown-item">Arc Flash Labels (PDF)</button><button id="btn-export-template" class="dropdown-item">Report Templates…</button><div class="dropdown-divider"></div><span class="dropdown-label">Quantities</span><button id="btn-boq" class="dropdown-item" data-search-skip>Bill of Quantities…</button><button id="btn-cable-schedules" class="dropdown-item" data-search-skip>Cable Schedules…</button><button id="btn-meter-schedule" class="dropdown-item" data-search-skip>Meter Schedule…</button><button id="btn-rates" class="dropdown-item" data-search-skip>Rate Library…</button><div class="dropdown-divider"></div><span class="dropdown-label">Data</span><button id="btn-export-csv" class="dropdown-item">Results (CSV)</button><button id="btn-export-settings" class="dropdown-item">Settings Schedule (CSV)</button><button id="btn-export-json" class="dropdown-item">Project (JSON)</button><div class="dropdown-divider"></div><span class="dropdown-label">Drawing</span><button id="btn-export-diagram-pdf" class="dropdown-item">Diagram (PDF)</button><button id="btn-export-sheets" class="dropdown-item" title="The diagram as a set of sheets you arrange: buses per sheet, saved views, one scale, title blocks, off-page connectors and a key plan">Drawing set — sheets (PDF)…</button><button id="btn-export-selection" class="dropdown-item" title="The selected parts, or a window on the diagram, as a PDF sheet, PNG, SVG or DXF">Export selection…</button><button id="btn-print-window" class="dropdown-item" title="Drag an area on the diagram to print or save as a view">Draw print window…</button><button id="btn-export-png" class="dropdown-item">Diagram (PNG)</button><button id="btn-export-svg" class="dropdown-item">Diagram (SVG)</button><button id="btn-export-dxf" class="dropdown-item">Diagram (DXF)</button><button id="btn-export-breakers" class="dropdown-item" data-search-skip title="Applies to the diagram PDF, PNG, SVG, DXF, print and the report diagram">Breakers in drawings: as shown</button><button id="btn-export-detail" class="dropdown-item" data-search-skip title="How much data prints beside each symbol in the diagram PDF, PNG, SVG and DXF">Diagram detail: everything…</button><button id="btn-print" class="dropdown-item">
               <svg width="14" height="14" viewBox="0 0 16 16"><path d="M4 2h8v3H4zM2 5h12v6H2zM4 11h8v3H4z" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="11" cy="8" r="0.8" fill="currentColor"/></svg>
               Print / Page Layout
             </button></div></div>
@@ -3395,7 +3395,7 @@
   <script src="js/lib/xlsx.full.min.js?v=3.5.274"></script>
   <script src="js/lib/pdf.min.js?v=3.5.274"></script>
   <script src="js/iec-60364-data.js?v=3.5.274"></script>
-  <script src="js/constants.js?v=3.5.554"></script>
+  <script src="js/constants.js?v=3.5.555"></script>
   <script src="js/vendor-trip-units.js?v=1.0"></script>
   <script src="js/vendor-trip-units-abb.js?v=1.0"></script>
   <script src="js/vendor-trip-units-abb-xt.js?v=3.5.536"></script>
@@ -3425,13 +3425,13 @@
   <script src="js/grid.js?v=3.5.274"></script>
   <script src="js/components.js?v=3.5.552"></script>
   <script src="js/voltage.js?v=3.5.274"></script>
-  <script src="js/symbols.js?v=3.5.274"></script>
-  <script src="js/canvas.js?v=3.5.274"></script>
+  <script src="js/symbols.js?v=3.5.555"></script>
+  <script src="js/canvas.js?v=3.5.555"></script>
   <script src="js/sidebar.js?v=3.5.274"></script>
   <script src="js/wiring.js?v=3.5.274"></script>
   <script src="js/field-help.js?v=3.5.274"></script>
   <script src="js/cablebulk.js?v=3.5.538"></script>
-  <script src="js/properties.js?v=3.5.538"></script>
+  <script src="js/properties.js?v=3.5.555"></script>
   <script src="js/propwindow.js?v=3.5.274"></script>
   <script src="js/tripunit.js?v=3.5.274"></script>
   <script src="js/annotations.js?v=3.5.274"></script>
@@ -3447,7 +3447,7 @@
   <script src="js/sharing.js?v=3.5.274"></script>
   <script src="js/compliance.js?v=3.5.274"></script>
   <script src="js/tcc.js?v=3.5.274"></script>
-  <script src="js/project.js?v=3.5.541"></script>
+  <script src="js/project.js?v=3.5.555"></script>
   <script src="js/vectorpdf.js?v=1.542b"></script>
   <script src="js/sheetprint.js?v=1.542b"></script>
   <script src="js/drawingset.js?v=1.542b"></script>
@@ -3467,7 +3467,7 @@
   <script src="js/vendor-cascading.js?v=1.0"></script>
   <script src="js/cascading.js?v=1.0"></script>
   <script src="js/dbcoord.js?v=3.5.546"></script>
-  <script src="js/dbschedule.js?v=3.5.553"></script>
+  <script src="js/dbschedule.js?v=3.5.555"></script>
   <script src="js/dbfeeders.js?v=3.5.552"></script>
   <script src="js/dbcablesize.js?v=3.5.550"></script>
   <script src="js/dbbreakers.js?v=3.5.551"></script>
@@ -3489,7 +3489,7 @@
   <script src="js/interlocking.js?v=3.5.274"></script>
   <script src="js/sequence.js?v=3.5.274"></script>
   <script src="js/retic.js?v=3.5.283"></script>
-  <script src="js/schedule-mobile.js?v=3.5.554"></script>
+  <script src="js/schedule-mobile.js?v=3.5.555"></script>
   <script src="js/schedules.js?v=3.5.552"></script>
   <script src="js/searchselect.js?v=3.5.548"></script>
   <script src="js/streetlight.js?v=3.5.323"></script>
@@ -3506,14 +3506,15 @@
   <script src="js/lightning.js?v=3.5.274"></script>
   <script src="js/earthgrid.js?v=3.5.274"></script>
   <script src="js/rates.js?v=3.5.274"></script>
-  <script src="js/boq.js?v=3.5.553"></script>
+  <script src="js/boq.js?v=3.5.555"></script>
   <script src="js/cableschedules.js?v=3.5.305"></script>
-  <script src="js/quantities.js?v=3.5.274"></script>
+  <script src="js/quantities.js?v=3.5.555"></script>
   <script src="js/dbsections.js?v=3.5.274"></script>
   <script src="js/dbaccessories.js?v=3.5.274"></script>
   <script src="js/dbcontrols.js?v=3.5.554"></script>
+  <script src="js/dbmeters.js?v=3.5.555"></script>
   <script src="js/dxfwriter.js?v=3.5.274"></script>
-  <script src="js/dbdrawing.js?v=3.5.554"></script>
+  <script src="js/dbdrawing.js?v=3.5.555"></script>
   <script src="js/ga.js?v=3.5.554"></script>
   <script src="js/retic-diagram.js?v=3.5.280"></script>
   <script src="js/retic-tcc.js?v=3.5.286"></script>

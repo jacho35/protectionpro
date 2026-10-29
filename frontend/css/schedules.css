@@ -535,12 +535,14 @@ body.dark-mode .dba-note.warn { color: #ef5350; }
 
 .db-schedule-grid .db-grp-sum { display: none; }
 .db-schedule-grid.db-fold-ctl [data-grp="ctl"],
+.db-schedule-grid.db-fold-mtr [data-grp="mtr"],
 .db-schedule-grid.db-fold-dev [data-grp="dev"],
 .db-schedule-grid.db-fold-el  [data-grp="el"],
 .db-schedule-grid.db-fold-cab [data-grp="cab"],
 .db-schedule-grid.db-fold-dem [data-grp="dem"],
 .db-schedule-grid.db-fold-con [data-grp="con"] { display: none; }
 .db-schedule-grid.db-fold-ctl .db-grp-sum[data-sum="ctl"],
+.db-schedule-grid.db-fold-mtr .db-grp-sum[data-sum="mtr"],
 .db-schedule-grid.db-fold-dev .db-grp-sum[data-sum="dev"],
 .db-schedule-grid.db-fold-el  .db-grp-sum[data-sum="el"],
 .db-schedule-grid.db-fold-cab .db-grp-sum[data-sum="cab"],
@@ -1076,3 +1078,42 @@ body.dark-mode .smb-selbar [data-smb="sel-new"] { color: #1e1e2e; }
 .smb-ctlsheet .dbc-card { padding: 10px; border-radius: 8px; font-size: 13px; }
 .smb-ctlsheet .dbc-card .btn-small, .smb-ctlsheet .dbc-bar .btn-small { padding: 9px 14px; font-size: 14px; }
 .smb-ctlsheet .dbc-sup input, .smb-ctlsheet .dbc-sup select { font-size: 16px; }
+
+/* ── Energy metering (dbmeters.js): reuses the Controls layout in teal ── */
+:root { --mtr: #0b6e69; --mtr-bg: #e6f4f3; --mtr-line: #9fd3cf; }
+body.dark-mode { --mtr: #4fd1c5; --mtr-bg: #183634; --mtr-line: #2c6460; }
+.dbm-scope { --ctl: var(--mtr); --ctl-bg: var(--mtr-bg); --ctl-line: var(--mtr-line); }
+.dbm-tag { display: inline-block; padding: 0 6px; border-radius: 3px; background: var(--mtr); color: #fff; border: 1.5px solid var(--mtr);
+  font-family: var(--font-mono); font-size: 11.5px; font-weight: 700; line-height: 16px; white-space: nowrap; }
+.dbm-tag.grp { background: var(--bg-primary); color: var(--mtr); border-style: dashed; }
+body.dark-mode .dbm-tag:not(.grp) { color: #1e1e2e; }
+.dbm-gm { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+.dbm-gm-h { font-weight: 600; font-size: 12.5px; }
+.dbm-arr2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.dbm-pts { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 6px; }
+.dbm-pt { min-height: 30px; padding: 0 10px; border-radius: 15px; border: 1px solid var(--border-color); background: var(--bg-primary); color: var(--text-secondary); font: inherit; font-size: 12px; cursor: pointer; }
+.dbm-pt.on { background: var(--mtr); border-color: var(--mtr); color: #fff; }
+.ms-stats { display: flex; gap: 10px; padding: 10px 16px 0; flex-wrap: wrap; }
+.ms-stat { display: flex; flex-direction: column; border: 1px solid var(--border-color); border-radius: 6px; padding: 6px 12px; min-width: 150px; font-size: 12px; color: var(--text-secondary); }
+.ms-stat b { font-size: 20px; color: var(--text-primary); }
+.ms-stat.bad b { color: var(--danger); }
+.ms-split { display: flex; gap: 12px; flex: 1; min-height: 0; padding: 10px 16px; }
+.ms-list { flex: 1.5; overflow: auto; }
+.ms-side { flex: 1; overflow: auto; display: flex; flex-direction: column; gap: 6px; font-size: 12.5px; }
+.ms-side-head { display: flex; align-items: center; gap: 8px; }
+.ms-side-head .btn-small { margin-left: auto; }
+.ms-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.ms-table th { text-align: left; font-size: 11px; color: var(--text-secondary); background: var(--bg-tertiary); padding: 6px 8px; position: sticky; top: 0; }
+.ms-table td { padding: 5px 8px; border-bottom: 1px solid var(--border-color); vertical-align: top; }
+.ms-table .num { text-align: right; }
+.ms-table tr[data-ms] { cursor: pointer; }
+.ms-table tr.on td { background: var(--mtr-bg); }
+@media (max-width: 768px) { .ms-split { flex-direction: column; } .dbm-arr2 { grid-template-columns: minmax(0, 1fr); } }
+.ms-mark { background: var(--mtr-bg); color: var(--mtr); }
+.ms-dialog .rt-main { display: flex; flex-direction: column; min-height: 0; }
+.ms-stat.ok b { color: var(--success); }
+.ms-table tr.bad td:first-child { box-shadow: inset 3px 0 0 var(--danger); }
+.ms-pts code { font-size: 11.5px; }
+.prop-meter-check { display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
+.db-schedule-grid .library-table td.dbm-cell select { width: 104px; min-width: 104px; }
+.db-schedule-grid .library-table td.dbm-cell.on select { color: var(--mtr); }

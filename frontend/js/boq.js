@@ -361,6 +361,11 @@ const BOQ = {
         } else if (c.type === 'ct') add({ key: 'EQ-CT' }, 1, 'sld', 'SLD CTs');
         else if (c.type === 'pt') add({ key: 'EQ-VT' }, 1, 'sld', 'SLD VTs');
         else if (c.type === 'relay') add({ key: 'EQ-RELAY' }, 1, 'sld', 'SLD relays');
+        else if (c.type === 'energy_meter') {
+          const m = { type: p.meter_type, system: p.system, conn: p.conn, protocol: p.protocol };
+          const l = DBMeters.boqLines({ props: { meters: [m], circuits: [] } })[0];
+          if (l) add({ key: l.key, desc: l.desc, unit: 'ea', cat: 'equip' }, 1, 'sld', 'SLD meters');
+        } else if (c.type === 'bms_gateway') add({ key: `MTR-GATEWAY`, desc: `BMS gateway ${p.from_protocol || ''} → ${p.to_protocol || ''}`.trim(), unit: 'ea', cat: 'equip' }, 1, 'sld', 'SLD BMS gateways');
         else if (c.type === 'capacitor_bank') add({ key: 'EQ-CAPACITOR-BANK' }, 1, 'sld', 'SLD capacitor banks');
         else if (c.type === 'surge_arrester') add({ key: 'EQ-SURGE-ARRESTER' }, 1, 'sld', 'SLD surge arresters');
         else if (c.type === 'distribution_board' && !(inc.db && (p.circuits || []).length)) add({ key: 'EQ-DB' }, 1, 'sld', 'SLD boards');
@@ -412,6 +417,10 @@ const BOQ = {
         // Contactors, time switches, photocells, selectors and control supplies (DBControls).
         if (typeof DBControls !== 'undefined') {
           for (const l of DBControls.boqLines(comp)) add({ key: l.key, desc: l.desc, unit: 'ea', cat: 'prot' }, 1, 'db', 'DB controls');
+        }
+        // Energy meters, their CTs and metered sub-busbars (DBMeters).
+        if (typeof DBMeters !== 'undefined') {
+          for (const l of DBMeters.boqLines(comp)) add({ key: l.key, desc: l.desc, unit: 'ea', cat: 'equip' }, 1, 'db', 'DB metering');
         }
       }
     }

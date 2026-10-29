@@ -72,7 +72,7 @@ const DBDrawing = {
 
   DETAIL_DEFAULTS: {
     cable: true, load: true, phase: true, elgroups: true,
-    bars: true, status: true, accessories: true, controls: true,
+    bars: true, status: true, accessories: true, controls: true, meters: true,
     table: false,        // way info as a table under the load arrows instead of beside the device
     phaserows: false,    // a busbar row per phase: R ways, then W, then B, then three-phase
   },
@@ -117,6 +117,7 @@ const DBDrawing = {
           ${toggle('status', 'Check status', 'Colour each way by its circuit-check verdict')}
           ${toggle('accessories', 'Accessories', 'Draw the board accessories on the single line')}
           ${toggle('controls', 'Controls', 'Draw the contactors on their ways and the control circuit that switches them')}
+          ${toggle('meters', 'Meters', 'Draw the energy meters: on the incomer, on their ways, and a group\'s metered sub-busbar')}
           ${toggle('table', 'Info table', 'Show each way\'s information as a table below its load, instead of beside the device')}
           ${toggle('phaserows', 'Phase rows', 'Group the ways by phase, a row each: red, then white (yellow), then blue, then three-phase — how a board is usually built, though it takes more space')}
           <span class="sch-sep"></span>
@@ -171,9 +172,10 @@ const DBDrawing = {
     const side = document.getElementById('dbd-accessories');
     const comp = this.board();
     if (side) {
-      if (!side.querySelector('#dbd-acc-host')) side.innerHTML = '<div id="dbd-acc-host"></div><div id="dbd-ctl-host"></div>';
+      if (!side.querySelector('#dbd-mtr-host')) side.innerHTML = '<div id="dbd-acc-host"></div><div id="dbd-ctl-host"></div><div id="dbd-mtr-host"></div>';
       DBAccessories.render(comp, side.querySelector('#dbd-acc-host'), () => this.render(), { mode: 'panel' });
       if (typeof DBControls !== 'undefined') DBControls.render(comp, side.querySelector('#dbd-ctl-host'), () => this.render(), { mode: 'panel' });
+      if (typeof DBMeters !== 'undefined') DBMeters.render(comp, side.querySelector('#dbd-mtr-host'), () => this.render(), { mode: 'panel' });
     }
     if (!canvas) return;
     if (!comp) { canvas.innerHTML = '<div class="sch-empty">No board selected.</div>'; return; }
@@ -298,10 +300,19 @@ const DBDrawing = {
 
       const ctr = D.controls && typeof DBControls !== 'undefined' ? DBControls.wayContactor(comp, c) : null;
       if (ctr) tip += `\nSwitched by contactor ${ctr.tag} (${ctr.poles} ${ctr.rating_a} A ${ctr.category}) — ${DBControls.switchedBy(ctr)}`;
+      // Its meter: a metered sub-bus group hangs the way from the sub-bus (as a
+      // switched section does — a way already on one keeps it, its meter then
+      // drawn on the drop); everything else is drawn on the way's drop.
+      const mtr = D.meters && typeof DBMeters !== 'undefined' ? DBMeters.wayMeter(comp, c) : null;
+      const msub = mtr && DBMeters.isSubbus(mtr) && !(ctr && ctr.arrangement === 'section') ? mtr : null;
+      if (mtr) tip += `\nMetered by ${mtr.tag}${DBMeters.isGroup(mtr) ? ' (group' + (DBMeters.isVirtual(mtr) ? ', summed by the BMS)' : ', metered sub-bus)') : ''} — ${DBMeters.spec(mtr)} · ${DBMeters.comms(mtr)}`;
       const dxf = this.wayDxfAttrs(comp, c, v);
       if (ctr) dxf.CONTACTOR = ctr.tag;
+      if (mtr) dxf.METER = mtr.tag;
       items.push({
-        kind: 'way', w: this.DROP_W, glyph: 'mcb', ctr, sec: (DBSections.of(comp, c) || {}).id, phase: (c.poles === '3P' || c.phase === 'RWB') ? 'RWB' : (c.phase || 'R'),
+        kind: 'way', w: this.DROP_W, glyph: 'mcb', ctr, mtr: msub ? null : mtr, msub,
+        mtrLabel: mtr && !msub ? (DBMeters.isVirtual(mtr) ? mtr.tag + String.fromCharCode(97 + DBMeters.waysOf(comp, mtr).indexOf(c) % 26) : mtr.tag) : '',
+        sec: (DBSections.of(comp, c) || {}).id, phase: (c.poles === '3P' || c.phase === 'RWB') ? 'RWB' : (c.phase || 'R'),
         poles: c.poles || '1P', spare, wayDesc: c.description || '',
         feeds: sub ? (sub.props.name || sub.id) : (c.type === 'feeder_db' ? 'Sub-board' : null),
         cells: {
@@ -321,13 +332,15 @@ const DBDrawing = {
     // (Per board section: each band draws its own part of the group.)
     const out = [];
     const done = new Set();
+    // A metered sub-bus group is kept together the same way.
+    const hub = (it) => (it.ctr && it.ctr.arrangement === 'section') ? it.ctr : it.msub || null;
     for (const it of items) {
-      const k = it.ctr;
-      if (!k || k.arrangement !== 'section') { out.push(it); continue; }
+      const k = hub(it);
+      if (!k) { out.push(it); continue; }
       const key = k.id + '|' + (it.sec || '');
       if (done.has(key)) continue;
       done.add(key);
-      out.push(...items.filter(o => o.ctr === k && o.sec === it.sec));
+      out.push(...items.filter(o => hub(o) === k && o.sec === it.sec));
     }
     return out;
   },
@@ -407,6 +420,75 @@ const DBDrawing = {
   //    them side by side).
   // `sections`: false = the pole links (drawn under the drops), true = the
   // section risers (over them).
+  // ── Meters (DBMeters) ───────────────────────────────────────────────
+  _mtrDxf(comp, m) {
+    return this._dxfData({ BOARD: comp.props.name || comp.id, TAG: m.tag, SCOPE: m.scope, SPEC: DBMeters.spec(m), COMMS: DBMeters.comms(m),
+      CT: DBMeters.conn(m.conn).ct ? (m.ct_ratio || '') : '', POINTS: DBMeters.pointsOf(m).join(' ') });
+  },
+  // The meter box: "kWh" in a teal rectangle, its tag beside it.
+  _gMeterBox(x, y, P, label, sub) {
+    return `<rect x="${x}" y="${y - 7}" width="24" height="14" rx="2" fill="${P.surface}" stroke="${P.mtr}" stroke-width="1.4"/>`
+      + `<text x="${x + 12}" y="${y + 3}" text-anchor="middle" font-size="7" font-weight="700" fill="${P.mtr}">kWh</text>`
+      + `<text x="${x + 28}" y="${y + 1}" font-size="9" font-weight="700" fill="${P.mtr}" data-dxf-attr="TAG_LABEL">${this._esc(label)}</text>`
+      + (sub ? `<text x="${x + 28}" y="${y + 10}" font-size="7.5" fill="${P.inkSec}" data-dxf-attr="SPEC_LABEL">${this._esc(sub)}</text>` : '');
+  },
+  // A meter on a way's drop: a CT on the conductor with the meter beside it,
+  // or a direct meter beside the conductor joined to it.
+  _gWayMeter(comp, m, label, x, y, P, ct) {
+    const tip = `${m.tag} — ${DBMeters.spec(m)}\n${DBMeters.comms(m)}`;
+    const sub = ct ? (m.ct_ratio || 'CT') : 'direct';
+    return `<g><title>${this._esc(tip)}</title><g data-dxf-block="DB_METER" data-dxf-at="${x},${y}" data-dxf-attrs="${this._mtrDxf(comp, m)}">`
+      + (ct ? `<circle cx="${x}" cy="${y}" r="5" fill="none" stroke="${P.line}" stroke-width="1.3"/>` : `<circle cx="${x}" cy="${y}" r="1.8" fill="${P.mtr}"/>`)
+      + `<line x1="${x + (ct ? 5 : 0)}" y1="${y}" x2="${x + 9}" y2="${y}" stroke="${P.mtr}" stroke-width="1"/>`
+      + this._gMeterBox(x + 9, y, P, label, sub) + `</g></g>`;
+  },
+  // The incomer meter(s): on the riser between the incomer device (or the
+  // main isolator) and the busbar.
+  _incomerMeter(comp, L, P, x) {
+    if (!this.detail().meters || typeof DBMeters === 'undefined' || L.sec) return '';
+    const ms = DBMeters.list(comp).filter(m => m.scope === 'incomer');
+    let s = '';
+    ms.forEach((m, j) => {
+      const y = (L.isoY || L.devY) + 25 + j * 2;
+      const ct = DBMeters.conn(m.conn).ct;
+      s += `<g><title>${this._esc(`${m.tag} — incomer meter: ${DBMeters.spec(m)}\n${DBMeters.comms(m)}`)}</title>`
+        + `<g data-dxf-block="DB_METER" data-dxf-at="${x},${y}" data-dxf-attrs="${this._mtrDxf(comp, m)}">`
+        + (ct ? `<circle cx="${x}" cy="${y}" r="6" fill="${P.surface}" stroke="${P.line}" stroke-width="1.4"/>` : '')
+        + `<line x1="${x + (ct ? 6 : 0)}" y1="${y}" x2="${x + 12 + j * 70}" y2="${y}" stroke="${P.mtr}" stroke-width="1"/>`
+        + this._gMeterBox(x + 12 + j * 70, y, P, m.tag, ct ? (m.ct_ratio || 'CT') : 'direct') + `</g></g>`;
+    });
+    return s;
+  },
+  // A metered sub-busbar group: a riser off the busbar through its isolator
+  // and meter to a sub-bus the group's ways hang from (_items keeps them together).
+  _mtrSubbus(row, xs, busY, P, comp) {
+    let s = '';
+    const runs = [];
+    row.forEach((it, i) => {
+      const m = it.msub || null;
+      const cur = runs[runs.length - 1];
+      if (m && cur && cur.m === m && cur.to === i - 1) cur.to = i;
+      else if (m) runs.push({ m, from: i, to: i });
+    });
+    for (const r of runs) {
+      const m = r.m;
+      const mid = (xs[r.from] + xs[r.to]) / 2;
+      const isoY = busY + 15, mY = busY + 38, sy = busY + this.SEC_BUS_Y;
+      const ct = DBMeters.conn(m.conn).ct;
+      s += `<g><title>${this._esc(`${m.tag} — group meter on a sub-busbar: ${DBMeters.spec(m)}\n${DBMeters.comms(m)}`)}</title>`
+        + this._vline(mid, busY, sy, [[isoY, 9], ...(ct ? [[mY, 5]] : [])], P.line, 1.4)
+        + this._gSwitch(mid, isoY, P, P.line)
+        + `<text x="${mid - 12}" y="${isoY + 3}" text-anchor="end" font-size="8" fill="${P.inkSec}">${this._esc((m.iso_a || 63) + ' A')}</text>`
+        + `<line x1="${xs[r.from] - 22}" y1="${sy}" x2="${xs[r.to] + 22}" y2="${sy}" stroke="${P.bus}" stroke-width="2.4" stroke-linecap="round"/>`
+        + `<g data-dxf-block="DB_METER" data-dxf-at="${mid},${mY}" data-dxf-attrs="${this._mtrDxf(comp, m)}">`
+        + (ct ? `<circle cx="${mid}" cy="${mY}" r="5" fill="none" stroke="${P.line}" stroke-width="1.3"/>` : `<circle cx="${mid}" cy="${mY}" r="1.8" fill="${P.mtr}"/>`)
+        + `<line x1="${mid + (ct ? 5 : 0)}" y1="${mY}" x2="${mid + 9}" y2="${mY}" stroke="${P.mtr}" stroke-width="1"/>`
+        + this._gMeterBox(mid + 9, mY, P, m.tag, 'group · ' + (ct ? (m.ct_ratio || 'CT') : 'direct'))
+        + `</g></g>`;
+    }
+    return s;
+  },
+
   _ctrBrackets(row, xs, busY, ctrY, P, comp, sections) {
     let s = '';
     const runs = [];
@@ -693,7 +775,7 @@ const DBDrawing = {
     // switched section's contactor and sub-bus sit under the busbar (the
     // breakers — and the earth-leakage brackets — drop lower).
     const ctrDY = items.some(it => it.ctr && it.ctr.arrangement !== 'section') ? this.CTR_DY : 0;
-    const secDY = items.some(it => it.ctr && it.ctr.arrangement === 'section') ? this.SEC_CTR_DY : 0;
+    const secDY = items.some(it => (it.ctr && it.ctr.arrangement === 'section') || it.msub) ? this.SEC_CTR_DY : 0;
     const btd = (items.some(it => it.kind === 'acc') ? 92 : this.BUS_TO_DEV) + secDY;
     const rowInner = btd + this.LABEL_DY + ctrDY + maxLines * this.LINE_H
       + (D.bars ? this.BAR_GAP + this.BAR_PITCH + 8 : 8) + (D.load ? this.LOAD_H : 0)
@@ -813,13 +895,13 @@ const DBDrawing = {
     return dark ? {
       surface: '#1e1e2e', panel: '#252536', ink: '#e0e0e8', inkSec: '#a0a0b0',
       muted: '#7c7c96', line: '#8a8aa4', bus: '#c9c9e0', border: '#3a3a50',
-      accent: '#4a9eff', head: '#2f2f44', ctl: '#ffa94d',
+      accent: '#4a9eff', head: '#2f2f44', ctl: '#ffa94d', mtr: '#4fd1c5',
       pass: '#69db7c', warn: '#ffc078', fail: '#ff6b6b',
       phase: { R: '#f87171', W: '#cbd5e1', B: '#60a5fa', RWB: '#c084fc' },
     } : {
       surface: '#ffffff', panel: '#f5f8ff', ink: '#1a1a2e', inkSec: '#555555',
       muted: '#7a7a88', line: '#44444f', bus: '#1a1a2e', border: '#c9ced6',
-      accent: '#0078d7', head: '#eef1f5', ctl: '#b85c00',
+      accent: '#0078d7', head: '#eef1f5', ctl: '#b85c00', mtr: '#0b6e69',
       pass: '#2e7d32', warn: '#b26a00', fail: '#d32f2f',
       phase: { R: '#dc2626', W: '#6b7280', B: '#2563eb', RWB: '#7c3aed' },
     };
@@ -1127,6 +1209,8 @@ const DBDrawing = {
       + `<text x="${x + 16}" y="${L.devY + 12}" font-size="8.5" fill="${P.muted}" data-dxf-attr="NOTE_LABEL">${this._esc(inc.note || (inc.basis === 'sld' ? 'from the SLD' : inc.basis === 'feeder_way' ? 'from the feeding board' : 'not modelled'))}</text>`
       + `</g></g>`;
 
+    s += this._incomerMeter(comp, L, P, x);
+
     if (L.isoY) {
       const isoName = inc.isolator.props.name || 'Main switch';
       s += `<g><title>Board main isolator</title>`
@@ -1245,10 +1329,13 @@ const DBDrawing = {
       } else {
         const endY = it.spare ? devY + 30 + (L.ctrDY || 0) : (D.bars ? peY : devY + 26) + (D.load ? 14 : 0);
         const pole = it.ctr && it.ctr.arrangement !== 'section';
-        const top = it.ctr && it.ctr.arrangement === 'section' ? busY + this.SEC_BUS_Y : busY;
-        g += this._vline(x, top, endY, [[devY, 20 * this.SYM_SCALE], ...(pole ? [[ctrY, 12]] : []), ...lblGap], stroke, 1.4);
+        const top = (it.ctr && it.ctr.arrangement === 'section') || it.msub ? busY + this.SEC_BUS_Y : busY;
+        const mY = devY + 27;
+        const mCt = it.mtr && DBMeters.conn(it.mtr.conn).ct;
+        g += this._vline(x, top, endY, [[devY, 20 * this.SYM_SCALE], ...(pole ? [[ctrY, 12]] : []), ...(mCt ? [[mY, 5]] : []), ...lblGap], stroke, 1.4);
         sym = this._glyph(it.glyph, x, devY, P, stroke, it);
         if (pole) g += this._gContactor(x, ctrY, P, P.ctl);
+        if (it.mtr) g += this._gWayMeter(comp, it.mtr, it.mtrLabel, x, mY, P, mCt);
         if (D.load && !it.spare) {
           const motor = (it.poles === '3P' || it.phase === 'RWB')
             && /pump|motor|fan|compress|aircon|a\/c|hvac|drive/i.test(it.wayDesc || '');
@@ -1287,6 +1374,7 @@ const DBDrawing = {
     });
 
     s += this._ctrBrackets(row, xs, busY, ctrY, P, comp, true);
+    s += this._mtrSubbus(row, xs, busY, P, comp);
 
     if (L.tRows.length) {
       const top = peY + 14 + (D.load ? 56 : 0);
