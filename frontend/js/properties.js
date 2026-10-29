@@ -2557,7 +2557,11 @@ ${br.loading_pct > 0 ? `Loading = ${br.loading_pct.toFixed(1)}%${br.loading_pct 
     const type = ['mcb', 'mccb', 'acb'].includes(p.cb_type) ? p.cb_type : 'mccb';
     const curve = /^[A-Z]{1,2}$/.test(String(p.mcb_curve || '').toUpperCase()) ? String(p.mcb_curve).toUpperCase() : '';
     const own = parseInt(String(p.poles || ''), 10) || 0;
-    return { type, a: st.rating === 'any' ? 0 : (typeof st.rating === 'number' ? st.rating : Number(p.rated_current_a) || 0),
+    // The two breakers of a changeover usually match: until breaker II has a device of its own
+    // or its own Rating pick, its list starts at breaker I's rating.
+    const follow = n === 2 && st.rating === undefined && !p.standard_type;
+    const rated = follow ? (this._cbFilterOf(comp, 1).a || Number(p.rated_current_a) || 0) : Number(p.rated_current_a) || 0;
+    return { type, a: st.rating === 'any' ? 0 : (typeof st.rating === 'number' ? st.rating : rated),
       curve: st.curve === 'any' ? '' : (st.curve || curve),
       poles: st.poles === 'any' ? 0 : (typeof st.poles === 'number' ? st.poles : own), kv: bus.kv, volt: st.volt, all: st.all,
       ka: st.ka != null ? st.ka : auto, kaAuto: auto, bus };
