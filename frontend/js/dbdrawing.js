@@ -51,6 +51,7 @@ const DBDrawing = {
   WAYS_PER_ROW: 12,
   BUS_TO_RCD: 12,      // busbar → top of the earth-leakage bracket
   RCD_H: 20,
+  EL_DY: 112,          // busbar → the sub-bus of an in-line earth-leakage unit (symbol, E/L block, room for labels)
   BUS_TO_DEV: 68,      // busbar → device centre
   TICK_DY: 32,         // device centre → phase tick
   LABEL_DY: 48,        // device centre → first label baseline
@@ -73,7 +74,7 @@ const DBDrawing = {
   CTL_PAR: 68,         // pitch of parallel switching branches (operator + three label lines)
 
   DETAIL_DEFAULTS: {
-    cable: true, load: true, phase: true, elgroups: true,
+    cable: true, load: true, phase: true, elgroups: true, elunits: true,
     bars: true, status: true, accessories: true, controls: true, meters: true,
     table: false,        // way info as a table under the load arrows instead of beside the device
     phaserows: false,    // a busbar row per phase: R ways, then W, then B, then three-phase
@@ -115,6 +116,7 @@ const DBDrawing = {
           ${toggle('load', 'Load', 'Show each way\'s full-load current and connected kVA')}
           ${toggle('phase', 'Phase', 'Show the phase each way is connected to')}
           ${toggle('elgroups', 'EL groups', 'Draw a shared earth-leakage unit over the ways in each EL group')}
+          ${toggle('elunits', 'EL devices', 'Draw each earth-leakage group as a breaker or isolator with an E/L block on its own feed and sub-bus. Off: a bracket over the ways.')}
           ${toggle('bars', 'N + PE bars', 'Draw the neutral and protective earth bars')}
           ${toggle('status', 'Check status', 'Colour each way by its circuit-check verdict')}
           ${toggle('accessories', 'Accessories', 'Draw the board accessories on the single line')}
@@ -328,7 +330,7 @@ const DBDrawing = {
           amps: spare ? '' : DBSchedule._wayFlaA(c, vll).toFixed(1),
           kva: spare ? '' : wayKva.toFixed(2),
         },
-        elGroup: D.elgroups ? (c.el_group || '') : '',
+        elGroup: D.elgroups ? (c.el_group || '') : '', hub: ctr && ctr.arrangement === 'section' ? ctr.id : '',
         status: v ? v.status : (warns.length ? 'warn' : null),
         lines, tip, dxf,
       });
@@ -336,6 +338,34 @@ const DBDrawing = {
     // A switched section's ways hang together off its sub-bus: they are drawn
     // side by side where the first of them falls, in schedule order.
     // (Per board section: each band draws its own part of the group.)
+    // In-line earth-leakage units: a group that sits wholly on the busbar is
+    // drawn as a device on its own feed and sub-bus ('device'); one that is
+    // exactly a switched section has its unit on the section's riser
+    // ('section'); anything else (a part of a section, across a contactor or
+    // board sections) falls back to the bracket.
+    const unitOn = !!(D.elgroups && D.elunits);
+    if (unitOn) {
+      const byG = new Map();
+      for (const it of items) if (it.kind === 'way' && it.elGroup) {
+        if (!byG.has(it.elGroup)) byG.set(it.elGroup, []);
+        byG.get(it.elGroup).push(it);
+      }
+      for (const [g, list] of byG) {
+        const hubs = new Set(list.map(it => it.hub));
+        const secs = new Set(list.map(it => it.sec || ''));
+        let mode = 'bracket';
+        if (hubs.size === 1 && secs.size === 1 && !list.some(it => it.msub || it.br)) {
+          const hub = [...hubs][0];
+          if (!hub) mode = 'device';
+          else {
+            const all = items.filter(o => o.kind === 'way' && o.hub === hub && (o.sec || '') === [...secs][0]);
+            if (all.every(o => o.elGroup === g)) mode = 'section';
+          }
+        }
+        const u = DBSchedule.elUnit(comp, g);
+        for (const it of list) { it.elMode = mode; it.elU = u; it.elName = g; }
+      }
+    }
     const out = [];
     const done = new Set();
     // A metered sub-bus group is kept together the same way.
@@ -348,7 +378,16 @@ const DBDrawing = {
       done.add(key);
       out.push(...items.filter(o => hub(o) === k && o.sec === it.sec));
     }
-    return out;
+    if (!unitOn) return out;
+    // A device-style group is kept together, where its first way falls.
+    const res = [], seen = new Set();
+    for (const it of out) {
+      if (it.elMode !== 'device') { res.push(it); continue; }
+      if (seen.has(it.elGroup)) continue;
+      seen.add(it.elGroup);
+      res.push(...out.filter(o => o.elMode === 'device' && o.elGroup === it.elGroup));
+    }
+    return res;
   },
 
   // `comp` is passed explicitly rather than read from this.board(): an export
@@ -409,7 +448,7 @@ const DBDrawing = {
     const out = [];
     let start = -1;
     for (let i = 0; i <= rowItems.length; i++) {
-      const g = i < rowItems.length ? rowItems[i].elGroup : '';
+      const g = i < rowItems.length && rowItems[i].elMode !== 'device' && rowItems[i].elMode !== 'section' ? rowItems[i].elGroup : '';
       const prev = start >= 0 ? rowItems[start].elGroup : '';
       if (start >= 0 && g !== prev) { out.push({ from: start, to: i - 1, group: prev }); start = -1; }
       if (g && start < 0) start = i;
@@ -520,6 +559,66 @@ const DBDrawing = {
     return s;
   },
 
+  // One in-line earth-leakage unit on a feed at x, from the busbar down: pole
+  // ticks, the contact (breaker: with the cross; isolator: a bar across the
+  // blade), the E/L block in the conductor, the dashed link between them and
+  // the labels. The feed line itself is the caller's (it stops at `gaps`).
+  // Returns { svg, gaps }.
+  _elUnitSvg(x, busY, u, name, P, comp) {
+    const e = (v) => this._esc(v);
+    const cy = busY + 34, by = busY + 68, stroke = P.line;
+    const idn = u.idn_ma, type = u.type + (u.delay ? ' · S' : '');
+    const dev = u.device === 'isolator' ? 'Isolator' : 'Breaker';
+    const poles = u.poles;
+    const tip = `Earth-leakage unit ${name} — ${dev.toLowerCase()} ${u.rating_a} A${u.device === 'breaker' ? ` curve ${u.curve}, ${u.ka} kA` : ''}, ${poles}P, IΔn ${idn} mA, type ${u.type}${u.delay ? ', selective (S)' : ''}`;
+    let g = '';
+    for (let i = 0; i < poles; i++) g += `<line x1="${x - 4}" y1="${busY + 14 + i * 4 + 2}" x2="${x + 4}" y2="${busY + 14 + i * 4 - 2}" stroke="${escHtml(stroke)}" stroke-width="1"/>`;
+    g += `<text x="${x + 8}" y="${busY + 14 + (poles - 1) * 2 + 3}" font-size="8" fill="${P.muted}" data-dxf-attr="POLES">${poles}P</text>`;
+    // contact: pivot circle at the foot, blade to the upper right
+    g += `<circle cx="${x}" cy="${cy + 8}" r="2.6" fill="${P.surface}" stroke="${escHtml(stroke)}" stroke-width="1.4"/>`
+      + `<line x1="${x}" y1="${cy + 5.5}" x2="${x + 8.5}" y2="${cy - 9}" stroke="${escHtml(stroke)}" stroke-width="1.7"/>`;
+    if (u.device === 'breaker') {
+      g += `<line x1="${x - 4}" y1="${cy - 11}" x2="${x + 4}" y2="${cy - 3}" stroke="${P.fail}" stroke-width="1.5"/>`
+        + `<line x1="${x - 4}" y1="${cy - 3}" x2="${x + 4}" y2="${cy - 11}" stroke="${P.fail}" stroke-width="1.5"/>`;
+    } else {
+      const dx = 17 / 19, dy = 8.5 / 19, tx = x + 8.5, ty = cy - 9;
+      g += `<line x1="${tx - 5 * dx}" y1="${ty - 5 * dy}" x2="${tx + 5 * dx}" y2="${ty + 5 * dy}" stroke="${escHtml(stroke)}" stroke-width="1.7"/>`;
+    }
+    g += `<text x="${x - 14}" y="${cy + 4}" text-anchor="end" font-size="10" font-weight="700" fill="${P.ink}" data-dxf-attr="DEVICE_LABEL">${e(u.rating_a + ' A' + (u.device === 'breaker' ? ' ' + u.curve : ''))}</text>`;
+    // E/L block + dashed link
+    g += `<rect x="${x - 18}" y="${by}" width="36" height="18" fill="${P.surface}" stroke="${P.accent}" stroke-width="1.6"/>`
+      + `<text x="${x}" y="${by + 13}" text-anchor="middle" font-size="10" font-weight="700" fill="${P.accent}">E/L</text>`
+      + `<path d="M ${x + 4} ${cy} H ${x - 30} V ${by + 9} H ${x - 18}" fill="none" stroke="${P.muted}" stroke-width="1.2" stroke-dasharray="4,3"/>`
+      + `<text x="${x + 23}" y="${by - 4}" font-size="10" font-weight="700" fill="${P.accent}" data-dxf-attr="EL_GROUP">${e(/^el/i.test(name) ? name : 'EL ' + name)}</text>`
+      + `<text x="${x + 23}" y="${by + 9}" font-size="10" font-weight="700" fill="${P.ink}" data-dxf-attr="IDN_LABEL">${e(idn + ' mA')}</text>`
+      + `<text x="${x + 23}" y="${by + 21}" font-size="9" fill="${P.muted}" data-dxf-attr="TYPE_LABEL">${e('Type ' + type)}</text>`;
+    const attrs = this._dxfData({ BOARD: comp.props.name || comp.id, EL_GROUP: name, DEVICE: dev, RATING_A: u.rating_a, POLES: poles, IDN_MA: idn, TYPE: u.type, DELAY: u.delay || '' });
+    return {
+      svg: `<g><title>${e(tip)}</title><g data-dxf-block="DB_EL_UNIT" data-dxf-at="${x},${cy}" data-dxf-attrs="${escHtml(attrs)}">${g}</g></g>`,
+      gaps: [[cy, 12], [by + 9, 11]],
+    };
+  },
+
+  // Device-style EL groups along one busbar row: a feed from the busbar
+  // through the unit to a short sub-bus the group's ways hang from.
+  _elUnitRuns(row, xs, busY, P, comp) {
+    let s = '';
+    const runs = [];
+    row.forEach((it, i) => {
+      if (it.elMode !== 'device') return;
+      const cur = runs[runs.length - 1];
+      if (cur && cur.g === it.elGroup && cur.to === i - 1) cur.to = i; else runs.push({ g: it.elGroup, from: i, to: i });
+    });
+    for (const r of runs) {
+      const it = row[r.from];
+      const mid = (xs[r.from] + xs[r.to]) / 2, sy = busY + this.EL_DY;
+      const unit = this._elUnitSvg(mid, busY, it.elU, it.elName, P, comp);
+      s += unit.svg + this._vline(mid, busY, sy, unit.gaps, P.line, 1.4)
+        + `<line x1="${xs[r.from] - 22}" y1="${sy}" x2="${numAttr(xs[r.to] + 22)}" y2="${sy}" stroke="${P.bus}" stroke-width="2.4" stroke-linecap="round"/>`;
+    }
+    return s;
+  },
+
   _ctrBrackets(row, xs, busY, ctrY, P, comp, sections) {
     let s = '';
     const runs = [];
@@ -544,9 +643,13 @@ const DBDrawing = {
         + `<text x="${x}" y="${y + 19}" font-size="7.5" fill="${P.inkSec}" data-dxf-attr="SWITCHED_LABEL">${this._esc(this._trunc(by, 16))}</text>`;
       if (k.arrangement === 'section') {
         const mid = (xs[r.from] + xs[r.to]) / 2;
-        const ry = busY + this.SEC_CTR_Y, sy = busY + this.SEC_BUS_Y;
-        s += `<g><title>${this._esc(tip + '\nSwitched section — its ways hang from the sub-bus')}</title>`
-          + this._vline(mid, busY, sy, [[ry, 12]], P.line, 1.4)
+        const eu = row[r.from].elMode === 'section' ? row[r.from] : null;
+        const sh = eu ? this.EL_DY : 0;
+        const ry = busY + this.SEC_CTR_Y + sh, sy = busY + this.SEC_BUS_Y + sh;
+        const unit = eu ? this._elUnitSvg(mid, busY, eu.elU, eu.elName, P, comp) : null;
+        s += (unit ? unit.svg : '')
+          + `<g><title>${this._esc(tip + '\nSwitched section — its ways hang from the sub-bus')}</title>`
+          + this._vline(mid, busY, sy, [[ry, 12], ...(unit ? unit.gaps : [])], P.line, 1.4)
           + `<line x1="${xs[r.from] - 22}" y1="${sy}" x2="${numAttr(xs[r.to] + 22)}" y2="${sy}" stroke="${P.bus}" stroke-width="2.4" stroke-linecap="round"/>`
           + `<g data-dxf-block="DB_CONTACTOR" data-dxf-at="${mid},${ry}" data-dxf-attrs="${escHtml(attrs)}">`
           + this._gContactor(mid, ry, P, P.ctl) + label(mid + 10, ry - 4)
@@ -898,7 +1001,8 @@ const DBDrawing = {
     const ctrDY = items.some(it => it.ctr && !it.br && it.ctr.arrangement !== 'section') ? this.CTR_DY : 0;
     const brH = items.some(it => it.br) ? this.BR_H : 0;
     const secDY = items.some(it => (it.ctr && it.ctr.arrangement === 'section') || it.msub) ? this.SEC_CTR_DY : 0;
-    const btd = (items.some(it => it.kind === 'acc') ? 92 : this.BUS_TO_DEV) + secDY;
+    const elDY = items.some(it => it.elMode === 'device' || it.elMode === 'section') ? this.EL_DY : 0;
+    const btd = (items.some(it => it.kind === 'acc') ? 92 : this.BUS_TO_DEV) + secDY + elDY;
     const rowInner = btd + this.LABEL_DY + ctrDY + maxLines * this.LINE_H
       + (D.bars ? this.BAR_GAP + this.BAR_PITCH + 8 : 8) + (D.load ? this.LOAD_H : 0) + brH
       + (tRows.length ? tRows.length * this.TBL_ROW + 14 : 0);
@@ -946,7 +1050,7 @@ const DBDrawing = {
     const ctl = D.controls ? this._ctlLayout(comp, w, h) : null;
     if (ctl) h = ctl.y1 + this.PAD;
 
-    return { bands, rowDefs, sectioned, btd, ctrDY, secDY, ctl, tRows, items, inc: boardInc, maxLines, rowInner, rowH, busW, w, h, gutter };
+    return { bands, rowDefs, sectioned, btd, ctrDY, secDY, elDY, ctl, tRows, items, inc: boardInc, maxLines, rowInner, rowH, busW, w, h, gutter };
   },
 
   // The busbar rows of one band: WAYS_PER_ROW columns a row; with phase rows
@@ -956,24 +1060,58 @@ const DBDrawing = {
   _rowChunks(items, D) {
     const out = [];
     const push = (list, phase) => {
-      for (let i = 0; i < list.length; i += this.WAYS_PER_ROW) {
-        const r = list.slice(i, i + this.WAYS_PER_ROW);
-        r.phase = phase;
-        out.push(r);
+      // Whole blocks only: a switched section, a pole-linked contactor or an
+      // in-line EL unit is never cut across two rows (a block longer than a
+      // row gets one to itself).
+      let cur = [];
+      const flush = () => { if (cur.length) { cur.phase = phase; out.push(cur); cur = []; } };
+      for (const b of this._blocks(list)) {
+        if (cur.length && cur.length + b.length > this.WAYS_PER_ROW) flush();
+        cur.push(...b);
+        if (cur.length >= this.WAYS_PER_ROW) flush();
       }
+      flush();
     };
     if (!D.phaserows) push(items, null);
     else {
       const acc = items.filter(it => it.kind === 'acc');
       const ways = items.filter(it => it.kind !== 'acc');
-      const groups = ['R', 'W', 'B', 'RWB'].map(ph => ways.filter(it => (it.phase || 'R') === ph));
-      groups.forEach((g, gi) => {
-        const lead = gi === groups.findIndex(x => x.length) ? acc : [];
-        if (g.length) push(lead.concat(g), ['R', 'W', 'B', 'RWB'][gi]);
-      });
+      // Phase rows are built from blocks, not single ways: a block goes to its
+      // phase's row when every way of it is on that phase; a switched section
+      // (or any block) over several phases goes to a row of its own after the
+      // three-phase ways.
+      const groups = { R: [], W: [], B: [], RWB: [], SW: [] };
+      for (const b of this._blocks(ways)) {
+        const ph = [...new Set(b.map(it => it.phase || 'R'))];
+        const key = ph.length === 1 && groups[ph[0]] && ph[0] !== 'SW' ? ph[0] : (b.length > 1 && b[0].blockKey && b[0].blockKey.startsWith('k:') ? 'SW' : 'RWB');
+        groups[key].push(...b);
+      }
+      const order = ['R', 'W', 'B', 'RWB', 'SW'];
+      const first = order.find(k => groups[k].length);
+      for (const k of order) {
+        if (!groups[k].length) continue;
+        const lead = k === first ? acc : [];
+        push(lead.concat(groups[k]), k);
+      }
       if (!ways.length && acc.length) push(acc, null);
     }
     if (!out.length) { const r = []; r.phase = null; out.push(r); }
+    return out;
+  },
+
+  // Items in the order given, grouped into blocks that stay together: all the
+  // ways of one contactor (section or poles) and all the ways of one device-
+  // style EL group. A way with neither is a block of one.
+  _blocks(list) {
+    const key = (it) => (it.ctr && !it.br ? 'k:' + it.ctr.id : it.elMode === 'device' ? 'g:' + it.elGroup : '');
+    const out = [], at = new Map();
+    for (const it of list) {
+      const k = key(it);
+      it.blockKey = k;
+      if (!k) { out.push([it]); continue; }
+      if (at.has(k)) { at.get(k).push(it); continue; }
+      const b = [it]; at.set(k, b); out.push(b);
+    }
     return out;
   },
 
@@ -1425,7 +1563,8 @@ const DBDrawing = {
     }
     if (rd.phase) {
       // Phase rows: the row's phase at the right-hand end of its busbar.
-      const name = { R: 'Red phase (R)', W: 'White / yellow phase (W)', B: 'Blue phase (B)', RWB: 'Three-phase (RWB)' }[rd.phase];
+      const swTags = rd.phase === 'SW' ? [...new Set(row.filter(it => it.ctr).map(it => it.ctr.tag))].join(', ') : '';
+      const name = { R: 'Red phase (R)', W: 'White / yellow phase (W)', B: 'Blue phase (B)', RWB: 'Three-phase (RWB)', SW: `Switched · ${swTags || 'sections'}` }[rd.phase];
       const pc = P.phase[rd.phase] || P.muted;
       const tw = name.length * 5.3;
       s += `<rect x="${busEndX - tw - 14}" y="${busY - 15}" width="9" height="9" rx="2" fill="${pc}"/>`
@@ -1463,6 +1602,8 @@ const DBDrawing = {
         + `<text x="${bx0 + 6}" y="${busY + 17}" font-size="8.5" fill="${P.muted}">Board accessories</text>`;
     }
 
+    s += this._elUnitRuns(row, xs, busY, P, comp);
+
     row.forEach((it, i) => {
       const x = xs[i];
       const stroke = D.status ? this._statusColor(it.status, P) : P.line;
@@ -1489,7 +1630,8 @@ const DBDrawing = {
         const endY = it.br ? Math.max(D.bars ? peY : 0, labelTop + L.maxLines * this.LINE_H + 8) + (D.load ? 14 : 0)
           : it.spare ? devY + 30 + (L.ctrDY || 0) : (D.bars ? peY : devY + 26) + (D.load ? 14 : 0);
         const pole = it.ctr && !it.br && it.ctr.arrangement !== 'section';
-        const top = (it.ctr && it.ctr.arrangement === 'section') || it.msub ? busY + this.SEC_BUS_Y : busY;
+        const top = it.elMode === 'device' ? busY + this.EL_DY
+          : (it.ctr && it.ctr.arrangement === 'section') || it.msub ? busY + this.SEC_BUS_Y + (it.elMode === 'section' ? this.EL_DY : 0) : busY;
         const mY = devY + 27;
         const mCt = it.mtr && DBMeters.conn(it.mtr.conn).ct;
         g += this._vline(x, top, endY, [[devY, 20 * this.SYM_SCALE], ...(pole ? [[ctrY, 12]] : []), ...(mCt ? [[mY, 5]] : []), ...lblGap], stroke, 1.4);
