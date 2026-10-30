@@ -660,7 +660,7 @@ const DBDrawing = {
           + `</g></g>`;
         continue;
       }
-      const pecRun = direct && (k.switches || []).some(sw => sw.kind === 'photocell');
+      const pecRun = direct && ((k.switches || []).some(sw => sw.kind === 'photocell') || DBControls.hasBypass(k));
       const lx = xs[r.to] + (pecRun ? 112 : 10);
       s += `<g><title>${this._esc(tip)}</title>`
         + (r.to > r.from && !pecRun ? `<line x1="${xs[r.from] - 4.5}" y1="${ctrY - (direct ? 19 : 0)}" x2="${xs[r.to] - 4.5}" y2="${ctrY - (direct ? 19 : 0)}" stroke="${P.ctl}" stroke-width="1" stroke-dasharray="3,3"/>` : '')
@@ -1262,13 +1262,14 @@ const DBDrawing = {
       + `<line x1="${x}" y1="${y + 12}" x2="${x - 9}" y2="${y - 8}" stroke="${escHtml(stroke)}" stroke-width="1.6"/>`;
   },
 
-  // A directly switched circuit with a photocell, drawn as its wiring diagram (as in
-  // the Controls editor): feed → PEC (Line top, Load left → AUTO, N right) → selector
-  // AUTO, the supply past the PEC to ON, the lamp across the bypass.
+  // A directly switched circuit with a photocell, or with any bypass, drawn as its
+  // wiring diagram (as in the Controls editor): feed → PEC / timer contact (Line top,
+  // Load left → AUTO, a photocell's N right) → selector AUTO, the supply past the
+  // device to ON, the lamp across the bypass.
   _pecCircuit(it) {
     const k = it.ctr;
     return !!(k && !it.br && k.arrangement !== 'section' && DBControls.isDirect(k)
-      && (k.switches || []).some(sw => sw.kind === 'photocell'));
+      && ((k.switches || []).some(sw => sw.kind === 'photocell') || DBControls.hasBypass(k)));
   },
 
   _gPecCircuit(x, top, P, k) {
@@ -1295,14 +1296,18 @@ const DBDrawing = {
         + `<path d="${[[x2, y2], [bx + px, by + py], [bx - px, by - py]].map((q, i) => (i ? 'L' : 'M') + X(q[0]) + ' ' + Y(q[1])).join(' ')} Z" fill="${ink}"/>`;
     };
     const txt = (tx, ty, str, c, anchor, sz) => `<text x="${X(tx)}" y="${Y(ty)}"${anchor ? ` text-anchor="${anchor}"` : ''} font-size="${sz || 7}" fill="${c}">${this._esc(str)}</text>`;
-    const pcTag = ((k.switches || []).find(sw => sw.kind === 'photocell').tag || 'PC').replace(/^PC(\d)/, 'PEC$1');
-    let g = path('M150 6 V64 M150 68 V86 M122 100 H136 M164 100 H178 M186 100 H192', ink, 1.4)
-      + ring(150, 100, 14, ink) + path('M146 93 V107 M154 93 V107', ink, 1.3)
-      + arrow(178, 74, 165, 87) + arrow(185, 80, 172, 93)
-      + term(150, 64) + term(118, 100) + term(182, 100)
+    const pcSw = (k.switches || []).find(sw => sw.kind === 'photocell'), dev = pcSw || (k.switches || [])[0];
+    const pcTag = pcSw ? (pcSw.tag || 'PC').replace(/^PC(\d)/, 'PEC$1') : (dev && dev.tag) || '';
+    // A photocell is a three-terminal block (N on the right); a timer / thermostat is a contact.
+    let g = path('M150 6 V64 M150 68 V86 M122 100 H136', ink, 1.4)
+      + (pcSw ? path('M164 100 H178 M186 100 H192', ink, 1.4) + ring(150, 100, 14, ink) + path('M146 93 V107 M154 93 V107', ink, 1.3)
+        + arrow(178, 74, 165, 87) + arrow(185, 80, 172, 93) + term(182, 100)
+        : `<rect x="${X(134)}" y="${Y(86)}" width="${f(32 * sc)}" height="${f(28 * sc)}" rx="${f(3 * sc)}" fill="${P.surface}" stroke="${ink}" stroke-width="1.2"/>`
+          + path('M150 90 V94 M150 106 V110 M150 106 L142 94', ink, 1.3) + path('M139 99 H161', ink, 0))
+      + term(150, 64) + term(118, 100)
       + (byp ? path('M118 104 V146 M150 164 V180', ink, 1.4) + ring(118, 150, 4, ink)
         : path('M118 104 V170 H150 V180', ink, 1.4))
-      + txt(108, 95, pcTag, ink, 'end') + txt(196, 104, 'N', ink);
+      + txt(108, 95, pcTag, ink, 'end') + (pcSw ? txt(196, 104, 'N', ink) : '');
     if (byp) {
       g += path('M150 64 H250 V150 H186', hot, 1.8) + ring(182, 150, 4, hot) + (hoa ? ring(150, 140, 4, ink) : '')
         + path('M150 160 L121.5 152', hot, 2) + `<circle cx="${X(150)}" cy="${Y(160)}" r="${f(3.5 * sc)}" fill="${hot}"/>`
@@ -1316,7 +1321,7 @@ const DBDrawing = {
         + ring(276, 133, 9, amber) + path('M269.6 126.6 L282.4 139.4 M282.4 126.6 L269.6 139.4', amber, 1.1)
         + `<path d="${['M270 111', 'H198', 'V157', 'H138'].map(c => c.replace(/([HV])([\d.]+)/, (m, l, v) => l + (l === 'H' ? X(+v) : Y(+v))).replace(/^M([\d.]+) ([\d.]+)/, (m, a2, b2) => 'M' + X(+a2) + ' ' + Y(+b2))).join(' ')}" fill="none" stroke="${amber}" stroke-width="0.9" stroke-dasharray="3,2.5"/>`
         + path('M270 150 H282', amber, 1.2) + txt(288, 112, 'aux', amber, '', 6) + txt(288, 154, 'N', amber, '', 6.5)
-        + txt(276, 166, DBControls.bypassLampTag(k), amber, 'middle', 6.5);
+        + txt(276, 178, DBControls.bypassLampTag(k), amber, 'middle', 6.5);
     }
     return g;
   },
