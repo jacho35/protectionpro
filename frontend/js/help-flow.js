@@ -46,7 +46,7 @@ $$V_i^{(k+1)}=\frac{1}{Y_{ii}}\left[\frac{P_i-jQ_i}{V_i^{(k)*}}-\sum_{j\ne i}Y_{
 <li><strong>SVC / STATCOM</strong> is a PV device that converts to a fixed-$Q$ shunt at its limits.</li>
 <li><strong>Islands</strong> — sections with no source path (open breaker, tripped source) are de-energised and solved separately, not left to diverge.</li>
 <li><strong>On-load tap changers</strong> iterate the tap by steps until the regulated bus is inside a half-step deadband.</li>
-<li>A load or source wired only through a series cable or transformer with no bus gets an implicit terminal bus, so the feeding element has a real voltage drop. The terminal takes the voltage of the zone it is fed from; the element's own rating is used only when it is within 15 % of that.</li>
+<li>A load or source wired only through a series cable or transformer with no bus gets an implicit terminal bus, so the feeding element has a real voltage drop. The terminal takes the nominal voltage of the network it is fed from (the bus reached along its cable, or the facing transformer winding); an element rated more than 15 % away from that is reported.</li>
 </ul>
 <div class="hc-note"><span class="hc-label">Which solver?</span>Newton-Raphson converges in a handful of iterations even on stressed networks and is the default. Gauss-Seidel is slower but never singular; use it to sanity-check a case that Newton-Raphson reports as non-convergent.</div>` },
 

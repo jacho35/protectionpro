@@ -139,21 +139,22 @@ def test_lfc2_terminal_bus_takes_the_feeder_zone(load_first):
     assert not any(w.elementId == "C" for w in res.warnings)
 
 
-def test_lfc2_nameplate_close_to_the_zone_is_kept():
-    """A 0.4 kV motor behind an 11/0.42 kV unit keeps its 0.4 kV base, so its
-    terminal reads above 1 pu as before."""
+def test_lfc2_terminal_behind_a_transformer_takes_its_winding():
+    """Behind a transformer the terminal is on the facing winding's network
+    (CR-F13, shared with the fault engine): a 0.38 kV load behind an
+    11/0.42 kV unit sits on a 0.42 kV node, with no warning (within 15 %)."""
     n = _Net()
     n.add("S", "bus", voltage_kv=11)
     n.add("U", "utility", voltage_kv=11, fault_mva=500, x_r_ratio=15)
     n.wire("U", "out", "S", "p0")
     n.add("T", "transformer", rated_mva=1, voltage_hv_kv=11, voltage_lv_kv=0.42,
           z_percent=5, x_r_ratio=6)
-    n.add("M", "static_load", rated_kva=50, power_factor=0.9, voltage_kv=0.4)
+    n.add("M", "static_load", rated_kva=50, power_factor=0.9, voltage_kv=0.38)
     n.wire("S", "p1", "T", "primary")
     n.wire("T", "secondary", "M", "in")
     res = n.run(include_synthetic=True)
-    assert res.buses["__term__M"].voltage_kv / res.buses["__term__M"].voltage_pu == pytest.approx(0.4, rel=1e-4)
-    assert res.buses["__term__M"].voltage_pu > 1.03
+    b = res.buses["__term__M"]
+    assert b.voltage_kv / b.voltage_pu == pytest.approx(0.42, rel=1e-3)
     assert not any(w.elementId == "M" for w in res.warnings)
 
 
