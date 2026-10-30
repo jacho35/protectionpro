@@ -52,7 +52,7 @@ const VerificationTemplates = {
       "name": "3-Bus Load Flow (Glover / Newton-Raphson)",
       "category": "Verification / Standards",
       "preview": "Slack + PV + PQ, 3 lines \u2014 NR solve",
-      "description": "Newton-Raphson load flow verified against the Glover / ESE 470 textbook 3-bus example (slack at 1.0 pu, one PV, one PQ). Reproduces the published voltages and angles to \u22640.002 pu / 0.04\u00b0 with the same 4-iteration convergence."
+      "description": "Newton-Raphson load flow verified against the Glover / ESE 470 textbook 3-bus example (slack at 1.0 pu, one PV, one PQ). Reproduces the published voltages and angles to \u22640.002 pu / 0.04\u00b0, converging in 5 iterations to a 1e-9 pu mismatch."
     },
     {
       "id": "ver_arcflash",
@@ -986,7 +986,7 @@ const VerificationTemplates = {
       ],
       "nextId": 100,
       "projectDetails": {
-        "description": "VERIFICATION TEMPLATE — Newton-Raphson load flow (Glover / ESE 470 3-bus example). Gen2's reactive limits are opened up (q_max/q_min ±9999 Mvar) because the textbook PV bus is unlimited — it needs ~267 Mvar to hold 1.05 p.u., beyond a 250 MVA / 0.8 pf machine's capability. RUN: Load Flow (Newton-Raphson). Expected V2 = 1.050∠-2.06°, V3 = 0.978∠-8.78°, converges in 4 iterations. Full working: Help → Verification."
+        "description": "VERIFICATION TEMPLATE — Newton-Raphson load flow (Glover / ESE 470 3-bus example). Gen2's reactive limits are opened up (q_max/q_min ±9999 Mvar) because the textbook PV bus is unlimited — it needs ~267 Mvar to hold 1.05 p.u., beyond a 250 MVA / 0.8 pf machine's capability. RUN: Load Flow (Newton-Raphson). Expected V2 = 1.050∠-2.06°, V3 = 0.978∠-8.78°, converges in 5 iterations. Full working: Help → Verification."
       }
     },
     "ver_arcflash": {

@@ -43,7 +43,7 @@ CASES = [
     ("case-loadflow-3bus", "ver_lf_3bus",
      "3-Bus Load Flow (Glover / Newton-Raphson)",
      "Slack + PV + PQ, 3 lines — NR solve",
-     "Newton-Raphson load flow verified against the Glover / ESE 470 textbook 3-bus example (slack at 1.0 pu, one PV, one PQ). Reproduces the published voltages and angles to ≤0.002 pu / 0.04° with the same 4-iteration convergence."),
+     "Newton-Raphson load flow verified against the Glover / ESE 470 textbook 3-bus example (slack at 1.0 pu, one PV, one PQ). Reproduces the published voltages and angles to ≤0.002 pu / 0.04°, converging in 5 iterations to a 1e-9 pu mismatch."),
     ("case-arcflash-ieee1584", "ver_arcflash",
      "Arc Flash (IEEE 1584-2002)",
      "480 V MCC — incident energy & AFB",
@@ -118,7 +118,7 @@ EXPECTED = {
         "a2": ("buses.bus-2.angle_deg", -2.06, 2e-3),
         "v3": ("buses.bus-3.voltage_pu", 0.9782),
         "a3": ("buses.bus-3.angle_deg", -8.78, 2e-3),
-        "iters": ("iterations", 4),
+        "iters": ("iterations", 5),
     }),
     "ver_arcflash": ("arcflash", {
         "e": ("buses.bus-1.incident_energy_cal", 12.82),

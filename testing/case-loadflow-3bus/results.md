@@ -25,7 +25,7 @@ L1-2/L2-3 = 2.447 + j25.07 Ω, L1-3 = 3.297 + j33.37 Ω. Slack = utility; PV bus
 ## ProtectionPro vs published solution
 | Quantity | Reference | ProtectionPro (NR) | Diff |
 |---|---|---|---|
-| Iterations to converge | 4 | 4 | — |
+| Iterations to converge | 4 | 5 (4 before 2026-10-30) | see note |
 | V₂ (PV) | 1.050 ∠−2.1° | 1.0500 ∠−2.06° | 0.00 / 0.04° |
 | V₃ (PQ) | 0.98 ∠−8.8° (0.97 in the notes' vector) | 0.9782 ∠−8.78° | ≤0.002 pu / 0.02° |
 | Slack P₁ | 3.08 pu | 3.0835 pu (308.35 MW) | 0.1 % |
@@ -33,8 +33,12 @@ L1-2/L2-3 = 2.447 + j25.07 Ω, L1-3 = 3.297 + j33.37 Ω. Slack = utility; PV bus
 | Gen P₂ | 2.0 pu | 2.000 pu (200.0 MW) | 0.0 % |
 | Load S₃ | −5.0 − j1.0 pu | 500.0 MW + j99.999 Mvar | 0.0 % |
 
-**All bus voltages, angles, slack power, and the iteration count match the published solution** to within the
+**All bus voltages, angles and slack power match the published solution** to within the
 2–3 significant figures the notes report (worst case 0.4 % on slack Q). ✅ PASS (tolerance ±2 %).
+
+> **2026-10-30:** the Newton-Raphson stopping rule was tightened from a 1e-6 to a 1e-9 pu power mismatch
+> (load-flow cold review P2: 1e-6 on a 100 MVA base left up to 3e-5 pu at weak LV buses). This case now
+> takes one more iteration, 5; the voltages and powers are unchanged to the figures shown.
 
 > **2026-09-27:** since generator reactive-capability limits were enforced (EE inverter/reactive review,
 > 2026-07-19) the 250 MVA / 0.8 pf Gen2 caps at 150 Mvar and can no longer hold 1.05 p.u. (V₂ fell to 1.014).
@@ -52,5 +56,5 @@ solver-computed PV reactive** — a cosmetic reporting detail that does not affe
 
 ## Verdict
 ProtectionPro's Newton-Raphson load flow **reproduces the textbook solution essentially exactly** (voltages/angles to
-≤0.002 pu / 0.04°, powers to ≤0.4 %, same 4-iteration convergence). This is the first verification of `loadflow.py`,
+≤0.002 pu / 0.04°, powers to ≤0.4 %; 5 iterations to a 1e-9 pu mismatch, one more than the textbook's looser stop). This is the first verification of `loadflow.py`,
 and it passes cleanly on a self-contained, charging-free slack + PV + PQ example.

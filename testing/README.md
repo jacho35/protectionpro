@@ -69,8 +69,8 @@ I_th = Ik″·√(m+n), not bare Isc). Full detail: [`case-cable-sizing-lv/resul
 ## Load flow (Newton-Raphson) — PASS
 First verification of `loadflow.py`, against a self-contained textbook example (Glover/ESE 470 3-bus: slack at 1.0 pu,
 one PV, one PQ, charging-free lines). ProtectionPro reproduces the published solution essentially exactly — V₂ = 1.0500∠−2.06°
-(ref 1.05∠−2.1°), V₃ = 0.9782∠−8.78° (ref 0.98∠−8.8°), slack 308.35 MW/−81.66 Mvar (ref 308/−82), same 4-iteration
-convergence. Full detail: [`case-loadflow-3bus/results.md`](case-loadflow-3bus/results.md).
+(ref 1.05∠−2.1°), V₃ = 0.9782∠−8.78° (ref 0.98∠−8.8°), slack 308.35 MW/−81.66 Mvar (ref 308/−82); 5 iterations to the
+engine's 1e-9 pu mismatch (the textbook stops at 4 on a looser tolerance). Full detail: [`case-loadflow-3bus/results.md`](case-loadflow-3bus/results.md).
 
 ## Arc flash (IEEE 1584-2002) — PASS
 First verification of `arcflash.py`. No clean public **2002** worked example exists (current material is 2018), so
