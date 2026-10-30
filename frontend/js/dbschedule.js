@@ -512,6 +512,10 @@ const DBSchedule = {
   _normalizeElRatings(comp) {
     const { ratings } = this._leakageGroups(comp);
     comp.props.el_ratings = ratings;
+    if (comp.props.el_units && typeof comp.props.el_units === 'object') {
+      for (const g of Object.keys(comp.props.el_units)) if (!(g in ratings)) delete comp.props.el_units[g];
+      if (!Object.keys(comp.props.el_units).length) delete comp.props.el_units;
+    }
     const poles = comp.props.el_poles;
     if (poles && typeof poles === 'object') {
       for (const g of Object.keys(poles)) if (!(g in ratings)) delete poles[g];
@@ -530,6 +534,83 @@ const DBSchedule = {
     const set = comp.props.el_poles && comp.props.el_poles[g];
     if (set === '1P' || set === '3P') return set;
     return (comp.props.circuits || []).some(c => this._elGroupOf(c) === g && wayIsMulti(c)) ? '3P' : '1P';
+  },
+
+  // ── EL units: parameters, and the switched-section rule ─────────────
+  // A unit is a breaker or an isolator with an E/L trip block (drawn in line
+  // on the group's feed). IΔn stays in el_ratings; everything else about the
+  // unit is in comp.props.el_units[group]. Absent ⇒ a breaker, type A, instant.
+  EL_STD_RATINGS_A: [16, 25, 32, 40, 63, 80, 100, 125, 160, 200, 250],
+
+  elUnit(comp, g) {
+    const u = (comp.props.el_units && comp.props.el_units[g]) || {};
+    const ways = (comp.props.circuits || []).filter(c => this._elGroupOf(c) === g);
+    const sum = ways.reduce((n, c) => n + (Number(c.breaker_a) || 0), 0);
+    const derived = this.EL_STD_RATINGS_A.find(r => r >= sum) || this.EL_STD_RATINGS_A[this.EL_STD_RATINGS_A.length - 1];
+    const idn = Number((comp.props.el_ratings || {})[g]);
+    return {
+      device: u.device === 'isolator' ? 'isolator' : 'breaker',
+      rating_a: Number(u.rating_a) > 0 ? Number(u.rating_a) : derived,
+      type: ['AC', 'A', 'F', 'B'].includes(u.type) ? u.type : 'A',
+      delay: u.delay === 'S' ? 'S' : '',
+      ka: Number(u.ka) > 0 ? Number(u.ka) : 6,
+      curve: ['B', 'C', 'D'].includes(u.curve) ? u.curve : 'C',
+      idn_ma: idn > 0 ? idn : 30,
+      custom: u.custom === true,
+      poles: this.elPoles(comp, g) === '3P' ? 4 : 2,
+    };
+  },
+
+  setElUnit(comp, g, patch) {
+    if (!comp.props.el_units || typeof comp.props.el_units !== 'object') comp.props.el_units = {};
+    comp.props.el_units[g] = Object.assign({}, comp.props.el_units[g], patch);
+  },
+
+  // The switched section (contactor id) a way hangs from, '' when it is on the busbar.
+  _elHub(comp, c) {
+    const k = typeof DBControls !== 'undefined' ? DBControls.wayContactor(comp, c) : null;
+    return k && k.arrangement === 'section' ? k.id : '';
+  },
+
+  // EL groups whose ways are not all inside one switched section or all outside
+  // every one: [{ group, parts: [{ hub, tag, ways: ['14', …] }] }]. One unit
+  // cannot sit both ahead of and after a contactor.
+  elStraddles(comp) {
+    const by = new Map();
+    for (const c of comp.props.circuits || []) {
+      const g = this._elGroupOf(c);
+      if (!g) continue;
+      const hub = this._elHub(comp, c);
+      if (!by.has(g)) by.set(g, new Map());
+      const parts = by.get(g);
+      if (!parts.has(hub)) parts.set(hub, []);
+      parts.get(hub).push(String(c.way ?? ''));
+    }
+    const out = [];
+    for (const [group, parts] of by) {
+      if (parts.size < 2) continue;
+      out.push({ group, parts: [...parts].map(([hub, ways]) => {
+        const k = hub && typeof DBControls !== 'undefined' ? DBControls.contactor(comp, hub) : null;
+        return { hub, tag: k ? k.tag : '', ways };
+      }) });
+    }
+    return out;
+  },
+
+  _straddleText(st) {
+    const where = (p) => (p.hub ? `inside switched section ${p.tag}` : 'on the busbar');
+    return `EL group ${st.group} cannot be ${st.parts.map(p => `${where(p)} (way ${p.ways.join(', ')})`).join(' and ')}: an earth-leakage unit sits wholly inside one switched section or wholly outside them.`;
+  },
+
+  // Would setting `patch` on way `c` leave one of its EL groups across a contactor?
+  // Returns the message, or '' when fine. The board is not touched.
+  _elBlockMsg(comp, c, patch) {
+    const fake = { props: Object.assign({}, comp.props, {
+      circuits: (comp.props.circuits || []).map(o => (o === c ? Object.assign({}, o, patch) : o)) }) };
+    const g = this._elGroupOf(Object.assign({}, c, patch));
+    if (!g) return '';
+    const st = this.elStraddles(fake).find(x => x.group === g);
+    return st ? this._straddleText(st) : '';
   },
 
   // Put every single-phase way of each single-phase EL group on one phase.
@@ -1343,8 +1424,11 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
       if (v === '__new' || v === '__newdirect') {
         const kNew = DBControls.newContactor(comp, [c], v === '__newdirect' ? 'direct' : undefined);
         DBControls.edit(comp, kNew, { isNew: true, ways: [c.id] });
-      } else if (v) c.contactor = v;
-      else delete c.contactor;
+      } else if (v) {
+        const bad = this._elBlockMsg(comp, c, { contactor: v });
+        if (bad) { this._blockMsg = bad; return 'el_blocked'; }
+        c.contactor = v;
+      } else delete c.contactor;
       return 'render';
     }
     // The meter measuring the way (DBMeters): picked, cleared, or a new one for
@@ -1428,6 +1512,8 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
       }
     }
     if (k === 'el_group') {
+      const bad = this._elBlockMsg(comp, c, { el_group: String(v).trim() });
+      if (bad) { this._blockMsg = bad; return 'el_blocked'; }
       c.el_group = String(v).trim();
       if (this._syncElPhases(comp, null, new Set([c.id]))) return 'render';
     }
@@ -1949,6 +2035,11 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
           if (typeof UI !== 'undefined' && UI.toast) UI.toast(`Way ${String(typed).trim()} already exists on this board.`, 'warning');
           return;
         }
+        if (out === 'el_blocked') {
+          e.target.value = e.target.defaultValue;
+          if (typeof UI !== 'undefined' && UI.toast) UI.toast(this._blockMsg, 'warning');
+          return;
+        }
         if (out === 'conduit') { this._paintConduit(comp); this._notifyEdited(); return; }
         if (k === 'breaker_a' || k === 'curve') this._refreshDeviceCell(tr, c);
         if (out === 'render') this.render();
@@ -2053,6 +2144,8 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
     Conduit.syncGroups(circuits);
     this.render();
     this._notifyEdited();
+    const stPaste = this.elStraddles(comp);
+    if (stPaste.length && typeof UI !== 'undefined' && UI.toast) UI.toast(this._straddleText(stPaste[0]) + ' Fix it in the Earth leakage panel.', 'warning');
     this._status(`Pasted ${lines.length} row(s) into the schedule.` + (bad ? ` ${bad} value(s) were not numbers and were skipped.` : ''));
   },
 
@@ -2361,10 +2454,19 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
     }
 
     let count = 0;
+    const elSkipped = [];
     for (const c of comp.props.circuits || []) {
       if (!this._selected.has(c.id)) continue;
-      for (const ch of changes) this._applyBulkField(c, ch.f.k, ch.val);
+      for (const ch of changes) {
+        if ((ch.f.k === 'el_group' || ch.f.k === 'contactor') && this._elBlockMsg(comp, c, { [ch.f.k]: ch.val })) {
+          elSkipped.push(String(c.way ?? '')); continue;   // would put an EL group across a contactor
+        }
+        this._applyBulkField(c, ch.f.k, ch.val);
+      }
       count++;
+    }
+    if (elSkipped.length && typeof UI !== 'undefined' && UI.toast) {
+      UI.toast(`Way ${[...new Set(elSkipped)].join(', ')} skipped: an EL group cannot straddle a switched section.`, 'warning');
     }
     // Single-phase EL groups stay on one phase: a phase set here moves each
     // touched group whole; ways that joined a group take its phase.
@@ -2531,12 +2633,66 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
   // without expanding.
   _elOpen: false,
 
+  // Type tooltip: which residual currents each RCD type detects (IEC 60755).
+  EL_TYPE_HELP: {
+    AC: 'Type AC: trips on sinusoidal AC residual current only. Suits plain resistive loads (heaters, incandescent lighting). A DC component can blind it, so it is discouraged for electronic loads.',
+    A: 'Type A: AC plus pulsating DC residual current. The usual choice today: LED drivers, switch-mode supplies, dimmers, single-phase drives.',
+    F: 'Type F: everything in A, plus mixed-frequency residual current. Single-phase circuits with variable-speed drives (washing machines, heat pumps).',
+    B: 'Type B: everything in F, plus smooth DC and high-frequency residual current. Three-phase rectifier loads: three-phase drives, EV chargers, UPS, PV inverters.',
+  },
+  EL_TYPE_TIP: 'RCD type (IEC 60755): which kinds of residual current the unit detects.\n'
+    + 'AC: sinusoidal AC only (plain resistive loads).\n'
+    + 'A: AC + pulsating DC (LED drivers, switch-mode supplies, single-phase drives). The usual choice.\n'
+    + 'F: A + mixed-frequency (single-phase variable-speed drives).\n'
+    + 'B: F + smooth DC and high frequency (three-phase drives, EV chargers, UPS, PV inverters).',
+
+  _elParamsHtml(comp, g) {
+    const u = this.elUnit(comp, g);
+    const ratingList = (typeof DB_EL_RATINGS_MA !== 'undefined') ? DB_EL_RATINGS_MA : [10, 30, 100, 300, 500];
+    const custom = u.custom || !ratingList.includes(u.idn_ma);
+    const e = escHtml(g);
+    const sel = (key, val, opts, title) => `<select data-elu="${e}" data-key="${escHtml(key)}" title="${escHtml(title || '')}">${opts.map(([v, l]) =>
+      `<option value="${v}"${String(v) === String(val) ? ' selected' : ''}>${escHtml(l)}</option>`).join('')}</select>`;
+    const typeOpts = ['AC', 'A', 'F', 'B'].map(t => [t, 'Type ' + t]);
+    const amps = this.EL_STD_RATINGS_A.includes(u.rating_a) ? this.EL_STD_RATINGS_A : [...this.EL_STD_RATINGS_A, u.rating_a].sort((a, b) => a - b);
+    return `
+      <div class="db-el-params" style="display:flex;align-items:center;gap:6px 8px;flex-wrap:wrap;margin:2px 0 6px 0;font-size:12px;">
+        ${sel('device', u.device, [['breaker', 'Breaker'], ['isolator', 'Isolator']], 'Breaker: the unit also protects the ways against overcurrent. Isolator: switches and detects earth leakage only; the ways\' own breakers protect against overcurrent.')}
+        ${sel('rating_a', u.rating_a, amps.map(a => [a, a + ' A']), 'Rated current of the unit')}
+        ${u.device === 'breaker' ? sel('curve', u.curve, ['B', 'C', 'D'].map(c => [c, 'Curve ' + c]), 'Trip curve of the breaker')
+          + `<input type="number" data-elu="${e}" data-key="ka" value="${escHtml(String(u.ka))}" min="1" step="0.5" style="width:54px" title="Breaking capacity, kA"> kA` : ''}
+        ${sel('idn_sel', custom ? 'custom' : u.idn_ma, [...ratingList.map(r => [r, r + ' mA']), ['custom', 'Custom…']], 'Rated residual current IΔn')}
+        ${custom ? `<input type="number" data-elu="${e}" data-key="idn_custom" value="${escHtml(String(u.idn_ma))}" min="1" max="1000" step="1" style="width:62px" title="Custom IΔn, 1 to 1000 mA"> mA` : ''}
+        <span title="${escHtml(this.EL_TYPE_TIP)}" style="display:inline-flex;align-items:center;gap:3px;">
+          ${sel('type', u.type, typeOpts, this.EL_TYPE_TIP)}
+          <span class="db-el-help" tabindex="0" aria-label="${escHtml(this.EL_TYPE_TIP)}" title="${escHtml(this.EL_TYPE_TIP)}" style="cursor:help;border:1px solid currentColor;border-radius:50%;width:15px;height:15px;font-size:10px;line-height:13px;text-align:center;opacity:.7;">?</span>
+        </span>
+        ${sel('delay', u.delay, [['', 'Instantaneous'], ['S', 'Selective (S)']], 'S: short time delay so a downstream unit trips first. Needs the upstream IΔn at least three times the downstream one.')}
+      </div>`;
+  },
+
+  // Advisory checks for one unit.
+  _elUnitNotes(comp, g) {
+    const u = this.elUnit(comp, g);
+    const ways = (comp.props.circuits || []).filter(c => this._elGroupOf(c) === g);
+    const out = [];
+    if (u.device === 'isolator') out.push('Isolator: this unit gives no overcurrent protection. The ways\' own breakers are the only protection.');
+    if (u.idn_ma > 30 && ways.some(c => /socket|plug|outlet/i.test(c.description || '') && (Number(c.breaker_a) || 0) <= 32)) {
+      out.push('IΔn above 30 mA on a group that feeds socket outlets (additional protection is 30 mA, IEC 60364-4-41 §415.1).');
+    }
+    if (u.type === 'AC' && ways.some(c => /drive|vfd|inverter|charger|ev\b|led|ups|pv/i.test(c.description || ''))) {
+      out.push('Type AC on a way that looks electronic (drive, charger, inverter, LED, UPS): consider type A, F or B.');
+    }
+    const tc = this._elTypeDesc(u.type);
+    return { notes: out, typeHelp: tc };
+  },
+  _elTypeDesc(t) { return this.EL_TYPE_HELP[t] || ''; },
+
   _elPanelHtml(comp) {
     const { groups, ungrouped, ratings } = this._leakageGroups(comp);
     if (groups.size === 0 && ungrouped < 0.05) return '';
-    const ratingList = (typeof DB_EL_RATINGS_MA !== 'undefined')
-      ? DB_EL_RATINGS_MA : [10, 30, 100, 300, 500];
     let overCount = 0;
+    const straddles = this.elStraddles(comp);
     const rows = [...groups.entries()]
       .sort((a, b) => a[0].localeCompare(b[0], undefined, { numeric: true }))
       .map(([g, ma]) => {
@@ -2544,25 +2700,31 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
         const limit = idn * DB_EL_STANDING_LIMIT;
         const over = ma > limit;
         if (over) overCount++;
-        const opts = ratingList.map(r =>
-          `<option value="${r}"${r === idn ? ' selected' : ''}>${r} mA</option>`).join('');
         const poles = this.elPoles(comp, g);
         const phases = [...new Set((comp.props.circuits || [])
           .filter(c => this._elGroupOf(c) === g && !wayIsMulti(c)).map(c => c.phase))].filter(Boolean).sort();
         const split = poles === '1P' && phases.length > 1;
         const where = poles === '3P' ? 'all phases'
           : split ? `⚠ ways on ${phases.join(' + ')} — a single-phase unit feeds one phase` : (phases[0] ? `on ${phases[0]}` : '');
+        const st = straddles.find(x => x.group === g);
+        const stHtml = st ? `
+            <div style="flex-basis:100%;color:#d32f2f;font-weight:600;">⚠ ${escHtml(this._straddleText(st))}
+              ${st.parts.filter(p => p.hub).map(p => `<button class="btn-small" data-elfix="${escHtml(g)}" data-hub="${escHtml(p.hub)}" title="Give the ways of this group that are inside ${escHtml(p.tag)} a group of their own">Split off the ${escHtml(p.tag)} ways</button>`).join(' ')}
+            </div>` : '';
+        const notes = this._elUnitNotes(comp, g);
         return `
-          <div style="display:flex;align-items:center;gap:6px 10px;font-size:12px;flex-wrap:wrap;">
+          <div style="display:flex;align-items:center;gap:6px 10px;font-size:12px;flex-wrap:wrap;margin-bottom:4px;">
             <span style="min-width:56px;"><strong>${/^el\b/i.test(g) ? '' : 'EL '}${escHtml(g)}</strong></span>
             <select data-elp="${escHtml(g)}" title="Single-phase (2-pole) unit: every way in the group is on its phase, and changing one way's phase moves the group. Three-phase (4-pole) unit: its ways can be on any phase.">
               <option value="1P"${poles === '1P' ? ' selected' : ''}>1-phase</option><option value="3P"${poles === '3P' ? ' selected' : ''}>3-phase</option></select>
             <span style="${split ? 'color:#d32f2f;font-weight:600;' : 'opacity:0.75;'}">${escHtml(where)}</span>
-            <select data-elg="${escHtml(g)}" title="Rated residual current (IΔn) of this group's earth-leakage unit">${opts}</select>
             <span style="min-width:170px;${over ? 'color:#d32f2f;font-weight:600;' : ''}">${ma.toFixed(1)} mA standing / ${limit.toFixed(1)} mA limit</span>
             <span style="${over ? 'color:#d32f2f;' : 'opacity:0.65;'}">${over
               ? '⚠ nuisance-trip risk — move ways to another EL group'
               : '✓ within 30% of IΔn'}</span>
+            ${stHtml}
+            <div style="flex-basis:100%;">${this._elParamsHtml(comp, g)}</div>
+            ${notes.notes.map(n => `<div style="flex-basis:100%;color:#b26a00;">⚠ ${escHtml(n)}</div>`).join('')}
           </div>`;
       }).join('');
     const ung = ungrouped >= 0.05
@@ -2577,6 +2739,7 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
         <summary>Standing earth leakage
           <span class="db-el-count">${nGroups} EL group${nGroups === 1 ? '' : 's'}</span>
           ${nGroups > 0 ? verdict : ''}
+          ${straddles.length ? `<span class="db-el-badge st-fail">⚠ ${straddles.length} across a contactor</span>` : ''}
           <span class="db-el-ref">IEC 60364-5-53 §531.3.2 — limit 30% of IΔn</span>
         </summary>
         <div class="db-el-body">${rows}${ung}</div>
@@ -2600,13 +2763,40 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
         this._notifyEdited();
       });
     });
-    wrap.querySelectorAll('select[data-elg]').forEach(sel => {
-      sel.addEventListener('change', () => {
-        if (!comp.props.el_ratings || typeof comp.props.el_ratings !== 'object') {
-          comp.props.el_ratings = {};
+    wrap.querySelectorAll('[data-elu]').forEach(inp => {
+      inp.addEventListener('change', () => {
+        const g = inp.dataset.elu, key = inp.dataset.key;
+        if (!comp.props.el_ratings || typeof comp.props.el_ratings !== 'object') comp.props.el_ratings = {};
+        if (key === 'idn_sel') {
+          if (inp.value === 'custom') this.setElUnit(comp, g, { custom: true });
+          else { comp.props.el_ratings[g] = parseFloat(inp.value) || 30; this.setElUnit(comp, g, { custom: false }); }
+        } else if (key === 'idn_custom') {
+          const v = Math.min(1000, Math.max(1, parseFloat(inp.value) || 30));
+          comp.props.el_ratings[g] = v;
+        } else if (key === 'rating_a' || key === 'ka') {
+          this.setElUnit(comp, g, { [key]: parseFloat(inp.value) || undefined });
+        } else {
+          this.setElUnit(comp, g, { [key]: inp.value });
         }
-        comp.props.el_ratings[sel.dataset.elg] = parseFloat(sel.value) || 30;
         this._refreshElPanel(comp);
+        this._notifyEdited();
+      });
+    });
+    wrap.querySelectorAll('button[data-elfix]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const g = btn.dataset.elfix, hub = btn.dataset.hub;
+        const names = new Set((comp.props.circuits || []).map(c => this._elGroupOf(c)).filter(Boolean));
+        let n = 2; while (names.has(`${g}-${n}`)) n++;
+        const next = `${g}-${n}`;
+        for (const c of comp.props.circuits || []) {
+          if (this._elGroupOf(c) === g && this._elHub(comp, c) === hub) c.el_group = next;
+        }
+        comp.props.el_ratings = Object.assign({}, comp.props.el_ratings, { [next]: Number((comp.props.el_ratings || {})[g]) || 30 });
+        if (comp.props.el_poles && comp.props.el_poles[g]) comp.props.el_poles[next] = comp.props.el_poles[g];
+        if (comp.props.el_units && comp.props.el_units[g]) comp.props.el_units[next] = Object.assign({}, comp.props.el_units[g]);
+        this._syncElPhases(comp);
+        this.render();
+        this._notifyEdited();
       });
     });
   },

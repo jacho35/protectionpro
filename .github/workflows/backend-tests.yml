@@ -62,6 +62,9 @@ jobs:
       - name: Cascading (back-up protection, IEC 60947-2 Annex A)
         run: node frontend/tests/test_cascading.mjs
 
+      - name: DB earth-leakage units and switched sections
+        run: node frontend/tests/test_db_el_units.mjs
+
       - name: Raw HTML interpolation ratchet (new unescaped attribute values fail)
         run: node testing/lint/raw-interp.mjs --max 0
 

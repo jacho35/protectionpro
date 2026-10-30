@@ -671,6 +671,11 @@ const SchMobile = {
       if (typeof UI !== 'undefined' && UI.toast) UI.toast(`Way ${String(typed).trim()} already exists on this board.`, 'warning');
       return;
     }
+    if (out === 'el_blocked') {
+      t.value = k === 'el_group' ? (c.el_group || '') : (c.contactor || '');
+      if (typeof UI !== 'undefined' && UI.toast) UI.toast(DBSchedule._blockMsg, 'warning');
+      return;
+    }
     this._touch();
     this.render();
     // Poles flips the phase select, a load type fills several fields, and a

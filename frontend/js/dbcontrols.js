@@ -326,6 +326,11 @@ const DBControls = {
     if (this.isDirect(k)) return out.concat(this._directWarnings(k, ways, rating, cat));
     if (ways.length && rating) {
       if (k.arrangement === 'section') {
+        if (typeof DBSchedule !== 'undefined' && DBSchedule.elStraddles) {
+          for (const st of DBSchedule.elStraddles(comp)) {
+            if (st.parts.some(p => p.hub === k.id)) out.push({ level: 'warn', block: true, text: DBSchedule._straddleText(st) });
+          }
+        }
         const duty = this.dutyA(comp, k, ways);
         if (duty > rating) out.push({ level: 'warn', text: `Section current ${duty.toFixed(1)} A per phase is above the ${rating} A ${cat} rating.` });
       } else {
@@ -940,6 +945,11 @@ const DBControls = {
         if (d.contactors.some(x => x.id !== k.id && String(x.tag).toLowerCase() === tag.toLowerCase())) {
           if (typeof UI !== 'undefined' && UI.toast) UI.toast(`${tag} is already used on this board.`, 'warning');
           return;
+        }
+        if (k.arrangement === 'section' && typeof DBSchedule !== 'undefined' && DBSchedule.elStraddles) {
+          const ids = new Set(circuits.filter(c => picked.has(c.id)).map(c => c.id));
+          const bad = this._draftWarnings(comp, k, circuits.filter(c => ids.has(c.id))).find(w => w.block);
+          if (bad) { if (typeof UI !== 'undefined' && UI.toast) UI.toast(bad.text, 'warning'); return; }
         }
         k.tag = tag;
         if (!this.isDirect(k) && !k.supply && !d.supplies.length) k.supply = this.addSupply(comp).id;   // the board's first control supply
