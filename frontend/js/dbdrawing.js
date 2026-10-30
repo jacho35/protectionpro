@@ -636,12 +636,14 @@ const DBDrawing = {
       const spec = `${k.poles} ${k.rating_a} A ${k.category}`;
       const by = DBControls.switchedBy(k);
       const attrs = this._dxfData({ BOARD: comp.props.name || comp.id, TAG: k.tag, DESCRIPTION: k.label || '',
-        SPEC: spec, ARRANGEMENT: k.arrangement, SWITCHED_BY: by });
-      const tip = direct ? `${k.tag} — direct switching, ${spec} contact${k.label ? ', ' + k.label : ''}\nSwitched by ${by} (no contactor)`
+        SPEC: spec, ARRANGEMENT: k.arrangement, SWITCHED_BY: by,
+        BYPASS: DBControls.hasBypass(k) ? DBControls.bypassTag(k) : '' });
+      const tip = direct ? `${k.tag} — direct switching, ${spec} contact${k.label ? ', ' + k.label : ''}\nSwitched by ${by} (no contactor)${DBControls.hasBypass(k) ? '\nBypass ' + DBControls.bypassTag(k) + ': ' + DBControls.bypassSpec(comp, k) : ''}`
         : `${k.tag} — contactor ${spec}${k.label ? ', ' + k.label : ''}\nSwitched by ${by}`;
       const label = (x, y) => `<text x="${x}" y="${y}" font-size="9.5" font-weight="700" fill="${P.ctl}" data-dxf-attr="TAG_LABEL">${this._esc(this._trunc(k.tag, 6))}</text>`
         + `<text x="${x}" y="${y + 10}" font-size="7.5" fill="${P.ctl}" data-dxf-attr="SPEC_LABEL">${this._esc(k.arrangement === 'section' ? spec : `${k.rating_a} A ${k.category}`)}</text>`
-        + `<text x="${x}" y="${y + 19}" font-size="7.5" fill="${P.inkSec}" data-dxf-attr="SWITCHED_LABEL">${this._esc(this._trunc(by, 16))}</text>`;
+        + `<text x="${x}" y="${y + 19}" font-size="7.5" fill="${P.inkSec}" data-dxf-attr="SWITCHED_LABEL">${this._esc(this._trunc(by, 16))}</text>`
+        + (DBControls.hasBypass(k) ? `<text x="${x}" y="${y + 28}" font-size="7.5" fill="${P.inkSec}" data-dxf-attr="BYPASS_LABEL">${this._esc(this._trunc(DBControls.bypassTag(k) + ' bypass', 16))}</text>` : '');
       if (k.arrangement === 'section') {
         const mid = (xs[r.from] + xs[r.to]) / 2;
         const eu = row[r.from].elMode === 'section' ? row[r.from] : null;
@@ -1258,6 +1260,15 @@ const DBDrawing = {
       + `<line x1="${x}" y1="${y + 12}" x2="${x - 9}" y2="${y - 8}" stroke="${escHtml(stroke)}" stroke-width="1.6"/>`;
   },
 
+  // The bypass round a directly switched circuit's contact: a leg off the line above
+  // the contact, through an open switch, back in below it.
+  _gBypassLoop(x, y, P) {
+    const c = escHtml(P.ctl), xl = x - 15;
+    return `<path d="M ${x} ${y - 14} H ${xl} V ${y - 5} M ${xl} ${y + 5} V ${y + 14} H ${x}" fill="none" stroke="${c}" stroke-width="1.2"/>`
+      + `<line x1="${xl}" y1="${y + 5}" x2="${xl - 5}" y2="${y - 4}" stroke="${c}" stroke-width="1.4"/>`
+      + `<circle cx="${x}" cy="${y - 14}" r="1.8" fill="${c}"/><circle cx="${x}" cy="${y + 14}" r="1.8" fill="${c}"/>`;
+  },
+
   // A way that splits to several switching devices (direct switching, separate
   // branches): a junction under the way, then one branch per device — its contact
   // (dashed outline, tag + rating + terminals beside it) running to its own load.
@@ -1685,6 +1696,7 @@ const DBDrawing = {
         g += this._vline(x, top, endY, [[devY, 20 * this.SYM_SCALE], ...(pole ? [[ctrY, 12]] : []), ...(mCt ? [[mY, 5]] : []), ...lblGap], stroke, 1.4);
         sym = this._glyph(it.glyph, x, devY, P, stroke, it);
         if (pole) g += this._gContactor(x, ctrY, P, P.ctl);
+        if (pole && DBControls.hasBypass(it.ctr)) g += this._gBypassLoop(x, ctrY, P);
         if (it.mtr) g += this._gWayMeter(comp, it.mtr, it.mtrLabel, x, mY, P, mCt);
         if (it.br) g += this._branchTier(it, x, endY, P, D.load);
         if (D.load && !it.spare && !it.br) {

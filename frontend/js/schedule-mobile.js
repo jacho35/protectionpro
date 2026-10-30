@@ -236,7 +236,7 @@ const SchMobile = {
       const cable = [c.cable_mm2 ? `${c.cable_mm2} mm²` : '', Number(c.cable_m) > 0 ? `${c.cable_m} m` : ''].filter(Boolean).join(' · ');
       const k = DBControls.wayContactor(comp, c);
       const pole = k ? DBControls.poleLabel(comp, k, c) : '';
-      const ctlLine = k ? `${k.tag}${pole ? ' pole ' + pole : ''} · ${DBControls.switchedBy(k)}${!DBControls.isDirect(k) && k.selector !== 'none' ? ' · ' + (k.selector === 'hoa' ? 'H-O-A' : 'O-A') : ''}` : '';
+      const ctlLine = k ? `${k.tag}${pole ? ' pole ' + pole : ''} · ${DBControls.switchedBy(k)}${DBControls.hasBypass(k) ? ' · bypass ' + DBControls.bypassTag(k) : ''}${!DBControls.isDirect(k) && k.selector !== 'none' ? ' · ' + (k.selector === 'hoa' ? 'H-O-A' : 'O-A') : ''}` : '';
       const sel = this._selecting;
       const on = sel && this._sel.has(c.id);
       cards.push(`
