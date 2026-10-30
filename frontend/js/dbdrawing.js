@@ -64,6 +64,7 @@ const DBDrawing = {
   LOAD_H: 62,          // PE bar → load symbol block
   SYM_SCALE: 1.3,      // device symbols are drawn this much larger than the SLD's
   CTR_OFF: 62,         // device centre → contactor pole centre
+  PEC_DY: 72,          // extra drop for a photocell circuit drawn as its wiring diagram
   CTR_DY: 56,          // extra drop length when a row carries contactor poles
   SEC_CTR_DY: 60,      // extra busbar → device room for a switched section (riser, contactor, sub-bus)
   SEC_CTR_Y: 28,       // busbar → a switched section's contactor
@@ -659,10 +660,11 @@ const DBDrawing = {
           + `</g></g>`;
         continue;
       }
-      const lx = xs[r.to] + 10;
+      const pecRun = direct && (k.switches || []).some(sw => sw.kind === 'photocell');
+      const lx = xs[r.to] + (pecRun ? 112 : 10);
       s += `<g><title>${this._esc(tip)}</title>`
-        + (r.to > r.from ? `<line x1="${xs[r.from] - 4.5}" y1="${ctrY}" x2="${xs[r.to] - 4.5}" y2="${ctrY}" stroke="${P.ctl}" stroke-width="1" stroke-dasharray="3,3"/>` : '')
-        + `<g data-dxf-block="DB_CONTACTOR" data-dxf-at="${escHtml(xs[r.from])},${ctrY}" data-dxf-attrs="${escHtml(attrs)}">${label(lx, ctrY - 4)}</g></g>`;
+        + (r.to > r.from && !pecRun ? `<line x1="${xs[r.from] - 4.5}" y1="${ctrY - (direct ? 19 : 0)}" x2="${xs[r.to] - 4.5}" y2="${ctrY - (direct ? 19 : 0)}" stroke="${P.ctl}" stroke-width="1" stroke-dasharray="3,3"/>` : '')
+        + `<g data-dxf-block="DB_CONTACTOR" data-dxf-at="${escHtml(xs[r.from])},${ctrY}" data-dxf-attrs="${escHtml(attrs)}">${label(lx, ctrY - 4 + (pecRun ? 34 : 0))}</g></g>`;
     }
     return s;
   },
@@ -1001,7 +1003,7 @@ const DBDrawing = {
     // Contactor poles sit under the way's breaker (the drop gets longer); a
     // switched section's contactor and sub-bus sit under the busbar (the
     // breakers — and the earth-leakage brackets — drop lower).
-    const ctrDY = items.some(it => it.ctr && !it.br && it.ctr.arrangement !== 'section') ? this.CTR_DY : 0;
+    const ctrDY = items.some(it => it.ctr && !it.br && it.ctr.arrangement !== 'section') ? this.CTR_DY + (items.some(it => this._pecCircuit(it)) ? this.PEC_DY : 0) : 0;
     const brH = items.some(it => it.br) ? this.BR_H : 0;
     const secDY = items.some(it => (it.ctr && it.ctr.arrangement === 'section') || it.msub) ? this.SEC_CTR_DY : 0;
     const elDY = items.some(it => it.elMode === 'device' || it.elMode === 'section') ? this.EL_DY : 0;
@@ -1260,11 +1262,74 @@ const DBDrawing = {
       + `<line x1="${x}" y1="${y + 12}" x2="${x - 9}" y2="${y - 8}" stroke="${escHtml(stroke)}" stroke-width="1.6"/>`;
   },
 
+  // A directly switched circuit with a photocell, drawn as its wiring diagram (as in
+  // the Controls editor): feed → PEC (Line top, Load left → AUTO, N right) → selector
+  // AUTO, the supply past the PEC to ON, the lamp across the bypass.
+  _pecCircuit(it) {
+    const k = it.ctr;
+    return !!(k && !it.br && k.arrangement !== 'section' && DBControls.isDirect(k)
+      && (k.switches || []).some(sw => sw.kind === 'photocell'));
+  },
+
+  _gPecCircuit(x, top, P, k) {
+    const sc = 0.6, f = (n) => +n.toFixed(2);
+    const X = (v) => f(x + (v - 150) * sc), Y = (v) => f(top + (v - 6) * sc);
+    const ink = escHtml(P.line), hot = escHtml(P.ctl), amber = '#d98a00';
+    const byp = DBControls.hasBypass(k), hoa = DBControls.bypassMode(k) === 'hoa';
+    const path = (d, c, w) => {
+      const t = d.match(/[MLHVZ]|-?[\d.]+/g), o = []; let i = 0;
+      while (i < t.length) {
+        const c0 = t[i++]; o.push(c0);
+        if (c0 === 'H') o.push(X(+t[i++]));
+        else if (c0 === 'V') o.push(Y(+t[i++]));
+        else if (c0 !== 'Z') { o.push(X(+t[i++]), Y(+t[i++])); }
+      }
+      return `<path d="${o.join(' ')}" fill="none" stroke="${c}" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round"/>`;
+    };
+    const ring = (cx, cy, r, c, fill) => `<circle cx="${X(cx)}" cy="${Y(cy)}" r="${f(r * sc)}" fill="${fill || P.surface}" stroke="${c}" stroke-width="1.2"/>`;
+    const term = (cx, cy) => ring(cx, cy, 4, ink) + path(`M${cx - 2.8} ${cy + 2.8} L${cx + 2.8} ${cy - 2.8}`, ink, 0.8);
+    const arrow = (x1, y1, x2, y2) => {
+      const L = Math.hypot(x2 - x1, y2 - y1), ux = (x2 - x1) / L, uy = (y2 - y1) / L;
+      const bx = x2 - ux * 6, by = y2 - uy * 6, px = -uy * 2.5, py = ux * 2.5;
+      return path(`M${x1} ${y1} L${bx} ${by}`, ink, 0.9)
+        + `<path d="${[[x2, y2], [bx + px, by + py], [bx - px, by - py]].map((q, i) => (i ? 'L' : 'M') + X(q[0]) + ' ' + Y(q[1])).join(' ')} Z" fill="${ink}"/>`;
+    };
+    const txt = (tx, ty, str, c, anchor, sz) => `<text x="${X(tx)}" y="${Y(ty)}"${anchor ? ` text-anchor="${anchor}"` : ''} font-size="${sz || 7}" fill="${c}">${this._esc(str)}</text>`;
+    const pcTag = ((k.switches || []).find(sw => sw.kind === 'photocell').tag || 'PC').replace(/^PC(\d)/, 'PEC$1');
+    let g = path('M150 6 V64 M150 68 V86 M122 100 H136 M164 100 H178 M186 100 H192', ink, 1.4)
+      + ring(150, 100, 14, ink) + path('M146 93 V107 M154 93 V107', ink, 1.3)
+      + arrow(178, 74, 165, 87) + arrow(185, 80, 172, 93)
+      + term(150, 64) + term(118, 100) + term(182, 100)
+      + (byp ? path('M118 104 V146 M150 164 V180', ink, 1.4) + ring(118, 150, 4, ink)
+        : path('M118 104 V170 H150 V180', ink, 1.4))
+      + txt(108, 95, pcTag, ink, 'end') + txt(196, 104, 'N', ink);
+    if (byp) {
+      g += path('M150 64 H250 V150 H186', hot, 1.8) + ring(182, 150, 4, hot) + (hoa ? ring(150, 140, 4, ink) : '')
+        + path('M150 160 L121.5 152', hot, 2) + `<circle cx="${X(150)}" cy="${Y(160)}" r="${f(3.5 * sc)}" fill="${hot}"/>`
+        + txt(118, 170, 'AUTO', hot, 'middle', 6.5) + txt(182, 170, 'ON', hot, 'middle', 6.5)
+        + (hoa ? txt(150, 134, 'OFF', hot, 'middle', 6.5) : '')
+        + txt(244, 165, DBControls.bypassTag(k), hot, 'end', 7.5) + txt(244, 176, hoa ? 'Auto·Off·On' : 'Auto / On', hot, 'end', 6);
+      // The lamp is wired live → neutral through the selector's own auxiliary contact (closed
+      // in On), never in the load path.
+      if (k.bypass_lamp) g += path('M250 98 H276 V102 M276 118 V124 M276 142 V150', amber, 1.2) + `<circle cx="${X(250)}" cy="${Y(98)}" r="${f(2 * sc)}" fill="${amber}"/>`
+        + path('M276 118 L270.5 104.5', amber, 1.4) + `<circle cx="${X(276)}" cy="${Y(102)}" r="${f(2 * sc)}" fill="${amber}"/>`
+        + ring(276, 133, 9, amber) + path('M269.6 126.6 L282.4 139.4 M282.4 126.6 L269.6 139.4', amber, 1.1)
+        + `<path d="${['M270 111', 'H198', 'V157', 'H138'].map(c => c.replace(/([HV])([\d.]+)/, (m, l, v) => l + (l === 'H' ? X(+v) : Y(+v))).replace(/^M([\d.]+) ([\d.]+)/, (m, a2, b2) => 'M' + X(+a2) + ' ' + Y(+b2))).join(' ')}" fill="none" stroke="${amber}" stroke-width="0.9" stroke-dasharray="3,2.5"/>`
+        + path('M270 150 H282', amber, 1.2) + txt(288, 112, 'aux', amber, '', 6) + txt(288, 154, 'N', amber, '', 6.5)
+        + txt(276, 166, DBControls.bypassLampTag(k), amber, 'middle', 6.5);
+    }
+    return g;
+  },
+
   // The bypass round a directly switched circuit's contact: a leg off the line above
   // the contact, through an open switch, back in below it.
-  _gBypassLoop(x, y, P) {
+  _gBypassLoop(x, y, P, tag, lamp) {
     const c = escHtml(P.ctl), xl = x - 15;
-    return `<path d="M ${x} ${y - 14} H ${xl} V ${y - 5} M ${xl} ${y + 5} V ${y + 14} H ${x}" fill="none" stroke="${c}" stroke-width="1.2"/>`
+    const lampSvg = lamp ? `<circle cx="${xl - 14}" cy="${y}" r="5.5" fill="${P.surface}" stroke="#d98a00" stroke-width="1.3"/>`
+      + `<path d="M ${xl - 17.9} ${y - 3.9} L ${xl - 10.1} ${y + 3.9} M ${xl - 10.1} ${y - 3.9} L ${xl - 17.9} ${y + 3.9}" stroke="#d98a00" stroke-width="1.1"/>`
+      + `<line x1="${xl - 8.5}" y1="${y}" x2="${xl - 1}" y2="${y}" stroke="#d98a00" stroke-width="0.8" stroke-dasharray="2,2"/>`
+      + `<text x="${xl - 14}" y="${y + 15}" text-anchor="middle" font-size="6.5" fill="#d98a00">${this._esc(lamp)}</text>` : '';
+    return `<text x="${xl}" y="${y + 25}" text-anchor="middle" font-size="7" fill="${c}">${this._esc(tag || '')}</text>` + lampSvg + `<path d="M ${x} ${y - 14} H ${xl} V ${y - 5} M ${xl} ${y + 5} V ${y + 14} H ${x}" fill="none" stroke="${c}" stroke-width="1.2"/>`
       + `<line x1="${xl}" y1="${y + 5}" x2="${xl - 5}" y2="${y - 4}" stroke="${c}" stroke-width="1.4"/>`
       + `<circle cx="${x}" cy="${y - 14}" r="1.8" fill="${c}"/><circle cx="${x}" cy="${y + 14}" r="1.8" fill="${c}"/>`;
   },
@@ -1691,12 +1756,14 @@ const DBDrawing = {
         const pole = it.ctr && !it.br && it.ctr.arrangement !== 'section';
         const top = it.elMode === 'device' ? busY + this.EL_DY
           : (it.ctr && it.ctr.arrangement === 'section') || it.msub ? busY + this.SEC_BUS_Y + (it.elMode === 'section' ? this.EL_DY : 0) : busY;
+        const pec = pole && this._pecCircuit(it), pecTop = devY + 44;
         const mY = devY + 27;
         const mCt = it.mtr && DBMeters.conn(it.mtr.conn).ct;
-        g += this._vline(x, top, endY, [[devY, 20 * this.SYM_SCALE], ...(pole ? [[ctrY, 12]] : []), ...(mCt ? [[mY, 5]] : []), ...lblGap], stroke, 1.4);
+        g += this._vline(x, top, endY, [[devY, 20 * this.SYM_SCALE], ...(pec ? [[pecTop + 52, 52]] : pole ? [[ctrY, 12]] : []), ...(mCt ? [[mY, 5]] : []), ...lblGap], stroke, 1.4);
         sym = this._glyph(it.glyph, x, devY, P, stroke, it);
-        if (pole) g += this._gContactor(x, ctrY, P, P.ctl);
-        if (pole && DBControls.hasBypass(it.ctr)) g += this._gBypassLoop(x, ctrY, P);
+        if (pec) g += this._gPecCircuit(x, pecTop, P, it.ctr);
+        else if (pole) g += this._gContactor(x, ctrY, P, P.ctl);
+        if (pole && !pec && DBControls.hasBypass(it.ctr)) g += this._gBypassLoop(x, ctrY, P, DBControls.bypassTag(it.ctr), it.ctr.bypass_lamp ? DBControls.bypassLampTag(it.ctr) : '');
         if (it.mtr) g += this._gWayMeter(comp, it.mtr, it.mtrLabel, x, mY, P, mCt);
         if (it.br) g += this._branchTier(it, x, endY, P, D.load);
         if (D.load && !it.spare && !it.br) {
