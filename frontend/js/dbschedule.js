@@ -1615,7 +1615,7 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
       const k = DBControls.wayContactor(comp, c);
       const pole = DBControls.poleLabel(comp, k, c);
       const opts = `<option value="">—</option>${ctrs.map(x => `<option value="${escHtml(x.id)}"${k === x ? ' selected' : ''}>${escHtml(x.tag)}</option>`).join('')}<option value="__new">New contactor…</option><option value="__newdirect">New direct switching…</option>`;
-      const tip = k ? `${k.tag}${k.label ? ' (' + k.label + ')' : ''}: ${DBControls.specText(k)} — switched ${DBControls.isDirect(k) ? 'direct (no contactor) ' : ''}by ${DBControls.switchedBy(k)}` : 'Switch this way through a contactor, or direct through a timer / photocell contact';
+      const tip = k ? `${k.tag}${k.label ? ' (' + k.label + ')' : ''}: ${DBControls.specText(k)} — switched ${DBControls.isDirect(k) ? 'direct (no contactor) ' : ''}by ${DBControls.switchedBy(k)}${DBControls.hasBypass(k) ? ' — bypass ' + DBControls.bypassTag(k) : ''}` : 'Switch this way through a contactor, or direct through a timer / photocell contact';
       return `<td data-label="Control" data-grp="ctl" class="db-ctl-cell${k ? ' on' : ''}"><select data-k="contactor" title="${escHtml(tip)}">${opts}</select>${pole ? `<span class="db-ctl-pole" title="Contactor pole">p${escHtml(pole)}</span>` : ''}</td>`;
     };
     // Metering: the meter that measures the way (DBMeters) — a circuit meter

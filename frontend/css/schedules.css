@@ -1022,6 +1022,22 @@ body.dark-mode .dbc-tag { color: #1e1e2e; }
 .dbc-tip-ink { fill: none; stroke: var(--text-primary); stroke-width: 1.5; }
 .dbc-tip-ctl { fill: none; stroke: var(--ctl); stroke-width: 1.8; }
 .dbc-tip-fill { fill: var(--text-primary); }
+.dbc-bypass-row { display: flex; gap: 14px; align-items: flex-start; flex-wrap: wrap; }
+.dbc-byopts { flex: 1 1 200px; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.dbc-dlg-body label.dbc-byopt { flex-direction: row; align-items: flex-start; gap: 8px; padding: 8px; border: 1px solid transparent; border-radius: 6px; color: var(--text-primary); cursor: pointer; }
+.dbc-dlg-body label.dbc-byopt.on { border: 1px solid var(--ctl); background: var(--ctl-bg); }
+.dbc-byopt small { display: block; color: var(--text-secondary); font-size: 11.5px; }
+.dbc-bypass-f { margin-top: 10px; }
+.dbc-bypass-f input[readonly] { opacity: 0.75; }
+.dbc-by-svg { flex: 0 0 auto; border: 1px solid var(--border-color); border-radius: 6px; background: var(--bg-primary); padding: 4px; }
+.dbc-by-ink { fill: none; stroke: var(--text-primary); stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.dbc-by-thin { stroke-width: 1.1; }
+.dbc-by-bg { fill: var(--bg-primary); stroke: var(--text-primary); stroke-width: 1.6; }
+.dbc-by-hot { fill: none; stroke: var(--ctl); stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+.dbc-by-blade { stroke-width: 2.8; }
+.dbc-by-hotring { stroke: var(--ctl); }
+.dbc-tip-svg text.dbc-by-lbl { fill: var(--ctl); font-weight: 600; font-size: 10.5px; }
+.dbc-tip-svg text.dbc-by-plain { font-weight: 400; font-size: 11px; }
 .dbc-swmore { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr); gap: 6px; padding-bottom: 6px; border-bottom: 1px dashed var(--border-color); }
 .dbc-lamp { margin-top: 4px; }
 .dbc-span2 { grid-column: span 2; }

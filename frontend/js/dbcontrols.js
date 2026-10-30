@@ -17,6 +17,13 @@
  *   }
  *   way.contactor = <contactor id>   (in props.circuits)
  *
+ * A 'direct' record may carry a bypass round its switching contact:
+ * `bypass: 'switch'|'hoa'` (absent / 'none' ⇒ none) — 'switch' = an Auto / On
+ * switch, 'hoa' = an Auto – Off – On selector — with `bypass_tag` (BS1),
+ * `bypass_a` (blank = the largest MCB on the circuit), `bypass_mount`
+ * ('door' default | 'din') and an optional lamp (`bypass_lamp`, `bypass_lamp_tag`).
+ * In On the supply goes straight to the load past the contact.
+ *
  * Arrangements: 'single' — one way through its own contactor; 'poles' — one
  * contactor, each way on a pole of its own after its own MCB; 'section' — the
  * contactor feeds a group of ways (a switched busbar section).
@@ -93,11 +100,17 @@ const CTL_LAMP_SHOWS = [
   { v: 'on', label: 'Lit when the contactor is closed', aux: '13-14', nc: false },
   { v: 'off', label: 'Lit when the contactor is open', aux: '21-22', nc: true },
 ];
+// Bypass round a directly switched circuit's contact.
+const CTL_BYPASS = [
+  { v: 'none', label: 'None', hint: 'Only the switching device switches the circuit' },
+  { v: 'switch', label: 'Bypass switch', hint: 'Auto / On: On connects the supply straight to the load' },
+  { v: 'hoa', label: 'Auto – Off – On selector', hint: 'Three positions; Off isolates the circuit' },
+];
 // The "?" beside each arrangement in the editor: a small diagram and what it means.
 const CTL_ARRANGEMENT_HELP = {
   single: 'The contactor sits after the way’s MCB and switches that one circuit. Use it for a single heater, pump or lighting circuit.',
   poles: 'Each circuit keeps its own MCB. One pole of the contactor sits in each circuit and they all switch together — up to as many circuits as the contactor has poles.',
-  direct: 'No contactor: the circuit’s load current runs through the output contact of the timer, astronomical clock or photocell itself, after the way’s MCB. Use it for small loads — the contact rating must cover the MCB, and lighting or motor loads need the AC-5 / AC-3 contact rating.',
+  direct: 'No contactor: the circuit’s load current runs through the output contact of the timer, astronomical clock or photocell itself, after the way’s MCB. Use it for small loads — the contact rating must cover the MCB, and lighting or motor loads need the AC-5 / AC-3 contact rating. Add a bypass switch (or an Auto – Off – On selector) to force the circuit on past the contact for testing or a failed sensor.',
   section: 'The contactor sits ahead of the circuits and feeds a small bus; their MCBs hang from it. Use it when there are more circuits than poles, or a whole group must go off together.',
 };
 
@@ -139,6 +152,20 @@ const DBControls = {
   // 'Contactor 2P 25 A AC-1' or, for a directly switched circuit, 'Direct contact 16 A AC-5a'.
   specText(k) { return this.isDirect(k) ? `${k.poles} ${k.rating_a} A ${k.category} contact` : `${k.poles} ${k.rating_a} A ${k.category}`; },
   noun(k) { return this.isDirect(k) ? 'direct switching' : 'contactor'; },
+
+  // ── Bypass (directly switched circuits only) ────────────────────────
+  bypassMode(k) { return this.isDirect(k) && (k.bypass === 'switch' || k.bypass === 'hoa') ? k.bypass : 'none'; },
+  hasBypass(k) { return this.bypassMode(k) !== 'none'; },
+  bypassKind(k) { return CTL_BYPASS.find(x => x.v === this.bypassMode(k)) || CTL_BYPASS[0]; },
+  bypassTag(k) { return String(k.bypass_tag || '').trim() || (this.bypassMode(k) === 'hoa' ? 'S-' : 'BS-') + k.tag; },
+  bypassMount(k) { return k.bypass_mount === 'din' ? 'din' : 'door'; },
+  bypassLampTag(k) { return String(k.bypass_lamp_tag || '').trim() || 'H-' + this.bypassTag(k); },
+  // Rating: typed, else the largest MCB on the circuit (it carries the whole load when bypassed).
+  bypassA(comp, k) { return Number(k.bypass_a) || this.dutyA(comp, k, this.waysOf(comp, k)) || Number(k.rating_a) || 0; },
+  bypassModules(k) { return this.bypassMount(k) === 'din' ? Math.max(1, Math.ceil(this._polesN(k) / 2)) : 0; },
+  bypassSpec(comp, k) {
+    return `${this.bypassKind(k).label} ${k.poles} ${this.bypassA(comp, k)} A${this.bypassMode(k) === 'hoa' ? ' · Auto–Off–On' : ' · Auto / On'}`;
+  },
 
   has(comp) { return this.peek(comp).contactors.length > 0; },
   contactors(comp) { return this.peek(comp).contactors; },
@@ -190,6 +217,7 @@ const DBControls = {
     for (const k of this.contactors(comp)) {
       for (const s of (k.switches || [])) out.push(s.tag);
       if (!this.isDirect(k)) out.push(k.selector_tag);
+      if (this.hasBypass(k)) out.push(k.bypass_tag, k.bypass_lamp_tag);
     }
     return out;
   },
@@ -263,6 +291,7 @@ const DBControls = {
       k.selector = 'none'; k.lamp = false; k.supply = '';
       if (/^K\d+$/i.test(String(k.tag || ''))) k.tag = this._nextTag(this.contactors(comp).filter(x => x.id !== k.id).map(x => x.tag), 'SW');
     } else if (v !== 'direct' && wasDirect) {
+      for (const f of ['bypass', 'bypass_tag', 'bypass_a', 'bypass_mount', 'bypass_lamp', 'bypass_lamp_tag']) delete k[f];
       k.selector = 'hoa';
       if (k.combine === 'branches') k.combine = 'series';
       const d = this.peek(comp);
@@ -391,6 +420,13 @@ const DBControls = {
         if (a > rating) out.push({ level: 'warn', text: `Way ${w.way}: the ${rating} A ${cat} contact is below its ${a} A breaker — the breaker does not protect the contact; fit a contactor or a bigger contact.` });
       }
     }
+    if (this.hasBypass(k)) {
+      const bt = this.bypassTag(k), a = Number(k.bypass_a) || 0;
+      const big = Math.max(0, ...ways.map(w => Number(w.breaker_a) || 0));
+      if (a && big && a < big) out.push({ level: 'warn', text: `${bt}: the ${a} A ${this.bypassKind(k).label.toLowerCase()} is below the ${big} A breaker — it carries the whole load when the contact is bypassed.` });
+      out.push({ level: 'info', text: `${bt}: in On the circuit stays live whatever ${this.switchedBy(k)} says — label it on the door and set it back to Auto.${this.bypassMode(k) === 'hoa' ? ' Off opens the circuit.' : ''}` });
+      if (this.isBranched(k)) out.push({ level: 'info', text: `${bt} bypasses every branch together.` });
+    }
     if (ways.some(w => this._isMotor(w))) out.push({ level: 'warn', text: 'Switches a motor load directly — use a contactor, or check the contact’s AC-3 rating.' });
     if (ways.some(w => this._isLighting(w)) && !/^AC-5/.test(cat)) {
       out.push({ level: 'info', text: 'Switches lighting — use the contact’s AC-5a (LED / discharge) or AC-5b (incandescent) rating; LED drivers draw a high inrush.' });
@@ -445,6 +481,17 @@ const DBControls = {
           spec: `${this.switchDevice(s)}${direct ? ` · ${this.branchRating(k, s)} A ${k.category} contact` : ''}${direct && k.combine === 'branches' && s.feeds ? ' · feeds ' + s.feeds : ''}${s.setting ? ' · ' + s.setting : ''}${mount === 'din' ? (kd.field ? ' · ' + kd.field : '') : ' · ' + this.mountLabel(mount).toLowerCase()}`,
           modules: mods, heat_w: mods ? kd.heat_w : 0, field: !mods });
       }
+      if (direct && this.hasBypass(k)) {
+        const mount = this.bypassMount(k), mods = this.bypassModules(k);
+        out.push({ id: 'byp:' + k.id, group: k.id, tag: this.bypassTag(k), kind: 'bypass', label: this.bypassTag(k),
+          spec: `${this.bypassSpec(comp, k)} · across ${this.switchedBy(k)} · ${this.mountLabel(mount).toLowerCase()}`,
+          modules: mods, heat_w: mods ? 0.5 : 0, field: !mods,
+          bypass: { mode: this.bypassMode(k), poles: k.poles, a: this.bypassA(comp, k) } });
+        if (k.bypass_lamp) {
+          out.push({ id: 'bypl:' + k.id, group: k.id, tag: this.bypassLampTag(k), kind: 'bypasslamp', label: this.bypassLampTag(k),
+            spec: `Indicator lamp (door) — Amber LED 22 mm · lit while ${this.bypassTag(k)} is On`, modules: 0, heat_w: 0.5, field: true });
+        }
+      }
       const selKey = 'sel|' + String(k.selector_tag || 'S').trim().toLowerCase() + '|' + k.selector;
       if (!direct && (k.selector || 'hoa') !== 'none' && !seen.has(selKey)) {
         seen.add(selKey);       // one selector switching several contactors is fitted once
@@ -476,6 +523,13 @@ const DBControls = {
         continue;
       }
       const kd = CTL_SWITCH_KINDS.find(x => x.key === dv.kind);
+      if (dv.kind === 'bypass') {
+        const b = dv.bypass;
+        out.push({ key: `CTL-BYPASS-${b.mode === 'hoa' ? 'HOA' : 'SW'}-${b.poles}-${b.a}A`,
+          desc: b.mode === 'hoa' ? `Selector switch Auto – Off – On ${b.poles} ${b.a} A (bypass)` : `Bypass switch Auto / On ${b.poles} ${b.a} A` });
+        continue;
+      }
+      if (dv.kind === 'bypasslamp') { out.push({ key: 'CTL-LAMP', desc: 'Indicator lamp, amber LED 22 mm' }); continue; }
       if (dv.kind === 'lamp') {
         const k = this.contactors(comp).find(x => 'lamp:' + x.id === dv.id);
         const col = k ? this.lampColour(k) : CTL_LAMP_COLOURS[0];
@@ -549,6 +603,14 @@ const DBControls = {
         if (key) byTag.set(key, r);
         rows.push(r);
       }
+      if (this.hasBypass(k)) {
+        const hoa = this.bypassMode(k) === 'hoa';
+        rows.push({ tag: this.bypassTag(k), device: `${this.bypassKind(k).label} ${k.poles} ${this.bypassA(comp, k)} A`,
+          setting: hoa ? 'Auto · Off · On' : 'Auto / On', contact: hoa ? 'Auto → contact · On → direct' : 'On → direct, past the contact',
+          mount: this.mountLabel(this.bypassMount(k)), modules: this.bypassModules(k), ctrs: [k.tag] });
+        if (k.bypass_lamp) rows.push({ tag: this.bypassLampTag(k), device: 'Indicator, amber LED 22 mm', setting: `Lit while ${this.bypassTag(k)} is On`,
+          contact: `across ${this.bypassTag(k)} On`, mount: this.mountLabel('door'), modules: 0, ctrs: [k.tag] });
+      }
       if (!this.isDirect(k) && k.lamp) {
         const sh = this.lampShows(k);
         rows.push({ tag: this.lampTag(k), device: `Indicator, ${this.lampColour(k).label.toLowerCase()} LED 22 mm${volts ? ', ' + volts : ''}`,
@@ -595,6 +657,36 @@ const DBControls = {
       <path d="${ink}" class="dbc-tip-ink"/><path d="${ctl}" class="dbc-tip-ctl${v === 'poles' ? ' dbc-tip-link' : ''}"/><path d="${escHtml(fill)}" class="dbc-tip-fill"/>${txt}</svg>`;
   },
 
+  // Single-line sketch of a directly switched circuit with its bypass (the editor's
+  // Bypass section): MCB → PEC (photocell: Line top, Load left, N right) → Auto
+  // terminal of the selector; the supply goes straight to On past the PEC.
+  bypassSvg(mode) {
+    const arrow = (x1, y1, x2, y2) => {
+      const L = Math.hypot(x2 - x1, y2 - y1), ux = (x2 - x1) / L, uy = (y2 - y1) / L;
+      const bx = x2 - ux * 6, by = y2 - uy * 6, px = -uy * 2.5, py = ux * 2.5, f = (n) => n.toFixed(1);
+      return `<path d="M${x1} ${y1} L${f(bx)} ${f(by)}" class="dbc-by-ink dbc-by-thin"/><path d="M${x2} ${y2} L${f(bx + px)} ${f(by + py)} L${f(bx - px)} ${f(by - py)} Z" class="dbc-tip-fill"/>`;
+    };
+    const term = (x, y) => `<circle cx="${x}" cy="${y}" r="4" class="dbc-by-bg"/><path d="M${x - 2.8} ${y + 2.8} L${x + 2.8} ${y - 2.8}" class="dbc-by-ink dbc-by-thin"/>`;
+    const hollow = (x, y, hot) => `<circle cx="${x}" cy="${y}" r="4" class="dbc-by-bg${hot ? ' dbc-by-hotring' : ''}"/>`;
+    const byp = mode !== 'none', hoa = mode === 'hoa';
+    let ink = `<path d="M150 6 V22 M150 40 L141 26 M150 40 V60 M150 68 V86 M122 100 H136 M164 100 H178 M186 100 H192" class="dbc-by-ink"/>`
+      + `<circle cx="150" cy="100" r="14" class="dbc-by-bg"/><path d="M146 93 V107 M154 93 V107" class="dbc-by-ink dbc-by-thin"/>`
+      + arrow(178, 74, 165, 87) + arrow(185, 80, 172, 93)
+      + term(150, 64) + term(118, 100) + term(182, 100)
+      + (byp ? `<path d="M118 104 V146 M150 164 V180" class="dbc-by-ink"/>${hollow(118, 150)}` : `<path d="M118 104 V170 H150 V180" class="dbc-by-ink"/>`)
+      + `<rect x="130" y="180" width="40" height="24" rx="3" class="dbc-by-ink"/>`;
+    let hot = '', txt = `<text x="162" y="36">MCB</text><text x="108" y="95" text-anchor="end" class="dbc-tip-k">PEC</text><text x="196" y="104">N</text><text x="150" y="196" text-anchor="middle">Load</text>`;
+    if (byp) {
+      hot = `<path d="M150 64 H250 V150 H186" class="dbc-by-hot"/>${hollow(182, 150, true)}${hoa ? hollow(150, 140) : ''}`
+        + `<path d="M150 160 L121.5 152" class="dbc-by-hot dbc-by-blade"/><circle cx="150" cy="160" r="3.5" class="dbc-tip-fill"/>`;
+      txt += `<text x="118" y="170" text-anchor="middle" class="dbc-by-lbl">AUTO</text><text x="182" y="170" text-anchor="middle" class="dbc-by-lbl">ON</text>`
+        + (hoa ? `<text x="150" y="134" text-anchor="middle" class="dbc-by-lbl">OFF</text>` : '')
+        + `<text x="258" y="112" class="dbc-by-lbl">${hoa ? 'Selector' : 'Bypass switch'}</text><text x="258" y="125" class="dbc-by-lbl dbc-by-plain">${hoa ? 'Auto · Off · On' : 'Auto / On'}</text>`;
+    }
+    const label = byp ? `Single line: the PEC switches the circuit in Auto; in On the supply goes straight to the load${hoa ? '; Off opens it' : ''}` : 'Single line: MCB, PEC, load';
+    return `<svg class="dbc-tip-svg dbc-by-svg" viewBox="0 0 360 212" width="300" height="177" role="img" aria-label="${label}">${ink}${hot}${txt}</svg>`;
+  },
+
   // ── Rendering: the Controls section under the schedule grid ─────────
   // mode 'section' (schedule) | 'panel' (the single-line side panel, compact).
   render(comp, host, onChange, opts) {
@@ -624,7 +716,7 @@ const DBControls = {
         return `<div class="dbc-card${bad.length ? ' dbc-card-bad' : ''}">
           <div class="dbc-card-head">${chip(k.tag)}<span>${e(k.label || '')}</span><button type="button" class="btn-small" data-dbc-edit="${e(k.id)}">Edit</button></div>
           <div class="dbc-dim">${e(`${this.isDirect(k) ? 'direct ' : ''}${this.specText(k)} · ways ${ways.map(x => x.way).join(', ') || '—'}`)}</div>
-          <div class="dbc-dim">${e(this.switchedBy(k))}${sup ? ' · ' + e(sup.tag) : ''}</div>
+          <div class="dbc-dim">${e(this.switchedBy(k))}${sup ? ' · ' + e(sup.tag) : ''}${this.hasBypass(k) ? ' · bypass ' + e(this.bypassTag(k)) : ''}</div>
           ${bad.length ? `<div class="dbc-bad">⚠ ${e(bad[0].text)}</div>` : ''}</div>`;
       }
       return `<tr>
@@ -633,7 +725,7 @@ const DBControls = {
         <td>${e(arr)}</td>
         <td>${e(`${k.poles} ${k.rating_a} A · ${k.category}`)}<br><span class="dbc-dim">${this.isDirect(k) ? 'contact on the device' : 'coil ' + e(k.coil || '')}${k.arrangement === 'poles' || this.isDirect(k) ? ` · ${this.polesNeeded(k, ways)} of ${this._polesN(k)} poles` : ''}</span></td>
         <td><div class="dbc-sws">${sw || '<span class="dbc-dim">—</span>'}</div></td>
-        <td>${e(k.selector === 'none' ? '—' : `${sel.label} ${k.selector_tag || ''}`)}</td>
+        <td>${e(this.hasBypass(k) ? `${this.bypassKind(k).label} ${this.bypassTag(k)}` : k.selector === 'none' ? '—' : `${sel.label} ${k.selector_tag || ''}`)}</td>
         <td>${e(sup ? sup.tag : '—')}</td>
         <td>${e(ways.map(x => x.way).join(', ') || '—')}</td>
         <td>${din} mod</td>
@@ -806,6 +898,7 @@ const DBControls = {
         if (!direct) parts.push(`${k.tag} ${this.contactorSize(k).modules}`);
         for (const s of k.switches) { const n = this.switchModules(s); if (n) parts.push(`${s.tag} ${n}`); }
         if (!direct && k.selector !== 'none') parts.push(`${k.selector_tag || 'S'} 1`);
+        if (direct && this.hasBypass(k) && this.bypassModules(k)) parts.push(`${this.bypassTag(k)} ${this.bypassModules(k)}`);
         return parts.join(' · ');
       })();
 
@@ -845,6 +938,7 @@ const DBControls = {
             </div>
             <div class="dbc-dim">${direct ? 'The device’s own output contact carries the circuit current — enter its rating above.' : 'A tag used on another contactor is the same device (one photocell switching several contactors).'}</div>
           </fieldset>
+          ${direct ? this._bypassHtml(comp, k, ways) : ''}
           ${direct ? '' : `<fieldset><legend>Override and supply</legend>
             <div class="dbc-grid4">
               <label>Selector <select data-kk="selector">${CTL_SELECTORS.map(x => opt(x.v, k.selector, x.label)).join('')}</select></label>
@@ -860,7 +954,7 @@ const DBControls = {
           </fieldset>`}
           ${warnList.length ? `<div class="dbc-warns">${warnList.map(w => `<div class="dba-note ${e(w.level)}">${w.level === 'warn' ? '⚠' : 'ⓘ'} ${e(w.text)}</div>`).join('')}</div>` : ''}
           <div class="dbc-where"><div><small>Schedule</small>${ways.length ? `Ways ${e(ways.map(w => w.way).join(', '))} show ${e(k.tag)}` : 'No ways'}</div>
-            <div><small>Single line</small>${ways.length ? `${e(k.tag)} on ${ways.length} way${ways.length === 1 ? '' : 's'}${direct ? ' (contact in the circuit)' : ' + control rung'}` : direct ? 'No ways' : 'Control rung only'}</div>
+            <div><small>Single line</small>${ways.length ? `${e(k.tag)} on ${ways.length} way${ways.length === 1 ? '' : 's'}${direct ? ' (contact in the circuit' + (this.hasBypass(k) ? `, ${e(this.bypassTag(k))} round it` : '') + ')' : ' + control rung'}` : direct ? 'No ways' : 'Control rung only'}</div>
             <div><small>GA</small>${e(din)} modules</div></div>
         </div>
         <div class="modal-footer dbc-foot">
@@ -902,9 +996,26 @@ const DBControls = {
         }
         draw(); return;
       }
+      if (t.name === 'dbc-bypass') {
+        if (t.value === 'none') k.bypass = 'none';
+        else {
+          const wasTag = String(k.bypass_tag || '');
+          k.bypass = t.value;
+          if (!wasTag || /^(BS|S)\d+$/i.test(wasTag)) {
+            const mine = new Set([wasTag.toLowerCase()]);
+            k.bypass_tag = this._nextTag(this._allSwitchTags(comp).filter(x => !mine.has(String(x || '').toLowerCase())).concat(k.switches.map(x => x.tag)), t.value === 'hoa' ? 'S' : 'BS');
+          }
+        }
+        draw(); return;
+      }
       const kk = t.dataset.kk;
       if (!kk) return;
-      if (kk === 'lamp') {
+      if (kk === 'bypass_lamp') {
+        k.bypass_lamp = t.checked;
+        if (k.bypass_lamp && !k.bypass_lamp_tag) k.bypass_lamp_tag = this._nextTag(this.contactors(comp).filter(x => x.id !== k.id && x.bypass_lamp_tag).map(x => x.bypass_lamp_tag).concat(this.contactors(comp).filter(x => x.lamp).map(x => this.lampTag(x))), 'H');
+      }
+      else if (kk === 'bypass_a') k.bypass_a = parseFloat(t.value) || 0;
+      else if (kk === 'lamp') {
         k.lamp = t.checked;
         if (k.lamp && !k.lamp_tag) k.lamp_tag = this._nextLampTag(comp, k);
       }
@@ -963,6 +1074,24 @@ const DBControls = {
         this._afterSave(comp, opts);
       }
     });
+  },
+
+  // The editor's Bypass section for a directly switched circuit.
+  _bypassHtml(comp, k, ways) {
+    const e = escHtml, mode = this.bypassMode(k), on = mode !== 'none';
+    const big = Math.max(0, ...ways.map(w => Number(w.breaker_a) || 0));
+    const radios = CTL_BYPASS.map(b => `<label class="dbc-byopt${mode === b.v ? ' on' : ''}"><input type="radio" name="dbc-bypass" value="${e(b.v)}"${mode === b.v ? ' checked' : ''}>
+        <span>${e(b.label)}<small>${e(b.hint)}</small></span></label>`).join('');
+    const fields = on ? `<div class="dbc-grid4 dbc-bypass-f">
+        <label>Tag <input type="text" data-kk="bypass_tag" value="${e(k.bypass_tag || '')}" placeholder="${e(this.bypassTag(k))}"></label>
+        <label>Rating (A) <input type="number" data-kk="bypass_a" value="${e(k.bypass_a || '')}" placeholder="${e(big || k.rating_a)}" min="1" step="1"></label>
+        <label>Poles <input type="text" value="${e(k.poles)}" readonly aria-label="Poles follow the contact"></label>
+        <label>Mounted <select data-kk="bypass_mount">${CTL_MOUNTS.filter(x => x.v !== 'field').map(x => `<option value="${e(x.v)}"${this.bypassMount(k) === x.v ? ' selected' : ''}>${e(x.label)}</option>`).join('')}</select></label>
+      </div>
+      <label class="dbc-chk"><input type="checkbox" data-kk="bypass_lamp"${k.bypass_lamp ? ' checked' : ''}> Indicator lamp on the door, lit while bypassed${k.bypass_lamp ? ` (${e(this.bypassLampTag(k))} · amber)` : ''}</label>
+      <div class="dbc-dim">${big ? `Suggested ${big} A — the largest breaker on the circuit; ` : ''}the bypass carries the whole load, so it is not limited by the contact’s ${e(k.rating_a)} A.</div>` : '';
+    return `<fieldset class="dbc-bypass"><legend>Bypass</legend>
+      <div class="dbc-bypass-row"><div class="dbc-byopts">${radios}</div>${this.bypassSvg(mode)}</div>${fields}</fieldset>`;
   },
 
   // Warnings for the editor's working copy (its ways are the picked ones).
