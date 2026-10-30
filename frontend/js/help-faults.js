@@ -19,11 +19,12 @@ $$Z_b=\frac{U_b^{2}}{S_b},\qquad I_b=\frac{S_b}{\sqrt3\,U_b},\qquad z_{pu}=\frac
 <tr><td>Transformer</td><td>$z_T=\dfrac{u_k\%}{100}\dfrac{S_b}{S_{rT}}\,K_T$ with $K_T=\dfrac{0.95\,c_{max}}{1+0.6\,x_T}$ (§6.3.3)</td></tr>
 <tr><td>Generator</td><td>$Z_{GK}=K_G\,(R_G+jX''_d)$ with $K_G=\dfrac{U_n}{U_{rG}}\dfrac{c_{max}}{1+x''_d\sin\varphi_{rG}}$ (Eq. 18). When no $X/R$ is entered, $R_G=0.15X''_d$ (≤1 kV), $0.07X''_d$ (&gt;1 kV, &lt;100 MVA) or $0.05X''_d$ (≥100 MVA)</td></tr>
 <tr><td>Cable / line</td><td>$z=\dfrac{(r+jx)\,\ell}{n_{par}\,Z_b}$ — per-km values × length, divided by the number of parallel runs</td></tr>
-<tr><td>Induction motor (§13)</td><td>$x=x''\dfrac{S_b}{S_{rM}}$ with $S_{rM}=\dfrac{P_r}{\eta\cos\varphi}$; $r=x/(X/R)$</td></tr>
-<tr><td>Solar PV / inverter (TR 60909-4)</td><td>Current-limited: $x=\dfrac{1}{k_{fc}}\dfrac{S_b}{S_{inv}}$, $X/R=10$, with $k_{fc}$ the fault-contribution multiple (default 1.1 pu)</td></tr>
+<tr><td>Induction motor (§13)</td><td>$x=x''\dfrac{S_b}{S_{rM}}\left(\dfrac{U_{rM}}{U_n}\right)^2$ with $S_{rM}=\dfrac{P_r}{\eta\cos\varphi}$; $r=x/(X/R)$</td></tr>
+<tr><td>Solar PV / BESS / full-converter wind</td><td>Current-limited: $|z|=\dfrac{c}{k_{fc}}\dfrac{S_b}{S_{inv}}$, $X/R=10$, so the inverter delivers exactly $k_{fc}\,I_r$ whatever $c$ is; $k_{fc}$ is the fault-contribution multiple (default 1.1 pu)</td></tr>
 </tbody></table>
 <p>Impedances are referred to the fault location through each transformer's <strong>rated</strong> ratio $t_r=U_{rTHV}/U_{rTLV}$, not the ratio of the drawn bus voltages. When a nameplate differs from its bus — an 11/0.42 kV unit on a 0.4 kV bus — the transformer and everything beyond it are scaled by $(U_r/U_b)^2$ as seen from the fault, here $(0.42/0.4)^2=1.1025$ from the LV side; in a meshed network the branch carries the matching off-nominal ratio. When every nameplate matches its buses the factor is exactly 1.</p>
-<p>The voltage factor $c$ is <strong>1.10</strong> for maximum-current studies ($c_{max}$) and 0.95 for the minimum-current basis used when checking earth-fault disconnection ($c_{min}$).</p>
+<p>Machines are taken on their own rated voltage: a generator rated $U_{rG}$ on a bus of nominal $U_n$ has $Z_{GK}=K_G\,(R_G+jX''_d)\,U_{rG}^2/S_{rG}$, and $K_G$ also corrects an entered $X_2$ and $X_0$. A rated voltage more than 25 % from the bus voltage is treated as a stale entry and the machine as rated at the bus voltage; the study notes name it.</p>
+<p>The voltage factor $c$ is <strong>1.10</strong> for maximum-current studies ($c_{max}$) and 0.95 for the minimum-current basis used when checking earth-fault disconnection ($c_{min}$). The minimum-current study also neglects motors, the rotating fraction of lumped loads and drive regeneration (§2.5).</p>
 
 <h4>3 · Fault currents</h4>
 <p>With $Z_1$ the driving-point impedance from the fault node (a nodal $Z_{bus}$ solve when the network is meshed, source-path parallel when radial), and $Z_2$, $Z_0$ the negative- and zero-sequence equivalents:</p>
@@ -41,7 +42,8 @@ $$\kappa=1.02+0.98\,e^{-3R/X},\qquad i_p=\kappa\sqrt2\,I''_{k3}$$
 $$I_b=\sum_i \mu_i\,I''_{k,i}\;+\;\sum_{motors} q_j\,\mu_j\,I''_{kM,j},\qquad
 \mu=a+b\,e^{-d\,I''_{kG}/I_{rG}}\ (\le 1)$$
 <p>with $(a,b,d)=(0.84,0.26,0.26)$ at 20 ms, $(0.71,0.51,0.30)$ at 50 ms, $(0.62,0.72,0.32)$ at 100 ms and $(0.56,0.94,0.38)$ from 250 ms. Utility feeders far from generators have $\mu=1$. Induction-motor decay is $q=a'+b'\ln m$ with $m$ the MW per pole pair.</p>
-<p><strong>Steady-state</strong> $I_k$: utilities keep $I''_k$; generators use the synchronous reactance, $I_k=c/(x_d\,S_b/S_{rG})\,I_b$; induction motors contribute zero.</p>
+<p>On a meshed network, or where several sources feed the fault through a shared branch, the breaking current follows §9.1.3 Eq. (75): $I_b=I''_k-\sum_i \dfrac{\Delta U''_i}{c\,U_n/\sqrt3}(1-\mu_i q_i)\,I''_{k,i}$ with each machine's partial current $I''_{k,i}$ and $\Delta U''_i=X''_i I''_{k,i}$ from the nodal solution. The per-branch currents shown come from the same solution.</p>
+<p><strong>Steady-state</strong> $I_k$ (§4.6): utilities keep $I''_k$; a synchronous machine gives $\lambda\,I_{rG}$, with $\lambda_{max}$ from its own $x''_d$, $x_{d\,sat}$ and power factor and $\lambda_{min}$ from the standard's curve; induction motors contribute zero.</p>
 <p><strong>Thermal-equivalent</strong> current, for withstand checks (§12):</p>
 $$I_{th}=I''_{k3}\sqrt{m+n},\qquad m=\frac{e^{4fT_k\ln(\kappa-1)}-1}{2fT_k\ln(\kappa-1)},\qquad n=1$$
 <p>$n=1$ is the far-from-generator upper bound. $T_k$ is the fault duration (default 1 s).</p>
@@ -55,7 +57,7 @@ $$I_{th}=I''_{k3}\sqrt{m+n},\qquad m=\frac{e^{4fT_k\ln(\kappa-1)}-1}{2fT_k\ln(\k
 <h4>Assumptions and limits</h4>
 <ul>
 <li>Loads are ignored in the fault network (IEC 60909 §3.2) except rotating machines. A static load contributes only through its <code>motor_fraction</code>, modelled as an induction motor with $x''\approx1/\text{LRC}$ (default locked-rotor ratio 6).</li>
-<li>Three-winding transformers are expanded to a star of three two-winding legs before the walk.</li>
+<li>Three-winding autotransformers are expanded to a star of three two-winding legs before the walk. $K_T$ corrects each measured pair impedance before the star conversion (Eq. 13), and the delta tertiary is a zero-sequence source at the star point.</li>
 <li>Zero-sequence behaviour depends on transformer grounding — see <a href="#" data-help="fault-zero-seq">Zero-sequence &amp; earthing</a>.</li>
 <li>Method (c) for $\kappa$ (equivalent frequency) is not implemented.</li>
 </ul>` },
@@ -75,7 +77,7 @@ $$V_j = 1-\frac{Z_{jk}}{Z_{kk}}$$
 <tr><td>Steady state (&gt;0.5 s)</td><td>$X_d$</td><td>fully decayed</td></tr></tbody></table>
 <p>Buses are colour-coded: green &gt;80 %, yellow 50–80 %, orange 30–50 %, red &lt;30 %.</p>
 <h4>Motor re-acceleration</h4>
-<p>After the fault clears, motors that stayed connected draw a re-acceleration current from the recovering voltage. The recovery chart integrates each motor's slip against the network's retained voltage, so it shows whether the voltage returns above the level the motors need to re-speed or stalls the bus.</p>
+<p>After the fault clears, motors that stayed connected draw a re-acceleration current from the recovering voltage. The recovery chart is a screening estimate, not a dynamic simulation: each motor slows by about $t_{clear}/2H$ during the 0.1 s fault, then draws its locked-rotor current scaled by that slowdown, decaying with $2H$, through the post-fault network. Use Dynamic motor starting for a time-domain answer.</p>
 <div class="hc-note"><span class="hc-label">Reading it</span>Use the sub-transient column for relay and contactor drop-out questions (the deepest, shortest sag), and the steady-state column for whether sustained-fault motors will stall.</div>` },
 
 { id: 'fault-zero-seq', group: 'faults', title: 'Zero-sequence & earthing',
@@ -86,7 +88,8 @@ $$V_j = 1-\frac{Z_{jk}}{Z_{kk}}$$
 <h4>Transformer zero-sequence model</h4>
 <p>The transformer's <strong>grounding setting is authoritative</strong>; the vector-group letters only classify each winding:</p>
 <ul>
-<li><strong>Delta or zigzag</strong> winding: an internal circulation path for $I_0$ — it acts as a zero-sequence source whether or not anything is earthed.</li>
+<li><strong>Delta</strong> winding: an internal circulation path for $I_0$. It makes the other winding a zero-sequence source whether or not anything is earthed, and blocks $I_0$ at its own terminals.</li>
+<li><strong>Zigzag</strong> winding (Yzn11, Yzn1): with its neutral earthed it is a zero-sequence source at its own terminals, through its own leakage; unearthed it blocks $I_0$. It cannot balance zero-sequence current entering the other winding.</li>
 <li><strong>Star</strong> winding: passes zero-sequence current <em>only if its neutral is earthed</em> (<code>grounding_hv</code> / <code>grounding_lv</code>). An earthing impedance $Z_n$ enters the zero-sequence loop as $3Z_n$.</li>
 <li>When a grounding property is absent (older projects) the engine falls back to the vector-group letter <code>n</code>, so those results are unchanged.</li>
 </ul>
@@ -96,7 +99,7 @@ $$Z_{0}\;\approx\;Z_{T0}+Z_{0m}\quad\text{with}\quad Z_{0m}\ \begin{cases}0.6\ \
 <h4>Cables and sources</h4>
 <p>Cables carry $r_0,x_0$ per km. If neither is entered, the fault engine falls back to a composite $Z_0\approx3Z_1$, while the unbalanced load-flow uses $3.5\times$ each component. Both engines state which fallback they used in the result notes, and choosing a library cable (armoured distribution types carry $r_0,x_0$) avoids it. Utilities use $Z_0=Z_1\times(Z_0/Z_1)$ ratio; machines use their $X_0$.</p>
 <h4>LV earthing systems (IEC 60364-1)</h4>
-<p>Each LV source (≤1 kV) carries an earthing system. It reshapes the earth-fault loop:</p>
+<p>An LV utility supply and an LV transformer winding (≤1 kV) each carry an earthing system. It reshapes the earth-fault loop:</p>
 <table class="help-ref-table"><thead><tr><th>System</th><th>Effect on $I''_{k1}$</th><th>Compliance consequence</th></tr></thead><tbody>
 <tr><td>TN-S, TN-C-S</td><td>Metallic return through the PE/PEN: $I''_{k1}=3c/|Z_1+Z_2+Z_0|$</td><td>Disconnect on overcurrent device, checked against $Z_s$</td></tr>
 <tr><td>TN-C</td><td>As TN-S</td><td>No RCD on a PEN conductor</td></tr>
