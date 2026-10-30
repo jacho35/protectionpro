@@ -1134,7 +1134,7 @@ const DBDrawing = {
       s += `<line x1="${bx}" y1="${y0}" x2="${bx}" y2="${cy - 14}" stroke="${P.line}" stroke-width="1.4"/>`
         + `<line x1="${bx}" y1="${cy + 14}" x2="${bx}" y2="${numAttr(loadY + (withLoad ? 0 : 10))}" stroke="${P.line}" stroke-width="1.4"/>`
         + `<g><title>${this._esc(`${b.tag}: ${b.label}, ${b.rating} A ${b.cat} contact${b.load_a ? ', ' + b.load_a + ' A' : ''}${b.feeds ? ' — feeds ' + b.feeds : ''}`)}</title>`
-        + `<g data-dxf-block="DB_BRANCH_CONTACT" data-dxf-at="${bx},${cy}" data-dxf-attrs="${esc(attrs)}">`
+        + `<g data-dxf-block="DB_BRANCH_CONTACT" data-dxf-at="${bx},${cy}" data-dxf-attrs="${this._esc(attrs)}">`
         + this._gContactor(bx, cy, P, P.ctl)
         + `<rect x="${bx - 12}" y="${cy - 17}" width="24" height="34" rx="3" fill="none" stroke="${P.ctl}" stroke-width="1" stroke-dasharray="3,2"/>`
         + `<text x="${bx + 17}" y="${cy - 6}" font-size="9.5" font-weight="700" fill="${P.ctl}" data-dxf-attr="TAG_LABEL">${this._esc(this._trunc(b.tag, 8))}</text>`
