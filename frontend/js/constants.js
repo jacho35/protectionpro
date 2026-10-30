@@ -15,7 +15,7 @@
 // App version = 1.<PR number>b — set to the number of the PR that ships the change
 // (CLAUDE.md › Development Workflow). It also stamps saved study results, so
 // every bump marks results from older builds as stale.
-const APP_VERSION = '1.575b';
+const APP_VERSION = '1.576b';
 
 // Way poles (DB schedule, GA, drawings): '1P' live + neutral; '2P' live + neutral, or two
 // phases (L–L) when `phase` is a pair RW / WB / BR; '3P' R W B; '4P' R W B + neutral.
