@@ -37,7 +37,7 @@ $$V_i^{(k+1)}=\frac{1}{Y_{ii}}\left[\frac{P_i-jQ_i}{V_i^{(k)*}}-\sum_{j\ne i}Y_{
 <p>A PV bus first recomputes $Q_i$ from the latest voltages, then rescales $V_i$ back to its set-point magnitude. Because $\Delta V$ per sweep under-states the true error on meshed networks, convergence is confirmed by a final power-mismatch check (&lt;$10^{-5}$ pu) before it is reported.</p>
 
 <h4>5 · Results</h4>
-<p>Branch current and loading come from the solved voltages; the flow from bus $i$ into a branch is $S_{ij}=V_iI_{ij}^{*}$ with $I_{ij}=\frac{y}{t^2}V_i-\frac{y}{t}V_j$, and the loss is $S_{ij}+S_{ji}$. Loading is a current ratio: $|I|/I_{rated}$ for cables, and for transformers the LV winding current over $I_r=S_r/(\sqrt3\,U_{rLV})$. Buses outside $0.9$–$1.1$ pu are listed in the warnings.</p>
+<p>Branch current and loading come from the solved voltages; the flow from bus $i$ into a branch is $S_{ij}=V_iI_{ij}^{*}$ with $I_{ij}=\frac{y}{t^2}V_i-\frac{y}{t}V_j$, and the loss is $S_{ij}+S_{ji}$. In a chain with no bus inside it, each element's current comes from the voltages of the chain's internal points (recovered exactly from its two end buses), so a step-up and a step-down unit on different taps each show their own current. Loading is a current ratio: $|I|/I_{rated}$ for cables, and for transformers the LV winding current over $I_r=S_r/(\sqrt3\,U_{rLV})$. Buses outside $0.9$–$1.1$ pu are listed in the warnings.</p>
 
 <h4>Sources, dispatch and islands</h4>
 <ul>

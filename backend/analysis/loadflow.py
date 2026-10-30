@@ -2255,36 +2255,8 @@ def _kron_reduce_two_port(chain_order, xfmr_set, t_local, near_hv, cable_v_kv,
     (branch-flow reporting, per-element loss-share) needs to change.
     """
     k = len(chain_order)
-    size = k + 1
-    Yl = np.zeros((size, size), dtype=complex)
-
-    def _series_y(z):
-        if abs(z) > 1e-15:
-            return 1.0 / z
-        return complex(0, -1e6)
-
-    for m, elem in enumerate(chain_order):
-        na, nb = m, m + 1
-        if m in xfmr_set:
-            t = t_local[m]
-            y_t = _series_y(_get_impedance(
-                elem, base_mva, v_lv_kv=(xfmr_lv_kv or {}).get(m)))
-            hv_node, lv_node = (na, nb) if near_hv[m] else (nb, na)
-            Yl[hv_node, hv_node] += y_t / (t * t)
-            Yl[lv_node, lv_node] += y_t
-            Yl[hv_node, lv_node] -= y_t / t
-            Yl[lv_node, hv_node] -= y_t / t
-        else:  # cable
-            v_kv = cable_v_kv[m]
-            z_base = (v_kv ** 2) / base_mva if v_kv > 0 else 1.0
-            r = elem.props.get("r_per_km", 0.1) * elem.props.get("length_km", 1)
-            x = elem.props.get("x_per_km", 0.08) * elem.props.get("length_km", 1)
-            n = max(1, int(elem.props.get("num_parallel", 1)))
-            y_c = _series_y(complex(r / z_base, x / z_base) / n)
-            Yl[na, na] += y_c
-            Yl[nb, nb] += y_c
-            Yl[na, nb] -= y_c
-            Yl[nb, na] -= y_c
+    Yl, _stamps = _chain_local_y(chain_order, xfmr_set, t_local, near_hv,
+                                 cable_v_kv, base_mva, xfmr_lv_kv)
 
     # Kron-reduce out every internal node (1..k-1), keeping {0, k}.
     for internal in range(1, k):
@@ -2312,6 +2284,94 @@ def _kron_reduce_two_port(chain_order, xfmr_set, t_local, near_hv, cable_v_kv,
                         # shift possible from real series impedances) —
                         # any imaginary residue is floating-point noise.
     return y_eff, t_eff, hv_bus_id
+
+
+def _chain_local_y(chain_order, xfmr_set, t_local, near_hv, cable_v_kv, base_mva,
+                   xfmr_lv_kv=None):
+    """Admittance matrix over a chain's own nodes (node 0 = bus_a, node m+1
+    after element m, node k = bus_b): each transformer its ideal-ratio
+    pi-model, each cable a series admittance at its zone base. Returns
+    (Yl, stamps) with stamps[m] = (y, t, from_node, to_node) — t None for a
+    cable, and for a transformer from_node is its HV node, to_node its LV
+    node."""
+    k = len(chain_order)
+    Yl = np.zeros((k + 1, k + 1), dtype=complex)
+
+    def _series_y(z):
+        if abs(z) > 1e-15:
+            return 1.0 / z
+        return complex(0, -1e6)
+
+    stamps = []
+    for m, elem in enumerate(chain_order):
+        na, nb = m, m + 1
+        if m in xfmr_set:
+            t = t_local[m]
+            y_t = _series_y(_get_impedance(
+                elem, base_mva, v_lv_kv=(xfmr_lv_kv or {}).get(m)))
+            hv_node, lv_node = (na, nb) if near_hv[m] else (nb, na)
+            Yl[hv_node, hv_node] += y_t / (t * t)
+            Yl[lv_node, lv_node] += y_t
+            Yl[hv_node, lv_node] -= y_t / t
+            Yl[lv_node, hv_node] -= y_t / t
+            stamps.append((y_t, t, hv_node, lv_node))
+        else:  # cable
+            v_kv = cable_v_kv[m]
+            z_base = (v_kv ** 2) / base_mva if v_kv > 0 else 1.0
+            r = elem.props.get("r_per_km", 0.1) * elem.props.get("length_km", 1)
+            x = elem.props.get("x_per_km", 0.08) * elem.props.get("length_km", 1)
+            n = max(1, int(elem.props.get("num_parallel", 1)))
+            y_c = _series_y(complex(r / z_base, x / z_base) / n)
+            Yl[na, na] += y_c
+            Yl[nb, nb] += y_c
+            Yl[na, nb] -= y_c
+            Yl[nb, na] -= y_c
+            stamps.append((y_c, None, na, nb))
+    return Yl, stamps
+
+
+def chain_element_currents_a(chain_order, bus_a_id, bus_b_id, bus_a_v, bus_b_v,
+                             base_mva, v_a, v_b):
+    """{element_id: current in A} for every element of an ordered chain,
+    given the solved complex voltages (pu) of its two end buses.
+
+    A chain with no bus inside it is stamped as one equivalent branch, whose
+    current is only known at its two ends; with cascaded transformers on
+    different taps the current changes at every ratio, so one end's figure is
+    wrong for the rest (a step-up / step-down link with taps +2.5 % and −5 %
+    reported the step-down unit at the step-up unit's 92 % instead of 85 %).
+    The internal node voltages follow exactly from the end voltages (the
+    nodes carry no injection): Y_II·V_I = −Y_IB·V_B. A cable reports its
+    series current at its zone voltage, a transformer the current in its LV
+    winding at its LV zone voltage."""
+    t_local, near_hv, zone_v = _walk_chain_zones(chain_order, bus_a_v, bus_b_v,
+                                                 bus_a_id, bus_b_id)
+    xfmr_set = {m for m, e in enumerate(chain_order)
+                if e.type in ("transformer", "autotransformer")}
+    cable_v = {m: zone_v[m] for m in range(len(chain_order)) if m not in xfmr_set}
+    xfmr_lv = {m: zone_v[m] for m in xfmr_set}
+    Yl, stamps = _chain_local_y(chain_order, xfmr_set, t_local, near_hv, cable_v,
+                                base_mva, xfmr_lv)
+    k = len(chain_order)
+    vn = np.zeros(k + 1, dtype=complex)
+    vn[0], vn[k] = v_a, v_b
+    if k > 1:
+        rhs = -(Yl[1:k, 0] * v_a + Yl[1:k, k] * v_b)
+        try:
+            vn[1:k] = np.linalg.solve(Yl[1:k, 1:k], rhs)
+        except np.linalg.LinAlgError:
+            return {}
+    out = {}
+    for m, elem in enumerate(chain_order):
+        y, t, n1, n2 = stamps[m]
+        if t is None:
+            i_pu = y * (vn[n1] - vn[n2])
+        else:
+            i_pu = y * vn[n2] - (y / t) * vn[n1]   # into the LV winding
+        kv = zone_v[m]
+        out[elem.id] = (abs(i_pu) * base_mva * 1000 / (math.sqrt(3) * kv)
+                        if kv > 0 else 0.0)
+    return out
 
 
 def _get_chain_turns_ratio(elems, bus_a_id, bus_b_id, components):
@@ -2834,6 +2894,7 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
     multi_xfmr_chain_warnings = []  # [EE-2] cascaded transformers in one chain
     input_warnings = []  # [EE-8] bad user props clamped instead of crashing
     branch_chains = []  # list of (elements_dict, bus_a, bus_b, admittance)
+    chain_order_of = {}  # frozenset(element ids) -> electrically ordered chain
     tee_warned = set()  # elements already named in an unresolved-tee warning
 
     def _load_pf(pf, comp_name):
@@ -3039,6 +3100,7 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
             Y[j, i] -= y
 
         branch_chains.append((all_elems, bus_a, bus_b, y, t, hv_bus, cable_voltages))
+        chain_order_of[chain_key] = chain_order
 
     # ── Find direct bus-to-bus connections (solid links through transparent elements only) ──
     linked_pairs = set()
@@ -3924,6 +3986,21 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
             _r_chain = sum(z.real for z in _elem_z.values())
             _mag_chain = sum(abs(z) for z in _elem_z.values())
 
+            # Each element's own current in a chain with a transformer and no
+            # bus inside: the chain is one stamped branch, but the current
+            # changes at every turns ratio along it (see
+            # chain_element_currents_a). Empty for a one-element or
+            # cable-only chain, which carries one current throughout.
+            _elem_amps = {}
+            _order = chain_order_of.get(frozenset(elems.keys()))
+            if hv_bus is not None and _order and len(_order) > 1:
+                _ca, _cb = components.get(from_bus), components.get(to_bus)
+                _elem_amps = chain_element_currents_a(
+                    _order, from_bus, to_bus,
+                    _ca.props.get("voltage_kv", 11) if _ca else 11,
+                    _cb.props.get("voltage_kv", 11) if _cb else 11,
+                    base_mva, V[i], V[j])
+
             for elem in elems.values():
                 for duct, duct_bus in duct_on_branch.get(elem.id, []):
                     if duct_bus not in (from_bus, to_bus):
@@ -3964,6 +4041,7 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
                             cable_s_mva, cable_v_pu = s_lv_mva, _vpu(lv_i)
                     elem_i_amps = ((cable_s_mva * 1000) / (math.sqrt(3) * v_kv * cable_v_pu)
                                    if v_kv > 0 else 0)
+                    elem_i_amps = _elem_amps.get(elem.id, elem_i_amps)
                     rated_a = elem.props.get("rated_amps", 400) * max(1, int(elem.props.get("num_parallel", 1) or 1))
                     # Thermal loading is a CURRENT ratio (I / Iz), not S / S_nominal.
                     loading = (elem_i_amps / rated_a * 100) if rated_a > 0 else 0
@@ -3990,6 +4068,7 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
                     )
                     elem_i_amps = ((s_lv_mva * 1000) / (math.sqrt(3) * lv_kv * _vpu(lv_i))
                                    if lv_kv > 0 else 0)
+                    elem_i_amps = _elem_amps.get(elem.id, elem_i_amps)
                     loading = _xfmr_loading_pct(elem, elem_i_amps)
                 else:
                     from_bus_comp = components.get(from_bus)

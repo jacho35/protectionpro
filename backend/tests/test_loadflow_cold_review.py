@@ -412,3 +412,75 @@ def test_svc_on_the_swing_bus_set_above_it_runs_to_its_limit():
     res, base = net(True), net(False)
     assert next(u for u in res.svc if u["id"] == "S")["q_mvar"] == pytest.approx(4.0)
     assert _row(res, "U").q_mvar == pytest.approx(_row(base, "U").q_mvar - 4.0, abs=1e-3)
+
+
+# ── Per-element current inside a bus-less chain ────────────────────────────
+
+def _step_up_down(mid_buses, t1_tap=2.5, t2_tap=-5.0, second_xfmr=True):
+    """0.4 kV bus G → T1 0.42/11 kV step-up → 5 km 11 kV cable → T2 11/0.42
+    kV step-down → 0.4 kV bus L with 1.6 MVA. `mid_buses` draws an 11 kV bus
+    either side of the cable; without them the three elements are one
+    stamped chain. With `second_xfmr` False the cable ends on an 11 kV bus."""
+    n = _Net()
+    n.add("G", "bus", voltage_kv=0.4)
+    n.add("U", "utility", voltage_kv=0.4, fault_mva=50, x_r_ratio=10)
+    n.wire("U", "out", "G", "p0")
+    n.add("T1", "transformer", rated_mva=2, voltage_hv_kv=11, voltage_lv_kv=0.42,
+          z_percent=6, x_r_ratio=8, tap_percent=t1_tap, winding_config="step_up")
+    n.add("C", "cable", r_per_km=0.2, x_per_km=0.1, length_km=5, voltage_kv=11,
+          rated_amps=400)
+    n.wire("G", "p1", "T1", "primary")
+    if mid_buses:
+        n.add("M1", "bus", voltage_kv=11)
+        n.wire("T1", "secondary", "M1", "p0"); n.wire("M1", "p1", "C", "from")
+    else:
+        n.wire("T1", "secondary", "C", "from")
+    if second_xfmr:
+        n.add("L", "bus", voltage_kv=0.4)
+        n.add("T2", "transformer", rated_mva=2, voltage_hv_kv=11, voltage_lv_kv=0.42,
+              z_percent=6, x_r_ratio=8, tap_percent=t2_tap)
+        if mid_buses:
+            n.add("M2", "bus", voltage_kv=11)
+            n.wire("C", "to", "M2", "p0"); n.wire("M2", "p1", "T2", "primary")
+        else:
+            n.wire("C", "to", "T2", "primary")
+        n.wire("T2", "secondary", "L", "p1")
+    else:
+        n.add("L", "bus", voltage_kv=11)
+        n.wire("C", "to", "L", "p1")
+    n.add("LD", "static_load", rated_kva=1600, power_factor=0.85)
+    n.wire("L", "p2", "LD", "in")
+    return n.run()
+
+
+@pytest.mark.parametrize("taps", [(2.5, -5.0), (0.0, 0.0), (-2.5, 5.0)])
+def test_bus_less_step_up_down_reports_each_elements_own_current(taps):
+    """A bus-less step-up / step-down link reported T1's current (2533 A,
+    92.1 %) against the cable and T2 too; T2 really carries 2347 A (85.4 %),
+    as the same network drawn with 11 kV buses shows."""
+    ref, merged = _step_up_down(True, *taps), _step_up_down(False, *taps)
+    assert merged.buses["L"].voltage_pu == pytest.approx(ref.buses["L"].voltage_pu, abs=1e-9)
+    for eid in ("T1", "C", "T2"):
+        r, m = _row(ref, eid), _row(merged, eid)
+        assert m.i_amps == pytest.approx(r.i_amps, rel=1e-4), eid
+        assert m.loading_pct == pytest.approx(r.loading_pct, abs=0.01), eid
+
+
+def test_bus_less_step_up_down_hand_figures():
+    """The same 11 kV current through both units, scaled by each one's own
+    turns ratio: T2's LV current = I_11kV × 11/0.42 × 0.95."""
+    res = _step_up_down(False)
+    i_mv = _row(res, "C").i_amps
+    assert _row(res, "T1").i_amps == pytest.approx(i_mv * 11 / 0.42 * 1.025, rel=1e-4)
+    assert _row(res, "T2").i_amps == pytest.approx(i_mv * 11 / 0.42 * 0.95, rel=1e-4)
+    assert _row(res, "T2").loading_pct == pytest.approx(85.38, abs=0.02)
+
+
+def test_single_tapped_transformer_and_cable_chain_unchanged():
+    """One tapped transformer sharing its chain with a cable carries one
+    current referred through one ratio; the per-element path agrees with the
+    explicit-bus drawing there too."""
+    ref = _step_up_down(True, second_xfmr=False)
+    merged = _step_up_down(False, second_xfmr=False)
+    for eid in ("T1", "C"):
+        assert _row(merged, eid).i_amps == pytest.approx(_row(ref, eid).i_amps, rel=1e-4), eid
