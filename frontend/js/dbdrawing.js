@@ -51,6 +51,7 @@ const DBDrawing = {
   WAYS_PER_ROW: 12,
   BUS_TO_RCD: 12,      // busbar → top of the earth-leakage bracket
   RCD_H: 20,
+  LEGEND_COL_W: 96,    // one legend column (status / phase / other)
   EL_DY: 112,          // busbar → the sub-bus of an in-line earth-leakage unit (symbol, E/L block, room for labels)
   BUS_TO_DEV: 68,      // busbar → device centre
   TICK_DY: 32,         // device centre → phase tick
@@ -1047,6 +1048,9 @@ const DBDrawing = {
     const last = bands[bands.length - 1];
     let h = (sectioned ? last.y1 : last.busY + last.rows.length * rowH) + this.PAD;
     if (D.controls && typeof DBControls !== 'undefined' && DBControls.has(comp)) w = Math.max(w, this.PAD * 2 + this.CTL_BW);
+    // The legend sits beside the totals box: room for it clear of the board name.
+    const lg = this._legendCols(comp, D);
+    if (lg.length) w = Math.max(w, this.PAD * 2 + 330 + lg.length * this.LEGEND_COL_W + 12 + 226 + 10);
     const ctl = D.controls ? this._ctlLayout(comp, w, h) : null;
     if (ctl) h = ctl.y1 + this.PAD;
 
@@ -1381,6 +1385,7 @@ const DBDrawing = {
 
     let svg = `<rect x="0" y="0" width="${L.w}" height="${L.h}" fill="${P.surface}"/>`;
     svg += this._header(comp, L, P, t, vll, x0);
+    svg += this._legend(comp, L, P, D);
     const tot = L.sectioned ? DBSections.totals(comp) : null;
     for (const b of L.bands) {
       if (b.sec) svg += this._sectionFrame(b, L, P, x0, tot.get(b.sec.id));
@@ -1394,6 +1399,49 @@ const DBDrawing = {
     return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${L.w} ${L.h}" width="${L.w}" height="${L.h}"
         role="img" aria-label="${this._esc(`Single line of ${comp.props.name || comp.id}: ${(comp.props.circuits || []).length} ways`)}"
         font-family="Helvetica, Arial, sans-serif">${svg}</svg>`;
+  },
+
+  // What the colours on this drawing mean, for the switches that are on:
+  // [{ title, items: [{ k: 'line' | 'box', c: colour, t: label }] }], up to 4 rows a column.
+  _legendCols(comp, D) {
+    const cols = [];
+    if (D.status) {
+      cols.push({ title: 'Breaker and line', items: [
+        { k: 'line', c: 'pass', t: 'Check passed' }, { k: 'line', c: 'warn', t: 'Warning' },
+        { k: 'line', c: 'fail', t: 'Check failed' }, { k: 'line', c: 'line', t: 'Not checked' }] });
+    }
+    if (D.phase) {
+      cols.push({ title: 'Phase', items: [
+        { k: 'box', c: 'R', t: 'Red (R)' }, { k: 'box', c: 'W', t: 'White (W)' },
+        { k: 'box', c: 'B', t: 'Blue (B)' }, { k: 'box', c: 'RWB', t: 'Three-phase' }] });
+    }
+    const other = [];
+    if (D.elgroups && (comp.props.circuits || []).some(c => String(c.el_group || '').trim())) other.push({ k: 'box', c: 'accent', t: 'Earth leakage' });
+    if (D.controls && typeof DBControls !== 'undefined' && DBControls.has(comp)) other.push({ k: 'box', c: 'ctl', t: 'Contactor' });
+    if (D.meters && typeof DBMeters !== 'undefined' && DBMeters.list(comp).length) other.push({ k: 'box', c: 'mtr', t: 'Energy meter' });
+    if (other.length) cols.push({ title: 'Other', items: other });
+    return cols;
+  },
+
+  _legend(comp, L, P, D) {
+    const cols = this._legendCols(comp, D);
+    if (!cols.length) return '';
+    const boxW = 226, boxX = L.w - this.PAD - boxW;
+    const lw = cols.length * this.LEGEND_COL_W + 12, lx = boxX - 10 - lw;
+    const col = (c) => (c === 'R' || c === 'W' || c === 'B' || c === 'RWB') ? P.phase[c] : P[c];
+    let s = `<rect x="${numAttr(lx)}" y="${this.PAD}" width="${numAttr(lw)}" height="72" rx="5" fill="${P.panel}" stroke="${P.border}"/>`;
+    cols.forEach((cl, ci) => {
+      const x = lx + 10 + ci * this.LEGEND_COL_W;
+      s += `<text x="${numAttr(x)}" y="${this.PAD + 15}" font-size="8.5" font-weight="700" fill="${P.muted}">${this._esc(cl.title)}</text>`;
+      cl.items.forEach((it, i) => {
+        const y = this.PAD + 28 + i * 12;
+        s += it.k === 'line'
+          ? `<line x1="${numAttr(x)}" y1="${y - 3}" x2="${numAttr(x + 11)}" y2="${y - 3}" stroke="${escHtml(col(it.c))}" stroke-width="2.4" stroke-linecap="round"/>`
+          : `<rect x="${numAttr(x)}" y="${y - 8}" width="8" height="8" rx="2" fill="${escHtml(col(it.c))}"/>`;
+        s += `<text x="${numAttr(x + 15)}" y="${y}" font-size="9" fill="${P.inkSec}">${this._esc(it.t)}</text>`;
+      });
+    });
+    return `<g data-dxf-block="DB_LEGEND" data-dxf-at="${numAttr(lx)},${this.PAD}">${s}</g>`;
   },
 
   _header(comp, L, P, t, vll, x0) {
