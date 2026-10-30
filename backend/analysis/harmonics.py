@@ -399,7 +399,10 @@ def _branch_chains(project, base_mva):
     stamp each transformer's ideal ratio. The load flow stamps the same ratio
     (`_reduce_chain_two_port`); the plain R/X sum left it out, so the whole
     network beyond the transformer was referred through the drawn bus ratio
-    instead of the turns ratio."""
+    instead of the turns ratio.
+
+    Expects the project through `_lf.tag_transformer_hv_ports` (the callers'
+    pre-pass), so an equal-voltage transformer is oriented by its HV port."""
     components = {c.id: c for c in project.components}
     buses = [c for c in project.components
              if c.type in ("bus", "distribution_board")
@@ -446,7 +449,8 @@ def _branch_chains(project, base_mva):
         # entry is its LV zone, to which its nameplate z% is re-based.
         order = _lf.chain_order_from_paths(path_a, path_b)
         if has_xfmr:
-            t_local, near_hv, zone_v = _lf._walk_chain_zones(order, va, vb)
+            t_local, near_hv, zone_v = _lf._walk_chain_zones(order, va, vb,
+                                                             bus_a, bus_b)
             zones = {e.id: zone_v[m] for m, e in enumerate(order)}
         else:
             t_local, near_hv, zones = {}, {}, {}
@@ -581,6 +585,7 @@ def run_harmonics(project, method: str = "newton_raphson", limits: str | None = 
     # the drawing left without a bus, then load/source terminal buses.
     project = _lf.insert_junction_buses(project)
     project = _lf.insert_implicit_load_buses(project)
+    project = _lf.tag_transformer_hv_ports(project)
 
     # 1. Fundamental load flow → per-bus fundamental voltage magnitude,
     #    which buses are live, and each SVC's solved reactive output.

@@ -14,6 +14,7 @@ $$Y_{ii}\mathrel{+}=\frac{y}{t^{2}},\quad Y_{jj}\mathrel{+}=y,\quad Y_{ij}=Y_{ji
 $$z_{cable}=\frac{(r+jx)\,\ell}{n_{par}\,Z_b},\qquad
 z_{xfmr}=\frac{u_k\%}{100}\,\frac{S_b}{S_r}\ \Rightarrow\ x=z\,\frac{X/R}{\sqrt{1+(X/R)^2}},\ \ r=\frac{x}{X/R}$$
 <p>A chain of cables and transformers between two real buses with no bus in between is reduced <em>exactly</em> by Kron elimination of its internal nodes, so each cable's impedance is referred through the correct local tap ratio, however many transformers the chain cascades.</p>
+<p>The winding facing each bus is found from the voltages. A transformer with the same voltage on both windings (an 11/11 kV regulating unit, a 400/400 V isolation unit) has its tap placed on the winding drawn on its HV port: the primary, or the secondary for a step-up unit. Capacitor banks are a constant susceptance on the diagonal, $B=\frac{Q_r}{S_b}\left(\frac{U_n}{U_r}\right)^{2}$, so their output follows $|V|^2$ exactly.</p>
 
 <h4>2 · Bus types</h4>
 <table class="help-ref-table"><thead><tr><th>Type</th><th>Specified</th><th>Solved for</th></tr></thead><tbody>
@@ -28,7 +29,7 @@ Q_i=\sum_j|V_i||V_j|\big(G_{ij}\sin\theta_{ij}-B_{ij}\cos\theta_{ij}\big)$$
 <p>with $\theta_{ij}=\theta_i-\theta_j$. Each iteration solves the linearised mismatch equations</p>
 $$\begin{bmatrix}\Delta P\\\Delta Q\end{bmatrix}=\begin{bmatrix}J_1&J_2\\J_3&J_4\end{bmatrix}\begin{bmatrix}\Delta\theta\\\Delta|V|\end{bmatrix},\qquad
 J_1=\frac{\partial P}{\partial\theta},\ J_2=\frac{\partial P}{\partial|V|},\ J_3=\frac{\partial Q}{\partial\theta},\ J_4=\frac{\partial Q}{\partial|V|}$$
-<p>and stops when $\max|\Delta P,\Delta Q|<10^{-6}$ pu (at most 100 iterations). A singular Jacobian is reported as such rather than iterated on.</p>
+<p>and stops when $\max|\Delta P,\Delta Q|<10^{-9}$ pu, or below $10^{-6}$ pu once the mismatch stops halving (rounding limit), at most 100 iterations. A singular Jacobian is reported as such rather than iterated on.</p>
 
 <h4>4 · Gauss-Seidel</h4>
 <p>No Jacobian; each PQ bus is updated in turn</p>
@@ -36,16 +37,16 @@ $$V_i^{(k+1)}=\frac{1}{Y_{ii}}\left[\frac{P_i-jQ_i}{V_i^{(k)*}}-\sum_{j\ne i}Y_{
 <p>A PV bus first recomputes $Q_i$ from the latest voltages, then rescales $V_i$ back to its set-point magnitude. Because $\Delta V$ per sweep under-states the true error on meshed networks, convergence is confirmed by a final power-mismatch check (&lt;$10^{-5}$ pu) before it is reported.</p>
 
 <h4>5 · Results</h4>
-<p>Branch current and loading come from the solved voltages; the flow from bus $i$ into a branch is $S_{ij}=V_iI_{ij}^{*}$ with $I_{ij}=\frac{y}{t^2}V_i-\frac{y}{t}V_j$, and the loss is $S_{ij}+S_{ji}$. Loading is $|I|/I_{rated}$ for cables and $|S|/S_r$ for transformers.</p>
+<p>Branch current and loading come from the solved voltages; the flow from bus $i$ into a branch is $S_{ij}=V_iI_{ij}^{*}$ with $I_{ij}=\frac{y}{t^2}V_i-\frac{y}{t}V_j$, and the loss is $S_{ij}+S_{ji}$. Loading is a current ratio: $|I|/I_{rated}$ for cables, and for transformers the LV winding current over $I_r=S_r/(\sqrt3\,U_{rLV})$. Buses outside $0.9$–$1.1$ pu are listed in the warnings.</p>
 
 <h4>Sources, dispatch and islands</h4>
 <ul>
 <li><strong>Utility</strong> defaults to an ideal swing bus held at its set-point. Setting <code>lf_grid_model: thevenin</code> hangs it behind $Z=U^2/S''_k$ (with its $X/R$, no $c$ factor) via an internal EMF bus, so the point of supply sags with load.</li>
-<li><strong>Generators, solar, wind and batteries</strong> are dispatched by priority, must-run, min/max loading and droop sharing; losses are shared in proportion to rating. Generators are PV buses limited by their reactive capability $Q_{min},Q_{max}$; a unit that hits a limit becomes a fixed-$Q$ PQ bus.</li>
+<li><strong>Generators, solar, wind and batteries</strong> are dispatched by priority, must-run, min/max loading and droop sharing; droop-paralleled sets share load, losses and reactive power in proportion to rating. Generators are PV buses limited by their reactive capability $Q_{min},Q_{max}$; a unit that hits a limit becomes a fixed-$Q$ PQ bus.</li>
 <li><strong>SVC / STATCOM</strong> is a PV device that converts to a fixed-$Q$ shunt at its limits.</li>
 <li><strong>Islands</strong> — sections with no source path (open breaker, tripped source) are de-energised and solved separately, not left to diverge.</li>
 <li><strong>On-load tap changers</strong> iterate the tap by steps until the regulated bus is inside a half-step deadband.</li>
-<li>A load or source wired only through a series cable or transformer with no bus gets an implicit terminal bus, so the feeding element has a real voltage drop.</li>
+<li>A load or source wired only through a series cable or transformer with no bus gets an implicit terminal bus, so the feeding element has a real voltage drop. The terminal takes the voltage of the zone it is fed from; the element's own rating is used only when it is within 15 % of that.</li>
 </ul>
 <div class="hc-note"><span class="hc-label">Which solver?</span>Newton-Raphson converges in a handful of iterations even on stressed networks and is the default. Gauss-Seidel is slower but never singular; use it to sanity-check a case that Newton-Raphson reports as non-convergent.</div>` },
 

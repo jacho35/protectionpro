@@ -44,6 +44,7 @@ from .loadflow import (
     _reduce_chain_two_port,
     insert_junction_buses,
     _expand_three_winding,
+    tag_transformer_hv_ports,
 )
 from .fault import (
     _utility_impedance,
@@ -188,6 +189,8 @@ def build_branch_ybus(project):
     # [NR4] 3-winding autotransformers as a star of 2-winding legs, as the
     # load flow builds them (idempotent).
     project = _expand_three_winding(project)
+    # Equal-voltage transformers oriented by their HV port (idempotent).
+    project = tag_transformer_hv_ports(project)
     base_mva = project.baseMVA
     components = {c_.id: c_ for c_ in project.components}
     buses = [c_ for c_ in project.components
@@ -253,7 +256,8 @@ def build_branch_ybus(project):
             # Zone by chain POSITION, not walk-path membership (which depends
             # on the seed element — see loadflow._walk_chain_zones); each
             # transformer re-based to its LV zone.
-            zones = chain_element_zones(chain_order, bus_a_v, bus_b_v)
+            zones = chain_element_zones(chain_order, bus_a_v, bus_b_v,
+                                        bus_a, bus_b)
             z_total = sum((element_impedance_in_zone(e, base_mva, zones)
                            for e in all_elems.values()), complex(0, 0))
         else:

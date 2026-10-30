@@ -233,9 +233,10 @@ class TestFS5RegulatingSvc:
         r = run_frequency_scan(_grid_cap(kvar=0.1, extra=extra, extra_w=wires))
         pk = [x for x in r["resonances"] if x["kind"] == "parallel"]
         assert pk, "a capacitive SVC must resonate with the source"
-        # At full output (4 Mvar at V≈1.02 → B ≈ 3.85 Mvar at 1 pu) the
-        # lossless screening estimate is √(100/3.85) ≈ 5.1.
-        assert pk[0]["h"] == pytest.approx(math.sqrt(100 / 3.85), abs=0.15)
+        # The utility holds its bus at 1.0 pu, so the SVC set to 1.02 runs to
+        # full capacitive output: 4 Mvar at 1 pu → B = 4, and the lossless
+        # screening estimate is √(100/4) = 5.0.
+        assert pk[0]["h"] == pytest.approx(math.sqrt(100 / 4), abs=0.15)
         assert not any("No capacitor banks" in w for w in r["warnings"])
 
 

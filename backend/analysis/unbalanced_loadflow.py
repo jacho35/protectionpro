@@ -50,6 +50,7 @@ from .loadflow import (
     _insert_grid_source_impedance, is_grid_bus, GRID_Z_PREFIX,
     _utility_models_impedance, _expand_three_winding, _run_oltc,
     _inverter_var_mode, _inverter_rating_mva, run_load_flow,
+    tag_transformer_hv_ports,
 )
 from .fault import _transformer_zero_seq, _machine_neutral_z, GEN_Z0_Z1_DEFAULT
 from .line_coupling import (coupling_note, parallel_z0_scale, equivalent_z0_ohm,
@@ -281,6 +282,7 @@ def run_unbalanced_load_flow(
     # balanced-equivalent loading, as a real AVC relay averages its phases).
     project = _expand_three_winding(project)
     project, grid_warnings = _insert_grid_source_impedance(project)
+    project = tag_transformer_hv_ports(project)
     oltc_warnings: list = []
     _oltc_units = [c for c in project.components
                    if c.type in ("transformer", "autotransformer")
@@ -426,7 +428,8 @@ def run_unbalanced_load_flow(
             # Zone by chain POSITION, not walk-path membership (which depends
             # on the seed element — see loadflow._walk_chain_zones). A
             # transformer's entry is its LV zone, to which z% is re-based.
-            zones = chain_element_zones(chain_order, bus_a_v, bus_b_v)
+            zones = chain_element_zones(chain_order, bus_a_v, bus_b_v,
+                                        bus_a, bus_b)
 
             for e in all_elems.values():
                 if e.type == "cable":

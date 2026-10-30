@@ -14,6 +14,12 @@ from ..models.schemas import (
 
 MAX_ITERATIONS = 100
 TOLERANCE = 1e-6
+# Newton-Raphson power-mismatch target (pu on the study base). TOLERANCE is
+# absolute on that base — 100 W at 100 MVA, enough to leave ~3e-5 pu at a weak
+# LV bus — so NR, which converges quadratically, takes the one extra
+# iteration to 1e-9. It still accepts TOLERANCE once the mismatch stops
+# halving (round-off floor, e.g. a 1e6 pu bus link).
+NR_TOLERANCE = 1e-9
 # [EE-11] Gauss-Seidel final power-mismatch acceptance (pu on the study base).
 # GS converges geometrically, so the per-sweep ΔV under-states the true error
 # by 1/(1−ρ); a converged verdict additionally requires the power balance.
@@ -36,6 +42,10 @@ V_IMPLAUSIBLE_PU = 0.5
 # 0.5 floor too. The canvas LOW badge already flags this visually; this adds
 # the same signal to the warnings list so it isn't canvas-only.
 V_ADVISORY_PU = 0.9
+# Its over-voltage twin: a converged energized bus above this (a capacitor
+# bank on a lightly loaded feeder, a high source setpoint or tap) is outside
+# the ~0.9-1.1 p.u. operating range and gets the same warnings-list entry.
+V_HIGH_ADVISORY_PU = 1.1
 
 # Newton-Raphson Jacobian condition-number ceiling. A well-posed power-flow
 # Jacobian is well-conditioned (cond ~ 1e1–1e4); it blows up towards ∞ only when
@@ -321,20 +331,24 @@ def insert_implicit_load_buses(project: ProjectData) -> ProjectData:
     if not dangling:
         return project
 
+    port_of = {}  # (component, neighbour) -> the component's port on that wire
+    for w in project.wires:
+        port_of[(w.toComponent, w.fromComponent)] = w.toPort
+        port_of[(w.fromComponent, w.toComponent)] = w.fromPort
+
     data = json.loads(project.model_dump_json())
     wires = data["wires"]
     for term in dangling:
         syn_id = f"{SYNTHETIC_BUS_PREFIX}{term.id}"
-        # Terminal voltage base: the element's own rating, else a series
-        # neighbour's rating, else an LV default.
-        v_kv = term.props.get("voltage_kv")
-        if not v_kv:
-            for nb in adjacency.get(term.id, []):
-                nc = components.get(nb)
-                if nc and nc.type in ("cable", "transformer", "autotransformer"):
-                    v_kv = nc.props.get("voltage_lv_kv") or nc.props.get("voltage_kv")
-                    if v_kv:
-                        break
+        # Terminal voltage base: the element's own rating when it agrees with
+        # the zone it sits in (within 15 % — a 0.4 kV motor behind an
+        # 11/0.42 kV unit keeps its 0.4 kV base, so its terminal reads 1.05
+        # pu), otherwise the zone's (see _terminal_zone_kv), else LV. A
+        # nameplate left at 0.4 kV on an 11 kV cable would otherwise put the
+        # cable on a 0.4 kV base — 756× its impedance.
+        own = _prop_float(term.props, "voltage_kv", 0.0)
+        zone = _terminal_zone_kv(term.id, adjacency, components, port_of)
+        v_kv = own if own > 0 and (not zone or abs(own - zone) <= 0.15 * zone) else (zone or own)
         # Rewire: the element hangs off the new bus, and everything it used to
         # touch now hangs off the new bus instead (elem → syn → cable → …).
         term_port = "in"
@@ -361,6 +375,38 @@ def insert_implicit_load_buses(project: ProjectData) -> ProjectData:
         })
 
     return ProjectData(**data)
+
+
+def _terminal_zone_kv(term_id, adjacency, components, port_of):
+    """Nominal voltage of the zone an implicit terminal sits in: walking out
+    through cables and closed switchgear, the first bus/board's voltage, or
+    the winding of the first transformer met (the one on the port the walk
+    enters by). None when neither is reached."""
+    seen = {term_id}
+    queue = [(nb, term_id) for nb in adjacency.get(term_id, [])]
+    while queue:
+        nid, prev = queue.pop(0)
+        if nid in seen:
+            continue
+        seen.add(nid)
+        c = components.get(nid)
+        if not c:
+            continue
+        if c.type in ("bus", "distribution_board"):
+            return float(c.props.get("voltage_kv", 0) or 0) or None
+        if c.type in ("transformer", "autotransformer"):
+            port = port_of.get((nid, prev))
+            if port == "tertiary":
+                v = c.props.get("voltage_tv_kv")
+            elif port not in ("primary", "secondary"):
+                v = c.props.get("voltage_lv_kv")
+            else:
+                side = "hv" if port == _hv_port(c) else "lv"
+                v = c.props.get(f"voltage_{side}_kv")
+            return float(v or 0) or None
+        if c.type == "cable" or _is_transparent_and_closed(c):
+            queue.extend((nb, nid) for nb in adjacency.get(nid, []) if nb not in seen)
+    return None
 
 
 # ── Junction (tee) buses ─────────────────────────────────────────────
@@ -489,6 +535,91 @@ def insert_junction_buses(project: ProjectData) -> ProjectData:
                       "bus_type": "PQ", "system": "ac", "synthetic": True},
         })
     return ProjectData(**data)
+
+
+# ── Transformer HV port (voltage-tie orientation) ───────────────────────
+# The chain walkers decide which winding faces which bus by voltage
+# nearness. On a unit with the same voltage both sides (an 11/11 kV
+# regulating transformer, a 400/400 V isolation unit, a 3-winding unit's
+# 1:1 HV leg) that is a tie, and the tap landed on whichever side the walk
+# happened to enter from — the order the wires were drawn. Each two-winding
+# unit therefore carries, in the engine's working copy, the ids met on its
+# HV port (through closed switchgear and bus couplers): `_hv_side`. The
+# walkers consult it only on a tie, so a unit wired the other way round
+# but with distinct voltages is still oriented by voltage, as before.
+HV_SIDE_PROP = "_hv_side"
+
+
+def _hv_port(comp):
+    """Port id of a transformer's HV winding: primary, unless a two-winding
+    unit is configured step-up (fault.py uses the same rule)."""
+    if comp.type == "transformer" and comp.props.get("winding_config") == "step_up":
+        return "secondary"
+    return "primary"
+
+
+def tag_transformer_hv_ports(project: ProjectData) -> ProjectData:
+    """Return a copy of *project* with `_hv_side` (the ids reached from the HV
+    port through closed transparent devices and buses) on every two-winding
+    transformer / autotransformer. Idempotent."""
+    import json
+    xfmrs = [c for c in project.components
+             if c.type in ("transformer", "autotransformer")
+             and HV_SIDE_PROP not in c.props
+             and int(c.props.get("windings", 2) or 2) != 3]
+    if not xfmrs:
+        return project
+    components = {c.id: c for c in project.components}
+    adjacency, port_adj = {}, {}
+    for w in project.wires:
+        adjacency.setdefault(w.fromComponent, []).append(w.toComponent)
+        adjacency.setdefault(w.toComponent, []).append(w.fromComponent)
+        port_adj.setdefault((w.fromComponent, w.fromPort), []).append(w.toComponent)
+        port_adj.setdefault((w.toComponent, w.toPort), []).append(w.fromComponent)
+    sides = {}
+    for x in xfmrs:
+        seen, found = {x.id}, set()
+        queue = list(port_adj.get((x.id, _hv_port(x)), []))
+        while queue:
+            nid = queue.pop(0)
+            if nid in seen:
+                continue
+            seen.add(nid)
+            found.add(nid)
+            c = components.get(nid)
+            if c and (_is_transparent_and_closed(c)
+                      or c.type in ("bus", "distribution_board")):
+                queue.extend(nb for nb in adjacency.get(nid, []) if nb not in seen)
+        sides[x.id] = sorted(found)
+    data = json.loads(project.model_dump_json())
+    for c in data["components"]:
+        if c["id"] in sides:
+            c["props"][HV_SIDE_PROP] = sides[c["id"]]
+    return ProjectData(**data)
+
+
+def _faces_hv(elem, v, near_id=None, far_id=None):
+    """True if the winding of *elem* facing a zone at *v* kV is its HV winding.
+    Voltage nearness decides; on a tie (equal winding voltages) the drawn HV
+    port does, via `_hv_side` and the ids on either side of the element."""
+    v_hv = elem.props.get("voltage_hv_kv", 33)
+    v_lv = elem.props.get("voltage_lv_kv", 11)
+    d_hv, d_lv = abs(v - v_hv), abs(v - v_lv)
+    if abs(d_hv - d_lv) <= 1e-9 * max(1.0, abs(v_hv), abs(v_lv)):
+        side = elem.props.get(HV_SIDE_PROP)
+        if side:
+            if near_id is not None and near_id in side:
+                return True
+            if far_id is not None and far_id in side:
+                return False
+    return d_hv <= d_lv
+
+
+def _chain_neighbours(ordered, bus_a_id, bus_b_id):
+    """(prev_id, next_id) for each position of an electrically ordered chain
+    bus_a → bus_b."""
+    ids = [bus_a_id] + [e.id for e in ordered] + [bus_b_id]
+    return [(ids[m], ids[m + 2]) for m in range(len(ordered))]
 
 
 # ── Three-winding autotransformer expansion ─────────────────────────────
@@ -1059,7 +1190,7 @@ def _compute_islands(n, bus_idx, branch_pairs):
 
 def plan_dispatch(project, components, adjacency, bus_idx, buses,
                   branch_pairs, bus_load_p_mw, loss_adders=None,
-                  regulated_q=None):
+                  regulated_q=None, droop_q=None):
     """Island detection, per-island swing selection, and merit-order dispatch.
 
     bus_load_p_mw: per-bus-index total load MW (positive = consumption).
@@ -1074,6 +1205,13 @@ def plan_dispatch(project, components, adjacency, bus_idx, buses,
     reactive-limit clamp (fixed-Q PQ), never from the pf-split schedule, so
     their scheduled Q is zeroed here — otherwise it would stack on top of the
     pinned limit once the unit clamps (delivered Q = Q_limit + rated·sinφ).
+    droop_q: optional {island: MVAr} — the reactive the droop-paralleled sets
+    of that island carry together, measured by the caller on the previous
+    solve. Each non-reference set is scheduled its rating share of it (the
+    reference set takes its own share through the solve), so paralleled sets
+    share vars by rating as reactive droop makes them; without it a
+    non-reference set runs at its rated pf and the reference set takes the
+    difference (absorbing vars at a unity-pf load).
 
     Returns dict with:
       swing_idx     — set of bus indices to run as Swing
@@ -1085,9 +1223,10 @@ def plan_dispatch(project, components, adjacency, bus_idx, buses,
                       (balancer output is filled in post-solve by the caller)
       warnings      — list of LoadFlowWarning
       island_of     — {bus_index: island number}
-      droop_ref     — {island: {"bus_id", "share_mw"}} droop-parallel
-                      reference set's proportional share, for the caller's
-                      loss-compensation pass
+      droop_ref     — {island: {"bus_id", "share_mw", "fixed_ids"}}
+                      droop-parallel reference set's proportional share and
+                      the other committed sets, for the caller's
+                      loss-compensation and var-sharing passes
     """
     n = len(buses)
     island_of = _compute_islands(n, bus_idx, branch_pairs)
@@ -1097,7 +1236,8 @@ def plan_dispatch(project, components, adjacency, bus_idx, buses,
     dispatched_by_comp = {}
     swing_idx = set()
     dead_idx = set()
-    droop_ref = {}   # island -> {"bus_id", "share_mw"} of the droop reference set
+    droop_ref = {}   # island -> {"bus_id", "share_mw", "fixed_ids"} of the droop reference set
+    droop_fixed_q = {}  # comp_id -> scheduled MVAr of a non-reference droop set
 
     # ── Locate every source's connection bus ──
     # Direct sources (reachable through transparent elements only) can be
@@ -1415,6 +1555,14 @@ def plan_dispatch(project, components, adjacency, bus_idx, buses,
                                              if share_base > 0 else 0.0)
                     for c, _b, _d in seq_fixed:
                         seq_fixed_target[c.id] = droop_share[c.id]
+                    # Reactive shared by rating (MVA) once the caller has
+                    # measured the sets' total on a previous solve.
+                    if droop_q and isl in droop_q:
+                        q_base = sum(_source_output_mva(c)[3]
+                                     for c, _b, _d in committed)
+                        for c, _b, _d in seq_fixed:
+                            droop_fixed_q[c.id] = (droop_q[isl] * _source_output_mva(c)[3]
+                                                   / q_base if q_base > 0 else 0.0)
                     # Expose the reference set's share so the caller's
                     # loss-compensation pass can measure the residual it
                     # carries beyond that share (= the island's network
@@ -1422,7 +1570,8 @@ def plan_dispatch(project, components, adjacency, bus_idx, buses,
                     # re-splits the losses across the paralleled sets in
                     # rating proportion (distributed slack).
                     droop_ref[isl] = {"bus_id": buses[ref[1]].id,
-                                      "share_mw": droop_share[ref[0].id]}
+                                      "share_mw": droop_share[ref[0].id],
+                                      "fixed_ids": [c.id for c, _b, _d in seq_fixed]}
                     shared = ", ".join(
                         f"'{c.props.get('name', c.id)}' {_fmt_power_mw(droop_share[c.id])}"
                         for c, _b, _d in committed)
@@ -1716,6 +1865,8 @@ def plan_dispatch(project, components, adjacency, bus_idx, buses,
 
         for comp, bi, p_av, q_av, p_disp, p_target in plan:
             q_disp = q_av * (p_disp / p_av) if p_av > 0 else 0.0
+            if comp.id in droop_fixed_q:
+                q_disp = droop_fixed_q[comp.id]
             # A voltage-regulating unit's Q is solver/clamp-determined (see
             # regulated_q in the docstring) — never scheduled here.
             if regulated_q and (
@@ -1961,7 +2112,8 @@ def _reduce_chain_two_port(chain_order, xfmr_positions, hv_bus_id, bus_a, bus_b,
 
     Returns (y_eff, t_eff, hv_bus_id) matching the caller's existing tuple.
     """
-    t_local, near_hv, zone_v = _walk_chain_zones(chain_order, bus_a_v, bus_b_v)
+    t_local, near_hv, zone_v = _walk_chain_zones(chain_order, bus_a_v, bus_b_v,
+                                                 bus_a, bus_b)
     xfmr_set = set(xfmr_positions)
     cable_v_kv = {m: zone_v[m] for m in range(len(chain_order)) if m not in xfmr_set}
     xfmr_lv_kv = {m: zone_v[m] for m in xfmr_set}
@@ -1970,7 +2122,7 @@ def _reduce_chain_two_port(chain_order, xfmr_positions, hv_bus_id, bus_a, bus_b,
                                   xfmr_lv_kv=xfmr_lv_kv)
 
 
-def _walk_chain_zones(chain_order, bus_a_v, bus_b_v):
+def _walk_chain_zones(chain_order, bus_a_v, bus_b_v, bus_a_id=None, bus_b_id=None):
     """Walk an electrically-ordered branch chain (bus_a → bus_b) tracking the
     nominal voltage zone each element sits in.
 
@@ -1991,7 +2143,11 @@ def _walk_chain_zones(chain_order, bus_a_v, bus_b_v):
     far-side seed and the transformer on the wrong side's base — a 0.4 kV cable
     referred to 11 kV, ~756× too little impedance, and a result that changed
     with the order components were drawn.
+
+    bus_a_id / bus_b_id let a transformer with equal winding voltages be
+    oriented by its drawn HV port (see _faces_hv) instead of walk order.
     """
+    nbrs = _chain_neighbours(chain_order, bus_a_id, bus_b_id)
     xfmr_positions = [m for m, e in enumerate(chain_order)
                       if e.type in ("transformer", "autotransformer")]
     last_xfmr_pos = max(xfmr_positions) if xfmr_positions else -1
@@ -2004,7 +2160,7 @@ def _walk_chain_zones(chain_order, bus_a_v, bus_b_v):
             tap_pct = elem.props.get("tap_percent", 0)
             nominal = v_hv / v_lv if v_lv > 0 else 1.0
             actual = nominal * (1 + tap_pct / 100)
-            is_hv_near = abs(v - v_hv) <= abs(v - v_lv)
+            is_hv_near = _faces_hv(elem, v, *nbrs[m])
             # The zone AFTER this transformer: bus_b_v if it's the last
             # transformer in the chain (that zone is bounded by the real
             # bus_b, exactly like the legacy single-transformer code used
@@ -2023,6 +2179,22 @@ def _walk_chain_zones(chain_order, bus_a_v, bus_b_v):
     return t_local, near_hv, zone_v
 
 
+def _cable_chain_zone_kv(chain_order, bus_a_v, bus_b_v):
+    """Voltage zone of a chain with no transformer: its buses' common
+    voltage. When the two disagree (a drawing error), the bus nearer the
+    first cable's own rating, the higher on a tie — fixed by the network,
+    not by which end the walk reached first."""
+    if abs(bus_a_v - bus_b_v) <= 1e-9 * max(1.0, bus_a_v, bus_b_v):
+        return bus_a_v
+    rated = next((_prop_float(e.props, "voltage_kv", 0.0) for e in chain_order
+                  if e.type == "cable" and _prop_float(e.props, "voltage_kv", 0.0) > 0), 0.0)
+    if rated > 0:
+        da, db = abs(bus_a_v - rated), abs(bus_b_v - rated)
+        if abs(da - db) > 1e-9 * rated:
+            return bus_a_v if da < db else bus_b_v
+    return max(bus_a_v, bus_b_v)
+
+
 def chain_order_from_paths(path_a, path_b):
     """Electrically-ordered chain (bus_a → bus_b) from _find_bus_paths' two
     walks: path_a runs seed→bus_a and path_b seed→bus_b, so the chain is
@@ -2035,14 +2207,15 @@ def chain_order_from_paths(path_a, path_b):
     return order
 
 
-def chain_element_zones(chain_order, bus_a_v, bus_b_v):
+def chain_element_zones(chain_order, bus_a_v, bus_b_v, bus_a_id=None, bus_b_id=None):
     """{element_id: zone voltage_kv} for every element of an ordered chain —
     a cable's own zone, and a transformer's LV-side zone. These are the
     per-unit bases the impedances must be referred to: pass a cable's as
     _get_impedance(v_kv=…) and a transformer's as _get_impedance(v_lv_kv=…).
     Shared by every engine that builds branch chains (load flow, unbalanced,
     harmonics, network reduction) so they agree on one zone rule."""
-    _t, _nh, zone_v = _walk_chain_zones(chain_order, bus_a_v, bus_b_v)
+    _t, _nh, zone_v = _walk_chain_zones(chain_order, bus_a_v, bus_b_v,
+                                        bus_a_id, bus_b_id)
     return {e.id: zone_v[m] for m, e in enumerate(chain_order)}
 
 
@@ -2183,13 +2356,14 @@ def _get_chain_turns_ratio(elems, bus_a_id, bus_b_id, components):
 
     # The tap-side bus: whichever bus faces the FIRST transformer's HV winding
     # (walked from bus_a, tracking the voltage zone).
+    nbrs = {e.id: nb for e, nb in zip(ordered, _chain_neighbours(ordered, bus_a_id, bus_b_id))}
     v = bus_a_v
     hv_bus_id = None
     for e in ordered:
         if e.type not in ("transformer", "autotransformer"):
             continue
         v_hv, v_lv, _actual = _winding(e)
-        near_is_hv = abs(v - v_hv) <= abs(v - v_lv)
+        near_is_hv = _faces_hv(e, v, *nbrs[e.id])
         if hv_bus_id is None:
             hv_bus_id = bus_a_id if near_is_hv else bus_b_id
         v = v_lv if near_is_hv else v_hv
@@ -2197,16 +2371,17 @@ def _get_chain_turns_ratio(elems, bus_a_id, bus_b_id, components):
     # Accumulate the oriented ratio product walking FROM the tap-side bus, so
     # single-transformer chains reproduce the legacy arithmetic exactly.
     if hv_bus_id == bus_a_id:
-        seq, start_v, end_v = ordered, bus_a_v, bus_b_v
+        seq, start_v, end_v, fwd = ordered, bus_a_v, bus_b_v, True
     else:
-        seq, start_v, end_v = list(reversed(ordered)), bus_b_v, bus_a_v
+        seq, start_v, end_v, fwd = list(reversed(ordered)), bus_b_v, bus_a_v, False
     v = start_v
     ratio = 1.0
     for e in seq:
         if e.type not in ("transformer", "autotransformer"):
             continue
         v_hv, v_lv, actual = _winding(e)
-        if abs(v - v_hv) <= abs(v - v_lv):
+        prev_id, next_id = nbrs[e.id]
+        if _faces_hv(e, v, *((prev_id, next_id) if fwd else (next_id, prev_id))):
             ratio *= actual       # stepping down through this unit
             v = v_lv
         else:
@@ -2216,6 +2391,20 @@ def _get_chain_turns_ratio(elems, bus_a_id, bus_b_id, components):
     base_ratio = start_v / end_v if end_v > 0 else 1.0
     t = ratio / base_ratio if base_ratio > 0 else 1.0
     return t, hv_bus_id
+
+
+def _xfmr_loading_pct(tx, i_lv_amps):
+    """Transformer loading % as a CURRENT ratio — LV winding current over its
+    rated current S_r / (√3·U_rLV) (IEC 60076-7 load factor K). An S/S_r ratio
+    equals it only while the terminal sits at nameplate voltage: it under-reads
+    at a depressed bus, and on a unit whose nameplate differs from its bus
+    (33/11.5 kV on an 11 kV bus)."""
+    rated = _prop_float(tx.props, "rated_mva", 10)
+    u_lv = min(_prop_float(tx.props, "voltage_hv_kv", 11),
+               _prop_float(tx.props, "voltage_lv_kv", 0.42))
+    if rated <= 0 or u_lv <= 0:
+        return 0.0
+    return i_lv_amps / (rated * 1000 / (math.sqrt(3) * u_lv)) * 100
 
 
 def _utility_loading_base_mva(util):
@@ -2525,6 +2714,7 @@ def _assess_solution(bus_results, converged, iterations, reason="", oscillation_
                      "normal operating solution. Verify source strength and loading; the "
                      "network may be past its loadability limit."))]
 
+    out = []
     advisories = [(bid, b) for bid, b in bus_results.items()
                   if getattr(b, "energized", True)
                   and V_IMPLAUSIBLE_PU <= b.voltage_pu < V_ADVISORY_PU]
@@ -2532,15 +2722,28 @@ def _assess_solution(bus_results, converged, iterations, reason="", oscillation_
         worst_id, worst = min(advisories, key=lambda kv: kv[1].voltage_pu)
         extra = (f" ({len(advisories)} energized buses below {V_ADVISORY_PU:.2f} p.u.)"
                  if len(advisories) > 1 else "")
-        return "ok", [LoadFlowWarning(
+        out.append(LoadFlowWarning(
             elementId=worst_id, element_name=worst.bus_name,
             message=(f"Advisory: '{worst.bus_name}' converged at {worst.voltage_pu:.3f} "
                      f"p.u.{extra} — below typical operating range (~0.9-1.1 p.u.), though "
                      f"above the {V_IMPLAUSIBLE_PU:.2f} p.u. floor this tool treats as an "
                      "implausible/collapse root. Usually a genuinely weak feeder or heavy "
-                     "loading; verify source strength if unexpected."))]
+                     "loading; verify source strength if unexpected.")))
 
-    return "ok", []
+    highs = [(bid, b) for bid, b in bus_results.items()
+             if getattr(b, "energized", True) and b.voltage_pu > V_HIGH_ADVISORY_PU]
+    if highs:
+        worst_id, worst = max(highs, key=lambda kv: kv[1].voltage_pu)
+        extra = (f" ({len(highs)} energized buses above {V_HIGH_ADVISORY_PU:.2f} p.u.)"
+                 if len(highs) > 1 else "")
+        out.append(LoadFlowWarning(
+            elementId=worst_id, element_name=worst.bus_name,
+            message=(f"Over-voltage: '{worst.bus_name}' converged at {worst.voltage_pu:.3f} "
+                     f"p.u.{extra} — above the typical operating range (~0.9-1.1 p.u.). "
+                     "Check capacitor banks on lightly loaded feeders, source voltage "
+                     "setpoints and transformer taps.")))
+
+    return "ok", out
 
 
 def run_load_flow(project: ProjectData, method: str = "newton_raphson",
@@ -2569,6 +2772,9 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
     # Re-hang each weak-grid utility behind its Thevenin source impedance
     # (idempotent; no-op unless a utility opts in via lf_grid_model).
     project, grid_impedance_warnings = _insert_grid_source_impedance(project)
+    # Record each transformer's drawn HV port so a unit with equal winding
+    # voltages is oriented by its ports, not by wire order (idempotent).
+    project = tag_transformer_hv_ports(project)
     # Iterate OLTC taps of regulating transformers/autotransformers to their
     # setpoint (standard 2-winding units regulate the same way — the tap sits
     # on the HV winding in both models).
@@ -2716,7 +2922,8 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
         bus_b_v = bus_b_comp.props.get("voltage_kv", 11) if bus_b_comp else 11
 
         if has_xfmr:
-            cable_voltages = chain_element_zones(chain_order, bus_a_v, bus_b_v)
+            cable_voltages = chain_element_zones(chain_order, bus_a_v, bus_b_v,
+                                                 bus_a, bus_b)
             z_total = sum((element_impedance_in_zone(e, base_mva, cable_voltages)
                            for e in all_elems.values()), complex(0, 0))
         else:
@@ -2724,11 +2931,28 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
             # one its bounding buses define. Pass that zone voltage so a cable
             # carrying a stale voltage_kv prop is still referred to the right
             # per-unit base ([EE-12 mirror], see _get_impedance).
+            zone_v = _cable_chain_zone_kv(chain_order, bus_a_v, bus_b_v)
+            if abs(bus_a_v - bus_b_v) > 0.15 * max(bus_a_v, bus_b_v):
+                # Two buses of different nominal voltage joined by cable(s)
+                # alone — a drawing error (a missing transformer, or a bus
+                # left at the wrong kV). Refer the chain to one fixed side so
+                # the answer does not depend on which bus the walk met first.
+                _ca = next((e for e in chain_order if e.type == "cable"), chain_order[0])
+                _nm = lambda b: str(components[b].props.get("name", b)) if b in components else b
+                input_warnings.append(LoadFlowWarning(
+                    elementId=_ca.id, element_name=str(_ca.props.get("name", _ca.id)),
+                    message=(f"'{_ca.props.get('name', _ca.id)}' joins '{_nm(bus_a)}' "
+                             f"({bus_a_v:g} kV) and '{_nm(bus_b)}' ({bus_b_v:g} kV) with "
+                             f"no transformer between them. It is modelled on a "
+                             f"{zone_v:g} kV base; check the bus voltages or draw the "
+                             "transformer."),
+                    expected_kv=round(zone_v, 3),
+                ))
             for e in all_elems.values():
                 if e.type == "cable":
-                    cable_voltages[e.id] = bus_a_v
+                    cable_voltages[e.id] = zone_v
             z_total = sum(
-                (_get_impedance(e, base_mva, v_kv=bus_a_v) for e in all_elems.values()),
+                (_get_impedance(e, base_mva, v_kv=zone_v) for e in all_elems.values()),
                 complex(0, 0))
 
         if abs(z_total) > 1e-15:
@@ -2882,6 +3106,7 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
     bus_load_q_mvar = np.zeros(n)  # per-bus load Q, for swing-bus source badges
     svc_units = []  # FACTS shunt compensators: list of dicts (see svc branch below)
     cap_units = []  # [EE-9] capacitor banks — constant susceptance (Q ∝ V²)
+    cap_b = np.zeros(n)  # per-bus capacitor susceptance, pu on the study base
     gen_pv_units = {}  # bus index -> PV-generator reactive-limit unit (see below)
     gen_vset = {}      # bus index -> generator voltage setpoint (used if it becomes the swing)
     ibr_pv_units = {}  # bus index -> voltage-regulating storage-inverter unit
@@ -3037,9 +3262,11 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
                 # bank at 0.9 p.u. delivers 3.24). The previous constant-Q
                 # injection credited full output at depressed voltage —
                 # optimistic exactly where capacitors matter (P-V
-                # continuation near the nose). Seed the injection at the
-                # rated value (V = 1) and track Q = Q_rated·V² across the
-                # outer solve passes, mirroring the susceptance-limited SVC.
+                # continuation near the nose). The susceptance B = Q_rated
+                # (pu) is stamped on the diagonal of the matrix the solver
+                # uses (Y_solve), so Q = Q_rated·V² holds exactly in one
+                # solve. Reporting keeps the branch-only Y and books the bank
+                # as a negative load at its solved Q (see the cap_units pass).
                 kvar = comp.props.get("rated_kvar", 100)
                 # Switched bank: only steps_in_service/steps of the rating is
                 # connected (OPF's Volt/VAR control). Absent prop ⇒ the whole
@@ -3049,7 +3276,28 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
                 if _sis not in (None, ""):
                     kvar = kvar * min(_steps, max(0, int(_sis))) / _steps
                 q_rated = kvar / 1000
-                Q_spec[i] += q_rated / base_mva
+                # The kvar is quoted at the bank's rated voltage: on a bus of
+                # nominal U it delivers Q_r·(U/U_r)² at 1 pu (a 525 V bank on
+                # a 400 V bus gives 58 % of its rating). A rating far from the
+                # bus (the 11 kV palette default left on an LV bank, which
+                # the app's voltage sync normally overwrites) is taken as a
+                # stale value, not a rating: the bank is credited its kvar at
+                # the bus voltage and the mismatch is reported.
+                u_bus = _prop_float(bus.props, "voltage_kv", 0.0)
+                u_r = _prop_float(comp.props, "voltage_kv", 0.0)
+                if u_bus > 0 and u_r > 0 and abs(u_r - u_bus) > 1e-9 * u_bus:
+                    if 1 / 1.4 <= u_r / u_bus <= 1.4:
+                        q_rated *= (u_bus / u_r) ** 2
+                    else:
+                        input_warnings.append(LoadFlowWarning(
+                            elementId=comp.id,
+                            element_name=str(comp.props.get("name", comp.id)),
+                            message=(f"Capacitor bank '{comp.props.get('name', comp.id)}' "
+                                     f"is rated {u_r:g} kV on a {u_bus:g} kV bus — taken "
+                                     f"as {kvar:g} kvar at {u_bus:g} kV; check its "
+                                     "voltage rating."),
+                            expected_kv=round(u_bus, 3), actual_kv=round(u_r, 3)))
+                cap_b[i] += q_rated / base_mva
                 bus_load_q_mvar[i] -= q_rated  # capacitor supplies Q
                 cap_units.append({"i": i, "q_rated": q_rated, "inj_q": q_rated})
             elif comp.type == "vfd":
@@ -3087,8 +3335,12 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
                     bus_load_q_mvar[i] -= q_out
                 else:
                     vset = float(cp.get("v_setpoint_pu", 1.0) or 1.0)
-                    bus_types[i] = 1                     # PV — hold |V| at setpoint
-                    V_spec[i] = vset
+                    if bus.id not in _utility_bus_ids:
+                        # PV — hold |V| at setpoint. On a utility's bus the
+                        # utility's setpoint wins (as for a generator there):
+                        # the SVC cannot move a stiff swing bus, it saturates.
+                        bus_types[i] = 1
+                        V_spec[i] = vset
                     svc_units.append({
                         "i": i, "id": comp.id, "name": cp.get("name", comp.id),
                         "device": mode, "q_max": q_max, "q_min": q_min,
@@ -3133,7 +3385,10 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
     # island demand re-splits it across all paralleled sets in rating
     # proportion (a distributed slack) instead of leaving it on one machine.
     P_base, Q_base = P_spec.copy(), Q_spec.copy()
+    # The solver's matrix: branches plus the capacitor susceptances.
+    Y_solve = Y + np.diag(1j * cap_b) if cap_units else Y
     loss_adders = {}
+    droop_q = {}   # island -> MVAr the droop-paralleled sets carry together
     prev_swing = set()
     # Voltage-regulating units whose scheduled pf-split Q the dispatcher must
     # zero (their Q comes from the solve or the reactive-limit clamp). Passing
@@ -3207,7 +3462,7 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
             bt_pq[u["i"]] = 0
             V_spec[u["i"]] = 1.0
         V0, ok, _it, _r = solve_with_islands(
-            Y, P_spec, Q_spec, V_spec, bt_pq, dispatch["dead_idx"], method)
+            Y_solve, P_spec, Q_spec, V_spec, bt_pq, dispatch["dead_idx"], method)
         if not ok:
             return []
         names = []
@@ -3246,7 +3501,7 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
         for _pass in range(3):
             dispatch = plan_dispatch(project, components, adjacency, bus_idx, buses,
                                      branch_pairs, bus_load_p_mw, loss_adders,
-                                     regulated_q)
+                                     regulated_q, droop_q)
             # A bus that was the swing on an earlier pass but no longer is
             # (e.g. sequential commitment moved the balancer once the loss
             # adders grew the demand) reverts to its own type — otherwise the
@@ -3266,9 +3521,18 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
                 Q_spec[i] += q_mvar / base_mva
 
             V, converged, iterations, solve_reason = solve_with_islands(
-                Y, P_spec, Q_spec, V_spec, bus_types, dispatch["dead_idx"], method)
+                Y_solve, P_spec, Q_spec, V_spec, bus_types, dispatch["dead_idx"], method)
             if not converged:
                 break
+            # [EE-9] Capacitor banks: the solve holds Q = Q_rated·V² exactly
+            # (susceptance in Y_solve). bus_load_q_mvar carries each bank as a
+            # negative load at that solved output, so everything reading the
+            # branch-only Y (regulator checks, droop vars, reporting) sees it.
+            for u in cap_units:
+                vmag = abs(V[u["i"]])
+                inj = u["q_rated"] * vmag * vmag
+                bus_load_q_mvar[u["i"]] += u["inj_q"] - inj
+                u["inj_q"] = inj
 
             S_tmp = V * np.conj(Y @ V)
             util_import = {}   # island -> utility balancer real import (MW)
@@ -3309,6 +3573,15 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
                 if resid > 2e-4 or (prev > 0 and resid < -2e-4):
                     loss_adders[isl] = max(0.0, prev + resid)
                     adjusted = True
+                # Vars: the sets' total = the reference set's solved Q plus
+                # what the others were scheduled; the next dispatch splits it
+                # by rating (a regulating set's Q is the solver's, not shared).
+                q_ref = S_tmp[bi].imag * base_mva + bus_load_q_mvar[bi] - inj[1]
+                q_tot = q_ref + sum(dispatch["dispatched_by_comp"].get(cid, (0.0, 0.0))[1]
+                                    for cid in ref_info.get("fixed_ids", []))
+                if abs(q_tot - droop_q.get(isl, float("inf"))) > 2e-4:
+                    droop_q[isl] = q_tot
+                    adjusted = True
             if not adjusted:
                 break
 
@@ -3336,22 +3609,10 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
             break
         S_reg = V * np.conj(Y @ V)
         changed = False
-        # [EE-9] Capacitor banks: constant susceptance — the delivered Q
-        # follows Q_rated·V², refined across passes as V settles (the same
-        # treatment as a susceptance-limited SVC below). bus_load_q_mvar
-        # carries the bank as a negative load, so reporting (badges,
-        # through-flow, source attribution) sees the V²-scaled output.
-        for u in cap_units:
-            bi = u["i"]
-            vmag = abs(V[bi]) if abs(V[bi]) > 1e-6 else 1.0
-            inj = u["q_rated"] * vmag * vmag
-            if abs(inj - u["inj_q"]) > 1e-3:
-                Q_base[bi] += (inj - u["inj_q"]) / base_mva
-                bus_load_q_mvar[bi] += (u["inj_q"] - inj)
-                u["inj_q"] = inj
-                changed = True
         for u in svc_units:
             bi = u["i"]
+            if bus_types[bi] == 2:
+                continue   # the swing source holds this bus — nothing to regulate
             vmag = abs(V[bi]) if abs(V[bi]) > 1e-6 else 1.0
             if u["clamped"] is None:
                 # Reactive output the PV constraint is currently demanding —
@@ -3475,6 +3736,27 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
         S_svc = V * np.conj(Y @ V)
         for u in svc_units:
             bi = u["i"]
+            if bus_types[bi] == 2:
+                # On a swing bus the source holds the voltage and S_bus is its
+                # supply of the whole network's Q. An SVC whose setpoint the
+                # swing already meets has nothing to do (zero output); one set
+                # above / below it runs to its capacitive / inductive limit
+                # trying to reach it. That output is booked as a negative load
+                # so the source's own Q excludes it.
+                vmag = abs(V[bi])
+                v2 = vmag * vmag if u["device"] == "svc" else 1.0
+                err = u["vset"] - vmag
+                q_out = (u["q_max"] * v2 if err > 1e-4
+                         else u["q_min"] * v2 if err < -1e-4 else 0.0)
+                bus_load_q_mvar[bi] -= q_out
+                svc_results.append({
+                    "id": u["id"], "name": u["name"], "device": u["device"],
+                    "bus_id": buses[bi].id if bi < len(buses) else "",
+                    "q_mvar": round(q_out, 3), "v_pu": round(vmag, 4),
+                    "v_setpoint_pu": u["vset"], "q_min_mvar": u["q_min"],
+                    "q_max_mvar": u["q_max"], "at_limit": q_out != 0.0,
+                })
+                continue
             q_out = (u["inj_q"] if u["clamped"] is not None
                      else S_svc[bi].imag * base_mva + bus_load_q_mvar[bi])
             svc_results.append({
@@ -3699,8 +3981,6 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
                             row_from, row_to = row_to, row_from
                             row_p, row_q = -row_p, -row_q
                 elif elem.type in ("transformer", "autotransformer"):
-                    rated_mva_xfmr = elem.props.get("rated_mva", 10)
-                    loading = (s_mva / rated_mva_xfmr * 100) if rated_mva_xfmr > 0 else 0
                     # Report current at the LV side (higher current) using
                     # LV-side power at the LV zone's actual voltage (the zone
                     # voltage the impedance is based on, else the nameplate).
@@ -3710,6 +3990,7 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
                     )
                     elem_i_amps = ((s_lv_mva * 1000) / (math.sqrt(3) * lv_kv * _vpu(lv_i))
                                    if lv_kv > 0 else 0)
+                    loading = _xfmr_loading_pct(elem, elem_i_amps)
                 else:
                     from_bus_comp = components.get(from_bus)
                     v_kv_fb = from_bus_comp.props.get("voltage_kv", 11) if from_bus_comp else 11
@@ -3872,13 +4153,12 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
         q_per_tx = (s_net_pu.imag * base_mva) / n_sources if n_sources > 0 else 0
 
         for tx in non_util_txs:
-            rated_mva_xfmr = tx.props.get("rated_mva", 10)
-            loading = (s_per_tx / rated_mva_xfmr * 100) if rated_mva_xfmr > 0 else 0
             lv_kv = min(
                 tx.props.get("voltage_hv_kv", 11),
                 tx.props.get("voltage_lv_kv", 0.42)
             )
             elem_i_amps = (s_per_tx * 1000) / (math.sqrt(3) * lv_kv * _vpu(bus_i)) if lv_kv > 0 else 0
+            loading = _xfmr_loading_pct(tx, elem_i_amps)
             source_side = _find_source_side_neighbor(tx.id, bus_id, adjacency, bus_of)
             branch_results.append(LoadFlowBranch(
                 elementId=tx.id,
@@ -4108,11 +4388,10 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
                                     s_bus_total.imag / n_util_tx)
                 s_this_mva = abs(s_this_tx)
 
-                rated_mva_xfmr = tx.props.get("rated_mva", 10)
-                tx_loading = (s_this_mva / rated_mva_xfmr * 100) if rated_mva_xfmr > 0 else 0
                 lv_kv = min(tx.props.get("voltage_hv_kv", 11),
                             tx.props.get("voltage_lv_kv", 0.42))
                 tx_i_amps = (s_this_mva * 1000) / (math.sqrt(3) * lv_kv * _vpu(bus_i)) if lv_kv > 0 else 0
+                tx_loading = _xfmr_loading_pct(tx, tx_i_amps)
                 branch_results.append(LoadFlowBranch(
                     elementId=tx.id,
                     element_name=tx.props.get("name", tx.type),
@@ -4143,6 +4422,25 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
     voltage_warnings.extend(multi_xfmr_chain_warnings)  # [EE-2]
     voltage_warnings.extend(input_warnings)  # [EE-8]
     voltage_warnings.extend(oltc_warnings)  # tap changer at limit / unsettled
+    # A load/source behind a cable or transformer whose own rating disagrees
+    # with the zone it hangs in: its terminal is modelled at the zone voltage
+    # (insert_implicit_load_buses), and the rating is the likely error.
+    for b in buses:
+        if not b.id.startswith(SYNTHETIC_BUS_PREFIX):
+            continue
+        el = components.get(b.id[len(SYNTHETIC_BUS_PREFIX):])
+        if el is None:
+            continue
+        own = _prop_float(el.props, "voltage_kv", 0.0)
+        zone = _prop_float(b.props, "voltage_kv", 0.0)
+        if own > 0 and zone > 0 and abs(own - zone) > 0.15 * zone:
+            voltage_warnings.append(LoadFlowWarning(
+                elementId=el.id, element_name=str(el.props.get("name", el.id)),
+                message=(f"Voltage mismatch: rated {own:g} kV, but it is fed at "
+                         f"{zone:g} kV through its cable/transformer — modelled at "
+                         f"{zone:g} kV; check its rating."),
+                expected_kv=round(zone, 3), actual_kv=round(own, 3),
+            ))
     voltage_warnings.extend(dispatch["warnings"])
 
     # PV generators that hit their reactive capability: they can no longer hold
@@ -4312,6 +4610,12 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
     # their connection bus is not necessarily the island's swing bus (e.g. a
     # user-labelled Swing bus elsewhere), where the per-bus formula reads ~0.
     island_of = dispatch.get("island_of", {})
+    # Buses whose reactive output is held by a voltage-regulating unit of
+    # their own (SVC/STATCOM, PV-bus generator, voltage-mode inverter —
+    # regulating or clamped at a limit). Their solved Q is that unit's, never
+    # the island balancer's, so the island-wide Q sum leaves them out.
+    _reg_q_buses = ({u["i"] for u in svc_units} | set(gen_pv_units)
+                    | set(ibr_pv_units))
     balancer_entries = {}
     for entry in dispatch["entries"]:
         if entry["role"] == "balancer" and entry["bus_id"]:
@@ -4325,8 +4629,10 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
             isl_buses = [i for i in range(len(buses)) if island_of.get(i) == isl]
             p_out = (sum(S_bus[i].real * base_mva + bus_load_p_mw[i] for i in isl_buses)
                      - sum(dispatch["injections"].get(i, (0.0, 0.0))[0] for i in isl_buses))
-            q_out = (sum(S_bus[i].imag * base_mva + bus_load_q_mvar[i] for i in isl_buses)
-                     - sum(dispatch["injections"].get(i, (0.0, 0.0))[1] for i in isl_buses))
+            q_buses = [i for i in isl_buses
+                       if i == bi or i not in _reg_q_buses or bus_types[i] == 2]
+            q_out = (sum(S_bus[i].imag * base_mva + bus_load_q_mvar[i] for i in q_buses)
+                     - sum(dispatch["injections"].get(i, (0.0, 0.0))[1] for i in q_buses))
         else:
             p_out = S_bus[bi].real * base_mva + bus_load_p_mw[bi] - inj[0]
             q_out = S_bus[bi].imag * base_mva + bus_load_q_mvar[bi] - inj[1]
@@ -4363,7 +4669,11 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
                         br.q_mvar = round(q_b, 4)
                         br.s_mva = round(s_b, 4)
                         br.loading_pct = round(s_b / rated * 100, 2) if rated > 0 else 0
-                        v_kv_b = comp.props.get("voltage_kv", 0.4) if comp is not None else 0.4
+                        # Current at the bus it feeds, as every other source
+                        # row is reported (its own voltage_kv may be absent
+                        # or stale).
+                        v_kv_b = _prop_float(buses[bi].props, "voltage_kv", 0.0) or (
+                            _prop_float(comp.props, "voltage_kv", 0.4) if comp is not None else 0.4)
                         br.i_amps = (round((s_b * 1000) / (math.sqrt(3) * v_kv_b * v_pu_b), 2)
                                      if v_kv_b > 0 else 0)
                         break
@@ -4499,6 +4809,7 @@ def _newton_raphson(Y, P_spec, Q_spec, V_mag, bus_types):
     non_swing = [i for i in range(n) if bus_types[i] != 2]
     ns, pq = np.array(non_swing, dtype=int), np.array(pq_idx, dtype=int)
 
+    prev_mis = math.inf
     for iteration in range(MAX_ITERATIONS):
         # Power mismatches — vectorized form of
         #   P_i = Σ_j |Vi||Vj|(G_ij cosθ_ij + B_ij sinθ_ij)
@@ -4516,9 +4827,11 @@ def _newton_raphson(Y, P_spec, Q_spec, V_mag, bus_types):
 
         # Check convergence (swing buses excluded; Q only at PQ buses)
         mismatch = np.concatenate([dP[ns], dQ[pq]])
-        if len(mismatch) == 0 or np.max(np.abs(mismatch)) < TOLERANCE:
+        max_mis = float(np.max(np.abs(mismatch))) if len(mismatch) else 0.0
+        if max_mis < NR_TOLERANCE or (max_mis < TOLERANCE and max_mis > 0.5 * prev_mis):
             V = Vm * np.exp(1j * theta)
             return V, True, iteration + 1, ""
+        prev_mis = max_mis
 
         # Jacobian blocks. J1: dP/dθ, J2: dP/d|V|, J3: dQ/dθ, J4: dQ/d|V|.
         # Off-diagonal terms from the full matrices, then the diagonals.
