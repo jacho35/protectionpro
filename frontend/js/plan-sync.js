@@ -267,12 +267,23 @@ const PlanSync = {
     }
   },
 
-  async pushToSchedules() {
+  // Site plan → Demand. opts.interactive (default true, the Output button)
+  // asks and reports in dialogs and takes an undo snapshot; the sync pass
+  // calls it with interactive: false — no dialog, no snapshot, and what it
+  // used to ask goes to opts.issue(key, text) instead. Without an await on
+  // that path the whole push runs synchronously. Returns the summary.
+  async pushToSchedules(opts = {}) {
+    const interactive = opts.interactive !== false;
+    const issue = opts.issue || (() => {});
     const pm = AppState.planMarkup;
     const factor = this._factor();
     if (!factor) {
-      const ok = await UI.confirm('Plan is not calibrated — push topology without measured lengths?', { danger: false });
-      if (!ok) return;
+      if (interactive) {
+        const ok = await UI.confirm('Plan is not calibrated — push topology without measured lengths?', { danger: false });
+        if (!ok) return null;
+      } else {
+        issue('plan-uncalibrated', 'Site plan not calibrated — lengths are not measured, so Demand uses its default lengths. Calibrate the plan to fill them in.');
+      }
     }
     const R = AppState.reticulation;
     const elById = this._elById();
@@ -367,9 +378,10 @@ const PlanSync = {
 
     AppState.dirty = true;
     if (typeof Retic !== 'undefined') {
-      if (Retic._snapshot) Retic._snapshot();
+      if (interactive && Retic._snapshot) Retic._snapshot();
       if (Retic._active) { Retic.render && Retic.render(); Retic.recompute && Retic.recompute(); }
     }
+    if (!interactive) return summary;
     const extra = [];
     const mv = pm.routes.filter(r => r.type === 'mv').length - (summary.mvFeeds || 0);
     if (mv > 0) extra.push(`${mv} other MV route(s)`);
@@ -381,6 +393,7 @@ const PlanSync = {
       `• ${summary.feeders} feeder link(s), ${summary.sl} kiosk SL load(s)` +
       (summary.mvFeeds ? `\n• ${summary.mvFeeds} MV link(s) between minisubs` : '') +
       (extra.length ? `\n\n${extra.join(', ')} → included in the CSV/DXF exports only.` : ''));
+    return summary;
   },
 
   // BFS over LV routes from minisub elements; first arrival sets a kiosk's
@@ -1168,7 +1181,17 @@ const PlanSync = {
   // component wired MDB(out) → cable → SDB(in). Reconciles BOTH directions,
   // id-linked (idempotent). Deletions propagate across views on sync, behind a
   // confirmation. Building never touches the Reticulation schedule.
-  async syncBuildingToSLD() {
+  // Floor plans ⇄ single line. opts.interactive (default true, the Sync
+  // with SLD button) asks and reports in dialogs and takes paired undo
+  // snapshots; the sync pass calls it with interactive: false — deletions made
+  // in one view are applied in the other (opts.notice says so), an ambiguous
+  // feeder direction keeps the drawing order and goes to opts.issue, no
+  // snapshot, no summary. Without an await on that path it runs
+  // synchronously. Returns the summary.
+  async syncBuildingToSLD(opts = {}) {
+    const interactive = opts.interactive !== false;
+    const issue = opts.issue || (() => {});
+    const notice = opts.notice || (() => {});
     const pm = AppState.planMarkup;
     const comps = AppState.components;
 
@@ -1192,9 +1215,14 @@ const PlanSync = {
     // ── 0b. Propagate genuine deletions (with confirmation) ──
     const del = this._collectDeletions(pm);
     if (del.boards + del.feeders > 0) {
-      const ok = await UI.confirm(
-        `Sync will remove ${del.boards} board/switchboard(s) and ${del.feeders} feeder(s) that were deleted in the other view. Remove them here too?`,
-        { danger: true, okText: 'Remove', cancelText: 'Keep both' });
+      const ok = interactive
+        ? await UI.confirm(
+          `Sync will remove ${del.boards} board/switchboard(s) and ${del.feeders} feeder(s) that were deleted in the other view. Remove them here too?`,
+          { danger: true, okText: 'Remove', cancelText: 'Keep both' })
+        : true;
+      if (ok && !interactive) {
+        notice(`${del.boards ? `${del.boards} board${del.boards === 1 ? '' : 's'}` : ''}${del.boards && del.feeders ? ' and ' : ''}${del.feeders ? `${del.feeders} feeder${del.feeders === 1 ? '' : 's'}` : ''} removed here too · Undo puts ${del.boards + del.feeders === 1 ? 'it' : 'them'} back`);
+      }
       if (ok) {
         for (const id of del.sldComps) AppState.removeComponent(id);
         // Filter every floor's collections, then re-point the active mirror.
@@ -1280,11 +1308,15 @@ const PlanSync = {
           // supply — otherwise (neither energized yet, e.g. first sync) keep
           // the draw order rather than nagging for every feeder.
           const bothSourced = this._reachesSupply(a.sldId, b.sldId) && this._reachesSupply(b.sldId, a.sldId);
-          if (bothSourced) {
+          if (bothSourced && interactive) {
             const aFeeds = await UI.confirm(
               `Feeder between "${a.name || 'DB A'}" and "${b.name || 'DB B'}": which board feeds the other?`,
               { danger: false, okText: `${a.name || 'A'} feeds`, cancelText: `${b.name || 'B'} feeds` });
             if (!aFeeds) { upEl = b; downEl = a; }
+          } else if (bothSourced) {
+            issue('feeder-direction:' + r.id,
+              `Feeder between ${a.name || 'DB A'} and ${b.name || 'DB B'}: both boards have a supply, so ${a.name || 'the first'} is taken to feed ${b.name || 'the second'} (the order it was drawn in).`,
+              { kind: 'swap-feeder', routeId: r.id });
           }
         }
         const src = this._feederSourcePoint(upEl);    // upstream connection {compId, port}
@@ -1347,6 +1379,7 @@ const PlanSync = {
     // push a paired snapshot to each undo stack. This keeps Ctrl+Z coherent —
     // the plan's sldId links and the SLD's boards/cables move together — and
     // the SD-1 healing above defuses the stale-link deletion prompt on redo.
+    if (!interactive) return Object.assign(summary, { circuits: circ });
     if (typeof UndoManager !== 'undefined' && UndoManager.snapshot) UndoManager.snapshot();
     if (typeof PlanMarkup !== 'undefined' && PlanMarkup.snapshot) PlanMarkup.snapshot();
     if (typeof Canvas !== 'undefined') Canvas.render();
@@ -1358,6 +1391,7 @@ const PlanSync = {
       `• ${summary.riserNew} cross-floor riser feeder(s) created on the SLD\n` +
       `• ${summary.planNew} SLD cable(s) reflected back as plan feeders` +
       (circ ? `\n• ${circ.ways} circuit way(s) from ${circ.devices} tagged device(s)` : ''));
+    return Object.assign(summary, { circuits: circ });
   },
 
   // Immediate rename propagation from a plan element to its schedule row.

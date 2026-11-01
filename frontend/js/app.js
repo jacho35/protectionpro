@@ -61,6 +61,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if (typeof Interlocking !== 'undefined') Interlocking.init();
   if (typeof Schedules !== 'undefined') Schedules.init();
   if (typeof Quantities !== 'undefined') Quantities.init();
+  if (typeof Sync !== 'undefined') Sync.init();
   if (typeof StreetLight !== 'undefined') StreetLight.init();
   if (typeof Sharing !== 'undefined') Sharing.init();
   // Auth last: shows the login gate (a blocking modal) over the initialized —
@@ -4766,6 +4767,11 @@ document.addEventListener('DOMContentLoaded', () => {
     AppState.voltageFactor = parseFloat(document.getElementById('voltage-factor').value) || DEFAULT_VOLTAGE_FACTOR;
     AppState.defaultLengthUnit = document.getElementById('default-length-unit').value || 'm';
     AppState.cascading = document.getElementById('allow-cascading').checked;
+    const syncWas = AppState.keepInSync !== false;
+    AppState.keepInSync = document.getElementById('keep-in-sync').checked;
+    // A change is saved with the project; switching it on, the dirty mark
+    // also starts a sync pass that brings every workspace up to date.
+    if (syncWas !== AppState.keepInSync) AppState.dirty = true;
     AppState.invalidateResults();
     Canvas.render();
     document.getElementById('settings-modal').style.display = 'none';
