@@ -64,6 +64,8 @@ jobs:
 
       - name: DB earth-leakage units and switched sections
         run: node frontend/tests/test_db_el_units.mjs
+      - name: Sync speed fixes (board index, street-lighting changed circuits only)
+        run: node frontend/tests/test_sync_speed.mjs
 
       - name: Raw HTML interpolation ratchet (new unescaped attribute values fail)
         run: node testing/lint/raw-interp.mjs --max 0
