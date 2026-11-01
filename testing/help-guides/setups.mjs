@@ -561,7 +561,7 @@ Object.assign(SETUPS, {
     await cableNetwork(page);
     await page.evaluate(() => document.getElementById('btn-run-loadflow').click());
     await page.waitForFunction(() => AppState.loadFlowResults && ResultView.isOn('loadflow'), null, { timeout: 20000 });
-    await page.evaluate(() => { document.querySelectorAll('.modal').forEach(m => { if (getComputedStyle(m).display !== 'none') m.style.display = 'none'; }); ResultView._openValues(); });
+    await page.evaluate(() => { document.querySelectorAll('.modal').forEach(m => { if (getComputedStyle(m).display !== 'none') m.style.display = 'none'; }); ResultsPanel.close(); ResultView._openValues(); });
     await page.waitForTimeout(500);
   } },
 
@@ -597,6 +597,7 @@ async function cableNetwork(page) {
   }
   await page.waitForTimeout(600);
   await page.evaluate(() => document.querySelectorAll('.modal').forEach(m => { if (m.id !== 'lightning-modal') m.style.display = 'none'; }));
+  await page.evaluate(() => { if (typeof ResultsPanel !== 'undefined') ResultsPanel.close(); });
   await page.evaluate(() => { Canvas.fitToView && Canvas.fitToView(); });
   await page.waitForTimeout(400);
 }
@@ -624,6 +625,26 @@ async function markModal(page) {
       .sort((a, b) => (+getComputedStyle(b).zIndex || 0) - (+getComputedStyle(a).zIndex || 0))[0];
     if (m) m.setAttribute('data-hg-cap', '1');
   });
+}
+// The results panel docked right / bottom, optionally with Needs attention on
+// and the first row (of a section) opened.
+async function panel(page, dock, { attention = false, openFirst = false, height } = {}) {
+  await page.evaluate(({ dock, height }) => {
+    document.querySelectorAll('.modal').forEach(m => { m.style.display = 'none'; });
+    if (height) ResultsPanel._loadPrefs().bottom = height;
+    ResultsPanel.setDock(dock); ResultsPanel.open(ResultsPanel.tab);
+  }, { dock, height });
+  await page.waitForTimeout(400);
+  if (attention) { await page.click('#results-panel [data-rp-attn]'); await page.waitForTimeout(200); }
+  if (openFirst) {
+    const sel = typeof openFirst === 'string' ? `#results-panel [data-rp-sec="${openFirst}"] tr.rp-row.rp-st-fail` : '#results-panel tr.rp-row.rp-st-fail, #results-panel tr.rp-row';
+    await page.locator(sel).first().click();
+    await page.waitForTimeout(400);
+  }
+}
+async function closePanel(page) {
+  await page.evaluate(() => { if (typeof ResultsPanel !== 'undefined') ResultsPanel.close(); });
+  await page.waitForTimeout(300);
 }
 async function closeModals(page) {
   await page.evaluate(() => document.querySelectorAll('.modal').forEach(m => { m.style.display = 'none'; }));
@@ -678,18 +699,31 @@ Object.assign(SETUPS, {
     await page.click('#btn-tcc-verify-seq'); await page.waitForTimeout(1200);
   }, viewport: TCC_VP },
 
-  'study-fault': { run: async (page) => { await loadTemplate(page, 'industrial_plant'); await runStudy(page, '#btn-run-fault', 'faultResults'); await closeModals(page); }, viewport: { width: 1500, height: 1100 } },
-  'study-loadflow': { run: async (page) => { await loadTemplate(page, 'industrial_plant'); await runStudy(page, '#btn-run-loadflow', 'loadFlowResults'); await closeModals(page); }, viewport: { width: 1500, height: 1100 } },
-  'study-arcflash': { run: async (page) => { await loadTemplate(page, 'industrial_plant'); await runStudy(page, '#btn-arcflash', 'arcFlashResults'); await markModal(page); } },
+  'study-fault': { run: async (page) => { await loadTemplate(page, 'industrial_plant'); await runStudy(page, '#btn-run-fault', 'faultResults'); await closeModals(page); await closePanel(page); }, viewport: { width: 1500, height: 1100 } },
+  'study-loadflow': { run: async (page) => { await loadTemplate(page, 'industrial_plant'); await runStudy(page, '#btn-run-loadflow', 'loadFlowResults'); await closeModals(page); await closePanel(page); }, viewport: { width: 1500, height: 1100 } },
+  'study-arcflash': { run: async (page) => { await loadTemplate(page, 'industrial_plant'); await runStudy(page, '#btn-arcflash', 'arcFlashResults'); await panel(page, 'right'); }, viewport: { width: 1440, height: 860 } },
   'menu-output': { run: async (page) => {
-    await loadTemplate(page, 'industrial_plant'); await runStudy(page, '#btn-arcflash', 'arcFlashResults'); await closeModals(page);
+    await loadTemplate(page, 'industrial_plant'); await runStudy(page, '#btn-arcflash', 'arcFlashResults'); await closeModals(page); await closePanel(page);
     await page.click('#menu-export .toolbar-menu-btn'); await page.waitForSelector('#btn-export-aflabels');
   } },
-  'study-cable': { run: async (page) => { await loadTemplate(page, 'industrial_plant'); await runStudy(page, '#btn-cable-sizing', 'cableSizingResults'); } },
-  'study-cable-canvas': { run: async (page) => { await loadTemplate(page, 'industrial_plant'); await runStudy(page, '#btn-cable-sizing', 'cableSizingResults'); await closeModals(page); }, viewport: { width: 1500, height: 1100 } },
+  'study-cable': { run: async (page) => { await loadTemplate(page, 'industrial_plant'); await runStudy(page, '#btn-cable-sizing', 'cableSizingResults'); await panel(page, 'bottom', { openFirst: true }); }, viewport: { width: 1500, height: 1000 } },
+  'study-cable-canvas': { run: async (page) => { await loadTemplate(page, 'industrial_plant'); await runStudy(page, '#btn-cable-sizing', 'cableSizingResults'); await closeModals(page); await closePanel(page); }, viewport: { width: 1500, height: 1100 } },
   'study-motor': { run: async (page) => { await loadTemplate(page, 'industrial_plant'); await runStudy(page, '#btn-motor-starting', 'motorStartingResults'); await markModal(page); } },
   'study-motor-canvas': { run: async (page) => { await loadTemplate(page, 'industrial_plant'); await runStudy(page, '#btn-motor-starting', 'motorStartingResults'); await closeModals(page); }, viewport: { width: 1500, height: 1100 } },
-  'study-duty': { run: async (page) => { await loadTemplate(page, 'industrial_plant'); await runStudy(page, '#btn-duty-check', 'dutyCheckResults'); await markModal(page); }, viewport: { width: 1500, height: 1000 } },
+  'study-duty': { run: async (page) => { await loadTemplate(page, 'industrial_plant'); await runStudy(page, '#btn-duty-check', 'dutyCheckResults'); await panel(page, 'bottom', { openFirst: 'devices', height: 380 }); }, viewport: { width: 1500, height: 1000 } },
+  'rp-right': { run: async (page) => {
+    await loadTemplate(page, 'industrial_plant');
+    await runStudy(page, '#btn-run-fault', 'faultResults');
+    await runStudy(page, '#btn-cable-sizing', 'cableSizingResults');
+    await runStudy(page, '#btn-arcflash', 'arcFlashResults');
+    await panel(page, 'right');
+  }, viewport: { width: 1440, height: 860 } },
+  'rp-bottom': { run: async (page) => {
+    await loadTemplate(page, 'industrial_plant');
+    await runStudy(page, '#btn-arcflash', 'arcFlashResults');
+    await runStudy(page, '#btn-cable-sizing', 'cableSizingResults');
+    await panel(page, 'bottom', { attention: true, openFirst: true, height: 340 });
+  }, viewport: { width: 1440, height: 900 } },
   'study-grounding': { run: async (page) => { await loadTemplate(page, 'ver_grounding'); await runStudy(page, '#btn-grounding', 'groundingResults'); await markModal(page); } },
 });
 

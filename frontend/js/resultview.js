@@ -159,6 +159,7 @@ const ResultView = {
     const want = new Set(keys);
     for (const s of this.STUDIES) AppState.showResultBoxes[s.key] = want.has(s.key);
     if (keys.length) this._last = [...keys];
+    if (typeof ResultsPanel !== 'undefined') ResultsPanel.follow(keys);
     if (!want.has('cable') && typeof CableFocus !== 'undefined' && CableFocus.active) CableFocus.disable();
     this._redraw();
   },
@@ -230,6 +231,7 @@ const ResultView = {
       this._el.hidden = true;
       this._closeValues();
       if (typeof Header !== 'undefined' && Header.syncResultsMenu) Header.syncResultsMenu();
+      if (typeof ResultsPanel !== 'undefined') ResultsPanel.onCanvasRender();
       return;
     }
     const cur = new Set(this.current());
@@ -243,7 +245,9 @@ const ResultView = {
     };
     const html = `<button type="button" class="rv-chip rv-off" data-rv="off" aria-pressed="${cur.size === 0}" title="Plain diagram, no result boxes (H)">Off</button>`
       + avail.map(chip).join('')
-      + `<span class="rv-sep" aria-hidden="true"></span><button type="button" class="rv-chip rv-values" data-rv-values aria-haspopup="dialog" aria-expanded="${!!this._pop}"${cur.size ? '' : ' disabled'} title="Which values the boxes show">Values ▾</button>`;
+      + `<span class="rv-sep" aria-hidden="true"></span><button type="button" class="rv-chip rv-values" data-rv-values aria-haspopup="dialog" aria-expanded="${!!this._pop}"${cur.size ? '' : ' disabled'} title="Which values the boxes show">Values ▾</button>`
+      + (typeof ResultsPanel !== 'undefined' && ResultsPanel.available().length
+        ? `<button type="button" class="rv-chip rv-table" data-rv-table aria-pressed="${ResultsPanel.isOpen()}" title="The results in tables, beside the diagram">▤ Table</button>` : '');
     this._el.hidden = false;
     if (html !== this._html) { this._el.innerHTML = html; this._html = html; }
     if (this._pop) {
@@ -251,10 +255,12 @@ const ResultView = {
       else this._renderValues();
     }
     if (typeof Header !== 'undefined' && Header.syncResultsMenu) Header.syncResultsMenu();
+    if (typeof ResultsPanel !== 'undefined') ResultsPanel.onCanvasRender();
   },
 
   _onClick(e) {
     if (e.target.closest('[data-rv-values]')) { this._pop ? this._closeValues() : this._openValues(); return; }
+    if (e.target.closest('[data-rv-table]')) { ResultsPanel.toggle(); this._html = ''; this.render(); return; }
     const b = e.target.closest('[data-rv]');
     if (!b) return;
     this.show(b.dataset.rv, e.shiftKey || e.ctrlKey || e.metaKey);

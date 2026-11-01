@@ -38,6 +38,7 @@ const Header = {
     if (note) note.hidden = studies.length > 0;
   },
   _openResults(key) {
+    if (typeof ResultsPanel !== 'undefined' && ResultsPanel.TABS.includes(key)) { ResultsPanel.open(key); return; }
     let prefix = this.OPEN_PREFIX[key];
     if (key === 'arcflash' && !AppState.arcFlashResults) prefix = 'dcaf';
     window.AppActions?.openResultBox?.(prefix + ':');
