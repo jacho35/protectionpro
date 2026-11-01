@@ -27,6 +27,7 @@
  *
  * Workspace keys are the ones switchWorkspace() already uses:
  *   'plan' | 'retic' (shown as "Demand") | 'streetlight' | 'sld' | 'schedules' | 'interlock'
+ *   | 'overview' (Reticulation, Building and Network: overview.js) | 'lightov' (a Lighting project's Overview)
  */
 
 const Workspaces = {
@@ -34,19 +35,19 @@ const Workspaces = {
     retic: {
       label: 'Reticulation',
       desc: 'A township or site LV network: minisubs, kiosks and erven, sized by ADMD (NRS 034-1).',
-      core: ['plan', 'retic', 'streetlight', 'sld', 'quantities'],
+      core: ['overview', 'plan', 'retic', 'streetlight', 'sld', 'quantities'],
       planDomain: 'retic',
     },
     building: {
       label: 'Building',
       desc: 'Floors, distribution boards and final circuits, down to each way.',
-      core: ['plan', 'sld', 'schedules', 'lighting', 'quantities'],
+      core: ['overview', 'plan', 'sld', 'schedules', 'lighting', 'quantities'],
       planDomain: 'building',
     },
     network: {
       label: 'Network / plant',
       desc: 'Substations, industrial and utility networks: single-line studies and breaker interlocking.',
-      core: ['sld', 'interlock'],
+      core: ['overview', 'sld', 'interlock'],
       planDomain: null,
     },
     lighting: {
@@ -65,12 +66,14 @@ const Workspaces = {
   },
   // Workspaces that exist only in a Lighting project.
   LIGHTING_ONLY: ['lightov', 'sports'],
+  // Workspaces a Lighting project never shows (it has its own Overview).
+  NOT_LIGHTING: ['overview'],
   // Canonical order for workspaces outside a type's core set.
-  ORDER: ['lightov', 'plan', 'retic', 'streetlight', 'sld', 'schedules', 'lighting', 'sports', 'interlock', 'quantities'],
+  ORDER: ['overview', 'lightov', 'plan', 'retic', 'streetlight', 'sld', 'schedules', 'lighting', 'sports', 'interlock', 'quantities'],
   TAB_IDS: {
     sld: 'btn-workspace-sld', retic: 'btn-workspace-retic', streetlight: 'btn-workspace-streetlight', plan: 'btn-workspace-plan',
     interlock: 'btn-workspace-interlock', schedules: 'btn-workspace-schedules', quantities: 'btn-workspace-quantities', lighting: 'btn-workspace-lighting',
-    lightov: 'btn-workspace-lightov', sports: 'btn-workspace-sports',
+    lightov: 'btn-workspace-lightov', sports: 'btn-workspace-sports', overview: 'btn-workspace-overview',
   },
   DESCS: {
     plan: 'Site or floor plans with devices, routes and circuits',
@@ -82,6 +85,7 @@ const Workspaces = {
     quantities: 'Bill of quantities, cable schedules and the rate library',
     lighting: 'Rooms, outdoor areas, fences and escape routes: lux, glare, energy and emergency lighting',
     lightov: 'Every lighting design with its verdict, Calculate all and the report',
+    overview: 'Is the project OK? Every workspace with its results and verdict, Calculate all and the issues',
     sports: 'Sports fields: masts, aimed floods, stands and TV',
   },
 
@@ -178,7 +182,7 @@ const Workspaces = {
     const extras = Array.isArray(AppState.extraWorkspaces) ? AppState.extraWorkspaces : [];
     const out = core.slice();
     for (const ws of this.ORDER) {
-      if (out.includes(ws) || (t !== 'lighting' && this.LIGHTING_ONLY.includes(ws))) continue;
+      if (out.includes(ws) || (t !== 'lighting' && this.LIGHTING_ONLY.includes(ws)) || (t === 'lighting' && this.NOT_LIGHTING.includes(ws))) continue;
       if (extras.includes(ws) || this.hasData(ws)) out.push(ws);
     }
     return out;
@@ -202,7 +206,7 @@ const Workspaces = {
       const d = AppState.planMarkup && AppState.planMarkup.settings && AppState.planMarkup.settings.domain;
       return d === 'building' ? 'Floor plans' : 'Site plan';
     }
-    return { sld: 'Single-line', retic: 'Demand', streetlight: 'Street lighting', schedules: 'Schedules', interlock: 'Interlocking', quantities: 'Quantities', lighting: 'Lighting' }[ws] || ws;
+    return { overview: 'Overview', sld: 'Single-line', retic: 'Demand', streetlight: 'Street lighting', schedules: 'Schedules', interlock: 'Interlocking', quantities: 'Quantities', lighting: 'Lighting' }[ws] || ws;
   },
 
   // ── Plan domain follows the type ────────────────────────────────────
@@ -338,7 +342,7 @@ const Workspaces = {
       if (l) return l;
     }
     if (ws === 'plan') return type === 'building' ? 'Floor plans' : 'Site plan';
-    return { sld: 'Single-line', retic: 'Demand', streetlight: 'Street lighting', schedules: 'Schedules', interlock: 'Interlocking', quantities: 'Quantities', lighting: 'Lighting' }[ws];
+    return { overview: 'Overview', sld: 'Single-line', retic: 'Demand', streetlight: 'Street lighting', schedules: 'Schedules', interlock: 'Interlocking', quantities: 'Quantities', lighting: 'Lighting' }[ws];
   },
 
   // A Lighting project's design picker: the three kinds, the electrical

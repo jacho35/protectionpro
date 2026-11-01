@@ -1518,7 +1518,16 @@ const AppState = {
   },
 
   _applyLastView(v) {
-    if (!v || typeof v !== 'object') return;
+    // No tab saved with the project: open on its Overview.
+    if (!v || typeof v !== 'object' || typeof v.workspace !== 'string') {
+      if (typeof window !== 'undefined' && typeof window.switchWorkspace === 'function' && typeof Workspaces !== 'undefined') {
+        setTimeout(() => {
+          const ov = Workspaces.visible().find(ws => ws === 'overview' || ws === 'lightov');
+          if (ov) window.switchWorkspace(ov);
+        }, 0);
+      }
+      if (!v || typeof v !== 'object') return;
+    }
     const ok = (n) => typeof n === 'number' && isFinite(n);
     if (ok(v.zoom) && v.zoom > 0 && ok(v.panX) && ok(v.panY)) {
       this.zoom = v.zoom; this.panX = v.panX; this.panY = v.panY;
@@ -2083,6 +2092,7 @@ for (const slot of RESULT_SLOTS) {
       };
       if (typeof StaleResults !== 'undefined' && StaleResults.refresh) StaleResults.refresh();
       if (typeof ResultView !== 'undefined') ResultView.onResult(slot);
+      if (typeof Issues !== 'undefined') Issues.kick();
     },
   });
 }
@@ -2110,6 +2120,7 @@ AppState._sigCache = null;
       if (!v) return;
       this._sigCache = null;
       if (typeof Sync !== 'undefined') Sync.kick();   // the sync pass (sync.js)
+      if (typeof Issues !== 'undefined') Issues.onEdit();   // the Issues list (issues.js)
     },
   });
 }

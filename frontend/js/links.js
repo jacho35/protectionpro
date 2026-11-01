@@ -16,6 +16,7 @@
  *   sl:<circuit or pole id>   a Street lighting circuit or pole
  *   rp:<road id>              a road on the road plan
  *   way:<board id>/<way id>   a way in a board schedule
+ *   tab:<workspace>           a workspace tab itself (Overview, Demand, …)
  *
  * A link mark (markHtml) is a small button beside a field another workspace
  * owns: it goes to the owner, and a "← Back" chip returns to where you were.
@@ -122,6 +123,7 @@ const Links = {
     const t = this._parse(addr);
     if (!t) return '';
     try {
+      if (t.ws === 'tab') return typeof Workspaces !== 'undefined' ? Workspaces.label(t.id) : t.id;
       if (t.ws === 'sld') { const c = AppState.components.get(t.id); return c ? (c.props.name || c.id) : t.id; }
       if (t.ws === 'plan') {
         const e = this._els().find(x => x.id === t.id) || this._routes().find(x => x.id === t.id);
@@ -183,6 +185,11 @@ const Links = {
 
   _focus(t) {
     const { ws, id } = t;
+    if (ws === 'tab') {
+      if (typeof Workspaces !== 'undefined' && id !== 'sld' && !Workspaces.isVisible(id)) return false;
+      this._sw(id);
+      return true;
+    }
     if (ws === 'sld') {
       if (!AppState.components.has(id)) return false;
       this._sw('sld');
@@ -270,7 +277,7 @@ const Links = {
     }
     chip.dataset.to = back;
     const t = this._parse(back);
-    chip.textContent = `← Back to ${this.name(back)} in ${this.WS_LABEL[t.ws] || t.ws}`;
+    chip.textContent = t.ws === 'tab' ? `← Back to ${this.name(back)}` : `← Back to ${this.name(back)} in ${this.WS_LABEL[t.ws] || t.ws}`;
     chip.hidden = false;
   },
 };

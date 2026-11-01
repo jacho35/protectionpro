@@ -901,7 +901,7 @@ const HELP_GUIDES = [
   intro: 'Every study’s results are in one panel beside the diagram. Where the results belong to parts (buses, cables, motors, breakers) they are tables linked to those parts, and Needs attention keeps what fails; studies built on charts (stability, time series, frequency scan) show their charts there.',
   steps: [
     { title: 'Open it',
-      html: 'Running a study opens the panel on its tab (load flow and unbalanced load flow only when they have something to flag; short circuit never, its levels are on the diagram). Otherwise use <strong>▤ Table</strong> at the end of the study chips over the diagram. Each study with results has a tab with a dot, and the tab follows the chip you pick (and picking a tab shows that study on the diagram). The line under the tabs says how the study ran, when, and how many rows fail or warn; after an edit it says the numbers are out of date, with <strong>Re-run</strong> (or <strong>Run again…</strong> for a study that has its own setup). Studies that are not saved with the project (contingency, harmonics, reliability and the other planning and power-quality studies) keep their tab until you open another project.',
+      html: 'Running a study opens the panel on its tab (load flow and unbalanced load flow only when they have something to flag; short circuit never, its levels are on the diagram). Otherwise use <strong>▤ Table</strong> at the end of the study chips over the diagram. Each study with results has a tab with a dot, and the tab follows the chip you pick (and picking a tab shows that study on the diagram). The line under the tabs says how the study ran, when, and how many rows fail or warn; after an edit it says the numbers are out of date, with <strong>Re-run</strong> (or <strong>Run again…</strong> for a study that has its own setup). Studies that are not saved with the project (contingency, harmonics, reliability and the other planning and power-quality studies) keep their tab until you open another project. The first tab, <strong>Issues</strong>, lists what fails in every workspace, not only the studies.',
       shot: { file: 'results-panel-1.png', alt: 'The results panel on the right of a tall diagram',
         setup: 'rp-right', clip: 'viewport',
         callouts: [
@@ -954,12 +954,40 @@ const HELP_GUIDES = [
   related: [] },
 
 // ───────────────────────────────────────────────────────────────────────────
+{ id: 'overview-issues', group: 'studies', title: 'Check a project with the Overview and Issues',
+  where: 'The Overview tab, and ⚠ issues at the top', time: '3 min', phone: 'Overview in the workspace menu; Issues in the Results sheet',
+  intro: 'The Overview answers "is this project OK?" in one place, and the Issues list gathers everything that fails or needs attention from every workspace. Both read the results the workspaces already have; nothing runs until you ask.',
+  steps: [
+    { title: 'Read the Overview',
+      html: 'The <strong>Overview</strong> is the first tab of every project. The strip at the top counts what fails, what warns and what is out of date. Below it is a card per workspace the project uses: a row per minisub or board with its loading, volt drop and checks, the street-light circuits, the rooms, the single-line studies, the plan and the quantities, worst first. Click a row to go to that minisub, board or study; <strong>← Back to Overview</strong> brings you back.',
+      shot: { file: 'overview-issues-1.png', alt: 'The Overview of a reticulation project',
+        setup: 'overview', clip: 'viewport',
+        callouts: [
+          { sel: '.ov-health', label: 'Fail, warning and out-of-date counts' },
+          { sel: '#ov-main .ov-card.ov-wide', label: 'A row per minisub, worst first' },
+          { sel: '[data-ov="calc"]', label: 'Bring everything up to date' },
+        ] } },
+    { title: 'Bring it up to date',
+      html: '<strong>Calculate all</strong> runs what each workspace calculates: Demand\'s ADMD and earth check, street lighting, the circuit check and lighting, then re-runs the single-line studies that are out of date after an edit. Studies with their own setup are re-run from the single line.' },
+    { title: 'Work through the issues',
+      html: 'The <strong>⚠ issues</strong> button at the top (on every tab) opens the Issues list: on the single line it is the first tab of the results panel, elsewhere it opens on its own, on the right. Issues are grouped by workspace, worst first; pick a workspace to list only its own. Click one to go there and select the item: a minisub or kiosk in Demand, a way in its schedule, a cable on the single line with its study open. Some have their own button: <strong>Re-run</strong> for an out-of-date study, <strong>Set rates</strong> for BOQ items with no rate.',
+      shot: { file: 'overview-issues-2.png', alt: 'The Issues list open over Demand',
+        setup: 'issues-float', clip: 'viewport',
+        callouts: [
+          { sel: '#btn-issues', label: 'On every tab' },
+          { sel: '#results-panel .rp-sec', label: 'Grouped by workspace — click to go there' },
+        ] } },
+  ],
+  tips: ['A study that is out of date lists once, with Re-run; its old fails are not listed until it runs again.', 'The sync questions (plan not calibrated, items not placed, two kiosks with the same name) are listed here too.'],
+  related: [{ help: 'design-types', label: 'Project types & workspaces (reference)' }] },
+
+// ───────────────────────────────────────────────────────────────────────────
 { id: 'project-types', group: 'studies', title: 'Choose a project type and its workspaces',
   where: 'Project ▸ New Project, Project ▸ Project Type & Workspaces…', time: '3 min', phone: 'Same dialog',
   intro: 'The project type decides which workspace tabs you see, in the order you will use them. Nothing is deleted when a workspace is hidden.',
   steps: [
     { title: 'Pick a type when you start',
-      html: '<strong>New Project</strong> asks what you are designing. <strong>Reticulation</strong> is a township or site LV network sized by ADMD: site plan, Demand, street lighting, single line and quantities. <strong>Building</strong> is floors, boards and final circuits: floor plans, single line, schedules and quantities. <strong>Network / plant</strong> is substations and industrial networks: single line and interlocking.',
+      html: '<strong>New Project</strong> asks what you are designing. <strong>Reticulation</strong> is a township or site LV network sized by ADMD: site plan, Demand, street lighting, single line and quantities. <strong>Building</strong> is floors, boards and final circuits: floor plans, single line, schedules, lighting and quantities. <strong>Network / plant</strong> is substations and industrial networks: single line and interlocking. Each starts with an <strong>Overview</strong> tab that sums up the whole project.',
       shot: { file: 'project-types-1.png', alt: 'The New project dialog with three type cards',
         setup: 'type-new', clip: 'viewport',
         callouts: [
@@ -1705,6 +1733,7 @@ const HELP_GUIDE_LINKS = [
   { after: '#btn-eg-save', guide: 'earth-grid' },
   { before: '#lib-sub', guide: 'libraries' },
   { host: '#cable-focus-bar', guide: 'cable-focus' },
+  { host: '#ov-main .ov-acts', guide: 'overview-issues' },
   { host: '.cmd-search-input-row', guide: 'find-anything' },
   { after: '.ws-dialog-note', guide: 'project-types' },
   { after: '#project-quoted-chip', guide: 'quoted', when: () => typeof Quote !== 'undefined' && Quote.isQuoted() },
