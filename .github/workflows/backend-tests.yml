@@ -78,6 +78,8 @@ jobs:
         run: node frontend/tests/test_demand_sld.mjs
       - name: Links (one table of every link between workspaces, link marks)
         run: node frontend/tests/test_links.mjs
+      - name: Results view switch (study chips, dots, Values)
+        run: node frontend/tests/test_result_view.mjs
 
       - name: Raw HTML interpolation ratchet (new unescaped attribute values fail)
         run: node testing/lint/raw-interp.mjs --max 0

@@ -393,8 +393,7 @@ const Properties = {
     const btnCableFocus = root.querySelector('#btn-bus-cable-focus');
     if (btnCableFocus) {
       btnCableFocus.addEventListener('click', () => {
-        AppState.showResultBoxes.cable = true;
-        window.syncViewToggles?.();
+        if (!ResultView.isOn('cable')) ResultView.show('cable');
         CableFocus.toggle(comp.id);
       });
     }
@@ -3292,39 +3291,10 @@ I_base = S_base / (√3 × V) = ${base * 1000} / (√3 × ${vkv}) = ${Ibase.toFi
   },
 
   // Global display preferences (shown in the Project Details view when nothing
-  // is selected): the voltage display unit, which result boxes appear on the
-  // diagram, and — nested under each box — which individual value lines it
-  // shows. All persist with the project (state.js toJSON/fromJSON). The type /
-  // field schema is RESULT_TYPE_DEFS (annotations.js), shared with the render
-  // and the result-box right-click menu.
+  // is selected): the voltage display unit. Which result boxes appear and the
+  // value lines in them are picked on the canvas (resultview.js).
   _renderDisplayOptions() {
     const unit = AppState.voltageDisplayUnit === 'V' ? 'V' : 'kV';
-    const rb = AppState.showResultBoxes || {};
-    const defs = RESULT_TYPE_DEFS;
-    const allOn = defs.every(t => rb[t.key]);
-
-    const typeBlocks = defs.map(t => {
-      const boxOn = rb[t.key] !== false;
-      // Only offer per-value control when there's more than one line to choose.
-      const fieldHtml = t.fields.length >= 2 ? `
-        <div class="display-field-list${boxOn ? '' : ' disabled'}" data-field-group="${escHtml(t.key)}">
-          ${t.fields.map(f => `
-            <label class="display-field-item">
-              <input type="checkbox" data-result-field="${escHtml(t.key)}" data-field-name="${escHtml(f.key)}"
-                ${Annotations.fieldVisible(t.key, f.key) ? ' checked' : ''}${boxOn ? '' : ' disabled'} />
-              <span>${f.label}</span>
-            </label>`).join('')}
-        </div>` : '';
-      return `
-        <div class="display-type-block">
-          <label class="display-result-item">
-            <input type="checkbox" data-result-box="${escHtml(t.key)}"${boxOn ? ' checked' : ''} />
-            <span>${t.label}</span>
-          </label>
-          ${fieldHtml}
-        </div>`;
-    }).join('');
-
     return `
       <div class="prop-section">
         <div class="prop-section-title">Display Options</div>
@@ -3335,15 +3305,7 @@ I_base = S_base / (√3 × V) = ${base * 1000} / (√3 × ${vkv}) = ${Ibase.toFi
             <option value="V"${unit === 'V' ? ' selected' : ''}>V</option>
           </select>
         </div>
-        <div class="display-results-head">
-          <span>Result boxes &amp; values</span>
-          <label class="display-result-all">
-            <input type="checkbox" data-result-all${allOn ? ' checked' : ''} /> All
-          </label>
-        </div>
-        <div class="display-result-list">
-          ${typeBlocks}
-        </div>
+        <p class="display-hint">Which result boxes show, and the values in them, are picked over the diagram (the strip of study chips and Values ▾).</p>
       </div>`;
   },
 
@@ -3406,8 +3368,7 @@ I_base = S_base / (√3 × V) = ${base * 1000} / (√3 × ${vkv}) = ${Ibase.toFi
     this._bindDisplayOptionsEvents();
   },
 
-  // Wire up the Display Options controls: voltage unit, per-box visibility, and
-  // the nested per-value tick lists.
+  // Wire up the Display Options controls: the voltage unit.
   _bindDisplayOptionsEvents() {
     const unitSel = this.contentEl.querySelector('[data-display-field="voltageDisplayUnit"]');
     if (unitSel) {
@@ -3415,60 +3376,6 @@ I_base = S_base / (√3 × V) = ${base * 1000} / (√3 × ${vkv}) = ${Ibase.toFi
         AppState.voltageDisplayUnit = unitSel.value === 'V' ? 'V' : 'kV';
         AppState.dirty = true;
         Canvas.render();
-      });
-    }
-
-    const allCb = this.contentEl.querySelector('[data-result-all]');
-    const itemCbs = [...this.contentEl.querySelectorAll('[data-result-box]')];
-
-    const syncAll = () => {
-      if (allCb) allCb.checked = RESULT_TYPE_DEFS.every(t => AppState.showResultBoxes[t.key]);
-    };
-
-    // Enable/disable a type's nested field checkboxes when its box is toggled.
-    const setGroupEnabled = (typeKey, on) => {
-      const group = this.contentEl.querySelector(`[data-field-group="${typeKey}"]`);
-      if (!group) return;
-      group.classList.toggle('disabled', !on);
-      group.querySelectorAll('input[type="checkbox"]').forEach(fc => { fc.disabled = !on; });
-    };
-
-    itemCbs.forEach(cb => {
-      cb.addEventListener('change', () => {
-        AppState.showResultBoxes[cb.dataset.resultBox] = cb.checked;
-        AppState.dirty = true;
-        setGroupEnabled(cb.dataset.resultBox, cb.checked);
-        syncAll();
-        Canvas.render();
-        window.AppActions?.refreshResultToggles?.();
-      });
-    });
-
-    // Per-value line toggles.
-    this.contentEl.querySelectorAll('[data-result-field]').forEach(cb => {
-      cb.addEventListener('change', () => {
-        const type = cb.dataset.resultField;
-        const field = cb.dataset.fieldName;
-        if (!AppState.resultBoxFields[type]) AppState.resultBoxFields[type] = {};
-        // Store only the "hidden" state; delete when re-shown to keep it sparse.
-        if (cb.checked) delete AppState.resultBoxFields[type][field];
-        else AppState.resultBoxFields[type][field] = false;
-        AppState.dirty = true;
-        Canvas.render();
-      });
-    });
-
-    if (allCb) {
-      allCb.addEventListener('change', () => {
-        const on = allCb.checked;
-        for (const t of RESULT_TYPE_DEFS) {
-          AppState.showResultBoxes[t.key] = on;
-          setGroupEnabled(t.key, on);
-        }
-        itemCbs.forEach(cb => { cb.checked = on; });
-        AppState.dirty = true;
-        Canvas.render();
-        window.AppActions?.refreshResultToggles?.();
       });
     }
   },

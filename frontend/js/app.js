@@ -183,25 +183,6 @@ document.addEventListener('DOMContentLoaded', () => {
     btnWire.classList.toggle('active', isWire);
     Canvas.svg.classList.toggle('wiring', isWire);
     document.getElementById('status-mode').textContent = isWire ? 'Wire Mode' : 'Select Mode';
-    // Keep the persistent on-canvas mode indicator (H17) in sync.
-    const modeInd = document.getElementById('canvas-mode-indicator');
-    if (modeInd) {
-      modeInd.classList.toggle('wire', isWire);
-      const lbl = document.getElementById('canvas-mode-label');
-      if (lbl) lbl.textContent = isWire ? 'Wire' : 'Select';
-      modeInd.setAttribute('aria-label',
-        isWire ? 'Interaction mode: Wire. Click to switch to Select mode.'
-               : 'Interaction mode: Select. Click to switch to Wire mode.');
-    }
-  }
-  // On-canvas mode indicator: click / Enter / Space toggles Select ⇄ Wire.
-  const modeIndicator = document.getElementById('canvas-mode-indicator');
-  if (modeIndicator) {
-    const toggleMode = () => setMode(AppState.mode === MODE.WIRE ? MODE.SELECT : MODE.WIRE);
-    modeIndicator.addEventListener('click', toggleMode);
-    modeIndicator.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleMode(); }
-    });
   }
 
   // Keyboard navigation across components (used when the canvas has keyboard
@@ -606,12 +587,9 @@ document.addEventListener('DOMContentLoaded', () => {
       case 'h':
       case 'H':
         if (!e.ctrlKey && !e.metaKey) {
-          const allOn = Object.values(AppState.showResultBoxes).every(Boolean);
-          const newVal = !allOn;
-          for (const k of Object.keys(AppState.showResultBoxes)) AppState.showResultBoxes[k] = newVal;
-          if (typeof _syncResultToggleButtons === 'function') _syncResultToggleButtons();
-          Canvas.render();
-          document.getElementById('status-info').textContent = newVal ? 'Result boxes shown.' : 'Result boxes hidden.';
+          if (!ResultView.available().length) break;
+          const shown = ResultView.toggleAll();
+          document.getElementById('status-info').textContent = shown ? 'Result boxes shown.' : 'Result boxes hidden.';
         }
         break;
     }
@@ -809,12 +787,10 @@ document.addEventListener('DOMContentLoaded', () => {
       AppState.select(busId);
       runAnalysis('fault');
     },
-    // Re-sync the View-menu result-box toggle buttons to AppState. Called when
-    // visibility is changed from another surface (the properties Display
-    // Options tick list, the result-box right-click menu) so the menu's
-    // active-state matches.
+    // Re-draw the results view switch after visibility changed elsewhere
+    // (the result-box right-click menu).
     refreshResultToggles() {
-      if (typeof _syncResultToggleButtons === 'function') _syncResultToggleButtons();
+      if (typeof ResultView !== 'undefined') ResultView.render();
     },
     // Reopen the full results view for the study a result box belongs to,
     // from its already-stored results (no re-run). Studies with a dedicated
@@ -4612,15 +4588,6 @@ document.addEventListener('DOMContentLoaded', () => {
     Canvas.render();
   });
 
-  // Result box visibility toggles
-  function _toggleResultBoxes(types, forceValue) {
-    const rb = AppState.showResultBoxes;
-    for (const t of types) {
-      rb[t] = forceValue !== undefined ? forceValue : !rb[t];
-    }
-    Canvas.render();
-  }
-
   // Put the toolbar toggles in step with AppState (after a project loads or resets).
   function syncViewToggles() {
     const on = (id, v) => { const el = document.getElementById(id); if (el) el.classList.toggle('active', !!v); };
@@ -4632,31 +4599,15 @@ document.addEventListener('DOMContentLoaded', () => {
     on('btn-toggle-rating-flags', AppState.showRatingFlags);
     const fa = document.getElementById('chk-fault-arrows'); if (fa) fa.checked = !!AppState.showFlowArrows.fault;
     const la = document.getElementById('chk-loadflow-arrows'); if (la) la.checked = !!AppState.showFlowArrows.loadflow;
-    _syncResultToggleButtons();
+    if (typeof ResultView !== 'undefined') ResultView.render();
   }
   window.syncViewToggles = syncViewToggles;
 
-  function _syncResultToggleButtons() {
-    const rb = AppState.showResultBoxes;
-    const allOn = Object.values(rb).every(Boolean);
-    document.getElementById('btn-toggle-results-all').classList.toggle('active', allOn);
-    document.getElementById('btn-toggle-results-fault').classList.toggle('active', rb.fault);
-    document.getElementById('btn-toggle-results-loadflow').classList.toggle('active', rb.loadflow);
-    document.getElementById('btn-toggle-results-unbalanced').classList.toggle('active', rb.unbalancedLF);
-    document.getElementById('btn-toggle-results-arcflash').classList.toggle('active', rb.arcflash);
-    document.getElementById('btn-toggle-results-cable').classList.toggle('active', rb.cable);
-    document.getElementById('btn-toggle-results-motor').classList.toggle('active', rb.motor);
-    document.getElementById('btn-toggle-results-dynmotor').classList.toggle('active', rb.dynMotor);
-    document.getElementById('btn-toggle-results-duty').classList.toggle('active', rb.duty);
-    document.getElementById('btn-toggle-results-loaddiversity').classList.toggle('active', rb.loadDiversity);
-    document.getElementById('btn-toggle-results-grounding').classList.toggle('active', rb.grounding);
-  }
-
-  // Cable sizing bus focus — Results menu item + the properties-panel button
+  // Cable sizing bus focus — the properties-panel button (and the results
+  // view's Values popover, which redraws with the canvas)
   function syncCableFocusButtons() {
     const on = typeof CableFocus !== 'undefined' && CableFocus.active;
-    const btn = document.getElementById('btn-cable-focus');
-    if (btn) { btn.classList.toggle('active', on); btn.setAttribute('aria-pressed', on ? 'true' : 'false'); }
+    if (typeof ResultView !== 'undefined') ResultView.render();
     const pb = document.getElementById('btn-bus-cable-focus');
     if (pb) {
       const mine = on && CableFocus.busId === pb.dataset.busId;
@@ -4666,43 +4617,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
   window.syncCableFocusButtons = syncCableFocusButtons;
-  document.getElementById('btn-cable-focus').addEventListener('click', () => {
-    if (!CableFocus.active) {
-      AppState.showResultBoxes.cable = true;
-      _syncResultToggleButtons();
-    }
-    CableFocus.toggle();
-    if (CableFocus.active && !CableFocus.busId) {
-      document.getElementById('status-info').textContent = 'Cable focus on — select a bus to show only its cables.';
-    }
-  });
-
-  document.getElementById('btn-toggle-results-all').addEventListener('click', () => {
-    const allOn = Object.values(AppState.showResultBoxes).every(Boolean);
-    const newVal = !allOn;
-    _toggleResultBoxes(Object.keys(AppState.showResultBoxes), newVal);
-    _syncResultToggleButtons();
-  });
-
-  const _resultToggleMap = [
-    ['btn-toggle-results-fault', 'fault'],
-    ['btn-toggle-results-loadflow', 'loadflow'],
-    ['btn-toggle-results-unbalanced', 'unbalancedLF'],
-    ['btn-toggle-results-arcflash', 'arcflash'],
-    ['btn-toggle-results-cable', 'cable'],
-    ['btn-toggle-results-motor', 'motor'],
-    ['btn-toggle-results-dynmotor', 'dynMotor'],
-    ['btn-toggle-results-duty', 'duty'],
-    ['btn-toggle-results-loaddiversity', 'loadDiversity'],
-    ['btn-toggle-results-grounding', 'grounding'],
-  ];
-  for (const [btnId, key] of _resultToggleMap) {
-    document.getElementById(btnId).addEventListener('click', () => {
-      _toggleResultBoxes([key]);
-      _syncResultToggleButtons();
-    });
-  }
-
   // Under-rated device flags toggle (on-diagram warning markers)
   const _ratingFlagsBtn = document.getElementById('btn-toggle-rating-flags');
   if (_ratingFlagsBtn) {
@@ -4715,23 +4629,6 @@ document.addEventListener('DOMContentLoaded', () => {
         AppState.showRatingFlags ? 'Under-rated device flags shown.' : 'Under-rated device flags hidden.';
     });
   }
-
-  // Reset annotation positions
-  document.getElementById('btn-reset-annotation-positions').addEventListener('click', () => {
-    Annotations.offsets.clear();
-    Canvas.render();
-    AppState.dirty = true;
-  });
-
-  // Restore result boxes hidden via the right-click menu (top-bar button,
-  // shown only while something is hidden — visibility synced in render()).
-  document.getElementById('btn-restore-results').addEventListener('click', () => {
-    const n = Annotations.hiddenResultBoxes.size;
-    Annotations.restoreAllResultBoxes();
-    if (typeof UI !== 'undefined' && UI.toast && n > 0) {
-      UI.toast(`Restored ${n} result box${n === 1 ? '' : 'es'}`, 'success');
-    }
-  });
 
   // Zoom controls
   document.getElementById('btn-zoom-fit').addEventListener('click', () => Canvas.zoomToFit());

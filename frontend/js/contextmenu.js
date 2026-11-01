@@ -364,11 +364,8 @@ const ContextMenu = {
         checked: boxOn,
         keepOpen: true,
         action: () => {
-          AppState.showResultBoxes[type.key] = !AppState.showResultBoxes[type.key];
-          AppState.dirty = true;
-          Canvas.render();
-          window.AppActions?.refreshResultToggles?.();
-          if (typeof Properties !== 'undefined') Properties.refreshProjectViewIfOpen?.();
+          // Same as Shift-clicking its chip in the results view switch.
+          if (typeof ResultView !== 'undefined') ResultView.toggle(type.key);
         },
       });
       if (type.fields.length >= 2) {

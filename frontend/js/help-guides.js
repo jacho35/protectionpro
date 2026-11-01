@@ -51,7 +51,6 @@ const HELP_GUIDES = [
         setup: 'sld-wire', clip: 'viewport',
         callouts: [
           { sel: '#btn-wire', label: 'Wire mode — W' },
-          { sel: '#canvas-mode-indicator', label: 'The mode you are in; click it to switch' },
           { sel: '.sld-component[data-id^="bus"]', label: 'A bus takes a wire anywhere along its bar' },
         ] } },
     { title: 'Give each component its ratings',
@@ -873,7 +872,7 @@ const HELP_GUIDES = [
 
 // ───────────────────────────────────────────────────────────────────────────
 { id: 'cable-focus', group: 'studies', title: 'Show only the cables at one bus',
-  where: 'Results ▸ Cables at Selected Bus', time: '2 min', phone: 'Use the bus properties button',
+  where: 'Values ▾ over the diagram ▸ Only cables at the selected bus', time: '2 min', phone: 'Use the bus properties button',
   intro: 'After a cable sizing run every cable carries a result box, and a busy diagram becomes unreadable. Focus mode keeps only the cables into and out of one bus and dims everything else.',
   steps: [
     { title: 'Run the cable sizing',
@@ -884,7 +883,7 @@ const HELP_GUIDES = [
           { sel: '#sld-canvas', label: 'One result box per cable' },
         ] } },
     { title: 'Focus on a bus',
-      html: 'Select a bus, then use <strong>Results ▸ Cables at Selected Bus</strong>, or the <strong>Cables</strong> button in the bus’s properties, or <strong>At bus</strong> in the cable sizing results table. The cables arriving from the source side and leaving toward the loads stay; the rest of the sheet is dimmed.',
+      html: 'Select a bus, then tick <strong>Only cables at the selected bus</strong> under <strong>Values ▾</strong> (over the diagram, with <em>Cable sizing</em> picked), or the <strong>Cables</strong> button in the bus’s properties, or <strong>At bus</strong> in the cable sizing results table. The cables arriving from the source side and leaving toward the loads stay; the rest of the sheet is dimmed.',
       shot: { file: 'cable-focus-2.png', alt: 'The diagram dimmed except for the cables at the 11 kV bus',
         setup: 'cf-focus', clip: '#sld-canvas',
         callouts: [
@@ -915,12 +914,13 @@ const HELP_GUIDES = [
         callouts: [
           { sel: '#menu-analyse .toolbar-menu-panel', label: 'Analyse — studies grouped by what they answer' },
         ] } },
-    { title: 'Show only the results you have',
-      html: 'The <strong>Results</strong> menu lists a result-box toggle only for studies that have been run, so it stays short. Use <strong>All Result Boxes</strong> to hide or show everything, <strong>Restore hidden boxes</strong> after closing some, and <strong>Reset Result Box Positions</strong> to tidy dragged boxes.',
-      shot: { file: 'find-anything-3.png', alt: 'The Results menu listing toggles for the studies that have run',
-        setup: 'menu-results', clip: 'viewport',
+    { title: 'Pick which results show on the diagram',
+      html: 'Once a study has run, a strip of chips sits over the diagram: <strong>Off</strong> and one chip per study with results. Click a chip to show that study’s boxes alone, <kbd>Shift</kbd>-click to add a second, <kbd>H</kbd> to hide them all and bring them back. The dot on each chip is the outcome: red something fails, amber warnings, green all clear, grey information only; a dimmed chip is out of date after an edit. <strong>Values ▾</strong> picks the lines in the boxes, the flow arrows, restores boxes you hid and resets dragged ones. The <strong>Results</strong> menu opens each study’s full results.',
+      shot: { file: 'find-anything-3.png', alt: 'The study chips over the diagram with the Values popover open',
+        setup: 'results-view', clip: 'viewport',
         callouts: [
-          { sel: '#menu-results .toolbar-menu-panel', label: 'Only studies with results are listed' },
+          { sel: '#result-view .rv-chip[aria-pressed="true"]', label: 'The study on screen; Shift-click another to add it' },
+          { sel: '#result-values', label: 'Values in the boxes, arrows, restore and reset' },
         ] } },
   ],
   tips: ['The search is built from the menus every time it opens, so anything added to a menu is searchable at once.'],
@@ -1095,7 +1095,7 @@ const HELP_GUIDES = [
     { title: 'See where equipment is exceeded',
       html: 'A breaker whose rating is lower than the fault current at its bus is marked with a warning symbol. The <strong>Duty Check</strong> study lists them with the numbers; the next guides cover it.' },
     { title: 'Choose what is shown',
-      html: 'In <strong>Project details ▸ Result boxes &amp; values</strong> (the right-hand panel with nothing selected), tick which fault quantities appear. <strong>Results ▸ Fault Results</strong> shows or hides the boxes for the whole study.' },
+      html: 'The <strong>Short circuit</strong> chip over the diagram shows the fault boxes (<strong>Off</strong> or another chip hides them; <kbd>Shift</kbd>-click adds a second study). <strong>Values ▾</strong> beside the chips ticks which fault quantities appear and turns the fault current arrows on or off.' },
   ],
   tips: ['The study uses a maximum case with the voltage factor c max and a minimum case with c min and motors left out; protection settings use the minimum.', 'Change a source’s fault level and run again; the boxes are replaced.'],
   related: [{ help: 'fault-iec60909', label: 'Short circuit (IEC 60909)' }, { help: 'fault-zero-seq', label: 'Zero-sequence & earthing' }] },
@@ -1171,7 +1171,7 @@ const HELP_GUIDES = [
           { sel: '#cable-sizing-modal .cs-filter, #cable-sizing-modal [class*="filter"]', label: 'Show all cables, or only those at one bus' },
         ] } },
     { title: 'See it on the diagram',
-      html: 'Every cable also carries a small result box with its size, loading and volt drop, green when it passes and red when it fails. With a large diagram, <strong>Results ▸ Cables at Selected Bus</strong> keeps only those at one bus; see the cable focus guide.',
+      html: 'Every cable also carries a small result box with its size, loading and volt drop, green when it passes and red when it fails. With a large diagram, <strong>Values ▾ ▸ Only cables at the selected bus</strong> (over the diagram) keeps only those at one bus; see the cable focus guide.',
       shot: { file: 'study-cable-2.png', alt: 'A cable result box in red on the diagram',
         setup: 'study-cable-canvas', clip: '#sld-canvas',
         callouts: [
