@@ -335,8 +335,13 @@ const StreetLight = {
   async deleteCircuit(id) {
     const c = this.circuit(id);
     if (!c) return;
-    const ok = await UI.confirm(`Delete circuit ${c.name}?`);
+    const linked = this._syncOn() && this._origin(c);
+    const ok = await UI.confirm(linked === 'plan'
+      ? `Delete circuit ${c.name}? Its ${c.poles.filter(p => p.planId).length} poles are deleted from the site plan too. Undo on the site plan puts them back.`
+      : linked === 'road' ? `Delete circuit ${c.name}? Its road's feed point is removed in the road plan too. Undo in the road plan puts it back.`
+      : `Delete circuit ${c.name}?`);
     if (!ok) return;
+    if (linked) this._deleteLinkedCircuit(c);
     this.circuits.splice(this.circuits.indexOf(c), 1);
     delete this._results[id];
     delete this._sent[id];
@@ -538,6 +543,11 @@ const StreetLight = {
     if (!this._built) return;
     const ws = document.getElementById('streetlight-workspace');
     for (const el of ws.querySelectorAll('[data-df]')) el.value = this.defaults[el.dataset.df];
+    // Settings › Keep workspaces in sync: the sync pass does what these did.
+    for (const el of ws.querySelectorAll('[data-sl="sync"], [data-sl="sync-road"]')) el.hidden = this._syncOn();
+    const note = ws.querySelector('.sl-rail-foot');
+    if (note) note.textContent = (this._syncOn() ? 'Poles drawn on the site plan and roads with a feed point in the road plan are circuits here a moment after each edit. ' : '')
+      + 'Each circuit’s load goes to its kiosk or minisub as fixed street-lighting kVA in Demand.';
     this.renderRail();
     this.renderMain();
     this.renderResults();
@@ -611,7 +621,7 @@ const StreetLight = {
         </div>
       </div>
       <div class="sl-form">
-        <label>Fed from<select data-cf="source">${srcOpts}</select></label>
+        <label>Fed from<select data-cf="source"${this._srcLockHtml(c)}>${srcOpts}</select></label>
         <label>System<select data-cf="system">
           <option value="3ph"${c.system !== '1ph' ? ' selected' : ''}>3Φ alternating R-W-B (4-core)</option>
           <option value="1ph"${c.system === '1ph' ? ' selected' : ''}>1Φ string (2-core)</option></select></label>
@@ -665,23 +675,44 @@ const StreetLight = {
 
   _poleRows(c, lumOpts) {
     const names = c.poles.map(p => ({ id: p.id, name: p.name || p.id }));
+    const sync = this._syncOn();
     return c.poles.map(p => {
+      const from = sync ? this._origin(p) : null;
+      const where = from === 'plan' ? 'the site plan' : 'the road plan';
+      const lockHtml = from ? ` disabled title="Set by ${where}"` : '';
+      const delHtml = from
+        ? `<button class="sl-x" disabled aria-label="Pole ${escHtml(p.name || '')} is on ${where}" title="${from === 'plan' ? 'Drawn on the site plan — delete it there' : 'Placed by the road plan — delete it there'}">×</button>`
+        : `<button class="sl-x" data-sl="del-pole" data-pole="${p.id}" aria-label="Delete pole ${escHtml(p.name || '')}" title="Delete pole (its spur poles move to its feeding pole)">×</button>`;
       const par = `<option value="">Source</option>` + names.filter(n => n.id !== p.id)
         .map(n => `<option value="${n.id}"${n.id === p.parent ? ' selected' : ''}>${escHtml(n.name)}</option>`).join('');
       const ph = ['', 'R', 'W', 'B'].map(x => `<option value="${x}"${(p.phase || '') === x ? ' selected' : ''}>${x || 'Auto'}</option>`).join('');
       return `<tr data-pole="${p.id}">
         <td><input data-pf="name" data-pole="${p.id}" value="${escHtml(p.name || '')}" class="sl-in-name"><span class="sl-mini" data-res="mini"></span></td>
-        <td><select data-pf="parent" data-pole="${p.id}">${par}</select></td>
-        <td><input type="number" step="0.1" data-pf="spacingM" data-pole="${p.id}" value="${this._blank(p.spacingM) ? '' : escHtml(p.spacingM)}" placeholder="${escHtml(c.spacingM)}" class="sl-in-num"></td>
+        <td><select data-pf="parent" data-pole="${p.id}"${lockHtml}>${par}</select></td>
+        <td><span class="sl-span-cell"><input type="number" step="0.1" data-pf="spacingM" data-pole="${p.id}" value="${this._blank(p.spacingM) ? '' : escHtml(p.spacingM)}" placeholder="${escHtml(c.spacingM)}" class="sl-in-num">${this._spanTagHtml(p)}</span></td>
         <td><select data-pf="luminaireId" data-pole="${p.id}">${lumOpts(p.luminaireId || '', true)}</select></td>
         <td><select data-pf="phase" data-pole="${p.id}" class="sl-in-ph">${ph}</select><span class="sl-ph" data-res="phase"></span></td>
         <td class="num" data-res="distM"></td><td class="num" data-res="iSpanA"></td>
         <td class="num" data-res="vdPct"></td><td class="num" data-res="cumVdPct"></td>
         <td class="num" data-res="zsOhm"></td><td class="num" data-res="ik1A"></td>
         <td data-res="check"></td>
-        <td><button class="sl-x" data-sl="del-pole" data-pole="${p.id}" aria-label="Delete pole ${escHtml(p.name || '')}" title="Delete pole (its spur poles move to its feeding pole)">×</button></td>
+        <td>${delHtml}</td>
       </tr>`;
     }).join('');
+  },
+
+  // The note beside a span the site plan or road plan measures: "plan", or
+  // "typed" + ↺ (Reset) when a value was typed here.
+  _spanTagHtml(p) {
+    if (!this._syncOn()) return '';
+    const src = this._spanSrc[p.id];
+    if (src == null) return '';
+    const where = this._origin(p) === 'road' ? 'road plan' : 'site plan';
+    const key = 'span:' + p.id;
+    const ov = Sync.override(key);
+    if (!ov) return `<span class="sl-plan-tag" title="${escHtml(`Measured on the ${where} (${src} m): it follows the drawing. Type a value to keep your own.`)}">plan</span>`;
+    return `<span class="sl-plan-tag sl-plan-tag--typed" title="${escHtml(`Typed here — the ${where} measures ${ov.src} m. Reset to follow it again.`)}">typed</span>`
+      + `<button type="button" class="sl-plan-reset" data-sl="span-reset" data-key="${escHtml(key)}" title="${escHtml(`Follow the ${where} again (${ov.src} m)`)}">↺</button>`;
   },
 
   _attachGrid() {
@@ -831,6 +862,7 @@ const StreetLight = {
       this._addPoles(c, n);
       this._afterMutate(true);
     } else if (act === 'del-pole' && c) { this._deletePole(c, b.dataset.pole); this._afterMutate(true); }
+    else if (act === 'span-reset') { Sync.resetOverride(b.dataset.key); Sync.run(); this.render(); }
   },
 
   _onChange(e) {
@@ -865,7 +897,24 @@ const StreetLight = {
       const p = c.poles.find(x => x.id === t.dataset.pole);
       if (!p) return;
       const k = t.dataset.pf;
-      if (k === 'spacingM') p.spacingM = t.value === '' ? null : this._num(t.value, null);
+      if (k === 'spacingM') {
+        p.spacingM = t.value === '' ? null : this._num(t.value, null);
+        // A span the plan measures: a typed value is kept as an override,
+        // a cleared one follows the plan again.
+        const src = this._syncOn() ? this._spanSrc[p.id] : null;
+        if (src != null) {
+          if (p.spacingM == null) { Sync.resetOverride('span:' + p.id); p.spacingM = src; }
+          else Sync.setOverride('span:' + p.id, p.spacingM, src);
+          const cell = t.closest('.sl-span-cell');
+          if (cell) { cell.querySelectorAll('.sl-plan-tag, .sl-plan-reset').forEach(x => x.remove()); cell.insertAdjacentHTML('beforeend', this._spanTagHtml(p)); }
+        }
+      }
+      else if (k === 'name' && p.planId && AppState.planMarkup) {
+        // A drawn pole's label follows its name here.
+        p.name = t.value || '';
+        const el = AppState.planAllElements().find(e => e.id === p.planId);
+        if (el && p.name) { el.name = p.name; if (typeof PlanMarkup !== 'undefined') PlanMarkup.markDirty(); }
+      }
       else if (k === 'parent') {
         const v = t.value || null;
         // Refuse a loop (a pole fed from its own spur).
@@ -883,16 +932,52 @@ const StreetLight = {
 
   // ─── Plan sync ──────────────────────────────────────────────────────
   // Each connected set of Plan street-lighting routes with a kiosk or minisub
-  // (pushed to Demand, so it has a reticId) becomes a circuit: poles in
-  // walk order, each fed from the element before it (so a branch is a spur),
-  // span = the feeding route's length. Re-syncing updates spans, names and the
-  // tree but keeps each pole's luminaire / phase overrides and the circuit's
-  // own settings.
+  // (in Demand, so it has a reticId) becomes a circuit: poles in walk order,
+  // each fed from the element before it (so a branch is a spur), span = the
+  // feeding route's length. Re-syncing updates spans, names and the tree but
+  // keeps each pole's luminaire / phase overrides and the circuit's own
+  // settings. The button (setting off) is syncFromPlan; the sync pass calls
+  // _planCore with { prune, value }.
   syncFromPlan() {
     if (typeof PlanSync === 'undefined' || !AppState.planMarkup) { UI.alert('There is no plan to sync from.'); return; }
+    if (!PlanSync._factor()) { UI.alert('Calibrate the plan first — spans are measured in metres.'); return; }
+    const r = this._planCore({});
+    if (!r.made && !r.updated) {
+      UI.alert('No street-lighting routes from a kiosk or minisub were found. Place streetlight poles on the Plan and join them with street-lighting routes from a kiosk or minisub (or lay them out in Road plan), and push to Demand first so the source exists in Demand.');
+      return;
+    }
+    if (!this.selected) this._selId = this.circuits[0].id;
+    this._afterMutate(true);
+    UI.toast(`Street lighting: ${r.made} new, ${r.updated} updated circuit(s)${r.skipped ? `, ${r.skipped} pole(s) not connected to a source` : ''}.`, 'success');
+  },
+
+  // ── Kept in sync (Settings › Keep workspaces in sync) ──
+  // What the pass takes away (a circuit whose poles were all deleted, a pole
+  // deleted on the plan) is remembered for the session, so an undo on the
+  // plan brings it back with its luminaire, phase, cable and other settings.
+  _memo: { circuits: new Map(), poles: new Map() },
+  _remember(kind, key, obj) { this._memo[kind].set(key, JSON.parse(JSON.stringify(obj))); },
+  _recall(kind, key) {
+    const o = this._memo[kind].get(key);
+    if (!o) return null;
+    this._memo[kind].delete(key);
+    return o;
+  },
+  // Span of a pole the plan measures (m), by pole id, from the last pass —
+  // for the "typed" note in the pole grid.
+  _spanSrc: {},
+  _span(p, src, value) {
+    this._spanSrc[p.id] = src;
+    return value ? value('span:' + p.id, src, p.spacingM) : src;
+  },
+
+  // Site plan → circuits. opts.prune: circuits whose drawn poles are all gone
+  // are removed (remembered); opts.value: the sync pass's override reader.
+  // Returns { made, updated, skipped, removed: [names] }.
+  _planCore(opts = {}) {
+    const out = { made: 0, updated: 0, skipped: 0, removed: [] };
     const pm = AppState.planMarkup;
     const factor = PlanSync._factor();
-    if (!factor) { UI.alert('Calibrate the plan first — spans are measured in metres.'); return; }
     const elById = PlanSync._elById();
     const adj = {};
     const add = (u, v, r) => { (adj[u] = adj[u] || []).push({ other: v, route: r }); };
@@ -908,8 +993,7 @@ const StreetLight = {
       if (el.type === 'minisub' && R.minisubs.some(m => m.id === el.reticId)) return { kind: 'minisub', id: el.reticId };
       return null;
     };
-    let made = 0, updated = 0, skipped = 0;
-    const claimed = new Set();
+    const claimed = new Set(), seenKeys = new Set();
     for (const startId of Object.keys(adj)) {
       const el = elById[startId];
       const src = srcOf(el);
@@ -934,26 +1018,33 @@ const StreetLight = {
           }
         }
         const planKey = `${startId}>${firstEl.id}`;
+        seenKeys.add(planKey);
         let c = this.circuits.find(x => x.planKey === planKey)
           || this.circuits.find(x => x.poles.some(p => p.planId === firstEl.id));
         if (!c) {
-          const rc = (first.route && first.route.cableType) || '';
-          c = this._newCircuit(src, CableLib.byName(rc) ? { planKey, cable: rc } : { planKey });
+          c = this._recall('circuits', 'plan:' + planKey);
+          if (!c) {
+            const rc = (first.route && first.route.cableType) || '';
+            c = this._newCircuit(src, CableLib.byName(rc) ? { planKey, cable: rc } : { planKey });
+          }
           this.circuits.push(c);
-          made++;
-        } else { updated++; c.planKey = planKey; c.source = src; }
+          out.made++;
+        } else { out.updated++; c.planKey = planKey; c.source = src; }
+        seenKeys.add(c.planKey);
         const old = {};
         for (const p of c.poles) if (p.planId) old[p.planId] = p;
-        const idOf = {};
+        const idOf = {}, kept = new Set();
         const next = poles.map(sp => {
-          const prev = old[sp.planId];
+          const prev = old[sp.planId] || this._recall('poles', 'plan:' + sp.planId);
           const p = prev || { id: this._genPoleId(), luminaireId: null, phase: null };
           p.planId = sp.planId; p.name = sp.name || p.name || this._nextPoleName(c);
-          p.spacingM = sp.spacingM;
-          idOf[sp.planId] = p.id;
+          p.spacingM = this._span(p, sp.spacingM, opts.value);
+          idOf[sp.planId] = p.id; kept.add(sp.planId);
           return { p, sp };
         });
         for (const { p, sp } of next) p.parent = sp.parentPlan ? idOf[sp.parentPlan] || null : null;
+        // A drawn pole no longer in the string is remembered (an undo brings it back).
+        for (const [pid, p] of Object.entries(old)) if (!kept.has(pid)) this._remember('poles', 'plan:' + pid, p);
         // Poles added by hand (no planId) stay, fed from where they were.
         const manual = c.poles.filter(p => !p.planId);
         c.poles = next.map(x => x.p).concat(manual);
@@ -961,15 +1052,106 @@ const StreetLight = {
     }
     for (const id of Object.keys(adj)) {
       const el = elById[id];
-      if (el && el.type === 'pole' && !claimed.has(id)) skipped++;
+      if (el && el.type === 'pole' && !claimed.has(id)) out.skipped++;
     }
-    if (!made && !updated) {
-      UI.alert('No street-lighting routes from a kiosk or minisub were found. Place streetlight poles on the Plan and join them with street-lighting routes from a kiosk or minisub (or lay them out in Road plan), and push to Demand first so the source exists in Demand.');
-      return;
+    if (opts.prune) this._prune(c => c.planKey && !seenKeys.has(c.planKey), c => 'plan:' + c.planKey, p => p.planId ? 'plan:' + p.planId : null, out);
+    return out;
+  },
+
+  // Circuits `gone` says lost their source drawing: drawn poles are dropped
+  // (remembered); a circuit left with no poles is removed (remembered).
+  _prune(gone, key, poleKey, out) {
+    for (const c of this.circuits.slice()) {
+      if (!gone(c)) continue;
+      const manual = c.poles.filter(p => !poleKey(p));
+      if (!manual.length) {
+        this._remember('circuits', key(c), c);
+        this.circuits.splice(this.circuits.indexOf(c), 1);
+        delete this._results[c.id];
+        if (this._sent) delete this._sent[c.id];
+        if (this._selId === c.id) this._selId = this.circuits.length ? this.circuits[0].id : null;
+        out.removed.push(c.name);
+      } else if (manual.length < c.poles.length) {
+        for (const p of c.poles) if (poleKey(p)) this._remember('poles', poleKey(p), p);
+        const ids = new Set(manual.map(p => p.id));
+        for (const p of manual) if (p.parent && !ids.has(p.parent)) p.parent = null;
+        c.poles = manual;
+      }
     }
-    if (!this.selected) this._selId = this.circuits[0].id;
-    this._afterMutate(true);
-    UI.toast(`Street lighting: ${made} new, ${updated} updated circuit(s)${skipped ? `, ${skipped} pole(s) not connected to a source` : ''}.`, 'success');
+  },
+
+  // Is there anything for the sync pass to keep in step?
+  syncInUse() {
+    if (this.circuits.some(c => c.planKey || c.roadKey)) return true;
+    const pm = AppState.planMarkup;
+    if (pm && typeof AppState.planAllElements === 'function' && AppState.planAllElements().some(e => e.type === 'pole')) return true;
+    return typeof RoadPlan !== 'undefined' && RoadPlan.roads.some(r => r.feed);
+  },
+
+  _fingerprint() {
+    const rp = typeof RoadPlan !== 'undefined' ? RoadPlan.roads.map(r => r.circuitId || null) : [];
+    return AppState._hashText(JSON.stringify([this.circuits, rp, AppState.syncOverrides || null]));
+  },
+
+  // The sync pass's routine: site-plan poles and road-plan circuits into the
+  // Street lighting circuits. Returns whether anything changed.
+  syncAll(ctx = {}) {
+    const issue = ctx.issue || (() => {}), notice = ctx.notice || (() => {});
+    const before = this._fingerprint();
+    const removed = [];
+    this._spanSrc = {};
+    const poles = AppState.planMarkup && AppState.planAllElements().some(e => e.type === 'pole');
+    if (typeof PlanSync !== 'undefined' && AppState.planMarkup && (poles || this.circuits.some(c => c.planKey))) {
+      if (!PlanSync._factor()) {
+        if (poles) issue('sl-plan-uncalibrated', 'Site plan not calibrated — street-lighting spans are measured on it. Calibrate the plan to make circuits from its poles.');
+      } else {
+        const r = this._planCore({ prune: true, value: ctx.value });
+        removed.push(...r.removed);
+        if (r.skipped) issue('sl-plan-unfed', `${r.skipped} streetlight pole${r.skipped === 1 ? ' is' : 's are'} not connected to a kiosk or minisub on the site plan, so ${r.skipped === 1 ? 'it is' : 'they are'} in no circuit.`);
+      }
+    }
+    if (typeof RoadPlan !== 'undefined' && RoadPlan._roadSyncCore) {
+      const r = RoadPlan._roadSyncCore({ prune: true, value: ctx.value, issue });
+      removed.push(...r.removed);
+    }
+    const changed = this._fingerprint() !== before;
+    if (changed) {
+      this._syncSourceLoads();
+      this.recompute();
+    }
+    if (removed.length) notice(`${removed.slice(0, 3).join(', ')}${removed.length > 3 ? ` and ${removed.length - 3} more` : ''} removed from Street lighting — ${removed.length === 1 ? 'its poles were' : 'their poles were'} deleted · Undo where you deleted them puts ${removed.length === 1 ? 'it' : 'them'} back`);
+    return changed;
+  },
+
+  _syncOn() { return AppState.keepInSync !== false && typeof Sync !== 'undefined'; },
+  _srcLockHtml(c) {
+    const o = this._syncOn() && this._origin(c);
+    return o ? ` disabled title="Set by the ${o === 'plan' ? 'site plan' : 'road plan'}"` : '';
+  },
+  // Where a pole or circuit comes from: 'plan' | 'road' | null.
+  _origin(x) { return x.planId || x.planKey ? 'plan' : (x.roadPoleId || x.roadKey ? 'road' : null); },
+
+  // Delete a circuit made from the site plan or the road plan: its drawing
+  // goes too, so the pass does not make it again — the drawn poles from the
+  // site plan, or the road's feed point from the road plan. Undo there puts
+  // it back, and the pass brings the circuit back with its settings.
+  _deleteLinkedCircuit(c) {
+    if (c.planKey && AppState.planMarkup) {
+      const pm = AppState.planMarkup;
+      const ids = new Set(c.poles.filter(p => p.planId).map(p => p.planId));
+      for (let i = pm.elements.length - 1; i >= 0; i--) if (ids.has(pm.elements[i].id)) pm.elements.splice(i, 1);
+      for (let i = pm.routes.length - 1; i >= 0; i--) { const r = pm.routes[i]; if (ids.has(r.fromId) || ids.has(r.toId)) pm.routes.splice(i, 1); }
+      if (typeof PlanMarkup !== 'undefined') { PlanMarkup.snapshot(); PlanMarkup.markDirty(); }
+      this._remember('circuits', 'plan:' + c.planKey, c);
+      return 'site plan';
+    }
+    if (c.roadKey && typeof RoadPlan !== 'undefined') {
+      const road = RoadPlan.road(c.roadKey);
+      if (road && road.feed) { delete road.feed; RoadPlan._commit(); }
+      this._remember('circuits', 'road:' + c.roadKey, c);
+      return 'road plan';
+    }
+    return null;
   },
 
   // ─── Quick calc ─────────────────────────────────────────────────────

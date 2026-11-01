@@ -571,8 +571,8 @@ const HELP_GUIDES = [
         callouts: [
           { sel: '.modal-content', label: 'Quick calc — change an input and the verdict follows' },
         ] } },
-    { title: 'Pull the poles in from the plan',
-      html: 'If you have drawn street-light poles and routes on the plan, <strong>Sync from plan</strong> creates the circuits from them. Each circuit’s load goes to its kiosk or minisub as street-lighting kVA in Demand.' },
+    { title: 'Draw the poles on the plan, or lay them out on the road plan',
+      html: 'Street-light poles drawn on the site plan and joined by street-lighting routes from a kiosk or minisub are a circuit a moment after each edit, with the spans measured on the plan; a branch is a spur. On the <strong>Road plan</strong>, a road with a feed point is a circuit too, and a side road joins it as a spur; the cable and system for new circuits and the feeder allowances are in the road\u2019s <em>Circuits</em> panel. Luminaire, phase, cable and name edits made here are kept. A span typed here is kept, marked <em>typed</em>, until you press ↺. Delete a drawn pole where it was drawn; deleting a whole circuit here deletes its poles on the site plan (or the road\u2019s feed point), and Undo there brings the circuit back with its settings. Each circuit\u2019s load goes to its kiosk or minisub as street-lighting kVA in Demand.' },
   ],
   tips: ['<strong>Diagram</strong> draws the circuit as a schematic you can export as PNG, SVG or DXF.', 'Snaking and loop-in allowances are set in the toolbar and add to every span.'],
   related: [{ help: 'design-roadlight', label: 'Road lighting design' }] },

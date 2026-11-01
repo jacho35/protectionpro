@@ -5,9 +5,10 @@
 //     routed lengths, phase splits) after moving one fitting.
 //     Budget: the very large building (61 boards, 11,520 devices) under 100 ms.
 //     The whole sync pass after one edit (Building routines): under 150 ms.
-//   • Reticulation: the whole sync pass (site plan → Demand, PR 7) after
-//     moving one kiosk, on the street-lighting plans below with erven added
-//     (very large: 300 kiosks, 3,000 erven). Budget: under 150 ms.
+//   • Reticulation: the whole sync pass (site plan → Demand, PR 7, and the
+//     poles → street-lighting circuits, PR 8) after moving one kiosk, on the
+//     street-lighting plans below with erven added (very large: 300 kiosks,
+//     3,000 erven, 1,500 poles). Budget: under 150 ms.
 //   • Street lighting: the volt-drop recalculation after one pole edit
 //     (StreetLight._doCompute, a server round trip). Only the edited circuit is
 //     sent; budget: about the time of one circuit, not of all of them.

@@ -273,6 +273,24 @@ Sync.register({
   },
 });
 
+// ── Routine: site plan and road plan → street-lighting circuits ──
+// Poles drawn on the site plan from a kiosk or minisub, and roads with a feed
+// point in the road plan, are Street lighting circuits (spans measured, kept
+// as overrides where typed); their load goes to Demand. Runs after the
+// Reticulation routine, which gives the drawn sources their Demand rows.
+// Replaces "Sync from site plan" and "Import from road plan".
+Sync.register({
+  id: 'streetlight',
+  order: 40,
+  label: 'Site plan and road plan → street lighting',
+  run(ctx) {
+    if (typeof StreetLight === 'undefined' || !AppState.reticulation || !StreetLight.syncInUse()) return false;
+    const changed = StreetLight.syncAll({ issue: ctx.issue, notice: ctx.notice, value: ctx.value });
+    if (changed) { ctx.touch('sl'); ctx.touch('rp'); ctx.touch('retic'); }
+    return changed;
+  },
+});
+
 // ── Routine: floor plans ⇄ single line, then devices → schedule ways ──
 // Boards, feeders and riser feeders both ways (plan-sync.js), then the tagged
 // devices' loads, points and routed lengths into each way (plan-circuits.js,
