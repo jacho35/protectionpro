@@ -126,9 +126,13 @@ const Retic = {
     if (src == null) return '';
     const m = (v) => `${(Math.round(v * 10) / 10)} m`;
     const ov = Sync.override(key);
-    if (!ov) return `<span class="retic-plan-tag" title="${escHtml(`Measured on the site plan (${m(src)}): it follows the drawing. Type a value to keep your own.`)}">plan</span>`;
-    const tip = `Typed here — the site plan measures ${m(ov.src)}. Reset to follow the plan again.`;
-    return `<span class="retic-plan-tag retic-plan-tag--typed" title="${escHtml(tip)}">${compact ? 'typed' : `typed · plan ${m(ov.src)}`}</span>`
+    // A link mark to the drawn item (the row's own element on the site plan).
+    const row = key.split(':').pop();
+    const to = typeof Links !== 'undefined' ? Links.find('retic:' + row, 'plan', 'plan-demand') : null;
+    const mark = (text, cls, tip) => to ? Links.markHtml(to, 'retic:' + row, text, cls)
+      : `<span class="${escHtml(cls)}" title="${escHtml(tip)}">${escHtml(text)}</span>`;
+    if (!ov) return mark('plan', 'retic-plan-tag', `Measured on the site plan (${m(src)}): it follows the drawing. Type a value to keep your own.`);
+    return mark(compact ? 'typed' : `typed · plan ${m(ov.src)}`, 'retic-plan-tag retic-plan-tag--typed', `Typed here — the site plan measures ${m(ov.src)}. Reset to follow the plan again.`)
       + `<button type="button" class="retic-plan-reset" data-action="sync-reset" data-key="${escHtml(key)}" title="${escHtml(`Follow the site plan again (${m(ov.src)})`)}">${compact ? '↺' : 'Reset'}</button>`;
   },
   // The drawn route that sets a Fed from (kiosk id, or 'ms:' + minisub id).
@@ -136,8 +140,21 @@ const Retic = {
   _fedLockHtml(key, what) {
     return this._fedRoute(key) ? ` disabled title="Set by the ${escHtml(what)} drawn on the site plan"` : '';
   },
-  _fedNote(routeId) {
-    return `<button type="button" class="retic-plan-tag retic-plan-link" data-action="show-plan-route" data-route="${escHtml(routeId)}" title="Set by the cable drawn on the site plan — show it there">from the plan ›</button>`;
+  _fedNote(routeId, back) {
+    return typeof Links !== 'undefined' ? Links.markHtml('plan:' + routeId, back, 'from the plan ›', 'retic-plan-tag retic-plan-link')
+      : `<button type="button" class="retic-plan-tag retic-plan-link" data-action="show-plan-route" data-route="${escHtml(routeId)}" title="Set by the cable drawn on the site plan — show it there">from the plan ›</button>`;
+  },
+  // Link mark to the Street lighting circuit(s) a kiosk's SL load comes from.
+  _slMarkHtml(k) {
+    if (typeof Links === 'undefined') return '';
+    const c = Links.of('retic:' + k.id).find(l => l.kind === 'sl-source');
+    return c ? Links.markHtml(c.to, 'retic:' + k.id, 'from Street lighting ›', 'retic-plan-tag retic-plan-link') : '';
+  },
+  // Link mark to a minisub's transformer on the single line.
+  _sldMarkHtml(ms) {
+    if (typeof Links === 'undefined') return '';
+    const st = this._stacks()[ms.id];
+    return st && st.tx ? Links.markHtml('sld:' + st.tx.id, 'retic:' + ms.id, 'on the single line ›', 'retic-plan-tag retic-plan-link') : '';
   },
   _showOnPlan(routeId) {
     if (typeof window.switchWorkspace === 'function') window.switchWorkspace('plan');
@@ -1122,13 +1139,13 @@ const Retic = {
         ${k.collapsed ? '' : `
         <div class="kiosk-body">
           <div class="kiosk-meta">
-            <div class="retic-field"><label>Fed From${this._fedRoute(k.id) ? ' ' + this._fedNote(this._fedRoute(k.id)) : ''}</label>
+            <div class="retic-field"><label>Fed From${this._fedRoute(k.id) ? ' ' + this._fedNote(this._fedRoute(k.id), 'retic:' + k.id) : ''}</label>
               <select data-action="kiosk-field" data-kiosk="${escHtml(k.id)}" data-field="fedFrom"${this._fedLockHtml(k.id, 'LV cable')}>${fedFromOptsFor(k)}</select></div>
             <div class="retic-field"><label>Load Class</label>
               <select data-action="kiosk-field" data-kiosk="${escHtml(k.id)}" data-field="loadClass">${classOptsFor(k.loadClass)}</select></div>
             <div class="retic-field"><label>ADMD Override (kVA${this._classIs3ph(this._kioskClass(k)) ? '/phase' : ''})</label>
               <input type="number" step="0.01" data-action="kiosk-field" data-kiosk="${escHtml(k.id)}" data-field="admdOverride" value="${numAttr(k.admdOverride || '')}" placeholder="${this._kioskAdmd(k, true)}"></div>
-            <div class="retic-field"><label>Street Lighting (kVA)</label>
+            <div class="retic-field"><label>Street Lighting (kVA)${k.streetLightFromCircuits ? ' ' + this._slMarkHtml(k) : ''}</label>
               ${k.streetLightFromCircuits
                 ? `<input type="number" value="${numAttr(k.streetLightKVA || 0)}" readonly title="From this kiosk's circuits in the Street lighting workspace (fixed, undiversified). Edit the circuits there.">`
                 : `<input type="number" step="0.1" data-action="kiosk-field" data-kiosk="${escHtml(k.id)}" data-field="streetLightKVA" value="${numAttr(k.streetLightKVA || '')}" placeholder="0" title="Fixed, undiversified street-lighting load">`}</div>
@@ -1942,12 +1959,12 @@ const Retic = {
       const xfmr = this._minisubTx(ms, demand);
       const autoTx = this._suggestTransformer(demand);
       return `
-      <div class="summary-block minisub-block">
+      <div class="summary-block minisub-block" data-ms-block="${escHtml(ms.id)}">
         <div class="ms-head">
           <input class="ms-name" data-action="minisub-field" data-ms="${escHtml(ms.id)}" data-field="name" value="${escHtml(ms.name)}" title="Minisub / transformer name">
           ${this.minisubs.length > 1 ? `<button class="btn-icon-del" data-action="del-minisub" data-ms="${escHtml(ms.id)}" title="Delete minisub (its kiosks move to the first minisub)">&times;</button>` : ''}
         </div>
-        <div class="summary-row"><span class="k">Diversified demand</span><span class="v">${has ? r.totalKVA + ' kVA' : '—'}</span></div>
+        <div class="summary-row"><span class="k">Diversified demand ${this._sldMarkHtml(ms)}</span><span class="v">${has ? r.totalKVA + ' kVA' : '—'}</span></div>
         <div class="summary-row"><span class="k">Current / Conns / Kiosks</span><span class="v">${has ? `${r.currentA} A / ${r.conns} / ${r.numKiosks}` : (r ? `— / ${r.conns} / ${r.numKiosks}` : '—')}</span></div>
         <div class="summary-row"><span class="k">Transformer</span><span class="v">
           <select class="ms-tx" data-action="minisub-field" data-ms="${escHtml(ms.id)}" data-field="txTypeId"
@@ -1959,7 +1976,7 @@ const Retic = {
           <select class="ms-earthing" data-action="minisub-field" data-ms="${escHtml(ms.id)}" data-field="earthing">
             ${['TN-S', 'TN-C', 'TN-C-S'].map(t => `<option value="${t}"${(ms.earthing || 'TN-S') === t ? ' selected' : ''}>${t}</option>`).join('')}
           </select></span></div>
-        <div class="summary-row"><span class="k" title="The upstream transformer / minisub this one is fed from on the MV network (none = the MV supply).">MV fed from${this._fedRoute('ms:' + ms.id) ? ' ' + this._fedNote(this._fedRoute('ms:' + ms.id)) : ''}</span><span class="v">
+        <div class="summary-row"><span class="k" title="The upstream transformer / minisub this one is fed from on the MV network (none = the MV supply).">MV fed from${this._fedRoute('ms:' + ms.id) ? ' ' + this._fedNote(this._fedRoute('ms:' + ms.id), 'retic:' + ms.id) : ''}</span><span class="v">
           <select class="ms-mvfrom" data-action="minisub-field" data-ms="${escHtml(ms.id)}" data-field="mvFedFrom"${this._fedLockHtml('ms:' + ms.id, 'MV cables')}>
             <option value=""${!ms.mvFedFrom ? ' selected' : ''}>— MV supply —</option>
             ${this.minisubs.filter(o => o.id !== ms.id).map(o => `<option value="${o.id}"${ms.mvFedFrom === o.id ? ' selected' : ''}>${escHtml(o.name)}</option>`).join('')}

@@ -884,7 +884,8 @@ const PlanUI = {
       kioskList = down;
       if (r) row('Demand', `${r.totalKVA} kVA`);
     } else return '';
-    return `<div class="plan-demand"><div class="plan-demand-title">${title}</div>${rows.join('')}</div>${kioskList ? this._kioskTable(kioskList, res) : ''}`;
+    const openHtml = (item.reticId && typeof Links !== 'undefined') ? Links.markHtml('retic:' + item.reticId, 'plan:' + item.id, 'Open in Demand ›', 'plan-link-mark') : '';
+    return `<div class="plan-demand"><div class="plan-demand-title">${title}${openHtml}</div>${rows.join('')}</div>${kioskList ? this._kioskTable(kioskList, res) : ''}`;
   },
 
   // Each downstream kiosk of a selected minisub: demand, feeder length (own and
@@ -1184,7 +1185,8 @@ const PlanUI = {
     for (const c of cands.sort((a, b) => a.label.localeCompare(b.label))) {
       opts += `<option value="${escHtml(c.id)}"${live && c.id === cur ? ' selected' : ''}>${escHtml(c.label)}</option>`;
     }
-    return `<div class="plan-field"><label class="plan-field-label">Link to SLD</label>
+    const openHtml = (live && typeof Links !== 'undefined') ? Links.markHtml('sld:' + cur, 'plan:' + item.id, 'Open on the single line ›', 'plan-link-mark') : '';
+    return `<div class="plan-field"><label class="plan-field-label">Link to SLD ${openHtml}</label>
       <select data-role="sld-link" title="Attach this drawn item to an existing SLD component${isRoute ? ' (cable)' : ''}">${opts}</select></div>`;
   },
 

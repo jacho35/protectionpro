@@ -244,12 +244,14 @@ const DBFeeders = {
   },
 
   // A short "from the SLD" tag for a grid cell, or ''.
-  cellTag(way, key) {
+  cellTag(way, key, board) {
     if (!way || way.type !== 'feeder_db' || !way.sld) return '';
     const id = (key === 'cable_mm2' || key === 'cable_m') ? way.sld.cable
       : (key === 'breaker_a' ? way.sld.device : null);
     const c = id ? AppState.components.get(id) : null;
     if (!c) return '';
+    // A link mark: goes to the drawn part on the single line (Links), with Back.
+    if (typeof Links !== 'undefined') return Links.markHtml('sld:' + c.id, board ? `way:${board.id}/${way.id}` : null, 'SLD', 'db-sld-tag');
     return `<span class="db-sld-tag" title="Linked to ${escHtml(c.props.name || c.id)} on the single line">SLD</span>`;
   },
 };

@@ -621,7 +621,7 @@ const StreetLight = {
         </div>
       </div>
       <div class="sl-form">
-        <label>Fed from<select data-cf="source"${this._srcLockHtml(c)}>${srcOpts}</select></label>
+        <label>Fed from ${this._syncOn() && this._ownerOf(c) && typeof Links !== 'undefined' ? Links.markHtml(this._ownerOf(c), 'sl:' + c.id, this._origin(c) === 'road' ? 'from the road plan ›' : 'from the plan ›', 'sl-plan-tag') : ''}<select data-cf="source"${this._srcLockHtml(c)}>${srcOpts}</select></label>
         <label>System<select data-cf="system">
           <option value="3ph"${c.system !== '1ph' ? ' selected' : ''}>3Φ alternating R-W-B (4-core)</option>
           <option value="1ph"${c.system === '1ph' ? ' selected' : ''}>1Φ string (2-core)</option></select></label>
@@ -710,9 +710,27 @@ const StreetLight = {
     const where = this._origin(p) === 'road' ? 'road plan' : 'site plan';
     const key = 'span:' + p.id;
     const ov = Sync.override(key);
-    if (!ov) return `<span class="sl-plan-tag" title="${escHtml(`Measured on the ${where} (${src} m): it follows the drawing. Type a value to keep your own.`)}">plan</span>`;
-    return `<span class="sl-plan-tag sl-plan-tag--typed" title="${escHtml(`Typed here — the ${where} measures ${ov.src} m. Reset to follow it again.`)}">typed</span>`
+    const to = this._ownerOf(p);
+    const mark = (text, cls, tip) => to && typeof Links !== 'undefined' ? Links.markHtml(to, 'sl:' + p.id, text, cls)
+      : `<span class="${escHtml(cls)}" title="${escHtml(tip)}">${escHtml(text)}</span>`;
+    if (!ov) return mark('plan', 'sl-plan-tag', `Measured on the ${where} (${src} m): it follows the drawing. Type a value to keep your own.`);
+    return mark('typed', 'sl-plan-tag sl-plan-tag--typed', `Typed here — the ${where} measures ${ov.src} m. Reset to follow it again.`)
       + `<button type="button" class="sl-plan-reset" data-sl="span-reset" data-key="${escHtml(key)}" title="${escHtml(`Follow the ${where} again (${ov.src} m)`)}">↺</button>`;
+  },
+
+  // Where a linked pole or circuit is drawn: 'plan:<element>' or 'rp:<road>'.
+  _ownerOf(x) {
+    if (x.planId) return 'plan:' + x.planId;
+    if (x.roadPoleId && typeof RoadPlan !== 'undefined') {
+      const r = RoadPlan.roads.find(rd => (rd.poles || []).some(q => q.id === x.roadPoleId));
+      return r ? 'rp:' + r.id : null;
+    }
+    if (x.roadKey) return 'rp:' + x.roadKey;
+    if (x.planKey) {
+      const first = x.poles.find(q => q.planId);
+      return first ? 'plan:' + first.planId : null;
+    }
+    return null;
   },
 
   _attachGrid() {
