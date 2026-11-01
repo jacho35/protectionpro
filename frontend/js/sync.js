@@ -134,8 +134,12 @@ const Sync = {
       // `current` what the field holds now. Returns what the field should hold.
       value(key, source, current) {
         const o = ov()[key];
-        if (o) return o.v;
-        if (adopt && current != null && current !== '' && !Sync.same(current, source)) {
+        if (o) {
+          // Keep the owner's figure current for the "typed · plan 38 m" note.
+          if (!Sync.same(o.src, source)) o.src = source;
+          return o.v;
+        }
+        if (adopt && current != null && current !== '' && current !== 0 && !Sync.same(current, source)) {
           ov()[key] = { v: current, src: source };
           return current;
         }
@@ -164,6 +168,48 @@ const Sync = {
     // Bringing derived values up to date on open is not an edit of the file.
     AppState.dirty = wasDirty;
     return r;
+  },
+
+  // ── Deletions made by the user (not by the pass, not by an undo) ──
+  // AppState.removeComponent and PlanMarkup.deleteSelected mark what the user
+  // deleted; the Building sync reads the marks to tell a deletion (carried to
+  // the other view) from an undo (healed). side: 'sld' | 'plan'.
+  _deleted: { sld: new Set(), plan: new Set() },
+  markDeleted(side, id) { if (!this._running && id) this._deleted[side].add(id); },
+  takeDeleted(side) { const s = this._deleted[side]; this._deleted[side] = new Set(); return s; },
+
+  // ── Fields owned by another workspace ──
+  // A field listed here, edited by hand, becomes an override (kept by the
+  // pass) and shows a note with Reset in the properties panel.
+  OWNED: [
+    {
+      // An SLD feeder cable measured on a floor plan (plan feeder or riser legs).
+      match: (comp, key) => comp.type === 'cable' && key === 'length_km' && (comp.planLink || comp.riserLink),
+      key: (comp) => 'len:' + comp.id,
+      label: 'plan',
+      show: (v) => (v == null || v === '' ? '—' : `${(+v * 1000).toFixed(1).replace(/\.0$/, '')} m`),
+    },
+  ],
+  _owned(comp, key) { return (comp && this.OWNED.find(o => o.match(comp, key))) || null; },
+
+  // The properties panel calls this whenever it writes a field (live or on
+  // commit), before the next pass can run.
+  onFieldEdited(comp, key, before, value) {
+    const o = this._owned(comp, key);
+    if (!o || this._running) return;
+    const k = o.key(comp);
+    const cur = this.override(k);
+    this.setOverride(k, value, cur ? cur.src : before);
+  },
+
+  // A note beside an owned field: "from plan", or "typed · plan 38 m" + Reset.
+  fieldFlagHtml(comp, key) {
+    const o = this._owned(comp, key);
+    if (!o || AppState.keepInSync === false) return '';
+    const ov = this.override(o.key(comp));
+    if (!ov) return `<span class="prop-sync-flag" title="Measured on the ${escHtml(o.label)}: it follows the drawing. Type a value to keep your own.">from ${escHtml(o.label)}</span>`;
+    return `<span class="prop-sync-flag prop-sync-flag--typed" title="Typed here — the ${escHtml(o.label)} measures ${escHtml(o.show(ov.src))}. Reset to follow the ${escHtml(o.label)} again.">typed · ${escHtml(o.label)} ${escHtml(o.show(ov.src))}</span>`
+      + `<button type="button" class="prop-sync-reset" data-sync-reset="${escHtml(o.key(comp))}" title="Follow the ${escHtml(o.label)} again">Reset</button>`;
   },
 
   // ── Overrides (a value typed where another workspace owns it) ──
@@ -201,6 +247,30 @@ const Sync = {
     if (typeof CollabData !== 'undefined' && CollabData.refresh) CollabData.refresh(touched);
   },
 };
+
+// ── Routine: floor plans ⇄ single line, then devices → schedule ways ──
+// Boards, feeders and riser feeders both ways (plan-sync.js), then the tagged
+// devices' loads, points and routed lengths into each way (plan-circuits.js,
+// called at the end of the same sync). Replaces the "Sync with single line"
+// and "Count circuits into boards" buttons while the setting is on.
+Sync.register({
+  id: 'building',
+  order: 50,
+  label: 'Floor plans ⇄ single line',
+  run(ctx) {
+    if (typeof PlanSync === 'undefined' || !PlanSync.buildingInUse()) return false;
+    const before = PlanSync.buildingFingerprint();
+    if (typeof PlanCircuits !== 'undefined') PlanCircuits._adopt = ctx.adopt;
+    try {
+      PlanSync.syncBuildingToSLD({ interactive: false, issue: ctx.issue, notice: ctx.notice, value: ctx.value });
+    } finally {
+      if (typeof PlanCircuits !== 'undefined') PlanCircuits._adopt = false;
+    }
+    const changed = PlanSync.buildingFingerprint() !== before;
+    if (changed) { ctx.touch('sld'); ctx.touch('plan'); ctx.touch('schedules'); }
+    return changed;
+  },
+});
 
 // ── Routine: single-line sub-board feeders → schedule ways (dbfeeders.js) ──
 // Until now this ran only when a schedule or the bill of quantities opened.

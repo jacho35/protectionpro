@@ -186,8 +186,8 @@ await ok('an old project opens with an adopt pass pending; one saved now does no
   deq(A.syncOverrides, { 'len:dst': { v: 1, src: 2 } });
 });
 
-await ok('the single-line feeder routine is registered', () => {
-  deq(builtIn.map(r => r.id), ['sld-feeder-ways']);
+await ok('the Building and single-line feeder routines are registered, in order', () => {
+  deq(builtIn.map(r => r.id), ['building', 'sld-feeder-ways']);
 });
 
 await wait();

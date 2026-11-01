@@ -459,6 +459,19 @@ const Properties = {
       });
     });
 
+    // Owned-field Reset: drop the override and follow the owner again now.
+    root.querySelectorAll('[data-sync-reset]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (typeof Sync === 'undefined') return;
+        Sync.resetOverride(btn.dataset.syncReset);
+        Sync.run();
+        if (typeof UndoManager !== 'undefined') UndoManager.snapshot();
+        Canvas.render();
+        if (this.currentId) this.show(this.currentId);
+      });
+    });
+
     // Bind cable impedance reset buttons
     root.querySelectorAll('.prop-reset-btn').forEach(btn => {
       btn.addEventListener('click', (e) => {
@@ -944,6 +957,10 @@ const Properties = {
     const defaultFlagHtml = isDefaultVal
       ? `<span class="prop-default-flag" title="Typical/standard default value — edit to use a site-specific figure">default</span>`
       : '';
+    // A value owned by another workspace (e.g. a feeder length measured on the
+    // floor plan): "from plan", or "typed · plan 38 m" with Reset (sync.js).
+    const syncFlagHtml = (typeof Sync !== 'undefined' && Sync.fieldFlagHtml && this.currentId)
+      ? Sync.fieldFlagHtml(AppState.components.get(this.currentId), field.key) : '';
 
     // Check if this cable impedance field has been modified from its standard library default
     const cableImpedanceFields = ['r_per_km', 'x_per_km', 'r0_per_km', 'x0_per_km', 'rated_amps', 'voltage_kv'];
@@ -1045,7 +1062,7 @@ const Properties = {
         ${inputHtml}
         ${unitHtml}
         ${infoHtml}
-        ${defaultFlagHtml}
+        ${defaultFlagHtml}${syncFlagHtml}
         ${resetHtml}
         ${clearHtml}
       </div>${hintHtml}`;
@@ -1207,7 +1224,11 @@ const Properties = {
           }
         }
       }
+      const before = comp.props[field];
       comp.props[field] = value;
+      // A value owned by another workspace, typed here, is kept as an
+      // override — recorded now, so the next sync pass does not overwrite it.
+      if (typeof Sync !== 'undefined' && Sync.onFieldEdited) Sync.onFieldEdited(comp, field, before, value);
     }
 
     // Voltage propagation: when bus voltage changes, propagate with confirmation
@@ -1249,7 +1270,8 @@ const Properties = {
     // presence. Section expand state persists, so the panel doesn't jump.
     if (commit) {
       const _fdef = (COMPONENT_DEFS[comp.type]?.fields || []).find(f => f.key === field);
-      if (_fdef && _fdef.clearable) {
+      // An owned field (sync.js) switches between "from plan" and "typed · Reset".
+      if ((_fdef && _fdef.clearable) || (typeof Sync !== 'undefined' && Sync._owned && Sync._owned(comp, field))) {
         this.show(comp.id);
         return;
       }

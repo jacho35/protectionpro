@@ -444,6 +444,11 @@ const PlanCircuits = {
           if (a.threePhase) { c.poles = '3P'; c.phase = 'RWB'; }
           else if (c.poles !== '3P') { c.poles = '1P'; if (c.phase === 'RWB') c.phase = 'R'; }
         }
+        // An adopt pass (an old project opening with sync on) keeps a load
+        // that differs from the plan's as a pinned override.
+        if (!c._manualLoadOverride && this._adopt && Number(c.load_va) > 0 && Number(c.load_va) !== Math.round(a.va)) {
+          c._manualLoadOverride = true;
+        }
         if (!c._manualLoadOverride) {
           c.load_va = Math.round(a.va);
           if (!c._nameOverride) c.description = this._describe(a.classes, a.count);
@@ -456,7 +461,7 @@ const PlanCircuits = {
     // EE-3: a way that was plan-derived (plan_qty>0) but received no devices
     // this pass is now a ghost — its devices were deleted or re-tagged. Zero
     // it (unless the user pinned the value) so the board no longer overstates.
-    for (const b of this.boardEls()) {
+    for (const b of this._adopt ? [] : this.boardEls()) {   // adopt: zero nothing on open
       const comp = compFor(b.id);
       if (!comp || !Array.isArray(comp.props.circuits)) continue;
       const written = writtenByComp.get(comp);
@@ -726,6 +731,8 @@ const PlanCircuits = {
       let c = rec.wid ? comp.props.circuits.find(x => x.id === rec.wid) : null;
       if (!c) c = comp.props.circuits.find(x => String(x.way) === rec.way && x.type !== 'feeder_db');
       if (!c || c._cableManual) continue;
+      // Adopt pass: a length that differs from the routed one stays, pinned.
+      if (this._adopt && Number(c.cable_m) > 0 && Math.abs(Number(c.cable_m) - rec.m) > 0.01) { c._cableManual = true; continue; }
       c.cable_m = +rec.m.toFixed(2); updated++; touched.add(comp);
     }
     for (const comp of touched) DBSchedule.recompute(comp);
