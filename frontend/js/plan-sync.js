@@ -770,6 +770,11 @@ const PlanSync = {
       });
       circuits.push(c);
     }
+    // A way linked to its drawn breaker / cable (dbfeeders.js) takes its
+    // description, cable, length and downstream demand from them: writing the
+    // plan's figures here too made the two routines undo each other on every
+    // pass.
+    if (c.sld && (c.sld.cable || c.sld.device)) return;
     c.description = 'Feeder to ' + (subComp.props.name || 'Sub-board');
     if (typeof BreakerSet !== 'undefined') BreakerSet.fillNew(dbComp, c);
     if (cableType) {
@@ -987,6 +992,176 @@ const PlanSync = {
   // Collect entities on each side whose linked partner was deleted in the
   // other view — the set that deletion-propagation would remove. Cascades:
   // removing a board removes its feeders; removing a feeder removes its cable.
+  // ── Deletions when the sync pass runs (no dialog) ──
+  // A board, switchboard or feeder deleted in one view is removed in the other
+  // (decision 2026-11-01: delete everywhere, with Undo). Telling a deletion
+  // from an undo: a user's own delete is marked (Sync.markDeleted — by
+  // AppState.removeComponent and PlanMarkup.deleteSelected outside a pass);
+  // a counterpart missing without a mark was taken away by an undo and is
+  // healed as before (SD-1). What the pass removes is kept in a pair record:
+  // when the deleted item comes back (undo) the pass puts the removed side
+  // back — a board with its schedule — and when it goes again (redo) the pass
+  // removes it again.
+  _pairs: [],
+  PAIRS_KEPT: 50,
+
+  _passDeletions(notice) {
+    const comps = AppState.components;
+    const delSld = typeof Sync !== 'undefined' ? Sync.takeDeleted('sld') : new Set();
+    const delPlan = typeof Sync !== 'undefined' ? Sync.takeDeleted('plan') : new Set();
+    const planIds = () => {
+      const s = new Set();
+      for (const e of AppState.planAllElements()) s.add(e.id);
+      for (const r of AppState.planAllRoutes()) s.add(r.id);
+      return s;
+    };
+
+    // 1. Earlier deletions: undo brought the deleted item back → restore what
+    //    the pass removed; redo took it away again → remove it again.
+    let inPlan = planIds();
+    for (const p of this._pairs) {
+      const back = p.origin === 'plan' ? p.originIds.some(id => inPlan.has(id)) : p.originIds.some(id => comps.has(id));
+      if (p.state === 'removed' && back) { this._restorePair(p); p.state = 'restored'; inPlan = planIds(); }
+      else if (p.state === 'restored' && !back) { this._removePair(p); p.state = 'removed'; inPlan = planIds(); }
+    }
+
+    // 2. Heal links an undo left dangling (not a user's delete).
+    for (const e of AppState.planAllElements()) {
+      if ((e.type === 'bd_db' || e.type === 'bd_switchboard') && e.sldId && !comps.get(e.sldId) && !delSld.has(e.sldId)) e.sldId = null;
+    }
+    for (const r of AppState.planAllRoutes()) {
+      if (r.type === 'feeder' && r.sldCableId && !comps.get(r.sldCableId) && !delSld.has(r.sldCableId)) r.sldCableId = null;
+      if (r.sldRiserCableId && !comps.get(r.sldRiserCableId)) r.sldRiserCableId = null;
+    }
+    // A single-line cable whose plan feeder the sync had drawn itself, and an
+    // undo took away: the cable stays, and is drawn on the plan again.
+    const auto = this._autoRoutes || new Set();
+    for (const c of comps.values()) {
+      if (c.type === 'cable' && c.planLink && !inPlan.has(c.planLink) && auto.has(c.planLink) && !delPlan.has(c.planLink)) c.planLink = null;
+    }
+
+    // 3. What is left are real deletions: carry them across, keep a record.
+    const del = this._collectDeletions(AppState.planMarkup);
+    if (!(del.boards + del.feeders)) return;
+    const sldIds = [...del.sldComps].filter(id => comps.get(id));
+    // An outgoing bus left with no cable would be pruned: take it with the
+    // pair, so an undo puts the feeder back on it.
+    const gone = new Set(sldIds);
+    for (const c of comps.values()) {
+      if (c.type !== 'bus' || gone.has(c.id) || !(c.busOwner || [...comps.values()].some(b => b.outBusId === c.id))) continue;
+      const cables = [...AppState.wires.values()]
+        .filter(w => w.fromComponent === c.id || w.toComponent === c.id)
+        .map(w => (w.fromComponent === c.id ? w.toComponent : w.fromComponent))
+        .filter(id => { const x = comps.get(id); return x && x.type === 'cable'; });
+      if (cables.length && cables.every(id => gone.has(id))) { sldIds.push(c.id); gone.add(c.id); }
+    }
+    const planElIds = [...del.planEls], planRtIds = [...del.planRoutes];
+    // Which deleted items each side's removal follows from.
+    const sldOrigin = new Set();
+    for (const id of sldIds) {
+      const c = comps.get(id);
+      for (const k of ['planLink', 'swLink', 'riserLink']) if (c[k] && !inPlan.has(c[k])) sldOrigin.add(c[k]);
+    }
+    const planOrigin = new Set();
+    for (const e of AppState.planAllElements()) if (del.planEls.has(e.id) && e.sldId && !comps.get(e.sldId)) planOrigin.add(e.sldId);
+    for (const r of AppState.planAllRoutes()) if (del.planRoutes.has(r.id) && r.sldCableId && !comps.get(r.sldCableId)) planOrigin.add(r.sldCableId);
+    const names = [];
+    for (const id of sldIds) { const c = comps.get(id); if (c.type === 'distribution_board') names.push(c.props.name || 'Board'); }
+    for (const e of AppState.planAllElements()) if (del.planEls.has(e.id) && (e.type === 'bd_db' || e.type === 'bd_switchboard')) names.push(e.name || 'Board');
+    if (sldIds.length && sldOrigin.size) {
+      const p = { origin: 'plan', originIds: [...sldOrigin], sld: sldIds, plan: null, state: 'removed' };
+      this._removePair(p); this._addPair(p);
+    } else for (const id of sldIds) AppState.removeComponent(id);
+    if (planElIds.length + planRtIds.length) {
+      const p = { origin: 'sld', originIds: [...planOrigin], sld: null, plan: { els: planElIds, routes: planRtIds }, state: 'removed' };
+      if (p.originIds.length) { this._removePair(p); this._addPair(p); }
+      else this._removePlanItems(new Set(planElIds), new Set(planRtIds));
+    }
+    if (this._pairs.length > this.PAIRS_KEPT) this._pairs.splice(0, this._pairs.length - this.PAIRS_KEPT);
+    const what = names.length
+      ? `${names.slice(0, 3).join(', ')}${names.length > 3 ? ` and ${names.length - 3} more` : ''}`
+      : `${del.feeders} feeder${del.feeders === 1 ? '' : 's'}`;
+    notice(`${what} removed in the other view too · Undo puts it back`);
+  },
+
+  // A newer deletion of the same items replaces older records about them
+  // (otherwise an older record would read the newer removal as a redo).
+  _addPair(p) {
+    const ids = (q) => new Set([...q.originIds, ...(q.sld || []), ...(q.plan ? [...q.plan.els, ...q.plan.routes] : [])]);
+    const mine = ids(p);
+    this._pairs = this._pairs.filter(q => ![...ids(q)].some(id => mine.has(id)));
+    this._pairs.push(p);
+  },
+
+  // Take one side of a pair away, keeping it (with its wires / floor) to put back.
+  _removePair(p) {
+    const comps = AppState.components;
+    if (p.sld) {
+      const ids = new Set(p.sld.filter(id => comps.has(id)));
+      p.saved = {
+        comps: [...ids].map(id => JSON.parse(JSON.stringify(comps.get(id)))),
+        wires: [...AppState.wires.values()].filter(w => ids.has(w.fromComponent) || ids.has(w.toComponent)).map(w => JSON.parse(JSON.stringify(w))),
+      };
+      for (const id of ids) AppState.removeComponent(id);
+    } else {
+      const els = new Set(p.plan.els), rts = new Set(p.plan.routes);
+      const saved = [];
+      for (const fl of AppState.planFloors()) {
+        for (const e of (fl.data.elements || [])) if (els.has(e.id)) saved.push({ floor: fl.id, kind: 'elements', item: JSON.parse(JSON.stringify(e)) });
+        for (const r of (fl.data.routes || [])) if (rts.has(r.id)) saved.push({ floor: fl.id, kind: 'routes', item: JSON.parse(JSON.stringify(r)) });
+      }
+      p.saved = saved;
+      this._removePlanItems(els, rts);
+    }
+  },
+
+  _restorePair(p) {
+    if (!p.saved) return;
+    if (p.sld) {
+      for (const c of p.saved.comps) if (!AppState.components.has(c.id)) AppState.components.set(c.id, JSON.parse(JSON.stringify(c)));
+      for (const w of p.saved.wires) {
+        if (!AppState.wires.has(w.id) && AppState.components.has(w.fromComponent) && AppState.components.has(w.toComponent)) AppState.wires.set(w.id, JSON.parse(JSON.stringify(w)));
+      }
+    } else {
+      const floors = AppState.planFloors();
+      for (const s of p.saved) {
+        const fl = floors.find(f => f.id === s.floor) || floors[0];
+        if (!fl) continue;
+        const arr = fl.data[s.kind] || (fl.data[s.kind] = []);
+        if (!arr.some(x => x.id === s.item.id)) arr.push(JSON.parse(JSON.stringify(s.item)));
+      }
+      AppState._hydrateActiveFloor();
+    }
+  },
+
+  _removePlanItems(els, rts) {
+    for (const fl of AppState.planFloors()) {
+      fl.data.elements = (fl.data.elements || []).filter(e => !els.has(e.id));
+      fl.data.routes = (fl.data.routes || []).filter(r => !rts.has(r.id));
+    }
+    AppState._hydrateActiveFloor();
+    if (typeof PlanMarkup !== 'undefined' && PlanMarkup.selectedIds) for (const id of [...els, ...rts]) PlanMarkup.selectedIds.delete(id);
+  },
+
+  // Is the Building link in use: any board on a floor plan, or a single-line
+  // part linked to one.
+  buildingInUse() {
+    if (AppState.planAllElements().some(e => e.type === 'bd_db' || e.type === 'bd_switchboard')) return true;
+    for (const c of AppState.components.values()) if (c.planLink || c.swLink || c.riserLink) return true;
+    return false;
+  },
+
+  // A fingerprint of everything the Building sync reads and writes, to tell
+  // whether a pass changed anything.
+  buildingFingerprint() {
+    const comps = [...AppState.components.values()];
+    const wires = [...AppState.wires.keys()].sort().join(',');
+    const els = AppState.planAllElements().filter(e => e.sldId || e.sldMembers || e.type === 'bd_db' || e.type === 'bd_switchboard' || (e.props && e.props.circuitDbId))
+      .map(e => [e.id, e.sldId || null, e.props && e.props.circuitWid, e.props && e.props.circuitNo]);
+    const rts = AppState.planAllRoutes().filter(r => r.type === 'feeder').map(r => [r.id, r.sldCableId || null, r.sldRiserCableId || null, r.fromId, r.toId]);
+    return AppState._hashText(JSON.stringify([comps, wires, els, rts]));
+  },
+
   _collectDeletions(pm) {
     const comps = AppState.components;
     const planEls = new Set(), planRoutes = new Set(), sldComps = new Set();
@@ -1161,7 +1336,11 @@ const PlanSync = {
         // is a sum of three measurements and is also written to the DB schedule
         // in metres at 2 dp, so 0.1 m rounding here would show up as the cable
         // and its own schedule way disagreeing.
-        if (lenM > 0) cable.props.length_km = +(lenM / 1000).toFixed(5);
+        if (lenM > 0) {
+          const cur = Number(cable.props.length_km) || 0;
+          const v = (this._value || ((k, src) => src))('len:' + cable.id, +(lenM / 1000).toFixed(5), cur);
+          if (v !== cur) cable.props.length_km = v;
+        }
         cable.props.riser_note = `via riser ${src.riser.name || shaft} — ${src.lenM.toFixed(1)} m + ${vertM.toFixed(1)} m vertical + ${leg.lenM.toFixed(1)} m`;
         // The feeding DB records the cross-floor way like any other sub-board
         // feeder (switchboards have no circuit schedule).
@@ -1192,8 +1371,14 @@ const PlanSync = {
     const interactive = opts.interactive !== false;
     const issue = opts.issue || (() => {});
     const notice = opts.notice || (() => {});
+    // A length the plan measures goes through value(key, measured, current):
+    // the sync pass keeps a length typed on the single line as an override.
+    this._value = opts.value || ((key, source) => source);
     const pm = AppState.planMarkup;
     const comps = AppState.components;
+    if (!interactive) {
+      this._passDeletions(notice);
+    } else {
 
     // ── 0. Heal undo-stranded links (SD-1) ──
     // An SLD-side undo/redo that crosses a sync boundary leaves a plan board's
@@ -1245,6 +1430,7 @@ const PlanSync = {
         }
       }
     }
+    }   // interactive deletions
 
     const factor = this._factor();
     const dbEls = AppState.planAllElements().filter(e => e.type === 'bd_db');
@@ -1348,7 +1534,9 @@ const PlanSync = {
       if (rf && lenM > 0) {
         const km = +(lenM / 1000).toFixed(4);
         const cur = Number(cable.props.length_km) || 0;
-        if (!cur || !auto2pt || km > cur) cable.props.length_km = km;
+        const want = (!cur || !auto2pt || km > cur) ? km : cur;
+        const v = this._value('len:' + cable.id, want, cur);
+        if (v !== cur) cable.props.length_km = v;
       }
       // A feeding DB records an outgoing "Feeder to Sub-board" way (switchboards
       // have no circuit schedule, so skip).
@@ -1373,6 +1561,10 @@ const PlanSync = {
     // schedules. Without this a board synced for the first time came across
     // with no ways at all, however many devices were tagged to it.
     const circ = (typeof PlanCircuits !== 'undefined' && PlanCircuits.syncAll) ? PlanCircuits.syncAll() : null;
+    // Feeder routes the sync drew itself (reflected from a single-line cable):
+    // one that disappears was undone, not deleted (_passDeletions).
+    this._autoRoutes = new Set(AppState.planAllRoutes().filter(r => r.type === 'feeder' && r._autoReflected).map(r => r.id));
+    this._value = null;
 
     AppState.dirty = true;
     // UX-4: sync mutates BOTH views (SLD components + plan link fields), so

@@ -4,6 +4,7 @@
 //   • Building: plan devices → DB schedule ways (PlanCircuits.syncAll — loads,
 //     routed lengths, phase splits) after moving one fitting.
 //     Budget: the very large building (61 boards, 11,520 devices) under 100 ms.
+//     The whole sync pass after one edit (Building routines): under 150 ms.
 //   • Street lighting: the volt-drop recalculation after one pole edit
 //     (StreetLight._doCompute, a server round trip). Only the edited circuit is
 //     sent; budget: about the time of one circuit, not of all of them.
@@ -38,7 +39,7 @@ const PASSWORD = process.env.PP_PASSWORD || 'perf-bench-pass-1';
 const RUNS = Number(process.env.RUNS) || 5;
 const CHECK = process.argv.includes('--check');
 
-const BUDGET = { buildingVeryLargeMs: 100, slOneCircuitFactor: 3 };
+const BUDGET = { buildingVeryLargeMs: 100, buildingPassVeryLargeMs: 150, slOneCircuitFactor: 3 };
 
 async function token() {
   const post = (path, body) => fetch(`${BASE_URL}/api/auth/${path}`, {
@@ -100,10 +101,21 @@ async function building(browser, jwt, size) {
     const ways = [...AppState.components.values()].filter(c => c.type === 'distribution_board')
       .sort((a, b) => String(a.props.name).localeCompare(String(b.props.name)))
       .map(c => (c.props.circuits || []).map(w => [w.way, w.load_va, w.cable_m, w.phase_va, w.plan_qty]));
-    return { boards: size.boards + 1, devices, times, ways };
+    // The whole sync pass after one edit (PR 6: floor plans ⇄ single line,
+    // devices → ways, feeder ways), when the setting is on.
+    const pass = [];
+    if (typeof Sync !== 'undefined') {
+      for (let i = 0; i < runs; i++) {
+        lights[(i * 53) % lights.length].x += 5;
+        const a = performance.now();
+        Sync.run();
+        pass.push(performance.now() - a);
+      }
+    }
+    return { boards: size.boards + 1, devices, times, pass, ways };
   }, { size, runs: RUNS });
   await ctx.close();
-  return { boards: r.boards, devices: r.devices, ms: median(r.times), fingerprint: fp(r.ways) };
+  return { boards: r.boards, devices: r.devices, ms: median(r.times), passMs: r.pass.length ? median(r.pass) : null, fingerprint: fp(r.ways) };
 }
 
 // ── Street lighting: minisubs → kiosk strings, a run of poles off each kiosk ──
@@ -189,7 +201,7 @@ try {
 
 const ms = v => `${v.toFixed(1)} ms`;
 for (const [k, b] of Object.entries(out.building)) {
-  console.log(`building ${k.padEnd(9)}  ${String(b.boards).padStart(3)} boards ${String(b.devices).padStart(6)} devices   devices→ways ${ms(b.ms).padStart(9)}   fingerprint ${b.fingerprint}`);
+  console.log(`building ${k.padEnd(9)}  ${String(b.boards).padStart(3)} boards ${String(b.devices).padStart(6)} devices   devices→ways ${ms(b.ms).padStart(9)}${b.passMs != null ? `   whole sync pass ${ms(b.passMs).padStart(9)}` : ''}   fingerprint ${b.fingerprint}`);
 }
 for (const [k, s] of Object.entries(out.streetLighting)) {
   console.log(`street lighting ${k.padEnd(9)} ${String(s.circuits).padStart(4)} circuits ${String(s.poles).padStart(5)} poles   one edit ${ms(s.oneEditMs).padStart(9)} (${s.circuitsSentPerEdit} sent)   all circuits ${ms(s.allCircuitsMs).padStart(9)}   fingerprint ${s.fingerprint}`);
@@ -197,6 +209,7 @@ for (const [k, s] of Object.entries(out.streetLighting)) {
 
 const vl = out.building.veryLarge, sl = out.streetLighting.veryLarge;
 const oneRef = sl.allCircuitsMs / sl.circuits;   // per-circuit share of a full request
+if (vl.passMs != null && vl.passMs > BUDGET.buildingPassVeryLargeMs) { fail = true; console.log(`OVER BUDGET: very large building sync pass ${ms(vl.passMs)} > ${BUDGET.buildingPassVeryLargeMs} ms`); }
 if (vl.ms > BUDGET.buildingVeryLargeMs) { fail = true; console.log(`OVER BUDGET: very large building ${ms(vl.ms)} > ${BUDGET.buildingVeryLargeMs} ms`); }
 for (const [k, s] of Object.entries(out.streetLighting)) {
   if (s.circuitsSentPerEdit !== 1) { fail = true; console.log(`OVER BUDGET: street lighting ${k} sent ${s.circuitsSentPerEdit} circuits for one edit`); }

@@ -584,6 +584,8 @@ const PlanMarkup = {
         if (e.type === 'bd_db' || (e.props && e.props.circuitDbId) || PlanCircuits.isCircuitDevice(e.type)) { circuitTouched = true; break; }
       }
     }
+    // The Building sync carries a deleted board / feeder to the single line.
+    if (typeof Sync !== 'undefined' && Sync.markDeleted) for (const id of this.selectedIds) Sync.markDeleted('plan', id);
     const kill = (arr) => { for (let i = arr.length - 1; i >= 0; i--) if (this.selectedIds.has(arr[i].id)) arr.splice(i, 1); };
     kill(pm.elements); kill(pm.routes); kill(pm.trenches);
     kill(pm.crossings); if (pm.rooms) kill(pm.rooms); kill(pm.texts); kill(pm.measurements);

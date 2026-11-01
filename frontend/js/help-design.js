@@ -80,7 +80,7 @@ $$\text{VD}_{cum}=\sum_{legs}\text{VD}_{leg}\ \le\ \text{Max Feeder VD}$$
 
 { id: 'design-plan', group: 'design', title: 'Plan markup (site & floor plans)',
   std: 'Plan workspace',
-  kw: 'plan calibrate scale route trench crossing device dxf import export ies auto circuit tag board way length sync background pdf',
+  kw: 'plan calibrate scale route trench crossing device dxf import export ies auto circuit tag board way length sync background pdf keep in sync single line feeder override typed reset',
   html: String.raw`
 <p>The Plan workspace is a drawing surface for a site (reticulation) or a floor (building): place devices, draw routes and trenches, and let the geometry feed the rest of the project.</p>
 <h4>Calibration and lengths</h4>
@@ -97,6 +97,8 @@ $$f=\frac{d_{known}\ [\text{m}]}{d_{px}},\qquad \ell_{route}=f\sum_{k}\left|\mat
 <p>Import a <code>.dxf</code> as a background (layers, blocks with attributes and all curve types are read). Map a CAD layer to a route type, trench, rooms or erf boundaries, and <em>Convert</em> mapped blocks to editable devices at their positions and rotations (one undo step; the mapping is remembered for the next issue). A DXF exported from ProtectionPro re-imports as editable devices, routes, trenches, crossings and rooms.</p>
 <h4>Auto-circuiting (Building)</h4>
 <p>Devices tagged to a board way ($\texttt{circuitDbId}$, $\texttt{circuitNo}$) let the plan write the way's load and quantity into the linked board schedule. Untagged devices can inherit a tag through connected final-circuit routes, or be distributed across ways with per-type caps. Routed length flows to the way's cable length, unless the way has been pinned manually.</p>
+<h4>Floor plans and the single line (Building)</h4>
+<p>With <em>Keep workspaces in sync</em> on (Settings ▸ System Base, the default), the floor plans and the single line stay in step by themselves, a moment after each edit: a board placed on a plan is on the single line, a feeder drawn between two boards (or two riser legs on different floors) becomes a single-line cable with a "Feeder to …" way in the upstream board, and each way takes its load, points and routed length from the devices tagged to it. Deleting a board or feeder in either view removes it in the other; Undo puts both back, the board with its schedule. A feeder length measured on the plan shows <em>from plan</em> beside the cable's Length; typing a different length keeps it as <em>typed · plan 38 m</em> with Reset. When both boards already have a supply and the direction of a new feeder is unclear, the drawing order is used and the choice is listed for review. With the setting off, the plan's Output panel has <em>Sync with single line</em> and <em>Count circuits into boards</em> buttons instead.</p>
 <h4>Lighting</h4>
 <p>Rooms and outdoor areas are drawn and calculated on the Lighting tab's plan view and shown there in false colour — see <a href="#" data-help="design-roomlight">Room, outdoor &amp; emergency lighting</a>. Road lighting to EN 13201 is under Street lighting — see <a href="#" data-help="design-roadlight">Road lighting design</a>.</p>` },
 

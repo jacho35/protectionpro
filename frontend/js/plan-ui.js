@@ -196,6 +196,8 @@ const PlanUI = {
   _outputPanel() {
     const pm = AppState.planMarkup;
     const building = pm.settings.domain === 'building';
+    // Settings ▸ Keep workspaces in sync: the sync pass does what the buttons did.
+    const autoSync = AppState.keepInSync !== false;
     let untagged = 0;
     if (building && typeof PlanCircuits !== 'undefined' && PlanCircuits.isCircuitDevice) {
       untagged = pm.elements.filter(e => PlanCircuits.isCircuitDevice(e.type) && !(e.props && e.props.circuitDbId)).length;
@@ -205,8 +207,10 @@ const PlanUI = {
     const crop = pm.cropBox;
     return `<div class="plan-out">
       <div class="plan-sec-head"><span>Sync</span></div>
-      ${building ? act('push', 'Sync with single line', 'Boards and feeder cables, both directions') : act('push', 'Push to Demand schedules', 'Kiosks, erven and feeders into Reticulation')}
-      ${building ? act('circuits', 'Count circuits into boards', `Loads and routed lengths per way${untagged ? ` · ${untagged} device${untagged > 1 ? 's' : ''} not on a circuit` : ''}`) : ''}
+      ${building && autoSync
+        ? `<div class="plan-card plan-sync-auto"><b>Kept in sync</b><small>Boards, feeders and riser feeders are on the single line, and each way's load, points and routed length come from the devices tagged to it — a moment after each edit.${untagged ? ` ${untagged} device${untagged > 1 ? 's are' : ' is'} not on a circuit yet.` : ''}</small></div>`
+        : (building ? act('push', 'Sync with single line', 'Boards and feeder cables, both directions') : act('push', 'Push to Demand schedules', 'Kiosks, erven and feeders into Reticulation'))}
+      ${building && !autoSync ? act('circuits', 'Count circuits into boards', `Loads and routed lengths per way${untagged ? ` · ${untagged} device${untagged > 1 ? 's' : ''} not on a circuit` : ''}`) : ''}
       <div class="plan-sec-head"><span>Print area</span></div>
       <div class="plan-card">
         <div class="plan-card-head"><b>${crop ? 'Set' : 'Whole floor'}</b></div>
@@ -1045,7 +1049,7 @@ const PlanUI = {
       <div class="plan-circuit-note">${ways} way(s) on this board${linked}</div>
       <button class="plan-circuit-btn" data-role="edit-schedule">📋 Open Circuit Schedule</button>
       <button class="plan-circuit-btn" data-role="bulk-assign">⚡ Auto-assign connected devices</button>
-      <button class="plan-circuit-btn" data-role="sync-circuits">🔄 Sync loads from plan</button>
+      ${AppState.keepInSync === false ? '<button class="plan-circuit-btn" data-role="sync-circuits">🔄 Sync loads from plan</button>' : ''}
       ${phase}
     </div>`;
   },
@@ -1262,7 +1266,7 @@ const PlanUI = {
         // A tag on a board that isn't on the SLD yet has nowhere to land —
         // say so instead of silently writing nothing.
         const tagBoard = item.props.circuitDbId && PlanCircuits._boardById(item.props.circuitDbId);
-        if (tagBoard && !PlanCircuits._sldComp(tagBoard)) {
+        if (tagBoard && !PlanCircuits._sldComp(tagBoard) && AppState.keepInSync === false) {
           UI.toast(`${tagBoard.name || 'This board'} isn't on the SLD yet — press → Sync with SLD to create its schedule.`, 'info');
         }
         PlanMarkup.snapshot(); PlanMarkup.markDirty();
@@ -1293,7 +1297,13 @@ const PlanUI = {
     const ids = [...PlanMarkup.selectedIds]; if (ids.length !== 1) return;
     const found = PlanMarkup.findEntityById(ids[0]);
     if (!found || found.kind !== 'element' || found.item.type !== 'bd_db') return;
-    const comp = found.item.sldId && AppState.components.get(found.item.sldId);
+    let comp = found.item.sldId && AppState.components.get(found.item.sldId);
+    // With sync on, a board placed a moment ago may still be waiting for its
+    // pass: run it now.
+    if (!comp && AppState.keepInSync !== false && typeof Sync !== 'undefined') {
+      Sync.run();
+      comp = found.item.sldId && AppState.components.get(found.item.sldId);
+    }
     if (!comp) {
       UI.toast('Sync this board with the SLD first (→ Sync with SLD) to create its circuit schedule.', 'info');
       return;
@@ -1308,7 +1318,8 @@ const PlanUI = {
     if (!found || found.kind !== 'element' || found.item.type !== 'bd_db') return;
     // The board needs a schedule to assign into — link it rather than refuse.
     if (!found.item.sldId || !AppState.components.get(found.item.sldId)) {
-      await PlanSync.syncBuildingToSLD();
+      if (AppState.keepInSync !== false && typeof Sync !== 'undefined') Sync.run();
+      else await PlanSync.syncBuildingToSLD();
       if (!found.item.sldId || !AppState.components.get(found.item.sldId)) return;
     }
     const r = PlanCircuits.bulkAssign(found.item.id);

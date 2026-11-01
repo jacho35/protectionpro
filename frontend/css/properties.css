@@ -1144,3 +1144,19 @@ body.dark-mode .pw-tip { background: #33374d; border: 1px solid #454a63; }
 .shape-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; padding: 8px 0; }
 .shape-act { height: 30px; }
 .shape-act.danger { border-color: #b91c1c; color: #b91c1c; }
+
+/* A value owned by another workspace (sync.js): "from plan" / "typed · plan 38 m" + Reset */
+.prop-sync-flag {
+  display: inline-flex; align-items: center; flex-shrink: 0;
+  padding: 1px 6px; border-radius: 8px;
+  border: 1px solid #9ec5f0; background: #eef5fd; color: #1f5ea8;
+  font-size: 9px; font-weight: 600; letter-spacing: .02em; line-height: 1.4; white-space: nowrap;
+}
+.prop-sync-flag--typed { border-color: #e0a800; background: #fff8e1; color: #7a5c00; }
+.prop-sync-reset {
+  flex-shrink: 0; padding: 1px 6px; border: 1px solid var(--border-color); border-radius: 4px;
+  background: var(--bg-primary); color: var(--text-primary); font-size: 10px; cursor: pointer;
+}
+.prop-sync-reset:hover { background: var(--bg-secondary); }
+body.dark-mode .prop-sync-flag { background: #13283f; border-color: #2f5f93; color: #9ec5f0; }
+body.dark-mode .prop-sync-flag--typed { background: #3a2f0b; border-color: #8a6d1a; color: #ffd76a; }

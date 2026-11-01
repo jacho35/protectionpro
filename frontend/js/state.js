@@ -743,6 +743,9 @@ const AppState = {
 
   // Remove component
   removeComponent(id) {
+    // A linked part deleted by the user (not by the sync pass): the Building
+    // sync carries the deletion to the floor plan (Sync.markDeleted).
+    if (typeof Sync !== 'undefined' && Sync.markDeleted) Sync.markDeleted('sld', id);
     // Remove connected wires
     for (const [wid, w] of this.wires) {
       if (w.fromComponent === id || w.toComponent === id) {
