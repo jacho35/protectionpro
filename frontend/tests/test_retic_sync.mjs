@@ -16,6 +16,7 @@
  *  · a row an undo in Demand took away comes back under the same id;
  *  · an erf whose service cable moves to another kiosk moves with its data;
  *  · a name match never takes a row another drawn element stands for;
+ *  · duplicate minisub / kiosk names and erf numbers under one kiosk are Issues;
  *  · rows added in Demand are listed as not placed, and placing one links it.
  *
  * Run:  node frontend/tests/test_retic_sync.mjs   (exit code 1 on failure)
@@ -221,6 +222,24 @@ await ok('a name match never takes a row another drawn element stands for', () =
   pass();
   assert.strictEqual(R().kiosks.filter(k => k.name === 'K1').length, 2);
   assert.strictEqual(new Set(pm.elements.filter(e => e.type === 'kiosk').map(e => e.reticId)).size, 3);
+});
+
+await ok('duplicate names go on the Issues list, and come off once renamed', () => {
+  const d = fresh(); pass();
+  deq(Sync.issues.filter(i => i.key.startsWith('retic-dup')), []);
+  d.el('kiosk', 200, 0, 'k1 ');                                         // same name, other case / spaces
+  erf('E2').e.erfNumber = 'E1';                                         // two erven numbered E1 under K1
+  erf('E3').e.erfNumber = 'E1';                                         // … and one under K2: not a clash
+  pass();
+  const dup = Sync.issues.filter(i => i.key.startsWith('retic-dup'));
+  deq(dup.map(i => i.key).sort(), ['retic-dup:erf:' + kiosk('K1').id + ':e1', 'retic-dup:kiosk:k1']);
+  assert.match(dup.find(i => i.key.startsWith('retic-dup:kiosk')).text, /2 kiosks are called "K1"/);
+  assert.match(dup.find(i => i.key.startsWith('retic-dup:erf')).text, /2 erven under K1 are numbered E1/);
+  assert.strictEqual(dup.find(i => i.key.startsWith('retic-dup:kiosk')).action.ids.length, 2);
+  R().kiosks.find(k => k.name === 'k1 ').name = 'K4';
+  erf('E1').k.erfs.find(e => e.erfNumber === 'E1' && e !== erf('E1').e).erfNumber = 'E2';
+  pass();
+  deq(Sync.issues.filter(i => i.key.startsWith('retic-dup')), []);
 });
 
 await ok('rows added in Demand are not placed yet; placing one links it', () => {

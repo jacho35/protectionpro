@@ -759,7 +759,38 @@ const PlanSync = {
       if (f && f.kind === e.type) links.set(e.id, { type: e.type, rowId: e.reticId });
     }
     this._reticLinks = links;
+    this._reticDuplicates(opts.issue || (() => {}));
     return this.reticFingerprint() !== before;
+  },
+
+  // Two minisubs or two kiosks with the same name, or two erven with the same
+  // number under one kiosk, go on the Issues list: a newly drawn item with
+  // that name could be matched to either row. Names compare as the sync
+  // matches them (case and outer spaces ignored).
+  _reticDuplicates(issue) {
+    const R = AppState.reticulation;
+    const norm = (v) => String(v || '').trim().toLowerCase();
+    const report = (rows, nameOf, what, where) => {
+      const by = new Map();
+      for (const r of rows) {
+        const k = norm(nameOf(r));
+        if (!k) continue;
+        if (!by.has(k)) by.set(k, []);
+        by.get(k).push(r);
+      }
+      for (const [k, list] of by) {
+        if (list.length < 2) continue;
+        const shown = String(nameOf(list[0])).trim();
+        issue(`retic-dup:${what}:${where ? where.id + ':' : ''}${k}`,
+          what === 'erf'
+            ? `${list.length} erven under ${where.name || 'a kiosk'} are numbered ${shown} in Demand. Renumber one so a newly drawn erf cannot be linked to the wrong row.`
+            : `${list.length} ${what}s are called "${shown}" in Demand. Rename one so a newly drawn ${what} cannot be linked to the wrong row.`,
+          { kind: 'retic-rows', ids: list.map(r => r.id) });
+      }
+    };
+    report(R.minisubs, m => m.name, 'minisub');
+    report(R.kiosks, k => k.name, 'kiosk');
+    for (const k of R.kiosks) report(k.erfs, e => e.erfNumber, 'erf', k);
   },
 
   // ── "Not placed yet": Demand rows no drawn element stands for ──
