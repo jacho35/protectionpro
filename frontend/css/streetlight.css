@@ -185,3 +185,21 @@ body.dark-mode #streetlight-workspace, body.dark-mode #sl-quick-modal { --sl-r: 
 
 /* Circuit diagram modal (js/sl-diagram.js) — chrome shared with the retic diagram. */
 #sldg-circuit { font-size: 12px; padding: 3px 6px; max-width: 320px; background: var(--bg-primary); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 4px; }
+
+/* Spans measured on the site plan / road plan (Keep workspaces in sync). */
+.sl-span-cell { display: flex; align-items: center; gap: 3px; }
+.sl-span-cell input { min-width: 0; flex: 1 1 auto; }
+.sl-plan-tag {
+  flex-shrink: 0; padding: 0 5px; border-radius: 8px;
+  border: 1px solid #9ec5f0; background: #eef5fd; color: #1f5ea8;
+  font-size: 9px; font-weight: 600; line-height: 1.5; white-space: nowrap;
+}
+.sl-plan-tag--typed { border-color: #e0a800; background: #fff8e1; color: #7a5c00; }
+.sl-plan-reset {
+  flex-shrink: 0; padding: 0 5px; border: 1px solid var(--border-color); border-radius: 4px;
+  background: var(--bg-primary); color: var(--text-primary); font-size: 10px; line-height: 1.5; cursor: pointer;
+}
+.sl-table select:disabled, .sl-form select:disabled { opacity: .75; cursor: default; }
+.sl-x:disabled { opacity: .3; cursor: default; }
+body.dark-mode .sl-plan-tag { background: #13283f; border-color: #2f5f93; color: #9ec5f0; }
+body.dark-mode .sl-plan-tag--typed { background: #3a2f0b; border-color: #8a6d1a; color: #ffd76a; }

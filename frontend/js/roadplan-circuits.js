@@ -204,7 +204,26 @@ if (typeof RoadPlan !== 'undefined') Object.assign(RoadPlan, {
       line = sel2 + `<div class="rp-feedline"><b>${escHtml(this._sourceLabel(r.feed.source))}</b>${f ? ` · feeder ${f.mode === 'route' ? 'drawn' : 'straight line'} ${this._fmt(f.routeM, 1)} m + ${f.allowPct} % = <b>${this._fmt(f.lenM, 1)} m</b>` : ''}</div>`;
     }
     return `<div class="rp-block"><div class="rp-block-h"><b>Supply</b></div>${sel}${line}
-      <div class="rp-actions"><button class="btn-small${this._tool === 'feed' ? ' active' : ''}" data-rp-tool="feed" title="Click the source's position, then click bends of the feeder cable; Enter or double-click to finish">${r.feed ? 'Move feed point' : 'Place feed point'}</button>${r.feed ? '<button class="btn-small" data-rp="feed-clear">Remove</button>' : ''}</div></div>`;
+      <div class="rp-actions"><button class="btn-small${this._tool === 'feed' ? ' active' : ''}" data-rp-tool="feed" title="Click the source's position, then click bends of the feeder cable; Enter or double-click to finish">${r.feed ? 'Move feed point' : 'Place feed point'}</button>${r.feed ? '<button class="btn-small" data-rp="feed-clear">Remove</button>' : ''}</div></div>
+      ${AppState.keepInSync !== false ? this._panelCircuitsHtml(r) : ''}`;
+  },
+
+  // Keep workspaces in sync: the circuit settings the import dialog asked for
+  // live here, for every road of the plan.
+  _panelCircuitsHtml(r) {
+    const st = this._circuitNewSettings(), opt = this._circuitOpts();
+    const c = r.circuitId ? StreetLight.circuit(r.circuitId) : null;
+    const cableOpts = CableLib.options(st.cable, {
+      filter: (x) => CableLib.isDistribution(x) && !CableLib.isMV(x) && (st.system === '1ph' || Number(x.cores) >= 4),
+      groups: CableLib.reticGroups(), prefer: CableLib.reticPrefer('lv'), showAll: true,
+    });
+    return `<div class="rp-block"><div class="rp-block-h"><b>Circuits</b>${c ? `<span class="rp-cs ok">In ${escHtml(c.name)}</span>` : ''}</div>
+      <div class="sl-hint">A road with a feed point is a street-lighting circuit a moment after each edit, and a side road joins it as a spur. Luminaire, phase and name edits made in Street lighting are kept.</div>
+      <label class="rp-field rp-span2">Cable for new circuits<select data-rp-cs="cable">${cableOpts}</select></label>
+      <label class="rp-field rp-span2">System for new circuits<select data-rp-cs="system"><option value="3ph"${st.system !== '1ph' ? ' selected' : ''}>3Φ alternating R-W-B</option><option value="1ph"${st.system === '1ph' ? ' selected' : ''}>1Φ string</option></select></label>
+      <div class="rp-grid2"><label class="rp-field" title="Added to a drawn feeder route for sag, dressing and terminations">Feeder allowance, drawn %<input type="number" step="1" min="0" data-rp-cs="routePct" value="${escHtml(opt.routeAllowPct)}"></label>
+      <label class="rp-field" title="Used when no feeder route is drawn: the straight line is longer in practice">Straight line %<input type="number" step="1" min="0" data-rp-cs="straightPct" value="${escHtml(opt.straightAllowPct)}"></label></div>
+      <label class="rp-field rp-span2" title="A side road's first pole connects to the nearest pole of the road it leaves, within this distance">Connect a spur within m<input type="number" step="5" min="5" data-rp-cs="linkMax" value="${escHtml(opt.linkMaxM)}"></label></div>`;
   },
 
   // Cable runs of the current plan on the plan (poles step).
@@ -319,6 +338,78 @@ if (typeof RoadPlan !== 'undefined') Object.assign(RoadPlan, {
   },
 
   // ─── Write the plan into the circuits ────────────────────────────────
+  // Shared by the dialog (applyCircuits) and the sync pass (_roadSyncCore).
+  // st: { system, cable } for new circuits; value: the pass's override reader
+  // (spans typed in Street lighting are kept).
+  _writeCircuits(plan, st, value) {
+    let made = 0, updated = 0, firstId = null;
+    for (const pc of plan.circuits) {
+      const root = this.road(pc.rootId);
+      const src = root.feed.source;
+      let c = this._circuitFor(pc.rootId);
+      if (!c) {
+        c = StreetLight._recall('circuits', 'road:' + pc.rootId);
+        if (!c) {
+          c = StreetLight._newCircuit(src, { roadKey: pc.rootId, system: st.system, cable: st.cable });
+          c.name = `${c.name} (${root.name})`;
+        }
+        StreetLight.circuits.push(c); made++;
+      } else { c.source = src; updated++; }
+      const old = new Map(c.poles.filter(p => p.roadPoleId).map(p => [p.roadPoleId, p]));
+      const manual = c.poles.filter(p => !p.roadPoleId);
+      const idOf = new Map(), next = [], kept = new Set();
+      for (const sp of pc.poles) {
+        const prev = old.get(sp.rid) || StreetLight._recall('poles', 'road:' + sp.rid);
+        const p = prev || { id: StreetLight._genPoleId(), name: null, luminaireId: sp.ph ? 'ph:' + sp.ph : null, phase: null };
+        p.roadPoleId = sp.rid;
+        if (!p.name) p.name = StreetLight._nextPoleName({ poles: next.concat(manual) });
+        p.spacingM = StreetLight._span(p, sp.spanM, value);
+        idOf.set(sp.rid, p.id); kept.add(sp.rid);
+        p.parent = sp.parent ? idOf.get(sp.parent) : null;
+        next.push(p);
+      }
+      for (const [rid, p] of old) if (!kept.has(rid)) StreetLight._remember('poles', 'road:' + rid, p);
+      c.poles = next.concat(manual);
+      for (const id of pc.roadIds) { const r = this.road(id); if (r) r.circuitId = c.id; }
+      if (!firstId) firstId = c.id;
+    }
+    return { made, updated, firstId };
+  },
+
+  // The sync pass: every road with a feed point (and the side roads joining
+  // it) is a circuit, with the road plan's own circuit settings for new ones.
+  // A circuit whose road lost its feed point (or was deleted) is removed and
+  // remembered. Roads a spur cannot reach go on the Issues list.
+  _roadSyncCore(opts = {}) {
+    const out = { removed: [] };
+    const has = this.roads.some(r => r.feed) || StreetLight.circuits.some(c => c.roadKey);
+    if (!has) return out;
+    const plan = this._circuitPlan(null, this._circuitOpts());
+    const st = this._circuitNewSettings();
+    // Roads gone from the plan (or without poles) drop out of their circuit.
+    const roots = new Set(plan.circuits.map(c => c.rootId));
+    this._writeCircuits(plan, st, opts.value);
+    const inPlan = new Set(); for (const c of plan.circuits) for (const id of c.roadIds) inPlan.add(id);
+    for (const r of this.roads) if (r.circuitId && !inPlan.has(r.id)) delete r.circuitId;
+    StreetLight._prune(c => c.roadKey && !roots.has(c.roadKey), c => 'road:' + c.roadKey, p => p.roadPoleId ? 'road:' + p.roadPoleId : null, out);
+    if (opts.issue) {
+      for (const sk of plan.skipped) {
+        if (!/^no pole of/.test(sk.reason)) continue;
+        const r = this.road(sk.roadId);
+        opts.issue('rp-spur:' + sk.roadId, `Road plan: ${(r && r.name) || 'a side road'} is in no circuit — ${sk.reason}.`);
+      }
+    }
+    return out;
+  },
+
+  // System and cable for circuits the road plan makes (its own settings).
+  _circuitNewSettings() {
+    const s = this.rp.settings;
+    const system = s.circuitSystem === '1ph' ? '1ph' : (s.circuitSystem || StreetLight.defaults.system || '3ph');
+    const cab = s.circuitCable && CableLib.byName(s.circuitCable) ? s.circuitCable : StreetLight._defaultCable(system);
+    return { system, cable: cab };
+  },
+
   async applyCircuits(plan, st) {
     if (!plan || !plan.circuits.length) return;
     // Differences against circuits made earlier from the same road.
@@ -334,34 +425,9 @@ if (typeof RoadPlan !== 'undefined') Object.assign(RoadPlan, {
       if (added || removed || changed) lines.push(`${ex.name}: ${added} pole${added === 1 ? '' : 's'} added, ${removed} removed, ${changed} span${changed === 1 ? '' : 's'} changed.`);
     }
     if (lines.length && !(await UI.confirm(`Update the circuits from the road plan?\n\n${lines.join('\n')}\n\nLuminaire, phase and name edits and poles added by hand are kept.`))) return;
-    let made = 0, updated = 0, firstId = null;
-    for (const pc of plan.circuits) {
-      const root = this.road(pc.rootId);
-      const src = root.feed.source;
-      let c = this._circuitFor(pc.rootId);
-      if (!c) {
-        c = StreetLight._newCircuit(src, { roadKey: pc.rootId, system: st.system, cable: st.cable });
-        c.name = `${c.name} (${root.name})`;
-        StreetLight.circuits.push(c); made++;
-      } else { c.source = src; updated++; }
-      const old = new Map(c.poles.filter(p => p.roadPoleId).map(p => [p.roadPoleId, p]));
-      const manual = c.poles.filter(p => !p.roadPoleId);
-      const idOf = new Map(), next = [];
-      for (const sp of pc.poles) {
-        const prev = old.get(sp.rid);
-        const p = prev || { id: StreetLight._genPoleId(), name: null, luminaireId: sp.ph ? 'ph:' + sp.ph : null, phase: null };
-        p.roadPoleId = sp.rid;
-        if (!p.name) p.name = StreetLight._nextPoleName({ poles: next.concat(manual) });
-        p.spacingM = sp.spanM;
-        idOf.set(sp.rid, p.id);
-        p.parent = sp.parent ? idOf.get(sp.parent) : null;
-        next.push(p);
-      }
-      c.poles = next.concat(manual);
-      for (const id of pc.roadIds) { const r = this.road(id); if (r) r.circuitId = c.id; }
-      if (!firstId) firstId = c.id;
-    }
-    StreetLight._selId = firstId;
+    const w = this._writeCircuits(plan, st, null);
+    StreetLight._selId = w.firstId;
+    const made = w.made, updated = w.updated;
     this._commit();
     StreetLight._afterMutate(true);
     UI.toast(`Street lighting: ${made} new, ${updated} updated circuit${made + updated === 1 ? '' : 's'} from the road plan.`, 'success', 5000);

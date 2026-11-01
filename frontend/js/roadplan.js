@@ -1711,7 +1711,7 @@ const RoadPlan = {
         <div class="rp-actions"><button class="btn-small btn-primary" data-rp="relayout">Lay out again</button><label class="rl-inline"><input type="checkbox" data-rp="keepmoved"${this._keepMoved === false ? '' : ' checked'}> Keep poles I moved</label></div></div>
       ${selHtml}
       ${this._panelFeed(r)}
-      <div class="rp-block"><div class="rp-block-h"><b>Pole schedule · ${poles.length}</b><button class="btn-small" data-rp="circuit" title="Create or update street-lighting circuits and their cables from the road plan">Circuits and cables…</button></div>
+      <div class="rp-block"><div class="rp-block-h"><b>Pole schedule · ${poles.length}</b>${AppState.keepInSync !== false ? '' : '<button class="btn-small" data-rp="circuit" title="Create or update street-lighting circuits and their cables from the road plan">Circuits and cables…</button>'}</div>
         <div class="rp-sched"><table class="rl-table"><thead><tr><th>Pole</th><th>Ch m</th><th>Side</th><th title="To the previous pole on the same side">Gap m</th><th></th></tr></thead><tbody>${rows}</tbody></table></div></div>
       <div class="rp-actions"><button class="btn-small" data-rp-step="1">← Road shape</button><button class="btn-small btn-primary" data-rp-step="3">Calculate the light →</button></div></div>`;
   },
@@ -1787,7 +1787,19 @@ const RoadPlan = {
     if (this._view3d && Road3D.onChange(e)) return;
     const t = e.target, d = t.dataset;
     const r = this.selRoad;
-    if (d.rpFeed === 'pole') { if (r && r.feed) { if (t.value) r.feed.poleId = t.value; else delete r.feed.poleId; this._commit(); this.render(); } return; }
+    if (d.rpCs) {
+      // The road plan's own circuit settings (Keep workspaces in sync).
+      const st = this.rp.settings, k = d.rpCs;
+      if (k === 'system') { st.circuitSystem = t.value; delete st.circuitCable; }
+      else if (k === 'cable') { if (t.value === '__all__') return; st.circuitCable = t.value; }
+      else if (k === 'routePct') st.feederRoutePct = Math.max(0, this._num(t.value, 5));
+      else if (k === 'straightPct') st.feederStraightPct = Math.max(0, this._num(t.value, 15));
+      else if (k === 'linkMax') st.linkMaxM = Math.max(5, this._num(t.value, 60));
+      this._cp = null;
+      this._commit(); this.render();
+      return;
+    }
+        if (d.rpFeed === 'pole') { if (r && r.feed) { if (t.value) r.feed.poleId = t.value; else delete r.feed.poleId; this._commit(); this.render(); } return; }
     if (d.rpFeed === 'source') { const [k, ...id] = t.value.split(':'); this._feedSrc = { kind: k, id: id.join(':') }; if (r && r.feed) { r.feed.source = this._feedSrc; this._commit(); } this.render(); return; }
     if (d.rpGap !== undefined) { this._gapTol = Math.max(0, +t.value || 0); if (this._pickSrc) this._rechain(); return; }
     if (d.rp === 'snap') { this._snap = t.checked; return; }

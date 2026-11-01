@@ -13,7 +13,7 @@
  *  · no undo snapshots while the pass writes;
  *  · a routine that throws becomes an Issues entry and the others still run;
  *  · old project → adopt pass pending on open; a project saved now → not;
- *  · the Reticulation, Building and single-line feeder routines are registered.
+ *  · the Reticulation, street-lighting, Building and single-line feeder routines are registered.
  *
  * Run:  node frontend/tests/test_sync_pass.mjs   (exit code 1 on failure)
  */
@@ -186,8 +186,8 @@ await ok('an old project opens with an adopt pass pending; one saved now does no
   deq(A.syncOverrides, { 'len:dst': { v: 1, src: 2 } });
 });
 
-await ok('the Reticulation, Building and single-line feeder routines are registered, in order', () => {
-  deq(builtIn.map(r => r.id), ['retic', 'building', 'sld-feeder-ways']);
+await ok('the Reticulation, street-lighting, Building and single-line feeder routines are registered, in order', () => {
+  deq(builtIn.map(r => r.id), ['retic', 'streetlight', 'building', 'sld-feeder-ways']);
 });
 
 await wait();
