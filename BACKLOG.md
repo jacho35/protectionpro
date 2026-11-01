@@ -107,6 +107,29 @@ section and adding the `## Completed` entry.
 93. **Schedules page: way details form** — selecting a way opens a form on the right (all fields, check breakdown, suggested fix, prev/next way). *(Circuit schedule redesign)*
 
 
+### UX workflow plan — in this order (2026-11-01 review)
+
+94. **Speed fixes before auto-sync** — index the board lookup in plan circuits; Street lighting recalculates only the circuits whose inputs changed. *(UX Workflow Plan, PR 3)*
+95. **Out-of-date results** — an edit no longer clears results; every study stays visible, dimmed, with an "Out of date · Re-run" chip. Also replaces the single-line "results cleared" notice. *(UX Workflow Plan, PR 4)*
+96. **Sync pass** — `sync.js` on the `AppState.dirty` hook: debounced, never mid-drag, no undo snapshots, visible workspace only; dialogs become notices and Issues; "Keep workspaces in sync" project setting (old projects keep differing values as overrides). *(UX Workflow Plan, PR 5)*
+97. **Building auto-sync** — boards, feeders, devices → ways and feeder ways through the pass; deletes everywhere with Undo; removes "Sync with SLD" / "Sync circuits". *(UX Workflow Plan, PR 6)*
+98. **Reticulation auto-sync** — site plan → Demand incl. deletions; length overrides with Reset; "Not placed yet" tray; removes Output › Push and the kiosk "Not in Demand yet" note. *(UX Workflow Plan, PR 7)*
+99. **Street lighting auto-sync** — site-plan poles and road-plan circuits through the pass; removes "Sync from site plan" / "Import from road plan". *(UX Workflow Plan, PR 8)*
+100. **Demand → single line** — ADMD in the background; minisub loads follow; the transformer follows only while Demand is on Auto; removes "Push demand to SLD". *(UX Workflow Plan, PR 9)*
+101. **Link marks and one link table** — fields owned elsewhere show a link mark; today's link fields become one table, migrated on open. *(UX Workflow Plan, PR 10)*
+102. **Results view switch** — study chips with status dots on the canvas and a Values popover; replaces the Results-menu toggles and the Project details checkboxes. *(UX Workflow Plan, PR 11)*
+103. **Results panel** — docked right or bottom by diagram shape, remembered, pop-out; tabs, sortable tables, row ↔ part linking, Needs attention; replaces the load flow / short circuit / arc flash / cable sizing / duty result dialogs. *(UX Workflow Plan, PR 12)*
+104. **Remaining studies in the results panel** — harmonics, motor starting, stability, contingency and the rest. *(UX Workflow Plan, PR 13)*
+105. **Overview and Issues per project type** — Overview tabs for Reticulation, Building and Network; Issues as a results-panel tab. *(UX Workflow Plan, PR 14)*
+106. **Start screen and sample projects** — first sign-in and Project › New only; one sample per type. *(UX Workflow Plan, PR 15)*
+107. **Help and Settings per project type** *(UX Workflow Plan, PR 16)*
+108. **Project settings page** — project values in one page; the gear keeps personal preferences. *(UX Workflow Plan, PR 17)*
+109. **Save-state chip and autosave** *(UX Workflow Plan, PR 18)*
+110. **Ctrl K across workspaces** — kiosks, erven, boards, ways, circuits, rooms. *(UX Workflow Plan, PR 19)*
+111. **Analyse menu and Study Manager** — common group first, disabled entries with a reason, last run / out-of-date / fails in the Study Manager. *(UX Workflow Plan, PR 20)*
+112. **Property panels and shared toolbar layout** — "Used by" hints, a filter, rules as placeholders; one header layout for every workspace. *(UX Workflow Plan, PR 21)*
+113. **Undo names, project history, one Cases concept** — scoped when item 112 is done. *(UX Workflow Plan, PR 22)*
+
 ### Large or long-horizon — scope decision needed before starting
 
 47. **Standard + user-defined dynamic model library** — GENROU/EXST1/GAST and a DSL/Modelica/UDM mechanism. Large sustained investment; machine/AVR/governor models are fixed built-ins today. *(DIgSILENT / PSS Additions)*
@@ -426,6 +449,14 @@ Room and outdoor lighting design (Plan › Lighting mode + Lighting workspace) c
 Help ▸ Guides (`frontend/js/help-guides.js`, pictures in `frontend/img/help/`) holds task walkthroughs with annotated screenshots. A guide is data; each picture names a setup in `testing/help-guides/setups.mjs`, so adding a guide is: write the steps + callouts in `HELP_GUIDES`, add its setup, run `node testing/help-guides/capture.mjs`. Guides are searchable from Ctrl K and the Help article search.
 
 **Still to write** (index items 82–92): Quantities, Reticulation/Demand, Interlock, revisions and sharing, accounts and admin, reports and export, scenarios, control circuits / changeover / off-page, Plan basics, notifications, plus deeper coverage of the Study Manager, Settings and the ampacity / compliance / Wenner dialogs. Road lighting and the core single line are done (see Completed). The MCP server and Python client are API tools, so they probably don't belong in Help.
+
+## UX Workflow Plan
+
+UI/UX workflow review of 2026-11-01 (`reviews/ux-workflow-review/`): 22 PRs in six phases, each reviewed before the next starts. Decisions: one source of truth with no sync buttons (deletes everywhere with Undo, typed values kept as overrides with Reset, old projects open with overrides, the transformer follows Demand only on Auto); stale results stay visible, dimmed; the results panel docks by diagram shape and replaces the result dialogs; the start screen shows on first sign-in and Project › New only.
+
+- ~~**PR 1 — Duty Check server error**~~ — done 2026-11-01 (#578).
+- ~~**PR 2 — Small fixes**~~ — done 2026-11-01: BOQ data issues, Ctrl K badge, schedule pinned-block divider, property input widths, phone empty-canvas hint, Fit after a template, site-plan click toast. Two of the review's small fixes moved into later items: the single-line "results cleared" notice (PR 4) and the kiosk "Not in Demand yet" note (PR 7).
+- **PR 3–22** — see the index above (items 94–113).
 
 ## Completed
 
@@ -1785,3 +1816,4 @@ Help ▸ Guides (`frontend/js/help-guides.js`, pictures in `frontend/img/help/`)
 - **DB single line legend** (2026-10-30): a small key in the top-right corner of the drawing (exports too) for the switches that are on — breaker / line colour by circuit-check result (passed, warning, failed, not checked), phase colours, and earth leakage / contactor / energy meter. The drawing widens on a narrow board to make room. (`dbdrawing.js`)
 - **Bypass for directly switched circuits** (2026-10-30): a "Switched direct (no contactor)" circuit takes an optional bypass round its contact — a Bypass switch (Auto / On) or an Auto – Off – On selector — with its own tag, rating (blank = the largest MCB), mounting (door / DIN rail) and an optional amber door lamp lit while bypassed. The editor's new Bypass section shows the PEC wiring (supply to On past the photocell, Load to Auto). Checks warn if the bypass is below the breaker and note that On overrides the sensor; the board single line draws a photocell circuit — or a timer / thermostat circuit with a bypass (its contact in place of the PEC) — as its wiring (PEC with Line / Load / N, selector Auto and On, the supply leg past the PEC, the lamp wired live → neutral through the selector's aux contact with a dashed link), a direct circuit with no bypass and no photocell keeps the contact symbol, and a row in the control device table; the GA gets the DIN modules, the BOQ a switch/selector line and a lamp line, and the schedule tooltip, mobile sheet and DXF attributes carry the tag.
 - **Duty check returned an error on some networks** (2026-11-01): with motors on an LV bus behind a transformer (one behind a cable), the fault engine's branch currents came back as NumPy numbers, so Analyse ▸ Duty Check stopped with a server error; the same values also slipped past the making and asymmetric-breaking Fail tests, so an MV breaker short of either rating would not have been failed. The duty check now converts the fault results to plain numbers and every check to a plain yes/no; tests cover the route, the result types and the Fail verdict.
+- **UX small fixes** (2026-11-01): Quantities ▸ BOQ data issues show their text again (they rendered as empty bullets); Ctrl K lists "Libraries…" without the hidden badge's "0"; the schedule grid draws the divider of its pinned blocks (a scrolled group header no longer runs into "CHECK"), and group labels stay in view while their columns scroll under a pinned block; property inputs keep at least 56 px and a long label ("Thermal Pickup (630 A)") wraps instead; the phone's empty single line says "Tap Parts to add a component"; loading a template fits it to the view; clicking a kiosk on the site plan selects it without the "6 items here" notice (a second click still cycles).

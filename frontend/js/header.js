@@ -56,7 +56,7 @@ const Header = {
     const seen = new Set();
     const text = (el) => {
       const c = el.cloneNode(true);
-      c.querySelectorAll('.dropdown-shortcut, .tb-sr, .k, svg, select').forEach(n => n.remove());
+      c.querySelectorAll('.dropdown-shortcut, .tb-sr, .k, .notif-badge, svg, select').forEach(n => n.remove());
       return c.textContent.replace(/\s+/g, ' ').trim();
     };
     const add = (btn, where, labelOverride) => {
