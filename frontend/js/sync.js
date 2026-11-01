@@ -197,6 +197,13 @@ const Sync = {
       label: 'plan',
       show: (v) => (v == null || v === '' ? '—' : `${(+v * 1000).toFixed(1).replace(/\.0$/, '')} m`),
     },
+    {
+      // A minisub's diversified load on the single line (Demand's ADMD).
+      match: (comp, key) => comp.type === 'static_load' && key === 'rated_kva' && comp.reticMinisubId && comp.reticRole === 'load',
+      key: (comp) => 'kva:' + comp.reticMinisubId,
+      label: 'Demand',
+      show: (v) => (v == null || v === '' ? '—' : `${(+v).toFixed(1).replace(/\.0$/, '')} kVA`),
+    },
   ],
   _owned(comp, key) { return (comp && this.OWNED.find(o => o.match(comp, key))) || null; },
 
@@ -311,6 +318,25 @@ Sync.register({
     }
     const changed = PlanSync.buildingFingerprint() !== before;
     if (changed) { ctx.touch('sld'); ctx.touch('plan'); ctx.touch('schedules'); }
+    return changed;
+  },
+});
+
+// ── Routine: Demand → single line (retic.js) ──
+// Each minisub's transformer → LV bus → load stack follows Demand: the load is
+// the diversified demand from ADMD (run in the background when Demand's
+// inputs change), the transformer follows Demand's pick (on Auto, the
+// smallest unit covering the demand). Starts once the first stack is on the
+// single line ("Add to the single line" in Demand). Replaces "Push demand to
+// SLD".
+Sync.register({
+  id: 'demand-sld',
+  order: 60,
+  label: 'Demand → single line',
+  run(ctx) {
+    if (typeof Retic === 'undefined' || !AppState.reticulation) return false;
+    const changed = Retic.syncToSLD(ctx);
+    if (changed) { ctx.touch('sld'); ctx.touch('retic'); }
     return changed;
   },
 });

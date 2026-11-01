@@ -1158,5 +1158,8 @@ body.dark-mode .pw-tip { background: #33374d; border: 1px solid #454a63; }
   background: var(--bg-primary); color: var(--text-primary); font-size: 10px; cursor: pointer;
 }
 .prop-sync-reset:hover { background: var(--bg-secondary); }
+/* The note sits on its own line under the input, at its right-hand end. */
+.prop-row--sync { flex-wrap: wrap; row-gap: 4px; }
+.prop-sync-line { flex: 1 0 100%; box-sizing: border-box; display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 4px 6px; min-width: 0; }
 body.dark-mode .prop-sync-flag { background: #13283f; border-color: #2f5f93; color: #9ec5f0; }
 body.dark-mode .prop-sync-flag--typed { background: #3a2f0b; border-color: #8a6d1a; color: #ffd76a; }
