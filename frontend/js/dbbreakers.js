@@ -344,8 +344,7 @@ const BreakerSet = {
     for (const b of scope) if (b.id !== comp.id) DBSchedule.recompute(b);
     if (!DBSchedule.commit()) {
       AppState.dirty = true;
-      if (typeof Properties !== 'undefined') Properties._notifyResultsCleared();
-      AppState.clearResults();
+      AppState.invalidateResults();
       if (typeof UndoManager !== 'undefined') UndoManager.snapshot();
     }
     DBSchedule.render();

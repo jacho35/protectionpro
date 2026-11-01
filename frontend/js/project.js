@@ -890,8 +890,10 @@ const Project = {
   // After loading a project, warn if any persisted study result was computed on
   // an older app/engine version — it is shown for reference but must be re-run.
   _noticeStaleResults() {
+    // Only results from an earlier version: ones out of date because of an
+    // edit were already flagged before saving, and the chip shows them.
     const stale = (typeof AppState.staleResultSlots === 'function')
-      ? AppState.staleResultSlots() : [];
+      ? AppState.staleResultSlots().filter(s => AppState.staleReason(s) === 'version') : [];
     if (!stale.length) return;
     const names = stale.map(s => (typeof RESULT_SLOT_LABELS !== 'undefined'
       && RESULT_SLOT_LABELS[s]) || s);

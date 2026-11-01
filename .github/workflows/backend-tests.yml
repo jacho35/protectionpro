@@ -66,6 +66,8 @@ jobs:
         run: node frontend/tests/test_db_el_units.mjs
       - name: Sync speed fixes (board index, street-lighting changed circuits only)
         run: node frontend/tests/test_sync_speed.mjs
+      - name: Out-of-date study results (network signature, kept after an edit)
+        run: node frontend/tests/test_stale_results.mjs
 
       - name: Raw HTML interpolation ratchet (new unescaped attribute values fail)
         run: node testing/lint/raw-interp.mjs --max 0

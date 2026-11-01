@@ -469,8 +469,7 @@ const Properties = {
         if (comp && !isNaN(resetValue)) {
           comp.props[fieldKey] = resetValue;
           AppState.dirty = true;
-          this._notifyResultsCleared();
-          AppState.clearResults();
+          AppState.invalidateResults();
           if (typeof UndoManager !== 'undefined') UndoManager.snapshot();
           Canvas.render();
           this.show(comp.id);
@@ -488,8 +487,7 @@ const Properties = {
         if (comp && fieldKey in comp.props) {
           delete comp.props[fieldKey];
           AppState.dirty = true;
-          this._notifyResultsCleared();
-          AppState.clearResults();
+          AppState.invalidateResults();
           if (typeof UndoManager !== 'undefined') UndoManager.snapshot();
           Canvas.render();
           this.show(comp.id);
@@ -556,8 +554,7 @@ const Properties = {
         if (!c) return;
         c.props.reverse = !c.props.reverse;
         AppState.dirty = true;
-        this._notifyResultsCleared();
-        AppState.clearResults();
+        AppState.invalidateResults();
         if (typeof UndoManager !== 'undefined') UndoManager.snapshot();
         Canvas.render();
         this.show(c.id);
@@ -1115,8 +1112,7 @@ const Properties = {
         }
         this._cbPickReset(comp, 0);   // the picked device's values are the new starting point
         AppState.dirty = true;
-        this._notifyResultsCleared();
-        AppState.clearResults();
+        AppState.invalidateResults();
         if (typeof UndoManager !== 'undefined') UndoManager.snapshot();
         Canvas.render();
         this.show(comp.id);
@@ -1137,8 +1133,7 @@ const Properties = {
         }
         this._cbPickReset(comp, +coLeg[1]);
         AppState.dirty = true;
-        this._notifyResultsCleared();
-        AppState.clearResults();
+        AppState.invalidateResults();
         if (typeof UndoManager !== 'undefined') UndoManager.snapshot();
         Canvas.render();
         this.show(comp.id);
@@ -1151,8 +1146,7 @@ const Properties = {
         this.applyStandardType(comp, e.target.dataset.library, value);
       }
       AppState.dirty = true;
-      this._notifyResultsCleared();
-      AppState.clearResults();
+      AppState.invalidateResults();
       Canvas.render();
       this.show(comp.id); // re-render to show filled values
       return;
@@ -1161,8 +1155,7 @@ const Properties = {
     if (field === 'linked_to' && comp.type === 'offpage_connector') {
       this._linkOffpage(comp, value);
       AppState.dirty = true;
-      this._notifyResultsCleared();
-      AppState.clearResults();
+      AppState.invalidateResults();
       if (typeof UndoManager !== 'undefined') UndoManager.snapshot();
       Canvas.render();
       this.show(comp.id);
@@ -1224,8 +1217,7 @@ const Properties = {
         Canvas.render();
         return;
       }
-      this._notifyResultsCleared();
-      AppState.clearResults();
+      AppState.invalidateResults();
       VoltagePropagation.propagateFromBusChange(comp.id, value, () => {
         Canvas.render();
       });
@@ -1247,8 +1239,7 @@ const Properties = {
           typeof AppState !== 'undefined' && AppState.lfPreviewCaseId) {
         LFStudy.clearPreview();
       }
-      this._notifyResultsCleared();
-      AppState.clearResults();
+      AppState.invalidateResults();
       if (typeof UndoManager !== 'undefined') UndoManager.snapshot();
     }
     Canvas.render();
@@ -1419,21 +1410,6 @@ const Properties = {
     } else if (lvIsGrounded && es === 'IT') {
       comp.props.earthing_system = 'TN-S';
     }
-  },
-
-  // Notify once that stale analysis results were cleared by an edit.
-  // Only fires when there were results to clear, so it appears once per
-  // editing session (results stay cleared until studies are re-run).
-  _notifyResultsCleared() {
-    const had = AppState.faultResults || AppState.loadFlowResults ||
-      AppState.unbalancedLoadFlowResults || AppState.arcFlashResults ||
-      AppState.dcArcFlashResults || AppState.cableSizingResults ||
-      AppState.motorStartingResults || AppState.dutyCheckResults ||
-      AppState.loadDiversityResults || AppState.groundingResults ||
-      AppState.studyManagerResults;
-    if (!had) return;
-    const el = document.getElementById('status-info');
-    if (el) el.textContent = 'Analysis results cleared — re-run studies after editing.';
   },
 
   // ═══ Per-cable IEC 60364-5-52 installed-ampacity calculator ══════════════
@@ -1764,8 +1740,7 @@ const Properties = {
     }
     this._writeAmpacity(comp, s);
     AppState.dirty = true;
-    this._notifyResultsCleared();
-    AppState.clearResults();
+    AppState.invalidateResults();
     if (typeof UndoManager !== 'undefined') UndoManager.snapshot();
     Canvas.render();
     this._hideAmpacityModal();
@@ -1778,8 +1753,7 @@ const Properties = {
     const e = comp.props.standard_type ? CableLib.byId(comp.props.standard_type) : null;
     if (e) comp.props.rated_amps = e.rated_amps;
     AppState.dirty = true;
-    this._notifyResultsCleared();
-    AppState.clearResults();
+    AppState.invalidateResults();
     if (typeof UndoManager !== 'undefined') UndoManager.snapshot();
     Canvas.render();
     this.show(comp.id);
@@ -2776,8 +2750,7 @@ ${br.loading_pct > 0 ? `Loading = ${br.loading_pct.toFixed(1)}%${br.loading_pct 
           this.applyStandardType(comp, libraryType, val);
         }
         AppState.dirty = true;
-        this._notifyResultsCleared();
-        AppState.clearResults();
+        AppState.invalidateResults();
         Canvas.render();
         wrapper.classList.remove('open');
         this.show(comp.id);

@@ -24,8 +24,8 @@ const Compliance = {
       baseMVA: AppState.baseMVA,
       frequency: AppState.frequency,
       timestamp: new Date().toISOString(),
-      hasFault: !!(AppState.faultResults && AppState.faultResults.buses && Object.keys(AppState.faultResults.buses).length > 0),
-      hasLoadFlow: !!(AppState.loadFlowResults && AppState.loadFlowResults.buses && Object.keys(AppState.loadFlowResults.buses).length > 0),
+      hasFault: !!(AppState.freshResult('faultResults') && AppState.freshResult('faultResults').buses && Object.keys(AppState.freshResult('faultResults').buses).length > 0),
+      hasLoadFlow: !!(AppState.freshResult('loadFlowResults') && AppState.freshResult('loadFlowResults').buses && Object.keys(AppState.freshResult('loadFlowResults').buses).length > 0),
       sections: [],
       totals: { pass: 0, fail: 0, warn: 0, info: 0 },
     };
@@ -93,7 +93,7 @@ const Compliance = {
       return section;
     }
 
-    const faultBuses = AppState.faultResults.buses;
+    const faultBuses = AppState.freshResult('faultResults').buses;
 
     // For each bus, find connected CBs, fuses, and check breaking capacity
     for (const [busId, faultResult] of Object.entries(faultBuses)) {
@@ -233,11 +233,11 @@ const Compliance = {
       return section;
     }
 
-    if (!AppState.loadFlowResults.converged) {
+    if (!AppState.freshResult('loadFlowResults').converged) {
       section.items.push({ status: 'fail', component: '—', message: 'Load flow did NOT converge.', detail: 'Results may be unreliable. Check network configuration and bus types.' });
     }
 
-    const lfBuses = AppState.loadFlowResults.buses;
+    const lfBuses = AppState.freshResult('loadFlowResults').buses;
 
     for (const [busId, lfResult] of Object.entries(lfBuses)) {
       const busComp = AppState.components.get(busId);
@@ -291,7 +291,7 @@ const Compliance = {
       return section;
     }
 
-    const branches = AppState.loadFlowResults.branches || [];
+    const branches = AppState.freshResult('loadFlowResults').branches || [];
 
     for (const br of branches) {
       const comp = AppState.components.get(br.elementId);
@@ -383,8 +383,8 @@ const Compliance = {
       return section;
     }
 
-    const maxB = AppState.faultResults.buses;
-    const minB = AppState.faultResultsMin?.buses || null;
+    const maxB = AppState.freshResult('faultResults').buses;
+    const minB = AppState.freshResult('faultResultsMin')?.buses || null;
     const freq = Number(AppState.frequency) || 50;
     const fmtT = (t) => (t >= 100 ? t.toFixed(0) : t >= 10 ? t.toFixed(1) : t >= 1 ? t.toFixed(2) : t.toFixed(3));
     const T_ADIABATIC = 5.0; // §434.5.2 is valid up to 5 s
@@ -855,7 +855,7 @@ const Compliance = {
     const HI = 1.10;
     let checked = 0;
 
-    for (const [busId, lfResult] of Object.entries(AppState.loadFlowResults.buses)) {
+    for (const [busId, lfResult] of Object.entries(AppState.freshResult('loadFlowResults').buses)) {
       const busComp = AppState.components.get(busId);
       const nominalKV = busComp?.props?.voltage_kv ?? busComp?.props?.voltage;
       if (!nominalKV || nominalKV > LV_THRESHOLD_KV) continue; // Only LV buses
@@ -1400,11 +1400,11 @@ const Compliance = {
     // current (IEC 60909-0 §5.3.1: c_min = 0.95, hot-conductor resistance),
     // not the maximum-current study — c_max + cold conductors overstate Ik1
     // by ≥16 %, passing circuits the standard fails. app.js fetches the
-    // companion minimum study into AppState.faultResultsMin on every fault
+    // companion minimum study into AppState.freshResult('faultResultsMin') on every fault
     // run; older saved results fall back to the maximum figures with a
     // warning so the report is explicit about its basis.
-    const maxBuses = AppState.faultResults.buses;
-    const minBuses = AppState.faultResultsMin?.buses || null;
+    const maxBuses = AppState.freshResult('faultResults').buses;
+    const minBuses = AppState.freshResult('faultResultsMin')?.buses || null;
     const usingMin = !!(minBuses && Object.keys(minBuses).length > 0);
     const useBuses = usingMin ? minBuses : maxBuses;
     const basisNote = usingMin
@@ -1650,7 +1650,7 @@ const Compliance = {
   // own (`__term__<id>`, kept in fault results). → [{ key, compId, name }]
   _faultNodes(startId, through) {
     const adj = this._getAdjacency();
-    const results = AppState.faultResults?.buses || {};
+    const results = AppState.freshResult('faultResults')?.buses || {};
     const visited = new Set([startId]);
     const queue = [startId];
     const out = [];
@@ -1829,7 +1829,7 @@ const Compliance = {
 
 
   _hasFault() {
-    return !!(AppState.faultResults && AppState.faultResults.buses && Object.keys(AppState.faultResults.buses).length > 0);
+    return !!(AppState.freshResult('faultResults') && AppState.freshResult('faultResults').buses && Object.keys(AppState.freshResult('faultResults').buses).length > 0);
   },
 
   // Under-rated protective devices, keyed by component id → { level, reasons }.
@@ -1883,7 +1883,7 @@ const Compliance = {
         const kaRating = parseFloat(comp.props?.breaking_capacity_ka);
         if (!(kaRating > 0)) continue;
         for (const b of this._findConnectedDevices(id, ['bus'])) {
-          const r = AppState.faultResults.buses[b.id];
+          const r = AppState.freshResult('faultResults').buses[b.id];
           if (!r || r.ik3 == null) continue;
           // [C8] Same basis as the report ([DU1]/[DU2]): the largest phase
           // current of any fault type — Ik1 exceeds Ik3 near a Dyn
@@ -1906,7 +1906,7 @@ const Compliance = {
   },
 
   _hasLoadFlow() {
-    return !!(AppState.loadFlowResults && AppState.loadFlowResults.buses && Object.keys(AppState.loadFlowResults.buses).length > 0);
+    return !!(AppState.freshResult('loadFlowResults') && AppState.freshResult('loadFlowResults').buses && Object.keys(AppState.freshResult('loadFlowResults').buses).length > 0);
   },
 
   // Resolve a cable's operating voltage: use its own voltage_kv prop when set,
@@ -1945,7 +1945,7 @@ const Compliance = {
     const comp = AppState.components.get(id);
     let dutyKa = 0, kv = 0;
     for (const b of this._findConnectedDevices(id, ['bus', 'distribution_board'])) {
-      const r = AppState.faultResults?.buses?.[b.id];
+      const r = AppState.freshResult('faultResults')?.buses?.[b.id];
       if (!r || r.ik3 == null) continue;
       const busKv = parseFloat(r.voltage_kv) || parseFloat(AppState.components.get(b.id)?.props?.voltage_kv) || 0;
       const unbal = Math.max(r.ik1 || 0, r.ikLL || 0);
@@ -2014,7 +2014,7 @@ const Compliance = {
   _findAdjacentBranchCurrents(deviceId) {
     if (!this._hasLoadFlow()) return [];
     const results = [];
-    const branches = AppState.loadFlowResults.branches || [];
+    const branches = AppState.freshResult('loadFlowResults').branches || [];
 
     // Find cables/transformers connected through this device
     const connBranches = this._findConnectedDevices(deviceId, ['cable', 'transformer']);

@@ -59,7 +59,7 @@ const dc = DbCoord.cascade(items, 0, board);
 assert(dc && dc.reinforcedKa === 25 && dc.up.label === 'DB incoming', 'DbCoord: iC60N behind NSX250F at 18 kA, 25 kA');
 assert(DbCoord.cascade([items[0], { ...items[1], ikA: null }], 0, board) == null, 'DbCoord: upstream fault level unknown — no credit');
 assert(DbCoord.cascade(items, 0, { props: { voltage_kv: 0.525 } }) == null, 'DbCoord: 525 V is outside the table Ue');
-ctx.AppState = { cascading: false };
+ctx.AppState = { cascading: false, freshResult(slot) { return this[slot] || null; } };
 assert(DbCoord.cascade(items, 0, board) == null, 'DbCoord: cascading switched off');
 
 // ─── compliance on the diagram ───
@@ -67,6 +67,7 @@ const comp = (id, type, props) => [id, { id, type, x: 0, y: 0, props }];
 const wire = (id, f, t) => [id, { id, fromComponent: f, toComponent: t }];
 function net(extra = []) {
   ctx.AppState = {
+    freshResult(slot) { return this[slot] || null; },
     cascading: true, frequency: 50,
     components: new Map([
       comp('u', 'utility', { name: 'Grid' }), comp('b2', 'bus', { name: 'LV', voltage_kv: 0.4 }),

@@ -65,12 +65,14 @@ const Collab = {
   _warned: new Map(),    // id → time of the last "also working on" heads-up
 
   init() {
-    // Wrap AppState.dirty so every existing `AppState.dirty = true` also wakes the differ.
+    // Wrap AppState.dirty so every existing `AppState.dirty = true` also wakes the differ
+    // (chained to the accessor state.js already put there, if any).
+    const prev = Object.getOwnPropertyDescriptor(AppState, 'dirty') || {};
     let value = AppState.dirty;
     Object.defineProperty(AppState, 'dirty', {
       configurable: true,
-      get() { return value; },
-      set(v) { value = v; if (v) Collab.kick(); },
+      get() { return prev.get ? prev.get.call(AppState) : value; },
+      set(v) { if (prev.set) prev.set.call(AppState, v); else value = v; if (v) Collab.kick(); },
     });
     this._origGenId = AppState.genId;
     // The open project changes through many paths (open, recent list, file manager,

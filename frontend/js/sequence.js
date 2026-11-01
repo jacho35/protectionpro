@@ -14,7 +14,7 @@ const SOO = {
   _opts: null,
 
   _faultedBuses() {
-    const fr = AppState.faultResults;
+    const fr = AppState.freshResult('faultResults');
     if (!fr || !fr.buses) return [];
     return [...AppState.components.values()]
       .filter(c => c.type === 'bus' && fr.buses[c.id])
@@ -38,7 +38,7 @@ const SOO = {
     const runBtn = document.getElementById('btn-sequence-run');
     if (!modal || !body) return;
 
-    const fr = AppState.faultResults;
+    const fr = AppState.freshResult('faultResults');
     if (!fr || !fr.buses || !Object.keys(fr.buses).length) {
       body.innerHTML = '<p style="font-size:13px;margin:4px 0">Run <strong>Fault Analysis</strong> first — the sequence study reads the fault current at each bus.</p>';
       if (runBtn) runBtn.disabled = true;

@@ -391,7 +391,7 @@ const Schedules = {
     const changed = DBSchedule.commit();
     if (changed) {
       this.render();
-      // commit() runs AppState.clearResults(), which drops the check results
+      // commit() runs AppState.invalidateResults(), which drops the check results
       // the columns are bound to. Re-run so the grid doesn't sit blank after
       // every edit burst — but only once the user has asked for a check.
       if (this._checkRan) this._scheduleCheck();

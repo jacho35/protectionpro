@@ -1265,6 +1265,9 @@ const Canvas = {
     this.renderLoadFlowArrows();
     this.renderFaultFlowArrows();
 
+    // "Out of date · Re-run" chip over the diagram
+    if (typeof StaleResults !== 'undefined') StaleResults.refresh();
+
     // Update mini-map
     if (typeof MiniMap !== 'undefined') MiniMap.render();
   },
@@ -1520,7 +1523,8 @@ const Canvas = {
       const lineHtml = lines.map((line, i) => {
         const text = typeof line === 'string' ? line : line.text;
         const fill = typeof line === 'object' && line.color ? ` fill="${line.color}"` : '';
-        return `<tspan x="${x}" dy="${i === 0 ? 0 : 12}"${fill}>${escHtml(text)}</tspan>`;
+        const staleHtml = typeof line === 'object' && line.stale ? ' class="res-stale"' : '';
+        return `<tspan x="${x}" dy="${i === 0 ? 0 : 12}"${fill}${staleHtml}>${escHtml(text)}</tspan>`;
       }).join('');
       html += `<text class="comp-data-label" data-comp-id="${comp.id}" x="${x}" y="${y}" font-size="9" font-family="var(--font-mono)" cursor="move">${lineHtml}</text>`;
     }
@@ -1559,6 +1563,7 @@ const Canvas = {
   // when "View ▸ Detailed Branch Flow" is on (AppState.branchFlowDetailed);
   // off by default keeps busier networks' labels from overlapping neighbours.
   _appendLoadFlowBranchLines(comp, lines, { showLoss = false, requirePositiveS = false } = {}) {
+    const stale = typeof StaleResults !== 'undefined' && StaleResults.isStale('loadFlowResults');
     if (!AppState.showResultBoxes.loadflow || !AppState.loadFlowResults || !AppState.loadFlowResults.branches) return;
     const branch = AppState.loadFlowResults.branches.find(b => b.elementId === comp.id);
     if (!branch) return;
@@ -1569,38 +1574,40 @@ const Canvas = {
     const qStr = Math.abs(branch.q_mvar) >= 1 ? `${branch.q_mvar.toFixed(2)} MVAr` : `${(branch.q_mvar * 1000).toFixed(1)} kVAr`;
     const loadStr = branch.loading_pct > 0 ? `${branch.loading_pct.toFixed(1)}%` : null;
 
-    lines.push({text: '───────', color: loadColor});
-    lines.push({text: `P: ${pStr}`, color: loadColor});
+    lines.push({stale, text: '───────', color: loadColor});
+    lines.push({stale, text: `P: ${pStr}`, color: loadColor});
     if (AppState.branchFlowDetailed) {
-      lines.push({text: `Q: ${qStr}`, color: loadColor});
-      if (branch.i_amps > 0) lines.push({text: `I: ${branch.i_amps.toFixed(1)} A`, color: loadColor});
-      if (loadStr != null) lines.push({text: `Load: ${loadStr}`, color: loadColor});
-      if (showLoss && branch.losses_mw > 0) lines.push({text: `Loss: ${this._fmtLossLine(branch.losses_mw)}`, color: loadColor});
+      lines.push({stale, text: `Q: ${qStr}`, color: loadColor});
+      if (branch.i_amps > 0) lines.push({stale, text: `I: ${branch.i_amps.toFixed(1)} A`, color: loadColor});
+      if (loadStr != null) lines.push({stale, text: `Load: ${loadStr}`, color: loadColor});
+      if (showLoss && branch.losses_mw > 0) lines.push({stale, text: `Loss: ${this._fmtLossLine(branch.losses_mw)}`, color: loadColor});
     } else if (loadStr != null) {
-      lines.push({text: `Load: ${loadStr}`, color: loadColor});
+      lines.push({stale, text: `Load: ${loadStr}`, color: loadColor});
     }
   },
 
   _appendFaultBranchLines(comp, lines) {
+    const stale = typeof StaleResults !== 'undefined' && StaleResults.isStale('faultResults');
     const br = this._findFaultBranch(comp);
     if (!br || br.ik_ka <= 0) return;
     const faultColor = '#b71c1c';
-    lines.push({text: '── FAULT ──', color: faultColor});
-    lines.push({text: `If: ${br.ik_ka.toFixed(2)} kA`, color: faultColor});
+    lines.push({stale, text: '── FAULT ──', color: faultColor});
+    lines.push({stale, text: `If: ${br.ik_ka.toFixed(2)} kA`, color: faultColor});
     if (br.contribution_pct > 0) {
-      lines.push({text: `(${br.contribution_pct.toFixed(1)}%)`, color: faultColor});
+      lines.push({stale, text: `(${br.contribution_pct.toFixed(1)}%)`, color: faultColor});
     }
   },
 
   _appendDCLoadFlowSourceLines(comp, lines) {
+    const stale = typeof StaleResults !== 'undefined' && StaleResults.isStale('dcLoadFlowResults');
     if (!AppState.showResultBoxes.dcLoadflow || !AppState.dcLoadFlowResults) return;
     const src = (AppState.dcLoadFlowResults.sources || []).find(s => s.source_id === comp.id);
     if (!src) return;
     const c = src.current_limited ? '#d32f2f' : (src.loading_pct > 80 ? '#f57c00' : '#2e7d32');
-    lines.push({text: '───────', color: c});
-    lines.push({text: `${src.voltage_v.toFixed(1)} V`, color: c});
-    lines.push({text: `${src.current_a.toFixed(1)} A`, color: c});
-    if (src.loading_pct > 0) lines.push({text: `Load: ${src.loading_pct.toFixed(0)}%`, color: c});
+    lines.push({stale, text: '───────', color: c});
+    lines.push({stale, text: `${src.voltage_v.toFixed(1)} V`, color: c});
+    lines.push({stale, text: `${src.current_a.toFixed(1)} A`, color: c});
+    if (src.loading_pct > 0) lines.push({stale, text: `Load: ${src.loading_pct.toFixed(0)}%`, color: c});
   },
 
   // Show red warning circles on unconnected ports
@@ -1627,6 +1634,7 @@ const Canvas = {
     if (!AppState.loadFlowResults || !AppState.loadFlowResults.branches) return;
 
     const pageComps = AppState.getActivePageComponents();
+    const flagCls = 'overload-flag' + (typeof StaleResults !== 'undefined' ? StaleResults.cls('loadFlowResults') : '');
     let html = '';
     for (const branch of AppState.loadFlowResults.branches) {
       if (!branch.loading_pct || branch.loading_pct <= 100) continue;
@@ -1639,7 +1647,7 @@ const Canvas = {
       const pct = branch.loading_pct.toFixed(0);
 
       html += `
-        <g class="overload-flag" transform="translate(${x},${y})">
+        <g class="${flagCls}" transform="translate(${x},${y})">
           <polygon points="-2,-12 2,-12 3,0 -3,0" fill="#d32f2f"/>
           <polygon points="-7,0 7,0 7,-4 0,-12 -7,-4" fill="#d32f2f"/>
           <rect x="-18" y="1" width="36" height="13" rx="2" fill="#d32f2f"/>
@@ -1665,7 +1673,7 @@ const Canvas = {
         const label = result.voltage_pu < 0.95 ? 'LOW' : 'HIGH';
 
         html += `
-          <g class="overload-flag" transform="translate(${x},${y})">
+          <g class="${flagCls}" transform="translate(${x},${y})">
             <polygon points="-2,-12 2,-12 3,0 -3,0" fill="#d32f2f"/>
             <polygon points="-7,0 7,0 7,-4 0,-12 -7,-4" fill="#d32f2f"/>
             <rect x="-28" y="1" width="56" height="13" rx="2" fill="#d32f2f"/>
@@ -1684,6 +1692,7 @@ const Canvas = {
     if (!AppState.showFlowArrows.loadflow || !AppState.loadFlowResults) return;
     const branches = AppState.loadFlowResults.branches || [];
     if (branches.length === 0) return;
+    const lfStale = (typeof StaleResults !== 'undefined' ? StaleResults.cls('loadFlowResults') : '');
 
     // Index branches by elementId for fast lookup
     const branchByElem = new Map();
@@ -1728,7 +1737,7 @@ const Canvas = {
       // Flip arrow when real power flows opposite to the branch's from→to direction
       const isForward = branch.p_mw >= 0 ? forward : !forward;
 
-      html += this._buildArrowSvg(id, wire, fromComp, toComp, isForward, color, 'loadflow-arrow');
+      html += this._buildArrowSvg(id, wire, fromComp, toComp, isForward, color, 'loadflow-arrow' + lfStale);
     }
 
     if (html) {
@@ -1742,6 +1751,7 @@ const Canvas = {
     const faultedBusId = AppState.faultedBusId;
     const busResult = AppState.faultResults.buses?.[faultedBusId];
     if (!busResult || !busResult.branches || busResult.branches.length === 0) return;
+    const faultStale = (typeof StaleResults !== 'undefined' ? StaleResults.cls('faultResults') : '');
 
     // Index fault branches by element_id
     const faultByElem = new Map();
@@ -1786,7 +1796,7 @@ const Canvas = {
       const towardFault = forward;
 
       // Offset the arrow slightly from center to avoid overlapping with load flow arrows
-      html += this._buildArrowSvg(id, wire, fromComp, toComp, towardFault, color, 'fault-arrow', 0.35);
+      html += this._buildArrowSvg(id, wire, fromComp, toComp, towardFault, color, 'fault-arrow' + faultStale, 0.35);
     }
 
     if (html) {
