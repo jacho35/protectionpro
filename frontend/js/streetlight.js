@@ -54,6 +54,8 @@ const StreetLight = {
   _built: false,
   _selId: null,
   _results: {},          // circuit id → engine result (not saved)
+  _sent: {},             // circuit id → the request its result came from (only changed circuits are re-sent)
+  _sentCables: null,     // the candidate-cable list those results used
   _timer: null,
   _req: 0,
   _qc: null,             // quick-calc inputs
@@ -261,6 +263,7 @@ const StreetLight = {
   // Called when the project is replaced (AppState.reset / fromJSON).
   onProjectChanged() {
     this._results = {};
+    this._sent = {};
     this._selId = null;
     if (this._active) { this._selId = this.circuits.length ? this.circuits[0].id : null; this.render(); this.recompute(0); }
     if (typeof RoadLight !== 'undefined') RoadLight.onProjectChanged();
@@ -336,6 +339,7 @@ const StreetLight = {
     if (!ok) return;
     this.circuits.splice(this.circuits.indexOf(c), 1);
     delete this._results[id];
+    delete this._sent[id];
     if (this._selId === id) this._selId = this.circuits.length ? this.circuits[0].id : null;
     this._afterMutate(true);
   },
@@ -491,16 +495,30 @@ const StreetLight = {
     this._timer = setTimeout(() => this._doCompute(), delay);
   },
 
+  // Only circuits whose request differs from the one their result came from
+  // are sent: the engine solves each circuit on its own from its request
+  // alone, so an unchanged request gives the same result (one circuit ~30 ms
+  // instead of every circuit after any edit). A different cable library
+  // re-sends them all (it sets the smallest-cable answer).
   async _doCompute() {
     const circuits = this.circuits.filter(c => c.poles.length);
-    if (!circuits.length) { this._results = {}; this.renderRail(); this.renderResults(); return; }
+    if (!circuits.length) { this._results = {}; this._sent = {}; this.renderRail(); this.renderResults(); return; }
+    const cables = this._candidateCables();
+    const cablesKey = JSON.stringify(cables);
+    if (cablesKey !== this._sentCables) this._sent = {};
+    const reqs = circuits.map(c => this._payload(c));
+    const keys = new Map(reqs.map(r => [r.id, JSON.stringify(r)]));
+    // Results of circuits that are gone (or have no poles now) go.
+    for (const id of Object.keys(this._results)) if (!keys.has(id)) { delete this._results[id]; delete this._sent[id]; }
+    const todo = reqs.filter(r => !this._results[r.id] || this._sent[r.id] !== keys.get(r.id));
     const token = ++this._req;
+    if (!todo.length) { this._status(''); this.renderRail(); this._paintPoleResults(); this.renderResults(); return; }
     this._status('Calculating…');
     try {
-      const res = await API.runStreetLighting({ circuits: circuits.map(c => this._payload(c)), candidateCables: this._candidateCables() });
+      const res = await API.runStreetLighting({ circuits: todo, candidateCables: cables });
       if (token !== this._req) return;
-      this._results = {};
-      for (const r of res.circuits || []) this._results[r.id] = r;
+      for (const r of res.circuits || []) { this._results[r.id] = r; this._sent[r.id] = keys.get(r.id); }
+      this._sentCables = cablesKey;
       this._status('');
       this.renderRail();
       this._paintPoleResults();

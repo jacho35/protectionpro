@@ -121,7 +121,7 @@ const PlanCircuits = {
   // number for devices whose tag predates stable way ids).
   devicesByWay(dbElId) {
     const map = new Map();
-    for (const el of AppState.planAllElements()) {
+    for (const el of this._taggedTo(dbElId)) {
       const p = el.props || {};
       if (p.circuitDbId !== dbElId || p.circuitNo == null || p.circuitNo === '') continue;
       if (!this.isCircuitDevice(el.type)) continue;
@@ -317,7 +317,39 @@ const PlanCircuits = {
     }
     return out;
   },
-  _boardById(id) { return AppState.planAllElements().find(e => e.id === id && e.type === 'bd_db') || null; },
+  // A plan DB by id. Inside withBoardIndex() the lookup is one Map hit; outside
+  // it, a scan of every element on every floor (fine for one call, not for one
+  // per way: syncRoutedLengths made ~2,900 of them on a 60-board building).
+  _boardById(id) {
+    if (this._boardIdx) return this._boardIdx.get(id) || null;
+    return AppState.planAllElements().find(e => e.id === id && e.type === 'bd_db') || null;
+  },
+  // Run fn with the boards indexed once, and the elements tagged to each board
+  // grouped on first use. The sync passes read boards and tags but never add,
+  // remove or re-tag them (only the way id is migrated), so neither index can
+  // go stale inside; nested calls share them.
+  withBoardIndex(fn) {
+    if (this._boardIdx) return fn();
+    const idx = new Map();
+    for (const e of AppState.planAllElements()) if (e.type === 'bd_db') idx.set(e.id, e);
+    this._boardIdx = idx;
+    this._tagIdx = null;
+    try { return fn(); } finally { this._boardIdx = null; this._tagIdx = null; }
+  },
+  // Elements whose circuitDbId may be this board (the caller still filters).
+  _taggedTo(dbElId) {
+    if (!this._boardIdx) return AppState.planAllElements();
+    if (!this._tagIdx) {
+      this._tagIdx = new Map();
+      for (const e of AppState.planAllElements()) {
+        const id = e.props && e.props.circuitDbId;
+        if (!id) continue;
+        if (!this._tagIdx.has(id)) this._tagIdx.set(id, []);
+        this._tagIdx.get(id).push(e);
+      }
+    }
+    return this._tagIdx.get(dbElId) || [];
+  },
   // The SLD distribution_board a plan DB links to (or null when unsynced).
   _sldComp(dbEl) { return (dbEl && dbEl.sldId) ? AppState.components.get(dbEl.sldId) : null; },
   // Any plan board with no live SLD board yet — it has no schedule to write
@@ -329,7 +361,8 @@ const PlanCircuits = {
   // into the linked SLD board schedule (unless the way is a manual override),
   // auto-name from the device mix, then recompute the board's lumped load.
   // Returns a summary {boards, ways, devices, unsynced}.
-  syncLoads() {
+  syncLoads() { return this.withBoardIndex(() => this._syncLoads()); },
+  _syncLoads() {
     // Resolve each board's SLD component once, migrating its way ids up front
     // (EE-7), so aggregation can key by the STABLE way id — a device with a
     // circuitWid and a freshly-typed device sharing the same physical way both
@@ -441,7 +474,10 @@ const PlanCircuits = {
     }
 
     for (const comp of touchedComps) DBSchedule.recompute(comp);
-    if (touchedComps.size && typeof Canvas !== 'undefined' && Canvas.render) Canvas.render();
+    // Redraw the single line only when it is on screen: switching to it
+    // redraws it anyway (app.js switchWorkspace).
+    if (touchedComps.size && typeof Canvas !== 'undefined' && Canvas.render
+        && (typeof window === 'undefined' || !window.activeWorkspace || window.activeWorkspace === 'sld')) Canvas.render();
     return sum;
   },
 
@@ -652,7 +688,8 @@ const PlanCircuits = {
   // are tagged to that way (measured with the route's floor scale), and write
   // it to the way's cable_m unless the user pinned it (_cableManual). Returns
   // the number of ways updated.
-  syncRoutedLengths() {
+  syncRoutedLengths() { return this.withBoardIndex(() => this._syncRoutedLengths()); },
+  _syncRoutedLengths() {
     const elById = {}; for (const e of AppState.planAllElements()) elById[e.id] = e;
     const routeWay = (r) => {
       // A route belongs to the circuit its tagged endpoints share.
@@ -698,11 +735,13 @@ const PlanCircuits = {
   // Full "Sync circuits from plan": loads, routed lengths, then the per-phase
   // split of every board (so the schedule always reflects the current tags).
   syncAll() {
-    const s = this.syncLoads();
-    s.lengths = this.syncRoutedLengths();
-    s.phaseWays = 0;
-    for (const b of this.boardEls()) s.phaseWays += this.syncPhaseSplits(b.id);
-    s.joints = this.jbJointTotals();
-    return s;
+    return this.withBoardIndex(() => {
+      const s = this.syncLoads();
+      s.lengths = this.syncRoutedLengths();
+      s.phaseWays = 0;
+      for (const b of this.boardEls()) s.phaseWays += this.syncPhaseSplits(b.id);
+      s.joints = this.jbJointTotals();
+      return s;
+    });
   },
 };
