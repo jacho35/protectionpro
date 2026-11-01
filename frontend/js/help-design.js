@@ -7,10 +7,19 @@ HELP_ARTICLES.push(
   html: String.raw`
 <p>A project is a <strong>Reticulation</strong>, a <strong>Building</strong>, a <strong>Network / plant</strong> or a <strong>Lighting</strong> project. The type decides which workspace tabs appear, in workflow order:</p>
 <table class="help-ref-table"><thead><tr><th>Type</th><th>Workspaces, in order</th><th>For</th></tr></thead><tbody>
-<tr><td>Reticulation</td><td>1 Site plan → 2 Demand → 3 Single-line</td><td>A township or site LV network: minisubs, kiosks and erven sized by ADMD (NRS 034-1)</td></tr>
-<tr><td>Building</td><td>1 Floor plans → 2 Single-line → 3 Schedules</td><td>Floors, distribution boards and final circuits down to each way</td></tr>
-<tr><td>Network / plant</td><td>Single-line · Interlocking</td><td>Substations, industrial and utility networks: the studies and breaker interlocking</td></tr>
+<tr><td>Reticulation</td><td>1 Overview → 2 Site plan → 3 Demand → 4 Street lighting → 5 Single-line → 6 Quantities</td><td>A township or site LV network: minisubs, kiosks and erven sized by ADMD (NRS 034-1)</td></tr>
+<tr><td>Building</td><td>1 Overview → 2 Floor plans → 3 Single-line → 4 Schedules → 5 Lighting → 6 Quantities</td><td>Floors, distribution boards and final circuits down to each way</td></tr>
+<tr><td>Network / plant</td><td>Overview · Single-line · Interlocking</td><td>Substations, industrial and utility networks: the studies and breaker interlocking</td></tr>
 <tr><td>Lighting</td><td>1 Overview → 2 Rooms → 3 Roads → 4 Sports fields (only the ones you pick)</td><td>Lighting design on its own: rooms and areas, roads, sports fields</td></tr></tbody></table>
+<h4>Overview and Issues</h4>
+<p>Every project opens on its <strong>Overview</strong> when it has no tab saved with it (a new project opens on its first working tab, a template on its single line). The Overview answers "is this project OK?" from the results each workspace already has; it never runs anything by itself:</p>
+<ul>
+<li><strong>Reticulation</strong>: a row per minisub (transformer, demand, loading, worst feeder volt drop, earth checks, verdict), the street-light circuits, the site plan, the single-line studies and the quantities.</li>
+<li><strong>Building</strong>: a row per board (fed from, ways, load, circuit-check counts, worst volt drop), the rooms and their lighting verdict, the floor plans, the single-line studies and the quantities.</li>
+<li><strong>Network / plant</strong>: a row per study (when it ran, current or out of date, what it found), the findings by study and the network model's pre-run checks.</li>
+</ul>
+<p><em>Calculate all</em> brings everything up to date: Demand's ADMD and earth check, street lighting, the circuit check, lighting, and the single-line studies that are out of date. A row goes to its item, with <em>← Back to Overview</em>.</p>
+<p>The <strong>⚠ N issues</strong> button at the top lists everything that fails or needs attention in every workspace: Demand's transformer loading, volt drop and earth checks, street-light circuits, the circuit check, each single-line study's fails and the ones out of date (with Re-run), the pre-run checks, lighting that misses its targets, the sync questions (plan not calibrated, items not placed, duplicate names) and BOQ items with no rate. It is the first tab of the results panel; on the other workspaces it opens on its own, on the right. Click an issue to go to it.</p>
 <h4>Lighting projects</h4>
 <p>When you pick <strong>Lighting</strong>, tick what you are lighting: <em>Rooms &amp; areas</em>, <em>Roads</em>, <em>Sports fields</em> (one or more). The dialog shows the tabs you will get.</p>
 <ul>

@@ -97,6 +97,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const qWs = document.getElementById('quantities-workspace');
     const lWs = document.getElementById('lighting-workspace');
     const loWs = document.getElementById('lightov-workspace');
+    const ovWs = document.getElementById('overview-workspace');
     // Rooms ('lighting') and Sports fields ('sports') share the Lighting pane.
     const lightPane = name === 'lighting' || name === 'sports';
     // Stand down whichever secondary workspace we're leaving.
@@ -108,6 +109,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (typeof Quantities !== 'undefined' && Quantities._active && name !== 'quantities') Quantities.deactivate();
     if (typeof LightingWS !== 'undefined' && LightingWS._active && !lightPane) LightingWS.deactivate();
     if (typeof LightOverview !== 'undefined' && LightOverview._active && name !== 'lightov') LightOverview.deactivate();
+    if (typeof Overview !== 'undefined' && Overview._active && name !== 'overview') Overview.deactivate();
 
     appc.style.display = (name === 'sld') ? '' : 'none';
     if (reticWs) reticWs.style.display = (name === 'retic') ? 'flex' : 'none';
@@ -118,6 +120,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (qWs) qWs.style.display = (name === 'quantities') ? 'flex' : 'none';
     if (lWs) lWs.style.display = lightPane ? 'flex' : 'none';
     if (loWs) loWs.style.display = (name === 'lightov') ? 'flex' : 'none';
+    if (ovWs) ovWs.style.display = (name === 'overview') ? 'flex' : 'none';
     window.activeWorkspace = name;
     // Mobile: flag secondary workspaces so the phone CSS hides SLD-only chrome
     // (FABs, selection bar, Components/Analysis nav) and fits the workspace
@@ -144,6 +147,9 @@ document.addEventListener('DOMContentLoaded', () => {
     else if (name === 'quantities' && typeof Quantities !== 'undefined') { Quantities.activate(); }
     else if (lightPane && typeof LightingWS !== 'undefined') { LightingWS.activate(name === 'sports' ? 'sports' : null); }
     else if (name === 'lightov' && typeof LightOverview !== 'undefined') { LightOverview.activate(); }
+    else if (name === 'overview' && typeof Overview !== 'undefined') { Overview.activate(); }
+    // The results panel: docked on the single line, only Issues elsewhere.
+    if (typeof ResultsPanel !== 'undefined' && ResultsPanel.render) ResultsPanel.render(true);
   }
   window.switchWorkspace = switchWorkspace;
   for (const [name, id] of [
@@ -157,6 +163,7 @@ document.addEventListener('DOMContentLoaded', () => {
     ['lighting', 'btn-workspace-lighting'],
     ['sports', 'btn-workspace-sports'],
     ['lightov', 'btn-workspace-lightov'],
+    ['overview', 'btn-workspace-overview'],
   ]) {
     document.getElementById(id)?.addEventListener('click', () => switchWorkspace(name));
   }

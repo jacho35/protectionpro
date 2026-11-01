@@ -92,7 +92,29 @@ const seedSld = async (page, { wired = true, select = null } = {}) => {
   }, { wired, select });
 };
 
+// A reticulation project with Demand calculated: one minisub on a small
+// transformer and long feeders, so the Overview and Issues have something to say.
+async function reticDemo(page) {
+  await page.evaluate(() => { Workspaces.setType('retic', []); switchWorkspace('retic'); });
+  await page.waitForTimeout(600);
+  await page.evaluate(() => {
+    Object.assign(Retic.settings, { quickKiosks: 5, quickErven: 24, quickChain: true });
+    Retic.quickBuild();
+    const cab = STANDARD_CABLES.find(c => c.id === 'cu_xlpe_185_lv');
+    const ms = Retic.minisubs[0]; ms.name = 'MS-1 Main road';
+    ms.txTypeId = (Retic._txOptions().find(o => o.kva === 315) || Retic._txOptions()[0]).id;
+    Retic.kiosks.forEach((k, i) => { k.name = `K-${11 + i}`; k.feederCable = cab.name; k.feederLength = [60, 45, 55, 70, 65][i]; });
+    AppState.projectName = 'Riverside Ext 4';
+    if (typeof updateProjectNameDisplay === 'function') updateProjectNameDisplay('Riverside Ext 4');
+    AppState.dirty = true; Retic.render(); Retic.recompute();
+  });
+  await page.waitForTimeout(2500);
+  await page.evaluate(() => Issues.refresh());
+}
+
 export const SETUPS = {
+  'overview': { run: async (page) => { await reticDemo(page); await page.evaluate(() => switchWorkspace('overview')); await page.waitForTimeout(600); }, viewport: { width: 1440, height: 760 } },
+  'issues-float': { run: async (page) => { await reticDemo(page); await page.evaluate(() => Issues.open()); await page.waitForTimeout(600); }, viewport: { width: 1440, height: 760 } },
   'sld-palette': { run: async (page) => {
     await page.evaluate(() => { Workspaces.setType('network', []); switchWorkspace('sld'); });
     await page.waitForTimeout(400);

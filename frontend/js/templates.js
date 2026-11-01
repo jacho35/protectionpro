@@ -424,6 +424,8 @@ const NetworkTemplates = {
         // A template starts a new project, so it takes the new-project
         // symbol set (fromJSON reads a missing field as a legacy save).
         if (!data.symbolSet) data.symbolSet = 'iec';
+        // A template opens on its single line, not the Overview.
+        if (!data.lastView) data.lastView = { workspace: 'sld' };
         if (typeof RevisionTimeline !== 'undefined') RevisionTimeline.clearLocal();
         AppState.fromJSON(data);
         UndoManager.clear();

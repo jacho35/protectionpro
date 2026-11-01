@@ -82,6 +82,8 @@ jobs:
         run: node frontend/tests/test_result_view.mjs
       - name: Results panel (tabs, row status, sorting, filters, dock)
         run: node frontend/tests/test_results_panel.mjs
+      - name: Issues and Overview (every workspace's fails, Issues tab, Overview rows, tabs)
+        run: node frontend/tests/test_issues_overview.mjs
 
       - name: Raw HTML interpolation ratchet (new unescaped attribute values fail)
         run: node testing/lint/raw-interp.mjs --max 0

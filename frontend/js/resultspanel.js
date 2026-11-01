@@ -19,16 +19,21 @@
  *    gets the panel on the right, a wide one at the bottom).
  *
  * The tables are built by `model(key)` (no DOM), so they are node-testable.
+ *
+ * Issues (UX plan PR 14) is the first tab: everything that fails or needs
+ * attention in every workspace (issues.js). It is the one tab the panel shows
+ * off the single line — the header's Issues button opens it on any
+ * workspace, floating on the right (`openIssues`, `_floatOpen`).
  */
 
 const ResultsPanel = {
   // Tab order. Studies saved with the project have result SLOTS on AppState;
   // the rest are kept for the session (SESSION, put by their run through
   // `show(key, result)`). A tab's content is its model `_m_<key>`.
-  TABS: ['loadflow', 'unbalancedLF', 'fault', 'ansi', 'arcflash', 'cable', 'duty', 'motor', 'dynMotor', 'stability',
+  TABS: ['issues', 'loadflow', 'unbalancedLF', 'fault', 'ansi', 'arcflash', 'cable', 'duty', 'motor', 'dynMotor', 'stability',
     'loadDiversity', 'grounding', 'harmonics', 'dcLoadflow', 'dcShortCircuit', 'sequence', 'contingency', 'vstab', 'tsl',
     'opf', 'hc', 'cpl', 'rel', 'fscan', 'flt', 'flk', 'bsz', 'backup', 'openConductor', 'twoConductorOpen', 'simultaneousFault'],
-  LABELS: { loadflow: 'Load flow', unbalancedLF: 'Unbalanced LF', fault: 'Short circuit', ansi: 'Fault duty (ANSI)',
+  LABELS: { issues: 'Issues', loadflow: 'Load flow', unbalancedLF: 'Unbalanced LF', fault: 'Short circuit', ansi: 'Fault duty (ANSI)',
     arcflash: 'Arc flash', cable: 'Cable sizing', duty: 'Duty check', motor: 'Motor starting', dynMotor: 'Dynamic motor',
     stability: 'Transient stability', loadDiversity: 'Load diversity', grounding: 'Grounding', harmonics: 'Harmonics',
     dcLoadflow: 'DC load flow', dcShortCircuit: 'DC short circuit', sequence: 'Sequence of operation',
@@ -115,11 +120,13 @@ const ResultsPanel = {
   },
   clearSession() { this._session = {}; this.openRow = null; },
   result(key) {
+    if (key === 'issues') { const l = typeof Issues !== 'undefined' ? Issues.list() : []; return l.length ? l : null; }
     const slots = this.SLOTS[key];
     if (slots) { const s = slots.find(x => AppState[x] != null); return s ? AppState[s] : null; }
     return this._session[key] ? this._session[key].r : null;
   },
   isStale(key) {
+    if (key === 'issues') return false;
     const slots = this.SLOTS[key];
     if (slots) return typeof StaleResults !== 'undefined' && slots.some(s => AppState[s] != null && StaleResults.isStale(s));
     const e = this._session[key];
@@ -152,7 +159,11 @@ const ResultsPanel = {
 
   has(key) { return this.result(key) != null; },
   available() { return this.TABS.filter(k => this.has(k)); },
-  isOpen() { return !!(this._win || this._loadPrefs().open); },
+  isOpen() { return this._offSld() ? this._floatOpen : !!(this._win || this._loadPrefs().open); },
+  // On another workspace than the single line only the Issues tab shows,
+  // floating on the right, opened from the header (kept for the session).
+  _floatOpen: false,
+  _offSld() { return typeof window !== 'undefined' && !!window.activeWorkspace && window.activeWorkspace !== 'sld'; },
 
   // ── Formatting ────────────────────────────────────────────────────────
   _n(v, d = 2) { return (v == null || !isFinite(v)) ? '—' : Number(v).toFixed(d); },
@@ -170,6 +181,41 @@ const ResultsPanel = {
   //   rows: [{ id, name, status, cells: { key: { v, t } }, reasons: [], actions: [] }] }] }
   model(key) {
     try { return this['_m_' + key]() || null; } catch (e) { console.error('Results panel:', key, e); return null; }
+  },
+
+  // Issues: a section per workspace, worst first; a row goes to its item.
+  issueWs: '',
+  _m_issues() {
+    const list = typeof Issues !== 'undefined' ? Issues.list() : [];
+    const n = typeof Issues !== 'undefined' ? Issues.counts(list) : { fail: 0, warn: 0, stale: 0 };
+    const order = typeof Issues !== 'undefined' ? Issues.order() : [];
+    const groups = new Map();
+    for (const i of list) {
+      if (this.issueWs && i.ws !== this.issueWs) continue;
+      if (!groups.has(i.ws)) groups.set(i.ws, []);
+      groups.get(i.ws).push(i);
+    }
+    const rank = { fail: 0, warn: 1, stale: 2 };
+    const sections = [...groups.entries()].sort((a, b) => order.indexOf(a[0]) - order.indexOf(b[0])).map(([ws, items]) => ({
+      id: 'ws-' + ws, title: Issues.label(ws), wrap: true, nameLabel: 'Issue',
+      cols: [{ key: 'where', label: 'Where' }, { key: 'act', label: '' }],
+      defaultSort: null,
+      rows: items.sort((a, b) => rank[a.sev] - rank[b.sev]).map(i => ({
+        id: i.key, name: i.text, status: i.sev === 'stale' ? 'warn' : i.sev, stale: i.sev === 'stale',
+        cells: {
+          where: this._cell(i.where || '', escHtml(i.where || '')),
+          act: this._cell(null, i.act ? `<button type="button" class="rp-btn rp-small" data-rp-issue-act="${escHtml(i.key)}">${escHtml(i.act)}</button>` : ''),
+        },
+        reasons: [], actions: [],
+      })),
+    }));
+    return {
+      summary: 'Everything that fails or needs attention, in every workspace. Click one to go to it.',
+      notes: n.stale ? [{ level: 'info', text: `${n.stale} out-of-date stud${n.stale === 1 ? 'y' : 'ies'}: ${n.stale === 1 ? 'its' : 'their'} fails are not listed until ${n.stale === 1 ? 'it is' : 'they are'} run again.` }] : [],
+      sections,
+      empty: list.length ? (sections.length ? null : 'Nothing in this workspace.') : 'Nothing needs attention.',
+      verdict: n.fail ? 'fail' : n.warn || n.stale ? 'warn' : 'ok',
+    };
   },
 
   _m_loadflow() {
@@ -933,6 +979,7 @@ const ResultsPanel = {
   // is the panel.
   open(key, opts = {}) {
     if (key && !this.TABS.includes(key)) key = null;
+    if (this._offSld() && !this._phone()) { if (key === 'issues') this.openIssues(); return; }
     if (this._phone()) {
       if (typeof MobileUI !== 'undefined' && MobileUI.renderResults) {
         if (key && this.has(key)) MobileUI._resultKey = key;
@@ -950,7 +997,15 @@ const ResultsPanel = {
     this.render(true);
     if (this._win) { try { this._win.focus(); } catch (e) { /* closed */ } }
   },
+  // The header's Issues button: the Issues tab, on any workspace.
+  openIssues() {
+    if (this._phone() || !this._offSld()) { this.open('issues'); return; }
+    this.tab = 'issues';
+    this._floatOpen = true;
+    this.render(true);
+  },
   close() {
+    if (this._offSld()) { this._floatOpen = false; this.render(true); return; }
     this._redock();
     const p = this._loadPrefs();
     p.open = false; this._savePrefs();
@@ -1012,7 +1067,8 @@ const ResultsPanel = {
       if (!el._rpBound) { this._bind(el); el._rpBound = true; }
       return el;
     }
-    const container = document.getElementById('canvas-container');
+    const float = this._offSld();
+    const container = float ? document.body : document.getElementById('canvas-container');
     if (!container) return null;
     let el = document.getElementById('results-panel');
     if (!el) {
@@ -1021,16 +1077,24 @@ const ResultsPanel = {
       el.className = 'rp';
       el.setAttribute('role', 'region');
       el.setAttribute('aria-label', 'Study results');
-      container.appendChild(el);
       this._bind(el);
       el._rpBound = true;
     }
+    if (el.parentElement !== container) container.appendChild(el);
+    el.classList.toggle('rp-float', float);
+    if (float) {
+      const tb = document.getElementById('toolbar');
+      const p = this._loadPrefs();
+      el.style.top = (tb ? tb.offsetHeight : 44) + 'px';
+      el.style.width = Math.min(Math.max(300, p.right), Math.max(320, window.innerWidth * 0.7)) + 'px';
+    } else { el.style.top = ''; el.style.width = ''; }
     return el;
   },
 
   _layout(open) {
     const container = typeof document !== 'undefined' && document.getElementById('canvas-container');
     if (!container) return;
+    if (this._offSld()) open = false;     // the single line is not on screen
     const p = this._loadPrefs();
     const docked = open && !this._win;
     const d = this.dock();
@@ -1056,10 +1120,12 @@ const ResultsPanel = {
   render(force) {
     if (typeof document === 'undefined') return;
     const open = this.isOpen() && !this._phone();
-    const avail = this.available();
+    const float = this._offSld();
+    const avail = float ? (this.has('issues') ? ['issues'] : []) : this.available();
     const showing = open && avail.length > 0;
     this._wasOpen = showing;
     const host = showing ? this._host() : document.getElementById('results-panel');
+    if (float && !showing && this._floatOpen && !avail.length) this._floatOpen = false;   // nothing left to show
     if (this._win) { const dockEl = document.getElementById('results-panel'); if (dockEl) dockEl.hidden = true; }
     this._layout(showing);
     if (typeof ResultView !== 'undefined' && ResultView._el) {
@@ -1078,14 +1144,14 @@ const ResultsPanel = {
     const focus = typeof CableFocus !== 'undefined' ? `${CableFocus.active}:${CableFocus.busId}` : '';
     const sig = [tab, avail.join(','), slots.map(s => this._idOf(AppState[s])).join(','), this._idOf(this._session[tab]), stale, this.attention, this.filter,
       JSON.stringify(this.sort), this.openRow, focus, this.dock(), !!this._win, AppState.dispatchUnits,
-      typeof StaleResults !== 'undefined' && StaleResults._busy].join('|');
-    const layoutKey = `${this.dock()}:${!!this._win}`;
-    if (this._lastLayout !== layoutKey) { this._lastLayout = layoutKey; this._redrawSoon(); }
+      typeof StaleResults !== 'undefined' && StaleResults._busy, float, this.issueWs, tab === 'issues' && typeof Issues !== 'undefined' ? Issues._sig : ''].join('|');
+    const layoutKey = `${float ? 'float' : this.dock()}:${!!this._win}`;
+    if (this._lastLayout !== layoutKey) { this._lastLayout = layoutKey; if (!float) this._redrawSoon(); }
     if (!force && sig === this._sig && !host.hidden) return;
     this._sig = sig;
     host.hidden = false;
-    host.classList.toggle('rp-right', !this._win && this.dock() === 'right');
-    host.classList.toggle('rp-bottom', !this._win && this.dock() === 'bottom');
+    host.classList.toggle('rp-right', !this._win && (float || this.dock() === 'right'));
+    host.classList.toggle('rp-bottom', !this._win && !float && this.dock() === 'bottom');
 
     const m = this.model(tab) || { summary: '', notes: [], sections: [] };
     const n = this.counts(m);
@@ -1125,7 +1191,7 @@ const ResultsPanel = {
         <div class="rp-tabs" role="tablist" aria-label="Studies">${tabsHtml}</div>
         <div class="rp-head-tools">
           ${this.GUIDES[tab] && typeof HelpGuides !== 'undefined' ? `<button type="button" class="rp-icon" data-rp-guide title="Guide to this study">?</button>` : ''}
-          ${this._win ? '<button type="button" class="rp-icon" data-rp-dockback title="Put the panel back in the app">⇲</button>' : `
+          ${float ? '' : this._win ? '<button type="button" class="rp-icon" data-rp-dockback title="Put the panel back in the app">⇲</button>' : `
           <button type="button" class="rp-icon" data-rp-dock="right" aria-pressed="${this.dock() === 'right'}" title="Dock on the right">${this.ICONS.right}</button>
           <button type="button" class="rp-icon" data-rp-dock="bottom" aria-pressed="${this.dock() === 'bottom'}" title="Dock at the bottom">${this.ICONS.bottom}</button>
           <button type="button" class="rp-icon" data-rp-pop title="Pop out into its own window (a second monitor)">${this.ICONS.pop}</button>`}
@@ -1138,8 +1204,9 @@ const ResultsPanel = {
       </div>
       ${staleHtml}
       ${tables ? `<div class="rp-bar">
-        <button type="button" class="rp-btn" data-rp-attn aria-pressed="${this.attention ? 'true' : 'false'}"${attn || this.attention ? '' : ' disabled'} title="Show only rows that fail or warn">Needs attention · ${attn}</button>
+${tab === 'issues' ? '' : `        <button type="button" class="rp-btn" data-rp-attn aria-pressed="${this.attention ? 'true' : 'false'}"${attn || this.attention ? '' : ' disabled'} title="Show only rows that fail or warn">Needs attention · ${attn}</button>`}
         <input type="search" class="rp-filter" data-rp-filter placeholder="Filter by name" value="${escHtml(this.filter)}" aria-label="Filter by name">
+        ${tab === 'issues' ? this._issueWsSelect() : ''}
       </div>` : ''}
       <div class="rp-body${stale ? ' rp-is-stale' : ''}">${notesHtml}${body}</div>`;
     // Studies shown with their own view draw into their placeholder.
@@ -1169,6 +1236,17 @@ const ResultsPanel = {
     this.syncSelection();
   },
 
+  // Issues: which workspace to list.
+  _issueWsSelect() {
+    const list = typeof Issues !== 'undefined' ? Issues.list() : [];
+    const ws = [...new Set(list.map(i => i.ws))];
+    if (ws.length < 2 && !this.issueWs) return '';
+    const order = Issues.order();
+    ws.sort((a, b) => order.indexOf(a) - order.indexOf(b));
+    return `<select class="rp-ws" data-rp-ws aria-label="Workspace"><option value="">Every workspace</option>${ws.map(w =>
+      `<option value="${escHtml(w)}"${w === this.issueWs ? ' selected' : ''}>${escHtml(Issues.label(w))}</option>`).join('')}</select>`;
+  },
+
   // The diagram's size changed (panel docked / undocked): redraw it once.
   _redrawSoon() {
     if (typeof Canvas === 'undefined' || !Canvas.render) return;
@@ -1194,7 +1272,7 @@ const ResultsPanel = {
       <div class="rp-sec-head"><span class="rp-sec-title">${escHtml(sec.title)}</span><span class="rp-sec-n">${rows.length === sec.rows.length ? rows.length : `${rows.length} of ${sec.rows.length}`}</span>
       ${tools}</div>`;
     if (!rows.length) return html + `<p class="rp-empty">${sec.rows.length ? 'No rows match.' : 'None.'}</p></section>`;
-    html += `<div class="rp-scroll"><table class="rp-table"><thead><tr>${th('status', '', false, 'Status')}${th('name', 'Name')}${sec.cols.map(c => th(c.key, c.label, c.num, c.title)).join('')}</tr></thead><tbody>`;
+    html += `<div class="rp-scroll"><table class="rp-table${sec.wrap ? ' rp-wrap' : ''}"><thead><tr>${th('status', '', false, 'Status')}${th('name', sec.nameLabel || 'Name')}${sec.cols.map(c => th(c.key, c.label, c.num, c.title)).join('')}</tr></thead><tbody>`;
     for (const r of rows) {
       const rk = `${sec.id}:${r.id}`;
       const open = this.openRow === rk;
@@ -1261,6 +1339,14 @@ const ResultsPanel = {
       if (tool) tool.run();
       return true;
     }
+    if (key === 'issues') {
+      if ((b = q('[data-rp-issue-act]'))) { Issues.act(b.dataset.rpIssueAct); return false; }
+      if ((b = q('[data-rp-row]'))) {
+        if (typeof MobileUI !== 'undefined' && MobileUI.closeSheet) MobileUI.closeSheet();
+        Issues.go(b.dataset.rpId);
+        return false;
+      }
+    }
     if ((b = q('[data-rp-row]'))) { this.openRow = this.openRow === b.dataset.rpRow ? null : b.dataset.rpRow; return true; }
     return false;
   },
@@ -1274,6 +1360,7 @@ const ResultsPanel = {
     });
     el.addEventListener('input', (e) => {
       if (e.target.matches('[data-rp-filter]')) { this.filter = e.target.value; this._focusFilter = true; this.render(true); }
+      else if (e.target.matches('[data-rp-ws]')) { this.issueWs = e.target.value; this.render(true); }
     });
     el.addEventListener('pointerdown', (e) => {
       if (e.target.closest('[data-rp-resize]')) this._startResize(e);
@@ -1288,6 +1375,7 @@ const ResultsPanel = {
       if (typeof ResultView !== 'undefined' && ResultView.study(this.tab)) { this._quiet = true; ResultView.show(this.tab); this._quiet = false; }
       this.render(true); return;
     }
+    if ((b = q('[data-rp-issue-act]'))) { if (this._win) window.focus(); Issues.act(b.dataset.rpIssueAct); return; }
     if (q('[data-rp-close]')) { this.close(); return; }
     if (q('[data-rp-pop]')) { this.popOut(); return; }
     if (q('[data-rp-dockback]')) { this._redock(); const p = this._loadPrefs(); p.open = true; this._savePrefs(); this.render(true); return; }
@@ -1313,6 +1401,7 @@ const ResultsPanel = {
 
   // A row was clicked: open / close it and select its part on the diagram.
   _pickRow(rk, id) {
+    if (this.tab === 'issues') { if (this._win) window.focus(); if (typeof Issues !== 'undefined') Issues.go(id); return; }
     this.openRow = this.openRow === rk ? null : rk;
     this._selecting = id;
     this.selectPart(id);
@@ -1374,6 +1463,15 @@ const ResultsPanel = {
   // Drag the inner edge to resize the dock.
   _startResize(e) {
     e.preventDefault();
+    if (this._offSld()) {
+      const p = this._loadPrefs();
+      const host = document.getElementById('results-panel');
+      const move = (ev) => { p.right = Math.round(window.innerWidth - ev.clientX); if (host) host.style.width = Math.min(Math.max(300, p.right), window.innerWidth * 0.7) + 'px'; };
+      const up = () => { document.removeEventListener('pointermove', move); document.removeEventListener('pointerup', up); this._savePrefs(); };
+      document.addEventListener('pointermove', move);
+      document.addEventListener('pointerup', up);
+      return;
+    }
     const container = document.getElementById('canvas-container');
     const rect = container.getBoundingClientRect();
     const d = this.dock();

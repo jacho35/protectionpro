@@ -228,7 +228,7 @@ const Schedules = {
   },
 
   _BACK_LABELS: { sld: 'Single line', plan: 'Plan', retic: 'Demand', streetlight: 'Street lighting',
-    interlock: 'Interlocking', quantities: 'Quantities', lighting: 'Lighting', sports: 'Sports fields', lightov: 'Overview' },
+    interlock: 'Interlocking', quantities: 'Quantities', lighting: 'Lighting', sports: 'Sports fields', lightov: 'Overview', overview: 'Overview' },
 
   _syncBack() {
     const b = document.getElementById('sch-back');

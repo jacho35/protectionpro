@@ -149,8 +149,9 @@ const Project = {
     if (projectType) {
       Workspaces.setType(projectType.type, projectType.extras, projectType.lighting);
       AppState.dirty = false;
-      // Open on the first step of the chosen type (e.g. the site plan).
-      const first = Workspaces.visible()[0];
+      // Open on the first step of the chosen type (e.g. the site plan): an
+      // empty project's Overview has nothing to say yet.
+      const first = Workspaces.visible().find(ws => ws !== 'overview');
       if (first && typeof window.switchWorkspace === 'function') window.switchWorkspace(first);
     }
     if (typeof LFStudy !== 'undefined' && LFStudy.onNetworkReloaded) LFStudy.onNetworkReloaded();

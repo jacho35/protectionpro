@@ -83,7 +83,11 @@ Gotchas that cost time — do it this way:
   load flow / unbalanced LF only when they have something to flag, a fault run
   never. Wait for `ResultsPanel.tab === '<key>'` (keys in `ResultsPanel.TABS`);
   read a study's result with `ResultsPanel.result(key)` (session-only studies
-  such as contingency or harmonics are not on AppState). It remembers open / dock
+  such as contingency or harmonics are not on AppState). The first tab is
+  `issues` (issues.js, `Issues.list()`); off the single line the panel shows
+  only Issues, floating (`ResultsPanel.openIssues()`, header `#btn-issues`).
+  A project with no saved tab opens on its Overview (`#overview-workspace`);
+  templates open on the single line. It remembers open / dock
   in localStorage `pp-results-panel`. Setup dialogs and the validation dialog are
   still modals — hide open ones
   (`document.querySelectorAll('.modal').forEach(m => m.style.display = 'none')`)
