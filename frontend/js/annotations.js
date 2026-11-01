@@ -2,8 +2,8 @@
 
 // Authoritative definition of every result-box type and the individual value
 // lines it can show. Drives (1) which lines render here, (2) the per-value
-// tick-lists in the properties Display Options section, and (3) the per-value
-// toggles in the result-box right-click menu. `prefixes` are the annotation-key
+// tick-lists in the results view's Values popover (resultview.js), and (3) the
+// per-value toggles in the result-box right-click menu. `prefixes` are the annotation-key
 // prefixes that map to this type (so the right-click menu can identify a badge).
 // Field visibility is stored in AppState.resultBoxFields keyed by
 // [type.key][field.key]; absent ⇒ visible (see Annotations.fieldVisible).
@@ -88,7 +88,7 @@ const Annotations = {
 
   // Result boxes the user has hidden via the right-click menu (annotation keys).
   // Persisted with the project (state.js toJSON/fromJSON) and restored on load;
-  // cleared only on new-project (reset). Un-hidden via the top-bar Restore button.
+  // cleared only on new-project (reset). Un-hidden via Values ▾ › Restore (resultview.js).
   hiddenResultBoxes: new Set(),
 
   init() {
@@ -184,15 +184,10 @@ const Annotations = {
     document.body.removeChild(ta);
   },
 
-  // The Results menu's "Restore hidden boxes" item: always listed, enabled only
-  // while something is hidden, with the count in its label.
+  // The results view switch (chips + Values popover, where hidden boxes are
+  // restored) follows every redraw.
   _syncRestoreButton() {
-    const btn = document.getElementById('btn-restore-results');
-    if (!btn) return;
-    const n = this.hiddenResultBoxes.size;
-    btn.disabled = n === 0;
-    const label = btn.querySelector('span');
-    if (label) label.textContent = n ? `Restore hidden boxes (${n})` : 'Restore hidden boxes';
+    if (typeof ResultView !== 'undefined') ResultView.render();
   },
 
   // ── Auto-stacking of badges per component (no user offset) ──

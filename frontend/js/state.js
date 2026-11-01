@@ -2080,6 +2080,7 @@ for (const slot of RESULT_SLOTS) {
         sig: LIVE_RESULT_SLOTS.has(slot) ? undefined : this.networkSignature(),
       };
       if (typeof StaleResults !== 'undefined' && StaleResults.refresh) StaleResults.refresh();
+      if (typeof ResultView !== 'undefined') ResultView.onResult(slot);
     },
   });
 }

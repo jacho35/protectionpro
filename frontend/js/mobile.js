@@ -49,20 +49,6 @@ const MobileUI = {
     'btn-cable-sizing': 'cableSizingResults', 'btn-load-diversity': 'loadDiversityResults',
     'btn-grounding': 'groundingResults', 'btn-study-manager': 'studyManagerResults',
   },
-  // Result slot → [desktop result-box toggle, AppState.showResultBoxes key].
-  SLOT_TOGGLES: {
-    faultResults: ['btn-toggle-results-fault', 'fault'],
-    loadFlowResults: ['btn-toggle-results-loadflow', 'loadflow'],
-    unbalancedLoadFlowResults: ['btn-toggle-results-unbalanced', 'unbalancedLF'],
-    arcFlashResults: ['btn-toggle-results-arcflash', 'arcflash'],
-    dcArcFlashResults: ['btn-toggle-results-arcflash', 'arcflash'],
-    cableSizingResults: ['btn-toggle-results-cable', 'cable'],
-    motorStartingResults: ['btn-toggle-results-motor', 'motor'],
-    dynamicMotorResults: ['btn-toggle-results-dynmotor', 'dynMotor'],
-    dutyCheckResults: ['btn-toggle-results-duty', 'duty'],
-    loadDiversityResults: ['btn-toggle-results-loaddiversity', 'loadDiversity'],
-    groundingResults: ['btn-toggle-results-grounding', 'grounding'],
-  },
   // Desktop-only controls left out of More.
   // Also left out because the header (Save) and the selection bar (copy, duplicate, rotate, delete) already have them.
   MENU_SKIP: new Set(['btn-toggle-ribbon', 'btn-boq', 'btn-cable-schedules', 'btn-rates',
@@ -901,8 +887,9 @@ const MobileUI = {
     }
     if (!slots.includes(this._resultSlot)) this._resultSlot = slots[0];
     const slot = this._resultSlot;
-    const tog = this.SLOT_TOGGLES[slot];
-    const on = tog && AppState.showResultBoxes && AppState.showResultBoxes[tog[1]];
+    // The study's chip in the results view switch (resultview.js).
+    const tog = typeof ResultView !== 'undefined' ? ResultView.studyForSlot(slot) : null;
+    const on = tog && ResultView.isOn(tog.key);
     head.innerHTML = `<div class="mobile-chips" role="group" aria-label="Studies with results">${slots.map(s =>
       `<button class="mobile-chip${s === slot ? ' active' : ''}" data-slot="${s}" aria-pressed="${s === slot}">${escHtml(RESULT_SLOT_LABELS[s] || s)}</button>`).join('')}</div>
       ${tog ? `<label class="mopt mopt-switch mresults-toggle"><span class="mopt-label">Show on diagram</span>
@@ -912,7 +899,7 @@ const MobileUI = {
       if (chip) { this._resultSlot = chip.dataset.slot; this.renderResults(); }
     };
     head.onchange = (e) => {
-      if (e.target.matches('[data-show-boxes]')) document.getElementById(tog[0])?.click();
+      if (e.target.matches('[data-show-boxes]')) ResultView.toggle(tog.key);
     };
 
     const r = AppState[slot];
@@ -926,7 +913,7 @@ const MobileUI = {
         <button class="mobile-secondary-btn" data-click="btn-export-csv">${mIcon('export')} CSV</button>
       </div>
       <div class="mresults-more">
-        <button class="mm-link" data-click="btn-reset-annotation-positions">Reset result box positions</button>
+        <button class="mm-link" data-reset-boxes>Reset result box positions</button>
       </div>`;
     body.innerHTML = html;
     body.onclick = (e) => {
@@ -936,6 +923,13 @@ const MobileUI = {
       if (run) {
         const item = this._studyIndex().find(s => s.id === run.dataset.run);
         if (item) item.opts.length ? this.openStudySetup(item) : this.runStudy(item);
+        return;
+      }
+      if (e.target.closest('[data-reset-boxes]')) {
+        this.closeSheet();
+        Annotations.offsets.clear();
+        AppState.dirty = true;
+        Canvas.render();
         return;
       }
       const c = e.target.closest('[data-click]');

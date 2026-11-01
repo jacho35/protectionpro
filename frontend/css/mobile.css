@@ -33,7 +33,6 @@ body.dark-mode {
   #properties-resize,
   #properties-panel,
   #minimap,
-  #canvas-mode-indicator,
   #page-tab-bar,
   #status-bar {
     display: none !important;
@@ -1488,6 +1487,9 @@ body.dark-mode {
   #calc-modal .fm-item-date { font-size: 13px; white-space: normal; }
   #calc-modal .fm-more { display: flex; }
 
+  /* Results view switch: under the mode bar, clear of the side buttons; scrolls sideways */
+  .rv-strip { top: 62px; left: 10px; transform: none; max-width: calc(100% - 70px); }
+  #canvas-container.has-rv .stale-chip { top: 104px; }
 } /* end @media (max-width: 768px) */
 
 /* Applies at every viewport width: tablets and landscape phones exceed

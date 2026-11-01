@@ -557,9 +557,12 @@ Object.assign(SETUPS, {
 
   'ctrlk': { run: async (page) => { await page.keyboard.press('Control+k'); await page.keyboard.type('arc'); await page.waitForTimeout(400); } },
   'menu-analyse': { run: async (page) => { await page.click('#menu-analyse .toolbar-menu-btn'); await page.waitForTimeout(300); } },
-  'menu-results': { run: async (page) => {
+  'results-view': { run: async (page) => {
     await cableNetwork(page);
-    await page.click('#menu-results .toolbar-menu-btn'); await page.waitForTimeout(300);
+    await page.evaluate(() => document.getElementById('btn-run-loadflow').click());
+    await page.waitForFunction(() => AppState.loadFlowResults && ResultView.isOn('loadflow'), null, { timeout: 20000 });
+    await page.evaluate(() => { document.querySelectorAll('.modal').forEach(m => { if (getComputedStyle(m).display !== 'none') m.style.display = 'none'; }); ResultView._openValues(); });
+    await page.waitForTimeout(500);
   } },
 
   'type-new': { run: async (page) => {

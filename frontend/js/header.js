@@ -1,7 +1,7 @@
 /* ProtectionPro — two-row header behaviours (top-menu redesign, phase C).
  *
- *  • Results menu: lists a per-study "result boxes" toggle only for studies
- *    that actually have results, instead of a fixed list of eleven.
+ *  • Results menu: "Open results" lists the result window of each study that
+ *    has results (which boxes show is the switch over the canvas, resultview.js).
  *  • Command search (Ctrl K, or the Search button in the app bar): finds any
  *    command, analysis, export, setting or workspace by name and runs it.
  *
@@ -13,41 +13,34 @@
  */
 
 const Header = {
-  // Result-box toggle → the result slots that give it something to show.
-  RESULT_TOGGLES: {
-    'btn-toggle-results-fault': ['faultResults'],
-    'btn-toggle-results-loadflow': ['loadFlowResults'],
-    'btn-toggle-results-unbalanced': ['unbalancedLoadFlowResults'],
-    'btn-toggle-results-arcflash': ['arcFlashResults', 'dcArcFlashResults'],
-    'btn-toggle-results-cable': ['cableSizingResults'],
-    'btn-toggle-results-motor': ['motorStartingResults'],
-    'btn-toggle-results-dynmotor': ['dynamicMotorResults'],
-    'btn-toggle-results-duty': ['dutyCheckResults'],
-    'btn-toggle-results-loaddiversity': ['loadDiversityResults'],
-    'btn-toggle-results-grounding': ['groundingResults'],
+  // Results menu → "Open results": the result window of each study that has
+  // results (which boxes show on the diagram is the results view switch over
+  // the canvas, resultview.js). Box-key prefix handed to AppActions.openResultBox.
+  OPEN_PREFIX: {
+    loadflow: 'lf', unbalancedLF: 'ulf', fault: 'fault', arcflash: 'af', cable: 'cs',
+    duty: 'dc', motor: 'ms', dynMotor: 'dynms', loadDiversity: 'ld', grounding: 'gr',
+    dcLoadflow: 'dclf', dcShortCircuit: 'dcsc',
   },
 
   // ── Results menu ───────────────────────────────────────────────────
+  _openHtml: null,
   syncResultsMenu() {
-    let any = false;
-    for (const [id, slots] of Object.entries(this.RESULT_TOGGLES)) {
-      const btn = document.getElementById(id);
-      if (!btn) continue;
-      const has = slots.some(s => AppState[s] != null);
-      btn.hidden = !has;
-      if (has) any = true;
+    const list = document.getElementById('results-open-list');
+    if (!list || typeof ResultView === 'undefined') return;
+    const studies = ResultView.available().filter(s => this.OPEN_PREFIX[s.key]);
+    const html = studies.map(s => `<button type="button" class="dropdown-item" id="btn-open-results-${escHtml(s.key)}" data-open-results="${escHtml(s.key)}" title="Open the ${escHtml(s.label.toLowerCase())} results">`
+      + `<span class="rv-dot rv-${ResultView.verdict(s.key)}" aria-hidden="true"></span>${escHtml(s.label)}</button>`).join('');
+    if (html !== this._openHtml) {
+      list.innerHTML = html;
+      this._openHtml = html;
     }
-    const all = document.getElementById('btn-toggle-results-all');
-    if (all) all.hidden = !any;
-    let note = document.getElementById('results-none-note');
-    if (!note && all) {
-      note = document.createElement('span');
-      note.id = 'results-none-note';
-      note.className = 'dropdown-note';
-      note.textContent = 'No study results yet. Run an analysis and its result boxes can be shown or hidden here.';
-      all.parentNode.insertBefore(note, all);
-    }
-    if (note) note.hidden = any;
+    const note = document.getElementById('results-none-note');
+    if (note) note.hidden = studies.length > 0;
+  },
+  _openResults(key) {
+    let prefix = this.OPEN_PREFIX[key];
+    if (key === 'arcflash' && !AppState.arcFlashResults) prefix = 'dcaf';
+    window.AppActions?.openResultBox?.(prefix + ':');
   },
 
   // ── Command search ─────────────────────────────────────────────────
@@ -262,6 +255,10 @@ const Header = {
   init() {
     const resultsBtn = document.querySelector('#menu-results .toolbar-menu-btn');
     if (resultsBtn) resultsBtn.addEventListener('click', () => this.syncResultsMenu());
+    document.getElementById('results-open-list')?.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-open-results]');
+      if (b) this._openResults(b.dataset.openResults);
+    });
     this.syncResultsMenu();
     document.getElementById('btn-command-search')?.addEventListener('click', () => this.openSearch());
     // Ctrl/Cmd+K anywhere, including while typing in a field.

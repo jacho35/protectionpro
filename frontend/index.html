@@ -168,49 +168,7 @@
                 <option value="spline">Spline</option>
               </select>
             </div></div></div>
-        <div class="toolbar-menu" id="menu-results"><button type="button" class="toolbar-menu-btn" aria-haspopup="menu">Results <svg width="8" height="8" viewBox="0 0 8 8" aria-hidden="true"><path d="M1 3l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.2"/></svg></button><div class="toolbar-menu-panel"><span class="dropdown-label">Result boxes</span><button id="btn-toggle-results-all" class="dropdown-item active" title="Show/Hide all result boxes (H)">
-              <svg width="14" height="14" viewBox="0 0 16 16"><rect x="1" y="4" width="14" height="8" rx="1" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M4 8h8M4 10h5" stroke="currentColor" stroke-width="1"/></svg>
-              All Result Boxes
-            </button><button id="btn-toggle-results-fault" class="dropdown-item active" title="Show/Hide Fault result boxes">
-              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M9 1L4 9h4l-1 6 7-8H9z" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
-              Fault Results
-            </button><button id="btn-toggle-results-loadflow" class="dropdown-item active" title="Show/Hide Load Flow result boxes">
-              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M2 8h12M10 4l4 4-4 4" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
-              Load Flow Results
-            </button><button id="btn-toggle-results-unbalanced" class="dropdown-item active" title="Show/Hide Unbalanced Load Flow result boxes">
-              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M2 5h12M2 8h9M2 11h11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
-              Unbalanced LF Results
-            </button><button id="btn-toggle-results-arcflash" class="dropdown-item active" title="Show/Hide Arc Flash result boxes">
-              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M9 1L4 9h4l-1 6 7-8H9z" fill="#f57c00" stroke="#e65100" stroke-width="0.8"/></svg>
-              Arc Flash Results
-            </button><button id="btn-toggle-results-cable" class="dropdown-item active" title="Show/Hide Cable Sizing result boxes">
-              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M2 8h12" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg>
-              Cable Sizing Results
-            </button><button id="btn-cable-focus" class="dropdown-item" title="Show only the cables into and out of the selected bus (Esc shows all again)">
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="5.5"/><circle cx="8" cy="8" r="1.5"/><path d="M8 .5v3M8 12.5v3M.5 8h3M12.5 8h3"/></svg>
-              Cables at Selected Bus
-            </button><button id="btn-toggle-results-motor" class="dropdown-item active" title="Show/Hide Motor Starting result boxes">
-              <svg width="14" height="14" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.3"/><text x="5" y="11" font-size="8" fill="currentColor" font-weight="bold">M</text></svg>
-              Motor Starting Results
-            </button><button id="btn-toggle-results-dynmotor" class="dropdown-item active" title="Show/Hide Dynamic Motor Starting result boxes">
-              <svg width="14" height="14" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M4 10.5c1.5 0 1.5-5 3-5s1.5 3.5 3 3.5 1.5-1.5 2-1.5" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
-              Dynamic Motor Results
-            </button><button id="btn-toggle-results-duty" class="dropdown-item active" title="Show/Hide Duty Check result boxes">
-              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M8 1L2 4v4c0 3.5 2.5 6.5 6 7.5 3.5-1 6-4 6-7.5V4z" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>
-              Duty Check Results
-            </button><button id="btn-toggle-results-loaddiversity" class="dropdown-item active" title="Show/Hide Load Diversity result boxes">
-              <svg width="14" height="14" viewBox="0 0 16 16"><rect x="2" y="10" width="3" height="4" fill="currentColor" opacity="0.4"/><rect x="6.5" y="6" width="3" height="8" fill="currentColor" opacity="0.6"/><rect x="11" y="2" width="3" height="12" fill="currentColor" opacity="0.8"/></svg>
-              Load Diversity Results
-            </button><button id="btn-toggle-results-grounding" class="dropdown-item active" title="Show/Hide Grounding result boxes">
-              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M8 2v6" stroke="currentColor" stroke-width="1.5"/><path d="M4 8h8M5.5 10.5h5M7 13h2" stroke="currentColor" stroke-width="1.3"/></svg>
-              Grounding Results
-            </button><div class="dropdown-divider"></div><button class="dropdown-item" id="btn-restore-results" title="Restore result boxes hidden via right-click" disabled>
-          <svg width="16" height="16" viewBox="0 0 16 16"><path d="M2 8a6 6 0 1 1 6 6" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M2 5v3h3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><rect x="6" y="6" width="7" height="4.5" rx="0.6" fill="none" stroke="currentColor" stroke-width="1.1"/></svg>
-          <span>Restore results</span>
-        </button><button id="btn-reset-annotation-positions" class="dropdown-item" title="Reset all result boxes to default positions">
-              <svg width="14" height="14" viewBox="0 0 16 16"><path d="M2 4a6 6 0 1 1 0 8" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M5 1L2 4l3 3" fill="none" stroke="currentColor" stroke-width="1.3"/><rect x="5" y="6" width="6" height="4" rx="0.5" fill="none" stroke="currentColor" stroke-width="1"/></svg>
-              Reset Result Box Positions
-            </button><div class="dropdown-divider"></div><button id="btn-show-dispatch" class="dropdown-item" title="Show the Generation Dispatch summary from the last load flow">
+        <div class="toolbar-menu" id="menu-results"><button type="button" class="toolbar-menu-btn" aria-haspopup="menu">Results <svg width="8" height="8" viewBox="0 0 8 8" aria-hidden="true"><path d="M1 3l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.2"/></svg></button><div class="toolbar-menu-panel"><span class="dropdown-label">Open results</span><div id="results-open-list" role="none"></div><span id="results-none-note" class="dropdown-note">No study results yet. Run a study from Analyse — its result boxes show over the diagram, and a strip of study chips there picks which.</span><div class="dropdown-divider"></div><button id="btn-show-dispatch" class="dropdown-item" title="Show the Generation Dispatch summary from the last load flow">
               <svg width="14" height="14" viewBox="0 0 16 16"><rect x="2" y="8" width="3" height="6" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="6.5" y="5" width="3" height="9" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="11" y="2" width="3" height="12" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
               Generation Dispatch
             </button></div></div>
@@ -424,16 +382,6 @@
 
     <!-- SVG Canvas -->
     <main id="canvas-container">
-      <!-- Persistent on-canvas mode indicator (H17): shows the active
-           interaction mode and toggles Select ⇄ Wire on click. Kept in sync
-           by setMode() in app.js. -->
-      <div id="canvas-mode-indicator" class="canvas-mode-indicator" role="button" tabindex="0"
-           title="Interaction mode — click to switch between Select (V) and Wire (W)"
-           aria-label="Interaction mode: Select. Click to switch to Wire mode.">
-        <svg class="mode-icon-select" width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 1l5 12 2-5 5-2z" fill="currentColor"/></svg>
-        <svg class="mode-icon-wire" width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 12h5a3 3 0 003-3V6" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="2" cy="12" r="2" fill="currentColor"/><circle cx="10" cy="4" r="2" fill="currentColor"/></svg>
-        <span id="canvas-mode-label">Select</span>
-      </div>
       <svg id="sld-canvas" xmlns="http://www.w3.org/2000/svg" tabindex="0" role="application" aria-label="Single-line diagram canvas. Use arrow keys to move between components when focused.">
         <defs>
           <!-- Grid pattern -->
@@ -3456,6 +3404,7 @@
   <script src="js/tripunit.js?v=2.581"></script>
   <script src="js/annotations.js?v=2.581"></script>
   <script src="js/stale-results.js?v=2.581"></script>
+  <script src="js/resultview.js?v=2.588"></script>
   <script src="js/sync.js?v=2.587"></script>
   <script src="js/links.js?v=2.587"></script>
   <script src="js/cablefocus.js?v=3.5.274"></script>
