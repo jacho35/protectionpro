@@ -96,7 +96,7 @@ def _apply_cascading(results, adj, comp_map):
         # the combination is tested for making at the reinforced capacity too
         if not v["explicit_making"]:
             r["making_capacity_ka"] = lv_making_factor(ka) * ka
-            r["making_ok"] = r["peak_fault_ka"] <= r["making_capacity_ka"]
+            r["making_ok"] = bool(r["peak_fault_ka"] <= r["making_capacity_ka"])
             r["making_margin_pct"] = (1 - r["peak_fault_ka"] / r["making_capacity_ka"]) * 100
 
 
@@ -329,7 +329,7 @@ def run_duty_check(project: ProjectData):
         for bid in bus_ids:
             if bid in fault_results.buses:
                 bus_fault = fault_results.buses[bid]
-                ik3 = bus_fault.ik3 or 0
+                ik3 = float(bus_fault.ik3 or 0)
                 if ik3 > prospective_fault_ka:
                     prospective_fault_ka = ik3
                     # [PROT-15] Breaking duty uses the symmetrical breaking
@@ -343,14 +343,14 @@ def run_duty_check(project: ProjectData):
                     # crediting decay understated their duty 20 % at a motor
                     # bus. [DU2] Unbalanced faults: IEC 60909-0 §9 takes
                     # Ib = I″k (no decay), so they enter at their I″k.
-                    largest_fault_ka = _largest_fault_ka(bus_fault)
+                    largest_fault_ka = float(_largest_fault_ka(bus_fault))
                     others = max([float(v) for v in (bus_fault.ik1, bus_fault.ikLL) if v],
                                  default=0.0)
                     use_ib = (device_type == "cb" and is_mv_device
                               and bus_fault.ib and bus_fault.ib > 0
                               and not (0 < t_cp < 0.1))
                     if use_ib:
-                        breaking_duty_ka = max(bus_fault.ib, others)
+                        breaking_duty_ka = max(float(bus_fault.ib), others)
                         duty_basis = "ib" if bus_fault.ib >= others else "ik_unbalanced"
                     else:
                         breaking_duty_ka = largest_fault_ka
@@ -358,11 +358,11 @@ def run_duty_check(project: ProjectData):
                     # [PS-14a] Asymmetrical breaking current at contact
                     # parting (fault engine: Ib_asym = √(Ib² + I_dc²) at
                     # 100 ms with τ from the reduced Z_eq).
-                    asym_duty_ka = bus_fault.ib_asymmetric or 0.0
+                    asym_duty_ka = float(bus_fault.ib_asymmetric or 0.0)
                     location_bus = comp_map[bid].props.get("name", bid) if bid in comp_map else bid
                     # Use kappa from fault results if available
                     if bus_fault.kappa:
-                        kappa = bus_fault.kappa
+                        kappa = float(bus_fault.kappa)
                     # [R3/PS-1 fallback] this bus's currents come from the
                     # OVERSTATING per-path combination — flag the verdict.
                     fallback_basis = (getattr(bus_fault, "thevenin_basis", None)
@@ -382,7 +382,7 @@ def run_duty_check(project: ProjectData):
                     row_ka = 0.0
                     for br in (bus_fault.branches or []):
                         if br.element_id == device.id:
-                            row_ka = br.ik_ka or 0.0
+                            row_ka = float(br.ik_ka or 0.0)
                             break
                     if 0 < row_ka < ik3:
                         through_fault_ka = max(row_ka, ik3 - row_ka)
@@ -419,12 +419,12 @@ def run_duty_check(project: ProjectData):
                     system_voltage_kv = v
 
         # Get load current through device
-        load_current_a = branch_currents.get(device.id, 0)
+        load_current_a = float(branch_currents.get(device.id, 0) or 0)
 
         # ── Interrupt / breaking check ──
         interrupt_ok = True
         if breaking_capacity_ka > 0:
-            interrupt_ok = breaking_duty_ka <= breaking_capacity_ka
+            interrupt_ok = bool(breaking_duty_ka <= breaking_capacity_ka)
         elif prospective_fault_ka > 0:
             analysis_warnings.append(f"Device '{device_name}' has no breaking capacity rating.")
             interrupt_ok = False
@@ -448,7 +448,7 @@ def run_duty_check(project: ProjectData):
                 else:
                     n = lv_making_factor(breaking_capacity_ka)
                     making_capacity_ka = n * breaking_capacity_ka
-            making_ok = peak_fault_ka <= making_capacity_ka
+            making_ok = bool(peak_fault_ka <= making_capacity_ka)
             if making_capacity_ka > 0:
                 making_margin_pct = (1 - peak_fault_ka / making_capacity_ka) * 100
 
@@ -472,12 +472,12 @@ def run_duty_check(project: ProjectData):
                 beta_rated = math.exp(-t_eval / 0.045)  # ≈ 0.108 at 100 ms
             asym_capability_ka = breaking_capacity_ka * math.sqrt(
                 1.0 + 2.0 * beta_rated ** 2)
-            asym_ok = asym_duty_ka <= asym_capability_ka
+            asym_ok = bool(asym_duty_ka <= asym_capability_ka)
 
         # ── Continuous current check ──
         continuous_ok = True
         if rated_current_a > 0 and load_current_a > 0:
-            continuous_ok = load_current_a <= rated_current_a
+            continuous_ok = bool(load_current_a <= rated_current_a)
 
         # ── Voltage rating check ──
         # [L1] MV: IEC 62271-1 requires Ur ≥ Um (IEC 60038 highest voltage
@@ -488,7 +488,7 @@ def run_duty_check(project: ProjectData):
         voltage_marginal = False
         um_kv = highest_system_voltage_kv(system_voltage_kv) if system_voltage_kv > 0 else 0.0
         if rated_voltage_kv > 0 and system_voltage_kv > 0:
-            voltage_ok = system_voltage_kv <= rated_voltage_kv + 1e-9
+            voltage_ok = bool(system_voltage_kv <= rated_voltage_kv + 1e-9)
             voltage_marginal = voltage_ok and system_voltage_kv > 1.0 and rated_voltage_kv < um_kv - 1e-9
 
         # ── [L2] Short-time withstand (IEC 60947-2 Icw, category B) ──
@@ -509,7 +509,7 @@ def run_duty_check(project: ProjectData):
             if not (inst > 0 and i_st_ka * 1000 >= inst):
                 if icw_ka > 0:
                     t_cw = float(dp.get("icw_time_s", 1.0) or 1.0)
-                    icw_ok = i_st_ka ** 2 * st_delay <= icw_ka ** 2 * t_cw + 1e-9
+                    icw_ok = bool(i_st_ka ** 2 * st_delay <= icw_ka ** 2 * t_cw + 1e-9)
                 else:
                     analysis_warnings.append(
                         f"Device '{device_name}' has a short-time delay but no Icw rating — "
