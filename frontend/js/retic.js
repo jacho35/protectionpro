@@ -104,6 +104,50 @@ const Retic = {
     if (typeof PlanSync !== 'undefined' && PlanSync.pullNamesFromDemand) PlanSync.pullNamesFromDemand();
   },
 
+  // ─── Kept in sync with the site plan (Settings › Keep workspaces in sync) ───
+  // Lengths measured on the site plan: a value typed here is kept as an
+  // override and shown "typed · plan 38 m" with Reset.
+  _syncOn() { return typeof PlanSync !== 'undefined' && typeof Sync !== 'undefined' && AppState.keepInSync !== false; },
+  _planLen(key) { return this._syncOn() && PlanSync._reticSrc ? PlanSync._reticSrc[key] : undefined; },
+  _typedLength(key, v) {
+    const src = this._planLen(key);
+    if (src == null) return;
+    Sync.setOverride(key, v, src);
+    const tag = document.querySelector(`[data-plan-tag="${CSS.escape(key)}"]`);
+    if (tag) tag.innerHTML = this._planTagInner(key, tag.dataset.compact === '1');
+  },
+  // The note beside a length the plan measures; '' when the plan does not.
+  _planTag(key, compact) {
+    if (this._planLen(key) == null) return '';
+    return `<span class="retic-plan-tagwrap" data-plan-tag="${escHtml(key)}"${compact ? ' data-compact="1"' : ''}>${this._planTagInner(key, compact)}</span>`;
+  },
+  _planTagInner(key, compact) {
+    const src = this._planLen(key);
+    if (src == null) return '';
+    const m = (v) => `${(Math.round(v * 10) / 10)} m`;
+    const ov = Sync.override(key);
+    if (!ov) return `<span class="retic-plan-tag" title="${escHtml(`Measured on the site plan (${m(src)}): it follows the drawing. Type a value to keep your own.`)}">plan</span>`;
+    const tip = `Typed here — the site plan measures ${m(ov.src)}. Reset to follow the plan again.`;
+    return `<span class="retic-plan-tag retic-plan-tag--typed" title="${escHtml(tip)}">${compact ? 'typed' : `typed · plan ${m(ov.src)}`}</span>`
+      + `<button type="button" class="retic-plan-reset" data-action="sync-reset" data-key="${escHtml(key)}" title="${escHtml(`Follow the site plan again (${m(ov.src)})`)}">${compact ? '↺' : 'Reset'}</button>`;
+  },
+  // The drawn route that sets a Fed from (kiosk id, or 'ms:' + minisub id).
+  _fedRoute(key) { return this._syncOn() && PlanSync._reticFed ? PlanSync._reticFed[key] || null : null; },
+  _fedLockHtml(key, what) {
+    return this._fedRoute(key) ? ` disabled title="Set by the ${escHtml(what)} drawn on the site plan"` : '';
+  },
+  _fedNote(routeId) {
+    return `<button type="button" class="retic-plan-tag retic-plan-link" data-action="show-plan-route" data-route="${escHtml(routeId)}" title="Set by the cable drawn on the site plan — show it there">from the plan ›</button>`;
+  },
+  _showOnPlan(routeId) {
+    if (typeof window.switchWorkspace === 'function') window.switchWorkspace('plan');
+    const r = AppState.planMarkup && AppState.planMarkup.routes.find(x => x.id === routeId);
+    if (!r || typeof PlanMarkup === 'undefined') return;
+    PlanMarkup.selectOnly(r.id);
+    if (typeof PlanEngine !== 'undefined' && PlanEngine.zoomToPoints && r.points) PlanEngine.zoomToPoints(r.points);
+    if (typeof PlanUI !== 'undefined') PlanUI.renderProps();
+  },
+
   // ─── CRUD ───
   // Bare kiosk object seeded with the Quick Build feeder defaults.
   _newKiosk(fedFrom) {
@@ -170,6 +214,7 @@ const Retic = {
     const i = this.kiosks.findIndex(k => k.id === id);
     if (i < 0) return;
     const parent = this.kiosks[i].fedFrom || this.minisubs[0].id;
+    if (typeof Sync !== 'undefined') Sync.markDeleted('retic', id);   // its drawn kiosk goes too
     this.kiosks.splice(i, 1);
     // Kiosks fed from the deleted one inherit its parent (chain closes up)
     for (const k of this.kiosks) if (k.fedFrom === id) k.fedFrom = parent;
@@ -190,6 +235,7 @@ const Retic = {
     }
     const i = this.minisubs.findIndex(m => m.id === id);
     if (i < 0) return;
+    if (typeof Sync !== 'undefined') Sync.markDeleted('retic', id);
     this.minisubs.splice(i, 1);
     // Kiosks fed from the deleted minisub move to the first remaining one
     const fallback = this.minisubs[0].id;
@@ -212,6 +258,7 @@ const Retic = {
     const k = this.kioskById(kioskId);
     if (!k) return;
     const i = k.erfs.findIndex(e => e.id === erfId);
+    if (i >= 0 && typeof Sync !== 'undefined') Sync.markDeleted('retic', erfId);
     if (i >= 0) k.erfs.splice(i, 1);
     this._afterMutate();
   },
@@ -292,6 +339,7 @@ const Retic = {
       let v = t.value;
       if (t.type === 'number') v = parseFloat(v) || 0;
       k[key] = v;
+      if (key === 'feederLength') this._typedLength('len:feeder:' + k.id, v);
       this._snapshot();
       this._markDirty();
       if (key === 'feederCable' && typeof PlanSync !== 'undefined') PlanSync.pullCablesFromDemand();   // drawn feeder route follows
@@ -318,6 +366,7 @@ const Retic = {
       } else {
         erf[key] = v;
         if (key === 'phase') this._syncErfOverride(erf);   // a kVA entry re-derives its amps
+        if (key === 'length') this._typedLength('len:service:' + erf.id, v);
       }
       this._snapshot();
       this._markDirty();
@@ -346,6 +395,7 @@ const Retic = {
       }
       ms[field] = field === 'mvLength' ? (parseFloat(t.value) || 0) : t.value;
       if (field === 'mvFedFrom' && t.value === ms.id) ms.mvFedFrom = '';
+      if (field === 'mvLength') this._typedLength('len:mv:' + ms.id, ms.mvLength);
       this._snapshot();
       this._markDirty();
       if ((field === 'mvCable' || field === 'mvFedFrom') && typeof PlanSync !== 'undefined') PlanSync.pullCablesFromDemand();   // drawn MV route follows
@@ -422,6 +472,13 @@ const Retic = {
       if (typeof ReticDiagram !== 'undefined') ReticDiagram.open();
     }
     else if (action === 'push-sld') this.pushToSLD();
+    else if (action === 'sync-reset') {
+      // Follow the site plan's measured length again.
+      if (typeof Sync !== 'undefined') { Sync.resetOverride(btn.dataset.key); Sync.run(); }
+      this.render();
+      this.recompute();
+    }
+    else if (action === 'show-plan-route') this._showOnPlan(btn.dataset.route);
     else if (action === 'toggle-settings') {
       this._settingsOpen = !this._settingsOpen;
       this.renderSettingsBar();
@@ -877,8 +934,8 @@ const Retic = {
         ${k.collapsed ? '' : `
         <div class="kiosk-body">
           <div class="kiosk-meta">
-            <div class="retic-field"><label>Fed From</label>
-              <select data-action="kiosk-field" data-kiosk="${escHtml(k.id)}" data-field="fedFrom">${fedFromOptsFor(k)}</select></div>
+            <div class="retic-field"><label>Fed From${this._fedRoute(k.id) ? ' ' + this._fedNote(this._fedRoute(k.id)) : ''}</label>
+              <select data-action="kiosk-field" data-kiosk="${escHtml(k.id)}" data-field="fedFrom"${this._fedLockHtml(k.id, 'LV cable')}>${fedFromOptsFor(k)}</select></div>
             <div class="retic-field"><label>Load Class</label>
               <select data-action="kiosk-field" data-kiosk="${escHtml(k.id)}" data-field="loadClass">${classOptsFor(k.loadClass)}</select></div>
             <div class="retic-field"><label>ADMD Override (kVA${this._classIs3ph(this._kioskClass(k)) ? '/phase' : ''})</label>
@@ -889,7 +946,7 @@ const Retic = {
                 : `<input type="number" step="0.1" data-action="kiosk-field" data-kiosk="${escHtml(k.id)}" data-field="streetLightKVA" value="${numAttr(k.streetLightKVA || '')}" placeholder="0" title="Fixed, undiversified street-lighting load">`}</div>
             <div class="retic-field"><label>Feeder Cable <span class="sel-feeder" title="Include this kiosk's LV feeder cable in the bulk cable change"><input type="checkbox" data-action="sel-feeder" data-kiosk="${escHtml(k.id)}" aria-label="Include this kiosk's feeder in the bulk cable change"${this._selFeeders.has(k.id) ? ' checked' : ''}> change</span></label>
               <select data-action="kiosk-field" data-kiosk="${escHtml(k.id)}" data-field="feederCable" data-cable-select>${this._cableOptions(k.feederCable)}</select></div>
-            <div class="retic-field"><label>Feeder Length (m)</label>
+            <div class="retic-field"><label>Feeder Length (m) ${this._planTag('len:feeder:' + k.id)}</label>
               <input type="number" step="1" data-action="kiosk-field" data-kiosk="${escHtml(k.id)}" data-field="feederLength" value="${numAttr(k.feederLength || '')}"></div>
             ${this._stringHead(k) === k
               ? `<div class="retic-field"><label title="The breaker at the head of this string of kiosks: every kiosk fed on from this one is protected by it. Used for the earth-fault loop and ECC checks. Also settable in the side bar's Strings list.">String Breaker</label>
@@ -1176,7 +1233,7 @@ const Retic = {
       <tr data-erf="${escHtml(e.id)}"${this._selErfs.has(e.id) ? ' class="erf-selected"' : ''}>
         <td data-cell="sel" class="sel-col"><input type="checkbox" class="sel-box" data-action="sel-erf" data-kiosk="${escHtml(k.id)}" data-erf="${escHtml(e.id)}" aria-label="Select this erf for a bulk cable change"${this._selErfs.has(e.id) ? ' checked' : ''}></td>
         <td data-cell="erf" data-label="Erf #"><input type="text" data-action="erf-field" data-kiosk="${escHtml(k.id)}" data-erf="${escHtml(e.id)}" data-field="erfNumber" value="${escHtml(e.erfNumber || '')}"></td>
-        <td data-cell="len" data-label="Length (m)"><input type="number" step="1" data-action="erf-field" data-kiosk="${escHtml(k.id)}" data-erf="${escHtml(e.id)}" data-field="length" value="${numAttr(e.length || '')}"></td>
+        <td data-cell="len" data-label="Length (m)"><span class="retic-len-cell"><input type="number" step="1" data-action="erf-field" data-kiosk="${escHtml(k.id)}" data-erf="${escHtml(e.id)}" data-field="length" value="${numAttr(e.length || '')}">${this._planTag('len:service:' + e.id, true)}</span></td>
         <td data-cell="phase" data-label="Phase"${this._erfPhaseMismatch(k, e) ? ` class="erf-phase-warn" title="${escHtml(this._mixedPhaseText(this._kioskClass(k)))}"` : ''}><select data-action="erf-field" data-kiosk="${escHtml(k.id)}" data-erf="${escHtml(e.id)}" data-field="phase">${phaseOpts}</select></td>
         <td data-cell="cable" data-label="Service Cable"${this._erfCableMismatch(k, e) ? ` class="erf-phase-warn" title="${escHtml(this._erfCableMismatch(k, e))}"` : ''}><select data-action="erf-field" data-kiosk="${escHtml(k.id)}" data-erf="${escHtml(e.id)}" data-field="cableType" data-cable-select>${this._cableOptions(e.cableType)}</select></td>
         <td data-cell="earth" data-label="Earth Cable">${this._earthingOf(k) === 'TN-C'
@@ -1685,15 +1742,15 @@ const Retic = {
           <select class="ms-earthing" data-action="minisub-field" data-ms="${escHtml(ms.id)}" data-field="earthing">
             ${['TN-S', 'TN-C', 'TN-C-S'].map(t => `<option value="${t}"${(ms.earthing || 'TN-S') === t ? ' selected' : ''}>${t}</option>`).join('')}
           </select></span></div>
-        <div class="summary-row"><span class="k" title="The upstream transformer / minisub this one is fed from on the MV network (none = the MV supply).">MV fed from</span><span class="v">
-          <select class="ms-mvfrom" data-action="minisub-field" data-ms="${escHtml(ms.id)}" data-field="mvFedFrom">
+        <div class="summary-row"><span class="k" title="The upstream transformer / minisub this one is fed from on the MV network (none = the MV supply).">MV fed from${this._fedRoute('ms:' + ms.id) ? ' ' + this._fedNote(this._fedRoute('ms:' + ms.id)) : ''}</span><span class="v">
+          <select class="ms-mvfrom" data-action="minisub-field" data-ms="${escHtml(ms.id)}" data-field="mvFedFrom"${this._fedLockHtml('ms:' + ms.id, 'MV cables')}>
             <option value=""${!ms.mvFedFrom ? ' selected' : ''}>— MV supply —</option>
             ${this.minisubs.filter(o => o.id !== ms.id).map(o => `<option value="${o.id}"${ms.mvFedFrom === o.id ? ' selected' : ''}>${escHtml(o.name)}</option>`).join('')}
           </select></span></div>
         ${ms.mvFedFrom || ms.mvLength ? `
         <div class="summary-row"><span class="k">MV cable</span><span class="v">
           <select class="ms-mvcable" data-action="minisub-field" data-ms="${escHtml(ms.id)}" data-field="mvCable" data-cable-select>${this._mvCableOptions(ms.mvCable)}</select></span></div>
-        <div class="summary-row"><span class="k">MV length (m)</span><span class="v">
+        <div class="summary-row"><span class="k">MV length (m) ${this._planTag('len:mv:' + ms.id)}</span><span class="v">
           <input type="number" step="1" min="0" class="ms-mvlen" data-action="minisub-field" data-ms="${escHtml(ms.id)}" data-field="mvLength" value="${numAttr(ms.mvLength || '')}" placeholder="0"></span></div>` : ''}
         ${(typeof ReticDiagram !== 'undefined' ? ReticDiagram.ringTiesFor(ms.id) : []).map(t => `
         <div class="summary-row"><span class="k" title="MV ring tie: a drawn MV route closing the ring back to ${escHtml(t.other)}. Shown on the diagram; not part of the MV fed-from chain.">Ring tie to</span><span class="v">${escHtml(t.other)}${t.cable ? ' · ' + escHtml(t.cable) : ''}${t.len ? ' · ' + t.len + ' m' : ''}</span></div>`).join('')}

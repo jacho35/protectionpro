@@ -53,11 +53,35 @@ const PlanSync = {
   },
 
   // Resolve a plan element to an existing reticulation row: reticId, then name.
-  _resolve(rows, el) {
+  // `taken` (optional): row ids other drawn elements are linked to — a name
+  // match never takes a row another element already stands for.
+  _resolve(rows, el, taken) {
     if (el.reticId) { const byId = rows.find(r => r.id === el.reticId); if (byId) return byId; }
     const nm = (el.name || '').trim().toLowerCase();
     if (!nm) return null;
-    return rows.find(r => (r.name || '').trim().toLowerCase() === nm) || null;
+    return rows.find(r => (r.name || '').trim().toLowerCase() === nm && !(taken && taken.has(r.id))) || null;
+  },
+
+  // Row ids drawn elements of `type` are linked to, except `el`'s own.
+  _takenIds(els, type) {
+    const s = new Set();
+    for (const e of els) if (e.type === type && e.reticId) s.add(e.reticId);
+    return s;
+  },
+
+  // A new Demand row for a drawn element keeps the id the element already
+  // points to (an undo in Demand took the row away; the pass puts it back
+  // under the same id, so links and overrides stay valid).
+  _rowId(el, exists, gen) {
+    return el.reticId && !exists(el.reticId) ? el.reticId : gen();
+  },
+
+  // A length the site plan measures (m). With "Keep workspaces in sync" a
+  // value typed in Demand is kept as an override (Sync.value); the measured
+  // figure is remembered for Demand's "plan" / "typed · plan 38 m" note.
+  _len(key, src, cur) {
+    this._reticSrc[key] = src;
+    return this._value ? this._value(key, src, cur) : src;
   },
 
   // ─── Cable type, kept in step both ways ───
@@ -267,27 +291,35 @@ const PlanSync = {
     }
   },
 
-  // Site plan → Demand. opts.interactive (default true, the Output button)
-  // asks and reports in dialogs and takes an undo snapshot; the sync pass
-  // calls it with interactive: false — no dialog, no snapshot, and what it
-  // used to ask goes to opts.issue(key, text) instead. Without an await on
-  // that path the whole push runs synchronously. Returns the summary.
+  // Site plan → Demand, the Output button (with "Keep workspaces in sync"
+  // off): asks and reports in dialogs and takes an undo snapshot. The sync
+  // pass calls _pushCore with interactive: false instead — no dialog, no
+  // snapshot, and what it used to ask goes to opts.issue(key, text).
   async pushToSchedules(opts = {}) {
+    const interactive = opts.interactive !== false;
+    if (interactive && !this._factor()) {
+      const ok = await UI.confirm('Plan is not calibrated — push topology without measured lengths?', { danger: false });
+      if (!ok) return null;
+    }
+    return this._pushCore(opts);
+  },
+
+  // The push itself, synchronous. Returns the summary.
+  _pushCore(opts = {}) {
     const interactive = opts.interactive !== false;
     const issue = opts.issue || (() => {});
     const pm = AppState.planMarkup;
     const factor = this._factor();
-    if (!factor) {
-      if (interactive) {
-        const ok = await UI.confirm('Plan is not calibrated — push topology without measured lengths?', { danger: false });
-        if (!ok) return null;
-      } else {
-        issue('plan-uncalibrated', 'Site plan not calibrated — lengths are not measured, so Demand uses its default lengths. Calibrate the plan to fill them in.');
-      }
+    if (!factor && !interactive) {
+      issue('plan-uncalibrated', 'Site plan not calibrated — lengths are not measured, so Demand keeps its own lengths. Calibrate the plan to fill them in.');
     }
     const R = AppState.reticulation;
     const elById = this._elById();
-    const summary = { minisubs: 0, kiosks: 0, erfs: 0, feeders: 0, sl: 0 };
+    const summary = { minisubs: 0, kiosks: 0, erfs: 0, feeders: 0, sl: 0, created: [] };
+    this._value = interactive ? null : (opts.value || null);
+    this._reticSrc = {};
+    this._reticFed = {};
+    try {
 
     // 1) Minisubs
     const msEls = pm.elements.filter(e => e.type === 'minisub');
@@ -295,13 +327,14 @@ const PlanSync = {
     const defaultSourceOnly = R.minisubs.length === 1 && R.minisubs[0].id === 'source' &&
       !R.kiosks.some(k => k.fedFrom && k.fedFrom !== 'source');
     let adopted = false;
+    const msTaken = this._takenIds(msEls, 'minisub');
     for (const el of msEls) {
-      let row = this._resolve(R.minisubs, el);
-      if (!row && defaultSourceOnly && !adopted) {
+      let row = this._resolve(R.minisubs, el, msTaken);
+      if (!row && defaultSourceOnly && !adopted && !msTaken.has(R.minisubs[0].id)) {
         row = R.minisubs[0]; row.name = el.name || row.name; adopted = true;
       } else if (!row) {
-        row = { id: AppState.reticGenMinisubId(), name: el.name || 'Minisub' };
-        R.minisubs.push(row); summary.minisubs++;
+        row = { id: this._rowId(el, id => R.minisubs.some(m => m.id === id), () => AppState.reticGenMinisubId()), name: el.name || 'Minisub' };
+        R.minisubs.push(row); summary.minisubs++; summary.created.push(row.id);
       } else if (el.reticId === row.id) {
         el.name = row.name || el.name;      // already linked: Demand's name wins
       } else {
@@ -312,12 +345,14 @@ const PlanSync = {
 
     // 2) Kiosks
     const kioskEls = pm.elements.filter(e => e.type === 'kiosk');
+    const kTaken = this._takenIds(kioskEls, 'kiosk');
     for (const el of kioskEls) {
-      let row = this._resolve(R.kiosks, el);
+      let row = this._resolve(R.kiosks, el, kTaken);
       if (!row) {
         row = Retic._newKiosk(R.minisubs[0] ? R.minisubs[0].id : 'source');
+        row.id = this._rowId(el, id => R.kiosks.some(k => k.id === id), () => row.id);
         row.name = el.name || row.name;
-        R.kiosks.push(row); summary.kiosks++;
+        R.kiosks.push(row); summary.kiosks++; summary.created.push(row.id);
       } else if (el.reticId === row.id) {
         el.name = row.name || el.name;      // already linked: Demand's name wins
       } else {
@@ -331,6 +366,8 @@ const PlanSync = {
     this._walkMvFeeds(pm, elById, factor, R, summary);
 
     // 4) Service routes → erven under their kiosk
+    const erfTaken = this._takenIds(pm.elements, 'erf');
+    const erfSeen = new Set();
     for (const r of pm.routes) {
       if (this._effectiveType(r, elById) !== 'service') continue;
       const a = elById[r.fromId], b = elById[r.toId];
@@ -338,25 +375,37 @@ const PlanSync = {
       const kioskEl = a.type === 'kiosk' ? a : b.type === 'kiosk' ? b : null;
       const erfEl = a.type === 'erf' ? a : b.type === 'erf' ? b : null;
       if (!kioskEl || !erfEl || !kioskEl.reticId) continue;
+      if (erfSeen.has(erfEl.id)) continue;     // one service cable per erf counts
+      erfSeen.add(erfEl.id);
       const krow = R.kiosks.find(k => k.id === kioskEl.reticId);
       if (!krow) continue;
       const erfName = (erfEl.name || '').trim();
       let erf = erfEl.reticId && krow.erfs.find(e => e.id === erfEl.reticId);
-      if (!erf) erf = krow.erfs.find(e => (e.erfNumber || '').trim().toLowerCase() === erfName.toLowerCase());
+      if (!erf && erfEl.reticId) {
+        // Linked to an erf under another kiosk: its service cable now runs
+        // from this kiosk, so the erf (and everything typed on it) moves here.
+        for (const other of R.kiosks) {
+          if (other === krow) continue;
+          const i = other.erfs.findIndex(e => e.id === erfEl.reticId);
+          if (i >= 0) { erf = other.erfs.splice(i, 1)[0]; krow.erfs.push(erf); break; }
+        }
+      }
+      if (!erf) erf = krow.erfs.find(e => (e.erfNumber || '').trim().toLowerCase() === erfName.toLowerCase() && !erfTaken.has(e.id));
       const len = this._routeLenM(r, factor);
       if (!erf) {
         erf = {
-          id: AppState.reticGenErfId(),
+          id: this._rowId(erfEl, id => R.kiosks.some(k => k.erfs.some(e => e.id === id)), () => AppState.reticGenErfId()),
           erfNumber: erfName || String(krow.erfs.length + 1),
           length: len || (Retic.settings.quickServiceLen || 30),
           phase: this.PHASES[krow.erfs.length % 3],
           cableType: r.cableType || Retic.settings.quickServiceCable || '',
           ampsOverride: 0,
         };
-        krow.erfs.push(erf); summary.erfs++;
+        krow.erfs.push(erf); summary.erfs++; summary.created.push(erf.id);
+        if (len) this._reticSrc['len:service:' + erf.id] = len;
       } else {
         if (erfEl.reticId === erf.id && erf.erfNumber) erfEl.name = erf.erfNumber;
-        if (len) erf.length = len;
+        if (len) erf.length = this._len('len:service:' + erf.id, len, erf.length);
         if (r.cableType) erf.cableType = r.cableType;
       }
       erfEl.reticId = erf.id;
@@ -375,13 +424,17 @@ const PlanSync = {
       // from those (per luminaire), not this flat per-pole estimate.
       if (krow && !krow.streetLightFromCircuits) { krow.streetLightKVA = +v.toFixed(3); summary.sl++; }
     }
+    } finally {
+      this._value = null;
+    }
 
+    // The sync pass marks the project changed and redraws Demand itself.
+    if (!interactive) return summary;
     AppState.dirty = true;
     if (typeof Retic !== 'undefined') {
-      if (interactive && Retic._snapshot) Retic._snapshot();
+      if (Retic._snapshot) Retic._snapshot();
       if (Retic._active) { Retic.render && Retic.render(); Retic.recompute && Retic.recompute(); }
     }
-    if (!interactive) return summary;
     const extra = [];
     const mv = pm.routes.filter(r => r.type === 'mv').length - (summary.mvFeeds || 0);
     if (mv > 0) extra.push(`${mv} other MV route(s)`);
@@ -424,8 +477,9 @@ const PlanSync = {
           const krow = R.kiosks.find(k => k.id === child.reticId);
           if (krow) {
             krow.fedFrom = curEl.reticId;
+            this._reticFed[krow.id] = edge.route.id;
             const len = this._routeLenM(edge.route, factor);
-            if (len) krow.feederLength = len;
+            if (len) krow.feederLength = this._len('len:feeder:' + krow.id, len, krow.feederLength);
             if (edge.route.cableType) krow.feederCable = edge.route.cableType;
             summary.feeders++;
           }
@@ -465,6 +519,7 @@ const PlanSync = {
       const rootRow = (roots.length ? roots : rows).sort((a, b) => order(a) - order(b))[0];
       const rootId = comp.find(id => rowOf(id) === rootRow);
       rootRow.mvFedFrom = '';
+      if (adj[rootId] && adj[rootId][0]) this._reticFed['ms:' + rootRow.id] = adj[rootId][0].route.id;
       this._mvSupplyCable(adj, elById, rootId, rootRow, factor);
       if (rows.length < 2) continue;
       const visited = new Set([rootId]);
@@ -479,7 +534,8 @@ const PlanSync = {
           const row = rowOf(e.other);
           if (row && row !== cur.parent) {
             row.mvFedFrom = cur.parent.id;
-            if (len) row.mvLength = len;
+            this._reticFed['ms:' + row.id] = e.route.id;
+            if (len) row.mvLength = this._len('len:mv:' + row.id, len, row.mvLength);
             if (cable) row.mvCable = cable;
             summary.mvFeeds = (summary.mvFeeds || 0) + 1;
             q.push({ id: e.other, parent: row, len: 0, cable: '' });
@@ -506,13 +562,265 @@ const PlanSync = {
         const len = +(cur.len + (this._routeLenM(e.route, factor) || 0)).toFixed(2);
         const cable = cur.cable || e.route.cableType || '';
         if (el.type === 'rmu') {
-          if (len) rootRow.mvLength = len;
+          if (len) rootRow.mvLength = this._len('len:mv:' + rootRow.id, len, rootRow.mvLength);
           if (cable) rootRow.mvCable = cable;
           return;
         }
         q.push({ id: e.other, len, cable });
       }
     }
+  },
+
+  // ─── Reticulation kept in sync (Settings › Keep workspaces in sync) ───
+  // The sync pass runs syncRetic a moment after each edit: what is drawn on
+  // the site plan goes to Demand (pushToSchedules, non-interactive), and a
+  // deletion on either side is carried to the other. As with Building, what
+  // the pass removes is kept in a record: when the deleted item comes back
+  // (undo) the pass puts the removed side back, and when it goes again
+  // (redo) the pass removes it again.
+  RETIC_TYPES: ['minisub', 'kiosk', 'erf'],
+  _reticSrc: {},           // override key → plan-measured length (m), last pass
+  _reticFed: {},           // kiosk id / 'ms:'+minisub id → the drawn route setting its Fed from
+  _reticLinks: new Map(),  // plan element id → { type, rowId } as of the last pass
+  _reticAuto: new Set(),   // Demand rows the pass created (this session)
+  _reticPairs: [],
+
+  reticInUse() {
+    const pm = AppState.planMarkup, R = AppState.reticulation;
+    if (!pm || !R || !pm.settings || pm.settings.domain !== 'retic') return false;
+    return this._reticLinks.size > 0 || this._reticPairs.length > 0
+      || pm.elements.some(e => this.RETIC_TYPES.includes(e.type));
+  },
+
+  // Everything the Reticulation sync reads and writes, to tell whether a pass
+  // changed anything.
+  reticFingerprint() {
+    const R = AppState.reticulation, pm = AppState.planMarkup;
+    const els = pm.elements.filter(e => this.RETIC_TYPES.includes(e.type)).map(e => [e.id, e.reticId || null, e.name]);
+    const keys = new Set(pm.routes.map(r => r.id));
+    return AppState._hashText(JSON.stringify([R.minisubs, R.kiosks, els, keys.size, AppState.syncOverrides || null]));
+  },
+
+  // A Demand row by id: { kind, row, list, index, kiosk? } or null.
+  _reticRow(id) {
+    const R = AppState.reticulation;
+    if (!R || !id) return null;
+    let i = R.minisubs.findIndex(m => m.id === id);
+    if (i >= 0) return { kind: 'minisub', row: R.minisubs[i], list: R.minisubs, index: i };
+    i = R.kiosks.findIndex(k => k.id === id);
+    if (i >= 0) return { kind: 'kiosk', row: R.kiosks[i], list: R.kiosks, index: i };
+    for (const k of R.kiosks) {
+      i = k.erfs.findIndex(e => e.id === id);
+      if (i >= 0) return { kind: 'erf', row: k.erfs[i], list: k.erfs, index: i, kiosk: k };
+    }
+    return null;
+  },
+  _reticRowName(f) { return f.kind === 'erf' ? `Erf ${f.row.erfNumber || ''}`.trim() : (f.row.name || (f.kind === 'kiosk' ? 'Kiosk' : 'Minisub')); },
+
+  // Take Demand rows away, keeping copies to put back. Kiosks fed from a
+  // removed kiosk or minisub close up the chain, as Demand's own delete does.
+  _reticRemoveRows(ids) {
+    const R = AppState.reticulation;
+    const saved = [];
+    for (const id of ids) {
+      const f = this._reticRow(id);
+      if (!f) continue;
+      if (f.kind === 'minisub' && R.minisubs.length <= 1) continue;   // Demand keeps one
+      const rec = { kind: f.kind, row: JSON.parse(JSON.stringify(f.row)), index: f.index, kioskId: f.kiosk ? f.kiosk.id : null, moved: [] };
+      f.list.splice(f.index, 1);
+      if (f.kind !== 'erf') {
+        const to = f.kind === 'kiosk' ? (f.row.fedFrom || (R.minisubs[0] && R.minisubs[0].id)) : (R.minisubs[0] && R.minisubs[0].id);
+        for (const k of R.kiosks) if (k.fedFrom === id) { rec.moved.push(k.id); k.fedFrom = to; }
+        if (f.kind === 'minisub') for (const m of R.minisubs) if (m.mvFedFrom === id) m.mvFedFrom = '';
+      }
+      saved.push(rec);
+    }
+    return saved;
+  },
+
+  _reticRestoreRows(saved) {
+    const R = AppState.reticulation;
+    for (const rec of saved || []) {
+      if (this._reticRow(rec.row.id)) continue;
+      const row = JSON.parse(JSON.stringify(rec.row));
+      let list;
+      if (rec.kind === 'erf') {
+        const k = R.kiosks.find(x => x.id === rec.kioskId);
+        if (!k) continue;
+        list = k.erfs;
+      } else list = rec.kind === 'kiosk' ? R.kiosks : R.minisubs;
+      list.splice(Math.min(rec.index, list.length), 0, row);
+      for (const kid of rec.moved || []) { const k = R.kiosks.find(x => x.id === kid); if (k) k.fedFrom = row.id; }
+    }
+  },
+
+  // Drawn elements (and the routes ending on them) taken off the site plan,
+  // in place (pm.elements / pm.routes are the active floor's own arrays).
+  _reticRemovePlan(elIds) {
+    const pm = AppState.planMarkup;
+    const ids = new Set(elIds);
+    const saved = { els: [], routes: [] };
+    for (let i = pm.elements.length - 1; i >= 0; i--) {
+      if (ids.has(pm.elements[i].id)) saved.els.unshift(JSON.parse(JSON.stringify(pm.elements.splice(i, 1)[0])));
+    }
+    for (let i = pm.routes.length - 1; i >= 0; i--) {
+      const r = pm.routes[i];
+      if (ids.has(r.fromId) || ids.has(r.toId)) saved.routes.unshift(JSON.parse(JSON.stringify(pm.routes.splice(i, 1)[0])));
+    }
+    if (typeof PlanMarkup !== 'undefined' && PlanMarkup.selectedIds) for (const id of ids) PlanMarkup.selectedIds.delete(id);
+    return saved;
+  },
+
+  _reticRestorePlan(saved) {
+    const pm = AppState.planMarkup;
+    if (!saved) return;
+    for (const e of saved.els) if (!pm.elements.some(x => x.id === e.id)) pm.elements.push(JSON.parse(JSON.stringify(e)));
+    for (const r of saved.routes) if (!pm.routes.some(x => x.id === r.id)) pm.routes.push(JSON.parse(JSON.stringify(r)));
+  },
+
+  _reticDeletions(notice) {
+    const pm = AppState.planMarkup;
+    const inPlan = () => new Set(pm.elements.map(e => e.id));
+    const links = this._reticLinks;
+    const delPlan = typeof Sync !== 'undefined' ? Sync.takeDeleted('plan', id => links.has(id)) : new Set();
+    const delRetic = typeof Sync !== 'undefined' ? Sync.takeDeleted('retic') : new Set();
+
+    // 1. Earlier deletions: undo brought the deleted item back → put back what
+    //    the pass removed; redo took it away again → remove it again.
+    let here = inPlan();
+    for (const p of this._reticPairs) {
+      const back = p.origin === 'plan' ? p.originIds.some(id => here.has(id)) : p.originIds.some(id => this._reticRow(id));
+      if (p.state === 'removed' && back) {
+        if (p.origin === 'plan') this._reticRestoreRows(p.saved); else this._reticRestorePlan(p.saved);
+        p.state = 'restored'; here = inPlan();
+      } else if (p.state === 'restored' && !back) {
+        if (p.origin === 'plan') p.saved = this._reticRemoveRows(p.saved.map(r => r.row.id));
+        else p.saved = this._reticRemovePlan(p.saved.els.map(e => e.id));
+        p.state = 'removed'; here = inPlan();
+      }
+    }
+
+    // 2. Drawn elements deleted on the plan → their Demand rows. An element an
+    //    undo took away (not a delete) takes its row only if the pass had
+    //    created it; a row that was there before stays, as "not placed yet".
+    const gonePlan = [], rowIds = [], names = [];
+    for (const [elId, link] of links) {
+      if (here.has(elId)) continue;
+      const f = this._reticRow(link.rowId);
+      const marked = delPlan.has(elId);
+      if (f && f.kind === link.type && (marked || this._reticAuto.has(link.rowId))) {
+        gonePlan.push(elId); rowIds.push(link.rowId);
+        if (marked) names.push(this._reticRowName(f));
+      }
+    }
+    if (rowIds.length) {
+      const saved = this._reticRemoveRows(rowIds);
+      if (saved.length) this._reticAddPair({ origin: 'plan', originIds: gonePlan, saved, state: 'removed' });
+      if (names.length) notice(`${this._names(names)} removed from Demand too · Undo on the plan puts ${names.length === 1 ? 'it' : 'them'} back`);
+    }
+
+    // 3. Demand rows deleted in Demand → their drawn elements (and the cables
+    //    ending on them). Stands drawn for the erven of a deleted kiosk stay.
+    if (delRetic.size) {
+      const els = pm.elements.filter(e => this.RETIC_TYPES.includes(e.type) && e.reticId && delRetic.has(e.reticId) && !this._reticRow(e.reticId));
+      if (els.length) {
+        const saved = this._reticRemovePlan(els.map(e => e.id));
+        this._reticAddPair({ origin: 'retic', originIds: [...new Set(els.map(e => e.reticId))], saved, state: 'removed' });
+        notice(`${this._names(els.map(e => e.name || e.type))} removed from the site plan too · Undo in Demand puts ${els.length === 1 ? 'it' : 'them'} back`);
+      }
+    }
+  },
+
+  _names(list) {
+    return `${list.slice(0, 3).join(', ')}${list.length > 3 ? ` and ${list.length - 3} more` : ''}`;
+  },
+
+  // A newer deletion of the same items replaces older records about them.
+  _reticAddPair(p) {
+    const ids = (q) => new Set([...q.originIds, ...(q.origin === 'plan' ? q.saved.map(r => r.row.id) : q.saved.els.map(e => e.id))]);
+    const mine = ids(p);
+    this._reticPairs = this._reticPairs.filter(q => ![...ids(q)].some(id => mine.has(id)));
+    this._reticPairs.push(p);
+    if (this._reticPairs.length > this.PAIRS_KEPT) this._reticPairs.splice(0, this._reticPairs.length - this.PAIRS_KEPT);
+  },
+
+  // The sync pass's Reticulation routine. Returns whether anything changed.
+  syncRetic(opts = {}) {
+    const notice = opts.notice || (() => {});
+    const before = this.reticFingerprint();
+    this._reticDeletions(notice);
+    const summary = this._pushCore({ interactive: false, issue: opts.issue, value: opts.value });
+    if (summary) for (const id of summary.created) this._reticAuto.add(id);
+    // Remember what each drawn element stands for, to tell a deletion later.
+    const links = new Map();
+    for (const e of AppState.planMarkup.elements) {
+      if (!this.RETIC_TYPES.includes(e.type) || !e.reticId) continue;
+      const f = this._reticRow(e.reticId);
+      if (f && f.kind === e.type) links.set(e.id, { type: e.type, rowId: e.reticId });
+    }
+    this._reticLinks = links;
+    this._reticDuplicates(opts.issue || (() => {}));
+    return this.reticFingerprint() !== before;
+  },
+
+  // Two minisubs or two kiosks with the same name, or two erven with the same
+  // number under one kiosk, go on the Issues list: a newly drawn item with
+  // that name could be matched to either row. Names compare as the sync
+  // matches them (case and outer spaces ignored).
+  _reticDuplicates(issue) {
+    const R = AppState.reticulation;
+    const norm = (v) => String(v || '').trim().toLowerCase();
+    const report = (rows, nameOf, what, where) => {
+      const by = new Map();
+      for (const r of rows) {
+        const k = norm(nameOf(r));
+        if (!k) continue;
+        if (!by.has(k)) by.set(k, []);
+        by.get(k).push(r);
+      }
+      for (const [k, list] of by) {
+        if (list.length < 2) continue;
+        const shown = String(nameOf(list[0])).trim();
+        issue(`retic-dup:${what}:${where ? where.id + ':' : ''}${k}`,
+          what === 'erf'
+            ? `${list.length} erven under ${where.name || 'a kiosk'} are numbered ${shown} in Demand. Renumber one so a newly drawn erf cannot be linked to the wrong row.`
+            : `${list.length} ${what}s are called "${shown}" in Demand. Rename one so a newly drawn ${what} cannot be linked to the wrong row.`,
+          { kind: 'retic-rows', ids: list.map(r => r.id) });
+      }
+    };
+    report(R.minisubs, m => m.name, 'minisub');
+    report(R.kiosks, k => k.name, 'kiosk');
+    for (const k of R.kiosks) report(k.erfs, e => e.erfNumber, 'erf', k);
+  },
+
+  // ── "Not placed yet": Demand rows no drawn element stands for ──
+  reticUnplaced() {
+    const R = AppState.reticulation, pm = AppState.planMarkup;
+    if (!R || !pm) return { minisubs: [], kiosks: [], erven: [] };
+    const placed = new Set(pm.elements.filter(e => this.RETIC_TYPES.includes(e.type) && e.reticId).map(e => e.reticId));
+    // A new project's untouched default minisub is not listed: the first
+    // minisub drawn takes it over.
+    const blank = (m) => m.id === 'source' && !R.kiosks.length;
+    return {
+      minisubs: R.minisubs.filter(m => !placed.has(m.id) && !blank(m)),
+      kiosks: R.kiosks.filter(k => !placed.has(k.id)),
+      erven: R.kiosks.map(k => ({ kiosk: k, erfs: k.erfs.filter(e => !placed.has(e.id)) })).filter(g => g.erfs.length),
+    };
+  },
+
+  // Place a Demand row on the site plan as a linked element.
+  placeFromDemand(rowId, x, y) {
+    const f = this._reticRow(rowId);
+    if (!f) return null;
+    const pm = AppState.planMarkup;
+    if (pm.elements.some(e => e.reticId === rowId)) return null;
+    const el = {
+      id: AppState.planGenId('pmel'), type: f.kind, x, y, rotation: 0,
+      name: f.kind === 'erf' ? (f.row.erfNumber || '') : (f.row.name || ''),
+      reticId: rowId, props: PLAN_DEFS.defaults(f.kind),
+    };
+    pm.elements.push(el);
+    return el;
   },
 
   // Connected components of SL routes → circuits. Each: {sourceReticId, source,
@@ -1622,7 +1930,7 @@ const PlanSync = {
       }
       if (hit) el.reticId = hit.id;
     }
-    if (!el.reticId) return fail(`this ${what} is not linked to a Demand ${what}. Pick one under "Linked Demand item", or use Output › Push to Demand schedules.`);
+    if (!el.reticId) return fail(`this ${what} is not linked to a Demand ${what}. Pick one under "Linked Demand item"${AppState.keepInSync !== false ? '' : ', or use Output › Push to Demand schedules'}.`);
     const row = this._demandRow(el);
     if (!row) return fail(`its linked Demand ${what} no longer exists. Pick another under "Linked Demand item".`);
     if (nameOf(row) === newTrim || nameOf(row) === newName) return { status: 'unchanged' };

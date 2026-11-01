@@ -466,6 +466,45 @@ PlanTools.register({
 });
 
 // ─────────────────────────────────────────────────────────────────────────
+// PLACE FROM DEMAND — a minisub / kiosk / erf in Demand that is not on the
+// site plan yet ("Not placed yet") becomes a linked element at the click.
+// ─────────────────────────────────────────────────────────────────────────
+PlanTools.register({
+  id: 'placeRetic', cursor: 'crosshair', _rowId: null, _type: null, _ghost: null,
+  onActivate(opts) {
+    this._rowId = opts && opts.rowId;
+    const f = this._rowId && PlanSync._reticRow(this._rowId);
+    this._type = f ? f.kind : null;
+    this._ghost = null;
+  },
+  cancel() { this._ghost = null; },
+  onMove(pt) { this._ghost = PlanTools.snap(pt, { wantElements: false }); PlanEngine.requestDraw({ fg: true }); },
+  onDown(pt) {
+    if (!this._type) { PlanTools.set('select'); return; }
+    const s = PlanTools.snap(pt, { wantElements: false });
+    const el = PlanSync.placeFromDemand(this._rowId, s.x, s.y);
+    if (el) {
+      PlanMarkup.selectOnly(el.id);
+      PlanMarkup.snapshot(); PlanMarkup.markDirty(); PlanMarkup.refreshProps();
+      if (typeof PlanUI !== 'undefined') PlanUI.renderPalette();  // drop it from the list
+    }
+    PlanEngine.requestDraw({ fg: true });
+    PlanTools.set('select');   // one placement; pick the next from the list
+  },
+  onKey(e) { if (e.key === 'Escape') { PlanTools.set('select'); return true; } return false; },
+  drawOverlay(ctx, zoom) {
+    if (!this._ghost || !this._type) return;
+    const def = PLAN_DEFS.element(this._type);
+    ctx.save();
+    ctx.globalAlpha = 0.5;
+    ctx.translate(this._ghost.x, this._ghost.y);
+    PLAN_DEFS.drawElement(ctx, def, { sizePx: 12 / zoom, color: def ? def.color : '#64748b', selected: false, strokeW: 1.5 / zoom });
+    ctx.restore();
+    PlanTools._drawSnapRing(ctx, this._ghost.x, this._ghost.y, this._ghost.snapped, zoom);
+  },
+});
+
+// ─────────────────────────────────────────────────────────────────────────
 // PLACE FROM SLD — adopt an existing SLD component (opts.sldId) as a linked
 // plan element at the click point (ghost shows the mapped building symbol).
 // ─────────────────────────────────────────────────────────────────────────

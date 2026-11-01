@@ -288,13 +288,9 @@ export const SETUPS = {
 
   'demand-linked': { run: async (page) => {
     await seedPlan(page);
-    await page.click('.plan-mode-btn[data-mode="output"]');
-    await page.click('[data-act="push"]');
-    for (let i = 0; i < 3; i++) {   // "not calibrated" confirm, then the "Pushed to Reticulation" notice
-      await page.getByRole('button', { name: 'OK', exact: true }).click({ timeout: 2500 }).catch(() => {});
-      await page.waitForTimeout(300);
-    }
-    await page.waitForTimeout(1500);
+    // Keep workspaces in sync: the drawn network is in Demand after one pass.
+    await page.evaluate(() => { Sync.run(); document.querySelectorAll('.toast').forEach(t => t.remove()); });
+    await page.waitForTimeout(800);
     if (await page.evaluate(() => !document.getElementById('plan-workspace') || document.getElementById('plan-workspace').style.display === 'none')) await page.evaluate(() => switchWorkspace('plan'));
     await page.evaluate(() => PlanMarkup.setMode('draw'));
     await page.waitForTimeout(500);

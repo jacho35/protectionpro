@@ -507,8 +507,8 @@ const HELP_GUIDES = [
   steps: [
     { title: 'Rough out the network in Demand',
       html: 'In <strong>Demand</strong>, <strong>Quick Build</strong> adds a number of kiosks with erven in one go, using the service and feeder cables and lengths you set. <strong>Feed from</strong> chooses the minisub and <strong>Daisy-chain</strong> feeds each kiosk from the one before. You can also add kiosks and erven by hand.' },
-    { title: 'Push the plan into Demand',
-      html: 'Draw the network on the <strong>Plan</strong>, then switch the bar to <strong>Output</strong> and press <strong>Push to Demand schedules</strong>. Minisubs, kiosks, erven, route lengths and cables become Demand rows. Push again at any time: it updates rows rather than adding duplicates.' },
+    { title: 'Draw the network on the plan',
+      html: 'Draw minisubs, kiosks and erven on the <strong>Plan</strong> and connect them with LV, service and MV cables. A moment after each edit they are Demand rows, with which kiosk feeds which and the measured cable lengths. A length you type in Demand is kept, marked <em>typed · plan 38 m</em>, until you press <strong>Reset</strong>. Rows you add in Demand or with Quick Build wait under <strong>Not placed yet</strong> on the plan: pick one and click where it goes. Deleting an item on either side removes it on the other, and Undo there puts it back.' },
     { title: 'See and change the link',
       html: 'Select a kiosk, erf or minisub on the plan. <strong>From Demand</strong> shows what Demand says about it (load, cable, volt drop). <strong>Linked Demand item</strong> lists the unlinked rows of its kind, so an item drawn after the row existed can be attached, or detached. Once linked, editing a name or erf number in Demand updates the label on the plan.',
       shot: { file: 'demand-plan-1.png', alt: 'A kiosk selected on the plan with the From Demand panel and the link picker',
@@ -516,7 +516,6 @@ const HELP_GUIDES = [
         callouts: [
           { sel: '.plan-demand', label: 'What Demand says about this item' },
           { sel: '#plan-props select', label: 'Link or unlink a Demand row' },
-          { sel: '.plan-mode-btn[data-mode="output"]', label: 'Output › Push to Demand schedules' },
         ] } },
     { title: 'Change cables on many erven at once',
       html: 'In Demand, tick erven (<kbd>Shift</kbd>+click for a range), a kiosk’s header box for all its erven and its feeder, or a kiosk’s <em>change feeder</em> box. A bar docks at the bottom with pickers for <strong>Service cable</strong>, <strong>Earth cable</strong> and <strong>LV feeder cable</strong>, plus <strong>Phase</strong> and a quick rename. A picker left on <em>leave unchanged</em> touches nothing. <strong>Apply</strong> is one undo step and updates the drawn routes.',

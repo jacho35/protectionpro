@@ -583,7 +583,7 @@ const PlanDxfManager = {
     let msg = `Converted ${parts.join(', ')} from "${desc.name}". Press Ctrl+Z to undo.`;
     if (res.relinked) msg += ` ${res.relinked} device${res.relinked === 1 ? '' : 's'} linked to ${res.relinked === 1 ? 'its board' : 'their boards'}.`;
     if (res.unlinked) msg += ` ${res.unlinked} board name${res.unlinked === 1 ? '' : 's'} didn't match any board on the plan.`;
-    if (domain === 'retic' && (res.n || res2.erven)) msg += ' Use Output › Push to Demand schedules to send them to Demand.';
+    if (domain === 'retic' && (res.n || res2.erven)) msg += AppState.keepInSync !== false ? ' Connect them with cables and they are in Demand.' : ' Use Output › Push to Demand schedules to send them to Demand.';
     UI.toast(msg, 'success', 7000);
     this.render();
   },
