@@ -169,3 +169,65 @@ class TestL4AsymmetryMvOnly:
     def test_lv_breaker_has_no_62271_asym_check(self):
         assert _dev(_genset(50))["asym_ok"] is None
         assert _dev(_mv())["asym_ok"] is not None
+
+
+# ── Route: every check is a plain bool ─────────────────────────────────
+
+def _mv_motors(icu=25.0, **cb):
+    """MV breaker → 1.5 MVA → LV bus with two motors, one behind a cable.
+    The motor's terminal bus makes the fault engine split its branch
+    currents nodally, and those rows come back as numpy floats."""
+    props = {"name": "CB", "rated_voltage_kv": 12, "rated_current_a": 630,
+             "breaking_capacity_ka": icu, "state": "closed"}
+    props.update(cb)
+    return ProjectData(projectName="mm", baseMVA=100.0, frequency=50, components=[
+        C("u", "utility", {"name": "Grid", "voltage_kv": 11, "fault_mva": 250, "x_r_ratio": 15}),
+        C("b1", "bus", {"name": "MV", "voltage_kv": 11}),
+        C("d", "cb", props),
+        C("t", "transformer", {"name": "T", "rated_mva": 1.5, "z_percent": 6, "x_r_ratio": 8,
+                               "voltage_hv_kv": 11, "voltage_lv_kv": 0.4, "vector_group": "Dyn11"}),
+        C("b2", "bus", {"name": "LV", "voltage_kv": 0.4}),
+        C("k", "cable", {"name": "K", "length_km": 0.05, "r_per_km": 0.32, "x_per_km": 0.08,
+                         "rated_amps": 400, "voltage_kv": 0.4}),
+        C("m1", "motor_induction", {"name": "M1", "rated_kw": 200, "voltage_kv": 0.4, "poles": 4}),
+        C("m2", "motor_induction", {"name": "M2", "rated_kw": 90, "voltage_kv": 0.4, "poles": 4}),
+    ], wires=[W("1", "u", "b1"), W("2", "b1", "d"), W("3", "d", "t"), W("4", "t", "b2"),
+              W("5", "b2", "k"), W("6", "k", "m1"), W("7", "b2", "m2")])
+
+
+class TestChecksArePlainBools:
+    """Fault-engine branch rows can be numpy floats, so the duty
+    comparisons gave numpy.bool_: `POST /api/analysis/duty-check`
+    failed to serialise (HTTP 500), and `making_ok is False` never
+    matched, so a breaker short of its making rating was not failed."""
+
+    OK_KEYS = ("interrupt_ok", "making_ok", "asym_ok", "continuous_ok",
+               "voltage_ok", "icw_ok")
+
+    @pytest.mark.parametrize("project", [_mv(), _mv_motors(), _mv_motors(icu=5.0),
+                                         _genset(50), _motor_bus("cb", 50)])
+    def test_ok_fields_are_bool_or_none(self, project):
+        for d in run_duty_check(project)["devices"]:
+            for k in self.OK_KEYS:
+                assert d[k] is None or type(d[k]) is bool, (k, type(d[k]))
+
+    def test_mv_breaker_short_of_making_capacity_fails(self):
+        d = _dev(_mv_motors(icu=25.0, making_capacity_ka=10.0))
+        assert d["interrupt_ok"] is True
+        assert d["making_ok"] is False
+        assert d["status"] == "fail"
+
+    def test_route_returns_200(self):
+        from fastapi.testclient import TestClient
+        from backend.main import app
+        from backend import auth
+
+        app.dependency_overrides[auth.get_current_user] = lambda: object()
+        try:
+            r = TestClient(app).post("/api/analysis/duty-check",
+                                     json=_mv_motors().model_dump())
+        finally:
+            app.dependency_overrides.clear()
+        assert r.status_code == 200, r.text
+        dev = next(d for d in r.json()["devices"] if d["device_id"] == "d")
+        assert dev["making_ok"] is True
