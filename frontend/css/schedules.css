@@ -158,6 +158,10 @@
 .db-fla, .db-fla-h {
   right: 264px; width: 62px; min-width: 62px;
   border-left: 2px solid var(--border-color);
+  /* The border is not painted on a sticky cell of a collapsed-border table,
+     so the divider is drawn as an inset shadow too — without it a scrolled
+     group header ("EARTH…") ran straight into "CHECK". */
+  box-shadow: inset 2px 0 0 var(--border-color);
 }
 
 .db-schedule-grid .library-table td.db-row-actions,
@@ -291,7 +295,8 @@ body.dark-mode #schedules-workspace input[list]::-webkit-calendar-picker-indicat
 .db-col-desc    { left: 82px;  width: 220px; min-width: 220px; }
 .db-col-breaker { left: 302px; width: 80px;  min-width: 80px; }
 .db-col-load    { left: 382px; width: 100px; min-width: 100px;
-  border-right: 2px solid var(--border-color); }
+  border-right: 2px solid var(--border-color);
+  box-shadow: inset -2px 0 0 var(--border-color); }
 
 /* Scroll-shadow cue on the two inner edges where the scrollable middle
    columns actually go off-screen (the outer edges — checkbox at left:0, row
@@ -299,19 +304,19 @@ body.dark-mode #schedules-workspace input[list]::-webkit-calendar-picker-indicat
    _wireScrollShadow() based on scrollLeft. */
 .db-schedule-grid.db-scroll-l .library-table .db-col-load,
 .db-schedule-grid.db-scroll-l .library-table th.db-col-load {
-  box-shadow: 4px 0 6px -4px rgba(0, 0, 0, .4);
+  box-shadow: inset -2px 0 0 var(--border-color), 4px 0 6px -4px rgba(0, 0, 0, .4);
 }
 .db-schedule-grid.db-scroll-r .library-table .db-fla,
 .db-schedule-grid.db-scroll-r .library-table .db-fla-h {
-  box-shadow: -4px 0 6px -4px rgba(0, 0, 0, .4);
+  box-shadow: inset 2px 0 0 var(--border-color), -4px 0 6px -4px rgba(0, 0, 0, .4);
 }
 body.dark-mode .db-schedule-grid.db-scroll-l .library-table .db-col-load,
 body.dark-mode .db-schedule-grid.db-scroll-l .library-table th.db-col-load {
-  box-shadow: 4px 0 6px -4px rgba(0, 0, 0, .7);
+  box-shadow: inset -2px 0 0 var(--border-color), 4px 0 6px -4px rgba(0, 0, 0, .7);
 }
 body.dark-mode .db-schedule-grid.db-scroll-r .library-table .db-fla,
 body.dark-mode .db-schedule-grid.db-scroll-r .library-table .db-fla-h {
-  box-shadow: -4px 0 6px -4px rgba(0, 0, 0, .7);
+  box-shadow: inset 2px 0 0 var(--border-color), -4px 0 6px -4px rgba(0, 0, 0, .7);
 }
 
 /* Selected rows. The tint is OPAQUE (mixed with --bg-primary rather than laid
@@ -480,7 +485,7 @@ body.dark-mode .dba-note.warn { color: #ef5350; }
     position: static; width: auto; min-width: 0; text-align: left;
     padding: 5px 0 !important;
   }
-  .db-col-load { border-right: none; }
+  .db-col-load { border-right: none; box-shadow: none; }
   /* Tint the card itself; its cells are transparent in card mode, so the
      desktop per-<td> rule would leave the card's own padding untinted. */
   .db-schedule-grid .library-table tr.db-selected {
@@ -525,6 +530,14 @@ body.dark-mode .dba-note.warn { color: #ef5350; }
 .db-grp-btn:hover { background: var(--bg-secondary); }
 .db-grp-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .db-grp-btn svg { color: var(--text-secondary); transition: transform .12s; flex: 0 0 auto; }
+/* The label slides to stay in view between the pinned blocks (left: checkbox
+   + way + description + breaker + load = 482 px; right: FLA + Iz + %VD + ECC
+   + row actions = 326 px), so a group half under the Check block reads
+   "EARTH LEAKAGE" up to the divider instead of a cut "EARTH" beside "CHECK". */
+.db-grp-lbl {
+  display: inline-flex; align-items: center; gap: 6px;
+  position: sticky; left: 488px; right: 332px;
+}
 .db-grp-btn[aria-expanded="false"] svg { transform: rotate(-90deg); }
 .db-grp-n { margin-left: auto; padding-left: 6px; font-weight: 600; letter-spacing: 0; color: var(--text-secondary); }
 .db-grp-btn[aria-expanded="true"] .db-grp-n { display: none; }

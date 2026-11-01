@@ -2831,6 +2831,11 @@ textarea:focus-visible {
   user-select: none;
   z-index: 5;
 }
+.canvas-empty-hint .ceh-phone { display: none; }
+@media (max-width: 768px) {
+  .canvas-empty-hint .ceh-desktop { display: none; }
+  .canvas-empty-hint .ceh-phone { display: inline; }
+}
 
 /* ─── Mini-map collapse toggle ─── */
 .minimap-toggle {

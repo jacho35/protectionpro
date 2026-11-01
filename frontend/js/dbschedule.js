@@ -1568,7 +1568,7 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
     const fold = this._foldState();
     const grpLabel = Object.fromEntries(this._GROUPS.map(G => [G.g, G.label]));
     const sumCell = (c, g) => `<td class="db-grp-sum" data-sum="${g}" data-label="${escHtml(grpLabel[g])}"><button type="button" class="db-grp-chip" data-grp-open="${g}" title="${escHtml(grpLabel[g])} — click to unfold and edit">${this._sumHtml(c, g)}</button></td>`;
-    const grpHead = (G) => `<th class="db-grp-h" data-grp-h="${G.g}" colspan="${fold[G.g] ? 1 : G.keys.length}"><button type="button" class="db-grp-btn" data-grp-toggle="${G.g}" aria-expanded="${!fold[G.g]}" title="Fold or unfold the ${G.label.toLowerCase()} columns"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M2 3.5l3 3 3-3"/></svg>${G.label}<span class="db-grp-n">${G.keys.length}</span></button></th>`;
+    const grpHead = (G) => `<th class="db-grp-h" data-grp-h="${G.g}" colspan="${fold[G.g] ? 1 : G.keys.length}"><button type="button" class="db-grp-btn" data-grp-toggle="${G.g}" aria-expanded="${!fold[G.g]}" title="Fold or unfold the ${G.label.toLowerCase()} columns"><span class="db-grp-lbl"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M2 3.5l3 3 3-3"/></svg>${G.label}</span><span class="db-grp-n">${G.keys.length}</span></button></th>`;
     const foldCls = this._GROUPS.filter(G => fold[G.g]).map(G => ` db-fold-${G.g}`).join('');
 
     // Conduit group cells: tag (shared-conduit key), type, size (blank = auto),

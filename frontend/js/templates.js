@@ -429,6 +429,9 @@ const NetworkTemplates = {
         UndoManager.clear();
         Canvas.updateTransform();
         Canvas.render();
+        // Show the whole network (a template's own pan/zoom suits one screen
+        // size only). Skipped while the single line is not on screen.
+        if (Canvas.svg.getBoundingClientRect().width > 0) Canvas.zoomToFit();
         Properties.clear();
         document.title = `ProtectionPro \u2014 ${data.projectName}`;
         updateProjectNameDisplay(data.projectName);

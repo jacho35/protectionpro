@@ -4,9 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ProtectionPro — Single Line Diagram Builder</title>
-  <link rel="stylesheet" href="css/app.css?v=3.5.548">
+  <link rel="stylesheet" href="css/app.css?v=2.579">
   <link rel="stylesheet" href="css/sidebar.css?v=3.5.274">
-  <link rel="stylesheet" href="css/properties.css?v=3.5.274">
+  <link rel="stylesheet" href="css/properties.css?v=2.579">
   <link rel="stylesheet" href="css/toolbar.css?v=3.5.274">
   <link rel="stylesheet" href="css/symbols.css?v=3.5.274">
   <link rel="stylesheet" href="css/retic.css?v=3.5.286">
@@ -17,7 +17,7 @@
   <link rel="stylesheet" href="css/drawingset.css?v=1.542b">
   <link rel="stylesheet" href="css/mobile.css?v=3.5.541">
   <link rel="stylesheet" href="css/interlocking.css?v=3.5.274">
-  <link rel="stylesheet" href="css/schedules.css?v=3.5.559">
+  <link rel="stylesheet" href="css/schedules.css?v=2.579">
   <link rel="stylesheet" href="css/quantities.css?v=3.5.274">
   <link rel="stylesheet" href="css/lighting.css?v=3.5.527">
   <link rel="stylesheet" href="css/streetlight.css?v=3.5.274">
@@ -476,8 +476,10 @@
       </div>
       <!-- Empty-canvas hint (toggled by Canvas.render) -->
       <div id="canvas-empty-hint" class="canvas-empty-hint" style="display:none">
-        Drag a component from the left palette to start drawing,<br>
-        or open <strong>Project &rarr; Templates</strong> for a pre-built network.
+        <span class="ceh-desktop">Drag a component from the left palette to start drawing,<br>
+        or open <strong>Project &rarr; Templates</strong> for a pre-built network.</span>
+        <span class="ceh-phone">Tap <strong>Parts</strong> to add a component,<br>
+        or open <strong>More &rarr; Templates</strong> for a pre-built network.</span>
       </div>
       <!-- Page Tab Bar -->
       <div id="page-tab-bar">
@@ -3407,7 +3409,7 @@
   <script src="js/lib/xlsx.full.min.js?v=3.5.274"></script>
   <script src="js/lib/pdf.min.js?v=3.5.274"></script>
   <script src="js/iec-60364-data.js?v=3.5.274"></script>
-  <script src="js/constants.js?v=2.578"></script>
+  <script src="js/constants.js?v=2.579"></script>
   <script src="js/vendor-trip-units.js?v=1.0"></script>
   <script src="js/vendor-trip-units-abb.js?v=1.0"></script>
   <script src="js/vendor-trip-units-abb-xt.js?v=3.5.536"></script>
@@ -3469,7 +3471,7 @@
   <script src="js/collab.js?v=3.5.533"></script>
   <script src="js/reports.js?v=3.5.274"></script>
   <script src="js/verification-templates.js?v=1.571b"></script>
-  <script src="js/templates.js?v=3.5.274"></script>
+  <script src="js/templates.js?v=2.579"></script>
   <script src="js/standard-data.js?v=3.5.274"></script>
   <script src="js/shared-libs.js?v=3.5.274"></script>
   <script src="js/undo.js?v=3.5.274"></script>
@@ -3480,7 +3482,7 @@
   <script src="js/vendor-cascading.js?v=1.0"></script>
   <script src="js/cascading.js?v=1.0"></script>
   <script src="js/dbcoord.js?v=3.5.546"></script>
-  <script src="js/dbschedule.js?v=1.575b"></script>
+  <script src="js/dbschedule.js?v=2.579"></script>
   <script src="js/dbfeeders.js?v=3.5.552"></script>
   <script src="js/dbcablesize.js?v=3.5.550"></script>
   <script src="js/dbbreakers.js?v=3.5.551"></script>
@@ -3515,11 +3517,11 @@
   <script src="js/roadlight-report.js?v=3.5.274"></script>
   <script src="js/sl-diagram.js?v=3.5.274"></script>
   <script src="js/workspaces.js?v=3.5.525"></script>
-  <script src="js/header.js?v=3.5.274"></script>
+  <script src="js/header.js?v=2.579"></script>
   <script src="js/lightning.js?v=3.5.274"></script>
   <script src="js/earthgrid.js?v=3.5.274"></script>
   <script src="js/rates.js?v=3.5.274"></script>
-  <script src="js/boq.js?v=3.5.555"></script>
+  <script src="js/boq.js?v=2.579"></script>
   <script src="js/cableschedules.js?v=3.5.305"></script>
   <script src="js/quantities.js?v=3.5.555"></script>
   <script src="js/dbsections.js?v=3.5.274"></script>
@@ -3535,7 +3537,7 @@
   <script src="js/plan-symbols.js?v=3.5.274"></script>
   <script src="js/plan-engine.js?v=3.5.529"></script>
   <script src="js/plan-images.js?v=3.5.324"></script>
-  <script src="js/plan-tools.js?v=3.5.529"></script>
+  <script src="js/plan-tools.js?v=2.579"></script>
   <script src="js/plan-sync.js?v=3.5.552"></script>
   <script src="js/plan-csv.js?v=3.5.274"></script>
   <script src="js/plan-dxf.js?v=3.5.274"></script>
