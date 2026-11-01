@@ -89,13 +89,11 @@ const Flicker = {
     }
   },
 
+  // The results open on this study's tab of the results panel, which draws
+  // them with _render.
   show(result) {
     this._result = result;
-    const modal = document.getElementById('flk-modal');
-    const body = document.getElementById('flk-body');
-    if (!modal || !body) return;
-    this._render(body);
-    modal.style.display = '';
+    ResultsPanel.show('flk', result);
   },
 
   _render(body) {

@@ -1113,83 +1113,6 @@
     </div>
   </div>
 
-  <!-- Voltage Depression Modal -->
-  <div id="vdep-modal" class="modal" role="dialog" aria-modal="true" aria-label="Voltage Depression" style="display:none">
-    <div class="modal-content modal-wide">
-      <div class="modal-header">
-        <h3>Voltage Depression During Fault (IEC 60909)</h3>
-        <button class="modal-close" id="btn-close-vdep">&times;</button>
-      </div>
-      <div class="modal-body">
-        <div id="vdep-body">
-          <!-- Populated by JS -->
-        </div>
-      </div>
-    </div>
-  </div>
-
-
-  <!-- DC Arc Flash Results Modal -->
-  <div id="dc-arcflash-modal" class="modal" role="dialog" aria-modal="true" aria-label="DC Arc Flash Results" style="display:none">
-    <div class="modal-content modal-wide">
-      <div class="modal-header">
-        <h3>DC Arc Flash Analysis — Stokes &amp; Oppenlander</h3>
-        <button class="modal-close" id="btn-close-dc-arcflash">&times;</button>
-      </div>
-      <div class="modal-body">
-        <div id="dc-arcflash-body">
-          <!-- Populated by JS -->
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- DC Load Flow Results Modal -->
-  <div id="dc-loadflow-modal" class="modal" role="dialog" aria-modal="true" aria-label="DC Load Flow Results" style="display:none">
-    <div class="modal-content modal-wide">
-      <div class="modal-header">
-        <h3>DC Load Flow — Resistive Nodal Solve</h3>
-        <button class="modal-close" id="btn-close-dc-loadflow">&times;</button>
-      </div>
-      <div class="modal-body">
-        <div id="dc-loadflow-body">
-          <!-- Populated by JS -->
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- DC Short Circuit Results Modal -->
-  <div id="dc-shortcircuit-modal" class="modal" role="dialog" aria-modal="true" aria-label="DC Short Circuit Results" style="display:none">
-    <div class="modal-content modal-wide">
-      <div class="modal-header">
-        <h3>DC Short Circuit — IEC 61660-1</h3>
-        <button class="modal-close" id="btn-close-dc-shortcircuit">&times;</button>
-      </div>
-      <div class="modal-body">
-        <div id="dc-shortcircuit-body">
-          <!-- Populated by JS -->
-        </div>
-      </div>
-    </div>
-  </div>
-
-
-  <!-- Motor Starting Results Modal -->
-  <div id="motor-starting-modal" class="modal" role="dialog" aria-modal="true" aria-label="Motor Starting Results" style="display:none">
-    <div class="modal-content modal-wide">
-      <div class="modal-header">
-        <h3>Motor Starting Voltage Dip Analysis</h3>
-        <button class="modal-close" id="btn-close-motor-starting">&times;</button>
-      </div>
-      <div class="modal-body">
-        <div id="motor-starting-body">
-          <!-- Populated by JS -->
-        </div>
-      </div>
-    </div>
-  </div>
-
   <!-- Load Flow Study Manager Modal -->
   <div id="lf-study-modal" class="modal" role="dialog" aria-modal="true" aria-label="Load Flow Study Manager" style="display:none">
     <div class="modal-content modal-wide">
@@ -1220,19 +1143,6 @@
     </div>
   </div>
 
-  <!-- Transient Stability Results Modal -->
-  <div id="stability-modal" class="modal" role="dialog" aria-modal="true" aria-label="Transient Stability Results" style="display:none">
-    <div class="modal-content modal-wide">
-      <div class="modal-header">
-        <h3>Transient Stability — Rotor-Angle Study</h3>
-        <button class="modal-close" id="btn-close-stability">&times;</button>
-      </div>
-      <div class="modal-body">
-        <div id="stability-body"><!-- Populated by JS --></div>
-      </div>
-    </div>
-  </div>
-
   <!-- Voltage Stability — setup Modal -->
   <div id="vstab-config-modal" class="modal" role="dialog" aria-modal="true" aria-label="Voltage Stability Setup" style="display:none">
     <div class="modal-content">
@@ -1246,19 +1156,6 @@
       <div class="modal-footer" style="display:flex;justify-content:flex-end;gap:8px;padding:10px 16px">
         <button class="btn" id="btn-vstab-cancel">Cancel</button>
         <button class="btn btn-primary" id="btn-vstab-run">Run Study</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Voltage Stability — results Modal -->
-  <div id="vstab-modal" class="modal" role="dialog" aria-modal="true" aria-label="Voltage Stability Results" style="display:none">
-    <div class="modal-content modal-wide">
-      <div class="modal-header">
-        <h3>Voltage Stability — P-V / Q-V</h3>
-        <button class="modal-close" id="btn-close-vstab">&times;</button>
-      </div>
-      <div class="modal-body">
-        <div id="vstab-body"><!-- Populated by JS --></div>
       </div>
     </div>
   </div>
@@ -1280,19 +1177,6 @@
     </div>
   </div>
 
-  <!-- Frequency Scan — results Modal -->
-  <div id="fscan-modal" class="modal" role="dialog" aria-modal="true" aria-label="Frequency Scan Results" style="display:none">
-    <div class="modal-content modal-wide">
-      <div class="modal-header">
-        <h3>Frequency Scan — Impedance vs Frequency</h3>
-        <button class="modal-close" id="btn-close-fscan">&times;</button>
-      </div>
-      <div class="modal-body">
-        <div id="fscan-body"><!-- Populated by JS --></div>
-      </div>
-    </div>
-  </div>
-
   <!-- Capacitor Placement — setup Modal -->
   <div id="cpl-config-modal" class="modal" role="dialog" aria-modal="true" aria-label="Capacitor Placement Setup" style="display:none">
     <div class="modal-content">
@@ -1306,19 +1190,6 @@
       <div class="modal-footer" style="display:flex;justify-content:flex-end;gap:8px;padding:10px 16px">
         <button class="btn" id="btn-cpl-cancel">Cancel</button>
         <button class="btn btn-primary" id="btn-cpl-run">Run Study</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Capacitor Placement — results Modal -->
-  <div id="cpl-modal" class="modal" role="dialog" aria-modal="true" aria-label="Capacitor Placement Results" style="display:none">
-    <div class="modal-content modal-wide">
-      <div class="modal-header">
-        <h3>Optimal Capacitor Placement</h3>
-        <button class="modal-close" id="btn-close-cpl">&times;</button>
-      </div>
-      <div class="modal-body">
-        <div id="cpl-body"><!-- Populated by JS --></div>
       </div>
     </div>
   </div>
@@ -1340,19 +1211,6 @@
     </div>
   </div>
 
-  <!-- Filter Sizing — results Modal -->
-  <div id="flt-modal" class="modal" role="dialog" aria-modal="true" aria-label="Filter Sizing Results" style="display:none">
-    <div class="modal-content modal-wide">
-      <div class="modal-header">
-        <h3>Passive Filter Sizing — IEEE 519</h3>
-        <button class="modal-close" id="btn-close-flt">&times;</button>
-      </div>
-      <div class="modal-body">
-        <div id="flt-body"><!-- Populated by JS --></div>
-      </div>
-    </div>
-  </div>
-
   <!-- Voltage Flicker — setup Modal -->
   <div id="flk-config-modal" class="modal" role="dialog" aria-modal="true" aria-label="Voltage Flicker Setup" style="display:none">
     <div class="modal-content">
@@ -1366,19 +1224,6 @@
       <div class="modal-footer" style="display:flex;justify-content:flex-end;gap:8px;padding:10px 16px">
         <button class="btn" id="btn-flk-cancel">Cancel</button>
         <button class="btn btn-primary" id="btn-flk-run">Run Study</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Voltage Flicker — results Modal -->
-  <div id="flk-modal" class="modal" role="dialog" aria-modal="true" aria-label="Voltage Flicker Results" style="display:none">
-    <div class="modal-content modal-wide">
-      <div class="modal-header">
-        <h3>Voltage Flicker — IEC 61000-3-3</h3>
-        <button class="modal-close" id="btn-close-flk">&times;</button>
-      </div>
-      <div class="modal-body">
-        <div id="flk-body"><!-- Populated by JS --></div>
       </div>
     </div>
   </div>
@@ -1400,32 +1245,6 @@
     </div>
   </div>
 
-  <!-- Hosting Capacity — results Modal -->
-  <div id="hc-modal" class="modal" role="dialog" aria-modal="true" aria-label="Hosting Capacity Results" style="display:none">
-    <div class="modal-content modal-wide">
-      <div class="modal-header">
-        <h3>Nodal Hosting Capacity</h3>
-        <button class="modal-close" id="btn-close-hc">&times;</button>
-      </div>
-      <div class="modal-body">
-        <div id="hc-body"><!-- Populated by JS --></div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Reliability — results Modal -->
-  <div id="rel-modal" class="modal" role="dialog" aria-modal="true" aria-label="Reliability Results" style="display:none">
-    <div class="modal-content modal-wide">
-      <div class="modal-header">
-        <h3>Reliability Assessment — IEEE 1366</h3>
-        <button class="modal-close" id="btn-close-rel">&times;</button>
-      </div>
-      <div class="modal-body">
-        <div id="rel-body"><!-- Populated by JS --></div>
-      </div>
-    </div>
-  </div>
-
   <!-- OPF — setup Modal -->
   <div id="opf-config-modal" class="modal" role="dialog" aria-modal="true" aria-label="Optimal Power Flow Setup" style="display:none">
     <div class="modal-content">
@@ -1439,19 +1258,6 @@
       <div class="modal-footer" style="display:flex;justify-content:flex-end;gap:8px;padding:10px 16px">
         <button class="btn" id="btn-opf-cancel">Cancel</button>
         <button class="btn btn-primary" id="btn-opf-run">Run Study</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- OPF — results Modal -->
-  <div id="opf-modal" class="modal" role="dialog" aria-modal="true" aria-label="Optimal Power Flow Results" style="display:none">
-    <div class="modal-content modal-wide">
-      <div class="modal-header">
-        <h3>Optimal Power Flow</h3>
-        <button class="modal-close" id="btn-close-opf">&times;</button>
-      </div>
-      <div class="modal-body">
-        <div id="opf-body"><!-- Populated by JS --></div>
       </div>
     </div>
   </div>
@@ -1473,19 +1279,6 @@
     </div>
   </div>
 
-  <!-- Battery Sizing — results Modal -->
-  <div id="bsz-modal" class="modal" role="dialog" aria-modal="true" aria-label="Battery Sizing Results" style="display:none">
-    <div class="modal-content modal-wide">
-      <div class="modal-header">
-        <h3>Battery Sizing &amp; Discharge</h3>
-        <button class="modal-close" id="btn-close-bsz">&times;</button>
-      </div>
-      <div class="modal-body">
-        <div id="bsz-body"><!-- Populated by JS --></div>
-      </div>
-    </div>
-  </div>
-
   <!-- Contingency Analysis — setup Modal -->
   <div id="contingency-config-modal" class="modal" role="dialog" aria-modal="true" aria-label="Contingency Setup" style="display:none">
     <div class="modal-content">
@@ -1499,19 +1292,6 @@
       <div class="modal-footer" style="display:flex;justify-content:flex-end;gap:8px;padding:10px 16px">
         <button class="btn" id="btn-contingency-cancel">Cancel</button>
         <button class="btn btn-primary" id="btn-contingency-run">Run Screening</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Contingency Analysis — results Modal -->
-  <div id="contingency-modal" class="modal" role="dialog" aria-modal="true" aria-label="Contingency Results" style="display:none">
-    <div class="modal-content modal-wide">
-      <div class="modal-header">
-        <h3>Contingency Analysis — N-1 / N-2</h3>
-        <button class="modal-close" id="btn-close-contingency">&times;</button>
-      </div>
-      <div class="modal-body">
-        <div id="contingency-body"><!-- Populated by JS --></div>
       </div>
     </div>
   </div>
@@ -1533,19 +1313,6 @@
     </div>
   </div>
 
-  <!-- Time-Series Load Flow — results Modal -->
-  <div id="tsl-modal" class="modal" role="dialog" aria-modal="true" aria-label="Time-Series Load Flow Results" style="display:none">
-    <div class="modal-content modal-wide">
-      <div class="modal-header">
-        <h3>Time-Series Load Flow — Quasi-Dynamic</h3>
-        <button class="modal-close" id="btn-close-tsl">&times;</button>
-      </div>
-      <div class="modal-body">
-        <div id="tsl-body"><!-- Populated by JS --></div>
-      </div>
-    </div>
-  </div>
-
   <!-- Sequence of Operation — setup Modal -->
   <div id="sequence-config-modal" class="modal" role="dialog" aria-modal="true" aria-label="Sequence of Operation Setup" style="display:none">
     <div class="modal-content">
@@ -1563,19 +1330,6 @@
     </div>
   </div>
 
-  <!-- Sequence of Operation — results Modal -->
-  <div id="sequence-modal" class="modal" role="dialog" aria-modal="true" aria-label="Sequence of Operation Results" style="display:none">
-    <div class="modal-content modal-wide">
-      <div class="modal-header">
-        <h3>Protective Device Sequence of Operation</h3>
-        <button class="modal-close" id="btn-close-sequence">&times;</button>
-      </div>
-      <div class="modal-body">
-        <div id="sequence-body"><!-- Populated by JS --></div>
-      </div>
-    </div>
-  </div>
-
   <!-- Dynamic Motor Starting Setup Modal (start timeline) -->
   <div id="dynamic-motor-config-modal" class="modal" role="dialog" aria-modal="true" aria-label="Dynamic Motor Starting Setup" style="display:none">
     <div class="modal-content">
@@ -1589,111 +1343,6 @@
       <div class="modal-footer" style="display:flex;justify-content:flex-end;gap:8px;padding:10px 16px">
         <button class="btn" id="btn-dynmot-cancel">Cancel</button>
         <button class="btn btn-primary" id="btn-dynmot-run">Run Simulation</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Dynamic Motor Starting Results Modal -->
-  <div id="dynamic-motor-modal" class="modal" role="dialog" aria-modal="true" aria-label="Dynamic Motor Starting Results" style="display:none">
-    <div class="modal-content modal-wide">
-      <div class="modal-header">
-        <h3>Dynamic Motor Starting — Acceleration Study</h3>
-        <button class="modal-close" id="btn-close-dynamic-motor">&times;</button>
-      </div>
-      <div class="modal-body">
-        <div id="dynamic-motor-body">
-          <!-- Populated by JS -->
-        </div>
-      </div>
-    </div>
-  </div>
-
-
-  <!-- ANSI/IEEE C37.010 Fault Duty Results Modal -->
-  <div id="fault-ansi-modal" class="modal" role="dialog" aria-modal="true" aria-label="ANSI Fault Duty Results" style="display:none">
-    <div class="modal-content modal-wide">
-      <div class="modal-header">
-        <h3>Fault Duty — ANSI/IEEE C37.010</h3>
-        <button class="modal-close" id="btn-close-fault-ansi">&times;</button>
-      </div>
-      <div class="modal-body">
-        <div id="fault-ansi-body">
-          <!-- Populated by JS -->
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Open-Conductor (Single-Phasing) Results Modal -->
-  <div id="open-conductor-modal" class="modal" role="dialog" aria-modal="true" aria-label="Open Conductor Results" style="display:none">
-    <div class="modal-content modal-wide">
-      <div class="modal-header">
-        <h3>Open Conductor — Single-Phasing Analysis</h3>
-        <button class="modal-close" id="btn-close-open-conductor">&times;</button>
-      </div>
-      <div class="modal-body">
-        <div id="open-conductor-body">
-          <!-- Populated by JS -->
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Two-Conductor-Open Results Modal -->
-  <div id="two-conductor-open-modal" class="modal" role="dialog" aria-modal="true" aria-label="Two Conductor Open Results" style="display:none">
-    <div class="modal-content modal-wide">
-      <div class="modal-header">
-        <h3>Two Conductor Open Analysis</h3>
-        <button class="modal-close" id="btn-close-two-conductor-open">&times;</button>
-      </div>
-      <div class="modal-body">
-        <div id="two-conductor-open-body">
-          <!-- Populated by JS -->
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Simultaneous Series+Shunt Fault Results Modal -->
-  <div id="simultaneous-fault-modal" class="modal" role="dialog" aria-modal="true" aria-label="Simultaneous Series+Shunt Fault Results" style="display:none">
-    <div class="modal-content modal-wide">
-      <div class="modal-header">
-        <h3>Simultaneous Series + Shunt Fault</h3>
-        <button class="modal-close" id="btn-close-simultaneous-fault">&times;</button>
-      </div>
-      <div class="modal-body">
-        <div id="simultaneous-fault-body">
-          <!-- Populated by JS -->
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Load Diversity Results Modal -->
-  <div id="backup-modal" class="modal" role="dialog" aria-modal="true" aria-label="Backup Autonomy Results" style="display:none">
-    <div class="modal-content modal-wide">
-      <div class="modal-header">
-        <h3>Backup Autonomy — Grid Outage Study</h3>
-        <button class="modal-close" id="btn-close-backup">&times;</button>
-      </div>
-      <div class="modal-body">
-        <div id="backup-body">
-          <!-- Populated by JS -->
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <div id="load-diversity-modal" class="modal" role="dialog" aria-modal="true" aria-label="Load Diversity Results" style="display:none">
-    <div class="modal-content modal-wide">
-      <div class="modal-header">
-        <h3>Load Diversity & Demand Factor Analysis</h3>
-        <button class="modal-close" id="btn-close-load-diversity">&times;</button>
-      </div>
-      <div class="modal-body">
-        <div id="load-diversity-body">
-          <!-- Populated by JS -->
-        </div>
       </div>
     </div>
   </div>
@@ -1746,21 +1395,6 @@
     </div>
   </div>
 
-  <!-- Grounding System Analysis Modal -->
-  <div id="grounding-modal" class="modal" role="dialog" aria-modal="true" aria-label="Grounding System Results" style="display:none">
-    <div class="modal-content modal-wide">
-      <div class="modal-header">
-        <h3 id="grounding-title">Grounding System Analysis — IEEE 80</h3>
-        <button class="modal-close" id="btn-close-grounding">&times;</button>
-      </div>
-      <div class="modal-body">
-        <div id="grounding-body">
-          <!-- Populated by JS -->
-        </div>
-      </div>
-    </div>
-  </div>
-
   <!-- Earth Grid Editor Modal (earthgrid.js) -->
   <div id="earth-grid-modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="eg-title" style="display:none">
     <div class="modal-content eg-dialog">
@@ -1803,21 +1437,6 @@
         <button id="btn-wenner-add-row" class="btn btn-secondary" style="font-size:12px">+ Add Reading</button>
         <button id="btn-wenner-run" class="btn btn-primary" style="font-size:12px;margin-left:8px">Interpret</button>
         <div id="wenner-results" style="margin-top:14px"></div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Harmonic Analysis Modal -->
-  <div id="harmonics-modal" class="modal" role="dialog" aria-modal="true" aria-label="Harmonic Analysis Results" style="display:none">
-    <div class="modal-content modal-wide">
-      <div class="modal-header">
-        <h3 id="harmonics-title">Harmonic Analysis — IEEE 519-2014</h3>
-        <button class="modal-close" id="btn-close-harmonics">&times;</button>
-      </div>
-      <div class="modal-body">
-        <div id="harmonics-body">
-          <!-- Populated by JS -->
-        </div>
       </div>
     </div>
   </div>
@@ -2676,8 +2295,6 @@
         </div>
 
         <!-- Shared (team) libraries Tab -->
-
-
 
         <!-- IEC Standards Tab -->
         <div id="settings-tab-iec-standards" class="settings-tab-content">

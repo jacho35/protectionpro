@@ -106,13 +106,9 @@ const SOO = {
     this.show(res, { faultType, breakerTimeMs });
   },
 
-  // ── Results modal ──────────────────────────────────────────────────────────
+  // ── Results (a tab of the results panel) ──────────────────────────────────────────────────────────
   show(res, meta = {}) {
-    const modal = document.getElementById('sequence-modal');
-    const body = document.getElementById('sequence-body');
-    if (!modal || !body) return;
-    body.innerHTML = this._render(res, meta);
-    modal.style.display = '';
+    ResultsPanel.show('sequence', res, meta);
   },
 
   _render(res, meta) {

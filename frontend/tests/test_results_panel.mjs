@@ -8,7 +8,12 @@
  *    circuit with the minimum study, arc flash, cable sizing, duty check);
  *  · sorting (numbers, names, blanks last), Needs attention and the filter;
  *  · the dock follows the diagram's shape until one is picked;
- *  · the tab follows the results view switch.
+ *  · the tab follows the results view switch;
+ *  · the remaining studies (UX plan PR 13): unbalanced load flow, motor
+ *    starting, DC load flow / short circuit, ANSI duty, load diversity,
+ *    grounding and harmonics as tables; studies kept for the session go out
+ *    of date after an edit and are cleared with the project; their dot comes
+ *    from their result.
  *
  * Run:  node frontend/tests/test_results_panel.mjs   (exit code 1 on failure)
  */
@@ -44,7 +49,7 @@ const row = (m, sec, id) => m.sections.find(s => s.id === sec).rows.find(r => r.
 function fresh() {
   for (const s of vm.runInContext('RESULT_SLOTS', ctx)) A._results[s] = undefined, delete A._results[s];
   A.components.clear();
-  RP.attention = false; RP.filter = ''; RP.sort = {}; RP.tab = null; RP.prefs = null;
+  RP.attention = false; RP.filter = ''; RP.sort = {}; RP.tab = null; RP.prefs = null; RP._session = {};
   for (const k of Object.keys(store)) delete store[k];
 }
 const LF = {
@@ -179,6 +184,102 @@ await ok('the tab follows the results view switch', async () => {
   assert.strictEqual(RP.tab, 'loadflow');
   RV.show('off');
   assert.strictEqual(RP.tab, 'loadflow');                    // Off keeps the tab
+});
+
+await ok('unbalanced load flow: VUF against the limit for the voltage, phase voltages, branch loading', async () => {
+  fresh();
+  const bus = (id, kv, vuf, va = 1, vb = 1, vc = 1) => ({ bus_id: id, bus_name: id.toUpperCase(), voltage_kv: kv, va_pu: va, vb_pu: vb, vc_pu: vc, v1_pu: 1, v2_pu: vuf / 100, v0_pu: 0, vuf_pct: vuf });
+  A._results.unbalancedLoadFlowResults = { converged: true, iterations: 5, method: 'Sequence Component (Unbalanced)', warnings: [{ message: 'PV bus Q not split by phase' }],
+    buses: { a: bus('a', 0.4, 0.5), b: bus('b', 0.4, 1.5), c: bus('c', 11, 1.9), d: bus('d', 0.4, 0.2, 0.93, 1, 1) },
+    branches: [{ elementId: 'l1', element_name: 'L1', from_bus: 'a', to_bus: 'b', ia_amps: 100, ib_amps: 80, ic_amps: 60, in_amps: 35, loading_pct: 95 }] };
+  const m = RP.model('unbalancedLF');
+  assert.strictEqual(row(m, 'buses', 'a').status, 'ok');
+  assert.strictEqual(row(m, 'buses', 'b').status, 'warn');            // above 1 %, below the 2 % LV limit
+  assert.strictEqual(row(m, 'buses', 'c').status, 'fail');            // 11 kV: limit 1.8 %
+  assert.match(row(m, 'buses', 'c').reasons[0], /1\.8 % limit/);
+  assert.strictEqual(row(m, 'buses', 'd').status, 'warn');            // a phase 7 % low
+  assert.strictEqual(row(m, 'branches', 'l1').status, 'warn');
+  assert.strictEqual(m.notes[0].text, 'PV bus Q not split by phase');
+  assert.ok(RP.available().includes('unbalancedLF'));
+});
+
+await ok('motor starting: a row per motor with its status, reasons and worst bus dips', async () => {
+  fresh();
+  A._results.motorStartingResults = { warnings: [], motors: [
+    { motor_id: 'm1', motor_name: 'M1', status: 'pass', rated_kw: 90, start_current_a: 1200, motor_terminal_voltage_pu: 0.91, motor_will_start: true, max_system_dip_pct: 6, max_dip_bus: 'MCC', bus_dips: { MCC: 6, LV: 3, MV: 0.5, A: 0.1, B: 0.05, C: 0.01 }, issues: [] },
+    { motor_id: 'm2', motor_name: 'M2', status: 'fail', rated_kw: 400, start_current_a: 5200, motor_terminal_voltage_pu: 0.62, motor_will_start: false, max_system_dip_pct: 31, max_dip_bus: 'MCC', bus_dips: { MCC: 31 }, issues: ['Dip above 15 %'] },
+  ] };
+  const m = RP.model('motor');
+  assert.strictEqual(row(m, 'motors', 'm2').status, 'fail');
+  assert.match(row(m, 'motors', 'm2').reasons[0], /will not start/);
+  assert.strictEqual((row(m, 'motors', 'm1').detail.match(/<tr><td>/g) || []).length, 5);   // the five worst dips
+  deq(RP.view('motor', m.sections[0]).map(r => r.id), ['m2', 'm1']);                // worst first
+  assert.strictEqual(RP.verdict('motor'), 'fail');
+});
+
+await ok('DC load flow and DC short circuit: de-energised buses, current-limited sources, no source', async () => {
+  fresh();
+  A._results.dcLoadFlowResults = { converged: true, iterations: 3, method: 'DC Nodal', warnings: [],
+    buses: { d1: { bus_id: 'd1', bus_name: 'DC1', voltage_v: 110, nominal_v: 110, voltage_pu: 1, drop_pct: 0, load_kw: 2 },
+      d2: { bus_id: 'd2', bus_name: 'DC2', voltage_v: 0, nominal_v: 110, voltage_pu: 0, drop_pct: 100, load_kw: 0, energized: false } },
+    sources: [{ source_id: 'r1', source_name: 'R1', source_type: 'rectifier', bus_id: 'd1', voltage_v: 110, current_a: 50, power_kw: 5.5, loading_pct: 100, current_limited: true }],
+    branches: [{ elementId: 'c1', element_name: 'C1', from_bus: 'd1', to_bus: 'd2', current_a: 0, voltage_drop_v: 0, loss_kw: 0, resistance_ohm: 0.01, loading_pct: 0 }] };
+  const m = RP.model('dcLoadflow');
+  assert.strictEqual(row(m, 'buses', 'd2').status, 'warn');
+  assert.strictEqual(row(m, 'sources', 'r1').status, 'warn');
+  assert.strictEqual(RP.verdict('dcLoadflow'), 'warn');                // the chip agrees with the table
+  A._results.dcShortCircuitResults = { standard: 'IEC 61660-1', warnings: [], buses: {
+    d1: { bus_id: 'd1', bus_name: 'DC1', nominal_v: 110, ik_ka: 2, ip_ka: 2.4, tp_ms: 5, time_constant_ms: 2, contributions: [{ source_id: 'b', source_name: 'Batt', source_type: 'dc_battery', ik_ka: 2, ip_ka: 2.4, tp_ms: 5, r_mohm: 20 }] },
+    d2: { bus_id: 'd2', bus_name: 'DC2', nominal_v: 110, ik_ka: 0, ip_ka: 0, tp_ms: 0, time_constant_ms: 0, contributions: [] } } };
+  const s = RP.model('dcShortCircuit');
+  assert.strictEqual(row(s, 'buses', 'd1').status, 'info');
+  assert.match(row(s, 'buses', 'd1').detail, /Batt/);
+  assert.strictEqual(row(s, 'buses', 'd2').status, 'warn');
+});
+
+await ok('ANSI duty, load diversity and grounding as tables', async () => {
+  fresh();
+  A._results.ansiFaultResults = { warnings: [], buses: { b: { bus_id: 'b', bus_name: 'B', voltage_kv: 13.8, i_sym_momentary_ka: 20, i_asym_momentary_ka: 32, i_sym_interrupting_ka: 18, x_r_interrupting: 15 } },
+    devices: [{ device_id: 'cb1', device_name: 'CB1', bus_id: 'b', rated_interrupting_ka: 25, rated_max_kv: 15, k_factor: 1, duty_interrupting_ka: 30, capability_interrupting_ka: 25, multiplying_factor: 1.1, status_interrupting: 'FAIL', duty_closing_latching_ka: 40, capability_closing_latching_ka: 65, status_closing_latching: 'PASS' }] };
+  const a = RP.model('ansi');
+  assert.strictEqual(row(a, 'devices', 'cb1').status, 'fail');
+  assert.match(row(a, 'devices', 'cb1').reasons[0], /above its capability/);
+  A._results.loadDiversityResults = { warnings: [], summary: { overall_demand_factor: 0.7, total_installed_kva: 1000, total_demand_kva: 700 },
+    transformers: [{ transformer_id: 't1', transformer_name: 'T1', rated_kva: 500, fed_buses: ['LV'], installed_kva: 1000, demand_kva: 700, installed_loading_pct: 200, demand_loading_pct: 140, status: 'fail', issues: ['Overloaded'] }],
+    buses: [{ bus_id: 'lv', bus_name: 'LV', fed_from: ['T1'], num_circuits: 2, installed_kva: 1000, demand_kva: 800, diversity_factor: 0.9, diversified_demand_kva: 700, effective_demand_factor: 0.7, demand_current_a: 1010, circuits: [{ name: 'M1', kind: 'load', installed_kva: 500, demand_kva: 400, demand_kw: 360 }] }],
+    ks_table: [{ circuits: '2-3', ks: 0.9 }] };
+  const d = RP.model('loadDiversity');
+  assert.strictEqual(row(d, 'tx', 't1').status, 'fail');
+  assert.match(row(d, 'boards', 'lv').detail, /M1/);
+  assert.match(d.summary, /saves 30 %/);
+  assert.strictEqual(RP.verdict('loadDiversity'), 'fail');
+  A._results.groundingResults = { warnings: [], summary: {}, buses: [{ bus_id: 'g', bus_name: 'G', status: 'warning', voltage_kv: 11, fault_current_ka: 2,
+    grid_resistance_ohm: 0.5, gpr_v: 1000, mesh_voltage_v: 400, tolerable_touch_v: 500, touch_ok: true, step_voltage_v: 300, tolerable_step_v: 1500, step_ok: true,
+    grid_length_m: 20, grid_width_m: 10, num_conductors_x: 3, num_conductors_y: 3, num_ground_rods: 4, issues: ['GPR above the touch limit'] }] };
+  const g = RP.model('grounding');
+  assert.strictEqual(row(g, 'buses', 'g').status, 'warn');
+  assert.match(row(g, 'buses', 'g').detail, /<svg/);
+});
+
+await ok('studies kept for the session: shown, out of date after an edit, cleared with the project', async () => {
+  fresh();
+  RP.open = () => {};                                       // no DOM
+  const r = { converged: true, n_minus_1_secure: false, mode: 'N-1', analyzed: 3, contingencies: [] };
+  RP.show('contingency', r);
+  assert.ok(RP.has('contingency'));
+  assert.strictEqual(RP.result('contingency'), r);
+  assert.strictEqual(RP.isStale('contingency'), false);
+  assert.strictEqual(RP.verdict('contingency'), 'fail');
+  A.components.set('x', { id: 'x', type: 'bus', props: { voltage_kv: 11 } });
+  A.dirty = true;                                           // an edit
+  assert.strictEqual(RP.isStale('contingency'), true);
+  RP.show('harmonics', { compliant: true, limits_standard: 'ieee519', buses: [{ id: 'x', name: 'X', compliant: false, thd_v_pct: 9, thd_limit_pct: 8, ihd_limit_pct: 5 }], orders: [5] });
+  const h = RP.model('harmonics');
+  assert.strictEqual(row(h, 'buses', 'x').status, 'fail');
+  assert.strictEqual(RP.verdict('harmonics'), 'ok');          // the study's own verdict (PCC)
+  deq(RP.available().filter(k => !RP.SLOTS[k]), ['harmonics', 'contingency']);   // tab order
+  A.clearResults();
+  assert.ok(!RP.has('contingency') && !RP.has('harmonics'));
 });
 
 console.log(`\n${n} passed`);

@@ -38,13 +38,11 @@ const Reliability = {
     }
   },
 
+  // The results open on this study's tab of the results panel, which draws
+  // them with _render.
   show(result) {
     this._result = result;
-    const modal = document.getElementById('rel-modal');
-    const body = document.getElementById('rel-body');
-    if (!modal || !body) return;
-    this._render(body);
-    modal.style.display = '';
+    ResultsPanel.show('rel', result);
   },
 
   _render(body) {

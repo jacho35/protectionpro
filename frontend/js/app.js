@@ -643,126 +643,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // Post-run load flow summary: generation dispatch table + solver warnings.
-  // Shown automatically when the run is noteworthy (islanding, curtailment,
-  // de-energized buses, non-convergence); reuses the calc modal shell.
-  // `title` is parameterized because the unbalanced solver reuses this shell
-  // for its warnings — it has no dispatch/svc of its own (both sections are
-  // guarded on length), and its warnings were previously counted in the status
-  // bar with no way to read them.
-  function showDispatchSummary(result, title = 'Load Flow — Generation Dispatch') {
-    const modal = document.getElementById('calc-modal');
-    const dispatch = result.dispatch || [];
-    const warnings = result.warnings || [];
-    const roleLabel = {
-      balancer: 'Balancer (slack)', dispatched: 'Dispatched',
-      curtailed: 'Curtailed', offline: 'Disconnected', standby: 'Standby (idle)',
-      off: 'Off (sequence)', idle: 'Idle (no load)',
-    };
-    // Power units for the dispatch table: apparent (kVA/MVA, the default —
-    // it's what a source is rated and sized in) or real (kW/MW). The choice
-    // sticks across runs and sessions.
-    const unitMode = AppState.dispatchUnits === 'kw' ? 'kw' : 'kva';   // saved with the project
-    // Adaptive magnitude: a 200 kW PV plant should read in kW, not 0.200 MW
-    const fmtPower = (mw) => Math.abs(mw) >= 1
-      ? `${mw.toFixed(2)} MW`
-      : `${(mw * 1000).toFixed(0)} kW`;
-    const fmtApparent = (mva) => Math.abs(mva) >= 1
-      ? `${mva.toFixed(2)} MVA`
-      : `${(mva * 1000).toFixed(0)} kVA`;
-    // S = √(P²+Q²), signed by the real part so a charging battery still reads
-    // as a negative (absorbing) figure.
-    const fmtVal = (mw, mvar) => {
-      if (unitMode === 'kw') return fmtPower(mw);
-      const s = Math.hypot(mw || 0, mvar || 0);
-      return fmtApparent(mw < 0 ? -s : s);
-    };
-
-    let html = '';
-    if (!result.converged) {
-      html += '<div class="validation-item validation-error">Load flow did NOT converge — results are unreliable.</div>';
-    } else if (result.solution_quality === 'low_voltage_root') {
-      html += '<div class="validation-item validation-error">Load flow converged to an implausibly low-voltage solution — likely the collapse root or an infeasible operating point, NOT a valid result. See warning below.</div>';
-    }
-    if (warnings.length > 0) {
-      html += '<div class="validation-section"><div class="validation-section-title warning-title">Warnings</div>';
-      for (const w of warnings) {
-        html += `<div class="validation-item validation-warning">${escHtml(w.message)}</div>`;
-      }
-      html += '</div>';
-    }
-    if (dispatch.length > 0) {
-      html += `<div class="validation-section">
-        <div class="validation-section-title" style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
-          <span>Generation Dispatch</span>
-          <span style="font-weight:normal;">
-            <button id="dispatch-units-kva" class="btn-small${unitMode === 'kva' ? ' active' : ''}"
-              title="Show apparent power, S = √(P²+Q²)">kVA</button><button
-              id="dispatch-units-kw" class="btn-small${unitMode === 'kw' ? ' active' : ''}"
-              title="Show real power, P">kW</button>
-          </span>
-        </div>
-        <div style="overflow-x:auto;"><table class="library-table" style="width:100%;font-size:12px;">
-        <thead><tr><th>Source</th><th>Island</th><th>Priority</th><th>Mode</th><th>Role</th>
-        <th>Available</th><th>Dispatched</th><th>Curtailed</th></tr></thead><tbody>`;
-      const sorted = [...dispatch].sort((a, b) => (a.island - b.island) || (a.priority - b.priority));
-      for (const d of sorted) {
-        const cur = d.curtailed_mw > 0
-          ? `<span style="color:#f57c00;">${fmtVal(d.curtailed_mw, d.curtailed_mvar)}</span>` : '—';
-        html += `<tr>
-          <td>${escHtml(d.source_name || d.source_id)}</td>
-          <td>${d.island > 0 ? d.island : '—'}</td>
-          <td>${d.priority}</td>
-          <td>${d.role === 'balancer' ? '—' : escHtml(d.mode.replace('_', ' '))}</td>
-          <td>${roleLabel[d.role] || escHtml(d.role)}</td>
-          <td>${d.source_type === 'utility' && d.available_mw === 0 ? '∞' : fmtVal(d.available_mw, d.available_mvar)}</td>
-          <td>${['offline', 'standby', 'off', 'idle'].includes(d.role) ? '—' : fmtVal(d.dispatched_mw, d.dispatched_mvar)}</td>
-          <td>${cur}</td></tr>`;
-      }
-      html += '</tbody></table></div></div>';
-    }
-    const svc = result.svc || [];
-    if (svc.length > 0) {
-      html += `<div class="validation-section"><div class="validation-section-title">FACTS Reactive Compensation (SVC / STATCOM)</div>
-        <div style="overflow-x:auto;"><table class="library-table" style="width:100%;font-size:12px;">
-        <thead><tr><th>Device</th><th>Type</th><th>Bus V (pu)</th><th>Setpoint</th>
-        <th>Q output</th><th>Q range</th><th>Status</th></tr></thead><tbody>`;
-      for (const s of svc) {
-        const status = s.at_limit
-          ? '<span style="color:#f57c00;">At Q limit</span>'
-          : '<span style="color:#4caf50;">Regulating</span>';
-        html += `<tr>
-          <td>${escHtml(s.name || s.id)}</td>
-          <td>${s.device === 'svc' ? 'SVC (Q∝V²)' : 'STATCOM'}</td>
-          <td>${s.v_pu}</td>
-          <td>${s.v_setpoint_pu} pu</td>
-          <td>${s.q_mvar >= 0 ? '+' : ''}${s.q_mvar} MVAr</td>
-          <td>${s.q_min_mvar} … ${s.q_max_mvar} MVAr</td>
-          <td>${status}</td></tr>`;
-      }
-      html += '</tbody></table></div></div>';
-    }
-    html += `<div style="margin-top:16px;"><button id="dispatch-close" class="btn-small">Close</button></div>`;
-
-    modal.querySelector('#calc-modal-title').textContent = title;
-    modal.querySelector('#calc-modal-body').innerHTML = html;
-    modal.style.display = '';
-    document.getElementById('dispatch-close').addEventListener('click', () => {
-      modal.style.display = 'none';
-    });
-    // Unit toggle: persist the choice and re-render this same summary in place
-    for (const [id, mode] of [['dispatch-units-kva', 'kva'], ['dispatch-units-kw', 'kw']]) {
-      const btn = document.getElementById(id);
-      if (!btn) continue;
-      btn.addEventListener('click', () => {
-        if (mode === unitMode) return;
-        AppState.dispatchUnits = mode;
-        AppState.dirty = true;
-        showDispatchSummary(result, title);
-      });
-    }
-  }
-
   async function runAnalysis(type) {
     const { errors, warnings } = Components.validate();
 
@@ -792,32 +672,24 @@ document.addEventListener('DOMContentLoaded', () => {
     refreshResultToggles() {
       if (typeof ResultView !== 'undefined') ResultView.render();
     },
-    // Reopen the full results view for the study a result box belongs to,
-    // from its already-stored results (no re-run). Studies with a dedicated
-    // modal reopen it; those without (fault, unbalanced LF) fall back to the
-    // full detailed-calculations report, which covers every study.
+    // Open the results panel on the study a result box belongs to (from its
+    // stored results, no re-run).
     openResultBox(key) {
-      const prefix = String(key).split(':')[0];
-      switch (prefix) {
-        case 'af':   ResultsPanel.open('arcflash'); break;
-        case 'cs':   ResultsPanel.open('cable'); break;
-        case 'ms':   if (AppState.motorStartingResults) showMotorStartingResults(AppState.motorStartingResults); break;
-        case 'dynms': if (AppState.dynamicMotorResults && typeof DynMotor !== 'undefined') DynMotor.show(AppState.dynamicMotorResults); break;
-        case 'dc':   ResultsPanel.open('duty'); break;
-        case 'ld':   if (AppState.loadDiversityResults) showLoadDiversityResults(AppState.loadDiversityResults); break;
-        case 'gr':   if (AppState.groundingResults) showGroundingResults(AppState.groundingResults); break;
-        case 'dclf': if (AppState.dcLoadFlowResults) showDCLoadFlowResults(AppState.dcLoadFlowResults); break;
-        case 'dcsc': if (AppState.dcShortCircuitResults) showDCShortCircuitResults(AppState.dcShortCircuitResults); break;
-        case 'dcaf': ResultsPanel.open('arcflash'); break;
-        case 'lf': case 'warn': ResultsPanel.open('loadflow'); break;
-        case 'fault': case 'vdep': ResultsPanel.open('fault'); break;
-        default:
-          // fault, vdep, ulf, ulf-warn — no dedicated modal; open the detailed
-          // calculations report (has a full worked section per study).
-          document.getElementById('btn-show-calc')?.click();
-      }
+      const tab = { af: 'arcflash', dcaf: 'arcflash', cs: 'cable', dc: 'duty', ms: 'motor', dynms: 'dynMotor',
+        ld: 'loadDiversity', gr: 'grounding', dclf: 'dcLoadflow', dcsc: 'dcShortCircuit', lf: 'loadflow', warn: 'loadflow',
+        ulf: 'unbalancedLF', 'ulf-warn': 'unbalancedLF', fault: 'fault', vdep: 'fault' }[String(key).split(':')[0]];
+      if (tab && ResultsPanel.has(tab)) ResultsPanel.open(tab, tab === 'arcflash' && String(key).startsWith('dcaf') ? { section: 'dc' } : {});
+      else document.getElementById('btn-show-calc')?.click();   // the detailed calculations report
     },
   };
+
+  // The series-fault and backup studies draw their own view in the results panel.
+  Object.assign(ResultsPanel.VIEWS, {
+    openConductor: (el, r) => renderOpenConductorResults(r, el),
+    twoConductorOpen: (el, r) => renderTwoConductorOpenResults(r, el),
+    simultaneousFault: (el, r) => renderSimultaneousFaultResults(r, el),
+    backup: (el, r) => renderBackupResults(r, el),
+  });
 
   // Disable/enable a toolbar control while its request is in flight, and drive
   // the global busy overlay so the whole canvas is locked (not just the button)
@@ -977,9 +849,7 @@ document.addEventListener('DOMContentLoaded', () => {
         (warnCount > 0 ? ` (${warnCount} warning${warnCount > 1 ? 's' : ''})` : '');
       // The count alone was a dead end — VUF exceedances, PV-bus Q caveats and
       // the zero-sequence coupling disclosure had no readable surface.
-      if (warnCount > 0 || !result.converged) {
-        showDispatchSummary(result, 'Unbalanced Load Flow — Warnings');
-      }
+      if (warnCount > 0 || !result.converged) ResultsPanel.open('unbalancedLF');
     } catch (e) {
       statusEl.textContent = 'Unbalanced load flow failed.';
       showValidationModal('Unbalanced Load Flow — Error', [{ msg: e.message || 'Unknown error' }], [], null);
@@ -1037,7 +907,7 @@ document.addEventListener('DOMContentLoaded', () => {
       AppState.dcArcFlashResults = result;
       Canvas.render();
       document.getElementById('status-info').textContent = 'DC arc flash analysis complete.';
-      showDCArcFlashResults(result);
+      ResultsPanel.open('arcflash', { section: 'dc' });
     } catch (e) {
       console.error('DC arc flash analysis error:', e);
       document.getElementById('status-info').textContent = 'DC arc flash analysis failed.';
@@ -1064,7 +934,7 @@ document.addEventListener('DOMContentLoaded', () => {
         ? `DC load flow complete — ${nBus} DC bus${nBus === 1 ? '' : 'es'}.`
         : (nBus > 0 ? 'DC load flow: an island cannot be supplied — see the warnings.'
                     : 'DC load flow: no DC buses found.');
-      showDCLoadFlowResults(result);
+      ResultsPanel.open('dcLoadflow');
     } catch (e) {
       console.error('DC load flow error:', e);
       document.getElementById('status-info').textContent = 'DC load flow failed.';
@@ -1098,7 +968,7 @@ document.addEventListener('DOMContentLoaded', () => {
       document.getElementById('status-info').textContent = result.converged
         ? `DC short circuit complete — ${nBus} DC bus${nBus === 1 ? '' : 'es'}.`
         : 'DC short circuit: no DC buses found.';
-      showDCShortCircuitResults(result);
+      ResultsPanel.open('dcShortCircuit');
     } catch (e) {
       console.error('DC short circuit error:', e);
       document.getElementById('status-info').textContent = 'DC short circuit failed.';
@@ -1146,7 +1016,7 @@ document.addEventListener('DOMContentLoaded', () => {
       AppState.motorStartingResults = result;
       Canvas.render();
       document.getElementById('status-info').textContent = 'Motor starting analysis complete.';
-      showMotorStartingResults(result);
+      ResultsPanel.open('motor');
     } catch (e) {
       console.error('Motor starting error:', e);
       document.getElementById('status-info').textContent = 'Motor starting analysis failed.';
@@ -1156,69 +1026,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  function showMotorStartingResults(result) {
-    const modal = document.getElementById('motor-starting-modal');
-    const body = document.getElementById('motor-starting-body');
-    if (!modal || !body) return;
-
-    const motors = result.motors || [];
-    if (motors.length === 0) {
-      body.innerHTML = '<p>No induction motors found in the project.</p>';
-      if (result.warnings && result.warnings.length > 0) {
-        body.innerHTML += '<div class="af-warnings">' + result.warnings.map(w => `<div class="af-warning-item">⚠ ${escHtml(w)}</div>`).join('') + '</div>';
-      }
-      modal.style.display = '';
-      return;
-    }
-
-    let html = '';
-    if (result.warnings && result.warnings.length > 0) {
-      html += '<div class="af-warnings">';
-      for (const w of result.warnings) html += `<div class="af-warning-item">⚠ ${escHtml(w)}</div>`;
-      html += '</div>';
-    }
-
-    for (const m of motors) {
-      const statusClass = m.status === 'fail' ? 'af-danger' : m.status === 'warning' ? 'af-medium' : 'af-low';
-      const willStartIcon = m.motor_will_start ? '<span style="color:#4caf50;font-weight:600">YES</span>' : '<span style="color:#d32f2f;font-weight:600">NO</span>';
-      const statusBadge = m.status === 'pass' ? '<span style="color:#4caf50;font-weight:600">PASS</span>'
-        : m.status === 'warning' ? '<span style="color:#f57c00;font-weight:600">WARN</span>'
-        : '<span style="color:#d32f2f;font-weight:600">FAIL</span>';
-
-      html += `<div class="${statusClass}" style="border:1px solid #ddd;border-radius:6px;padding:12px;margin-bottom:12px">`;
-      html += `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-        <strong>${escHtml(m.motor_name)}</strong> ${statusBadge}
-      </div>`;
-      html += `<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;font-size:12px;margin-bottom:8px">
-        <div>Rated: <strong>${m.rated_kw} kW</strong>${m.motor_type ? ` (${m.motor_type})` : ''}</div>
-        <div>Start Current: <strong>${m.start_current_a.toFixed(0)} A</strong>${m.starting_method ? ` (${m.starting_method})` : ''}</div>
-        <div>Terminal Bus: <strong>${escHtml(m.terminal_bus)}</strong></div>
-        <div>Terminal V: <strong>${m.collapse ? 'voltage collapse' : `${m.estimate ? '≈ ' : ''}${m.motor_terminal_voltage_pu.toFixed(3)} p.u.`}</strong></div>
-        <div>Will Start: ${willStartIcon}</div>
-        <div>Max Dip: <strong>${m.collapse ? '—' : `${m.max_system_dip_pct.toFixed(1)}%`}</strong>${m.collapse ? '' : ` at ${escHtml(m.max_dip_bus)}`}</div>
-      </div>`;
-
-      if (m.issues.length > 0) {
-        html += '<div style="color:#b71c1c;font-size:11px;margin-bottom:8px">' + m.issues.map(escHtml).join('<br>') + '</div>';
-      }
-
-      // Bus dips table (top 5 worst)
-      // No dip table for a collapse — there is no operating point to tabulate.
-      const sortedDips = m.collapse ? [] : Object.entries(m.bus_dips).sort((a, b) => b[1] - a[1]).slice(0, 5);
-      if (sortedDips.length > 0) {
-        html += `<table class="af-table" style="font-size:11px"><thead><tr><th>Bus</th><th>Voltage Dip (%)</th></tr></thead><tbody>`;
-        for (const [bus, dip] of sortedDips) {
-          const dipColor = dip > 15 ? '#d32f2f' : dip > 10 ? '#f57c00' : dip > 5 ? '#fbc02d' : '#4caf50';
-          html += `<tr><td>${escHtml(bus)}</td><td style="color:${dipColor};font-weight:600">${dip.toFixed(2)}%</td></tr>`;
-        }
-        html += '</tbody></table>';
-      }
-      html += '</div>';
-    }
-
-    body.innerHTML = html;
-    modal.style.display = '';
-  }
 
   // ── Dynamic Motor Starting (time-domain acceleration) ──
   // The button opens the start-timeline setup modal; the modal's Run button
@@ -1270,12 +1077,6 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btn-close-stability-config').addEventListener('click', () => {
     document.getElementById('stability-config-modal').style.display = 'none';
   });
-  document.getElementById('btn-close-stability').addEventListener('click', () => {
-    document.getElementById('stability-modal').style.display = 'none';
-  });
-  document.getElementById('stability-modal').addEventListener('click', (e) => {
-    if (e.target.id === 'stability-modal') e.target.style.display = 'none';
-  });
   // The setup modal deliberately does NOT close on an outside click — that would
   // discard the disturbance configuration. Use Cancel or the ✕ button.
 
@@ -1294,12 +1095,6 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btn-close-vstab-config').addEventListener('click', () => {
     document.getElementById('vstab-config-modal').style.display = 'none';
   });
-  document.getElementById('btn-close-vstab').addEventListener('click', () => {
-    document.getElementById('vstab-modal').style.display = 'none';
-  });
-  document.getElementById('vstab-modal').addEventListener('click', (e) => {
-    if (e.target.id === 'vstab-modal') e.target.style.display = 'none';
-  });
 
   // ── Frequency Scan (impedance vs frequency) ──
   document.getElementById('btn-frequency-scan').addEventListener('click', () => {
@@ -1315,12 +1110,6 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   document.getElementById('btn-close-fscan-config').addEventListener('click', () => {
     document.getElementById('fscan-config-modal').style.display = 'none';
-  });
-  document.getElementById('btn-close-fscan').addEventListener('click', () => {
-    document.getElementById('fscan-modal').style.display = 'none';
-  });
-  document.getElementById('fscan-modal').addEventListener('click', (e) => {
-    if (e.target.id === 'fscan-modal') e.target.style.display = 'none';
   });
 
   // ── Optimal Capacitor Placement ──
@@ -1338,12 +1127,6 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btn-close-cpl-config').addEventListener('click', () => {
     document.getElementById('cpl-config-modal').style.display = 'none';
   });
-  document.getElementById('btn-close-cpl').addEventListener('click', () => {
-    document.getElementById('cpl-modal').style.display = 'none';
-  });
-  document.getElementById('cpl-modal').addEventListener('click', (e) => {
-    if (e.target.id === 'cpl-modal') e.target.style.display = 'none';
-  });
 
   // ── Passive Filter Sizing ──
   document.getElementById('btn-filter-sizing').addEventListener('click', () => {
@@ -1359,12 +1142,6 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   document.getElementById('btn-close-flt-config').addEventListener('click', () => {
     document.getElementById('flt-config-modal').style.display = 'none';
-  });
-  document.getElementById('btn-close-flt').addEventListener('click', () => {
-    document.getElementById('flt-modal').style.display = 'none';
-  });
-  document.getElementById('flt-modal').addEventListener('click', (e) => {
-    if (e.target.id === 'flt-modal') e.target.style.display = 'none';
   });
 
   // ── Voltage Flicker (IEC 61000-3-3) ──
@@ -1382,12 +1159,6 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btn-close-flk-config').addEventListener('click', () => {
     document.getElementById('flk-config-modal').style.display = 'none';
   });
-  document.getElementById('btn-close-flk').addEventListener('click', () => {
-    document.getElementById('flk-modal').style.display = 'none';
-  });
-  document.getElementById('flk-modal').addEventListener('click', (e) => {
-    if (e.target.id === 'flk-modal') e.target.style.display = 'none';
-  });
 
   // ── Nodal Hosting Capacity ──
   document.getElementById('btn-hosting-capacity').addEventListener('click', () => {
@@ -1404,12 +1175,6 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btn-close-hc-config').addEventListener('click', () => {
     document.getElementById('hc-config-modal').style.display = 'none';
   });
-  document.getElementById('btn-close-hc').addEventListener('click', () => {
-    document.getElementById('hc-modal').style.display = 'none';
-  });
-  document.getElementById('hc-modal').addEventListener('click', (e) => {
-    if (e.target.id === 'hc-modal') e.target.style.display = 'none';
-  });
 
   // ── Reliability Assessment ──
   document.getElementById('btn-reliability').addEventListener('click', () => {
@@ -1418,12 +1183,6 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
     Reliability.run();
-  });
-  document.getElementById('btn-close-rel').addEventListener('click', () => {
-    document.getElementById('rel-modal').style.display = 'none';
-  });
-  document.getElementById('rel-modal').addEventListener('click', (e) => {
-    if (e.target.id === 'rel-modal') e.target.style.display = 'none';
   });
 
   // ── Optimal Power Flow ──
@@ -1441,12 +1200,6 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btn-close-opf-config').addEventListener('click', () => {
     document.getElementById('opf-config-modal').style.display = 'none';
   });
-  document.getElementById('btn-close-opf').addEventListener('click', () => {
-    document.getElementById('opf-modal').style.display = 'none';
-  });
-  document.getElementById('opf-modal').addEventListener('click', (e) => {
-    if (e.target.id === 'opf-modal') e.target.style.display = 'none';
-  });
 
   // ── Battery Sizing & Discharge ──
   document.getElementById('btn-battery-sizing').addEventListener('click', () => {
@@ -1462,12 +1215,6 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   document.getElementById('btn-close-bsz-config').addEventListener('click', () => {
     document.getElementById('bsz-config-modal').style.display = 'none';
-  });
-  document.getElementById('btn-close-bsz').addEventListener('click', () => {
-    document.getElementById('bsz-modal').style.display = 'none';
-  });
-  document.getElementById('bsz-modal').addEventListener('click', (e) => {
-    if (e.target.id === 'bsz-modal') e.target.style.display = 'none';
   });
 
   // ── Contingency Analysis (N-1 / N-2) ──
@@ -1485,12 +1232,6 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btn-close-contingency-config').addEventListener('click', () => {
     document.getElementById('contingency-config-modal').style.display = 'none';
   });
-  document.getElementById('btn-close-contingency').addEventListener('click', () => {
-    document.getElementById('contingency-modal').style.display = 'none';
-  });
-  document.getElementById('contingency-modal').addEventListener('click', (e) => {
-    if (e.target.id === 'contingency-modal') e.target.style.display = 'none';
-  });
 
   // ── Time-Series / Quasi-Dynamic Load Flow ──
   document.getElementById('btn-timeseries').addEventListener('click', () => {
@@ -1507,12 +1248,6 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btn-close-tsl-config').addEventListener('click', () => {
     document.getElementById('tsl-config-modal').style.display = 'none';
   });
-  document.getElementById('btn-close-tsl').addEventListener('click', () => {
-    document.getElementById('tsl-modal').style.display = 'none';
-  });
-  document.getElementById('tsl-modal').addEventListener('click', (e) => {
-    if (e.target.id === 'tsl-modal') e.target.style.display = 'none';
-  });
 
   // ── Protective Device Sequence of Operation ──
   document.getElementById('btn-sequence-op').addEventListener('click', () => {
@@ -1528,16 +1263,6 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   document.getElementById('btn-close-sequence-config').addEventListener('click', () => {
     document.getElementById('sequence-config-modal').style.display = 'none';
-  });
-  document.getElementById('btn-close-sequence').addEventListener('click', () => {
-    document.getElementById('sequence-modal').style.display = 'none';
-  });
-  document.getElementById('sequence-modal').addEventListener('click', (e) => {
-    if (e.target.id === 'sequence-modal') e.target.style.display = 'none';
-  });
-  // Copy-report button lives inside the (re-rendered) results body
-  document.getElementById('sequence-body').addEventListener('click', (e) => {
-    if (e.target.id === 'soo-copy-btn') SOO._copyReport();
   });
 
   // ── Equipment Duty Check ──
@@ -1575,7 +1300,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const result = await API.runAnsiFaultAnalysis();
       AppState.ansiFaultResults = result;
       document.getElementById('status-info').textContent = 'ANSI fault duty analysis complete.';
-      showAnsiFaultResults(result);
+      ResultsPanel.open('ansi');
     } catch (e) {
       console.error('ANSI fault duty error:', e);
       document.getElementById('status-info').textContent = 'ANSI fault duty analysis failed.';
@@ -1598,9 +1323,8 @@ document.addEventListener('DOMContentLoaded', () => {
     _setBusy('btn-open-conductor', true);
     try {
       const result = await API.runOpenConductorAnalysis(selComp.id);
-      AppState.openConductorResults = result;
       document.getElementById('status-info').textContent = 'Open-conductor analysis complete.';
-      showOpenConductorResults(result);
+      ResultsPanel.show('openConductor', result);
     } catch (e) {
       console.error('Open-conductor analysis error:', e);
       document.getElementById('status-info').textContent = 'Open-conductor analysis failed.';
@@ -1610,10 +1334,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  function showOpenConductorResults(result) {
-    const modal = document.getElementById('open-conductor-modal');
-    const body = document.getElementById('open-conductor-body');
-    if (!modal || !body) return;
+  // Drawn into its tab of the results panel.
+  function renderOpenConductorResults(result, body) {
 
     let html = '';
     if (result.warnings && result.warnings.length > 0) {
@@ -1665,7 +1387,6 @@ document.addEventListener('DOMContentLoaded', () => {
     </table>`;
 
     body.innerHTML = html;
-    modal.style.display = '';
   }
 
   // ── Two-Conductor Open (Series-Fault Dual of SLG) Analysis ──
@@ -1681,9 +1402,8 @@ document.addEventListener('DOMContentLoaded', () => {
     _setBusy('btn-two-conductor-open', true);
     try {
       const result = await API.runTwoConductorOpenAnalysis(selComp.id);
-      AppState.twoConductorOpenResults = result;
       document.getElementById('status-info').textContent = 'Two-conductor-open analysis complete.';
-      showTwoConductorOpenResults(result);
+      ResultsPanel.show('twoConductorOpen', result);
     } catch (e) {
       console.error('Two-conductor-open analysis error:', e);
       document.getElementById('status-info').textContent = 'Two-conductor-open analysis failed.';
@@ -1693,10 +1413,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  function showTwoConductorOpenResults(result) {
-    const modal = document.getElementById('two-conductor-open-modal');
-    const body = document.getElementById('two-conductor-open-body');
-    if (!modal || !body) return;
+  // Drawn into its tab of the results panel.
+  function renderTwoConductorOpenResults(result, body) {
 
     let html = '';
     if (result.warnings && result.warnings.length > 0) {
@@ -1745,7 +1463,6 @@ document.addEventListener('DOMContentLoaded', () => {
     </table>`;
 
     body.innerHTML = html;
-    modal.style.display = '';
   }
 
   // ── Simultaneous Series + Shunt Fault Analysis ──
@@ -1765,9 +1482,8 @@ document.addEventListener('DOMContentLoaded', () => {
     _setBusy('btn-simultaneous-fault', true);
     try {
       const result = await API.runSimultaneousFaultAnalysis(branchComp.id, seriesType, busComp.id, shuntType);
-      AppState.simultaneousFaultResults = result;
       document.getElementById('status-info').textContent = 'Simultaneous fault analysis complete.';
-      showSimultaneousFaultResults(result);
+      ResultsPanel.show('simultaneousFault', result);
     } catch (e) {
       console.error('Simultaneous fault analysis error:', e);
       document.getElementById('status-info').textContent = 'Simultaneous fault analysis failed.';
@@ -1777,10 +1493,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  function showSimultaneousFaultResults(result) {
-    const modal = document.getElementById('simultaneous-fault-modal');
-    const body = document.getElementById('simultaneous-fault-body');
-    if (!modal || !body) return;
+  // Drawn into its tab of the results panel.
+  function renderSimultaneousFaultResults(result, body) {
 
     let html = '';
     if (result.warnings && result.warnings.length > 0) {
@@ -1843,93 +1557,8 @@ document.addEventListener('DOMContentLoaded', () => {
     </table>`;
 
     body.innerHTML = html;
-    modal.style.display = '';
   }
 
-  function showAnsiFaultResults(result) {
-    const modal = document.getElementById('fault-ansi-modal');
-    const body = document.getElementById('fault-ansi-body');
-    if (!modal || !body) return;
-
-    const buses = Object.values(result.buses || {});
-    const devices = result.devices || [];
-
-    if (buses.length === 0) {
-      body.innerHTML = '<p>No buses found for fault duty analysis.</p>';
-      modal.style.display = '';
-      return;
-    }
-
-    let html = '';
-    if (result.warnings && result.warnings.length > 0) {
-      html += '<div class="af-warnings">';
-      for (const w of result.warnings) html += `<div class="af-warning-item">⚠ ${escHtml(w)}</div>`;
-      html += '</div>';
-    }
-
-    html += `<h4 style="margin:8px 0 4px">Bus Fault Duty (E/X method, 3-phase)</h4>
-    <table class="af-table">
-      <thead><tr>
-        <th>Bus</th><th>Voltage (kV)</th><th>I sym momentary (kA)</th>
-        <th>I asym momentary / C&amp;L (kA)</th><th>I sym interrupting (kA)</th>
-        <th>X/R interrupting</th><th>LV first cycle (kA, X/R)</th>
-      </tr></thead><tbody>`;
-    for (const b of buses) {
-      html += `<tr${b.warning ? ' class="af-medium"' : ''}>
-        <td>${escHtml(b.bus_name || b.bus_id)}</td>
-        <td>${b.voltage_kv.toFixed(2)}</td>
-        <td>${b.i_sym_momentary_ka.toFixed(2)}</td>
-        <td>${b.i_asym_momentary_ka.toFixed(2)}</td>
-        <td>${b.i_sym_interrupting_ka.toFixed(2)}</td>
-        <td>${b.x_r_interrupting != null ? b.x_r_interrupting.toFixed(1) : '—'}</td>
-        <td>${b.i_sym_lv_first_cycle_ka != null ? `${b.i_sym_lv_first_cycle_ka.toFixed(2)} (${b.x_r_lv_first_cycle != null ? b.x_r_lv_first_cycle.toFixed(1) : '—'})` : '—'}</td>
-      </tr>`;
-      if (b.warning) {
-        html += `<tr class="af-medium"><td colspan="7" style="padding-left:24px;font-size:11px">${escHtml(b.warning)}</td></tr>`;
-      }
-    }
-    html += '</tbody></table>';
-
-    if (devices.length > 0) {
-      html += `<h4 style="margin:12px 0 4px">Breaker Duty (C37.010 above 1 kV; LV first-cycle at or below 1 kV)</h4>
-      <table class="af-table">
-        <thead><tr>
-          <th>Breaker</th><th>Bus</th><th>Rated (kA @ kV, K)</th>
-          <th>Interrupting duty / cap.</th><th>MF</th><th>Status</th>
-          <th>Closing &amp; latching duty / cap.</th><th>Status</th>
-        </tr></thead><tbody>`;
-      const fmt = v => (v == null ? '—' : Number(v).toFixed(2));
-      for (const d of devices) {
-        const passI = d.status_interrupting === 'PASS';
-        const passL = d.status_closing_latching === 'PASS' || d.status_closing_latching === 'N/A';
-        const rowClass = (!passI && !d.requires_detailed_method) || !passL ? 'af-danger'
-          : d.requires_detailed_method ? 'af-medium' : 'af-low';
-        const badge = (ok, review) => ok
-          ? '<span style="color:#4caf50;font-weight:600">PASS</span>'
-          : review ? '<span style="color:#f57c00;font-weight:600">REVIEW</span>'
-          : '<span style="color:#d32f2f;font-weight:600">FAIL</span>';
-        html += `<tr class="${rowClass}">
-          <td>${escHtml(d.device_name)}</td>
-          <td>${escHtml(d.bus_id)}</td>
-          <td>${d.rated_interrupting_ka.toFixed(1)} @ ${d.rated_max_kv.toFixed(1)}, K=${d.k_factor.toFixed(2)}</td>
-          <td>${fmt(d.duty_interrupting_ka)} / ${fmt(d.capability_interrupting_ka)}</td>
-          <td title="${escHtml(d.method || '')}">${d.multiplying_factor != null ? d.multiplying_factor.toFixed(3) : '—'}</td>
-          <td>${badge(passI, d.requires_detailed_method)}</td>
-          <td>${fmt(d.duty_closing_latching_ka)} / ${fmt(d.capability_closing_latching_ka)}</td>
-          <td>${d.status_closing_latching === 'N/A' ? '<span style="color:#888">N/A (LV)</span>' : badge(passL, false)}</td>
-        </tr>`;
-        if (d.requires_detailed_method) {
-          html += `<tr class="af-medium"><td colspan="8" style="padding-left:24px;font-size:11px">${escHtml(d.status_interrupting)}</td></tr>`;
-        }
-      }
-      html += '</tbody></table>';
-    } else {
-      html += '<p>No circuit breakers found in the project.</p>';
-    }
-
-    body.innerHTML = html;
-    modal.style.display = '';
-  }
 
   // ── Backup Autonomy (grid outage) ──
   document.getElementById('btn-backup-study').addEventListener('click', async () => {
@@ -1945,9 +1574,8 @@ document.addEventListener('DOMContentLoaded', () => {
     _setBusy('btn-backup-study', true);
     try {
       const result = await API.runBackupAutonomy();
-      AppState.backupResults = result;
       document.getElementById('status-info').textContent = 'Backup autonomy study complete.';
-      showBackupResults(result);
+      ResultsPanel.show('backup', result);
     } catch (e) {
       console.error('Backup study error:', e);
       document.getElementById('status-info').textContent = 'Backup autonomy study failed.';
@@ -1957,10 +1585,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  function showBackupResults(result) {
-    const modal = document.getElementById('backup-modal');
-    const body = document.getElementById('backup-body');
-    if (!modal || !body) return;
+  // Drawn into its tab of the results panel.
+  function renderBackupResults(result, body) {
     const islands = result.islands || [];
     const summary = result.summary || {};
 
@@ -2024,143 +1650,9 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
     body.innerHTML = html;
-    modal.style.display = '';
   }
 
-  function showDCLoadFlowResults(result) {
-    const modal = document.getElementById('dc-loadflow-modal');
-    const body = document.getElementById('dc-loadflow-body');
-    if (!modal || !body) return;
-    const buses = Object.values(result.buses || {});
-    const branches = result.branches || [];
-    const sources = result.sources || [];
-    const warnings = result.warnings || [];
 
-    let html = `<div style="background:#e6510011;border:1px solid #e65100;border-radius:6px;padding:10px 14px;margin-bottom:14px;display:flex;flex-wrap:wrap;gap:16px;align-items:center">
-      <div style="font-size:12px">Method: <strong>${escHtml(result.method || 'DC Nodal')}</strong></div>
-      <div style="font-size:12px">DC buses: <strong>${buses.length}</strong></div>
-      <div style="font-size:12px">Iterations: <strong>${result.iterations ?? 0}</strong></div>
-    </div>`;
-
-    if (buses.length === 0) {
-      html += '<p style="opacity:0.7">No DC buses. Set a bus\'s <strong>System</strong> property to <strong>DC</strong> to model a DC network.</p>';
-      body.innerHTML = html; modal.style.display = ''; return;
-    }
-
-    html += `<h4 style="margin:12px 0 6px;font-size:13px">Bus Voltages</h4>
-      <table class="af-table"><thead><tr>
-      <th>Bus</th><th>Voltage (V)</th><th>Nominal (V)</th><th>% Nominal</th><th>Deviation</th><th>Load (kW)</th><th>Status</th>
-      </tr></thead><tbody>`;
-    for (const b of buses) {
-      const de = b.energized === false;
-      const dropColor = Math.abs(b.drop_pct) > 5 ? '#d32f2f' : Math.abs(b.drop_pct) > 2 ? '#f57c00' : '#2e7d32';
-      html += `<tr>
-        <td>${escHtml(b.bus_name)}</td>
-        <td>${de ? '—' : b.voltage_v.toFixed(1)}</td>
-        <td>${b.nominal_v.toFixed(0)}</td>
-        <td>${de ? '—' : (b.voltage_pu * 100).toFixed(1) + '%'}</td>
-        <td style="color:${dropColor}">${de ? '—' : b.drop_pct.toFixed(2) + '%'}</td>
-        <td>${b.load_kw.toFixed(2)}</td>
-        <td>${de ? '<span style="color:#d32f2f;font-weight:600">DE-ENERGIZED</span>' : '<span style="color:#4caf50">OK</span>'}</td>
-      </tr>`;
-    }
-    html += '</tbody></table>';
-
-    if (sources.length) {
-      html += `<h4 style="margin:14px 0 6px;font-size:13px">Sources</h4>
-        <table class="af-table"><thead><tr>
-        <th>Source</th><th>Type</th><th>Bus</th><th>Voltage (V)</th><th>Current (A)</th><th>Power (kW)</th><th>Loading</th>
-        </tr></thead><tbody>`;
-      for (const s of sources) {
-        const lc = s.current_limited ? '#d32f2f' : s.loading_pct > 80 ? '#f57c00' : '#2e7d32';
-        html += `<tr>
-          <td>${escHtml(s.source_name)}</td><td>${escHtml(s.source_type)}</td>
-          <td>${escHtml((result.buses[s.bus_id] || {}).bus_name || s.bus_id)}</td>
-          <td>${s.voltage_v.toFixed(1)}</td><td>${s.current_a.toFixed(1)}</td><td>${s.power_kw.toFixed(2)}</td>
-          <td style="color:${lc}">${s.loading_pct.toFixed(0)}%${s.current_limited ? ' (limited)' : ''}</td>
-        </tr>`;
-      }
-      html += '</tbody></table>';
-    }
-
-    if (branches.length) {
-      html += `<h4 style="margin:14px 0 6px;font-size:13px">Cable Flows</h4>
-        <table class="af-table"><thead><tr>
-        <th>Cable</th><th>Current (A)</th><th>V-drop (V)</th><th>R loop (Ω)</th><th>Loss (kW)</th><th>Loading</th>
-        </tr></thead><tbody>`;
-      for (const br of branches) {
-        const lc = br.loading_pct > 100 ? '#d32f2f' : br.loading_pct > 80 ? '#f57c00' : '#2e7d32';
-        html += `<tr>
-          <td>${escHtml(br.element_name)}</td><td>${br.current_a.toFixed(1)}</td>
-          <td>${br.voltage_drop_v.toFixed(2)}</td><td>${br.resistance_ohm.toFixed(4)}</td>
-          <td>${br.loss_kw.toFixed(3)}</td><td style="color:${lc}">${br.loading_pct.toFixed(0)}%</td>
-        </tr>`;
-      }
-      html += '</tbody></table>';
-    }
-
-    for (const w of warnings) {
-      html += `<p style="font-size:12px;color:#f57c00;margin:4px 0">⚠ ${escHtml(w.message)}</p>`;
-    }
-    body.innerHTML = html;
-    modal.style.display = '';
-  }
-
-  function showDCShortCircuitResults(result) {
-    const modal = document.getElementById('dc-shortcircuit-modal');
-    const body = document.getElementById('dc-shortcircuit-body');
-    if (!modal || !body) return;
-    const buses = Object.values(result.buses || {});
-    const warnings = result.warnings || [];
-
-    let html = `<div style="background:#e6510011;border:1px solid #e65100;border-radius:6px;padding:10px 14px;margin-bottom:14px;display:flex;flex-wrap:wrap;gap:16px;align-items:center">
-      <div style="font-size:12px">Standard: <strong>${escHtml(result.standard || 'IEC 61660-1')}</strong></div>
-      <div style="font-size:12px">DC buses: <strong>${buses.length}</strong></div>
-    </div>`;
-
-    if (buses.length === 0) {
-      html += '<p style="opacity:0.7">No DC buses. Set a bus\'s <strong>System</strong> property to <strong>DC</strong> to model a DC network.</p>';
-      body.innerHTML = html; modal.style.display = ''; return;
-    }
-
-    html += `<table class="af-table"><thead><tr>
-      <th>Bus</th><th>Nom. (V)</th><th>I<sub>k</sub> (kA)</th><th>i<sub>p</sub> (kA)</th><th>t<sub>p</sub> (ms)</th><th>τ<sub>1</sub> (ms)</th><th>Sources</th>
-      </tr></thead><tbody>`;
-    for (const b of buses) {
-      const none = !b.contributions || b.contributions.length === 0;
-      html += `<tr>
-        <td>${escHtml(b.bus_name)}</td><td>${b.nominal_v.toFixed(0)}</td>
-        <td><strong>${b.ik_ka.toFixed(2)}</strong></td><td><strong>${b.ip_ka.toFixed(2)}</strong></td>
-        <td>${b.tp_ms.toFixed(1)}</td><td>${b.time_constant_ms.toFixed(1)}</td>
-        <td>${none ? '<span style="color:#d32f2f">none</span>' : b.contributions.length}</td>
-      </tr>`;
-    }
-    html += '</tbody></table>';
-
-    // Per-source contribution breakdown for buses that have sources.
-    for (const b of buses) {
-      if (!b.contributions || b.contributions.length === 0) continue;
-      html += `<h4 style="margin:14px 0 6px;font-size:13px">${escHtml(b.bus_name)} — source contributions</h4>
-        <table class="af-table"><thead><tr>
-        <th>Source</th><th>Type</th><th>I<sub>k</sub> (kA)</th><th>i<sub>p</sub> (kA)</th><th>t<sub>p</sub> (ms)</th><th>R branch (mΩ)</th>
-        </tr></thead><tbody>`;
-      for (const c of b.contributions) {
-        html += `<tr>
-          <td>${escHtml(c.source_name)}</td><td>${escHtml(c.source_type)}</td>
-          <td>${c.ik_ka.toFixed(3)}</td><td>${c.ip_ka.toFixed(3)}</td>
-          <td>${c.tp_ms.toFixed(1)}</td><td>${c.r_mohm.toFixed(1)}</td>
-        </tr>`;
-      }
-      html += '</tbody></table>';
-    }
-
-    html += `<p style="font-size:11px;opacity:0.7;margin-top:12px">IEC 61660-1 maximum, conductors at 20 °C. Battery: i<sub>p</sub> = E<sub>B</sub>/R<sub>BBr</sub>, I<sub>k</sub> = 0.95·E<sub>B</sub>/(R<sub>BBr</sub> + 0.1·R<sub>B</sub>). Diode / thyristor rectifiers and chargers: the IEC rectifier procedure from their AC supply; switch-mode converters: current-limited. Contributions are superposition shares of a nodal solve and sum to the total. Capacitor and DC-motor sources are not modelled.</p>`;
-    for (const w of warnings) {
-      html += `<p style="font-size:12px;color:#f57c00;margin:4px 0">⚠ ${escHtml(w.message)}</p>`;
-    }
-    body.innerHTML = html;
-    modal.style.display = '';
-  }
 
   // ── Load Diversity & Demand Factor ──
   document.getElementById('btn-load-diversity').addEventListener('click', async () => {
@@ -2175,7 +1667,7 @@ document.addEventListener('DOMContentLoaded', () => {
       AppState.loadDiversityResults = result;
       Canvas.render();
       document.getElementById('status-info').textContent = 'Load diversity analysis complete.';
-      showLoadDiversityResults(result);
+      ResultsPanel.open('loadDiversity');
     } catch (e) {
       console.error('Load diversity error:', e);
       document.getElementById('status-info').textContent = 'Load diversity analysis failed.';
@@ -2185,127 +1677,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  function showLoadDiversityResults(result) {
-    const modal = document.getElementById('load-diversity-modal');
-    const body = document.getElementById('load-diversity-body');
-    if (!modal || !body) return;
-
-    const buses = result.buses || [];
-    const xfmrs = result.transformers || [];
-    const summary = result.summary || {};
-    const refFactors = result.reference_demand_factors || {};
-    const ksTable = result.ks_table || [];
-    const warnings = result.warnings || [];
-
-    let html = '';
-
-    // Summary banner
-    const overallDf = summary.overall_demand_factor || 1;
-    const savings = summary.total_installed_kva > 0
-      ? ((1 - overallDf) * 100).toFixed(0) : 0;
-    html += `<div style="background:#1565c011;border:1px solid #1565c0;border-radius:6px;padding:10px 14px;margin-bottom:14px;display:flex;flex-wrap:wrap;gap:16px;align-items:center">
-      <div><strong style="font-size:13px">Overall Demand Factor:</strong> <span style="font-size:16px;font-weight:700;color:#1565c0">${overallDf.toFixed(3)}</span></div>
-      <div style="font-size:12px">Installed: <strong>${summary.total_installed_kva?.toFixed(0) || 0} kVA</strong> (${summary.total_installed_kw?.toFixed(0) || 0} kW)</div>
-      <div style="font-size:12px">Max Demand: <strong>${summary.total_demand_kva?.toFixed(0) || 0} kVA</strong> (${summary.total_demand_kw?.toFixed(0) || 0} kW)</div>
-      ${savings > 0 ? `<div style="font-size:12px;color:#4caf50">Diversity saving: <strong>${savings}%</strong></div>` : ''}
-    </div>`;
-
-    // Transformer loading section
-    if (xfmrs.length > 0) {
-      html += '<h4 style="margin:12px 0 8px;font-size:13px">Transformer Loading</h4>';
-      html += `<table class="af-table"><thead><tr>
-        <th>Transformer</th><th>Rating (kVA)</th><th>Feeds</th>
-        <th>Installed (kVA)</th><th>Demand (kVA)</th>
-        <th>Installed %</th><th>Demand %</th><th>Status</th>
-      </tr></thead><tbody>`;
-      for (const t of xfmrs) {
-        const rowClass = t.status === 'fail' ? 'af-danger' : t.status === 'warning' ? 'af-medium' : 'af-low';
-        const statusBadge = t.status === 'pass' ? '<span style="color:#4caf50;font-weight:600">PASS</span>'
-          : t.status === 'warning' ? '<span style="color:#f57c00;font-weight:600">WARN</span>'
-          : '<span style="color:#d32f2f;font-weight:600">FAIL</span>';
-        html += `<tr class="${rowClass}">
-          <td>${escHtml(t.transformer_name)}</td>
-          <td>${t.rated_kva.toFixed(0)}</td>
-          <td>${t.fed_buses.join(', ') || '—'}</td>
-          <td>${t.installed_kva.toFixed(0)}</td>
-          <td>${t.demand_kva.toFixed(0)}</td>
-          <td>${t.installed_loading_pct.toFixed(1)}%</td>
-          <td><strong>${t.demand_loading_pct.toFixed(1)}%</strong></td>
-          <td>${statusBadge}</td>
-        </tr>`;
-        if (t.issues.length > 0) {
-          html += `<tr class="${rowClass}"><td colspan="8" style="padding-left:24px;font-size:11px;color:#b71c1c">${t.issues.join('<br>')}</td></tr>`;
-        }
-      }
-      html += '</tbody></table>';
-    }
-
-    if (warnings.length) {
-      html += `<div style="border:1px solid #f57c00;background:#f57c0011;border-radius:6px;padding:8px 12px;margin-bottom:12px;font-size:12px">${warnings.map(escHtml).join('<br>')}</div>`;
-    }
-
-    // Per-board breakdown: every board with what it feeds, Ks per board
-    if (buses.length > 0) {
-      html += '<h4 style="margin:16px 0 8px;font-size:13px">Board Maximum Demand</h4>';
-      html += `<table class="af-table"><thead><tr>
-        <th>Board</th><th>Fed from</th><th>Circuits</th><th>Installed (kVA)</th><th>Σ Demand (kVA)</th>
-        <th>K<sub>s</sub></th><th>Max demand (kVA)</th><th>Eff. DF</th><th>Current (A)</th>
-      </tr></thead><tbody>`;
-      for (const b of buses) {
-        const cap = b.capacitor_kvar > 0 ? ` <span title="Capacitor banks on this board">(−${b.capacitor_kvar.toFixed(0)} kvar)</span>` : '';
-        html += `<tr>
-          <td>${escHtml(b.bus_name)}${b.node_type === 'distribution_board' ? ' <span style="color:var(--text-secondary)">(DB)</span>' : ''}</td>
-          <td>${(b.fed_from || []).map(escHtml).join(', ') || '—'}</td>
-          <td>${b.num_circuits ?? b.num_loads}</td>
-          <td>${b.installed_kva.toFixed(0)}</td>
-          <td>${b.demand_kva.toFixed(0)}</td>
-          <td>${b.diversity_factor.toFixed(2)}</td>
-          <td><strong>${b.diversified_demand_kva.toFixed(0)}</strong>${cap}</td>
-          <td>${b.effective_demand_factor.toFixed(3)}</td>
-          <td>${b.demand_current_a.toFixed(1)}</td>
-        </tr>`;
-
-        const circuits = b.circuits || [];
-        if (circuits.length > 0) {
-          html += `<tr><td colspan="9" style="padding:0 0 0 20px">
-            <details style="font-size:11px"><summary style="cursor:pointer;color:var(--text-secondary)">Show ${circuits.length} circuit${circuits.length === 1 ? '' : 's'}</summary>
-            <table style="width:100%;font-size:11px;margin:4px 0"><thead><tr>
-              <th style="text-align:left">Circuit</th><th>Type</th><th>Installed kVA</th><th>Demand kVA</th><th>Demand kW</th>
-            </tr></thead><tbody>`;
-          const kindLabel = { load: 'Load', feeder: 'Feeder', schedule: 'DB schedule' };
-          for (const c of circuits) {
-            html += `<tr>
-              <td style="text-align:left">${escHtml(c.name)}</td><td>${kindLabel[c.kind] || c.kind}</td>
-              <td>${c.installed_kva.toFixed(1)}</td><td>${c.demand_kva.toFixed(1)}</td><td>${c.demand_kw.toFixed(1)}</td>
-            </tr>`;
-          }
-          html += '</tbody></table></details></td></tr>';
-        }
-      }
-      html += '</tbody></table>';
-      html += `<p style="font-size:11px;color:var(--text-secondary);margin:6px 0 0">Max demand = K<sub>s</sub> × the phasor sum of the circuits' demand (kW, kvar), less any capacitor kvar. Each board includes everything it feeds; K<sub>s</sub> applies to LV boards only.</p>`;
-    }
-
-    // Coincidence factor table and typical demand factors
-    if (ksTable.length > 0) {
-      html += '<h4 style="margin:16px 0 8px;font-size:13px">Coincidence factor K<sub>s</sub> (IEC 61439 rated diversity factor)</h4>';
-      html += '<div style="display:flex;flex-wrap:wrap;gap:4px 16px;font-size:11px">';
-      for (const r of ksTable) html += `<div>${escHtml(r.circuits)} circuit${r.circuits === '1' ? '' : 's'}: <strong>${r.ks.toFixed(1)}</strong></div>`;
-      html += '</div>';
-    }
-    const refEntries = Object.values(refFactors);
-    if (refEntries.length > 0) {
-      html += '<h4 style="margin:16px 0 8px;font-size:13px">Typical demand factors (set per load)</h4>';
-      html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:4px 16px;font-size:11px">';
-      for (const info of refEntries) {
-        html += `<div><strong>${info.factor.toFixed(2)}</strong> — ${escHtml(info.description)} <span style="color:var(--text-secondary)">(${escHtml(info.source)})</span></div>`;
-      }
-      html += '</div>';
-    }
-
-    body.innerHTML = html;
-    modal.style.display = '';
-  }
 
   // ── Grounding System Analysis (IEEE 80) ──
   document.getElementById('btn-grounding').addEventListener('click', async () => {
@@ -2336,7 +1707,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (typeof StaleResults !== 'undefined') StaleResults.noteArgs('groundingResults', { busIds });
       Canvas.render();
       document.getElementById('status-info').textContent = `Grounding study complete (${scopeInfo}).`;
-      showGroundingResults(result);
+      ResultsPanel.open('grounding');
     } catch (e) {
       console.error('Grounding analysis error:', e);
       document.getElementById('status-info').textContent = 'Grounding analysis failed.';
@@ -2355,11 +1726,10 @@ document.addEventListener('DOMContentLoaded', () => {
     _setBusy('btn-harmonics', true);
     try {
       const result = await API.runHarmonics(document.getElementById('loadflow-method')?.value || 'newton_raphson');
-      AppState.harmonicsResults = result;
       document.getElementById('status-info').textContent =
         `Harmonic analysis complete — ${_harmStdName(result.limits_standard)} `
         + (result.compliant ? 'compliant.' : 'limits exceeded.');
-      showHarmonicsResults(result);
+      ResultsPanel.show('harmonics', result);
     } catch (e) {
       console.error('Harmonic analysis error:', e);
       document.getElementById('status-info').textContent = 'Harmonic analysis failed.';
@@ -2380,282 +1750,7 @@ document.addEventListener('DOMContentLoaded', () => {
     await runHarmonicsStudy();
   });
 
-  function showHarmonicsResults(result) {
-    const modal = document.getElementById('harmonics-modal');
-    const body = document.getElementById('harmonics-body');
-    if (!modal || !body) return;
-    const ok = (v) => v ? '<span style="color:#4caf50">✓ PASS</span>' : '<span style="color:#d32f2f">✗ FAIL</span>';
-    const std = result.limits_standard === 'iec' ? 'iec' : 'ieee519';
-    const title = document.getElementById('harmonics-title');
-    if (title) title.textContent = `Harmonic Analysis — ${_harmStdName(std)}`;
-    // Limit basis — saved with the project; changing it re-runs the study.
-    let html = `<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;font-size:12px">
-      <label for="harmonics-limits">Limits:</label>
-      <select id="harmonics-limits">
-        <option value="ieee519"${std === 'ieee519' ? ' selected' : ''}>IEEE 519-2014 (voltage + PCC current)</option>
-        <option value="iec"${std === 'iec' ? ' selected' : ''}>IEC 61000-3-6 planning levels (MV/HV) · IEC 61000-2-4 Class 2 (LV)</option>
-      </select></div>`;
-    const warnHtml = () => {
-      if (!(result.warnings && result.warnings.length)) return '';
-      let w = '<div class="af-warnings">';
-      for (const m of result.warnings) w += `<div class="af-warning-item">⚠ ${escHtml(m)}</div>`;
-      return w + '</div>';
-    };
-    const bindLimits = () => {
-      const sel = document.getElementById('harmonics-limits');
-      if (sel) sel.addEventListener('change', async () => {
-        AppState.harmonicsLimits = sel.value === 'iec' ? 'iec' : null;
-        AppState.dirty = true;
-        await runHarmonicsStudy();
-      });
-    };
 
-    if (result.note) {
-      body.innerHTML = html + `<p>${escHtml(result.note)}</p>` + warnHtml();
-      bindLimits();
-      modal.style.display = '';
-      return;
-    }
-
-    // Banner
-    const bColor = result.compliant ? '#4caf50' : '#d32f2f';
-    html += `<div style="background:${bColor}11;border:1px solid ${bColor};border-radius:6px;padding:10px 14px;margin-bottom:14px">
-      <strong style="color:${bColor}">${_harmStdName(std)} ${result.compliant ? 'compliant' : 'limits exceeded'}</strong>
-      <span style="margin-left:12px">Worst bus THD<sub>V</sub>: <strong>${result.worst_thd_pct}%</strong> at ${escHtml(result.worst_bus_name || '—')}</span>
-      <span style="margin-left:12px;color:var(--text-secondary)">Orders analysed: ${(result.orders || []).join(', ')}</span>
-    </div>`;
-    html += warnHtml();
-
-    // PCC current TDD + individual orders
-    const pcc = result.pcc;
-    if (pcc) {
-      const graded = pcc.compliant !== null && pcc.compliant !== undefined;
-      const border = !graded ? 'var(--border-color)' : (pcc.compliant ? '#4caf50' : '#d32f2f');
-      const lims = pcc.harmonic_limits || {};
-      const over = new Set((pcc.exceeding_orders || []).map(String));
-      const cells = Object.entries(pcc.harmonics || {}).map(([h, v]) => {
-        const l = lims[h];
-        const bad = over.has(h);
-        return `<span style="white-space:nowrap${bad ? ';color:#d32f2f;font-weight:600' : ''}">h${h}: ${v}%${l != null ? ` / ${l}%` : ''}</span>`;
-      }).join('&nbsp;&nbsp; ');
-      html += `<h4 style="margin:14px 0 6px">Point of Common Coupling — Current Distortion</h4>
-        <div style="border:1px solid var(--border-color);border-radius:6px;padding:12px 14px;margin-bottom:6px;border-left:4px solid ${border}">
-          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px 16px;font-size:12px">
-            <div>PCC bus: <strong>${escHtml(pcc.name)} (${pcc.voltage_kv} kV)</strong></div>
-            <div>I<sub>SC</sub>/I<sub>L</sub>: <strong>${pcc.isc_il}</strong></div>
-            <div>Current TDD: <strong>${pcc.i_tdd_pct}%</strong></div>
-            <div>${graded ? `TDD limit: <strong>${pcc.tdd_limit_pct}%</strong> · PCC ${ok(pcc.compliant)}${(pcc.exceeding_orders || []).length ? ` <span style="color:#d32f2f">(h${pcc.exceeding_orders.join(', h')} over its limit)</span>` : ''}` : 'Not graded (IEC: emission allocation needs planning data)'}</div>
-          </div>
-          <div style="font-size:11px;color:var(--text-secondary);margin-top:6px">I<sub>h</sub> % of I<sub>L</sub>${graded ? ' / IEEE 519 individual limit' : ''}: ${cells}</div>
-        </div>`;
-    }
-
-    // Per-bus voltage THD table
-    html += `<h4 style="margin:14px 0 6px">Bus Voltage Distortion</h4>
-      <table class="data-table" style="width:100%;font-size:12px"><thead><tr>
-      <th style="text-align:left">Bus</th><th>kV</th><th>THD<sub>V</sub> %</th><th>Limit %</th>
-      <th>Critical order</th><th>IHD %</th><th>IHD limit %</th><th>Basis</th><th>Verdict</th></tr></thead><tbody>`;
-    for (const b of (result.buses || [])) {
-      const c = b.compliant ? '' : 'background:#d32f2f11';
-      const crit = b.critical_order != null ? b.critical_order : '—';
-      const ihd = b.critical_order != null ? b.critical_ihd_pct : b.max_ihd_pct;
-      html += `<tr style="${c}"><td style="text-align:left">${escHtml(b.name)}</td>
-        <td style="text-align:center">${b.voltage_kv}</td>
-        <td style="text-align:center"><strong>${b.thd_v_pct}</strong></td>
-        <td style="text-align:center">${b.thd_limit_pct}</td>
-        <td style="text-align:center">${crit}</td>
-        <td style="text-align:center">${ihd}</td>
-        <td style="text-align:center">${b.ihd_limit_pct}</td>
-        <td style="text-align:center;font-size:11px">${escHtml(b.limit_basis || '')}</td>
-        <td style="text-align:center">${ok(b.compliant)}</td></tr>`;
-    }
-    html += '</tbody></table>';
-
-    // VFD sources
-    if ((result.vfd_sources || []).length) {
-      html += `<h4 style="margin:16px 0 6px">Harmonic Sources (VFDs)</h4>`;
-      for (const v of result.vfd_sources) {
-        const spec = Object.entries(v.spectrum).map(([h, r]) => `h${h}: ${(r * 100).toFixed(1)}%`).join('  ');
-        html += `<div style="border:1px solid var(--border-color);border-radius:6px;padding:10px 14px;margin-bottom:8px">
-          <strong>${escHtml(v.name)}</strong> — ${v.pulse_number}-pulse ${escHtml(v.front_end)}, ${v.p_mw} MW, current THD ${v.current_thd_pct}%
-          <div style="font-size:11px;color:var(--text-secondary);margin-top:4px">I<sub>h</sub>/I<sub>1</sub>: ${spec}</div>
-        </div>`;
-      }
-    }
-
-    html += `<p style="font-size:11px;color:var(--text-secondary);margin-top:12px">${escHtml(result.method)}. `
-      + `Critical order = the order nearest its own limit. `
-      + (std === 'iec' ? 'IEC 61000-3-6 planning levels are indicative network-operator targets; the LV basis is the IEC 61000-2-4 Class 2 compatibility level. ' : 'IEEE 519 limits apply at the PCC; internal buses are screened against the same table. ')
-      + `Multiple sources of the same order summed in phase (conservative). Transformer/line tap ratios and phase shifts not applied at harmonic frequencies.</p>`;
-
-    body.innerHTML = html;
-    bindLimits();
-    modal.style.display = '';
-  }
-
-  // Plan-view SVG of the earthing grid mesh + rods (IEEE 80 geometry).
-  // Pure geometry passthrough from the backend — no recalculation here.
-  function buildGroundingGridSVG(b) {
-    const Lx = Number(b.grid_length_m), Ly = Number(b.grid_width_m);
-    const nx = Math.max(2, parseInt(b.num_conductors_x, 10) || 2);
-    const ny = Math.max(2, parseInt(b.num_conductors_y, 10) || 2);
-    const nR = Math.max(0, parseInt(b.num_ground_rods, 10) || 0);
-    if (!(Lx > 0) || !(Ly > 0)) return '';
-
-    // Fit the grid into a fixed viewport, preserving aspect ratio.
-    const VW = 240, VH = 150, pad = 22;
-    const s = Math.min((VW - 2 * pad) / Lx, (VH - 2 * pad) / Ly);
-    const gw = Lx * s, gh = Ly * s;
-    const ox = (VW - gw) / 2, oy = (VH - gh) / 2;
-    const col = b.status === 'fail' ? '#d32f2f' : b.status === 'warning' ? '#f57c00' : '#2e7d32';
-
-    let mesh = '';
-    for (let i = 0; i < nx; i++) {           // vertical conductors (run along Ly)
-      const x = ox + (nx === 1 ? gw / 2 : (gw * i) / (nx - 1));
-      mesh += `<line x1="${x.toFixed(1)}" y1="${oy.toFixed(1)}" x2="${x.toFixed(1)}" y2="${(oy + gh).toFixed(1)}"/>`;
-    }
-    for (let j = 0; j < ny; j++) {           // horizontal conductors (run along Lx)
-      const y = oy + (ny === 1 ? gh / 2 : (gh * j) / (ny - 1));
-      mesh += `<line x1="${ox.toFixed(1)}" y1="${y.toFixed(1)}" x2="${(ox + gw).toFixed(1)}" y2="${y.toFixed(1)}"/>`;
-    }
-
-    // Rods distributed evenly around the grid perimeter.
-    let rods = '';
-    if (nR > 0) {
-      const perim = 2 * (gw + gh);
-      for (let k = 0; k < nR; k++) {
-        let d = (perim * k) / nR, px, py;
-        if (d < gw) { px = ox + d; py = oy; }
-        else if (d < gw + gh) { px = ox + gw; py = oy + (d - gw); }
-        else if (d < 2 * gw + gh) { px = ox + gw - (d - gw - gh); py = oy + gh; }
-        else { px = ox; py = oy + gh - (d - 2 * gw - gh); }
-        rods += `<circle cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="3" fill="${col}" stroke="#fff" stroke-width="0.8"/>`;
-      }
-    }
-
-    const rodTxt = nR > 0 ? ` · ${nR} rod${nR > 1 ? 's' : ''}` : '';
-    return `<svg viewBox="0 0 ${VW} ${VH}" width="100%" style="max-width:280px;background:var(--bg-secondary);border-radius:4px" role="img"
-        aria-label="Earthing grid plan: ${Lx} by ${Ly} metres, ${nx} by ${ny} conductor mesh, ${nR} rods">
-      <g stroke="${col}" stroke-width="1" opacity="0.85">${mesh}</g>
-      ${rods}
-      <text x="${(ox + gw / 2).toFixed(1)}" y="${(oy - 7).toFixed(1)}" text-anchor="middle" font-size="9" fill="var(--text-secondary)">${Lx} m — ${nx}×${ny} mesh${rodTxt}</text>
-      <text x="${(ox - 7).toFixed(1)}" y="${(oy + gh / 2).toFixed(1)}" text-anchor="middle" font-size="9" fill="var(--text-secondary)" transform="rotate(-90 ${(ox - 7).toFixed(1)} ${(oy + gh / 2).toFixed(1)})">${Ly} m</text>
-    </svg>`;
-  }
-
-  function showGroundingResults(result) {
-    const modal = document.getElementById('grounding-modal');
-    const body = document.getElementById('grounding-body');
-    if (!modal || !body) return;
-
-    const buses = result.buses || [];
-    const summary = result.summary || {};
-    // Buses on an earth grid may use EN 50522 limits or the numerical method
-    const title = document.getElementById('grounding-title');
-    if (title) title.textContent = buses.some(b => b.method) ? 'Grounding System Analysis' : 'Grounding System Analysis — IEEE 80';
-
-    let html = '';
-
-    if (result.warnings && result.warnings.length > 0) {
-      html += '<div class="af-warnings">';
-      for (const w of result.warnings) html += `<div class="af-warning-item">⚠ ${escHtml(w)}</div>`;
-      html += '</div>';
-    }
-
-    if (buses.length === 0) {
-      body.innerHTML = html + '<p>No buses with fault data available for grounding analysis.</p>';
-      modal.style.display = '';
-      return;
-    }
-
-    // Summary banner
-    const failCount = summary.fail || 0;
-    const warnCount = summary.warning || 0;
-    const bannerColor = failCount > 0 ? '#d32f2f' : warnCount > 0 ? '#f57c00' : '#4caf50';
-    html += `<div style="background:${bannerColor}11;border:1px solid ${bannerColor};border-radius:6px;padding:10px 14px;margin-bottom:14px">
-      <strong style="color:${bannerColor}">${summary.total} buses analysed:</strong>
-      <span style="color:#4caf50;margin-left:8px">${summary.pass} Pass</span>
-      <span style="color:#f57c00;margin-left:8px">${warnCount} Warn</span>
-      <span style="color:#d32f2f;margin-left:8px">${failCount} Fail</span>
-      ${failCount > 0 ? '<span style="color:#d32f2f;margin-left:16px;font-weight:600">— limits exceeded (touch, step or conductor size)</span>' : ''}
-      ${result.scope && Array.isArray(result.scope.bus_ids) ? `<div style="font-size:11px;color:var(--text-secondary);margin-top:4px">Selected bus${result.scope.bus_ids.length === 1 ? '' : 'es'} only — other buses were not evaluated. Run with nothing selected for every bus.</div>` : ''}
-    </div>`;
-
-    // Per-bus results
-    for (const b of buses) {
-      // A bus on a project earth grid (has `method`) — its own card with the
-      // plan heatmap (earthgrid.js); per-bus IEEE 80 buses render as before.
-      if (b.method && typeof EarthGridEditor !== 'undefined') {
-        html += EarthGridEditor.resultCardHtml(b, result);
-        continue;
-      }
-      const statusColor = b.status === 'fail' ? '#d32f2f' : b.status === 'warning' ? '#f57c00' : '#4caf50';
-      const statusLabel = b.status.toUpperCase();
-      const touchIcon = b.touch_ok ? '<span style="color:#4caf50">✓</span>' : '<span style="color:#d32f2f">✗</span>';
-      const stepIcon = b.step_ok ? '<span style="color:#4caf50">✓</span>' : '<span style="color:#d32f2f">✗</span>';
-
-      html += `<div style="border:1px solid var(--border-color);border-radius:6px;padding:12px 14px;margin-bottom:10px;border-left:4px solid ${statusColor}">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-          <strong style="font-size:13px">${escHtml(b.bus_name)} (${b.voltage_kv} kV)</strong>
-          <span style="color:${statusColor};font-weight:600;font-size:12px">${statusLabel}</span>
-        </div>
-        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px 16px;font-size:12px">
-          <div>Grid: <strong>${b.grid_dimensions}</strong></div>
-          <div>Soil: <strong>${b.soil_resistivity} Ω·m</strong>${b.two_layer_soil_enabled ? ' <span style="color:var(--text-secondary)">(ρ₁)</span>' : ''}</div>
-          <div>Fault: <strong>${b.fault_current_ka} kA</strong></div>
-          <div>R<sub>grid</sub>: <strong>${b.grid_resistance_ohm.toFixed(3)} Ω</strong></div>
-          <div>GPR: <strong>${b.gpr_v.toFixed(0)} V</strong></div>
-          <div>Conductor: ${EarthGridEditor.conductorHtml(b)}</div>
-          <div>Rods: <strong>${b.num_ground_rods}</strong></div>
-          <div>L<sub>total</sub>: <strong>${b.total_conductor_length_m} m</strong></div>
-        </div>
-        ${b.two_layer_soil_enabled ? `<div style="margin-top:6px;font-size:11px;color:var(--text-secondary)">
-          Two-layer soil: ρ₁=${b.soil_resistivity} Ω·m, ρ₂=${b.soil_resistivity_lower} Ω·m, h₁=${b.upper_layer_thickness_m} m
-          → K=${b.two_layer_reflection_factor_K}; numerical grid solve vs uniform ρ₁: R<sub>grid</sub> ×${b.two_layer_ratio_R}, touch ×${b.two_layer_ratio_Em}, step ×${b.two_layer_ratio_Es} (ρ<sub>eq</sub>=<strong>${b.equivalent_resistivity_ohm_m} Ω·m</strong>)
-        </div>` : ''}
-        <div style="margin-top:8px;display:grid;grid-template-columns:1fr 1fr;gap:8px">
-          <div style="background:var(--bg-secondary);border-radius:4px;padding:8px;font-size:12px">
-            <div style="margin-bottom:4px"><strong>Touch Voltage</strong> ${touchIcon}</div>
-            <div>Actual: <strong>${b.mesh_voltage_v.toFixed(0)} V</strong></div>
-            <div>Limit: <strong>${b.tolerable_touch_v.toFixed(0)} V</strong></div>
-          </div>
-          <div style="background:var(--bg-secondary);border-radius:4px;padding:8px;font-size:12px">
-            <div style="margin-bottom:4px"><strong>Step Voltage</strong> ${stepIcon}</div>
-            <div>Actual: <strong>${b.step_voltage_v.toFixed(0)} V</strong></div>
-            <div>Limit: <strong>${b.tolerable_step_v.toFixed(0)} V</strong></div>
-          </div>
-        </div>`;
-
-      const gridSvg = buildGroundingGridSVG(b);
-      if (gridSvg) {
-        html += `<div style="margin-top:10px;display:flex;align-items:center;gap:14px;flex-wrap:wrap">
-          <div>${gridSvg}</div>
-          <div style="font-size:11px;color:var(--text-secondary);line-height:1.6">
-            <div style="font-weight:600;color:var(--text-primary);margin-bottom:2px">Grid arrangement (plan)</div>
-            <div>${b.num_conductors_x}×${b.num_conductors_y} conductor mesh</div>
-            <div>Spacing: ${Number(b.conductor_spacing_x_m).toFixed(1)} × ${Number(b.conductor_spacing_y_m).toFixed(1)} m</div>
-            <div>${b.num_ground_rods} ground rod${b.num_ground_rods === 1 ? '' : 's'}${b.ground_rod_length_m ? ` @ ${Number(b.ground_rod_length_m).toFixed(1)} m` : ''}</div>
-          </div>
-        </div>`;
-      }
-
-      if (b.remote_fraction != null && (b.remote_fraction < 1 || b.current_split_factor < 1)) {
-        html += `<div style="margin-top:6px;font-size:11px;color:var(--text-secondary)">
-          Grid current I<sub>G</sub> = D<sub>f</sub> × S<sub>f</sub> × remote share × 3I₀ = ${b.decrement_factor_df} × ${b.current_split_factor} × ${b.remote_fraction} × ${b.symmetrical_fault_ka} kA = <strong>${b.fault_current_ka} kA</strong>;
-          conductor sized for ${b.conductor_current_ka} kA</div>`;
-      }
-      if (b.issues.length > 0) {
-        html += `<div style="margin-top:6px;font-size:11px;color:#b71c1c">${b.issues.map(escHtml).join('<br>')}</div>`;
-      }
-      if (b.notes && b.notes.length > 0) {
-        html += `<div style="margin-top:6px;font-size:11px;color:var(--text-secondary)">${b.notes.map(n => 'ⓘ ' + escHtml(n)).join('<br>')}</div>`;
-      }
-      html += '</div>';
-    }
-
-    body.innerHTML = html;
-    modal.style.display = '';
-  }
 
   // ── Wenner Four-Pin Test Interpreter (two-layer soil ρ1/ρ2/h1 fit) ──
   let wennerReadings = [
@@ -3278,160 +2373,8 @@ document.addEventListener('DOMContentLoaded', () => {
     return '';
   }
 
-  function showDCArcFlashResults(result) {
-    const modal = document.getElementById('dc-arcflash-modal');
-    const body = document.getElementById('dc-arcflash-body');
-    if (!modal || !body) return;
 
-    const buses = result.buses || {};
-    const entries = Object.values(buses).sort((a, b) => b.incident_energy_cal - a.incident_energy_cal);
 
-    let html = '';
-    if (result.warnings && result.warnings.length > 0) {
-      html += '<div class="af-warnings">';
-      for (const w of result.warnings) {
-        html += `<div class="af-warning-item">⚠ ${escHtml(w)}</div>`;
-      }
-      html += '</div>';
-    }
-
-    if (entries.length === 0) {
-      body.innerHTML = html + '<p>No DC buses studied. DC arc flash runs on buses whose System is set to DC, fed by a DC battery, rectifier or charger.</p>';
-      modal.style.display = '';
-      return;
-    }
-
-    html += `<table class="af-table">
-      <thead><tr>
-        <th>Bus</th><th>DC Voltage</th><th>Bolted Fault</th><th>DC Arc Current</th>
-        <th>Arc Voltage</th><th>Incident Energy</th><th>AFB</th><th>Clearing Time</th>
-        <th>Enclosure</th><th>PPE Cat.</th><th>PPE</th>
-      </tr></thead><tbody>`;
-
-    for (const b of entries) {
-      const ppeClass = (b.ppe_category >= 4 || b.ppe_category === -1) ? 'af-danger' : b.ppe_category >= 3 ? 'af-high' : b.ppe_category >= 2 ? 'af-medium' : 'af-low';
-      const hasRecs = b.recommendations && b.recommendations.length > 0;
-      html += `<tr class="${ppeClass}">
-        <td>${escHtml(b.bus_name || b.bus_id)}</td>
-        <td>${b.system_voltage_v.toFixed(0)} V</td>
-        <td>${b.bolted_fault_ka.toFixed(2)} kA</td>
-        <td>${b.dc_arcing_current_a.toFixed(1)} A</td>
-        <td>${b.arc_voltage_v.toFixed(1)} V</td>
-        <td><strong>${b.incident_energy_cal.toFixed(2)}</strong> cal/cm²</td>
-        <td>${(b.arc_flash_boundary_mm / 1000).toFixed(2)} m</td>
-        <td>${(b.clearing_time_s * 1000).toFixed(0)} ms</td>
-        <td>${escHtml(b.enclosure || 'open air')}</td>
-        <td><span class="af-ppe-badge">${b.ppe_category === -1 ? 'DANGER' : b.ppe_category}</span></td>
-        <td>${b.ppe_name}</td>
-      </tr>`;
-      if (b.warning) {
-        html += `<tr class="af-medium"><td colspan="11" style="padding-left:24px;font-size:11px">${escHtml(b.warning)}</td></tr>`;
-      }
-      if (hasRecs) {
-        html += `<tr class="${ppeClass} af-rec-row">
-          <td colspan="11">
-            <details class="af-rec-details">
-              <summary>Recommendations (${b.recommendations.length})</summary>
-              <ul class="af-rec-list">
-                ${b.recommendations.map(r => `<li>${r}</li>`).join('')}
-              </ul>
-            </details>
-          </td>
-        </tr>`;
-      }
-    }
-    html += '</tbody></table>';
-
-    body.innerHTML = html;
-    modal.style.display = '';
-  }
-
-  function showVoltageDepression(faultBusId, faultResult) {
-    const modal = document.getElementById('vdep-modal');
-    const body = document.getElementById('vdep-body');
-    if (!modal || !body) return;
-
-    const dep = faultResult.voltage_depression || {};
-    const faultBusName = faultResult.bus_name || faultBusId;
-    const entries = Object.entries(dep)
-      .filter(([id]) => id !== faultBusId)
-      .map(([id, d]) => ({ id, ...d }))
-      .sort((a, b) => (a.subtransient_pu || 1) - (b.subtransient_pu || 1));
-
-    if (entries.length === 0) {
-      body.innerHTML = '<p>No voltage depression data available.</p>';
-      modal.style.display = '';
-      return;
-    }
-
-    let html = `<p>Fault at <strong>${escHtml(faultBusName)}</strong> (${faultResult.voltage_kv} kV) — Retained voltage at other buses:</p>`;
-    html += `<table class="af-table vdep-table">
-      <thead><tr>
-        <th>Bus</th><th>Rated kV</th>
-        <th>Sub-transient</th><th>Transient</th><th>Steady-state</th>
-        <th>Retained kV</th><th>Status</th>
-      </tr></thead><tbody>`;
-
-    for (const d of entries) {
-      const vSub = d.subtransient_pu != null ? d.subtransient_pu : 1;
-      const vTr = d.transient_pu != null ? d.transient_pu : vSub;
-      const vSS = d.steadystate_pu != null ? d.steadystate_pu : vTr;
-      const worst = Math.min(vSub, vTr, vSS);
-      const rowClass = worst >= 0.8 ? 'af-low' : worst >= 0.5 ? 'af-medium' : worst >= 0.3 ? 'af-high' : 'af-danger';
-      const status = worst >= 0.8 ? 'Normal' : worst >= 0.5 ? 'Moderate Sag' : worst >= 0.3 ? 'Severe Sag' : 'Near Collapse';
-      html += `<tr class="${rowClass}">
-        <td>${escHtml(d.bus_name || d.id)}</td>
-        <td>${(d.voltage_kv || 0).toFixed(1)}</td>
-        <td>${(vSub * 100).toFixed(1)}%</td>
-        <td>${(vTr * 100).toFixed(1)}%</td>
-        <td>${(vSS * 100).toFixed(1)}%</td>
-        <td>${(d.retained_kv || 0).toFixed(2)} kV</td>
-        <td><span class="af-ppe-badge">${status}</span></td>
-      </tr>`;
-    }
-    html += '</tbody></table>';
-
-    // Motor recovery chart
-    if (faultResult.motor_recovery && faultResult.motor_recovery.length > 0) {
-      html += '<h4 style="margin-top:16px;">Motor Reacceleration Voltage Recovery</h4>';
-      html += _renderRecoveryChart(faultResult.motor_recovery);
-    }
-
-    body.innerHTML = html;
-    modal.style.display = '';
-  }
-
-  function _renderRecoveryChart(profile) {
-    // Simple SVG line chart
-    const w = 500, h = 150, pad = 40;
-    const maxT = profile[profile.length - 1].t_ms;
-    const scaleX = (t) => pad + (t / maxT) * (w - pad * 2);
-    const scaleY = (v) => h - pad - (v * (h - pad * 2));
-
-    let pathD = profile.map((p, i) => {
-      const x = scaleX(p.t_ms);
-      const y = scaleY(p.v_pu);
-      return `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`;
-    }).join(' ');
-
-    // Reference lines
-    const y100 = scaleY(1.0);
-    const y95 = scaleY(0.95);
-    const y80 = scaleY(0.8);
-
-    return `<svg width="${w}" height="${h}" style="border:1px solid var(--border,#ddd);border-radius:4px;margin-top:8px;">
-      <line x1="${pad}" y1="${y100}" x2="${w - pad}" y2="${y100}" stroke="#4caf50" stroke-width="0.5" stroke-dasharray="4,4"/>
-      <text x="${pad - 4}" y="${y100 + 3}" text-anchor="end" font-size="9" fill="#666">100%</text>
-      <line x1="${pad}" y1="${y95}" x2="${w - pad}" y2="${y95}" stroke="#f9a825" stroke-width="0.5" stroke-dasharray="4,4"/>
-      <text x="${pad - 4}" y="${y95 + 3}" text-anchor="end" font-size="9" fill="#666">95%</text>
-      <line x1="${pad}" y1="${y80}" x2="${w - pad}" y2="${y80}" stroke="#d32f2f" stroke-width="0.5" stroke-dasharray="4,4"/>
-      <text x="${pad - 4}" y="${y80 + 3}" text-anchor="end" font-size="9" fill="#666">80%</text>
-      <path d="${pathD}" fill="none" stroke="#1976d2" stroke-width="2"/>
-      <text x="${w / 2}" y="${h - 5}" text-anchor="middle" font-size="10" fill="#666">Time after clearing (ms)</text>
-      <text x="${pad}" y="${h - 5}" font-size="9" fill="#666">0</text>
-      <text x="${w - pad}" y="${h - 5}" text-anchor="end" font-size="9" fill="#666">${maxT}</text>
-    </svg>`;
-  }
 
   // Compliance report
   document.getElementById('btn-compliance').addEventListener('click', () => {
@@ -3469,99 +2412,21 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
 
-  document.getElementById('btn-close-dc-arcflash').addEventListener('click', () => {
-    document.getElementById('dc-arcflash-modal').style.display = 'none';
-  });
-  document.getElementById('dc-arcflash-modal').addEventListener('click', (e) => {
-    if (e.target.id === 'dc-arcflash-modal') e.target.style.display = 'none';
-  });
-
-  document.getElementById('btn-close-dc-loadflow').addEventListener('click', () => {
-    document.getElementById('dc-loadflow-modal').style.display = 'none';
-  });
-  document.getElementById('dc-loadflow-modal').addEventListener('click', (e) => {
-    if (e.target.id === 'dc-loadflow-modal') e.target.style.display = 'none';
-  });
-
-  document.getElementById('btn-close-dc-shortcircuit').addEventListener('click', () => {
-    document.getElementById('dc-shortcircuit-modal').style.display = 'none';
-  });
-  document.getElementById('dc-shortcircuit-modal').addEventListener('click', (e) => {
-    if (e.target.id === 'dc-shortcircuit-modal') e.target.style.display = 'none';
-  });
 
 
-  document.getElementById('btn-close-motor-starting').addEventListener('click', () => {
-    document.getElementById('motor-starting-modal').style.display = 'none';
-  });
-  document.getElementById('btn-close-dynamic-motor').addEventListener('click', () => {
-    document.getElementById('dynamic-motor-modal').style.display = 'none';
-  });
-  document.getElementById('dynamic-motor-modal').addEventListener('click', (e) => {
-    if (e.target.id === 'dynamic-motor-modal') e.target.style.display = 'none';
-  });
+
+
   document.getElementById('dynamic-motor-config-modal').addEventListener('click', (e) => {
     if (e.target.id === 'dynamic-motor-config-modal') e.target.style.display = 'none';
   });
-  document.getElementById('motor-starting-modal').addEventListener('click', (e) => {
-    if (e.target.id === 'motor-starting-modal') e.target.style.display = 'none';
-  });
 
 
-  document.getElementById('btn-close-fault-ansi').addEventListener('click', () => {
-    document.getElementById('fault-ansi-modal').style.display = 'none';
-  });
-  document.getElementById('fault-ansi-modal').addEventListener('click', (e) => {
-    if (e.target.id === 'fault-ansi-modal') e.target.style.display = 'none';
-  });
 
-  document.getElementById('btn-close-open-conductor').addEventListener('click', () => {
-    document.getElementById('open-conductor-modal').style.display = 'none';
-  });
-  document.getElementById('open-conductor-modal').addEventListener('click', (e) => {
-    if (e.target.id === 'open-conductor-modal') e.target.style.display = 'none';
-  });
 
-  document.getElementById('btn-close-two-conductor-open').addEventListener('click', () => {
-    document.getElementById('two-conductor-open-modal').style.display = 'none';
-  });
-  document.getElementById('two-conductor-open-modal').addEventListener('click', (e) => {
-    if (e.target.id === 'two-conductor-open-modal') e.target.style.display = 'none';
-  });
 
-  document.getElementById('btn-close-simultaneous-fault').addEventListener('click', () => {
-    document.getElementById('simultaneous-fault-modal').style.display = 'none';
-  });
-  document.getElementById('simultaneous-fault-modal').addEventListener('click', (e) => {
-    if (e.target.id === 'simultaneous-fault-modal') e.target.style.display = 'none';
-  });
 
-  document.getElementById('btn-close-load-diversity').addEventListener('click', () => {
-    document.getElementById('load-diversity-modal').style.display = 'none';
-  });
-  document.getElementById('load-diversity-modal').addEventListener('click', (e) => {
-    if (e.target.id === 'load-diversity-modal') e.target.style.display = 'none';
-  });
 
-  document.getElementById('btn-close-backup').addEventListener('click', () => {
-    document.getElementById('backup-modal').style.display = 'none';
-  });
-  document.getElementById('backup-modal').addEventListener('click', (e) => {
-    if (e.target.id === 'backup-modal') e.target.style.display = 'none';
-  });
 
-  document.getElementById('btn-close-grounding').addEventListener('click', () => {
-    document.getElementById('grounding-modal').style.display = 'none';
-  });
-  document.getElementById('grounding-modal').addEventListener('click', (e) => {
-    if (e.target.id === 'grounding-modal') e.target.style.display = 'none';
-  });
-  document.getElementById('btn-close-harmonics').addEventListener('click', () => {
-    document.getElementById('harmonics-modal').style.display = 'none';
-  });
-  document.getElementById('harmonics-modal').addEventListener('click', (e) => {
-    if (e.target.id === 'harmonics-modal') e.target.style.display = 'none';
-  });
 
   // ── Control circuit simulation toggle ──
   document.getElementById('btn-control-sim').addEventListener('click', () => {
@@ -3588,12 +2453,6 @@ document.addEventListener('DOMContentLoaded', () => {
     if (e.target.id === 'study-manager-modal') e.target.style.display = 'none';
   });
 
-  document.getElementById('btn-close-vdep').addEventListener('click', () => {
-    document.getElementById('vdep-modal').style.display = 'none';
-  });
-  document.getElementById('vdep-modal').addEventListener('click', (e) => {
-    if (e.target.id === 'vdep-modal') e.target.style.display = 'none';
-  });
 
   // Help modal
   document.getElementById('btn-help').addEventListener('click', () => {

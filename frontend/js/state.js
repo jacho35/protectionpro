@@ -1269,6 +1269,8 @@ const AppState = {
     this.groundingResults = null;
     this.studyManagerResults = null;
     this.ansiFaultResults = null;
+    // Results kept only for the session (contingency, harmonics, …).
+    if (typeof ResultsPanel !== 'undefined' && ResultsPanel.clearSession) ResultsPanel.clearSession();
   },
 
   // Reset entire state

@@ -618,22 +618,28 @@ async function runStudy(page, btn, field) {
   }
   await page.waitForTimeout(900);
 }
-// Tag the open results window so a picture can clip to it.
-async function markModal(page) {
-  await page.evaluate(() => {
+// Tag the open dialog so a picture can clip to it; a study's results are in
+// the results panel instead, docked on the right wide enough to read.
+async function markModal(page, opts = {}) {
+  const modal = await page.evaluate(() => {
     const m = [...document.querySelectorAll('.modal')].filter(e => getComputedStyle(e).display !== 'none' && e.getBoundingClientRect().width > 0)
       .sort((a, b) => (+getComputedStyle(b).zIndex || 0) - (+getComputedStyle(a).zIndex || 0))[0];
     if (m) m.setAttribute('data-hg-cap', '1');
+    return !!m;
   });
+  if (!modal && await page.evaluate(() => typeof ResultsPanel !== 'undefined' && ResultsPanel.isOpen())) {
+    await panel(page, 'right', { width: 780, ...opts });
+  }
 }
 // The results panel docked right / bottom, optionally with Needs attention on
 // and the first row (of a section) opened.
-async function panel(page, dock, { attention = false, openFirst = false, height } = {}) {
-  await page.evaluate(({ dock, height }) => {
+async function panel(page, dock, { attention = false, openFirst = false, height, width } = {}) {
+  await page.evaluate(({ dock, height, width }) => {
     document.querySelectorAll('.modal').forEach(m => { m.style.display = 'none'; });
     if (height) ResultsPanel._loadPrefs().bottom = height;
+    if (width) ResultsPanel._loadPrefs().right = width;
     ResultsPanel.setDock(dock); ResultsPanel.open(ResultsPanel.tab);
-  }, { dock, height });
+  }, { dock, height, width });
   await page.waitForTimeout(400);
   if (attention) { await page.click('#results-panel [data-rp-attn]'); await page.waitForTimeout(200); }
   if (openFirst) {
@@ -724,7 +730,7 @@ Object.assign(SETUPS, {
     await runStudy(page, '#btn-cable-sizing', 'cableSizingResults');
     await panel(page, 'bottom', { attention: true, openFirst: true, height: 340 });
   }, viewport: { width: 1440, height: 900 } },
-  'study-grounding': { run: async (page) => { await loadTemplate(page, 'ver_grounding'); await runStudy(page, '#btn-grounding', 'groundingResults'); await markModal(page); } },
+  'study-grounding': { run: async (page) => { await loadTemplate(page, 'ver_grounding'); await runStudy(page, '#btn-grounding', 'groundingResults'); await markModal(page, { openFirst: true }); } },
 });
 
 // ── The remaining studies ─────────────────────────────────────────────────
@@ -767,7 +773,8 @@ async function selectNamed(page, names) {
   }, names);
 }
 async function waitModal(page, timeout = 15000) {
-  await page.waitForFunction(() => [...document.querySelectorAll('.modal')].some(m => getComputedStyle(m).display !== 'none' && m.getBoundingClientRect().width > 0), null, { timeout }).catch(() => {});
+  await page.waitForFunction(() => [...document.querySelectorAll('.modal')].some(m => getComputedStyle(m).display !== 'none' && m.getBoundingClientRect().width > 0)
+    || (typeof ResultsPanel !== 'undefined' && ResultsPanel.isOpen()), null, { timeout }).catch(() => {});
   await page.waitForTimeout(800);
 }
 // study(spec): { tpl | seed, pre, btn, run } → { config, results } setups.
