@@ -959,8 +959,10 @@ const Properties = {
       : '';
     // A value owned by another workspace (e.g. a feeder length measured on the
     // floor plan): "from plan", or "typed · plan 38 m" with Reset (sync.js).
-    const syncFlagHtml = (typeof Sync !== 'undefined' && Sync.fieldFlagHtml && this.currentId)
+    // On its own line under the field (it does not fit beside the input).
+    const syncFlagRaw = (typeof Sync !== 'undefined' && Sync.fieldFlagHtml && this.currentId)
       ? Sync.fieldFlagHtml(AppState.components.get(this.currentId), field.key) : '';
+    const syncFlagHtml = syncFlagRaw ? `<span class="prop-sync-line">${syncFlagRaw}</span>` : '';
 
     // Check if this cable impedance field has been modified from its standard library default
     const cableImpedanceFields = ['r_per_km', 'x_per_km', 'r0_per_km', 'x0_per_km', 'rated_amps', 'voltage_kv'];
@@ -1057,7 +1059,7 @@ const Properties = {
     }
 
     return `${preRowHtml}
-      <div class="prop-row${modifiedClass}">
+      <div class="prop-row${modifiedClass}${syncFlagHtml ? ' prop-row--sync' : ''}">
         <label>${labelText}</label>
         ${inputHtml}
         ${unitHtml}

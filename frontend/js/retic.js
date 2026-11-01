@@ -472,6 +472,7 @@ const Retic = {
       if (typeof ReticDiagram !== 'undefined') ReticDiagram.open();
     }
     else if (action === 'push-sld') this.pushToSLD();
+    else if (action === 'sld-add') this.addToSLD(btn.dataset.ms || null);
     else if (action === 'sync-reset') {
       // Follow the site plan's measured length again.
       if (typeof Sync !== 'undefined') { Sync.resetOverride(btn.dataset.key); Sync.run(); }
@@ -581,6 +582,250 @@ const Retic = {
     };
   },
 
+  // Create (or adopt) the transformer → LV bus → load stack of one minisub at
+  // x / yLoad, tagged with reticMinisubId / reticRole. Returns { xfmr, bus,
+  // load, updated } or null.
+  _buildStack(ms, x, yLoad) {
+    const base = `Retic: ${ms.name || ms.id}`;
+    // Legacy projects have only a name-matched static load — adopt it.
+    let load = this._sldComp(ms.id, 'load');
+    if (!load) {
+      load = [...AppState.components.values()]
+        .find(c => c.type === 'static_load' && !c.reticMinisubId && c.props.name === base) || null;
+    }
+    let xfmr = this._sldComp(ms.id, 'tx');
+    let bus = this._sldComp(ms.id, 'bus');
+    const updated = !!(load || xfmr);
+    if (load) { x = load.x; yLoad = load.y; }
+    if (!xfmr) { xfmr = AppState.addComponent('transformer', x, yLoad - 160); if (!xfmr) return null; }
+    if (!bus) { bus = AppState.addComponent('bus', x, yLoad - 80); if (!bus) return null; }
+    if (!load) { load = AppState.addComponent('static_load', x, yLoad); if (!load) return null; }
+    // Primary is left unwired — the user connects it to their MV supply.
+    // Buses take free-position 'at_<offset>' attachments; 'at_0' is the bar
+    // centre, so the stack draws as one straight vertical run.
+    this._ensureWire(xfmr.id, 'secondary', bus.id, 'at_0');
+    this._ensureWire(bus.id, 'at_0', load.id, 'in');
+    for (const [c, role] of [[xfmr, 'tx'], [bus, 'bus'], [load, 'load']]) {
+      c.reticMinisubId = ms.id;
+      c.reticRole = role;
+    }
+    return { xfmr, bus, load, updated };
+  },
+
+  // Write a minisub's demand, transformer and names onto its stack.
+  // value(key, source, current) reads overrides (the sync pass); without it
+  // Demand's figure is written as-is (the button).
+  _applyStack(st, ms, m, res, value) {
+    const { xfmr, bus, load } = st;
+    let tx = this._minisubTx(ms, m.totalKVA);
+    if (!tx) return null;
+    const base = `Retic: ${ms.name || m.name || ms.id}`;
+    if (!value) {
+      if (xfmr.props.standard_type !== tx.entry.id) this._applyTxEntry(xfmr, tx.entry);
+      xfmr.reticTx = tx.entry.id;
+    } else if (xfmr.reticTx == null && !st.isNew) {
+      // A stack pushed before the sync existed keeps its transformer: one
+      // picked on the single line becomes Demand's pick; anything else stays
+      // until Demand's pick changes.
+      const cur = xfmr.props.standard_type;
+      if (cur && cur !== tx.entry.id && this._txOptions().some(o => o.id === cur)) {
+        ms.txTypeId = cur;
+        tx = this._minisubTx(ms, m.totalKVA);
+      }
+      xfmr.reticTx = tx.entry.id;
+    } else if (xfmr.reticTx !== tx.entry.id) {
+      // Demand's pick changed (or, on Auto, the demand moved to another size).
+      this._applyTxEntry(xfmr, tx.entry);
+      xfmr.reticTx = tx.entry.id;
+    }
+    const lv = tx.entry.voltage_lv_kv;
+    xfmr.props.name = `${base} TX`;
+    bus.props.name = `${base} LV`;
+    load.props.name = base;
+    for (const c of [xfmr, bus, load]) c.reticName = c.props.name;
+    bus.props.voltage_kv = lv;
+    bus.props.bus_type = 'PQ';
+    const kva = +(+m.totalKVA).toFixed(2);
+    load.props.rated_kva = value ? value('kva:' + ms.id, kva, load.props.rated_kva) : kva;
+    load.props.power_factor = 0.95;
+    load.props.demand_factor = 1.0;     // demand is already after-diversity
+    load.props.voltage_kv = lv;
+    xfmr.reticInfo = this._minisubInfo(ms, m, res, tx);
+    return tx;
+  },
+
+  // Each minisub's stack, by role. { msId: { tx, bus, load } }
+  _stacks() {
+    const out = {};
+    for (const c of AppState.components.values()) {
+      if (!c.reticMinisubId || !c.reticRole) continue;
+      (out[c.reticMinisubId] = out[c.reticMinisubId] || {})[c.reticRole] = c;
+    }
+    return out;
+  },
+  sldInUse() { return [...AppState.components.values()].some(c => c.reticMinisubId); },
+
+  // Where the next new stack goes: right of the stacks already drawn.
+  _nextStackX() {
+    let x = 200;
+    for (const c of AppState.components.values()) if (c.reticRole === 'tx') x = Math.max(x, c.x);
+    return x + 220;
+  },
+
+  // ── Keep workspaces in sync: Demand → single line (routine 'demand-sld') ──
+  // Once a minisub stack is on the single line ("Add to the single line"),
+  // every minisub with demand gets one, and each stack follows Demand:
+  // the load is the diversified demand (a value typed on the single line is
+  // kept as an override), the transformer follows Demand's pick on Auto (a
+  // library transformer picked on the single line becomes Demand's pick),
+  // names follow the minisub (a stack renamed on the single line renames the
+  // minisub). A minisub deleted in Demand takes its stack (Undo in Demand puts
+  // it back); a stack deleted on the single line leaves the minisub, marked
+  // "not on the single line" with Add back.
+  _stackPairs: [],
+  _stackSeen: new Set(),     // minisubs whose stack was complete at the last pass
+  _adoptPending: false,
+
+  syncToSLD(ctx = {}) {
+    if (!this.state || !this.sldInUse() && !this._stackPairs.length) return false;
+    const issue = ctx.issue || (() => {});
+    const notice = ctx.notice || (() => {});
+    const comps = AppState.components;
+    const fp = () => AppState._hashText(JSON.stringify([
+      [...comps.values()].filter(c => c.reticMinisubId).map(c => [c.id, c.props, c.x, c.y]),
+      this.minisubs.map(m => [m.id, m.name, m.txTypeId || '', !!m.sldOff]),
+    ]));
+    const before = fp();
+    const msById = new Map(this.minisubs.map(m => [m.id, m]));
+
+    // 1. A minisub back in Demand (undo there) gets its stack back.
+    for (const p of this._stackPairs) {
+      if (p.state === 'removed' && msById.has(p.msId)) {
+        for (const c of p.comps) if (!comps.has(c.id)) comps.set(c.id, JSON.parse(JSON.stringify(c)));
+        for (const w of p.wires) if (!AppState.wires.has(w.id) && comps.has(w.fromComponent) && comps.has(w.toComponent)) AppState.wires.set(w.id, JSON.parse(JSON.stringify(w)));
+        p.state = 'restored';
+      }
+    }
+    this._stackPairs = this._stackPairs.filter(p => p.state === 'removed');
+
+    let stacks = this._stacks();
+    // 2. A minisub gone from Demand takes its stack (kept to put back).
+    const goneNames = [];
+    for (const [msId, st] of Object.entries(stacks)) {
+      if (msById.has(msId)) continue;
+      const ids = new Set(Object.values(st).map(c => c.id));
+      const p = {
+        msId, state: 'removed',
+        comps: [...ids].map(id => JSON.parse(JSON.stringify(comps.get(id)))),
+        wires: [...AppState.wires.values()].filter(w => ids.has(w.fromComponent) || ids.has(w.toComponent)).map(w => JSON.parse(JSON.stringify(w))),
+      };
+      this._stackPairs.push(p);
+      if (st.load) goneNames.push(st.load.props.name || 'Minisub');
+      for (const id of ids) AppState.removeComponent(id);
+    }
+    if (goneNames.length) notice(`${goneNames.join(', ')} removed from the single line too · Undo in Demand puts ${goneNames.length === 1 ? 'it' : 'them'} back`);
+    stacks = this._stacks();
+
+    // 3. A stack taken apart on the single line (a delete, or its undo / redo):
+    //    the minisub stays in Demand, off the single line; the rest of its
+    //    stack goes. A whole stack back (undo there) puts it on again.
+    for (const ms of this.minisubs) {
+      const st = stacks[ms.id] || {};
+      const whole = st.tx && st.load;
+      if (ms.sldOff && st.tx) ms.sldOff = false;
+      else if (!whole && this._stackSeen.has(ms.id)) {
+        ms.sldOff = true;
+        for (const c of Object.values(st)) {
+          const wired = [...AppState.wires.values()].some(w => (w.fromComponent === c.id || w.toComponent === c.id)
+            && ![st.tx, st.bus, st.load].some(o => o && o !== c && (w.fromComponent === o.id || w.toComponent === o.id)));
+          if (c.reticRole === 'bus' && wired) { delete c.reticMinisubId; delete c.reticRole; }   // the bus feeds other parts: it stays
+          else AppState.removeComponent(c.id);
+        }
+      }
+    }
+    stacks = this._stacks();
+
+    // 4. Names and transformer edits made on the single line go to Demand.
+    for (const ms of this.minisubs) {
+      const st = stacks[ms.id];
+      if (!st) continue;
+      for (const c of [st.tx, st.load, st.bus]) {
+        if (!c || !c.reticName || c.props.name === c.reticName) continue;
+        const nm = String(c.props.name || '').replace(/^Retic:\s*/, '').replace(/\s+(TX|LV)$/, '').trim();
+        if (nm && nm !== ms.name) ms.name = nm;
+        break;
+      }
+      if (st.tx && st.tx.reticTx && st.tx.props.standard_type && st.tx.props.standard_type !== st.tx.reticTx
+          && this._txOptions().some(o => o.id === st.tx.props.standard_type)) {
+        ms.txTypeId = st.tx.props.standard_type;     // picked on the single line: Demand's pick, Auto off
+      }
+    }
+
+    // 5. Demand figures, once ADMD is current for what Demand holds now.
+    if (!this.resultIsCurrent()) {
+      this.computeInBackground();
+      if (ctx.adopt) this._adoptPending = true;
+    } else {
+      const res = AppState.reticResults;
+      const byMs = new Map((res.minisubs || []).map(m => [m.minisubId, m]));
+      const adopt = ctx.adopt || this._adoptPending;
+      // An old project's typed loads are kept as overrides on its first pass.
+      const value = (key, src, cur) => {
+        if (adopt && !Sync.override(key) && cur != null && cur !== '' && cur !== 0 && !Sync.same(cur, src)) Sync.setOverride(key, cur, src);
+        return ctx.value ? ctx.value(key, src, cur) : src;
+      };
+      const max = this._txOptions().reduce((a, o) => Math.max(a, o.kva), 0);
+      for (const ms of this.minisubs) {
+        const m = byMs.get(ms.id);
+        let st = stacks[ms.id];
+        if (!st && !ms.sldOff && m && m.totalKVA > 0) {
+          st = this._buildStack(ms, this._nextStackX(), 480);
+          if (st) st = { tx: st.xfmr, bus: st.bus, load: st.load, isNew: !st.updated };
+        }
+        if (!st || !st.tx || !st.bus || !st.load || !m) continue;
+        this._applyStack({ xfmr: st.tx, bus: st.bus, load: st.load, isNew: !!st.isNew }, ms, m, res, value);
+        if (max && m.totalKVA > max) issue('demand-tx-max:' + ms.id, `${ms.name}: the demand (${(+m.totalKVA).toFixed(0)} kVA) is more than the largest transformer in the library (${max} kVA).`);
+      }
+      this._adoptPending = false;
+    }
+
+    // Stacks whose transformer primary is not connected to an MV supply.
+    stacks = this._stacks();
+    const loose = Object.values(stacks).filter(st => st.tx && ![...AppState.wires.values()]
+      .some(w => (w.fromComponent === st.tx.id && w.fromPort === 'primary') || (w.toComponent === st.tx.id && w.toPort === 'primary')));
+    if (loose.length) issue('demand-tx-unwired', `${loose.length} minisub transformer${loose.length === 1 ? ' is' : 's are'} not connected to an MV supply on the single line — wire ${loose.length === 1 ? 'its' : 'each'} primary to the MV bus to include the reticulation in the studies.`);
+    this._stackSeen = new Set(Object.entries(stacks).filter(([, st]) => st.tx && st.load).map(([id]) => id));
+    return fp() !== before;
+  },
+
+  // "Add to the single line": the first stacks (then the pass keeps them),
+  // or one minisub's stack back after it was deleted there. One undo step.
+  async addToSLD(msId) {
+    if (!this.resultIsCurrent()) await this._doCompute();
+    const res = AppState.reticResults;
+    const byMs = new Map(((res && res.minisubs) || []).map(m => [m.minisubId, m]));
+    let made = 0, firstId = null;
+    for (const ms of this.minisubs) {
+      if (msId && ms.id !== msId) continue;
+      const m = byMs.get(ms.id);
+      if (!m || !(m.totalKVA > 0)) continue;
+      ms.sldOff = false;
+      const st = this._buildStack(ms, this._nextStackX(), 480);
+      if (!st) continue;
+      this._applyStack(st, ms, m, res, null);
+      made++;
+      if (!firstId) firstId = st.xfmr.id;
+    }
+    if (!made) { UI.alert('No diversified demand yet — add kiosks and erven first.'); return; }
+    this._stackSeen = new Set(Object.entries(this._stacks()).filter(([, st]) => st.tx && st.load).map(([id]) => id));
+    AppState.dirty = true;
+    this._snapshot();
+    if (typeof UndoManager !== 'undefined') UndoManager.snapshot();
+    UI.toast(`${made} minisub${made === 1 ? '' : 's'} on the single line — they follow Demand from now on. Wire each transformer primary to the MV supply.`, 'success', 6000);
+    this.renderSummary();
+  },
+
+  // The button (Keep workspaces in sync off): add or update every stack now.
   async pushToSLD() {
     const res = AppState.reticResults;
     const entries = ((res && res.minisubs) || []).filter(m => m.totalKVA > 0);
@@ -593,72 +838,15 @@ const Retic = {
     entries.forEach((m, i) => {
       const ms = this.minisubs.find(x => x.id === m.minisubId);
       if (!ms) return;
-      const tx = this._minisubTx(ms, m.totalKVA);
-      if (!tx) return;
-      // Live state wins over the name echoed back in the results, which can lag
-      // a rename by one recompute.
-      const base = `Retic: ${ms.name || m.name || ms.id}`;
-
-      // Existing stack? Legacy projects have only a name-matched static load —
-      // adopt it (stamp the back-refs) rather than pushing a duplicate.
-      let load = this._sldComp(ms.id, 'load');
-      if (!load) {
-        load = [...AppState.components.values()]
-          .find(c => c.type === 'static_load' && !c.reticMinisubId && c.props.name === base) || null;
-      }
-      let xfmr = this._sldComp(ms.id, 'tx');
-      let bus = this._sldComp(ms.id, 'bus');
-      const updated = !!(load || xfmr);
-
       // Layout: one column per minisub, 4 across then wrap. Existing parts keep
       // their coordinates — the user may have arranged the diagram.
       const col = i % 4, row = Math.floor(i / 4);
-      const x = load ? load.x : 420 + col * 220;
-      const yLoad = load ? load.y : 320 + row * 280 + 160;
-
-      if (!xfmr) {
-        xfmr = AppState.addComponent('transformer', x, yLoad - 160);
-        if (!xfmr) return;
-      }
-      if (!bus) {
-        bus = AppState.addComponent('bus', x, yLoad - 80);
-        if (!bus) return;
-      }
-      if (!load) {
-        load = AppState.addComponent('static_load', x, yLoad);
-        if (!load) return;
-      }
-      // Primary is left unwired — the user connects it to their MV supply.
-      // Buses take free-position 'at_<offset>' attachments; 'at_0' is the bar
-      // centre, so the stack draws as one straight vertical run (the legacy
-      // 'top'/'bottom' ids resolve to the bar's left end and jog the wire).
-      this._ensureWire(xfmr.id, 'secondary', bus.id, 'at_0');
-      this._ensureWire(bus.id, 'at_0', load.id, 'in');
-
-      for (const [c, role] of [[xfmr, 'tx'], [bus, 'bus'], [load, 'load']]) {
-        c.reticMinisubId = ms.id;
-        c.reticRole = role;
-      }
-
-      // Re-apply the library entry whenever the selected rating differs from
-      // what the transformer currently holds.
-      if (xfmr.props.standard_type !== tx.entry.id) this._applyTxEntry(xfmr, tx.entry);
-      xfmr.props.name = `${base} TX`;
-
-      const lv = tx.entry.voltage_lv_kv;
-      bus.props.name = `${base} LV`;
-      bus.props.voltage_kv = lv;
-      bus.props.bus_type = 'PQ';
-
-      load.props.name = base;
-      load.props.rated_kva = m.totalKVA;
-      load.props.power_factor = 0.95;
-      load.props.demand_factor = 1.0;     // demand is already after-diversity
-      load.props.voltage_kv = lv;
-
-      xfmr.reticInfo = this._minisubInfo(ms, m, res, tx);
-      msgs.push(`${updated ? 'Updated' : 'Added'} "${base}" — ${m.totalKVA} kVA on ${tx.label}`);
-      if (!firstId) firstId = xfmr.id;
+      const st = this._buildStack(ms, 420 + col * 220, 320 + row * 280 + 160);
+      if (!st) return;
+      const tx = this._applyStack(st, ms, m, res, null);
+      if (!tx) return;
+      msgs.push(`${st.updated ? 'Updated' : 'Added'} "${st.load.props.name}" — ${m.totalKVA} kVA on ${tx.label}`);
+      if (!firstId) firstId = st.xfmr.id;
     });
     if (!msgs.length) {
       UI.alert('Nothing to push — no standard distribution transformer is available for the demand.');
@@ -1273,8 +1461,32 @@ const Retic = {
     this._computeTimer = setTimeout(() => this._doCompute(), 250);
   },
 
+  // ─── ADMD in the background (Keep workspaces in sync) ───
+  // A signature of everything the ADMD calculation reads; a result is current
+  // when it was computed on the signature Demand has now. View state
+  // (collapsed cards) and the single-line flag are left out.
+  _inputSig() {
+    const R = this.state;
+    if (!R) return '';
+    return AppState._hashText(JSON.stringify([R.settings, R.minisubs, R.kiosks],
+      (k, v) => (k === 'collapsed' || k === 'sldOff' ? undefined : v)));
+  },
+  _resSig: null,
+  _bgTimer: null,
+  _bgSig: null,
+  // Run ADMD a moment after Demand's inputs change, whichever tab is open.
+  computeInBackground() {
+    const sig = this._inputSig();
+    if (sig === this._resSig || sig === this._bgSig) return;
+    this._bgSig = sig;
+    clearTimeout(this._bgTimer);
+    this._bgTimer = setTimeout(() => { this._bgTimer = null; this._doCompute(); }, 600);
+  },
+  resultIsCurrent() { return !!AppState.reticResults && this._resSig === this._inputSig(); },
+
   async _doCompute() {
     const s = this.settings;
+    const sig = this._inputSig();
     const payload = {
       estimationMethod: s.estimationMethod,
       correctionMethod: s.correctionMethod,
@@ -1290,6 +1502,11 @@ const Retic = {
       const prevEarth = AppState.reticResults && AppState.reticResults.earth;
       AppState.reticResults = res;
       if (prevEarth) res.earth = prevEarth;     // keep showing the last earth check until the new one lands
+      this._resSig = sig;
+      if (this._bgSig === sig) this._bgSig = null;
+      // A fresh demand wakes the sync pass (minisub loads on the single line).
+      if (typeof Sync !== 'undefined' && Sync.kick) Sync.kick();
+      if (!this._active) return;               // in the background: no Demand screen to update
       this.updateBadges();
       this.updateVD();
       this.renderSummary();
@@ -1752,6 +1969,8 @@ const Retic = {
           <select class="ms-mvcable" data-action="minisub-field" data-ms="${escHtml(ms.id)}" data-field="mvCable" data-cable-select>${this._mvCableOptions(ms.mvCable)}</select></span></div>
         <div class="summary-row"><span class="k">MV length (m) ${this._planTag('len:mv:' + ms.id)}</span><span class="v">
           <input type="number" step="1" min="0" class="ms-mvlen" data-action="minisub-field" data-ms="${escHtml(ms.id)}" data-field="mvLength" value="${numAttr(ms.mvLength || '')}" placeholder="0"></span></div>` : ''}
+        ${ms.sldOff && AppState.keepInSync !== false ? `
+        <div class="summary-row"><span class="k" title="Its transformer and load were deleted on the single line. The minisub and its kiosks stay here.">Single line</span><span class="v">not on it · <button type="button" class="retic-plan-reset" data-action="sld-add" data-ms="${escHtml(ms.id)}">Add back</button></span></div>` : ''}
         ${(typeof ReticDiagram !== 'undefined' ? ReticDiagram.ringTiesFor(ms.id) : []).map(t => `
         <div class="summary-row"><span class="k" title="MV ring tie: a drawn MV route closing the ring back to ${escHtml(t.other)}. Shown on the diagram; not part of the MV fed-from chain.">Ring tie to</span><span class="v">${escHtml(t.other)}${t.cable ? ' · ' + escHtml(t.cable) : ''}${t.len ? ' · ' + t.len + ' m' : ''}</span></div>`).join('')}
         ${this._stringsRows(ms)}
@@ -1812,10 +2031,21 @@ const Retic = {
       ${networkBlock}
       ${feederBlock}
       ${this._earthSummaryHtml()}
-      <div class="retic-toolbar">
-        <button class="retic-btn primary" data-action="push-sld" title="Add each minisub's diversified demand to the SLD as an equivalent static load">Push demand to SLD →</button>
-      </div>`;
+      <div class="retic-toolbar">${this._sldBarHtml()}</div>`;
     this._searchifyCables();
+  },
+
+  // The single-line action at the foot of the summary. With "Keep workspaces
+  // in sync": "Add to the single line" until the first stack exists, then a
+  // note (each stack follows Demand); without it, the push button.
+  _sldBarHtml() {
+    if (AppState.keepInSync === false) {
+      return `<button class="retic-btn primary" data-action="push-sld" title="Add each minisub's diversified demand to the SLD as an equivalent static load">Push demand to SLD →</button>`;
+    }
+    if (!this.sldInUse()) {
+      return `<button class="retic-btn primary" data-action="sld-add" title="Put each minisub on the single line as transformer → LV bus → diversified load. From then on they follow Demand by themselves.">Add to the single line →</button>`;
+    }
+    return `<span class="retic-hint">On the single line: each minisub's transformer and diversified load follow Demand a moment after each change.</span>`;
   },
 
   // VD (%) across the single segment feeding one kiosk — the leg from its

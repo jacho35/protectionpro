@@ -8,7 +8,8 @@
 //   • Reticulation: the whole sync pass (site plan → Demand, PR 7, and the
 //     poles → street-lighting circuits, PR 8) after moving one kiosk, on the
 //     street-lighting plans below with erven added (very large: 300 kiosks,
-//     3,000 erven, 1,500 poles). Budget: under 150 ms.
+//     3,000 erven, 1,500 poles). Budget: under 150 ms. Also the background
+//     ADMD request Demand now sends after each change (PR 9), for reference.
 //   • Street lighting: the volt-drop recalculation after one pole edit
 //     (StreetLight._doCompute, a server round trip). Only the edited circuit is
 //     sent; budget: about the time of one circuit, not of all of them.
@@ -191,11 +192,15 @@ async function streetLighting(browser, jwt, size) {
       all.push(performance.now() - a);
     }
     const results = circuits.map(c => StreetLight._results[c.id]).map(x => x && JSON.stringify(x));
-    return { circuits: circuits.length, poles: pn, kiosks: kn, erven: en, reticPass, one, oneSent, all, results };
+    // The background ADMD request (PR 9: Demand → single line), every kiosk —
+    // timed after the street-lighting results (they read Demand's figures).
+    const admd = [];
+    for (let i = 0; i < Math.min(runs, 3); i++) { const a = performance.now(); await Retic._doCompute(); admd.push(performance.now() - a); }
+    return { circuits: circuits.length, poles: pn, kiosks: kn, erven: en, reticPass, admd, one, oneSent, all, results };
   }, { size, runs: RUNS });
   await ctx.close();
   return {
-    circuits: r.circuits, poles: r.poles, kiosks: r.kiosks, erven: r.erven, reticPassMs: median(r.reticPass),
+    circuits: r.circuits, poles: r.poles, kiosks: r.kiosks, erven: r.erven, reticPassMs: median(r.reticPass), admdMs: median(r.admd),
     oneEditMs: median(r.one), circuitsSentPerEdit: Math.max(...r.oneSent),
     allCircuitsMs: median(r.all), fingerprint: fp(r.results),
   };
@@ -223,7 +228,7 @@ for (const [k, b] of Object.entries(out.building)) {
   console.log(`building ${k.padEnd(9)}  ${String(b.boards).padStart(3)} boards ${String(b.devices).padStart(6)} devices   devices→ways ${ms(b.ms).padStart(9)}${b.passMs != null ? `   whole sync pass ${ms(b.passMs).padStart(9)}` : ''}   fingerprint ${b.fingerprint}`);
 }
 for (const [k, s] of Object.entries(out.streetLighting)) {
-  console.log(`reticulation ${k.padEnd(9)}   ${String(s.kiosks).padStart(4)} kiosks ${String(s.erven).padStart(5)} erven   whole sync pass ${ms(s.reticPassMs).padStart(9)}`);
+  console.log(`reticulation ${k.padEnd(9)}   ${String(s.kiosks).padStart(4)} kiosks ${String(s.erven).padStart(5)} erven   whole sync pass ${ms(s.reticPassMs).padStart(9)}   background ADMD ${ms(s.admdMs).padStart(9)}`);
 }
 for (const [k, s] of Object.entries(out.streetLighting)) {
   console.log(`street lighting ${k.padEnd(9)} ${String(s.circuits).padStart(4)} circuits ${String(s.poles).padStart(5)} poles   one edit ${ms(s.oneEditMs).padStart(9)} (${s.circuitsSentPerEdit} sent)   all circuits ${ms(s.allCircuitsMs).padStart(9)}   fingerprint ${s.fingerprint}`);
