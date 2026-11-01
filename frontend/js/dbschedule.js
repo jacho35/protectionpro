@@ -407,10 +407,7 @@ const DBSchedule = {
     // drawn breaker and cable.
     if (typeof DBFeeders !== 'undefined') DBFeeders.pushBoard(comp);
     AppState.dirty = true;
-    if (typeof Properties !== 'undefined') {
-      Properties._notifyResultsCleared();
-    }
-    AppState.clearResults();
+    AppState.invalidateResults();
     if (typeof UndoManager !== 'undefined') UndoManager.snapshot();
     Canvas.render();
     if (typeof Properties !== 'undefined' && Properties.currentId === comp.id) {
@@ -2605,8 +2602,7 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
     // this board untouched, so the ritual is done here for the target.
     if (!this.commit()) {
       AppState.dirty = true;
-      if (typeof Properties !== 'undefined') Properties._notifyResultsCleared();
-      AppState.clearResults();
+      AppState.invalidateResults();
       if (typeof UndoManager !== 'undefined') UndoManager.snapshot();
       Canvas.render();
     }

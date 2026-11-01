@@ -39,6 +39,7 @@ function makeSandbox() {
     wires,
     faultResults: null,
     isResultStale: () => false,
+    freshResult(slot) { return this[slot] || null; },
   };
   const sandbox = {
     console,
@@ -245,7 +246,7 @@ function wire(id, fromComponent, fromPort, toComponent, toPort) {
   const wires3 = new Map();
   for (const [id, c] of components) components3.set(id, c);
   for (const [id, w] of wires) wires3.set(id, w);
-  const appState3 = { components: components3, wires: wires3, faultResults: fr, isResultStale: () => false };
+  const appState3 = { components: components3, wires: wires3, faultResults: fr, isResultStale: () => false, freshResult(slot) { return this[slot] || null; } };
   const sandbox3 = {
     console, AppState: appState3, escHtml: (s) => String(s),
     document: { getElementById: () => ({ innerHTML: '', querySelectorAll: () => [] }) },

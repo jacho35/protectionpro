@@ -886,6 +886,7 @@ document.addEventListener('DOMContentLoaded', () => {
         result = await API.runFaultAnalysis(faultBusId, faultType);
         AppState.faultResults = result;
         AppState.faultedBusId = faultBusId;
+        if (typeof StaleResults !== 'undefined') StaleResults.noteArgs('faultResults', { busId: faultBusId, type: faultType });
         // [PS-3] Companion minimum-current study (c_min = 0.95, [CT2]
         // conductors at their end-of-fault temperature) so the compliance disconnection check uses the current
         // that may actually flow. Non-fatal: compliance falls back (with a
@@ -904,6 +905,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const lfMethod = document.getElementById('loadflow-method').value;
         result = await API.runLoadFlow(lfMethod);
         AppState.loadFlowResults = result;
+        if (typeof StaleResults !== 'undefined') StaleResults.noteArgs('loadFlowResults', { method: lfMethod });
       }
       Canvas.render();
       if (type === 'loadflow') {
@@ -989,6 +991,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const lfMethod = document.getElementById('loadflow-method').value;
       const result = await API.runUnbalancedLoadFlow(lfMethod);
       AppState.unbalancedLoadFlowResults = result;
+      if (typeof StaleResults !== 'undefined') StaleResults.noteArgs('unbalancedLoadFlowResults', { method: lfMethod });
       Canvas.render();
       const vufMax = Math.max(...Object.values(result.buses).map(b => b.vuf_pct));
       const warnCount = result.warnings ? result.warnings.length : 0;
@@ -1111,6 +1114,7 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       const result = await API.runDCShortCircuit(faultBusId);
       AppState.dcShortCircuitResults = result;
+      if (typeof StaleResults !== 'undefined') StaleResults.noteArgs('dcShortCircuitResults', { busId: faultBusId });
       Canvas.render();
       const nBus = Object.keys(result.buses || {}).length;
       document.getElementById('status-info').textContent = result.converged
@@ -2683,6 +2687,7 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       const result = await API.runGroundingAnalysis(busIds);
       AppState.groundingResults = result;
+      if (typeof StaleResults !== 'undefined') StaleResults.noteArgs('groundingResults', { busIds });
       Canvas.render();
       document.getElementById('status-info').textContent = `Grounding study complete (${scopeInfo}).`;
       showGroundingResults(result);
@@ -3512,7 +3517,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
       // Distribute individual study results to their AppState slots
       const studies = result.studies || {};
-      if (studies.fault && studies.fault.result) AppState.faultResults = studies.fault.result;
+      if (studies.fault && studies.fault.result) {
+        AppState.faultResults = studies.fault.result;
+        if (typeof StaleResults !== 'undefined') StaleResults.noteArgs('faultResults', { busId: null, type: null });
+      }
       if (studies.loadflow && studies.loadflow.result) AppState.loadFlowResults = studies.loadflow.result;
       if (studies.arcflash && studies.arcflash.result) AppState.arcFlashResults = studies.arcflash.result;
       if (studies.dc_arcflash && studies.dc_arcflash.result) AppState.dcArcFlashResults = studies.dc_arcflash.result;
@@ -4758,7 +4766,7 @@ document.addEventListener('DOMContentLoaded', () => {
     AppState.voltageFactor = parseFloat(document.getElementById('voltage-factor').value) || DEFAULT_VOLTAGE_FACTOR;
     AppState.defaultLengthUnit = document.getElementById('default-length-unit').value || 'm';
     AppState.cascading = document.getElementById('allow-cascading').checked;
-    AppState.clearResults();
+    AppState.invalidateResults();
     Canvas.render();
     document.getElementById('settings-modal').style.display = 'none';
     // Refresh properties if showing

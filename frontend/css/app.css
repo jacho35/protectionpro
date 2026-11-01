@@ -2817,6 +2817,54 @@ textarea:focus-visible {
   outline-offset: 1px;
 }
 
+/* ─── Out-of-date study results (StaleResults) ─── */
+/* Kept after an edit, dimmed until re-run. Opacity on the whole group so the
+   box, its text and its colours all fade together; still clickable. */
+.res-stale { opacity: .38; }
+/* An out-of-date overload flag does not pulse for attention. */
+.overload-flag.res-stale { animation: none; }
+tspan.res-stale { opacity: 1; fill-opacity: .38; }
+.stale-chip {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 4px 4px 10px;
+  border: 1px solid #e0a800;
+  border-radius: 16px;
+  background: #fff8e1;
+  color: #7a5c00;
+  font-size: 12px;
+  line-height: 1.2;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, .12);
+  white-space: nowrap;
+}
+.stale-chip[hidden] { display: none; }
+.stale-chip-dot { width: 8px; height: 8px; border-radius: 50%; background: #e0a800; flex: 0 0 auto; }
+.stale-chip-t { font-weight: 600; }
+.stale-chip-sub { padding-right: 6px; }
+.stale-chip-btn {
+  border: 0;
+  border-radius: 12px;
+  padding: 4px 10px;
+  background: #7a5c00;
+  color: #fff;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.stale-chip-btn:hover { background: #5c4500; }
+.stale-chip-btn:focus-visible { outline: 2px solid var(--accent, #0078d7); outline-offset: 2px; }
+body.dark-mode .stale-chip { background: #3a2f0b; color: #ffd76a; border-color: #8a6d1a; }
+body.dark-mode .stale-chip-btn { background: #ffd76a; color: #2a2205; }
+@media (max-width: 768px) {
+  .stale-chip { top: 64px; }
+}
+
 /* ─── Empty-canvas hint ─── */
 .canvas-empty-hint {
   position: absolute;

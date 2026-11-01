@@ -467,10 +467,7 @@ const ContextMenu = {
     if ((comp.props.state || 'in_1') === pos) return;
     comp.props.state = pos;
     AppState.dirty = true;
-    if (typeof Properties !== 'undefined' && Properties._notifyResultsCleared) {
-      Properties._notifyResultsCleared();
-    }
-    AppState.clearResults();
+    AppState.invalidateResults();
     if (typeof UndoManager !== 'undefined') UndoManager.snapshot();
     Canvas.render();
     if (typeof Properties !== 'undefined' && Properties.currentId === comp.id) {
@@ -491,10 +488,7 @@ const ContextMenu = {
     const opening = comp.props.state !== 'open';
     comp.props.state = opening ? 'open' : 'closed';
     AppState.dirty = true;
-    if (typeof Properties !== 'undefined' && Properties._notifyResultsCleared) {
-      Properties._notifyResultsCleared();
-    }
-    AppState.clearResults();
+    AppState.invalidateResults();
     if (typeof UndoManager !== 'undefined') UndoManager.snapshot();
     Canvas.render();
     if (typeof Properties !== 'undefined' && Properties.currentId === comp.id) {

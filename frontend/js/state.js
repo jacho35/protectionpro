@@ -26,6 +26,11 @@ const RESULT_SLOT_LABELS = {
   dbCheckResults: 'DB Circuit Check', reticResults: 'Reticulation (ADMD)',
 };
 
+// Live checks that re-run themselves after an edit and dim their own columns
+// (the DB schedule circuit check, Demand's ADMD): an edit still clears the
+// circuit check, and neither is judged against the network signature.
+const LIVE_RESULT_SLOTS = new Set(['dbCheckResults', 'reticResults']);
+
 const AppState = {
   // Project
   projectId: null,
@@ -1223,16 +1228,16 @@ const AppState = {
     return result;
   },
 
-  // Topology-mutation commit ritual — the same sequence a properties-panel
-  // edit performs: show the results-cleared status notice (only when there
-  // are results to clear), then clear every stale analysis result slot.
-  // Call from every path that mutates network topology (delete, cut, paste,
-  // new wire, bus resize).
+  // Call from every path that edits the network (a property, delete, cut,
+  // paste, a new wire, bus resize, undo, a remote edit). Study results are
+  // KEPT: each was stamped with the network signature it was computed on, so
+  // after an edit it reads as out of date (dimmed, "Re-run" chip, kept out of
+  // reports) until it is re-run — or the edit is undone. Only the live
+  // circuit check is cleared (it re-runs itself).
   invalidateResults() {
-    if (typeof Properties !== 'undefined' && Properties._notifyResultsCleared) {
-      Properties._notifyResultsCleared();
-    }
-    this.clearResults();
+    this._netSeq = (this._netSeq || 0) + 1;
+    this.dbCheckResults = null;
+    if (typeof StaleResults !== 'undefined' && StaleResults.refresh) StaleResults.refresh();
   },
 
   // Clear all results
@@ -1588,7 +1593,7 @@ const AppState = {
       // Provenance for the persisted results (app version + time per slot) so a
       // result computed on an older engine version is detected as stale on load.
       resultsMeta: (this.resultsMeta && Object.keys(this.resultsMeta).length)
-        ? this.resultsMeta : undefined,
+        ? this._resultsMetaToJSON() : undefined,
       lightningAssessments: (this.lightningAssessments && this.lightningAssessments.length) ? this.lightningAssessments : undefined,
       lightningActiveId: this.lightningActiveId || undefined,
       earthGrids: (this.earthGrids && this.earthGrids.length) ? this.earthGrids : undefined,
@@ -1929,6 +1934,7 @@ const AppState = {
     for (const slot of RESULT_SLOTS) {
       if (data[slot] != null) this._results[slot] = data[slot];
     }
+    this._rebaseLoadedSignatures();
     this.faultedBusId = data.faultedBusId || null;
     this.stabilityCases = Array.isArray(data.stabilityCases) ? data.stabilityCases : [];
     this.dynamicMotorSchedule = (data.dynamicMotorSchedule && Array.isArray(data.dynamicMotorSchedule.motors))
@@ -2044,17 +2050,111 @@ for (const slot of RESULT_SLOTS) {
         v: (typeof APP_VERSION !== 'undefined' ? APP_VERSION : null),
         at: Date.now(),
         run: ++this._runSeq,
+        sig: LIVE_RESULT_SLOTS.has(slot) ? undefined : this.networkSignature(),
       };
+      if (typeof StaleResults !== 'undefined' && StaleResults.refresh) StaleResults.refresh();
     },
   });
 }
 
-// A stored result is stale if it exists but its provenance is missing or was
-// stamped by a different app version than the one now running.
-AppState.isResultStale = function (slot) {
-  if (this._results[slot] == null) return false;
+// ── Network signature ─────────────────────────────────────────────────────
+// A hash of everything the studies read: each component's type and props
+// (not its position, rotation or name), each wire's ends (not its route) and
+// the study settings. A result is stamped with it when stored; when the
+// network's signature no longer matches, the result is out of date. Undoing
+// back to the same network matches again. Cached until the next edit
+// (invalidateResults bumps _netSeq).
+AppState._netSeq = 0;
+AppState._sigCache = null;
+// Any edit marks the project dirty: drop the cached signature too, so a path
+// that edits without calling invalidateResults() is still judged afresh.
+// (Collab wraps this accessor and chains to it.)
+{
+  let dirtyValue = AppState.dirty;
+  Object.defineProperty(AppState, 'dirty', {
+    configurable: true,
+    enumerable: true,
+    get() { return dirtyValue; },
+    set(v) { dirtyValue = v; if (v) this._sigCache = null; },
+  });
+}
+const _SIG_SKIP_PROP = (k) => k === 'name' || k.startsWith('label_') || k.startsWith('show_');
+AppState._signatureText = function () {
+  const byId = (a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0);
+  const comps = [...this.components.values()].map((c) => {
+    const props = {};
+    for (const k of Object.keys(c.props || {})) if (!_SIG_SKIP_PROP(k)) props[k] = c.props[k];
+    return [c.id, c.type, props];
+  }).sort(byId);
+  const wires = [...this.wires.values()]
+    .map((w) => [w.fromComponent + '|' + w.fromPort + '|' + w.toComponent + '|' + w.toPort])
+    .sort(byId);
+  return JSON.stringify([comps, wires, this.baseMVA, this.frequency, this.voltageFactor,
+    this.cascading !== false, this.earthGrids || null, this.stabilityCases || null,
+    this.dynamicMotorSchedule || null]);
+};
+// FNV-1a over the text, two seeds, plus its length.
+AppState._hashText = function (t) {
+  let a = 0x811c9dc5, b = 0x01000193 ^ 0x5bd1e995;
+  for (let i = 0; i < t.length; i++) {
+    const c = t.charCodeAt(i);
+    a = Math.imul(a ^ c, 0x01000193);
+    b = Math.imul(b ^ c, 0x01000193) ^ (b >>> 13);
+  }
+  return t.length.toString(36) + '.' + (a >>> 0).toString(36) + '.' + (b >>> 0).toString(36);
+};
+AppState.networkSignature = function () {
+  if (this._sigCache && this._sigCache.seq === this._netSeq) return this._sigCache.sig;
+  const sig = this._hashText(this._signatureText());
+  this._sigCache = { seq: this._netSeq, sig };
+  return sig;
+};
+
+// Why a stored result is out of date: 'version' (computed on another app
+// version, or saved before provenance existed), 'edited' (the network changed
+// since it was computed), or null (current, or no result).
+AppState.staleReason = function (slot) {
+  if (this._results[slot] == null) return null;
   const m = this.resultsMeta[slot];
-  return !m || m.v !== (typeof APP_VERSION !== 'undefined' ? APP_VERSION : null);
+  if (!m || m.v !== (typeof APP_VERSION !== 'undefined' ? APP_VERSION : null)) return 'version';
+  if (LIVE_RESULT_SLOTS.has(slot) || !m.sig || m.sig === '?') return null;
+  return m.sig === this.networkSignature() ? null : 'edited';
+};
+AppState.isResultStale = function (slot) {
+  return this.staleReason(slot) != null;
+};
+
+// Saved provenance: a result that was out of date because of an edit stays out
+// of date on reopening (`edited`); the signature itself is not saved — it is
+// taken again after the project has loaded (see _rebaseLoadedSignatures), so
+// a load-time migration that touches props cannot make every result look
+// out of date.
+AppState._resultsMetaToJSON = function () {
+  const out = {};
+  for (const [slot, m] of Object.entries(this.resultsMeta || {})) {
+    if (!m) continue;
+    const { sig, ...rest } = m;
+    if (this.staleReason(slot) === 'edited') rest.edited = true;
+    out[slot] = rest;
+  }
+  return out;
+};
+AppState._rebaseLoadedSignatures = function () {
+  this._netSeq++;
+  for (const m of Object.values(this.resultsMeta || {})) {
+    if (!m) continue;
+    m.sig = m.edited ? '!edited' : '?';
+    delete m.edited;
+  }
+  // After the load (and the migrations the open path runs straight after
+  // fromJSON) has finished, take the signature the results now match.
+  const adopt = () => {
+    let sig = null;
+    for (const m of Object.values(this.resultsMeta || {})) {
+      if (m && m.sig === '?') m.sig = sig || (sig = this.networkSignature());
+    }
+  };
+  if (typeof queueMicrotask === 'function') queueMicrotask(adopt); else adopt();
 };
 
 AppState.resultMetaInfo = function (slot) {
@@ -2074,19 +2174,23 @@ AppState.freshResult = function (slot) {
 // Shared "out of date — re-run" banner for a study view. Returns '' when the
 // slot's result is current (or absent), so callers can prepend it blindly.
 AppState.staleBannerHTML = function (slot) {
-  if (!this.isResultStale(slot)) return '';
+  const reason = this.staleReason(slot);
+  if (!reason) return '';
   const m = this.resultsMeta[slot];
-  const ver = (m && m.v) ? escHtml(m.v) : 'an earlier version';
   let when = '';
   if (m && m.at) {
     try { when = ' (' + escHtml(new Date(m.at).toLocaleString()) + ')'; } catch (e) { when = ''; }
   }
+  const why = reason === 'edited'
+    ? 'The network has changed since these results were computed' + when + '. '
+    : 'These results were computed on ' + ((m && m.v) ? escHtml(m.v) : 'an earlier version') + when
+      + ', not the current version. ';
   return '<div class="stale-result-banner" role="alert" style="'
     + 'display:flex;gap:8px;align-items:flex-start;margin:0 0 10px;padding:8px 11px;'
     + 'border:1px solid #e0a800;border-radius:6px;background:#fff8e1;color:#7a5c00;'
     + 'font-size:12px;line-height:1.4">'
     + '<span style="font-size:14px">⚠</span><span><strong>Out of date.</strong> '
-    + 'These results were computed on ' + ver + when + ', not the current version. '
+    + why
     + 'Re-run the study to update — they are shown for reference and are excluded from reports.'
     + '</span></div>';
 };

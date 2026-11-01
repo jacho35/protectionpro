@@ -35,6 +35,7 @@ const comp = (id, type, props) => ({ id, type, x: 0, y: 0, props });
 const wire = (id, a, b, fp = 'bottom', tp = 'top') => ({ id, fromComponent: a, fromPort: fp, toComponent: b, toPort: tp });
 function state(s) {
   ctx.AppState = {
+    freshResult(slot) { return this[slot] || null; },
     projectName: 't', baseMVA: 100, frequency: 50,
     components: new Map((s.components || []).map(c => [c.id, c])),
     wires: new Map((s.wires || []).map(w => [w.id, w])),

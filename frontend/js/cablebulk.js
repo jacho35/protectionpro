@@ -124,8 +124,7 @@ const CableBulk = {
 
   _finish(msg) {
     AppState.dirty = true;
-    Properties._notifyResultsCleared();
-    AppState.clearResults();
+    AppState.invalidateResults();
     if (typeof UndoManager !== 'undefined') UndoManager.snapshot();
     Canvas.render();
     if (Properties.currentId) Properties.show(Properties.currentId);
@@ -278,7 +277,7 @@ const CableBulk = {
     const cbs = ids.map(id => this._comp(id)).filter(c => this._isCb(c));
     if (!cbs.length) return;
     const duty = {};
-    const dr = AppState.dutyCheckResults;
+    const dr = AppState.freshResult('dutyCheckResults');
     if (dr && Array.isArray(dr.devices)) dr.devices.forEach(d => { duty[d.device_id] = d; });
     const label = (e) => `${e.name}${e.manufacturer ? ' · ' + e.manufacturer : ''} · ${e.trip_rating_a} A · ${e.breaking_ka} kA`;
     const state = { pick: null, q: '' };

@@ -145,7 +145,7 @@ const CableSchedules = {
     const cables = [...AppState.components.values()].filter(c => c.type === 'cable');
     const boards = [...AppState.components.values()].filter(c => c.type === 'distribution_board' && (c.props.circuits || []).length);
     if (!cables.length && !boards.length) return null;
-    const lf = AppState.loadFlowResults;
+    const lf = AppState.freshResult('loadFlowResults');
     const br = {};
     if (lf && Array.isArray(lf.branches)) for (const b of lf.branches) br[b.elementId] = b;
     const busV = (id) => lf && lf.buses && lf.buses[id] ? lf.buses[id].voltage_pu : null;

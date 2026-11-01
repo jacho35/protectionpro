@@ -83,13 +83,6 @@ const UndoManager = {
     AppState.components.clear();
     AppState.wires.clear();
     AppState.selectedIds.clear();
-    // Stale analysis results describe a diagram that no longer exists after
-    // undo/redo — clear EVERY result slot (fault, faultedBusId, load flow,
-    // unbalanced, arc flash, DC arc flash, cable sizing, motor starting,
-    // duty check, load diversity, grounding, study manager) via the
-    // canonical list in AppState.clearResults(). No side effects: it only
-    // nulls the slots; the re-render below drops the stale annotations.
-    AppState.clearResults();
     for (const c of state.components) {
       AppState.components.set(c.id, c);
     }
@@ -114,6 +107,11 @@ const UndoManager = {
     }
     if (Array.isArray(state.earthGrids)) AppState.earthGrids = state.earthGrids;
     if (Array.isArray(state.sldShapes)) AppState.sldShapes = state.sldShapes;
+    // The network is now the snapshot's: results are judged against it (out of
+    // date, or current again when the undo returns to the network they were
+    // computed on). Called after the restore so the signature is of the
+    // restored network.
+    AppState.invalidateResults();
     AppState.dirty = true;
     if (typeof EarthGridEditor !== 'undefined') EarthGridEditor.onStateRestored();
     if (typeof window !== 'undefined' && typeof window.renderPageTabs === 'function') {

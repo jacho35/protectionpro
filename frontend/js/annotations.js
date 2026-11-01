@@ -544,7 +544,21 @@ const Annotations = {
     }
 
     this.layer.innerHTML = html;
+    this._dimStale();
     this._syncRestoreButton();
+  },
+
+  // Dim the boxes of out-of-date studies (an edit since they were run, or an
+  // earlier app version) — see StaleResults.
+  _dimStale() {
+    if (typeof StaleResults === 'undefined') return;
+    const stale = new Map();
+    for (const g of this.layer.querySelectorAll('.annotation-group[data-annotation-key]')) {
+      const slot = StaleResults.slotFor(g.getAttribute('data-annotation-key'));
+      if (!slot) continue;
+      if (!stale.has(slot)) stale.set(slot, StaleResults.isStale(slot));
+      if (stale.get(slot)) g.classList.add('res-stale');
+    }
   },
 
   // Small red warning triangle at a device's top-right, with a tooltip listing

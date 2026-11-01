@@ -69,7 +69,7 @@ $$\text{energised}(x)\iff \exists\ \text{path}\ L\rightsquigarrow x\rightsquigar
 
 { id: 'wf-files', group: 'workflow', title: 'Saving, revisions & sharing',
   std: 'Project menu · Revision timeline · Share',
-  kw: 'save autosave revision timeline snapshot undo redo share collaborate export json project file',
+  kw: 'save autosave revision timeline snapshot undo redo share collaborate export json project file stale out of date results re-run dimmed',
   html: String.raw`
 <ul>
 <li><strong>Save and auto-save</strong> — <kbd>Ctrl+S</kbd> saves to the server; Auto Save writes every 2 minutes.</li>
@@ -79,7 +79,7 @@ $$\text{energised}(x)\iff \exists\ \text{path}\ L\rightsquigarrow x\rightsquigar
 <li><strong>Export</strong> — project JSON (re-importable), diagram as SVG / PNG / PDF / DXF, results CSV, settings schedule CSV, analysis report PDF, detailed-calculations PDF (step-by-step formulas with intermediate values), arc-flash labels PDF, plus BOQ, cable schedules and rates.</li>
 <li><strong>DXF for CAD</strong> — the single line (Output › Diagram (DXF)), the Demand topology, the street-light schematic, a board's single line and its GA layout (DXF buttons on each) export as AutoCAD 2010 DXF in millimetres. Every symbol — breaker, fuse, transformer, load, minisub, kiosk, RMU, pole, GA device — is a block; the labels drawn beside it are visible attributes (move and edit with the symbol), and its data (ratings, settings, cable, load, check status, latest load-flow / fault results) are hidden attributes ready for CAD data extraction. The site and floor plans have their own DXF export that re-imports into ProtectionPro.</li>
 </ul>
-<div class="hc-note"><span class="hc-label">Stale results</span>Study results saved in a project are restored on load and are <em>not</em> recomputed. If a verdict looks out of date after an edit, re-run the study.</div>` },
+<div class="hc-note"><span class="hc-label">Out-of-date results</span>An edit no longer clears study results. A study's result boxes stay on the diagram but are dimmed as soon as the network differs from the one the study ran on, and an <strong>Out of date · Re-run</strong> chip appears above the diagram; it re-runs every out-of-date study you had run, with the same scope and options, without opening the result dialogs. Undoing back to the network a study ran on makes its results current again. Moving, rotating or renaming parts does not make results out of date. Out-of-date results are left out of reports and arc-flash labels, and checks that use them (compliance, under-rated markers, TCC fault levels, trip-unit suggestions, cable schedules) wait for the re-run. Dynamic motor starting and transient stability are re-run from their own screens. Results saved in a project are restored on load and are <em>not</em> recomputed; ones computed on an earlier version of the app are also shown as out of date.</div>` },
 
 { id: 'wf-drawing-set', group: 'workflow', title: 'Drawing sets, selection export & print windows',
   std: 'Output ▸ Drawing set · Export selection · Draw print window',

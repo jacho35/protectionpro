@@ -1450,7 +1450,7 @@ const TCC = {
     note('tcc-fo-scope-all-note', `${counts.all} buses, mixed voltages`);
     const path = document.getElementById('tcc-fo-scope-path');
     if (path) path.disabled = counts.path == null;
-    const hasMin = !!(AppState.faultResultsMin && AppState.faultResultsMin.buses);
+    const hasMin = !!(AppState.freshResult('faultResultsMin') && AppState.freshResult('faultResultsMin').buses);
     note('tcc-fo-tmin-note', hasMin ? 'Uses the minimum-fault study' : 'No minimum study: uses the lowest of Ik1 and Ik″ 3-phase from the maximum study');
   },
 
@@ -1488,13 +1488,13 @@ const TCC = {
     if (!host) return;
     const pane = document.getElementById('tcc-drawer-pane-fault');
     if (pane && pane.hidden) return; // drawn when the tab is shown
-    const fr = AppState.faultResults;
+    const fr = AppState.freshResult('faultResults');
     if (!fr || !fr.buses) {
       host.innerHTML = '<div class="tcc-coord-info">No fault study in this project. Run Fault Analysis to see fault levels, and trip times at the highest and lowest fault.</div>';
       return;
     }
     const o = this._fo();
-    const hasMin = !!(AppState.faultResultsMin && AppState.faultResultsMin.buses);
+    const hasMin = !!(AppState.freshResult('faultResultsMin') && AppState.freshResult('faultResultsMin').buses);
     const fmtT = (t) => this._fmtTime(t);
     const cellT = (t, minCol, limit) => {
       // Cables and transformers show how long they can withstand the current, not a trip time
@@ -3552,7 +3552,7 @@ const TCC = {
   // buses whose fault current actually flows through it (a generator breaker does not
   // carry the utility's fault current, and a bus upstream of a device is not "its" fault).
   _faultReach() {
-    const fr = AppState.faultResults;
+    const fr = AppState.freshResult('faultResults');
     if (!fr || !fr.buses) return new Map();
     if (this._reachCache && this._reachCache.fr === fr) return this._reachCache.map;
     const map = new Map();
@@ -3575,10 +3575,10 @@ const TCC = {
 
   // Buses in scope for the fault display (with study values). `scope` overrides the option.
   _faultEntriesFor(scope) {
-    const fr = AppState.faultResults;
+    const fr = AppState.freshResult('faultResults');
     if (!fr || !fr.buses) return [];
     const o = this._fo();
-    const frMin = (AppState.faultResultsMin && AppState.faultResultsMin.buses) || null;
+    const frMin = (AppState.freshResult('faultResultsMin') && AppState.freshResult('faultResultsMin').buses) || null;
     let allow = null;                       // Set of node ids, or null = no id filter
     let kvs = null;                         // voltages of the visible curves
     scope = scope || o.scope;
@@ -3620,7 +3620,7 @@ const TCC = {
   _faultExtremes(entries) {
     const o = this._fo();
     let hi = null, lo = null;
-    const haveMin = !!(AppState.faultResultsMin && AppState.faultResultsMin.buses);
+    const haveMin = !!(AppState.freshResult('faultResultsMin') && AppState.freshResult('faultResultsMin').buses);
     for (const e of entries) {
       if (e.extra) continue;
       const vals = [];
@@ -3646,12 +3646,12 @@ const TCC = {
   // 3-phase branch current scaled by that bus's Ik1/Ik\u2033 ratio. The lowest uses the
   // minimum study when there is one, else the lowest value in the maximum study.
   _deviceFaultRange(dev) {
-    const fr = AppState.faultResults;
+    const fr = AppState.freshResult('faultResults');
     if (!fr || !fr.buses) return null;
     const list = this._faultReach().get(this._endpointCompId(dev));
     if (!list || !list.length) return null;
     const o = this._fo();
-    const frMin = (AppState.faultResultsMin && AppState.faultResultsMin.buses) || null;
+    const frMin = (AppState.freshResult('faultResultsMin') && AppState.freshResult('faultResultsMin').buses) || null;
     let iMax = 0, iMin = Infinity, maxBus = '', minBus = '', minKind = '', usedMin = false;
     for (const { node, i3 } of list) {
       const r = fr.buses[node];
@@ -5148,7 +5148,7 @@ const TCC = {
    */
   _buildCoordinationTestPoints(fallbackAmps = [500, 1000, 2000, 5000, 10000, 20000]) {
     const points = [];
-    const fr = AppState.faultResults;
+    const fr = AppState.freshResult('faultResults');
     let hasPhase = false, hasEarth = false;
     if (fr && fr.buses) {
       for (const [busId, r] of Object.entries(fr.buses)) {
@@ -6049,7 +6049,7 @@ const TCC = {
    * Returns null when no matching (fresh) fault result is available.
    */
   _infeedFactorFromFaultResults(remoteBusId, chainIds) {
-    const fr = AppState.faultResults;
+    const fr = AppState.freshResult('faultResults');
     if (!fr || !fr.buses || !fr.buses[remoteBusId]) return null;
     const busResult = fr.buses[remoteBusId];
     const ik3Total = busResult.ik3;
@@ -6129,7 +6129,7 @@ const TCC = {
       return;
     }
 
-    const staleFault = !AppState.faultResults ||
+    const staleFault = !AppState.freshResult('faultResults') ||
       (typeof AppState.isResultStale === 'function' && AppState.isResultStale('faultResults'));
 
     const rows = [];
@@ -6418,7 +6418,7 @@ const TCC = {
     }
 
     // Require fault results to know actual fault currents at each bus
-    const fr = AppState.faultResults;
+    const fr = AppState.freshResult('faultResults');
     if (!fr || !fr.buses || Object.keys(fr.buses).length === 0) {
       return { buses: [], paths, error: 'Run Fault Analysis first to provide fault currents at each bus.' };
     }

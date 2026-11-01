@@ -409,7 +409,7 @@ const TripUnit = {
   // Cable Sizing (which already knows each cable's protective device), else
   // from load flow when the breaker feeds exactly one cable directly.
   _circuit(comp) {
-    const cs = AppState.cableSizingResults && AppState.cableSizingResults.cables;
+    const cs = AppState.freshResult('cableSizingResults') && AppState.freshResult('cableSizingResults').cables;
     if (Array.isArray(cs)) {
       const mine = cs.filter(c => c.protective_device_id === comp.id);
       if (mine.length) {
@@ -422,7 +422,7 @@ const TripUnit = {
         };
       }
     }
-    const lf = AppState.loadFlowResults;
+    const lf = AppState.freshResult('loadFlowResults');
     if (!lf || !Array.isArray(lf.branches)) return null;
     const cable = this._fedCable(comp);
     if (!cable) return null;
@@ -611,8 +611,7 @@ const TripUnit = {
 
   _commit(comp) {
     AppState.dirty = true;
-    Properties._notifyResultsCleared();
-    AppState.clearResults();
+    AppState.invalidateResults();
     if (typeof UndoManager !== 'undefined') UndoManager.snapshot();
     Canvas.render();
     Properties.show(comp.coParent || comp.id);
