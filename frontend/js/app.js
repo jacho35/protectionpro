@@ -799,17 +799,18 @@ document.addEventListener('DOMContentLoaded', () => {
     openResultBox(key) {
       const prefix = String(key).split(':')[0];
       switch (prefix) {
-        case 'af':   if (AppState.arcFlashResults) showArcFlashResults(AppState.arcFlashResults); break;
-        case 'cs':   if (AppState.cableSizingResults) showCableSizingResults(AppState.cableSizingResults); break;
+        case 'af':   ResultsPanel.open('arcflash'); break;
+        case 'cs':   ResultsPanel.open('cable'); break;
         case 'ms':   if (AppState.motorStartingResults) showMotorStartingResults(AppState.motorStartingResults); break;
         case 'dynms': if (AppState.dynamicMotorResults && typeof DynMotor !== 'undefined') DynMotor.show(AppState.dynamicMotorResults); break;
-        case 'dc':   if (AppState.dutyCheckResults) showDutyCheckResults(AppState.dutyCheckResults); break;
+        case 'dc':   ResultsPanel.open('duty'); break;
         case 'ld':   if (AppState.loadDiversityResults) showLoadDiversityResults(AppState.loadDiversityResults); break;
         case 'gr':   if (AppState.groundingResults) showGroundingResults(AppState.groundingResults); break;
         case 'dclf': if (AppState.dcLoadFlowResults) showDCLoadFlowResults(AppState.dcLoadFlowResults); break;
         case 'dcsc': if (AppState.dcShortCircuitResults) showDCShortCircuitResults(AppState.dcShortCircuitResults); break;
-        case 'dcaf': if (AppState.dcArcFlashResults) showDCArcFlashResults(AppState.dcArcFlashResults); break;
-        case 'lf': case 'warn': if (AppState.loadFlowResults) showDispatchSummary(AppState.loadFlowResults); break;
+        case 'dcaf': ResultsPanel.open('arcflash'); break;
+        case 'lf': case 'warn': ResultsPanel.open('loadflow'); break;
+        case 'fault': case 'vdep': ResultsPanel.open('fault'); break;
         default:
           // fault, vdep, ulf, ulf-warn — no dedicated modal; open the detailed
           // calculations report (has a full worked section per study).
@@ -905,7 +906,7 @@ document.addEventListener('DOMContentLoaded', () => {
           (result.dispatch || []).some(d =>
             d.curtailed_mw > 0 || d.role === 'offline' ||
             (d.role === 'balancer' && d.source_type !== 'utility'));
-        if (noteworthy) showDispatchSummary(result);
+        if (noteworthy) ResultsPanel.open('loadflow');
       } else {
         document.getElementById('status-info').textContent = `${label} complete.`;
       }
@@ -925,7 +926,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btn-show-dispatch').addEventListener('click', () => {
     window.closeAllToolbarMenus?.();
     if (AppState.loadFlowResults) {
-      showDispatchSummary(AppState.loadFlowResults);
+      ResultsPanel.open('loadflow', { section: 'dispatch' });
     } else {
       document.getElementById('status-info').textContent =
         'No load flow results yet — run a load flow first.';
@@ -1013,7 +1014,7 @@ document.addEventListener('DOMContentLoaded', () => {
       AppState.arcFlashResults = result;
       Canvas.render();
       document.getElementById('status-info').textContent = 'Arc flash analysis complete.';
-      showArcFlashResults(result);
+      ResultsPanel.open('arcflash');
     } catch (e) {
       console.error('Arc flash analysis error:', e);
       document.getElementById('status-info').textContent = 'Arc flash analysis failed.';
@@ -1120,7 +1121,7 @@ document.addEventListener('DOMContentLoaded', () => {
       AppState.cableSizingResults = result;
       Canvas.render();
       document.getElementById('status-info').textContent = 'Cable sizing analysis complete.';
-      showCableSizingResults(result);
+      ResultsPanel.open('cable');
     } catch (e) {
       console.error('Cable sizing error:', e);
       document.getElementById('status-info').textContent = 'Cable sizing analysis failed.';
@@ -1132,155 +1133,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Bus the results table is filtered to (null = all cables). Follows the
   // diagram's cable focus when that is on.
-  let _csFilterBus = null;
-
-  function showCableSizingResults(result) {
-    const modal = document.getElementById('cable-sizing-modal');
-    const body = document.getElementById('cable-sizing-body');
-    if (!modal || !body) return;
-
-    const cables = result.cables || [];
-    if (cables.length === 0) {
-      body.innerHTML = '<p>No cables found in the project.</p>';
-      modal.style.display = '';
-      return;
-    }
-
-    if (CableFocus.filtering()) _csFilterBus = CableFocus.busId;
-    if (_csFilterBus && !AppState.components.has(_csFilterBus)) _csFilterBus = null;
-    // Buses that have at least one cable, for the picker
-    const busIds = new Set();
-    for (const c of cables) {
-      const { fromId, toId } = CableFocus.cableEnds(c);
-      if (fromId && AppState.components.has(fromId)) busIds.add(fromId);
-      if (toId && AppState.components.has(toId)) busIds.add(toId);
-    }
-    const busName = (id) => { const b = AppState.components.get(id); return b ? (b.props?.name || b.id) : id; };
-    const busList = [...busIds].sort((a, b) => busName(a).localeCompare(busName(b), undefined, { numeric: true }));
-    // The picker shows the filter bus, else the selected bus, else the first
-    const sel = AppState.selectedIds.size === 1 ? [...AppState.selectedIds][0] : null;
-    const pickBus = _csFilterBus || (sel && busIds.has(sel) ? sel : busList[0]);
-
-    const at = _csFilterBus ? CableFocus.cablesAt(_csFilterBus, result) : null;
-    const shown = at ? at.map(e => e.cable) : cables;
-
-    const failCount = shown.filter(c => c.status === 'fail').length;
-    const warnCount = shown.filter(c => c.status === 'warning').length;
-
-    let html = '';
-    if (result.warnings && result.warnings.length > 0) {
-      html += '<div class="af-warnings">';
-      for (const w of result.warnings) html += `<div class="af-warning-item">⚠ ${escHtml(w)}</div>`;
-      html += '</div>';
-    }
-
-    html += `<div class="cs-filter-bar">
-      <span>Show</span>
-      <div class="cs-seg" role="group" aria-label="Cables shown">
-        <button type="button" data-cs-scope="all" aria-pressed="${!_csFilterBus}" class="${!_csFilterBus ? 'active' : ''}">All cables · ${cables.length}</button>
-        <button type="button" data-cs-scope="bus" aria-pressed="${!!_csFilterBus}" class="${_csFilterBus ? 'active' : ''}"${busList.length ? '' : ' disabled'}>At bus</button>
-      </div>
-      <select id="cs-filter-bus" aria-label="Bus"${_csFilterBus ? '' : ' disabled'}>
-        ${busList.map(id => `<option value="${escHtml(id)}"${id === pickBus ? ' selected' : ''}>${escHtml(busName(id))}</option>`).join('')}
-      </select>
-      <span class="cs-filter-spacer"></span>
-      <span class="cs-filter-summary">${at ? `${shown.length} of ${cables.length} · ` : ''}${failCount ? `<b class="cs-fail">${failCount} fail</b>` : '0 fail'} · ${warnCount ? `<b class="cs-warn">${warnCount} warning</b>` : '0 warnings'}</span>
-    </div>`;
-
-    if (failCount > 0 && !at) {
-      html += `<div class="af-warning-item" style="color:#d32f2f;font-weight:600;margin-bottom:8px">${failCount} cable(s) FAIL sizing checks</div>`;
-    }
-
-    html += `<table class="af-table">
-      <thead><tr>
-        <th>Cable</th><th>${at ? 'Other end' : 'From → To'}</th><th>Load (A)</th><th>Thermal</th>
-        <th title="Voltage drop across this cable; Σ = from the origin of the installation (IEC 60364-5-52 §525), which the limit applies to">VDrop%</th><th title="Overload protection, IEC 60364-4-43 §433.1: Ib ≤ In ≤ Iz and I2 ≤ 1.45·Iz (LV only)">Protection</th><th>Withstand</th><th>Status</th><th>Recommended</th>
-      </tr></thead><tbody>`;
-
-    const rowHtml = (c, ends) => {
-      let html = '';
-      const rowClass = c.status === 'fail' ? 'af-danger'
-        : c.status === 'warning' ? 'af-medium'
-        : c.status === 'unknown' ? 'af-unknown' : 'af-low';
-      const thermalIcon = c.thermal_ok ? '✓' : '✗';
-      const vdropIcon = c.voltage_drop_ok ? '✓' : '✗';
-      const withstandIcon = c.fault_withstand_ok ? '✓' : '✗';
-      const cum = c.cumulative_voltage_drop_pct;
-      const vdropCell = `${vdropIcon} ${c.voltage_drop_pct.toFixed(2)}%` + (cum != null
-        ? ` <span style="cursor:help;border-bottom:1px dotted #888;font-size:10px;color:#888" title="From ${escHtml(c.voltage_drop_origin || 'origin')}">Σ ${cum.toFixed(2)}%</span>` : '');
-      const olCell = c.overload_protection_ok == null ? '<span style="color:#9e9e9e">—</span>'
-        : `<span style="cursor:help" title="${escHtml(c.overload_protection_note || '')}">${c.overload_protection_ok ? '✓' : '✗'}</span>`;
-      const wsTitle = c.clearing_time_s != null ? ` title="cleared in ${(c.clearing_time_s * 1000).toFixed(0)} ms"` : '';
-      const statusBadge = c.status === 'pass' ? '<span style="color:#4caf50;font-weight:600">PASS</span>'
-        : c.status === 'warning' ? '<span style="color:#f57c00;font-weight:600">WARN</span>'
-        : c.status === 'unknown' ? '<span style="color:#9e9e9e;font-weight:600">UNKNOWN</span>'
-        : '<span style="color:#d32f2f;font-weight:600">FAIL</span>';
-      html += `<tr class="${rowClass}" data-cable-id="${escHtml(c.cable_id)}" style="cursor:pointer">
-        <td>${escHtml(c.cable_name)}</td>
-        <td>${ends}</td>
-        <td>${c.load_current_a.toFixed(1)}</td>
-        <td>${thermalIcon} ${c.thermal_loading_pct.toFixed(0)}%${c.ampacity_derated
-          ? ` <span style="cursor:help;border-bottom:1px dotted #888;font-size:10px;color:#888" title="${escHtml(c.ampacity_conditions || '')}">↓ ${c.derated_ampacity_a}A</span>`
-          : ''}</td>
-        <td>${vdropCell}</td>
-        <td>${olCell}</td>
-        <td${wsTitle}>${withstandIcon}</td>
-        <td>${statusBadge}</td>
-        <td>${(c.status === 'warning' || c.status === 'unknown') && c.warning_reasons && c.warning_reasons.length > 0
-          ? `<span style="cursor:help;border-bottom:1px dotted ${c.status === 'unknown' ? '#9e9e9e' : '#f57c00'};color:${c.status === 'unknown' ? '#9e9e9e' : '#f57c00'}" title="${escHtml(c.warning_reasons.join('; '))}">ⓘ ${c.status === 'unknown' ? 'Needs load flow' : 'Near limits'}</span>`
-          : (c.recommended_cable || '—')}</td>
-      </tr>`;
-      if (c.issues.length > 0) {
-        html += `<tr class="${rowClass}"><td colspan="9" style="padding-left:24px;font-size:11px;color:#b71c1c">
-          ${c.issues.join('<br>')}
-        </td></tr>`;
-      }
-      return html;
-    };
-
-    if (at) {
-      const name = escHtml(busName(_csFilterBus));
-      const groups = [['in', `Incoming to ${name}`, 'from'], ['out', `Outgoing from ${name}`, 'to']];
-      for (const [dir, title, word] of groups) {
-        const rows = at.filter(e => e.dir === dir);
-        html += `<tr class="cs-group-row"><td colspan="9">${title} · ${rows.length}</td></tr>`;
-        if (!rows.length) html += `<tr><td colspan="9" class="cs-none">None</td></tr>`;
-        for (const e of rows) html += rowHtml(e.cable, `${word} ${escHtml(e.otherId ? busName(e.otherId) : '—')}`);
-      }
-    } else {
-      for (const c of cables) html += rowHtml(c, `${escHtml(c.from_bus)} → ${escHtml(c.to_bus)}`);
-    }
-    html += '</tbody></table>';
-
-    body.innerHTML = html;
-    modal.style.display = '';
-
-    body.querySelectorAll('[data-cs-scope]').forEach(b => b.addEventListener('click', () => {
-      const sel = body.querySelector('#cs-filter-bus');
-      _csFilterBus = b.dataset.csScope === 'bus' ? (sel && sel.value) || null : null;
-      if (CableFocus.active) {
-        if (_csFilterBus) CableFocus.enable(_csFilterBus); else CableFocus.disable();
-      }
-      showCableSizingResults(result);
-    }));
-    const busSel = body.querySelector('#cs-filter-bus');
-    if (busSel) busSel.addEventListener('change', () => {
-      _csFilterBus = busSel.value || null;
-      if (CableFocus.active && _csFilterBus) CableFocus.enable(_csFilterBus);
-      showCableSizingResults(result);
-    });
-
-    // Click-to-highlight cable on SLD
-    body.querySelectorAll('tr[data-cable-id]').forEach(row => {
-      row.addEventListener('click', () => {
-        const cid = row.dataset.cableId;
-        AppState.selectedIds.clear();
-        AppState.selectedIds.add(cid);
-        Canvas.render();
-      });
-    });
-  }
-
   // ── Motor Starting Analysis ──
   document.getElementById('btn-motor-starting').addEventListener('click', async () => {
     if (AppState.components.size === 0) {
@@ -1701,7 +1553,7 @@ document.addEventListener('DOMContentLoaded', () => {
       AppState.dutyCheckResults = result;
       Canvas.render();
       document.getElementById('status-info').textContent = 'Equipment duty check complete.';
-      showDutyCheckResults(result);
+      ResultsPanel.open('duty');
     } catch (e) {
       console.error('Duty check error:', e);
       document.getElementById('status-info').textContent = 'Duty check failed.';
@@ -2077,189 +1929,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     body.innerHTML = html;
     modal.style.display = '';
-  }
-
-  function showDutyCheckResults(result) {
-    const modal = document.getElementById('duty-check-modal');
-    const body = document.getElementById('duty-check-body');
-    if (!modal || !body) return;
-
-    const devices = result.devices || [];
-    const transformers = result.transformers || [];
-    const ctChecks = result.ct_checks || [];
-    const ptChecks = result.pt_checks || [];
-
-    if (devices.length === 0 && transformers.length === 0 && ctChecks.length === 0 && ptChecks.length === 0) {
-      body.innerHTML = '<p>No circuit breakers, fuses, or transformers found in the project.</p>';
-      modal.style.display = '';
-      return;
-    }
-
-    const failCount = devices.filter(d => d.status === 'fail').length;
-    const xfmrFailCount = transformers.filter(t => t.status === 'fail').length;
-    const ctFailCount = ctChecks.filter(c => c.status === 'fail').length;
-    const ptFailCount = ptChecks.filter(c => c.status === 'fail').length;
-    const totalFails = failCount + xfmrFailCount + ctFailCount + ptFailCount;
-
-    let html = '';
-    if (result.warnings && result.warnings.length > 0) {
-      html += '<div class="af-warnings">';
-      for (const w of result.warnings) html += `<div class="af-warning-item">⚠ ${escHtml(w)}</div>`;
-      html += '</div>';
-    }
-
-    if (totalFails > 0) {
-      html += `<div class="af-warning-item" style="color:#d32f2f;font-weight:600;margin-bottom:8px">${totalFails} item(s) FAIL duty check — system is not adequately protected</div>`;
-    }
-
-    // ── Transformer overload table ──
-    if (transformers.length > 0) {
-      html += `<h4 style="margin:8px 0 4px">Transformer Loading</h4>
-      <table class="af-table">
-        <thead><tr>
-          <th>Transformer</th><th>Bus</th><th>Rated (MVA)</th>
-          <th>Load (MVA)</th><th>Loading</th><th>Status</th>
-        </tr></thead><tbody>`;
-      for (const t of transformers) {
-        const rowClass = t.status === 'fail' ? 'af-danger' : t.status === 'warning' ? 'af-medium' : 'af-low';
-        const statusBadge = t.status === 'pass' ? '<span style="color:#4caf50;font-weight:600">PASS</span>'
-          : t.status === 'warning' ? '<span style="color:#f57c00;font-weight:600">WARN</span>'
-          : '<span style="color:#d32f2f;font-weight:600">FAIL</span>';
-        html += `<tr class="${rowClass}" data-device-id="${escHtml(t.device_id)}" style="cursor:pointer">
-          <td>${escHtml(t.device_name)}</td>
-          <td>${escHtml(t.location_bus)}</td>
-          <td>${t.rated_mva.toFixed(3)}</td>
-          <td>${t.load_mva.toFixed(3)}</td>
-          <td>${t.loading_pct.toFixed(1)}%</td>
-          <td>${statusBadge}</td>
-        </tr>`;
-        if (t.issues.length > 0) {
-          html += `<tr class="${rowClass}"><td colspan="6" style="padding-left:24px;font-size:11px;color:#b71c1c">
-            ${t.issues.join('<br>')}
-          </td></tr>`;
-        }
-      }
-      html += '</tbody></table>';
-    }
-
-    // ── CB / Fuse duty table ──
-    if (devices.length > 0) {
-      html += `<h4 style="margin:12px 0 4px">Protective Device Duty</h4>
-      <table class="af-table">
-        <thead><tr>
-          <th>Device</th><th>Type</th><th>Bus</th><th>Fault (kA)</th>
-          <th>Rating (kA)</th><th>Utilisation</th><th>Continuous</th><th>Status</th>
-        </tr></thead><tbody>`;
-
-      for (const d of devices) {
-        const rowClass = d.status === 'fail' ? 'af-danger' : d.status === 'warning' ? 'af-medium' : 'af-low';
-        const statusBadge = d.status === 'pass' ? '<span style="color:#4caf50;font-weight:600">PASS</span>'
-          : d.status === 'warning' ? '<span style="color:#f57c00;font-weight:600">WARN</span>'
-          : '<span style="color:#d32f2f;font-weight:600">FAIL</span>';
-        const contIcon = d.continuous_ok ? '✓' : '✗';
-        html += `<tr class="${rowClass}" data-device-id="${escHtml(d.device_id)}" style="cursor:pointer">
-          <td>${escHtml(d.device_name)}</td>
-          <td>${d.device_type.toUpperCase()}</td>
-          <td>${escHtml(d.location_bus)}</td>
-          <td>${d.prospective_fault_ka.toFixed(2)}</td>
-          <td>${d.cascade ? `${d.cascade.reinforced_ka.toFixed(2)} <span title="Reinforced breaking capacity with ${escHtml(d.cascade.upstream_name)} upstream (cascading, IEC 60947-2 Annex A); own ${d.breaking_capacity_ka.toFixed(2)} kA">(cascaded)</span>` : d.breaking_capacity_ka.toFixed(2)}</td>
-          <td>${d.utilisation_pct.toFixed(0)}%</td>
-          <td>${contIcon}</td>
-          <td>${statusBadge}</td>
-        </tr>`;
-        if (d.issues.length > 0) {
-          html += `<tr class="${rowClass}"><td colspan="8" style="padding-left:24px;font-size:11px;color:#b71c1c">
-            ${d.issues.join('<br>')}
-          </td></tr>`;
-        }
-      }
-      html += '</tbody></table>';
-    }
-
-    // ── CT saturation / accuracy-limit adequacy table ──
-    if (ctChecks.length > 0) {
-      html += `<h4 style="margin:12px 0 4px">CT Saturation Adequacy</h4>
-      <table class="af-table">
-        <thead><tr>
-          <th>CT</th><th>Bus</th><th>Ratio</th><th>Fault (kA)</th><th>ALF'</th>
-          <th>Sat. Threshold (A)</th><th>Headroom</th><th title="Time for a fully offset fault to saturate the core (IEC 61869-2 Ktf / IEEE C37.110); 0 = saturates symmetrically">t sat (ms)</th><th>Status</th>
-        </tr></thead><tbody>`;
-      for (const c of ctChecks) {
-        const rowClass = c.status === 'fail' ? 'af-danger' : c.status === 'warning' ? 'af-medium' : 'af-low';
-        const statusBadge = c.status === 'pass' ? '<span style="color:#4caf50;font-weight:600">PASS</span>'
-          : c.status === 'warning' ? '<span style="color:#f57c00;font-weight:600">WARN</span>'
-          : '<span style="color:#d32f2f;font-weight:600">FAIL</span>';
-        html += `<tr class="${rowClass}" data-device-id="${escHtml(c.device_id)}" style="cursor:pointer">
-          <td>${escHtml(c.device_name)}</td>
-          <td>${escHtml(c.location_bus)}</td>
-          <td>${escHtml(String(c.ratio))}</td>
-          <td>${c.prospective_fault_ka.toFixed(2)}${c.fault_basis === 'Ik1' ? ' (Ik1)' : ''}</td>
-          <td>${c.alf_effective != null ? c.alf_effective.toFixed(1) : '—'}</td>
-          <td>${c.i_sat_primary_a != null ? Math.round(c.i_sat_primary_a) : '—'}</td>
-          <td>${c.headroom_pct != null ? c.headroom_pct.toFixed(0) + '%' : '—'}</td>
-          <td>${c.time_to_saturation_ms != null ? c.time_to_saturation_ms.toFixed(1) : '—'}</td>
-          <td>${statusBadge}</td>
-        </tr>`;
-        if (c.issues.length > 0) {
-          html += `<tr class="${rowClass}"><td colspan="9" style="padding-left:24px;font-size:11px;color:#b71c1c">
-            ${c.issues.map(escHtml).join('<br>')}
-          </td></tr>`;
-        }
-      }
-      html += '</tbody></table>';
-    }
-
-    // ── PT burden / accuracy-class adequacy table ──
-    if (ptChecks.length > 0) {
-      html += `<h4 style="margin:12px 0 4px">PT Adequacy (burden, voltage, voltage factor)</h4>
-      <table class="af-table">
-        <thead><tr>
-          <th>PT</th><th>Bus</th><th>Ratio</th><th>Class</th>
-          <th>Rated (VA)</th><th>Connected (VA)</th><th>Loading</th>
-          <th title="Service voltage as % of the rated primary (IEC 61869-3: 80–120%)">V / Vr</th>
-          <th title="Earth fault factor at the bus (IEC 61869-1; ≤ 1.4 = effectively earthed)">k</th>
-          <th title="Voltage factor required (k × V/Vr) vs the declared rated voltage factor (IEC 61869-3 Table 303)">Vf req / rated</th>
-          <th>Status</th>
-        </tr></thead><tbody>`;
-      for (const c of ptChecks) {
-        const rowClass = c.status === 'fail' ? 'af-danger' : c.status === 'warning' ? 'af-medium' : 'af-low';
-        const statusBadge = c.status === 'pass' ? '<span style="color:#4caf50;font-weight:600">PASS</span>'
-          : c.status === 'warning' ? '<span style="color:#f57c00;font-weight:600">WARN</span>'
-          : '<span style="color:#d32f2f;font-weight:600">FAIL</span>';
-        html += `<tr class="${rowClass}" data-device-id="${escHtml(c.device_id)}" style="cursor:pointer">
-          <td>${escHtml(c.device_name)}</td>
-          <td>${escHtml(c.location_bus)}</td>
-          <td>${escHtml(String(c.ratio))}</td>
-          <td>${escHtml(String(c.accuracy_class))}</td>
-          <td>${c.rated_burden_va != null ? c.rated_burden_va.toFixed(1) : '—'}</td>
-          <td>${c.connected_burden_va != null ? c.connected_burden_va.toFixed(1) : '—'}</td>
-          <td>${c.loading_pct != null ? c.loading_pct.toFixed(0) + '%' : '—'}</td>
-          <td>${c.service_voltage_pct != null ? c.service_voltage_pct.toFixed(0) + '%' : '—'}</td>
-          <td>${c.earth_fault_factor != null ? c.earth_fault_factor.toFixed(2) : '—'}</td>
-          <td>${c.required_voltage_factor != null ? c.required_voltage_factor.toFixed(2) : '—'} / ${c.voltage_factor ? escHtml(String(c.voltage_factor)) : '—'}</td>
-          <td>${statusBadge}</td>
-        </tr>`;
-        if (c.issues.length > 0) {
-          html += `<tr class="${rowClass}"><td colspan="11" style="padding-left:24px;font-size:11px;color:#b71c1c">
-            ${c.issues.join('<br>')}
-          </td></tr>`;
-        }
-      }
-      html += '</tbody></table>';
-    }
-
-    body.innerHTML = html;
-    modal.style.display = '';
-
-    // Click-to-highlight device on SLD
-    body.querySelectorAll('tr[data-device-id]').forEach(row => {
-      row.addEventListener('click', () => {
-        const did = row.dataset.deviceId;
-        AppState.selectedIds.clear();
-        AppState.selectedIds.add(did);
-        Canvas.render();
-      });
-    });
   }
 
   // ── Backup Autonomy (grid outage) ──
@@ -3609,73 +3278,6 @@ document.addEventListener('DOMContentLoaded', () => {
     return '';
   }
 
-  function showArcFlashResults(result) {
-    const modal = document.getElementById('arcflash-modal');
-    const body = document.getElementById('arcflash-body');
-    if (!modal || !body) return;
-
-    const buses = result.buses || {};
-    const entries = Object.values(buses).sort((a, b) => b.incident_energy_cal - a.incident_energy_cal);
-
-    const title = document.getElementById('arcflash-modal')?.querySelector('h3');
-    if (title) title.textContent = `Arc Flash Analysis — ${result.method || 'IEEE 1584'}`;
-
-    if (entries.length === 0) {
-      body.innerHTML = '<p>No buses found for arc flash analysis.</p>';
-      modal.style.display = '';
-      return;
-    }
-
-    let html = '';
-    if (result.warnings && result.warnings.length > 0) {
-      html += '<div class="af-warnings">';
-      for (const w of result.warnings) {
-        html += `<div class="af-warning-item">⚠ ${escHtml(w)}</div>`;
-      }
-      html += '</div>';
-    }
-
-    html += `<table class="af-table">
-      <thead><tr>
-        <th>Bus</th><th>Voltage</th><th>Bolted Fault</th><th>Arcing Current</th>
-        <th>Incident Energy</th><th>AFB</th><th>Clearing Time</th>
-        <th>PPE Cat.</th><th>PPE</th><th>Method</th>
-      </tr></thead><tbody>`;
-
-    for (const b of entries) {
-      const ppeClass = (b.ppe_category >= 4 || b.ppe_category === -1) ? 'af-danger' : b.ppe_category >= 3 ? 'af-high' : b.ppe_category >= 2 ? 'af-medium' : 'af-low';
-      const hasRecs = b.recommendations && b.recommendations.length > 0;
-      html += `<tr class="${ppeClass}">
-        <td>${escHtml(b.bus_name || b.bus_id)}</td>
-        <td>${b.voltage_kv.toFixed(3)} kV</td>
-        <td>${b.bolted_fault_ka.toFixed(2)} kA</td>
-        <td>${b.arcing_current_ka.toFixed(2)} kA</td>
-        <td><strong>${b.incident_energy_cal.toFixed(2)}</strong> cal/cm²</td>
-        <td>${(b.arc_flash_boundary_mm / 1000).toFixed(2)} m</td>
-        <td>${(b.clearing_time_s * 1000).toFixed(0)} ms</td>
-        <td><span class="af-ppe-badge">${b.ppe_category === -1 ? 'DANGER' : b.ppe_category}</span></td>
-        <td>${b.ppe_name}</td>
-        <td>${escHtml((b.method || '—').replace('IEEE 1584-', ''))}</td>
-      </tr>`;
-      if (hasRecs) {
-        html += `<tr class="${ppeClass} af-rec-row">
-          <td colspan="10">
-            <details class="af-rec-details">
-              <summary>Recommendations to reduce PPE category (${b.recommendations.length})</summary>
-              <ul class="af-rec-list">
-                ${b.recommendations.map(r => `<li>${r}</li>`).join('')}
-              </ul>
-            </details>
-          </td>
-        </tr>`;
-      }
-    }
-    html += '</tbody></table>';
-
-    body.innerHTML = html;
-    modal.style.display = '';
-  }
-
   function showDCArcFlashResults(result) {
     const modal = document.getElementById('dc-arcflash-modal');
     const body = document.getElementById('dc-arcflash-body');
@@ -3866,12 +3468,6 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('compliance-modal').style.display = 'none';
   });
 
-  document.getElementById('btn-close-arcflash').addEventListener('click', () => {
-    document.getElementById('arcflash-modal').style.display = 'none';
-  });
-  document.getElementById('arcflash-modal').addEventListener('click', (e) => {
-    if (e.target.id === 'arcflash-modal') e.target.style.display = 'none';
-  });
 
   document.getElementById('btn-close-dc-arcflash').addEventListener('click', () => {
     document.getElementById('dc-arcflash-modal').style.display = 'none';
@@ -3894,12 +3490,6 @@ document.addEventListener('DOMContentLoaded', () => {
     if (e.target.id === 'dc-shortcircuit-modal') e.target.style.display = 'none';
   });
 
-  document.getElementById('btn-close-cable-sizing').addEventListener('click', () => {
-    document.getElementById('cable-sizing-modal').style.display = 'none';
-  });
-  document.getElementById('cable-sizing-modal').addEventListener('click', (e) => {
-    if (e.target.id === 'cable-sizing-modal') e.target.style.display = 'none';
-  });
 
   document.getElementById('btn-close-motor-starting').addEventListener('click', () => {
     document.getElementById('motor-starting-modal').style.display = 'none';
@@ -3917,12 +3507,6 @@ document.addEventListener('DOMContentLoaded', () => {
     if (e.target.id === 'motor-starting-modal') e.target.style.display = 'none';
   });
 
-  document.getElementById('btn-close-duty-check').addEventListener('click', () => {
-    document.getElementById('duty-check-modal').style.display = 'none';
-  });
-  document.getElementById('duty-check-modal').addEventListener('click', (e) => {
-    if (e.target.id === 'duty-check-modal') e.target.style.display = 'none';
-  });
 
   document.getElementById('btn-close-fault-ansi').addEventListener('click', () => {
     document.getElementById('fault-ansi-modal').style.display = 'none';

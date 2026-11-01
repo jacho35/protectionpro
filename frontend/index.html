@@ -15,6 +15,7 @@
   <link rel="stylesheet" href="css/rates.css?v=3.5.274">
   <link rel="stylesheet" href="css/plan.css?v=2.584">
   <link rel="stylesheet" href="css/drawingset.css?v=1.542b">
+  <link rel="stylesheet" href="css/resultspanel.css?v=2.589">
   <link rel="stylesheet" href="css/mobile.css?v=2.588">
   <link rel="stylesheet" href="css/interlocking.css?v=3.5.274">
   <link rel="stylesheet" href="css/schedules.css?v=2.587">
@@ -1127,20 +1128,6 @@
     </div>
   </div>
 
-  <!-- Arc Flash Results Modal -->
-  <div id="arcflash-modal" class="modal" role="dialog" aria-modal="true" aria-label="Arc Flash Results" style="display:none">
-    <div class="modal-content modal-wide">
-      <div class="modal-header">
-        <h3>Arc Flash Analysis — IEEE 1584-2002</h3>
-        <button class="modal-close" id="btn-close-arcflash">&times;</button>
-      </div>
-      <div class="modal-body">
-        <div id="arcflash-body">
-          <!-- Populated by JS -->
-        </div>
-      </div>
-    </div>
-  </div>
 
   <!-- DC Arc Flash Results Modal -->
   <div id="dc-arcflash-modal" class="modal" role="dialog" aria-modal="true" aria-label="DC Arc Flash Results" style="display:none">
@@ -1187,20 +1174,6 @@
     </div>
   </div>
 
-  <!-- Cable Sizing Results Modal -->
-  <div id="cable-sizing-modal" class="modal" role="dialog" aria-modal="true" aria-label="Cable Sizing Results" style="display:none">
-    <div class="modal-content modal-wide">
-      <div class="modal-header">
-        <h3>Cable Sizing Analysis</h3>
-        <button class="modal-close" id="btn-close-cable-sizing">&times;</button>
-      </div>
-      <div class="modal-body">
-        <div id="cable-sizing-body">
-          <!-- Populated by JS -->
-        </div>
-      </div>
-    </div>
-  </div>
 
   <!-- Motor Starting Results Modal -->
   <div id="motor-starting-modal" class="modal" role="dialog" aria-modal="true" aria-label="Motor Starting Results" style="display:none">
@@ -1635,20 +1608,6 @@
     </div>
   </div>
 
-  <!-- Equipment Duty Check Results Modal -->
-  <div id="duty-check-modal" class="modal" role="dialog" aria-modal="true" aria-label="Equipment Duty Check Results" style="display:none">
-    <div class="modal-content modal-wide">
-      <div class="modal-header">
-        <h3>Equipment Duty Check</h3>
-        <button class="modal-close" id="btn-close-duty-check">&times;</button>
-      </div>
-      <div class="modal-body">
-        <div id="duty-check-body">
-          <!-- Populated by JS -->
-        </div>
-      </div>
-    </div>
-  </div>
 
   <!-- ANSI/IEEE C37.010 Fault Duty Results Modal -->
   <div id="fault-ansi-modal" class="modal" role="dialog" aria-modal="true" aria-label="ANSI Fault Duty Results" style="display:none">
@@ -3363,7 +3322,7 @@
   <script src="js/lib/xlsx.full.min.js?v=3.5.274"></script>
   <script src="js/lib/pdf.min.js?v=3.5.274"></script>
   <script src="js/iec-60364-data.js?v=3.5.274"></script>
-  <script src="js/constants.js?v=2.588"></script>
+  <script src="js/constants.js?v=2.589"></script>
   <script src="js/vendor-trip-units.js?v=1.0"></script>
   <script src="js/vendor-trip-units-abb.js?v=1.0"></script>
   <script src="js/vendor-trip-units-abb-xt.js?v=3.5.536"></script>
@@ -3404,7 +3363,8 @@
   <script src="js/tripunit.js?v=2.581"></script>
   <script src="js/annotations.js?v=2.588"></script>
   <script src="js/stale-results.js?v=2.581"></script>
-  <script src="js/resultview.js?v=2.588"></script>
+  <script src="js/resultview.js?v=2.589"></script>
+  <script src="js/resultspanel.js?v=2.589"></script>
   <script src="js/sync.js?v=2.587"></script>
   <script src="js/links.js?v=2.587"></script>
   <script src="js/cablefocus.js?v=3.5.274"></script>
@@ -3475,7 +3435,7 @@
   <script src="js/roadlight-report.js?v=3.5.274"></script>
   <script src="js/sl-diagram.js?v=3.5.274"></script>
   <script src="js/workspaces.js?v=3.5.525"></script>
-  <script src="js/header.js?v=2.588"></script>
+  <script src="js/header.js?v=2.589"></script>
   <script src="js/lightning.js?v=3.5.274"></script>
   <script src="js/earthgrid.js?v=3.5.274"></script>
   <script src="js/rates.js?v=3.5.274"></script>
@@ -3531,8 +3491,8 @@
   <script src="js/help-cables.js?v=3.5.274"></script>
   <script src="js/help-design.js?v=2.586"></script>
   <script src="js/help-workflow.js?v=2.587"></script>
-  <script src="js/help-guides.js?v=2.588"></script>
-  <script src="js/app.js?v=2.588"></script>
+  <script src="js/help-guides.js?v=2.589"></script>
+  <script src="js/app.js?v=2.589"></script>
   <script src="js/mobile.js?v=2.588"></script>
 </body>
 </html>

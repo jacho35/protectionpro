@@ -80,6 +80,8 @@ jobs:
         run: node frontend/tests/test_links.mjs
       - name: Results view switch (study chips, dots, Values)
         run: node frontend/tests/test_result_view.mjs
+      - name: Results panel (tabs, row status, sorting, filters, dock)
+        run: node frontend/tests/test_results_panel.mjs
 
       - name: Raw HTML interpolation ratchet (new unescaped attribute values fail)
         run: node testing/lint/raw-interp.mjs --max 0
