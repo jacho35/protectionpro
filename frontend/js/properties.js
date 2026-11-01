@@ -95,7 +95,15 @@ const Properties = {
     // UX-5: surface plan↔SLD linkage in the properties panel (the canvas also
     // shows a 🔗 badge). Boards/switchboard sections carry planLink; cables
     // reflected from plan feeders carry swLink.
-    if (comp.planLink || comp.swLink) {
+    // Every link this part has (Links): a mark per linked item, each going
+    // there with Back.
+    const linked = typeof Links !== 'undefined' ? Links.of('sld:' + comp.id).filter(l => !l.to.startsWith('sld:')) : [];
+    if (linked.length) {
+      const seen = new Set();
+      const marks = linked.filter(l => !seen.has(l.to) && seen.add(l.to)).slice(0, 4)
+        .map(l => Links.markHtml(l.to, 'sld:' + comp.id, `${Links.name(l.to)} in ${Links.where(l.to)} ›`, 'prop-link-mark')).join('');
+      html += `<div class="prop-linked-note">🔗 Linked to ${marks}</div>`;
+    } else if (comp.planLink || comp.swLink) {
       html += `<div class="prop-linked-note">🔗 Linked to the distribution plan</div>`;
     }
 

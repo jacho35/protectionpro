@@ -1600,7 +1600,7 @@ Magnetic trip: If ${row.ief_a >= row.ia_a ? '≥' : '<'} Ia  →  disconnection 
       const why = F ? F.lockReason(c, k) : '';
       return why ? ` disabled title="${escHtml(why)}"` : '';
     };
-    const sldTag = (c, k) => F ? F.cellTag(c, k) : '';
+    const sldTag = (c, k) => F ? F.cellTag(c, k, comp) : '';
     const subLink = (c) => {
       const sub = c.type === 'feeder_db' && c.feedsDbId ? AppState.components.get(c.feedsDbId) : null;
       return sub ? `<button type="button" class="db-sub-open" data-open-board="${escHtml(sub.id)}" title="Open the ${escHtml(sub.props.name || sub.id)} schedule">→ ${escHtml(sub.props.name || sub.id)}</button>` : '';

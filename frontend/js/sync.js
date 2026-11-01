@@ -195,6 +195,7 @@ const Sync = {
       match: (comp, key) => comp.type === 'cable' && key === 'length_km' && (comp.planLink || comp.riserLink),
       key: (comp) => 'len:' + comp.id,
       label: 'plan',
+      owner: (comp) => 'plan:' + (comp.planLink || comp.riserLink),
       show: (v) => (v == null || v === '' ? '—' : `${(+v * 1000).toFixed(1).replace(/\.0$/, '')} m`),
     },
     {
@@ -202,6 +203,7 @@ const Sync = {
       match: (comp, key) => comp.type === 'static_load' && key === 'rated_kva' && comp.reticMinisubId && comp.reticRole === 'load',
       key: (comp) => 'kva:' + comp.reticMinisubId,
       label: 'Demand',
+      owner: (comp) => 'retic:' + comp.reticMinisubId,
       show: (v) => (v == null || v === '' ? '—' : `${(+v).toFixed(1).replace(/\.0$/, '')} kVA`),
     },
   ],
@@ -222,8 +224,13 @@ const Sync = {
     const o = this._owned(comp, key);
     if (!o || AppState.keepInSync === false) return '';
     const ov = this.override(o.key(comp));
-    if (!ov) return `<span class="prop-sync-flag" title="Measured on the ${escHtml(o.label)}: it follows the drawing. Type a value to keep your own.">from ${escHtml(o.label)}</span>`;
-    return `<span class="prop-sync-flag prop-sync-flag--typed" title="Typed here — the ${escHtml(o.label)} measures ${escHtml(o.show(ov.src))}. Reset to follow the ${escHtml(o.label)} again.">typed · ${escHtml(o.label)} ${escHtml(o.show(ov.src))}</span>`
+    // The note is a link mark: it goes to the owner (Links), with Back.
+    const to = o.owner ? o.owner(comp) : null;
+    const mark = (text, cls, tip) => (to && typeof Links !== 'undefined')
+      ? Links.markHtml(to, 'sld:' + comp.id, text, cls)
+      : `<span class="${escHtml(cls)}" title="${escHtml(tip)}">${escHtml(text)}</span>`;
+    if (!ov) return mark(`from ${o.label}`, 'prop-sync-flag', `Set by the ${o.label}: it follows it. Type a value to keep your own.`);
+    return mark(`typed · ${o.label} ${o.show(ov.src)}`, 'prop-sync-flag prop-sync-flag--typed', `Typed here — the ${o.label} gives ${o.show(ov.src)}. Reset to follow it again.`)
       + `<button type="button" class="prop-sync-reset" data-sync-reset="${escHtml(o.key(comp))}" title="Follow the ${escHtml(o.label)} again">Reset</button>`;
   },
 

@@ -76,6 +76,8 @@ jobs:
         run: node frontend/tests/test_sl_sync.mjs
       - name: Demand → single line kept in sync (background ADMD, loads, transformer, deletions)
         run: node frontend/tests/test_demand_sld.mjs
+      - name: Links (one table of every link between workspaces, link marks)
+        run: node frontend/tests/test_links.mjs
 
       - name: Raw HTML interpolation ratchet (new unescaped attribute values fail)
         run: node testing/lint/raw-interp.mjs --max 0

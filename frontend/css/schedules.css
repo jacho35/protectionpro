@@ -957,7 +957,9 @@ body.dark-mode .bks-other { background: #433210; color: #ffd98a; }
   display: inline-flex; align-items: center; margin-left: 4px; padding: 0 4px; height: 16px;
   border-radius: 3px; font-size: 10px; font-weight: 600; vertical-align: middle; cursor: help;
   background: color-mix(in srgb, #14b8a6 18%, var(--bg-primary)); color: #0f8f82;
+  border: none; font-family: inherit;
 }
+button.db-sld-tag { cursor: pointer; }
 body.dark-mode .db-sld-tag { color: #5fd4c6; }
 .db-schedule-grid td.db-desc-feeder { display: flex; align-items: center; gap: 6px; }
 .db-sub-open, .sch-fed-from {
