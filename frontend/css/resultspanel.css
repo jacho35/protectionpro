@@ -127,6 +127,25 @@ body.dark-mode .rp-note-fail { color: #ff8a80; }
 .rp-sub { color: var(--text-muted); font-size: 10.5px; }
 .rp-empty { color: var(--text-muted); margin: 4px 0 8px; }
 
+/* Opened row: a study's own detail (dips, contributions, circuits, grid plan) */
+.rp-more { margin: 0 0 6px; overflow-x: auto; }
+.rp-mini { border-collapse: collapse; font-size: 11.5px; margin: 2px 0 4px; }
+.rp-mini th, .rp-mini td { padding: 2px 8px 2px 0; border-bottom: 1px solid var(--border-color); text-align: left; white-space: nowrap; }
+.rp-mini .rp-num { text-align: right; font-variant-numeric: tabular-nums; }
+.rp-kv { display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 2px 0 6px; }
+.rp-text { margin: 2px 0 6px; line-height: 1.45; white-space: normal; }
+.rp-grid-svg { display: block; max-width: 100%; color: var(--text-secondary); background: var(--bg-primary); border-radius: 4px; margin: 4px 0; }
+.rp-html { margin-bottom: 4px; }
+.rp-foot { color: var(--text-muted); font-size: 11px; line-height: 1.45; margin: 12px 0 0; }
+.rp-note-info { background: rgba(37, 99, 235, .08); color: var(--text-secondary); }
+/* A study shown with its own view (charts, cases): it scrolls with the panel */
+.rp-sec-view { margin-top: 4px; }
+.rp-view { overflow-x: auto; }
+.rp-view svg { max-width: 100%; height: auto; }
+.rp-body.rp-is-stale .rp-view { opacity: .6; }
+/* The same content in the phone's Results sheet */
+.rp.rp-sheet { position: static; display: block; background: none; }
+
 /* The strip's Table button */
 .rv-chip.rv-table { font-weight: 600; }
 
@@ -135,3 +154,4 @@ body.dark-mode .rp-note-fail { color: #ff8a80; }
   #canvas-container { --rp-right: 0px !important; --rp-bottom: 0px !important; }
   #canvas-container .rv-strip { left: 10px; }
 }
+.mobile-chip .rv-dot { margin-right: 6px; }

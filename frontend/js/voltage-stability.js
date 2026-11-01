@@ -106,13 +106,11 @@ const VoltageStability = {
   },
 
   // ── Results ────────────────────────────────────────────────────────
+  // The results open on this study's tab of the results panel, which draws
+  // them with _render.
   show(result) {
     this._result = result;
-    const modal = document.getElementById('vstab-modal');
-    const body = document.getElementById('vstab-body');
-    if (!modal || !body) return;
-    this._render(body);
-    modal.style.display = '';
+    ResultsPanel.show('vstab', result);
   },
 
   _render(body) {

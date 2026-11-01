@@ -78,11 +78,14 @@ Gotchas that cost time — do it this way:
 - **Reading analysis results**: each study stores on its OWN AppState field
   (`loadFlowResults`, `faultResults`, `arcFlashResults`, …) — `AppState.analysisResults`
   does not exist at runtime despite CLAUDE.md's summary.
-- **Results panel, not dialogs**: load flow (when it has something to flag), arc
-  flash, cable sizing and the duty check open the docked results panel
-  (`#results-panel`, `ResultsPanel` in resultspanel.js) instead of a modal; it
-  remembers open / dock in localStorage `pp-results-panel`. Other studies still
-  open modals — hide open ones
+- **Results panel, not dialogs**: every study opens its results on a tab of the
+  docked results panel (`#results-panel`, `ResultsPanel` in resultspanel.js) —
+  load flow / unbalanced LF only when they have something to flag, a fault run
+  never. Wait for `ResultsPanel.tab === '<key>'` (keys in `ResultsPanel.TABS`);
+  read a study's result with `ResultsPanel.result(key)` (session-only studies
+  such as contingency or harmonics are not on AppState). It remembers open / dock
+  in localStorage `pp-results-panel`. Setup dialogs and the validation dialog are
+  still modals — hide open ones
   (`document.querySelectorAll('.modal').forEach(m => m.style.display = 'none')`)
   before driving the next menu action. The study chips over the diagram are
   `#result-view` (`ResultView`).

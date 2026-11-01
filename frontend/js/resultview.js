@@ -115,8 +115,10 @@ const ResultView = {
         return v;
       }
       case 'fault':
-      case 'dcShortCircuit':
         return 'info';
+      case 'dcShortCircuit':
+        // Levels only, unless a DC bus has no source reaching it.
+        return Object.values(r.buses || {}).some(b => !(b.contributions || []).length) ? 'warn' : 'info';
       case 'arcflash':
         // Above 40 cal/cm² no PPE category applies; Cat 3–4 is heavy PPE.
         return this._worst(Object.values(r.buses || {}), b =>
@@ -130,11 +132,17 @@ const ResultView = {
         return this._worst((r.motors || []).filter(m => m.status !== 'not_simulated'), m => this._status(m));
       case 'grounding':
         return this._worst(Object.values(r.buses || {}), b => this._status(b));
-      case 'loadDiversity':
-        return 'info';
+      case 'loadDiversity': {
+        // Demand figures are information; a transformer loaded beyond its rating is not.
+        const t = r.transformers || [];
+        return t.length ? this._worst(t, x => this._status(x)) : 'info';
+      }
       case 'dcLoadflow': {
         if (r.converged === false) return 'fail';
-        return this._worst(r.branches, b => (b.loading_pct || 0) > 100 ? 'fail' : ((b.loading_pct || 0) > 90 ? 'warn' : 'ok'));
+        const v = this._worst(r.branches, b => (b.loading_pct || 0) > 100 ? 'fail' : ((b.loading_pct || 0) > 90 ? 'warn' : 'ok'));
+        if (v !== 'ok') return v;
+        // A bus with no source, or more than 5 % from its nominal voltage.
+        return this._worst(Object.values(r.buses || {}), b => b.energized === false || Math.abs(b.drop_pct || 0) > 5 ? 'warn' : 'ok');
       }
       case 'retic': {
         let v = 'ok';

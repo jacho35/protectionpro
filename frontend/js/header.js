@@ -13,36 +13,27 @@
  */
 
 const Header = {
-  // Results menu → "Open results": the result window of each study that has
-  // results (which boxes show on the diagram is the results view switch over
-  // the canvas, resultview.js). Box-key prefix handed to AppActions.openResultBox.
-  OPEN_PREFIX: {
-    loadflow: 'lf', unbalancedLF: 'ulf', fault: 'fault', arcflash: 'af', cable: 'cs',
-    duty: 'dc', motor: 'ms', dynMotor: 'dynms', loadDiversity: 'ld', grounding: 'gr',
-    dcLoadflow: 'dclf', dcShortCircuit: 'dcsc',
-  },
-
-  // ── Results menu ───────────────────────────────────────────────────
+  // Results menu → "Open results": every study with results opens on its tab
+  // of the results panel (which boxes show on the diagram is the results view
+  // switch over the canvas, resultview.js).
   _openHtml: null,
   syncResultsMenu() {
     const list = document.getElementById('results-open-list');
-    if (!list || typeof ResultView === 'undefined') return;
-    const studies = ResultView.available().filter(s => this.OPEN_PREFIX[s.key]);
-    const html = studies.map(s => `<button type="button" class="dropdown-item" id="btn-open-results-${escHtml(s.key)}" data-open-results="${escHtml(s.key)}" title="Open the ${escHtml(s.label.toLowerCase())} results">`
-      + `<span class="rv-dot rv-${ResultView.verdict(s.key)}" aria-hidden="true"></span>${escHtml(s.label)}</button>`).join('');
+    if (!list || typeof ResultsPanel === 'undefined') return;
+    const keys = ResultsPanel.available();
+    const html = keys.map(k => {
+      const label = ResultsPanel.LABELS[k];
+      return `<button type="button" class="dropdown-item" id="btn-open-results-${escHtml(k)}" data-open-results="${escHtml(k)}" title="Open the ${escHtml(label.toLowerCase())} results">`
+        + `<span class="rv-dot rv-${ResultsPanel.verdict(k)}" aria-hidden="true"></span>${escHtml(label)}</button>`;
+    }).join('');
     if (html !== this._openHtml) {
       list.innerHTML = html;
       this._openHtml = html;
     }
     const note = document.getElementById('results-none-note');
-    if (note) note.hidden = studies.length > 0;
+    if (note) note.hidden = keys.length > 0;
   },
-  _openResults(key) {
-    if (typeof ResultsPanel !== 'undefined' && ResultsPanel.TABS.includes(key)) { ResultsPanel.open(key); return; }
-    let prefix = this.OPEN_PREFIX[key];
-    if (key === 'arcflash' && !AppState.arcFlashResults) prefix = 'dcaf';
-    window.AppActions?.openResultBox?.(prefix + ':');
-  },
+  _openResults(key) { ResultsPanel.open(key); },
 
   // ── Command search ─────────────────────────────────────────────────
   _index() {

@@ -33,7 +33,7 @@ const MobileUI = {
   activeSheet: null,
   toastTimer: null,
   _studyGroup: '',        // '' = all groups
-  _resultSlot: null,      // result slot shown in the Results sheet
+  _resultKey: null,       // study (results panel tab) shown in the Results sheet
   _studyItem: null,       // study open in the setup sheet
   _menuEls: [],           // elements behind the More sheet's rows
   _syncQueued: false,
@@ -106,7 +106,7 @@ const MobileUI = {
     this.updateSelectionBar();
     this.updateModeButtons();
     const dot = document.getElementById('mobile-results-dot');
-    if (dot) dot.hidden = !this._slotsWithResults().length;
+    if (dot) dot.hidden = !(typeof ResultsPanel !== 'undefined' ? ResultsPanel.available().length : this._slotsWithResults().length);
     const n = (AppState.pages || []).length;
     const badge = document.getElementById('fab-pages-count');
     if (badge) { badge.hidden = n < 2; badge.textContent = String(n); }
@@ -874,8 +874,11 @@ const MobileUI = {
     const head = document.getElementById('mobile-results-head');
     const body = document.getElementById('mobile-results-content');
     if (!head || !body) return;
-    const slots = this._slotsWithResults();
-    if (!slots.length) {
+    // The studies of the results panel (resultspanel.js); load flow, short
+    // circuit and arc flash keep their cards, the rest show the panel's tables
+    // or the study's own view.
+    const keys = ResultsPanel.available();
+    if (!keys.length) {
       head.innerHTML = '';
       body.innerHTML = `<div class="mobile-empty">
         <p>No study results yet.</p>
@@ -885,29 +888,27 @@ const MobileUI = {
       };
       return;
     }
-    if (!slots.includes(this._resultSlot)) this._resultSlot = slots[0];
-    const slot = this._resultSlot;
+    if (!keys.includes(this._resultKey)) this._resultKey = keys[0];
+    const key = this._resultKey;
     // The study's chip in the results view switch (resultview.js).
-    const tog = typeof ResultView !== 'undefined' ? ResultView.studyForSlot(slot) : null;
+    const tog = typeof ResultView !== 'undefined' ? ResultView.study(key) : null;
     const on = tog && ResultView.isOn(tog.key);
-    head.innerHTML = `<div class="mobile-chips" role="group" aria-label="Studies with results">${slots.map(s =>
-      `<button class="mobile-chip${s === slot ? ' active' : ''}" data-slot="${s}" aria-pressed="${s === slot}">${escHtml(RESULT_SLOT_LABELS[s] || s)}</button>`).join('')}</div>
+    head.innerHTML = `<div class="mobile-chips" role="group" aria-label="Studies with results">${keys.map(k =>
+      `<button class="mobile-chip${k === key ? ' active' : ''}" data-key="${escHtml(k)}" aria-pressed="${k === key}"><span class="rv-dot rv-${ResultsPanel.verdict(k)}" aria-hidden="true"></span>${escHtml(ResultsPanel.LABELS[k])}</button>`).join('')}</div>
       ${tog ? `<label class="mopt mopt-switch mresults-toggle"><span class="mopt-label">Show on diagram</span>
         <input type="checkbox" class="mobile-switch" data-show-boxes${on ? ' checked' : ''}></label>` : ''}`;
     head.onclick = (e) => {
-      const chip = e.target.closest('[data-slot]');
-      if (chip) { this._resultSlot = chip.dataset.slot; this.renderResults(); }
+      const chip = e.target.closest('[data-key]');
+      if (chip) { this._resultKey = chip.dataset.key; ResultsPanel.openRow = null; this.renderResults(); }
     };
     head.onchange = (e) => {
       if (e.target.matches('[data-show-boxes]')) ResultView.toggle(tog.key);
     };
 
-    const r = AppState[slot];
     let html = '';
-    if (slot === 'faultResults' || slot === 'faultResultsMin') html = this._faultCards(r);
-    else if (slot === 'loadFlowResults') html = this._loadFlowCards(r);
-    else if (slot === 'arcFlashResults') html = this._arcFlashCards(r);
-    else html = this._genericResult(slot);
+    const cards = { fault: () => this._faultCards(AppState.faultResults), loadflow: () => this._loadFlowCards(AppState.loadFlowResults),
+      arcflash: () => AppState.arcFlashResults ? this._arcFlashCards(AppState.arcFlashResults) : '<div class="mres-panel" data-panel-body></div>' }[key];
+    html = cards ? cards() : '<div class="mres-panel" data-panel-body></div>';
     html += `<div class="mresults-actions">
         <button class="mobile-secondary-btn" data-click="btn-export-pdf">${mIcon('export')} PDF report</button>
         <button class="mobile-secondary-btn" data-click="btn-export-csv">${mIcon('export')} CSV</button>
@@ -916,9 +917,12 @@ const MobileUI = {
         <button class="mm-link" data-reset-boxes>Reset result box positions</button>
       </div>`;
     body.innerHTML = html;
+    const panelBody = body.querySelector('[data-panel-body]');
+    if (panelBody) ResultsPanel.renderInto(panelBody, key);
     body.onclick = (e) => {
       const loc = e.target.closest('[data-locate]');
       if (loc) { this.locate(loc.dataset.locate); return; }
+      if (panelBody && panelBody.contains(e.target) && ResultsPanel.onSheetClick(e, key)) { this.renderResults(); return; }
       const run = e.target.closest('[data-run]');
       if (run) {
         const item = this._studyIndex().find(s => s.id === run.dataset.run);
@@ -992,14 +996,6 @@ const MobileUI = {
     ])).join('');
   },
 
-  _genericResult(slot) {
-    const label = RESULT_SLOT_LABELS[slot] || slot;
-    const run = Object.keys(this.STUDY_SLOTS).find(id => this.STUDY_SLOTS[id] === slot);
-    return `<div class="mobile-empty">
-      <p>${escHtml(label)} results are drawn on the diagram as result boxes. Run the study again to open its full results window.</p>
-      ${run ? `<button class="mobile-primary-btn" data-run="${run}">${mIcon('bolt', 20)} Run ${escHtml(label)}</button>` : ''}
-    </div>`;
-  },
 
   // Close the sheet and bring a component into view on the diagram.
   locate(id) {

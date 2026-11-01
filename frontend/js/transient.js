@@ -449,19 +449,16 @@ const Transient = {
   },
 
   // ── Results ────────────────────────────────────────────────────────
+  // The results open on this study's tab of the results panel (drawn by _render).
   show(result) {
     this._result = result;
-    const modal = document.getElementById('stability-modal');
-    const body = document.getElementById('stability-body');
-    if (!modal || !body) return;
-    this._render(body);
-    modal.style.display = '';
+    ResultsPanel.open('stability');
   },
 
   _render(body) {
     const r = this._result || {};
     const warnings = r.warnings || [];
-    let html = AppState.staleBannerHTML('stabilityResults');
+    let html = '';   // out of date: said by the results panel
     if (warnings.length) {
       html += '<div class="af-warnings">' + warnings.map(w =>
         `<div class="af-warning-item">⚠ ${this._esc(w)}</div>`).join('') + '</div>';

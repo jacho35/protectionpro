@@ -30,14 +30,11 @@ const DynMotor = {
     };
   },
 
+  // The results open on this study's tab of the results panel (drawn by _render).
   show(result) {
     this._result = result;
     this._activeIdx = 0;
-    const modal = document.getElementById('dynamic-motor-modal');
-    const body = document.getElementById('dynamic-motor-body');
-    if (!modal || !body) return;
-    this._render(body);
-    modal.style.display = '';
+    ResultsPanel.open('dynMotor');
   },
 
   _esc(s) {
@@ -258,7 +255,7 @@ const DynMotor = {
   _render(body) {
     const motors = (this._result && this._result.motors) || [];
     const warnings = (this._result && this._result.warnings) || [];
-    let html = AppState.staleBannerHTML('dynamicMotorResults');
+    let html = '';   // out of date: said by the results panel
 
     if (warnings.length) {
       html += '<div class="af-warnings">' + warnings.map(w =>
