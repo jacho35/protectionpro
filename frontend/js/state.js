@@ -38,6 +38,8 @@ const AppState = {
   projectName: 'Untitled Project',
   symbolSet: 'iec',         // SLD symbol set — see reset()
   cascading: true,           // credit tested back-up combinations — see reset()
+  keepInSync: true,          // the sync pass keeps every workspace current (sync.js) — see reset()
+  syncOverrides: {},         // values typed where another workspace owns them (sync.js)
   dirty: false,
 
   // Project details for report covers
@@ -1336,6 +1338,10 @@ const AppState = {
     this.tccFaultOpts = null;      // fault-level display options (kinds, scope, extra buses)
     this.harmonicsLimits = null;   // harmonics limit basis: null/'ieee519' (IEEE 519-2014) or 'iec'
     this.cascading = true;         // breaking-capacity checks credit tested back-up combinations (cascading.js)
+    // Keep workspaces in sync (sync.js): on for a new project.
+    this.keepInSync = true;
+    this.syncOverrides = {};
+    this._syncAdoptPending = false;
     // Bill-of-quantities rate library — only the entries the user has set
     // (rates.js builds the catalogue of item keys itself).
     this.rateLibrary = null;
@@ -1604,6 +1610,10 @@ const AppState = {
       tccFaultOpts: this.tccFaultOpts || undefined,
       harmonicsLimits: this.harmonicsLimits === 'iec' ? 'iec' : undefined,
       cascading: this.cascading === false ? false : undefined,
+      // Always written, so a project saved from now on is never taken for one
+      // saved before the sync pass (which opens with an adopt pass).
+      keepInSync: this.keepInSync !== false,
+      syncOverrides: (this.syncOverrides && Object.keys(this.syncOverrides).length) ? this.syncOverrides : undefined,
       // Pre-assessments field (the active assessment's inputs), still written
       // so an older build of the app opens the project with its inputs.
       lightningRisk: (() => {
@@ -1963,6 +1973,20 @@ const AppState = {
     this.tccFaultOpts = (data.tccFaultOpts && typeof data.tccFaultOpts === 'object') ? data.tccFaultOpts : null;
     this.harmonicsLimits = data.harmonicsLimits === 'iec' ? 'iec' : null;
     this.cascading = data.cascading !== false;
+    // Keep workspaces in sync. A project saved before the setting existed has
+    // no field: sync is switched on, and its first pass adopts what is there —
+    // every value that differs from its source is kept as an override, so
+    // nothing changes on open (Sync.adoptOnOpen).
+    this.syncOverrides = (data.syncOverrides && typeof data.syncOverrides === 'object' && !Array.isArray(data.syncOverrides))
+      ? data.syncOverrides : {};
+    if (typeof data.keepInSync === 'boolean') {
+      this.keepInSync = data.keepInSync;
+      this._syncAdoptPending = false;
+    } else {
+      this.keepInSync = true;
+      this._syncAdoptPending = true;
+    }
+    if (typeof Sync !== 'undefined' && Sync.adoptOnOpen) setTimeout(() => Sync.adoptOnOpen(), 0);
     this.rateLibrary = (data.rateLibrary && typeof data.rateLibrary === 'object') ? data.rateLibrary : null;
     this.quoted = (data.quoted && typeof data.quoted === 'object' && data.quoted.at) ? { at: String(data.quoted.at), by: String(data.quoted.by || ''), note: String(data.quoted.note || '') } : null;
     this.quotedLibrary = (this.quoted && data.quotedLibrary && typeof data.quotedLibrary === 'object') ? data.quotedLibrary : null;
@@ -2075,7 +2099,12 @@ AppState._sigCache = null;
     configurable: true,
     enumerable: true,
     get() { return dirtyValue; },
-    set(v) { dirtyValue = v; if (v) this._sigCache = null; },
+    set(v) {
+      dirtyValue = v;
+      if (!v) return;
+      this._sigCache = null;
+      if (typeof Sync !== 'undefined') Sync.kick();   // the sync pass (sync.js)
+    },
   });
 }
 const _SIG_SKIP_PROP = (k) => k === 'name' || k.startsWith('label_') || k.startsWith('show_');

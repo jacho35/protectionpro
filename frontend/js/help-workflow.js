@@ -69,11 +69,12 @@ $$\text{energised}(x)\iff \exists\ \text{path}\ L\rightsquigarrow x\rightsquigar
 
 { id: 'wf-files', group: 'workflow', title: 'Saving, revisions & sharing',
   std: 'Project menu · Revision timeline · Share',
-  kw: 'save autosave revision timeline snapshot undo redo share collaborate export json project file stale out of date results re-run dimmed',
+  kw: 'save autosave revision timeline snapshot undo redo share collaborate export json project file stale out of date results re-run dimmed keep workspaces in sync automatic',
   html: String.raw`
 <ul>
 <li><strong>Save and auto-save</strong> — <kbd>Ctrl+S</kbd> saves to the server; Auto Save writes every 2 minutes.</li>
 <li><strong>Undo / redo</strong> — snapshot based (not diffs), up to 50 states.</li>
+<li><strong>Keep workspaces in sync</strong> (Settings ▸ System Base, on by default) — after each edit the app brings the other workspaces up to date by itself, a moment after you finish (never during a drag): for example a sub-board feeder's breaker, cable and length drawn on the single line show in its board's schedule straight away. It adds no undo steps of its own: undoing the edit puts everything back. A value typed where another workspace owns it is kept as an override. A project saved before this setting existed switches it on when it opens and keeps every value it has, so no number changes.</li>
 <li><strong>Revision timeline</strong> — keeps up to 20 project snapshots in a strip above the status bar. Saved projects store revisions on the server; unsaved projects keep them in the browser, namespaced per project so one project's revisions can never appear in another's. Select a revision to preview it.</li>
 <li><strong>Sharing</strong> — the owner grants view or edit access to another user by email.</li>
 <li><strong>Export</strong> — project JSON (re-importable), diagram as SVG / PNG / PDF / DXF, results CSV, settings schedule CSV, analysis report PDF, detailed-calculations PDF (step-by-step formulas with intermediate values), arc-flash labels PDF, plus BOQ, cable schedules and rates.</li>

@@ -36,7 +36,8 @@ const Collab = {
   PAGES_KEY: 'pages',
   // Project-level values synced whole (key → AppState field of the same name; groups are Maps).
   MISC_KEYS: ['projectDetails', 'baseMVA', 'frequency', 'voltageFactor', 'defaultLengthUnit',
-              'voltageDisplayUnit', 'symbolSet', 'wireRouteMode', 'earthGrids', 'scenarios', 'groups'],
+              'voltageDisplayUnit', 'symbolSet', 'wireRouteMode', 'earthGrids', 'scenarios', 'groups',
+              'keepInSync', 'syncOverrides'],
   DEBOUNCE_MS: 250,
   HEARTBEAT_MS: 25000,
 
@@ -236,7 +237,14 @@ const Collab = {
     if (reconnect) this.kick();   // send whatever changed while offline
   },
 
+  // A co-editor's changes never start a sync pass here: they ran it on their
+  // side, and its results arrive as ordinary ops.
   _applyOps(ops, from) {
+    if (typeof Sync !== 'undefined') return Sync.quietly(() => this._applyOpsNow(ops, from));
+    return this._applyOpsNow(ops, from);
+  },
+
+  _applyOpsNow(ops, from) {
     if (!ops.length) return;
     const who = this.peers.get(from);
     let touched = false;
@@ -449,6 +457,10 @@ const Collab = {
         return true;
       case 'projectDetails':
         if (!obj(v)) return false; AppState.projectDetails = v; return true;
+      case 'keepInSync':
+        if (typeof v !== 'boolean') return false; AppState.keepInSync = v; return true;
+      case 'syncOverrides':
+        if (!obj(v)) return false; AppState.syncOverrides = v; return true;
       case 'earthGrids':
         if (!Array.isArray(v)) return false; AppState.earthGrids = v; return true;
       case 'scenarios':
