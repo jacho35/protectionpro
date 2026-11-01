@@ -7,7 +7,7 @@
 2. Mark the completed item as done in its original section (strikethrough with `~~text~~`)
 3. Add a concise entry to the `## Completed` section at the bottom
 
-**Every PR sets the app version to its own PR number**: `APP_VERSION = '1.<PR number>b'` in `frontend/js/constants.js` (PR #348 → `1.348b`). The number is only known once the PR exists, so open the PR, then push a commit that bumps `APP_VERSION` to it. Bump the `?v=` cache-bust in `index.html` in the same commit.
+**Every PR bumps the app version by 0.001**: `APP_VERSION` in `frontend/js/constants.js` is `'2.<three digits>'`, and each PR adds one to it (`2.000` → `2.001` → `2.002`, … `2.010`), always three digits after the point. Read the current value on `main` and take the next one. Bump the `?v=` cache-bust on `constants.js` (and on any other file the PR changes) in `index.html` to the same version in the same commit.
 
 **Engine reviews, audits, method/validation write-ups and roadmaps** (`*_REVIEW.md`, `ENGINE_REVIEW_*.md`, `EARTH_GRID_METHOD.md`, `FEATURE_GAP_ANALYSIS.md`, `TRANSIENT_STABILITY_ROADMAP.md`, `QUANTITY_RULES_PLAN.md`, `audit-history/`) live in `reviews/` — local only, gitignored. Code comments refer to them as `reviews/<file>`; put new ones there, never in the repo root. **User-facing text (help articles, PDF reports, verification-template descriptions, UI strings) never cites a `.md` file** — users can't open them; state the result instead.
 
