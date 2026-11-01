@@ -856,6 +856,7 @@ const PlanMarkup = {
       }
       case 'place': return `Placing: ${elName(t)} — click to place. Esc / Select to stop.`;
       case 'placeSld': return 'Placing linked board — click where it goes on the plan.';
+      case 'placeRetic': return 'Placing from Demand — click where it goes on the plan. Esc cancels.';
       case 'array': return `Array: ${elName(t)} — drag a rectangle, then enter columns × rows.`;
       case 'devpath': return `Path: ${elName(t)} — click points, then ✓ Done / Enter to place. Esc cancels.`;
       case 'route': return `Drawing ${rtName(t)} — click points; ✓ Done / Enter finishes, Esc cancels.`;

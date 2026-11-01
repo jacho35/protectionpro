@@ -70,6 +70,8 @@ jobs:
         run: node frontend/tests/test_stale_results.mjs
       - name: Sync pass (order, idempotence, adopt overrides, drag / remote / off)
         run: node frontend/tests/test_sync_pass.mjs
+      - name: Reticulation kept in sync (site plan → Demand, overrides, deletions with undo)
+        run: node frontend/tests/test_retic_sync.mjs
 
       - name: Raw HTML interpolation ratchet (new unescaped attribute values fail)
         run: node testing/lint/raw-interp.mjs --max 0

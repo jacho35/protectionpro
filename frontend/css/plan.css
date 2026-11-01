@@ -368,6 +368,9 @@ body.dark-mode .plan-info { background: rgba(30,30,46,0.85); color: #c0c0d0; }
 .plan-sld-item { border-style: dashed; border-color: var(--border-color); }
 .plan-sec-head { display: flex; align-items: baseline; justify-content: space-between; padding: 12px 10px 6px; font-weight: 700; font-size: 11px; letter-spacing: .04em; text-transform: uppercase; color: var(--text-secondary); }
 .plan-fromsld .plan-sec-head { padding: 0 0 4px; }
+.plan-unplaced-grp > summary { cursor: pointer; font-size: 12px; color: var(--text-secondary); padding: 3px 0; }
+.plan-unplaced-grp[open] > summary { margin-bottom: 4px; }
+.plan-unplaced-grp > .plan-pal-item { margin-bottom: 4px; }
 .plan-sec-head small { font-weight: 400; text-transform: none; letter-spacing: 0; }
 .plan-palette > .plan-btn { margin: 0 10px 4px; }
 .plan-btn {

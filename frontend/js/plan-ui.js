@@ -112,6 +112,9 @@ const PlanUI = {
       html += `</div>`;
     }
     html += `</div>`;
+    // "Not placed yet": Demand rows (added in Demand or Quick Build) no drawn
+    // element stands for. Pick one, then click where it goes.
+    if (domain === 'retic') html += this._reticTrayHtml();
     // "From the single line": adopt SLD boards/supply that aren't on the plan yet.
     if (domain === 'building' && typeof AppState.components !== 'undefined' && PLAN_DEFS.sldLinkTypes) {
       const linkedSld = new Set(pm.elements.filter(e => e.sldId).map(e => e.sldId));
@@ -138,6 +141,25 @@ const PlanUI = {
       }
     }
     return html;
+  },
+
+  _reticTrayHtml() {
+    if (typeof PlanSync === 'undefined' || !PlanSync.reticUnplaced || !AppState.reticulation) return '';
+    const pm = AppState.planMarkup;
+    const u = PlanSync.reticUnplaced();
+    const nErven = u.erven.reduce((n, g) => n + g.erfs.length, 0);
+    const n = u.minisubs.length + u.kiosks.length + nErven;
+    if (!n) return '';
+    const item = (id, type, label, sub) => `<button type="button" class="plan-pal-item plan-sld-item" data-retic-place="${escHtml(id)}" title="Place ${escHtml(label)} on the plan — then click where it goes">
+      <span class="plan-pal-swatch" style="background:${escHtml(PLAN_DEFS.elementColor(type, pm.styles))}"></span><span class="plan-pal-name">${escHtml(label)}</span><small>${escHtml(sub)}</small></button>`;
+    let html = `<div class="plan-fromsld plan-unplaced"><div class="plan-sec-head"><span>Not placed yet</span><small>${n} in Demand</small></div>`;
+    for (const m of u.minisubs) html += item(m.id, 'minisub', m.name || 'Minisub', 'Minisub');
+    for (const k of u.kiosks) html += item(k.id, 'kiosk', k.name || 'Kiosk', `Kiosk · ${k.erfs.length} erven`);
+    for (const g of u.erven) {
+      html += `<details class="plan-unplaced-grp"><summary>${escHtml(g.kiosk.name || 'Kiosk')} · ${g.erfs.length} erf${g.erfs.length === 1 ? '' : 'ven'}</summary>`
+        + g.erfs.map(e => item(e.id, 'erf', `Erf ${e.erfNumber || ''}`.trim(), g.kiosk.name || 'Kiosk')).join('') + `</details>`;
+    }
+    return html + `</div>`;
   },
 
   _underlaysPanel() {
@@ -209,6 +231,8 @@ const PlanUI = {
       <div class="plan-sec-head"><span>Sync</span></div>
       ${building && autoSync
         ? `<div class="plan-card plan-sync-auto"><b>Kept in sync</b><small>Boards, feeders and riser feeders are on the single line, and each way's load, points and routed length come from the devices tagged to it — a moment after each edit.${untagged ? ` ${untagged} device${untagged > 1 ? 's are' : ' is'} not on a circuit yet.` : ''}</small></div>`
+        : autoSync
+        ? `<div class="plan-card plan-sync-auto"><b>Kept in sync</b><small>Minisubs, kiosks and erven drawn here are in Demand a moment after each edit, with which kiosk feeds which and the measured cable lengths. A length typed in Demand is kept there, with Reset.</small></div>`
         : (building ? act('push', 'Sync with single line', 'Boards and feeder cables, both directions') : act('push', 'Push to Demand schedules', 'Kiosks, erven and feeders into Reticulation'))}
       ${building && !autoSync ? act('circuits', 'Count circuits into boards', `Loads and routed lengths per way${untagged ? ` · ${untagged} device${untagged > 1 ? 's' : ''} not on a circuit` : ''}`) : ''}
       <div class="plan-sec-head"><span>Print area</span></div>
@@ -324,6 +348,14 @@ const PlanUI = {
         }
         return;
       }
+    }
+    // Place a Demand row ("Not placed yet") as a linked element.
+    const reticItem = e.target.closest('[data-retic-place]');
+    if (reticItem) {
+      PlanTools.set('placeRetic', { rowId: reticItem.dataset.reticPlace });
+      this.paletteEl.querySelectorAll('.plan-pal-item.armed').forEach(b => b.classList.remove('armed'));
+      reticItem.classList.add('armed');
+      return;
     }
     // Adopt an existing SLD entity ("From the single line") — link + place it.
     const sldItem = e.target.closest('[data-sld]');
@@ -791,7 +823,13 @@ const PlanUI = {
     const clsLabel = (k) => { const c = Retic._kioskClass(k); return c ? escHtml(c.label) : '—'; };
     let title = 'From Demand';
     let kioskList = null;
-    const notLinked = () => `<div class="plan-demand"><div class="plan-demand-title">From Demand</div><div class="plan-demand-row"><span>Not in Demand yet — Output › Push to Demand schedules.</span></div></div>`;
+    // With "Keep workspaces in sync" a drawn kiosk or minisub is in Demand a
+    // moment after it is drawn; an erf only once a service cable reaches it.
+    const autoSync = AppState.keepInSync !== false;
+    const notLinked = () => (autoSync && item.type !== 'erf') ? ''
+      : `<div class="plan-demand"><div class="plan-demand-title">From Demand</div><div class="plan-demand-row"><span>${autoSync
+        ? 'Not in Demand yet — draw a service cable from a kiosk to it.'
+        : 'Not in Demand yet — Output › Push to Demand schedules.'}</span></div></div>`;
     // Figures for a kiosk / minisub come from the last Demand calculation; ask
     // for one if none has run this session (it redraws this panel when done).
     if (item.type !== 'erf' && !res && Retic._doCompute && !this._demandAsked) {
@@ -918,6 +956,7 @@ const PlanUI = {
       if (!retic) return `<div class="plan-demand"><div class="plan-demand-title">Cable</div>${rows.join('')}</div>`;
       const why = (!route.fromId || !route.toId) ? 'Both ends must be connected to plan elements (kiosk, erf, minisub).'
         : (route.type !== 'service' && route.type !== 'lv') ? 'Only service and LV feeder routes are tied to Demand.'
+        : AppState.keepInSync !== false ? 'Not in Demand yet — connect it to a minisub through LV cables.'
         : 'Not linked to Demand yet — use → Push to Schedules.';
       rows.push(`<div class="plan-demand-row"><span>${escHtml(why)}</span></div>`);
       return `<div class="plan-demand"><div class="plan-demand-title">Cable · Demand</div>${rows.join('')}</div>`;
@@ -1160,7 +1199,8 @@ const PlanUI = {
     for (const c of cands.sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true }))) {
       opts += `<option value="${escHtml(c.id)}"${live && c.id === item.reticId ? ' selected' : ''}>${escHtml(c.label)}</option>`;
     }
-    const note = live ? 'The name follows the Demand sheet — edit it there.' : 'Pick the Demand row this stands for, or use → Push to Schedules.';
+    const note = live ? 'The name follows the Demand sheet — edit it there.'
+      : AppState.keepInSync !== false ? 'Pick the Demand row this stands for.' : 'Pick the Demand row this stands for, or use → Push to Schedules.';
     return `<div class="plan-field"><label class="plan-field-label">Linked Demand item</label>
       <select data-role="demand-link" title="Attach this drawn item to a Demand row">${opts}</select>
       <div class="plan-linked-note">${note}</div></div>`;

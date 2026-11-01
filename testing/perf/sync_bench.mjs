@@ -5,6 +5,9 @@
 //     routed lengths, phase splits) after moving one fitting.
 //     Budget: the very large building (61 boards, 11,520 devices) under 100 ms.
 //     The whole sync pass after one edit (Building routines): under 150 ms.
+//   • Reticulation: the whole sync pass (site plan → Demand, PR 7) after
+//     moving one kiosk, on the street-lighting plans below with erven added
+//     (very large: 300 kiosks, 3,000 erven). Budget: under 150 ms.
 //   • Street lighting: the volt-drop recalculation after one pole edit
 //     (StreetLight._doCompute, a server round trip). Only the edited circuit is
 //     sent; budget: about the time of one circuit, not of all of them.
@@ -39,7 +42,7 @@ const PASSWORD = process.env.PP_PASSWORD || 'perf-bench-pass-1';
 const RUNS = Number(process.env.RUNS) || 5;
 const CHECK = process.argv.includes('--check');
 
-const BUDGET = { buildingVeryLargeMs: 100, buildingPassVeryLargeMs: 150, slOneCircuitFactor: 3 };
+const BUDGET = { buildingVeryLargeMs: 100, buildingPassVeryLargeMs: 150, reticPassVeryLargeMs: 150, slOneCircuitFactor: 3 };
 
 async function token() {
   const post = (path, body) => fetch(`${BASE_URL}/api/auth/${path}`, {
@@ -130,7 +133,7 @@ async function streetLighting(browser, jwt, size) {
     pm.scale = { factor: 0.5 };
     const el = (type, x, y, name) => { const e = { id: AppState.planGenId('pmel'), type, x, y, rotation: 0, name, reticId: null, props: PLAN_DEFS.defaults(type) }; pm.elements.push(e); return e; };
     const rt = (type, a, b) => pm.routes.push({ id: AppState.planGenId('pmrt'), type, fromId: a.id, toId: b.id, points: [{ x: a.x, y: a.y }, { x: b.x, y: b.y }], cableType: '', curved: false, props: {} });
-    let kn = 0, pn = 0;
+    let kn = 0, pn = 0, en = 0;
     for (let m = 0; m < size.ms; m++) {
       const ms = el('minisub', m * 4000, 0, 'TX' + (m + 1));
       for (let s = 0; s < size.strings; s++) {
@@ -140,8 +143,23 @@ async function streetLighting(browser, jwt, size) {
           rt('lv', prev, k); prev = k;
           let pp = k;
           for (let j = 0; j < size.poles; j++) { const po = el('pole', k.x + 10, k.y + 100 + j * 60, 'P' + (++pn)); rt('sl', pp, po); pp = po; }
+          for (let j = 0; j < (size.erven || 0); j++) { const e = el('erf', k.x - 40 + j * 8, k.y - 60, 'E' + (++en)); rt('service', k, e); }
         }
       }
+    }
+    // The whole sync pass after moving one kiosk (PR 7: site plan → Demand).
+    UI.alert = async () => {};
+    Sync.run();                                     // first pass: every row created
+    const reticPass = [];
+    const kiosks = pm.elements.filter(e => e.type === 'kiosk');
+    for (let i = 0; i < runs; i++) {
+      const k = kiosks[(i * 13) % kiosks.length];
+      const move = (d) => { k.x += d; for (const r of pm.routes) { if (r.fromId === k.id) r.points[0].x = k.x; if (r.toId === k.id) r.points[r.points.length - 1].x = k.x; } };
+      move(10);
+      const a = performance.now();
+      Sync.run();
+      reticPass.push(performance.now() - a);
+      move(-10); Sync.run();
     }
     await PlanSync.pushToSchedules();
     await StreetLight.syncFromPlan();
@@ -172,11 +190,11 @@ async function streetLighting(browser, jwt, size) {
       all.push(performance.now() - a);
     }
     const results = circuits.map(c => StreetLight._results[c.id]).map(x => x && JSON.stringify(x));
-    return { circuits: circuits.length, poles: pn, one, oneSent, all, results };
+    return { circuits: circuits.length, poles: pn, kiosks: kn, erven: en, reticPass, one, oneSent, all, results };
   }, { size, runs: RUNS });
   await ctx.close();
   return {
-    circuits: r.circuits, poles: r.poles,
+    circuits: r.circuits, poles: r.poles, kiosks: r.kiosks, erven: r.erven, reticPassMs: median(r.reticPass),
     oneEditMs: median(r.one), circuitsSentPerEdit: Math.max(...r.oneSent),
     allCircuitsMs: median(r.all), fingerprint: fp(r.results),
   };
@@ -192,8 +210,8 @@ try {
     veryLarge: await building(browser, jwt, { boards: 60, ways: 24, perWay: 8 }),
   };
   out.streetLighting = {
-    typical: await streetLighting(browser, jwt, { ms: 1, strings: 3, perString: 8, poles: 4 }),
-    veryLarge: await streetLighting(browser, jwt, { ms: 10, strings: 3, perString: 10, poles: 5 }),
+    typical: await streetLighting(browser, jwt, { ms: 1, strings: 3, perString: 8, poles: 4, erven: 10 }),
+    veryLarge: await streetLighting(browser, jwt, { ms: 10, strings: 3, perString: 10, poles: 5, erven: 10 }),
   };
 } finally {
   await browser.close();
@@ -204,12 +222,16 @@ for (const [k, b] of Object.entries(out.building)) {
   console.log(`building ${k.padEnd(9)}  ${String(b.boards).padStart(3)} boards ${String(b.devices).padStart(6)} devices   devices→ways ${ms(b.ms).padStart(9)}${b.passMs != null ? `   whole sync pass ${ms(b.passMs).padStart(9)}` : ''}   fingerprint ${b.fingerprint}`);
 }
 for (const [k, s] of Object.entries(out.streetLighting)) {
+  console.log(`reticulation ${k.padEnd(9)}   ${String(s.kiosks).padStart(4)} kiosks ${String(s.erven).padStart(5)} erven   whole sync pass ${ms(s.reticPassMs).padStart(9)}`);
+}
+for (const [k, s] of Object.entries(out.streetLighting)) {
   console.log(`street lighting ${k.padEnd(9)} ${String(s.circuits).padStart(4)} circuits ${String(s.poles).padStart(5)} poles   one edit ${ms(s.oneEditMs).padStart(9)} (${s.circuitsSentPerEdit} sent)   all circuits ${ms(s.allCircuitsMs).padStart(9)}   fingerprint ${s.fingerprint}`);
 }
 
 const vl = out.building.veryLarge, sl = out.streetLighting.veryLarge;
 const oneRef = sl.allCircuitsMs / sl.circuits;   // per-circuit share of a full request
 if (vl.passMs != null && vl.passMs > BUDGET.buildingPassVeryLargeMs) { fail = true; console.log(`OVER BUDGET: very large building sync pass ${ms(vl.passMs)} > ${BUDGET.buildingPassVeryLargeMs} ms`); }
+if (sl.reticPassMs > BUDGET.reticPassVeryLargeMs) { fail = true; console.log(`OVER BUDGET: very large reticulation sync pass ${ms(sl.reticPassMs)} > ${BUDGET.reticPassVeryLargeMs} ms`); }
 if (vl.ms > BUDGET.buildingVeryLargeMs) { fail = true; console.log(`OVER BUDGET: very large building ${ms(vl.ms)} > ${BUDGET.buildingVeryLargeMs} ms`); }
 for (const [k, s] of Object.entries(out.streetLighting)) {
   if (s.circuitsSentPerEdit !== 1) { fail = true; console.log(`OVER BUDGET: street lighting ${k} sent ${s.circuitsSentPerEdit} circuits for one edit`); }

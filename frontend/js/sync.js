@@ -171,12 +171,20 @@ const Sync = {
   },
 
   // ── Deletions made by the user (not by the pass, not by an undo) ──
-  // AppState.removeComponent and PlanMarkup.deleteSelected mark what the user
-  // deleted; the Building sync reads the marks to tell a deletion (carried to
-  // the other view) from an undo (healed). side: 'sld' | 'plan'.
-  _deleted: { sld: new Set(), plan: new Set() },
+  // AppState.removeComponent, PlanMarkup.deleteSelected and Demand's deletes
+  // mark what the user deleted; the Building and Reticulation syncs read the
+  // marks to tell a deletion (carried to the other view) from an undo.
+  // side: 'sld' | 'plan' | 'retic'. takeDeleted(side, keep) takes only the
+  // ids `keep` accepts (the rest stay for another routine), or all of them.
+  _deleted: { sld: new Set(), plan: new Set(), retic: new Set() },
   markDeleted(side, id) { if (!this._running && id) this._deleted[side].add(id); },
-  takeDeleted(side) { const s = this._deleted[side]; this._deleted[side] = new Set(); return s; },
+  takeDeleted(side, keep) {
+    const s = this._deleted[side];
+    if (!keep) { this._deleted[side] = new Set(); return s; }
+    const out = new Set();
+    for (const id of s) if (keep(id)) { out.add(id); s.delete(id); }
+    return out;
+  },
 
   // ── Fields owned by another workspace ──
   // A field listed here, edited by hand, becomes an override (kept by the
@@ -247,6 +255,23 @@ const Sync = {
     if (typeof CollabData !== 'undefined' && CollabData.refresh) CollabData.refresh(touched);
   },
 };
+
+// ── Routine: site plan → Demand (Reticulation) ──
+// Minisubs, kiosks and erven drawn on the site plan, which kiosk feeds which,
+// and the measured feeder, service and MV lengths go to Demand; a deletion on
+// either side is carried to the other. Replaces Output › Push to Demand
+// schedules while the setting is on.
+Sync.register({
+  id: 'retic',
+  order: 30,
+  label: 'Site plan → Demand',
+  run(ctx) {
+    if (typeof PlanSync === 'undefined' || !PlanSync.reticInUse()) return false;
+    const changed = PlanSync.syncRetic({ issue: ctx.issue, notice: ctx.notice, value: ctx.value });
+    if (changed) { ctx.touch('retic'); ctx.touch('plan'); }
+    return changed;
+  },
+});
 
 // ── Routine: floor plans ⇄ single line, then devices → schedule ways ──
 // Boards, feeders and riser feeders both ways (plan-sync.js), then the tagged
