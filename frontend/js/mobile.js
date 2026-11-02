@@ -1065,7 +1065,7 @@ const MobileUI = {
   _appItems() {
     const byId = (id) => document.getElementById(id);
     const out = [];
-    if (byId('btn-auto-save')) out.push({ el: byId('btn-auto-save'), label: 'Auto save', toggle: byId('btn-auto-save').classList.contains('active') });
+    if (typeof SaveState !== 'undefined') out.push({ label: 'Save automatically', toggle: SaveState.autoOn(), run: () => SaveState.setAuto(!SaveState.autoOn()) });
     if (byId('btn-dark-mode')) out.push({ el: byId('btn-dark-mode'), label: 'Dark mode', toggle: document.body.classList.contains('dark-mode') });
     for (const [id, label, sub] of [['btn-settings', 'Settings', 'Dark mode, sign-in, libraries'], ['btn-help', 'Help', 'Calculations & tools'], ['btn-account', 'Account', 'Sign in, sync, sharing']]) {
       if (byId(id) && !byId(id).hidden) out.push({ el: byId(id), label, sub, nav: true });

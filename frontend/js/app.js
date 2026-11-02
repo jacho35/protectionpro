@@ -284,12 +284,9 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('btn-dark-mode').classList.add('active');
   }
 
-  // Auto-save toggle
-  document.getElementById('btn-auto-save').addEventListener('click', () => {
-    Project.toggleAutoSave();
-  });
-  // Restore auto-save preference and check for local backup
-  Project.restoreAutoSave();
+  // The save chip + autosave (savestate.js); the choice is in Settings › Preferences
+  SaveState.init();
+  Project.startLocalBackup();
   Project.restoreLocalBackup();
 
   // Keyboard shortcuts
@@ -3104,6 +3101,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('pref-dark').addEventListener('change', (e) => {
     if (document.body.classList.contains('dark-mode') !== e.target.checked) document.getElementById('btn-dark-mode').click();
   });
+  document.getElementById('pref-autosave').addEventListener('change', (e) => SaveState.setAuto(e.target.checked));
   document.getElementById('pref-open-last').addEventListener('change', (e) => {
     if (typeof StartScreen !== 'undefined') StartScreen.setOpenLast(e.target.checked);
   });

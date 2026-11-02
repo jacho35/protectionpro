@@ -106,7 +106,7 @@ const Project = {
 
     // Auto-save: attempt final backup on page unload
     window.addEventListener('beforeunload', (e) => {
-      if (this._autoSaveEnabled && AppState.dirty) {
+      if (AppState.dirty) {
         this._saveToLocalBackup();
       }
       // Warn before discarding unsaved work
@@ -222,6 +222,7 @@ const Project = {
     }
 
     document.getElementById('status-info').textContent = 'Saving...';
+    SaveState.begin();
     try {
       let result;
       try {
@@ -237,6 +238,7 @@ const Project = {
         if (!overwrite) {
           document.getElementById('status-info').textContent =
             'NOT SAVED — the project changed on the server. Use Save As to keep your copy.';
+          SaveState.conflict();
           return;
         }
         result = await API.saveProject({ overwrite: true });
@@ -245,6 +247,7 @@ const Project = {
       // Attach any plan-markup images uploaded before this project had an id.
       if (typeof PlanImages !== 'undefined') await PlanImages.claimOrphans(result.id);
       AppState.dirty = false;
+      SaveState.saved();
       document.title = `ProtectionPro — ${AppState.projectName}`;
       updateProjectNameDisplay();
       this._addRecent(result.id, AppState.projectName);
@@ -266,6 +269,7 @@ const Project = {
   // persistent error that distinguishes "backend down" from "server error".
   _handleSaveFailure(e) {
     AppState.dirty = true;
+    SaveState.failed((e instanceof TypeError) || /failed to fetch|networkerror|load failed/i.test(e.message || ''));
     try {
       localStorage.setItem('protectionpro-auto-save-backup', JSON.stringify(AppState.toJSON()));
     } catch (_) { /* localStorage full/unavailable — nothing more we can do */ }
@@ -290,6 +294,7 @@ const Project = {
 
     document.getElementById('status-info').textContent = 'Saving...';
     try {
+      SaveState.begin();
       const result = await API.saveProject();
       AppState.projectId = result.id;
       // The copy is owned by the current user — clear any view-only lock.
@@ -935,66 +940,46 @@ const Project = {
     }
   },
 
-  // ── Auto Save ──
+  // ── Autosave (savestate.js decides when) and the local backup ──
 
-  _autoSaveInterval: null,
-  _autoSaveEnabled: false,
-  _AUTO_SAVE_MS: 120000, // 2 minutes
+  // The choice lives in SaveState; these keep the old names working.
+  toggleAutoSave() { SaveState.setAuto(!SaveState.autoOn()); },
+  restoreAutoSave() { /* the preference is read from localStorage on demand */ },
 
-  toggleAutoSave() {
-    this._autoSaveEnabled = !this._autoSaveEnabled;
-    const btn = document.getElementById('btn-auto-save');
-    btn.classList.toggle('active', this._autoSaveEnabled);
-    localStorage.setItem('protectionpro-auto-save', this._autoSaveEnabled ? '1' : '0');
-
-    if (this._autoSaveEnabled) {
-      this._autoSaveInterval = setInterval(() => this._autoSave(), this._AUTO_SAVE_MS);
-      this._statusMsg('Auto save enabled.');
-    } else {
-      clearInterval(this._autoSaveInterval);
-      this._autoSaveInterval = null;
-      this._statusMsg('Auto save disabled.');
-    }
-  },
-
-  restoreAutoSave() {
-    if (localStorage.getItem('protectionpro-auto-save') === '1') {
-      this._autoSaveEnabled = true;
-      document.getElementById('btn-auto-save').classList.add('active');
-      this._autoSaveInterval = setInterval(() => this._autoSave(), this._AUTO_SAVE_MS);
-    }
-  },
-
-  async _autoSave() {
-    if (!AppState.dirty) return;
-
-    if (AppState.projectId) {
-      try {
-        await API.saveProject();
-        AppState.dirty = false;
-        document.title = `ProtectionPro — ${AppState.projectName}`;
-        updateProjectNameDisplay();
+  // Save to the server without asking anything: never overwrites someone else's save.
+  async autoSaveNow() {
+    if (!AppState.dirty || !AppState.projectId || AppState.readOnly) return;
+    SaveState.begin();
+    try {
+      await API.saveProject();
+      AppState.dirty = false;
+      SaveState.saved();
+      document.title = `ProtectionPro — ${AppState.projectName}`;
+      updateProjectNameDisplay();
+      this._clearLocalBackup();
+      // A revision snapshot at most every few minutes, so the timeline isn't one point per edit
+      if (SaveState.revisionDue()) {
+        SaveState.revisionMade();
         await RevisionTimeline.createRevision('Auto-save');
         await RevisionTimeline.show();
-        this._statusMsg('Auto-saved.');
-      } catch (e) {
-        if (e.status === 409) {
-          // Never auto-overwrite another editor; the manual Save asks what to do.
-          this._saveToLocalBackup();
-          document.getElementById('status-info').textContent =
-            'Auto-save paused — someone else saved this project. Press Save to choose what to keep.';
-          return;
-        }
-        // Silently fall back to localStorage on API failure
-        this._saveToLocalBackup();
-        await RevisionTimeline.createRevision('Auto-save (local)');
-        await RevisionTimeline.show();
       }
-    } else {
+    } catch (e) {
       this._saveToLocalBackup();
-      await RevisionTimeline.createRevision('Auto-save (local)');
-      await RevisionTimeline.show();
+      if (e.status === 409) {
+        // Never auto-overwrite another editor; the manual Save asks what to do.
+        SaveState.conflict();
+        document.getElementById('status-info').textContent =
+          'Auto-save paused — someone else saved this project. Press Save to choose what to keep.';
+        return;
+      }
+      SaveState.failed((e instanceof TypeError) || /failed to fetch|networkerror|load failed/i.test(e.message || ''));
     }
+  },
+
+  // Work not on the server yet (or not saveable) keeps a copy in this browser every couple of minutes.
+  startLocalBackup() {
+    if (this._backupTimer) return;
+    this._backupTimer = setInterval(() => { if (AppState.dirty) this._saveToLocalBackup(); }, SaveState.BACKUP_MS);
   },
 
   _saveToLocalBackup() {

@@ -1610,6 +1610,7 @@ const StandardData = {
   open() {
     // Personal preferences (the project's own values are in Project settings)
     document.getElementById('pref-dark').checked = document.body.classList.contains('dark-mode');
+    document.getElementById('pref-autosave').checked = typeof SaveState === 'undefined' || SaveState.autoOn();
     document.getElementById('pref-open-last').checked = typeof StartScreen === 'undefined' || StartScreen.openLastOn();
     this._showAll = false;
     this._applyType();

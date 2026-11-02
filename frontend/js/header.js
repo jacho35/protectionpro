@@ -75,12 +75,12 @@ const Header = {
       ['btn-select', 'Single-line toolbar › Mode'], ['btn-wire', 'Single-line toolbar › Mode'],
       ['btn-undo', 'Single-line toolbar'], ['btn-redo', 'Single-line toolbar'],
       ['btn-study-manager', 'Single-line toolbar'], ['btn-zoom-fit', 'Single-line toolbar › Zoom'],
-      ['btn-zoom-reset', 'Single-line toolbar › Zoom'], ['btn-auto-save', 'App bar'],
+      ['btn-zoom-reset', 'Single-line toolbar › Zoom'],
       ['btn-dark-mode', 'App bar'], ['btn-settings', 'App bar'], ['btn-help', 'App bar'],
       ['btn-account', 'App bar'],
     ];
     const names = { 'btn-zoom-fit': 'Zoom to fit', 'btn-zoom-reset': 'Actual size (1:1)',
-      'btn-dark-mode': 'Toggle dark mode', 'btn-auto-save': 'Toggle auto-save', 'btn-help': 'Help & documentation' };
+      'btn-dark-mode': 'Toggle dark mode', 'btn-help': 'Help & documentation' };
     for (const [id, where] of loose) add(document.getElementById(id), where, names[id]);
     return out;
   },

@@ -2117,6 +2117,7 @@ AppState._sigCache = null;
     get() { return dirtyValue; },
     set(v) {
       dirtyValue = v;
+      if (typeof SaveState !== 'undefined') SaveState.onDirty(v);   // the save chip + autosave (savestate.js)
       if (!v) return;
       this._sigCache = null;
       if (typeof Sync !== 'undefined') Sync.kick();   // the sync pass (sync.js)

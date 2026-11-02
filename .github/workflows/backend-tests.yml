@@ -90,6 +90,8 @@ jobs:
         run: node frontend/tests/test_help_types.mjs
       - name: Project settings (value rules, sections, when the electrical values apply)
         run: node frontend/tests/test_projectsettings.mjs
+      - name: Save-state chip and autosave rules
+        run: node frontend/tests/test_savestate.mjs
 
       - name: Raw HTML interpolation ratchet (new unescaped attribute values fail)
         run: node testing/lint/raw-interp.mjs --max 0
