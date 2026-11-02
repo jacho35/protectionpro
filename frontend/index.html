@@ -18,6 +18,7 @@
   <link rel="stylesheet" href="css/resultspanel.css?v=2.590">
   <link rel="stylesheet" href="css/overview.css?v=2.591">
   <link rel="stylesheet" href="css/startscreen.css?v=2.592">
+  <link rel="stylesheet" href="css/projectsettings.css?v=2.593">
   <link rel="stylesheet" href="css/mobile.css?v=2.591">
   <link rel="stylesheet" href="css/interlocking.css?v=3.5.274">
   <link rel="stylesheet" href="css/schedules.css?v=2.587">
@@ -60,6 +61,9 @@
             </button><div class="dropdown-divider"></div><button id="btn-share" class="dropdown-item">
               <svg width="14" height="14" viewBox="0 0 16 16"><circle cx="4" cy="8" r="1.8" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="12" cy="4" r="1.8" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="12" cy="12" r="1.8" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M5.6 7.1l4.8-2.4M5.6 8.9l4.8 2.4" stroke="currentColor" stroke-width="1.4"/></svg>
               Share…
+            </button><button id="btn-project-settings" class="dropdown-item" title="Project info, type, electrical base and standards, display: one page for the project's own values">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><path d="M2 4h7M12 4h2M2 8h2M7 8h7M2 12h9"/><circle cx="10.5" cy="4" r="1.5"/><circle cx="5.5" cy="8" r="1.5"/><circle cx="12.5" cy="12" r="1.5"/></svg>
+              Project settings…
             </button><button id="btn-project-type" class="dropdown-item" title="Choose the project type and which workspaces the project shows">
               <svg width="14" height="14" viewBox="0 0 16 16"><rect x="1.5" y="3" width="4" height="10" rx="1" fill="none" stroke="currentColor" stroke-width="1.3"/><rect x="6" y="3" width="4" height="10" rx="1" fill="none" stroke="currentColor" stroke-width="1.3"/><rect x="10.5" y="3" width="4" height="10" rx="1" fill="none" stroke="currentColor" stroke-width="1.3" stroke-dasharray="2 1.5"/></svg>
               Project Type &amp; Workspaces…
@@ -2233,7 +2237,7 @@
       </div>
       <div class="settings-home" id="settings-home" hidden></div>
       <div class="settings-tabs">
-        <button class="settings-tab active" data-tab="system">System Base</button>
+        <button class="settings-tab active" data-tab="system">Preferences</button>
         <button class="settings-tab" data-tab="iec-standards" data-not-types="lighting">IEC Standards</button>
         <button class="settings-tab" data-tab="email" id="settings-tab-btn-email" hidden>Email</button>
       </div>
@@ -2241,49 +2245,15 @@
         <!-- System Base Tab -->
         <div id="settings-tab-system" class="settings-tab-content active">
           <div id="settings-type-note" class="settings-type-note" hidden></div>
-          <div class="form-group" data-needs="sld">
-            <label for="base-mva">Base MVA</label>
-            <input type="number" id="base-mva" value="100" min="1" step="1">
-            <span class="unit">MVA</span>
+          <div class="form-group">
+            <label for="pref-dark">Appearance</label>
+            <label class="checkbox-inline"><input type="checkbox" id="pref-dark"> Dark mode</label>
           </div>
           <div class="form-group">
-            <label for="base-freq">System Frequency</label>
-            <select id="base-freq">
-              <option value="50">50 Hz</option>
-              <option value="60">60 Hz</option>
-            </select>
+            <label for="pref-open-last">Signing in</label>
+            <label class="checkbox-inline" title="After you sign in, open the project you last had open instead of the start screen."><input type="checkbox" id="pref-open-last"> Open my last project</label>
           </div>
-          <div class="form-group" data-needs="sld">
-            <label for="voltage-factor">Voltage Factor c (IEC 60909)</label>
-            <input type="number" id="voltage-factor" value="1.10" min="0.9" max="1.2" step="0.01">
-            <span class="unit" title="IEC 60909-0 Table 1 voltage factor for short-circuit currents. 1.10 = c_max (default). Use 1.00 for bolted-fault / V=1.0 studies.">c</span>
-          </div>
-          <div class="form-group" data-needs="sld">
-            <label for="default-length-unit">Default Cable Length Unit</label>
-            <select id="default-length-unit">
-              <option value="m">Meters (m)</option>
-              <option value="km">Kilometers (km)</option>
-            </select>
-          </div>
-          <div class="form-group" data-needs="sld">
-            <label for="use-iec-symbols">Diagram Symbols</label>
-            <label class="checkbox-inline" title="Draw switching and protection devices with IEC 60617 symbols: breakers, switches and disconnectors as contacts with a function qualifier, shown open or closed by blade position. Saved with the project; applies immediately.">
-              <input type="checkbox" id="use-iec-symbols"> Use IEC symbols (IEC 60617)
-            </label>
-          </div>
-          <div class="form-group" data-needs="sld">
-            <label for="allow-cascading">Breaking capacity</label>
-            <label class="checkbox-inline" title="Cascading (back-up protection, IEC 60947-2 Annex A): a breaker whose own breaking capacity is below the fault level passes when the manufacturer has tested it with the breaker above it and the combination covers the fault. Used by the duty check, compliance and the DB schedule coordination check. The two breakers are then not selective at those fault currents. Saved with the project.">
-              <input type="checkbox" id="allow-cascading"> Allow cascading (back-up protection)
-            </label>
-          </div>
-          <div class="form-group">
-            <label for="keep-in-sync">Workspaces</label>
-            <label class="checkbox-inline" title="After each edit the app brings the other workspaces up to date by itself — for example a sub-board feeder drawn on the single line shows in its board's schedule straight away. A value typed where another workspace owns it is kept as an override. Saved with the project.">
-              <input type="checkbox" id="keep-in-sync"> Keep workspaces in sync
-            </label>
-          </div>
-          <button id="btn-save-settings" class="btn-primary">Apply</button>
+          <p class="settings-type-note" id="settings-project-note">Base MVA, frequency, voltage factor, symbols, cascading, keep in sync and the project's name and details belong to the project: <button type="button" class="btn-link" id="btn-settings-to-project">Project settings…</button></p>
         </div>
         <!-- Cable Library Tab -->
 
@@ -3104,6 +3074,7 @@
   <script src="js/lightov.js?v=3.5.525"></script>
   <script src="js/overview.js?v=2.592"></script>
   <script src="js/startscreen.js?v=2.592"></script>
+  <script src="js/projectsettings.js?v=2.593"></script>
   <script src="js/lightreport.js?v=3.5.329"></script>
   <script src="js/plan-dxf-manager.js?v=2.584"></script>
   <script src="js/plan-dd-import.js?v=3.5.313"></script>

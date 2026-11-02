@@ -122,7 +122,7 @@ $$\Delta t=t_{clear,backup}-t_{clear,primary}\ \ge\ \Delta t_{min}$$</li>
 <p>Transformer loading from the load flow: fail above 100 %, warning above 80 %. CT saturation and PT burden are reported in their own tables — see <a href="#" data-help="prot-ct-pt">CT &amp; PT</a>.</p>` },
 
 { id: 'prot-cascading', group: 'protect', title: 'Cascading (back-up protection)',
-  std: 'IEC 60947-2 Annex A · IEC 60364-5-53 §536.4.2 · Settings ▸ System Base',
+  std: 'IEC 60947-2 Annex A · IEC 60364-5-53 §536.4.2 · Project ▸ Project settings',
   kw: 'cascading back-up backup protection series rating reinforced breaking capacity icu filiation combination schneider',
   html: String.raw`
 <p>A breaker may be installed where the prospective fault current is above its own breaking capacity when a breaker upstream of it limits and helps break that fault. The pair must have been <strong>tested together</strong>, and the combination's <em>reinforced breaking capacity</em> must cover the fault. That figure comes only from the manufacturer's table. It cannot be calculated from the two breakers' own ratings.</p>
@@ -136,7 +136,7 @@ $$\Delta t=t_{clear,backup}-t_{clear,primary}\ \ge\ \Delta t_{min}$$</li>
 </ul>
 <p>The duty check, the compliance report and the DB schedule coordination check (Coord column) all apply the same rule. A cascaded breaker shows the reinforced capacity, marked <em>(cascaded)</em>, and its making capacity is assumed from that capacity (IEC 60947-2 Table 2).</p>
 <h4>What it costs</h4>
-<p>Cascading works because the upstream breaker opens too. At those fault currents the two breakers are <strong>not selective</strong>, so a fault on one circuit can trip the incomer. A replacement must also be the same type as the tested pair. Turn cascading off in <em>Settings ▸ System Base</em> (<em>Allow cascading</em>, saved with the project) when a specification requires each breaker to be rated for its own fault level.</p>
+<p>Cascading works because the upstream breaker opens too. At those fault currents the two breakers are <strong>not selective</strong>, so a fault on one circuit can trip the incomer. A replacement must also be the same type as the tested pair. Turn cascading off in <em>Project ▸ Project settings</em> (<em>Allow cascading</em>, saved with the project) when a specification requires each breaker to be rated for its own fault level.</p>
 <h4>Data</h4>
 <p>Schneider Electric, <em>Selectivity, Cascading and Coordination Guide</em> 2025 (LVPED318033EN), 380–415 V tables. Upstream: Acti9 iC60 and C120, NG125, ComPacT NSXm and NSX100–630, ComPacT NS, MasterPacT MTZ1 / MTZ2 L1. Downstream: iC60 N/H/L, C120 N/H, NG125, NSXm, NSX100–630.</p>
 <div class="hc-example"><span class="hc-label">Worked example (from the guide)</span>

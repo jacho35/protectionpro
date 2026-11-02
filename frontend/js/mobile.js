@@ -1030,6 +1030,7 @@ const MobileUI = {
     ['btn-templates', 'Templates', '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M17.5 14v7M14 17.5h7"/>'],
     ['btn-save-as', 'Save as', '<path d="M12 4v11M7 11l5 5 5-5M5 20h14"/>'],
     ['btn-share', 'Share', '<path d="M12 16V4M7 9l5-5 5 5M5 14v5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-5"/>'],
+    ['btn-project-settings', 'Settings', '<path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/>'],
     ['btn-project-type', 'Type', '<path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/>'],
   ],
   MENU_GROUP_NAMES: { Drawing: 'Diagram' },
@@ -1066,7 +1067,7 @@ const MobileUI = {
     const out = [];
     if (byId('btn-auto-save')) out.push({ el: byId('btn-auto-save'), label: 'Auto save', toggle: byId('btn-auto-save').classList.contains('active') });
     if (byId('btn-dark-mode')) out.push({ el: byId('btn-dark-mode'), label: 'Dark mode', toggle: document.body.classList.contains('dark-mode') });
-    for (const [id, label, sub] of [['btn-settings', 'Settings', 'Base MVA, frequency, symbols'], ['btn-help', 'Help', 'Calculations & tools'], ['btn-account', 'Account', 'Sign in, sync, sharing']]) {
+    for (const [id, label, sub] of [['btn-settings', 'Settings', 'Dark mode, sign-in, libraries'], ['btn-help', 'Help', 'Calculations & tools'], ['btn-account', 'Account', 'Sign in, sync, sharing']]) {
       if (byId(id) && !byId(id).hidden) out.push({ el: byId(id), label, sub, nav: true });
     }
     return out;

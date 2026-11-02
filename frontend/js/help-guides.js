@@ -732,12 +732,12 @@ const HELP_GUIDES = [
 
 // ───────────────────────────────────────────────────────────────────────────
 { id: 'cascading', group: 'protection', title: 'Use cascading (back-up protection)',
-  where: 'Settings ▸ System Base ▸ Allow cascading, then Duty check', time: '5 min', phone: 'Same dialogs',
+  where: 'Project ▸ Project settings ▸ Allow cascading, then Duty check', time: '5 min', phone: 'Same dialogs',
   intro: 'A low-voltage breaker whose own breaking capacity is below the fault level can still be acceptable when a tested breaker above it backs it up. The manufacturer’s tables give the reinforced breaking capacity of the pair, and the duty and compliance checks use it.',
   steps: [
     { title: 'Leave cascading on (or turn it off)',
-      html: 'In <strong>Settings ▸ System Base</strong>, <strong>Allow cascading (back-up protection)</strong> is on by default and is saved with the project. Turn it off when a specification requires every breaker to be rated for its own fault level.',
-      shot: { file: 'cascading-1.png', alt: 'Settings, System Base tab, with Allow cascading ticked',
+      html: 'In <strong>Project ▸ Project settings ▸ Electrical base &amp; standards</strong>, <strong>Allow cascading (back-up protection)</strong> is on by default and is saved with the project. Turn it off when a specification requires every breaker to be rated for its own fault level.',
+      shot: { file: 'cascading-1.png', alt: 'Project settings, Electrical base and standards, with Allow cascading ticked',
         setup: 'settings-cascading', clip: 'viewport',
         callouts: [
           { sel: '#allow-cascading', label: 'Allow cascading (back-up protection)' },
