@@ -366,7 +366,7 @@ const LightingWS = {
     const cur = this.step, list = this.stepList();
     const at = list.findIndex(x => x[0] === cur);
     return list.map(([k, label, sub], i) => `<button type="button" class="lw-step${k === cur ? ' on' : ''}${i < at ? ' done' : ''}" data-lw-step="${k}"${k === cur ? ' aria-current="step"' : ''} title="${escHtml(sub)}">
-        <span class="lw-step-n" aria-hidden="true">${i < at ? '✓' : i + 1}</span><span class="lw-step-t"><b>${escHtml(label)}</b><small>${escHtml(sub)}</small></span></button>`).join('');
+        <span class="lw-step-n" aria-hidden="true">${i < at ? '✓' : ''}</span><span class="lw-step-t"><b>${escHtml(label)}</b><small>${escHtml(sub)}</small></span></button>`).join('');
   },
 
   // ─── The left panel, per step ───
