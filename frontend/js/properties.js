@@ -3220,92 +3220,20 @@ I_base = S_base / (√3 × V) = ${base * 1000} / (√3 × ${vkv}) = ${Ibase.toFi
     this._bindProjectDetailsEvents();
   },
 
+  // Nothing selected: a short summary of the project with a link to its settings page.
   _renderProjectDetails() {
-    const d = AppState.projectDetails;
-    const pName = AppState.projectName || '';
+    const d = AppState.projectDetails || {};
+    const t = typeof Workspaces !== 'undefined' ? Workspaces.TYPES[Workspaces.type()] : null;
+    const rows = [['Name', AppState.projectName || 'Untitled Project'], ['Type', t ? t.label : ''], ['Number', d.projectNumber], ['Client', d.client], ['Engineer', d.engineerName], ['Revision', d.revisionNumber]]
+      .filter(r => r[1]).map(r => `<div class="prop-row"><label>${r[0]}</label><span class="pd-val">${this._esc(r[1])}</span></div>`).join('');
     return `
       <div class="project-details-form">
         <div class="prop-section">
-          <div class="prop-section-title">Project Information</div>
-          <div class="prop-row">
-            <label>Project Name</label>
-            <input type="text" data-project-field="projectName" value="${this._esc(pName)}" />
-          </div>
-          <div class="prop-row">
-            <label>Project Number</label>
-            <input type="text" data-project-field="projectNumber" value="${this._esc(d.projectNumber)}" />
-          </div>
-          <div class="prop-row">
-            <label>Client</label>
-            <input type="text" data-project-field="client" value="${this._esc(d.client)}" />
-          </div>
-          <div class="prop-row">
-            <label>Company</label>
-            <input type="text" data-project-field="company" value="${this._esc(d.company)}" />
-          </div>
-          <div class="prop-row">
-            <label>Description</label>
-            <textarea data-project-field="description" rows="3">${this._esc(d.description)}</textarea>
-          </div>
+          <div class="prop-section-title">Project</div>
+          ${rows}
+          <button type="button" class="btn-primary pd-edit" data-project-settings>Edit project settings…</button>
         </div>
-        <div class="prop-section">
-          <div class="prop-section-title">Personnel</div>
-          <div class="prop-row">
-            <label>Engineer</label>
-            <input type="text" data-project-field="engineerName" value="${this._esc(d.engineerName)}" />
-          </div>
-          <div class="prop-row">
-            <label>Checked By</label>
-            <input type="text" data-project-field="checkedBy" value="${this._esc(d.checkedBy)}" />
-          </div>
-          <div class="prop-row">
-            <label>Approved By</label>
-            <input type="text" data-project-field="approvedBy" value="${this._esc(d.approvedBy)}" />
-          </div>
-        </div>
-        <div class="prop-section">
-          <div class="prop-section-title">Revision</div>
-          <div class="prop-row">
-            <label>Revision No.</label>
-            <input type="text" data-project-field="revisionNumber" value="${this._esc(d.revisionNumber)}" />
-          </div>
-          <div class="prop-row">
-            <label>Date</label>
-            <input type="date" data-project-field="date" value="${this._esc(d.date || '')}" />
-          </div>
-        </div>
-        <div class="prop-section">
-          <div class="prop-section-title">Company Logo</div>
-          <div class="logo-upload-area">
-            ${this._safeLogo(d.companyLogo)
-              ? `<div class="logo-preview"><img src="${this._esc(this._safeLogo(d.companyLogo))}" alt="Company Logo" /><button class="btn-remove-logo" title="Remove logo">&times;</button></div>`
-              : '<div class="logo-placeholder">No logo uploaded</div>'}
-            <label class="btn btn-small btn-secondary logo-upload-btn">
-              ${this._safeLogo(d.companyLogo) ? 'Change Logo' : 'Upload Logo'}
-              <input type="file" accept="image/png,image/jpeg,image/gif,image/webp" id="logo-file-input" hidden />
-            </label>
-          </div>
-        </div>
-        ${this._renderDisplayOptions()}
-      </div>`;
-  },
-
-  // Global display preferences (shown in the Project Details view when nothing
-  // is selected): the voltage display unit. Which result boxes appear and the
-  // value lines in them are picked on the canvas (resultview.js).
-  _renderDisplayOptions() {
-    const unit = AppState.voltageDisplayUnit === 'V' ? 'V' : 'kV';
-    return `
-      <div class="prop-section">
-        <div class="prop-section-title">Display Options</div>
-        <div class="prop-row">
-          <label>Voltage unit</label>
-          <select data-display-field="voltageDisplayUnit">
-            <option value="kV"${unit === 'kV' ? ' selected' : ''}>kV</option>
-            <option value="V"${unit === 'V' ? ' selected' : ''}>V</option>
-          </select>
-        </div>
-        <p class="display-hint">Which result boxes show, and the values in them, are picked over the diagram (the strip of study chips and Values ▾).</p>
+        <p class="display-hint">Select a component to see its properties.</p>
       </div>`;
   },
 
@@ -3320,64 +3248,7 @@ I_base = S_base / (√3 × V) = ${base * 1000} / (√3 × ${vkv}) = ${Ibase.toFi
   },
 
   _bindProjectDetailsEvents() {
-    // Text/date field bindings
-    this.contentEl.querySelectorAll('[data-project-field]').forEach(el => {
-      el.addEventListener('input', () => {
-        const field = el.dataset.projectField;
-        if (field === 'projectName') {
-          AppState.projectName = el.value;
-          document.getElementById('project-name-display').textContent = el.value || 'Untitled Project';
-        } else {
-          AppState.projectDetails[field] = el.value;
-        }
-        AppState.dirty = true;
-      });
-    });
-
-    // Logo upload
-    const fileInput = this.contentEl.querySelector('#logo-file-input');
-    if (fileInput) {
-      fileInput.addEventListener('change', (e) => {
-        const file = e.target.files[0];
-        if (!file) return;
-        if (file.size > 2 * 1024 * 1024) {
-          UI.toast('Logo file must be under 2 MB.', 'error');
-          return;
-        }
-        const reader = new FileReader();
-        reader.onload = () => {
-          if (!this._safeLogo(reader.result)) { UI.toast('The logo must be a PNG, JPEG, GIF or WebP image.', 'error'); return; }
-          AppState.projectDetails.companyLogo = reader.result;
-          AppState.dirty = true;
-          this.clear(); // re-render to show preview
-        };
-        reader.readAsDataURL(file);
-      });
-    }
-
-    // Logo remove button
-    const removeBtn = this.contentEl.querySelector('.btn-remove-logo');
-    if (removeBtn) {
-      removeBtn.addEventListener('click', () => {
-        AppState.projectDetails.companyLogo = null;
-        AppState.dirty = true;
-        this.clear(); // re-render
-      });
-    }
-
-    this._bindDisplayOptionsEvents();
-  },
-
-  // Wire up the Display Options controls: the voltage unit.
-  _bindDisplayOptionsEvents() {
-    const unitSel = this.contentEl.querySelector('[data-display-field="voltageDisplayUnit"]');
-    if (unitSel) {
-      unitSel.addEventListener('change', () => {
-        AppState.voltageDisplayUnit = unitSel.value === 'V' ? 'V' : 'kV';
-        AppState.dirty = true;
-        Canvas.render();
-      });
-    }
+    this.contentEl.querySelector('[data-project-settings]')?.addEventListener('click', () => ProjectSettings.open());
   },
 
   // Re-render the Project Details view (which hosts Display Options) if it's the

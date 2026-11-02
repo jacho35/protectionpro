@@ -88,6 +88,8 @@ jobs:
         run: node frontend/tests/test_startscreen.mjs
       - name: Help per project type (guides listed for each type exist)
         run: node frontend/tests/test_help_types.mjs
+      - name: Project settings (value rules, sections, when the electrical values apply)
+        run: node frontend/tests/test_projectsettings.mjs
 
       - name: Raw HTML interpolation ratchet (new unescaped attribute values fail)
         run: node testing/lint/raw-interp.mjs --max 0

@@ -473,7 +473,7 @@ export const SETUPS = {
     await fc.setFiles(new URL('../vendor-libraries/cbi_breakers.json', import.meta.url).pathname);
     await page.waitForTimeout(600); } },
 
-  'settings-cascading': { run: async (page) => { await page.evaluate(() => { StandardData.openSettings ? StandardData.openSettings() : document.getElementById('btn-settings')?.click(); });
+  'settings-cascading': { run: async (page) => { await page.evaluate(() => { Workspaces.setType('network'); ProjectSettings.open('electrical'); });
     await page.waitForTimeout(600); } },
 
   'notifications': { run: async (page) => { await page.click('#btn-notifications'); await page.waitForTimeout(800); } },

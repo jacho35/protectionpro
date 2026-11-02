@@ -47,6 +47,7 @@ document.addEventListener('DOMContentLoaded', () => {
   Properties.init();
   Annotations.init();
   Project.init();
+  if (typeof ProjectSettings !== 'undefined') ProjectSettings.init();
   updateProjectNameDisplay();
   StandardData.init();
   TCC.init();
@@ -3099,31 +3100,16 @@ document.addEventListener('DOMContentLoaded', () => {
       document.getElementById('settings-modal').style.display = 'none';
     }
   });
-  // Symbol set is display-only: applies live and leaves analysis results alone
-  // (Apply below clears them, which a drawing-style change must not do).
-  document.getElementById('use-iec-symbols').addEventListener('change', (e) => {
-    AppState.symbolSet = e.target.checked ? 'iec' : 'classic';
-    AppState.dirty = true;
-    Canvas.render();
-    if (typeof Sidebar !== 'undefined') Sidebar.syncSymbolSet();
-    if (Properties.currentId) Properties.show(Properties.currentId);
+  // Personal preferences (the project's own values are in Project settings)
+  document.getElementById('pref-dark').addEventListener('change', (e) => {
+    if (document.body.classList.contains('dark-mode') !== e.target.checked) document.getElementById('btn-dark-mode').click();
   });
-  document.getElementById('btn-save-settings').addEventListener('click', () => {
-    AppState.baseMVA = parseFloat(document.getElementById('base-mva').value) || DEFAULT_BASE_MVA;
-    AppState.frequency = parseInt(document.getElementById('base-freq').value) || DEFAULT_FREQUENCY;
-    AppState.voltageFactor = parseFloat(document.getElementById('voltage-factor').value) || DEFAULT_VOLTAGE_FACTOR;
-    AppState.defaultLengthUnit = document.getElementById('default-length-unit').value || 'm';
-    AppState.cascading = document.getElementById('allow-cascading').checked;
-    const syncWas = AppState.keepInSync !== false;
-    AppState.keepInSync = document.getElementById('keep-in-sync').checked;
-    // A change is saved with the project; switching it on, the dirty mark
-    // also starts a sync pass that brings every workspace up to date.
-    if (syncWas !== AppState.keepInSync) AppState.dirty = true;
-    AppState.invalidateResults();
-    Canvas.render();
+  document.getElementById('pref-open-last').addEventListener('change', (e) => {
+    if (typeof StartScreen !== 'undefined') StartScreen.setOpenLast(e.target.checked);
+  });
+  document.getElementById('btn-settings-to-project').addEventListener('click', () => {
     document.getElementById('settings-modal').style.display = 'none';
-    // Refresh properties if showing
-    if (Properties.currentId) Properties.show(Properties.currentId);
+    ProjectSettings.open();
   });
 
   // Properties panel resize

@@ -1096,7 +1096,7 @@ const StandardData = {
   _screen: 'home',
 
   _SECTIONS: [
-    { group: 'General', tab: 'system', sub: () => `${AppState.baseMVA} MVA · ${AppState.frequency} Hz · c = ${(AppState.voltageFactor ?? DEFAULT_VOLTAGE_FACTOR).toFixed(2)}` },
+    { group: 'General', tab: 'system', sub: () => 'Dark mode, signing in' },
     { group: 'Server', tab: 'email', sub: () => 'Invites and password resets (optional)', adminOnly: true },
     { group: 'Reference', tab: 'iec-standards', sub: () => 'Ampacity, sizing and derating tables' },
   ],
@@ -1608,13 +1608,9 @@ const StandardData = {
 
   // Open settings modal
   open() {
-    document.getElementById('base-mva').value = AppState.baseMVA;
-    document.getElementById('base-freq').value = AppState.frequency;
-    document.getElementById('voltage-factor').value = AppState.voltageFactor ?? DEFAULT_VOLTAGE_FACTOR;
-    document.getElementById('default-length-unit').value = AppState.defaultLengthUnit || 'm';
-    document.getElementById('use-iec-symbols').checked = AppState.symbolSet === 'iec';
-    document.getElementById('allow-cascading').checked = AppState.cascading !== false;
-    document.getElementById('keep-in-sync').checked = AppState.keepInSync !== false;
+    // Personal preferences (the project's own values are in Project settings)
+    document.getElementById('pref-dark').checked = document.body.classList.contains('dark-mode');
+    document.getElementById('pref-open-last').checked = typeof StartScreen === 'undefined' || StartScreen.openLastOn();
     this._showAll = false;
     this._applyType();
     document.getElementById('settings-modal').style.display = '';
@@ -1624,20 +1620,13 @@ const StandardData = {
     if (this._compactOn) this._showScreen('home');
   },
 
-  // Settings follow the project type: the single-line study values (base MVA, voltage factor,
-  // symbols, cascading, cable length unit) show for a Network project or once the single line
-  // is in use; the IEC tables are left out of a Lighting project. "Show all settings" lifts it.
+  // Settings follow the project type: the IEC tables are left out of a Lighting project.
+  // "Show all settings" lifts it. (The project's own values are in Project settings.)
   _showAll: false,
   _applyType() {
     const type = typeof Workspaces !== 'undefined' ? Workspaces.type() : 'network';
-    const sld = type === 'network' || (AppState.components && AppState.components.size > 0);
     const all = this._showAll;
     let hidden = 0;
-    document.querySelectorAll('#settings-modal [data-needs="sld"]').forEach(el => {
-      const off = !all && !sld;
-      el.hidden = off;
-      if (off) hidden++;
-    });
     document.querySelectorAll('#settings-modal .settings-tab[data-not-types]').forEach(tab => {
       const off = !all && tab.dataset.notTypes.split(' ').includes(type);
       tab.hidden = off;
