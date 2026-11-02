@@ -128,6 +128,11 @@ def expand_changeovers(project):
         new_cases = []
         changed = False
         for case in cases:
+            # A saved project carries its Cases as plain dicts (`cases`); only a
+            # Load Flow Study Manager request has them as typed snapshots.
+            if not hasattr(case, "components"):
+                new_cases.append(case)
+                continue
             cc, cw = _expand(case.components, case.wires)
             if cc is not case.components:
                 case = case.model_copy(update={"components": cc, "wires": cw})

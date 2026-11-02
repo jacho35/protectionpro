@@ -496,8 +496,9 @@ const API = {
   },
 
   // Run study manager (batch all analyses)
-  async runStudyManager(enabledStudies = null) {
-    const data = AppState.toJSON();
+  async runStudyManager(enabledStudies = null, project = null) {
+    const data = project || AppState.toJSON();
+    delete data.cases;   // the saved cases are not an input to a study (and would be sent with every request)
     if (enabledStudies) data.enabled_studies = enabledStudies;
     return this.request('/analysis/study-manager', 'POST', data);
   },

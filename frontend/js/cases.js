@@ -83,4 +83,16 @@ const Cases = {
     const d = nb - na;
     return (d >= 0 ? '+' : '') + d.toFixed(4);
   },
+
+  // The project a study runs on for this case: the live project with the
+  // case's network (and base MVA / solver method) in place of the live one.
+  // A case runs as the copy that was saved; its `applies` ticks are only for loading it.
+  project(base, c) {
+    const o = { ...base };
+    if (Array.isArray(c.components) && c.components.length) { o.components = c.components; o.wires = c.wires || []; }
+    else if (Array.isArray(c.wires) && c.wires.length) o.wires = c.wires;
+    if (c.baseMVA != null) o.baseMVA = c.baseMVA;
+    if (c.loadFlowMethod) o.loadFlowMethod = c.loadFlowMethod;
+    return o;
+  },
 };

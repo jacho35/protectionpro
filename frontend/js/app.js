@@ -287,6 +287,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // The save chip + autosave (savestate.js); the choice is in Settings › Preferences
   SaveState.init();
   AnalyseMenu.init();
+  CaseRuns.init();
   WsHead.init();
   ProjectHistory.init();
   Project.startLocalBackup();
@@ -2261,6 +2262,18 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('study-manager-body').innerHTML = '';
 
     try {
+      const runCurrent = CaseRuns.currentOn();
+      const others = CaseRuns.selectedCases();
+      if (others.length) await CaseRuns.runCases(others, enabled, statusEl);
+      if (!runCurrent) {
+        statusEl.textContent = `Ran ${enabled.length} studies on ${others.length} case${others.length === 1 ? '' : 's'}.`;
+        document.getElementById('status-info').textContent = 'Batch run complete.';
+        btn.disabled = false;
+        CaseRuns.render();
+        AnalyseMenu.syncManager();
+        return;
+      }
+      statusEl.textContent = `Running ${enabled.length} studies on the current network…`;
       const result = await API.runStudyManager(enabled);
       AppState.studyManagerResults = result;
 
@@ -2286,6 +2299,7 @@ document.addEventListener('DOMContentLoaded', () => {
       statusEl.textContent = `Completed in ${result.total_time_s}s`;
       btn.disabled = false;
       showStudyManagerResults(result);
+      CaseRuns.render();
     } catch (e) {
       console.error('Study manager error:', e);
       document.getElementById('status-info').textContent = 'Batch run failed.';

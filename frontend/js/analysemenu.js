@@ -137,7 +137,7 @@ const AnalyseMenu = {
     all.parentNode.insertBefore(b, all);
     b.addEventListener('click', () => {
       for (const cb of document.querySelectorAll('#study-manager-checks input[data-study]')) {
-        cb.checked = cb.dataset.smState === 'stale' || cb.dataset.smState === 'none';
+        cb.checked = typeof CaseRuns !== 'undefined' ? CaseRuns.needs(cb.dataset.study) : (cb.dataset.smState === 'stale' || cb.dataset.smState === 'none');
       }
       all.click();
     });
