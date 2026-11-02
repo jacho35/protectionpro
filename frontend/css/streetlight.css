@@ -33,7 +33,7 @@ body.dark-mode #streetlight-workspace, body.dark-mode #sl-quick-modal { --sl-r: 
   border: 1px solid var(--border-color); border-radius: 4px;
   font-family: inherit;
 }
-.sl-status { font-size: 12px; color: var(--text-secondary); margin-left: auto; }
+.sl-status { font-size: 12px; color: var(--text-secondary); margin-left: 0; }
 
 .sl-body { flex: 1; display: flex; min-height: 0; }
 

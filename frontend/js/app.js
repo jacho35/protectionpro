@@ -287,6 +287,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // The save chip + autosave (savestate.js); the choice is in Settings › Preferences
   SaveState.init();
   AnalyseMenu.init();
+  WsHead.init();
   Project.startLocalBackup();
   Project.restoreLocalBackup();
 

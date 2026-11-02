@@ -1,0 +1,11 @@
+/* One header layout for every workspace: the right-hand cluster (wshead.js). */
+.ws-tail { display: flex; align-items: center; gap: 8px; margin-left: auto; flex: none; }
+.ws-tail .ws-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.ws-tail .ws-primary:hover { filter: brightness(1.08); }
+.ws-pop { position: relative; display: inline-flex; }
+.ws-pop-panel { display: none; position: absolute; right: 0; top: calc(100% + 4px); z-index: 120; min-width: 240px; padding: 10px 12px; flex-direction: column; gap: 8px; background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: 6px; box-shadow: 0 6px 20px rgba(0,0,0,.18); }
+.ws-pop.open .ws-pop-panel { display: flex; }
+.ws-pop-panel label { justify-content: space-between; }
+.ws-pop-panel input { width: 64px; }
+.ws-pop-note { font-size: 11px; color: var(--text-muted); }
+@media (max-width: 768px) { .ws-pop-panel { position: fixed; left: 8px; right: 8px; top: auto; bottom: 8px; } }
