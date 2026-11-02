@@ -1,0 +1,13 @@
+/* Analyse menu: Common row, items that need a selection. Study Manager status. */
+.mega-panel .am-common { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 4px 8px 8px; margin-bottom: 4px; border-bottom: 1px solid var(--border-color); }
+.am-label { font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--text-muted); margin-right: 4px; }
+.am-btn { display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px; border: 1px solid var(--border-color); border-radius: 14px; background: var(--bg-secondary); color: var(--text-primary); font-size: 12.5px; cursor: pointer; }
+.am-btn:hover { background: var(--bg-hover, var(--bg-tertiary)); }
+.am-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--text-muted); }
+.am-dot.am-ok { background: #2e7d32; } .am-dot.am-warn { background: #f9a825; } .am-dot.am-fail { background: #c62828; }
+.am-dot.am-stale { background: transparent; border: 2px solid #f9a825; } .am-dot.am-none { background: transparent; border: 1px solid var(--text-muted); }
+.dropdown-item.am-needs { opacity: .6; }
+.am-why { display: block; font-size: 11px; color: var(--text-muted); font-style: italic; }
+#study-manager-checks label { flex-wrap: wrap; }
+.sm-status { flex-basis: 100%; margin-left: 22px; font-size: 11px; color: var(--text-muted); }
+.sm-status.sm-fail { color: #c62828; } .sm-status.sm-warn { color: #b26a00; } .sm-status.sm-stale { color: #b26a00; font-style: italic; }
