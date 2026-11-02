@@ -84,7 +84,7 @@ const AnalyseMenu = {
       if (!document.getElementById(id)) return '';
       const st = rp ? this.status(this._read(rp)) : null;
       return `<button type="button" class="am-btn" data-am="${escHtml(id)}"${st ? ` title="${escHtml(st.text)}"` : ''}>`
-        + (st ? `<span class="rv-dot am-dot am-${st.state}" aria-hidden="true"></span>` : '') + escHtml(label) + '</button>';
+        + (st ? `<span class="rv-dot am-dot am-${escHtml(st.state)}" aria-hidden="true"></span>` : '') + escHtml(label) + '</button>';
     }).join('');
     const types = [...AppState.selectedIds].map(id => (AppState.components.get(id) || {}).type).filter(Boolean);
     for (const [id, kind] of Object.entries(this.NEEDS)) {
