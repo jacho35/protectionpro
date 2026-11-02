@@ -319,6 +319,7 @@ const PlanMarkup = {
     this.selectedIds.clear();
     this._undoStack = [];
     this._undoIndex = -1;
+    this._undoNames = [];
     this._snapshot();
     if (typeof PlanImages !== 'undefined') PlanImages.syncCache();
     if (typeof PlanDxfImport !== 'undefined') PlanDxfImport.syncFloor();
@@ -973,24 +974,43 @@ const PlanMarkup = {
   _snapshot() {
     if (typeof AppState._stashActiveFloor === 'function') AppState._stashActiveFloor();
     const snap = JSON.stringify(AppState.planMarkup);
+    const prev = this._undoStack[this._undoIndex];
+    const name = prev !== undefined && snap.length < 3e6 ? UndoNames.plan(prev, snap) : '';
     // Drop any redo tail, push, cap.
     this._undoStack = this._undoStack.slice(0, this._undoIndex + 1);
+    this._undoNames = (this._undoNames || []).slice(0, this._undoIndex + 1);
     this._undoStack.push(snap);
-    if (this._undoStack.length > this._maxUndo) this._undoStack.shift();
+    this._undoNames.push(name);
+    if (this._undoStack.length > this._maxUndo) { this._undoStack.shift(); this._undoNames.shift(); }
     this._undoIndex = this._undoStack.length - 1;
+    this._syncUndoUi();
+  },
+  _undoNames: [],
+  undoLabel() { return this._undoIndex > 0 ? (this._undoNames[this._undoIndex] || '') : ''; },
+  redoLabel() { return this._undoIndex < this._undoStack.length - 1 ? (this._undoNames[this._undoIndex + 1] || '') : ''; },
+  _syncUndoUi() {
+    const u = UndoNames.title('Undo', this.undoLabel(), 'Ctrl+Z'), r = UndoNames.title('Redo', this.redoLabel(), 'Ctrl+Shift+Z');
+    document.querySelectorAll('#plan-toolbar [data-action="undo"], [data-lw-act="undo"]').forEach(b => { b.title = u; b.setAttribute('aria-label', u.replace(/ \(.*\)$/, '')); });
+    document.querySelectorAll('#plan-toolbar [data-action="redo"], [data-lw-act="redo"]').forEach(b => { b.title = r; b.setAttribute('aria-label', r.replace(/ \(.*\)$/, '')); });
   },
   snapshot() { this._snapshot(); },
 
   undo() {
     if (this._undoIndex <= 0) return;
+    const what = this.undoLabel();
     this._undoIndex--;
     this._restore(this._undoStack[this._undoIndex]);
+    this._syncUndoUi();
+    this._said(what && 'Undid: ' + what);
   },
   redo() {
     if (this._undoIndex >= this._undoStack.length - 1) return;
     this._undoIndex++;
     this._restore(this._undoStack[this._undoIndex]);
+    this._syncUndoUi();
+    this._said(this._undoNames[this._undoIndex] && 'Redid: ' + this._undoNames[this._undoIndex]);
   },
+  _said(t) { const el = document.getElementById('status-info'); if (el && t) el.textContent = t; },
   _restore(snap) {
     AppState.planMarkup = JSON.parse(snap);
     if (typeof AppState._hydrateActiveFloor === 'function') AppState._hydrateActiveFloor();

@@ -1086,8 +1086,8 @@ const Retic = {
       <div class="retic-toolbar">
         <button class="retic-btn primary" data-action="add-kiosk">+ Add Kiosk</button>
         <button class="retic-btn retic-mobile-only" data-action="toggle-summary" title="Show the minisub / network summary">▤ Summary</button>
-        <button class="retic-btn" data-action="undo" title="Undo (reticulation)">↶ Undo</button>
-        <button class="retic-btn" data-action="redo" title="Redo (reticulation)">Redo ↷</button>
+        <button class="retic-btn" data-action="undo" title="${escHtml(UndoNames.title('Undo', this.undoLabel(), 'Ctrl+Z'))}">↶ Undo</button>
+        <button class="retic-btn" data-action="redo" title="${escHtml(UndoNames.title('Redo', this.redoLabel(), 'Ctrl+Shift+Z'))}">Redo ↷</button>
         <button class="retic-btn" data-action="diagram" title="Single-line view of the minisub → kiosk topology, with per-leg and cumulative volt drop and connection counts">◱ Diagram</button>
         <button class="retic-btn" data-action="report" title="Export demand + cable schedule">Export Report</button>
       </div>` + (this.kiosks.length ? `
@@ -2427,6 +2427,7 @@ const Retic = {
   // can't restore a previous project's reticulation, and refresh the view.
   onProjectChanged() {
     this._undoStack = [];
+    this._undoNames = [];
     this._undoIndex = -1;
     this._snapshot(); // new baseline
     if (this._active) {
@@ -2439,24 +2440,42 @@ const Retic = {
   _snapshot() {
     const snap = JSON.stringify(this.state);
     if (this._undoStack[this._undoIndex] === snap) return; // no actual change
+    const prev = this._undoStack[this._undoIndex];
+    const name = prev !== undefined && snap.length < 3e6 ? UndoNames.demand(prev, snap) : '';
     if (this._undoIndex < this._undoStack.length - 1) {
       this._undoStack.splice(this._undoIndex + 1);
     }
+    this._undoNames = (this._undoNames || []).slice(0, this._undoIndex + 1);
     this._undoStack.push(snap);
-    if (this._undoStack.length > 50) this._undoStack.shift();
+    this._undoNames.push(name);
+    if (this._undoStack.length > 50) { this._undoStack.shift(); this._undoNames.shift(); }
     this._undoIndex = this._undoStack.length - 1;
+    this._syncUndoUi();
+  },
+  _undoNames: [],
+  undoLabel() { return this._undoIndex > 0 ? (this._undoNames[this._undoIndex] || '') : ''; },
+  redoLabel() { return this._undoIndex < this._undoStack.length - 1 ? (this._undoNames[this._undoIndex + 1] || '') : ''; },
+  _syncUndoUi() {
+    document.querySelectorAll('#retic-workspace [data-action="undo"]').forEach(b => { b.title = UndoNames.title('Undo', this.undoLabel(), 'Ctrl+Z'); });
+    document.querySelectorAll('#retic-workspace [data-action="redo"]').forEach(b => { b.title = UndoNames.title('Redo', this.redoLabel(), 'Ctrl+Shift+Z'); });
   },
 
   undo() {
     if (this._undoIndex <= 0) return;
+    const what = this.undoLabel();
     this._undoIndex--;
     this._restore(this._undoStack[this._undoIndex]);
+    this._syncUndoUi();
+    const el = document.getElementById('status-info'); if (el && what) el.textContent = 'Undid: ' + what;
   },
 
   redo() {
     if (this._undoIndex >= this._undoStack.length - 1) return;
     this._undoIndex++;
     this._restore(this._undoStack[this._undoIndex]);
+    this._syncUndoUi();
+    const w = this._undoNames[this._undoIndex];
+    const el = document.getElementById('status-info'); if (el && w) el.textContent = 'Redid: ' + w;
   },
 
   _restore(json) {

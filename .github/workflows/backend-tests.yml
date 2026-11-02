@@ -102,6 +102,8 @@ jobs:
         run: node frontend/tests/test_undo_names.mjs
       - name: Workspace header cluster (settings, primary action, guide)
         run: node frontend/tests/test_wshead.mjs
+      - name: Undo names in the plan, Demand and road plan
+        run: node frontend/tests/test_undonames.mjs
 
       - name: Raw HTML interpolation ratchet (new unescaped attribute values fail)
         run: node testing/lint/raw-interp.mjs --max 0

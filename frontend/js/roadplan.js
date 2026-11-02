@@ -117,7 +117,9 @@ const RoadPlan = {
   _showSeg: true,
   _req: 0,
   _timer: null,
-  _undo: [], _redo: [],
+  _undo: [], _redo: [], _undoNames: [], _redoNames: [],
+  undoLabel() { return this._undoNames[this._undoNames.length - 1] || ''; },
+  redoLabel() { return this._redoNames[this._redoNames.length - 1] || ''; },
   _drag: null,
   _hover: null,
   _snap: true,
@@ -145,10 +147,12 @@ const RoadPlan = {
   // ─── Undo (road data only; the background is not snapshotted) ────────
   _snapshot() { return JSON.stringify({ roads: this.roads, junctionCls: this.rp.junctionCls, settings: this.rp.settings, scene: this.rp.scene || null }); },
   _commit() {
-    this._undo.push(this._last || this._snapshot());
-    if (this._undo.length > 50) this._undo.shift();
-    this._redo = [];
+    const before = this._last || this._snapshot();
+    this._undo.push(before);
+    if (this._undo.length > 50) { this._undo.shift(); this._undoNames.shift(); }
+    this._redo = []; this._redoNames = [];
     this._last = this._snapshot();
+    this._undoNames.push(before.length < 3e6 ? UndoNames.road(before, this._last) : '');
     AppState.dirty = true;
     this._resStale = true;
     this._geo.clear();
@@ -164,8 +168,20 @@ const RoadPlan = {
     this.render();
     if (this._step === 3 || (this._view3d && this._res)) this.recompute();
   },
-  undo() { if (!this._undo.length) return; this._redo.push(this._snapshot()); this._restore(this._undo.pop()); },
-  redo() { if (!this._redo.length) return; this._undo.push(this._snapshot()); this._restore(this._redo.pop()); },
+  undo() {
+    if (!this._undo.length) return;
+    const n = this._undoNames.pop() || '';
+    this._redoNames.push(n);
+    this._redo.push(this._snapshot()); this._restore(this._undo.pop());
+    const el = document.getElementById('status-info'); if (el && n) el.textContent = 'Undid: ' + n;
+  },
+  redo() {
+    if (!this._redo.length) return;
+    const n = this._redoNames.pop() || '';
+    this._undoNames.push(n);
+    this._undo.push(this._snapshot()); this._restore(this._redo.pop());
+    const el = document.getElementById('status-info'); if (el && n) el.textContent = 'Redid: ' + n;
+  },
 
   // ─── Lifecycle (StreetLight's view switch) ───────────────────────────
   mount(host) {
@@ -228,7 +244,7 @@ const RoadPlan = {
   },
   deactivate() { this._active = false; clearTimeout(this._timer); this._draft = null; this._kerbDraft = null; },
   onProjectChanged() {
-    this._res = null; this._resStale = true; this._geo.clear(); this._undo = []; this._redo = [];
+    this._res = null; this._resStale = true; this._geo.clear(); this._undo = []; this._redo = []; this._undoNames = []; this._redoNames = [];
     this._selRoad = this.roads.length ? this.roads[0].id : null; this._selPole = null; this._fitted = false;
     if (this._active) { this._fitted = true; this.fit(); this.render(); this._last = this._snapshot(); }
   },
@@ -1353,7 +1369,7 @@ const RoadPlan = {
         <button class="btn-small btn-primary" data-rp="calc">${this._busy ? 'Calculating…' : 'Recalculate'}</button>`;
     }
     const v3 = this._view3d;
-    html += `<span class="rp-tb-right"><button class="btn-small" data-rp="undo" title="Undo (Ctrl+Z)"${this._undo.length ? '' : ' disabled'}>Undo</button><button class="btn-small" data-rp="redo" title="Redo (Ctrl+Y)"${this._redo.length ? '' : ' disabled'}>Redo</button>${v3 ? '' : '<button class="btn-small" data-rp="fit" title="Fit the plan (F)">Fit</button>'}
+    html += `<span class="rp-tb-right"><button class="btn-small" data-rp="undo" title="${escHtml(UndoNames.title('Undo', this.undoLabel(), 'Ctrl+Z'))}"${this._undo.length ? '' : ' disabled'}>Undo</button><button class="btn-small" data-rp="redo" title="${escHtml(UndoNames.title('Redo', this.redoLabel(), 'Ctrl+Y'))}"${this._redo.length ? '' : ' disabled'}>Redo</button>${v3 ? '' : '<button class="btn-small" data-rp="fit" title="Fit the plan (F)">Fit</button>'}
       ${typeof Road3D !== 'undefined' ? `<span class="sl-view-toggle" role="group" aria-label="View"><button class="${v3 ? '' : 'active'}" data-rp-view="plan" aria-pressed="${!v3}">Plan</button><button class="${v3 ? 'active' : ''}" data-rp-view="3d" aria-pressed="${v3}">3D</button></span>` : ''}</span>`;
     el.innerHTML = html;
   },
