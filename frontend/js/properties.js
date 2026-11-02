@@ -21,6 +21,23 @@ const SECTION_LABELS = {
   comms: 'BMS / Control Connection',
 };
 
+// Which study reads each section ("Used by" hint), and the filter chips on a
+// part with many sections. A chip shows only if the part has that section.
+const SECTION_USED_BY = {
+  fault: 'Short circuit', dynamic: 'Motor starting', stability: 'Transient stability', loadflow: 'Load flow',
+  harmonics: 'Harmonics', arcflash: 'Arc flash', grounding: 'Grounding', cable_sizing: 'Cable sizing',
+  protection: 'Protection & TCC', battery: 'Load flow, Time series', pv: 'Load flow, Hosting capacity',
+  reliability: 'Reliability', flicker: 'Flicker', comms: 'BMS',
+};
+const SECTION_FILTERS = [['loadflow', 'Load flow'], ['fault', 'Short circuit'], ['arcflash', 'Arc flash'], ['grounding', 'Grounding'], ['protection', 'Protection'], ['cable_sizing', 'Cable sizing']];
+
+// "Conductor Gap (0 = auto)" → label "Conductor Gap" and the rule "0 = auto" on a
+// helper line under the input, so the rule no longer squeezes the input.
+function splitLabelRule(label) {
+  const m = /^(.*?)\s*\((0 = [^)]+)\)\s*$/.exec(String(label || ''));
+  return m ? { label: m[1], rule: m[2] } : { label, rule: '' };
+}
+
 // The result-box type/field schema lives in RESULT_TYPE_DEFS (annotations.js),
 // shared by the render, the Display Options tick-lists here, and the result-box
 // right-click menu.
@@ -113,8 +130,18 @@ const Properties = {
     const { sectionGroups, sectionKeys } = this._groupSections(visibleFields);
     const hasMultipleSections = sectionKeys.length > 1;
 
+    // Filter chips: only for a part with several studies' sections.
+    const chips = SECTION_FILTERS.filter(([k]) => sectionKeys.includes(k));
+    const filt = this.sectionFilter(chips);
+    if (chips.length >= 2 && sectionKeys.length >= 3) {
+      html += '<div class="prop-filter" role="group" aria-label="Show settings for">'
+        + [['all', 'All'], ...chips].map(([k, l]) => `<button type="button" class="prop-filter-chip${filt === k ? ' on' : ''}" data-prop-filter="${escHtml(k)}" aria-pressed="${filt === k}">${escHtml(l)}</button>`).join('')
+        + '</div>';
+    }
+
     // Render each section
     for (const secKey of sectionKeys) {
+      if (filt !== 'all' && secKey !== 'General' && secKey !== filt) continue;
       const fields = sectionGroups[secKey];
       const label = SECTION_LABELS[secKey] || secKey;
       const isGeneral = secKey === 'General';
@@ -127,6 +154,7 @@ const Properties = {
         html += `<div class="prop-section-header${isCollapsed ? ' collapsed' : ''}" data-section="${escHtml(secKey)}">`;
         html += `<span class="chevron">\u25B8</span>`;
         html += `<span>${label}</span>`;
+        if (SECTION_USED_BY[secKey] && SECTION_USED_BY[secKey].toLowerCase() !== String(label).toLowerCase()) html += `<small class="prop-used">Used by: ${escHtml(SECTION_USED_BY[secKey])}</small>`;
         html += `</div>`;
         html += `<div class="prop-section-body${isCollapsed ? ' collapsed' : ''}">`;
       } else {
@@ -202,10 +230,23 @@ const Properties = {
     this.calcInfoEl.style.display = hasCalc ? '' : 'none';
 
     this._bindContent(this.contentEl, comp);
+    this.contentEl.querySelectorAll('[data-prop-filter]').forEach(b => b.addEventListener('click', () => {
+      this.setSectionFilter(b.dataset.propFilter);
+      this.show(id);
+    }));
 
     // Keep an open properties window on the same component in step
     if (typeof PropWindow !== 'undefined' && PropWindow.isOpen()) PropWindow.render();
   },
+
+  // The chosen filter ('all' or a section key), remembered across parts and
+  // sessions; a part without that section shows everything.
+  sectionFilter(chips) {
+    let f = 'all';
+    try { f = localStorage.getItem('pp-prop-filter') || 'all'; } catch (e) { /* private mode */ }
+    return chips.some(([k]) => k === f) ? f : 'all';
+  },
+  setSectionFilter(f) { try { localStorage.setItem('pp-prop-filter', f); } catch (e) { /* private mode */ } },
 
   // Fields of a component that pass their showWhen rules — shared by the
   // sidebar and the properties window.
@@ -1065,6 +1106,9 @@ const Properties = {
       }
     }
 
+    const lr = splitLabelRule(labelText);
+    if (lr.rule && !hintHtml) hintHtml = `<div class="prop-hint">${escHtml(lr.rule)}</div>`;
+    labelText = lr.label;
     return `${preRowHtml}
       <div class="prop-row${modifiedClass}${syncFlagHtml ? ' prop-row--sync' : ''}">
         <label>${labelText}</label>
