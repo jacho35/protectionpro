@@ -93,6 +93,13 @@ Gotchas that cost time — do it this way:
   (`document.querySelectorAll('.modal').forEach(m => m.style.display = 'none')`)
   before driving the next menu action. The study chips over the diagram are
   `#result-view` (`ResultView`).
+- **Start screen on sign-in** (startscreen.js): a user with no projects gets
+  the start screen over the app; one with projects gets their last project
+  opened. For a clean empty project set localStorage `pp-open-last` to `'0'`
+  in the init script, wait for `StartScreen.settled`, then
+  `StartScreen.close()` (`testing/help-guides/lib.mjs` openApp does this).
+  `StartScreen.openSample('retic' | 'building' | 'network' | 'lighting')`
+  opens a calculated sample project.
 - **Fresh state per scenario**: use a new browser context (auto-save backup lives in
   localStorage and can restore on load).
 - `node --check frontend/js/*.js` for quick syntax sanity; there are no frontend

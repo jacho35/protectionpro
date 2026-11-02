@@ -123,17 +123,25 @@ const Project = {
     return await UI.confirm('You have unsaved changes that will be lost. Continue?', { danger: true });
   },
 
+  // Project › New: the start screen (type → blank or its sample, recent
+  // projects). Each of its actions asks about unsaved work itself; closing
+  // it leaves the current project as it was.
   async newProject() {
+    if (typeof StartScreen !== 'undefined') { StartScreen.open(); return; }
     if (AppState.dirty) {
       if (!(await UI.confirm('You have unsaved changes. Create new project?', { danger: true }))) return;
     }
-    // The project type decides which workspaces the new project shows.
-    // Cancelling here abandons the new project and leaves the current one.
     let projectType = null;
     if (typeof Workspaces !== 'undefined' && Workspaces.chooseType) {
       projectType = await Workspaces.chooseType();
       if (!projectType) return;
     }
+    this.createBlank(projectType);
+  },
+
+  // A blank project of the chosen type ({ type, extras, lighting } from
+  // Workspaces.readChoice), on the first working tab of that type.
+  createBlank(projectType) {
     // Different project from here on — drop the outgoing project's local
     // revisions before reset() rotates the revision namespace.
     RevisionTimeline.clearLocal();
@@ -154,6 +162,26 @@ const Project = {
       const first = Workspaces.visible().find(ws => ws !== 'overview');
       if (first && typeof window.switchWorkspace === 'function') window.switchWorkspace(first);
     }
+    if (typeof LFStudy !== 'undefined' && LFStudy.onNetworkReloaded) LFStudy.onNetworkReloaded();
+    RevisionTimeline.hide();
+  },
+
+  // Open project data that has no saved copy (a start-screen sample): it
+  // opens unsaved, so Save makes the user's own project of it.
+  openData(data) {
+    AppState._validateProjectData(data);
+    RevisionTimeline.clearLocal();
+    AppState.fromJSON(data);
+    UndoManager.clear();
+    AppState.projectId = null;
+    this._currentAccess = 'owner';
+    this._applyReadOnly();
+    Canvas.updateTransform();
+    if (typeof renderPageTabs === 'function') renderPageTabs();
+    Canvas.render();
+    Properties.clear();
+    document.title = `ProtectionPro — ${AppState.projectName}`;
+    updateProjectNameDisplay();
     if (typeof LFStudy !== 'undefined' && LFStudy.onNetworkReloaded) LFStudy.onNetworkReloaded();
     RevisionTimeline.hide();
   },

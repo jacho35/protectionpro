@@ -420,11 +420,17 @@ const Workspaces = {
       });
     }
     const result = await promise;
-    if (!result) return null;
-    const card = result.querySelector('[data-ws-type][aria-pressed="true"]');
+    return result ? this.readChoice(result) : null;
+  },
+
+  // The type picked in a box holding the type cards (and, for Lighting, the
+  // design picker): { type, lighting?, extras } — the new project dialog's and
+  // the start screen's answer (startscreen.js).
+  readChoice(content) {
+    const card = content.querySelector('[data-ws-type][aria-pressed="true"]');
     const type = card ? card.dataset.wsType : 'building';
     if (type !== 'lighting') return { type, extras: [] };
-    const lighting = this._readLighting(result);
+    const lighting = this._readLighting(content);
     // The electrical side: circuits on the Roads tab, schedules for rooms, the single line.
     const extras = [];
     if (lighting.circuits) {

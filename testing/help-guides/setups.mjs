@@ -588,10 +588,12 @@ Object.assign(SETUPS, {
   } },
 
   'type-new': { run: async (page) => {
+    await page.evaluate(() => StartScreen.setOpenLast(true));   // the default (openApp turns it off)
     await page.click('#menu-file .toolbar-menu-btn'); await page.click('#btn-new');
-    await page.waitForSelector('.ws-type-card');
-    await page.click('.ws-type-card >> nth=0');
-  } },
+    await page.waitForSelector('#start-screen .ws-type-card');
+    await page.click('#start-screen [data-ws-type="retic"]');
+    await page.waitForSelector('#start-screen .ss-recent .ss-muted, #start-screen .ss-recent-row');
+  }, viewport: { width: 1440, height: 860 } },
   'type-dialog': { run: async (page) => {
     await page.click('#menu-file .toolbar-menu-btn'); await page.click('#btn-project-type');
     await page.waitForSelector('.ws-type-card');

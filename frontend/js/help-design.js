@@ -3,7 +3,7 @@ HELP_ARTICLES.push(
 
 { id: 'design-types', group: 'design', title: 'Project types & workspaces',
   std: 'Project ▸ Project type & workspaces',
-  kw: 'reticulation building network plant lighting workspace tab site plan demand single line schedules interlocking new project overview rooms roads sports fields',
+  kw: 'reticulation building network plant lighting workspace tab site plan demand single line schedules interlocking new project start screen sample recent sign in open last overview rooms roads sports fields',
   html: String.raw`
 <p>A project is a <strong>Reticulation</strong>, a <strong>Building</strong>, a <strong>Network / plant</strong> or a <strong>Lighting</strong> project. The type decides which workspace tabs appear, in workflow order:</p>
 <table class="help-ref-table"><thead><tr><th>Type</th><th>Workspaces, in order</th><th>For</th></tr></thead><tbody>
@@ -11,8 +11,11 @@ HELP_ARTICLES.push(
 <tr><td>Building</td><td>1 Overview → 2 Floor plans → 3 Single-line → 4 Schedules → 5 Lighting → 6 Quantities</td><td>Floors, distribution boards and final circuits down to each way</td></tr>
 <tr><td>Network / plant</td><td>Overview · Single-line · Interlocking</td><td>Substations, industrial and utility networks: the studies and breaker interlocking</td></tr>
 <tr><td>Lighting</td><td>1 Overview → 2 Rooms → 3 Roads → 4 Sports fields (only the ones you pick)</td><td>Lighting design on its own: rooms and areas, roads, sports fields</td></tr></tbody></table>
+<h4>Starting a project</h4>
+<p><strong>Project ▸ New Project</strong> opens the start screen: pick the type, then <em>Create blank project</em> (it lists the tabs you will get) or <em>Open the sample</em>. Each type has one sample — Riverside Ext 4 (Reticulation), Harbour Office Block (Building), Kestrel 33/11 kV Substation (Network / plant), Office floor and access road (Lighting). A sample opens unsaved, calculates with the current engines and shows its Overview; Save keeps your own copy. The right column lists your last five projects and <em>Open project…</em>.</p>
+<p>The first sign-in, with no projects yet, shows the start screen. After that, signing in opens the project you last had open, unless you untick <em>When I sign in, open my last project</em> on the start screen. <strong>Project ▸ Templates</strong> keeps the network templates and the verification cases.</p>
 <h4>Overview and Issues</h4>
-<p>Every project opens on its <strong>Overview</strong> when it has no tab saved with it (a new project opens on its first working tab, a template on its single line). The Overview answers "is this project OK?" from the results each workspace already has; it never runs anything by itself:</p>
+<p>Every project opens on its <strong>Overview</strong> when it has no tab saved with it (a new project opens on its first working tab, a template on its single line, a sample on its Overview). The Overview answers "is this project OK?" from the results each workspace already has; it never runs anything by itself:</p>
 <ul>
 <li><strong>Reticulation</strong>: a row per minisub (transformer, demand, loading, worst feeder volt drop, earth checks, verdict), the street-light circuits, the site plan, the single-line studies and the quantities.</li>
 <li><strong>Building</strong>: a row per board (fed from, ways, load, circuit-check counts, worst volt drop), the rooms and their lighting verdict, the floor plans, the single-line studies and the quantities.</li>

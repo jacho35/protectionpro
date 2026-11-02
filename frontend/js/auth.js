@@ -27,7 +27,7 @@ const Auth = {
     const token = API.getToken();
     if (token) {
       API.me()
-        .then(u => { this.user = u; this._applyAuthedState(); this.hideGate(); this._maybeShowDevice(); })
+        .then(u => { this.user = u; this._applyAuthedState(); this.hideGate(); const dev = !!this._pendingDevice; this._maybeShowDevice(); if (!dev) this._startScreen(); })
         .catch(() => { /* invalid/expired — stay on the gate */ });
     }
   },
@@ -200,7 +200,16 @@ const Auth = {
       Project.refreshProjectViewIfOpen();
     }
     UI.toast && UI.toast(`Signed in as ${this.user.email}`, 'success');
+    const dev = !!this._pendingDevice;
     this._maybeShowDevice();
+    if (!dev) this._startScreen();
+  },
+
+  // After the first sign-in of the page: the last project, or the start screen
+  // (startscreen.js; once per page load, never over work already open). Not
+  // when the page was opened to approve a device sign-in.
+  _startScreen() {
+    if (typeof StartScreen !== 'undefined' && StartScreen.onSignIn) StartScreen.onSignIn();
   },
 
   // ── Approve a sign-in link from another client (the MCP server) ──
