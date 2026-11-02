@@ -54,7 +54,7 @@ body.dark-mode {
 #sld-canvas:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 
 /* Dark mode SVG canvas adjustments */
-body.dark-mode #sld-canvas { background: #1a1a2a; }
+body.dark-mode #sld-canvas, body.dark-mode #canvas-container { background: #1a1a2a; }
 body.dark-mode #grid-bg { opacity: 0.15; }
 body.dark-mode .sld-wire { stroke: #8888aa; }
 body.dark-mode .sld-wire.selected { stroke: #4a9eff; }

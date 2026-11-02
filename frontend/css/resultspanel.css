@@ -6,6 +6,9 @@
 #canvas-container #sld-canvas {
   width: calc(100% - var(--rp-right));
   height: calc(100% - var(--status-height) - 28px - var(--rp-bottom));
+  /* The page tabs and status bar follow the canvas in the flow: keep the room the
+     panel covers, so they stay at the bottom of the window instead of riding up under it. */
+  margin-bottom: var(--rp-bottom);
 }
 #canvas-container .minimap { right: calc(8px + var(--rp-right)); }
 #canvas-container.rp-docked-bottom .minimap { bottom: calc(var(--status-height) + 36px + var(--rp-bottom)); }
