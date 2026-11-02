@@ -137,7 +137,7 @@ frontend/
     ├── dxfwriter.js        # DxfExport — every drawing DXF (SLD, Demand topology, street-light schematic, DB single line, GA): renders the page SVG in a shadow root, `data-dxf-block` groups → BLOCK + INSERT, `data-dxf-attr` texts → visible ATTRIBs, `data-dxf-attrs` JSON → hidden ATTRIBs; posts to /api/drawing/dxf-export (the plan DXF is plan-dxf.js)
     ├── compliance.js       # Standards compliance verification
     ├── minimap.js          # Scaled diagram overview widget
-    └── undo.js             # Snapshot-based undo/redo (50 states max)
+    └── undo.js             # Snapshot-based undo/redo (50 states max); each snapshot is named from what changed (`describe`, or `snapshot(label)`), shown on the Undo / Redo buttons
 
 clients/
 ├── python/                 # Python API client (protectionpro_client.py, httpx) — batch/parametric scripting; see its README

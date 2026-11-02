@@ -98,6 +98,8 @@ jobs:
         run: node frontend/tests/test_analysemenu.mjs
       - name: Property panel label rules and section filter
         run: node frontend/tests/test_propfilter.mjs
+      - name: Undo / Redo name their action
+        run: node frontend/tests/test_undo_names.mjs
 
       - name: Raw HTML interpolation ratchet (new unescaped attribute values fail)
         run: node testing/lint/raw-interp.mjs --max 0
