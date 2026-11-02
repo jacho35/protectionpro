@@ -94,6 +94,8 @@ jobs:
         run: node frontend/tests/test_savestate.mjs
       - name: Ctrl K finds items inside the workspaces (kiosks, erven, boards, ways, rooms)
         run: node frontend/tests/test_search_items.mjs
+      - name: Analyse menu (needs-a-selection reasons) and Study Manager status
+        run: node frontend/tests/test_analysemenu.mjs
 
       - name: Raw HTML interpolation ratchet (new unescaped attribute values fail)
         run: node testing/lint/raw-interp.mjs --max 0
