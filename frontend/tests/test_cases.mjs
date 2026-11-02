@@ -51,5 +51,20 @@ test('the next number follows case_ and scenario_ ids', () => {
   assert.strictEqual(C.nextNumber([]), 1);
   assert.strictEqual(C.nextNumber([{ id: 'scenario_4' }, { id: 'case_2' }, { id: 'lfc_99' }]), 5);
 });
+test('diff: added, removed and changed values; names and positions ignored', () => {
+  const comp = (id, props) => ({ id, type: 'bus', x: 0, y: 0, props });
+  const A = { components: [comp('b1', { name: 'B1', voltage_kv: 11, load_mw: 2 }), comp('b2', { name: 'B2' })] };
+  const B = { components: [comp('b1', { name: 'Renamed', voltage_kv: 11, load_mw: 3 }), comp('b3', { name: 'B3' })] };
+  const rows = plain(C.diff(A, B));
+  const byWhat = Object.fromEntries(rows.map(r => [r.name + ':' + r.what, r]));
+  assert.strictEqual(rows.length, 3);
+  assert.strictEqual(byWhat['B1:load mw'].delta, '+1.0000');
+  assert.ok(byWhat['B2:Removed in B'] && byWhat['B3:Added in B']);
+});
+test('diff: equal cases give nothing; a non-numeric change reads A → B', () => {
+  const comp = (p) => ({ id: 'c', type: 'cb', props: p });
+  assert.strictEqual(C.diff({ components: [comp({ state: 'closed' })] }, { components: [comp({ state: 'closed' })] }).length, 0);
+  assert.strictEqual(plain(C.diff({ components: [comp({ state: 'closed' })] }, { components: [comp({ state: 'open' })] }))[0].delta, 'closed \u2192 open');
+});
 if (failed) { console.log(`\n${failed} failed`); process.exit(1); }
 console.log('\nall passed');

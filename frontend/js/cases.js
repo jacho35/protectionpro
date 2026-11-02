@@ -55,4 +55,32 @@ const Cases = {
     for (const c of list) { const m = /^(?:case|scenario)_(\d+)$/.exec(String(c.id)); if (m) max = Math.max(max, +m[1]); }
     return max + 1;
   },
+
+  // What differs between two cases: parts added / removed in B and property
+  // values that changed. rows = [{ name, what, a, b, delta }]; names and
+  // positions are not compared.
+  diff(A, B) {
+    const map = (c) => new Map((c.components || []).map(x => [x.id, { type: x.type, ...(x.props || {}) }]));
+    const ma = map(A), mb = map(B), rows = [];
+    for (const id of new Set([...ma.keys(), ...mb.keys()])) {
+      const a = ma.get(id), b = mb.get(id);
+      if (!a && b) { rows.push({ name: b.name || id, what: 'Added in B', a: '', b: '', delta: '' }); continue; }
+      if (a && !b) { rows.push({ name: a.name || id, what: 'Removed in B', a: '', b: '', delta: '' }); continue; }
+      for (const k of new Set([...Object.keys(a), ...Object.keys(b)])) {
+        if (k === 'name' || k === 'x' || k === 'y') continue;
+        const va = a[k], vb = b[k];
+        if (JSON.stringify(va) === JSON.stringify(vb) || (va == null && vb == null)) continue;
+        rows.push({ name: a.name || b.name || id, what: k.replace(/_/g, ' '),
+          a: va != null ? String(typeof va === 'object' ? JSON.stringify(va) : va) : '', b: vb != null ? String(typeof vb === 'object' ? JSON.stringify(vb) : vb) : '', delta: this.delta(va, vb) });
+      }
+    }
+    return rows;
+  },
+  delta(a, b) {
+    if (a == null || b == null) return '';
+    const na = parseFloat(a), nb = parseFloat(b);
+    if (isNaN(na) || isNaN(nb) || typeof a === 'object' || typeof b === 'object') return `${a} \u2192 ${b}`;
+    const d = nb - na;
+    return (d >= 0 ? '+' : '') + d.toFixed(4);
+  },
 };
