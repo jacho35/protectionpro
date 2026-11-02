@@ -4031,3 +4031,8 @@ button.link-mark:focus-visible { outline: 2px solid var(--accent, #2563eb); outl
 .link-back[hidden] { display: none; }
 @keyframes link-flash { 0%, 60% { box-shadow: 0 0 0 3px rgba(37, 99, 235, .55); } 100% { box-shadow: 0 0 0 3px rgba(37, 99, 235, 0); } }
 .link-flash { animation: link-flash 1.6s ease-out; }
+
+/* Settings: which sections apply to this project type */
+.settings-type-note { margin: 0 0 12px; padding: 8px 10px; border-radius: 6px; background: var(--bg-secondary, #f3f4f6); font-size: 12.5px; color: var(--text-secondary, #555); }
+.settings-type-note .btn-link { background: none; border: 0; padding: 0; color: var(--accent, #2563eb); cursor: pointer; text-decoration: underline; font: inherit; }
+.settings-tab-content [data-needs][hidden] { display: none !important; }

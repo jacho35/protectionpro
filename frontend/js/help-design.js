@@ -3,7 +3,7 @@ HELP_ARTICLES.push(
 
 { id: 'design-types', group: 'design', title: 'Project types & workspaces',
   std: 'Project ▸ Project type & workspaces',
-  kw: 'reticulation building network plant lighting workspace tab site plan demand single line schedules interlocking new project start screen sample recent sign in open last overview rooms roads sports fields',
+  kw: 'reticulation building network plant lighting workspace tab site plan demand single line schedules interlocking new project start screen sample recent help settings show all settings getting started sign in open last overview rooms roads sports fields',
   html: String.raw`
 <p>A project is a <strong>Reticulation</strong>, a <strong>Building</strong>, a <strong>Network / plant</strong> or a <strong>Lighting</strong> project. The type decides which workspace tabs appear, in workflow order:</p>
 <table class="help-ref-table"><thead><tr><th>Type</th><th>Workspaces, in order</th><th>For</th></tr></thead><tbody>
@@ -14,6 +14,8 @@ HELP_ARTICLES.push(
 <h4>Starting a project</h4>
 <p><strong>Project ▸ New Project</strong> opens the start screen: pick the type, then <em>Create blank project</em> (it lists the tabs you will get) or <em>Open the sample</em>. Each type has one sample — Riverside Ext 4 (Reticulation), Harbour Office Block (Building), Kestrel 33/11 kV Substation (Network / plant), Office floor and access road (Lighting). A sample opens unsaved, calculates with the current engines and shows its Overview; Save keeps your own copy. The right column lists your last five projects and <em>Open project…</em>.</p>
 <p>The first sign-in, with no projects yet, shows the start screen. After that, signing in opens the project you last had open, unless you untick <em>When I sign in, open my last project</em> on the start screen. <strong>Project ▸ Templates</strong> keeps the network templates and the verification cases.</p>
+<h4>Help and Settings follow the type</h4>
+<p><strong>Help</strong> opens on <em>Getting Started</em> for the project you have open: its tabs in the order you work, with the guides to read first; the Guides tab lists that type's guides on top. Everything else stays in Guides and Calculations &amp; tools. <strong>Settings</strong> shows what applies: the single-line study values (base MVA, voltage factor c, symbols, cascading, cable length unit) appear in a Network project, or once the single line holds components, and the IEC tables are left out of a Lighting project. <em>Show all settings</em> on the Settings page brings them back.</p>
 <h4>Overview and Issues</h4>
 <p>Every project opens on its <strong>Overview</strong> when it has no tab saved with it (a new project opens on its first working tab, a template on its single line, a sample on its Overview). The Overview answers "is this project OK?" from the results each workspace already has; it never runs anything by itself:</p>
 <ul>

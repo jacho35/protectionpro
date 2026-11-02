@@ -1170,6 +1170,11 @@ const StandardData = {
 
   // ─── Tab Switching ───
   bindTabs() {
+    document.getElementById('settings-type-note')?.addEventListener('click', (e) => {
+      if (!e.target.closest('[data-settings-all]')) return;
+      this._showAll = !this._showAll;
+      this._applyType();
+    });
     document.querySelectorAll('.settings-tab').forEach(tab => {
       tab.addEventListener('click', () => {
         document.querySelectorAll('.settings-tab').forEach(t => t.classList.remove('active'));
@@ -1610,11 +1615,47 @@ const StandardData = {
     document.getElementById('use-iec-symbols').checked = AppState.symbolSet === 'iec';
     document.getElementById('allow-cascading').checked = AppState.cascading !== false;
     document.getElementById('keep-in-sync').checked = AppState.keepInSync !== false;
+    this._showAll = false;
+    this._applyType();
     document.getElementById('settings-modal').style.display = '';
     // Render the currently active tab's content
     const activeTab = document.querySelector('.settings-tab.active');
     if (activeTab.dataset.tab === 'iec-standards') this.renderIECActiveSection();
     if (this._compactOn) this._showScreen('home');
+  },
+
+  // Settings follow the project type: the single-line study values (base MVA, voltage factor,
+  // symbols, cascading, cable length unit) show for a Network project or once the single line
+  // is in use; the IEC tables are left out of a Lighting project. "Show all settings" lifts it.
+  _showAll: false,
+  _applyType() {
+    const type = typeof Workspaces !== 'undefined' ? Workspaces.type() : 'network';
+    const sld = type === 'network' || (AppState.components && AppState.components.size > 0);
+    const all = this._showAll;
+    let hidden = 0;
+    document.querySelectorAll('#settings-modal [data-needs="sld"]').forEach(el => {
+      const off = !all && !sld;
+      el.hidden = off;
+      if (off) hidden++;
+    });
+    document.querySelectorAll('#settings-modal .settings-tab[data-not-types]').forEach(tab => {
+      const off = !all && tab.dataset.notTypes.split(' ').includes(type);
+      tab.hidden = off;
+      if (off) hidden++;
+    });
+    const active = document.querySelector('.settings-tab.active');
+    if (active && active.hidden) document.querySelector('.settings-tab[data-tab="system"]')?.click();
+    const note = document.getElementById('settings-type-note');
+    if (!note) return;
+    const label = typeof Workspaces !== 'undefined' && Workspaces.TYPES[type] ? Workspaces.TYPES[type].label : '';
+    if (hidden) {
+      note.hidden = false;
+      note.innerHTML = `Showing the settings for a ${escHtml(label)} project. <button type="button" class="btn-link" data-settings-all>Show all settings</button>`;
+    } else if (all) {
+      note.hidden = false;
+      note.innerHTML = `Showing all settings. <button type="button" class="btn-link" data-settings-all>Only those for a ${escHtml(label)} project</button>`;
+    } else note.hidden = true;
+    if (this._compactOn && this._screen === 'home') this._buildHome();
   },
 
   // ═══════════════════════════════════════════════════════

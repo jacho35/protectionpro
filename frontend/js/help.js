@@ -595,3 +595,49 @@ document.addEventListener('click', (e) => {
   e.preventDefault();
   HelpCenter.open(a.dataset.helpOpen);
 });
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Getting Started for the open project's type: its tabs in order, the guides to read first.
+// Help opens here; the generic single-line text stays below it.
+// ─────────────────────────────────────────────────────────────────────────────
+const HelpType = {
+  html(type) {
+    const t = Workspaces.TYPES[type];
+    if (!t) return '';
+    const esc = (v) => String(v == null ? '' : v).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    const tabs = Workspaces.core(type).map(ws => {
+      const b = document.getElementById(Workspaces.TAB_IDS[ws]);
+      const name = b ? b.textContent.trim() : ws;
+      return `<li><b>${esc(name)}</b> — ${esc(Workspaces.DESCS[ws] || '')}</li>`;
+    }).join('');
+    const guides = (typeof HELP_GUIDES_FOR_TYPE !== 'undefined' ? HELP_GUIDES_FOR_TYPE[type] : []).slice(0, 4)
+      .map(id => (typeof HELP_GUIDES !== 'undefined' ? HELP_GUIDES : []).find(g => g.id === id)).filter(Boolean)
+      .map(g => `<button type="button" class="ht-guide" data-type-guide="${esc(g.id)}">${esc(g.title)}</button>`).join('');
+    return `<h4>Your ${esc(t.label)} project</h4><p>${esc(t.desc)}</p>`
+      + `<p class="ht-sub">Its tabs, in the order you work:</p><ul class="ht-tabs">${tabs}</ul>`
+      + (guides ? `<p class="ht-sub">Read first:</p><div class="ht-guides">${guides}</div>` : '')
+      + `<p class="ht-more">Project › New opens the start screen with a sample for each type. Every guide and article is still under Guides and Calculations &amp; tools.</p>`;
+  },
+  render() {
+    const el = document.getElementById('help-type-start');
+    if (!el) return;
+    el.innerHTML = this.html(Workspaces.type());
+  },
+  // Opening Help from the app bar lands on Getting Started for this project's type.
+  onOpen() {
+    this.render();
+    if (typeof HelpMobile !== 'undefined' && HelpMobile.on) return;
+    document.querySelector('.help-tab[data-tab="getting-started"]')?.click();
+  },
+};
+
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('btn-help')?.addEventListener('click', () => HelpType.onOpen());
+  document.getElementById('help-type-start')?.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-type-guide]');
+    if (!b) return;
+    document.querySelector('.help-tab[data-tab="guides"]')?.click();
+    HelpGuides.open(b.dataset.typeGuide);
+  });
+});

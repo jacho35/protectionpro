@@ -30,6 +30,15 @@ const HELP_GUIDE_GROUPS = [
   { id: 'output', title: 'Drawings & export' },
 ];
 
+// The guides worth reading first in each project type (Help ▸ Guides lists them on top;
+// every other guide stays in its group below).
+const HELP_GUIDES_FOR_TYPE = {
+  retic: ['project-types', 'demand-plan', 'plan-dxf', 'plan-select', 'plan-place', 'street-light', 'road-lighting', 'retic-earth-fault', 'overview-issues', 'quoted'],
+  building: ['project-types', 'db-schedule', 'db-single-line', 'db-sections', 'db-ga', 'plan-dxf', 'plan-select', 'plan-place', 'overview-issues', 'quoted'],
+  network: ['project-types', 'sld-draw', 'sld-edit', 'study-fault', 'study-loadflow', 'study-cable', 'study-duty', 'study-arcflash', 'tcc-read', 'tcc-coordination', 'results-panel', 'overview-issues'],
+  lighting: ['project-types', 'road-lighting', 'street-light', 'plan-dxf', 'plan-select'],
+};
+
 const HELP_GUIDES = [
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -1618,12 +1627,17 @@ const HelpGuides = {
 
   _renderList() {
     const el = document.getElementById('hg-list');
-    el.innerHTML = HELP_GUIDE_GROUPS.map(g => {
+    const item = x => `<button type="button" class="hg-item${this._current === x.id ? ' on' : ''}" data-hg-open="${x.id}">
+           <span class="hg-item-t">${this._esc(x.title)}</span><span class="hg-item-s">${this._esc(x.time)}</span></button>`;
+    // The open project's own guides first
+    const type = typeof Workspaces !== 'undefined' ? Workspaces.type() : null;
+    const mine = (HELP_GUIDES_FOR_TYPE[type] || []).map(id => HELP_GUIDES.find(x => x.id === id)).filter(Boolean);
+    const top = mine.length
+      ? `<div class="hg-group hg-group-mine">For your ${this._esc(Workspaces.TYPES[type].label)} project</div>` + mine.map(item).join('') : '';
+    el.innerHTML = top + HELP_GUIDE_GROUPS.map(g => {
       const items = HELP_GUIDES.filter(x => x.group === g.id);
       if (!items.length) return '';
-      return `<div class="hg-group">${this._esc(g.title)}</div>` + items.map(x =>
-        `<button type="button" class="hg-item${this._current === x.id ? ' on' : ''}" data-hg-open="${x.id}">
-           <span class="hg-item-t">${this._esc(x.title)}</span><span class="hg-item-s">${this._esc(x.time)}</span></button>`).join('');
+      return `<div class="hg-group">${this._esc(g.title)}</div>` + items.map(item).join('');
     }).join('');
   },
 

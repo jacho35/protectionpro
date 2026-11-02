@@ -86,6 +86,8 @@ jobs:
         run: node frontend/tests/test_issues_overview.mjs
       - name: Start screen (sign-in action, recent list, one sample per type)
         run: node frontend/tests/test_startscreen.mjs
+      - name: Help per project type (guides listed for each type exist)
+        run: node frontend/tests/test_help_types.mjs
 
       - name: Raw HTML interpolation ratchet (new unescaped attribute values fail)
         run: node testing/lint/raw-interp.mjs --max 0
