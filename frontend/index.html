@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ProtectionPro — Single Line Diagram Builder</title>
-  <link rel="stylesheet" href="css/app.css?v=2.588">
+  <link rel="stylesheet" href="css/app.css?v=2.593">
   <link rel="stylesheet" href="css/sidebar.css?v=3.5.274">
   <link rel="stylesheet" href="css/properties.css?v=2.588">
   <link rel="stylesheet" href="css/toolbar.css?v=3.5.274">
@@ -26,7 +26,7 @@
   <link rel="stylesheet" href="css/streetlight.css?v=2.585">
   <link rel="stylesheet" href="css/roadlight.css?v=3.5.274">
   <link rel="stylesheet" href="css/roadplan.css?v=3.5.305">
-  <link rel="stylesheet" href="css/help.css?v=3.5.274">
+  <link rel="stylesheet" href="css/help.css?v=2.593">
 </head>
 <body>
   <!-- Top Toolbar -->
@@ -2234,13 +2234,14 @@
       <div class="settings-home" id="settings-home" hidden></div>
       <div class="settings-tabs">
         <button class="settings-tab active" data-tab="system">System Base</button>
-        <button class="settings-tab" data-tab="iec-standards">IEC Standards</button>
+        <button class="settings-tab" data-tab="iec-standards" data-not-types="lighting">IEC Standards</button>
         <button class="settings-tab" data-tab="email" id="settings-tab-btn-email" hidden>Email</button>
       </div>
       <div class="modal-body">
         <!-- System Base Tab -->
         <div id="settings-tab-system" class="settings-tab-content active">
-          <div class="form-group">
+          <div id="settings-type-note" class="settings-type-note" hidden></div>
+          <div class="form-group" data-needs="sld">
             <label for="base-mva">Base MVA</label>
             <input type="number" id="base-mva" value="100" min="1" step="1">
             <span class="unit">MVA</span>
@@ -2252,25 +2253,25 @@
               <option value="60">60 Hz</option>
             </select>
           </div>
-          <div class="form-group">
+          <div class="form-group" data-needs="sld">
             <label for="voltage-factor">Voltage Factor c (IEC 60909)</label>
             <input type="number" id="voltage-factor" value="1.10" min="0.9" max="1.2" step="0.01">
             <span class="unit" title="IEC 60909-0 Table 1 voltage factor for short-circuit currents. 1.10 = c_max (default). Use 1.00 for bolted-fault / V=1.0 studies.">c</span>
           </div>
-          <div class="form-group">
+          <div class="form-group" data-needs="sld">
             <label for="default-length-unit">Default Cable Length Unit</label>
             <select id="default-length-unit">
               <option value="m">Meters (m)</option>
               <option value="km">Kilometers (km)</option>
             </select>
           </div>
-          <div class="form-group">
+          <div class="form-group" data-needs="sld">
             <label for="use-iec-symbols">Diagram Symbols</label>
             <label class="checkbox-inline" title="Draw switching and protection devices with IEC 60617 symbols: breakers, switches and disconnectors as contacts with a function qualifier, shown open or closed by blade position. Saved with the project; applies immediately.">
               <input type="checkbox" id="use-iec-symbols"> Use IEC symbols (IEC 60617)
             </label>
           </div>
-          <div class="form-group">
+          <div class="form-group" data-needs="sld">
             <label for="allow-cascading">Breaking capacity</label>
             <label class="checkbox-inline" title="Cascading (back-up protection, IEC 60947-2 Annex A): a breaker whose own breaking capacity is below the fault level passes when the manufacturer has tested it with the breaker above it and the combination covers the fault. Used by the duty check, compliance and the DB schedule coordination check. The two breakers are then not selective at those fault currents. Saved with the project.">
               <input type="checkbox" id="allow-cascading"> Allow cascading (back-up protection)
@@ -2563,6 +2564,7 @@
         </div>
 
         <div class="help-content" id="help-tab-getting-started">
+          <div id="help-type-start" class="ht-start"></div>
           <h4>Welcome to ProtectionPro</h4>
           <p>ProtectionPro is a browser-based power systems engineering tool for building single-line diagrams (SLDs) and performing electrical analysis — a lightweight, web-based alternative to ETAP.</p>
 
@@ -2944,7 +2946,7 @@
   <script src="js/lib/xlsx.full.min.js?v=3.5.274"></script>
   <script src="js/lib/pdf.min.js?v=3.5.274"></script>
   <script src="js/iec-60364-data.js?v=3.5.274"></script>
-  <script src="js/constants.js?v=2.592"></script>
+  <script src="js/constants.js?v=2.593"></script>
   <script src="js/vendor-trip-units.js?v=1.0"></script>
   <script src="js/vendor-trip-units-abb.js?v=1.0"></script>
   <script src="js/vendor-trip-units-abb-xt.js?v=3.5.536"></script>
@@ -3013,7 +3015,7 @@
   <script src="js/reports.js?v=3.5.274"></script>
   <script src="js/verification-templates.js?v=1.571b"></script>
   <script src="js/templates.js?v=2.591"></script>
-  <script src="js/standard-data.js?v=2.582"></script>
+  <script src="js/standard-data.js?v=2.593"></script>
   <script src="js/shared-libs.js?v=3.5.274"></script>
   <script src="js/undo.js?v=2.581"></script>
   <script src="js/arrange.js?v=3.5.274"></script>
@@ -3108,15 +3110,15 @@
   <script src="js/plan-circuits.js?v=2.583"></script>
   <script src="js/plan-ui.js?v=2.587"></script>
   <script src="js/plan.js?v=2.584"></script>
-  <script src="js/help.js?v=3.5.274"></script>
+  <script src="js/help.js?v=2.593"></script>
   <script src="js/help-faults.js?v=3.5.274"></script>
   <script src="js/help-flow.js?v=1.571b"></script>
   <script src="js/help-dynamics.js?v=3.5.274"></script>
   <script src="js/help-protect.js?v=3.5.274"></script>
   <script src="js/help-cables.js?v=3.5.274"></script>
-  <script src="js/help-design.js?v=2.592"></script>
+  <script src="js/help-design.js?v=2.593"></script>
   <script src="js/help-workflow.js?v=2.587"></script>
-  <script src="js/help-guides.js?v=2.592"></script>
+  <script src="js/help-guides.js?v=2.593"></script>
   <script src="js/app.js?v=2.591"></script>
   <script src="js/mobile.js?v=2.590"></script>
 </body>
