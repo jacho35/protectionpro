@@ -468,6 +468,7 @@ UI/UX workflow review of 2026-11-01 (`reviews/ux-workflow-review/`): 22 PRs in s
 
 ## Completed
 
+- **Fix: white bar under the bottom-docked results panel** (2026-11-02): the sheet tabs and status bar follow the canvas in the page flow, so shrinking the canvas for the panel pulled them up behind it and left the empty strip uncovered (white in dark mode). `#sld-canvas` keeps the room the panel covers (`margin-bottom: var(--rp-bottom)`), and the canvas container follows dark mode.
 - **Study options** (2026-11-02, item 113 step 5): `studyoptions.js` — `OPTIONS` table (control id, the Analyse item it belongs to, group, label, saved field), the `.ws-pop` Options panel after `#menu-analyse`, `apply()` from `syncViewToggles`; `MobileUI._studyIndex` reads `[data-opt-for]`. `frontend/tests/test_studyoptions.mjs` in CI; `verify_templates_ui.mjs` still passes (it clicks the Analyse items by id).
 - **Compare any study** (2026-11-02, item 113 step 4): `CaseRuns.compare` / pure `compareRows` (rows matched by section + id across cases).
 - **Study Manager on cases** (2026-11-02, item 113 step 3): `frontend/js/caseruns.js` (`CaseRuns`: `selected`, `results`, `runCases`, `state`, `needs`, `modelFor` = a Results panel model for a result that is not the live one, by swapping `AppState._results`; the grid + picker in `#sm-cases` / `#sm-grid`), `Cases.project`, `API.runStudyManager(enabled, project)`, the run handler in app.js. `frontend/tests/test_caseruns.mjs` and `backend/tests/test_saved_cases_field.py` in CI.
