@@ -36,6 +36,32 @@ const CaseRuns = {
     return { state: 'ok', text: 'All clear' };
   },
 
+  // Line up the rows of one study across cases. `models` = [{ id, name, model }]
+  // (a Results panel model each, or null where the study has no result there).
+  // Returns [{ key, section, name, cells: [{status, text} | null], differs }] — a row
+  // differs when any case's status or values differ, or it is missing from one.
+  compareRows(models) {
+    const order = [], seen = new Map();
+    models.forEach((m, i) => {
+      for (const sec of (m.model && m.model.sections) || []) {
+        for (const r of sec.rows || []) {
+          const key = (sec.id || sec.title || '') + '|' + r.id;
+          if (!seen.has(key)) { seen.set(key, { key, section: sec.title || '', name: r.name, cells: models.map(() => null) }); order.push(key); }
+          const cols = sec.cols || [];
+          const text = cols.slice(0, 4).map(c => { const v = r.cells && r.cells[c.key]; return v ? (v.t != null ? v.t : v.v) : ''; }).filter(x => x !== '' && x != null).join(' · ');
+          seen.get(key).cells[i] = { status: r.status || '', text: String(text) };
+        }
+      }
+    });
+    return order.map(k => {
+      const row = seen.get(k);
+      // only cases that have a result for the study count (one not run yet does not make every row differ)
+      const have = row.cells.filter((c, i) => models[i].model).map(c => (c ? JSON.stringify(c) : null));
+      row.differs = have.some(x => x !== have[0]);
+      return row;
+    });
+  },
+
   // ── Cases ──
   currentOn() { return this.selected.has(this.CURRENT); },
   selectedCases() { return AppState.cases.filter(c => this.selected.has(c.id)); },
@@ -119,11 +145,38 @@ const CaseRuns = {
     if (ids.length < 2) { host.innerHTML = ''; return; }
     const name = (id) => id === this.CURRENT ? 'Current' : (AppState.cases.find(c => c.id === id) || {}).name;
     host.innerHTML = `<table class="sm-grid"><thead><tr><th>Study</th>${ids.map(id => `<th>${escHtml(name(id))}</th>`).join('')}</tr></thead><tbody>`
-      + this.KEYS.map(k => `<tr><td>${escHtml(this.LABEL[k])}</td>${ids.map(id => {
+      + this.KEYS.map(k => `<tr><td>${escHtml(this.LABEL[k])} <button type="button" class="sm-cmp" data-sm-cmp="${escHtml(k)}" title="Line up this study's rows across the cases">Compare</button></td>${ids.map(id => {
         const st = this.state(k, id);
         const open = st.state !== 'none';
         return `<td class="sm-cell sm-${escHtml(st.state)}">${open ? `<button type="button" data-sm-open="${escHtml(k)}" data-sm-id="${escHtml(id)}">${escHtml(st.text)}</button>` : escHtml(st.text)}</td>`;
       }).join('')}</tr>`).join('') + '</tbody></table>';
+  },
+
+  // One study side by side on every ticked case that has a result for it.
+  compare(key, onlyDiff = true) {
+    const ids = [this.CURRENT, ...AppState.cases.map(c => c.id)].filter(id => this.selected.has(id));
+    const models = [];
+    for (const id of ids) {
+      if (id === this.CURRENT) { const rp = AnalyseMenu.MANAGER[key]; models.push({ id, name: 'Current', model: ResultsPanel.has(rp) ? ResultsPanel.model(rp) : null }); continue; }
+      const c = AppState.cases.find(x => x.id === id), e = this.results[id] && this.results[id].studies[key];
+      models.push({ id, name: c.name + (this.isStale(c) ? ' (out of date)' : ''), model: e ? this.modelFor(key, e.store) : null });
+    }
+    const rows = this.compareRows(models);
+    const shown = onlyDiff ? rows.filter(r => r.differs) : rows;
+    const dot = { fail: '#c62828', warn: '#b26a00', ok: '#2e7d32' };
+    const body = `<label style="font-size:12px"><input type="checkbox" id="sm-cmp-only"${onlyDiff ? ' checked' : ''}> Only rows that differ</label>
+      <p style="font-size:12px;margin:6px 0">${rows.filter(r => r.differs).length} of ${rows.length} rows differ.</p>
+      <div class="cm-scroll"><table class="cm-diff"><thead><tr><th>Item</th><th>Section</th>${models.map(m => `<th>${escHtml(m.name)}${m.model ? '' : ' — not run'}</th>`).join('')}</tr></thead><tbody>`
+      + (shown.slice(0, 500).map(r => `<tr${r.differs ? ' style="background:var(--accent-soft,#eef4ff)"' : ''}><td>${escHtml(r.name)}</td><td>${escHtml(r.section)}</td>${r.cells.map(c => c
+        ? `<td><span style="display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;background:${dot[c.status] || '#999'}"></span>${escHtml(c.text)}</td>` : '<td>—</td>').join('')}</tr>`).join('')
+        || `<tr><td colspan="${models.length + 2}">${rows.length ? 'No row differs.' : 'No rows.'}</td></tr>`)
+      + '</tbody></table></div>';
+    const modal = document.getElementById('calc-modal');
+    modal.querySelector('#calc-modal-title').textContent = `${this.LABEL[key]} on ${models.length} cases`;
+    modal.querySelector('#calc-modal-body').innerHTML = body;
+    modal.style.zIndex = 2000;   // over the Study Manager it was opened from
+    modal.style.display = '';
+    document.getElementById('sm-cmp-only').addEventListener('change', (e) => this.compare(key, e.target.checked));
   },
 
   // A case's result for one study, read only.
@@ -146,6 +199,7 @@ const CaseRuns = {
     const modal = document.getElementById('calc-modal');
     modal.querySelector('#calc-modal-title').textContent = `${this.LABEL[key]} — ${c ? c.name : ''}${this.isStale(c) ? ' (out of date)' : ''}`;
     modal.querySelector('#calc-modal-body').innerHTML = body;
+    modal.style.zIndex = 2000;
     modal.style.display = '';
   },
 
@@ -168,6 +222,8 @@ const CaseRuns = {
     host.addEventListener('click', (e) => {
       const b = e.target.closest('[data-sm-open]');
       if (b) this._show(b.dataset.smOpen, b.dataset.smId);
+      const c = e.target.closest('[data-sm-cmp]');
+      if (c) this.compare(c.dataset.smCmp);
     });
     document.getElementById('btn-study-manager')?.addEventListener('click', () => { this.render(); if (typeof AnalyseMenu !== 'undefined') AnalyseMenu.syncManager(); });
   },

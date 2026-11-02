@@ -58,5 +58,25 @@ test('run out-of-date picks studies not run or stale on any ticked case', () => 
 test('every study has a result slot', () => {
   for (const k of R.KEYS) assert.ok(R.SLOT[k] && R.LABEL[k], k);
 });
+test('compare lines the same row up across cases and marks what differs', () => {
+  const model = (rows) => ({ sections: [{ id: 'buses', title: 'Buses', cols: [{ key: 'v', label: 'V' }], rows: rows.map(([id, status, v]) => ({ id, name: id.toUpperCase(), status, cells: { v: { v, t: String(v) + ' pu' } } })) }] });
+  const rows = plain(R.compareRows([
+    { id: 'cur', name: 'Current', model: model([['b1', 'ok', 1.0], ['b2', 'ok', 0.99]]) },
+    { id: 'c1', name: 'Gen out', model: model([['b1', 'ok', 1.0], ['b2', 'fail', 0.88], ['b3', 'ok', 1.0]]) },
+    { id: 'c2', name: 'Not run', model: null },
+  ]));
+  const by = Object.fromEntries(rows.map(r => [r.name, r]));
+  assert.strictEqual(rows.length, 3);
+  assert.strictEqual(by.B2.cells[1].status, 'fail');
+  assert.strictEqual(by.B2.cells[1].text, '0.88 pu');
+  assert.strictEqual(by.B2.differs, true);
+  assert.strictEqual(by.B3.cells[0], null);                 // only on one case
+  assert.strictEqual(by.B3.differs, true);
+  assert.strictEqual(by.B1.cells[2], null);                 // a case with no result
+  assert.strictEqual(by.B1.differs, false);                 // …which does not make the row differ
+  // two cases that agree everywhere differ nowhere
+  const same = plain(R.compareRows([{ id: 'a', model: model([['b1', 'ok', 1]]) }, { id: 'b', model: model([['b1', 'ok', 1]]) }]));
+  assert.strictEqual(same[0].differs, false);
+});
 if (failed) { console.log(`\n${failed} failed`); process.exit(1); }
 console.log('\nall passed');

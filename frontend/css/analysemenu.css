@@ -24,3 +24,6 @@
 .sm-grid th { background: var(--bg-secondary); }
 .sm-cell button { background: none; border: 0; padding: 0; color: inherit; font: inherit; cursor: pointer; text-decoration: underline dotted; }
 .sm-ok { color: #2e7d32; } .sm-warn, .sm-stale { color: #b26a00; } .sm-fail, .sm-error { color: #c62828; } .sm-none { color: var(--text-muted); }
+
+.sm-cmp { margin-left: 8px; font-size: 10.5px; padding: 0 7px; border: 1px solid var(--border-color); border-radius: 9px; background: transparent; color: var(--text-secondary); cursor: pointer; }
+.sm-cmp:hover { background: var(--bg-tertiary); }
