@@ -491,11 +491,18 @@ const Overview = {
       return;
     }
     const failed = [];
-    for (const [label, fn] of steps) {
-      if (UI.setBusy) UI.setBusy(true, `Calculating: ${label}…`);
-      try { await fn(); } catch (e) { console.error('Calculate all:', label, e); failed.push(label); }
+    // One busy hold for the whole run (UI.setBusy counts holds); each step
+    // only changes the label.
+    if (UI.setBusy) UI.setBusy(true, `Calculating: ${steps[0][0]}…`);
+    try {
+      for (const [label, fn] of steps) {
+        const lab = document.querySelector('#busy-overlay .busy-label');
+        if (lab) lab.textContent = `Calculating: ${label}…`;
+        try { await fn(); } catch (e) { console.error('Calculate all:', label, e); failed.push(label); }
+      }
+    } finally {
+      if (UI.setBusy) UI.setBusy(false);
     }
-    if (UI.setBusy) UI.setBusy(false);
     if (typeof Issues !== 'undefined') Issues.refresh();
     if (this._active) this.render();
     UI.toast(failed.length ? `Could not calculate: ${failed.join(', ')}.` : `Up to date: ${steps.map(s => s[0]).join(', ')}.`, failed.length ? 'error' : 'success');

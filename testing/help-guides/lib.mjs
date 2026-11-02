@@ -36,14 +36,20 @@ export async function token() {
   return (await res.json()).access_token;
 }
 
-export async function openApp(browser, jwt, viewport = { width: 1440, height: 900 }, opts = {}) {
+// Signed in on the empty start-up project. Sign-in shows the start screen
+// (startscreen.js; "open my last project" is turned off here so a saved
+// project never opens instead); it is closed once sign-in has settled, unless
+// `{ startScreen: true }` keeps it.
+export async function openApp(browser, jwt, viewport = { width: 1440, height: 900 }, opts = {}, { startScreen = false } = {}) {
   const context = await browser.newContext({ viewport, deviceScaleFactor: 1, ...opts });
-  await context.addInitScript(t => { try { localStorage.setItem('protectionpro-token', t); } catch (_) {} }, jwt);
+  await context.addInitScript(t => { try { localStorage.setItem('protectionpro-token', t); localStorage.setItem('pp-open-last', '0'); } catch (_) {} }, jwt);
   const page = await context.newPage();
   page.errors = [];
   page.on('pageerror', e => page.errors.push(String(e)));
   await page.goto(BASE_URL, { waitUntil: 'load' });
   await page.waitForFunction(() => typeof AppState !== 'undefined' && typeof Schedules !== 'undefined');
+  await page.waitForFunction(() => typeof StartScreen === 'undefined' || StartScreen.settled, null, { timeout: 15000 }).catch(() => {});
+  if (!startScreen) await page.evaluate(() => { if (typeof StartScreen !== 'undefined') StartScreen.close(); });
   return page;
 }
 

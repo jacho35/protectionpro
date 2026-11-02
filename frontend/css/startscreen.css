@@ -1,0 +1,70 @@
+/* ProtectionPro — the start screen (startscreen.js): type first, then blank or
+   the sample; recent projects on the right. The type cards and the Lighting
+   picker are the New project dialog's own (.ws-type-card, .ws-kinds in app.css). */
+
+.ss-overlay {
+  position: fixed; inset: 0; z-index: 2900;
+  display: flex; align-items: center; justify-content: center; padding: 16px;
+  background: rgba(15, 23, 42, .45);
+}
+.ss-panel {
+  width: min(1120px, 100%); max-height: calc(100vh - 32px); overflow: auto; box-sizing: border-box;
+  display: flex; flex-direction: column;
+  background: var(--bg-primary); color: var(--text-primary); font-family: var(--font-family);
+  border: 1px solid var(--border-color); border-radius: 12px; box-shadow: 0 18px 50px rgba(0, 0, 0, .25);
+}
+.ss-head { display: flex; align-items: flex-start; gap: 12px; padding: 18px 22px 6px; }
+.ss-head-text { flex: 1 1 auto; min-width: 0; }
+.ss-head h2 { margin: 0; font-size: 20px; }
+.ss-lead { margin: 4px 0 0; color: var(--text-secondary); font-size: 13px; }
+.ss-close {
+  flex: 0 0 auto; width: 36px; height: 36px; border: 0; border-radius: 8px; background: transparent;
+  color: var(--text-secondary); font-size: 24px; line-height: 1; cursor: pointer;
+}
+.ss-close:hover, .ss-close:focus-visible { background: var(--bg-tertiary); color: var(--text-primary); }
+
+.ss-body { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 20px; padding: 12px 22px 22px; }
+.ss-main { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.ss-paths { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 14px; align-items: stretch; }
+.ss-path {
+  display: flex; flex-direction: column; gap: 8px; padding: 14px; min-width: 0; box-sizing: border-box;
+  border: 1px solid var(--border-color); border-radius: 10px; background: var(--bg-secondary);
+}
+.ss-path h3, .ss-side h3 { margin: 0; font-size: 13px; color: var(--text-secondary); text-transform: none; }
+.ss-path .ws-kinds { background: var(--bg-primary); }
+.ss-path .ws-kind-cards { grid-template-columns: 1fr; gap: 6px; }
+.ss-path-acts { margin-top: auto; padding-top: 4px; display: flex; gap: 8px; }
+.ss-path-acts button { min-height: 34px; }
+.ss-sample-name { font-size: 15px; font-weight: 700; }
+.ss-sample-what { margin: 0; font-size: 12.5px; line-height: 1.5; color: var(--text-primary); }
+.ss-sample-find { margin: 0; font-size: 12.5px; font-weight: 600; color: var(--accent); }
+.ss-muted { margin: 0; font-size: 12px; color: var(--text-muted); }
+
+.ss-side { display: flex; flex-direction: column; gap: 10px; min-width: 0; border-left: 1px solid var(--bg-tertiary); padding-left: 20px; }
+.ss-recent { display: flex; flex-direction: column; gap: 2px; }
+.ss-recent-row {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 1px; width: 100%; min-height: 44px;
+  padding: 7px 10px; border: 0; border-radius: 8px; background: transparent; color: var(--text-primary);
+  font: inherit; text-align: left; cursor: pointer; box-sizing: border-box;
+}
+.ss-recent-row:hover, .ss-recent-row:focus-visible { background: var(--bg-secondary); }
+.ss-recent-name { font-size: 13px; font-weight: 600; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ss-recent-sub { font-size: 11.5px; color: var(--text-muted); }
+.ss-openbtn { align-self: flex-start; min-height: 34px; }
+.ss-pref { display: flex; gap: 8px; align-items: flex-start; margin-top: auto; padding-top: 10px; font-size: 12.5px; color: var(--text-secondary); cursor: pointer; }
+.ss-pref input { width: 16px; height: 16px; margin: 1px 0 0; accent-color: var(--accent); flex-shrink: 0; }
+
+@media (max-width: 1100px) {
+  .ss-paths { grid-template-columns: 1fr; }
+}
+@media (max-width: 900px) {
+  .ss-body { grid-template-columns: 1fr; }
+  .ss-side { border-left: 0; padding-left: 0; border-top: 1px solid var(--bg-tertiary); padding-top: 14px; }
+}
+/* Phone: a full-height sheet. */
+@media (max-width: 768px) {
+  .ss-overlay { padding: 0; align-items: stretch; }
+  .ss-panel { max-height: none; height: 100%; border-radius: 0; border: 0; }
+  .ss-head { padding: 14px 16px 4px; position: sticky; top: 0; background: var(--bg-primary); z-index: 1; }
+  .ss-body { padding: 8px 16px 24px; }
+}

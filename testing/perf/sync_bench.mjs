@@ -61,11 +61,14 @@ const median = (a) => { const s = [...a].sort((x, y) => x - y); return s[Math.fl
 
 async function page(browser, jwt) {
   const ctx = await browser.newContext({ viewport: { width: 1600, height: 950 } });
-  await ctx.addInitScript(t => { try { localStorage.setItem('protectionpro-token', t); } catch (_) {} }, jwt);
+  await ctx.addInitScript(t => { try { localStorage.setItem('protectionpro-token', t); localStorage.setItem('pp-open-last', '0'); } catch (_) {} }, jwt);
   const p = await ctx.newPage();
   p.on('pageerror', e => console.error('page error:', e.message));
   await p.goto(BASE_URL + '/', { waitUntil: 'networkidle' });
   await p.waitForFunction(() => typeof PlanCircuits !== 'undefined' && typeof StreetLight !== 'undefined');
+  // sign-in shows the start screen: close it once sign-in has settled
+  await p.waitForFunction(() => typeof StartScreen === 'undefined' || StartScreen.settled, null, { timeout: 15000 }).catch(() => {});
+  await p.evaluate(() => { if (typeof StartScreen !== 'undefined') StartScreen.close(); });
   await p.evaluate(() => { UI.alert = async () => {}; UI.confirm = async () => true; UI.toast = () => {}; });
   return { ctx, p };
 }

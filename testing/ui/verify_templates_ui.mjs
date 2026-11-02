@@ -87,7 +87,7 @@ async function checkTemplate(browser, jwt, tid) {
   if (!button) return { tid, errors: [`no UI mapping for route '${route}'`] };
 
   const context = await browser.newContext({ viewport: { width: 1600, height: 1000 } });
-  await context.addInitScript(t => { try { localStorage.setItem('protectionpro-token', t); } catch (_) {} }, jwt);
+  await context.addInitScript(t => { try { localStorage.setItem('protectionpro-token', t); localStorage.setItem('pp-open-last', '0'); } catch (_) {} }, jwt);
   const page = await context.newPage();
   const consoleErrors = [];
   page.on('pageerror', e => consoleErrors.push(String(e)));
@@ -96,6 +96,9 @@ async function checkTemplate(browser, jwt, tid) {
   try {
     await page.goto(BASE_URL, { waitUntil: 'load' });
     await page.waitForFunction(() => typeof AppState !== 'undefined' && typeof NetworkTemplates !== 'undefined');
+    // Sign-in shows the start screen (startscreen.js): close it once settled.
+    await page.waitForFunction(() => typeof StartScreen === 'undefined' || StartScreen.settled, null, { timeout: 15000 }).catch(() => {});
+    await page.evaluate(() => { if (typeof StartScreen !== 'undefined') StartScreen.close(); });
 
     // Project → Templates → Load Template (the real picker, not a shortcut).
     await page.click('#menu-file .toolbar-menu-btn');
