@@ -180,14 +180,20 @@ const StreetLight = {
         <button class="btn-small" data-sl="sync" title="Create / update circuits from the Plan's street-lighting routes (poles, spans and spurs)">Sync from site plan</button>
         <button class="btn-small" data-sl="sync-road" title="Create / update circuits and their cables from the Road plan: poles, spans, feeder and spurs">Import from road plan</button>
         <span class="sl-sep"></span>
-        <label title="Volt-drop limit measured from the source kiosk or minisub">VD from source
+        <span class="ws-pop sl-settings">
+          <button type="button" class="btn-small" aria-expanded="false" aria-haspopup="true" title="Volt-drop limits, snaking and loop-in for every circuit">⚙ Settings</button>
+          <span class="ws-pop-panel">
+            <label title="Volt-drop limit measured from the source kiosk or minisub">VD from source
           <input type="number" step="0.5" data-df="vdLimitPct"> %</label>
-        <label title="Limit on the supply's drop at the source (from Demand) plus the circuit's own drop">Cumulative
+            <label title="Limit on the supply's drop at the source (from Demand) plus the circuit's own drop">Cumulative
           <input type="number" step="0.5" data-df="cumVdLimitPct"> %</label>
-        <label title="Added to every span for snaking in the trench">Snaking
+            <label title="Added to every span for snaking in the trench">Snaking
           <input type="number" step="0.5" data-df="snakingPct"> %</label>
-        <label title="Extra cable per pole to loop into the pole base and back">Loop-in
+            <label title="Extra cable per pole to loop into the pole base and back">Loop-in
           <input type="number" step="0.5" data-df="loopInM"> m</label>
+            <span class="ws-pop-note">Apply to every circuit in the project.</span>
+          </span>
+        </span>
         </span>
         <span class="sl-status" id="sl-status"></span>
       </div>
@@ -243,6 +249,8 @@ const StreetLight = {
       b.setAttribute('aria-selected', on ? 'true' : 'false');
     });
     ws.querySelector('.sl-tb-circuits').style.display = design || plan ? 'none' : '';
+    const setBtn = ws.querySelector('.sl-settings');
+    if (setBtn) setBtn.style.display = design || plan ? 'none' : '';
     ws.querySelector('.sl-body:not(.rl-body):not(.rp-body)').style.display = design || plan ? 'none' : '';
     const rl = document.getElementById('rl-body');
     rl.style.display = design ? '' : 'none';

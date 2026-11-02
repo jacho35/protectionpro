@@ -1808,7 +1808,9 @@ const HelpGuideLinks = {
       const anchors = def.host ? [...document.querySelectorAll(def.host)] : [...document.querySelectorAll(def.after || def.before)];
       anchors.forEach(a => {
         const has = def.host
-          ? a.querySelector(`:scope > .hg-link[data-hg-slot="${slot}"]`)
+          ? (a.querySelector(`.hg-link[data-hg-slot="${slot}"]`)
+            // moved into its toolbar's right-hand cluster (wshead.js)
+            || ([...document.querySelectorAll('.ws-tail')].find(t => t.parentNode.contains(a)) || a).querySelector(`.hg-link[data-hg-slot="${slot}"]`))
           : (def.after ? a.nextElementSibling : a.previousElementSibling);
         const existing = has && has.classList && has.classList.contains('hg-link') && has.dataset.hgSlot === slot ? has : null;
         if (!want) { if (existing) existing.remove(); return; }
