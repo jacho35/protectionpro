@@ -47,7 +47,8 @@ const UndoManager = {
     };
     this._labels.splice(this._index + 1);
     this._stack.push(JSON.stringify(state));
-    this._labels.push(label || (this._last ? this.describe(this._last, state) : ''));
+    const name = label || (this._last ? this.describe(this._last, state) : '');
+    this._labels.push(name);
     this._last = state;
     this._index = this._stack.length - 1;
 
@@ -57,7 +58,9 @@ const UndoManager = {
       this._stack.splice(0, excess);
       this._labels.splice(0, excess);
       this._index -= excess;
+      if (typeof ProjectHistory !== 'undefined') ProjectHistory.shift('sld', excess);
     }
+    if (typeof ProjectHistory !== 'undefined') ProjectHistory.record('sld', this._index, name);
 
     this._updateUI();
   },
@@ -72,6 +75,7 @@ const UndoManager = {
 
   undo() {
     if (!this.canUndo()) return;
+    if (typeof ProjectHistory !== 'undefined' && ProjectHistory.intercept('undo', 'sld')) return;
     const what = this.undoLabel();
     this._index--;
     this._applySnapshot(this._stack[this._index]);
@@ -80,6 +84,7 @@ const UndoManager = {
 
   redo() {
     if (!this.canRedo()) return;
+    if (typeof ProjectHistory !== 'undefined' && ProjectHistory.intercept('redo', 'sld')) return;
     this._index++;
     this._applySnapshot(this._stack[this._index]);
     this._updateUI(this._labels[this._index] ? 'Redid: ' + this._labels[this._index] : '');

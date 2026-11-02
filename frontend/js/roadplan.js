@@ -149,10 +149,12 @@ const RoadPlan = {
   _commit() {
     const before = this._last || this._snapshot();
     this._undo.push(before);
-    if (this._undo.length > 50) { this._undo.shift(); this._undoNames.shift(); }
+    if (this._undo.length > 50) { this._undo.shift(); this._undoNames.shift(); if (typeof ProjectHistory !== 'undefined') ProjectHistory.shift('road', 1); }
     this._redo = []; this._redoNames = [];
     this._last = this._snapshot();
-    this._undoNames.push(before.length < 3e6 ? UndoNames.road(before, this._last) : '');
+    const name = before.length < 3e6 ? UndoNames.road(before, this._last) : '';
+    this._undoNames.push(name);
+    if (typeof ProjectHistory !== 'undefined') ProjectHistory.record('road', this._undo.length, name);
     AppState.dirty = true;
     this._resStale = true;
     this._geo.clear();
@@ -170,6 +172,7 @@ const RoadPlan = {
   },
   undo() {
     if (!this._undo.length) return;
+    if (typeof ProjectHistory !== 'undefined' && ProjectHistory.intercept('undo', 'road')) return;
     const n = this._undoNames.pop() || '';
     this._redoNames.push(n);
     this._redo.push(this._snapshot()); this._restore(this._undo.pop());
@@ -177,6 +180,7 @@ const RoadPlan = {
   },
   redo() {
     if (!this._redo.length) return;
+    if (typeof ProjectHistory !== 'undefined' && ProjectHistory.intercept('redo', 'road')) return;
     const n = this._redoNames.pop() || '';
     this._undoNames.push(n);
     this._undo.push(this._snapshot()); this._restore(this._redo.pop());
@@ -245,6 +249,7 @@ const RoadPlan = {
   deactivate() { this._active = false; clearTimeout(this._timer); this._draft = null; this._kerbDraft = null; },
   onProjectChanged() {
     this._res = null; this._resStale = true; this._geo.clear(); this._undo = []; this._redo = []; this._undoNames = []; this._redoNames = [];
+    if (typeof ProjectHistory !== 'undefined') ProjectHistory.reset('road');
     this._selRoad = this.roads.length ? this.roads[0].id : null; this._selPole = null; this._fitted = false;
     if (this._active) { this._fitted = true; this.fit(); this.render(); this._last = this._snapshot(); }
   },

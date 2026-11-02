@@ -92,6 +92,11 @@ def expand_offpage_links(project):
     if cases:
         new_cases, changed = [], False
         for case in cases:
+            # a saved project's Cases are plain dicts; only a Load Flow Study
+            # Manager request has typed snapshots
+            if not hasattr(case, "components"):
+                new_cases.append(case)
+                continue
             cc, cw = _expand(case.components, case.wires)
             if cc is not case.components:
                 case = case.model_copy(update={"components": cc, "wires": cw})

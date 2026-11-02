@@ -981,8 +981,9 @@ const PlanMarkup = {
     this._undoNames = (this._undoNames || []).slice(0, this._undoIndex + 1);
     this._undoStack.push(snap);
     this._undoNames.push(name);
-    if (this._undoStack.length > this._maxUndo) { this._undoStack.shift(); this._undoNames.shift(); }
+    if (this._undoStack.length > this._maxUndo) { this._undoStack.shift(); this._undoNames.shift(); if (typeof ProjectHistory !== 'undefined') ProjectHistory.shift('plan', 1); }
     this._undoIndex = this._undoStack.length - 1;
+    if (typeof ProjectHistory !== 'undefined') ProjectHistory.record('plan', this._undoIndex, name);
     this._syncUndoUi();
   },
   _undoNames: [],
@@ -997,6 +998,7 @@ const PlanMarkup = {
 
   undo() {
     if (this._undoIndex <= 0) return;
+    if (typeof ProjectHistory !== 'undefined' && ProjectHistory.intercept('undo', 'plan')) return;
     const what = this.undoLabel();
     this._undoIndex--;
     this._restore(this._undoStack[this._undoIndex]);
@@ -1005,6 +1007,7 @@ const PlanMarkup = {
   },
   redo() {
     if (this._undoIndex >= this._undoStack.length - 1) return;
+    if (typeof ProjectHistory !== 'undefined' && ProjectHistory.intercept('redo', 'plan')) return;
     this._undoIndex++;
     this._restore(this._undoStack[this._undoIndex]);
     this._syncUndoUi();

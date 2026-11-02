@@ -1,22 +1,21 @@
 /* Help articles — studies, scenarios & logic. Rendered by help.js; TeX between $…$ / $$…$$. */
 HELP_ARTICLES.push(
 
-{ id: 'wf-studies', group: 'workflow', title: 'Run All Studies, scenarios & load-flow cases',
-  std: 'Analyse ▸ Run All Studies · Scenarios · Load Flow Study Manager',
-  kw: 'study manager batch scenario compare case snapshot lf study attribute grid what if',
+{ id: 'wf-studies', group: 'workflow', title: 'Run All Studies, cases & load-flow cases',
+  std: 'Analyse ▸ Run All Studies · Cases · Load Flow Study Manager',
+  kw: 'study manager batch scenario scenarios cases compare case snapshot lf study attribute grid what if options',
   html: String.raw`
 <h4>Run All Studies</h4>
 <p>Batch-runs the enabled analyses (fault, load flow, arc flash, cable sizing, motor starting, duty check) in one call and returns a consolidated report with per-study results, timing and a summary — useful as a full design check after a change. Results appear as annotation badges on the diagram; the <em>Results</em> menu lists only studies that have results.</p>
-<h4>Scenarios</h4>
-<p>A scenario is a named snapshot of the network configuration (which breakers are open, which sources are in service, load levels). <em>Scenarios ▸ Manage</em> saves and restores them; <em>Compare Scenarios</em> produces a side-by-side report so normal, emergency, summer/winter and future-expansion cases can be judged together.</p>
-<h4>Load Flow Study Manager</h4>
-<p>Where a scenario is a switching state, a <em>case</em> is a full self-contained network snapshot. The manager lets you:</p>
-<ol>
-<li>define several named cases and edit, in a grid, the attributes that drive load flow (loads, generation, taps, set-points) in each;</li>
-<li>run the load flow for every case at once (the live network is an implicit "Current network" case);</li>
-<li>compare bus voltages, losses and overloads side by side, and apply a chosen case back onto the live diagram.</li>
-</ol>
-<p>The comparison metrics are those of <a href="#" data-help="flow-loadflow">Load flow</a>: bus voltage $|V|$, total loss $\sum P_{loss}$, and loading. Cases are saved with the project; results are transient. The Load Flow Study Manager is distinct from Run All Studies.</p>
+<h4>Cases</h4>
+<p>A <em>case</em> is a named copy of the network: which breakers are open, which sources are in service, load levels, equipment settings. <em>Cases ▸ Manage cases</em> saves the current network as a case and, for each case, can <em>Load</em> it (replace the network, or apply only the parts the case was saved to apply: switching, electrical settings, layout), <em>Preview</em> it on the diagram, <em>Edit values</em> in the load-flow grid, <em>Duplicate</em>, <em>Rename</em> or <em>Delete</em> it. <em>Compare cases</em> lists what differs between two cases, on screen and as a PDF, so normal, emergency, summer/winter and future-expansion networks can be judged together. Device names are never changed by loading a case.</p>
+<h4>Studies on cases</h4>
+<p>In <em>Run All Studies</em>, tick the studies, then tick the cases to <em>Run on</em>. The live network is always listed first, as <em>Current network</em>; its results are the project's own (on the diagram and in the Results panel). A saved case runs as the copy that was saved, and its results are kept for the session. With two or more ticked, a grid shows every study on every case: <em>All clear</em>, a count of fails or warnings, <em>Not run</em>, or <em>Out of date</em> (the case was edited after the run). Click a cell to open that result. <em>Compare</em> beside a study lines its rows up across the cases and marks the ones that differ. <em>Run out-of-date studies</em> runs what has not been run, or is out of date, on any ticked case.</p>
+<h4>Load flow on cases</h4>
+<p>The load-flow grid (<em>Analyse ▸ Load Flow Study Manager</em>, or <em>Edit values</em> on a case) edits the attributes that drive load flow (loads, generation, taps, set-points) in each case, runs load flow for every case at once and compares bus voltages, losses and overloads side by side. A chosen case can be applied back onto the live diagram.</p>
+<p>The comparison metrics are those of <a href="#" data-help="flow-loadflow">Load flow</a>: bus voltage $|V|$, total loss $\sum P_{loss}$, and loading. Cases are saved with the project (older projects open with their scenarios and load flow cases together in one list); results of cases other than the current network are not saved.</p>
+<h4>Study options</h4>
+<p>How a study runs (the load flow method, the fault type, the simultaneous-fault types, and whether to show flow arrows) is set under <em>Options</em> beside <em>Analyse</em>, and is saved with the project.</p>
 <h4>Python client</h4>
 <p>For batch and parametric work, <code>clients/python</code> wraps the same API (<code>protectionpro_client.py</code>) so a script can vary a parameter and collect any study's results.</p>` },
 

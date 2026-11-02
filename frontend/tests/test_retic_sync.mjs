@@ -39,7 +39,7 @@ const ctx = {
 };
 ctx.window.addEventListener = () => {};
 vm.createContext(ctx);
-for (const f of ['constants.js', 'state.js', 'sync.js', 'plan-defs.js', 'plan-sync.js']) {
+for (const f of ['constants.js', 'cases.js', 'state.js', 'sync.js', 'plan-defs.js', 'plan-sync.js']) {
   vm.runInContext(readFileSync(join(js, f), 'utf8'), ctx, { filename: f });
 }
 vm.runInContext(`

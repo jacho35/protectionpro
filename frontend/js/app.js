@@ -286,8 +286,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // The save chip + autosave (savestate.js); the choice is in Settings › Preferences
   SaveState.init();
+  StudyOptions.init();
   AnalyseMenu.init();
+  CaseRuns.init();
   WsHead.init();
+  ProjectHistory.init();
   Project.startLocalBackup();
   Project.restoreLocalBackup();
 
@@ -2260,6 +2263,18 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('study-manager-body').innerHTML = '';
 
     try {
+      const runCurrent = CaseRuns.currentOn();
+      const others = CaseRuns.selectedCases();
+      if (others.length) await CaseRuns.runCases(others, enabled, statusEl);
+      if (!runCurrent) {
+        statusEl.textContent = `Ran ${enabled.length} studies on ${others.length} case${others.length === 1 ? '' : 's'}.`;
+        document.getElementById('status-info').textContent = 'Batch run complete.';
+        btn.disabled = false;
+        CaseRuns.render();
+        AnalyseMenu.syncManager();
+        return;
+      }
+      statusEl.textContent = `Running ${enabled.length} studies on the current network…`;
       const result = await API.runStudyManager(enabled);
       AppState.studyManagerResults = result;
 
@@ -2285,6 +2300,7 @@ document.addEventListener('DOMContentLoaded', () => {
       statusEl.textContent = `Completed in ${result.total_time_s}s`;
       btn.disabled = false;
       showStudyManagerResults(result);
+      CaseRuns.render();
     } catch (e) {
       console.error('Study manager error:', e);
       document.getElementById('status-info').textContent = 'Batch run failed.';
@@ -2637,112 +2653,8 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btn-tcc-verify-seq').addEventListener('click', () => TCC.verifySequenceOfOperation());
   document.getElementById('btn-tcc-grade-distance').addEventListener('click', () => TCC.gradeDistanceZones());
 
-  // ─── Scenarios ───
-  const scenariosModal = document.getElementById('scenarios-modal');
-
-  function renderScenarioList() {
-    const list = document.getElementById('scenario-list');
-    if (AppState.scenarios.length === 0) {
-      list.innerHTML = '<p class="scenario-empty">No scenarios saved yet.</p>';
-      return;
-    }
-    list.innerHTML = AppState.scenarios.map(s => {
-      const date = new Date(s.timestamp).toLocaleString();
-      const compCount = s.components.length;
-      const descHtml = s.description ? `<div class="scenario-desc">${escapeHtml(s.description)}</div>` : '';
-      const a = s.applies || { switching: true, settings: true, layout: true };
-      const tags = [a.switching && 'switching', a.settings && 'settings', a.layout && 'layout']
-        .filter(Boolean).join(' · ');
-      return `
-        <div class="scenario-item" data-id="${s.id}">
-          <div class="scenario-info">
-            <div class="scenario-name">${escapeHtml(s.name)}</div>
-            ${descHtml}
-            <div class="scenario-meta">${date} &mdash; ${compCount} component${compCount !== 1 ? 's' : ''} &mdash; applies: ${tags}</div>
-          </div>
-          <div class="scenario-actions">
-            <button class="btn-load-scenario" data-id="${s.id}" title="Load this scenario">Load</button>
-            <button class="btn-delete-scenario" data-id="${s.id}" title="Delete this scenario">&times;</button>
-          </div>
-        </div>`;
-    }).join('');
-
-    // Bind load buttons
-    list.querySelectorAll('.btn-load-scenario').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        const sc = AppState.scenarios.find(s => s.id === btn.dataset.id);
-        const a = sc?.applies || { switching: true, settings: true, layout: true };
-        const full = a.switching && a.settings && a.layout;
-        const what = full
-          ? 'Current unsaved changes will be replaced (device names are kept).'
-          : `Applies ${[a.switching && 'switching states', a.settings && 'electrical settings', a.layout && 'layout'].filter(Boolean).join(' and ')} to the current network.`;
-        if (!(await UI.confirm(`Load this scenario? ${what}`))) return;
-        const loaded = AppState.loadScenario(btn.dataset.id);
-        if (loaded) {
-          UndoManager.clear();
-          renderPageTabs();
-          Canvas.render();
-          Properties.clear();
-          scenariosModal.style.display = 'none';
-          const scenario = AppState.scenarios.find(s => s.id === btn.dataset.id);
-          document.getElementById('status-info').textContent = `Loaded scenario: ${scenario.name}`;
-        }
-      });
-    });
-
-    // Bind delete buttons
-    list.querySelectorAll('.btn-delete-scenario').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        if (!(await UI.confirm('Delete this scenario permanently?', { danger: true, okText: 'Delete' }))) return;
-        AppState.deleteScenario(btn.dataset.id);
-        renderScenarioList();
-      });
-    });
-  }
-
-  function escapeHtml(str) {
-    const div = document.createElement('div');
-    div.textContent = str;
-    return div.innerHTML;
-  }
-
-  document.getElementById('btn-scenarios').addEventListener('click', () => {
-    document.getElementById('scenario-name').value = '';
-    document.getElementById('scenario-desc').value = '';
-    renderScenarioList();
-    scenariosModal.style.display = '';
-  });
-
-  document.getElementById('btn-close-scenarios').addEventListener('click', () => {
-    scenariosModal.style.display = 'none';
-  });
-  scenariosModal.addEventListener('click', (e) => {
-    if (e.target === scenariosModal) scenariosModal.style.display = 'none';
-  });
-
-  document.getElementById('btn-save-scenario').addEventListener('click', () => {
-    const name = document.getElementById('scenario-name').value.trim();
-    if (!name) {
-      document.getElementById('scenario-name').focus();
-      return;
-    }
-    const desc = document.getElementById('scenario-desc').value.trim();
-    const applies = {
-      switching: document.getElementById('scenario-apply-switching').checked,
-      settings: document.getElementById('scenario-apply-settings').checked,
-      layout: document.getElementById('scenario-apply-layout').checked,
-    };
-    if (!applies.switching && !applies.settings && !applies.layout) {
-      document.getElementById('status-info').textContent =
-        'Tick at least one category for the scenario to apply.';
-      return;
-    }
-    AppState.saveScenario(name, desc, applies);
-    document.getElementById('scenario-name').value = '';
-    document.getElementById('scenario-desc').value = '';
-    renderScenarioList();
-    document.getElementById('status-info').textContent = `Scenario "${name}" saved.`;
-  });
+  // ─── Cases (the Cases manager: casesmanager.js) ───
+  CasesManager.init();
 
   // ─── Group / Ungroup ───
   document.getElementById('btn-group').addEventListener('click', () => {
@@ -3049,6 +2961,7 @@ document.addEventListener('DOMContentLoaded', () => {
     on('btn-toggle-rating-flags', AppState.showRatingFlags);
     const fa = document.getElementById('chk-fault-arrows'); if (fa) fa.checked = !!AppState.showFlowArrows.fault;
     const la = document.getElementById('chk-loadflow-arrows'); if (la) la.checked = !!AppState.showFlowArrows.loadflow;
+    if (typeof StudyOptions !== 'undefined') StudyOptions.apply();
     if (typeof ResultView !== 'undefined') ResultView.render();
   }
   window.syncViewToggles = syncViewToggles;

@@ -104,6 +104,14 @@ jobs:
         run: node frontend/tests/test_wshead.mjs
       - name: Undo names in the plan, Demand and road plan
         run: node frontend/tests/test_undonames.mjs
+      - name: One project history (hand-offs as one undo, Undo history)
+        run: node frontend/tests/test_history.mjs
+      - name: One Cases list (old Scenarios and Load Flow cases join)
+        run: node frontend/tests/test_cases.mjs
+      - name: Study Manager on cases (case project, grid states, run out-of-date)
+        run: node frontend/tests/test_caseruns.mjs
+      - name: Study options table
+        run: node frontend/tests/test_studyoptions.mjs
 
       - name: Raw HTML interpolation ratchet (new unescaped attribute values fail)
         run: node testing/lint/raw-interp.mjs --max 0

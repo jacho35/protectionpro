@@ -743,6 +743,10 @@ const MobileUI = {
         const input = next.querySelector('input[type="checkbox"]');
         if (input) opts.push({ kind: 'check', el: input, label: next.textContent.trim() });
       }
+      // controls moved into the Options panel name their item with data-opt-for
+      document.querySelectorAll(`[data-opt-for="${el.id}"]`).forEach(c => opts.push(c.tagName === 'SELECT'
+        ? { kind: 'select', el: c, label: c.dataset.optLabel || c.title || 'Option' }
+        : { kind: 'check', el: c, label: c.dataset.optLabel || 'Option' }));
       const title = el.title || '';
       const dash = title.indexOf(' — ');
       out.push({ id: el.id, el, label: this._text(el), group, opts, desc: dash >= 0 ? title.charAt(dash + 3).toUpperCase() + title.slice(dash + 4) : '' });

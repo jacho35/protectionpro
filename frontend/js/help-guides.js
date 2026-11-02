@@ -84,7 +84,7 @@ const HELP_GUIDES = [
       html: 'Press <strong>Save</strong> (<kbd>Ctrl</kbd>+<kbd>S</kbd>) to keep the project in your account; the chip in the header says whether your work is saved, and once the project is on the server it saves itself a moment after your last edit. To start from a worked example instead of a blank page, use <strong>Project ▸ Templates</strong>. Then run a study from the <strong>Analyse</strong> menu, or press <strong>Run All Studies</strong>; the results appear as boxes you can drag on the diagram.' },
   ],
   tips: ['Components snap to a 20-unit grid. Arrow keys nudge a selection by one grid step, and <kbd>Shift</kbd>+arrow by five.', 'Rename components early: the names appear in the TCC, the result tables and the reports.'],
-  related: [{ help: 'wf-studies', label: 'Run All Studies, scenarios & load-flow cases' }, { help: 'wf-files', label: 'Saving, revisions & sharing' }] },
+  related: [{ help: 'wf-studies', label: 'Run All Studies, cases & load-flow cases' }, { help: 'wf-files', label: 'Saving, revisions & sharing' }] },
 
 // ───────────────────────────────────────────────────────────────────────────
 { id: 'sld-edit', group: 'sld', title: 'Select, tidy and undo on the single line',
@@ -1194,10 +1194,10 @@ const HELP_GUIDES = [
     { title: 'Check the messages',
       html: 'The status bar says whether the solver converged and in how many iterations. If it did not, the cause is usually a source with no path to a load, a bus with the wrong voltage, or a load far larger than the supply. The dispatch summary lists what each source and battery delivered.' },
     { title: 'Try a change',
-      html: 'Open or close a breaker, change a tap or add a capacitor bank and run again to see the effect. <strong>Scenarios</strong> keeps named switching states so you can return to one.' },
+      html: 'Open or close a breaker, change a tap or add a capacitor bank and run again to see the effect. <strong>Cases</strong> keeps named versions of the network so you can return to one.' },
   ],
   tips: ['Time-series and the study manager reuse this same solver, so a flat profile reproduces this result exactly.'],
-  related: [{ help: 'flow-loadflow', label: 'Load flow (the method)' }, { help: 'wf-studies', label: 'Run All Studies, scenarios & load-flow cases' }] },
+  related: [{ help: 'flow-loadflow', label: 'Load flow (the method)' }, { help: 'wf-studies', label: 'Run All Studies, cases & load-flow cases' }] },
 
 // ───────────────────────────────────────────────────────────────────────────
 { id: 'study-arcflash', group: 'analyses', title: 'Run an arc flash study and print labels',

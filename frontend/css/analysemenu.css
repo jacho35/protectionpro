@@ -11,3 +11,20 @@
 #study-manager-checks label { flex-wrap: wrap; }
 .sm-status { flex-basis: 100%; margin-left: 22px; font-size: 11px; color: var(--text-muted); }
 .sm-status.sm-fail { color: #c62828; } .sm-status.sm-warn { color: #b26a00; } .sm-status.sm-stale { color: #b26a00; font-style: italic; }
+
+/* Study Manager on cases (caseruns.js) */
+.sm-cases { margin: 0 0 14px; }
+.sm-cases-head { font-size: 12px; font-weight: 600; margin-bottom: 4px; }
+.sm-cases-list { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 13px; }
+.sm-case { display: inline-flex; gap: 6px; align-items: center; cursor: pointer; }
+.sm-cases-none { font-size: 11.5px; color: var(--text-muted); margin-top: 4px; }
+.sm-grid-wrap { margin-top: 16px; overflow-x: auto; }
+.sm-grid { border-collapse: collapse; font-size: 12px; min-width: 420px; }
+.sm-grid th, .sm-grid td { padding: 5px 12px; border-bottom: 1px solid var(--border-color); text-align: left; }
+.sm-grid th { background: var(--bg-secondary); }
+.sm-cell button { background: none; border: 0; padding: 0; color: inherit; font: inherit; cursor: pointer; text-decoration: underline dotted; }
+.sm-ok { color: #2e7d32; } .sm-warn, .sm-stale { color: #b26a00; } .sm-fail, .sm-error { color: #c62828; } .sm-none { color: var(--text-muted); }
+
+.sm-cmp { margin-left: 8px; font-size: 10.5px; padding: 0 7px; border: 1px solid var(--border-color); border-radius: 9px; background: transparent; color: var(--text-secondary); cursor: pointer; }
+.sm-cmp:hover { background: var(--bg-tertiary); }
+.cm-diff tr.sm-differs td { background: var(--accent-soft, #eef4ff); }

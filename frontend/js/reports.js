@@ -656,7 +656,7 @@ const Reports = {
     Project._statusMsg('Exported settings schedule as CSV.');
   },
 
-  // ── Scenario Comparison Report ──
+  // ── Case Comparison Report ──
 
   exportComparisonPDF(scenarioIdA, scenarioIdB) {
     const { jsPDF } = window.jspdf;
@@ -681,53 +681,15 @@ const Reports = {
     // Title
     doc.setFontSize(18);
     doc.setFont('helvetica', 'bold');
-    doc.text('Scenario Comparison Report', margin, margin + 6);
+    doc.text('Case Comparison Report', margin, margin + 6);
     doc.setFontSize(11);
     doc.setFont('helvetica', 'normal');
     doc.text(`Project: ${projName}   |   Date: ${new Date().toLocaleDateString()}`, margin, margin + 14);
-    doc.text(`Scenario A: ${scA.name}   vs   Scenario B: ${scB.name}`, margin, margin + 21);
-
-    // Build component maps: scenario.components is an array of { id, type, props, ... }
-    const mapA = new Map();
-    for (const c of scA.components) mapA.set(c.id, { type: c.type, ...(c.props || {}) });
-    const mapB = new Map();
-    for (const c of scB.components) mapB.set(c.id, { type: c.type, ...(c.props || {}) });
+    doc.text(`Case A: ${scA.name}   vs   Case B: ${scB.name}`, margin, margin + 21);
 
     // ── Component Differences ──
-    const diffRows = [];
-    const allIds = new Set([...mapA.keys(), ...mapB.keys()]);
-
-    for (const id of allIds) {
-      const propsA = mapA.get(id);
-      const propsB = mapB.get(id);
-
-      if (!propsA && propsB) {
-        diffRows.push([propsB.name || id, 'Added in B', '\u2014', '\u2014', '\u2014']);
-        continue;
-      }
-      if (propsA && !propsB) {
-        diffRows.push([propsA.name || id, 'Removed in B', '\u2014', '\u2014', '\u2014']);
-        continue;
-      }
-
-      // Compare properties
-      const allKeys = new Set([...Object.keys(propsA), ...Object.keys(propsB)]);
-      for (const key of allKeys) {
-        if (key === 'name' || key === 'x' || key === 'y') continue;
-        const vA = propsA[key];
-        const vB = propsB[key];
-        if (vA !== vB && (vA != null || vB != null)) {
-          const name = propsA.name || propsB.name || id;
-          diffRows.push([
-            name,
-            key.replace(/_/g, ' '),
-            vA != null ? String(vA) : '\u2014',
-            vB != null ? String(vB) : '\u2014',
-            this._formatDelta(vA, vB),
-          ]);
-        }
-      }
-    }
+    const dash = (v) => v === '' ? '\u2014' : v;
+    const diffRows = Cases.diff(scA, scB).map(r => [r.name, r.what, dash(r.a), dash(r.b), dash(r.delta)]);
 
     if (diffRows.length === 0) {
       doc.setFontSize(11);
@@ -756,7 +718,7 @@ const Reports = {
     const compCountB = scB.components.length;
     const summaryY = doc.lastAutoTable ? doc.lastAutoTable.finalY + 10 : margin + 35;
     doc.setFontSize(10);
-    doc.text(`Scenario A: ${compCountA} components   |   Scenario B: ${compCountB} components   |   ${diffRows.length} differences found`, margin, summaryY);
+    doc.text(`Case A: ${compCountA} components   |   Case B: ${compCountB} components   |   ${diffRows.length} differences found`, margin, summaryY);
 
     // Footer
     const totalPages = doc.internal.getNumberOfPages();
@@ -896,49 +858,8 @@ const Reports = {
     return sections;
   },
 
-  // ── Scenario Comparison UI ──
-
-  showComparisonDialog() {
-    const scenarios = AppState.scenarios;
-    if (scenarios.length < 2) {
-      UI.toast('Save at least 2 scenarios before comparing.', 'warning');
-      return;
-    }
-
-    const modal = document.getElementById('calc-modal');
-    modal.querySelector('#calc-modal-title').textContent = 'Compare Scenarios';
-
-    const options = scenarios.map(s => `<option value="${s.id}">${s.name} (${new Date(s.timestamp).toLocaleDateString()})</option>`).join('');
-
-    modal.querySelector('#calc-modal-body').innerHTML = `
-      <div style="max-width:400px;">
-        <div class="tcc-form-row" style="margin-bottom:12px;">
-          <label for="compare-sc-a" style="font-weight:600;">Scenario A (Before)</label>
-          <select id="compare-sc-a" style="width:100%;padding:6px;font-size:12px;border:1px solid var(--border-color);border-radius:4px;">${options}</select>
-        </div>
-        <div class="tcc-form-row" style="margin-bottom:16px;">
-          <label for="compare-sc-b" style="font-weight:600;">Scenario B (After)</label>
-          <select id="compare-sc-b" style="width:100%;padding:6px;font-size:12px;border:1px solid var(--border-color);border-radius:4px;">${options}</select>
-        </div>
-        <button id="btn-run-comparison" class="btn-primary">Generate Comparison PDF</button>
-      </div>
-    `;
-
-    // Default to second scenario for B
-    if (scenarios.length >= 2) {
-      document.getElementById('compare-sc-b').value = scenarios[1].id;
-    }
-
-    modal.style.display = '';
-
-    document.getElementById('btn-run-comparison').addEventListener('click', () => {
-      const idA = document.getElementById('compare-sc-a').value;
-      const idB = document.getElementById('compare-sc-b').value;
-      if (idA === idB) { UI.toast('Select two different scenarios.', 'warning'); return; }
-      modal.style.display = 'none';
-      this.exportComparisonPDF(idA, idB);
-    });
-  },
+  // The comparison is chosen in the Cases manager (casesmanager.js); this makes the PDF.
+  showComparisonDialog() { CasesManager.open({ compare: true }); },
 
   // ── Detailed Calculations Report ──
 

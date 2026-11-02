@@ -817,7 +817,8 @@ const Retic = {
 
   // "Add to the single line": the first stacks (then the pass keeps them),
   // or one minisub's stack back after it was deleted there. One undo step.
-  async addToSLD(msId) {
+  addToSLD(msId) { return (typeof ProjectHistory !== 'undefined' ? ProjectHistory.group.bind(ProjectHistory) : (l, f) => f())('Add to the single line', () => this._addToSLD(msId)); },
+  async _addToSLD(msId) {
     if (!this.resultIsCurrent()) await this._doCompute();
     const res = AppState.reticResults;
     const byMs = new Map(((res && res.minisubs) || []).map(m => [m.minisubId, m]));
@@ -843,7 +844,8 @@ const Retic = {
   },
 
   // The button (Keep workspaces in sync off): add or update every stack now.
-  async pushToSLD() {
+  pushToSLD() { return (typeof ProjectHistory !== 'undefined' ? ProjectHistory.group.bind(ProjectHistory) : (l, f) => f())('Push demand to the single line', () => this._pushToSLD()); },
+  async _pushToSLD() {
     const res = AppState.reticResults;
     const entries = ((res && res.minisubs) || []).filter(m => m.totalKVA > 0);
     if (!entries.length) {
@@ -2448,8 +2450,9 @@ const Retic = {
     this._undoNames = (this._undoNames || []).slice(0, this._undoIndex + 1);
     this._undoStack.push(snap);
     this._undoNames.push(name);
-    if (this._undoStack.length > 50) { this._undoStack.shift(); this._undoNames.shift(); }
+    if (this._undoStack.length > 50) { this._undoStack.shift(); this._undoNames.shift(); if (typeof ProjectHistory !== 'undefined') ProjectHistory.shift('retic', 1); }
     this._undoIndex = this._undoStack.length - 1;
+    if (typeof ProjectHistory !== 'undefined') ProjectHistory.record('retic', this._undoIndex, name);
     this._syncUndoUi();
   },
   _undoNames: [],
@@ -2462,6 +2465,7 @@ const Retic = {
 
   undo() {
     if (this._undoIndex <= 0) return;
+    if (typeof ProjectHistory !== 'undefined' && ProjectHistory.intercept('undo', 'retic')) return;
     const what = this.undoLabel();
     this._undoIndex--;
     this._restore(this._undoStack[this._undoIndex]);
@@ -2471,6 +2475,7 @@ const Retic = {
 
   redo() {
     if (this._undoIndex >= this._undoStack.length - 1) return;
+    if (typeof ProjectHistory !== 'undefined' && ProjectHistory.intercept('redo', 'retic')) return;
     this._undoIndex++;
     this._restore(this._undoStack[this._undoIndex]);
     this._syncUndoUi();

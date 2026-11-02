@@ -4036,3 +4036,12 @@ button.link-mark:focus-visible { outline: 2px solid var(--accent, #2563eb); outl
 .settings-type-note { margin: 0 0 12px; padding: 8px 10px; border-radius: 6px; background: var(--bg-secondary, #f3f4f6); font-size: 12.5px; color: var(--text-secondary, #555); }
 .settings-type-note .btn-link { background: none; border: 0; padding: 0; color: var(--accent, #2563eb); cursor: pointer; text-decoration: underline; font: inherit; }
 .settings-tab-content [data-needs][hidden] { display: none !important; }
+
+/* Cases manager (casesmanager.js) */
+.scenario-actions { flex-wrap: wrap; justify-content: flex-end; gap: 4px; }
+.cm-compare-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 8px; font-size: 12px; }
+.cm-compare-row select { max-width: 200px; }
+.cm-scroll { max-height: 280px; overflow: auto; border: 1px solid var(--border-color); border-radius: 4px; }
+.cm-diff { border-collapse: collapse; width: 100%; font-size: 11.5px; }
+.cm-diff th, .cm-diff td { text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--border-color); }
+.cm-diff th { position: sticky; top: 0; background: var(--bg-secondary); }
