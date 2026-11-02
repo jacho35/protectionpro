@@ -121,6 +121,69 @@ const Header = {
     }));
   },
 
+  // Items inside the workspaces the project shows: minisubs, kiosks, erven,
+  // street-light circuits, boards, ways, rooms and areas. Built from the data
+  // each workspace holds (never runs anything); shown only once the user types.
+  // `go` is a Links address (Links.go) or a `board:` / `room:` address.
+  _itemIndex() {
+    const out = [];
+    const vis = (ws) => typeof Workspaces === 'undefined' || Workspaces.isVisible(ws);
+    const add = (go, label, where, extra) => {
+      label = String(label || '').trim();
+      if (!label) return;
+      out.push({ item: go, label, where, shortcut: '', hay: (label + ' ' + where + ' ' + (extra || '')).toLowerCase() });
+    };
+    const R = AppState.reticulation;
+    if (R && vis('retic')) {
+      const wsName = Workspaces.label('retic');
+      for (const m of R.minisubs || []) add('retic:' + m.id, m.name || 'Minisub', wsName + ' · Minisub');
+      for (const k of R.kiosks || []) {
+        add('retic:' + k.id, k.name || 'Kiosk', wsName + ' · Kiosk');
+        for (const e of k.erfs || []) {
+          const num = String(e.erfNumber || '').trim();
+          const n = /^erf\b/i.test(num) ? num : 'Erf ' + num;
+          add('retic:' + e.id, n.trim(), wsName + ' · Erf on ' + (k.name || 'kiosk'), e.address || e.name || '');
+        }
+      }
+    }
+    const sl = R && R.streetLighting;
+    if (sl && vis('streetlight')) {
+      for (const c of sl.circuits || []) add('sl:' + c.id, c.name || 'Circuit', Workspaces.label('streetlight') + ' · Circuit');
+    }
+    if (vis('schedules')) {
+      for (const c of AppState.components.values()) {
+        if (c.type !== 'distribution_board') continue;
+        const bn = c.props.name || c.id;
+        add('board:' + c.id, bn, 'Schedules · Board');
+        for (const w of c.props.circuits || []) {
+          const d = (w.description || '').trim();
+          add('way:' + c.id + '/' + w.id, `${bn} way ${w.way || ''}${d ? ' · ' + d : ''}`.trim(), 'Schedules · Way', d);
+        }
+      }
+    }
+    if (typeof Issues !== 'undefined' && Issues.lightRows && vis('lighting')) {
+      for (const r of Issues.lightRows()) {
+        if (r.kind === 'obtrusive') continue;
+        add(`room:${r.floorId}:${r.id}`, r.name, Workspaces.label('lighting') + ' · ' + [r.task, r.floor].filter(Boolean).join(' · '));
+      }
+    }
+    return out;
+  },
+
+  // Go to a workspace item picked in the search.
+  goItem(addr) {
+    const [kind, ...rest] = addr.split(':');
+    if (kind === 'board') {
+      switchWorkspace('schedules');
+      if (typeof Schedules !== 'undefined' && Schedules.selectBoard) Schedules.selectBoard(rest[0]);
+    } else if (kind === 'room') {
+      switchWorkspace('lighting');
+      if (typeof LightingWS !== 'undefined') { LightingWS.view = 'plan'; LightingWS.locate(rest.slice(1).join(':'), rest[0]); }
+    } else if (typeof Links !== 'undefined') {
+      Links.go(addr, null);
+    }
+  },
+
   // Take the user to a placed device: its workspace, its page, selected + centred.
   locateComponent(id) {
     const comp = AppState.components.get(id);
@@ -143,7 +206,7 @@ const Header = {
 
   _rank(items, q) {
     const words = q.toLowerCase().split(/\s+/).filter(Boolean);
-    if (!words.length) return items.filter(it => !it.device && !it.guide).slice(0, 60);
+    if (!words.length) return items.filter(it => !it.device && !it.guide && !it.item).slice(0, 60);
     const scored = [];
     for (const it of items) {
       // Guides match on word starts, so "arc" does not hit "search" in their text.
@@ -163,7 +226,7 @@ const Header = {
     if (document.getElementById('cmd-search')) return;
     if (typeof window.closeAllToolbarMenus === 'function') window.closeAllToolbarMenus();
     // Commands first so an exact command name outranks a guide of the same score.
-    const items = this._index().concat(this._guideIndex(), this._deviceIndex());
+    const items = this._index().concat(this._guideIndex(), this._itemIndex(), this._deviceIndex());
     const prevFocus = document.activeElement;
     // A `.modal` overlay: the global shortcut handler already stands down while
     // one is open, so typing here can never edit the diagram behind it.
@@ -175,7 +238,7 @@ const Header = {
       <div class="cmd-search" role="dialog" aria-modal="true" aria-label="Search commands">
         <div class="cmd-search-input-row">
           <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/></svg>
-          <input type="text" class="cmd-search-input" placeholder="Search commands, analyses, exports, settings, guides, devices…"
+          <input type="text" class="cmd-search-input" placeholder="Search commands, analyses, exports, settings, guides, kiosks, boards, rooms, devices…"
             aria-label="Search commands" role="combobox" aria-expanded="true" aria-controls="cmd-search-list" aria-autocomplete="list">
           <kbd class="cmd-kbd">Esc</kbd>
         </div>
@@ -213,6 +276,7 @@ const Header = {
     const run = (it) => {
       if (!it) return;
       close();
+      if (it.item) { this.goItem(it.item); return; }
       if (it.device) { this.locateComponent(it.device); return; }
       if (it.guide) { if (typeof HelpGuides !== 'undefined') HelpGuides.openGuide(it.guide); return; }
       const btn = document.getElementById(it.id);
