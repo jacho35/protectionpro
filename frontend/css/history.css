@@ -1,0 +1,12 @@
+/* Undo history dialog (history.js) */
+#ph-modal .modal-content { width: min(640px, 94vw); max-height: 80vh; display: flex; flex-direction: column; }
+#ph-modal .modal-body { overflow-y: auto; }
+.ph-note, .ph-empty { font-size: 12px; color: var(--text-secondary); margin: 0 0 10px; }
+.ph-list { list-style: none; margin: 0; padding: 0; }
+.ph-item { display: flex; align-items: center; gap: 8px; padding: 6px 4px; border-bottom: 1px solid var(--border-color); font-size: 13px; }
+.ph-item.ph-undone { opacity: .55; }
+.ph-item.ph-undone .ph-l { text-decoration: line-through; }
+.ph-t { font-size: 11px; color: var(--text-muted); font-variant-numeric: tabular-nums; flex: none; }
+.ph-ws { flex: none; font-size: 10.5px; padding: 1px 7px; border-radius: 10px; background: var(--bg-tertiary); color: var(--text-secondary); }
+.ph-l { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ph-item .btn-small { flex: none; }

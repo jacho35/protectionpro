@@ -288,6 +288,7 @@ document.addEventListener('DOMContentLoaded', () => {
   SaveState.init();
   AnalyseMenu.init();
   WsHead.init();
+  ProjectHistory.init();
   Project.startLocalBackup();
   Project.restoreLocalBackup();
 
