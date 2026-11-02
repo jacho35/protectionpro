@@ -908,7 +908,7 @@ const Reports = {
     const modal = document.getElementById('calc-modal');
     modal.querySelector('#calc-modal-title').textContent = 'Compare Scenarios';
 
-    const options = scenarios.map(s => `<option value="${s.id}">${s.name} (${new Date(s.timestamp).toLocaleDateString()})</option>`).join('');
+    const options = scenarios.map(s => `<option value="${s.id}">${s.name} ${s.timestamp ? '(' + new Date(s.timestamp).toLocaleDateString() + ')' : ''}</option>`).join('');
 
     modal.querySelector('#calc-modal-body').innerHTML = `
       <div style="max-width:400px;">

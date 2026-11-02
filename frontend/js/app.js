@@ -2648,7 +2648,7 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
     list.innerHTML = AppState.scenarios.map(s => {
-      const date = new Date(s.timestamp).toLocaleString();
+      const date = s.timestamp ? new Date(s.timestamp).toLocaleString() : 'no date';
       const compCount = s.components.length;
       const descHtml = s.description ? `<div class="scenario-desc">${escapeHtml(s.description)}</div>` : '';
       const a = s.applies || { switching: true, settings: true, layout: true };

@@ -20,7 +20,7 @@
  *   when it can't — then a clean copy is reloaded, a dirty one is told to save and reload.
  * - Selection: each editor's selection is relayed as presence and outlined in their colour;
  *   picking something a colleague has selected shows a heads-up (a soft lock — never blocks).
- * - Project-level data (settings, project details, scenarios, groups, earth grids) travels as
+ * - Project-level data (settings, project details, cases, groups, earth grids) travels as
  *   whole-value `misc` ops, last writer wins per key.
  *
  * - Per-element data (collab-data.js lists the collections): Demand minisubs / kiosks,
@@ -36,7 +36,7 @@ const Collab = {
   PAGES_KEY: 'pages',
   // Project-level values synced whole (key → AppState field of the same name; groups are Maps).
   MISC_KEYS: ['projectDetails', 'baseMVA', 'frequency', 'voltageFactor', 'defaultLengthUnit',
-              'voltageDisplayUnit', 'symbolSet', 'wireRouteMode', 'earthGrids', 'scenarios', 'groups',
+              'voltageDisplayUnit', 'symbolSet', 'wireRouteMode', 'earthGrids', 'cases', 'groups',
               'keepInSync', 'syncOverrides'],
   DEBOUNCE_MS: 250,
   HEARTBEAT_MS: 25000,
@@ -463,11 +463,11 @@ const Collab = {
         if (!obj(v)) return false; AppState.syncOverrides = v; return true;
       case 'earthGrids':
         if (!Array.isArray(v)) return false; AppState.earthGrids = v; return true;
-      case 'scenarios':
+      case 'cases':
+      case 'scenarios':     // a co-editor on an older version
         if (!Array.isArray(v)) return false;
-        AppState.scenarios = v;
-        AppState._scenarioNextId = v.length
-          ? Math.max(...v.map(x => parseInt(String(x.id).replace('scenario_', '')) || 0)) + 1 : 1;
+        AppState.cases = v;
+        AppState._scenarioNextId = Cases.nextNumber(v);
         return true;
       case 'groups':
         if (!Array.isArray(v)) return false;

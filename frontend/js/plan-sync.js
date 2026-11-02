@@ -295,7 +295,7 @@ const PlanSync = {
   // off): asks and reports in dialogs and takes an undo snapshot. The sync
   // pass calls _pushCore with interactive: false instead — no dialog, no
   // snapshot, and what it used to ask goes to opts.issue(key, text).
-  pushToSchedules(opts = {}) { return ProjectHistory.group('Push to Demand schedules', () => this._pushToSchedules(opts)); },
+  pushToSchedules(opts = {}) { return (typeof ProjectHistory !== 'undefined' ? ProjectHistory.group.bind(ProjectHistory) : (l, f) => f())('Push to Demand schedules', () => this._pushToSchedules(opts)); },
   async _pushToSchedules(opts = {}) {
     const interactive = opts.interactive !== false;
     if (interactive && !this._factor()) {
@@ -1676,7 +1676,7 @@ const PlanSync = {
   // feeder direction keeps the drawing order and goes to opts.issue, no
   // snapshot, no summary. Without an await on that path it runs
   // synchronously. Returns the summary.
-  syncBuildingToSLD(opts = {}) { return ProjectHistory.group('Sync plan with the single line', () => this._syncBuildingToSLD(opts)); },
+  syncBuildingToSLD(opts = {}) { return (typeof ProjectHistory !== 'undefined' ? ProjectHistory.group.bind(ProjectHistory) : (l, f) => f())('Sync plan with the single line', () => this._syncBuildingToSLD(opts)); },
   async _syncBuildingToSLD(opts = {}) {
     const interactive = opts.interactive !== false;
     const issue = opts.issue || (() => {});

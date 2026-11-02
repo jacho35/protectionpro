@@ -389,10 +389,10 @@ const LFStudy = {
   _newFromCurrent(body) {
     const snap = this._snapshotCurrent();
     const cases = this._cases();
-    const id = 'lfc_' + Date.now();
-    cases.push({ id, name: `Case ${cases.length + 1}`, description: '', baseMVA: snap.baseMVA,
-                 loadFlowMethod: null, nextId: snap.nextId,
-                 components: snap.components, wires: snap.wires });
+    const id = 'case_' + Math.max(AppState._scenarioNextId++, Cases.nextNumber(cases));
+    cases.push(Cases.normalize({ id, name: `Case ${cases.length + 1}`, description: '', timestamp: new Date().toISOString(),
+                 baseMVA: snap.baseMVA, loadFlowMethod: null, nextId: snap.nextId,
+                 components: snap.components, wires: snap.wires }, 'lf'));
     AppState.dirty = true;
     this._activeCaseId = id;
     this._render(body);

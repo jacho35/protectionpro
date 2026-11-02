@@ -817,7 +817,7 @@ const Retic = {
 
   // "Add to the single line": the first stacks (then the pass keeps them),
   // or one minisub's stack back after it was deleted there. One undo step.
-  addToSLD(msId) { return ProjectHistory.group('Add to the single line', () => this._addToSLD(msId)); },
+  addToSLD(msId) { return (typeof ProjectHistory !== 'undefined' ? ProjectHistory.group.bind(ProjectHistory) : (l, f) => f())('Add to the single line', () => this._addToSLD(msId)); },
   async _addToSLD(msId) {
     if (!this.resultIsCurrent()) await this._doCompute();
     const res = AppState.reticResults;
@@ -844,7 +844,7 @@ const Retic = {
   },
 
   // The button (Keep workspaces in sync off): add or update every stack now.
-  pushToSLD() { return ProjectHistory.group('Push demand to the single line', () => this._pushToSLD()); },
+  pushToSLD() { return (typeof ProjectHistory !== 'undefined' ? ProjectHistory.group.bind(ProjectHistory) : (l, f) => f())('Push demand to the single line', () => this._pushToSLD()); },
   async _pushToSLD() {
     const res = AppState.reticResults;
     const entries = ((res && res.minisubs) || []).filter(m => m.totalKVA > 0);

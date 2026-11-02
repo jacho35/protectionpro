@@ -140,8 +140,10 @@ const AppState = {
   faultedBusId: null,  // ID of the specific bus that was faulted (null = all buses)
 
   // Scenarios — saved snapshots of network configuration
-  scenarios: [],  // [{id, name, description, timestamp, components, wires, nextId}]
+  cases: [],      // the one list of named network variants (cases.js); `scenarios` and `loadFlowCases` below are the same list
   _scenarioNextId: 1,
+  get scenarios() { return this.cases; },
+  set scenarios(v) { this.cases = v; },
 
   // Study config persisted with the project (NOT results, so it survives
   // topology edits — see clearResults). Transient-stability disturbance cases;
@@ -150,7 +152,8 @@ const AppState = {
   stabilityCases: [],          // [{id, name, disturbance}]
   dynamicMotorSchedule: null,  // {motors: [{id, role, start_time_s}]}
   dynamicMotorCases: [],       // [{id, name, schedule}]
-  loadFlowCases: [],           // [{id, name, baseMVA, loadFlowMethod, components, wires}] — Load Flow Study Manager
+  get loadFlowCases() { return this.cases; },
+  set loadFlowCases(v) { this.cases = v; },
   interlockLogic: { nodes: [], links: [] },  // CB interlocking boolean-gate diagram (Interlock workspace)
   lfPreviewCaseId: null,       // transient (NOT persisted): a saved load-flow case currently previewed on the diagram — overrides cb/switch state in the symbol render. See lfstudy.js.
 
@@ -913,7 +916,7 @@ const AppState = {
 
   // Save current network configuration as a scenario
   saveScenario(name, description = '', applies = null) {
-    const id = `scenario_${this._scenarioNextId++}`;
+    const id = `case_${Math.max(this._scenarioNextId++, Cases.nextNumber(this.cases))}`;
     const scenario = {
       id,
       name,
@@ -930,7 +933,7 @@ const AppState = {
       activePageId: this.activePageId,
       // What loading this scenario applies (snapshot always stores everything;
       // names are never applied). Missing/legacy → all true.
-      applies: applies || { switching: true, settings: true, layout: true },
+      applies: applies || { ...Cases.DEFAULT_APPLIES },
     };
     this.scenarios.push(scenario);
     this.dirty = true;
@@ -1304,7 +1307,6 @@ const AppState = {
     this.stabilityCases = [];  // saved transient-stability disturbance cases
     this.dynamicMotorSchedule = null;
     this.dynamicMotorCases = [];
-    this.loadFlowCases = [];   // saved load-flow study cases
     this.interlockLogic = { nodes: [], links: [] };  // CB interlocking diagram
     this.zoom = 1;
     this.panX = 0;
@@ -1313,7 +1315,7 @@ const AppState = {
     this.placingType = null;
     this.wireStart = null;
     this.dragState = null;
-    this.scenarios = [];
+    this.cases = [];
     this._scenarioNextId = 1;
     this.groups.clear();
     this._groupNextId = 1;
@@ -1570,7 +1572,7 @@ const AppState = {
       components: [...this.components.values()],
       wires: [...this.wires.values()],
       nextId: this.nextId,
-      scenarios: this.scenarios,
+      cases: this.cases,
       groups: [...this.groups.values()].map(g => ({ ...g, memberIds: [...g.memberIds] })),
       pages: this.pages,
       activePageId: this.activePageId,
@@ -1603,7 +1605,6 @@ const AppState = {
       dynamicMotorSchedule: (this.dynamicMotorSchedule && this.dynamicMotorSchedule.motors
         && this.dynamicMotorSchedule.motors.length) ? this.dynamicMotorSchedule : undefined,
       dynamicMotorCases: (this.dynamicMotorCases && this.dynamicMotorCases.length) ? this.dynamicMotorCases : undefined,
-      loadFlowCases: (this.loadFlowCases && this.loadFlowCases.length) ? this.loadFlowCases : undefined,
       interlockLogic: (this.interlockLogic && this.interlockLogic.nodes && this.interlockLogic.nodes.length) ? this.interlockLogic : undefined,
       dutyCheckResults: this.dutyCheckResults || undefined,
       loadDiversityResults: this.loadDiversityResults || undefined,
@@ -1733,10 +1734,8 @@ const AppState = {
       }
     }
     this.nextId = Math.max(data.nextId || 1, maxIdSuffix + 1);
-    this.scenarios = data.scenarios || [];
-    this._scenarioNextId = this.scenarios.length > 0
-      ? Math.max(...this.scenarios.map(s => parseInt(s.id.replace('scenario_', '')) || 0)) + 1
-      : 1;
+    this.cases = Cases.fromProject(data);   // an older file's Scenarios and Load Flow cases are joined here
+    this._scenarioNextId = Cases.nextNumber(this.cases);
 
     // Migrate legacy cable resistances (pre-v2 projects stored 20°C DC values;
     // the backend now treats cable r_per_km as operating-temperature). Applies
@@ -1964,7 +1963,6 @@ const AppState = {
     this.dynamicMotorSchedule = (data.dynamicMotorSchedule && Array.isArray(data.dynamicMotorSchedule.motors))
       ? data.dynamicMotorSchedule : null;
     this.dynamicMotorCases = Array.isArray(data.dynamicMotorCases) ? data.dynamicMotorCases : [];
-    this.loadFlowCases = Array.isArray(data.loadFlowCases) ? data.loadFlowCases : [];
     this.interlockLogic = (data.interlockLogic && Array.isArray(data.interlockLogic.nodes))
       ? data.interlockLogic : { nodes: [], links: [] };
     // Named assessments; a project from before them carries one set of inputs

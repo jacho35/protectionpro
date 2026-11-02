@@ -31,7 +31,7 @@ const ctx = {
   Annotations: { offsets: new Map(), hiddenResultBoxes: new Set() },
 };
 vm.createContext(ctx);
-for (const f of ['constants.js', 'state.js']) vm.runInContext(readFileSync(join(js, f), 'utf8'), ctx, { filename: f });
+for (const f of ['constants.js', 'cases.js', 'state.js']) vm.runInContext(readFileSync(join(js, f), 'utf8'), ctx, { filename: f });
 const A = vm.runInContext('AppState', ctx);
 const tick = () => new Promise(r => setTimeout(r, 0));
 
