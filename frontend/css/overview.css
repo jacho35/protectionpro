@@ -97,7 +97,6 @@ body.dark-mode #toolbar .app-bar .toolbar-right > button.issues-btn.issues-fail 
   #toolbar .workspace-tab { padding: 3px 8px; }
   #toolbar .app-bar .toolbar-right > button.cmd-search-btn { min-width: 0; }
   #toolbar .app-bar .toolbar-right > button.cmd-search-btn > span { display: none; }
-  #toolbar .app-bar .toolbar-right > button#btn-auto-save > span { display: none; }
   #toolbar #account-email { display: none; }
 }
 @media (max-width: 1380px) {

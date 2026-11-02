@@ -81,7 +81,7 @@ const HELP_GUIDES = [
           { sel: '#page-tab-bar', label: 'Sheets — add one for a big diagram' },
         ] } },
     { title: 'Save, then analyse',
-      html: 'Press <strong>Save</strong> (<kbd>Ctrl</kbd>+<kbd>S</kbd>) to keep the project in your account; <strong>Auto Save</strong> in the header also keeps it up to date. To start from a worked example instead of a blank page, use <strong>Project ▸ Templates</strong>. Then run a study from the <strong>Analyse</strong> menu, or press <strong>Run All Studies</strong>; the results appear as boxes you can drag on the diagram.' },
+      html: 'Press <strong>Save</strong> (<kbd>Ctrl</kbd>+<kbd>S</kbd>) to keep the project in your account; the chip in the header says whether your work is saved, and once the project is on the server it saves itself a moment after your last edit. To start from a worked example instead of a blank page, use <strong>Project ▸ Templates</strong>. Then run a study from the <strong>Analyse</strong> menu, or press <strong>Run All Studies</strong>; the results appear as boxes you can drag on the diagram.' },
   ],
   tips: ['Components snap to a 20-unit grid. Arrow keys nudge a selection by one grid step, and <kbd>Shift</kbd>+arrow by five.', 'Rename components early: the names appear in the TCC, the result tables and the reports.'],
   related: [{ help: 'wf-studies', label: 'Run All Studies, scenarios & load-flow cases' }, { help: 'wf-files', label: 'Saving, revisions & sharing' }] },

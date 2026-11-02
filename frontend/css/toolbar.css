@@ -516,8 +516,6 @@ body.ws-secondary-active { --toolbar-height: var(--app-bar-height); }
   position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0;
   overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
 }
-/* Auto-save doubles as the save-state chip. */
-#toolbar .app-bar #btn-auto-save.tb-status { font-size: 12px; }
 
 /* Row 2 controls */
 .ws-bar .toolbar-left, .ws-bar .toolbar-right { gap: 4px; }

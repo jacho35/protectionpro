@@ -1,0 +1,11 @@
+/* The save-state chip in the app bar */
+.save-chip { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; white-space: nowrap; }
+.save-chip .sc-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-secondary, #888); flex: none; }
+.save-chip[data-state="saved"] .sc-dot { background: #16a34a; }
+.save-chip[data-state="saving"] .sc-dot { background: #2563eb; animation: sc-pulse 1s ease-in-out infinite; }
+.save-chip[data-state="unsaved"] .sc-dot, .save-chip[data-state="new"] .sc-dot { background: #d97706; }
+.save-chip[data-state="failed"] .sc-dot, .save-chip[data-state="conflict"] .sc-dot { background: #dc2626; }
+.save-chip[data-state="failed"], .save-chip[data-state="conflict"] { color: #dc2626; font-weight: 600; }
+.save-chip[data-state="saved"], .save-chip[data-state="readonly"] { cursor: default; }
+@keyframes sc-pulse { 50% { opacity: .35; } }
+@media (max-width: 1200px) { #toolbar .app-bar .save-chip .sc-text { display: none; } }
