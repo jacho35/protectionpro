@@ -167,9 +167,9 @@ const CaseRuns = {
     const body = `<label style="font-size:12px"><input type="checkbox" id="sm-cmp-only"${onlyDiff ? ' checked' : ''}> Only rows that differ</label>
       <p style="font-size:12px;margin:6px 0">${rows.filter(r => r.differs).length} of ${rows.length} rows differ.</p>
       <div class="cm-scroll"><table class="cm-diff"><thead><tr><th>Item</th><th>Section</th>${models.map(m => `<th>${escHtml(m.name)}${m.model ? '' : ' — not run'}</th>`).join('')}</tr></thead><tbody>`
-      + (shown.slice(0, 500).map(r => `<tr${r.differs ? ' style="background:var(--accent-soft,#eef4ff)"' : ''}><td>${escHtml(r.name)}</td><td>${escHtml(r.section)}</td>${r.cells.map(c => c
-        ? `<td><span style="display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;background:${dot[c.status] || '#999'}"></span>${escHtml(c.text)}</td>` : '<td>—</td>').join('')}</tr>`).join('')
-        || `<tr><td colspan="${models.length + 2}">${rows.length ? 'No row differs.' : 'No rows.'}</td></tr>`)
+      + (shown.slice(0, 500).map(r => `<tr class="${r.differs ? 'sm-differs' : ''}"><td>${escHtml(r.name)}</td><td>${escHtml(r.section)}</td>${r.cells.map(c => c
+        ? `<td><span style="display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;background:${escHtml(dot[c.status] || '#999')}"></span>${escHtml(c.text)}</td>` : '<td>—</td>').join('')}</tr>`).join('')
+        || `<tr><td colspan="${numAttr(models.length + 2)}">${rows.length ? 'No row differs.' : 'No rows.'}</td></tr>`)
       + '</tbody></table></div>';
     const modal = document.getElementById('calc-modal');
     modal.querySelector('#calc-modal-title').textContent = `${this.LABEL[key]} on ${models.length} cases`;

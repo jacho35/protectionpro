@@ -9,3 +9,12 @@
 .ws-pop-panel input { width: 64px; }
 .ws-pop-note { font-size: 11px; color: var(--text-muted); }
 @media (max-width: 768px) { .ws-pop-panel { position: fixed; left: 8px; right: 8px; top: auto; bottom: 8px; } }
+
+/* Study options panel (studyoptions.js) */
+.study-options { margin-left: 2px; }
+.so-panel { min-width: 260px; gap: 10px; left: 0; right: auto; }
+.so-group { display: flex; flex-direction: column; gap: 6px; }
+.so-title { font: 600 11px var(--font-family, sans-serif); text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted); }
+.so-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 12.5px; }
+.so-row select { max-width: 150px; }
+.so-row input[type="checkbox"] { width: auto; }

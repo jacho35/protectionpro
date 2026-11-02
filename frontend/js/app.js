@@ -286,6 +286,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // The save chip + autosave (savestate.js); the choice is in Settings › Preferences
   SaveState.init();
+  StudyOptions.init();
   AnalyseMenu.init();
   CaseRuns.init();
   WsHead.init();
@@ -2960,6 +2961,7 @@ document.addEventListener('DOMContentLoaded', () => {
     on('btn-toggle-rating-flags', AppState.showRatingFlags);
     const fa = document.getElementById('chk-fault-arrows'); if (fa) fa.checked = !!AppState.showFlowArrows.fault;
     const la = document.getElementById('chk-loadflow-arrows'); if (la) la.checked = !!AppState.showFlowArrows.loadflow;
+    if (typeof StudyOptions !== 'undefined') StudyOptions.apply();
     if (typeof ResultView !== 'undefined') ResultView.render();
   }
   window.syncViewToggles = syncViewToggles;

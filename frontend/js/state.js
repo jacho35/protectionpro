@@ -98,6 +98,7 @@ const AppState = {
   branchFlowDetailed: false,
 
   // Flow arrow visibility — per analysis type
+  studyOptions: {},   // how the studies run (studyoptions.js): { loadflowMethod, faultType, simSeries, simShunt }, only what is not the default
   showFlowArrows: {
     loadflow: false,
     fault: false,
@@ -1484,6 +1485,7 @@ const AppState = {
     if (this.showFlowArrows.fault) fa.fault = true;
     if (this.showFlowArrows.loadflow) fa.loadflow = true;
     if (Object.keys(fa).length) out.showFlowArrows = fa;
+    if (this.studyOptions && Object.keys(this.studyOptions).length) out.studyOptions = { ...this.studyOptions };
     if (this.dispatchUnits === 'kw') out.dispatchUnits = 'kw';
     if (this.dbDrawingDetail && Object.keys(this.dbDrawingDetail).length) out.dbDrawingDetail = { ...this.dbDrawingDetail };
     return Object.keys(out).length ? out : undefined;
@@ -1500,6 +1502,7 @@ const AppState = {
       fault: !!(v.showFlowArrows && v.showFlowArrows.fault),
       loadflow: !!(v.showFlowArrows && v.showFlowArrows.loadflow),
     };
+    this.studyOptions = (v.studyOptions && typeof v.studyOptions === 'object' && !Array.isArray(v.studyOptions)) ? { ...v.studyOptions } : {};
     this.dispatchUnits = v.dispatchUnits === 'kw' ? 'kw' : 'kva';
     this.dbDrawingDetail = (v.dbDrawingDetail && typeof v.dbDrawingDetail === 'object' && !Array.isArray(v.dbDrawingDetail))
       ? { ...v.dbDrawingDetail } : {};

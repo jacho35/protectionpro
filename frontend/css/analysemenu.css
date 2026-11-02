@@ -27,3 +27,4 @@
 
 .sm-cmp { margin-left: 8px; font-size: 10.5px; padding: 0 7px; border: 1px solid var(--border-color); border-radius: 9px; background: transparent; color: var(--text-secondary); cursor: pointer; }
 .sm-cmp:hover { background: var(--bg-tertiary); }
+.cm-diff tr.sm-differs td { background: var(--accent-soft, #eef4ff); }
