@@ -243,6 +243,7 @@ const PlanSync = {
     if (el.type === 'erf') {
       for (const k of R.kiosks) { const e = k.erfs.find(x => x.id === el.reticId); if (e) return e; }
     }
+    if (el.type === 'load') { const f = this._reticRow(el.reticId); return f && f.kind === 'load' ? f.row : null; }
     return null;
   },
   _demandRowName(el, row) { return el.type === 'erf' ? row.erfNumber : row.name; },
@@ -263,6 +264,31 @@ const PlanSync = {
       PlanMarkup.snapshot(); PlanMarkup.markDirty();
       if (PlanMarkup.refreshProps) PlanMarkup.refreshProps();
       if (typeof PlanUI !== 'undefined' && PlanUI.renderPalette) PlanUI.renderPalette();
+      if (typeof PlanEngine !== 'undefined') PlanEngine.requestDraw({ all: true });
+    }
+    return n;
+  },
+
+  // Demand → Plan: a drawn custom load takes its row's values at once (Demand
+  // edits are not left waiting for the next sync pass).
+  pullLoadsFromDemand() {
+    const pm = AppState.planMarkup;
+    if (!pm || !AppState.reticulation) return 0;
+    let n = 0;
+    for (const el of AppState.planAllElements()) {
+      if (el.type !== 'load' || !el.reticId) continue;
+      const f = this._reticRow(el.reticId);
+      if (!f || f.kind !== 'load') continue;
+      const p = el.props || (el.props = {});
+      const want = { loadType: f.row.loadType, kw: f.row.kw == null ? '' : f.row.kw, cableType: f.row.cableType || '' };
+      let ch = false;
+      for (const k of Object.keys(want)) if (p[k] !== want[k]) { p[k] = want[k]; ch = true; }
+      if (f.row.name && el.name !== f.row.name) { el.name = f.row.name; ch = true; }
+      if (ch) n++;
+    }
+    if (n && typeof PlanMarkup !== 'undefined') {
+      PlanMarkup.snapshot(); PlanMarkup.markDirty();
+      if (PlanMarkup.refreshProps) PlanMarkup.refreshProps();
       if (typeof PlanEngine !== 'undefined') PlanEngine.requestDraw({ all: true });
     }
     return n;
@@ -316,7 +342,7 @@ const PlanSync = {
     }
     const R = AppState.reticulation;
     const elById = this._elById();
-    const summary = { minisubs: 0, kiosks: 0, erfs: 0, feeders: 0, sl: 0, created: [] };
+    const summary = { minisubs: 0, kiosks: 0, erfs: 0, loads: 0, feeders: 0, sl: 0, created: [] };
     this._value = interactive ? null : (opts.value || null);
     this._reticSrc = {};
     this._reticFed = {};
@@ -424,6 +450,45 @@ const PlanSync = {
       // A kiosk with circuits in the Street lighting workspace gets its load
       // from those (per luminaire), not this flat per-pole estimate.
       if (krow && !krow.streetLightFromCircuits) { krow.streetLightKVA = +v.toFixed(3); summary.sl++; }
+    }
+
+    // 6) Custom loads → rows on the kiosk / mini-sub that feeds them. Demand's
+    //    values win once linked (a plan edit writes to the row when it is made,
+    //    PlanLoads.pushToRow); the supply and the measured supply run are the plan's.
+    const seenLoad = new Set();
+    for (const el of pm.elements) {
+      if (el.type !== 'load') continue;
+      const sup = el.props && el.props.fedFrom ? elById[el.props.fedFrom] : null;
+      const owner = sup && sup.reticId ? (R.kiosks.find(k => k.id === sup.reticId) || R.minisubs.find(m => m.id === sup.reticId)) : null;
+      let f = el.reticId && !seenLoad.has(el.reticId) ? this._reticRow(el.reticId) : null;
+      if (f && f.kind !== 'load') f = null;
+      if (!f) {
+        if (!owner || !(el.props && el.props.loadType)) continue;     // not fed yet: no row until it is
+        const row = {
+          id: this._rowId(el, id => !!this._reticRow(id) || seenLoad.has(id), () => AppState.reticGenLoadId()),
+          name: el.name || '', loadType: el.props.loadType, kw: el.props.kw === 0 ? '' : (el.props.kw == null ? '' : el.props.kw),
+          cableType: el.props.cableType || '', length: 0,
+        };
+        (owner.loads || (owner.loads = [])).push(row);
+        summary.loads++; summary.created.push(row.id);
+        f = { kind: 'load', row, owner };
+      } else if (owner && f.owner !== owner) {                         // fed from another supply now: the row follows
+        f.list.splice(f.index, 1);
+        (owner.loads || (owner.loads = [])).push(f.row);
+        f.owner = owner;
+      }
+      const row = f.row;
+      seenLoad.add(row.id);
+      el.reticId = row.id;
+      if (row.name) el.name = row.name;
+      el.props = el.props || {};
+      el.props.loadType = row.loadType;
+      el.props.kw = row.kw == null ? '' : row.kw;
+      el.props.cableType = row.cableType || '';
+      if (owner) {
+        const m = (typeof PlanLoads !== 'undefined') ? PlanLoads.feedLengthM(el) : null;
+        if (m) row.length = this._len('len:load:' + row.id, +m.toFixed(1), row.length);
+      }
     }
     } finally {
       this._value = null;
@@ -579,7 +644,7 @@ const PlanSync = {
   // the pass removes is kept in a record: when the deleted item comes back
   // (undo) the pass puts the removed side back, and when it goes again
   // (redo) the pass removes it again.
-  RETIC_TYPES: ['minisub', 'kiosk', 'erf'],
+  RETIC_TYPES: ['minisub', 'kiosk', 'erf', 'load'],
   _reticSrc: {},           // override key → plan-measured length (m), last pass
   _reticFed: {},           // kiosk id / 'ms:'+minisub id → the drawn route setting its Fed from
   _reticLinks: new Map(),  // plan element id → { type, rowId } as of the last pass
@@ -614,9 +679,16 @@ const PlanSync = {
       i = k.erfs.findIndex(e => e.id === id);
       if (i >= 0) return { kind: 'erf', row: k.erfs[i], list: k.erfs, index: i, kiosk: k };
     }
+    for (const o of [...R.minisubs, ...R.kiosks]) {       // custom loads
+      i = (o.loads || []).findIndex(l => l.id === id);
+      if (i >= 0) return { kind: 'load', row: o.loads[i], list: o.loads, index: i, owner: o };
+    }
     return null;
   },
-  _reticRowName(f) { return f.kind === 'erf' ? `Erf ${f.row.erfNumber || ''}`.trim() : (f.row.name || (f.kind === 'kiosk' ? 'Kiosk' : 'Minisub')); },
+  _reticRowName(f) {
+    if (f.kind === 'load') return f.row.name || 'Custom load';
+    return f.kind === 'erf' ? `Erf ${f.row.erfNumber || ''}`.trim() : (f.row.name || (f.kind === 'kiosk' ? 'Kiosk' : 'Minisub'));
+  },
 
   // Take Demand rows away, keeping copies to put back. Kiosks fed from a
   // removed kiosk or minisub close up the chain, as Demand's own delete does.
@@ -627,9 +699,9 @@ const PlanSync = {
       const f = this._reticRow(id);
       if (!f) continue;
       if (f.kind === 'minisub' && R.minisubs.length <= 1) continue;   // Demand keeps one
-      const rec = { kind: f.kind, row: JSON.parse(JSON.stringify(f.row)), index: f.index, kioskId: f.kiosk ? f.kiosk.id : null, moved: [] };
+      const rec = { kind: f.kind, row: JSON.parse(JSON.stringify(f.row)), index: f.index, kioskId: f.kiosk ? f.kiosk.id : null, ownerId: f.owner ? f.owner.id : null, moved: [] };
       f.list.splice(f.index, 1);
-      if (f.kind !== 'erf') {
+      if (f.kind !== 'erf' && f.kind !== 'load') {
         const to = f.kind === 'kiosk' ? (f.row.fedFrom || (R.minisubs[0] && R.minisubs[0].id)) : (R.minisubs[0] && R.minisubs[0].id);
         for (const k of R.kiosks) if (k.fedFrom === id) { rec.moved.push(k.id); k.fedFrom = to; }
         if (f.kind === 'minisub') for (const m of R.minisubs) if (m.mvFedFrom === id) m.mvFedFrom = '';
@@ -645,7 +717,11 @@ const PlanSync = {
       if (this._reticRow(rec.row.id)) continue;
       const row = JSON.parse(JSON.stringify(rec.row));
       let list;
-      if (rec.kind === 'erf') {
+      if (rec.kind === 'load') {
+        const o = [...R.minisubs, ...R.kiosks].find(x => x.id === rec.ownerId);
+        if (!o) continue;
+        list = o.loads || (o.loads = []);
+      } else if (rec.kind === 'erf') {
         const k = R.kiosks.find(x => x.id === rec.kioskId);
         if (!k) continue;
         list = k.erfs;
@@ -797,7 +873,7 @@ const PlanSync = {
   // ── "Not placed yet": Demand rows no drawn element stands for ──
   reticUnplaced() {
     const R = AppState.reticulation, pm = AppState.planMarkup;
-    if (!R || !pm) return { minisubs: [], kiosks: [], erven: [] };
+    if (!R || !pm) return { minisubs: [], kiosks: [], erven: [], loads: [] };
     const placed = new Set(pm.elements.filter(e => this.RETIC_TYPES.includes(e.type) && e.reticId).map(e => e.reticId));
     // A new project's untouched default minisub is not listed: the first
     // minisub drawn takes it over.
@@ -806,6 +882,7 @@ const PlanSync = {
       minisubs: R.minisubs.filter(m => !placed.has(m.id) && !blank(m)),
       kiosks: R.kiosks.filter(k => !placed.has(k.id)),
       erven: R.kiosks.map(k => ({ kiosk: k, erfs: k.erfs.filter(e => !placed.has(e.id)) })).filter(g => g.erfs.length),
+      loads: [...R.minisubs, ...R.kiosks].flatMap(o => (o.loads || []).filter(l => !placed.has(l.id)).map(l => ({ row: l, owner: o }))),
     };
   },
 
@@ -815,10 +892,15 @@ const PlanSync = {
     if (!f) return null;
     const pm = AppState.planMarkup;
     if (pm.elements.some(e => e.reticId === rowId)) return null;
+    let props = PLAN_DEFS.defaults(f.kind);
+    if (f.kind === 'load') {       // a custom load: fed from the drawn supply, when that is on the plan
+      const sup = pm.elements.find(e => e.reticId === f.owner.id && (e.type === 'kiosk' || e.type === 'minisub'));
+      props = { loadType: f.row.loadType, fedFrom: sup ? sup.id : '', kw: f.row.kw === 0 ? '' : (f.row.kw || ''), cableType: f.row.cableType || '' };
+    }
     const el = {
       id: AppState.planGenId('pmel'), type: f.kind, x, y, rotation: 0,
       name: f.kind === 'erf' ? (f.row.erfNumber || '') : (f.row.name || ''),
-      reticId: rowId, props: PLAN_DEFS.defaults(f.kind),
+      reticId: rowId, props,
     };
     pm.elements.push(el);
     return el;

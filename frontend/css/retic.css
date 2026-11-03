@@ -594,3 +594,15 @@ button.retic-plan-link:hover { background: #dcebfb; }
 .kiosk-meta select:disabled, .ms-mvfrom:disabled { opacity: .75; cursor: default; }
 body.dark-mode .retic-plan-tag { background: #13283f; border-color: #2f5f93; color: #9ec5f0; }
 body.dark-mode .retic-plan-tag--typed { background: #3a2f0b; border-color: #8a6d1a; color: #ffd76a; }
+
+/* ─── Custom loads: "Fed directly from <minisub>" and the load rows ─── */
+.retic-direct { border: 1px solid var(--border-color); border-radius: 6px; padding: 8px 10px; margin: 0 0 10px; background: var(--bg-secondary); }
+.retic-direct-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 6px; }
+.retic-direct-head b { font-size: 13px; }
+.retic-direct-tot { margin-left: auto; font-variant-numeric: tabular-nums; font-weight: 600; }
+.load-table { margin-top: 6px; }
+.load-table td.vd-cell { text-align: right; }
+.load-table .load-sl td { color: var(--text-secondary); }
+.load-table td input[type="number"] { width: 64px; }
+.load-table td[data-cell="name"] input { min-width: 120px; }
+.load-table td[data-cell="act"] { white-space: nowrap; }
