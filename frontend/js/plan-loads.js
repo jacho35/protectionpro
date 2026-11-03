@@ -101,6 +101,7 @@ const PlanLoads = {
     if (!f || f.kind !== 'load') return false;
     if (key === 'name') f.row.name = val;
     else if (key === 'loadType' || key === 'cableType') f.row[key] = val;
+    else if (key === 'motor') f.row.motor = val === 'motor' || val === 'static' ? val : '';
     else if (key === 'kw') f.row.kw = val > 0 ? val : '';
     else if (key === 'fedFrom') {
       const sup = AppState.planAllElements().find(e => e.id === val);
@@ -182,7 +183,7 @@ const PlanLoads = {
   newProps(typeId, x, y) {
     const t = this.get(typeId);
     const s = t ? this.nearestSupply(t, x, y) : null;
-    return { loadType: typeId, kw: '', fedFrom: s ? s.id : '', cableType: '' };
+    return { loadType: typeId, kw: '', fedFrom: s ? s.id : '', cableType: '', motor: '' };
   },
 
   // ── Properties panel ──
@@ -198,6 +199,7 @@ const PlanLoads = {
     return [
       { key: 'name', label: 'Name', type: 'text' },
       { key: 'loadType', label: 'Load type', type: 'select', options: types.map(x => ({ value: x.id, label: x.name })) },
+      { key: 'motor', label: 'Load kind', type: 'select', options: [{ value: '', label: t && t.motor ? 'Type default (motor)' : 'Type default (static)' }, { value: 'static', label: 'Static load' }, { value: 'motor', label: 'Motor' }] },
       { key: 'fedFrom', label: 'Fed from', type: 'select', options: opts },
       { key: 'kw', label: `Power${t ? ` (blank = ${t.kw})` : ''}`, type: 'number', unit: 'kW', min: 0, step: 0.1 },
       { key: 'cableType', label: 'Supply cable', type: 'cable_select', voltage: 'lv' },
@@ -209,7 +211,7 @@ const PlanLoads = {
       const t = this.typeOf(item);
       if (!t) return '<div class="plan-linked-note">This load\'s type no longer exists. Pick another above.</div>';
       const a = this.amps(item), m = this.feedLengthM(item), sup = this.supplyOf(item);
-      const bits = [`${this.kw(item)} kW`, `${t.volt} V ${t.phases}φ`, `pf ${t.pf}`, a != null ? `≈ ${a} A` : '', t.start, t.duty].filter(Boolean);
+      const bits = [this.isMotor({ motor: item.props && item.props.motor }, t) ? 'Motor' : 'Static', `${this.kw(item)} kW`, `${t.volt} V ${t.phases}φ`, `pf ${t.pf}`, a != null ? `≈ ${a} A` : '', t.start, t.duty].filter(Boolean);
       let h = `<div class="plan-load-sum"><b>${escHtml(t.name)}</b><span>${escHtml(bits.join(' · '))}</span>`;
       if (sup) h += `<span>Fed from ${escHtml(sup.name || sup.id)}${m != null ? ` · supply run ≈ ${m.toFixed(1)} m (straight line)` : ''}</span>`;
       else h += '<span class="warn">Not fed from a mini-sub or kiosk yet.</span>';

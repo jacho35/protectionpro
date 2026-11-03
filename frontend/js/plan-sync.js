@@ -280,7 +280,7 @@ const PlanSync = {
       const f = this._reticRow(el.reticId);
       if (!f || f.kind !== 'load') continue;
       const p = el.props || (el.props = {});
-      const want = { loadType: f.row.loadType, kw: f.row.kw == null ? '' : f.row.kw, cableType: f.row.cableType || '' };
+      const want = { loadType: f.row.loadType, kw: f.row.kw == null ? '' : f.row.kw, cableType: f.row.cableType || '', motor: f.row.motor || '' };
       let ch = false;
       for (const k of Object.keys(want)) if (p[k] !== want[k]) { p[k] = want[k]; ch = true; }
       if (f.row.name && el.name !== f.row.name) { el.name = f.row.name; ch = true; }
@@ -467,7 +467,7 @@ const PlanSync = {
         const row = {
           id: this._rowId(el, id => !!this._reticRow(id) || seenLoad.has(id), () => AppState.reticGenLoadId()),
           name: el.name || '', loadType: el.props.loadType, kw: el.props.kw === 0 ? '' : (el.props.kw == null ? '' : el.props.kw),
-          cableType: el.props.cableType || '', length: 0,
+          cableType: el.props.cableType || '', motor: el.props.motor || '', length: 0,
         };
         (owner.loads || (owner.loads = [])).push(row);
         summary.loads++; summary.created.push(row.id);
@@ -485,6 +485,7 @@ const PlanSync = {
       el.props.loadType = row.loadType;
       el.props.kw = row.kw == null ? '' : row.kw;
       el.props.cableType = row.cableType || '';
+      el.props.motor = row.motor || '';
       if (owner) {
         const m = (typeof PlanLoads !== 'undefined') ? PlanLoads.feedLengthM(el) : null;
         if (m) row.length = this._len('len:load:' + row.id, +m.toFixed(1), row.length);
@@ -895,7 +896,7 @@ const PlanSync = {
     let props = PLAN_DEFS.defaults(f.kind);
     if (f.kind === 'load') {       // a custom load: fed from the drawn supply, when that is on the plan
       const sup = pm.elements.find(e => e.reticId === f.owner.id && (e.type === 'kiosk' || e.type === 'minisub'));
-      props = { loadType: f.row.loadType, fedFrom: sup ? sup.id : '', kw: f.row.kw === 0 ? '' : (f.row.kw || ''), cableType: f.row.cableType || '' };
+      props = { loadType: f.row.loadType, fedFrom: sup ? sup.id : '', kw: f.row.kw === 0 ? '' : (f.row.kw || ''), cableType: f.row.cableType || '', motor: f.row.motor || '' };
     }
     const el = {
       id: AppState.planGenId('pmel'), type: f.kind, x, y, rotation: 0,
