@@ -65,6 +65,14 @@ const PlanLoads = {
     const t = this.get(row && row.loadType);
     return t ? t.kw : 0;
   },
+  // Is a Demand row a motor? Its own choice (`row.motor`: 'motor' | 'static'),
+  // else its load type's setting.
+  isMotor(row, t) {
+    if (row && row.motor === 'motor') return true;
+    if (row && row.motor === 'static') return false;
+    t = t || this.get(row && row.loadType);
+    return !!(t && t.motor);
+  },
   // Demand of a row: kW ÷ pf × the type's diversity (kVA).
   rowKva(row) {
     const t = this.get(row && row.loadType), kw = this.rowKw(row);
@@ -80,7 +88,7 @@ const PlanLoads = {
       if (!t || !(kva > 0)) continue;
       const r = out[owner.id] || (out[owner.id] = { kva: 0, items: [] });
       r.kva += kva;
-      r.items.push({ id: row.id, name: row.name || t.name, type: t.name, kw: this.rowKw(row), div: this.diversity(t), kva: +kva.toFixed(3), motor: !!t.motor });
+      r.items.push({ id: row.id, name: row.name || t.name, type: t.name, kw: this.rowKw(row), div: this.diversity(t), kva: +kva.toFixed(3), motor: this.isMotor(row, t) });
     }
     for (const r of Object.values(out)) r.kva = +r.kva.toFixed(3);
     return out;
@@ -116,7 +124,7 @@ const PlanLoads = {
     for (const { row, owner } of this.rows()) {
       const t = this.get(row.loadType);
       const kw = this.rowKw(row);
-      if (!t || !t.motor || !(kw > 0)) continue;
+      if (!t || !this.isMotor(row, t) || !(kw > 0)) continue;
       out.push({
         id: row.id, name: row.name || t.name, supplyId: owner.id, supplyName: owner.name || '',
         kw, volt: t.volt, phases: t.phases, pf: t.pf, eff: t.eff || 0.93,
