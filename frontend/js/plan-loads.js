@@ -34,7 +34,7 @@ const PlanLoads = {
     const own = parseFloat(el.props && el.props.kw);
     if (own > 0) return own;
     const t = this.typeOf(el);
-    return t ? t.kw : 0;
+    return t ? (Number(t.kw) || 0) : 0;
   },
   amps(el) {
     const t = this.typeOf(el); if (!t) return null;
@@ -206,13 +206,13 @@ const PlanLoads = {
             <input type="text" class="ply-name" value="${escHtml(t.name)}" data-role="name" aria-label="Load type name">
             <button type="button" class="ply-ib" data-role="open" aria-expanded="${isOpen}">${isOpen ? 'Close' : 'Edit'}</button>
           </div>
-          <div class="ply-sub">${t.kw} kW · ${t.volt} V ${t.phases}φ · pf ${t.pf}${this.diversity(t) < 1 ? ' · div ' + this.diversity(t) : ''} · ${escHtml(t.start)} · ${escHtml(t.duty)} · fed from ${sup} · ${used(t.id)} placed</div>
+          <div class="ply-sub">${escHtml(String(t.kw))} kW · ${escHtml(String(t.volt))} V ${escHtml(String(t.phases))}φ · pf ${escHtml(String(t.pf))}${this.diversity(t) < 1 ? ' · div ' + this.diversity(t) : ''} · ${escHtml(t.start)} · ${escHtml(t.duty)} · fed from ${sup} · ${used(t.id)} placed</div>
           ${isOpen ? `<div class="ply-body ply-form">
             <label>Symbol letter<input type="text" maxlength="2" value="${escHtml(t.letter)}" data-role="letter"></label>
-            <label>Rated power (kW)<input type="number" min="0.1" step="0.1" value="${t.kw}" data-role="kw"></label>
+            <label>Rated power (kW)<input type="number" min="0.1" step="0.1" value="${escHtml(String(t.kw))}" data-role="kw"></label>
             <label>Voltage (V)${sel('volt', this.VOLTS, t.volt)}</label>
             <label>Phases${sel('phases', [1, 3], t.phases)}</label>
-            <label>Power factor<input type="number" min="0.3" max="1" step="0.01" value="${t.pf}" data-role="pf"></label>
+            <label>Power factor<input type="number" min="0.3" max="1" step="0.01" value="${escHtml(String(t.pf))}" data-role="pf"></label>
             <label>Diversity factor<input type="number" min="0.05" max="1" step="0.05" value="${this.diversity(t)}" data-role="diversity" title="Share of the load counted in Demand (1 = all of it)"></label>
             <div class="chk full"><label><input type="checkbox" data-role="motor"${t.motor ? ' checked' : ''}> Motor — check its starting in Demand</label></div>
             ${t.motor ? `<label>Efficiency<input type="number" min="0.5" max="0.99" step="0.01" value="${t.eff || 0.93}" data-role="eff"></label>
