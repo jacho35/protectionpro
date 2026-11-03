@@ -445,7 +445,7 @@ const PLAN_DEFAULT_LAYERS = [
   },
   {
     id: 'loads', name: 'Custom Loads', discipline: 'loads', color: '#0ea5e9',
-    visibleElementTypes: ['minisub', 'kiosk', 'load', 'load:pump'], routeTypes: ['loadfeed', 'lv', 'service'],
+    visibleElementTypes: ['minisub', 'kiosk', 'erf', 'load', 'load:pump'], routeTypes: ['loadfeed', 'lv', 'service'],
     trenchTypes: [], showCrossings: false, drawingNo: '', revision: '',
   },
   // Building-distribution discipline layers (used when the Building domain is active)

@@ -433,7 +433,7 @@ const AppState = {
       activeFloorId: null,
       layers,             // discipline layers (filter by entity type) — shared
       activeLayerId: null,
-      layersVersion: 4,   // 2 = the Custom Loads layer exists; 3 = the LV layer holds custom loads; 4 = the Custom Loads layer holds every load type (older projects get both added on load)
+      layersVersion: 5,   // 5 = the Custom Loads layer holds erven (a service cable ends on one); 2 = the Custom Loads layer exists; 3 = the LV layer holds custom loads; 4 = the Custom Loads layer holds every load type (older projects get both added on load)
       loadTypes: (typeof PLAN_DEFAULT_LOAD_TYPES !== 'undefined') ? JSON.parse(JSON.stringify(PLAN_DEFAULT_LOAD_TYPES)) : [],  // custom load types (plan-loads.js) — shared
       styles: {},         // sparse overrides merged over PLAN_DEFS defaults — shared
       settings: {
@@ -1895,16 +1895,16 @@ const AppState = {
             if (d) L.push(JSON.parse(JSON.stringify(d)));
           }
           // Version 3: the LV layer holds custom loads, so LV / service cables can end on one.
-          if ((p.layersVersion || 1) < 4) {
+          if ((p.layersVersion || 1) < 5) {
             const lv = L.find(l => l.id === 'lv');
             if (lv && Array.isArray(lv.visibleElementTypes) && !lv.visibleElementTypes.includes('load')) lv.visibleElementTypes.push('load');
             const ld = L.find(l => l.id === 'loads');
-            if (ld && Array.isArray(ld.visibleElementTypes) && !ld.visibleElementTypes.includes('load')) ld.visibleElementTypes.push('load');
+            if (ld && Array.isArray(ld.visibleElementTypes)) for (const k of ['load', 'erf']) if (!ld.visibleElementTypes.includes(k)) ld.visibleElementTypes.push(k);
             if (ld && Array.isArray(ld.routeTypes)) for (const r of ['lv', 'service']) if (!ld.routeTypes.includes(r)) ld.routeTypes.push(r);
           }
           return L;
         })(),
-        layersVersion: 4,
+        layersVersion: 5,
         loadTypes: Array.isArray(p.loadTypes) ? p.loadTypes : pdef.loadTypes,
         activeLayerId: p.activeLayerId || null,
         styles: (p.styles && typeof p.styles === 'object') ? p.styles : {},
