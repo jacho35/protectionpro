@@ -346,13 +346,16 @@ def kiosk_demand(kiosk, settings):
     override_kva = sum_override_kva(erven)
     # Street lighting is a fixed, undiversified load on the kiosk.
     sl_kva = float(_get(kiosk, "streetLightKVA", 0) or 0)
+    # Custom loads from the site plan: already diversified per load type, so
+    # they are added as a fixed figure.
+    cl_kva = float(_get(kiosk, "customLoadKVA", 0) or 0)
     diversified_kva = total_kva
-    total_kva = _round2(total_kva + override_kva + sl_kva)
+    total_kva = _round2(total_kva + override_kva + sl_kva + cl_kva)
     current_a = _round2(total_kva * 1000.0 / (math.sqrt(3) * V_3PH_LINE)) if total_kva else 0
     # Worst-loaded phase of this kiosk (fixed loads spread evenly over the three).
     worst_phase_a = _round2(
         max((b["currentA"] for b in buckets), default=0)
-        + (override_kva + sl_kva) * 1000.0 / (3 * V_1PH))
+        + (override_kva + sl_kva + cl_kva) * 1000.0 / (3 * V_1PH))
     cls_label = param["label"] if isinstance(param, dict) else f"ADMD {admd_val} kVA"
     cls_obj = next((c for c in resolve_classes(lib) if c["id"] == cls_id), None)
 
@@ -366,6 +369,7 @@ def kiosk_demand(kiosk, settings):
         "conns": conns,
         "overrideKVA": _round2(override_kva),
         "streetLightKVA": _round2(sl_kva),
+        "customLoadKVA": _round2(cl_kva),
         "cls": cls_label,
         "clsId": cls_id,
         "admdPerPhase": three_ph,
@@ -383,6 +387,7 @@ def kiosk_demand(kiosk, settings):
             "mixedPhaseErven": 0 if three_ph else sum(
                 1 for e in erven if is_3phase_erf(e) and not _has_override(e)),
             "overrideKVA": _round2(override_kva), "streetLightKVA": _round2(sl_kva),
+            "customLoadKVA": _round2(cl_kva),
             # Each fixed load, for the panel: what was entered and what it is.
             "overrides": [{
                 "erf": _get(e, "erfNumber") or "",
@@ -425,6 +430,7 @@ def feeder_demand(kiosks, settings, risk_z=None):
     total_kva = 0.0
     override_kva = 0.0
     sl_kva = 0.0
+    cl_kva = 0.0
     total_conns = 0
     phase_i = {}     # Herman-Beta: design current per R/W/B phase (A)
 
@@ -438,6 +444,7 @@ def feeder_demand(kiosks, settings, risk_z=None):
             total_conns += count_weighted_conns(erven, three_ph)
             override_kva += sum_override_kva(erven)
             sl_kva += float(_get(k, "streetLightKVA", 0) or 0)
+            cl_kva += float(_get(k, "customLoadKVA", 0) or 0)
             param = resolve_demand_param(est, cls_id, project_admd,
                                          _get(k, "admdOverride"), lib,
                                          _get(k, "loadClass"))
@@ -467,6 +474,7 @@ def feeder_demand(kiosks, settings, risk_z=None):
             total_conns += count_weighted_conns(erven, three_ph)
             override_kva += sum_override_kva(erven)
             sl_kva += float(_get(k, "streetLightKVA", 0) or 0)
+            cl_kva += float(_get(k, "customLoadKVA", 0) or 0)
             admd = resolve_demand_param(est, cls_id, project_admd,
                                         _get(k, "admdOverride"), lib,
                                         _get(k, "loadClass"))
@@ -479,13 +487,14 @@ def feeder_demand(kiosks, settings, risk_z=None):
         for (admd, _p), n in by_admd_phase.items():
             total_kva += calc_demand(n, est, corr, admd)["totalKVA"]
 
-    total_kva = _round2(total_kva + override_kva + sl_kva)
+    total_kva = _round2(total_kva + override_kva + sl_kva + cl_kva)
     current_a = _round2(total_kva * 1000.0 / (math.sqrt(3) * V_3PH_LINE)) if total_kva else 0
     out = {
         "totalKVA": total_kva,
         "currentA": current_a,
         "overrideKVA": _round2(override_kva),
         "streetLightKVA": _round2(sl_kva),
+        "customLoadKVA": _round2(cl_kva),
         "conns": total_conns,
         "numKiosks": len(kiosks),
     }
@@ -493,7 +502,7 @@ def feeder_demand(kiosks, settings, risk_z=None):
         # Herman-Beta is per phase, so the cable / transformer is sized on the
         # worst-loaded phase, not the three-phase average. Fixed loads are
         # spread evenly over the phases.
-        fixed_i = (override_kva + sl_kva) * 1000.0 / (3 * V_1PH)
+        fixed_i = (override_kva + sl_kva + cl_kva) * 1000.0 / (3 * V_1PH)
         out["worstPhaseA"] = _round2(max(phase_i.values()) + fixed_i)
         out["phaseA"] = {p: _round2(v + fixed_i) for p, v in phase_i.items()}
     return out
@@ -613,7 +622,7 @@ def run_admd(request):
 
     ms_results = []
     sum_kva = 0.0
-    tot_override = tot_sl = 0.0
+    tot_override = tot_sl = tot_cl = 0.0
     tot_conns = 0
     for m in minisubs:
         mid = _get(m, "id")
@@ -627,12 +636,22 @@ def run_admd(request):
             d["currentA"] = _round2(d["totalKVA"] * 1000.0 / (math.sqrt(3) * V_3PH_LINE))
             if "worstPhaseA" in d:
                 d["worstPhaseA"] = _round2(d["worstPhaseA"] + ms_sl * 1000.0 / (3 * V_1PH))
+        # Custom loads (site plan) on the minisub's own LV board: fixed, already
+        # diversified per load type.
+        ms_cl = float(_get(m, "customLoadKVA", 0) or 0)
+        if ms_cl:
+            d["totalKVA"] = _round2(d["totalKVA"] + ms_cl)
+            d["customLoadKVA"] = _round2(d.get("customLoadKVA", 0) + ms_cl)
+            d["currentA"] = _round2(d["totalKVA"] * 1000.0 / (math.sqrt(3) * V_3PH_LINE))
+            if "worstPhaseA" in d:
+                d["worstPhaseA"] = _round2(d["worstPhaseA"] + ms_cl * 1000.0 / (3 * V_1PH))
         if "worstPhaseA" in d:
             d["currentA"] = d["worstPhaseA"]
         ms_results.append({"minisubId": mid, "name": _get(m, "name", ""), **d})
         sum_kva += d["totalKVA"]
         tot_override += d["overrideKVA"]
         tot_sl += d["streetLightKVA"]
+        tot_cl += d.get("customLoadKVA", 0)
         tot_conns += d["conns"]
 
     try:
@@ -647,6 +666,7 @@ def run_admd(request):
         "currentA": _round2(total_kva * 1000.0 / (math.sqrt(3) * V_3PH_LINE)) if total_kva else 0,
         "overrideKVA": _round2(tot_override),
         "streetLightKVA": _round2(tot_sl),
+        "customLoadKVA": _round2(tot_cl),
         "conns": tot_conns,
         "numKiosks": len(kiosks),
         "sumKVA": _round2(sum_kva),           # Σ minisub demands before NDF

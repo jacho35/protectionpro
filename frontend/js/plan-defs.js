@@ -410,7 +410,7 @@ const PLAN_DEFS = {
 
 // The load types a new project starts with (plan-loads.js owns the rest).
 const PLAN_DEFAULT_LOAD_TYPES = [{
-  id: 'pump', name: 'Pump', letter: 'P', color: '#0ea5e9', kw: 15, volt: 400, phases: 3, pf: 0.85,
+  id: 'pump', name: 'Pump', letter: 'P', color: '#0ea5e9', kw: 15, volt: 400, phases: 3, pf: 0.85, diversity: 1,
   start: 'Star-delta', duty: 'Continuous', supply: { minisub: true, kiosk: true },
 }];
 

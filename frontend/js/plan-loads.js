@@ -9,11 +9,14 @@
  * `cableType`. The supply cable is drawn from that supply to the load (a
  * direct line, layer route key `loadfeed`); it is not a separate item.
  *
- * Markup only: nothing here changes Demand, the single line or any study.
+ * Demand: a load fed from a linked mini-sub / kiosk adds kW ÷ pf × its type's
+ * diversity to that row (`demandByRow` → `customLoadKVA`, a fixed load in the
+ * ADMD engine); a type marked Motor is also checked for starting in Demand
+ * (`motorsForDemand` → /analysis/retic-motor-start). The single line is untouched.
  */
 const PlanLoads = {
   VOLTS: [230, 400, 525, 690],
-  STARTS: ['DOL', 'Star-delta', 'Soft starter', 'VFD'],
+  STARTS: ['DOL', 'Star-delta', 'Autotransformer', 'Soft starter', 'VFD'],
   DUTIES: ['Continuous', 'Intermittent', 'Standby'],
   SUPPLIES: ['minisub', 'kiosk'],
   SUPPLY_NAME: { minisub: 'Mini-sub', kiosk: 'Kiosk' },
@@ -38,6 +41,53 @@ const PlanLoads = {
     const kw = this.kw(el);
     if (!(kw > 0) || !(t.volt > 0) || !(t.pf > 0)) return null;
     return Math.round(kw * 1000 / ((t.phases === 3 ? Math.sqrt(3) : 1) * t.volt * t.pf) * 10) / 10;
+  },
+
+  // Diversity factor of a load type (0.01–1; absent = 1, no diversity).
+  diversity(t) { const d = parseFloat(t && t.diversity); return d > 0 ? Math.min(1, d) : 1; },
+  // Demand of each mini-sub / kiosk row from its custom loads: kW / pf × the
+  // type's diversity. { reticId: { kva, items: [{ name, type, kw, kva }] } }.
+  // A load counts once its supply is linked to a Demand row.
+  demandByRow() {
+    const out = {};
+    if (typeof AppState === 'undefined' || !AppState.planMarkup) return out;
+    const els = AppState.planAllElements ? AppState.planAllElements() : AppState.planMarkup.elements;
+    const byId = {};
+    for (const e of els) byId[e.id] = e;
+    for (const el of els) {
+      if (el.type !== 'load') continue;
+      const t = this.typeOf(el), sup = el.props && el.props.fedFrom ? byId[el.props.fedFrom] : null;
+      const kw = this.kw(el);
+      if (!t || !sup || !sup.reticId || !(kw > 0)) continue;
+      const kva = kw / (t.pf > 0 ? t.pf : 1) * this.diversity(t);
+      const r = out[sup.reticId] || (out[sup.reticId] = { kva: 0, items: [] });
+      r.kva += kva;
+      r.items.push({ name: el.name || t.name, type: t.name, kw, div: this.diversity(t), kva: +kva.toFixed(3) });
+    }
+    for (const r of Object.values(out)) r.kva = +r.kva.toFixed(3);
+    return out;
+  },
+
+  // Motor loads fed from a linked mini-sub / kiosk, for the Demand motor
+  // starting check. The supply cable run is the straight line on the plan.
+  motorsForDemand() {
+    const out = [];
+    if (typeof AppState === 'undefined' || !AppState.planMarkup) return out;
+    const els = AppState.planAllElements ? AppState.planAllElements() : AppState.planMarkup.elements;
+    const byId = {};
+    for (const e of els) byId[e.id] = e;
+    for (const el of els) {
+      if (el.type !== 'load') continue;
+      const t = this.typeOf(el), sup = el.props && el.props.fedFrom ? byId[el.props.fedFrom] : null;
+      if (!t || !t.motor || !sup || !sup.reticId) continue;
+      out.push({
+        id: el.id, name: el.name || t.name, supplyId: sup.reticId, supplyName: sup.name || '',
+        kw: this.kw(el), volt: t.volt, phases: t.phases, pf: t.pf, eff: t.eff || 0.93,
+        lrc: t.lrc || 6, lrtPct: t.lrtPct || 150, rpm: t.rpm || 0, method: t.start,
+        cableType: (el.props && el.props.cableType) || '', lengthM: this.feedLengthM(el) || 0,
+      });
+    }
+    return out;
   },
 
   // ── Supplies ──
@@ -156,13 +206,19 @@ const PlanLoads = {
             <input type="text" class="ply-name" value="${escHtml(t.name)}" data-role="name" aria-label="Load type name">
             <button type="button" class="ply-ib" data-role="open" aria-expanded="${isOpen}">${isOpen ? 'Close' : 'Edit'}</button>
           </div>
-          <div class="ply-sub">${t.kw} kW · ${t.volt} V ${t.phases}φ · pf ${t.pf} · ${escHtml(t.start)} · ${escHtml(t.duty)} · fed from ${sup} · ${used(t.id)} placed</div>
+          <div class="ply-sub">${t.kw} kW · ${t.volt} V ${t.phases}φ · pf ${t.pf}${this.diversity(t) < 1 ? ' · div ' + this.diversity(t) : ''} · ${escHtml(t.start)} · ${escHtml(t.duty)} · fed from ${sup} · ${used(t.id)} placed</div>
           ${isOpen ? `<div class="ply-body ply-form">
             <label>Symbol letter<input type="text" maxlength="2" value="${escHtml(t.letter)}" data-role="letter"></label>
             <label>Rated power (kW)<input type="number" min="0.1" step="0.1" value="${t.kw}" data-role="kw"></label>
             <label>Voltage (V)${sel('volt', this.VOLTS, t.volt)}</label>
             <label>Phases${sel('phases', [1, 3], t.phases)}</label>
             <label>Power factor<input type="number" min="0.3" max="1" step="0.01" value="${t.pf}" data-role="pf"></label>
+            <label>Diversity factor<input type="number" min="0.05" max="1" step="0.05" value="${this.diversity(t)}" data-role="diversity" title="Share of the load counted in Demand (1 = all of it)"></label>
+            <div class="chk full"><label><input type="checkbox" data-role="motor"${t.motor ? ' checked' : ''}> Motor — check its starting in Demand</label></div>
+            ${t.motor ? `<label>Efficiency<input type="number" min="0.5" max="0.99" step="0.01" value="${t.eff || 0.93}" data-role="eff"></label>
+            <label>Locked-rotor current (× FLC)<input type="number" min="2" max="12" step="0.1" value="${t.lrc || 6}" data-role="lrc"></label>
+            <label>Locked-rotor torque (% FLT)<input type="number" min="50" max="400" step="5" value="${t.lrtPct || 150}" data-role="lrtPct"></label>
+            <label>Rated speed (rpm, 0 = typical)<input type="number" min="0" step="10" value="${t.rpm || 0}" data-role="rpm"></label>` : ''}
             <label>Starting method${sel('start', this.STARTS, t.start)}</label>
             <label class="full">Duty${sel('duty', this.DUTIES, t.duty)}</label>
             <div class="chk full"><span>Can be fed from</span>
@@ -174,7 +230,7 @@ const PlanLoads = {
       overlay.innerHTML = `<div class="modal-content plan-layers-content">
         <div class="modal-header"><h3>Load types</h3></div>
         <div class="modal-body">
-          <p class="ply-help">Define a load once, then place as many as you need from the <b>Loads</b> group in the parts list. Each one is fed from a mini-sub or kiosk and draws a supply cable to it. Loads are markup on the plan; they don't change Demand.</p>
+          <p class="ply-help">Define a load once, then place as many as you need from the <b>Loads</b> group in the parts list. Each one is fed from a mini-sub or kiosk and draws a supply cable to it. A load adds its kW ÷ pf × diversity to the mini-sub or kiosk that feeds it in Demand, and a motor type is checked for starting there.</p>
           <div class="ply-list">${rows || '<div class="ply-none">No load types yet.</div>'}</div>
           <div class="ply-foot"><button type="button" class="btn-small" data-role="add">+ New load type</button>
             <span class="ply-spacer"></span><button type="button" class="btn-primary" data-role="close">Done</button></div>
@@ -194,7 +250,7 @@ const PlanLoads = {
       if (role === 'add') {
         const id = 'lt_' + Date.now().toString(36), n = this.list().length + 1;
         pm.loadTypes.push({ id, name: 'Load ' + n, letter: 'L', color: ['#a855f7', '#f59e0b', '#ef4444', '#22c55e', '#14b8a6'][n % 5],
-          kw: 10, volt: 400, phases: 3, pf: 0.85, start: 'DOL', duty: 'Continuous', supply: { minisub: true, kiosk: true } });
+          kw: 10, volt: 400, phases: 3, pf: 0.85, diversity: 1, start: 'DOL', duty: 'Continuous', supply: { minisub: true, kiosk: true } });
         const ly = pm.layers.find(l => l.id === 'loads');
         if (ly && !ly.visibleElementTypes.includes('load:' + id)) ly.visibleElementTypes.push('load:' + id);
         open.add(id);
@@ -214,6 +270,11 @@ const PlanLoads = {
       else if (role === 'color') { t.color = v; e.target.closest('[data-type]').style.setProperty('--lc', v); }
       else if (role === 'letter') t.letter = v;
       else if (role === 'kw') t.kw = Math.max(0.1, parseFloat(v) || 0.1);
+      else if (role === 'eff') t.eff = Math.min(0.99, Math.max(0.5, parseFloat(v) || 0.93));
+      else if (role === 'lrc') t.lrc = Math.min(12, Math.max(2, parseFloat(v) || 6));
+      else if (role === 'lrtPct') t.lrtPct = Math.min(400, Math.max(50, parseFloat(v) || 150));
+      else if (role === 'rpm') t.rpm = Math.max(0, parseFloat(v) || 0);
+      else if (role === 'diversity') t.diversity = Math.min(1, Math.max(0.05, parseFloat(v) || 1));
       else if (role === 'pf') t.pf = Math.min(1, Math.max(0.3, parseFloat(v) || 0.85));
       else return;
       changed(false);
@@ -225,6 +286,7 @@ const PlanLoads = {
       else if (role === 'phases') t.phases = +e.target.value;
       else if (role === 'start') t.start = e.target.value;
       else if (role === 'duty') t.duty = e.target.value;
+      else if (role === 'motor') t.motor = e.target.checked;
       else if (role === 'supply') t.supply[e.target.dataset.k] = e.target.checked;
       changed(true); render();
     });

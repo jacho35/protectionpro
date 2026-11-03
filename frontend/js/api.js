@@ -485,6 +485,11 @@ const API = {
     return this.request('/analysis/admd', 'POST', { settings, kiosks, minisubs });
   },
 
+  // Reticulation motor starting check (custom motor loads in Demand)
+  async runReticMotorStart(body) {
+    return this.request('/analysis/retic-motor-start', 'POST', body);
+  },
+
   // Reticulation earth-fault loop + ECC size per LV cable (minisub device disconnection)
   async runReticEarth(body) {
     return this.request('/analysis/retic-earth-check', 'POST', body);

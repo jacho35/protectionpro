@@ -623,6 +623,7 @@ class KioskInput(BaseModel):
     loadClass: Optional[str] = None         # per-kiosk class override
     admdOverride: Optional[float] = None    # per-kiosk ADMD override (kVA)
     streetLightKVA: Optional[float] = None  # fixed, undiversified SL load (kVA)
+    customLoadKVA: Optional[float] = None   # site-plan custom loads, already diversified (kVA)
     erfs: list[ErfInput] = []
 
 
@@ -664,6 +665,18 @@ class ReticEarthRequest(BaseModel):
     settings: dict = {}
     minisubs: list[dict] = []
     kiosks: list[dict] = []
+
+
+class ReticMotorStartRequest(BaseModel):
+    """Reticulation motor starting check (Demand): motors, the minisub
+    transformers and kiosk feeder legs resolved to numbers — see
+    analysis/retic_motor_start.py."""
+    model_config = {"extra": "allow"}
+
+    settings: dict = {}
+    minisubs: list[dict] = []
+    kiosks: list[dict] = []
+    motors: list[dict] = []
 
 
 class StreetLightingRequest(BaseModel):
@@ -795,6 +808,7 @@ class AdmdMinisubResult(BaseModel):
     currentA: float
     overrideKVA: float = 0
     streetLightKVA: float = 0
+    customLoadKVA: float = 0
     conns: int
     numKiosks: int
 
@@ -804,6 +818,7 @@ class AdmdFeederTotal(BaseModel):
     currentA: float
     overrideKVA: float = 0
     streetLightKVA: float = 0
+    customLoadKVA: float = 0
     conns: int
     numKiosks: int
     sumKVA: float = 0                        # Σ per-minisub diversified demands
