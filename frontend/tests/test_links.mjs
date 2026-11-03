@@ -51,6 +51,7 @@ comp('cab1', 'cable', { planLink: 'rt1' });
 comp('cab2', 'cable', { riserLink: 'rt2' });
 comp('sec1', 'bus', { swLink: 'psw1' });
 comp('tx1', 'transformer', { reticMinisubId: 'ms1', reticRole: 'tx' });
+comp('ld1', 'static_load', { reticLoadId: 'rl1' });
 comp('op1', 'offpage_connector', null, { linked_to: 'op2' });
 comp('op2', 'offpage_connector');
 el('pk1', 'kiosk', { reticId: 'k1' });
