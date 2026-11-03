@@ -136,9 +136,13 @@ const Header = {
     const R = AppState.reticulation;
     if (R && vis('retic')) {
       const wsName = Workspaces.label('retic');
-      for (const m of R.minisubs || []) add('retic:' + m.id, m.name || 'Minisub', wsName + ' · Minisub');
+      for (const m of R.minisubs || []) {
+        add('retic:' + m.id, m.name || 'Minisub', wsName + ' · Minisub');
+        for (const l of m.loads || []) add('retic:' + l.id, l.name || 'Custom load', wsName + ' · Custom load on ' + (m.name || 'minisub'), (PlanLoads.get(l.loadType) || {}).name || '');
+      }
       for (const k of R.kiosks || []) {
         add('retic:' + k.id, k.name || 'Kiosk', wsName + ' · Kiosk');
+        for (const l of k.loads || []) add('retic:' + l.id, l.name || 'Custom load', wsName + ' · Custom load on ' + (k.name || 'kiosk'), (PlanLoads.get(l.loadType) || {}).name || '');
         for (const e of k.erfs || []) {
           const num = String(e.erfNumber || '').trim();
           const n = /^erf\b/i.test(num) ? num : 'Erf ' + num;

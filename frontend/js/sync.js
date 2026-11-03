@@ -206,6 +206,14 @@ const Sync = {
       owner: (comp) => 'retic:' + comp.reticMinisubId,
       show: (v) => (v == null || v === '' ? '—' : `${(+v).toFixed(1).replace(/\.0$/, '')} kVA`),
     },
+    {
+      // A custom load fed from a minisub, as its own motor / static load on the LV bus (Demand's row).
+      match: (comp, key) => !!comp.reticLoadId && ['rated_kw', 'rated_kva', 'power_factor', 'demand_factor'].includes(key),
+      key: (comp, key) => `l:${key}:${comp.reticLoadId}`,
+      label: 'Demand',
+      owner: (comp) => 'retic:' + comp.reticLoadId,
+      show: (v) => (v == null || v === '' ? '—' : String(Math.round(+v * 100) / 100)),
+    },
   ],
   _owned(comp, key) { return (comp && this.OWNED.find(o => o.match(comp, key))) || null; },
 
@@ -214,7 +222,7 @@ const Sync = {
   onFieldEdited(comp, key, before, value) {
     const o = this._owned(comp, key);
     if (!o || this._running) return;
-    const k = o.key(comp);
+    const k = o.key(comp, key);
     const cur = this.override(k);
     this.setOverride(k, value, cur ? cur.src : before);
   },
@@ -223,7 +231,7 @@ const Sync = {
   fieldFlagHtml(comp, key) {
     const o = this._owned(comp, key);
     if (!o || AppState.keepInSync === false) return '';
-    const ov = this.override(o.key(comp));
+    const ov = this.override(o.key(comp, key));
     // The note is a link mark: it goes to the owner (Links), with Back.
     const to = o.owner ? o.owner(comp) : null;
     const mark = (text, cls, tip) => (to && typeof Links !== 'undefined')
@@ -231,7 +239,7 @@ const Sync = {
       : `<span class="${escHtml(cls)}" title="${escHtml(tip)}">${escHtml(text)}</span>`;
     if (!ov) return mark(`from ${o.label}`, 'prop-sync-flag', `Set by the ${o.label}: it follows it. Type a value to keep your own.`);
     return mark(`typed · ${o.label} ${o.show(ov.src)}`, 'prop-sync-flag prop-sync-flag--typed', `Typed here — the ${o.label} gives ${o.show(ov.src)}. Reset to follow it again.`)
-      + `<button type="button" class="prop-sync-reset" data-sync-reset="${escHtml(o.key(comp))}" title="Follow the ${escHtml(o.label)} again">Reset</button>`;
+      + `<button type="button" class="prop-sync-reset" data-sync-reset="${escHtml(o.key(comp, key))}" title="Follow the ${escHtml(o.label)} again">Reset</button>`;
   },
 
   // ── Overrides (a value typed where another workspace owns it) ──

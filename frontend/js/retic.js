@@ -843,7 +843,7 @@ const Retic = {
     load.props.demand_factor = 1.0;     // demand is already after-diversity
     load.props.voltage_kv = lv;
     xfmr.reticInfo = this._minisubInfo(ms, m, res, tx);
-    this._applyLoadParts(st, ms);
+    this._applyLoadParts(st, ms, value);
     return tx;
   },
 
@@ -860,7 +860,7 @@ const Retic = {
     for (const c of Object.values(this._loadPartMap(msId))) AppState.removeComponent(c.id);
   },
   _STARTER_KEYS: { 'DOL': 'dol', 'Star-delta': 'star_delta', 'Autotransformer': 'autotransformer', 'Soft starter': 'soft_starter', 'VFD': 'vfd' },
-  _applyLoadParts(st, ms) {
+  _applyLoadParts(st, ms, value) {
     if (typeof PlanLoads === 'undefined') return;
     const { bus, load } = st;
     const parts = this._loadPartMap(ms.id);
@@ -873,6 +873,9 @@ const Retic = {
       let c = parts[row.id];
       if (c && c.type !== type) { AppState.removeComponent(c.id); c = null; }
       const off = 80 * (Math.floor(i / 2) + 1) * (i % 2 ? -1 : 1);       // alternate right / left of the aggregate load
+      const isNew = !c;
+      // A figure typed on the single line is kept (an override, like the aggregate load's kVA); a part just made takes Demand's.
+      const val = (field, src) => (value && !isNew) ? value(`l:${field}:${row.id}`, src, c.props[field]) : src;
       if (!c) {
         c = AppState.addComponent(type, bus.x + off, load.y);
         if (!c) return;
@@ -883,10 +886,10 @@ const Retic = {
       c.reticLoadId = row.id;
       c.props.name = row.name || t.name;
       c.reticName = c.props.name;
-      c.props.demand_factor = div;                 // Demand's diversity, so load flow draws what Demand counted
-      c.props.power_factor = t.pf;
+      c.props.demand_factor = val('demand_factor', div);     // Demand's diversity, so load flow draws what Demand counted
+      c.props.power_factor = val('power_factor', t.pf);
       if (t.motor) {
-        c.props.rated_kw = kw;
+        c.props.rated_kw = val('rated_kw', kw);
         c.props.voltage_kv = t.volt / 1000;
         c.props.efficiency = t.eff || 0.93;
         c.props.locked_rotor_current = t.lrc || 6;
@@ -894,7 +897,7 @@ const Retic = {
         c.props.starting_method = this._STARTER_KEYS[t.start] || 'dol';
         if (t.rpm > 0) c.props.rated_speed_rpm = t.rpm;
       } else {
-        c.props.rated_kva = +(kw / (t.pf > 0 ? t.pf : 1)).toFixed(2);
+        c.props.rated_kva = val('rated_kva', +(kw / (t.pf > 0 ? t.pf : 1)).toFixed(2));
         c.props.voltage_kv = bus.props.voltage_kv;
       }
       keep.add(row.id);
