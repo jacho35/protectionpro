@@ -349,7 +349,7 @@ const Retic = {
   // The starting check beside a motor row.
   _loadCheckHtml(l) {
     const t = PlanLoads.get(l.loadType);
-    if (!t || !t.motor) return '<span class="retic-hint">static</span>';
+    if (!t || !PlanLoads.isMotor(l, t)) return '<span class="retic-hint">static</span>';
     const m = this._motorResult(l.id);
     if (!m) return '<span class="retic-hint">…</span>';
     const tip = m.status === 'info' ? m.note
@@ -374,7 +374,11 @@ const Retic = {
     const placed = AppState.planAllElements().some(e => e.reticId === l.id);
     return `<tr data-load-row="${escHtml(l.id)}">
       <td data-cell="name" data-label="Name"><input type="text" ${a} data-field="name" value="${escHtml(l.name || '')}"></td>
-      <td data-cell="type" data-label="Type"><select ${a} data-field="loadType">${typeOpts}</select></td>
+      <td data-cell="type" data-label="Type"><select ${a} data-field="loadType">${typeOpts}</select>
+        <select ${a} data-field="motor" title="Static load, or a motor (checked for starting, drawn as an induction motor on the single line). Default follows the load type." aria-label="Static or motor">
+          <option value=""${l.motor ? '' : ' selected'}>${t && t.motor ? 'Type default: motor' : 'Type default: static'}</option>
+          <option value="static"${l.motor === 'static' ? ' selected' : ''}>Static load</option>
+          <option value="motor"${l.motor === 'motor' ? ' selected' : ''}>Motor</option></select></td>
       <td data-cell="kw" data-label="kW"><input type="number" min="0" step="0.1" ${a} data-field="kw" value="${numAttr(l.kw || '')}" placeholder="${t ? t.kw : ''}" title="Blank = the load type's rating"></td>
       <td data-cell="div" data-label="Diversity"><input type="number" min="0.05" max="1" step="0.05" data-action="load-div" data-type="${escHtml(l.loadType || '')}" value="${PlanLoads.diversity(t)}" title="Diversity factor of the load type ${t ? escHtml(t.name) : ''}: every load of that type uses it"></td>
       <td data-cell="cable" data-label="Supply cable"><select ${a} data-field="cableType" data-cable-select>${this._cableOptions(l.cableType)}</select></td>
@@ -551,7 +555,7 @@ const Retic = {
       this._snapshot();
       this._markDirty();
       if (typeof PlanSync !== 'undefined' && PlanSync.pullLoadsFromDemand) PlanSync.pullLoadsFromDemand();   // the drawn load follows
-      if (key === 'loadType') this.renderKiosks();     // kW placeholder, kVA, motor check
+      if (key === 'loadType' || key === 'motor') this.renderKiosks();     // kW placeholder, kVA, motor check
       else this._refreshLoadRow(o, l);
       this.recompute();
       return;
@@ -869,7 +873,8 @@ const Retic = {
     let maxOff = 0;
     want.forEach(({ row }, i) => {
       const t = PlanLoads.get(row.loadType), kw = PlanLoads.rowKw(row), div = PlanLoads.diversity(t);
-      const type = t.motor ? 'motor_induction' : 'static_load';
+      const isMotor = PlanLoads.isMotor(row, t);
+      const type = isMotor ? 'motor_induction' : 'static_load';
       let c = parts[row.id];
       if (c && c.type !== type) { AppState.removeComponent(c.id); c = null; }
       const off = 80 * (Math.floor(i / 2) + 1) * (i % 2 ? -1 : 1);       // alternate right / left of the aggregate load
@@ -888,7 +893,7 @@ const Retic = {
       c.reticName = c.props.name;
       c.props.demand_factor = val('demand_factor', div);     // Demand's diversity, so load flow draws what Demand counted
       c.props.power_factor = val('power_factor', t.pf);
-      if (t.motor) {
+      if (isMotor) {
         c.props.rated_kw = val('rated_kw', kw);
         c.props.voltage_kv = t.volt / 1000;
         c.props.efficiency = t.eff || 0.93;

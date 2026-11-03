@@ -67,6 +67,14 @@ const PlanLoads = {
     const t = this.get(row && row.loadType);
     return t ? t.kw : 0;
   },
+  // Is a Demand row a motor? Its own choice (`row.motor`: 'motor' | 'static'),
+  // else its load type's setting.
+  isMotor(row, t) {
+    if (row && row.motor === 'motor') return true;
+    if (row && row.motor === 'static') return false;
+    t = t || this.get(row && row.loadType);
+    return !!(t && t.motor);
+  },
   // Demand of a row: kW ÷ pf × the type's diversity (kVA).
   rowKva(row) {
     const t = this.get(row && row.loadType), kw = this.rowKw(row);
@@ -82,7 +90,7 @@ const PlanLoads = {
       if (!t || !(kva > 0)) continue;
       const r = out[owner.id] || (out[owner.id] = { kva: 0, items: [] });
       r.kva += kva;
-      r.items.push({ id: row.id, name: row.name || t.name, type: t.name, kw: this.rowKw(row), div: this.diversity(t), kva: +kva.toFixed(3), motor: !!t.motor });
+      r.items.push({ id: row.id, name: row.name || t.name, type: t.name, kw: this.rowKw(row), div: this.diversity(t), kva: +kva.toFixed(3), motor: this.isMotor(row, t) });
     }
     for (const r of Object.values(out)) r.kva = +r.kva.toFixed(3);
     return out;
@@ -95,6 +103,7 @@ const PlanLoads = {
     if (!f || f.kind !== 'load') return false;
     if (key === 'name') f.row.name = val;
     else if (key === 'loadType' || key === 'cableType') f.row[key] = val;
+    else if (key === 'motor') f.row.motor = val === 'motor' || val === 'static' ? val : '';
     else if (key === 'kw') f.row.kw = val > 0 ? val : '';
     else if (key === 'fedFrom') {
       const sup = AppState.planAllElements().find(e => e.id === val);
@@ -118,7 +127,7 @@ const PlanLoads = {
     for (const { row, owner } of this.rows()) {
       const t = this.get(row.loadType);
       const kw = this.rowKw(row);
-      if (!t || !t.motor || !(kw > 0)) continue;
+      if (!t || !this.isMotor(row, t) || !(kw > 0)) continue;
       out.push({
         id: row.id, name: row.name || t.name, supplyId: owner.id, supplyName: owner.name || '',
         kw, volt: t.volt, phases: t.phases, pf: t.pf, eff: t.eff || 0.93,
@@ -198,7 +207,7 @@ const PlanLoads = {
   newProps(typeId, x, y) {
     const t = this.get(typeId);
     const s = t ? this.nearestSupply(t, x, y) : null;
-    return { loadType: typeId, kw: '', fedFrom: s ? s.id : '', cableType: '' };
+    return { loadType: typeId, kw: '', fedFrom: s ? s.id : '', cableType: '', motor: '' };
   },
 
   // ── Properties panel ──
@@ -214,6 +223,7 @@ const PlanLoads = {
     return [
       { key: 'name', label: 'Name', type: 'text' },
       { key: 'loadType', label: 'Load type', type: 'select', options: types.map(x => ({ value: x.id, label: x.name })) },
+      { key: 'motor', label: 'Load kind', type: 'select', options: [{ value: '', label: t && t.motor ? 'Type default (motor)' : 'Type default (static)' }, { value: 'static', label: 'Static load' }, { value: 'motor', label: 'Motor' }] },
       { key: 'fedFrom', label: 'Fed from', type: 'select', options: opts },
       { key: 'kw', label: `Power${t ? ` (blank = ${t.kw})` : ''}`, type: 'number', unit: 'kW', min: 0, step: 0.1 },
       { key: 'cableType', label: 'Supply cable', type: 'cable_select', voltage: 'lv' },
@@ -225,7 +235,7 @@ const PlanLoads = {
       const t = this.typeOf(item);
       if (!t) return '<div class="plan-linked-note">This load\'s type no longer exists. Pick another above.</div>';
       const a = this.amps(item), m = this.feedLengthM(item), sup = this.supplyOf(item);
-      const bits = [`${this.kw(item)} kW`, `${t.volt} V ${t.phases}φ`, `pf ${t.pf}`, a != null ? `≈ ${a} A` : '', t.start, t.duty].filter(Boolean);
+      const bits = [this.isMotor({ motor: item.props && item.props.motor }, t) ? 'Motor' : 'Static', `${this.kw(item)} kW`, `${t.volt} V ${t.phases}φ`, `pf ${t.pf}`, a != null ? `≈ ${a} A` : '', t.start, t.duty].filter(Boolean);
       let h = `<div class="plan-load-sum"><b>${escHtml(t.name)}</b><span>${escHtml(bits.join(' · '))}</span>`;
       const drawn = !!this.drawnFeed(item);
       if (sup) h += `<span>Fed from ${escHtml(sup.name || sup.id)}${m != null ? ` · supply run ${drawn ? '' : '≈ '}${m.toFixed(1)} m (${drawn ? 'drawn cable' : 'straight line'})` : ''}</span>`;
