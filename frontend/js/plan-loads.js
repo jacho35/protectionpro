@@ -6,8 +6,10 @@
  * (mini-sub and/or kiosk). Each type is a palette item; a placed load is an
  * element of type `load` whose `props` carry `loadType`, `fedFrom` (the id of
  * the mini-sub or kiosk feeding it), an optional `kw` override and the supply
- * `cableType`. The supply cable is drawn from that supply to the load (a
- * direct line, layer route key `loadfeed`); it is not a separate item.
+ * `cableType`. The supply cable is an LV / service cable drawn from a mini-sub
+ * or kiosk to the load (`drawnFeed`: it sets the supply, length and cable);
+ * with none drawn it is a straight line from `fedFrom` (layer route key
+ * `loadfeed`), not a separate item.
  *
  * Demand: a load fed from a linked mini-sub / kiosk adds kW ÷ pf × its type's
  * diversity to that row (`demandByRow` → `customLoadKVA`, a fixed load in the
@@ -160,12 +162,34 @@ const PlanLoads = {
   fedBy(supply) {
     return AppState.planMarkup.elements.filter(e => e.type === 'load' && e.props && e.props.fedFrom === supply.id);
   },
-  // Supply cable as a straight run: { a, b } world points, or null when unfed.
+  // A drawn LV / service cable from a mini-sub or kiosk to this load:
+  // { route, supply } or null. One to the load's current supply wins.
+  drawnFeed(el) {
+    if (!el) return null;
+    const pm = AppState.planMarkup;
+    const byId = {};
+    for (const e of pm.elements) byId[e.id] = e;
+    let best = null;
+    for (const r of pm.routes || []) {
+      if (r.type !== 'lv' && r.type !== 'service') continue;
+      const other = r.fromId === el.id ? r.toId : r.toId === el.id ? r.fromId : null;
+      const s = other && byId[other];
+      if (!s || !this.SUPPLIES.includes(s.type)) continue;
+      if (el.props && el.props.fedFrom === s.id) return { route: r, supply: s };
+      if (!best) best = { route: r, supply: s };
+    }
+    return best;
+  },
+  // Supply run as a straight line { a, b } (world points) when no cable is
+  // drawn to the load; null when one is drawn (it shows itself) or unfed.
   feedLine(el) {
+    if (this.drawnFeed(el)) return null;
     const s = this.supplyOf(el);
     return s ? { a: { x: s.x, y: s.y }, b: { x: el.x, y: el.y } } : null;
   },
   feedLengthPx(el) {
+    const d = this.drawnFeed(el);
+    if (d) return AppState.planRoutePx(d.route);
     const l = this.feedLine(el);
     return l ? Math.hypot(l.b.x - l.a.x, l.b.y - l.a.y) : 0;
   },
@@ -213,7 +237,8 @@ const PlanLoads = {
       const a = this.amps(item), m = this.feedLengthM(item), sup = this.supplyOf(item);
       const bits = [this.isMotor({ motor: item.props && item.props.motor }, t) ? 'Motor' : 'Static', `${this.kw(item)} kW`, `${t.volt} V ${t.phases}φ`, `pf ${t.pf}`, a != null ? `≈ ${a} A` : '', t.start, t.duty].filter(Boolean);
       let h = `<div class="plan-load-sum"><b>${escHtml(t.name)}</b><span>${escHtml(bits.join(' · '))}</span>`;
-      if (sup) h += `<span>Fed from ${escHtml(sup.name || sup.id)}${m != null ? ` · supply run ≈ ${m.toFixed(1)} m (straight line)` : ''}</span>`;
+      const drawn = !!this.drawnFeed(item);
+      if (sup) h += `<span>Fed from ${escHtml(sup.name || sup.id)}${m != null ? ` · supply run ${drawn ? '' : '≈ '}${m.toFixed(1)} m (${drawn ? 'drawn cable' : 'straight line'})` : ''}</span>`;
       else h += '<span class="warn">Not fed from a mini-sub or kiosk yet.</span>';
       if (sup && !this.allowedSupplies(t).includes(sup.type)) h += `<span class="warn">${escHtml(t.name)} loads can't be fed from a ${this.SUPPLY_NAME[sup.type].toLowerCase()}.</span>`;
       return h + '</div>';

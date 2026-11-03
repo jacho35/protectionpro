@@ -553,15 +553,24 @@ PlanTools.register({
   onActivate(opts) { this._type = opts.type; this._draft = null; this._hover = null; },
   cancel() { this._draft = null; this._hover = null; },
 
+  // A click on a component is a connection, whether or not "Snap to placed
+  // parts" is on: that setting only governs snapping, not what a route ends on.
+  // The part nearest the cursor wins, not the topmost (a pole drawn over its
+  // kiosk must not take the kiosk's cable).
+  _snap(pt) {
+    const el = PlanEngine.findElementsAt(pt, 12)[0];
+    return el ? { x: el.x, y: el.y, snapped: 'el', targetId: el.id } : PlanTools.snap(pt, { wantElements: false });
+  },
+
   onMove(pt) {
-    this._hover = PlanTools.snap(pt);
+    this._hover = this._snap(pt);
     PlanEngine.requestDraw({ fg: true });
   },
 
   onDown(pt) {
     const def = PLAN_DEFS.route(this._type);
     const requiresEnds = def && def.requiresEndpoints;
-    const snapped = PlanTools.snap(pt);
+    const snapped = this._snap(pt);
     if (!this._draft) {
       if (requiresEnds && snapped.snapped !== 'el') {
         UI.toast(`${def.name} must start on a component.`, 'warn');
