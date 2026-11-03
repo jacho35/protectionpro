@@ -270,6 +270,35 @@ def _find_motor_bus(motor_id, adj, comp_map):
     return None
 
 
+def _upstream_bus(terminal_bus, adj, comp_map):
+    """The real bus feeding a synthetic motor-terminal bus (the one the feeder
+    cable / transformer hangs off), or None when the motor sits on a real bus.
+
+    The synthetic terminal bus is at the motor end of the feeder, so its
+    voltage already includes the feeder drop; this is the voltage BEFORE it."""
+    from .loadflow import is_synthetic_bus
+    if not is_synthetic_bus(terminal_bus):
+        return None
+    visited = {terminal_bus}
+    stack = [nid for nid, _ in adj.get(terminal_bus, [])]
+    while stack:
+        nid = stack.pop(0)
+        if nid in visited:
+            continue
+        visited.add(nid)
+        comp = comp_map.get(nid)
+        if not comp:
+            continue
+        if comp.type in ("bus", "distribution_board"):
+            if not is_synthetic_bus(nid):
+                return nid
+            continue
+        if comp.type in ("cable", "transformer", "autotransformer") \
+                or comp.type in TRANSPARENT_TYPES:
+            stack.extend(n for n, _ in adj.get(nid, []) if n not in visited)
+    return None
+
+
 def _thevenin_at_bus(project, bus_id, exclude_motor_ids):
     """Thevenin impedance (complex, pu on system base at the bus voltage
     zone) from all non-motor source paths, evaluated at c = 1.0 with
@@ -614,7 +643,7 @@ def _simulate_sequence(units, zres, v_pre_by_bus, base_mva, bus_name_of, warning
         Z = zres["Z"]
         Imat = np.eye(len(ports), dtype=complex)
     else:
-        ports = list(dict.fromkeys(u["terminal_bus"] for u in units))
+        ports = list(dict.fromkeys(u["terminal_bus"] for u in units))  # no supply ports without a network
         Z = None
         Imat = None
     port_of = {b: i for i, b in enumerate(ports)}
@@ -642,6 +671,9 @@ def _simulate_sequence(units, zres, v_pre_by_bus, base_mva, bus_name_of, warning
         u["crawl"] = False
         u["accel_time"] = None
         u["port"] = port_of.get(u["terminal_bus"], -1)
+        u["supply_port"] = port_of.get(u.get("supply_bus"), -1) if Z is not None else -1
+        u["rvs"] = []   # voltage at the bus upstream of the feeder (if any)
+        u["v_pre_supply"] = 1.0
         u["_alpha"] = 1.0
         u["rt"], u["rspd"], u["ri"] = [], [], []
         u["rvb"], u["rvm"], u["rte"], u["rtl"] = [], [], [], []
@@ -714,8 +746,11 @@ def _simulate_sequence(units, zres, v_pre_by_bus, base_mva, bus_name_of, warning
         accel = {}
         for u in units:
             vb = float(Vabs[u["port"]]) if (u["port"] >= 0 and npv) else 1.0
+            vs = float(Vabs[u["supply_port"]]) if u["supply_port"] >= 0 else vb
+            u["rvs"].append(round(vs, 4))
             if not energized(u, t):
                 u["v_pre_sim"] = vb   # [MG6] latest voltage before this start
+                u["v_pre_supply"] = vs
                 u["rt"].append(round(t, 4)); u["rspd"].append(0.0)
                 u["ri"].append(0.0); u["rvb"].append(round(vb, 4))
                 u["rvm"].append(round(vb, 4)); u["rte"].append(0.0); u["rtl"].append(0.0)
@@ -834,13 +869,17 @@ def _simulate_sequence(units, zres, v_pre_by_bus, base_mva, bus_name_of, warning
     results = []
     for u in units:
         n_pts = len(u["rt"])
-        rt, rspd, ri, rvb, rvm, rte, rtl = _decimate(
-            [u["rt"], u["rspd"], u["ri"], u["rvb"], u["rvm"], u["rte"], u["rtl"]], n_pts)
+        rt, rspd, ri, rvb, rvm, rte, rtl, rvs = _decimate(
+            [u["rt"], u["rspd"], u["ri"], u["rvb"], u["rvm"], u["rte"], u["rtl"],
+             u["rvs"]], n_pts)
+        has_supply = u["supply_port"] >= 0
         curves = {
             "t": rt, "speed_pct": rspd, "current_xflc": ri,
             "v_bus_pu": rvb, "v_motor_pu": rvm, "te_pu": rte, "tl_pu": rtl,
             "current_a": [round(i * u["flc_a"], 1) for i in ri],
         }
+        if has_supply:
+            curves["v_supply_bus_pu"] = rvs
 
         v_pre = u["v_pre_sim"] or 1.0   # [MG6] with running motors connected
         # Metrics over the motor's own energised window (ignore the pre-start
@@ -856,6 +895,10 @@ def _simulate_sequence(units, zres, v_pre_by_bus, base_mva, bus_name_of, warning
         # instant), so every such start was flagged as a dip.
         min_v_supply = min((u["rvb"][k] for k in act), default=1.0) * u["v_ratio"]
         max_dip_pct = (v_pre - min_v_bus) / v_pre * 100.0 if v_pre > 0 else 0.0
+        v_pre_sup = u["v_pre_supply"] or 1.0
+        min_v_sup_bus = min((u["rvs"][k] for k in act), default=1.0)
+        max_sup_dip_pct = ((v_pre_sup - min_v_sup_bus) / v_pre_sup * 100.0
+                           if v_pre_sup > 0 else 0.0)
 
         thermal_capacity = u["m_i"] * u["m_i"] * u["stall_time_hot"]
         thermal_used_pct = (u["i2t"] / thermal_capacity * 100.0
@@ -929,6 +972,11 @@ def _simulate_sequence(units, zres, v_pre_by_bus, base_mva, bus_name_of, warning
             "min_v_motor_pu": round(min_v_motor, 4),
             "min_v_supply_pu": round(min_v_supply, 4),
             "max_bus_dip_pct": round(max_dip_pct, 2),
+            # Bus upstream of the feeder (None when the motor sits on a real bus)
+            "supply_bus": u["supply_bus_name"] if has_supply else None,
+            "v_prestart_supply_bus_pu": round(v_pre_sup, 4) if has_supply else None,
+            "min_v_supply_bus_pu": round(min_v_sup_bus, 4) if has_supply else None,
+            "max_supply_bus_dip_pct": round(max_sup_dip_pct, 2) if has_supply else None,
             "thermal_used_pct": round(thermal_used_pct, 1),
             "stall_time_hot_s": u["stall_time_hot"],
             "transition": u["transition"],
@@ -1002,6 +1050,9 @@ def run_dynamic_motor_starting(project: ProjectData):
         if "passthrough" in prep:
             passthrough.append(prep["passthrough"])
         else:
+            prep["supply_bus"] = _upstream_bus(prep["terminal_bus"], adj, comp_map)
+            sb = comp_map.get(prep["supply_bus"]) if prep["supply_bus"] else None
+            prep["supply_bus_name"] = sb.props.get("name", sb.id) if sb else ""
             units.append(prep)
 
     if not units:
@@ -1029,7 +1080,9 @@ def run_dynamic_motor_starting(project: ProjectData):
     if not units:
         return {"motors": passthrough, "warnings": analysis_warnings, "sequence": None}
 
-    port_buses = list(dict.fromkeys(u["terminal_bus"] for u in units))
+    port_buses = list(dict.fromkeys(
+        [u["terminal_bus"] for u in units]
+        + [u["supply_bus"] for u in units if u.get("supply_bus")]))
     zres = build_port_zbus(project, port_buses, c=1.0)
     if zres is None:
         analysis_warnings.append(

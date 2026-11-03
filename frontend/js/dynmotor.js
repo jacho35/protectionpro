@@ -367,8 +367,12 @@ const DynMotor = {
       ['Acceleration time', m.accel_time_s != null ? m.accel_time_s.toFixed(2) + ' s' : '—'],
       ['Final speed', m.final_speed_pct.toFixed(1) + ' %'],
       ['Peak current', `${m.peak_current_a.toFixed(0)} A (${m.peak_current_xflc.toFixed(2)}×FLC)`],
-      ['Pre-start bus V', m.v_prestart_pu.toFixed(3) + ' p.u.'],
-      ['Min bus V', `${m.min_v_bus_pu.toFixed(3)} p.u. (dip ${m.max_bus_dip_pct.toFixed(1)}%)`],
+      ...(m.supply_bus != null ? [
+        [`Pre-start V at ${m.supply_bus}`, m.v_prestart_supply_bus_pu.toFixed(3) + ' p.u.'],
+        [`Min V at ${m.supply_bus} (supply bus)`, `${m.min_v_supply_bus_pu.toFixed(3)} p.u. (dip ${m.max_supply_bus_dip_pct.toFixed(1)}%)`],
+      ] : []),
+      [m.supply_bus != null ? 'Pre-start terminal bus V' : 'Pre-start bus V', m.v_prestart_pu.toFixed(3) + ' p.u.'],
+      [m.supply_bus != null ? 'Min terminal bus V (after feeder)' : 'Min bus V', `${m.min_v_bus_pu.toFixed(3)} p.u. (dip ${m.max_bus_dip_pct.toFixed(1)}%)`],
       ...(m.min_v_supply_pu != null
         ? [['Min supply V at motor', m.min_v_supply_pu.toFixed(3) + ' p.u. (motor rating)']] : []),
       ['Min winding V', m.min_v_motor_pu.toFixed(3) + ' p.u.'],
@@ -423,13 +427,14 @@ const DynMotor = {
     for (let i = 0; i < t.length; i += step) {
       rows += `<tr><td>${t[i].toFixed(2)}</td><td>${c.speed_pct[i].toFixed(1)}</td>
         <td>${c.current_a[i].toFixed(0)} (${c.current_xflc[i].toFixed(2)}×)</td>
+        ${c.v_supply_bus_pu ? `<td>${c.v_supply_bus_pu[i].toFixed(3)}</td>` : ''}
         <td>${c.v_bus_pu[i].toFixed(3)}</td><td>${c.v_motor_pu[i].toFixed(3)}</td>
         <td>${c.te_pu[i].toFixed(3)}</td><td>${c.tl_pu[i].toFixed(3)}</td></tr>`;
     }
     return `<details style="font-size:11px;margin-top:6px"><summary style="cursor:pointer">Data table</summary>
       <div style="max-height:220px;overflow:auto;margin-top:6px">
       <table class="af-table" style="font-size:10px;font-variant-numeric:tabular-nums"><thead><tr>
-        <th>t (s)</th><th>Speed (%)</th><th>Current A (×FLC)</th><th>V bus (p.u.)</th><th>V motor (p.u.)</th><th>T_e (p.u.)</th><th>T_L (p.u.)</th>
+        <th>t (s)</th><th>Speed (%)</th><th>Current A (×FLC)</th>${c.v_supply_bus_pu ? '<th>V supply bus (p.u.)</th>' : ''}<th>V ${c.v_supply_bus_pu ? 'terminal bus' : 'bus'} (p.u.)</th><th>V motor (p.u.)</th><th>T_e (p.u.)</th><th>T_L (p.u.)</th>
       </tr></thead><tbody>${rows}</tbody></table></div></details>`;
   },
 
@@ -455,7 +460,12 @@ const DynMotor = {
         markers,
         series: [
           { name: 'Speed', values: c.speed_pct, color: P.speed, fmt: v => v.toFixed(1) + ' %' },
-          { name: 'Bus V', values: c.v_bus_pu.map(v => v * 100), color: P.vbus, fmt: v => (v / 100).toFixed(3) + ' p.u.' },
+          // Motor fed through a feeder: the supply bus (before the feeder) is
+          // a separate series from the motor's terminal bus (after it).
+          ...(c.v_supply_bus_pu
+            ? [{ name: 'Supply bus V', values: c.v_supply_bus_pu.map(v => v * 100), color: P.current, fmt: v => (v / 100).toFixed(3) + ' p.u.' }]
+            : []),
+          { name: c.v_supply_bus_pu ? 'Terminal bus V' : 'Bus V', values: c.v_bus_pu.map(v => v * 100), color: P.vbus, fmt: v => (v / 100).toFixed(3) + ' p.u.' },
           { name: 'Motor V', values: c.v_motor_pu.map(v => v * 100), color: P.vmotor, fmt: v => (v / 100).toFixed(3) + ' p.u.' },
         ],
       },
