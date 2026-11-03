@@ -214,3 +214,18 @@ class TestAdmdMinisubStreetLight:
         assert res["minisubs"][0]["totalKVA"] == pytest.approx(2.5)
         assert res["minisubs"][0]["streetLightKVA"] == pytest.approx(2.5)
         assert res["total"]["streetLightKVA"] == pytest.approx(2.5)
+
+
+class TestCustomLoadKVA:
+    """Site-plan custom loads are a fixed (already diversified) kVA per row."""
+
+    def test_kiosk_minisub_and_total(self):
+        from backend.analysis.admd import run_admd
+        res = run_admd({"kiosks": [{"id": "K", "fedFrom": "ms", "customLoadKVA": 4.0, "erfs": []}],
+                        "minisubs": [{"id": "ms", "name": "MS", "customLoadKVA": 1.5}]})
+        assert res["kiosks"][0]["customLoadKVA"] == pytest.approx(4.0)
+        assert res["kiosks"][0]["totalKVA"] == pytest.approx(4.0)
+        ms = res["minisubs"][0]
+        assert ms["customLoadKVA"] == pytest.approx(5.5)
+        assert ms["totalKVA"] == pytest.approx(5.5)
+        assert res["total"]["customLoadKVA"] == pytest.approx(5.5)

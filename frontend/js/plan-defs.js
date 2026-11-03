@@ -410,7 +410,7 @@ const PLAN_DEFS = {
 
 // The load types a new project starts with (plan-loads.js owns the rest).
 const PLAN_DEFAULT_LOAD_TYPES = [{
-  id: 'pump', name: 'Pump', letter: 'P', color: '#0ea5e9', kw: 15, volt: 400, phases: 3, pf: 0.85,
+  id: 'pump', name: 'Pump', letter: 'P', color: '#0ea5e9', kw: 15, volt: 400, phases: 3, pf: 0.85, diversity: 1,
   start: 'Star-delta', duty: 'Continuous', supply: { minisub: true, kiosk: true },
 }];
 
@@ -425,7 +425,7 @@ const PLAN_DEFAULT_LAYERS = [
   },
   {
     id: 'lv', name: 'LV Reticulation', discipline: 'lv', color: '#3b82f6',
-    visibleElementTypes: ['minisub', 'kiosk', 'erf'], routeTypes: ['lv', 'service'],
+    visibleElementTypes: ['minisub', 'kiosk', 'erf', 'load'], routeTypes: ['lv', 'service'],
     trenchTypes: ['LV/SL', 'MV/LV/SL'], showCrossings: true, drawingNo: '', revision: '',
   },
   {
@@ -445,7 +445,7 @@ const PLAN_DEFAULT_LAYERS = [
   },
   {
     id: 'loads', name: 'Custom Loads', discipline: 'loads', color: '#0ea5e9',
-    visibleElementTypes: ['minisub', 'kiosk', 'load:pump'], routeTypes: ['loadfeed'],
+    visibleElementTypes: ['minisub', 'kiosk', 'load:pump'], routeTypes: ['loadfeed', 'lv', 'service'],
     trenchTypes: [], showCrossings: false, drawingNo: '', revision: '',
   },
   // Building-distribution discipline layers (used when the Building domain is active)

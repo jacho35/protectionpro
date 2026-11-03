@@ -150,6 +150,15 @@ const Retic = {
     const c = Links.of('retic:' + k.id).find(l => l.kind === 'sl-source');
     return c ? Links.markHtml(c.to, 'retic:' + k.id, 'from Street lighting ›', 'retic-plan-tag retic-plan-link') : '';
   },
+  // Read-only "Custom loads" figure on a kiosk: its loads drawn on the site plan.
+  _customLoadField(k) {
+    if (typeof PlanLoads === 'undefined') return '';
+    const d = PlanLoads.demandByRow()[k.id];
+    if (!d) return '';
+    const tip = d.items.map(i => `${i.name}: ${i.kw} kW${i.div < 1 ? ' × ' + i.div : ''} = ${i.kva} kVA`).join('\n');
+    return `<div class="retic-field"><label>Custom Loads (kVA)</label>
+              <input type="number" value="${numAttr(d.kva)}" readonly title="${escHtml('Loads placed on the site plan and fed from this kiosk (kW ÷ pf × diversity), added to its demand. Edit them on the plan.\n' + tip)}"></div>`;
+  },
   // Link mark to a minisub's transformer on the single line.
   _sldMarkHtml(ms) {
     if (typeof Links === 'undefined') return '';
@@ -1151,6 +1160,7 @@ const Retic = {
               ${k.streetLightFromCircuits
                 ? `<input type="number" value="${numAttr(k.streetLightKVA || 0)}" readonly title="From this kiosk's circuits in the Street lighting workspace (fixed, undiversified). Edit the circuits there.">`
                 : `<input type="number" step="0.1" data-action="kiosk-field" data-kiosk="${escHtml(k.id)}" data-field="streetLightKVA" value="${numAttr(k.streetLightKVA || '')}" placeholder="0" title="Fixed, undiversified street-lighting load">`}</div>
+            ${this._customLoadField(k)}
             <div class="retic-field"><label>Feeder Cable <span class="sel-feeder" title="Include this kiosk's LV feeder cable in the bulk cable change"><input type="checkbox" data-action="sel-feeder" data-kiosk="${escHtml(k.id)}" aria-label="Include this kiosk's feeder in the bulk cable change"${this._selFeeders.has(k.id) ? ' checked' : ''}> change</span></label>
               <select data-action="kiosk-field" data-kiosk="${escHtml(k.id)}" data-field="feederCable" data-cable-select>${this._cableOptions(k.feederCable)}</select></div>
             <div class="retic-field"><label>Feeder Length (m) ${this._planTag('len:feeder:' + k.id)}</label>
@@ -1487,7 +1497,8 @@ const Retic = {
   _inputSig() {
     const R = this.state;
     if (!R) return '';
-    return AppState._hashText(JSON.stringify([R.settings, R.minisubs, R.kiosks],
+    const cl = (typeof PlanLoads !== 'undefined') ? PlanLoads.demandByRow() : {};
+    return AppState._hashText(JSON.stringify([R.settings, R.minisubs, R.kiosks, cl, (typeof PlanLoads !== 'undefined') ? PlanLoads.motorsForDemand() : null],
       (k, v) => (k === 'collapsed' || k === 'sldOff' ? undefined : v)));
   },
   _resSig: null,
@@ -1517,10 +1528,15 @@ const Retic = {
       loadClassLib: STANDARD_LOAD_CLASSES,
     };
     try {
-      const res = await API.runAdmd(payload, this.kiosks, this.minisubs);
+      // Custom loads from the site plan ride along as a fixed kVA per row.
+      const cl = (typeof PlanLoads !== 'undefined') ? PlanLoads.demandByRow() : {};
+      const withCl = (rows) => rows.map(r => cl[r.id] ? { ...r, customLoadKVA: cl[r.id].kva } : r);
+      const res = await API.runAdmd(payload, withCl(this.kiosks), withCl(this.minisubs));
       const prevEarth = AppState.reticResults && AppState.reticResults.earth;
+      const prevMotor = AppState.reticResults && AppState.reticResults.motorStart;
       AppState.reticResults = res;
       if (prevEarth) res.earth = prevEarth;     // keep showing the last earth check until the new one lands
+      if (prevMotor) res.motorStart = prevMotor;
       this._resSig = sig;
       if (this._bgSig === sig) this._bgSig = null;
       // A fresh demand wakes the sync pass (minisub loads on the single line).
@@ -1530,6 +1546,7 @@ const Retic = {
       this.updateVD();
       this.renderSummary();
       this._doEarth();
+      this._doMotorStart();
       // Linked site-plan elements show Demand figures in their properties.
       if (typeof PlanMarkup !== 'undefined' && PlanMarkup.refreshProps) PlanMarkup.refreshProps();
       // Keep the topology diagram live while it's open (edits recompute here).
@@ -1851,6 +1868,7 @@ const Retic = {
       }
       if (!(c.overrides || []).length) tail.push(['+ Fixed loads', 'erven with an override (undiversified)', `${f(c.overrideKVA)} kVA`]);
     }
+    if (c.customLoadKVA) tail.push(['+ Custom loads', 'site-plan loads, kW ÷ pf × diversity', `${f(c.customLoadKVA)} kVA`]);
     if (c.streetLightKVA) tail.push(['+ Street lighting', 'fixed, undiversified', `${f(c.streetLightKVA)} kVA`]);
     tail.push({ cls: 'calc-total', cells: ['Kiosk demand', tail.length > 1 ? 'sum of the above' : '', `${f(c.totalKVA)} kVA`] });
     tail.push(['Current', `S / (√3·${c.vLine} V) = ${f(c.totalKVA)}·1000 / ${f(Math.sqrt(3) * c.vLine, 1)}`, `${f(c.currentA)} A`]);
@@ -2050,6 +2068,7 @@ const Retic = {
       ${networkBlock}
       ${feederBlock}
       ${this._earthSummaryHtml()}
+      ${this._motorSummaryHtml()}
       <div class="retic-toolbar">${this._sldBarHtml()}</div>`;
     this._searchifyCables();
   },
@@ -2310,6 +2329,57 @@ const Retic = {
         }),
       })),
     };
+  },
+
+  // Motor starting check: the static Motor Starting criteria for every custom
+  // motor load fed from a mini-sub or kiosk (results on reticResults.motorStart).
+  _motorPayload() {
+    const res = AppState.reticResults;
+    const msRes = {};
+    if (res && res.minisubs) for (const m of res.minisubs) msRes[m.minisubId] = m;
+    return {
+      settings: { frequency: AppState.frequency || 50 },
+      minisubs: this.minisubs.map(ms => {
+        const r = msRes[ms.id];
+        const tx = this._minisubTx(ms, r ? r.totalKVA : 0);
+        const e = tx && tx.entry;
+        return { id: ms.id, name: ms.name, tx: e ? { kva: tx.kva, zPercent: e.z_percent, xrRatio: e.x_r_ratio, vLvKv: e.voltage_lv_kv } : null };
+      }),
+      kiosks: this.kiosks.map(k => ({
+        id: k.id, name: k.name, fedFrom: k.fedFrom || 'source', hasConsumers: k.erfs.length > 0,
+        feeder: { cable: this._cableDict(k.feederCable), lengthM: Number(k.feederLength) || 0 },
+      })),
+      motors: PlanLoads.motorsForDemand().map(m => ({ ...m, cable: this._cableDict(m.cableType) })),
+    };
+  },
+  async _doMotorStart() {
+    if (typeof PlanLoads === 'undefined' || !AppState.reticResults) return;
+    const body = this._motorPayload();
+    const stamp = this._motorStamp = (this._motorStamp || 0) + 1;
+    if (!body.motors.length) { delete AppState.reticResults.motorStart; this.renderSummary(); return; }
+    try {
+      const r = await API.runReticMotorStart(body);
+      if (stamp !== this._motorStamp || !AppState.reticResults) return;
+      AppState.reticResults.motorStart = r;
+      this.renderSummary();
+    } catch (err) {
+      console.error('Motor starting check failed:', err);
+    }
+  },
+  _motorSummaryHtml() {
+    const r = AppState.reticResults && AppState.reticResults.motorStart;
+    if (!r || !r.motors || !r.motors.length) return '';
+    const rows = r.motors.map(m => {
+      const txt = { pass: 'Pass', warning: 'Warning', fail: 'Fail' }[m.status] || 'To complete';
+      const detail = m.status === 'info' ? m.note
+        : `${m.startingMethod}: ${m.startCurrentA} A, terminal ${m.terminalVoltagePu} p.u., dip ${m.maxDipPct}%${m.torqueOk === false ? ', torque short' : ''}` + (m.issues.length ? '\n' + m.issues.join('\n') : '');
+      return `<div class="summary-row"><span class="k" title="${escHtml(detail || '')}">${escHtml(m.name)}${m.supplyName ? ' · ' + escHtml(m.supplyName) : ''}</span><span class="v">${this._earthPill(m.status === 'warning' ? 'info' : m.status, txt, detail || '')}</span></div>`;
+    }).join('');
+    return `<div class="summary-block">
+      <h3>Motor Starting</h3>
+      ${rows}
+      <details class="earth-basis"><summary>Basis</summary><p>${escHtml(r.basis || '')}</p></details>
+    </div>`;
   },
 
   async _doEarth() {
