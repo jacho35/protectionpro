@@ -252,10 +252,10 @@ const PlanLoads = {
             <label>Power factor<input type="number" min="0.3" max="1" step="0.01" value="${escHtml(String(t.pf))}" data-role="pf"></label>
             <label>Diversity factor<input type="number" min="0.05" max="1" step="0.05" value="${this.diversity(t)}" data-role="diversity" title="Share of the load counted in Demand (1 = all of it)"></label>
             <div class="chk full"><label><input type="checkbox" data-role="motor"${t.motor ? ' checked' : ''}> Motor — check its starting in Demand</label></div>
-            ${t.motor ? `<label>Efficiency<input type="number" min="0.5" max="0.99" step="0.01" value="${t.eff || 0.93}" data-role="eff"></label>
-            <label>Locked-rotor current (× FLC)<input type="number" min="2" max="12" step="0.1" value="${t.lrc || 6}" data-role="lrc"></label>
-            <label>Locked-rotor torque (% FLT)<input type="number" min="50" max="400" step="5" value="${t.lrtPct || 150}" data-role="lrtPct"></label>
-            <label>Rated speed (rpm, 0 = typical)<input type="number" min="0" step="10" value="${t.rpm || 0}" data-role="rpm"></label>` : ''}
+            ${t.motor ? `<label>Efficiency<input type="number" min="0.5" max="0.99" step="0.01" value="${escHtml(String(t.eff || 0.93))}" data-role="eff"></label>
+            <label>Locked-rotor current (× FLC)<input type="number" min="2" max="12" step="0.1" value="${escHtml(String(t.lrc || 6))}" data-role="lrc"></label>
+            <label>Locked-rotor torque (% FLT)<input type="number" min="50" max="400" step="5" value="${escHtml(String(t.lrtPct || 150))}" data-role="lrtPct"></label>
+            <label>Rated speed (rpm, 0 = typical)<input type="number" min="0" step="10" value="${escHtml(String(t.rpm || 0))}" data-role="rpm"></label>` : ''}
             <label>Starting method${sel('start', this.STARTS, t.start)}</label>
             <label class="full">Duty${sel('duty', this.DUTIES, t.duty)}</label>
             <div class="chk full"><span>Can be fed from</span>
