@@ -503,3 +503,39 @@ class TestSequencedStarting:
         solo = _by_name(run_dynamic_motor_starting(build(False)))["MotorA"]["min_v_bus_pu"]
         both = _by_name(run_dynamic_motor_starting(build(True)))["MotorA"]["min_v_bus_pu"]
         assert both < solo - 1e-3  # MotorB's inrush reaches MotorA's bus
+
+
+# ── Motor fed through a feeder cable: supply bus vs terminal bus ────────
+
+def _cable_project(with_cable=True):
+    p = _project()
+    comps = list(p.components)
+    wires = [w for w in p.wires if w.id != "w4"]
+    if with_cable:
+        comps.append(_comp("cable-1", "cable", {
+            "name": "Feeder", "r_per_km": 0.32, "x_per_km": 0.08,
+            "length_km": 0.65, "rated_amps": 200.0, "voltage_kv": 0.4,
+        }))
+        wires += [_wire("w4a", "bus-2", "cable-1"),
+                  _wire("w4b", "cable-1", "motor_induction-1")]
+    else:
+        wires.append(_wire("w4", "bus-2", "motor_induction-1"))
+    return ProjectData(projectName="test", baseMVA=100.0, frequency=50,
+                       components=comps, wires=wires)
+
+
+class TestSupplyBusVoltage:
+    def test_cable_drop_separates_supply_and_terminal_voltage(self):
+        m = run_dynamic_motor_starting(_cable_project())["motors"][0]
+        assert m["supply_bus"] == "LV Bus"
+        c = m["curves"]
+        assert len(c["v_supply_bus_pu"]) == len(c["v_bus_pu"])
+        # The feeder drops voltage: terminal bus sits below the supply bus
+        assert m["min_v_bus_pu"] < m["min_v_supply_bus_pu"] - 0.01
+        assert m["max_supply_bus_dip_pct"] < m["max_bus_dip_pct"]
+        assert all(s >= b - 1e-6 for s, b in zip(c["v_supply_bus_pu"], c["v_bus_pu"]))
+
+    def test_motor_on_real_bus_has_no_supply_bus(self):
+        m = run_dynamic_motor_starting(_cable_project(False))["motors"][0]
+        assert m["supply_bus"] is None
+        assert "v_supply_bus_pu" not in m["curves"]
