@@ -458,6 +458,9 @@ const PlanSync = {
     const seenLoad = new Set();
     for (const el of pm.elements) {
       if (el.type !== 'load') continue;
+      // A cable drawn to the load from a mini-sub / kiosk is its supply.
+      const drawn = (typeof PlanLoads !== 'undefined') ? PlanLoads.drawnFeed(el) : null;
+      if (drawn) { el.props = el.props || {}; el.props.fedFrom = drawn.supply.id; }
       const sup = el.props && el.props.fedFrom ? elById[el.props.fedFrom] : null;
       const owner = sup && sup.reticId ? (R.kiosks.find(k => k.id === sup.reticId) || R.minisubs.find(m => m.id === sup.reticId)) : null;
       let f = el.reticId && !seenLoad.has(el.reticId) ? this._reticRow(el.reticId) : null;
@@ -478,6 +481,7 @@ const PlanSync = {
         f.owner = owner;
       }
       const row = f.row;
+      if (drawn && drawn.route.cableType) row.cableType = drawn.route.cableType;
       seenLoad.add(row.id);
       el.reticId = row.id;
       if (row.name) el.name = row.name;
@@ -550,6 +554,7 @@ const PlanSync = {
             summary.feeders++;
           }
         }
+        if (child && child.type === 'load') continue;   // a load ends its cable (step 6), it feeds nothing
         queue.push(edge.other);
       }
     }

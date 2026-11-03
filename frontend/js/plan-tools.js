@@ -555,11 +555,11 @@ PlanTools.register({
 
   // A click on a component is a connection, whether or not "Snap to placed
   // parts" is on: that setting only governs snapping, not what a route ends on.
+  // The part nearest the cursor wins, not the topmost (a pole drawn over its
+  // kiosk must not take the kiosk's cable).
   _snap(pt) {
-    const s = PlanTools.snap(pt);
-    if (s.snapped === 'el') return s;
-    const el = PlanEngine.findElementAt(pt, 12);
-    return el ? { x: el.x, y: el.y, snapped: 'el', targetId: el.id } : s;
+    const el = PlanEngine.findElementsAt(pt, 12)[0];
+    return el ? { x: el.x, y: el.y, snapped: 'el', targetId: el.id } : PlanTools.snap(pt, { wantElements: false });
   },
 
   onMove(pt) {
