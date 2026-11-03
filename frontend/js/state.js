@@ -217,6 +217,7 @@ const AppState = {
     _kioskSeq: 1,
     _erfSeq: 1,
     _msSeq: 2,
+    _loadSeq: 1,   // custom loads: kiosk.loads / minisub.loads rows [{id,name,loadType,kw,cableType,length}]
   },
   // reticResults (latest /api/analysis/admd response) is a RESULT_SLOTS accessor: saved with the project
 
@@ -270,7 +271,7 @@ const AppState = {
         lvConductor: '', mvConductor: '',   // project standard conductor ('Al' | 'Cu' | '' = any): listed first in cable pickers
       },
       minisubs: [{ id: 'source', name: 'Minisub 1' }],
-      kiosks: [], _kioskSeq: 1, _erfSeq: 1, _msSeq: 2,
+      kiosks: [], _kioskSeq: 1, _erfSeq: 1, _msSeq: 2, _loadSeq: 1,
       streetLighting: this._defaultStreetLighting(),
     };
   },
@@ -369,6 +370,10 @@ const AppState = {
     return `erf_${this.reticulation._erfSeq++}`;
   },
 
+  reticGenLoadId() {
+    return `rload_${this.reticulation._loadSeq++}`;
+  },
+
   reticGenMinisubId() {
     return `minisub_${this.reticulation._msSeq++}`;
   },
@@ -428,7 +433,7 @@ const AppState = {
       activeFloorId: null,
       layers,             // discipline layers (filter by entity type) — shared
       activeLayerId: null,
-      layersVersion: 3,   // 2 = the Custom Loads layer exists; 3 = the LV layer holds custom loads (older projects get both added on load)
+      layersVersion: 4,   // 2 = the Custom Loads layer exists; 3 = the LV layer holds custom loads; 4 = the Custom Loads layer holds every load type (older projects get both added on load)
       loadTypes: (typeof PLAN_DEFAULT_LOAD_TYPES !== 'undefined') ? JSON.parse(JSON.stringify(PLAN_DEFAULT_LOAD_TYPES)) : [],  // custom load types (plan-loads.js) — shared
       styles: {},         // sparse overrides merged over PLAN_DEFS defaults — shared
       settings: {
@@ -1821,6 +1826,7 @@ const AppState = {
         _kioskSeq: r._kioskSeq || 1,
         _erfSeq: r._erfSeq || 1,
         _msSeq: r._msSeq || 2,
+        _loadSeq: r._loadSeq || 1,
         streetLighting: this._restoreStreetLighting(r.streetLighting),
       };
       // Repair id sequence counters so genId never collides with loaded ids
@@ -1831,9 +1837,14 @@ const AppState = {
           const me = /_(\d+)$/.exec(String(e.id || '')); if (me) maxE = Math.max(maxE, +me[1]);
         }
       }
+      let maxL = 0;
+      const seeLoads = (owner) => { for (const l of (owner.loads || [])) { const ml = /_(\d+)$/.exec(String(l.id || '')); if (ml) maxL = Math.max(maxL, +ml[1]); } };
+      for (const k of this.reticulation.kiosks) seeLoads(k);
       for (const m of this.reticulation.minisubs) {
         const mm = /^minisub_(\d+)$/.exec(String(m.id || '')); if (mm) maxM = Math.max(maxM, +mm[1]);
+        seeLoads(m);
       }
+      this.reticulation._loadSeq = Math.max(this.reticulation._loadSeq, maxL + 1);
       this.reticulation._kioskSeq = Math.max(this.reticulation._kioskSeq, maxK + 1);
       this.reticulation._erfSeq = Math.max(this.reticulation._erfSeq, maxE + 1);
       this.reticulation._msSeq = Math.max(this.reticulation._msSeq, maxM + 1);
@@ -1884,15 +1895,16 @@ const AppState = {
             if (d) L.push(JSON.parse(JSON.stringify(d)));
           }
           // Version 3: the LV layer holds custom loads, so LV / service cables can end on one.
-          if ((p.layersVersion || 1) < 3) {
+          if ((p.layersVersion || 1) < 4) {
             const lv = L.find(l => l.id === 'lv');
             if (lv && Array.isArray(lv.visibleElementTypes) && !lv.visibleElementTypes.includes('load')) lv.visibleElementTypes.push('load');
             const ld = L.find(l => l.id === 'loads');
+            if (ld && Array.isArray(ld.visibleElementTypes) && !ld.visibleElementTypes.includes('load')) ld.visibleElementTypes.push('load');
             if (ld && Array.isArray(ld.routeTypes)) for (const r of ['lv', 'service']) if (!ld.routeTypes.includes(r)) ld.routeTypes.push(r);
           }
           return L;
         })(),
-        layersVersion: 3,
+        layersVersion: 4,
         loadTypes: Array.isArray(p.loadTypes) ? p.loadTypes : pdef.loadTypes,
         activeLayerId: p.activeLayerId || null,
         styles: (p.styles && typeof p.styles === 'object') ? p.styles : {},

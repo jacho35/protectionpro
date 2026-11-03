@@ -2,7 +2,7 @@
  *
  * Read from what every workspace has already worked out — nothing here runs a
  * study:
- *   · Demand: transformer loading, feeder and service volt drop, earth loop
+ *   · Demand: transformer loading, feeder and service volt drop, motor starting, earth loop
  *     and ECC (AppState.reticResults);
  *   · Street lighting: each circuit's verdict (StreetLight._results);
  *   · Schedules: the circuit check's fails and warnings (dbCheckResults);
@@ -217,6 +217,17 @@ const Issues = {
       this._capped(out, fails, (n) => ({ key: 'retic-earth:more', sev: 'fail', ws: 'retic', where: 'Demand', run: () => switchWorkspace('retic'),
         text: `${n} more earth-fault checks fail` }));
     }
+    // Custom motor loads: the starting check (a fail, or a warning on the dip).
+    const motors = res.motorStart && Array.isArray(res.motorStart.motors) ? res.motorStart.motors : [];
+    const starts = [];
+    for (const m of motors) {
+      if (m.status !== 'fail' && m.status !== 'warning') continue;
+      starts.push({ key: 'retic-motor:' + m.id, sev: m.status === 'fail' ? 'fail' : 'warn', ws: 'retic',
+        where: `${m.supplyName || 'Supply'} › ${m.name}`, go: 'retic:' + m.id,
+        text: `${m.name}: ${(m.issues && m.issues[0]) || (m.status === 'fail' ? 'may not start' : 'starting dip too high')}` });
+    }
+    this._capped(out, starts, (n) => ({ key: 'retic-motor:more', sev: 'warn', ws: 'retic', where: 'Demand', run: () => switchWorkspace('retic'),
+      text: `${n} more motors fail or are marginal at starting` }));
   },
 
   // ── Street lighting ──

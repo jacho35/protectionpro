@@ -151,7 +151,8 @@ const PlanUI = {
     const pm = AppState.planMarkup;
     const u = PlanSync.reticUnplaced();
     const nErven = u.erven.reduce((n, g) => n + g.erfs.length, 0);
-    const n = u.minisubs.length + u.kiosks.length + nErven;
+    const nLoads = (u.loads || []).length;
+    const n = u.minisubs.length + u.kiosks.length + nErven + nLoads;
     if (!n) return '';
     const item = (id, type, label, sub) => `<button type="button" class="plan-pal-item plan-sld-item" data-retic-place="${escHtml(id)}" title="Place ${escHtml(label)} on the plan — then click where it goes">
       <span class="plan-pal-swatch" style="background:${escHtml(PLAN_DEFS.elementColor(type, pm.styles))}"></span><span class="plan-pal-name">${escHtml(label)}</span><small>${escHtml(sub)}</small></button>`;
@@ -161,6 +162,10 @@ const PlanUI = {
     for (const g of u.erven) {
       html += `<details class="plan-unplaced-grp"><summary>${escHtml(g.kiosk.name || 'Kiosk')} · ${g.erfs.length} erf${g.erfs.length === 1 ? '' : 'ven'}</summary>`
         + g.erfs.map(e => item(e.id, 'erf', `Erf ${e.erfNumber || ''}`.trim(), g.kiosk.name || 'Kiosk')).join('') + `</details>`;
+    }
+    if (nLoads) {
+      html += `<details class="plan-unplaced-grp"><summary>Custom loads · ${nLoads}</summary>`
+        + u.loads.map(l => item(l.row.id, 'load', l.row.name || 'Custom load', l.owner.name || 'Supply')).join('') + `</details>`;
     }
     return html + `</div>`;
   },
@@ -1292,6 +1297,7 @@ const PlanUI = {
       if (key === 'name' || key === 'rotation') item[key] = val;
       else if (key === 'symScale') { if (val > 0 && val !== 1) item.scale = Math.min(10, val); else delete item.scale; }
       else { item.props = item.props || {}; item.props[key] = val; }
+      if (item.type === 'load' && typeof PlanLoads !== 'undefined') PlanLoads.pushToRow(item, key, val);
       if (key === 'name' && typeof PlanSync !== 'undefined' && PlanSync.onElementRenamed) {
         // Typing syncs after a short pause as well as on commit: a name typed
         // and then abandoned by clicking elsewhere never fires `change`.

@@ -29,7 +29,9 @@ const Links = {
   // [a, b] address pairs from the project as it is now.
   KINDS: [
     { id: 'plan-demand', label: 'Drawn item ↔ Demand row', field: 'element.reticId',
-      list: (L) => L._els().filter(e => e.reticId && ['minisub', 'kiosk', 'erf'].includes(e.type)).map(e => ['plan:' + e.id, 'retic:' + e.reticId]) },
+      list: (L) => L._els().filter(e => e.reticId && ['minisub', 'kiosk', 'erf', 'load'].includes(e.type)).map(e => ['plan:' + e.id, 'retic:' + e.reticId]) },
+    { id: 'demand-sld-load', label: 'Demand custom load ↔ its single-line motor / static load', field: 'component.reticLoadId',
+      list: (L) => L._comps().filter(c => c.reticLoadId).map(c => ['sld:' + c.id, 'retic:' + c.reticLoadId]) },
     { id: 'plan-sld', label: 'Drawn board / supply ↔ single-line part', field: 'element.sldId',
       list: (L) => L._els().filter(e => e.sldId).map(e => ['plan:' + e.id, 'sld:' + e.sldId]) },
     { id: 'plan-sld-members', label: 'Drawn switchboard ↔ its single-line sections', field: 'element.sldMembers',
@@ -220,10 +222,11 @@ const Links = {
         if (typeof Retic !== 'undefined' && Retic._isMobile && Retic._isMobile() && Retic._toggleSummary) Retic._toggleSummary(true);
         this._later(() => this._flash(document.querySelector(`[data-ms-block="${CSS.escape(id)}"]`)));
       } else {
-        const k = f.kind === 'kiosk' ? f.row : f.kiosk;
+        const k = f.kind === 'kiosk' ? f.row : (f.kind === 'load' && f.owner && f.owner.erfs ? f.owner : f.kiosk);
         if (k && k.collapsed) { k.collapsed = false; if (typeof Retic !== 'undefined') Retic.render(); }
         this._later(() => this._flash(f.kind === 'kiosk'
           ? document.querySelector(`.kiosk-card[data-kiosk="${CSS.escape(id)}"]`)
+          : f.kind === 'load' ? document.querySelector(`tr[data-load-row="${CSS.escape(id)}"]`)
           : document.querySelector(`tr[data-erf="${CSS.escape(id)}"]`)));
       }
       return true;

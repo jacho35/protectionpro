@@ -144,7 +144,7 @@ const CollabData = {
   // restores, so Collab re-installs on every tick.
   counters() {
     const out = [], r = this._retic(), sl = this._sl(), rp = this._rp();
-    if (r) for (const n of ['_kioskSeq', '_erfSeq', '_msSeq']) out.push([r, n]);
+    if (r) for (const n of ['_kioskSeq', '_erfSeq', '_msSeq', '_loadSeq']) out.push([r, n]);
     if (sl) for (const n of ['_circSeq', '_poleSeq', '_rdSeq', '_phSeq']) out.push([sl, n]);
     if (rp) out.push([rp, '_seq']);
     if (AppState.planMarkup) out.push([AppState.planMarkup, '_seq']);
