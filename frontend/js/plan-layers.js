@@ -30,7 +30,8 @@ const PlanLayers = {
   },
 
   // The keys an element answers to in a layer's visibleElementTypes: its type,
-  // and for a custom load also its load type ('load:pump').
+  // and for a custom load also its load type ('load:pump'). A layer that lists
+  // plain 'load' holds every custom load (the LV layer, so a cable can end on one).
   elementKeys(el) {
     const k = [el.type];
     if (el.type === 'load' && el.props && el.props.loadType) k.unshift('load:' + el.props.loadType);
@@ -109,6 +110,7 @@ const PlanLayers = {
       out.push({ key: type, name: def.name });
     }
     if (domain === 'retic' && typeof PlanLoads !== 'undefined') {
+      out.push({ key: 'load', name: 'All custom loads' });
       for (const t of PlanLoads.list()) out.push({ key: 'load:' + t.id, name: t.name + ' (load)' });
     }
     return out;
