@@ -362,9 +362,9 @@ PlanTools.register({
 
   _entitiesInRect(r) {
     const pm = AppState.planMarkup, ids = [];
-    for (const el of pm.elements) if (this._ptIn(el, r)) ids.push(el.id);
-    for (const rt of pm.routes) if (rt.points.some(p => this._ptIn(p, r))) ids.push(rt.id);
-    for (const t of pm.trenches) if (t.points.some(p => this._ptIn(p, r))) ids.push(t.id);
+    for (const el of pm.elements) if (PlanLayers.pickableEl(el) && this._ptIn(el, r)) ids.push(el.id);
+    for (const rt of pm.routes) if (PlanLayers.pickableRoute(rt) && rt.points.some(p => this._ptIn(p, r))) ids.push(rt.id);
+    for (const t of pm.trenches) if (PlanLayers.pickableTrench(t) && t.points.some(p => this._ptIn(p, r))) ids.push(t.id);
     for (const c of pm.crossings) if (this._ptIn(c.p1, r) || this._ptIn(c.p2, r)) ids.push(c.id);
     for (const tx of pm.texts) if (this._ptIn(tx, r)) ids.push(tx.id);
     for (const m of pm.measurements) if (m.points.some(p => this._ptIn(p, r))) ids.push(m.id);
@@ -423,7 +423,7 @@ PlanTools.register({
 PlanTools.register({
   id: 'place', cursor: 'crosshair',
   _ghost: null,
-  onActivate(opts) { this._type = opts.type; this._ghost = null; },
+  onActivate(opts) { this._type = opts.type; this._loadType = opts.loadType || null; this._ghost = null; },
   cancel() { this._ghost = null; if (typeof PlanMarkup !== 'undefined') PlanTools.set('select'); },
 
   onMove(pt) {
@@ -440,9 +440,9 @@ PlanTools.register({
     const el = {
       id: AppState.planGenId('pmel'),
       type, x: s.x, y: s.y, rotation: 0,
-      name: PlanMarkup.nextName(type),
+      name: type === 'load' && this._loadType ? PlanLoads.nextName(this._loadType) : PlanMarkup.nextName(type),
       reticId: null,
-      props: PLAN_DEFS.defaults(type),
+      props: type === 'load' && this._loadType ? PlanLoads.newProps(this._loadType, s.x, s.y) : PLAN_DEFS.defaults(type),
     };
     AppState.planMarkup.elements.push(el);
     PlanMarkup.selectOnly(el.id);
@@ -455,7 +455,8 @@ PlanTools.register({
   drawOverlay(ctx, zoom) {
     if (!this._ghost) return;
     const def = PLAN_DEFS.element(this._type);
-    const color = def ? def.color : '#64748b';
+    const lt = this._type === 'load' && this._loadType ? PlanLoads.get(this._loadType) : null;
+    const color = lt ? lt.color : def ? def.color : '#64748b';
     ctx.save();
     ctx.globalAlpha = 0.5;
     ctx.translate(this._ghost.x, this._ghost.y);

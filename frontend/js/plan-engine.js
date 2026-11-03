@@ -313,6 +313,7 @@ const PlanEngine = {
     for (const t of pm.trenches) this._drawTrench(ctx, t, sel.has(t.id));
     for (const c of pm.crossings) this._drawCrossing(ctx, c, sel.has(c.id));
     for (const r of pm.routes) this._drawRoute(ctx, r, sel.has(r.id));
+    this._drawLoadFeeds(ctx);
     for (const el of pm.elements) this._drawElementEntity(ctx, el, sel.has(el.id));
     for (const tx of pm.texts) this._drawText(ctx, tx, sel.has(tx.id));
     for (const m of pm.measurements) this._drawMeasurement(ctx, m, sel.has(m.id));
@@ -406,13 +407,10 @@ const PlanEngine = {
   },
 
 
-  _emphasis(entityTypeKey, type) {
-    // Dim entities not primary on the active discipline layer (source-app feel).
-    const pm = AppState.planMarkup;
-    const layer = pm.layers.find(l => l.id === pm.activeLayerId);
-    if (!layer) return 1;
-    const list = layer[entityTypeKey] || [];
-    return list.includes(type) ? 1 : 0.25;
+  // Opacity of an item under the layer rules (plan-layers.js): 1 on the shown
+  // layer, ghosted (or 0 = hidden) off it, 0 on a hidden layer.
+  _emphasis(entityTypeKey, type, el) {
+    return PlanLayers.alpha(entityTypeKey, el ? PlanLayers.elementKeys(el) : [type]);
   },
 
   // Constant world-pixel half-extent of a device glyph (matches the source
@@ -432,11 +430,11 @@ const PlanEngine = {
 
   _drawElementEntity(ctx, el, selected) {
     const def = PLAN_DEFS.element(el.type);
-    const color = PLAN_DEFS.elementColor(el.type, AppState.planMarkup.styles);
+    const color = el.type === 'load' ? PlanLoads.color(el) : PLAN_DEFS.elementColor(el.type, AppState.planMarkup.styles);
     const half = this.glyphHalf(el.type, el.props, el);
     const bg = this._cssVar('--plan-stage-bg', '#ffffff');
     ctx.save();
-    ctx.globalAlpha = this._emphasis('visibleElementTypes', el.type);
+    ctx.globalAlpha = this._emphasis('visibleElementTypes', el.type, el);
     ctx.translate(el.x, el.y);
     if (el.rotation) ctx.rotate(el.rotation * Math.PI / 180);
     // Source-matched glyph; fall back to the registry primitive if absent.
@@ -448,7 +446,7 @@ const PlanEngine = {
     ctx.restore();
     // Label + selection ring in unrotated space
     ctx.save();
-    ctx.globalAlpha = this._emphasis('visibleElementTypes', el.type);
+    ctx.globalAlpha = this._emphasis('visibleElementTypes', el.type, el);
     if (selected) {
       const pad = 4 / this.view.zoom;
       ctx.strokeStyle = '#2563eb';
@@ -463,6 +461,10 @@ const PlanEngine = {
       ctx.fillStyle = this._cssVar('--plan-label', '#334155');
       ctx.textAlign = 'center'; ctx.textBaseline = 'top';
       ctx.fillText(el.name, el.x, el.y + half + 2 / this.view.zoom);
+      if (el.type === 'load') {
+        ctx.font = `${9 / this.view.zoom}px system-ui, sans-serif`;
+        ctx.fillText(`${PlanLoads.kw(el)} kW`, el.x, el.y + half + 2 / this.view.zoom + fpx);
+      }
     }
     // Link badge (UX-5): a small chain glyph on elements linked to the SLD.
     if (el.sldId) this._drawLinkBadge(ctx, el.x + half, el.y - half);
@@ -520,6 +522,33 @@ const PlanEngine = {
       ctx.fillText(label, mid.x, mid.y - 3 / this.view.zoom);
     }
     ctx.restore();
+  },
+
+  // Supply cable of every custom load: a straight line from its mini-sub or
+  // kiosk (derived from the load's `fedFrom`, so it is not a separate item).
+  _drawLoadFeeds(ctx) {
+    const pm = AppState.planMarkup;
+    const a = PlanLayers.alpha('routeTypes', ['loadfeed']);
+    if (!a) return;
+    for (const el of pm.elements) {
+      if (el.type !== 'load') continue;
+      const l = PlanLoads.feedLine(el); if (!l) continue;
+      const color = PlanLoads.color(el), z = this.view.zoom;
+      ctx.save();
+      ctx.globalAlpha = a;
+      ctx.strokeStyle = color; ctx.lineWidth = 1.6 / z; ctx.lineCap = 'round';
+      ctx.setLineDash([7 / z, 4 / z]);
+      ctx.beginPath(); ctx.moveTo(l.a.x, l.a.y); ctx.lineTo(l.b.x, l.b.y); ctx.stroke();
+      ctx.setLineDash([]);
+      const m = PlanLoads.feedLengthM(el);
+      const label = (el.props.cableType ? el.props.cableType + '  ' : '') + (m != null ? this.lenLabel(this._polyLen([l.a, l.b])) : '');
+      if (label.trim()) {
+        ctx.font = `${11 / z}px system-ui, sans-serif`;
+        ctx.fillStyle = color; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+        ctx.fillText(label, (l.a.x + l.b.x) / 2, (l.a.y + l.b.y) / 2 - 3 / z);
+      }
+      ctx.restore();
+    }
   },
 
   _drawTrench(ctx, t, selected) {
@@ -625,6 +654,7 @@ const PlanEngine = {
     for (const t of pm.trenches) this._drawTrench(ctx, t, false);
     for (const c of pm.crossings) this._drawCrossing(ctx, c, false);
     for (const r of pm.routes) this._drawRoute(ctx, r, false);
+    this._drawLoadFeeds(ctx);
     for (const el of pm.elements) this._drawElementEntity(ctx, el, false);
     for (const tx of pm.texts) this._drawText(ctx, tx, false);
     for (const m of pm.measurements) this._drawMeasurement(ctx, m, false);
@@ -681,6 +711,7 @@ const PlanEngine = {
     const pm = AppState.planMarkup;
     for (let i = pm.elements.length - 1; i >= 0; i--) {
       const el = pm.elements[i];
+      if (!PlanLayers.pickableEl(el)) continue;
       const half = this.glyphHalf(el.type, el.props, el);
       const tol = (tolPx != null ? tolPx : 6) / this.view.zoom;
       if (Math.abs(pt.x - el.x) <= half + tol && Math.abs(pt.y - el.y) <= half + tol) return el;
@@ -697,6 +728,7 @@ const PlanEngine = {
     const hits = [];
     for (let i = pm.elements.length - 1; i >= 0; i--) {
       const el = pm.elements[i];
+      if (!PlanLayers.pickableEl(el)) continue;
       const half = this.glyphHalf(el.type, el.props, el);
       if (Math.abs(pt.x - el.x) <= half + tol && Math.abs(pt.y - el.y) <= half + tol) {
         hits.push({ el, dist: Math.hypot(pt.x - el.x, pt.y - el.y), order: pm.elements.length - i });
@@ -713,6 +745,7 @@ const PlanEngine = {
     const out = [];
     for (let i = pm.trenches.length - 1; i >= 0; i--) {
       const t = pm.trenches[i];
+      if (!PlanLayers.pickableTrench(t)) continue;
       for (let s = 1; s < t.points.length; s++) {
         if (this._distToSeg(pt, t.points[s - 1], t.points[s]) <= tol) { out.push(t); break; }
       }
@@ -750,6 +783,7 @@ const PlanEngine = {
     const tol = (tolPx || 8) / this.view.zoom;
     for (let i = pm.routes.length - 1; i >= 0; i--) {
       const r = pm.routes[i];
+      if (!PlanLayers.pickableRoute(r)) continue;
       for (let s = 1; s < r.points.length; s++) {
         if (this._distToSeg(pt, r.points[s - 1], r.points[s]) <= tol) return { route: r, segIndex: s - 1 };
       }
@@ -766,6 +800,7 @@ const PlanEngine = {
     const hits = [];
     for (let i = pm.routes.length - 1; i >= 0; i--) {
       const r = pm.routes[i];
+      if (!PlanLayers.pickableRoute(r)) continue;
       let best = Infinity;
       for (let s = 1; s < r.points.length; s++) {
         best = Math.min(best, this._distToSeg(pt, r.points[s - 1], r.points[s]));
@@ -781,6 +816,7 @@ const PlanEngine = {
     const tol = (tolPx || 8) / this.view.zoom;
     for (let i = pm.trenches.length - 1; i >= 0; i--) {
       const t = pm.trenches[i];
+      if (!PlanLayers.pickableTrench(t)) continue;
       for (let s = 1; s < t.points.length; s++) {
         if (this._distToSeg(pt, t.points[s - 1], t.points[s]) <= tol) return { trench: t, segIndex: s - 1 };
       }
@@ -800,6 +836,7 @@ const PlanEngine = {
   findRouteVertexAt(pt, tolPx) {
     const pm = AppState.planMarkup;
     for (let i = pm.routes.length - 1; i >= 0; i--) {
+      if (!PlanLayers.pickableRoute(pm.routes[i])) continue;
       const vi = this.findVertexAt(pm.routes[i].points, pt, tolPx || 9);
       if (vi >= 0) return { route: pm.routes[i], index: vi };
     }

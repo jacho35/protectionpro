@@ -71,13 +71,15 @@ const PlanUI = {
     const t = (typeof PlanTools !== 'undefined') && PlanTools.active;
     const type = t && PlanTools.opts && PlanTools.opts.type;
     if (!t || t.id === 'select' || !type) return;
-    this.paletteEl.querySelectorAll('.plan-pal-item[data-type]').forEach(b => b.classList.toggle('armed', b.dataset.type === type));
+    const lt = t.opts && t.opts.loadType;
+    this.paletteEl.querySelectorAll('.plan-pal-item[data-type]').forEach(b =>
+      b.classList.toggle('armed', b.dataset.type === type && (!lt || b.dataset.loadtype === lt)));
   },
 
   _palItem(it) {
     const toolId = this._toolFor(it.kind);
     const ready = typeof PlanTools !== 'undefined' && PlanTools._tools[toolId];
-    return `<button type="button" class="plan-pal-item${ready ? '' : ' disabled'}" data-kind="${escHtml(it.kind)}" data-type="${escHtml(it.type)}"${ready ? '' : ' disabled'}${it.desc ? ` title="${escHtml(it.desc)}"` : ''}>
+    return `<button type="button" class="plan-pal-item${ready ? '' : ' disabled'}" data-kind="${escHtml(it.kind)}" data-type="${escHtml(it.type)}"${it.loadType ? ` data-loadtype="${escHtml(it.loadType)}"` : ''}${ready ? '' : ' disabled'}${it.desc ? ` title="${escHtml(it.desc)}"` : ''}>
       <span class="plan-pal-swatch" style="background:${escHtml(it.color)}"></span><span class="plan-pal-name">${escHtml(it.name)}</span>${it.desc ? `<small>${escHtml(it.desc)}</small>` : ''}</button>`;
   },
 
@@ -112,6 +114,7 @@ const PlanUI = {
       html += `</div>`;
     }
     html += `</div>`;
+    if (domain === 'retic') html += `<div class="plan-fromsld"><button type="button" class="plan-btn" data-role="load-types" title="Define pumps, boreholes and other loads that are fed from a mini-sub or kiosk">Load types…</button></div>`;
     // "Not placed yet": Demand rows (added in Demand or Quick Build) no drawn
     // element stands for. Pick one, then click where it goes.
     if (domain === 'retic') html += this._reticTrayHtml();
@@ -314,6 +317,7 @@ const PlanUI = {
       if (a === 'photolib') { if (typeof PhotoLib !== 'undefined') PhotoLib.open(); return; }
       PlanMarkup.runAction(a); return;
     }
+    if (e.target.closest('[data-role="load-types"]')) { PlanLoads.openManager(); return; }
     const fold = e.target.closest('[data-role="fold"]');
     if (fold) {
       const g = fold.dataset.group;
@@ -368,7 +372,10 @@ const PlanUI = {
     const item = e.target.closest('.plan-pal-item');
     if (!item || item.disabled) return;
     const kind = item.dataset.kind, type = item.dataset.type;
-    if (kind === 'element') {
+    if (kind === 'element' && item.dataset.loadtype) {
+      PlanTools.set('place', { type, loadType: item.dataset.loadtype });   // a project load type: one at a time
+    }
+    else if (kind === 'element') {
       // Point devices: the placing bar's choice remembered for this type.
       const byMode = { single: 'place', array: 'array', path: 'devpath' };
       PlanTools.set(byMode[this.placeModeFor(type)] || 'place', { type });
@@ -565,7 +572,7 @@ const PlanUI = {
     if (kind === 'element') {
       const def = PLAN_DEFS.element(item.type);
       title = def ? def.name : item.type;
-      fields = (def && def.fields) || [];
+      fields = (item.type === 'load' && typeof PlanLoads !== 'undefined') ? PlanLoads.fieldsFor(item) : ((def && def.fields) || []);
       fields = fields.concat([{ key: 'symScale', label: 'Symbol scale ×', type: 'number', min: 0.25, max: 10, step: 0.25 }]);
       getVal = (k) => (k === 'symScale') ? (item.scale || '') : (k === 'name' || k === 'rotation') ? item[k] : (item.props ? item.props[k] : undefined);
     } else if (kind === 'route') {
@@ -628,6 +635,7 @@ const PlanUI = {
       }
       else html += `<button type="button" class="plan-btn" data-role="open-lighting">Lighting for this ${({ escape: 'route', perimeter: 'fence', outdoor: 'area', sports: 'field', obtrusive: 'check' })[item.kind] || 'room'}…</button>`;
     }
+    if (kind === 'element' && typeof PlanLoads !== 'undefined') html += PlanLoads.summaryHtml(item);
     html += this._defaultCableButton(item, kind);
     html += this._demandBlock(item, kind);
     html += this._demandLinkField(item, kind);

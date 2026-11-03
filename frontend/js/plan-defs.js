@@ -86,6 +86,20 @@ const PLAN_DEFS = {
       defaults: {},
       fields: [{ key: 'name', label: 'Erf Number', type: 'text' }],
     },
+    // A project-defined load (pump, borehole, motor…). Its look, rating and
+    // allowed supply come from a load type (plan-loads.js); `fields` here are
+    // the ones bulk edit can set — the single-item panel adds type / fed-from.
+    load: {
+      name: 'Custom Load', domain: 'retic', group: 'Loads', color: '#0ea5e9', scale: 1,
+      symbol: 'circle', dxf: { shape: 'circle', sizeM: 1.0 }, rotatable: false,
+      schedule: null, namePrefix: 'LD', dxfLayer: 'CUSTOM_LOADS',
+      defaults: { loadType: '', fedFrom: '', kw: '', cableType: '' },
+      fields: [
+        { key: 'name', label: 'Name', type: 'text' },
+        { key: 'kw', label: 'Power', type: 'number', unit: 'kW', min: 0, step: 0.1 },
+        { key: 'cableType', label: 'Supply cable', type: 'cable_select', voltage: 'lv' },
+      ],
+    },
     manhole: {
       name: 'Manhole', domain: 'retic', group: 'Fibre', color: '#a855f7', scale: 1,
       symbol: 'square', dxf: { shape: 'square', sizeM: 1.0 }, rotatable: false,
@@ -327,6 +341,11 @@ const PLAN_DEFS = {
     };
     for (const [type, def] of Object.entries(this.elements)) {
       if (def.domain !== domain || def.adoptOnly) continue;   // adopt-only types are placed via "From SLD"
+      if (type === 'load') {                                  // one palette item per project load type
+        const lt = (typeof PlanLoads !== 'undefined') ? PlanLoads.list() : [];
+        for (const t of lt) push('Loads', { type, kind: 'element', name: t.name, color: t.color, loadType: t.id });
+        continue;
+      }
       push(def.group || 'Other', { type, kind: 'element', name: def.name, color: def.color });
     }
     for (const [type, def] of Object.entries(this.routes)) {
@@ -389,6 +408,12 @@ const PLAN_DEFS = {
   },
 };
 
+// The load types a new project starts with (plan-loads.js owns the rest).
+const PLAN_DEFAULT_LOAD_TYPES = [{
+  id: 'pump', name: 'Pump', letter: 'P', color: '#0ea5e9', kw: 15, volt: 400, phases: 3, pf: 0.85,
+  start: 'Star-delta', duty: 'Continuous', supply: { minisub: true, kiosk: true },
+}];
+
 // Discipline layers (from Retic Builder's sitePlan.drawings defaults). These
 // filter what is emphasized per sheet; entities are matched by TYPE, so an
 // entity can appear (dimmed) on non-primary layers.
@@ -417,6 +442,11 @@ const PLAN_DEFAULT_LAYERS = [
     id: 'sl', name: 'Street Lighting', discipline: 'sl', color: '#22c55e',
     visibleElementTypes: ['pole', 'kiosk'], routeTypes: ['sl'],
     trenchTypes: ['LV/SL'], showCrossings: false, drawingNo: '', revision: '',
+  },
+  {
+    id: 'loads', name: 'Custom Loads', discipline: 'loads', color: '#0ea5e9',
+    visibleElementTypes: ['minisub', 'kiosk', 'load:pump'], routeTypes: ['loadfeed'],
+    trenchTypes: [], showCrossings: false, drawingNo: '', revision: '',
   },
   // Building-distribution discipline layers (used when the Building domain is active)
   {
