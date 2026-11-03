@@ -134,7 +134,7 @@ const PlanLayers = {
       .map(L => JSON.parse(JSON.stringify(L)));
     const loads = out.find(L => L.id === 'loads');
     if (loads && typeof PlanLoads !== 'undefined') {
-      loads.visibleElementTypes = ['minisub', 'kiosk'].concat(PlanLoads.list().map(t => 'load:' + t.id));
+      loads.visibleElementTypes = ['minisub', 'kiosk', 'load'].concat(PlanLoads.list().map(t => 'load:' + t.id));
     }
     return out;
   },
