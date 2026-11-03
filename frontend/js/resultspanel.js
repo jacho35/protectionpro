@@ -174,7 +174,7 @@ const ResultsPanel = {
     const c = typeof AppState !== 'undefined' && AppState.components.get(id);
     return c ? (c.props?.name || c.id) : id;
   },
-  _cell(v, t) { return { v, t: t == null ? (v == null ? '—' : String(v)) : t }; },
+  _cell(v, t) { return { v, t: t == null ? (v == null ? '—' : escHtml(String(v))) : t }; },
 
   // ── Models: what each tab shows ───────────────────────────────────────
   // { summary, notes: [{level, text}], sections: [{ id, title, cols: [{ key, label, num, title }],
