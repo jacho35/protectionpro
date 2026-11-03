@@ -80,9 +80,10 @@ const PlanMarkup = {
           </label>
           <button class="plan-tb-btn plan-icon-btn" data-action="floors" aria-label="Manage floors" title="Add, rename, reorder or delete floors">${I('floors')}</button>
         </div>
-        <label class="plan-tb-field" id="plan-layer-field" title="Emphasise one discipline; the rest are dimmed">Show
+        <label class="plan-tb-field" id="plan-layer-field" title="Work on one layer: the others are faded and can't be selected">Show
           <select id="plan-layer-select"></select>
         </label>
+        <button class="plan-tb-btn" id="plan-layers-btn" data-action="layers" title="Rename, recolour, hide, lock and edit the contents of the layers">Layers…</button>
         <input type="file" id="plan-file-input" accept="image/png,image/jpeg,image/webp,application/pdf,.dxf,.json,application/json" style="display:none">
       </div>
       <div id="plan-main" class="plan-main">
@@ -160,10 +161,7 @@ const PlanMarkup = {
     });
     tb.addEventListener('change', (e) => {
       if (e.target.id === 'plan-floor-select') this.setActiveFloor(e.target.value);
-      else if (e.target.id === 'plan-layer-select') {
-        AppState.planMarkup.activeLayerId = e.target.value || null;
-        if (typeof PlanEngine !== 'undefined') PlanEngine.requestDraw({ fg: true });
-      }
+      else if (e.target.id === 'plan-layer-select') PlanLayers.setActive(e.target.value);
     });
     const backdrop = document.getElementById('plan-drawer-backdrop');
     if (backdrop) backdrop.addEventListener('click', () => this._closeDrawers());
@@ -194,6 +192,7 @@ const PlanMarkup = {
     else if (action === 'toggle-palette') this._toggleDrawer('palette');
     else if (action === 'toggle-props') this._toggleDrawer('props');
     else if (action === 'floors') this._openFloorManager();
+    else if (action === 'layers') PlanLayers.openManager();
     else if (action === 'undo') this.undo();
     else if (action === 'redo') this.redo();
     else if (action === 'fit') PlanEngine.zoomFit();

@@ -83,6 +83,7 @@ const CollabData = {
       { key: 'plan.floors', kind: 'list', group: 'plan', structural: true, exclude: ['data'],
         fresh: () => ({ data: AppState._newPlanFloorData() }), get: () => pm() && pm().floors },
       { key: 'plan.layers', kind: 'list', group: 'plan', get: () => pm() && pm().layers },
+      { key: 'plan.loadTypes', kind: 'list', group: 'plan', get: () => pm() && pm().loadTypes },
       { key: 'plan.styles', kind: 'value', group: 'plan', get: () => pm() && pm().styles,
         set: v => { if (pm() && v && typeof v === 'object') pm().styles = v; } },
       { key: 'plan.settings', kind: 'value', group: 'plan', get: () => pm() && pm().settings,

@@ -1237,7 +1237,7 @@ body.dark-mode {
   .plan-tool-btn, .plan-tb-btn { white-space: nowrap; min-height: 40px; }
   .plan-mode-btn { min-height: 36px; padding: 0 12px; }
   .plan-tb-spacer { display: none; }
-  .plan-status-coords, #plan-grid-chip, #plan-sym-chip, #plan-layer-field { display: none; }
+  .plan-status-coords, #plan-grid-chip, #plan-sym-chip, #plan-layer-field, #plan-layers-btn { display: none; }
   .plan-tb-btn[data-action="fit"] { font-size: 0; gap: 0; padding: 0 9px; }
   .plan-chip { min-height: 34px; }
   .plan-pop { left: 8px; right: 8px; width: auto; }

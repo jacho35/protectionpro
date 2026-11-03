@@ -134,6 +134,7 @@ const PlanSymbols = {
     if (type === 'bd_socket') return (props.outlets === 'double' || props.outlets === 'double_usb') ? 24 : 22;
     if (type === 'bd_switch') return 22;
     if (type === 'bd_switchboard') return Math.min(64, 40 + (Math.max(1, parseInt(props.sections, 10) || 1) - 1) * 10);
+    if (type === 'load') return 28;
     const r = this.RECIPES[type];
     return r ? r.size : 24;
   },
@@ -247,19 +248,30 @@ const PlanSymbols = {
     return [{ k: 'c', cx: c, cy: c, r: 10, s: 'col', lw: sw }];
   },
 
+  // A project load type: ringed disc carrying the type's symbol letter.
+  _load(props) {
+    const t = (typeof PlanLoads !== 'undefined') ? PlanLoads.get(props && props.loadType) : null;
+    const letter = String((t && t.letter) || 'L').slice(0, 2);
+    return [
+      { k: 'c', cx: 20, cy: 20, r: 17, f: 'bg', s: 'col', lw: 2.4 },
+      { k: 't', x: 20, y: 21, str: letter, size: letter.length > 1 ? 15 : 19, f: 'col', bold: 1 },
+    ];
+  },
+
   prims(type, props) {
     props = props || {};
     if (type === 'bd_light') return this._light(props);
     if (type === 'bd_socket') return this._socket(props);
     if (type === 'bd_switch') return this._switch(props);
     if (type === 'bd_switchboard') return this._switchboard(props);
+    if (type === 'load') return this._load(props);
     const r = this.RECIPES[type];
     if (!r) return null;
     return (typeof r.prims === 'string') ? this._procedural(r.prims) : r.prims;
   },
 
   // Family types have no static RECIPE entry — report them as drawable.
-  has(type) { return ['bd_light', 'bd_socket', 'bd_switch', 'bd_switchboard'].includes(type) || !!this.RECIPES[type]; },
+  has(type) { return ['bd_light', 'bd_socket', 'bd_switch', 'bd_switchboard', 'load'].includes(type) || !!this.RECIPES[type]; },
 
   _resolve(v, ctxCol, bg) {
     if (v === 'col') return ctxCol;
