@@ -43,48 +43,85 @@ const PlanLoads = {
     return Math.round(kw * 1000 / ((t.phases === 3 ? Math.sqrt(3) : 1) * t.volt * t.pf) * 10) / 10;
   },
 
-  // Diversity factor of a load type (0.01–1; absent = 1, no diversity).
+  // Diversity factor of a load type (0.05–1; absent = 1, no diversity).
   diversity(t) { const d = parseFloat(t && t.diversity); return d > 0 ? Math.min(1, d) : 1; },
-  // Demand of each mini-sub / kiosk row from its custom loads: kW / pf × the
-  // type's diversity. { reticId: { kva, items: [{ name, type, kw, kva }] } }.
-  // A load counts once its supply is linked to a Demand row.
+
+  // ── Demand rows ──
+  // A custom load in Demand is a row on its kiosk or mini-sub:
+  // `owner.loads = [{ id, name, loadType, kw ('' = the type's), cableType,
+  // length (m) }]`. A drawn load is linked to its row by `reticId`.
+  // Every row with its owner: [{ row, owner, kind: 'kiosk' | 'minisub' }].
+  rows() {
+    const R = (typeof AppState !== 'undefined') ? AppState.reticulation : null;
+    const out = [];
+    if (!R) return out;
+    for (const m of R.minisubs || []) for (const row of m.loads || []) out.push({ row, owner: m, kind: 'minisub' });
+    for (const k of R.kiosks || []) for (const row of k.loads || []) out.push({ row, owner: k, kind: 'kiosk' });
+    return out;
+  },
+  rowKw(row) {
+    const own = parseFloat(row && row.kw);
+    if (own > 0) return own;
+    const t = this.get(row && row.loadType);
+    return t ? t.kw : 0;
+  },
+  // Demand of a row: kW ÷ pf × the type's diversity (kVA).
+  rowKva(row) {
+    const t = this.get(row && row.loadType), kw = this.rowKw(row);
+    if (!t || !(kw > 0)) return 0;
+    return kw / (t.pf > 0 ? t.pf : 1) * this.diversity(t);
+  },
+  // Demand of each kiosk / mini-sub row from its custom loads:
+  // { ownerId: { kva, items: [{ id, name, type, kw, div, kva, motor }] } }.
   demandByRow() {
     const out = {};
-    if (typeof AppState === 'undefined' || !AppState.planMarkup) return out;
-    const els = AppState.planAllElements ? AppState.planAllElements() : AppState.planMarkup.elements;
-    const byId = {};
-    for (const e of els) byId[e.id] = e;
-    for (const el of els) {
-      if (el.type !== 'load') continue;
-      const t = this.typeOf(el), sup = el.props && el.props.fedFrom ? byId[el.props.fedFrom] : null;
-      const kw = this.kw(el);
-      if (!t || !sup || !sup.reticId || !(kw > 0)) continue;
-      const kva = kw / (t.pf > 0 ? t.pf : 1) * this.diversity(t);
-      const r = out[sup.reticId] || (out[sup.reticId] = { kva: 0, items: [] });
+    for (const { row, owner } of this.rows()) {
+      const t = this.get(row.loadType), kva = this.rowKva(row);
+      if (!t || !(kva > 0)) continue;
+      const r = out[owner.id] || (out[owner.id] = { kva: 0, items: [] });
       r.kva += kva;
-      r.items.push({ name: el.name || t.name, type: t.name, kw, div: this.diversity(t), kva: +kva.toFixed(3) });
+      r.items.push({ id: row.id, name: row.name || t.name, type: t.name, kw: this.rowKw(row), div: this.diversity(t), kva: +kva.toFixed(3), motor: !!t.motor });
     }
     for (const r of Object.values(out)) r.kva = +r.kva.toFixed(3);
     return out;
   },
+  // A drawn load edited in the Properties panel: the linked Demand row takes the
+  // new value now (Demand's values win in the next sync pass). Returns whether a
+  // row was changed.
+  pushToRow(el, key, val) {
+    const f = (typeof PlanSync !== 'undefined' && el && el.reticId) ? PlanSync._reticRow(el.reticId) : null;
+    if (!f || f.kind !== 'load') return false;
+    if (key === 'name') f.row.name = val;
+    else if (key === 'loadType' || key === 'cableType') f.row[key] = val;
+    else if (key === 'kw') f.row.kw = val > 0 ? val : '';
+    else if (key === 'fedFrom') {
+      const sup = AppState.planAllElements().find(e => e.id === val);
+      const owner = sup && sup.reticId ? [...AppState.reticulation.kiosks, ...AppState.reticulation.minisubs].find(o => o.id === sup.reticId) : null;
+      if (!owner || owner === f.owner) return false;
+      f.list.splice(f.index, 1);
+      (owner.loads || (owner.loads = [])).push(f.row);
+    } else return false;
+    AppState.dirty = true;
+    if (typeof Retic !== 'undefined') {
+      if (Retic._snapshot) Retic._snapshot();
+      if (Retic._active) { Retic.render && Retic.render(); }
+      if (Retic.computeInBackground) Retic.computeInBackground();
+    }
+    return true;
+  },
 
-  // Motor loads fed from a linked mini-sub / kiosk, for the Demand motor
-  // starting check. The supply cable run is the straight line on the plan.
+  // Motor rows (any supply), for the Demand motor starting check.
   motorsForDemand() {
     const out = [];
-    if (typeof AppState === 'undefined' || !AppState.planMarkup) return out;
-    const els = AppState.planAllElements ? AppState.planAllElements() : AppState.planMarkup.elements;
-    const byId = {};
-    for (const e of els) byId[e.id] = e;
-    for (const el of els) {
-      if (el.type !== 'load') continue;
-      const t = this.typeOf(el), sup = el.props && el.props.fedFrom ? byId[el.props.fedFrom] : null;
-      if (!t || !t.motor || !sup || !sup.reticId) continue;
+    for (const { row, owner } of this.rows()) {
+      const t = this.get(row.loadType);
+      const kw = this.rowKw(row);
+      if (!t || !t.motor || !(kw > 0)) continue;
       out.push({
-        id: el.id, name: el.name || t.name, supplyId: sup.reticId, supplyName: sup.name || '',
-        kw: this.kw(el), volt: t.volt, phases: t.phases, pf: t.pf, eff: t.eff || 0.93,
+        id: row.id, name: row.name || t.name, supplyId: owner.id, supplyName: owner.name || '',
+        kw, volt: t.volt, phases: t.phases, pf: t.pf, eff: t.eff || 0.93,
         lrc: t.lrc || 6, lrtPct: t.lrtPct || 150, rpm: t.rpm || 0, method: t.start,
-        cableType: (el.props && el.props.cableType) || '', lengthM: this.feedLengthM(el) || 0,
+        cableType: row.cableType || '', lengthM: Number(row.length) || 0,
       });
     }
     return out;
@@ -256,7 +293,8 @@ const PlanLoads = {
         open.add(id);
       } else if (t && role === 'open') { open.has(t.id) ? open.delete(t.id) : open.add(t.id); render(); return; }
       else if (t && role === 'del') {
-        const n = pm.elements.filter(x => x.type === 'load' && x.props && x.props.loadType === t.id).length;
+        const n = Math.max(pm.elements.filter(x => x.type === 'load' && x.props && x.props.loadType === t.id).length,
+          this.rows().filter(r => r.row.loadType === t.id).length);
         if (n) { if (typeof UI !== 'undefined' && UI.toast) UI.toast(`${n} placed ${t.name} load${n === 1 ? '' : 's'} use this type. Delete them first.`, 'warn'); return; }
         pm.loadTypes = pm.loadTypes.filter(x => x !== t);
         pm.layers.forEach(l => { l.visibleElementTypes = (l.visibleElementTypes || []).filter(k => k !== 'load:' + t.id); });

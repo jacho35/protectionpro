@@ -150,6 +150,15 @@ const Retic = {
     const c = Links.of('retic:' + k.id).find(l => l.kind === 'sl-source');
     return c ? Links.markHtml(c.to, 'retic:' + k.id, 'from Street lighting ›', 'retic-plan-tag retic-plan-link') : '';
   },
+  // Side-panel lines of a mini-sub: what is fed straight from it, and the custom loads behind its kiosks.
+  _directSummaryRows(ms) {
+    if (typeof PlanLoads === 'undefined') return '';
+    const dm = PlanLoads.demandByRow();
+    const direct = (+ms.streetLightKVA || 0) + (dm[ms.id] ? dm[ms.id].kva : 0);
+    const viaK = this.kiosks.filter(k => this._rootOf(k.id) === ms.id).reduce((a, k) => a + (dm[k.id] ? dm[k.id].kva : 0), 0);
+    return (direct > 0 ? `<div class="summary-row"><span class="k" title="Street lighting and custom loads fed straight from this minisub's LV board (listed at the top of the kiosk list). Included in its demand.">Fed direct</span><span class="v">${direct.toFixed(1)} kVA</span></div>` : '')
+      + (viaK > 0 ? `<div class="summary-row"><span class="k" title="Custom loads fed from this minisub's kiosks (listed on each kiosk). Included in its demand.">Custom loads via kiosks</span><span class="v">${viaK.toFixed(1)} kVA</span></div>` : '');
+  },
   // Read-only "Custom loads" figure on a kiosk: its loads drawn on the site plan.
   _customLoadField(k) {
     if (typeof PlanLoads === 'undefined') return '';
@@ -157,7 +166,7 @@ const Retic = {
     if (!d) return '';
     const tip = d.items.map(i => `${i.name}: ${i.kw} kW${i.div < 1 ? ' × ' + i.div : ''} = ${i.kva} kVA`).join('\n');
     return `<div class="retic-field"><label>Custom Loads (kVA)</label>
-              <input type="number" value="${numAttr(d.kva)}" readonly title="${escHtml('Loads placed on the site plan and fed from this kiosk (kW ÷ pf × diversity), added to its demand. Edit them on the plan.\n' + tip)}"></div>`;
+              <input type="number" value="${numAttr(d.kva)}" readonly title="${escHtml('Custom loads fed from this kiosk (kW ÷ pf × diversity), added to its demand. They are listed below the erven.\n' + tip)}"></div>`;
   },
   // Link mark to a minisub's transformer on the single line.
   _sldMarkHtml(ms) {
@@ -240,7 +249,10 @@ const Retic = {
     const i = this.kiosks.findIndex(k => k.id === id);
     if (i < 0) return;
     const parent = this.kiosks[i].fedFrom || this.minisubs[0].id;
-    if (typeof Sync !== 'undefined') Sync.markDeleted('retic', id);   // its drawn kiosk goes too
+    if (typeof Sync !== 'undefined') {
+      Sync.markDeleted('retic', id);   // its drawn kiosk goes too
+      for (const l of this.kiosks[i].loads || []) Sync.markDeleted('retic', l.id);
+    }
     this.kiosks.splice(i, 1);
     // Kiosks fed from the deleted one inherit its parent (chain closes up)
     for (const k of this.kiosks) if (k.fedFrom === id) k.fedFrom = parent;
@@ -261,7 +273,10 @@ const Retic = {
     }
     const i = this.minisubs.findIndex(m => m.id === id);
     if (i < 0) return;
-    if (typeof Sync !== 'undefined') Sync.markDeleted('retic', id);
+    if (typeof Sync !== 'undefined') {
+      Sync.markDeleted('retic', id);
+      for (const l of this.minisubs[i].loads || []) Sync.markDeleted('retic', l.id);
+    }
     this.minisubs.splice(i, 1);
     // Kiosks fed from the deleted minisub move to the first remaining one
     const fallback = this.minisubs[0].id;
@@ -289,6 +304,120 @@ const Retic = {
     this._afterMutate();
   },
 
+  // ─── Custom loads: rows on a kiosk or mini-sub (motors, other non-domestic loads) ───
+  _loadOwner(id) { return this.kiosks.find(k => k.id === id) || this.minisubs.find(m => m.id === id) || null; },
+
+  addLoad(ownerId) {
+    const o = this._loadOwner(ownerId);
+    if (!o || typeof PlanLoads === 'undefined') return;
+    const pm = AppState.planMarkup;
+    if (pm && !PlanLoads.list().length) pm.loadTypes = PlanLoads.defaultTypes();     // none defined: start from the default
+    const t = PlanLoads.list()[0];
+    if (!t) return;
+    const n = PlanLoads.rows().filter(r => r.row.loadType === t.id).length + 1;     // numbered across the project
+    (o.loads || (o.loads = [])).push({
+      id: AppState.reticGenLoadId(), name: `${t.name} ${n}`, loadType: t.id, kw: '',
+      cableType: this.settings.quickServiceCable || '', length: 0,
+    });
+    this._afterMutate();
+  },
+
+  deleteLoad(ownerId, loadId) {
+    const o = this._loadOwner(ownerId);
+    const i = o ? (o.loads || []).findIndex(l => l.id === loadId) : -1;
+    if (i < 0) return;
+    if (typeof Sync !== 'undefined') Sync.markDeleted('retic', loadId);     // its drawn load goes too
+    o.loads.splice(i, 1);
+    this._afterMutate();
+  },
+
+  // Select the drawn load on the site plan, or start placing it when it has no symbol yet.
+  _showLoadOnPlan(loadId) {
+    const el = AppState.planAllElements().find(e => e.reticId === loadId);
+    if (typeof window.switchWorkspace === 'function') window.switchWorkspace('plan');
+    if (el && typeof PlanMarkup !== 'undefined') {
+      PlanMarkup.selectOnly(el.id);
+      if (typeof PlanEngine !== 'undefined' && PlanEngine.zoomToPoints) PlanEngine.zoomToPoints([{ x: el.x, y: el.y }]);
+      if (typeof PlanUI !== 'undefined') PlanUI.renderProps();
+    } else if (typeof PlanTools !== 'undefined' && PlanTools.set) PlanTools.set('placeRetic', { rowId: loadId });
+  },
+
+  _motorResult(loadId) {
+    const r = AppState.reticResults && AppState.reticResults.motorStart;
+    return r && r.motors ? r.motors.find(m => m.id === loadId) : null;
+  },
+  // The starting check beside a motor row.
+  _loadCheckHtml(l) {
+    const t = PlanLoads.get(l.loadType);
+    if (!t || !t.motor) return '<span class="retic-hint">static</span>';
+    const m = this._motorResult(l.id);
+    if (!m) return '<span class="retic-hint">…</span>';
+    const tip = m.status === 'info' ? m.note
+      : `${m.startingMethod}: ${m.startCurrentA} A, terminal ${m.terminalVoltagePu} p.u., dip ${m.maxDipPct}%${m.torqueOk === false ? ', torque short' : ''}` + (m.issues.length ? '\n' + m.issues.join('\n') : '');
+    const text = { pass: 'Starts', warning: 'Warning', fail: 'Fail' }[m.status] || 'To complete';
+    return this._earthPill(m.status === 'warning' ? 'info' : m.status, text, tip || '');
+  },
+
+  // The motor check came back: refresh the Starting cells in place.
+  updateLoadChecks() {
+    for (const { row } of PlanLoads.rows()) {
+      const c = document.querySelector(`[data-load-chk="${CSS.escape(row.id)}"]`);
+      if (c) c.innerHTML = this._loadCheckHtml(row);
+    }
+  },
+
+  _loadRowHtml(o, l) {
+    const t = PlanLoads.get(l.loadType);
+    const a = `data-action="load-field" data-owner="${escHtml(o.id)}" data-load="${escHtml(l.id)}"`;
+    const typeOpts = PlanLoads.list().map(x => `<option value="${escHtml(x.id)}"${x.id === l.loadType ? ' selected' : ''}>${escHtml(x.name)}${x.motor ? ' (motor)' : ''}</option>`).join('')
+      + (t ? '' : `<option value="${escHtml(l.loadType || '')}" selected>— type missing —</option>`);
+    const placed = AppState.planAllElements().some(e => e.reticId === l.id);
+    return `<tr data-load-row="${escHtml(l.id)}">
+      <td data-cell="name" data-label="Name"><input type="text" ${a} data-field="name" value="${escHtml(l.name || '')}"></td>
+      <td data-cell="type" data-label="Type"><select ${a} data-field="loadType">${typeOpts}</select></td>
+      <td data-cell="kw" data-label="kW"><input type="number" min="0" step="0.1" ${a} data-field="kw" value="${numAttr(l.kw || '')}" placeholder="${t ? t.kw : ''}" title="Blank = the load type's rating"></td>
+      <td data-cell="div" data-label="Diversity"><input type="number" min="0.05" max="1" step="0.05" data-action="load-div" data-type="${escHtml(l.loadType || '')}" value="${PlanLoads.diversity(t)}" title="Diversity factor of the load type ${t ? escHtml(t.name) : ''}: every load of that type uses it"></td>
+      <td data-cell="cable" data-label="Supply cable"><select ${a} data-field="cableType" data-cable-select>${this._cableOptions(l.cableType)}</select></td>
+      <td data-cell="len" data-label="Length (m)"><span class="retic-len-cell"><input type="number" step="1" min="0" ${a} data-field="length" value="${numAttr(l.length || '')}">${this._planTag('len:load:' + l.id, true)}</span></td>
+      <td data-cell="kva" data-label="kVA" class="vd-cell"><span data-load-kva="${escHtml(l.id)}">${PlanLoads.rowKva(l).toFixed(1)}</span></td>
+      <td data-cell="chk" data-label="Starting" data-load-chk="${escHtml(l.id)}">${this._loadCheckHtml(l)}</td>
+      <td data-cell="act"><button type="button" class="retic-btn" data-action="show-load" data-load="${escHtml(l.id)}" title="${placed ? 'Select it on the site plan' : 'Not on the site plan yet — then click where it goes'}">${placed ? 'Show on plan' : 'Place on plan'}</button>
+        <button type="button" class="btn-icon-del" data-action="del-load" data-owner="${escHtml(o.id)}" data-load="${escHtml(l.id)}" title="Delete custom load">&times;</button></td>
+    </tr>`;
+  },
+  // A typed edit that changes only this row's figures: no full re-render, so focus stays.
+  _refreshLoadRow(o, l) {
+    const el = document.querySelector(`[data-load-kva="${CSS.escape(l.id)}"]`);
+    if (el) el.textContent = PlanLoads.rowKva(l).toFixed(1);
+    const c = document.querySelector(`[data-load-chk="${CSS.escape(l.id)}"]`);
+    if (c) c.innerHTML = this._loadCheckHtml(l);
+  },
+  _loadsTableHtml(o, extraRows) {
+    const rows = (o.loads || []).map(l => this._loadRowHtml(o, l)).join('');
+    if (!rows && !extraRows) return '';
+    return `<table class="erf-table load-table">
+      <thead><tr><th>Load</th><th>Type</th><th title="Blank = the load type's rating">kW</th><th title="Diversity factor of the load type">Div.</th><th>Supply cable</th><th title="Measured on the site plan when the load is drawn">Length (m)</th><th title="kW ÷ pf × diversity">kVA</th><th title="Motor starting check: voltage at the motor terminals and dip on the supply path">Starting</th><th></th></tr></thead>
+      <tbody>${extraRows || ''}${rows}</tbody></table>`;
+  },
+  // "Fed directly from <minisub>": its own street lighting and custom loads, above its kiosks.
+  _directBlocksHtml() {
+    if (typeof PlanLoads === 'undefined') return '';
+    const dem = PlanLoads.demandByRow();
+    return this.minisubs.map(ms => {
+      const sl = +ms.streetLightKVA || 0, d = dem[ms.id], total = sl + (d ? d.kva : 0);
+      const slRow = sl > 0 ? `<tr class="load-sl"><td data-cell="name" data-label="Load">Street lighting ${this._slMarkHtml(ms)}</td><td data-cell="type" data-label="Type"><span class="retic-hint">Fixed kVA</span></td><td colspan="4"></td><td data-cell="kva" data-label="kVA" class="vd-cell">${sl.toFixed(1)}</td><td></td><td></td></tr>` : '';
+      return `<div class="retic-direct" data-ms-direct="${escHtml(ms.id)}">
+        <div class="retic-direct-head"><b>Fed directly from ${escHtml(ms.name || 'minisub')}</b>
+          <span class="retic-hint">street lighting and custom loads on its LV board</span>
+          <span class="retic-direct-tot">${total ? total.toFixed(1) + ' kVA' : ''}</span></div>
+        ${this._loadsTableHtml(ms, slRow)}
+        <div class="retic-toolbar" style="margin-top:6px">
+          <button class="retic-btn" data-action="add-load" data-owner="${escHtml(ms.id)}">+ Custom load</button>
+          <button class="retic-btn" data-action="load-types" title="Define pumps, motors and other loads: rating, voltage, power factor, diversity, starting method">Load types…</button>
+        </div></div>`;
+    }).join('');
+  },
+
   // Common post-mutation path: record the new state on the undo stack
   // (snapshot-after pattern, matching UndoManager), then refresh.
   _afterMutate() {
@@ -309,8 +438,9 @@ const Retic = {
       const k = t.dataset.kiosk ? this.kioskById(t.dataset.kiosk) : null;
       const erf = k && t.dataset.erf ? k.erfs.find(x => x.id === t.dataset.erf) : null;
       const ms = t.dataset.ms ? this.minisubs.find(m => m.id === t.dataset.ms) : null;
-      const cur = action === 'setting' ? this.settings[f] : ms ? ms[f] : erf ? erf[f] : k ? k[f] : '';
-      const mv = f === 'quickMvCable' || !!ms;
+      const ld = t.dataset.load ? (this._loadOwner(t.dataset.owner) || { loads: [] }).loads.find(x => x.id === t.dataset.load) : null;
+      const cur = ld ? ld[f] : action === 'setting' ? this.settings[f] : ms ? ms[f] : erf ? erf[f] : k ? k[f] : '';
+      const mv = f === 'quickMvCable' || (!!ms && !ld);
       CableLib.handleShowAll(t, cur, (v) => mv ? this._mvCableOptions(v, true) : this._cableOptions(v, true));
       return;
     }
@@ -408,6 +538,35 @@ const Retic = {
       return;
     }
 
+    if (action === 'load-field') {
+      const o = this._loadOwner(t.dataset.owner);
+      const l = o && (o.loads || []).find(x => x.id === t.dataset.load);
+      if (!l) return;
+      const key = t.dataset.field;
+      let v = t.value;
+      if (t.type === 'number') v = parseFloat(v) || 0;
+      if (key === 'kw') l.kw = v > 0 ? v : '';
+      else if (key === 'length') { l.length = v; this._typedLength('len:load:' + l.id, v); }
+      else l[key] = v;
+      this._snapshot();
+      this._markDirty();
+      if (typeof PlanSync !== 'undefined' && PlanSync.pullLoadsFromDemand) PlanSync.pullLoadsFromDemand();   // the drawn load follows
+      if (key === 'loadType') this.renderKiosks();     // kW placeholder, kVA, motor check
+      else this._refreshLoadRow(o, l);
+      this.recompute();
+      return;
+    }
+    if (action === 'load-div') {
+      const ty = PlanLoads.get(t.dataset.type);
+      if (!ty) return;
+      ty.diversity = Math.min(1, Math.max(0.05, parseFloat(t.value) || 1));
+      this._snapshot(); this._markDirty();
+      this.renderKiosks();
+      if (typeof PlanUI !== 'undefined' && PlanUI.renderProps) PlanUI.renderProps();
+      this.recompute();
+      return;
+    }
+
     if (action === 'minisub-field') {
       const ms = this.minisubs.find(m => m.id === t.dataset.ms);
       if (!ms) return;
@@ -473,6 +632,10 @@ const Retic = {
     else if (action === 'add-erf') this.addErf(btn.dataset.kiosk, 1);
     else if (action === 'add-erf-n') this.addErf(btn.dataset.kiosk, Math.max(1, Math.round(this.settings.quickErven || 5)));
     else if (action === 'del-erf') this.deleteErf(btn.dataset.kiosk, btn.dataset.erf);
+    else if (action === 'add-load') this.addLoad(btn.dataset.owner);
+    else if (action === 'del-load') this.deleteLoad(btn.dataset.owner, btn.dataset.load);
+    else if (action === 'show-load') this._showLoadOnPlan(btn.dataset.load);
+    else if (action === 'load-types') { if (typeof PlanLoads !== 'undefined') PlanLoads.openManager(); }
     else if (action === 'toggle-calc') {
       // Show/hide a calculation panel in place — no re-render, so focus and
       // scroll stay put. Panels are always kept filled by the update passes.
@@ -671,13 +834,73 @@ const Retic = {
     for (const c of [xfmr, bus, load]) c.reticName = c.props.name;
     bus.props.voltage_kv = lv;
     bus.props.bus_type = 'PQ';
-    const kva = +(+m.totalKVA).toFixed(2);
+    // The aggregate load is the Demand figure less what is fed straight from
+    // the minisub as its own motor / static load parts (see _applyLoadParts).
+    const dd = (typeof PlanLoads !== 'undefined') ? PlanLoads.demandByRow()[ms.id] : null;
+    const kva = +Math.max(0, +m.totalKVA - (dd ? dd.kva : 0)).toFixed(2);
     load.props.rated_kva = value ? value('kva:' + ms.id, kva, load.props.rated_kva) : kva;
     load.props.power_factor = 0.95;
     load.props.demand_factor = 1.0;     // demand is already after-diversity
     load.props.voltage_kv = lv;
     xfmr.reticInfo = this._minisubInfo(ms, m, res, tx);
+    this._applyLoadParts(st, ms);
     return tx;
+  },
+
+  // ─── Custom loads fed straight from a minisub → parts on its LV bus ───
+  // A load of a type marked Motor becomes an induction motor, any other a static
+  // load; each carries its Demand row id (reticLoadId) so a later pass updates
+  // it in place. Loads on a kiosk stay inside the aggregate load (fixed kVA).
+  _loadPartMap(msId) {
+    const out = {};
+    for (const c of AppState.components.values()) if (c.reticLoadId && c.reticMinisubId === msId) out[c.reticLoadId] = c;
+    return out;
+  },
+  _removeLoadParts(msId) {
+    for (const c of Object.values(this._loadPartMap(msId))) AppState.removeComponent(c.id);
+  },
+  _STARTER_KEYS: { 'DOL': 'dol', 'Star-delta': 'star_delta', 'Autotransformer': 'autotransformer', 'Soft starter': 'soft_starter', 'VFD': 'vfd' },
+  _applyLoadParts(st, ms) {
+    if (typeof PlanLoads === 'undefined') return;
+    const { bus, load } = st;
+    const parts = this._loadPartMap(ms.id);
+    const want = PlanLoads.rows().filter(r => r.owner === ms && PlanLoads.get(r.row.loadType) && PlanLoads.rowKva(r.row) > 0);
+    const keep = new Set();
+    let maxOff = 0;
+    want.forEach(({ row }, i) => {
+      const t = PlanLoads.get(row.loadType), kw = PlanLoads.rowKw(row), div = PlanLoads.diversity(t);
+      const type = t.motor ? 'motor_induction' : 'static_load';
+      let c = parts[row.id];
+      if (c && c.type !== type) { AppState.removeComponent(c.id); c = null; }
+      const off = 80 * (Math.floor(i / 2) + 1) * (i % 2 ? -1 : 1);       // alternate right / left of the aggregate load
+      if (!c) {
+        c = AppState.addComponent(type, bus.x + off, load.y);
+        if (!c) return;
+        this._ensureWire(bus.id, 'at_' + off, c.id, 'in');
+      }
+      maxOff = Math.max(maxOff, Math.abs(off));
+      c.reticMinisubId = ms.id;
+      c.reticLoadId = row.id;
+      c.props.name = row.name || t.name;
+      c.reticName = c.props.name;
+      c.props.demand_factor = div;                 // Demand's diversity, so load flow draws what Demand counted
+      c.props.power_factor = t.pf;
+      if (t.motor) {
+        c.props.rated_kw = kw;
+        c.props.voltage_kv = t.volt / 1000;
+        c.props.efficiency = t.eff || 0.93;
+        c.props.locked_rotor_current = t.lrc || 6;
+        c.props.locked_rotor_torque_pct = t.lrtPct || 150;
+        c.props.starting_method = this._STARTER_KEYS[t.start] || 'dol';
+        if (t.rpm > 0) c.props.rated_speed_rpm = t.rpm;
+      } else {
+        c.props.rated_kva = +(kw / (t.pf > 0 ? t.pf : 1)).toFixed(2);
+        c.props.voltage_kv = bus.props.voltage_kv;
+      }
+      keep.add(row.id);
+    });
+    for (const [id, c] of Object.entries(parts)) if (!keep.has(id)) AppState.removeComponent(c.id);
+    if (maxOff) bus.props.busWidth = Math.max(bus.props.busWidth || 120, 2 * maxOff + 80);
   },
 
   // Each minisub's stack, by role. { msId: { tx, bus, load } }
@@ -748,6 +971,7 @@ const Retic = {
       this._stackPairs.push(p);
       if (st.load) goneNames.push(st.load.props.name || 'Minisub');
       for (const id of ids) AppState.removeComponent(id);
+      this._removeLoadParts(msId);
     }
     if (goneNames.length) notice(`${goneNames.join(', ')} removed from the single line too · Undo in Demand puts ${goneNames.length === 1 ? 'it' : 'them'} back`);
     stacks = this._stacks();
@@ -761,6 +985,7 @@ const Retic = {
       if (ms.sldOff && st.tx) ms.sldOff = false;
       else if (!whole && this._stackSeen.has(ms.id)) {
         ms.sldOff = true;
+        this._removeLoadParts(ms.id);
         for (const c of Object.values(st)) {
           const wired = [...AppState.wires.values()].some(w => (w.fromComponent === c.id || w.toComponent === c.id)
             && ![st.tx, st.bus, st.load].some(o => o && o !== c && (w.fromComponent === o.id || w.toComponent === o.id)));
@@ -1108,7 +1333,7 @@ const Retic = {
       </div>` : '') + this._quickBuildBar();
 
     if (this.kiosks.length === 0) {
-      host.innerHTML = toolbar + `<div class="retic-empty">No kiosks yet. Use ⚡ Quick Build to rough out the whole network in one click, or add a kiosk and its erven (stands) manually.</div>`;
+      host.innerHTML = toolbar + this._directBlocksHtml() + `<div class="retic-empty">No kiosks yet. Use ⚡ Quick Build to rough out the whole network in one click, or add a kiosk and its erven (stands) manually.</div>`;
       return;
     }
 
@@ -1131,7 +1356,7 @@ const Retic = {
         + (kk ? `<optgroup label="Kiosks">${kk}</optgroup>` : '');
     };
 
-    host.innerHTML = toolbar + this.kiosks.map(k => {
+    host.innerHTML = toolbar + this._directBlocksHtml() + this.kiosks.map(k => {
       const erfRows = k.erfs.map(e => this._erfRow(k, e)).join('');
       return `
       <div class="kiosk-card" data-kiosk="${escHtml(k.id)}">
@@ -1182,9 +1407,11 @@ const Retic = {
             <thead><tr><th class="sel-col"></th><th>Erf #</th><th>Length (m)</th><th>Phase</th><th>Service Cable</th><th title="Earth conductor of the service cable (Cu or Al)">Earth Cable</th><th title="The breaker or fuse that protects this erf's service cable in the kiosk. Blank uses the kiosk's default outgoing protection; with that blank too, the string breaker is used.">Protection</th><th title="Fixed, undiversified load replacing the ADMD for that erf: enter amps or kVA">Override (A / kVA)</th><th>Service VD</th><th title="Earth-fault loop disconnection and ECC size at the end of the service">Earth fault</th><th></th></tr></thead>
             <tbody>${erfRows}</tbody>
           </table>
+          ${this._loadsTableHtml(k)}
           <div class="retic-toolbar" style="margin-top:8px">
             <button class="retic-btn" data-action="add-erf" data-kiosk="${escHtml(k.id)}">+ Erf</button>
             <button class="retic-btn" data-action="add-erf-n" data-kiosk="${escHtml(k.id)}" title="Batch size follows the Quick Build 'Erven / Kiosk' setting">+ ${Math.max(1, Math.round(Number(s.quickErven) || 5))} Erven</button>
+            <button class="retic-btn" data-action="add-load" data-owner="${escHtml(k.id)}" title="Add a motor or other non-domestic load fed from this kiosk">+ Custom load</button>
           </div>
         </div>`}
       </div>`;
@@ -1985,6 +2212,7 @@ const Retic = {
           ${this.minisubs.length > 1 ? `<button class="btn-icon-del" data-action="del-minisub" data-ms="${escHtml(ms.id)}" title="Delete minisub (its kiosks move to the first minisub)">&times;</button>` : ''}
         </div>
         <div class="summary-row"><span class="k">Diversified demand ${this._sldMarkHtml(ms)}</span><span class="v">${has ? r.totalKVA + ' kVA' : '—'}</span></div>
+        ${this._directSummaryRows(ms)}
         <div class="summary-row"><span class="k">Current / Conns / Kiosks</span><span class="v">${has ? `${r.currentA} A / ${r.conns} / ${r.numKiosks}` : (r ? `— / ${r.conns} / ${r.numKiosks}` : '—')}</span></div>
         <div class="summary-row"><span class="k">Transformer</span><span class="v">
           <select class="ms-tx" data-action="minisub-field" data-ms="${escHtml(ms.id)}" data-field="txTypeId"
@@ -2361,6 +2589,7 @@ const Retic = {
       const r = await API.runReticMotorStart(body);
       if (stamp !== this._motorStamp || !AppState.reticResults) return;
       AppState.reticResults.motorStart = r;
+      this.updateLoadChecks();
       this.renderSummary();
     } catch (err) {
       console.error('Motor starting check failed:', err);
