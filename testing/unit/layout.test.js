@@ -181,4 +181,12 @@ ok('demand input: every erf once, the LV tree as fedFrom, the service length on 
   assert(d.kiosks.filter(k => k.fedFrom !== 'MS').every(k => k.feederLength > 0 && k.feederCable === 'A'));
   const k0 = d.kiosks.find(k => k.erfs.length >= 3); assert.deepStrictEqual(k0.erfs.slice(0, 3).map(e => e.phase), ['Red', 'White', 'Blue']);
 });
+ok('mini-sub position: "opt" never has a worse worst kiosk than the middle; a placed mini-sub is kept', () => {
+  const mom = (r) => { const up = new Map(r.net.lvLinks.map(l => [l.to, l])), cnt = new Map(); const c = k => { if (cnt.has(k)) return cnt.get(k); let x = k.members.length; r.net.lvLinks.filter(l => l.from === k).forEach(l => { x += c(l.to); }); cnt.set(k, x); return x; };
+    let worst = 0; r.kiosks.forEach(k => { let m = 0, v = k; while (up.has(v)) { const l = up.get(v); m += c(l.to) * l.len; v = l.from; } worst = Math.max(worst, m); }); return worst; };
+  const mid = L.solve(F, { subMode: 'mid' }), opt = L.solve(F, { subMode: 'opt' });
+  assert(mom(opt) <= mom(mid) + 1e-6);
+  const fixed = L.solve(Object.assign({}, F, { subPt: [mid.net.sub.x, mid.net.sub.y] }), { subMode: 'opt' });
+  assert.strictEqual(fixed.net.sub.id, mid.net.sub.id);
+});
 console.log(n + ' passed');

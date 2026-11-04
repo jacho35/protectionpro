@@ -26,6 +26,7 @@ const PlanLayoutUI = {
       ['front', 'select', [['longest', 'longest street edge'], ['shortest', 'shortest street edge']], 'A corner erf fronts its']]],
     ['Kiosks', [['kmode', 'select', [['rules', 'even runs (rule of thumb)'], ['opt', 'optimiser: fewest crossings, then kiosks, then cable']], 'Placement'],
       ['n', 'range', 4, 8, 1, '', 'Max houses per kiosk'], ['maxc', 'range', 30, 150, 5, 'm', 'Max service cable'], ['worth', 'range', 50, 600, 25, 'm', 'One kiosk is worth (cable)']]],
+    ['LV network', [['subMode', 'select', [['opt', 'where the LV network drops least'], ['mid', 'nearest the middle of the kiosks']], 'Mini-sub position (unless you place it)']]],
     ['Fibre', [['m', 'range', 4, 12, 1, '', 'Erven per manhole'], ['maxmh', 'range', 40, 200, 10, 'm', 'Max distance between manholes'],
       ['fibre', 'select', [['opp', 'civil side, opposite the kiosks'], ['same', 'same side as the kiosks']], 'Manholes default to the'],
       ['topo', 'select', [['ring', 'every street, closed loops'], ['spur', 'spurs with T-offs from the entry']], 'Main duct layout']]],
@@ -83,12 +84,18 @@ const PlanLayoutUI = {
     const g = (typeof CableLib !== 'undefined') ? CableLib.reticGroups() : [];
     const feeders = all.filter(c => g[0] && g[0].test(c)), services = all.filter(c => g[1] && g[1].test(c));
     const pick = (list, id, prefer) => list.find(c => c.id === id) || list.find(prefer) || list[0] || null;
-    return { feeders, services,
-      lv: pick(feeders, vd.lv, c => c.id === 'al_xlpe_95_lv' || (c.size_mm2 === 95 && c.conductor === 'Al')),
+    const auto = !feeders.some(c => c.id === vd.lv);                       // nothing picked: the smallest cable that keeps the drop within the limit
+    const r = this.result, sized = auto && r && r.vd && r.vd.autoLv ? feeders.find(c => c.id === r.vd.autoLv) : null;
+    return { feeders, services, auto,
+      lv: sized || pick(feeders, vd.lv, c => c.id === 'al_xlpe_95_lv' || (c.size_mm2 === 95 && c.conductor === 'Al')),
       svc: pick(services, vd.svc, c => c.size_mm2 === 16 && c.conductor === 'Cu') };
   },
-  // The check runs Demand's own engine on the proposed network: /analysis/admd for the diversified current of every LV leg, then Retic's
-  // volt-drop maths (`_vdPercent`, `_cumulativeFeederVD`, `_erfDesignAmps`) for each leg and each service. Nothing is worked out here.
+  // Auto sizing tries the armoured XLPE aluminium sizes first, then copper, smallest first.
+  vdCandidates(feeders) {
+    const xl = feeders.filter(c => c.insulation === 'XLPE' && (c.construction || 'armoured') === 'armoured');
+    const by = cond => xl.filter(c => c.conductor === cond).sort((a, b) => a.size_mm2 - b.size_mm2);
+    return by('Al').concat(by('Cu'));
+  },
   async vdRun() {
     const r = this.result; if (!r) return;
     r.vd = null; r.dem = null;
@@ -114,8 +121,23 @@ const PlanLayoutUI = {
   vdDerive() {
     const r = this.result, d = r && r.dem; if (!d) return;
     const c = this.vdCables(), vd = this.cfg().vd;
-    if (!c.lv || !c.svc) { r.vd = { err: 'Pick the LV feeder and service cables.' }; return; }
-    d.input.kiosks.forEach(k => { k.feederCable = c.lv.name; k.erfs.forEach(e => { e.cableType = c.svc.name; }); });
+    if (!c.svc || !c.feeders.length) { r.vd = { err: 'Pick the LV feeder and service cables.' }; return; }
+    let res;
+    if (c.auto) {
+      // the limit as a constraint: the smallest cable that passes; if none does, the largest, flagged
+      const cands = this.vdCandidates(c.feeders);
+      let pass = null, last = null;
+      for (const cab of cands) { last = this._vdWith(cab, c.svc, vd); if (!last.over.length) { pass = { cab, v: last }; break; } }
+      const first = cands.length ? this._vdWith(cands.find(x => x.id === 'al_xlpe_95_lv') || cands[0], c.svc, vd) : null;
+      if (pass) { res = pass.v; res.autoLv = pass.cab.id; res.autoFrom = first && first.max > vd.maxPct ? { name: first.V.lv.name, max: first.max } : null; }
+      else { const big = cands[cands.length - 1] || c.lv; res = this._vdWith(big, c.svc, vd); res.autoLv = big.id; res.unmet = true; }
+    } else res = this._vdWith(c.lv, c.svc, vd);
+    r.vd = res;
+  },
+  // the volt drop of every erf with these two cables, from Demand's answer (`r.dem`) and Retic's own functions
+  _vdWith(lvCab, svcCab, vd) {
+    const r = this.result, d = r.dem;
+    d.input.kiosks.forEach(k => { k.feederCable = lvCab.name; k.erfs.forEach(e => { e.cableType = svcCab.name; }); });
     const byId = {}; for (const kr of d.res.kiosks) byId[kr.kioskId] = kr;
     const net = r.net, sub = net.sub, up = new Map(net.lvLinks.map(l => [l.to, l]));
     const cum = k => { const v = Retic._cumulativeFeederVD(k.id, byId, d.kioskOf); return v == null ? 0 : v; };
@@ -123,12 +145,12 @@ const PlanLayoutUI = {
     const rows = [], unreached = [];
     for (const k of r.kiosks) for (const e of k.members) {
       if (k !== sub && !up.has(k)) { unreached.push(e); continue; }
-      const de = d.byK.get(k.id).erfs.find(x => x.id === e.id);
-      const svc = Retic._vdPercent(c.svc.name, Retic._erfDesignAmps(d.byK.get(k.id), de), de.length, Retic._erfIs3ph(d.byK.get(k.id), de)) || 0, lv = cum(k);
+      const dk = d.byK.get(k.id), de = dk.erfs.find(x => x.id === e.id);
+      const svc = Retic._vdPercent(svcCab.name, Retic._erfDesignAmps(dk, de), de.length, Retic._erfIs3ph(dk, de)) || 0, lv = cum(k);
       rows.push({ erf: e, kiosk: k, lv, svc, total: lv + svc });
     }
     const worst = rows.slice().sort((a, b) => b.total - a.total)[0] || null;
-    r.vd = { V: { maxPct: vd.maxPct, lv: { name: c.lv.name }, svc: { name: c.svc.name } }, legs, rows, worst, over: rows.filter(x => x.total > vd.maxPct), unreached, max: worst ? worst.total : 0 };
+    return { V: { maxPct: vd.maxPct, lv: { name: lvCab.name }, svc: { name: svcCab.name } }, legs, rows, worst, over: rows.filter(x => x.total > vd.maxPct), unreached, max: worst ? worst.total : 0 };
   },
   _vdCableName(type) { if (type !== 'lv' && type !== 'service') return ''; const c = this.vdCables(); const x = type === 'lv' ? c.lv : c.svc; return x ? x.name : ''; },
   // a voltage-drop setting changed: only the check is worked out again
@@ -344,8 +366,10 @@ const PlanLayoutUI = {
     else if (vd && vd.err) out.push({ sev: 'info', text: 'Voltage drop not checked: ' + vd.err, ids: [] });
     else if (vd) {
       const w = vd.worst, lim = vd.V.maxPct;
-      if (vd.over.length) out.push({ sev: 'fail', text: `${vd.over.length} erven are over the ${lim}% voltage drop. Worst: erf ${names[w.erf.id] || w.erf.id} at ${w.total.toFixed(1)}% (${w.lv.toFixed(1)}% along the LV feeder to ${w.kiosk.id} + ${w.svc.toFixed(1)}% on its ${Math.round(w.erf.cable)} m service). Add a kiosk or a bigger cable, or raise the limit.`, ids: vd.over.map(x => x.erf.id) });
-      else if (w && w.total > 0.9 * lim) out.push({ sev: 'warn', text: `Worst voltage drop is ${w.total.toFixed(1)}% of the ${lim}% limit (erf ${names[w.erf.id] || w.erf.id}).`, ids: [w.erf.id] });
+      if (vd.unmet) out.push({ sev: 'fail', text: `Even the largest feeder (${vd.V.lv.name}) leaves ${vd.over.length} erven over the ${lim}% voltage drop, the worst at ${w.total.toFixed(1)}%. One mini-sub feeds too much LV network: add a mini-sub, or raise the limit.`, ids: vd.over.map(x => x.erf.id) });
+      else if (vd.autoFrom) out.push({ sev: 'info', text: `LV feeder sized to ${vd.V.lv.name} to keep the worst erf within ${lim}% (${vd.autoFrom.name} would give ${vd.autoFrom.max.toFixed(1)}%).`, ids: [] });
+      if (!vd.unmet && vd.over.length) out.push({ sev: 'fail', text: `${vd.over.length} erven are over the ${lim}% voltage drop. Worst: erf ${names[w.erf.id] || w.erf.id} at ${w.total.toFixed(1)}% (${w.lv.toFixed(1)}% along the LV feeder to ${w.kiosk.id} + ${w.svc.toFixed(1)}% on its ${Math.round(w.erf.cable)} m service). Add a kiosk or a bigger cable, or raise the limit.`, ids: vd.over.map(x => x.erf.id) });
+      if (w && !vd.over.length && w.total > 0.9 * lim) out.push({ sev: 'warn', text: `Worst voltage drop is ${w.total.toFixed(1)}% of the ${lim}% limit (erf ${names[w.erf.id] || w.erf.id}).`, ids: [w.erf.id] });
       if (vd.unreached.length) out.push({ sev: 'warn', text: `${vd.unreached.length} erven sit on a kiosk the LV network does not reach, so their voltage drop is not checked.`, ids: vd.unreached.map(e => e.id) });
     }
     const near = r.erven.filter(e => e.fe && e.kiosk && e.cable > 0.85 * P.maxc && e.cable <= P.maxc + 1e-6);
@@ -443,7 +467,7 @@ const PlanLayoutUI = {
     const VDc = L.vd, cb = this.vdCables(), opts = (list, cur) => list.map(c => `<option value="${esc(c.id)}"${cur && cur.id === c.id ? ' selected' : ''}>${esc(c.name)}</option>`).join('');
     const vdGroup = `<details open><summary style="cursor:pointer;font-weight:600;margin:2px 0">Voltage drop</summary><div style="display:flex;flex-direction:column;gap:8px;padding:6px 0 4px">
         <label style="display:block">Maximum drop, mini-sub to the furthest erf <b data-vv="maxPct">${VDc.maxPct} %</b><input type="range" data-vd="maxPct" min="1" max="15" step="0.5" value="${VDc.maxPct}" style="width:100%"></label>
-        <label style="display:block">LV feeder cable<select data-vd="lv" style="width:100%">${opts(cb.feeders, cb.lv)}</select></label>
+        <label style="display:block">LV feeder cable<select data-vd="lv" style="width:100%"><option value=""${cb.auto ? ' selected' : ''}>Automatic: the smallest that meets the limit${cb.auto && cb.lv ? ' (now ' + esc(cb.lv.name) + ')' : ''}</option>${opts(cb.feeders, cb.auto ? null : cb.lv)}</select></label>
         <label style="display:block">Service cable<select data-vd="svc" style="width:100%">${opts(cb.services, cb.svc)}</select></label>
         <div style="color:var(--text-muted)">Worked out by Demand itself: its load class and ADMD settings give the diversified current on each LV leg and on each service, and its volt-drop calculation does the rest.</div></div></details>`;
     const sr = this.streetsOnPlan();
