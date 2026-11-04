@@ -21,7 +21,7 @@
  * Chains are { pts:[[x,y],...], closed? }. Streets come back as { pts, w, chains:[i,...] }.
  */
 const PlanKerbs = (() => {
-  const D = { wmin: 4, wmax: 20, cover: 0.6, minStreet: 20, minRun: 6, gap: 15, step: 1, tol: 0.05, par: 0.35 };
+  const D = { wmin: 4, wmax: 20, cover: 0.6, minStreet: 20, minRun: 6, gap: 15, step: 1, tol: 0.05, par: 0.35, oneW: 6, join: 40 };
   const opt = o => Object.assign({}, D, o || {});
   const hyp = Math.hypot, dot = (a, b) => a[0] * b[0] + a[1] * b[1], cr = (a, b) => a[0] * b[1] - a[1] * b[0];
   const median = a => { if (!a.length) return 0; const s = a.slice().sort((x, y) => x - y), m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
@@ -130,16 +130,19 @@ const PlanKerbs = (() => {
         for (let j = 0; j < R.length; j++) {
           const rj = R[j], bx = rj.box; if (C[j].skip || ci.skip) continue;
           if (p.x < bx[0] - o.wmax || p.x > bx[2] + o.wmax || p.y < bx[1] - o.wmax || p.y > bx[3] + o.wmax) continue;
+          // the nearest sample of this chain that is a road-width away, parallel and straight across (not just the nearest
+          // sample: near the end of a road that is the end cap, closer than any road is wide)
           let m = -1, md = Infinity;
           for (let q = 0; q < rj.S.length; q++) {
-            const Q = rj.S[q], d = hyp(Q.x - p.x, Q.y - p.y); if (d >= md) continue;
-            if (j === i) { let ds = Math.abs(Q.s - p.s); if (ring) ds = Math.min(ds, ri.len - ds); if (ds <= 1.3 * d) continue; }
+            const Q = rj.S[q], d = hyp(Q.x - p.x, Q.y - p.y);
+            if (d >= md || d < o.wmin || d > o.wmax || (best && d >= best.d)) continue;
+            if (j === i) { let ds = Math.abs(Q.s - p.s); if (ring) ds = Math.min(ds, ri.len - ds); if (ds <= 1.3 * d) continue; if (!(Q.s > p.s)) continue; }   // a chain with itself: the first arm only
+            const u = [(Q.x - p.x) / d, (Q.y - p.y) / d];
+            if (Math.abs(p.tx * Q.ty - p.ty * Q.tx) > o.par || Math.abs(u[0] * p.tx + u[1] * p.ty) > o.par) continue;
             md = d; m = q;
           }
-          if (m < 0 || md < o.wmin || md > o.wmax || (best && md >= best.d)) continue;
-          const Q = rj.S[m], u = [(Q.x - p.x) / md, (Q.y - p.y) / md];
-          if (Math.abs(p.tx * Q.ty - p.ty * Q.tx) > o.par || Math.abs(u[0] * p.tx + u[1] * p.ty) > o.par) continue;
-          if (j === i && !(Q.s > p.s)) continue;                              // a chain with itself: the first arm only
+          if (m < 0) continue;
+          const Q = rj.S[m];
           best = { j, m, d: md, qx: Q.x, qy: Q.y, qs: Q.s };
         }
         out[i][k] = best;
@@ -155,16 +158,16 @@ const PlanKerbs = (() => {
     const out = []; let cur = null;
     for (const k of list) {
       const a = A[i][k];
-      if (cur && k - cur.k1 <= 3 && Math.abs(a.qs - cur.qs) <= 8 + 3 * (k - cur.k1)) { cur.k1 = k; cur.qs = a.qs; cur.ks.push(k); }
-      else { if (cur) out.push(cur); cur = { i, j, k0: k, k1: k, qs: a.qs, ks: [k] }; }
+      if (cur && k - cur.k1 <= 3 && Math.abs(a.qs - cur.qs) <= 8 + 3 * (k - cur.k1) && Math.abs(a.d - cur.d) <= 0.6 * (k - cur.k1)) { cur.k1 = k; cur.qs = a.qs; cur.d = a.d; cur.ks.push(k); }   // a width that jumps is another road (the end cap's sides)
+      else { if (cur) out.push(cur); cur = { i, j, k0: k, k1: k, qs: a.qs, d: a.d, ks: [k] }; }
     }
     if (cur) out.push(cur);
     const res = [];
     for (const r of out) {
-      // a fillet bends the kerb away: take off the ends where the width leaves the run's own
-      const md = median(r.ks.map(k => A[i][k].d)), off = k => Math.abs(A[i][k].d - md) > Math.max(0.3, 0.03 * md);
-      while (r.ks.length > 2 && off(r.ks[0])) r.ks.shift();
-      while (r.ks.length > 2 && off(r.ks[r.ks.length - 1])) r.ks.pop();
+      // a fillet bends the kerb away: take off the ends where the width is changing fast (a taper changes it slowly and stays)
+      const dd = k => A[i][k].d, steep = (k, k2) => Math.abs(dd(k) - dd(k2)) > 0.25 * Math.abs(k2 - k);
+      while (r.ks.length > 2 && steep(r.ks[0], r.ks[1])) r.ks.shift();
+      while (r.ks.length > 2 && steep(r.ks[r.ks.length - 1], r.ks[r.ks.length - 2])) r.ks.pop();
       r.k0 = r.ks[0]; r.k1 = r.ks[r.ks.length - 1];
       const len = S[r.k1].s - S[r.k0].s; if (len < o.minRun) continue;
       const mids = [], ws = [];
@@ -265,8 +268,8 @@ const PlanKerbs = (() => {
       const js = new Set(); A[i].forEach(a => { if (a) js.add(a.j); });
       for (const j of js) {
         if (j === i) {                                                      // the two arms of one chain (cul-de-sac): the arm 1 stretch
-          const rs = runs(R, A, i, i, o), cov = rs.reduce((t, r) => t + r.len, 0);
-          if (!rs.length || !(cov >= o.cover * R[i].len / 2 || Math.max(...rs.map(r => r.len)) >= o.minStreet)) continue;
+          const rs = runs(R, A, i, i, o), cov = rs.reduce((t, r) => t + r.len, 0), cap = median(rs.flatMap(r => r.ws)), arm = Math.max(R[i].len / 2 - cap, o.minRun);   // one arm = half the chain less the end cap
+          if (!rs.length || !(cov >= o.cover * arm || Math.max(...rs.map(r => r.len)) >= o.minStreet)) continue;
           paired.add(i);
           for (const r of rs) {
             const piece = { pts: simplify(r.mids, 0.15), ws: r.ws, chains: [i], bulbs: [] };
@@ -406,7 +409,68 @@ const PlanKerbs = (() => {
     return { pts: simplify(pts, 0.15).map(p => [+p[0].toFixed(3), +p[1].toFixed(3)]), w: +w.toFixed(1), chains: [], one: true };
   }
 
-  return { D, joinPieces, solve, pairedShare, pairManual, attach, fitCircle, resample, components, connect, offsetOne };
+  // The two kerb lines of a street, read back from the drawn kerbs: at every 2 m of the centreline the nearest kerb point
+  // straight across on each side (left, then right, looking along the street). A side with no kerb there (a junction mouth,
+  // a stub run on to another street) is mirrored from the other side, or set half the street's width out. Road plan roads
+  // keep the kerb width profile through these two lines.
+  function sides(street, chains, o) {
+    o = opt(o);
+    const R = resample(street.pts, 2), cs = chains.map(c => resample(c.pts, 1)), half = (street.w || 10) / 2, lo = 0.4 * half, hi = 1.6 * half + 1;
+    const A = [], B = [];
+    for (const p of R.S) {
+      let l = null, r = null;
+      for (const c of cs) {
+        const bx = c.box; if (p.x < bx[0] - hi || p.x > bx[2] + hi || p.y < bx[1] - hi || p.y > bx[3] + hi) continue;
+        for (const q of c.S) {
+          const dx = q.x - p.x, dy = q.y - p.y, d = hyp(dx, dy); if (d > hi || d < lo) continue;
+          if (Math.abs(dx * p.tx + dy * p.ty) > 0.35 * d) continue;                      // straight across only
+          if (p.tx * dy - p.ty * dx > 0) { if (!l || d < l.d) l = { d, x: q.x, y: q.y }; } else if (!r || d < r.d) r = { d, x: q.x, y: q.y };
+        }
+      }
+      const nl = [p.x - p.ty * half, p.y + p.tx * half], nr = [p.x + p.ty * half, p.y - p.tx * half];
+      const L = l ? [l.x, l.y] : r ? [2 * p.x - r.x, 2 * p.y - r.y] : nl, Rr = r ? [r.x, r.y] : l ? [2 * p.x - l.x, 2 * p.y - l.y] : nr;
+      A.push(L); B.push(Rr);
+    }
+    const fix = a => simplify(a, 0.1).map(q => [+q[0].toFixed(3), +q[1].toFixed(3)]);
+    return { a: fix(A), b: fix(B) };
+  }
+
+  // ───────── the review step, without a screen ─────────
+  // The state both review UIs (Auto layout, Road plan) drive: the streets found, what is left over, and the edits:
+  // remove a street, add one from two kerbs, a road beside a lone kerb, join separate networks.
+  function stage(chains, o) {
+    const T = {
+      o: opt(o), chains, streets: [], unpaired: [], pickA: null, one: null,
+      solve() { const r = solve(chains, T.o); T.streets = r.streets.map(x => ({ ...x })); T.unpaired = r.unpaired; T.pickA = null; T.one = null; return T; },
+      _near(pts, pt) { let b = Infinity; for (let i = 0; i + 1 < pts.length; i++) b = Math.min(b, segDist(pt, pts[i], pts[i + 1])); return b; },
+      _pick(list, pt, tol) { let bi = -1, bd = tol; list.forEach((x, i) => { const d = T._near(x.pts, pt); if (d < bd) { bd = d; bi = i; } }); return bi; },
+      streetAt(pt, tol) { return T._pick(T.streets, pt, tol); },
+      chainAt(pt, tol) { return T._pick(chains, pt, tol); },
+      remove(pt, tol) { const i = T.streetAt(pt, tol); if (i < 0) return false; T.streets.splice(i, 1); T.pickA = null; return true; },
+      // Shift-click: the first kerb, then the one across the road. Returns what happened.
+      pair(pt, tol) {
+        const i = T.chainAt(pt, tol); if (i < 0) return 'nokerb';
+        if (T.pickA == null) { T.pickA = i; return 'first'; }
+        if (T.pickA === i) { T.pickA = null; return 'cancel'; }
+        const st = pairManual(chains, T.pickA, i, T.o); T.pickA = null;
+        if (!st) return 'noroad';
+        T.streets.push(st); attach(T.streets, T.streets.length - 1, T.o); return 'added';
+      },
+      arm(i) { T.one = i; T.pickA = null; },
+      // the click after arm(): its side of the lone kerb is where the road goes
+      place(pt) {
+        if (T.one == null) return false;
+        const st = offsetOne(chains[T.one], pt, T.o.oneW); st.chains = [T.one]; T.one = null;
+        T.streets.push(st); attach(T.streets, T.streets.length - 1, T.o); return true;
+      },
+      join(maxGap) { return connect(T.streets, maxGap == null ? T.o.join : maxGap); },
+      networks() { return components(T.streets); },
+      info(i) { const c = chains[i], mid = c.pts[Math.floor(c.pts.length / 2)]; return { i, len: plen(c.pts), at: [mid[0], mid[1]] }; },
+    };
+    return T;
+  }
+
+  return { D, sides, stage, joinPieces, solve, pairedShare, pairManual, attach, fitCircle, resample, components, connect, offsetOne };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = PlanKerbs;

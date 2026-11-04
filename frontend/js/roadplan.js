@@ -784,7 +784,7 @@ const RoadPlan = {
       if (!ok) return;
       unitM = +m.querySelector('[data-u="m"]').value;
     }
-    const ents = [];
+    const ents = [], texts = [];
     let npts = 0, truncated = false;
     const push = (l, flat, closed) => {
       if (npts + flat.length / 2 > 120000) { truncated = true; return; }
@@ -792,6 +792,7 @@ const RoadPlan = {
       ents.push({ l, p: flat.map(v => +(v * unitM).toFixed(3)), c: closed ? 1 : 0 });
     };
     for (const e of data.entities) {
+      if (e.t === 'x' && texts.length < 500 && /[A-Za-z]{3,}/.test(String(e.s || '')) && e.p) { texts.push({ s: String(e.s).replace(/\s+/g, ' ').trim(), x: +(e.p[0] * unitM).toFixed(3), y: +(e.p[1] * unitM).toFixed(3) }); continue; }
       if (e.t === 'l') push(e.l, e.p, false);
       else if (e.t === 'p' && e.p && e.p.length >= 4) push(e.l, e.p, !!e.c);
       else if (e.t === 'a' || e.t === 'c') {
@@ -806,7 +807,7 @@ const RoadPlan = {
     }
     const layers = (data.layers || []).map(l => ({ name: l.name, color: l.color || '#8a8f98', hidden: !l.on || !!l.frozen }))
       .filter(l => ents.some(e => e.l === l.name));
-    this.rp.bg = { name, unitM, origin: data.origin || [0, 0], layers, ents };
+    this.rp.bg = { name, unitM, origin: data.origin || [0, 0], layers, ents, texts };
     AppState.dirty = true;
     this.fit();
     this.render();
@@ -1025,6 +1026,7 @@ const RoadPlan = {
       if (!last || Math.hypot(p[0] - last[0], p[1] - last[1]) > 0.05) this._draft.push(p);
       this.renderScreen(); return;
     }
+    if (this._tool === 'kerbauto') { RoadKerbs.down(wx, wy, e); return; }
     if (this._tool === 'pick') { this._pickAt(wx, wy, e); return; }
     if (this._tool === 'addpole') { this._addPoleAt(wx, wy); return; }
     if (this._tool === 'feed') { this._feedDown(wx, wy); return; }
@@ -1116,6 +1118,7 @@ const RoadPlan = {
   onKeydown(e) {
     if (!this._active || this._view3d) return false;   // the 3D view takes its keys on its canvas
     const k = e.key;
+    if (this._tool === 'kerbauto' && typeof RoadKerbs !== 'undefined' && RoadKerbs.key(e)) return true;
     if ((this._tool === 'draw' || this._tool === 'kerbs') && this._draft) {
       if (k === 'Enter') { this.finishDraft(); return true; }
       if (k === 'Escape') { this._draft = null; this.renderScreen(); return true; }
@@ -1133,6 +1136,7 @@ const RoadPlan = {
 
   // ─── Tools ───────────────────────────────────────────────────────────
   setTool(t) {
+    if (t !== 'kerbauto' && typeof RoadKerbs !== 'undefined') RoadKerbs.close();
     this._tool = t; this._draft = null; this._feedDraft = null; this._closePick();
     if (t !== 'kerbs' && t !== 'pick') this._kerbDraft = null;
     this.renderToolbar(); this.renderScreen(); this._hint();
@@ -1291,7 +1295,7 @@ const RoadPlan = {
   },
   setStep(n) {
     this._step = n;
-    if (n !== 1 && (this._tool === 'draw' || this._tool === 'kerbs' || this._tool === 'pick')) this._tool = 'select';
+    if (n !== 1 && (this._tool === 'draw' || this._tool === 'kerbs' || this._tool === 'pick' || this._tool === 'kerbauto')) { this._tool = 'select'; if (typeof RoadKerbs !== 'undefined') RoadKerbs.close(); }
     if (n !== 2 && (this._tool === 'addpole' || this._tool === 'feed')) this._tool = 'select';
     this._feedDraft = null;
     this._draft = null; this._kerbDraft = null; this._closePick();
@@ -1305,6 +1309,7 @@ const RoadPlan = {
     if (!this.roads.length && this._tool === 'select' && this._step === 1) t = 'Draw a centreline, trace two kerbs, or load a DXF background and pick lines from it.';
     else if (this._tool === 'draw') t = 'Click each intersection point; corners get a tangent arc at the bend radius. Double-click or Enter to finish, Backspace removes the last point, Esc cancels.';
     else if (this._tool === 'kerbs') t = this._kerbDraft ? 'Now trace the other kerb (Enter / double-click to finish).' : 'Trace the first kerb (Enter / double-click to finish), then the other one.';
+    else if (this._tool === 'kerbauto') t = RoadKerbs.hint();
     else if (this._tool === 'pick') t = this._kerbDraft ? 'Click the other kerb line.' : 'Click a DXF line: connected pieces on its layer are joined.';
     else if (this._tool === 'addpole') t = 'Click beside the road: the pole goes on the nearest pole line.';
     else if (this._tool === 'feed') t = this._feedDraft ? 'Click each bend of the feeder cable, then click the pole it feeds (or Enter to feed the nearest end). Backspace removes the last bend, Esc cancels.' : 'Click where the kiosk or minisub stands, then the bends of its feeder cable to the road.';
@@ -1354,6 +1359,7 @@ const RoadPlan = {
     } else if (this._step === 1) {
       html = `${b('select', 'Select', 'Select a road, drag its intersection points')}${b('draw', 'Draw centreline', 'Click intersection points; corners are rounded with tangent arcs')}${b('kerbs', 'Trace kerbs', 'Trace both kerbs: the carriageway width follows them')}
         ${this.rp.bg ? b('pick', 'From DXF', 'Pick a centreline or two kerbs from the background drawing') : ''}
+        ${this.rp.bg && typeof RoadKerbs !== 'undefined' ? `<button class="btn-small${this._tool === 'kerbauto' ? ' active' : ''}" data-rp="rk-open" title="Find every road of a kerb layer by pairing its kerb lines, review them, then create the roads with their measured widths">Roads from kerbs</button>` : ''}
         <span class="sl-sep"></span>
         <label class="rl-inline" title="Radius of the tangent arc at each corner of a drawn centreline (a corner can override it)">Bend radius<span class="sl-unit"><input type="number" min="0" step="5" class="sl-in-num" data-rp-road-f="radius" value="${escHtml(r ? (r.radius ?? 50) : 50)}"${r && r.mode === 'ip' ? '' : (r ? ' disabled' : '')}> m</span></label>
         <label class="rl-inline"><input type="checkbox" data-rp="snap"${this._snap ? ' checked' : ''}> Snap</label>`;
@@ -1599,6 +1605,7 @@ const RoadPlan = {
       for (const g of (this._pickGaps || [])) out.push(poly(g, 'rp-gap'));
       for (const mk of (this._trim || [])) { const [mx, my] = S(mk.pt[0], mk.pt[1]); out.push(`<circle cx="${mx.toFixed(1)}" cy="${my.toFixed(1)}" r="5" class="rp-mark"/>`); }
     }
+    if (this._tool === 'kerbauto' && typeof RoadKerbs !== 'undefined') RoadKerbs.overlay(S, out);
     // draft
     if (this._draft && this._draft.length) {
       const pts = this._draft.slice();
@@ -1656,6 +1663,7 @@ const RoadPlan = {
       `<div style="flex:${escHtml(s.width)};background:${RoadLight.SEC_FILL[s.type] || 'var(--rl-verge)'}" class="rp-xs-s ${escHtml(s.type)}" title="${escHtml((s.name || RoadLight._secName(s, des)) + ' ' + s.width + ' m' + (s.cls ? ' · ' + s.cls : ''))}"><span>${this._fmt(s.width, 1)}${s.cls ? ' · ' + escHtml(s.cls) : ''}</span></div>`).join('')}</div>`;
   },
   _panelShape() {
+    if (this._tool === 'kerbauto' && typeof RoadKerbs !== 'undefined') return RoadKerbs.panelHtml();
     const r = this.selRoad;
     if (!r) return `<div class="sl-empty"><h3>Road plan</h3><p>Draw the road's centreline on the plan — straights joined by tangent arcs — or trace both kerbs, or load a DXF site plan and pick its centreline. The cross-section of a Lighting design is swept along it.</p><p><button class="btn-small btn-primary" data-rp-tool="draw">Draw centreline</button></p></div>`;
     const g = this.geom(r), des = this._design(r);
@@ -1775,6 +1783,8 @@ const RoadPlan = {
     if (t.dataset.rpQty) { this._qty = t.dataset.rpQty; this._heatKey = null; this.renderToolbar(); if (this._view3d) Road3D.render(); else this._renderHeat(); return; }
     if (t.dataset.rpPole) { this._selPole = t.dataset.rpPole; this.renderPanel(); this.renderScreen(); return; }
     const r = this.selRoad;
+    if (t.dataset.rp === 'rk-open') { RoadKerbs.open(); return; }
+    if (t.dataset.rp && t.dataset.rp.startsWith('rk-') && typeof RoadKerbs !== 'undefined' && RoadKerbs.act(t)) return;
     switch (t.dataset.rp) {
       case 'bg': document.getElementById('rp-file').click(); break;
       case 'bg-site': this.useSitePlan(); break;
@@ -1808,6 +1818,7 @@ const RoadPlan = {
     if (this._view3d && Road3D.onChange(e)) return;
     const t = e.target, d = t.dataset;
     const r = this.selRoad;
+    if (d.rpk !== undefined && typeof RoadKerbs !== 'undefined') { RoadKerbs.change(t); return; }
     if (d.rpCs) {
       // The road plan's own circuit settings (Keep workspaces in sync).
       const st = this.rp.settings, k = d.rpCs;
