@@ -28,7 +28,7 @@ const PlanLayout = (() => {
   const DEFAULTS = {
     side: 4, depth: 4, corner: 'start', front: 'longest',      // marker: m from the side boundary and the front; which corner; corner erf's front
     kmode: 'opt', n: 6, maxc: 80, worth: 250,                // kiosks
-    subMode: 'opt',                                          // mini-sub: 'opt' = where the LV network drops least, 'mid' = nearest the middle
+    subMode: 'opt', subs: 1,                                          // mini-sub: 'opt' = where the LV network drops least, 'mid' = nearest the middle
     m: 8, maxmh: 120, fibre: 'opp', topo: 'ring',              // fibre
     share: true, xmode: 'bound', junct: false, j110: 2, j160: 1, spare: 0,   // crossings
   };
@@ -522,58 +522,117 @@ const PlanLayout = (() => {
           }
           return { dist, prev };
         };
-        let sk, T;
-        if (input.subPt || P.subMode !== 'opt' || kiosks.length < 3) {
-          let sp = input.subPt;
-          if (!sp) sp = [kiosks.reduce((a, k) => a + k.x, 0) / kiosks.length, kiosks.reduce((a, k) => a + k.y, 0) / kiosks.length];
-          sk = kiosks.slice().sort((p, q) => Math.hypot(p.x - sp[0], p.y - sp[1]) - Math.hypot(q.x - sp[0], q.y - sp[1]))[0];
-          T = treeFrom(sk);
-        } else {
-          // The mini-sub goes where the LV network drops least. Search guide (the real volt drop is worked out by Demand afterwards):
-          // for each candidate kiosk, the worst "erven below × length" summed along a kiosk's path, then the shortest LV network.
-          let best = null;
-          for (const cand of kiosks) {
-            const t = treeFrom(cand), load = new Map(), used = new Set();
-            for (const k of kiosks) for (let v = k.node; v !== cand.node && t.prev.get(v);) { const ed = t.prev.get(v); load.set(ed, (load.get(ed) || 0) + k.members.length); used.add(ed); v = ed.a === v ? ed.b : ed.a; }
-            let worst = 0;
-            for (const k of kiosks) { let m = 0; for (let v = k.node; v !== cand.node && t.prev.get(v);) { const ed = t.prev.get(v); m += load.get(ed) * ed.len; v = ed.a === v ? ed.b : ed.a; } if (m > worst) worst = m; }
-            let tot = 0; used.forEach(ed => { tot += ed.len; });
-            if (!best || worst < best.worst - 1e-6 || (Math.abs(worst - best.worst) <= 1e-6 && tot < best.tot)) best = { cand, t, worst, tot };
+        const trees = new Map();
+        const T = k => { let t = trees.get(k); if (!t) { t = treeFrom(k); trees.set(k, t); } return t; };
+        const dd = (a, b) => T(a).dist.get(b.node);
+        // the mini-sub of a group of kiosks: the one placed by hand (nearest kiosk to it), the middle of the kiosks, or — the default —
+        // where the LV network drops least. That is a search guide (the real volt drop is worked out by Demand afterwards): for each
+        // candidate kiosk, the worst "erven below × length" summed along a kiosk's path, then the shortest LV network.
+        const pickSub = (grp, sp) => {
+          if (sp || P.subMode !== 'opt' || grp.length < 3) {
+            if (!sp) sp = [grp.reduce((a, k) => a + k.x, 0) / grp.length, grp.reduce((a, k) => a + k.y, 0) / grp.length];
+            return grp.slice().sort((p, q) => Math.hypot(p.x - sp[0], p.y - sp[1]) - Math.hypot(q.x - sp[0], q.y - sp[1]))[0];
           }
-          sk = best.cand; T = best.t;
+          let best = null;
+          for (const cand of grp) {
+            const t = T(cand), load = new Map(), used = new Set();
+            for (const k of grp) for (let v = k.node; v !== cand.node && t.prev.get(v);) { const ed = t.prev.get(v); load.set(ed, (load.get(ed) || 0) + k.members.length); used.add(ed); v = ed.a === v ? ed.b : ed.a; }
+            let worst = 0;
+            for (const k of grp) { let m = 0; for (let v = k.node; v !== cand.node && t.prev.get(v);) { const ed = t.prev.get(v); m += load.get(ed) * ed.len; v = ed.a === v ? ed.b : ed.a; } if (m > worst) worst = m; }
+            let tot = 0; used.forEach(ed => { tot += ed.len; });
+            if (!best || worst < best.worst - 1e-6 || (Math.abs(worst - best.worst) <= 1e-6 && tot < best.tot)) best = { cand, worst, tot };
+          }
+          return best.cand;
+        };
+        // how many mini-subs: the kiosks are split by LV distance (k-medoids, weighted by erven) and each group gets its own tree
+        const nSub = Math.max(1, Math.min(Math.round(P.subs) || 1, kiosks.length));
+        let subs;
+        if (nSub === 1) subs = [{ k: pickSub(kiosks, input.subPt), g: kiosks }];
+        else {
+          const fixed = input.subPt ? pickSub(kiosks, input.subPt) : null;
+          const cost = (c, g) => g.reduce((a, k) => a + dd(c, k) * k.members.length, 0);
+          const med = [fixed || kiosks.slice().sort((p, q) => cost(p, kiosks) - cost(q, kiosks))[0]];
+          while (med.length < nSub) {
+            let far = null, fd = -1;
+            for (const k of kiosks) { if (med.includes(k)) continue; const d = Math.min(...med.map(m => dd(m, k))); if (d > fd) { fd = d; far = k; } }
+            if (!far) break; med.push(far);
+          }
+          // each kiosk goes to its nearest mini-sub that still has room (a mini-sub takes at most ~20 % more than an even share of the erven),
+          // the kiosks with most to lose first, so the transformers carry similar loads
+          const total = kiosks.reduce((a, k) => a + k.members.length, 0), cap = Math.ceil(total / nSub * 1.2);
+          const assign = () => {
+            const g = med.map(() => []), used = med.map(() => 0);
+            const ds = new Map(kiosks.map(k => [k, med.map(m => dd(m, k))]));
+            const regret = k => { const d = ds.get(k).slice().sort((p, q) => p - q); return (d[1] === undefined ? 0 : d[1]) - d[0]; };
+            kiosks.slice().sort((p, q) => regret(q) - regret(p)).forEach(k => {
+              const d = ds.get(k), order = d.map((v, i) => i).sort((p, q) => d[p] - d[q]);
+              const bi = order.find(i => used[i] + k.members.length <= cap) ?? order[0];
+              g[bi].push(k); used[bi] += k.members.length;
+            });
+            return g;
+          };
+          let groups = assign();
+          for (let it = 0; it < 10; it++) {
+            let moved = false;
+            groups.forEach((g, i) => { if (fixed && i === 0) return; let bk = med[i], bc = cost(med[i], g); g.forEach(c => { const cc = cost(c, g); if (cc < bc - 1e-6) { bc = cc; bk = c; } }); if (bk !== med[i]) { med[i] = bk; moved = true; } });
+            if (!moved) break;
+            groups = assign();
+          }
+          subs = med.map((k, i) => ({ k, g: groups[i] })).filter(x => x.g.length);
         }
-        net.sub = sk;
-        const dist = T.dist, prev = T.prev;
-        const kioskNode = new Map(kiosks.map(k => [k.node, k])), lvSet = new Set();
-        for (const k of kiosks) {
-          if (k === sk) continue;
-          for (let v = k.node; v !== sk.node && prev.get(v);) { const ed = prev.get(v); lvSet.add(ed); v = ed.a === v ? ed.b : ed.a; }
-          // the link from the nearest kiosk (or the mini-sub) up the tree to this one
-          const path = []; let v = k.node;
-          while (v !== sk.node && prev.get(v)) { const ed = prev.get(v); path.push({ ed, from: ed.a === v ? ed.b : ed.a, to: v }); v = ed.a === v ? ed.b : ed.a; if (kioskNode.has(v)) break; }
-          const parent = kioskNode.get(v);
-          if (parent && path.length) {
-            const pts = []; path.slice().reverse().forEach(st => { const seg = st.ed.a === st.from ? st.ed.pts : st.ed.pts.slice().reverse(); seg.forEach(p => { if (!pts.length || Math.hypot(pts[pts.length - 1][0] - p[0], pts[pts.length - 1][1] - p[1]) > .01) pts.push(p); }); });
-            net.lvLinks.push({ from: parent, to: k, pts, len: plen(pts) });
+        // the mini-sub nearest the supply point comes first (its MV cable is the one from the supply)
+        const sup = input.mvPt || (streets[0] ? ptAt(streets[0], 0, 0) : [0, 0]);
+        subs.sort((p, q) => Math.hypot(p.k.x - sup[0], p.k.y - sup[1]) - Math.hypot(q.k.x - sup[0], q.k.y - sup[1]));
+        subs.forEach((s, i) => { s.id = i + 1; s.g.forEach(k => { k.subK = s.k; }); });
+        net.subs = subs; net.sub = subs[0].k;
+        const lvSet = new Set();
+        for (const S of subs) {
+          const sk = S.k, prev = T(sk).prev, kioskNode = new Map(S.g.map(k => [k.node, k]));
+          for (const k of S.g) {
+            if (k === sk) continue;
+            for (let v = k.node; v !== sk.node && prev.get(v);) { const ed = prev.get(v); lvSet.add(ed); v = ed.a === v ? ed.b : ed.a; }
+            // the link from the nearest kiosk (or the mini-sub) up the tree to this one
+            const path = []; let v = k.node;
+            while (v !== sk.node && prev.get(v)) { const ed = prev.get(v); path.push({ ed, from: ed.a === v ? ed.b : ed.a, to: v }); v = ed.a === v ? ed.b : ed.a; if (kioskNode.has(v)) break; }
+            const parent = kioskNode.get(v);
+            if (parent && path.length) {
+              const pts = []; path.slice().reverse().forEach(st => { const seg = st.ed.a === st.from ? st.ed.pts : st.ed.pts.slice().reverse(); seg.forEach(p => { if (!pts.length || Math.hypot(pts[pts.length - 1][0] - p[0], pts[pts.length - 1][1] - p[1]) > .01) pts.push(p); }); });
+              net.lvLinks.push({ from: parent, to: k, pts, len: plen(pts) });
+            }
           }
         }
         net.lv = [...lvSet]; net.lvLen = net.lv.reduce((a, ed) => a + ed.len, 0);
         net.lv.forEach(ed => ed.xs.forEach(x => events.push({ st: x.st, s: x.s, t: 'lv' })));
-        // MV: from the supply point to the mini-sub, in the kiosk-side verge, in its own duct
+        // MV: from the supply point to the first mini-sub, then on from the nearest earlier one, in the kiosk-side verge, in its own duct
         let mvNode = null;
         if (input.mvPt) { let bs = null, bd = 1e9; for (const st of streets) { const pr = project(st, input.mvPt[0], input.mvPt[1]); if (pr.d < bd) { bd = pr.d; bs = [st, pr.s]; } } if (bs) mvNode = node(bs[0], bs[1]); }
         if (!mvNode && streets.length) mvNode = node(streets[0], 0);
-        const mvSet = [], mvLine = [];
-        if (mvNode) {
-          // a node made after the search has no distance: join it to its street neighbours
-          if (!prev.get(mvNode) && mvNode !== sk.node) {
-            const on = nodes.filter(n => n.st === mvNode.st && n !== mvNode).sort((p, q) => Math.abs(p.s - mvNode.s) - Math.abs(q.s - mvNode.s))[0];
-            if (on) { const ed = { a: mvNode, b: on, pts: verge(mvNode.st, mvNode.s, on.s, (ks[mvNode.st.id] || 1) * mvNode.st.vk), len: 0, xs: [] }; ed.len = plen(ed.pts); mvSet.push(ed); mvLine.push(...ed.pts); mvNode = on; }
+        const mvSet = [], mvLines = [];
+        const walk = (from, S) => {
+          const prev = T(S.k).prev, line = [];
+          for (let v = from; v !== S.k.node && prev.get(v);) { const ed = prev.get(v); mvSet.push(ed); line.push(...(ed.a === v ? ed.pts : ed.pts.slice().reverse())); v = ed.a === v ? ed.b : ed.a; }
+          return line;
+        };
+        subs.forEach((S, i) => {
+          let line = [];
+          if (i === 0) {
+            if (mvNode) {
+              let from = mvNode;
+              // a node made after the search has no distance: join it to its street neighbours
+              if (!T(S.k).prev.get(from) && from !== S.k.node) {
+                const on = nodes.filter(n => n.st === from.st && n !== from).sort((p, q) => Math.abs(p.s - from.s) - Math.abs(q.s - from.s))[0];
+                if (on) { const ed = { a: from, b: on, pts: verge(from.st, from.s, on.s, (ks[from.st.id] || 1) * from.st.vk), len: 0, xs: [] }; ed.len = plen(ed.pts); mvSet.push(ed); line.push(...ed.pts); from = on; }
+              }
+              line.push(...walk(from, S));
+            }
+          } else {
+            const near = subs.slice(0, i).sort((p, q) => dd(S.k, p.k) - dd(S.k, q.k))[0];
+            line = walk(near.k.node, S);
           }
-          for (let v = mvNode; v !== sk.node && prev.get(v);) { const ed = prev.get(v); mvSet.push(ed); mvLine.push(...(ed.a === v ? ed.pts : ed.pts.slice().reverse())); v = ed.a === v ? ed.b : ed.a; }
-        }
+          mvLines.push({ sub: S.k, pts: line.filter((p, j) => !j || Math.hypot(p[0] - line[j - 1][0], p[1] - line[j - 1][1]) > .01) });
+        });
         net.mv = mvSet; net.mvLen = mvSet.reduce((a, ed) => a + ed.len, 0);
-        net.mvLine = mvLine.filter((p, i) => !i || Math.hypot(p[0] - mvLine[i - 1][0], p[1] - mvLine[i - 1][1]) > .01);
+        net.mvLines = mvLines; net.mvLine = mvLines[0] ? mvLines[0].pts : [];
         net.mvPts = net.mvLine.length ? net.mvLine[0] : null;
         mvSet.forEach(ed => ed.xs.forEach(x => events.push({ st: x.st, s: x.s, t: 'mv' })));
       }
@@ -698,17 +757,19 @@ const PlanLayout = (() => {
   // mini-sub, in the shape Demand's own demand and volt-drop engine takes — so the layout never re-implements either.
   // o = { minisubId, lvCable, svcCable (names), phases: [id, id, id] }
   function demandInput(res, o) {
-    const net = res.net, sub = net && net.sub;
-    if (!sub) return null;
+    const net = res.net, subs = net && net.subs;
+    if (!subs || !subs.length) return null;
     const up = new Map(net.lvLinks.map(l => [l.to, l]));
     const phases = (o.phases && o.phases.length) ? o.phases : [null];
+    const sid = k => (o.minisubId || 'LAYOUT_SUB') + (subs.length > 1 ? '_' + subs.find(S => S.k === k.subK).id : '');
+    const isSub = new Set(subs.map(S => S.k));
     const kiosks = res.kiosks.map(k => {
       const l = up.get(k);
-      return { id: k.id, name: k.id, fedFrom: l ? l.from.id : o.minisubId, loadClass: '', admdOverride: 0, streetLightKVA: 0,
-        feederCable: o.lvCable || '', feederLength: l ? l.len : (k === sub ? 5 : 0),   // the mini-sub stands 5 m along the street from its kiosk
-        erfs: k.members.map((e, i) => ({ id: e.id, erfNumber: String(e.id), length: Math.max(e.cable || 0, 0.1), phase: phases[i % phases.length], cableType: o.svcCable || '', ampsOverride: 0 })) };
+      return { id: k.id, name: k.id, fedFrom: l ? l.from.id : sid(k), loadClass: '', admdOverride: 0, streetLightKVA: 0,
+        feederCable: o.lvCable || '', feederLength: l ? l.len : (isSub.has(k) ? 5 : 0),   // a mini-sub stands 5 m along the street from its kiosk
+        erfs: k.members.map((e, i) => ({ id: e.id, erfNumber: String((o.names && o.names[e.id]) || e.id), length: Math.max(e.cable || 0, 0.1), phase: phases[i % phases.length], cableType: o.svcCable || '', ampsOverride: 0 })) };
     });
-    return { minisubs: [{ id: o.minisubId, name: 'Auto layout mini-sub' }], kiosks };
+    return { minisubs: subs.map(S => ({ id: sid(S.k), name: 'Auto layout mini-sub' + (subs.length > 1 ? ' ' + S.id : ''), ...(o.txTypeId ? { txTypeId: o.txTypeId } : {}) })), kiosks };
   }
 
   return { solve, trenches, demandInput, TRENCH_DEFAULTS, DEFAULTS, ptAt, project, verge, plen };
