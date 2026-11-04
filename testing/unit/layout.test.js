@@ -62,12 +62,14 @@ ok('crossing ducts follow the rules: 110 mm takes 4 services / 4 fibre ducts / 2
 
 ok('crossings sit on erf boundaries (or kiosk stations when asked)', () => {
   const r = L.solve(F, { xmode: 'bound' });
-  const real = r.net.cross.filter(c => c.svc > 0);
-  assert(real.length > 0);
-  for (const c of real) {
-    const near = r.erven.some(e => e.road === c.st && (Math.abs(e.lo - c.s) < 2.5 || Math.abs(e.hi - c.s) < 2.5));
-    assert(near, `${c.st.id} ${c.s.toFixed(1)}`);
+  // the shared crossings of erven across the road from their kiosk (a service that runs round a junction corner crosses at the junction instead)
+  const across = r.erven.filter(e => e.kiosk && e.via);
+  assert(across.length > 0);
+  for (const e of across) {
+    const near = r.erven.some(o => o.road === e.road && (Math.abs(o.lo - e.via.s) < 2.5 || Math.abs(o.hi - e.via.s) < 2.5)) || (e.kiosk.road === e.road && Math.abs(e.kiosk.s - e.via.s) < 2.5);   // a boundary, else the kiosk's own station
+    assert(near, `${e.id} ${e.via.s.toFixed(1)}`);
   }
+  assert(r.net.cross.some(c => c.svc > 0));
 });
 
 ok('junction ducts: every junction leg gets a crossing, empty ones get the provisional ducts', () => {
@@ -233,6 +235,109 @@ ok('reach: a run through other erven is counted; an erf already in reach says so
   assert.strictEqual(L.reach(lone, farStreet, { erven: [{ poly: block }] }).crosses, 1);
   assert.strictEqual(L.reach(sq(40, 6, 60, 20), farStreet).near, true);
   assert.strictEqual(L.reach(lone, []), null);
+});
+
+// ── kiosks: one solve for the whole street network (fewest kiosks first, then crossings, then cable) ──
+const gridFx = require('./layout-grid-fixture.js');
+const stats = r => ({ k: r.kiosks.length, small: r.kiosks.filter(x => x.members.length <= 2).length, maxN: Math.max(0, ...r.kiosks.map(x => x.members.length)), served: r.erven.filter(e => e.kiosk).length });
+// the invariants every layout must keep: all served, nothing over the cable limit, no kiosk over n erven
+const holds = (r, P, total, what) => {
+  const s = stats(r);
+  assert.strictEqual(s.served, total, `${what}: ${s.served} of ${total} erven served`);
+  assert.strictEqual(r.erven.filter(e => e.kiosk && e.cable > P.maxc + 1e-6).length, 0, `${what}: erven beyond the cable limit`);
+  assert(s.maxN <= P.n, `${what}: a kiosk serves ${s.maxN} > ${P.n}`);
+  assert.strictEqual(r.stats.over, 0);
+};
+ok('kiosks: the neighbourhood needs far fewer than one solve per street gives, and none is thin', () => {
+  const P = { n: 6, maxc: 80 }, old = L.solve(F, { knet: false }), r = L.solve(F, P), s = stats(r);
+  holds(r, Object.assign({}, L.DEFAULTS, P), F.erven.length, 'fixture');
+  assert(s.k <= 15, `kiosks ${s.k}`); assert(s.k <= old.kiosks.length - 3, `${s.k} vs ${old.kiosks.length} before`);
+  assert(s.small <= 1, `${s.small} kiosks serve 2 erven or fewer`);
+  assert(r.stats.avgPer >= 4.5, 'average erven per kiosk ' + r.stats.avgPer);
+  assert(r.stats.cable <= old.stats.cable * 1.15, `service cable ${Math.round(r.stats.cable)} m vs ${Math.round(old.stats.cable)} m before`);
+});
+ok('kiosks: four short parallel streets of four erven need 3 kiosks at most (one per street gives 4 or more)', () => {
+  const G = gridFx(50), r = L.solve(G, {}), old = L.solve(G, { knet: false });
+  holds(r, Object.assign({}, L.DEFAULTS), G.erven.length, 'grid');
+  assert(r.kiosks.length <= 3, 'kiosks ' + r.kiosks.length); assert(old.kiosks.length >= 4, 'before ' + old.kiosks.length);
+  assert(r.kiosks.some(k => new Set(k.members.map(e => e.road.id)).size > 1), 'a kiosk serves erven of two streets');
+  assert(r.stats.small <= 1);
+});
+ok('kiosks: the settings now have an effect (n, worth, aim)', () => {
+  const k = P => L.solve(F, P).kiosks.length;
+  assert(k({ n: 6 }) - k({ n: 8 }) >= 2, `n 6 → 8: ${k({ n: 6 })} → ${k({ n: 8 })}`);
+  assert(k({ n: 4 }) > k({ n: 6 }), 'n 4 needs more than n 6');
+  assert(k({ worth: 0 }) - k({ worth: 250 }) >= 3, `worth 0 → 250: ${k({ worth: 0 })} → ${k({ worth: 250 })}`);
+  const loose = L.solve(F, { worth: 0 }), tight = L.solve(F, { worth: 250 });
+  assert(loose.stats.cable < tight.stats.cable, 'a smaller worth keeps the cable shorter');
+  for (const P of [{ n: 8 }, { n: 4 }, { worth: 0 }, { worth: 400 }, { maxc: 60 }, { aim: 3 }]) holds(L.solve(F, P), Object.assign({}, L.DEFAULTS, P), F.erven.length, JSON.stringify(P));
+});
+ok('kiosks: a sparser neighbourhood (40 erven) also gets far fewer', () => {
+  const S = { streets: F.streets, erven: F.erven.filter((e, i) => i % 2 === 0).slice(0, 40) }, old = L.solve(S, { knet: false }), r = L.solve(S, {});
+  assert.strictEqual(r.stats.erven, old.stats.erven, 'the same erven face a street as before'); holds(r, L.DEFAULTS, old.stats.erven, '40 erven'); assert(r.kiosks.length <= old.kiosks.length - 3, `${r.kiosks.length} vs ${old.kiosks.length} before`); assert(r.kiosks.length <= 11);
+});
+ok('kiosks: the rule-of-thumb mode is unchanged by the network solve', () => {
+  const a = L.solve(F, { kmode: 'rules', n: 6 }), b = L.solve(F, { kmode: 'rules', n: 6, knet: false });
+  assert.strictEqual(a.kiosks.length, b.kiosks.length); assert.strictEqual(Math.round(a.stats.cable), Math.round(b.stats.cable));
+});
+ok('kiosks: a service round a junction corner is routed and its crossings counted', () => {
+  const G = gridFx(50), r = L.solve(G, {}), hop = r.erven.filter(e => e.kiosk && e.kiosk.road !== e.road);
+  assert(hop.length > 0, 'some services run from another street');
+  for (const e of hop) { assert(e.route && e.route.length >= 3 && e.cable <= 80 + 1e-6, e.id); assert(e.hopN >= 2, 'the part up to the corner is known'); }
+});
+ok('LV network: the mini-sub is picked among kiosks that reach the rest; a kiosk it cannot reach is reported', () => {
+  // two streets not joined to each other: 3 + 1 erven, so the kiosks of the small street are cut off
+  const streets = [{ id: 'A', name: 'A', w: 10, pts: [[0, 0], [120, 0]] }, { id: 'B', name: 'B', w: 10, pts: [[0, 200], [30, 200]] }];
+  const erven = [0, 1, 2].map(i => ({ id: 'a' + i, poly: [[10 + 36 * i, 8], [10 + 36 * i + 30, 8], [10 + 36 * i + 30, 28], [10 + 36 * i, 28]] })).concat([{ id: 'b0', poly: [[2, 208], [28, 208], [28, 228], [2, 228]] }]);
+  const r = L.solve({ streets, erven }, { n: 6 });
+  assert(r.net.unreached.length >= 1 && r.stats.unreached >= 1, 'a cut-off kiosk is reported');
+  assert.strictEqual(r.net.sub.road.id, 'A', 'the mini-sub is on the larger network');
+  assert(r.net.unreached.every(k => k.road.id === 'B'));
+  const ok2 = L.solve({ streets: [streets[0]], erven: erven.slice(0, 3) }, {});
+  assert.strictEqual(ok2.net.unreached.length, 0);
+});
+ok('mini-sub: a free point on a street gets a kiosk there, as close as the street allows', () => {
+  const base = L.solve(F, {}), spot = L.ptAt(base.streets[0], 60, 0), r = L.solve(Object.assign({}, F, { subPt: [spot[0], spot[1]] }), {});
+  const k = r.net.sub, d = Math.hypot(k.x - spot[0], k.y - spot[1]);
+  assert(d <= 12, `the mini-sub is ${d.toFixed(1)} m from the point`);
+  holds(r, L.DEFAULTS, F.erven.length, 'with a mini-sub placed by hand');
+});
+
+// ── erven the classifier cannot place: a marker put there by hand, the solver does the rest ──
+const markerFx = () => {
+  const sq = (x0, y0, x1, y1) => [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];
+  return { streets: [{ id: 'A', name: 'ROAD A', w: 10, pts: [[0, 0], [160, 0]] }],
+    erven: [0, 1, 2, 3, 4].map(i => ({ id: 'f' + i, poly: sq(10 + i * 28, 8, 10 + i * 28 + 26, 28) })).concat([{ id: 'back', poly: sq(40, 32, 70, 52) }]) };   // 'back' has no street edge
+};
+ok('markers: an erf with no street edge is left out until its marker is placed, then it is served', () => {
+  const G = markerFx(), a = L.solve(G, {});
+  assert.deepStrictEqual(a.noFront.map(e => e.id), ['back']); assert.strictEqual(a.stats.erven, 5);
+  const r = L.solve(Object.assign({ markers: { back: [55, 30] } }, G), {}), b = r.erven.find(e => e.id === 'back');
+  assert.strictEqual(r.noFront.length, 0); assert.strictEqual(r.stats.erven, 6); assert.strictEqual(r.stats.manual, 1);
+  assert(b.manual && b.kiosk && b.road.id === 'A', 'served from the nearest street');
+  assert.deepStrictEqual(b.marker, [55, 30]); assert.deepStrictEqual(b.route[b.route.length - 1], [55, 30]);
+  assert(b.cable > 0 && b.cable <= 80, 'cable ' + b.cable);
+  assert(r.kiosks.every(k => k.members.length <= 6)); assert.strictEqual(r.over.length, 0);
+});
+ok('markers: a marker on an erf that has a front overrides the classifier\'s corner', () => {
+  const G = markerFx(), r = L.solve(Object.assign({ markers: { f2: [60, 12] } }, G), {}), e = r.erven.find(x => x.id === 'f2');
+  assert(e.manual); assert.deepStrictEqual(e.marker, [60, 12]);
+  const plain = L.solve(G, {}).erven.find(x => x.id === 'f2'); assert(!plain.manual && plain.marker[0] !== 60);
+});
+ok('markers: unknown erf ids and bad points are ignored; a marker far from every street is served but reported over the limit', () => {
+  const G = markerFx(), r = L.solve(Object.assign({ markers: { back: [55, 30], ghost: [1, 1], bad: 'x', worse: [NaN, 1] } }, G), {});
+  assert.strictEqual(r.stats.erven, 6); assert.strictEqual(r.stats.manual, 1);
+  const far = L.solve(Object.assign({ markers: { back: [55, 300] } }, G), {}), b = far.erven.find(e => e.id === 'back');
+  assert(b.kiosk, 'still assigned a kiosk'); assert(b.cable > 80 && far.over.some(e => e.id === 'back'), 'reported over maxc');
+});
+ok('markers: a hand-placed erf makes no kiosk stand of its own, and both placement modes serve it', () => {
+  const G = markerFx();
+  for (const P of [{}, { kmode: 'rules' }, { knet: false }]) {
+    const r = L.solve(Object.assign({ markers: { back: [55, 30] } }, G), P), b = r.erven.find(e => e.id === 'back');
+    assert(b.kiosk && b.cable <= 80, JSON.stringify(P)); assert.strictEqual(r.stats.erven, 6);
+  }
+  const a = L.solve(Object.assign({ markers: { back: [55, 30] } }, G), {}), b = L.solve(Object.assign({ markers: { back: [55, 30] } }, G), {});
+  assert.deepStrictEqual(a.kiosks.map(k => [k.id, k.members.length]), b.kiosks.map(k => [k.id, k.members.length]), 'deterministic');
 });
 
 console.log(n + ' passed');
