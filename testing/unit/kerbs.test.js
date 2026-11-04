@@ -99,4 +99,23 @@ ok('pairManual / attach: a street added by hand', () => {
   assert.deepStrictEqual(side.pts[side.pts.length - 1], [40, 0]);
   assert(main.pts.some(p => p[0] === 40 && p[1] === 0));
 });
+
+ok('a narrow street whose end stops short and skews still reaches the street (reach = bridge gap, not the road width)', () => {
+  const main = { pts: [[0, 0], [100, 0]], w: 5, chains: [] }, side = { pts: [[0, -60], [22, -17.7], [40, -9]], w: 5, chains: [] }, all = [main, side];
+  K.attach(all, 1);
+  const e = side.pts[side.pts.length - 1];
+  assert(Math.abs(e[1]) < 1e-6, 'ends on the main street ' + e);
+  assert.strictEqual(K.components(all).length, 1);
+});
+
+ok('components: separate networks are found, and connect joins them within the gap only', () => {
+  const a = { pts: [[0, 0], [100, 0]], w: 5 }, b = { pts: [[50, 0], [50, 60]], w: 5 }, c = { pts: [[200, 0], [260, 0]], w: 5 }, d = { pts: [[110, 5], [110, 40]], w: 5 };
+  const all = [a, b, c, d];
+  const g = K.components(all); assert.strictEqual(g.length, 3); assert.deepStrictEqual(g[0], [0, 1]);
+  assert.strictEqual(K.connect(all, 8), 0);                                    // d is 11 m from a's end: too far for 8
+  assert.strictEqual(K.connect(all, 12), 1);                                   // joined at 12
+  assert.strictEqual(K.components(all).length, 2);
+  assert.strictEqual(K.connect(all, 50), 0);                                   // c is 100 m away: left alone, the review says so
+});
+
 console.log(n + ' passed');
