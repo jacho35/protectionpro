@@ -168,4 +168,17 @@ ok('trenches: one shared trench per road crossing, and none when switched off', 
   assert.strictEqual(no.list.filter(x => x.kind === 'crossing').length, 0);
   assert(on.list.filter(x => x.kind === 'crossing').every(x => x.len > 5));
 });
+ok('demand input: every erf once, the LV tree as fedFrom, the service length on the erf', () => {
+  const r = L.solve(F, {});
+  const d = L.demandInput(r, { minisubId: 'MS', lvCable: 'A', svcCable: 'B', phases: ['Red', 'White', 'Blue'] });
+  const ids = d.kiosks.flatMap(k => k.erfs.map(e => e.id));
+  assert.strictEqual(ids.length, new Set(ids).size);
+  assert.strictEqual(ids.length, r.erven.filter(e => e.kiosk).length);
+  const kid = new Set(d.kiosks.map(k => k.id));
+  assert.strictEqual(d.kiosks.filter(k => k.fedFrom === 'MS').length, 1);                        // one kiosk feeds from the mini-sub
+  d.kiosks.forEach(k => assert(k.fedFrom === 'MS' || kid.has(k.fedFrom)));
+  d.kiosks.forEach(k => k.erfs.forEach(e => assert(e.length > 0 && e.cableType === 'B')));
+  assert(d.kiosks.filter(k => k.fedFrom !== 'MS').every(k => k.feederLength > 0 && k.feederCable === 'A'));
+  const k0 = d.kiosks.find(k => k.erfs.length >= 3); assert.deepStrictEqual(k0.erfs.slice(0, 3).map(e => e.phase), ['Red', 'White', 'Blue']);
+});
 console.log(n + ' passed');

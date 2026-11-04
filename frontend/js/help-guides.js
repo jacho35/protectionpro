@@ -33,7 +33,7 @@ const HELP_GUIDE_GROUPS = [
 // The guides worth reading first in each project type (Help ▸ Guides lists them on top;
 // every other guide stays in its group below).
 const HELP_GUIDES_FOR_TYPE = {
-  retic: ['project-types', 'demand-plan', 'plan-dxf', 'plan-select', 'plan-place', 'street-light', 'road-lighting', 'retic-earth-fault', 'overview-issues', 'quoted'],
+  retic: ['project-types', 'demand-plan', 'plan-dxf', 'auto-layout', 'plan-select', 'plan-place', 'street-light', 'road-lighting', 'retic-earth-fault', 'overview-issues', 'quoted'],
   building: ['project-types', 'db-schedule', 'db-single-line', 'db-sections', 'db-ga', 'plan-dxf', 'plan-select', 'plan-place', 'overview-issues', 'quoted'],
   network: ['project-types', 'sld-draw', 'sld-edit', 'study-fault', 'study-loadflow', 'study-cable', 'study-duty', 'study-arcflash', 'tcc-read', 'tcc-coordination', 'results-panel', 'overview-issues'],
   lighting: ['project-types', 'road-lighting', 'street-light', 'plan-dxf', 'plan-select'],
@@ -506,6 +506,39 @@ const HELP_GUIDES = [
         ] } },
   ],
   tips: ['On a building plan, a batch is tagged to the nearest board’s next free circuit.'],
+  related: [{ help: 'design-plan', label: 'Plan markup (site & floor plans)' }] },
+
+// ───────────────────────────────────────────────────────────────────────────
+{ id: 'auto-layout', group: 'retic', title: 'Lay out a township: erf markers, kiosks, fibre and trenches',
+  where: 'Plan ▸ Detect ▸ Auto layout', time: '15 min', phone: 'Best on a larger screen; the steps work on a tablet',
+  intro: 'From the erf boundaries and the street centrelines, the Plan can place every erf marker, the kiosks, a mini-sub, the LV and MV cables, fibre manholes and ducts, the road crossings and the trenches. You check the proposal, fix what you disagree with, and Create writes real plan items that Demand and the quantities pick up.',
+  steps: [
+    { title: 'Get the erven in',
+      html: 'Import the layout as a DXF underlay (see <em>Bring in a DXF at the right scale</em>) and make sure the plan is calibrated. Pick <strong>Detect erven</strong> in the Detect group and press <strong>Detect all erven</strong>: every closed boundary on the matching layers is found, and each takes the number written inside it as its name. If a number in the drawing sits in no region, the message lists it. Review the set, then <strong>Create</strong>.' },
+    { title: 'Tell it where the streets are',
+      html: 'Auto layout needs a <strong>Street centreline</strong> for every road. If the drawing has them on a layer, pick that layer under <strong>Streets</strong> in the Auto layout panel and press <strong>Use layer as streets</strong>: each polyline becomes a street, named from the nearest text, 12 m wide. Otherwise pick <em>Street centreline</em> in the Routes group and click along each street, <kbd>Enter</kbd> to finish. Streets are never counted in the quantities.' },
+    { title: 'Run the layout',
+      html: 'Open <strong>Auto layout</strong> and press <strong>Run layout</strong>. The proposal draws on the plan: the front edge of each erf, the erf marker in its corner, the kiosk each erf is served from, the fibre ducts and the road crossings. Change a rule (houses per kiosk, longest service, the maximum voltage drop (8 % to start with) and the LV and service cables it is worked out with, manhole spacing, ring or spur fibre, a side of the road per street) and it re-runs. The <strong>Result</strong> tiles show the totals, the longest service against its limit and how many crossings sharing saves.',
+      shot: { file: 'auto-layout-1.png', alt: 'The Auto layout panel beside a neighbourhood with the proposed kiosks, services and fibre',
+        setup: 'plan-layout', clip: '#plan-workspace',
+        callouts: [
+          { sel: '#plan-props [data-act="run"]', label: 'Run or re-run the layout' },
+          { sel: '#plan-props [data-side]', label: 'Kiosk and fibre side, per street' },
+          { sel: '#plan-props [data-act="create"]', label: 'Create writes the real plan items' },
+        ] } },
+    { title: 'Read the checks',
+      html: 'Under <strong>Checks</strong> the layout lists what needs a decision: erven further than the service limit from their kiosk, erven that face no street, a kiosk with too many erven, services close to the limit, erven over the voltage-drop limit, erven on the plan with no boundary. Press a row to mark those erven in red on the plan. <em>Fix</em> rows should be cleared before you Create; <em>Check</em> and <em>Note</em> rows are your call.',
+      shot: { file: 'auto-layout-2.png', alt: 'The Checks list with a row picked and the erven it names marked in red on the plan',
+        setup: 'plan-layout-checks', clip: '#plan-workspace',
+        callouts: [
+          { sel: '#plan-props [data-ck]', label: 'A check: press it to mark the erven' },
+        ] } },
+    { title: 'Correct what it got wrong',
+      html: 'Under <strong>A click edits</strong>, <strong>Erf fronts</strong> lets you click near the edge of an erf that should be its front (the choice is kept and shown in orange). <strong>Mini-sub</strong> moves the mini-sub beside a kiosk you click, and <strong>Trunk ducts / entry</strong> cuts or restores a section of the main fibre duct and moves its entry. <strong>Reset edits</strong> puts them all back. A street can be given a kiosk side and a fibre side: left and right are looking along the way the street was drawn.' },
+    { title: 'Set the trenches and Create',
+      html: 'The <strong>Trenches</strong> group sets the depth of each cable class (MV 1.1 m, LV, service and street light 0.7 m, fibre 0.6 m) and what shares a trench; the trench lengths and volumes update at once. Tick what to create and press <strong>Create on plan</strong>. It adds the kiosks, mini-sub, manholes, cables, one crossing per duct and the trenches, and moves each erf marker to its corner. Create again later and the previous layout is replaced; your own items stay. Undo removes all of it in one step.' },
+  ],
+  tips: ['The road crossings are shared: services, fibre, LV and MV that cross at one place share one trench, with 110 mm ducts for 4 services, 4 fibre ducts or 2 LV cables and a 160 mm duct for each MV cable.', 'A plan with many routes shows route lengths for the selected route only; change it in Layers › Route length labels.', 'Push to Demand then carries the erven, kiosks and service lengths into Demand.'],
   related: [{ help: 'design-plan', label: 'Plan markup (site & floor plans)' }] },
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -1746,7 +1779,7 @@ const HELP_GUIDE_LINKS = [
       if (tab === 'grid' && typeof SchMobile !== 'undefined' && SchMobile.isPhone()) return 'db-phone';
       return { grid: 'db-schedule', drawing: 'db-single-line', ga: 'db-ga' }[tab] || 'db-schedule';
     } },
-  { host: '#plan-toolbar', guide: () => (typeof PlanMarkup === 'undefined' ? 'plan-select' : PlanMarkup.mode === 'underlays' ? 'plan-dxf' : (typeof PlanTools !== 'undefined' && PlanTools.active && /^(place|array|devpath)$/.test(PlanTools.active.id)) ? 'plan-place' : 'plan-select') },
+  { host: '#plan-toolbar', guide: () => (typeof PlanMarkup === 'undefined' ? 'plan-select' : PlanMarkup.mode === 'underlays' ? 'plan-dxf' : (typeof PlanTools !== 'undefined' && PlanTools.active && /^(place|array|devpath)$/.test(PlanTools.active.id)) ? 'plan-place' : (typeof PlanTools !== 'undefined' && PlanTools.active && /^(layout|erfdetect)$/.test(PlanTools.active.id)) ? 'auto-layout' : 'plan-select') },
   { after: 'button[data-action="diagram"]', guide: 'demand-plan' },
   { host: '.sl-toolbar', guide: () => (typeof StreetLight !== 'undefined' && StreetLight._view === 'design' ? 'road-lighting' : 'street-light') },
   { host: '.tu-head', guide: 'trip-unit' },

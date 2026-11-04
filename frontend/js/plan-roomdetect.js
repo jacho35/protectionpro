@@ -1312,7 +1312,7 @@ Object.assign(PlanRoomDetect, {
     const leakBox = lk ? `<div style="border:1px solid #dc2626;border-radius:4px;padding:8px;display:flex;flex-direction:column;gap:6px">
         <span><b style="color:#dc2626">Not closed.</b> ${lk.points.length === 1 ? 'The opening' : lk.points.length + ' openings'} marked in red close${lk.points.length === 1 ? 's' : ''} at ${need.toFixed(1)} m.</span>
         <button type="button" class="plan-btn" data-rd-fixgap="${need}">Set gap to ${need.toFixed(1)} m</button></div>` : '';
-    const modeBtn = (v, t) => `<button type="button" class="plan-btn" data-rd-mode="${v}" aria-pressed="${this.mode === v}"${this.mode === v ? ' style="font-weight:600;outline:2px solid var(--accent,#2563eb)"' : ''}>${t}</button>`;
+    const modeBtn = (v, t) => `<button type="button" class="plan-btn" data-rd-mode="${v}" aria-pressed="${this.mode === v}" style="${this.mode === v ? 'font-weight:600;outline:2px solid var(--accent,#2563eb)' : ''}">${t}</button>`;
     el.innerHTML = `<div class="plan-props-title">Detect ${lim.noun === 'erf' ? 'erven' : 'rooms'}</div>
       <div class="plan-props-body" style="display:flex;flex-direction:column;gap:10px;font-size:13px">
         <button type="button" class="plan-btn" data-rd-all style="font-weight:600">Detect all ${lim.nouns}</button>

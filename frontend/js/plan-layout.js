@@ -670,7 +670,25 @@ const PlanLayout = (() => {
     return { list: out, summary: sum, T };
   }
 
-  return { solve, trenches, TRENCH_DEFAULTS, DEFAULTS, ptAt, project, verge, plen };
+  // ── the proposed network as Demand rows ──
+  // The kiosks (fedFrom = the kiosk up the LV tree, the mini-sub for the first one), their erven with the service length, and the one
+  // mini-sub, in the shape Demand's own demand and volt-drop engine takes — so the layout never re-implements either.
+  // o = { minisubId, lvCable, svcCable (names), phases: [id, id, id] }
+  function demandInput(res, o) {
+    const net = res.net, sub = net && net.sub;
+    if (!sub) return null;
+    const up = new Map(net.lvLinks.map(l => [l.to, l]));
+    const phases = (o.phases && o.phases.length) ? o.phases : [null];
+    const kiosks = res.kiosks.map(k => {
+      const l = up.get(k);
+      return { id: k.id, name: k.id, fedFrom: l ? l.from.id : o.minisubId, loadClass: '', admdOverride: 0, streetLightKVA: 0,
+        feederCable: o.lvCable || '', feederLength: l ? l.len : (k === sub ? 5 : 0),   // the mini-sub stands 5 m along the street from its kiosk
+        erfs: k.members.map((e, i) => ({ id: e.id, erfNumber: String(e.id), length: Math.max(e.cable || 0, 0.1), phase: phases[i % phases.length], cableType: o.svcCable || '', ampsOverride: 0 })) };
+    });
+    return { minisubs: [{ id: o.minisubId, name: 'Auto layout mini-sub' }], kiosks };
+  }
+
+  return { solve, trenches, demandInput, TRENCH_DEFAULTS, DEFAULTS, ptAt, project, verge, plen };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = PlanLayout;

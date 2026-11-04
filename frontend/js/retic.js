@@ -1749,10 +1749,10 @@ const Retic = {
   },
   resultIsCurrent() { return !!AppState.reticResults && this._resSig === this._inputSig(); },
 
-  async _doCompute() {
+  // The /analysis/admd settings block — also used by the plan's Auto layout to size a proposed network.
+  _admdPayload() {
     const s = this.settings;
-    const sig = this._inputSig();
-    const payload = {
+    return {
       estimationMethod: s.estimationMethod,
       correctionMethod: s.correctionMethod,
       loadClass: s.loadClass,
@@ -1762,6 +1762,12 @@ const Retic = {
       networkDiversity: s.networkDiversity,
       loadClassLib: STANDARD_LOAD_CLASSES,
     };
+  },
+
+  async _doCompute() {
+    const s = this.settings;
+    const sig = this._inputSig();
+    const payload = this._admdPayload();
     try {
       // Custom loads from the site plan ride along as a fixed kVA per row.
       const cl = (typeof PlanLoads !== 'undefined') ? PlanLoads.demandByRow() : {};
@@ -2327,8 +2333,8 @@ const Retic = {
   // Note: feederA is the diversified subtree current WITHOUT the UCF unbalance
   // factor — matching the source app, whose chain VD also uses the plain
   // diversified current (its UCF/feederCurrentA is display-only).
-  _legFeederVD(kioskId, resById) {
-    const k = this.kioskById(kioskId);
+  _legFeederVD(kioskId, resById, kioskOf) {
+    const k = (kioskOf || (id => this.kioskById(id)))(kioskId);
     const kr = resById[kioskId];
     if (!k || !kr) return null;
     const amps = kr.feederA != null ? kr.feederA : kr.currentA;
@@ -2337,14 +2343,16 @@ const Retic = {
 
   // Cumulative feeder VD (%) from the source down to a kiosk: sum each leg on
   // the path (see _legFeederVD above). Cycle-guarded.
-  _cumulativeFeederVD(kioskId, resById) {
+  // `kioskOf` (id → kiosk) lets a caller check a proposed network that is not in Demand yet.
+  _cumulativeFeederVD(kioskId, resById, kioskOf) {
     let total = 0, any = false, id = kioskId;
     const seen = new Set();
+    const lookup = kioskOf || (x => this.kioskById(x));
     while (id && id !== 'source' && !seen.has(id)) {
       seen.add(id);
-      const k = this.kioskById(id);
+      const k = lookup(id);
       if (k && resById[id]) {
-        const vd = this._legFeederVD(id, resById);
+        const vd = this._legFeederVD(id, resById, lookup);
         if (vd != null) { total += vd; any = true; }
         id = k.fedFrom || 'source';
       } else break;
