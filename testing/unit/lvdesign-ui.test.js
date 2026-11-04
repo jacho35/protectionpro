@@ -126,6 +126,44 @@ ok('the panel shows the tile, the table with the taper marks, the switches and t
   assert(D.heads.every(x => h.includes(x.breaker)));
 });
 
+// click a button of the Checks list the way the panel does
+async function clickAct(U, textRe, actName) {
+  const el = { innerHTML: '' }; U.renderOptions(el);
+  const i = U._ck.findIndex(c => textRe.test(c.text)), j = i < 0 ? -1 : U._ck[i].acts.findIndex(a => a.act === actName);
+  assert(i >= 0 && j >= 0, `no ${actName} button on a row matching ${textRe}`);
+  el.onclick({ target: { closest: () => ({ dataset: { ckact: i + ':' + j } }) } });
+}
+
+ok('a smallest and a largest LV cable: the cables stay inside, the panel offers the sizes', async () => {
+  const { U, r } = await run({ minSize: 50, maxSize: 300 }), D = r.design;
+  assert(D && D.ok); assert(D.feeders.every(f => f.sizeMm2 >= 50 && f.sizeMm2 <= 300), 'sizes ' + D.feeders.map(f => f.sizeMm2));
+  const el = { innerHTML: '' }; U.renderOptions(el); const h = el.innerHTML;
+  assert(/data-vd="minSize"/.test(h) && /data-vd="maxSize"/.test(h) && />No limit</.test(h) && /<option value="50" selected>50 mm²/.test(h) && /<option value="300" selected>300 mm²/.test(h));
+  assert(/limited to 50 to 300 mm²/.test(h), 'the tile says so');
+});
+
+ok('a largest cable that is too small: the engine names it, the Fix row offers the size that works, and one click makes it pass', async () => {
+  const { U, r } = await run({ maxSize: 50 });
+  assert(r.design && !r.design.ok && r.design.limits.maxNeededMm2 > 50);
+  const row = U.checks().find(c => /too small/.test(c.text) && c.sev === 'fail');
+  assert(row, 'a Fix row says the largest size is too small');
+  const need = r.design.limits.maxNeededMm2;
+  assert(row.acts.some(a => a.act === 'maxsize' && a.val === need) && row.acts.some(a => a.act === 'addsub'));
+  await clickAct(U, /too small/, 'maxsize');
+  assert.strictEqual(U.cfg().vd.maxSize, need);
+  await U.vdRun();
+  assert(U.result.design.ok, 'passes with the size allowed'); assert(U.result.design.feeders.every(f => f.sizeMm2 <= need));
+});
+
+ok('a range no cable fits is reported, with a way back, and the old check carries on', async () => {
+  const { U, r } = await run({ minSize: 240, maxSize: 120 });
+  assert.strictEqual(r.design, null); assert(r.designIssue && r.designIssue.reasons[0].kind === 'range');
+  const row = U.checks().find(c => /no size fits/.test(c.text)); assert(row && row.sev === 'fail');
+  await clickAct(U, /no size fits/, 'clearsize');
+  assert.strictEqual(U.cfg().vd.minSize, 0); assert.strictEqual(U.cfg().vd.maxSize, 0);
+  await U.vdRun(); assert(U.result.design && U.result.design.ok);
+});
+
 (async () => {
   for (const [name, fn] of queue) { const t = Date.now(); await fn(); n++; console.log('ok', name, `(${((Date.now() - t) / 1000).toFixed(1)} s)`); }
   console.log(n + ' passed');

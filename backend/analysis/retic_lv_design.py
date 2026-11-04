@@ -22,7 +22,12 @@ What the Auto layout needs to call a proposal a *design* and not a sketch:
 
    A taper that merely kept the *count* of fails would be accepted by a count test while a failing feeder got
    slower; this one is not.
-5. **When it cannot pass** the module says why. A string whose far kiosks fail on the largest cable cannot
+5. **Size limits.** ``options.minSizeMm2`` / ``maxSizeMm2`` (0 or absent = none) keep every feeder on a cable in that range
+   (a cable pinned by hand is exempt). When the range is why the design cannot pass, the module says so and what to
+   allow (``limits.maxNeededMm2``); when a minimum only makes the design dearer it says by how much; a minimum above the
+   maximum, or no cable in the range, is reported. A cable too small for its feeder's current, or a cumulative volt drop over
+   the limit, now counts as a failed check like an earth-fault fail (it used to be reported only by the frontend).
+6. **When it cannot pass** the module says why. A string whose far kiosks fail on the largest cable cannot
    be fixed by a bigger cable: the breaker at its head is too big for the fault current at the end. It then
    says which string, the breaker, the kiosks and the clearing times, and proposes the two real fixes: add a
    mini-sub, or split the string at the kiosk where the split helps most (found by trying each).
@@ -58,6 +63,14 @@ def _size(c):
     return _num((c or {}).get("size_mm2"))
 
 
+def _empty(note=""):
+    """The shape of an answer with no design in it (no kiosks, no cable in the range, a contradictory range)."""
+    return {"ok": False, "passes": False, "note": note, "fails": [], "failCount": 0, "refFails": 0, "violations": [], "violationCount": 0,
+            "feeders": [], "heads": [], "reasons": [], "uniform": {"cable": "", "sizeMm2": 0, "totalMm2M": 0},
+            "taper": {"on": False, "totalMm2M": 0, "savedPct": 0, "sizes": [], "minMm2": 0, "maxMm2": 0, "count": 0},
+            "conductor": "", "trials": 0, "engineCalls": 0}
+
+
 class _Design:
     def __init__(self, req):
         self.req = req
@@ -78,7 +91,10 @@ class _Design:
             for k in self.kiosks.values():
                 k["erfs"] = [e if e.get("device") else {**e, "device": ed, "deviceSource": "kiosk"} for e in k["erfs"]]
         self.order = list(self.kiosks)
-        self.ladder = sorted(req.get("ladder") or [], key=_size)
+        o0 = req.get("options") or {}
+        self.min_size, self.max_size = _num(o0.get("minSizeMm2")), _num(o0.get("maxSizeMm2"))
+        self.ladder_all = sorted(req.get("ladder") or [], key=_size)
+        self.ladder = [c for c in self.ladder_all if (not self.min_size or _size(c) >= self.min_size - EPS) and (not self.max_size or _size(c) <= self.max_size + EPS)]
         self.breakers = sorted(req.get("breakers") or [], key=lambda b: _num(b.get("rating")))
         o = req.get("options") or {}
         self.taper = o.get("taper", True) is not False
@@ -150,6 +166,19 @@ class _Design:
     def rating_ok(self, kid):
         r = _num(self.cable(kid).get("rated_amps", self.cable(kid).get("rating_a")))
         return not r or self.kiosks[kid]["amps"] <= r + EPS
+
+    def violations(self):
+        """Checks that need no engine and fail at the final state: a cable below its feeder's current, a volt drop over the limit."""
+        out = []
+        for k in self.order:
+            c, kk = self.cable(k), self.kiosks[k]
+            r = _num(c.get("rated_amps", c.get("rating_a")))
+            if r and kk["amps"] > r + EPS:
+                out.append({"kioskId": k, "kind": "rating", "value": round(kk["amps"], 1), "limit": r, "cable": c.get("name")})
+            v = self.cum_vd(k)
+            if v > self.vd_limit + EPS:
+                out.append({"kioskId": k, "kind": "vd", "value": round(v, 2), "limit": self.vd_limit, "cable": c.get("name")})
+        return out
 
     # ── the engine, one kiosk's path at a time ──
     def _dev_key(self, d):
@@ -412,10 +441,12 @@ class _Design:
                     when += " or never"
             else:
                 when = "never"
+            capped = bool(self.ladder and self.ladder_all and _size(self.ladder[-1]) < _size(self.ladder_all[-1]) - EPS)
+            why = (f"on the largest cable allowed ({_size(self.ladder[-1]):g} mm²)" if capped else "")
             text = (f"String {self.kiosks[head]['name']} carries {amps:.0f} A and needs a {name}. "
-                    f"{names(kids)} clear{'s' if len(kids) == 1 else ''} in {when} against {self.t_allow:g} s: "
-                    f"the cable is already the largest that suits, so a bigger one does not fix it. "
-                    f"Add a mini-sub or split the string.")
+                    f"{names(kids)} clear{'s' if len(kids) == 1 else ''} in {when} against {self.t_allow:g} s"
+                    + (f" {why}. " if capped else ": the cable is already the largest that suits, so a bigger one does not fix it. ")
+                    + "Add a mini-sub or split the string.")
             fixes = [{"action": "addSub", "text": "Add a mini-sub"}]
             sp = self._split_candidates(head)
             if sp:
@@ -426,11 +457,32 @@ class _Design:
                         "tMin": min(finite) if finite else None, "tMax": max(finite) if finite else None, "never": never, "text": text, "fixes": fixes})
         return out
 
+    def _violation_reasons(self, viol):
+        out = []
+        for kind, title in (("rating", "carries more than its cable is rated for"), ("vd", "is over the volt-drop limit")):
+            rows = [v for v in viol if v["kind"] == kind]
+            if not rows:
+                continue
+            ids = [v["kioskId"] for v in rows]
+            names = ", ".join(self.kiosks[i]["name"] for i in ids)
+            if kind == "rating":
+                v0 = max(rows, key=lambda v: v["value"] / (v["limit"] or 1))
+                text = (f"{names}: {'feeder' if len(ids) == 1 else 'feeders'} carry{'ies' if len(ids) == 1 else ''} more than the cable is rated for "
+                        f"({self.kiosks[v0['kioskId']]['name']} {v0['value']:g} A on {v0['cable']}, rated {v0['limit']:g} A).")
+            else:
+                v0 = max(rows, key=lambda v: v["value"])
+                text = (f"The LV volt drop to {names} is over the {self.vd_limit:g} % limit "
+                        f"({self.kiosks[v0['kioskId']]['name']} {v0['value']:g} %).")
+            out.append({"head": None, "headName": "", "amps": 0, "breaker": "", "kiosks": ids, "tMin": None, "tMax": None, "never": False,
+                        "kind": kind, "text": text, "fixes": [{"action": "addSub", "text": "Add a mini-sub"}]})
+        return out
+
     def _result(self, note="", ref_items=None, ref_fails=0, uniform_idx=0, uniform_total=0.0):
         if note:
-            return {"ok": False, "note": note, "feeders": [], "heads": [], "fails": [], "reasons": []}
+            return _empty(note)
         items = self.items()
         fails = self._fail_rows(items)
+        viol = self.violations()
         feeders = []
         for k in self.order:
             kk, c = self.kiosks[k], self.cable(k)
@@ -445,8 +497,9 @@ class _Design:
         sizes = sorted({_size(f) for f in [self.cable(k) for k in self.order]})
         taper_total = self.cable_total()
         saved = (1 - taper_total / uniform_total) * 100 if uniform_total else 0.0
-        reasons = self._reasons(items)
-        return {"ok": not fails, "passes": not fails, "fails": fails, "failCount": len(fails), "refFails": ref_fails,
+        reasons = self._reasons(items) + self._violation_reasons(viol)
+        return {"ok": not fails and not viol, "passes": not fails and not viol, "fails": fails, "failCount": len(fails), "refFails": ref_fails,
+                "violations": viol, "violationCount": len(viol),
                 "feeders": feeders, "heads": heads, "reasons": reasons,
                 "uniform": {"cable": self.uniform_cable.get("name"), "sizeMm2": _size(self.uniform_cable), "totalMm2M": round(uniform_total, 1)},
                 "taper": {"on": self.taper and len(self.kiosks) > 1, "totalMm2M": round(taper_total, 1), "savedPct": round(saved, 1),
@@ -455,5 +508,78 @@ class _Design:
                 "trials": self.trials, "engineCalls": self.engine_calls}
 
 
+def _with_options(req, **kw):
+    out = dict(req)
+    o = dict(req.get("options") or {})
+    for k, v in kw.items():
+        if v is None:
+            o.pop(k, None)
+        else:
+            o[k] = v
+    out["options"] = o
+    return out
+
+
 def run_retic_lv_design(req: dict) -> dict:
-    return _Design(req).run()
+    """The design, and (when a minimum or maximum cable size is set) whether those sizes are what stops it."""
+    res = _Design(req).run()
+    o = req.get("options") or {}
+    mn, mx = _num(o.get("minSizeMm2")), _num(o.get("maxSizeMm2"))
+    sizes = sorted({_size(c) for c in req.get("ladder") or []})
+    inrange = [x for x in sizes if (not mn or x >= mn - EPS) and (not mx or x <= mx + EPS)]
+    lim = {"minMm2": mn or None, "maxMm2": mx or None, "sizes": inrange, "allSizes": sizes, "maxNeededMm2": None, "minAddsPct": None}
+    res["limits"] = lim
+    if not (mn or mx):
+        return res
+    reasons = res.setdefault("reasons", [])
+    if mn and mx and mn > mx + EPS:
+        res = _empty("range")
+        res["limits"] = lim
+        res["reasons"].append({"head": None, "headName": "", "amps": 0, "breaker": "", "kiosks": [], "tMin": None, "tMax": None, "never": False, "kind": "range",
+                               "text": f"The smallest LV cable allowed ({mn:g} mm²) is larger than the largest ({mx:g} mm²): no size fits.",
+                               "fixes": [{"action": "clearSize", "text": "Remove the size limits"}]})
+        return res
+    if not inrange:
+        res = _empty("range")
+        res["limits"] = lim
+        res["reasons"].append({"head": None, "headName": "", "amps": 0, "breaker": "", "kiosks": [], "tMin": None, "tMax": None, "never": False, "kind": "range",
+                               "text": f"The cable library has no LV cable between {mn or sizes[0]:g} and {mx or sizes[-1]:g} mm²: no size fits.",
+                               "fixes": [{"action": "clearSize", "text": "Remove the size limits"}]})
+        return res
+    free = _Design(_with_options(req, minSizeMm2=None, maxSizeMm2=None)).run()
+    lim["freeTotalMm2M"] = free["taper"]["totalMm2M"]
+    lim["freeOk"] = bool(free.get("ok"))
+    if res.get("ok"):
+        if mn and free["taper"]["totalMm2M"] > 0:
+            lim["minAddsPct"] = round((res["taper"]["totalMm2M"] / free["taper"]["totalMm2M"] - 1) * 100, 1)
+        return res
+    # it fails inside the range: would it pass without the range? and with how large a maximum?
+    if not free.get("ok"):
+        lim["freeFails"] = free.get("failCount", 0) + free.get("violationCount", 0)
+        mine = res.get("failCount", 0) + res.get("violationCount", 0)
+        if mx and mine > lim["freeFails"]:                   # not only a size problem, but the limit makes it worse
+            reasons.insert(0, {"head": None, "headName": "", "amps": 0, "breaker": "", "kiosks": [], "tMin": None, "tMax": None, "never": False, "kind": "maxSizeWorse",
+                               "text": f"The largest LV cable allowed ({mx:g} mm²) makes it worse: {mine} checks fail with it, {lim['freeFails']} without it. It does not pass either way: see the string below.",
+                               "fixes": [{"action": "clearSize", "text": "Remove the size limits"}]})
+        return res                                           # the string / breaker, said below
+    need = None
+    for cap in [x for x in sizes if (not mx or x > mx + EPS)]:
+        t = _Design(_with_options(req, maxSizeMm2=cap)).run()
+        if t.get("ok"):
+            need = cap
+            break
+    lim["maxNeededMm2"] = need
+    if need is not None:
+        text = (f"The largest LV cable allowed ({mx:g} mm²) is too small: the design passes with up to {need:g} mm² allowed "
+                f"({free['taper']['maxMm2']:g} mm² is the largest it then uses).")
+        fixes = [{"action": "maxSize", "size": need, "text": f"Allow up to {need:g} mm²"}, {"action": "addSub", "text": "Add a mini-sub"}]
+    else:
+        text = (f"The sizes allowed ({mn or sizes[0]:g} to {mx or sizes[-1]:g} mm²) are why this fails: without them it passes. "
+                f"Widen the range.")
+        fixes = [{"action": "clearSize", "text": "Remove the size limits"}, {"action": "addSub", "text": "Add a mini-sub"}]
+    bad = [f["name"] for f in res["feeders"] if mx and _size({"size_mm2": f["sizeMm2"]}) >= mx - EPS]
+    if bad:
+        text += f" Feeders on the largest size: {', '.join(bad[:8])}{'…' if len(bad) > 8 else ''}."
+    reasons.insert(0, {"head": None, "headName": "", "amps": 0, "breaker": "", "kiosks": [], "tMin": None, "tMax": None, "never": False,
+                       "kind": "maxSize", "text": text, "fixes": fixes})
+    return res
