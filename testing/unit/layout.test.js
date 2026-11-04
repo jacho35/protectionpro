@@ -189,4 +189,18 @@ ok('mini-sub position: "opt" never has a worse worst kiosk than the middle; a pl
   const fixed = L.solve(Object.assign({}, F, { subPt: [mid.net.sub.x, mid.net.sub.y] }), { subMode: 'opt' });
   assert.strictEqual(fixed.net.sub.id, mid.net.sub.id);
 });
+ok('several mini-subs: each kiosk is fed by one, the LV tree splits, Demand gets one row per mini-sub', () => {
+  const one = L.solve(F, {}), r = L.solve(F, { subs: 3 });
+  assert.strictEqual(r.net.subs.length, 3);
+  assert(r.kiosks.every(k => k.subK && r.net.subs.some(S => S.k === k.subK)));
+  assert.strictEqual(r.net.lvLinks.length, r.kiosks.length - 3);                  // a tree per mini-sub: kiosks minus mini-subs
+  assert.strictEqual(r.net.mvLines.length, 3);
+  const per = r.net.subs.map(S => S.g.reduce((a, k) => a + k.members.length, 0)), tot = per.reduce((a, b) => a + b, 0);
+  assert(Math.max(...per) <= Math.ceil(tot / 3 * 1.2));                           // the transformers carry similar loads
+  assert(Math.max(...r.net.lvLinks.map(l => l.len)) > 0 && one.net.subs.length === 1);
+  const d = L.demandInput(r, { minisubId: 'MS', phases: [null], txTypeId: 'tx' });
+  assert.strictEqual(d.minisubs.length, 3);
+  assert.strictEqual(d.kiosks.filter(k => d.minisubs.some(m => m.id === k.fedFrom)).length, 3);
+  assert(d.minisubs.every(m => m.txTypeId === 'tx'));
+});
 console.log(n + ' passed');

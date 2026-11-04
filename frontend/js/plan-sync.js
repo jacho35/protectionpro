@@ -368,6 +368,7 @@ const PlanSync = {
         row.name = el.name || row.name;
       }
       el.reticId = row.id;
+      if (el.props && el.props.txTypeId && !row.txTypeId) row.txTypeId = el.props.txTypeId;   // the transformer the Auto layout was checked against
     }
 
     // 2) Kiosks
