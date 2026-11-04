@@ -227,9 +227,18 @@ const PlanKerbs = (() => {
             if (!hit || t < hit.t) hit = { t, b, i, pt: [tip[0] + dir[0] * t, tip[1] + dir[1] * t] };
           }
         });
-        if (!hit) {                                                                              // no clean crossing: the nearest street within the road width
-          let bd = wOf(A);
-          pieces.forEach((B, b) => { if (b === a) return; for (let i = 0; i + 1 < B.pts.length; i++) { const d = segDist(tip, B.pts[i], B.pts[i + 1]); if (d < bd) { bd = d; const q0 = B.pts[i], q1 = B.pts[i + 1], dx = q1[0] - q0[0], dy = q1[1] - q0[1], L2 = dx * dx + dy * dy, t = L2 ? Math.max(0, Math.min(1, ((tip[0] - q0[0]) * dx + (tip[1] - q0[1]) * dy) / L2)) : 0; hit = { t: d, b, i, pt: [q0[0] + dx * t, q0[1] + dy * t] }; } } });
+        if (!hit) {                                                                              // no clean crossing: the nearest street ahead within the bridge gap (not just the road width)
+          let bd = Math.max(o.gap, wOf(A));
+          pieces.forEach((B, b) => {
+            if (b === a) return;
+            for (let i = 0; i + 1 < B.pts.length; i++) {
+              const q0 = B.pts[i], q1 = B.pts[i + 1], dx = q1[0] - q0[0], dy = q1[1] - q0[1], L2 = dx * dx + dy * dy, t = L2 ? Math.max(0, Math.min(1, ((tip[0] - q0[0]) * dx + (tip[1] - q0[1]) * dy) / L2)) : 0;
+              const x = q0[0] + dx * t, y = q0[1] + dy * t, d = hyp(x - tip[0], y - tip[1]);
+              if (d >= bd) continue;
+              if (d > 1 && ((x - tip[0]) * dir[0] + (y - tip[1]) * dir[1]) / d < 0.3) continue;   // behind or beside the end: not where this street was going
+              bd = d; hit = { t: d, b, i, pt: [x, y] };
+            }
+          });
         }
         if (!hit) continue;
         const B = pieces[hit.b]; let pt = hit.pt;
@@ -293,6 +302,7 @@ const PlanKerbs = (() => {
     }
     // re-read the vertex inserted into a street by a later snap
     streets.forEach((s, k) => { if (live[k]) s.pts = live[k].pts.map(p => [+p[0].toFixed(3), +p[1].toFixed(3)]); });
+    connect(streets, o.gap);                                              // separate networks within the bridge gap become one
     const unpaired = []; C.forEach((c, i) => { if (!paired.has(i) && R[i].len >= 3) unpaired.push(i); });
     return { streets, unpaired, chains: C };
   }
@@ -328,7 +338,75 @@ const PlanKerbs = (() => {
     pieces.forEach((P, k) => { streets[k].pts = P.pts.map(p => [+p[0].toFixed(3), +p[1].toFixed(3)]); });
   }
 
-  return { D, joinPieces, solve, pairedShare, pairManual, attach, fitCircle, resample };
+
+  // ───────── one network ─────────
+  const segSegDist = (a, b, c, d) => {
+    const o1 = cr([b[0] - a[0], b[1] - a[1]], [c[0] - a[0], c[1] - a[1]]), o2 = cr([b[0] - a[0], b[1] - a[1]], [d[0] - a[0], d[1] - a[1]]);
+    const o3 = cr([d[0] - c[0], d[1] - c[1]], [a[0] - c[0], a[1] - c[1]]), o4 = cr([d[0] - c[0], d[1] - c[1]], [b[0] - c[0], b[1] - c[1]]);
+    if (o1 * o2 < 0 && o3 * o4 < 0) return 0;
+    return Math.min(segDist(a, c, d), segDist(b, c, d), segDist(c, a, b), segDist(d, a, b));
+  };
+  function polyDist(A, B) {
+    let m = Infinity;
+    for (let i = 0; i + 1 < A.length; i++) for (let j = 0; j + 1 < B.length; j++) { const d = segSegDist(A[i], A[i + 1], B[j], B[j + 1]); if (d < m) m = d; if (!m) return 0; }
+    return m;
+  }
+  // Groups of streets that touch or cross (an end within `tol` m of another street, as Auto layout reads a junction).
+  // Returns arrays of street indices, the largest group first.
+  function components(streets, tol) {
+    tol = tol == null ? 3 : tol;
+    const n = streets.length, par = streets.map((_, i) => i), bb = streets.map(s => bbox(s.pts));
+    const find = i => { while (par[i] !== i) { par[i] = par[par[i]]; i = par[i]; } return i; };
+    for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) {
+      if (find(i) === find(j)) continue;
+      const a = bb[i], b = bb[j]; if (a[0] > b[2] + tol || b[0] > a[2] + tol || a[1] > b[3] + tol || b[1] > a[3] + tol) continue;
+      if (polyDist(streets[i].pts, streets[j].pts) <= tol) par[find(i)] = find(j);
+    }
+    const g = new Map(); for (let i = 0; i < n; i++) { const r = find(i); if (!g.has(r)) g.set(r, []); g.get(r).push(i); }
+    return [...g.values()].sort((x, y) => y.length - x.length);
+  }
+  // Join separate networks: the closest street end to another network's street, while that is within `maxGap` m.
+  // Streets change in place; returns the number of joins made.
+  function connect(streets, maxGap) {
+    let made = 0;
+    for (let guard = 0; guard < 200; guard++) {
+      const comps = components(streets); if (comps.length < 2) break;
+      const of = new Map(); comps.forEach((c, k) => c.forEach(i => of.set(i, k)));
+      let best = null;
+      streets.forEach((A, a) => {
+        for (const atEnd of [false, true]) {
+          const tip = atEnd ? A.pts[A.pts.length - 1] : A.pts[0];
+          streets.forEach((B, b) => {
+            if (of.get(a) === of.get(b)) return;
+            for (let i = 0; i + 1 < B.pts.length; i++) {
+              const d = segDist(tip, B.pts[i], B.pts[i + 1]);
+              if (d <= maxGap && (!best || d < best.d)) best = { d, a, atEnd, b, i };
+            }
+          });
+        }
+      });
+      if (!best) break;
+      const A = streets[best.a], B = streets[best.b], tip = best.atEnd ? A.pts[A.pts.length - 1] : A.pts[0], q0 = B.pts[best.i], q1 = B.pts[best.i + 1];
+      const dx = q1[0] - q0[0], dy = q1[1] - q0[1], L2 = dx * dx + dy * dy, t = L2 ? Math.max(0, Math.min(1, ((tip[0] - q0[0]) * dx + (tip[1] - q0[1]) * dy) / L2)) : 0;
+      let pt = [q0[0] + dx * t, q0[1] + dy * t];
+      if (hyp(pt[0] - q0[0], pt[1] - q0[1]) < 3) pt = q0.slice(); else if (hyp(pt[0] - q1[0], pt[1] - q1[1]) < 3) pt = q1.slice(); else B.pts.splice(best.i + 1, 0, pt);
+      pt = [+pt[0].toFixed(3), +pt[1].toFixed(3)];
+      if (best.atEnd) A.pts.push(pt); else A.pts.unshift(pt);
+      made++;
+    }
+    return made;
+  }
+
+  // A road with a kerb on one side only: its centreline half a width in from that kerb, on the side of `side` (a point).
+  function offsetOne(chain, side, w, o) {
+    o = opt(o); const R = resample(chain.pts, o.step);
+    let bi = 0, bd = Infinity; R.S.forEach((p, k) => { const d = hyp(p.x - side[0], p.y - side[1]); if (d < bd) { bd = d; bi = k; } });
+    const t = R.S[bi], sg = cr([t.tx, t.ty], [side[0] - t.x, side[1] - t.y]) >= 0 ? 1 : -1;
+    const pts = R.S.map(p => [p.x - sg * p.ty * w / 2, p.y + sg * p.tx * w / 2]);
+    return { pts: simplify(pts, 0.15).map(p => [+p[0].toFixed(3), +p[1].toFixed(3)]), w: +w.toFixed(1), chains: [], one: true };
+  }
+
+  return { D, joinPieces, solve, pairedShare, pairManual, attach, fitCircle, resample, components, connect, offsetOne };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = PlanKerbs;
