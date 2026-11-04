@@ -439,6 +439,7 @@ const AppState = {
       settings: {
         domain: 'retic', gridSize: 0.5,
         snapGrid: true, snapEl: true, snapVtx: true, snapRoute: true, snapDxf: true,
+        routeLabels: 'all',   // route length labels: 'all' | 'selected' | 'none'
         layerOthers: 'ghost',   // other layers while one is shown: 'ghost' (faded) | 'hide'
         showGrid: true, greyBg: false, invertBg: false, slPoleKVA: 0.15,
         floorHeight: 3.5,   // default storey height (m) for new floors

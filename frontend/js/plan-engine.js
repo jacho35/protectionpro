@@ -510,8 +510,9 @@ const PlanEngine = {
       ctx.fillStyle = '#2563eb';
       for (const p of r.points) { ctx.beginPath(); ctx.arc(p.x, p.y, rr, 0, Math.PI * 2); ctx.fill(); }
     }
-    // Midpoint label: cable type + length
-    if (r.points.length >= 2) {
+    // Midpoint label: cable type + length (Layers › Route labels: all / selected only / none)
+    const rl = (AppState.planMarkup.settings || {}).routeLabels;
+    if (r.points.length >= 2 && (rl === 'none' ? false : rl === 'selected' ? selected : true)) {
       const mid = r.points[Math.floor(r.points.length / 2) - (r.points.length % 2 === 0 ? 1 : 0)];
       const len = this._polyLen(r.points);
       const label = (r.cableType ? r.cableType + '  ' : '') + this.lenLabel(len);

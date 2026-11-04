@@ -189,6 +189,8 @@ const PlanLayers = {
           <p class="ply-help">Pick a layer in <b>Show</b> to work on it alone. Hide a layer to take it off the drawing, or lock it so it stays visible but can't be moved or deleted by accident. A device that sits on several layers stays editable until every layer it is on is hidden or locked.</p>
           <label class="ply-others">While one layer is shown, the other layers are
             <select data-role="others"><option value="ghost"${this.others(pm) === 'ghost' ? ' selected' : ''}>faded (and locked)</option><option value="hide"${this.others(pm) === 'hide' ? ' selected' : ''}>hidden</option></select></label>
+          <label class="ply-others">Route length labels on the plan
+            <select data-role="rlabels">${[['all', 'every route'], ['selected', 'the selected route only'], ['none', 'none']].map(([v, t]) => `<option value="${v}"${((pm.settings || {}).routeLabels || 'all') === v ? ' selected' : ''}>${t}</option>`).join('')}</select></label>
           <div class="ply-list">${rows || '<div class="ply-none">No layers.</div>'}</div>
           <div class="ply-foot">
             <button type="button" class="btn-small" data-role="add">+ New layer</button>
@@ -250,6 +252,7 @@ const PlanLayers = {
     });
     overlay.addEventListener('change', (e) => {
       const role = e.target.dataset.role;
+      if (role === 'rlabels') { AppState.planMarkup.settings.routeLabels = e.target.value; PlanMarkup.markDirty(); PlanEngine.requestDraw({ all: true }); return; }
       if (role === 'others') { AppState.planMarkup.settings.layerOthers = e.target.value; this.afterChange(true); return; }
       if (role === 'name' || role === 'color') { PlanMarkup.snapshot(); PlanMarkup.markDirty(); }
     });
