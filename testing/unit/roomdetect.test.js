@@ -121,4 +121,68 @@ ok('raster click on wall / outside plan', () => {
   assert(D.fromRaster(img, [11, 50], { gapPx: 0 }).reason === 'on-wall');
   assert(!D.fromRaster(img, [3, 3], { gapPx: 0 }).ok);
 });
+
+// ── every closed region at once ──
+ok('all: a plan of 3 rooms gives 3 polygons, outside left out', () => {
+  const s = rect(0, 0, 12, 4).concat([[4, 0, 4, 4], [8, 0, 8, 4]]);
+  const r = D.allFromSegments(s, { gap: 0 });
+  assert.strictEqual(r.length, 3);
+  assert(r.every(x => Math.abs(x.area - 16) < 1e-6 && D._pip(x.seed, x.points)));
+});
+ok('all: door gaps decide how many rooms', () => {
+  const s = [[0,0,12,0],[12,0,12,4],[12,4,0,4],[0,4,0,0],[4,0,4,1.5],[4,2.5,4,4]];   // 1.0 opening in the divider
+  assert.strictEqual(D.allFromSegments(s, { gap: 0 }).length, 1);
+  assert.strictEqual(D.allFromSegments(s, { gap: 1.2 }).length, 2);
+});
+ok('all: L-shape seed is inside; thick-wall slivers dropped by minWidth', () => {
+  const L = [[0,0,10,0],[10,0,10,4],[10,4,4,4],[4,4,4,8],[4,8,0,8],[0,8,0,0]];
+  const r = D.allFromSegments(L, { gap: 0 });
+  assert.strictEqual(r.length, 1); assert(D._pip(r[0].seed, r[0].points));
+  const dbl = rect(0, 0, 10, 6).concat(rect(0.2, 0.2, 9.8, 5.8));   // double-line wall
+  assert.strictEqual(D.allFromSegments(dbl, { gap: 0, minWidth: 0.6 }).length, 1);
+});
+ok('all: outline drawn apart from its partitions yields the rooms only', () => {
+  const s = rect(0, 0, 10, 4).concat(rect(1, 1, 4, 3), rect(5, 1, 9, 3));   // floating rooms inside an outline
+  assert.strictEqual(D.allFromSegments(s, { gap: 0 }).length, 2);
+});
+ok('all (raster): three rooms, outside excluded, door gap closes', () => {
+  const img = image(260, 120, px => { thickRect(px, 10, 10, 250, 110, 4); thickRect(px, 10, 10, 90, 110, 4); thickRect(px, 90, 10, 170, 110, 4); });
+  for (let y = 50; y < 70; y++) for (let x = 86; x < 95; x++) { const i = (y * 260 + x) * 4; img.data[i] = img.data[i+1] = img.data[i+2] = 255; }
+  assert.strictEqual(D.allFromRaster(img, { gapPx: 0 }).length, 2);          // 2 + 1 merged
+  const r = D.allFromRaster(img, { gapPx: 26 });
+  assert.strictEqual(r.length, 3);
+  assert(r.every(x => D._pip(x.seed, x.points)));
+});
+
+// ── hatches as walls, and where a leak is ──
+ok('hatch outlines count as walls only when asked', () => {
+  // two thick walls drawn as filled hatches either side of a 4 m room; no wall lines at all
+  const hatch = (x0, y0, x1, y1) => ({ t: 'p', l: 'WALL', g: 'HATCH', c: true, p: [x0, y0, x1, y0, x1, y1, x0, y1] });
+  const data = { entities: [hatch(0, 0, 10, 0.3), hatch(0, 3.7, 10, 4), hatch(0, 0, 0.3, 4), hatch(9.7, 0, 10, 4)] };
+  const plain = D.segmentsFromDxf(data, () => true), withH = D.segmentsFromDxf(data, () => true, { hatches: true });
+  assert.strictEqual(plain.length, 0);
+  const r = D.fromSegments(withH, [5, 2], { gap: 0 });
+  assert(r.ok && Math.abs(r.area - 9.4 * 3.4) < 1e-6);        // inner wall faces, not the centre lines
+});
+ok('leak (vector): closing gap and the opening that closes it', () => {
+  const s = [[0,0,6,0],[6,0,6,2],[6,3.8,6,6],[6,6,0,6],[0,6,0,0]];    // 1.8 opening on the right wall
+  const r = D.leakFromSegments(s, [3, 3], { gap: 0.5, maxGap: 5, tol: 0.01 });
+  assert(r.ok && Math.abs(r.gap - 1.8) < 0.05, JSON.stringify(r));
+  assert.strictEqual(r.bridges.length, 1);
+  const b = r.bridges[0]; assert(Math.abs(b[0] - 6) < 1e-6 && Math.abs(b[2] - 6) < 1e-6);
+  assert(D.fromSegments(s, [3, 3], { gap: r.gap }).ok);
+});
+ok('leak (vector): nothing closes it within maxGap', () => {
+  const s = [[0,0,6,0],[6,0,6,1.0],[6,9,6,10],[6,10,0,10],[0,10,0,0],[0,0,0,10]];
+  assert.strictEqual(D.leakFromSegments(s, [3, 5], { gap: 0.5, maxGap: 5 }).reason, 'no-closing-gap');
+});
+ok('leak (raster): the opening is found and sized', () => {
+  const img = image(200, 150, px => thickRect(px, 20, 20, 180, 130, 4));
+  for (let y = 60; y < 90; y++) for (let x = 176; x < 185; x++) { const i = (y * 200 + x) * 4; img.data[i] = img.data[i+1] = img.data[i+2] = 255; }  // 30 px door
+  const r = D.leakFromRaster(img, [100, 70], { gapPx: 4, maxGapPx: 60 });
+  assert(r.ok, r.reason);
+  assert(r.gapPx >= 28 && r.gapPx <= 40, 'gap ' + r.gapPx);
+  assert(Math.abs(r.point[0] - 180) < 8 && Math.abs(r.point[1] - 75) < 8, JSON.stringify(r.point));
+  assert.strictEqual(D.leakFromRaster(image(200, 150, px => thickRect(px, 20, 20, 180, 130, 4)), [100, 70], {}).reason, 'enclosed');
+});
 console.log(n + ' passed');

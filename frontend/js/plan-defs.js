@@ -339,6 +339,9 @@ const PLAN_DEFS = {
       if (!groups.has(label)) groups.set(label, []);
       groups.get(label).push(item);
     };
+    if (domain === 'retic') {
+      push('Detect', { type: 'erfdetect', kind: 'erfdetect', name: 'Detect erven', color: this.elements.erf.color, desc: 'Find every closed erf on the DXF / plan image, or click inside one' });
+    }
     for (const [type, def] of Object.entries(this.elements)) {
       if (def.domain !== domain || def.adoptOnly) continue;   // adopt-only types are placed via "From SLD"
       if (type === 'load') {                                  // one palette item per project load type
@@ -370,7 +373,7 @@ const PLAN_DEFS = {
     return [
       { type: 'room', kind: 'room', name: 'Room / area', color: this.room.stroke, desc: 'Click the corners' },
       { type: 'roomshape', kind: 'roomshape', name: 'Room from a shape', color: this.room.stroke, desc: 'Rectangle, L, T, U or any outline — no plan needed' },
-      { type: 'roomdetect', kind: 'roomdetect', name: 'Detect room', color: this.room.stroke, desc: 'Click inside a room' },
+      { type: 'roomdetect', kind: 'roomdetect', name: 'Detect room', color: this.room.stroke, desc: 'Find every closed room at once, or click inside one' },
       { type: 'outdoor', kind: 'room', name: 'Outdoor area', color: '#16a34a', desc: 'Car park, yard, walkway' },
       { type: 'perimeter', kind: 'perimeter', name: 'Fence / perimeter', color: '#7c3aed', desc: 'Vertical lux along a line' },
       { type: 'sportsfield', kind: 'sportsfield', name: 'Sports field', color: '#15803d', desc: 'Click the centre spot' },
