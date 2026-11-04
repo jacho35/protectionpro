@@ -477,7 +477,8 @@ const PlanRoomDetect = {
   },
 
   // Flatten the DXF records of a layer into segments in drawing units.
-  segmentsFromDxf(data, layerOk) {
+  segmentsFromDxf(data, layerOk, opts) {
+    const hatches = !!(opts && opts.hatches);
     const segs = [];
     const addPoly = (pts, closed) => {
       for (let i = 0; i + 1 < pts.length; i++) segs.push([pts[i][0], pts[i][1], pts[i + 1][0], pts[i + 1][1]]);
@@ -486,9 +487,9 @@ const PlanRoomDetect = {
     for (const r of (data.entities || [])) {
       if (!layerOk(r.l)) continue;
       if (r.t === 'l') segs.push([r.p[0], r.p[1], r.p[2], r.p[3]]);
-      else if (r.t === 'p' && r.g !== 'HATCH') {
+      else if (r.t === 'p' && (r.g !== 'HATCH' || hatches)) {
         const pts = []; for (let i = 0; i + 1 < r.p.length; i += 2) pts.push([r.p[i], r.p[i + 1]]);
-        addPoly(pts, !!r.c);
+        addPoly(pts, !!r.c || r.g === 'HATCH');
       } else if (r.t === 'a') {
         const [cx, cy, rad, a0, a1] = r.p;
         let sweep = a1 - a0; while (sweep <= 0) sweep += 360;
@@ -614,6 +615,84 @@ Object.assign(PlanRoomDetect, {
     return this._leaves(out).sort((a, b) => a.seed[1] - b.seed[1] || a.seed[0] - b.seed[0]);
   },
 
+  /**
+   * Why a click is not enclosed: the smallest gap that would close it and the
+   * openings that gap bridges (the leak). Vector walls.
+   * @returns { ok:true, gap, bridges:[[x1,y1,x2,y2]…] } | { ok:false, reason }
+   */
+  leakFromSegments(segs, click, opts) {
+    const o = Object.assign({ gap: 1.2, maxGap: 5, tol: 0.01, maxArea: Infinity }, opts || {});
+    const S = segs.map(s => [s[0], s[1], s[2], s[3]]).filter(s => Math.hypot(s[2] - s[0], s[3] - s[1]) > o.tol * 0.1);
+    const key = (b) => [b[0], b[1], b[2], b[3]].map(v => Math.round(v / o.tol)).join(',');
+    const have = new Set(this._bridgeGaps(S, o.gap, o.tol).map(key));
+    const all = this._bridgeGaps(S, o.maxGap, o.tol);
+    const lens = [...new Set(all.map(b => Math.round(Math.hypot(b[2] - b[0], b[3] - b[1]) / o.tol) * o.tol))]
+      .filter(l => l > o.gap).sort((a, b) => a - b);
+    const tryGap = (g) => this.fromSegments(S, click, { gap: g, tol: o.tol, maxArea: o.maxArea });
+    let lo = 0, hi = lens.length - 1;
+    if (hi < 0 || !tryGap(lens[hi] + o.tol).ok) return { ok: false, reason: 'no-closing-gap' };
+    while (lo < hi) { const m = (lo + hi) >> 1; if (tryGap(lens[m] + o.tol).ok) hi = m; else lo = m + 1; }
+    const gap = lens[lo] + o.tol, face = tryGap(gap);
+    const ring = face.points, near = (x, y) => {
+      let d = Infinity;
+      for (let i = 0; i < ring.length; i++) {
+        const a = ring[i], b = ring[(i + 1) % ring.length], dx = b[0] - a[0], dy = b[1] - a[1], L2 = dx * dx + dy * dy || 1e-12;
+        const t = Math.max(0, Math.min(1, ((x - a[0]) * dx + (y - a[1]) * dy) / L2));
+        d = Math.min(d, Math.hypot(a[0] + t * dx - x, a[1] + t * dy - y));
+      }
+      return d;
+    };
+    const bridges = this._bridgeGaps(S, gap, o.tol).filter(b => !have.has(key(b)) && near(b[0], b[1]) <= o.tol * 5 && near(b[2], b[3]) <= o.tol * 5);
+    return { ok: true, gap, bridges };
+  },
+
+  /** Same for a rendered plan: the opening is where the escape path squeezes through. */
+  leakFromRaster(img, click, opts) {
+    const o = Object.assign({ gapPx: 6, maxGapPx: 60, dark: 140 }, opts || {});
+    const { w, h, data } = img, N = w * h;
+    const wall = new Uint8Array(N);
+    for (let i = 0; i < N; i++) {
+      const lum = 0.299 * data[i * 4] + 0.587 * data[i * 4 + 1] + 0.114 * data[i * 4 + 2];
+      wall[i] = (data[i * 4 + 3] > 40 && lum < o.dark) ? 1 : 0;
+    }
+    const cx = Math.round(click[0]), cy = Math.round(click[1]);
+    if (cx < 0 || cy < 0 || cx >= w || cy >= h || wall[cy * w + cx]) return { ok: false, reason: 'on-wall' };
+    const start = cy * w + cx, parent = new Int32Array(N), queue = new Int32Array(N);
+    const escape = (thick) => {      // path click → image edge through free space, or null
+      if (thick[start]) return undefined;
+      parent.fill(-1); let qh = 0, qt = 0; queue[qt++] = start; parent[start] = start;
+      while (qh < qt) {
+        const p = queue[qh++], x = p % w, y = (p - x) / w;
+        if (x === 0 || y === 0 || x === w - 1 || y === h - 1) {
+          const path = []; for (let c = p; c !== start; c = parent[c]) path.push(c); path.push(start); return path.reverse();
+        }
+        let q;
+        if (!thick[q = p - 1] && parent[q] < 0) { parent[q] = p; queue[qt++] = q; }
+        if (!thick[q = p + 1] && parent[q] < 0) { parent[q] = p; queue[qt++] = q; }
+        if (!thick[q = p - w] && parent[q] < 0) { parent[q] = p; queue[qt++] = q; }
+        if (!thick[q = p + w] && parent[q] < 0) { parent[q] = p; queue[qt++] = q; }
+      }
+      return null;
+    };
+    const dil = (r) => r > 0 ? this._dilate(wall, w, h, r) : wall;
+    let rlo = Math.max(0, Math.round(o.gapPx / 2)), rhi = Math.round(o.maxGapPx / 2);
+    const thLo = dil(rlo);
+    const pathLo = escape(thLo);
+    if (pathLo === undefined) return { ok: false, reason: 'on-wall' };
+    if (pathLo === null) return { ok: false, reason: 'enclosed' };
+    const closes = (r) => escape(dil(r)) === null;
+    if (!closes(rhi)) return { ok: false, reason: 'no-closing-gap' };
+    while (rhi - rlo > 1) { const m = (rlo + rhi) >> 1; if (closes(m)) rhi = m; else rlo = m; }
+    const thHi = dil(rhi), path = escape(dil(rlo)) || pathLo;
+    let run = [], hit = false;
+    for (const c of path) {
+      if (thHi[c]) { hit = true; run.push(c); } else if (hit) break;
+    }
+    if (!run.length) run = [path[path.length >> 1]];
+    let sx = 0, sy = 0; for (const c of run) { sx += c % w; sy += (c / w) | 0; }
+    return { ok: true, gapPx: 2 * rhi, point: [sx / run.length, sy / run.length] };
+  },
+
   _perimeter(p) { let s = 0; for (let i = 0; i < p.length; i++) { const a = p[i], b = p[(i + 1) % p.length]; s += Math.hypot(b[0] - a[0], b[1] - a[1]); } return s; },
 
   // A point inside the polygon: the middle of the widest span on the scanline
@@ -670,6 +749,8 @@ Object.assign(PlanRoomDetect, {
     rd.gapM = Number.isFinite(gap) ? Math.max(0, Math.min(5, gap)) : (erf ? 0.5 : 1.2);
     const def = erf ? this.ERF_LAYERS : this.DEFAULT_LAYERS;
     rd.layers = (typeof rd.layers === 'string' && rd.layers.trim()) ? rd.layers.slice(0, 200) : def;
+    rd.hatch = rd.hatch !== false;        // outlines of hatched / solid walls on the wall layers count as walls
+    rd.hover = rd.hover !== false;        // preview the region under the pointer
     return rd;
   },
 
@@ -710,7 +791,7 @@ Object.assign(PlanRoomDetect, {
   _detectDxf(desc, pt, f, o, lim) {
     const data = PlanDxfImport.dataOf(desc);
     const lt = this._wallLayerTest(desc, data, o.layers);
-    const segs = this.segmentsFromDxf(data, lt.test);
+    const segs = this.segmentsFromDxf(data, lt.test, { hatches: o.hatch && lt.matched });
     if (!segs.length) return { ok: false, reason: 'no-walls' };
     const click = PlanDxfImport.localOf(desc, pt.x, pt.y);
     // metres per drawing unit, for the door gap and the size cap
@@ -793,6 +874,24 @@ Object.assign(PlanRoomDetect, {
 
   // → { ok:true, items:[{points:[{x,y}], seed:{x,y}}], source } | { ok:false, reason }
   allCandidates(target) {
+    const sig = this._sig(target);
+    if (!this._cands || this._cands.sig !== sig) {
+      const t0 = performance.now(), r = this._computeCands(target);
+      this._cands = { sig, r, ms: performance.now() - t0 };
+    }
+    const r = this._cands.r;
+    return r.ok ? Object.assign({}, r, { items: r.items.slice() }) : r;
+  },
+
+  // Everything the result depends on, so a cached result is never stale.
+  _sig(target) {
+    const pm = AppState.planMarkup, o = this.opts(target);
+    const dxf = (typeof PlanDxfImport !== 'undefined') ? PlanDxfImport.list().map(d => [d.id, d.hidden, d.k, d.offX, d.offY, d.rotation, d.scaleAdj, d.unitM, d.layers]) : [];
+    const img = pm.plans.map(p => [p.id, p.imageId, p.visible, p.offX, p.offY, p.rotation, p.scaleAdj, p.k, p.scale, p.x, p.y]);
+    return JSON.stringify([target, o.gapM, o.layers, o.hatch, PlanEngine.factor(), dxf, img]);
+  },
+
+  _computeCands(target) {
     const f = PlanEngine.factor(), o = this.opts(target), lim = this.LIMITS[target];
     const visibleDxf = (typeof PlanDxfImport !== 'undefined')
       ? PlanDxfImport.list().filter(d => !d.hidden && PlanDxfImport.dataOf(d)).reverse() : [];
@@ -801,7 +900,7 @@ Object.assign(PlanRoomDetect, {
     let items = [], source = null, noWalls = true;
     for (const d of visibleDxf) {
       const data = PlanDxfImport.dataOf(d), lt = this._wallLayerTest(d, data, o.layers);
-      const segs = this.segmentsFromDxf(data, lt.test);
+      const segs = this.segmentsFromDxf(data, lt.test, { hatches: o.hatch && lt.matched });
       if (!segs.length) continue;
       noWalls = false;
       const mpu = f ? PlanDxfImport._pxPerUnit(d) * f : d.unitM;
@@ -833,6 +932,56 @@ Object.assign(PlanRoomDetect, {
     }
     if (!items.length) return { ok: false, reason: noWalls ? 'no-walls' : 'not-enclosed' };
     return { ok: true, items, source };
+  },
+
+  // ───────── why a click did not close, and what it would pick ─────────
+
+  // → { gapM, points:[{x,y}] } | null. Run only after a click failed to enclose.
+  leakAt(pt, target) {
+    const f = PlanEngine.factor(), o = this.opts(target), lim = this.LIMITS[target];
+    const maxGapM = 5;
+    const dxfs = (typeof PlanDxfImport !== 'undefined')
+      ? PlanDxfImport.list().filter(d => !d.hidden && PlanDxfImport.dataOf(d)).reverse() : [];
+    for (const d of dxfs) {
+      const data = PlanDxfImport.dataOf(d), lt = this._wallLayerTest(d, data, o.layers);
+      const segs = this.segmentsFromDxf(data, lt.test, { hatches: o.hatch && lt.matched });
+      if (!segs.length) continue;
+      const mpu = f ? PlanDxfImport._pxPerUnit(d) * f : d.unitM, c = PlanDxfImport.localOf(d, pt.x, pt.y);
+      const r = this.leakFromSegments(segs, [c.x, c.y], { gap: o.gapM / mpu, maxGap: maxGapM / mpu, tol: Math.max(0.001 / mpu, 1e-9), maxArea: lim.maxAreaM2 / (mpu * mpu) });
+      if (r.ok) return { gapM: r.gap * mpu, points: r.bridges.map(b => PlanDxfImport.worldOf(d, (b[0] + b[2]) / 2, (b[1] + b[3]) / 2)) };
+    }
+    if (AppState.planMarkup.plans.some(p => p.visible !== false) && f) {
+      const win = this._rasterWindow();
+      if (win) {
+        const mPerPx = f / win.sc;
+        const r = this.leakFromRaster({ w: win.w, h: win.h, data: win.data }, [(pt.x - win.minX) * win.sc, (pt.y - win.minY) * win.sc], { gapPx: o.gapM / mPerPx, maxGapPx: maxGapM / mPerPx });
+        if (r.ok) return { gapM: r.gapPx * mPerPx, points: [{ x: win.minX + r.point[0] / win.sc, y: win.minY + r.point[1] / win.sc }] };
+      }
+    }
+    return null;
+  },
+
+  // Smallest detected region under the pointer (from the cached Detect-all
+  // result, so moving the mouse never rebuilds the wall graph).
+  hoverAt(pt, target) {
+    const o = this.opts(target);
+    if (!o.hover || this._hoverOff) { this._setHover(null); return; }
+    const r = this.allCandidates(target);
+    if (this._cands && this._cands.ms > 1500) { this._hoverOff = true; this._setHover(null); this._changed(); return; }
+    let best = null, ba = Infinity;
+    if (r.ok) for (const c of r.items) {
+      const xs = c.points.map(p => p.x), ys = c.points.map(p => p.y);
+      if (pt.x < Math.min(...xs) || pt.x > Math.max(...xs) || pt.y < Math.min(...ys) || pt.y > Math.max(...ys)) continue;
+      if (!this._pip([pt.x, pt.y], c.points.map(p => [p.x, p.y]))) continue;
+      const a = Math.abs(this._signedArea(c.points.map(p => [p.x, p.y])));
+      if (a < ba) { ba = a; best = c; }
+    }
+    this._setHover(best);
+  },
+  _setHover(c) {
+    const was = this.hover;
+    if ((was && was.points) === (c && c.points)) return;
+    this.hover = c; PlanEngine.requestDraw({ fg: true });
   },
 
   // A polygon (or an erf) already on the plan inside this candidate.
@@ -878,7 +1027,20 @@ Object.assign(PlanRoomDetect, {
       this._changed(); return;
     }
     const res = this.detectAt(pt, target);
-    if (!res.ok) { UI.toast(this._why(res, target), 'warn', 6000); return; }
+    if (!res.ok) {
+      this.leak = null;
+      if (res.reason === 'not-enclosed') {
+        const lk = this.leakAt(pt, target);
+        if (lk) {
+          this.leak = Object.assign(lk, { target });
+          const n = lk.points.length;
+          UI.toast(`No closed ${lim.noun} here. ${n === 1 ? 'The opening is' : 'The openings are'} marked in red — about ${lk.gapM.toFixed(1)} m wide. Raise the gap to ${(Math.ceil(lk.gapM * 10) / 10).toFixed(1)} m, or draw it by hand.`, 'warn', 8000);
+          this._changed(); return;
+        }
+      }
+      UI.toast(this._why(res, target), 'warn', 6000); this._changed(); return;
+    }
+    this.leak = null;
     if (m === 'add') {
       if (this.staged.items.some(it => this._inside(it, pt))) { UI.toast(`That ${lim.noun} is already in the set.`, 'info', 3000); return; }
       this.stage(target, [{ points: res.points, seed: this._seedOf(res.points), source: res.source }], false);
@@ -930,6 +1092,33 @@ Object.assign(PlanRoomDetect, {
 
   commit(res) { return this.commitMany('room', [res])[0]; },
 
+  drawHover(ctx, zoom, target, e) {
+    const sub = !!(e && (e.altKey || e.ctrlKey || e.metaKey));
+    let c = this.hover, red = false;
+    if (sub && this.hoverPt && this.staged.target === target) {
+      const hit = this.staged.items.find(it => this._inside(it, this.hoverPt));
+      if (hit) { c = hit; red = true; }
+    }
+    if (c && c.points && c.points.length > 2 && this.opts(target).hover) {
+      ctx.save();
+      ctx.beginPath(); c.points.forEach((p, k) => k ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); ctx.closePath();
+      ctx.fillStyle = red ? 'rgba(220,38,38,0.30)' : 'rgba(37,99,235,0.18)'; ctx.fill();
+      ctx.lineWidth = 2 / zoom; ctx.strokeStyle = red ? '#dc2626' : '#2563eb'; ctx.stroke();
+      ctx.restore();
+    }
+    const lk = this.leak;
+    if (lk && lk.target === target) {
+      ctx.save(); ctx.strokeStyle = '#dc2626'; ctx.lineWidth = 2.5 / zoom; ctx.setLineDash([5 / zoom, 3 / zoom]);
+      for (const p of lk.points) {
+        ctx.beginPath(); ctx.arc(p.x, p.y, 14 / zoom, 0, Math.PI * 2); ctx.stroke();
+        ctx.setLineDash([]); ctx.beginPath(); ctx.moveTo(p.x - 6 / zoom, p.y - 6 / zoom); ctx.lineTo(p.x + 6 / zoom, p.y + 6 / zoom);
+        ctx.moveTo(p.x - 6 / zoom, p.y + 6 / zoom); ctx.lineTo(p.x + 6 / zoom, p.y - 6 / zoom); ctx.stroke();
+        ctx.setLineDash([5 / zoom, 3 / zoom]);
+      }
+      ctx.restore();
+    }
+  },
+
   drawStaged(ctx, zoom, target) {
     if (this.staged.target !== target || !this.staged.items.length) return;
     const f = PlanEngine.factor();
@@ -953,6 +1142,11 @@ Object.assign(PlanRoomDetect, {
     const total = items.reduce((s, it) => s + (areaOf(it) || 0), 0);
     const rows = items.map((it, i) => { const a = areaOf(it); return `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;border-bottom:1px solid var(--border,#ddd);padding:3px 0">
         <span><b>${i + 1}</b> ${lim.Noun}${a != null ? ` · ${a.toFixed(1)} m²` : ''}</span><button type="button" class="plan-btn" data-rd-del="${i}" aria-label="Remove ${lim.noun} ${i + 1}">✕</button></div>`; }).join('');
+    const lk = (this.leak && this.leak.target === target) ? this.leak : null;
+    const need = lk ? Math.min(5, Math.ceil(lk.gapM * 10) / 10) : 0;
+    const leakBox = lk ? `<div style="border:1px solid #dc2626;border-radius:4px;padding:8px;display:flex;flex-direction:column;gap:6px">
+        <span><b style="color:#dc2626">Not closed.</b> ${lk.points.length === 1 ? 'The opening' : lk.points.length + ' openings'} marked in red close${lk.points.length === 1 ? 's' : ''} at ${need.toFixed(1)} m.</span>
+        <button type="button" class="plan-btn" data-rd-fixgap="${need}">Set gap to ${need.toFixed(1)} m</button></div>` : '';
     const modeBtn = (v, t) => `<button type="button" class="plan-btn" data-rd-mode="${v}" aria-pressed="${this.mode === v}"${this.mode === v ? ' style="font-weight:600;outline:2px solid var(--accent,#2563eb)"' : ''}>${t}</button>`;
     el.innerHTML = `<div class="plan-props-title">Detect ${lim.noun === 'erf' ? 'erven' : 'rooms'}</div>
       <div class="plan-props-body" style="display:flex;flex-direction:column;gap:10px;font-size:13px">
@@ -965,16 +1159,25 @@ Object.assign(PlanRoomDetect, {
         <div style="display:flex;gap:6px;flex-wrap:wrap">
           <button type="button" class="plan-btn" data-rd-create style="font-weight:600"${items.length ? '' : ' disabled'}>Create${items.length ? ' ' + items.length : ''} ${items.length === 1 ? lim.noun : lim.nouns}</button>
           <button type="button" class="plan-btn" data-rd-clear${items.length ? '' : ' disabled'}>Clear set</button></div>
+        ${leakBox}
         <label>Gap to close (m)
           <input type="number" min="0" max="5" step="0.1" data-rd="gap" style="width:100%"></label>
         <label>${target === 'erf' ? 'Boundary' : 'Wall'} layers (DXF, regex)
           <input type="text" data-rd="layers" style="width:100%"></label>
+        <label style="display:flex;gap:6px;align-items:flex-start"><input type="checkbox" data-rd="hatch"> <span>Hatched and solid ${target === 'erf' ? 'boundaries' : 'walls'} on those layers count as ${target === 'erf' ? 'boundaries' : 'walls'} (their outline is the face)</span></label>
+        <label style="display:flex;gap:6px;align-items:flex-start"><input type="checkbox" data-rd="hover"> <span>Preview the ${lim.noun} under the pointer${this._hoverOff ? ' (switched off: this drawing is too slow for it)' : ''}</span></label>
         <p style="margin:0;color:var(--text-muted)">With a plan image the lines are the dark pixels. ${target === 'erf' ? 'Detected erven are placed as Erf points and appear in Demand.' : 'Drag a corner to reshape a room; drag a midpoint to add a corner; double-click a corner to remove it.'}</p>
       </div>`;
     el.querySelector('[data-rd="gap"]').value = o.gapM;
     el.querySelector('[data-rd="layers"]').value = o.layers;
-    el.querySelector('[data-rd="gap"]').addEventListener('change', (e) => { o.gapM = Math.max(0, Math.min(5, parseFloat(e.target.value) || 0)); PlanMarkup.markDirty(); });
+    el.querySelector('[data-rd="gap"]').addEventListener('change', (e) => { o.gapM = Math.max(0, Math.min(5, parseFloat(e.target.value) || 0)); PlanMarkup.markDirty(); this.leak = null; PlanEngine.requestDraw({ fg: true }); });
     el.querySelector('[data-rd="layers"]').addEventListener('change', (e) => { o.layers = e.target.value || (target === 'erf' ? this.ERF_LAYERS : this.DEFAULT_LAYERS); PlanMarkup.markDirty(); });
+    const hb = el.querySelector('[data-rd="hatch"]'), hv = el.querySelector('[data-rd="hover"]');
+    hb.checked = o.hatch; hv.checked = o.hover && !this._hoverOff; hv.disabled = !!this._hoverOff;
+    hb.addEventListener('change', (e) => { o.hatch = e.target.checked; PlanMarkup.markDirty(); this.leak = null; this._changed(); });
+    hv.addEventListener('change', (e) => { o.hover = e.target.checked; PlanMarkup.markDirty(); this._setHover(null); });
+    const fx = el.querySelector('[data-rd-fixgap]');
+    if (fx) fx.addEventListener('click', () => { o.gapM = parseFloat(fx.dataset.rdFixgap); PlanMarkup.markDirty(); this.leak = null; UI.toast(`Gap set to ${o.gapM.toFixed(1)} m. Click inside again.`, 'info', 4000); this._changed(); });
     el.querySelector('[data-rd-all]').addEventListener('click', () => this.detectAll(target));
     el.querySelector('[data-rd-create]').addEventListener('click', () => this.createStaged());
     el.querySelector('[data-rd-clear]').addEventListener('click', () => this.clearStaged());
@@ -987,10 +1190,15 @@ if (typeof PlanTools !== 'undefined') {
   const makeDetectTool = (id, target) => ({
     id, cursor: 'copy',
     onActivate() { PlanRoomDetect.mode = 'create'; if (typeof PlanMarkup !== 'undefined') PlanMarkup.refreshProps(); },
-    onDeactivate() { PlanRoomDetect.staged = { target, items: [] }; },
+    onDeactivate() { PlanRoomDetect.staged = { target, items: [] }; PlanRoomDetect.hover = null; PlanRoomDetect.leak = null; },
+    onMove(pt, e) {
+      this._e = e; PlanRoomDetect.hoverPt = { x: pt.x, y: pt.y };
+      clearTimeout(this._t); this._t = setTimeout(() => PlanRoomDetect.hoverAt(pt, target), 60);
+      PlanEngine.requestDraw({ fg: true });
+    },
     cancel() { PlanTools.set('select'); },
     onDown(pt, e) { PlanRoomDetect.click(pt, target, e); },
-    drawOverlay(ctx, zoom) { PlanRoomDetect.drawStaged(ctx, zoom, target); },
+    drawOverlay(ctx, zoom) { PlanRoomDetect.drawStaged(ctx, zoom, target); PlanRoomDetect.drawHover(ctx, zoom, target, this._e); },
     onKey(e) {
       if (e.key === 'Enter' && PlanRoomDetect.staged.items.length) { PlanRoomDetect.createStaged(); return true; }
       if (e.key === 'Escape') {
