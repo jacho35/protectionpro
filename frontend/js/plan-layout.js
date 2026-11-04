@@ -765,8 +765,10 @@ const PlanLayout = (() => {
     const isSub = new Set(subs.map(S => S.k));
     const kiosks = res.kiosks.map(k => {
       const l = up.get(k);
-      return { id: k.id, name: k.id, fedFrom: l ? l.from.id : sid(k), loadClass: '', admdOverride: 0, streetLightKVA: 0,
-        feederCable: o.lvCable || '', feederLength: l ? l.len : (isSub.has(k) ? 5 : 0),   // a mini-sub stands 5 m along the street from its kiosk
+      // the kiosks next to the mini-sub's own are fed by their own feeder from the mini-sub (its own breaker, a string each), not through that kiosk
+      const hub = !!l && l.from === k.subK;
+      return { id: k.id, name: k.id, fedFrom: l && !hub ? l.from.id : sid(k), loadClass: '', admdOverride: 0, streetLightKVA: 0,
+        feederCable: o.lvCable || '', feederLength: l ? l.len + (hub ? 5 : 0) : (isSub.has(k) ? 5 : 0),   // a mini-sub stands 5 m along the street from its kiosk
         erfs: k.members.map((e, i) => ({ id: e.id, erfNumber: String((o.names && o.names[e.id]) || e.id), length: Math.max(e.cable || 0, 0.1), phase: phases[i % phases.length], cableType: o.svcCable || '', ampsOverride: 0 })) };
     });
     return { minisubs: subs.map(S => ({ id: sid(S.k), name: 'Auto layout mini-sub' + (subs.length > 1 ? ' ' + S.id : ''), ...(o.txTypeId ? { txTypeId: o.txTypeId } : {}) })), kiosks };

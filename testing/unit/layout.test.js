@@ -175,7 +175,8 @@ ok('demand input: every erf once, the LV tree as fedFrom, the service length on 
   assert.strictEqual(ids.length, new Set(ids).size);
   assert.strictEqual(ids.length, r.erven.filter(e => e.kiosk).length);
   const kid = new Set(d.kiosks.map(k => k.id));
-  assert.strictEqual(d.kiosks.filter(k => k.fedFrom === 'MS').length, 1);                        // one kiosk feeds from the mini-sub
+  assert(d.kiosks.filter(k => k.fedFrom === 'MS').length >= 1);                                  // the mini-sub's own kiosk and the ones next to it hang off the mini-sub (a string each)
+  assert(d.kiosks.filter(k => k.fedFrom === 'MS').length === 1 + r.net.lvLinks.filter(l => l.from === r.net.sub).length);
   d.kiosks.forEach(k => assert(k.fedFrom === 'MS' || kid.has(k.fedFrom)));
   d.kiosks.forEach(k => k.erfs.forEach(e => assert(e.length > 0 && e.cableType === 'B')));
   assert(d.kiosks.filter(k => k.fedFrom !== 'MS').every(k => k.feederLength > 0 && k.feederCable === 'A'));
@@ -200,7 +201,7 @@ ok('several mini-subs: each kiosk is fed by one, the LV tree splits, Demand gets
   assert(Math.max(...r.net.lvLinks.map(l => l.len)) > 0 && one.net.subs.length === 1);
   const d = L.demandInput(r, { minisubId: 'MS', phases: [null], txTypeId: 'tx' });
   assert.strictEqual(d.minisubs.length, 3);
-  assert.strictEqual(d.kiosks.filter(k => d.minisubs.some(m => m.id === k.fedFrom)).length, 3);
+  assert(d.kiosks.filter(k => d.minisubs.some(m => m.id === k.fedFrom)).length >= 3);
   assert(d.minisubs.every(m => m.txTypeId === 'tx'));
 });
 console.log(n + ' passed');

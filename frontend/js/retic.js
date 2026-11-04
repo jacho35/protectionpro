@@ -2419,25 +2419,26 @@ const Retic = {
   },
 
   // The minisub a kiosk hangs off (following fedFrom), and so its earthing system.
-  _minisubOf(k) {
+  // (`minisubs` / `kiosks` default to Demand's own; the Auto layout passes its proposed network)
+  _minisubOf(k, minisubs = this.minisubs, kiosks = this.kiosks) {
     const seen = new Set();
     let cur = k;
     while (cur && !seen.has(cur.id)) {
       seen.add(cur.id);
-      const ms = this.minisubs.find(m => m.id === cur.fedFrom);
+      const ms = minisubs.find(m => m.id === cur.fedFrom);
       if (ms) return ms;
-      cur = this.kiosks.find(o => o.id === cur.fedFrom);
+      cur = kiosks.find(o => o.id === cur.fedFrom);
     }
-    return this.minisubs[0] || null;
+    return minisubs[0] || null;
   },
   // A string of kiosks is everything fed on from a kiosk that hangs directly off
   // a minisub; they share the breaker set on that head kiosk.
-  _stringHead(k) {
+  _stringHead(k, kiosks = this.kiosks) {
     const seen = new Set();
     let cur = k;
     while (cur && !seen.has(cur.id)) {
       seen.add(cur.id);
-      const parent = this.kiosks.find(o => o.id === cur.fedFrom);
+      const parent = kiosks.find(o => o.id === cur.fedFrom);
       if (!parent) return cur;
       cur = parent;
     }
@@ -2454,6 +2455,12 @@ const Retic = {
   // Phase currents of a string and what that means for its breaker: the
   // worst phase is what the device has to carry, so show R / W / B, the loading
   // of the chosen breaker's In, and the smallest standard rating that covers it.
+  // the smallest standard LV MCCB / ACB whose rating covers a string's worst-phase current
+  _fitBreaker(amps) {
+    const lv = (x) => !x.rated_voltage_kv || x.rated_voltage_kv <= 1;
+    return STANDARD_CBS.filter(x => lv(x) && (x.cb_type === 'mccb' || x.cb_type === 'acb') && Number(x.trip_rating_a) >= amps)
+      .sort((a, b) => a.trip_rating_a - b.trip_rating_a)[0] || null;
+  },
   _stringCurrentRow(h) {
     const res = AppState.reticResults;
     const kr = res && res.kiosks && res.kiosks.find(r => r.kioskId === h.id);
@@ -2466,8 +2473,7 @@ const Retic = {
     const dev = this._protectionDevice(h);
     const inA = dev ? (dev.kind === 'fuse' ? Number(dev.props.rated_current_a) : Number(dev.props.trip_rating_a)) || 0 : 0;
     const lv = (x) => !x.rated_voltage_kv || x.rated_voltage_kv <= 1;
-    const fits = STANDARD_CBS.filter(x => lv(x) && (x.cb_type === 'mccb' || x.cb_type === 'acb') && Number(x.trip_rating_a) >= worst)
-      .sort((a, b) => a.trip_rating_a - b.trip_rating_a)[0];
+    const fits = this._fitBreaker(worst);
     let status;
     if (inA > 0) {
       const pct = Math.round(worst / inA * 100);
@@ -2542,14 +2548,17 @@ const Retic = {
     return { name: c.name, size_mm2: c.size_mm2, conductor: c.conductor, insulation: c.insulation, r_per_km: c.r_per_km, x_per_km: c.x_per_km };
   },
 
-  _earthPayload() {
-    this._migrateProtection();
-    const res = AppState.reticResults;
+  // The payload of the earth-fault loop check. `src` = { minisubs, kiosks, res } lets another workspace (the Auto layout) check its
+  // proposed network with exactly this code; without it Demand's own network and results are used.
+  _earthPayload(src) {
+    if (!src) this._migrateProtection();
+    const minisubs = src ? src.minisubs : this.minisubs, kiosks = src ? src.kiosks : this.kiosks;
+    const res = src ? src.res : AppState.reticResults;
     const msRes = {};
     if (res && res.minisubs) for (const m of res.minisubs) msRes[m.minisubId] = m;
     return {
       settings: { u0: 230, disconnectTimeS: 5 },
-      minisubs: this.minisubs.map(ms => {
+      minisubs: minisubs.map(ms => {
         const r = msRes[ms.id];
         const tx = this._minisubTx(ms, r ? r.totalKVA : 0);
         const e = tx && tx.entry;
@@ -2559,9 +2568,9 @@ const Retic = {
           device: null,
         };
       }),
-      kiosks: this.kiosks.map(k => ({
+      kiosks: kiosks.map(k => ({
         id: k.id, name: k.name, fedFrom: k.fedFrom || 'source',
-        device: this._stringHead(k) === k ? this._protectionDevice(k) : null,   // one breaker per string, on its head
+        device: this._stringHead(k, kiosks) === k ? this._protectionDevice(k) : null,   // one breaker per string, on its head
         feeder: { cable: this._cableDict(k.feederCable), earth: this._cableDict(k.feederEarth), lengthM: Number(k.feederLength) || 0 },
         erfs: k.erfs.map(e => {
           const ed = this._erfDevice(k, e);

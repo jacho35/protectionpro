@@ -387,6 +387,7 @@ const PlanSync = {
         row.name = el.name || row.name;
       }
       el.reticId = row.id;
+      if (el.props && el.props.protection && !row.protection) row.protection = el.props.protection;   // the string breaker the Auto layout checked
     }
 
     // 3) fedFrom walk over LV routes (BFS from each minisub element)
