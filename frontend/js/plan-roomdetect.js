@@ -1306,7 +1306,7 @@ Object.assign(PlanRoomDetect, {
     const areaOf = (it) => f ? (PlanEngine._polyArea(it.points) * f * f) : null;
     const total = items.reduce((s, it) => s + (areaOf(it) || 0), 0);
     const rows = items.map((it, i) => { const a = areaOf(it); return `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;border-bottom:1px solid var(--border,#ddd);padding:3px 0">
-        <span><b>${it.label || (i + 1)}</b> ${lim.Noun}${a != null ? ` · ${a.toFixed(1)} m²` : ''}</span><button type="button" class="plan-btn" data-rd-del="${i}" aria-label="Remove ${lim.noun} ${i + 1}">✕</button></div>`; }).join('');
+        <span><b>${String(it.label || (i + 1)).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]))}</b> ${lim.Noun}${a != null ? ` · ${a.toFixed(1)} m²` : ''}</span><button type="button" class="plan-btn" data-rd-del="${i}" aria-label="Remove ${lim.noun} ${i + 1}">✕</button></div>`; }).join('');
     const lk = (this.leak && this.leak.target === target) ? this.leak : null;
     const need = lk ? Math.min(5, Math.ceil(lk.gapM * 10) / 10) : 0;
     const leakBox = lk ? `<div style="border:1px solid #dc2626;border-radius:4px;padding:8px;display:flex;flex-direction:column;gap:6px">
