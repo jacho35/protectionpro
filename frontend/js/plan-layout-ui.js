@@ -57,6 +57,7 @@ const PlanLayoutUI = {
     T.crossings = typeof T.crossings === 'boolean' ? T.crossings : D2.crossings;
     const vd = L.vd = (L.vd && typeof L.vd === 'object') ? L.vd : {};
     vd.tx = typeof vd.tx === 'string' ? vd.tx.slice(0, 80) : '';
+    vd.prot = typeof vd.prot === 'string' ? vd.prot.slice(0, 80) : '';
     vd.lv = typeof vd.lv === 'string' ? vd.lv.slice(0, 80) : ''; vd.svc = typeof vd.svc === 'string' ? vd.svc.slice(0, 80) : '';
     L.sides = (L.sides && typeof L.sides === 'object') ? L.sides : {};
     L.fronts = (L.fronts && typeof L.fronts === 'object') ? L.fronts : {};
@@ -117,6 +118,9 @@ const PlanLayoutUI = {
       const byK = new Map(input.kiosks.map(k => [k.id, k]));
       r.dem = { res, input, byK, sig: JSON.stringify(Retic._admdPayload()) };
       r.vdBusy = false; this.vdDerive();
+      r.earthBusy = true; PlanMarkup.refreshProps();
+      await this.earthRun(tok);
+      if (tok !== this._vdTok) return;
     } catch (e) {
       if (tok !== this._vdTok) return;
       r.vdBusy = false; r.vd = { err: 'Demand could not be run (' + ((e && e.message) || e) + ').' };
@@ -152,7 +156,7 @@ const PlanLayoutUI = {
     const net = r.net, up = new Map(net.lvLinks.map(l => [l.to, l])), isSub = new Set(net.subs.map(S => S.k));
     const lvRate = (Retic._cableRX(lvCab.name) || {}).rating || 0, svcRate = (Retic._cableRX(svcCab.name) || {}).rating || 0;
     const cum = k => { const v = Retic._cumulativeFeederVD(k.id, byId, kioskOf); return v == null ? 0 : v; };
-    const legs = net.lvLinks.map(l => ({ from: l.from, to: l.to, len: l.len, pct: Retic._legFeederVD(l.to.id, byId, kioskOf) || 0, cum: cum(l.to), amps: (byId[l.to.id] || {}).feederA || 0, rating: lvRate }));
+    const legs = net.lvLinks.map(l => ({ from: l.from, to: l.to, len: (cur.get(l.to.id) || {}).feederLength || l.len, pct: Retic._legFeederVD(l.to.id, byId, kioskOf) || 0, cum: cum(l.to), amps: (byId[l.to.id] || {}).feederA || 0, rating: lvRate }));
     const rows = [], unreached = [];
     for (const k of r.kiosks) for (const e of k.members) {
       if (!isSub.has(k) && !up.has(k)) { unreached.push(e); continue; }
@@ -185,7 +189,54 @@ const PlanLayoutUI = {
   // (no cable meets the limits: the largest is not written to the routes)
   _vdCableName(type) { if (type !== 'lv' && type !== 'service') return ''; const c = this.vdCables(); if (type === 'lv' && this.result && this.result.vd && this.result.vd.unmet) return ''; const x = type === 'lv' ? c.lv : c.svc; return x ? x.name : ''; },
   // a voltage-drop setting changed: only the check is worked out again
-  revd() { if (!this.result) return; this.vdDerive(); this.flag = null; PlanMarkup.markDirty(); PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true }); },
+  revd() {
+    if (!this.result) return; this.vdDerive(); this.flag = null; PlanMarkup.markDirty(); PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true });
+    const tok = this._vdTok = (this._vdTok || 0) + 1, r = this.result;
+    if (r.vd && !r.vd.err) { r.earthBusy = true; this.earthRun(tok).then(() => { if (tok === this._vdTok) { PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true }); } }); }
+  },
+  // ── earth-fault loop ──
+  // The proposal as Demand's own earth check takes it (Retic._earthPayload, run by /analysis/retic-earth-check): the kiosks with the
+  // chosen cables, a breaker on the head of each string (the one picked, else the smallest MCCB / ACB that carries the string), the
+  // transformer chosen (else the one that covers the mini-sub's demand).
+  _earthSrc(lvCab, svcCab) {
+    const d = this.result.dem, vd = this.cfg().vd, byId = {}; d.res.kiosks.forEach(kr => { byId[kr.kioskId] = kr; });
+    const heads = new Set(d.input.minisubs.map(m => m.id)), prot = {};
+    const kiosks = d.input.kiosks.map(k => {
+      const o = Object.assign({}, k, { feederCable: lvCab.name, erfs: k.erfs.map(e => Object.assign({}, e, { cableType: svcCab.name })) });
+      if (heads.has(k.fedFrom)) { const fit = vd.prot ? null : Retic._fitBreaker((byId[k.id] || {}).feederA || 0), dev = vd.prot || (fit ? 'cb:' + fit.id : ''); if (dev) { o.protection = dev; prot[k.id] = dev; } }
+      return o;
+    });
+    return { src: { minisubs: d.input.minisubs.map(m => Object.assign({}, m, vd.tx ? { txTypeId: vd.tx } : {})), kiosks, res: { minisubs: d.res.minisubs } }, prot };
+  },
+  // what fails in an earth result: [{ kiosk, erf (or null), item }]
+  _earthFails(e) {
+    const out = [], bad = x => x && ((x.loop && x.loop.status === 'fail') || (x.ecc && x.ecc.status === 'fail'));
+    if (!e) return out;
+    for (const k of e.kiosks || []) { if (bad(k)) out.push({ kiosk: k.kioskId, erf: null, item: k }); for (const x of k.erfs || []) if (bad(x)) out.push({ kiosk: k.kioskId, erf: x.erfId, item: x }); }
+    return out;
+  },
+  async earthRun(tok) {
+    const r = this.result, d = r && r.dem; if (!d || !r.vd || r.vd.err) { if (r) { r.earth = null; r.earthBusy = false; } return; }
+    r.earthErr = ''; r.earthUp = null;
+    const c = this.vdCables(), ask = async (lvCab, svcCab) => { const { src, prot } = this._earthSrc(lvCab, svcCab); const e = await API.runReticEarth(Retic._earthPayload(src)); return { e, prot }; };
+    try {
+      let { e, prot } = await ask(c.lv, c.svc);
+      if (tok !== this._vdTok) return;
+      // automatic cable: when the earth loop fails, try the next sizes up (each one still has to meet the volt-drop limits and its rating)
+      if (c.auto && this._earthFails(e).length) {
+        const cands = this.vdCandidates(c.feeders), i0 = cands.findIndex(x => x.id === c.lv.id), from = c.lv.name;
+        for (let i = i0 + 1, n = 0; i >= 1 && i < cands.length && n < 4 && this._earthFails(e).length; i++) {
+          const v = this._vdWith(cands[i], c.svc); if (v.over.length || v.hotLegs.length || v.hotSvc.length) continue;
+          n++; const t = await ask(cands[i], c.svc); if (tok !== this._vdTok) return;
+          if (!this._earthFails(t.e).length) {                                                   // only a size that clears every earth-fault check is worth the copper
+            Object.assign(v, { autoLv: cands[i].id, autoFrom: r.vd.autoFrom, subs: r.vd.subs }); r.vd = v; e = t.e; prot = t.prot; r.earthUp = { from, to: cands[i].name };
+          }
+        }
+      }
+      r.earth = e; r.prot = prot;
+    } catch (err) { if (tok === this._vdTok) { r.earth = null; r.earthErr = (err && err.message) || String(err); } }
+    if (tok === this._vdTok) r.earthBusy = false;
+  },
 
   // ── streets from a drawing layer ──
   // DXF layers that hold lines or polylines, as { d, layer, n, guess } (guess = looks like street centrelines).
@@ -297,7 +348,7 @@ const PlanLayoutUI = {
     // erf markers: the erf point moves to its corner
     if (opt.markers) r.erven.forEach(e => { const el0 = erfEl.get(e.id); if (el0 && e.marker) { el0.x = e.marker[0] / f; el0.y = e.marker[1] / f; made.markers++; } });
     const kEl = new Map();
-    if (opt.kiosks) r.kiosks.forEach(k => { kEl.set(k, el('kiosk', k.x, k.y)); made.kiosks++; });
+    if (opt.kiosks) r.kiosks.forEach(k => { const pr = r.prot && r.prot[k.id]; kEl.set(k, el('kiosk', k.x, k.y, pr ? { props: Object.assign(PLAN_DEFS.defaults('kiosk'), { protection: pr }) } : null)); made.kiosks++; });
     if (opt.kiosks) r.erven.forEach(e => { if (e.kiosk && e.route && kEl.get(e.kiosk) && erfEl.get(e.id)) { const pts = e.route.slice(); if (!opt.markers) pts.push([erfEl.get(e.id).x * f, erfEl.get(e.id).y * f]); route('service', kEl.get(e.kiosk).id, e.id, pts); made.routes++; } });
     const subEls = new Map();
     if (opt.lv && r.net.subs) {
@@ -312,7 +363,13 @@ const PlanLayoutUI = {
         subEls.set(Sb, se); made.subs++;
         route('lv', se.id, kEl.get(k0).id, [[se.x * f, se.y * f], [k0.x, k0.y]]); made.routes++;
       });
-      r.net.lvLinks.forEach(l => { if (kEl.get(l.from) && kEl.get(l.to)) { route('lv', kEl.get(l.from).id, kEl.get(l.to).id, l.pts); made.routes++; } });
+      r.net.lvLinks.forEach(l => {
+        if (!kEl.get(l.from) || !kEl.get(l.to)) return;
+        const Sb = r.net.subs.find(x => x.k === l.from), se = Sb && subEls.get(Sb);          // next to the mini-sub's kiosk: its own feeder from the mini-sub
+        if (se) route('lv', se.id, kEl.get(l.to).id, [[se.x * f, se.y * f], [l.from.x, l.from.y], ...l.pts.slice(1)]);
+        else route('lv', kEl.get(l.from).id, kEl.get(l.to).id, l.pts);
+        made.routes++;
+      });
     }
     if (opt.mv && r.net.mvLines) r.net.mvLines.forEach(m => { const Sb = r.net.subs.find(x => x.k === m.sub), se = Sb && subEls.get(Sb); if (se && m.pts.length > 1) { route('mv', null, se.id, m.pts); made.routes++; } });
     if (opt.fibre) {
@@ -431,7 +488,22 @@ const PlanLayoutUI = {
       });
       const ok = (vd.subs || []).filter(t => t.tx && !t.over);
       if (ok.length) out.push({ sev: ok.some(t => t.tx.util > 90) ? 'warn' : 'info', text: 'Transformer loading: ' + ok.map(t => `${t.name} ${Math.round(t.kva)} kVA on ${Math.round(t.tx.kva)} kVA (${t.tx.util}%${t.picked ? '' : ', automatic'})`).join('; ') + '.', ids: [] });
-      out.push({ sev: 'info', text: 'Cable ratings are checked here. The earth-fault loop and earth conductor are checked in Demand once the layout is created.', ids: [] });
+      if (r.earthErr) out.push({ sev: 'warn', text: 'Earth-fault loop not checked: ' + r.earthErr + ' Create leaves the strings without a breaker.', ids: [] });
+      else if (r.earth) {
+        const E = r.earth, fails = this._earthFails(E), kiosksById = new Map(r.kiosks.map(k => [k.id, k]));
+        if (r.earthUp) out.push({ sev: 'info', text: `LV feeder raised from ${r.earthUp.from} to ${r.earthUp.to} so the earth-fault loop passes.`, ids: [] });
+        if (fails.length) {
+          const worstItem = fails.slice().sort((p, q) => ((q.item.loop || {}).zsOhm || 0) - ((p.item.loop || {}).zsOhm || 0))[0];
+          const wl = worstItem.item.loop || {}, we = worstItem.item.ecc || {};
+          const why = (wl.status === 'fail' ? (wl.note || 'the loop is too high to trip in time') : (we.note || 'the earth conductor is too small')).split('\n')[0];
+          const ids = [...new Set(fails.flatMap(x => x.erf ? [x.erf] : ((kiosksById.get(x.kiosk) || { members: [] }).members.map(e => e.id))))];
+          out.push({ sev: 'fail', text: `${fails.length} earth-fault checks fail (disconnection in 5 s and earth conductor size, Demand's own check): ${fails.filter(x => x.erf).length} services, ${fails.filter(x => !x.erf).length} LV feeders. Worst: ${worstItem.erf ? 'erf ' + (names[worstItem.erf] || worstItem.erf) : worstItem.kiosk}${wl.zsOhm != null ? ', Zs ' + wl.zsOhm + ' Ω' : ''}: ${why} Shorten the service, use a larger LV feeder or a smaller string breaker.`, ids, acts: addSub });
+        }
+        const noDev = Object.keys(r.prot || {}).length < ((r.net && r.net.subs) || []).length;
+        if (!fails.length && noDev) out.push({ sev: 'warn', text: 'No standard breaker is big enough for a string, so its earth-fault loop is not judged. Split the load with another mini-sub.', ids: [] });
+        else if (!fails.length) out.push({ sev: 'info', text: `Earth-fault loop and earth conductor: ${E.counts ? E.counts.pass : 0} checks pass, none fail (Demand's own check, 5 s disconnection).`, ids: [] });
+      }
+      out.push({ sev: 'info', text: 'Cable ratings and voltage drop are checked here; fault withstand of the cables is checked in Demand.', ids: [] });
     }
     const near = r.erven.filter(e => e.fe && e.kiosk && e.cable > 0.85 * P.maxc && e.cable <= P.maxc + 1e-6);
     if (near.length) out.push({ sev: 'warn', text: `${near.length} services are within 15% of the ${P.maxc} m limit: ${nm(near.map(lab))}.`, ids: near.map(e => e.id) });
@@ -532,6 +604,7 @@ const PlanLayoutUI = {
     const vdGroup = `<details open><summary style="cursor:pointer;font-weight:600;margin:2px 0">Voltage drop and transformer</summary><div style="display:flex;flex-direction:column;gap:8px;padding:6px 0 4px">
         <div>Limits are Demand's: LV feeder <b>${Number(lim.feeder)} %</b>, service <b>${Number(lim.svc)} %</b>. Change them in Demand (Max Feeder VD, Max Service VD).</div>
         <label style="display:block">Mini-sub transformer<select data-vd="tx" style="width:100%"><option value=""${VDc.tx ? '' : ' selected'}>Automatic: the smallest that carries each mini-sub</option>${txOpts.map(o => `<option value="${esc(o.id)}"${VDc.tx === o.id ? ' selected' : ''}>${esc(o.name)}</option>`).join('')}</select></label>
+        <label style="display:block">String breaker (earth-fault loop)<select data-vd="prot" style="width:100%">${Retic._protectionOptions(VDc.prot, 'Automatic: the smallest that carries each string')}</select></label>
         <label style="display:block">LV feeder cable<select data-vd="lv" style="width:100%"><option value=""${cb.auto ? ' selected' : ''}>Automatic: the smallest that meets the limits and the rating${cb.auto && cb.lv ? ' (now ' + esc(cb.lv.name) + ')' : ''}</option>${opts(cb.feeders, cb.auto ? null : cb.lv)}</select></label>
         <label style="display:block">Service cable<select data-vd="svc" style="width:100%">${opts(cb.services, cb.svc)}</select></label>
         <div style="color:var(--text-muted)">Worked out by Demand itself: its load class and ADMD settings give the diversified current on each LV leg and on each service, and its volt-drop calculation does the rest.</div></div></details>`;
@@ -569,7 +642,7 @@ const PlanLayoutUI = {
         ${trenchGroup}
         ${vdGroup}
         ${r ? `<div><b>Result</b><div style="display:grid;grid-template-columns:repeat(2,1fr);gap:5px;margin-top:4px">${tiles}</div>
-        ${r.vdBusy ? '<div style="color:var(--text-muted);margin-top:6px">Checking the voltage drop with Demand…</div>' : ''}
+        ${r.vdBusy || r.earthBusy ? '<div style="color:var(--text-muted);margin-top:6px">Checking the voltage drop and earth-fault loop with Demand…</div>' : ''}
         ${r.vd && !r.vd.err && r.vd.worst ? `<div style="margin-top:6px"><b>Voltage drop</b><div>Furthest: erf ${esc(((AppState.planMarkup.elements.find(e => e.id === r.vd.worst.erf.id) || {}).name) || r.vd.worst.erf.id)}, ${r.vd.worst.total.toFixed(1)}% = ${r.vd.worst.lv.toFixed(1)}% LV (to ${esc(r.vd.worst.kiosk.id)}) + ${r.vd.worst.svc.toFixed(1)}% service</div>${r.vd.legs.slice().sort((a, b) => b.cum - a.cum).slice(0, 5).map(l => `<div style="display:flex;justify-content:space-between;gap:8px"><span>${esc(l.from.id)} → ${esc(l.to.id)} · ${Math.round(l.len)} m · ${Math.round(l.amps)} A</span><span>${l.pct.toFixed(2)}% (to here ${l.cum.toFixed(1)}%)</span></div>`).join('')}</div>` : ''}
         ${r.trench ? `<div style="margin-top:6px"><b>Trenches</b>${trenchRows}</div>` : ''}
           <div style="max-height:170px;overflow:auto;margin-top:6px"><table style="width:100%;font-size:12px;border-collapse:collapse"><thead><tr><th style="text-align:left">Crossing</th><th style="text-align:left">Ducts</th></tr></thead><tbody>${xt}</tbody></table></div>
