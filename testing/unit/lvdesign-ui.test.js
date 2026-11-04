@@ -36,7 +36,7 @@ async function run(vdOpts = {}, subs = 1) {
   const S = sandbox(), { ctx, AS } = S, U = ctx.PlanLayoutUI, PL = ctx.PlanLayout;
   AS.planMarkup.elements = F.erven.map(e => ({ id: e.id, type: 'erf', name: e.id, x: 0, y: 0, reticId: null, props: {} }));
   const g = { input: F, params: Object.assign({}, PL.DEFAULTS, { subs }) };
-  U._gathered = g; U.f = 1; U.ms = 300; Object.assign(U.cfg().vd, { subsAuto: false }, vdOpts);
+  U._gathered = g; U.f = 1; U.ms = 300; Object.assign(U.cfg().vd, { subsMax: 1 }, vdOpts);
   U.result = PL.solve(g.input, g.params); U.result.trench = PL.trenches(U.result, U.cfg().trench);
   await U.vdRun();
   return Object.assign(S, { U, PL, r: U.result });
@@ -95,7 +95,7 @@ ok('the switches: taper off gives one size, 80 A off leaves the ways to the stri
 });
 
 ok('1, 2 and 3 mini-subs are tried; the one that passes with the least cable is used, each reported', async () => {
-  const { r, counts } = await run({ subsAuto: true });
+  const { r, counts } = await run({ subsMax: 3 });
   assert.strictEqual(r.subsTrials.length, 3); assert.strictEqual(JSON.stringify(r.subsTrials.map(x => x.subs)), '[1,2,3]');
   const used = r.subsTrials.filter(x => x.chosen); assert.strictEqual(used.length, 1);
   const passing = r.subsTrials.filter(x => x.ok); assert(passing.length > 0);
@@ -115,15 +115,54 @@ ok('a design that cannot pass says why and offers the fixes; Add a mini-sub and 
 });
 
 ok('the panel shows the tile, the table with the taper marks, the switches and the mini-sub trials', async () => {
-  const { U, r } = await run({ subsAuto: true });
+  const { U, r } = await run({ subsMax: 3 });
   const el = { innerHTML: '' }; U.renderOptions(el); const h = el.innerHTML, D = r.design;
   assert(/LV design/.test(h) && new RegExp('LV cable: ' + D.taper.count + ' size').test(h), 'the tile');
   assert(h.includes(`${D.taper.minMm2} to ${D.taper.maxMm2} mm²`) && h.includes(`taper saves ${D.taper.savedPct}%`));
   assert(/<th[^>]*>Kiosk<\/th>.*<th[^>]*>Fed from<\/th>.*<th[^>]*>Cable<\/th>.*<th[^>]*>Breaker<\/th>/.test(h), 'the table');
   assert(/set by taper/.test(h), 'a feeder marked as set by the taper');
-  for (const sw of ['way80', 'taper', 'subsAuto']) assert(new RegExp(`data-vd="${sw}"[^>]* checked`).test(h), sw + ' on by default');
+  for (const sw of ['way80', 'taper']) assert(new RegExp(`data-vd="${sw}"[^>]* checked`).test(h), sw + ' on by default');
+  assert(/data-vd="subsMax"[^>]*value="3"/.test(h), 'most mini-subs defaults to 3');
   assert(/Mini-subs tried:/.test(h) && /\(used\)/.test(h));
   assert(D.heads.every(x => h.includes(x.breaker)));
+});
+
+// click a button of the Checks list the way the panel does
+async function clickAct(U, textRe, actName) {
+  const el = { innerHTML: '' }; U.renderOptions(el);
+  const i = U._ck.findIndex(c => textRe.test(c.text)), j = i < 0 ? -1 : U._ck[i].acts.findIndex(a => a.act === actName);
+  assert(i >= 0 && j >= 0, `no ${actName} button on a row matching ${textRe}`);
+  el.onclick({ target: { closest: () => ({ dataset: { ckact: i + ':' + j } }) } });
+}
+
+ok('a smallest and a largest LV cable: the cables stay inside, the panel offers the sizes', async () => {
+  const { U, r } = await run({ minSize: 50, maxSize: 300 }), D = r.design;
+  assert(D && D.ok); assert(D.feeders.every(f => f.sizeMm2 >= 50 && f.sizeMm2 <= 300), 'sizes ' + D.feeders.map(f => f.sizeMm2));
+  const el = { innerHTML: '' }; U.renderOptions(el); const h = el.innerHTML;
+  assert(/data-vd="minSize"/.test(h) && /data-vd="maxSize"/.test(h) && />No limit</.test(h) && /<option value="50" selected>50 mm²/.test(h) && /<option value="300" selected>300 mm²/.test(h));
+  assert(/limited to 50 to 300 mm²/.test(h), 'the tile says so');
+});
+
+ok('a largest cable that is too small: the engine names it, the Fix row offers the size that works, and one click makes it pass', async () => {
+  const { U, r } = await run({ maxSize: 50 });
+  assert(r.design && !r.design.ok && r.design.limits.maxNeededMm2 > 50);
+  const row = U.checks().find(c => /too small/.test(c.text) && c.sev === 'fail');
+  assert(row, 'a Fix row says the largest size is too small');
+  const need = r.design.limits.maxNeededMm2;
+  assert(row.acts.some(a => a.act === 'maxsize' && a.val === need) && row.acts.some(a => a.act === 'addsub'));
+  await clickAct(U, /too small/, 'maxsize');
+  assert.strictEqual(U.cfg().vd.maxSize, need);
+  await U.vdRun();
+  assert(U.result.design.ok, 'passes with the size allowed'); assert(U.result.design.feeders.every(f => f.sizeMm2 <= need));
+});
+
+ok('a range no cable fits is reported, with a way back, and the old check carries on', async () => {
+  const { U, r } = await run({ minSize: 240, maxSize: 120 });
+  assert.strictEqual(r.design, null); assert(r.designIssue && r.designIssue.reasons[0].kind === 'range');
+  const row = U.checks().find(c => /no size fits/.test(c.text)); assert(row && row.sev === 'fail');
+  await clickAct(U, /no size fits/, 'clearsize');
+  assert.strictEqual(U.cfg().vd.minSize, 0); assert.strictEqual(U.cfg().vd.maxSize, 0);
+  await U.vdRun(); assert(U.result.design && U.result.design.ok);
 });
 
 (async () => {

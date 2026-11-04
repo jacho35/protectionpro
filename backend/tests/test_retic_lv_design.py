@@ -278,3 +278,76 @@ def test_the_route_runs_the_design_behind_sign_in(tmp_path, monkeypatch):
         body = r.json()
         want = run_retic_lv_design(req)
         assert body["ok"] and [f["cable"] for f in body["feeders"]] == [f["cable"] for f in want["feeders"]]
+
+
+# ── a minimum and a maximum LV cable size ──
+
+def sizes_used(res):
+    return sorted({f["sizeMm2"] for f in res["feeders"]})
+
+
+def test_the_cables_stay_inside_the_range_and_the_report_lists_it():
+    res = run_retic_lv_design(network(net_72(), minSizeMm2=95, maxSizeMm2=185))
+    assert res["ok"] and all(95 <= s <= 185 for s in sizes_used(res))
+    assert res["limits"]["sizes"] == [95, 120, 150, 185] and res["limits"]["minMm2"] == 95 and res["limits"]["maxMm2"] == 185
+
+
+def test_a_range_that_is_wide_enough_changes_nothing():
+    free = run_retic_lv_design(network(net_72()))
+    wide = run_retic_lv_design(network(net_72(), minSizeMm2=16, maxSizeMm2=300))
+    assert [f["cable"] for f in wide["feeders"]] == [f["cable"] for f in free["feeders"]]
+    assert wide["limits"]["maxNeededMm2"] is None
+
+
+def test_a_maximum_that_is_too_small_is_named_as_the_reason_with_what_would_work():
+    req = network(net_72(), maxSizeMm2=70)
+    res = run_retic_lv_design(req)
+    assert not res["ok"] and res["failCount"] > 0
+    r0 = res["reasons"][0]
+    assert r0["kind"] == "maxSize" and "too small" in r0["text"] and "70 mm²" in r0["text"]
+    need = res["limits"]["maxNeededMm2"]
+    assert need == 95                                                     # what the free design needs on its worst feeder
+    fix = next(f for f in r0["fixes"] if f["action"] == "maxSize")
+    assert fix["size"] == need
+    assert run_retic_lv_design(network(net_72(), maxSizeMm2=need))["ok"]    # allowing it works...
+    assert not run_retic_lv_design(network(net_72(), maxSizeMm2=70))["ok"]  # ...and the next size down below it does not
+    below = max(s for s in res["limits"]["allSizes"] if s < need)
+    assert not run_retic_lv_design(network(net_72(), maxSizeMm2=below))["ok"]
+
+
+def test_a_minimum_says_what_it_costs():
+    free = run_retic_lv_design(network(net_72()))
+    res = run_retic_lv_design(network(net_72(), minSizeMm2=120))
+    assert res["ok"] and sizes_used(res) == [120]
+    assert res["limits"]["minAddsPct"] == pytest.approx((res["taper"]["totalMm2M"] / free["taper"]["totalMm2M"] - 1) * 100, abs=0.1)
+    assert res["limits"]["minAddsPct"] > 0
+
+
+def test_a_minimum_above_the_maximum_and_a_range_with_no_cable_in_it():
+    a = run_retic_lv_design(network(net_72(), minSizeMm2=240, maxSizeMm2=120))
+    assert not a["ok"] and a["reasons"][0]["kind"] == "range" and "no size fits" in a["reasons"][0]["text"] and a["feeders"] == []
+    b = run_retic_lv_design(network(net_72(), minSizeMm2=17, maxSizeMm2=18))
+    assert not b["ok"] and "no LV cable between" in b["reasons"][0]["text"]
+    assert any(f["action"] == "clearSize" for f in a["reasons"][0]["fixes"])
+
+
+def test_a_cable_too_small_for_its_current_or_a_volt_drop_over_the_limit_is_a_failed_check():
+    res = run_retic_lv_design(network(net_72(), maxSizeMm2=16))
+    assert not res["ok"] and res["violationCount"] > 0
+    kinds = {v["kind"] for v in res["violations"]}
+    assert kinds <= {"rating", "vd"} and kinds
+    assert any(r.get("kind") in ("rating", "vd") for r in res["reasons"])
+
+
+def test_a_pinned_cable_is_exempt_from_the_range():
+    pin = next(c for c in AL if c["size_mm2"] == 240)
+    res = run_retic_lv_design(network(net_72(), maxSizeMm2=150, pinnedCables={"S1K3": pin}))
+    assert next(f for f in res["feeders"] if f["kioskId"] == "S1K3")["sizeMm2"] == 240
+    assert all(f["sizeMm2"] <= 150 for f in res["feeders"] if f["kioskId"] != "S1K3")
+
+
+def test_a_cap_on_a_string_that_cannot_pass_anyway_says_the_limit_makes_it_worse():
+    res = run_retic_lv_design(network(net_mount_royal(), tx="315", maxSizeMm2=185))
+    assert not res["ok"]
+    assert res["reasons"][0]["kind"] == "maxSizeWorse" and "makes it worse" in res["reasons"][0]["text"]
+    assert any("largest cable allowed (185 mm²)" in r["text"] for r in res["reasons"])      # the string reason no longer says a bigger cable cannot help
