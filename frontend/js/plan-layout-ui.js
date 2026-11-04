@@ -340,57 +340,43 @@ const PlanLayoutUI = {
     if (!d || !f) { UI.toast('Calibrate the plan first.', 'warn', 4000); return; }
     const pieces = this._kerbPieces(d, layer);
     if (!pieces || !pieces.length) { UI.toast(`Layer "${layer}" has no lines or polylines.`, 'warn', 4000); return; }
-    this.kerbStage = { descId, layer, f, chains: PlanKerbs.joinPieces(pieces), pickA: null, one: null, res: null, streets: [], namer: this._namer(PlanDxfImport.dataOf(d), d, f) };
-    this.kerbSolve();
-    const S = this.kerbStage, u = S.res.unpaired.length;
+    // the review state is the shared PlanKerbs.stage (also used by the Road plan); the plan-only parts ride on it
+    const S = this.kerbStage = Object.assign(PlanKerbs.stage(PlanKerbs.joinPieces(pieces), this.kerbOpt), { descId, layer, f, namer: this._namer(PlanDxfImport.dataOf(d), d, f) });
+    S.solve();
+    const u = S.unpaired.length;
     UI.toast(`${S.streets.length} street${S.streets.length === 1 ? '' : 's'} found from ${S.chains.length} kerb chains${u ? `; ${u} without a partner` : ''}. Alt-click removes one, Shift-click two kerbs adds one, Enter creates them.`, u ? 'warn' : 'success', 8000);
   },
   kerbSolve() {
     const S = this.kerbStage; if (!S) return;
-    S.res = PlanKerbs.solve(S.chains, this.kerbOpt); S.streets = S.res.streets.map(x => ({ ...x })); S.pickA = null; S.one = null;
+    S.o = Object.assign({}, S.o, this.kerbOpt); S.solve();
     PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true });
   },
   // arm a lone kerb: the next click on the plan, on the road's side of it, makes the street half the set width in from the kerb
   kerbOne(i) {
-    const S = this.kerbStage; if (!S) return; S.one = i; S.pickA = null;
+    const S = this.kerbStage; if (!S) return; S.arm(i);
     UI.toast(`Click on the road's side of that kerb: the street goes ${this.kerbOpt.oneW} m wide beside it.`, 'info', 4000);
     PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true });
   },
   // what an unpaired kerb chain is: its length, the nearest road name (or where it is)
   kerbInfo(i) {
-    const S = this.kerbStage, c = S.chains[i], f = S.f; let L = 0;
-    for (let k = 1; k < c.pts.length; k++) L += Math.hypot(c.pts[k][0] - c.pts[k - 1][0], c.pts[k][1] - c.pts[k - 1][1]);
-    const mid = c.pts[Math.floor(c.pts.length / 2)], nm = S.namer && S.namer.peek(c.pts.map(q => ({ x: q[0] / f, y: q[1] / f })));
-    return { i, len: L, name: nm, at: [mid[0], mid[1]] };
+    const S = this.kerbStage, k = S.info(i), f = S.f;
+    return { ...k, name: S.namer && S.namer.peek(S.chains[i].pts.map(q => ({ x: q[0] / f, y: q[1] / f }))) };
   },
   kerbCancel() { this.kerbStage = null; PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true }); },
   kerbClick(pt, e) {
-    const S = this.kerbStage, f = S.f, m = [pt.x * f, pt.y * f], tol = 14 * f / PlanEngine.view.zoom;
-    const near = (pts) => { let b = Infinity; for (let i = 0; i + 1 < pts.length; i++) { const a = pts[i], c = pts[i + 1], dx = c[0] - a[0], dy = c[1] - a[1], L2 = dx * dx + dy * dy, t = L2 ? Math.max(0, Math.min(1, ((m[0] - a[0]) * dx + (m[1] - a[1]) * dy) / L2)) : 0; b = Math.min(b, Math.hypot(m[0] - a[0] - dx * t, m[1] - a[1] - dy * t)); } return b; };
-    const pick = (list, get) => { let bi = -1, bd = tol; list.forEach((x, i) => { const dd = near(get(x)); if (dd < bd) { bd = dd; bi = i; } }); return bi; };
-    if (S.one != null && !(e && (e.altKey || e.shiftKey || e.ctrlKey || e.metaKey))) {   // the road beside a lone kerb: this click says which side
-      const st = PlanKerbs.offsetOne(S.chains[S.one], m, this.kerbOpt.oneW); st.chains = [S.one]; S.one = null;
-      S.streets.push(st); PlanKerbs.attach(S.streets, S.streets.length - 1, this.kerbOpt);
-      PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true }); return;
+    const S = this.kerbStage, f = S.f, m = [pt.x * f, pt.y * f], tol = 14 * f / PlanEngine.view.zoom, redraw = () => { PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true }); };
+    e = e || {};
+    if (S.one != null && !(e.altKey || e.shiftKey || e.ctrlKey || e.metaKey)) { S.place(m); redraw(); return; }       // the road beside a lone kerb: this click says which side
+    if (e.ctrlKey || e.metaKey) { const i = S.chainAt(m, tol); if (i < 0) UI.toast('Click on a kerb line.', 'info', 2500); else this.kerbOne(i); return; }
+    if (e.altKey) { if (!S.remove(m, tol)) UI.toast('No street there.', 'info', 2000); redraw(); return; }
+    if (e.shiftKey) {                                                     // add one: kerb A, then kerb B
+      const r = S.pair(m, tol);
+      if (r === 'nokerb') UI.toast('Click on a kerb line.', 'info', 2500);
+      else if (r === 'first') UI.toast('Now Shift-click the kerb on the other side of that road.', 'info', 3000);
+      else if (r === 'noroad') UI.toast('Those two kerbs do not run beside each other.', 'warn', 3500);
+      redraw(); return;
     }
-    if (e && (e.ctrlKey || e.metaKey)) {                                  // Ctrl-click a kerb: a road with a kerb on one side only
-      const i = pick(S.chains, x => x.pts); if (i < 0) { UI.toast('Click on a kerb line.', 'info', 2500); return; }
-      this.kerbOne(i); return;
-    }
-    if (e && e.altKey) {                                                  // remove the street under the click
-      const i = pick(S.streets, x => x.pts); if (i < 0) { UI.toast('No street there.', 'info', 2000); return; }
-      S.streets.splice(i, 1); S.pickA = null; PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true }); return;
-    }
-    if (e && e.shiftKey) {                                                // add one: kerb A, then kerb B
-      const i = pick(S.chains, x => x.pts); if (i < 0) { UI.toast('Click on a kerb line.', 'info', 2500); return; }
-      if (S.pickA == null) { S.pickA = i; UI.toast('Now Shift-click the kerb on the other side of that road.', 'info', 3000); PlanEngine.requestDraw({ fg: true }); return; }
-      if (S.pickA === i || S.one === i) { S.pickA = null; PlanEngine.requestDraw({ fg: true }); return; }
-      const st = PlanKerbs.pairManual(S.chains, S.pickA, i, this.kerbOpt); S.pickA = null;
-      if (!st) { UI.toast('Those two kerbs do not run beside each other.', 'warn', 3500); PlanEngine.requestDraw({ fg: true }); return; }
-      S.streets.push(st); PlanKerbs.attach(S.streets, S.streets.length - 1, this.kerbOpt);
-      PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true }); return;
-    }
-    UI.toast('Alt-click removes a street; Shift-click two kerbs adds one; Enter creates the streets, Esc leaves them.', 'info', 3500);
+    UI.toast('Alt-click removes a street; Shift-click two kerbs adds one; Ctrl-click a lone kerb; Enter creates the streets, Esc leaves them.', 'info', 3500);
   },
   kerbCreate() {
     const S = this.kerbStage; if (!S) return 0;
@@ -404,7 +390,7 @@ const PlanLayoutUI = {
       pm.routes.push({ id: AppState.planGenId('pmrt'), type: 'street', fromId: null, toId: null, points: wp, cableType: '', curved: false,
         props: { name: nm || 'Street ' + (pm.routes.filter(r => r.type === 'street').length + 1), width: st.w } });
     });
-    const made = S.streets.length, nets = PlanKerbs.components(S.streets).length; this.kerbStage = null;
+    const made = S.streets.length, nets = S.networks().length; this.kerbStage = null;
     PlanMarkup.markDirty(); this.touched(); PlanEngine.requestDraw({ fg: true });
     UI.toast(`${made} street${made === 1 ? '' : 's'} made from the kerbs${named < made ? ` (${made - named} without a name nearby: check them)` : ''}.${nets > 1 ? ` They form ${nets} separate networks: the LV and fibre networks will not reach across the gaps.` : ' One connected network.'}`, named < made || nets > 1 ? 'warn' : 'success', 8000);
     return made;
@@ -413,7 +399,7 @@ const PlanLayoutUI = {
     const S = this.kerbStage; if (!S) return;
     const u = 1 / zoom, f = S.f, line = pts => { ctx.beginPath(); pts.forEach((p, i) => i ? ctx.lineTo(p[0] / f, p[1] / f) : ctx.moveTo(p[0] / f, p[1] / f)); ctx.stroke(); };
     ctx.save(); ctx.lineJoin = 'round'; ctx.lineCap = 'round';
-    const un = new Set(S.res.unpaired);
+    const un = new Set(S.unpaired);
     S.chains.forEach((c, i) => {
       if (S.pickA === i) { ctx.strokeStyle = '#2563eb'; ctx.lineWidth = 3 * u; ctx.setLineDash([]); }
       else if (un.has(i)) { ctx.strokeStyle = '#dc2626'; ctx.lineWidth = 2 * u; ctx.setLineDash([5 * u, 4 * u]); }
@@ -421,7 +407,7 @@ const PlanLayoutUI = {
       line(c.pts);
     });
     ctx.setLineDash([]); ctx.lineWidth = 3.2 * u;
-    const comps = PlanKerbs.components(S.streets), main = new Set(comps[0] || []);                        // streets cut off from the main network are drawn orange
+    const comps = S.networks(), main = new Set(comps[0] || []);                        // streets cut off from the main network are drawn orange
     S.streets.forEach((st, si) => {
       ctx.strokeStyle = main.has(si) ? '#f59e0b' : '#ea580c'; line(st.pts);
       const a = st.pts[0], b = st.pts[st.pts.length - 1]; ctx.fillStyle = '#f59e0b';
@@ -759,8 +745,8 @@ const PlanLayoutUI = {
     const lyr = this.dxfLayers();
     const fromDxf = lyr.length ? `<div style="display:flex;flex-direction:column;gap:4px;margin:4px 0"><label style="display:block">Take streets from a drawing layer<select data-stl style="width:100%">${lyr.map((x, i) => `<option value="${i}"${(this.kerbStage ? x.layer === this.kerbStage.layer && x.d.id === this.kerbStage.descId : i === 0) ? ' selected' : ''}>${esc(x.layer)} (${x.n} line${x.n === 1 ? '' : 's'})${x.kerbs ? ' · kerbs (pair them)' : x.guess ? ' ★' : ''}</option>`).join('')}</select></label><div style="display:flex;gap:4px;flex-wrap:wrap"><button type="button" class="plan-btn" data-act="kerbstreets" title="Pair the kerb lines of a layer into one centreline per road, with the measured width">Streets from kerb layer</button><button type="button" class="plan-btn" data-act="dxfstreets" title="Every line of the layer becomes a street, as drawn">Use layer as streets</button></div></div>` : '';
     const KS = this.kerbStage, ko = this.kerbOpt;
-    const kcomps = KS ? PlanKerbs.components(KS.streets) : [];
-    const kinfo = KS ? KS.res.unpaired.map(i => this.kerbInfo(i)) : [];
+    const kcomps = KS ? KS.networks() : [];
+    const kinfo = KS ? KS.unpaired.map(i => this.kerbInfo(i)) : [];
     const kerbBlock = KS ? `<div style="border:2px solid #f59e0b;border-radius:6px;padding:6px 8px;margin:4px 0;display:flex;flex-direction:column;gap:5px">
         <b>Streets from kerbs: review</b>
         <div>${KS.streets.length} street${KS.streets.length === 1 ? '' : 's'} (amber, width on each) from ${KS.chains.length} kerb chains of "${esc(KS.layer)}".</div>
@@ -823,9 +809,9 @@ const PlanLayoutUI = {
       if (b.dataset.act === 'kerbstreets') { const sel = el.querySelector('[data-stl]'), x = lyr[sel ? +sel.value : 0]; if (x) this.kerbStart(x.d.id, x.layer); return; }
       if (b.dataset.act === 'kerbcreate') { this.kerbCreate(); return; }
       if (b.dataset.act === 'kerbcancel') { this.kerbCancel(); return; }
-      if (b.dataset.act === 'kerbshow') { const S = this.kerbStage; if (S) { const ids = b.dataset.i != null ? [+b.dataset.i] : S.res.unpaired, pts = []; ids.forEach(i => S.chains[i].pts.forEach(q => pts.push({ x: q[0] / S.f, y: q[1] / S.f }))); if (pts.length) PlanEngine.zoomToPoints(pts); } return; }
+      if (b.dataset.act === 'kerbshow') { const S = this.kerbStage; if (S) { const ids = b.dataset.i != null ? [+b.dataset.i] : S.unpaired, pts = []; ids.forEach(i => S.chains[i].pts.forEach(q => pts.push({ x: q[0] / S.f, y: q[1] / S.f }))); if (pts.length) PlanEngine.zoomToPoints(pts); } return; }
       if (b.dataset.act === 'kerbone') { this.kerbOne(+b.dataset.i); return; }
-      if (b.dataset.act === 'kerbjoin') { const S = this.kerbStage; if (S) { const n = PlanKerbs.connect(S.streets, this.kerbOpt.join), c = PlanKerbs.components(S.streets).length; UI.toast(n ? `${n} join${n === 1 ? '' : 's'} made; ${c === 1 ? 'one connected network now' : c + ' networks remain (the gaps are wider than ' + this.kerbOpt.join + ' m)'}.` : `Nothing within ${this.kerbOpt.join} m to join.`, c === 1 ? 'success' : 'warn', 5000); PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true }); } return; }
+      if (b.dataset.act === 'kerbjoin') { const S = this.kerbStage; if (S) { const n = S.join(this.kerbOpt.join), c = S.networks().length; UI.toast(n ? `${n} join${n === 1 ? '' : 's'} made; ${c === 1 ? 'one connected network now' : c + ' networks remain (the gaps are wider than ' + this.kerbOpt.join + ' m)'}.` : `Nothing within ${this.kerbOpt.join} m to join.`, c === 1 ? 'success' : 'warn', 5000); PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true }); } return; }
       if (b.dataset.act === 'dxfstreets') { const sel = el.querySelector('[data-stl]'), x = lyr[sel ? +sel.value : 0]; if (x) this.streetsFromLayer(x.d.id, x.layer); }
       else if (b.dataset.act === 'run') this.run();
       else if (b.dataset.act === 'create') this.commit();
@@ -846,7 +832,7 @@ const PlanLayoutUI = {
     };
     el.onchange = (e) => {
       const t = e.target;
-      if (t.dataset.kopt) { const v = parseFloat(t.value); if (isFinite(v)) { this.kerbOpt[t.dataset.kopt] = v; if (t.dataset.kopt !== 'join' && t.dataset.kopt !== 'oneW') this.kerbSolve(); } return; }
+      if (t.dataset.kopt) { const v = parseFloat(t.value); if (isFinite(v)) { this.kerbOpt[t.dataset.kopt] = v; if (this.kerbStage) { if (t.dataset.kopt === 'join' || t.dataset.kopt === 'oneW') this.kerbStage.o = Object.assign({}, this.kerbStage.o, this.kerbOpt); else this.kerbSolve(); } } return; }
       if (t.dataset.vd) {
         if (t.type === 'range') return;
         VDc[t.dataset.vd] = t.value;
