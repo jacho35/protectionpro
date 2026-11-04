@@ -54,9 +54,8 @@ const PlanLayoutUI = {
     T.combine = ['separate', 'mvlv'].includes(T.combine) ? T.combine : D2.combine;
     T.fibre = ['own', 'with', 'off'].includes(T.fibre) ? T.fibre : D2.fibre;
     T.crossings = typeof T.crossings === 'boolean' ? T.crossings : D2.crossings;
-    const vd = L.vd = (L.vd && typeof L.vd === 'object') ? L.vd : {}, VD = PlanLayout.VD_DEFAULTS;
-    vd.maxPct = this._num(vd.maxPct, 1, 20, VD.maxPct);
-    vd.admd = this._num(vd.admd, 0.5, 30, (typeof Retic !== 'undefined' && Retic.settings && Retic.settings.admd > 0) ? Retic.settings.admd : VD.admd);
+    const vd = L.vd = (L.vd && typeof L.vd === 'object') ? L.vd : {};
+    vd.maxPct = this._num(vd.maxPct, 1, 20, 8);
     vd.lv = typeof vd.lv === 'string' ? vd.lv.slice(0, 80) : ''; vd.svc = typeof vd.svc === 'string' ? vd.svc.slice(0, 80) : '';
     L.sides = (L.sides && typeof L.sides === 'object') ? L.sides : {};
     L.fronts = (L.fronts && typeof L.fronts === 'object') ? L.fronts : {};
@@ -88,14 +87,52 @@ const PlanLayoutUI = {
       lv: pick(feeders, vd.lv, c => c.id === 'al_xlpe_95_lv' || (c.size_mm2 === 95 && c.conductor === 'Al')),
       svc: pick(services, vd.svc, c => c.size_mm2 === 16 && c.conductor === 'Cu') };
   },
-  _vdCableName(type) { if (type !== 'lv' && type !== 'service') return ''; const c = this.vdCables(); const x = type === 'lv' ? c.lv : c.svc; return x ? x.name : ''; },
-  vdCalc() {
+  // The check runs Demand's own engine on the proposed network: /analysis/admd for the diversified current of every LV leg, then Retic's
+  // volt-drop maths (`_vdPercent`, `_cumulativeFeederVD`, `_erfDesignAmps`) for each leg and each service. Nothing is worked out here.
+  async vdRun() {
     const r = this.result; if (!r) return;
-    const c = this.vdCables(), vd = this.cfg().vd;
-    r.vd = PlanLayout.voltDrop(r, { maxPct: vd.maxPct, admd: vd.admd, lv: c.lv && { r: c.lv.r_per_km, x: c.lv.x_per_km, name: c.lv.name }, svc: c.svc && { r: c.svc.r_per_km, x: c.svc.x_per_km, name: c.svc.name } });
+    r.vd = null; r.dem = null;
+    if (typeof Retic === 'undefined' || typeof API === 'undefined') return;
+    const c = this.vdCables();
+    const input = PlanLayout.demandInput(r, { minisubId: 'LAYOUT_SUB', lvCable: c.lv && c.lv.name, svcCable: c.svc && c.svc.name, phases: Retic.PHASES.slice(0, 3).map(x => x.id) });
+    if (!input) { r.vd = { err: 'No LV network to check yet.' }; return; }
+    const tok = this._vdTok = (this._vdTok || 0) + 1;
+    r.vdBusy = true; PlanMarkup.refreshProps();
+    try {
+      const res = await API.runAdmd(Retic._admdPayload(), input.kiosks, input.minisubs);
+      if (tok !== this._vdTok || r !== this.result) return;
+      const byK = new Map(input.kiosks.map(k => [k.id, k]));
+      r.dem = { res, input, kioskOf: id => byK.get(id), byK };
+      r.vdBusy = false; this.vdDerive();
+    } catch (e) {
+      if (tok !== this._vdTok) return;
+      r.vdBusy = false; r.vd = { err: 'Demand could not be run (' + ((e && e.message) || e) + ').' };
+    }
+    PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true });
   },
+  // From the engine's answer to the figures shown. Cable or limit changes come back here (no new request: the loads do not depend on them).
+  vdDerive() {
+    const r = this.result, d = r && r.dem; if (!d) return;
+    const c = this.vdCables(), vd = this.cfg().vd;
+    if (!c.lv || !c.svc) { r.vd = { err: 'Pick the LV feeder and service cables.' }; return; }
+    d.input.kiosks.forEach(k => { k.feederCable = c.lv.name; k.erfs.forEach(e => { e.cableType = c.svc.name; }); });
+    const byId = {}; for (const kr of d.res.kiosks) byId[kr.kioskId] = kr;
+    const net = r.net, sub = net.sub, up = new Map(net.lvLinks.map(l => [l.to, l]));
+    const cum = k => { const v = Retic._cumulativeFeederVD(k.id, byId, d.kioskOf); return v == null ? 0 : v; };
+    const legs = net.lvLinks.map(l => ({ from: l.from, to: l.to, len: l.len, pct: Retic._legFeederVD(l.to.id, byId, d.kioskOf) || 0, cum: cum(l.to), amps: (byId[l.to.id] || {}).feederA || 0 }));
+    const rows = [], unreached = [];
+    for (const k of r.kiosks) for (const e of k.members) {
+      if (k !== sub && !up.has(k)) { unreached.push(e); continue; }
+      const de = d.byK.get(k.id).erfs.find(x => x.id === e.id);
+      const svc = Retic._vdPercent(c.svc.name, Retic._erfDesignAmps(d.byK.get(k.id), de), de.length, Retic._erfIs3ph(d.byK.get(k.id), de)) || 0, lv = cum(k);
+      rows.push({ erf: e, kiosk: k, lv, svc, total: lv + svc });
+    }
+    const worst = rows.slice().sort((a, b) => b.total - a.total)[0] || null;
+    r.vd = { V: { maxPct: vd.maxPct, lv: { name: c.lv.name }, svc: { name: c.svc.name } }, legs, rows, worst, over: rows.filter(x => x.total > vd.maxPct), unreached, max: worst ? worst.total : 0 };
+  },
+  _vdCableName(type) { if (type !== 'lv' && type !== 'service') return ''; const c = this.vdCables(); const x = type === 'lv' ? c.lv : c.svc; return x ? x.name : ''; },
   // a voltage-drop setting changed: only the check is worked out again
-  revd() { if (!this.result) return; this.vdCalc(); this.flag = null; PlanMarkup.markDirty(); PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true }); },
+  revd() { if (!this.result) return; this.vdDerive(); this.flag = null; PlanMarkup.markDirty(); PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true }); },
 
   // ── streets from a drawing layer ──
   // DXF layers that hold lines or polylines, as { d, layer, n, guess } (guess = looks like street centrelines).
@@ -173,7 +210,7 @@ const PlanLayoutUI = {
     this.result = PlanLayout.solve(g.input, g.params);
     this.f = g.f; this.ms = performance.now() - t0; this.stale = false; this.flag = null;
     this.result.trench = PlanLayout.trenches(this.result, this.cfg().trench);
-    this.vdCalc();
+    this.vdRun();
     PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true });
   },
   // trench depth / sharing changed: only the trenches are worked out again
@@ -303,7 +340,8 @@ const PlanLayoutUI = {
     const noBoundary = AppState.planMarkup.elements.filter(e => e.type === 'erf' && !(Array.isArray(e.boundary) && e.boundary.length >= 3));
     if (noBoundary.length) out.push({ sev: 'warn', text: `${noBoundary.length} erven on the plan have no boundary, so the layout ignores them (${nm(noBoundary)}). Detect them with Detect erven.`, ids: noBoundary.map(e => e.id) });
     const vd = r.vd;
-    if (vd && vd.err) out.push({ sev: 'info', text: 'Voltage drop not checked: ' + vd.err, ids: [] });
+    if (r.vdBusy) { /* the engine is still answering */ }
+    else if (vd && vd.err) out.push({ sev: 'info', text: 'Voltage drop not checked: ' + vd.err, ids: [] });
     else if (vd) {
       const w = vd.worst, lim = vd.V.maxPct;
       if (vd.over.length) out.push({ sev: 'fail', text: `${vd.over.length} erven are over the ${lim}% voltage drop. Worst: erf ${names[w.erf.id] || w.erf.id} at ${w.total.toFixed(1)}% (${w.lv.toFixed(1)}% along the LV feeder to ${w.kiosk.id} + ${w.svc.toFixed(1)}% on its ${Math.round(w.erf.cable)} m service). Add a kiosk or a bigger cable, or raise the limit.`, ids: vd.over.map(x => x.erf.id) });
@@ -405,10 +443,9 @@ const PlanLayoutUI = {
     const VDc = L.vd, cb = this.vdCables(), opts = (list, cur) => list.map(c => `<option value="${esc(c.id)}"${cur && cur.id === c.id ? ' selected' : ''}>${esc(c.name)}</option>`).join('');
     const vdGroup = `<details open><summary style="cursor:pointer;font-weight:600;margin:2px 0">Voltage drop</summary><div style="display:flex;flex-direction:column;gap:8px;padding:6px 0 4px">
         <label style="display:block">Maximum drop, mini-sub to the furthest erf <b data-vv="maxPct">${VDc.maxPct} %</b><input type="range" data-vd="maxPct" min="1" max="15" step="0.5" value="${VDc.maxPct}" style="width:100%"></label>
-        <label style="display:block">Load per erf (ADMD, kVA)<input type="number" data-vd="admd" min="0.5" max="30" step="0.1" value="${VDc.admd}" style="width:100%"></label>
         <label style="display:block">LV feeder cable<select data-vd="lv" style="width:100%">${opts(cb.feeders, cb.lv)}</select></label>
         <label style="display:block">Service cable<select data-vd="svc" style="width:100%">${opts(cb.services, cb.svc)}</select></label>
-        <div style="color:var(--text-muted)">Each LV leg carries every erf below it; a service carries one erf. Same method as Demand (power factor 0.95).</div></div></details>`;
+        <div style="color:var(--text-muted)">Worked out by Demand itself: its load class and ADMD settings give the diversified current on each LV leg and on each service, and its volt-drop calculation does the rest.</div></div></details>`;
     const sr = this.streetsOnPlan();
     const seg = (id, key, vals) => `<span class="plan-seg" style="display:inline-flex;gap:2px">${vals.map(([v, t]) => { const cur = (L.sides[id] || {})[key]; const on = (v === 0 ? (cur == null) : cur === v); return `<button type="button" class="plan-btn" data-side="${esc(id)}" data-key="${esc(key)}" data-val="${v}" aria-pressed="${on}" style="padding:2px 7px;font-size:12px${on ? ';font-weight:600;outline:2px solid var(--accent,#2563eb)' : ''}">${t}</button>`; }).join('')}</span>`;
     const streets = sr.length ? sr.map((s, i) => `<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;border-bottom:1px solid var(--border,#ddd);padding:3px 0"><span>${esc((s.props && s.props.name) || 'Street ' + (i + 1))}</span><span style="display:flex;flex-direction:column;gap:2px;align-items:flex-end"><span>Kiosks ${seg(s.id, 'k', [[0, 'Auto'], [1, 'Left'], [-1, 'Right']])}</span><span>Fibre ${seg(s.id, 'f', [[0, 'Auto'], [1, 'Left'], [-1, 'Right']])}</span></span></div>`).join('') : '<div class="plan-props-empty" style="padding:4px 0">No streets yet. Take them from a drawing layer above, or pick Street centreline (Routes) and click along each street, Enter to finish. Left and right are looking along the way you drew it.</div>';
@@ -439,7 +476,8 @@ const PlanLayoutUI = {
         ${trenchGroup}
         ${vdGroup}
         ${r ? `<div><b>Result</b><div style="display:grid;grid-template-columns:repeat(2,1fr);gap:5px;margin-top:4px">${tiles}</div>
-        ${r.vd && !r.vd.err && r.vd.worst ? `<div style="margin-top:6px"><b>Voltage drop</b><div>Furthest: erf ${esc(((AppState.planMarkup.elements.find(e => e.id === r.vd.worst.erf.id) || {}).name) || r.vd.worst.erf.id)}, ${r.vd.worst.total.toFixed(1)}% = ${r.vd.worst.lv.toFixed(1)}% LV (to ${esc(r.vd.worst.kiosk.id)}) + ${r.vd.worst.svc.toFixed(1)}% service</div>${r.vd.legs.slice().sort((a, b) => b.cum - a.cum).slice(0, 5).map(l => `<div style="display:flex;justify-content:space-between;gap:8px"><span>${esc(l.from.id)} → ${esc(l.to.id)} · ${Math.round(l.len)} m · ${l.erven} erven</span><span>${l.pct.toFixed(2)}% (to here ${l.cum.toFixed(1)}%)</span></div>`).join('')}</div>` : ''}
+        ${r.vdBusy ? '<div style="color:var(--text-muted);margin-top:6px">Checking the voltage drop with Demand…</div>' : ''}
+        ${r.vd && !r.vd.err && r.vd.worst ? `<div style="margin-top:6px"><b>Voltage drop</b><div>Furthest: erf ${esc(((AppState.planMarkup.elements.find(e => e.id === r.vd.worst.erf.id) || {}).name) || r.vd.worst.erf.id)}, ${r.vd.worst.total.toFixed(1)}% = ${r.vd.worst.lv.toFixed(1)}% LV (to ${esc(r.vd.worst.kiosk.id)}) + ${r.vd.worst.svc.toFixed(1)}% service</div>${r.vd.legs.slice().sort((a, b) => b.cum - a.cum).slice(0, 5).map(l => `<div style="display:flex;justify-content:space-between;gap:8px"><span>${esc(l.from.id)} → ${esc(l.to.id)} · ${Math.round(l.len)} m · ${Math.round(l.amps)} A</span><span>${l.pct.toFixed(2)}% (to here ${l.cum.toFixed(1)}%)</span></div>`).join('')}</div>` : ''}
         ${r.trench ? `<div style="margin-top:6px"><b>Trenches</b>${trenchRows}</div>` : ''}
           <div style="max-height:170px;overflow:auto;margin-top:6px"><table style="width:100%;font-size:12px;border-collapse:collapse"><thead><tr><th style="text-align:left">Crossing</th><th style="text-align:left">Ducts</th></tr></thead><tbody>${xt}</tbody></table></div>
           <div style="margin-top:8px"><b>Create</b><div style="display:flex;flex-direction:column;gap:2px;margin-top:3px">${chk('markers', 'Move the erf markers to their corner')}${chk('kiosks', 'Kiosks and service cables')}${chk('lv', 'Mini-sub and LV feeders')}${chk('mv', 'MV cable')}${chk('fibre', 'Fibre manholes and ducts')}${chk('cross', 'Road crossings (one per duct)')}${chk('trench', 'Trenches along the routes (depth and sharing as set)')}</div><div style="color:var(--text-muted);margin-top:4px">Replaces the previous auto layout. Your own items stay.</div></div></div>` : ''}
@@ -469,7 +507,7 @@ const PlanLayoutUI = {
       const t = e.target;
       if (t.dataset.vd) {
         if (t.type === 'range') return;
-        if (t.dataset.vd === 'admd') VDc.admd = this._num(t.value, 0.5, 30, VDc.admd); else VDc[t.dataset.vd] = t.value;
+        VDc[t.dataset.vd] = t.value;
         this.revd(); return;
       }
       if (t.dataset.t && t.type !== 'range') {

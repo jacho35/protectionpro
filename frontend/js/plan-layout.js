@@ -670,38 +670,25 @@ const PlanLayout = (() => {
     return { list: out, summary: sum, T };
   }
 
-  // ── voltage drop: mini-sub → kiosks along the LV tree, then the service cable to every erf ──
-  // V = { admd (kVA per erf), pf, maxPct, lv: { r, x } and svc: { r, x } (ohm / km) }. Each LV leg carries the erven of every
-  // kiosk below it; the service cable carries one erf, single phase. Same R·cosφ + X·sinφ form Demand uses (400 V three phase, 230 V single phase).
-  const VD_DEFAULTS = { maxPct: 8, admd: 4.04, pf: 0.95 };
-  function voltDrop(res, Vin) {
-    const V = Object.assign({}, VD_DEFAULTS, Vin || {});
-    if (!V.lv || !V.svc) return { err: 'Pick the LV feeder and service cables.' };
-    const z = (c) => c.r * V.pf + c.x * Math.sqrt(1 - V.pf * V.pf);
+  // ── the proposed network as Demand rows ──
+  // The kiosks (fedFrom = the kiosk up the LV tree, the mini-sub for the first one), their erven with the service length, and the one
+  // mini-sub, in the shape Demand's own demand and volt-drop engine takes — so the layout never re-implements either.
+  // o = { minisubId, lvCable, svcCable (names), phases: [id, id, id] }
+  function demandInput(res, o) {
     const net = res.net, sub = net && net.sub;
-    if (!sub) return { err: 'No LV network to check yet.' };
-    const kids = new Map(), up = new Map();
-    for (const l of net.lvLinks) { if (!kids.has(l.from)) kids.set(l.from, []); kids.get(l.from).push(l); up.set(l.to, l); }
-    const count = new Map();
-    const cnt = (k) => { if (count.has(k)) return count.get(k); count.set(k, 0); let n = k.members.length; for (const l of (kids.get(k) || [])) n += cnt(l.to); count.set(k, n); return n; };
-    const cum = new Map([[sub, 0]]), legs = [];
-    const walk = (k) => { for (const l of (kids.get(k) || [])) {
-      const I = cnt(l.to) * V.admd / (Math.sqrt(3) * 0.4), pct = Math.sqrt(3) * I * (l.len / 1000) * z(V.lv) / 400 * 100;
-      cum.set(l.to, cum.get(k) + pct); legs.push({ from: k, to: l.to, len: l.len, erven: cnt(l.to), amps: I, pct, cum: cum.get(l.to) }); walk(l.to);
-    } };
-    cnt(sub); walk(sub);
-    const rows = [], Is = V.admd / 0.23;
-    for (const e of res.erven) {
-      if (!e.kiosk || !cum.has(e.kiosk)) continue;
-      const svc = 2 * Is * ((e.cable || 0) / 1000) * z(V.svc) / 230 * 100, lvp = cum.get(e.kiosk);
-      rows.push({ erf: e, kiosk: e.kiosk, lv: lvp, svc, total: lvp + svc });
-    }
-    const unreached = res.erven.filter(e => e.kiosk && !cum.has(e.kiosk));
-    const worst = rows.slice().sort((a, b) => b.total - a.total)[0] || null;
-    return { V, legs, rows, worst, over: rows.filter(r => r.total > V.maxPct), unreached, max: worst ? worst.total : 0, maxLv: Math.max(0, ...rows.map(r => r.lv)) };
+    if (!sub) return null;
+    const up = new Map(net.lvLinks.map(l => [l.to, l]));
+    const phases = (o.phases && o.phases.length) ? o.phases : [null];
+    const kiosks = res.kiosks.map(k => {
+      const l = up.get(k);
+      return { id: k.id, name: k.id, fedFrom: l ? l.from.id : o.minisubId, loadClass: '', admdOverride: 0, streetLightKVA: 0,
+        feederCable: o.lvCable || '', feederLength: l ? l.len : (k === sub ? 5 : 0),   // the mini-sub stands 5 m along the street from its kiosk
+        erfs: k.members.map((e, i) => ({ id: e.id, erfNumber: String(e.id), length: Math.max(e.cable || 0, 0.1), phase: phases[i % phases.length], cableType: o.svcCable || '', ampsOverride: 0 })) };
+    });
+    return { minisubs: [{ id: o.minisubId, name: 'Auto layout mini-sub' }], kiosks };
   }
 
-  return { solve, trenches, voltDrop, VD_DEFAULTS, TRENCH_DEFAULTS, DEFAULTS, ptAt, project, verge, plen };
+  return { solve, trenches, demandInput, TRENCH_DEFAULTS, DEFAULTS, ptAt, project, verge, plen };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = PlanLayout;
