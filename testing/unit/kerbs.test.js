@@ -118,4 +118,28 @@ ok('components: separate networks are found, and connect joins them within the g
   assert.strictEqual(K.connect(all, 50), 0);                                   // c is 100 m away: left alone, the review says so
 });
 
+ok('sides: a street read back into its two kerbs keeps the width profile', () => {
+  const ch = K.joinPieces([[[0, 5], [50, 5], [100, 8]], [[0, -5], [50, -5], [100, -8]]].map(p => p));
+  const r = K.solve(ch), st = r.streets[0], sd = K.sides(st, ch);
+  assert(sd.a.length >= 2 && sd.b.length >= 2);
+  assert(sd.a.every(p => p[1] > 0) && sd.b.every(p => p[1] < 0), 'left above, right below');
+  assert(Math.abs(sd.a[0][1] - 5) < 0.3 && Math.abs(sd.b[sd.b.length - 1][1] + 8) < 0.5, 'follows the kerbs ' + JSON.stringify([sd.a[0], sd.b[sd.b.length - 1]]));
+});
+
+ok('sides: a stub run on to another street (no kerbs there) is set half the width out', () => {
+  const st = { pts: [[0, 0], [30, 0]], w: 8 }, sd = K.sides(st, []);
+  assert(Math.abs(sd.a[0][1] - 4) < 1e-6 && Math.abs(sd.b[0][1] + 4) < 1e-6);
+});
+
+ok('stage: remove, add from two kerbs, a road beside a lone kerb, join', () => {
+  const ch = [...K.joinPieces([...loose(0, 5, 100, 5), ...loose(0, -5, 100, -5)]), { pts: [[0, 60], [60, 60]] }];
+  const T = K.stage(ch).solve();
+  assert.strictEqual(T.streets.length, 1); assert.deepStrictEqual(T.unpaired, [2]);
+  T.arm(2); assert(T.place([30, 50]));                                       // click below the kerb: the road is below it
+  assert.strictEqual(T.streets.length, 2); assert(Math.abs(T.streets[1].pts[0][1] - 57) < 1e-6 && T.streets[1].w === 6);
+  assert.strictEqual(T.networks().length, 2); assert.strictEqual(T.join(60), 1); assert.strictEqual(T.networks().length, 1);
+  assert(T.remove([50, 57], 3)); assert.strictEqual(T.streets.length, 1);
+  assert.strictEqual(T.pair([50, 5], 2), 'first'); assert.strictEqual(T.pair([50, -5], 2), 'added'); assert.strictEqual(T.streets.length, 2);
+});
+
 console.log(n + ' passed');

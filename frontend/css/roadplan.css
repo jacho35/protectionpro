@@ -139,3 +139,15 @@ body.dark-mode #streetlight-workspace {
 .rp-cs.muted { color: var(--text-secondary, #5b6675); }
 .rp-circ-sum { margin-right: auto; font-size: 13px; }
 .rp-circ-dialog { max-width: 880px; width: 94vw; }
+
+/* Roads from kerbs (js/roadplan-kerbs.js) */
+.rk-panel { display: flex; flex-direction: column; gap: 8px; }
+.rk-opts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.rk-num { display: flex; flex-direction: column; font-size: 12px; gap: 2px; }
+.rk-num input, .rk-row input { width: 100%; }
+.rk-row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-top: 3px; }
+.rk-row input { width: 64px; }
+.rk-warn { color: #c2410c; } .rk-bad { color: #b91c1c; } .rk-ok { color: #15803d; }
+.rk-list { max-height: 160px; overflow: auto; margin-top: 3px; }
+.rk-item { display: flex; justify-content: space-between; align-items: center; gap: 4px; border-bottom: 1px solid var(--border, #ddd); padding: 2px 0; }
+.rk-item .btn-small { padding: 1px 6px; font-size: 12px; margin-left: 3px; }
