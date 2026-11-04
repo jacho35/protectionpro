@@ -441,7 +441,7 @@ const PlanLayoutUI = {
     this.err = '';
     const t0 = performance.now();
     this.result = PlanLayout.solve(g.input, g.params);
-    this.f = g.f; this.ms = performance.now() - t0; this.stale = false; this.flag = null;
+    this.f = g.f; this.ms = performance.now() - t0; this.stale = false; this.flag = null; this.nearHint = null;
     this.result.trench = PlanLayout.trenches(this.result, this.cfg().trench);
     this.vdRun();
     PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true });
@@ -530,6 +530,48 @@ const PlanLayoutUI = {
   _opt: { markers: true, kiosks: true, lv: true, mv: true, fibre: true, cross: true, trench: true },
   clear() { this.result = null; this.stale = true; PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true }); },
 
+  // ───────── an erf no street reaches: show the nearest street and extend it ─────────
+  nearHint: null,
+  // draw the nearest street and the proposed run on the plan, and zoom to them
+  nearShow(eid) {
+    const r = this.result, f = this.f, e = r && r.erven.find(x => x.id === eid); if (!e) return;
+    const g = PlanLayout.reach(e.poly, r.streets, { erven: r.erven });
+    if (!g) { UI.toast('There is no street on the plan to extend.', 'warn', 3500); return; }
+    this.nearHint = { erf: eid, g }; this.flag = new Set([eid]);
+    const pts = e.poly.map(q => ({ x: q[0] / f, y: q[1] / f })).concat([{ x: g.q[0] / f, y: g.q[1] / f }, { x: g.t[0] / f, y: g.t[1] / f }]);
+    PlanEngine.zoomToPoints(pts);
+    PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true });
+  },
+  // Run each of these erven's nearest street on to it (the street's own end, or a spur from its middle), one change to the
+  // plan. Later erven see the earlier extensions. Returns how many were fixed.
+  extendErven(ids) {
+    const r = this.result, f = this.f, pm = AppState.planMarkup; if (!r || !ids.length) return 0;
+    const work = r.streets.map(s => ({ id: s.id, name: s.name, w: s.w, pts: s.pts.map(q => q.slice()) }));
+    let ext = 0, spurs = 0, skipped = 0, through = 0, snap = false;
+    for (const id of ids) {
+      const e = r.erven.find(x => x.id === id), g = e && PlanLayout.reach(e.poly, work, { erven: r.erven });
+      const route = g && !g.near && pm.routes.find(x => x.id === g.street.id);
+      if (!route) { skipped++; continue; }
+      if (!snap) { PlanMarkup.snapshot(); snap = true; }
+      const T = { x: g.t[0] / f, y: g.t[1] / f }, w = work.find(x => x.id === route.id);
+      if (g.atEnd && !route.curved) {                                                     // the street's own end runs on
+        if (g.atEnd === 'end') { route.points.push(T); w.pts.push(g.t.slice()); } else { route.points.unshift(T); w.pts.unshift(g.t.slice()); }
+        ext++;
+      } else {                                                                            // a spur from the street, same width
+        const nm = String(g.street.name).replace(/ spur$/, '') + ' spur';
+        const nr = { id: AppState.planGenId('pmrt'), type: 'street', fromId: null, toId: null, points: [{ x: g.q[0] / f, y: g.q[1] / f }, T], cableType: '', curved: false, props: { name: nm, width: g.street.w } };
+        pm.routes.push(nr); work.push({ id: nr.id, name: nm, w: g.street.w, pts: [g.q.slice(), g.t.slice()] }); spurs++;
+      }
+      if (g.crosses) through++;
+    }
+    if (!snap) { UI.toast('Nothing to extend: those erven are already within reach of a street or there is none.', 'warn', 4000); return 0; }
+    this.nearHint = null; this.flag = null;
+    PlanMarkup.markDirty(); this.touched();
+    const n = ext + spurs;
+    UI.toast(`${n} ${n === 1 ? 'erf' : 'erven'} given a street: ${ext} street${ext === 1 ? '' : 's'} extended, ${spurs} spur${spurs === 1 ? '' : 's'} added${skipped ? `; ${skipped} left (already in reach, or no street)` : ''}${through ? `. ${through} run${through === 1 ? '' : 's'} pass through other erven: check the plan` : ''}. Press Run if the checks do not update.`, through || skipped ? 'warn' : 'success', 8000);
+    return n;
+  },
+
   // ───────── the tool's clicks ─────────
   click(pt) {
     const r = this.result, f = this.f; if (!r) { UI.toast('Run the layout first.', 'info', 3000); return; }
@@ -581,7 +623,11 @@ const PlanLayoutUI = {
     const over = r.erven.filter(e => e.fe && e.cable > P.maxc + 1e-6);
     if (over.length) out.push({ sev: 'fail', text: `${over.length} erven are further than ${P.maxc} m of service cable from their kiosk (longest ${Math.round(Math.max(...over.map(e => e.cable)))} m): ${nm(over.map(lab))}.`, ids: over.map(e => e.id) });
     const nf = r.erven.filter(e => !e.fe);
-    if (nf.length) out.push({ sev: 'fail', text: `${nf.length} erven do not face a street and get no kiosk, service or fibre: ${nm(nf.map(lab))}. Check the streets reach them.`, ids: nf.map(e => e.id) });
+    if (nf.length) {
+      const rows = nf.map(e => ({ id: e.id, name: names[e.id] || e.id, g: PlanLayout.reach(e.poly, r.streets, { erven: r.erven }) }));
+      out.push({ sev: 'fail', text: `${nf.length} erven do not face a street and get no kiosk, service or fibre: ${nm(nf.map(lab))}. Check the streets reach them.`, ids: nf.map(e => e.id), rows,
+        acts: rows.filter(x => x.g && !x.g.near).length > 1 ? [{ label: 'Extend the nearest streets to all of them', act: 'extendall', val: rows.filter(x => x.g && !x.g.near).map(x => x.id) }] : [] });
+    }
     const unserved = r.erven.filter(e => e.fe && !e.kiosk);
     if (unserved.length) out.push({ sev: 'fail', text: `${unserved.length} erven have no kiosk: ${nm(unserved.map(lab))}.`, ids: unserved.map(e => e.id) });
     const crowd = r.kiosks.filter(k => k.members.length > P.n);
@@ -656,6 +702,12 @@ const PlanLayoutUI = {
     }
     ctx.strokeStyle = 'rgba(71,85,105,.6)'; ctx.lineWidth = 1 * u;                                   // the erf boundaries the layout read
     r.erven.forEach(e => { ctx.beginPath(); e.poly.forEach((p, i) => { const q = W(p); i ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1]); }); ctx.closePath(); ctx.stroke(); });
+    if (this.nearHint) {                                                                               // the nearest street and the run proposed for one erf
+      const h = this.nearHint, st = r.streets.find(x => x.id === h.g.street.id), g = h.g; ctx.save(); ctx.lineCap = 'round';
+      if (st) { ctx.strokeStyle = 'rgba(245,158,11,.35)'; ctx.lineWidth = Math.max(st.w / f, 6 * u); line(st.pts); }
+      if (!g.near) { ctx.strokeStyle = '#f59e0b'; ctx.lineWidth = 3 * u; ctx.setLineDash([6 * u, 4 * u]); line([g.q, g.t]); ctx.setLineDash([]); ctx.fillStyle = '#f59e0b'; for (const q of [g.q, g.t]) { ctx.beginPath(); ctx.arc(q[0] / f, q[1] / f, 4 * u, 0, 6.2832); ctx.fill(); } }
+      ctx.restore();
+    }
     if (this.flag && this.flag.size) {                                                                 // erven picked from the check list
       ctx.save(); ctx.strokeStyle = '#dc2626'; ctx.fillStyle = 'rgba(220,38,38,.22)'; ctx.lineWidth = 3 * u;
       r.erven.forEach(e => { if (!this.flag.has(e.id)) return; ctx.beginPath(); e.poly.forEach((p, i) => { const q = W(p); i ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1]); }); ctx.closePath(); ctx.fill(); ctx.stroke(); });
@@ -766,6 +818,9 @@ const PlanLayoutUI = {
         ${ck.length ? ck.map((c, i) => { const col = esc(sevCol[c.sev]), head = `<b style="color:${col}">${sevTxt[c.sev]}</b> ${esc(c.text)}`;
           return (c.ids.length ? `<button type="button" class="plan-btn" data-ck="${i}" style="display:block;width:100%;text-align:left;margin-top:3px;white-space:normal;border-left:4px solid ${col}">${head} <span style="color:var(--text-muted)">· show on plan</span></button>`
             : `<div style="margin-top:3px;padding:3px 6px;border-left:4px solid ${col};white-space:normal">${head}</div>`)
+            + (c.rows ? `<div style="max-height:190px;overflow:auto;margin-top:2px">${c.rows.map(x => { const g = x.g;
+              const why = !g ? 'no street on the plan' : g.near ? `already within reach of ${esc(g.street.name)}: check that its edge is not blocked by another erf` : `${esc(g.street.name)}, ${Math.round(g.d)} m away: ${g.atEnd ? 'extend it' : 'a spur'} ${Math.round(g.len)} m${g.crosses ? ` · <b style="color:#b45309">passes through ${g.crosses} other ${g.crosses === 1 ? 'erf' : 'erven'}</b>` : ''}`;
+              return `<div style="display:flex;justify-content:space-between;align-items:center;gap:4px;border-bottom:1px solid var(--border,#ddd);padding:2px 0;font-size:12px"><span>${esc(x.name)} · ${why}</span><span style="display:flex;gap:3px;flex-shrink:0"><button type="button" class="plan-btn" data-ckerf="show:${esc(x.id)}" style="padding:1px 6px;font-size:12px"${g ? '' : ' disabled'}>show</button><button type="button" class="plan-btn" data-ckerf="ext:${esc(x.id)}" style="padding:1px 6px;font-size:12px;font-weight:600"${g && !g.near ? '' : ' disabled'}>extend</button></span></div>`; }).join('')}</div>` : '')
             + ((c.acts || []).length ? `<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:2px">${c.acts.map((a, j) => `<button type="button" class="plan-btn" data-ckact="${i}:${j}" style="padding:2px 8px;font-size:12px;font-weight:600">${esc(a.label)}</button>`).join('')}</div>` : ''); }).join('')
           : '<div style="color:#15803d;margin-top:3px">✓ Every erf is served, within the service limit and the kiosk size.</div>'}</div>` : '';
     const chk = (k, t) => `<label style="display:flex;gap:6px"><input type="checkbox" data-opt="${k}"${opt[k] ? ' checked' : ''}> ${t}</label>`;
@@ -791,10 +846,12 @@ const PlanLayoutUI = {
           <div style="margin-top:8px"><b>Create</b><div style="display:flex;flex-direction:column;gap:2px;margin-top:3px">${chk('markers', 'Move the erf markers to their corner')}${chk('kiosks', 'Kiosks and service cables')}${chk('lv', 'Mini-sub and LV feeders')}${chk('mv', 'MV cable')}${chk('fibre', 'Fibre manholes and ducts')}${chk('cross', 'Road crossings (one per duct)')}${chk('trench', 'Trenches along the routes (depth and sharing as set)')}</div><div style="color:var(--text-muted);margin-top:4px">Replaces the previous auto layout. Your own items stay.</div></div></div>` : ''}
       </div>`;
     el.onclick = (e) => {
-      const b = e.target.closest('[data-act],[data-mode],[data-side],[data-ck],[data-ckact]'); if (!b) return;
+      const b = e.target.closest('[data-act],[data-mode],[data-side],[data-ck],[data-ckact],[data-ckerf]'); if (!b) return;
+      if (b.dataset.ckerf != null) { const [kind, ...rest] = b.dataset.ckerf.split(':'), id = rest.join(':'); if (kind === 'show') this.nearShow(id); else this.extendErven([id]); return; }
       if (b.dataset.ckact != null) {
         const [i, j] = b.dataset.ckact.split(':').map(Number), a = (((this._ck || [])[i] || {}).acts || [])[j]; if (!a) return;
         if (a.act === 'tx') { L.vd.tx = a.val; this.revd(); }
+        else if (a.act === 'extendall') { this.extendErven(a.val || []); }
         else if (a.act === 'addsub') { p.subs = Math.min(8, (+p.subs || 1) + 1); this.touched(); }
         return;
       }
@@ -805,7 +862,7 @@ const PlanLayoutUI = {
         if (pts.length) PlanEngine.zoomToPoints(pts);
         PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true }); return;
       }
-      if (b.dataset.act === 'unflag') { this.flag = null; PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true }); return; }
+      if (b.dataset.act === 'unflag') { this.flag = null; this.nearHint = null; PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true }); return; }
       if (b.dataset.act === 'kerbstreets') { const sel = el.querySelector('[data-stl]'), x = lyr[sel ? +sel.value : 0]; if (x) this.kerbStart(x.d.id, x.layer); return; }
       if (b.dataset.act === 'kerbcreate') { this.kerbCreate(); return; }
       if (b.dataset.act === 'kerbcancel') { this.kerbCancel(); return; }

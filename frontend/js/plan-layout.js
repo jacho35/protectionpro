@@ -774,7 +774,55 @@ const PlanLayout = (() => {
     return { minisubs: subs.map(S => ({ id: sid(S.k), name: 'Auto layout mini-sub' + (subs.length > 1 ? ' ' + S.id : ''), ...(o.txTypeId ? { txTypeId: o.txTypeId } : {}) })), kiosks };
   }
 
-  return { solve, trenches, demandInput, TRENCH_DEFAULTS, DEFAULTS, ptAt, project, verge, plen };
+
+  // ───────────── an erf no street reaches: where the nearest street should run on to ─────────────
+  // An erf faces a street when the midpoint of one of its edges, 1 m out, is within half the street's width + 4 m of its
+  // centreline (roadHit). For an erf that does not: the nearest street (centreline to the erf outline), the erf edge that
+  // is closest to it, and the straight run from the street's nearest point to `w/2 + slack` m short of that edge's
+  // midpoint. `atEnd` ('start' | 'end') = the nearest point is an end of that street, so the street itself can be
+  // extended; null = a spur from the middle of it. `near` = already within reach (the edge is blocked or not facing out).
+  // `crosses` = how many of `o.erven` (polygons) the run passes through. streets: prepared streets or { id, name, w, pts }.
+  function segNear(a, b, c, d) {
+    if (segInter(a, b, c, d)) { const t = orient(c, d, a) / (orient(c, d, a) - orient(c, d, b)); const p = [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]; return { d: 0, p, q: p.slice() }; }
+    const on = (pt, u, v) => { const dx = v[0] - u[0], dy = v[1] - u[1], L2 = dx * dx + dy * dy, t = L2 ? clamp(((pt[0] - u[0]) * dx + (pt[1] - u[1]) * dy) / L2, 0, 1) : 0; return [u[0] + dx * t, u[1] + dy * t]; };
+    let best = null;
+    for (const [pt, from, to, swap] of [[a, c, d, false], [b, c, d, false], [c, a, b, true], [d, a, b, true]]) {
+      const q = on(pt, from, to), dd = Math.hypot(pt[0] - q[0], pt[1] - q[1]);
+      if (!best || dd < best.d) best = swap ? { d: dd, p: q, q: pt } : { d: dd, p: pt, q };
+    }
+    return best;
+  }
+  function reach(poly, streets, o) {
+    o = o || {};
+    const slack = o.slack == null ? 2 : o.slack, n = poly.length; let best = null;
+    for (const st of streets) {
+      if (!st.pts || st.pts.length < 2) continue;
+      for (let i = 0; i + 1 < st.pts.length; i++) for (let k = 0; k < n; k++) {
+        const r = segNear(st.pts[i], st.pts[i + 1], poly[k], poly[(k + 1) % n]);
+        if (!best || r.d < best.d) best = { d: r.d, st, q: r.p, k };
+      }
+    }
+    if (!best) return null;
+    const a = poly[best.k], b = poly[(best.k + 1) % n], m = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], w = best.st.w || 12, need = w / 2 + slack;
+    { let bd = Infinity;                                                           // the street point nearest that edge's midpoint (the run leaves from there)
+      for (let i = 0; i + 1 < best.st.pts.length; i++) { const u = best.st.pts[i], v = best.st.pts[i + 1], dx = v[0] - u[0], dy = v[1] - u[1], L2 = dx * dx + dy * dy, t = L2 ? clamp(((m[0] - u[0]) * dx + (m[1] - u[1]) * dy) / L2, 0, 1) : 0, q = [u[0] + dx * t, u[1] + dy * t], dd = Math.hypot(q[0] - m[0], q[1] - m[1]); if (dd < bd) { bd = dd; best.q = q; } } }
+    const dx = best.q[0] - m[0], dy = best.q[1] - m[1], L = Math.hypot(dx, dy) || 1e-9, st = best.st;
+    const out = { street: { id: st.id, name: st.name || st.id, w }, d: best.d, q: best.q, m, edge: best.k,
+      atEnd: Math.hypot(best.q[0] - st.pts[0][0], best.q[1] - st.pts[0][1]) < 1.5 ? 'start' : Math.hypot(best.q[0] - st.pts[st.pts.length - 1][0], best.q[1] - st.pts[st.pts.length - 1][1]) < 1.5 ? 'end' : null };
+    if (L <= need + 0.5) return Object.assign(out, { near: true, t: best.q.slice(), len: 0, crosses: 0 });
+    out.t = [m[0] + dx / L * need, m[1] + dy / L * need]; out.len = L - need; out.near = false;
+    let crosses = 0;
+    for (const e of o.erven || []) {
+      if (e.poly === poly) continue;
+      const steps = Math.max(2, Math.ceil(out.len)); let hit = false;
+      for (let i = 0; i <= steps && !hit; i++) { const t = i / steps; hit = pip(best.q[0] + (out.t[0] - best.q[0]) * t, best.q[1] + (out.t[1] - best.q[1]) * t, e.poly); }
+      if (hit) crosses++;
+    }
+    out.crosses = crosses;
+    return out;
+  }
+
+  return { reach, solve, trenches, demandInput, TRENCH_DEFAULTS, DEFAULTS, ptAt, project, verge, plen };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = PlanLayout;

@@ -130,16 +130,19 @@ const PlanKerbs = (() => {
         for (let j = 0; j < R.length; j++) {
           const rj = R[j], bx = rj.box; if (C[j].skip || ci.skip) continue;
           if (p.x < bx[0] - o.wmax || p.x > bx[2] + o.wmax || p.y < bx[1] - o.wmax || p.y > bx[3] + o.wmax) continue;
+          // the nearest sample of this chain that is a road-width away, parallel and straight across (not just the nearest
+          // sample: near the end of a road that is the end cap, closer than any road is wide)
           let m = -1, md = Infinity;
           for (let q = 0; q < rj.S.length; q++) {
-            const Q = rj.S[q], d = hyp(Q.x - p.x, Q.y - p.y); if (d >= md) continue;
-            if (j === i) { let ds = Math.abs(Q.s - p.s); if (ring) ds = Math.min(ds, ri.len - ds); if (ds <= 1.3 * d) continue; }
+            const Q = rj.S[q], d = hyp(Q.x - p.x, Q.y - p.y);
+            if (d >= md || d < o.wmin || d > o.wmax || (best && d >= best.d)) continue;
+            if (j === i) { let ds = Math.abs(Q.s - p.s); if (ring) ds = Math.min(ds, ri.len - ds); if (ds <= 1.3 * d) continue; if (!(Q.s > p.s)) continue; }   // a chain with itself: the first arm only
+            const u = [(Q.x - p.x) / d, (Q.y - p.y) / d];
+            if (Math.abs(p.tx * Q.ty - p.ty * Q.tx) > o.par || Math.abs(u[0] * p.tx + u[1] * p.ty) > o.par) continue;
             md = d; m = q;
           }
-          if (m < 0 || md < o.wmin || md > o.wmax || (best && md >= best.d)) continue;
-          const Q = rj.S[m], u = [(Q.x - p.x) / md, (Q.y - p.y) / md];
-          if (Math.abs(p.tx * Q.ty - p.ty * Q.tx) > o.par || Math.abs(u[0] * p.tx + u[1] * p.ty) > o.par) continue;
-          if (j === i && !(Q.s > p.s)) continue;                              // a chain with itself: the first arm only
+          if (m < 0) continue;
+          const Q = rj.S[m];
           best = { j, m, d: md, qx: Q.x, qy: Q.y, qs: Q.s };
         }
         out[i][k] = best;
@@ -155,14 +158,14 @@ const PlanKerbs = (() => {
     const out = []; let cur = null;
     for (const k of list) {
       const a = A[i][k];
-      if (cur && k - cur.k1 <= 3 && Math.abs(a.qs - cur.qs) <= 8 + 3 * (k - cur.k1)) { cur.k1 = k; cur.qs = a.qs; cur.ks.push(k); }
-      else { if (cur) out.push(cur); cur = { i, j, k0: k, k1: k, qs: a.qs, ks: [k] }; }
+      if (cur && k - cur.k1 <= 3 && Math.abs(a.qs - cur.qs) <= 8 + 3 * (k - cur.k1) && Math.abs(a.d - cur.d) <= 0.6 * (k - cur.k1)) { cur.k1 = k; cur.qs = a.qs; cur.d = a.d; cur.ks.push(k); }   // a width that jumps is another road (the end cap's sides)
+      else { if (cur) out.push(cur); cur = { i, j, k0: k, k1: k, qs: a.qs, d: a.d, ks: [k] }; }
     }
     if (cur) out.push(cur);
     const res = [];
     for (const r of out) {
       // a fillet bends the kerb away: take off the ends where the width is changing fast (a taper changes it slowly and stays)
-      const dd = k => A[i][k].d, steep = (k, k2) => Math.abs(dd(k) - dd(k2)) > 0.15 * Math.abs(k2 - k);
+      const dd = k => A[i][k].d, steep = (k, k2) => Math.abs(dd(k) - dd(k2)) > 0.25 * Math.abs(k2 - k);
       while (r.ks.length > 2 && steep(r.ks[0], r.ks[1])) r.ks.shift();
       while (r.ks.length > 2 && steep(r.ks[r.ks.length - 1], r.ks[r.ks.length - 2])) r.ks.pop();
       r.k0 = r.ks[0]; r.k1 = r.ks[r.ks.length - 1];
@@ -265,8 +268,8 @@ const PlanKerbs = (() => {
       const js = new Set(); A[i].forEach(a => { if (a) js.add(a.j); });
       for (const j of js) {
         if (j === i) {                                                      // the two arms of one chain (cul-de-sac): the arm 1 stretch
-          const rs = runs(R, A, i, i, o), cov = rs.reduce((t, r) => t + r.len, 0);
-          if (!rs.length || !(cov >= o.cover * R[i].len / 2 || Math.max(...rs.map(r => r.len)) >= o.minStreet)) continue;
+          const rs = runs(R, A, i, i, o), cov = rs.reduce((t, r) => t + r.len, 0), cap = median(rs.flatMap(r => r.ws)), arm = Math.max(R[i].len / 2 - cap, o.minRun);   // one arm = half the chain less the end cap
+          if (!rs.length || !(cov >= o.cover * arm || Math.max(...rs.map(r => r.len)) >= o.minStreet)) continue;
           paired.add(i);
           for (const r of rs) {
             const piece = { pts: simplify(r.mids, 0.15), ws: r.ws, chains: [i], bulbs: [] };

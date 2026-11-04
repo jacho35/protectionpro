@@ -142,4 +142,25 @@ ok('stage: remove, add from two kerbs, a road beside a lone kerb, join', () => {
   assert.strictEqual(T.pair([50, 5], 2), 'first'); assert.strictEqual(T.pair([50, -5], 2), 'added'); assert.strictEqual(T.streets.length, 2);
 });
 
+// A dead-end road drawn as ONE kerb line: both kerbs and the end cap in a single chain (open U, or a closed outline)
+const deadEnd = (L, w, kind) => {
+  const h = w / 2;
+  if (kind === 'open') return { pts: [[0, h], [L, h], [L + 1.5, h / 2], [L + 1.5, -h / 2], [L, -h], [0, -h]] };
+  if (kind === 'ring') return { pts: [[0, h], [L, h], [L, -h], [0, -h], [0, h]], closed: true };
+  return { pts: [[0, h + 1], [L, h], [L, -h], [0, -h - 1]] };                                   // taper: arms 1 m further apart at the mouth
+};
+for (const kind of ['open', 'ring', 'taper']) {
+  ok(`a dead-end road drawn as one kerb line (${kind}): one street, the real width, on the centreline, 12–60 m long`, () => {
+    for (const L of [12, 20, 35, 60]) for (const w of [4.5, 6]) {
+      const r = K.solve([deadEnd(L, w, kind)]);
+      assert.strictEqual(r.streets.length, 1, `${kind} L${L} w${w}: ${r.streets.length} streets`);
+      const s = r.streets[0];
+      assert(Math.abs(s.w - (kind === 'taper' ? w + 1.1 : w)) < 0.7, `${kind} L${L} w${w}: width ${s.w}`);
+      assert(s.pts.every(q => Math.abs(q[1]) < 0.7), `${kind} L${L} w${w}: stays on the centreline ${JSON.stringify(s.pts)}`);
+      assert(len(s.pts) > L * 0.7, `${kind} L${L} w${w}: length ${len(s.pts)}`);
+      assert.deepStrictEqual(r.unpaired, []);
+    }
+  });
+}
+
 console.log(n + ' passed');

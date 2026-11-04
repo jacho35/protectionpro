@@ -204,4 +204,35 @@ ok('several mini-subs: each kiosk is fed by one, the LV tree splits, Demand gets
   assert(d.kiosks.filter(k => d.minisubs.some(m => m.id === k.fedFrom)).length >= 3);
   assert(d.minisubs.every(m => m.txTypeId === 'tx'));
 });
+// an erf no street reaches: the nearest street and the run that makes it face the street
+const farStreet = [{ id: 's1', name: 'ROAD A', w: 10, pts: [[0, 0], [100, 0]] }];
+const sq = (x0, y0, x1, y1) => [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];
+ok('reach: an erf beyond the end of a street → extend that street', () => {
+  const lone = sq(120, -10, 140, 10), near = sq(20, 8, 40, 28);
+  const r = L.reach(lone, farStreet, { erven: [{ poly: near }] });
+  assert.strictEqual(r.street.id, 's1'); assert.strictEqual(r.atEnd, 'end'); assert(!r.near);
+  assert(Math.abs(r.t[0] - 113) < 1e-9 && Math.abs(r.t[1]) < 1e-9, 't ' + r.t);              // w/2 + 2 = 7 m short of the edge at x = 120
+  assert(Math.abs(r.len - 13) < 1e-9); assert.strictEqual(r.crosses, 0);
+});
+ok('reach: an erf beside the middle of a street → a spur', () => {
+  const r = L.reach(sq(45, 40, 65, 60), farStreet);
+  assert.strictEqual(r.atEnd, null); assert(Math.abs(r.q[1]) < 1e-9 && r.q[0] >= 45 && r.q[0] <= 65);
+  assert(Math.abs(r.t[1] - 33) < 1e-6, 't ' + r.t);                                           // 7 m short of the edge midpoint at y = 40
+});
+ok('reach: after the run the erf faces a street (the layout gives it a front)', () => {
+  const erven = [{ id: 'e1', poly: sq(20, 8, 40, 28) }, { id: 'e2', poly: sq(120, -10, 140, 10) }];
+  let r = L.solve({ erven, streets: farStreet }, {});
+  assert.deepStrictEqual(r.noFront.map(e => e.id), ['e2']);
+  const g = L.reach(erven[1].poly, r.streets, { erven });
+  const ext = [{ id: 's1', name: 'ROAD A', w: 10, pts: [[0, 0], [100, 0], g.t] }];
+  r = L.solve({ erven, streets: ext }, {});
+  assert.strictEqual(r.noFront.length, 0, 'noFront after ' + r.noFront.map(e => e.id));
+});
+ok('reach: a run through other erven is counted; an erf already in reach says so', () => {
+  const block = sq(105, -6, 112, 6), lone = sq(120, -10, 140, 10);
+  assert.strictEqual(L.reach(lone, farStreet, { erven: [{ poly: block }] }).crosses, 1);
+  assert.strictEqual(L.reach(sq(40, 6, 60, 20), farStreet).near, true);
+  assert.strictEqual(L.reach(lone, []), null);
+});
+
 console.log(n + ' passed');
