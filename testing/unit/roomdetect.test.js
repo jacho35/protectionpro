@@ -215,4 +215,16 @@ ok('inset: too much for the shape returns null, never a wrong polygon', () => {
   assert.strictEqual(D.insetPolygon([[0,0],[10,0],[10,2],[0,2]], 1.2), null);                      // wider than the room
   assert.strictEqual(D.insetPolygon([[0,0],[10,0],[10,6],[6,6],[6,1],[4,1],[4,6],[0,6]], 0.6), null);   // a bridge only 1 thick under the notch
 });
+ok('all-regions: neighbours whose shared side is a few mm off still all close', () => {
+  // three lots in a row; each next lot's near side ends 5 mm beside the last one's, not on it
+  const segs = [];
+  const lot = (a, b, c, d) => { const p = [a, b, c, d]; for (let i = 0; i < 4; i++) segs.push([...p[i], ...p[(i + 1) % 4]]); };
+  lot([0, 0], [0, 10], [20, 10.005], [20, 0]);
+  lot([0, 10], [0, 20], [20, 20], [20.0, 10]);
+  lot([0, 20], [0, 30], [20, 30], [20, 20.004]);
+  const plain = D.allFromSegments(segs, { gap: 0.5, tol: 0.001, minArea: 20, minWidth: 2 });
+  const snapped = D.allFromSegments(segs, { gap: 0.5, tol: 0.001, snap: 0.03, minArea: 20, minWidth: 2 });
+  assert.strictEqual(snapped.length, 3);
+  assert(plain.length <= 3);
+});
 console.log(n + ' passed');

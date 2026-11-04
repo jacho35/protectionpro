@@ -73,6 +73,56 @@ const PlanLayoutUI = {
     out.push(pts[pts.length - 1]);
     return out;
   },
+  // ── streets from a drawing layer ──
+  // DXF layers that hold lines or polylines, as { d, layer, n, guess } (guess = looks like street centrelines).
+  dxfLayers() {
+    if (typeof PlanDxfImport === 'undefined') return [];
+    const out = [];
+    for (const d of PlanDxfImport.list()) {
+      const data = d.hidden ? null : PlanDxfImport.dataOf(d); if (!data) continue;
+      const n = new Map();
+      for (const r of (data.entities || [])) if ((r.t === 'p' && r.g !== 'HATCH') || r.t === 'l') n.set(r.l, (n.get(r.l) || 0) + 1);
+      for (const [layer, c] of n) out.push({ d, layer, n: c, guess: /street|road|centre|center|strat|pad/i.test(layer) && !/name|text|label|kerb|curb/i.test(layer) });
+    }
+    return out.sort((a, b) => (b.guess - a.guess) || (b.n - a.n));
+  },
+
+  // Every polyline of the layer becomes a Street centreline (the drawn vertices, so curves stay curves),
+  // named from the nearest text. Returns how many were made.
+  streetsFromLayer(descId, layer) {
+    const d = PlanDxfImport.byId(descId), data = d && PlanDxfImport.dataOf(d), pm = AppState.planMarkup, f = PlanEngine.factor();
+    if (!data || !f) { UI.toast('Calibrate the plan first.', 'warn', 4000); return 0; }
+    const lines = [], polys = [];
+    const [bx0, by0, bx1, by1] = data.bbox || [0, 0, 1, 1];
+    const eps = Math.max(bx1 - bx0, by1 - by0, 1e-9) * 1e-6;
+    for (const r of (data.entities || [])) {
+      if (r.l !== layer) continue;
+      if (r.t === 'l') lines.push(r);
+      else if (r.t === 'p' && r.g !== 'HATCH') { const pts = []; for (let i = 0; i + 1 < r.p.length; i += 2) pts.push([r.p[i], r.p[i + 1]]); if (pts.length > 1) polys.push(pts); }
+    }
+    if (lines.length && typeof PlanDxfManager !== 'undefined') for (const ch of PlanDxfManager._chainLines(lines, eps)) if (ch.pts.length > 1) polys.push(ch.pts);
+    if (!polys.length) { UI.toast(`Layer "${layer}" has no lines or polylines.`, 'warn', 4000); return 0; }
+    const W = ([x, y]) => PlanDxfImport.worldOf(d, x, y);
+    // texts that read as a name: letters, not just a number; the ones on a "name" layer first
+    const texts = (data.entities || []).filter(r => r.t === 'x' && /[A-Za-z]{3,}/.test(String(r.s || '')))
+      .map(r => ({ s: String(r.s).replace(/\s+/g, ' ').trim(), w: W(r.p), pri: /name|street|road/i.test(r.l) ? 0 : 1 }));
+    const dist = (pt, pl) => { let best = Infinity; for (let i = 0; i + 1 < pl.length; i++) { const a = pl[i], b = pl[i + 1], dx = b.x - a.x, dy = b.y - a.y, L2 = dx * dx + dy * dy; const t = L2 ? Math.max(0, Math.min(1, ((pt.x - a.x) * dx + (pt.y - a.y) * dy) / L2)) : 0; best = Math.min(best, Math.hypot(pt.x - a.x - t * dx, pt.y - a.y - t * dy)); } return best; };
+    const used = new Set(); let made = 0;
+    PlanMarkup.snapshot();
+    polys.forEach((pts, i) => {
+      const wp = pts.map(W);
+      let best = null, bd = 25 / f;                       // a name within 25 m of the line
+      for (const t of texts) { if (used.has(t)) continue; const dd = dist(t.w, wp) + t.pri * 1e-6; if (dd < bd) { bd = dd; best = t; } }
+      if (best) used.add(best);
+      pm.routes.push({ id: AppState.planGenId('pmrt'), type: 'street', fromId: null, toId: null, points: wp, cableType: '', curved: false,
+        props: { name: best ? best.s : 'Street ' + (pm.routes.filter(r => r.type === 'street').length + 1), width: 12 } });
+      made++;
+    });
+    PlanMarkup.markDirty(); this.touched();
+    UI.toast(`${made} street${made === 1 ? '' : 's'} taken from layer "${layer}"${used.size < made ? ` (${made - used.size} without a name nearby: check them)` : ''}. Width 12 m; change it in each street's properties.`, used.size < made ? 'warn' : 'success', 6000);
+    return made;
+  },
+
   streetsOnPlan() { return AppState.planMarkup.routes.filter(r => r.type === 'street' && r.points && r.points.length >= 2); },
 
   gather() {
@@ -160,7 +210,10 @@ const PlanLayoutUI = {
     });
     PlanMarkup.snapshot(); PlanMarkup.markDirty();
     PlanEngine.requestDraw({ fg: true });
-    UI.toast(`Created ${made.kiosks} kiosk(s), ${made.manholes} manhole(s), ${made.routes} route(s), ${made.crossings} crossing duct(s) and ${made.trenches} trench(es); moved ${made.markers} erf marker(s).`, 'success', 7000);
+    const st = AppState.planMarkup.settings;
+    const crowded = made.routes > 40 && (!st.routeLabels || st.routeLabels === 'all');
+    if (crowded) st.routeLabels = 'selected';
+    UI.toast(`Created ${made.kiosks} kiosk(s), ${made.manholes} manhole(s), ${made.routes} route(s), ${made.crossings} crossing duct(s) and ${made.trenches} trench(es); moved ${made.markers} erf marker(s).${crowded ? ' Route length labels now show for the selected route only (Layers › Route length labels).' : ''}`, 'success', 8000);
     this.result = null; this.stale = true; PlanMarkup.refreshProps();
   },
   _opt: { markers: true, kiosks: true, lv: true, mv: true, fibre: true, cross: true, trench: true },
@@ -287,9 +340,11 @@ const PlanLayoutUI = {
     const trenchGroup = `<details open><summary style="cursor:pointer;font-weight:600;margin:2px 0">Trenches</summary><div style="display:flex;flex-direction:column;gap:8px;padding:6px 0 4px">${this.TREN.map(tctrl).join('')}</div></details>`;
     const sr = this.streetsOnPlan();
     const seg = (id, key, vals) => `<span class="plan-seg" style="display:inline-flex;gap:2px">${vals.map(([v, t]) => { const cur = (L.sides[id] || {})[key]; const on = (v === 0 ? (cur == null) : cur === v); return `<button type="button" class="plan-btn" data-side="${id}" data-key="${key}" data-val="${v}" aria-pressed="${on}" style="padding:2px 7px;font-size:12px${on ? ';font-weight:600;outline:2px solid var(--accent,#2563eb)' : ''}">${t}</button>`; }).join('')}</span>`;
-    const streets = sr.length ? sr.map((s, i) => `<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;border-bottom:1px solid var(--border,#ddd);padding:3px 0"><span>${esc((s.props && s.props.name) || 'Street ' + (i + 1))}</span><span style="display:flex;flex-direction:column;gap:2px;align-items:flex-end"><span>Kiosks ${seg(s.id, 'k', [[0, 'Auto'], [1, 'Left'], [-1, 'Right']])}</span><span>Fibre ${seg(s.id, 'f', [[0, 'Auto'], [1, 'Left'], [-1, 'Right']])}</span></span></div>`).join('') : '<div class="plan-props-empty" style="padding:4px 0">No streets yet. Pick Street centreline (Routes) and click along each street, Enter to finish. Left and right are looking along the way you drew it.</div>';
+    const streets = sr.length ? sr.map((s, i) => `<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;border-bottom:1px solid var(--border,#ddd);padding:3px 0"><span>${esc((s.props && s.props.name) || 'Street ' + (i + 1))}</span><span style="display:flex;flex-direction:column;gap:2px;align-items:flex-end"><span>Kiosks ${seg(s.id, 'k', [[0, 'Auto'], [1, 'Left'], [-1, 'Right']])}</span><span>Fibre ${seg(s.id, 'f', [[0, 'Auto'], [1, 'Left'], [-1, 'Right']])}</span></span></div>`).join('') : '<div class="plan-props-empty" style="padding:4px 0">No streets yet. Take them from a drawing layer above, or pick Street centreline (Routes) and click along each street, Enter to finish. Left and right are looking along the way you drew it.</div>';
+    const lyr = this.dxfLayers();
+    const fromDxf = lyr.length ? `<div style="display:flex;flex-direction:column;gap:4px;margin:4px 0"><label style="display:block">Take streets from a drawing layer<select data-stl style="width:100%">${lyr.map((x, i) => `<option value="${i}"${i === 0 ? ' selected' : ''}>${esc(x.layer)} (${x.n} line${x.n === 1 ? '' : 's'})${x.guess ? ' ★' : ''}</option>`).join('')}</select></label><button type="button" class="plan-btn" data-act="dxfstreets">Use layer as streets</button></div>` : '';
     const tile = (b, s) => `<div style="border:1px solid var(--border,#ddd);border-radius:5px;padding:4px 6px"><b style="font-size:15px;display:block">${b}</b><span style="font-size:11px;color:var(--text-muted)">${s}</span></div>`;
-    const tiles = st ? [[st.erven, 'erven'], [st.kiosks, 'kiosks'], [fmt(st.cable) + ' m', 'service cable'], [fmt(st.cableMax) + ' m', 'longest service'], [st.crossings, 'road crossings'], [st.provisional, 'junction ducts, empty'], [st.d110 + ' + ' + st.d160, '110 mm + 160 mm ducts'], [st.manholes + ' + ' + st.junctionManholes, 'manholes + junctions'], [fmt(st.trunk) + ' m', 'trunk duct'], [fmt(st.leads) + ' m', 'duct to erven'], [fmt(st.lv) + ' m', 'LV feeder'], [fmt(st.mv) + ' m', 'MV cable'], [st.tOffs + ' / ' + st.spurEnds + ' / ' + st.loops, 'T-offs / spur ends / loops'], [st.baseline, 'crossings if unshared']].map(t => tile(...t)).join('') : '';
+    const tiles = st ? [[st.erven, 'erven'], [st.kiosks, `kiosks · at most ${p.n} erven each`], [fmt(st.cable) + ' m', 'service cable'], [fmt(st.cableMax) + ' m of ' + p.maxc + ' m', 'longest service · limit'], [st.crossings, 'road crossings'], [st.provisional, 'junction ducts, empty'], [st.d110 + ' + ' + st.d160, '110 mm + 160 mm ducts'], [st.manholes + ' + ' + st.junctionManholes, 'manholes + junctions'], [fmt(st.trunk) + ' m', 'trunk duct'], [fmt(st.leads) + ' m', 'duct to erven'], [fmt(st.lv) + ' m', 'LV feeder'], [fmt(st.mv) + ' m', 'MV cable'], [st.tOffs + ' / ' + st.spurEnds + ' / ' + st.loops, 'T-offs / spur ends / loops'], [st.baseline, 'crossings if unshared']].map(t => tile(...t)).join('') : '';
     const xt = r ? r.net.cross.slice().sort((a, b) => (a.prov - b.prov) || (b.d110 + b.d160) - (a.d110 + a.d160)).slice(0, 14).map((x, i) => { const parts = x.prov ? `${x.d110}×110, ${x.d160}×160, junction` : [x.d110s && `${x.d110s}×110 service`, x.d110f && `${x.d110f}×110 fibre`, x.d110l && `${x.d110l}×110 LV`, x.d160 && `${x.d160}×160 MV`, x.spare && `${x.spare}×110 spare`].filter(Boolean).join(', '); return `<tr><td>${esc(x.st.name)}</td><td>${parts}</td></tr>`; }).join('') : '';
     const trenchRows = r && r.trench ? Object.entries(r.trench.summary).map(([type, q]) => { const d = PLAN_DEFS.trenchTypes[type] || { name: type, width: 0.5 }; const vol = q.len * d.width * q.depth; return `<div style="display:flex;justify-content:space-between;gap:8px"><span>${esc(d.name)}</span><span>${fmt(q.len)} m at ${q.depth.toFixed(2)} m · ${fmt(vol)} m³</span></div>`; }).join('') : '';
     const chk = (k, t) => `<label style="display:flex;gap:6px"><input type="checkbox" data-opt="${k}"${opt[k] ? ' checked' : ''}> ${t}</label>`;
@@ -302,7 +357,7 @@ const PlanLayoutUI = {
         ${r && this.stale ? '<div style="color:#b45309">Out of date: press Run again.</div>' : ''}
         ${r ? `<div style="color:var(--text-muted)">Solved in ${Math.round(this.ms)} ms. Click an erf near the edge you want as its front.</div>` : '<div style="color:var(--text-muted)">Needs the erf boundaries (Detect erven), the streets, and a calibrated plan.</div>'}
         <div><b>A click edits</b><div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px">${modeBtn('front', 'Erf fronts')}${modeBtn('sub', 'Mini-sub')}${modeBtn('trunk', 'Trunk ducts / entry')}<button type="button" class="plan-btn" data-act="reset" style="padding:3px 8px;font-size:12px">Reset edits</button></div></div>
-        <div><b>Streets</b>${streets}</div>
+        <div><b>Streets</b>${fromDxf}${streets}</div>
         ${groups}
         ${trenchGroup}
         ${r ? `<div><b>Result</b><div style="display:grid;grid-template-columns:repeat(2,1fr);gap:5px;margin-top:4px">${tiles}</div>
@@ -313,7 +368,8 @@ const PlanLayoutUI = {
       </div>`;
     el.onclick = (e) => {
       const b = e.target.closest('[data-act],[data-mode],[data-side]'); if (!b) return;
-      if (b.dataset.act === 'run') this.run();
+      if (b.dataset.act === 'dxfstreets') { const sel = el.querySelector('[data-stl]'), x = lyr[sel ? +sel.value : 0]; if (x) this.streetsFromLayer(x.d.id, x.layer); }
+      else if (b.dataset.act === 'run') this.run();
       else if (b.dataset.act === 'create') this.commit();
       else if (b.dataset.act === 'clear') this.clear();
       else if (b.dataset.act === 'reset') { L.fronts = {}; L.cuts = []; delete L.entry; delete L.sub; this.touched(); }

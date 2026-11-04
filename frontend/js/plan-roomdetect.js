@@ -55,7 +55,8 @@ const PlanRoomDetect = {
   _buildGraph(segs, o) {
     const tol = o.tol;
     // 1. split every segment at every crossing/touch with another one.
-    const S = segs.map(s => [s[0], s[1], s[2], s[3]]).filter(s => Math.hypot(s[2] - s[0], s[3] - s[1]) > tol * 0.1);
+    let S = segs.map(s => [s[0], s[1], s[2], s[3]]).filter(s => Math.hypot(s[2] - s[0], s[3] - s[1]) > tol * 0.1);
+    if (o.snap > tol) S = this._snapEnds(S, o.snap);
     // 2. close door gaps first, on the raw segments (needs the dangling ends).
     const bridges = this._bridgeGaps(S, o.gap, tol);
     const all = S.concat(bridges);
@@ -81,6 +82,58 @@ const PlanRoomDetect = {
     this._pruneDeadEnds(g);
     this._buildAdj(g);
     return g;
+  },
+
+  // Drawn "shared" edges are rarely exact: the end of one erf's side lies a few
+  // mm off the neighbour's side. Merge ends within `snap` of each other, then
+  // lay each end that sits within `snap` of another segment's span onto it, so
+  // the two edges become one and the faces beside them close.
+  _snapEnds(S, snap) {
+    const cell = Math.max(snap * 4, 1e-6), key = (x, y) => Math.floor(x / cell) + ',' + Math.floor(y / cell);
+    // 1. cluster ends (union by grid neighbourhood), move each to the cluster mean
+    const pts = []; S.forEach((s, i) => { pts.push([i, 0]); pts.push([i, 2]); });
+    const par = pts.map((_, i) => i), find = (i) => { while (par[i] !== i) { par[i] = par[par[i]]; i = par[i]; } return i; };
+    const grid = new Map();
+    pts.forEach(([i, o], k) => { const kk = key(S[i][o], S[i][o + 1]); if (!grid.has(kk)) grid.set(kk, []); grid.get(kk).push(k); });
+    pts.forEach(([i, o], k) => {
+      const x = S[i][o], y = S[i][o + 1], cx = Math.floor(x / cell), cy = Math.floor(y / cell);
+      for (let a = cx - 1; a <= cx + 1; a++) for (let b = cy - 1; b <= cy + 1; b++)
+        for (const m of (grid.get(a + ',' + b) || [])) {
+          if (m <= k) continue;
+          const [j, q] = pts[m];
+          if (Math.hypot(S[j][q] - x, S[j][q + 1] - y) <= snap) par[find(m)] = find(k);
+        }
+    });
+    const sum = new Map();
+    pts.forEach(([i, o], k) => { const r = find(k), v = sum.get(r) || [0, 0, 0]; v[0] += S[i][o]; v[1] += S[i][o + 1]; v[2]++; sum.set(r, v); });
+    const T = S.map(s => s.slice());
+    pts.forEach(([i, o], k) => { const v = sum.get(find(k)); if (v[2] > 1) { T[i][o] = v[0] / v[2]; T[i][o + 1] = v[1] / v[2]; } });
+    // 2. ends onto the interior of a nearby segment
+    let tot = 0; for (const s of T) tot += Math.hypot(s[2] - s[0], s[3] - s[1]);
+    const c2 = Math.max(tot / Math.max(T.length, 1) * 2, snap * 10, 1e-6), g2 = new Map();
+    T.forEach((s, i) => {
+      for (let a = Math.floor(Math.min(s[0], s[2]) / c2); a <= Math.floor(Math.max(s[0], s[2]) / c2); a++)
+        for (let b = Math.floor(Math.min(s[1], s[3]) / c2); b <= Math.floor(Math.max(s[1], s[3]) / c2); b++) {
+          const k = a + ',' + b; if (!g2.has(k)) g2.set(k, []); g2.get(k).push(i);
+        }
+    });
+    const out = T.map(s => s.slice());
+    T.forEach((s, i) => {
+      for (const o of [0, 2]) {
+        const x = s[o], y = s[o + 1];
+        let best = null, bd = snap;
+        for (const j of (g2.get(Math.floor(x / c2) + ',' + Math.floor(y / c2)) || [])) {
+          if (j === i) continue;
+          const u = T[j], dx = u[2] - u[0], dy = u[3] - u[1], L2 = dx * dx + dy * dy;
+          const t = ((x - u[0]) * dx + (y - u[1]) * dy) / L2;
+          if (t * Math.sqrt(L2) <= snap || (1 - t) * Math.sqrt(L2) <= snap) continue;   // near an end: the cluster step owns it
+          const px = u[0] + t * dx, py = u[1] + t * dy, d = Math.hypot(px - x, py - y);
+          if (d < bd && d > 1e-9) { bd = d; best = [px, py]; }
+        }
+        if (best) { out[i][o] = best[0]; out[i][o + 1] = best[1]; }
+      }
+    });
+    return out;
   },
 
   _buildAdj(g) {
@@ -859,7 +912,7 @@ Object.assign(PlanRoomDetect, {
     const mpu = f ? PlanDxfImport._pxPerUnit(desc) * f : desc.unitM;
     const gap = o.gapM / mpu;
     const r = this.fromSegments(segs, [click.x, click.y], {
-      gap, maxArea: lim.maxAreaM2 / (mpu * mpu), tol: Math.max(0.001 / mpu, 1e-9),
+      gap, maxArea: lim.maxAreaM2 / (mpu * mpu), tol: Math.max(0.001 / mpu, 1e-9), snap: Math.max(0.03 / mpu, 1e-9),
     });
     if (!r.ok) return Object.assign(r, { layers: lt.names });
     return {
@@ -958,7 +1011,7 @@ Object.assign(PlanRoomDetect, {
       ? PlanDxfImport.list().filter(d => !d.hidden && PlanDxfImport.dataOf(d)).reverse() : [];
     const hasImages = AppState.planMarkup.plans.some(p => p.visible !== false);
     if (!visibleDxf.length && !hasImages) return { ok: false, reason: 'no-background' };
-    let items = [], source = null, noWalls = true;
+    let items = [], source = null, noWalls = true; const orphans = [];
     for (const d of visibleDxf) {
       const data = PlanDxfImport.dataOf(d), lt = this._wallLayerTest(d, data, o.layers);
       const segs = this.segmentsFromDxf(data, lt.test, { hatches: o.hatch && lt.matched });
@@ -966,15 +1019,25 @@ Object.assign(PlanRoomDetect, {
       noWalls = false;
       const mpu = f ? PlanDxfImport._pxPerUnit(d) * f : d.unitM;
       const found = this.allFromSegments(segs, {
-        gap: o.gapM / mpu, tol: Math.max(0.001 / mpu, 1e-9),
+        gap: o.gapM / mpu, tol: Math.max(0.001 / mpu, 1e-9), snap: Math.max(0.03 / mpu, 1e-9),
         minArea: lim.minAreaM2 / (mpu * mpu), maxArea: lim.maxAreaM2 / (mpu * mpu), minWidth: lim.minWidthM / mpu,
       });
+      // The text inside a region names it (a stand number, a room number), as the DXF manager does.
+      const texts = target === 'erf' ? (data.entities || []).filter(r => r.t === 'x' && r.s != null && String(r.s).trim()) : [];
+      const used = new Set();
       for (const c of found) {
+        const hits = texts.filter(t => this._pip(t.p, c.points));
+        hits.sort((a, b) => (/\d/.test(b.s) - /\d/.test(a.s)) || (b.h - a.h));
+        const label = hits.length ? String(hits[0].s).replace(/\s+/g, ' ').trim().slice(0, 40) : '';
+        hits.forEach(t => used.add(t));
         items.push({
           points: c.points.map(([x, y]) => PlanDxfImport.worldOf(d, x, y)),
           seed: (([x, y]) => PlanDxfImport.worldOf(d, x, y))(c.seed),
+          label,
         });
       }
+      // A stand number that sits in no detected region is a stand that was missed.
+      for (const t of texts) if (!used.has(t) && /^[A-Za-z]{0,4}[ -]?\d+[A-Za-z]?$/.test(String(t.s).trim())) orphans.push(String(t.s).trim());
       if (items.length) source = 'dxf';
     }
     if (!items.length && hasImages) {
@@ -992,7 +1055,7 @@ Object.assign(PlanRoomDetect, {
       }
     }
     if (!items.length) return { ok: false, reason: noWalls ? 'no-walls' : 'not-enclosed' };
-    return { ok: true, items, source };
+    return { ok: true, items, source, orphans };
   },
 
   // ───────── why a click did not close, and what it would pick ─────────
@@ -1008,7 +1071,7 @@ Object.assign(PlanRoomDetect, {
       const segs = this.segmentsFromDxf(data, lt.test, { hatches: o.hatch && lt.matched });
       if (!segs.length) continue;
       const mpu = f ? PlanDxfImport._pxPerUnit(d) * f : d.unitM, c = PlanDxfImport.localOf(d, pt.x, pt.y);
-      const r = this.leakFromSegments(segs, [c.x, c.y], { gap: o.gapM / mpu, maxGap: maxGapM / mpu, tol: Math.max(0.001 / mpu, 1e-9), maxArea: lim.maxAreaM2 / (mpu * mpu) });
+      const r = this.leakFromSegments(segs, [c.x, c.y], { gap: o.gapM / mpu, maxGap: maxGapM / mpu, tol: Math.max(0.001 / mpu, 1e-9), snap: Math.max(0.03 / mpu, 1e-9), maxArea: lim.maxAreaM2 / (mpu * mpu) });
       if (r.ok) return { gapM: r.gap * mpu, points: r.bridges.map(b => PlanDxfImport.worldOf(d, (b[0] + b[2]) / 2, (b[1] + b[3]) / 2)) };
     }
     if (AppState.planMarkup.plans.some(p => p.visible !== false) && f) {
@@ -1070,7 +1133,7 @@ Object.assign(PlanRoomDetect, {
       const ins = this._inset(it.points, target);
       if (!ins) bad++;
       const pts = ins || it.points;
-      this.staged.items.push({ id: 's' + (this._sid = (this._sid || 0) + 1), raw: it.points, points: pts, seed: ins ? this._seedOf(pts) : it.seed, source: it.source });
+      this.staged.items.push({ id: 's' + (this._sid = (this._sid || 0) + 1), raw: it.points, points: pts, seed: ins ? this._seedOf(pts) : it.seed, source: it.source, label: it.label || '' });
     }
     if (bad) UI.toast(`${bad} ${bad === 1 ? 'region is' : 'regions are'} too narrow for a ${this.opts(target).insetM} m inset and ${bad === 1 ? 'keeps' : 'keep'} the wall line.`, 'warn', 5000);
     this._changed();
@@ -1088,8 +1151,23 @@ Object.assign(PlanRoomDetect, {
     const fresh = r.items.filter(c => !this._alreadyThere(target, c));
     if (!fresh.length) { UI.toast(`Found ${r.items.length} ${lim.nouns}, all already on the plan.`, 'info', 5000); return; }
     this.stage(target, fresh.map(c => Object.assign(c, { source: r.source })), true);
-    const skipped = r.items.length - fresh.length;
-    UI.toast(`Found ${fresh.length} ${lim.nouns}${skipped ? ` (${skipped} already on the plan)` : ''}. Review them, then create. Shift-click adds, Alt-click subtracts.`, 'success', 6000);
+    const skipped = r.items.length - fresh.length, orph = r.orphans || [];
+    UI.toast(`Found ${fresh.length} ${lim.nouns}${skipped ? ` (${skipped} already on the plan)` : ''}. Review them, then create. Shift-click adds, Alt-click subtracts.` +
+      (orph.length ? ` ${orph.length} stand number${orph.length === 1 ? '' : 's'} in the drawing sit${orph.length === 1 ? 's' : ''} in no detected region (${orph.slice(0, 8).join(', ')}${orph.length > 8 ? '…' : ''}): check those ${lim.nouns}.` : ''),
+      orph.length ? 'warn' : 'success', orph.length ? 12000 : 6000);
+  },
+
+  // The number text of the detected region under the point (erven only).
+  _labelAt(pt, target) {
+    if (target !== 'erf') return '';
+    const r = this.allCandidates(target);
+    let best = null, ba = Infinity;
+    if (r.ok) for (const c of r.items) {
+      if (!c.label || !this._pip([pt.x, pt.y], c.points.map(p => [p.x, p.y]))) continue;
+      const a = Math.abs(this._signedArea(c.points.map(p => [p.x, p.y])));
+      if (a < ba) { ba = a; best = c; }
+    }
+    return best ? best.label : '';
   },
 
   // The tool's click: create now, stage (add) or unstage (subtract).
@@ -1120,14 +1198,14 @@ Object.assign(PlanRoomDetect, {
     this.leak = null;
     if (m === 'add') {
       if (this.staged.items.some(it => this._inside(it, pt))) { UI.toast(`That ${lim.noun} is already in the set.`, 'info', 3000); return; }
-      this.stage(target, [{ points: res.points, seed: this._seedOf(res.points), source: res.source }], false);
+      this.stage(target, [{ points: res.points, seed: this._seedOf(res.points), source: res.source, label: this._labelAt(pt, target) }], false);
       return;
     }
     // create now; a staged candidate for the same region is replaced by it
     this.staged.items = this.staged.items.filter(it => !this._inside(it, pt));
     const ins = this._inset(res.points, target);
     if (!ins) UI.toast(`Too narrow for a ${this.opts(target).insetM} m inset — created on the wall line.`, 'warn', 5000);
-    const made = this.commitMany(target, [Object.assign({}, res, { points: ins || res.points })]);
+    const made = this.commitMany(target, [Object.assign({}, res, { points: ins || res.points, label: this._labelAt(pt, target) })]);
     const f = PlanEngine.factor(), first = made[0];
     const area = f && first.points ? PlanEngine._polyArea(first.points) * f * f : null;
     const bits = [`${first.name} detected${area != null ? ` — ${area.toFixed(1)} m²` : ''}`];
@@ -1147,6 +1225,12 @@ Object.assign(PlanRoomDetect, {
     this._changed();
   },
 
+  // The number written in the drawing, unless an erf already has it.
+  _erfName(label) {
+    const taken = new Set(AppState.planMarkup.elements.filter(e => e.type === 'erf').map(e => String(e.name)));
+    return (label && !taken.has(label)) ? label : PlanMarkup.nextName('erf');
+  },
+
   // Rooms become plan rooms; erven become Erf points at the region's interior
   // (the same element a DXF import makes), so Demand picks them up as usual.
   commitMany(target, items) {
@@ -1155,7 +1239,7 @@ Object.assign(PlanRoomDetect, {
       if (target === 'erf') {
         const seed = it.seed || this._seedOf(it.points);
         const el = { id: AppState.planGenId('pmel'), type: 'erf', x: seed.x, y: seed.y, rotation: 0,
-          name: PlanMarkup.nextName('erf'), reticId: null, props: PLAN_DEFS.defaults('erf'),
+          name: this._erfName(it.label), reticId: null, props: PLAN_DEFS.defaults('erf'),
           boundary: it.points.map(p => ({ x: p.x, y: p.y })) };      // kept so Auto layout can find the erf's front
         pm.elements.push(el); made.push(Object.assign({ points: it.points }, { name: el.name })); ids.push(el.id);
       } else {
@@ -1209,7 +1293,7 @@ Object.assign(PlanRoomDetect, {
     this.staged.items.forEach((it, i) => {
       ctx.beginPath(); it.points.forEach((p, k) => k ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); ctx.closePath();
       ctx.fillStyle = 'rgba(217,119,6,0.28)'; ctx.fill(); ctx.strokeStyle = '#d97706'; ctx.stroke();
-      ctx.setLineDash([]); ctx.fillStyle = '#7c2d12'; ctx.fillText(String(i + 1), it.seed.x, it.seed.y); ctx.setLineDash([6 / zoom, 4 / zoom]);
+      ctx.setLineDash([]); ctx.fillStyle = '#7c2d12'; ctx.fillText(String(it.label || (i + 1)), it.seed.x, it.seed.y); ctx.setLineDash([6 / zoom, 4 / zoom]);
     });
     ctx.restore();
   },
@@ -1222,7 +1306,7 @@ Object.assign(PlanRoomDetect, {
     const areaOf = (it) => f ? (PlanEngine._polyArea(it.points) * f * f) : null;
     const total = items.reduce((s, it) => s + (areaOf(it) || 0), 0);
     const rows = items.map((it, i) => { const a = areaOf(it); return `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;border-bottom:1px solid var(--border,#ddd);padding:3px 0">
-        <span><b>${i + 1}</b> ${lim.Noun}${a != null ? ` · ${a.toFixed(1)} m²` : ''}</span><button type="button" class="plan-btn" data-rd-del="${i}" aria-label="Remove ${lim.noun} ${i + 1}">✕</button></div>`; }).join('');
+        <span><b>${it.label || (i + 1)}</b> ${lim.Noun}${a != null ? ` · ${a.toFixed(1)} m²` : ''}</span><button type="button" class="plan-btn" data-rd-del="${i}" aria-label="Remove ${lim.noun} ${i + 1}">✕</button></div>`; }).join('');
     const lk = (this.leak && this.leak.target === target) ? this.leak : null;
     const need = lk ? Math.min(5, Math.ceil(lk.gapM * 10) / 10) : 0;
     const leakBox = lk ? `<div style="border:1px solid #dc2626;border-radius:4px;padding:8px;display:flex;flex-direction:column;gap:6px">
