@@ -121,4 +121,36 @@ ok('raster click on wall / outside plan', () => {
   assert(D.fromRaster(img, [11, 50], { gapPx: 0 }).reason === 'on-wall');
   assert(!D.fromRaster(img, [3, 3], { gapPx: 0 }).ok);
 });
+
+// ── every closed region at once ──
+ok('all: a plan of 3 rooms gives 3 polygons, outside left out', () => {
+  const s = rect(0, 0, 12, 4).concat([[4, 0, 4, 4], [8, 0, 8, 4]]);
+  const r = D.allFromSegments(s, { gap: 0 });
+  assert.strictEqual(r.length, 3);
+  assert(r.every(x => Math.abs(x.area - 16) < 1e-6 && D._pip(x.seed, x.points)));
+});
+ok('all: door gaps decide how many rooms', () => {
+  const s = [[0,0,12,0],[12,0,12,4],[12,4,0,4],[0,4,0,0],[4,0,4,1.5],[4,2.5,4,4]];   // 1.0 opening in the divider
+  assert.strictEqual(D.allFromSegments(s, { gap: 0 }).length, 1);
+  assert.strictEqual(D.allFromSegments(s, { gap: 1.2 }).length, 2);
+});
+ok('all: L-shape seed is inside; thick-wall slivers dropped by minWidth', () => {
+  const L = [[0,0,10,0],[10,0,10,4],[10,4,4,4],[4,4,4,8],[4,8,0,8],[0,8,0,0]];
+  const r = D.allFromSegments(L, { gap: 0 });
+  assert.strictEqual(r.length, 1); assert(D._pip(r[0].seed, r[0].points));
+  const dbl = rect(0, 0, 10, 6).concat(rect(0.2, 0.2, 9.8, 5.8));   // double-line wall
+  assert.strictEqual(D.allFromSegments(dbl, { gap: 0, minWidth: 0.6 }).length, 1);
+});
+ok('all: outline drawn apart from its partitions yields the rooms only', () => {
+  const s = rect(0, 0, 10, 4).concat(rect(1, 1, 4, 3), rect(5, 1, 9, 3));   // floating rooms inside an outline
+  assert.strictEqual(D.allFromSegments(s, { gap: 0 }).length, 2);
+});
+ok('all (raster): three rooms, outside excluded, door gap closes', () => {
+  const img = image(260, 120, px => { thickRect(px, 10, 10, 250, 110, 4); thickRect(px, 10, 10, 90, 110, 4); thickRect(px, 90, 10, 170, 110, 4); });
+  for (let y = 50; y < 70; y++) for (let x = 86; x < 95; x++) { const i = (y * 260 + x) * 4; img.data[i] = img.data[i+1] = img.data[i+2] = 255; }
+  assert.strictEqual(D.allFromRaster(img, { gapPx: 0 }).length, 2);          // 2 + 1 merged
+  const r = D.allFromRaster(img, { gapPx: 26 });
+  assert.strictEqual(r.length, 3);
+  assert(r.every(x => D._pip(x.seed, x.points)));
+});
 console.log(n + ' passed');
