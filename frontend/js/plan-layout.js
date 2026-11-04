@@ -28,6 +28,7 @@ const PlanLayout = (() => {
   const DEFAULTS = {
     side: 4, depth: 4, corner: 'start', front: 'longest',      // marker: m from the side boundary and the front; which corner; corner erf's front
     kmode: 'opt', n: 6, maxc: 80, worth: 250,                // kiosks
+    subMode: 'opt',                                          // mini-sub: 'opt' = where the LV network drops least, 'mid' = nearest the middle
     m: 8, maxmh: 120, fibre: 'opp', topo: 'ring',              // fibre
     share: true, xmode: 'bound', junct: false, j110: 2, j160: 1, spare: 0,   // crossings
   };
@@ -510,17 +511,39 @@ const PlanLayout = (() => {
             link(nA, nB, [ptAt(A, nA.s, (ks[A.id] || 1) * A.vk).slice(0, 2), ptAt(B, nB.s, (ks[B.id] || 1) * B.vk).slice(0, 2)], null);
           }
         }
-        let sp = input.subPt;
-        if (!sp) sp = [kiosks.reduce((a, k) => a + k.x, 0) / kiosks.length, kiosks.reduce((a, k) => a + k.y, 0) / kiosks.length];
-        const sk = kiosks.slice().sort((p, q) => Math.hypot(p.x - sp[0], p.y - sp[1]) - Math.hypot(q.x - sp[0], q.y - sp[1]))[0];
-        net.sub = sk;
-        const dist = new Map(nodes.map(n => [n, Infinity])), prev = new Map(), done = new Set();
-        dist.set(sk.node, 0);
-        for (;;) {
-          let u = null; for (const n of nodes) if (!done.has(n) && dist.get(n) < Infinity && (!u || dist.get(n) < dist.get(u))) u = n;
-          if (!u) break; done.add(u);
-          for (const ed of u.adj) { const v = ed.a === u ? ed.b : ed.a; if (dist.get(u) + ed.w < dist.get(v) - 1e-9) { dist.set(v, dist.get(u) + ed.w); prev.set(v, ed); } }
+        // shortest-path tree of the kiosk-side verge graph from one kiosk (crossings carry a penalty in the weights)
+        const treeFrom = (sk) => {
+          const dist = new Map(nodes.map(n => [n, Infinity])), prev = new Map(), done = new Set();
+          dist.set(sk.node, 0);
+          for (;;) {
+            let u = null; for (const n of nodes) if (!done.has(n) && dist.get(n) < Infinity && (!u || dist.get(n) < dist.get(u))) u = n;
+            if (!u) break; done.add(u);
+            for (const ed of u.adj) { const v = ed.a === u ? ed.b : ed.a; if (dist.get(u) + ed.w < dist.get(v) - 1e-9) { dist.set(v, dist.get(u) + ed.w); prev.set(v, ed); } }
+          }
+          return { dist, prev };
+        };
+        let sk, T;
+        if (input.subPt || P.subMode !== 'opt' || kiosks.length < 3) {
+          let sp = input.subPt;
+          if (!sp) sp = [kiosks.reduce((a, k) => a + k.x, 0) / kiosks.length, kiosks.reduce((a, k) => a + k.y, 0) / kiosks.length];
+          sk = kiosks.slice().sort((p, q) => Math.hypot(p.x - sp[0], p.y - sp[1]) - Math.hypot(q.x - sp[0], q.y - sp[1]))[0];
+          T = treeFrom(sk);
+        } else {
+          // The mini-sub goes where the LV network drops least. Search guide (the real volt drop is worked out by Demand afterwards):
+          // for each candidate kiosk, the worst "erven below × length" summed along a kiosk's path, then the shortest LV network.
+          let best = null;
+          for (const cand of kiosks) {
+            const t = treeFrom(cand), load = new Map(), used = new Set();
+            for (const k of kiosks) for (let v = k.node; v !== cand.node && t.prev.get(v);) { const ed = t.prev.get(v); load.set(ed, (load.get(ed) || 0) + k.members.length); used.add(ed); v = ed.a === v ? ed.b : ed.a; }
+            let worst = 0;
+            for (const k of kiosks) { let m = 0; for (let v = k.node; v !== cand.node && t.prev.get(v);) { const ed = t.prev.get(v); m += load.get(ed) * ed.len; v = ed.a === v ? ed.b : ed.a; } if (m > worst) worst = m; }
+            let tot = 0; used.forEach(ed => { tot += ed.len; });
+            if (!best || worst < best.worst - 1e-6 || (Math.abs(worst - best.worst) <= 1e-6 && tot < best.tot)) best = { cand, t, worst, tot };
+          }
+          sk = best.cand; T = best.t;
         }
+        net.sub = sk;
+        const dist = T.dist, prev = T.prev;
         const kioskNode = new Map(kiosks.map(k => [k.node, k])), lvSet = new Set();
         for (const k of kiosks) {
           if (k === sk) continue;
