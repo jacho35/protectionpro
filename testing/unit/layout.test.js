@@ -303,4 +303,41 @@ ok('mini-sub: a free point on a street gets a kiosk there, as close as the stree
   holds(r, L.DEFAULTS, F.erven.length, 'with a mini-sub placed by hand');
 });
 
+// ── erven the classifier cannot place: a marker put there by hand, the solver does the rest ──
+const markerFx = () => {
+  const sq = (x0, y0, x1, y1) => [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];
+  return { streets: [{ id: 'A', name: 'ROAD A', w: 10, pts: [[0, 0], [160, 0]] }],
+    erven: [0, 1, 2, 3, 4].map(i => ({ id: 'f' + i, poly: sq(10 + i * 28, 8, 10 + i * 28 + 26, 28) })).concat([{ id: 'back', poly: sq(40, 32, 70, 52) }]) };   // 'back' has no street edge
+};
+ok('markers: an erf with no street edge is left out until its marker is placed, then it is served', () => {
+  const G = markerFx(), a = L.solve(G, {});
+  assert.deepStrictEqual(a.noFront.map(e => e.id), ['back']); assert.strictEqual(a.stats.erven, 5);
+  const r = L.solve(Object.assign({ markers: { back: [55, 30] } }, G), {}), b = r.erven.find(e => e.id === 'back');
+  assert.strictEqual(r.noFront.length, 0); assert.strictEqual(r.stats.erven, 6); assert.strictEqual(r.stats.manual, 1);
+  assert(b.manual && b.kiosk && b.road.id === 'A', 'served from the nearest street');
+  assert.deepStrictEqual(b.marker, [55, 30]); assert.deepStrictEqual(b.route[b.route.length - 1], [55, 30]);
+  assert(b.cable > 0 && b.cable <= 80, 'cable ' + b.cable);
+  assert(r.kiosks.every(k => k.members.length <= 6)); assert.strictEqual(r.over.length, 0);
+});
+ok('markers: a marker on an erf that has a front overrides the classifier\'s corner', () => {
+  const G = markerFx(), r = L.solve(Object.assign({ markers: { f2: [60, 12] } }, G), {}), e = r.erven.find(x => x.id === 'f2');
+  assert(e.manual); assert.deepStrictEqual(e.marker, [60, 12]);
+  const plain = L.solve(G, {}).erven.find(x => x.id === 'f2'); assert(!plain.manual && plain.marker[0] !== 60);
+});
+ok('markers: unknown erf ids and bad points are ignored; a marker far from every street is served but reported over the limit', () => {
+  const G = markerFx(), r = L.solve(Object.assign({ markers: { back: [55, 30], ghost: [1, 1], bad: 'x', worse: [NaN, 1] } }, G), {});
+  assert.strictEqual(r.stats.erven, 6); assert.strictEqual(r.stats.manual, 1);
+  const far = L.solve(Object.assign({ markers: { back: [55, 300] } }, G), {}), b = far.erven.find(e => e.id === 'back');
+  assert(b.kiosk, 'still assigned a kiosk'); assert(b.cable > 80 && far.over.some(e => e.id === 'back'), 'reported over maxc');
+});
+ok('markers: a hand-placed erf makes no kiosk stand of its own, and both placement modes serve it', () => {
+  const G = markerFx();
+  for (const P of [{}, { kmode: 'rules' }, { knet: false }]) {
+    const r = L.solve(Object.assign({ markers: { back: [55, 30] } }, G), P), b = r.erven.find(e => e.id === 'back');
+    assert(b.kiosk && b.cable <= 80, JSON.stringify(P)); assert.strictEqual(r.stats.erven, 6);
+  }
+  const a = L.solve(Object.assign({ markers: { back: [55, 30] } }, G), {}), b = L.solve(Object.assign({ markers: { back: [55, 30] } }, G), {});
+  assert.deepStrictEqual(a.kiosks.map(k => [k.id, k.members.length]), b.kiosks.map(k => [k.id, k.members.length]), 'deterministic');
+});
+
 console.log(n + ' passed');

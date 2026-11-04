@@ -137,17 +137,35 @@ const PlanLayout = (() => {
       }
       return out;
     }
+    const hand = {};                                                                  // erf id → the marker point put there by hand
+    for (const [id, m] of Object.entries(input.markers || {})) if (Array.isArray(m) && Number.isFinite(m[0]) && Number.isFinite(m[1]) && erven.some(e => e.id === id)) hand[id] = [m[0], m[1]];
+    // a front made from a marker: no edge, the nearest street's centreline point as its station, `out` = towards that street
+    function manualFront(m) {
+      let bs = null;
+      for (const st of streets) { const pr = project(st, m[0], m[1]); if (!bs || pr.d < bs.pr.d) bs = { st, pr }; }
+      if (!bs) return null;
+      const dx = bs.pr.px - m[0], dy = bs.pr.py - m[1], L = Math.hypot(dx, dy) || 1, out = [dx / L, dy / L];
+      return { i: -1, a: m.slice(), b: m.slice(), len: 0, mid: m.slice(), out, inn: [-out[0], -out[1]], road: bs.st, manual: true, s: bs.pr.s, side: bs.pr.side };
+    }
     function detectFronts() {
       for (const e of erven) {
         if (!e.edges) e.edges = edgesOf(e);
         const re = e.edges.filter(d => d.road);
         e.corner = re.length > 1;
         let pick = re.slice().sort((p, q) => (P.front === 'longest' ? q.len - p.len : p.len - q.len) || p.i - q.i)[0] || null;
-        e.overridden = false;
+        e.overridden = false; e.manual = false;
         const ov = overrides[e.id];
         if (ov != null && e.edges[ov] && e.edges[ov].road) { pick = e.edges[ov]; e.overridden = true; }
+        // an erf the classifier cannot place (no street edge, or the wrong one): the marker the user put there is its service point, on the nearest street
+        const mk = hand[e.id];
+        if (mk) { const mf = manualFront(mk); if (mf) { pick = mf; e.manual = true; e.overridden = false; } }
         e.fe = pick; e.kiosk = null; e.mh = null; e.via = null; e.road = null;
         if (!pick) continue;
+        if (e.manual) {
+          const st = pick.road; e.road = st; e.sa = e.sb = e.lo = e.hi = e.al = pick.s; e.sd = pick.side;
+          let seg = 0; for (let i = 0; i < st.stops.length - 1; i++) if (e.al >= st.stops[i]) seg = i;
+          e.seg = seg; e.corner = false; continue;
+        }
         const st = pick.road; e.road = st;
         const pa = project(st, pick.a[0], pick.a[1]), pb = project(st, pick.b[0], pick.b[1]), pm = project(st, pick.mid[0], pick.mid[1]);
         e.sa = pa.s; e.sb = pb.s; e.lo = Math.min(pa.s, pb.s); e.hi = Math.max(pa.s, pb.s); e.al = pm.s;
@@ -160,6 +178,7 @@ const PlanLayout = (() => {
     // ── 2. markers, kiosks, service cables ──
     function markerCands(e) {
       const fe = e.fe, aa = e.sa, ab = e.sb;
+      if (e.manual) return [{ end: 'a', c: fe.a, o: fe.a, t: [1, 0], pt: fe.a, fpt: fe.a }];            // the point the user placed, as is
       const ends = P.corner === 'start' ? [aa <= ab ? 'a' : 'b'] : P.corner === 'end' ? [aa >= ab ? 'a' : 'b'] : ['a', 'b'];
       return ends.map(end => {
         const c = end === 'a' ? fe.a : fe.b, o = end === 'a' ? fe.b : fe.a, t = [(o[0] - c[0]) / fe.len, (o[1] - c[1]) / fe.len];
@@ -319,6 +338,7 @@ const PlanLayout = (() => {
         const n = list.length, K = list.filter(e => e.sd === side);
         const cands = [];
         for (const e of K) {
+          if (e.manual) continue;
           const fe = e.fe, lo = e.sa <= e.sb ? fe.a : fe.b, hi = e.sa <= e.sb ? fe.b : fe.a;
           for (const [a, v] of [[e.lo, lo], [e.hi, hi]]) {
             const hit = cands.find(c => Math.abs(c.a - a) <= 1.5);
@@ -328,7 +348,7 @@ const PlanLayout = (() => {
           }
         }
         // a kiosk may also stand in the kiosk-side verge opposite a boundary between erven across the road
-        for (const e of list.filter(q => q.sd !== side)) for (const a of [e.lo, e.hi]) {
+        for (const e of list.filter(q => q.sd !== side && !q.manual)) for (const a of [e.lo, e.hi]) {
           if (cands.some(c => Math.abs(c.a - a) <= 1.5)) continue;
           const pos = ptAt(st, a, side * st.vk);
           cands.push({ a, x: pos[0], y: pos[1], s: a, shared: false, across: true });
@@ -383,6 +403,7 @@ const PlanLayout = (() => {
       for (const st of streets) {
         const side = ks[st.id], mine = [], L1 = list.filter(e => e.road === st), K = L1.filter(e => e.sd === side);
         for (const e of K) {
+          if (e.manual) continue;
           const fe = e.fe, lo = e.sa <= e.sb ? fe.a : fe.b, hi = e.sa <= e.sb ? fe.b : fe.a;
           for (const [a, v] of [[e.lo, lo], [e.hi, hi]]) {
             const hit = mine.find(c => Math.abs(c.a - a) <= 1.5);
@@ -391,7 +412,7 @@ const PlanLayout = (() => {
             mine.push({ road: st, a, x, y, s: project(st, x, y).s, shared: false });
           }
         }
-        for (const e of L1.filter(q => q.sd !== side)) for (const a of [e.lo, e.hi]) {
+        for (const e of L1.filter(q => q.sd !== side && !q.manual)) for (const a of [e.lo, e.hi]) {
           if (mine.some(c => Math.abs(c.a - a) <= 1.5)) continue;
           const pos = ptAt(st, a, side * st.vk); mine.push({ road: st, a, x: pos[0], y: pos[1], s: a, shared: false, across: true });
         }
@@ -892,7 +913,7 @@ const PlanLayout = (() => {
       P, streets, junctions, erven, kiosks, fibre, net, over, noFront, ks, fs,
       warns: warns.concat(fibre.warns),
       stats: {
-        erven: erven.filter(e => e.fe).length, kiosks: kiosks.length, small: kiosks.filter(k => k.members.length <= 2).length, avgPer: kiosks.length ? erven.filter(e => e.kiosk).length / kiosks.length : 0, unreached: net.unreached.length, corner: erven.filter(e => e.corner).length, overridden: Object.keys(overrides).length,
+        erven: erven.filter(e => e.fe).length, kiosks: kiosks.length, small: kiosks.filter(k => k.members.length <= 2).length, avgPer: kiosks.length ? erven.filter(e => e.kiosk).length / kiosks.length : 0, unreached: net.unreached.length, manual: erven.filter(e => e.manual).length, corner: erven.filter(e => e.corner).length, overridden: Object.keys(overrides).length,
         cable: cab.reduce((a, b) => a + b, 0), cableMax: Math.max(0, ...cab), over: over.length,
         manholes: fibre.mhs.length, junctionManholes: fibre.inter.length, trunk: fibre.trunkLen, leads: fibre.leadLen, tOffs: fibre.tOffs, spurEnds: fibre.ends, loops: fibre.loops,
         crossings: net.cross.length, provisional: net.prov, baseline: net.baseline, d110: net.d110, d160: net.d160, lv: net.lvLen, mv: net.mvLen, ms: Date.now() - t0,
