@@ -599,7 +599,78 @@ const PlanLayout = (() => {
     };
   }
 
-  return { solve, DEFAULTS, ptAt, project, verge, plen };
+  // ───────────── trenches along the created routes ─────────────
+  // Cables that run along the same verge share one trench: the routes are cut into runs on the kiosk-side
+  // and civil-side verge lines, overlapping runs are merged, and what is left (the short legs into an erf,
+  // the bridges round a junction) become small trenches of their own. Road crossings get one shared
+  // trench each. Depths (m) and what shares a trench are settings.
+  const TRENCH_DEFAULTS = {
+    depth: { mv: 1.1, lv: 0.7, fi: 0.6, comb: null },     // MV; LV + service + street light; fibre; combined (null = the deepest of its cables)
+    combine: 'separate',                                   // 'separate' | 'mvlv': MV in the same trench as LV / service / street light
+    fibre: 'own',                                          // 'own' | 'with' (in the LV trench where they run together) | 'off'
+    crossings: true,                                       // a shared trench across the road at every crossing
+  };
+  function trenches(res, Tin) {
+    const T = { depth: Object.assign({}, TRENCH_DEFAULTS.depth, (Tin && Tin.depth) || {}), combine: (Tin && Tin.combine) || TRENCH_DEFAULTS.combine, fibre: (Tin && Tin.fibre) || TRENCH_DEFAULTS.fibre, crossings: !(Tin && Tin.crossings === false) };
+    const streets = res.streets, lines = [], spurs = new Map(), out = [];
+    const lineFor = (st, sign, off) => { let l = lines.find(q => q.st === st && q.sign === sign && Math.abs(q.off - off) <= 0.75); if (!l) { l = { st, sign, off, offN: 0, ivs: [] }; lines.push(l); } l.off = (l.off * l.offN + off) / (l.offN + 1); l.offN++; return l; };
+    const rnd = p => Math.round(p[0] * 4) + ',' + Math.round(p[1] * 4);
+    const flush = (chain, cat) => { if (chain.length < 2) return; const a = rnd(chain[0]), b = rnd(chain[chain.length - 1]), key = a < b ? a + '|' + b : b + '|' + a; let sp = spurs.get(key); if (!sp) { sp = { pts: chain.slice(), cats: new Set() }; spurs.set(key, sp); } sp.cats.add(cat); };
+    const add = (pts, cat) => {
+      let chain = [];
+      for (let i = 1; i < pts.length; i++) {
+        const p = pts[i - 1], q = pts[i], mid = [(p[0] + q[0]) / 2, (p[1] + q[1]) / 2];
+        if (Math.hypot(q[0] - p[0], q[1] - p[1]) < 0.05) continue;
+        let best = null; for (const st of streets) { const pr = project(st, mid[0], mid[1]); if (!best || pr.d < best.pr.d) best = { st, pr }; }
+        const st = best.st, pp = project(st, p[0], p[1]), pq = project(st, q[0], q[1]), op = pp.side * pp.d, oq = pq.side * pq.d;
+        if (Math.abs(op - oq) > 3) { flush(chain, cat); chain = []; continue; }              // across a road: the crossing trench covers it
+        const m = (Math.abs(op) + Math.abs(oq)) / 2;
+        if (Math.abs(op - oq) <= 0.6 && Math.abs(pq.s - pp.s) > 0.05 && m >= st.vk - 1.5 && m <= st.w / 2 + 0.5) {
+          flush(chain, cat); chain = [];
+          lineFor(st, Math.sign(op + oq) || 1, m).ivs.push({ s0: Math.min(pp.s, pq.s), s1: Math.max(pp.s, pq.s), cat });
+        } else { if (!chain.length) chain.push(p); chain.push(q); }
+      }
+      flush(chain, cat);
+    };
+    res.erven.forEach(e => { if (e.route) add(e.route, 'svc'); if (T.fibre !== 'off' && e.duct) add(e.duct, 'fi'); });
+    if (res.net) { res.net.lv.forEach(ed => add(ed.pts, 'lv')); res.net.mv.forEach(ed => add(ed.pts, 'mv')); }
+    if (T.fibre !== 'off' && res.fibre) res.fibre.trunks.forEach(ed => add(ed.pts, 'fi'));
+    const dep = type => type === 'MV' ? T.depth.mv : type === 'FI' ? T.depth.fi : type === 'LV/SL' ? T.depth.lv : (T.depth.comb != null ? T.depth.comb : Math.max(T.depth.mv, T.depth.lv));
+    // what a set of cables becomes: [{ type, shift }] (shift moves a separate MV trench in from the verge line)
+    const kinds = cats => {
+      const mv = cats.has('mv'), pw = cats.has('lv') || cats.has('svc'), fi = cats.has('fi');
+      const r = [];
+      if (mv && pw && T.combine === 'mvlv') r.push({ type: 'MV/LV/SL', shift: 0 });
+      else { if (mv) r.push({ type: 'MV', shift: pw ? 0.7 : 0 }); if (pw) r.push({ type: 'LV/SL', shift: 0 }); }
+      if (fi && !(T.fibre === 'with' && pw) && T.fibre !== 'off') r.push({ type: 'FI', shift: 0 });
+      return r;
+    };
+    const emit = (type, pts, cats, kind) => { if (pts.length >= 2 && plen(pts) > 0.3) out.push({ type, pts, depth: dep(type), len: plen(pts), cats: [...cats], kind }); };
+    for (const l of lines) {                                   // runs along a verge line: merge what overlaps
+      const bp = [...new Set(l.ivs.flatMap(v => [v.s0, v.s1]).map(v => Math.round(v * 20) / 20))].sort((a, b) => a - b);
+      const runs = [];
+      for (let i = 1; i < bp.length; i++) {
+        const a = bp[i - 1], b = bp[i], mid = (a + b) / 2;
+        const cats = new Set(l.ivs.filter(v => v.s0 <= mid && v.s1 >= mid).map(v => v.cat)); if (!cats.size) continue;
+        const key = [...cats].sort().join('+'), last = runs[runs.length - 1];
+        if (last && last.key === key && a - last.b < 0.6) last.b = b; else runs.push({ key, cats, a, b });
+      }
+      for (const r of runs) for (const k of kinds(r.cats)) emit(k.type, verge(l.st, r.a, r.b, l.sign * (l.off - k.shift)), r.cats, 'run');
+    }
+    for (const sp of spurs.values()) for (const k of kinds(sp.cats)) emit(k.type, sp.pts, sp.cats, 'spur');
+    if (T.crossings && res.net) res.net.cross.forEach(x => {
+      const mv = x.d160 > 0, pw = x.svc > 0 || x.lv > 0 || (x.prov && x.d110 > 0), fi = x.fib > 0 && T.fibre !== 'off';
+      const type = mv && (pw || fi) ? 'MV/LV/SL' : mv ? 'MV' : pw ? 'LV/SL' : fi ? 'FI' : null;
+      if (!type) return;
+      const a = ptAt(x.st, x.s, x.st.w / 2), b = ptAt(x.st, x.s, -x.st.w / 2);
+      out.push({ type, pts: [[a[0], a[1]], [b[0], b[1]]], depth: dep(type), len: x.st.w, cats: [mv && 'mv', pw && 'lv', fi && 'fi'].filter(Boolean), kind: 'crossing' });
+    });
+    const sum = {};
+    out.forEach(t => { const q = sum[t.type] || (sum[t.type] = { len: 0, n: 0, depth: t.depth }); q.len += t.len; q.n++; });
+    return { list: out, summary: sum, T };
+  }
+
+  return { solve, trenches, TRENCH_DEFAULTS, DEFAULTS, ptAt, project, verge, plen };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = PlanLayout;

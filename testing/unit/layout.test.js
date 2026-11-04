@@ -126,4 +126,46 @@ ok('deterministic', () => {
 ok('speed: a 100-erf neighbourhood solves in a couple of seconds with the optimiser', () => {
   const t = Date.now(); L.solve(F, { kmode: 'opt', junct: true }); assert(Date.now() - t < 4000, (Date.now() - t) + ' ms');
 });
+
+// ── trenches ──
+const plenOf = pts => { let l = 0; for (let i = 1; i < pts.length; i++) l += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]); return l; };
+const sumLen = (t, f) => t.list.filter(f).reduce((a, x) => a + x.len, 0);
+ok('trenches: MV at 1.1 m, LV / service / street light at 0.7 m by default', () => {
+  const r = L.solve(F, {}), t = L.trenches(r, {});
+  assert(t.summary['MV'] && t.summary['LV/SL']);
+  assert.strictEqual(t.summary['MV'].depth, 1.1); assert.strictEqual(t.summary['LV/SL'].depth, 0.7);
+  assert(t.list.every(x => x.depth === (x.type === 'MV' ? 1.1 : x.type === 'LV/SL' ? 0.7 : x.type === 'FI' ? 0.6 : 1.1)));
+});
+ok('trenches: cables on one verge share a trench (far less than the sum of the routes)', () => {
+  const r = L.solve(F, {}), t = L.trenches(r, {});
+  const routes = r.erven.reduce((a, e) => a + (e.route ? plenOf(e.route) : 0), 0) + r.net.lvLen;
+  assert(sumLen(t, x => x.type === 'LV/SL' && x.kind !== 'crossing') < routes * 0.95, `${sumLen(t, x => x.type === 'LV/SL')} vs ${routes}`);
+  assert(sumLen(t, x => (x.type === 'MV' || x.type === 'MV/LV/SL') && x.kind !== 'crossing') < r.net.mvLen * 1.15 + 5);
+});
+ok('trenches: MV with LV in one trench makes a combined trench at the deepest depth', () => {
+  const r = L.solve(F, {}), sep = L.trenches(r, { combine: 'separate' }), com = L.trenches(r, { combine: 'mvlv' });
+  assert(com.summary['MV/LV/SL'].len > sep.summary['MV/LV/SL'].len);
+  assert((com.summary['MV'] ? com.summary['MV'].len : 0) < sep.summary['MV'].len);
+  assert.strictEqual(com.summary['MV/LV/SL'].depth, 1.1);
+  const deep = L.trenches(r, { combine: 'mvlv', depth: { mv: 1.5, lv: 0.9 } });
+  assert.strictEqual(deep.summary['MV/LV/SL'].depth, 1.5);
+  assert.strictEqual(L.trenches(r, { combine: 'mvlv', depth: { comb: 1.3 } }).summary['MV/LV/SL'].depth, 1.3);
+});
+ok('trenches: depths are the settings', () => {
+  const t = L.trenches(L.solve(F, {}), { depth: { mv: 1.4, lv: 0.85, fi: 0.5 } });
+  assert.strictEqual(t.summary['MV'].depth, 1.4); assert.strictEqual(t.summary['LV/SL'].depth, 0.85); assert.strictEqual(t.summary['FI'].depth, 0.5);
+});
+ok('trenches: fibre own / with the LV trench / none', () => {
+  const r = L.solve(F, { fibre: 'same' });
+  const own = L.trenches(r, { fibre: 'own' }), wi = L.trenches(r, { fibre: 'with' }), off = L.trenches(r, { fibre: 'off' });
+  assert(wi.summary['FI'].len < own.summary['FI'].len);
+  assert(!off.summary['FI']);
+});
+ok('trenches: one shared trench per road crossing, and none when switched off', () => {
+  const r = L.solve(F, { junct: true });
+  const on = L.trenches(r, { crossings: true }), no = L.trenches(r, { crossings: false });
+  assert.strictEqual(on.list.filter(x => x.kind === 'crossing').length, r.net.cross.length);
+  assert.strictEqual(no.list.filter(x => x.kind === 'crossing').length, 0);
+  assert(on.list.filter(x => x.kind === 'crossing').every(x => x.len > 5));
+});
 console.log(n + ' passed');

@@ -591,6 +591,8 @@ const PlanUI = {
       fields = [
         { key: 'name', label: 'Name', type: 'text' },
         { key: 'excType', label: 'Type', type: 'select', options: Object.keys(PLAN_DEFS.trenchTypes).map(k => ({ value: k, label: PLAN_DEFS.trenchTypes[k].name })) },
+        { key: 'depthOverride', label: 'Depth — blank = the type\'s', type: 'number', unit: 'm', min: 0.2, max: 4, step: 0.05 },
+        { key: 'widthOverride', label: 'Width — blank = the type\'s', type: 'number', unit: 'm', min: 0.1, max: 3, step: 0.05 },
       ];
       getVal = (k) => item[k];
     } else if (kind === 'crossing') {
