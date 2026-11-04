@@ -63,7 +63,7 @@ const PlanLayoutUI = {
     vd.taper = typeof vd.taper === 'boolean' ? vd.taper : true;                  // taper the LV cable (smaller feeders further out)
     vd.way80 = typeof vd.way80 === 'boolean' ? vd.way80 : true;                  // an 80 A MCCB on every erf's way
     if (vd.subsMax == null && typeof vd.subsAuto === 'boolean') vd.subsMax = vd.subsAuto ? 3 : 1;   // older files: the on / off switch
-    vd.subsMax = Math.round(this._num(vd.subsMax, 1, 8, 3)); delete vd.subsAuto;  // most mini-subs to try (1..N, the least cable that passes is kept); 1 = just the count set above
+    vd.subsMax = Math.round(this._num(vd.subsMax, 1, 8, 1)); delete vd.subsAuto;  // most mini-subs to try (1..N, the least cable that passes is kept); 1 = just the count set above
     vd.splits = Array.isArray(vd.splits) ? vd.splits.filter(q => q && Number.isFinite(+q.x) && Number.isFinite(+q.y)).map(q => ({ x: +q.x, y: +q.y })).slice(0, 200) : [];   // kiosks made a string head of their own
     vd.lv = typeof vd.lv === 'string' ? vd.lv.slice(0, 80) : ''; vd.svc = typeof vd.svc === 'string' ? vd.svc.slice(0, 80) : '';
     L.sides = (L.sides && typeof L.sides === 'object') ? L.sides : {};
