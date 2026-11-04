@@ -235,6 +235,13 @@ const PLAN_DEFS = {
       defaults: { cableType: '' },
       fields: [{ key: 'cableType', label: 'Cable Type', type: 'cable_select', voltage: 'lv' }],
     },
+    // A street centreline: information only (no take-off). Auto layout reads these with the erf boundaries.
+    street: {
+      name: 'Street centreline', domain: 'retic', color: '#64748b', width: 3, lineStyle: 'dashed',
+      cableVoltage: null, dxfLayer: 'STREETS', schedule: null, requiresEndpoints: false, noTakeoff: true,
+      defaults: {},
+      fields: [{ key: 'name', label: 'Street name', type: 'text' }, { key: 'width', label: 'Reserve width (m)', type: 'number', unit: 'm', min: 6, max: 40, step: 0.5 }],
+    },
     fibreBB: {
       name: 'Fibre Backbone', domain: 'retic', color: '#a855f7', width: 1.5, lineStyle: 'dashed',
       cableVoltage: null, dxfLayer: 'FIBRE', schedule: null, requiresEndpoints: false,
@@ -341,6 +348,7 @@ const PLAN_DEFS = {
     };
     if (domain === 'retic') {
       push('Detect', { type: 'erfdetect', kind: 'erfdetect', name: 'Detect erven', color: this.elements.erf.color, desc: 'Find every closed erf on the DXF / plan image, or click inside one' });
+      push('Detect', { type: 'layout', kind: 'layout', name: 'Auto layout', color: '#16a34a', desc: 'Erf markers, kiosks, mini-sub, LV / MV, fibre and shared road crossings from the erven and the street centrelines' });
     }
     for (const [type, def] of Object.entries(this.elements)) {
       if (def.domain !== domain || def.adoptOnly) continue;   // adopt-only types are placed via "From SLD"
@@ -428,7 +436,7 @@ const PLAN_DEFAULT_LAYERS = [
   },
   {
     id: 'lv', name: 'LV Reticulation', discipline: 'lv', color: '#3b82f6',
-    visibleElementTypes: ['minisub', 'kiosk', 'erf', 'load'], routeTypes: ['lv', 'service'],
+    visibleElementTypes: ['minisub', 'kiosk', 'erf', 'load'], routeTypes: ['lv', 'service', 'street'],
     trenchTypes: ['LV/SL', 'MV/LV/SL'], showCrossings: true, drawingNo: '', revision: '',
   },
   {
@@ -438,7 +446,7 @@ const PLAN_DEFAULT_LAYERS = [
   },
   {
     id: 'fibre', name: 'Fibre Layout', discipline: 'fibre', color: '#f59e0b',
-    visibleElementTypes: ['manhole', 'erf'], routeTypes: ['fibreBB', 'fibreErf'],
+    visibleElementTypes: ['manhole', 'erf'], routeTypes: ['fibreBB', 'fibreErf', 'street'],
     trenchTypes: ['FI'], showCrossings: false, drawingNo: '', revision: '',
   },
   {

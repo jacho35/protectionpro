@@ -1155,7 +1155,8 @@ Object.assign(PlanRoomDetect, {
       if (target === 'erf') {
         const seed = it.seed || this._seedOf(it.points);
         const el = { id: AppState.planGenId('pmel'), type: 'erf', x: seed.x, y: seed.y, rotation: 0,
-          name: PlanMarkup.nextName('erf'), reticId: null, props: PLAN_DEFS.defaults('erf') };
+          name: PlanMarkup.nextName('erf'), reticId: null, props: PLAN_DEFS.defaults('erf'),
+          boundary: it.points.map(p => ({ x: p.x, y: p.y })) };      // kept so Auto layout can find the erf's front
         pm.elements.push(el); made.push(Object.assign({ points: it.points }, { name: el.name })); ids.push(el.id);
       } else {
         const room = { id: AppState.planGenId('pmrm'), name: PlanMarkup.nextCounter('_room', 'Room '),
