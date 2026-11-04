@@ -667,6 +667,19 @@ class ReticEarthRequest(BaseModel):
     kiosks: list[dict] = []
 
 
+class ReticLvDesignRequest(BaseModel):
+    """The Auto layout's LV design (analysis/retic_lv_design.py): the proposal's kiosk tree with Demand's currents, the
+    cable ladder, the breaker library and the options. The frontend resolves every library reference into plain numbers."""
+    model_config = {"extra": "allow"}
+
+    settings: dict = {}
+    minisubs: list[dict] = []
+    kiosks: list[dict] = []
+    ladder: list[dict] = []
+    breakers: list[dict] = []
+    options: dict = {}
+
+
 class ReticMotorStartRequest(BaseModel):
     """Reticulation motor starting check (Demand): motors, the minisub
     transformers and kiosk feeder legs resolved to numbers — see

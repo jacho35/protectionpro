@@ -8,7 +8,7 @@ from typing import List, Optional
 from fastapi import APIRouter, HTTPException
 from fastapi.routing import APIRoute
 from pydantic import BaseModel
-from ..models.schemas import ProjectData, FaultResults, LoadFlowResults, ArcFlashResults, DCArcFlashResults, UnbalancedLoadFlowResults, AdmdRequest, AdmdResults, ReticEarthRequest, ReticMotorStartRequest, StreetLightingRequest, RoadLightingRequest, RoadPlanRequest, RoomLightingRequest, AreaLightingRequest, SportsLightingRequest, ObtrusiveLightRequest, EmergencyLightingRequest, PhotometryFileRequest, GenericOpticRequest, LightningRiskRequest, LightningRiskResult, RacewayRequest, RacewayResults, DCLoadFlowResults, DCShortCircuitResults, LoadFlowCasesRequest, LoadFlowCasesResults, VoltageStabilityRequest, VoltageStabilityResults, ContingencyRequest, ContingencyResults, TimeSeriesLoadFlowRequest, TimeSeriesLoadFlowResults, HarmonicsResults, FrequencyScanRequest, FrequencyScanResults, BatterySizingRequest, BatterySizingResults, OPFRequest, OPFResults, ReliabilityResults, FilterSizingRequest, FilterSizingResults, CapacitorPlacementRequest, CapacitorPlacementResults, FlickerAnalysisRequest, FlickerAnalysisResults, HostingCapacityRequest, HostingCapacityResults, OpenConductorResults, TwoConductorOpenResults, SimultaneousFaultResults, WennerTestRequest, WennerTestResults
+from ..models.schemas import ProjectData, FaultResults, LoadFlowResults, ArcFlashResults, DCArcFlashResults, UnbalancedLoadFlowResults, AdmdRequest, AdmdResults, ReticEarthRequest, ReticLvDesignRequest, ReticMotorStartRequest, StreetLightingRequest, RoadLightingRequest, RoadPlanRequest, RoomLightingRequest, AreaLightingRequest, SportsLightingRequest, ObtrusiveLightRequest, EmergencyLightingRequest, PhotometryFileRequest, GenericOpticRequest, LightningRiskRequest, LightningRiskResult, RacewayRequest, RacewayResults, DCLoadFlowResults, DCShortCircuitResults, LoadFlowCasesRequest, LoadFlowCasesResults, VoltageStabilityRequest, VoltageStabilityResults, ContingencyRequest, ContingencyResults, TimeSeriesLoadFlowRequest, TimeSeriesLoadFlowResults, HarmonicsResults, FrequencyScanRequest, FrequencyScanResults, BatterySizingRequest, BatterySizingResults, OPFRequest, OPFResults, ReliabilityResults, FilterSizingRequest, FilterSizingResults, CapacitorPlacementRequest, CapacitorPlacementResults, FlickerAnalysisRequest, FlickerAnalysisResults, HostingCapacityRequest, HostingCapacityResults, OpenConductorResults, TwoConductorOpenResults, SimultaneousFaultResults, WennerTestRequest, WennerTestResults
 from ..analysis.loadflow_cases import run_loadflow_cases
 from ..analysis.voltage_stability import run_voltage_stability
 from ..analysis.contingency import run_contingency
@@ -24,6 +24,7 @@ from ..analysis.flicker import run_flicker_analysis
 from ..analysis.hosting_capacity import run_hosting_capacity
 from ..analysis.admd import run_admd
 from ..analysis.retic_earth import run_retic_earth_check
+from ..analysis.retic_lv_design import run_retic_lv_design
 from ..analysis.retic_motor_start import run_retic_motor_start
 from ..analysis.street_lighting import run_street_lighting
 from ..analysis.road_lighting import run_road_lighting
@@ -713,6 +714,17 @@ def retic_earth_check(data: ReticEarthRequest):
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Retic earth check error: {e}")
+
+
+@router.post("/retic-lv-design")
+def retic_lv_design(data: ReticLvDesignRequest):
+    """The Auto layout's LV design: a breaker on each string head, the smallest uniform LV cable that passes every
+    check, then the taper (smaller feeders further out, never making a check worse), or why it cannot pass."""
+    try:
+        return run_retic_lv_design(data.model_dump())
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"LV design error: {e}")
 
 
 @router.post("/retic-motor-start")

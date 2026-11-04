@@ -26,7 +26,7 @@ const PlanLayoutUI = {
       ['front', 'select', [['longest', 'longest street edge'], ['shortest', 'shortest street edge']], 'A corner erf fronts its']]],
     ['Kiosks', [['kmode', 'select', [['rules', 'even runs (rule of thumb)'], ['opt', 'optimiser: fewest kiosks, then crossings, then cable']], 'Placement'],
       ['n', 'range', 4, 8, 1, '', 'Max houses per kiosk'], ['aim', 'range', 2, 8, 1, '', 'Aim for about this many houses per kiosk'], ['maxc', 'range', 30, 150, 5, 'm', 'Max service cable'], ['worth', 'range', 0, 600, 10, 'm', 'A kiosk is worth up to this much extra service cable']]],
-    ['LV network', [['subs', 'range', 1, 8, 1, '', 'Mini-subs'], ['subMode', 'select', [['opt', 'where the LV network drops least'], ['mid', 'nearest the middle of the kiosks']], 'Mini-sub position (unless you place it)']]],
+    ['LV network', [['subs', 'range', 1, 8, 1, '', 'Mini-subs (when not chosen automatically)'], ['subMode', 'select', [['opt', 'where the LV network drops least'], ['mid', 'nearest the middle of the kiosks']], 'Mini-sub position (unless you place it)']]],
     ['Fibre', [['m', 'range', 4, 12, 1, '', 'Erven per manhole'], ['maxmh', 'range', 40, 200, 10, 'm', 'Max distance between manholes'],
       ['fibre', 'select', [['opp', 'civil side, opposite the kiosks'], ['same', 'same side as the kiosks']], 'Manholes default to the'],
       ['topo', 'select', [['ring', 'every street, closed loops'], ['spur', 'spurs with T-offs from the entry']], 'Main duct layout']]],
@@ -59,6 +59,10 @@ const PlanLayoutUI = {
     vd.tx = typeof vd.tx === 'string' ? vd.tx.slice(0, 80) : '';
     vd.prot = typeof vd.prot === 'string' ? vd.prot.slice(0, 80) : '';
     vd.protK = this._num(vd.protK, 1, 2, 1.2);
+    vd.taper = typeof vd.taper === 'boolean' ? vd.taper : true;                  // taper the LV cable (smaller feeders further out)
+    vd.way80 = typeof vd.way80 === 'boolean' ? vd.way80 : true;                  // an 80 A MCCB on every erf's way
+    vd.subsAuto = typeof vd.subsAuto === 'boolean' ? vd.subsAuto : true;         // try 1, 2 and 3 mini-subs and take the least cable that passes
+    vd.splits = Array.isArray(vd.splits) ? vd.splits.filter(q => q && Number.isFinite(+q.x) && Number.isFinite(+q.y)).map(q => ({ x: +q.x, y: +q.y })).slice(0, 200) : [];   // kiosks made a string head of their own
     vd.lv = typeof vd.lv === 'string' ? vd.lv.slice(0, 80) : ''; vd.svc = typeof vd.svc === 'string' ? vd.svc.slice(0, 80) : '';
     L.sides = (L.sides && typeof L.sides === 'object') ? L.sides : {};
     L.fronts = (L.fronts && typeof L.fronts === 'object') ? L.fronts : {};
@@ -105,29 +109,102 @@ const PlanLayoutUI = {
     const by = cond => xl.filter(c => c.conductor === cond).sort((a, b) => a.size_mm2 - b.size_mm2);
     return by('Al').concat(by('Cu'));
   },
+  // Demand's own answer for one proposal (its ADMD run): the diversified current on every leg and service.
+  async _demandFor(r) {
+    const c = this.vdCables(), vd = this.cfg().vd, names = {}; AppState.planMarkup.elements.forEach(e => { if (e.type === 'erf') names[e.id] = e.name; });
+    const input = PlanLayout.demandInput(r, { names, minisubId: 'LAYOUT_SUB', lvCable: c.lv && c.lv.name, svcCable: c.svc && c.svc.name, outgoing: vd.way80 ? 'cb:mccb_80a' : '', phases: Retic.PHASES.slice(0, 3).map(x => x.id) });
+    if (!input) return null;
+    const res = await API.runAdmd(Retic._admdPayload(), input.kiosks, input.minisubs);
+    return { res, input, byK: new Map(input.kiosks.map(k => [k.id, k])), sig: JSON.stringify(Retic._admdPayload()) };
+  },
   async vdRun() {
     const r = this.result; if (!r) return;
-    r.vd = null; r.dem = null;
+    r.vd = null; r.dem = null; r.design = null; r.designErr = '';
     if (typeof Retic === 'undefined' || typeof API === 'undefined') return;
-    const c = this.vdCables();
-    const names = {}; AppState.planMarkup.elements.forEach(e => { if (e.type === 'erf') names[e.id] = e.name; });
-    const input = PlanLayout.demandInput(r, { names, minisubId: 'LAYOUT_SUB', lvCable: c.lv && c.lv.name, svcCable: c.svc && c.svc.name, phases: Retic.PHASES.slice(0, 3).map(x => x.id) });
-    if (!input) { r.vd = { err: 'No LV network to check yet.' }; return; }
     const tok = this._vdTok = (this._vdTok || 0) + 1;
     r.vdBusy = true; PlanMarkup.refreshProps();
     try {
-      const res = await API.runAdmd(Retic._admdPayload(), input.kiosks, input.minisubs);
+      const dem = await this._demandFor(r);
       if (tok !== this._vdTok || r !== this.result) return;
-      const byK = new Map(input.kiosks.map(k => [k.id, k]));
-      r.dem = { res, input, byK, sig: JSON.stringify(Retic._admdPayload()) };
+      if (!dem) { r.vdBusy = false; r.vd = { err: 'No LV network to check yet.' }; PlanMarkup.refreshProps(); return; }
+      r.dem = dem;
+      await this.designRun(r, tok);                                        // head breakers, the cable ladder, the taper
+      if (tok !== this._vdTok || r !== this.result) return;
       r.vdBusy = false; this.vdDerive();
       r.earthBusy = true; PlanMarkup.refreshProps();
       await this.earthRun(tok);
       if (tok !== this._vdTok) return;
+      if (this.cfg().vd.subsAuto && r.design) await this.trySubs(tok);     // 1, 2 and 3 mini-subs: the least cable that passes
     } catch (e) {
       if (tok !== this._vdTok) return;
       r.vdBusy = false; r.vd = { err: 'Demand could not be run (' + ((e && e.message) || e) + ').' };
     }
+    PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true });
+  },
+
+  // ── the LV design: 80 A ways, a breaker per string, the smallest cable that passes, tapered (backend/analysis/retic_lv_design.py) ──
+  _designOn() { const vd = this.cfg().vd; return !!(vd.taper || vd.way80); },
+  _deviceOf(spec) {                                                         // a library breaker as the engines take it, with its rating
+    const x = Retic._protectionDevice({ protection: spec }); if (!x) return null;
+    const id = String(spec).split(':')[1], e = STANDARD_CBS.find(q => q.id === id);
+    return Object.assign({ id, rating: e ? Number(e.trip_rating_a) || 0 : 0 }, x);
+  },
+  // the cable ladder the taper chooses from: armoured XLPE aluminium, smallest first
+  _ladder(c) { const all = this.vdCandidates(c.feeders), al = all.filter(x => x.conductor === 'Al'); return al.length ? al : all; },
+  _cableDict(c) { const o = Retic._cableDict(c.name), e = CableLib.byName(c.name); return o && Object.assign(o, { rated_amps: e ? e.rated_amps : 0 }); },
+  _designPayload(r) {
+    const d = r.dem, vd = this.cfg().vd, c = this.vdCables(), lim = this.vdLimits(), ladder = this._ladder(c);
+    const { src } = this._earthSrc(ladder[ladder.length - 1] || c.lv, c.svc, null, r, true);
+    const ep = Retic._earthPayload(src), byId = {}; d.res.kiosks.forEach(kr => { byId[kr.kioskId] = kr; });
+    const msIds = new Set(ep.minisubs.map(m => m.id)), pinnedCables = {}, pinnedBreakers = {};
+    const lv = x => !x.rated_voltage_kv || x.rated_voltage_kv <= 1;
+    const breakers = STANDARD_CBS.filter(x => lv(x) && (x.cb_type === 'mccb' || x.cb_type === 'acb')).map(x => this._deviceOf('cb:' + x.id)).filter(Boolean);
+    const kiosks = ep.kiosks.map(k => {
+      const kr = byId[k.id] || {}, amps = kr.feederA != null ? Number(kr.feederA) : Number(kr.currentA) || 0;
+      if (!c.auto && c.lv) pinnedCables[k.id] = this._cableDict(c.lv);                          // a cable picked by hand is kept on every feeder
+      if (vd.prot && msIds.has(k.fedFrom)) { const pd = this._deviceOf(vd.prot); if (pd) pinnedBreakers[k.id] = pd; }
+      return { id: k.id, name: k.name, fedFrom: k.fedFrom, lengthM: k.feeder.lengthM, amps, erfs: k.erfs.map(e => ({ id: e.id, erfNumber: e.erfNumber, service: e.service, device: e.device, deviceSource: e.deviceSource })) };
+    });
+    return { settings: { u0: ep.settings.u0, disconnectTimeS: ep.settings.disconnectTimeS, maxFeederVD: lim.feeder }, minisubs: ep.minisubs, kiosks,
+      ladder: ladder.map(x => this._cableDict(x)).filter(Boolean), breakers, options: { taper: !!vd.taper, pinnedCables, pinnedBreakers } };
+  },
+  async designRun(r, tok) {
+    if (!this._designOn() || !r.dem) { r.design = null; return; }
+    try {
+      const res = await API.runReticLvDesign(this._designPayload(r));
+      if (tok !== this._vdTok) return;                                      // (a trial of another mini-sub count is not this.result yet)
+      r.design = res && res.feeders && res.feeders.length ? res : null;
+    } catch (e) { if (tok === this._vdTok) { r.design = null; r.designErr = (e && e.message) || String(e); } }
+  },
+  // kiosk id → the library cable the design gave it
+  _designCables(r) {
+    const m = new Map(); if (!r || !r.design) return m;
+    for (const f of r.design.feeders) { const cab = CableLib.byName(f.cable); if (cab) m.set(f.kioskId, cab); }
+    return m;
+  },
+  // 1, 2 and 3 mini-subs: each is laid out, run through Demand and designed; the one that passes with the least cable (else the fewest fails) is kept.
+  async trySubs(tok) {
+    const base = this.result, g = this._gathered; if (!base || !g || !base.design || !base.net.subs) return;
+    const cur = base.net.subs.length, trials = [{ subs: cur, res: base }];
+    const nK = base.kiosks.length;
+    for (const n of [1, 2, 3]) {
+      if (n === cur || n > nK) continue;
+      const res = PlanLayout.solve(g.input, Object.assign({}, g.params, { subs: n }));
+      res.trench = PlanLayout.trenches(res, this.cfg().trench);
+      res.dem = await this._demandFor(res); if (tok !== this._vdTok || base !== this.result) return;
+      if (!res.dem) continue;
+      await this.designRun(res, tok); if (tok !== this._vdTok || base !== this.result) return;
+      if (res.design) trials.push({ subs: res.net.subs.length, res });
+    }
+    const score = x => [x.res.design.ok ? 0 : 1, x.res.design.ok ? 0 : x.res.design.failCount, x.res.design.taper.totalMm2M];
+    const best = trials.slice().sort((a, b) => { const p = score(a), q = score(b); return (p[0] - q[0]) || (p[1] - q[1]) || (p[2] - q[2]) || (a.subs - b.subs); })[0];
+    const summary = trials.sort((a, b) => a.subs - b.subs).map(x => ({ subs: x.subs, ok: x.res.design.ok, fails: x.res.design.failCount, total: x.res.design.taper.totalMm2M, saved: x.res.design.taper.savedPct, chosen: x === best }));
+    if (best.res !== base) {
+      const res = best.res; res.subsTrials = summary; res.vdBusy = false; res.vdFrom = cur;
+      this.result = res; this.f = g.f; res.vd = null; this.vdDerive();
+      res.earthBusy = true; PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true });
+      await this.earthRun(tok);
+    } else base.subsTrials = summary;
     PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true });
   },
   // From the engine's answer to the figures shown. Cable or limit changes come back here (no new request: the loads do not depend on them).
@@ -137,7 +214,9 @@ const PlanLayoutUI = {
     if (!c.svc || !c.feeders.length) { r.vd = { err: 'Pick the LV feeder and service cables.' }; return; }
     const bad = x => x.over.length || x.hotLegs.length || x.hotSvc.length;
     let res;
-    if (c.auto) {
+    const per = this._designCables(r);
+    if (r.design && per.size) { res = this._vdWith(c.lv, c.svc, per); res.designed = true; }      // the tapered cables, kiosk by kiosk
+    else if (c.auto) {
       // the limits as a constraint: the smallest cable that passes (volt drop and rating); if none does, the largest, flagged
       const cands = this.vdCandidates(c.feeders);
       let pass = null;
@@ -151,15 +230,16 @@ const PlanLayoutUI = {
   },
   // the volt drop and the cable ratings of every erf with these two cables, from Demand's answer (`r.dem`) and Retic's own functions.
   // Nothing is written into the shared Demand input: each call works on its own copy.
-  _vdWith(lvCab, svcCab) {
+  _vdWith(lvCab, svcCab, per) {
     const r = this.result, d = r.dem, lim = this.vdLimits();
-    const cur = new Map(d.input.kiosks.map(k => [k.id, Object.assign({}, k, { feederCable: lvCab.name, erfs: k.erfs.map(e => Object.assign({}, e, { cableType: svcCab.name })) })]));
+    const cabOf = k => (per && per.get(k.id)) || lvCab;
+    const cur = new Map(d.input.kiosks.map(k => [k.id, Object.assign({}, k, { feederCable: cabOf(k).name, erfs: k.erfs.map(e => Object.assign({}, e, { cableType: svcCab.name })) })]));
     const kioskOf = id => cur.get(id);
     const byId = {}; for (const kr of d.res.kiosks) byId[kr.kioskId] = kr;
     const net = r.net, up = new Map(net.lvLinks.map(l => [l.to, l])), isSub = new Set(net.subs.map(S => S.k));
-    const lvRate = (Retic._cableRX(lvCab.name) || {}).rating || 0, svcRate = (Retic._cableRX(svcCab.name) || {}).rating || 0;
+    const rateOf = name => (Retic._cableRX(name) || {}).rating || 0, lvRate = lvCab ? rateOf(lvCab.name) : 0, svcRate = rateOf(svcCab.name);
     const cum = k => { const v = Retic._cumulativeFeederVD(k.id, byId, kioskOf); return v == null ? 0 : v; };
-    const legs = net.lvLinks.map(l => ({ from: l.from, to: l.to, len: (cur.get(l.to.id) || {}).feederLength || l.len, pct: Retic._legFeederVD(l.to.id, byId, kioskOf) || 0, cum: cum(l.to), amps: (byId[l.to.id] || {}).feederA || 0, rating: lvRate }));
+    const legs = net.lvLinks.map(l => ({ from: l.from, to: l.to, len: (cur.get(l.to.id) || {}).feederLength || l.len, pct: Retic._legFeederVD(l.to.id, byId, kioskOf) || 0, cum: cum(l.to), amps: (byId[l.to.id] || {}).feederA || 0, rating: rateOf((cur.get(l.to.id) || {}).feederCable) }));
     const rows = [], unreached = [];
     for (const k of r.kiosks) for (const e of k.members) {
       if (!isSub.has(k) && !up.has(k)) { unreached.push(e); continue; }
@@ -169,10 +249,14 @@ const PlanLayoutUI = {
     }
     const worst = rows.slice().sort((a, b) => b.total - a.total)[0] || null;
     const eps = 1e-9;
-    return { V: { limF: lim.feeder, limS: lim.svc, lv: { name: lvCab.name, rating: lvRate }, svc: { name: svcCab.name, rating: svcRate } }, legs, rows, worst, unreached,
+    return { V: { limF: lim.feeder, limS: lim.svc, lv: per && per.size ? { name: this._taperLabel(per), rating: 0 } : { name: lvCab.name, rating: lvRate }, svc: { name: svcCab.name, rating: svcRate } }, legs, rows, worst, unreached,
       over: rows.filter(x => x.lv > lim.feeder + eps || x.svc > lim.svc + eps),
-      hotLegs: lvRate ? legs.filter(l => l.amps > lvRate + eps) : [], hotSvc: svcRate ? rows.filter(x => x.amps > svcRate + eps) : [],
+      hotLegs: legs.filter(l => l.rating && l.amps > l.rating + eps), hotSvc: svcRate ? rows.filter(x => x.amps > svcRate + eps) : [],
       maxLv: Math.max(0, ...rows.map(x => x.lv)), maxSvc: Math.max(0, ...rows.map(x => x.svc)), max: worst ? worst.total : 0 };
+  },
+  _taperLabel(per) {
+    const s = [...per.values()].map(c => c.size_mm2).sort((a, b) => a - b), cond = [...per.values()][0] && [...per.values()][0].conductor;
+    return s.length ? (s[0] === s[s.length - 1] ? `${s[0]} mm² ${cond}` : `tapered ${s[0]} to ${s[s.length - 1]} mm² ${cond}`) : '';
   },
   // each mini-sub's demand (Demand's own diversified figure) against its transformer: the one picked here, else the smallest in the library that carries it
   _txRows() {
@@ -201,12 +285,19 @@ const PlanLayoutUI = {
   // The proposal as Demand's own earth check takes it (Retic._earthPayload, run by /analysis/retic-earth-check): the kiosks with the
   // chosen cables, a breaker on the head of each string (the one picked, else the next standard MCCB / ACB size up from protK × the string current), the
   // transformer chosen (else the one that covers the mini-sub's demand).
-  _earthSrc(lvCab, svcCab) {
-    const d = this.result.dem, vd = this.cfg().vd, byId = {}; d.res.kiosks.forEach(kr => { byId[kr.kioskId] = kr; });
-    const heads = new Set(d.input.minisubs.map(m => m.id)), prot = {};
+  _earthSrc(lvCab, svcCab, per, r = this.result, noHeads = false) {
+    const d = r.dem, vd = this.cfg().vd, byId = {}; d.res.kiosks.forEach(kr => { byId[kr.kioskId] = kr; });
+    const heads = new Set(d.input.minisubs.map(m => m.id)), prot = {}, way = vd.way80 ? 'cb:mccb_80a' : '';
+    const chosen = new Map(((r.design && r.design.heads) || []).map(h => [h.kioskId, h.device && h.device.id ? 'cb:' + h.device.id : '']));
     const kiosks = d.input.kiosks.map(k => {
-      const o = Object.assign({}, k, { feederCable: lvCab.name, erfs: k.erfs.map(e => Object.assign({}, e, { cableType: svcCab.name })) });
-      if (heads.has(k.fedFrom)) { const fit = vd.prot ? null : Retic._fitBreaker(vd.protK * ((byId[k.id] || {}).feederA || 0)), dev = vd.prot || (fit ? 'cb:' + fit.id : ''); if (dev) { o.protection = dev; prot[k.id] = dev; } }
+      const cab = (per && per.get(k.id)) || lvCab;
+      const o = Object.assign({}, k, { feederCable: cab.name, outgoingProtection: way || k.outgoingProtection || '', erfs: k.erfs.map(e => Object.assign({}, e, { cableType: svcCab.name })) });
+      if (!noHeads && heads.has(k.fedFrom)) {
+        let dev = vd.prot;                                                              // picked by hand: used on every string
+        if (!dev && chosen.size) dev = chosen.get(k.id) || '';                         // the design's: sized to this string
+        if (!dev && !chosen.size) { const fit = Retic._fitBreaker(vd.protK * ((byId[k.id] || {}).feederA || 0)); dev = fit ? 'cb:' + fit.id : ''; }
+        if (dev) { o.protection = dev; prot[k.id] = dev; }
+      }
       return o;
     });
     return { src: { minisubs: d.input.minisubs.map(m => Object.assign({}, m, vd.tx ? { txTypeId: vd.tx } : {})), kiosks, res: { minisubs: d.res.minisubs } }, prot };
@@ -221,8 +312,15 @@ const PlanLayoutUI = {
   async earthRun(tok) {
     const r = this.result, d = r && r.dem; if (!d || !r.vd || r.vd.err) { if (r) { r.earth = null; r.earthBusy = false; } return; }
     r.earthErr = ''; r.earthUp = null;
-    const c = this.vdCables(), ask = async (lvCab, svcCab) => { const { src, prot } = this._earthSrc(lvCab, svcCab); const e = await API.runReticEarth(Retic._earthPayload(src)); return { e, prot }; };
+    const c = this.vdCables(), ask = async (lvCab, svcCab, per) => { const { src, prot } = this._earthSrc(lvCab, svcCab, per, r); const e = await API.runReticEarth(Retic._earthPayload(src)); return { e, prot }; };
     try {
+      const per = this._designCables(r);
+      if (r.design && per.size) {                                                     // the designed cables and breakers, checked once more by the same engine
+        const t = await ask(c.lv || [...per.values()][0], c.svc, per); if (tok !== this._vdTok || r !== this.result) return;
+        r.earth = t.e; r.prot = t.prot;
+        if (tok === this._vdTok) r.earthBusy = false;
+        return;
+      }
       let { e, prot } = await ask(c.lv, c.svc);
       if (tok !== this._vdTok) return;
       // automatic cable: when the earth loop fails, try the next sizes up (each one still has to meet the volt-drop limits and its rating)
@@ -435,7 +533,8 @@ const PlanLayoutUI = {
     const ms = pm.elements.find(e => e.type === 'minisub' && own(e)), rmu = pm.elements.find(e => e.type === 'rmu' && own(e));
     const subPt = L.sub ? [L.sub.x * f, L.sub.y * f] : ms ? [ms.x * f, ms.y * f] : null;
     const markers = {}; for (const [id, q] of Object.entries(L.markers)) if (erven.some(e => e.id === id)) markers[id] = [q.x * f, q.y * f];
-    return { f, input: { erven, streets, markers, ks, fs, overrides: L.fronts, cuts: L.cuts, subPt, mvPt: rmu ? [rmu.x * f, rmu.y * f] : null, entryPt: L.entry ? [L.entry.x * f, L.entry.y * f] : null }, params: L.params };
+    const splits = L.vd.splits.map(q => [q.x * f, q.y * f]);
+    return { f, input: { erven, streets, markers, splits, ks, fs, overrides: L.fronts, cuts: L.cuts, subPt, mvPt: rmu ? [rmu.x * f, rmu.y * f] : null, entryPt: L.entry ? [L.entry.x * f, L.entry.y * f] : null }, params: L.params };
   },
 
   run() {
@@ -443,6 +542,7 @@ const PlanLayoutUI = {
     if (g.err) { this.err = g.err; this.result = null; PlanMarkup.refreshProps(); UI.toast(g.err, 'warn', 6000); return; }
     this.err = '';
     const t0 = performance.now();
+    this._gathered = g;
     this.result = PlanLayout.solve(g.input, g.params);
     this.f = g.f; this.ms = performance.now() - t0; this.stale = false; this.flag = null; this.nearHint = null;
     this.result.trench = PlanLayout.trenches(this.result, this.cfg().trench);
@@ -474,13 +574,14 @@ const PlanLayoutUI = {
     const ptsPx = a => a.map(p => ({ x: p[0] / f, y: p[1] / f }));
     removeIf(pm.routes, auto); removeIf(pm.crossings, auto); removeIf(pm.elements, auto); removeIf(pm.trenches, auto);
     const el = (type, x, y, extra) => { const e = Object.assign({ id: AppState.planGenId('pmel'), type, x: x / f, y: y / f, rotation: 0, name: PlanMarkup.nextName(type), reticId: null, props: PLAN_DEFS.defaults(type), auto: 'layout' }, extra || {}); pm.elements.push(e); return e; };
-    const route = (type, fromId, toId, pts) => { const rt = { id: AppState.planGenId('pmrt'), type, fromId: fromId || null, toId: toId || null, points: ptsPx(pts), cableType: this._vdCableName(type) || PLAN_DEFS.defaults(type).cableType || ((typeof PlanSync !== 'undefined' && PlanSync.defaultCableFor(type, fromId, toId)) || ''), curved: false, props: {}, auto: 'layout' }; pm.routes.push(rt); return rt; };
+    const route = (type, fromId, toId, pts, cable) => { const rt = { id: AppState.planGenId('pmrt'), type, fromId: fromId || null, toId: toId || null, points: ptsPx(pts), cableType: cable || this._vdCableName(type) || PLAN_DEFS.defaults(type).cableType || ((typeof PlanSync !== 'undefined' && PlanSync.defaultCableFor(type, fromId, toId)) || ''), curved: false, props: {}, auto: 'layout' }; pm.routes.push(rt); return rt; };
     const made = { subs: 0, kiosks: 0, manholes: 0, routes: 0, crossings: 0, markers: 0, trenches: 0 };
     const erfEl = new Map(pm.elements.filter(e => e.type === 'erf').map(e => [e.id, e]));
     // erf markers: the erf point moves to its corner
     if (opt.markers) r.erven.forEach(e => { const el0 = erfEl.get(e.id); if (el0 && e.marker) { el0.x = e.marker[0] / f; el0.y = e.marker[1] / f; made.markers++; } });
     const kEl = new Map();
-    if (opt.kiosks) r.kiosks.forEach(k => { const pr = r.prot && r.prot[k.id]; kEl.set(k, el('kiosk', k.x, k.y, pr ? { props: Object.assign(PLAN_DEFS.defaults('kiosk'), { protection: pr }) } : null)); made.kiosks++; });
+    const lvCab = this._designCables(r), way = this.cfg().vd.way80 ? 'cb:mccb_80a' : '';                  // the tapered cable of each feeder, the 80 A way on every erf
+    if (opt.kiosks) r.kiosks.forEach(k => { const pr = r.prot && r.prot[k.id], extra = Object.assign({}, pr ? { protection: pr } : {}, way ? { outgoingProtection: way } : {}); kEl.set(k, el('kiosk', k.x, k.y, Object.keys(extra).length ? { props: Object.assign(PLAN_DEFS.defaults('kiosk'), extra) } : null)); made.kiosks++; });
     if (opt.kiosks) r.erven.forEach(e => { if (e.kiosk && e.route && kEl.get(e.kiosk) && erfEl.get(e.id)) { const pts = e.route.slice(); if (!opt.markers) pts.push([erfEl.get(e.id).x * f, erfEl.get(e.id).y * f]); route('service', kEl.get(e.kiosk).id, e.id, pts); made.routes++; } });
     const subEls = new Map();
     if (opt.lv && r.net.subs) {
@@ -493,13 +594,14 @@ const PlanLayoutUI = {
         const st = k0.road, sp = PlanLayout.ptAt(st, k0.s + 5, (r.ks[st.id] || 1) * st.vk);
         const se = (existing && Sb === exS) ? existing : el('minisub', sp[0], sp[1], tx ? { props: Object.assign(PLAN_DEFS.defaults('minisub'), { txTypeId: tx }) } : null);
         subEls.set(Sb, se); made.subs++;
-        route('lv', se.id, kEl.get(k0).id, [[se.x * f, se.y * f], [k0.x, k0.y]]); made.routes++;
+        route('lv', se.id, kEl.get(k0).id, [[se.x * f, se.y * f], [k0.x, k0.y]], (lvCab.get(k0.id) || {}).name); made.routes++;
       });
       r.net.lvLinks.forEach(l => {
         if (!kEl.get(l.from) || !kEl.get(l.to)) return;
         const Sb = r.net.subs.find(x => x.k === l.from), se = Sb && subEls.get(Sb);          // next to the mini-sub's kiosk: its own feeder from the mini-sub
-        if (se) route('lv', se.id, kEl.get(l.to).id, [[se.x * f, se.y * f], [l.from.x, l.from.y], ...l.pts.slice(1)]);
-        else route('lv', kEl.get(l.from).id, kEl.get(l.to).id, l.pts);
+        const lc = (lvCab.get(l.to.id) || {}).name;
+        if (se) route('lv', se.id, kEl.get(l.to).id, [[se.x * f, se.y * f], [l.from.x, l.from.y], ...l.pts.slice(1)], lc);
+        else route('lv', kEl.get(l.from).id, kEl.get(l.to).id, l.pts, lc);
         made.routes++;
       });
     }
@@ -712,6 +814,12 @@ const PlanLayoutUI = {
       }
       out.push({ sev: 'info', text: 'Cable ratings and voltage drop are checked here; fault withstand of the cables is checked in Demand.', ids: [] });
     }
+    const D = r.design;
+    if (D && !D.ok) D.reasons.forEach(rs => out.push({ sev: 'fail', text: rs.text, ids: r.kiosks.filter(k => rs.kiosks.includes(k.id)).flatMap(k => k.members.map(e => e.id)),
+      acts: rs.fixes.map(x => x.action === 'split' ? { label: x.text, act: 'split', val: x.kiosk } : { label: x.text, act: 'addsub' }) }));
+    if (D) D.heads.filter(h => h.noCurrent && !h.pinned).forEach(h => out.push({ sev: 'fail', text: `String ${h.name} has no current from Demand, so no breaker was chosen for it (none is guessed). Run Demand, or pick the string breaker yourself.`, ids: [] }));
+    else if (D && D.taper.on && D.taper.count > 1) out.push({ sev: 'info', text: `LV cable: ${D.taper.count} sizes, ${D.taper.minMm2} to ${D.taper.maxMm2} mm² ${D.conductor}, taper saves ${D.taper.savedPct}% (cable size × length) against ${D.uniform.sizeMm2} mm² throughout. ${this.cfg().vd.way80 ? 'Every erf way is an 80 A MCCB; ' : ''}each string head has the breaker with the fewest earth-fault fails.`, ids: [] });
+    if (D && r.subsTrials && r.subsTrials.length > 1) out.push({ sev: 'info', text: 'Mini-subs tried: ' + r.subsTrials.map(x => `${x.subs} → ${x.ok ? 'passes, ' + Math.round(x.total).toLocaleString('en') + ' mm²·m' : x.fails + ' fail' + (x.fails === 1 ? '' : 's')}${x.chosen ? ' (used)' : ''}`).join(' · ') + '.', ids: [] });
     const near = r.erven.filter(e => e.fe && e.kiosk && e.cable > 0.85 * P.maxc && e.cable <= P.maxc + 1e-6);
     if (near.length) out.push({ sev: 'warn', text: `${near.length} services are within 15% of the ${P.maxc} m limit: ${nm(near.map(lab))}.`, ids: near.map(e => e.id) });
     const onRoad = new Map(); r.erven.forEach(e => { if (e.road) onRoad.set(e.road, (onRoad.get(e.road) || 0) + 1); });
@@ -819,9 +927,12 @@ const PlanLayoutUI = {
     const VDc = L.vd, cb = this.vdCables(), lim = this.vdLimits(), txOpts = (typeof Retic !== 'undefined' ? Retic._txOptions() : []), opts = (list, cur) => list.map(c => `<option value="${esc(c.id)}"${cur && cur.id === c.id ? ' selected' : ''}>${esc(c.name)}</option>`).join('');
     const vdGroup = `<details open><summary style="cursor:pointer;font-weight:600;margin:2px 0">Voltage drop and transformer</summary><div style="display:flex;flex-direction:column;gap:8px;padding:6px 0 4px">
         <div>Limits are Demand's: LV feeder <b>${Number(lim.feeder)} %</b>, service <b>${Number(lim.svc)} %</b>. Change them in Demand (Max Feeder VD, Max Service VD).</div>
+        <label style="display:flex;gap:6px;align-items:flex-start"><input type="checkbox" data-vd="way80"${VDc.way80 ? ' checked' : ''}> <span>80 A on erven: an 80 A MCCB on every erf's way (change it per kiosk in Demand)</span></label>
+        <label style="display:flex;gap:6px;align-items:flex-start"><input type="checkbox" data-vd="taper"${VDc.taper ? ' checked' : ''}> <span>Taper the LV cable: the smallest size that passes on each feeder, large near the mini-sub</span></label>
+        <label style="display:flex;gap:6px;align-items:flex-start"><input type="checkbox" data-vd="subsAuto"${VDc.subsAuto ? ' checked' : ''}> <span>Try 1, 2 and 3 mini-subs and use the least cable that passes</span></label>
         <label style="display:block">Mini-sub transformer<select data-vd="tx" style="width:100%"><option value=""${VDc.tx ? '' : ' selected'}>Automatic: the smallest that carries each mini-sub</option>${txOpts.map(o => `<option value="${esc(o.id)}"${VDc.tx === o.id ? ' selected' : ''}>${esc(o.name)}</option>`).join('')}</select></label>
-        <label style="display:block">String breaker (earth-fault loop)<select data-vd="prot" style="width:100%">${Retic._protectionOptions(VDc.prot, 'Automatic: the next size up from the string current × factor')}</select></label>
-        ${VDc.prot ? '' : `<label style="display:block">Breaker rating at least <b data-vv="protK">${Number(VDc.protK).toFixed(2)}</b> × the string current<input type="range" data-vd="protK" min="1" max="2" step="0.05" value="${Number(VDc.protK)}" style="width:100%"></label>`}
+        <label style="display:block">String breaker (earth-fault loop)<select data-vd="prot" style="width:100%">${Retic._protectionOptions(VDc.prot, this._designOn() ? 'Automatic: sized to each string (fewest earth-fault fails)' : 'Automatic: the next size up from the string current × factor')}</select></label>
+        ${VDc.prot || this._designOn() ? '' : `<label style="display:block">Breaker rating at least <b data-vv="protK">${Number(VDc.protK).toFixed(2)}</b> × the string current<input type="range" data-vd="protK" min="1" max="2" step="0.05" value="${Number(VDc.protK)}" style="width:100%"></label>`}
         <label style="display:block">LV feeder cable<select data-vd="lv" style="width:100%"><option value=""${cb.auto ? ' selected' : ''}>Automatic: the smallest that meets the limits and the rating${cb.auto && cb.lv ? ' (now ' + esc(cb.lv.name) + ')' : ''}</option>${opts(cb.feeders, cb.auto ? null : cb.lv)}</select></label>
         <label style="display:block">Service cable<select data-vd="svc" style="width:100%">${opts(cb.services, cb.svc)}</select></label>
         <div style="color:var(--text-muted)">Worked out by Demand itself: its load class and ADMD settings give the diversified current on each LV leg and on each service, and its volt-drop calculation does the rest.</div></div></details>`;
@@ -843,6 +954,14 @@ const PlanLayoutUI = {
         <div style="display:flex;gap:6px"><button type="button" class="plan-btn" data-act="kerbcreate" style="font-weight:600">Create ${KS.streets.length} street${KS.streets.length === 1 ? '' : 's'}</button><button type="button" class="plan-btn" data-act="kerbcancel">Cancel</button></div></div>` : '';
     const tile = (b, s) => `<div style="border:1px solid var(--border,#ddd);border-radius:5px;padding:4px 6px"><b style="font-size:15px;display:block">${b}</b><span style="font-size:11px;color:var(--text-muted)">${s}</span></div>`;
     const tiles = st ? [[st.erven, 'erven'], [r.net.subs.length, 'mini-sub' + (r.net.subs.length === 1 ? '' : 's')], [st.kiosks, `kiosks · ${st.avgPer.toFixed(1)} erven each on average · ${st.small} serve 2 erven or fewer · at most ${p.n}`], [fmt(st.cable) + ' m', 'service cable'], [fmt(st.cableMax) + ' m of ' + p.maxc + ' m', 'longest service · limit'], ...(r.vd && !r.vd.err ? [[r.vd.maxLv.toFixed(1) + '% / ' + r.vd.maxSvc.toFixed(1) + '%', 'worst LV feeder / service drop · limits ' + r.vd.V.limF + '% / ' + r.vd.V.limS + '%']] : []), [st.crossings, 'road crossings'], [st.provisional, 'junction ducts, empty'], [st.d110 + ' + ' + st.d160, '110 mm + 160 mm ducts'], [st.manholes + ' + ' + st.junctionManholes, 'manholes + junctions'], [fmt(st.trunk) + ' m', 'trunk duct'], [fmt(st.leads) + ' m', 'duct to erven'], [fmt(st.lv) + ' m', 'LV feeder'], [fmt(st.mv) + ' m', 'MV cable'], [st.tOffs + ' / ' + st.spurEnds + ' / ' + st.loops, 'T-offs / spur ends / loops'], [st.baseline, 'crossings if unshared']].map(t => tile(...t)).join('') : '';
+    const D = r && r.design, cfgVd = this.cfg().vd;
+    const subName = id => /^LAYOUT_SUB/.test(id) ? 'Mini-sub' + (id.split('_')[2] ? ' ' + id.split('_')[2] : '') : id;
+    const headOf = D ? new Map(D.heads.map(h => [h.kioskId, h])) : new Map();
+    const designBlock = D ? `<div style="margin-top:6px"><b>LV design</b>
+      ${tile(`LV cable: ${D.taper.count} size${D.taper.count === 1 ? '' : 's'}, ${D.taper.minMm2}${D.taper.count > 1 ? ' to ' + D.taper.maxMm2 : ''} mm² ${esc(D.conductor)}`, D.taper.on && D.taper.savedPct > 0 ? `taper saves ${D.taper.savedPct}% against ${D.uniform.sizeMm2} mm² throughout (size × length)` : (D.taper.on ? 'no feeder can be smaller' : 'taper off: one size throughout'))}
+      <div style="font-size:12px;color:var(--text-muted);margin:3px 0">${cfgVd.way80 ? 'Every erf way: MCCB 80 A. ' : ''}${D.ok ? 'Every earth-fault, volt-drop and rating check passes.' : `<b style="color:#b91c1c">${D.failCount} earth-fault check${D.failCount === 1 ? '' : 's'} still fail${D.failCount === 1 ? 's' : ''}: see the Checks below.</b>`}</div>
+      <div style="max-height:200px;overflow:auto"><table style="width:100%;font-size:12px;border-collapse:collapse"><thead><tr><th style="text-align:left">Kiosk</th><th style="text-align:left">Fed from</th><th style="text-align:left">Cable</th><th style="text-align:left">Breaker</th><th style="text-align:right">m</th></tr></thead><tbody>${D.feeders.map(x => { const h = headOf.get(x.kioskId); return `<tr style="border-top:1px solid var(--border,#ddd)"><td>${esc(x.name)}</td><td>${esc(subName(x.fedFrom))}</td><td>${esc(String(x.cable).replace(/ LV$/, ''))}${x.setBy === 'taper' ? ' <span title="smaller (or larger) than the one size that would pass everywhere: set by the taper" style="color:#0f8f78;font-size:11px">· set by taper</span>' : x.setBy === 'you' ? ' <span style="font-size:11px">· set by you</span>' : ''}</td><td>${h ? (h.breaker ? esc(h.breaker) + (h.pinned ? ' <span style="font-size:11px">· set by you</span>' : '') : '<span style="color:#b91c1c">no current from Demand</span>') : '—'}</td><td style="text-align:right">${Math.round(x.lengthM)}</td></tr>`; }).join('')}</tbody></table></div>
+      ${r.subsTrials && r.subsTrials.length > 1 ? `<div style="font-size:12px;color:var(--text-muted);margin-top:3px">Mini-subs tried: ${r.subsTrials.map(x => `${x.subs}: ${x.ok ? Math.round(x.total).toLocaleString('en') + ' mm²·m' : x.fails + ' fail' + (x.fails === 1 ? '' : 's')}${x.chosen ? ' <b>(used)</b>' : ''}`).join(' · ')}</div>` : ''}</div>` : (r && r.designErr ? `<div style="color:#b91c1c;margin-top:6px">The LV design could not be run: ${esc(r.designErr)}</div>` : '');
     const xt = r ? r.net.cross.slice().sort((a, b) => (a.prov - b.prov) || (b.d110 + b.d160) - (a.d110 + a.d160)).slice(0, 14).map((x, i) => { const parts = x.prov ? `${x.d110}×110, ${x.d160}×160, junction` : [x.d110s && `${x.d110s}×110 service`, x.d110f && `${x.d110f}×110 fibre`, x.d110l && `${x.d110l}×110 LV`, x.d160 && `${x.d160}×160 MV`, x.spare && `${x.spare}×110 spare`].filter(Boolean).join(', '); return `<tr><td>${esc(x.st.name)}</td><td>${esc(parts)}</td></tr>`; }).join('') : '';
     const trenchRows = r && r.trench ? Object.entries(r.trench.summary).map(([type, q]) => { const d = PLAN_DEFS.trenchTypes[type] || { name: type, width: 0.5 }; const vol = q.len * d.width * q.depth; return `<div style="display:flex;justify-content:space-between;gap:8px"><span>${esc(d.name)}</span><span>${fmt(q.len)} m at ${q.depth.toFixed(2)} m · ${fmt(vol)} m³</span></div>`; }).join('') : '';
     const ck = r ? this.checks() : [], sevCol = { fail: '#dc2626', warn: '#b45309', info: '#64748b' }, sevTxt = { fail: 'Fix', warn: 'Check', info: 'Note' };
@@ -873,6 +992,7 @@ const PlanLayoutUI = {
         ${trenchGroup}
         ${vdGroup}
         ${r ? `<div><b>Result</b><div style="display:grid;grid-template-columns:repeat(2,1fr);gap:5px;margin-top:4px">${tiles}</div>
+        ${designBlock}
         ${r.vdBusy || r.earthBusy ? '<div style="color:var(--text-muted);margin-top:6px">Checking the voltage drop and earth-fault loop with Demand…</div>' : ''}
         ${r.vd && !r.vd.err && r.vd.worst ? `<div style="margin-top:6px"><b>Voltage drop</b><div>Furthest: erf ${esc(((AppState.planMarkup.elements.find(e => e.id === r.vd.worst.erf.id) || {}).name) || r.vd.worst.erf.id)}, ${r.vd.worst.total.toFixed(1)}% = ${r.vd.worst.lv.toFixed(1)}% LV (to ${esc(r.vd.worst.kiosk.id)}) + ${r.vd.worst.svc.toFixed(1)}% service</div>${r.vd.legs.slice().sort((a, b) => b.cum - a.cum).slice(0, 5).map(l => `<div style="display:flex;justify-content:space-between;gap:8px"><span>${esc(l.from.id)} → ${esc(l.to.id)} · ${Math.round(l.len)} m · ${Math.round(l.amps)} A</span><span>${l.pct.toFixed(2)}% (to here ${l.cum.toFixed(1)}%)</span></div>`).join('')}</div>` : ''}
         ${r.trench ? `<div style="margin-top:6px"><b>Trenches</b>${trenchRows}</div>` : ''}
@@ -887,7 +1007,8 @@ const PlanLayoutUI = {
         if (a.act === 'tx') { L.vd.tx = a.val; this.revd(); }
         else if (a.act === 'extendall') { this.extendErven(a.val || []); }
         else if (a.act === 'resetmarkers') { this.cfg().markers = {}; this.markFor = null; this.touched(); }
-        else if (a.act === 'addsub') { p.subs = Math.min(8, (+p.subs || 1) + 1); this.touched(); }
+        else if (a.act === 'addsub') { L.vd.subsAuto = false; p.subs = Math.min(8, ((this.result && this.result.net.subs.length) || +p.subs || 1) + 1); this.touched(); }
+        else if (a.act === 'split') { const k = this.result && this.result.kiosks.find(x => x.id === a.val); if (k) { L.vd.splits.push({ x: k.x / this.f, y: k.y / this.f }); this.touched(); } }
         return;
       }
       if (b.dataset.ck != null) {
@@ -927,8 +1048,9 @@ const PlanLayoutUI = {
       if (t.dataset.kopt) { const v = parseFloat(t.value); if (isFinite(v)) { this.kerbOpt[t.dataset.kopt] = v; if (this.kerbStage) { if (t.dataset.kopt === 'join' || t.dataset.kopt === 'oneW') this.kerbStage.o = Object.assign({}, this.kerbStage.o, this.kerbOpt); else this.kerbSolve(); } } return; }
       if (t.dataset.vd) {
         if (t.type === 'range') return;
+        if (t.type === 'checkbox') { VDc[t.dataset.vd] = t.checked; if (t.dataset.vd === 'subsAuto' && !t.checked) { const r0 = this.result; if (r0) r0.subsTrials = null; } this.vdRun(); return; }   // the design is worked out again
         VDc[t.dataset.vd] = t.value;
-        this.revd(); return;
+        if (this._designOn()) this.vdRun(); else this.revd(); return;                         // the design depends on the transformer, the breakers and the cable picked
       }
       if (t.dataset.t && t.type !== 'range') {
         const k = t.dataset.t;

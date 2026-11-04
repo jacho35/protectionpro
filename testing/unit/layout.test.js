@@ -340,4 +340,21 @@ ok('markers: a hand-placed erf makes no kiosk stand of its own, and both placeme
   assert.deepStrictEqual(a.kiosks.map(k => [k.id, k.members.length]), b.kiosks.map(k => [k.id, k.members.length]), 'deterministic');
 });
 
+ok('splitting a string: a kiosk becomes its own string head, fed straight off the mini-sub along the same route', () => {
+  const base = L.solve(F, { subs: 1 }), deep = base.net.lvLinks.filter(l => l.from !== base.net.subs[0].k).sort((a, b) => b.len - a.len)[0];
+  assert(deep, 'a kiosk that hangs off another kiosk');
+  const di = L.demandInput(base, { minisubId: 'S' }).kiosks.find(k => k.id === deep.to.id);
+  assert.strictEqual(di.fedFrom, deep.from.id, 'before: fed from the kiosk above it');
+  const r = L.solve(Object.assign({ splits: [[deep.to.x, deep.to.y]] }, F), { subs: 1 });
+  const k = r.kiosks.find(x => Math.hypot(x.x - deep.to.x, x.y - deep.to.y) < 3), link = r.net.lvLinks.find(l => l.to === k);
+  assert(link.split && link.from === r.net.subs[0].k, 'now a hub of the mini-sub');
+  const dem = L.demandInput(r, { minisubId: 'S' }).kiosks.find(x => x.id === k.id);
+  assert.strictEqual(dem.fedFrom, 'S', 'fed from the mini-sub');
+  assert(dem.feederLength > 5 && dem.feederLength >= deep.len - 1e-6, 'the whole path from the mini-sub, ' + dem.feederLength);
+  assert(Math.abs(link.len - L.plen(link.pts)) < 1e-6);
+  // the kiosks it fed still hang off it
+  assert(r.net.lvLinks.filter(l => l.from === k).length === base.net.lvLinks.filter(l => l.from === deep.to).length);
+  assert.strictEqual(r.stats.kiosks, base.stats.kiosks);
+});
+
 console.log(n + ' passed');
