@@ -24,8 +24,8 @@ const PlanLayoutUI = {
     ['Marker', [['side', 'range', 3, 5, 0.5, 'm', 'From the side boundary'], ['depth', 'range', 3, 5, 0.5, 'm', 'In from the front'],
       ['corner', 'select', [['start', 'start of the street'], ['end', 'far end of the street'], ['kiosk', 'nearest its kiosk']], 'Front corner'],
       ['front', 'select', [['longest', 'longest street edge'], ['shortest', 'shortest street edge']], 'A corner erf fronts its']]],
-    ['Kiosks', [['kmode', 'select', [['rules', 'even runs (rule of thumb)'], ['opt', 'optimiser: fewest crossings, then kiosks, then cable']], 'Placement'],
-      ['n', 'range', 4, 8, 1, '', 'Max houses per kiosk'], ['maxc', 'range', 30, 150, 5, 'm', 'Max service cable'], ['worth', 'range', 50, 600, 25, 'm', 'One kiosk is worth (cable)']]],
+    ['Kiosks', [['kmode', 'select', [['rules', 'even runs (rule of thumb)'], ['opt', 'optimiser: fewest kiosks, then crossings, then cable']], 'Placement'],
+      ['n', 'range', 4, 8, 1, '', 'Max houses per kiosk'], ['aim', 'range', 2, 8, 1, '', 'Aim for about this many houses per kiosk'], ['maxc', 'range', 30, 150, 5, 'm', 'Max service cable'], ['worth', 'range', 0, 600, 10, 'm', 'A kiosk is worth up to this much extra service cable']]],
     ['LV network', [['subs', 'range', 1, 8, 1, '', 'Mini-subs'], ['subMode', 'select', [['opt', 'where the LV network drops least'], ['mid', 'nearest the middle of the kiosks']], 'Mini-sub position (unless you place it)']]],
     ['Fibre', [['m', 'range', 4, 12, 1, '', 'Erven per manhole'], ['maxmh', 'range', 40, 200, 10, 'm', 'Max distance between manholes'],
       ['fibre', 'select', [['opp', 'civil side, opposite the kiosks'], ['same', 'same side as the kiosks']], 'Manholes default to the'],
@@ -580,8 +580,12 @@ const PlanLayoutUI = {
     if (this.mode === 'sub') {
       let best = null, bd = 12 * f / PlanEngine.view.zoom * 1;
       for (const k of r.kiosks) { const d = Math.hypot(k.x - m[0], k.y - m[1]); if (d < bd) { bd = d; best = k; } }
-      if (!best) { UI.toast('Click a kiosk to put the mini-sub beside it.', 'warn', 3000); return; }
-      L.sub = { x: best.x / f, y: best.y / f }; this.touched(); return;
+      if (best) { L.sub = { x: best.x / f, y: best.y / f }; this.touched(); return; }
+      // a free click: the mini-sub (with its kiosk) stands on the nearest street's kiosk-side verge, as close to the click as the street allows
+      let bs = null; for (const st of r.streets) { const pr = PlanLayout.project(st, m[0], m[1]); if (!bs || pr.d < bs.d) bs = { st, s: pr.s, d: pr.d }; }
+      if (!bs || bs.d > 60) { UI.toast('Click on or beside a street to put the mini-sub there.', 'warn', 3000); return; }
+      const pos = PlanLayout.ptAt(bs.st, bs.s, (r.ks[bs.st.id] || 1) * bs.st.vk);
+      L.sub = { x: pos[0] / f, y: pos[1] / f }; this.touched(); return;
     }
     if (this.mode === 'trunk') {
       const h = this._pickT(m); if (!h) return;
@@ -628,6 +632,7 @@ const PlanLayoutUI = {
       out.push({ sev: 'fail', text: `${nf.length} erven do not face a street and get no kiosk, service or fibre: ${nm(nf.map(lab))}. Check the streets reach them.`, ids: nf.map(e => e.id), rows,
         acts: rows.filter(x => x.g && !x.g.near).length > 1 ? [{ label: 'Extend the nearest streets to all of them', act: 'extendall', val: rows.filter(x => x.g && !x.g.near).map(x => x.id) }] : [] });
     }
+    if (r.net.unreached && r.net.unreached.length) out.push({ sev: 'fail', text: `The LV network does not reach ${r.net.unreached.length} ${r.net.unreached.length === 1 ? 'kiosk' : 'kiosks'} (${r.net.unreached.map(k => k.id).join(', ')}): the streets between them are not joined up. Their erven have no LV supply, and the voltage-drop and earth-fault results leave them out. Join the streets (Streets from kerb layer › Join networks) or add the missing street.`, ids: r.net.unreached.flatMap(k => k.members.map(e => e.id)) });
     const unserved = r.erven.filter(e => e.fe && !e.kiosk);
     if (unserved.length) out.push({ sev: 'fail', text: `${unserved.length} erven have no kiosk: ${nm(unserved.map(lab))}.`, ids: unserved.map(e => e.id) });
     const crowd = r.kiosks.filter(k => k.members.length > P.n);
@@ -651,7 +656,7 @@ const PlanLayoutUI = {
         if (parts.length) out.push({ sev: 'fail', text: parts.join('; ') + '. Pick a bigger cable (or Automatic), add a kiosk, or raise the limits in Demand.', ids: badIds, acts: addSub });
       }
       if (w && !parts.length && (vd.maxLv > 0.9 * V.limF || vd.maxSvc > 0.9 * V.limS)) out.push({ sev: 'warn', text: `Close to the limits: LV feeder ${vd.maxLv.toFixed(1)}% of ${V.limF}%, service ${vd.maxSvc.toFixed(1)}% of ${V.limS}% (worst erf ${nmE(w.erf.id)}).`, ids: [w.erf.id] });
-      if (vd.unreached.length) out.push({ sev: 'warn', text: `${vd.unreached.length} erven sit on a kiosk the LV network does not reach, so their voltage drop is not checked.`, ids: vd.unreached.map(e => e.id) });
+      if (vd.unreached.length) out.push({ sev: 'fail', text: `${vd.unreached.length} erven sit on a kiosk the LV network does not reach, so their voltage drop is not checked.`, ids: vd.unreached.map(e => e.id) });
       // each mini-sub against its transformer
       (vd.subs || []).forEach((t, i) => {
         const S = r.net.subs[i], ids = S ? r.kiosks.filter(k => k.subK === S.k).flatMap(k => k.members.map(e => e.id)) : [];
@@ -682,8 +687,9 @@ const PlanLayoutUI = {
     }
     const near = r.erven.filter(e => e.fe && e.kiosk && e.cable > 0.85 * P.maxc && e.cable <= P.maxc + 1e-6);
     if (near.length) out.push({ sev: 'warn', text: `${near.length} services are within 15% of the ${P.maxc} m limit: ${nm(near.map(lab))}.`, ids: near.map(e => e.id) });
-    const thin = P.n >= 4 ? r.kiosks.filter(k => k.members.length <= 2) : [];
-    if (thin.length) out.push({ sev: 'info', text: `${thin.length} kiosks serve 2 erven or fewer (${thin.map(k => k.id).join(', ')}). Fine on a short street; otherwise try a larger worth per kiosk.`, ids: thin.flatMap(k => k.members.map(e => e.id)) });
+    const onRoad = new Map(); r.erven.forEach(e => { if (e.road) onRoad.set(e.road, (onRoad.get(e.road) || 0) + 1); });
+    const thin = P.n >= 4 ? r.kiosks.filter(k => k.members.length <= 2 && (onRoad.get(k.road) || 0) > 2) : [];          // a street of 2 erven needs its own
+    if (thin.length) out.push({ sev: thin.length > 1 ? 'warn' : 'info', text: `${thin.length} of ${r.kiosks.length} kiosks ${thin.length === 1 ? 'serves' : 'serve'} 2 erven or fewer (${thin.map(k => k.id).join(', ')}). Fine on a short street; otherwise raise the worth of a kiosk (more extra cable accepted to save one) or lower the aim.`, ids: thin.flatMap(k => k.members.map(e => e.id)) });
     const mhw = (r.fibre && r.fibre.warns) || [];
     mhw.forEach(w => out.push({ sev: 'warn', text: w, ids: [] }));
     return out;
@@ -808,7 +814,7 @@ const PlanLayoutUI = {
         ${kinfo.length ? `<div style="color:#b91c1c"><b>${kinfo.length} kerb chain${kinfo.length === 1 ? ' has' : 's have'} no partner</b> (red dashed):<div style="max-height:150px;overflow:auto;margin-top:3px">${kinfo.map(k => `<div style="display:flex;justify-content:space-between;align-items:center;gap:4px;border-bottom:1px solid var(--border,#ddd);padding:2px 0"><span>${k.name ? esc(k.name) : 'near ' + Math.round(k.at[0]) + ', ' + Math.round(k.at[1]) + ' m'} · ${Math.round(k.len)} m</span><span style="display:flex;gap:3px"><button type="button" class="plan-btn" data-act="kerbshow" data-i="${k.i}" style="padding:1px 6px;font-size:12px">show</button><button type="button" class="plan-btn" data-act="kerbone" data-i="${k.i}" style="padding:1px 6px;font-size:12px${KS.one === k.i ? ';outline:2px solid #2563eb' : ''}" title="A road with a kerb on this side only">road from this kerb</button></span></div>`).join('')}</div></div>` : '<div style="color:#15803d">Every kerb chain was paired.</div>'}
         <div style="display:flex;gap:6px"><button type="button" class="plan-btn" data-act="kerbcreate" style="font-weight:600">Create ${KS.streets.length} street${KS.streets.length === 1 ? '' : 's'}</button><button type="button" class="plan-btn" data-act="kerbcancel">Cancel</button></div></div>` : '';
     const tile = (b, s) => `<div style="border:1px solid var(--border,#ddd);border-radius:5px;padding:4px 6px"><b style="font-size:15px;display:block">${b}</b><span style="font-size:11px;color:var(--text-muted)">${s}</span></div>`;
-    const tiles = st ? [[st.erven, 'erven'], [r.net.subs.length, 'mini-sub' + (r.net.subs.length === 1 ? '' : 's')], [st.kiosks, `kiosks · at most ${p.n} erven each`], [fmt(st.cable) + ' m', 'service cable'], [fmt(st.cableMax) + ' m of ' + p.maxc + ' m', 'longest service · limit'], ...(r.vd && !r.vd.err ? [[r.vd.maxLv.toFixed(1) + '% / ' + r.vd.maxSvc.toFixed(1) + '%', 'worst LV feeder / service drop · limits ' + r.vd.V.limF + '% / ' + r.vd.V.limS + '%']] : []), [st.crossings, 'road crossings'], [st.provisional, 'junction ducts, empty'], [st.d110 + ' + ' + st.d160, '110 mm + 160 mm ducts'], [st.manholes + ' + ' + st.junctionManholes, 'manholes + junctions'], [fmt(st.trunk) + ' m', 'trunk duct'], [fmt(st.leads) + ' m', 'duct to erven'], [fmt(st.lv) + ' m', 'LV feeder'], [fmt(st.mv) + ' m', 'MV cable'], [st.tOffs + ' / ' + st.spurEnds + ' / ' + st.loops, 'T-offs / spur ends / loops'], [st.baseline, 'crossings if unshared']].map(t => tile(...t)).join('') : '';
+    const tiles = st ? [[st.erven, 'erven'], [r.net.subs.length, 'mini-sub' + (r.net.subs.length === 1 ? '' : 's')], [st.kiosks, `kiosks · ${st.avgPer.toFixed(1)} erven each on average · ${st.small} serve 2 erven or fewer · at most ${p.n}`], [fmt(st.cable) + ' m', 'service cable'], [fmt(st.cableMax) + ' m of ' + p.maxc + ' m', 'longest service · limit'], ...(r.vd && !r.vd.err ? [[r.vd.maxLv.toFixed(1) + '% / ' + r.vd.maxSvc.toFixed(1) + '%', 'worst LV feeder / service drop · limits ' + r.vd.V.limF + '% / ' + r.vd.V.limS + '%']] : []), [st.crossings, 'road crossings'], [st.provisional, 'junction ducts, empty'], [st.d110 + ' + ' + st.d160, '110 mm + 160 mm ducts'], [st.manholes + ' + ' + st.junctionManholes, 'manholes + junctions'], [fmt(st.trunk) + ' m', 'trunk duct'], [fmt(st.leads) + ' m', 'duct to erven'], [fmt(st.lv) + ' m', 'LV feeder'], [fmt(st.mv) + ' m', 'MV cable'], [st.tOffs + ' / ' + st.spurEnds + ' / ' + st.loops, 'T-offs / spur ends / loops'], [st.baseline, 'crossings if unshared']].map(t => tile(...t)).join('') : '';
     const xt = r ? r.net.cross.slice().sort((a, b) => (a.prov - b.prov) || (b.d110 + b.d160) - (a.d110 + a.d160)).slice(0, 14).map((x, i) => { const parts = x.prov ? `${x.d110}×110, ${x.d160}×160, junction` : [x.d110s && `${x.d110s}×110 service`, x.d110f && `${x.d110f}×110 fibre`, x.d110l && `${x.d110l}×110 LV`, x.d160 && `${x.d160}×160 MV`, x.spare && `${x.spare}×110 spare`].filter(Boolean).join(', '); return `<tr><td>${esc(x.st.name)}</td><td>${esc(parts)}</td></tr>`; }).join('') : '';
     const trenchRows = r && r.trench ? Object.entries(r.trench.summary).map(([type, q]) => { const d = PLAN_DEFS.trenchTypes[type] || { name: type, width: 0.5 }; const vol = q.len * d.width * q.depth; return `<div style="display:flex;justify-content:space-between;gap:8px"><span>${esc(d.name)}</span><span>${fmt(q.len)} m at ${q.depth.toFixed(2)} m · ${fmt(vol)} m³</span></div>`; }).join('') : '';
     const ck = r ? this.checks() : [], sevCol = { fail: '#dc2626', warn: '#b45309', info: '#64748b' }, sevTxt = { fail: 'Fix', warn: 'Check', info: 'Note' };
