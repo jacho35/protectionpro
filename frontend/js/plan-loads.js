@@ -285,7 +285,7 @@ const PlanLoads = {
             <label>Voltage (V)${sel('volt', this.VOLTS, t.volt)}</label>
             <label>Phases${sel('phases', [1, 3], t.phases)}</label>
             <label>Power factor<input type="number" min="0.3" max="1" step="0.01" value="${escHtml(String(t.pf))}" data-role="pf"></label>
-            <label>Diversity factor<input type="number" min="0.05" max="1" step="0.05" value="${this.diversity(t)}" data-role="diversity" title="Share of the load counted in Demand (1 = all of it)"></label>
+            <label>Diversity factor<input type="number" min="0.05" max="1" step="0.05" value="${Number(this.diversity(t))}" data-role="diversity" title="Share of the load counted in Demand (1 = all of it)"></label>
             <div class="chk full"><label><input type="checkbox" data-role="motor"${t.motor ? ' checked' : ''}> Motor — check its starting in Demand</label></div>
             ${t.motor ? `<label>Efficiency<input type="number" min="0.5" max="0.99" step="0.01" value="${escHtml(String(t.eff || 0.93))}" data-role="eff"></label>
             <label>Locked-rotor current (× FLC)<input type="number" min="2" max="12" step="0.1" value="${escHtml(String(t.lrc || 6))}" data-role="lrc"></label>

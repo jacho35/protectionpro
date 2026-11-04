@@ -156,7 +156,7 @@ const PlanLayers = {
     const chips = (L, listKey, choices) => choices.length
       ? `<div class="ply-chips">${choices.map(c => {
           const on = (L[listKey] || []).includes(c.key);
-          return `<button type="button" class="ply-chip${on ? ' on' : ''}" style="--lc:${escHtml(L.color)}" data-role="chip" data-list="${listKey}" data-key="${escHtml(c.key)}" aria-pressed="${on}">${escHtml(c.name)}</button>`;
+          return `<button type="button" class="ply-chip${on ? ' on' : ''}" style="--lc:${escHtml(L.color)}" data-role="chip" data-list="${escHtml(listKey)}" data-key="${escHtml(c.key)}" aria-pressed="${on}">${escHtml(c.name)}</button>`;
         }).join('')}</div>`
       : '<div class="ply-none">None for this plan type.</div>';
 

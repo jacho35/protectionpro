@@ -427,17 +427,17 @@ const PlanLayoutUI = {
     const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     const fmt = v => Math.round(v).toLocaleString('en');
     const ctrl = ([k, kind, a, b, c, unit, label]) => {
-      if (kind === 'range') return `<label style="display:block">${esc(label)} <b data-v="${k}">${p[k]}${unit ? ' ' + unit : ''}</b><input type="range" data-p="${k}" data-unit="${unit}" min="${a}" max="${b}" step="${c}" value="${p[k]}" style="width:100%"></label>`;
+      if (kind === 'range') return `<label style="display:block">${esc(label)} <b data-v="${esc(k)}">${esc(p[k])}${unit ? ' ' + esc(unit) : ''}</b><input type="range" data-p="${esc(k)}" data-unit="${esc(unit)}" min="${a}" max="${b}" step="${c}" value="${esc(p[k])}" style="width:100%"></label>`;
       if (kind === 'check') return `<label style="display:flex;gap:6px;align-items:flex-start"><input type="checkbox" data-p="${k}"${p[k] ? ' checked' : ''}> <span>${esc(a)}</span></label>`;
-      return `<label style="display:block">${esc(b)}<select data-p="${k}" style="width:100%">${a.map(o => `<option value="${o[0]}"${p[k] === o[0] ? ' selected' : ''}>${esc(o[1])}</option>`).join('')}</select></label>`;
+      return `<label style="display:block">${esc(b)}<select data-p="${k}" style="width:100%">${a.map(o => `<option value="${esc(o[0])}"${p[k] === o[0] ? ' selected' : ''}>${esc(o[1])}</option>`).join('')}</select></label>`;
     };
     const groups = this.CTRL.map(([name, rows], gi) => `<details${gi === 0 || gi === 3 ? ' open' : ''}><summary style="cursor:pointer;font-weight:600;margin:2px 0">${name}</summary><div style="display:flex;flex-direction:column;gap:8px;padding:6px 0 4px">${rows.map(ctrl).join('')}</div></details>`).join('');
     const TT = L.trench, tget = k => k.startsWith('depth.') ? TT.depth[k.slice(6)] : TT[k];
     const tctrl = ([k, kind, a, b, c, unit, label]) => {
       if (k === 'depth.comb' && TT.depth.comb == null) return '';
-      if (kind === 'range') return `<label style="display:block">${esc(label)} <b data-tv="${k}">${(+tget(k)).toFixed(2)} ${unit}</b><input type="range" data-t="${k}" min="${a}" max="${b}" step="${c}" value="${tget(k)}" style="width:100%"></label>`;
+      if (kind === 'range') return `<label style="display:block">${esc(label)} <b data-tv="${k}">${(+tget(k)).toFixed(2)} ${esc(unit)}</b><input type="range" data-t="${k}" min="${a}" max="${b}" step="${c}" value="${Number(tget(k))}" style="width:100%"></label>`;
       if (kind === 'check') { const on = k === 'combOn' ? TT.depth.comb != null : TT[k]; return `<label style="display:flex;gap:6px;align-items:flex-start"><input type="checkbox" data-t="${k}"${on ? ' checked' : ''}> <span>${esc(a)}</span></label>`; }
-      return `<label style="display:block">${esc(b)}<select data-t="${k}" style="width:100%">${a.map(o => `<option value="${o[0]}"${TT[k] === o[0] ? ' selected' : ''}>${esc(o[1])}</option>`).join('')}</select></label>`;
+      return `<label style="display:block">${esc(b)}<select data-t="${k}" style="width:100%">${a.map(o => `<option value="${esc(o[0])}"${TT[k] === o[0] ? ' selected' : ''}>${esc(o[1])}</option>`).join('')}</select></label>`;
     };
     const trenchGroup = `<details open><summary style="cursor:pointer;font-weight:600;margin:2px 0">Trenches</summary><div style="display:flex;flex-direction:column;gap:8px;padding:6px 0 4px">${this.TREN.map(tctrl).join('')}</div></details>`;
     const VDc = L.vd, cb = this.vdCables(), opts = (list, cur) => list.map(c => `<option value="${esc(c.id)}"${cur && cur.id === c.id ? ' selected' : ''}>${esc(c.name)}</option>`).join('');
@@ -458,7 +458,7 @@ const PlanLayoutUI = {
     const ck = r ? this.checks() : [], sevCol = { fail: '#dc2626', warn: '#b45309', info: '#64748b' }, sevTxt = { fail: 'Fix', warn: 'Check', info: 'Note' };
     this._ck = ck;
     const checkBlock = r ? `<div><b>Checks</b> <span style="color:var(--text-muted)">${ck.length ? ck.filter(c => c.sev === 'fail').length + ' to fix · ' + ck.filter(c => c.sev === 'warn').length + ' to check' : ''}</span>
-        ${ck.length ? ck.map((c, i) => `<button type="button" class="plan-btn" data-ck="${i}" style="display:block;width:100%;text-align:left;margin-top:3px;white-space:normal;border-left:4px solid ${sevCol[c.sev]}"><b style="color:${sevCol[c.sev]}">${sevTxt[c.sev]}</b> ${esc(c.text)}${c.ids.length ? ' <span style="color:var(--text-muted)">· show on plan</span>' : ''}</button>`).join('')
+        ${ck.length ? ck.map((c, i) => `<button type="button" class="plan-btn" data-ck="${i}" style="display:block;width:100%;text-align:left;margin-top:3px;white-space:normal;border-left:4px solid ${esc(sevCol[c.sev])}"><b style="color:${esc(sevCol[c.sev])}">${sevTxt[c.sev]}</b> ${esc(c.text)}${c.ids.length ? ' <span style="color:var(--text-muted)">· show on plan</span>' : ''}</button>`).join('')
           : '<div style="color:#15803d;margin-top:3px">✓ Every erf is served, within the service limit and the kiosk size.</div>'}</div>` : '';
     const chk = (k, t) => `<label style="display:flex;gap:6px"><input type="checkbox" data-opt="${k}"${opt[k] ? ' checked' : ''}> ${t}</label>`;
     const modeBtn = (v, t) => `<button type="button" class="plan-btn" data-mode="${v}" aria-pressed="${this.mode === v}" style="padding:3px 8px;font-size:12px${this.mode === v ? ';font-weight:600;outline:2px solid var(--accent,#2563eb)' : ''}">${t}</button>`;
