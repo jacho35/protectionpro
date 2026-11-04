@@ -495,6 +495,11 @@ const API = {
     return this.request('/analysis/retic-earth-check', 'POST', body);
   },
 
+  // The Auto layout's LV design: head breakers, the smallest uniform LV cable that passes, the taper, or why it cannot pass
+  async runReticLvDesign(body) {
+    return this.request('/analysis/retic-lv-design', 'POST', body);
+  },
+
   // Street lighting circuits (Reticulation › Street lighting)
   async runStreetLighting(body) {
     return this.request('/analysis/street-lighting', 'POST', body);

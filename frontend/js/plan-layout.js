@@ -841,6 +841,17 @@ const PlanLayout = (() => {
         }
         net.unreached = [];                                                          // kiosks the LV network does not reach (streets not joined up): their erven have no LV supply
         for (const S of subs) for (const k of S.g) if (k !== S.k && !(T(S.k).dist.get(k.node) < Infinity)) net.unreached.push(k);
+        // a split string: a kiosk made its own string head (a feeder of its own straight off the mini-sub, along the same route)
+        if (input.splits && input.splits.length) {
+          const orig = new Map(net.lvLinks.map(l => [l.to, l]));
+          for (const l of net.lvLinks.slice()) {
+            const S = subs.find(x => x.g.includes(l.to));
+            if (!S || l.from === S.k || !input.splits.some(q => Math.hypot(q[0] - l.to.x, q[1] - l.to.y) <= 3)) continue;
+            const chain = []; for (let cur = orig.get(l.to); cur; cur = cur.from === S.k ? null : orig.get(cur.from)) chain.unshift(cur);
+            const pts = []; chain.forEach(c => c.pts.forEach(q => { if (!pts.length || Math.hypot(pts[pts.length - 1][0] - q[0], pts[pts.length - 1][1] - q[1]) > .01) pts.push(q); }));
+            l.from = S.k; l.pts = pts; l.len = plen(pts); l.split = true;
+          }
+        }
         net.lv = [...lvSet]; net.lvLen = net.lv.reduce((a, ed) => a + ed.len, 0);
         net.lv.forEach(ed => ed.xs.forEach(x => events.push({ st: x.st, s: x.s, t: 'lv' })));
         // MV: from the supply point to the first mini-sub, then on from the nearest earlier one, in the kiosk-side verge, in its own duct
@@ -1008,7 +1019,7 @@ const PlanLayout = (() => {
       // the kiosks next to the mini-sub's own are fed by their own feeder from the mini-sub (its own breaker, a string each), not through that kiosk
       const hub = !!l && l.from === k.subK;
       return { id: k.id, name: k.id, fedFrom: l && !hub ? l.from.id : sid(k), loadClass: '', admdOverride: 0, streetLightKVA: 0,
-        feederCable: o.lvCable || '', feederLength: l ? l.len + (hub ? 5 : 0) : (isSub.has(k) ? 5 : 0),   // a mini-sub stands 5 m along the street from its kiosk
+        feederCable: (o.cableOf && o.cableOf[k.id]) || o.lvCable || '', outgoingProtection: o.outgoing || '', feederLength: l ? l.len + (hub ? 5 : 0) : (isSub.has(k) ? 5 : 0),   // a mini-sub stands 5 m along the street from its kiosk
         erfs: k.members.map((e, i) => ({ id: e.id, erfNumber: String((o.names && o.names[e.id]) || e.id), length: Math.max(e.cable || 0, 0.1), phase: phases[i % phases.length], cableType: o.svcCable || '', ampsOverride: 0 })) };
     });
     return { minisubs: subs.map(S => ({ id: sid(S.k), name: 'Auto layout mini-sub' + (subs.length > 1 ? ' ' + S.id : ''), ...(o.txTypeId ? { txTypeId: o.txTypeId } : {}) })), kiosks };

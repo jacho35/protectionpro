@@ -1,0 +1,374 @@
+{
+ "al_xlpe_lv": [
+  {
+   "name": "16mm\u00b2 Al XLPE LV",
+   "conductor": "Al",
+   "insulation": "XLPE",
+   "size_mm2": 16,
+   "r_per_km": 2.449,
+   "x_per_km": 0.08,
+   "rated_amps": 76
+  },
+  {
+   "name": "25mm\u00b2 Al XLPE LV",
+   "conductor": "Al",
+   "insulation": "XLPE",
+   "size_mm2": 25,
+   "r_per_km": 1.539,
+   "x_per_km": 0.079,
+   "rated_amps": 90
+  },
+  {
+   "name": "35mm\u00b2 Al XLPE LV",
+   "conductor": "Al",
+   "insulation": "XLPE",
+   "size_mm2": 35,
+   "r_per_km": 1.113,
+   "x_per_km": 0.076,
+   "rated_amps": 112
+  },
+  {
+   "name": "50mm\u00b2 Al XLPE LV",
+   "conductor": "Al",
+   "insulation": "XLPE",
+   "size_mm2": 50,
+   "r_per_km": 0.8222,
+   "x_per_km": 0.076,
+   "rated_amps": 136
+  },
+  {
+   "name": "70mm\u00b2 Al XLPE LV",
+   "conductor": "Al",
+   "insulation": "XLPE",
+   "size_mm2": 70,
+   "r_per_km": 0.5685,
+   "x_per_km": 0.074,
+   "rated_amps": 174
+  },
+  {
+   "name": "95mm\u00b2 Al XLPE LV",
+   "conductor": "Al",
+   "insulation": "XLPE",
+   "size_mm2": 95,
+   "r_per_km": 0.411,
+   "x_per_km": 0.073,
+   "rated_amps": 211
+  },
+  {
+   "name": "120mm\u00b2 Al XLPE LV",
+   "conductor": "Al",
+   "insulation": "XLPE",
+   "size_mm2": 120,
+   "r_per_km": 0.3253,
+   "x_per_km": 0.072,
+   "rated_amps": 245
+  },
+  {
+   "name": "150mm\u00b2 Al XLPE LV",
+   "conductor": "Al",
+   "insulation": "XLPE",
+   "size_mm2": 150,
+   "r_per_km": 0.2652,
+   "x_per_km": 0.072,
+   "rated_amps": 283
+  },
+  {
+   "name": "185mm\u00b2 Al XLPE LV",
+   "conductor": "Al",
+   "insulation": "XLPE",
+   "size_mm2": 185,
+   "r_per_km": 0.2116,
+   "x_per_km": 0.072,
+   "rated_amps": 323
+  },
+  {
+   "name": "240mm\u00b2 Al XLPE LV",
+   "conductor": "Al",
+   "insulation": "XLPE",
+   "size_mm2": 240,
+   "r_per_km": 0.1621,
+   "x_per_km": 0.072,
+   "rated_amps": 382
+  },
+  {
+   "name": "300mm\u00b2 Al XLPE LV",
+   "conductor": "Al",
+   "insulation": "XLPE",
+   "size_mm2": 300,
+   "r_per_km": 0.1305,
+   "x_per_km": 0.071,
+   "rated_amps": 440
+  }
+ ],
+ "cu_xlpe_lv": [
+  {
+   "name": "16mm\u00b2 Cu XLPE LV",
+   "conductor": "Cu",
+   "insulation": "XLPE",
+   "size_mm2": 16,
+   "r_per_km": 1.467,
+   "x_per_km": 0.08,
+   "rated_amps": 96
+  },
+  {
+   "name": "25mm\u00b2 Cu XLPE LV",
+   "conductor": "Cu",
+   "insulation": "XLPE",
+   "size_mm2": 25,
+   "r_per_km": 0.9273,
+   "x_per_km": 0.079,
+   "rated_amps": 119
+  },
+  {
+   "name": "35mm\u00b2 Cu XLPE LV",
+   "conductor": "Cu",
+   "insulation": "XLPE",
+   "size_mm2": 35,
+   "r_per_km": 0.6686,
+   "x_per_km": 0.076,
+   "rated_amps": 147
+  },
+  {
+   "name": "50mm\u00b2 Cu XLPE LV",
+   "conductor": "Cu",
+   "insulation": "XLPE",
+   "size_mm2": 50,
+   "r_per_km": 0.494,
+   "x_per_km": 0.076,
+   "rated_amps": 179
+  },
+  {
+   "name": "70mm\u00b2 Cu XLPE LV",
+   "conductor": "Cu",
+   "insulation": "XLPE",
+   "size_mm2": 70,
+   "r_per_km": 0.3426,
+   "x_per_km": 0.074,
+   "rated_amps": 229
+  },
+  {
+   "name": "95mm\u00b2 Cu XLPE LV",
+   "conductor": "Cu",
+   "insulation": "XLPE",
+   "size_mm2": 95,
+   "r_per_km": 0.2473,
+   "x_per_km": 0.073,
+   "rated_amps": 278
+  },
+  {
+   "name": "120mm\u00b2 Cu XLPE LV",
+   "conductor": "Cu",
+   "insulation": "XLPE",
+   "size_mm2": 120,
+   "r_per_km": 0.1966,
+   "x_per_km": 0.072,
+   "rated_amps": 322
+  },
+  {
+   "name": "150mm\u00b2 Cu XLPE LV",
+   "conductor": "Cu",
+   "insulation": "XLPE",
+   "size_mm2": 150,
+   "r_per_km": 0.1599,
+   "x_per_km": 0.072,
+   "rated_amps": 371
+  },
+  {
+   "name": "185mm\u00b2 Cu XLPE LV",
+   "conductor": "Cu",
+   "insulation": "XLPE",
+   "size_mm2": 185,
+   "r_per_km": 0.1286,
+   "x_per_km": 0.072,
+   "rated_amps": 424
+  },
+  {
+   "name": "240mm\u00b2 Cu XLPE LV",
+   "conductor": "Cu",
+   "insulation": "XLPE",
+   "size_mm2": 240,
+   "r_per_km": 0.0991,
+   "x_per_km": 0.072,
+   "rated_amps": 500
+  },
+  {
+   "name": "300mm\u00b2 Cu XLPE LV",
+   "conductor": "Cu",
+   "insulation": "XLPE",
+   "size_mm2": 300,
+   "r_per_km": 0.08032,
+   "x_per_km": 0.071,
+   "rated_amps": 576
+  }
+ ],
+ "lv_breakers": [
+  {
+   "id": "mccb_16a",
+   "name": "MCCB 16A",
+   "cb_type": "mccb",
+   "trip_rating_a": 16,
+   "frame_a": 100,
+   "rated_voltage_kv": 0.4,
+   "breaking_ka": 25,
+   "thermal_pickup": 1,
+   "magnetic_pickup": 10,
+   "long_time_delay": 10
+  },
+  {
+   "id": "mccb_25a",
+   "name": "MCCB 25A",
+   "cb_type": "mccb",
+   "trip_rating_a": 25,
+   "frame_a": 100,
+   "rated_voltage_kv": 0.4,
+   "breaking_ka": 25,
+   "thermal_pickup": 1,
+   "magnetic_pickup": 10,
+   "long_time_delay": 10
+  },
+  {
+   "id": "mccb_32a",
+   "name": "MCCB 32A",
+   "cb_type": "mccb",
+   "trip_rating_a": 32,
+   "frame_a": 100,
+   "rated_voltage_kv": 0.4,
+   "breaking_ka": 25,
+   "thermal_pickup": 1,
+   "magnetic_pickup": 10,
+   "long_time_delay": 10
+  },
+  {
+   "id": "mccb_40a",
+   "name": "MCCB 40A",
+   "cb_type": "mccb",
+   "trip_rating_a": 40,
+   "frame_a": 100,
+   "rated_voltage_kv": 0.4,
+   "breaking_ka": 25,
+   "thermal_pickup": 1,
+   "magnetic_pickup": 10,
+   "long_time_delay": 10
+  },
+  {
+   "id": "mccb_50a",
+   "name": "MCCB 50A",
+   "cb_type": "mccb",
+   "trip_rating_a": 50,
+   "frame_a": 100,
+   "rated_voltage_kv": 0.4,
+   "breaking_ka": 25,
+   "thermal_pickup": 1,
+   "magnetic_pickup": 10,
+   "long_time_delay": 10
+  },
+  {
+   "id": "mccb_63a",
+   "name": "MCCB 63A",
+   "cb_type": "mccb",
+   "trip_rating_a": 63,
+   "frame_a": 100,
+   "rated_voltage_kv": 0.4,
+   "breaking_ka": 25,
+   "thermal_pickup": 1,
+   "magnetic_pickup": 10,
+   "long_time_delay": 10
+  },
+  {
+   "id": "mccb_80a",
+   "name": "MCCB 80A",
+   "cb_type": "mccb",
+   "trip_rating_a": 80,
+   "frame_a": 100,
+   "rated_voltage_kv": 0.4,
+   "breaking_ka": 25,
+   "thermal_pickup": 1,
+   "magnetic_pickup": 10,
+   "long_time_delay": 10
+  },
+  {
+   "id": "mccb_100a",
+   "name": "MCCB 100A",
+   "cb_type": "mccb",
+   "trip_rating_a": 100,
+   "frame_a": 100,
+   "rated_voltage_kv": 0.4,
+   "breaking_ka": 25,
+   "thermal_pickup": 1,
+   "magnetic_pickup": 10,
+   "long_time_delay": 10
+  },
+  {
+   "id": "mccb_125a",
+   "name": "MCCB 125A",
+   "cb_type": "mccb",
+   "trip_rating_a": 125,
+   "frame_a": 160,
+   "rated_voltage_kv": 0.4,
+   "breaking_ka": 36,
+   "thermal_pickup": 1,
+   "magnetic_pickup": 10,
+   "long_time_delay": 10
+  },
+  {
+   "id": "mccb_160a",
+   "name": "MCCB 160A",
+   "cb_type": "mccb",
+   "trip_rating_a": 160,
+   "frame_a": 160,
+   "rated_voltage_kv": 0.4,
+   "breaking_ka": 36,
+   "thermal_pickup": 1,
+   "magnetic_pickup": 10,
+   "long_time_delay": 10
+  },
+  {
+   "id": "mccb_200a",
+   "name": "MCCB 200A",
+   "cb_type": "mccb",
+   "trip_rating_a": 200,
+   "frame_a": 250,
+   "rated_voltage_kv": 0.4,
+   "breaking_ka": 36,
+   "thermal_pickup": 1,
+   "magnetic_pickup": 10,
+   "long_time_delay": 10
+  },
+  {
+   "id": "mccb_250a",
+   "name": "MCCB 250A",
+   "cb_type": "mccb",
+   "trip_rating_a": 250,
+   "frame_a": 250,
+   "rated_voltage_kv": 0.4,
+   "breaking_ka": 36,
+   "thermal_pickup": 1,
+   "magnetic_pickup": 10,
+   "long_time_delay": 10
+  },
+  {
+   "id": "mccb_315a",
+   "name": "MCCB 315A",
+   "cb_type": "mccb",
+   "trip_rating_a": 315,
+   "frame_a": 400,
+   "rated_voltage_kv": 0.4,
+   "breaking_ka": 50,
+   "thermal_pickup": 1,
+   "magnetic_pickup": 10,
+   "long_time_delay": 10
+  },
+  {
+   "id": "mccb_400a",
+   "name": "MCCB 400A",
+   "cb_type": "mccb",
+   "trip_rating_a": 400,
+   "frame_a": 400,
+   "rated_voltage_kv": 0.4,
+   "breaking_ka": 50,
+   "thermal_pickup": 1,
+   "magnetic_pickup": 10,
+   "long_time_delay": 10
+  }
+ ]
+}
