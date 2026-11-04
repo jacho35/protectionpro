@@ -58,6 +58,7 @@ const PlanLayoutUI = {
     const vd = L.vd = (L.vd && typeof L.vd === 'object') ? L.vd : {};
     vd.tx = typeof vd.tx === 'string' ? vd.tx.slice(0, 80) : '';
     vd.prot = typeof vd.prot === 'string' ? vd.prot.slice(0, 80) : '';
+    vd.protK = this._num(vd.protK, 1, 2, 1.2);
     vd.lv = typeof vd.lv === 'string' ? vd.lv.slice(0, 80) : ''; vd.svc = typeof vd.svc === 'string' ? vd.svc.slice(0, 80) : '';
     L.sides = (L.sides && typeof L.sides === 'object') ? L.sides : {};
     L.fronts = (L.fronts && typeof L.fronts === 'object') ? L.fronts : {};
@@ -196,14 +197,14 @@ const PlanLayoutUI = {
   },
   // ── earth-fault loop ──
   // The proposal as Demand's own earth check takes it (Retic._earthPayload, run by /analysis/retic-earth-check): the kiosks with the
-  // chosen cables, a breaker on the head of each string (the one picked, else the smallest MCCB / ACB that carries the string), the
+  // chosen cables, a breaker on the head of each string (the one picked, else the next standard MCCB / ACB size up from protK × the string current), the
   // transformer chosen (else the one that covers the mini-sub's demand).
   _earthSrc(lvCab, svcCab) {
     const d = this.result.dem, vd = this.cfg().vd, byId = {}; d.res.kiosks.forEach(kr => { byId[kr.kioskId] = kr; });
     const heads = new Set(d.input.minisubs.map(m => m.id)), prot = {};
     const kiosks = d.input.kiosks.map(k => {
       const o = Object.assign({}, k, { feederCable: lvCab.name, erfs: k.erfs.map(e => Object.assign({}, e, { cableType: svcCab.name })) });
-      if (heads.has(k.fedFrom)) { const fit = vd.prot ? null : Retic._fitBreaker((byId[k.id] || {}).feederA || 0), dev = vd.prot || (fit ? 'cb:' + fit.id : ''); if (dev) { o.protection = dev; prot[k.id] = dev; } }
+      if (heads.has(k.fedFrom)) { const fit = vd.prot ? null : Retic._fitBreaker(vd.protK * ((byId[k.id] || {}).feederA || 0)), dev = vd.prot || (fit ? 'cb:' + fit.id : ''); if (dev) { o.protection = dev; prot[k.id] = dev; } }
       return o;
     });
     return { src: { minisubs: d.input.minisubs.map(m => Object.assign({}, m, vd.tx ? { txTypeId: vd.tx } : {})), kiosks, res: { minisubs: d.res.minisubs } }, prot };
@@ -604,7 +605,8 @@ const PlanLayoutUI = {
     const vdGroup = `<details open><summary style="cursor:pointer;font-weight:600;margin:2px 0">Voltage drop and transformer</summary><div style="display:flex;flex-direction:column;gap:8px;padding:6px 0 4px">
         <div>Limits are Demand's: LV feeder <b>${Number(lim.feeder)} %</b>, service <b>${Number(lim.svc)} %</b>. Change them in Demand (Max Feeder VD, Max Service VD).</div>
         <label style="display:block">Mini-sub transformer<select data-vd="tx" style="width:100%"><option value=""${VDc.tx ? '' : ' selected'}>Automatic: the smallest that carries each mini-sub</option>${txOpts.map(o => `<option value="${esc(o.id)}"${VDc.tx === o.id ? ' selected' : ''}>${esc(o.name)}</option>`).join('')}</select></label>
-        <label style="display:block">String breaker (earth-fault loop)<select data-vd="prot" style="width:100%">${Retic._protectionOptions(VDc.prot, 'Automatic: the smallest that carries each string')}</select></label>
+        <label style="display:block">String breaker (earth-fault loop)<select data-vd="prot" style="width:100%">${Retic._protectionOptions(VDc.prot, 'Automatic: the next size up from the string current × factor')}</select></label>
+        ${VDc.prot ? '' : `<label style="display:block">Breaker rating at least <b data-vv="protK">${Number(VDc.protK).toFixed(2)}</b> × the string current<input type="range" data-vd="protK" min="1" max="2" step="0.05" value="${Number(VDc.protK)}" style="width:100%"></label>`}
         <label style="display:block">LV feeder cable<select data-vd="lv" style="width:100%"><option value=""${cb.auto ? ' selected' : ''}>Automatic: the smallest that meets the limits and the rating${cb.auto && cb.lv ? ' (now ' + esc(cb.lv.name) + ')' : ''}</option>${opts(cb.feeders, cb.auto ? null : cb.lv)}</select></label>
         <label style="display:block">Service cable<select data-vd="svc" style="width:100%">${opts(cb.services, cb.svc)}</select></label>
         <div style="color:var(--text-muted)">Worked out by Demand itself: its load class and ADMD settings give the diversified current on each LV leg and on each service, and its volt-drop calculation does the rest.</div></div></details>`;
@@ -674,6 +676,8 @@ const PlanLayoutUI = {
     };
     const setT = (k, v) => { if (k.startsWith('depth.')) TT.depth[k.slice(6)] = v; else TT[k] = v; };
     el.oninput = (e) => {
+      const vk = e.target.dataset.vd;
+      if (vk === 'protK') { VDc.protK = this._num(e.target.value, 1, 2, 1.2); const lab = el.querySelector('[data-vv="protK"]'); if (lab) lab.textContent = VDc.protK.toFixed(2); clearTimeout(this._tv); this._tv = setTimeout(() => this.revd(), 150); return; }
       const tk = e.target.dataset.t;
       if (tk && e.target.type === 'range') { const v = parseFloat(e.target.value); setT(tk, v); const lab = el.querySelector(`[data-tv="${tk}"]`); if (lab) lab.textContent = v.toFixed(2) + ' m'; clearTimeout(this._tt); this._tt = setTimeout(() => this.retrench(), 120); return; }
       const t = e.target, k = t.dataset.p; if (!k || t.type !== 'range') return;
