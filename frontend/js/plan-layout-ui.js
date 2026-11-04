@@ -147,7 +147,7 @@ const PlanLayoutUI = {
     this.err = '';
     const t0 = performance.now();
     this.result = PlanLayout.solve(g.input, g.params);
-    this.f = g.f; this.ms = performance.now() - t0; this.stale = false;
+    this.f = g.f; this.ms = performance.now() - t0; this.stale = false; this.flag = null;
     this.result.trench = PlanLayout.trenches(this.result, this.cfg().trench);
     PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true });
   },
@@ -260,6 +260,32 @@ const PlanLayoutUI = {
   },
 
   // ───────── the preview on the plan ─────────
+  // ── the check list after a run ──
+  // → [{ sev: 'fail' | 'warn' | 'info', text, ids: [erf ids to mark] }], worst first; [] = nothing to flag.
+  checks() {
+    const r = this.result; if (!r) return [];
+    const P = r.P, out = [], nm = (list) => list.slice(0, 6).map(e => e.name || e.id).join(', ') + (list.length > 6 ? '…' : '');
+    const names = {}; AppState.planMarkup.elements.forEach(e => { if (e.type === 'erf') names[e.id] = e.name; });
+    const lab = (e) => Object.assign({}, e, { name: names[e.id] || e.id });
+    const over = r.erven.filter(e => e.fe && e.cable > P.maxc + 1e-6);
+    if (over.length) out.push({ sev: 'fail', text: `${over.length} erven are further than ${P.maxc} m of service cable from their kiosk (longest ${Math.round(Math.max(...over.map(e => e.cable)))} m): ${nm(over.map(lab))}.`, ids: over.map(e => e.id) });
+    const nf = r.erven.filter(e => !e.fe);
+    if (nf.length) out.push({ sev: 'fail', text: `${nf.length} erven do not face a street and get no kiosk, service or fibre: ${nm(nf.map(lab))}. Check the streets reach them.`, ids: nf.map(e => e.id) });
+    const unserved = r.erven.filter(e => e.fe && !e.kiosk);
+    if (unserved.length) out.push({ sev: 'fail', text: `${unserved.length} erven have no kiosk: ${nm(unserved.map(lab))}.`, ids: unserved.map(e => e.id) });
+    const crowd = r.kiosks.filter(k => k.members.length > P.n);
+    if (crowd.length) out.push({ sev: 'fail', text: `${crowd.length} kiosks serve more than ${P.n} erven (${crowd.map(k => k.id + ': ' + k.members.length).join(', ')}).`, ids: crowd.flatMap(k => k.members.map(e => e.id)) });
+    const noBoundary = AppState.planMarkup.elements.filter(e => e.type === 'erf' && !(Array.isArray(e.boundary) && e.boundary.length >= 3));
+    if (noBoundary.length) out.push({ sev: 'warn', text: `${noBoundary.length} erven on the plan have no boundary, so the layout ignores them (${nm(noBoundary)}). Detect them with Detect erven.`, ids: noBoundary.map(e => e.id) });
+    const near = r.erven.filter(e => e.fe && e.kiosk && e.cable > 0.85 * P.maxc && e.cable <= P.maxc + 1e-6);
+    if (near.length) out.push({ sev: 'warn', text: `${near.length} services are within 15% of the ${P.maxc} m limit: ${nm(near.map(lab))}.`, ids: near.map(e => e.id) });
+    const thin = P.n >= 4 ? r.kiosks.filter(k => k.members.length <= 2) : [];
+    if (thin.length) out.push({ sev: 'info', text: `${thin.length} kiosks serve 2 erven or fewer (${thin.map(k => k.id).join(', ')}). Fine on a short street; otherwise try a larger worth per kiosk.`, ids: thin.flatMap(k => k.members.map(e => e.id)) });
+    const mhw = (r.fibre && r.fibre.warns) || [];
+    mhw.forEach(w => out.push({ sev: 'warn', text: w, ids: [] }));
+    return out;
+  },
+
   draw(ctx, zoom) {
     const r = this.result, f = this.f; if (!r) return;
     const u = 1 / zoom, W = p => [p[0] / f, p[1] / f], line = pts => { ctx.beginPath(); pts.forEach((p, i) => { const q = W(p); i ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1]); }); ctx.stroke(); };
@@ -272,6 +298,11 @@ const PlanLayoutUI = {
     }
     ctx.strokeStyle = 'rgba(71,85,105,.6)'; ctx.lineWidth = 1 * u;                                   // the erf boundaries the layout read
     r.erven.forEach(e => { ctx.beginPath(); e.poly.forEach((p, i) => { const q = W(p); i ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1]); }); ctx.closePath(); ctx.stroke(); });
+    if (this.flag && this.flag.size) {                                                                 // erven picked from the check list
+      ctx.save(); ctx.strokeStyle = '#dc2626'; ctx.fillStyle = 'rgba(220,38,38,.22)'; ctx.lineWidth = 3 * u;
+      r.erven.forEach(e => { if (!this.flag.has(e.id)) return; ctx.beginPath(); e.poly.forEach((p, i) => { const q = W(p); i ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1]); }); ctx.closePath(); ctx.fill(); ctx.stroke(); });
+      ctx.restore();
+    }
     if (S.fibre) {
       ctx.strokeStyle = '#a21caf'; ctx.lineWidth = 1.1 * u; ctx.setLineDash([2 * u, 3 * u]);
       r.erven.forEach(e => { if (e.duct) line(e.duct); });
@@ -347,6 +378,11 @@ const PlanLayoutUI = {
     const tiles = st ? [[st.erven, 'erven'], [st.kiosks, `kiosks · at most ${p.n} erven each`], [fmt(st.cable) + ' m', 'service cable'], [fmt(st.cableMax) + ' m of ' + p.maxc + ' m', 'longest service · limit'], [st.crossings, 'road crossings'], [st.provisional, 'junction ducts, empty'], [st.d110 + ' + ' + st.d160, '110 mm + 160 mm ducts'], [st.manholes + ' + ' + st.junctionManholes, 'manholes + junctions'], [fmt(st.trunk) + ' m', 'trunk duct'], [fmt(st.leads) + ' m', 'duct to erven'], [fmt(st.lv) + ' m', 'LV feeder'], [fmt(st.mv) + ' m', 'MV cable'], [st.tOffs + ' / ' + st.spurEnds + ' / ' + st.loops, 'T-offs / spur ends / loops'], [st.baseline, 'crossings if unshared']].map(t => tile(...t)).join('') : '';
     const xt = r ? r.net.cross.slice().sort((a, b) => (a.prov - b.prov) || (b.d110 + b.d160) - (a.d110 + a.d160)).slice(0, 14).map((x, i) => { const parts = x.prov ? `${x.d110}×110, ${x.d160}×160, junction` : [x.d110s && `${x.d110s}×110 service`, x.d110f && `${x.d110f}×110 fibre`, x.d110l && `${x.d110l}×110 LV`, x.d160 && `${x.d160}×160 MV`, x.spare && `${x.spare}×110 spare`].filter(Boolean).join(', '); return `<tr><td>${esc(x.st.name)}</td><td>${parts}</td></tr>`; }).join('') : '';
     const trenchRows = r && r.trench ? Object.entries(r.trench.summary).map(([type, q]) => { const d = PLAN_DEFS.trenchTypes[type] || { name: type, width: 0.5 }; const vol = q.len * d.width * q.depth; return `<div style="display:flex;justify-content:space-between;gap:8px"><span>${esc(d.name)}</span><span>${fmt(q.len)} m at ${q.depth.toFixed(2)} m · ${fmt(vol)} m³</span></div>`; }).join('') : '';
+    const ck = r ? this.checks() : [], sevCol = { fail: '#dc2626', warn: '#b45309', info: '#64748b' }, sevTxt = { fail: 'Fix', warn: 'Check', info: 'Note' };
+    this._ck = ck;
+    const checkBlock = r ? `<div><b>Checks</b> <span style="color:var(--text-muted)">${ck.length ? ck.filter(c => c.sev === 'fail').length + ' to fix · ' + ck.filter(c => c.sev === 'warn').length + ' to check' : ''}</span>
+        ${ck.length ? ck.map((c, i) => `<button type="button" class="plan-btn" data-ck="${i}" style="display:block;width:100%;text-align:left;margin-top:3px;white-space:normal;border-left:4px solid ${sevCol[c.sev]}"><b style="color:${sevCol[c.sev]}">${sevTxt[c.sev]}</b> ${esc(c.text)}${c.ids.length ? ' <span style="color:var(--text-muted)">· show on plan</span>' : ''}</button>`).join('')
+          : '<div style="color:#15803d;margin-top:3px">✓ Every erf is served, within the service limit and the kiosk size.</div>'}</div>` : '';
     const chk = (k, t) => `<label style="display:flex;gap:6px"><input type="checkbox" data-opt="${k}"${opt[k] ? ' checked' : ''}> ${t}</label>`;
     const modeBtn = (v, t) => `<button type="button" class="plan-btn" data-mode="${v}" aria-pressed="${this.mode === v}" style="padding:3px 8px;font-size:12px${this.mode === v ? ';font-weight:600;outline:2px solid var(--accent,#2563eb)' : ''}">${t}</button>`;
     el.innerHTML = `<div class="plan-props-title">Auto layout</div>
@@ -356,18 +392,19 @@ const PlanLayoutUI = {
         ${this.err ? `<div style="color:#dc2626">${esc(this.err)}</div>` : ''}
         ${r && this.stale ? '<div style="color:#b45309">Out of date: press Run again.</div>' : ''}
         ${r ? `<div style="color:var(--text-muted)">Solved in ${Math.round(this.ms)} ms. Click an erf near the edge you want as its front.</div>` : '<div style="color:var(--text-muted)">Needs the erf boundaries (Detect erven), the streets, and a calibrated plan.</div>'}
+        ${checkBlock}
         <div><b>A click edits</b><div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px">${modeBtn('front', 'Erf fronts')}${modeBtn('sub', 'Mini-sub')}${modeBtn('trunk', 'Trunk ducts / entry')}<button type="button" class="plan-btn" data-act="reset" style="padding:3px 8px;font-size:12px">Reset edits</button></div></div>
         <div><b>Streets</b>${fromDxf}${streets}</div>
         ${groups}
         ${trenchGroup}
         ${r ? `<div><b>Result</b><div style="display:grid;grid-template-columns:repeat(2,1fr);gap:5px;margin-top:4px">${tiles}</div>
-          ${r.warns.length ? `<div style="color:#b45309;margin-top:6px">${r.warns.map(esc).join('<br>')}</div>` : ''}
         ${r.trench ? `<div style="margin-top:6px"><b>Trenches</b>${trenchRows}</div>` : ''}
           <div style="max-height:170px;overflow:auto;margin-top:6px"><table style="width:100%;font-size:12px;border-collapse:collapse"><thead><tr><th style="text-align:left">Crossing</th><th style="text-align:left">Ducts</th></tr></thead><tbody>${xt}</tbody></table></div>
           <div style="margin-top:8px"><b>Create</b><div style="display:flex;flex-direction:column;gap:2px;margin-top:3px">${chk('markers', 'Move the erf markers to their corner')}${chk('kiosks', 'Kiosks and service cables')}${chk('lv', 'Mini-sub and LV feeders')}${chk('mv', 'MV cable')}${chk('fibre', 'Fibre manholes and ducts')}${chk('cross', 'Road crossings (one per duct)')}${chk('trench', 'Trenches along the routes (depth and sharing as set)')}</div><div style="color:var(--text-muted);margin-top:4px">Replaces the previous auto layout. Your own items stay.</div></div></div>` : ''}
       </div>`;
     el.onclick = (e) => {
-      const b = e.target.closest('[data-act],[data-mode],[data-side]'); if (!b) return;
+      const b = e.target.closest('[data-act],[data-mode],[data-side],[data-ck]'); if (!b) return;
+      if (b.dataset.ck != null) { const c = (this._ck || [])[+b.dataset.ck]; this.flag = new Set(c ? c.ids : []); PlanEngine.requestDraw({ fg: true }); return; }
       if (b.dataset.act === 'dxfstreets') { const sel = el.querySelector('[data-stl]'), x = lyr[sel ? +sel.value : 0]; if (x) this.streetsFromLayer(x.d.id, x.layer); }
       else if (b.dataset.act === 'run') this.run();
       else if (b.dataset.act === 'create') this.commit();

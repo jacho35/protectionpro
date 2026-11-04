@@ -1,5 +1,20 @@
 // Named screen set-ups for capture.mjs. Each runs on a fresh page of the app.
+import { createRequire } from 'node:module';
 import { seedPlan, planPoint, seedBoard } from './lib.mjs';
+
+const neighbourhood = createRequire(import.meta.url)('../unit/layout-fixture.js');
+
+// A reticulation plan with the curved 72-erf test neighbourhood: erf boundaries and five street centrelines, 0.25 m per plan pixel.
+async function seedNeighbourhood(page) {
+  await page.evaluate(() => { Workspaces.setType('reticulation', []); switchWorkspace('plan'); });
+  await page.waitForTimeout(700);
+  await page.evaluate((fx) => {
+    const pm = AppState.planMarkup, f = 0.25;
+    pm.scale = { factor: f };
+    fx.streets.forEach(s => pm.routes.push({ id: AppState.planGenId('pmrt'), type: 'street', fromId: null, toId: null, points: s.pts.map(p => ({ x: p[0] / f, y: p[1] / f })), cableType: '', curved: false, props: { name: s.name, width: 12 } }));
+    fx.erven.forEach((e, i) => pm.elements.push({ id: AppState.planGenId('pmel'), type: 'erf', x: e.poly.reduce((a, p) => a + p[0], 0) / 4 / f, y: e.poly.reduce((a, p) => a + p[1], 0) / 4 / f, rotation: 0, name: String(i + 1), reticId: null, props: {}, boundary: e.poly.map(p => ({ x: p[0] / f, y: p[1] / f })) }));
+  }, neighbourhood());
+}
 
 // A building project on the Plan tab with an empty, uncalibrated floor.
 async function seedFloor(page) {
@@ -337,6 +352,21 @@ export const SETUPS = {
     await page.evaluate(() => { PlanTools.set('select'); document.querySelectorAll('.toast').forEach(t => t.remove()); });
     await page.click('.plan-ul-name');
     await page.waitForTimeout(400);
+  } },
+
+  'plan-layout': { run: async (page) => {
+    await seedNeighbourhood(page);
+    await page.evaluate(() => { PlanTools.set('layout'); PlanLayoutUI.run(); PlanEngine.zoomFit && PlanEngine.zoomFit(); document.querySelectorAll('.toast').forEach(t => t.remove()); });
+    await page.waitForTimeout(600);
+  } },
+
+  'plan-layout-checks': { run: async (page) => {
+    await seedNeighbourhood(page);
+    await page.evaluate(() => {
+      PlanTools.set('layout'); PlanLayoutUI.cfg().params.maxc = 45; PlanLayoutUI.run(); PlanEngine.zoomFit && PlanEngine.zoomFit();
+      document.querySelector('#plan-props [data-ck="0"]').click(); document.querySelectorAll('.toast').forEach(t => t.remove());
+    });
+    await page.waitForTimeout(600);
   } },
 
   'plan-placebar': { run: async (page) => {
