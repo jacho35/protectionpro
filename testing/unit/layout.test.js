@@ -168,4 +168,23 @@ ok('trenches: one shared trench per road crossing, and none when switched off', 
   assert.strictEqual(no.list.filter(x => x.kind === 'crossing').length, 0);
   assert(on.list.filter(x => x.kind === 'crossing').every(x => x.len > 5));
 });
+ok('voltage drop: legs add up, a service adds its own, a tighter limit flags more erven', () => {
+  const r = L.solve(F, {});
+  const lv = { r: 0.32, x: 0.075 }, svc = { r: 1.15, x: 0.08 };
+  const a = L.voltDrop(r, { lv, svc, maxPct: 8, admd: 4 });
+  assert(!a.err && a.rows.length > 0 && a.legs.length > 0);
+  // every erf: its kiosk's cumulative LV drop + its own service drop
+  a.rows.forEach(x => assert(Math.abs(x.total - (x.lv + x.svc)) < 1e-9));
+  // a leg's cumulative drop = its parent's + its own
+  const byTo = new Map(a.legs.map(l => [l.to, l]));
+  a.legs.forEach(l => { const par = byTo.get(l.from); assert(Math.abs(l.cum - ((par ? par.cum : 0) + l.pct)) < 1e-9); });
+  // hand check of one service: 2 * I * L * (r cos + x sin) / 230, I = ADMD / 230
+  const w = a.rows.find(x => x.erf.cable > 10), I = 4 / 0.23, zz = 1.15 * 0.95 + 0.08 * Math.sqrt(1 - 0.95 * 0.95);
+  assert(Math.abs(w.svc - 2 * I * w.erf.cable / 1000 * zz / 230 * 100) < 1e-9);
+  const tight = L.voltDrop(r, { lv, svc, maxPct: a.max / 2, admd: 4 });
+  assert(tight.over.length > a.over.length);
+  assert.strictEqual(a.over.length, 0 + a.rows.filter(x => x.total > 8).length);
+  assert(L.voltDrop(r, { lv, svc, admd: 8 }).max > a.max);
+  assert(L.voltDrop(r, {}).err);
+});
 console.log(n + ' passed');
