@@ -122,7 +122,7 @@ ok('the panel shows the tile, the table with the taper marks, the switches and t
   assert(/<th[^>]*>Kiosk<\/th>.*<th[^>]*>Fed from<\/th>.*<th[^>]*>Cable<\/th>.*<th[^>]*>Breaker<\/th>/.test(h), 'the table');
   assert(/set by taper/.test(h), 'a feeder marked as set by the taper');
   for (const sw of ['way80', 'taper']) assert(new RegExp(`data-vd="${sw}"[^>]* checked`).test(h), sw + ' on by default');
-  assert(/data-vd="subsMax"[^>]*value="3"/.test(h), 'most mini-subs defaults to 3');
+  assert(/data-vd="subsMax"[^>]*value="3"/.test(h), 'the panel shows the number set');
   assert(/Mini-subs tried:/.test(h) && /\(used\)/.test(h));
   assert(D.heads.every(x => h.includes(x.breaker)));
 });
