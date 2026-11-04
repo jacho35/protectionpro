@@ -62,7 +62,8 @@ const PlanLayoutUI = {
     vd.minSize = this._num(vd.minSize, 0, 2000, 0); vd.maxSize = this._num(vd.maxSize, 0, 2000, 0);   // smallest / largest LV cable (mm², 0 = no limit)
     vd.taper = typeof vd.taper === 'boolean' ? vd.taper : true;                  // taper the LV cable (smaller feeders further out)
     vd.way80 = typeof vd.way80 === 'boolean' ? vd.way80 : true;                  // an 80 A MCCB on every erf's way
-    vd.subsAuto = typeof vd.subsAuto === 'boolean' ? vd.subsAuto : true;         // try 1, 2 and 3 mini-subs and take the least cable that passes
+    if (vd.subsMax == null && typeof vd.subsAuto === 'boolean') vd.subsMax = vd.subsAuto ? 3 : 1;   // older files: the on / off switch
+    vd.subsMax = Math.round(this._num(vd.subsMax, 1, 8, 3)); delete vd.subsAuto;  // most mini-subs to try (1..N, the least cable that passes is kept); 1 = just the count set above
     vd.splits = Array.isArray(vd.splits) ? vd.splits.filter(q => q && Number.isFinite(+q.x) && Number.isFinite(+q.y)).map(q => ({ x: +q.x, y: +q.y })).slice(0, 200) : [];   // kiosks made a string head of their own
     vd.lv = typeof vd.lv === 'string' ? vd.lv.slice(0, 80) : ''; vd.svc = typeof vd.svc === 'string' ? vd.svc.slice(0, 80) : '';
     L.sides = (L.sides && typeof L.sides === 'object') ? L.sides : {};
@@ -135,7 +136,7 @@ const PlanLayoutUI = {
       r.earthBusy = true; PlanMarkup.refreshProps();
       await this.earthRun(tok);
       if (tok !== this._vdTok) return;
-      if (this.cfg().vd.subsAuto && r.design) await this.trySubs(tok);     // 1, 2 and 3 mini-subs: the least cable that passes
+      if (this.cfg().vd.subsMax > 1 && r.design) await this.trySubs(tok);  // 1 up to the most mini-subs: the least cable that passes
     } catch (e) {
       if (tok !== this._vdTok) return;
       r.vdBusy = false; r.vd = { err: 'Demand could not be run (' + ((e && e.message) || e) + ').' };
@@ -185,12 +186,13 @@ const PlanLayoutUI = {
     for (const f of r.design.feeders) { const cab = CableLib.byName(f.cable); if (cab) m.set(f.kioskId, cab); }
     return m;
   },
-  // 1, 2 and 3 mini-subs: each is laid out, run through Demand and designed; the one that passes with the least cable (else the fewest fails) is kept.
+  // 1 up to `vd.subsMax` mini-subs: each is laid out, run through Demand and designed; the one that passes with the least cable (else the fewest fails) is kept.
   async trySubs(tok) {
     const base = this.result, g = this._gathered; if (!base || !g || !base.design || !base.net.subs) return;
     const cur = base.net.subs.length, trials = [{ subs: cur, res: base }];
     const nK = base.kiosks.length;
-    for (const n of [1, 2, 3]) {
+    const top = Math.min(8, this.cfg().vd.subsMax || 3);
+    for (let n = 1; n <= top; n++) {
       if (n === cur || n > nK) continue;
       const res = PlanLayout.solve(g.input, Object.assign({}, g.params, { subs: n }));
       res.trench = PlanLayout.trenches(res, this.cfg().trench);
@@ -934,7 +936,7 @@ const PlanLayoutUI = {
         <label style="display:flex;gap:6px;align-items:flex-start"><input type="checkbox" data-vd="taper"${VDc.taper ? ' checked' : ''}> <span>Taper the LV cable: the smallest size that passes on each feeder, large near the mini-sub</span></label>
         <div style="display:flex;gap:6px"><label style="flex:1;display:block">Smallest LV cable<select data-vd="minSize" style="width:100%"><option value="0"${VDc.minSize ? '' : ' selected'}>No limit</option>${this._ladderSizes().map(x => `<option value="${x}"${VDc.minSize === x ? ' selected' : ''}>${x} mm²</option>`).join('')}</select></label>
           <label style="flex:1;display:block">Largest LV cable<select data-vd="maxSize" style="width:100%"><option value="0"${VDc.maxSize ? '' : ' selected'}>No limit</option>${this._ladderSizes().map(x => `<option value="${x}"${VDc.maxSize === x ? ' selected' : ''}>${x} mm²</option>`).join('')}</select></label></div>
-        <label style="display:flex;gap:6px;align-items:flex-start"><input type="checkbox" data-vd="subsAuto"${VDc.subsAuto ? ' checked' : ''}> <span>Try 1, 2 and 3 mini-subs and use the least cable that passes</span></label>
+        <label style="display:flex;gap:6px;align-items:center"><input type="number" min="1" max="8" step="1" style="width:52px" data-vd="subsMax" value="${VDc.subsMax}"> <span>Most mini-subs to try (1 = only the number set above); the least cable that passes is used</span></label>
         <label style="display:block">Mini-sub transformer<select data-vd="tx" style="width:100%"><option value=""${VDc.tx ? '' : ' selected'}>Automatic: the smallest that carries each mini-sub</option>${txOpts.map(o => `<option value="${esc(o.id)}"${VDc.tx === o.id ? ' selected' : ''}>${esc(o.name)}</option>`).join('')}</select></label>
         <label style="display:block">String breaker (earth-fault loop)<select data-vd="prot" style="width:100%">${Retic._protectionOptions(VDc.prot, this._designOn() ? 'Automatic: sized to each string (fewest earth-fault fails)' : 'Automatic: the next size up from the string current × factor')}</select></label>
         ${VDc.prot || this._designOn() ? '' : `<label style="display:block">Breaker rating at least <b data-vv="protK">${Number(VDc.protK).toFixed(2)}</b> × the string current<input type="range" data-vd="protK" min="1" max="2" step="0.05" value="${Number(VDc.protK)}" style="width:100%"></label>`}
@@ -1012,7 +1014,7 @@ const PlanLayoutUI = {
         if (a.act === 'tx') { L.vd.tx = a.val; this.revd(); }
         else if (a.act === 'extendall') { this.extendErven(a.val || []); }
         else if (a.act === 'resetmarkers') { this.cfg().markers = {}; this.markFor = null; this.touched(); }
-        else if (a.act === 'addsub') { L.vd.subsAuto = false; p.subs = Math.min(8, ((this.result && this.result.net.subs.length) || +p.subs || 1) + 1); this.touched(); }
+        else if (a.act === 'addsub') { L.vd.subsMax = 1; p.subs = Math.min(8, ((this.result && this.result.net.subs.length) || +p.subs || 1) + 1); this.touched(); }
         else if (a.act === 'maxsize') { L.vd.maxSize = +a.val || 0; this.vdRun(); }
         else if (a.act === 'clearsize') { L.vd.minSize = 0; L.vd.maxSize = 0; this.vdRun(); }
         else if (a.act === 'split') { const k = this.result && this.result.kiosks.find(x => x.id === a.val); if (k) { L.vd.splits.push({ x: k.x / this.f, y: k.y / this.f }); this.touched(); } }
@@ -1055,7 +1057,8 @@ const PlanLayoutUI = {
       if (t.dataset.kopt) { const v = parseFloat(t.value); if (isFinite(v)) { this.kerbOpt[t.dataset.kopt] = v; if (this.kerbStage) { if (t.dataset.kopt === 'join' || t.dataset.kopt === 'oneW') this.kerbStage.o = Object.assign({}, this.kerbStage.o, this.kerbOpt); else this.kerbSolve(); } } return; }
       if (t.dataset.vd) {
         if (t.type === 'range') return;
-        if (t.type === 'checkbox') { VDc[t.dataset.vd] = t.checked; if (t.dataset.vd === 'subsAuto' && !t.checked) { const r0 = this.result; if (r0) r0.subsTrials = null; } this.vdRun(); return; }   // the design is worked out again
+        if (t.dataset.vd === 'subsMax') { const n = Math.max(1, Math.min(8, Math.round(parseFloat(t.value) || 1))); VDc.subsMax = n; t.value = n; const r0 = this.result; if (r0 && n < 2) r0.subsTrials = null; this.vdRun(); return; }
+        if (t.type === 'checkbox') { VDc[t.dataset.vd] = t.checked; this.vdRun(); return; }   // the design is worked out again
         VDc[t.dataset.vd] = t.value;
         if (this._designOn()) this.vdRun(); else this.revd(); return;                         // the design depends on the transformer, the breakers and the cable picked
       }
