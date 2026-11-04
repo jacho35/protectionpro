@@ -379,7 +379,7 @@ const Retic = {
           <option value=""${l.motor ? '' : ' selected'}>${t && t.motor ? 'Type default: motor' : 'Type default: static'}</option>
           <option value="static"${l.motor === 'static' ? ' selected' : ''}>Static load</option>
           <option value="motor"${l.motor === 'motor' ? ' selected' : ''}>Motor</option></select></td>
-      <td data-cell="kw" data-label="kW"><input type="number" min="0" step="0.1" ${a} data-field="kw" value="${numAttr(l.kw || '')}" placeholder="${t ? t.kw : ''}" title="Blank = the load type's rating"></td>
+      <td data-cell="kw" data-label="kW"><input type="number" min="0" step="0.1" ${a} data-field="kw" value="${numAttr(l.kw || '')}" placeholder="${t ? escHtml(String(t.kw ?? '')) : ''}" title="Blank = the load type's rating"></td>
       <td data-cell="div" data-label="Diversity"><input type="number" min="0.05" max="1" step="0.05" data-action="load-div" data-type="${escHtml(l.loadType || '')}" value="${PlanLoads.diversity(t)}" title="Diversity factor of the load type ${t ? escHtml(t.name) : ''}: every load of that type uses it"></td>
       <td data-cell="cable" data-label="Supply cable"><select ${a} data-field="cableType" data-cable-select>${this._cableOptions(l.cableType)}</select></td>
       <td data-cell="len" data-label="Length (m)"><span class="retic-len-cell"><input type="number" step="1" min="0" ${a} data-field="length" value="${numAttr(l.length || '')}">${this._planTag('len:load:' + l.id, true)}</span></td>
