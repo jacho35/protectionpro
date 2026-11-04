@@ -257,6 +257,7 @@ const BOQ = {
         const d = fl.data || {};
         for (const r of (d.routes || [])) {
           const et = PlanCSV._effectiveType(r, elById);
+          if ((PLAN_DEFS.route(r.type) || {}).noTakeoff) continue;
           if (inc.demand && hasDemand && (et === 'lv' || et === 'service')) { skipDemand++; continue; }
           if (slFromPlan && et === 'sl') { skipSl++; continue; }
           if (inc.sld && (sldByRoute.has(r.id) || riserRoutes.has(r.id))) { skipSld++; continue; }

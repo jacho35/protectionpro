@@ -88,6 +88,7 @@ const PlanCSV = {
       for (const r of (fl.data.routes || [])) {
         const et = this._effectiveType(r, elById);
         const def = PLAN_DEFS.route(et) || PLAN_DEFS.route(r.type) || {};
+        if (def.noTakeoff) continue;
         const len = this._routeLenM(r, f);
         totals[et] = +((totals[et] || 0) + len).toFixed(2);
         const from = (elById[r.fromId] && elById[r.fromId].name) || '';

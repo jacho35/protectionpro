@@ -45,7 +45,7 @@ const PlanUI = {
   // kind → the tool id that draws it; disabled until that tool is registered.
   _toolFor(kind) {
     return { element: 'place', route: 'route', trench: 'trench',
-      crossing: 'crossing', text: 'text', measurement: 'measurement', room: 'room', roomdetect: 'roomdetect', erfdetect: 'erfdetect', roomshape: 'roomshape', perimeter: 'perimeter', sportsfield: 'sportsfield' }[kind];
+      crossing: 'crossing', text: 'text', measurement: 'measurement', room: 'room', roomdetect: 'roomdetect', erfdetect: 'erfdetect', layout: 'layout', roomshape: 'roomshape', perimeter: 'perimeter', sportsfield: 'sportsfield' }[kind];
   },
 
   // Folded palette groups (session only); the group last used stays open.
@@ -563,6 +563,7 @@ const PlanUI = {
   // ─── Properties ───
   renderProps() {
     const el = this.propsEl; if (!el) return;
+    if (typeof PlanTools !== 'undefined' && PlanTools.active && PlanTools.active.id === 'layout' && typeof PlanLayoutUI !== 'undefined') { PlanLayoutUI.renderOptions(el); return; }
     if (typeof PlanTools !== 'undefined' && PlanTools.active && (PlanTools.active.id === 'roomdetect' || PlanTools.active.id === 'erfdetect') && typeof PlanRoomDetect !== 'undefined') { PlanRoomDetect.renderOptions(el, PlanTools.active.id === 'erfdetect' ? 'erf' : 'room'); return; }
     if (PlanMarkup.context === 'plan' && PlanMarkup.mode === 'underlays') { this._renderUnderlayProps(el); return; }
     // The Lighting tab's Space step: a picked underlay shows its actions until something else is selected.
@@ -590,6 +591,8 @@ const PlanUI = {
       fields = [
         { key: 'name', label: 'Name', type: 'text' },
         { key: 'excType', label: 'Type', type: 'select', options: Object.keys(PLAN_DEFS.trenchTypes).map(k => ({ value: k, label: PLAN_DEFS.trenchTypes[k].name })) },
+        { key: 'depthOverride', label: 'Depth — blank = the type\'s', type: 'number', unit: 'm', min: 0.2, max: 4, step: 0.05 },
+        { key: 'widthOverride', label: 'Width — blank = the type\'s', type: 'number', unit: 'm', min: 0.1, max: 3, step: 0.05 },
       ];
       getVal = (k) => item[k];
     } else if (kind === 'crossing') {

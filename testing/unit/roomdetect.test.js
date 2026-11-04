@@ -185,4 +185,34 @@ ok('leak (raster): the opening is found and sized', () => {
   assert(Math.abs(r.point[0] - 180) < 8 && Math.abs(r.point[1] - 75) < 8, JSON.stringify(r.point));
   assert.strictEqual(D.leakFromRaster(image(200, 150, px => thickRect(px, 20, 20, 180, 130, 4)), [100, 70], {}).reason, 'enclosed');
 });
+
+// ── inset / offset ──
+ok('inset: rectangle shrinks every side, exact area', () => {
+  const r = D.insetPolygon([[0,0],[10,0],[10,6],[0,6]], 0.5);
+  assert(r && r.length === 4 && Math.abs(Math.abs(D._signedArea(r)) - 9 * 5) < 1e-9);
+});
+ok('inset: either winding gives the inside', () => {
+  const cw = [[0,0],[0,6],[10,6],[10,0]];
+  const r = D.insetPolygon(cw, 1); assert(r && Math.abs(Math.abs(D._signedArea(r)) - 8 * 4) < 1e-9);
+});
+ok('offset (negative inset) grows the polygon', () => {
+  const r = D.insetPolygon([[0,0],[10,0],[10,6],[0,6]], -0.5);
+  assert(r && Math.abs(Math.abs(D._signedArea(r)) - 11 * 7) < 1e-9);
+});
+ok('inset: L-shape keeps six corners and the reflex corner mitres', () => {
+  const L = [[0,0],[10,0],[10,4],[4,4],[4,8],[0,8]];
+  const r = D.insetPolygon(L, 0.3);
+  assert(r && r.length === 6);
+  // L area 56, perimeter 36, 5 convex + 1 reflex corner: A - d*P + d^2*(5-1)*... (right-angle corners) = 56 - 0.3*36 + 0.09*4
+  assert(Math.abs(Math.abs(D._signedArea(r)) - (56 - 0.3 * 36 + 0.09 * 4)) < 1e-9);
+});
+ok('inset: collinear points and zero are harmless', () => {
+  const r = D.insetPolygon([[0,0],[5,0],[10,0],[10,6],[0,6]], 0.5);
+  assert(r && r.length === 4);
+  assert.deepStrictEqual(D.insetPolygon([[0,0],[4,0],[4,3]], 0), [[0,0],[4,0],[4,3]]);
+});
+ok('inset: too much for the shape returns null, never a wrong polygon', () => {
+  assert.strictEqual(D.insetPolygon([[0,0],[10,0],[10,2],[0,2]], 1.2), null);                      // wider than the room
+  assert.strictEqual(D.insetPolygon([[0,0],[10,0],[10,6],[6,6],[6,1],[4,1],[4,6],[0,6]], 0.6), null);   // a bridge only 1 thick under the notch
+});
 console.log(n + ' passed');

@@ -727,7 +727,8 @@ const PlanDxfManager = {
             const c = this._centroid(ring);
             const w = W(c[0], c[1]);
             pm.elements.push({ id: AppState.planGenId('pmel'), type: 'erf', x: w.x, y: w.y, rotation: 0,
-              name: label || PlanMarkup.nextName('erf'), reticId: null, props: PLAN_DEFS.defaults('erf') });
+              name: label || PlanMarkup.nextName('erf'), reticId: null, props: PLAN_DEFS.defaults('erf'),
+              boundary: ring.map(([x, y]) => W(x, y)) });
             out.erven++;
           }
         } else if (tgt.startsWith('trench:')) {
