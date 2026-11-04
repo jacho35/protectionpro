@@ -693,6 +693,65 @@ Object.assign(PlanRoomDetect, {
     return { ok: true, gapPx: 2 * rhi, point: [sx / run.length, sy / run.length] };
   },
 
+  /**
+   * Move every edge of a polygon `d` towards its inside (d > 0, wall finish) or
+   * outside (d < 0), corners mitred (bevelled past `miter` × |d|).
+   * Returns null when the result would fold over itself or lose a part of the
+   * shape (a thin arm narrower than 2·d): never a wrong polygon.
+   * @param poly [[x,y]…]  @returns [[x,y]…] | null
+   */
+  insetPolygon(poly, d, opts) {
+    const o = Object.assign({ miter: 4 }, opts || {});
+    if (!d) return poly.map(q => q.slice());
+    let p = this._dropCollinear(poly.map(q => q.slice()), 1e-9);
+    if (p.length < 3) return null;
+    const a0 = this._signedArea(p);
+    if (Math.abs(a0) < 1e-12) return null;
+    if (a0 < 0) p.reverse();                         // interior on the left of every edge
+    const n = p.length, nrm = [];
+    for (let i = 0; i < n; i++) {
+      const a = p[i], b = p[(i + 1) % n], L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      if (L < 1e-12) return null;
+      nrm.push([-(b[1] - a[1]) / L, (b[0] - a[0]) / L]);
+    }
+    const out = [];
+    for (let j = 0; j < n; j++) {
+      const n1 = nrm[(j - 1 + n) % n], n2 = nrm[j], dot = n1[0] * n2[0] + n1[1] * n2[1];
+      const k = 1 + dot;
+      const miterLen = k > 1e-9 ? Math.abs(d) * Math.sqrt(2 / k) : Infinity;
+      if (miterLen > o.miter * Math.abs(d)) {
+        out.push([p[j][0] + n1[0] * d, p[j][1] + n1[1] * d], [p[j][0] + n2[0] * d, p[j][1] + n2[1] * d]);
+      } else out.push([p[j][0] + (n1[0] + n2[0]) * d / k, p[j][1] + (n1[1] + n2[1]) * d / k]);
+    }
+    // validation: simple, same winding, and every corner the right side of, and
+    // at least |d| from, the original outline
+    const A = this._signedArea(out);
+    if (!(A > 1e-12) || (d > 0 ? A >= Math.abs(a0) : A <= Math.abs(a0))) return null;
+    const m = out.length;
+    for (let i = 0; i < m; i++) for (let j = i + 1; j < m; j++) {
+      if (j === i + 1 || (i === 0 && j === m - 1)) continue;
+      if (this._segCross(out[i], out[(i + 1) % m], out[j], out[(j + 1) % m])) return null;
+    }
+    const lim = Math.abs(d) * (1 - 1e-6);
+    for (const q of out) {
+      if (this._pip(q, p) !== (d > 0)) return null;
+      let dist = Infinity;
+      for (let i = 0; i < n; i++) dist = Math.min(dist, this._distSeg(q, p[i], p[(i + 1) % n]));
+      if (dist < lim) return null;
+    }
+    return out;
+  },
+  _distSeg(q, a, b) {
+    const dx = b[0] - a[0], dy = b[1] - a[1], L2 = dx * dx + dy * dy || 1e-18;
+    const t = Math.max(0, Math.min(1, ((q[0] - a[0]) * dx + (q[1] - a[1]) * dy) / L2));
+    return Math.hypot(a[0] + t * dx - q[0], a[1] + t * dy - q[1]);
+  },
+  _segCross(a, b, c, d) {
+    const o = (p, q, r) => (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]);
+    const d1 = o(a, b, c), d2 = o(a, b, d), d3 = o(c, d, a), d4 = o(c, d, b);
+    return ((d1 > 1e-12 && d2 < -1e-12) || (d1 < -1e-12 && d2 > 1e-12)) && ((d3 > 1e-12 && d4 < -1e-12) || (d3 < -1e-12 && d4 > 1e-12));
+  },
+
   _perimeter(p) { let s = 0; for (let i = 0; i < p.length; i++) { const a = p[i], b = p[(i + 1) % p.length]; s += Math.hypot(b[0] - a[0], b[1] - a[1]); } return s; },
 
   // A point inside the polygon: the middle of the widest span on the scanline
@@ -751,6 +810,8 @@ Object.assign(PlanRoomDetect, {
     rd.layers = (typeof rd.layers === 'string' && rd.layers.trim()) ? rd.layers.slice(0, 200) : def;
     rd.hatch = rd.hatch !== false;        // outlines of hatched / solid walls on the wall layers count as walls
     rd.hover = rd.hover !== false;        // preview the region under the pointer
+    const ins = parseFloat(rd.insetM);
+    rd.insetM = (!erf && Number.isFinite(ins)) ? Math.max(-2, Math.min(2, ins)) : 0;   // wall finish: + shrinks, − grows (rooms only; an erf is a point)
     return rd;
   },
 
@@ -984,6 +1045,15 @@ Object.assign(PlanRoomDetect, {
     this.hover = c; PlanEngine.requestDraw({ fg: true });
   },
 
+  // The boundary with the wall finish applied (rooms only). null when the
+  // inset does not fit (a part would vanish): the caller keeps the raw one.
+  _inset(points, target) {
+    const o = this.opts(target), f = PlanEngine.factor();
+    if (target !== 'room' || !o.insetM || !f) return points;
+    const r = this.insetPolygon(points.map(p => [p.x, p.y]), o.insetM / f);
+    return r ? r.map(([x, y]) => ({ x, y })) : null;
+  },
+
   // A polygon (or an erf) already on the plan inside this candidate.
   _alreadyThere(target, c) {
     const pm = AppState.planMarkup, poly = c.points.map(p => [p.x, p.y]);
@@ -995,7 +1065,14 @@ Object.assign(PlanRoomDetect, {
   stage(target, items, replace) {
     if (this.staged.target !== target) this.staged = { target, items: [] };
     if (replace) this.staged.items = [];
-    for (const it of items) this.staged.items.push({ id: 's' + (this._sid = (this._sid || 0) + 1), points: it.points, seed: it.seed, source: it.source });
+    let bad = 0;
+    for (const it of items) {
+      const ins = this._inset(it.points, target);
+      if (!ins) bad++;
+      const pts = ins || it.points;
+      this.staged.items.push({ id: 's' + (this._sid = (this._sid || 0) + 1), raw: it.points, points: pts, seed: ins ? this._seedOf(pts) : it.seed, source: it.source });
+    }
+    if (bad) UI.toast(`${bad} ${bad === 1 ? 'region is' : 'regions are'} too narrow for a ${this.opts(target).insetM} m inset and ${bad === 1 ? 'keeps' : 'keep'} the wall line.`, 'warn', 5000);
     this._changed();
   },
   clearStaged() { this.staged = { target: this.staged.target, items: [] }; this._changed(); },
@@ -1048,7 +1125,9 @@ Object.assign(PlanRoomDetect, {
     }
     // create now; a staged candidate for the same region is replaced by it
     this.staged.items = this.staged.items.filter(it => !this._inside(it, pt));
-    const made = this.commitMany(target, [res]);
+    const ins = this._inset(res.points, target);
+    if (!ins) UI.toast(`Too narrow for a ${this.opts(target).insetM} m inset — created on the wall line.`, 'warn', 5000);
+    const made = this.commitMany(target, [Object.assign({}, res, { points: ins || res.points })]);
     const f = PlanEngine.factor(), first = made[0];
     const area = f && first.points ? PlanEngine._polyArea(first.points) * f * f : null;
     const bits = [`${first.name} detected${area != null ? ` — ${area.toFixed(1)} m²` : ''}`];
@@ -1100,8 +1179,9 @@ Object.assign(PlanRoomDetect, {
       if (hit) { c = hit; red = true; }
     }
     if (c && c.points && c.points.length > 2 && this.opts(target).hover) {
+      const pts = red ? c.points : (this._inset(c.points, target) || c.points);
       ctx.save();
-      ctx.beginPath(); c.points.forEach((p, k) => k ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); ctx.closePath();
+      ctx.beginPath(); pts.forEach((p, k) => k ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); ctx.closePath();
       ctx.fillStyle = red ? 'rgba(220,38,38,0.30)' : 'rgba(37,99,235,0.18)'; ctx.fill();
       ctx.lineWidth = 2 / zoom; ctx.strokeStyle = red ? '#dc2626' : '#2563eb'; ctx.stroke();
       ctx.restore();
@@ -1160,6 +1240,9 @@ Object.assign(PlanRoomDetect, {
           <button type="button" class="plan-btn" data-rd-create style="font-weight:600"${items.length ? '' : ' disabled'}>Create${items.length ? ' ' + items.length : ''} ${items.length === 1 ? lim.noun : lim.nouns}</button>
           <button type="button" class="plan-btn" data-rd-clear${items.length ? '' : ' disabled'}>Clear set</button></div>
         ${leakBox}
+        ${target === 'room' ? `<label>Wall finish: inset boundary by (m)
+          <input type="number" min="-2" max="2" step="0.01" data-rd="inset" style="width:100%"></label>
+        <p style="margin:-4px 0 0;color:var(--text-muted)">${f ? 'Positive pulls the boundary in from the wall face (plaster, skirting); negative pushes it out, e.g. to the wall centre.' : 'Calibrate the plan to use an inset.'}</p>` : ''}
         <label>Gap to close (m)
           <input type="number" min="0" max="5" step="0.1" data-rd="gap" style="width:100%"></label>
         <label>${target === 'erf' ? 'Boundary' : 'Wall'} layers (DXF, regex)
@@ -1170,6 +1253,16 @@ Object.assign(PlanRoomDetect, {
       </div>`;
     el.querySelector('[data-rd="gap"]').value = o.gapM;
     el.querySelector('[data-rd="layers"]').value = o.layers;
+    const insEl = el.querySelector('[data-rd="inset"]');
+    if (insEl) {
+      insEl.value = o.insetM; insEl.disabled = !f;
+      insEl.addEventListener('change', (e) => {
+        o.insetM = Math.max(-2, Math.min(2, parseFloat(e.target.value) || 0)); PlanMarkup.markDirty();
+        // re-derive what is already staged from its raw outline
+        for (const it of this.staged.items) { const r = this._inset(it.raw || it.points, 'room'); it.points = r || it.raw || it.points; if (r) it.seed = this._seedOf(r); }
+        this._changed();
+      });
+    }
     el.querySelector('[data-rd="gap"]').addEventListener('change', (e) => { o.gapM = Math.max(0, Math.min(5, parseFloat(e.target.value) || 0)); PlanMarkup.markDirty(); this.leak = null; PlanEngine.requestDraw({ fg: true }); });
     el.querySelector('[data-rd="layers"]').addEventListener('change', (e) => { o.layers = e.target.value || (target === 'erf' ? this.ERF_LAYERS : this.DEFAULT_LAYERS); PlanMarkup.markDirty(); });
     const hb = el.querySelector('[data-rd="hatch"]'), hv = el.querySelector('[data-rd="hover"]');
