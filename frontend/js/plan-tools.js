@@ -68,6 +68,15 @@ const PlanTools = {
       PlanEngine.requestDraw({ fg: true });
       return true;
     }
+    for (const t of (AppState.planMarkup.trenches || [])) {
+      if (!PlanMarkup.selectedIds.has(t.id) || t.points.length <= 2) continue;
+      const vi = PlanEngine.findVertexAt(t.points, pt, 9);
+      if (vi < 0) continue;
+      t.points.splice(vi, 1);
+      PlanMarkup.snapshot(); PlanMarkup.markDirty(); PlanMarkup.refreshProps();
+      PlanEngine.requestDraw({ fg: true });
+      return true;
+    }
     const hit = PlanEngine.findRouteVertexAt(pt, 9);
     if (!hit) return false;
     const { route, index } = hit;
@@ -195,12 +204,38 @@ PlanTools.register({
         }
       }
     }
+    // 1c) bend / segment midpoint of a selected trench: drag a bend to reshape the path,
+    // drag a midpoint to add a bend there (double-click a bend removes it).
+    for (const t of (pm.trenches || [])) {
+      if (!PlanMarkup.selectedIds.has(t.id) || PlanLayers.pickableTrench && !PlanLayers.pickableTrench(t)) continue;
+      const vi = PlanEngine.findVertexAt(t.points, pt, 8);
+      if (vi >= 0) { this._drag = { kind: 'trenchvertex', trench: t, index: vi, moved: false }; return; }
+      for (let i = 0; i < t.points.length - 1; i++) {
+        const a = t.points[i], b = t.points[i + 1];
+        const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+        if (Math.hypot(pt.x - mx, pt.y - my) <= 7 / z) {
+          // The bend is only added once the pointer moves, so a plain click on a midpoint adds nothing.
+          this._drag = { kind: 'trenchmid', trench: t, seg: i, at: { x: mx, y: my }, moved: false };
+          return;
+        }
+      }
+    }
     // 2) shift+click on a route segment inserts a vertex
     const rhShift = e.shiftKey ? PlanEngine.findRouteAt(pt) : null;
     if (rhShift) {
       const snapped = PlanTools.snap(pt, { ignoreIds: new Set([rhShift.route.id]) });
       rhShift.route.points.splice(rhShift.segIndex + 1, 0, { x: snapped.x, y: snapped.y });
       PlanMarkup.selectOnly(rhShift.route.id);
+      PlanMarkup.snapshot(); PlanMarkup.markDirty();
+      PlanEngine.requestDraw({ fg: true });
+      return;
+    }
+    // 2b) shift+click on a trench segment inserts a bend there
+    const thShift = e.shiftKey && !rhShift ? PlanEngine.findTrenchAt(pt) : null;
+    if (thShift) {
+      const snapped = PlanTools.snap(pt, { ignoreIds: new Set([thShift.trench.id]) });
+      thShift.trench.points.splice(thShift.segIndex + 1, 0, { x: snapped.x, y: snapped.y });
+      PlanMarkup.selectOnly(thShift.trench.id);
       PlanMarkup.snapshot(); PlanMarkup.markDirty();
       PlanEngine.requestDraw({ fg: true });
       return;
@@ -240,6 +275,7 @@ PlanTools.register({
     }
     const snapped = PlanTools.snap(pt, {
       ignoreIds: this._drag.kind === 'vertex' ? new Set([this._drag.route.id])
+        : (this._drag.kind === 'trenchvertex' || this._drag.kind === 'trenchmid') ? new Set([this._drag.trench.id])
         : this._drag.kind === 'roomvertex' ? new Set() : new Set([this._drag.el.id]),
     });
     if (this._drag.kind === 'element') {
@@ -252,6 +288,14 @@ PlanTools.register({
       this._drag.moved = true;
     } else if (this._drag.kind === 'vertex') {
       const p = this._drag.route.points[this._drag.index];
+      p.x = snapped.x; p.y = snapped.y;
+      this._drag.moved = true;
+    } else if (this._drag.kind === 'trenchmid') {
+      if (Math.hypot(pt.x - this._drag.at.x, pt.y - this._drag.at.y) < 4 / PlanEngine.view.zoom) return;   // a click, not a drag
+      this._drag.trench.points.splice(this._drag.seg + 1, 0, { x: snapped.x, y: snapped.y });
+      this._drag = { kind: 'trenchvertex', trench: this._drag.trench, index: this._drag.seg + 1, moved: true };
+    } else if (this._drag.kind === 'trenchvertex') {
+      const p = this._drag.trench.points[this._drag.index];
       p.x = snapped.x; p.y = snapped.y;
       this._drag.moved = true;
     } else if (this._drag.kind === 'roomvertex') {
@@ -404,6 +448,20 @@ PlanTools.register({
       }
       ctx.fillStyle = '#fff';
       for (const p of rm.points) { ctx.beginPath(); ctx.rect(p.x - h, p.y - h, 2 * h, 2 * h); ctx.fill(); ctx.stroke(); }
+      ctx.restore();
+    }
+    for (const t of (AppState.planMarkup.trenches || [])) {
+      if (!PlanMarkup.selectedIds.has(t.id) || t.points.length < 2) continue;
+      ctx.save();
+      ctx.lineWidth = 1.5 / zoom; ctx.strokeStyle = '#7c3aed';
+      const h = 5 / zoom;
+      ctx.fillStyle = 'rgba(124,58,237,0.45)';
+      for (let i = 0; i < t.points.length - 1; i++) {
+        const a = t.points[i], b = t.points[i + 1];
+        ctx.beginPath(); ctx.arc((a.x + b.x) / 2, (a.y + b.y) / 2, 3.5 / zoom, 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.fillStyle = '#fff';
+      for (const p of t.points) { ctx.beginPath(); ctx.rect(p.x - h, p.y - h, 2 * h, 2 * h); ctx.fill(); ctx.stroke(); }
       ctx.restore();
     }
     const rot = this._rotateHandle();
