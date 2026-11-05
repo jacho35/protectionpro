@@ -10,7 +10,7 @@
  *      beside every junction, an erf takes any kiosk within `maxc` m of service cable —
  *      along its street or round a junction corner — fewest kiosks first (one is given up
  *      while the extra cable stays within `worth` m), then fewest road crossings, then
- *      shortest cable, `aim` erven per kiosk as a soft limit under the hard `n`);
+ *      shortest cable, at most `n` erven per kiosk);
  *   4. fibre: manholes on the civil side (one per `m` erven and never further apart
  *      than `maxmh` m), a trunk duct as a ring or as spurs with T-offs from an entry,
  *      and a duct from a manhole to every erf;
@@ -30,7 +30,7 @@ const PlanLayout = (() => {
 
   const DEFAULTS = {
     side: 4, depth: 4, corner: 'start', front: 'longest',      // marker: m from the side boundary and the front; which corner; corner erf's front
-    kmode: 'opt', n: 6, maxc: 80, worth: 170, aim: 5, knet: true,   // kiosks (aim = the erven per kiosk to aim for, a soft limit under n; knet = one solve over the whole street network)
+    kmode: 'opt', n: 6, maxc: 80, worth: 170, knet: true,   // kiosks (n = the most erven one kiosk serves; knet = one solve over the whole street network)
     subMode: 'opt', subs: 1,                                          // mini-sub: 'opt' = where the LV network drops least, 'mid' = nearest the middle
     m: 8, maxmh: 120, fibre: 'opp', topo: 'ring',              // fibre
     share: true, xmode: 'bound', junct: false, j110: 2, j160: 1, spare: 0,   // crossings
@@ -389,7 +389,7 @@ const PlanLayout = (() => {
     }
 
     // ── 2b. kiosks for the whole street network ──
-    const XPEN = 300, SOFT = 30;                 // m of cable one road crossing / one erf over `aim` counts for in the assignment
+    const XPEN = 300;                            // m of cable one road crossing counts for in the assignment
     function placeKiosksNet() {
       groups = new Map();
       for (const e of erven) if (e.fe) { const k = e.road.id + '|' + e.seg; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(e); }
@@ -397,7 +397,7 @@ const PlanLayout = (() => {
       const list = erven.filter(e => e.fe), n = list.length, kiosks = [];
       list.forEach(e => { e.gkey = e.road.id + '|' + e.seg; e.via = null; e.mcs = markerCands(e); e._k = null; e.hopN = 0; });
       if (!n) return kiosks;
-      const maxc = P.maxc, N = Math.max(1, Math.round(P.n)), aim = Math.max(1, Math.min(N, Math.round(P.aim) || N));
+      const maxc = P.maxc, N = Math.max(1, Math.round(P.n));
       // candidate stands: every street's kiosk-side verge at the erf boundaries, across the road from a boundary, and beside each junction
       const cands = [];
       for (const st of streets) {
@@ -458,14 +458,14 @@ const PlanLayout = (() => {
       const cover = cands.map((c, ci) => { const a = []; for (let i = 0; i < n; i++) if (Lm[ci][i] <= maxc) a.push(i); return a; });
       const servable = list.map((e, i) => cover.some(a => a.includes(i)));
       const nServ = servable.filter(Boolean).length;
-      // erven → the chosen stands, each taking at most N (the soft `aim` first, a small penalty beyond it): a small min-cost flow
+      // erven → the chosen stands, each taking at most N: a small min-cost flow
       function assignG(sel) {
         const k = sel.length, V = n + k + 2, S0 = n + k, T = n + k + 1;
         const to = [], cap = [], cost = [], nxt = [], head = new Array(V).fill(-1);
         const add = (u, v, c, w) => { to.push(v); cap.push(c); cost.push(w); nxt.push(head[u]); head[u] = to.length - 1; to.push(u); cap.push(0); cost.push(-w); nxt.push(head[v]); head[v] = to.length - 1; };
         for (let i = 0; i < n; i++) add(S0, i, 1, 0);
         for (let i = 0; i < n; i++) for (let j = 0; j < k; j++) if (Lm[sel[j]][i] <= maxc) add(i, n + j, 1, Math.round(wt(sel[j], i) * 10));
-        for (let j = 0; j < k; j++) { add(n + j, T, aim, 0); if (N > aim) add(n + j, T, N - aim, SOFT * 10); }
+        for (let j = 0; j < k; j++) { add(n + j, T, N, 0); }
         let flow = 0, total = 0;
         const dist = new Array(V), prev = new Array(V), inq = new Array(V);
         for (;;) {
@@ -718,7 +718,7 @@ const PlanLayout = (() => {
         if (s0 > 2) events.push({ st: X, s: s0 - 5, t: 'jn' });
         if (s0 < X.len - 2) events.push({ st: X, s: s0 + 5, t: 'jn' });
       }));
-      const net = { lv: [], mv: [], sub: null, lvLen: 0, mvLen: 0, lvLinks: [], mvPts: null, unreached: [] };
+      const net = { lv: [], mv: [], sub: null, subs: [], mvLines: [], mvLine: [], lvLen: 0, mvLen: 0, lvLinks: [], mvPts: null, unreached: [] };
       if (kiosks.length) {
         const nodes = [], map = new Map();
         const node = (st, s0) => { const key = st.id + '|' + Math.round(s0 / 1.5); let n = map.get(key); if (!n) { n = { id: nodes.length, st, s: s0, adj: [] }; map.set(key, n); nodes.push(n); } return n; };
@@ -787,9 +787,9 @@ const PlanLayout = (() => {
           const st = k.road, s2 = k.s + 5 <= st.len ? k.s + 5 : Math.max(0, k.s - 5), p = ptAt(st, s2, (ks[st.id] || 1) * st.vk).slice(0, 2);
           return { id: 'SUBAUTO', x: p[0], y: p[1], root: true, members: [], road: st, s: s2, node: k.node, stub: [p, [k.x, k.y]] };
         };
-        // how many mini-subs: the ones placed by hand (always kept, where you put them), then — if more are asked for — automatic ones.
+        // the mini-subs are the ones placed by hand, where you put them (with none placed — only the tests — `subs` of them are chosen).
         // The kiosks are split by LV distance; each group gets its own tree.
-        const nFix = manualRoots.length, nSub = Math.max(nFix, Math.min(Math.round(P.subs) || 1, kiosks.length));
+        const nFix = manualRoots.length, nSub = nFix || Math.min(Math.round(P.subs) || 1, kiosks.length);
         let subs;
         if (nSub === 1) subs = [{ k: nFix ? manualRoots[0] : asRoot(pickSub(kiosks, null)), g: kiosks }];
         else {
@@ -824,9 +824,8 @@ const PlanLayout = (() => {
           }
           subs = med.map((m, i) => ({ k: i < nFix ? m : asRoot(m), g: groups[i] })).filter(x => x.g.length || x.k.manual);
         }
-        // the mini-sub nearest the supply point comes first (its MV cable is the one from the supply)
-        const sup = input.mvPt || (streets[0] ? ptAt(streets[0], 0, 0) : [0, 0]);
-        subs.sort((p, q) => Math.hypot(p.k.x - sup[0], p.k.y - sup[1]) - Math.hypot(q.k.x - sup[0], q.k.y - sup[1]));
+        // placed mini-subs keep the order you placed them in (S1, S2, …); chosen ones start from the first street
+        if (!nFix) { const sup = streets[0] ? ptAt(streets[0], 0, 0) : [0, 0]; subs.sort((p, q) => Math.hypot(p.k.x - sup[0], p.k.y - sup[1]) - Math.hypot(q.k.x - sup[0], q.k.y - sup[1])); }
         subs.forEach((s, i) => { s.id = i + 1; s.g.forEach(k => { k.subK = s.k; }); });
         net.subs = subs; net.sub = subs[0].k;
         const lvSet = new Set();
@@ -867,41 +866,8 @@ const PlanLayout = (() => {
         }
         net.lv = [...lvSet]; net.lvLen = net.lv.reduce((a, ed) => a + ed.len, 0);
         net.lv.forEach(ed => ed.xs.forEach(x => events.push({ st: x.st, s: x.s, t: 'lv' })));
-        // MV: from the supply point to the first mini-sub, then on from the nearest earlier one, in the kiosk-side verge, in its own duct
-        let mvNode = null;
-        if (input.mvPt) { let bs = null, bd = 1e9; for (const st of streets) { const pr = project(st, input.mvPt[0], input.mvPt[1]); if (pr.d < bd) { bd = pr.d; bs = [st, pr.s]; } } if (bs) mvNode = node(bs[0], bs[1]); }
-        if (!mvNode && streets.length) mvNode = node(streets[0], 0);
-        const mvSet = [], mvLines = [];
-        const walk = (from, S) => {
-          const prev = T(S.k).prev, line = [];
-          for (let v = from; v !== S.k.node && prev.get(v);) { const ed = prev.get(v); mvSet.push(ed); line.push(...(ed.a === v ? ed.pts : ed.pts.slice().reverse())); v = ed.a === v ? ed.b : ed.a; }
-          return line;
-        };
-        subs.forEach((S, i) => {
-          let line = [];
-          if (i === 0) {
-            if (mvNode) {
-              let from = mvNode;
-              // a node made after the search has no distance: join it to its street neighbours
-              if (!T(S.k).prev.get(from) && from !== S.k.node) {
-                const on = nodes.filter(n => n.st === from.st && n !== from).sort((p, q) => Math.abs(p.s - from.s) - Math.abs(q.s - from.s))[0];
-                if (on) { const ed = { a: from, b: on, pts: verge(from.st, from.s, on.s, (ks[from.st.id] || 1) * from.st.vk), len: 0, xs: [] }; ed.len = plen(ed.pts); mvSet.push(ed); line.push(...ed.pts); from = on; }
-              }
-              line.push(...walk(from, S));
-            }
-          } else {
-            const near = subs.slice(0, i).sort((p, q) => dd(S.k, p.k) - dd(S.k, q.k))[0];
-            line = [[near.k.x, near.k.y], ...walk(near.k.node, S)];
-          }
-          if (!line.length) line.push(S.k.stub[1].slice());
-          line.push([S.k.x, S.k.y]);
-          pathCrossings(S.k.stub, null).forEach(x => events.push({ st: x.st, s: x.s, t: 'mv' }));
-          mvLines.push({ sub: S.k, pts: line.filter((p, j) => !j || Math.hypot(p[0] - line[j - 1][0], p[1] - line[j - 1][1]) > .01) });
-        });
-        net.mv = mvSet; net.mvLen = mvSet.reduce((a, ed) => a + ed.len, 0);
-        net.mvLines = mvLines; net.mvLine = mvLines[0] ? mvLines[0].pts : [];
-        net.mvPts = net.mvLine.length ? net.mvLine[0] : null;
-        mvSet.forEach(ed => ed.xs.forEach(x => events.push({ st: x.st, s: x.s, t: 'mv' })));
+        // MV is not designed here: the mini-subs are fed from outside the layout
+        net.mv = []; net.mvLen = 0; net.mvLines = []; net.mvLine = []; net.mvPts = null;
       }
       events.sort((p, q) => p.st.id.localeCompare(q.st.id) || p.s - q.s);
       const cross = [];

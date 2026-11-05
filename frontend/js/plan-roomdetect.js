@@ -1314,7 +1314,8 @@ Object.assign(PlanRoomDetect, {
       ctx.save();
       ctx.beginPath(); pts.forEach((p, k) => k ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); ctx.closePath();
       ctx.fillStyle = red ? 'rgba(220,38,38,0.30)' : 'rgba(37,99,235,0.18)'; ctx.fill();
-      ctx.lineWidth = 2 / zoom; ctx.strokeStyle = red ? '#dc2626' : '#2563eb'; ctx.stroke();
+      ctx.lineWidth = 5 / zoom; ctx.strokeStyle = 'rgba(255,255,255,0.9)'; ctx.stroke();
+      ctx.lineWidth = 2.2 / zoom; ctx.strokeStyle = red ? '#b91c1c' : '#1d4ed8'; ctx.stroke();
       ctx.restore();
     }
     const lk = this.leak;
@@ -1332,14 +1333,18 @@ Object.assign(PlanRoomDetect, {
 
   drawStaged(ctx, zoom, target) {
     if (this.staged.target !== target || !this.staged.items.length) return;
-    const f = PlanEngine.factor();
     ctx.save();
-    ctx.lineWidth = 1.5 / zoom; ctx.setLineDash([6 / zoom, 4 / zoom]);
-    ctx.font = `600 ${12 / zoom}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.lineJoin = 'round'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.font = `700 ${13 / zoom}px sans-serif`;
+    // light fill, a white casing under a dark solid outline, a number with a white halo: the fill, the edge and the label are three different tones
     this.staged.items.forEach((it, i) => {
       ctx.beginPath(); it.points.forEach((p, k) => k ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); ctx.closePath();
-      ctx.fillStyle = 'rgba(217,119,6,0.28)'; ctx.fill(); ctx.strokeStyle = '#d97706'; ctx.stroke();
-      ctx.setLineDash([]); ctx.fillStyle = '#7c2d12'; ctx.fillText(String(it.label || (i + 1)), it.seed.x, it.seed.y); ctx.setLineDash([6 / zoom, 4 / zoom]);
+      ctx.fillStyle = 'rgba(250,204,21,0.26)'; ctx.fill();
+      ctx.lineWidth = 5 / zoom; ctx.strokeStyle = 'rgba(255,255,255,0.92)'; ctx.stroke();
+      ctx.lineWidth = 2.2 / zoom; ctx.strokeStyle = '#9a3412'; ctx.stroke();
+      const t = String(it.label || (i + 1));
+      ctx.lineWidth = 4 / zoom; ctx.strokeStyle = 'rgba(255,255,255,0.95)'; ctx.strokeText(t, it.seed.x, it.seed.y);
+      ctx.fillStyle = '#1c1917'; ctx.fillText(t, it.seed.x, it.seed.y);
     });
     ctx.restore();
   },

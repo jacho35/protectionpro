@@ -312,9 +312,12 @@ const PlanEngine = {
     for (const rm of (pm.rooms || [])) this._drawRoom(ctx, rm, sel.has(rm.id));
     for (const t of pm.trenches) this._drawTrench(ctx, t, sel.has(t.id));
     for (const c of pm.crossings) this._drawCrossing(ctx, c, sel.has(c.id));
+    const served = this._servedOf(sel);                                  // a selected kiosk: the erven it serves
+    this._drawServedUnder(ctx, served, z);
     for (const r of pm.routes) this._drawRoute(ctx, r, sel.has(r.id));
     this._drawLoadFeeds(ctx);
     for (const el of pm.elements) this._drawElementEntity(ctx, el, sel.has(el.id));
+    this._drawServedOver(ctx, served, z);
     for (const tx of pm.texts) this._drawText(ctx, tx, sel.has(tx.id));
     for (const m of pm.measurements) this._drawMeasurement(ctx, m, sel.has(m.id));
 
@@ -323,6 +326,57 @@ const PlanEngine = {
     if (typeof RoomCalc !== 'undefined' && typeof PlanMarkup !== 'undefined' && PlanMarkup.context === 'lighting') RoomCalc.draw(ctx, this.view.zoom);
     // Tool overlay (ghosts, rubber-bands, snap ring)
     if (typeof PlanTools !== 'undefined' && PlanTools.drawOverlay) PlanTools.drawOverlay(ctx, z);
+    ctx.restore();
+  },
+
+  // ─── A selected kiosk shows the erven it serves ───
+  // The erven on its service cables (routes of type "service" from the kiosk), plus the ones its Demand row lists.
+  // → [{ kiosk, erven: [erf element], routes: [service route] }] for each selected kiosk; nothing selected = [].
+  _servedOf(sel) {
+    const pm = AppState.planMarkup, out = [];
+    if (!sel || !sel.size) return out;
+    const R = AppState.reticulation;
+    for (const k of pm.elements) {
+      if (k.type !== 'kiosk' || !sel.has(k.id)) continue;
+      const ids = new Set(), routes = [];
+      for (const r of pm.routes) {
+        if (r.type !== 'service') continue;
+        if (r.fromId === k.id && r.toId) { ids.add(r.toId); routes.push(r); }
+        else if (r.toId === k.id && r.fromId) { ids.add(r.fromId); routes.push(r); }
+      }
+      const row = k.reticId && R && Array.isArray(R.kiosks) ? R.kiosks.find(x => x.id === k.reticId) : null;
+      if (row && Array.isArray(row.erfs)) for (const e of row.erfs) { const el = pm.elements.find(x => x.type === 'erf' && x.reticId === e.id); if (el) ids.add(el.id); }
+      const erven = [...ids].map(id => pm.elements.find(x => x.id === id)).filter(x => x && x.type === 'erf');
+      out.push({ kiosk: k, erven, routes });
+    }
+    return out;
+  },
+  _drawServedUnder(ctx, served, z) {
+    if (!served.length) return;
+    const u = 1 / z;
+    ctx.save();
+    for (const s of served) for (const e of s.erven) {
+      ctx.fillStyle = 'rgba(245,158,11,0.30)'; ctx.strokeStyle = '#f59e0b'; ctx.lineWidth = 2.2 * u;
+      if (Array.isArray(e.boundary) && e.boundary.length >= 3) {
+        ctx.beginPath(); e.boundary.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); ctx.closePath(); ctx.fill(); ctx.stroke();
+      } else { ctx.beginPath(); ctx.arc(e.x, e.y, 16 * u, 0, 6.2832); ctx.fill(); ctx.stroke(); }
+    }
+    ctx.restore();
+  },
+  _drawServedOver(ctx, served, z) {
+    if (!served.length) return;
+    const u = 1 / z;
+    ctx.save(); ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+    for (const s of served) {
+      ctx.strokeStyle = '#f59e0b'; ctx.lineWidth = 3.4 * u; ctx.globalAlpha = 0.9;
+      for (const r of s.routes) { if (!r.points || r.points.length < 2) continue; ctx.beginPath(); r.points.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); ctx.stroke(); }
+      ctx.globalAlpha = 1;
+      const label = s.erven.length ? `serves ${s.erven.length} ${s.erven.length === 1 ? 'erf' : 'erven'}` : 'no erven connected';
+      ctx.font = `700 ${11 * u}px sans-serif`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+      const x = s.kiosk.x + 14 * u, y = s.kiosk.y - 16 * u, w = ctx.measureText(label).width + 10 * u;
+      ctx.fillStyle = s.erven.length ? '#b45309' : '#64748b'; ctx.fillRect(x, y - 9 * u, w, 18 * u);
+      ctx.fillStyle = '#fff'; ctx.fillText(label, x + 5 * u, y);
+    }
     ctx.restore();
   },
 
