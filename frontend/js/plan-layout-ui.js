@@ -12,6 +12,11 @@
 
 const PlanLayoutUI = {
   result: null, f: null, stale: true, mode: 'front', hoverT: null, ms: 0, err: '',
+  step: 1, ckFilter: 'all', _ckOpen: new Set(), _active: false,
+  STEPS: ['Streets', 'Mini-subs', 'Rules', 'Review'],
+  PRESET_NAMES: { standard: 'Standard', short: 'Short services', fewest: 'Fewest kiosks', custom: 'Custom' },
+  PRESET_HINT: { standard: 'The kiosk rules most projects use.', short: 'More kiosks, so every service is short: lower volt drop and earth-fault loop.', fewest: 'Fewer kiosks and more cable: the lowest kiosk count, longer services.' },
+  get PRESETS() { const D = PlanLayout.DEFAULTS; return { standard: { n: D.n, maxc: D.maxc, worth: D.worth }, short: { n: 6, maxc: 50, worth: 80 }, fewest: { n: 8, maxc: 100, worth: 400 } }; },
   PAL: ['#2a7de1', '#d9480f', '#2b9348', '#9c36b5', '#b07800', '#0c8599', '#c2255c', '#5f3dc4'],
   SHOW: { front: true, mark: true, kiosk: true, fibre: true, lvmv: true, cross: true, trench: true },
   // trench settings: depth per cable class (m) and what shares a trench; kept apart from the layout rules (no re-solve)
@@ -639,6 +644,54 @@ const PlanLayoutUI = {
     L.subs.push({ x: pt.x, y: pt.y }); this.touched();                               // exactly where you click: no kiosk is added beside it
   },
 
+
+  // ───────── the panel's steps, presets and footer button ─────────
+  presetOf() { const p = this.cfg().params, P = this.PRESETS; for (const k of Object.keys(P)) if (Object.keys(P[k]).every(x => +p[x] === +P[k][x])) return k; return 'custom'; },
+  setPreset(k) { const P = this.PRESETS[k]; if (!P) return; Object.assign(this.cfg().params, P); this.touched(); },
+  setStep(n) {
+    n = Math.max(1, Math.min(4, n | 0)); this.step = n;
+    if (n !== 1) { this.streetDrawOn(false); if (this.kerbStage) this.kerbCancel(); if (this.centreStage) this.centreCancel(); }
+    if (n === 2) this.mode = 'sub'; else if (this.mode === 'sub') this.mode = 'front';
+    this.markFor = null; this.subMove = null;
+    PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true });
+  },
+  // the step a user most likely wants when the tool opens
+  firstStep() { return !this.streetsOnPlan().length ? 1 : !this.placedSubs().length ? 2 : this.result ? 4 : 3; },
+  edits() { const L = this.cfg(); return Object.keys(L.fronts).length + Object.keys(L.markers).length + L.cuts.length + (L.entry ? 1 : 0); },
+  nextAction(r, placed, noKiosks, nErv, nStreets) {
+    if (!nErv) return { label: 'Detect the erven to continue', act: 'goto', s: 1, dis: true, note: 'The layout needs erf boundaries: use Detect erven.' };
+    if (!nStreets) return { label: 'Add the streets to continue', act: 'goto', s: 1, dis: true, note: 'The layout needs the street centrelines.' };
+    if (!placed.length) return { label: 'Place a mini-sub to continue', act: 'goto', s: 2, dis: true, note: 'The layout works from the mini-subs you place.' };
+    if (!r || this.stale) return { label: r ? 'Re-run layout' : 'Run layout', act: 'run', note: '' };
+    if (noKiosks) return { label: 'Fix the streets to continue', act: 'goto', s: 1, dis: true, note: 'No erf faces a street, so there are no kiosks to create.' };
+    return { label: 'Create on plan', act: 'create', create: true, note: 'Replaces the previous auto layout. Your own items stay.' };
+  },
+  createCounts() {
+    const r = this.result; if (!r) return {};
+    const mh = ((r.fibre && r.fibre.inter) || []).length + ((r.fibre && r.fibre.mhs) || []).length;
+    const m = r.trench ? Object.values(r.trench.summary).reduce((a, q) => a + q.len, 0) : 0;
+    return { markers: r.erven.filter(e => e.marker).length, kiosks: `${r.kiosks.length} + ${r.erven.filter(e => e.kiosk && e.route).length}`, lv: `${r.net.subs.length} + ${r.net.lvLinks.length}`,
+      fibre: String(mh), cross: String(r.stats ? r.stats.crossings : 0), trench: Math.round(m).toLocaleString('en') + ' m' };
+  },
+  // the line over the plan: what a click does now
+  hint() {
+    const r = this.result, pre = 'Auto layout · ';
+    if (this.drawStreets) return pre + 'Streets: click along the street. Enter, or the last point again, finishes it. Backspace takes a point back, Esc stops.';
+    if (this.centreStage) return pre + 'Streets: click the centreline of each road. Shift-click one piece, Alt-click drops it. Enter creates, Esc leaves.';
+    if (this.kerbStage) return pre + 'Streets: Alt-click removes a street, Shift-click two kerbs adds one. Enter creates, Esc leaves.';
+    if (this.step === 1) return pre + 'Streets: draw each street centreline, or take them from the drawing in the panel.';
+    if (this.step === 2) return pre + 'Mini-subs: click where each one stands. Click a mini-sub to move it, Alt-click to remove it.';
+    if (this.step === 3) return pre + 'Rules: choose the preset and the settings in the panel.';
+    if (!r) return pre + 'Review: run the layout to see the kiosks, cables and checks.';
+    if (!r.kiosks.length) return pre + 'Review: no kiosks were found. Draw a centreline beside the erven, or extend the nearest street.';
+    if (this.mode === 'marker') return pre + (this.markFor ? 'click on the erf where its service cable should arrive.' : 'click inside an erf where its service cable should arrive. Alt-click removes a marker.');
+    if (this.mode === 'trunk') return pre + 'click a trunk duct section to cut it or put it back; click a junction for the fibre entry.';
+    return pre + 'Review: click a check to see it on the plan. Click an erf near an edge to make it the front.';
+  },
+  // the panel has a lot to show: a little wider while this tool is open (not on a phone)
+  widen(on) { const el = document.getElementById('plan-props'); if (el && !(window.matchMedia && window.matchMedia('(max-width: 768px)').matches)) el.style.width = on ? '360px' : ''; },
+  syncHint() { if (this._active && typeof PlanMarkup !== 'undefined' && PlanMarkup.onDraftChanged) { PlanMarkup._toolMsg = this.hint(); PlanMarkup.onDraftChanged(); } },
+
   streetsOnPlan() { return AppState.planMarkup.routes.filter(r => r.type === 'street' && r.points && r.points.length >= 2); },
 
   gather() {
@@ -652,7 +705,7 @@ const PlanLayoutUI = {
     const streets = sr.map((r, i) => ({ id: r.id, name: (r.props && r.props.name) || ('Street ' + (i + 1)), w: this._num(r.props && r.props.width, 6, 40, 12), pts: this._flat(r).map(p => [p.x * f, p.y * f]) }));
     const ks = {}, fs = {}; streets.forEach(s => { const sd = L.sides[s.id] || {}; ks[s.id] = sd.k === 1 || sd.k === -1 ? sd.k : 0; fs[s.id] = sd.f === 1 || sd.f === -1 ? sd.f : null; });
     const subPts = this.placedSubs().map(q => [q.x * f, q.y * f]);                    // every mini-sub you placed: the layout works from them
-    if (!subPts.length) return { err: 'Place your mini-subs first: pick Mini-sub under "A click edits" and click where each one stands. The layout works from them.' };
+    if (!subPts.length) return { err: 'Place your mini-subs first (step 2): click where each one stands. The layout works from them.' };
     const markers = {}; for (const [id, q] of Object.entries(L.markers)) if (erven.some(e => e.id === id)) markers[id] = [q.x * f, q.y * f];
     const splits = L.vd.splits.map(q => [q.x * f, q.y * f]);
     return { f, input: { erven, streets, markers, splits, ks, fs, overrides: L.fronts, cuts: L.cuts, subPts, entryPt: L.entry ? [L.entry.x * f, L.entry.y * f] : null }, params: L.params };
@@ -928,7 +981,7 @@ const PlanLayoutUI = {
     if (D) D.heads.filter(h => h.noCurrent && !h.pinned).forEach(h => out.push({ sev: 'fail', text: `String ${h.name} has no current from Demand, so no breaker was chosen for it (none is guessed). Run Demand, or pick the string breaker yourself.`, ids: [] }));
     else if (D && D.taper.on && D.taper.count > 1) out.push({ sev: 'info', text: `LV cable: ${D.taper.count} sizes, ${D.taper.minMm2} to ${D.taper.maxMm2} mm² ${D.conductor}, taper saves ${D.taper.savedPct}% (cable size × length) against ${D.uniform.sizeMm2} mm² throughout. ${this.cfg().vd.way80 ? 'Every erf way is an 80 A MCCB; ' : ''}each string head has the breaker with the fewest earth-fault fails.`, ids: [] });
     const near = r.erven.filter(e => e.fe && e.kiosk && e.cable > 0.85 * P.maxc && e.cable <= P.maxc + 1e-6);
-    if (near.length) out.push({ sev: 'warn', text: `${near.length} services are within 15% of the ${P.maxc} m limit: ${nm(near.map(lab))}.`, ids: near.map(e => e.id) });
+    if (near.length) out.push({ sev: 'warn', text: `${near.length} ${near.length === 1 ? 'service is' : 'services are'} within 15% of the ${P.maxc} m limit: ${nm(near.map(lab))}.`, ids: near.map(e => e.id) });
     const onRoad = new Map(); r.erven.forEach(e => { if (e.road) onRoad.set(e.road, (onRoad.get(e.road) || 0) + 1); });
     const thin = P.n >= 4 ? r.kiosks.filter(k => k.members.length <= 2 && (onRoad.get(k.road) || 0) > 2) : [];          // a street of 2 erven needs its own
     if (thin.length) out.push({ sev: thin.length > 1 ? 'warn' : 'info', text: `${thin.length} of ${r.kiosks.length} kiosks ${thin.length === 1 ? 'serves' : 'serve'} 2 erven or fewer (${thin.map(k => k.id).join(', ')}). Fine on a short street; otherwise raise the worth of a kiosk (more extra cable accepted to save one) or lower the maximum houses per kiosk.`, ids: thin.flatMap(k => k.members.map(e => e.id)) });
@@ -1028,7 +1081,12 @@ const PlanLayoutUI = {
       if (kind === 'check') return `<label style="display:flex;gap:6px;align-items:flex-start"><input type="checkbox" data-p="${k}"${p[k] ? ' checked' : ''}> <span>${esc(a)}</span></label>`;
       return `<label style="display:block">${esc(b)}<select data-p="${k}" style="width:100%">${a.map(o => `<option value="${esc(o[0])}"${p[k] === o[0] ? ' selected' : ''}>${esc(o[1])}</option>`).join('')}</select></label>`;
     };
-    const groups = this.CTRL.map(([name, rows], gi) => `<details${gi === 0 || gi === 2 || gi === 3 ? ' open' : ''}><summary style="cursor:pointer;font-weight:600;margin:2px 0">${name}</summary><div style="display:flex;flex-direction:column;gap:8px;padding:6px 0 4px">${rows.map(ctrl).join('')}</div></details>`).join('');
+    const dflt = PlanLayout.DEFAULTS, MOST = ['n', 'maxc'];                                      // the two kiosk settings shown in Rules as "most used"
+    const grpChanged = rows => rows.some(r => !MOST.includes(r[0]) && String(p[r[0]]) !== String(dflt[r[0]]));
+    const advHead = (name, changed, key) => `<summary style="cursor:pointer;font-weight:600;margin:2px 0">${name}${changed ? ` <span style="color:#b45309;font-weight:400;font-size:12px">● changed</span>` : ''}</summary>`;
+    const resetBtn = (changed, key) => changed ? `<button type="button" class="plan-btn" data-act="resetgrp" data-g="${key}" style="align-self:flex-start;padding:1px 8px;font-size:12px">Reset this group</button>` : '';
+    const groups = this.CTRL.map(([name, rows]) => { const ch = grpChanged(rows), shown = rows.filter(r => !MOST.includes(r[0]));
+      return shown.length ? `<details>${advHead(name, ch)}<div style="display:flex;flex-direction:column;gap:8px;padding:6px 0 4px">${shown.map(ctrl).join('')}${resetBtn(ch, name)}</div></details>` : ''; }).join('');
     const TT = L.trench, tget = k => k.startsWith('depth.') ? TT.depth[k.slice(6)] : TT[k];
     const tctrl = ([k, kind, a, b, c, unit, label]) => {
       if (k === 'depth.comb' && TT.depth.comb == null) return '';
@@ -1036,20 +1094,23 @@ const PlanLayoutUI = {
       if (kind === 'check') { const on = k === 'combOn' ? TT.depth.comb != null : TT[k]; return `<label style="display:flex;gap:6px;align-items:flex-start"><input type="checkbox" data-t="${k}"${on ? ' checked' : ''}> <span>${esc(a)}</span></label>`; }
       return `<label style="display:block">${esc(b)}<select data-t="${k}" style="width:100%">${a.map(o => `<option value="${esc(o[0])}"${TT[k] === o[0] ? ' selected' : ''}>${esc(o[1])}</option>`).join('')}</select></label>`;
     };
-    const trenchGroup = `<details open><summary style="cursor:pointer;font-weight:600;margin:2px 0">Trenches</summary><div style="display:flex;flex-direction:column;gap:8px;padding:6px 0 4px">${this.TREN.map(tctrl).join('')}</div></details>`;
+    const trChanged = JSON.stringify([TT.depth.lv, TT.depth.fi, TT.fibre, TT.crossings]) !== JSON.stringify([PlanLayout.TRENCH_DEFAULTS.depth.lv, PlanLayout.TRENCH_DEFAULTS.depth.fi, PlanLayout.TRENCH_DEFAULTS.fibre, PlanLayout.TRENCH_DEFAULTS.crossings]);
+    const trenchGroup = `<details>${advHead('Trenches', trChanged)}<div style="display:flex;flex-direction:column;gap:8px;padding:6px 0 4px">${this.TREN.map(tctrl).join('')}${resetBtn(trChanged, 'Trenches')}</div></details>`;
     const VDc = L.vd, cb = this.vdCables(), lim = this.vdLimits(), txOpts = (typeof Retic !== 'undefined' ? Retic._txOptions() : []), opts = (list, cur) => list.map(c => `<option value="${esc(c.id)}"${cur && cur.id === c.id ? ' selected' : ''}>${esc(c.name)}</option>`).join('');
-    const vdGroup = `<details open><summary style="cursor:pointer;font-weight:600;margin:2px 0">Voltage drop and transformer</summary><div style="display:flex;flex-direction:column;gap:8px;padding:6px 0 4px">
+    const vdDef = { way80: true, taper: true, minSize: 0, maxSize: 0, prot: '', protK: 1.2, svc: '' };
+    const vdChanged = Object.keys(vdDef).some(k => String(VDc[k]) !== String(vdDef[k]));
+    const vdTx = `<label style="display:block">Mini-sub transformer<select data-vd="tx" style="width:100%"><option value=""${VDc.tx ? '' : ' selected'}>Automatic: the smallest that carries each mini-sub</option>${txOpts.map(o => `<option value="${esc(o.id)}"${VDc.tx === o.id ? ' selected' : ''}>${esc(o.name)}</option>`).join('')}</select></label>`;
+    const vdLv = `<label style="display:block">LV feeder cable<select data-vd="lv" style="width:100%"><option value=""${cb.auto ? ' selected' : ''}>Automatic: the smallest that meets the limits and the rating${cb.auto && cb.lv ? ' (now ' + esc(cb.lv.name) + ')' : ''}</option>${opts(cb.feeders, cb.auto ? null : cb.lv)}</select></label>`;
+    const vdGroup = `<details>${advHead('Voltage drop and earth fault', vdChanged)}<div style="display:flex;flex-direction:column;gap:8px;padding:6px 0 4px">
         <div>Limits are Demand's: LV feeder <b>${Number(lim.feeder)} %</b>, service <b>${Number(lim.svc)} %</b>. Change them in Demand (Max Feeder VD, Max Service VD).</div>
         <label style="display:flex;gap:6px;align-items:flex-start"><input type="checkbox" data-vd="way80"${VDc.way80 ? ' checked' : ''}> <span>80 A on erven: an 80 A MCCB on every erf's way (change it per kiosk in Demand)</span></label>
         <label style="display:flex;gap:6px;align-items:flex-start"><input type="checkbox" data-vd="taper"${VDc.taper ? ' checked' : ''}> <span>Taper the LV cable: the smallest size that passes on each feeder, large near the mini-sub</span></label>
         <div style="display:flex;gap:6px"><label style="flex:1;display:block">Smallest LV cable<select data-vd="minSize" style="width:100%"><option value="0"${VDc.minSize ? '' : ' selected'}>No limit</option>${this._ladderSizes().map(x => `<option value="${x}"${VDc.minSize === x ? ' selected' : ''}>${x} mm²</option>`).join('')}</select></label>
           <label style="flex:1;display:block">Largest LV cable<select data-vd="maxSize" style="width:100%"><option value="0"${VDc.maxSize ? '' : ' selected'}>No limit</option>${this._ladderSizes().map(x => `<option value="${x}"${VDc.maxSize === x ? ' selected' : ''}>${x} mm²</option>`).join('')}</select></label></div>
-        <label style="display:block">Mini-sub transformer<select data-vd="tx" style="width:100%"><option value=""${VDc.tx ? '' : ' selected'}>Automatic: the smallest that carries each mini-sub</option>${txOpts.map(o => `<option value="${esc(o.id)}"${VDc.tx === o.id ? ' selected' : ''}>${esc(o.name)}</option>`).join('')}</select></label>
         <label style="display:block">String breaker (earth-fault loop)<select data-vd="prot" style="width:100%">${Retic._protectionOptions(VDc.prot, this._designOn() ? 'Automatic: sized to each string (fewest earth-fault fails)' : 'Automatic: the next size up from the string current × factor')}</select></label>
         ${VDc.prot || this._designOn() ? '' : `<label style="display:block">Breaker rating at least <b data-vv="protK">${Number(VDc.protK).toFixed(2)}</b> × the string current<input type="range" data-vd="protK" min="1" max="2" step="0.05" value="${Number(VDc.protK)}" style="width:100%"></label>`}
-        <label style="display:block">LV feeder cable<select data-vd="lv" style="width:100%"><option value=""${cb.auto ? ' selected' : ''}>Automatic: the smallest that meets the limits and the rating${cb.auto && cb.lv ? ' (now ' + esc(cb.lv.name) + ')' : ''}</option>${opts(cb.feeders, cb.auto ? null : cb.lv)}</select></label>
         <label style="display:block">Service cable<select data-vd="svc" style="width:100%">${opts(cb.services, cb.svc)}</select></label>
-        <div style="color:var(--text-muted)">Worked out by Demand itself: its load class and ADMD settings give the diversified current on each LV leg and on each service, and its volt-drop calculation does the rest.</div></div></details>`;
+        <div style="color:var(--text-muted)">Worked out by Demand itself: its load class and ADMD settings give the diversified current on each LV leg and on each service, and its volt-drop calculation does the rest.</div>${resetBtn(vdChanged, 'Voltage drop and earth fault')}</div></details>`;
     const sr = this.streetsOnPlan();
     const seg = (id, key, vals) => `<span class="plan-seg" style="display:inline-flex;gap:2px">${vals.map(([v, t]) => { const cur = (L.sides[id] || {})[key]; const on = (v === 0 ? (cur == null) : cur === v); return `<button type="button" class="plan-btn" data-side="${esc(id)}" data-key="${esc(key)}" data-val="${v}" aria-pressed="${on}" style="padding:2px 7px;font-size:12px${on ? ';font-weight:600;outline:2px solid var(--accent,#2563eb)' : ''}">${t}</button>`; }).join('')}</span>`;
     const streets = sr.length ? sr.map((s, i) => `<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;border-bottom:1px solid var(--border,#ddd);padding:3px 0"><span>${esc((s.props && s.props.name) || 'Street ' + (i + 1))}</span><span style="display:flex;flex-direction:column;gap:2px;align-items:flex-end"><span>Kiosks ${seg(s.id, 'k', [[0, 'Auto'], [1, 'Left'], [-1, 'Right']])}</span><span>Fibre ${seg(s.id, 'f', [[0, 'Auto'], [1, 'Left'], [-1, 'Right']])}</span></span></div>`).join('') : '<div class="plan-props-empty" style="padding:4px 0">No streets yet. Draw them with Draw centrelines above, or take them from a drawing layer (pair kerbs, pick the centrelines you want, or use every line of a centreline layer). Left and right are looking along the way you drew it.</div>';
@@ -1084,58 +1145,125 @@ const PlanLayoutUI = {
       </div>` : (r && r.designErr ? `<div style="color:#b91c1c;margin-top:6px">The LV design could not be run: ${esc(r.designErr)}</div>` : '');
     const xt = r ? r.net.cross.slice().sort((a, b) => (a.prov - b.prov) || (b.d110 + b.d160) - (a.d110 + a.d160)).slice(0, 14).map((x, i) => { const parts = x.prov ? `${x.d110}×110, ${x.d160}×160, junction` : [x.d110s && `${x.d110s}×110 service`, x.d110f && `${x.d110f}×110 fibre`, x.d110l && `${x.d110l}×110 LV`, x.d160 && `${x.d160}×160 MV`, x.spare && `${x.spare}×110 spare`].filter(Boolean).join(', '); return `<tr><td>${esc(x.st.name)}</td><td>${esc(parts)}</td></tr>`; }).join('') : '';
     const trenchRows = r && r.trench ? Object.entries(r.trench.summary).map(([type, q]) => { const d = PLAN_DEFS.trenchTypes[type] || { name: type, width: 0.5 }; const vol = q.len * d.width * q.depth; return `<div style="display:flex;justify-content:space-between;gap:8px"><span>${esc(d.name)}</span><span>${fmt(q.len)} m at ${q.depth.toFixed(2)} m · ${fmt(vol)} m³</span></div>`; }).join('') : '';
-    const ck = r ? this.checks() : [], sevCol = { fail: '#dc2626', warn: '#b45309', info: '#64748b' }, sevTxt = { fail: 'Fix', warn: 'Check', info: 'Note' };
+    const ck = r ? this.checks() : [], placed = this.placedSubs(), Ls = this.cfg();
     this._ck = ck;
-    const checkBlock = r ? `<div><b>Checks</b> <span style="color:var(--text-muted)">${ck.length ? ck.filter(c => c.sev === 'fail').length + ' to fix · ' + ck.filter(c => c.sev === 'warn').length + ' to check' : ''}</span>
-        ${this.flag && this.flag.size ? '<button type="button" class="plan-btn" data-act="unflag" style="margin-top:3px;padding:2px 8px;font-size:12px">Clear the red marks on the plan</button>' : ''}
-        ${ck.length ? ck.map((c, i) => { const col = esc(sevCol[c.sev]), head = `<b style="color:${col}">${sevTxt[c.sev]}</b> ${esc(c.text)}`;
-          return (c.ids.length ? `<button type="button" class="plan-btn" data-ck="${i}" style="display:block;width:100%;text-align:left;margin-top:3px;white-space:normal;border-left:4px solid ${col}">${head} <span style="color:var(--text-muted)">· show on plan</span></button>`
-            : `<div style="margin-top:3px;padding:3px 6px;border-left:4px solid ${col};white-space:normal">${head}</div>`)
-            + (c.rows ? `<div style="max-height:190px;overflow:auto;margin-top:2px">${c.rows.map(x => { const g = x.g;
-              const why = !g ? 'no street on the plan' : g.near ? `already within reach of ${esc(g.street.name)}: check that its edge is not blocked by another erf` : `${esc(g.street.name)}, ${Math.round(g.d)} m away: ${g.atEnd ? 'extend it' : 'a spur'} ${Math.round(g.len)} m${g.crosses ? ` · <b style="color:#b45309">passes through ${g.crosses} other ${g.crosses === 1 ? 'erf' : 'erven'}</b>` : ''}`;
-              return `<div style="display:flex;justify-content:space-between;align-items:center;gap:4px;border-bottom:1px solid var(--border,#ddd);padding:2px 0;font-size:12px"><span>${esc(x.name)} · ${why}</span><span style="display:flex;gap:3px;flex-shrink:0"><button type="button" class="plan-btn" data-ckerf="show:${esc(x.id)}" style="padding:1px 6px;font-size:12px"${g ? '' : ' disabled'}>show</button><button type="button" class="plan-btn" data-ckerf="ext:${esc(x.id)}" style="padding:1px 6px;font-size:12px;font-weight:600"${g && !g.near ? '' : ' disabled'}>extend</button><button type="button" class="plan-btn" data-ckerf="mark:${esc(x.id)}" style="padding:1px 6px;font-size:12px;font-weight:600" title="Put the service marker there yourself: the cable then runs to it from the nearest street">place marker</button></span></div>`; }).join('')}</div>` : '')
-            + ((c.acts || []).length ? `<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:2px">${c.acts.map((a, j) => `<button type="button" class="plan-btn" data-ckact="${i}:${j}" style="padding:2px 8px;font-size:12px;font-weight:600">${esc(a.label)}</button>`).join('')}</div>` : ''); }).join('')
-          : '<div style="color:#15803d;margin-top:3px">✓ Every erf is served, within the service limit and the kiosk size.</div>'}</div>` : '';
-    const chk = (k, t) => `<label style="display:flex;gap:6px"><input type="checkbox" data-opt="${k}"${opt[k] ? ' checked' : ''}> ${t}</label>`;
+    const sevCol = { fail: '#dc2626', warn: '#b45309', info: '#64748b' }, sevTxt = { fail: 'Fix', warn: 'Check', info: 'Note' };
+    const nFix = ck.filter(c => c.sev === 'fail').length, nChk = ck.filter(c => c.sev === 'warn').length, nNote = ck.filter(c => c.sev === 'info').length;
+    const noKiosks = !!(r && !r.kiosks.length);
+    const sr0 = this.streetsOnPlan(), nErv = AppState.planMarkup.elements.filter(e => e.type === 'erf' && Array.isArray(e.boundary) && e.boundary.length >= 3).length;
+    const f0 = PlanEngine.factor(), streetM = f0 ? sr0.reduce((a, s) => a + this.centreLen(this._flat(s).map(q => [q.x * f0, q.y * f0])), 0) : 0;
+    // ── the step bar
+    const preset = this.presetOf();
+    const sst = [
+      !sr0.length || !nErv ? { c: 'todo', g: '!', t: !nErv ? 'No erven' : 'No streets' } : noKiosks ? { c: 'todo', g: '!', t: 'No kiosks' } : { c: 'ok', g: '✓', t: `${nErv} erven`, title: `${nErv} erven · ${sr0.length} street${sr0.length === 1 ? '' : 's'}` },
+      placed.length ? { c: 'ok', g: '✓', t: placed.length + ' placed' } : { c: 'todo', g: '!', t: 'Place one' },
+      { c: 'ok', g: '✓', t: this.PRESET_NAMES[preset] },
+      !r ? { c: 'idle', g: '4', t: 'Not run' } : this.stale ? { c: 'stale', g: '↻', t: 'Out of date' } : noKiosks ? { c: 'todo', g: '!', t: 'Blocked' } : nFix ? { c: 'todo', g: String(nFix), t: nFix + (nFix === 1 ? ' fix' : ' fixes') } : { c: 'ok', g: '✓', t: 'Ready' }];
+    const dotCol = { ok: '#16a34a', todo: '#dc2626', stale: '#b45309', idle: '#94a3b8' };
+    const stepBar = `<div role="tablist" style="display:grid;grid-template-columns:repeat(4,1fr);gap:3px">${sst.map((x, i) => `<button type="button" role="tab" class="plan-btn" data-step="${i + 1}" aria-selected="${this.step === i + 1}" title="${esc(this.STEPS[i] + ': ' + (x.title || x.t))}" style="display:flex;flex-direction:column;align-items:flex-start;gap:1px;padding:4px 5px;min-width:0;text-align:left;${this.step === i + 1 ? 'outline:2px solid var(--accent,#2563eb);font-weight:600' : ''}"><span style="display:flex;align-items:center;gap:4px;font-size:12px;white-space:nowrap"><span style="display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;border-radius:50%;background:${dotCol[x.c]};color:#fff;font-size:10px;flex:none">${esc(x.g)}</span>${this.STEPS[i]}</span><small style="font-size:10px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%">${esc(x.t)}</small></button>`).join('')}</div>`;
+    const banner = (kind, html) => `<div style="border-left:4px solid ${kind === 'bad' ? '#dc2626' : '#b45309'};background:${kind === 'bad' ? 'rgba(220,38,38,.08)' : 'rgba(180,83,9,.09)'};padding:6px 8px;border-radius:4px;display:flex;flex-direction:column;gap:5px">${html}</div>`;
+    const sBtn = 'padding:2px 8px;font-size:12px';
+    const blocked = noKiosks ? banner('bad', `<b>No kiosks were found.</b><span>${r.erven.length} erven do not face a street, so nothing can be created. Draw a centreline beside them, or extend the nearest street.</span><span style="display:flex;gap:5px;flex-wrap:wrap"><button type="button" class="plan-btn" data-act="showerven" style="${sBtn}">Show the erven</button><button type="button" class="plan-btn" data-act="drawfix" style="${sBtn};font-weight:600">Draw centrelines</button></span>`) : '';
+    // ── step 1: streets
+    const found = (ok, html, act) => `<div style="display:flex;align-items:center;gap:6px;border-bottom:1px solid var(--border-color,#ddd);padding:3px 0"><span style="color:${ok ? '#16a34a' : '#dc2626'};font-weight:700">${ok ? '✓' : '!'}</span><span style="flex:1">${html}</span>${act ? `<button type="button" class="plan-btn" data-act="${act}" style="${sBtn}">Show</button>` : ''}</div>`;
+    const step1 = `${blocked}
+        ${found(nErv > 0, nErv ? `<b>${nErv} erven</b> with boundaries` : '<b>No erven with a boundary.</b> Use Detect erven first', nErv ? 'zoomerven' : '')}
+        ${found(sr0.length > 0, sr0.length ? `<b>${sr0.length} street${sr0.length === 1 ? '' : 's'}</b>, ${fmt(streetM)} m` : '<b>No streets yet.</b> Add them below', sr0.length ? 'zoomstreets' : '')}
+        ${kerbBlock}${centreBlock}
+        <div style="font-weight:600;margin-top:4px">Add or change streets</div>
+        <div style="border:1px solid var(--accent,#2563eb);border-radius:6px;padding:6px 8px;display:flex;flex-direction:column;gap:4px"><div style="display:flex;justify-content:space-between"><b>Draw centrelines</b><span style="font-size:11px;color:var(--accent,#2563eb)">usual choice</span></div><span style="font-size:12px;color:var(--text-muted)">Click along each street. An end that lands on another street joins it.</span><div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><button type="button" class="plan-btn" data-act="streetdraw" aria-pressed="${this.drawStreets}" style="font-weight:600;${this.drawStreets ? 'outline:2px solid var(--accent,#2563eb)' : ''}">${this.drawStreets ? 'Stop drawing' : 'Start drawing'}</button><label style="font-size:12px;display:flex;gap:4px;align-items:center">Width <input type="number" data-copt="w" min="3" max="60" step="0.5" value="${this.centreW}" style="width:54px"> m</label></div>${this.drawStreets ? '<div style="font-size:12px;color:var(--text-muted)">Click along the street. Enter, or click the last point again, finishes it. Backspace takes a point back, Esc stops. Points snap to the drawing\'s corners and ends. Left and right are looking along the way you drew it.</div>' : ''}</div>
+        ${fromDxf || '<div style="font-size:12px;color:var(--text-muted)">To take streets from a drawing layer, import a DXF first.</div>'}
+        <details><summary style="cursor:pointer;font-weight:600">Street options <span style="font-weight:400;font-size:12px;color:var(--text-muted)">kiosk and fibre side · ${sr0.length} street${sr0.length === 1 ? '' : 's'}</span></summary>${streets}</details>`;
+    // ── step 2: mini-subs
+    const subRow = (q, i) => { const S = r && r.net.subs[i], ks = S ? r.kiosks.filter(k => k.subK === S.k) : null;
+      return `<div style="border:1px solid var(--border-color,#ddd);border-radius:5px;padding:4px 6px;display:flex;flex-direction:column;gap:2px"><div style="display:flex;justify-content:space-between;align-items:center;gap:4px"><b>S${i + 1}</b>${q.src === 'layout' ? `<span style="display:flex;gap:4px"><button type="button" class="plan-btn" data-act="submove" data-i="${q.i}" style="${sBtn}">Move</button><button type="button" class="plan-btn" data-act="subrm" data-i="${q.i}" style="${sBtn}">Remove</button></span>` : ''}</div><span style="font-size:12px;color:var(--text-muted)">${q.src === 'plan' ? 'Drawn on the plan. Move or remove it there. ' : ''}${f0 ? Math.round(q.x * f0) + ' m, ' + Math.round(q.y * f0) + ' m' : ''}${ks ? ` · serves ${ks.length} kiosk${ks.length === 1 ? '' : 's'}, ${ks.reduce((a, k) => a + k.members.length, 0)} erven` : ''}</span></div>`; };
+    const step2 = `<div style="font-size:12px;color:var(--text-muted)">The layout works from your mini-subs. Click where each one stands, anywhere (on a street, in a block, in a park). No kiosk is added beside it: kiosks follow the erven and go to the nearest mini-sub.</div>
+        <button type="button" class="plan-btn" data-mode="sub" aria-pressed="${this.mode === 'sub'}" style="font-weight:600;padding:8px;${this.mode === 'sub' ? 'outline:2px solid var(--accent,#2563eb)' : ''}">${this.mode === 'sub' ? 'Placing: click the plan' : (placed.length ? 'Place another' : 'Place a mini-sub')}</button>
+        <div style="font-weight:600">Placed (${placed.length})</div>
+        ${placed.length ? placed.map(subRow).join('') : banner('warn', '<span>None yet. The layout cannot run until one is placed.</span>')}
+        <div style="font-size:12px;color:var(--text-muted)">Click one, then click again to move it. Alt-click removes it. A mini-sub part you draw on the plan counts too.</div>`;
+    // ── step 3: rules
+    const pBtn = (k, t) => `<button type="button" class="plan-btn" data-preset="${k}" aria-pressed="${preset === k}" style="padding:3px 6px;font-size:12px;${preset === k ? 'font-weight:600;outline:2px solid var(--accent,#2563eb)' : ''}">${t}</button>`;
+    const kRow = k => this.CTRL[1][1].find(x => x[0] === k);
+    const nChanged = this.CTRL.filter(([, rows]) => grpChanged(rows)).length + (trChanged ? 1 : 0) + (vdChanged ? 1 : 0);
+    const step3 = `<div><div style="font-weight:600;margin-bottom:3px">Preset</div><div style="display:grid;grid-template-columns:repeat(2,1fr);gap:3px">${Object.keys(this.PRESETS).map(k => pBtn(k, this.PRESET_NAMES[k])).join('')}${pBtn('custom', 'Custom')}</div><div style="font-size:12px;color:var(--text-muted);margin-top:3px">${preset === 'custom' ? 'Your own mix of the three kiosk settings below.' : this.PRESET_HINT[preset]}</div></div>
+        <div style="font-weight:600">Most used</div>
+        <div style="display:flex;flex-direction:column;gap:8px">${ctrl(kRow('n'))}${ctrl(kRow('maxc'))}${vdTx}${vdLv}</div>
+        <details><summary style="cursor:pointer;font-weight:600">Advanced <span style="font-weight:400;font-size:12px;color:var(--text-muted)">6 groups · ${nChanged} changed</span></summary><div style="display:flex;flex-direction:column;gap:4px;padding-top:4px">${groups}${trenchGroup}${vdGroup}</div></details>
+        <div style="font-size:12px;color:var(--text-muted)">${r ? 'The layout runs again when you change a setting.' : 'Nothing is drawn while you choose.'}</div>`;
+    // ── step 4: review
+    const split = t => { const i = t.search(/[.:] /); if (i > 8 && i <= 150) return [t.slice(0, i), t.slice(i + 1).trim()]; return t.length <= 150 ? [t, ''] : [t.slice(0, 130) + '…', t]; };
+    const seenAct = new Set(), filt = this.ckFilter || 'all';
+    const rank = { fail: 0, warn: 1, info: 2 };
+    const shown = ck.map((c, i) => ({ c, i })).filter(x => filt === 'all' || x.c.sev === ({ f: 'fail', w: 'warn', n: 'info' }[filt])).sort((a, b) => rank[a.c.sev] - rank[b.c.sev] || a.i - b.i);
+    const rowHtml = ({ c, i }) => { const [title, detail] = split(c.text), key = c.sev + '|' + title, isOpen = this._ckOpen.has(key), col = sevCol[c.sev];
+      const acts = (c.acts || []).map((a, j) => ({ a, j })).filter(({ a }) => { const k = a.label; if (c.sev === 'fail' && seenAct.has(k)) return false; seenAct.add(k); return true; });
+      const rowsHtml = c.rows ? `<div style="max-height:190px;overflow:auto;margin-top:2px">${c.rows.map(x => { const g = x.g;
+        const why = !g ? 'no street on the plan' : g.near ? `already within reach of ${esc(g.street.name)}: check that its edge is not blocked by another erf` : `${esc(g.street.name)}, ${Math.round(g.d)} m away: ${g.atEnd ? 'extend it' : 'a spur'} ${Math.round(g.len)} m${g.crosses ? ` · <b style="color:#b45309">passes through ${g.crosses} other ${g.crosses === 1 ? 'erf' : 'erven'}</b>` : ''}`;
+        return `<div style="display:flex;justify-content:space-between;align-items:center;gap:4px;border-bottom:1px solid var(--border-color,#ddd);padding:2px 0;font-size:12px"><span>${esc(x.name)} · ${why}</span><span style="display:flex;gap:3px;flex-shrink:0"><button type="button" class="plan-btn" data-ckerf="show:${esc(x.id)}" style="padding:1px 6px;font-size:12px"${g ? '' : ' disabled'}>show</button><button type="button" class="plan-btn" data-ckerf="ext:${esc(x.id)}" style="padding:1px 6px;font-size:12px;font-weight:600"${g && !g.near ? '' : ' disabled'}>extend</button><button type="button" class="plan-btn" data-ckerf="mark:${esc(x.id)}" style="padding:1px 6px;font-size:12px;font-weight:600">place marker</button></span></div>`; }).join('')}</div>` : '';
+      return `<div style="display:flex;gap:6px;align-items:flex-start;padding:4px 0;border-bottom:1px solid var(--border-color,#ddd)"><span style="flex:none;margin-top:1px;padding:0 5px;border-radius:3px;background:${col};color:#fff;font-size:11px;font-weight:600">${sevTxt[c.sev]}</span><div style="flex:1;min-width:0"><b style="font-weight:600">${esc(title)}</b>${isOpen && detail ? `<div style="font-size:12px;color:var(--text-muted);margin-top:2px">${esc(detail)}</div>` : ''}${isOpen ? rowsHtml : ''}
+        <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:3px">${detail || c.rows ? `<button type="button" class="plan-btn" data-ckopen="${i}" style="${sBtn}">${isOpen ? 'Hide detail' : 'Detail'}</button>` : ''}${c.ids.length ? `<button type="button" class="plan-btn" data-ck="${i}" style="${sBtn}">Show</button>` : ''}${acts.map(({ a, j }) => `<button type="button" class="plan-btn" data-ckact="${i}:${j}" style="${sBtn}${c.sev === 'fail' ? ';font-weight:600' : ''}">${esc(a.label)}</button>`).join('')}</div></div></div>`; };
+    const chip = (k, t, on) => `<button type="button" class="plan-btn" data-cf="${k}" aria-pressed="${on}" style="padding:2px 8px;font-size:12px;${on ? 'font-weight:600;outline:2px solid var(--accent,#2563eb)' : ''}">${t}</button>`;
+    const cnt = this.edits();
     const modeBtn = (v, t) => `<button type="button" class="plan-btn" data-mode="${v}" aria-pressed="${this.mode === v}" style="padding:3px 8px;font-size:12px${this.mode === v ? ';font-weight:600;outline:2px solid var(--accent,#2563eb)' : ''}">${t}</button>`;
-    const placed = this.placedSubs(), Ls = this.cfg();
-    const subStep = `<div style="border:2px solid ${placed.length ? '#16a34a' : '#c92a2a'};border-radius:6px;padding:8px;display:flex;flex-direction:column;gap:6px">
-        <b>Step 1 · Place your mini-subs</b>
-        <div style="font-size:12px;color:var(--text-muted)">${placed.length ? `${placed.length} placed. Kiosks follow the erven and each goes to the nearest mini-sub; the LV network runs from them.` : 'None placed yet. The layout works from your mini-subs: click where each one stands, anywhere (on a street, in a block, in a park). No kiosk is added beside it.'}</div>
-        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"><button type="button" class="plan-btn" data-mode="sub" aria-pressed="${this.mode === 'sub'}" style="font-weight:600${this.mode === 'sub' ? ';outline:2px solid var(--accent,#2563eb)' : ''}">${this.mode === 'sub' ? 'Placing: click the plan' : (placed.length ? 'Place another' : 'Place mini-subs')}</button></div>
-        ${this.mode === 'sub' ? '<div style="font-size:12px;color:var(--text-muted)">Click a mini-sub, then click again to move it. Alt-click removes it. A mini-sub part you draw on the plan counts too.</div>' : ''}
-        ${placed.length ? `<div>${placed.map((q, i) => `<div style="display:flex;justify-content:space-between;align-items:center;gap:4px;border-bottom:1px solid var(--border,#ddd);padding:2px 0;font-size:12px"><span>S${i + 1}${q.src === 'plan' ? ' · drawn on the plan' : ''}</span>${q.src === 'layout' ? `<button type="button" class="plan-btn" data-act="subrm" data-i="${q.i}" style="padding:1px 6px;font-size:12px">remove</button>` : ''}</div>`).join('')}</div>` : ''}</div>`;
-    el.innerHTML = `<div class="plan-props-title">Auto layout</div>
-      <div class="plan-props-body" style="display:flex;flex-direction:column;gap:10px;font-size:13px">
-        ${subStep}
-        <div style="display:flex;gap:6px;flex-wrap:wrap"><button type="button" class="plan-btn" data-act="run" style="font-weight:600"${placed.length ? '' : ' disabled title="Place your mini-subs first"'}>${r ? (this.stale ? 'Run again' : 'Re-run') : 'Step 2 · Run layout'}</button>
-          <button type="button" class="plan-btn" data-act="create" style="font-weight:600"${r ? '' : ' disabled'}>Create on plan</button><button type="button" class="plan-btn" data-act="clear"${r ? '' : ' disabled'}>Clear</button></div>
-        ${this.err ? `<div style="color:#dc2626">${esc(this.err)}</div>` : ''}
-        ${r && this.stale ? '<div style="color:#b45309">Out of date: press Run again.</div>' : ''}
-        ${r ? `<div style="color:var(--text-muted)">Solved in ${Math.round(this.ms)} ms. Click an erf near the edge you want as its front.</div>` : '<div style="color:var(--text-muted)">Needs the erf boundaries (Detect erven), the streets, and a calibrated plan.</div>'}
-        ${checkBlock}
-        <div><b>A click edits</b><div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px">${modeBtn('front', 'Erf fronts')}${modeBtn('marker', 'Erf markers')}${modeBtn('sub', 'Mini-sub')}${modeBtn('trunk', 'Trunk ducts / entry')}<button type="button" class="plan-btn" data-act="reset" style="padding:3px 8px;font-size:12px">Reset edits</button></div>${this.mode === 'marker' ? `<div style="font-size:12px;color:var(--text-muted);margin-top:3px">${this.markFor ? 'Click on the erf where its service cable should arrive.' : 'Click inside an erf the layout cannot place (or one it places wrongly) where its service cable should arrive. Alt-click removes a marker.'} The cable, kiosk and fibre duct are worked out to it.</div>` : ''}${this.mode === 'sub' ? `<div style="font-size:12px;color:var(--text-muted);margin-top:3px">Click anywhere to stand a mini-sub exactly there: on a street, in a block, in a park. No kiosk is added beside it; the kiosks follow the erven. Its cables run to the nearest street and along it. Click a mini-sub, then click again to move it; Alt-click removes it. Place as many as you need: the kiosks go to the nearest. A mini-sub part you draw on the plan is used the same way. Press Run to see the result.</div>` : ''}</div>
-        <div><b>Streets</b>${kerbBlock}${centreBlock}<div style="display:flex;flex-direction:column;gap:4px;margin:4px 0"><div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center"><button type="button" class="plan-btn" data-act="streetdraw" aria-pressed="${this.drawStreets}" style="${this.drawStreets ? 'font-weight:600;outline:2px solid var(--accent,#2563eb)' : ''}" title="Click along a street to draw its centreline, here, without leaving Auto layout">${this.drawStreets ? 'Stop drawing' : 'Draw centrelines'}</button><label style="font-size:12px;display:flex;gap:4px;align-items:center">width <input type="number" data-copt="w" min="3" max="60" step="0.5" value="${this.centreW}" style="width:54px"> m</label></div>${this.drawStreets ? '<div style="font-size:12px;color:var(--text-muted)">Click along the street. Enter, or click the last point again, finishes it. Backspace takes a point back, Esc stops. Points snap to the drawing\'s corners and ends; a street that ends on another street joins it. Left and right are looking along the way you drew it.</div>' : ''}</div>${fromDxf}${streets}</div>
-        ${groups}
-        ${trenchGroup}
-        ${vdGroup}
-        ${r ? `<div><b>Result</b><div style="display:grid;grid-template-columns:repeat(2,1fr);gap:5px;margin-top:4px">${tiles}</div>
+    const served = r ? r.erven.filter(e => e.kiosk).length : 0;
+    const keyTiles = st ? [[served, 'erven served'], [st.kiosks, `kiosks, ${st.avgPer.toFixed(1)} erven each`], [r.net.subs.length, 'mini-sub' + (r.net.subs.length === 1 ? '' : 's')], [fmt(st.cableMax) + ' m', 'longest service, limit ' + p.maxc], ...(r.vd && !r.vd.err ? [[r.vd.maxLv.toFixed(1) + '% / ' + r.vd.maxSvc.toFixed(1) + '%', `worst LV feeder / service volt drop, limits ${r.vd.V.limF}% / ${r.vd.V.limS}%`, true]] : [])].map(([b, s, wide]) => `<div style="border:1px solid var(--border-color,#ddd);border-radius:5px;padding:4px 6px${wide ? ';grid-column:span 2' : ''}"><b style="font-size:15px;display:block">${b}</b><span style="font-size:11px;color:var(--text-muted)">${s}</span></div>`).join('') : '';
+    const verdict = !r ? '' : nFix ? `<div style="border-left:4px solid #dc2626;padding:4px 8px;font-size:13px"><b>${nFix} fix${nFix === 1 ? '' : 'es'}</b> before you create.${nChk + nNote ? ` ${nChk + nNote} other item${nChk + nNote === 1 ? '' : 's'} to read.` : ''}</div>` : `<div style="border-left:4px solid #16a34a;padding:4px 8px;font-size:13px"><b>Nothing to fix.</b>${nChk ? ` ${nChk} to check.` : ''} Ready to create.</div>`;
+    const checksHtml = r ? `<div style="font-weight:600;display:flex;justify-content:space-between;align-items:center">Checks${this.flag && this.flag.size ? '<button type="button" class="plan-btn" data-act="unflag" style="padding:1px 8px;font-size:12px;font-weight:400">Clear red marks</button>' : ''}</div>
+        <div style="display:flex;gap:4px;flex-wrap:wrap">${chip('all', 'All ' + ck.length, filt === 'all')}${nFix ? chip('f', nFix + ' Fix', filt === 'f') : ''}${nChk ? chip('w', nChk + ' Check', filt === 'w') : ''}${nNote ? chip('n', nNote + (nNote === 1 ? ' Note' : ' Notes'), filt === 'n') : ''}</div>
+        <div>${shown.length ? shown.map(rowHtml).join('') : '<div style="color:#15803d">✓ Every erf is served, within the service limit and the kiosk size.</div>'}</div>` : '';
+    const step4 = !r ? banner('warn', `<span>Nothing to review yet. ${placed.length ? 'Press Run layout below.' : 'Place a mini-sub first.'}</span>${this.err ? `<span style="color:#dc2626">${esc(this.err)}</span>` : ''}`)
+      : `${this.stale ? banner('warn', '<span><b>↻ Changed since the last run.</b> The figures below are from before.</span><span><button type="button" class="plan-btn" data-act="run" style="' + sBtn + ';font-weight:600">Re-run</button></span>') : ''}
+        ${noKiosks ? blocked : `${verdict}<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:5px">${keyTiles}</div>
+        ${checksHtml}
+        <div style="font-weight:600">Adjust on the plan</div>
+        <div style="display:flex;gap:4px;flex-wrap:wrap">${modeBtn('front', 'Erf fronts')}${modeBtn('marker', 'Erf markers')}${modeBtn('trunk', 'Trunk ducts')}<button type="button" class="plan-btn" data-act="reset" style="padding:3px 8px;font-size:12px"${cnt ? '' : ' disabled'}>Reset my edits (${cnt})</button></div>
+        <div style="font-size:12px;color:var(--text-muted)">${this.mode === 'marker' ? (this.markFor ? 'Click on the erf where its service cable should arrive.' : 'Click inside an erf the layout cannot place (or one it places wrongly) where its service cable should arrive. Alt-click removes a marker. The cable, kiosk and fibre duct are worked out to it.') : this.mode === 'trunk' ? 'Click a trunk duct section to cut it or put it back; click a junction to make it the fibre entry.' : 'Click an erf near the edge you want as its front.'}</div>
+        <details><summary style="cursor:pointer;font-weight:600">More figures <span style="font-weight:400;font-size:12px;color:var(--text-muted)">crossings, ducts, trenches, LV design</span></summary><div style="display:flex;flex-direction:column;gap:6px;padding-top:4px"><div style="display:grid;grid-template-columns:repeat(2,1fr);gap:5px">${tiles}</div>
         ${designBlock}
-        ${r.vdBusy || r.earthBusy ? '<div style="color:var(--text-muted);margin-top:6px">Checking the voltage drop and earth-fault loop with Demand…</div>' : ''}
-        ${r.vd && !r.vd.err && r.vd.worst ? `<div style="margin-top:6px"><b>Voltage drop</b><div>Furthest: erf ${esc(((AppState.planMarkup.elements.find(e => e.id === r.vd.worst.erf.id) || {}).name) || r.vd.worst.erf.id)}, ${r.vd.worst.total.toFixed(1)}% = ${r.vd.worst.lv.toFixed(1)}% LV (to ${esc(r.vd.worst.kiosk.id)}) + ${r.vd.worst.svc.toFixed(1)}% service</div>${r.vd.legs.slice().sort((a, b) => b.cum - a.cum).slice(0, 5).map(l => `<div style="display:flex;justify-content:space-between;gap:8px"><span>${esc(l.from.id)} → ${esc(l.to.id)} · ${Math.round(l.len)} m · ${Math.round(l.amps)} A</span><span>${l.pct.toFixed(2)}% (to here ${l.cum.toFixed(1)}%)</span></div>`).join('')}</div>` : ''}
-        ${r.trench ? `<div style="margin-top:6px"><b>Trenches</b>${trenchRows}</div>` : ''}
-          <div style="max-height:170px;overflow:auto;margin-top:6px"><table style="width:100%;font-size:12px;border-collapse:collapse"><thead><tr><th style="text-align:left">Crossing</th><th style="text-align:left">Ducts</th></tr></thead><tbody>${xt}</tbody></table></div>
-          <div style="margin-top:8px"><b>Create</b><div style="display:flex;flex-direction:column;gap:2px;margin-top:3px">${chk('markers', 'Move the erf markers to their corner')}${chk('kiosks', 'Kiosks and service cables')}${chk('lv', 'Mini-subs and LV feeders')}${chk('fibre', 'Fibre manholes and ducts')}${chk('cross', 'Road crossings (one per duct)')}${chk('trench', 'Trenches along the routes (depth and sharing as set)')}</div><div style="color:var(--text-muted);margin-top:4px">Replaces the previous auto layout. Your own items stay.</div></div></div>` : ''}
+        ${r.vdBusy || r.earthBusy ? '<div style="color:var(--text-muted)">Checking the voltage drop and earth-fault loop with Demand…</div>' : ''}
+        ${r.vd && !r.vd.err && r.vd.worst ? `<div><b>Voltage drop</b><div>Furthest: erf ${esc(((AppState.planMarkup.elements.find(e => e.id === r.vd.worst.erf.id) || {}).name) || r.vd.worst.erf.id)}, ${r.vd.worst.total.toFixed(1)}% = ${r.vd.worst.lv.toFixed(1)}% LV (to ${esc(r.vd.worst.kiosk.id)}) + ${r.vd.worst.svc.toFixed(1)}% service</div>${r.vd.legs.slice().sort((a, b) => b.cum - a.cum).slice(0, 5).map(l => `<div style="display:flex;justify-content:space-between;gap:8px"><span>${esc(l.from.id)} → ${esc(l.to.id)} · ${Math.round(l.len)} m · ${Math.round(l.amps)} A</span><span>${l.pct.toFixed(2)}% (to here ${l.cum.toFixed(1)}%)</span></div>`).join('')}</div>` : ''}
+        ${r.trench ? `<div><b>Trenches</b>${trenchRows}</div>` : ''}
+        <div style="max-height:170px;overflow:auto"><table style="width:100%;font-size:12px;border-collapse:collapse"><thead><tr><th style="text-align:left">Crossing</th><th style="text-align:left">Ducts</th></tr></thead><tbody>${xt}</tbody></table></div>
+        <div style="color:var(--text-muted)">Solved in ${Math.round(this.ms)} ms.</div></div></details>`}`;
+    // ── the footer: one button that does the next thing
+    const act = this.nextAction(r, placed, noKiosks, nErv, sr0.length), co = this.createCounts();
+    const chkO = (k, t, n) => `<label style="display:flex;gap:6px;align-items:flex-start"><input type="checkbox" data-opt="${k}"${opt[k] ? ' checked' : ''}> <span>${t} <em style="font-style:normal;font-family:var(--font-mono,monospace);font-size:12px;color:var(--text-muted)">${n}</em></span></label>`;
+    const nOpt = Object.values(opt).filter(Boolean).length;
+    const createOpts = act.create ? `<details style="font-size:12px"><summary style="cursor:pointer;font-weight:600">What it will create <span style="font-weight:400;color:var(--text-muted)">${nOpt} of ${Object.keys(opt).length} ticked</span></summary><div style="display:flex;flex-direction:column;gap:2px;padding:4px 0">${chkO('markers', 'Erf markers moved to their corner', co.markers)}${chkO('kiosks', 'Kiosks and service cables', co.kiosks)}${chkO('lv', 'Mini-subs and LV feeders', co.lv)}${chkO('fibre', 'Fibre manholes and ducts', co.fibre)}${chkO('cross', 'Road crossings, one per duct', co.cross)}${chkO('trench', 'Trenches along the routes (depth and sharing as set)', co.trench)}</div></details>` : '';
+    const footer = `<div style="position:sticky;bottom:-10px;margin:0 -10px -10px;padding:8px 10px;background:var(--bg-primary);border-top:1px solid var(--border-color,#ddd);display:flex;flex-direction:column;gap:5px;z-index:2">${createOpts}<button type="button" class="plan-btn" data-act="${act.act}"${act.s ? ` data-s="${act.s}"` : ''} aria-disabled="${!!act.dis}" style="font-weight:600;padding:9px;${act.dis ? 'opacity:.65' : (act.create ? 'background:var(--accent,#2563eb);color:#fff' : '')}">${esc(act.label)}</button>${act.note ? `<div style="color:var(--text-muted);font-size:12px;text-align:center">${esc(act.note)}</div>` : ''}${r ? `<button type="button" class="plan-btn" data-act="clear" style="align-self:center;padding:1px 8px;font-size:12px;font-weight:400">Clear the result</button>` : ''}</div>`;
+    el.innerHTML = `<div class="plan-props-title" style="margin-bottom:6px">Auto layout</div>
+      <div class="plan-props-body" style="display:flex;flex-direction:column;gap:10px;font-size:13px">
+        ${stepBar}
+        ${this.err && this.step !== 4 ? `<div style="color:#dc2626">${esc(this.err)}</div>` : ''}
+        ${[step1, step2, step3, step4][this.step - 1]}
+        ${footer}
       </div>`;
     el.onclick = (e) => {
-      const b = e.target.closest('[data-act],[data-mode],[data-side],[data-ck],[data-ckact],[data-ckerf]'); if (!b) return;
+      const b = e.target.closest('[data-act],[data-mode],[data-side],[data-ck],[data-ckact],[data-ckerf],[data-step],[data-preset],[data-cf],[data-ckopen]'); if (!b) return;
+      if (b.dataset.step) { this.setStep(+b.dataset.step); return; }
+      if (b.dataset.preset) { this.setPreset(b.dataset.preset); return; }
+      if (b.dataset.cf) { this.ckFilter = b.dataset.cf; PlanMarkup.refreshProps(); return; }
+      if (b.dataset.ckopen != null) { const c = (this._ck || [])[+b.dataset.ckopen]; if (c) { const [t] = (() => { const i = c.text.search(/[.:] /); return [i > 8 && i <= 150 ? c.text.slice(0, i) : (c.text.length <= 150 ? c.text : c.text.slice(0, 130) + '…')]; })(), k = c.sev + '|' + t; if (this._ckOpen.has(k)) this._ckOpen.delete(k); else this._ckOpen.add(k); PlanMarkup.refreshProps(); } return; }
+      if (b.dataset.act === 'goto') { this.setStep(+b.dataset.s); return; }
+      if (b.dataset.act === 'zoomerven' || b.dataset.act === 'zoomstreets') { const pm = AppState.planMarkup, pts = []; if (b.dataset.act === 'zoomerven') pm.elements.forEach(x => { if (x.type === 'erf' && Array.isArray(x.boundary)) x.boundary.forEach(q => pts.push({ x: q.x, y: q.y })); }); else this.streetsOnPlan().forEach(x => this._flat(x).forEach(q => pts.push({ x: q.x, y: q.y }))); if (pts.length) PlanEngine.zoomToPoints(pts); return; }
+      if (b.dataset.act === 'showerven') { const r0 = this.result; if (!r0) return; const ids = new Set(r0.erven.filter(x => !x.fe).map(x => x.id)); this.flag = ids; const pts = []; r0.erven.forEach(x => { if (ids.has(x.id)) x.poly.forEach(q => pts.push({ x: q[0] / this.f, y: q[1] / this.f })); }); if (pts.length) PlanEngine.zoomToPoints(pts); PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true }); return; }
+      if (b.dataset.act === 'drawfix') { this.setStep(1); this.streetDrawOn(true); return; }
+      if (b.dataset.act === 'submove') { const i = +b.dataset.i; if (L.subs[i]) { this.subMove = i; this.mode = 'sub'; UI.toast('Click where this mini-sub should stand.', 'info', 3500); PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true }); } return; }
+      if (b.dataset.act === 'resetgrp') {
+        const g = b.dataset.g, grp = this.CTRL.find(x => x[0] === g);
+        if (grp) { grp[1].forEach(x => { if (!MOST.includes(x[0])) p[x[0]] = dflt[x[0]]; }); this.touched(); }
+        else if (g === 'Trenches') { const T0 = PlanLayout.TRENCH_DEFAULTS; TT.depth.lv = T0.depth.lv; TT.depth.fi = T0.depth.fi; TT.fibre = T0.fibre; TT.crossings = T0.crossings; this.retrench(); }
+        else { Object.assign(VDc, vdDef); this.vdRun(); }
+        return;
+      }
       if (b.dataset.ckerf != null) { const [kind, ...rest] = b.dataset.ckerf.split(':'), id = rest.join(':'); if (kind === 'show') this.nearShow(id); else if (kind === 'mark') this.markStart(id); else this.extendErven([id]); return; }
       if (b.dataset.ckact != null) {
         const [i, j] = b.dataset.ckact.split(':').map(Number), a = (((this._ck || [])[i] || {}).acts || [])[j]; if (!a) return;
         if (a.act === 'tx') { L.vd.tx = a.val; this.revd(); }
         else if (a.act === 'extendall') { this.extendErven(a.val || []); }
         else if (a.act === 'resetmarkers') { this.cfg().markers = {}; this.markFor = null; this.touched(); }
-        else if (a.act === 'addsub') { this.mode = 'sub'; UI.toast('Click where the next mini-sub should stand. The kiosks go to the nearest one.', 'info', 5000); PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true }); }
+        else if (a.act === 'addsub') { this.setStep(2); UI.toast('Click where the next mini-sub should stand. The kiosks go to the nearest one.', 'info', 5000); PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true }); }
         else if (a.act === 'maxsize') { L.vd.maxSize = +a.val || 0; this.vdRun(); }
         else if (a.act === 'clearsize') { L.vd.minSize = 0; L.vd.maxSize = 0; this.vdRun(); }
         else if (a.act === 'split') { const k = this.result && this.result.kiosks.find(x => x.id === a.val); if (k) { L.vd.splits.push({ x: k.x / this.f, y: k.y / this.f }); this.touched(); } }
@@ -1162,10 +1290,10 @@ const PlanLayoutUI = {
       if (b.dataset.act === 'kerbone') { this.kerbOne(+b.dataset.i); return; }
       if (b.dataset.act === 'kerbjoin') { const S = this.kerbStage; if (S) { const n = S.join(this.kerbOpt.join), c = S.networks().length; UI.toast(n ? `${n} join${n === 1 ? '' : 's'} made; ${c === 1 ? 'one connected network now' : c + ' networks remain (the gaps are wider than ' + this.kerbOpt.join + ' m)'}.` : `Nothing within ${this.kerbOpt.join} m to join.`, c === 1 ? 'success' : 'warn', 5000); PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true }); } return; }
       if (b.dataset.act === 'dxfstreets') { const sel = el.querySelector('[data-stl]'), x = lyr[sel ? +sel.value : 0]; if (x) this.streetsFromLayer(x.d.id, x.layer); }
-      else if (b.dataset.act === 'run') this.run();
+      else if (b.dataset.act === 'run') { this.run(); if (this.result) this.setStep(4); }
       else if (b.dataset.act === 'create') this.commit();
       else if (b.dataset.act === 'clear') this.clear();
-      else if (b.dataset.act === 'reset') { L.fronts = {}; L.markers = {}; L.cuts = []; delete L.entry; L.subs = []; this.subMove = null; this.touched(); }
+      else if (b.dataset.act === 'reset') { L.fronts = {}; L.markers = {}; L.cuts = []; delete L.entry; this.markFor = null; this.touched(); }
       else if (b.dataset.mode) { this.mode = b.dataset.mode; this.markFor = null; PlanMarkup.refreshProps(); }
       else if (b.dataset.side) { const o = L.sides[b.dataset.side] = L.sides[b.dataset.side] || {}, v = +b.dataset.val; if (v === 0) delete o[b.dataset.key]; else o[b.dataset.key] = v; this.touched(); }
     };
@@ -1199,6 +1327,7 @@ const PlanLayoutUI = {
       const k = t.dataset.p; if (!k || t.type === 'range') return;
       p[k] = t.type === 'checkbox' ? t.checked : t.value; this.touched();
     };
+    this.syncHint();
   },
 };
 
@@ -1206,12 +1335,12 @@ if (typeof PlanTools !== 'undefined') {
   PlanTools.register({
     id: 'layout', cursor: 'crosshair',
     onActivate() {
-      const none = !PlanLayoutUI.placedSubs().length;
-      PlanLayoutUI.mode = none ? 'sub' : 'front';                                      // the first step: place the mini-subs
-      if (none && typeof UI !== 'undefined') UI.toast('First, place your mini-subs: click where each one stands. The layout works from them.', 'info', 6000);
+      PlanLayoutUI._active = true; PlanLayoutUI.widen(true);
+      PlanLayoutUI.step = PlanLayoutUI.firstStep();
+      PlanLayoutUI.mode = PlanLayoutUI.step === 2 ? 'sub' : 'front';
       if (typeof PlanMarkup !== 'undefined') PlanMarkup.refreshProps();
     },
-    onDeactivate() { PlanLayoutUI.hoverT = null; PlanLayoutUI.kerbStage = null; PlanLayoutUI.centreStage = null; if (PlanLayoutUI.drawStreets) PlanLayoutUI.streetDrawOn(false); },
+    onDeactivate() { PlanLayoutUI._active = false; PlanLayoutUI.widen(false); PlanLayoutUI.hoverT = null; PlanLayoutUI.kerbStage = null; PlanLayoutUI.centreStage = null; if (PlanLayoutUI.drawStreets) PlanLayoutUI.streetDrawOn(false); },
     cancel() { PlanTools.set('select'); },
     onMove(pt) {
       if (PlanLayoutUI.drawStreets) { const R = PlanLayoutUI._rt(); if (R) { R._hover = PlanTools.snap(pt, { wantElements: false }); PlanEngine.requestDraw({ fg: true }); } return; }
