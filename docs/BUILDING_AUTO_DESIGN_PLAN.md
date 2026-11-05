@@ -34,7 +34,7 @@ Not there yet: a room-use model for non-lighting purposes, door / opening geomet
 | File | Role | State |
 |---|---|---|
 | `frontend/js/plan-bdgeom.js` | Pure room geometry and detector coverage solver (`visible`, `coverage`, `layout`, `zoneOf`) | **Done**, `testing/unit/bdgeom.test.js` (15 tests) |
-| `frontend/js/plan-bdrules.js` | Design-basis rule tables (SANS / BS+EN 54 / NFPA 72), each value with a clause `ref` and a `provisional` flag | Pending |
+| `frontend/js/plan-bdrules.js` | Design-basis rule tables (SANS / BS+EN 54 / NFPA 72), each value with a clause `ref` and a `provisional` flag | **SANS 10139:2021 done** (every value read from the standard, none provisional), `testing/unit/bdrules.test.js` + NFPA 72 (2016) done (22 tests in all; the heat detector's listed spacing is an input, its default is flagged provisional); BS 5839-1 starts from the SANS 10139 values (SANS is based on it), all provisional until checked against the BS text |
 | `frontend/js/plan-bdfire.js` | Pure fire engine: detector type, layout, call points, sounders / strobes, zoning | Pending |
 | `frontend/js/plan-bdpower.js` | Pure switch and socket engine | Pending (phase 2) |
 | `frontend/js/plan-bdauto-ui.js` | The "Auto design" tool: Fire tab and Power tab | Pending |
@@ -95,7 +95,7 @@ Create writes real plan items tagged `auto: 'fire'` or `auto: 'power'`. The next
 | # | Item | Needs |
 |---|---|---|
 | 1 | Supply the standards text (SANS 10139 / 14520 clauses, BS 5839-1 / EN 54, NFPA 72, SANS 10142-1 for sockets) | The user: PDFs or pasted tables, for example in `reviews/standards/` |
-| 2 | `plan-bdrules.js` with the table structure, PROVISIONAL placeholders until item 1 arrives | Item 1 to finish |
+| 2 | `plan-bdrules.js` — SANS 10139 and NFPA 72 tables done; BS 5839-1 uses the SANS values, provisional | Checking them against the BS 5839-1 text |
 | 3 | `room.fire` (use, ceiling height) and its room-panel fields; check against `room.lighting.task` | - |
 | 4 | `fireZones` collection, Fire zone drawing tool, Collab descriptor, undo names | - |
 | 5 | `plan-bdfire.js` engine: detector type, call points, sounders / strobes, zoning, loop / cable limit checks | Items 2-4 |
