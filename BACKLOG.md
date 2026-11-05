@@ -110,6 +110,10 @@ section and adding the `## Completed` entry.
 ### UX workflow plan — in this order (2026-11-01 review)
 
 
+### Building auto design — fire detection, then switches and sockets
+
+114. **Building auto design (fire detection first)** *(in progress)* — an Auto design tool on the Building plan, same pattern as the reticulation Auto layout. Done: pure room geometry + detector coverage solver (`plan-bdgeom.js`). Next: design-basis rule tables (SANS 10139 / BS 5839-1 + EN 54 / NFPA 72, PROVISIONAL until checked against the licensed copies), `room.fire` (use, ceiling height) + user-drawn `fireZones`, the fire engine (type, call points, sounders / strobes, zoning), the tool UI with Checks, BOQ / Issues / report. Phase 2: switches and sockets from a room-use schedule, lights read from the Lighting design, circuits to DB ways, routes to the board. Full plan and pending list: `docs/BUILDING_AUTO_DESIGN_PLAN.md`.
+
 ### Large or long-horizon — scope decision needed before starting
 
 47. **Standard + user-defined dynamic model library** — GENROU/EXST1/GAST and a DSL/Modelica/UDM mechanism. Large sustained investment; machine/AVR/governor models are fixed built-ins today. *(DIgSILENT / PSS Additions)*
