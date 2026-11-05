@@ -35,6 +35,7 @@ const PlanLayoutUI = {
       ['fibre', 'select', [['opp', 'civil side, opposite the kiosks'], ['same', 'same side as the kiosks']], 'Manholes default to the'],
       ['topo', 'select', [['ring', 'every street, closed loops'], ['spur', 'spurs with T-offs from the entry']], 'Main duct layout']]],
     ['Crossings', [['share', 'check', 'Share road crossings between services, fibre and LV'],
+      ['xpref', 'select', [['near', 'at the erf\'s own boundary (cable stays on the kiosk side)'], ['few', 'at as few places as possible']], 'Services cross the road'],
       ['xmode', 'select', [['bound', 'on any erf boundary'], ['kiosk', 'only at kiosk stations']], 'Crossings may be put'],
       ['junct', 'check', 'Lay ducts across every road at all junctions, even with no cables'],
       ['j110', 'range', 0, 4, 1, '', '110 mm ducts at an empty junction'], ['j160', 'range', 0, 2, 1, '', '160 mm ducts at an empty junction'],
@@ -45,6 +46,7 @@ const PlanLayoutUI = {
 
   // hover explanations for the settings that need one (native tooltip on the label and on the (?) mark)
   TIPS: {
+    xpref: 'Where a service for an erf across the road crosses. At the erf\'s own boundary: the cable runs along the kiosk\'s side of the road and crosses at the erf boundary nearest the erf, so the far verge only carries the last stretch. Services whose nearest boundary is the same share that crossing. At as few places as possible: fewer crossings, but the cable may cross at the kiosk and run along the far verge.',
     strN: 'The most kiosks fed in a line from one feeder off the mini-sub. A longer street is cut into several strings, each with its own breaker and its own cable back to the mini-sub along the same route. A shorter string keeps the head breaker and the cable small and the far-end earth-fault loop short, at the price of more cable and more ways on the mini-sub board. 0 = no limit: kiosks daisy-chain along the whole street.',
     strMode: 'How a street with more kiosks than the limit is cut. Fewest strings: cut from the far end back, so as few feeders as possible leave the mini-sub, but the last string can be short (9 kiosks at a limit of 4 gives 4 + 4 + 1). Strings of similar size: the same number of feeders as the limit needs, but shared out evenly (9 kiosks gives 3 + 3 + 3), so the strings are loaded alike. On a branching network this can need more feeders.',
   },
@@ -54,6 +56,7 @@ const PlanLayoutUI = {
     const s = AppState.planMarkup.settings;
     const L = (s.layout && typeof s.layout === 'object') ? s.layout : (s.layout = {});
     const D = PlanLayout.DEFAULTS, p = L.params = (L.params && typeof L.params === 'object') ? L.params : {};
+    if (Object.keys(p).length && p.xpref === undefined) p.xpref = 'few';           // a layout made before this keeps its fewest-crossings choice
     if (Object.keys(p).length && p.strN === undefined) p.strN = 0;                    // a layout made before strings existed keeps its one tree
     if (Object.keys(p).length && p.kgeo === undefined) p.kgeo = 'street';          // a layout set up before the boundary corridor existed keeps running the way it did
     for (const [, rows] of this.CTRL) for (const r of rows) {
