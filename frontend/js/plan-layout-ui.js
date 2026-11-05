@@ -3,7 +3,7 @@
  * The plan glue for plan-layout.js: reads the erf boundaries (stored by Detect erven) and the
  * street centrelines (route type "street"), runs the layout in metres, previews it on the plan
  * and, on Create, writes real plan items: kiosks, a mini-sub, manholes, the erf markers (the
- * erf points move to their corner), service / LV / MV / fibre routes and one crossing per
+ * erf points move to their corner), service / LV / fibre routes and one crossing per
  * duct (so the BOQ counts sleeves). Everything it creates is tagged `auto: 'layout'` and is
  * replaced by the next Create; anything you drew yourself is left alone.
  *
@@ -15,9 +15,7 @@ const PlanLayoutUI = {
   PAL: ['#2a7de1', '#d9480f', '#2b9348', '#9c36b5', '#b07800', '#0c8599', '#c2255c', '#5f3dc4'],
   SHOW: { front: true, mark: true, kiosk: true, fibre: true, lvmv: true, cross: true, trench: true },
   // trench settings: depth per cable class (m) and what shares a trench; kept apart from the layout rules (no re-solve)
-  TREN: [['depth.mv', 'range', 0.6, 2, 0.05, 'm', 'MV cable depth'], ['depth.lv', 'range', 0.4, 1.5, 0.05, 'm', 'LV, service and street-light depth'], ['depth.fi', 'range', 0.3, 1.2, 0.05, 'm', 'Fibre depth'],
-    ['combOn', 'check', 'Set a depth for the combined (MV with LV) trench; otherwise the deepest of its cables'], ['depth.comb', 'range', 0.6, 2, 0.05, 'm', 'Combined trench depth'],
-    ['combine', 'select', [['separate', 'MV in its own trench, LV / service / street light in another'], ['mvlv', 'MV, LV, service and street light in one trench where they run together']], 'Sharing'],
+  TREN: [['depth.lv', 'range', 0.4, 1.5, 0.05, 'm', 'LV, service and street-light depth'], ['depth.fi', 'range', 0.3, 1.2, 0.05, 'm', 'Fibre depth'],
     ['fibre', 'select', [['own', 'fibre in its own trench'], ['with', 'fibre in the LV trench where they run together'], ['off', 'no fibre trench']], 'Fibre'],
     ['crossings', 'check', 'A shared trench across the road at every crossing']],
   CTRL: [
@@ -26,11 +24,10 @@ const PlanLayoutUI = {
       ['front', 'select', [['longest', 'longest street edge'], ['shortest', 'shortest street edge']], 'A corner erf fronts its']]],
     ['Kiosks', [['kmode', 'select', [['rules', 'even runs (rule of thumb)'], ['opt', 'optimiser: fewest kiosks, then crossings, then cable']], 'Placement'],
       ['n', 'range', 4, 8, 1, '', 'Max houses per kiosk'], ['aim', 'range', 2, 8, 1, '', 'Aim for about this many houses per kiosk'], ['maxc', 'range', 30, 150, 5, 'm', 'Max service cable'], ['worth', 'range', 0, 600, 10, 'm', 'A kiosk is worth up to this much extra service cable']]],
-    ['LV network', [['subs', 'range', 1, 8, 1, '', 'Mini-subs (more than you placed by hand are added automatically)'], ['subMode', 'select', [['opt', 'where the LV network drops least'], ['mid', 'nearest the middle of the kiosks']], 'Mini-sub position (unless you place it)']]],
     ['Fibre', [['m', 'range', 4, 12, 1, '', 'Erven per manhole'], ['maxmh', 'range', 40, 200, 10, 'm', 'Max distance between manholes'],
       ['fibre', 'select', [['opp', 'civil side, opposite the kiosks'], ['same', 'same side as the kiosks']], 'Manholes default to the'],
       ['topo', 'select', [['ring', 'every street, closed loops'], ['spur', 'spurs with T-offs from the entry']], 'Main duct layout']]],
-    ['Crossings', [['share', 'check', 'Share road crossings between services, fibre, LV and MV'],
+    ['Crossings', [['share', 'check', 'Share road crossings between services, fibre and LV'],
       ['xmode', 'select', [['bound', 'on any erf boundary'], ['kiosk', 'only at kiosk stations']], 'Crossings may be put'],
       ['junct', 'check', 'Lay ducts across every road at all junctions, even with no cables'],
       ['j110', 'range', 0, 4, 1, '', '110 mm ducts at an empty junction'], ['j160', 'range', 0, 2, 1, '', '160 mm ducts at an empty junction'],
@@ -62,8 +59,7 @@ const PlanLayoutUI = {
     vd.minSize = this._num(vd.minSize, 0, 2000, 0); vd.maxSize = this._num(vd.maxSize, 0, 2000, 0);   // smallest / largest LV cable (mm², 0 = no limit)
     vd.taper = typeof vd.taper === 'boolean' ? vd.taper : true;                  // taper the LV cable (smaller feeders further out)
     vd.way80 = typeof vd.way80 === 'boolean' ? vd.way80 : true;                  // an 80 A MCCB on every erf's way
-    if (vd.subsMax == null && typeof vd.subsAuto === 'boolean') vd.subsMax = vd.subsAuto ? 3 : 1;   // older files: the on / off switch
-    vd.subsMax = Math.round(this._num(vd.subsMax, 1, 8, 1)); delete vd.subsAuto;  // most mini-subs to try (1..N, the least cable that passes is kept); 1 = just the count set above
+    delete vd.subsMax; delete vd.subsAuto;                                  // the mini-subs are the ones you place: there is no count to try
     vd.splits = Array.isArray(vd.splits) ? vd.splits.filter(q => q && Number.isFinite(+q.x) && Number.isFinite(+q.y)).map(q => ({ x: +q.x, y: +q.y })).slice(0, 200) : [];   // kiosks made a string head of their own
     vd.lv = typeof vd.lv === 'string' ? vd.lv.slice(0, 80) : ''; vd.svc = typeof vd.svc === 'string' ? vd.svc.slice(0, 80) : '';
     L.sides = (L.sides && typeof L.sides === 'object') ? L.sides : {};
@@ -139,7 +135,6 @@ const PlanLayoutUI = {
       r.earthBusy = true; PlanMarkup.refreshProps();
       await this.earthRun(tok);
       if (tok !== this._vdTok) return;
-      if (this.cfg().vd.subsMax > 1 && r.design) await this.trySubs(tok);  // 1 up to the most mini-subs: the least cable that passes
     } catch (e) {
       if (tok !== this._vdTok) return;
       r.vdBusy = false; r.vd = { err: 'Demand could not be run (' + ((e && e.message) || e) + ').' };
@@ -188,32 +183,6 @@ const PlanLayoutUI = {
     const m = new Map(); if (!r || !r.design) return m;
     for (const f of r.design.feeders) { const cab = CableLib.byName(f.cable); if (cab) m.set(f.kioskId, cab); }
     return m;
-  },
-  // 1 up to `vd.subsMax` mini-subs: each is laid out, run through Demand and designed; the one that passes with the least cable (else the fewest fails) is kept.
-  async trySubs(tok) {
-    const base = this.result, g = this._gathered; if (!base || !g || !base.design || !base.net.subs || (g.input.subPts && g.input.subPts.length)) return;   // mini-subs you placed fix the count
-    const cur = base.net.subs.length, trials = [{ subs: cur, res: base }];
-    const nK = base.kiosks.length;
-    const top = Math.min(8, this.cfg().vd.subsMax || 3);
-    for (let n = 1; n <= top; n++) {
-      if (n === cur || n > nK) continue;
-      const res = PlanLayout.solve(g.input, Object.assign({}, g.params, { subs: n }));
-      res.trench = PlanLayout.trenches(res, this.cfg().trench);
-      res.dem = await this._demandFor(res); if (tok !== this._vdTok || base !== this.result) return;
-      if (!res.dem) continue;
-      await this.designRun(res, tok); if (tok !== this._vdTok || base !== this.result) return;
-      if (res.design) trials.push({ subs: res.net.subs.length, res });
-    }
-    const score = x => [x.res.design.ok ? 0 : 1, x.res.design.ok ? 0 : x.res.design.failCount, x.res.design.taper.totalMm2M];
-    const best = trials.slice().sort((a, b) => { const p = score(a), q = score(b); return (p[0] - q[0]) || (p[1] - q[1]) || (p[2] - q[2]) || (a.subs - b.subs); })[0];
-    const summary = trials.sort((a, b) => a.subs - b.subs).map(x => ({ subs: x.subs, ok: x.res.design.ok, fails: x.res.design.failCount, total: x.res.design.taper.totalMm2M, saved: x.res.design.taper.savedPct, chosen: x === best }));
-    if (best.res !== base) {
-      const res = best.res; res.subsTrials = summary; res.vdBusy = false; res.vdFrom = cur;
-      this.result = res; this.f = g.f; res.vd = null; this.vdDerive();
-      res.earthBusy = true; PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true });
-      await this.earthRun(tok);
-    } else base.subsTrials = summary;
-    PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true });
   },
   // From the engine's answer to the figures shown. Cable or limit changes come back here (no new request: the loads do not depend on them).
   vdDerive() {
@@ -644,6 +613,32 @@ const PlanLayoutUI = {
     return false;
   },
 
+  // The mini-subs you placed, in the order they will be numbered: the layout's own points (clicked with Mini-sub), then the mini-sub
+  // parts you drew on the plan. [{ x, y (plan points), src: 'layout' | 'plan', i (index in cfg().subs) }]
+  placedSubs() {
+    const pm = AppState.planMarkup, L = this.cfg(), out = [];
+    const near = q => out.some(o => Math.hypot(o.x - q.x, o.y - q.y) < 1 / (PlanEngine.factor() || 1));
+    (L.subs || []).forEach((q, i) => { if (!near(q)) out.push({ x: q.x, y: q.y, src: 'layout', i }); });
+    pm.elements.filter(e => e.type === 'minisub' && e.auto !== 'layout').forEach(e => { if (!near(e)) out.push({ x: e.x, y: e.y, src: 'plan', id: e.id }); });
+    return out;
+  },
+  // A click in Mini-sub mode: stand a mini-sub exactly there (works before any layout has been run).
+  subClick(pt, ev) {
+    const f = PlanEngine.factor(), L = this.cfg();
+    if (!f) { UI.toast('Calibrate the plan first: the layout works in metres.', 'warn', 3500); return; }
+    const m = [pt.x * f, pt.y * f], tol = 14 * f / PlanEngine.view.zoom;
+    const mine = (L.subs || []).map((q, i) => ({ i, d: Math.hypot(q.x * f - m[0], q.y * f - m[1]) })).filter(x => x.d <= tol).sort((a, b) => a.d - b.d)[0];
+    if (ev && ev.altKey) {                                                           // Alt-click removes the one under the pointer
+      if (mine) { L.subs.splice(mine.i, 1); this.subMove = null; this.touched(); }
+      else UI.toast('No mini-sub placed by Auto layout there. A mini-sub part you drew on the plan is removed on the plan.', 'info', 3500);
+      return;
+    }
+    if (this.subMove != null && L.subs[this.subMove]) { L.subs[this.subMove] = { x: pt.x, y: pt.y }; this.subMove = null; this.touched(); return; }   // the second click of a move
+    if (mine) { this.subMove = mine.i; UI.toast('Click where this mini-sub should stand. Alt-click it to remove it.', 'info', 3500); PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true }); return; }
+    if ((L.subs || []).length >= 20) { UI.toast('That is the most mini-subs the layout takes (20).', 'warn', 3000); return; }
+    L.subs.push({ x: pt.x, y: pt.y }); this.touched();                               // exactly where you click: no kiosk is added beside it
+  },
+
   streetsOnPlan() { return AppState.planMarkup.routes.filter(r => r.type === 'street' && r.points && r.points.length >= 2); },
 
   gather() {
@@ -656,15 +651,11 @@ const PlanLayoutUI = {
     if (!erven.length) return { err: 'No erf has a boundary yet. Run Detect erven first (it keeps each erf\'s boundary).' };
     const streets = sr.map((r, i) => ({ id: r.id, name: (r.props && r.props.name) || ('Street ' + (i + 1)), w: this._num(r.props && r.props.width, 6, 40, 12), pts: this._flat(r).map(p => [p.x * f, p.y * f]) }));
     const ks = {}, fs = {}; streets.forEach(s => { const sd = L.sides[s.id] || {}; ks[s.id] = sd.k === 1 || sd.k === -1 ? sd.k : 0; fs[s.id] = sd.f === 1 || sd.f === -1 ? sd.f : null; });
-    const own = e => e.auto !== 'layout';
-    const rmu = pm.elements.find(e => e.type === 'rmu' && own(e));
-    const subPts = [];                                                                // every mini-sub you placed: the layout's own points and the mini-sub parts you drew
-    const addSub = q => { if (!subPts.some(p => Math.hypot(p[0] - q[0], p[1] - q[1]) < 1)) subPts.push(q); };
-    L.subs.forEach(q => addSub([q.x * f, q.y * f]));
-    pm.elements.filter(e => e.type === 'minisub' && own(e)).forEach(e => addSub([e.x * f, e.y * f]));
+    const subPts = this.placedSubs().map(q => [q.x * f, q.y * f]);                    // every mini-sub you placed: the layout works from them
+    if (!subPts.length) return { err: 'Place your mini-subs first: pick Mini-sub under "A click edits" and click where each one stands. The layout works from them.' };
     const markers = {}; for (const [id, q] of Object.entries(L.markers)) if (erven.some(e => e.id === id)) markers[id] = [q.x * f, q.y * f];
     const splits = L.vd.splits.map(q => [q.x * f, q.y * f]);
-    return { f, input: { erven, streets, markers, splits, ks, fs, overrides: L.fronts, cuts: L.cuts, subPts, mvPt: rmu ? [rmu.x * f, rmu.y * f] : null, entryPt: L.entry ? [L.entry.x * f, L.entry.y * f] : null }, params: L.params };
+    return { f, input: { erven, streets, markers, splits, ks, fs, overrides: L.fronts, cuts: L.cuts, subPts, entryPt: L.entry ? [L.entry.x * f, L.entry.y * f] : null }, params: L.params };
   },
 
   run() {
@@ -732,7 +723,6 @@ const PlanLayoutUI = {
         made.routes++;
       });
     }
-    if (opt.mv && r.net.mvLines) r.net.mvLines.forEach(m => { const Sb = r.net.subs.find(x => x.k === m.sub), se = Sb && subEls.get(Sb); if (se && m.pts.length > 1) { route('mv', null, se.id, m.pts); made.routes++; } });
     if (opt.fibre) {
       const mEl = new Map();
       [...r.fibre.inter, ...r.fibre.mhs].forEach(m => { mEl.set(m, el('manhole', m.x, m.y)); made.manholes++; });
@@ -759,7 +749,7 @@ const PlanLayoutUI = {
     UI.toast(`Created ${made.kiosks} kiosk(s), ${made.subs} mini-sub(s), ${made.manholes} manhole(s), ${made.routes} route(s), ${made.crossings} crossing duct(s) and ${made.trenches} trench(es); moved ${made.markers} erf marker(s).${crowded ? ' Route length labels now show for the selected route only (Layers › Route length labels).' : ''}`, 'success', 8000);
     this.result = null; this.stale = true; PlanMarkup.refreshProps();
   },
-  _opt: { markers: true, kiosks: true, lv: true, mv: true, fibre: true, cross: true, trench: true },
+  _opt: { markers: true, kiosks: true, lv: true, fibre: true, cross: true, trench: true },
   clear() { this.result = null; this.stale = true; PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true }); },
 
   // ───────── an erf no street reaches: show the nearest street and extend it ─────────
@@ -817,6 +807,7 @@ const PlanLayoutUI = {
 
   // ───────── the tool's clicks ─────────
   click(pt, ev) {
+    if (this.mode === 'sub') { this.subClick(pt, ev); return; }
     const r = this.result, f = this.f; if (!r) { UI.toast('Run the layout first.', 'info', 3000); return; }
     const L = this.cfg(), m = [pt.x * f, pt.y * f];
     const pip = (x, y, p) => { let c = false; for (let i = 0, j = p.length - 1; i < p.length; j = i++) { const a = p[i], b = p[j]; if ((a[1] > y) !== (b[1] > y) && x < (b[0] - a[0]) * (y - a[1]) / (b[1] - a[1]) + a[0]) c = !c; } return c; };
@@ -830,18 +821,6 @@ const PlanLayoutUI = {
       L.markers[target.id] = { x: pt.x, y: pt.y }; this.markFor = null; this.touched();
       UI.toast(`Marker placed on erf ${nm(target)}: its service cable now runs to it from the nearest street.`, 'success', 3500);
       return;
-    }
-    if (this.mode === 'sub') {                                                          // mini-subs: free points, anywhere
-      const tol = 14 * f / PlanEngine.view.zoom, mine = (L.subs || []).map((q, i) => ({ i, d: Math.hypot(q.x * f - m[0], q.y * f - m[1]) })).filter(x => x.d <= tol).sort((a, b) => a.d - b.d)[0];
-      if (ev && ev.altKey) {                                                           // Alt-click removes the one under the pointer
-        if (mine) { L.subs.splice(mine.i, 1); this.subMove = null; this.touched(); }
-        else UI.toast('No mini-sub placed by hand there. A mini-sub part you drew on the plan is removed on the plan.', 'info', 3500);
-        return;
-      }
-      if (this.subMove != null && L.subs[this.subMove]) { L.subs[this.subMove] = { x: pt.x, y: pt.y }; this.subMove = null; this.touched(); return; }   // the second click of a move
-      if (mine) { this.subMove = mine.i; UI.toast('Click where this mini-sub should stand. Alt-click it to remove it.', 'info', 3500); PlanEngine.requestDraw({ fg: true }); return; }
-      if ((L.subs || []).length >= 20) { UI.toast('That is the most mini-subs the layout takes (20).', 'warn', 3000); return; }
-      L.subs.push({ x: pt.x, y: pt.y }); this.touched(); return;                        // exactly where you click: no kiosk is added beside it
     }
     if (this.mode === 'trunk') {
       const h = this._pickT(m); if (!h) return;
@@ -897,7 +876,7 @@ const PlanLayoutUI = {
     if (crowd.length) out.push({ sev: 'fail', text: `${crowd.length} kiosks serve more than ${P.n} erven (${crowd.map(k => k.id + ': ' + k.members.length).join(', ')}).`, ids: crowd.flatMap(k => k.members.map(e => e.id)) });
     const noBoundary = AppState.planMarkup.elements.filter(e => e.type === 'erf' && !(Array.isArray(e.boundary) && e.boundary.length >= 3));
     if (noBoundary.length) out.push({ sev: 'warn', text: `${noBoundary.length} erven on the plan have no boundary, so the layout ignores them (${nm(noBoundary)}). Detect them with Detect erven.`, ids: noBoundary.map(e => e.id) });
-    const vd = r.vd, canAdd = (P.subs || 1) < 8 && (P.subs || 1) < r.kiosks.length, addSub = canAdd ? [{ label: 'Add a mini-sub', act: 'addsub' }] : [];
+    const vd = r.vd, canAdd = (this.cfg().subs || []).length < 20, addSub = canAdd ? [{ label: 'Place another mini-sub', act: 'addsub' }] : [];
     if (r.vdBusy) { /* the engine is still answering */ }
     else if (vd && vd.err) out.push({ sev: 'warn', text: 'Voltage drop and mini-sub loading not checked: ' + vd.err + ' Create will leave the LV and service cables at their defaults.', ids: [] });
     else if (vd) {
@@ -908,7 +887,7 @@ const PlanLayoutUI = {
       if (vd.hotLegs.length) { const h = vd.hotLegs.slice().sort((p, q) => q.amps - p.amps)[0]; parts.push(`${vd.hotLegs.length} LV legs carry more than the ${V.lv.name} rating (${h.to.id}: ${Math.round(h.amps)} A on ${Math.round(V.lv.rating)} A)`); }
       if (vd.hotSvc.length) parts.push(`${vd.hotSvc.length} services carry more than the ${V.svc.name} rating (${Math.round(V.svc.rating)} A)`);
       const badIds = [...new Set([...vd.over.map(x => x.erf.id), ...vd.hotLegs.flatMap(l => l.to.members.map(e => e.id)), ...vd.hotSvc.map(x => x.erf.id)])];
-      if (vd.unmet) out.push({ sev: 'fail', text: `Even the largest LV feeder (${V.lv.name}) does not meet Demand's limits: ${parts.join('; ')}. One mini-sub feeds too much LV network: ${canAdd ? 'add a mini-sub' : 'split the site by hand'}, or raise the limits in Demand. Create leaves the LV cable at its default.`, ids: badIds, acts: addSub });
+      if (vd.unmet) out.push({ sev: 'fail', text: `Even the largest LV feeder (${V.lv.name}) does not meet Demand's limits: ${parts.join('; ')}. One mini-sub feeds too much LV network: ${canAdd ? 'place another mini-sub' : 'split the site by hand'}, or raise the limits in Demand. Create leaves the LV cable at its default.`, ids: badIds, acts: addSub });
       else {
         if (vd.autoFrom) out.push({ sev: 'info', text: `LV feeder sized to ${V.lv.name} to meet Demand's limits (${vd.autoFrom.name} would give ${vd.autoFrom.max.toFixed(1)}% or overload a leg).`, ids: [] });
         if (parts.length) out.push({ sev: 'fail', text: parts.join('; ') + '. Pick a bigger cable (or Automatic), add a kiosk, or raise the limits in Demand.', ids: badIds, acts: addSub });
@@ -922,7 +901,7 @@ const PlanLayoutUI = {
         const acts = [...(t.picked && t.next ? [{ label: `Use ${t.next.name}`, act: 'tx', val: t.next.id }] : []), ...addSub];
         out.push({ sev: 'fail', text: t.picked
           ? `${t.name} carries ${Math.round(t.kva)} kVA, more than its ${Math.round(t.tx.kva)} kVA transformer. Choose a ${t.next ? 'larger size (' + Math.round(t.next.kva) + ' kVA)' : 'larger size (none in the library is big enough)'} or add a mini-sub to share the load.`
-          : `${t.name} carries ${Math.round(t.kva)} kVA, more than the largest transformer in the library (${Math.round(t.tx.kva)} kVA). Add a mini-sub to share the load.`, ids, acts });
+          : `${t.name} carries ${Math.round(t.kva)} kVA, more than the largest transformer in the library (${Math.round(t.tx.kva)} kVA). Place another mini-sub to share the load.`, ids, acts });
       });
       const ok = (vd.subs || []).filter(t => t.tx && !t.over);
       if (ok.length) out.push({ sev: ok.some(t => t.tx.util > 90) ? 'warn' : 'info', text: 'Transformer loading: ' + ok.map(t => `${t.name} ${Math.round(t.kva)} kVA on ${Math.round(t.tx.kva)} kVA (${t.tx.util}%${t.picked ? '' : ', automatic'})`).join('; ') + '.', ids: [] });
@@ -943,12 +922,11 @@ const PlanLayoutUI = {
       }
       out.push({ sev: 'info', text: 'Cable ratings and voltage drop are checked here; fault withstand of the cables is checked in Demand.', ids: [] });
     }
-    const D = r.design || r.designIssue, fixAct = x => x.action === 'split' ? { label: x.text, act: 'split', val: x.kiosk } : x.action === 'maxSize' ? { label: x.text, act: 'maxsize', val: x.size } : x.action === 'clearSize' ? { label: x.text, act: 'clearsize' } : { label: x.text, act: 'addsub' };
-    if (D && !D.ok) D.reasons.forEach(rs => out.push({ sev: 'fail', text: rs.text, ids: r.kiosks.filter(k => rs.kiosks.includes(k.id)).flatMap(k => k.members.map(e => e.id)), acts: rs.fixes.map(fixAct) }));
+    const D = r.design || r.designIssue, fixAct = x => x.action === 'split' ? { label: x.text, act: 'split', val: x.kiosk } : x.action === 'maxSize' ? { label: x.text, act: 'maxsize', val: x.size } : x.action === 'clearSize' ? { label: x.text, act: 'clearsize' } : { label: 'Place another mini-sub', act: 'addsub' };
+    if (D && !D.ok) D.reasons.forEach(rs => out.push({ sev: 'fail', text: rs.text.replace(/Add a mini-sub/g, 'Place another mini-sub').replace(/add a mini-sub/g, 'place another mini-sub'), ids: r.kiosks.filter(k => rs.kiosks.includes(k.id)).flatMap(k => k.members.map(e => e.id)), acts: rs.fixes.map(fixAct) }));
     if (D && D.ok && D.limits && D.limits.minAddsPct > 0) out.push({ sev: 'info', text: `The smallest LV cable allowed (${D.limits.minMm2} mm²) adds ${D.limits.minAddsPct}% cable (size × length) over the design with no minimum.`, ids: [], acts: [{ label: 'Remove the size limits', act: 'clearsize' }] });
     if (D) D.heads.filter(h => h.noCurrent && !h.pinned).forEach(h => out.push({ sev: 'fail', text: `String ${h.name} has no current from Demand, so no breaker was chosen for it (none is guessed). Run Demand, or pick the string breaker yourself.`, ids: [] }));
     else if (D && D.taper.on && D.taper.count > 1) out.push({ sev: 'info', text: `LV cable: ${D.taper.count} sizes, ${D.taper.minMm2} to ${D.taper.maxMm2} mm² ${D.conductor}, taper saves ${D.taper.savedPct}% (cable size × length) against ${D.uniform.sizeMm2} mm² throughout. ${this.cfg().vd.way80 ? 'Every erf way is an 80 A MCCB; ' : ''}each string head has the breaker with the fewest earth-fault fails.`, ids: [] });
-    if (D && r.subsTrials && r.subsTrials.length > 1) out.push({ sev: 'info', text: 'Mini-subs tried: ' + r.subsTrials.map(x => `${x.subs} → ${x.ok ? 'passes, ' + Math.round(x.total).toLocaleString('en') + ' mm²·m' : x.fails + ' fail' + (x.fails === 1 ? '' : 's')}${x.chosen ? ' (used)' : ''}`).join(' · ') + '.', ids: [] });
     const near = r.erven.filter(e => e.fe && e.kiosk && e.cable > 0.85 * P.maxc && e.cable <= P.maxc + 1e-6);
     if (near.length) out.push({ sev: 'warn', text: `${near.length} services are within 15% of the ${P.maxc} m limit: ${nm(near.map(lab))}.`, ids: near.map(e => e.id) });
     const onRoad = new Map(); r.erven.forEach(e => { if (e.road) onRoad.set(e.road, (onRoad.get(e.road) || 0) + 1); });
@@ -962,6 +940,10 @@ const PlanLayoutUI = {
   draw(ctx, zoom) {
     this.kerbDraw(ctx, zoom);
     this.centreDraw(ctx, zoom);
+    if (!this.result) {                                                                  // before a run: where the mini-subs stand
+      const u0 = 1 / zoom;
+      this.placedSubs().forEach(q => { ctx.save(); ctx.fillStyle = '#c92a2a'; ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.6 * u0; ctx.beginPath(); ctx.moveTo(q.x, q.y - 9 * u0); ctx.lineTo(q.x + 8 * u0, q.y + 6 * u0); ctx.lineTo(q.x - 8 * u0, q.y + 6 * u0); ctx.closePath(); ctx.stroke(); ctx.fill(); if (q.src === 'layout' && this.subMove === q.i) { ctx.strokeStyle = '#2563eb'; ctx.lineWidth = 2.2 * u0; ctx.beginPath(); ctx.arc(q.x, q.y, 14 * u0, 0, 6.2832); ctx.stroke(); } ctx.restore(); });
+    }
     const r = this.result, f = this.f; if (!r) return;
     const u = 1 / zoom, W = p => [p[0] / f, p[1] / f], line = pts => { ctx.beginPath(); pts.forEach((p, i) => { const q = W(p); i ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1]); }); ctx.stroke(); };
     const col = k => this.PAL[(parseInt(k.id.slice(1)) - 1) % 8], S = this.SHOW;
@@ -994,7 +976,6 @@ const PlanLayoutUI = {
     }
     if (S.lvmv && r.net) {
       ctx.setLineDash([6 * u, 3 * u]); ctx.strokeStyle = '#b45309'; ctx.lineWidth = 1.8 * u; r.net.lv.forEach(ed => line(ed.pts));
-      ctx.setLineDash([]); ctx.strokeStyle = '#c92a2a'; ctx.lineWidth = 3 * u; (r.net.mvLines || []).forEach(m => line(m.pts));
     }
     if (S.kiosk) { ctx.lineWidth = 1.1 * u; r.erven.forEach(e => { if (!e.route) return; ctx.strokeStyle = col(e.kiosk); ctx.globalAlpha = .75; line(e.route); }); ctx.globalAlpha = 1; }
     if (S.front) r.erven.forEach(e => { if (!e.fe) return; ctx.strokeStyle = e.overridden ? '#ea580c' : '#0f8f78'; ctx.lineWidth = (e.overridden ? 3.5 : 2.6) * u; const d = e.fe; ctx.beginPath(); const a = W([d.a[0] + d.inn[0] * .6, d.a[1] + d.inn[1] * .6]), b = W([d.b[0] + d.inn[0] * .6, d.b[1] + d.inn[1] * .6]); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke(); });
@@ -1063,7 +1044,6 @@ const PlanLayoutUI = {
         <label style="display:flex;gap:6px;align-items:flex-start"><input type="checkbox" data-vd="taper"${VDc.taper ? ' checked' : ''}> <span>Taper the LV cable: the smallest size that passes on each feeder, large near the mini-sub</span></label>
         <div style="display:flex;gap:6px"><label style="flex:1;display:block">Smallest LV cable<select data-vd="minSize" style="width:100%"><option value="0"${VDc.minSize ? '' : ' selected'}>No limit</option>${this._ladderSizes().map(x => `<option value="${x}"${VDc.minSize === x ? ' selected' : ''}>${x} mm²</option>`).join('')}</select></label>
           <label style="flex:1;display:block">Largest LV cable<select data-vd="maxSize" style="width:100%"><option value="0"${VDc.maxSize ? '' : ' selected'}>No limit</option>${this._ladderSizes().map(x => `<option value="${x}"${VDc.maxSize === x ? ' selected' : ''}>${x} mm²</option>`).join('')}</select></label></div>
-        <label style="display:flex;gap:6px;align-items:center"><input type="number" min="1" max="8" step="1" style="width:52px" data-vd="subsMax" value="${VDc.subsMax}"> <span>Most mini-subs to try (1 = only the number set above); the least cable that passes is used</span></label>
         <label style="display:block">Mini-sub transformer<select data-vd="tx" style="width:100%"><option value=""${VDc.tx ? '' : ' selected'}>Automatic: the smallest that carries each mini-sub</option>${txOpts.map(o => `<option value="${esc(o.id)}"${VDc.tx === o.id ? ' selected' : ''}>${esc(o.name)}</option>`).join('')}</select></label>
         <label style="display:block">String breaker (earth-fault loop)<select data-vd="prot" style="width:100%">${Retic._protectionOptions(VDc.prot, this._designOn() ? 'Automatic: sized to each string (fewest earth-fault fails)' : 'Automatic: the next size up from the string current × factor')}</select></label>
         ${VDc.prot || this._designOn() ? '' : `<label style="display:block">Breaker rating at least <b data-vv="protK">${Number(VDc.protK).toFixed(2)}</b> × the string current<input type="range" data-vd="protK" min="1" max="2" step="0.05" value="${Number(VDc.protK)}" style="width:100%"></label>`}
@@ -1093,7 +1073,7 @@ const PlanLayoutUI = {
         ${kinfo.length ? `<div style="color:#b91c1c"><b>${kinfo.length} kerb chain${kinfo.length === 1 ? ' has' : 's have'} no partner</b> (red dashed):<div style="max-height:150px;overflow:auto;margin-top:3px">${kinfo.map(k => `<div style="display:flex;justify-content:space-between;align-items:center;gap:4px;border-bottom:1px solid var(--border,#ddd);padding:2px 0"><span>${k.name ? esc(k.name) : 'near ' + Math.round(k.at[0]) + ', ' + Math.round(k.at[1]) + ' m'} · ${Math.round(k.len)} m</span><span style="display:flex;gap:3px"><button type="button" class="plan-btn" data-act="kerbshow" data-i="${k.i}" style="padding:1px 6px;font-size:12px">show</button><button type="button" class="plan-btn" data-act="kerbone" data-i="${k.i}" style="padding:1px 6px;font-size:12px${KS.one === k.i ? ';outline:2px solid #2563eb' : ''}" title="A road with a kerb on this side only">road from this kerb</button></span></div>`).join('')}</div></div>` : '<div style="color:#15803d">Every kerb chain was paired.</div>'}
         <div style="display:flex;gap:6px"><button type="button" class="plan-btn" data-act="kerbcreate" style="font-weight:600">Create ${KS.streets.length} street${KS.streets.length === 1 ? '' : 's'}</button><button type="button" class="plan-btn" data-act="kerbcancel">Cancel</button></div></div>` : '';
     const tile = (b, s) => `<div style="border:1px solid var(--border,#ddd);border-radius:5px;padding:4px 6px"><b style="font-size:15px;display:block">${b}</b><span style="font-size:11px;color:var(--text-muted)">${s}</span></div>`;
-    const tiles = st ? [[st.erven, 'erven'], [r.net.subs.length, 'mini-sub' + (r.net.subs.length === 1 ? '' : 's')], [st.kiosks, `kiosks · ${st.avgPer.toFixed(1)} erven each on average · ${st.small} serve 2 erven or fewer · at most ${p.n}`], [fmt(st.cable) + ' m', 'service cable'], [fmt(st.cableMax) + ' m of ' + p.maxc + ' m', 'longest service · limit'], ...(r.vd && !r.vd.err ? [[r.vd.maxLv.toFixed(1) + '% / ' + r.vd.maxSvc.toFixed(1) + '%', 'worst LV feeder / service drop · limits ' + r.vd.V.limF + '% / ' + r.vd.V.limS + '%']] : []), [st.crossings, 'road crossings'], [st.provisional, 'junction ducts, empty'], [st.d110 + ' + ' + st.d160, '110 mm + 160 mm ducts'], [st.manholes + ' + ' + st.junctionManholes, 'manholes + junctions'], [fmt(st.trunk) + ' m', 'trunk duct'], [fmt(st.leads) + ' m', 'duct to erven'], [fmt(st.lv) + ' m', 'LV feeder'], [fmt(st.mv) + ' m', 'MV cable'], [st.tOffs + ' / ' + st.spurEnds + ' / ' + st.loops, 'T-offs / spur ends / loops'], [st.baseline, 'crossings if unshared']].map(t => tile(...t)).join('') : '';
+    const tiles = st ? [[st.erven, 'erven'], [r.net.subs.length, 'mini-sub' + (r.net.subs.length === 1 ? '' : 's')], [st.kiosks, `kiosks · ${st.avgPer.toFixed(1)} erven each on average · ${st.small} serve 2 erven or fewer · at most ${p.n}`], [fmt(st.cable) + ' m', 'service cable'], [fmt(st.cableMax) + ' m of ' + p.maxc + ' m', 'longest service · limit'], ...(r.vd && !r.vd.err ? [[r.vd.maxLv.toFixed(1) + '% / ' + r.vd.maxSvc.toFixed(1) + '%', 'worst LV feeder / service drop · limits ' + r.vd.V.limF + '% / ' + r.vd.V.limS + '%']] : []), [st.crossings, 'road crossings'], [st.provisional, 'junction ducts, empty'], [st.d110 + ' + ' + st.d160, '110 mm + 160 mm ducts'], [st.manholes + ' + ' + st.junctionManholes, 'manholes + junctions'], [fmt(st.trunk) + ' m', 'trunk duct'], [fmt(st.leads) + ' m', 'duct to erven'], [fmt(st.lv) + ' m', 'LV feeder'], [st.tOffs + ' / ' + st.spurEnds + ' / ' + st.loops, 'T-offs / spur ends / loops'], [st.baseline, 'crossings if unshared']].map(t => tile(...t)).join('') : '';
     const D = r && r.design, cfgVd = this.cfg().vd;
     const subName = id => /^LAYOUT_SUB/.test(id) ? 'Mini-sub' + (id.split('_')[2] ? ' ' + id.split('_')[2] : '') : id;
     const headOf = D ? new Map(D.heads.map(h => [h.kioskId, h])) : new Map();
@@ -1101,7 +1081,7 @@ const PlanLayoutUI = {
       ${tile(`LV cable: ${D.taper.count} size${D.taper.count === 1 ? '' : 's'}, ${D.taper.minMm2}${D.taper.count > 1 ? ' to ' + D.taper.maxMm2 : ''} mm² ${esc(D.conductor)}`, (cfgVd.minSize || cfgVd.maxSize ? `limited to ${cfgVd.minSize || 'any'} to ${cfgVd.maxSize || 'any'} mm² · ` : '') + (D.taper.on && D.taper.savedPct > 0 ? `taper saves ${D.taper.savedPct}% against ${D.uniform.sizeMm2} mm² throughout (size × length)` : (D.taper.on ? 'no feeder can be smaller' : 'taper off: one size throughout')))}
       <div style="font-size:12px;color:var(--text-muted);margin:3px 0">${cfgVd.way80 ? 'Every erf way: MCCB 80 A. ' : ''}${D.ok ? 'Every earth-fault, volt-drop and rating check passes.' : `<b style="color:#b91c1c">${D.failCount} earth-fault check${D.failCount === 1 ? '' : 's'} still fail${D.failCount === 1 ? 's' : ''}: see the Checks below.</b>`}</div>
       <div style="max-height:200px;overflow:auto"><table style="width:100%;font-size:12px;border-collapse:collapse"><thead><tr><th style="text-align:left">Kiosk</th><th style="text-align:left">Fed from</th><th style="text-align:left">Cable</th><th style="text-align:left">Breaker</th><th style="text-align:right">m</th></tr></thead><tbody>${D.feeders.map(x => { const h = headOf.get(x.kioskId); return `<tr style="border-top:1px solid var(--border,#ddd)"><td>${esc(x.name)}</td><td>${esc(subName(x.fedFrom))}</td><td>${esc(String(x.cable).replace(/ LV$/, ''))}${x.setBy === 'taper' ? ' <span title="smaller (or larger) than the one size that would pass everywhere: set by the taper" style="color:#0f8f78;font-size:11px">· set by taper</span>' : x.setBy === 'you' ? ' <span style="font-size:11px">· set by you</span>' : ''}</td><td>${h ? (h.breaker ? esc(h.breaker) + (h.pinned ? ' <span style="font-size:11px">· set by you</span>' : '') : '<span style="color:#b91c1c">no current from Demand</span>') : '—'}</td><td style="text-align:right">${Math.round(x.lengthM)}</td></tr>`; }).join('')}</tbody></table></div>
-      ${r.subsTrials && r.subsTrials.length > 1 ? `<div style="font-size:12px;color:var(--text-muted);margin-top:3px">Mini-subs tried: ${r.subsTrials.map(x => `${x.subs}: ${x.ok ? Math.round(x.total).toLocaleString('en') + ' mm²·m' : x.fails + ' fail' + (x.fails === 1 ? '' : 's')}${x.chosen ? ' <b>(used)</b>' : ''}`).join(' · ')}</div>` : ''}</div>` : (r && r.designErr ? `<div style="color:#b91c1c;margin-top:6px">The LV design could not be run: ${esc(r.designErr)}</div>` : '');
+      </div>` : (r && r.designErr ? `<div style="color:#b91c1c;margin-top:6px">The LV design could not be run: ${esc(r.designErr)}</div>` : '');
     const xt = r ? r.net.cross.slice().sort((a, b) => (a.prov - b.prov) || (b.d110 + b.d160) - (a.d110 + a.d160)).slice(0, 14).map((x, i) => { const parts = x.prov ? `${x.d110}×110, ${x.d160}×160, junction` : [x.d110s && `${x.d110s}×110 service`, x.d110f && `${x.d110f}×110 fibre`, x.d110l && `${x.d110l}×110 LV`, x.d160 && `${x.d160}×160 MV`, x.spare && `${x.spare}×110 spare`].filter(Boolean).join(', '); return `<tr><td>${esc(x.st.name)}</td><td>${esc(parts)}</td></tr>`; }).join('') : '';
     const trenchRows = r && r.trench ? Object.entries(r.trench.summary).map(([type, q]) => { const d = PLAN_DEFS.trenchTypes[type] || { name: type, width: 0.5 }; const vol = q.len * d.width * q.depth; return `<div style="display:flex;justify-content:space-between;gap:8px"><span>${esc(d.name)}</span><span>${fmt(q.len)} m at ${q.depth.toFixed(2)} m · ${fmt(vol)} m³</span></div>`; }).join('') : '';
     const ck = r ? this.checks() : [], sevCol = { fail: '#dc2626', warn: '#b45309', info: '#64748b' }, sevTxt = { fail: 'Fix', warn: 'Check', info: 'Note' };
@@ -1118,9 +1098,17 @@ const PlanLayoutUI = {
           : '<div style="color:#15803d;margin-top:3px">✓ Every erf is served, within the service limit and the kiosk size.</div>'}</div>` : '';
     const chk = (k, t) => `<label style="display:flex;gap:6px"><input type="checkbox" data-opt="${k}"${opt[k] ? ' checked' : ''}> ${t}</label>`;
     const modeBtn = (v, t) => `<button type="button" class="plan-btn" data-mode="${v}" aria-pressed="${this.mode === v}" style="padding:3px 8px;font-size:12px${this.mode === v ? ';font-weight:600;outline:2px solid var(--accent,#2563eb)' : ''}">${t}</button>`;
+    const placed = this.placedSubs(), Ls = this.cfg();
+    const subStep = `<div style="border:2px solid ${placed.length ? '#16a34a' : '#c92a2a'};border-radius:6px;padding:8px;display:flex;flex-direction:column;gap:6px">
+        <b>Step 1 · Place your mini-subs</b>
+        <div style="font-size:12px;color:var(--text-muted)">${placed.length ? `${placed.length} placed. Kiosks follow the erven and each goes to the nearest mini-sub; the LV network runs from them.` : 'None placed yet. The layout works from your mini-subs: click where each one stands, anywhere (on a street, in a block, in a park). No kiosk is added beside it.'}</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"><button type="button" class="plan-btn" data-mode="sub" aria-pressed="${this.mode === 'sub'}" style="font-weight:600${this.mode === 'sub' ? ';outline:2px solid var(--accent,#2563eb)' : ''}">${this.mode === 'sub' ? 'Placing: click the plan' : (placed.length ? 'Place another' : 'Place mini-subs')}</button></div>
+        ${this.mode === 'sub' ? '<div style="font-size:12px;color:var(--text-muted)">Click a mini-sub, then click again to move it. Alt-click removes it. A mini-sub part you draw on the plan counts too.</div>' : ''}
+        ${placed.length ? `<div>${placed.map((q, i) => `<div style="display:flex;justify-content:space-between;align-items:center;gap:4px;border-bottom:1px solid var(--border,#ddd);padding:2px 0;font-size:12px"><span>S${i + 1}${q.src === 'plan' ? ' · drawn on the plan' : ''}</span>${q.src === 'layout' ? `<button type="button" class="plan-btn" data-act="subrm" data-i="${q.i}" style="padding:1px 6px;font-size:12px">remove</button>` : ''}</div>`).join('')}</div>` : ''}</div>`;
     el.innerHTML = `<div class="plan-props-title">Auto layout</div>
       <div class="plan-props-body" style="display:flex;flex-direction:column;gap:10px;font-size:13px">
-        <div style="display:flex;gap:6px;flex-wrap:wrap"><button type="button" class="plan-btn" data-act="run" style="font-weight:600">${r ? (this.stale ? 'Run again' : 'Re-run') : 'Run layout'}</button>
+        ${subStep}
+        <div style="display:flex;gap:6px;flex-wrap:wrap"><button type="button" class="plan-btn" data-act="run" style="font-weight:600"${placed.length ? '' : ' disabled title="Place your mini-subs first"'}>${r ? (this.stale ? 'Run again' : 'Re-run') : 'Step 2 · Run layout'}</button>
           <button type="button" class="plan-btn" data-act="create" style="font-weight:600"${r ? '' : ' disabled'}>Create on plan</button><button type="button" class="plan-btn" data-act="clear"${r ? '' : ' disabled'}>Clear</button></div>
         ${this.err ? `<div style="color:#dc2626">${esc(this.err)}</div>` : ''}
         ${r && this.stale ? '<div style="color:#b45309">Out of date: press Run again.</div>' : ''}
@@ -1137,7 +1125,7 @@ const PlanLayoutUI = {
         ${r.vd && !r.vd.err && r.vd.worst ? `<div style="margin-top:6px"><b>Voltage drop</b><div>Furthest: erf ${esc(((AppState.planMarkup.elements.find(e => e.id === r.vd.worst.erf.id) || {}).name) || r.vd.worst.erf.id)}, ${r.vd.worst.total.toFixed(1)}% = ${r.vd.worst.lv.toFixed(1)}% LV (to ${esc(r.vd.worst.kiosk.id)}) + ${r.vd.worst.svc.toFixed(1)}% service</div>${r.vd.legs.slice().sort((a, b) => b.cum - a.cum).slice(0, 5).map(l => `<div style="display:flex;justify-content:space-between;gap:8px"><span>${esc(l.from.id)} → ${esc(l.to.id)} · ${Math.round(l.len)} m · ${Math.round(l.amps)} A</span><span>${l.pct.toFixed(2)}% (to here ${l.cum.toFixed(1)}%)</span></div>`).join('')}</div>` : ''}
         ${r.trench ? `<div style="margin-top:6px"><b>Trenches</b>${trenchRows}</div>` : ''}
           <div style="max-height:170px;overflow:auto;margin-top:6px"><table style="width:100%;font-size:12px;border-collapse:collapse"><thead><tr><th style="text-align:left">Crossing</th><th style="text-align:left">Ducts</th></tr></thead><tbody>${xt}</tbody></table></div>
-          <div style="margin-top:8px"><b>Create</b><div style="display:flex;flex-direction:column;gap:2px;margin-top:3px">${chk('markers', 'Move the erf markers to their corner')}${chk('kiosks', 'Kiosks and service cables')}${chk('lv', 'Mini-sub and LV feeders')}${chk('mv', 'MV cable')}${chk('fibre', 'Fibre manholes and ducts')}${chk('cross', 'Road crossings (one per duct)')}${chk('trench', 'Trenches along the routes (depth and sharing as set)')}</div><div style="color:var(--text-muted);margin-top:4px">Replaces the previous auto layout. Your own items stay.</div></div></div>` : ''}
+          <div style="margin-top:8px"><b>Create</b><div style="display:flex;flex-direction:column;gap:2px;margin-top:3px">${chk('markers', 'Move the erf markers to their corner')}${chk('kiosks', 'Kiosks and service cables')}${chk('lv', 'Mini-subs and LV feeders')}${chk('fibre', 'Fibre manholes and ducts')}${chk('cross', 'Road crossings (one per duct)')}${chk('trench', 'Trenches along the routes (depth and sharing as set)')}</div><div style="color:var(--text-muted);margin-top:4px">Replaces the previous auto layout. Your own items stay.</div></div></div>` : ''}
       </div>`;
     el.onclick = (e) => {
       const b = e.target.closest('[data-act],[data-mode],[data-side],[data-ck],[data-ckact],[data-ckerf]'); if (!b) return;
@@ -1147,7 +1135,7 @@ const PlanLayoutUI = {
         if (a.act === 'tx') { L.vd.tx = a.val; this.revd(); }
         else if (a.act === 'extendall') { this.extendErven(a.val || []); }
         else if (a.act === 'resetmarkers') { this.cfg().markers = {}; this.markFor = null; this.touched(); }
-        else if (a.act === 'addsub') { L.vd.subsMax = 1; p.subs = Math.min(8, ((this.result && this.result.net.subs.length) || +p.subs || 1) + 1); this.touched(); }
+        else if (a.act === 'addsub') { this.mode = 'sub'; UI.toast('Click where the next mini-sub should stand. The kiosks go to the nearest one.', 'info', 5000); PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true }); }
         else if (a.act === 'maxsize') { L.vd.maxSize = +a.val || 0; this.vdRun(); }
         else if (a.act === 'clearsize') { L.vd.minSize = 0; L.vd.maxSize = 0; this.vdRun(); }
         else if (a.act === 'split') { const k = this.result && this.result.kiosks.find(x => x.id === a.val); if (k) { L.vd.splits.push({ x: k.x / this.f, y: k.y / this.f }); this.touched(); } }
@@ -1162,6 +1150,7 @@ const PlanLayoutUI = {
       }
       if (b.dataset.act === 'unflag') { this.flag = null; this.nearHint = null; PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true }); return; }
       if (b.dataset.act === 'kerbstreets') { this.streetDrawOn(false); const sel = el.querySelector('[data-stl]'), x = lyr[sel ? +sel.value : 0]; if (x) this.kerbStart(x.d.id, x.layer); return; }
+      if (b.dataset.act === 'subrm') { const L2 = this.cfg(); L2.subs.splice(+b.dataset.i, 1); this.subMove = null; this.touched(); return; }
       if (b.dataset.act === 'streetdraw') { this.streetDrawOn(!this.drawStreets); return; }
       if (b.dataset.act === 'centrepick') { this.streetDrawOn(false); const sel = el.querySelector('[data-stl]'), x = lyr[sel ? +sel.value : 0]; if (x) this.centreStart(x.d.id, x.layer); return; }
       if (b.dataset.act === 'centrecreate') { this.centreCreate(); return; }
@@ -1196,7 +1185,6 @@ const PlanLayoutUI = {
       if (t.dataset.kopt) { const v = parseFloat(t.value); if (isFinite(v)) { this.kerbOpt[t.dataset.kopt] = v; if (this.kerbStage) { if (t.dataset.kopt === 'join' || t.dataset.kopt === 'oneW') this.kerbStage.o = Object.assign({}, this.kerbStage.o, this.kerbOpt); else this.kerbSolve(); } } return; }
       if (t.dataset.vd) {
         if (t.type === 'range') return;
-        if (t.dataset.vd === 'subsMax') { const n = Math.max(1, Math.min(8, Math.round(parseFloat(t.value) || 1))); VDc.subsMax = n; t.value = n; const r0 = this.result; if (r0 && n < 2) r0.subsTrials = null; this.vdRun(); return; }
         if (t.type === 'checkbox') { VDc[t.dataset.vd] = t.checked; this.vdRun(); return; }   // the design is worked out again
         VDc[t.dataset.vd] = t.value;
         if (this._designOn()) this.vdRun(); else this.revd(); return;                         // the design depends on the transformer, the breakers and the cable picked
@@ -1217,7 +1205,12 @@ const PlanLayoutUI = {
 if (typeof PlanTools !== 'undefined') {
   PlanTools.register({
     id: 'layout', cursor: 'crosshair',
-    onActivate() { PlanLayoutUI.mode = 'front'; if (typeof PlanMarkup !== 'undefined') PlanMarkup.refreshProps(); },
+    onActivate() {
+      const none = !PlanLayoutUI.placedSubs().length;
+      PlanLayoutUI.mode = none ? 'sub' : 'front';                                      // the first step: place the mini-subs
+      if (none && typeof UI !== 'undefined') UI.toast('First, place your mini-subs: click where each one stands. The layout works from them.', 'info', 6000);
+      if (typeof PlanMarkup !== 'undefined') PlanMarkup.refreshProps();
+    },
     onDeactivate() { PlanLayoutUI.hoverT = null; PlanLayoutUI.kerbStage = null; PlanLayoutUI.centreStage = null; if (PlanLayoutUI.drawStreets) PlanLayoutUI.streetDrawOn(false); },
     cancel() { PlanTools.set('select'); },
     onMove(pt) {

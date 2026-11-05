@@ -48,7 +48,7 @@ ok('sharing road crossings needs far fewer trenches than crossing separately', (
   assert(sh.stats.crossings < no.stats.crossings * 0.6, `${sh.stats.crossings} vs ${no.stats.crossings}`);
 });
 
-ok('crossing ducts follow the rules: 110 mm takes 4 services / 4 fibre ducts / 2 LV; MV own 160 mm', () => {
+ok('crossing ducts follow the rules: 110 mm takes 4 services / 4 fibre ducts / 2 LV', () => {
   const r = L.solve(F, {});
   for (const c of r.net.cross) {
     assert.strictEqual(c.d110s, Math.ceil(c.svc / 4)); assert.strictEqual(c.d110f, Math.ceil(c.fib / 4));
@@ -56,7 +56,7 @@ ok('crossing ducts follow the rules: 110 mm takes 4 services / 4 fibre ducts / 2
     assert.strictEqual(c.d110, c.d110s + c.d110f + c.d110l + c.spare);
   }
   assert(r.net.cross.some(c => c.svc + c.fib > 4), 'a busy crossing');
-  assert(r.net.cross.some(c => c.mv > 0), 'the MV cable crosses somewhere');
+  assert(r.net.cross.every(c => c.mv === 0), 'no MV cable is designed here');
   const sp = L.solve(F, { spare: 2 }); assert(sp.net.d110 > r.net.d110);
 });
 
@@ -99,13 +99,13 @@ ok('cutting a spur section re-routes, never leaves a manhole unconnected silentl
   assert(cut.fibre.mhs.every(m => !m.off) || cut.warns.some(w => /not connected/.test(w)));
 });
 
-ok('LV is a tree reaching every kiosk; MV reaches the mini-sub', () => {
+ok('LV is a tree reaching every kiosk, from the mini-sub', () => {
   const r = L.solve(F, {});
   assert(r.net.sub);
   assert(!r.kiosks.includes(r.net.sub), 'the mini-sub is not one of the kiosks');
   assert.strictEqual(r.net.lvLinks.length, r.kiosks.length);                       // every kiosk has a feeder; the first ones leave the mini-sub itself
   assert(r.net.lvLinks.filter(l => l.from === r.net.sub).every(l => Math.hypot(l.pts[0][0] - r.net.sub.x, l.pts[0][1] - r.net.sub.y) < 1e-6), 'a string head starts at the mini-sub');
-  assert(r.net.mvLen > 0);
+  assert.strictEqual(r.net.mvLen, 0, 'MV is not designed here'); assert.strictEqual(r.net.mvLines.length, 0);
 });
 
 ok('front override moves the front and the marker', () => {
@@ -134,30 +134,21 @@ ok('speed: a 100-erf neighbourhood solves in a couple of seconds with the optimi
 // ── trenches ──
 const plenOf = pts => { let l = 0; for (let i = 1; i < pts.length; i++) l += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]); return l; };
 const sumLen = (t, f) => t.list.filter(f).reduce((a, x) => a + x.len, 0);
-ok('trenches: MV at 1.1 m, LV / service / street light at 0.7 m by default', () => {
+ok('trenches: LV / service / street light at 0.7 m, fibre at 0.6 m by default; no MV trench', () => {
   const r = L.solve(F, {}), t = L.trenches(r, {});
-  assert(t.summary['MV'] && t.summary['LV/SL']);
-  assert.strictEqual(t.summary['MV'].depth, 1.1); assert.strictEqual(t.summary['LV/SL'].depth, 0.7);
-  assert(t.list.every(x => x.depth === (x.type === 'MV' ? 1.1 : x.type === 'LV/SL' ? 0.7 : x.type === 'FI' ? 0.6 : 1.1)));
+  assert(t.summary['LV/SL'] && !t.summary['MV']);
+  assert.strictEqual(t.summary['LV/SL'].depth, 0.7);
+  assert(t.list.every(x => x.depth === (x.type === 'LV/SL' ? 0.7 : x.type === 'FI' ? 0.6 : 1.1)));
 });
 ok('trenches: cables on one verge share a trench (far less than the sum of the routes)', () => {
   const r = L.solve(F, {}), t = L.trenches(r, {});
   const routes = r.erven.reduce((a, e) => a + (e.route ? plenOf(e.route) : 0), 0) + r.net.lvLen;
   assert(sumLen(t, x => x.type === 'LV/SL' && x.kind !== 'crossing') < routes * 0.95, `${sumLen(t, x => x.type === 'LV/SL')} vs ${routes}`);
-  assert(sumLen(t, x => (x.type === 'MV' || x.type === 'MV/LV/SL') && x.kind !== 'crossing') < r.net.mvLen * 1.15 + 5);
-});
-ok('trenches: MV with LV in one trench makes a combined trench at the deepest depth', () => {
-  const r = L.solve(F, {}), sep = L.trenches(r, { combine: 'separate' }), com = L.trenches(r, { combine: 'mvlv' });
-  assert(com.summary['MV/LV/SL'].len > sep.summary['MV/LV/SL'].len);
-  assert((com.summary['MV'] ? com.summary['MV'].len : 0) < sep.summary['MV'].len);
-  assert.strictEqual(com.summary['MV/LV/SL'].depth, 1.1);
-  const deep = L.trenches(r, { combine: 'mvlv', depth: { mv: 1.5, lv: 0.9 } });
-  assert.strictEqual(deep.summary['MV/LV/SL'].depth, 1.5);
-  assert.strictEqual(L.trenches(r, { combine: 'mvlv', depth: { comb: 1.3 } }).summary['MV/LV/SL'].depth, 1.3);
+  assert(!t.list.some(x => x.type === 'MV' && x.kind !== 'crossing'), 'no MV trench along the routes');
 });
 ok('trenches: depths are the settings', () => {
-  const t = L.trenches(L.solve(F, {}), { depth: { mv: 1.4, lv: 0.85, fi: 0.5 } });
-  assert.strictEqual(t.summary['MV'].depth, 1.4); assert.strictEqual(t.summary['LV/SL'].depth, 0.85); assert.strictEqual(t.summary['FI'].depth, 0.5);
+  const t = L.trenches(L.solve(F, {}), { depth: { lv: 0.85, fi: 0.5 } });
+  assert.strictEqual(t.summary['LV/SL'].depth, 0.85); assert.strictEqual(t.summary['FI'].depth, 0.5);
 });
 ok('trenches: fibre own / with the LV trench / none', () => {
   const r = L.solve(F, { fibre: 'same' });
@@ -199,7 +190,6 @@ ok('several mini-subs: each kiosk is fed by one, the LV tree splits, Demand gets
   assert.strictEqual(r.net.subs.length, 3);
   assert(r.kiosks.every(k => k.subK && r.net.subs.some(S => S.k === k.subK)));
   assert.strictEqual(r.net.lvLinks.length, r.kiosks.length);                      // a tree per mini-sub, every kiosk fed once
-  assert.strictEqual(r.net.mvLines.length, 3);
   const per = r.net.subs.map(S => S.g.reduce((a, k) => a + k.members.length, 0)), tot = per.reduce((a, b) => a + b, 0);
   assert(Math.max(...per) <= Math.ceil(tot / 3 * 1.2));                           // the transformers carry similar loads
   assert(Math.max(...r.net.lvLinks.map(l => l.len)) > 0 && one.net.subs.length === 1);
@@ -312,8 +302,6 @@ ok('mini-sub: placed at an exact point, on a street or well away from any; no ki
   for (const r of [onSt, off]) {
     assert(!r.kiosks.includes(r.net.sub));
     holds(r, L.DEFAULTS, F.erven.length, 'with a mini-sub placed by hand');
-    const mv = r.net.mvLines[0].pts, last = mv[mv.length - 1];
-    assert(Math.hypot(last[0] - away[0], last[1] - away[1]) < 1e-9 || Math.hypot(last[0] - spot[0], last[1] - spot[1]) < 1e-9, 'MV ends at the mini-sub');
     r.net.lvLinks.filter(l => l.from === r.net.sub).forEach(l => assert(Math.hypot(l.pts[0][0] - r.net.sub.x, l.pts[0][1] - r.net.sub.y) < 1e-9 && Math.abs(l.len - L.plen(l.pts)) < 1e-6));
   }
   const dStreet = Math.min(...off.streets.map(st => L.project(st, away[0], away[1]).d));
@@ -330,20 +318,23 @@ ok('several mini-subs placed by hand: each exactly where put, kiosks go to the n
   assert(r.net.subs.every(S => S.k.manual));
   assert(r.kiosks.every(k => k.subK && r.net.subs.some(S => S.k === k.subK)));
   assert.strictEqual(r.net.lvLinks.length, r.kiosks.length);
-  assert.strictEqual(r.net.mvLines.length, 2);
   const d = L.demandInput(r, { minisubId: 'MS', phases: [null] });
   assert.strictEqual(d.minisubs.length, 2);
   assert.strictEqual(d.kiosks.filter(k => d.minisubs.some(m => m.id === k.fedFrom)).length, r.net.lvLinks.filter(l => l.from.root).length);
   holds(r, L.DEFAULTS, F.erven.length, 'with two mini-subs placed by hand');
 });
-ok('mini-subs placed by hand are kept and more can be asked for: the extra one is automatic', () => {
+ok('mini-subs placed by hand are the mini-subs: the count setting no longer adds automatic ones', () => {
   const base = L.solve(F, {}), a = L.ptAt(base.streets[0], 30, 0);
-  const r = L.solve(Object.assign({}, F, { subPts: [[a[0], a[1]]] }), { subs: 2 });
-  assert.strictEqual(r.net.subs.length, 2);
-  assert.strictEqual(r.net.subs.filter(S => S.k.manual).length, 1);
-  const man = r.net.subs.find(S => S.k.manual);
-  assert(Math.hypot(man.k.x - a[0], man.k.y - a[1]) < 1e-9);
+  const r = L.solve(Object.assign({}, F, { subPts: [[a[0], a[1]]] }), { subs: 3 });
+  assert.strictEqual(r.net.subs.length, 1);
+  assert(r.net.subs[0].k.manual && Math.hypot(r.net.subs[0].k.x - a[0], r.net.subs[0].k.y - a[1]) < 1e-9);
   assert.strictEqual(kioskKey(r), kioskKey(base));
+});
+ok('placed mini-subs keep the order they were placed in', () => {
+  const base = L.solve(F, {}), a = L.ptAt(base.streets[0], 30, 0), b = L.ptAt(base.streets[1], 40, 0);
+  const r = L.solve(Object.assign({}, F, { subPts: [[b[0], b[1]], [a[0], a[1]]] }), {});
+  assert(Math.hypot(r.net.subs[0].k.x - b[0], r.net.subs[0].k.y - b[1]) < 1e-9 && Math.hypot(r.net.subs[1].k.x - a[0], r.net.subs[1].k.y - a[1]) < 1e-9);
+  assert.deepStrictEqual(r.net.subs.map(S => S.id), [1, 2]);
 });
 ok('a mini-sub with no kiosks to feed is still kept where it was put', () => {
   const r = L.solve(Object.assign({}, F, { subPts: [[0, 0], [1, 1]] }), {});
