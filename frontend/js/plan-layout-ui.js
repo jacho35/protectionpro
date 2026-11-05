@@ -1324,6 +1324,14 @@ const PlanLayoutUI = {
         ${[step1, step2, step3, step4][this.step - 1]}
         ${footer}
       </div>`;
+    // the panel is redrawn after every change: keep the sections the user opened open (by their heading)
+    const openSet = this._openSec || (this._openSec = new Set());
+    el.querySelectorAll('details').forEach(d => {
+      const sm = d.querySelector(':scope > summary'); if (!sm) return;
+      const key = this.step + ':' + ((sm.firstChild && sm.firstChild.textContent) || sm.textContent).trim();
+      if (openSet.has(key)) d.open = true;
+      d.addEventListener('toggle', () => { if (d.open) openSet.add(key); else openSet.delete(key); });
+    });
     el.onclick = (e) => {
       const b = e.target.closest('[data-act],[data-mode],[data-side],[data-ck],[data-ckact],[data-ckerf],[data-step],[data-preset],[data-cf],[data-ckopen]'); if (!b) return;
       if (b.dataset.step) { this.setStep(+b.dataset.step); return; }
