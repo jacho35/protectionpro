@@ -10,7 +10,7 @@
  *      beside every junction, an erf takes any kiosk within `maxc` m of service cable —
  *      along its street or round a junction corner — fewest kiosks first (one is given up
  *      while the extra cable stays within `worth` m), then fewest road crossings, then
- *      shortest cable, `aim` erven per kiosk as a soft limit under the hard `n`);
+ *      shortest cable, at most `n` erven per kiosk);
  *   4. fibre: manholes on the civil side (one per `m` erven and never further apart
  *      than `maxmh` m), a trunk duct as a ring or as spurs with T-offs from an entry,
  *      and a duct from a manhole to every erf;
@@ -30,7 +30,7 @@ const PlanLayout = (() => {
 
   const DEFAULTS = {
     side: 4, depth: 4, corner: 'start', front: 'longest',      // marker: m from the side boundary and the front; which corner; corner erf's front
-    kmode: 'opt', n: 6, maxc: 80, worth: 170, aim: 5, knet: true,   // kiosks (aim = the erven per kiosk to aim for, a soft limit under n; knet = one solve over the whole street network)
+    kmode: 'opt', n: 6, maxc: 80, worth: 170, knet: true,   // kiosks (n = the most erven one kiosk serves; knet = one solve over the whole street network)
     subMode: 'opt', subs: 1,                                          // mini-sub: 'opt' = where the LV network drops least, 'mid' = nearest the middle
     m: 8, maxmh: 120, fibre: 'opp', topo: 'ring',              // fibre
     share: true, xmode: 'bound', junct: false, j110: 2, j160: 1, spare: 0,   // crossings
@@ -389,7 +389,7 @@ const PlanLayout = (() => {
     }
 
     // ── 2b. kiosks for the whole street network ──
-    const XPEN = 300, SOFT = 30;                 // m of cable one road crossing / one erf over `aim` counts for in the assignment
+    const XPEN = 300;                            // m of cable one road crossing counts for in the assignment
     function placeKiosksNet() {
       groups = new Map();
       for (const e of erven) if (e.fe) { const k = e.road.id + '|' + e.seg; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(e); }
@@ -397,7 +397,7 @@ const PlanLayout = (() => {
       const list = erven.filter(e => e.fe), n = list.length, kiosks = [];
       list.forEach(e => { e.gkey = e.road.id + '|' + e.seg; e.via = null; e.mcs = markerCands(e); e._k = null; e.hopN = 0; });
       if (!n) return kiosks;
-      const maxc = P.maxc, N = Math.max(1, Math.round(P.n)), aim = Math.max(1, Math.min(N, Math.round(P.aim) || N));
+      const maxc = P.maxc, N = Math.max(1, Math.round(P.n));
       // candidate stands: every street's kiosk-side verge at the erf boundaries, across the road from a boundary, and beside each junction
       const cands = [];
       for (const st of streets) {
@@ -458,14 +458,14 @@ const PlanLayout = (() => {
       const cover = cands.map((c, ci) => { const a = []; for (let i = 0; i < n; i++) if (Lm[ci][i] <= maxc) a.push(i); return a; });
       const servable = list.map((e, i) => cover.some(a => a.includes(i)));
       const nServ = servable.filter(Boolean).length;
-      // erven → the chosen stands, each taking at most N (the soft `aim` first, a small penalty beyond it): a small min-cost flow
+      // erven → the chosen stands, each taking at most N: a small min-cost flow
       function assignG(sel) {
         const k = sel.length, V = n + k + 2, S0 = n + k, T = n + k + 1;
         const to = [], cap = [], cost = [], nxt = [], head = new Array(V).fill(-1);
         const add = (u, v, c, w) => { to.push(v); cap.push(c); cost.push(w); nxt.push(head[u]); head[u] = to.length - 1; to.push(u); cap.push(0); cost.push(-w); nxt.push(head[v]); head[v] = to.length - 1; };
         for (let i = 0; i < n; i++) add(S0, i, 1, 0);
         for (let i = 0; i < n; i++) for (let j = 0; j < k; j++) if (Lm[sel[j]][i] <= maxc) add(i, n + j, 1, Math.round(wt(sel[j], i) * 10));
-        for (let j = 0; j < k; j++) { add(n + j, T, aim, 0); if (N > aim) add(n + j, T, N - aim, SOFT * 10); }
+        for (let j = 0; j < k; j++) { add(n + j, T, N, 0); }
         let flow = 0, total = 0;
         const dist = new Array(V), prev = new Array(V), inq = new Array(V);
         for (;;) {

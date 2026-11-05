@@ -255,14 +255,14 @@ ok('kiosks: four short parallel streets of four erven need 3 kiosks at most (one
   assert(r.kiosks.some(k => new Set(k.members.map(e => e.road.id)).size > 1), 'a kiosk serves erven of two streets');
   assert(r.stats.small <= 1);
 });
-ok('kiosks: the settings now have an effect (n, worth, aim)', () => {
+ok('kiosks: the settings now have an effect (n, worth)', () => {
   const k = P => L.solve(F, P).kiosks.length;
   assert(k({ n: 6 }) - k({ n: 8 }) >= 2, `n 6 → 8: ${k({ n: 6 })} → ${k({ n: 8 })}`);
   assert(k({ n: 4 }) > k({ n: 6 }), 'n 4 needs more than n 6');
   assert(k({ worth: 0 }) - k({ worth: 250 }) >= 3, `worth 0 → 250: ${k({ worth: 0 })} → ${k({ worth: 250 })}`);
   const loose = L.solve(F, { worth: 0 }), tight = L.solve(F, { worth: 250 });
   assert(loose.stats.cable < tight.stats.cable, 'a smaller worth keeps the cable shorter');
-  for (const P of [{ n: 8 }, { n: 4 }, { worth: 0 }, { worth: 400 }, { maxc: 60 }, { aim: 3 }]) holds(L.solve(F, P), Object.assign({}, L.DEFAULTS, P), F.erven.length, JSON.stringify(P));
+  for (const P of [{ n: 8 }, { n: 4 }, { worth: 0 }, { worth: 400 }, { maxc: 60 }, { n: 3 }]) holds(L.solve(F, P), Object.assign({}, L.DEFAULTS, P), F.erven.length, JSON.stringify(P));
 });
 ok('kiosks: a sparser neighbourhood (40 erven) also gets far fewer', () => {
   const S = { streets: F.streets, erven: F.erven.filter((e, i) => i % 2 === 0).slice(0, 40) }, old = L.solve(S, { knet: false }), r = L.solve(S, {});
