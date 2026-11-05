@@ -1193,6 +1193,22 @@ Object.assign(PlanRoomDetect, {
   },
   drawBack() { const D = this.draft; if (!D) return false; D.pts.pop(); if (!D.pts.length) this.draft = null; this._changed(); return true; },
   drawCancel() { if (!this.draft) return false; this.draft = null; this._changed(); return true; },
+  // The stand number written inside a polygon (a drawn erf takes it, as a detected one does): the DXF's own text, found by position.
+  _numberIn(pts) {
+    if (typeof PlanDxfImport === 'undefined') return '';
+    const poly = pts.map(p => [p.x, p.y]); let best = null;
+    for (const d of PlanDxfImport.list().filter(x => !x.hidden && PlanDxfImport.dataOf(x))) {
+      for (const t of (PlanDxfImport.dataOf(d).entities || [])) {
+        if (t.t !== 'x' || t.s == null || !String(t.s).trim() || !t.p) continue;
+        const w = PlanDxfImport.worldOf(d, t.p[0], t.p[1]);
+        if (!this._pip([w.x, w.y], poly)) continue;
+        const rank = (/\d/.test(t.s) ? 1e9 : 0) + (t.h || 0);
+        if (!best || rank > best.rank) best = { rank, s: String(t.s).replace(/\s+/g, ' ').trim().slice(0, 40) };
+      }
+    }
+    return best ? best.s : '';
+  },
+
   drawClose() {
     const D = this.draft; if (!D) return false;
     const lim = this.LIMITS[D.target], f = PlanEngine.factor();
@@ -1200,7 +1216,8 @@ Object.assign(PlanRoomDetect, {
     if (this._crosses(D.pts)) { UI.toast('The outline crosses itself. Backspace takes the last corner back.', 'warn', 4000); return true; }
     const pts = D.pts.map(q => ({ x: q.x, y: q.y })), area = f ? PlanEngine._polyArea(pts) * f * f : null;
     this.draft = null;
-    const made = this.commitMany(D.target, [{ points: pts, label: '', source: 'drawn' }]);
+    const label = D.target === 'erf' ? (this._numberIn(pts) || this._labelAt(this._seedOf(pts), 'erf')) : '';
+    const made = this.commitMany(D.target, [{ points: pts, label, source: 'drawn' }]);
     UI.toast(`${made[0].name} drawn${area != null ? ` — ${area.toFixed(1)} m²` : ''}.`, 'success', 3500);
     this._changed(); return true;
   },
