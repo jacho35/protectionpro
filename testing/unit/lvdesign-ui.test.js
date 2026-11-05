@@ -26,7 +26,7 @@ function sandbox() {
     runAdmd: async (settings, kiosks, minisubs) => { counts.admd++; return bridge('admd', { settings, kiosks, minisubs }); },
     runReticEarth: async body => { counts.earth++; return bridge('earth', body); },
     runReticLvDesign: async body => { counts.design++; return bridge('design', body); } };
-  for (const f of ['constants.js', 'cablelib.js', 'undonames.js', 'retic.js', 'plan-sync.js', 'plan-defs.js', 'plan-layout.js', 'plan-kerbs.js', 'plan-layout-ui.js']) load(f);
+  for (const f of ['constants.js', 'cablelib.js', 'undonames.js', 'retic.js', 'plan-sync.js', 'plan-defs.js', 'plan-layout.js', 'plan-kerbs.js', 'plan-sections.js', 'plan-layout-ui.js']) load(f);
   return { ctx, AS, counts, toasts };
 }
 const F = require('./layout-fixture.js')();

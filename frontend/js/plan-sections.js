@@ -59,7 +59,9 @@ const PlanSections = (() => {
     return sec;
   }
   // the project's sections, always valid: at least one section, a default that exists, lines that point at sections
+  const valid = new WeakSet();                                       // states this module made: handed back as they are, so a holder can edit one in place
   function state(raw) {
+    if (raw && valid.has(raw)) return raw;
     const r = raw && typeof raw === 'object' ? raw : {};
     const list = (Array.isArray(r.list) ? r.list : []).map((s, i) => normalize(s, 'sec_' + (i + 1)));
     const seen = new Set(); list.forEach(s => { let id = s.id, n = 1; while (seen.has(id)) id = s.id + '_' + (++n); s.id = id; seen.add(id); });
@@ -67,7 +69,7 @@ const PlanSections = (() => {
     const def = list.some(s => s.id === r.def) ? r.def : list[0].id;
     const lines = (Array.isArray(r.lines) ? r.lines : []).filter(l => l && typeof l.streetId === 'string' && seen.has(l.sec) && Number.isFinite(+l.s0) && Number.isFinite(+l.s1))
       .map((l, i) => ({ id: String(l.id || 'sl_' + (i + 1)), streetId: l.streetId, s0: +l.s0, s1: +l.s1, sec: l.sec, group: l.group || null }));
-    return { list, def, lines };
+    const out = { on: !!r.on, list, def, lines }; valid.add(out); return out;
   }
   const nextId = list => { let n = list.length + 1; while (list.some(s => s.id === 'sec_' + n)) n++; return 'sec_' + n; };
 
