@@ -356,15 +356,15 @@ export const SETUPS = {
 
   'plan-layout': { run: async (page) => {
     await seedNeighbourhood(page);
-    await page.evaluate(() => { PlanTools.set('layout'); PlanLayoutUI.run(); PlanEngine.zoomFit && PlanEngine.zoomFit(); document.querySelectorAll('.toast').forEach(t => t.remove()); });
+    await page.evaluate(() => { PlanTools.set('layout'); PlanLayoutUI.cfg().subs = [{ x: 600, y: 520 }]; PlanLayoutUI.run(); PlanLayoutUI.setStep(4); PlanEngine.zoomFit && PlanEngine.zoomFit(); document.querySelectorAll('.toast').forEach(t => t.remove()); });
     await page.waitForTimeout(600);
   } },
 
   'plan-layout-checks': { run: async (page) => {
     await seedNeighbourhood(page);
     await page.evaluate(() => {
-      PlanTools.set('layout'); PlanLayoutUI.cfg().params.maxc = 45; PlanLayoutUI.run(); PlanEngine.zoomFit && PlanEngine.zoomFit();
-      document.querySelector('#plan-props [data-ck="0"]').click(); document.querySelectorAll('.toast').forEach(t => t.remove());
+      PlanTools.set('layout'); PlanLayoutUI.cfg().subs = [{ x: 600, y: 520 }]; PlanLayoutUI.cfg().params.maxc = 45; PlanLayoutUI.run(); PlanLayoutUI.setStep(4); PlanEngine.zoomFit && PlanEngine.zoomFit();
+      document.querySelector('#plan-props [data-ck]').click(); document.querySelectorAll('.toast').forEach(t => t.remove());
     });
     await page.waitForTimeout(600);
   } },
