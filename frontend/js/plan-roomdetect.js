@@ -1170,6 +1170,52 @@ Object.assign(PlanRoomDetect, {
     return best ? best.label : '';
   },
 
+  // ── a shape drawn by hand, for what the detection gets wrong ──
+  // Click the corners (they snap like everything else on the plan, so DXF corners and ends are caught); click the first
+  // corner, click the last one again, or press Enter to close; Backspace takes the last corner back; Esc drops it.
+  draft: null,                                                  // { target, pts: [{x, y}], hover }
+  _crosses(pts) {                                                // does the outline cross itself?
+    const n = pts.length, o = (a, b, c) => (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+    for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) {
+      if (j === i + 1 || (i === 0 && j === n - 1)) continue;
+      const a = pts[i], b = pts[(i + 1) % n], c = pts[j], d = pts[(j + 1) % n];
+      if (o(a, b, c) * o(a, b, d) < 0 && o(c, d, a) * o(c, d, b) < 0) return true;
+    }
+    return false;
+  },
+  drawClick(pt, target) {
+    const lim = this.LIMITS[target], z = PlanEngine.view.zoom, tol = 9 / z;
+    if (!this.draft || this.draft.target !== target) this.draft = { target, pts: [], hover: null };
+    const D = this.draft, q = (typeof PlanTools.snap === 'function' ? PlanTools.snap(pt) : pt) || pt, p = { x: q.x, y: q.y };
+    if (D.pts.length >= 3 && (Math.hypot(p.x - D.pts[0].x, p.y - D.pts[0].y) <= tol || Math.hypot(p.x - D.pts[D.pts.length - 1].x, p.y - D.pts[D.pts.length - 1].y) <= tol)) { this.drawClose(); return; }
+    if (D.pts.length && Math.hypot(p.x - D.pts[D.pts.length - 1].x, p.y - D.pts[D.pts.length - 1].y) <= tol / 3) return;      // the same spot twice
+    D.pts.push(p); this._changed();
+  },
+  drawBack() { const D = this.draft; if (!D) return false; D.pts.pop(); if (!D.pts.length) this.draft = null; this._changed(); return true; },
+  drawCancel() { if (!this.draft) return false; this.draft = null; this._changed(); return true; },
+  drawClose() {
+    const D = this.draft; if (!D) return false;
+    const lim = this.LIMITS[D.target], f = PlanEngine.factor();
+    if (D.pts.length < 3) { UI.toast(`A ${lim.noun} needs at least three corners.`, 'warn', 3000); return true; }
+    if (this._crosses(D.pts)) { UI.toast('The outline crosses itself. Backspace takes the last corner back.', 'warn', 4000); return true; }
+    const pts = D.pts.map(q => ({ x: q.x, y: q.y })), area = f ? PlanEngine._polyArea(pts) * f * f : null;
+    this.draft = null;
+    const made = this.commitMany(D.target, [{ points: pts, label: '', source: 'drawn' }]);
+    UI.toast(`${made[0].name} drawn${area != null ? ` — ${area.toFixed(1)} m²` : ''}.`, 'success', 3500);
+    this._changed(); return true;
+  },
+  drawDraft(ctx, zoom, target) {
+    const D = this.draft; if (!D || D.target !== target || !D.pts.length) return;
+    const pts = D.pts, h = D.hover, u = 1 / zoom;
+    ctx.save();
+    ctx.beginPath(); pts.forEach((q, i) => i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y)); if (h) ctx.lineTo(h.x, h.y);
+    if (pts.length >= 2) { ctx.save(); ctx.closePath(); ctx.fillStyle = 'rgba(22,163,74,0.14)'; ctx.fill(); ctx.restore(); }
+    ctx.lineWidth = 2 * u; ctx.strokeStyle = '#16a34a'; ctx.setLineDash([6 * u, 4 * u]); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle = '#fff';
+    pts.forEach((q, i) => { ctx.beginPath(); ctx.arc(q.x, q.y, (i === 0 && pts.length >= 3 ? 6 : 4) * u, 0, 6.2832); ctx.fill(); ctx.stroke(); });
+    ctx.restore();
+  },
+
   // The tool's click: create now, stage (add) or unstage (subtract).
   click(pt, target, e) {
     const lim = this.LIMITS[target];
@@ -1318,7 +1364,8 @@ Object.assign(PlanRoomDetect, {
         <button type="button" class="plan-btn" data-rd-all style="font-weight:600">Detect all ${lim.nouns}</button>
         <p style="margin:0;color:var(--text-muted)">Or click inside one. A plain click ${target === 'erf' ? 'places an erf' : 'creates the room'} now.
           Shift-click adds it to the set below, Alt-click takes it out. Esc to stop.</p>
-        <div style="display:flex;gap:6px;flex-wrap:wrap" role="group" aria-label="Click action">${modeBtn('create', 'Create')}${modeBtn('add', 'Add to set')}${modeBtn('subtract', 'Subtract')}</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap" role="group" aria-label="Click action">${modeBtn('create', 'Create')}${modeBtn('add', 'Add to set')}${modeBtn('subtract', 'Subtract')}${modeBtn('draw', 'Draw')}</div>
+        ${this.mode === 'draw' ? `<p style="margin:0;color:var(--text-muted)"><b>Draw</b> for a ${lim.noun} the detection gets wrong: click its corners (they snap to the drawing's corners and ends), then click the first corner, click the last one again, or press Enter to close it. Backspace takes the last corner back, Esc drops the outline. It is created as a real ${lim.noun}${target === 'erf' ? ' with its boundary, so Auto layout can use it' : ''}. Alt-click still takes a set member out.</p>` : ''}
         <div><b>Set to review</b> <span style="color:var(--text-muted)">${items.length ? `${items.length} ${items.length === 1 ? lim.noun : lim.nouns}${f ? ` · ${total.toFixed(0)} m²` : ''}` : 'empty'}</span></div>
         <div style="max-height:200px;overflow:auto">${rows}</div>
         <div style="display:flex;gap:6px;flex-wrap:wrap">
@@ -1359,7 +1406,7 @@ Object.assign(PlanRoomDetect, {
     el.querySelector('[data-rd-all]').addEventListener('click', () => this.detectAll(target));
     el.querySelector('[data-rd-create]').addEventListener('click', () => this.createStaged());
     el.querySelector('[data-rd-clear]').addEventListener('click', () => this.clearStaged());
-    el.querySelectorAll('[data-rd-mode]').forEach(b => b.addEventListener('click', () => { this.mode = b.dataset.rdMode; this._changed(); }));
+    el.querySelectorAll('[data-rd-mode]').forEach(b => b.addEventListener('click', () => { this.mode = b.dataset.rdMode; if (this.mode !== 'draw') this.draft = null; this._changed(); }));
     el.querySelectorAll('[data-rd-del]').forEach(b => b.addEventListener('click', () => { this.staged.items.splice(+b.dataset.rdDel, 1); this._changed(); }));
   },
 });
@@ -1368,16 +1415,30 @@ if (typeof PlanTools !== 'undefined') {
   const makeDetectTool = (id, target) => ({
     id, cursor: 'copy',
     onActivate() { PlanRoomDetect.mode = 'create'; if (typeof PlanMarkup !== 'undefined') PlanMarkup.refreshProps(); },
-    onDeactivate() { PlanRoomDetect.staged = { target, items: [] }; PlanRoomDetect.hover = null; PlanRoomDetect.leak = null; },
+    onDeactivate() { PlanRoomDetect.staged = { target, items: [] }; PlanRoomDetect.hover = null; PlanRoomDetect.leak = null; PlanRoomDetect.draft = null; },
     onMove(pt, e) {
+      if (PlanRoomDetect.mode === 'draw') {                                    // drawing by hand: the rubber band follows the pointer, no detection preview
+        const D = PlanRoomDetect.draft;
+        if (D && D.target === target) { const q = (typeof PlanTools.snap === 'function' ? PlanTools.snap(pt) : pt) || pt; D.hover = { x: q.x, y: q.y }; PlanEngine.requestDraw({ fg: true }); }
+        return;
+      }
       this._e = e; PlanRoomDetect.hoverPt = { x: pt.x, y: pt.y };
       clearTimeout(this._t); this._t = setTimeout(() => PlanRoomDetect.hoverAt(pt, target), 60);
       PlanEngine.requestDraw({ fg: true });
     },
     cancel() { PlanTools.set('select'); },
-    onDown(pt, e) { PlanRoomDetect.click(pt, target, e); },
-    drawOverlay(ctx, zoom) { PlanRoomDetect.drawStaged(ctx, zoom, target); PlanRoomDetect.drawHover(ctx, zoom, target, this._e); },
+    onDown(pt, e) { if (PlanRoomDetect.mode === 'draw' && !(e && (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey))) PlanRoomDetect.drawClick(pt, target); else PlanRoomDetect.click(pt, target, e); },
+    drawOverlay(ctx, zoom) { PlanRoomDetect.drawStaged(ctx, zoom, target); if (PlanRoomDetect.mode === 'draw') PlanRoomDetect.drawDraft(ctx, zoom, target); else PlanRoomDetect.drawHover(ctx, zoom, target, this._e); },
+    keyFirst(e) {                                                              // a shape being drawn: Enter closes it, Backspace takes a corner back, Esc drops it
+      const D = PlanRoomDetect.draft; if (!D || D.target !== target) return false;
+      if (e.key === 'Enter') return PlanRoomDetect.drawClose();
+      if (e.key === 'Backspace') return PlanRoomDetect.drawBack();
+      if (e.key === 'Escape') return PlanRoomDetect.drawCancel();
+      return false;
+    },
+    get _draft() { const D = PlanRoomDetect.draft; return D && D.target === target ? { points: D.pts } : null; },    // lets the Done / Cancel chip show while a shape is being drawn
     onKey(e) {
+      if (this.keyFirst(e)) return true;
       if (e.key === 'Enter' && PlanRoomDetect.staged.items.length) { PlanRoomDetect.createStaged(); return true; }
       if (e.key === 'Escape') {
         if (PlanRoomDetect.staged.items.length) { PlanRoomDetect.clearStaged(); return true; }
