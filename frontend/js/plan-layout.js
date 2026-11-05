@@ -718,7 +718,7 @@ const PlanLayout = (() => {
         if (s0 > 2) events.push({ st: X, s: s0 - 5, t: 'jn' });
         if (s0 < X.len - 2) events.push({ st: X, s: s0 + 5, t: 'jn' });
       }));
-      const net = { lv: [], mv: [], sub: null, lvLen: 0, mvLen: 0, lvLinks: [], mvPts: null, unreached: [] };
+      const net = { lv: [], mv: [], sub: null, subs: [], mvLines: [], mvLine: [], lvLen: 0, mvLen: 0, lvLinks: [], mvPts: null, unreached: [] };
       if (kiosks.length) {
         const nodes = [], map = new Map();
         const node = (st, s0) => { const key = st.id + '|' + Math.round(s0 / 1.5); let n = map.get(key); if (!n) { n = { id: nodes.length, st, s: s0, adj: [] }; map.set(key, n); nodes.push(n); } return n; };

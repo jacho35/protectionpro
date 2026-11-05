@@ -395,4 +395,10 @@ ok('splitting a string: a kiosk becomes its own string head, fed straight off th
   assert.strictEqual(r.stats.kiosks, base.stats.kiosks);
 });
 
+ok('no street reaches any erf: no kiosks, and the network still has its (empty) lists', () => {
+  const r = L.solve({ streets: [{ id: 'A', name: 'A', w: 10, pts: [[0, 0], [50, 0]] }], erven: [{ id: 'e', poly: [[400, 400], [420, 400], [420, 420], [400, 420]] }] }, {});
+  assert.strictEqual(r.kiosks.length, 0);
+  assert(Array.isArray(r.net.subs) && Array.isArray(r.net.lvLinks) && Array.isArray(r.net.mvLines));
+});
+
 console.log(n + ' passed');
