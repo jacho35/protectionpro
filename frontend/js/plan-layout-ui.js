@@ -37,6 +37,8 @@ const PlanLayoutUI = {
       ['junct', 'check', 'Lay ducts across every road at all junctions, even with no cables'],
       ['j110', 'range', 0, 4, 1, '', '110 mm ducts at an empty junction'], ['j160', 'range', 0, 2, 1, '', '160 mm ducts at an empty junction'],
       ['spare', 'range', 0, 3, 1, '', 'Spare 110 mm ducts per crossing']]],
+    ['Corridor', [['kgeo', 'select', [['boundary', 'the erf boundary (the street line can be out)'], ['street', 'the street line (how earlier layouts were made)']], 'Kiosks and cables are placed from'],
+      ['kd', 'range', 0, 4, 0.05, 'm', 'Corridor distance inside the boundary']]],
   ],
 
   // ───────── settings (saved in the project, so never trusted) ─────────
@@ -44,12 +46,14 @@ const PlanLayoutUI = {
     const s = AppState.planMarkup.settings;
     const L = (s.layout && typeof s.layout === 'object') ? s.layout : (s.layout = {});
     const D = PlanLayout.DEFAULTS, p = L.params = (L.params && typeof L.params === 'object') ? L.params : {};
+    if (Object.keys(p).length && p.kgeo === undefined) p.kgeo = 'street';          // a layout set up before the boundary corridor existed keeps running the way it did
     for (const [, rows] of this.CTRL) for (const r of rows) {
       const k = r[0], v = p[k];
       if (r[1] === 'range') { const n = parseFloat(v); p[k] = Number.isFinite(n) ? Math.max(r[2], Math.min(r[3], n)) : D[k]; }
       else if (r[1] === 'check') p[k] = typeof v === 'boolean' ? v : D[k];
       else p[k] = r[2].some(o => o[0] === v) ? v : D[k];
     }
+    L.sections = PlanSections.state(L.sections);
     const T = L.trench = (L.trench && typeof L.trench === 'object') ? L.trench : {};
     const D2 = PlanLayout.TRENCH_DEFAULTS, dd = T.depth = (T.depth && typeof T.depth === 'object') ? T.depth : {};
     for (const k of ['mv', 'lv', 'fi']) { const n = parseFloat(dd[k]); dd[k] = Number.isFinite(n) ? Math.max(0.3, Math.min(3, n)) : D2.depth[k]; }
@@ -618,6 +622,70 @@ const PlanLayoutUI = {
     return false;
   },
 
+  // ───────── section lines: a polyline drawn over the street line says which cross-section applies there ─────────
+  secDraw: null,                                                                     // { sec: section id, pts: [{x, y}] } while the tool is on
+  _secHover: null,
+  secDrawOn(on, secId) {
+    if (on) { this.streetDrawOn(false); this.kerbStage = null; this.centreStage = null; this.secDraw = { sec: secId, pts: [] }; this._secHover = null; UI.toast('Click along the street line where this section applies. Enter, or click the last point again, finishes. Ends snap to the drawing; the line need not be exact.', 'info', 7000); }
+    else this.secDraw = null;
+    PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true });
+  },
+  _streetsM() { const f = PlanEngine.factor(); return this.streetsOnPlan().map(r => ({ id: r.id, w: this._num(r.props && r.props.width, 6, 40, 12), pts: this._flat(r).map(p => [p.x * f, p.y * f]) })); },
+  secDown(pt) {
+    const q = PlanTools.snap(pt, { wantElements: false }), d = this.secDraw; if (!d) return;
+    const last = d.pts[d.pts.length - 1];
+    if (last && d.pts.length >= 2 && Math.hypot(q.x - last.x, q.y - last.y) <= 7 / PlanEngine.view.zoom) { this.secFinish(); return; }
+    if (!last || Math.hypot(q.x - last.x, q.y - last.y) > 1e-9) d.pts.push({ x: q.x, y: q.y });
+    this._secHover = q; PlanEngine.requestDraw({ fg: true });
+  },
+  secFinish() {
+    const d = this.secDraw, f = PlanEngine.factor(); if (!d || !f) return true;
+    if (d.pts.length < 2) { UI.toast('A section line needs at least two points.', 'warn', 2500); return true; }
+    const S = this.cfg().sections, made = PlanSections.linesFromPolyline(d.pts.map(p => [p.x * f, p.y * f]), this._streetsM(), d.sec);
+    if (!made.length) { UI.toast('That line does not run along a street. Draw it over the street line.', 'warn', 4000); d.pts = []; PlanEngine.requestDraw({ fg: true }); return true; }
+    let n = S.lines.length; const gid = 'g' + Date.now().toString(36);
+    made.forEach(l => { let id; do { id = 'sl_' + (++n); } while (S.lines.some(x => x.id === id)); S.lines.push(Object.assign(l, { id, group: gid })); });
+    const nm = S.list.find(x => x.id === d.sec);
+    UI.toast(`"${nm ? nm.name : 'Section'}" applies to ${made.length} street${made.length === 1 ? '' : 's'}. Draw the next line, or press Esc.`, 'success', 3500);
+    d.pts = []; this._secHover = null; this.touched(); return true;
+  },
+  secKey(e) {
+    const d = this.secDraw; if (!d) return false;
+    if (e.key === 'Enter') return this.secFinish();
+    if (e.key === 'Backspace') { if (!d.pts.length) return false; d.pts.pop(); PlanEngine.requestDraw({ fg: true }); return true; }
+    if (e.key === 'Escape') { if (d.pts.length) { d.pts = []; PlanEngine.requestDraw({ fg: true }); } else this.secDrawOn(false); return true; }
+    return false;
+  },
+  // the stretch [s0, s1] of a street as plan points (for drawing and zooming)
+  secStretch(l) {
+    const f = PlanEngine.factor(), r = AppState.planMarkup.routes.find(x => x.id === l.streetId); if (!r || !f) return null;
+    const pts = this._flat(r), cum = [0]; for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y) * f);
+    const a = Math.min(l.s0, l.s1), b = Math.max(l.s0, l.s1), at = s => { for (let i = 1; i < pts.length; i++) if (s <= cum[i] || i === pts.length - 1) { const t = Math.max(0, Math.min(1, (s - cum[i - 1]) / ((cum[i] - cum[i - 1]) || 1))); return { x: pts[i - 1].x + (pts[i].x - pts[i - 1].x) * t, y: pts[i - 1].y + (pts[i].y - pts[i - 1].y) * t }; } return pts[0]; };
+    const out = [at(a)]; for (let i = 0; i < pts.length; i++) if (cum[i] > a && cum[i] < b) out.push({ x: pts[i].x, y: pts[i].y }); out.push(at(b)); return out;
+  },
+  secShow(l) { const p = this.secStretch(l); if (p && p.length) PlanEngine.zoomToPoints(p); },
+  SEC_PAL: ['#2563eb', '#0b6e6e', '#b4501c', '#7c3aed', '#8a6a00', '#be185d'],
+  secDrawOverlay(ctx, zoom) {
+    const S = this.cfg().sections, u = 1 / zoom;
+    if (!S.lines.length && !this.secDraw) return;
+    ctx.save(); ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+    for (const l of S.lines) {
+      const p = this.secStretch(l); if (!p || p.length < 2) continue;
+      const i = Math.max(0, S.list.findIndex(x => x.id === l.sec));
+      ctx.strokeStyle = this.SEC_PAL[i % this.SEC_PAL.length]; ctx.globalAlpha = S.on || this.secDraw ? 0.9 : 0.45; ctx.lineWidth = 6 * u;
+      ctx.beginPath(); p.forEach((q, k) => k ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y)); ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+    const d = this.secDraw;
+    if (d && d.pts.length) {
+      const i = Math.max(0, S.list.findIndex(x => x.id === d.sec)), col = this.SEC_PAL[i % this.SEC_PAL.length];
+      ctx.strokeStyle = col; ctx.lineWidth = 3 * u; ctx.setLineDash([8 * u, 5 * u]);
+      ctx.beginPath(); d.pts.forEach((q, k) => k ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y)); if (this._secHover) ctx.lineTo(this._secHover.x, this._secHover.y); ctx.stroke(); ctx.setLineDash([]);
+      ctx.fillStyle = '#fff'; ctx.lineWidth = 2 * u; d.pts.forEach(q => { ctx.beginPath(); ctx.arc(q.x, q.y, 4 * u, 0, 7); ctx.fill(); ctx.stroke(); });
+    }
+    ctx.restore();
+  },
+
   // The mini-subs you placed, in the order they will be numbered: the layout's own points (clicked with Mini-sub), then the mini-sub
   // parts you drew on the plan. [{ x, y (plan points), src: 'layout' | 'plan', i (index in cfg().subs) }]
   placedSubs() {
@@ -676,6 +744,7 @@ const PlanLayoutUI = {
   // the line over the plan: what a click does now
   hint() {
     const r = this.result, pre = 'Auto layout · ';
+    if (this.secDraw) return pre + 'Section line: click along the street line. Enter, or the last point again, finishes. Backspace takes a point back, Esc stops.';
     if (this.drawStreets) return pre + 'Streets: click along the street. Enter, or the last point again, finishes it. Backspace takes a point back, Esc stops.';
     if (this.centreStage) return pre + 'Streets: click the centreline of each road. Shift-click one piece, Alt-click drops it. Enter creates, Esc leaves.';
     if (this.kerbStage) return pre + 'Streets: Alt-click removes a street, Shift-click two kerbs adds one. Enter creates, Esc leaves.';
@@ -708,7 +777,7 @@ const PlanLayoutUI = {
     if (!subPts.length) return { err: 'Place your mini-subs first (step 2): click where each one stands. The layout works from them.' };
     const markers = {}; for (const [id, q] of Object.entries(L.markers)) if (erven.some(e => e.id === id)) markers[id] = [q.x * f, q.y * f];
     const splits = L.vd.splits.map(q => [q.x * f, q.y * f]);
-    return { f, input: { erven, streets, markers, splits, ks, fs, overrides: L.fronts, cuts: L.cuts, subPts, entryPt: L.entry ? [L.entry.x * f, L.entry.y * f] : null }, params: L.params };
+    return { f, input: { erven, streets, markers, splits, ks, fs, overrides: L.fronts, cuts: L.cuts, subPts, entryPt: L.entry ? [L.entry.x * f, L.entry.y * f] : null, sections: L.sections.on ? L.sections : null }, params: L.params };
   },
 
   run() {
@@ -987,12 +1056,14 @@ const PlanLayoutUI = {
     if (thin.length) out.push({ sev: thin.length > 1 ? 'warn' : 'info', text: `${thin.length} of ${r.kiosks.length} kiosks ${thin.length === 1 ? 'serves' : 'serve'} 2 erven or fewer (${thin.map(k => k.id).join(', ')}). Fine on a short street; otherwise raise the worth of a kiosk (more extra cable accepted to save one) or lower the maximum houses per kiosk.`, ids: thin.flatMap(k => k.members.map(e => e.id)) });
     const mhw = (r.fibre && r.fibre.warns) || [];
     mhw.forEach(w => out.push({ sev: 'warn', text: w, ids: [] }));
+    (r.secChecks || []).forEach(c => out.push({ sev: c.sev === 'info' ? 'info' : 'warn', text: c.text, ids: [] }));
     return out;
   },
 
   draw(ctx, zoom) {
     this.kerbDraw(ctx, zoom);
     this.centreDraw(ctx, zoom);
+    this.secDrawOverlay(ctx, zoom);
     if (!this.result) {                                                                  // before a run: where the mini-subs stand
       const u0 = 1 / zoom;
       this.placedSubs().forEach(q => { ctx.save(); ctx.fillStyle = '#c92a2a'; ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.6 * u0; ctx.beginPath(); ctx.moveTo(q.x, q.y - 9 * u0); ctx.lineTo(q.x + 8 * u0, q.y + 6 * u0); ctx.lineTo(q.x - 8 * u0, q.y + 6 * u0); ctx.closePath(); ctx.stroke(); ctx.fill(); if (q.src === 'layout' && this.subMove === q.i) { ctx.strokeStyle = '#2563eb'; ctx.lineWidth = 2.2 * u0; ctx.beginPath(); ctx.arc(q.x, q.y, 14 * u0, 0, 6.2832); ctx.stroke(); } ctx.restore(); });
@@ -1186,7 +1257,11 @@ const PlanLayoutUI = {
     const pBtn = (k, t) => `<button type="button" class="plan-btn" data-preset="${k}" aria-pressed="${preset === k}" style="padding:3px 6px;font-size:12px;${preset === k ? 'font-weight:600;outline:2px solid var(--accent,#2563eb)' : ''}">${t}</button>`;
     const kRow = k => this.CTRL[1][1].find(x => x[0] === k);
     const nChanged = this.CTRL.filter(([, rows]) => grpChanged(rows)).length + (trChanged ? 1 : 0) + (vdChanged ? 1 : 0);
+    const SC = L.sections, secBlock = `<div style="border:1px solid var(--border,#ddd);border-radius:6px;padding:6px 8px;display:flex;flex-direction:column;gap:5px"><div style="font-weight:600">Cross-sections <span style="font-weight:400;font-size:12px;color:var(--text-muted)">${SC.on ? 'on' : 'off'} · ${SC.list.length} section${SC.list.length === 1 ? '' : 's'}${SC.lines.length ? ' · ' + SC.lines.length + ' line' + (SC.lines.length === 1 ? '' : 's') : ''}</span></div>
+        <div style="font-size:12px;color:var(--text-muted)">${SC.on ? 'Offsets, depths and the kiosk and manhole sizes come from the section that applies to each stretch of street, all measured from the erf boundary.' : 'Off: every cable runs the Corridor distance inside the boundary. Switch sections on in the editor.'}</div>
+        <div style="display:flex;gap:4px;flex-wrap:wrap"><button type="button" class="plan-btn" data-act="secedit">Edit sections…</button><button type="button" class="plan-btn" data-act="secdraw" aria-pressed="${!!this.secDraw}"${this.secDraw ? ' style="outline:2px solid var(--accent,#2563eb)"' : ''}>${this.secDraw ? 'Stop drawing' : 'Draw section line'}</button></div></div>`;
     const step3 = `<div><div style="font-weight:600;margin-bottom:3px">Preset</div><div style="display:grid;grid-template-columns:repeat(2,1fr);gap:3px">${Object.keys(this.PRESETS).map(k => pBtn(k, this.PRESET_NAMES[k])).join('')}${pBtn('custom', 'Custom')}</div><div style="font-size:12px;color:var(--text-muted);margin-top:3px">${preset === 'custom' ? 'Your own mix of the three kiosk settings below.' : this.PRESET_HINT[preset]}</div></div>
+        ${secBlock}
         <div style="font-weight:600">Most used</div>
         <div style="display:flex;flex-direction:column;gap:8px">${ctrl(kRow('n'))}${ctrl(kRow('maxc'))}${vdTx}${vdLv}</div>
         <details><summary style="cursor:pointer;font-weight:600">Advanced <span style="font-weight:400;font-size:12px;color:var(--text-muted)">6 groups · ${nChanged} changed</span></summary><div style="display:flex;flex-direction:column;gap:4px;padding-top:4px">${groups}${trenchGroup}${vdGroup}</div></details>
@@ -1248,6 +1323,8 @@ const PlanLayoutUI = {
       if (b.dataset.act === 'goto') { this.setStep(+b.dataset.s); return; }
       if (b.dataset.act === 'zoomerven' || b.dataset.act === 'zoomstreets') { const pm = AppState.planMarkup, pts = []; if (b.dataset.act === 'zoomerven') pm.elements.forEach(x => { if (x.type === 'erf' && Array.isArray(x.boundary)) x.boundary.forEach(q => pts.push({ x: q.x, y: q.y })); }); else this.streetsOnPlan().forEach(x => this._flat(x).forEach(q => pts.push({ x: q.x, y: q.y }))); if (pts.length) PlanEngine.zoomToPoints(pts); return; }
       if (b.dataset.act === 'showerven') { const r0 = this.result; if (!r0) return; const ids = new Set(r0.erven.filter(x => !x.fe).map(x => x.id)); this.flag = ids; const pts = []; r0.erven.forEach(x => { if (ids.has(x.id)) x.poly.forEach(q => pts.push({ x: q[0] / this.f, y: q[1] / this.f })); }); if (pts.length) PlanEngine.zoomToPoints(pts); PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true }); return; }
+      if (b.dataset.act === 'secedit') { PlanSectionsUI.open(); return; }
+      if (b.dataset.act === 'secdraw') { this.secDrawOn(!this.secDraw, L.sections.def); return; }
       if (b.dataset.act === 'drawfix') { this.setStep(1); this.streetDrawOn(true); return; }
       if (b.dataset.act === 'submove') { const i = +b.dataset.i; if (L.subs[i]) { this.subMove = i; this.mode = 'sub'; UI.toast('Click where this mini-sub should stand.', 'info', 3500); PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true }); } return; }
       if (b.dataset.act === 'resetgrp') {
@@ -1340,19 +1417,21 @@ if (typeof PlanTools !== 'undefined') {
       PlanLayoutUI.mode = PlanLayoutUI.step === 2 ? 'sub' : 'front';
       if (typeof PlanMarkup !== 'undefined') PlanMarkup.refreshProps();
     },
-    onDeactivate() { PlanLayoutUI._active = false; PlanLayoutUI.widen(false); PlanLayoutUI.hoverT = null; PlanLayoutUI.kerbStage = null; PlanLayoutUI.centreStage = null; if (PlanLayoutUI.drawStreets) PlanLayoutUI.streetDrawOn(false); },
+    onDeactivate() { PlanLayoutUI.secDraw = null; PlanLayoutUI._active = false; PlanLayoutUI.widen(false); PlanLayoutUI.hoverT = null; PlanLayoutUI.kerbStage = null; PlanLayoutUI.centreStage = null; if (PlanLayoutUI.drawStreets) PlanLayoutUI.streetDrawOn(false); },
     cancel() { PlanTools.set('select'); },
     onMove(pt) {
+      if (PlanLayoutUI.secDraw) { PlanLayoutUI._secHover = PlanTools.snap(pt, { wantElements: false }); PlanEngine.requestDraw({ fg: true }); return; }
       if (PlanLayoutUI.drawStreets) { const R = PlanLayoutUI._rt(); if (R) { R._hover = PlanTools.snap(pt, { wantElements: false }); PlanEngine.requestDraw({ fg: true }); } return; }
       if (PlanLayoutUI.mode !== 'trunk' || !PlanLayoutUI.result) return;
       const h = PlanLayoutUI._pickT([pt.x * PlanLayoutUI.f, pt.y * PlanLayoutUI.f]);
       if ((h && h.edge) !== (PlanLayoutUI.hoverT && PlanLayoutUI.hoverT.edge)) { PlanLayoutUI.hoverT = h; PlanEngine.requestDraw({ fg: true }); }
     },
-    onDown(pt, e) { if (PlanLayoutUI.drawStreets) PlanLayoutUI.streetDown(pt); else if (PlanLayoutUI.centreStage) PlanLayoutUI.centreClick(pt, e); else if (PlanLayoutUI.kerbStage) PlanLayoutUI.kerbClick(pt, e); else PlanLayoutUI.click(pt, e); },
+    onDown(pt, e) { if (PlanLayoutUI.secDraw) PlanLayoutUI.secDown(pt); else if (PlanLayoutUI.drawStreets) PlanLayoutUI.streetDown(pt); else if (PlanLayoutUI.centreStage) PlanLayoutUI.centreClick(pt, e); else if (PlanLayoutUI.kerbStage) PlanLayoutUI.kerbClick(pt, e); else PlanLayoutUI.click(pt, e); },
     drawOverlay(ctx, zoom) { PlanLayoutUI.draw(ctx, zoom); if (PlanLayoutUI.drawStreets) { const R = PlanLayoutUI._rt(); if (R) R.drawOverlay(ctx, zoom); } },
-    keyFirst(e) { return PlanLayoutUI.drawStreets ? PlanLayoutUI.streetKey(e) : false; },
+    keyFirst(e) { return PlanLayoutUI.secDraw ? PlanLayoutUI.secKey(e) : PlanLayoutUI.drawStreets ? PlanLayoutUI.streetKey(e) : false; },
     get _draft() { const R = PlanLayoutUI.drawStreets && PlanLayoutUI._rt(); return R && R._draft ? R._draft : null; },
     onKey(e) {
+      if (PlanLayoutUI.secDraw && PlanLayoutUI.secKey(e)) return true;
       if (PlanLayoutUI.drawStreets && PlanLayoutUI.streetKey(e)) return true;
       if (PlanLayoutUI.centreStage && e.key === 'Enter') { PlanLayoutUI.centreCreate(); return true; }
       if (PlanLayoutUI.kerbStage && e.key === 'Enter') { PlanLayoutUI.kerbCreate(); return true; }

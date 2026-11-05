@@ -30,6 +30,7 @@ const PlanLayout = (() => {
 
   const DEFAULTS = {
     side: 4, depth: 4, corner: 'start', front: 'longest',      // marker: m from the side boundary and the front; which corner; corner erf's front
+    kgeo: 'boundary', kd: 2,                                       // cables + kiosks run kd m inside the erf boundary ('street' = the old street-line offset)
     kmode: 'opt', n: 6, maxc: 80, worth: 170, knet: true,   // kiosks (n = the most erven one kiosk serves; knet = one solve over the whole street network)
     subMode: 'opt', subs: 1,                                          // mini-sub: 'opt' = where the LV network drops least, 'mid' = nearest the middle
     m: 8, maxmh: 120, fibre: 'opp', topo: 'ring',              // fibre
@@ -119,6 +120,51 @@ const PlanLayout = (() => {
     streets.forEach(st => { ks[st.id] = (input.ks && input.ks[st.id]) || 0; fs[st.id] = (input.fs && input.fs[st.id]) || null; });
     const warns = [];
 
+    // ── 0. the corridor: where a cable runs across the road, measured from the erf boundary ──
+    // frontage(st, side) = samples [station, distance from the street line to the boundary] taken from the fronts of the erven on that side.
+    // fd = that distance at a station (linear between samples; the drawn half-width where nothing fronts that side). mag = the corridor's
+    // distance from the street line: kd inside the boundary, so a street line that is out moves nothing. 'street' mode keeps the old constants.
+    const byBoundary = P.kgeo !== 'street', KD = byBoundary ? Math.max(0, +P.kd || 0) : 2;
+    function frontage(st, side) {
+      const key = 'fr' + side; if (st[key] !== undefined) return st[key];
+      const smp = [];
+      for (const e of erven) if (e.road === st && e.sd === side && e.fe && !e.manual && e.fe.i >= 0)
+        for (const [pt, q] of [[e.fe.a, e.sa], [e.fe.b, e.sb]]) { const pr = project(st, pt[0], pt[1]); smp.push([q, pr.side * side * pr.d]); }     // signed: negative if the street line has strayed past the boundary
+      smp.sort((p, q) => p[0] - q[0]);
+      return (st[key] = smp.length ? smp : null);
+    }
+    function fd(st, side, s) {
+      const smp = frontage(st, side); if (!smp) return st.w / 2;
+      if (s <= smp[0][0]) return smp[0][1];
+      for (let i = 1; i < smp.length; i++) if (s <= smp[i][0]) { const a = smp[i - 1], b = smp[i], t = (s - a[0]) / ((b[0] - a[0]) || 1); return a[1] + (b[1] - a[1]) * t; }
+      return smp[smp.length - 1][1];
+    }
+    // sections (plan-sections.js): the cross-section that applies at a station = the last section line drawn over it, else the default one.
+    // With none, every offset is the single kd as before. A section sets the offset of each cable class and the kiosk from the boundary.
+    const SEC = input.sections && Array.isArray(input.sections.list) && input.sections.list.length ? input.sections : null;
+    const secById = id => SEC && SEC.list.find(x => x.id === id);
+    const secDef = SEC ? (secById(SEC.def) || SEC.list[0]) : null;
+    function secAt(st, q) {
+      if (!SEC) return null;
+      const ln = (SEC.lines || []).filter(l => l.streetId === st.id);
+      for (let i = ln.length - 1; i >= 0; i--) { const l = ln[i]; if (q >= Math.min(l.s0, l.s1) - 0.01 && q <= Math.max(l.s0, l.s1) + 0.01) { const x = secById(l.sec); if (x) return x; } }
+      return secDef;
+    }
+    const itemOff = (sec, kind) => !sec ? null : kind === 't' ? sec.items.fi.off : kind === 'm' ? sec.items.mv.off : kind === 'h' ? sec.items.mh.off : sec.items.lv.off;
+    const standOff = (st, q) => { const sc = secAt(st, q); return sc ? sc.items.kiosk.off + sc.items.kiosk.depth / 2 : KD; };
+    const mag = (st, side, s, kind) => {
+      if (!byBoundary) return kind === 't' ? st.tr : st.vk;
+      const io = itemOff(secAt(st, s), kind), off = io != null ? io : (kind === 't' || kind === 'h' ? KD - 0.3 : KD);
+      return Math.max(0.5, fd(st, side, s) - off);
+    };
+    const kp = (st, side, s, kind) => ptAt(st, s, side * mag(st, side, s, kind));                      // a point on the corridor (x, y, tx, ty)
+    function kv(st, side, s0, s1, kind) {                                                             // the corridor between two stations
+      const n = Math.max(1, Math.ceil(Math.abs(s1 - s0) / STEP)), out = [];
+      for (let i = 0; i <= n; i++) out.push(kp(st, side, s0 + (s1 - s0) * i / n, kind).slice(0, 2));
+      return out;
+    }
+    streets.forEach(st => { st.fd = (side, s) => fd(st, side, s); st.kd = KD; st.byBoundary = byBoundary; st.sec = q => secAt(st, q); });
+
     // ── 1. fronts ──
     const inErf = (x, y, except) => erven.some(o => o !== except && x >= o.box[0] && x <= o.box[2] && y >= o.box[1] && y <= o.box[3] && pip(x, y, o.poly));
     function roadHit(x, y) {
@@ -188,23 +234,23 @@ const PlanLayout = (() => {
       });
     }
     function routeFor(e, k, mc) {
-      const st = e.road, sM = project(st, mc.pt[0], mc.pt[1]).s, ok = ks[st.id] * st.vk;
-      const pts = [[k.x, k.y], ...verge(st, k.s, sM, ok)];
-      if (e.sd !== ks[st.id]) pts.push(ptAt(st, sM, e.sd * st.vk).slice(0, 2));
+      const st = e.road, sM = project(st, mc.pt[0], mc.pt[1]).s;
+      const pts = [[k.x, k.y], ...kv(st, ks[st.id], k.s, sM)];
+      if (e.sd !== ks[st.id]) pts.push(kp(st, e.sd, sM).slice(0, 2));
       pts.push(mc.pt);
       return pts;
     }
     function routeVia(e, k, mc, x) {
-      const st = e.road, sM = project(st, mc.pt[0], mc.pt[1]).s, ok = ks[st.id] * st.vk, ov = e.sd * st.vk;
-      return [[k.x, k.y], ...verge(st, k.s, x.s, ok), ptAt(st, x.s, ov).slice(0, 2), ...verge(st, x.s, sM, ov).slice(1), mc.pt];
+      const st = e.road, sM = project(st, mc.pt[0], mc.pt[1]).s;
+      return [[k.x, k.y], ...kv(st, ks[st.id], k.s, x.s), kp(st, e.sd, x.s).slice(0, 2), ...kv(st, e.sd, x.s, sM).slice(1), mc.pt];
     }
     // a service from a kiosk on ANOTHER street: along the kiosk's verge to a junction both streets share, round the corner onto the erf's
     // street (its kiosk-side verge), then as routeFor. `pre` is the part up to the corner (its road crossings are counted separately).
     function routeHop(e, k, mc, id) {
       const A = e.road, B = k.road, nB = B.nodeSt[id], nA = A.nodeSt[id];
-      const pre = [[k.x, k.y], ...verge(B, k.s, nB, ks[B.id] * B.vk), ptAt(A, nA, ks[A.id] * A.vk).slice(0, 2)];
-      const sM = project(A, mc.pt[0], mc.pt[1]).s, pts = [...pre, ...verge(A, nA, sM, ks[A.id] * A.vk).slice(1)];
-      if (e.sd !== ks[A.id]) pts.push(ptAt(A, sM, e.sd * A.vk).slice(0, 2));
+      const pre = [[k.x, k.y], ...kv(B, ks[B.id], k.s, nB), kp(A, ks[A.id], nA).slice(0, 2)];
+      const sM = project(A, mc.pt[0], mc.pt[1]).s, pts = [...pre, ...kv(A, ks[A.id], nA, sM).slice(1)];
+      if (e.sd !== ks[A.id]) pts.push(kp(A, e.sd, sM).slice(0, 2));
       pts.push(mc.pt);
       return { pts, pre };
     }
@@ -343,14 +389,14 @@ const PlanLayout = (() => {
           for (const [a, v] of [[e.lo, lo], [e.hi, hi]]) {
             const hit = cands.find(c => Math.abs(c.a - a) <= 1.5);
             if (hit) { hit.shared = true; continue; }
-            const x = v[0] + fe.out[0] * 2, y = v[1] + fe.out[1] * 2;
+            const so = standOff(st, a), x = v[0] + fe.out[0] * so, y = v[1] + fe.out[1] * so;
             cands.push({ a, x, y, s: project(st, x, y).s, shared: false });
           }
         }
         // a kiosk may also stand in the kiosk-side verge opposite a boundary between erven across the road
         for (const e of list.filter(q => q.sd !== side && !q.manual)) for (const a of [e.lo, e.hi]) {
           if (cands.some(c => Math.abs(c.a - a) <= 1.5)) continue;
-          const pos = ptAt(st, a, side * st.vk);
+          const pos = kp(st, side, a);
           cands.push({ a, x: pos[0], y: pos[1], s: a, shared: false, across: true });
         }
         if (!cands.length) { warns.push(`${st.name}: no place for a kiosk in one run. Flip the side.`); continue; }
@@ -408,19 +454,19 @@ const PlanLayout = (() => {
           for (const [a, v] of [[e.lo, lo], [e.hi, hi]]) {
             const hit = mine.find(c => Math.abs(c.a - a) <= 1.5);
             if (hit) { hit.shared = true; continue; }
-            const x = v[0] + fe.out[0] * 2, y = v[1] + fe.out[1] * 2;
+            const so = standOff(st, a), x = v[0] + fe.out[0] * so, y = v[1] + fe.out[1] * so;
             mine.push({ road: st, a, x, y, s: project(st, x, y).s, shared: false });
           }
         }
         for (const e of L1.filter(q => q.sd !== side && !q.manual)) for (const a of [e.lo, e.hi]) {
           if (mine.some(c => Math.abs(c.a - a) <= 1.5)) continue;
-          const pos = ptAt(st, a, side * st.vk); mine.push({ road: st, a, x: pos[0], y: pos[1], s: a, shared: false, across: true });
+          const pos = kp(st, side, a); mine.push({ road: st, a, x: pos[0], y: pos[1], s: a, shared: false, across: true });
         }
         for (const id of st.jids) for (const Y of use[id] || []) {                      // beside a junction: clear of the crossing road's mouth
           if (Y === st) continue;
           for (const dir of [-1, 1]) {
             const s0 = st.nodeSt[id] + dir * (Y.w / 2 + 2.5); if (s0 < 0 || s0 > st.len || mine.some(c => Math.abs(c.s - s0) <= 1.5)) continue;
-            const pos = ptAt(st, s0, side * st.vk); mine.push({ road: st, a: s0, x: pos[0], y: pos[1], s: s0, shared: false, junction: true });
+            const pos = kp(st, side, s0); mine.push({ road: st, a: s0, x: pos[0], y: pos[1], s: s0, shared: false, junction: true });
           }
         }
         cands.push(...mine);
@@ -597,7 +643,7 @@ const PlanLayout = (() => {
         for (let i = 0; i < K.length - 1; i++) if (Math.abs(K[i].hi - K[i + 1].lo) <= 1.5) bounds.push({ a: K[i].hi, used: false });
         (XS[gkey] || []).forEach(x0 => { const b = bounds.find(q => Math.abs(q.a - x0) <= 1.5); if (b) b.cross = true; else bounds.push({ a: x0, used: false, cross: true }); });
         const pickB = tg => bounds.filter(b => !b.used).sort((p, q) => (Math.abs(p.a - tg) - (p.cross ? 8 : 0)) - (Math.abs(q.a - tg) - (q.cross ? 8 : 0)))[0];
-        const mk = a => { const pos = ptAt(st, a, sg * st.tr), m = { id: 'M' + (++n), x: pos[0], y: pos[1], a, road: st, members: [], junction: false, label: String(n), sg }; mhs.push(m); return m; };
+        const mk = a => { const pos = kp(st, sg, a, 'h'), m = { id: 'M' + (++n), x: pos[0], y: pos[1], a, road: st, members: [], junction: false, label: String(n), sg }; mhs.push(m); return m; };
         const here = []; let from = 0;
         for (let g = 0; g < nM; g++) {
           const c = base + (g < extra ? 1 : 0), members = list.slice(from, from + c); from += c;
@@ -622,7 +668,7 @@ const PlanLayout = (() => {
         list.forEach(e => { let best = null; for (const m of here) if (!best || Math.abs(m.a - e.al) < Math.abs(best.a - e.al)) best = m; best.members.push(e); e.mh = best; });
       }
       const inter = junctions.map(j => {
-        const ps = use[j.id].map(st => ptAt(st, st.nodeSt[j.id], fibreSign(st) * st.tr));
+        const ps = use[j.id].map(st => kp(st, fibreSign(st), st.nodeSt[j.id], 't'));
         return { id: j.id, x: ps.reduce((s, p) => s + p[0], 0) / ps.length, y: ps.reduce((s, p) => s + p[1], 0) / ps.length, junction: true, label: '', streets: use[j.id] };
       });
       const nodes = [...inter, ...mhs], edges = [];
@@ -631,7 +677,7 @@ const PlanLayout = (() => {
         const on = nodes.filter(nd => nd.junction ? nd.streets.includes(st) : nd.road === st).sort((p, q) => stat(p, st) - stat(q, st));
         for (let i = 1; i < on.length; i++) {
           const A = on[i - 1], B = on[i], sa = stat(A, st), sb = stat(B, st), sg = fibreSign(st);
-          const pts = [[A.x, A.y]]; if (sb - sa > 5) pts.push(...verge(st, sa + 2.5, sb - 2.5, sg * st.tr)); pts.push([B.x, B.y]);
+          const pts = [[A.x, A.y]]; if (sb - sa > 5) pts.push(...kv(st, sg, sa + 2.5, sb - 2.5, 't')); pts.push([B.x, B.y]);
           edges.push({ a: A, b: B, st, pts, len: plen(pts), key: st.id + '|' + Math.round((sa + sb) / 6) * 3 });
         }
       });
@@ -674,12 +720,12 @@ const PlanLayout = (() => {
         if (!e.mh || !e.fibrePt) continue;
         const st = e.road, m = e.mh, sF = project(st, e.fibrePt[0], e.fibrePt[1]).s;
         let pts, xsel = null;
-        if (e.sd === m.sg) pts = [[m.x, m.y], ...verge(st, m.a, sF, m.sg * st.tr), e.fibrePt];
+        if (e.sd === m.sg) pts = [[m.x, m.y], ...kv(st, m.sg, m.a, sF, 't'), e.fibrePt];
         else {
           let bd = Infinity;
           for (const s0 of (XS[e.gkey] || [])) { const d = Math.abs(m.a - s0) + Math.abs(s0 - sF); if (d < bd) { bd = d; xsel = s0; } }
           if (xsel == null || (bd - Math.abs(m.a - sF)) > 50) xsel = m.a;
-          pts = [[m.x, m.y], ...verge(st, m.a, xsel, m.sg * st.tr), ptAt(st, xsel, e.sd * st.tr).slice(0, 2), ...verge(st, xsel, sF, e.sd * st.tr).slice(1), e.fibrePt];
+          pts = [[m.x, m.y], ...kv(st, m.sg, m.a, xsel, 't'), kp(st, e.sd, xsel, 't').slice(0, 2), ...kv(st, e.sd, xsel, sF, 't').slice(1), e.fibrePt];
         }
         e.fibX = xsel; e.duct = pts; e.ductLen = plen(pts); leadLen += e.ductLen; leadMax = Math.max(leadMax, e.ductLen);
       }
@@ -729,7 +775,7 @@ const PlanLayout = (() => {
         (input.subPts || []).forEach((pt, i) => {
           let bs = null; for (const st of streets) { const pr = project(st, pt[0], pt[1]); if (!bs || pr.d < bs.d) bs = { st, s: pr.s }; }
           if (!bs) return;
-          const nd = node(bs.st, bs.s), V = ptAt(bs.st, nd.s, (ks[bs.st.id] || 1) * bs.st.vk).slice(0, 2);
+          const nd = node(bs.st, bs.s), V = kp(bs.st, ks[bs.st.id] || 1, nd.s).slice(0, 2);
           manualRoots.push({ id: 'SUBPT' + (i + 1), x: pt[0], y: pt[1], root: true, manual: true, members: [], road: bs.st, s: nd.s, node: nd, stub: [[pt[0], pt[1]], V] });
         });
         streets.forEach(st => { node(st, 0); node(st, st.len); st.jids.forEach(id => node(st, st.nodeSt[id])); });
@@ -737,13 +783,13 @@ const PlanLayout = (() => {
         const link = (A, B, pts, excl) => { const xs = pathCrossings(pts, excl), len = plen(pts), ed = { a: A, b: B, pts, len, xs, w: len + xs.length * 300 }; edges.push(ed); A.adj.push(ed); B.adj.push(ed); };
         streets.forEach(st => {
           const on = nodes.filter(n => n.st === st).sort((p, q) => p.s - q.s);
-          for (let i = 1; i < on.length; i++) if (on[i].s - on[i - 1].s > .4) link(on[i - 1], on[i], verge(st, on[i - 1].s, on[i].s, (ks[st.id] || 1) * st.vk), st);
+          for (let i = 1; i < on.length; i++) if (on[i].s - on[i - 1].s > .4) link(on[i - 1], on[i], kv(st, ks[st.id] || 1, on[i - 1].s, on[i].s), st);
         });
         for (const j of junctions) {
           const ss = use[j.id];
           for (let i = 0; i < ss.length; i++) for (let k = i + 1; k < ss.length; k++) {
             const A = ss[i], B = ss[k], nA = node(A, A.nodeSt[j.id]), nB = node(B, B.nodeSt[j.id]);
-            link(nA, nB, [ptAt(A, nA.s, (ks[A.id] || 1) * A.vk).slice(0, 2), ptAt(B, nB.s, (ks[B.id] || 1) * B.vk).slice(0, 2)], null);
+            link(nA, nB, [kp(A, ks[A.id] || 1, nA.s).slice(0, 2), kp(B, ks[B.id] || 1, nB.s).slice(0, 2)], null);
           }
         }
         // shortest-path tree of the kiosk-side verge graph from one kiosk (crossings carry a penalty in the weights)
@@ -784,7 +830,7 @@ const PlanLayout = (() => {
         };
         // an automatic mini-sub stands 5 m along the street from the kiosk it is built beside (that kiosk is one the erven need anyway)
         const asRoot = k => {
-          const st = k.road, s2 = k.s + 5 <= st.len ? k.s + 5 : Math.max(0, k.s - 5), p = ptAt(st, s2, (ks[st.id] || 1) * st.vk).slice(0, 2);
+          const st = k.road, s2 = k.s + 5 <= st.len ? k.s + 5 : Math.max(0, k.s - 5), p = kp(st, ks[st.id] || 1, s2).slice(0, 2);
           return { id: 'SUBAUTO', x: p[0], y: p[1], root: true, members: [], road: st, s: s2, node: k.node, stub: [p, [k.x, k.y]] };
         };
         // the mini-subs are the ones placed by hand, where you put them (with none placed — only the tests — `subs` of them are chosen).
@@ -902,7 +948,31 @@ const PlanLayout = (() => {
     const fibre = placeFibre();
     const net = placeNetworks(kiosks);
     const cab = erven.filter(e => e.cable).map(e => e.cable);
+    // what the cross-section says about what was laid out: sizes onto the parts, and checks measured from the erf boundary
+    const secChecks = [];
+    if (SEC) {
+      kiosks.forEach(k => { const sc = secAt(k.road, k.s); if (sc) { k.section = sc.id; k.dim = Object.assign({}, sc.items.kiosk); } });
+      (fibre.mhs || []).forEach(m => { const sc = secAt(m.road, m.a); if (sc) { m.section = sc.id; m.dim = Object.assign({}, sc.items.mh); } });
+      for (const st of streets) {
+        const sc = secAt(st, st.len / 2);
+        if (sc && frontage(st, 1) && frontage(st, -1)) {
+          const W = sc.strips.a + sc.strips.road + sc.strips.b, M = fd(st, 1, st.len / 2) + fd(st, -1, st.len / 2);
+          if (Math.abs(W - M) > 0.5) secChecks.push({ sev: 'warn', street: st.id, text: `${st.name}: section "${sc.name}" is ${W.toFixed(2)} m wide, but the erf boundaries are ${M.toFixed(2)} m apart.` });
+        }
+        const ks2 = kiosks.filter(k => k.road === st).sort((p, q) => p.s - q.s);
+        for (let i = 1; i < ks2.length; i++) {
+          const d = ks2[i].dim, need = d ? d.len + 2 * d.end : 0, gap = ks2[i].s - ks2[i - 1].s;
+          if (d && gap < need) secChecks.push({ sev: 'warn', street: st.id, text: `${st.name}: two kiosks ${gap.toFixed(1)} m apart, but a kiosk needs ${need.toFixed(2)} m (length and clear space each end).` });
+        }
+      }
+      for (const sc of SEC.list) {
+        const d = sc.items, kf = d.kiosk.off + d.kiosk.depth;
+        if (d.lv.off + d.lv.w / 2 > d.kiosk.off && d.lv.off - d.lv.w / 2 < kf) secChecks.push({ sev: 'info', street: null, text: `Section "${sc.name}": the LV trench runs under the kiosk footprint.` });
+        if (d.pole.off - kf < 1) secChecks.push({ sev: 'warn', street: null, text: `Section "${sc.name}": pole ${(d.pole.off - kf).toFixed(2)} m from the kiosk (1.00 m wanted).` });
+      }
+    }
     return {
+      sections: SEC, secChecks,
       P, streets, junctions, erven, kiosks, fibre, net, over, noFront, ks, fs,
       warns: warns.concat(fibre.warns),
       stats: {
@@ -939,10 +1009,12 @@ const PlanLayout = (() => {
         let best = null; for (const st of streets) { const pr = project(st, mid[0], mid[1]); if (!best || pr.d < best.pr.d) best = { st, pr }; }
         const st = best.st, pp = project(st, p[0], p[1]), pq = project(st, q[0], q[1]), op = pp.side * pp.d, oq = pq.side * pq.d;
         if (Math.abs(op - oq) > 3) { flush(chain, cat); chain = []; continue; }              // across a road: the crossing trench covers it
-        const m = (Math.abs(op) + Math.abs(oq)) / 2;
-        if (Math.abs(op - oq) <= 0.6 && Math.abs(pq.s - pp.s) > 0.05 && m >= st.vk - 1.5 && m <= st.w / 2 + 0.5) {
+        const m = (Math.abs(op) + Math.abs(oq)) / 2, sg = Math.sign(op + oq) || 1, sMid = (pp.s + pq.s) / 2;
+        // on the boundary corridor a line is told apart by how far it sits from the corridor itself (0 = kd inside the boundary)
+        const bnd = st.byBoundary && typeof st.fd === 'function', rel = bnd ? m - (st.fd(sg, sMid) - st.kd) : m;
+        if (Math.abs(op - oq) <= 0.6 && Math.abs(pq.s - pp.s) > 0.05 && (bnd ? rel >= -1.5 && rel <= st.kd + 0.5 : m >= st.vk - 1.5 && m <= st.w / 2 + 0.5)) {
           flush(chain, cat); chain = [];
-          lineFor(st, Math.sign(op + oq) || 1, m).ivs.push({ s0: Math.min(pp.s, pq.s), s1: Math.max(pp.s, pq.s), cat });
+          lineFor(st, sg, rel).ivs.push({ s0: Math.min(pp.s, pq.s), s1: Math.max(pp.s, pq.s), cat });
         } else { if (!chain.length) chain.push(p); chain.push(q); }
       }
       flush(chain, cat);
@@ -950,17 +1022,30 @@ const PlanLayout = (() => {
     res.erven.forEach(e => { if (e.route) add(e.route, 'svc'); if (T.fibre !== 'off' && e.duct) add(e.duct, 'fi'); });
     if (res.net) { res.net.lv.forEach(ed => add(ed.pts, 'lv')); res.net.mv.forEach(ed => add(ed.pts, 'mv')); }
     if (T.fibre !== 'off' && res.fibre) res.fibre.trunks.forEach(ed => add(ed.pts, 'fi'));
-    const dep = type => type === 'MV' ? T.depth.mv : type === 'FI' ? T.depth.fi : type === 'LV/SL' ? T.depth.lv : (T.depth.comb != null ? T.depth.comb : Math.max(T.depth.mv, T.depth.lv));
+    // depth of a trench: the section's own depth for its cable class where a section applies, else the Trenches setting
+    const secDepth = (sec, type) => {
+      const d = sec.items, mv = d.mv.depth, lv = Math.max(d.lv.depth, d.svc.depth), fi = d.fi.depth;
+      return type === 'MV' ? mv : type === 'FI' ? fi : type === 'LV/SL' ? lv : Math.max(mv, lv);
+    };
+    const nearStreet = (x, y) => { let b = null; for (const st of streets) { const pr = project(st, x, y); if (!b || pr.d < b.pr.d) b = { st, pr }; } return b; };
+    const secOf = (st, q) => (st && typeof st.sec === 'function') ? st.sec(q) : null;
+    const dep = (type, sec) => sec && sec.items ? secDepth(sec, type) : type === 'MV' ? T.depth.mv : type === 'FI' ? T.depth.fi : type === 'LV/SL' ? T.depth.lv : (T.depth.comb != null ? T.depth.comb : Math.max(T.depth.mv, T.depth.lv));
     // what a set of cables becomes: [{ type, shift }] (shift moves a separate MV trench in from the verge line)
-    const kinds = cats => {
+    const kinds = (cats, sec) => {
       const mv = cats.has('mv'), pw = cats.has('lv') || cats.has('svc'), fi = cats.has('fi');
       const r = [];
       if (mv && pw && T.combine === 'mvlv') r.push({ type: 'MV/LV/SL', shift: 0 });
-      else { if (mv) r.push({ type: 'MV', shift: pw ? 0.7 : 0 }); if (pw) r.push({ type: 'LV/SL', shift: 0 }); }
+      else { if (mv) r.push({ type: 'MV', shift: pw ? (sec && sec.items ? Math.max(0, sec.items.mv.off - sec.items.lv.off) : 0.7) : 0 }); if (pw) r.push({ type: 'LV/SL', shift: 0 }); }
       if (fi && !(T.fibre === 'with' && pw) && T.fibre !== 'off') r.push({ type: 'FI', shift: 0 });
       return r;
     };
-    const emit = (type, pts, cats, kind) => { if (pts.length >= 2 && plen(pts) > 0.3) out.push({ type, pts, depth: dep(type), len: plen(pts), cats: [...cats], kind }); };
+    const emit = (type, pts, cats, kind, sec) => { if (pts.length >= 2 && plen(pts) > 0.3) out.push({ type, pts, depth: dep(type, sec), len: plen(pts), cats: [...cats], kind, section: sec ? sec.id : null }); };
+    // a run on the boundary corridor: kd inside the boundary wherever the boundary goes, plus the line's own offset
+    const relVerge = (st, sign, s0, s1, rel) => {
+      const n = Math.max(1, Math.ceil(Math.abs(s1 - s0) / STEP)), pts = [];
+      for (let i = 0; i <= n; i++) { const q = s0 + (s1 - s0) * i / n; pts.push(ptAt(st, q, sign * Math.max(0.5, st.fd(sign, q) - st.kd + rel)).slice(0, 2)); }
+      return pts;
+    };
     for (const l of lines) {                                   // runs along a verge line: merge what overlaps
       const bp = [...new Set(l.ivs.flatMap(v => [v.s0, v.s1]).map(v => Math.round(v * 20) / 20))].sort((a, b) => a - b);
       const runs = [];
@@ -970,15 +1055,17 @@ const PlanLayout = (() => {
         const key = [...cats].sort().join('+'), last = runs[runs.length - 1];
         if (last && last.key === key && a - last.b < 0.6) last.b = b; else runs.push({ key, cats, a, b });
       }
-      for (const r of runs) for (const k of kinds(r.cats)) emit(k.type, verge(l.st, r.a, r.b, l.sign * (l.off - k.shift)), r.cats, 'run');
+      for (const r of runs) for (const k of kinds(r.cats, secOf(l.st, (r.a + r.b) / 2))) emit(k.type, l.st.byBoundary && typeof l.st.fd === 'function' ? relVerge(l.st, l.sign, r.a, r.b, l.off - k.shift) : verge(l.st, r.a, r.b, l.sign * (l.off - k.shift)), r.cats, 'run', secOf(l.st, (r.a + r.b) / 2));
     }
-    for (const sp of spurs.values()) for (const k of kinds(sp.cats)) emit(k.type, sp.pts, sp.cats, 'spur');
+    for (const sp of spurs.values()) { const m0 = sp.pts[Math.floor(sp.pts.length / 2)], nb = nearStreet(m0[0], m0[1]), sec = nb ? secOf(nb.st, nb.pr.s) : null; for (const k of kinds(sp.cats, sec)) emit(k.type, sp.pts, sp.cats, 'spur', sec); }
     if (T.crossings && res.net) res.net.cross.forEach(x => {
       const mv = x.d160 > 0, pw = x.svc > 0 || x.lv > 0 || (x.prov && x.d110 > 0), fi = x.fib > 0 && T.fibre !== 'off';
       const type = mv && (pw || fi) ? 'MV/LV/SL' : mv ? 'MV' : pw ? 'LV/SL' : fi ? 'FI' : null;
       if (!type) return;
-      const a = ptAt(x.st, x.s, x.st.w / 2), b = ptAt(x.st, x.s, -x.st.w / 2);
-      out.push({ type, pts: [[a[0], a[1]], [b[0], b[1]]], depth: dep(type), len: x.st.w, cats: [mv && 'mv', pw && 'lv', fi && 'fi'].filter(Boolean), kind: 'crossing' });
+      const bnd = x.st.byBoundary && typeof x.st.fd === 'function', hA = bnd ? x.st.fd(1, x.s) : x.st.w / 2, hB = bnd ? x.st.fd(-1, x.s) : x.st.w / 2;
+      const a = ptAt(x.st, x.s, hA), b = ptAt(x.st, x.s, -hB);
+      const xsec = secOf(x.st, x.s);
+      out.push({ type, pts: [[a[0], a[1]], [b[0], b[1]]], depth: dep(type, xsec), section: xsec ? xsec.id : null, len: hA + hB, cats: [mv && 'mv', pw && 'lv', fi && 'fi'].filter(Boolean), kind: 'crossing' });
     });
     const sum = {};
     out.forEach(t => { const q = sum[t.type] || (sum[t.type] = { len: 0, n: 0, depth: t.depth }); q.len += t.len; q.n++; });
