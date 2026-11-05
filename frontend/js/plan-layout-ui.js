@@ -26,7 +26,7 @@ const PlanLayoutUI = {
       ['front', 'select', [['longest', 'longest street edge'], ['shortest', 'shortest street edge']], 'A corner erf fronts its']]],
     ['Kiosks', [['kmode', 'select', [['rules', 'even runs (rule of thumb)'], ['opt', 'optimiser: fewest kiosks, then crossings, then cable']], 'Placement'],
       ['n', 'range', 4, 8, 1, '', 'Max houses per kiosk'], ['aim', 'range', 2, 8, 1, '', 'Aim for about this many houses per kiosk'], ['maxc', 'range', 30, 150, 5, 'm', 'Max service cable'], ['worth', 'range', 0, 600, 10, 'm', 'A kiosk is worth up to this much extra service cable']]],
-    ['LV network', [['subs', 'range', 1, 8, 1, '', 'Mini-subs (when not chosen automatically)'], ['subMode', 'select', [['opt', 'where the LV network drops least'], ['mid', 'nearest the middle of the kiosks']], 'Mini-sub position (unless you place it)']]],
+    ['LV network', [['subs', 'range', 1, 8, 1, '', 'Mini-subs (more than you placed by hand are added automatically)'], ['subMode', 'select', [['opt', 'where the LV network drops least'], ['mid', 'nearest the middle of the kiosks']], 'Mini-sub position (unless you place it)']]],
     ['Fibre', [['m', 'range', 4, 12, 1, '', 'Erven per manhole'], ['maxmh', 'range', 40, 200, 10, 'm', 'Max distance between manholes'],
       ['fibre', 'select', [['opp', 'civil side, opposite the kiosks'], ['same', 'same side as the kiosks']], 'Manholes default to the'],
       ['topo', 'select', [['ring', 'every street, closed loops'], ['spur', 'spurs with T-offs from the entry']], 'Main duct layout']]],
@@ -71,6 +71,9 @@ const PlanLayoutUI = {
     { const mk = (L.markers && typeof L.markers === 'object') ? L.markers : {}; L.markers = {};                      // hand-placed service markers: erf id → plan point
       for (const [id, v] of Object.entries(mk).slice(0, 5000)) if (v && Number.isFinite(+v.x) && Number.isFinite(+v.y)) L.markers[String(id).slice(0, 80)] = { x: +v.x, y: +v.y }; }
     L.cuts = Array.isArray(L.cuts) ? L.cuts.filter(x => typeof x === 'string').slice(0, 500) : [];
+    L.subs = Array.isArray(L.subs) ? L.subs.filter(q => q && Number.isFinite(+q.x) && Number.isFinite(+q.y)).map(q => ({ x: +q.x, y: +q.y })).slice(0, 20) : [];   // mini-subs placed by hand: free points
+    if (L.sub && Number.isFinite(+L.sub.x) && Number.isFinite(+L.sub.y) && !L.subs.some(q => Math.hypot(q.x - L.sub.x, q.y - L.sub.y) < 1e-6)) L.subs.push({ x: +L.sub.x, y: +L.sub.y });   // older files held one
+    delete L.sub;
     return L;
   },
   _num(v, lo, hi, d) { const n = parseFloat(v); return Number.isFinite(n) ? Math.max(lo, Math.min(hi, n)) : d; },
@@ -188,7 +191,7 @@ const PlanLayoutUI = {
   },
   // 1 up to `vd.subsMax` mini-subs: each is laid out, run through Demand and designed; the one that passes with the least cable (else the fewest fails) is kept.
   async trySubs(tok) {
-    const base = this.result, g = this._gathered; if (!base || !g || !base.design || !base.net.subs) return;
+    const base = this.result, g = this._gathered; if (!base || !g || !base.design || !base.net.subs || (g.input.subPts && g.input.subPts.length)) return;   // mini-subs you placed fix the count
     const cur = base.net.subs.length, trials = [{ subs: cur, res: base }];
     const nK = base.kiosks.length;
     const top = Math.min(8, this.cfg().vd.subsMax || 3);
@@ -241,13 +244,13 @@ const PlanLayoutUI = {
     const cur = new Map(d.input.kiosks.map(k => [k.id, Object.assign({}, k, { feederCable: cabOf(k).name, erfs: k.erfs.map(e => Object.assign({}, e, { cableType: svcCab.name })) })]));
     const kioskOf = id => cur.get(id);
     const byId = {}; for (const kr of d.res.kiosks) byId[kr.kioskId] = kr;
-    const net = r.net, up = new Map(net.lvLinks.map(l => [l.to, l])), isSub = new Set(net.subs.map(S => S.k));
+    const net = r.net, up = new Map(net.lvLinks.map(l => [l.to, l]));
     const rateOf = name => (Retic._cableRX(name) || {}).rating || 0, lvRate = lvCab ? rateOf(lvCab.name) : 0, svcRate = rateOf(svcCab.name);
     const cum = k => { const v = Retic._cumulativeFeederVD(k.id, byId, kioskOf); return v == null ? 0 : v; };
     const legs = net.lvLinks.map(l => ({ from: l.from, to: l.to, len: (cur.get(l.to.id) || {}).feederLength || l.len, pct: Retic._legFeederVD(l.to.id, byId, kioskOf) || 0, cum: cum(l.to), amps: (byId[l.to.id] || {}).feederA || 0, rating: rateOf((cur.get(l.to.id) || {}).feederCable) }));
     const rows = [], unreached = [];
     for (const k of r.kiosks) for (const e of k.members) {
-      if (!isSub.has(k) && !up.has(k)) { unreached.push(e); continue; }
+      if (!up.has(k)) { unreached.push(e); continue; }
       const dk = cur.get(k.id), de = dk.erfs.find(x => x.id === e.id), amps = Retic._erfDesignAmps(dk, de);
       const svc = Retic._vdPercent(svcCab.name, amps, de.length, Retic._erfIs3ph(dk, de)) || 0, lv = cum(k);
       rows.push({ erf: e, kiosk: k, lv, svc, total: lv + svc, amps, rating: svcRate });
@@ -613,11 +616,14 @@ const PlanLayoutUI = {
     const streets = sr.map((r, i) => ({ id: r.id, name: (r.props && r.props.name) || ('Street ' + (i + 1)), w: this._num(r.props && r.props.width, 6, 40, 12), pts: this._flat(r).map(p => [p.x * f, p.y * f]) }));
     const ks = {}, fs = {}; streets.forEach(s => { const sd = L.sides[s.id] || {}; ks[s.id] = sd.k === 1 || sd.k === -1 ? sd.k : 0; fs[s.id] = sd.f === 1 || sd.f === -1 ? sd.f : null; });
     const own = e => e.auto !== 'layout';
-    const ms = pm.elements.find(e => e.type === 'minisub' && own(e)), rmu = pm.elements.find(e => e.type === 'rmu' && own(e));
-    const subPt = L.sub ? [L.sub.x * f, L.sub.y * f] : ms ? [ms.x * f, ms.y * f] : null;
+    const rmu = pm.elements.find(e => e.type === 'rmu' && own(e));
+    const subPts = [];                                                                // every mini-sub you placed: the layout's own points and the mini-sub parts you drew
+    const addSub = q => { if (!subPts.some(p => Math.hypot(p[0] - q[0], p[1] - q[1]) < 1)) subPts.push(q); };
+    L.subs.forEach(q => addSub([q.x * f, q.y * f]));
+    pm.elements.filter(e => e.type === 'minisub' && own(e)).forEach(e => addSub([e.x * f, e.y * f]));
     const markers = {}; for (const [id, q] of Object.entries(L.markers)) if (erven.some(e => e.id === id)) markers[id] = [q.x * f, q.y * f];
     const splits = L.vd.splits.map(q => [q.x * f, q.y * f]);
-    return { f, input: { erven, streets, markers, splits, ks, fs, overrides: L.fronts, cuts: L.cuts, subPt, mvPt: rmu ? [rmu.x * f, rmu.y * f] : null, entryPt: L.entry ? [L.entry.x * f, L.entry.y * f] : null }, params: L.params };
+    return { f, input: { erven, streets, markers, splits, ks, fs, overrides: L.fronts, cuts: L.cuts, subPts, mvPt: rmu ? [rmu.x * f, rmu.y * f] : null, entryPt: L.entry ? [L.entry.x * f, L.entry.y * f] : null }, params: L.params };
   },
 
   run() {
@@ -668,23 +674,20 @@ const PlanLayoutUI = {
     if (opt.kiosks) r.erven.forEach(e => { if (e.kiosk && e.route && kEl.get(e.kiosk) && erfEl.get(e.id)) { const pts = e.route.slice(); if (!opt.markers) pts.push([erfEl.get(e.id).x * f, erfEl.get(e.id).y * f]); route('service', kEl.get(e.kiosk).id, e.id, pts); made.routes++; } });
     const subEls = new Map();
     if (opt.lv && r.net.subs) {
-      // a mini-sub you placed yourself is kept, for the one nearest to it
-      const existing = pm.elements.find(e => e.type === 'minisub' && !auto(e));
-      const exS = existing ? r.net.subs.slice().sort((p, q) => Math.hypot(p.k.x - existing.x * f, p.k.y - existing.y * f) - Math.hypot(q.k.x - existing.x * f, q.k.y - existing.y * f))[0] : null;
-      const tx = this.cfg().vd.tx;
+      // a mini-sub part you drew yourself is kept (for the one placed there); the others are made where they stand
+      const own = pm.elements.filter(e => e.type === 'minisub' && !auto(e)), tx = this.cfg().vd.tx;
       r.net.subs.forEach(Sb => {
-        const k0 = Sb.k; if (!kEl.get(k0)) return;
-        const st = k0.road, sp = PlanLayout.ptAt(st, k0.s + 5, (r.ks[st.id] || 1) * st.vk);
-        const se = (existing && Sb === exS) ? existing : el('minisub', sp[0], sp[1], tx ? { props: Object.assign(PLAN_DEFS.defaults('minisub'), { txTypeId: tx }) } : null);
+        const k0 = Sb.k, ex = own.find(e => Math.hypot(e.x * f - k0.x, e.y * f - k0.y) < 1.5);
+        const se = ex || el('minisub', k0.x, k0.y, tx ? { props: Object.assign(PLAN_DEFS.defaults('minisub'), { txTypeId: tx }) } : null);
         subEls.set(Sb, se); made.subs++;
-        route('lv', se.id, kEl.get(k0).id, [[se.x * f, se.y * f], [k0.x, k0.y]], (lvCab.get(k0.id) || {}).name); made.routes++;
       });
       r.net.lvLinks.forEach(l => {
-        if (!kEl.get(l.from) || !kEl.get(l.to)) return;
-        const Sb = r.net.subs.find(x => x.k === l.from), se = Sb && subEls.get(Sb);          // next to the mini-sub's kiosk: its own feeder from the mini-sub
+        if (!kEl.get(l.to)) return;
+        const Sb = r.net.subs.find(x => x.k === l.from), se = Sb && subEls.get(Sb);          // a string head: its own feeder from the mini-sub
         const lc = (lvCab.get(l.to.id) || {}).name;
-        if (se) route('lv', se.id, kEl.get(l.to).id, [[se.x * f, se.y * f], [l.from.x, l.from.y], ...l.pts.slice(1)], lc);
-        else route('lv', kEl.get(l.from).id, kEl.get(l.to).id, l.pts, lc);
+        if (se) route('lv', se.id, kEl.get(l.to).id, [[se.x * f, se.y * f], ...l.pts.slice(1)], lc);
+        else if (kEl.get(l.from)) route('lv', kEl.get(l.from).id, kEl.get(l.to).id, l.pts, lc);
+        else return;
         made.routes++;
       });
     }
@@ -787,15 +790,17 @@ const PlanLayoutUI = {
       UI.toast(`Marker placed on erf ${nm(target)}: its service cable now runs to it from the nearest street.`, 'success', 3500);
       return;
     }
-    if (this.mode === 'sub') {
-      let best = null, bd = 12 * f / PlanEngine.view.zoom * 1;
-      for (const k of r.kiosks) { const d = Math.hypot(k.x - m[0], k.y - m[1]); if (d < bd) { bd = d; best = k; } }
-      if (best) { L.sub = { x: best.x / f, y: best.y / f }; this.touched(); return; }
-      // a free click: the mini-sub (with its kiosk) stands on the nearest street's kiosk-side verge, as close to the click as the street allows
-      let bs = null; for (const st of r.streets) { const pr = PlanLayout.project(st, m[0], m[1]); if (!bs || pr.d < bs.d) bs = { st, s: pr.s, d: pr.d }; }
-      if (!bs || bs.d > 60) { UI.toast('Click on or beside a street to put the mini-sub there.', 'warn', 3000); return; }
-      const pos = PlanLayout.ptAt(bs.st, bs.s, (r.ks[bs.st.id] || 1) * bs.st.vk);
-      L.sub = { x: pos[0] / f, y: pos[1] / f }; this.touched(); return;
+    if (this.mode === 'sub') {                                                          // mini-subs: free points, anywhere
+      const tol = 14 * f / PlanEngine.view.zoom, mine = (L.subs || []).map((q, i) => ({ i, d: Math.hypot(q.x * f - m[0], q.y * f - m[1]) })).filter(x => x.d <= tol).sort((a, b) => a.d - b.d)[0];
+      if (ev && ev.altKey) {                                                           // Alt-click removes the one under the pointer
+        if (mine) { L.subs.splice(mine.i, 1); this.subMove = null; this.touched(); }
+        else UI.toast('No mini-sub placed by hand there. A mini-sub part you drew on the plan is removed on the plan.', 'info', 3500);
+        return;
+      }
+      if (this.subMove != null && L.subs[this.subMove]) { L.subs[this.subMove] = { x: pt.x, y: pt.y }; this.subMove = null; this.touched(); return; }   // the second click of a move
+      if (mine) { this.subMove = mine.i; UI.toast('Click where this mini-sub should stand. Alt-click it to remove it.', 'info', 3500); PlanEngine.requestDraw({ fg: true }); return; }
+      if ((L.subs || []).length >= 20) { UI.toast('That is the most mini-subs the layout takes (20).', 'warn', 3000); return; }
+      L.subs.push({ x: pt.x, y: pt.y }); this.touched(); return;                        // exactly where you click: no kiosk is added beside it
     }
     if (this.mode === 'trunk') {
       const h = this._pickT(m); if (!h) return;
@@ -980,8 +985,10 @@ const PlanLayoutUI = {
     }
     if (S.lvmv && r.net && r.net.subs) {
       r.net.subs.forEach(Sb => {
-        const k0 = Sb.k, st = k0.road, m = W(PlanLayout.ptAt(st, k0.s + 5, (r.ks[st.id] || 1) * st.vk));
-        ctx.fillStyle = '#c92a2a'; ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.6 * u; ctx.beginPath(); ctx.moveTo(m[0], m[1] - 9 * u); ctx.lineTo(m[0] + 8 * u, m[1] + 6 * u); ctx.lineTo(m[0] - 8 * u, m[1] + 6 * u); ctx.closePath(); ctx.stroke(); ctx.fill();
+        const k0 = Sb.k, m = W([k0.x, k0.y]);
+        if (k0.stub) { ctx.save(); ctx.setLineDash([4 * u, 3 * u]); ctx.strokeStyle = '#c92a2a'; ctx.lineWidth = 1.4 * u; line(k0.stub); ctx.restore(); }
+        ctx.fillStyle = k0.manual ? '#c92a2a' : '#e8590c'; ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.6 * u; ctx.beginPath(); ctx.moveTo(m[0], m[1] - 9 * u); ctx.lineTo(m[0] + 8 * u, m[1] + 6 * u); ctx.lineTo(m[0] - 8 * u, m[1] + 6 * u); ctx.closePath(); ctx.stroke(); ctx.fill();
+        if (this.subMove != null && (this.cfg().subs || [])[this.subMove] && Math.hypot(this.cfg().subs[this.subMove].x * this.f - k0.x, this.cfg().subs[this.subMove].y * this.f - k0.y) < 1e-6) { ctx.strokeStyle = '#2563eb'; ctx.lineWidth = 2.2 * u; ctx.beginPath(); ctx.arc(m[0], m[1], 14 * u, 0, 6.2832); ctx.stroke(); }
         if (r.net.subs.length > 1) { ctx.font = `700 ${10 * u}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#c92a2a'; ctx.fillText('S' + Sb.id, m[0], m[1] + 16 * u); }
       });
     }
@@ -1078,7 +1085,7 @@ const PlanLayoutUI = {
         ${r && this.stale ? '<div style="color:#b45309">Out of date: press Run again.</div>' : ''}
         ${r ? `<div style="color:var(--text-muted)">Solved in ${Math.round(this.ms)} ms. Click an erf near the edge you want as its front.</div>` : '<div style="color:var(--text-muted)">Needs the erf boundaries (Detect erven), the streets, and a calibrated plan.</div>'}
         ${checkBlock}
-        <div><b>A click edits</b><div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px">${modeBtn('front', 'Erf fronts')}${modeBtn('marker', 'Erf markers')}${modeBtn('sub', 'Mini-sub')}${modeBtn('trunk', 'Trunk ducts / entry')}<button type="button" class="plan-btn" data-act="reset" style="padding:3px 8px;font-size:12px">Reset edits</button></div>${this.mode === 'marker' ? `<div style="font-size:12px;color:var(--text-muted);margin-top:3px">${this.markFor ? 'Click on the erf where its service cable should arrive.' : 'Click inside an erf the layout cannot place (or one it places wrongly) where its service cable should arrive. Alt-click removes a marker.'} The cable, kiosk and fibre duct are worked out to it.</div>` : ''}</div>
+        <div><b>A click edits</b><div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px">${modeBtn('front', 'Erf fronts')}${modeBtn('marker', 'Erf markers')}${modeBtn('sub', 'Mini-sub')}${modeBtn('trunk', 'Trunk ducts / entry')}<button type="button" class="plan-btn" data-act="reset" style="padding:3px 8px;font-size:12px">Reset edits</button></div>${this.mode === 'marker' ? `<div style="font-size:12px;color:var(--text-muted);margin-top:3px">${this.markFor ? 'Click on the erf where its service cable should arrive.' : 'Click inside an erf the layout cannot place (or one it places wrongly) where its service cable should arrive. Alt-click removes a marker.'} The cable, kiosk and fibre duct are worked out to it.</div>` : ''}${this.mode === 'sub' ? `<div style="font-size:12px;color:var(--text-muted);margin-top:3px">Click anywhere to stand a mini-sub exactly there: on a street, in a block, in a park. No kiosk is added beside it; the kiosks follow the erven. Its cables run to the nearest street and along it. Click a mini-sub, then click again to move it; Alt-click removes it. Place as many as you need: the kiosks go to the nearest. A mini-sub part you draw on the plan is used the same way. Press Run to see the result.</div>` : ''}</div>
         <div><b>Streets</b>${kerbBlock}${centreBlock}${fromDxf}${streets}</div>
         ${groups}
         ${trenchGroup}
@@ -1127,7 +1134,7 @@ const PlanLayoutUI = {
       else if (b.dataset.act === 'run') this.run();
       else if (b.dataset.act === 'create') this.commit();
       else if (b.dataset.act === 'clear') this.clear();
-      else if (b.dataset.act === 'reset') { L.fronts = {}; L.markers = {}; L.cuts = []; delete L.entry; delete L.sub; this.touched(); }
+      else if (b.dataset.act === 'reset') { L.fronts = {}; L.markers = {}; L.cuts = []; delete L.entry; L.subs = []; this.subMove = null; this.touched(); }
       else if (b.dataset.mode) { this.mode = b.dataset.mode; this.markFor = null; PlanMarkup.refreshProps(); }
       else if (b.dataset.side) { const o = L.sides[b.dataset.side] = L.sides[b.dataset.side] || {}, v = +b.dataset.val; if (v === 0) delete o[b.dataset.key]; else o[b.dataset.key] = v; this.touched(); }
     };

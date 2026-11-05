@@ -102,7 +102,9 @@ ok('cutting a spur section re-routes, never leaves a manhole unconnected silentl
 ok('LV is a tree reaching every kiosk; MV reaches the mini-sub', () => {
   const r = L.solve(F, {});
   assert(r.net.sub);
-  assert.strictEqual(r.net.lvLinks.length, r.kiosks.length - 1);
+  assert(!r.kiosks.includes(r.net.sub), 'the mini-sub is not one of the kiosks');
+  assert.strictEqual(r.net.lvLinks.length, r.kiosks.length);                       // every kiosk has a feeder; the first ones leave the mini-sub itself
+  assert(r.net.lvLinks.filter(l => l.from === r.net.sub).every(l => Math.hypot(l.pts[0][0] - r.net.sub.x, l.pts[0][1] - r.net.sub.y) < 1e-6), 'a string head starts at the mini-sub');
   assert(r.net.mvLen > 0);
 });
 
@@ -177,11 +179,11 @@ ok('demand input: every erf once, the LV tree as fedFrom, the service length on 
   assert.strictEqual(ids.length, new Set(ids).size);
   assert.strictEqual(ids.length, r.erven.filter(e => e.kiosk).length);
   const kid = new Set(d.kiosks.map(k => k.id));
-  assert(d.kiosks.filter(k => k.fedFrom === 'MS').length >= 1);                                  // the mini-sub's own kiosk and the ones next to it hang off the mini-sub (a string each)
-  assert(d.kiosks.filter(k => k.fedFrom === 'MS').length === 1 + r.net.lvLinks.filter(l => l.from === r.net.sub).length);
+  assert(d.kiosks.filter(k => k.fedFrom === 'MS').length >= 1);                                  // the kiosks the first cables reach hang off the mini-sub (a string each)
+  assert(d.kiosks.filter(k => k.fedFrom === 'MS').length === r.net.lvLinks.filter(l => l.from === r.net.sub).length);
   d.kiosks.forEach(k => assert(k.fedFrom === 'MS' || kid.has(k.fedFrom)));
   d.kiosks.forEach(k => k.erfs.forEach(e => assert(e.length > 0 && e.cableType === 'B')));
-  assert(d.kiosks.filter(k => k.fedFrom !== 'MS').every(k => k.feederLength > 0 && k.feederCable === 'A'));
+  assert(d.kiosks.every(k => k.feederLength > 0 && k.feederCable === 'A'));
   const k0 = d.kiosks.find(k => k.erfs.length >= 3); assert.deepStrictEqual(k0.erfs.slice(0, 3).map(e => e.phase), ['Red', 'White', 'Blue']);
 });
 ok('mini-sub position: "opt" never has a worse worst kiosk than the middle; a placed mini-sub is kept', () => {
@@ -189,14 +191,14 @@ ok('mini-sub position: "opt" never has a worse worst kiosk than the middle; a pl
     let worst = 0; r.kiosks.forEach(k => { let m = 0, v = k; while (up.has(v)) { const l = up.get(v); m += c(l.to) * l.len; v = l.from; } worst = Math.max(worst, m); }); return worst; };
   const mid = L.solve(F, { subMode: 'mid' }), opt = L.solve(F, { subMode: 'opt' });
   assert(mom(opt) <= mom(mid) + 1e-6);
-  const fixed = L.solve(Object.assign({}, F, { subPt: [mid.net.sub.x, mid.net.sub.y] }), { subMode: 'opt' });
-  assert.strictEqual(fixed.net.sub.id, mid.net.sub.id);
+  const fixed = L.solve(Object.assign({}, F, { subPts: [[mid.net.sub.x, mid.net.sub.y]] }), { subMode: 'opt' });
+  assert(Math.hypot(fixed.net.sub.x - mid.net.sub.x, fixed.net.sub.y - mid.net.sub.y) < 1e-9);
 });
 ok('several mini-subs: each kiosk is fed by one, the LV tree splits, Demand gets one row per mini-sub', () => {
   const one = L.solve(F, {}), r = L.solve(F, { subs: 3 });
   assert.strictEqual(r.net.subs.length, 3);
   assert(r.kiosks.every(k => k.subK && r.net.subs.some(S => S.k === k.subK)));
-  assert.strictEqual(r.net.lvLinks.length, r.kiosks.length - 3);                  // a tree per mini-sub: kiosks minus mini-subs
+  assert.strictEqual(r.net.lvLinks.length, r.kiosks.length);                      // a tree per mini-sub, every kiosk fed once
   assert.strictEqual(r.net.mvLines.length, 3);
   const per = r.net.subs.map(S => S.g.reduce((a, k) => a + k.members.length, 0)), tot = per.reduce((a, b) => a + b, 0);
   assert(Math.max(...per) <= Math.ceil(tot / 3 * 1.2));                           // the transformers carry similar loads
@@ -296,11 +298,56 @@ ok('LV network: the mini-sub is picked among kiosks that reach the rest; a kiosk
   const ok2 = L.solve({ streets: [streets[0]], erven: erven.slice(0, 3) }, {});
   assert.strictEqual(ok2.net.unreached.length, 0);
 });
-ok('mini-sub: a free point on a street gets a kiosk there, as close as the street allows', () => {
-  const base = L.solve(F, {}), spot = L.ptAt(base.streets[0], 60, 0), r = L.solve(Object.assign({}, F, { subPt: [spot[0], spot[1]] }), {});
-  const k = r.net.sub, d = Math.hypot(k.x - spot[0], k.y - spot[1]);
-  assert(d <= 12, `the mini-sub is ${d.toFixed(1)} m from the point`);
-  holds(r, L.DEFAULTS, F.erven.length, 'with a mini-sub placed by hand');
+// ── mini-subs placed by hand: free points, kiosks come from the erven alone ──
+const kioskKey = r => r.kiosks.map(k => [k.id, Math.round(k.x * 100), Math.round(k.y * 100), k.members.length].join(':')).join('|');
+ok('mini-sub: placed at an exact point, on a street or well away from any; no kiosk is forced beside it', () => {
+  const base = L.solve(F, {}), spot = L.ptAt(base.streets[0], 60, 0);
+  const onSt = L.solve(Object.assign({}, F, { subPts: [[spot[0], spot[1]]] }), {});
+  assert(Math.hypot(onSt.net.sub.x - spot[0], onSt.net.sub.y - spot[1]) < 1e-9, 'exactly where it was put');
+  const away = [spot[0] + 70, spot[1] + 90];                                      // nowhere near a street
+  const off = L.solve(Object.assign({}, F, { subPts: [away] }), {});
+  assert(Math.hypot(off.net.sub.x - away[0], off.net.sub.y - away[1]) < 1e-9);
+  assert.strictEqual(kioskKey(onSt), kioskKey(base), 'kiosks are placed from the erven: the mini-sub does not move or add one');
+  assert.strictEqual(kioskKey(off), kioskKey(base));
+  for (const r of [onSt, off]) {
+    assert(!r.kiosks.includes(r.net.sub));
+    holds(r, L.DEFAULTS, F.erven.length, 'with a mini-sub placed by hand');
+    const mv = r.net.mvLines[0].pts, last = mv[mv.length - 1];
+    assert(Math.hypot(last[0] - away[0], last[1] - away[1]) < 1e-9 || Math.hypot(last[0] - spot[0], last[1] - spot[1]) < 1e-9, 'MV ends at the mini-sub');
+    r.net.lvLinks.filter(l => l.from === r.net.sub).forEach(l => assert(Math.hypot(l.pts[0][0] - r.net.sub.x, l.pts[0][1] - r.net.sub.y) < 1e-9 && Math.abs(l.len - L.plen(l.pts)) < 1e-6));
+  }
+  const dStreet = Math.min(...off.streets.map(st => L.project(st, away[0], away[1]).d));
+  assert(dStreet > 20, 'the point is well away from every street: ' + dStreet.toFixed(1) + ' m');
+  assert(off.net.lvLinks.filter(l => l.from === off.net.sub).every(l => l.len >= dStreet - 1e-6), 'every string head is at least as long as the way out to the street');
+});
+ok('several mini-subs placed by hand: each exactly where put, kiosks go to the nearest by LV distance', () => {
+  const base = L.solve(F, {}), a = L.ptAt(base.streets[0], 30, 0), b = L.ptAt(base.streets[base.streets.length - 1], 40, 0);
+  const r = L.solve(Object.assign({}, F, { subPts: [[a[0], a[1]], [b[0] + 25, b[1] + 25]] }), {});
+  assert.strictEqual(r.net.subs.length, 2);
+  assert.strictEqual(kioskKey(r), kioskKey(base), 'kiosks unchanged');
+  const at = r.net.subs.map(S => [Math.round(S.k.x), Math.round(S.k.y)]);
+  assert(at.some(q => q[0] === Math.round(a[0]) && q[1] === Math.round(a[1])) && at.some(q => q[0] === Math.round(b[0] + 25) && q[1] === Math.round(b[1] + 25)));
+  assert(r.net.subs.every(S => S.k.manual));
+  assert(r.kiosks.every(k => k.subK && r.net.subs.some(S => S.k === k.subK)));
+  assert.strictEqual(r.net.lvLinks.length, r.kiosks.length);
+  assert.strictEqual(r.net.mvLines.length, 2);
+  const d = L.demandInput(r, { minisubId: 'MS', phases: [null] });
+  assert.strictEqual(d.minisubs.length, 2);
+  assert.strictEqual(d.kiosks.filter(k => d.minisubs.some(m => m.id === k.fedFrom)).length, r.net.lvLinks.filter(l => l.from.root).length);
+  holds(r, L.DEFAULTS, F.erven.length, 'with two mini-subs placed by hand');
+});
+ok('mini-subs placed by hand are kept and more can be asked for: the extra one is automatic', () => {
+  const base = L.solve(F, {}), a = L.ptAt(base.streets[0], 30, 0);
+  const r = L.solve(Object.assign({}, F, { subPts: [[a[0], a[1]]] }), { subs: 2 });
+  assert.strictEqual(r.net.subs.length, 2);
+  assert.strictEqual(r.net.subs.filter(S => S.k.manual).length, 1);
+  const man = r.net.subs.find(S => S.k.manual);
+  assert(Math.hypot(man.k.x - a[0], man.k.y - a[1]) < 1e-9);
+  assert.strictEqual(kioskKey(r), kioskKey(base));
+});
+ok('a mini-sub with no kiosks to feed is still kept where it was put', () => {
+  const r = L.solve(Object.assign({}, F, { subPts: [[0, 0], [1, 1]] }), {});
+  assert.strictEqual(r.net.subs.length, 2);
 });
 
 // ── erven the classifier cannot place: a marker put there by hand, the solver does the rest ──
