@@ -445,6 +445,7 @@ const PlanLayoutUI = {
     if (!d || !f) { UI.toast('Calibrate the plan first.', 'warn', 4000); return; }
     const pieces = this._kerbPieces(d, layer);
     if (!pieces || !pieces.length) { UI.toast(`Layer "${layer}" has no lines or polylines.`, 'warn', 4000); return; }
+    this.centreStage = null;
     // the review state is the shared PlanKerbs.stage (also used by the Road plan); the plan-only parts ride on it
     const S = this.kerbStage = Object.assign(PlanKerbs.stage(PlanKerbs.joinPieces(pieces), this.kerbOpt), { descId, layer, f, namer: this._namer(PlanDxfImport.dataOf(d), d, f) });
     S.solve();
@@ -518,6 +519,83 @@ const PlanLayoutUI = {
       const a = st.pts[0], b = st.pts[st.pts.length - 1]; ctx.fillStyle = '#f59e0b';
       for (const q of [a, b]) { ctx.beginPath(); ctx.arc(q[0] / f, q[1] / f, 3 * u, 0, 6.2832); ctx.fill(); }
       const mid = st.pts[Math.floor(st.pts.length / 2)]; ctx.fillStyle = '#92400e'; ctx.font = `${11 * u}px sans-serif`; ctx.fillText(st.w.toFixed(1) + ' m', mid[0] / f + 4 * u, mid[1] / f - 4 * u);
+    });
+    ctx.restore();
+  },
+
+  // ───────── streets from centrelines you pick: click the lines, then Create ─────────
+  // The lines come from a drawing layer (start again on another layer to add from it too). A click takes the whole
+  // line the pointer is on (loose pieces joined end to end, going straight on at a junction); Shift-click takes only the
+  // one drawn piece; clicking a picked line again, or Alt-click, drops it. Enter creates one street per picked line.
+  centreStage: null,
+  centreW: 12,
+  centreStart(descId, layer) {
+    const d = PlanDxfImport.byId(descId), f = PlanEngine.factor();
+    if (!d || !f) { UI.toast('Calibrate the plan first.', 'warn', 4000); return; }
+    const pieces = this._kerbPieces(d, layer);
+    if (!pieces || !pieces.length) { UI.toast(`Layer "${layer}" has no lines or polylines.`, 'warn', 4000); return; }
+    this.kerbStage = null;
+    let S = this.centreStage;
+    if (!S || S.descId !== descId) S = this.centreStage = { descId, f, layers: [], pieces: [], chains: [], picks: [], namer: this._namer(PlanDxfImport.dataOf(d), d, f) };
+    if (!S.layers.includes(layer)) {
+      S.layers.push(layer);
+      pieces.forEach(pts => S.pieces.push({ pts, layer }));
+      (typeof PlanKerbs !== 'undefined' ? PlanKerbs.joinPieces(pieces) : pieces.map(pts => ({ pts }))).forEach(c => S.chains.push({ pts: c.pts, layer }));
+    }
+    UI.toast(`Click the centreline of each road in "${layer}". Click takes the whole line, Shift-click one drawn piece, Alt-click (or clicking it again) drops it, Enter creates the streets.`, 'info', 7000);
+    PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true });
+  },
+  centreCancel() { this.centreStage = null; PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true }); },
+  _centreSig(pts) { const a = pts[0], b = pts[pts.length - 1]; return [pts.length, a[0].toFixed(2), a[1].toFixed(2), b[0].toFixed(2), b[1].toFixed(2)].join('|'); },
+  _centreDist(pts, m) {
+    let best = Infinity;
+    for (let i = 0; i + 1 < pts.length; i++) {
+      const a = pts[i], b = pts[i + 1], dx = b[0] - a[0], dy = b[1] - a[1], L2 = dx * dx + dy * dy;
+      const t = L2 ? Math.max(0, Math.min(1, ((m[0] - a[0]) * dx + (m[1] - a[1]) * dy) / L2)) : 0;
+      best = Math.min(best, Math.hypot(m[0] - a[0] - t * dx, m[1] - a[1] - t * dy));
+    }
+    return best;
+  },
+  centreClick(pt, e) {
+    const S = this.centreStage, f = S.f, m = [pt.x * f, pt.y * f], tol = 14 * f / PlanEngine.view.zoom, redraw = () => { PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true }); };
+    e = e || {};
+    const near = list => { let bi = -1, bd = tol; list.forEach((c, i) => { const dd = this._centreDist(c.pts, m); if (dd <= bd) { bd = dd; bi = i; } }); return bi; };
+    if (e.altKey) {                                                       // drop the picked line under the pointer
+      const i = near(S.picks); if (i < 0) UI.toast('No picked line there.', 'info', 2000); else S.picks.splice(i, 1);
+      redraw(); return;
+    }
+    const list = e.shiftKey ? S.pieces : S.chains, i = near(list);
+    if (i < 0) { UI.toast('Click on a line of the layer (' + S.layers.join(', ') + '). Pick another layer in the list and press Pick centrelines to take lines from it too.', 'info', 3500); return; }
+    const c = list[i], sig = this._centreSig(c.pts), at = S.picks.findIndex(p => this._centreSig(p.pts) === sig);
+    if (at >= 0) S.picks.splice(at, 1); else S.picks.push({ pts: c.pts, layer: c.layer, piece: !!e.shiftKey });
+    redraw();
+  },
+  centreLen(pts) { let L = 0; for (let i = 0; i + 1 < pts.length; i++) L += Math.hypot(pts[i + 1][0] - pts[i][0], pts[i + 1][1] - pts[i][1]); return L; },
+  centreCreate() {
+    const S = this.centreStage; if (!S) return 0;
+    if (!S.picks.length) { UI.toast('Pick at least one line first.', 'warn', 3000); return 0; }
+    const pm = AppState.planMarkup, f = S.f, w = this.centreW > 0 ? this.centreW : 12;
+    PlanMarkup.snapshot();
+    let named = 0;
+    S.picks.forEach(c => {
+      const wp = c.pts.map(q => ({ x: q[0] / f, y: q[1] / f })), nm = S.namer(wp); if (nm) named++;
+      pm.routes.push({ id: AppState.planGenId('pmrt'), type: 'street', fromId: null, toId: null, points: wp, cableType: '', curved: false,
+        props: { name: nm || 'Street ' + (pm.routes.filter(r => r.type === 'street').length + 1), width: w } });
+    });
+    const made = S.picks.length; this.centreStage = null;
+    PlanMarkup.markDirty(); this.touched(); PlanEngine.requestDraw({ fg: true });
+    UI.toast(`${made} street${made === 1 ? '' : 's'} made from the lines you picked${named < made ? ` (${made - named} without a name nearby: check them)` : ''}. Width ${w} m; change it in each street's properties.`, named < made ? 'warn' : 'success', 6000);
+    return made;
+  },
+  centreDraw(ctx, zoom) {
+    const S = this.centreStage; if (!S) return;
+    const u = 1 / zoom, f = S.f;
+    ctx.save(); ctx.lineJoin = 'round'; ctx.lineCap = 'round'; ctx.setLineDash([]);
+    S.picks.forEach(c => {
+      ctx.strokeStyle = '#f59e0b'; ctx.lineWidth = 3.2 * u;
+      ctx.beginPath(); c.pts.forEach((p, i) => i ? ctx.lineTo(p[0] / f, p[1] / f) : ctx.moveTo(p[0] / f, p[1] / f)); ctx.stroke();
+      ctx.fillStyle = '#f59e0b';
+      for (const q of [c.pts[0], c.pts[c.pts.length - 1]]) { ctx.beginPath(); ctx.arc(q[0] / f, q[1] / f, 3 * u, 0, 6.2832); ctx.fill(); }
     });
     ctx.restore();
   },
@@ -837,6 +915,7 @@ const PlanLayoutUI = {
 
   draw(ctx, zoom) {
     this.kerbDraw(ctx, zoom);
+    this.centreDraw(ctx, zoom);
     const r = this.result, f = this.f; if (!r) return;
     const u = 1 / zoom, W = p => [p[0] / f, p[1] / f], line = pts => { ctx.beginPath(); pts.forEach((p, i) => { const q = W(p); i ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1]); }); ctx.stroke(); };
     const col = k => this.PAL[(parseInt(k.id.slice(1)) - 1) % 8], S = this.SHOW;
@@ -945,10 +1024,16 @@ const PlanLayoutUI = {
         <div style="color:var(--text-muted)">Worked out by Demand itself: its load class and ADMD settings give the diversified current on each LV leg and on each service, and its volt-drop calculation does the rest.</div></div></details>`;
     const sr = this.streetsOnPlan();
     const seg = (id, key, vals) => `<span class="plan-seg" style="display:inline-flex;gap:2px">${vals.map(([v, t]) => { const cur = (L.sides[id] || {})[key]; const on = (v === 0 ? (cur == null) : cur === v); return `<button type="button" class="plan-btn" data-side="${esc(id)}" data-key="${esc(key)}" data-val="${v}" aria-pressed="${on}" style="padding:2px 7px;font-size:12px${on ? ';font-weight:600;outline:2px solid var(--accent,#2563eb)' : ''}">${t}</button>`; }).join('')}</span>`;
-    const streets = sr.length ? sr.map((s, i) => `<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;border-bottom:1px solid var(--border,#ddd);padding:3px 0"><span>${esc((s.props && s.props.name) || 'Street ' + (i + 1))}</span><span style="display:flex;flex-direction:column;gap:2px;align-items:flex-end"><span>Kiosks ${seg(s.id, 'k', [[0, 'Auto'], [1, 'Left'], [-1, 'Right']])}</span><span>Fibre ${seg(s.id, 'f', [[0, 'Auto'], [1, 'Left'], [-1, 'Right']])}</span></span></div>`).join('') : '<div class="plan-props-empty" style="padding:4px 0">No streets yet. Take them from a drawing layer above, or pick Street centreline (Routes) and click along each street, Enter to finish. Left and right are looking along the way you drew it.</div>';
+    const streets = sr.length ? sr.map((s, i) => `<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;border-bottom:1px solid var(--border,#ddd);padding:3px 0"><span>${esc((s.props && s.props.name) || 'Street ' + (i + 1))}</span><span style="display:flex;flex-direction:column;gap:2px;align-items:flex-end"><span>Kiosks ${seg(s.id, 'k', [[0, 'Auto'], [1, 'Left'], [-1, 'Right']])}</span><span>Fibre ${seg(s.id, 'f', [[0, 'Auto'], [1, 'Left'], [-1, 'Right']])}</span></span></div>`).join('') : '<div class="plan-props-empty" style="padding:4px 0">No streets yet. Take them from a drawing layer above (pair kerbs, pick the centrelines you want, or use every line of a centreline layer), or pick Street centreline (Routes) and click along each street, Enter to finish. Left and right are looking along the way you drew it.</div>';
     const lyr = this.dxfLayers();
-    const fromDxf = lyr.length ? `<div style="display:flex;flex-direction:column;gap:4px;margin:4px 0"><label style="display:block">Take streets from a drawing layer<select data-stl style="width:100%">${lyr.map((x, i) => `<option value="${i}"${(this.kerbStage ? x.layer === this.kerbStage.layer && x.d.id === this.kerbStage.descId : i === 0) ? ' selected' : ''}>${esc(x.layer)} (${x.n} line${x.n === 1 ? '' : 's'})${x.kerbs ? ' · kerbs (pair them)' : x.guess ? ' ★' : ''}</option>`).join('')}</select></label><div style="display:flex;gap:4px;flex-wrap:wrap"><button type="button" class="plan-btn" data-act="kerbstreets" title="Pair the kerb lines of a layer into one centreline per road, with the measured width">Streets from kerb layer</button><button type="button" class="plan-btn" data-act="dxfstreets" title="Every line of the layer becomes a street, as drawn">Use layer as streets</button></div></div>` : '';
-    const KS = this.kerbStage, ko = this.kerbOpt;
+    const fromDxf = lyr.length ? `<div style="display:flex;flex-direction:column;gap:4px;margin:4px 0"><label style="display:block">Take streets from a drawing layer<select data-stl style="width:100%">${lyr.map((x, i) => `<option value="${i}"${(this.kerbStage ? x.layer === this.kerbStage.layer && x.d.id === this.kerbStage.descId : i === 0) ? ' selected' : ''}>${esc(x.layer)} (${x.n} line${x.n === 1 ? '' : 's'})${x.kerbs ? ' · kerbs (pair them)' : x.guess ? ' ★' : ''}</option>`).join('')}</select></label><div style="display:flex;gap:4px;flex-wrap:wrap"><button type="button" class="plan-btn" data-act="kerbstreets" title="The layer holds kerb lines: pair them into one centreline per road, with the measured width, then review on the plan">Streets from kerb layer</button><button type="button" class="plan-btn" data-act="centrepick" title="The layer holds road centrelines among other lines: click the lines you want, one per road, then create the streets">Pick centrelines</button><button type="button" class="plan-btn" data-act="dxfstreets" title="The layer holds only road centrelines: every line of it becomes a street as drawn, width 12 m">All lines as streets</button></div><div style="font-size:12px;color:var(--text-muted)"><b>Kerb layer</b>: kerb lines are paired into roads with their measured width. <b>Pick centrelines</b>: you click the centreline of each road. <b>All lines</b>: every line of the layer is a street as drawn.</div></div></div>` : '';
+    const KS = this.kerbStage, ko = this.kerbOpt, CS = this.centreStage;
+    const centreBlock = CS ? `<div style="border:2px solid #f59e0b;border-radius:6px;padding:6px 8px;margin:4px 0;display:flex;flex-direction:column;gap:5px">
+        <b>Streets from centrelines: pick</b>
+        <div style="font-size:12px;color:var(--text-muted)">Click the centreline of each road in ${CS.layers.map(l => '"' + esc(l) + '"').join(', ')}: the whole line is taken. Shift-click takes just the one drawn piece. Click a picked line again, or Alt-click it, to drop it. To take lines from another layer, pick it in the list below and press Pick centrelines. Enter creates, Esc leaves.</div>
+        <label style="font-size:12px;display:flex;gap:6px;align-items:center">Road width <input type="number" data-copt="w" min="3" max="60" step="0.5" value="${this.centreW}" style="width:60px"> m (change it per street in its properties)</label>
+        ${CS.picks.length ? `<div style="max-height:150px;overflow:auto">${CS.picks.map((c, i) => `<div style="display:flex;justify-content:space-between;align-items:center;gap:4px;border-bottom:1px solid var(--border,#ddd);padding:2px 0;font-size:12px"><span>${esc(CS.namer.peek(c.pts.map(q => ({ x: q[0] / CS.f, y: q[1] / CS.f }))) || 'Street ' + (i + 1))} · ${Math.round(this.centreLen(c.pts))} m${c.piece ? ' · one piece' : ''}</span><button type="button" class="plan-btn" data-act="centrerm" data-i="${i}" style="padding:1px 6px;font-size:12px">drop</button></div>`).join('')}</div>` : '<div style="color:var(--text-muted)">No lines picked yet.</div>'}
+        <div style="display:flex;gap:6px"><button type="button" class="plan-btn" data-act="centrecreate" style="font-weight:600"${CS.picks.length ? '' : ' disabled'}>Create ${CS.picks.length} street${CS.picks.length === 1 ? '' : 's'}</button><button type="button" class="plan-btn" data-act="centrecancel">Cancel</button></div></div>` : '';
     const kcomps = KS ? KS.networks() : [];
     const kinfo = KS ? KS.unpaired.map(i => this.kerbInfo(i)) : [];
     const kerbBlock = KS ? `<div style="border:2px solid #f59e0b;border-radius:6px;padding:6px 8px;margin:4px 0;display:flex;flex-direction:column;gap:5px">
@@ -994,7 +1079,7 @@ const PlanLayoutUI = {
         ${r ? `<div style="color:var(--text-muted)">Solved in ${Math.round(this.ms)} ms. Click an erf near the edge you want as its front.</div>` : '<div style="color:var(--text-muted)">Needs the erf boundaries (Detect erven), the streets, and a calibrated plan.</div>'}
         ${checkBlock}
         <div><b>A click edits</b><div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px">${modeBtn('front', 'Erf fronts')}${modeBtn('marker', 'Erf markers')}${modeBtn('sub', 'Mini-sub')}${modeBtn('trunk', 'Trunk ducts / entry')}<button type="button" class="plan-btn" data-act="reset" style="padding:3px 8px;font-size:12px">Reset edits</button></div>${this.mode === 'marker' ? `<div style="font-size:12px;color:var(--text-muted);margin-top:3px">${this.markFor ? 'Click on the erf where its service cable should arrive.' : 'Click inside an erf the layout cannot place (or one it places wrongly) where its service cable should arrive. Alt-click removes a marker.'} The cable, kiosk and fibre duct are worked out to it.</div>` : ''}</div>
-        <div><b>Streets</b>${kerbBlock}${fromDxf}${streets}</div>
+        <div><b>Streets</b>${kerbBlock}${centreBlock}${fromDxf}${streets}</div>
         ${groups}
         ${trenchGroup}
         ${vdGroup}
@@ -1029,6 +1114,10 @@ const PlanLayoutUI = {
       }
       if (b.dataset.act === 'unflag') { this.flag = null; this.nearHint = null; PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true }); return; }
       if (b.dataset.act === 'kerbstreets') { const sel = el.querySelector('[data-stl]'), x = lyr[sel ? +sel.value : 0]; if (x) this.kerbStart(x.d.id, x.layer); return; }
+      if (b.dataset.act === 'centrepick') { const sel = el.querySelector('[data-stl]'), x = lyr[sel ? +sel.value : 0]; if (x) this.centreStart(x.d.id, x.layer); return; }
+      if (b.dataset.act === 'centrecreate') { this.centreCreate(); return; }
+      if (b.dataset.act === 'centrecancel') { this.centreCancel(); return; }
+      if (b.dataset.act === 'centrerm') { const S = this.centreStage; if (S) { S.picks.splice(+b.dataset.i, 1); PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true }); } return; }
       if (b.dataset.act === 'kerbcreate') { this.kerbCreate(); return; }
       if (b.dataset.act === 'kerbcancel') { this.kerbCancel(); return; }
       if (b.dataset.act === 'kerbshow') { const S = this.kerbStage; if (S) { const ids = b.dataset.i != null ? [+b.dataset.i] : S.unpaired, pts = []; ids.forEach(i => S.chains[i].pts.forEach(q => pts.push({ x: q[0] / S.f, y: q[1] / S.f }))); if (pts.length) PlanEngine.zoomToPoints(pts); } return; }
@@ -1054,6 +1143,7 @@ const PlanLayoutUI = {
     };
     el.onchange = (e) => {
       const t = e.target;
+      if (t.dataset.copt) { const v = parseFloat(t.value); if (isFinite(v) && v > 0) this.centreW = v; return; }
       if (t.dataset.kopt) { const v = parseFloat(t.value); if (isFinite(v)) { this.kerbOpt[t.dataset.kopt] = v; if (this.kerbStage) { if (t.dataset.kopt === 'join' || t.dataset.kopt === 'oneW') this.kerbStage.o = Object.assign({}, this.kerbStage.o, this.kerbOpt); else this.kerbSolve(); } } return; }
       if (t.dataset.vd) {
         if (t.type === 'range') return;
@@ -1079,18 +1169,19 @@ if (typeof PlanTools !== 'undefined') {
   PlanTools.register({
     id: 'layout', cursor: 'crosshair',
     onActivate() { PlanLayoutUI.mode = 'front'; if (typeof PlanMarkup !== 'undefined') PlanMarkup.refreshProps(); },
-    onDeactivate() { PlanLayoutUI.hoverT = null; PlanLayoutUI.kerbStage = null; },
+    onDeactivate() { PlanLayoutUI.hoverT = null; PlanLayoutUI.kerbStage = null; PlanLayoutUI.centreStage = null; },
     cancel() { PlanTools.set('select'); },
     onMove(pt) {
       if (PlanLayoutUI.mode !== 'trunk' || !PlanLayoutUI.result) return;
       const h = PlanLayoutUI._pickT([pt.x * PlanLayoutUI.f, pt.y * PlanLayoutUI.f]);
       if ((h && h.edge) !== (PlanLayoutUI.hoverT && PlanLayoutUI.hoverT.edge)) { PlanLayoutUI.hoverT = h; PlanEngine.requestDraw({ fg: true }); }
     },
-    onDown(pt, e) { if (PlanLayoutUI.kerbStage) PlanLayoutUI.kerbClick(pt, e); else PlanLayoutUI.click(pt, e); },
+    onDown(pt, e) { if (PlanLayoutUI.centreStage) PlanLayoutUI.centreClick(pt, e); else if (PlanLayoutUI.kerbStage) PlanLayoutUI.kerbClick(pt, e); else PlanLayoutUI.click(pt, e); },
     drawOverlay(ctx, zoom) { PlanLayoutUI.draw(ctx, zoom); },
     onKey(e) {
+      if (PlanLayoutUI.centreStage && e.key === 'Enter') { PlanLayoutUI.centreCreate(); return true; }
       if (PlanLayoutUI.kerbStage && e.key === 'Enter') { PlanLayoutUI.kerbCreate(); return true; }
-      if (e.key === 'Escape') { if (PlanLayoutUI.kerbStage) PlanLayoutUI.kerbCancel(); else if (PlanLayoutUI.markFor) { PlanLayoutUI.markFor = null; PlanLayoutUI.flag = null; PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true }); } else this.cancel(); return true; }
+      if (e.key === 'Escape') { if (PlanLayoutUI.centreStage) PlanLayoutUI.centreCancel(); else if (PlanLayoutUI.kerbStage) PlanLayoutUI.kerbCancel(); else if (PlanLayoutUI.markFor) { PlanLayoutUI.markFor = null; PlanLayoutUI.flag = null; PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true }); } else this.cancel(); return true; }
       return false;
     },
   });
