@@ -32,6 +32,7 @@ const PlanLayout = (() => {
     side: 4, depth: 4, corner: 'start', front: 'longest',      // marker: m from the side boundary and the front; which corner; corner erf's front
     kgeo: 'boundary', kd: 2,                                       // cables + kiosks run kd m inside the erf boundary ('street' = the old street-line offset)
     kmode: 'opt', n: 6, maxc: 80, worth: 170, knet: true,   // kiosks (n = the most erven one kiosk serves; knet = one solve over the whole street network)
+    strN: 4, strMode: 'fewest',                                     // LV strings: most kiosks on one string off the mini-sub (0 = no limit); 'fewest' = fewest strings, 'even' = strings of similar size
     subMode: 'opt', subs: 1,                                          // mini-sub: 'opt' = where the LV network drops least, 'mid' = nearest the middle
     m: 8, maxmh: 120, fibre: 'opp', topo: 'ring',              // fibre
     share: true, xmode: 'bound', junct: false, j110: 2, j160: 1, spare: 0,   // crossings
@@ -899,17 +900,47 @@ const PlanLayout = (() => {
         }
         net.unreached = [];                                                          // kiosks the LV network does not reach (streets not joined up): their erven have no LV supply
         for (const S of subs) for (const k of S.g) if (k !== S.k && !(T(S.k).dist.get(k.node) < Infinity)) net.unreached.push(k);
+        // strings: the tree is cut so no string has more than strN kiosks. A cut kiosk becomes a string head of its own: a feeder
+        // straight off the mini-sub along the same route (the same thing a manual split does).
+        const orig = new Map(net.lvLinks.map(l => [l.to, l]));
+        const autoHeads = new Set();
+        if (P.strN >= 1) {
+          for (const S of subs) {
+            const kids = new Map(); S.g.forEach(k => kids.set(k, []));
+            net.lvLinks.forEach(l => { if (l.from !== S.k && kids.has(l.from) && kids.has(l.to)) kids.get(l.from).push(l.to); });
+            // size of the group hanging off each hub kiosk (a string head of the original tree)
+            const total = k => 1 + kids.get(k).reduce((a, c) => a + total(c), 0);
+            const cutTree = (hub, limit) => {                                          // bottom-up: the fewest strings of at most `limit` kiosks
+              const up = k => {
+                const open = kids.get(k).map(c => ({ c, n: up(c) }));
+                let sum = 1 + open.reduce((a, o) => a + o.n, 0);
+                open.sort((a, b) => b.n - a.n);
+                for (const o of open) { if (sum <= limit) break; autoHeads.add(o.c); sum -= o.n; }
+                return sum;
+              };
+              up(hub);
+            };
+            for (const l of net.lvLinks) {
+              if (l.from !== S.k || !kids.has(l.to)) continue;
+              let limit = Math.floor(P.strN);
+              if (P.strMode === 'even') { const M = total(l.to), strs = Math.ceil(M / limit); limit = Math.ceil(M / strs); }
+              cutTree(l.to, limit);
+            }
+          }
+        }
         // a split string: a kiosk made its own string head (a feeder of its own straight off the mini-sub, along the same route)
-        if (input.splits && input.splits.length) {
-          const orig = new Map(net.lvLinks.map(l => [l.to, l]));
+        if (autoHeads.size || (input.splits && input.splits.length)) {
           for (const l of net.lvLinks.slice()) {
             const S = subs.find(x => x.g.includes(l.to));
-            if (!S || l.from === S.k || !input.splits.some(q => Math.hypot(q[0] - l.to.x, q[1] - l.to.y) <= 3)) continue;
+            const auto = autoHeads.has(l.to);
+            if (!S || l.from === S.k || !(auto || (input.splits || []).some(q => Math.hypot(q[0] - l.to.x, q[1] - l.to.y) <= 3))) continue;
             const chain = []; for (let cur = orig.get(l.to); cur; cur = cur.from === S.k ? null : orig.get(cur.from)) chain.unshift(cur);
             const pts = []; chain.forEach(c => c.pts.forEach(q => { if (!pts.length || Math.hypot(pts[pts.length - 1][0] - q[0], pts[pts.length - 1][1] - q[1]) > .01) pts.push(q); }));
             l.from = S.k; l.pts = pts; l.len = plen(pts); l.split = true;
+            if (auto) pathCrossings(pts, null).forEach(x => events.push({ st: x.st, s: x.s, t: 'lv' }));   // its own cable over every crossing on the way
           }
         }
+        net.strings = net.lvLinks.filter(l => subs.some(S => S.k === l.from)).length;
         net.lv = [...lvSet]; net.lvLen = net.lv.reduce((a, ed) => a + ed.len, 0);
         net.lv.forEach(ed => ed.xs.forEach(x => events.push({ st: x.st, s: x.s, t: 'lv' })));
         // MV is not designed here: the mini-subs are fed from outside the layout
@@ -976,7 +1007,7 @@ const PlanLayout = (() => {
       P, streets, junctions, erven, kiosks, fibre, net, over, noFront, ks, fs,
       warns: warns.concat(fibre.warns),
       stats: {
-        erven: erven.filter(e => e.fe).length, kiosks: kiosks.length, small: kiosks.filter(k => k.members.length <= 2).length, avgPer: kiosks.length ? erven.filter(e => e.kiosk).length / kiosks.length : 0, unreached: net.unreached.length, manual: erven.filter(e => e.manual).length, corner: erven.filter(e => e.corner).length, overridden: Object.keys(overrides).length,
+        erven: erven.filter(e => e.fe).length, kiosks: kiosks.length, strings: net.strings || 0, small: kiosks.filter(k => k.members.length <= 2).length, avgPer: kiosks.length ? erven.filter(e => e.kiosk).length / kiosks.length : 0, unreached: net.unreached.length, manual: erven.filter(e => e.manual).length, corner: erven.filter(e => e.corner).length, overridden: Object.keys(overrides).length,
         cable: cab.reduce((a, b) => a + b, 0), cableMax: Math.max(0, ...cab), over: over.length,
         manholes: fibre.mhs.length, junctionManholes: fibre.inter.length, trunk: fibre.trunkLen, leads: fibre.leadLen, tOffs: fibre.tOffs, spurEnds: fibre.ends, loops: fibre.loops,
         crossings: net.cross.length, provisional: net.prov, baseline: net.baseline, d110: net.d110, d160: net.d160, lv: net.lvLen, mv: net.mvLen, ms: Date.now() - t0,
