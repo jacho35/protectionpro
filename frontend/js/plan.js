@@ -782,6 +782,7 @@ const PlanMarkup = {
   onKeydown(e) {
     const tag = e.target.tagName;
     if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || e.target.isContentEditable) return false;
+    if (PlanTools.active && PlanTools.active.keyFirst && PlanTools.active.keyFirst(e)) return true;   // a tool holding a draft (e.g. a shape being drawn) takes Backspace / Esc / Enter before the plan does
     if (e.key === 'Delete' || e.key === 'Backspace') { this.deleteSelected(); return true; }
     if (e.key === 'Escape') { PlanTools.set('select'); this.clearSelection(); PlanEngine.requestDraw({ fg: true }); return true; }
     if (e.key === 'Enter') { const c = PlanTools.onKey(e); this.onDraftChanged(); return c; }

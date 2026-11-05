@@ -603,6 +603,47 @@ const PlanLayoutUI = {
     ctx.restore();
   },
 
+  // ───────── draw the street centrelines yourself, without leaving Auto layout ─────────
+  // Uses the plan's own street route tool (snapping to the drawing's corners / ends, an end that lands on another street joins it),
+  // so a street drawn here is the same Street centreline as one drawn from the Routes group.
+  drawStreets: false,
+  _rt() { return PlanTools._tools && PlanTools._tools.route; },
+  streetDrawOn(on) {
+    this.drawStreets = !!on;
+    const R = this._rt(); if (!R) { this.drawStreets = false; return; }
+    if (on) { this.kerbStage = null; this.centreStage = null; R._type = 'street'; R._draft = null; R._hover = null; UI.toast('Click along each street centreline. Enter, or click the last point again, finishes it; Backspace takes a point back; Esc stops. A street that ends on another one joins it.', 'info', 7000); }
+    else { R._draft = null; R._hover = null; }
+    PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true });
+  },
+  streetDown(pt) {
+    const R = this._rt(); R._type = 'street';
+    const q = PlanTools.snap(pt, { wantElements: false });                       // a street never attaches to a part (an erf point, a kiosk), only to geometry
+    const d = R._draft;
+    if (d && d.points.length >= 2) {                                                // clicking the last point again finishes the street
+      const last = d.points[d.points.length - 1];
+      if (Math.hypot(q.x - last.x, q.y - last.y) <= 7 / PlanEngine.view.zoom) { this.streetFinish(); return; }
+    }
+    if (!d) R._draft = { type: 'street', fromId: null, points: [{ x: q.x, y: q.y }] };
+    else if (Math.hypot(q.x - d.points[d.points.length - 1].x, q.y - d.points[d.points.length - 1].y) > 1e-9) d.points.push({ x: q.x, y: q.y });
+    R._hover = q; PlanEngine.requestDraw({ fg: true });
+  },
+  streetFinish() {
+    const R = this._rt(), before = new Set(AppState.planMarkup.routes.map(r => r.id));
+    if (!R._draft || R._draft.points.length < 2) { UI.toast('A street needs at least two points.', 'warn', 2500); return true; }
+    R._finalize(null);
+    const made = AppState.planMarkup.routes.filter(r => !before.has(r.id) && r.type === 'street');
+    made.forEach(r => { r.props = Object.assign({}, r.props, { width: this.centreW > 0 ? this.centreW : 12, name: 'Street ' + AppState.planMarkup.routes.filter(x => x.type === 'street').length }); });
+    if (made.length) { UI.toast(`Street ${made.length > 1 ? 's' : ''} drawn. Width ${this.centreW} m; change it in the street's properties. Draw the next, or press Esc.`, 'success', 3500); this.touched(); }
+    return true;
+  },
+  streetKey(e) {
+    const R = this._rt(); if (!this.drawStreets || !R) return false;
+    if (e.key === 'Enter') { if (R._draft) return this.streetFinish(); return false; }
+    if (e.key === 'Backspace') { if (!R._draft) return false; R._draft.points.pop(); if (!R._draft.points.length) R._draft = null; PlanEngine.requestDraw({ fg: true }); return true; }
+    if (e.key === 'Escape') { if (R._draft) { R._draft = null; PlanEngine.requestDraw({ fg: true }); } else this.streetDrawOn(false); return true; }
+    return false;
+  },
+
   streetsOnPlan() { return AppState.planMarkup.routes.filter(r => r.type === 'street' && r.points && r.points.length >= 2); },
 
   gather() {
@@ -1031,7 +1072,7 @@ const PlanLayoutUI = {
         <div style="color:var(--text-muted)">Worked out by Demand itself: its load class and ADMD settings give the diversified current on each LV leg and on each service, and its volt-drop calculation does the rest.</div></div></details>`;
     const sr = this.streetsOnPlan();
     const seg = (id, key, vals) => `<span class="plan-seg" style="display:inline-flex;gap:2px">${vals.map(([v, t]) => { const cur = (L.sides[id] || {})[key]; const on = (v === 0 ? (cur == null) : cur === v); return `<button type="button" class="plan-btn" data-side="${esc(id)}" data-key="${esc(key)}" data-val="${v}" aria-pressed="${on}" style="padding:2px 7px;font-size:12px${on ? ';font-weight:600;outline:2px solid var(--accent,#2563eb)' : ''}">${t}</button>`; }).join('')}</span>`;
-    const streets = sr.length ? sr.map((s, i) => `<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;border-bottom:1px solid var(--border,#ddd);padding:3px 0"><span>${esc((s.props && s.props.name) || 'Street ' + (i + 1))}</span><span style="display:flex;flex-direction:column;gap:2px;align-items:flex-end"><span>Kiosks ${seg(s.id, 'k', [[0, 'Auto'], [1, 'Left'], [-1, 'Right']])}</span><span>Fibre ${seg(s.id, 'f', [[0, 'Auto'], [1, 'Left'], [-1, 'Right']])}</span></span></div>`).join('') : '<div class="plan-props-empty" style="padding:4px 0">No streets yet. Take them from a drawing layer above (pair kerbs, pick the centrelines you want, or use every line of a centreline layer), or pick Street centreline (Routes) and click along each street, Enter to finish. Left and right are looking along the way you drew it.</div>';
+    const streets = sr.length ? sr.map((s, i) => `<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;border-bottom:1px solid var(--border,#ddd);padding:3px 0"><span>${esc((s.props && s.props.name) || 'Street ' + (i + 1))}</span><span style="display:flex;flex-direction:column;gap:2px;align-items:flex-end"><span>Kiosks ${seg(s.id, 'k', [[0, 'Auto'], [1, 'Left'], [-1, 'Right']])}</span><span>Fibre ${seg(s.id, 'f', [[0, 'Auto'], [1, 'Left'], [-1, 'Right']])}</span></span></div>`).join('') : '<div class="plan-props-empty" style="padding:4px 0">No streets yet. Draw them with Draw centrelines above, or take them from a drawing layer (pair kerbs, pick the centrelines you want, or use every line of a centreline layer). Left and right are looking along the way you drew it.</div>';
     const lyr = this.dxfLayers();
     const fromDxf = lyr.length ? `<div style="display:flex;flex-direction:column;gap:4px;margin:4px 0"><label style="display:block">Take streets from a drawing layer<select data-stl style="width:100%">${lyr.map((x, i) => `<option value="${i}"${(this.kerbStage ? x.layer === this.kerbStage.layer && x.d.id === this.kerbStage.descId : i === 0) ? ' selected' : ''}>${esc(x.layer)} (${x.n} line${x.n === 1 ? '' : 's'})${x.kerbs ? ' · kerbs (pair them)' : x.guess ? ' ★' : ''}</option>`).join('')}</select></label><div style="display:flex;gap:4px;flex-wrap:wrap"><button type="button" class="plan-btn" data-act="kerbstreets" title="The layer holds kerb lines: pair them into one centreline per road, with the measured width, then review on the plan">Streets from kerb layer</button><button type="button" class="plan-btn" data-act="centrepick" title="The layer holds road centrelines among other lines: click the lines you want, one per road, then create the streets">Pick centrelines</button><button type="button" class="plan-btn" data-act="dxfstreets" title="The layer holds only road centrelines: every line of it becomes a street as drawn, width 12 m">All lines as streets</button></div><div style="font-size:12px;color:var(--text-muted)"><b>Kerb layer</b>: kerb lines are paired into roads with their measured width. <b>Pick centrelines</b>: you click the centreline of each road. <b>All lines</b>: every line of the layer is a street as drawn.</div></div></div>` : '';
     const KS = this.kerbStage, ko = this.kerbOpt, CS = this.centreStage;
@@ -1086,7 +1127,7 @@ const PlanLayoutUI = {
         ${r ? `<div style="color:var(--text-muted)">Solved in ${Math.round(this.ms)} ms. Click an erf near the edge you want as its front.</div>` : '<div style="color:var(--text-muted)">Needs the erf boundaries (Detect erven), the streets, and a calibrated plan.</div>'}
         ${checkBlock}
         <div><b>A click edits</b><div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px">${modeBtn('front', 'Erf fronts')}${modeBtn('marker', 'Erf markers')}${modeBtn('sub', 'Mini-sub')}${modeBtn('trunk', 'Trunk ducts / entry')}<button type="button" class="plan-btn" data-act="reset" style="padding:3px 8px;font-size:12px">Reset edits</button></div>${this.mode === 'marker' ? `<div style="font-size:12px;color:var(--text-muted);margin-top:3px">${this.markFor ? 'Click on the erf where its service cable should arrive.' : 'Click inside an erf the layout cannot place (or one it places wrongly) where its service cable should arrive. Alt-click removes a marker.'} The cable, kiosk and fibre duct are worked out to it.</div>` : ''}${this.mode === 'sub' ? `<div style="font-size:12px;color:var(--text-muted);margin-top:3px">Click anywhere to stand a mini-sub exactly there: on a street, in a block, in a park. No kiosk is added beside it; the kiosks follow the erven. Its cables run to the nearest street and along it. Click a mini-sub, then click again to move it; Alt-click removes it. Place as many as you need: the kiosks go to the nearest. A mini-sub part you draw on the plan is used the same way. Press Run to see the result.</div>` : ''}</div>
-        <div><b>Streets</b>${kerbBlock}${centreBlock}${fromDxf}${streets}</div>
+        <div><b>Streets</b>${kerbBlock}${centreBlock}<div style="display:flex;flex-direction:column;gap:4px;margin:4px 0"><div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center"><button type="button" class="plan-btn" data-act="streetdraw" aria-pressed="${this.drawStreets}" style="${this.drawStreets ? 'font-weight:600;outline:2px solid var(--accent,#2563eb)' : ''}" title="Click along a street to draw its centreline, here, without leaving Auto layout">${this.drawStreets ? 'Stop drawing' : 'Draw centrelines'}</button><label style="font-size:12px;display:flex;gap:4px;align-items:center">width <input type="number" data-copt="w" min="3" max="60" step="0.5" value="${this.centreW}" style="width:54px"> m</label></div>${this.drawStreets ? '<div style="font-size:12px;color:var(--text-muted)">Click along the street. Enter, or click the last point again, finishes it. Backspace takes a point back, Esc stops. Points snap to the drawing\'s corners and ends; a street that ends on another street joins it. Left and right are looking along the way you drew it.</div>' : ''}</div>${fromDxf}${streets}</div>
         ${groups}
         ${trenchGroup}
         ${vdGroup}
@@ -1120,8 +1161,9 @@ const PlanLayoutUI = {
         PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true }); return;
       }
       if (b.dataset.act === 'unflag') { this.flag = null; this.nearHint = null; PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true }); return; }
-      if (b.dataset.act === 'kerbstreets') { const sel = el.querySelector('[data-stl]'), x = lyr[sel ? +sel.value : 0]; if (x) this.kerbStart(x.d.id, x.layer); return; }
-      if (b.dataset.act === 'centrepick') { const sel = el.querySelector('[data-stl]'), x = lyr[sel ? +sel.value : 0]; if (x) this.centreStart(x.d.id, x.layer); return; }
+      if (b.dataset.act === 'kerbstreets') { this.streetDrawOn(false); const sel = el.querySelector('[data-stl]'), x = lyr[sel ? +sel.value : 0]; if (x) this.kerbStart(x.d.id, x.layer); return; }
+      if (b.dataset.act === 'streetdraw') { this.streetDrawOn(!this.drawStreets); return; }
+      if (b.dataset.act === 'centrepick') { this.streetDrawOn(false); const sel = el.querySelector('[data-stl]'), x = lyr[sel ? +sel.value : 0]; if (x) this.centreStart(x.d.id, x.layer); return; }
       if (b.dataset.act === 'centrecreate') { this.centreCreate(); return; }
       if (b.dataset.act === 'centrecancel') { this.centreCancel(); return; }
       if (b.dataset.act === 'centrerm') { const S = this.centreStage; if (S) { S.picks.splice(+b.dataset.i, 1); PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true }); } return; }
@@ -1176,16 +1218,20 @@ if (typeof PlanTools !== 'undefined') {
   PlanTools.register({
     id: 'layout', cursor: 'crosshair',
     onActivate() { PlanLayoutUI.mode = 'front'; if (typeof PlanMarkup !== 'undefined') PlanMarkup.refreshProps(); },
-    onDeactivate() { PlanLayoutUI.hoverT = null; PlanLayoutUI.kerbStage = null; PlanLayoutUI.centreStage = null; },
+    onDeactivate() { PlanLayoutUI.hoverT = null; PlanLayoutUI.kerbStage = null; PlanLayoutUI.centreStage = null; if (PlanLayoutUI.drawStreets) PlanLayoutUI.streetDrawOn(false); },
     cancel() { PlanTools.set('select'); },
     onMove(pt) {
+      if (PlanLayoutUI.drawStreets) { const R = PlanLayoutUI._rt(); if (R) { R._hover = PlanTools.snap(pt, { wantElements: false }); PlanEngine.requestDraw({ fg: true }); } return; }
       if (PlanLayoutUI.mode !== 'trunk' || !PlanLayoutUI.result) return;
       const h = PlanLayoutUI._pickT([pt.x * PlanLayoutUI.f, pt.y * PlanLayoutUI.f]);
       if ((h && h.edge) !== (PlanLayoutUI.hoverT && PlanLayoutUI.hoverT.edge)) { PlanLayoutUI.hoverT = h; PlanEngine.requestDraw({ fg: true }); }
     },
-    onDown(pt, e) { if (PlanLayoutUI.centreStage) PlanLayoutUI.centreClick(pt, e); else if (PlanLayoutUI.kerbStage) PlanLayoutUI.kerbClick(pt, e); else PlanLayoutUI.click(pt, e); },
-    drawOverlay(ctx, zoom) { PlanLayoutUI.draw(ctx, zoom); },
+    onDown(pt, e) { if (PlanLayoutUI.drawStreets) PlanLayoutUI.streetDown(pt); else if (PlanLayoutUI.centreStage) PlanLayoutUI.centreClick(pt, e); else if (PlanLayoutUI.kerbStage) PlanLayoutUI.kerbClick(pt, e); else PlanLayoutUI.click(pt, e); },
+    drawOverlay(ctx, zoom) { PlanLayoutUI.draw(ctx, zoom); if (PlanLayoutUI.drawStreets) { const R = PlanLayoutUI._rt(); if (R) R.drawOverlay(ctx, zoom); } },
+    keyFirst(e) { return PlanLayoutUI.drawStreets ? PlanLayoutUI.streetKey(e) : false; },
+    get _draft() { const R = PlanLayoutUI.drawStreets && PlanLayoutUI._rt(); return R && R._draft ? R._draft : null; },
     onKey(e) {
+      if (PlanLayoutUI.drawStreets && PlanLayoutUI.streetKey(e)) return true;
       if (PlanLayoutUI.centreStage && e.key === 'Enter') { PlanLayoutUI.centreCreate(); return true; }
       if (PlanLayoutUI.kerbStage && e.key === 'Enter') { PlanLayoutUI.kerbCreate(); return true; }
       if (e.key === 'Escape') { if (PlanLayoutUI.centreStage) PlanLayoutUI.centreCancel(); else if (PlanLayoutUI.kerbStage) PlanLayoutUI.kerbCancel(); else if (PlanLayoutUI.markFor) { PlanLayoutUI.markFor = null; PlanLayoutUI.flag = null; PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true }); } else this.cancel(); return true; }
