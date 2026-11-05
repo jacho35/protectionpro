@@ -13,11 +13,10 @@ scratch/
 .claude/settings.local.json
 core
 
-# Licensed IEC standards (copyrighted, reference only — never commit)
-IEC Standards/
-
-# Licensed SANS standards (copyrighted, reference only — never commit)
-SANS Standards/
+# Licensed standards (IEC, SANS, NFPA, BS, EN, ... — copyrighted, reference only, never commit):
+# any folder whose name ends in "Standards" (e.g. "IEC Standards/", "SANS Standards/", "NFPA Standards/", "BS Standards/")
+*Standards/
+*standards/
 
 # Earth grid reports from other software (customer projects — reference only, never commit)
 EarthGridExamples/
