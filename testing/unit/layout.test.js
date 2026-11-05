@@ -401,4 +401,28 @@ ok('no street reaches any erf: no kiosks, and the network still has its (empty) 
   assert(Array.isArray(r.net.subs) && Array.isArray(r.net.lvLinks) && Array.isArray(r.net.mvLines));
 });
 
+
+// ── the corridor follows the erf boundary, not the street line ──
+const distSeg = (p, a, b) => { const dx = b[0] - a[0], dy = b[1] - a[1], L2 = dx * dx + dy * dy || 1e-9, t = Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / L2)); return Math.hypot(p[0] - a[0] - dx * t, p[1] - a[1] - dy * t); };
+const distErf = (p, erven) => { let m = 1e9; for (const e of erven) for (let i = 0; i < e.poly.length; i++) m = Math.min(m, distSeg(p, e.poly[i], e.poly[(i + 1) % e.poly.length])); return m; };
+const shifted = (F0, dx, dy) => Object.assign({}, F0, { streets: F0.streets.map(s => Object.assign({}, s, { pts: s.pts.map(p => [p[0] + dx, p[1] + dy]) })) });
+// the cable points of a service that run along the kiosk's verge (not the first or last point: the kiosk and the marker)
+const verges = r => { const d = []; for (const e of r.erven) if (e.route && e.route.length > 3) for (const p of e.route.slice(1, -1)) d.push(distErf(p, r.erven)); return d; };
+ok('corridor: on an accurate street line the boundary mode (kd 2) gives the same layout as the street mode', () => {
+  const a = L.solve(F, { kgeo: 'boundary', kd: 2 }), b = L.solve(F, { kgeo: 'street' });
+  assert.strictEqual(a.kiosks.length, b.kiosks.length);
+  assert(Math.abs(a.stats.cable - b.stats.cable) < 0.01 * b.stats.cable, `cable ${a.stats.cable} v ${b.stats.cable}`);
+});
+ok('corridor: with the street line 4 m out the cables still run kd inside the boundary', () => {
+  const G = shifted(F, 3, 3), r = L.solve(G, { kgeo: 'boundary', kd: 2 }), old = L.solve(G, { kgeo: 'street' });
+  const near = verges(r).filter(d => d < 6), far = verges(old).filter(d => d < 6);
+  const bad = near.filter(d => Math.abs(d - 2) > 0.8).length / near.length, badOld = far.filter(d => Math.abs(d - 2) > 0.8).length / far.length;
+  assert(bad < 0.25, 'boundary mode: ' + (bad * 100).toFixed(0) + '% of the cable is off the corridor');
+  assert(badOld > bad + 0.2, 'street mode drifts: ' + (badOld * 100).toFixed(0) + '% v ' + (bad * 100).toFixed(0) + '%');
+});
+ok('corridor: kd is the distance from the boundary', () => {
+  const r1 = L.solve(F, { kgeo: 'boundary', kd: 1 }), r3 = L.solve(F, { kgeo: 'boundary', kd: 3 });
+  const m = r => { const d = verges(r).filter(x => x < 6); return d.reduce((a, b) => a + b, 0) / d.length; };
+  assert(m(r3) - m(r1) > 1, `mean ${m(r1).toFixed(2)} → ${m(r3).toFixed(2)}`);
+});
 console.log(n + ' passed');

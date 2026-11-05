@@ -37,6 +37,8 @@ const PlanLayoutUI = {
       ['junct', 'check', 'Lay ducts across every road at all junctions, even with no cables'],
       ['j110', 'range', 0, 4, 1, '', '110 mm ducts at an empty junction'], ['j160', 'range', 0, 2, 1, '', '160 mm ducts at an empty junction'],
       ['spare', 'range', 0, 3, 1, '', 'Spare 110 mm ducts per crossing']]],
+    ['Corridor', [['kgeo', 'select', [['boundary', 'the erf boundary (the street line can be out)'], ['street', 'the street line (how earlier layouts were made)']], 'Kiosks and cables are placed from'],
+      ['kd', 'range', 0, 4, 0.05, 'm', 'Corridor distance inside the boundary']]],
   ],
 
   // ───────── settings (saved in the project, so never trusted) ─────────
@@ -44,6 +46,7 @@ const PlanLayoutUI = {
     const s = AppState.planMarkup.settings;
     const L = (s.layout && typeof s.layout === 'object') ? s.layout : (s.layout = {});
     const D = PlanLayout.DEFAULTS, p = L.params = (L.params && typeof L.params === 'object') ? L.params : {};
+    if (Object.keys(p).length && p.kgeo === undefined) p.kgeo = 'street';          // a layout set up before the boundary corridor existed keeps running the way it did
     for (const [, rows] of this.CTRL) for (const r of rows) {
       const k = r[0], v = p[k];
       if (r[1] === 'range') { const n = parseFloat(v); p[k] = Number.isFinite(n) ? Math.max(r[2], Math.min(r[3], n)) : D[k]; }
