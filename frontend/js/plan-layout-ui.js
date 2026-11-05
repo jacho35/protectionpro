@@ -28,7 +28,9 @@ const PlanLayoutUI = {
       ['corner', 'select', [['start', 'start of the street'], ['end', 'far end of the street'], ['kiosk', 'nearest its kiosk']], 'Front corner'],
       ['front', 'select', [['longest', 'longest street edge'], ['shortest', 'shortest street edge']], 'A corner erf fronts its']]],
     ['Kiosks', [['kmode', 'select', [['rules', 'even runs (rule of thumb)'], ['opt', 'optimiser: fewest kiosks, then crossings, then cable']], 'Placement'],
-      ['n', 'range', 4, 8, 1, '', 'Max houses per kiosk'], ['maxc', 'range', 30, 150, 5, 'm', 'Max service cable'], ['worth', 'range', 0, 600, 10, 'm', 'A kiosk is worth up to this much extra service cable']]],
+      ['n', 'range', 4, 8, 1, '', 'Max houses per kiosk'], ['maxc', 'range', 30, 150, 5, 'm', 'Max service cable'], ['worth', 'range', 0, 600, 10, 'm', 'A kiosk is worth up to this much extra service cable'],
+      ['strN', 'range', 0, 10, 1, '', 'Longest LV string (kiosks, 0 = no limit)'],
+      ['strMode', 'select', [['fewest', 'fewest strings'], ['even', 'strings of similar size']], 'Cut long strings into']]],
     ['Fibre', [['m', 'range', 4, 12, 1, '', 'Erven per manhole'], ['maxmh', 'range', 40, 200, 10, 'm', 'Max distance between manholes'],
       ['fibre', 'select', [['opp', 'civil side, opposite the kiosks'], ['same', 'same side as the kiosks']], 'Manholes default to the'],
       ['topo', 'select', [['ring', 'every street, closed loops'], ['spur', 'spurs with T-offs from the entry']], 'Main duct layout']]],
@@ -41,11 +43,18 @@ const PlanLayoutUI = {
       ['kd', 'range', 0, 4, 0.05, 'm', 'Corridor distance inside the boundary']]],
   ],
 
+  // hover explanations for the settings that need one (native tooltip on the label and on the (?) mark)
+  TIPS: {
+    strN: 'The most kiosks fed in a line from one feeder off the mini-sub. A longer street is cut into several strings, each with its own breaker and its own cable back to the mini-sub along the same route. A shorter string keeps the head breaker and the cable small and the far-end earth-fault loop short, at the price of more cable and more ways on the mini-sub board. 0 = no limit: kiosks daisy-chain along the whole street.',
+    strMode: 'How a street with more kiosks than the limit is cut. Fewest strings: cut from the far end back, so as few feeders as possible leave the mini-sub, but the last string can be short (9 kiosks at a limit of 4 gives 4 + 4 + 1). Strings of similar size: the same number of feeders as the limit needs, but shared out evenly (9 kiosks gives 3 + 3 + 3), so the strings are loaded alike. On a branching network this can need more feeders.',
+  },
+
   // ───────── settings (saved in the project, so never trusted) ─────────
   cfg() {
     const s = AppState.planMarkup.settings;
     const L = (s.layout && typeof s.layout === 'object') ? s.layout : (s.layout = {});
     const D = PlanLayout.DEFAULTS, p = L.params = (L.params && typeof L.params === 'object') ? L.params : {};
+    if (Object.keys(p).length && p.strN === undefined) p.strN = 0;                    // a layout made before strings existed keeps its one tree
     if (Object.keys(p).length && p.kgeo === undefined) p.kgeo = 'street';          // a layout set up before the boundary corridor existed keeps running the way it did
     for (const [, rows] of this.CTRL) for (const r of rows) {
       const k = r[0], v = p[k];
@@ -1147,12 +1156,13 @@ const PlanLayoutUI = {
     const L = this.cfg(), p = L.params, r = this.result, st = r && r.stats, opt = this._opt;
     const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     const fmt = v => Math.round(v).toLocaleString('en');
+    const tipOf = k => this.TIPS[k] ? ` title="${esc(this.TIPS[k])}"` : '', qm = k => this.TIPS[k] ? ` <span${tipOf(k)} style="cursor:help;color:var(--text-muted);font-size:12px">(?)</span>` : '';
     const ctrl = ([k, kind, a, b, c, unit, label]) => {
-      if (kind === 'range') return `<label style="display:block">${esc(label)} <b data-v="${esc(k)}">${esc(p[k])}${unit ? ' ' + esc(unit) : ''}</b><input type="range" data-p="${esc(k)}" data-unit="${esc(unit)}" min="${a}" max="${b}" step="${c}" value="${esc(p[k])}" style="width:100%"></label>`;
+      if (kind === 'range') return `<label style="display:block"${tipOf(k)}>${esc(label)}${qm(k)} <b data-v="${esc(k)}">${esc(p[k])}${unit ? ' ' + esc(unit) : ''}</b><input type="range" data-p="${esc(k)}" data-unit="${esc(unit)}" min="${a}" max="${b}" step="${c}" value="${esc(p[k])}" style="width:100%"></label>`;
       if (kind === 'check') return `<label style="display:flex;gap:6px;align-items:flex-start"><input type="checkbox" data-p="${k}"${p[k] ? ' checked' : ''}> <span>${esc(a)}</span></label>`;
-      return `<label style="display:block">${esc(b)}<select data-p="${k}" style="width:100%">${a.map(o => `<option value="${esc(o[0])}"${p[k] === o[0] ? ' selected' : ''}>${esc(o[1])}</option>`).join('')}</select></label>`;
+      return `<label style="display:block"${tipOf(k)}>${esc(b)}${qm(k)}<select data-p="${k}" style="width:100%">${a.map(o => `<option value="${esc(o[0])}"${p[k] === o[0] ? ' selected' : ''}>${esc(o[1])}</option>`).join('')}</select></label>`;
     };
-    const dflt = PlanLayout.DEFAULTS, MOST = ['n', 'maxc'];                                      // the two kiosk settings shown in Rules as "most used"
+    const dflt = PlanLayout.DEFAULTS, MOST = ['n', 'maxc', 'strN'];                                      // the two kiosk settings shown in Rules as "most used"
     const grpChanged = rows => rows.some(r => !MOST.includes(r[0]) && String(p[r[0]]) !== String(dflt[r[0]]));
     const advHead = (name, changed, key) => `<summary style="cursor:pointer;font-weight:600;margin:2px 0">${name}${changed ? ` <span style="color:#b45309;font-weight:400;font-size:12px">● changed</span>` : ''}</summary>`;
     const resetBtn = (changed, key) => changed ? `<button type="button" class="plan-btn" data-act="resetgrp" data-g="${key}" style="align-self:flex-start;padding:1px 8px;font-size:12px">Reset this group</button>` : '';
@@ -1205,7 +1215,7 @@ const PlanLayoutUI = {
         ${kinfo.length ? `<div style="color:#b91c1c"><b>${kinfo.length} kerb chain${kinfo.length === 1 ? ' has' : 's have'} no partner</b> (red dashed):<div style="max-height:150px;overflow:auto;margin-top:3px">${kinfo.map(k => `<div style="display:flex;justify-content:space-between;align-items:center;gap:4px;border-bottom:1px solid var(--border,#ddd);padding:2px 0"><span>${k.name ? esc(k.name) : 'near ' + Math.round(k.at[0]) + ', ' + Math.round(k.at[1]) + ' m'} · ${Math.round(k.len)} m</span><span style="display:flex;gap:3px"><button type="button" class="plan-btn" data-act="kerbshow" data-i="${k.i}" style="padding:1px 6px;font-size:12px">show</button><button type="button" class="plan-btn" data-act="kerbone" data-i="${k.i}" style="padding:1px 6px;font-size:12px${KS.one === k.i ? ';outline:2px solid #2563eb' : ''}" title="A road with a kerb on this side only">road from this kerb</button></span></div>`).join('')}</div></div>` : '<div style="color:#15803d">Every kerb chain was paired.</div>'}
         <div style="display:flex;gap:6px"><button type="button" class="plan-btn" data-act="kerbcreate" style="font-weight:600">Create ${KS.streets.length} street${KS.streets.length === 1 ? '' : 's'}</button><button type="button" class="plan-btn" data-act="kerbcancel">Cancel</button></div></div>` : '';
     const tile = (b, s) => `<div style="border:1px solid var(--border,#ddd);border-radius:5px;padding:4px 6px"><b style="font-size:15px;display:block">${b}</b><span style="font-size:11px;color:var(--text-muted)">${s}</span></div>`;
-    const tiles = st ? [[st.erven, 'erven'], [r.net.subs.length, 'mini-sub' + (r.net.subs.length === 1 ? '' : 's')], [st.kiosks, `kiosks · ${st.avgPer.toFixed(1)} erven each on average · ${st.small} serve 2 erven or fewer · at most ${p.n}`], [fmt(st.cable) + ' m', 'service cable'], [fmt(st.cableMax) + ' m of ' + p.maxc + ' m', 'longest service · limit'], ...(r.vd && !r.vd.err ? [[r.vd.maxLv.toFixed(1) + '% / ' + r.vd.maxSvc.toFixed(1) + '%', 'worst LV feeder / service drop · limits ' + r.vd.V.limF + '% / ' + r.vd.V.limS + '%']] : []), [st.crossings, 'road crossings'], [st.provisional, 'junction ducts, empty'], [st.d110 + ' + ' + st.d160, '110 mm + 160 mm ducts'], [st.manholes + ' + ' + st.junctionManholes, 'manholes + junctions'], [fmt(st.trunk) + ' m', 'trunk duct'], [fmt(st.leads) + ' m', 'duct to erven'], [fmt(st.lv) + ' m', 'LV feeder'], [st.tOffs + ' / ' + st.spurEnds + ' / ' + st.loops, 'T-offs / spur ends / loops'], [st.baseline, 'crossings if unshared']].map(t => tile(...t)).join('') : '';
+    const tiles = st ? [[st.erven, 'erven'], [r.net.subs.length, 'mini-sub' + (r.net.subs.length === 1 ? '' : 's')], [st.kiosks, `kiosks · ${st.avgPer.toFixed(1)} erven each on average · ${st.small} serve 2 erven or fewer · at most ${p.n}`], [st.strings, 'LV strings off the mini-sub' + (p.strN ? ' · at most ' + p.strN + ' kiosks each' : '')], [fmt(st.cable) + ' m', 'service cable'], [fmt(st.cableMax) + ' m of ' + p.maxc + ' m', 'longest service · limit'], ...(r.vd && !r.vd.err ? [[r.vd.maxLv.toFixed(1) + '% / ' + r.vd.maxSvc.toFixed(1) + '%', 'worst LV feeder / service drop · limits ' + r.vd.V.limF + '% / ' + r.vd.V.limS + '%']] : []), [st.crossings, 'road crossings'], [st.provisional, 'junction ducts, empty'], [st.d110 + ' + ' + st.d160, '110 mm + 160 mm ducts'], [st.manholes + ' + ' + st.junctionManholes, 'manholes + junctions'], [fmt(st.trunk) + ' m', 'trunk duct'], [fmt(st.leads) + ' m', 'duct to erven'], [fmt(st.lv) + ' m', 'LV feeder'], [st.tOffs + ' / ' + st.spurEnds + ' / ' + st.loops, 'T-offs / spur ends / loops'], [st.baseline, 'crossings if unshared']].map(t => tile(...t)).join('') : '';
     const D = r && r.design, cfgVd = this.cfg().vd;
     const subName = id => /^LAYOUT_SUB/.test(id) ? 'Mini-sub' + (id.split('_')[2] ? ' ' + id.split('_')[2] : '') : id;
     const headOf = D ? new Map(D.heads.map(h => [h.kioskId, h])) : new Map();
@@ -1263,7 +1273,7 @@ const PlanLayoutUI = {
     const step3 = `<div><div style="font-weight:600;margin-bottom:3px">Preset</div><div style="display:grid;grid-template-columns:repeat(2,1fr);gap:3px">${Object.keys(this.PRESETS).map(k => pBtn(k, this.PRESET_NAMES[k])).join('')}${pBtn('custom', 'Custom')}</div><div style="font-size:12px;color:var(--text-muted);margin-top:3px">${preset === 'custom' ? 'Your own mix of the three kiosk settings below.' : this.PRESET_HINT[preset]}</div></div>
         ${secBlock}
         <div style="font-weight:600">Most used</div>
-        <div style="display:flex;flex-direction:column;gap:8px">${ctrl(kRow('n'))}${ctrl(kRow('maxc'))}${vdTx}${vdLv}</div>
+        <div style="display:flex;flex-direction:column;gap:8px">${ctrl(kRow('n'))}${ctrl(kRow('maxc'))}${ctrl(kRow('strN'))}${vdTx}${vdLv}</div>
         <details><summary style="cursor:pointer;font-weight:600">Advanced <span style="font-weight:400;font-size:12px;color:var(--text-muted)">6 groups · ${nChanged} changed</span></summary><div style="display:flex;flex-direction:column;gap:4px;padding-top:4px">${groups}${trenchGroup}${vdGroup}</div></details>
         <div style="font-size:12px;color:var(--text-muted)">${r ? 'The layout runs again when you change a setting.' : 'Nothing is drawn while you choose.'}</div>`;
     // ── step 4: review

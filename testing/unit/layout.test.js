@@ -180,9 +180,9 @@ ok('demand input: every erf once, the LV tree as fedFrom, the service length on 
 ok('mini-sub position: "opt" never has a worse worst kiosk than the middle; a placed mini-sub is kept', () => {
   const mom = (r) => { const up = new Map(r.net.lvLinks.map(l => [l.to, l])), cnt = new Map(); const c = k => { if (cnt.has(k)) return cnt.get(k); let x = k.members.length; r.net.lvLinks.filter(l => l.from === k).forEach(l => { x += c(l.to); }); cnt.set(k, x); return x; };
     let worst = 0; r.kiosks.forEach(k => { let m = 0, v = k; while (up.has(v)) { const l = up.get(v); m += c(l.to) * l.len; v = l.from; } worst = Math.max(worst, m); }); return worst; };
-  const mid = L.solve(F, { subMode: 'mid' }), opt = L.solve(F, { subMode: 'opt' });
+  const mid = L.solve(F, { subMode: 'mid', strN: 0 }), opt = L.solve(F, { subMode: 'opt', strN: 0 });
   assert(mom(opt) <= mom(mid) + 1e-6);
-  const fixed = L.solve(Object.assign({}, F, { subPts: [[mid.net.sub.x, mid.net.sub.y]] }), { subMode: 'opt' });
+  const fixed = L.solve(Object.assign({}, F, { subPts: [[mid.net.sub.x, mid.net.sub.y]] }), { subMode: 'opt', strN: 0 });
   assert(Math.hypot(fixed.net.sub.x - mid.net.sub.x, fixed.net.sub.y - mid.net.sub.y) < 1e-9);
 });
 ok('several mini-subs: each kiosk is fed by one, the LV tree splits, Demand gets one row per mini-sub', () => {
@@ -426,3 +426,27 @@ ok('corridor: kd is the distance from the boundary', () => {
   assert(m(r3) - m(r1) > 1, `mean ${m(r1).toFixed(2)} → ${m(r3).toFixed(2)}`);
 });
 console.log(n + ' passed');
+
+// ── LV strings: no string longer than strN kiosks ──
+const strSizes = (r) => {                                                           // kiosks in the string of each head
+  const kids = new Map(r.kiosks.map(k => [k, []])); r.net.lvLinks.forEach(l => { if (kids.has(l.from)) kids.get(l.from).push(l.to); });
+  const size = k => 1 + kids.get(k).reduce((a, c) => a + size(c), 0);
+  return r.net.lvLinks.filter(l => !kids.has(l.from)).map(l => size(l.to));
+};
+ok('strings: no string has more than strN kiosks, every kiosk is still fed once', () => {
+  const free = L.solve(F, { strN: 0 }), cut = L.solve(F, { strN: 4 });
+  assert.strictEqual(cut.net.lvLinks.length, cut.kiosks.length);
+  assert(Math.max(...strSizes(cut)) <= 4, 'sizes ' + strSizes(cut));
+  assert(strSizes(cut).length >= strSizes(free).length);
+  assert.strictEqual(cut.stats.strings, strSizes(cut).length);
+  cut.net.lvLinks.filter(l => !cut.kiosks.includes(l.from)).forEach(l => assert(Math.hypot(l.pts[0][0] - l.from.x, l.pts[0][1] - l.from.y) < 1e-6 && Math.abs(l.len - L.plen(l.pts)) < 1e-6));
+});
+ok('strings: strN 0 leaves the tree as it was; "even" never has more kiosks than strN nor fewer strings than "fewest"', () => {
+  const a = L.solve(F, { strN: 0 }), b = L.solve(F, { strN: 0, strMode: 'even' });
+  assert.deepStrictEqual(a.net.lvLinks.map(l => l.len), b.net.lvLinks.map(l => l.len));
+  const f = L.solve(F, { strN: 3 }), e = L.solve(F, { strN: 3, strMode: 'even' });
+  assert(Math.max(...strSizes(e)) <= 3 && strSizes(e).length >= strSizes(f).length);
+  assert(Math.max(...strSizes(e)) - Math.min(...strSizes(e)) <= Math.max(...strSizes(f)) - Math.min(...strSizes(f)));
+});
+
+
