@@ -44,7 +44,7 @@ ok('a tighter cable limit needs more kiosks', () => {
 });
 
 ok('sharing road crossings needs far fewer trenches than crossing separately', () => {
-  const sh = L.solve(F, { share: true }), no = L.solve(F, { share: false });
+  const sh = L.solve(F, { share: true, xpref: 'few' }), no = L.solve(F, { share: false, xpref: 'few' });
   assert(sh.stats.crossings < no.stats.crossings * 0.6, `${sh.stats.crossings} vs ${no.stats.crossings}`);
 });
 
@@ -241,7 +241,7 @@ const holds = (r, P, total, what) => {
   assert.strictEqual(r.stats.over, 0);
 };
 ok('kiosks: the neighbourhood needs far fewer than one solve per street gives, and none is thin', () => {
-  const P = { n: 6, maxc: 80 }, old = L.solve(F, { knet: false }), r = L.solve(F, P), s = stats(r);
+  const P = { n: 6, maxc: 80, xpref: 'few' }, old = L.solve(F, { knet: false, xpref: 'few' }), r = L.solve(F, P), s = stats(r);
   holds(r, Object.assign({}, L.DEFAULTS, P), F.erven.length, 'fixture');
   assert(s.k <= 15, `kiosks ${s.k}`); assert(s.k <= old.kiosks.length - 3, `${s.k} vs ${old.kiosks.length} before`);
   assert(s.small <= 1, `${s.small} kiosks serve 2 erven or fewer`);
@@ -425,7 +425,6 @@ ok('corridor: kd is the distance from the boundary', () => {
   const m = r => { const d = verges(r).filter(x => x < 6); return d.reduce((a, b) => a + b, 0) / d.length; };
   assert(m(r3) - m(r1) > 1, `mean ${m(r1).toFixed(2)} → ${m(r3).toFixed(2)}`);
 });
-console.log(n + ' passed');
 
 // ── LV strings: no string longer than strN kiosks ──
 const strSizes = (r) => {                                                           // kiosks in the string of each head
@@ -449,4 +448,12 @@ ok('strings: strN 0 leaves the tree as it was; "even" never has more kiosks than
   assert(Math.max(...strSizes(e)) - Math.min(...strSizes(e)) <= Math.max(...strSizes(f)) - Math.min(...strSizes(f)));
 });
 
-
+ok('crossings: "near" crosses at the boundary nearest each erf, no longer cable, shorter far-verge run than "few"', () => {
+  const run = r => { let t = 0, n = 0; r.erven.forEach(e => { if (e.via && e.marker) { t += Math.abs(e.via.s - L.project(e.road, e.marker[0], e.marker[1]).s); n++; } }); return { t, n }; };
+  const few = L.solve(F, { xpref: 'few' }), near = L.solve(F, { xpref: 'near' });
+  assert(near.stats.cable <= few.stats.cable * 1.03, `${near.stats.cable} vs ${few.stats.cable}`);
+  const a = run(few), b = run(near); assert(a.n > 0 && b.n === a.n);
+  assert(b.t < a.t * 0.8, `far-verge run ${Math.round(b.t)} m vs ${Math.round(a.t)} m`);
+  assert(near.stats.crossings >= few.stats.crossings);
+});
+console.log(n + ' passed');

@@ -35,7 +35,7 @@ const PlanLayout = (() => {
     strN: 4, strMode: 'fewest',                                     // LV strings: most kiosks on one string off the mini-sub (0 = no limit); 'fewest' = fewest strings, 'even' = strings of similar size
     subMode: 'opt', subs: 1,                                          // mini-sub: 'opt' = where the LV network drops least, 'mid' = nearest the middle
     m: 8, maxmh: 120, fibre: 'opp', topo: 'ring',              // fibre
-    share: true, xmode: 'bound', junct: false, j110: 2, j160: 1, spare: 0,   // crossings
+    share: true, xmode: 'bound', xpref: 'near', junct: false, j110: 2, j160: 1, spare: 0,   // crossings
   };
 
   // ───────────── small geometry ─────────────
@@ -304,13 +304,31 @@ const PlanLayout = (() => {
         opp.forEach((e, i) => { let bj = pick[0]; for (const j of pick) if (L[i][j].l < L[i][bj].l) bj = j; picks.set(e, { x: xs[bj], mc: L[i][bj].mc, l: L[i][bj].l }); used.add(bj); total += L[i][bj].l; });
         return { nx: used.size, total, picks, xs, nf: noF.length };
       };
-      let xs = bd.length ? bd : chosen.map(c => ({ s: c.cand.s })), res = evalXs(xs);
+      // xpref 'near': each service crosses at the boundary nearest its own marker, so the cable stays on the kiosk's side as long as it can and
+      // the far verge only carries the last stretch; services whose nearest boundary is the same share that crossing. 'few': fewest crossings.
+      const evalNear = xs => {
+        const picks = new Map(), used = new Set(); let total = 0, nf = 0;
+        opp.forEach(e => {
+          const cs = xs.map((x, j) => {
+            let l = 1e9, mc = null; for (const m of e.mcs) { const q = viaLen(e, chosen[e._k].cand, m, x); if (q < l) { l = q; mc = m; } }
+            return { j, l, mc, far: Math.abs(x.s - project(e.road, mc.pt[0], mc.pt[1]).s) };
+          });
+          const ok = cs.filter(c => c.l <= P.maxc), lmin = Math.min(...ok.map(c => c.l));          // no detour past the marker: only crossings that keep the cable at its shortest (+2 m)
+          let pick;
+          if (ok.length) pick = ok.filter(c => c.l <= lmin + 2).sort((p, q) => p.far - q.far || p.l - q.l)[0];
+          else { nf++; pick = cs.slice().sort((p, q) => p.l - q.l)[0]; }
+          picks.set(e, { x: xs[pick.j], mc: pick.mc, l: pick.l }); used.add(pick.j); total += pick.l;
+        });
+        return { nx: used.size, total, picks, xs, nf };
+      };
+      const evalPick = P.xpref === 'few' ? evalXs : evalNear;
+      let xs = bd.length ? bd : chosen.map(c => ({ s: c.cand.s })), res = evalPick(xs);
       if (res.nf && bd.length) {                                      // some erf has no boundary in reach: allow its own side boundaries and the kiosk stations
         const soft = bd.slice();
         const add = a => { if (!soft.some(o => Math.abs(o.s - a) <= 1.5)) soft.push({ s: a, soft: true }); };
         opp.forEach(e => { add(e.lo); add(e.hi); }); chosen.forEach(c => add(c.cand.s));
         soft.sort((p, q) => p.s - q.s);
-        const r2 = evalXs(soft); if (r2.nf < res.nf || (r2.nf === res.nf && r2.nx < res.nx)) res = r2;
+        const r2 = evalPick(soft); if (r2.nf < res.nf || (r2.nf === res.nf && r2.nx < res.nx)) res = r2;
       }
       return { nx: res.nx, total: total + res.total, picks: res.picks, xs: res.xs };
     }
