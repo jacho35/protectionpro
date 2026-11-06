@@ -586,3 +586,16 @@ body.dark-mode .lw-chip.bad { background: rgba(166,27,27,.35); color: #f5c2c2; }
   .lw-plan.lw-phone .plan-zone-row, .lw-plan.lw-phone .lw-lum, .lw-plan.lw-phone .plan-btn { min-height: 44px; }
   .lw-plan.lw-phone .rl-tab { min-height: 44px; }
 }
+
+/* Aiming dialog: Replace luminaire + polar curve */
+.sf-replace { border: 1px solid var(--border-color); border-radius: 6px; padding: 8px 10px; margin: 0 0 10px; display: flex; flex-wrap: wrap; gap: 12px; }
+.sf-replace legend { font-weight: 600; font-size: 13px; padding: 0 4px; }
+.sf-rep-main { flex: 1 1 380px; min-width: 0; }
+.sf-seg { display: flex; }
+.sf-seg .btn-small.active { background: var(--accent, #1d4ed8); color: #fff; }
+.sf-polars { display: flex; flex-wrap: wrap; gap: 10px; flex: 0 1 auto; }
+.sf-polar { font-size: 12px; max-width: 230px; }
+.sf-polar .pv-svg { width: 100%; height: auto; }
+.sf-repdone { background: var(--bg-tertiary); border-radius: 4px; padding: 6px 8px; font-size: 12px; margin: 4px 0; }
+.sf-table tr.sf-hit td { background: var(--bg-tertiary); font-weight: 600; }
+.sf-table tr.sf-sel td:first-child .sf-selbtn { background: var(--text-primary); color: var(--bg-primary); }
