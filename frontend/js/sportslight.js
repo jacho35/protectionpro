@@ -356,7 +356,7 @@ const SportsCalc = {
     const cameras = L.tv ? L.cameras.map(c => ({ name: c.name || 'Camera', x: +c.x || 0, y: +c.y || 0 })) : [];
     return Object.assign({
       field: { length: fr.L, width: fr.W, gridStep: L.grid > 0 ? L.grid : 0, mf: L.mf, maxTilt: L.maxTilt, groundRho: L.groundRho, evHeight: L.evHeight, targets, cameras },
-      masts, photometry,
+      masts, photometry, symmetric: !(this._aim && this._aim.sym === false),
     }, o);
   },
   // An /aim answer onto the field: aim points, output %, patterns, floods removed.
@@ -379,7 +379,7 @@ const SportsCalc = {
     const a = out.after, b = out.before;
     if (!a) return 'Aim points placed (no library luminaire to calculate with).';
     const pcts = [...new Set((out.masts || []).flatMap(m => m.floods.map(fl => fl.fluxPct)))];
-    return `Aiming: U₂ ${b ? b.U2.toFixed(2) + ' → ' : ''}${a.U2.toFixed(2)}, U₁ ${a.U1.toFixed(2)}, Ēh ${Math.round(a.Eav)} lx${a.GR != null ? `, GR ${a.GR.toFixed(0)}` : ''}`
+    return `${out.symmetric ? 'Symmetric aiming ' + (out.symmetry ? '(' + out.symmetry + ') ' : '') + '· ' : ''}Aiming: U₂ ${b ? b.U2.toFixed(2) + ' → ' : ''}${a.U2.toFixed(2)}, U₁ ${a.U1.toFixed(2)}, Ēh ${Math.round(a.Eav)} lx${a.GR != null ? `, GR ${a.GR.toFixed(0)}` : ''}`
       + (a.pass === true ? ' — every target met' : a.pass === false ? ' — not every target met' : '')
       + ((out.removed || []).length ? ` · ${out.removed.length} flood${out.removed.length === 1 ? '' : 's'} removed` : '')
       + (pcts.length === 1 && pcts[0] < 100 ? ` · output ${pcts[0]} %` : '')
@@ -971,6 +971,7 @@ const SportsCalc = {
             <button type="button" class="btn-small" data-a="pat-all"${L.masts.length ? '' : ' disabled'}>Apply to all masts</button>
             <button type="button" class="btn-small" data-a="pat-one"${m ? '' : ' disabled'}>Apply to this mast</button>
             <label class="plan-field-check" style="margin:0 0 4px"><input type="checkbox" data-sf-patopt${this._aim.optimise ? ' checked' : ''}> then optimise</label>
+            <label class="plan-field-check" style="margin:0 0 4px" title="Masts that mirror each other (about the halfway line, the long axis or both) are aimed as mirror images"><input type="checkbox" data-sf-sym${this._aim.sym === false ? '' : ' checked'}> keep symmetric</label>
             <span style="flex:1"></span>
             <label class="plan-field" style="margin:0"><span>After aiming</span><select data-sf-trim>${Object.entries(this.TRIMS).map(([k, n]) => `<option value="${k}"${k === L.aimTrim ? ' selected' : ''}>${n}</option>`).join('')}</select></label>
             <button type="button" class="btn-small" data-a="optimise">Optimise aiming (all masts)</button>
@@ -999,6 +1000,7 @@ const SportsCalc = {
       if (t.matches('[data-sf-pat]')) { this._aim.pattern = t.value; render(); return; }
       if (t.dataset.sfRep) { this._aim.rep[t.dataset.sfRep] = t.value; this._aim.repMsg = ''; this._aim.repUndo = null; render(); return; }
       if (t.matches('[data-sf-patopt]')) { this._aim.optimise = t.checked; return; }
+      if (t.matches('[data-sf-sym]')) { this._aim.sym = t.checked; return; }
       if (t.matches('[data-sf-trim]')) { this.set(room, 'aimTrim', t.value); PlanMarkup.markDirty(); return; }
       if (!m) return;
       if (t.dataset.m) { m[t.dataset.m] = t.dataset.m === 'name' ? t.value : (parseFloat(t.value) || 0); if (t.dataset.m === 'h') m.h = Math.max(1, m.h); }
