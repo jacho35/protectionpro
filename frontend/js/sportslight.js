@@ -913,7 +913,8 @@ const SportsCalc = {
     const f = PlanEngine.factor();
     if (!this.frame(room, f)) { UI.alert('Calibrate the plan and draw the field first.'); return; }
     const first = this.read(room).masts.find(x => x.id === mastId) || this.read(room).masts[0] || {};
-    this._aim = { roomId: room.id, mastId: first.id, pattern: this.AIM_PATTERNS[first.pattern] ? first.pattern : 'band', optimise: true };
+    this._aim = { roomId: room.id, mastId: first.id, pattern: this.AIM_PATTERNS[first.pattern] ? first.pattern : 'band', optimise: true,
+      sel: null, rep: { scope: 'mast', from: 'any', to: '' }, repMsg: '', repUndo: null };
     const ov = document.createElement('div');
     ov.className = 'modal plan-floor-modal';
     ov.style.display = 'flex'; ov.style.zIndex = '3000';
@@ -923,6 +924,12 @@ const SportsCalc = {
       const fr = this.frame(room, PlanEngine.factor()), L = this.read(room), m = mast();
       const libs = PhotoLib.list().filter(p => p.group !== 'indoor');
       const opts = (cur) => libs.map(p => `<option value="${escHtml(p.id)}"${p.id === cur ? ' selected' : ''}>${escHtml(PhotoLib.label(p))}</option>`).join('') + (PhotoLib.get(cur) ? '' : '<option value="" selected>(none)</option>');
+      const A = this._aim, R = A.rep, flo = m ? (m.floods || []) : [];
+      const selF = flo.find(x => x.id === A.sel) || flo[0];
+      if (selF) A.sel = selF.id;
+      if (!R.to || !PhotoLib.get(R.to)) R.to = ((libs.find(p => p.id !== (selF && selF.photoId)) || libs[0]) || {}).id || '';
+      const hits = this._repHits(room, m);
+      const hitSet = new Set(hits.map(x => x.id));
       let body = '<p class="sf-note">This field has no masts yet — use “Add masts…” in its panel.</p>';
       if (m) {
         const M = { x: +m.x || 0, y: +m.y || 0 }, h = Math.max(+m.h || 20, 0.5);
@@ -930,7 +937,7 @@ const SportsCalc = {
           const d = Math.hypot((+fl.ax || 0) - M.x, (+fl.ay || 0) - M.y);
           const tilt = Math.atan2(d, h) * 180 / Math.PI, dir = ((Math.atan2((+fl.ay || 0) - M.y, (+fl.ax || 0) - M.x) * 180 / Math.PI) + 360) % 360;
           const over = tilt > L.maxTilt + 1e-9;
-          return `<tr data-sf-fl="${escHtml(fl.id)}"${over ? ' class="sf-over"' : ''}><td>F${i + 1}</td>
+          return `<tr data-sf-fl="${escHtml(fl.id)}" class="${over ? 'sf-over ' : ''}${fl.id === A.sel ? 'sf-sel ' : ''}${hitSet.has(fl.id) ? 'sf-hit' : ''}"><td><button type="button" class="btn-small sf-selbtn" data-sf-sel aria-pressed="${fl.id === A.sel}" aria-label="Show the polar curve for F${i + 1}">F${i + 1}</button></td>
             <td><input type="number" data-fl="ax" value="${+fl.ax || 0}" step="0.5" aria-label="F${i + 1} aim x"></td>
             <td><input type="number" data-fl="ay" value="${+fl.ay || 0}" step="0.5" aria-label="F${i + 1} aim y"></td>
             <td><select data-fl="photoId" aria-label="F${i + 1} luminaire">${opts(fl.photoId)}</select></td>
@@ -970,6 +977,7 @@ const SportsCalc = {
             <button type="button" class="btn-small" data-a="compare"${L.masts.length ? '' : ' disabled'}>Compare patterns…</button>
           </div>
           <div class="sf-note">${escHtml(this.AIM_PATTERNS[this._aim.pattern].note)} <em>Apply to this mast</em> moves only this mast's floods; <em>After aiming</em> applies to the whole field.</div>
+          ${this._replaceHtml(room, m, libs, selF, hits)}
           ${body}
           <div class="ui-dialog-actions"><button class="btn-primary" data-a="done">Done — calculate</button></div>
         </div></div>`;
@@ -989,6 +997,7 @@ const SportsCalc = {
       const t = e.target, m = mast();
       if (t.matches('[data-sf-pick]')) { this._aim.mastId = t.value; const pm = (mast() || {}).pattern; if (this.AIM_PATTERNS[pm]) this._aim.pattern = pm; render(); PlanEngine.requestDraw({ fg: true }); return; }
       if (t.matches('[data-sf-pat]')) { this._aim.pattern = t.value; render(); return; }
+      if (t.dataset.sfRep) { this._aim.rep[t.dataset.sfRep] = t.value; this._aim.repMsg = ''; this._aim.repUndo = null; render(); return; }
       if (t.matches('[data-sf-patopt]')) { this._aim.optimise = t.checked; return; }
       if (t.matches('[data-sf-trim]')) { this.set(room, 'aimTrim', t.value); PlanMarkup.markDirty(); return; }
       if (!m) return;
@@ -1003,6 +1012,10 @@ const SportsCalc = {
     });
     ov.addEventListener('click', async (e) => {
       const b = e.target.closest('[data-a]'), m = mast();
+      const sc = e.target.closest('[data-sf-repscope]');
+      if (sc) { this._aim.rep.scope = sc.dataset.sfRepscope; this._aim.repMsg = ''; this._aim.repUndo = null; render(); return; }
+      const sb = e.target.closest('[data-sf-sel]');
+      if (sb) { this._aim.sel = sb.closest('[data-sf-fl]').dataset.sfFl; render(); return; }
       if (e.target.closest('[data-sf-flrm]') && m) {
         const id = e.target.closest('[data-sf-fl]').dataset.sfFl;
         m.floods = (m.floods || []).filter(x => x.id !== id);
@@ -1011,7 +1024,17 @@ const SportsCalc = {
       if (!b) return;
       const a = b.dataset.a, fr = this.frame(room, PlanEngine.factor()), L = this._L(room);
       if (a === 'done') { close(true); return; }
-      if (a === 'flood-add' && m) {
+      if (a === 'rep-apply') {
+        const hs = this._repHits(room, m), to = this._aim.rep.to;
+        if (!hs.length || !PhotoLib.get(to)) return;
+        this._aim.repUndo = hs.map(x => [x, x.photoId]);
+        hs.forEach(x => { x.photoId = to; });
+        const nm = PhotoLib.label(PhotoLib.get(to));
+        this._aim.repMsg = `${hs.length} flood${hs.length === 1 ? '' : 's'} now use ${nm}. Results are out of date.`;
+      } else if (a === 'rep-undo') {
+        (this._aim.repUndo || []).forEach(([x, id]) => { x.photoId = id; });
+        this._aim.repUndo = null; this._aim.repMsg = '';
+      } else if (a === 'flood-add' && m) {
         const last = (m.floods || [])[(m.floods || []).length - 1];
         (m.floods = m.floods || []).push({ id: this._seq(room, 'f'), ax: +(fr.L / 2).toFixed(1), ay: +(fr.W / 2).toFixed(1), photoId: last ? last.photoId : ((PhotoLib.list().find(p => p.group !== 'indoor') || {}).id || ''), fluxPct: 100 });
       } else if (a === 'mirror' && m) {
@@ -1044,6 +1067,47 @@ const SportsCalc = {
     });
     document.body.appendChild(ov);
     PlanEngine.requestDraw({ fg: true });
+  },
+
+  // ─── Replace luminaire (aiming dialog) ───
+  // The floods a replacement would change: this mast or every mast, matching the "Replace" pick.
+  _repHits(room, m) {
+    const R = this._aim.rep, masts = R.scope === 'all' ? this.read(room).masts : (m ? [m] : []);
+    return masts.flatMap(x => x.floods || []).filter(fl => (R.from === 'any' || fl.photoId === R.from) && fl.photoId !== R.to);
+  },
+  _repPolar(id, title) {
+    const p = PhotoLib.get(id);
+    if (!p) return `<div class="sf-polar"><b>${escHtml(title)}</b><p class="sf-note">No library luminaire.</p></div>`;
+    const bm = PhotoView.beam(p, 0, 180, 0.5), fd = PhotoView.beam(p, 0, 180, 0.1);
+    const deg = (b) => b ? Math.round(b.angle) + '°' : '–';
+    return `<div class="sf-polar"><b>${escHtml(title)}</b> <span class="sf-note">${escHtml(PhotoLib.label(p))}</span>${PhotoView.polarSvg(p, { R: 80 })}
+      <div class="sf-note">Beam (50 %) ${deg(bm)} · Field (10 %) ${deg(fd)}</div></div>`;
+  },
+  _replaceHtml(room, m, libs, selF, hits) {
+    const A = this._aim, R = A.rep, L = this.read(room);
+    const used = [...new Set(L.masts.flatMap(x => (x.floods || []).map(f => f.photoId)).filter(id => id && PhotoLib.get(id)))];
+    const opt = (id, cur) => `<option value="${escHtml(id)}"${id === cur ? ' selected' : ''}>`;
+    const where = R.scope === 'all' ? 'all masts' : escHtml((m && m.name) || 'this mast');
+    const n = hits.length, nm = new Set(L.masts.filter(x => (x.floods || []).some(f => hits.includes(f))).map(x => x.id)).size;
+    const summary = !m && R.scope !== 'all' ? 'No mast selected.' : n ? `${n} flood${n === 1 ? '' : 's'} on ${nm} mast${nm === 1 ? '' : 's'} will change.` : `No floods on ${where} differ from the luminaire chosen.`;
+    const cur = selF ? selF.photoId : '';
+    return `<fieldset class="sf-replace"><legend>Replace luminaire</legend>
+      <div class="sf-rep-main">
+        <div class="sf-toolbar">
+          <div role="group" aria-label="Scope" class="sf-seg">
+            <button type="button" class="btn-small${R.scope === 'mast' ? ' active' : ''}" data-sf-repscope="mast" aria-pressed="${R.scope === 'mast'}">This mast</button>
+            <button type="button" class="btn-small${R.scope === 'all' ? ' active' : ''}" data-sf-repscope="all" aria-pressed="${R.scope === 'all'}">All masts</button>
+          </div>
+          <label class="plan-field" style="margin:0"><span>Replace</span><select data-sf-rep="from"><option value="any"${R.from === 'any' ? ' selected' : ''}>Every flood</option>${used.map(id => opt(id, R.from) + 'Only ' + escHtml(PhotoLib.label(PhotoLib.get(id))) + '</option>').join('')}</select></label>
+          <label class="plan-field" style="margin:0"><span>With</span><select data-sf-rep="to">${libs.map(p => opt(p.id, R.to) + escHtml(PhotoLib.label(p)) + '</option>').join('')}</select></label>
+          <button type="button" class="btn-primary" data-a="rep-apply"${n ? '' : ' disabled'}>Replace on ${R.scope === 'all' ? 'all masts' : escHtml((m && m.name) || 'mast')}</button>
+        </div>
+        <div class="sf-note" aria-live="polite">${summary}</div>
+        ${A.repMsg ? `<div class="sf-repdone" role="status">${escHtml(A.repMsg)} <button type="button" class="btn-small" data-a="rep-undo">Undo</button></div>` : ''}
+        <div class="sf-note">Aim points, output % and mast heights are kept and floods are not added or removed, so check the results afterwards: a brighter or dimmer fitting may need a different flood count. Click a flood's F number to see its polar curve.</div>
+      </div>
+      <div class="sf-polars">${this._repPolar(cur, selF ? 'Current F' + ((m.floods || []).indexOf(selF) + 1) : 'Current')}${R.to && R.to !== cur ? this._repPolar(R.to, 'With') : ''}</div>
+      </fieldset>`;
   },
 
   // Section through the mast along each beam: height against distance from the mast.
