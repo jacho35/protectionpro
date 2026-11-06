@@ -123,13 +123,129 @@ const LightReport = {
     return Object.values(groups);
   },
 
+  // ─── Sports field: aiming + 3D pages ───
+  MAST_COLOURS: ['#1d4ed8', '#c2410c', '#0f766e', '#7e22ce', '#b91c1c', '#4d7c0f', '#0e7490', '#a16207'],
+  MAST_DASH: [[], [16, 6], [3, 6], [20, 6, 3, 6], [], [16, 6], [3, 6], [20, 6, 3, 6]],
+
+  // One row per flood on every mast: throw / tilt / direction as in the aiming dialog.
+  _aimRows(room) {
+    const L = SportsCalc.read(room), rows = [], masts = [];
+    for (const m of L.masts) {
+      const h = Math.max(+m.h || 20, 0.5), mx = +m.x || 0, my = +m.y || 0;
+      let worst = 0;
+      (m.floods || []).forEach((fl, i) => {
+        const ax = +fl.ax || 0, ay = +fl.ay || 0, d = Math.hypot(ax - mx, ay - my);
+        const tilt = Math.atan2(d, h) * 180 / Math.PI, dir = ((Math.atan2(ay - my, ax - mx) * 180 / Math.PI) + 360) % 360;
+        const ph = PhotoLib.get(fl.photoId);
+        worst = Math.max(worst, tilt);
+        rows.push({ mast: m.name || m.id, first: i === 0, n: i + 1, lamp: [mx, my], aim: [ax, ay], lum: ph ? ph.name : '(no library luminaire)',
+          pct: SportsCalc._pct(fl.fluxPct), thr: Math.hypot(d, h), tilt, dir, over: tilt > L.maxTilt + 1e-9 });
+      });
+      masts.push({ name: m.name || m.id, n: (m.floods || []).length, h, tilt: worst });
+    }
+    return { rows, masts, maxTilt: L.maxTilt };
+  },
+
+  // The field with every mast, an aim line per flood and the aim points → { png, w, h } (null if no frame).
+  _aimPlanPng(it) {
+    try {
+      const fr = SportsCalc.frame(it.room, it.factor);
+      if (!fr) return null;
+      const L = SportsCalc.read(it.room);
+      const xs = [0, fr.L], ys = [0, fr.W];
+      for (const m of L.masts) { xs.push(+m.x || 0); ys.push(+m.y || 0); for (const fl of (m.floods || [])) { xs.push(+fl.ax || 0); ys.push(+fl.ay || 0); } }
+      let x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+      const pad = Math.max(x1 - x0, y1 - y0) * 0.06; x0 -= pad; x1 += pad; y0 -= pad; y1 += pad;
+      const CW = 1100, s = CW / (x1 - x0), PH = Math.ceil((y1 - y0) * s), LEG = 56;
+      const cv = document.createElement('canvas'); cv.width = CW; cv.height = PH + LEG;
+      const ctx = cv.getContext('2d');
+      ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height);
+      ctx.save();
+      ctx.setTransform(s, 0, 0, s, -x0 * s, -y0 * s);
+      ctx.fillStyle = '#e8f1e4'; ctx.fillRect(0, 0, fr.L, fr.W);
+      ctx.lineWidth = 2 / s; ctx.strokeStyle = '#475569'; ctx.strokeRect(0, 0, fr.L, fr.W);
+      ctx.lineWidth = 1.5 / s; ctx.beginPath(); ctx.moveTo(fr.L / 2, 0); ctx.lineTo(fr.L / 2, fr.W); ctx.stroke();
+      const col = (i) => this.MAST_COLOURS[i % this.MAST_COLOURS.length], dash = (i) => this.MAST_DASH[i % this.MAST_DASH.length];
+      L.masts.forEach((m, mi) => {
+        const mx = +m.x || 0, my = +m.y || 0;
+        (m.floods || []).forEach((fl, i) => {
+          const ax = +fl.ax || 0, ay = +fl.ay || 0, r = 7 / s;
+          ctx.strokeStyle = col(mi); ctx.lineWidth = 2 / s; ctx.setLineDash(dash(mi).map(d => d / s));
+          ctx.beginPath(); ctx.moveTo(mx, my); ctx.lineTo(ax, ay); ctx.stroke(); ctx.setLineDash([]);
+          ctx.beginPath(); ctx.moveTo(ax, ay - r); ctx.lineTo(ax + r, ay); ctx.lineTo(ax, ay + r); ctx.lineTo(ax - r, ay); ctx.closePath();
+          ctx.fillStyle = '#fff'; ctx.fill(); ctx.lineWidth = 2 / s; ctx.stroke();
+          ctx.fillStyle = '#1a1a2e'; ctx.font = `${15 / s}px Helvetica, Arial, sans-serif`; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+          ctx.fillText(`${m.name || m.id}-F${i + 1}`, ax + 10 / s, ay - 8 / s);
+        });
+      });
+      L.masts.forEach((m, mi) => {
+        const mx = +m.x || 0, my = +m.y || 0;
+        ctx.beginPath(); ctx.arc(mx, my, 9 / s, 0, Math.PI * 2); ctx.fillStyle = col(mi); ctx.fill(); ctx.lineWidth = 2 / s; ctx.strokeStyle = '#1a1a2e'; ctx.stroke();
+        ctx.fillStyle = '#1a1a2e'; ctx.font = `bold ${20 / s}px Helvetica, Arial, sans-serif`; ctx.textAlign = 'center';
+        ctx.fillText(m.name || m.id, mx, my + (my < fr.W / 2 ? -16 : 32) / s);
+      });
+      ctx.restore();
+      // key
+      ctx.font = '22px Helvetica, Arial, sans-serif'; ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+      let kx = 10;
+      L.masts.forEach((m, mi) => {
+        const lab = `${m.name || m.id} (${(m.floods || []).length})`, w = ctx.measureText(lab).width;
+        if (kx + 60 + w > CW) return;
+        ctx.strokeStyle = col(mi); ctx.lineWidth = 4; ctx.setLineDash(dash(mi)); ctx.beginPath(); ctx.moveTo(kx, PH + LEG / 2); ctx.lineTo(kx + 46, PH + LEG / 2); ctx.stroke(); ctx.setLineDash([]);
+        ctx.fillStyle = '#1a1a2e'; ctx.fillText(lab, kx + 54, PH + LEG / 2);
+        kx += 54 + w + 28;
+      });
+      return { png: cv.toDataURL('image/png'), w: cv.width, h: cv.height };
+    } catch (_) { return null; }
+  },
+
+  // The field in 3D — 'model' (masts, floods, aim lines) or 'render' (lit at night) — drawn off screen with
+  // the Lighting tab's own 3D drawing. cam: 'saved' (the 3D tab's angle) | 'corner' (from the first mast) | 'above'.
+  _view3dPng(it, mode, cam) {
+    let host = null, v = null;
+    try {
+      if (typeof View3D === 'undefined' || typeof Sports3D === 'undefined') return null;
+      const room = it.room, B = Sports3D.bounds(room), C = Sports3D._ctx(room);
+      if (!B || !C) return null;
+      const CW = 1100, CH = 680;
+      host = document.createElement('div');
+      host.style.cssText = `position:fixed;left:-12000px;top:0;width:${CW}px;height:${CH}px;visibility:hidden`;
+      document.body.appendChild(host);
+      v = new View3D(host, {});
+      v.canvas.style.cssText = 'width:100%;height:100%;display:block';
+      const lit = typeof Light3D !== 'undefined';
+      const L3 = { mode, expo: lit ? Light3D.expo : 1.5, sel: null, cones: mode === 'model', walls: 'none' };
+      v.onDraw = (vv) => Sports3D.draw(vv, room, L3);
+      v.fit(B.min, B.max);
+      if (cam === 'above') v.setView(0, 89.5);
+      else if (cam === 'corner' && C.L.masts.length) {
+        const m = C.L.masts[0], M = C.W(+m.x || 0, +m.y || 0), c = C.W(C.fr.L / 2, C.fr.W / 2);
+        const dx = M[0] - c[0], dy = M[1] - c[1], d = Math.hypot(dx, dy) || 1;
+        v.setView(Math.atan2(-dx / d, -dy / d) * 180 / Math.PI, 28);
+      } else if (lit && Light3D.view && Number.isFinite(Light3D.view.yaw)) v.setView(Light3D.view.yaw, Light3D.view.pitch);
+      else v.setView(-32, 36);
+      if (v._raf) { cancelAnimationFrame(v._raf); v._raf = 0; }
+      v.zoom = 1;
+      v.draw();
+      const out = document.createElement('canvas'); out.width = CW; out.height = CH;
+      const g = out.getContext('2d');
+      g.fillStyle = mode === 'render' ? '#0a0d12' : '#ffffff'; g.fillRect(0, 0, CW, CH);
+      g.drawImage(v.canvas, 0, 0, CW, CH);
+      return { png: out.toDataURL('image/jpeg', 0.92), w: CW, h: CH };
+    } catch (_) { return null; }
+    finally {
+      try { if (v && v._ro) v._ro.disconnect(); if (v && v._raf) cancelAnimationFrame(v._raf); } catch (_) { /* gone */ }
+      if (host) host.remove();
+    }
+  },
+
   // What the dialog remembers between reports (this session).
   _last: null,
 
   // The export dialog: which zones, which sections, what each zone's page holds.
   // Resolves the options, or null when cancelled.
   askOptions(all) {
-    const L = this._last || { summary: true, energy: true, detail: true, plot: true, checks: true, lums: true, assump: true, method: true };
+    const L = Object.assign({ summary: true, energy: true, detail: true, plot: true, checks: true, lums: true, assump: true, method: true, aimTable: true, aimPlan: true, v3dModel: true, v3dRender: true, cam: 'saved' }, this._last || {});
     const ready = (r) => !!(r.res || r.eres);
     const sel = new Set(this._last && this._last.ids ? this._last.ids.filter(id => all.some(r => r.id === id && ready(r))) : all.filter(ready).map(r => r.id));
     const floors = [...new Set(all.map(r => r.floor))];
@@ -141,7 +257,7 @@ const LightReport = {
       const chk = (k, label, sub) => `<label class="lrp-check"><input type="checkbox" data-opt="${k}"${L[k] ? ' checked' : ''}><span>${label}${sub ? `<small>${sub}</small>` : ''}</span></label>`;
       const zoneRows = floors.map(fl => `<div class="lrp-floor">${escHtml(fl || 'Floor')}</div>` + all.filter(r => r.floor === fl).map(r => {
         const ok = ready(r), vc = r.verdict === 'Pass' ? 'ok' : r.verdict === 'Fail' ? 'bad' : '';
-        return `<label class="lrp-zone${ok ? '' : ' off'}"><input type="checkbox" data-zone="${escHtml(r.id)}"${ok ? '' : ' disabled'}${sel.has(r.id) ? ' checked' : ''}>
+        return `<label class="lrp-zone${ok ? '' : ' off'}"><input type="checkbox" data-zone="${escHtml(r.id)}" data-kind="${escHtml(r.kind)}"${ok ? '' : ' disabled'}${sel.has(r.id) ? ' checked' : ''}>
           <span><b>${escHtml(r.name)}</b><small>${LightingWS.KIND[r.kind]}${ok ? '' : ' · not calculated'}</small></span>
           <span class="lrp-v ${vc}">${ok ? escHtml(r.verdict) + (r.stale ? ' (out of date)' : '') : ''}</span></label>`;
       }).join('')).join('');
@@ -167,6 +283,17 @@ const LightReport = {
               ${chk('assump', 'Assumptions and notes')}
             </div>
             ${chk('method', 'Method and limits', 'Closing page')}
+            <div class="lrp-sports" data-sports>
+              <div class="lrp-head"><b>Sports field pages</b><small data-role="sportsnote"></small></div>
+              <div class="lrp-subhead">Aiming of every flood</div>
+              ${chk('aimTable', 'Aiming table', 'Every flood on every mast: aim point, luminaire, output %, throw, tilt, direction')}
+              ${chk('aimPlan', 'Aiming on the plan', 'Masts, aim lines and aim points drawn on the field')}
+              <div class="lrp-subhead">3D views</div>
+              ${chk('v3dModel', '3D model view', 'Masts, floods and aim lines as modelled')}
+              ${chk('v3dRender', '3D rendered light view', 'The field lit at night from the calculated result')}
+              <label class="lrp-cam">Camera for the 3D views
+                <select data-cam>${[['saved', 'As in the 3D tab'], ['corner', 'From a corner mast'], ['above', 'From above']].map(([k, n]) => `<option value="${k}"${L.cam === k ? ' selected' : ''}>${n}</option>`).join('')}</select></label>
+            </div>
           </div>
         </div>
         <div class="lrp-foot"><span class="lrp-count" data-role="count" aria-live="polite"></span>
@@ -174,11 +301,15 @@ const LightReport = {
           <button type="button" class="btn-primary" data-role="ok">Create PDF</button></div>
       </div>`;
       const zones = () => [...ov.querySelectorAll('[data-zone]:not(:disabled)')];
-      const opts = () => { const o = {}; ov.querySelectorAll('[data-opt]').forEach(c => { o[c.dataset.opt] = c.checked; }); o.ids = zones().filter(c => c.checked).map(c => c.dataset.zone); return o; };
+      const opts = () => { const o = {}; ov.querySelectorAll('[data-opt]').forEach(c => { o[c.dataset.opt] = c.checked; }); o.ids = zones().filter(c => c.checked).map(c => c.dataset.zone); o.cam = ov.querySelector('[data-cam]').value; return o; };
       const refresh = () => {
         const o = opts();
         ov.querySelector('[data-sub]').classList.toggle('dim', !o.detail);
         ov.querySelectorAll('[data-sub] input').forEach(c => { c.disabled = !o.detail; });
+        const nSports = zones().filter(c => c.checked && c.dataset.kind === 'sports').length, spOff = !o.detail || !nSports;
+        ov.querySelector('[data-sports]').classList.toggle('dim', spOff);
+        ov.querySelectorAll('[data-sports] input, [data-sports] select').forEach(c => { c.disabled = spOff || (c.matches('[data-cam]') && !(o.v3dModel || o.v3dRender)); });
+        ov.querySelector('[data-role="sportsnote"]').textContent = nSports ? `${nSports} sports field${nSports === 1 ? '' : 's'} selected` : 'select a sports field to use these';
         const bad = !o.ids.length || !(o.summary || o.energy || o.detail || o.method);
         ov.querySelector('[data-role="ok"]').disabled = bad;
         ov.querySelector('[data-role="count"]').textContent = o.ids.length ? `${o.ids.length} zone${o.ids.length === 1 ? '' : 's'} selected` : 'Select at least one zone';
@@ -413,6 +544,63 @@ const LightReport = {
         doc.setFontSize(8); doc.setTextColor(138, 90, 0);
         doc.text(warns.map(w => t('Note: ' + w)), M, next(5), { maxWidth: W });
         doc.setTextColor(26, 26, 46);
+      }
+
+      // sports field: aiming of every flood, and the 3D views
+      if (it.kind === 'sports' && (opts.aimTable || opts.aimPlan || opts.v3dModel || opts.v3dRender)) {
+        let sub = 0;
+        const page = (title) => {
+          doc.addPage(); doc.lastAutoTable = null; y = M + 4;
+          doc.setFont('helvetica', 'bold'); doc.setFontSize(13); doc.setTextColor(26, 26, 46);
+          doc.text(t(`${detailSec}.${n}  ${it.name}`), M, y);
+          doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(90);
+          doc.text(t(`${LightingWS.KIND[it.kind]}  |  ${it.floor}`), M, y + 5);
+          y += 11;
+          y = heading(`${detailSec}.${n}.${++sub}  ${title}`, y, 20, 11) + 3;
+        };
+        const aim = (opts.aimTable || opts.aimPlan) ? this._aimRows(it.room) : null;
+        const para = (txt) => { doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(60); const ln = doc.splitTextToSize(t(txt), W); doc.text(ln, M, y); y += ln.length * 4.2 + 2; doc.setTextColor(26, 26, 46); };
+        if (opts.aimTable) {
+          page('Aiming of every flood');
+          para(`Aim points are in field metres: x along the length from the first corner, y across. Throw is the distance from the luminaire to its aim point; tilt is measured from straight down (limit ${aim.maxTilt} deg, rows over it in red); direction from the length axis.`);
+          if (aim.rows.length) {
+            tbl({ startY: y, head: [['Mast', 'Flood', 'Mast x, y (m)', 'Aim x, y (m)', 'Luminaire', 'Output', 'Throw (m)', 'Tilt (deg)', 'Dir (deg)']],
+              body: aim.rows.map(r => [r.first ? t(r.mast) : '', 'F' + r.n, r.first ? `${f1(r.lamp[0])}, ${f1(r.lamp[1])}` : '', `${f1(r.aim[0])}, ${f1(r.aim[1])}`, t(r.lum), `${Math.round(r.pct)} %`, f1(r.thr), f1(r.tilt), Math.round(r.dir)]),
+              styles: { fontSize: 8, cellPadding: 1.3 },
+              columnStyles: { 6: { halign: 'right' }, 7: { halign: 'right' }, 8: { halign: 'right' } },
+              didParseCell: (d) => { if (d.section === 'body' && aim.rows[d.row.index] && aim.rows[d.row.index].over && d.column.index === 7) { d.cell.styles.textColor = [179, 38, 30]; d.cell.styles.fontStyle = 'bold'; } if (d.section === 'body' && d.column.index === 0) d.cell.styles.fontStyle = 'bold'; } });
+            y = next(6);
+            y = heading('Per mast', y, 30, 10) + 1;
+            tbl({ startY: y, head: [['Mast', 'Floods', 'Height (m)', 'Steepest tilt (deg)']], tableWidth: 110,
+              body: aim.masts.map(m => [t(m.name), m.n, f1(m.h), f1(m.tilt)]), columnStyles: { 0: { fontStyle: 'bold' } } });
+          } else para('No floods on any mast.');
+        }
+        if (opts.aimPlan) {
+          const pl = this._aimPlanPng(it);
+          page('Aiming on the plan');
+          if (pl) {
+            para('Each line runs from a mast to the point one of its floods is aimed at. Diamonds are the aim points, labelled mast and flood; the aiming table lists the same figures.');
+            const h = Math.min(W * pl.h / pl.w, PH - M - y - 12), w = h * pl.w / pl.h;
+            doc.addImage(pl.png, 'PNG', M, y, w, h);
+          } else para('The plan could not be drawn: calibrate the plan scale and draw the field first.');
+        }
+        if (opts.v3dModel || opts.v3dRender) {
+          const views = [];
+          if (opts.v3dModel) views.push(['Model', this._view3dPng(it, 'model', opts.cam)]);
+          if (opts.v3dRender) views.push(['Rendered light, at night', this._view3dPng(it, 'render', opts.cam)]);
+          page(views.length > 1 ? '3D views' : '3D view');
+          const camName = { saved: 'camera as in the 3D tab', corner: 'camera at the first mast', above: 'camera from above' }[opts.cam] || '';
+          const room = Math.floor((PH - M - y - 8 * views.length) / views.length);
+          for (const [name, im] of views) {
+            doc.setFont('helvetica', 'bold'); doc.setFontSize(9.5); doc.text(t(`${name}  (${camName})`), M, y);
+            y += 2;
+            if (im) {
+              const h = Math.min(W * im.h / im.w, room - 4), w = h * im.w / im.h;
+              doc.addImage(im.png, 'JPEG', M, y, w, h);
+              y += h + 8;
+            } else { doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.text('This view could not be drawn.', M, y + 5); y += 12; }
+          }
+        }
       }
     }
 

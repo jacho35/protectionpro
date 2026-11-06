@@ -599,3 +599,10 @@ body.dark-mode .lw-chip.bad { background: rgba(166,27,27,.35); color: #f5c2c2; }
 .sf-repdone { background: var(--bg-tertiary); border-radius: 4px; padding: 6px 8px; font-size: 12px; margin: 4px 0; }
 .sf-table tr.sf-hit td { background: var(--bg-tertiary); font-weight: 600; }
 .sf-table tr.sf-sel td:first-child .sf-selbtn { background: var(--text-primary); color: var(--bg-primary); }
+
+/* Lighting report dialog: sports field pages */
+.lrp-sports { margin-top: 8px; border: 1px solid var(--border-color); border-radius: 6px; padding: 8px 10px; }
+.lrp-sports.dim { opacity: .55; }
+.lrp-sports .lrp-head small { margin-left: 8px; font-weight: 400; color: var(--text-secondary); }
+.lrp-subhead { font-size: 12px; font-weight: 600; color: var(--text-secondary); margin: 6px 0 2px; }
+.lrp-cam { display: flex; flex-direction: column; gap: 4px; font-size: 12px; margin-top: 6px; max-width: 260px; }
