@@ -3,6 +3,7 @@
 import hashlib
 import os
 import secrets
+import threading
 import time
 from datetime import datetime, timedelta, timezone
 
@@ -23,6 +24,11 @@ from ..auth import (
 )
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+# Serialises the "is this the first user?" decision with the insert that follows it, so
+# two simultaneous sign-ups on an empty server cannot both become administrator.
+# (One uvicorn worker; the DB unique email constraint backs it up.)
+_first_user_lock = threading.Lock()
 
 
 # ── Rate limiting ──
@@ -107,6 +113,11 @@ def _token_for(user: User) -> Token:
 def register(data: RegisterRequest, background: BackgroundTasks, request: Request,
              db: Session = Depends(get_db)):
     _ip_limit(request, "register")
+    with _first_user_lock:
+        return _register_locked(data, background, db)
+
+
+def _register_locked(data: RegisterRequest, background: BackgroundTasks, db: Session):
     email = _norm_email(data.email)
     if "@" not in email or len(email) < 3:
         raise HTTPException(status_code=400, detail="A valid email is required")
@@ -114,6 +125,10 @@ def register(data: RegisterRequest, background: BackgroundTasks, request: Reques
         raise HTTPException(status_code=400, detail="An account with that email already exists")
 
     first_user = db.query(User).count() == 0
+    setup_key = os.environ.get("BOOTSTRAP_TOKEN", "")
+    if first_user and setup_key and not secrets.compare_digest(
+            (data.invite_code or "").strip().encode(), setup_key.encode()):
+        raise HTTPException(status_code=403, detail="A setup key is required to create the first account")
 
     invite = None
     if not first_user:
@@ -223,8 +238,12 @@ def change_password(data: ChangePasswordRequest, user: User = Depends(get_curren
 
 
 @router.post("/logout")
-def logout(user: User = Depends(get_current_user)):
-    # Stateless JWT — the client discards the token. Endpoint exists for symmetry.
+def logout(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    # Tokens are stateless JWTs, so ending a session means bumping the account's
+    # token version: this signs the account out everywhere, and a copied token stops working.
+    user.token_version = (user.token_version or 0) + 1
+    db.commit()
+    revoke_access(user.id)
     return {"ok": True}
 
 

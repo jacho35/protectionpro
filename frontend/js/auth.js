@@ -182,6 +182,7 @@ const Auth = {
     errEl.textContent = '';
     if (!email || !password) { errEl.textContent = 'Enter an email and password.'; return; }
     if (password.length < 8) { errEl.textContent = 'Password must be at least 8 characters.'; return; }
+    if (new TextEncoder().encode(password).length > 72) { errEl.textContent = 'Password is too long (72 bytes at most).'; return; }
     try {
       const res = await API.register({ email, password, name, invite_code: invite || null });
       this._onAuthSuccess(res);
@@ -356,6 +357,7 @@ const Auth = {
     msg.className = 'auth-error';
     if (!cur.value) { msg.textContent = 'Enter your current password.'; return; }
     if (nw.value.length < 8) { msg.textContent = 'The new password must be at least 8 characters.'; return; }
+    if (new TextEncoder().encode(nw.value).length > 72) { msg.textContent = 'The new password is too long (72 bytes at most).'; return; }
     if (nw.value !== cf.value) { msg.textContent = 'The two new passwords don’t match.'; return; }
     try {
       const res = await API.changePassword(cur.value, nw.value);
