@@ -16,6 +16,7 @@ from ..models.schemas import (
     InviteCreate, InviteOut, InviteCreated, ForgotRequest, ResetRequest, ChangePasswordRequest, AdminRoleRequest, ApproverRequest, ActiveRequest, ResetLinkRequest,
     DeviceStartRequest, DevicePollRequest,
 )
+from .collab import revoke_access
 from ..auth import (
     hash_password, verify_password, create_access_token,
     get_current_user, require_admin,
@@ -124,7 +125,7 @@ def register(data: RegisterRequest, background: BackgroundTasks, request: Reques
         exp = invite.expires_at if invite else None
         if exp is not None and exp.tzinfo is None:
             exp = exp.replace(tzinfo=timezone.utc)   # SQLite hands back naive datetimes
-        if invite is None or invite.used_by is not None or (exp is not None and exp < now):
+        if invite is None or invite.used_by is not None or invite.used_at is not None or (exp is not None and exp < now):
             raise HTTPException(status_code=400, detail="Invalid or expired invite code")
         if invite.email and _norm_email(invite.email) != email:
             raise HTTPException(status_code=400,
@@ -216,6 +217,7 @@ def change_password(data: ChangePasswordRequest, user: User = Depends(get_curren
     user.password_hash = hash_password(data.new_password)
     user.token_version = (user.token_version or 0) + 1   # every other session ends
     db.commit()
+    revoke_access(user.id)
     db.refresh(user)
     return _token_for(user)   # this session carries on under the new version
 
@@ -408,6 +410,8 @@ def set_active(user_id: int, data: ActiveRequest, admin: User = Depends(require_
         user.token_version = (user.token_version or 0) + 1
     user.is_active = data.is_active
     db.commit()
+    if not user.is_active:
+        revoke_access(user.id)
     return {"id": user.id, "is_active": user.is_active}
 
 
@@ -430,8 +434,10 @@ def delete_user(user_id: int, transfer_to: int = None, admin: User = Depends(req
     db.query(PlanImage).filter(PlanImage.owner_id == user.id).update({PlanImage.owner_id: heir.id}, synchronize_session=False)
     db.query(Invite).filter(Invite.created_by == user.id).update({Invite.created_by: heir.id}, synchronize_session=False)
     db.query(Invite).filter(Invite.used_by == user.id).update({Invite.used_by: None}, synchronize_session=False)
+    uid = user.id
     db.delete(user)
     db.commit()
+    revoke_access(uid)
     return {"ok": True, "projects_moved": moved, "transferred_to": heir.id}
 
 
@@ -531,6 +537,7 @@ def reset_password(data: ResetRequest, request: Request, db: Session = Depends(g
     row.used_at = now
     db.commit()
     db.refresh(user)
+    revoke_access(user.id)
     return _token_for(user)
 
 

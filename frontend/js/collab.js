@@ -149,7 +149,8 @@ const Collab = {
       this._renderPeers();
       this._paintRemote();
       // 44xx = refused (auth / no access / room full): don't hammer the server.
-      if (ev.code >= 4400 && ev.code < 4500) return;
+      // 4403 = access changed under us: reconnect once so the server decides afresh (new role, or refused).
+      if (ev.code >= 4400 && ev.code < 4500 && ev.code !== 4403) return;
       if (this._wasConnected) UI.toast('Live editing connection lost — reconnecting…', 'warning');
       this._scheduleRetry();
     };

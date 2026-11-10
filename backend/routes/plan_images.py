@@ -37,9 +37,11 @@ def _project_level(db, project_id, user):
 
 
 def _can(db: Session, img, user: User, level: str) -> bool:
-    """The uploader, or anyone whose access to the image's project reaches `level`."""
-    if img.owner_id == user.id:
-        return True
+    """Access to an image. Before it is attached to a project only its uploader has
+    any; afterwards the project's CURRENT permissions decide, so a collaborator whose
+    share was removed or downgraded loses their hold on what they uploaded."""
+    if img.project_id is None:
+        return img.owner_id == user.id
     got = _project_level(db, img.project_id, user)
     return got is not None and _LEVELS[got] >= _LEVELS[level]
 
