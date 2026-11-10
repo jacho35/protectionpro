@@ -13,7 +13,7 @@ from ..models.schemas import (
 )
 from ..auth import get_current_user, require_project
 from ..notifications import notify, display_name
-from .collab import notify_saved
+from .collab import notify_saved, revoke_access
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 
@@ -303,6 +303,7 @@ def update_share(project_id: int, user_id: int, data: ShareRoleUpdate,
                actor=user, link={"type": "project", "id": project.id})
     share.role = data.role
     db.commit()
+    revoke_access(user_id, project_id)   # live sockets reconnect under the new role
     return _shares_out(db, project_id)
 
 
@@ -319,6 +320,7 @@ def remove_share(project_id: int, user_id: int,
                f"{display_name(user)} stopped sharing “{project.name}” with you.", actor=user)
         db.delete(share)
         db.commit()
+        revoke_access(user_id, project_id)
     return _shares_out(db, project_id)
 
 

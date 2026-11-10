@@ -13,6 +13,8 @@ from ..models.schemas import (
 
 
 MAX_ITERATIONS = 100
+# The solver builds dense n x n complex matrices; refuse sizes that would exhaust memory.
+MAX_DENSE_BUSES = 3000
 TOLERANCE = 1e-6
 # Newton-Raphson power-mismatch target (pu on the study base). TOLERANCE is
 # absolute on that base — 100 W at 100 MVA, enough to leave ~3e-5 pu at a weak
@@ -2900,6 +2902,9 @@ def run_load_flow(project: ProjectData, method: str = "newton_raphson",
         )
 
     n = len(buses)
+    if n > MAX_DENSE_BUSES:
+        raise ValueError(
+            f"Network has {n} buses; the load-flow solver is limited to {MAX_DENSE_BUSES}.")
     bus_idx = {b.id: i for i, b in enumerate(buses)}
 
     # Build adjacency

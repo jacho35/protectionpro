@@ -23,6 +23,7 @@ Messages (JSON):
 """
 
 import json
+import time
 from collections import deque
 
 import anyio
@@ -39,6 +40,9 @@ router = APIRouter()
 MAX_SLOTS = 16
 LOG_BATCHES = 500   # op batches kept per live project for reconnect replay
 MAX_MESSAGE_BYTES = 2_000_000
+MAX_LOG_BYTES = 32_000_000     # replay log per project, by retained op payload size
+MAX_OPS_PER_BATCH = 5000
+OPS_WINDOW_S, OPS_PER_WINDOW = 10.0, 100   # op batches one client may send per window
 HELLO_TIMEOUT_S = 10
 _COLORS = ["#e6194b", "#3cb44b", "#4363d8", "#f58231", "#911eb4", "#008080",
            "#9a6324", "#800000", "#808000", "#000075"]
@@ -51,8 +55,10 @@ _next_client = 0
 
 
 class Peer:
-    def __init__(self, ws, client_id, user_id, name, role, color, slot, session=None):
+    def __init__(self, ws, client_id, user_id, name, role, color, slot, session=None, exp=None):
         self.ws, self.client_id, self.user_id, self.session = ws, client_id, user_id, session
+        self.exp = exp              # token expiry (epoch seconds); the socket ends with it
+        self.sent_ops = deque()     # monotonic times of recent op batches (rate limit)
         self.name, self.role, self.color, self.slot = name, role, color, slot
 
     def info(self):
@@ -69,9 +75,35 @@ async def _send(peer: Peer, msg: dict) -> bool:
 
 
 async def _broadcast(project_id: int, msg: dict, exclude: str | None = None):
+    now = time.time()
     for peer in list(_rooms.get(project_id, {}).values()):
+        if peer.exp is not None and peer.exp <= now:
+            await _refuse(peer.ws, 4401)   # token expired: stop feeding it
+            continue
         if peer.client_id != exclude:
             await _send(peer, msg)
+
+
+async def _kick(project_id: int | None, user_id: int):
+    """Close a user's live sockets (on one project, or all) so access is decided afresh
+    when they reconnect."""
+    for pid, room in list(_rooms.items()):
+        if project_id is not None and pid != project_id:
+            continue
+        for peer in list(room.values()):
+            if peer.user_id == user_id:
+                await _refuse(peer.ws, 4403)
+
+
+def revoke_access(user_id: int, project_id: int | None = None):
+    """Called by the (sync) routes that remove or change someone's access: share removed
+    or changed, account deactivated / deleted / password changed or reset."""
+    if not _rooms:
+        return
+    try:
+        anyio.from_thread.run(_kick, project_id, user_id)
+    except Exception:
+        pass  # not under a worker thread (scripts/tests); nobody to tell
 
 
 def _user_from_token(db: Session, token) -> User | None:
@@ -128,6 +160,10 @@ async def live(ws: WebSocket, project_id: int, db: Session = Depends(get_db)):
     if user is None:
         await _refuse(ws, 4401)
         return
+    try:
+        exp = float(decode_token(hello.get("token")).get("exp"))
+    except (jwt.PyJWTError, TypeError, ValueError):
+        exp = None
     project = db.query(Project).filter(Project.id == project_id).first()
     level = resolve_access(db, project, user) if project else None
     if level is None:
@@ -141,7 +177,7 @@ async def live(ws: WebSocket, project_id: int, db: Session = Depends(get_db)):
     _next_client += 1
     client_id = f"c{_next_client}"
     room = _rooms.setdefault(project_id, {})
-    log = _logs.setdefault(project_id, [0, deque(maxlen=LOG_BATCHES)])
+    log = _logs.setdefault(project_id, [0, deque(maxlen=LOG_BATCHES), 0])
     # Lowest free 0..MAX_SLOTS-1: the client strides its generated ids by it so two
     # editors never mint the same `bus_12` (see collab.js).
     taken = {p.slot for p in room.values()}
@@ -150,13 +186,13 @@ async def live(ws: WebSocket, project_id: int, db: Session = Depends(get_db)):
         await _refuse(ws, 4429)   # room full
         return
     peer = Peer(ws, client_id, uid, name, "edit" if level in ("edit", "owner") else "view",
-                _COLORS[uid % len(_COLORS)], slot, str(hello.get("session") or "")[:64])
+                _COLORS[uid % len(_COLORS)], slot, str(hello.get("session") or "")[:64], exp=exp)
     others = [p.info() for p in room.values()]
     room[client_id] = peer
     # A reconnecting client says the last seq it saw: replay what it missed if the log
     # still covers it, otherwise tell it to resync from the saved project.
     since = hello.get("since")
-    seq, batches = log
+    seq, batches = log[0], log[1]
     resync, missed = False, []
     if isinstance(since, int) and not isinstance(since, bool) and since != seq:
         missed = [b for b in batches if b[0] > since]
@@ -174,6 +210,9 @@ async def live(ws: WebSocket, project_id: int, db: Session = Depends(get_db)):
     try:
         while True:
             raw = await ws.receive_text()
+            if peer.exp is not None and peer.exp <= time.time():
+                await _refuse(ws, 4401)
+                break
             if len(raw) > MAX_MESSAGE_BYTES:
                 await _send(peer, {"type": "error", "message": "message too large"})
                 continue
@@ -189,8 +228,22 @@ async def live(ws: WebSocket, project_id: int, db: Session = Depends(get_db)):
                     await _send(peer, {"type": "error", "message": "view-only"})
                     continue
                 ops = msg.get("ops") or []
+                if (not isinstance(ops, list) or len(ops) > MAX_OPS_PER_BATCH
+                        or not all(isinstance(o, dict) for o in ops)):
+                    await _send(peer, {"type": "error", "message": "malformed ops"})
+                    continue
+                t = time.monotonic()
+                while peer.sent_ops and t - peer.sent_ops[0] > OPS_WINDOW_S:
+                    peer.sent_ops.popleft()
+                if len(peer.sent_ops) >= OPS_PER_WINDOW:
+                    await _send(peer, {"type": "error", "message": "too many edits, slow down"})
+                    continue
+                peer.sent_ops.append(t)
                 log[0] += 1
-                log[1].append((log[0], client_id, peer.session, ops))
+                log[1].append((log[0], client_id, peer.session, ops, len(raw)))
+                log[2] += len(raw)
+                while log[2] > MAX_LOG_BYTES and log[1]:
+                    log[2] -= log[1].popleft()[4]
                 await _broadcast(project_id, {"type": "ops", "from": client_id, "seq": log[0],
                                               "ops": ops}, exclude=client_id)
             elif kind == "presence":
