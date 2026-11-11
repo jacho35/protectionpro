@@ -15,7 +15,9 @@ from datetime import datetime, timedelta, timezone
 
 import bcrypt
 import jwt
-from fastapi import Depends, HTTPException, status
+import re
+
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 
@@ -71,17 +73,20 @@ def verify_password(password: str, password_hash: str) -> bool:
 
 # ── JWT ──
 
-def create_access_token(user: User, amr: str | None = None) -> str:
+def create_access_token(user: User, amr: str | None = None, ttl: timedelta | None = None,
+                        extra: dict | None = None) -> str:
     now = datetime.now(timezone.utc)
     payload = {
         "sub": str(user.id),
         "email": user.email,
         "tv": user.token_version or 0,
         "iat": now,
-        "exp": now + TOKEN_TTL,
+        "exp": now + (ttl or TOKEN_TTL),
     }
     if amr:
         payload["amr"] = amr   # how the token was obtained (e.g. "device")
+    if extra:
+        payload.update(extra)
     return jwt.encode(payload, _load_or_create_secret(), algorithm=ALGORITHM)
 
 
@@ -102,7 +107,44 @@ def _unauthorized(detail: str = "Not authenticated") -> HTTPException:
     )
 
 
+# What an MCP access token (amr "mcp") may reach through the REST API. Everything else
+# (account, admin, libraries, sharing, project deletion …) is refused whatever the user could do.
+_MCP_READ = [
+    ("GET", r"/api/auth/me"),
+    ("GET", r"/api/projects"),
+    ("GET", r"/api/projects/\d+"),
+    ("GET", r"/api/projects/\d+/revisions"),
+    ("POST", r"/api/analysis/[a-z0-9-]+"),
+]
+_MCP_WRITE = [
+    ("POST", r"/api/projects"),
+    ("PUT", r"/api/projects/\d+"),
+    ("PATCH", r"/api/projects/\d+/rename"),
+    ("POST", r"/api/projects/\d+/revisions"),
+]
+
+
+def _mcp_allowed(method: str, path: str, scope: str) -> bool:
+    rules = list(_MCP_READ)
+    if "mcp:write" in scope.split():
+        rules += _MCP_WRITE
+    path = path.rstrip("/") or "/"
+    return any(method == m and re.fullmatch(p, path) for m, p in rules)
+
+
+def _check_mcp_token(payload: dict, request: Request | None, db: Session):
+    from .models.database import OAuthGrant
+    gid = payload.get("gid")
+    grant = db.query(OAuthGrant).filter(OAuthGrant.id == gid).first() if gid else None
+    if grant is None or grant.revoked:
+        raise _unauthorized("This app was disconnected")
+    if request is not None and not _mcp_allowed(request.method, request.url.path,
+                                                str(payload.get("scope", ""))):
+        raise HTTPException(status_code=403, detail="Not available to a connected AI app")
+
+
 def get_current_user(
+    request: Request = None,
     cred: HTTPAuthorizationCredentials = Depends(_bearer),
     db: Session = Depends(get_db),
 ) -> User:
@@ -116,6 +158,8 @@ def get_current_user(
     user = db.query(User).filter(User.id == user_id).first()
     if user is None or not user.is_active:
         raise _unauthorized("User not found or deactivated")
+    if payload.get("amr") == "mcp":
+        _check_mcp_token(payload, request, db)
     if int(payload.get("tv", 0) or 0) != (user.token_version or 0):
         raise _unauthorized("Session expired — sign in again")
     return user

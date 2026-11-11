@@ -15,10 +15,12 @@ const Auth = {
     this._wireAccount();
     this._parseInviteLink();
     this._parseDeviceLink();
+    this._parseConsentLink();
     // An invite/reset link opened in a tab that already has the app loaded.
     window.addEventListener('hashchange', () => {
       if (/[#&](invite|reset)=/.test(location.hash)) { this._parseInviteLink(); this.showGate(); }
       if (/[#&]device=/.test(location.hash)) { this._parseDeviceLink(); this._maybeShowDevice(); }
+      if (/[#&]mcp-consent=/.test(location.hash)) { this._parseConsentLink(); this._maybeShowConsent(); }
     });
 
     // Start gated: the #auth-modal blocks all interaction with the app behind
@@ -27,7 +29,7 @@ const Auth = {
     const token = API.getToken();
     if (token) {
       API.me()
-        .then(u => { this.user = u; this._applyAuthedState(); this.hideGate(); const dev = !!this._pendingDevice; this._maybeShowDevice(); if (!dev) this._startScreen(); })
+        .then(u => { this.user = u; this._applyAuthedState(); this.hideGate(); const dev = !!(this._pendingDevice || this._pendingConsent); this._maybeShowDevice(); this._maybeShowConsent(); if (!dev) this._startScreen(); })
         .catch(() => { /* invalid/expired — stay on the gate */ });
     }
   },
@@ -201,8 +203,9 @@ const Auth = {
       Project.refreshProjectViewIfOpen();
     }
     UI.toast && UI.toast(`Signed in as ${this.user.email}`, 'success');
-    const dev = !!this._pendingDevice;
+    const dev = !!(this._pendingDevice || this._pendingConsent);
     this._maybeShowDevice();
+    this._maybeShowConsent();
     if (!dev) this._startScreen();
   },
 
@@ -259,6 +262,87 @@ const Auth = {
     m.querySelector('#auth-device-deny').addEventListener('click', () => decide('deny'));
   },
 
+  // ── Approve an AI app (the built-in MCP endpoint's OAuth consent screen) ──
+
+  _parseConsentLink() {
+    const m = /[#&]mcp-consent=([^&]+)/.exec(location.hash || '');
+    if (!m) return;
+    this._pendingConsent = decodeURIComponent(m[1]);
+    history.replaceState(null, '', location.pathname + location.search);
+  },
+
+  async _maybeShowConsent() {
+    const rid = this._pendingConsent;
+    if (!rid || !this.user) return;
+    this._pendingConsent = null;
+    let info;
+    try { info = await API.request(`/oauth/consent/${encodeURIComponent(rid)}`); }
+    catch (e) { UI.toast && UI.toast(e.message || 'This request is no longer valid.', 'warning'); return; }
+    if (info.status !== 'pending') { UI.toast && UI.toast('This request was already answered.', 'warning'); return; }
+    const esc = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    const wantsWrite = info.scope.includes('mcp:write');
+    const m = document.createElement('div');
+    m.className = 'modal';
+    m.setAttribute('role', 'dialog');
+    m.setAttribute('aria-modal', 'true');
+    m.innerHTML = `<div class="modal-content" style="min-width:340px;max-width:440px">
+      <div class="modal-header"><h3>Connect an AI app</h3></div>
+      <div class="modal-body">
+        <p>An app that calls itself <b>${esc(info.client_name)}</b> (it chose that name; it returns to <b>${esc(info.redirect_host)}</b>) is asking to use ProtectionPro as <b>${esc(info.email)}</b>, on the projects you can already open.</p>
+        <div class="form-group"><label><input type="radio" name="mcp-scope" value="mcp:read"${wantsWrite ? '' : ' checked'}> Read only — list projects, read components, run studies</label></div>
+        ${wantsWrite ? `<div class="form-group"><label><input type="radio" name="mcp-scope" value="mcp:read mcp:write" checked> Read and edit — also add, move, change and delete components and wires, and create or rename projects. Every edit saves a revision first. It can never delete a project.</label></div>` : ''}
+        <p style="font-size:.9em">Only approve an app you just connected yourself. You can disconnect it any time under My account → Connected AI apps.</p>
+        <div id="auth-consent-error" class="auth-error"></div>
+        <div style="display:flex;gap:8px;justify-content:flex-end">
+          <button class="btn" id="auth-consent-deny" type="button">Deny</button>
+          <button class="btn-primary" id="auth-consent-approve" type="button">Approve</button>
+        </div>
+      </div></div>`;
+    document.body.appendChild(m);
+    const decide = async verb => {
+      try {
+        const scope = (m.querySelector('input[name="mcp-scope"]:checked') || {}).value;
+        const r = await API.request(`/oauth/consent/${encodeURIComponent(rid)}/${verb}`, 'POST', verb === 'approve' ? { scope } : null);
+        m.remove();
+        if (r && r.redirect_url) window.location.href = r.redirect_url;   // hand the code back to the app
+      } catch (e) { m.querySelector('#auth-consent-error').textContent = e.message || 'Could not answer the request.'; }
+    };
+    m.querySelector('#auth-consent-approve').addEventListener('click', () => decide('approve'));
+    m.querySelector('#auth-consent-deny').addEventListener('click', () => decide('deny'));
+  },
+
+  // My account → Connected AI apps
+  async _loadGrants() {
+    const box = document.getElementById('account-grants');
+    if (!box) return;
+    let rows = [];
+    try { rows = await API.request('/oauth/grants'); } catch (e) { box.textContent = ''; return; }
+    box.textContent = '';
+    if (!rows.length) { box.textContent = 'None connected.'; return; }
+    const when = t => t ? new Date(t + (/[zZ]|[+-]\d\d:?\d\d$/.test(t) ? '' : 'Z')).toLocaleString() : 'never';
+    rows.forEach(g => {
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;justify-content:space-between;align-items:center;gap:8px;margin:6px 0';
+      const label = document.createElement('div');
+      const strong = document.createElement('strong');
+      strong.textContent = g.client_name;
+      const small = document.createElement('small');
+      small.style.display = 'block';
+      small.textContent = `${g.scope.includes('mcp:write') ? 'Read and edit' : 'Read only'} · connected ${when(g.connected)} · last renewed ${when(g.last_used)}`;
+      label.append(strong, small);
+      const btn = document.createElement('button');
+      btn.className = 'btn-small';
+      btn.type = 'button';
+      btn.textContent = 'Disconnect';
+      btn.addEventListener('click', async () => {
+        try { await API.request(`/oauth/grants/${g.id}`, 'DELETE'); } catch (e) { /* listed again below */ }
+        this._loadGrants();
+      });
+      row.append(label, btn);
+      box.appendChild(row);
+    });
+  },
+
   _applyAuthedState() {
     if (!this.user) return;
     // Component libraries are per user: load this user's (never the previous user's).
@@ -302,6 +386,7 @@ const Auth = {
     this._applyAuthedState();
     const m = document.getElementById('account-modal');
     if (m) m.style.display = '';
+    this._loadGrants();
   },
 
   // Admin console: users, projects and invitations (separate from My account).
