@@ -12,6 +12,10 @@ services:
       - SECRET_KEY=${SECRET_KEY:-}
       # nginx (the only thing that reaches this port) sets X-Real-IP to the client address.
       - PP_TRUST_PROXY=1
+      # The one public address of this server (no trailing slash), used as the OAuth issuer
+      # in the MCP discovery documents, e.g. https://protectionpro.devmooreapps.co.za
+      # Unset ⇒ taken from the request's Host / X-Forwarded-* headers.
+      - PUBLIC_URL=${PUBLIC_URL:-}
     volumes:
       - db-data:/data
     expose:

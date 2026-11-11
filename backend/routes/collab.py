@@ -109,6 +109,8 @@ def revoke_access(user_id: int, project_id: int | None = None):
 def _user_from_token(db: Session, token) -> User | None:
     try:
         payload = decode_token(token)
+        if payload.get("amr") == "mcp":
+            return None      # MCP tokens reach projects through /mcp only
         user = db.query(User).filter(User.id == int(payload["sub"])).first()
     except (jwt.PyJWTError, KeyError, ValueError, TypeError):
         return None
