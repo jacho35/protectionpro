@@ -132,19 +132,19 @@ def _mcp_allowed(method: str, path: str, scope: str) -> bool:
     return any(method == m and re.fullmatch(p, path) for m, p in rules)
 
 
-def _check_mcp_token(payload: dict, request: Request | None, db: Session):
+def _check_mcp_token(payload: dict, request: Request, db: Session):
     from .models.database import OAuthGrant
     gid = payload.get("gid")
     grant = db.query(OAuthGrant).filter(OAuthGrant.id == gid).first() if gid else None
     if grant is None or grant.revoked:
         raise _unauthorized("This app was disconnected")
-    if request is not None and not _mcp_allowed(request.method, request.url.path,
-                                                str(payload.get("scope", ""))):
+    if request is None or not _mcp_allowed(request.method, request.url.path,
+                                           str(payload.get("scope", ""))):
         raise HTTPException(status_code=403, detail="Not available to a connected AI app")
 
 
 def get_current_user(
-    request: Request = None,
+    request: Request,
     cred: HTTPAuthorizationCredentials = Depends(_bearer),
     db: Session = Depends(get_db),
 ) -> User:
