@@ -21,10 +21,14 @@ const PlanUI = {
     propsEl.addEventListener('input', (e) => this._onPropsChange(e));
     propsEl.addEventListener('click', (e) => {
       if (e.target.closest('[data-role="delete"]')) { PlanMarkup.deleteSelected(); return; }
+      const go = e.target.closest('[data-plan-go]');
+      if (go) { PlanMarkup.selectOnly(go.dataset.planGo); PlanMarkup.zoomToSelection(); return; }
       const pick = e.target.closest('[data-plan-select]');
       if (pick) { PlanMarkup.selectOnly(pick.dataset.planSelect); PlanEngine.requestDraw({ fg: true }); return; }
       if (e.target.closest('[data-role="edit-schedule"]')) { this._editBoardSchedule(); return; }
-      if (e.target.closest('[data-role="bulk-assign"]')) { this._bulkAssign(); return; }
+      if (e.target.closest('[data-role="bulk-assign"]')) { this._assignPreview = [...PlanMarkup.selectedIds][0]; this.renderProps(); return; }
+      if (e.target.closest('[data-role="assign-cancel"]')) { this._assignPreview = null; this.renderProps(); return; }
+      if (e.target.closest('[data-role="assign-apply"]')) { this._assignPreview = null; this._bulkAssign(); return; }
       if (e.target.closest('[data-role="sync-circuits"]')) { this._syncCircuits(); return; }
       if (e.target.closest('[data-role="open-photolib"]')) { PhotoLib.open(); return; }
       const pd = e.target.closest('[data-role="open-photodata"]');
@@ -83,42 +87,10 @@ const PlanUI = {
       <span class="plan-pal-swatch" style="background:${escHtml(it.color)}"></span><span class="plan-pal-name">${escHtml(it.name)}</span>${it.desc ? `<small>${escHtml(it.desc)}</small>` : ''}</button>`;
   },
 
-  _drawPanel() {
-    const pm = AppState.planMarkup;
-    const domain = pm.settings.domain || 'retic';
-    const filter = (this._search || '').toLowerCase();
-    const groups = PLAN_DEFS.paletteGroups(domain);
-    if (!this._folded || this._foldedDomain !== domain) { this._folded = new Set(groups.slice(2).map(g => g.label)); this._foldedDomain = domain; }
-    // The project type normally fixes the plan's domain (workspaces.js); the
-    // selector only appears when it doesn't — a Network project with a plan,
-    // or a plan whose content is the other domain's.
-    const domainLocked = typeof Workspaces !== 'undefined' && Workspaces.planDomainLocked && Workspaces.planDomainLocked();
-    let html = `<div class="plan-pal-header">
-        ${domainLocked ? '' : `<label class="plan-domain-field">
-          <span class="plan-domain-cap">Plan type</span>
-          <select class="plan-domain-select" data-role="domain">
-            ${PLAN_DOMAINS.map(d => `<option value="${d.id}" ${d.id === domain ? 'selected' : ''}>${escHtml(d.name)}</option>`).join('')}
-          </select>
-        </label>`}
-        <label class="plan-domain-field plan-pal-searchfield"><span class="plan-domain-cap">Find a part</span>
-        <input type="search" class="plan-pal-search" data-role="search" placeholder="Socket, DB, smoke…" value="${escHtml(this._search || '')}"></label>
-      </div><div class="plan-pal-groups">`;
-    for (const g of groups) {
-      const items = g.items.filter(it => !filter || it.name.toLowerCase().includes(filter));
-      if (!items.length) continue;
-      const open = !!filter || !this._folded.has(g.label);
-      html += `<div class="plan-pal-group">
-        <button type="button" class="plan-pal-group-label" data-role="fold" data-group="${escHtml(g.label)}" aria-expanded="${open}">
-          <span class="plan-pal-chev" aria-hidden="true">${open ? '▾' : '▸'}</span>${escHtml(g.label)}<span class="plan-pal-count">${items.length}</span></button>`;
-      if (open) html += `<div class="plan-pal-grid">${items.map(it => this._palItem(it)).join('')}</div>`;
-      html += `</div>`;
-    }
-    html += `</div>`;
-    if (domain === 'retic') html += `<div class="plan-fromsld"><button type="button" class="plan-btn" data-role="load-types" title="Define pumps, boreholes and other loads that are fed from a mini-sub or kiosk">Load types…</button></div>`;
-    // "Not placed yet": Demand rows (added in Demand or Quick Build) no drawn
-    // element stands for. Pick one, then click where it goes.
-    if (domain === 'retic') html += this._reticTrayHtml();
-    // "From the single line": adopt SLD boards/supply that aren't on the plan yet.
+  // "From the single line": SLD boards / supply that are not on the plan yet. Shown at the top of the
+  // palette: placing them is the first job of a building plan.
+  _sldTrayHtml(pm, domain) {
+    let html = '';
     if (domain === 'building' && typeof AppState.components !== 'undefined' && PLAN_DEFS.sldLinkTypes) {
       const linkedSld = new Set(pm.elements.filter(e => e.sldId).map(e => e.sldId));
       const rows = [];
@@ -143,6 +115,61 @@ const PlanUI = {
         html += `</div>`;
       }
     }
+    return html;
+  },
+
+  // The last five parts used on this kind of plan, one click from the top of the palette.
+  _recentKey(domain) { return 'pp-plan-recent-' + domain; },
+  _recent(domain) { try { return JSON.parse(localStorage.getItem(this._recentKey(domain)) || '[]'); } catch (_) { return []; } },
+  _noteRecent(domain, kind, type, loadType) {
+    if (kind !== 'element' && kind !== 'route') return;
+    const key = [kind, type, loadType || ''].join('|');
+    const list = [{ kind, type, loadType: loadType || '' }].concat(this._recent(domain).filter(r => [r.kind, r.type, r.loadType || ''].join('|') !== key)).slice(0, 5);
+    try { localStorage.setItem(this._recentKey(domain), JSON.stringify(list)); } catch (_) { /* private mode */ }
+  },
+
+  _drawPanel() {
+    const pm = AppState.planMarkup;
+    const domain = pm.settings.domain || 'retic';
+    const filter = (this._search || '').toLowerCase();
+    // Workflow order: the parts you place first, then the routes that join them, then the rest.
+    const groups = PLAN_DEFS.paletteGroups(domain).slice();
+    const ri = groups.findIndex(g => g.label === 'Routes');
+    if (ri > 0) { const [rg] = groups.splice(ri, 1); groups.splice(groups.findIndex(g => g.label !== 'Detect') + 1, 0, rg); }
+    const openTo = Math.max(1, groups.findIndex(g => g.label === 'Routes'));
+    if (!this._folded || this._foldedDomain !== domain) { this._folded = new Set(groups.slice(openTo + 1).map(g => g.label)); this._foldedDomain = domain; }
+    // The project type normally fixes the plan's domain (workspaces.js); the
+    // selector only appears when it doesn't — a Network project with a plan,
+    // or a plan whose content is the other domain's.
+    const domainLocked = typeof Workspaces !== 'undefined' && Workspaces.planDomainLocked && Workspaces.planDomainLocked();
+    let html = `<div class="plan-pal-header">
+        ${domainLocked ? '' : `<label class="plan-domain-field">
+          <span class="plan-domain-cap">Plan type</span>
+          <select class="plan-domain-select" data-role="domain">
+            ${PLAN_DOMAINS.map(d => `<option value="${d.id}" ${d.id === domain ? 'selected' : ''}>${escHtml(d.name)}</option>`).join('')}
+          </select>
+        </label>`}
+        <label class="plan-domain-field plan-pal-searchfield"><span class="plan-domain-cap">Find a part</span>
+        <input type="search" class="plan-pal-search" data-role="search" placeholder="Socket, DB, smoke…" value="${escHtml(this._search || '')}"></label>
+      </div><div class="plan-pal-groups">`;
+    if (!filter) html += this._sldTrayHtml(pm, domain) + (domain === 'retic' ? this._reticTrayHtml() : '');
+    if (!filter) {
+      const all = groups.flatMap(g => g.items), rec = this._recent(domain)
+        .map(r => all.find(it => it.kind === r.kind && it.type === r.type && (it.loadType || '') === (r.loadType || ''))).filter(Boolean);
+      if (rec.length) html += `<div class="plan-pal-group"><div class="plan-pal-group-label plan-pal-recent-label">Recent</div><div class="plan-pal-grid">${rec.map(it => this._palItem(it)).join('')}</div></div>`;
+    }
+    for (const g of groups) {
+      const items = g.items.filter(it => !filter || it.name.toLowerCase().includes(filter));
+      if (!items.length) continue;
+      const open = !!filter || !this._folded.has(g.label);
+      html += `<div class="plan-pal-group">
+        <button type="button" class="plan-pal-group-label" data-role="fold" data-group="${escHtml(g.label)}" aria-expanded="${open}">
+          <span class="plan-pal-chev" aria-hidden="true">${open ? '▾' : '▸'}</span>${escHtml(g.label)}<span class="plan-pal-count">${items.length}</span></button>`;
+      if (open) html += `<div class="plan-pal-grid">${items.map(it => this._palItem(it)).join('')}</div>`;
+      html += `</div>`;
+    }
+    html += `</div>`;
+    if (domain === 'retic') html += `<div class="plan-fromsld"><button type="button" class="plan-btn" data-role="load-types" title="Define pumps, boreholes and other loads that are fed from a mini-sub or kiosk">Load types…</button></div>`;
     return html;
   },
 
@@ -377,6 +404,7 @@ const PlanUI = {
     const item = e.target.closest('.plan-pal-item');
     if (!item || item.disabled) return;
     const kind = item.dataset.kind, type = item.dataset.type;
+    this._noteRecent(AppState.planMarkup.settings.domain || 'retic', kind, type, item.dataset.loadtype);
     if (kind === 'element' && item.dataset.loadtype) {
       PlanTools.set('place', { type, loadType: item.dataset.loadtype });   // a project load type: one at a time
     }
@@ -562,6 +590,9 @@ const PlanUI = {
 
   // ─── Properties ───
   renderProps() {
+    // A Demand run redraws this panel when it finishes: that is also when Colour by has new figures.
+    if (typeof PlanEngine !== 'undefined' && PlanEngine.colourBy !== 'off') { PlanEngine._cmap = null; PlanEngine.requestDraw({ fg: true }); }
+    if (typeof PlanMarkup !== 'undefined' && PlanMarkup.refreshColourBy) PlanMarkup.refreshColourBy();
     const el = this.propsEl; if (!el) return;
     if (typeof PlanTools !== 'undefined' && PlanTools.active && PlanTools.active.id === 'layout' && typeof PlanLayoutUI !== 'undefined') { PlanLayoutUI.renderOptions(el); return; }
     if (typeof PlanTools !== 'undefined' && PlanTools.active && (PlanTools.active.id === 'roomdetect' || PlanTools.active.id === 'erfdetect') && typeof PlanRoomDetect !== 'undefined') { PlanRoomDetect.renderOptions(el, PlanTools.active.id === 'erfdetect' ? 'erf' : 'room'); return; }
@@ -569,7 +600,7 @@ const PlanUI = {
     // The Lighting tab's Space step: a picked underlay shows its actions until something else is selected.
     if (PlanMarkup.context === 'lighting' && this._underlay && !PlanMarkup.selectedIds.size) { this._renderUnderlayProps(el); return; }
     const ids = [...PlanMarkup.selectedIds];
-    if (ids.length === 0) { el.innerHTML = `<div class="plan-props-empty">Select an item to edit its properties.</div>`; return; }
+    if (ids.length === 0) { el.innerHTML = (PlanMarkup.context === 'lighting') ? `<div class="plan-props-empty">Select an item to edit its properties.</div>` : this._summaryHtml(); return; }
     if (ids.length > 1) { this._renderBulk(el, ids); return; }
     const found = PlanMarkup.findEntityById(ids[0]);
     if (!found) { el.innerHTML = ''; return; }
@@ -645,6 +676,7 @@ const PlanUI = {
     }
     if (kind === 'element' && typeof PlanLoads !== 'undefined') html += PlanLoads.summaryHtml(item);
     html += this._defaultCableButton(item, kind);
+    this._pendingVerdicts = '';
     html += this._demandBlock(item, kind);
     html += this._demandLinkField(item, kind);
     html += this._sldLinkField(item, kind);
@@ -655,6 +687,8 @@ const PlanUI = {
       if (item.type === 'bd_db') html += this._boardCircuits(item);
       else if (PlanCircuits.isCircuitDevice(item.type)) html += this._circuitTag(item);
     }
+    // The verdicts lead the panel: straight under the title, before any field.
+    if (this._pendingVerdicts) html = html.replace(/^(<div class="plan-props-title">[^]*?<\/div>)/, (m) => m + this._pendingVerdicts);
     // Delete button
     html += `<button class="plan-props-delete" data-role="delete">Delete</button>`;
     el.innerHTML = html;
@@ -828,12 +862,66 @@ const PlanUI = {
   // element: computed from the current Demand data every time the panel is
   // drawn, and redrawn whenever Demand recomputes (Retic._doCompute) or the
   // Plan workspace is shown. Read-only — edit it in Demand.
+  // What the panel shows with nothing selected: the plan in numbers, what needs attention (each row
+  // goes to its item) and the next step. Read from what the workspaces already hold; runs nothing.
+  _summaryHtml() {
+    const pm = AppState.planMarkup, domain = pm.settings && pm.settings.domain;
+    const f = (typeof PlanEngine !== 'undefined') ? PlanEngine.factor() : null;
+    const counts = new Map();
+    for (const e of pm.elements) { const d = PLAN_DEFS.element(e.type); const n = d ? d.name : e.type; counts.set(n, (counts.get(n) || 0) + 1); }
+    const top = [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6);
+    const rows = top.map(([n, c]) => `<div class="plan-demand-row"><span>${escHtml(n)}</span><b>${c}</b></div>`);
+    if (pm.routes.length) rows.push(`<div class="plan-demand-row"><span>Routes</span><b>${pm.routes.length}</b></div>`);
+    if ((pm.rooms || []).length) rows.push(`<div class="plan-demand-row"><span>Rooms / areas</span><b>${pm.rooms.length}</b></div>`);
+    const attn = [];
+    const add = (st, text, id) => attn.push(`<button type="button" class="plan-attn" ${id ? `data-plan-go="${escHtml(id)}"` : ''}><i class="plan-dot ${st}"></i><span>${escHtml(text)}</span></button>`);
+    const anything = ['plans', 'dxfs', 'elements', 'routes', 'rooms'].some(k => (pm[k] || []).length);
+    if (!f && anything) add('warn', 'The scale is not set. Lengths, areas and cable quantities need it (Underlays › Calibrate).');
+    const R = AppState.reticulation, res = AppState.reticResults;
+    if (domain === 'retic' && typeof Retic !== 'undefined' && R && res && res.kiosks) {
+      const lim = Retic.settings.maxFeederVD;
+      for (const k of R.kiosks) {
+        const pe = pm.elements.find(e => e.type === 'kiosk' && e.reticId === k.id);
+        const fi = this._feederInfo(k, res), kr = fi.kr;
+        if (!kr) continue;
+        const cab = CableLib.byName(k.feederCable), amps = kr.feederA != null ? kr.feederA : kr.currentA;
+        const ls = cab && cab.rated_amps ? this._loadingState(amps, Number(cab.rated_amps)) : null;
+        if (ls && ls !== 'ok') add(ls === 'bad' ? 'bad' : 'warn', `Feeder to ${k.name || 'kiosk'} is ${Math.round(amps / Number(cab.rated_amps) * 100)} % loaded`, pe && pe.id);
+        const vs = this._vdState(fi.cumVD, lim);
+        if (vs && vs !== 'ok') add(vs === 'bad' ? 'bad' : 'warn', `${k.name || 'Kiosk'} volt drop ${Math.round(fi.cumVD * 100) / 100} % (limit ${lim} %)`, pe && pe.id);
+      }
+      attn.sort((a, b) => (b.includes('plan-dot bad') ? 1 : 0) - (a.includes('plan-dot bad') ? 1 : 0));
+    }
+    if (domain === 'building' && typeof AppState.components !== 'undefined' && PLAN_DEFS.sldLinkTypes) {
+      const linked = new Set(pm.elements.filter(e => e.sldId).map(e => e.sldId));
+      let n = 0;
+      for (const c of AppState.components.values()) if (PLAN_DEFS.sldLinkTypes[c.type] && c.type !== 'bus' && !linked.has(c.id)) n++;
+      if (n) add('warn', `${n} single-line item${n === 1 ? '' : 's'} not placed yet (listed under From the single line)`);
+    }
+    const title = domain === 'building' ? 'Floor plan' : 'Site plan';
+    return `<div class="plan-props-title">${title}</div>
+      ${attn.length ? `<div class="plan-demand"><div class="plan-demand-title">Needs attention · ${attn.length}</div><div class="plan-attns">${attn.slice(0, 8).join('')}${attn.length > 8 ? `<small>and ${attn.length - 8} more (Issues, top bar)</small>` : ''}</div></div>`
+        : (pm.elements.length ? '<div class="plan-verdicts"><span class="plan-verdict ok">✓ Nothing needs attention</span></div>' : '')}
+      ${rows.length ? `<div class="plan-demand"><div class="plan-demand-title">On this plan</div>${rows.join('')}</div>` : '<div class="plan-props-empty">Nothing is drawn yet. Import a drawing in Underlays, or place a part from the palette.</div>'}
+      <div class="plan-props-empty">Select an item to edit its properties.</div>`;
+  },
+
+  // Verdict chips at the head of a Demand block: the answer first, the figures below it.
+  // st = ok | warn | bad. Loading is bad over the cable's rating, warn from 90 %.
+  _verdicts(list) {
+    const l = list.filter(Boolean);
+    if (!l.length) return '';
+    return `<div class="plan-verdicts">${l.map(v => `<span class="plan-verdict ${v.st}">${v.st === 'ok' ? '✓' : '!'} ${escHtml(v.text)}</span>`).join('')}</div>`;
+  },
+  _loadingState(amps, rating) { if (!rating || !amps) return null; const p = amps / rating * 100; return p > 100 ? 'bad' : p >= 90 ? 'warn' : 'ok'; },
+  _vdState(vd, limit) { if (vd == null || !limit) return null; return vd > limit ? 'bad' : vd >= limit * 0.9 ? 'warn' : 'ok'; },
+
   _demandBlock(item, kind) {
     if (kind === 'route') return this._demandRouteBlock(item);
     if (typeof Retic === 'undefined' || !AppState.reticulation) return '';
     if (kind !== 'element' || !['erf', 'kiosk', 'minisub'].includes(item.type)) return '';
     const R = AppState.reticulation, res = AppState.reticResults;
-    const rows = [];
+    const rows = [], chips = [];
     const row = (k, v, cls) => rows.push(`<div class="plan-demand-row${cls ? ' ' + cls : ''}"><span>${escHtml(k)}</span><b>${v}</b></div>`);
     const num = (n, d = 2) => (Math.round(n * 10 ** d) / 10 ** d).toString();
     const clsLabel = (k) => { const c = Retic._kioskClass(k); return c ? escHtml(c.label) : '—'; };
@@ -870,7 +958,7 @@ const PlanUI = {
       row('Design current', `${num(amps)} A`);
       row('Service cable', escHtml(e.cableType || '—'));
       row('Service length', e.length ? `${num(e.length, 1)} m` : '—');
-      if (vc) row('Service volt drop', `${num(vc.vd)} %`, vc.vd > limit ? 'bad' : 'ok');
+      if (vc) { row('Service volt drop', `${num(vc.vd)} %`, vc.vd > limit ? 'bad' : 'ok'); chips.push({ st: this._vdState(vc.vd, limit), text: `Service volt drop ${num(vc.vd)} % of ${limit} %` }); }
     } else if (item.type === 'kiosk') {
       const k = PlanSync._resolve(R.kiosks, item);
       if (!k) return notLinked();
@@ -888,7 +976,13 @@ const PlanUI = {
       row('Feeder length (incoming leg)', k.feederLength ? `${num(k.feederLength, 1)} m` : '—');
       row('Cumulative length', fi.cumLen ? `${num(fi.cumLen, 1)} m` : '—');
       if (fi.legVD != null) row('Incoming leg volt drop', `${num(fi.legVD)} %`);
-      if (fi.cumVD != null) row('Cumulative volt drop', `${num(fi.cumVD)} %`, fi.cumVD > Retic.settings.maxFeederVD ? 'bad' : 'ok');
+      if (fi.cumVD != null) {
+        row('Cumulative volt drop', `${num(fi.cumVD)} %`, fi.cumVD > Retic.settings.maxFeederVD ? 'bad' : 'ok');
+        chips.push({ st: this._vdState(fi.cumVD, Retic.settings.maxFeederVD), text: `Volt drop ${num(fi.cumVD)} % of ${Retic.settings.maxFeederVD} %` });
+      }
+      const kc = CableLib.byName(k.feederCable), kAmps = kr && (kr.feederA != null ? kr.feederA : kr.currentA);
+      const kl = kc && kc.rated_amps ? this._loadingState(kAmps, Number(kc.rated_amps)) : null;
+      if (kl) chips.push({ st: kl, text: `Feeder ${Math.round(kAmps / Number(kc.rated_amps) * 100)} % loaded` });
     } else if (item.type === 'minisub') {
       const ms = PlanSync._resolve(R.minisubs, item);
       if (!ms) return notLinked();
@@ -901,6 +995,7 @@ const PlanUI = {
       if (r) row('Demand', `${r.totalKVA} kVA`);
     } else return '';
     const openHtml = (item.reticId && typeof Links !== 'undefined') ? Links.markHtml('retic:' + item.reticId, 'plan:' + item.id, 'Open in Demand ›', 'plan-link-mark') : '';
+    this._pendingVerdicts = this._verdicts(chips);
     return `<div class="plan-demand"><div class="plan-demand-title">${title}${openHtml}</div>${rows.join('')}</div>${kioskList ? this._kioskTable(kioskList, res) : ''}`;
   },
 
@@ -955,7 +1050,7 @@ const PlanUI = {
     const retic = typeof Retic !== 'undefined' && R && AppState.planMarkup.settings.domain === 'retic';
     const link = retic ? PlanSync._cableLink(route, PlanSync._elById()) : null;
     const res = AppState.reticResults;
-    const rows = [];
+    const rows = [], chips = []; let fixes = '';
     const row = (k, v, cls) => rows.push(`<div class="plan-demand-row${cls ? ' ' + cls : ''}"><span>${escHtml(k)}</span><b>${v}</b></div>`);
     const num = (n, d = 2) => (Math.round(n * 10 ** d) / 10 ** d).toString();
     const cable = CableLib.byName(route.cableType || (link && link.row[link.key]));
@@ -987,9 +1082,11 @@ const PlanUI = {
       const limit = Retic.settings.maxRunVD;
       row('Erf', escHtml(e.erfNumber || '—') + ' · ' + escHtml(k.name));
       row('Connection', is3 ? '3 phase' : '1 phase');
-      row('Design current', `${num(amps)} A${loading(amps)}`);
+      const ls = this._loadingState(amps, rating);
+      row('Design current', `${num(amps)} A${loading(amps)}`, ls === 'bad' ? 'bad' : '');
+      if (ls) chips.push({ st: ls, text: `${Math.round(amps / rating * 100)} % of cable rating` });
       row('Length in Demand', e.length ? `${num(e.length, 1)} m` : '—');
-      if (vc) row('Volt drop', `${num(vc.vd)} % (limit ${limit} %)`, vc.vd > limit ? 'bad' : 'ok');
+      if (vc) { row('Volt drop', `${num(vc.vd)} % (limit ${limit} %)`, vc.vd > limit ? 'bad' : 'ok'); chips.push({ st: this._vdState(vc.vd, limit), text: `Volt drop ${num(vc.vd)} % of ${limit} %` }); }
     } else {                                             // feeder cable → kiosk leg
       const k = link.row;
       if (!res && Retic._doCompute && !this._demandAsked) {
@@ -1001,14 +1098,23 @@ const PlanUI = {
       if (fi.kr) {
         const kva = fi.kr.feederKVA != null ? fi.kr.feederKVA : fi.kr.totalKVA;
         const amps = fi.kr.feederA != null ? fi.kr.feederA : fi.kr.currentA;
-        row('Leg load', `${kva} kVA · ${num(amps)} A${loading(amps)}`);
+        const ls = this._loadingState(amps, rating);
+        row('Leg load', `${kva} kVA · ${num(amps)} A${loading(amps)}`, ls === 'bad' ? 'bad' : '');
+        if (ls) chips.push({ st: ls, text: `${Math.round(amps / rating * 100)} % of cable rating` });
+        if (ls === 'bad') fixes = 'Use a larger cable for this leg, or move some erven to another string (fed from another kiosk or mini-sub).';
       }
       row('Leg length in Demand', k.feederLength ? `${num(k.feederLength, 1)} m` : '—');
       row('Cumulative length', fi.cumLen ? `${num(fi.cumLen, 1)} m` : '—');
       if (fi.legVD != null) row('Leg volt drop', `${num(fi.legVD)} %`);
-      if (fi.cumVD != null) row('Cumulative volt drop', `${num(fi.cumVD)} % (limit ${Retic.settings.maxFeederVD} %)`, fi.cumVD > Retic.settings.maxFeederVD ? 'bad' : 'ok');
+      if (fi.cumVD != null) {
+        row('Cumulative volt drop', `${num(fi.cumVD)} % (limit ${Retic.settings.maxFeederVD} %)`, fi.cumVD > Retic.settings.maxFeederVD ? 'bad' : 'ok');
+        chips.push({ st: this._vdState(fi.cumVD, Retic.settings.maxFeederVD), text: `Volt drop ${num(fi.cumVD)} % of ${Retic.settings.maxFeederVD} %` });
+        if (fi.cumVD > Retic.settings.maxFeederVD && !fixes) fixes = 'Use a larger cable on the legs upstream, or shorten the run by adding a mini-sub nearer the load.';
+      }
     }
-    return `<div class="plan-demand"><div class="plan-demand-title">Cable · From Demand</div>${rows.join('')}</div>`;
+    const fixHtml = fixes ? `<div class="plan-demand"><div class="plan-demand-title">Ways to fix</div><div class="plan-demand-row"><span>${escHtml(fixes)}</span></div></div>` : '';
+    this._pendingVerdicts = this._verdicts(chips);
+    return `<div class="plan-demand"><div class="plan-demand-title">Cable · From Demand</div>${rows.join('')}</div>${fixHtml}`;
   },
 
   // Circuit-tag editor for a load device: pick a board + way number. The board
@@ -1100,11 +1206,25 @@ const PlanUI = {
         </div>${un}
         <button class="plan-circuit-btn" data-role="balance-phases">⚖ Balance 3P+N tap phases</button>`;
     }
+    // The answer first: devices wired to this board that are on no way yet, and what assigning them would do.
+    const plan = comp ? PlanCircuits.planAssign(item.id) : null;
+    this._pendingVerdicts = plan && plan.devices
+      ? this._verdicts([{ st: 'warn', text: `${plan.devices} connected device${plan.devices === 1 ? '' : 's'} not on a way` }])
+      : (comp && ways ? this._verdicts([{ st: 'ok', text: 'Every connected device is on a way' }]) : '');
+    let assign = '<button class="plan-circuit-btn" data-role="bulk-assign">⚡ Auto-assign connected devices…</button>';
+    if (plan && this._assignPreview === item.id) {
+      const KL = { lighting: 'Lighting', socket: 'Sockets', other: 'Other' };
+      assign = plan.devices ? `<div class="plan-assign-preview"><div class="plan-demand-title">This would add ${plan.ways.length} way${plan.ways.length === 1 ? '' : 's'}</div>
+        <table class="plan-demand-table"><thead><tr><th>Way</th><th>Type</th><th>Devices</th><th>Load</th></tr></thead><tbody>${plan.ways.map(w =>
+          `<tr><td>${escHtml(w.way)}</td><td>${KL[w.klass]}</td><td>${w.devices.length}</td><td>${Math.round(w.devices.reduce((a, e) => a + PlanCircuits.deviceVA(e), 0))} VA</td></tr>`).join('')}</tbody></table>
+        <div class="plan-assign-actions"><button type="button" class="plan-circuit-btn" data-role="assign-apply">Apply</button><button type="button" class="plan-circuit-btn" data-role="assign-cancel">Cancel</button></div></div>`
+        : '<div class="plan-circuit-note">Nothing to assign: every connected device is already on a way.</div>';
+    }
     return `<div class="plan-circuit-box">
       <div class="plan-circuit-h">Circuits</div>
       <div class="plan-circuit-note">${ways} way(s) on this board${linked}</div>
       <button class="plan-circuit-btn" data-role="edit-schedule">📋 Open Circuit Schedule</button>
-      <button class="plan-circuit-btn" data-role="bulk-assign">⚡ Auto-assign connected devices</button>
+      ${assign}
       ${AppState.keepInSync === false ? '<button class="plan-circuit-btn" data-role="sync-circuits">🔄 Sync loads from plan</button>' : ''}
       ${phase}
     </div>`;
@@ -1117,8 +1237,8 @@ const PlanUI = {
       return `<div class="plan-field plan-field-check"><label><input type="checkbox" data-key="${escHtml(f.key)}" ${value ? 'checked' : ''}> ${escHtml(f.label)}</label></div>`;
     }
     if (f.type === 'cable_select') {
-      // The size in use is also spelled out under the box, so it reads at a glance.
-      return `<div class="plan-field">${label}<select data-key="${escHtml(f.key)}" data-cable-select>${this._cableOptions(v, f)}</select><div class="plan-field-current">${v ? 'Current: <b>' + escHtml(v) + '</b>' : 'No cable chosen'}</div></div>`;
+      // The box shows the cable in use; only an empty one needs a line under it.
+      return `<div class="plan-field">${label}<select data-key="${escHtml(f.key)}" data-cable-select>${this._cableOptions(v, f)}</select>${v ? '' : '<div class="plan-field-current">No cable chosen</div>'}</div>`;
     }
     if (f.type === 'select') {
       const opts = (f.options || []).map(o => `<option value="${escHtml(o.value)}" ${String(o.value) === String(v) ? 'selected' : ''}>${escHtml(o.label)}</option>`).join('');
@@ -1137,7 +1257,8 @@ const PlanUI = {
     }
     if (f.type === 'number') {
       const attrs = [f.min != null ? `min="${f.min}"` : '', f.max != null ? `max="${f.max}"` : '', f.step != null ? `step="${f.step}"` : ''].join(' ');
-      return `<div class="plan-field">${label}<input type="number" data-key="${escHtml(f.key)}" value="${escHtml(v)}" ${attrs}></div>`;
+      const ph = f.key === 'symScale' ? 'placeholder="1 (plan default)"' : '';
+      return `<div class="plan-field">${label}<input type="number" data-key="${escHtml(f.key)}" value="${escHtml(v)}" ${attrs} ${ph}></div>`;
     }
     return `<div class="plan-field">${label}<input type="text" data-key="${escHtml(f.key)}" value="${escHtml(v)}"></div>`;
   },
