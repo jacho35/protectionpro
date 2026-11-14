@@ -1320,6 +1320,7 @@ const AppState = {
     this.interlockLogic = { nodes: [], links: [] };  // CB interlocking diagram
     this.zoom = 1;
     this.panX = 0;
+    if (typeof PlanEngine !== 'undefined') PlanEngine.viewSet = false;   // a new project is fitted on first open
     this.panY = 0;
     this.mode = MODE.SELECT;
     this.placingType = null;
@@ -1549,6 +1550,7 @@ const AppState = {
     const p = v.plan;
     if (p && ok(p.zoom) && p.zoom > 0 && ok(p.panX) && ok(p.panY) && typeof PlanEngine !== 'undefined') {
       PlanEngine.view = { zoom: p.zoom, panX: p.panX, panY: p.panY };
+      PlanEngine.viewSet = true;   // the saved view is the user's own
     }
     // Switch tab once the load has finished rendering (and tabs are re-evaluated).
     if (typeof v.workspace === 'string' && typeof window !== 'undefined' && typeof window.switchWorkspace === 'function') {

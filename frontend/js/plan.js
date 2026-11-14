@@ -78,8 +78,11 @@ const PlanMarkup = {
           <label class="plan-tb-field">Floor
             <select id="plan-floor-select" title="Switch the active floor"></select>
           </label>
-          <button class="plan-tb-btn plan-icon-btn" data-action="floors" aria-label="Manage floors" title="Add, rename, reorder or delete floors">${I('floors')}</button>
+          <button class="plan-tb-btn" data-action="floors" title="Add, rename, reorder or delete floors">${I('floors')} Floors…</button>
         </div>
+        <label class="plan-tb-field" id="plan-colour-field" hidden title="Paint the cables and kiosks by a Demand result">Colour by
+          <select id="plan-colour-select"><option value="off">Type</option><option value="vd">Volt drop</option><option value="load">Cable loading</option></select>
+        </label>
         <label class="plan-tb-field" id="plan-layer-field" title="Work on one layer: the others are faded and can't be selected">Show
           <select id="plan-layer-select"></select>
         </label>
@@ -93,7 +96,8 @@ const PlanMarkup = {
             <canvas id="plan-canvas-bg" class="plan-canvas"></canvas>
             <canvas id="plan-canvas-fg" class="plan-canvas" tabindex="0" role="application"
               aria-label="Plan canvas. Use arrow keys to move between placed items when focused; R rotates, Delete removes."></canvas>
-            <div id="plan-info" class="plan-info">Import a plan, calibrate the scale, then place components and draw routes.</div>
+            <div id="plan-empty" class="plan-empty" hidden></div>
+            <div id="plan-legend" class="plan-legend" hidden></div>
             <button type="button" id="plan-calibrate-btn" class="plan-calibrate-btn" hidden>${I('ruler')}<span>Calibrate plan</span></button>
             <div id="plan-placebar" class="plan-placebar" role="group" hidden></div>
             <div id="plan-action-chip" class="plan-action-chip" role="group" aria-label="Finish or cancel the current drawing">
@@ -106,6 +110,7 @@ const PlanMarkup = {
             <button type="button" id="plan-snap-chip" class="plan-chip" aria-expanded="false" aria-controls="plan-snap-pop" title="Snap and grid settings (G toggles grid snap)"></button>
             <button type="button" class="plan-chip" id="plan-grid-chip" data-pop-focus="plan-grid-size" title="Grid spacing"></button>
             <button type="button" class="plan-chip" id="plan-sym-chip" data-pop-focus="plan-symbol-scale" title="Size of every symbol on this plan (each item can also be scaled on its own)"></button>
+            <span id="plan-info" class="plan-info">Import a plan, calibrate the scale, then place components and draw routes.</span>
             <span id="plan-status-coords" class="plan-status-coords"></span>
             <div id="plan-snap-pop" class="plan-pop" role="dialog" aria-label="Snap and grid" hidden>
               <div class="plan-pop-title">Snap to</div>
@@ -127,6 +132,7 @@ const PlanMarkup = {
 
   // Switch Draw / Underlays / Output. Tools that belong to another mode stop.
   setMode(mode) {
+    if (typeof ContextMenu !== 'undefined') ContextMenu.close();   // a menu left open would act on the old mode
     if (!['draw', 'underlays', 'output'].includes(mode)) mode = 'draw';
     this.mode = mode;
     document.querySelectorAll('#plan-toolbar .plan-mode-btn').forEach(b => {
@@ -299,7 +305,12 @@ const PlanMarkup = {
     const ws = document.getElementById(this.context === 'lighting' ? 'lighting-workspace' : 'plan-workspace');
     if (tb && ws) ws.style.top = tb.offsetHeight + 'px';
     if (this.context === 'plan') this.setMode(this.mode);
-    if (typeof PlanEngine !== 'undefined') { PlanEngine.resize(); PlanEngine.requestDraw({ all: true }); }
+    if (typeof PlanEngine !== 'undefined') {
+      PlanEngine.resize();
+      // First open of this project's plan: show the whole drawing, not an arbitrary corner of it.
+      if (!PlanEngine.viewSet && this.context === 'plan') PlanEngine.zoomFit();
+      PlanEngine.requestDraw({ all: true });
+    }
     if (typeof PlanImages !== 'undefined') PlanImages.syncCache();
     if (typeof PlanDxfImport !== 'undefined') PlanDxfImport.syncFloor();
     if (typeof PlanUI !== 'undefined') { PlanUI.renderPalette(); PlanUI.renderProps(); }
@@ -332,6 +343,8 @@ const PlanMarkup = {
 
   markDirty() {
     AppState.dirty = true;
+    if (typeof PlanEngine !== 'undefined') PlanEngine._cmap = null;
+    this.refreshEmptyState();
     // The Lighting tab recalculates the item being worked on (Live results).
     if (this.context === 'lighting' && typeof LightingWS !== 'undefined' && LightingWS.liveKick) LightingWS.liveKick();
   },
@@ -784,7 +797,7 @@ const PlanMarkup = {
     if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || e.target.isContentEditable) return false;
     if (PlanTools.active && PlanTools.active.keyFirst && PlanTools.active.keyFirst(e)) return true;   // a tool holding a draft (e.g. a shape being drawn) takes Backspace / Esc / Enter before the plan does
     if (e.key === 'Delete' || e.key === 'Backspace') { this.deleteSelected(); return true; }
-    if (e.key === 'Escape') { PlanTools.set('select'); this.clearSelection(); PlanEngine.requestDraw({ fg: true }); return true; }
+    if (e.key === 'Escape') { if (typeof ContextMenu !== 'undefined') ContextMenu.close(); PlanTools.set('select'); this.clearSelection(); PlanEngine.requestDraw({ fg: true }); return true; }
     if (e.key === 'Enter') { const c = PlanTools.onKey(e); this.onDraftChanged(); return c; }
     if (e.key === 'v' || e.key === 'V') { PlanTools.set('select'); return true; }
     if (e.key === 'g' || e.key === 'G') {
@@ -823,6 +836,7 @@ const PlanMarkup = {
   },
 
   onToolChanged(id, opts) {
+    if (typeof ContextMenu !== 'undefined') ContextMenu.close();
     const PLACERS = (id === 'place' || id === 'route' || id === 'array' || id === 'devpath');
     document.querySelectorAll('.plan-tool-btn[data-tool]').forEach(b =>
       b.classList.toggle('active', b.dataset.tool === id));
@@ -853,7 +867,7 @@ const PlanMarkup = {
         if (!pm.plans.length && !pm.elements.length && !(pm.dxfs || []).length) {
           return 'Import a plan (Underlays), set the scale, then place parts and draw routes.';
         }
-        return 'Select — tap to edit, drag to move. Arrow keys nudge; R rotates.';
+        return matchMedia('(pointer: coarse)').matches ? 'Tap an item to edit it · drag to move' : 'Click an item to edit it · drag to move · arrows nudge · R rotates';
       }
       case 'place': return `Placing: ${elName(t)} — click to place. Esc / Select to stop.`;
       case 'placeSld': return 'Placing linked board — click where it goes on the plan.';
@@ -940,15 +954,58 @@ const PlanMarkup = {
     return true;
   },
 
+  // A plan with nothing on this floor yet: three steps instead of a one-line hint. It is out of the way
+  // (top left, like the hint it replaces) so the first part can be placed straight under it.
+  refreshEmptyState() {
+    const box = document.getElementById('plan-empty'), info = document.getElementById('plan-info');
+    if (!box) return;
+    const pm = AppState.planMarkup;
+    const empty = this.context === 'plan' && !['plans', 'dxfs', 'elements', 'routes', 'rooms', 'trenches', 'crossings', 'texts', 'measurements'].some(k => (pm[k] || []).length);
+    box.hidden = !empty;
+    if (info) info.hidden = empty;
+    if (!empty) return;
+    const retic = pm.settings && pm.settings.domain === 'retic';
+    box.innerHTML = `<div class="plan-empty-title">Start this ${retic ? 'site' : 'floor'} plan</div>
+      <ol>
+        <li><b>Import a drawing</b><span>A PDF, image or DXF to draw on. Or skip it and place parts on the empty sheet.</span>
+          <button type="button" class="plan-btn" data-empty="import">Import plan or DXF…</button></li>
+        <li><b>Set the scale</b><span>A DXF sets it for you. For a PDF or image, click two points a known distance apart.</span></li>
+        <li><b>${retic ? 'Detect erven, then place plant' : 'Place the boards and devices'}</b><span>${retic ? 'Detect erven and Auto layout give a first design from the drawing; or pick Minisub / Kiosk in the palette.' : 'Pick a part in the palette, or place the boards listed under From the single line.'}</span></li>
+      </ol>`;
+    if (!box._wired) { box._wired = true; box.addEventListener('click', (e) => { if (e.target.closest('[data-empty="import"]')) this.runAction('import'); }); }
+  },
+
+  // The Colour by control: site plans that have Demand results. The legend names what the colours mean.
+  refreshColourBy() {
+    const field = document.getElementById('plan-colour-field'), sel = document.getElementById('plan-colour-select'), lg = document.getElementById('plan-legend');
+    if (!field || !sel) return;
+    const pm = AppState.planMarkup;
+    const can = this.context === 'plan' && pm.settings && pm.settings.domain === 'retic' && !!AppState.reticResults;
+    field.hidden = !can;
+    if (!sel._wired) {
+      sel._wired = true;
+      sel.addEventListener('change', () => { PlanEngine.colourBy = sel.value; PlanEngine._cmap = null; this.refreshColourBy(); PlanEngine.requestDraw({ all: true }); });
+    }
+    if (!can && PlanEngine.colourBy !== 'off') { PlanEngine.colourBy = 'off'; PlanEngine._cmap = null; }
+    sel.value = PlanEngine.colourBy;
+    if (!lg) return;
+    const vd = PlanEngine.colourBy === 'vd', C = PlanEngine.COLOURS, lim = (typeof Retic !== 'undefined' && Retic.settings) ? Retic.settings.maxFeederVD : 7;
+    lg.hidden = !can || PlanEngine.colourBy === 'off';
+    if (!lg.hidden) lg.innerHTML = `<b>${vd ? 'Volt drop' : 'Cable loading'}</b>`
+      + `<span><i style="background:${C.ok}"></i>${vd ? 'within the limit' : 'under 90 %'}</span><span><i style="background:${C.warn}"></i>${vd ? 'within 10 % of it' : '90–100 %'}</span><span><i style="background:${C.bad}"></i>${vd ? `over ${lim} %` : 'over the rating'}</span>`;
+  },
+
   updateScaleReadout() {
     const pm = AppState.planMarkup;
+    this.refreshEmptyState();
+    this.refreshColourBy();
     const s = pm.scale;
     const calibrated = !!(s && s.factor);
     const cal = document.getElementById('plan-calibrate-btn');
     if (cal) {
       if (!cal._wired) { cal._wired = true; cal.addEventListener('click', () => PlanTools.set('calibrate')); }
       const autoW = calibrated && s.source === 'auto' && (pm.plans || []).length > 0;
-      cal.hidden = calibrated && !autoW;
+      cal.hidden = (calibrated && !autoW) || (document.getElementById('plan-empty') || {}).hidden === false;
     }
     const chip = document.getElementById('plan-scale-chip');
     if (chip) {

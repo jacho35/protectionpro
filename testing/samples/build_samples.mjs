@@ -54,14 +54,21 @@ async function retic(page) {
         for (let j = 0; j < 20; j++) {
           const side = j % 2 ? 1 : -1, col = Math.floor(j / 2);
           const e = el('erf', k.x - 65 + col * 14, m.y + side * 60, `Erf ${++en}`);
+          // The stand's boundary (14 × 80 plan units = 7 × 40 m, shared sides with its neighbours), so Auto layout
+          // can be tried on the sample: its front is 20 units off the street centreline.
+          const fy = m.y + side * 20, by = m.y + side * 100;
+          e.boundary = [{ x: e.x - 7, y: fy }, { x: e.x + 7, y: fy }, { x: e.x + 7, y: by }, { x: e.x - 7, y: by }];
           rt('service', k, e, [[k.x, m.y], [e.x, m.y], [e.x, e.y]]);
         }
       }
+      // the street's centreline (information only), read by Auto layout with the erf boundaries
+      pm.routes.push({ id: AppState.planGenId('pmrt'), type: 'street', fromId: null, toId: null,
+        points: [{ x: 40, y: m.y }, { x: 700, y: m.y }], cableType: '', curved: false, props: { name: m.name, width: 12 } });
       // street lights along the street, fed from the first kiosk
       const k1 = pm.elements.find(e => e.name === `K-${mi + 1}1`);
       let pp = k1;
       for (let j = 0; j < 12; j++) {
-        const p = el('pole', 140 + j * 50, m.y + 30, `P${String(++pn).padStart(2, '0')}`);
+        const p = el('pole', 140 + j * 50, m.y + 14, `P${String(++pn).padStart(2, '0')}`);
         rt('sl', pp, p); pp = p;
       }
     });
