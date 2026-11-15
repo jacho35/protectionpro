@@ -59,8 +59,8 @@ const PlanMarkup = {
     ws.innerHTML = `
       <div id="plan-toolbar" class="plan-toolbar">
         <div class="plan-tb-group plan-mobile-toggle">
-          <button class="plan-tb-btn" data-action="toggle-palette" title="Show/hide the side panel">☰ Panel</button>
-          <button class="plan-tb-btn" data-action="toggle-props" title="Show/hide the properties panel">✎ Props</button>
+          <button class="plan-tb-btn" data-action="toggle-palette" title="Show/hide the side panel" aria-label="Panel">☰<span class="plan-lbl"> Panel</span></button>
+          <button class="plan-tb-btn" data-action="toggle-props" title="Show/hide the properties panel" aria-label="Properties">✎<span class="plan-lbl"> Props</span></button>
         </div>
         <div class="plan-modes" role="group" aria-label="Plan mode">
           <button type="button" class="plan-mode-btn active" data-mode="draw" aria-pressed="true" title="Place devices, draw routes and annotate">Draw</button>

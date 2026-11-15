@@ -1244,10 +1244,14 @@ body.dark-mode {
   .plan-tb-group:not(.plan-mobile-toggle):not(#plan-floor-group) { order: 2; }
   .plan-modes { order: 3; flex: 1 0 100%; display: flex; }
   .plan-modes .plan-mode-btn { flex: 1; }
-  #plan-floor-group { order: 4; }
   .plan-tb-btn[data-action="floors"] { font-size: 0; gap: 0; padding: 0 10px; }
   .plan-tool-btn { padding: 0 10px; }
-  .plan-toolbar .ws-tail { order: 5; margin-left: auto; }
+  .plan-toolbar .ws-tail { order: 6; margin-left: auto; }
+  .plan-mobile-toggle .plan-lbl { display: none; }
+  .plan-mobile-toggle .plan-tb-btn { min-width: 40px; justify-content: center; }
+  .plan-modes { order: 3; }
+  #plan-floor-group { order: 4; }
+  #plan-colour-field { order: 5; }
   .plan-mobile-toggle .plan-tb-btn { padding: 0 8px; }
   .plan-chip { min-height: 34px; }
   .plan-pop { left: 8px; right: 8px; width: auto; }
@@ -1500,6 +1504,45 @@ body.dark-mode {
   /* Results view switch: under the mode bar, clear of the side buttons; scrolls sideways */
   .rv-strip { top: 62px; left: 10px; transform: none; max-width: calc(100% - 70px); }
   #canvas-container.has-rv .stale-chip { top: 104px; }
+
+  /* ─── Compact workspace headers (phone) ────────────── */
+  /* Toolbars with many buttons become one swipeable row instead of three or four wrapped rows. */
+  .retic-toolbar, #interlock-workspace .il-toolbar {
+    flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none;
+  }
+  .retic-toolbar::-webkit-scrollbar, #interlock-workspace .il-toolbar::-webkit-scrollbar { display: none; }
+  .retic-toolbar > *, #interlock-workspace .il-toolbar > * { flex: 0 0 auto; }
+  #interlock-workspace .il-title { width: auto; }
+  #interlock-workspace .il-gate-adds { flex-wrap: nowrap; }
+  #interlock-workspace .il-status { display: none; }
+  /* The help text stays out of the way until something is selected. */
+  #interlock-workspace .il-inspector:has(.il-insp-empty) { display: none; }
+
+  /* Street lighting: the title is already in the header; the view tabs span the width. */
+  #streetlight-workspace .sl-toolbar { flex-wrap: wrap; overflow-x: visible; }
+  #streetlight-workspace .sl-title { display: none; }
+  #streetlight-workspace .sl-toolbar .btn-small { white-space: nowrap; }
+  #streetlight-workspace .sl-view-toggle { display: flex; flex: 1 1 100%; }
+  #streetlight-workspace .sl-view-toggle button { flex: 1 1 0; min-width: 0; padding-inline: 6px; white-space: nowrap; }
+  #streetlight-workspace .sl-toolbar .sl-sep { display: none; }
+
+  /* Schedules: the board tabs scroll instead of running off the edge. */
+  .sch-tabs { overflow-x: auto; max-width: 100%; scrollbar-width: none; flex-wrap: nowrap; }
+  .sch-tabs::-webkit-scrollbar { display: none; }
+  .sch-tab { flex: 0 0 auto; white-space: nowrap; }
+
+  /* Overview tables: a shadow on the edge that still has more to scroll to. */
+  .ov-tscroll {
+    background:
+      linear-gradient(to right, var(--bg-primary) 30%, transparent),
+      linear-gradient(to left, var(--bg-primary) 30%, transparent) 100% 0,
+      radial-gradient(farthest-side at 0 50%, rgba(0,0,0,.22), transparent),
+      radial-gradient(farthest-side at 100% 50%, rgba(0,0,0,.22), transparent) 100% 0;
+    background-repeat: no-repeat;
+    background-size: 36px 100%, 36px 100%, 14px 100%, 14px 100%;
+    background-attachment: local, local, scroll, scroll;
+  }
+  .ov-table th, .ov-table td { padding: 6px 8px; }
 } /* end @media (max-width: 768px) */
 
 /* Applies at every viewport width: tablets and landscape phones exceed
