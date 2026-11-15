@@ -44,6 +44,7 @@ from __future__ import annotations
 
 import math
 
+from .iec_60364_tables import grouping_factor
 from .retic_earth import run_retic_earth_check
 
 PF = 0.95
@@ -98,7 +99,11 @@ class _Design:
         self.breakers = sorted(req.get("breakers") or [], key=lambda b: _num(b.get("rating")))
         o = req.get("options") or {}
         self.taper = o.get("taper", True) is not False
+        self.max_sizes = int(_num(o.get("maxSizes")))                 # 0 = as many different sizes as the taper likes
         self.pinned_cable = dict(o.get("pinnedCables") or {})
+        # LV cables sharing one buried trench derate each other (IEC 60364-5-52 B.52.18): kiosk id → how many feeders lie in its trench
+        row = o.get("groupRow") or "buried_touching"
+        self.group = {k: grouping_factor(row, int(_num(n, 1)))[0] for k, n in (o.get("groupCircuits") or {}).items() if _num(n, 1) > 1}
         self.pinned_breaker = dict(o.get("pinnedBreakers") or {})
         r = o.get("headRange") or {}
         self.hi_mul, self.hi_add = _num(r.get("high"), 2.2), _num(r.get("add"), 20.0)
@@ -163,8 +168,13 @@ class _Design:
     def cum_vd(self, kid):
         return sum(self.leg_vd(c) for c in self.chain(kid))
 
+    def rated(self, kid):
+        """The cable's rated amps for this feeder: the library figure, less the grouping factor of the trench it shares."""
+        c = self.cable(kid)
+        return _num(c.get("rated_amps", c.get("rating_a"))) * self.group.get(kid, 1.0)
+
     def rating_ok(self, kid):
-        r = _num(self.cable(kid).get("rated_amps", self.cable(kid).get("rating_a")))
+        r = self.rated(kid)
         return not r or self.kiosks[kid]["amps"] <= r + EPS
 
     def violations(self):
@@ -172,7 +182,7 @@ class _Design:
         out = []
         for k in self.order:
             c, kk = self.cable(k), self.kiosks[k]
-            r = _num(c.get("rated_amps", c.get("rating_a")))
+            r = round(self.rated(k), 1)
             if r and kk["amps"] > r + EPS:
                 out.append({"kioskId": k, "kind": "rating", "value": round(kk["amps"], 1), "limit": r, "cable": c.get("name")})
             v = self.cum_vd(k)
@@ -253,6 +263,10 @@ class _Design:
         if head in self.pinned_breaker:
             return [self.pinned_breaker[head]]
         lo, hi = amps, amps * self.hi_mul + self.hi_add
+        # a head breaker smaller than a way below it trips first on an erf fault: start at the largest way in the string
+        ways = [_num((e.get("device") or {}).get("rating")) for k in self.string(head) for e in self.kiosks[k]["erfs"]]
+        lo = max([lo] + ways)
+        hi = max(hi, lo)
         c = [b for b in self.breakers if lo - EPS <= _num(b.get("rating")) <= hi + EPS]
         if not c:                                   # the string is above the library: the largest there is
             above = [b for b in self.breakers if _num(b.get("rating")) >= amps - EPS]
@@ -339,6 +353,8 @@ class _Design:
                 tries.append((self.cable_total(), start != uniform_idx, dict(self.idx)))
             tries.sort(key=lambda t: (round(t[0], 6), t[1]))
             self.idx = dict(tries[0][2])
+        if self.max_sizes and self.taper:
+            self._limit_sizes(ref_items, ref_vd, ref_rate)
         # the breakers again on the final cable; a change is kept only if it is not worse
         before = {h: self.dev.get(h) for h in self.heads}
         before_items = self.items()
@@ -346,6 +362,25 @@ class _Design:
         if before != {h: self.dev.get(h) for h in self.heads} and not self.not_worse(before_items, self.items()):
             self.dev.update(before)
         return self._result(ref_items=ref_items, ref_fails=ref_fails, uniform_idx=uniform_idx, uniform_total=uniform_total)
+
+    def _limit_sizes(self, ref_items, ref_vd, ref_rate):
+        """At most ``maxSizes`` different cables: the smallest size in use moves up to the next size in use (bigger is
+        kept only if nothing gets worse), until the count is met or a step cannot be taken."""
+        while True:
+            used = sorted({self.idx[k] for k in self.order})
+            if len(used) <= self.max_sizes or len(used) < 2:
+                return
+            lo, nxt = used[0], used[1]
+            movers = [k for k in self.order if self.idx[k] == lo and not self.frozen(k)]
+            if not movers:
+                return
+            for k in movers:
+                self.idx[k] = nxt
+            self.trials += 1
+            if not self.acceptable(ref_items, ref_vd, ref_rate, self.order):
+                for k in movers:
+                    self.idx[k] = lo
+                return
 
     def _taper(self, ref_items, ref_vd, ref_rate):
         """Deepest kiosk first, one size smaller at a time, kept only if nothing downstream gets worse."""
@@ -487,7 +522,7 @@ class _Design:
         for k in self.order:
             kk, c = self.kiosks[k], self.cable(k)
             feeders.append({"kioskId": k, "name": kk["name"], "fedFrom": kk["fedFrom"], "cable": c.get("name"), "sizeMm2": _size(c),
-                            "lengthM": kk["len"], "amps": kk["amps"], "ratingA": _num(c.get("rated_amps", c.get("rating_a"))),
+                            "lengthM": kk["len"], "amps": kk["amps"], "ratingA": round(self.rated(k), 1), "groupFactor": self.group.get(k, 1.0),
                             "vdPct": round(self.leg_vd(k), 3), "vdCumPct": round(self.cum_vd(k), 3),
                             "head": k in self.heads, "pinned": self.frozen(k),
                             "setBy": "you" if self.frozen(k) else ("uniform" if self.idx[k] == uniform_idx else "taper")})

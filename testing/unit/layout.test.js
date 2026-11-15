@@ -177,6 +177,14 @@ ok('demand input: every erf once, the LV tree as fedFrom, the service length on 
   assert(d.kiosks.every(k => k.feederLength > 0 && k.feederCable === 'A'));
   const k0 = d.kiosks.find(k => k.erfs.length >= 3); assert.deepStrictEqual(k0.erfs.slice(0, 3).map(e => e.phase), ['Red', 'White', 'Blue']);
 });
+ok('Demand rows: phases rotate along a string, not afresh at each kiosk', () => {
+  const r = L.solve(F, {}), d = L.demandInput(r, { minisubId: 'MS', lvCable: 'A', svcCable: 'B', phases: ['Red', 'White', 'Blue'] });
+  const cnt = {}; d.kiosks.forEach(k => k.erfs.forEach(e => { cnt[e.phase] = (cnt[e.phase] || 0) + 1; }));
+  const v = Object.values(cnt), naive = {}; d.kiosks.forEach(k => k.erfs.forEach((e, i) => { const ph = ['Red', 'White', 'Blue'][i % 3]; naive[ph] = (naive[ph] || 0) + 1; }));
+  const spread = o => { const x = Object.values(o); return Math.max(...x) - Math.min(...x); };
+  assert(spread(cnt) <= spread(naive), `carried ${JSON.stringify(cnt)} vs per-kiosk ${JSON.stringify(naive)}`);
+  const k0 = d.kiosks[0]; assert.deepStrictEqual(k0.erfs.slice(0, 3).map(e => e.phase).slice(0, Math.min(3, k0.erfs.length)), ['Red', 'White', 'Blue'].slice(0, Math.min(3, k0.erfs.length)));
+});
 ok('mini-sub position: "opt" never has a worse worst kiosk than the middle; a placed mini-sub is kept', () => {
   const mom = (r) => { const up = new Map(r.net.lvLinks.map(l => [l.to, l])), cnt = new Map(); const c = k => { if (cnt.has(k)) return cnt.get(k); let x = k.members.length; r.net.lvLinks.filter(l => l.from === k).forEach(l => { x += c(l.to); }); cnt.set(k, x); return x; };
     let worst = 0; r.kiosks.forEach(k => { let m = 0, v = k; while (up.has(v)) { const l = up.get(v); m += c(l.to) * l.len; v = l.from; } worst = Math.max(worst, m); }); return worst; };
@@ -455,5 +463,49 @@ ok('crossings: "near" crosses at the boundary nearest each erf, no longer cable,
   const a = run(few), b = run(near); assert(a.n > 0 && b.n === a.n);
   assert(b.t < a.t * 0.8, `far-verge run ${Math.round(b.t)} m vs ${Math.round(a.t)} m`);
   assert(near.stats.crossings >= few.stats.crossings);
+});
+ok('strings: strE cuts by erven carried; no string carries more than strE (a single kiosk aside)', () => {
+  const r = L.solve(F, { strN: 0, strE: 12 }), up = new Map(r.net.lvLinks.map(l => [l.to, l]));
+  const head = k => { let c = k; while (up.get(c) && up.get(c).from !== c.subK) c = up.get(c).from; return c; };
+  const load = new Map(); r.kiosks.forEach(k => { const h = head(k); load.set(h, (load.get(h) || 0) + k.members.length); });
+  load.forEach((n, h) => assert(n <= 12 || h.members.length > 12 || n === h.members.length, 'string of ' + n));
+  assert(r.net.strings >= L.solve(F, { strN: 0, strE: 0 }).net.strings);
+});
+ok('mini-subs placed by hand: subBal moves the border kiosks to the neighbour with room; 0 keeps nearest-wins', () => {
+  const base = L.solve(F, { subs: 2, strN: 0 }), p0 = [base.net.subs[0].k.x, base.net.subs[0].k.y], near = [p0, [p0[0] + 15, p0[1]]];
+  const load = r => r.net.subs.map(s => s.g.reduce((a, k) => a + k.members.length, 0));
+  const a = load(L.solve(Object.assign({}, F, { subPts: near }), { strN: 0 })), b = load(L.solve(Object.assign({}, F, { subPts: near }), { strN: 0, subBal: 1.3 }));
+  assert(Math.max(...b) < Math.max(...a), `${a} then ${b}`);
+});
+ok('markers: "pair" puts neighbours\' markers on their common boundary, closer than the start corner does', () => {
+  const gap = r => { let tot = 0, n = 0; const by = new Map(); r.erven.forEach(e => { if (!e.fe || !e.marker) return; const k = e.road.id + '|' + e.sd; (by.get(k) || by.set(k, []).get(k)).push(e); });
+    by.forEach(l => { l.sort((a, b) => a.al - b.al); for (let i = 0; i + 1 < l.length; i++) if (Math.abs(l[i].hi - l[i + 1].lo) <= 1.5) { tot += Math.hypot(l[i].marker[0] - l[i + 1].marker[0], l[i].marker[1] - l[i + 1].marker[1]); n++; } }); return tot / n; };
+  const a = L.solve(F, { corner: 'start' }), b = L.solve(F, { corner: 'pair' });
+  assert(gap(b) < gap(a), `${gap(b).toFixed(1)} vs ${gap(a).toFixed(1)}`);
+  holds(b, Object.assign({}, L.DEFAULTS, { corner: 'pair' }), F.erven.length, 'pair');
+});
+ok('crossings: xkiosk keeps a kiosk that giving up would add crossings for (default off: fewest kiosks first)', () => {
+  const G = gridFx(50), off = L.solve(G, {}), on = L.solve(G, { xkiosk: true });
+  assert(on.kiosks.length >= off.kiosks.length && on.stats.crossings <= off.stats.crossings, `kiosks ${off.kiosks.length} → ${on.kiosks.length}, crossings ${off.stats.crossings} → ${on.stats.crossings}`);
+  holds(on, Object.assign({}, L.DEFAULTS, { xkiosk: true }), G.erven.length, 'grid xkiosk');
+});
+ok('front: "busy" gives every erf a front and keeps every layout rule', () => {
+  const r = L.solve(F, { front: 'busy' });
+  holds(r, Object.assign({}, L.DEFAULTS, { front: 'busy' }), F.erven.length, 'busy');
+});
+ok('fibre: mhmerge folds short stretches into a neighbour: fewer manholes, every erf still has a duct, no manhole over m erven', () => {
+  const a = L.solve(F, {}), b = L.solve(F, { mhmerge: true });
+  assert(b.fibre.mhs.length < a.fibre.mhs.length, `${a.fibre.mhs.length} → ${b.fibre.mhs.length}`);
+  assert.strictEqual(b.erven.filter(e => e.fe && !e.duct).length, 0);
+  b.fibre.mhs.forEach(m => assert(m.members.length <= b.P.m, 'manhole of ' + m.members.length));
+  assert.strictEqual(new Set(b.fibre.mhs.map(m => m.id)).size, b.fibre.mhs.length);
+});
+ok('kside "try": never scores worse than the head-count side, sides set by hand are kept, rules still hold', () => {
+  const sc = r => r.kiosks.length * r.P.worth + r.stats.cable + r.P.xpen * r.stats.crossings;
+  const a = L.solve(F, { kside: 'count' }), b = L.solve(F, { kside: 'try' });
+  assert(sc(b) <= sc(a) + 1e-6, `${sc(a)} vs ${sc(b)}`);
+  holds(b, Object.assign({}, L.DEFAULTS, { kside: 'try' }), F.erven.length, 'kside try');
+  const id = a.streets[0].id, c = L.solve(Object.assign({}, F, { ks: { [id]: -a.ks[id] } }), { kside: 'try' });
+  assert.strictEqual(c.ks[id], -a.ks[id]);
 });
 console.log(n + ' passed');
