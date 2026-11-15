@@ -7,6 +7,9 @@ let n = 0; const ok = (name, fn) => { fn(); n++; console.log('ok', name); };
 const fixture = require('./layout-fixture.js');
 const F = fixture();
 
+ok('the default longest service cable is 70 m', () => { assert.strictEqual(L.DEFAULTS.maxc, 70); });
+L.DEFAULTS.maxc = 80;   // the fixtures below were tuned at 80 m: they test the engine, not the default
+
 ok('fixture: a believable neighbourhood', () => { assert(F.erven.length > 60 && F.erven.length < 140, 'erven ' + F.erven.length); });
 
 ok('every erf gets a front, a marker 3-5 m in, and the marker is inside the erf', () => {
@@ -257,14 +260,14 @@ ok('kiosks: the neighbourhood needs far fewer than one solve per street gives, a
   assert(r.stats.cable <= old.stats.cable * 1.15, `service cable ${Math.round(r.stats.cable)} m vs ${Math.round(old.stats.cable)} m before`);
 });
 ok('kiosks: four short parallel streets of four erven need 3 kiosks at most (one per street gives 4 or more)', () => {
-  const G = gridFx(50), r = L.solve(G, {}), old = L.solve(G, { knet: false });
-  holds(r, Object.assign({}, L.DEFAULTS), G.erven.length, 'grid');
+  const G = gridFx(50), r = L.solve(G, { maxc: 80 }), old = L.solve(G, { knet: false, maxc: 80 });
+  holds(r, Object.assign({}, L.DEFAULTS, { maxc: 80 }), G.erven.length, 'grid');
   assert(r.kiosks.length <= 3, 'kiosks ' + r.kiosks.length); assert(old.kiosks.length >= 4, 'before ' + old.kiosks.length);
   assert(r.kiosks.some(k => new Set(k.members.map(e => e.road.id)).size > 1), 'a kiosk serves erven of two streets');
   assert(r.stats.small <= 1);
 });
 ok('kiosks: the settings now have an effect (n, worth)', () => {
-  const k = P => L.solve(F, P).kiosks.length;
+  const k = P => L.solve(F, Object.assign({ maxc: 80 }, P)).kiosks.length;
   assert(k({ n: 6 }) - k({ n: 8 }) >= 2, `n 6 → 8: ${k({ n: 6 })} → ${k({ n: 8 })}`);
   assert(k({ n: 4 }) > k({ n: 6 }), 'n 4 needs more than n 6');
   assert(k({ worth: 0 }) - k({ worth: 250 }) >= 3, `worth 0 → 250: ${k({ worth: 0 })} → ${k({ worth: 250 })}`);
