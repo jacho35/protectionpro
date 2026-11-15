@@ -537,4 +537,12 @@ ok('a placed mini-sub joins the NEAREST street, not the first one', () => {
   const r = L.solve(Object.assign({}, F, { subPts: [[p[0], p[1]]] }), { strN: 0 });
   assert.strictEqual(r.net.sub.road.id, 'S2'); assert(Math.hypot(r.net.sub.stub[1][0] - p[0], r.net.sub.stub[1][1] - p[1]) < 30, 'its cable stub is short');
 });
+ok('strings: each string reports its reach from the mini-sub; cutting by kiosks never shortens it; default limit is 350 m', () => {
+  assert.strictEqual(L.DEFAULTS.strL, 350);
+  const a = L.solve(F, { strN: 0 }), b = L.solve(F, { strN: 2 });
+  assert(a.net.strLens.length >= 1 && b.net.strLens.length > a.net.strLens.length, 'more strings when cut');
+  const far = r => Math.max(...r.net.strLens.map(x => x.len));
+  assert(Math.abs(far(a) - far(b)) < 1e-6 || far(b) <= far(a) + 1e-6, 'the furthest kiosk is no further when cut');
+  b.net.strLens.forEach(x => { assert(x.len > 0 && x.kiosks.includes(x.far)); });
+});
 console.log(n + ' passed');

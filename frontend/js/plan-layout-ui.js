@@ -34,7 +34,7 @@ const PlanLayoutUI = {
     ['Kiosks', [['kmode', 'select', [['rules', 'even runs (rule of thumb)'], ['opt', 'optimiser: fewest kiosks, then crossings, then cable']], 'Placement'],
       ['n', 'range', 4, 12, 1, '', 'Max houses per kiosk'], ['maxc', 'range', 30, 150, 5, 'm', 'Max service cable'], ['worth', 'range', 0, 600, 10, 'm', 'Extra cable accepted to save one kiosk'],
       ['kside', 'select', [['count', 'the side with more erven'], ['try', 'try both sides, keep the cheaper']], 'Kiosk side of each street'], ['xpen', 'range', 0, 600, 25, 'm', 'A road crossing counts as this much cable'], ['xkiosk', 'check', 'Keep a kiosk if removing it would add road crossings'],
-      ['strN', 'range', 0, 10, 1, '', 'Longest LV string (kiosks, 0 = no limit)'], ['strE', 'tnum', 2, 60, 2, 'erven', 'Limit erven on one string (instead of kiosks)', 12], ['subBal', 'tnum', 1.1, 2, 0.1, '× an even share', 'Balance hand-placed mini-subs', 1.3],
+      ['strN', 'range', 0, 10, 1, '', 'Most kiosks on one LV string (0 = no limit)'], ['strL', 'range', 0, 1000, 25, 'm', 'Longest LV string, mini-sub to furthest kiosk (0 = no limit)'], ['strE', 'tnum', 2, 60, 2, 'erven', 'Limit erven on one string (instead of kiosks)', 12], ['subBal', 'tnum', 1.1, 2, 0.1, '× an even share', 'Balance hand-placed mini-subs', 1.3],
       ['strMode', 'select', [['fewest', 'fewest strings'], ['even', 'strings of similar size']], 'Cut long strings into']]],
     ['Fibre', [['m', 'range', 4, 12, 1, '', 'Erven per manhole'], ['mhmerge', 'check', 'Fold a short stretch\'s manhole into its neighbour'], ['maxmh', 'range', 40, 200, 10, 'm', 'Max distance between manholes'],
       ['fibre', 'select', [['opp', 'civil side, opposite the kiosks'], ['same', 'same side as the kiosks']], 'Manholes default to the'],
@@ -78,6 +78,7 @@ const PlanLayoutUI = {
     xpen: 'How many metres of cable one road crossing counts for when erven are given to kiosks. Higher keeps services on their own side of the road.',
     xkiosk: 'Giving up a kiosk is allowed while the extra service cable stays within the amount a kiosk is worth. With crossings counted, a kiosk that would add road crossings is kept unless the saving covers them (crossings counted at the figure above).',
     strE: 'The most erven carried by one string. When set, strings are cut by the erven they feed (a kiosk of six counts six) and the kiosk limit above is not used. 0 = count kiosks instead.',
+    strL: 'The longest cable run from the mini-sub to the furthest kiosk on one string. Volt drop and the earth-fault loop grow with this length. Cutting a string does not shorten it (each string has its own feeder from the mini-sub along the same route), so a string over the limit is reported as a Fix: add a mini-sub nearer, or move the mini-sub. 0 = no limit.',
     strN: 'The most kiosks fed in a line from one feeder off the mini-sub. A longer street is cut into several strings, each with its own breaker and its own cable back to the mini-sub along the same route. A shorter string keeps the head breaker and the cable small and the far-end earth-fault loop short, at the price of more cable and more ways on the mini-sub board. 0 = no limit: kiosks daisy-chain along the whole street.',
     strMode: 'How a street with more kiosks than the limit is cut. Fewest strings: cut from the far end back, so as few feeders as possible leave the mini-sub, but the last string can be short (9 kiosks at a limit of 4 gives 4 + 4 + 1). Strings of similar size: the same number of feeders as the limit needs, but shared out evenly (9 kiosks gives 3 + 3 + 3), so the strings are loaded alike. On a branching network this can need more feeders.',
   },
@@ -88,7 +89,8 @@ const PlanLayoutUI = {
     const L = (s.layout && typeof s.layout === 'object') ? s.layout : (s.layout = {});
     const D = PlanLayout.DEFAULTS, p = L.params = (L.params && typeof L.params === 'object') ? L.params : {};
     if (Object.keys(p).length && p.xpref === undefined) p.xpref = 'few';           // a layout made before this keeps its fewest-crossings choice
-    if (Object.keys(p).length && p.strN === undefined) p.strN = 0;                    // a layout made before strings existed keeps its one tree
+    if (Object.keys(p).length && p.strN === undefined) p.strN = 0;
+    if (Object.keys(p).length && p.strL === undefined) p.strL = 0;                    // a layout made before the string length limit keeps no limit                    // a layout made before strings existed keeps its one tree
     if (Object.keys(p).length && p.kgeo === undefined) p.kgeo = 'street';          // a layout set up before the boundary corridor existed keeps running the way it did
     for (const [, rows] of this.CTRL) for (const r of rows) {
       const k = r[0], v = p[k];
@@ -1092,6 +1094,10 @@ const PlanLayoutUI = {
         acts: rows.filter(x => x.g && !x.g.near).length > 1 ? [{ label: 'Extend the nearest streets to all of them', act: 'extendall', val: rows.filter(x => x.g && !x.g.near).map(x => x.id) }] : [] });
     }
     if (r.net.unreached && r.net.unreached.length) out.push({ sev: 'fail', text: `The LV network does not reach ${r.net.unreached.length} ${r.net.unreached.length === 1 ? 'kiosk' : 'kiosks'} (${r.net.unreached.map(k => k.id).join(', ')}): ${(r.net.parts || 2) > 1 ? 'the streets between them are not joined up (' + r.net.parts + ' separate street networks).' : 'the streets are joined, so this is a layout fault: run the layout again and report it if it stays.'} Their erven have no LV supply, and the voltage-drop and earth-fault results leave them out. ${(r.net.parts || 2) > 1 ? 'Join the streets (Streets from kerb layer › Join networks) or add the missing street.' : ''}`, ids: r.net.unreached.flatMap(k => k.members.map(e => e.id)) });
+    if (P.strL > 0 && r.net.strLens) {
+      const longS = r.net.strLens.filter(x => x.len > P.strL + 1e-6).sort((a, b) => b.len - a.len);
+      if (longS.length) out.push({ sev: 'fail', text: `${longS.length} LV ${longS.length === 1 ? 'string is' : 'strings are'} longer than ${P.strL} m from the mini-sub to the furthest kiosk (${longS.slice(0, 5).map(x => x.far.id + ': ' + Math.round(x.len) + ' m').join(', ')}${longS.length > 5 ? ', …' : ''}). Cutting a string does not shorten it: add a mini-sub nearer the far end, or move the mini-sub.`, ids: longS.flatMap(x => x.kiosks.flatMap(k => k.members.map(e => e.id))), acts: [{ label: 'Place another mini-sub', act: 'addsub' }] });
+    }
     const hand = r.erven.filter(e => e.manual);
     if (hand.length) out.push({ sev: 'info', text: `${hand.length} ${hand.length === 1 ? 'erf uses' : 'erven use'} a marker you placed (${nm(hand.map(lab))}). The service cable, kiosk and fibre duct are worked out to it.`, ids: hand.map(e => e.id), acts: [{ label: 'Remove my markers', act: 'resetmarkers' }] });
     const unserved = r.erven.filter(e => e.fe && !e.kiosk);
@@ -1269,7 +1275,7 @@ const PlanLayoutUI = {
       if (kind === 'check') return `<div style="display:flex;flex-direction:column;gap:3px"><label style="display:flex;gap:6px;align-items:flex-start"${tipOf(k)}><input type="checkbox" data-p="${k}"${p[k] ? ' checked' : ''}> <span>${dot(k)}${esc(a)}${qm(k)}</span></label>${rst(row)}</div>`;
       return `<div style="display:flex;flex-direction:column;gap:3px"><label style="display:block"${tipOf(k)}>${dot(k)}${esc(b)}${qm(k)}<select data-p="${k}" style="width:100%">${a.map(o => `<option value="${esc(o[0])}"${p[k] === o[0] ? ' selected' : ''}>${esc(o[1])}</option>`).join('')}</select></label>${rst(row)}</div>`;
     };
-    const MOST = ['n', 'maxc', 'strN'];                                      // the two kiosk settings shown in Rules as "most used"
+    const MOST = ['n', 'maxc', 'strN', 'strL'];                                      // the two kiosk settings shown in Rules as "most used"
     const grpChanged = rows => rows.some(r => !MOST.includes(r[0]) && String(p[r[0]]) !== String(dflt[r[0]]));
     const advHead = (name, changed, key) => `<summary style="cursor:pointer;font-weight:600;margin:2px 0">${name}${changed ? ` <span style="color:#b45309;font-weight:400;font-size:12px">● changed</span>` : ''}</summary>`;
     const resetBtn = (changed, key) => changed ? `<button type="button" class="plan-btn" data-act="resetgrp" data-g="${key}" style="align-self:flex-start;padding:1px 8px;font-size:12px">Reset this group</button>` : '';
@@ -1393,7 +1399,7 @@ const PlanLayoutUI = {
     const step3 = words.length ? `${searchBox}${searchRes}` : `${searchBox}<div><div style="font-weight:600;margin-bottom:3px">What matters most</div><div style="display:grid;grid-template-columns:repeat(2,1fr);gap:3px">${Object.keys(this.PRESETS).map(k => pBtn(k, this.PRESET_NAMES[k])).join('')}${pBtn('custom', 'Custom')}</div><div style="font-size:12px;color:var(--text-muted);margin-top:3px">${preset === 'custom' ? 'Your own mix of the settings below.' : this.PRESET_HINT[preset]}</div></div>
         ${secBlock}
         <div style="font-weight:600">Most used</div>
-        <div style="display:flex;flex-direction:column;gap:8px">${ctrl(kRow('n'))}${ctrl(kRow('maxc'))}${ctrl(kRow('strN'))}${vdTx}${vdLv}</div>
+        <div style="display:flex;flex-direction:column;gap:8px">${ctrl(kRow('n'))}${ctrl(kRow('maxc'))}${ctrl(kRow('strN'))}${ctrl(kRow('strL'))}${vdTx}${vdLv}</div>
         <details><summary style="cursor:pointer;font-weight:600">Advanced <span style="font-weight:400;font-size:12px;color:var(--text-muted)">6 groups · ${nChanged} changed</span></summary><div style="display:flex;flex-direction:column;gap:4px;padding-top:4px">${groups}${trenchGroup}${vdGroup}</div></details>
         <div style="font-size:12px;color:var(--text-muted)">${r ? 'The layout runs again when you change a setting.' : 'Nothing is drawn while you choose.'}</div>`;
     // ── step 4: review
