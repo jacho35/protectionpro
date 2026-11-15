@@ -32,7 +32,7 @@ const PlanLayoutUI = {
       ['corner', 'select', [['start', 'start of the street'], ['end', 'far end of the street'], ['kiosk', 'nearest its kiosk'], ['pair', 'paired on the shared boundary']], 'Front corner'],
       ['front', 'select', [['longest', 'longest street edge'], ['shortest', 'shortest street edge'], ['busy', 'the busier street']], 'A corner erf fronts its']]],
     ['Kiosks', [['kmode', 'select', [['rules', 'even runs (rule of thumb)'], ['opt', 'optimiser: fewest kiosks, then crossings, then cable']], 'Placement'],
-      ['n', 'range', 4, 12, 1, '', 'Max houses per kiosk'], ['maxc', 'range', 30, 150, 5, 'm', 'Max service cable'], ['worth', 'range', 0, 600, 10, 'm', 'A kiosk is worth up to this much extra service cable'],
+      ['n', 'range', 4, 12, 1, '', 'Max houses per kiosk'], ['maxc', 'range', 30, 150, 5, 'm', 'Max service cable'], ['worth', 'range', 0, 600, 10, 'm', 'Extra cable accepted to save one kiosk'],
       ['kside', 'select', [['count', 'the side with more erven'], ['try', 'try both sides, keep the cheaper']], 'Kiosk side of each street'], ['xpen', 'range', 0, 600, 25, 'm', 'A road crossing counts as this much cable'], ['xkiosk', 'check', 'Keep a kiosk if removing it would add road crossings'],
       ['strN', 'range', 0, 10, 1, '', 'Longest LV string (kiosks, 0 = no limit)'], ['strE', 'tnum', 2, 60, 2, 'erven', 'Limit erven on one string (instead of kiosks)', 12], ['subBal', 'tnum', 1.1, 2, 0.1, '× an even share', 'Balance hand-placed mini-subs', 1.3],
       ['strMode', 'select', [['fewest', 'fewest strings'], ['even', 'strings of similar size']], 'Cut long strings into']]],
@@ -51,6 +51,28 @@ const PlanLayoutUI = {
 
   // hover explanations for the settings that need one (native tooltip on the label and on the (?) mark)
   TIPS: {
+    side: 'How far in from the erf\'s side boundary the service marker (where the service cable enters the erf) is placed.',
+    depth: 'How far in from the front boundary the service marker is placed.',
+    corner: 'Which front corner of each erf gets the marker. Start / far end of the street, or the corner nearest its kiosk. Paired puts the markers of two neighbouring erven on their shared boundary, so they share one service leg and, across the road, one crossing.',
+    front: 'Which street a corner erf faces, and so where its marker and service go: the longer or the shorter of its street edges, or the busier street (the one with more erven on it).',
+    kmode: 'How kiosks are placed. Even runs: a kiosk for every run of up to the maximum houses along each street. Optimiser: one solve over the whole street network, fewest kiosks first, then fewest road crossings, then least cable.',
+    n: 'The most erven one kiosk may serve.',
+    maxc: 'The longest service cable from a kiosk to an erf, in metres. Longer services cost more volt drop and a longer earth-fault loop, so 70 m is the usual limit. An erf beyond it is reported.',
+    worth: 'How many metres of extra service cable the layout will accept to remove one kiosk. A kiosk is given up while every erf is still within the maximum service cable and the extra cable added is no more than this; a kiosk is added only if it saves more than this. Higher: fewer kiosks, longer services. 0: never trade cable for a kiosk.',
+    kside: 'Which side of each street the kiosks and LV cable run along. The side with more erven is simple. Trying both sides runs the layout each way for every street and keeps the cheaper, at the cost of a slower run.',
+    m: 'One fibre manhole for about this many erven along a street.',
+    mhmerge: 'Where a short stretch would get its own manhole, use its neighbour\'s instead, so fewer manholes are built.',
+    maxmh: 'The longest duct run between two manholes. More manholes are added where a run would be longer.',
+    fibre: 'Which side of the street the fibre manholes and ducts are put by default: opposite the kiosks, or the same side.',
+    topo: 'How the main fibre duct runs. Ring: every street, closed into loops. Spur: spurs with T-offs from the entry point (less duct, no second path).',
+    share: 'Services, fibre and LV cable that cross the road at the same place share one crossing trench and its sleeves instead of one each.',
+    xmode: 'Where a road crossing may be put: on any erf boundary, or only at kiosk stations.',
+    junct: 'Lay provisional ducts across every road at every junction, even where no cable uses them yet, for later work.',
+    j110: 'How many 110 mm ducts are laid at a junction crossing that carries no cable.',
+    j160: 'How many 160 mm (MV size) ducts are laid at a junction crossing that carries no cable.',
+    spare: 'Extra 110 mm ducts added to every crossing for future cables.',
+    kgeo: 'What the kiosk, cable and manhole offsets are measured from. The erf boundary follows the plots, so a street line that is a little out moves nothing. The street line is how earlier layouts were made.',
+    kd: 'How far inside the erf boundary the cables and kiosks run. Cross-sections, when switched on, set their own offsets.',
     xpref: 'Where a service for an erf across the road crosses. At the erf\'s own boundary: the cable runs along the kiosk\'s side of the road and crosses at the erf boundary nearest the erf, so the far verge only carries the last stretch. Services whose nearest boundary is the same share that crossing. At as few places as possible: fewer crossings, but the cable may cross at the kiosk and run along the far verge.',
     subBal: 'When you place the mini-subs yourself each kiosk goes to the nearest one, so one transformer can carry far more than another. Set this to cap each mini-sub at that multiple of an even share of the erven (1.3 = 30 % above even); the kiosks nearest the border move to the neighbour with room. 0 = off, nearest wins.',
     xpen: 'How many metres of cable one road crossing counts for when erven are given to kiosks. Higher keeps services on their own side of the road.',
@@ -1244,7 +1266,7 @@ const PlanLayoutUI = {
         const on = p[k] > 0;
         return `<div style="display:flex;flex-direction:column;gap:4px"${tipOf(k)}><label style="display:flex;gap:6px;align-items:center;min-height:28px"><input type="checkbox" data-tn="${esc(k)}" data-def="${esc(def)}"${on ? ' checked' : ''}> <span>${dot(k)}${esc(label)}${qm(k)}</span></label>${on ? `<label style="display:flex;gap:6px;align-items:center;margin-left:22px">Up to <input type="number" data-p="${esc(k)}" min="${a}" max="${b}" step="${c}" value="${esc(p[k])}" style="width:72px;padding:4px 6px"> ${esc(unit)}</label>` : ''}${rst(row)}</div>`;
       }
-      if (kind === 'check') return `<div style="display:flex;flex-direction:column;gap:3px"><label style="display:flex;gap:6px;align-items:flex-start"><input type="checkbox" data-p="${k}"${p[k] ? ' checked' : ''}> <span>${dot(k)}${esc(a)}</span></label>${rst(row)}</div>`;
+      if (kind === 'check') return `<div style="display:flex;flex-direction:column;gap:3px"><label style="display:flex;gap:6px;align-items:flex-start"${tipOf(k)}><input type="checkbox" data-p="${k}"${p[k] ? ' checked' : ''}> <span>${dot(k)}${esc(a)}${qm(k)}</span></label>${rst(row)}</div>`;
       return `<div style="display:flex;flex-direction:column;gap:3px"><label style="display:block"${tipOf(k)}>${dot(k)}${esc(b)}${qm(k)}<select data-p="${k}" style="width:100%">${a.map(o => `<option value="${esc(o[0])}"${p[k] === o[0] ? ' selected' : ''}>${esc(o[1])}</option>`).join('')}</select></label>${rst(row)}</div>`;
     };
     const MOST = ['n', 'maxc', 'strN'];                                      // the two kiosk settings shown in Rules as "most used"
@@ -1255,11 +1277,13 @@ const PlanLayoutUI = {
     const groups = this.CTRL.map(([name, rows]) => { const ch = grpChanged(rows), shown = rows.filter(r => !MOST.includes(r[0]));
       return shown.length ? `<details>${advHead(name, ch)}<div style="display:flex;flex-direction:column;gap:8px;padding:6px 0 4px">${shown.map(ctrl).join('')}${name === 'Kiosks' ? ratesBtn : ''}${resetBtn(ch, name)}</div></details>` : ''; }).join('');
     const TT = L.trench, tget = k => k.startsWith('depth.') ? TT.depth[k.slice(6)] : TT[k];
+    const TTIP = { 'depth.lv': 'How deep the LV, service and street-light cable trenches are dug. Sets the trench volume in the quantities.', 'depth.fi': 'How deep the fibre duct trenches are dug.', fibre: 'Whether fibre gets its own trench, lies in the LV trench where the two run together, or has no trench drawn.', crossings: 'Draw one shared trench across the road at every crossing, so the quantities count the road cut once.' };
+    const ttl = k => TTIP[k] ? ` title="${esc(TTIP[k])}"` : '';
     const tctrl = ([k, kind, a, b, c, unit, label]) => {
       if (k === 'depth.comb' && TT.depth.comb == null) return '';
-      if (kind === 'range') return `<label style="display:block">${esc(label)} <b data-tv="${k}">${(+tget(k)).toFixed(2)} ${esc(unit)}</b><input type="range" data-t="${k}" min="${a}" max="${b}" step="${c}" value="${Number(tget(k))}" style="width:100%"></label>`;
-      if (kind === 'check') { const on = k === 'combOn' ? TT.depth.comb != null : TT[k]; return `<label style="display:flex;gap:6px;align-items:flex-start"><input type="checkbox" data-t="${k}"${on ? ' checked' : ''}> <span>${esc(a)}</span></label>`; }
-      return `<label style="display:block">${esc(b)}<select data-t="${k}" style="width:100%">${a.map(o => `<option value="${esc(o[0])}"${TT[k] === o[0] ? ' selected' : ''}>${esc(o[1])}</option>`).join('')}</select></label>`;
+      if (kind === 'range') return `<label style="display:block"${ttl(k)}>${esc(label)} <b data-tv="${k}">${(+tget(k)).toFixed(2)} ${esc(unit)}</b><input type="range" data-t="${k}" min="${a}" max="${b}" step="${c}" value="${Number(tget(k))}" style="width:100%"></label>`;
+      if (kind === 'check') { const on = k === 'combOn' ? TT.depth.comb != null : TT[k]; return `<label style="display:flex;gap:6px;align-items:flex-start"${ttl(k)}><input type="checkbox" data-t="${k}"${on ? ' checked' : ''}> <span>${esc(a)}</span></label>`; }
+      return `<label style="display:block"${ttl(k)}>${esc(b)}<select data-t="${k}" style="width:100%">${a.map(o => `<option value="${esc(o[0])}"${TT[k] === o[0] ? ' selected' : ''}>${esc(o[1])}</option>`).join('')}</select></label>`;
     };
     const trChanged = JSON.stringify([TT.depth.lv, TT.depth.fi, TT.fibre, TT.crossings]) !== JSON.stringify([PlanLayout.TRENCH_DEFAULTS.depth.lv, PlanLayout.TRENCH_DEFAULTS.depth.fi, PlanLayout.TRENCH_DEFAULTS.fibre, PlanLayout.TRENCH_DEFAULTS.crossings]);
     const trenchGroup = `<details>${advHead('Trenches', trChanged)}<div style="display:flex;flex-direction:column;gap:8px;padding:6px 0 4px">${this.TREN.map(tctrl).join('')}${resetBtn(trChanged, 'Trenches')}</div></details>`;
