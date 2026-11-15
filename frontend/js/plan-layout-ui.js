@@ -25,13 +25,14 @@ const PlanLayoutUI = {
     ['crossings', 'check', 'A shared trench across the road at every crossing']],
   CTRL: [
     ['Marker', [['side', 'range', 3, 5, 0.5, 'm', 'From the side boundary'], ['depth', 'range', 3, 5, 0.5, 'm', 'In from the front'],
-      ['corner', 'select', [['start', 'start of the street'], ['end', 'far end of the street'], ['kiosk', 'nearest its kiosk']], 'Front corner'],
-      ['front', 'select', [['longest', 'longest street edge'], ['shortest', 'shortest street edge']], 'A corner erf fronts its']]],
+      ['corner', 'select', [['start', 'start of the street'], ['end', 'far end of the street'], ['kiosk', 'nearest its kiosk'], ['pair', 'paired on the shared boundary']], 'Front corner'],
+      ['front', 'select', [['longest', 'longest street edge'], ['shortest', 'shortest street edge'], ['busy', 'the busier street']], 'A corner erf fronts its']]],
     ['Kiosks', [['kmode', 'select', [['rules', 'even runs (rule of thumb)'], ['opt', 'optimiser: fewest kiosks, then crossings, then cable']], 'Placement'],
       ['n', 'range', 4, 8, 1, '', 'Max houses per kiosk'], ['maxc', 'range', 30, 150, 5, 'm', 'Max service cable'], ['worth', 'range', 0, 600, 10, 'm', 'A kiosk is worth up to this much extra service cable'],
-      ['strN', 'range', 0, 10, 1, '', 'Longest LV string (kiosks, 0 = no limit)'],
+      ['kside', 'select', [['count', 'the side with more erven'], ['try', 'try both sides, keep the cheaper']], 'Kiosk side of each street'], ['xpen', 'range', 0, 600, 25, 'm', 'A road crossing counts as this much cable'], ['xkiosk', 'check', 'Keep a kiosk that giving up would add road crossings for'],
+      ['strN', 'range', 0, 10, 1, '', 'Longest LV string (kiosks, 0 = no limit)'], ['strE', 'range', 0, 60, 2, '', 'Longest LV string (erven, 0 = count kiosks)'], ['subBal', 'range', 0, 2, 0.1, '', 'Balance placed mini-subs (× even share, 0 = off)'],
       ['strMode', 'select', [['fewest', 'fewest strings'], ['even', 'strings of similar size']], 'Cut long strings into']]],
-    ['Fibre', [['m', 'range', 4, 12, 1, '', 'Erven per manhole'], ['maxmh', 'range', 40, 200, 10, 'm', 'Max distance between manholes'],
+    ['Fibre', [['m', 'range', 4, 12, 1, '', 'Erven per manhole'], ['mhmerge', 'check', 'Fold a short stretch\'s manhole into its neighbour'], ['maxmh', 'range', 40, 200, 10, 'm', 'Max distance between manholes'],
       ['fibre', 'select', [['opp', 'civil side, opposite the kiosks'], ['same', 'same side as the kiosks']], 'Manholes default to the'],
       ['topo', 'select', [['ring', 'every street, closed loops'], ['spur', 'spurs with T-offs from the entry']], 'Main duct layout']]],
     ['Crossings', [['share', 'check', 'Share road crossings between services, fibre and LV'],
@@ -47,6 +48,10 @@ const PlanLayoutUI = {
   // hover explanations for the settings that need one (native tooltip on the label and on the (?) mark)
   TIPS: {
     xpref: 'Where a service for an erf across the road crosses. At the erf\'s own boundary: the cable runs along the kiosk\'s side of the road and crosses at the erf boundary nearest the erf, so the far verge only carries the last stretch. Services whose nearest boundary is the same share that crossing. At as few places as possible: fewer crossings, but the cable may cross at the kiosk and run along the far verge.',
+    subBal: 'When you place the mini-subs yourself each kiosk goes to the nearest one, so one transformer can carry far more than another. Set this to cap each mini-sub at that multiple of an even share of the erven (1.3 = 30 % above even); the kiosks nearest the border move to the neighbour with room. 0 = off, nearest wins.',
+    xpen: 'How many metres of cable one road crossing counts for when erven are given to kiosks. Higher keeps services on their own side of the road.',
+    xkiosk: 'Giving up a kiosk is allowed while the extra service cable stays within the amount a kiosk is worth. With crossings counted, a kiosk that would add road crossings is kept unless the saving covers them (crossings counted at the figure above).',
+    strE: 'The most erven carried by one string. When set, strings are cut by the erven they feed (a kiosk of six counts six) and the kiosk limit above is not used. 0 = count kiosks instead.',
     strN: 'The most kiosks fed in a line from one feeder off the mini-sub. A longer street is cut into several strings, each with its own breaker and its own cable back to the mini-sub along the same route. A shorter string keeps the head breaker and the cable small and the far-end earth-fault loop short, at the price of more cable and more ways on the mini-sub board. 0 = no limit: kiosks daisy-chain along the whole street.',
     strMode: 'How a street with more kiosks than the limit is cut. Fewest strings: cut from the far end back, so as few feeders as possible leave the mini-sub, but the last string can be short (9 kiosks at a limit of 4 gives 4 + 4 + 1). Strings of similar size: the same number of feeders as the limit needs, but shared out evenly (9 kiosks gives 3 + 3 + 3), so the strings are loaded alike. On a branching network this can need more feeders.',
   },
@@ -77,7 +82,7 @@ const PlanLayoutUI = {
     vd.tx = typeof vd.tx === 'string' ? vd.tx.slice(0, 80) : '';
     vd.prot = typeof vd.prot === 'string' ? vd.prot.slice(0, 80) : '';
     vd.protK = this._num(vd.protK, 1, 2, 1.2);
-    vd.minSize = this._num(vd.minSize, 0, 2000, 0); vd.maxSize = this._num(vd.maxSize, 0, 2000, 0);   // smallest / largest LV cable (mm², 0 = no limit)
+    vd.minSize = this._num(vd.minSize, 0, 2000, 0); vd.maxSize = this._num(vd.maxSize, 0, 2000, 0); vd.maxSizes = this._num(vd.maxSizes, 0, 20, 0); vd.autoSplit = !!vd.autoSplit;   // smallest / largest LV cable (mm², 0 = no limit)
     vd.taper = typeof vd.taper === 'boolean' ? vd.taper : true;                  // taper the LV cable (smaller feeders further out)
     vd.way80 = typeof vd.way80 === 'boolean' ? vd.way80 : true;                  // an 80 A MCCB on every erf's way
     delete vd.subsMax; delete vd.subsAuto;                                  // the mini-subs are the ones you place: there is no count to try
@@ -172,8 +177,25 @@ const PlanLayoutUI = {
   },
   // the cable ladder the taper chooses from: armoured XLPE aluminium, smallest first
   _ladder(c) { const all = this.vdCandidates(c.feeders), al = all.filter(x => x.conductor === 'Al'); return al.length ? al : all; },
+  // What a kiosk and a road crossing are worth in metres of service cable, from the project's own rate library (material + labour):
+  // price of the kiosk (EQ-KIOSK) or of one 110 mm crossing (CIV-XING-110) ÷ price per metre of the service cable. null = any of the three unpriced.
+  ratesFigures() {
+    try {
+      const c = this.vdCables(), price = key => { const v = Rates.get(key); return Rates.priced(v) ? (v.rate || 0) + (v.labour || 0) : null; };
+      const cab = c && c.svc ? price(Rates.cableKey(c.svc.name)) : null, ki = price('EQ-KIOSK'), xg = price(Rates.crossingKey('110'));
+      if (!cab || !ki || !xg) return null;
+      return { worth: Math.round(ki / cab / 10) * 10, xpen: Math.round(xg / cab / 25) * 25 };
+    } catch (e) { return null; }
+  },
   _ladderSizes() { const c = this.vdCables(), s = new Set(this._ladder(c).map(x => x.size_mm2)); return [...s].sort((a, b) => a - b); },
   _cableDict(c) { const o = Retic._cableDict(c.name), e = CableLib.byName(c.name); return o && Object.assign(o, { rated_amps: e ? e.rated_amps : 0 }); },
+  // feeders that lie in the same trench: for each LV link, 1 + the other links whose cable passes the middle of its first run
+  _trenchShare(r) {
+    const links = (r.net && r.net.lvLinks) || [], out = {}, mid = pts => pts.length > 1 ? [(pts[0][0] + pts[1][0]) / 2, (pts[0][1] + pts[1][1]) / 2] : null;
+    const near = (m, pts) => { for (let i = 1; i < pts.length; i++) { const a = pts[i - 1], b = pts[i], dx = b[0] - a[0], dy = b[1] - a[1], L2 = dx * dx + dy * dy || 1e-9, t = Math.max(0, Math.min(1, ((m[0] - a[0]) * dx + (m[1] - a[1]) * dy) / L2)); if (Math.hypot(a[0] + dx * t - m[0], a[1] + dy * t - m[1]) < 0.6) return true; } return false; };
+    for (const l of links) { const m = mid(l.pts); if (!m) continue; const n = links.filter(o => o === l || near(m, o.pts)).length; if (n > 1) out[l.to.id] = n; }
+    return out;
+  },
   _designPayload(r) {
     const d = r.dem, vd = this.cfg().vd, c = this.vdCables(), lim = this.vdLimits(), ladder = this._ladder(c);
     const { src } = this._earthSrc(ladder[ladder.length - 1] || c.lv, c.svc, null, r, true);
@@ -188,7 +210,7 @@ const PlanLayoutUI = {
       return { id: k.id, name: k.name, fedFrom: k.fedFrom, lengthM: k.feeder.lengthM, amps, erfs: k.erfs.map(e => ({ id: e.id, erfNumber: e.erfNumber, service: e.service, device: e.device, deviceSource: e.deviceSource })) };
     });
     return { settings: { u0: ep.settings.u0, disconnectTimeS: ep.settings.disconnectTimeS, maxFeederVD: lim.feeder }, minisubs: ep.minisubs, kiosks,
-      ladder: ladder.map(x => this._cableDict(x)).filter(Boolean), breakers, options: { taper: !!vd.taper, pinnedCables, pinnedBreakers, minSizeMm2: vd.minSize || 0, maxSizeMm2: vd.maxSize || 0 } };
+      ladder: ladder.map(x => this._cableDict(x)).filter(Boolean), breakers, options: { taper: !!vd.taper, pinnedCables, pinnedBreakers, minSizeMm2: vd.minSize || 0, maxSizeMm2: vd.maxSize || 0, maxSizes: vd.maxSizes || 0, groupCircuits: this._trenchShare(r) } };
   },
   async designRun(r, tok) {
     if (!this._designOn() || !r.dem) { r.design = null; return; }
@@ -197,6 +219,13 @@ const PlanLayoutUI = {
       if (tok !== this._vdTok) return;                                      // (a trial of another mini-sub count is not this.result yet)
       r.design = res && res.feeders && res.feeders.length ? res : null;
       r.designIssue = res && !(res.feeders && res.feeders.length) && res.reasons && res.reasons.length ? res : null;     // e.g. no cable fits the sizes allowed
+      // Split strings automatically: a string that cannot clear its fault gets the split the design proposes, while that helps (at most 12 in all)
+      const vd = this.cfg().vd;
+      if (vd.autoSplit && r.design && !r.design.passes && vd.splits.length < 12) {
+        const fx = (r.design.reasons || []).flatMap(x => x.fixes || []).find(x => x.action === 'split' && x.failsAfter < x.failsBefore);
+        const k = fx && this.result && this.result.kiosks.find(q => q.id === fx.kiosk);
+        if (k && !vd.splits.some(q => Math.hypot(q.x - k.x / this.f, q.y - k.y / this.f) < 1e-6)) { vd.splits.push({ x: k.x / this.f, y: k.y / this.f }); setTimeout(() => this.touched(), 0); }
+      }
     } catch (e) { if (tok === this._vdTok) { r.design = null; r.designErr = (e && e.message) || String(e); } }
   },
   // kiosk id → the library cable the design gave it
@@ -1169,8 +1198,9 @@ const PlanLayoutUI = {
     const grpChanged = rows => rows.some(r => !MOST.includes(r[0]) && String(p[r[0]]) !== String(dflt[r[0]]));
     const advHead = (name, changed, key) => `<summary style="cursor:pointer;font-weight:600;margin:2px 0">${name}${changed ? ` <span style="color:#b45309;font-weight:400;font-size:12px">● changed</span>` : ''}</summary>`;
     const resetBtn = (changed, key) => changed ? `<button type="button" class="plan-btn" data-act="resetgrp" data-g="${key}" style="align-self:flex-start;padding:1px 8px;font-size:12px">Reset this group</button>` : '';
+    const rf = this.ratesFigures(), ratesBtn = `<button type="button" class="plan-btn" data-act="fromrates" ${rf ? '' : 'disabled'} title="${rf ? `A kiosk = ${rf.worth} m of service cable, a crossing = ${rf.xpen} m (from the rate library)` : 'Needs a price for the kiosk, a 110 mm crossing and the service cable in the rate library'}" style="align-self:flex-start;padding:1px 8px;font-size:12px">Set kiosk worth and crossing cost from my rates</button>`;
     const groups = this.CTRL.map(([name, rows]) => { const ch = grpChanged(rows), shown = rows.filter(r => !MOST.includes(r[0]));
-      return shown.length ? `<details>${advHead(name, ch)}<div style="display:flex;flex-direction:column;gap:8px;padding:6px 0 4px">${shown.map(ctrl).join('')}${resetBtn(ch, name)}</div></details>` : ''; }).join('');
+      return shown.length ? `<details>${advHead(name, ch)}<div style="display:flex;flex-direction:column;gap:8px;padding:6px 0 4px">${shown.map(ctrl).join('')}${name === 'Kiosks' ? ratesBtn : ''}${resetBtn(ch, name)}</div></details>` : ''; }).join('');
     const TT = L.trench, tget = k => k.startsWith('depth.') ? TT.depth[k.slice(6)] : TT[k];
     const tctrl = ([k, kind, a, b, c, unit, label]) => {
       if (k === 'depth.comb' && TT.depth.comb == null) return '';
@@ -1181,7 +1211,7 @@ const PlanLayoutUI = {
     const trChanged = JSON.stringify([TT.depth.lv, TT.depth.fi, TT.fibre, TT.crossings]) !== JSON.stringify([PlanLayout.TRENCH_DEFAULTS.depth.lv, PlanLayout.TRENCH_DEFAULTS.depth.fi, PlanLayout.TRENCH_DEFAULTS.fibre, PlanLayout.TRENCH_DEFAULTS.crossings]);
     const trenchGroup = `<details>${advHead('Trenches', trChanged)}<div style="display:flex;flex-direction:column;gap:8px;padding:6px 0 4px">${this.TREN.map(tctrl).join('')}${resetBtn(trChanged, 'Trenches')}</div></details>`;
     const VDc = L.vd, cb = this.vdCables(), lim = this.vdLimits(), txOpts = (typeof Retic !== 'undefined' ? Retic._txOptions() : []), opts = (list, cur) => list.map(c => `<option value="${esc(c.id)}"${cur && cur.id === c.id ? ' selected' : ''}>${esc(c.name)}</option>`).join('');
-    const vdDef = { way80: true, taper: true, minSize: 0, maxSize: 0, prot: '', protK: 1.2, svc: '' };
+    const vdDef = { way80: true, taper: true, minSize: 0, maxSize: 0, maxSizes: 0, autoSplit: false, prot: '', protK: 1.2, svc: '' };
     const vdChanged = Object.keys(vdDef).some(k => String(VDc[k]) !== String(vdDef[k]));
     const vdTx = `<label style="display:block">Mini-sub transformer<select data-vd="tx" style="width:100%"><option value=""${VDc.tx ? '' : ' selected'}>Automatic: the smallest that carries each mini-sub</option>${txOpts.map(o => `<option value="${esc(o.id)}"${VDc.tx === o.id ? ' selected' : ''}>${esc(o.name)}</option>`).join('')}</select></label>`;
     const vdLv = `<label style="display:block">LV feeder cable<select data-vd="lv" style="width:100%"><option value=""${cb.auto ? ' selected' : ''}>Automatic: the smallest that meets the limits and the rating${cb.auto && cb.lv ? ' (now ' + esc(cb.lv.name) + ')' : ''}</option>${opts(cb.feeders, cb.auto ? null : cb.lv)}</select></label>`;
@@ -1191,6 +1221,8 @@ const PlanLayoutUI = {
         <label style="display:flex;gap:6px;align-items:flex-start"><input type="checkbox" data-vd="taper"${VDc.taper ? ' checked' : ''}> <span>Taper the LV cable: the smallest size that passes on each feeder, large near the mini-sub</span></label>
         <div style="display:flex;gap:6px"><label style="flex:1;display:block">Smallest LV cable<select data-vd="minSize" style="width:100%"><option value="0"${VDc.minSize ? '' : ' selected'}>No limit</option>${this._ladderSizes().map(x => `<option value="${x}"${VDc.minSize === x ? ' selected' : ''}>${x} mm²</option>`).join('')}</select></label>
           <label style="flex:1;display:block">Largest LV cable<select data-vd="maxSize" style="width:100%"><option value="0"${VDc.maxSize ? '' : ' selected'}>No limit</option>${this._ladderSizes().map(x => `<option value="${x}"${VDc.maxSize === x ? ' selected' : ''}>${x} mm²</option>`).join('')}</select></label></div>
+        <label style="display:block">Different LV cable sizes (at most)<select data-vd="maxSizes" style="width:100%"><option value="0"${VDc.maxSizes ? '' : ' selected'}>No limit</option>${[1, 2, 3, 4].map(x => `<option value="${x}"${VDc.maxSizes === x ? ' selected' : ''}>${x}</option>`).join('')}</select></label>
+        <label style="display:flex;gap:6px;align-items:center"><input type="checkbox" data-vd="autoSplit"${VDc.autoSplit ? ' checked' : ''}> Split strings automatically when one cannot clear its fault</label>
         <label style="display:block">String breaker (earth-fault loop)<select data-vd="prot" style="width:100%">${Retic._protectionOptions(VDc.prot, this._designOn() ? 'Automatic: sized to each string (fewest earth-fault fails)' : 'Automatic: the next size up from the string current × factor')}</select></label>
         ${VDc.prot || this._designOn() ? '' : `<label style="display:block">Breaker rating at least <b data-vv="protK">${Number(VDc.protK).toFixed(2)}</b> × the string current<input type="range" data-vd="protK" min="1" max="2" step="0.05" value="${Number(VDc.protK)}" style="width:100%"></label>`}
         <label style="display:block">Service cable<select data-vd="svc" style="width:100%">${opts(cb.services, cb.svc)}</select></label>
@@ -1350,6 +1382,7 @@ const PlanLayoutUI = {
       if (b.dataset.act === 'secdraw') { this.secDrawOn(!this.secDraw, L.sections.def); return; }
       if (b.dataset.act === 'drawfix') { this.setStep(1); this.streetDrawOn(true); return; }
       if (b.dataset.act === 'submove') { const i = +b.dataset.i; if (L.subs[i]) { this.subMove = i; this.mode = 'sub'; UI.toast('Click where this mini-sub should stand.', 'info', 3500); PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true }); } return; }
+      if (b.dataset.act === 'fromrates') { const f = this.ratesFigures(); if (f) { p.worth = f.worth; p.xpen = f.xpen; this.touched(); } return; }
       if (b.dataset.act === 'resetgrp') {
         const g = b.dataset.g, grp = this.CTRL.find(x => x[0] === g);
         if (grp) { grp[1].forEach(x => { if (!MOST.includes(x[0])) p[x[0]] = dflt[x[0]]; }); this.touched(); }

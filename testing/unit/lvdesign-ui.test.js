@@ -94,15 +94,6 @@ ok('the switches: taper off gives one size, 80 A off leaves the ways to the stri
   assert(both.r.vd && !both.r.vd.designed);
 });
 
-ok('1, 2 and 3 mini-subs are tried; the one that passes with the least cable is used, each reported', async () => {
-  const { r, counts } = await run({ subsMax: 3 });
-  assert.strictEqual(r.subsTrials.length, 3); assert.strictEqual(JSON.stringify(r.subsTrials.map(x => x.subs)), '[1,2,3]');
-  const used = r.subsTrials.filter(x => x.chosen); assert.strictEqual(used.length, 1);
-  const passing = r.subsTrials.filter(x => x.ok); assert(passing.length > 0);
-  assert.strictEqual(used[0].total, Math.min(...passing.map(x => x.total)), 'the least cable among those that pass');
-  assert.strictEqual(r.net.subs.length, used[0].subs); assert.strictEqual(counts.design, 3);
-});
-
 ok('a design that cannot pass says why and offers the fixes; Add a mini-sub and Split the string act on the layout', async () => {
   const { U, r, ctx } = await run();
   const k = r.kiosks[3];
@@ -114,22 +105,21 @@ ok('a design that cannot pass says why and offers the fixes; Add a mini-sub and 
   assert.strictEqual(row.acts[1].val, k.id);
 });
 
-ok('the panel shows the tile, the table with the taper marks, the switches and the mini-sub trials', async () => {
-  const { U, r } = await run({ subsMax: 3 });
-  const el = { innerHTML: '' }; U.renderOptions(el); const h = el.innerHTML, D = r.design;
+ok('the panel shows the tile, the table with the taper marks and the switches', async () => {
+  const { U, r } = await run();
+  U.step = 4; const el = { innerHTML: '', querySelectorAll: () => [], querySelector: () => null }; U.renderOptions(el); const h = el.innerHTML, D = r.design;
   assert(/LV design/.test(h) && new RegExp('LV cable: ' + D.taper.count + ' size').test(h), 'the tile');
   assert(h.includes(`${D.taper.minMm2} to ${D.taper.maxMm2} mm²`) && h.includes(`taper saves ${D.taper.savedPct}%`));
   assert(/<th[^>]*>Kiosk<\/th>.*<th[^>]*>Fed from<\/th>.*<th[^>]*>Cable<\/th>.*<th[^>]*>Breaker<\/th>/.test(h), 'the table');
   assert(/set by taper/.test(h), 'a feeder marked as set by the taper');
-  for (const sw of ['way80', 'taper']) assert(new RegExp(`data-vd="${sw}"[^>]* checked`).test(h), sw + ' on by default');
-  assert(/data-vd="subsMax"[^>]*value="3"/.test(h), 'the panel shows the number set');
-  assert(/Mini-subs tried:/.test(h) && /\(used\)/.test(h));
+  U.step = 3; const el3 = { innerHTML: '', querySelectorAll: () => [], querySelector: () => null }; U.renderOptions(el3); const h3 = el3.innerHTML;
+  for (const sw of ['way80', 'taper']) assert(new RegExp(`data-vd="${sw}"[^>]* checked`).test(h3), sw + ' on by default');
   assert(D.heads.every(x => h.includes(x.breaker)));
 });
 
 // click a button of the Checks list the way the panel does
 async function clickAct(U, textRe, actName) {
-  const el = { innerHTML: '' }; U.renderOptions(el);
+  const el = { innerHTML: '', querySelectorAll: () => [], querySelector: () => null }; U.renderOptions(el);
   const i = U._ck.findIndex(c => textRe.test(c.text)), j = i < 0 ? -1 : U._ck[i].acts.findIndex(a => a.act === actName);
   assert(i >= 0 && j >= 0, `no ${actName} button on a row matching ${textRe}`);
   el.onclick({ target: { closest: () => ({ dataset: { ckact: i + ':' + j } }) } });
@@ -138,7 +128,8 @@ async function clickAct(U, textRe, actName) {
 ok('a smallest and a largest LV cable: the cables stay inside, the panel offers the sizes', async () => {
   const { U, r } = await run({ minSize: 50, maxSize: 300 }), D = r.design;
   assert(D && D.ok); assert(D.feeders.every(f => f.sizeMm2 >= 50 && f.sizeMm2 <= 300), 'sizes ' + D.feeders.map(f => f.sizeMm2));
-  const el = { innerHTML: '' }; U.renderOptions(el); const h = el.innerHTML;
+  const both = st => { U.step = st; const e = { innerHTML: '', querySelectorAll: () => [], querySelector: () => null }; U.renderOptions(e); return e.innerHTML; };
+  const h = both(3) + both(4);
   assert(/data-vd="minSize"/.test(h) && /data-vd="maxSize"/.test(h) && />No limit</.test(h) && /<option value="50" selected>50 mm²/.test(h) && /<option value="300" selected>300 mm²/.test(h));
   assert(/limited to 50 to 300 mm²/.test(h), 'the tile says so');
 });
