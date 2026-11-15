@@ -29,8 +29,8 @@ const PlanLayoutUI = {
       ['front', 'select', [['longest', 'longest street edge'], ['shortest', 'shortest street edge'], ['busy', 'the busier street']], 'A corner erf fronts its']]],
     ['Kiosks', [['kmode', 'select', [['rules', 'even runs (rule of thumb)'], ['opt', 'optimiser: fewest kiosks, then crossings, then cable']], 'Placement'],
       ['n', 'range', 4, 8, 1, '', 'Max houses per kiosk'], ['maxc', 'range', 30, 150, 5, 'm', 'Max service cable'], ['worth', 'range', 0, 600, 10, 'm', 'A kiosk is worth up to this much extra service cable'],
-      ['kside', 'select', [['count', 'the side with more erven'], ['try', 'try both sides, keep the cheaper']], 'Kiosk side of each street'], ['xpen', 'range', 0, 600, 25, 'm', 'A road crossing counts as this much cable'], ['xkiosk', 'check', 'Keep a kiosk that giving up would add road crossings for'],
-      ['strN', 'range', 0, 10, 1, '', 'Longest LV string (kiosks, 0 = no limit)'], ['strE', 'range', 0, 60, 2, '', 'Longest LV string (erven, 0 = count kiosks)'], ['subBal', 'range', 0, 2, 0.1, '', 'Balance placed mini-subs (× even share, 0 = off)'],
+      ['kside', 'select', [['count', 'the side with more erven'], ['try', 'try both sides, keep the cheaper']], 'Kiosk side of each street'], ['xpen', 'range', 0, 600, 25, 'm', 'A road crossing counts as this much cable'], ['xkiosk', 'check', 'Keep a kiosk if removing it would add road crossings'],
+      ['strN', 'range', 0, 10, 1, '', 'Longest LV string (kiosks, 0 = no limit)'], ['strE', 'tnum', 2, 60, 2, 'erven', 'Limit erven on one string (instead of kiosks)', 12], ['subBal', 'tnum', 1.1, 2, 0.1, '× an even share', 'Balance hand-placed mini-subs', 1.3],
       ['strMode', 'select', [['fewest', 'fewest strings'], ['even', 'strings of similar size']], 'Cut long strings into']]],
     ['Fibre', [['m', 'range', 4, 12, 1, '', 'Erven per manhole'], ['mhmerge', 'check', 'Fold a short stretch\'s manhole into its neighbour'], ['maxmh', 'range', 40, 200, 10, 'm', 'Max distance between manholes'],
       ['fibre', 'select', [['opp', 'civil side, opposite the kiosks'], ['same', 'same side as the kiosks']], 'Manholes default to the'],
@@ -66,7 +66,8 @@ const PlanLayoutUI = {
     if (Object.keys(p).length && p.kgeo === undefined) p.kgeo = 'street';          // a layout set up before the boundary corridor existed keeps running the way it did
     for (const [, rows] of this.CTRL) for (const r of rows) {
       const k = r[0], v = p[k];
-      if (r[1] === 'range') { const n = parseFloat(v); p[k] = Number.isFinite(n) ? Math.max(r[2], Math.min(r[3], n)) : D[k]; }
+      if (r[1] === 'tnum') { const n = parseFloat(v); p[k] = Number.isFinite(n) && n > 0 ? Math.max(r[2], Math.min(r[3], n)) : 0; }      // 0 = off, else within the range
+      else if (r[1] === 'range') { const n = parseFloat(v); p[k] = Number.isFinite(n) ? Math.max(r[2], Math.min(r[3], n)) : D[k]; }
       else if (r[1] === 'check') p[k] = typeof v === 'boolean' ? v : D[k];
       else p[k] = r[2].some(o => o[0] === v) ? v : D[k];
     }
@@ -179,13 +180,15 @@ const PlanLayoutUI = {
   _ladder(c) { const all = this.vdCandidates(c.feeders), al = all.filter(x => x.conductor === 'Al'); return al.length ? al : all; },
   // What a kiosk and a road crossing are worth in metres of service cable, from the project's own rate library (material + labour):
   // price of the kiosk (EQ-KIOSK) or of one 110 mm crossing (CIV-XING-110) ÷ price per metre of the service cable. null = any of the three unpriced.
-  ratesFigures() {
+  ratesFigures() { return this.ratesCheck().fig; },
+  // { fig: {worth, xpen} | null, missing: [names of what has no price] }
+  ratesCheck() {
     try {
       const c = this.vdCables(), price = key => { const v = Rates.get(key); return Rates.priced(v) ? (v.rate || 0) + (v.labour || 0) : null; };
       const cab = c && c.svc ? price(Rates.cableKey(c.svc.name)) : null, ki = price('EQ-KIOSK'), xg = price(Rates.crossingKey('110'));
-      if (!cab || !ki || !xg) return null;
-      return { worth: Math.round(ki / cab / 10) * 10, xpen: Math.round(xg / cab / 25) * 25 };
-    } catch (e) { return null; }
+      const missing = [!cab && 'the service cable', !ki && 'a kiosk', !xg && 'a 110 mm road crossing'].filter(Boolean);
+      return { fig: missing.length ? null : { worth: Math.round(ki / cab / 10) * 10, xpen: Math.round(xg / cab / 25) * 25 }, missing };
+    } catch (e) { return { fig: null, missing: ['the rate library'] }; }
   },
   _ladderSizes() { const c = this.vdCables(), s = new Set(this._ladder(c).map(x => x.size_mm2)); return [...s].sort((a, b) => a - b); },
   _cableDict(c) { const o = Retic._cableDict(c.name), e = CableLib.byName(c.name); return o && Object.assign(o, { rated_amps: e ? e.rated_amps : 0 }); },
@@ -838,13 +841,27 @@ const PlanLayoutUI = {
     this.cfg().subs.push({ x: k.x / g.f, y: k.y / g.f }); UI.toast('Mini-sub placed where the LV network drops least. Click it to move it.', 'info', 4500); this.touched(true);
   },
 
+  // The figures shown beside Run layout: what the last run came to, and how many settings were changed since it
+  _runFigures(r) { return { k: r.kiosks.length, x: r.stats.crossings, c: Math.round(r.stats.cable) }; },
+  changedSinceRun() {
+    if (!this._ranParams) return 0; let was; try { was = JSON.parse(this._ranParams); } catch (e) { return 0; }
+    const now = this.cfg().params; return Object.keys(now).filter(k => JSON.stringify(now[k]) !== JSON.stringify(was[k])).length;
+  },
+  lastRunHtml() {
+    const r = this.result; if (!r || !r.stats) return '';
+    const f = this._runFigures(r), pv = this._prevRun, n = this.changedSinceRun(), fm = v => Math.round(v).toLocaleString('en');
+    const d = (a, b, unit) => a === b ? '' : ` <span style="color:var(--text-muted)">(was ${fm(b)}${unit})</span>`;
+    const chip = n ? `<span style="background:#fff1dc;color:#7a3e00;border-radius:4px;padding:2px 7px;font-size:12px;font-weight:600">${n} setting${n === 1 ? '' : 's'} changed since the last run</span>` : '';
+    return `<div style="font-size:12px;line-height:1.45"><div>Last run: <b>${f.k}</b> kiosks${pv ? d(f.k, pv.k, '') : ''} · <b>${f.x}</b> crossings${pv ? d(f.x, pv.x, '') : ''} · <b>${fm(f.c)} m</b> of service cable${pv ? d(f.c, pv.c, ' m') : ''}</div>${chip}</div>`;
+  },
+
   run() {
     const g = this.gather();
     if (g.err) { this.err = g.err; this.result = null; PlanMarkup.refreshProps(); UI.toast(g.err, 'warn', 6000); return; }
     this.err = '';
     const t0 = performance.now();
-    this._gathered = g;
-    this.result = PlanLayout.solve(g.input, g.params);
+    this._gathered = g; this._prevRun = this.result && this.result.stats ? this._runFigures(this.result) : null;
+    this.result = PlanLayout.solve(g.input, g.params); this._ranParams = JSON.stringify(g.params);
     this.f = g.f; this.ms = performance.now() - t0; this.stale = false; this.flag = null; this.nearHint = null;
     this.result.trench = PlanLayout.trenches(this.result, this.cfg().trench);
     this.vdRun();
@@ -1209,8 +1226,12 @@ const PlanLayoutUI = {
     const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     const fmt = v => Math.round(v).toLocaleString('en');
     const tipOf = k => this.TIPS[k] ? ` title="${esc(this.TIPS[k])}"` : '', qm = k => this.TIPS[k] ? ` <span${tipOf(k)} style="cursor:help;color:var(--text-muted);font-size:12px">(?)</span>` : '';
-    const ctrl = ([k, kind, a, b, c, unit, label]) => {
+    const ctrl = ([k, kind, a, b, c, unit, label, def]) => {
       if (kind === 'range') return `<label style="display:block"${tipOf(k)}>${esc(label)}${qm(k)} <b data-v="${esc(k)}">${esc(p[k])}${unit ? ' ' + esc(unit) : ''}</b><input type="range" data-p="${esc(k)}" data-unit="${esc(unit)}" min="${a}" max="${b}" step="${c}" value="${esc(p[k])}" style="width:100%"></label>`;
+      if (kind === 'tnum') {                                                       // an option that is off by default: a switch, and its number only while it is on
+        const on = p[k] > 0;
+        return `<div style="display:flex;flex-direction:column;gap:4px"${tipOf(k)}><label style="display:flex;gap:6px;align-items:center;min-height:28px"><input type="checkbox" data-tn="${esc(k)}" data-def="${esc(def)}"${on ? ' checked' : ''}> <span>${esc(label)}${qm(k)}</span></label>${on ? `<label style="display:flex;gap:6px;align-items:center;margin-left:22px">Up to <input type="number" data-p="${esc(k)}" min="${a}" max="${b}" step="${c}" value="${esc(p[k])}" style="width:72px;padding:4px 6px"> ${esc(unit)}</label>` : ''}</div>`;
+      }
       if (kind === 'check') return `<label style="display:flex;gap:6px;align-items:flex-start"><input type="checkbox" data-p="${k}"${p[k] ? ' checked' : ''}> <span>${esc(a)}</span></label>`;
       return `<label style="display:block"${tipOf(k)}>${esc(b)}${qm(k)}<select data-p="${k}" style="width:100%">${a.map(o => `<option value="${esc(o[0])}"${p[k] === o[0] ? ' selected' : ''}>${esc(o[1])}</option>`).join('')}</select></label>`;
     };
@@ -1218,7 +1239,7 @@ const PlanLayoutUI = {
     const grpChanged = rows => rows.some(r => !MOST.includes(r[0]) && String(p[r[0]]) !== String(dflt[r[0]]));
     const advHead = (name, changed, key) => `<summary style="cursor:pointer;font-weight:600;margin:2px 0">${name}${changed ? ` <span style="color:#b45309;font-weight:400;font-size:12px">● changed</span>` : ''}</summary>`;
     const resetBtn = (changed, key) => changed ? `<button type="button" class="plan-btn" data-act="resetgrp" data-g="${key}" style="align-self:flex-start;padding:1px 8px;font-size:12px">Reset this group</button>` : '';
-    const rf = this.ratesFigures(), ratesBtn = `<button type="button" class="plan-btn" data-act="fromrates" ${rf ? '' : 'disabled'} title="${rf ? `A kiosk = ${rf.worth} m of service cable, a crossing = ${rf.xpen} m (from the rate library)` : 'Needs a price for the kiosk, a 110 mm crossing and the service cable in the rate library'}" style="align-self:flex-start;padding:1px 8px;font-size:12px">Set kiosk worth and crossing cost from my rates</button>`;
+    const rc = this.ratesCheck(), rf = rc.fig, ratesBtn = `<button type="button" class="plan-btn" data-act="fromrates" ${rf ? '' : 'disabled'} title="${rf ? `A kiosk = ${rf.worth} m of service cable, a crossing = ${rf.xpen} m (from the rate library)` : 'Needs a price for the kiosk, a 110 mm crossing and the service cable in the rate library'}" style="align-self:flex-start;padding:1px 8px;font-size:12px">Set kiosk worth and crossing cost from my rates</button>` + (rf ? '' : `<span style="font-size:12px;color:#8f270a">Not available: the rate library has no price for ${esc(rc.missing.join(', '))}. Enter them in Quantities › Rate library.</span>`);
     const groups = this.CTRL.map(([name, rows]) => { const ch = grpChanged(rows), shown = rows.filter(r => !MOST.includes(r[0]));
       return shown.length ? `<details>${advHead(name, ch)}<div style="display:flex;flex-direction:column;gap:8px;padding:6px 0 4px">${shown.map(ctrl).join('')}${name === 'Kiosks' ? ratesBtn : ''}${resetBtn(ch, name)}</div></details>` : ''; }).join('');
     const TT = L.trench, tget = k => k.startsWith('depth.') ? TT.depth[k.slice(6)] : TT[k];
@@ -1373,7 +1394,7 @@ const PlanLayoutUI = {
     const chkO = (k, t, n) => `<label style="display:flex;gap:6px;align-items:flex-start"><input type="checkbox" data-opt="${k}"${opt[k] ? ' checked' : ''}> <span>${t} <em style="font-style:normal;font-family:var(--font-mono,monospace);font-size:12px;color:var(--text-muted)">${n}</em></span></label>`;
     const nOpt = Object.values(opt).filter(Boolean).length;
     const createOpts = act.create ? `<details style="font-size:12px"><summary style="cursor:pointer;font-weight:600">What it will create <span style="font-weight:400;color:var(--text-muted)">${nOpt} of ${Object.keys(opt).length} ticked</span></summary><div style="display:flex;flex-direction:column;gap:2px;padding:4px 0">${chkO('markers', 'Erf markers moved to their corner', co.markers)}${chkO('kiosks', 'Kiosks and service cables', co.kiosks)}${chkO('lv', 'Mini-subs and LV feeders', co.lv)}${chkO('fibre', 'Fibre manholes and ducts', co.fibre)}${chkO('cross', 'Road crossings, one per duct', co.cross)}${chkO('trench', 'Trenches along the routes (depth and sharing as set)', co.trench)}</div></details>` : '';
-    const footer = `<div style="position:sticky;bottom:-10px;margin:0 -10px -10px;padding:8px 10px;background:var(--bg-primary);border-top:1px solid var(--border-color,#ddd);display:flex;flex-direction:column;gap:5px;z-index:2">${createOpts}<button type="button" class="plan-btn" data-act="${act.act}"${act.s ? ` data-s="${act.s}"` : ''} aria-disabled="${!!act.dis}" style="font-weight:600;padding:9px;${act.dis ? 'opacity:.65' : (act.create ? 'background:var(--accent,#2563eb);color:#fff' : '')}">${esc(act.label)}</button>${act.note ? `<div style="color:var(--text-muted);font-size:12px;text-align:center">${esc(act.note)}</div>` : ''}${r ? `<button type="button" class="plan-btn" data-act="clear" style="align-self:center;padding:1px 8px;font-size:12px;font-weight:400">Clear the result</button>` : ''}</div>`;
+    const footer = `<div style="position:sticky;bottom:-10px;margin:0 -10px -10px;padding:8px 10px;background:var(--bg-primary);border-top:1px solid var(--border-color,#ddd);display:flex;flex-direction:column;gap:5px;z-index:2">${this.lastRunHtml()}${createOpts}<button type="button" class="plan-btn" data-act="${act.act}"${act.s ? ` data-s="${act.s}"` : ''} aria-disabled="${!!act.dis}" style="font-weight:600;padding:9px;${act.dis ? 'opacity:.65' : (act.create ? 'background:var(--accent,#2563eb);color:#fff' : '')}">${esc(act.label)}</button>${act.note ? `<div style="color:var(--text-muted);font-size:12px;text-align:center">${esc(act.note)}</div>` : ''}${r ? `<button type="button" class="plan-btn" data-act="clear" style="align-self:center;padding:1px 8px;font-size:12px;font-weight:400">Clear the result</button>` : ''}</div>`;
     el.innerHTML = `<div class="plan-props-title" style="margin-bottom:6px">Auto layout</div>
       <div class="plan-props-body" style="display:flex;flex-direction:column;gap:10px;font-size:13px">
         ${stepBar}
@@ -1477,6 +1498,7 @@ const PlanLayoutUI = {
         else setT(k, t.type === 'checkbox' ? t.checked : t.value);
         this.retrench(); return;
       }
+      if (t.dataset.tn) { p[t.dataset.tn] = t.checked ? +t.dataset.def : 0; this.touched(); return; }
       if (t.dataset.opt) { opt[t.dataset.opt] = t.checked; return; }
       const k = t.dataset.p; if (!k || t.type === 'range') return;
       p[k] = t.type === 'checkbox' ? t.checked : t.value; this.touched();

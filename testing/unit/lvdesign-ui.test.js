@@ -169,6 +169,24 @@ ok('kiosks the LV network does not reach: a failing check that names the cause, 
   assert(/Incomplete: 1 kiosk/.test(el.innerHTML), 'the design line says incomplete, not that everything passes');
 });
 
+ok('panel: an option that is off by default is a switch, its number shows only while on; the rates option says why it is unavailable; the last run is shown with what changed since', async () => {
+  const { U } = await run();
+  const draw = st => { U.step = st; const e = { innerHTML: '', querySelectorAll: () => [], querySelector: () => null }; U.renderOptions(e); return e.innerHTML; };
+  const p = U.cfg().params; p.strE = 0; p.subBal = 0;
+  let h = draw(3);
+  assert(/data-tn="strE"(?![^>]*checked)/.test(h) && !/data-p="strE"/.test(h), 'strE off: a switch, no number');
+  assert(/data-tn="subBal"(?![^>]*checked)/.test(h) && !/data-p="subBal"/.test(h), 'subBal off: a switch, no number');
+  assert(/Not available: the rate library has no price for/.test(h), 'the reason is in the panel, not only a tooltip');
+  p.strE = 12; p.subBal = 1.3; U.cfg(); h = draw(3);
+  assert(/data-tn="strE"[^>]* checked/.test(h) && /data-p="strE"[^>]*value="12"/.test(h), 'strE on: its number shows');
+  assert(/data-p="subBal"[^>]*value="1.3"/.test(h));
+  p.strE = 1; p.subBal = 0.4; U.cfg(); assert.strictEqual(U.cfg().params.strE, 2); assert.strictEqual(U.cfg().params.subBal, 1.1, 'a stored value is held within its range');
+  U.cfg().params.strE = 0; U._ranParams = JSON.stringify(U.cfg().params);          // what run() records
+  assert(/Last run: <b>\d+<\/b> kiosks/.test(draw(3)), 'the footer shows the last result'); assert(!/changed since the last run/.test(draw(3)));
+  U.cfg().params.n = (U.cfg().params.n || 6) + 1;
+  assert(/1 setting changed since the last run/.test(draw(3)), 'one change is counted');
+});
+
 (async () => {
   for (const [name, fn] of queue) { const t = Date.now(); await fn(); n++; console.log('ok', name, `(${((Date.now() - t) / 1000).toFixed(1)} s)`); }
   console.log(n + ' passed');
