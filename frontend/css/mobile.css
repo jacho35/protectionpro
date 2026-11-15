@@ -1994,3 +1994,7 @@ body.dark-mode {
 .fm-sheet-item:active { background: var(--bg-tertiary); }
 .fm-sheet-sep { height: 1px; background: var(--border-color); margin: 6px 0; }
 .fm-sheet-danger { color: var(--danger); font-weight: 600; }
+
+.mm-grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.mm-grid2 .mm-item { border-right: 1px solid var(--border-color); }
+.mm-grid2 .mm-item:nth-child(2n) { border-right: none; }

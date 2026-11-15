@@ -1251,12 +1251,17 @@ const MobileUI = {
       // A drill-in page: the desktop menu's own groups become sub-headings
       const def = this.MENU_PAGES[page];
       const items = this._pageItems(page);
-      let last = null;
+      let last = null, inGrid = false;
       const multi = new Set(items.map(i => i.group)).size > 1;
       for (const it of items) {
-        if (multi && it.group !== last) { html += `<h4 class="mm-subhead">${escHtml(it.group || def.first || 'Other')}</h4>`; last = it.group; }
+        if (multi && it.group !== last) { if (inGrid) { html += '</div>'; inGrid = false; } html += `<h4 class="mm-subhead">${escHtml(it.group || def.first || 'Other')}</h4>`; last = it.group; }
+        // The arrange commands are short, so they sit two to a row
+        const grid = it.group === 'Arrange selection';
+        if (grid && !inGrid) { html += '<div class="mm-grid2">'; inGrid = true; }
+        if (!grid && inGrid) { html += '</div>'; inGrid = false; }
         html += row(it.el, it.label, { sub: it.sub, toggle: it.toggle });
       }
+      if (inGrid) html += '</div>';
       const route = document.getElementById('wire-route-mode');
       if (def.route && route) {
         html += `<label class="mopt mm-select-row"><span class="mopt-label">Wire routing</span>
