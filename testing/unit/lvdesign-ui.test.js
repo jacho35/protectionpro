@@ -156,6 +156,19 @@ ok('a range no cable fits is reported, with a way back, and the old check carrie
   await U.vdRun(); assert(U.result.design && U.result.design.ok);
 });
 
+ok('kiosks the LV network does not reach: a failing check that names the cause, a warning instead of an earth-fault pass, and the tile says incomplete', async () => {
+  const { U, r } = await run();
+  assert(!U.checks().some(c => /not joined up|does not reach/.test(c.text)), 'a connected network says nothing about joins');
+  const k = r.kiosks[2]; r.net.unreached = [k]; r.net.parts = 2;
+  let ck = U.checks();
+  const row = ck.find(c => /does not reach/.test(c.text)); assert(row && row.sev === 'fail' && /not joined up \(2 separate street networks\)/.test(row.text));
+  assert(!ck.some(c => /checks pass, none fail/.test(c.text)), 'no earth-fault pass is quoted for a partial network');
+  r.net.parts = 1; ck = U.checks();
+  assert(/the streets are joined, so this is a layout fault/.test(ck.find(c => /does not reach/.test(c.text)).text), 'joined streets are never called not joined');
+  U.step = 4; const el = { innerHTML: '', querySelectorAll: () => [], querySelector: () => null }; U.renderOptions(el);
+  assert(/Incomplete: 1 kiosk/.test(el.innerHTML), 'the design line says incomplete, not that everything passes');
+});
+
 (async () => {
   for (const [name, fn] of queue) { const t = Date.now(); await fn(); n++; console.log('ok', name, `(${((Date.now() - t) / 1000).toFixed(1)} s)`); }
   console.log(n + ' passed');
