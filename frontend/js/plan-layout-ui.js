@@ -15,11 +15,11 @@ const PlanLayoutUI = {
   step: 1, ckFilter: 'all', _ckOpen: new Set(), _active: false,
   STEPS: ['Streets', 'Mini-subs', 'Rules', 'Review'],
   PRESET_NAMES: { standard: 'Standard', short: 'Short services', fewest: 'Fewest kiosks', crossings: 'Fewest crossings', custom: 'Custom' },
-  PRESET_HINT: { standard: 'The kiosk rules most projects use.', short: 'More kiosks, so every service is short: lower volt drop and earth-fault loop.', fewest: 'Fewer kiosks and more cable: the lowest kiosk count, longer services.', crossings: 'Services cross the road in as few places as possible: a crossing counts for more cable, a kiosk is kept where it saves crossings, the better side of each street is tried and markers pair up on a shared boundary.' },
+  PRESET_HINT: { standard: 'The kiosk rules most projects use.', short: 'More kiosks, so every service is short: lower volt drop and earth-fault loop.', fewest: 'Fewer, larger kiosks: the lowest kiosk count, services up to the 70 m volt-drop limit.', crossings: 'Services cross the road in as few places as possible: a crossing counts for more cable, a kiosk is kept where it saves crossings, the better side of each street is tried and markers pair up on a shared boundary.' },
   // every preset names the same settings, so choosing one puts back what another changed
   get PRESETS() {
     const D = PlanLayout.DEFAULTS, base = { n: D.n, maxc: D.maxc, worth: D.worth, xpen: D.xpen, xkiosk: D.xkiosk, kside: D.kside, corner: D.corner, xpref: D.xpref };
-    return { standard: base, short: { ...base, n: 6, maxc: 50, worth: 80 }, fewest: { ...base, n: 8, maxc: 100, worth: 400 }, crossings: { ...base, xpen: 600, xkiosk: true, kside: 'try', corner: 'pair', xpref: 'few' } };
+    return { standard: base, short: { ...base, n: 6, maxc: 50, worth: 80 }, fewest: { ...base, n: 8, maxc: 70, worth: 400 }, crossings: { ...base, xpen: 600, xkiosk: true, kside: 'try', corner: 'pair', xpref: 'few' } };
   },
   PAL: ['#2a7de1', '#d9480f', '#2b9348', '#9c36b5', '#b07800', '#0c8599', '#c2255c', '#5f3dc4'],
   SHOW: { front: true, mark: true, kiosk: true, fibre: true, lvmv: true, cross: true, trench: true },
