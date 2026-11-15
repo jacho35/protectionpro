@@ -121,7 +121,7 @@ const PlanLayoutUI = {
     const pick = (list, id, prefer) => list.find(c => c.id === id) || list.find(prefer) || list[0] || null;
     const auto = !feeders.some(c => c.id === vd.lv);                       // nothing picked: the smallest cable that keeps the drop within the limit
     const r = this.result, sized = auto && r && r.vd && r.vd.autoLv ? feeders.find(c => c.id === r.vd.autoLv) : null;
-    return { feeders, services, auto,
+    return { feeders, services, auto, svcAuto: !services.some(c => c.id === vd.svc),
       lv: sized || pick(feeders, vd.lv, c => c.id === 'al_xlpe_95_lv' || (c.size_mm2 === 95 && c.conductor === 'Al')),
       svc: pick(services, vd.svc, c => c.size_mm2 === 16 && c.conductor === 'Cu') };
   },
@@ -401,7 +401,15 @@ const PlanLayoutUI = {
     const key = [d.id, layer, count, PlanEngine.factor()].join('|');
     if (!this._kerbCache.has(key)) {
       const pieces = this._kerbPieces(d, layer);
-      this._kerbCache.set(key, !!pieces && pieces.length > 1 && PlanKerbs.pairedShare(PlanKerbs.joinPieces(pieces)) >= 0.5);
+      // Plot boundaries pair up across a street just as kerbs do, so pairing alone proves nothing. A layer of mostly closed outlines (plots) or
+      // one named for plots / boundaries is not offered as kerbs; the layer's name is a hint, the closed outlines are the test.
+      let kerbs = false;
+      if (pieces && pieces.length > 1 && (/kerb|curb/i.test(String(layer)) || !/erf|erven|plot|stand|lot\b|parcel|cadastr|boundar|site|building/i.test(String(layer)))) {
+        const chains = PlanKerbs.joinPieces(pieces), len = c => { let L = 0; for (let i = 1; i < c.pts.length; i++) L += Math.hypot(c.pts[i][0] - c.pts[i - 1][0], c.pts[i][1] - c.pts[i - 1][1]); return L; };
+        const tot = chains.reduce((a, c) => a + len(c), 0) || 1, closed = chains.filter(c => c.closed).reduce((a, c) => a + len(c), 0) / tot;
+        kerbs = closed < 0.5 && PlanKerbs.pairedShare(chains) >= 0.5;
+      }
+      this._kerbCache.set(key, kerbs);
     }
     return this._kerbCache.get(key);
   },
@@ -743,14 +751,14 @@ const PlanLayoutUI = {
     const m = [pt.x * f, pt.y * f], tol = 14 * f / PlanEngine.view.zoom;
     const mine = (L.subs || []).map((q, i) => ({ i, d: Math.hypot(q.x * f - m[0], q.y * f - m[1]) })).filter(x => x.d <= tol).sort((a, b) => a.d - b.d)[0];
     if (ev && ev.altKey) {                                                           // Alt-click removes the one under the pointer
-      if (mine) { L.subs.splice(mine.i, 1); this.subMove = null; this.touched(); }
+      if (mine) { L.subs.splice(mine.i, 1); this.subMove = null; this.touched(true); }
       else UI.toast('No mini-sub placed by Auto layout there. A mini-sub part you drew on the plan is removed on the plan.', 'info', 3500);
       return;
     }
-    if (this.subMove != null && L.subs[this.subMove]) { L.subs[this.subMove] = { x: pt.x, y: pt.y }; this.subMove = null; this.touched(); return; }   // the second click of a move
+    if (this.subMove != null && L.subs[this.subMove]) { L.subs[this.subMove] = { x: pt.x, y: pt.y }; this.subMove = null; this.touched(true); return; }   // the second click of a move
     if (mine) { this.subMove = mine.i; UI.toast('Click where this mini-sub should stand. Alt-click it to remove it.', 'info', 3500); PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true }); return; }
     if ((L.subs || []).length >= 20) { UI.toast('That is the most mini-subs the layout takes (20).', 'warn', 3000); return; }
-    L.subs.push({ x: pt.x, y: pt.y }); this.touched();                               // exactly where you click: no kiosk is added beside it
+    L.subs.push({ x: pt.x, y: pt.y }); this.touched(true);                               // exactly where you click: no kiosk is added beside it
   },
 
 
@@ -804,7 +812,7 @@ const PlanLayoutUI = {
 
   streetsOnPlan() { return AppState.planMarkup.routes.filter(r => r.type === 'street' && r.points && r.points.length >= 2); },
 
-  gather() {
+  gather(allowNoSub) {
     const pm = AppState.planMarkup, f = PlanEngine.factor(), L = this.cfg();
     if (!f) return { err: 'Calibrate the plan first: the layout works in metres.' };
     const erven = pm.elements.filter(e => e.type === 'erf' && Array.isArray(e.boundary) && e.boundary.length >= 3)
@@ -815,10 +823,19 @@ const PlanLayoutUI = {
     const streets = sr.map((r, i) => ({ id: r.id, name: (r.props && r.props.name) || ('Street ' + (i + 1)), w: this._num(r.props && r.props.width, 6, 40, 12), pts: this._flat(r).map(p => [p.x * f, p.y * f]) }));
     const ks = {}, fs = {}, ga = L.sides['*'] || {}; streets.forEach(s => { const sd = L.sides[s.id] || {}, pk = v => v === 1 || v === -1 ? v : null; ks[s.id] = pk(sd.k) || pk(ga.k) || 0; fs[s.id] = pk(sd.f) || pk(ga.f); });   // a street's own side overrides the all-streets one
     const subPts = this.placedSubs().map(q => [q.x * f, q.y * f]);                    // every mini-sub you placed: the layout works from them
-    if (!subPts.length) return { err: 'Place your mini-subs first (step 2): click where each one stands. The layout works from them.' };
+    if (!subPts.length && !allowNoSub) return { err: 'Place your mini-subs first (step 2): click where each one stands. The layout works from them.' };
     const markers = {}; for (const [id, q] of Object.entries(L.markers)) if (erven.some(e => e.id === id)) markers[id] = [q.x * f, q.y * f];
     const splits = L.vd.splits.map(q => [q.x * f, q.y * f]);
     return { f, input: { erven, streets, markers, splits, ks, fs, overrides: L.fronts, cuts: L.cuts, subPts, entryPt: L.entry ? [L.entry.x * f, L.entry.y * f] : null, sections: L.sections.on ? L.sections : null }, params: L.params };
+  },
+
+  // Suggest where the first mini-sub goes: the layout is solved once with none placed (the engine then picks the kiosk where the LV network
+  // drops least) and its position is placed for you. You can move it like any other.
+  suggestSub() {
+    const g = this.gather(true); if (g.err) { UI.toast(g.err, 'warn', 5000); return; }
+    const r = PlanLayout.solve(g.input, Object.assign({}, g.params, { subs: 1 })), k = r && r.net && r.net.sub;
+    if (!k) { UI.toast('No kiosk was found to put a mini-sub beside. Check the erven and streets first.', 'warn', 5000); return; }
+    this.cfg().subs.push({ x: k.x / g.f, y: k.y / g.f }); UI.toast('Mini-sub placed where the LV network drops least. Click it to move it.', 'info', 4500); this.touched(true);
   },
 
   run() {
@@ -840,9 +857,10 @@ const PlanLayoutUI = {
     PlanMarkup.markDirty(); PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true });
   },
   // after a setting changes: re-run at once when that is quick, otherwise wait for Run
-  touched() {
+  // `force`: a deliberate single edit (a mini-sub placed, moved or removed) re-runs whatever the last solve cost; a slider drag re-runs only while the solve is quick
+  touched(force) {
     PlanMarkup.markDirty();
-    if (this.result && this.ms < 400) this.run();
+    if (this.result && (force || this.ms < 400)) this.run();
     else { this.stale = true; PlanMarkup.refreshProps(); }
   },
 
@@ -1030,7 +1048,7 @@ const PlanLayoutUI = {
       out.push({ sev: 'fail', text: `${nf.length} erven do not face a street and get no kiosk, service or fibre: ${nm(nf.map(lab))}. Extend the nearest street to them, or place their markers yourself and the cable and kiosk are worked out from there.`, ids: nf.map(e => e.id), rows,
         acts: rows.filter(x => x.g && !x.g.near).length > 1 ? [{ label: 'Extend the nearest streets to all of them', act: 'extendall', val: rows.filter(x => x.g && !x.g.near).map(x => x.id) }] : [] });
     }
-    if (r.net.unreached && r.net.unreached.length) out.push({ sev: 'fail', text: `The LV network does not reach ${r.net.unreached.length} ${r.net.unreached.length === 1 ? 'kiosk' : 'kiosks'} (${r.net.unreached.map(k => k.id).join(', ')}): the streets between them are not joined up. Their erven have no LV supply, and the voltage-drop and earth-fault results leave them out. Join the streets (Streets from kerb layer › Join networks) or add the missing street.`, ids: r.net.unreached.flatMap(k => k.members.map(e => e.id)) });
+    if (r.net.unreached && r.net.unreached.length) out.push({ sev: 'fail', text: `The LV network does not reach ${r.net.unreached.length} ${r.net.unreached.length === 1 ? 'kiosk' : 'kiosks'} (${r.net.unreached.map(k => k.id).join(', ')}): ${(r.net.parts || 2) > 1 ? 'the streets between them are not joined up (' + r.net.parts + ' separate street networks).' : 'the streets are joined, so this is a layout fault: run the layout again and report it if it stays.'} Their erven have no LV supply, and the voltage-drop and earth-fault results leave them out. ${(r.net.parts || 2) > 1 ? 'Join the streets (Streets from kerb layer › Join networks) or add the missing street.' : ''}`, ids: r.net.unreached.flatMap(k => k.members.map(e => e.id)) });
     const hand = r.erven.filter(e => e.manual);
     if (hand.length) out.push({ sev: 'info', text: `${hand.length} ${hand.length === 1 ? 'erf uses' : 'erven use'} a marker you placed (${nm(hand.map(lab))}). The service cable, kiosk and fibre duct are worked out to it.`, ids: hand.map(e => e.id), acts: [{ label: 'Remove my markers', act: 'resetmarkers' }] });
     const unserved = r.erven.filter(e => e.fe && !e.kiosk);
@@ -1081,8 +1099,10 @@ const PlanLayoutUI = {
         }
         const noDev = Object.keys(r.prot || {}).length < ((r.net && r.net.subs) || []).length;
         if (!fails.length && noDev) out.push({ sev: 'warn', text: 'No standard breaker is big enough for a string, so its earth-fault loop is not judged. Split the load with another mini-sub.', ids: [] });
+        else if (!fails.length && r.net.unreached && r.net.unreached.length) out.push({ sev: 'warn', text: `Earth-fault loop and earth conductor: no check failed, but ${r.net.unreached.reduce((a, k) => a + k.members.length, 0)} erven on ${r.net.unreached.length} kiosks the LV network does not reach were not checked. This is not a pass for the whole layout.`, ids: r.net.unreached.flatMap(k => k.members.map(e => e.id)) });
         else if (!fails.length) out.push({ sev: 'info', text: `Earth-fault loop and earth conductor: ${E.counts ? E.counts.pass : 0} checks pass, none fail (Demand's own check, 5 s disconnection).`, ids: [] });
       }
+      { const cc = this.vdCables(); if (cc.svcAuto && cc.svc) out.push({ sev: 'info', text: `The service cable was not picked, so every check uses the default: ${cc.svc.name}${cc.svc.size_mm2 === 16 && cc.svc.conductor === 'Cu' ? ' (a 16 mm² copper stand-in for the real service cable)' : ''}. Pick the cable you will install under Rules › LV design, and the voltage drop and earth-fault results follow it.`, ids: [] }); }
       out.push({ sev: 'info', text: 'Cable ratings and voltage drop are checked here; fault withstand of the cables is checked in Demand.', ids: [] });
     }
     const D = r.design || r.designIssue, fixAct = x => x.action === 'split' ? { label: x.text, act: 'split', val: x.kiosk } : x.action === 'maxSize' ? { label: x.text, act: 'maxsize', val: x.size } : x.action === 'clearSize' ? { label: x.text, act: 'clearsize' } : { label: 'Place another mini-sub', act: 'addsub' };
@@ -1252,13 +1272,13 @@ const PlanLayoutUI = {
         ${kinfo.length ? `<div style="color:#b91c1c"><b>${kinfo.length} kerb chain${kinfo.length === 1 ? ' has' : 's have'} no partner</b> (red dashed):<div style="max-height:150px;overflow:auto;margin-top:3px">${kinfo.map(k => `<div style="display:flex;justify-content:space-between;align-items:center;gap:4px;border-bottom:1px solid var(--border,#ddd);padding:2px 0"><span>${k.name ? esc(k.name) : 'near ' + Math.round(k.at[0]) + ', ' + Math.round(k.at[1]) + ' m'} · ${Math.round(k.len)} m</span><span style="display:flex;gap:3px"><button type="button" class="plan-btn" data-act="kerbshow" data-i="${k.i}" style="padding:1px 6px;font-size:12px">show</button><button type="button" class="plan-btn" data-act="kerbone" data-i="${k.i}" style="padding:1px 6px;font-size:12px${KS.one === k.i ? ';outline:2px solid #2563eb' : ''}" title="A road with a kerb on this side only">road from this kerb</button></span></div>`).join('')}</div></div>` : '<div style="color:#15803d">Every kerb chain was paired.</div>'}
         <div style="display:flex;gap:6px"><button type="button" class="plan-btn" data-act="kerbcreate" style="font-weight:600">Create ${KS.streets.length} street${KS.streets.length === 1 ? '' : 's'}</button><button type="button" class="plan-btn" data-act="kerbcancel">Cancel</button></div></div>` : '';
     const tile = (b, s) => `<div style="border:1px solid var(--border,#ddd);border-radius:5px;padding:4px 6px"><b style="font-size:15px;display:block">${b}</b><span style="font-size:11px;color:var(--text-muted)">${s}</span></div>`;
-    const tiles = st ? [[st.erven, 'erven'], [r.net.subs.length, 'mini-sub' + (r.net.subs.length === 1 ? '' : 's')], [st.kiosks, `kiosks · ${st.avgPer.toFixed(1)} erven each on average · ${st.small} serve 2 erven or fewer · at most ${p.n}`], [st.strings, 'LV strings off the mini-sub' + (p.strN ? ' · at most ' + p.strN + ' kiosks each' : '')], [fmt(st.cable) + ' m', 'service cable'], [fmt(st.cableMax) + ' m of ' + p.maxc + ' m', 'longest service · limit'], ...(r.vd && !r.vd.err ? [[r.vd.maxLv.toFixed(1) + '% / ' + r.vd.maxSvc.toFixed(1) + '%', 'worst LV feeder / service drop · limits ' + r.vd.V.limF + '% / ' + r.vd.V.limS + '%']] : []), [st.crossings, 'road crossings'], [st.provisional, 'junction ducts, empty'], [st.d110 + ' + ' + st.d160, '110 mm + 160 mm ducts'], [st.manholes + ' + ' + st.junctionManholes, 'manholes + junctions'], [fmt(st.trunk) + ' m', 'trunk duct'], [fmt(st.leads) + ' m', 'duct to erven'], [fmt(st.lv) + ' m', 'LV feeder'], [st.tOffs + ' / ' + st.spurEnds + ' / ' + st.loops, 'T-offs / spur ends / loops'], [st.baseline, 'crossings if unshared']].map(t => tile(...t)).join('') : '';
+    const tiles = st ? [[st.erven, 'erven'], [r.net.subs.length, 'mini-sub' + (r.net.subs.length === 1 ? '' : 's')], [st.kiosks, `kiosks · ${st.avgPer.toFixed(1)} erven each on average · ${st.small} serve 2 erven or fewer · at most ${p.n}`], [st.strings, 'LV strings off the mini-sub' + (p.strN ? ' · at most ' + p.strN + ' kiosks each' : '')], [fmt(st.cable) + ' m', 'service cable'], [fmt(st.cableMax) + ' m of ' + p.maxc + ' m', 'longest service · limit'], ...(r.vd && !r.vd.err ? [[r.vd.maxLv.toFixed(1) + '% / ' + r.vd.maxSvc.toFixed(1) + '%', 'worst LV feeder / service drop · limits ' + r.vd.V.limF + '% / ' + r.vd.V.limS + '%']] : []), [st.crossings, 'road crossings'], [st.provisional, 'junction ducts, empty'], [st.d110 + ' + ' + st.d160, '110 mm + 160 mm ducts'], [st.manholes + ' + ' + st.junctionManholes, 'manholes + junctions'], [fmt(st.trunk) + ' m', 'trunk duct'], [fmt(st.leads) + ' m', 'duct to erven'], [fmt(st.lv) + ' m', st.unreached ? `<span style="color:#c92a2a;font-weight:600">LV feeder: incomplete, ${st.unreached} kiosk${st.unreached === 1 ? '' : 's'} not reached</span>` : 'LV feeder'], [st.tOffs + ' / ' + st.spurEnds + ' / ' + st.loops, 'T-offs / spur ends / loops'], [st.baseline, 'crossings if unshared']].map(t => tile(...t)).join('') : '';
     const D = r && r.design, cfgVd = this.cfg().vd;
     const subName = id => /^LAYOUT_SUB/.test(id) ? 'Mini-sub' + (id.split('_')[2] ? ' ' + id.split('_')[2] : '') : id;
     const headOf = D ? new Map(D.heads.map(h => [h.kioskId, h])) : new Map();
     const designBlock = D ? `<div style="margin-top:6px"><b>LV design</b>
       ${tile(`LV cable: ${D.taper.count} size${D.taper.count === 1 ? '' : 's'}, ${D.taper.minMm2}${D.taper.count > 1 ? ' to ' + D.taper.maxMm2 : ''} mm² ${esc(D.conductor)}`, (cfgVd.minSize || cfgVd.maxSize ? `limited to ${cfgVd.minSize || 'any'} to ${cfgVd.maxSize || 'any'} mm² · ` : '') + (D.taper.on && D.taper.savedPct > 0 ? `taper saves ${D.taper.savedPct}% against ${D.uniform.sizeMm2} mm² throughout (size × length)` : (D.taper.on ? 'no feeder can be smaller' : 'taper off: one size throughout')))}
-      <div style="font-size:12px;color:var(--text-muted);margin:3px 0">${cfgVd.way80 ? 'Every erf way: MCCB 80 A. ' : ''}${D.ok ? 'Every earth-fault, volt-drop and rating check passes.' : `<b style="color:#b91c1c">${D.failCount} earth-fault check${D.failCount === 1 ? '' : 's'} still fail${D.failCount === 1 ? 's' : ''}: see the Checks below.</b>`}</div>
+      <div style="font-size:12px;color:var(--text-muted);margin:3px 0">${cfgVd.way80 ? 'Every erf way: MCCB 80 A. ' : ''}${r.net.unreached && r.net.unreached.length ? `<b style="color:#c92a2a">Incomplete: ${r.net.unreached.length} kiosk${r.net.unreached.length === 1 ? '' : 's'} (${r.net.unreached.reduce((a, k) => a + k.members.length, 0)} erven) are not on the LV network, so the checks below leave them out. This is not a pass.</b>` : D.ok ? 'Every earth-fault, volt-drop and rating check passes.' : `<b style="color:#b91c1c">${D.failCount} earth-fault check${D.failCount === 1 ? '' : 's'} still fail${D.failCount === 1 ? 's' : ''}: see the Checks below.</b>`}</div>
       <div style="max-height:200px;overflow:auto"><table style="width:100%;font-size:12px;border-collapse:collapse"><thead><tr><th style="text-align:left">Kiosk</th><th style="text-align:left">Fed from</th><th style="text-align:left">Cable</th><th style="text-align:left">Breaker</th><th style="text-align:right">m</th></tr></thead><tbody>${D.feeders.map(x => { const h = headOf.get(x.kioskId); return `<tr style="border-top:1px solid var(--border,#ddd)"><td>${esc(x.name)}</td><td>${esc(subName(x.fedFrom))}</td><td>${esc(String(x.cable).replace(/ LV$/, ''))}${x.setBy === 'taper' ? ' <span title="smaller (or larger) than the one size that would pass everywhere: set by the taper" style="color:#0f8f78;font-size:11px">· set by taper</span>' : x.setBy === 'you' ? ' <span style="font-size:11px">· set by you</span>' : ''}</td><td>${h ? (h.breaker ? esc(h.breaker) + (h.pinned ? ' <span style="font-size:11px">· set by you</span>' : '') : '<span style="color:#b91c1c">no current from Demand</span>') : '—'}</td><td style="text-align:right">${Math.round(x.lengthM)}</td></tr>`; }).join('')}</tbody></table></div>
       </div>` : (r && r.designErr ? `<div style="color:#b91c1c;margin-top:6px">The LV design could not be run: ${esc(r.designErr)}</div>` : '');
     const xt = r ? r.net.cross.slice().sort((a, b) => (a.prov - b.prov) || (b.d110 + b.d160) - (a.d110 + a.d160)).slice(0, 14).map((x, i) => { const parts = x.prov ? `${x.d110}×110, ${x.d160}×160, junction` : [x.d110s && `${x.d110s}×110 service`, x.d110f && `${x.d110f}×110 fibre`, x.d110l && `${x.d110l}×110 LV`, x.d160 && `${x.d160}×160 MV`, x.spare && `${x.spare}×110 spare`].filter(Boolean).join(', '); return `<tr><td>${esc(x.st.name)}</td><td>${esc(parts)}</td></tr>`; }).join('') : '';
@@ -1298,7 +1318,7 @@ const PlanLayoutUI = {
     const step2 = `<div style="font-size:12px;color:var(--text-muted)">The layout works from your mini-subs. Click where each one stands, anywhere (on a street, in a block, in a park). No kiosk is added beside it: kiosks follow the erven and go to the nearest mini-sub.</div>
         <button type="button" class="plan-btn" data-mode="sub" aria-pressed="${this.mode === 'sub'}" style="font-weight:600;padding:8px;${this.mode === 'sub' ? 'outline:2px solid var(--accent,#2563eb)' : ''}">${this.mode === 'sub' ? 'Placing: click the plan' : (placed.length ? 'Place another' : 'Place a mini-sub')}</button>
         <div style="font-weight:600">Placed (${placed.length})</div>
-        ${placed.length ? placed.map(subRow).join('') : banner('warn', '<span>None yet. The layout cannot run until one is placed.</span>')}
+        ${placed.length ? placed.map(subRow).join('') : banner('warn', '<span>None yet. The layout cannot run until one is placed. Where it stands decides every LV cable, so place it with care, or let the layout suggest a place to start from.</span>') + '<button type="button" class="plan-btn" data-act="suggestsub" style="padding:8px;font-weight:600">Suggest a position</button>'}
         <div style="font-size:12px;color:var(--text-muted)">Click one, then click again to move it. Alt-click removes it. A mini-sub part you draw on the plan counts too.</div>`;
     // ── step 3: rules
     const pBtn = (k, t) => `<button type="button" class="plan-btn" data-preset="${k}" aria-pressed="${preset === k}" style="padding:3px 6px;font-size:12px;${preset === k ? 'font-weight:600;outline:2px solid var(--accent,#2563eb)' : ''}">${t}</button>`;
@@ -1380,6 +1400,7 @@ const PlanLayoutUI = {
       if (b.dataset.act === 'showerven') { const r0 = this.result; if (!r0) return; const ids = new Set(r0.erven.filter(x => !x.fe).map(x => x.id)); this.flag = ids; const pts = []; r0.erven.forEach(x => { if (ids.has(x.id)) x.poly.forEach(q => pts.push({ x: q[0] / this.f, y: q[1] / this.f })); }); if (pts.length) PlanEngine.zoomToPoints(pts); PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true }); return; }
       if (b.dataset.act === 'secedit') { PlanSectionsUI.open(); return; }
       if (b.dataset.act === 'secdraw') { this.secDrawOn(!this.secDraw, L.sections.def); return; }
+      if (b.dataset.act === 'suggestsub') { this.suggestSub(); return; }
       if (b.dataset.act === 'drawfix') { this.setStep(1); this.streetDrawOn(true); return; }
       if (b.dataset.act === 'submove') { const i = +b.dataset.i; if (L.subs[i]) { this.subMove = i; this.mode = 'sub'; UI.toast('Click where this mini-sub should stand.', 'info', 3500); PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true }); } return; }
       if (b.dataset.act === 'fromrates') { const f = this.ratesFigures(); if (f) { p.worth = f.worth; p.xpen = f.xpen; this.touched(); } return; }

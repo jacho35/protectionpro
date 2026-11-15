@@ -800,24 +800,34 @@ const PlanLayout = (() => {
       }));
       const net = { lv: [], mv: [], sub: null, subs: [], mvLines: [], mvLine: [], lvLen: 0, mvLen: 0, lvLinks: [], mvPts: null, unreached: [] };
       if (kiosks.length) {
-        const nodes = [], map = new Map();
-        const node = (st, s0) => { const key = st.id + '|' + Math.round(s0 / 1.5); let n = map.get(key); if (!n) { n = { id: nodes.length, st, s: s0, adj: [] }; map.set(key, n); nodes.push(n); } return n; };
+        // Nodes of the kiosk-side verge graph. One node per place on a street: a new one is made only if no node of that street is within
+        // MERGE m, so nodes on a street are always more than MERGE m apart and every consecutive pair is joined below. (They used to be
+        // keyed by a 1.5 m bucket while consecutive nodes were joined only if > 0.4 m apart: two nodes 0.3 m apart across a bucket edge
+        // were never joined, and a mini-sub or kiosk beside a junction cut the street in two.) Street ends and junctions are made first, so
+        // anything placed beside one joins that node and the junction keeps its own station.
+        const MERGE = 0.4, nodes = [], byStreet = new Map();
+        const node = (st, s0) => {
+          let arr = byStreet.get(st); if (!arr) byStreet.set(st, arr = []);
+          let n = null; for (const q of arr) if (Math.abs(q.s - s0) <= MERGE && (!n || Math.abs(q.s - s0) < Math.abs(n.s - s0))) n = q;
+          if (!n) { n = { id: nodes.length, st, s: s0, adj: [] }; arr.push(n); nodes.push(n); }
+          return n;
+        };
+        streets.forEach(st => { node(st, 0); node(st, st.len); st.jids.forEach(id => node(st, st.nodeSt[id])); });
         kiosks.forEach(k => { k.node = node(k.road, k.s); });
         // mini-subs placed by hand: a free point anywhere. It joins the verge network at the nearest street (its node is made here so
         // the graph links it), and its own cables run from the point to that verge and along it.
         const manualRoots = [];
         (input.subPts || []).forEach((pt, i) => {
-          let bs = null; for (const st of streets) { const pr = project(st, pt[0], pt[1]); if (!bs || pr.d < bs.d) bs = { st, s: pr.s }; }
+          let bs = null; for (const st of streets) { const pr = project(st, pt[0], pt[1]); if (!bs || pr.d < bs.d) bs = { st, s: pr.s, d: pr.d }; }
           if (!bs) return;
           const nd = node(bs.st, bs.s), V = kp(bs.st, ks[bs.st.id] || 1, nd.s).slice(0, 2);
           manualRoots.push({ id: 'SUBPT' + (i + 1), x: pt[0], y: pt[1], root: true, manual: true, members: [], road: bs.st, s: nd.s, node: nd, stub: [[pt[0], pt[1]], V] });
         });
-        streets.forEach(st => { node(st, 0); node(st, st.len); st.jids.forEach(id => node(st, st.nodeSt[id])); });
         const edges = [];
         const link = (A, B, pts, excl) => { const xs = pathCrossings(pts, excl), len = plen(pts), ed = { a: A, b: B, pts, len, xs, w: len + xs.length * 300 }; edges.push(ed); A.adj.push(ed); B.adj.push(ed); };
         streets.forEach(st => {
           const on = nodes.filter(n => n.st === st).sort((p, q) => p.s - q.s);
-          for (let i = 1; i < on.length; i++) if (on[i].s - on[i - 1].s > .4) link(on[i - 1], on[i], kv(st, ks[st.id] || 1, on[i - 1].s, on[i].s), st);
+          for (let i = 1; i < on.length; i++) if (on[i].s - on[i - 1].s > 1e-6) link(on[i - 1], on[i], kv(st, ks[st.id] || 1, on[i - 1].s, on[i].s), st);
         });
         for (const j of junctions) {
           const ss = use[j.id];
@@ -944,6 +954,9 @@ const PlanLayout = (() => {
             if (parent === sk) pathCrossings(sk.stub, null).forEach(x => events.push({ st: x.st, s: x.s, t: 'lv' }));   // each string has its own cable over the stub
           }
         }
+        { const seen = new Set(); let parts = 0;                                      // separate street networks in the verge graph (1 = every street is joined)
+          for (const n0 of nodes) { if (seen.has(n0)) continue; parts++; const q = [n0]; seen.add(n0); while (q.length) { const u = q.pop(); for (const ed of u.adj) { const v = ed.a === u ? ed.b : ed.a; if (!seen.has(v)) { seen.add(v); q.push(v); } } } }
+          net.parts = parts; }
         net.unreached = [];                                                          // kiosks the LV network does not reach (streets not joined up): their erven have no LV supply
         for (const S of subs) for (const k of S.g) if (k !== S.k && !(T(S.k).dist.get(k.node) < Infinity)) net.unreached.push(k);
         // strings: the tree is cut so no string has more than strN kiosks. A cut kiosk becomes a string head of its own: a feeder

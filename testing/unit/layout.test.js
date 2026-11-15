@@ -472,7 +472,7 @@ ok('strings: strE cuts by erven carried; no string carries more than strE (a sin
   assert(r.net.strings >= L.solve(F, { strN: 0, strE: 0 }).net.strings);
 });
 ok('mini-subs placed by hand: subBal moves the border kiosks to the neighbour with room; 0 keeps nearest-wins', () => {
-  const base = L.solve(F, { subs: 2, strN: 0 }), p0 = [base.net.subs[0].k.x, base.net.subs[0].k.y], near = [p0, [p0[0] + 15, p0[1]]];
+  const S0 = L.solve(F, { strN: 0 }).streets[0], pa = L.ptAt(S0, 5, 0), pb = L.ptAt(S0, 20, 0), near = [[pa[0], pa[1]], [pb[0], pb[1]]];     // both at the start of the first street: nearest-wins gives one of them everything
   const load = r => r.net.subs.map(s => s.g.reduce((a, k) => a + k.members.length, 0));
   const a = load(L.solve(Object.assign({}, F, { subPts: near }), { strN: 0 })), b = load(L.solve(Object.assign({}, F, { subPts: near }), { strN: 0, subBal: 1.3 }));
   assert(Math.max(...b) < Math.max(...a), `${a} then ${b}`);
@@ -507,5 +507,31 @@ ok('kside "try": never scores worse than the head-count side, sides set by hand 
   holds(b, Object.assign({}, L.DEFAULTS, { kside: 'try' }), F.erven.length, 'kside try');
   const id = a.streets[0].id, c = L.solve(Object.assign({}, F, { ks: { [id]: -a.ks[id] } }), { kside: 'try' });
   assert.strictEqual(c.ks[id], -a.ks[id]);
+});
+// two streets that form a T (a spine and a branch whose end is 2 mm off it), erven on every side: the shape of an organic estate
+const teeFx = jx => {
+  const streets = [{ id: 'SPINE', name: 'Elm Avenue', w: 12, pts: [[0, 0], [300, 0]] }, { id: 'BRANCH', name: 'Protea Close', w: 12, pts: [[jx, 0.002], [jx, 160]] }], erven = []; let n = 0;
+  const R = (x0, y0, x1, y1) => erven.push({ id: 'E' + (++n), poly: [[x0, y0], [x1, y0], [x1, y1], [x0, y1]] });
+  for (let x = 0; x < 300; x += 20) if (x + 20 < jx - 8 || x > jx + 8) { R(x, -31, x + 20, -6); R(x, 6, x + 20, 31); }
+  for (let y = 12; y < 160; y += 20) { R(jx - 31, y, jx - 6, y + 20); R(jx + 6, y, jx + 31, y + 20); }
+  return { streets, erven };
+};
+ok('a mini-sub beside a junction never cuts the LV network (0 to 12 m either side, on the spine and on the branch, and the 0.26 to 0.35 m that straddled a node bucket)', () => {
+  const T = teeFx(149.5), r0 = L.solve(T, { strN: 0 }), sp = r0.streets.find(x => x.id === 'SPINE'), br = r0.streets.find(x => x.id === 'BRANCH');
+  const sJ = r0.junctions[0].items.find(i => i[0].id === 'SPINE')[1];
+  const ref = L.solve(Object.assign({}, T, { subPts: [L.ptAt(sp, sJ, 0.002).slice(0, 2)] }), { strN: 0 });
+  assert.strictEqual(ref.net.unreached.length, 0); const lv0 = ref.net.lvLen;
+  const check = (S, s, what) => {
+    const p = L.ptAt(S, Math.max(0, s), 0.002), r = L.solve(Object.assign({}, T, { subPts: [[p[0], p[1]]] }), { strN: 0 });
+    assert.strictEqual(r.net.unreached.length, 0, `${what}: ${r.net.unreached.length} kiosks not reached`);
+    assert.strictEqual(r.erven.filter(e => e.kiosk && r.net.unreached.includes(e.kiosk)).length, 0, `${what}: erven with no LV supply`);
+    assert(Math.abs(r.net.lvLen - lv0) <= 5, `${what}: LV ${Math.round(r.net.lvLen)} m vs ${Math.round(lv0)} m`);
+  };
+  for (const d of [0, 1, 3, 5, 8, 12, -1, -3, -5, -8, -12, -0.26, -0.3, -0.35, 0.3, 45]) { check(sp, sJ + d, 'spine ' + d); check(br, Math.abs(d), 'branch ' + Math.abs(d)); }
+});
+ok('a placed mini-sub joins the NEAREST street, not the first one', () => {
+  const r0 = L.solve(F, { strN: 0 }), S = r0.streets.find(x => x.id === 'S2'), p = L.ptAt(S, 120, 0.002);
+  const r = L.solve(Object.assign({}, F, { subPts: [[p[0], p[1]]] }), { strN: 0 });
+  assert.strictEqual(r.net.sub.road.id, 'S2'); assert(Math.hypot(r.net.sub.stub[1][0] - p[0], r.net.sub.stub[1][1] - p[1]) < 30, 'its cable stub is short');
 });
 console.log(n + ' passed');
