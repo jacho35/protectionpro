@@ -23,6 +23,10 @@ const Project = {
     document.getElementById('btn-new').addEventListener('click', () => this.newProject());
     document.getElementById('btn-save').addEventListener('click', () => this.saveProject());
     document.getElementById('btn-open').addEventListener('click', () => this.openProject());
+    // Top-bar shortcuts: each one presses the File-menu item of the same name
+    for (const k of ['open', 'save', 'share'])
+      document.getElementById('btn-top-' + k)?.addEventListener('click', () => document.getElementById('btn-' + k)?.click());
+    document.getElementById('btn-close-project')?.addEventListener('click', () => { window.closeAllToolbarMenus?.(); this.closeProject(); });
     document.getElementById('btn-save-as').addEventListener('click', () => this.saveAsProject());
 
     // Export actions (items live inside the File menu)
@@ -137,6 +141,15 @@ const Project = {
       if (!projectType) return;
     }
     this.createBlank(projectType);
+  },
+
+  // File › Close project: asks about unsaved work, empties the editor and
+  // shows the start screen (its recent list is the way back).
+  async closeProject() {
+    if (!(await this._confirmDiscardUnsaved())) return;
+    this.createBlank(null);
+    AppState.dirty = false;
+    if (typeof StartScreen !== 'undefined') StartScreen.open();
   },
 
   // A blank project of the chosen type ({ type, extras, lighting } from

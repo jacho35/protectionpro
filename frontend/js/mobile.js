@@ -1154,7 +1154,7 @@ const MobileUI = {
         const hay = `${it.label} ${it.sub || ''} ${where} ${it.group || ''}`.toLowerCase();
         if (hay.includes(q)) hits.push({ it, where });
       });
-      add(this._menuItems('menu-file').filter(i => !i.recent), 'Project');
+      add(this._menuItems('menu-file').filter(i => !i.recent), 'File');
       for (const def of Object.values(this.MENU_PAGES)) add(def.menus.flatMap(m => this._menuItems(m)), def.title);
       add(this._appItems(), 'App');
       html += `<div class="mm-count">${hits.length ? hits.length + (hits.length === 1 ? ' command' : ' commands') : 'Nothing matches'}</div>`;
