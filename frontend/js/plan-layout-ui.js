@@ -14,9 +14,13 @@ const PlanLayoutUI = {
   result: null, f: null, stale: true, mode: 'front', hoverT: null, ms: 0, err: '',
   step: 1, ckFilter: 'all', _ckOpen: new Set(), _active: false,
   STEPS: ['Streets', 'Mini-subs', 'Rules', 'Review'],
-  PRESET_NAMES: { standard: 'Standard', short: 'Short services', fewest: 'Fewest kiosks', custom: 'Custom' },
-  PRESET_HINT: { standard: 'The kiosk rules most projects use.', short: 'More kiosks, so every service is short: lower volt drop and earth-fault loop.', fewest: 'Fewer kiosks and more cable: the lowest kiosk count, longer services.' },
-  get PRESETS() { const D = PlanLayout.DEFAULTS; return { standard: { n: D.n, maxc: D.maxc, worth: D.worth }, short: { n: 6, maxc: 50, worth: 80 }, fewest: { n: 8, maxc: 100, worth: 400 } }; },
+  PRESET_NAMES: { standard: 'Standard', short: 'Short services', fewest: 'Fewest kiosks', crossings: 'Fewest crossings', custom: 'Custom' },
+  PRESET_HINT: { standard: 'The kiosk rules most projects use.', short: 'More kiosks, so every service is short: lower volt drop and earth-fault loop.', fewest: 'Fewer kiosks and more cable: the lowest kiosk count, longer services.', crossings: 'Services cross the road in as few places as possible: a crossing counts for more cable, a kiosk is kept where it saves crossings, the better side of each street is tried and markers pair up on a shared boundary.' },
+  // every preset names the same settings, so choosing one puts back what another changed
+  get PRESETS() {
+    const D = PlanLayout.DEFAULTS, base = { n: D.n, maxc: D.maxc, worth: D.worth, xpen: D.xpen, xkiosk: D.xkiosk, kside: D.kside, corner: D.corner, xpref: D.xpref };
+    return { standard: base, short: { ...base, n: 6, maxc: 50, worth: 80 }, fewest: { ...base, n: 8, maxc: 100, worth: 400 }, crossings: { ...base, xpen: 600, xkiosk: true, kside: 'try', corner: 'pair', xpref: 'few' } };
+  },
   PAL: ['#2a7de1', '#d9480f', '#2b9348', '#9c36b5', '#b07800', '#0c8599', '#c2255c', '#5f3dc4'],
   SHOW: { front: true, mark: true, kiosk: true, fibre: true, lvmv: true, cross: true, trench: true },
   // trench settings: depth per cable class (m) and what shares a trench; kept apart from the layout rules (no re-solve)
@@ -766,7 +770,7 @@ const PlanLayoutUI = {
 
 
   // ───────── the panel's steps, presets and footer button ─────────
-  presetOf() { const p = this.cfg().params, P = this.PRESETS; for (const k of Object.keys(P)) if (Object.keys(P[k]).every(x => +p[x] === +P[k][x])) return k; return 'custom'; },
+  presetOf() { const p = this.cfg().params, P = this.PRESETS; for (const k of Object.keys(P)) if (Object.keys(P[k]).every(x => String(p[x]) === String(P[k][x]))) return k; return 'custom'; },
   setPreset(k) { const P = this.PRESETS[k]; if (!P) return; Object.assign(this.cfg().params, P); this.touched(); },
   setStep(n) {
     n = Math.max(1, Math.min(4, n | 0)); this.step = n;
@@ -1226,16 +1230,24 @@ const PlanLayoutUI = {
     const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     const fmt = v => Math.round(v).toLocaleString('en');
     const tipOf = k => this.TIPS[k] ? ` title="${esc(this.TIPS[k])}"` : '', qm = k => this.TIPS[k] ? ` <span${tipOf(k)} style="cursor:help;color:var(--text-muted);font-size:12px">(?)</span>` : '';
-    const ctrl = ([k, kind, a, b, c, unit, label, def]) => {
-      if (kind === 'range') return `<label style="display:block"${tipOf(k)}>${esc(label)}${qm(k)} <b data-v="${esc(k)}">${esc(p[k])}${unit ? ' ' + esc(unit) : ''}</b><input type="range" data-p="${esc(k)}" data-unit="${esc(unit)}" min="${a}" max="${b}" step="${c}" value="${esc(p[k])}" style="width:100%"></label>`;
+    const preset = this.presetOf(), dflt = PlanLayout.DEFAULTS;
+    // a setting is "changed" against the chosen preset (or the standard values when the mix is custom)
+    const refOf = k => { const P = this.PRESETS[preset]; return P && Object.prototype.hasOwnProperty.call(P, k) ? P[k] : dflt[k]; };
+    const isCh = k => String(p[k]) !== String(refOf(k));
+    const refShow = row => { const [k, kind, a, , , unit] = row, v = refOf(k); return kind === 'check' ? (v ? 'on' : 'off') : kind === 'select' ? ((row[2].find(o => o[0] === v) || [])[1] || String(v)) : kind === 'tnum' ? (v > 0 ? v + ' ' + unit : 'off') : v + (unit ? ' ' + unit : ''); };
+    const dot = k => isCh(k) ? '<span aria-label="Changed" style="display:inline-block;width:8px;height:8px;border-radius:4px;background:#b45309;margin-right:5px"></span>' : '';
+    const rst = row => isCh(row[0]) ? `<button type="button" class="plan-btn" data-act="resetone" data-k="${esc(row[0])}" style="align-self:flex-start;padding:0 6px;font-size:11px">Reset to ${esc(refShow(row))}</button>` : '';
+    const ctrl = (row) => {
+      const [k, kind, a, b, c, unit, label, def] = row;
+      if (kind === 'range') return `<div style="display:flex;flex-direction:column;gap:3px"${tipOf(k)}><div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><span>${dot(k)}${esc(label)}${qm(k)}</span><span style="display:flex;gap:4px;align-items:center;flex:none"><input type="number" data-pn="${esc(k)}" aria-label="${esc(label)}" min="${a}" max="${b}" step="${c}" value="${esc(p[k])}" style="width:64px;padding:3px 5px;text-align:right">${unit ? `<span style="color:var(--text-muted);font-size:12px">${esc(unit)}</span>` : ''}</span></div><input type="range" data-p="${esc(k)}" data-unit="${esc(unit)}" aria-label="${esc(label)}" min="${a}" max="${b}" step="${c}" value="${esc(p[k])}" style="width:100%">${rst(row)}</div>`;
       if (kind === 'tnum') {                                                       // an option that is off by default: a switch, and its number only while it is on
         const on = p[k] > 0;
-        return `<div style="display:flex;flex-direction:column;gap:4px"${tipOf(k)}><label style="display:flex;gap:6px;align-items:center;min-height:28px"><input type="checkbox" data-tn="${esc(k)}" data-def="${esc(def)}"${on ? ' checked' : ''}> <span>${esc(label)}${qm(k)}</span></label>${on ? `<label style="display:flex;gap:6px;align-items:center;margin-left:22px">Up to <input type="number" data-p="${esc(k)}" min="${a}" max="${b}" step="${c}" value="${esc(p[k])}" style="width:72px;padding:4px 6px"> ${esc(unit)}</label>` : ''}</div>`;
+        return `<div style="display:flex;flex-direction:column;gap:4px"${tipOf(k)}><label style="display:flex;gap:6px;align-items:center;min-height:28px"><input type="checkbox" data-tn="${esc(k)}" data-def="${esc(def)}"${on ? ' checked' : ''}> <span>${dot(k)}${esc(label)}${qm(k)}</span></label>${on ? `<label style="display:flex;gap:6px;align-items:center;margin-left:22px">Up to <input type="number" data-p="${esc(k)}" min="${a}" max="${b}" step="${c}" value="${esc(p[k])}" style="width:72px;padding:4px 6px"> ${esc(unit)}</label>` : ''}${rst(row)}</div>`;
       }
-      if (kind === 'check') return `<label style="display:flex;gap:6px;align-items:flex-start"><input type="checkbox" data-p="${k}"${p[k] ? ' checked' : ''}> <span>${esc(a)}</span></label>`;
-      return `<label style="display:block"${tipOf(k)}>${esc(b)}${qm(k)}<select data-p="${k}" style="width:100%">${a.map(o => `<option value="${esc(o[0])}"${p[k] === o[0] ? ' selected' : ''}>${esc(o[1])}</option>`).join('')}</select></label>`;
+      if (kind === 'check') return `<div style="display:flex;flex-direction:column;gap:3px"><label style="display:flex;gap:6px;align-items:flex-start"><input type="checkbox" data-p="${k}"${p[k] ? ' checked' : ''}> <span>${dot(k)}${esc(a)}</span></label>${rst(row)}</div>`;
+      return `<div style="display:flex;flex-direction:column;gap:3px"><label style="display:block"${tipOf(k)}>${dot(k)}${esc(b)}${qm(k)}<select data-p="${k}" style="width:100%">${a.map(o => `<option value="${esc(o[0])}"${p[k] === o[0] ? ' selected' : ''}>${esc(o[1])}</option>`).join('')}</select></label>${rst(row)}</div>`;
     };
-    const dflt = PlanLayout.DEFAULTS, MOST = ['n', 'maxc', 'strN'];                                      // the two kiosk settings shown in Rules as "most used"
+    const MOST = ['n', 'maxc', 'strN'];                                      // the two kiosk settings shown in Rules as "most used"
     const grpChanged = rows => rows.some(r => !MOST.includes(r[0]) && String(p[r[0]]) !== String(dflt[r[0]]));
     const advHead = (name, changed, key) => `<summary style="cursor:pointer;font-weight:600;margin:2px 0">${name}${changed ? ` <span style="color:#b45309;font-weight:400;font-size:12px">● changed</span>` : ''}</summary>`;
     const resetBtn = (changed, key) => changed ? `<button type="button" class="plan-btn" data-act="resetgrp" data-g="${key}" style="align-self:flex-start;padding:1px 8px;font-size:12px">Reset this group</button>` : '';
@@ -1312,7 +1324,6 @@ const PlanLayoutUI = {
     const sr0 = this.streetsOnPlan(), nErv = AppState.planMarkup.elements.filter(e => e.type === 'erf' && Array.isArray(e.boundary) && e.boundary.length >= 3).length;
     const f0 = PlanEngine.factor(), streetM = f0 ? sr0.reduce((a, s) => a + this.centreLen(this._flat(s).map(q => [q.x * f0, q.y * f0])), 0) : 0;
     // ── the step bar
-    const preset = this.presetOf();
     const sst = [
       !sr0.length || !nErv ? { c: 'todo', g: '!', t: !nErv ? 'No erven' : 'No streets' } : noKiosks ? { c: 'todo', g: '!', t: 'No kiosks' } : { c: 'ok', g: '✓', t: `${nErv} erven`, title: `${nErv} erven · ${sr0.length} street${sr0.length === 1 ? '' : 's'}` },
       placed.length ? { c: 'ok', g: '✓', t: placed.length + ' placed' } : { c: 'todo', g: '!', t: 'Place one' },
@@ -1345,10 +1356,17 @@ const PlanLayoutUI = {
     const pBtn = (k, t) => `<button type="button" class="plan-btn" data-preset="${k}" aria-pressed="${preset === k}" style="padding:3px 6px;font-size:12px;${preset === k ? 'font-weight:600;outline:2px solid var(--accent,#2563eb)' : ''}">${t}</button>`;
     const kRow = k => this.CTRL[1][1].find(x => x[0] === k);
     const nChanged = this.CTRL.filter(([, rows]) => grpChanged(rows)).length + (trChanged ? 1 : 0) + (vdChanged ? 1 : 0);
-    const SC = L.sections, secBlock = `<div style="border:1px solid var(--border,#ddd);border-radius:6px;padding:6px 8px;display:flex;flex-direction:column;gap:5px"><div style="font-weight:600">Cross-sections <span style="font-weight:400;font-size:12px;color:var(--text-muted)">${SC.on ? 'on' : 'off'} · ${SC.list.length} section${SC.list.length === 1 ? '' : 's'}${SC.lines.length ? ' · ' + SC.lines.length + ' line' + (SC.lines.length === 1 ? '' : 's') : ''}</span></div>
+    const SC = L.sections, secLine = `<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;font-size:12px"><span><b>Cross-sections</b> <span style="color:var(--text-muted)">off: every cable runs the Corridor distance inside the boundary</span></span><button type="button" class="plan-btn" data-act="secedit" style="padding:1px 8px;font-size:12px">Edit</button></div>`,
+      secBlock = !SC.on && !SC.lines.length ? secLine : `<div style="border:1px solid var(--border,#ddd);border-radius:6px;padding:6px 8px;display:flex;flex-direction:column;gap:5px"><div style="font-weight:600">Cross-sections <span style="font-weight:400;font-size:12px;color:var(--text-muted)">${SC.on ? 'on' : 'off'} · ${SC.list.length} section${SC.list.length === 1 ? '' : 's'}${SC.lines.length ? ' · ' + SC.lines.length + ' line' + (SC.lines.length === 1 ? '' : 's') : ''}</span></div>
         <div style="font-size:12px;color:var(--text-muted)">${SC.on ? 'Offsets, depths and the kiosk and manhole sizes come from the section that applies to each stretch of street, all measured from the erf boundary.' : 'Off: every cable runs the Corridor distance inside the boundary. Switch sections on in the editor.'}</div>
         <div style="display:flex;gap:4px;flex-wrap:wrap"><button type="button" class="plan-btn" data-act="secedit">Edit sections…</button><button type="button" class="plan-btn" data-act="secdraw" aria-pressed="${!!this.secDraw}"${this.secDraw ? ' style="outline:2px solid var(--accent,#2563eb)"' : ''}>${this.secDraw ? 'Stop drawing' : 'Draw section line'}</button></div></div>`;
-    const step3 = `<div><div style="font-weight:600;margin-bottom:3px">Preset</div><div style="display:grid;grid-template-columns:repeat(2,1fr);gap:3px">${Object.keys(this.PRESETS).map(k => pBtn(k, this.PRESET_NAMES[k])).join('')}${pBtn('custom', 'Custom')}</div><div style="font-size:12px;color:var(--text-muted);margin-top:3px">${preset === 'custom' ? 'Your own mix of the three kiosk settings below.' : this.PRESET_HINT[preset]}</div></div>
+    const q = (this.q || '').trim().toLowerCase(), words = q.split(/\s+/).filter(Boolean);
+    const hay = (gname, row) => (gname + ' ' + (row[1] === 'select' ? row[3] + ' ' + row[2].map(o => o[1]).join(' ') : row[1] === 'check' ? row[2] : row[6]) + ' ' + (this.TIPS[row[0]] || '')).toLowerCase();
+    const hits = words.length ? [...this.CTRL.flatMap(([gn, rows]) => rows.filter(rw => words.every(w => hay(gn, rw).includes(w))).map(rw => ({ gn, h: ctrl(rw) }))),
+      ...this.TREN.filter(rw => words.every(w => ('trenches ' + (rw[1] === 'select' ? rw[3] : rw[1] === 'check' ? rw[2] : rw[6])).toLowerCase().includes(w))).map(rw => ({ gn: 'Trenches', h: tctrl(rw) }))] : [];
+    const searchBox = `<input type="search" data-q aria-label="Find a setting" placeholder="Find a setting: crossings, strings, manholes…" value="${esc(this.q || '')}" style="width:100%;box-sizing:border-box;padding:6px 8px">`;
+    const searchRes = `<div style="display:flex;flex-direction:column;gap:8px">${hits.length ? hits.map(x => `<div><div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em">${esc(x.gn)}</div>${x.h}</div>`).join('') : '<div style="color:var(--text-muted)">No setting matches that.</div>'}</div>`;
+    const step3 = words.length ? `${searchBox}${searchRes}` : `${searchBox}<div><div style="font-weight:600;margin-bottom:3px">What matters most</div><div style="display:grid;grid-template-columns:repeat(2,1fr);gap:3px">${Object.keys(this.PRESETS).map(k => pBtn(k, this.PRESET_NAMES[k])).join('')}${pBtn('custom', 'Custom')}</div><div style="font-size:12px;color:var(--text-muted);margin-top:3px">${preset === 'custom' ? 'Your own mix of the settings below.' : this.PRESET_HINT[preset]}</div></div>
         ${secBlock}
         <div style="font-weight:600">Most used</div>
         <div style="display:flex;flex-direction:column;gap:8px">${ctrl(kRow('n'))}${ctrl(kRow('maxc'))}${ctrl(kRow('strN'))}${vdTx}${vdLv}</div>
@@ -1402,6 +1420,7 @@ const PlanLayoutUI = {
         ${[step1, step2, step3, step4][this.step - 1]}
         ${footer}
       </div>`;
+    { const qi = el.querySelector('[data-q]'); if (qi && this._qf) { this._qf = false; qi.focus(); const n = qi.value.length; qi.setSelectionRange(n, n); } }
     // the panel is redrawn after every change: keep the sections the user opened open (by their heading)
     const openSet = this._openSec || (this._openSec = new Set());
     el.querySelectorAll('details').forEach(d => {
@@ -1425,6 +1444,7 @@ const PlanLayoutUI = {
       if (b.dataset.act === 'drawfix') { this.setStep(1); this.streetDrawOn(true); return; }
       if (b.dataset.act === 'submove') { const i = +b.dataset.i; if (L.subs[i]) { this.subMove = i; this.mode = 'sub'; UI.toast('Click where this mini-sub should stand.', 'info', 3500); PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true }); } return; }
       if (b.dataset.act === 'fromrates') { const f = this.ratesFigures(); if (f) { p.worth = f.worth; p.xpen = f.xpen; this.touched(); } return; }
+      if (b.dataset.act === 'resetone') { const k = b.dataset.k; p[k] = refOf(k); this.touched(); return; }
       if (b.dataset.act === 'resetgrp') {
         const g = b.dataset.g, grp = this.CTRL.find(x => x[0] === g);
         if (grp) { grp[1].forEach(x => { if (!MOST.includes(x[0])) p[x[0]] = dflt[x[0]]; }); this.touched(); }
@@ -1474,12 +1494,13 @@ const PlanLayoutUI = {
     };
     const setT = (k, v) => { if (k.startsWith('depth.')) TT.depth[k.slice(6)] = v; else TT[k] = v; };
     el.oninput = (e) => {
+      if (e.target.dataset.q != null) { this.q = e.target.value; this._qf = true; clearTimeout(this._tq); this._tq = setTimeout(() => PlanMarkup.refreshProps(), 120); return; }
       const vk = e.target.dataset.vd;
       if (vk === 'protK') { VDc.protK = this._num(e.target.value, 1, 2, 1.2); const lab = el.querySelector('[data-vv="protK"]'); if (lab) lab.textContent = VDc.protK.toFixed(2); clearTimeout(this._tv); this._tv = setTimeout(() => this.revd(), 150); return; }
       const tk = e.target.dataset.t;
       if (tk && e.target.type === 'range') { const v = parseFloat(e.target.value); setT(tk, v); const lab = el.querySelector(`[data-tv="${tk}"]`); if (lab) lab.textContent = v.toFixed(2) + ' m'; clearTimeout(this._tt); this._tt = setTimeout(() => this.retrench(), 120); return; }
       const t = e.target, k = t.dataset.p; if (!k || t.type !== 'range') return;
-      p[k] = parseFloat(t.value); const lab = el.querySelector(`[data-v="${k}"]`); if (lab) lab.textContent = p[k] + (t.dataset.unit ? ' ' + t.dataset.unit : '');
+      p[k] = parseFloat(t.value); const nb = el.querySelector(`[data-pn="${k}"]`); if (nb) nb.value = p[k];
       clearTimeout(this._t); this._t = setTimeout(() => this.touched(), 150);
     };
     el.onchange = (e) => {
@@ -1497,6 +1518,13 @@ const PlanLayoutUI = {
         if (k === 'combOn') TT.depth.comb = t.checked ? Math.max(TT.depth.mv, TT.depth.lv) : null;
         else setT(k, t.type === 'checkbox' ? t.checked : t.value);
         this.retrench(); return;
+      }
+      if (t.dataset.pn) {                                                          // a number typed beside a slider
+        const k = t.dataset.pn, v = parseFloat(t.value), lo = +t.min, hi = +t.max, st = +t.step || 1;
+        if (!Number.isFinite(v)) { t.value = p[k]; return; }
+        p[k] = Math.round(Math.max(lo, Math.min(hi, Math.round(v / st) * st)) * 1e4) / 1e4; t.value = p[k];
+        const sl = el.querySelector(`input[type=range][data-p="${k}"]`); if (sl) sl.value = p[k];
+        this.touched(); return;
       }
       if (t.dataset.tn) { p[t.dataset.tn] = t.checked ? +t.dataset.def : 0; this.touched(); return; }
       if (t.dataset.opt) { opt[t.dataset.opt] = t.checked; return; }
