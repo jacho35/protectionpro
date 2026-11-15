@@ -860,15 +860,6 @@ const PlanLayoutUI = {
     return { f, input: { erven, streets, markers, splits, ks, fs, overrides: L.fronts, cuts: L.cuts, subPts, entryPt: L.entry ? [L.entry.x * f, L.entry.y * f] : null, sections: L.sections.on ? L.sections : null }, params: L.params };
   },
 
-  // Suggest where the first mini-sub goes: the layout is solved once with none placed (the engine then picks the kiosk where the LV network
-  // drops least) and its position is placed for you. You can move it like any other.
-  suggestSub() {
-    const g = this.gather(true); if (g.err) { UI.toast(g.err, 'warn', 5000); return; }
-    const r = PlanLayout.solve(g.input, Object.assign({}, g.params, { subs: 1 })), k = r && r.net && r.net.sub;
-    if (!k) { UI.toast('No kiosk was found to put a mini-sub beside. Check the erven and streets first.', 'warn', 5000); return; }
-    this.cfg().subs.push({ x: k.x / g.f, y: k.y / g.f }); UI.toast('Mini-sub placed where the LV network drops least. Click it to move it.', 'info', 4500); this.touched(true);
-  },
-
   // The figures shown beside Run layout: what the last run came to, and how many settings were changed since it
   _runFigures(r) { return { k: r.kiosks.length, x: r.stats.crossings, c: Math.round(r.stats.cable) }; },
   changedSinceRun() {
@@ -1380,7 +1371,7 @@ const PlanLayoutUI = {
     const step2 = `<div style="font-size:12px;color:var(--text-muted)">The layout works from your mini-subs. Click where each one stands, anywhere (on a street, in a block, in a park). No kiosk is added beside it: kiosks follow the erven and go to the nearest mini-sub.</div>
         <button type="button" class="plan-btn" data-mode="sub" aria-pressed="${this.mode === 'sub'}" style="font-weight:600;padding:8px;${this.mode === 'sub' ? 'outline:2px solid var(--accent,#2563eb)' : ''}">${this.mode === 'sub' ? 'Placing: click the plan' : (placed.length ? 'Place another' : 'Place a mini-sub')}</button>
         <div style="font-weight:600">Placed (${placed.length})</div>
-        ${placed.length ? placed.map(subRow).join('') : banner('warn', '<span>None yet. The layout cannot run until one is placed. Where it stands decides every LV cable, so place it with care, or let the layout suggest a place to start from.</span>') + '<button type="button" class="plan-btn" data-act="suggestsub" style="padding:8px;font-weight:600">Suggest a position</button>'}
+        ${placed.length ? placed.map(subRow).join('') : banner('warn', '<span>None yet. The layout cannot run until one is placed. Where it stands decides every LV cable, so place it with care.</span>')}
         <div style="font-size:12px;color:var(--text-muted)">Click one, then click again to move it. Alt-click removes it. A mini-sub part you draw on the plan counts too.</div>`;
     // ── step 3: rules
     const pBtn = (k, t) => `<button type="button" class="plan-btn" data-preset="${k}" aria-pressed="${preset === k}" style="padding:3px 6px;font-size:12px;${preset === k ? 'font-weight:600;outline:2px solid var(--accent,#2563eb)' : ''}">${t}</button>`;
@@ -1470,7 +1461,6 @@ const PlanLayoutUI = {
       if (b.dataset.act === 'showerven') { const r0 = this.result; if (!r0) return; const ids = new Set(r0.erven.filter(x => !x.fe).map(x => x.id)); this.flag = ids; const pts = []; r0.erven.forEach(x => { if (ids.has(x.id)) x.poly.forEach(q => pts.push({ x: q[0] / this.f, y: q[1] / this.f })); }); if (pts.length) PlanEngine.zoomToPoints(pts); PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true }); return; }
       if (b.dataset.act === 'secedit') { PlanSectionsUI.open(); return; }
       if (b.dataset.act === 'secdraw') { this.secDrawOn(!this.secDraw, L.sections.def); return; }
-      if (b.dataset.act === 'suggestsub') { this.suggestSub(); return; }
       if (b.dataset.act === 'drawfix') { this.setStep(1); this.streetDrawOn(true); return; }
       if (b.dataset.act === 'submove') { const i = +b.dataset.i; if (L.subs[i]) { this.subMove = i; this.mode = 'sub'; UI.toast('Click where this mini-sub should stand.', 'info', 3500); PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true }); } return; }
       if (b.dataset.act === 'fromrates') { const f = this.ratesFigures(); if (f) { p.worth = f.worth; p.xpen = f.xpen; this.touched(); } return; }
