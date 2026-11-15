@@ -33,7 +33,7 @@ const PlanLayout = (() => {
     kgeo: 'boundary', kd: 2,                                       // cables + kiosks run kd m inside the erf boundary ('street' = the old street-line offset)
     kmode: 'opt', xpen: 300, xkiosk: false, n: 6, maxc: 70, worth: 170, knet: true,   // kiosks (n = the most erven one kiosk serves; knet = one solve over the whole street network)
     strN: 4, strE: 0, strL: 350, strMode: 'fewest',                                     // LV strings: most kiosks on one string off the mini-sub (0 = no limit); 'fewest' = fewest strings, 'even' = strings of similar size
-    subMode: 'opt', subs: 1, kside: 'count', subBal: 0,                                          // mini-sub: 'opt' = where the LV network drops least, 'mid' = nearest the middle
+    kside: 'count', subBal: 0,                                                                    // kiosk side of each street; the mini-sub balance (0 = off)
     m: 8, mhmerge: false, maxmh: 120, fibre: 'opp', topo: 'ring',              // fibre
     share: true, xmode: 'bound', xpref: 'near', junct: false, j110: 2, j160: 1, spare: 0,   // crossings
   };
@@ -852,49 +852,17 @@ const PlanLayout = (() => {
         const trees = new Map();
         const T = k => { let t = trees.get(k); if (!t) { t = treeFrom(k); trees.set(k, t); } return t; };
         const dd = (a, b) => T(a).dist.get(b.node);
-        // the mini-sub of a group of kiosks: the one placed by hand (nearest kiosk to it), the middle of the kiosks, or — the default —
-        // where the LV network drops least. That is a search guide (the real volt drop is worked out by Demand afterwards): for each
-        // candidate kiosk, the worst "erven below × length" summed along a kiosk's path, then the shortest LV network.
-        const pickSub = (grp, sp) => {
-          if (sp || P.subMode !== 'opt' || grp.length < 3) {
-            if (!sp) sp = [grp.reduce((a, k) => a + k.x, 0) / grp.length, grp.reduce((a, k) => a + k.y, 0) / grp.length];
-            return grp.slice().sort((p, q) => Math.hypot(p.x - sp[0], p.y - sp[1]) - Math.hypot(q.x - sp[0], q.y - sp[1]))[0];
-          }
-          // only a kiosk the LV network can leave: the ones that reach the most of the group (all of it, on a connected network)
-          const reaches = c => grp.filter(k => T(c).dist.get(k.node) < Infinity).length, top = Math.max(...grp.map(reaches));
-          const pool = grp.filter(c => reaches(c) === top);
-          let best = null;
-          for (const cand of pool) {
-            // score the tree the cables will really form: each kiosk hangs off the nearest kiosk on its way to the mini-sub, and a link carries
-            // every erf below it; the worst kiosk is the sum of (erven below x link length) up its string
-            const t = T(cand), kn = new Map(grp.map(k => [k.node, k])), par = new Map(), plen2 = new Map(), below = new Map();
-            for (const k of grp) {
-              if (k === cand) continue;
-              let v = k.node, L = 0, p = null;
-              while (t.prev.get(v)) { const ed = t.prev.get(v); L += ed.len; v = ed.a === v ? ed.b : ed.a; if (v === cand.node) break; if (kn.has(v)) { p = kn.get(v); break; } }
-              par.set(k, p); plen2.set(k, L);
-            }
-            const sz = k => { if (below.has(k)) return below.get(k); let x = k.members.length; for (const [c, p] of par) if (p === k) x += sz(c); below.set(k, x); return x; };
-            let worst = 0, tot = 0;
-            for (const k of grp) {
-              let m = 0, v = k; for (let g = 0; par.has(v) && g < 500; g++) { m += sz(v) * plen2.get(v); v = par.get(v); if (!v) break; }
-              if (m > worst) worst = m;
-              if (par.has(k)) tot += plen2.get(k);
-            }
-            if (!best || worst < best.worst - 1e-6 || (Math.abs(worst - best.worst) <= 1e-6 && tot < best.tot)) best = { cand, worst, tot };
-          }
-          return best.cand;
-        };
+        // with no mini-sub placed (the app never allows that; only the tests) one stands beside the kiosk nearest the middle of the kiosks
+        const pickSub = (grp) => { const sp = [grp.reduce((a, k) => a + k.x, 0) / grp.length, grp.reduce((a, k) => a + k.y, 0) / grp.length]; return grp.slice().sort((p, q) => Math.hypot(p.x - sp[0], p.y - sp[1]) - Math.hypot(q.x - sp[0], q.y - sp[1]))[0]; };
         // an automatic mini-sub stands 5 m along the street from the kiosk it is built beside (that kiosk is one the erven need anyway)
         const asRoot = k => {
           const st = k.road, s2 = k.s + 5 <= st.len ? k.s + 5 : Math.max(0, k.s - 5), p = kp(st, ks[st.id] || 1, s2).slice(0, 2);
           return { id: 'SUBAUTO', x: p[0], y: p[1], root: true, members: [], road: st, s: s2, node: k.node, stub: [p, [k.x, k.y]] };
         };
-        // the mini-subs are the ones placed by hand, where you put them (with none placed — only the tests — `subs` of them are chosen).
-        // The kiosks are split by LV distance; each group gets its own tree.
-        const nFix = manualRoots.length, nSub = nFix || Math.min(Math.round(P.subs) || 1, kiosks.length);
+        // the mini-subs are the ones placed by hand, where you put them. The kiosks are split by LV distance; each group gets its own tree.
+        const nFix = manualRoots.length, nSub = nFix || 1;
         let subs;
-        if (nSub === 1) subs = [{ k: nFix ? manualRoots[0] : asRoot(pickSub(kiosks, null)), g: kiosks }];
+        if (nSub === 1) subs = [{ k: nFix ? manualRoots[0] : asRoot(pickSub(kiosks)), g: kiosks }];
         else {
           const cost = (c, g) => g.reduce((a, k) => a + dd(c, k) * k.members.length, 0);
           const med = manualRoots.slice();
@@ -904,9 +872,8 @@ const PlanLayout = (() => {
             for (const k of kiosks) { if (med.includes(k)) continue; const d = Math.min(...med.map(m => dd(m, k))); if (d > fd) { fd = d; far = k; } }
             if (!far) break; med.push(far);
           }
-          // each kiosk goes to its nearest mini-sub. With none placed by hand, a mini-sub takes at most ~20 % more than an even share of the
-          // erven (the kiosks with most to lose first), so the transformers carry similar loads; mini-subs you placed take what is nearest.
-          const total = kiosks.reduce((a, k) => a + k.members.length, 0), cap = nFix ? (P.subBal > 1 ? Math.ceil(total / nSub * P.subBal) : Infinity) : Math.ceil(total / nSub * 1.2);
+          // each kiosk goes to its nearest mini-sub; with a balance limit set, none takes more than that multiple of an even share of the erven
+          const total = kiosks.reduce((a, k) => a + k.members.length, 0), cap = P.subBal > 1 ? Math.ceil(total / nSub * P.subBal) : Infinity;
           const assign = () => {
             const g = med.map(() => []), used = med.map(() => 0);
             const ds = new Map(kiosks.map(k => [k, med.map(m => dd(m, k))]));

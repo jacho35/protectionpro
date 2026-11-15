@@ -188,21 +188,19 @@ ok('Demand rows: phases rotate along a string, not afresh at each kiosk', () => 
   assert(spread(cnt) <= spread(naive), `carried ${JSON.stringify(cnt)} vs per-kiosk ${JSON.stringify(naive)}`);
   const k0 = d.kiosks[0]; assert.deepStrictEqual(k0.erfs.slice(0, 3).map(e => e.phase).slice(0, Math.min(3, k0.erfs.length)), ['Red', 'White', 'Blue'].slice(0, Math.min(3, k0.erfs.length)));
 });
-ok('mini-sub position: "opt" never has a worse worst kiosk than the middle; a placed mini-sub is kept', () => {
-  const mom = (r) => { const up = new Map(r.net.lvLinks.map(l => [l.to, l])), cnt = new Map(); const c = k => { if (cnt.has(k)) return cnt.get(k); let x = k.members.length; r.net.lvLinks.filter(l => l.from === k).forEach(l => { x += c(l.to); }); cnt.set(k, x); return x; };
-    let worst = 0; r.kiosks.forEach(k => { let m = 0, v = k; while (up.has(v)) { const l = up.get(v); m += c(l.to) * l.len; v = l.from; } worst = Math.max(worst, m); }); return worst; };
-  const mid = L.solve(F, { subMode: 'mid', strN: 0 }), opt = L.solve(F, { subMode: 'opt', strN: 0 });
-  assert(mom(opt) <= mom(mid) + 1e-6);
-  const fixed = L.solve(Object.assign({}, F, { subPts: [[mid.net.sub.x, mid.net.sub.y]] }), { subMode: 'opt', strN: 0 });
+ok('mini-sub position: with none placed one stands beside the middle kiosk; a placed mini-sub is kept exactly', () => {
+  const mid = L.solve(F, { strN: 0 });
+  assert.strictEqual(mid.net.subs.length, 1);
+  const fixed = L.solve(Object.assign({}, F, { subPts: [[mid.net.sub.x, mid.net.sub.y]] }), { strN: 0 });
   assert(Math.hypot(fixed.net.sub.x - mid.net.sub.x, fixed.net.sub.y - mid.net.sub.y) < 1e-9);
 });
 ok('several mini-subs: each kiosk is fed by one, the LV tree splits, Demand gets one row per mini-sub', () => {
-  const one = L.solve(F, {}), r = L.solve(F, { subs: 3 });
+  const one = L.solve(F, {}), pts = [L.ptAt(one.streets[0], 30, 0), L.ptAt(one.streets[1], 100, 0), L.ptAt(one.streets[2] || one.streets[0], 60, 0)].map(p => [p[0], p[1]]), r = L.solve(Object.assign({}, F, { subPts: pts }), { subBal: 1.5 });
   assert.strictEqual(r.net.subs.length, 3);
   assert(r.kiosks.every(k => k.subK && r.net.subs.some(S => S.k === k.subK)));
   assert.strictEqual(r.net.lvLinks.length, r.kiosks.length);                      // a tree per mini-sub, every kiosk fed once
   const per = r.net.subs.map(S => S.g.reduce((a, k) => a + k.members.length, 0)), tot = per.reduce((a, b) => a + b, 0);
-  assert(Math.max(...per) <= Math.ceil(tot / 3 * 1.2));                           // the transformers carry similar loads
+  assert(Math.max(...per) <= Math.ceil(tot / 3 * 1.5) + 1);                       // the balance limit keeps the transformers alike
   assert(Math.max(...r.net.lvLinks.map(l => l.len)) > 0 && one.net.subs.length === 1);
   const d = L.demandInput(r, { minisubId: 'MS', phases: [null], txTypeId: 'tx' });
   assert.strictEqual(d.minisubs.length, 3);
@@ -334,9 +332,9 @@ ok('several mini-subs placed by hand: each exactly where put, kiosks go to the n
   assert.strictEqual(d.kiosks.filter(k => d.minisubs.some(m => m.id === k.fedFrom)).length, r.net.lvLinks.filter(l => l.from.root).length);
   holds(r, L.DEFAULTS, F.erven.length, 'with two mini-subs placed by hand');
 });
-ok('mini-subs placed by hand are the mini-subs: the count setting no longer adds automatic ones', () => {
+ok('mini-subs placed by hand are the mini-subs', () => {
   const base = L.solve(F, {}), a = L.ptAt(base.streets[0], 30, 0);
-  const r = L.solve(Object.assign({}, F, { subPts: [[a[0], a[1]]] }), { subs: 3 });
+  const r = L.solve(Object.assign({}, F, { subPts: [[a[0], a[1]]] }), {});
   assert.strictEqual(r.net.subs.length, 1);
   assert(r.net.subs[0].k.manual && Math.hypot(r.net.subs[0].k.x - a[0], r.net.subs[0].k.y - a[1]) < 1e-9);
   assert.strictEqual(kioskKey(r), kioskKey(base));
@@ -394,7 +392,7 @@ ok('splitting a string: a kiosk becomes its own string head, fed straight off th
   assert(deep, 'a kiosk that hangs off another kiosk');
   const di = L.demandInput(base, { minisubId: 'S' }).kiosks.find(k => k.id === deep.to.id);
   assert.strictEqual(di.fedFrom, deep.from.id, 'before: fed from the kiosk above it');
-  const r = L.solve(Object.assign({ splits: [[deep.to.x, deep.to.y]] }, F), { subs: 1 });
+  const r = L.solve(Object.assign({ splits: [[deep.to.x, deep.to.y]] }, F), {});
   const k = r.kiosks.find(x => Math.hypot(x.x - deep.to.x, x.y - deep.to.y) < 3), link = r.net.lvLinks.find(l => l.to === k);
   assert(link.split && link.from === r.net.subs[0].k, 'now a hub of the mini-sub');
   const dem = L.demandInput(r, { minisubId: 'S' }).kiosks.find(x => x.id === k.id);
