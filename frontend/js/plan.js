@@ -59,8 +59,8 @@ const PlanMarkup = {
     ws.innerHTML = `
       <div id="plan-toolbar" class="plan-toolbar">
         <div class="plan-tb-group plan-mobile-toggle">
-          <button class="plan-tb-btn" data-action="toggle-palette" title="Show/hide the side panel">☰ Panel</button>
-          <button class="plan-tb-btn" data-action="toggle-props" title="Show/hide the properties panel">✎ Props</button>
+          <button class="plan-tb-btn" data-action="toggle-palette" title="Show/hide the side panel" aria-label="Panel">☰<span class="plan-lbl"> Panel</span></button>
+          <button class="plan-tb-btn" data-action="toggle-props" title="Show/hide the properties panel" aria-label="Properties">✎<span class="plan-lbl"> Props</span></button>
         </div>
         <div class="plan-modes" role="group" aria-label="Plan mode">
           <button type="button" class="plan-mode-btn active" data-mode="draw" aria-pressed="true" title="Place devices, draw routes and annotate">Draw</button>
@@ -68,7 +68,7 @@ const PlanMarkup = {
           <button type="button" class="plan-mode-btn" data-mode="output" aria-pressed="false" title="Sync with the other workspaces, set the print area and export">Output</button>
         </div>
         <div class="plan-tb-group">
-          <button class="plan-tool-btn active" data-tool="select" title="Select / move (V)">${I('select')} Select</button>
+          <button class="plan-tool-btn active" data-tool="select" title="Select / move (V)" aria-label="Select">${I('select')}<span class="plan-lbl"> Select</span></button>
           <button class="plan-tb-btn plan-icon-btn" data-action="undo" aria-label="Undo" title="Undo (Ctrl+Z)">${I('undo')}</button>
           <button class="plan-tb-btn plan-icon-btn" data-action="redo" aria-label="Redo" title="Redo (Ctrl+Shift+Z)">${I('redo')}</button>
           <button class="plan-tb-btn" data-action="fit" title="Zoom to fit">${I('fit')} Fit</button>
@@ -308,7 +308,7 @@ const PlanMarkup = {
     if (typeof PlanEngine !== 'undefined') {
       PlanEngine.resize();
       // First open of this project's plan: show the whole drawing, not an arbitrary corner of it.
-      if (!PlanEngine.viewSet && this.context === 'plan') PlanEngine.zoomFit();
+      if (!PlanEngine.viewSet) PlanEngine.zoomFit();
       PlanEngine.requestDraw({ all: true });
     }
     if (typeof PlanImages !== 'undefined') PlanImages.syncCache();

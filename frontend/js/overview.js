@@ -270,7 +270,7 @@ const Overview = {
     const extra = rows.length - shown.length;
     return `<div class="ov-tscroll"><table class="ov-table"><thead><tr>${cols.map(c => `<th${numHtml(c.num)}>${escHtml(c.label)}</th>`).join('')}</tr></thead><tbody>`
       + shown.map(r => `<tr class="ov-r ov-st-${escHtml(r.status)}"${r.go ? ` data-ov-go="${escHtml(r.go)}"` : ''}${r.run ? ` data-ov-run="${escHtml(r.run)}"` : ''} tabindex="0">`
-        + r.cells.map((c, i) => `<td${numHtml(cols[i] && cols[i].num)}>${c}</td>`).join('') + '</tr>').join('')
+        + r.cells.map((c, i) => `<td${numHtml(cols[i] && cols[i].num)} data-l="${escHtml(cols[i] ? cols[i].label : '')}">${c}</td>`).join('') + '</tr>').join('')
       + `</tbody></table></div>${extra > 0 && more ? `<button type="button" class="ov-link ov-more" data-ov-tab="${escHtml(more)}">+${extra} more</button>` : ''}`;
   },
   _kv(pairs) {

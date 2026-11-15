@@ -52,7 +52,7 @@ const MobileUI = {
   // Desktop-only controls left out of More.
   // Also left out because the header (Save) and the selection bar (copy, duplicate, rotate, delete) already have them.
   MENU_SKIP: new Set(['btn-toggle-ribbon', 'btn-boq', 'btn-cable-schedules', 'btn-rates',
-    'btn-save', 'btn-edit-copy', 'btn-edit-duplicate', 'btn-edit-rotate', 'btn-delete']),
+    'btn-meter-schedule', 'btn-save', 'btn-edit-copy', 'btn-edit-duplicate', 'btn-edit-rotate', 'btn-delete']),
 
   init() {
     this.isMobile = window.matchMedia('(max-width: 768px)').matches;
@@ -107,6 +107,10 @@ const MobileUI = {
     this.updateModeButtons();
     const dot = document.getElementById('mobile-results-dot');
     if (dot) dot.hidden = !(typeof ResultsPanel !== 'undefined' ? ResultsPanel.available().length : this._slotsWithResults().length);
+    const more = document.getElementById('mobile-more-dot');
+    if (more) { const ic = this._issueCounts(); more.hidden = !((ic && ic.fail) || this._unreadCount()); }
+    // Studies and Results need a single-line model; a Lighting project has none until it adds one.
+    document.body.classList.toggle('mobile-no-studies', typeof Workspaces !== 'undefined' && Workspaces.type() === 'lighting' && !AppState.components.size);
     const n = (AppState.pages || []).length;
     const badge = document.getElementById('fab-pages-count');
     if (badge) { badge.hidden = n < 2; badge.textContent = String(n); }
@@ -129,7 +133,7 @@ const MobileUI = {
   // Plain text of a desktop control, without its icon, shortcut or badges.
   _text(el) {
     const c = el.cloneNode(true);
-    c.querySelectorAll('svg, select, .dropdown-shortcut, .tb-sr, .k, .q-badge, .q-d').forEach(n => n.remove());
+    c.querySelectorAll('svg, select, .dropdown-shortcut, .tb-sr, .k, .q-badge, .q-d, .notif-badge').forEach(n => n.remove());
     return c.textContent.replace(/\s+/g, ' ').trim();
   },
 
@@ -368,6 +372,8 @@ const MobileUI = {
   },
 
   openSheet(sheetId) {
+    // A passing notice would sit over the sheet's search box and first rows.
+    document.querySelectorAll('#toast-container .toast-info, #toast-container .toast-success').forEach(t => t.remove());
     if (this.activeSheet && this.activeSheet !== sheetId) {
       const prev = document.getElementById(this.activeSheet);
       if (prev) {
@@ -1026,7 +1032,8 @@ const MobileUI = {
     export:     { title: 'Export & reports',       sub: 'PDF, CSV, JSON, diagram images', menus: ['menu-export'] },
     display:    { title: 'Diagram display',        sub: 'Labels, flags, wire routing',    menus: ['menu-view'], route: true },
     quantities: { title: 'Quantities & scenarios', sub: 'BOQ, cable schedules, cases',    menus: ['menu-quantities', 'menu-scenario'] },
-    edit:       { title: 'Edit',                   sub: 'Paste, select all, arrange, group',       menus: ['menu-edit'] },
+    results:    { title: 'Results & summaries',   sub: 'Dispatch and other result summaries', menus: ['menu-results'] },
+    edit:       { title: 'Edit',                   sub: 'Paste, select all, arrange, group',       menus: ['menu-edit'], first: 'Clipboard & selection', sldOnly: true },
   },
   MENU_TILES: [
     ['btn-new', 'New', '<path d="M12 5v14M5 12h14"/>'],
@@ -1035,8 +1042,13 @@ const MobileUI = {
     ['btn-save-as', 'Save as', '<path d="M12 4v11M7 11l5 5 5-5M5 20h14"/>'],
     ['btn-share', 'Share', '<path d="M12 16V4M7 9l5-5 5 5M5 14v5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-5"/>'],
     ['btn-project-settings', 'Settings', '<path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/>'],
-    ['btn-project-type', 'Type', '<path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/>'],
+    ['btn-project-type', 'Type', '<path d="M12 3 3 8l9 5 9-5z"/><path d="m3 13 9 5 9-5"/>'],
+    ['btn-libraries', 'Libraries', '<path d="M4 4h4v16H4zM10 4h4v16h-4zM16 5l4 1-3.5 14-4-1z"/>'],
+    ['btn-history', 'History', '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>'],
+    ['btn-quote', 'Quote', '<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>'],
+    ['btn-close-project', 'Close', '<rect x="3" y="3" width="18" height="18" rx="3"/><path d="m9 9 6 6M15 9l-6 6"/>'],
   ],
+
   MENU_GROUP_NAMES: { Drawing: 'Diagram' },
 
   // Every usable item of one desktop menu: { el, label, sub, group, toggle }
@@ -1045,15 +1057,21 @@ const MobileUI = {
     if (!menu) return [];
     const out = [];
     let group = '';
-    for (const el of menu.querySelectorAll('.dropdown-label, .dropdown-item')) {
+    for (const el of menu.querySelectorAll('.dropdown-label, .dropdown-item, .dropdown-divider')) {
       if (el.closest('.toolbar-menu') !== menu) continue;   // nested menus list themselves
+      if (el.classList.contains('dropdown-divider')) { group = ''; continue; }   // a heading ends at the next divider
       if (el.classList.contains('dropdown-label')) { group = el.textContent.trim(); continue; }
       if (el.hidden || el.disabled || el.classList.contains('disabled') || this.MENU_SKIP.has(el.id)) continue;
       if (!el.id && !el.classList.contains('recent-project-item')) continue;
       const label = this._text(el.querySelector('.q-t') || el);
       if (!label) continue;
       const d = el.querySelector('.q-d');
-      out.push({ el, label, sub: d ? d.textContent.trim() : '', group: this.MENU_GROUP_NAMES[group] || group,
+      let name = label, note = d ? d.textContent.trim() : '';
+      // "Breakers in drawings: as shown" is a setting with a value, not a command
+      const kv = /^(btn-export-breakers|btn-export-detail)$/.test(el.id) && label.match(/^(.+?): (.+)$/);
+      if (kv) { name = kv[1]; note = 'Now: ' + kv[2]; }
+      if (el.id === 'btn-print-window') note = 'Then drag an area on the diagram';
+      out.push({ el, label: name, sub: note, group: this.MENU_GROUP_NAMES[group] || group,
         toggle: /^btn-toggle-/.test(el.id) ? el.classList.contains('active') : undefined,
         recent: el.classList.contains('recent-project-item') });
     }
@@ -1065,12 +1083,43 @@ const MobileUI = {
     return def.menus.flatMap(m => this._menuItems(m));
   },
 
+  // A page only shows where it acts: Edit works on the single line; the diagram display
+  // switches mean nothing in a Lighting project.
+  _pageApplies(key) {
+    const def = this.MENU_PAGES[key];
+    if (def.sldOnly && this.currentWorkspace() !== 'sld') return false;
+    if (key === 'display' && typeof Workspaces !== 'undefined' && Workspaces.type() === 'lighting') return false;
+    return true;
+  },
+
+  // Commands a Lighting project keeps on its Overview tab only, brought into More.
+  _lightingItems() {
+    if (typeof Workspaces === 'undefined' || Workspaces.type() !== 'lighting') return [];
+    const out = [];
+    if (typeof LightOverview !== 'undefined') out.push({ label: 'Calculate all', sub: 'Every room, area, road and field', run: () => LightOverview.calcAll() });
+    if (typeof LightReport !== 'undefined') out.push({ label: 'Lighting report (PDF)', sub: 'Summary, schedules and plots', run: () => LightReport.export() });
+    if (typeof PhotoLib !== 'undefined') out.push({ label: 'Luminaire library…', sub: 'IES / LDT files and generic optics', run: () => PhotoLib.open() });
+    return out;
+  },
+
+  _issueCounts() {
+    if (typeof Issues === 'undefined') return null;
+    try { const c = Issues.counts(); return (c.fail || c.warn) ? c : null; } catch (_) { return null; }
+  },
+
+  _unreadCount() {
+    return (typeof Notifications !== 'undefined' && Notifications._unread && Notifications._unread.total) || 0;
+  },
+
   // The app rows at the bottom of the home, as { el|run, label, toggle?, page } (also feeds search)
   _appItems() {
     const byId = (id) => document.getElementById(id);
     const out = [];
     if (typeof SaveState !== 'undefined') out.push({ label: 'Save automatically', toggle: SaveState.autoOn(), run: () => SaveState.setAuto(!SaveState.autoOn()) });
     if (byId('btn-dark-mode')) out.push({ el: byId('btn-dark-mode'), label: 'Dark mode', toggle: document.body.classList.contains('dark-mode') });
+    const unread = this._unreadCount();
+    if (byId('btn-notifications') && !byId('btn-notifications').hidden) out.push({ el: byId('btn-notifications'), label: 'Notifications', sub: unread ? `${unread} unread` : 'Library approvals, shared projects', nav: true });
+    if (typeof Header !== 'undefined' && Header.openSearch) out.push({ label: 'Search every command', sub: 'Same list as Ctrl K', nav: true, run: () => Header.openSearch() });
     for (const [id, label, sub] of [['btn-settings', 'Settings', 'Dark mode, sign-in, libraries'], ['btn-help', 'Help', 'Calculations & tools'], ['btn-account', 'Account', 'Sign in, sync, sharing']]) {
       if (byId(id) && !byId(id).hidden) out.push({ el: byId(id), label, sub, nav: true });
     }
@@ -1155,10 +1204,11 @@ const MobileUI = {
         if (hay.includes(q)) hits.push({ it, where });
       });
       add(this._menuItems('menu-file').filter(i => !i.recent), 'File');
-      for (const def of Object.values(this.MENU_PAGES)) add(def.menus.flatMap(m => this._menuItems(m)), def.title);
+      for (const [key, def] of Object.entries(this.MENU_PAGES)) if (this._pageApplies(key)) add(def.menus.flatMap(m => this._menuItems(m)), def.title);
+      add(this._lightingItems(), 'Lighting');
       add(this._appItems(), 'App');
       html += `<div class="mm-count">${hits.length ? hits.length + (hits.length === 1 ? ' command' : ' commands') : 'Nothing matches'}</div>`;
-      html += hits.map(({ it, where }) => row(it.el, it.label, { sub: it.group && it.group !== where ? `${where} › ${it.group}` : where, toggle: it.toggle })).join('');
+      html += hits.map(({ it, where }) => row(it.el || it, it.label, { sub: it.group && it.group !== where ? `${where} › ${it.group}` : where, toggle: it.toggle })).join('');
       html += `<div class="mm-foot">Not here? <button class="mm-link-btn" data-k="${els.push({ run: () => Header.openSearch() }) - 1}">Search every command</button> (the same list as Ctrl K on desktop).</div>`;
     } else if (page === 'home') {
       // Project tiles
@@ -1167,6 +1217,12 @@ const MobileUI = {
           const i = els.push(document.getElementById(id)) - 1;
           return `<button class="mm-tile" data-k="${i}"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${path}</svg><span>${label}</span></button>`;
         });
+      const ic = this._issueCounts();
+      if (ic) {
+        const bits = [ic.fail ? `${ic.fail} fail` : '', ic.warn ? `${ic.warn} warning${ic.warn === 1 ? '' : 's'}` : ''].filter(Boolean).join(' · ');
+        const i = els.push({ run: () => Issues.open() }) - 1;
+        html += `<div class="mm-card mm-issues${ic.fail ? ' fail' : ''}"><button class="mm-item" data-k="${i}"><span class="mm-text"><span class="mm-label">Issues</span><span class="mm-sub">${escHtml(bits)}</span></span><span class="mm-chev" aria-hidden="true">›</span></button></div>`;
+      }
       html += `<h3 class="mm-head">Project</h3><div class="mm-tiles">${tiles.join('')}</div>`;
       const recents = this._menuItems('menu-file').filter(i => i.recent).slice(0, 3);
       if (recents.length) {
@@ -1174,7 +1230,11 @@ const MobileUI = {
       }
       // Drill-in pages
       html += '<h3 class="mm-head">Tools</h3><div class="mm-card">';
+      for (const li of this._lightingItems()) {
+        html += row(li, li.label, { sub: li.sub });
+      }
       for (const [key, def] of Object.entries(this.MENU_PAGES)) {
+        if (!this._pageApplies(key)) continue;
         const n = this._pageItems(key).length + (def.route && document.getElementById('wire-route-mode') ? 1 : 0);
         if (!n) continue;
         html += `<button class="mm-item mm-nav" data-page="${escHtml(key)}"><span class="mm-text"><span class="mm-label">${escHtml(def.title)}</span><span class="mm-sub">${escHtml(def.sub)}</span></span><span class="mm-count-badge">${n}</span><span class="mm-chev" aria-hidden="true">›</span></button>`;
@@ -1183,7 +1243,7 @@ const MobileUI = {
       // App
       const app = this._appItems();
       html += '<h3 class="mm-head">App</h3><div class="mm-card">' +
-        app.map(a => row(a.el, a.label, { sub: a.nav ? a.sub : '', toggle: a.toggle, chev: !!a.nav })).join('') + '</div>';
+        app.map(a => row(a.el || a, a.label, { sub: a.nav ? a.sub : '', toggle: a.toggle, chev: !!a.nav })).join('') + '</div>';
       const ver = typeof APP_VERSION !== 'undefined' ? String(APP_VERSION) : '';
       const titleBlock = document.getElementById('app-title-block');
       html += `<div class="mm-footer"><span class="mm-version">${escHtml(ver)}</span>${titleBlock ? `<button class="mm-link-btn" data-k="${els.push(titleBlock) - 1}">Reload app</button>` : ''}</div>`;
@@ -1191,12 +1251,17 @@ const MobileUI = {
       // A drill-in page: the desktop menu's own groups become sub-headings
       const def = this.MENU_PAGES[page];
       const items = this._pageItems(page);
-      let last = null;
+      let last = null, inGrid = false;
       const multi = new Set(items.map(i => i.group)).size > 1;
       for (const it of items) {
-        if (multi && it.group !== last) { html += `<h4 class="mm-subhead">${escHtml(it.group || 'Other')}</h4>`; last = it.group; }
+        if (multi && it.group !== last) { if (inGrid) { html += '</div>'; inGrid = false; } html += `<h4 class="mm-subhead">${escHtml(it.group || def.first || 'Other')}</h4>`; last = it.group; }
+        // The arrange commands are short, so they sit two to a row
+        const grid = it.group === 'Arrange selection';
+        if (grid && !inGrid) { html += '<div class="mm-grid2">'; inGrid = true; }
+        if (!grid && inGrid) { html += '</div>'; inGrid = false; }
         html += row(it.el, it.label, { sub: it.sub, toggle: it.toggle });
       }
+      if (inGrid) html += '</div>';
       const route = document.getElementById('wire-route-mode');
       if (def.route && route) {
         html += `<label class="mopt mm-select-row"><span class="mopt-label">Wire routing</span>
