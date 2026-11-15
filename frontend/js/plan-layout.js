@@ -31,8 +31,8 @@ const PlanLayout = (() => {
   const DEFAULTS = {
     side: 4, depth: 4, corner: 'start', front: 'longest',      // marker: m from the side boundary and the front; which corner; corner erf's front
     kgeo: 'boundary', kd: 2,                                       // cables + kiosks run kd m inside the erf boundary ('street' = the old street-line offset)
-    kmode: 'opt', xpen: 300, xkiosk: false, n: 6, maxc: 80, worth: 170, knet: true,   // kiosks (n = the most erven one kiosk serves; knet = one solve over the whole street network)
-    strN: 4, strE: 0, strMode: 'fewest',                                     // LV strings: most kiosks on one string off the mini-sub (0 = no limit); 'fewest' = fewest strings, 'even' = strings of similar size
+    kmode: 'opt', xpen: 300, xkiosk: false, n: 6, maxc: 70, worth: 170, knet: true,   // kiosks (n = the most erven one kiosk serves; knet = one solve over the whole street network)
+    strN: 4, strE: 0, strL: 350, strMode: 'fewest',                                     // LV strings: most kiosks on one string off the mini-sub (0 = no limit); 'fewest' = fewest strings, 'even' = strings of similar size
     subMode: 'opt', subs: 1, kside: 'count', subBal: 0,                                          // mini-sub: 'opt' = where the LV network drops least, 'mid' = nearest the middle
     m: 8, mhmerge: false, maxmh: 120, fibre: 'opp', topo: 'ring',              // fibre
     share: true, xmode: 'bound', xpref: 'near', junct: false, j110: 2, j160: 1, spare: 0,   // crossings
@@ -1001,6 +1001,13 @@ const PlanLayout = (() => {
           }
         }
         net.strings = net.lvLinks.filter(l => subs.some(S => S.k === l.from)).length;
+        { // each string's reach: the cable run from the mini-sub to its furthest kiosk (a cut string still has its own feeder along the same route, so cutting never shortens it)
+          const into = new Map(net.lvLinks.map(l => [l.to, l])), kidsOf = new Map(), dist = new Map();
+          net.lvLinks.forEach(l => { if (!subs.some(S => S.k === l.from)) (kidsOf.get(l.from) || kidsOf.set(l.from, []).get(l.from)).push(l.to); });
+          const dOf = k => { if (dist.has(k)) return dist.get(k); const l = into.get(k), v = l ? l.len + (subs.some(S => S.k === l.from) ? 0 : dOf(l.from)) : 0; dist.set(k, v); return v; };
+          const mem = (k, a = []) => { a.push(k); (kidsOf.get(k) || []).forEach(c => mem(c, a)); return a; };
+          net.strLens = net.lvLinks.filter(l => subs.some(S => S.k === l.from)).map(l => { const ks = mem(l.to); let far = l.to; ks.forEach(k => { if (dOf(k) > dOf(far)) far = k; }); return { sub: subs.find(S => S.k === l.from), head: l.to, far, kiosks: ks, len: dOf(far) }; });
+        }
         net.lv = [...lvSet]; net.lvLen = net.lv.reduce((a, ed) => a + ed.len, 0);
         net.lv.forEach(ed => ed.xs.forEach(x => events.push({ st: x.st, s: x.s, t: 'lv' })));
         // MV is not designed here: the mini-subs are fed from outside the layout
