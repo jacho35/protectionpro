@@ -1247,7 +1247,7 @@ body.dark-mode {
   .plan-tb-btn[data-action="floors"] { font-size: 0; gap: 0; padding: 0 10px; }
   .plan-tool-btn { padding: 0 10px; }
   .plan-toolbar .ws-tail { order: 6; margin-left: auto; }
-  .plan-mobile-toggle .plan-lbl { display: none; }
+  .plan-toolbar .plan-lbl { display: none; }
   .plan-mobile-toggle .plan-tb-btn { min-width: 40px; justify-content: center; }
   .plan-modes { order: 3; }
   #plan-floor-group { order: 4; }
@@ -1543,6 +1543,29 @@ body.dark-mode {
     background-attachment: local, local, scroll, scroll;
   }
   .ov-table th, .ov-table td { padding: 6px 8px; }
+
+  /* Schedules header: board + tabs on one block, then the check summary beside its two buttons. */
+  .sch-toolbar { flex-wrap: wrap; align-items: center; }
+  .sch-toolbar .sch-grid-head { flex: 1 1 100%; }
+  .sch-toolbar .sch-status { order: 5; flex: 1 1 100%; min-width: 0; font-size: 11.5px; line-height: 1.3; }
+  .sch-toolbar #sch-run-check { order: 6; flex: 0 0 auto; }
+  .sch-toolbar .ws-tail { order: 7; flex: 1 1 100%; margin-left: 0; justify-content: flex-end; }
+  .sch-toolbar .ws-tail .hg-link { padding: 4px 10px; }
+
+  /* Overview tables on a phone: each row is a name line with its figures under it, labelled. */
+  .ov-table, .ov-table tbody, .ov-table tr, .ov-table td { display: block; }
+  .ov-table thead { display: none; }
+  .ov-table tr { display: flex; flex-wrap: wrap; gap: 2px 14px; padding: 8px 10px; border-bottom: 1px solid var(--bg-tertiary); }
+  .ov-table td { padding: 0; border: 0; white-space: normal; text-align: left; font-size: 12px; color: var(--text-secondary); }
+  .ov-table td:first-child { flex: 1 1 100%; font-size: 13.5px; font-weight: 600; color: var(--text-primary); }
+  .ov-table td:not(:first-child)::before { content: attr(data-l) ' '; color: var(--text-muted); }
+  .ov-table td:not(:first-child):empty { display: none; }
+
+  /* Interlocking follows the app theme on a phone (it is always dark on a desktop). */
+  body:not(.dark-mode) #interlock-workspace {
+    --il-bg: #f4f6f9; --il-panel: #ffffff; --il-panel2: #eef1f5; --il-dot: #d5dbe4; --il-elev: #e8ecf2; --il-line: #c3cad5;
+    --il-hover: #d9dfe8; --il-text: #1b2430; --il-muted: #5d6b7c; --il-sub: #44505f; --il-on: #d5efe0;
+  }
 } /* end @media (max-width: 768px) */
 
 /* Applies at every viewport width: tablets and landscape phones exceed

@@ -68,7 +68,7 @@ const PlanMarkup = {
           <button type="button" class="plan-mode-btn" data-mode="output" aria-pressed="false" title="Sync with the other workspaces, set the print area and export">Output</button>
         </div>
         <div class="plan-tb-group">
-          <button class="plan-tool-btn active" data-tool="select" title="Select / move (V)">${I('select')} Select</button>
+          <button class="plan-tool-btn active" data-tool="select" title="Select / move (V)" aria-label="Select">${I('select')}<span class="plan-lbl"> Select</span></button>
           <button class="plan-tb-btn plan-icon-btn" data-action="undo" aria-label="Undo" title="Undo (Ctrl+Z)">${I('undo')}</button>
           <button class="plan-tb-btn plan-icon-btn" data-action="redo" aria-label="Redo" title="Redo (Ctrl+Shift+Z)">${I('redo')}</button>
           <button class="plan-tb-btn" data-action="fit" title="Zoom to fit">${I('fit')} Fit</button>
@@ -308,7 +308,7 @@ const PlanMarkup = {
     if (typeof PlanEngine !== 'undefined') {
       PlanEngine.resize();
       // First open of this project's plan: show the whole drawing, not an arbitrary corner of it.
-      if (!PlanEngine.viewSet && this.context === 'plan') PlanEngine.zoomFit();
+      if (!PlanEngine.viewSet) PlanEngine.zoomFit();
       PlanEngine.requestDraw({ all: true });
     }
     if (typeof PlanImages !== 'undefined') PlanImages.syncCache();
