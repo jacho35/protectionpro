@@ -117,7 +117,7 @@ const RoadKerbs = {
   // ── the panel ──
   panelHtml() {
     const o = this.opt, T = this.stage, L = this.layers();
-    const num = (k, label, min, max, step) => `<label class="rk-num">${label}<input type="number" class="sl-in-num" data-rpk="${k}" min="${min}" max="${max}" step="${step}" value="${o[k]}"></label>`;
+    const num = (k, label, min, max, step) => `<label class="rk-num">${label}<input type="number" class="sl-in-num" data-rpk="${k}" min="${min}" max="${max}" step="${step}" value="${escHtml(o[k])}"></label>`;
     const pick = `<label class="rl-field">Layer with the kerb lines<select data-rpk="layer">${L.map(x => `<option value="${escHtml(x.layer)}"${x.layer === this.layer ? ' selected' : ''}>${escHtml(x.layer)} (${x.n})${x.kerbs ? ' · kerbs (pair them)' : ''}</option>`).join('')}</select></label>`;
     let body = '';
     if (!T) {
@@ -127,9 +127,9 @@ const RoadKerbs = {
     } else {
       const nets = T.networks(), info = T.unpaired.map(i => T.info(i));
       body = `<div><b>${T.streets.length}</b> road${T.streets.length === 1 ? '' : 's'} (amber, width on each) from ${T.chains.length} kerb chains.</div>
-        ${nets.length > 1 ? `<div class="rk-warn"><b>${nets.length} separate networks</b> (${nets.map(c => c.length).join(' + ')} roads; the ones cut off are orange): the circuits and junction lighting do not link across a gap.<div class="rk-row"><button class="btn-small" data-rp="rk-join">Join networks up to</button><input type="number" class="sl-in-num" data-rpk="join" min="1" max="200" step="5" value="${o.join}"> m</div></div>` : T.streets.length ? '<div class="rk-ok">The roads form one connected network.</div>' : ''}
+        ${nets.length > 1 ? `<div class="rk-warn"><b>${nets.length} separate networks</b> (${nets.map(c => c.length).join(' + ')} roads; the ones cut off are orange): the circuits and junction lighting do not link across a gap.<div class="rk-row"><button class="btn-small" data-rp="rk-join">Join networks up to</button><input type="number" class="sl-in-num" data-rpk="join" min="1" max="200" step="5" value="${escHtml(o.join)}"> m</div></div>` : T.streets.length ? '<div class="rk-ok">The roads form one connected network.</div>' : ''}
         <div class="rk-opts">${num('wmin', 'Road width at least', 1, 30, 0.5)}${num('wmax', 'at most', 5, 60, 0.5)}${num('gap', 'Bridge gaps up to (m)', 0, 60, 1)}</div>
-        <div class="sl-hint">Ctrl-click a kerb with no partner, then click the road's side: a road <input type="number" class="sl-in-num" data-rpk="oneW" min="3" max="40" step="0.5" value="${o.oneW}"> m wide beside it.</div>
+        <div class="sl-hint">Ctrl-click a kerb with no partner, then click the road's side: a road <input type="number" class="sl-in-num" data-rpk="oneW" min="3" max="40" step="0.5" value="${escHtml(o.oneW)}"> m wide beside it.</div>
         ${info.length ? `<div class="rk-bad"><b>${info.length} kerb chain${info.length === 1 ? ' has' : 's have'} no partner</b> (red dashed):<div class="rk-list">${info.map(k => `<div class="rk-item"><span>near ${Math.round(k.at[0])}, ${Math.round(k.at[1])} m · ${Math.round(k.len)} m</span><span><button class="btn-small" data-rp="rk-show" data-i="${k.i}">show</button><button class="btn-small${T.one === k.i ? ' active' : ''}" data-rp="rk-one" data-i="${k.i}" title="A road with a kerb on this side only">road from this kerb</button></span></div>`).join('')}</div></div>` : '<div class="rk-ok">Every kerb chain was paired.</div>'}
         <div class="rk-row"><button class="btn-small btn-primary" data-rp="rk-create"${T.streets.length ? '' : ' disabled'}>Create ${T.streets.length} road${T.streets.length === 1 ? '' : 's'}</button><button class="btn-small" data-rp="rk-back">Change layer</button><button class="btn-small" data-rp="rk-close">Cancel</button></div>`;
     }

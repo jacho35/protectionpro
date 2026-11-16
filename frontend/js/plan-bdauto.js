@@ -274,7 +274,7 @@ const PlanBdAuto = {
 
   _renderPanel(m, model) {
     const st = model.settings, r = st.rules;
-    const num = (key, label, val, step = 1) => `<label class="pba-num">${label}<input type="number" min="0" step="${step}" value="${val}" data-pba-rule="${key}"></label>`;
+    const num = (key, label, val, step = 1) => `<label class="pba-num">${label}<input type="number" min="0" step="${step}" value="${escHtml(val)}" data-pba-rule="${escHtml(key)}"></label>`;
     m.querySelector('#pba-panel').innerHTML = `
       <section><h4>Route mode</h4>
         ${this.MODES.map(o => `<label class="pba-mode${st.mode === o.id ? ' on' : ''}"><input type="radio" name="pba-mode" value="${o.id}"${st.mode === o.id ? ' checked' : ''}><span><b>${o.name}</b><small>${o.sub}</small></span></label>`).join('')}
@@ -302,7 +302,7 @@ const PlanBdAuto = {
     const ovr = Object.keys(this.settings().overrides).length;
     m.querySelector('#pba-ovr').innerHTML = ovr ? `${ovr} circuit${ovr === 1 ? ' is' : 's are'} set to direct in ceiling · <button type="button" class="pba-link" data-pba="reset-overrides">reset</button>` : '';
     const sev = { fail: 'Fail', warn: 'Warn', pass: 'Pass' };
-    const checks = res.checks.map(c => `<div class="pba-chk pba-${c.severity}"><b>${sev[c.severity] || c.severity}</b><span>${escHtml(c.text)}</span>${c.fix && c.fix.mode_override ? `<button type="button" class="btn-small" data-pba-fix='${escHtml(JSON.stringify(c.fix.mode_override))}'>Use direct</button>` : ''}</div>`).join('');
+    const checks = res.checks.map(c => `<div class="pba-chk pba-${escHtml(c.severity)}"><b>${sev[c.severity] || c.severity}</b><span>${escHtml(c.text)}</span>${c.fix && c.fix.mode_override ? `<button type="button" class="btn-small" data-pba-fix='${escHtml(JSON.stringify(c.fix.mode_override))}'>Use direct</button>` : ''}</div>`).join('');
     out.innerHTML = `<div class="pba-tiles"><div><b>${t.circuits}</b><small>circuits</small></div><div><b>${t.devices}</b><small>devices</small></div><div><b>${t.cable_m} m</b><small>cable</small></div></div>
       ${hand ? `<small class="pba-note">${hand} device${hand === 1 ? '' : 's'} tagged by hand ${hand === 1 ? 'is' : 'are'} left as ${hand === 1 ? 'it is' : 'they are'}.</small>` : ''}
       <section><h4>Checks</h4>${checks}</section>`;

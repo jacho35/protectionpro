@@ -171,3 +171,32 @@ tripunit.js::this.fmtVal(k, def[k], d)
 voltage-stability.js::mk.dashed ? ' stroke-dasharray="4 3"' : ''
 voltage-stability.js::seg.join(' ')
 dbschedule.js::lock(c, 'phase') && !wayIs3(c) ? lock(c, 'phase') : ''  # lock() returns an already-escaped attribute string
+dbdrawing.js::ctrY - (direct ? 19 : 0)
+dbdrawing.js::ctrY - (direct ? 19 : 0)
+dbdrawing.js::o.join(' ')
+dbdrawing.js::fill || P.surface
+dbdrawing.js::[[x2, y2], [bx + px, by + py], [bx - px, by - py]].map((q, i) => (i ? 'L' : 'M') + X(q[0]) + ' ' + Y(q[1])).join(' ')
+dbdrawing.js::['M270 111', 'H198', 'V157', 'H138'].map(c => c.replace(/([HV])([\d.]+)/, (m, l, v) => l + (l === 'H' ? X(+v) : Y(+v))).replace(/^M([\d.]+) ([\d.]+)/, (m, a2, b2) => 'M' + X(+a2) + ' ' + Y(+b2))).join(' ')
+fixes.js::manual ? (approved.includes(f.issue_key) ? ' checked' : '') : ' checked'
+interlocking.js::sel ? '#3498db' : (v ? meta.color : 'var(--il-muted)')
+plan-bdauto.js::r.points.map(p => (p.x * f).toFixed(2) + ',' + (p.y * f).toFixed(2)).join(' ')
+plan-bdauto.js::c.route.map(p => p[0].toFixed(2) + ',' + p[1].toFixed(2)).join(' ')
+plan-bdauto.js::colorOf.get(c.id)
+plan-bdauto.js::devColor.get(e.id)
+plan-layout-ui.js::tipOf(k)
+plan-layout-ui.js::tipOf(k)
+plan-layout-ui.js::tipOf(k)
+plan-layout-ui.js::tipOf(k)
+plan-layout-ui.js::tipOf(k)
+plan-layout-ui.js::rf ? `A kiosk = ${rf.worth} m of service cable, a crossing = ${rf.xpen} m (from the rate library)` : 'Needs a price for the kiosk, a 110 mm crossing and the service cable in the rate library'
+plan-layout-ui.js::ttl(k)
+plan-layout-ui.js::ttl(k)
+plan-layout-ui.js::ttl(k)
+plan-layout-ui.js::(this.kerbStage ? x.layer === this.kerbStage.layer && x.d.id === this.kerbStage.descId : i === 0) ? ' selected' : ''
+plan-layout-ui.js::this.secDraw ? ' style="outline:2px solid var(--accent,#2563eb)"' : ''
+plan-layout-ui.js::act.s ? ` data-s="${act.s}"` : ''
+plan-layout-ui.js::act.dis ? 'opacity:.65' : (act.create ? 'background:var(--accent,#2563eb);color:#fff' : '')
+plan-sections-ui.js::this.f2(val)
+plan-sections-ui.js::col[c.sev] || '#5b6068'
+roadplan-kerbs.js::pts.map(q => S(q[0], q[1]).map(v => v.toFixed(1)).join(' ')).join('L')
+roadplan-kerbs.js::attrs

@@ -684,7 +684,7 @@ const DBControls = {
         + `<text x="258" y="112" class="dbc-by-lbl">${hoa ? 'Selector' : 'Bypass switch'}</text><text x="258" y="125" class="dbc-by-lbl dbc-by-plain">${hoa ? 'Auto · Off · On' : 'Auto / On'}</text>`;
     }
     const label = byp ? `Single line: the PEC switches the circuit in Auto; in On the supply goes straight to the load${hoa ? '; Off opens it' : ''}` : 'Single line: MCB, PEC, load';
-    return `<svg class="dbc-tip-svg dbc-by-svg" viewBox="0 0 360 212" width="300" height="177" role="img" aria-label="${label}">${ink}${hot}${txt}</svg>`;
+    return `<svg class="dbc-tip-svg dbc-by-svg" viewBox="0 0 360 212" width="300" height="177" role="img" aria-label="${escHtml(label)}">${ink}${hot}${txt}</svg>`;
   },
 
   // ── Rendering: the Controls section under the schedule grid ─────────
