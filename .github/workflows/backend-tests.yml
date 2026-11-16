@@ -53,6 +53,10 @@ jobs:
           node-version: '22'
       - name: Phone menus reach every desktop menu item
         run: node testing/unit/mobile-menu-coverage.test.js
+      - name: Fixes (proposed fixes, Fix all)
+        run: node testing/unit/fixes.test.js
+      - name: Building auto circuits (request, preview)
+        run: node testing/unit/plan-bdauto.test.js
       - name: TCC curves
         run: node frontend/tests/test_tcc_curves.mjs
       - name: Distance zone grading

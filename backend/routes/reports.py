@@ -16,6 +16,7 @@ from ..analysis.offpage import expand_offpage_links
 from ..auth import get_current_user, require_project
 from ..analysis.fault import run_fault_analysis
 from ..analysis.loadflow import run_load_flow
+from ..analysis.deliverables_pack import build_pack, PackError
 from ..analysis.pdf_reports import generate_full_report, generate_arcflash_labels, generate_calculations_report
 
 router = APIRouter(prefix="/projects", tags=["reports"])
@@ -222,3 +223,24 @@ def export_csv(project_id: int, ctx=Depends(require_project("view"))):
         media_type="text/csv",
         headers={"Content-Disposition": f"attachment; filename=protectionpro_report_{project_id}.csv"}
     )
+
+
+class DeliverablesRequest(BaseModel):
+    """The project's deliverables as one PDF: each part is a PDF the client made (base64)."""
+    projectName: str = "Untitled Project"
+    projectDetails: Optional[dict] = None
+    revisions: list[dict] = []
+    parts: list[dict]
+
+
+@report_router.post("/deliverables")
+def build_deliverables(req: DeliverablesRequest):
+    """Merge the parts into one PDF with a cover, contents, bookmarks and page numbers."""
+    try:
+        buf, toc = build_pack(req.projectName, req.parts, req.projectDetails, req.revisions)
+    except PackError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return StreamingResponse(
+        buf, media_type="application/pdf",
+        headers={"Content-Disposition": content_disposition(f"{req.projectName}_deliverables", "pdf"),
+                 "X-Pack-Pages": str(toc[-1]["first_page"] + toc[-1]["pages"] - 1)})

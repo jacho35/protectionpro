@@ -1151,3 +1151,53 @@ body.dark-mode .dbm-tag:not(.grp) { color: #1e1e2e; }
 .ms-regbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .ms-pts input.ms-reg { width: 76px; min-height: 26px; font-family: var(--font-mono); font-size: 11.5px; }
 .dbm-help { font-size: 12px; color: var(--accent); }
+
+/* Fixes: a proposed fix and Fix all */
+.fx { width: min(760px, 96vw); }
+.fx-body { padding: 14px 18px; overflow: auto; display: flex; flex-direction: column; gap: 12px; }
+.fx-table { border-collapse: collapse; width: 100%; font-size: 13px; }
+.fx-table td { padding: 6px 8px; border-bottom: 1px solid var(--border-color); }
+.fx-ba { display: flex; gap: 12px; }
+.fx-ba > div { flex: 1; padding: 8px 10px; border: 1px solid var(--border-color); border-radius: 6px; display: flex; flex-direction: column; gap: 2px; }
+.fx-ba small, .fx-tiles small { color: var(--text-secondary); font-size: 11.5px; }
+.fx-ok { color: var(--success-color, #1a7f4b); font-weight: 600; }
+.fx-bad { color: var(--danger-color, #b4232c); font-weight: 600; }
+.fx-manual { margin: 0; padding: 8px 10px; border-radius: 6px; background: rgba(180, 120, 0, .12); font-size: 12.5px; }
+.fx-auto { margin: 0; color: var(--text-secondary); font-size: 12.5px; }
+.fx-tiles { display: flex; gap: 10px; }
+.fx-tiles > div { flex: 1; padding: 8px 10px; border: 1px solid var(--border-color); border-radius: 6px; display: flex; flex-direction: column; }
+.fx-sec h4 { margin: 0 0 6px; font-size: 12px; }
+.fx-sec-manual { padding: 8px 10px; border: 1.5px solid rgba(180, 120, 0, .5); border-radius: 8px; background: rgba(180, 120, 0, .07); }
+.fx-grp { margin-bottom: 8px; }
+.fx-row { display: flex; gap: 10px; align-items: center; padding: 5px 4px; font-size: 13px; }
+.fx-row span { flex: 1; }
+.fx-row small { color: var(--text-secondary); margin-left: 6px; }
+.fx-row em { font-style: normal; font-size: 12px; color: var(--text-secondary); }
+.fx-foot { display: flex; gap: 8px; align-items: center; justify-content: flex-end; padding-top: 6px; }
+.fx-foot span { margin-right: auto; color: var(--text-secondary); font-size: 12px; }
+
+/* Building auto circuits */
+.pba { width: min(1180px, 96vw); }
+.pba-body { flex: 1; min-height: 0; display: flex; }
+.pba-view { flex: 1; min-width: 0; min-height: 420px; background: var(--bg-tertiary); display: flex; align-items: center; justify-content: center; padding: 8px; }
+.pba-view svg { width: 100%; height: 100%; max-height: 70vh; background: var(--bg-primary); border: 1px solid var(--border-color); }
+.pba-panel { width: 380px; flex: none; overflow: auto; padding: 14px 16px; border-left: 1px solid var(--border-color); display: flex; flex-direction: column; gap: 14px; }
+.pba-panel h4 { margin: 0 0 6px; font-size: 12px; }
+.pba-mode { display: flex; gap: 10px; padding: 8px 10px; margin-bottom: 6px; border: 1px solid var(--border-color); border-radius: 6px; cursor: pointer; font-size: 13px; }
+.pba-mode.on { border-color: var(--accent-color, #1f5fd1); background: rgba(31, 95, 209, .08); }
+.pba-mode small, .pba-tiles small, .pba-note { display: block; color: var(--text-secondary); font-size: 11.5px; }
+.pba-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
+.pba-num { display: flex; flex-direction: column; gap: 2px; font-size: 12px; }
+.pba-num input { height: 28px; box-sizing: border-box; }
+.pba-tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.pba-tiles > div { border: 1px solid var(--border-color); border-radius: 6px; padding: 8px; }
+.pba-tiles b { font-size: 18px; }
+.pba-chk { display: flex; gap: 8px; align-items: center; padding: 7px 8px; margin-bottom: 6px; border: 1px solid var(--border-color); border-radius: 6px; font-size: 12.5px; }
+.pba-chk span { flex: 1; }
+.pba-fail { background: rgba(180, 35, 44, .08); border-color: rgba(180, 35, 44, .35); }
+.pba-warn { background: rgba(180, 120, 0, .08); border-color: rgba(180, 120, 0, .35); }
+.pba-fail b { color: #b4232c; } .pba-warn b { color: #8a5200; } .pba-pass b { color: #1a7f4b; }
+.pba-empty { padding: 12px; color: var(--text-secondary); font-size: 13px; }
+.pba-foot { margin-top: auto; display: flex; flex-direction: column; gap: 8px; }
+.pba-foot .btn-primary { height: 40px; font-size: 14px; }
+.pba-link { background: none; border: 0; padding: 0; color: var(--accent-color, #1f5fd1); cursor: pointer; text-decoration: underline; }

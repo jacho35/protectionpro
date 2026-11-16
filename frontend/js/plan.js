@@ -207,6 +207,7 @@ const PlanMarkup = {
       if (AppState.planMarkup.settings.domain === 'building') PlanSync.syncBuildingToSLD();
       else PlanSync.pushToSchedules();
     }
+    else if (action === 'autocircuit' && typeof PlanBdAuto !== 'undefined') PlanBdAuto.open();
     else if (action === 'circuits' && typeof PlanCircuits !== 'undefined') {
       // An unlinked board has no schedule to write into: link it first. The
       // SLD sync ends with the same circuit sync, and reports it.
