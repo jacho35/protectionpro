@@ -269,6 +269,7 @@ const PlanUI = {
         : autoSync
         ? `<div class="plan-card plan-sync-auto"><b>Kept in sync</b><small>Minisubs, kiosks and erven drawn here are in Demand a moment after each edit, with which kiosk feeds which and the measured cable lengths. A length typed in Demand is kept there, with Reset.</small></div>`
         : (building ? act('push', 'Sync with single line', 'Boards and feeder cables, both directions') : act('push', 'Push to Demand schedules', 'Kiosks, erven and feeders into Reticulation'))}
+      ${building ? act('autocircuit', 'Auto circuits…', 'Boards, circuits and routes from the devices on this floor') : ''}
       ${building && !autoSync ? act('circuits', 'Count circuits into boards', `Loads and routed lengths per way${untagged ? ` · ${untagged} device${untagged > 1 ? 's' : ''} not on a circuit` : ''}`) : ''}
       <div class="plan-sec-head"><span>Print area</span></div>
       <div class="plan-card">

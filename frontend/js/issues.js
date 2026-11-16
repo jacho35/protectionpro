@@ -251,7 +251,10 @@ const Issues = {
       .sort((a, b) => (a.status === 'fail' ? 0 : 1) - (b.status === 'fail' ? 0 : 1))
       .map(w => ({ key: `way:${w.board_id}/${w.way_id}`, sev: w.status, ws: 'schedules',
         where: `${w.board_name || 'Board'} › way ${w.way}`, go: `way:${w.board_id}/${w.way_id}`,
-        text: `${w.board_name || 'Board'} way ${w.way}${w.description ? ` (${w.description})` : ''}: ${(w.messages && w.messages[0]) || (w.status === 'fail' ? 'fails the circuit check' : 'warning')}` }));
+        text: `${w.board_name || 'Board'} way ${w.way}${w.description ? ` (${w.description})` : ''}: ${(w.messages && w.messages[0]) || (w.status === 'fail' ? 'fails the circuit check' : 'warning')}`,
+        // a failing way can be fixed (Fixes: the cable size that passes, proved by the circuit check)
+        ...(w.status === 'fail' && typeof Fixes !== 'undefined' ? { fix: { kind: 'db_way', board_id: w.board_id, way_id: w.way_id },
+          act: 'Fix…', actRun: () => Fixes.openOne(`way:${w.board_id}/${w.way_id}`) } : {}) }));
     this._capped(out, items, (n, rest) => ({ key: 'way:more', sev: rest.some(x => x.sev === 'fail') ? 'fail' : 'warn', ws: 'schedules', where: 'Schedules',
       run: () => switchWorkspace('schedules'), text: `${n} more ways with a fail or warning` }));
   },

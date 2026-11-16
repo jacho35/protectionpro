@@ -1207,6 +1207,7 @@ const ResultsPanel = {
 ${tab === 'issues' ? '' : `        <button type="button" class="rp-btn" data-rp-attn aria-pressed="${this.attention ? 'true' : 'false'}"${attn || this.attention ? '' : ' disabled'} title="Show only rows that fail or warn">Needs attention · ${attn}</button>`}
         <input type="search" class="rp-filter" data-rp-filter placeholder="Filter by name" value="${escHtml(this.filter)}" aria-label="Filter by name">
         ${tab === 'issues' ? this._issueWsSelect() : ''}
+        ${tab === 'issues' && typeof Fixes !== 'undefined' && Fixes.count() ? `<button type="button" class="rp-btn" data-rp-fixall title="Review every available fix, then apply the ones you tick">Fix all… (${Fixes.count()})</button>` : ''}
       </div>` : ''}
       <div class="rp-body${stale ? ' rp-is-stale' : ''}">${notesHtml}${body}</div>`;
     // Studies shown with their own view draw into their placeholder.
@@ -1340,6 +1341,7 @@ ${tab === 'issues' ? '' : `        <button type="button" class="rp-btn" data-rp-
       return true;
     }
     if (key === 'issues') {
+      if (q('[data-rp-fixall]')) { Fixes.openAll(); return false; }
       if ((b = q('[data-rp-issue-act]'))) { Issues.act(b.dataset.rpIssueAct); return false; }
       if ((b = q('[data-rp-row]'))) {
         if (typeof MobileUI !== 'undefined' && MobileUI.closeSheet) MobileUI.closeSheet();
@@ -1375,6 +1377,7 @@ ${tab === 'issues' ? '' : `        <button type="button" class="rp-btn" data-rp-
       if (typeof ResultView !== 'undefined' && ResultView.study(this.tab)) { this._quiet = true; ResultView.show(this.tab); this._quiet = false; }
       this.render(true); return;
     }
+    if (q('[data-rp-fixall]')) { if (this._win) window.focus(); Fixes.openAll(); return; }
     if ((b = q('[data-rp-issue-act]'))) { if (this._win) window.focus(); Issues.act(b.dataset.rpIssueAct); return; }
     if (q('[data-rp-close]')) { this.close(); return; }
     if (q('[data-rp-pop]')) { this.popOut(); return; }

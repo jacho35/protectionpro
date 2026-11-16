@@ -82,6 +82,8 @@ Create writes real plan items tagged `auto: 'fire'` or `auto: 'power'`. The next
 5. **Wiring**: conduit / cable routes from each device to its DB using the existing route machinery; lengths feed the circuit check and cable sizing.
 6. **Outputs**: Checks, BOQ, report.
 
+Steps 4 and 5 are widened into the **Building circuiting tool** (board assignment to placed boards, grouping rules, three route modes: containment / along walls / direct in ceiling) — see `DESIGN_AUTOMATION_PLAN.md` §2.
+
 ## 7. Cross-cutting
 
 - Project setting **Design basis** in Project settings.

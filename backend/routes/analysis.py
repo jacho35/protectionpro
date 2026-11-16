@@ -25,6 +25,9 @@ from ..analysis.hosting_capacity import run_hosting_capacity
 from ..analysis.admd import run_admd
 from ..analysis.retic_earth import run_retic_earth_check
 from ..analysis.retic_lv_design import run_retic_lv_design
+from ..analysis.retic_mv_design import design_mv
+from ..analysis.building_circuits import design_circuits
+from ..analysis.fixes import propose_fixes, fix_all
 from ..analysis.retic_motor_start import run_retic_motor_start
 from ..analysis.street_lighting import run_street_lighting
 from ..analysis.road_lighting import run_road_lighting
@@ -569,6 +572,90 @@ def db_cable_size(data: DbCableSizeRequest):
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"DB cable sizing error: {e}")
+
+
+class BuildingCircuitsRequest(BaseModel):
+    """Building circuiting (analysis/building_circuits.py): placed boards, rooms, devices, doors and drawn
+    containment in metres, the project's circuit rules and the route mode."""
+    model_config = {"extra": "allow"}
+
+    mode: str = "walls"
+    mode_by_group: dict = {}
+    mode_overrides: dict = {}
+    boards: List[dict] = []
+    rooms: List[dict] = []
+    devices: List[dict] = []
+    doors: List[dict] = []
+    containment: List[List[List[float]]] = []
+    rules: dict = {}
+
+
+@router.post("/building-circuits")
+def building_circuits(data: BuildingCircuitsRequest):
+    """Rooms to the boards already placed, devices to circuits under the project rules, and a cable route per
+    circuit (containment / along walls / direct in ceiling). Proposes only; nothing is written."""
+    try:
+        return design_circuits(data.model_dump())
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Building circuiting error: {e}")
+
+
+class FixesRequest(DbCircuitCheckRequest):
+    """The project plus the issues to fix (kinds db_way / ladder, see analysis/fixes.py)."""
+    issues: List[dict] = []
+    approved_keys: List[str] = []
+
+
+@router.post("/fixes")
+def fixes(data: FixesRequest):
+    """A proposed fix per issue with the check result before and after (nothing is applied)."""
+    try:
+        return {"fixes": propose_fixes(data, data.issues)}
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Fixes error: {e}")
+
+
+@router.post("/fix-all")
+def fix_all_route(data: FixesRequest):
+    """Every available fix checked together on a copy. Hand-entered values are listed under needs_approval and
+    join the automatic set only when their issue key is in approved_keys."""
+    try:
+        return fix_all(data, data.issues, data.approved_keys)
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Fix all error: {e}")
+
+
+class ReticMvDesignRequest(BaseModel):
+    """MV network between the mini-subs (analysis/retic_mv_design.py): supply, mini-subs with kVA, street
+    centrelines, the cable ladder as plain numbers, the limits."""
+    model_config = {"extra": "allow"}
+
+    topology: str = "radial"
+    voltage_kv: float = 11.0
+    supply: dict
+    subs: List[dict] = []
+    network: List[List[List[float]]] = []
+    cables: List[dict] = []
+    limits: dict = {}
+    laying: dict = {}
+
+
+@router.post("/retic-mv-design")
+def retic_mv_design(data: ReticMvDesignRequest):
+    """Radial or ring MV cable between the mini-subs, the smallest cable that passes volt drop, fault level and
+    cable rating (a ring with every single section out in turn)."""
+    try:
+        return design_mv(data.model_dump())
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"MV design error: {e}")
 
 
 @router.post("/motor-starting")
