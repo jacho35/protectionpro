@@ -912,7 +912,7 @@ const PlanUI = {
   _verdicts(list) {
     const l = list.filter(Boolean);
     if (!l.length) return '';
-    return `<div class="plan-verdicts">${l.map(v => `<span class="plan-verdict ${v.st}">${v.st === 'ok' ? '✓' : '!'} ${escHtml(v.text)}</span>`).join('')}</div>`;
+    return `<div class="plan-verdicts">${l.map(v => `<span class="plan-verdict ${escHtml(v.st)}">${v.st === 'ok' ? '✓' : '!'} ${escHtml(v.text)}</span>`).join('')}</div>`;
   },
   _loadingState(amps, rating) { if (!rating || !amps) return null; const p = amps / rating * 100; return p > 100 ? 'bad' : p >= 90 ? 'warn' : 'ok'; },
   _vdState(vd, limit) { if (vd == null || !limit) return null; return vd > limit ? 'bad' : vd >= limit * 0.9 ? 'warn' : 'ok'; },
