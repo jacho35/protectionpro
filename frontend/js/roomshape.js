@@ -249,7 +249,8 @@ const RoomShape = {
     const snap = v => Math.round(v * 10) / 10;
     ov.addEventListener('pointerdown', (e) => {
       const h = e.target.closest('.rs-polysvg .rsec-h');
-      if (!h) return;
+      if (!h) { if (e.shiftKey && e.target.closest('.rs-polysvg') && !e.target.closest('.rsec-h')) { addCorner(e); e.preventDefault(); } return; }       // Shift-click a wall adds a corner
+      if (e.altKey) { if (P().length > 3) { P().splice(+h.dataset.ci, 1); st.sel = -1; st.view = null; paintPoly(true); } e.preventDefault(); return; }   // Alt-click a corner removes it
       drag = st.sel = +h.dataset.ci;
       h.setPointerCapture && h.setPointerCapture(e.pointerId);
       e.preventDefault();
@@ -263,8 +264,7 @@ const RoomShape = {
     const endDrag = () => { if (drag >= 0) { drag = -1; st.view = null; paintPoly(true); } };
     ov.addEventListener('pointerup', endDrag);
     ov.addEventListener('pointercancel', endDrag);
-    ov.addEventListener('dblclick', (e) => {
-      if (!e.target.closest('.rs-polysvg') || e.target.closest('.rsec-h')) return;
+    const addCorner = (e) => {
       const [x, y] = toM(e), pts = P(), n = pts.length;
       let best = -1, bd = Infinity;          // the wall nearest the click
       pts.forEach((a, i) => {
@@ -276,7 +276,8 @@ const RoomShape = {
       if (best < 0) return;
       pts.splice(best + 1, 0, [snap(x), snap(y)]);
       st.sel = best + 1; st.view = null; paintPoly(true);
-    });
+    };
+    ov.addEventListener('dblclick', (e) => { if (e.target.closest('.rs-polysvg') && !e.target.closest('.rsec-h')) addCorner(e); });
     document.addEventListener('keydown', onKey, true);
     ov.addEventListener('change', (e) => {
       const c = e.target.dataset && (e.target.dataset.rsC || e.target.dataset.rsLen);
