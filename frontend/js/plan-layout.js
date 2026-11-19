@@ -30,6 +30,7 @@ const PlanLayout = (() => {
 
   const DEFAULTS = {
     side: 4, depth: 4, corner: 'start', front: 'longest',      // marker: m from the side boundary and the front; which corner; corner erf's front
+    cwDef: 5,                                                      // read by the UI: the carriageway width of a street that has none (one drawn as a centreline)
     kgeo: 'boundary', kd: 2,                                       // cables + kiosks run kd m inside the erf boundary ('street' = the old street-line offset)
     kmode: 'opt', xpen: 300, xkiosk: false, n: 6, maxc: 70, worth: 170, knet: true,   // kiosks (n = the most erven one kiosk serves; knet = one solve over the whole street network)
     strN: 4, strE: 0, strL: 350, strMode: 'fewest',                                     // LV strings: most kiosks on one string off the mini-sub (0 = no limit); 'fewest' = fewest strings, 'even' = strings of similar size
@@ -129,7 +130,7 @@ const PlanLayout = (() => {
   function solveOnce(input, Pin) {
     const P = Object.assign({}, DEFAULTS, Pin || {});
     const t0 = Date.now();
-    const streets = (input.streets || []).filter(s => s.pts && s.pts.length >= 2).map(prepStreet);
+    const streets = (input.streets || []).filter(s => s.pts && s.pts.length >= 2).map(s => { const st = prepStreet(s); st.cwAuto = !!s.cwAuto; return st; });
     streets.rets = kerbFills(input.kerbReturns);                                       // the kerb returns at the street corners (from the plan)
     const { list: junctions, use } = findJunctions(streets);
     const isJ = id => use[id] && use[id].length >= 2;
@@ -391,11 +392,24 @@ const PlanLayout = (() => {
       for (let k = 0; k <= n; k++) { const t = k / n, r = ra + (rb - ra) * t, an = a1 + dl * t; out.push([c[0] + r * Math.cos(an), c[1] + r * Math.sin(an)]); }
       out[0] = a.slice(0, 2); out[n] = b.slice(0, 2); return out;
     }
+    // a point (kiosk stand, manhole) that still falls in a carriageway — on the inside of a bend of a drawn street line, or in another street
+    // near a junction — goes out square to the nearer kerb + 0.4 m of each street it is in
+    const outOfRoad = q => {
+      for (let pass = 0; pass < 3; pass++) for (const st of streets) {
+        if (!(st.cw > 0) || cwDepth(st, q[0], q[1]) <= -0.35) continue;
+        const pr = project(st, q[0], q[1]), co = st.co || 0, lat = pr.side * pr.d, to = co + (lat >= co ? 1 : -1) * (st.cw / 2 + 0.4);
+        const nx = pr.d > 1e-6 ? pr.side * (q[0] - pr.px) / pr.d : 0, ny = pr.d > 1e-6 ? pr.side * (q[1] - pr.py) / pr.d : 1; q = [pr.px + nx * to, pr.py + ny * to];
+      }
+      return q;
+    };
+    const clearStand = (c, st) => { const q = outOfRoad([c.x, c.y]); if (q[0] !== c.x || q[1] !== c.y) { c.x = q[0]; c.y = q[1]; c.s = project(st || c.road, q[0], q[1]).s; } return c; };
     const capOff = (st, so, v) => { if (!(st.cw > 0)) return so; const pr = project(st, v[0], v[1]); return Math.min(so, Math.max(0, pr.d - corridorFloor(st, pr.side))); };     // a stand `so` m in from boundary point v, never inside the floor
     const mag = (st, side, s, kind) => {
-      if (!byBoundary) return kind === 't' ? st.tr : st.vk;
+      // an assumed carriageway (a street drawn as a centreline) never pushes the corridor over the erf boundary: the drawn line can run close to one side
+      const floor = st.cwAuto && frontage(st, side) ? Math.min(corridorFloor(st, side), Math.max(0.5, fd(st, side, s) - 0.5)) : corridorFloor(st, side);
+      if (!byBoundary) return Math.max(floor, kind === 't' ? st.tr : st.vk);          // (the old street-line offset, still clear of a carriageway)
       const io = itemOff(secAt(st, s), kind), off = io != null ? io : (kind === 't' || kind === 'h' ? KD - 0.3 : KD);
-      return Math.max(corridorFloor(st, side), fd(st, side, s) - off);
+      return Math.max(floor, fd(st, side, s) - off);
     };
     // how far in from an end that meets another street the corridor starts, per side and cable class: at least pullLo / pullHi (the other street's
     // kerb + 0.4 m along this street), and further where the street meets the other at a slant, so the corridor on the acute side (which
@@ -687,7 +701,7 @@ const PlanLayout = (() => {
             const hit = cands.find(c => Math.abs(c.a - a) <= 1.5);
             if (hit) { hit.shared = true; continue; }
             const so = capOff(st, standOff(st, a), v), x = v[0] + fe.out[0] * so, y = v[1] + fe.out[1] * so;
-            cands.push({ a, x, y, s: project(st, x, y).s, shared: false });
+            cands.push(clearStand({ a, x, y, s: project(st, x, y).s, shared: false }, st));
           }
         }
         // a kiosk may also stand in the kiosk-side verge opposite a boundary between erven across the road
@@ -766,7 +780,7 @@ const PlanLayout = (() => {
             const pos = kp(st, side, s0); mine.push({ road: st, a: s0, x: pos[0], y: pos[1], s: s0, shared: false, junction: true });
           }
         }
-        cands.push(...mine);
+        cands.push(...mine.map(c => clearStand(c)));
       }
       // kiosks moved or put by hand: a stand dropped where the solver would have put one (`kioskDrops`) and a stand that is always used (`kioskPins`)
       const pinIdx = new Set();
@@ -935,7 +949,7 @@ const PlanLayout = (() => {
         for (let i = 0; i < K.length - 1; i++) if (Math.abs(K[i].hi - K[i + 1].lo) <= 1.5) bounds.push({ a: K[i].hi, used: false });
         (XS[gkey] || []).forEach(x0 => { const b = bounds.find(q => Math.abs(q.a - x0) <= 1.5); if (b) b.cross = true; else bounds.push({ a: x0, used: false, cross: true }); });
         const pickB = tg => bounds.filter(b => !b.used).sort((p, q) => (Math.abs(p.a - tg) - (p.cross ? 8 : 0)) - (Math.abs(q.a - tg) - (q.cross ? 8 : 0)))[0];
-        const mk = a => { const pos = kp(st, sg, a, 'h'), m = { id: 'M' + (++n), x: pos[0], y: pos[1], a, road: st, members: [], junction: false, label: String(n), sg }; mhs.push(m); return m; };
+        const mk = a => { const pos = outOfRoad(kp(st, sg, a, 'h')), m = { id: 'M' + (++n), x: pos[0], y: pos[1], a, road: st, members: [], junction: false, label: String(n), sg }; mhs.push(m); return m; };
         const here = []; let from = 0;
         for (let g = 0; g < nM; g++) {
           const c = base + (g < extra ? 1 : 0), members = list.slice(from, from + c); from += c;
