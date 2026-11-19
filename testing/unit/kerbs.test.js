@@ -131,15 +131,95 @@ ok('sides: a stub run on to another street (no kerbs there) is set half the widt
   assert(Math.abs(sd.a[0][1] - 4) < 1e-6 && Math.abs(sd.b[0][1] + 4) < 1e-6);
 });
 
-ok('stage: remove, add from two kerbs, a road beside a lone kerb, join', () => {
+ok('joinPieces: parts = the drawn pieces of a chain (a reversed piece too)', () => {
+  const ch = K.joinPieces([[[0, 0], [10, 0]], [[20, 0], [10, 0]], [[20, 0], [35, 0]]]);
+  assert.strictEqual(ch.length, 1);
+  const p = ch[0].parts; assert.strictEqual(p.length, 3);
+  assert(Math.abs(p[0].s1 - p[1].s0) < 1e-9 && Math.abs(p[1].s1 - p[2].s0) < 1e-9 && Math.abs(p[2].s1 - 35) < 1e-9 && Math.abs(p[1].s1 - p[1].s0 - 10) < 1e-9);
+});
+
+ok('candidates + assemble(all) give exactly what solve gives', () => {
+  const ch = K.joinPieces(tee().map(pts => pts));
+  const a = K.solve(ch), c = K.candidates(ch), b = K.assemble(c, 'all', [], {}, 'all');
+  assert.deepStrictEqual(b.streets.map(s => [s.pts, s.w, s.chains]), a.streets.map(s => [s.pts, s.w, s.chains]));
+});
+
+// an L-shaped block: its kerb is ONE chain (L), with a straight kerb across each arm (road 10 m wide)
+const lShape = () => ({
+  L: K.joinPieces([[[0, 5], [100, 5], [100, 105]]]),                       // arm 1 along x, arm 2 up y
+  a: K.joinPieces([[[0, -5], [95, -5]]]),                                  // across arm 1
+  b: K.joinPieces([[[110, 20], [110, 105]]]),                              // across arm 2
+});
+const mk = () => { const x = lShape(); return { Lc: x.L[0], layers: { A: [x.L[0], x.a[0], x.b[0]] } }; };
+
+ok('click adds every street of a kerb line; Shift-click one piece adds one and does not run on to the street not chosen', () => {
+  let { layers } = mk(), T = K.stage(layers);
+  assert.strictEqual(T.streets.length, 0);
+  const r = T.addChain('A', 0, null); assert.strictEqual(T.streets.length, 2, JSON.stringify(r)); assert.strictEqual(r.added, 2);
+  const T2 = K.stage(mk().layers); T2.addChain('A', 0, [0, 100]);                      // arm 1 only
+  assert.strictEqual(T2.streets.length, 1);
+  const s = T2.streets[0]; assert(Math.abs(s.w - 10) < 0.2);
+  const end = s.pts[s.pts.length - 1]; assert(end[0] < 112 && Math.abs(end[1]) < 1, 'stops where the kerbs stop ' + end);
+});
+
+ok('subtract mirrors add; re-picks do nothing', () => {
+  const T = K.stage(mk().layers); T.addChain('A', 0, null);
+  assert(T.addChain('A', 0, null).noop, 'adding again is a no-op'); assert.strictEqual(T.picks.length, 1);
+  const r = T.addChain('A', 0, [0, 100], 'sub'); assert.strictEqual(T.streets.length, 1, JSON.stringify(r));
+  T.mode = 'sub'; T.addChain('A', 0, null); assert.strictEqual(T.streets.length, 0);
+  assert(T.addChain('A', 0, null).noop, 'nothing left to remove');
+});
+
+ok('a kerb with no partner is lonely; pairWith a kerb 23 m away makes a street; undo, options replay', () => {
+  const ch = [...K.joinPieces([[[0, 0], [100, 0]]]), ...K.joinPieces([[[0, 23], [100, 23]]])];
+  const T = K.stage({ A: ch });
+  T.addChain('A', 0, null); assert.strictEqual(T.streets.length, 0); assert.strictEqual(T.lonely.length, 1);
+  T.armPair('A', 0); assert.strictEqual(T.pairWith('A', 1), 'added'); assert.strictEqual(T.streets.length, 1); assert.strictEqual(T.lonely.length, 0);
+  assert(T.undo()); assert.strictEqual(T.streets.length, 0); assert.strictEqual(T.lonely.length, 1);
+  // options replay: a road 10 m wide with wmax 8 goes lonely, back at 20 comes back
+  const U = K.stage({ A: K.joinPieces([...loose(0, 5, 100, 5), ...loose(0, -5, 100, -5)]) });
+  U.addChain('A', 0, null); assert.strictEqual(U.streets.length, 1);
+  U.setOpt({ wmax: 8 }); assert.strictEqual(U.streets.length, 0); assert.strictEqual(U.lonely.length, 1);
+  U.setOpt({ wmax: 20 }); assert.strictEqual(U.streets.length, 1); assert.strictEqual(U.lonely.length, 0);
+});
+
+ok('undo: three picks, two undos = the state after the first', () => {
+  const x = lShape(), road = K.joinPieces([...loose(300, 5, 400, 5), ...loose(300, -5, 400, -5)]);
+  const T = K.stage({ A: [x.L[0], x.a[0], x.b[0], ...road] });
+  T.addChain('A', 0, [0, 100]); const one = JSON.stringify(T.streets);
+  T.addChain('A', 0, [100, 200]); T.addChain('A', 3, null); assert(T.streets.length >= 3);
+  T.undo(); T.undo(); assert.strictEqual(JSON.stringify(T.streets), one);
+});
+
+ok('two layers: a line on another layer is not a partner unless "any layer" is on', () => {
+  const kerbs = K.joinPieces([...loose(0, 5, 100, 5), ...loose(0, -5, 100, -5)]), erf = K.joinPieces([[[0, 20], [100, 20]]]);
+  const T = K.stage({ kerb: kerbs, erf });
+  T.addChain('erf', 0, null); assert.strictEqual(T.streets.length, 0); assert.strictEqual(T.lonely.length, 1);
+  T.addChain('kerb', 0, null); assert.strictEqual(T.streets.length, 1); assert.strictEqual(T.streets[0].layer, 'kerb');
+  const U = K.stage({ kerb: kerbs, erf }); U.setAnyLayer(true); U.addChain('erf', 0, null);
+  assert.strictEqual(U.streets.length, 1, 'with any layer the erf line pairs with the nearest kerb');
+});
+
+ok('pairAll(layer) = solve(chains) on that layer; subtract a street by clicking it', () => {
+  const ch = K.joinPieces(tee().map(pts => pts)), T = K.stage({ A: ch }), r = K.solve(ch);
+  T.pairAll('A'); assert.deepStrictEqual(T.streets.map(s => [s.pts, s.w, s.chains]), r.streets.map(s => [s.pts, s.w, s.chains]));
+  T.subStreet(T.streetAt([100, -60], 3)); assert.strictEqual(T.streets.length, r.streets.length - 1);
+});
+
+ok('hitAt: whole chain and the drawn piece under the click, across layers', () => {
+  const ch = K.joinPieces([[[0, 0], [10, 0]], [[10, 0], [30, 0]]]), T = K.stage({ A: ch, B: K.joinPieces([[[0, 50], [10, 50]]]) });
+  const h = T.hitAt([20, 0.5], 2); assert.strictEqual(h.layer, 'A'); assert.deepStrictEqual(h.part, [10, 30]);
+  assert.strictEqual(T.hitAt([5, 50], 2).layer, 'B'); assert.strictEqual(T.hitAt([5, 20], 2), null);
+});
+
+ok('stage: a road beside a lone kerb, hand-made streets join up', () => {
   const ch = [...K.joinPieces([...loose(0, 5, 100, 5), ...loose(0, -5, 100, -5)]), { pts: [[0, 60], [60, 60]] }];
-  const T = K.stage(ch).solve();
-  assert.strictEqual(T.streets.length, 1); assert.deepStrictEqual(T.unpaired, [2]);
-  T.arm(2); assert(T.place([30, 50]));                                       // click below the kerb: the road is below it
+  const T = K.stage({ A: ch }); T.pairAll('A');
+  assert.strictEqual(T.streets.length, 1); assert.strictEqual(T.lonely.length, 1);
+  T.arm('A', 2); assert(T.place([30, 50]));
   assert.strictEqual(T.streets.length, 2); assert(Math.abs(T.streets[1].pts[0][1] - 57) < 1e-6 && T.streets[1].w === 6);
-  assert.strictEqual(T.networks().length, 2); assert.strictEqual(T.join(60), 1); assert.strictEqual(T.networks().length, 1);
-  assert(T.remove([50, 57], 3)); assert.strictEqual(T.streets.length, 1);
-  assert.strictEqual(T.pair([50, 5], 2), 'first'); assert.strictEqual(T.pair([50, -5], 2), 'added'); assert.strictEqual(T.streets.length, 2);
+  assert.strictEqual(T.networks().length, 2); assert(T.join(60) >= 1); assert.strictEqual(T.networks().length, 1);
+  T.subStreet(T.streetAt([50, 57], 3)); assert.strictEqual(T.streets.length, 1);
 });
 
 // A dead-end road drawn as ONE kerb line: both kerbs and the end cap in a single chain (open U, or a closed outline)

@@ -1078,6 +1078,7 @@ const RoadPlan = {
       d.pole.moved = true; d.moved = true;
       this.renderScreen(); return;
     }
+    if (this._tool === 'kerbauto' && typeof RoadKerbs !== 'undefined') RoadKerbs.move(wx, wy, e);
     this._hover = { wx, wy, sx: e.offsetX, sy: e.offsetY };
     if (this._draft || this._tool === 'pick') this.renderScreen();
     this._readout();
@@ -1359,7 +1360,7 @@ const RoadPlan = {
     } else if (this._step === 1) {
       html = `${b('select', 'Select', 'Select a road, drag its intersection points')}${b('draw', 'Draw centreline', 'Click intersection points; corners are rounded with tangent arcs')}${b('kerbs', 'Trace kerbs', 'Trace both kerbs: the carriageway width follows them')}
         ${this.rp.bg ? b('pick', 'From DXF', 'Pick a centreline or two kerbs from the background drawing') : ''}
-        ${this.rp.bg && typeof RoadKerbs !== 'undefined' ? `<button class="btn-small${this._tool === 'kerbauto' ? ' active' : ''}" data-rp="rk-open" title="Find every road of a kerb layer by pairing its kerb lines, review them, then create the roads with their measured widths">Roads from kerbs</button>` : ''}
+        ${this.rp.bg && typeof RoadKerbs !== 'undefined' ? `<button class="btn-small${this._tool === 'kerbauto' ? ' active' : ''}" data-rp="rk-open" title="Click the kerb lines you want: the roads between them are made, with their measured widths">Roads from kerbs</button>` : ''}
         <span class="sl-sep"></span>
         <label class="rl-inline" title="Radius of the tangent arc at each corner of a drawn centreline (a corner can override it)">Bend radius<span class="sl-unit"><input type="number" min="0" step="5" class="sl-in-num" data-rp-road-f="radius" value="${escHtml(r ? (r.radius ?? 50) : 50)}"${r && r.mode === 'ip' ? '' : (r ? ' disabled' : '')}> m</span></label>
         <label class="rl-inline"><input type="checkbox" data-rp="snap"${this._snap ? ' checked' : ''}> Snap</label>`;
