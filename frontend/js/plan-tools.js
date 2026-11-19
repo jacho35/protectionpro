@@ -180,6 +180,8 @@ PlanTools.register({
       const d = SportsCalc.pickAt(pt, z);
       if (d) { this._drag = d; return; }
     }
+    // 0c) Alt+click on a node of a route / room / trench removes it (the ends of a route stay)
+    if (e.altKey && PlanTools.deleteVertexAt(pt)) return;
     // 1) route vertex of an already-selected route (fine control)
     for (const r of pm.routes) {
       if (!PlanMarkup.selectedIds.has(r.id)) continue;
