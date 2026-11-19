@@ -1193,17 +1193,28 @@ const PlanLayout = (() => {
     const rnd = p => Math.round(p[0] * 4) + ',' + Math.round(p[1] * 4);
     const flush = (chain, cat) => { if (chain.length < 2) return; const a = rnd(chain[0]), b = rnd(chain[chain.length - 1]), key = a < b ? a + '|' + b : b + '|' + a; let sp = spurs.get(key); if (!sp) { sp = { pts: chain.slice(), cats: new Set() }; spurs.set(key, sp); } sp.cats.add(cat); };
     const add = (pts, cat) => {
-      let chain = [];
+      // a piece that turns off the street's direction (more than 15 degrees), a run turning a junction corner on the kerb-return curve, is a
+      // trench of its own along that curve instead of being squared off onto the two streets' verge lines; a service leaving the verge stays as before
+      const segs = [];
       for (let i = 1; i < pts.length; i++) {
-        const p = pts[i - 1], q = pts[i], mid = [(p[0] + q[0]) / 2, (p[1] + q[1]) / 2];
-        if (Math.hypot(q[0] - p[0], q[1] - p[1]) < 0.05) continue;
+        const p = pts[i - 1], q = pts[i], L = Math.hypot(q[0] - p[0], q[1] - p[1]); if (L < 0.05) continue;
+        const mid = [(p[0] + q[0]) / 2, (p[1] + q[1]) / 2];
         let best = null; for (const st of streets) { const pr = project(st, mid[0], mid[1]); if (!best || pr.d < best.pr.d) best = { st, pr }; }
-        const st = best.st, pp = project(st, p[0], p[1]), pq = project(st, q[0], q[1]), op = pp.side * pp.d, oq = pq.side * pq.d;
+        const st = best.st, pp = project(st, p[0], p[1]), pq = project(st, q[0], q[1]);
+        segs.push({ p, q, L, st, pp, pq, turn: Math.abs(pq.s - pp.s) / L < 0.966 });
+      }
+      // a curve is its own trench only between runs along two DIFFERENT streets (a junction corner); 3 m or more of it
+      for (let i = 0; i < segs.length;) { if (!segs[i].turn) { i++; continue; } let j = i, len = 0; while (j < segs.length && segs[j].turn) len += segs[j++].L;
+        const before = i > 0 ? segs[i - 1].st : null, after = j < segs.length ? segs[j].st : null;
+        if (len < 3 || !before || !after || before === after) for (let k = i; k < j; k++) segs[k].turn = false; i = j; }
+      let chain = [];
+      for (const g of segs) {
+        const { p, q, st, pp, pq } = g, op = pp.side * pp.d, oq = pq.side * pq.d;
         if (Math.abs(op - oq) > 3) { flush(chain, cat); chain = []; continue; }              // across a road: the crossing trench covers it
         const m = (Math.abs(op) + Math.abs(oq)) / 2, sg = Math.sign(op + oq) || 1, sMid = (pp.s + pq.s) / 2;
         // on the boundary corridor a line is told apart by how far it sits from the corridor itself (0 = kd inside the boundary)
         const bnd = st.byBoundary && typeof st.fd === 'function', rel = bnd ? m - (st.fd(sg, sMid) - st.kd) : m;
-        if (Math.abs(op - oq) <= 0.6 && Math.abs(pq.s - pp.s) > 0.05 && (bnd ? rel >= -1.5 && rel <= st.kd + 0.5 : m >= st.vk - 1.5 && m <= st.w / 2 + 0.5)) {
+        if (!g.turn && Math.abs(op - oq) <= 0.6 && Math.abs(pq.s - pp.s) > 0.05 && (bnd ? rel >= -1.5 && rel <= st.kd + 0.5 : m >= st.vk - 1.5 && m <= st.w / 2 + 0.5)) {
           flush(chain, cat); chain = [];
           lineFor(st, sg, rel).ivs.push({ s0: Math.min(pp.s, pq.s), s1: Math.max(pp.s, pq.s), cat });
         } else { if (!chain.length) chain.push(p); chain.push(q); }

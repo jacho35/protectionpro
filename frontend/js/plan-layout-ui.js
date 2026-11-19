@@ -172,8 +172,20 @@ const PlanLayoutUI = {
     const objKeys = new Set(objs.map(o => o.k0).filter(Boolean)), kindOf = this._polyKinds(r);
     ((r.net && r.net.cross) || []).forEach(c => { c.relaid = { svc: 0, fi: 0, lv: 0 }; });
     const polys = this._polys(r), seenV = new Map(), seenS = new Set();
+    // two LV cables that only meet each other, end to end, at a plain node near a moved crossing are laid again as one run (then split where the
+    // node now is), so the node follows the kerb-return curve with them like any other point instead of holding a square corner the string feeder
+    // and the fibre beside them no longer share
+    const pairOf = new Map();
+    if (XS.length && r.net) {
+      const near = q => XS.some(x => { const p = PlanLayout.ptAt(x.c.st, x.c.s, 0); return Math.hypot(p[0] - q[0], p[1] - q[1]) < 20; });
+      const ends = new Map(); (r.net.lv || []).forEach(ed => { const p = ed.pts; if (!Array.isArray(p) || p.length < 2) return; [[p[0], false], [p[p.length - 1], true]].forEach(([q, atEnd]) => { const k = vk(q[0], q[1]); if (!ends.has(k)) ends.set(k, []); ends.get(k).push({ p, atEnd, q }); }); });
+      for (const [k, l] of ends) if (l.length === 2 && l[0].p !== l[1].p && !keep.has(k) && !objKeys.has(k) && !M.verts[k] && !pairOf.has(l[0].p) && !pairOf.has(l[1].p) && near(l[0].q)) { pairOf.set(l[0].p, { me: l[0], o: l[1], k }); pairOf.set(l[1].p, { second: true }); }
+    }
     for (const poly of polys) {
-      let list = poly.map(q => ({ pt: [q[0], q[1]], k: vk(q[0], q[1]) })); list.forEach(o => { o.t = o.k; });
+      const pr = pairOf.get(poly); if (pr && pr.second) continue;
+      let src = poly;
+      if (pr) { const A = pr.me.atEnd ? poly : poly.slice().reverse(), B = pr.o.atEnd ? pr.o.p.slice().reverse() : pr.o.p; src = A.concat(B.slice(1)); }
+      let list = src.map(q => ({ pt: [q[0], q[1]], k: vk(q[0], q[1]) })); list.forEach(o => { o.t = o.k; });
       for (const a of M.adds) {                                                         // a node put on a line, in the order it was made
         const out = [];
         for (let i = 0; i < list.length; i++) {
@@ -192,7 +204,13 @@ const PlanLayoutUI = {
         else if (o.t && (o.add || !keep.has(o.k))) { const v = { t: o.t, k: o.add ? null : o.k, add: o.add || null, pos: o.pt, interior }; seenV.set(o.t, v); this._verts.push(v); }
         if (i > 0 && list[i - 1].t && o.t) { const a = list[i - 1], key = a.t < o.t ? a.t + '|' + o.t : o.t + '|' + a.t; if (!seenS.has(key)) { seenS.add(key); this._segs.push({ a: a.t, b: o.t, pa: a.pt, pb: o.pt }); } }
       });
-      poly.splice(0, poly.length, ...list.map(o => o.pt));
+      if (pr) {                                                                         // split the joined run again: at the node, or where it now is
+        let j = list.findIndex((o, i) => i > 0 && i < list.length - 1 && o.k === pr.k);
+        if (j < 0) { let bd = Infinity; list.forEach((o, i) => { if (i > 0 && i < list.length - 1) { const d = Math.hypot(o.pt[0] - pr.me.q[0], o.pt[1] - pr.me.q[1]); if (d < bd) { bd = d; j = i; } } }); }
+        if (j < 1) j = Math.min(list.length - 2, Math.max(1, j));
+        const A2 = list.slice(0, j + 1).map(o => o.pt.slice()), B2 = list.slice(j).map(o => o.pt.slice());
+        poly.splice(0, poly.length, ...(pr.me.atEnd ? A2 : A2.reverse())); pr.o.p.splice(0, pr.o.p.length, ...(pr.o.atEnd ? B2.reverse() : B2));
+      } else poly.splice(0, poly.length, ...list.map(o => o.pt));
     }
     for (const o of objs) { const m = tgt(o.k0); if (m && !keep.has(o.k0)) { o.x = m[0]; o.y = m[1]; o.moved = true; } }
     r.erven.forEach(e => { if (e.fibrePt && e.duct && e.duct.length) { const q = e.duct[e.duct.length - 1]; e.fibrePt = [q[0], q[1]]; } });
@@ -355,9 +373,10 @@ const PlanLayoutUI = {
   },
   // a point of a run the layout may not re-lay: the ends, a kiosk / marker / manhole / mini-sub, a node you placed, and any real corner (over 30 degrees)
   _fixedFn(M, keep, objKeys) {
-    return (list, f) => {
+    return (list, f, hard) => {                                                      // hard: only the ends, the parts and the nodes placed by hand (no corners)
       if (f <= 0 || f >= list.length - 1) return true;
       const o = list[f]; if (o.add || (o.k && (M.verts[o.k] || keep.has(o.k) || (objKeys && objKeys.has(o.k))))) return true;
+      if (hard) return false;
       const a = list[f - 1].pt, b = o.pt, c = list[f + 1].pt, u = [b[0] - a[0], b[1] - a[1]], v = [c[0] - b[0], c[1] - b[1]], lu = Math.hypot(u[0], u[1]), lv = Math.hypot(v[0], v[1]);
       return lu > 1e-6 && lv > 1e-6 && Math.acos(Math.max(-1, Math.min(1, (u[0] * v[0] + u[1] * v[1]) / (lu * lv)))) > Math.PI / 6;
     };
@@ -380,6 +399,10 @@ const PlanLayoutUI = {
     if (st) {
       const pr = PlanLayout.project(st, last[0], last[1]), at = PlanLayout.ptAt(st, pr.s, 0), tv = [at[2], at[3]];
       if (Math.hypot(last[0] - prev[0], last[1] - prev[1]) < 1 || Math.abs(d[0] * tv[0] + d[1] * tv[1]) < 0.5) {      // (a run that starts at a node on the crossing has no direction of its own: it walks too)
+        // a bend within 4 m of the old crossing end is the run's own turn into the crossing (it leaves the main road's verge there): it is laid
+        // again too, so it can follow the kerb return; parts, ends and nodes placed by hand stay fixed
+        let g = f; while (g > 0 && g < list.length - 1 && !fixed(list, g, true) && Math.hypot(list[g].pt[0] - last[0], list[g].pt[1] - last[1]) < 4) { g += step; while (g > 0 && g < list.length - 1 && !fixed(list, g)) g += step; }
+        if (g !== f) { f = g; S.length = 0; if (step < 0) for (let k = f; k <= idx; k++) S.push(list[k]); else for (let k = f; k >= idx; k--) S.push(list[k]); }
         const nv = [tv[1], -tv[0]], alongT = a[0] * tv[0] + a[1] * tv[1], latN = a[0] * nv[0] + a[1] * nv[1], s1 = pr.s + alongT;
         // on the verge: the end of a crossing segment can lie inside the mouth, so the walk keeps at least the kerb + 0.4 m (on the run's side)
         const sg = pr.side >= 0 ? 1 : -1, kerb = st.cw > 0 ? st.cw / 2 + sg * (st.co || 0) + 0.4 : 0, lat = sg * Math.max(pr.d, kerb);
