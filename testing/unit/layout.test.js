@@ -9,6 +9,7 @@ const F = fixture();
 
 ok('the default longest service cable is 70 m', () => { assert.strictEqual(L.DEFAULTS.maxc, 70); });
 L.DEFAULTS.maxc = 80;   // the fixtures below were tuned at 80 m: they test the engine, not the default
+L.DEFAULTS.route = 'street';   // these tests pin the street-line corridors; routing along the erf boundaries is testing/unit/blocks.test.js
 
 ok('fixture: a believable neighbourhood', () => { assert(F.erven.length > 60 && F.erven.length < 140, 'erven ' + F.erven.length); });
 
