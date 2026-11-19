@@ -196,21 +196,35 @@ const PlanLayoutUI = {
     if (M.adds.length || M.cuts.length || Object.keys(M.verts).length || XS.length) PlanLayout.relength(r);          // the lengths that follow from the lines
   },
   // what is under a point (metres): a kiosk, an erf marker, a node, or a stretch of line
-  _moveHit(m) {
-    const r = this.result; if (!r) return null;
-    const tol = 9 * this.f / PlanEngine.view.zoom, d = (x, y) => Math.hypot(x - m[0], y - m[1]);
-    let best = null; const take = (o, dist) => { if (dist <= tol && (!best || dist < best.d)) best = Object.assign(o, { d: dist }); };
-    r.kiosks.forEach(k => take({ kind: 'kiosk', k }, d(k.x, k.y) - 2 * this.f / PlanEngine.view.zoom));
-    r.erven.forEach(e => { if (e.marker) take({ kind: 'marker', e }, d(e.marker[0], e.marker[1])); });
-    if (best) return best;
-    (this._verts || []).forEach(v => take({ kind: 'vert', v }, d(v.pos[0], v.pos[1])));
-    if (best) return best;
-    for (const sg of (this._segs || [])) {
+  // everything under a point, nearest first: kiosks, erf markers and nodes (one list, so the nearest wins and a part never hides one beside or under it)
+  _moveHits(m) {
+    const r = this.result; if (!r) return { pts: [], seg: null };
+    const z = this.f / PlanEngine.view.zoom, tol = 9 * z, d = (x, y) => Math.hypot(x - m[0], y - m[1]), pts = [];
+    const add = (o, dist, pri) => { if (dist <= tol) pts.push(Object.assign(o, { d: dist, score: dist + pri * 0.3 * tol })); };
+    r.kiosks.forEach(k => add({ kind: 'kiosk', k, name: 'kiosk ' + k.id }, Math.max(0, d(k.x, k.y) - 2 * z), 0));
+    r.erven.forEach(e => { if (e.marker) add({ kind: 'marker', e, name: 'erf marker' }, d(e.marker[0], e.marker[1]), 1); });
+    (this._verts || []).forEach(v => add({ kind: 'vert', v, name: v.add ? 'added node' : 'node' }, d(v.pos[0], v.pos[1]), 2));
+    pts.sort((a, b) => a.score - b.score);
+    let seg = null;
+    if (!pts.length) for (const sg of (this._segs || [])) {
       const dx = sg.pb[0] - sg.pa[0], dy = sg.pb[1] - sg.pa[1], L2 = dx * dx + dy * dy; if (!L2) continue;
-      const t = Math.max(0, Math.min(1, ((m[0] - sg.pa[0]) * dx + (m[1] - sg.pa[1]) * dy) / L2));
-      take({ kind: 'seg', sg, at: [sg.pa[0] + t * dx, sg.pa[1] + t * dy] }, d(sg.pa[0] + t * dx, sg.pa[1] + t * dy) * 1.3);
+      const t = Math.max(0, Math.min(1, ((m[0] - sg.pa[0]) * dx + (m[1] - sg.pa[1]) * dy) / L2)), q = d(sg.pa[0] + t * dx, sg.pa[1] + t * dy) * 1.3;
+      if (q <= tol && (!seg || q < seg.d)) seg = { kind: 'seg', sg, at: [sg.pa[0] + t * dx, sg.pa[1] + t * dy], d: q };
     }
-    return best;
+    return { pts, seg };
+  },
+  // parts stacked on one another: the nearest is picked first, and clicking again at the same spot picks the next one down
+  _pickCycle(list, m, keyOf) {
+    const tol = 9 * this.f / PlanEngine.view.zoom, prev = this._pk; let i = 0;
+    if (list.length > 1 && prev && Math.hypot(prev.m[0] - m[0], prev.m[1] - m[1]) <= tol * 0.6) { const at = list.findIndex(c => keyOf(c) === prev.key); if (at >= 0) i = (at + 1) % list.length; }
+    const c = list[i]; this._pk = list.length > 1 ? { m: m.slice(), key: keyOf(c) } : null; this._picked = list.length > 1 ? c : null;
+    if (list.length > 1) { UI.toast(`${list.length} parts here: picked ${c.name || c.kind} (${i + 1} of ${list.length}). Click again for the next.`, 'info', 2200); }
+    return c;
+  },
+  _moveHit(m) {
+    const H = this._moveHits(m);
+    if (H.pts.length) return this._pickCycle(H.pts, m, c => c.kind + ':' + (c.k ? c.k.id : c.e ? c.e.id : c.v.t));
+    this._pk = null; this._picked = null; return H.seg;
   },
   moveDown(pt, ev) {
     const r = this.result, f = this.f, M = this.cfg().moves; if (!r) { UI.toast('Run the layout first.', 'info', 3000); return; }
@@ -275,6 +289,11 @@ const PlanLayoutUI = {
       ctx.setLineDash([5 * u, 3 * u]); ctx.strokeStyle = '#2563eb'; ctx.lineWidth = 2.4 * u; ctx.beginPath(); ctx.moveTo(a[0] + dd[0], a[1] + dd[1]); ctx.lineTo(b[0] + dd[0], b[1] + dd[1]); ctx.stroke(); }
     ctx.restore();
   },
+  _pickedDraw(ctx, u, W) {
+    const c = this._picked; if (!c || !this.result) return; let p = null;
+    if (c.kind === 'kiosk') p = [c.k.x, c.k.y]; else if (c.kind === 'marker') p = c.e.marker; else if (c.kind === 'vert') p = c.v.pos; else if (c.kind === 'xa') p = this._xEnds(c.c)[0]; else if (c.kind === 'xb') p = this._xEnds(c.c)[1];
+    if (!p) return; const [x, y] = W(p); ctx.save(); ctx.strokeStyle = '#f59e0b'; ctx.lineWidth = 2.6 * u; ctx.setLineDash([4 * u, 3 * u]); ctx.beginPath(); ctx.arc(x, y, 14 * u, 0, 7); ctx.stroke(); ctx.restore();
+  },
   _moveDraw(ctx, u, W) {
     const r = this.result; if (!r || this.mode !== 'move') return;
     ctx.save(); ctx.lineWidth = 1.4 * u;
@@ -335,15 +354,17 @@ const PlanLayoutUI = {
   _xNorm(c) { const p0 = PlanLayout.ptAt(c.st, c.s, 0), p1 = PlanLayout.ptAt(c.st, c.s, 1), L = Math.hypot(p1[0] - p0[0], p1[1] - p0[1]) || 1; return [(p1[0] - p0[0]) / L, (p1[1] - p0[1]) / L]; },
   _xEnds(c) { return c.ends || c.ends0; },
   _crossHit(m) {
-    const r = this.result; if (!r || !r.net) return null; const tol = 10 * this.f / PlanEngine.view.zoom; let best = null;
-    const take = (o, d) => { if (d <= tol && (!best || d < best.d)) best = Object.assign(o, { d }); };
+    const r = this.result; if (!r || !r.net) return null; const tol = 10 * this.f / PlanEngine.view.zoom, list = [];
+    const take = (o, d, pri) => { if (d <= tol) list.push(Object.assign(o, { d, score: d + pri * 0.3 * tol })); };
     for (const c of r.net.cross) {
-      const [A, B] = this._xEnds(c); if (!A) continue;
-      take({ kind: 'xa', c }, Math.hypot(A[0] - m[0], A[1] - m[1])); take({ kind: 'xb', c }, Math.hypot(B[0] - m[0], B[1] - m[1]));
+      const [A, B] = this._xEnds(c); if (!A) continue; const nm = (c.st.name || c.st.id) + ' · ' + Math.round(c.s) + ' m';
+      take({ kind: 'xa', c, name: 'start of crossing ' + nm }, Math.hypot(A[0] - m[0], A[1] - m[1]), 0); take({ kind: 'xb', c, name: 'end of crossing ' + nm }, Math.hypot(B[0] - m[0], B[1] - m[1]), 0);
       const dx = B[0] - A[0], dy = B[1] - A[1], L2 = dx * dx + dy * dy, t = L2 ? Math.max(0, Math.min(1, ((m[0] - A[0]) * dx + (m[1] - A[1]) * dy) / L2)) : 0;
-      take({ kind: 'xs', c }, Math.hypot(A[0] + t * dx - m[0], A[1] + t * dy - m[1]) * 1.4);
+      take({ kind: 'xs', c, name: 'crossing ' + nm }, Math.hypot(A[0] + t * dx - m[0], A[1] + t * dy - m[1]) * 1.4, 2);
     }
-    return best;
+    if (!list.length) { this._pk = null; this._picked = null; return null; }
+    list.sort((a, b) => a.score - b.score);
+    return this._pickCycle(list, m, c => c.kind + ':' + c.c.key);
   },
   crossDown(pt, ev) {
     const r = this.result, f = this.f, L = this.cfg(), M = L.moves; if (!r) { UI.toast('Run the layout first.', 'info', 3000); return; }
@@ -391,11 +412,13 @@ const PlanLayoutUI = {
       bar = document.createElement('div'); bar.id = 'pl-adjust-bar';
       bar.style.cssText = 'position:absolute;left:0;right:0;top:10px;display:flex;flex-direction:column;align-items:center;gap:6px;z-index:6;pointer-events:none';
       bar.addEventListener('pointerdown', e => e.stopPropagation());
-      bar.onclick = e => { const b = e.target.closest('[data-bm]'); if (!b) return; if (b.dataset.bm === 'reset') { const a = document.querySelector('#plan-props [data-act="reset"]'); if (a) a.click(); return; } this.mode = b.dataset.bm; this.markFor = null; PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true }); };
+      bar.onclick = e => { const b = e.target.closest('[data-bm]'); if (!b) return; if (b.dataset.bm === 'fold') { this._barFold = !this._barFold; try { localStorage.setItem('pp-layout-bar-fold', this._barFold ? '1' : '0'); } catch (x) { /* kept for this session */ } this._syncBar(); return; } if (b.dataset.bm === 'reset') { const a = document.querySelector('#plan-props [data-act="reset"]'); if (a) a.click(); return; } this.mode = b.dataset.bm; this.markFor = null; PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true }); };
       stage.appendChild(bar);
     }
+    if (this._barFold === undefined) { try { this._barFold = localStorage.getItem('pp-layout-bar-fold') === '1'; } catch (x) { this._barFold = false; } }
+    if (this._barFold) { bar.innerHTML = '<div style="pointer-events:auto;align-self:flex-start;margin-left:10px"><button type="button" data-bm="fold" style="min-height:32px;padding:0 12px;border:1px solid #cbd5e1;border-radius:16px;background:#fff;font:inherit;font-size:12px;font-weight:600;cursor:pointer;box-shadow:0 2px 8px rgba(15,23,42,.16)">Adjust tools ▾</button></div>'; return; }
     const n = this.edits(), btn = (v, t) => `<button type="button" data-bm="${v}" aria-pressed="${this.mode === v}" style="min-height:36px;padding:0 12px;border:0;border-radius:7px;font:inherit;font-size:13px;cursor:pointer;${this.mode === v ? 'background:#2563eb;color:#fff;font-weight:600' : 'background:transparent;color:#334155;font-weight:500'}">${t}</button>`;
-    bar.innerHTML = `<div style="pointer-events:auto;display:flex;flex-wrap:wrap;gap:2px;padding:4px;background:#fff;border:1px solid #cbd5e1;border-radius:10px;box-shadow:0 4px 14px rgba(15,23,42,.18)">${btn('front', 'Erf fronts')}${btn('marker', 'Erf markers')}${btn('trunk', 'Trunk ducts')}${btn('move', 'Move parts')}${btn('cross', 'Crossings')}<span style="width:1px;background:#cbd5e1;margin:4px 3px"></span>${btn('reset', 'Reset edits (' + n + ')')}</div>
+    bar.innerHTML = `<div style="pointer-events:auto;display:flex;flex-wrap:wrap;gap:2px;padding:4px;background:#fff;border:1px solid #cbd5e1;border-radius:10px;box-shadow:0 4px 14px rgba(15,23,42,.18)">${btn('front', 'Erf fronts')}${btn('marker', 'Erf markers')}${btn('trunk', 'Trunk ducts')}${btn('move', 'Move parts')}${btn('cross', 'Crossings')}<span style="width:1px;background:#cbd5e1;margin:4px 3px"></span>${btn('reset', 'Reset edits (' + n + ')')}${btn('fold', 'Hide ▴')}</div>
       <div style="pointer-events:none;padding:5px 12px;background:#0f172a;color:#f8fafc;border-radius:8px;font-size:12px;max-width:720px;text-align:center">${this.hint().replace(/^Auto layout · /, '').replace(/&/g, '&amp;').replace(/</g, '&lt;')}</div>`;
   },
 
@@ -1181,7 +1204,7 @@ const PlanLayoutUI = {
     n = Math.max(1, Math.min(4, n | 0)); this.step = n;
     if (n !== 1) { this.streetDrawOn(false); if (this.kerbStage) this.kerbCancel(); if (this.centreStage) this.centreCancel(); if (typeof PlanReserveUI !== 'undefined' && PlanReserveUI.stage) PlanReserveUI.cancel(); }
     if (n === 2) this.mode = 'sub'; else if (this.mode === 'sub') this.mode = 'front';
-    this.markFor = null; this.subMove = null;
+    this.markFor = null; this.subMove = null; this._pk = null; this._picked = null;
     PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true });
   },
   // the step a user most likely wants when the tool opens
@@ -1646,7 +1669,7 @@ const PlanLayoutUI = {
       for (const g of this._xsegs) { ctx.strokeStyle = col2[g.kind]; ctx.lineWidth = 1.8 * u; ctx.setLineDash([5 * u, 3 * u]); line([g.a, g.b]); }
       ctx.restore();
     }
-    this._moveDraw(ctx, u, W); this._crossDraw(ctx, u, W);
+    this._moveDraw(ctx, u, W); this._crossDraw(ctx, u, W); this._pickedDraw(ctx, u, W);
     ctx.restore();
   },
 

@@ -254,6 +254,19 @@ ok('road crossings: ends can be moved or slid, every cable at that crossing foll
   L.moves.xs[c.key].a.x = NaN; assert.strictEqual(Object.keys(U.cfg().moves.xs).length, 0, 'a bad stored value is dropped');
 });
 
+ok('stacked parts: the nearest is picked first, a click again at the same spot picks the next one down, and it wraps', async () => {
+  const { U, r, toasts, ctx } = lay(); U.admdConfirm(); U.applyMoves(r); ctx.PlanEngine.view.zoom = 20;   // a 0.45 m pick radius
+  const k = r.kiosks[0], e0 = r.erven.find(e => e.marker);
+  e0.marker = [k.x + 0.3, k.y]; U._verts.push({ t: 'zz', k: 'zz', add: null, pos: [k.x, k.y + 0.4], interior: true });
+  const m = [k.x, k.y], kinds = [];
+  for (let i = 0; i < 4; i++) kinds.push(U._moveHit(m).kind);
+  assert.deepStrictEqual(kinds, ['kiosk', 'marker', 'vert', 'kiosk'], kinds.join());
+  assert(toasts.some(t => /3 parts here/.test(t)), 'it says so');
+  const far = U._moveHit([k.x + 500, k.y + 500]); assert(!far || far.kind === 'seg', 'nothing near: no part');
+  assert.strictEqual(U._pk, null, 'the cycle resets away from the stack');
+  const lone = U._moveHit([r.kiosks[1].x, r.kiosks[1].y]); assert.strictEqual(lone.kind, 'kiosk');
+});
+
 (async () => {
   for (const [name, fn] of queue) { if (process.env.ONLY && !name.includes(process.env.ONLY)) continue; const t = Date.now(); await fn(); n++; console.log('ok', name, `(${((Date.now() - t) / 1000).toFixed(1)} s)`); }
   console.log(n + ' passed');
