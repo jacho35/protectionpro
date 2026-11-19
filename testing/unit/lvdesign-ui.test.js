@@ -187,7 +187,52 @@ ok('panel: an option that is off by default is a switch, its number shows only w
   assert(/1 setting changed since the last run/.test(draw(3)), 'one change is counted');
 });
 
+// the layout only (no Demand / Python): for the tests of what the panel does with a result
+function lay(subs = 1) {
+  const S = sandbox(), { ctx, AS } = S, U = ctx.PlanLayoutUI, PL = ctx.PlanLayout;
+  AS.planMarkup.elements = F.erven.map(e => ({ id: e.id, type: 'erf', name: e.id, x: 0, y: 0, reticId: null, props: {} }));
+  const g = { input: F, params: Object.assign({}, PL.DEFAULTS, { subs }) };
+  U._gathered = g; U.f = 1; U.result = PL.solve(g.input, g.params); U.result.trench = PL.trenches(U.result, U.cfg().trench);
+  return Object.assign(S, { U, PL, r: U.result });
+}
+
+ok('ADMD is a prerequisite: Run is held until the Demand ADMD settings are confirmed, a change in Demand un-confirms them, and a value typed in Rules counts', async () => {
+  const { ctx } = sandbox(); const Uu = ctx.PlanLayoutUI;
+  assert(!Uu.admdOk(), 'a project that never confirmed them'); assert.strictEqual(Uu.nextAction(null, [{ x: 1, y: 1 }], false, 5, 2).act, 'goto');
+  assert(/Confirm the ADMD/.test(Uu.nextAction(null, [{ x: 1, y: 1 }], false, 5, 2).label));
+  Uu.admdConfirm(); assert(Uu.admdOk()); assert.strictEqual(Uu.nextAction(null, [{ x: 1, y: 1 }], false, 5, 2).act, 'run');
+  ctx.Retic.settings.admd = (ctx.Retic.settings.admd || 4) + 1; assert(!Uu.admdOk(), 'Demand changed');
+  Uu.setAdmd('admd', '3.5'); assert(Uu.admdOk()); assert.strictEqual(ctx.Retic.settings.admd, 3.5);
+  assert(/ADMD \(load on the cables\)/.test(Uu.admdHtml()));
+});
+
+ok('moved parts: a node dragged, added or removed is applied to every line that shares it, and the lengths follow', async () => {
+  const { U, PL, r } = lay(); U.admdConfirm();
+  const f = U.f, L = U.cfg(), poly = r.net.lv.find(e => e.pts.length >= 3) || r.net.lv[0];
+  U.applyMoves(r); const n0 = U._verts.length; assert(n0 > 0, 'nodes are listed');
+  const v = U._verts.find(x => x.interior && x.k); assert(v, 'an interior node');
+  const before = JSON.stringify(r.net.lv.map(e => e.pts));
+  L.moves.verts[v.k] = { x: v.pos[0] + 3, y: v.pos[1] }; U.cfg();
+  const again = PL.solve(U._gathered.input, U._gathered.params); U.result = again; U.applyMoves(again);
+  const moved = U._polys(again).filter(pts => pts.some(q => Math.abs(q[0] - (v.pos[0] + 3)) < 1e-6 && Math.abs(q[1] - v.pos[1]) < 1e-6));
+  assert(moved.length >= 1, 'the node moved'); assert(moved.length >= 1);
+  assert(Math.abs(again.net.lvLen - again.net.lv.reduce((t, e) => t + e.len, 0)) < 1e-6, 'LV length follows');
+  // add a node on a segment, then remove it again
+  const sg = U._segs[0]; L.moves.adds.push({ id: 'n1', a: sg.a, b: sg.b, x: (sg.pa[0] + sg.pb[0]) / 2 / f, y: (sg.pa[1] + sg.pb[1]) / 2 / f + 2 / f });
+  const r3 = PL.solve(U._gathered.input, U._gathered.params); U.result = r3; U.applyMoves(r3); assert(U._verts.some(x => x.add === 'n1'), 'the added node is listed');
+  L.moves.adds = []; const r4 = PL.solve(U._gathered.input, U._gathered.params); U.result = r4; U.applyMoves(r4); assert(!U._verts.some(x => x.add));
+});
+
+ok('a kiosk moved by hand is pinned: the layout is solved again around it and the move is kept in the project', async () => {
+  const { U, PL, r } = lay(); U.admdConfirm();
+  const k = r.kiosks[0], to = PL.ptAt(k.road, Math.min(k.road.len - 1, k.s + 9), 0.002), L = U.cfg();
+  L.moves.kiosks.push({ from: { x: k.x, y: k.y }, to: { x: to[0], y: to[1] } });
+  const g = U._gathered; assert.strictEqual(L.moves.kiosks.length, 1);
+  const r2 = PL.solve(Object.assign({}, g.input, { kioskDrops: [[k.x, k.y]], kioskPins: [[to[0], to[1]]] }), g.params); assert(r2.kiosks.some(q => Math.hypot(q.x - to[0], q.y - to[1]) < 1e-6));
+  assert.strictEqual(U.edits(), 1); L.moves.kiosks[0].to.x = NaN; assert.strictEqual(U.cfg().moves.kiosks.length, 0, 'a bad stored value is dropped');
+});
+
 (async () => {
-  for (const [name, fn] of queue) { const t = Date.now(); await fn(); n++; console.log('ok', name, `(${((Date.now() - t) / 1000).toFixed(1)} s)`); }
+  for (const [name, fn] of queue) { if (process.env.ONLY && !name.includes(process.env.ONLY)) continue; const t = Date.now(); await fn(); n++; console.log('ok', name, `(${((Date.now() - t) / 1000).toFixed(1)} s)`); }
   console.log(n + ' passed');
 })().catch(e => { console.error(e); process.exit(1); });
