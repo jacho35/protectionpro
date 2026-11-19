@@ -314,7 +314,10 @@ const PlanReserveUI = {
     const list = rs.map(r => ({ rid: r.id, pts: r.points.map(p => [p.x * f, p.y * f]), w: +r.props.width || 12, carriageW: +r.props.carriageW, cwOffset: +r.props.cwOffset || 0 }));
     // kerb lines cut back to the returns; a corner of two streets (or a bend of one) also gets its outer radius
     const d = PlanReserve.kerbDrawing(list, { ret: 8, retWide: 10 }, c => { const m = rets[c.jkey]; return m && m[c.key] != null ? m[c.key] : null; });
-    const g = { f, kerbs: d.kerbs, arcs: d.arcs.map(a => a.pts) }; this._geo = { sig, g }; return g;
+    // the inner returns as geometry (metres) for Auto layout: the square kerb corner P, the arc's centre and radius and its tangent points; the
+    // rounded-off corner between the arc and P is road
+    const fills = d.arcs.filter(a => !a.outer).map(a => { const x = PlanReserve.returnArc(a.c, a.R); return { P: a.c.P.slice(), c: x.centre.slice(), R: x.R, t1: x.t1.slice(), t2: x.t2.slice() }; });
+    const g = { f, kerbs: d.kerbs, arcs: d.arcs.map(a => a.pts), rets: fills }; this._geo = { sig, g }; return g;
   },
   drawPlanStreets(ctx, zoom) {
     const g = this.planGeometry(); if (!g) return; const f = g.f;
