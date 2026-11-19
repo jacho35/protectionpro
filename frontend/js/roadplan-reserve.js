@@ -17,6 +17,7 @@
  */
 const RoadReserve = Object.assign(Object.create(PlanReserveUI), {
   on: false,
+  bendCorners: false,                                                 // no bend corners / outer radii here: the roads keep the reserve's centre line (see _kerbOpts)
   stage: null,
   opt: { layers: '', carriageW: 6, ret: 8, wmax: 40, step: 0.5, gapM: 0.6 },
   _hdrag: null,
@@ -64,13 +65,13 @@ const RoadReserve = Object.assign(Object.create(PlanReserveUI), {
     for (const c of T.T.cuts) out.push(path(c, 'fill="none" stroke="#dc2626" stroke-width="2" stroke-dasharray="6 4"'));
     for (const s of R.streets) {
       out.push(path(s.pts, 'fill="none" stroke="#f59e0b" stroke-width="3" stroke-linecap="round"'));
-      const k = PlanReserve.kerbLines(s); out.push(path(k.left, 'fill="none" stroke="#475569" stroke-width="1.2"')); out.push(path(k.right, 'fill="none" stroke="#475569" stroke-width="1.2"'));
       const m = s.pts[s.pts.length >> 1], [x, y] = S(m[0], m[1]);
       out.push(`<text x="${(x + 4).toFixed(1)}" y="${(y - 4).toFixed(1)}" font-size="11" fill="#92400e">${Math.abs(s.wMax - s.wMin) < 0.6 ? s.w.toFixed(1) : s.wMin.toFixed(1) + '–' + s.wMax.toFixed(1)} m</text>`);
     }
+    for (const k of R.kerbs || []) out.push(path(k, 'fill="none" stroke="#475569" stroke-width="1.2"'));      // kerb lines, cut back to the returns
     for (const c of R.corners) {
       const a = PlanReserve.returnArc(c, this._R(c)), [hx, hy] = S(a.mid[0], a.mid[1]), hot = T.drag && T.drag.key === c.key && T.drag.jkey === c.jkey;
-      out.push(path(a.pts, 'fill="none" stroke="#334155" stroke-width="2"'));
+      out.push(path(a.pts, 'fill="none" stroke="#334155" stroke-width="2"')); if (a.outer) out.push(path(a.outer.pts, 'fill="none" stroke="#334155" stroke-width="2"'));
       out.push(`<circle cx="${hx.toFixed(1)}" cy="${hy.toFixed(1)}" r="5" fill="${hot ? '#2563eb' : '#fff'}" stroke="#2563eb" stroke-width="1.5"/>${hot ? `<text x="${(hx + 8).toFixed(1)}" y="${(hy - 6).toFixed(1)}" font-size="11" fill="#1e3a8a">R ${a.R.toFixed(1)} m</text>` : ''}`);
     }
     for (const j of R.junctions) { const [x, y] = S(j.x, j.y); out.push(`<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3" fill="#f59e0b"/>`); }
@@ -139,7 +140,7 @@ const RoadReserve = Object.assign(Object.create(PlanReserveUI), {
   overlayReturns(S, out) {
     for (const { c } of this.returns()) {
       const a = this.arcOf(c), [hx, hy] = S(a.mid[0], a.mid[1]), hot = this._hdrag && this._hdrag.c === c;
-      out.push(`<path d="M${a.pts.map(q => S(q[0], q[1]).map(v => v.toFixed(1)).join(' ')).join('L')}" fill="none" class="rp-return" stroke="#334155" stroke-width="2"/>`);
+      for (const pts of a.outer ? [a.pts, a.outer.pts] : [a.pts]) out.push(`<path d="M${pts.map(q => S(q[0], q[1]).map(v => v.toFixed(1)).join(' ')).join('L')}" fill="none" class="rp-return" stroke="#334155" stroke-width="2"/>`);
       if (RoadPlan._tool === 'select') out.push(`<circle cx="${hx.toFixed(1)}" cy="${hy.toFixed(1)}" r="5" fill="${hot ? '#2563eb' : '#fff'}" stroke="#2563eb" stroke-width="1.5"/>${hot ? `<text x="${(hx + 8).toFixed(1)}" y="${(hy - 6).toFixed(1)}" font-size="11" fill="#1e3a8a">R ${a.R.toFixed(1)} m</text>` : ''}`);
     }
   },
