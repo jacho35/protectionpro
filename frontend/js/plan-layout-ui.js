@@ -364,12 +364,32 @@ const PlanLayoutUI = {
   },
   // one side of a crossing: the run from its nearest fixed point to its crossing end is laid again so it reaches the NEW end along its own
   // line (extended, or cut back, by the along-the-street part of the shift), then turns square into the crossing by the lateral part. No old bend is left behind.
-  _relayStretch(list, idx, step, a, fixed) {
+  _relayStretch(list, idx, step, a, fixed, st) {
     const ends = step < 0 ? idx === 0 : idx === list.length - 1;
     if (ends) { const o = list[idx]; return { from: idx, to: idx, objs: [{ pt: [o.pt[0] + a[0], o.pt[1] + a[1]], k: null, t: null }] }; }
     let f = idx + step; while (f > 0 && f < list.length - 1 && !fixed(list, f)) f += step;
     const S = []; if (step < 0) for (let k = f; k <= idx; k++) S.push(list[k]); else for (let k = f; k >= idx; k--) S.push(list[k]);          // from the fixed point towards the crossing end
-    const n = S.length, last = S[n - 1].pt, prev = S[n - 2].pt, L0 = Math.hypot(last[0] - prev[0], last[1] - prev[1]) || 1, d = [(last[0] - prev[0]) / L0, (last[1] - prev[1]) / L0];
+    // the run's direction into the crossing, read over its last 2 m (a rounded corner leaves segments a few centimetres long)
+    // (from the run itself, past the fixed point: the stretch to it can be a few centimetres)
+    const n = S.length, last = S[n - 1].pt; let pj = idx + step; while (pj + step >= 0 && pj + step < list.length && Math.hypot(last[0] - list[pj].pt[0], last[1] - list[pj].pt[1]) < 2) pj += step;
+    const prev = list[pj].pt, L0 = Math.hypot(last[0] - prev[0], last[1] - prev[1]) || 1, d = [(last[0] - prev[0]) / L0, (last[1] - prev[1]) / L0];
+    // A run that comes to the crossing along another street (a crossing in a side street's mouth: the cables run along the main road's verge and
+    // cross the side street where it meets it): moved along the crossed street, it follows that street's verge from the old crossing end, at the
+    // same distance from the street line, to the new station, then turns square into the crossing. Extending it along its own line would take it
+    // through the side street's carriageway.
+    if (st) {
+      const pr = PlanLayout.project(st, last[0], last[1]), at = PlanLayout.ptAt(st, pr.s, 0), tv = [at[2], at[3]];
+      if (Math.hypot(last[0] - prev[0], last[1] - prev[1]) < 1 || Math.abs(d[0] * tv[0] + d[1] * tv[1]) < 0.5) {      // (a run that starts at a node on the crossing has no direction of its own: it walks too)
+        const nv = [tv[1], -tv[0]], alongT = a[0] * tv[0] + a[1] * tv[1], latN = a[0] * nv[0] + a[1] * nv[1], s1 = pr.s + alongT;
+        // on the verge: the end of a crossing segment can lie inside the mouth, so the walk keeps at least the kerb + 0.4 m (on the run's side)
+        const sg = pr.side >= 0 ? 1 : -1, kerb = st.cw > 0 ? st.cw / 2 + sg * (st.co || 0) + 0.4 : 0, lat = sg * Math.max(pr.d, kerb);
+        const res = S.slice(), m = Math.max(1, Math.ceil(Math.abs(alongT) / 2.5));
+        if (Math.abs(lat - pr.side * pr.d) > 0.1) { const q = PlanLayout.ptAt(st, pr.s, lat); res.push({ pt: [q[0], q[1]], k: null, t: null }); }
+        for (let k = 1; k <= m; k++) { const q = PlanLayout.ptAt(st, pr.s + alongT * k / m, lat); res.push({ pt: [q[0], q[1]], k: null, t: null }); }
+        if (Math.abs(latN) > 0.15) { const q = PlanLayout.ptAt(st, s1, lat + latN); res.push({ pt: [q[0], q[1]], k: null, t: null }); }
+        return step < 0 ? { from: f, to: idx, objs: res } : { from: idx, to: f, objs: res.slice().reverse() };
+      }
+    }
     const along = a[0] * d[0] + a[1] * d[1], lat = [a[0] - along * d[0], a[1] - along * d[1]];
     let out = S.slice(0, n - 1);                                                        // the run before the old end
     let end = [last[0], last[1]];
@@ -413,7 +433,7 @@ const PlanLayoutUI = {
       }
       if (!X) continue;
       const plus = PlanLayout.project(X.c.st, P.pt[0], P.pt[1]).side >= 0, aP = plus ? X.a : X.b, aQ = plus ? X.b : X.a;
-      const back = this._relayStretch(list, i - 1, -1, aP, fixed), fwd = this._relayStretch(list, i, 1, aQ, fixed);
+      const back = this._relayStretch(list, i - 1, -1, aP, fixed, X.c.st), fwd = this._relayStretch(list, i, 1, aQ, fixed, X.c.st);
       const out = list.slice(0, back.from).concat(back.objs, fwd.objs, list.slice(fwd.to + 1));
       const at = back.from + back.objs.length;
       back.objs.forEach(o => done.add(o)); fwd.objs.forEach(o => done.add(o));

@@ -632,4 +632,10 @@ ok('keep-out: a carriageway ends square at the end of its street (no round cap r
   const a = { id: 'A', w: 12, cw: 9, pts: [[0, 0], [0, 50]] }, C = L.carriage([a]);
   assert(C.insideAny([0, -2], [], 0.1) === null, 'past the end'); assert(C.insideAny([0, 2], [], 0.1) === a, 'inside');
 });
+ok('LV nodes: no end of an LV run stands in a carriageway (a through street\'s junction node in a side street\'s mouth is not made)', () => {
+  for (const [cw, off] of [[6, 0], [7, 0], [7, 1.5]]) {
+    const Fc = Object.assign({}, F, { streets: F.streets.map(s => Object.assign({}, s, { cw, cwOffset: off })), subPts: [[150, 130]] }), r = L.solve(Fc, {}), C = L.carriage(r.streets);
+    for (const ed of r.net.lv) for (const q of [ed.pts[0], ed.pts[ed.pts.length - 1]]) assert(!C.insideAny(q, [], 0.1), `cw ${cw} offset ${off}: an LV run ends inside a carriageway at ${q.map(v => v.toFixed(1))}`);
+  }
+});
 console.log(n + ' passed');
