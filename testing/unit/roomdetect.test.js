@@ -228,3 +228,22 @@ ok('all-regions: neighbours whose shared side is a few mm off still all close', 
   assert(plain.length <= 3);
 });
 console.log(n + ' passed');
+
+// Per-layer detection: two layers that only close a square together must not make one boundary when each layer is used alone.
+{
+  const RD = (typeof PlanRoomDetect !== 'undefined') ? PlanRoomDetect : require('../../frontend/js/plan-roomdetect.js');
+  const data = { entities: [
+    { t: 'l', l: 'A', p: [0, 0, 10, 0] }, { t: 'l', l: 'A', p: [10, 0, 10, 10] },
+    { t: 'l', l: 'B', p: [10, 10, 0, 10] }, { t: 'l', l: 'B', p: [0, 10, 0, 0] },
+  ] };
+  const opts = { sameLayer: true, layers: 'A|B' };
+  const o = (RD._wallLayerTest ? opts : opts);
+  const desc = { layers: {} }; data.layers = [{ name: 'A' }, { name: 'B' }];
+  const merged = RD._layerTests(desc, data, { layers: 'A|B', sameLayer: false });
+  const split = RD._layerTests(desc, data, { layers: 'A|B', sameLayer: true });
+  require('assert').strictEqual(merged.length, 1); require('assert').strictEqual(split.length, 2);
+  const faces = (lt) => RD.allFromSegments(RD.segmentsFromDxf(data, lt.test, {}), { gap: 0.1 }).length;
+  require('assert').strictEqual(faces(merged[0]), 1);
+  require('assert').strictEqual(split.reduce((n, lt) => n + faces(lt), 0), 0);
+  console.log('per-layer ok');
+}
