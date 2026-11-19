@@ -47,14 +47,18 @@ const PlanLayoutUI = {
     ['Fibre', [['m', 'range', 4, 12, 1, '', 'Erven per manhole'], ['mhmerge', 'check', 'Fold a short stretch\'s manhole into its neighbour'], ['maxmh', 'range', 40, 200, 10, 'm', 'Max distance between manholes'],
       ['fibre', 'select', [['opp', 'civil side, opposite the kiosks'], ['same', 'same side as the kiosks']], 'Manholes default to the'],
       ['topo', 'select', [['ring', 'every street, closed loops'], ['spur', 'spurs with T-offs from the entry']], 'Main duct layout']]],
-    ['Crossings', [['share', 'check', 'Share road crossings between services, fibre and LV'],
+    ['Crossings', [['xrule', 'select', [['leg', 'one per junction leg, shared by every cable'], ['mid', 'mid-block first, a junction leg only where nothing else reaches'], ['class', 'one per junction leg for each cable class']], 'At a junction cables cross'],
+      ['setback', 'range', 0, 10, 0.5, 'm', 'Junction crossing past the end of the splay'], ['xroute', 'range', 0, 100, 5, 'm', 'A road crossing counts as this much cable when routing'],
+      ['share', 'check', 'Share road crossings between services, fibre and LV'],
       ['xpref', 'select', [['near', 'at the erf\'s own boundary (cable stays on the kiosk side)'], ['few', 'at as few places as possible']], 'Services cross the road'],
       ['xmode', 'select', [['bound', 'on any erf boundary'], ['kiosk', 'only at kiosk stations']], 'Crossings may be put'],
       ['junct', 'check', 'Lay ducts across every road at all junctions, even with no cables'],
       ['j110', 'range', 0, 4, 1, '', '110 mm ducts at an empty junction'], ['j160', 'range', 0, 2, 1, '', '160 mm ducts at an empty junction'],
       ['spare', 'range', 0, 3, 1, '', 'Spare 110 mm ducts per crossing']]],
     ['Bends', [['bendFi', 'range', 0, 5, 0.25, 'm', 'Fibre duct bend radius'], ['bendLv', 'range', 0, 5, 0.25, 'm', 'LV and service cable bend radius'], ['bendMv', 'range', 0, 8, 0.25, 'm', 'MV cable bend radius']]],
-    ['Corridor', [['kgeo', 'select', [['boundary', 'the erf boundary (the street line can be out)'], ['street', 'the street line (how earlier layouts were made)']], 'Kiosks and cables are placed from'],
+    ['Corridor', [['route', 'select', [['blocks', 'the erf boundaries (street lines only say where the roads and junctions are)'], ['street', 'the street lines (how earlier layouts were made)']], 'Cables are routed along'],
+      ['gapTol', 'range', 0, 40, 1, 'm', 'Erven this far apart are one block'], ['gapFace', 'range', 0, 80, 5, 'm', 'Erven facing the same street, this far apart, are one block'],
+      ['kgeo', 'select', [['boundary', 'the erf boundary (the street line can be out)'], ['street', 'the street line (how earlier layouts were made)']], 'Kiosks and cables are placed from'],
       ['kd', 'range', 0, 4, 0.05, 'm', 'Corridor distance inside the boundary'], ['cwDef', 'range', 3, 12, 0.5, 'm', 'Carriageway width of a street with none set']]],
   ],
 
@@ -86,6 +90,12 @@ const PlanLayoutUI = {
     kgeo: 'What the kiosk, cable and manhole offsets are measured from. The erf boundary follows the plots, so a street line that is a little out moves nothing. The street line is how earlier layouts were made.',
     cwDef: 'A street drawn as a centreline has no carriageway of its own: it gets this width, centred on the line, and no cable, kiosk or manhole is put in it. Streets from road reserve keep their own width.',
     kd: 'How far inside the erf boundary the cables and kiosks run. Cross-sections, when switched on, set their own offsets.',
+    route: 'How cables are laid. Along the erf boundaries: every cable runs a set distance off the erf boundary on the road side, and crosses a road only at a crossing (one per junction leg, or at an erf boundary mid-block). The street lines only tell it where the roads and junctions are, so a rough, off-centre or broken street line moves nothing. Along the street lines: the corridors are worked out from the street lines, as earlier layouts were.',
+    xrule: 'Where cables cross at a junction. One per junction leg: a single square crossing on each leg, just past the corner splay, that every cable crossing that leg shares. Mid-block first: cables cross at erf boundaries away from the junction, and use a junction leg only when nothing else is within reach. One per leg for each cable class: fibre gets its own crossing, 4 m further along the leg than the power one.',
+    setback: 'How far past the end of the corner splay (or the corner curve) of the erf boundary a junction crossing is placed, so it stays clear of the bellmouth.',
+    xroute: 'How many metres of cable one road crossing is worth when a cable is routed. Lower crosses more readily; higher walks further to a crossing that is already used. A service that would come out longer than the maximum is laid by the shortest path instead.',
+    gapTol: 'Erven closer than this, with no street line between them, are joined into one block, so the cables run along their fronts across the gap. Set it to the gap between houses in an estate where the erven do not touch.',
+    gapFace: 'Erven that face the same street line from the same side, with no junction between them, are joined into one block up to this far apart, so a street with erven spread along it still has one continuous corridor.',
     xpref: 'Where a service for an erf across the road crosses. At the erf\'s own boundary: the cable runs along the kiosk\'s side of the road and crosses at the erf boundary nearest the erf, so the far verge only carries the last stretch. Services whose nearest boundary is the same share that crossing. At as few places as possible: fewer crossings, but the cable may cross at the kiosk and run along the far verge.',
     subBal: 'When you place the mini-subs yourself each kiosk goes to the nearest one, so one transformer can carry far more than another. Set this to cap each mini-sub at that multiple of an even share of the erven (1.3 = 30 % above even); the kiosks nearest the border move to the neighbour with room. 0 = off, nearest wins.',
     xpen: 'How many metres of cable one road crossing counts for when erven are given to kiosks. Higher keeps services on their own side of the road.',
@@ -1536,7 +1546,12 @@ const PlanLayoutUI = {
       if (x.prov) { push(x.d110, 'junction'); } else { push(x.d110s, 'service'); push(x.d110f, 'fibre'); push(x.d110l, 'LV'); push(x.spare, 'spare'); }
       const sizes = uses.map(u => ['110', u]); for (let i = 0; i < x.d160; i++) sizes.push(['160', x.prov ? 'junction' : 'MV']);
       sizes.forEach(([size, use], i) => {
-        const off = (i - (sizes.length - 1) / 2) * 0.6, a = PlanLayout.ptAt(x.st, x.s + off, x.st.w / 2), b = PlanLayout.ptAt(x.st, x.s + off, -x.st.w / 2);
+        const off = (i - (sizes.length - 1) / 2) * 0.6;
+        let a, b;
+        if (x.a && x.b) {                                                             // a crossing site (routing along the erf boundaries): ring to ring, sleeves side by side
+          const [A, B] = x.ends || [x.a, x.b], L = Math.hypot(B[0] - A[0], B[1] - A[1]) || 1, n = [-(B[1] - A[1]) / L, (B[0] - A[0]) / L];
+          a = [A[0] + n[0] * off, A[1] + n[1] * off]; b = [B[0] + n[0] * off, B[1] + n[1] * off];
+        } else { a = PlanLayout.ptAt(x.st, x.s + off, x.st.w / 2); b = PlanLayout.ptAt(x.st, x.s + off, -x.st.w / 2); }
         pm.crossings.push({ id: AppState.planGenId('pmcr'), name: PlanMarkup.nextCounter('_crossing', 'RC'), size, use, trench: 'X' + (xi + 1), p1: { x: a[0] / f, y: a[1] / f }, p2: { x: b[0] / f, y: b[1] / f }, auto: 'layout' }); made.crossings++;
       });
     });

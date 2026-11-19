@@ -57,6 +57,8 @@ jobs:
         run: node testing/unit/fixes.test.js
       - name: Building auto circuits (request, preview)
         run: node testing/unit/plan-bdauto.test.js
+      - name: Auto layout routing along the erf boundaries
+        run: node testing/unit/blocks.test.js
       - name: TCC curves
         run: node frontend/tests/test_tcc_curves.mjs
       - name: Distance zone grading
