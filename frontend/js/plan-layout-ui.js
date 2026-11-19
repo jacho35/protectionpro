@@ -383,9 +383,25 @@ const PlanLayoutUI = {
         const nv = [tv[1], -tv[0]], alongT = a[0] * tv[0] + a[1] * tv[1], latN = a[0] * nv[0] + a[1] * nv[1], s1 = pr.s + alongT;
         // on the verge: the end of a crossing segment can lie inside the mouth, so the walk keeps at least the kerb + 0.4 m (on the run's side)
         const sg = pr.side >= 0 ? 1 : -1, kerb = st.cw > 0 ? st.cw / 2 + sg * (st.co || 0) + 0.4 : 0, lat = sg * Math.max(pr.d, kerb);
-        const res = S.slice(), m = Math.max(1, Math.ceil(Math.abs(alongT) / 2.5));
-        if (Math.abs(lat - pr.side * pr.d) > 0.1) { const q = PlanLayout.ptAt(st, pr.s, lat); res.push({ pt: [q[0], q[1]], k: null, t: null }); }
-        for (let k = 1; k <= m; k++) { const q = PlanLayout.ptAt(st, pr.s + alongT * k / m, lat); res.push({ pt: [q[0], q[1]], k: null, t: null }); }
+        // the run turns off its own line where that line meets the crossed street's verge line (C): the part past it (into the mouth, the old
+        // crossing end) is dropped, so no stub is left; the corner at C is rounded like the kerb return it follows (8 m return, 0.4 m further from
+        // the road), then the run walks along the verge to the new station
+        const res = S.slice(), latLast = pr.side * pr.d, rate = d[0] * nv[0] + d[1] * nv[1];
+        let C = null;
+        if (Math.abs(rate) > 0.3) {
+          const tt = (lat - latLast) / rate; C = [last[0] + d[0] * tt, last[1] + d[1] * tt];
+          while (res.length > 1) { const p = res[res.length - 1].pt; if ((p[0] - C[0]) * d[0] + (p[1] - C[1]) * d[1] > -1e-6) res.pop(); else break; }
+          res.push({ pt: C, k: null, t: null });
+        } else if (Math.abs(lat - latLast) > 0.1) { const q = PlanLayout.ptAt(st, pr.s, lat); res.push({ pt: [q[0], q[1]], k: null, t: null }); }
+        const s0 = C ? PlanLayout.project(st, C[0], C[1]).s : pr.s, run = s1 - s0, m = Math.max(1, Math.ceil(Math.abs(run) / 2.5)), walk = [];
+        for (let k = 1; k <= m; k++) { const q = PlanLayout.ptAt(st, s0 + run * k / m, lat); walk.push([q[0], q[1]]); }
+        if (C && res.length >= 2 && walk.length) {
+          // rounded between a point up to 8 m back along the run (the points in between lie on it) and the end of the walk, so the arc is not
+          // held to half of a short piece; the fixed point the stretch starts from is never dropped
+          let b = res.length - 2; while (b > 0 && Math.hypot(res[b].pt[0] - C[0], res[b].pt[1] - C[1]) < 8) b--;
+          const loc = [res[b].pt, C, walk[walk.length - 1]]; PlanLayout.fillet(loc, 7.6);
+          res.splice(b + 1); loc.slice(1).forEach(q => res.push({ pt: q, k: null, t: null }));   // the arc at C, then the end of the walk
+        } else walk.forEach(q => res.push({ pt: q, k: null, t: null }));
         if (Math.abs(latN) > 0.15) { const q = PlanLayout.ptAt(st, s1, lat + latN); res.push({ pt: [q[0], q[1]], k: null, t: null }); }
         return step < 0 ? { from: f, to: idx, objs: res } : { from: idx, to: f, objs: res.slice().reverse() };
       }
