@@ -295,6 +295,19 @@ ok('a moved crossing re-lays the runs through it: ends stay, the crossing moves 
   assert.strictEqual(U.cfg().xsq, true); U.cfg().xsq = false; assert.strictEqual(U.cfg().xsq, false); U.cfg().xsq = true;
 });
 
+ok('a moved crossing never takes the cables of a crossing a few metres along the same street', async () => {
+  const { U, PL, r } = lay(); U.admdConfirm(); U.applyMoves(r);
+  const st = r.streets[0], s0 = 60, mk = s => (off => PL.ptAt(st, s, off).slice(0, 2)), t = U._xTan({ st, s: s0 });
+  const c1 = { st, s: s0, ss: [s0], key: st.id + '|' + s0 }, c2 = { st, s: s0 + 2, ss: [s0 + 2], key: st.id + '|' + (s0 + 2) };
+  const run = s => [mk(s - 15)(6), mk(s)(6), mk(s)(-6), mk(s + 15)(-6)].map(pt => ({ pt, k: null, t: null }));
+  const fixed = U._fixedFn({ verts: {} }, new Set(), null), XS = [{ c: c1, a: [t[0] * 2, t[1] * 2], b: [t[0] * 2, t[1] * 2] }];
+  const A = run(s0), B = run(s0 + 2), outA = U._relay(A, XS, fixed, null, [c1, c2], false), outB = U._relay(B, XS, fixed, null, [c1, c2], false);
+  assert.notStrictEqual(outA, A, 'the moved crossing\'s own cable is re-laid');
+  assert.strictEqual(outB, B, 'the cable of the crossing 2 m along is left alone');
+  assert.strictEqual(B.every((o, i) => o.pt === B[i].pt), true);
+  const moved = Math.hypot(outA[2].pt[0] - A[2].pt[0], outA[2].pt[1] - A[2].pt[1]); assert(Math.abs(moved - 2) < 0.05, 'slid 2 m: ' + moved);
+});
+
 (async () => {
   for (const [name, fn] of queue) { if (process.env.ONLY && !name.includes(process.env.ONLY)) continue; const t = Date.now(); await fn(); n++; console.log('ok', name, `(${((Date.now() - t) / 1000).toFixed(1)} s)`); }
   console.log(n + ' passed');

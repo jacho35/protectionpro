@@ -1008,9 +1008,9 @@ const PlanLayout = (() => {
       for (const ev of events) {
         const last = cross[cross.length - 1];
         if (last && last.st === ev.st && ev.s - last.s0 <= 2.7) {
-          last[ev.t]++;
+          last[ev.t]++; last.ss.push(ev.s);
           if (ev.t !== 'jn') { last.n++; last.sum += ev.s; last.s = last.sum / last.n; }
-        } else cross.push({ st: ev.st, s0: ev.s, s: ev.s, sum: ev.t === 'jn' ? 0 : ev.s, n: ev.t === 'jn' ? 0 : 1, svc: 0, fib: 0, lv: 0, mv: 0, jn: 0, [ev.t]: 1 });
+        } else cross.push({ st: ev.st, s0: ev.s, s: ev.s, ss: [ev.s], sum: ev.t === 'jn' ? 0 : ev.s, n: ev.t === 'jn' ? 0 : 1, svc: 0, fib: 0, lv: 0, mv: 0, jn: 0, [ev.t]: 1 });
       }
       cross.forEach(c => {
         c.prov = c.n === 0;

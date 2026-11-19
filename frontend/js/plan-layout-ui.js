@@ -185,7 +185,7 @@ const PlanLayoutUI = {
       }
       list = list.filter((o, i) => !(o.k && !o.add && M.cuts.includes(o.k) && !keep.has(o.k) && i > 0 && i < list.length - 1));
       list.forEach(o => { if (o.add) return; const m = !keep.has(o.k) && tgt(o.k); if (m) o.pt = m; });
-      if (XS.length) list = this._relay(list, XS, this._fixedFn(M, keep, objKeys), kindOf.get(poly));
+      if (XS.length) list = this._relay(list, XS, this._fixedFn(M, keep, objKeys), kindOf.get(poly), (r.net && r.net.cross) || [], false);
       list.forEach((o, i) => {
         const interior = i > 0 && i < list.length - 1;
         const seen = o.t ? seenV.get(o.t) : null; if (seen) { seen.interior = seen.interior || interior; }
@@ -290,10 +290,10 @@ const PlanLayoutUI = {
     if (D.kind === 'xs') { a = b = [t[0] * dT, t[1] * dT]; }
     else if (L.xsq) { const e = [n[0] * dN, n[1] * dN], al = [t[0] * dT, t[1] * dT]; a = [al[0] + (D.kind === 'xa' ? e[0] : 0), al[1] + (D.kind === 'xa' ? e[1] : 0)]; b = [al[0] + (D.kind === 'xb' ? e[0] : 0), al[1] + (D.kind === 'xb' ? e[1] : 0)]; }
     else if (D.kind === 'xa') a = d; else b = d;
-    const F = this.crossFields(c), X = { c, a, b, s0: F.along }, fixed = this._fixedFn({ verts: {} }, new Set(), null);
+    const X = { c, a, b }, fixed = this._fixedFn({ verts: {} }, new Set(), null);
     ctx.save(); ctx.setLineDash([5 * u, 3 * u]); ctx.strokeStyle = '#2563eb'; ctx.lineWidth = 2.2 * u; ctx.lineJoin = 'round';
     for (const poly of this._polys(r)) {
-      const old = poly.map(q => ({ pt: q, k: null, t: null })), out = this._relay(old, [X], fixed, null); if (out === old) continue;
+      const old = poly.map(q => ({ pt: q, k: null, t: null })), out = this._relay(old, [X], fixed, null, r.net.cross, true); if (out === old) continue;
       const np = out.map(o => o.pt); let i0 = 0; while (i0 < np.length && i0 < poly.length && Math.hypot(np[i0][0] - poly[i0][0], np[i0][1] - poly[i0][1]) < 1e-6) i0++;
       let i1 = 0; while (i1 < np.length - i0 && i1 < poly.length - i0 && Math.hypot(np[np.length - 1 - i1][0] - poly[poly.length - 1 - i1][0], np[np.length - 1 - i1][1] - poly[poly.length - 1 - i1][1]) < 1e-6) i1++;
       const seg = np.slice(Math.max(0, i0 - 1), np.length - i1 + 1); if (seg.length < 2) continue;
@@ -382,20 +382,34 @@ const PlanLayoutUI = {
     const res = out.slice();
     const lastKept = res.length ? res[res.length - 1].pt : null;
     if (!lastKept || Math.hypot(end[0] - lastKept[0], end[1] - lastKept[1]) > 1e-6) res.push({ pt: end, k: null, t: null });
-    if (Math.hypot(lat[0], lat[1]) > 1e-6) res.push({ pt: [end[0] + lat[0], end[1] + lat[1]], k: null, t: null });
+    if (Math.hypot(lat[0], lat[1]) > 0.15) res.push({ pt: [end[0] + lat[0], end[1] + lat[1]], k: null, t: null });          // a real in / out shift turns square into the crossing
+    else if (res.length) res[res.length - 1].pt = [res[res.length - 1].pt[0] + lat[0], res[res.length - 1].pt[1] + lat[1]];   // the street's own curve over a few metres: no extra point
     if (!res.length) res.push({ pt: end, k: null, t: null });
     return step < 0 ? { from: f, to: idx, objs: res } : { from: idx, to: f, objs: res.slice().reverse() };
   },
   // the crossing segments of a run (those that go over a moved crossing's street near its station): both sides are re-laid, counted into the crossing
-  _relay(list, XS, fixed, kind) {
-    const done = new Set();
+  // which crossing a run's crossing segment belongs to: the one (of ALL the crossings of that street) that has a cable crossing at that very station, so a
+  // neighbouring crossing a few metres along is never taken. `shifted`: the result already carries the crossings' moves (the live preview).
+  _xOwner(ALL, st, s, shifted) {
+    let best = null, bd = Infinity;
+    for (const c of ALL) {
+      if (c.st !== st) continue; const off = shifted ? this._xOff(c) : 0;
+      for (const m of (c.ss || [c.s])) { const d = Math.abs(s - off - m); if (d < bd) { bd = d; best = c; } }
+    }
+    return bd <= 3 ? best : null;
+  },
+  _xOff(c) { return this.cfg().moves.xs[c.key] ? this.crossFields(c).along - c.s : 0; },
+  _relay(list, XS, fixed, kind, ALL, shifted) {
+    const done = new Set(), mine = new Map(XS.map(x => [x.c, x]));
     for (let i = 1; i < list.length; i++) {
       const P = list[i - 1], Q = list[i]; if (done.has(P) || done.has(Q)) continue;
       let X = null;
-      for (const x of XS) {
-        const st = x.c.st; let hit = null;
+      for (const st of new Set(ALL.map(c => c.st))) {
+        let hit = null;
         for (let j = 1; j < st.pts.length && !hit; j++) hit = this._segInter(P.pt, Q.pt, st.pts[j - 1], st.pts[j]);
-        if (hit && Math.abs(PlanLayout.project(st, hit[0], hit[1]).s - (x.s0 != null ? x.s0 : x.c.s)) <= 3) { X = x; break; }
+        if (!hit) continue;
+        const own = this._xOwner(ALL, st, PlanLayout.project(st, hit[0], hit[1]).s, shifted);
+        if (own && mine.has(own)) { X = mine.get(own); break; }
       }
       if (!X) continue;
       const plus = PlanLayout.project(X.c.st, P.pt[0], P.pt[1]).side >= 0, aP = plus ? X.a : X.b, aQ = plus ? X.b : X.a;
