@@ -63,7 +63,7 @@ const PlanKerbs = (() => {
     const out = [];
     for (let s = 0; s < P.length; s++) {
       if (used[s]) continue; used[s] = true;
-      let pts = P[s].slice();
+      let pts = P[s].slice(), bounds = [0, pts.length - 1];                                                              // vertex indices where one drawn piece ends and the next begins
       for (let side = 0; side < 2; side++) {
         for (;;) {
           const tip = side === 0 ? pts[pts.length - 1] : pts[0], dout = endDir(pts, side === 0);
@@ -72,11 +72,14 @@ const PlanKerbs = (() => {
           if (!best) break;
           used[best[0]] = true;
           const seg = P[best[0]].slice(); if (best[1] === 1) seg.reverse();                                                   // starts at the joined end
-          if (side === 0) pts = pts.concat(seg.slice(1)); else pts = seg.reverse().slice(0, -1).concat(pts);
+          if (side === 0) { pts = pts.concat(seg.slice(1)); bounds.push(pts.length - 1); }
+          else { const add = seg.length - 1; pts = seg.reverse().slice(0, -1).concat(pts); bounds = [0].concat(bounds.map(b => b + add)); }
         }
       }
-      const f = pts[0], l = pts[pts.length - 1];
-      out.push({ pts, closed: pts.length > 3 && hyp(f[0] - l[0], f[1] - l[1]) <= tol * 2 });
+      const f = pts[0], l = pts[pts.length - 1], cum = [0];
+      for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + hyp(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
+      const parts = []; for (let b = 0; b + 1 < bounds.length; b++) parts.push({ s0: cum[bounds[b]], s1: cum[bounds[b + 1]] });
+      out.push({ pts, closed: pts.length > 3 && hyp(f[0] - l[0], f[1] - l[1]) <= tol * 2, parts });
     }
     return out;
   }
@@ -122,7 +125,14 @@ const PlanKerbs = (() => {
   // For every sample of every chain: the nearest point on another chain (or its own other arm) that is a road-width
   // away, parallel and straight across.
   function assign(R, C, o) {
-    const out = R.map(() => []);
+    const out = R.map(() => []), cell = Math.max(o.wmax, 1), grid = R.map(rj => {
+      const m = new Map(); rj.S.forEach((Q, q) => { const k = Math.floor(Q.x / cell) + ',' + Math.floor(Q.y / cell); let l = m.get(k); if (!l) m.set(k, l = []); l.push(q); }); return m;
+    });
+    const near = (j, x, y) => {
+      const cx = Math.floor(x / cell), cy = Math.floor(y / cell), out2 = [];
+      for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) { const l = grid[j].get((cx + dx) + ',' + (cy + dy)); if (l) for (const q of l) out2.push(q); }
+      return out2.sort((a, b) => a - b);
+    };
     R.forEach((ri, i) => {
       const ci = C[i], ring = !!ci.closed;
       ri.S.forEach((p, k) => {
@@ -133,9 +143,11 @@ const PlanKerbs = (() => {
           // the nearest sample of this chain that is a road-width away, parallel and straight across (not just the nearest
           // sample: near the end of a road that is the end cap, closer than any road is wide)
           let m = -1, md = Infinity;
-          for (let q = 0; q < rj.S.length; q++) {
-            const Q = rj.S[q], d = hyp(Q.x - p.x, Q.y - p.y);
+          const cand = near(j, p.x, p.y);                                                       // only the samples within a road width (grid cells), in chain order
+          for (let qi = 0; qi < cand.length; qi++) {
+            const q = cand[qi], Q = rj.S[q], d = hyp(Q.x - p.x, Q.y - p.y);
             if (d >= md || d < o.wmin || d > o.wmax || (best && d >= best.d)) continue;
+            if (o.inside && !o.inside((p.x + Q.x) / 2, (p.y + Q.y) / 2)) continue;                // a road reserve: the midline must lie in the road space, not through a block
             if (j === i) { let ds = Math.abs(Q.s - p.s); if (ring) ds = Math.min(ds, ri.len - ds); if (ds <= 1.3 * d) continue; if (!(Q.s > p.s)) continue; }   // a chain with itself: the first arm only
             const u = [(Q.x - p.x) / d, (Q.y - p.y) / d];
             if (Math.abs(p.tx * Q.ty - p.ty * Q.tx) > o.par || Math.abs(u[0] * p.tx + u[1] * p.ty) > o.par) continue;
@@ -172,7 +184,8 @@ const PlanKerbs = (() => {
       const len = S[r.k1].s - S[r.k0].s; if (len < o.minRun) continue;
       const mids = [], ws = [];
       for (const k of r.ks) { const p = S[k], a = A[i][k]; mids.push([(p.x + a.qx) / 2, (p.y + a.qy) / 2]); ws.push(a.d); }
-      res.push({ i, j, k0: r.k0, k1: r.k1, len, mids, ws, last: A[i][r.k1] });
+      const qss = r.ks.map(k => A[i][k].qs);
+      res.push({ i, j, k0: r.k0, k1: r.k1, len, mids, ws, last: A[i][r.k1], s0: S[r.k0].s, s1: S[r.k1].s, q0: Math.min(...qss), q1: Math.max(...qss) });
     }
     return res;
   }
@@ -187,7 +200,8 @@ const PlanKerbs = (() => {
     const dx = b[0] - a[0], dy = b[1] - a[1], L2 = dx * dx + dy * dy, t = L2 ? Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / L2)) : 0;
     return hyp(p[0] - a[0] - dx * t, p[1] - a[1] - dy * t);
   }
-  const wOf = P => P.w || median(P.ws) || 12;
+  const wOf = P => P._w || (P._w = P.w || median(P.ws) || 12);
+  function mergeSpans(a, b) { const m = {}; for (const x of [a, b]) for (const k in x || {}) m[k] = (m[k] || []).concat(x[k]); return m; }
 
   // pieces that run on from each other across a junction mouth become one street
   function bridge(pieces, o) {
@@ -206,7 +220,7 @@ const PlanKerbs = (() => {
       if (!best) return;
       const A = pieces[best.a], B = pieces[best.b];
       const pa = best.ea ? A.pts : A.pts.slice().reverse(), pb = best.eb ? B.pts.slice().reverse() : B.pts;
-      const m = { pts: pa.concat(pb), ws: A.ws.concat(B.ws), chains: [...new Set(A.chains.concat(B.chains))], bulbs: (A.bulbs || []).concat(B.bulbs || []) };
+      const m = { pts: pa.concat(pb), ws: A.ws.concat(B.ws), chains: [...new Set(A.chains.concat(B.chains))], bulbs: (A.bulbs || []).concat(B.bulbs || []), spans: mergeSpans(A.spans, B.spans) };
       pieces.splice(best.b, 1); pieces[best.a] = m;
     }
   }
@@ -252,14 +266,16 @@ const PlanKerbs = (() => {
     }
   }
 
-  // ───────── solve ─────────
-  function solve(chains, o) {
+  // ───────── solve = candidates + assemble ─────────
+  // candidates: every street the chains can make, before any junction work (the part a click choice does not change).
+  // Each piece carries `spans` = {chain: [[s0, s1], ...]}, the stretches of each kerb chain it was made from.
+  function candidates(chains, o) {
     o = opt(o);
     const C = chains.map(c => ({ pts: c.pts, closed: !!c.closed }));
     const R = C.map(c => resample(c.pts, o.step));
     const bulbRings = [];
     C.forEach((c, i) => {                                                  // a lone round kerb (cul-de-sac bulb, island) is not a road side
-      if (!c.closed) return; const f = fitCircle(R[i].S.map(s => [s.x, s.y]));
+      if (!c.closed || o.noRings) return; const f = fitCircle(R[i].S.map(s => [s.x, s.y]));
       if (f && f.r >= 3 && f.r <= 25 && f.rmse <= 0.08 * f.r && Math.abs(R[i].len - 2 * Math.PI * f.r) <= 0.15 * R[i].len) { c.skip = true; bulbRings.push({ i, c: [f.cx, f.cy], r: f.r }); }
     });
     const A = assign(R, C, o), paired = new Set(), pieces = [];
@@ -272,7 +288,7 @@ const PlanKerbs = (() => {
           if (!rs.length || !(cov >= o.cover * arm || Math.max(...rs.map(r => r.len)) >= o.minStreet)) continue;
           paired.add(i);
           for (const r of rs) {
-            const piece = { pts: simplify(r.mids, 0.15), ws: r.ws, chains: [i], bulbs: [] };
+            const piece = { pts: simplify(r.mids, 0.15), ws: r.ws, chains: [i], bulbs: [], spans: { [i]: [[r.s0, r.s1], [r.q0, r.q1]] } };
             // the end near the bulb: fit the kerb arc between the last pair
             const a = r.last, S = R[i].S, arc = []; for (let k = 0; k < S.length; k++) if (S[k].s >= S[r.k1].s && S[k].s <= a.qs) arc.push([S[k].x, S[k].y]);
             const f = fitCircle(arc);
@@ -285,29 +301,52 @@ const PlanKerbs = (() => {
         const rs = runs(R, A, i, j, o), cov = rs.reduce((t, r) => t + r.len, 0), L = Math.min(R[i].len, R[j].len);
         if (!rs.length || !(cov >= o.cover * L || Math.max(...rs.map(r => r.len)) >= o.minStreet)) continue;
         paired.add(i); paired.add(j);
-        for (const r of rs) pieces.push({ pts: simplify(r.mids, 0.15), ws: r.ws, chains: [i, j], bulbs: [] });
+        for (const r of rs) pieces.push({ pts: simplify(r.mids, 0.15), ws: r.ws, chains: [i, j], bulbs: [], spans: { [i]: [[r.s0, r.s1]], [j]: [[r.q0, r.q1]] } });
       }
     }
     bridge(pieces, o);
+    const unpaired = []; C.forEach((c, i) => { if (!paired.has(i) && R[i].len >= 3) unpaired.push(i); });
+    return { pieces, rings: bulbRings, paired, unpaired, chains: C };
+  }
+
+  // assemble: the streets for the chosen pieces (`ids` = 'all' or a set of piece indices) plus hand-made ones (`extras`):
+  // ends run on to the chosen streets only, round kerbs (`rings` = 'all' or a set of chain indices) are joined to the nearest one.
+  function assemble(cands, ids, extras, o, rings, noConnect) {
+    o = opt(o);
+    const sel = ids === 'all' ? cands.pieces.map((_, k) => k) : [...ids].sort((a, b) => a - b);
+    const pieces = sel.map(k => { const P = cands.pieces[k]; return { pts: P.pts.map(p => p.slice()), ws: P.ws, w: P.w, _w: P._w, chains: P.chains, bulbs: P.bulbs || [], spans: P.spans }; });
+    const n = pieces.length;
     extend(pieces, pieces.map((_, k) => k), o);
+    const ex = (extras || []).map(x => ({ pts: x.pts.map(p => p.slice()), ws: [x.w], w: x.w, chains: x.chains || [], bulbs: [], extra: x }));
+    ex.forEach(e => pieces.push(e));
+    if (ex.length) extend(pieces, ex.map((_, k) => n + k), o);
     const streets = [];
-    for (const P of pieces) if (plen(P.pts) >= 5 || (P.bulbs && P.bulbs.length)) streets.push({ pts: P.pts.map(p => [+p[0].toFixed(3), +p[1].toFixed(3)]), w: +wOf(P).toFixed(1), chains: P.chains });
+    for (const P of pieces) if (P.extra || plen(P.pts) >= 5 || (P.bulbs && P.bulbs.length)) {
+      const st = { pts: P.pts.map(p => [+p[0].toFixed(3), +p[1].toFixed(3)]), w: +wOf(P).toFixed(1), chains: P.chains, spans: P.spans || {} };
+      if (P.extra) { st.src = 'extra'; if (P.extra.one) st.one = true; }
+      streets.push(st);
+    }
     // round kerbs: centre joined to the nearest street
     const live = streets.map(s => ({ pts: s.pts, w: s.w, ws: [s.w], chains: s.chains, bulbs: [] }));
-    for (const b of bulbRings) {
+    for (const b of cands.rings) {
+      if (rings !== 'all' && !(rings && rings.has(b.i))) continue;
       let bd = b.r + o.gap + 5, hit = null;
       live.forEach((B, k) => { for (let i = 0; i + 1 < B.pts.length; i++) { const d = segDist(b.c, B.pts[i], B.pts[i + 1]); if (d < bd) { bd = d; hit = { k, i }; } } });
       if (!hit) continue;
       const B = live[hit.k], q0 = B.pts[hit.i], q1 = B.pts[hit.i + 1], dx = q1[0] - q0[0], dy = q1[1] - q0[1], L2 = dx * dx + dy * dy, t = L2 ? Math.max(0, Math.min(1, ((b.c[0] - q0[0]) * dx + (b.c[1] - q0[1]) * dy) / L2)) : 0;
       let pt = [q0[0] + dx * t, q0[1] + dy * t];
       if (hyp(pt[0] - q0[0], pt[1] - q0[1]) < 0.3) pt = q0.slice(); else if (hyp(pt[0] - q1[0], pt[1] - q1[1]) < 0.3) pt = q1.slice(); else B.pts.splice(hit.i + 1, 0, pt);
-      streets.push({ pts: [pt.map(v => +v.toFixed(3)), b.c.map(v => +v.toFixed(3))], w: B.w, chains: [b.i], bulb: true }); paired.add(b.i);
+      streets.push({ pts: [pt.map(v => +v.toFixed(3)), b.c.map(v => +v.toFixed(3))], w: B.w, chains: [b.i], spans: { [b.i]: [[0, Infinity]] }, bulb: true });
     }
     // re-read the vertex inserted into a street by a later snap
     streets.forEach((s, k) => { if (live[k]) s.pts = live[k].pts.map(p => [+p[0].toFixed(3), +p[1].toFixed(3)]); });
-    connect(streets, o.gap);                                              // separate networks within the bridge gap become one
-    const unpaired = []; C.forEach((c, i) => { if (!paired.has(i) && R[i].len >= 3) unpaired.push(i); });
-    return { streets, unpaired, chains: C };
+    if (!noConnect) connect(streets, o.gap);                              // separate networks within the bridge gap become one
+    return { streets };
+  }
+
+  function solve(chains, o) {
+    const c = candidates(chains, o), r = assemble(c, 'all', [], o, 'all');
+    return { streets: r.streets, unpaired: c.unpaired, chains: c.chains };
   }
   const shorter = (R, i, j) => R[i].len < R[j].len || (R[i].len === R[j].len && i < j);
 
@@ -435,42 +474,154 @@ const PlanKerbs = (() => {
     return { a: fix(A), b: fix(B) };
   }
 
-  // ───────── the review step, without a screen ─────────
-  // The state both review UIs (Auto layout, Road plan) drive: the streets found, what is left over, and the edits:
-  // remove a street, add one from two kerbs, a road beside a lone kerb, join separate networks.
-  function stage(chains, o) {
+  // ───────── the review step, without a screen: streets chosen by clicking kerb lines ─────────
+  // The state both review UIs (Auto layout, Road plan) drive. `layers` = { key: chains } (chains from joinPieces, with `parts`).
+  // The streets are a fold over a list of picks, so Backspace is `undo()` and a changed option replays the same picks:
+  //   { op: 'add' | 'sub', items: [{ layer, chain, span: [s0, s1] | null }], onlyExtras? }   a kerb line (or one drawn piece of it)
+  //   { op: 'all', layer }                          every street of a layer (Pair all)
+  //   { op: 'pair', layer, a, b }                   two kerbs by hand
+  //   { op: 'one', layer, chain, side: [x, y] }     a street beside a lone kerb
+  // A kerb clicked that no street can be made from is `lonely` (no partner).
+  const overlapOK = (ivs, span) => {
+    if (!span) return true;
+    let ov = 0; for (const [a, b] of ivs || []) ov += Math.max(0, Math.min(b, span[1]) - Math.max(a, span[0]));
+    return ov >= Math.min(5, 0.5 * (span[1] - span[0])) - 1e-9;
+  };
+  function stage(layers, o) {
     const T = {
-      o: opt(o), chains, streets: [], unpaired: [], pickA: null, one: null,
-      solve() { const r = solve(chains, T.o); T.streets = r.streets.map(x => ({ ...x })); T.unpaired = r.unpaired; T.pickA = null; T.one = null; return T; },
-      _near(pts, pt) { let b = Infinity; for (let i = 0; i + 1 < pts.length; i++) b = Math.min(b, segDist(pt, pts[i], pts[i + 1])); return b; },
-      _pick(list, pt, tol) { let bi = -1, bd = tol; list.forEach((x, i) => { const d = T._near(x.pts, pt); if (d < bd) { bd = d; bi = i; } }); return bi; },
-      streetAt(pt, tol) { return T._pick(T.streets, pt, tol); },
-      chainAt(pt, tol) { return T._pick(chains, pt, tol); },
-      remove(pt, tol) { const i = T.streetAt(pt, tol); if (i < 0) return false; T.streets.splice(i, 1); T.pickA = null; return true; },
-      // Shift-click: the first kerb, then the one across the road. Returns what happened.
-      pair(pt, tol) {
-        const i = T.chainAt(pt, tol); if (i < 0) return 'nokerb';
-        if (T.pickA == null) { T.pickA = i; return 'first'; }
-        if (T.pickA === i) { T.pickA = null; return 'cancel'; }
-        const st = pairManual(chains, T.pickA, i, T.o); T.pickA = null;
-        if (!st) return 'noroad';
-        T.streets.push(st); attach(T.streets, T.streets.length - 1, T.o); return 'added';
+      o: opt(o), layers, mode: 'add', picks: [], streets: [], lonely: [], one: null, pairFrom: null, anyLayer: false, sig: '',
+      _cache: new Map(), _join: 0, _pools: new Map(), _bb: new Map(),
+      keys() { return Object.keys(T.layers); },
+      _pool(layer) {                                                        // the chains a click looks for partners in: its own layer, or all
+        if (!T.anyLayer) return { key: layer, chains: T.layers[layer] || [], off: 0, layers: [layer] };
+        const off = {}, chains = []; let n = 0;
+        for (const k of T.keys()) { off[k] = n; n += T.layers[k].length; chains.push(...T.layers[k]); }
+        return { key: '*', chains, off: 0, offs: off, layers: T.keys() };
       },
-      arm(i) { T.one = i; T.pickA = null; },
-      // the click after arm(): its side of the lone kerb is where the road goes
-      place(pt) {
-        if (T.one == null) return false;
-        const st = offsetOne(chains[T.one], pt, T.o.oneW); st.chains = [T.one]; T.one = null;
-        T.streets.push(st); attach(T.streets, T.streets.length - 1, T.o); return true;
+      _g(P, layer, chain) { return P.offs ? P.offs[layer] + chain : chain; },
+      _back(P, g) { if (!P.offs) return { layer: P.key, chain: g }; let best = null; for (const k of P.layers) if (P.offs[k] <= g && (!best || P.offs[k] >= P.offs[best])) best = k; return { layer: best, chain: g - P.offs[best] }; },
+      _cand(P) {
+        const key = P.key + '|' + P.chains.length;
+        if (!T._cache.has(key)) T._cache.set(key, candidates(P.chains, T.o));
+        return T._cache.get(key);
       },
-      join(maxGap) { return connect(T.streets, maxGap == null ? T.o.join : maxGap); },
+      fold() {
+        const per = new Map(), lonely = new Map(), S = k => { if (!per.has(k)) per.set(k, { chosen: new Set(), extras: [], rings: new Set() }); return per.get(k); };
+        const pools = new Map(), lk = (l, c) => l + '\u0000' + c;
+        for (const p of T.picks) {
+          if (p.op === 'all') {
+            const P = T._pool(p.layer); pools.set(P.key, P); const c = T._cand(P), st = S(P.key), lo = P.offs ? P.offs[p.layer] : 0, hi = lo + T.layers[p.layer].length;
+            c.pieces.forEach((pc, k) => { if (pc.chains.every(g => g >= lo && g < hi)) st.chosen.add(k); });
+            c.rings.forEach(r => { if (r.i >= lo && r.i < hi) st.rings.add(r.i); });
+            for (const g of c.unpaired) if (g >= lo && g < hi) lonely.set(lk(p.layer, g - lo), { layer: p.layer, chain: g - lo });
+          } else if (p.op === 'add' || p.op === 'sub') {
+            for (const it of p.items) {
+              const P = T._pool(it.layer); if (!T.layers[it.layer] || !T.layers[it.layer][it.chain]) continue;
+              pools.set(P.key, P); const c = T._cand(P), st = S(P.key), g = T._g(P, it.layer, it.chain), key = lk(it.layer, it.chain);
+              const m = p.onlyExtras ? [] : c.pieces.map((pc, k) => (pc.chains.includes(g) && overlapOK(pc.spans[g], it.span)) ? k : -1).filter(k => k >= 0);
+              const ring = c.rings.some(r => r.i === g);
+              if (p.op === 'add') {
+                if (ring) st.rings.add(g);
+                if (m.length) { m.forEach(k => st.chosen.add(k)); lonely.delete(key); }
+                else if (!ring && !st.extras.some(e => e.chains.includes(g))) lonely.set(key, { layer: it.layer, chain: it.chain });
+              } else {
+                m.forEach(k => st.chosen.delete(k)); if (!it.span || p.onlyExtras) { st.rings.delete(g); st.extras = st.extras.filter(e => !e.chains.includes(g)); }
+                if (!it.span) lonely.delete(key);
+              }
+            }
+          } else if (p.op === 'pair') {
+            const P = T._pool(p.layer), g1 = T._g(P, p.layer, p.a), g2 = T._g(P, p.layer2 || p.layer, p.b), st = pairManual(P.chains, g1, g2, T.o);
+            if (!st) continue; pools.set(P.key, P); S(P.key).extras.push(st); lonely.delete(lk(p.layer, p.a)); lonely.delete(lk(p.layer2 || p.layer, p.b));
+          } else if (p.op === 'one') {
+            const P = T._pool(p.layer), g = T._g(P, p.layer, p.chain); pools.set(P.key, P);
+            const st = offsetOne(P.chains[g], p.side, T.o.oneW); st.chains = [g]; S(P.key).extras.push(st); lonely.delete(lk(p.layer, p.chain));
+          }
+        }
+        const streets = [], sig = [];
+        for (const [key, st] of per) {
+          const P = pools.get(key), c = T._cand(P), r = assemble(c, st.chosen, st.extras, T.o, st.rings, true);
+          r.streets.forEach(x => { x.layer = key; streets.push(x); });
+          sig.push(key, [...st.chosen].sort((a, b) => a - b).join(','), [...st.rings].sort().join(','), st.extras.length);
+        }
+        connect(streets, T.o.gap); if (T._join) T._join_made = connect(streets, T._join);
+        T.used = new Set(); for (const x of streets) { const P = pools.get(x.layer); for (const g of x.chains || []) { const b = T._back(P, g); T.used.add(b.layer + '\u0000' + b.chain); } }
+        T.streets = streets; T.lonely = [...lonely.values()]; T.sig = sig.join('|') + '#' + [...lonely.keys()].sort().join(',');
+        T._pools = pools; return T;
+      },
+      _push(pick) {
+        const sig0 = T.sig, n0 = T.streets.length, l0 = T.lonely.length;
+        T.picks.push(pick); T.fold();
+        if (T.sig === sig0) { T.picks.pop(); return { noop: true, added: 0, removed: 0, lonely: 0 }; }
+        return { noop: false, added: Math.max(0, T.streets.length - n0), removed: Math.max(0, n0 - T.streets.length), lonely: T.lonely.length - l0 };
+      },
+      // a click on a kerb line (span null = the whole joined line, [s0, s1] = one drawn piece); op defaults to the mode
+      addChain(layer, chain, span, op) { T.one = null; T.pairFrom = null; return T._push({ op: op || T.mode, items: [{ layer, chain, span: span || null }] }); },
+      pairAll(layer) { T.one = null; T.pairFrom = null; return T._push({ op: 'all', layer }); },
+      // subtract by clicking a street rather than a kerb: take out every stretch of kerb it was made from
+      subStreet(i) {
+        const st = T.streets[i]; if (!st) return null; const P = T._pools.get(st.layer); if (!P) return null;
+        if (st.src === 'extra') return T._push({ op: 'sub', onlyExtras: true, items: st.chains.map(g => Object.assign(T._back(P, g), { span: null })) });
+        const items = []; for (const g of st.chains) { const b = T._back(P, g), iv = (st.spans || {})[g] || []; if (iv.some(x => x[1] === Infinity)) items.push({ ...b, span: null }); else for (const x of iv) items.push({ ...b, span: x }); }
+        return T._push({ op: 'sub', items });
+      },
+      // two kerbs by hand: armPair(layer, chain) then pairWith(layer, chain) ('added' | 'noroad' | 'cancel' | 'layer')
+      armPair(layer, chain) { T.pairFrom = { layer, chain }; T.one = null; },
+      pairWith(layer, chain) {
+        const f = T.pairFrom; T.pairFrom = null; if (!f) return 'cancel';
+        if (f.layer === layer && f.chain === chain) return 'cancel';
+        if (f.layer !== layer && !T.anyLayer) return 'layer';
+        const P = T._pool(f.layer); if (!pairManual(P.chains, T._g(P, f.layer, f.chain), T._g(P, layer, chain), T.o)) return 'noroad';
+        T.picks.push({ op: 'pair', layer: f.layer, a: f.chain, b: chain, layer2: layer }); T.fold(); return 'added';
+      },
+      arm(layer, chain) { T.one = { layer, chain }; T.pairFrom = null; },
+      place(pt) {                                                           // the click after arm(): its side of the lone kerb is where the road goes
+        if (!T.one) return false; const f = T.one; T.one = null;
+        T.picks.push({ op: 'one', layer: f.layer, chain: f.chain, side: pt }); T.fold(); return true;
+      },
+      undo() { if (!T.picks.length) return false; T.picks.pop(); T.one = null; T.pairFrom = null; T.fold(); return true; },
+      removePick(i) { if (i < 0 || i >= T.picks.length) return false; T.picks.splice(i, 1); T.fold(); return true; },
+      setOpt(o2) { T.o = Object.assign({}, T.o, o2 || {}); T._cache.clear(); return T.fold(); },
+      setAnyLayer(v) { T.anyLayer = !!v; T._cache.clear(); return T.fold(); },
+      // the layers changed (hidden, working area, scale): replace them and keep the picks whose chain still exists; returns how many were dropped
+      setLayers(layers2) {
+        T.layers = layers2; T._cache.clear(); T._bb.clear();
+        const has = (l, c) => !!(T.layers[l] && T.layers[l][c]), n0 = T.picks.length;
+        T.picks = T.picks.filter(p => {
+          if (p.op === 'all') return !!T.layers[p.layer];
+          if (p.items) { p.items = p.items.filter(it => has(it.layer, it.chain)); return p.items.length > 0; }
+          if (p.op === 'pair') return has(p.layer, p.a) && has(p.layer2 || p.layer, p.b);
+          return has(p.layer, p.chain);
+        });
+        T.dropped = n0 - T.picks.length; T.one = T.pairFrom = null; return T.fold();
+      },
+      join(maxGap) { T._join = maxGap == null ? T.o.join : maxGap; T._join_made = 0; T.fold(); return T._join_made; },
       networks() { return components(T.streets); },
-      info(i) { const c = chains[i], mid = c.pts[Math.floor(c.pts.length / 2)]; return { i, len: plen(c.pts), at: [mid[0], mid[1]] }; },
+      _near(pts, pt) { let b = Infinity; for (let i = 0; i + 1 < pts.length; i++) b = Math.min(b, segDist(pt, pts[i], pts[i + 1])); return b; },
+      streetAt(pt, tol) { let bi = -1, bd = tol; T.streets.forEach((x, i) => { const d = T._near(x.pts, pt); if (d < bd) { bd = d; bi = i; } }); return bi; },
+      // the kerb line under a point, over every layer: { layer, chain, s (arc length at the point), part: [s0, s1] of the drawn piece | null, d }
+      hitAt(pt, tol) {
+        let best = null;
+        for (const layer of T.keys()) T.layers[layer].forEach((c, i) => {
+          const id = layer + '\u0000' + i; let bb = T._bb.get(id); if (!bb) { bb = bbox(c.pts); T._bb.set(id, bb); }
+          if (pt[0] < bb[0] - tol || pt[0] > bb[2] + tol || pt[1] < bb[1] - tol || pt[1] > bb[3] + tol) return;
+          let acc = 0;
+          for (let k = 0; k + 1 < c.pts.length; k++) {
+            const a = c.pts[k], b = c.pts[k + 1], dx = b[0] - a[0], dy = b[1] - a[1], L2 = dx * dx + dy * dy, t = L2 ? Math.max(0, Math.min(1, ((pt[0] - a[0]) * dx + (pt[1] - a[1]) * dy) / L2)) : 0;
+            const d = hyp(pt[0] - a[0] - dx * t, pt[1] - a[1] - dy * t), len = Math.sqrt(L2);
+            if (d < tol && (!best || d < best.d)) best = { layer, chain: i, d, s: acc + len * t };
+            acc += len;
+          }
+        });
+        if (best) { const c = T.layers[best.layer][best.chain]; best.part = null; for (const p of c.parts || []) if (best.s >= p.s0 - 1e-6 && best.s <= p.s1 + 1e-6) { best.part = [p.s0, p.s1]; break; } }
+        return best;
+      },
+      chainsOf(street) { const P = T._pools.get(street.layer); return P ? P.chains : []; },
+      info(layer, i) { const c = T.layers[layer][i], mid = c.pts[Math.floor(c.pts.length / 2)]; return { layer, i, len: plen(c.pts), at: [mid[0], mid[1]] }; },
     };
-    return T;
+    return T.fold();
   }
 
-  return { D, sides, stage, joinPieces, solve, pairedShare, pairManual, attach, fitCircle, resample, components, connect, offsetOne };
+  return { D, sides, stage, joinPieces, solve, candidates, assemble, pairedShare, pairManual, attach, fitCircle, resample, components, connect, offsetOne };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = PlanKerbs;

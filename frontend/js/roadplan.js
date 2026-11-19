@@ -145,7 +145,7 @@ const RoadPlan = {
   _design(road) { return road && typeof RoadLight !== 'undefined' ? RoadLight.design(road.designId) : null; },
 
   // ─── Undo (road data only; the background is not snapshotted) ────────
-  _snapshot() { return JSON.stringify({ roads: this.roads, junctionCls: this.rp.junctionCls, settings: this.rp.settings, scene: this.rp.scene || null }); },
+  _snapshot() { return JSON.stringify({ roads: this.roads, junctionCls: this.rp.junctionCls, settings: this.rp.settings, scene: this.rp.scene || null, junctionReturns: this.rp.junctionReturns || null }); },
   _commit() {
     const before = this._last || this._snapshot();
     this._undo.push(before);
@@ -164,6 +164,7 @@ const RoadPlan = {
     const o = JSON.parse(snap);
     this.rp.roads = o.roads; this.rp.junctionCls = o.junctionCls || {}; this.rp.settings = o.settings || {};
     if (o.scene) this.rp.scene = o.scene; else delete this.rp.scene;
+    if (o.junctionReturns) this.rp.junctionReturns = o.junctionReturns; else delete this.rp.junctionReturns;
     this._last = snap; this._geo.clear(); this._resStale = true; AppState.dirty = true;
     if (!this.selRoad) this._selRoad = this.roads.length ? this.roads[0].id : null;
     this._selPole = null;
@@ -490,6 +491,8 @@ const RoadPlan = {
     if (!cw) return this._standard() === 'SANS' ? 'RC4' : 'C3';
     return (this._standard() === 'SANS' ? RP_SANS_RC : RP_COMPARABLE_C)[cw.cls] || (this._standard() === 'SANS' ? 'RC4' : 'C3');
   },
+  // the kerb returns of a junction made from a road reserve: the fillet between the two kerb lines and the arc, for the conflict area
+  _returnPolys(j) { const l = (this.rp.junctionReturns || {})[j.key]; return l && typeof RoadReserve !== 'undefined' ? l.map(c => RoadReserve.fillet(c)) : []; },
   _kerbPolygon(road, s0, s1) {
     const g = this.geom(road);
     const n = Math.max(2, Math.ceil((s1 - s0) / 1));
@@ -695,7 +698,7 @@ const RoadPlan = {
     }
     const conflictAreas = juncs.map(j => ({
       id: j.key, name: j.name, cls: this._junctionCls(j),
-      polygons: this._junctionRanges(j).map(r => this._kerbPolygon(this.road(r.road), r.s0, r.s1)),
+      polygons: this._junctionRanges(j).map(r => this._kerbPolygon(this.road(r.road), r.s0, r.s1)).concat(this._returnPolys(j)),
     }));
     const scene = typeof Road3D !== 'undefined' ? Road3D.requestParts() : {};
     return { standard: this._standard(), mf: this._mf(), photometry, roads, luminaires, conflictAreas, hoursPerYear: 4100, ...scene };
@@ -1027,10 +1030,12 @@ const RoadPlan = {
       this.renderScreen(); return;
     }
     if (this._tool === 'kerbauto') { RoadKerbs.down(wx, wy, e); return; }
+    if (this._tool === 'reserveauto') { RoadReserve.downAt(wx, wy, e); return; }
     if (this._tool === 'pick') { this._pickAt(wx, wy, e); return; }
     if (this._tool === 'addpole') { this._addPoleAt(wx, wy); return; }
     if (this._tool === 'feed') { this._feedDown(wx, wy); return; }
     // select
+    if (typeof RoadReserve !== 'undefined' && RoadReserve.downSelect(wx, wy, e)) return;
     if (this._step === 1) {
       const vi = this._hitVertex(wx, wy);
       if (vi >= 0) {
@@ -1065,6 +1070,8 @@ const RoadPlan = {
       this._view.cy = d.cy + (e.clientY - d.y) / this._view.z;
       this.applyView(); return;
     }
+    if (d && d.kind === 'return') { RoadReserve.moveDrag(wx, wy); return; }
+    if (this._tool === 'reserveauto' && typeof RoadReserve !== 'undefined') RoadReserve.moveAt(wx, wy, e);
     if (d && d.kind === 'vertex') {
       const r = this.selRoad; const p = this._snapPt(wx, wy);
       r.ip[d.i].x = p[0]; r.ip[d.i].y = p[1]; d.moved = true;
@@ -1078,17 +1085,20 @@ const RoadPlan = {
       d.pole.moved = true; d.moved = true;
       this.renderScreen(); return;
     }
+    if (this._tool === 'kerbauto' && typeof RoadKerbs !== 'undefined') RoadKerbs.move(wx, wy, e);
     this._hover = { wx, wy, sx: e.offsetX, sy: e.offsetY };
     if (this._draft || this._tool === 'pick') this.renderScreen();
     this._readout();
   },
   _up(e) {
+    if (this._tool === 'reserveauto' && typeof RoadReserve !== 'undefined') RoadReserve.up();
     const d = this._drag;
     this._drag = null;
     if (!d) return;
     try { document.getElementById('rp-svg').releasePointerCapture(d.id); } catch (_) {}
     if (d.kind === 'vertex' && d.moved) { this._relayoutUnmoved(this.selRoad); this._commit(); this.render(); }
     if (d.kind === 'pole' && d.moved) { this._commit(); this.render(); }
+    if (d.kind === 'return') RoadReserve.upDrag();
   },
   _dbl(e) {
     if (this._tool === 'feed') { if (this._feedDraft && this._feedDraft.route.length) this._feedDraft.route.pop(); this._feedFinish(); return; }
@@ -1119,6 +1129,7 @@ const RoadPlan = {
     if (!this._active || this._view3d) return false;   // the 3D view takes its keys on its canvas
     const k = e.key;
     if (this._tool === 'kerbauto' && typeof RoadKerbs !== 'undefined' && RoadKerbs.key(e)) return true;
+    if (this._tool === 'reserveauto' && typeof RoadReserve !== 'undefined' && RoadReserve.keyAt(e)) return true;
     if ((this._tool === 'draw' || this._tool === 'kerbs') && this._draft) {
       if (k === 'Enter') { this.finishDraft(); return true; }
       if (k === 'Escape') { this._draft = null; this.renderScreen(); return true; }
@@ -1137,6 +1148,7 @@ const RoadPlan = {
   // ─── Tools ───────────────────────────────────────────────────────────
   setTool(t) {
     if (t !== 'kerbauto' && typeof RoadKerbs !== 'undefined') RoadKerbs.close();
+    if (t !== 'reserveauto' && typeof RoadReserve !== 'undefined') RoadReserve.close();
     this._tool = t; this._draft = null; this._feedDraft = null; this._closePick();
     if (t !== 'kerbs' && t !== 'pick') this._kerbDraft = null;
     this.renderToolbar(); this.renderScreen(); this._hint();
@@ -1295,7 +1307,7 @@ const RoadPlan = {
   },
   setStep(n) {
     this._step = n;
-    if (n !== 1 && (this._tool === 'draw' || this._tool === 'kerbs' || this._tool === 'pick' || this._tool === 'kerbauto')) { this._tool = 'select'; if (typeof RoadKerbs !== 'undefined') RoadKerbs.close(); }
+    if (n !== 1 && (this._tool === 'draw' || this._tool === 'kerbs' || this._tool === 'pick' || this._tool === 'kerbauto' || this._tool === 'reserveauto')) { this._tool = 'select'; if (typeof RoadKerbs !== 'undefined') RoadKerbs.close(); if (typeof RoadReserve !== 'undefined') RoadReserve.close(); }
     if (n !== 2 && (this._tool === 'addpole' || this._tool === 'feed')) this._tool = 'select';
     this._feedDraft = null;
     this._draft = null; this._kerbDraft = null; this._closePick();
@@ -1310,6 +1322,7 @@ const RoadPlan = {
     else if (this._tool === 'draw') t = 'Click each intersection point; corners get a tangent arc at the bend radius. Double-click or Enter to finish, Backspace removes the last point, Esc cancels.';
     else if (this._tool === 'kerbs') t = this._kerbDraft ? 'Now trace the other kerb (Enter / double-click to finish).' : 'Trace the first kerb (Enter / double-click to finish), then the other one.';
     else if (this._tool === 'kerbauto') t = RoadKerbs.hint();
+    else if (this._tool === 'reserveauto') t = RoadReserve.hint();
     else if (this._tool === 'pick') t = this._kerbDraft ? 'Click the other kerb line.' : 'Click a DXF line: connected pieces on its layer are joined.';
     else if (this._tool === 'addpole') t = 'Click beside the road: the pole goes on the nearest pole line.';
     else if (this._tool === 'feed') t = this._feedDraft ? 'Click each bend of the feeder cable, then click the pole it feeds (or Enter to feed the nearest end). Backspace removes the last bend, Esc cancels.' : 'Click where the kiosk or minisub stands, then the bends of its feeder cable to the road.';
@@ -1359,7 +1372,8 @@ const RoadPlan = {
     } else if (this._step === 1) {
       html = `${b('select', 'Select', 'Select a road, drag its intersection points')}${b('draw', 'Draw centreline', 'Click intersection points; corners are rounded with tangent arcs')}${b('kerbs', 'Trace kerbs', 'Trace both kerbs: the carriageway width follows them')}
         ${this.rp.bg ? b('pick', 'From DXF', 'Pick a centreline or two kerbs from the background drawing') : ''}
-        ${this.rp.bg && typeof RoadKerbs !== 'undefined' ? `<button class="btn-small${this._tool === 'kerbauto' ? ' active' : ''}" data-rp="rk-open" title="Find every road of a kerb layer by pairing its kerb lines, review them, then create the roads with their measured widths">Roads from kerbs</button>` : ''}
+        ${this.rp.bg && typeof RoadKerbs !== 'undefined' ? `<button class="btn-small${this._tool === 'kerbauto' ? ' active' : ''}" data-rp="rk-open" title="Click the kerb lines you want: the roads between them are made, with their measured widths">Roads from kerbs</button>` : ''}
+        ${this.rp.bg && typeof RoadReserve !== 'undefined' ? `<button class="btn-small${this._tool === 'reserveauto' ? ' active' : ''}" data-rp="rr-open" title="Click inside the road reserves of the drawing (the space between the erf boundaries, or one outline per street): the roads are made on their carriageway, with kerb returns">Roads from road reserve</button>` : ''}
         <span class="sl-sep"></span>
         <label class="rl-inline" title="Radius of the tangent arc at each corner of a drawn centreline (a corner can override it)">Bend radius<span class="sl-unit"><input type="number" min="0" step="5" class="sl-in-num" data-rp-road-f="radius" value="${escHtml(r ? (r.radius ?? 50) : 50)}"${r && r.mode === 'ip' ? '' : (r ? ' disabled' : '')}> m</span></label>
         <label class="rl-inline"><input type="checkbox" data-rp="snap"${this._snap ? ' checked' : ''}> Snap</label>`;
@@ -1430,6 +1444,7 @@ const RoadPlan = {
         const poly = this._kerbPolygon(this.road(rg.road), rg.s0, rg.s1);
         lines.push(`<path d="M${poly.map(p => p.join(' ')).join('L')}Z" class="rp-conflict" vector-effect="${ns}"/>`);
       }
+      for (const poly of this._returnPolys(j)) lines.push(`<path d="M${poly.map(p => p.join(' ')).join('L')}Z" class="rp-conflict" vector-effect="${ns}"/>`);
     }
     document.getElementById('rp-w-roads').innerHTML = out.join('');
     document.getElementById('rp-w-lines').innerHTML = lines.join('');
@@ -1606,6 +1621,7 @@ const RoadPlan = {
       for (const mk of (this._trim || [])) { const [mx, my] = S(mk.pt[0], mk.pt[1]); out.push(`<circle cx="${mx.toFixed(1)}" cy="${my.toFixed(1)}" r="5" class="rp-mark"/>`); }
     }
     if (this._tool === 'kerbauto' && typeof RoadKerbs !== 'undefined') RoadKerbs.overlay(S, out);
+    if (typeof RoadReserve !== 'undefined') { if (this._tool === 'reserveauto') RoadReserve.overlay(S, out); else RoadReserve.overlayReturns(S, out); }
     // draft
     if (this._draft && this._draft.length) {
       const pts = this._draft.slice();
@@ -1664,6 +1680,7 @@ const RoadPlan = {
   },
   _panelShape() {
     if (this._tool === 'kerbauto' && typeof RoadKerbs !== 'undefined') return RoadKerbs.panelHtml();
+    if (this._tool === 'reserveauto' && typeof RoadReserve !== 'undefined') return RoadReserve.panelHtml();
     const r = this.selRoad;
     if (!r) return `<div class="sl-empty"><h3>Road plan</h3><p>Draw the road's centreline on the plan — straights joined by tangent arcs — or trace both kerbs, or load a DXF site plan and pick its centreline. The cross-section of a Lighting design is swept along it.</p><p><button class="btn-small btn-primary" data-rp-tool="draw">Draw centreline</button></p></div>`;
     const g = this.geom(r), des = this._design(r);
@@ -1784,6 +1801,8 @@ const RoadPlan = {
     if (t.dataset.rpPole) { this._selPole = t.dataset.rpPole; this.renderPanel(); this.renderScreen(); return; }
     const r = this.selRoad;
     if (t.dataset.rp === 'rk-open') { RoadKerbs.open(); return; }
+    if (t.dataset.rp === 'rr-open') { RoadReserve.open(); return; }
+    if (t.dataset.rp && t.dataset.rp.startsWith('rs-') && typeof RoadReserve !== 'undefined' && RoadReserve.act(t)) return;
     if (t.dataset.rp && t.dataset.rp.startsWith('rk-') && typeof RoadKerbs !== 'undefined' && RoadKerbs.act(t)) return;
     switch (t.dataset.rp) {
       case 'bg': document.getElementById('rp-file').click(); break;
@@ -1818,6 +1837,7 @@ const RoadPlan = {
     if (this._view3d && Road3D.onChange(e)) return;
     const t = e.target, d = t.dataset;
     const r = this.selRoad;
+    if ((d.ropt !== undefined || d.rsedit !== undefined) && typeof RoadReserve !== 'undefined') { RoadReserve.change(t); return; }
     if (d.rpk !== undefined && typeof RoadKerbs !== 'undefined') { RoadKerbs.change(t); return; }
     if (d.rpCs) {
       // The road plan's own circuit settings (Keep workspaces in sync).

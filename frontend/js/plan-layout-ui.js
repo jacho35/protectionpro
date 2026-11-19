@@ -499,68 +499,129 @@ const PlanLayoutUI = {
     return made;
   },
 
-  // ───────── streets from a layer of kerbs: review on the plan, then Create ─────────
+  // ───────── streets from kerbs: pick the kerb lines on the plan, then Create ─────────
+  // Nothing is chosen at first. A click takes the whole joined kerb line under the pointer and every street it touches; Shift-click
+  // one drawn piece; Alt-click (or the Subtract button) takes streets out again; Backspace takes the last pick back. The stage is
+  // PlanKerbs.stage (shared with the Road plan): the streets are a replayable fold over the picks.
   kerbOpt: { wmin: 4, wmax: 20, gap: 15, oneW: 6, join: 40 },
   kerbStage: null,
-  kerbStart(descId, layer) {
+  // every visible layer of every drawing as kerb chains, keyed 'descId|layer'
+  _kerbPool() {
+    const layers = {}, meta = {};
+    for (const d of PlanDxfImport.list()) {
+      const data = d.hidden ? null : PlanDxfImport.dataOf(d), f = PlanEngine.factor(); if (!data || !f) continue;
+      const M = (x, y) => { const w = PlanDxfImport.worldOf(d, x, y); return [w.x * f, w.y * f]; }, by = new Map();
+      const keep = typeof PlanWorkArea !== 'undefined' ? PlanWorkArea.recKeeper(d) : null;
+      for (const r of (data.entities || [])) {
+        if ((keep && !keep(r)) || PlanDxfImport.layerHidden(d, r.l)) continue;
+        let pts = null;
+        if (r.t === 'l') pts = [M(r.p[0], r.p[1]), M(r.p[2], r.p[3])];
+        else if (r.t === 'p' && r.g !== 'HATCH') { pts = []; for (let i = 0; i + 1 < r.p.length; i += 2) pts.push(M(r.p[i], r.p[i + 1])); }
+        if (!pts || pts.length < 2) continue;
+        if (!by.has(r.l)) by.set(r.l, []); by.get(r.l).push(pts);
+      }
+      for (const [layer, pieces] of by) { const key = d.id + '|' + layer; layers[key] = PlanKerbs.joinPieces(pieces); meta[key] = { descId: d.id, layer }; }
+    }
+    return { layers, meta };
+  },
+  _kerbSig() {                                                             // what a pool depends on: the scale, the working area, the hidden layers
+    const hid = PlanDxfImport.list().map(d => d.id + ':' + (d.hidden ? 'h' : '') + Object.keys(d.layers || {}).filter(k => d.layers[k].hidden).sort().join(',')).join('|');
+    return [PlanEngine.factor(), typeof PlanWorkArea !== 'undefined' ? PlanWorkArea.sig() : '', hid].join('#');
+  },
+  kerbStart() {
     if (typeof PlanKerbs === 'undefined') return;
-    const d = PlanDxfImport.byId(descId), f = PlanEngine.factor();
-    if (!d || !f) { UI.toast('Calibrate the plan first.', 'warn', 4000); return; }
-    const pieces = this._kerbPieces(d, layer);
-    if (!pieces || !pieces.length) { UI.toast(`Layer "${layer}" has no lines or polylines.`, 'warn', 4000); return; }
-    this.centreStage = null;
-    // the review state is the shared PlanKerbs.stage (also used by the Road plan); the plan-only parts ride on it
-    const S = this.kerbStage = Object.assign(PlanKerbs.stage(PlanKerbs.joinPieces(pieces), this.kerbOpt), { descId, layer, f, namer: this._namer(PlanDxfImport.dataOf(d), d, f) });
-    S.solve();
-    const u = S.unpaired.length;
-    UI.toast(`${S.streets.length} street${S.streets.length === 1 ? '' : 's'} found from ${S.chains.length} kerb chains${u ? `; ${u} without a partner` : ''}. Alt-click removes one, Shift-click two kerbs adds one, Enter creates them.`, u ? 'warn' : 'success', 8000);
+    const f = PlanEngine.factor(); if (!f) { UI.toast('Calibrate the plan first.', 'warn', 4000); return; }
+    const P = this._kerbPool(); if (!Object.keys(P.layers).length) { UI.toast('The drawings have no visible lines or polylines.', 'warn', 4000); return; }
+    this.centreStage = null; if (typeof PlanReserveUI !== 'undefined') PlanReserveUI.stage = null;
+    this.kerbStage = Object.assign(PlanKerbs.stage(P.layers, this.kerbOpt), { f, meta: P.meta, sigNow: this._kerbSig(), namers: {}, hover: null });
+    UI.toast('Click a kerb line to add it and the streets it touches. Shift-click takes one piece, Alt-click takes streets out, Backspace undoes the last pick, Enter creates.', 'info', 8000);
+    this.syncHint(); PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true });
+  },
+  // the working area, a hidden layer or the scale changed: rebuild the kerb lines, keep the picks that still apply
+  _kerbRefresh() {
+    const S = this.kerbStage; if (!S || S.sigNow === this._kerbSig()) return;
+    const P = this._kerbPool(); S.f = PlanEngine.factor(); S.meta = P.meta; S.sigNow = this._kerbSig(); S.namers = {};
+    S.setLayers(P.layers);
+    if (S.dropped) UI.toast(`${S.dropped} pick${S.dropped === 1 ? '' : 's'} dropped: the kerb line is no longer there.`, 'warn', 4000);
   },
   kerbSolve() {
     const S = this.kerbStage; if (!S) return;
-    S.o = Object.assign({}, S.o, this.kerbOpt); S.solve();
+    S.setOpt(this.kerbOpt);
     PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true });
   },
+  kerbMode(m) { const S = this.kerbStage; if (!S) return; S.mode = m; S.one = S.pairFrom = null; this.syncHint(); PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true }); },
   // arm a lone kerb: the next click on the plan, on the road's side of it, makes the street half the set width in from the kerb
-  kerbOne(i) {
-    const S = this.kerbStage; if (!S) return; S.arm(i);
+  kerbOne(layer, i) {
+    const S = this.kerbStage; if (!S) return; S.arm(layer, i);
     UI.toast(`Click on the road's side of that kerb: the street goes ${this.kerbOpt.oneW} m wide beside it.`, 'info', 4000);
-    PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true });
+    this.syncHint(); PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true });
   },
-  // what an unpaired kerb chain is: its length, the nearest road name (or where it is)
-  kerbInfo(i) {
-    const S = this.kerbStage, k = S.info(i), f = S.f;
-    return { ...k, name: S.namer && S.namer.peek(S.chains[i].pts.map(q => ({ x: q[0] / f, y: q[1] / f }))) };
+  kerbPair(layer, i) {
+    const S = this.kerbStage; if (!S) return; S.armPair(layer, i);
+    UI.toast('Now click the kerb on the other side of that road.', 'info', 3500);
+    this.syncHint(); PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true });
   },
-  kerbCancel() { this.kerbStage = null; PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true }); },
+  _kerbNamer(S, key) {                                                     // the street namer of the drawing a layer key belongs to ('*' = the first drawing with a pick)
+    let m = S.meta[key];
+    if (!m) { const k = S.keys().find(k => [...S.used].some(u => u.startsWith(k + '\u0000'))) || S.keys()[0]; m = S.meta[k]; }
+    if (!m) return () => null;
+    if (!S.namers[m.descId]) { const d = PlanDxfImport.byId(m.descId), data = d && PlanDxfImport.dataOf(d); S.namers[m.descId] = data ? this._namer(data, d, S.f) : (() => null); }
+    return S.namers[m.descId];
+  },
+  // what a kerb chain with no partner is: its length, the nearest road name (or where it is)
+  kerbInfo(l) {
+    const S = this.kerbStage, k = S.info(l.layer, l.chain), f = S.f, nm = this._kerbNamer(S, l.layer);
+    return { ...k, name: nm && nm.peek && nm.peek(S.layers[l.layer][l.chain].pts.map(q => ({ x: q[0] / f, y: q[1] / f }))) };
+  },
+  kerbCancel() { this.kerbStage = null; this.syncHint(); PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true }); },
+  kerbKey(e) {                                                             // Backspace takes the last pick back (the plan must not delete a part)
+    const S = this.kerbStage; if (!S) return false;
+    if (e.key === 'Backspace') { if (S.undo()) { UI.toast('Last pick taken back.', 'info', 1500); this.syncHint(); PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true }); } return true; }
+    if (e.key === 'Enter') { this.kerbCreate(); return true; }
+    return false;
+  },
   kerbClick(pt, e) {
-    const S = this.kerbStage, f = S.f, m = [pt.x * f, pt.y * f], tol = 14 * f / PlanEngine.view.zoom, redraw = () => { PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true }); };
-    e = e || {};
-    if (S.one != null && !(e.altKey || e.shiftKey || e.ctrlKey || e.metaKey)) { S.place(m); redraw(); return; }       // the road beside a lone kerb: this click says which side
-    if (e.ctrlKey || e.metaKey) { const i = S.chainAt(m, tol); if (i < 0) UI.toast('Click on a kerb line.', 'info', 2500); else this.kerbOne(i); return; }
-    if (e.altKey) { if (!S.remove(m, tol)) UI.toast('No street there.', 'info', 2000); redraw(); return; }
-    if (e.shiftKey) {                                                     // add one: kerb A, then kerb B
-      const r = S.pair(m, tol);
-      if (r === 'nokerb') UI.toast('Click on a kerb line.', 'info', 2500);
-      else if (r === 'first') UI.toast('Now Shift-click the kerb on the other side of that road.', 'info', 3000);
-      else if (r === 'noroad') UI.toast('Those two kerbs do not run beside each other.', 'warn', 3500);
+    const S = this.kerbStage; this._kerbRefresh();
+    const f = S.f, m = [pt.x * f, pt.y * f], tol = 14 * f / PlanEngine.view.zoom, ev = e || {}, mod = ev.altKey || ev.shiftKey || ev.ctrlKey || ev.metaKey;
+    const redraw = () => { this.syncHint(); PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true }); };
+    if (S.one && !mod) { S.place(m); redraw(); return; }                   // the road beside a lone kerb: this click says which side
+    if (S.pairFrom && !mod) {                                              // the kerb across the road
+      const h = S.hitAt(m, tol);
+      if (!h) { S.pairFrom = null; UI.toast('Pairing cancelled: no kerb there.', 'info', 2500); }
+      else { const r = S.pairWith(h.layer, h.chain); if (r === 'noroad') UI.toast('Those two kerbs do not run beside each other.', 'warn', 3500); else if (r === 'layer') UI.toast('That kerb is on another layer: tick "Look for partners on any layer".', 'warn', 4000); }
       redraw(); return;
     }
-    UI.toast('Alt-click removes a street; Shift-click two kerbs adds one; Ctrl-click a lone kerb; Enter creates the streets, Esc leaves them.', 'info', 3500);
+    if (ev.ctrlKey || ev.metaKey) { const h = S.hitAt(m, tol); if (!h) UI.toast('Click on a kerb line.', 'info', 2500); else this.kerbOne(h.layer, h.chain); return; }
+    const h = S.hitAt(m, tol), op = ev.altKey ? 'sub' : S.mode;
+    if (!h) {
+      if (op === 'sub') { const i = S.streetAt(m, tol); if (i >= 0) { const r = S.subStreet(i); UI.toast(r && !r.noop ? 'Street removed.' : 'Nothing to remove there.', 'info', 2000); redraw(); return; } }
+      UI.toast('Click on a kerb line.', 'info', 2500); return;
+    }
+    if (op === 'add' && !ev.shiftKey && S.lonely.some(l => l.layer === h.layer && l.chain === h.chain)) { this.kerbPair(h.layer, h.chain); return; }
+    const r = S.addChain(h.layer, h.chain, ev.shiftKey ? h.part : null, op), n = k => `${k} street${k === 1 ? '' : 's'}`;
+    if (r.noop) UI.toast(op === 'add' ? 'Already in.' : 'Nothing to remove there.', 'info', 1800);
+    else if (op === 'add') UI.toast(r.added ? `Added ${n(r.added)}.` : r.lonely > 0 ? 'No partner found: shown red. Click it again, then the kerb across the road.' : 'Added.', r.added ? 'success' : 'warn', 3000);
+    else UI.toast(`Removed ${n(r.removed)}.`, 'info', 2000);
+    redraw();
+  },
+  kerbMove(pt, e) {
+    const S = this.kerbStage, f = S.f, h = S.hitAt([pt.x * f, pt.y * f], 14 * f / PlanEngine.view.zoom), part = h && e && e.shiftKey ? h.part : null;
+    const key = h ? h.layer + '\u0000' + h.chain + (part ? part.join(',') : '') : '';
+    if (key !== S._hk) { S._hk = key; S.hover = h ? { ...h, part } : null; PlanEngine.requestDraw({ fg: true }); }
   },
   kerbCreate() {
     const S = this.kerbStage; if (!S) return 0;
-    const d = PlanDxfImport.byId(S.descId), data = d && PlanDxfImport.dataOf(d), pm = AppState.planMarkup, f = S.f;
+    const pm = AppState.planMarkup, f = S.f;
     if (!S.streets.length) { UI.toast('No streets to create.', 'warn', 3000); return 0; }
-    const namer = data ? this._namer(data, d, f) : (() => null);
     PlanMarkup.snapshot();
     let named = 0;
     S.streets.forEach(st => {
-      const wp = st.pts.map(q => ({ x: q[0] / f, y: q[1] / f })), nm = namer(wp); if (nm) named++;
+      const wp = st.pts.map(q => ({ x: q[0] / f, y: q[1] / f })), nm = this._kerbNamer(S, st.layer)(wp); if (nm) named++;
       pm.routes.push({ id: AppState.planGenId('pmrt'), type: 'street', fromId: null, toId: null, points: wp, cableType: '', curved: false,
         props: { name: nm || 'Street ' + (pm.routes.filter(r => r.type === 'street').length + 1), width: st.w } });
     });
     const made = S.streets.length, nets = S.networks().length; this.kerbStage = null;
-    PlanMarkup.markDirty(); this.touched(); PlanEngine.requestDraw({ fg: true });
+    PlanMarkup.markDirty(); this.touched(); this.syncHint(); PlanEngine.requestDraw({ fg: true });
     UI.toast(`${made} street${made === 1 ? '' : 's'} made from the kerbs${named < made ? ` (${made - named} without a name nearby: check them)` : ''}.${nets > 1 ? ` They form ${nets} separate networks: the LV and fibre networks will not reach across the gaps.` : ' One connected network.'}`, named < made || nets > 1 ? 'warn' : 'success', 8000);
     return made;
   },
@@ -568,13 +629,21 @@ const PlanLayoutUI = {
     const S = this.kerbStage; if (!S) return;
     const u = 1 / zoom, f = S.f, line = pts => { ctx.beginPath(); pts.forEach((p, i) => i ? ctx.lineTo(p[0] / f, p[1] / f) : ctx.moveTo(p[0] / f, p[1] / f)); ctx.stroke(); };
     ctx.save(); ctx.lineJoin = 'round'; ctx.lineCap = 'round';
-    const un = new Set(S.unpaired);
-    S.chains.forEach((c, i) => {
-      if (S.pickA === i) { ctx.strokeStyle = '#2563eb'; ctx.lineWidth = 3 * u; ctx.setLineDash([]); }
-      else if (un.has(i)) { ctx.strokeStyle = '#dc2626'; ctx.lineWidth = 2 * u; ctx.setLineDash([5 * u, 4 * u]); }
-      else { ctx.strokeStyle = 'rgba(100,116,139,.55)'; ctx.lineWidth = 1 * u; ctx.setLineDash([]); }
+    const lonely = new Set(S.lonely.map(l => l.layer + '\u0000' + l.chain)), armed = S.pairFrom || S.one;
+    let npts = 0; for (const k of S.keys()) for (const c of S.layers[k]) npts += c.pts.length;
+    for (const k of S.keys()) S.layers[k].forEach((c, i) => {
+      const id = k + '\u0000' + i;
+      if (armed && armed.layer === k && armed.chain === i) { ctx.strokeStyle = '#2563eb'; ctx.lineWidth = 3 * u; ctx.setLineDash([]); }
+      else if (lonely.has(id)) { ctx.strokeStyle = '#dc2626'; ctx.lineWidth = 2 * u; ctx.setLineDash([5 * u, 4 * u]); }
+      else if (S.used.has(id)) { ctx.strokeStyle = 'rgba(30,64,175,.75)'; ctx.lineWidth = 1.6 * u; ctx.setLineDash([]); }
+      else if (npts < 150000) { ctx.strokeStyle = 'rgba(100,116,139,.4)'; ctx.lineWidth = 1 * u; ctx.setLineDash([]); }
+      else return;
       line(c.pts);
     });
+    if (S.hover) {                                                         // what a click would take: green to add, red to take out
+      const h = S.hover, c = S.layers[h.layer] && S.layers[h.layer][h.chain];
+      if (c) { ctx.setLineDash([]); ctx.strokeStyle = S.mode === 'add' ? 'rgba(22,163,74,.9)' : 'rgba(220,38,38,.9)'; ctx.lineWidth = 4 * u; line(c.pts); }
+    }
     ctx.setLineDash([]); ctx.lineWidth = 3.2 * u;
     const comps = S.networks(), main = new Set(comps[0] || []);                        // streets cut off from the main network are drawn orange
     S.streets.forEach((st, si) => {
@@ -597,7 +666,7 @@ const PlanLayoutUI = {
     if (!d || !f) { UI.toast('Calibrate the plan first.', 'warn', 4000); return; }
     const pieces = this._kerbPieces(d, layer);
     if (!pieces || !pieces.length) { UI.toast(`Layer "${layer}" has no lines or polylines.`, 'warn', 4000); return; }
-    this.kerbStage = null;
+    this.kerbStage = null; if (typeof PlanReserveUI !== 'undefined') PlanReserveUI.stage = null;
     let S = this.centreStage;
     if (!S || S.descId !== descId) S = this.centreStage = { descId, f, layers: [], pieces: [], chains: [], picks: [], namer: this._namer(PlanDxfImport.dataOf(d), d, f) };
     if (!S.layers.includes(layer)) {
@@ -671,7 +740,7 @@ const PlanLayoutUI = {
   streetDrawOn(on) {
     this.drawStreets = !!on;
     const R = this._rt(); if (!R) { this.drawStreets = false; return; }
-    if (on) { this.kerbStage = null; this.centreStage = null; R._type = 'street'; R._draft = null; R._hover = null; UI.toast('Click along each street centreline. Enter, or click the last point again, finishes it; Backspace takes a point back; Esc stops. A street that ends on another one joins it.', 'info', 7000); }
+    if (on) { this.kerbStage = null; this.centreStage = null; if (typeof PlanReserveUI !== 'undefined') PlanReserveUI.stage = null; R._type = 'street'; R._draft = null; R._hover = null; UI.toast('Click along each street centreline. Enter, or click the last point again, finishes it; Backspace takes a point back; Esc stops. A street that ends on another one joins it.', 'info', 7000); }
     else { R._draft = null; R._hover = null; }
     PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true });
   },
@@ -800,7 +869,7 @@ const PlanLayoutUI = {
   setPreset(k) { const P = this.PRESETS[k]; if (!P) return; Object.assign(this.cfg().params, P); this.touched(); },
   setStep(n) {
     n = Math.max(1, Math.min(4, n | 0)); this.step = n;
-    if (n !== 1) { this.streetDrawOn(false); if (this.kerbStage) this.kerbCancel(); if (this.centreStage) this.centreCancel(); }
+    if (n !== 1) { this.streetDrawOn(false); if (this.kerbStage) this.kerbCancel(); if (this.centreStage) this.centreCancel(); if (typeof PlanReserveUI !== 'undefined' && PlanReserveUI.stage) PlanReserveUI.cancel(); }
     if (n === 2) this.mode = 'sub'; else if (this.mode === 'sub') this.mode = 'front';
     this.markFor = null; this.subMove = null;
     PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true });
@@ -829,7 +898,15 @@ const PlanLayoutUI = {
     if (this.secDraw) return pre + 'Section line: click along the street line. Enter, or the last point again, finishes. Backspace takes a point back, Esc stops.';
     if (this.drawStreets) return pre + 'Streets: click along the street. Enter, or the last point again, finishes it. Backspace takes a point back, Esc stops.';
     if (this.centreStage) return pre + 'Streets: click the centreline of each road. Shift-click one piece, Alt-click drops it. Enter creates, Esc leaves.';
-    if (this.kerbStage) return pre + 'Streets: Alt-click removes a street, Shift-click two kerbs adds one. Enter creates, Esc leaves.';
+    if (typeof PlanReserveUI !== 'undefined' && PlanReserveUI.stage) return pre + 'Streets: ' + PlanReserveUI.hint();
+    if (this.kerbStage) {
+      const S = this.kerbStage;
+      if (S.one) return pre + 'Streets: click on the road\'s side of that kerb. Esc leaves.';
+      if (S.pairFrom) return pre + 'Streets: click the kerb on the other side of that road.';
+      return pre + (S.mode === 'sub'
+        ? 'Streets: Click: remove the streets of a kerb line · Shift-click: just this street · Enter: create · Backspace: undo pick · Esc: leave'
+        : 'Streets: Click: add a kerb line and its streets · Shift-click: just this piece · Alt-click: subtract · Ctrl-click: lone kerb · Enter: create · Backspace: undo pick · Esc: leave');
+    }
     if (this.step === 1) return pre + 'Streets: draw each street centreline, or take them from the drawing in the panel.';
     if (this.step === 2) return pre + 'Mini-subs: click where each one stands. Click a mini-sub to move it, Alt-click to remove it.';
     if (this.step === 3) return pre + 'Rules: choose the preset and the settings in the panel.';
@@ -1165,6 +1242,7 @@ const PlanLayoutUI = {
 
   draw(ctx, zoom) {
     this.kerbDraw(ctx, zoom);
+    if (typeof PlanReserveUI !== 'undefined') PlanReserveUI.draw(ctx, zoom);
     this.centreDraw(ctx, zoom);
     this.secDrawOverlay(ctx, zoom);
     if (!this.result) {                                                                  // before a run: where the mini-subs stand
@@ -1309,7 +1387,7 @@ const PlanLayoutUI = {
     const allRow = `<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;border-bottom:1px solid var(--border,#ddd);padding:3px 0 5px" title="The side for every street that has none of its own. A side set on a single street below overrides it."><span><b>All streets</b></span><span style="display:flex;flex-direction:column;gap:2px;align-items:flex-end"><span>Kiosks ${seg('*', 'k', [[0, 'Auto'], [1, 'Left'], [-1, 'Right']])}</span><span>Fibre ${seg('*', 'f', [[0, 'Auto'], [1, 'Left'], [-1, 'Right']])}</span></span></div>`;
     const streets = sr.length ? sr.map((s, i) => `<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;border-bottom:1px solid var(--border,#ddd);padding:3px 0"><span>${esc((s.props && s.props.name) || 'Street ' + (i + 1))}</span><span style="display:flex;flex-direction:column;gap:2px;align-items:flex-end"><span>Kiosks ${seg(s.id, 'k', [[0, dName('k')], [1, 'Left'], [-1, 'Right']])}</span><span>Fibre ${seg(s.id, 'f', [[0, dName('f')], [1, 'Left'], [-1, 'Right']])}</span></span></div>`).join('') : '<div class="plan-props-empty" style="padding:4px 0">No streets yet. Draw them with Draw centrelines above, or take them from a drawing layer (pair kerbs, pick the centrelines you want, or use every line of a centreline layer). Left and right are looking along the way you drew it.</div>';
     const lyr = this.dxfLayers();
-    const fromDxf = lyr.length ? `<div style="display:flex;flex-direction:column;gap:4px;margin:4px 0"><label style="display:block">Take streets from a drawing layer<select data-stl style="width:100%">${lyr.map((x, i) => `<option value="${i}"${(this.kerbStage ? x.layer === this.kerbStage.layer && x.d.id === this.kerbStage.descId : i === 0) ? ' selected' : ''}>${esc(x.layer)} (${x.n} line${x.n === 1 ? '' : 's'})${x.kerbs ? ' · kerbs (pair them)' : x.guess ? ' ★' : ''}</option>`).join('')}</select></label><div style="display:flex;gap:4px;flex-wrap:wrap"><button type="button" class="plan-btn" data-act="kerbstreets" title="The layer holds kerb lines: pair them into one centreline per road, with the measured width, then review on the plan">Streets from kerb layer</button><button type="button" class="plan-btn" data-act="centrepick" title="The layer holds road centrelines among other lines: click the lines you want, one per road, then create the streets">Pick centrelines</button><button type="button" class="plan-btn" data-act="dxfstreets" title="The layer holds only road centrelines: every line of it becomes a street as drawn, width 12 m">All lines as streets</button></div><div style="font-size:12px;color:var(--text-muted)"><b>Kerb layer</b>: kerb lines are paired into roads with their measured width. <b>Pick centrelines</b>: you click the centreline of each road. <b>All lines</b>: every line of the layer is a street as drawn.</div></div></div>` : '';
+    const fromDxf = lyr.length ? `<div style="display:flex;flex-direction:column;gap:4px;margin:4px 0"><label style="display:block">Take streets from a drawing layer<select data-stl style="width:100%">${lyr.map((x, i) => `<option value="${i}"${i === 0 ? ' selected' : ''}>${esc(x.layer)} (${x.n} line${x.n === 1 ? '' : 's'})${x.kerbs ? ' · kerbs (pair them)' : x.guess ? ' ★' : ''}</option>`).join('')}</select></label><div style="display:flex;gap:4px;flex-wrap:wrap"><button type="button" class="plan-btn" data-act="kerbstreets" title="Click the kerb lines you want, on any layer: each click adds the streets between that kerb line and the kerbs across the road, with the measured width">Pick kerbs</button><button type="button" class="plan-btn" data-act="rs-start" title="Click inside the road reserves (the space between the erf boundaries, or one outline per street): the streets are made from them, with the reserve width, a carriageway and kerb returns">Streets from road reserve</button><button type="button" class="plan-btn" data-act="centrepick" title="The layer holds road centrelines among other lines: click the lines you want, one per road, then create the streets">Pick centrelines</button><button type="button" class="plan-btn" data-act="dxfstreets" title="The layer holds only road centrelines: every line of it becomes a street as drawn, width 12 m">All lines as streets</button></div><div style="font-size:12px;color:var(--text-muted)"><b>Pick kerbs</b>: you click kerb lines and the roads between them are made, with their measured width. <b>Streets from road reserve</b>: you click inside the road space between the erf boundaries. <b>Pick centrelines</b>: you click the centreline of each road. <b>All lines</b>: every line of the layer is a street as drawn.</div></div></div>` : '';
     const KS = this.kerbStage, ko = this.kerbOpt, CS = this.centreStage;
     const centreBlock = CS ? `<div style="border:2px solid #f59e0b;border-radius:6px;padding:6px 8px;margin:4px 0;display:flex;flex-direction:column;gap:5px">
         <b>Streets from centrelines: pick</b>
@@ -1318,15 +1396,21 @@ const PlanLayoutUI = {
         ${CS.picks.length ? `<div style="max-height:150px;overflow:auto">${CS.picks.map((c, i) => `<div style="display:flex;justify-content:space-between;align-items:center;gap:4px;border-bottom:1px solid var(--border,#ddd);padding:2px 0;font-size:12px"><span>${esc(CS.namer.peek(c.pts.map(q => ({ x: q[0] / CS.f, y: q[1] / CS.f }))) || 'Street ' + (i + 1))} · ${Math.round(this.centreLen(c.pts))} m${c.piece ? ' · one piece' : ''}</span><button type="button" class="plan-btn" data-act="centrerm" data-i="${i}" style="padding:1px 6px;font-size:12px">drop</button></div>`).join('')}</div>` : '<div style="color:var(--text-muted)">No lines picked yet.</div>'}
         <div style="display:flex;gap:6px"><button type="button" class="plan-btn" data-act="centrecreate" style="font-weight:600"${CS.picks.length ? '' : ' disabled'}>Create ${CS.picks.length} street${CS.picks.length === 1 ? '' : 's'}</button><button type="button" class="plan-btn" data-act="centrecancel">Cancel</button></div></div>` : '';
     const kcomps = KS ? KS.networks() : [];
-    const kinfo = KS ? KS.unpaired.map(i => this.kerbInfo(i)) : [];
+    const kinfo = KS ? KS.lonely.map(l => this.kerbInfo(l)) : [];
+    const kpick = (p, i) => { const n = p.op === 'all' ? 'Paired every kerb of a layer' : p.op === 'pair' ? 'Paired two kerbs by hand' : p.op === 'one' ? 'Street beside a lone kerb' : `${p.op === 'add' ? 'Added' : 'Removed'} ${p.items.length > 1 ? p.items.length + ' kerb lines' : 'a kerb line'}${p.items[0] && p.items[0].span ? ' (one piece)' : ''}`; return `<div style="display:flex;justify-content:space-between;align-items:center;gap:4px;border-bottom:1px solid var(--border,#ddd);padding:2px 0;font-size:12px"><span>${n}</span><button type="button" class="plan-btn" data-act="kerbrmpick" data-i="${i}" style="padding:0 6px;font-size:12px" title="Take this pick out">×</button></div>`; };
     const kerbBlock = KS ? `<div style="border:2px solid #f59e0b;border-radius:6px;padding:6px 8px;margin:4px 0;display:flex;flex-direction:column;gap:5px">
-        <b>Streets from kerbs: review</b>
-        <div>${KS.streets.length} street${KS.streets.length === 1 ? '' : 's'} (amber, width on each) from ${KS.chains.length} kerb chains of "${esc(KS.layer)}".</div>
+        <b>Streets from kerbs: pick</b>
+        <div style="display:flex;gap:4px"><button type="button" class="plan-btn" data-act="kerbmode" data-m="add" aria-pressed="${KS.mode === 'add'}" style="${KS.mode === 'add' ? 'font-weight:600;outline:2px solid #16a34a' : ''}">Add</button><button type="button" class="plan-btn" data-act="kerbmode" data-m="sub" aria-pressed="${KS.mode === 'sub'}" style="${KS.mode === 'sub' ? 'font-weight:600;outline:2px solid #dc2626' : ''}">Subtract</button><button type="button" class="plan-btn" data-act="kerbundo"${KS.picks.length ? '' : ' disabled'} title="Backspace">Undo last pick</button></div>
+        <div style="font-size:12px;color:var(--text-muted)">Click a kerb line (any layer) to add it and every street it touches. Shift-click takes just the one drawn piece. Alt-click subtracts for one click. Click a street (Subtract) to remove it.</div>
+        <div>${KS.streets.length} street${KS.streets.length === 1 ? '' : 's'} (amber, width on each).</div>
+        <div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap"><button type="button" class="plan-btn" data-act="kerbpairall" title="Pair every kerb of the layer chosen in the list below, as the old Streets from kerb layer did">Pair all on layer</button><span style="font-size:12px;color:var(--text-muted)">(the layer picked in the list below)</span></div>
+        <label style="font-size:12px;display:flex;gap:6px;align-items:center"><input type="checkbox" data-kany${KS.anyLayer ? ' checked' : ''}> Look for partners on any layer</label>
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;font-size:12px">Road width at least <input type="number" data-kopt="wmin" min="1" max="30" step="0.5" value="${escHtml(ko.wmin)}" style="width:52px"> at most <input type="number" data-kopt="wmax" min="5" max="60" step="0.5" value="${escHtml(ko.wmax)}" style="width:52px"> Bridge gaps up to <input type="number" data-kopt="gap" min="0" max="60" step="1" value="${escHtml(ko.gap)}" style="width:52px"> m</div>
         ${kcomps.length > 1 ? `<div style="color:#c2410c">The streets form <b>${kcomps.length} separate networks</b> (${kcomps.map(c => c.length).join(' + ')} streets; the ones cut off are orange). The LV and fibre networks do not reach across a gap. <div style="display:flex;gap:6px;align-items:center;margin-top:3px"><button type="button" class="plan-btn" data-act="kerbjoin" style="padding:2px 8px;font-size:12px">Join networks up to</button><input type="number" data-kopt="join" min="1" max="200" step="5" value="${escHtml(ko.join)}" style="width:60px"> m</div></div>` : KS.streets.length ? '<div style="color:#15803d">The streets form one connected network.</div>' : ''}
-        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px"><label style="font-size:12px">Road width at least<input type="number" data-kopt="wmin" min="1" max="30" step="0.5" value="${escHtml(ko.wmin)}" style="width:100%"></label><label style="font-size:12px">at most<input type="number" data-kopt="wmax" min="5" max="60" step="0.5" value="${escHtml(ko.wmax)}" style="width:100%"></label><label style="font-size:12px">Bridge gaps up to (m)<input type="number" data-kopt="gap" min="0" max="60" step="1" value="${escHtml(ko.gap)}" style="width:100%"></label></div>
-        <div style="font-size:12px;color:var(--text-muted)">Alt-click a street removes it. Shift-click a kerb, then the kerb across the road, adds one. Ctrl-click a kerb that has no partner, then click on the road's side: a street <input type="number" data-kopt="oneW" min="3" max="40" step="0.5" value="${escHtml(ko.oneW)}" style="width:52px"> m wide beside it. Enter creates; Esc leaves.</div>
-        ${kinfo.length ? `<div style="color:#b91c1c"><b>${kinfo.length} kerb chain${kinfo.length === 1 ? ' has' : 's have'} no partner</b> (red dashed):<div style="max-height:150px;overflow:auto;margin-top:3px">${kinfo.map(k => `<div style="display:flex;justify-content:space-between;align-items:center;gap:4px;border-bottom:1px solid var(--border,#ddd);padding:2px 0"><span>${k.name ? esc(k.name) : 'near ' + Math.round(k.at[0]) + ', ' + Math.round(k.at[1]) + ' m'} · ${Math.round(k.len)} m</span><span style="display:flex;gap:3px"><button type="button" class="plan-btn" data-act="kerbshow" data-i="${k.i}" style="padding:1px 6px;font-size:12px">show</button><button type="button" class="plan-btn" data-act="kerbone" data-i="${k.i}" style="padding:1px 6px;font-size:12px${KS.one === k.i ? ';outline:2px solid #2563eb' : ''}" title="A road with a kerb on this side only">road from this kerb</button></span></div>`).join('')}</div></div>` : '<div style="color:#15803d">Every kerb chain was paired.</div>'}
-        <div style="display:flex;gap:6px"><button type="button" class="plan-btn" data-act="kerbcreate" style="font-weight:600">Create ${KS.streets.length} street${KS.streets.length === 1 ? '' : 's'}</button><button type="button" class="plan-btn" data-act="kerbcancel">Cancel</button></div></div>` : '';
+        <div style="font-size:12px;color:var(--text-muted)">Ctrl-click a kerb that has no partner, then click on the road's side: a street <input type="number" data-kopt="oneW" min="3" max="40" step="0.5" value="${escHtml(ko.oneW)}" style="width:52px"> m wide beside it. Enter creates; Esc leaves.</div>
+        ${kinfo.length ? `<div style="color:#b91c1c"><b>Clicked, no partner</b> (${kinfo.length}, red dashed):<div style="max-height:150px;overflow:auto;margin-top:3px">${kinfo.map(k => `<div style="display:flex;justify-content:space-between;align-items:center;gap:4px;border-bottom:1px solid var(--border,#ddd);padding:2px 0"><span>${k.name ? esc(k.name) : 'near ' + Math.round(k.at[0]) + ', ' + Math.round(k.at[1]) + ' m'} · ${Math.round(k.len)} m</span><span style="display:flex;gap:3px"><button type="button" class="plan-btn" data-act="kerbshow" data-l="${escHtml(k.layer)}" data-i="${k.i}" style="padding:1px 6px;font-size:12px">show</button><button type="button" class="plan-btn" data-act="kerbpair" data-l="${escHtml(k.layer)}" data-i="${k.i}" style="padding:1px 6px;font-size:12px${KS.pairFrom && KS.pairFrom.layer === k.layer && KS.pairFrom.chain === k.i ? ';outline:2px solid #2563eb' : ''}" title="Then click the kerb across the road">pair…</button><button type="button" class="plan-btn" data-act="kerbone" data-l="${escHtml(k.layer)}" data-i="${k.i}" style="padding:1px 6px;font-size:12px${KS.one && KS.one.layer === k.layer && KS.one.chain === k.i ? ';outline:2px solid #2563eb' : ''}" title="A road with a kerb on this side only">one side…</button></span></div>`).join('')}</div></div>` : ''}
+        ${KS.picks.length ? `<details><summary style="font-size:12px;cursor:pointer">Picks (${KS.picks.length})</summary><div style="max-height:130px;overflow:auto">${KS.picks.map((p, i) => kpick(p, i)).reverse().join('')}</div></details>` : ''}
+        <div style="display:flex;gap:6px"><button type="button" class="plan-btn" data-act="kerbcreate" style="font-weight:600"${KS.streets.length ? '' : ' disabled'}>Create ${KS.streets.length} street${KS.streets.length === 1 ? '' : 's'}</button><button type="button" class="plan-btn" data-act="kerbcancel">Cancel</button></div></div>` : '';
     const tile = (b, s) => `<div style="border:1px solid var(--border,#ddd);border-radius:5px;padding:4px 6px"><b style="font-size:15px;display:block">${b}</b><span style="font-size:11px;color:var(--text-muted)">${s}</span></div>`;
     const tiles = st ? [[st.erven, 'erven'], [r.net.subs.length, 'mini-sub' + (r.net.subs.length === 1 ? '' : 's')], [st.kiosks, `kiosks · ${st.avgPer.toFixed(1)} erven each on average · ${st.small} serve 2 erven or fewer · at most ${p.n}`], [st.strings, 'LV strings off the mini-sub' + (p.strN ? ' · at most ' + p.strN + ' kiosks each' : '')], [fmt(st.cable) + ' m', 'service cable'], [fmt(st.cableMax) + ' m of ' + p.maxc + ' m', 'longest service · limit'], ...(r.vd && !r.vd.err ? [[r.vd.maxLv.toFixed(1) + '% / ' + r.vd.maxSvc.toFixed(1) + '%', 'worst LV feeder / service drop · limits ' + r.vd.V.limF + '% / ' + r.vd.V.limS + '%']] : []), [st.crossings, 'road crossings'], [st.provisional, 'junction ducts, empty'], [st.d110 + ' + ' + st.d160, '110 mm + 160 mm ducts'], [st.manholes + ' + ' + st.junctionManholes, 'manholes + junctions'], [fmt(st.trunk) + ' m', 'trunk duct'], [fmt(st.leads) + ' m', 'duct to erven'], [fmt(st.lv) + ' m', st.unreached ? `<span style="color:#c92a2a;font-weight:600">LV feeder: incomplete, ${st.unreached} kiosk${st.unreached === 1 ? '' : 's'} not reached</span>` : 'LV feeder'], [st.tOffs + ' / ' + st.spurEnds + ' / ' + st.loops, 'T-offs / spur ends / loops'], [st.baseline, 'crossings if unshared']].map(t => tile(...t)).join('') : '';
     const D = r && r.design, cfgVd = this.cfg().vd;
@@ -1362,7 +1446,7 @@ const PlanLayoutUI = {
     const step1 = `${blocked}
         ${found(nErv > 0, nErv ? `<b>${nErv} erven</b> with boundaries` : '<b>No erven with a boundary.</b> Use Detect erven first', nErv ? 'zoomerven' : '')}
         ${found(sr0.length > 0, sr0.length ? `<b>${sr0.length} street${sr0.length === 1 ? '' : 's'}</b>, ${fmt(streetM)} m` : '<b>No streets yet.</b> Add them below', sr0.length ? 'zoomstreets' : '')}
-        ${kerbBlock}${centreBlock}
+        ${kerbBlock}${centreBlock}${typeof PlanReserveUI !== 'undefined' ? PlanReserveUI.panelHtml() : ''}
         <div style="font-weight:600;margin-top:4px">Add or change streets</div>
         <div style="border:1px solid var(--accent,#2563eb);border-radius:6px;padding:6px 8px;display:flex;flex-direction:column;gap:4px"><div style="display:flex;justify-content:space-between"><b>Draw centrelines</b><span style="font-size:11px;color:var(--accent,#2563eb)">usual choice</span></div><span style="font-size:12px;color:var(--text-muted)">Click along each street. An end that lands on another street joins it.</span><div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><button type="button" class="plan-btn" data-act="streetdraw" aria-pressed="${escHtml(this.drawStreets)}" style="font-weight:600;${this.drawStreets ? 'outline:2px solid var(--accent,#2563eb)' : ''}">${this.drawStreets ? 'Stop drawing' : 'Start drawing'}</button><label style="font-size:12px;display:flex;gap:4px;align-items:center">Width <input type="number" data-copt="w" min="3" max="60" step="0.5" value="${escHtml(this.centreW)}" style="width:54px"> m</label></div>${this.drawStreets ? '<div style="font-size:12px;color:var(--text-muted)">Click along the street. Enter, or click the last point again, finishes it. Backspace takes a point back, Esc stops. Points snap to the drawing\'s corners and ends. Left and right are looking along the way you drew it.</div>' : ''}</div>
         ${fromDxf || '<div style="font-size:12px;color:var(--text-muted)">To take streets from a drawing layer, import a DXF first.</div>'}
@@ -1454,6 +1538,7 @@ const PlanLayoutUI = {
     });
     el.onclick = (e) => {
       const b = e.target.closest('[data-act],[data-mode],[data-side],[data-ck],[data-ckact],[data-ckerf],[data-step],[data-preset],[data-cf],[data-ckopen]'); if (!b) return;
+      if (typeof PlanReserveUI !== 'undefined' && b.dataset.act && b.dataset.act.startsWith('rs-') && PlanReserveUI.act(b)) return;
       if (b.dataset.step) { this.setStep(+b.dataset.step); return; }
       if (b.dataset.preset) { this.setPreset(b.dataset.preset); return; }
       if (b.dataset.cf) { this.ckFilter = b.dataset.cf; PlanMarkup.refreshProps(); return; }
@@ -1494,7 +1579,7 @@ const PlanLayoutUI = {
         PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true }); return;
       }
       if (b.dataset.act === 'unflag') { this.flag = null; this.nearHint = null; PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true }); return; }
-      if (b.dataset.act === 'kerbstreets') { this.streetDrawOn(false); const sel = el.querySelector('[data-stl]'), x = lyr[sel ? +sel.value : 0]; if (x) this.kerbStart(x.d.id, x.layer); return; }
+      if (b.dataset.act === 'kerbstreets') { this.streetDrawOn(false); const sel = el.querySelector('[data-stl]'), x = lyr[sel ? +sel.value : 0]; this.kerbStart(); return; }
       if (b.dataset.act === 'subrm') { const L2 = this.cfg(); L2.subs.splice(+b.dataset.i, 1); this.subMove = null; this.touched(); return; }
       if (b.dataset.act === 'streetdraw') { this.streetDrawOn(!this.drawStreets); return; }
       if (b.dataset.act === 'centrepick') { this.streetDrawOn(false); const sel = el.querySelector('[data-stl]'), x = lyr[sel ? +sel.value : 0]; if (x) this.centreStart(x.d.id, x.layer); return; }
@@ -1503,8 +1588,18 @@ const PlanLayoutUI = {
       if (b.dataset.act === 'centrerm') { const S = this.centreStage; if (S) { S.picks.splice(+b.dataset.i, 1); PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true }); } return; }
       if (b.dataset.act === 'kerbcreate') { this.kerbCreate(); return; }
       if (b.dataset.act === 'kerbcancel') { this.kerbCancel(); return; }
-      if (b.dataset.act === 'kerbshow') { const S = this.kerbStage; if (S) { const ids = b.dataset.i != null ? [+b.dataset.i] : S.unpaired, pts = []; ids.forEach(i => S.chains[i].pts.forEach(q => pts.push({ x: q[0] / S.f, y: q[1] / S.f }))); if (pts.length) PlanEngine.zoomToPoints(pts); } return; }
-      if (b.dataset.act === 'kerbone') { this.kerbOne(+b.dataset.i); return; }
+      if (b.dataset.act === 'kerbshow') { const S = this.kerbStage; if (S) { const l = b.dataset.l, ids = b.dataset.i != null ? [{ layer: l, chain: +b.dataset.i }] : S.lonely, pts = []; ids.forEach(x => S.layers[x.layer][x.chain].pts.forEach(q => pts.push({ x: q[0] / S.f, y: q[1] / S.f }))); if (pts.length) PlanEngine.zoomToPoints(pts); } return; }
+      if (b.dataset.act === 'kerbone') { this.kerbOne(b.dataset.l, +b.dataset.i); return; }
+      if (b.dataset.act === 'kerbpair') { this.kerbPair(b.dataset.l, +b.dataset.i); return; }
+      if (b.dataset.act === 'kerbmode') { this.kerbMode(b.dataset.m); return; }
+      if (b.dataset.act === 'kerbundo') { const S = this.kerbStage; if (S) S.undo(); this.syncHint(); PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true }); return; }
+      if (b.dataset.act === 'kerbrmpick') { const S = this.kerbStage; if (S) S.removePick(+b.dataset.i); PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true }); return; }
+      if (b.dataset.act === 'kerbpairall') {
+        const S = this.kerbStage, sel = el.querySelector('[data-stl]'), x = lyr[sel ? +sel.value : 0]; if (!S || !x) return;
+        const key = x.d.id + '|' + x.layer; if (!S.layers[key]) { UI.toast(`Layer "${x.layer}" has no lines.`, 'warn', 3000); return; }
+        const r = S.pairAll(key); UI.toast(r.noop ? 'That layer is already paired.' : `${r.added} street${r.added === 1 ? '' : 's'} found${S.lonely.length ? `; ${S.lonely.length} kerb chain${S.lonely.length === 1 ? '' : 's'} without a partner (red)` : ''}.`, r.noop ? 'info' : 'success', 5000);
+        PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true }); return;
+      }
       if (b.dataset.act === 'kerbjoin') { const S = this.kerbStage; if (S) { const n = S.join(this.kerbOpt.join), c = S.networks().length; UI.toast(n ? `${n} join${n === 1 ? '' : 's'} made; ${c === 1 ? 'one connected network now' : c + ' networks remain (the gaps are wider than ' + this.kerbOpt.join + ' m)'}.` : `Nothing within ${this.kerbOpt.join} m to join.`, c === 1 ? 'success' : 'warn', 5000); PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true }); } return; }
       if (b.dataset.act === 'dxfstreets') { const sel = el.querySelector('[data-stl]'), x = lyr[sel ? +sel.value : 0]; if (x) this.streetsFromLayer(x.d.id, x.layer); }
       else if (b.dataset.act === 'run') { this.run(); if (this.result) this.setStep(4); }
@@ -1527,7 +1622,9 @@ const PlanLayoutUI = {
     };
     el.onchange = (e) => {
       const t = e.target;
+      if (typeof PlanReserveUI !== 'undefined' && PlanReserveUI.change(t)) return;
       if (t.dataset.copt) { const v = parseFloat(t.value); if (isFinite(v) && v > 0) this.centreW = v; return; }
+      if (t.hasAttribute && t.hasAttribute('data-kany')) { const S = this.kerbStage; if (S) { S.setAnyLayer(t.checked); PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true }); } return; }
       if (t.dataset.kopt) { const v = parseFloat(t.value); if (isFinite(v)) { this.kerbOpt[t.dataset.kopt] = v; if (this.kerbStage) { if (t.dataset.kopt === 'join' || t.dataset.kopt === 'oneW') this.kerbStage.o = Object.assign({}, this.kerbStage.o, this.kerbOpt); else this.kerbSolve(); } } return; }
       if (t.dataset.vd) {
         if (t.type === 'range') return;
@@ -1566,24 +1663,28 @@ if (typeof PlanTools !== 'undefined') {
       PlanLayoutUI.mode = PlanLayoutUI.step === 2 ? 'sub' : 'front';
       if (typeof PlanMarkup !== 'undefined') PlanMarkup.refreshProps();
     },
-    onDeactivate() { PlanLayoutUI.secDraw = null; PlanLayoutUI._active = false; PlanLayoutUI.widen(false); PlanLayoutUI.hoverT = null; PlanLayoutUI.kerbStage = null; PlanLayoutUI.centreStage = null; if (PlanLayoutUI.drawStreets) PlanLayoutUI.streetDrawOn(false); },
+    onDeactivate() { PlanLayoutUI.secDraw = null; PlanLayoutUI._active = false; PlanLayoutUI.widen(false); PlanLayoutUI.hoverT = null; PlanLayoutUI.kerbStage = null; PlanLayoutUI.centreStage = null; if (typeof PlanReserveUI !== 'undefined') PlanReserveUI.stage = null; if (PlanLayoutUI.drawStreets) PlanLayoutUI.streetDrawOn(false); },
     cancel() { PlanTools.set('select'); },
-    onMove(pt) {
+    onMove(pt, e) {
+      if (typeof PlanReserveUI !== 'undefined' && PlanReserveUI.stage) { PlanReserveUI.move(pt, e); return; }
+      if (PlanLayoutUI.kerbStage && !PlanLayoutUI.secDraw && !PlanLayoutUI.drawStreets) { PlanLayoutUI.kerbMove(pt, e); return; }
       if (PlanLayoutUI.secDraw) { PlanLayoutUI._secHover = PlanTools.snap(pt, { wantElements: false }); PlanEngine.requestDraw({ fg: true }); return; }
       if (PlanLayoutUI.drawStreets) { const R = PlanLayoutUI._rt(); if (R) { R._hover = PlanTools.snap(pt, { wantElements: false }); PlanEngine.requestDraw({ fg: true }); } return; }
       if (PlanLayoutUI.mode !== 'trunk' || !PlanLayoutUI.result) return;
       const h = PlanLayoutUI._pickT([pt.x * PlanLayoutUI.f, pt.y * PlanLayoutUI.f]);
       if ((h && h.edge) !== (PlanLayoutUI.hoverT && PlanLayoutUI.hoverT.edge)) { PlanLayoutUI.hoverT = h; PlanEngine.requestDraw({ fg: true }); }
     },
-    onDown(pt, e) { if (PlanLayoutUI.secDraw) PlanLayoutUI.secDown(pt); else if (PlanLayoutUI.drawStreets) PlanLayoutUI.streetDown(pt); else if (PlanLayoutUI.centreStage) PlanLayoutUI.centreClick(pt, e); else if (PlanLayoutUI.kerbStage) PlanLayoutUI.kerbClick(pt, e); else PlanLayoutUI.click(pt, e); },
+    onUp() { if (typeof PlanReserveUI !== 'undefined') PlanReserveUI.up(); },
+    onDown(pt, e) { if (typeof PlanReserveUI !== 'undefined' && PlanReserveUI.stage) PlanReserveUI.down(pt, e); else if (PlanLayoutUI.secDraw) PlanLayoutUI.secDown(pt); else if (PlanLayoutUI.drawStreets) PlanLayoutUI.streetDown(pt); else if (PlanLayoutUI.centreStage) PlanLayoutUI.centreClick(pt, e); else if (PlanLayoutUI.kerbStage) PlanLayoutUI.kerbClick(pt, e); else PlanLayoutUI.click(pt, e); },
     drawOverlay(ctx, zoom) { PlanLayoutUI.draw(ctx, zoom); if (PlanLayoutUI.drawStreets) { const R = PlanLayoutUI._rt(); if (R) R.drawOverlay(ctx, zoom); } },
-    keyFirst(e) { return PlanLayoutUI.secDraw ? PlanLayoutUI.secKey(e) : PlanLayoutUI.drawStreets ? PlanLayoutUI.streetKey(e) : false; },
+    keyFirst(e) { return PlanLayoutUI.secDraw ? PlanLayoutUI.secKey(e) : PlanLayoutUI.drawStreets ? PlanLayoutUI.streetKey(e) : (PlanLayoutUI.kerbStage && e.key === 'Backspace') ? PlanLayoutUI.kerbKey(e) : (typeof PlanReserveUI !== 'undefined' && PlanReserveUI.stage && (e.key === 'Backspace')) ? PlanReserveUI.key(e) : false; },
     get _draft() { const R = PlanLayoutUI.drawStreets && PlanLayoutUI._rt(); return R && R._draft ? R._draft : null; },
     onKey(e) {
       if (PlanLayoutUI.secDraw && PlanLayoutUI.secKey(e)) return true;
       if (PlanLayoutUI.drawStreets && PlanLayoutUI.streetKey(e)) return true;
       if (PlanLayoutUI.centreStage && e.key === 'Enter') { PlanLayoutUI.centreCreate(); return true; }
-      if (PlanLayoutUI.kerbStage && e.key === 'Enter') { PlanLayoutUI.kerbCreate(); return true; }
+      if (typeof PlanReserveUI !== 'undefined' && PlanReserveUI.stage && PlanReserveUI.key(e)) return true;
+      if (PlanLayoutUI.kerbStage && PlanLayoutUI.kerbKey(e)) return true;
       if (e.key === 'Escape') { if (PlanLayoutUI.centreStage) PlanLayoutUI.centreCancel(); else if (PlanLayoutUI.kerbStage) PlanLayoutUI.kerbCancel(); else if (PlanLayoutUI.markFor) { PlanLayoutUI.markFor = null; PlanLayoutUI.flag = null; PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true }); } else this.cancel(); return true; }
       return false;
     },
