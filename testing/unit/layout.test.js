@@ -540,7 +540,7 @@ ok('strings: each string reports its reach from the mini-sub; cutting by kiosks 
   const a = L.solve(F, { strN: 0 }), b = L.solve(F, { strN: 2 });
   assert(a.net.strLens.length >= 1 && b.net.strLens.length > a.net.strLens.length, 'more strings when cut');
   const far = r => Math.max(...r.net.strLens.map(x => x.len));
-  assert(Math.abs(far(a) - far(b)) < 1e-6 || far(b) <= far(a) + 1e-6, 'the furthest kiosk is no further when cut');
+  assert(far(b) <= far(a) + 0.05, 'the furthest kiosk is no further when cut (within 5 cm: the head feeder follows the same route, rounded at its own bends)');
   b.net.strLens.forEach(x => { assert(x.len > 0 && x.kiosks.includes(x.far)); });
 });
 ok('a kiosk moved by hand stands exactly there and the layout is solved around it', () => {
@@ -610,5 +610,26 @@ ok('keep-out in a layout: with a carriageway width on every street no service or
   const st = r.streets, inside = p => st.some(s => L.carriage([s]).dist(s, p) < 3 - 0.35);
   let n = 0; r.erven.forEach(e => { if (e.route) e.route.forEach((p, i) => { if (i && i < e.route.length - 1 && inside(p)) n++; }); });
   assert(n <= 3, 'interior service vertices within 0.35 m of the kerb or inside: ' + n);
+});
+ok('keep-out, the 72-erf neighbourhood as the app runs it: no run inside a carriageway at 4–9 m, with or without an offset carriageway', () => {
+  const run = (cw, off) => { const Fc = Object.assign({}, F, { streets: F.streets.map(s => Object.assign({}, s, { cw, cwOffset: off })), subPts: [[150, 130]] }); const r = L.solve(Fc, {}); L.keepOut(r); L.smooth(r, r.P); return r; };
+  for (const [cw, off] of [[4, 0], [5, 0], [6, 0], [7, 0], [9, 0], [7, 1.5], [7, -1.5], [7, 2.5], [7, -2.5], [9, -1], [9, 1], [8, -2]]) {
+    const h = L.carriageHits(run(cw, off)); assert.strictEqual(h.length, 0, `cw ${cw} offset ${off}: ` + h.map(x => x.kind + ' ' + x.id).join(', '));
+  }
+  // the offset is used: the same layout judged on a carriageway 2 m off has runs in it if the engine is told the street is centred
+  const centred = run(7, 0); centred.streets.forEach(st => { st.co = -2; }); assert(L.carriageHits(centred).length > 10, 'an offset carriageway is a different road');
+  // each hit carries the stretches inside, for the Checks list's Show
+  const st = { id: 'T', name: 'T', w: 12, cw: 6, pts: [[-60, 0], [60, 0]], cum: [0, 120], len: 120 };
+  const h = L.carriageHits({ streets: [st], erven: [{ id: 'e', route: [[-20, 3.6], [-2, 3.6], [0, 0.2], [2, 3.6], [20, 3.6]] }], net: null, fibre: null });
+  assert.strictEqual(h.length, 1); assert(h[0].bad.length === 1 && h[0].bad[0].length > 3 && h[0].bad[0].every(q => Math.abs(q[1]) < 3 - 0.8 + 1e-9));
+});
+ok('junctions: a third street ending where two others already meet joins that junction', () => {
+  const r = L.solve(F, {}), S4 = r.streets.find(x => x.id === 'S4');
+  const end = r.junctions.find(j => j.items.some(it => it[0] === S4 && it[1] > S4.len - 0.5));
+  assert(end, 'Orchard Lane ends on Main Road / Crescent Avenue'); assert(end.items.length >= 3, 'three streets at that junction');
+});
+ok('keep-out: a carriageway ends square at the end of its street (no round cap reaching over the street it meets)', () => {
+  const a = { id: 'A', w: 12, cw: 9, pts: [[0, 0], [0, 50]] }, C = L.carriage([a]);
+  assert(C.insideAny([0, -2], [], 0.1) === null, 'past the end'); assert(C.insideAny([0, 2], [], 0.1) === a, 'inside');
 });
 console.log(n + ' passed');
