@@ -267,6 +267,34 @@ ok('stacked parts: the nearest is picked first, a click again at the same spot p
   const lone = U._moveHit([r.kiosks[1].x, r.kiosks[1].y]); assert.strictEqual(lone.kind, 'kiosk');
 });
 
+ok('a moved crossing re-lays the runs through it: ends stay, the crossing moves square, no old bend is left, and it is counted', async () => {
+  const { U, PL, r } = lay(); U.admdConfirm(); U.applyMoves(r);
+  const c = r.net.cross.filter(x => !x.prov && x.svc > 1).sort((p, q) => q.svc - p.svc)[0] || r.net.cross.find(x => !x.prov && x.svc > 0); assert(c, 'a crossing with services');
+  const L = U.cfg(), f = U.f, t = U._xTan(c), st = c.st;
+  const crosses = pts => { for (let i = 1; i < pts.length; i++) for (let j = 1; j < st.pts.length; j++) { const h = U._segInter(pts[i - 1], pts[i], st.pts[j - 1], st.pts[j]); if (h && Math.abs(PL.project(st, h[0], h[1]).s - c.s) <= 6) return i; } return 0; };
+  const before = r.erven.filter(e => e.route && crosses(e.route)).map(e => ({ id: e.id, route: e.route.map(q => q.slice()) }));
+  assert(before.length >= 1, 'services cross it');
+  L.moves.xs[c.key] = { a: { x: t[0] * 3 / f, y: t[1] * 3 / f }, b: { x: t[0] * 3 / f, y: t[1] * 3 / f } };
+  const g = U._gathered, r2 = PL.solve(g.input, g.params); U.result = r2; U.applyMoves(r2);
+  const c2 = r2.net.cross.find(x => x.key === c.key);
+  for (const b of before) {
+    const n = r2.erven.find(e => e.id === b.id).route, i0 = crosses(b.route), i1 = crosses(n);
+    assert.deepStrictEqual(n[0], b.route[0]); assert.deepStrictEqual(n[n.length - 1], b.route[b.route.length - 1]);
+    assert(n.length <= b.route.length + 2, 'no leftover bend: ' + b.route.length + ' -> ' + n.length);
+    const p0 = b.route[i0 - 1], q0 = b.route[i0], p1 = n[i1 - 1], q1 = n[i1], sh = (x, y) => Math.hypot(x[0] - y[0], x[1] - y[1]);
+    assert(Math.abs(sh(p0, p1) - 3) < 0.02 && Math.abs(sh(q0, q1) - 3) < 0.02, 'both ends of the crossing slid 3 m: ' + sh(p0, p1).toFixed(3) + ' / ' + sh(q0, q1).toFixed(3));
+    assert(Math.abs((q1[0] - p1[0]) - (q0[0] - p0[0])) < 0.1 && Math.abs((q1[1] - p1[1]) - (q0[1] - p0[1])) < 0.1,   /* the street bends a little over 3 m */ 'still the same crossing vector: square stays square ' + [q1[0] - p1[0] - (q0[0] - p0[0]), q1[1] - p1[1] - (q0[1] - p0[1])].map(x => x.toFixed(3)));
+  }
+  assert.strictEqual(c2.relaid.svc, before.length, 'every service run is counted'); assert(c2.relaid.fi + c2.relaid.lv >= 0);
+  // sliding it back the other way (a cut-back stretch) also leaves ends and count in order
+  L.moves.xs[c.key] = { a: { x: -t[0] * 4 / f, y: -t[1] * 4 / f }, b: { x: -t[0] * 4 / f, y: -t[1] * 4 / f } };
+  const r3 = PL.solve(g.input, g.params); U.result = r3; U.applyMoves(r3);
+  for (const b of before) { const n = r3.erven.find(e => e.id === b.id).route; assert.deepStrictEqual(n[0], b.route[0]); assert.deepStrictEqual(n[n.length - 1], b.route[b.route.length - 1]); assert(n.length <= b.route.length + 2); }
+  assert(r3.erven.every(e => !e.route || e.route.every(q => isFinite(q[0]) && isFinite(q[1]))), 'no broken points');
+  // the square option
+  assert.strictEqual(U.cfg().xsq, true); U.cfg().xsq = false; assert.strictEqual(U.cfg().xsq, false); U.cfg().xsq = true;
+});
+
 (async () => {
   for (const [name, fn] of queue) { if (process.env.ONLY && !name.includes(process.env.ONLY)) continue; const t = Date.now(); await fn(); n++; console.log('ok', name, `(${((Date.now() - t) / 1000).toFixed(1)} s)`); }
   console.log(n + ' passed');
