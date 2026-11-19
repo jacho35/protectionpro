@@ -114,4 +114,47 @@ ok('a U-shaped block gets crossings between its two arms', () => {
   const blk = U.blockOf.get('N0'); assert.strictEqual(blk, U.blockOf.get('S0'), 'one block');
   assert(U.cls.p.sites.filter(x => x.kind === 'mid' && x.Ra.block === x.Rb.block).length >= 3, 'no crossing between the arms');
 });
+
+// five organic townships (curved streets, corner erven cut back by the crossing reserve with a 3 m splay): a loop with a cul-de-sac, Y
+// junctions, a staggered T, a skew crossroads with a crescent and a roundabout; each also with its street lines drawn rough (3 m off
+// centre, wavy), and with a junction moved and the erven laid out again round it
+const O = require('./organic-fixture.js');
+const MOVES = [{ A: [20, 0], C: [15, 0] }, { A: [22, 2], B: [16, -10] }, { B: [-22, 0] }, { A: [18, 4], B: [10, -25] }, { A: [12, 8] }];
+const safe = (F, r, truthLines, truthJ) => {
+  const lines = truthLines || F.lines, J = truthJ || r.blocks.junctions.filter(j => j.legs.length >= 3), cross = r.net.cross;
+  const sdist = (u, v, w) => { const L2 = (w[0] - v[0]) ** 2 + (w[1] - v[1]) ** 2 || 1e-9, t = Math.max(0, Math.min(1, ((u[0] - v[0]) * (w[0] - v[0]) + (u[1] - v[1]) * (w[1] - v[1])) / L2)); return dist(u, [v[0] + (w[0] - v[0]) * t, v[1] + (w[1] - v[1]) * t]); };
+  const onX = (a, b) => cross.some(c => [c.ends || [c.a, c.b], ...(c.sites || []).map(x => [x.a, x.b])].some(([p, q]) => sdist(a, p, q) < 1.2 && sdist(b, p, q) < 1.2));
+  const runs = []; r.erven.forEach(e => { if (e.route) runs.push([e.route, e.id]); if (e.duct) runs.push([e.duct, e.id]); }); r.net.lv.forEach(l => runs.push([l.pts, null])); r.fibre.trunks.forEach(t => runs.push([t.pts, null]));
+  let off = 0, thru = 0, mouth = 0;
+  for (const [pts, own] of runs) for (let i = 1; i < pts.length; i++) {
+    const a = pts[i - 1], b = pts[i], m = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+    if (lines.some(l => l.some((p, k) => k && segX(a, b, l[k - 1], p))) && !onX(a, b)) off++;
+    for (const E of F.erven) if (E.id !== own && pip(m, shrink(E.poly, 0.98))) thru++;
+    for (const j of J) if (sdist(j.pt, a, b) < 3.5 && !onX(a, b)) mouth++;
+  }
+  return { off, thru, mouth };
+};
+const solveO = F => { const ev = F.erven.flatMap(e => e.poly), c = [ev.reduce((t, p) => t + p[0], 0) / ev.length, ev.reduce((t, p) => t + p[1], 0) / ev.length];
+  let r = L.solve({ streets: F.streets, erven: F.erven, subPts: [c] }, { maxc: 80 }); const nd = r.blocks.cls.p.attach(c);      // the mini-sub on the corridor nearest the middle
+  r = L.solve({ streets: F.streets, erven: F.erven, subPts: [r.blocks.cls.p.nodes[nd].p.slice()] }, { maxc: 80 }); L.smooth(r, r.P); return r; };
+O.designs().forEach((d, i) => ok(`organic ${d.name}: every erf served within 80 m; no run crosses a road off a crossing, enters a junction mouth or passes through another erf (as drawn, rough lines, junction moved)`, () => {
+  const F = O.build(d), r = solveO(F), Fr = O.rough(F, 3, 5 + i), rr = solveO(Fr), Fm = O.build(O.designs(MOVES[i])[i]), rm = solveO(Fm);
+  const cases = [['as drawn', F, r, safe(F, r)], ['rough lines', Fr, rr, safe(Fr, rr, F.lines, r.blocks.junctions.filter(j => j.legs.length >= 3))], ['junction moved', Fm, rm, safe(Fm, rm)]];
+  for (const [what, G2, rx, s] of cases) {
+    assert(G2.erven.length >= 44, `${what}: ${G2.erven.length} erven`);
+    assert.strictEqual(rx.erven.filter(e => e.kiosk).length, G2.erven.length, `${what}: not every erf served`);
+    assert.strictEqual(rx.stats.over, 0, `${what}: ${rx.stats.over} services over 80 m`);
+    assert.deepStrictEqual(s, { off: 0, thru: 0, mouth: 0 }, `${what}: ${JSON.stringify(s)}`);
+    assert.strictEqual(rx.net.cross.filter(c => c.kind === 'link').length, 0, `${what}: a straight link across a road`);
+  }
+  // every leg of every junction has its crossing where erven line both sides of it (a roundabout's ring has the island on one side)
+  const want = [[2, 2, 3], [3, 3], [3, 2], [4, 3, 3], [1, 1, 1, 1]][i], got = r.blocks.junctions.filter(j => j.legs.length >= 3).map(j => r.blocks.cls.p.sites.filter(x => x.kind === 'leg' && x.j === j.id).length);
+  assert.deepStrictEqual(got.slice().sort(), want.slice().sort(), 'junction crossings ' + JSON.stringify(got));
+}));
+ok('organic: rough street lines (±1 m) move a junction crossing by no more than 0.3 m in the curved designs', () => {
+  for (const i of [1, 2, 4]) { const F = O.build(O.designs()[i]), m = X => PB.model({ erven: X.erven, lines: X.lines, classes: { p: 2 } }, {});
+    const A = m(F).cls.p.sites.filter(x => x.kind === 'leg'), B = m(O.rough(F, 1, 5 + i)).cls.p.sites.filter(x => x.kind === 'leg');
+    assert.strictEqual(A.length, B.length);
+    for (const x of A) assert(B.some(y => Math.max(dist(x.a, y.a), dist(x.b, y.b)) < 0.3 || Math.max(dist(x.a, y.b), dist(x.b, y.a)) < 0.3), O.designs()[i].name + ': a junction crossing moved'); }
+});
 console.log(n + ' passed');

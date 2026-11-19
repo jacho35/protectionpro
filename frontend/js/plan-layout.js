@@ -804,7 +804,7 @@ const PlanLayout = (() => {
         for (let i = 0; i < n; i++) {
           const e = list[i], B = BM.blockOf.get(e.id);
           for (const m of e.mcs) {
-            const nd = G.attach(m.pt, B); if (nd == null) continue;
+            const nd = G.attachInto(m.pt, B, e.id); if (nd == null) continue;
             const stub = Math.hypot(G.nodes[nd].p[0] - m.pt[0], G.nodes[nd].p[1] - m.pt[1]), R = G.reach(nd, maxc + 9 * (+P.xroute || 0));
             for (let ci = 0; ci < C; ci++) { const q = cn[ci]; if (!q) continue; const v = R.get(q.nd); if (!v) continue; const L = v[1] + stub + q.d;
               if (L <= maxc && L + XPEN * v[2] < Lm[ci][i] + XPEN * Xm[ci][i]) { Lm[ci][i] = L; Xm[ci][i] = Math.min(v[2], 9); } }
@@ -1481,10 +1481,20 @@ const PlanLayout = (() => {
     const G = M.cls.p, GF = M.cls.f, maxc = +P.maxc, simp = pts => PB.rdp(pts, 0.03), blk = e => M.blockOf.get(e.id);
     r.route = 'blocks'; r.blocks = M; r.keepOut = { fixed: 0, failed: 0 };
     const onto = (g, o) => { const nd = g.attach([o.x, o.y]); if (nd == null) return; const p = g.nodes[nd].p; o.x = p[0]; o.y = p[1]; o.bnode = nd; };
+    // an erf marker or fibre point the solve put outside its own erf (an odd corner erf whose front is only a short splay edge) is pulled
+    // 0.5 m inside it at the nearest point, so its service or duct never ends in the neighbour
+    const inside = (e, q) => {
+      if (!q || pip(q[0], q[1], e.poly)) return q;
+      let best = null; const P = e.poly;
+      for (let i = 0; i < P.length; i++) { const a = P[i], b = P[(i + 1) % P.length], dx = b[0] - a[0], dy = b[1] - a[1], L2 = dx * dx + dy * dy || 1e-9, t = clamp(((q[0] - a[0]) * dx + (q[1] - a[1]) * dy) / L2, 0, 1), p = [a[0] + dx * t, a[1] + dy * t], d = Math.hypot(q[0] - p[0], q[1] - p[1]); if (!best || d < best.d) best = { d, p }; }
+      const c = [e.cx, e.cy], v = [c[0] - best.p[0], c[1] - best.p[1]], l = Math.hypot(v[0], v[1]) || 1, out = [best.p[0] + v[0] / l * 0.5, best.p[1] + v[1] / l * 0.5];
+      return pip(out[0], out[1], e.poly) ? out : c.slice();
+    };
+    r.erven.forEach(e => { if (e.marker) { const m = inside(e, e.marker); e.marker[0] = m[0]; e.marker[1] = m[1]; } if (e.fibrePt) { const m = inside(e, e.fibrePt); e.fibrePt[0] = m[0]; e.fibrePt[1] = m[1]; } });
     // kiosks
     r.kiosks.forEach(k => onto(G, k));
     // services, kiosk by kiosk
-    const svc = (e, k, ov) => { const rt = k.bnode == null ? null : G.route(k.bnode, G.attach(e.marker, blk(e)), ov); if (!rt) return null; rt.full = [[k.x, k.y], ...rt.pts.slice(1), e.marker.slice()]; rt.len = plen(rt.full); return rt; };
+    const svc = (e, k, ov) => { const rt = k.bnode == null ? null : G.route(k.bnode, G.attachInto(e.marker, blk(e), e.id), ov); if (!rt) return null; rt.full = [[k.x, k.y], ...rt.pts.slice(1), e.marker.slice()]; rt.len = plen(rt.full); return rt; };
     let moved = 0, kept = 0, keptRuns = 0, slid = 0;
     // a kiosk with a service over the limit (the solve put it on a junction corner, its erf diagonally across) first slides along its own
     // corridor, up to 40 m each way, to the stand where the fewest of its erven are over the limit, then the least service cable
@@ -1526,7 +1536,7 @@ const PlanLayout = (() => {
       }
       for (const e of r.erven) {
         if (!e.mh || !e.fibrePt || e.mh.bnode == null) continue;
-        const rt = GF.route(e.mh.bnode, GF.attach(e.fibrePt, blk(e))); if (!rt) { keptRuns++; continue; }
+        const rt = GF.route(e.mh.bnode, GF.attachInto(e.fibrePt, blk(e), e.id)); if (!rt) { keptRuns++; continue; }
         rt.commit('fib'); e.duct = simp([[e.mh.x, e.mh.y], ...rt.pts.slice(1), e.fibrePt.slice()]); e.ductLen = plen(e.duct); e.fibX = null;
       }
     }

@@ -14,7 +14,7 @@
 //                 leg `legExtra` more (rule B, mid-block first)
 const PlanBlocks = (() => {
   'use strict';
-  const DEFAULTS = { gap: 4, gapFace: 40, cell: 0.25, step: 0.5, setback: 3, maxRes: 40, maxLink: 80, reach: 25, turn: 3, midNearJ: 18, jtol: 4, jmerge: 10, stub: 6 };
+  const DEFAULTS = { gap: 4, gapFace: 40, cell: 0.25, step: 0.5, setback: 3, maxRes: 40, maxLink: 80, reach: 25, turn: 3, midTurn: 25, midNearJ: 18, jtol: 4, jmerge: 10, stub: 6 };
   const sub = (a, b) => [a[0] - b[0], a[1] - b[1]], add = (a, b) => [a[0] + b[0], a[1] + b[1]], mul = (a, k) => [a[0] * k, a[1] * k];
   const dot = (a, b) => a[0] * b[0] + a[1] * b[1], nrm = a => { const l = Math.hypot(a[0], a[1]) || 1; return [a[0] / l, a[1] / l]; };
   const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
@@ -70,22 +70,24 @@ const PlanBlocks = (() => {
   // ── street lines → junctions (topology only: a point and the directions of its legs) ──
   function junctions(lines, o) {
     o = Object.assign({}, DEFAULTS, o || {});
-    const S = lines.map((pts, k) => { const cum = [0]; for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + dist(pts[i - 1], pts[i])); return { k, pts, cum, L: cum[cum.length - 1] }; });
-    const at = (st, s) => { s = Math.max(0, Math.min(st.L, s)); let i = 1; while (i < st.cum.length - 1 && st.cum[i] < s) i++; const a = st.pts[i - 1], b = st.pts[i], t = (s - st.cum[i - 1]) / ((st.cum[i] - st.cum[i - 1]) || 1); return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]; };
+    // a closed street (a roundabout's ring drawn as one loop) has no ends: its stations wrap round, so a junction at its seam has both legs
+    const S = lines.map((pts, k) => { const cum = [0]; for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + dist(pts[i - 1], pts[i])); const L = cum[cum.length - 1]; return { k, pts, cum, L, closed: pts.length > 3 && dist(pts[0], pts[pts.length - 1]) < o.jtol && L > 10 }; });
+    const at = (st, s) => { s = st.closed ? ((s % st.L) + st.L) % st.L : Math.max(0, Math.min(st.L, s)); let i = 1; while (i < st.cum.length - 1 && st.cum[i] < s) i++; const a = st.pts[i - 1], b = st.pts[i], t = (s - st.cum[i - 1]) / ((st.cum[i] - st.cum[i - 1]) || 1); return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]; };
     const proj = (st, p) => { let best = null; for (let i = 1; i < st.pts.length; i++) { const r = segDist(p, st.pts[i - 1], st.pts[i]); if (!best || r[0] < best.d) best = { d: r[0], q: r[1], s: st.cum[i - 1] + dist(st.pts[i - 1], r[1]) }; } return best; };
     const raw = [];
     for (let i = 0; i < S.length; i++) for (let j = i + 1; j < S.length; j++) {
       const A = S[i], B = S[j]; if (boxGap(bbox(A.pts), bbox(B.pts)) > o.jtol) continue;
       for (let p = 1; p < A.pts.length; p++) for (let q = 1; q < B.pts.length; q++) { const t = segX(A.pts[p - 1], A.pts[p], B.pts[q - 1], B.pts[q]); if (t != null) { const x = add(A.pts[p - 1], mul(sub(A.pts[p], A.pts[p - 1]), t)); raw.push({ pt: x, items: [[A, proj(A, x).s], [B, proj(B, x).s]] }); } }
-      for (const [E, T] of [[A, B], [B, A]]) for (const s0 of [0, E.L]) { const e = at(E, s0), pr = proj(T, e); if (pr.d <= o.jtol) raw.push({ pt: pr.q, items: [[E, s0], [T, pr.s]] }); }
+      for (const [E, T] of [[A, B], [B, A]]) for (const s0 of E.closed ? [] : [0, E.L]) { const e = at(E, s0), pr = proj(T, e); if (pr.d <= o.jtol) raw.push({ pt: pr.q, items: [[E, s0], [T, pr.s]] }); }
     }
     const cl = [];
     for (const r of raw) { const h = cl.find(c => dist(c.pt, r.pt) < o.jmerge); if (h) r.items.forEach(it => { if (!h.items.some(x => x[0] === it[0])) h.items.push(it); }); else cl.push({ pt: r.pt, items: r.items.slice() }); }
     return cl.map((c, n) => ({ id: 'J' + (n + 1), pt: c.pt, legs: c.items.flatMap(([st, s]) =>
       // a leg shorter than `stub` is a drawing overshoot past the other street, not a leg
-      [1, -1].filter(d => (d > 0 ? st.L - s : s) >= o.stub).map(d => {
-        const far = Math.min(st.L, Math.max(0, s + d * 12)), far2 = Math.min(st.L, Math.max(0, s + d * 25));
-        return { street: st.k, s, u: nrm(sub(at(st, far), c.pt)), u2: nrm(sub(at(st, far2), c.pt)), reach: Math.abs(far - s) };
+      [1, -1].filter(d => st.closed || (d > 0 ? st.L - s : s) >= o.stub).map(d => {
+        const far = st.closed ? s + d * 12 : Math.min(st.L, Math.max(0, s + d * 12)), far2 = st.closed ? s + d * 25 : Math.min(st.L, Math.max(0, s + d * 25));
+        const probes = [8, 12, 18, 25, 35].filter(k => st.closed ? k < st.L / 2 : (d > 0 ? st.L - s : s) >= k + 1).map(k => ({ k, p: at(st, s + d * k), t: nrm(sub(at(st, s + d * (k + 1)), at(st, s + d * (k - 1)))) }));
+        return { street: st.k, s, dir: d, closed: st.closed, L: st.L, u: nrm(sub(at(st, far), c.pt)), u2: nrm(sub(at(st, far2), c.pt)), reach: Math.abs(far - s), probes };
       })) }));
   }
 
@@ -117,9 +119,10 @@ const PlanBlocks = (() => {
       for (const v of A) { const r = nearOnPoly(v, B); if (r[0] <= lim) pts.push(v, r[1]); }
       for (const v of B) { const r = nearOnPoly(v, A); if (r[0] <= lim) pts.push(v, r[1]); }
       const h = hull(pts); if (h.length < 3) continue;
-      let cut = false; for (let k = 0; k < h.length && !cut; k++) cut = SI.crosses(h[k], h[(k + 1) % h.length], true);
-      if (!cut) cut = SS.some(([c]) => pip(c, h));
-      if (cut) continue;                                                            // a street line between them: two blocks
+      // a road between them = a street line crossing the line between the two erven's centres (the question the street lines answer; the
+      // filled gap itself can bulge into the road reserve on a curve, so a street line drawn off centre would cut it)
+      const cA = [A.reduce((t, p) => t + p[0], 0) / A.length, A.reduce((t, p) => t + p[1], 0) / A.length], cB = [B.reduce((t, p) => t + p[0], 0) / B.length, B.reduce((t, p) => t + p[1], 0) / B.length];
+      if (SI.crosses(cA, cB, true)) continue;                                        // a street line between them: two blocks
       bridges.push({ i, j, poly: h }); par[find(i)] = find(j);
     }
     const by = new Map(); erven.forEach((e, i) => { const r = find(i); if (!by.has(r)) by.set(r, []); by.get(r).push(i); });
@@ -223,34 +226,61 @@ const PlanBlocks = (() => {
       const ringNear = (B, p, frontOnly) => { let best = null; for (const R of (B.rings && B.rings[name]) || []) for (let i = 0; i < R.pts.length; i++) { if (frontOnly && !R.front[i]) continue; const d = dist(p, R.pts[i]); if (!best || d < best.d) best = { R, i, s: R.cum[i], d }; } return best; };
       const sites = [], warns = [];
       // junction legs
-      for (const Jn of real) for (const leg of Jn.legs) {
-        const u = leg.u, nL = [u[1], -u[0]], Q = add(Jn.pt, mul(u, Math.min(15, leg.reach || 15)));
-        const al = t => Math.max(dot(t, u), leg.u2 ? dot(t, leg.u2) : -1);
+      // a junction leg: probed at several distances along its street line (8 … 35 m, never past halfway to the next junction), so a skew or Y
+      // junction whose corner erven reach far along the leg still finds the straight frontage beyond them; the first probe that works is used
+      const tryLeg = (Jn, leg, Q, uL, sb) => {
+        const nL = [uL[1], -uL[0]], al = t => Math.max(dot(t, uL), dot(t, leg.u), leg.u2 ? dot(t, leg.u2) : -1);
         const hit = sgn => { let best = null; const e = add(Q, mul(nL, sgn * o.maxRes));
           for (const B of blocks) { if (boxGap(B.box, bbox([Q, e])) > 0) continue; for (const poly of B.polys) for (let i = 0; i < poly.length; i++) { const t = segXi(Q, e, poly[i], poly[(i + 1) % poly.length]); if (t != null && (!best || t < best.t)) best = { t, B, H: add(Q, mul(nL, sgn * o.maxRes * t)) }; } }
           return best; };
         const hA = hit(1), hB = hit(-1);
-        if (!hA || !hB || (hA.B === hB.B && dist(hA.H, hB.H) < 3)) { warns.push({ j: Jn.id, text: 'a junction leg with erven on one side only' }); continue; }
-        const sb = o.setback + (name !== 'p' && o.rule === 'class' ? 4 : 0);           // rule C: a class of its own, its crossing 4 m further along
+        if (!hA || !hB || (hA.B === hB.B && dist(hA.H, hB.H) < 3)) return { why: 'a junction leg with erven on one side only' };
         const ends = [hA, hB].map(({ B, H }) => {
           // from where the probe ray met the block, back along its ring towards the junction while the ring still runs along the leg: where
           // it stops is the end of the corner splay (local to this leg, whatever else of the block lies near the junction)
-          const rn = ringNear(B, H); if (!rn) return null; const R = rn.R, s0 = rn.s;
-          const dir = dot(sub(ringAt(R, s0 + 2), Jn.pt), u) > dot(sub(ringAt(R, s0 - 2), Jn.pt), u) ? 1 : -1;
-          const t0 = tanAt(R, s0, dir); if (al(t0) < Math.cos(35 * Math.PI / 180)) return null;       // (the street line only says roughly which way the leg runs)
+          const rn = ringNear(B, H); if (!rn) return null; const R = rn.R;
+          const dir = dot(sub(ringAt(R, rn.s + 2), Jn.pt), uL) > dot(sub(ringAt(R, rn.s - 2), Jn.pt), uL) ? 1 : -1;
+          // a probe that met the block inside its corner (between the two ends of a splay) first steps out along the leg onto straight frontage,
+          // so the walk back below always finds the same corner end whichever probe hit
+          const bendAt = q => dot(tanAt(R, q - 1.5, dir), tanAt(R, q + 1.5, dir)) < Math.cos(20 * Math.PI / 180);
+          let s0 = rn.s; for (let k = 0; k < 120 && bendAt(s0); k++) s0 += dir * 0.25;
+          const t0 = tanAt(R, s0, dir); if (al(t0) < Math.cos(40 * Math.PI / 180)) return null;       // (the street line only says roughly which way the leg runs)
           // the turn is measured against the ring's own direction where the probe met it, so the street line's angle moves nothing
           let sE = 0;
-          for (let s = 0.25; s < 60; s += 0.25) { const q = s0 - dir * s; if (dot(tanAt(R, q, dir), t0) < Math.cos(30 * Math.PI / 180) || dot(sub(ringAt(R, q), Jn.pt), u) <= 0) break; sE = s; }
+          // the corner may lie past the junction point (the acute corner of a Y, seen from its tail): looked for up to 25 m past it; with none,
+          // the end is the junction point (from the street line, so such an end does not set the crossing's station below)
+          let corner = false, sJ = null;
+          for (let s = 0.25; s < 80; s += 0.25) { const q = s0 - dir * s, past = dot(sub(ringAt(R, q), Jn.pt), leg.u);
+            // a corner turns 20° or more within 3 m (a splay, a square corner, a corner curve), wherever the walk began; the kink where two lots
+            // meet on a curved street does not
+            if (bendAt(q)) { corner = true; break; }
+            if (past <= 0 && sJ == null) sJ = sE; if (past <= -25) break; sE = s; }
+          if (!corner && sJ != null) sE = sJ;
           const sEnd = s0 - dir * sE;
-          return { R, dir, sE: sEnd, E: ringAt(R, sEnd), S: ringAt(R, sEnd + dir * sb), t: tanAt(R, sEnd + dir * sb, dir) };
+          return { R, dir, corner, sE: sEnd, E: ringAt(R, sEnd), S: ringAt(R, sEnd + dir * sb), t: tanAt(R, sEnd + dir * sb, dir) };
         });
-        if (!ends[0] || !ends[1]) { warns.push({ j: Jn.id, text: 'no frontage along a junction leg' }); continue; }
-        const m = nrm(add(ends[0].t, ends[1].t)), sig = Math.max(dot(sub(ends[0].S, Jn.pt), m), dot(sub(ends[1].S, Jn.pt), m));
-        const cut = en => { for (let s = 0; s < 80; s += 0.1) { const p = ringAt(en.R, en.sE + en.dir * s); if (dot(sub(p, Jn.pt), m) >= sig) return p; } return null; };
-        const a = cut(ends[0]), b = cut(ends[1]); if (!a || !b) { warns.push({ j: Jn.id, text: 'a junction crossing could not be placed' }); continue; }
-        { const d = nrm(sub(b, a)); if (dist(a, b) > o.maxRes || crossesBlock(add(a, mul(d, 0.05)), sub(b, mul(d, 0.05)))) { warns.push({ j: Jn.id, text: 'a junction crossing would pass over an erf' }); continue; } }
-        if (sites.some(x => x.kind === 'leg' && ((dist(x.a, a) < 2 && dist(x.b, b) < 2) || (dist(x.a, b) < 2 && dist(x.b, a) < 2)))) continue;
-        sites.push({ id: name + (sites.length + 1), cls: name, kind: 'leg', j: Jn.id, a, b, Ra: ends[0].R, Rb: ends[1].R, splay: [ends[0].E, ends[1].E] });
+        if (!ends[0] || !ends[1]) return { why: 'no frontage along a junction leg' };
+        const m = nrm(add(ends[0].t, ends[1].t)), by = ends.filter(e => e.corner).length ? ends.filter(e => e.corner) : ends, sig = Math.max(...by.map(e => dot(sub(e.S, Jn.pt), m)));     // only an end that found its corner sets the station: a straight frontage across from a side street runs on to the junction point, which comes from the street line
+        // where each ring meets the crossing line {dot(p − J, m) = sig} (the same line wherever J is): forward from a corner end, either way
+        // from an end with no corner (whose start came from the junction point), the nearest meeting
+        const cut = en => { const f = s => dot(sub(ringAt(en.R, en.sE + en.dir * s), Jn.pt), m) - sig, dd = en.corner || f(0) < 0 ? 1 : -1;
+          for (let s = 0; s < 80; s += 0.1) if (dd > 0 ? f(s) >= 0 : f(-s) <= 0) return ringAt(en.R, en.sE + en.dir * dd * s); return null; };
+        const a = cut(ends[0]), b = cut(ends[1]); if (!a || !b) return { why: 'a junction crossing could not be placed' };
+        { const d = nrm(sub(b, a)); if (dist(a, b) > o.maxRes || crossesBlock(add(a, mul(d, 0.05)), sub(b, mul(d, 0.05)))) return { why: 'a junction crossing would pass over an erf' }; }
+        return { site: { id: name + (sites.length + 1), cls: name, kind: 'leg', j: Jn.id, a, b, Ra: ends[0].R, Rb: ends[1].R, splay: [ends[0].E, ends[1].E], corners: [ends[0].corner, ends[1].corner], probe: Q } };
+      };
+      for (const Jn of real) {
+        for (const leg of Jn.legs) {
+          // never probe past halfway to the next junction along the same street (a roundabout's other junctions are near, but not on this leg)
+          let lim = Infinity; for (const o2 of real) if (o2 !== Jn) for (const l2 of o2.legs) if (l2.street === leg.street) { let ds = (l2.s - leg.s) * (leg.dir || 0); if (leg.closed && ds <= 0.5) ds += leg.L; if (ds > 0.5) lim = Math.min(lim, ds / 2); }
+          const sb = o.setback + (name !== 'p' && o.rule === 'class' ? 4 : 0);         // rule C: a class of its own, its crossing 4 m further along
+          const probes = (leg.probes || []).filter(q => q.k <= Math.max(8, lim)); if (!probes.length) probes.push({ p: add(Jn.pt, mul(leg.u, Math.min(12, leg.reach || 12))), t: leg.u });
+          let got = null, why = null;
+          for (const q of probes) { const r = tryLeg(Jn, leg, q.p, q.t, sb); if (r.site) { got = r.site; break; } why = why || r.why; }
+          if (!got) { warns.push({ j: Jn.id, text: why }); continue; }
+          if (sites.some(x => x.kind === 'leg' && ((dist(x.a, got.a) < 2 && dist(x.b, got.b) < 2) || (dist(x.a, got.b) < 2 && dist(x.b, got.a) < 2)))) continue;
+          sites.push(got);
+        }
       }
       // mid-block sites at erf boundaries: square across to the facing ring (another block, or the other arm of a U-shaped one)
       const nearJ = p => real.some(Jn => dist(p, Jn.pt) < o.midNearJ);
@@ -258,8 +288,8 @@ const PlanBlocks = (() => {
       const RI = segIndex(ringSegs.map(s => [s[0], s[1]]), 8);
       for (const R of rings) for (const ei of R.block.erven) for (const v of erven[ei].poly) {
         const q = nearestOnRing(R, v); if (q.d > kd + 0.3 || !R.front[q.i]) continue;
-        let straight = true; for (const k of [-2, -1, 1, 2]) straight = straight && dot(tanAt(R, q.s + k, 1), tanAt(R, q.s, 1)) > Math.cos(o.turn * Math.abs(k) * Math.PI / 180);
-        if (!straight) continue;
+        // not on a block corner (a splay or square corner turns 45–90°); the small kink where two lots meet on a curved street is fine
+        if (dot(tanAt(R, q.s - 2.5, 1), tanAt(R, q.s + 2.5, 1)) < Math.cos(o.midTurn * Math.PI / 180)) continue;
         const p = R.pts[q.i], n = R.n[q.i], e = add(p, mul(n, o.maxRes));
         let best = null;
         for (const c of RI.nearest(add(p, mul(n, o.maxRes / 2)), o.maxRes / 2 + 1)) { const sg = ringSegs[c.k], t = segXi(p, e, sg[0], sg[1]); if (t != null && t * o.maxRes > 0.5 && (!best || t < best.t)) best = { t, R2: sg[2] }; }
@@ -294,8 +324,12 @@ const PlanBlocks = (() => {
           cand.sort((p, q) => p.d - q.d);
           for (const c of cand) {
             if (find(c.i) === find(c.j)) continue;
+            par[find(c.i)] = find(c.j);
+            // across open land (two blocks with no road between them, such as the corner lots of a roundabout quadrant left out): just more
+            // corridor, not a road crossing; across a street line: a crossing, reported, since no junction crossing could be made there
+            if (!SI.crosses(nodes[c.i].p, nodes[c.j].p, true)) { link(c.i, c.j, c.d, null); continue; }
             const x = { id: name + (sites.length + 1), cls: name, kind: 'link', a: nodes[c.i].p.slice(), b: nodes[c.j].p.slice(), Ra: nodes[c.i].R, Rb: nodes[c.j].R, na: c.i, nb: c.j, len: c.d, used: [] };
-            sites.push(x); link(c.i, c.j, c.d, x); par[find(c.i)] = find(c.j);
+            sites.push(x); link(c.i, c.j, c.d, x);
             warns.push({ j: null, link: true, text: 'corridors joined by a straight link where no junction crossing could be made' });
           }
         }
@@ -304,6 +338,16 @@ const PlanBlocks = (() => {
       function attach(p, B) {
         if (!B) { let bd = Infinity; for (const b of blocks) { if (boxGap(b.box, [p[0], p[1], p[0], p[1]]) > bd) continue; const d = distBlock(b, p)[0]; if (d < bd) { bd = d; B = b; } } }
         const rn = B && (ringNear(B, p, true) || ringNear(B, p, false)); return rn ? rn.R.node[rn.i] : null;
+      }
+      // the frontage node a stub into erf `id` (to point p inside it) leaves from: the nearest one whose straight stub crosses no other erf
+      function attachInto(p, B, id) {
+        if (!B) return attach(p);
+        const others = B.erven.map(i => erven[i]).filter(e => e.id !== id && boxGap(bbox(e.poly), [p[0] - 40, p[1] - 40, p[0] + 40, p[1] + 40]) === 0);
+        const clear = q => others.every(e => { const P = e.poly; for (let i = 0; i < P.length; i++) if (segX(q, p, P[i], P[(i + 1) % P.length]) != null) return false; return !pip([(q[0] + p[0]) / 2, (q[1] + p[1]) / 2], P); });
+        const cand = []; for (const R of (B.rings && B.rings[name]) || []) for (let i = 0; i < R.pts.length; i++) if (R.front[i]) cand.push([dist(p, R.pts[i]), R.node[i]]);
+        cand.sort((a, b) => a[0] - b[0]);
+        for (const [, nd] of cand.slice(0, 400)) if (clear(nodes[nd].p)) return nd;
+        return attach(p, B);
       }
       function route(from, to, ov) {
         ov = ov || {}; const xpen = ov.xpen != null ? ov.xpen : o.xpen, xshare = ov.xshare != null ? ov.xshare : o.xshare, legExtra = o.rule === 'mid' ? 40 : 0;
@@ -330,7 +374,7 @@ const PlanBlocks = (() => {
         return out;
       }
       const resetUse = () => sites.forEach(x => { x.used = []; });
-      return { name, kd, rings, sites, warns, nodes, attach, route, reach, ringNear, resetUse };
+      return { name, kd, rings, sites, warns, nodes, attach, attachInto, route, reach, ringNear, resetUse };
     }
     return { o, junctions: J, blocks, bridges, blockOf, cls, ms: Date.now() - t0, crossesBlock, streetSI: SI, distBlock };
   }
