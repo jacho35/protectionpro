@@ -864,6 +864,7 @@ Object.assign(PlanRoomDetect, {
     const def = erf ? this.ERF_LAYERS : this.DEFAULT_LAYERS;
     rd.layers = (typeof rd.layers === 'string' && rd.layers.trim()) ? rd.layers.slice(0, 200) : def;
     rd.hatch = rd.hatch !== false;        // outlines of hatched / solid walls on the wall layers count as walls
+    rd.sameLayer = rd.sameLayer !== false;   // each layer is its own wall graph: lines of different layers are never joined into one boundary
     rd.hover = rd.hover !== false;        // preview the region under the pointer
     const ins = parseFloat(rd.insetM);
     rd.insetM = (!erf && Number.isFinite(ins)) ? Math.max(-2, Math.min(2, ins)) : 0;   // wall finish: + shrinks, − grows (rooms only; an erf is a point)
@@ -905,22 +906,37 @@ Object.assign(PlanRoomDetect, {
     return { test: (n) => use.has(n), names: [...use], matched: matched.length > 0 };
   },
 
+  // The wall-layer tests to run: one per matched layer when `sameLayer` (default), else the merged set.
+  _layerTests(desc, data, o) {
+    const lt = this._wallLayerTest(desc, data, o.layers);
+    if (!o.sameLayer || lt.names.length < 2) return [lt];
+    return lt.names.map(n => ({ test: (x) => x === n, names: [n], matched: lt.matched }));
+  },
+
   _detectDxf(desc, pt, f, o, lim) {
     const data = PlanDxfImport.dataOf(desc);
-    const lt = this._wallLayerTest(desc, data, o.layers);
-    const segs = this.segmentsFromDxf(data, lt.test, { hatches: o.hatch && lt.matched, desc: desc });
-    if (!segs.length) return { ok: false, reason: 'no-walls' };
     const click = PlanDxfImport.localOf(desc, pt.x, pt.y);
     // metres per drawing unit, for the door gap and the size cap
     const mpu = f ? PlanDxfImport._pxPerUnit(desc) * f : desc.unitM;
     const gap = o.gapM / mpu;
-    const r = this.fromSegments(segs, [click.x, click.y], {
-      gap, maxArea: lim.maxAreaM2 / (mpu * mpu), tol: Math.max(0.001 / mpu, 1e-9), snap: Math.max(0.03 / mpu, 1e-9),
-    });
-    if (!r.ok) return Object.assign(r, { layers: lt.names });
+    let best = null, fail = null, any = false;
+    for (const lt of this._layerTests(desc, data, o)) {
+      const segs = this.segmentsFromDxf(data, lt.test, { hatches: o.hatch && lt.matched, desc: desc });
+      if (!segs.length) continue;
+      any = true;
+      const r = this.fromSegments(segs, [click.x, click.y], {
+        gap, maxArea: lim.maxAreaM2 / (mpu * mpu), tol: Math.max(0.001 / mpu, 1e-9), snap: Math.max(0.03 / mpu, 1e-9),
+      });
+      if (!r.ok) { if (!fail || r.reason === 'not-enclosed') fail = Object.assign(r, { layers: lt.names }); continue; }
+      const area = Math.abs(this._signedArea(r.points));
+      // the layer that encloses the click most tightly wins
+      if (!best || area < best.area) best = { r, lt, area };
+    }
+    if (!any) return { ok: false, reason: 'no-walls' };
+    if (!best) return fail;
     return {
-      ok: true, source: 'dxf', bridged: r.bridged, layers: lt.names, layerMatched: lt.matched,
-      points: r.points.map(([x, y]) => PlanDxfImport.worldOf(desc, x, y)),
+      ok: true, source: 'dxf', bridged: best.r.bridged, layers: best.lt.names, layerMatched: best.lt.matched,
+      points: best.r.points.map(([x, y]) => PlanDxfImport.worldOf(desc, x, y)),
     };
   },
 
@@ -1006,7 +1022,7 @@ Object.assign(PlanRoomDetect, {
     const pm = AppState.planMarkup, o = this.opts(target);
     const dxf = (typeof PlanDxfImport !== 'undefined') ? PlanDxfImport.list().map(d => [d.id, d.hidden, d.k, d.offX, d.offY, d.rotation, d.scaleAdj, d.unitM, d.layers]) : [];
     const img = pm.plans.map(p => [p.id, p.imageId, p.visible, p.offX, p.offY, p.rotation, p.scaleAdj, p.k, p.scale, p.x, p.y]);
-    return JSON.stringify([target, o.gapM, o.layers, o.hatch, PlanEngine.factor(), dxf, img, typeof PlanWorkArea !== 'undefined' ? PlanWorkArea.sig() : '']);
+    return JSON.stringify([target, o.gapM, o.layers, o.hatch, o.sameLayer, PlanEngine.factor(), dxf, img, typeof PlanWorkArea !== 'undefined' ? PlanWorkArea.sig() : '']);
   },
 
   _computeCands(target) {
@@ -1017,15 +1033,22 @@ Object.assign(PlanRoomDetect, {
     if (!visibleDxf.length && !hasImages) return { ok: false, reason: 'no-background' };
     let items = [], source = null, noWalls = true; const orphans = [];
     for (const d of visibleDxf) {
-      const data = PlanDxfImport.dataOf(d), lt = this._wallLayerTest(d, data, o.layers);
-      const segs = this.segmentsFromDxf(data, lt.test, { hatches: o.hatch && lt.matched, desc: d });
-      if (!segs.length) continue;
-      noWalls = false;
+      const data = PlanDxfImport.dataOf(d);
       const mpu = f ? PlanDxfImport._pxPerUnit(d) * f : d.unitM;
-      const found = this.allFromSegments(segs, {
-        gap: o.gapM / mpu, tol: Math.max(0.001 / mpu, 1e-9), snap: Math.max(0.03 / mpu, 1e-9),
-        minArea: lim.minAreaM2 / (mpu * mpu), maxArea: lim.maxAreaM2 / (mpu * mpu), minWidth: lim.minWidthM / mpu,
-      });
+      let found = [];
+      for (const lt of this._layerTests(d, data, o)) {
+        const segs = this.segmentsFromDxf(data, lt.test, { hatches: o.hatch && lt.matched, desc: d });
+        if (!segs.length) continue;
+        noWalls = false;
+        for (const c of this.allFromSegments(segs, {
+          gap: o.gapM / mpu, tol: Math.max(0.001 / mpu, 1e-9), snap: Math.max(0.03 / mpu, 1e-9),
+          minArea: lim.minAreaM2 / (mpu * mpu), maxArea: lim.maxAreaM2 / (mpu * mpu), minWidth: lim.minWidthM / mpu,
+        })) {
+          // the same region drawn on two layers is one region
+          if (!found.some(g => Math.abs(g.area - c.area) <= 0.01 * c.area && Math.hypot(g.seed[0] - c.seed[0], g.seed[1] - c.seed[1]) <= 0.05 * Math.sqrt(c.area))) found.push(c);
+        }
+      }
+      if (!found.length) continue;
       // The text inside a region names it (a stand number, a room number), as the DXF manager does.
       const texts = target === 'erf' ? (data.entities || []).filter(r => r.t === 'x' && r.s != null && String(r.s).trim() && (typeof PlanWorkArea === 'undefined' || !PlanWorkArea.active() || (w => PlanWorkArea.inWorld(w.x, w.y))(PlanDxfImport.worldOf(d, r.p[0], r.p[1])))) : [];
       const used = new Set();
@@ -1073,12 +1096,14 @@ Object.assign(PlanRoomDetect, {
     const dxfs = (typeof PlanDxfImport !== 'undefined')
       ? PlanDxfImport.list().filter(d => !d.hidden && PlanDxfImport.dataOf(d)).reverse() : [];
     for (const d of dxfs) {
-      const data = PlanDxfImport.dataOf(d), lt = this._wallLayerTest(d, data, o.layers);
-      const segs = this.segmentsFromDxf(data, lt.test, { hatches: o.hatch && lt.matched, desc: d });
-      if (!segs.length) continue;
-      const mpu = f ? PlanDxfImport._pxPerUnit(d) * f : d.unitM, c = PlanDxfImport.localOf(d, pt.x, pt.y);
-      const r = this.leakFromSegments(segs, [c.x, c.y], { gap: o.gapM / mpu, maxGap: maxGapM / mpu, tol: Math.max(0.001 / mpu, 1e-9), snap: Math.max(0.03 / mpu, 1e-9), maxArea: lim.maxAreaM2 / (mpu * mpu) });
-      if (r.ok) return { gapM: r.gap * mpu, points: r.bridges.map(b => PlanDxfImport.worldOf(d, (b[0] + b[2]) / 2, (b[1] + b[3]) / 2)) };
+      const data = PlanDxfImport.dataOf(d);
+      for (const lt of this._layerTests(d, data, o)) {
+        const segs = this.segmentsFromDxf(data, lt.test, { hatches: o.hatch && lt.matched, desc: d });
+        if (!segs.length) continue;
+        const mpu = f ? PlanDxfImport._pxPerUnit(d) * f : d.unitM, c = PlanDxfImport.localOf(d, pt.x, pt.y);
+        const r = this.leakFromSegments(segs, [c.x, c.y], { gap: o.gapM / mpu, maxGap: maxGapM / mpu, tol: Math.max(0.001 / mpu, 1e-9), snap: Math.max(0.03 / mpu, 1e-9), maxArea: lim.maxAreaM2 / (mpu * mpu) });
+        if (r.ok) return { gapM: r.gap * mpu, points: r.bridges.map(b => PlanDxfImport.worldOf(d, (b[0] + b[2]) / 2, (b[1] + b[3]) / 2)) };
+      }
     }
     if (AppState.planMarkup.plans.some(p => p.visible !== false) && f) {
       const win = this._rasterWindow();
@@ -1408,6 +1433,7 @@ Object.assign(PlanRoomDetect, {
         <label>${target === 'erf' ? 'Boundary' : 'Wall'} layers (DXF, regex)
           <input type="text" data-rd="layers" style="width:100%"></label>
         <label style="display:flex;gap:6px;align-items:flex-start"><input type="checkbox" data-rd="hatch"> <span>Hatched and solid ${target === 'erf' ? 'boundaries' : 'walls'} on those layers count as ${target === 'erf' ? 'boundaries' : 'walls'} (their outline is the face)</span></label>
+        <label style="display:flex;gap:6px;align-items:flex-start"><input type="checkbox" data-rd="samelayer"> <span>Use one layer at a time: lines of different layers are never joined into one ${lim.noun} boundary</span></label>
         <label style="display:flex;gap:6px;align-items:flex-start"><input type="checkbox" data-rd="hover"> <span>Preview the ${lim.noun} under the pointer${this._hoverOff ? ' (switched off: this drawing is too slow for it)' : ''}</span></label>
         <p style="margin:0;color:var(--text-muted)">With a plan image the lines are the dark pixels. ${target === 'erf' ? 'Detected erven are placed as Erf points and appear in Demand.' : 'Drag a corner to reshape a room; drag a midpoint to add a corner; double-click a corner to remove it.'}</p>
       </div>`;
@@ -1427,6 +1453,8 @@ Object.assign(PlanRoomDetect, {
     el.querySelector('[data-rd="layers"]').addEventListener('change', (e) => { o.layers = e.target.value || (target === 'erf' ? this.ERF_LAYERS : this.DEFAULT_LAYERS); PlanMarkup.markDirty(); });
     const hb = el.querySelector('[data-rd="hatch"]'), hv = el.querySelector('[data-rd="hover"]');
     hb.checked = o.hatch; hv.checked = o.hover && !this._hoverOff; hv.disabled = !!this._hoverOff;
+    const sl = el.querySelector('[data-rd="samelayer"]'); sl.checked = o.sameLayer;
+    sl.addEventListener('change', (e) => { o.sameLayer = e.target.checked; PlanMarkup.markDirty(); this.leak = null; this._changed(); });
     hb.addEventListener('change', (e) => { o.hatch = e.target.checked; PlanMarkup.markDirty(); this.leak = null; this._changed(); });
     hv.addEventListener('change', (e) => { o.hover = e.target.checked; PlanMarkup.markDirty(); this._setHover(null); });
     const fx = el.querySelector('[data-rd-fixgap]');
