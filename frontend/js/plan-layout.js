@@ -55,7 +55,7 @@ const PlanLayout = (() => {
     const pts = s.pts.map(p => [p[0], p[1]]), cum = [0];
     for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
     const w = s.w || 12;
-    return { id: s.id, name: s.name || s.id, pts, cum, len: cum[cum.length - 1], w, cw: Math.max(0, Math.min(w, +s.cw || 0)), vk: Math.max(1.5, w / 2 - 2), tr: Math.max(1.5, w / 2 - 1.7), nodeSt: {}, jids: [] };
+    return { id: s.id, name: s.name || s.id, pts, cum, len: cum[cum.length - 1], w, cw: Math.max(0, Math.min(w, +s.cw || 0)), co: Math.max(-w / 2, Math.min(w / 2, -(+s.cwOffset || 0))), vk: Math.max(1.5, w / 2 - 2), tr: Math.max(1.5, w / 2 - 1.7), nodeSt: {}, jids: [] };
   }
   function ptAt(st, s, off) {
     s = clamp(s, 0, st.len);
@@ -64,6 +64,21 @@ const PlanLayout = (() => {
     const tx = (b[0] - a[0]) / L, ty = (b[1] - a[1]) / L;
     return [a[0] + (b[0] - a[0]) * t + ty * off, a[1] + (b[1] - a[1]) * t - tx * off, tx, ty];     // left of travel is (ty, -tx), y down
   }
+  // the carriageway's centre line, `co` m to the left of the street line (the road-reserve tool's offset is + to the right in this frame, so
+  // prepStreet stores its negative): every vertex moved along the mean of its two segment normals, mitre-limited
+  function offsetPts(pts, d) {
+    if (!d) return pts.map(p => p.slice());
+    return pts.map((p, i) => {
+      const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)];
+      const n = (u, v) => { const L = Math.hypot(v[0] - u[0], v[1] - u[1]) || 1; return [(v[1] - u[1]) / L, -(v[0] - u[0]) / L]; };
+      let nx, ny;
+      if (i > 0 && i < pts.length - 1) { const n1 = n(pts[i - 1], p), n2 = n(p, pts[i + 1]), mx = n1[0] + n2[0], my = n1[1] + n2[1], ml = Math.hypot(mx, my) || 1, c = Math.max(0.5, (mx / ml) * n1[0] + (my / ml) * n1[1]); nx = mx / ml / c; ny = my / ml / c; }
+      else [nx, ny] = n(a, b);
+      return [p[0] + nx * d, p[1] + ny * d];
+    });
+  }
+  // how deep a point is inside a street's carriageway (m, negative = outside it), from the carriageway's own centre (`co` off the street line)
+  function cwDepth(st, x, y) { const pr = project(st, x, y); return st.cw / 2 - Math.abs(pr.side * pr.d - (st.co || 0)); }
   function project(st, x, y) {
     let best = null;
     for (let i = 1; i < st.pts.length; i++) {
@@ -90,7 +105,12 @@ const PlanLayout = (() => {
       }
       for (const [E, T] of [[A, B], [B, A]]) for (const s0 of [0, E.len]) {
         const e = ptAt(E, s0, 0), pr = project(T, e[0], e[1]);
-        if (pr.d <= 3 && !raw.some(r => Math.hypot(r.pt[0] - e[0], r.pt[1] - e[1]) < 8)) raw.push({ pt: [pr.px, pr.py], items: [[E, s0], [T, pr.s]] });
+        if (pr.d > 3) continue;
+        // an end at a place that is already a junction (a third street ending where two cross or meet) joins that junction: it used to be skipped,
+        // so the street never knew it met the others, its corridor was not pulled back and its cables ran on into their carriageway
+        const near = raw.find(r => Math.hypot(r.pt[0] - e[0], r.pt[1] - e[1]) < 8);
+        if (near) { if (!near.items.some(it => it[0] === E)) near.items.push([E, s0]); if (!near.items.some(it => it[0] === T)) near.items.push([T, pr.s]); }
+        else raw.push({ pt: [pr.px, pr.py], items: [[E, s0], [T, pr.s]] });
       }
     }
     const cl = [];
@@ -113,7 +133,7 @@ const PlanLayout = (() => {
     const { list: junctions, use } = findJunctions(streets);
     const isJ = id => use[id] && use[id].length >= 2;
     // a street that ENDS on another street: its corridor stops short of the other street's carriageway (kerb + 0.4 m), so no verge point, kiosk stand or graph node of it lies in the road it meets
-    streets.forEach(st => { st.pullLo = 0; st.pullHi = 0; for (const id of st.jids) { const others = (use[id] || []).filter(o => o !== st), pull = Math.max(0, ...others.map(o => (o.cw > 0 ? o.cw / 2 + 0.4 : 0))); if (st.nodeSt[id] < 0.5) st.pullLo = Math.max(st.pullLo, pull); if (st.nodeSt[id] > st.len - 0.5) st.pullHi = Math.max(st.pullHi, pull); } });
+    streets.forEach(st => { st.pullLo = 0; st.pullHi = 0; for (const id of st.jids) { const others = (use[id] || []).filter(o => o !== st), pull = Math.max(0, ...others.map(o => (o.cw > 0 ? o.cw / 2 + Math.abs(o.co || 0) + 0.4 : 0))); if (st.nodeSt[id] < 0.5) st.pullLo = Math.max(st.pullLo, pull); if (st.nodeSt[id] > st.len - 0.5) st.pullHi = Math.max(st.pullHi, pull); } });
     const byId = Object.fromEntries(streets.map(s => [s.id, s]));
     const erven = (input.erven || []).filter(e => e.poly && e.poly.length >= 3).map(e => {
       const c = [e.poly.reduce((s, q) => s + q[0], 0) / e.poly.length, e.poly.reduce((s, q) => s + q[1], 0) / e.poly.length];
@@ -157,14 +177,29 @@ const PlanLayout = (() => {
     const itemOff = (sec, kind) => !sec ? null : kind === 't' ? sec.items.fi.off : kind === 'm' ? sec.items.mv.off : kind === 'h' ? sec.items.mh.off : sec.items.lv.off;
     const standOff = (st, q) => { const sc = secAt(st, q); return sc ? sc.items.kiosk.off + sc.items.kiosk.depth / 2 : KD; };
     // a street with a carriageway width keeps every corridor line (and kiosk stand) clear of it: never closer to the street line than the kerb + 0.4 m
-    const corridorFloor = st => st.cw > 0 ? st.cw / 2 + 0.4 : 0.5;
-    const capOff = (st, so, v) => st.cw > 0 ? Math.min(so, Math.max(0, project(st, v[0], v[1]).d - corridorFloor(st))) : so;     // a stand `so` m in from boundary point v, never inside the floor
+    // (`side`: the carriageway may be offset from the street line, so its kerb is nearer on one side than the other)
+    const corridorFloor = (st, side) => st.cw > 0 ? Math.max(0.5, st.cw / 2 + side * (st.co || 0) + 0.4) : 0.5;
+    const capOff = (st, so, v) => { if (!(st.cw > 0)) return so; const pr = project(st, v[0], v[1]); return Math.min(so, Math.max(0, pr.d - corridorFloor(st, pr.side))); };     // a stand `so` m in from boundary point v, never inside the floor
     const mag = (st, side, s, kind) => {
       if (!byBoundary) return kind === 't' ? st.tr : st.vk;
       const io = itemOff(secAt(st, s), kind), off = io != null ? io : (kind === 't' || kind === 'h' ? KD - 0.3 : KD);
-      return Math.max(corridorFloor(st), fd(st, side, s) - off);
+      return Math.max(corridorFloor(st, side), fd(st, side, s) - off);
     };
-    const kp = (st, side, s, kind) => ptAt(st, Math.min(Math.max(s, st.pullLo), st.len - st.pullHi), side * mag(st, side, s, kind));                      // a point on the corridor (x, y, tx, ty)
+    // how far in from an end that meets another street the corridor starts, per side and cable class: at least pullLo / pullHi (the other street's
+    // kerb + 0.4 m along this street), and further where the street meets the other at a slant, so the corridor on the acute side (which
+    // runs along the other street for a while) is not left in its carriageway. Worked out on first use, after the fronts are known.
+    const pullAt = (st, side, kind, hi) => {
+      const key = (hi ? 'h' : 'l') + side + (kind || ''), memo = st._pm || (st._pm = {}); if (memo[key] != null) return memo[key];
+      const base = hi ? st.pullHi : st.pullLo; let s = base;
+      const jid = base > 0 ? st.jids.find(id => hi ? st.nodeSt[id] > st.len - 0.5 : st.nodeSt[id] < 0.5) : null;
+      const others = jid != null ? (use[jid] || []).filter(o => o !== st && o.cw > 0) : [];
+      if (others.length) for (let k = 0; k < 160 && s < st.len / 2; k++, s += 0.25) {
+        const q = hi ? st.len - s : s, p = ptAt(st, q, side * mag(st, side, q, kind));
+        if (others.every(o => cwDepth(o, p[0], p[1]) <= -0.35)) break;
+      }
+      return (memo[key] = Math.min(s, st.len / 2));
+    };
+    const kp = (st, side, s, kind) => ptAt(st, Math.min(Math.max(s, pullAt(st, side, kind, false)), st.len - pullAt(st, side, kind, true)), side * mag(st, side, s, kind));                      // a point on the corridor (x, y, tx, ty)
     function kv(st, side, s0, s1, kind) {                                                             // the corridor between two stations
       const n = Math.max(1, Math.ceil(Math.abs(s1 - s0) / STEP)), out = [];
       for (let i = 0; i <= n; i++) out.push(kp(st, side, s0 + (s1 - s0) * i / n, kind).slice(0, 2));
@@ -236,6 +271,7 @@ const PlanLayout = (() => {
     }
 
     // ── 2. markers, kiosks, service cables ──
+    streets.forEach(st => { st._pm = {}; });                                                    // the corridor pulls (pullAt) follow the fronts found in step 1
     function markerCands(e) {
       const fe = e.fe, aa = e.sa, ab = e.sb;
       if (e.manual) return [{ end: 'a', c: fe.a, o: fe.a, t: [1, 0], pt: fe.a, fpt: fe.a }];            // the point the user placed, as is
@@ -699,7 +735,8 @@ const PlanLayout = (() => {
           }
         }
         here.forEach(m => { m.members = []; });
-        list.forEach(e => { let best = null; for (const m of here) if (!best || Math.abs(m.a - e.al) < Math.abs(best.a - e.al)) best = m; best.members.push(e); e.mh = best; });
+        // each erf to its nearest manhole that still has room (at most m erven): the spacing manholes added above can otherwise draw more than m to one
+        list.forEach(e => { const by = here.slice().sort((p, q) => Math.abs(p.a - e.al) - Math.abs(q.a - e.al)), best = by.find(m => m.members.length < P.m) || by[0]; best.members.push(e); e.mh = best; });
       }
       // mhmerge: a stretch between junctions is solved alone, so a short one gets a manhole of its own. A manhole carrying at most half the
       // usual erven folds into another on the same street when the two together stay within `m` erven and the farthest erf is within `maxmh`.
@@ -738,8 +775,10 @@ const PlanLayout = (() => {
         const X = use[j.id].length === 2 ? (vergeCorner(j, mean) || widerVerge(j)) : null;
         let q = X ? X.slice() : mean.slice();
         for (let pass = 0; pass < 3; pass++) for (const st of use[j.id]) {                  // a junction manhole / node never stands in a carriageway: pushed out to the kerb + 0.4 m
-          if (!(st.cw > 0)) continue; const pr = project(st, q[0], q[1]), need = st.cw / 2 + 0.4; if (pr.d >= need - 0.05) continue;
-          const nx = pr.d > 1e-6 ? (q[0] - pr.px) / pr.d : 0, ny = pr.d > 1e-6 ? (q[1] - pr.py) / pr.d : 1; q = [pr.px + nx * need, pr.py + ny * need];
+          if (!(st.cw > 0) || cwDepth(st, q[0], q[1]) <= -0.35) continue;
+          // out to the nearer kerb of the carriageway (which may be offset from the street line) + 0.4 m, square to the street
+          const pr = project(st, q[0], q[1]), co = st.co || 0, lat = pr.side * pr.d, to = co + (lat >= co ? 1 : -1) * (st.cw / 2 + 0.4);
+          const nx = pr.d > 1e-6 ? pr.side * (q[0] - pr.px) / pr.d : 0, ny = pr.d > 1e-6 ? pr.side * (q[1] - pr.py) / pr.d : 1; q = [pr.px + nx * to, pr.py + ny * to];
         }
         return { id: j.id, x: q[0], y: q[1], junction: true, label: '', streets: use[j.id] };
       });
@@ -861,19 +900,27 @@ const PlanLayout = (() => {
           const nd = node(bs.st, bs.s), V = kp(bs.st, ks[bs.st.id] || 1, nd.s).slice(0, 2);
           manualRoots.push({ id: 'SUBPT' + (i + 1), x: pt[0], y: pt[1], root: true, manual: true, members: [], road: bs.st, s: nd.s, node: nd, stub: [[pt[0], pt[1]], V] });
         });
+        // the two ends of each junction link: the verge point of each street at the junction, or the nearest one along that verge (≤ 15 m) that is clear
+        // of every other carriageway. The through street's verge point at a T can be in the side street's mouth, and a link from there runs
+        // inside the side street. Made before the streets are linked so a moved end is a node on its street like any other.
+        const clearSt = (st, s0) => {
+          const side = ks[st.id] || 1, ok = q => { const p = kp(st, side, q); return streets.every(o => o === st || !(o.cw > 0) || cwDepth(o, p[0], p[1]) <= -0.35); };
+          if (ok(s0)) return s0;
+          for (let d = 0.25; d <= 15; d += 0.25) for (const q of [s0 - d, s0 + d]) if (q >= 0 && q <= st.len && ok(q)) return q;
+          return s0;
+        };
+        const jLinks = [];
+        for (const j of junctions) {
+          const ss = use[j.id];
+          for (let i = 0; i < ss.length; i++) for (let k = i + 1; k < ss.length; k++) { const A = ss[i], B = ss[k]; jLinks.push([A, node(A, clearSt(A, A.nodeSt[j.id])), B, node(B, clearSt(B, B.nodeSt[j.id]))]); }
+        }
         const edges = [];
         const link = (A, B, pts, excl) => { const xs = pathCrossings(pts, excl), len = plen(pts), ed = { a: A, b: B, pts, len, xs, w: len + xs.length * 300 }; edges.push(ed); A.adj.push(ed); B.adj.push(ed); };
         streets.forEach(st => {
           const on = nodes.filter(n => n.st === st).sort((p, q) => p.s - q.s);
           for (let i = 1; i < on.length; i++) if (on[i].s - on[i - 1].s > 1e-6) link(on[i - 1], on[i], kv(st, ks[st.id] || 1, on[i - 1].s, on[i].s), st);
         });
-        for (const j of junctions) {
-          const ss = use[j.id];
-          for (let i = 0; i < ss.length; i++) for (let k = i + 1; k < ss.length; k++) {
-            const A = ss[i], B = ss[k], nA = node(A, A.nodeSt[j.id]), nB = node(B, B.nodeSt[j.id]);
-            link(nA, nB, [kp(A, ks[A.id] || 1, nA.s).slice(0, 2), kp(B, ks[B.id] || 1, nB.s).slice(0, 2)], null);
-          }
-        }
+        for (const [A, nA, B, nB] of jLinks) link(nA, nB, [kp(A, ks[A.id] || 1, nA.s).slice(0, 2), kp(B, ks[B.id] || 1, nB.s).slice(0, 2)], null);
         // shortest-path tree of the kiosk-side verge graph from one kiosk (crossings carry a penalty in the weights)
         const treeFrom = (sk) => {
           const dist = new Map(nodes.map(n => [n, Infinity])), prev = new Map(), done = new Set();
@@ -1294,9 +1341,19 @@ const PlanLayout = (() => {
     const t = ((c[0] - a[0]) * q[1] - (c[1] - a[1]) * q[0]) / den, u = ((c[0] - a[0]) * r[1] - (c[1] - a[1]) * r[0]) / den; if (t < 0 || t > 1 || u < 0 || u > 1) return null;
     return { ang: Math.acos(Math.min(1, Math.abs(r[0] * q[0] + r[1] * q[1]) / (Math.hypot(r[0], r[1]) * Math.hypot(q[0], q[1]) || 1))) * 180 / Math.PI };
   }
+  // distance to a street line whose ends are square: past the first or last point it is no distance at all (Infinity). A carriageway stops at the
+  // end of its street, which at a T is the other street's centre line; a round cap there reached over to the far verge of the through street.
+  function segDistFlat(p, a, b, first, last) {
+    const dx = b[0] - a[0], dy = b[1] - a[1], L2 = dx * dx + dy * dy; if (!L2) return Infinity;
+    let t = ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / L2;
+    if ((first && t < 0) || (last && t > 1)) return Infinity;
+    t = Math.max(0, Math.min(1, t)); return Math.hypot(a[0] + t * dx - p[0], a[1] + t * dy - p[1]);
+  }
   function carriage(streets) {
-    const S = (streets || []).filter(st => st.cw > 0); if (!S.length) return null;
-    const dist = (st, p) => { let m = Infinity; for (let i = 1; i < st.pts.length; i++) m = Math.min(m, segDist(p, st.pts[i - 1], st.pts[i])); return m; };
+    // a street whose carriageway is offset is tested on the carriageway's own centre line (same stations, width cw), so everything below is unchanged
+    const S = (streets || []).filter(st => st.cw > 0).map(st => { if (!st.co) return st; const pts = offsetPts(st.pts, st.co), cum = [0]; for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1])); return Object.assign({}, st, { pts, cum, len: cum[cum.length - 1], co: 0, base: st }); });
+    if (!S.length) return null;
+    const dist = (st, p) => { let m = Infinity; const n = st.pts.length; for (let i = 1; i < n; i++) m = Math.min(m, segDistFlat(p, st.pts[i - 1], st.pts[i], i === 1, i === n - 1)); return m; };
     const squareOn = (a, b, st) => { for (let i = 1; i < st.pts.length; i++) { const h = segHit(a, b, st.pts[i - 1], st.pts[i]); if (h && h.ang >= SQ_DEG) return true; } return false; };
     // the street whose carriageway holds p deeper than `clear` metres, not counting a street the given segments cross square
     const insideAny = (p, segs, clear) => { for (const st of S) { if (segs.some(sg => sg && squareOn(sg[0], sg[1], st))) continue; if (dist(st, p) < st.cw / 2 - clear) return st; } return null; };
@@ -1312,7 +1369,7 @@ const PlanLayout = (() => {
       for (let i = 1; i < st.pts.length; i++) {
         const a = st.pts[i - 1], b = st.pts[i], bx0 = Math.min(a[0], b[0]) - r, bx1 = Math.max(a[0], b[0]) + r, by0 = Math.min(a[1], b[1]) - r, by1 = Math.max(a[1], b[1]) + r;
         if (bx1 < x0 || bx0 > x1 || by1 < y0 || by0 > y1) continue;
-        for (let gj = Math.max(0, Math.floor((by0 - y0) / cs)); gj <= Math.min(H - 1, Math.ceil((by1 - y0) / cs)); gj++) for (let gi = Math.max(0, Math.floor((bx0 - x0) / cs)); gi <= Math.min(W - 1, Math.ceil((bx1 - x0) / cs)); gi++) { if (!blocked[gj * W + gi] && segDist([cx(gi), cy(gj)], a, b) < r) blocked[gj * W + gi] = 1; }
+        for (let gj = Math.max(0, Math.floor((by0 - y0) / cs)); gj <= Math.min(H - 1, Math.ceil((by1 - y0) / cs)); gj++) for (let gi = Math.max(0, Math.floor((bx0 - x0) / cs)); gi <= Math.min(W - 1, Math.ceil((bx1 - x0) / cs)); gi++) { if (!blocked[gj * W + gi] && segDistFlat([cx(gi), cy(gj)], a, b, i === 1, i === st.pts.length - 1) < r) blocked[gj * W + gi] = 1; }
       }
     }
     const trulyInside = q => C.S.some(st => C.dist(st, q) < st.cw / 2 - 0.1);
@@ -1362,10 +1419,26 @@ const PlanLayout = (() => {
     let fixed = 0, failed = 0;
     for (const r of runs) {
       if (r.j0 === 0 || r.j1 === dense.length - 1) { failed++; continue; }
-      const E = dense[r.j0 - 1].p, X = dense[r.j1 + 1].p, st = C.insideAny(dense[r.bj].p, dense[r.bj].sgs, thr);
+      const E = dense[r.j0 - 1].p, X = dense[r.j1 + 1].p;
+      // the street the run crosses: of every street the stretch is inside, the one it changes side of (at a junction the stretch is often inside the
+      // side street too, which it does not cross; testing only the first street found sent the repair looking for a detour that stays on one side
+      // of a road the run has to cross, and it gave up)
+      const inside = new Set(); for (let j = r.j0; j <= r.j1; j++) for (const s2 of C.S) if (C.dist(s2, dense[j].p) < s2.cw / 2 - thr) inside.add(s2);
+      const first = C.insideAny(dense[r.bj].p, dense[r.bj].sgs, thr), st = [...inside].find(s2 => Math.sign(PL_project(s2, E)) !== Math.sign(PL_project(s2, X))) || first;
       let path = null;
       if (st && Math.sign(PL_project(st, E)) !== Math.sign(PL_project(st, X))) {            // the run changes side of this street: a square crossing, clear of the junction, then on to X
-        const off = st.cw / 2 + 0.4, sE = project(st, E[0], E[1]).s, sg = PL_project(st, E) >= 0 ? 1 : -1, near = ptAt(st, sE, sg * off).slice(0, 2), far = ptAt(st, sE, -sg * off).slice(0, 2);
+        // the crossing goes at E's station, or the nearest station (up to 25 m either way) where it is clear of every other carriageway: at a junction
+        // E's station is often in the mouth of the side street, and a crossing there, square to this street, runs along inside the other one
+        const off = st.cw / 2 + 0.4, s0 = project(st, E[0], E[1]).s, sg = PL_project(st, E) >= 0 ? 1 : -1;
+        const clear = sq => { const a = ptAt(st, sq, sg * off).slice(0, 2), b = ptAt(st, sq, -sg * off).slice(0, 2), n = Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / 0.25); for (let k = 0; k <= n; k++) if (C.insideAny([a[0] + (b[0] - a[0]) * k / n, a[1] + (b[1] - a[1]) * k / n], [[a, b]], thr)) return false; return true; };
+        // of the clear stations, the one that makes the run shortest (E to the near end, across, the far end to X)
+        let sE = s0;
+        if (!clear(s0)) {
+          const cost = sq => { const a = ptAt(st, sq, sg * off), b = ptAt(st, sq, -sg * off); return Math.hypot(a[0] - E[0], a[1] - E[1]) + Math.hypot(X[0] - b[0], X[1] - b[1]); };
+          let best = null; for (let d = -25; d <= 25; d += 0.5) { const q = s0 + d; if (q < 0 || q > st.len || !clear(q)) continue; const c = cost(q); if (!best || c < best.c) best = { q, c }; }
+          if (best) sE = best.q;
+        }
+        const near = ptAt(st, sE, sg * off).slice(0, 2), far = ptAt(st, sE, -sg * off).slice(0, 2);
         const a = routeAround(E, near, C), b = routeAround(far, X, C);
         if (a && b) path = a.slice(1).concat(b.slice(0, -1)); else if (!a && !b) path = [near, far]; else path = (a ? a.slice(1) : [near]).concat(b ? b.slice(0, -1) : [far]);
         path = path.filter(q => q !== X); r.cross = true;
@@ -1392,19 +1465,21 @@ const PlanLayout = (() => {
     res.keepOut = { fixed, failed }; if (fixed) relength(res);
     return res;
   }
-  // how many stretches of a result are still inside a carriageway (outside a square crossing), for the Checks list
-  // does a run still lie inside a carriageway (outside a square crossing)? Detection only, no routing: cheap enough for the Checks list
-  function violates(pts, C, thr) {
+  // the stretches of a run that still lie inside a carriageway (outside a square crossing), each a list of points 0.25 m apart. Detection only,
+  // no routing: cheap enough for the Checks list, and what its Show draws
+  function stretches(pts, C, thr) {
+    const out = []; let cur = null;
+    const at = (q, sgs) => { if (C.insideAny(q, sgs, thr)) { if (!cur) out.push(cur = []); cur.push(q); } else cur = null; };
     for (let i = 0; i < pts.length; i++) {
-      const sgs = [i > 0 ? [pts[i - 1], pts[i]] : null, i + 1 < pts.length ? [pts[i], pts[i + 1]] : null].filter(Boolean);
-      if (C.insideAny(pts[i], sgs, thr)) return true;
-      if (i + 1 < pts.length) { const a = pts[i], b = pts[i + 1], n = Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / 0.25); for (let k = 1; k < n; k++) if (C.insideAny([a[0] + (b[0] - a[0]) * k / n, a[1] + (b[1] - a[1]) * k / n], [[a, b]], thr)) return true; }
+      at(pts[i], [i > 0 ? [pts[i - 1], pts[i]] : null, i + 1 < pts.length ? [pts[i], pts[i + 1]] : null].filter(Boolean));
+      if (i + 1 < pts.length) { const a = pts[i], b = pts[i + 1], n = Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / 0.25); for (let k = 1; k < n; k++) at([a[0] + (b[0] - a[0]) * k / n, a[1] + (b[1] - a[1]) * k / n], [[a, b]]); }
     }
-    return false;
+    return out;
   }
+  // every run still inside a carriageway: { kind, id, bad: [stretch, …] }
   function carriageHits(res, depth) {
     const C = carriage(res && res.streets); if (!C) return [];
-    const thr = depth == null ? 0.8 : depth, out = [], one = (kind, id, pts) => { if (Array.isArray(pts) && pts.length >= 2 && violates(pts, C, thr)) out.push({ kind, id }); };
+    const thr = depth == null ? 0.8 : depth, out = [], one = (kind, id, pts) => { if (!Array.isArray(pts) || pts.length < 2) return; const bad = stretches(pts, C, thr); if (bad.length) out.push({ kind, id, bad }); };
     res.erven.forEach(e => { one('service', e.id, e.route); one('fibre duct', e.id, e.duct); });
     if (res.net) (res.net.lv || []).forEach((ed, i) => one('LV cable', i, ed.pts)); if (res.fibre) (res.fibre.trunks || []).concat(res.fibre.spare || []).forEach((e, i) => one('fibre trunk', i, e.pts));
     return out;
@@ -1434,7 +1509,9 @@ const PlanLayout = (() => {
         const a1 = Math.atan2(T1[1] - C[1], T1[0] - C[0]); let dl = Math.atan2(T2[1] - C[1], T2[0] - C[0]) - a1; while (dl > Math.PI) dl -= 2 * Math.PI; while (dl < -Math.PI) dl += 2 * Math.PI;
         const n = Math.max(2, Math.ceil(Math.abs(dl) / (Math.PI / 12))), cand = [];
         for (let k = 0; k <= n; k++) { const an = a1 + dl * k / n; cand.push([C[0] + Re * Math.cos(an), C[1] + Re * Math.sin(an)]); }
-        if (!bad || !cand.some(q => bad(q, [a, b], [b, c]))) arc = cand;
+        // tested against the arc's own chords: the corner's legs may be a square crossing, which the arc no longer is where it cuts the corner
+        const pts2 = [a, ...cand, c];
+        if (!bad || !cand.some((q, k) => bad(q, [pts2[k], q], [q, pts2[k + 2]]))) arc = cand;
       }
       if (arc) out.push(...arc); else out.push(b);
     }
