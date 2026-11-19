@@ -553,4 +553,28 @@ ok('a kiosk moved by hand stands exactly there and the layout is solved around i
   assert(r.erven.filter(e => e.fe).every(e => e.kiosk), 'every erf still served');
   const again = L.solve(F, {}); assert.strictEqual(again.kiosks.length, r0.kiosks.length, 'no pins: unchanged');
 });
+ok('smooth corners: no sharp bend is left, ends stay put, a curve is never longer than its corners, and the lengths follow', () => {
+  const r0 = L.solve(F, {}), len0 = r0.stats.cable, lv0 = r0.net.lvLen;
+  const ends = r0.erven.filter(e => e.route).map(e => [e.route[0].slice(), e.route[e.route.length - 1].slice()]);
+  const r = L.smooth(L.solve(F, {}), r0.P);
+  assert(r.stats.cable <= len0 + 1e-6 && r.stats.cable > len0 * 0.9, 'service cable ' + len0 + ' -> ' + r.stats.cable);
+  assert(r.net.lvLen <= lv0 + 1e-6);
+  r.erven.filter(e => e.route).forEach((e, i) => { assert.deepStrictEqual(e.route[0], ends[i][0]); assert.deepStrictEqual(e.route[e.route.length - 1], ends[i][1]); assert(Math.abs(e.cable - L.plen(e.route)) < 1e-9); });
+  const worst = pts => { let w = 0; for (let i = 1; i < pts.length - 1; i++) { const a = [pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]], b = [pts[i + 1][0] - pts[i][0], pts[i + 1][1] - pts[i][1]]; const la = Math.hypot(...a), lb = Math.hypot(...b); if (la < 1e-6 || lb < 1e-6) continue; w = Math.max(w, Math.acos(Math.max(-1, Math.min(1, (a[0] * b[0] + a[1] * b[1]) / (la * lb))))); } return w; };
+  const worstAll = Math.max(...r.erven.filter(e => e.route).map(e => worst(e.route)), ...r.net.lv.map(e => worst(e.pts)), ...r.erven.filter(e => e.duct).map(e => worst(e.duct)));
+  assert(worstAll < Math.PI / 3 + 1e-6, 'a turn between two points is at most 60 degrees, was ' + (worstAll * 180 / Math.PI));
+  const off = L.smooth(L.solve(F, { bendFi: 0, bendLv: 0, bendMv: 0 }), Object.assign({}, r0.P, { bendFi: 0, bendLv: 0, bendMv: 0 }));
+  assert(Math.abs(off.stats.cable - len0) < 1e-6, 'radius 0 leaves the corners sharp');
+  const sq = [[0, 0], [10, 0], [10, 10]]; L.fillet(sq, 2); assert(sq.length > 3 && Math.abs(sq[0][0]) < 1e-9 && sq[sq.length - 1][1] === 10);
+  assert(L.plen(sq) < 20 && L.plen(sq) > 19, 'a radius-2 round of a right angle saves 2*(2-pi/2) = 0.86 m: ' + L.plen(sq));
+});
+ok('fibre round a corner: a run reaches a two-street junction along its own verge line, with no jog or hook', () => {
+  const r = L.solve(F, {}); let n = 0, mx = 0;
+  for (const e of r.fibre.trunks.concat(r.fibre.spare)) for (const [node, rev] of [[e.a, false], [e.b, true]]) {
+    if (!node.junction || node.streets.length !== 2 || e.pts.length < 4) continue;
+    const P = rev ? e.pts.slice().reverse() : e.pts, a = P[1], b = P[2], d = [b[0] - a[0], b[1] - a[1]], l = Math.hypot(d[0], d[1]);
+    mx = Math.max(mx, Math.abs((P[0][0] - a[0]) * d[1] - (P[0][1] - a[1]) * d[0]) / l); n++;
+  }
+  assert(n >= 10, 'junctions seen ' + n); assert(mx < 1, 'worst jog ' + mx.toFixed(2) + ' m (was 4.6 m)');
+});
 console.log(n + ' passed');
