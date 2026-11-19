@@ -1330,7 +1330,7 @@ const RoadPlan = {
     else if (this._tool === 'pick') t = this._kerbDraft ? 'Click the other kerb line.' : 'Click a DXF line: connected pieces on its layer are joined.';
     else if (this._tool === 'addpole') t = 'Click beside the road: the pole goes on the nearest pole line.';
     else if (this._tool === 'feed') t = this._feedDraft ? 'Click each bend of the feeder cable, then click the pole it feeds (or Enter to feed the nearest end). Backspace removes the last bend, Esc cancels.' : 'Click where the kiosk or minisub stands, then the bends of its feeder cable to the road.';
-    else if (this._step === 1 && this.selRoad && this.selRoad.mode === 'ip') t = 'Drag a square to move an intersection point · double-click a leg to add one · Alt-click to delete · scroll to zoom, Shift-drag or right-drag to pan, F fits.';
+    else if (this._step === 1 && this.selRoad && this.selRoad.mode === 'ip') t = 'Drag a square to move an intersection point · Shift-click a leg to add one · Alt-click a point to delete it · scroll to zoom, drag empty space or right-drag to pan, F fits.';
     else if (this._step === 2) t = 'Drag a pole along its kerb · Alt-drag moves it off the pole line · Delete removes the selected pole.';
     el.textContent = t;
     el.style.display = t ? '' : 'none';
