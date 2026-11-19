@@ -518,6 +518,20 @@ Run these after any change to `backend/analysis/`. Frontend testing is mostly ma
 - The undo system takes full state snapshots (not diffs)
 - Dark mode preference persists via `localStorage` key `'protectionpro-dark-mode'`
 
+## Editing nodes and areas (one gesture set everywhere)
+
+Every editor that has a polyline, polygon or picked region uses the same gestures. A new feature with nodes or areas must follow this table (and must not give Shift or Alt another meaning on that canvas):
+
+| Gesture | Nodes of a line / outline | Picked areas (detect, kerbs, road reserve) |
+|---|---|---|
+| **Shift-click** on an edge | add a node there (then drag it) | Pick kerbs: take just that drawn piece; Detect: add to the staged set |
+| **Alt-click** on a node | remove it (the two ends of a line stay; a polygon keeps at least 3 corners, a line 2) | subtract (Alt-click a street in the reserve tool drops it) |
+| **Double-click** | alias: on an edge adds a node, on a node removes it | — |
+| **Drag** a node | move it (snaps like the tool does) | — |
+| Backspace / Enter / Esc | take the last point or pick back / finish or create / leave | same |
+
+Where it is done: plan routes, trenches and rooms in `plan-tools.js` (select tool: `deleteVertexAt`, `_roomEdgeAt`; a midpoint drag also adds a corner to a room or trench), Road plan alignment points in `roadplan.js` (`_insertIp`, `_deleteVertex`), the room shape and room section editors (`roomshape.js`, `roomsection.js`), picked areas in `plan-roomdetect.js`, `plan-layout-ui.js` (kerbs), `roadplan-kerbs.js`, `plan-reserve-ui.js`. Pan is the middle button, Space-drag, or a drag on empty space, never Shift or Alt. The one deliberate exception is the single-line diagram (`canvas.js`): Alt-drag pans there, so a wire bend is added and removed by double-click (or the context menu); keep it that way unless the pan changes. A new gesture needs this table and the help text updated in the same PR.
+
 ## Where to Find Things
 
 - **Adding a new component type**: `constants.js` (definition) → `symbols.js` (SVG) → `properties.js` (editor) → `sidebar.js` (palette category)

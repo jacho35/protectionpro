@@ -161,6 +161,15 @@ PlanTools.register({
   _lastClick: null,  // {x, y, ids:[...], index} for tie-break cycling
 
   onActivate() { this._drag = null; this._marquee = null; },
+  // the edge of a room outline within 8 px of the point: { room, i } (edge i runs from point i to i + 1)
+  _roomEdgeAt(pt) {
+    const tol = 8 / PlanEngine.view.zoom;
+    for (const rm of (AppState.planMarkup.rooms || [])) {
+      const n = rm.points.length, closed = !(rm.kind === 'perimeter' || rm.kind === 'escape' || rm.kind === 'obtrusive');
+      for (let i = 0; i < (closed ? n : n - 1); i++) if (PlanEngine._distToSeg(pt, rm.points[i], rm.points[(i + 1) % n]) <= tol) return { room: rm, i };
+    }
+    return null;
+  },
   cancel() { this._drag = null; this._marquee = null; PlanEngine.requestDraw({ fg: true }); },
 
   onDown(pt, e) {
@@ -229,6 +238,16 @@ PlanTools.register({
       rhShift.route.points.splice(rhShift.segIndex + 1, 0, { x: snapped.x, y: snapped.y });
       PlanMarkup.selectOnly(rhShift.route.id);
       PlanMarkup.snapshot(); PlanMarkup.markDirty();
+      PlanEngine.requestDraw({ fg: true });
+      return;
+    }
+    // 2a) shift+click on the outline of a room / area inserts a corner there
+    const roomShift = e.shiftKey && !rhShift ? this._roomEdgeAt(pt) : null;
+    if (roomShift) {
+      const snapped = PlanTools.snap(pt, { ignoreIds: new Set([roomShift.room.id]) });
+      roomShift.room.points.splice(roomShift.i + 1, 0, { x: snapped.x, y: snapped.y });
+      PlanMarkup.selectOnly(roomShift.room.id);
+      PlanMarkup.snapshot(); PlanMarkup.markDirty(); PlanMarkup.refreshProps();
       PlanEngine.requestDraw({ fg: true });
       return;
     }

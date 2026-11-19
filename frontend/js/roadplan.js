@@ -1020,7 +1020,7 @@ const RoadPlan = {
     const svg = document.getElementById('rp-svg');
     svg.focus({ preventScroll: true });
     const [wx, wy] = this._evWorld(e);
-    if (e.button === 1 || e.button === 2 || (this._tool === 'select' && e.shiftKey)) { this._startPan(e); return; }
+    if (e.button === 1 || e.button === 2) { this._startPan(e); return; }                 // Shift is "add a node" here, as in the plan (see CLAUDE.md › Editing nodes and areas)
     if (e.button !== 0) return;
     if (this._tool === 'draw' || this._tool === 'kerbs') {
       const p = this._snapPt(wx, wy);
@@ -1036,6 +1036,7 @@ const RoadPlan = {
     if (this._tool === 'feed') { this._feedDown(wx, wy); return; }
     // select
     if (typeof RoadReserve !== 'undefined' && RoadReserve.downSelect(wx, wy, e)) return;
+    if (this._step === 1 && e.shiftKey && this._insertIp(wx, wy)) return;              // Shift-click a leg adds an IP
     if (this._step === 1) {
       const vi = this._hitVertex(wx, wy);
       if (vi >= 0) {
@@ -1103,11 +1104,13 @@ const RoadPlan = {
   _dbl(e) {
     if (this._tool === 'feed') { if (this._feedDraft && this._feedDraft.route.length) this._feedDraft.route.pop(); this._feedFinish(); return; }
     if (this._tool === 'draw' || this._tool === 'kerbs') { if (this._draft && this._draft.length > 1) this._draft.pop(); this.finishDraft(); return; }
-    if (this._step === 1 && this._tool === 'select') {
+    if (this._step === 1 && this._tool === 'select') { const [wx, wy] = this._evWorld(e); this._insertIp(wx, wy); }
+  },
+  // insert an IP on the leg of the selected road nearest the point (Shift-click, or double-click); true when one was added
+  _insertIp(wx, wy) {
+    {
       const r = this.selRoad;
-      if (!r || r.mode !== 'ip') return;
-      const [wx, wy] = this._evWorld(e);
-      // insert an IP on the leg nearest the click
+      if (!r || r.mode !== 'ip') return false;
       let best = -1, bd = 12 / this._view.z;
       for (let i = 0; i < r.ip.length - 1; i++) {
         const a = r.ip[i], b = r.ip[i + 1], dx = b.x - a.x, dy = b.y - a.y, L2 = dx * dx + dy * dy || 1e-12;
@@ -1115,8 +1118,9 @@ const RoadPlan = {
         const dd = Math.hypot(wx - a.x - dx * t, wy - a.y - dy * t);
         if (dd < bd) { bd = dd; best = i; }
       }
-      if (best >= 0) { r.ip.splice(best + 1, 0, { x: wx, y: wy }); this._relayoutUnmoved(r); this._commit(); this.render(); }
+      if (best >= 0) { r.ip.splice(best + 1, 0, { x: wx, y: wy }); this._relayoutUnmoved(r); this._commit(); this.render(); return true; }
     }
+    return false;
   },
   _deleteVertex(i) {
     const r = this.selRoad;
