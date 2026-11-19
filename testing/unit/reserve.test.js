@@ -109,4 +109,42 @@ ok('carriageway: width and offset from the centre', () => {
   assert(Math.abs(k.left[0][1] - 4) < 1e-9 && Math.abs(k.right[0][1] + 2) < 1e-9, JSON.stringify(k));
 });
 
+ok('outer radius: a corner of two streets gets an outer arc on the same centre, radius = inner + carriageway width; kerbs end at the arcs', () => {
+  const d = R.kerbDrawing([{ pts: [[0, 0], [60, 0]], carriageW: 7, w: 16 }, { pts: [[60, 0], [60, 60]], carriageW: 7, w: 16 }], {});
+  assert.strictEqual(d.corners.length, 1); const inner = d.arcs.find(a => !a.outer), outer = d.arcs.find(a => a.outer);
+  assert(inner && outer, 'both arcs'); assert(Math.abs(inner.R - 8) < 1e-9 && Math.abs(outer.R - 15) < 1e-9, inner.R + ' / ' + outer.R);
+  const a = R.returnArc(d.corners[0], 8); assert(Math.hypot(a.centre[0] - a.outer.centre[0], a.centre[1] - a.outer.centre[1]) < 1e-9, 'concentric');
+  assert.strictEqual(d.kerbs.length, 4);
+  const ends = d.kerbs.map(k => [k[0], k[k.length - 1]]).flat(), arcEnds = d.arcs.flatMap(x => [x.pts[0], x.pts[x.pts.length - 1]]);
+  for (const q of arcEnds) assert(ends.some(e => Math.hypot(e[0] - q[0], e[1] - q[1]) < 1e-6), 'a kerb ends at every arc end ' + q);
+  for (const k of d.kerbs) for (const p of k) assert(!(p[0] > 48.5 + 1e-6 && p[1] < 11.5 - 1e-6), 'no kerb inside the corner ' + p);
+  // the arcs are smooth: every chord within 3 cm of the circle
+  for (const x of [a, a.outer]) for (let i = 1; i < x.pts.length; i++) { const m = [(x.pts[i][0] + x.pts[i - 1][0]) / 2, (x.pts[i][1] + x.pts[i - 1][1]) / 2]; assert(x.R - Math.hypot(m[0] - x.centre[0], m[1] - x.centre[1]) < 0.031); }
+  // the drag sets the inner radius; the outer follows
+  assert(Math.abs(R.returnArc(d.corners[0], 12).outer.R - 19) < 1e-9);
+});
+ok('outer radius: the legs in either order give the inner corner (the outside used to be the only one tried)', () => {
+  for (const flip of [false, true]) {
+    const legs = [{ id: 'a', atEnd: false, dir: [1, 0], len: 100, ang: 0 }, { id: 'b', atEnd: false, dir: [0, -1], len: 100, ang: -Math.PI / 2 }];
+    const j = { key: 'j', x: 0, y: 0, legs: flip ? legs.reverse() : legs.sort((p, q) => p.ang - q.ang) }, byId = { a: { id: 'a', w: 12, carriageW: 6 }, b: { id: 'b', w: 12, carriageW: 6 } };
+    const cs = R.corners(j, byId); assert.strictEqual(cs.length, 1, 'one corner'); assert(Math.abs(cs[0].theta - Math.PI / 2) < 1e-9 && cs[0].outer, 'the 90° one, with an outer radius');
+  }
+});
+ok('bends: one street turning 90° is a corner like two streets; a turn under 30° is not; a T has no outer radius', () => {
+  const b = R.kerbDrawing([{ pts: [[0, 0], [60, 0], [60, 60]], carriageW: 7, w: 16 }], {});
+  assert.strictEqual(b.corners.length, 1); assert.deepStrictEqual(b.arcs.map(a => a.outer).sort(), [false, true]);
+  const g = R.kerbDrawing([{ pts: [[0, 0], [60, 0], [60 + 60 * Math.cos(0.35), 60 * Math.sin(0.35)]], carriageW: 7, w: 16 }], {});
+  assert.strictEqual(g.corners.length, 0, 'a 20° bend stays a bend of the kerb line');
+  const t = R.kerbDrawing([{ pts: [[0, 0], [90, 0]], carriageW: 7, w: 16 }, { pts: [[45, 0], [45, 60]], carriageW: 7, w: 16 }], {});
+  assert.strictEqual(t.corners.length, 2); assert(t.arcs.every(a => !a.outer));
+  const near = t.kerbs.filter(k => k.every(p => Math.abs(p[1] - 3.5) < 1e-6)); assert.strictEqual(near.length, 2, 'the through kerb is broken at the mouth');
+  assert(near.every(k => k.every(p => p[0] <= 33.5 + 1e-6 || p[0] >= 56.5 - 1e-6)), 'nothing across the mouth');
+});
+ok('bends: the road reserve of an L (its centre line cuts the corner with a chamfer) gives one corner at the meeting point of the two centre lines', () => {
+  const T = R.stage(poly([[0, 0], [116, 0], [116, 100], [100, 100], [100, 16], [0, 16]]), null); assert(T.click([50, 8], 'add').ok);
+  const st = R.split(T.streets().streets).streets.map(x => Object.assign(x, { carriageW: 7, cwOffset: 0 })), d = R.kerbDrawing(st, {});
+  assert.strictEqual(d.junctions.length, 1, 'junctions ' + d.junctions.length); const j = d.junctions[0];
+  assert(Math.abs(j.x - 108) < 1 && Math.abs(j.y - 8) < 1, 'at the corner ' + j.x + ',' + j.y);
+  assert(Math.abs(d.corners[0].theta - Math.PI / 2) < 0.05, 'a 90° corner'); assert(d.arcs.some(a => a.outer));
+});
 console.log(n + ' passed');

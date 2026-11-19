@@ -21,7 +21,7 @@
 const PlanReserve = (() => {
   const K = typeof PlanKerbs !== 'undefined' ? PlanKerbs : require('./plan-kerbs.js');
   const RD = typeof PlanRoomDetect !== 'undefined' ? PlanRoomDetect : require('./plan-roomdetect.js');
-  const D = { step: 0.5, gapM: 0.6, wmin: 6, wmax: 40, minStreet: 15, gap: 25, minRun: 8, pairStep: 2, carriageW: 6, ret: 8, retWide: 10, wide: 16, minHoleM2: 6, maxPx: 16e6, snap: 0.5, minPiece: 3 };
+  const D = { step: 0.5, gapM: 0.6, wmin: 6, wmax: 40, minStreet: 15, gap: 25, minRun: 8, pairStep: 2, carriageW: 6, ret: 8, retWide: 10, bend: 30, outer: true, wide: 16, minHoleM2: 6, maxPx: 16e6, snap: 0.5, minPiece: 3 };
   const hyp = Math.hypot, cr = (a, b) => a[0] * b[1] - a[1] * b[0], dot = (a, b) => a[0] * b[0] + a[1] * b[1];
   const plen = pts => { let L = 0; for (let i = 1; i < pts.length; i++) L += hyp(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]); return L; };
 
@@ -224,9 +224,55 @@ const PlanReserve = (() => {
   }
   // Split streets at every intersection. In: [{ pts, w, ... }]. Out: { streets, junctions } — one street = the stretch between two
   // junctions (or a junction and a free end); junctions = [{ key, x, y, legs: [{ id, atEnd, dir, len }] }], legs sorted by angle.
+  // ── corners of the kerb drawing (split with `bends`) ──
+  // Two streets that only meet each other end to end (same carriageway) are one line here, so a corner between them is found like a bend.
+  function mergeEnds(S, snap) {
+    const same = (a, b) => (+a.carriageW || 0) === (+b.carriageW || 0) && (+a.cwOffset || 0) === (+b.cwOffset || 0);
+    for (let guard = 0; guard < 500; guard++) {
+      let done = false;
+      for (let a = 0; a < S.length && !done; a++) for (const ea of [false, true]) {
+        if (done) break;
+        const A = S[a], pa = ea ? A.pts[A.pts.length - 1] : A.pts[0]; const hits = [];
+        for (let b = 0; b < S.length; b++) { if (b === a) continue; const B = S[b];
+          for (const eb of [false, true]) { const pb = eb ? B.pts[B.pts.length - 1] : B.pts[0]; if (hyp(pa[0] - pb[0], pa[1] - pb[1]) <= snap) hits.push({ b, eb }); }
+          if (!hits.some(h => h.b === b)) { const h = nearOn(pa, B.pts); if (h && h.d <= 1) hits.push({ b, eb: null }); }       // on another street: a junction, not a joint
+        }
+        if (hits.length !== 1 || hits[0].eb === null || !same(A, S[hits[0].b])) continue;
+        const B = S[hits[0].b], ap = ea ? A.pts : A.pts.slice().reverse(), bp = hits[0].eb ? B.pts.slice().reverse() : B.pts;
+        const m = { ...(plen(A.pts) >= plen(B.pts) ? A : B), pts: ap.concat(bp.slice(1)), bends: (A.bends || []).concat(B.bends || []) };
+        S.splice(Math.max(a, hits[0].b), 1); S.splice(Math.min(a, hits[0].b), 1, m); done = true;
+      }
+      if (!done) break;
+    }
+    return S;
+  }
+  // A sharp turn of a street line: two straight runs (≥ 6 m) with at most 25 m of short pieces between them, turning `deg` or more. The pieces
+  // between are replaced by the point where the two runs meet (the reserve's centre line cuts a corner with a chamfer), which is a bend.
+  function squareCorners(s, deg) {
+    const P = s.pts, thr = deg * Math.PI / 180, LONG = 6, GAP = 25; s.bends = s.bends || [];
+    const unit = k => { const a = P[k], b = P[k + 1], l = hyp(b[0] - a[0], b[1] - a[1]) || 1; return [(b[0] - a[0]) / l, (b[1] - a[1]) / l]; };
+    const segL = k => hyp(P[k + 1][0] - P[k][0], P[k + 1][1] - P[k][1]);
+    for (let i = 0; i + 1 < P.length; i++) {
+      if (segL(i) < LONG) continue;
+      // the straight run after it (within 25 m of pieces) that turns the most: a chamfer of the corner is then one of the pieces between
+      const u = unit(i); let best = null, gap = 0;
+      for (let j = i + 1; j + 1 < P.length && gap <= GAP; j++) {
+        if (segL(j) >= LONG) { const v = unit(j), turn = Math.acos(Math.max(-1, Math.min(1, dot(u, v)))); if (turn >= thr && turn <= 2.97 && (!best || turn > best.turn + 1e-6)) best = { j, v, turn }; }
+        gap += segL(j);
+      }
+      if (!best) continue;
+      const j = best.j, v = best.v, a0 = P[i], b0 = P[j], den = cr(u, v); if (Math.abs(den) < 1e-9) continue;
+      const t = cr([b0[0] - a0[0], b0[1] - a0[1]], v) / den, X = [a0[0] + u[0] * t, a0[1] + u[1] * t];
+      if (t < 0.5 || hyp(X[0] - P[i + 1][0], X[1] - P[i + 1][1]) > GAP || hyp(X[0] - b0[0], X[1] - b0[1]) > GAP) continue;
+      P.splice(i + 1, j - i, X); s.bends.push(X.slice());
+    }
+    return s;
+  }
   function split(list, o) {
     o = Object.assign({}, D, o || {});
-    const S = list.map(s => ({ ...s, pts: s.pts.map(p => p.slice()) }));
+    let S = list.map(s => ({ ...s, pts: s.pts.map(p => p.slice()) }));
+    // 0. for the kerb drawing (`bends` in degrees): joints of two streets are joined, sharp turns squared off and kept as bends
+    if (o.bends) { S = mergeEnds(S, o.snap); S.forEach(s => squareCorners(s, o.bends)); }
     // 1. crossings: a vertex in both streets
     for (let a = 0; a < S.length; a++) for (let b = a + 1; b < S.length; b++) {
       for (let i = 0; i + 1 < S[a].pts.length; i++) for (let j = 0; j + 1 < S[b].pts.length; j++) {
@@ -261,6 +307,7 @@ const PlanReserve = (() => {
       for (const i of ids) { jpt.set(i, c); S[vs[i].a].pts[vs[i].i] = c.slice(); }
     }
     const idx = new Map(); vs.forEach((v, i) => idx.set(v.a + ':' + v.i, i));
+    if (o.bends) S.forEach((s, a) => (s.bends || []).forEach(X => { const i = s.pts.findIndex(p => hyp(p[0] - X[0], p[1] - X[1]) < 1e-6); if (i > 0 && i < s.pts.length - 1) { const vid = idx.get(a + ':' + i); if (!jpt.has(vid)) jpt.set(vid, s.pts[i].slice()); } }));
     // 4. cut every street at its interior junction vertices
     const pieces = [];
     S.forEach((s, a) => {
@@ -268,7 +315,7 @@ const PlanReserve = (() => {
       for (let i = 1; i < s.pts.length; i++) {
         if (i < s.pts.length - 1 && !jpt.has(idx.get(a + ':' + i))) continue;
         const pts = s.pts.slice(from, i + 1);
-        if (plen(pts) >= o.minPiece && pts.length >= 2) pieces.push({ ...s, pts, parent: a });
+        if (plen(pts) >= o.minPiece && pts.length >= 2) { const pc = { ...s, pts, parent: a }; delete pc.bends; pieces.push(pc); }
         from = i;
       }
     });
@@ -331,9 +378,9 @@ const PlanReserve = (() => {
     const L = junction.legs, out = [];
     if (L.length < 2) return out;
     for (let i = 0; i < L.length; i++) {
-      const j = (i + 1) % L.length; if (L.length === 2 && i === 1) break;
+      const j = (i + 1) % L.length;
       const A = L[i], B = L[j], u = A.dir, v = B.dir; let th = Math.atan2(cr(u, v), dot(u, v)); if (th < 0) th += 2 * Math.PI;
-      if (th < 0.26 || th > 2.97) continue;                                           // under 15° or over 170°: no corner
+      if (th < 0.26 || th > 2.97) continue;                                           // under 15° or over 170°: no corner (the outside of a two-leg corner is its outer radius, below)
       const sa = byId[A.id], sb = byId[B.id]; if (!sa || !sb) continue;
       const ka = legKerbs(sa, A.atEnd, o), kb = legKerbs(sb, B.atEnd, o);
       const na = [-u[1], u[0]], nb = [-v[1], v[0]];
@@ -343,18 +390,33 @@ const PlanReserve = (() => {
       const lim = 0.8 * Math.min(A.len, B.len), tmax = Math.max(0, lim - Math.max(Math.abs(dot([P[0] - junction.x, P[1] - junction.y], u)), Math.abs(dot([P[0] - junction.x, P[1] - junction.y], v))));
       const rmax = Math.max(0, Math.min(30, tmax * Math.tan(th / 2)));
       const wide = Math.max(sa.w || 0, sb.w || 0) > o.wide;
-      out.push({ key: `${sa.key || A.id}${A.atEnd ? 'e' : 's'}|${sb.key || B.id}${B.atEnd ? 'e' : 's'}`, jkey: junction.key, a: A.id, b: B.id, P, u, v, theta: th, rmax, def: Math.min(wide ? o.retWide : o.ret, Math.max(rmax, 0)) });
+      // a corner of only two streets (or a bend) also has an outside kerb: its radius is the inner one + the carriageway width, on the
+      // fillet between the two outer kerb lines (the same centre when the two carriageways are the same)
+      let outer = null;
+      if (L.length === 2 && o.outer !== false) {
+        const qa = [junction.x + na[0] * ka.b, junction.y + na[1] * ka.b], qb = [junction.x + nb[0] * kb.a, junction.y + nb[1] * kb.a], to = cr([qb[0] - qa[0], qb[1] - qa[1]], v) / den;
+        const cwa = sa.carriageW != null ? +sa.carriageW : o.carriageW, cwb = sb.carriageW != null ? +sb.carriageW : o.carriageW;
+        outer = { P: [qa[0] + u[0] * to, qa[1] + u[1] * to], extra: (cwa + cwb) / 2 };
+      }
+      out.push({ outer, key: `${sa.key || A.id}${A.atEnd ? 'e' : 's'}|${sb.key || B.id}${B.atEnd ? 'e' : 's'}`, jkey: junction.key, a: A.id, b: B.id, P, u, v, theta: th, rmax, def: Math.min(wide ? o.retWide : o.ret, Math.max(rmax, 0)) });
     }
     return out;
   }
   const clampR = (c, R) => Math.max(Math.min(2, c.rmax), Math.min(R, c.rmax || R, 30));
   // The kerb return of one corner at radius R: tangent points, arc centre, the arc as points.
+  // points on an arc of radius R: steps of at most 10° and at most 3 cm off the true arc, so a large outer radius is not faceted
+  const arcSteps = (d, R) => Math.max(2, Math.ceil(Math.abs(d) / Math.min(Math.PI / 18, 2 * Math.acos(Math.max(-1, 1 - 0.03 / Math.max(R, 0.05))))));
   function returnArc(c, R) {
-    R = clampR(c, R); const th = c.theta, t = R / Math.tan(th / 2), s = Math.sin(th / 2);
+    const a = filletArc(c.P, c.u, c.v, c.theta, clampR(c, R));
+    if (c.outer) { const o = filletArc(c.outer.P, c.u, c.v, c.theta, a.R + c.outer.extra); a.outer = { R: o.R, t: o.t, t1: o.t1, t2: o.t2, centre: o.centre, pts: o.pts }; }
+    return a;
+  }
+  function filletArc(P, u, v, th, R) {
+    const c = { P, u, v }; const t = R / Math.tan(th / 2), s = Math.sin(th / 2);
     const bis = [c.u[0] + c.v[0], c.u[1] + c.v[1]], bl = hyp(bis[0], bis[1]) || 1, b = [bis[0] / bl, bis[1] / bl];
     const t1 = [c.P[0] + c.u[0] * t, c.P[1] + c.u[1] * t], t2 = [c.P[0] + c.v[0] * t, c.P[1] + c.v[1] * t], C = [c.P[0] + b[0] * R / s, c.P[1] + b[1] * R / s];
     const a1 = Math.atan2(t1[1] - C[1], t1[0] - C[0]); let d = Math.atan2(t2[1] - C[1], t2[0] - C[0]) - a1; while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI;
-    const n = Math.max(2, Math.ceil(Math.abs(d) / (Math.PI / 18))), pts = [];
+    const n = arcSteps(d, R), pts = [];
     for (let k = 0; k <= n; k++) { const a = a1 + d * k / n; pts.push([+(C[0] + R * Math.cos(a)).toFixed(3), +(C[1] + R * Math.sin(a)).toFixed(3)]); }
     return { R, t, t1, t2, centre: C, mid: [C[0] - b[0] * R, C[1] - b[1] * R], pts };
   }
@@ -365,7 +427,25 @@ const PlanReserve = (() => {
     return clampR(c, d * s / (1 - s));
   }
 
-  return { D, makeGrid, drawSeg, region, contours, stage, polyMask, streets, profile, split, streetKey, kerbLines, offsetLine, corners, returnArc, radiusFromDrag, outDir, label };
+  // The kerb drawing of a set of streets: split with bends, every corner's return (radius from `radiusOf(corner)`, else its default) and the outer
+  // radius of a two-leg corner, and the kerb lines cut back to where the arcs meet them. { streets, junctions, corners, kerbs, arcs: [{ pts, c, outer }] }
+  function trimAt(pts, q) {
+    const h = nearOn(q, pts); if (!h || h.d > 0.35) return null;
+    const toStart = hyp(pts[0][0] - q[0], pts[0][1] - q[1]) < hyp(pts[pts.length - 1][0] - q[0], pts[pts.length - 1][1] - q[1]);
+    return toStart ? [q.slice(), ...pts.slice(h.i + 1)] : [...pts.slice(0, h.i + 1), q.slice()];
+  }
+  function kerbDrawing(list, o, radiusOf) {
+    o = Object.assign({}, D, o || {});
+    const sp = split(list, Object.assign({ minPiece: 0.5 }, o, { bends: o.bend })), byId = {}; sp.streets.forEach(x => { byId[x.id] = x; });
+    const corners = sp.junctions.flatMap(j => corners_(j, byId, o)), arcs = [];
+    for (const c of corners) { const R = radiusOf ? radiusOf(c) : null, a = returnArc(c, R != null ? R : c.def); arcs.push({ pts: a.pts, c, outer: false, mid: a.mid, R: a.R }); if (a.outer) arcs.push({ pts: a.outer.pts, c, outer: true, R: a.outer.R }); }
+    let kerbs = sp.streets.flatMap(x => { const k = kerbLines(x, o); return [k.left, k.right]; });
+    for (const a of arcs) for (const q of [a.pts[0], a.pts[a.pts.length - 1]]) kerbs = kerbs.map(k => trimAt(k, q) || k);
+    return { streets: sp.streets, junctions: sp.junctions, corners, kerbs, arcs };
+  }
+  const corners_ = (j, byId, o) => corners(j, byId, o);
+
+  return { D, makeGrid, kerbDrawing, trimAt, squareCorners, drawSeg, region, contours, stage, polyMask, streets, profile, split, streetKey, kerbLines, offsetLine, corners, returnArc, radiusFromDrag, outDir, label };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = PlanReserve;

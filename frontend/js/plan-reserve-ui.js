@@ -79,12 +79,17 @@ const PlanReserveUI = {
       s.carriageW = e.cw != null ? e.cw : Math.min(o.carriageW, Math.max(3, s.w - 2)); s.cwOffset = e.off != null ? e.off : 0;
       byId[s.id] = s;
     });
-    const junctions = sp.junctions.map(j => ({ ...j, legs: j.legs.filter(l => byId[l.id]) })).filter(j => j.legs.length >= 2);
-    const corners = junctions.flatMap(j => PlanReserve.corners(j, byId, { ret: o.ret, retWide: o.ret + 2 }));
-    S.res = { rings, streets, junctions, corners, rev: T.rev, unpaired: r.unpaired.length };
+    // the kerb drawing is worked out on the streets as they will be created (the plan redraws them the same way, so the corner keys match):
+    // returns at every junction, a bend of 30° or more is a corner too, and a corner of two streets has its outer radius
+    const kd = PlanReserve.kerbDrawing(streets, this._kerbOpts(), c => { const m = S.returns[c.jkey]; return m && m[c.key] != null ? m[c.key] : null; });
+    S.res = { rings, streets, junctions: kd.junctions, corners: kd.corners, kerbs: kd.kerbs, rev: T.rev, unpaired: r.unpaired.length };
     return S.res;
   },
   _R(c) { const m = this.stage.returns[c.jkey]; return m && m[c.key] != null ? m[c.key] : c.def; },
+  // a radius changed: the kerb lines are cut back to the new tangent points
+  // corner options of the kerb drawing; the Road plan (RoadReserve) turns bends and outer radii off: its roads keep the reserve's own centre line
+  _kerbOpts() { const o = this.opt; return this.bendCorners === false ? { ret: o.ret, retWide: o.ret + 2, bend: 0, outer: false } : { ret: o.ret, retWide: o.ret + 2 }; },
+  _rekerb() { const S = this.stage; if (!S || !S.res || !S.res.streets.length) return; S.res.kerbs = PlanReserve.kerbDrawing(S.res.streets, this._kerbOpts(), c => { const m = S.returns[c.jkey]; return m && m[c.key] != null ? m[c.key] : null; }).kerbs; },
 
   // ── clicks ──
   _tol(S) { return 10 * S.f / PlanEngine.view.zoom; },                // ten screen pixels, in metres
@@ -93,7 +98,7 @@ const PlanReserveUI = {
     if (!S.res || S.res.rev !== S.T.rev) this.compute();
     const h = this._handleAt(m, tol);
     if (h) {                                                           // a kerb return handle: drag it (Alt-click puts it back to the default)
-      if (ev.altKey) { const mm = S.returns[h.jkey]; if (mm) { delete mm[h.key]; if (!Object.keys(mm).length) delete S.returns[h.jkey]; } this._sync(); return; }
+      if (ev.altKey) { const mm = S.returns[h.jkey]; if (mm) { delete mm[h.key]; if (!Object.keys(mm).length) delete S.returns[h.jkey]; } this._rekerb(); this._sync(); return; }
       S.drag = h; return;
     }
     if (S.mode === 'draw') {
@@ -119,7 +124,7 @@ const PlanReserveUI = {
   move(pt, e) {
     const S = this.stage; if (!S) return; const f = S.f, m = [pt.x * f, pt.y * f];
     if (S.drag) {
-      const R = PlanReserve.radiusFromDrag(S.drag, m), c = S.drag; (S.returns[c.jkey] = S.returns[c.jkey] || {})[c.key] = +R.toFixed(1); PlanEngine.requestDraw({ fg: true }); return;
+      const R = PlanReserve.radiusFromDrag(S.drag, m), c = S.drag; (S.returns[c.jkey] = S.returns[c.jkey] || {})[c.key] = +R.toFixed(1); this._rekerb(); PlanEngine.requestDraw({ fg: true }); return;
     }
     if (S.mode === 'draw' || S.mode === 'cut') { S.hover = m; PlanEngine.requestDraw({ fg: true }); return; }
     const h = S.res ? this._handleAt(m, this._tol(S)) : null, k = h ? h.jkey + h.key : '';
@@ -188,9 +193,9 @@ const PlanReserveUI = {
       ctx.strokeStyle = '#f59e0b'; ctx.lineWidth = 3 * u;
       R.streets.forEach(s => { line(s.pts); });
       ctx.lineWidth = 1.2 * u; ctx.strokeStyle = 'rgba(71,85,105,.9)';
-      R.streets.forEach(s => { const k = PlanReserve.kerbLines(s); line(k.left); line(k.right); });
-      for (const c of R.corners) {                                          // kerb returns, with a handle at the middle of each arc
-        const a = PlanReserve.returnArc(c, this._R(c)); ctx.strokeStyle = '#334155'; ctx.lineWidth = 2 * u; line(a.pts);
+      (R.kerbs || []).forEach(line);                                        // kerb lines, cut back to the returns
+      for (const c of R.corners) {                                          // kerb returns (and the outer radius of a corner), with a handle at the middle of each inner arc
+        const a = PlanReserve.returnArc(c, this._R(c)); ctx.strokeStyle = '#334155'; ctx.lineWidth = 2 * u; line(a.pts); if (a.outer) line(a.outer.pts);
         const hot = (S.drag && S.drag.key === c.key && S.drag.jkey === c.jkey) || (S.hoverH && S.hoverH.key === c.key && S.hoverH.jkey === c.jkey);
         ctx.fillStyle = hot ? '#2563eb' : '#fff'; ctx.strokeStyle = '#2563eb'; ctx.lineWidth = 1.5 * u;
         ctx.beginPath(); ctx.arc(a.mid[0] / f, a.mid[1] / f, 4 * u, 0, 6.2832); ctx.fill(); ctx.stroke();
@@ -307,16 +312,15 @@ const PlanReserveUI = {
     const sig = rs.map(r => r.id + ':' + r.points.length + ':' + r.points.map(p => Math.round(p.x) + ',' + Math.round(p.y)).join(';').length + ':' + Math.round(r.points[0].x) + ',' + Math.round(r.points[0].y) + ',' + Math.round(r.points[r.points.length - 1].x) + ',' + Math.round(r.points[r.points.length - 1].y) + ':' + r.props.carriageW + ':' + (r.props.cwOffset || 0) + ':' + r.props.width).join('|') + '#' + f + JSON.stringify(rets);
     if (this._geo.sig === sig) return this._geo.g;
     const list = rs.map(r => ({ rid: r.id, pts: r.points.map(p => [p.x * f, p.y * f]), w: +r.props.width || 12, carriageW: +r.props.carriageW, cwOffset: +r.props.cwOffset || 0 }));
-    const sp = PlanReserve.split(list, { minPiece: 0.5 }), byId = {}; sp.streets.forEach(s => { byId[s.id] = s; });
-    const kerbs = sp.streets.map(s => PlanReserve.kerbLines(s));
-    const arcs = sp.junctions.flatMap(j => PlanReserve.corners(j, byId, { ret: 8, retWide: 10 })).map(c => { const m = rets[c.jkey], R = m && m[c.key] != null ? m[c.key] : c.def; return PlanReserve.returnArc(c, R).pts; });
-    const g = { f, kerbs, arcs }; this._geo = { sig, g }; return g;
+    // kerb lines cut back to the returns; a corner of two streets (or a bend of one) also gets its outer radius
+    const d = PlanReserve.kerbDrawing(list, { ret: 8, retWide: 10 }, c => { const m = rets[c.jkey]; return m && m[c.key] != null ? m[c.key] : null; });
+    const g = { f, kerbs: d.kerbs, arcs: d.arcs.map(a => a.pts) }; this._geo = { sig, g }; return g;
   },
   drawPlanStreets(ctx, zoom) {
     const g = this.planGeometry(); if (!g) return; const f = g.f;
     ctx.save(); ctx.strokeStyle = 'rgba(71,85,105,.75)'; ctx.lineWidth = 1 / zoom; ctx.lineJoin = 'round';
     const line = pts => { ctx.beginPath(); pts.forEach((p, i) => i ? ctx.lineTo(p[0] / f, p[1] / f) : ctx.moveTo(p[0] / f, p[1] / f)); ctx.stroke(); };
-    for (const k of g.kerbs) { line(k.left); line(k.right); }
+    for (const k of g.kerbs) line(k);
     for (const a of g.arcs) line(a);
     ctx.restore();
   },
