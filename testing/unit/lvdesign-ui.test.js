@@ -232,6 +232,28 @@ ok('a kiosk moved by hand is pinned: the layout is solved again around it and th
   assert.strictEqual(U.edits(), 1); L.moves.kiosks[0].to.x = NaN; assert.strictEqual(U.cfg().moves.kiosks.length, 0, 'a bad stored value is dropped');
 });
 
+ok('road crossings: ends can be moved or slid, every cable at that crossing follows, the trench ends and the dashed under-road runs follow too', async () => {
+  const { U, PL, r } = lay(); U.admdConfirm(); U.applyMoves(r); U._findCross(r);
+  assert(U._xsegs.length > 0 && U._xsegs.some(g => g.kind === 'fi') && U._xsegs.some(g => g.kind === 'svc'), 'runs under the road are found');
+  const c = r.net.cross.find(x => !x.prov && x.svc > 0 && x.fib > 0) || r.net.cross.find(x => !x.prov); assert(c && c.key, 'a crossing with a key');
+  const L = U.cfg(), f = U.f, t = U._xTan(c);
+  const F0 = U.crossFields(c); assert(Math.abs(F0.along - c.s) < 1e-9 && Math.abs(F0.start - (c.hA - c.st.w / 2)) < 1e-9);
+  L.moves.xs[c.key] = { a: { x: t[0] * 3 / f, y: t[1] * 3 / f }, b: { x: t[0] * 3 / f, y: t[1] * 3 / f } };       // slid 3 m along the street
+  const g = U._gathered, r2 = PL.solve(g.input, g.params); U.result = r2; U.applyMoves(r2); PL.smooth(r2, g.params); U._findCross(r2);
+  const c2 = r2.net.cross.find(x => x.key === c.key); assert(c2 && c2.ends, 'the crossing carries its moved ends');
+  const [A0, B0] = c2.ends0, [A1, B1] = c2.ends; assert(Math.abs(Math.hypot(A1[0] - A0[0], A1[1] - A0[1]) - 3) < 1e-6 && Math.abs(Math.hypot(B1[0] - B0[0], B1[1] - B0[1]) - 3) < 1e-6);
+  const tr = PL.trenches(r2, U.cfg().trench), xt = tr.list.filter(q => q.kind === 'crossing').find(q => Math.hypot(q.pts[0][0] - A1[0], q.pts[0][1] - A1[1]) < 1e-6);
+  assert(xt, 'the crossing trench starts at the moved start');
+  const before = JSON.stringify(r.erven.filter(e => e.route).slice(0, 80).map(e => e.route)), after = JSON.stringify(r2.erven.filter(e => e.route).slice(0, 80).map(e => e.route));
+  assert.notStrictEqual(before, after, 'service routes through that crossing moved');
+  // the numbers: start / end distance and station round-trip
+  U.setCross(c2, 'start', 1.5); const Fs = U.crossFields(c2); assert(Math.abs(Fs.start - 1.5) < 1e-9, 'start ' + Fs.start); assert(Math.abs(Fs.along - (c2.s + 3)) < 1e-9, 'the slide is kept');
+  U.setCross(c2, 'along', c2.s + 5); assert(Math.abs(U.crossFields(c2).along - (c2.s + 5)) < 1e-9);
+  U.result = r2; U.selX = c2.key; assert(/Start, from the road edge/.test(U.crossHtml(x => String(x))), 'the editor shows the selected crossing');
+  assert.strictEqual(U.edits(), 1, 'one moved crossing is one edit');
+  L.moves.xs[c.key].a.x = NaN; assert.strictEqual(Object.keys(U.cfg().moves.xs).length, 0, 'a bad stored value is dropped');
+});
+
 (async () => {
   for (const [name, fn] of queue) { if (process.env.ONLY && !name.includes(process.env.ONLY)) continue; const t = Date.now(); await fn(); n++; console.log('ok', name, `(${((Date.now() - t) / 1000).toFixed(1)} s)`); }
   console.log(n + ' passed');

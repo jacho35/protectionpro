@@ -36,6 +36,7 @@ const PlanLayout = (() => {
     kside: 'count', subBal: 0,                                                                    // kiosk side of each street; the mini-sub balance (0 = off)
     m: 8, mhmerge: false, maxmh: 120, fibre: 'opp', topo: 'ring',              // fibre
     share: true, xmode: 'bound', xpref: 'near', junct: false, j110: 2, j160: 1, spare: 0,   // crossings
+    bendFi: 1, bendLv: 1.5, bendMv: 2,                                                 // smooth bends: radius (m) of fibre, LV / service and MV runs round a corner; 0 = sharp. PROVISIONAL: set to the cable / duct maker's minimum bend radius
   };
 
   // ───────────── small geometry ─────────────
@@ -713,9 +714,19 @@ const PlanLayout = (() => {
         }
         mhs.forEach((x, i) => { x.id = 'M' + (i + 1); x.label = String(i + 1); });
       }
+      // a junction of exactly two streets is the point where their two fibre verge lines meet, so each run reaches it along its own line and
+      // turns once. (The mean of the two verge points sat off both lines: each run then jogged back onto its line, a hook at the corner.)
+      const vergeCorner = (j, mean) => {
+        const [A, B] = use[j.id], line = st => { const sg = fibreSign(st), s = st.nodeSt[j.id], p = kp(st, sg, s, 't'), p1 = kp(st, sg, Math.max(0, s - 2), 't'), p2 = kp(st, sg, Math.min(st.len, s + 2), 't'), L = Math.hypot(p2[0] - p1[0], p2[1] - p1[1]); return L > 1e-6 ? { p, d: [(p2[0] - p1[0]) / L, (p2[1] - p1[1]) / L] } : null; };
+        const a = line(A), b = line(B); if (!a || !b) return null;
+        const det = a.d[0] * b.d[1] - a.d[1] * b.d[0]; if (Math.abs(det) < 0.26) return null;                      // streets within ~15 degrees of parallel: keep the mean
+        const t = ((b.p[0] - a.p[0]) * b.d[1] - (b.p[1] - a.p[1]) * b.d[0]) / det, X = [a.p[0] + t * a.d[0], a.p[1] + t * a.d[1]];
+        return Math.hypot(X[0] - mean[0], X[1] - mean[1]) <= 25 ? X : null;
+      };
       const inter = junctions.map(j => {
         const ps = use[j.id].map(st => kp(st, fibreSign(st), st.nodeSt[j.id], 't'));
-        return { id: j.id, x: ps.reduce((s, p) => s + p[0], 0) / ps.length, y: ps.reduce((s, p) => s + p[1], 0) / ps.length, junction: true, label: '', streets: use[j.id] };
+        const mean = [ps.reduce((s, p) => s + p[0], 0) / ps.length, ps.reduce((s, p) => s + p[1], 0) / ps.length], X = use[j.id].length === 2 ? vergeCorner(j, mean) : null;
+        return { id: j.id, x: X ? X[0] : mean[0], y: X ? X[1] : mean[1], junction: true, label: '', streets: use[j.id] };
       });
       const nodes = [...inter, ...mhs], edges = [];
       const stat = (nd, st) => nd.junction ? st.nodeSt[nd.id] : nd.a;
@@ -1173,9 +1184,9 @@ const PlanLayout = (() => {
       const type = mv && (pw || fi) ? 'MV/LV/SL' : mv ? 'MV' : pw ? 'LV/SL' : fi ? 'FI' : null;
       if (!type) return;
       const bnd = x.st.byBoundary && typeof x.st.fd === 'function', hA = bnd ? x.st.fd(1, x.s) : x.st.w / 2, hB = bnd ? x.st.fd(-1, x.s) : x.st.w / 2;
-      const a = ptAt(x.st, x.s, hA), b = ptAt(x.st, x.s, -hB);
+      const a = x.ends ? x.ends[0] : ptAt(x.st, x.s, hA), b = x.ends ? x.ends[1] : ptAt(x.st, x.s, -hB);              // `ends`: a crossing whose start / end were moved by hand
       const xsec = secOf(x.st, x.s);
-      out.push({ type, pts: [[a[0], a[1]], [b[0], b[1]]], depth: dep(type, xsec), section: xsec ? xsec.id : null, len: hA + hB, cats: [mv && 'mv', pw && 'lv', fi && 'fi'].filter(Boolean), kind: 'crossing' });
+      out.push({ type, pts: [[a[0], a[1]], [b[0], b[1]]], depth: dep(type, xsec), section: xsec ? xsec.id : null, len: x.ends ? Math.hypot(b[0] - a[0], b[1] - a[1]) : hA + hB, cats: [mv && 'mv', pw && 'lv', fi && 'fi'].filter(Boolean), kind: 'crossing' });
     });
     const sum = {};
     out.forEach(t => { const q = sum[t.type] || (sum[t.type] = { len: 0, n: 0, depth: t.depth }); q.len += t.len; q.n++; });
@@ -1256,7 +1267,66 @@ const PlanLayout = (() => {
     return out;
   }
 
-  return { reach, solve, trenches, demandInput, TRENCH_DEFAULTS, DEFAULTS, ptAt, project, verge, plen };
+
+  // ── smooth corners ──
+  // fillet(pts, R): every interior corner is replaced by a circular arc of radius R tangent to both legs (the arc is cut back so it never
+  // takes more than half of either leg: a corner too tight for R gets the largest arc that fits). The ends stay where they are; the points
+  // are replaced in place so the array keeps its identity. A turn under ~2 degrees is left alone.
+  function fillet(pts, R) {
+    if (!(R > 0) || !Array.isArray(pts) || pts.length < 3) return pts;
+    const P = [pts[0]]; for (let i = 1; i < pts.length; i++) if (Math.hypot(pts[i][0] - P[P.length - 1][0], pts[i][1] - P[P.length - 1][1]) > 1e-6) P.push(pts[i]);
+    if (P.length < 3) return pts;
+    const out = [P[0]];
+    for (let i = 1; i < P.length - 1; i++) {
+      const a = P[i - 1], b = P[i], c = P[i + 1];
+      const l1 = Math.hypot(a[0] - b[0], a[1] - b[1]), l2 = Math.hypot(c[0] - b[0], c[1] - b[1]);
+      const u1 = [(a[0] - b[0]) / l1, (a[1] - b[1]) / l1], u2 = [(c[0] - b[0]) / l2, (c[1] - b[1]) / l2];
+      const cosPhi = Math.max(-1, Math.min(1, u1[0] * u2[0] + u1[1] * u2[1])), phi = Math.acos(cosPhi), theta = Math.PI - phi;
+      if (theta < 0.035 || phi < 0.02) { out.push(b); continue; }
+      const half = Math.tan(phi / 2); let t = R / half; t = Math.min(t, (i === 1 ? l1 : l1 / 2), (i === P.length - 2 ? l2 : l2 / 2));
+      const Re = t * half, T1 = [b[0] + u1[0] * t, b[1] + u1[1] * t], T2 = [b[0] + u2[0] * t, b[1] + u2[1] * t];
+      const bx = u1[0] + u2[0], by = u1[1] + u2[1], bl = Math.hypot(bx, by) || 1, d = Re / Math.sin(phi / 2), C = [b[0] + bx / bl * d, b[1] + by / bl * d];
+      const a1 = Math.atan2(T1[1] - C[1], T1[0] - C[0]); let dl = Math.atan2(T2[1] - C[1], T2[0] - C[0]) - a1; while (dl > Math.PI) dl -= 2 * Math.PI; while (dl < -Math.PI) dl += 2 * Math.PI;
+      const n = Math.max(2, Math.ceil(Math.abs(dl) / (Math.PI / 12)));
+      for (let k = 0; k <= n; k++) { const an = a1 + dl * k / n; out.push([C[0] + Re * Math.cos(an), C[1] + Re * Math.sin(an)]); }
+    }
+    out.push(P[P.length - 1]);
+    pts.splice(0, pts.length, ...out);
+    return pts;
+  }
+  // every length that follows from the lines (after a node was moved, or the corners were rounded)
+  function relength(r) {
+    if (!r) return;
+    r.erven.forEach(e => { if (e.route) e.cable = plen(e.route); if (e.duct) e.ductLen = plen(e.duct); });
+    if (r.net) { (r.net.lvLinks || []).forEach(l => { l.len = plen(l.pts); }); (r.net.lv || []).forEach(ed => { ed.len = plen(ed.pts); }); r.net.lvLen = (r.net.lv || []).reduce((t, ed) => t + ed.len, 0); (r.net.mv || []).forEach(ed => { ed.len = plen(ed.pts); }); r.net.mvLen = (r.net.mv || []).reduce((t, ed) => t + (ed.len || 0), 0); }
+    const F = r.fibre;
+    if (F) {
+      const edges = (F.trunks || []).concat(F.spare || []); edges.forEach(e => { e.len = plen(e.pts); });
+      F.trunkLen = (F.trunks || []).reduce((t, e) => t + e.len, 0); F.maxGap = Math.max(0, ...edges.map(e => e.len));
+      const ds = r.erven.filter(e => e.duct).map(e => e.ductLen); F.leadLen = ds.reduce((t, x) => t + x, 0); F.leadMax = Math.max(0, ...ds);
+    }
+    const cab = r.erven.filter(e => e.cable).map(e => e.cable);
+    r.over = r.erven.filter(e => e.cable > r.P.maxc + 1e-6);
+    if (r.stats) {
+      r.stats.cable = cab.reduce((t, c) => t + c, 0); r.stats.cableMax = Math.max(0, ...cab); r.stats.over = r.over.length;
+      if (r.net) { r.stats.lv = r.net.lvLen; r.stats.mv = r.net.mvLen; } if (F) { r.stats.trunk = F.trunkLen; r.stats.leads = F.leadLen; }
+    }
+  }
+  // round the corners of every run in a result: fibre by `bendFi`, LV and service by `bendLv`, MV by `bendMv` (metres, 0 = sharp), then the lengths follow
+  function smooth(r, P) {
+    if (!r) return r; const q = Object.assign({}, DEFAULTS, P || r.P || {}), seen = new Set(), go = (pts, R) => { if (Array.isArray(pts) && !seen.has(pts)) { seen.add(pts); fillet(pts, R); } };
+    r.erven.forEach(e => { go(e.route, q.bendLv); go(e.duct, q.bendFi); });
+    if (r.net) { (r.net.lv || []).forEach(ed => go(ed.pts, q.bendLv)); (r.net.lvLinks || []).forEach(l => go(l.pts, q.bendLv)); (r.net.mv || []).forEach(ed => go(ed.pts, q.bendMv)); }
+    if (r.fibre) (r.fibre.trunks || []).concat(r.fibre.spare || []).forEach(e => go(e.pts, q.bendFi));
+    relength(r); return r;
+  }
+
+  // the two ends of a shared crossing as the trench draws them (kerb side to kerb side, or boundary to boundary)
+  function crossEnds(x) {
+    const bnd = x.st.byBoundary && typeof x.st.fd === 'function', hA = bnd ? x.st.fd(1, x.s) : x.st.w / 2, hB = bnd ? x.st.fd(-1, x.s) : x.st.w / 2;
+    return { a: ptAt(x.st, x.s, hA).slice(0, 2), b: ptAt(x.st, x.s, -hB).slice(0, 2), hA, hB };
+  }
+  return { reach, solve, trenches, demandInput, TRENCH_DEFAULTS, DEFAULTS, ptAt, project, verge, plen, fillet, relength, smooth, crossEnds };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = PlanLayout;

@@ -45,12 +45,16 @@ const PlanLayoutUI = {
       ['junct', 'check', 'Lay ducts across every road at all junctions, even with no cables'],
       ['j110', 'range', 0, 4, 1, '', '110 mm ducts at an empty junction'], ['j160', 'range', 0, 2, 1, '', '160 mm ducts at an empty junction'],
       ['spare', 'range', 0, 3, 1, '', 'Spare 110 mm ducts per crossing']]],
+    ['Bends', [['bendFi', 'range', 0, 5, 0.25, 'm', 'Fibre duct bend radius'], ['bendLv', 'range', 0, 5, 0.25, 'm', 'LV and service cable bend radius'], ['bendMv', 'range', 0, 8, 0.25, 'm', 'MV cable bend radius']]],
     ['Corridor', [['kgeo', 'select', [['boundary', 'the erf boundary (the street line can be out)'], ['street', 'the street line (how earlier layouts were made)']], 'Kiosks and cables are placed from'],
       ['kd', 'range', 0, 4, 0.05, 'm', 'Corridor distance inside the boundary']]],
   ],
 
   // hover explanations for the settings that need one (native tooltip on the label and on the (?) mark)
   TIPS: {
+    bendFi: 'Radius of the curve a fibre duct takes round a corner, in metres (0 = a sharp corner). The starting value is provisional: set it to your duct maker\'s minimum bend radius. A corner too tight for it gets the largest curve that fits.',
+    bendLv: 'Radius of the curve an LV or service cable takes round a corner, in metres (0 = sharp). Provisional starting value: use your cable maker\'s minimum bend radius. Lengths, volt drop and quantities use the curved path.',
+    bendMv: 'Radius of the curve an MV cable takes round a corner, in metres (0 = sharp). Provisional starting value: use your cable maker\'s minimum bend radius.',
     side: 'How far in from the erf\'s side boundary the service marker (where the service cable enters the erf) is placed.',
     depth: 'How far in from the front boundary the service marker is placed.',
     corner: 'Which front corner of each erf gets the marker. Start / far end of the street, or the corner nearest its kiosk. Paired puts the markers of two neighbouring erven on their shared boundary, so they share one service leg and, across the road, one crossing.',
@@ -118,10 +122,11 @@ const PlanLayoutUI = {
     vd.splits = Array.isArray(vd.splits) ? vd.splits.filter(q => q && Number.isFinite(+q.x) && Number.isFinite(+q.y)).map(q => ({ x: +q.x, y: +q.y })).slice(0, 200) : [];   // kiosks made a string head of their own
     vd.lv = typeof vd.lv === 'string' ? vd.lv.slice(0, 80) : ''; vd.svc = typeof vd.svc === 'string' ? vd.svc.slice(0, 80) : '';
     { const mv = (L.moves && typeof L.moves === 'object') ? L.moves : {}, pt = v => v && Number.isFinite(+v.x) && Number.isFinite(+v.y) ? { x: +v.x, y: +v.y } : null, key = /^-?\d+,-?\d+$/;
-      L.moves = { kiosks: [], verts: {}, adds: [], cuts: [] };                                    // parts moved by hand after a run (see "moving parts")
+      L.moves = { kiosks: [], verts: {}, adds: [], cuts: [], xs: {} };                                    // parts moved by hand after a run (see "moving parts")
       (Array.isArray(mv.kiosks) ? mv.kiosks : []).slice(0, 500).forEach(m => { const a = m && pt(m.from), b = m && pt(m.to); if (a && b) L.moves.kiosks.push({ from: a, to: b }); });
       for (const [k, v] of Object.entries(mv.verts && typeof mv.verts === 'object' ? mv.verts : {}).slice(0, 5000)) { const q = pt(v); if (q && key.test(k)) L.moves.verts[k] = q; }
       (Array.isArray(mv.adds) ? mv.adds : []).slice(0, 3000).forEach(a => { const q = a && pt(a); if (q && typeof a.id === 'string' && typeof a.a === 'string' && typeof a.b === 'string') L.moves.adds.push({ id: a.id.slice(0, 20), a: a.a.slice(0, 40), b: a.b.slice(0, 40), x: q.x, y: q.y }); });
+      for (const [k, v] of Object.entries(mv.xs && typeof mv.xs === 'object' ? mv.xs : {}).slice(0, 2000)) { const a = v && pt(v.a), b = v && pt(v.b); if (a && b && /^[^|]{1,80}\|-?\d+$/.test(k)) L.moves.xs[k] = { a, b }; }     // road crossings moved by hand: key = street|station, a / b = the shift of the start / end (plan points)
       L.moves.cuts = (Array.isArray(mv.cuts) ? mv.cuts : []).filter(k => typeof k === 'string' && key.test(k)).slice(0, 3000); }
     L.admdOk = typeof L.admdOk === 'string' ? L.admdOk.slice(0, 4000) : '';      // the Demand ADMD settings the user confirmed for the layout (a signature)
     L.sides = (L.sides && typeof L.sides === 'object') ? L.sides : {};
@@ -154,6 +159,12 @@ const PlanLayoutUI = {
     r.kiosks.forEach(k => keep.add(vk(k.x, k.y))); r.erven.forEach(e => { if (e.marker) keep.add(vk(e.marker[0], e.marker[1])); });
     if (r.net) (r.net.subs || []).forEach(S => { keep.add(vk(S.k.x, S.k.y)); if (S.k.stub) S.k.stub.forEach(q => keep.add(vk(q[0], q[1]))); });
     const tgt = k => { const v = M.verts[k]; return v ? [v.x * f, v.y * f] : null; };
+    const XS = [];                                                                      // road crossings: their ends, and the ones moved by hand
+    ((r.net && r.net.cross) || []).forEach(c => {
+      c.key = c.st.id + '|' + Math.round(c.s); const E = PlanLayout.crossEnds(c), mv = M.xs[c.key];
+      c.ends0 = [E.a, E.b]; c.hA = E.hA; c.hB = E.hB; c.ends = null;
+      if (mv) { c.ends = [[E.a[0] + mv.a.x * f, E.a[1] + mv.a.y * f], [E.b[0] + mv.b.x * f, E.b[1] + mv.b.y * f]]; XS.push({ c, a: [mv.a.x * f, mv.a.y * f], b: [mv.b.x * f, mv.b.y * f] }); }
+    });
     const objs = [];                                                                    // the points that are objects, not line vertices
     if (r.fibre) { (r.fibre.mhs || []).forEach(o => objs.push(o)); (r.fibre.inter || []).forEach(o => objs.push(o)); (r.fibre.nodes || []).forEach(o => objs.push(o)); if (r.fibre.entry) objs.push(r.fibre.entry); }
     objs.forEach(o => { if (Number.isFinite(o.x) && Number.isFinite(o.y)) o.k0 = vk(o.x, o.y); });
@@ -171,6 +182,7 @@ const PlanLayoutUI = {
       }
       list = list.filter((o, i) => !(o.k && !o.add && M.cuts.includes(o.k) && !keep.has(o.k) && i > 0 && i < list.length - 1));
       list.forEach(o => { if (o.add) return; const m = !keep.has(o.k) && tgt(o.k); if (m) o.pt = m; });
+      if (XS.length) this._shiftCross(list, XS);
       list.forEach((o, i) => {
         const interior = i > 0 && i < list.length - 1;
         const seen = seenV.get(o.t); if (seen) { seen.interior = seen.interior || interior; }
@@ -181,15 +193,7 @@ const PlanLayoutUI = {
     }
     for (const o of objs) { const m = tgt(o.k0); if (m && !keep.has(o.k0)) { o.x = m[0]; o.y = m[1]; o.moved = true; } }
     r.erven.forEach(e => { if (e.fibrePt && e.duct && e.duct.length) { const q = e.duct[e.duct.length - 1]; e.fibrePt = [q[0], q[1]]; } });
-    // the lengths that follow from the lines
-    const plen = a => a.reduce((t, q, i) => i ? t + Math.hypot(q[0] - a[i - 1][0], q[1] - a[i - 1][1]) : 0, 0);
-    if (M.adds.length || M.cuts.length || Object.keys(M.verts).length) {
-      r.erven.forEach(e => { if (e.route) e.cable = plen(e.route); });
-      if (r.net) { (r.net.lvLinks || []).forEach(l => { l.len = plen(l.pts); }); (r.net.lv || []).forEach(ed => { ed.len = plen(ed.pts); }); r.net.lvLen = (r.net.lv || []).reduce((t, ed) => t + ed.len, 0); }
-      const cab = r.erven.filter(e => e.cable).map(e => e.cable);
-      r.over = r.erven.filter(e => e.cable > r.P.maxc + 1e-6);
-      if (r.stats) { r.stats.cable = cab.reduce((t, c) => t + c, 0); r.stats.cableMax = Math.max(0, ...cab); r.stats.over = r.over.length; if (r.net) r.stats.lv = r.net.lvLen; }
-    }
+    if (M.adds.length || M.cuts.length || Object.keys(M.verts).length || XS.length) PlanLayout.relength(r);          // the lengths that follow from the lines
   },
   // what is under a point (metres): a kiosk, an erf marker, a node, or a stretch of line
   _moveHit(m) {
@@ -242,6 +246,13 @@ const PlanLayoutUI = {
   moveUp() {
     const D = this._drag; if (!D) return false; this._drag = null;
     const f = this.f, L = this.cfg(), M = L.moves, moved = Math.hypot(D.cur[0] - D.from[0], D.cur[1] - D.from[1]) > 0.2;
+    if (D.kind === 'xa' || D.kind === 'xb' || D.kind === 'xs') {
+      if (!moved) { PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true }); return true; }
+      const c = D.c, d = [(D.cur[0] - D.from[0]) / f, (D.cur[1] - D.from[1]) / f], mv = M.xs[c.key] || { a: { x: 0, y: 0 }, b: { x: 0, y: 0 } };
+      if (D.kind === 'xs') { const t = this._xTan(c), k = d[0] * t[0] + d[1] * t[1]; mv.a = { x: mv.a.x + t[0] * k, y: mv.a.y + t[1] * k }; mv.b = { x: mv.b.x + t[0] * k, y: mv.b.y + t[1] * k }; }
+      else { const e = D.kind === 'xa' ? 'a' : 'b'; mv[e] = { x: mv[e].x + d[0], y: mv[e].y + d[1] }; }
+      M.xs[c.key] = mv; this.touched(true); return true;
+    }
     if (!moved) { if (D.isNew) { M.adds = M.adds.filter(a => a.id !== D.add); } PlanEngine.requestDraw({ fg: true }); return true; }
     const q = { x: D.cur[0] / f, y: D.cur[1] / f };
     if (D.kind === 'kiosk') {
@@ -250,6 +261,19 @@ const PlanLayoutUI = {
     } else if (D.kind === 'marker') L.markers[D.e.id] = q;
     else if (D.kind === 'vert') { if (D.add) { const a = M.adds.find(x => x.id === D.add); if (a) { a.x = q.x; a.y = q.y; } } else M.verts[D.key] = q; }
     this.touched(true); return true;
+  },
+  _crossDraw(ctx, u, W) {
+    const r = this.result; if (!r || !r.net || this.mode !== 'cross') return;
+    ctx.save();
+    for (const c of r.net.cross) {
+      const [A, B] = this._xEnds(c), sel = c.key === this.selX, a = W(A), b = W(B);
+      ctx.strokeStyle = sel ? '#2563eb' : 'rgba(37,99,235,.55)'; ctx.lineWidth = (sel ? 3 : 2) * u; ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke();
+      for (const q of [a, b]) { ctx.fillStyle = '#fff'; ctx.strokeStyle = '#2563eb'; ctx.lineWidth = 2.2 * u; ctx.beginPath(); ctx.arc(q[0], q[1], (sel ? 7 : 5) * u, 0, 7); ctx.fill(); ctx.stroke(); if (sel) { ctx.strokeStyle = 'rgba(37,99,235,.25)'; ctx.lineWidth = 4 * u; ctx.beginPath(); ctx.arc(q[0], q[1], 11 * u, 0, 7); ctx.stroke(); } }
+    }
+    const D = this._drag;
+    if (D && D.c) { const [A, B] = this._xEnds(D.c), k = D.kind, cur = W(D.cur), a = k === 'xa' ? cur : W(A), b = k === 'xb' ? cur : W(B), dd = k === 'xs' ? [(D.cur[0] - D.from[0]) / this.f, (D.cur[1] - D.from[1]) / this.f] : [0, 0];
+      ctx.setLineDash([5 * u, 3 * u]); ctx.strokeStyle = '#2563eb'; ctx.lineWidth = 2.4 * u; ctx.beginPath(); ctx.moveTo(a[0] + dd[0], a[1] + dd[1]); ctx.lineTo(b[0] + dd[0], b[1] + dd[1]); ctx.stroke(); }
+    ctx.restore();
   },
   _moveDraw(ctx, u, W) {
     const r = this.result; if (!r || this.mode !== 'move') return;
@@ -270,6 +294,109 @@ const PlanLayoutUI = {
       ctx.beginPath(); ctx.arc(x, y, (D.kind === 'kiosk' ? 9 : 5) * u, 0, 7); ctx.fill(); ctx.stroke();
     }
     ctx.restore();
+  },
+
+  _segInter(a, b, c, d) {
+    const r = [b[0] - a[0], b[1] - a[1]], q = [d[0] - c[0], d[1] - c[1]], den = r[0] * q[1] - r[1] * q[0]; if (Math.abs(den) < 1e-12) return null;
+    const t = ((c[0] - a[0]) * q[1] - (c[1] - a[1]) * q[0]) / den, u = ((c[0] - a[0]) * r[1] - (c[1] - a[1]) * r[0]) / den;
+    return t >= 0 && t <= 1 && u >= 0 && u <= 1 ? [a[0] + t * r[0], a[1] + t * r[1]] : null;
+  },
+  // a crossing moved by hand: every cable that crosses that street at that place has the two ends of its crossing segment shifted
+  // (the start side by the start's shift, the far side by the end's), so all of them stay together and the verge runs stretch to meet them
+  _shiftCross(list, XS) {
+    const todo = new Map();
+    for (let i = 1; i < list.length; i++) {
+      const p = list[i - 1], q = list[i];
+      for (const X of XS) {
+        const st = X.c.st; let hit = null;
+        for (let j = 1; j < st.pts.length && !hit; j++) hit = this._segInter(p.pt, q.pt, st.pts[j - 1], st.pts[j]);
+        if (!hit || Math.abs(PlanLayout.project(st, hit[0], hit[1]).s - X.c.s) > 3) continue;
+        const pa = PlanLayout.project(st, p.pt[0], p.pt[1]).side >= 0;
+        if (!todo.has(p)) todo.set(p, pa ? X.a : X.b); if (!todo.has(q)) todo.set(q, pa ? X.b : X.a);
+      }
+    }
+    todo.forEach((d, o) => { o.pt = [o.pt[0] + d[0], o.pt[1] + d[1]]; });
+  },
+  // the stretches of every run that go across a street: drawn dashed, shaded, "below the road"
+  _findCross(r) {
+    const out = [], st = r.streets || [];
+    const seg = (kind, pts) => {
+      for (let i = 1; i < pts.length; i++) {
+        const a = pts[i - 1], b = pts[i]; if (Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1]) < 1e-6) continue;
+        for (const S of st) { let hit = false; for (let j = 1; j < S.pts.length && !hit; j++) hit = !!this._segInter(a, b, S.pts[j - 1], S.pts[j]); if (hit) { out.push({ kind, a, b }); break; } }
+      }
+    };
+    r.erven.forEach(e => { if (e.route) seg('svc', e.route); if (e.duct) seg('fi', e.duct); });
+    if (r.net) (r.net.lv || []).forEach(ed => seg('lv', ed.pts));
+    if (r.fibre) (r.fibre.trunks || []).concat(r.fibre.spare || []).forEach(e => seg('fi', e.pts));
+    this._xsegs = out;
+  },
+  _xTan(c) { const p1 = PlanLayout.ptAt(c.st, Math.max(0, c.s - 1), 0), p2 = PlanLayout.ptAt(c.st, Math.min(c.st.len, c.s + 1), 0), L = Math.hypot(p2[0] - p1[0], p2[1] - p1[1]) || 1; return [(p2[0] - p1[0]) / L, (p2[1] - p1[1]) / L]; },
+  _xNorm(c) { const p0 = PlanLayout.ptAt(c.st, c.s, 0), p1 = PlanLayout.ptAt(c.st, c.s, 1), L = Math.hypot(p1[0] - p0[0], p1[1] - p0[1]) || 1; return [(p1[0] - p0[0]) / L, (p1[1] - p0[1]) / L]; },
+  _xEnds(c) { return c.ends || c.ends0; },
+  _crossHit(m) {
+    const r = this.result; if (!r || !r.net) return null; const tol = 10 * this.f / PlanEngine.view.zoom; let best = null;
+    const take = (o, d) => { if (d <= tol && (!best || d < best.d)) best = Object.assign(o, { d }); };
+    for (const c of r.net.cross) {
+      const [A, B] = this._xEnds(c); if (!A) continue;
+      take({ kind: 'xa', c }, Math.hypot(A[0] - m[0], A[1] - m[1])); take({ kind: 'xb', c }, Math.hypot(B[0] - m[0], B[1] - m[1]));
+      const dx = B[0] - A[0], dy = B[1] - A[1], L2 = dx * dx + dy * dy, t = L2 ? Math.max(0, Math.min(1, ((m[0] - A[0]) * dx + (m[1] - A[1]) * dy) / L2)) : 0;
+      take({ kind: 'xs', c }, Math.hypot(A[0] + t * dx - m[0], A[1] + t * dy - m[1]) * 1.4);
+    }
+    return best;
+  },
+  crossDown(pt, ev) {
+    const r = this.result, f = this.f, L = this.cfg(), M = L.moves; if (!r) { UI.toast('Run the layout first.', 'info', 3000); return; }
+    const h = this._crossHit([pt.x * f, pt.y * f]);
+    if (!h) { PlanEngine.isPanning = true; PlanEngine.panStart = { x: ev.clientX - PlanEngine.view.panX, y: ev.clientY - PlanEngine.view.panY }; return; }
+    this.selX = h.c.key;
+    if (ev.altKey) { if (M.xs[h.c.key]) { delete M.xs[h.c.key]; this.touched(true); } else { PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true }); } return; }
+    const [A, B] = this._xEnds(h.c), from = h.kind === 'xa' ? A.slice() : h.kind === 'xb' ? B.slice() : [pt.x * f, pt.y * f];
+    this._drag = { kind: h.kind, c: h.c, cur: from.slice(), from }; PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true });
+  },
+  // the editor for the selected crossing (numbers, in metres) and the list of every crossing
+  crossFields(c) {
+    const f = this.f, mv = this.cfg().moves.xs[c.key] || { a: { x: 0, y: 0 }, b: { x: 0, y: 0 } }, t = this._xTan(c), n = this._xNorm(c), dot = (v, u) => v[0] * u[0] + v[1] * u[1];
+    const a = [mv.a.x * f, mv.a.y * f], b = [mv.b.x * f, mv.b.y * f], w2 = c.st.w / 2;
+    return { t, n, aT: dot(a, t), aN: dot(a, n), bT: dot(b, t), bN: dot(b, n), start: c.hA - w2 + dot(a, n), end: c.hB - w2 - dot(b, n), along: c.s + (dot(a, t) + dot(b, t)) / 2, w2 };
+  },
+  setCross(c, field, val) {
+    const f = this.f, F = this.crossFields(c), M = this.cfg().moves; let { aT, aN, bT, bN } = F; val = parseFloat(val); if (!isFinite(val)) return;
+    if (field === 'start') aN = val - (c.hA - F.w2); else if (field === 'end') bN = -(val - (c.hB - F.w2)); else { aT = bT = val - c.s; }
+    const vec = (T, N) => ({ x: (F.t[0] * T + F.n[0] * N) / f, y: (F.t[1] * T + F.n[1] * N) / f });
+    M.xs[c.key] = { a: vec(aT, aN), b: vec(bT, bN) }; this.touched(true);
+  },
+  crossHtml(esc) {
+    const r = this.result; if (!r || !r.net) return '';
+    const sel = r.net.cross.find(c => c.key === this.selX), rows = r.net.cross.slice().sort((p, q) => p.st.id.localeCompare(q.st.id) || p.s - q.s).slice(0, 60);
+    const num = (k, label, v) => `<label style="display:flex;flex-direction:column;gap:2px;font-size:12px;min-width:0">${label}<input type="number" step="0.1" data-xf="${k}" value="${(Math.round(v * 100) / 100)}" style="min-height:36px;width:100%;min-width:0;box-sizing:border-box;padding:0 8px"></label>`;
+    let ed = '<div style="font-size:12px;color:var(--text-muted)">Click a crossing on the plan or in the list. Drag its start or end to move that end, drag the line to slide it along the street. Alt-click puts it back.</div>';
+    if (sel) { const F = this.crossFields(sel), moved = !!this.cfg().moves.xs[sel.key];
+      ed = `<div style="display:flex;flex-direction:column;gap:6px"><b>${esc(sel.st.name || sel.st.id)} · ${Math.round(F.along)} m</b><div style="font-size:12px;color:var(--text-muted)">${sel.svc ? sel.svc + ' service' + (sel.svc === 1 ? '' : 's') + ' · ' : ''}${sel.fib ? sel.fib + ' fibre · ' : ''}${sel.lv ? sel.lv + ' LV · ' : ''}${sel.d110} × 110 mm${sel.d160 ? ' + ' + sel.d160 + ' × 160 mm' : ''}${sel.prov ? ' (provisional, no cable yet)' : ''}</div>
+        <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:6px">${num('start', 'Start, from the road edge (m)', F.start)}${num('end', 'End, from the road edge (m)', F.end)}<div style="grid-column:span 2">${num('along', 'Along the street (m)', F.along)}</div></div>
+        <button type="button" class="plan-btn" data-act="xreset" style="min-height:36px"${moved ? '' : ' disabled'}>Put this crossing back</button></div>`; }
+    const list = `<div style="max-height:150px;overflow:auto;border-top:1px solid var(--border-color,#ddd)">${rows.map(c => `<button type="button" data-xsel="${esc(c.key)}" class="plan-btn" style="display:flex;justify-content:space-between;width:100%;border:0;border-bottom:1px solid var(--border-color,#eee);border-radius:0;padding:4px 2px;font-size:12px;${c.key === this.selX ? 'font-weight:700;background:rgba(37,99,235,.1)' : ''}"><span>${esc(c.st.name || c.st.id)} · ${Math.round(c.s)} m${this.cfg().moves.xs[c.key] ? ' ●' : ''}</span><span>${c.d110 + c.d160} duct${c.d110 + c.d160 === 1 ? '' : 's'}</span></button>`).join('')}</div>`;
+    return ed + list;
+  },
+
+  // the adjust tools over the plan itself (Review step, not on a phone): the same modes as the panel's card, plus a line saying what a click does
+  _syncBar() {
+    const stage = typeof PlanEngine !== 'undefined' && PlanEngine.stage; if (!stage) return;
+    let bar = document.getElementById('pl-adjust-bar');
+    const phone = window.matchMedia && window.matchMedia('(max-width: 768px)').matches;
+    const show = this._active && this.step === 4 && this.result && this.result.kiosks.length && !phone;
+    if (!show) { if (bar) bar.remove(); return; }
+    if (getComputedStyle(stage).position === 'static') stage.style.position = 'relative';
+    if (!bar) {
+      bar = document.createElement('div'); bar.id = 'pl-adjust-bar';
+      bar.style.cssText = 'position:absolute;left:0;right:0;top:10px;display:flex;flex-direction:column;align-items:center;gap:6px;z-index:6;pointer-events:none';
+      bar.addEventListener('pointerdown', e => e.stopPropagation());
+      bar.onclick = e => { const b = e.target.closest('[data-bm]'); if (!b) return; if (b.dataset.bm === 'reset') { const a = document.querySelector('#plan-props [data-act="reset"]'); if (a) a.click(); return; } this.mode = b.dataset.bm; this.markFor = null; PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true }); };
+      stage.appendChild(bar);
+    }
+    const n = this.edits(), btn = (v, t) => `<button type="button" data-bm="${v}" aria-pressed="${this.mode === v}" style="min-height:36px;padding:0 12px;border:0;border-radius:7px;font:inherit;font-size:13px;cursor:pointer;${this.mode === v ? 'background:#2563eb;color:#fff;font-weight:600' : 'background:transparent;color:#334155;font-weight:500'}">${t}</button>`;
+    bar.innerHTML = `<div style="pointer-events:auto;display:flex;flex-wrap:wrap;gap:2px;padding:4px;background:#fff;border:1px solid #cbd5e1;border-radius:10px;box-shadow:0 4px 14px rgba(15,23,42,.18)">${btn('front', 'Erf fronts')}${btn('marker', 'Erf markers')}${btn('trunk', 'Trunk ducts')}${btn('move', 'Move parts')}${btn('cross', 'Crossings')}<span style="width:1px;background:#cbd5e1;margin:4px 3px"></span>${btn('reset', 'Reset edits (' + n + ')')}</div>
+      <div style="pointer-events:none;padding:5px 12px;background:#0f172a;color:#f8fafc;border-radius:8px;font-size:12px;max-width:720px;text-align:center">${this.hint().replace(/^Auto layout · /, '').replace(/&/g, '&amp;').replace(/</g, '&lt;')}</div>`;
   },
 
   // ───────── the ADMD prerequisite: the load on every cable comes from Demand's ADMD settings, so they are confirmed before a run ─────────
@@ -1059,7 +1186,7 @@ const PlanLayoutUI = {
   },
   // the step a user most likely wants when the tool opens
   firstStep() { return !this.streetsOnPlan().length ? 1 : !this.placedSubs().length ? 2 : this.result ? 4 : 3; },
-  edits() { const L = this.cfg(), M = L.moves; return Object.keys(L.fronts).length + Object.keys(L.markers).length + L.cuts.length + (L.entry ? 1 : 0) + M.kiosks.length + Object.keys(M.verts).length + M.adds.length + M.cuts.length; },
+  edits() { const L = this.cfg(), M = L.moves; return Object.keys(L.fronts).length + Object.keys(L.markers).length + L.cuts.length + (L.entry ? 1 : 0) + M.kiosks.length + Object.keys(M.verts).length + M.adds.length + M.cuts.length + Object.keys(M.xs).length; },
   nextAction(r, placed, noKiosks, nErv, nStreets) {
     if (!nErv) return { label: 'Detect the erven to continue', act: 'goto', s: 1, dis: true, note: 'The layout needs erf boundaries: use Detect erven.' };
     if (!nStreets) return { label: 'Add the streets to continue', act: 'goto', s: 1, dis: true, note: 'The layout needs the street centrelines.' };
@@ -1097,6 +1224,7 @@ const PlanLayoutUI = {
     if (!r) return pre + 'Review: run the layout to see the kiosks, cables and checks.';
     if (!r.kiosks.length) return pre + 'Review: no kiosks were found. Draw a centreline beside the erven, or extend the nearest street.';
     if (this.mode === 'marker') return pre + (this.markFor ? 'click on the erf where its service cable should arrive.' : 'click inside an erf where its service cable should arrive. Alt-click removes a marker.');
+    if (this.mode === 'cross') return pre + 'Road crossings: drag a start or end to move it · drag the line to slide it along the street · Alt-click: put it back · drag empty space: pan';
     if (this.mode === 'move') return pre + 'Drag a kiosk, manhole, erf marker or node · Shift-click a line: add a node · Alt-click a node: remove it · drag empty space: pan';
     if (this.mode === 'trunk') return pre + 'click a trunk duct section to cut it or put it back; click a junction for the fibre entry.';
     return pre + 'Review: click a check to see it on the plan. Click an erf near an edge to make it the front.';
@@ -1149,6 +1277,8 @@ const PlanLayoutUI = {
     this.result = PlanLayout.solve(g.input, g.params); this._ranParams = JSON.stringify(g.params);
     this.f = g.f; this.ms = performance.now() - t0; this.stale = false; this.flag = null; this.nearHint = null;
     this.applyMoves(this.result);                                                       // nodes moved, added or removed by hand
+    PlanLayout.smooth(this.result, g.params);                                           // then every corner rounded (the node handles stay on the corners)
+    this._findCross(this.result);
     this.result.trench = PlanLayout.trenches(this.result, this.cfg().trench);
     this.vdRun();
     PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true });
@@ -1293,6 +1423,7 @@ const PlanLayoutUI = {
   click(pt, ev) {
     if (this.mode === 'sub') { this.subClick(pt, ev); return; }
     if (this.mode === 'move') { this.moveDown(pt, ev); return; }
+    if (this.mode === 'cross') { this.crossDown(pt, ev); return; }
     const r = this.result, f = this.f; if (!r) { UI.toast('Run the layout first.', 'info', 3000); return; }
     const L = this.cfg(), m = [pt.x * f, pt.y * f];
     const pip = (x, y, p) => { let c = false; for (let i = 0, j = p.length - 1; i < p.length; j = i++) { const a = p[i], b = p[j]; if ((a[1] > y) !== (b[1] > y) && x < (b[0] - a[0]) * (y - a[1]) / (b[1] - a[1]) + a[0]) c = !c; } return c; };
@@ -1483,10 +1614,10 @@ const PlanLayoutUI = {
     if (S.cross && r.net) {
       ctx.font = `700 ${9 * u}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       r.net.cross.forEach(x => {
-        const a = W(PlanLayout.ptAt(x.st, x.s, x.st.w / 2)), b = W(PlanLayout.ptAt(x.st, x.s, -x.st.w / 2)), t = Math.min(x.d110 + x.d160, 6);
+        const a = W(x.ends ? x.ends[0] : PlanLayout.ptAt(x.st, x.s, x.st.w / 2)), b = W(x.ends ? x.ends[1] : PlanLayout.ptAt(x.st, x.s, -x.st.w / 2)), t = Math.min(x.d110 + x.d160, 6);
         ctx.strokeStyle = 'rgba(255,255,255,.9)'; ctx.lineWidth = (4 + t * 1.1) * u; ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke();
         ctx.strokeStyle = '#334155'; ctx.globalAlpha = x.prov ? .45 : 1; ctx.lineWidth = (2 + t * 1.1) * u; if (x.prov) ctx.setLineDash([4 * u, 3 * u]); ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke(); ctx.setLineDash([]);
-        const m = W(PlanLayout.ptAt(x.st, x.s, 0)); ctx.fillStyle = '#334155'; ctx.beginPath(); ctx.arc(m[0], m[1], 6.5 * u, 0, 7); ctx.fill(); ctx.globalAlpha = 1; ctx.fillStyle = '#fff'; ctx.fillText(String(x.d110 + x.d160), m[0], m[1] + .5 * u);
+        const m = x.ends ? [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2] : W(PlanLayout.ptAt(x.st, x.s, 0)); ctx.fillStyle = '#334155'; ctx.beginPath(); ctx.arc(m[0], m[1], 6.5 * u, 0, 7); ctx.fill(); ctx.globalAlpha = 1; ctx.fillStyle = '#fff'; ctx.fillText(String(x.d110 + x.d160), m[0], m[1] + .5 * u);
       });
     }
     if (S.fibre) {
@@ -1509,7 +1640,13 @@ const PlanLayoutUI = {
       });
     }
     if (this.hoverT && this.hoverT.edge) { ctx.strokeStyle = 'rgba(234,88,12,.5)'; ctx.lineWidth = 6 * u; line(this.hoverT.edge.pts); }
-    this._moveDraw(ctx, u, W);
+    if (S.cross && this._xsegs) {                                                                      // runs that go under a road: shaded, dashed
+      ctx.save(); ctx.lineCap = 'butt'; const col2 = { fi: '#6b21a8', lv: '#b45309', svc: '#334155' };
+      for (const g of this._xsegs) { ctx.strokeStyle = 'rgba(255,255,255,.85)'; ctx.lineWidth = 5 * u; ctx.setLineDash([]); line([g.a, g.b]); }
+      for (const g of this._xsegs) { ctx.strokeStyle = col2[g.kind]; ctx.lineWidth = 1.8 * u; ctx.setLineDash([5 * u, 3 * u]); line([g.a, g.b]); }
+      ctx.restore();
+    }
+    this._moveDraw(ctx, u, W); this._crossDraw(ctx, u, W);
     ctx.restore();
   },
 
@@ -1691,13 +1828,21 @@ const PlanLayoutUI = {
     const checksHtml = r ? `<div style="font-weight:600;display:flex;justify-content:space-between;align-items:center">Checks${this.flag && this.flag.size ? '<button type="button" class="plan-btn" data-act="unflag" style="padding:1px 8px;font-size:12px;font-weight:400">Clear red marks</button>' : ''}</div>
         <div style="display:flex;gap:4px;flex-wrap:wrap">${chip('all', 'All ' + ck.length, filt === 'all')}${nFix ? chip('f', nFix + ' Fix', filt === 'f') : ''}${nChk ? chip('w', nChk + ' Check', filt === 'w') : ''}${nNote ? chip('n', nNote + (nNote === 1 ? ' Note' : ' Notes'), filt === 'n') : ''}</div>
         <div>${shown.length ? shown.map(rowHtml).join('') : '<div style="color:#15803d">✓ Every erf is served, within the service limit and the kiosk size.</div>'}</div>` : '';
+    const aBtn = (v, t, span) => `<button type="button" class="plan-btn" data-mode="${v}" aria-pressed="${this.mode === v}" style="min-height:40px;padding:4px 8px;font-size:13px;${span ? 'grid-column:span 2;' : ''}${this.mode === v ? 'font-weight:700;background:var(--accent,#2563eb);color:#fff;border-color:var(--accent,#2563eb)' : ''}">${t}</button>`;
+    const modeText = this.mode === 'marker' ? (this.markFor ? 'Click on the erf where its service cable should arrive.' : 'Click inside an erf the layout cannot place (or one it places wrongly) where its service cable should arrive. Alt-click removes a marker. The cable, kiosk and fibre duct are worked out to it.')
+      : this.mode === 'trunk' ? 'Click a trunk duct section to cut it or put it back; click a junction to make it the fibre entry.'
+      : this.mode === 'move' ? 'Drag a kiosk, a manhole, an erf marker or any node on a duct or cable route. Shift-click a line to add a node, Alt-click a node to remove it (a kiosk or marker you moved: Alt-click puts it back). A kiosk you move stays where you put it and the rest is worked out around it; the checks run again.'
+      : this.mode === 'cross' ? '' : 'Click an erf near the edge you want as its front.';
+    const adjust = `<div style="border:2px solid var(--accent,#2563eb);border-radius:8px;padding:8px;display:flex;flex-direction:column;gap:6px;background:rgba(37,99,235,.05)">
+        <div style="display:flex;justify-content:space-between;align-items:baseline"><b>Adjust on the plan</b><span style="font-size:12px;color:var(--text-muted)">${cnt} edit${cnt === 1 ? '' : 's'}</span></div>
+        <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:5px">${aBtn('front', 'Erf fronts')}${aBtn('marker', 'Erf markers')}${aBtn('trunk', 'Trunk ducts')}${aBtn('move', 'Move parts')}${aBtn('cross', 'Road crossings: move start and end', true)}</div>
+        ${modeText ? `<div style="font-size:12px;color:var(--text-muted)">${modeText}</div>` : ''}
+        ${this.mode === 'cross' ? this.crossHtml(esc) : ''}
+        <button type="button" class="plan-btn" data-act="reset" style="padding:3px 8px;font-size:12px;align-self:flex-start"${cnt ? '' : ' disabled'}>Reset my edits (${cnt})</button></div>`;
     const step4 = !r ? banner('warn', `<span>Nothing to review yet. ${placed.length ? 'Press Run layout below.' : 'Place a mini-sub first.'}</span>${this.err ? `<span style="color:#dc2626">${esc(this.err)}</span>` : ''}`)
       : `${this.stale ? banner('warn', '<span><b>↻ Changed since the last run.</b> The figures below are from before.</span><span><button type="button" class="plan-btn" data-act="run" style="' + sBtn + ';font-weight:600">Re-run</button></span>') : ''}
-        ${noKiosks ? blocked : `${verdict}<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:5px">${keyTiles}</div>
+        ${noKiosks ? blocked : `${verdict}${adjust}<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:5px">${keyTiles}</div>
         ${checksHtml}
-        <div style="font-weight:600">Adjust on the plan</div>
-        <div style="display:flex;gap:4px;flex-wrap:wrap">${modeBtn('front', 'Erf fronts')}${modeBtn('marker', 'Erf markers')}${modeBtn('trunk', 'Trunk ducts')}${modeBtn('move', 'Move parts')}<button type="button" class="plan-btn" data-act="reset" style="padding:3px 8px;font-size:12px"${cnt ? '' : ' disabled'}>Reset my edits (${cnt})</button></div>
-        <div style="font-size:12px;color:var(--text-muted)">${this.mode === 'marker' ? (this.markFor ? 'Click on the erf where its service cable should arrive.' : 'Click inside an erf the layout cannot place (or one it places wrongly) where its service cable should arrive. Alt-click removes a marker. The cable, kiosk and fibre duct are worked out to it.') : this.mode === 'trunk' ? 'Click a trunk duct section to cut it or put it back; click a junction to make it the fibre entry.' : this.mode === 'move' ? 'Drag a kiosk, a manhole, an erf marker or any node on a duct or cable route. Shift-click a line to add a node, Alt-click a node to remove it (a kiosk or marker you moved: Alt-click puts it back). A kiosk you move stays where you put it and the rest is worked out around it; the checks run again.' : 'Click an erf near the edge you want as its front.'}</div>
         <details><summary style="cursor:pointer;font-weight:600">More figures <span style="font-weight:400;font-size:12px;color:var(--text-muted)">crossings, ducts, trenches, LV design</span></summary><div style="display:flex;flex-direction:column;gap:6px;padding-top:4px"><div style="display:grid;grid-template-columns:repeat(2,1fr);gap:5px">${tiles}</div>
         ${designBlock}
         ${r.vdBusy || r.earthBusy ? '<div style="color:var(--text-muted)">Checking the voltage drop and earth-fault loop with Demand…</div>' : ''}
@@ -1728,7 +1873,9 @@ const PlanLayoutUI = {
       d.addEventListener('toggle', () => { if (d.open) openSet.add(key); else openSet.delete(key); });
     });
     el.onclick = (e) => {
-      const b = e.target.closest('[data-act],[data-mode],[data-side],[data-ck],[data-ckact],[data-ckerf],[data-step],[data-preset],[data-cf],[data-ckopen]'); if (!b) return;
+      const b = e.target.closest('[data-act],[data-mode],[data-side],[data-ck],[data-ckact],[data-ckerf],[data-step],[data-preset],[data-cf],[data-ckopen],[data-xsel]'); if (!b) return;
+      if (b.dataset.xsel) { this.selX = b.dataset.xsel; const c = this.result && this.result.net.cross.find(q => q.key === this.selX); if (c) { const [A, B] = this._xEnds(c), f2 = this.f; PlanEngine.zoomToPoints([A, B].map(q => ({ x: q[0] / f2, y: q[1] / f2 }))); } PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true }); return; }
+      if (b.dataset.act === 'xreset') { const c = this.result && this.result.net.cross.find(q => q.key === this.selX); if (c && L.moves.xs[c.key]) { delete L.moves.xs[c.key]; this.touched(true); } return; }
       if (typeof PlanReserveUI !== 'undefined' && b.dataset.act && b.dataset.act.startsWith('rs-') && PlanReserveUI.act(b)) return;
       if (b.dataset.step) { this.setStep(+b.dataset.step); return; }
       if (b.dataset.preset) { this.setPreset(b.dataset.preset); return; }
@@ -1797,7 +1944,7 @@ const PlanLayoutUI = {
       else if (b.dataset.act === 'admdok') { this.admdConfirm(); PlanMarkup.refreshProps(); }
       else if (b.dataset.act === 'create') this.commit();
       else if (b.dataset.act === 'clear') this.clear();
-      else if (b.dataset.act === 'reset') { L.fronts = {}; L.markers = {}; L.cuts = []; delete L.entry; L.moves = { kiosks: [], verts: {}, adds: [], cuts: [] }; this.markFor = null; this._drag = null; this.touched(true); }
+      else if (b.dataset.act === 'reset') { L.fronts = {}; L.markers = {}; L.cuts = []; delete L.entry; L.moves = { kiosks: [], verts: {}, adds: [], cuts: [], xs: {} }; this.selX = null; this.markFor = null; this._drag = null; this.touched(true); }
       else if (b.dataset.mode) { this.mode = b.dataset.mode; this.markFor = null; PlanMarkup.refreshProps(); }
       else if (b.dataset.side) { const o = L.sides[b.dataset.side] = L.sides[b.dataset.side] || {}, v = +b.dataset.val; if (v === 0) delete o[b.dataset.key]; else o[b.dataset.key] = v; this.touched(); }
     };
@@ -1816,6 +1963,7 @@ const PlanLayoutUI = {
       const t = e.target;
       if (typeof PlanReserveUI !== 'undefined' && PlanReserveUI.change(t)) return;
       if (t.dataset.admd) { this.setAdmd(t.dataset.admd, t.value); return; }
+      if (t.dataset.xf) { const c = this.result && this.result.net.cross.find(q => q.key === this.selX); if (c) this.setCross(c, t.dataset.xf, t.value); return; }
       if (t.dataset.copt) { const v = parseFloat(t.value); if (isFinite(v) && v > 0) this.centreW = v; return; }
       if (t.hasAttribute && t.hasAttribute('data-kany')) { const S = this.kerbStage; if (S) { S.setAnyLayer(t.checked); PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true }); } return; }
       if (t.dataset.kopt) { const v = parseFloat(t.value); if (isFinite(v)) { this.kerbOpt[t.dataset.kopt] = v; if (this.kerbStage) { if (t.dataset.kopt === 'join' || t.dataset.kopt === 'oneW') this.kerbStage.o = Object.assign({}, this.kerbStage.o, this.kerbOpt); else this.kerbSolve(); } } return; }
@@ -1843,7 +1991,7 @@ const PlanLayoutUI = {
       const k = t.dataset.p; if (!k || t.type === 'range') return;
       p[k] = t.type === 'checkbox' ? t.checked : t.value; this.touched();
     };
-    this.syncHint();
+    this.syncHint(); this._syncBar();
   },
 };
 
@@ -1856,7 +2004,7 @@ if (typeof PlanTools !== 'undefined') {
       PlanLayoutUI.mode = PlanLayoutUI.step === 2 ? 'sub' : 'front';
       if (typeof PlanMarkup !== 'undefined') PlanMarkup.refreshProps();
     },
-    onDeactivate() { PlanLayoutUI.secDraw = null; PlanLayoutUI._active = false; PlanLayoutUI.widen(false); PlanLayoutUI.hoverT = null; PlanLayoutUI.kerbStage = null; PlanLayoutUI.centreStage = null; if (typeof PlanReserveUI !== 'undefined') PlanReserveUI.stage = null; if (PlanLayoutUI.drawStreets) PlanLayoutUI.streetDrawOn(false); },
+    onDeactivate() { { const b = document.getElementById('pl-adjust-bar'); if (b) b.remove(); } PlanLayoutUI.secDraw = null; PlanLayoutUI._active = false; PlanLayoutUI.widen(false); PlanLayoutUI.hoverT = null; PlanLayoutUI.kerbStage = null; PlanLayoutUI.centreStage = null; if (typeof PlanReserveUI !== 'undefined') PlanReserveUI.stage = null; if (PlanLayoutUI.drawStreets) PlanLayoutUI.streetDrawOn(false); },
     cancel() { PlanTools.set('select'); },
     onMove(pt, e) {
       if (PlanLayoutUI._drag && PlanLayoutUI.moveMove(pt)) return;
