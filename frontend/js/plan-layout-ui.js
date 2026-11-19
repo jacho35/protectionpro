@@ -1202,7 +1202,7 @@ const PlanLayoutUI = {
     else this.secDraw = null;
     PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true });
   },
-  _streetsM() { const f = PlanEngine.factor(); return this.streetsOnPlan().map(r => ({ id: r.id, w: this._num(r.props && r.props.width, 6, 40, 12), pts: this._flat(r).map(p => [p.x * f, p.y * f]) })); },
+  _streetsM() { const f = PlanEngine.factor(); return this.streetsOnPlan().map(r => ({ id: r.id, w: this._num(r.props && r.props.width, 6, 40, 12), cw: this._num(r.props && r.props.carriageW, 0, 40, 0), pts: this._flat(r).map(p => [p.x * f, p.y * f]) })); },
   secDown(pt) {
     const q = PlanTools.snap(pt, { wantElements: false }), d = this.secDraw; if (!d) return;
     const last = d.pts[d.pts.length - 1];
@@ -1354,7 +1354,7 @@ const PlanLayoutUI = {
     const sr = this.streetsOnPlan();
     if (!sr.length) return { err: 'Draw the streets first: pick Street centreline in the Routes group and click along each street.' };
     if (!erven.length) return { err: 'No erf has a boundary yet. Run Detect erven first (it keeps each erf\'s boundary).' };
-    const streets = sr.map((r, i) => ({ id: r.id, name: (r.props && r.props.name) || ('Street ' + (i + 1)), w: this._num(r.props && r.props.width, 6, 40, 12), pts: this._flat(r).map(p => [p.x * f, p.y * f]) }));
+    const streets = sr.map((r, i) => ({ id: r.id, name: (r.props && r.props.name) || ('Street ' + (i + 1)), w: this._num(r.props && r.props.width, 6, 40, 12), cw: this._num(r.props && r.props.carriageW, 0, 40, 0), pts: this._flat(r).map(p => [p.x * f, p.y * f]) }));
     const ks = {}, fs = {}, ga = L.sides['*'] || {}; streets.forEach(s => { const sd = L.sides[s.id] || {}, pk = v => v === 1 || v === -1 ? v : null; ks[s.id] = pk(sd.k) || pk(ga.k) || 0; fs[s.id] = pk(sd.f) || pk(ga.f); });   // a street's own side overrides the all-streets one
     const subPts = this.placedSubs().map(q => [q.x * f, q.y * f]);                    // every mini-sub you placed: the layout works from them
     if (!subPts.length && !allowNoSub) return { err: 'Place your mini-subs first (step 2): click where each one stands. The layout works from them.' };
@@ -1388,6 +1388,7 @@ const PlanLayoutUI = {
     this.result = PlanLayout.solve(g.input, g.params); this._ranParams = JSON.stringify(g.params);
     this.f = g.f; this.ms = performance.now() - t0; this.stale = false; this.flag = null; this.nearHint = null;
     this.applyMoves(this.result);                                                       // nodes moved, added or removed by hand
+    PlanLayout.keepOut(this.result);                                                    // anything a move or a re-laid crossing left inside a carriageway goes round it
     PlanLayout.smooth(this.result, g.params);                                           // then every corner rounded (the node handles stay on the corners)
     this._findCross(this.result);
     this.result.trench = PlanLayout.trenches(this.result, this.cfg().trench);
@@ -1588,6 +1589,9 @@ const PlanLayoutUI = {
     const lab = (e) => Object.assign({}, e, { name: names[e.id] || e.id });
     const over = r.erven.filter(e => e.fe && e.cable > P.maxc + 1e-6);
     if (over.length) out.push({ sev: 'fail', text: `${over.length} erven are further than ${P.maxc} m of service cable from their kiosk (longest ${Math.round(Math.max(...over.map(e => e.cable)))} m): ${nm(over.map(lab))}.`, ids: over.map(e => e.id) });
+    { const hits = PlanLayout.carriageHits(r);                                         // runs still inside a carriageway outside a square crossing
+      if (hits.length) { const c = {}; hits.forEach(h => { c[h.kind] = (c[h.kind] || 0) + 1; });
+        out.push({ sev: 'warn', text: `${hits.length} run${hits.length === 1 ? '' : 's'} still go${hits.length === 1 ? 'es' : ''} through a carriageway outside a crossing (${Object.entries(c).map(([k, n]) => n + ' ' + k).join(', ')}). They are laid on the kerb side where they can be; move the node or crossing by hand in Adjust on the plan.`, ids: [] }); } }
     const nf = r.erven.filter(e => !e.fe);
     if (nf.length) {
       const rows = nf.map(e => ({ id: e.id, name: names[e.id] || e.id, g: PlanLayout.reach(e.poly, r.streets, { erven: r.erven }) }));

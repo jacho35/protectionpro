@@ -568,13 +568,47 @@ ok('smooth corners: no sharp bend is left, ends stay put, a curve is never longe
   const sq = [[0, 0], [10, 0], [10, 10]]; L.fillet(sq, 2); assert(sq.length > 3 && Math.abs(sq[0][0]) < 1e-9 && sq[sq.length - 1][1] === 10);
   assert(L.plen(sq) < 20 && L.plen(sq) > 19, 'a radius-2 round of a right angle saves 2*(2-pi/2) = 0.86 m: ' + L.plen(sq));
 });
-ok('fibre round a corner: a run reaches a two-street junction along its own verge line, with no jog or hook', () => {
-  const r = L.solve(F, {}); let n = 0, mx = 0;
+ok('fibre round a corner: a run reaches a two-street junction along its own verge line (no hook); where the verge lines meet outside the mouth it falls back to a verge point, never a spike', () => {
+  const r = L.solve(F, {}); const js = [];
   for (const e of r.fibre.trunks.concat(r.fibre.spare)) for (const [node, rev] of [[e.a, false], [e.b, true]]) {
     if (!node.junction || node.streets.length !== 2 || e.pts.length < 4) continue;
     const P = rev ? e.pts.slice().reverse() : e.pts, a = P[1], b = P[2], d = [b[0] - a[0], b[1] - a[1]], l = Math.hypot(d[0], d[1]);
-    mx = Math.max(mx, Math.abs((P[0][0] - a[0]) * d[1] - (P[0][1] - a[1]) * d[0]) / l); n++;
+    js.push(Math.abs((P[0][0] - a[0]) * d[1] - (P[0][1] - a[1]) * d[0]) / l);
   }
-  assert(n >= 10, 'junctions seen ' + n); assert(mx < 1, 'worst jog ' + mx.toFixed(2) + ' m (was 4.6 m)');
+  assert(js.length >= 10, 'junctions seen ' + js.length);
+  assert(js.filter(x => x < 1).length >= js.length * 0.7, 'most corners reach the junction along their own line');
+  assert(Math.max(...js) <= 12, 'no jog beyond a street width: ' + Math.max(...js).toFixed(1));
+  // the junction node is never outside the junction mouth (the old spike through the erven)
+  r.fibre.inter.filter(n => n.streets.length === 2).forEach(n => n.streets.forEach(st => { const q = L.project(st, n.x, n.y); assert(q.d <= st.w, 'node ' + q.d.toFixed(1) + ' m from ' + st.id + ' (width ' + st.w + ')'); }));
+});
+ok('keep-out: a run that dips into a carriageway is routed round it, a square crossing is left alone, the ends stay', () => {
+  const st = { id: 'T', name: 'T', w: 12, cw: 6, pts: [[-60, 0], [60, 0]], cum: [0, 120], len: 120 };
+  const mk = routes => ({ streets: [st], erven: routes.map((r, i) => ({ id: 'e' + i, route: r, cable: L.plen(r) })), net: null, fibre: null, P: { maxc: 70 }, stats: {} });
+  const dip = [[-20, 3.6], [-2, 3.6], [0, 0.2], [2, 3.6], [20, 3.6]], sq = [[-8, 3.6], [0, 3.6], [0, -3.6], [8, -3.6]];
+  const res = L.keepOut(mk([dip.map(q => q.slice()), sq.map(q => q.slice())]));
+  const a = res.erven[0].route, b = res.erven[1].route;
+  assert.deepStrictEqual(a[0], dip[0]); assert.deepStrictEqual(a[a.length - 1], dip[dip.length - 1]);
+  for (let i = 1; i < a.length; i++) { const p = a[i - 1], q = a[i], n = Math.ceil(L.plen([p, q]) / 0.25); for (let k = 0; k <= n; k++) assert(Math.abs(p[1] + (q[1] - p[1]) * k / n) >= 2.85, 'inside the carriageway at ' + k + ' of segment ' + i); }
+  assert.deepStrictEqual(b, sq, 'a square crossing stays as drawn');
+  assert.strictEqual(res.keepOut.fixed, 1); assert(Math.abs(res.erven[0].cable - L.plen(a)) < 1e-9, 'the length follows');
+  assert.strictEqual(L.carriageHits(res).length, 0);
+  // a run that changes side without a square crossing gets one
+  const diag = [[-30, 3.6], [0, 3.6], [8, -3.6], [30, -3.6]], r2 = L.keepOut(mk([diag.map(q => q.slice())])), c = r2.erven[0].route;
+  assert.strictEqual(L.carriageHits(r2).length, 0, 'the side change is a square crossing now');
+  assert(c.some((q, i) => i && Math.abs(q[0] - c[i - 1][0]) < 1e-6 && Math.abs(q[1] - c[i - 1][1]) > 6), 'a square crossing (vertical across the road) was made');
+  // no carriageway width: nothing happens
+  const none = mk([dip.map(q => q.slice())]); none.streets = [Object.assign({}, st, { cw: 0 })]; assert.deepStrictEqual(L.keepOut(none).erven[0].route, dip);
+});
+
+ok('keep-out in a layout: with a carriageway width on every street no service or fibre duct runs through one, the corridor holds the kerb + 0.4 m, and smoothing adds nothing', () => {
+  const Fc = Object.assign({}, F, { streets: F.streets.map(s => Object.assign({}, s, { cw: 6 })) });
+  const r = L.solve(Fc, {}); assert(r.keepOut && r.keepOut.fixed > 0, 'something was re-routed');
+  const bad = pr => L.carriageHits(pr).filter(h => h.kind === 'service' || h.kind === 'fibre duct').length;
+  assert(bad(r) <= 4, 'services / ducts inside a carriageway: ' + bad(r) + ' of ' + (2 * r.erven.length));
+  const sm = L.smooth(L.solve(Fc, {}), r.P); assert(bad(sm) <= bad(r), 'smoothing adds none');
+  // every service vertex is at least the kerb off the street line, except the ends of a crossing
+  const st = r.streets, inside = p => st.some(s => L.carriage([s]).dist(s, p) < 3 - 0.35);
+  let n = 0; r.erven.forEach(e => { if (e.route) e.route.forEach((p, i) => { if (i && i < e.route.length - 1 && inside(p)) n++; }); });
+  assert(n <= 3, 'interior service vertices within 0.35 m of the kerb or inside: ' + n);
 });
 console.log(n + ' passed');

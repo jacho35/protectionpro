@@ -308,6 +308,20 @@ ok('a moved crossing never takes the cables of a crossing a few metres along the
   const moved = Math.hypot(outA[2].pt[0] - A[2].pt[0], outA[2].pt[1] - A[2].pt[1]); assert(Math.abs(moved - 2) < 0.05, 'slid 2 m: ' + moved);
 });
 
+ok('a moved crossing on streets with a carriageway: the re-laid runs are put back outside it, so they follow the verge', async () => {
+  const { U, PL, r } = lay(); U.admdConfirm();
+  const Fc = Object.assign({}, F, { streets: F.streets.map(s => Object.assign({}, s, { cw: 6 })) }), g = { input: Fc, params: Object.assign({}, PL.DEFAULTS, { subs: 1 }) };
+  U._gathered = g; const base = PL.solve(Fc, g.params); U.result = base; U.applyMoves(base);
+  const hits = res => PL.carriageHits(res).filter(h => h.kind === 'service' || h.kind === 'fibre duct').length;
+  const c = base.net.cross.filter(x => !x.prov && x.svc > 1).sort((p, q) => q.svc - p.svc)[0], t = U._xTan(c), L = U.cfg(), f = U.f;
+  L.moves.xs[c.key] = { a: { x: t[0] * 8 / f, y: t[1] * 8 / f }, b: { x: t[0] * 8 / f, y: t[1] * 8 / f } };           // slid 8 m
+  const r2 = PL.solve(Fc, g.params); U.result = r2; U.applyMoves(r2);
+  const raw = hits(r2); PL.keepOut(r2); const fixed = hits(r2);
+  assert(fixed <= hits(base) + 1, 'after the slide and the keep-out: ' + fixed + ' (before the slide ' + hits(base) + ', raw ' + raw + ')');
+  assert(fixed <= raw, 'keep-out never makes it worse');
+  const c2 = r2.net.cross.find(x => x.key === c.key); assert(c2.ends, 'the crossing carries its moved ends');
+});
+
 (async () => {
   for (const [name, fn] of queue) { if (process.env.ONLY && !name.includes(process.env.ONLY)) continue; const t = Date.now(); await fn(); n++; console.log('ok', name, `(${((Date.now() - t) / 1000).toFixed(1)} s)`); }
   console.log(n + ' passed');
