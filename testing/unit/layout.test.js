@@ -12,7 +12,7 @@ L.DEFAULTS.maxc = 80;   // the fixtures below were tuned at 80 m: they test the 
 
 ok('fixture: a believable neighbourhood', () => { assert(F.erven.length > 60 && F.erven.length < 140, 'erven ' + F.erven.length); });
 
-ok('every erf gets a front, a marker 3-5 m in, and the marker is inside the erf', () => {
+ok('every erf gets a front, a marker 1-5 m in, and the marker is inside the erf', () => {
   const r = L.solve(F, {});
   assert.strictEqual(r.noFront.length, 0);
   const pip = (x, y, poly) => { let c = false; for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) { const a = poly[i], b = poly[j]; if ((a[1] > y) !== (b[1] > y) && x < (b[0] - a[0]) * (y - a[1]) / (b[1] - a[1]) + a[0]) c = !c; } return c; };
@@ -542,5 +542,15 @@ ok('strings: each string reports its reach from the mini-sub; cutting by kiosks 
   const far = r => Math.max(...r.net.strLens.map(x => x.len));
   assert(Math.abs(far(a) - far(b)) < 1e-6 || far(b) <= far(a) + 1e-6, 'the furthest kiosk is no further when cut');
   b.net.strLens.forEach(x => { assert(x.len > 0 && x.kiosks.includes(x.far)); });
+});
+ok('a kiosk moved by hand stands exactly there and the layout is solved around it', () => {
+  const r0 = L.solve(F, {}), k0 = r0.kiosks[Math.floor(r0.kiosks.length / 2)], st = k0.road;
+  const to = L.ptAt(st, Math.max(1, Math.min(st.len - 1, k0.s + 12)), 0.002);
+  const r = L.solve(Object.assign({}, F, { kioskDrops: [[k0.x, k0.y]], kioskPins: [[to[0], to[1]]] }), {});
+  const hit = r.kiosks.find(k => Math.hypot(k.x - to[0], k.y - to[1]) < 1e-6);
+  assert(hit, 'a kiosk at the moved point'); assert(hit.members.length > 0, 'it serves erven'); assert.strictEqual(hit.flag, 'placed by hand');
+  assert(!r.kiosks.some(k => Math.hypot(k.x - k0.x, k.y - k0.y) <= 1.5), 'none left at the old point');
+  assert(r.erven.filter(e => e.fe).every(e => e.kiosk), 'every erf still served');
+  const again = L.solve(F, {}); assert.strictEqual(again.kiosks.length, r0.kiosks.length, 'no pins: unchanged');
 });
 console.log(n + ' passed');

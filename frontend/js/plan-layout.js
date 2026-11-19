@@ -271,8 +271,8 @@ const PlanLayout = (() => {
       best.r.pts.hopN = best.r.pre.length; return best.r.pts;
     }
     let LC = new Map();
-    const routeM = (e, k) => { const key = 'd|' + e.id + '|' + Math.round(k.s * 3); let v = LC.get(key); if (v == null) { v = Math.min(...e.mcs.map(mc => plen(routeFor(e, k, mc)))); LC.set(key, v); } return v; };
-    const viaLen = (e, k, mc, x) => { const key = 'v|' + e.id + '|' + Math.round(k.s * 3) + '|' + Math.round(x.s * 3) + '|' + mc.end; let v = LC.get(key); if (v == null) { v = plen(routeVia(e, k, mc, x)); LC.set(key, v); } return v; };
+    const routeM = (e, k) => { const key = 'd|' + e.id + '|' + Math.round(k.s * 3) + (k.pin ? '|p' + Math.round(k.x * 10) + ',' + Math.round(k.y * 10) : ''); let v = LC.get(key); if (v == null) { v = Math.min(...e.mcs.map(mc => plen(routeFor(e, k, mc)))); LC.set(key, v); } return v; };
+    const viaLen = (e, k, mc, x) => { const key = 'v|' + e.id + '|' + Math.round(k.s * 3) + '|' + Math.round(x.s * 3) + '|' + mc.end + (k.pin ? '|p' + Math.round(k.x * 10) + ',' + Math.round(k.y * 10) : ''); let v = LC.get(key); if (v == null) { v = plen(routeVia(e, k, mc, x)); LC.set(key, v); } return v; };
 
     function groupBoundaries(list) {
       const out = [];
@@ -504,6 +504,15 @@ const PlanLayout = (() => {
         }
         cands.push(...mine);
       }
+      // kiosks moved or put by hand: a stand dropped where the solver would have put one (`kioskDrops`) and a stand that is always used (`kioskPins`)
+      const pinIdx = new Set();
+      for (const q of (input.kioskDrops || [])) if (Array.isArray(q) && Number.isFinite(q[0]) && Number.isFinite(q[1])) for (let i = cands.length - 1; i >= 0; i--) if (Math.hypot(cands[i].x - q[0], cands[i].y - q[1]) <= 1.5) cands.splice(i, 1);
+      for (const q of (input.kioskPins || [])) {
+        if (!Array.isArray(q) || !Number.isFinite(q[0]) || !Number.isFinite(q[1])) continue;
+        let bp = null; for (const st of streets) { const h = project(st, q[0], q[1]); if (!bp || h.d < bp.h.d) bp = { st, h }; }
+        if (!bp) continue;
+        cands.push({ road: bp.st, a: bp.h.s, x: q[0], y: q[1], s: bp.h.s, shared: false, hand: true, pin: true }); pinIdx.add(cands.length - 1);
+      }
       const forced = -1;                                                       // kiosks are placed from the erven alone: a mini-sub never forces one
       const C = cands.length;
       if (!C) { warns.push('No place for a kiosk on any street.'); return kiosks; }
@@ -552,6 +561,8 @@ const PlanLayout = (() => {
         inc.forEach(i => left.delete(i)); return inc;
       };
       if (forced >= 0 && cover[forced].length) { sel.push(forced); take(forced); }
+      for (const ci of pinIdx) { sel.push(ci); take(ci); }                          // a kiosk you placed always stands
+      const isPin = j => sel[j] === forced || pinIdx.has(sel[j]);
       while (left.size) {
         let best = null;
         for (let ci = 0; ci < C; ci++) {
@@ -573,14 +584,14 @@ const PlanLayout = (() => {
           again = false;
           const order = sel.map((c, j) => j).sort((a, b) => members(cur, a) - members(cur, b));
           for (const j of order) {
-            if (sel[j] === forced && members(cur, j)) continue;
+            if (isPin(j)) continue;
             const t = sel.filter((c, q) => q !== j), r = assignG(t); budget--;
             if (r.flow >= cur.flow && r.flow === nServ && (P.xkiosk ? r.eff - cur.eff : r.cable - cur.cable) <= P.worth) { sel = t; cur = r; again = true; changed = true; break; }
             if (budget <= 0) break;
           }
         }
         for (let j = 0; j < sel.length && budget > 0; j++) {
-          if (sel[j] === forced) continue;
+          if (isPin(j)) continue;
           const a = cands[sel[j]]; let bestC = null;
           for (let ci = 0; ci < C && budget > 0; ci++) {
             if (sel.includes(ci) || Math.hypot(cands[ci].x - a.x, cands[ci].y - a.y) > 60) continue;
@@ -610,6 +621,7 @@ const PlanLayout = (() => {
         chosen[j].members.push(e);
       });
       const ord = new Map(streets.map((s, i) => [s, i]));
+      chosen.filter(c => c.cand.pin && !c.members.length).forEach(() => warns.push('A kiosk you moved serves no erf there (none is within the service limit), so it was left out.'));
       const live = chosen.filter(c => c.members.length).sort((p, q) => ord.get(p.cand.road) - ord.get(q.cand.road) || p.cand.s - q.cand.s);
       // crossings are shared per street: the erven a street's own kiosks serve across the road cross at the shared boundaries (stageB)
       for (const st of streets) {
