@@ -102,7 +102,7 @@ const CollabData = {
       const id = fl.id;
       for (const k of AppState._PLAN_FLOOR_KEYS) {
         const key = `plan.${id}.${k}`;
-        if (k === 'scale' || k === 'cropBox') {
+        if (k === 'scale' || k === 'cropBox' || k === 'workArea') {
           out.push({ key, kind: 'value', group: 'plan', get: () => live(id, k),
             set: v => {
               const p = pm(), f = floor(id);

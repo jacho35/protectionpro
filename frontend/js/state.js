@@ -383,7 +383,7 @@ const AppState = {
   // The per-floor drawing collections. Each floor owns its own copy of these;
   // the active floor's copies are mirrored onto planMarkup.<key> as the live
   // working set the engine + tools read/write directly (see switchFloor).
-  _PLAN_FLOOR_KEYS: ['plans', 'scale', 'cropBox', 'dxfs', 'elements', 'routes',
+  _PLAN_FLOOR_KEYS: ['plans', 'scale', 'cropBox', 'workArea', 'dxfs', 'elements', 'routes',
     'trenches', 'crossings', 'rooms', 'texts', 'measurements'],
 
   // A fresh, empty per-floor data bundle.
@@ -393,6 +393,7 @@ const AppState = {
                           //   pdfPages,imgW,imgH,opacity,visible,offX,offY,rotation,scaleAdj}
       scale: null,        // {p1,p2,realDist,pxDist,factor}  factor = metres per pixel
       cropBox: null,      // {x,y,w,h}
+      workArea: null,     // {points:[{x,y}…]} world polygon: detection / layout / take-off ignore the drawing outside it (PlanWorkArea)
       dxfs: [],           // imported DXF drawings (several per floor, e.g.
                           //   architectural + services): {id,imageId,name,count,
                           //   unitM,origin,bbox,k,offX,offY,rotation,scaleAdj,
@@ -1863,7 +1864,7 @@ const AppState = {
       const normData = (d) => {
         d = d || {};
         return {
-          plans: arr(d.plans), scale: d.scale || null, cropBox: d.cropBox || null,
+          plans: arr(d.plans), scale: d.scale || null, cropBox: d.cropBox || null, workArea: d.workArea || null,
           dxfs: this._planDxfsFrom(d),
           elements: arr(d.elements), routes: arr(d.routes), trenches: arr(d.trenches),
           crossings: arr(d.crossings), rooms: arr(d.rooms), texts: arr(d.texts),

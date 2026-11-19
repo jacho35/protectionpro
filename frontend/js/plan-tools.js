@@ -1147,6 +1147,66 @@ PlanTools.register({
 });
 
 // ─────────────────────────────────────────────────────────────────────────
+// FREEZE LAYER — click any DXF item to hide its whole layer (AutoCAD LAYFRZ)
+// ─────────────────────────────────────────────────────────────────────────
+PlanTools.register({
+  id: 'layerfreeze', cursor: 'crosshair',
+  onDown(pt) {
+    const r = 10 / Math.max(PlanEngine.view.zoom, 1e-6);
+    const name = PlanDxfImport.freezeLayerAt(pt, r);
+    UI.toast(name ? `Layer "${name}" frozen. Undo brings it back; Underlays › Layers & blocks lists every layer.` : 'No drawing item there — click right on a line, text or block.', name ? 'success' : 'info', 3500);
+  },
+  onKey(e) { if (e.key === 'Escape') { PlanTools.set('select'); return true; } return false; },
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// WORKING AREA — drag a rectangle, or click polygon corners (Enter / first point closes)
+// ─────────────────────────────────────────────────────────────────────────
+PlanTools.register({
+  id: 'workarea', cursor: 'crosshair', _mode: 'rect', _start: null, _pts: [], _cur: null,
+  onActivate(o) { this._mode = (o && o.mode) || 'rect'; this._start = null; this._pts = []; this._cur = null; },
+  cancel() { this._start = null; this._pts = []; this._cur = null; },
+  onDown(pt) {
+    if (this._mode === 'rect') { this._start = { x: pt.x, y: pt.y }; return; }
+    const tol = 10 / Math.max(PlanEngine.view.zoom, 1e-6);
+    if (this._pts.length >= 3 && Math.hypot(pt.x - this._pts[0].x, pt.y - this._pts[0].y) <= tol) { this._finish(); return; }
+    this._pts.push({ x: pt.x, y: pt.y }); PlanEngine.requestDraw({ fg: true });
+  },
+  onMove(pt) { this._cur = { x: pt.x, y: pt.y }; if (this._start || this._pts.length) PlanEngine.requestDraw({ fg: true }); },
+  onUp(pt) {
+    if (this._mode !== 'rect' || !this._start) return;
+    const a = this._start; this._start = null;
+    if (Math.abs(pt.x - a.x) < 4 || Math.abs(pt.y - a.y) < 4) return;
+    PlanWorkArea.set(PlanWorkArea.rect(a, pt)); PlanTools.set('select');
+  },
+  _finish() {
+    if (this._pts.length < 3) { UI.toast('A working area needs at least three corners.', 'warn', 3000); return true; }
+    const pts = this._pts; this._pts = []; PlanWorkArea.set(pts); PlanTools.set('select'); return true;
+  },
+  onKey(e) {
+    if (e.key === 'Escape') { this.cancel(); PlanTools.set('select'); return true; }
+    if (e.key === 'Enter' && this._mode === 'poly') return this._finish();
+    if (e.key === 'Backspace' && this._pts.length) { this._pts.pop(); PlanEngine.requestDraw({ fg: true }); return true; }
+    return false;
+  },
+  drawOverlay(ctx, zoom) {
+    ctx.save(); ctx.strokeStyle = '#16a34a'; ctx.lineWidth = 1.5 / zoom; ctx.setLineDash([6 / zoom, 4 / zoom]);
+    if (this._mode === 'rect' && this._start && this._cur) {
+      const r = PlanWorkArea.rect(this._start, this._cur);
+      ctx.strokeRect(r[0].x, r[0].y, r[1].x - r[0].x, r[2].y - r[0].y);
+    } else if (this._pts.length) {
+      ctx.beginPath(); ctx.moveTo(this._pts[0].x, this._pts[0].y);
+      for (const p of this._pts.slice(1)) ctx.lineTo(p.x, p.y);
+      if (this._cur) ctx.lineTo(this._cur.x, this._cur.y);
+      ctx.stroke();
+      ctx.setLineDash([]); ctx.fillStyle = '#16a34a';
+      for (const p of this._pts) { ctx.beginPath(); ctx.arc(p.x, p.y, 3.5 / zoom, 0, 7); ctx.fill(); }
+    }
+    ctx.restore();
+  },
+});
+
+// ─────────────────────────────────────────────────────────────────────────
 // ARRAY — drag a rectangle, then drop a grid (cols × rows) of one device type
 // (Distribution Designer's "Light Array"). Placed devices auto-tag to the
 // nearest board's next free circuit(s) in the building domain.

@@ -555,6 +555,8 @@ const PlanRoomDetect = {
         addPoly(pts, true);
       }
     }
+    // The plan's working area: only the walls in or crossing it (PlanWorkArea).
+    if (opts && opts.desc && typeof PlanWorkArea !== 'undefined' && PlanWorkArea.active()) return PlanWorkArea.filterSegs(segs, PlanWorkArea.localPoly(opts.desc));
     return segs;
   },
 };
@@ -877,6 +879,7 @@ Object.assign(PlanRoomDetect, {
       ? PlanDxfImport.list().filter(d => !d.hidden && PlanDxfImport.dataOf(d)).reverse() : [];
     const hasImages = AppState.planMarkup.plans.some(p => p.visible !== false);
     if (!visibleDxf.length && !hasImages) return { ok: false, reason: 'no-background' };
+    if (typeof PlanWorkArea !== 'undefined' && !PlanWorkArea.inWorld(pt.x, pt.y)) return { ok: false, reason: 'outside-area' };
     let last = null;
     for (const d of visibleDxf) {
       const r = this._detectDxf(d, pt, f, o, lim);
@@ -905,7 +908,7 @@ Object.assign(PlanRoomDetect, {
   _detectDxf(desc, pt, f, o, lim) {
     const data = PlanDxfImport.dataOf(desc);
     const lt = this._wallLayerTest(desc, data, o.layers);
-    const segs = this.segmentsFromDxf(data, lt.test, { hatches: o.hatch && lt.matched });
+    const segs = this.segmentsFromDxf(data, lt.test, { hatches: o.hatch && lt.matched, desc: desc });
     if (!segs.length) return { ok: false, reason: 'no-walls' };
     const click = PlanDxfImport.localOf(desc, pt.x, pt.y);
     // metres per drawing unit, for the door gap and the size cap
@@ -977,6 +980,7 @@ Object.assign(PlanRoomDetect, {
       case 'no-background': return 'Import a DXF or a plan image first — there is nothing to detect from.';
       case 'uncalibrated': return 'Calibrate the plan first — detection needs real distances for the gap.';
       case 'no-walls': return `No ${target === 'erf' ? 'boundary' : 'wall'} lines found on the visible layers. Check the layer filter in the options.`;
+      case 'outside-area': return 'That click is outside the working area. Click inside it, or change the area (Underlays › Working area).';
       case 'on-wall': return `That click landed on a ${target === 'erf' ? 'boundary' : 'wall'}. Click inside the ${lim.noun}.`;
       case 'outside': return 'Click on the plan.';
       case 'too-large': return `That region is larger than ${lim.maxAreaM2} m² — probably the whole site. Close the openings, or draw the ${lim.noun} by hand.`;
@@ -1002,7 +1006,7 @@ Object.assign(PlanRoomDetect, {
     const pm = AppState.planMarkup, o = this.opts(target);
     const dxf = (typeof PlanDxfImport !== 'undefined') ? PlanDxfImport.list().map(d => [d.id, d.hidden, d.k, d.offX, d.offY, d.rotation, d.scaleAdj, d.unitM, d.layers]) : [];
     const img = pm.plans.map(p => [p.id, p.imageId, p.visible, p.offX, p.offY, p.rotation, p.scaleAdj, p.k, p.scale, p.x, p.y]);
-    return JSON.stringify([target, o.gapM, o.layers, o.hatch, PlanEngine.factor(), dxf, img]);
+    return JSON.stringify([target, o.gapM, o.layers, o.hatch, PlanEngine.factor(), dxf, img, typeof PlanWorkArea !== 'undefined' ? PlanWorkArea.sig() : '']);
   },
 
   _computeCands(target) {
@@ -1014,7 +1018,7 @@ Object.assign(PlanRoomDetect, {
     let items = [], source = null, noWalls = true; const orphans = [];
     for (const d of visibleDxf) {
       const data = PlanDxfImport.dataOf(d), lt = this._wallLayerTest(d, data, o.layers);
-      const segs = this.segmentsFromDxf(data, lt.test, { hatches: o.hatch && lt.matched });
+      const segs = this.segmentsFromDxf(data, lt.test, { hatches: o.hatch && lt.matched, desc: d });
       if (!segs.length) continue;
       noWalls = false;
       const mpu = f ? PlanDxfImport._pxPerUnit(d) * f : d.unitM;
@@ -1023,7 +1027,7 @@ Object.assign(PlanRoomDetect, {
         minArea: lim.minAreaM2 / (mpu * mpu), maxArea: lim.maxAreaM2 / (mpu * mpu), minWidth: lim.minWidthM / mpu,
       });
       // The text inside a region names it (a stand number, a room number), as the DXF manager does.
-      const texts = target === 'erf' ? (data.entities || []).filter(r => r.t === 'x' && r.s != null && String(r.s).trim()) : [];
+      const texts = target === 'erf' ? (data.entities || []).filter(r => r.t === 'x' && r.s != null && String(r.s).trim() && (typeof PlanWorkArea === 'undefined' || !PlanWorkArea.active() || (w => PlanWorkArea.inWorld(w.x, w.y))(PlanDxfImport.worldOf(d, r.p[0], r.p[1])))) : [];
       const used = new Set();
       for (const c of found) {
         const hits = texts.filter(t => this._pip(t.p, c.points));
@@ -1036,6 +1040,7 @@ Object.assign(PlanRoomDetect, {
           label,
         });
       }
+      if (typeof PlanWorkArea !== 'undefined' && PlanWorkArea.active()) items = items.filter(it => PlanWorkArea.inWorld(it.seed.x, it.seed.y));
       // A stand number that sits in no detected region is a stand that was missed.
       for (const t of texts) if (!used.has(t) && /^[A-Za-z]{0,4}[ -]?\d+[A-Za-z]?$/.test(String(t.s).trim())) orphans.push(String(t.s).trim());
       if (items.length) source = 'dxf';
@@ -1054,6 +1059,7 @@ Object.assign(PlanRoomDetect, {
         noWalls = false;
       }
     }
+    if (typeof PlanWorkArea !== 'undefined' && PlanWorkArea.active()) items = items.filter(it => PlanWorkArea.inWorld(it.seed.x, it.seed.y));
     if (!items.length) return { ok: false, reason: noWalls ? 'no-walls' : 'not-enclosed' };
     return { ok: true, items, source, orphans };
   },
@@ -1068,7 +1074,7 @@ Object.assign(PlanRoomDetect, {
       ? PlanDxfImport.list().filter(d => !d.hidden && PlanDxfImport.dataOf(d)).reverse() : [];
     for (const d of dxfs) {
       const data = PlanDxfImport.dataOf(d), lt = this._wallLayerTest(d, data, o.layers);
-      const segs = this.segmentsFromDxf(data, lt.test, { hatches: o.hatch && lt.matched });
+      const segs = this.segmentsFromDxf(data, lt.test, { hatches: o.hatch && lt.matched, desc: d });
       if (!segs.length) continue;
       const mpu = f ? PlanDxfImport._pxPerUnit(d) * f : d.unitM, c = PlanDxfImport.localOf(d, pt.x, pt.y);
       const r = this.leakFromSegments(segs, [c.x, c.y], { gap: o.gapM / mpu, maxGap: maxGapM / mpu, tol: Math.max(0.001 / mpu, 1e-9), snap: Math.max(0.03 / mpu, 1e-9), maxArea: lim.maxAreaM2 / (mpu * mpu) });

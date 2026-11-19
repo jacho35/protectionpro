@@ -222,6 +222,11 @@ const PlanMarkup = {
       UI.alert(`Synced circuits from plan:\n• ${s.ways} way(s) on ${s.boards} board(s) from ${s.devices} tagged device(s)\n• ${s.lengths} way cable length(s) from routes` +
         (s.unsynced ? `\n• ${s.unsynced} board(s) not yet on the SLD (sync first)` : ''));
     }
+    else if (action === 'workarea-rect') PlanTools.set('workarea', { mode: 'rect' });
+    else if (action === 'workarea-poly') PlanTools.set('workarea', { mode: 'poly' });
+    else if (action === 'workarea-clear') PlanWorkArea.clear();
+    else if (action === 'layerfreeze') PlanTools.set('layerfreeze');
+    else if (action === 'layerthaw') PlanDxfImport.thawAll();
     else if (action === 'crop') PlanTools.set('crop');
     else if (action === 'crop-clear') {
       AppState.planMarkup.cropBox = null; this._snapshot(); this.markDirty();
@@ -885,6 +890,8 @@ const PlanMarkup = {
       case 'erfdetect': return 'Detect erven — click inside an erf, or Detect all. Shift-click adds, Alt-click subtracts. Esc to stop.';
       case 'crossing': return 'Crossing — click two points. Esc cancels.';
       case 'calibrate': return 'Calibrate — click two points a known distance apart.';
+      case 'workarea': return 'Working area — drag a rectangle, or click the corners of a polygon (Enter or the first corner closes, Backspace undoes a corner). Esc cancels.';
+      case 'layerfreeze': return 'Freeze layer — click any item of the drawing to hide its whole layer. Esc to stop.';
       case 'crop': return 'Crop — drag the export rectangle (tiny drag clears it).';
       case 'text': return 'Text — click to place a label.';
       case 'nudgeplan': return 'Move plan — drag the background plan. Esc / Select to stop.';
