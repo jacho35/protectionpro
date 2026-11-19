@@ -147,4 +147,11 @@ ok('bends: the road reserve of an L (its centre line cuts the corner with a cham
   assert(Math.abs(j.x - 108) < 1 && Math.abs(j.y - 8) < 1, 'at the corner ' + j.x + ',' + j.y);
   assert(Math.abs(d.corners[0].theta - Math.PI / 2) < 0.05, 'a 90° corner'); assert(d.arcs.some(a => a.outer));
 });
+ok('squareStreets: the reserve L (two streets meeting end to end with a chamfer) is split at the squared corner; one street per street given', () => {
+  const T = R.stage(poly([[0, 0], [116, 0], [116, 100], [100, 100], [100, 16], [0, 16]]), null); assert(T.click([50, 8], 'add').ok);
+  const st = R.split(T.streets().streets).streets.map(x => ({ pts: x.pts, carriageW: 7, name: 'n' + x.id }));
+  const sq = R.squareStreets(st); assert.strictEqual(sq.length, st.length); sq.forEach((x, i) => assert.strictEqual(x.name, st[i].name));
+  const ends = sq.flatMap(x => [x.pts[0], x.pts[x.pts.length - 1]]), corner = ends.filter(q => Math.abs(q[0] - 108) < 1 && Math.abs(q[1] - 8) < 1);
+  assert.strictEqual(corner.length, 2, 'both streets end at the corner ' + JSON.stringify(ends));
+});
 console.log(n + ' passed');

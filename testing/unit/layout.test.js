@@ -638,4 +638,25 @@ ok('LV nodes: no end of an LV run stands in a carriageway (a through street\'s j
     for (const ed of r.net.lv) for (const q of [ed.pts[0], ed.pts[ed.pts.length - 1]]) assert(!C.insideAny(q, [], 0.1), `cw ${cw} offset ${off}: an LV run ends inside a carriageway at ${q.map(v => v.toFixed(1))}`);
   }
 });
+ok('kerb returns: the corridor turns each corner on the return (no LV node or fibre manhole in a rounded-off corner, far fewer runs in the road); none given = as before', () => {
+  const R = require('../../frontend/js/plan-reserve.js');
+  for (const [cw, off] of [[6, 0], [7, 0], [7, 1.5], [9, -1]]) {
+    const sq = R.squareStreets(F.streets.map(s => ({ pts: s.pts, carriageW: cw, cwOffset: off })));
+    const streets = F.streets.map((s, i) => Object.assign({}, s, { pts: sq[i].pts, cw, cwOffset: off }));
+    const kd = R.kerbDrawing(streets.map(s => ({ pts: s.pts, w: s.w, carriageW: cw, cwOffset: off })), {});
+    const rets = kd.arcs.filter(a => !a.outer).map(a => { const x = R.returnArc(a.c, a.R); return { P: a.c.P, c: x.centre, R: x.R, t1: x.t1, t2: x.t2 }; });
+    assert(rets.length > 6, 'returns ' + rets.length);
+    const run = kr => { const r = L.solve(Object.assign({}, F, { streets, subPts: [[150, 130]], kerbReturns: kr }), {}); L.keepOut(r); L.smooth(r, r.P); r.streets.rets = L.kerbFills(rets); return r; };
+    const off0 = run([]), on = run(rets), fills = L.kerbFills(rets), inFill = p => fills.some(G => L.fillDepth(G, p) > 0.1);
+    on.net.lv.forEach(ed => [ed.pts[0], ed.pts[ed.pts.length - 1]].forEach(q => assert(!inFill(q), `cw ${cw}: an LV run ends in a return's corner at ${q.map(v => v.toFixed(1))}`)));
+    on.fibre.inter.forEach(n => assert(!inFill([n.x, n.y]), `cw ${cw}: fibre junction ${n.id} in a return's corner`));
+    const deep = r => L.carriageHits(r).length, lvIn = r => L.carriageHits(r, 0.1).filter(h => h.kind === 'LV cable').length;
+    assert(deep(on) <= 6 && deep(on) < deep(off0), `cw ${cw} offset ${off}: runs deep in the road ${deep(off0)} → ${deep(on)}`);
+    assert(lvIn(on) <= 1, `cw ${cw}: LV cables in the road / a return ${lvIn(on)}`);
+  }
+  // no returns: exactly as without the field
+  const Fc = Object.assign({}, F, { streets: F.streets.map(s => Object.assign({}, s, { cw: 7 })), subPts: [[150, 130]] });
+  const a = L.solve(Fc, {}), b = L.solve(Object.assign({}, Fc, { kerbReturns: [] }), {});
+  assert.strictEqual(JSON.stringify(a.net.lv.map(e => e.pts)), JSON.stringify(b.net.lv.map(e => e.pts))); assert.strictEqual(a.kiosks.length, b.kiosks.length);
+});
 console.log(n + ' passed');

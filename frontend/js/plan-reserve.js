@@ -445,7 +445,34 @@ const PlanReserve = (() => {
   }
   const corners_ = (j, byId, o) => corners(j, byId, o);
 
-  return { D, makeGrid, kerbDrawing, trimAt, squareCorners, drawSeg, region, contours, stage, polyMask, streets, profile, split, streetKey, kerbLines, offsetLine, corners, returnArc, radiusFromDrag, outDir, label };
+  // The street lines the kerb drawing is made from, one per street given (same order, same other fields), so Auto layout works on the same
+  // corners the plan draws: two streets that only meet each other end to end (same carriageway) are joined, a turn of `bend`° or more is squared
+  // off to where the two straights meet, and the pair is split again at that corner (or at the vertex nearest the old joint).
+  function squareStreets(list, o) {
+    o = Object.assign({}, D, o || {}); const deg = o.bend; const S = list.map(s => ({ ...s, pts: s.pts.map(p => p.slice()) }));
+    if (!deg) return S;
+    const same = (a, b) => (+a.carriageW || 0) === (+b.carriageW || 0) && (+a.cwOffset || 0) === (+b.cwOffset || 0);
+    const done = new Set();
+    for (let a = 0; a < S.length; a++) for (const ea of [false, true]) {
+      if (done.has(a)) break;
+      const A = S[a], pa = ea ? A.pts[A.pts.length - 1] : A.pts[0], hits = [];
+      for (let b = 0; b < S.length; b++) { if (b === a) continue; const B = S[b];
+        for (const eb of [false, true]) { const pb = eb ? B.pts[B.pts.length - 1] : B.pts[0]; if (hyp(pa[0] - pb[0], pa[1] - pb[1]) <= o.snap) hits.push({ b, eb }); }
+        if (!hits.some(h => h.b === b)) { const h = nearOn(pa, B.pts); if (h && h.d <= 1) hits.push({ b, eb: null }); }
+      }
+      if (hits.length !== 1 || hits[0].eb === null || done.has(hits[0].b) || !same(A, S[hits[0].b])) continue;
+      const b = hits[0].b, B = S[b], ap = ea ? A.pts : A.pts.slice().reverse(), bp = hits[0].eb ? B.pts.slice().reverse() : B.pts, joint = ap[ap.length - 1].slice();
+      const m = { pts: ap.concat(bp.slice(1)) }; squareCorners(m, deg);
+      let j = -1, bd = Infinity; m.pts.forEach((q, i) => { if (i > 0 && i < m.pts.length - 1) { const d = hyp(q[0] - joint[0], q[1] - joint[1]); if (d < bd) { bd = d; j = i; } } });
+      if (j < 1) continue;
+      const pa2 = m.pts.slice(0, j + 1), pb2 = m.pts.slice(j);
+      A.pts = ea ? pa2 : pa2.reverse(); B.pts = hits[0].eb ? pb2.reverse() : pb2; done.add(a); done.add(b);
+    }
+    S.forEach((x, i) => { if (!done.has(i)) squareCorners(x, deg); delete x.bends; });
+    return S;
+  }
+
+  return { D, makeGrid, kerbDrawing, trimAt, squareCorners, squareStreets, drawSeg, region, contours, stage, polyMask, streets, profile, split, streetKey, kerbLines, offsetLine, corners, returnArc, radiusFromDrag, outDir, label };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = PlanReserve;

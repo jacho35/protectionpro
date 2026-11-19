@@ -23,6 +23,14 @@ const PlanLayoutUI = {
   },
   PAL: ['#2a7de1', '#d9480f', '#2b9348', '#9c36b5', '#b07800', '#0c8599', '#c2255c', '#5f3dc4'],
   SHOW: { front: true, mark: true, kiosk: true, fibre: true, lvmv: true, cross: true, trench: true },
+  // the parts of the design the preview can show on their own (Review › Show on plan): the layout is solved as one design — services, LV and
+  // fibre share the road crossings and the trenches — so a part is hidden, not left out; What it will create decides what Create writes
+  SHOW_PARTS: { kiosk: 'Services', lvmv: 'LV / MV', fibre: 'Fibre', trench: 'Trenches', cross: 'Crossings' },
+  _showHtml() {
+    const chip = ([k, t]) => `<button type="button" class="plan-btn" data-act="show" data-k="${k}" aria-pressed="${!!this.SHOW[k]}" style="padding:3px 9px;font-size:12px;${this.SHOW[k] ? 'font-weight:600;background:rgba(37,99,235,.12);border-color:#2563eb' : 'opacity:.6'}">${t}</button>`;
+    const all = Object.keys(this.SHOW_PARTS).every(k => this.SHOW[k]);
+    return `<div style="display:flex;flex-wrap:wrap;gap:4px;align-items:center"><span style="font-size:12px;color:var(--text-muted)">Show on plan</span>${Object.entries(this.SHOW_PARTS).map(chip).join('')}${all ? '' : '<button type="button" class="plan-btn" data-act="show" data-k="all" style="padding:3px 9px;font-size:12px">All</button>'}</div>`;
+  },
   // trench settings: depth per cable class (m) and what shares a trench; kept apart from the layout rules (no re-solve)
   TREN: [['depth.lv', 'range', 0.4, 1.5, 0.05, 'm', 'LV, service and street-light depth'], ['depth.fi', 'range', 0.3, 1.2, 0.05, 'm', 'Fibre depth'],
     ['fibre', 'select', [['own', 'fibre in its own trench'], ['with', 'fibre in the LV trench where they run together'], ['off', 'no fibre trench']], 'Fibre'],
@@ -1414,13 +1422,19 @@ const PlanLayoutUI = {
     if (!sr.length) return { err: 'Draw the streets first: pick Street centreline in the Routes group and click along each street.' };
     if (!erven.length) return { err: 'No erf has a boundary yet. Run Detect erven first (it keeps each erf\'s boundary).' };
     const streets = sr.map((r, i) => ({ id: r.id, name: (r.props && r.props.name) || ('Street ' + (i + 1)), w: this._num(r.props && r.props.width, 6, 40, 12), cw: this._num(r.props && r.props.carriageW, 0, 40, 0), cwOffset: this._num(r.props && r.props.cwOffset, -20, 20, 0), pts: this._flat(r).map(p => [p.x * f, p.y * f]) }));
+    // streets from the road reserve: the same squared-off corners the plan draws its kerbs and kerb returns from
+    if (typeof PlanReserve !== 'undefined' && PlanReserve.squareStreets) {
+      const rs = streets.filter(s => s.cw > 0); if (rs.length) { const sq = PlanReserve.squareStreets(rs.map(s => ({ pts: s.pts, carriageW: s.cw, cwOffset: s.cwOffset }))); rs.forEach((s, i) => { s.pts = sq[i].pts; }); }
+    }
     const ks = {}, fs = {}, ga = L.sides['*'] || {}; streets.forEach(s => { const sd = L.sides[s.id] || {}, pk = v => v === 1 || v === -1 ? v : null; ks[s.id] = pk(sd.k) || pk(ga.k) || 0; fs[s.id] = pk(sd.f) || pk(ga.f); });   // a street's own side overrides the all-streets one
     const subPts = this.placedSubs().map(q => [q.x * f, q.y * f]);                    // every mini-sub you placed: the layout works from them
     if (!subPts.length && !allowNoSub) return { err: 'Place your mini-subs first (step 2): click where each one stands. The layout works from them.' };
     const markers = {}; for (const [id, q] of Object.entries(L.markers)) if (erven.some(e => e.id === id)) markers[id] = [q.x * f, q.y * f];
     const splits = L.vd.splits.map(q => [q.x * f, q.y * f]);
     const kioskDrops = L.moves.kiosks.map(m => [m.from.x * f, m.from.y * f]), kioskPins = L.moves.kiosks.map(m => [m.to.x * f, m.to.y * f]);   // kiosks moved by hand
-    return { f, input: { erven, streets, markers, splits, kioskDrops, kioskPins, ks, fs, overrides: L.fronts, cuts: L.cuts, subPts, entryPt: L.entry ? [L.entry.x * f, L.entry.y * f] : null, sections: L.sections.on ? L.sections : null }, params: L.params };
+    // the kerb returns the plan draws at the street corners (road-reserve streets; radii dragged on the plan included), in metres
+    let kerbReturns = []; try { const g = typeof PlanReserveUI !== 'undefined' && PlanReserveUI.planGeometry(); if (g && g.rets) kerbReturns = g.rets; } catch (e) { kerbReturns = []; }
+    return { f, input: { erven, streets, markers, splits, kioskDrops, kioskPins, ks, fs, overrides: L.fronts, cuts: L.cuts, subPts, entryPt: L.entry ? [L.entry.x * f, L.entry.y * f] : null, sections: L.sections.on ? L.sections : null, kerbReturns }, params: L.params };
   },
 
   // The figures shown beside Run layout: what the last run came to, and how many settings were changed since it
@@ -2020,7 +2034,7 @@ const PlanLayoutUI = {
         <button type="button" class="plan-btn" data-act="reset" style="padding:3px 8px;font-size:12px;align-self:flex-start"${cnt ? '' : ' disabled'}>Reset my edits (${cnt})</button></div>`;
     const step4 = !r ? banner('warn', `<span>Nothing to review yet. ${placed.length ? 'Press Run layout below.' : 'Place a mini-sub first.'}</span>${this.err ? `<span style="color:#dc2626">${esc(this.err)}</span>` : ''}`)
       : `${this.stale ? banner('warn', '<span><b>↻ Changed since the last run.</b> The figures below are from before.</span><span><button type="button" class="plan-btn" data-act="run" style="' + sBtn + ';font-weight:600">Re-run</button></span>') : ''}
-        ${noKiosks ? blocked : `${verdict}${adjust}<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:5px">${keyTiles}</div>
+        ${noKiosks ? blocked : `${verdict}${adjust}${this._showHtml()}<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:5px">${keyTiles}</div>
         ${checksHtml}
         <details><summary style="cursor:pointer;font-weight:600">More figures <span style="font-weight:400;font-size:12px;color:var(--text-muted)">crossings, ducts, trenches, LV design</span></summary><div style="display:flex;flex-direction:column;gap:6px;padding-top:4px"><div style="display:grid;grid-template-columns:repeat(2,1fr);gap:5px">${tiles}</div>
         ${designBlock}
@@ -2096,6 +2110,7 @@ const PlanLayoutUI = {
         if (pts.length) PlanEngine.zoomToPoints(pts);
         PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true }); return;
       }
+      if (b.dataset.act === 'show') { const k = b.dataset.k; if (k === 'all') Object.keys(this.SHOW_PARTS).forEach(q => { this.SHOW[q] = true; }); else if (k in this.SHOW) this.SHOW[k] = !this.SHOW[k]; PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true }); return; }
       if (b.dataset.act === 'unflag') { this.flag = null; this.flagRuns = null; this.nearHint = null; PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true }); return; }
       if (b.dataset.act === 'kerbstreets') { this.streetDrawOn(false); const sel = el.querySelector('[data-stl]'), x = lyr[sel ? +sel.value : 0]; this.kerbStart(); return; }
       if (b.dataset.act === 'subrm') { const L2 = this.cfg(); L2.subs.splice(+b.dataset.i, 1); this.subMove = null; this.touched(); return; }
