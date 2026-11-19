@@ -55,7 +55,7 @@ const PlanLayoutUI = {
       ['spare', 'range', 0, 3, 1, '', 'Spare 110 mm ducts per crossing']]],
     ['Bends', [['bendFi', 'range', 0, 5, 0.25, 'm', 'Fibre duct bend radius'], ['bendLv', 'range', 0, 5, 0.25, 'm', 'LV and service cable bend radius'], ['bendMv', 'range', 0, 8, 0.25, 'm', 'MV cable bend radius']]],
     ['Corridor', [['kgeo', 'select', [['boundary', 'the erf boundary (the street line can be out)'], ['street', 'the street line (how earlier layouts were made)']], 'Kiosks and cables are placed from'],
-      ['kd', 'range', 0, 4, 0.05, 'm', 'Corridor distance inside the boundary']]],
+      ['kd', 'range', 0, 4, 0.05, 'm', 'Corridor distance inside the boundary'], ['cwDef', 'range', 3, 12, 0.5, 'm', 'Carriageway width of a street with none set']]],
   ],
 
   // hover explanations for the settings that need one (native tooltip on the label and on the (?) mark)
@@ -84,6 +84,7 @@ const PlanLayoutUI = {
     j160: 'How many 160 mm (MV size) ducts are laid at a junction crossing that carries no cable.',
     spare: 'Extra 110 mm ducts added to every crossing for future cables.',
     kgeo: 'What the kiosk, cable and manhole offsets are measured from. The erf boundary follows the plots, so a street line that is a little out moves nothing. The street line is how earlier layouts were made.',
+    cwDef: 'A street drawn as a centreline has no carriageway of its own: it gets this width, centred on the line, and no cable, kiosk or manhole is put in it. Streets from road reserve keep their own width.',
     kd: 'How far inside the erf boundary the cables and kiosks run. Cross-sections, when switched on, set their own offsets.',
     xpref: 'Where a service for an erf across the road crosses. At the erf\'s own boundary: the cable runs along the kiosk\'s side of the road and crosses at the erf boundary nearest the erf, so the far verge only carries the last stretch. Services whose nearest boundary is the same share that crossing. At as few places as possible: fewer crossings, but the cable may cross at the kiosk and run along the far verge.',
     subBal: 'When you place the mini-subs yourself each kiosk goes to the nearest one, so one transformer can carry far more than another. Set this to cap each mini-sub at that multiple of an even share of the erven (1.3 = 30 % above even); the kiosks nearest the border move to the neighbour with room. 0 = off, nearest wins.',
@@ -1269,7 +1270,8 @@ const PlanLayoutUI = {
     else this.secDraw = null;
     PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true });
   },
-  _streetsM() { const f = PlanEngine.factor(); return this.streetsOnPlan().map(r => ({ id: r.id, w: this._num(r.props && r.props.width, 6, 40, 12), cw: this._num(r.props && r.props.carriageW, 0, 40, 0), cwOffset: this._num(r.props && r.props.cwOffset, -20, 20, 0), pts: this._flat(r).map(p => [p.x * f, p.y * f]) })); },
+  _cwDef() { const v = +this.cfg().params.cwDef; return v > 0 ? v : PlanLayout.DEFAULTS.cwDef; },          // the carriageway of a street drawn with none
+  _streetsM() { const f = PlanEngine.factor(); return this.streetsOnPlan().map(r => ({ id: r.id, w: this._num(r.props && r.props.width, 6, 40, 12), cw: this._num(r.props && r.props.carriageW, 0, 40, 0) || this._cwDef(), own: this._num(r.props && r.props.carriageW, 0, 40, 0) > 0, cwAuto: !(this._num(r.props && r.props.carriageW, 0, 40, 0) > 0), cwOffset: this._num(r.props && r.props.cwOffset, -20, 20, 0), pts: this._flat(r).map(p => [p.x * f, p.y * f]) })); },
   secDown(pt) {
     const q = PlanTools.snap(pt, { wantElements: false }), d = this.secDraw; if (!d) return;
     const last = d.pts[d.pts.length - 1];
@@ -1421,10 +1423,11 @@ const PlanLayoutUI = {
     const sr = this.streetsOnPlan();
     if (!sr.length) return { err: 'Draw the streets first: pick Street centreline in the Routes group and click along each street.' };
     if (!erven.length) return { err: 'No erf has a boundary yet. Run Detect erven first (it keeps each erf\'s boundary).' };
-    const streets = sr.map((r, i) => ({ id: r.id, name: (r.props && r.props.name) || ('Street ' + (i + 1)), w: this._num(r.props && r.props.width, 6, 40, 12), cw: this._num(r.props && r.props.carriageW, 0, 40, 0), cwOffset: this._num(r.props && r.props.cwOffset, -20, 20, 0), pts: this._flat(r).map(p => [p.x * f, p.y * f]) }));
+    const streets = sr.map((r, i) => ({ id: r.id, name: (r.props && r.props.name) || ('Street ' + (i + 1)), w: this._num(r.props && r.props.width, 6, 40, 12), cw: this._num(r.props && r.props.carriageW, 0, 40, 0) || this._cwDef(), own: this._num(r.props && r.props.carriageW, 0, 40, 0) > 0, cwAuto: !(this._num(r.props && r.props.carriageW, 0, 40, 0) > 0), cwOffset: this._num(r.props && r.props.cwOffset, -20, 20, 0), pts: this._flat(r).map(p => [p.x * f, p.y * f]) }));
     // streets from the road reserve: the same squared-off corners the plan draws its kerbs and kerb returns from
     if (typeof PlanReserve !== 'undefined' && PlanReserve.squareStreets) {
-      const rs = streets.filter(s => s.cw > 0); if (rs.length) { const sq = PlanReserve.squareStreets(rs.map(s => ({ pts: s.pts, carriageW: s.cw, cwOffset: s.cwOffset }))); rs.forEach((s, i) => { s.pts = sq[i].pts; }); }
+      // (a street with the default carriageway is drawn as a centreline: nothing to square)
+      const rs = streets.filter(s => s.own); if (rs.length) { const sq = PlanReserve.squareStreets(rs.map(s => ({ pts: s.pts, carriageW: s.cw, cwOffset: s.cwOffset }))); rs.forEach((s, i) => { s.pts = sq[i].pts; }); }
     }
     const ks = {}, fs = {}, ga = L.sides['*'] || {}; streets.forEach(s => { const sd = L.sides[s.id] || {}, pk = v => v === 1 || v === -1 ? v : null; ks[s.id] = pk(sd.k) || pk(ga.k) || 0; fs[s.id] = pk(sd.f) || pk(ga.f); });   // a street's own side overrides the all-streets one
     const subPts = this.placedSubs().map(q => [q.x * f, q.y * f]);                    // every mini-sub you placed: the layout works from them

@@ -659,4 +659,24 @@ ok('kerb returns: the corridor turns each corner on the return (no LV node or fi
   const a = L.solve(Fc, {}), b = L.solve(Object.assign({}, Fc, { kerbReturns: [] }), {});
   assert.strictEqual(JSON.stringify(a.net.lv.map(e => e.pts)), JSON.stringify(b.net.lv.map(e => e.pts))); assert.strictEqual(a.kiosks.length, b.kiosks.length);
 });
+ok('assumed carriageway (a centreline street): the corridor, kiosks and manholes stay out of it, in the street-line mode too, and it never pushes the corridor over an erf boundary', () => {
+  const C0 = L.carriage(null);
+  for (const kgeo of ['boundary', 'street']) {
+    const Fc = Object.assign({}, F, { streets: F.streets.map(s => Object.assign({}, s, { cw: 5, cwAuto: true })), subPts: [[150, 130]] });
+    const r = L.solve(Fc, { kgeo }), C = L.carriage(r.streets);
+    const dep = p => Math.max(...r.streets.map(st => st.cw / 2 - C.dist(st, p)));
+    assert(r.kiosks.length > 0);
+    r.kiosks.forEach(k => assert(dep([k.x, k.y]) <= 0.05, kgeo + ' kiosk ' + k.id + ' in the road ' + dep([k.x, k.y]).toFixed(2)));
+    (r.fibre.mhs || []).forEach(m => assert(dep([m.x, m.y]) <= 0.05, kgeo + ' manhole ' + m.id + ' in the road'));
+    assert(L.carriageHits(r).length <= 12, kgeo + ' runs in the road ' + L.carriageHits(r).length);
+  }
+  // a street line drawn 1.5 m from the erven on one side (4.5 m off the middle): a 5 m carriageway centred on it reaches 1 m into them. When it
+  // is assumed (cwAuto) the corridor stays inside the boundary, so far fewer services run through the next erven than with a real carriageway there
+  const base = L.solve(Object.assign({}, F, { subPts: [[150, 130]] }), {}).streets[0];
+  const moved = F.streets.map((s, i) => i ? s : Object.assign({}, s, { pts: base.pts.map((p, k) => L.ptAt(base, base.cum[k], -4.5).slice(0, 2)) }));
+  const pip = (P, p) => { let c = false; for (let i = 0, j = P.length - 1; i < P.length; j = i++) { const a = P[i], b = P[j]; if ((a[1] > p[1]) !== (b[1] > p[1]) && p[0] < (b[0] - a[0]) * (p[1] - a[1]) / (b[1] - a[1]) + a[0]) c = !c; } return c; };
+  const through = auto => { const r = L.solve(Object.assign({}, F, { streets: moved.map(s => Object.assign({}, s, { cw: 5, cwAuto: auto })), subPts: [[150, 130]] }), {});
+    let n = 0; for (const e of r.erven) for (const p of (e.route || []).slice(1, -1)) if (r.erven.some(o => o !== e && pip(o.poly, p))) n++; return n; };
+  const a = through(true), b = through(false); assert(a < b / 2, 'service points in other erven: assumed ' + a + ', real ' + b);
+});
 console.log(n + ' passed');
