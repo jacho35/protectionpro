@@ -305,7 +305,10 @@ const PlanDxfImport = {
     UI.toast(msg.join(' '), (!stored || data.truncated || mostlyHidden) ? 'warning' : 'success', mostlyHidden ? 9000 : 6000);
     if (typeof PlanUI !== 'undefined') PlanUI._underlay = { kind: 'dxf', id: desc.id };
     if (typeof PlanMarkup !== 'undefined' && PlanMarkup.setMode) PlanMarkup.setMode('underlays');
-    if (pick.checkLength && typeof PlanTools !== 'undefined') {
+    if (pick.area && typeof PlanTools !== 'undefined' && !pick.checkLength) {
+      PlanTools.set('workarea', { mode: 'rect' });
+      UI.toast('Drag a rectangle round the development. Use Polygon in Underlays for an irregular boundary.', 'info', 7000);
+    } else if (pick.checkLength && typeof PlanTools !== 'undefined') {
       PlanTools.set('calibrate', { dxfId: desc.id });
       UI.toast('Check the scale: click the two ends of a length you know, then type it.', 'info', 7000);
     } else if (data.inserts.length && typeof PlanDxfManager !== 'undefined') {
@@ -426,6 +429,7 @@ const PlanDxfImport = {
                 ${sib ? `<label class="dxfi-radio"><input type="radio" name="dxfi-place" value="grid" checked> <span>In the same coordinates as <b>${escHtml(sib.name)}</b><small>When both files share a coordinate grid</small></span></label>` : ''}
                 <label class="dxfi-radio"><input type="radio" name="dxfi-place" value="centre"${sib ? '' : ' checked'}> <span>Centred on this floor</span></label></fieldset>
               <div class="dxfi-checks">
+                <label class="dxfi-radio"><input type="checkbox" data-role="area"> <span>Set a working area after import<small>Draw a rectangle round the development; the rest of the drawing is ignored by detection and conversion</small></span></label>
                 <label class="dxfi-radio"><input type="checkbox" data-role="check"> <span>Check against a known length after import<small>Click two points and type the real distance; the DXF is corrected to match</small></span></label>
                 ${hidden.length ? `<label class="dxfi-radio"><input type="checkbox" data-role="showall"> <span>Show every layer<small>${hidden.length} layer${hidden.length > 1 ? 's' : ''}${total ? ` (${Math.round(hiddenN / total * 100)} % of the drawing)` : ''} are off or frozen in the file</small></span></label>` : ''}
               </div>`}
@@ -462,7 +466,7 @@ const PlanDxfImport = {
       const result = () => {
         const place = (ov.querySelector('input[name="dxfi-place"]:checked') || {}).value || 'centre';
         const ck = ov.querySelector('[data-role="check"]'), sa = ov.querySelector('[data-role="showall"]');
-        return { unitM: unit * scale, unitBase: unit, drawScale: scale, place, checkLength: !!(ck && ck.checked), showAll: !!(sa && sa.checked) };
+        return { unitM: unit * scale, unitBase: unit, drawScale: scale, place, checkLength: !!(ck && ck.checked), area: !!(ov.querySelector('[data-role="area"]') || {}).checked, showAll: !!(sa && sa.checked) };
       };
       const onKey = (e) => {
         if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); done(null); }
@@ -1087,5 +1091,67 @@ const PlanDxfImport = {
       }
     }
     return best;
+  },
+
+  // The visible DXF item nearest world `pt` within `radiusWorld` plan px → { desc, layer } | null.
+  // Lines, polylines (hatch outlines too), arcs, circles, text and block insertions are considered.
+  layerAt(pt, radiusWorld) {
+    let best = null, bd = Infinity;
+    const segD = (px, py, ax, ay, bx, by) => {
+      const dx = bx - ax, dy = by - ay, L2 = dx * dx + dy * dy;
+      const t = L2 ? Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / L2)) : 0;
+      return Math.hypot(px - ax - t * dx, py - ay - t * dy);
+    };
+    for (const desc of this.list()) {
+      if (desc.hidden) continue;
+      const data = this.dataOf(desc); if (!data) continue;
+      const ppu = this._pxPerUnit(desc), q = this.localOf(desc, pt.x, pt.y), rl = radiusWorld / ppu;
+      const consider = (d, layer) => { if (d <= rl && d * ppu < bd) { bd = d * ppu; best = { desc, layer }; } };
+      for (const r of data.entities) {
+        if (this.layerHidden(desc, r.l)) continue;
+        const p = r.p; if (!p) continue;
+        if (r.t === 'l') consider(segD(q.x, q.y, p[0], p[1], p[2], p[3]), r.l);
+        else if (r.t === 'p') {
+          if (p.length < 4) continue;
+          let d = Infinity;
+          for (let k = 0; k + 3 < p.length; k += 2) d = Math.min(d, segD(q.x, q.y, p[k], p[k + 1], p[k + 2], p[k + 3]));
+          if (r.c || r.g === 'HATCH') d = Math.min(d, segD(q.x, q.y, p[p.length - 2], p[p.length - 1], p[0], p[1]));
+          consider(d, r.l);
+        } else if (r.t === 'c') consider(Math.abs(Math.hypot(q.x - p[0], q.y - p[1]) - p[2]), r.l);
+        else if (r.t === 'a') {
+          const ang = (Math.atan2(q.y - p[1], q.x - p[0]) * 180 / Math.PI + 360) % 360;
+          let a0 = ((p[3] % 360) + 360) % 360, sw = (((p[4] - p[3]) % 360) + 360) % 360 || 360;
+          if (((ang - a0 + 360) % 360) <= sw) consider(Math.abs(Math.hypot(q.x - p[0], q.y - p[1]) - p[2]), r.l);
+        } else if (r.t === 'x') {
+          const h = r.h || 1, w = Math.max(1, String(r.s || '').length) * h * 0.6;
+          if (q.x >= p[0] - h * 0.2 && q.x <= p[0] + w && q.y >= p[1] - h * 0.3 && q.y <= p[1] + h * 1.1) consider(0, r.l);
+        }
+      }
+      for (const ins of data.inserts) {
+        if (this.layerHidden(desc, ins.l)) continue;
+        consider(Math.hypot(q.x - ins.p[0], q.y - ins.p[1]), ins.l);
+      }
+    }
+    return best;
+  },
+  // Hide the whole layer of a DXF item (AutoCAD LAYFRZ); returns the layer name or null.
+  freezeLayerAt(pt, radiusWorld) {
+    const hit = this.layerAt(pt, radiusWorld); if (!hit) return null;
+    const d = hit.desc;
+    d.layers = d.layers || {};
+    (d.layers[hit.layer] = d.layers[hit.layer] || {}).hidden = true;
+    this._cache.delete(d.id);
+    if (typeof PlanMarkup !== 'undefined') { PlanMarkup.snapshot(); PlanMarkup.markDirty(); }
+    if (typeof PlanRoomDetect !== 'undefined') PlanRoomDetect._cands = null;
+    if (typeof PlanUI !== 'undefined') { PlanUI.renderPalette(); PlanUI.renderProps(); }
+    this._redraw();
+    return hit.layer;
+  },
+  // Show every layer hidden by hand again (all DXFs on the floor).
+  thawAll() {
+    for (const d of this.list()) { if (d.layers) for (const k of Object.keys(d.layers)) delete d.layers[k].hidden; this._cache.delete(d.id); }
+    if (typeof PlanMarkup !== 'undefined') { PlanMarkup.snapshot(); PlanMarkup.markDirty(); }
+    if (typeof PlanUI !== 'undefined') PlanUI.renderPalette();
+    this._redraw();
   },
 };

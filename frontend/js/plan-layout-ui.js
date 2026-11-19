@@ -404,8 +404,8 @@ const PlanLayoutUI = {
     const out = [];
     for (const d of PlanDxfImport.list()) {
       const data = d.hidden ? null : PlanDxfImport.dataOf(d); if (!data) continue;
-      const n = new Map();
-      for (const r of (data.entities || [])) if ((r.t === 'p' && r.g !== 'HATCH') || r.t === 'l') n.set(r.l, (n.get(r.l) || 0) + 1);
+      const n = new Map(), keep = typeof PlanWorkArea !== 'undefined' ? PlanWorkArea.recKeeper(d) : null;
+      for (const r of (data.entities || [])) if (((r.t === 'p' && r.g !== 'HATCH') || r.t === 'l') && (!keep || keep(r))) n.set(r.l, (n.get(r.l) || 0) + 1);
       for (const [layer, c] of n) {
         const named = /street|road|centre|center|strat|pad/i.test(layer) && !/name|text|label|kerb|curb/i.test(layer);
         const kerbs = /kerb|curb/i.test(layer) || ((named || c <= 800) && this.kerbLike(d, layer, c));     // lines that come in close parallel pairs are kerbs, not centrelines
@@ -419,8 +419,9 @@ const PlanLayoutUI = {
   _kerbPieces(d, layer) {
     const data = PlanDxfImport.dataOf(d), f = PlanEngine.factor(); if (!data || !f) return null;
     const M = (x, y) => { const w = PlanDxfImport.worldOf(d, x, y); return [w.x * f, w.y * f]; }, pieces = [];
+    const keep = typeof PlanWorkArea !== 'undefined' ? PlanWorkArea.recKeeper(d) : null;
     for (const r of (data.entities || [])) {
-      if (r.l !== layer) continue;
+      if (r.l !== layer || (keep && !keep(r))) continue;
       if (r.t === 'l') pieces.push([M(r.p[0], r.p[1]), M(r.p[2], r.p[3])]);
       else if (r.t === 'p' && r.g !== 'HATCH') { const pts = []; for (let i = 0; i + 1 < r.p.length; i += 2) pts.push(M(r.p[i], r.p[i + 1])); if (pts.length > 1) pieces.push(pts); }
     }
@@ -475,8 +476,9 @@ const PlanLayoutUI = {
     const lines = [], polys = [];
     const [bx0, by0, bx1, by1] = data.bbox || [0, 0, 1, 1];
     const eps = Math.max(bx1 - bx0, by1 - by0, 1e-9) * 1e-6;
+    const keep = typeof PlanWorkArea !== 'undefined' ? PlanWorkArea.recKeeper(d) : null;
     for (const r of (data.entities || [])) {
-      if (r.l !== layer) continue;
+      if (r.l !== layer || (keep && !keep(r))) continue;
       if (r.t === 'l') lines.push(r);
       else if (r.t === 'p' && r.g !== 'HATCH') { const pts = []; for (let i = 0; i + 1 < r.p.length; i += 2) pts.push([r.p[i], r.p[i + 1]]); if (pts.length > 1) polys.push(pts); }
     }

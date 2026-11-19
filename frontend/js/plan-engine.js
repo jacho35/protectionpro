@@ -282,6 +282,9 @@ const PlanEngine = {
     // Imported DXF drawings (behind markup)
     if (typeof PlanDxfImport !== 'undefined') PlanDxfImport.draw(ctx, this.view.zoom, this._visibleWorldRect());
 
+    // Working area: fade the drawing outside the clip polygon.
+    if (typeof PlanWorkArea !== 'undefined') PlanWorkArea.draw(ctx, this.view.zoom, this._visibleWorldRect());
+
     // Crop box: dim everything outside the export rectangle.
     if (pm.cropBox) {
       const cb = pm.cropBox;

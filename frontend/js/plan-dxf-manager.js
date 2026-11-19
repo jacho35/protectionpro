@@ -607,8 +607,10 @@ const PlanDxfManager = {
     let n = 0, relinked = 0;
     const unlinkedNames = new Set();
     const pending = [];   // [el, boardName]
+    const wa = typeof PlanWorkArea !== 'undefined' ? PlanWorkArea.keepLocal(desc) : null;
     for (const ins of data.inserts) {
       if (conv.has(ins.h)) continue;
+      if (wa && !wa(ins.p[0], ins.p[1])) continue;
       const blk = data.blocks[ins.b]; if (!blk) continue;
       const m = bmap[blk.n || ins.b];
       if (!m || m.domain !== domain || !PLAN_DEFS.element(m.type)) continue;
@@ -657,8 +659,10 @@ const PlanDxfManager = {
     const used = new Set(desc.used || []);
     const out = { routes: 0, trenches: 0, rooms: 0, erven: 0 };
     const byLayer = new Map();
+    const keep = typeof PlanWorkArea !== 'undefined' ? PlanWorkArea.recKeeper(desc) : null;   // the plan's working area: leave the rest of the drawing alone
     for (const r of data.entities) {
       if (!r.h || conv.has(r.h) || used.has(r.h)) continue;
+      if (keep && !keep(r)) continue;
       const m = lmap[r.l];
       if (!m || m.domain !== domain || !m.target) continue;
       if (!byLayer.has(r.l)) byLayer.set(r.l, []);

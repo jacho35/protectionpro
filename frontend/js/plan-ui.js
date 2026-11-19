@@ -212,6 +212,16 @@ const PlanUI = {
         <small>${scaleSrc}</small>
         <button type="button" class="plan-btn" data-act="calibrate">Calibrate from a known length…</button>
       </div>
+      ${dxfs.length ? (() => { const wa = PlanWorkArea.active(); return `<div class="plan-card">
+        <div class="plan-card-head"><b>Working area</b><span>${wa ? 'Set' : 'Whole drawing'}</span></div>
+        <small>Detection, streets, kerbs and conversion ignore the drawing outside it (it is faded, not deleted).</small>
+        <div class="plan-btn-row"><button type="button" class="plan-btn" data-act="workarea-rect">Rectangle…</button><button type="button" class="plan-btn" data-act="workarea-poly">Polygon…</button>${wa ? '<button type="button" class="plan-btn" data-act="workarea-clear">Clear</button>' : ''}</div>
+      </div>
+      <div class="plan-card">
+        <div class="plan-card-head"><b>Freeze layer</b></div>
+        <small>Click an item to hide everything on its layer.</small>
+        <div class="plan-btn-row"><button type="button" class="plan-btn" data-act="layerfreeze">Freeze layer…</button><button type="button" class="plan-btn" data-act="layerthaw">Thaw all</button></div>
+      </div>`; })() : ''}
       <div class="plan-sec-head"><span>On this floor</span></div>`;
     if (!pm.plans.length && !dxfs.length) html += `<div class="plan-props-empty">Nothing imported yet.</div>`;
     const sel = this._underlay || {};
