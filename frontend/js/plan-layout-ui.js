@@ -128,6 +128,7 @@ const PlanLayoutUI = {
       (Array.isArray(mv.adds) ? mv.adds : []).slice(0, 3000).forEach(a => { const q = a && pt(a); if (q && typeof a.id === 'string' && typeof a.a === 'string' && typeof a.b === 'string') L.moves.adds.push({ id: a.id.slice(0, 20), a: a.a.slice(0, 40), b: a.b.slice(0, 40), x: q.x, y: q.y }); });
       for (const [k, v] of Object.entries(mv.xs && typeof mv.xs === 'object' ? mv.xs : {}).slice(0, 2000)) { const a = v && pt(v.a), b = v && pt(v.b); if (a && b && /^[^|]{1,80}\|-?\d+$/.test(k)) L.moves.xs[k] = { a, b }; }     // road crossings moved by hand: key = street|station, a / b = the shift of the start / end (plan points)
       L.moves.cuts = (Array.isArray(mv.cuts) ? mv.cuts : []).filter(k => typeof k === 'string' && key.test(k)).slice(0, 3000); }
+    L.xsq = typeof L.xsq === 'boolean' ? L.xsq : true;                              // a moved crossing stays square to the road (both ends move along the street together)
     L.admdOk = typeof L.admdOk === 'string' ? L.admdOk.slice(0, 4000) : '';      // the Demand ADMD settings the user confirmed for the layout (a signature)
     L.sides = (L.sides && typeof L.sides === 'object') ? L.sides : {};
     L.fronts = (L.fronts && typeof L.fronts === 'object') ? L.fronts : {};
@@ -168,6 +169,8 @@ const PlanLayoutUI = {
     const objs = [];                                                                    // the points that are objects, not line vertices
     if (r.fibre) { (r.fibre.mhs || []).forEach(o => objs.push(o)); (r.fibre.inter || []).forEach(o => objs.push(o)); (r.fibre.nodes || []).forEach(o => objs.push(o)); if (r.fibre.entry) objs.push(r.fibre.entry); }
     objs.forEach(o => { if (Number.isFinite(o.x) && Number.isFinite(o.y)) o.k0 = vk(o.x, o.y); });
+    const objKeys = new Set(objs.map(o => o.k0).filter(Boolean)), kindOf = this._polyKinds(r);
+    ((r.net && r.net.cross) || []).forEach(c => { c.relaid = { svc: 0, fi: 0, lv: 0 }; });
     const polys = this._polys(r), seenV = new Map(), seenS = new Set();
     for (const poly of polys) {
       let list = poly.map(q => ({ pt: [q[0], q[1]], k: vk(q[0], q[1]) })); list.forEach(o => { o.t = o.k; });
@@ -182,12 +185,12 @@ const PlanLayoutUI = {
       }
       list = list.filter((o, i) => !(o.k && !o.add && M.cuts.includes(o.k) && !keep.has(o.k) && i > 0 && i < list.length - 1));
       list.forEach(o => { if (o.add) return; const m = !keep.has(o.k) && tgt(o.k); if (m) o.pt = m; });
-      if (XS.length) this._shiftCross(list, XS);
+      if (XS.length) list = this._relay(list, XS, this._fixedFn(M, keep, objKeys), kindOf.get(poly));
       list.forEach((o, i) => {
         const interior = i > 0 && i < list.length - 1;
-        const seen = seenV.get(o.t); if (seen) { seen.interior = seen.interior || interior; }
-        else if (o.add || !keep.has(o.k)) { const v = { t: o.t, k: o.add ? null : o.k, add: o.add || null, pos: o.pt, interior }; seenV.set(o.t, v); this._verts.push(v); }
-        if (i > 0) { const a = list[i - 1], key = a.t < o.t ? a.t + '|' + o.t : o.t + '|' + a.t; if (!seenS.has(key)) { seenS.add(key); this._segs.push({ a: a.t, b: o.t, pa: a.pt, pb: o.pt }); } }
+        const seen = o.t ? seenV.get(o.t) : null; if (seen) { seen.interior = seen.interior || interior; }
+        else if (o.t && (o.add || !keep.has(o.k))) { const v = { t: o.t, k: o.add ? null : o.k, add: o.add || null, pos: o.pt, interior }; seenV.set(o.t, v); this._verts.push(v); }
+        if (i > 0 && list[i - 1].t && o.t) { const a = list[i - 1], key = a.t < o.t ? a.t + '|' + o.t : o.t + '|' + a.t; if (!seenS.has(key)) { seenS.add(key); this._segs.push({ a: a.t, b: o.t, pa: a.pt, pb: o.pt }); } }
       });
       poly.splice(0, poly.length, ...list.map(o => o.pt));
     }
@@ -258,13 +261,16 @@ const PlanLayoutUI = {
     D.cur = [pt.x * this.f, pt.y * this.f]; PlanEngine.requestDraw({ fg: true }); return true;
   },
   moveUp() {
-    const D = this._drag; if (!D) return false; this._drag = null;
+    const D = this._drag; if (!D) return false; this._drag = null; this._picked = null;
     const f = this.f, L = this.cfg(), M = L.moves, moved = Math.hypot(D.cur[0] - D.from[0], D.cur[1] - D.from[1]) > 0.2;
     if (D.kind === 'xa' || D.kind === 'xb' || D.kind === 'xs') {
       if (!moved) { PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true }); return true; }
       const c = D.c, d = [(D.cur[0] - D.from[0]) / f, (D.cur[1] - D.from[1]) / f], mv = M.xs[c.key] || { a: { x: 0, y: 0 }, b: { x: 0, y: 0 } };
       if (D.kind === 'xs') { const t = this._xTan(c), k = d[0] * t[0] + d[1] * t[1]; mv.a = { x: mv.a.x + t[0] * k, y: mv.a.y + t[1] * k }; mv.b = { x: mv.b.x + t[0] * k, y: mv.b.y + t[1] * k }; }
-      else { const e = D.kind === 'xa' ? 'a' : 'b'; mv[e] = { x: mv[e].x + d[0], y: mv[e].y + d[1] }; }
+      else if (L.xsq) {                                                                  // square to the road: both ends move along the street together, the dragged one also in / out
+        const t = this._xTan(c), n = this._xNorm(c), dT = d[0] * t[0] + d[1] * t[1], dN = d[0] * n[0] + d[1] * n[1], e = D.kind === 'xa' ? 'a' : 'b';
+        mv.a = { x: mv.a.x + t[0] * dT, y: mv.a.y + t[1] * dT }; mv.b = { x: mv.b.x + t[0] * dT, y: mv.b.y + t[1] * dT }; mv[e] = { x: mv[e].x + n[0] * dN, y: mv[e].y + n[1] * dN };
+      } else { const e = D.kind === 'xa' ? 'a' : 'b'; mv[e] = { x: mv[e].x + d[0], y: mv[e].y + d[1] }; }
       M.xs[c.key] = mv; this.touched(true); return true;
     }
     if (!moved) { if (D.isNew) { M.adds = M.adds.filter(a => a.id !== D.add); } PlanEngine.requestDraw({ fg: true }); return true; }
@@ -276,6 +282,25 @@ const PlanLayoutUI = {
     else if (D.kind === 'vert') { if (D.add) { const a = M.adds.find(x => x.id === D.add); if (a) { a.x = q.x; a.y = q.y; } } else M.verts[D.key] = q; }
     this.touched(true); return true;
   },
+  // what a crossing drag would re-lay, drawn live: the new stretches of every run through it, dashed in blue
+  _relayPreview(ctx, u, W, D) {
+    const r = this.result, f = this.f, c = D.c; if (!r || !f) return;
+    const L = this.cfg(), t = this._xTan(c), n = this._xNorm(c), d = [D.cur[0] - D.from[0], D.cur[1] - D.from[1]], dT = d[0] * t[0] + d[1] * t[1], dN = d[0] * n[0] + d[1] * n[1];
+    let a = [0, 0], b = [0, 0];
+    if (D.kind === 'xs') { a = b = [t[0] * dT, t[1] * dT]; }
+    else if (L.xsq) { const e = [n[0] * dN, n[1] * dN], al = [t[0] * dT, t[1] * dT]; a = [al[0] + (D.kind === 'xa' ? e[0] : 0), al[1] + (D.kind === 'xa' ? e[1] : 0)]; b = [al[0] + (D.kind === 'xb' ? e[0] : 0), al[1] + (D.kind === 'xb' ? e[1] : 0)]; }
+    else if (D.kind === 'xa') a = d; else b = d;
+    const F = this.crossFields(c), X = { c, a, b, s0: F.along }, fixed = this._fixedFn({ verts: {} }, new Set(), null);
+    ctx.save(); ctx.setLineDash([5 * u, 3 * u]); ctx.strokeStyle = '#2563eb'; ctx.lineWidth = 2.2 * u; ctx.lineJoin = 'round';
+    for (const poly of this._polys(r)) {
+      const old = poly.map(q => ({ pt: q, k: null, t: null })), out = this._relay(old, [X], fixed, null); if (out === old) continue;
+      const np = out.map(o => o.pt); let i0 = 0; while (i0 < np.length && i0 < poly.length && Math.hypot(np[i0][0] - poly[i0][0], np[i0][1] - poly[i0][1]) < 1e-6) i0++;
+      let i1 = 0; while (i1 < np.length - i0 && i1 < poly.length - i0 && Math.hypot(np[np.length - 1 - i1][0] - poly[poly.length - 1 - i1][0], np[np.length - 1 - i1][1] - poly[poly.length - 1 - i1][1]) < 1e-6) i1++;
+      const seg = np.slice(Math.max(0, i0 - 1), np.length - i1 + 1); if (seg.length < 2) continue;
+      ctx.beginPath(); seg.forEach((q, i) => { const w = W(q); i ? ctx.lineTo(w[0], w[1]) : ctx.moveTo(w[0], w[1]); }); ctx.stroke();
+    }
+    ctx.restore();
+  },
   _crossDraw(ctx, u, W) {
     const r = this.result; if (!r || !r.net || this.mode !== 'cross') return;
     ctx.save();
@@ -285,6 +310,7 @@ const PlanLayoutUI = {
       for (const q of [a, b]) { ctx.fillStyle = '#fff'; ctx.strokeStyle = '#2563eb'; ctx.lineWidth = 2.2 * u; ctx.beginPath(); ctx.arc(q[0], q[1], (sel ? 7 : 5) * u, 0, 7); ctx.fill(); ctx.stroke(); if (sel) { ctx.strokeStyle = 'rgba(37,99,235,.25)'; ctx.lineWidth = 4 * u; ctx.beginPath(); ctx.arc(q[0], q[1], 11 * u, 0, 7); ctx.stroke(); } }
     }
     const D = this._drag;
+    if (D && D.c) this._relayPreview(ctx, u, W, D);
     if (D && D.c) { const [A, B] = this._xEnds(D.c), k = D.kind, cur = W(D.cur), a = k === 'xa' ? cur : W(A), b = k === 'xb' ? cur : W(B), dd = k === 'xs' ? [(D.cur[0] - D.from[0]) / this.f, (D.cur[1] - D.from[1]) / this.f] : [0, 0];
       ctx.setLineDash([5 * u, 3 * u]); ctx.strokeStyle = '#2563eb'; ctx.lineWidth = 2.4 * u; ctx.beginPath(); ctx.moveTo(a[0] + dd[0], a[1] + dd[1]); ctx.lineTo(b[0] + dd[0], b[1] + dd[1]); ctx.stroke(); }
     ctx.restore();
@@ -320,21 +346,67 @@ const PlanLayoutUI = {
     const t = ((c[0] - a[0]) * q[1] - (c[1] - a[1]) * q[0]) / den, u = ((c[0] - a[0]) * r[1] - (c[1] - a[1]) * r[0]) / den;
     return t >= 0 && t <= 1 && u >= 0 && u <= 1 ? [a[0] + t * r[0], a[1] + t * r[1]] : null;
   },
-  // a crossing moved by hand: every cable that crosses that street at that place has the two ends of its crossing segment shifted
-  // (the start side by the start's shift, the far side by the end's), so all of them stay together and the verge runs stretch to meet them
-  _shiftCross(list, XS) {
-    const todo = new Map();
-    for (let i = 1; i < list.length; i++) {
-      const p = list[i - 1], q = list[i];
-      for (const X of XS) {
-        const st = X.c.st; let hit = null;
-        for (let j = 1; j < st.pts.length && !hit; j++) hit = this._segInter(p.pt, q.pt, st.pts[j - 1], st.pts[j]);
-        if (!hit || Math.abs(PlanLayout.project(st, hit[0], hit[1]).s - X.c.s) > 3) continue;
-        const pa = PlanLayout.project(st, p.pt[0], p.pt[1]).side >= 0;
-        if (!todo.has(p)) todo.set(p, pa ? X.a : X.b); if (!todo.has(q)) todo.set(q, pa ? X.b : X.a);
-      }
+  // the kind of every run in a result (service / fibre / LV), for counting what a crossing edit re-laid
+  _polyKinds(r) {
+    const m = new Map(); r.erven.forEach(e => { if (e.route) m.set(e.route, 'svc'); if (e.duct) m.set(e.duct, 'fi'); });
+    if (r.net) (r.net.lv || []).forEach(ed => m.set(ed.pts, 'lv'));
+    if (r.fibre) (r.fibre.trunks || []).concat(r.fibre.spare || []).forEach(e => m.set(e.pts, 'fi'));
+    return m;
+  },
+  // a point of a run the layout may not re-lay: the ends, a kiosk / marker / manhole / mini-sub, a node you placed, and any real corner (over 30 degrees)
+  _fixedFn(M, keep, objKeys) {
+    return (list, f) => {
+      if (f <= 0 || f >= list.length - 1) return true;
+      const o = list[f]; if (o.add || (o.k && (M.verts[o.k] || keep.has(o.k) || (objKeys && objKeys.has(o.k))))) return true;
+      const a = list[f - 1].pt, b = o.pt, c = list[f + 1].pt, u = [b[0] - a[0], b[1] - a[1]], v = [c[0] - b[0], c[1] - b[1]], lu = Math.hypot(u[0], u[1]), lv = Math.hypot(v[0], v[1]);
+      return lu > 1e-6 && lv > 1e-6 && Math.acos(Math.max(-1, Math.min(1, (u[0] * v[0] + u[1] * v[1]) / (lu * lv)))) > Math.PI / 6;
+    };
+  },
+  // one side of a crossing: the run from its nearest fixed point to its crossing end is laid again so it reaches the NEW end along its own
+  // line (extended, or cut back, by the along-the-street part of the shift), then turns square into the crossing by the lateral part. No old bend is left behind.
+  _relayStretch(list, idx, step, a, fixed) {
+    const ends = step < 0 ? idx === 0 : idx === list.length - 1;
+    if (ends) { const o = list[idx]; return { from: idx, to: idx, objs: [{ pt: [o.pt[0] + a[0], o.pt[1] + a[1]], k: null, t: null }] }; }
+    let f = idx + step; while (f > 0 && f < list.length - 1 && !fixed(list, f)) f += step;
+    const S = []; if (step < 0) for (let k = f; k <= idx; k++) S.push(list[k]); else for (let k = f; k >= idx; k--) S.push(list[k]);          // from the fixed point towards the crossing end
+    const n = S.length, last = S[n - 1].pt, prev = S[n - 2].pt, L0 = Math.hypot(last[0] - prev[0], last[1] - prev[1]) || 1, d = [(last[0] - prev[0]) / L0, (last[1] - prev[1]) / L0];
+    const along = a[0] * d[0] + a[1] * d[1], lat = [a[0] - along * d[0], a[1] - along * d[1]];
+    let out = S.slice(0, n - 1);                                                        // the run before the old end
+    let end = [last[0], last[1]];
+    if (along >= 0) end = [last[0] + d[0] * along, last[1] + d[1] * along];             // extended along the run
+    else {                                                                              // cut back along the run
+      let rem = -along, cur = last, i2 = out.length - 1; end = null;
+      while (i2 >= 0) { const to = out[i2].pt, Ls = Math.hypot(cur[0] - to[0], cur[1] - to[1]); if (rem < Ls - 1e-6) { end = [cur[0] + (to[0] - cur[0]) / Ls * rem, cur[1] + (to[1] - cur[1]) / Ls * rem]; break; } rem -= Ls; cur = to; i2--; }
+      if (end) out = out.slice(0, i2 + 1); else { end = [out[0].pt[0], out[0].pt[1]]; out = out.slice(0, 1); }
     }
-    todo.forEach((d, o) => { o.pt = [o.pt[0] + d[0], o.pt[1] + d[1]]; });
+    const res = out.slice();
+    const lastKept = res.length ? res[res.length - 1].pt : null;
+    if (!lastKept || Math.hypot(end[0] - lastKept[0], end[1] - lastKept[1]) > 1e-6) res.push({ pt: end, k: null, t: null });
+    if (Math.hypot(lat[0], lat[1]) > 1e-6) res.push({ pt: [end[0] + lat[0], end[1] + lat[1]], k: null, t: null });
+    if (!res.length) res.push({ pt: end, k: null, t: null });
+    return step < 0 ? { from: f, to: idx, objs: res } : { from: idx, to: f, objs: res.slice().reverse() };
+  },
+  // the crossing segments of a run (those that go over a moved crossing's street near its station): both sides are re-laid, counted into the crossing
+  _relay(list, XS, fixed, kind) {
+    const done = new Set();
+    for (let i = 1; i < list.length; i++) {
+      const P = list[i - 1], Q = list[i]; if (done.has(P) || done.has(Q)) continue;
+      let X = null;
+      for (const x of XS) {
+        const st = x.c.st; let hit = null;
+        for (let j = 1; j < st.pts.length && !hit; j++) hit = this._segInter(P.pt, Q.pt, st.pts[j - 1], st.pts[j]);
+        if (hit && Math.abs(PlanLayout.project(st, hit[0], hit[1]).s - (x.s0 != null ? x.s0 : x.c.s)) <= 3) { X = x; break; }
+      }
+      if (!X) continue;
+      const plus = PlanLayout.project(X.c.st, P.pt[0], P.pt[1]).side >= 0, aP = plus ? X.a : X.b, aQ = plus ? X.b : X.a;
+      const back = this._relayStretch(list, i - 1, -1, aP, fixed), fwd = this._relayStretch(list, i, 1, aQ, fixed);
+      const out = list.slice(0, back.from).concat(back.objs, fwd.objs, list.slice(fwd.to + 1));
+      const at = back.from + back.objs.length;
+      back.objs.forEach(o => done.add(o)); fwd.objs.forEach(o => done.add(o));
+      if (kind && X.c.relaid && X.c.relaid[kind] != null) X.c.relaid[kind]++;
+      list = out; i = at;
+    }
+    return list;
   },
   // the stretches of every run that go across a street: drawn dashed, shaded, "below the road"
   _findCross(r) {
@@ -395,6 +467,8 @@ const PlanLayoutUI = {
     if (sel) { const F = this.crossFields(sel), moved = !!this.cfg().moves.xs[sel.key];
       ed = `<div style="display:flex;flex-direction:column;gap:6px"><b>${esc(sel.st.name || sel.st.id)} · ${Math.round(F.along)} m</b><div style="font-size:12px;color:var(--text-muted)">${sel.svc ? sel.svc + ' service' + (sel.svc === 1 ? '' : 's') + ' · ' : ''}${sel.fib ? sel.fib + ' fibre · ' : ''}${sel.lv ? sel.lv + ' LV · ' : ''}${sel.d110} × 110 mm${sel.d160 ? ' + ' + sel.d160 + ' × 160 mm' : ''}${sel.prov ? ' (provisional, no cable yet)' : ''}</div>
         <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:6px">${num('start', 'Start, from the road edge (m)', F.start)}${num('end', 'End, from the road edge (m)', F.end)}<div style="grid-column:span 2">${num('along', 'Along the street (m)', F.along)}</div></div>
+        <label style="display:flex;gap:8px;align-items:flex-start;font-size:12px;line-height:1.4"><input type="checkbox" data-xsq${this.cfg().xsq ? ' checked' : ''} style="width:18px;height:18px;margin:0;flex:none"><span><b>Keep the crossing square to the road</b><br><span style="color:var(--text-muted)">On: the two ends move along the street together. Off: each end moves on its own and the crossing may be angled.</span></span></label>
+        ${moved && sel.relaid ? `<div style="border:1px solid #bbf7d0;background:#f0fdf4;border-radius:6px;padding:6px 8px;font-size:12px;line-height:1.45"><b style="color:#166534">Re-laid ${sel.relaid.svc + sel.relaid.fi + sel.relaid.lv} run${sel.relaid.svc + sel.relaid.fi + sel.relaid.lv === 1 ? '' : 's'}</b> · ${[sel.relaid.svc && sel.relaid.svc + ' service' + (sel.relaid.svc === 1 ? '' : 's'), sel.relaid.fi && sel.relaid.fi + ' fibre', sel.relaid.lv && sel.relaid.lv + ' LV'].filter(Boolean).join(', ')} · trench ${Math.round(Math.hypot(this._xEnds(sel)[1][0] - this._xEnds(sel)[0][0], this._xEnds(sel)[1][1] - this._xEnds(sel)[0][1]) * 10) / 10} m</div>` : ''}
         <button type="button" class="plan-btn" data-act="xreset" style="min-height:36px"${moved ? '' : ' disabled'}>Put this crossing back</button></div>`; }
     const list = `<div style="max-height:150px;overflow:auto;border-top:1px solid var(--border-color,#ddd)">${rows.map(c => `<button type="button" data-xsel="${esc(c.key)}" class="plan-btn" style="display:flex;justify-content:space-between;width:100%;border:0;border-bottom:1px solid var(--border-color,#eee);border-radius:0;padding:4px 2px;font-size:12px;${c.key === this.selX ? 'font-weight:700;background:rgba(37,99,235,.1)' : ''}"><span>${esc(c.st.name || c.st.id)} · ${Math.round(c.s)} m${this.cfg().moves.xs[c.key] ? ' ●' : ''}</span><span>${c.d110 + c.d160} duct${c.d110 + c.d160 === 1 ? '' : 's'}</span></button>`).join('')}</div>`;
     return ed + list;
@@ -1986,6 +2060,7 @@ const PlanLayoutUI = {
       const t = e.target;
       if (typeof PlanReserveUI !== 'undefined' && PlanReserveUI.change(t)) return;
       if (t.dataset.admd) { this.setAdmd(t.dataset.admd, t.value); return; }
+      if (t.hasAttribute && t.hasAttribute('data-xsq')) { this.cfg().xsq = t.checked; PlanMarkup.markDirty(); PlanMarkup.refreshProps(); return; }
       if (t.dataset.xf) { const c = this.result && this.result.net.cross.find(q => q.key === this.selX); if (c) this.setCross(c, t.dataset.xf, t.value); return; }
       if (t.dataset.copt) { const v = parseFloat(t.value); if (isFinite(v) && v > 0) this.centreW = v; return; }
       if (t.hasAttribute && t.hasAttribute('data-kany')) { const S = this.kerbStage; if (S) { S.setAnyLayer(t.checked); PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true }); } return; }
