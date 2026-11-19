@@ -134,7 +134,10 @@ const PlanLayout = (() => {
     const { list: junctions, use } = findJunctions(streets);
     const isJ = id => use[id] && use[id].length >= 2;
     // a street that ENDS on another street: its corridor stops short of the other street's carriageway (kerb + 0.4 m), so no verge point, kiosk stand or graph node of it lies in the road it meets
-    streets.forEach(st => { st.pullLo = 0; st.pullHi = 0; for (const id of st.jids) { const others = (use[id] || []).filter(o => o !== st), pull = Math.max(0, ...others.map(o => (o.cw > 0 ? o.cw / 2 + Math.abs(o.co || 0) + 0.4 : 0))); if (st.nodeSt[id] < 0.5) st.pullLo = Math.max(st.pullLo, pull); if (st.nodeSt[id] > st.len - 0.5) st.pullHi = Math.max(st.pullHi, pull); } });
+    // (none at a straight joint: the street runs on into the other one, whose carriageway is this one's)
+    const jointEnd = (st, id, others) => { if (others.length !== 1) return false; const o = others[0], s0 = st.nodeSt[id], s1 = o.nodeSt[id];
+      if (!((s0 < 0.5 || s0 > st.len - 0.5) && (s1 < 0.5 || s1 > o.len - 0.5))) return false; const ta = ptAt(st, s0, 0), tb = ptAt(o, s1, 0); return Math.abs(ta[2] * tb[2] + ta[3] * tb[3]) > 0.966; };
+    streets.forEach(st => { st.pullLo = 0; st.pullHi = 0; for (const id of st.jids) { const others = (use[id] || []).filter(o => o !== st); if (jointEnd(st, id, others)) continue; const pull = Math.max(0, ...others.map(o => (o.cw > 0 ? o.cw / 2 + Math.abs(o.co || 0) + 0.4 : 0))); if (st.nodeSt[id] < 0.5) st.pullLo = Math.max(st.pullLo, pull); if (st.nodeSt[id] > st.len - 0.5) st.pullHi = Math.max(st.pullHi, pull); } });
     const byId = Object.fromEntries(streets.map(s => [s.id, s]));
     const erven = (input.erven || []).filter(e => e.poly && e.poly.length >= 3).map(e => {
       const c = [e.poly.reduce((s, q) => s + q[0], 0) / e.poly.length, e.poly.reduce((s, q) => s + q[1], 0) / e.poly.length];
@@ -151,10 +154,34 @@ const PlanLayout = (() => {
     // distance from the street line: kd inside the boundary, so a street line that is out moves nothing. 'street' mode keeps the old constants.
     const byBoundary = P.kgeo !== 'street', KD = byBoundary ? Math.max(0, +P.kd || 0) : 2;
     function frontage(st, side) {
-      const key = 'fr' + side; if (st[key] !== undefined) return st[key];
+      const key = 'fr' + side; if (st[key] !== undefined) return st[key]; st[key] = null;                // (null while it is worked out: two empty sides joined end to end)
       const smp = [];
       for (const e of erven) if (e.road === st && e.sd === side && e.fe && !e.manual && e.fe.i >= 0)
         for (const [pt, q] of [[e.fe.a, e.sa], [e.fe.b, e.sb]]) { const pr = project(st, pt[0], pt[1]); smp.push([q, pr.side * side * pr.d]); }     // signed: negative if the street line has strayed past the boundary
+      // a side no erf fronts (a short piece of street between two junctions, beside a corner erf that faces the other street): the line is
+      // read from the erf boundaries that run alongside it, the nearest at each metre, so the corridor is not put out at the reserve's half-width
+      if (!smp.length) {
+        const best = new Map(), lim = st.w / 2 + 3;                                       // metre bucket → nearest boundary
+        for (const e of erven) for (let i = 0; i < e.poly.length; i++) {
+          const a = e.poly[i], b = e.poly[(i + 1) % e.poly.length], L = Math.hypot(b[0] - a[0], b[1] - a[1]); if (L < 0.5) continue;
+          const n = Math.ceil(L / 0.5);
+          for (let k = 0; k <= n; k++) {
+            const p = [a[0] + (b[0] - a[0]) * k / n, a[1] + (b[1] - a[1]) * k / n], pr = project(st, p[0], p[1]);
+            if (pr.side !== side || pr.d > lim || pr.s < 0.01 || pr.s > st.len - 0.01) continue;          // beside the street, not past its ends
+            const t = ptAt(st, pr.s, 0); if (Math.abs(((b[0] - a[0]) * t[2] + (b[1] - a[1]) * t[3]) / L) < 0.9) break;   // a side boundary, not one across
+            const q = Math.round(pr.s); if (!best.has(q) || pr.d < best.get(q)[1]) best.set(q, [pr.s, pr.d]);
+          }
+        }
+        for (const v of best.values()) smp.push(v);
+        // nothing alongside either: at an end where the street runs straight on into another, it carries that street's line on
+        if (!smp.length) for (const id of st.jids) {
+          const J = junctions.find(q => q.id === id), s0 = st.nodeSt[id]; if (!J || J.items.length !== 2 || !(s0 < 0.5 || s0 > st.len - 0.5)) continue;
+          const [W, sW] = J.items.find(it => it[0] !== st) || []; if (!W || !(sW < 0.5 || sW > W.len - 0.5)) continue;
+          const tw = ptAt(W, sW, 0), ts = ptAt(st, s0, 0), same = tw[2] * ts[2] + tw[3] * ts[3]; if (Math.abs(same) < 0.966) continue;
+          const sideW = same > 0 ? side : -side, sm = frontage(W, sideW); if (!sm) continue;
+          smp.push([s0, (sW < 0.5 ? sm[0] : sm[sm.length - 1])[1]]);
+        }
+      }
       smp.sort((p, q) => p[0] - q[0]);
       return (st[key] = smp.length ? smp : null);
     }
@@ -187,42 +214,76 @@ const PlanLayout = (() => {
     const RT = streets.rets, jPt = id => { const J = junctions.find(q => q.id === id); return J ? J.pt : null; };
     const fillHit = p => RT.some(F => fillDepth(F, p) > -0.35);
     const kerbLat = (st, side) => (st.co || 0) + side * st.cw / 2;                    // the signed offset of a street's kerb on one side
+    // a junction of just two streets that run straight on into each other (a bend in one street drawn as two)
+    const isJoint = id => { const J = junctions.find(q => q.id === id); if (!J || J.items.length !== 2) return false;
+      const [[A, sa], [B, sb]] = J.items; if (!((sa < 0.5 || sa > A.len - 0.5) && (sb < 0.5 || sb > B.len - 0.5))) return false;
+      const ta = ptAt(A, sa, 0), tb = ptAt(B, sb, 0); return Math.abs(ta[2] * tb[2] + ta[3] * tb[3]) > 0.966; };
     // the return at junction `id` on street X's side sx, on X's leg leaving the junction towards dX (+1 = increasing station): { F, s, T, other }
+    // (a tangent point is on the leg only where it is beside the street, not past its end)
     function legTangent(id, X, sx, dX) {
       if (!RT.length || !(X.cw > 0)) return null; const sJ = X.nodeSt[id], jp = jPt(id); if (sJ == null || !jp) return null;
       // only up to halfway to the next junction along that leg: a return there belongs to that junction
-      let lim = 40; for (const o of X.jids) { if (o === id) continue; const d = (X.nodeSt[o] - sJ) * dX; if (d > 0.5) lim = Math.min(lim, d / 2); }
+      // (a straight joint of two streets is not a junction: the block corner runs on past it, so a return beyond it is still this one's)
+      let lim = 40; for (const o of X.jids) { if (o === id || isJoint(o)) continue; const d = (X.nodeSt[o] - sJ) * dX; if (d > 0.5) lim = Math.min(lim, d / 2); }
       let best = null;
       for (const F of RT) {
         if (Math.hypot(F.P[0] - jp[0], F.P[1] - jp[1]) > 30) continue;
         for (const [T, O] of [[F.t1, F.t2], [F.t2, F.t1]]) {
           const pr = project(X, T[0], T[1]), lat = pr.side * pr.d, ds = (pr.s - sJ) * dX;
-          if (Math.abs(lat - kerbLat(X, sx)) > 2.5 || ds < 0.3 || ds > lim) continue;          // (the plan's kerb lines of a curved street can be a metre or two off this one)
+          if (Math.abs(lat - kerbLat(X, sx)) > 2.5 || ds < 0.3 || ds > lim || pr.s < 0.05 || pr.s > X.len - 0.05) continue;          // (the plan's kerb lines of a curved street can be a metre or two off this one)
           if (!best || ds < best.ds) best = { F, s: pr.s, T, other: O, ds };
         }
       }
       return best;
     }
+    // X's leg from junction id towards dX, carried on through a straight joint at its end into the street beyond (W): where point T lies beside W
+    // on that leg, { st: W, side, dir, s, sJ } (sJ = the junction's station on W, as if W ran on to it), else null
+    function legThru(id, X, sx, dX, T) {
+      const sJ = X.nodeSt[id]; if (sJ == null) return null;
+      for (const o of X.jids) {
+        if (o === id || !isJoint(o)) continue; const sO = X.nodeSt[o], base = (sO - sJ) * dX; if (!(base > 0.5) || !(sO < 0.5 || sO > X.len - 0.5)) continue;
+        const J = junctions.find(q => q.id === o), it = J.items.find(q => q[0] !== X); if (!it) continue; const [W, sW] = it; if (!(W.cw > 0)) continue;
+        const tx = ptAt(X, sO, 0), tw = ptAt(W, sW, 0), side = tx[2] * tw[2] + tx[3] * tw[3] > 0 ? sx : -sx, dir = sW < 0.5 ? 1 : -1;
+        const pr = project(W, T[0], T[1]), ds = (pr.s - sW) * dir;
+        if (Math.abs(pr.side * pr.d - kerbLat(W, side)) > 2.5 || ds < 0.05 || base + ds > 40 || pr.s < 0.05 || pr.s > W.len - 0.05) continue;
+        return { st: W, side, dir, s: pr.s, sJ: sW - dir * base };
+      }
+      return null;
+    }
     const legDirs = (X, id) => { const s0 = X.nodeSt[id]; return s0 < 0.5 ? [1] : s0 > X.len - 0.5 ? [-1] : [1, -1]; };
-    // the corner block between X (side sx) and Y (side sy) at junction id: its return and the tangent stations on both streets
-    function corner(id, X, sx, Y, sy, dX0, dY0, kind) {                               // kind: the cable class whose corridor turns the corner
+    // the corner block between X (side sx) and Y (side sy) at junction id: its return and the tangent stations on both streets.
+    // cn.X / cn.Y are the streets the corner is on: X and Y, or with `thru` the street beyond a straight joint (a short piece of street between
+    // a joint and the junction lies wholly in the corner); cn.sx / cn.sy, cn.dX / cn.dY are the sides and leg directions on those.
+    function corner(id, X, sx, Y, sy, dX0, dY0, kind, thru) {                         // kind: the cable class whose corridor turns the corner
+      if (!RT.length || !(X.cw > 0) || !(Y.cw > 0)) return null; const jp = jPt(id); if (!jp) return null;
+      const sJY = Y.nodeSt[id]; if (sJY == null) return null;
+      const limY = d => { let m = 40; for (const o of Y.jids) { if (o === id || isJoint(o)) continue; const q = (Y.nodeSt[o] - sJY) * d; if (q > 0.5) m = Math.min(m, q / 2); } return m; };
+      const onY = T => {                                                             // the other tangent point on a leg Y really has here (never past its end)
+        const pr = project(Y, T[0], T[1]);
+        if (Math.abs(pr.side * pr.d - kerbLat(Y, sy)) <= 2.5 && pr.s > 0.05 && pr.s < Y.len - 0.05) {
+          const dY = (dY0 ? [dY0] : legDirs(Y, id)).find(d => (pr.s - sJY) * d > 0.3 && (pr.s - sJY) * d <= limY(d)); if (dY) return { st: Y, side: sy, dir: dY, s: pr.s, sJ: sJY };
+        }
+        if (thru) for (const d of dY0 ? [dY0] : legDirs(Y, id)) { const L = legThru(id, Y, sy, d, T); if (L) return L; }
+        return null;
+      };
       for (const dX of dX0 ? [dX0] : legDirs(X, id)) {
-        const lt = legTangent(id, X, sx, dX); if (!lt) continue;
-        const pr = project(Y, lt.other[0], lt.other[1]), lat = pr.side * pr.d, sJ = Y.nodeSt[id];
-        if (sJ == null || Math.abs(lat - kerbLat(Y, sy)) > 2.5) continue;
-        // the other tangent point must lie on a leg Y really has here (never projected onto a point past Y's end), and the two legs must make a
-        // corner: a return near a straight joint of two streets belongs to another junction
-        const limY = d => { let m = 40; for (const o of Y.jids) { if (o === id) continue; const q = (Y.nodeSt[o] - sJ) * d; if (q > 0.5) m = Math.min(m, q / 2); } return m; };
-        const dY = (dY0 ? [dY0] : legDirs(Y, id)).find(d => (pr.s - sJ) * d > 0.3 && (pr.s - sJ) * d <= limY(d) && pr.s > 0.05 && pr.s < Y.len - 0.05); if (!dY) continue;
-        { const qx = ptAt(X, lt.s, 0), qy = ptAt(Y, pr.s, 0), c = Math.abs(qx[2] * dX * qy[2] * dY + qx[3] * dX * qy[3] * dY); if (c > 0.966) continue; }
-        const cn = { F: lt.F, sX: lt.s, sY: pr.s, X, Y, sx, sy, dX, dY };
-        // where the corridors are far from the kerb (a wide verge) they meet before the return starts: the corner curve, and so the corridor's end
-        // and the node, is at the fillet's own tangent points, not out at the kerb return's (which would run past the corner and back)
-        const g = filletGeom(cn, kpRaw(X, sx, lt.s, kind), kpRaw(Y, sy, pr.s, kind));
-        if (g) { const s1 = project(X, g.T1[0], g.T1[1]).s, s2 = project(Y, g.T2[0], g.T2[1]).s, sJY = sJ;
-          if ((s1 - X.nodeSt[id]) * dX > 0.3 && (s1 - X.nodeSt[id]) * dX < (lt.s - X.nodeSt[id]) * dX) cn.sX = s1;
-          if ((s2 - sJY) * cn.dY > 0.3 && (s2 - sJY) * cn.dY < (pr.s - sJY) * cn.dY) cn.sY = s2; }
-        return cn;
+        const cands = [];
+        const lt = legTangent(id, X, sx, dX); if (lt) cands.push([lt.F, lt.other, { st: X, side: sx, dir: dX, s: lt.s, sJ: X.nodeSt[id] }]);
+        if (thru && !lt) for (const F of RT) { if (Math.hypot(F.P[0] - jp[0], F.P[1] - jp[1]) > 30) continue;
+          for (const [T, O] of [[F.t1, F.t2], [F.t2, F.t1]]) { const L = legThru(id, X, sx, dX, T); if (L) cands.push([F, O, L]); } }
+        for (const [F, O, LX] of cands) {
+          const LY = onY(O); if (!LY || LY.st === LX.st) continue;
+          // the two legs must make a corner: a return near a straight joint of two streets belongs to another junction
+          { const qx = ptAt(LX.st, LX.s, 0), qy = ptAt(LY.st, LY.s, 0), c = Math.abs(qx[2] * LX.dir * qy[2] * LY.dir + qx[3] * LX.dir * qy[3] * LY.dir); if (c > 0.966) continue; }
+          const cn = { F, X: LX.st, sx: LX.side, dX: LX.dir, sX: LX.s, Y: LY.st, sy: LY.side, dY: LY.dir, sY: LY.s };
+          // where the corridors are far from the kerb (a wide verge) they meet before the return starts: the corner curve, and so the corridor's end
+          // and the node, is at the fillet's own tangent points, not out at the kerb return's (which would run past the corner and back)
+          const g = filletGeom(cn, kpRaw(cn.X, cn.sx, cn.sX, kind), kpRaw(cn.Y, cn.sy, cn.sY, kind));
+          if (g) { const s1 = project(cn.X, g.T1[0], g.T1[1]).s, s2 = project(cn.Y, g.T2[0], g.T2[1]).s;
+            if ((s1 - LX.sJ) * cn.dX > 0.3 && (s1 - LX.sJ) * cn.dX < (LX.s - LX.sJ) * cn.dX) cn.sX = s1;
+            if ((s2 - LY.sJ) * cn.dY > 0.3 && (s2 - LY.sJ) * cn.dY < (LY.s - LY.sJ) * cn.dY) cn.sY = s2; }
+          return cn;
+        }
       }
       return null;
     }
@@ -262,22 +323,64 @@ const PlanLayout = (() => {
     // a link at junction id from X's corridor (side sx) to Y's (side sy), round the kerb return: both corridors face one corner block → the
     // corner curve; they face different blocks → round the corner X faces, then cross Y square at its tangent station (or cross X square first,
     // then round). { pts, sX, sY } (the stations the link leaves X and joins Y at), or null (no return there: as before)
+    // a square crossing of a street near its end: at a station where the corridors on both sides have started (each side's corridor is
+    // pulled back to its own corner, so one station is not the same place on both sides)
+    const sqSt = (st, s, kind) => Math.min(Math.max(s, pullAt(st, 1, kind, false), pullAt(st, -1, kind, false)), st.len - Math.max(pullAt(st, 1, kind, true), pullAt(st, -1, kind, true)));
+    // a link round corner cn: { pts, X, sX, Y, sY, sideX, sideY } = the streets, stations and sides it leaves and joins (the corner's own streets)
+    const plainLink = (cn, kind) => ({ pts: cornerPath(cn, kp(cn.X, cn.sx, cn.sX, kind), kp(cn.Y, cn.sy, cn.sY, kind)), X: cn.X, sX: cn.sX, sideX: cn.sx, Y: cn.Y, sY: cn.sY, sideY: cn.sy });
+    // round the corner onto the far side of its Y, then across that street square
+    function acrossY(cn, kind) {
+      const q = sqSt(cn.Y, cn.sY, kind);
+      return { pts: cornerPath(cn, kp(cn.X, cn.sx, cn.sX, kind), kp(cn.Y, cn.sy, cn.sY, kind)).concat(kv(cn.Y, cn.sy, cn.sY, q, kind).map(p => p.slice(0, 2)), [kp(cn.Y, -cn.sy, q, kind).slice(0, 2)]), X: cn.X, sX: cn.sX, sideX: cn.sx, Y: cn.Y, sY: q, sideY: -cn.sy };
+    }
+    // across the corner's X square from its far side, then round the corner
+    function acrossX(cn, kind) {
+      const q = sqSt(cn.X, cn.sX, kind);
+      return { pts: [kp(cn.X, -cn.sx, q, kind).slice(0, 2)].concat(kv(cn.X, cn.sx, q, cn.sX, kind).map(p => p.slice(0, 2)), cornerPath(cn, kp(cn.X, cn.sx, cn.sX, kind), kp(cn.Y, cn.sy, cn.sY, kind))), X: cn.X, sX: q, sideX: -cn.sx, Y: cn.Y, sY: cn.sY, sideY: cn.sy };
+    }
     function linkPaths(id, X, sx, Y, sy, kind) {                                       // every variant, each leg of a through street: for the LV graph to choose from
       const out = [];
       for (const dX of legDirs(X, id)) for (const dY of legDirs(Y, id)) {
-        let cn = corner(id, X, sx, Y, sy, dX, dY, kind); if (cn) out.push({ pts: cornerPath(cn, kp(X, sx, cn.sX, kind), kp(Y, sy, cn.sY, kind)), sX: cn.sX, sY: cn.sY });
-        cn = corner(id, X, sx, Y, -sy, dX, dY, kind); if (cn) out.push({ pts: cornerPath(cn, kp(X, sx, cn.sX, kind), kp(Y, -sy, cn.sY, kind)).concat([kp(Y, sy, cn.sY, kind).slice(0, 2)]), sX: cn.sX, sY: cn.sY });
-        cn = corner(id, X, -sx, Y, sy, dX, dY, kind); if (cn) out.push({ pts: [kp(X, sx, cn.sX, kind).slice(0, 2)].concat(cornerPath(cn, kp(X, -sx, cn.sX, kind), kp(Y, sy, cn.sY, kind))), sX: cn.sX, sY: cn.sY });
+        let cn = corner(id, X, sx, Y, sy, dX, dY, kind, true); if (cn) out.push(plainLink(cn, kind));
+        cn = corner(id, X, sx, Y, -sy, dX, dY, kind, true); if (cn) out.push(acrossY(cn, kind));
+        cn = corner(id, X, -sx, Y, sy, dX, dY, kind, true); if (cn) out.push(acrossX(cn, kind));
       }
       return out;
     }
     function linkPath(id, X, sx, Y, sy, kind, dX, dY) {
-      let cn = corner(id, X, sx, Y, sy, dX, dY, kind);
-      if (cn) return { pts: cornerPath(cn, kp(X, sx, cn.sX, kind), kp(Y, sy, cn.sY, kind)), sX: cn.sX, sY: cn.sY };
-      cn = corner(id, X, sx, Y, -sy, dX, dY, kind);
-      if (cn) return { pts: cornerPath(cn, kp(X, sx, cn.sX, kind), kp(Y, -sy, cn.sY, kind)).concat([kp(Y, sy, cn.sY, kind).slice(0, 2)]), sX: cn.sX, sY: cn.sY };
-      cn = corner(id, X, -sx, Y, sy, dX, dY, kind);
-      if (cn) return { pts: [kp(X, sx, cn.sX, kind).slice(0, 2)].concat(cornerPath(cn, kp(X, -sx, cn.sX, kind), kp(Y, sy, cn.sY, kind))), sX: cn.sX, sY: cn.sY };
+      let cn = corner(id, X, sx, Y, sy, dX, dY, kind); if (cn) return plainLink(cn, kind);
+      cn = corner(id, X, sx, Y, -sy, dX, dY, kind); if (cn) return acrossY(cn, kind);
+      cn = corner(id, X, -sx, Y, sy, dX, dY, kind); if (cn) return acrossX(cn, kind);
+      return null;
+    }
+    // along X's corridor (side sx) from station s0 to s1 past a street Y that joins on that side: the corridor's straight line would run through
+    // Y's mouth and both its kerb returns, so the run turns the first corner onto Y's corridor, crosses Y square and turns the second corner back
+    // onto X. null where nothing joins on that side between s0 and s1, or the returns are not known (as before).
+    function mouthPath(X, sx, s0, s1, kind) {
+      if (!RT.length || !(X.cw > 0)) return null; const lo = Math.min(s0, s1), hi = Math.max(s0, s1);
+      for (const id of X.jids) {
+        const sJ = X.nodeSt[id]; if (!(sJ > lo + 0.3 && sJ < hi - 0.3)) continue;
+        const J = junctions.find(q => q.id === id); if (!J) continue;
+        for (const [Y] of J.items) {
+          if (Y === X || !(Y.cw > 0) || !(Y.nodeSt[id] < 0.5 || Y.nodeSt[id] > Y.len - 0.5)) continue;     // a street that ends here
+          const dY = Y.nodeSt[id] < 0.5 ? 1 : -1, far = ptAt(Y, Y.nodeSt[id] + dY * 5, 0), pf = project(X, far[0], far[1]); if (pf.side !== sx) continue;
+          let cA = null, cB = null;
+          for (const q of [1, -1]) { const a = corner(id, X, sx, Y, q, -1, dY, kind, true), b = corner(id, X, sx, Y, -q, 1, dY, kind, true); if (a && b && a.Y === b.Y) { cA = a; cB = b; break; } }
+          if (!cA) continue;
+          // a corner beyond a straight joint: only where the run starts (ends) at that joint, or within 3 m of it (then from the joint)
+          const pA = kp(X, sx, lo, kind), pB = kp(X, sx, hi, kind), jA = kp(X, sx, 0, kind), jB = kp(X, sx, X.len, kind);
+          if (cA.X === X ? cA.sX < lo - 0.05 : lo > 3) continue;
+          if (cB.X === X ? cB.sX > hi + 0.05 : hi < X.len - 3) continue;
+          const sA = cA.X === X ? lo : project(cA.X, jA[0], jA[1]).s, sB = cB.X === X ? hi : project(cB.X, jB[0], jB[1]).s;
+          if (cA.X !== X && Math.hypot(...[0, 1].map(k => kp(cA.X, cA.sx, sA, kind)[k] - jA[k])) > 1) continue;
+          if (cB.X !== X && Math.hypot(...[0, 1].map(k => kp(cB.X, cB.sx, sB, kind)[k] - jB[k])) > 1) continue;
+          const Ys = cA.Y, sc = sqSt(Ys, cA.dY > 0 ? Math.max(cA.sY, cB.sY) : Math.min(cA.sY, cB.sY), kind);   // the crossing: square, at the tangent station farther from X
+          const first = cornerPath(cA, kp(cA.X, cA.sx, cA.sX, kind), kp(Ys, cA.sy, cA.sY, kind)), second = cornerPath(cB, kp(cB.X, cB.sx, cB.sX, kind), kp(Ys, cB.sy, cB.sY, kind)).reverse();
+          const pts = [cA.X === X ? pA : jA].concat(kv(cA.X, cA.sx, sA, cA.sX, kind), first, kv(Ys, cA.sy, cA.sY, sc, kind), kv(Ys, cB.sy, sc, cB.sY, kind), second, kv(cB.X, cB.sx, cB.sX, sB, kind), [cB.X === X ? pB : jB]).map(p => p.slice(0, 2));
+          const out = [pts[0]]; for (const p of pts) if (Math.hypot(p[0] - out[out.length - 1][0], p[1] - out[out.length - 1][1]) > 0.02) out.push(p);
+          return s0 <= s1 ? out : out.reverse();
+        }
+      }
       return null;
     }
     // the arc from a to b round a return's centre, a and b included
@@ -916,12 +1019,20 @@ const PlanLayout = (() => {
           // the verge points between start 2.5 m past where the nodes actually stand: a junction node pushed out of a carriageway (or set on the
           // corner of two verge lines) can be a few metres along from the junction's station, and points behind it made the trunk double back
           // a corner node's tangent on this street applies only to the edge on that leg (a through street has two)
-          const cA = A.junction && A.ci && A.ci.at[st.id] != null && A.ci.at[st.id] > sa - 0.1 ? A.ci.at[st.id] : null, cB = B.junction && B.ci && B.ci.at[st.id] != null && B.ci.at[st.id] < sb + 0.1 ? B.ci.at[st.id] : null;
+          let cA = A.junction && A.ci && A.ci.at[st.id] != null && A.ci.at[st.id] > sa - 0.1 ? A.ci.at[st.id] : null, cB = B.junction && B.ci && B.ci.at[st.id] != null && B.ci.at[st.id] < sb + 0.1 ? B.ci.at[st.id] : null;
+          // a corner node on the far side of a street that joins this one on its fibre side (the node stands on the corner beyond that street's
+          // mouth): the trunk goes round the near corner, across that street square and round the far corner to the node (mouthPath)
+          let mid = null;
+          if (cB == null && B.junction && B.ci && B.ci.at[st.id] != null && B.ci.at[st.id] >= sb + 0.1) {
+            const m = mouthPath(st, sg, cA != null ? cA : sa + 2.5, B.ci.at[st.id], 't'); if (m) { mid = m; cB = B.ci.at[st.id]; } }
+          if (!mid && cA == null && A.junction && A.ci && A.ci.at[st.id] != null && A.ci.at[st.id] <= sa - 0.1) {
+            const m = mouthPath(st, sg, A.ci.at[st.id], cB != null ? cB : sb - 2.5, 't'); if (m) { mid = m; cA = A.ci.at[st.id]; } }
           const qa = cA != null ? cA : A.junction ? Math.max(sa, project(st, A.x, A.y).s) : sa, qb = cB != null ? cB : B.junction ? Math.min(sb, project(st, B.x, B.y).s) : sb;
           let pts = [[A.x, A.y]];
           if (cA != null) pts = A.ci.legs[st.id].map(q => q.slice());                           // from the node on the corner curve round to the tangent point
-          if (qb - qa > 5) pts.push(...kv(st, sg, qa + (cA != null ? 0 : 2.5), qb - (cB != null ? 0 : 2.5), 't').slice(cA != null ? 1 : 0));
-          if (cB != null) pts.push(...B.ci.legs[st.id].slice().reverse().map(q => q.slice()).slice(qb - qa > 5 ? 1 : 0)); else pts.push([B.x, B.y]);
+          if (mid) pts.push(...mid.slice(cA != null ? 1 : 0));
+          else if (qb - qa > 5) pts.push(...kv(st, sg, qa + (cA != null ? 0 : 2.5), qb - (cB != null ? 0 : 2.5), 't').slice(cA != null ? 1 : 0));
+          if (cB != null) pts.push(...B.ci.legs[st.id].slice().reverse().map(q => q.slice()).slice(mid || qb - qa > 5 ? 1 : 0)); else pts.push([B.x, B.y]);
           // a junction node on the far side of this street (its fibre verge is the other one): the trunk crosses the street square, clear of the
           // junction (where its verge starts), instead of running diagonally through the corner to the node
           const across = (N, sq, atStart) => {
@@ -1072,7 +1183,9 @@ const PlanLayout = (() => {
           const ss = use[j.id];
           for (let i = 0; i < ss.length; i++) for (let k = i + 1; k < ss.length; k++) {
             const A = ss[i], B = ss[k], lps = linkPaths(j.id, A, ks[A.id] || 1, B, ks[B.id] || 1);   // round the kerb return (and across, square) where there is one: every variant
-            if (lps.length) for (const lp of lps) jLinks.push([A, node(A, lp.sX), B, node(B, lp.sY), lp]);
+            // (a link round a corner beyond a straight joint starts on the street beyond it: only where that is its LV side too)
+            const fit = lps.filter(lp => (lp.X === A || lp.sideX === (ks[lp.X.id] || 1)) && (lp.Y === B || lp.sideY === (ks[lp.Y.id] || 1)));
+            if (fit.length) for (const lp of fit) jLinks.push([lp.X, node(lp.X, lp.sX), lp.Y, node(lp.Y, lp.sY), lp]);
             else jLinks.push([A, node(A, clearSt(A, A.nodeSt[j.id])), B, node(B, clearSt(B, B.nodeSt[j.id]))]);
           }
         }
@@ -1080,7 +1193,8 @@ const PlanLayout = (() => {
         const link = (A, B, pts, excl) => { const xs = pathCrossings(pts, excl), len = plen(pts), ed = { a: A, b: B, pts, len, xs, w: len + xs.length * 300 }; edges.push(ed); A.adj.push(ed); B.adj.push(ed); };
         streets.forEach(st => {
           const on = nodes.filter(n => n.st === st).sort((p, q) => p.s - q.s);
-          for (let i = 1; i < on.length; i++) if (on[i].s - on[i - 1].s > 1e-6) link(on[i - 1], on[i], kv(st, ks[st.id] || 1, on[i - 1].s, on[i].s), st);
+          for (let i = 1; i < on.length; i++) if (on[i].s - on[i - 1].s > 1e-6) { const side = ks[st.id] || 1, mp = mouthPath(st, side, on[i - 1].s, on[i].s);
+            link(on[i - 1], on[i], mp || kv(st, side, on[i - 1].s, on[i].s), mp ? null : st); }
         });
         for (const [A, nA, B, nB, cn] of jLinks) { const a = kp(A, ks[A.id] || 1, nA.s).slice(0, 2), b = kp(B, ks[B.id] || 1, nB.s).slice(0, 2); link(nA, nB, cn ? cn.pts : [a, b], null); }
         // shortest-path tree of the kiosk-side verge graph from one kiosk (crossings carry a penalty in the weights)
