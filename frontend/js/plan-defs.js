@@ -240,7 +240,7 @@ const PLAN_DEFS = {
       name: 'Street centreline', domain: 'retic', color: '#64748b', width: 3, lineStyle: 'dashed',
       cableVoltage: null, dxfLayer: 'STREETS', schedule: null, requiresEndpoints: false, noTakeoff: true,
       defaults: {},
-      fields: [{ key: 'name', label: 'Street name', type: 'text' }, { key: 'width', label: 'Reserve width (m)', type: 'number', unit: 'm', min: 6, max: 40, step: 0.5 }],
+      fields: [{ key: 'name', label: 'Street name', type: 'text' }, { key: 'width', label: 'Reserve width (m)', type: 'number', unit: 'm', min: 6, max: 40, step: 0.5 }, { key: 'carriageW', label: 'Carriageway width (m, 0 = not drawn)', type: 'number', unit: 'm', min: 0, max: 40, step: 0.5 }, { key: 'cwOffset', label: 'Carriageway offset (m, + = left)', type: 'number', unit: 'm', min: -20, max: 20, step: 0.5 }],
     },
     fibreBB: {
       name: 'Fibre Backbone', domain: 'retic', color: '#a855f7', width: 1.5, lineStyle: 'dashed',

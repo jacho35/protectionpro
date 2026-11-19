@@ -125,7 +125,14 @@ const PlanKerbs = (() => {
   // For every sample of every chain: the nearest point on another chain (or its own other arm) that is a road-width
   // away, parallel and straight across.
   function assign(R, C, o) {
-    const out = R.map(() => []);
+    const out = R.map(() => []), cell = Math.max(o.wmax, 1), grid = R.map(rj => {
+      const m = new Map(); rj.S.forEach((Q, q) => { const k = Math.floor(Q.x / cell) + ',' + Math.floor(Q.y / cell); let l = m.get(k); if (!l) m.set(k, l = []); l.push(q); }); return m;
+    });
+    const near = (j, x, y) => {
+      const cx = Math.floor(x / cell), cy = Math.floor(y / cell), out2 = [];
+      for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) { const l = grid[j].get((cx + dx) + ',' + (cy + dy)); if (l) for (const q of l) out2.push(q); }
+      return out2.sort((a, b) => a - b);
+    };
     R.forEach((ri, i) => {
       const ci = C[i], ring = !!ci.closed;
       ri.S.forEach((p, k) => {
@@ -136,9 +143,11 @@ const PlanKerbs = (() => {
           // the nearest sample of this chain that is a road-width away, parallel and straight across (not just the nearest
           // sample: near the end of a road that is the end cap, closer than any road is wide)
           let m = -1, md = Infinity;
-          for (let q = 0; q < rj.S.length; q++) {
-            const Q = rj.S[q], d = hyp(Q.x - p.x, Q.y - p.y);
+          const cand = near(j, p.x, p.y);                                                       // only the samples within a road width (grid cells), in chain order
+          for (let qi = 0; qi < cand.length; qi++) {
+            const q = cand[qi], Q = rj.S[q], d = hyp(Q.x - p.x, Q.y - p.y);
             if (d >= md || d < o.wmin || d > o.wmax || (best && d >= best.d)) continue;
+            if (o.inside && !o.inside((p.x + Q.x) / 2, (p.y + Q.y) / 2)) continue;                // a road reserve: the midline must lie in the road space, not through a block
             if (j === i) { let ds = Math.abs(Q.s - p.s); if (ring) ds = Math.min(ds, ri.len - ds); if (ds <= 1.3 * d) continue; if (!(Q.s > p.s)) continue; }   // a chain with itself: the first arm only
             const u = [(Q.x - p.x) / d, (Q.y - p.y) / d];
             if (Math.abs(p.tx * Q.ty - p.ty * Q.tx) > o.par || Math.abs(u[0] * p.tx + u[1] * p.ty) > o.par) continue;
@@ -191,7 +200,7 @@ const PlanKerbs = (() => {
     const dx = b[0] - a[0], dy = b[1] - a[1], L2 = dx * dx + dy * dy, t = L2 ? Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / L2)) : 0;
     return hyp(p[0] - a[0] - dx * t, p[1] - a[1] - dy * t);
   }
-  const wOf = P => P.w || median(P.ws) || 12;
+  const wOf = P => P._w || (P._w = P.w || median(P.ws) || 12);
   function mergeSpans(a, b) { const m = {}; for (const x of [a, b]) for (const k in x || {}) m[k] = (m[k] || []).concat(x[k]); return m; }
 
   // pieces that run on from each other across a junction mouth become one street
@@ -266,7 +275,7 @@ const PlanKerbs = (() => {
     const R = C.map(c => resample(c.pts, o.step));
     const bulbRings = [];
     C.forEach((c, i) => {                                                  // a lone round kerb (cul-de-sac bulb, island) is not a road side
-      if (!c.closed) return; const f = fitCircle(R[i].S.map(s => [s.x, s.y]));
+      if (!c.closed || o.noRings) return; const f = fitCircle(R[i].S.map(s => [s.x, s.y]));
       if (f && f.r >= 3 && f.r <= 25 && f.rmse <= 0.08 * f.r && Math.abs(R[i].len - 2 * Math.PI * f.r) <= 0.15 * R[i].len) { c.skip = true; bulbRings.push({ i, c: [f.cx, f.cy], r: f.r }); }
     });
     const A = assign(R, C, o), paired = new Set(), pieces = [];
@@ -305,7 +314,7 @@ const PlanKerbs = (() => {
   function assemble(cands, ids, extras, o, rings, noConnect) {
     o = opt(o);
     const sel = ids === 'all' ? cands.pieces.map((_, k) => k) : [...ids].sort((a, b) => a - b);
-    const pieces = sel.map(k => { const P = cands.pieces[k]; return { pts: P.pts.map(p => p.slice()), ws: P.ws, w: P.w, chains: P.chains, bulbs: P.bulbs || [], spans: P.spans }; });
+    const pieces = sel.map(k => { const P = cands.pieces[k]; return { pts: P.pts.map(p => p.slice()), ws: P.ws, w: P.w, _w: P._w, chains: P.chains, bulbs: P.bulbs || [], spans: P.spans }; });
     const n = pieces.length;
     extend(pieces, pieces.map((_, k) => k), o);
     const ex = (extras || []).map(x => ({ pts: x.pts.map(p => p.slice()), ws: [x.w], w: x.w, chains: x.chains || [], bulbs: [], extra: x }));
