@@ -249,7 +249,8 @@ def build_dxf(payload: Dict[str, Any]) -> bytes:
     for c in payload.get("crossings", []):
         p1, p2 = c.get("p1"), c.get("p2")
         if p1 and p2:
-            ent = msp.add_line((X(p1[0]), Y(p1[1])), (X(p2[0]), Y(p2[1])), dxfattribs={"layer": "PP_TRENCH"})
+            # colour by duct size (ACI 1 red = 160 mm, 30 orange = 110 mm), matching the plan; the size is also in the entity's data
+            ent = msp.add_line((X(p1[0]), Y(p1[1])), (X(p2[0]), Y(p2[1])), dxfattribs={"layer": "PP_TRENCH", "color": 1 if str(c.get("size")) == "160" else 30})
             _set_meta(ent, {"KIND": "crossing", "SIZE": c.get("size"), "NAME": c.get("name")})
     for tx in payload.get("texts", []):
         msp.add_text(str(tx.get("text", "")), dxfattribs={

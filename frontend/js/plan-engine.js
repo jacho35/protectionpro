@@ -728,12 +728,23 @@ const PlanEngine = {
     ctx.restore();
   },
 
+  // a road crossing duct: coloured and as wide as its size (110 mm orange, 160 mm red and wider), the size written at its middle once it is
+  // long enough on screen; selected = a blue halo and a handle at each end (drag them with the select tool)
   _drawCrossing(ctx, c, selected) {
     if (!c.p1 || !c.p2) return;
+    const D = PLAN_DEFS.crossings, st = (D.style && D.style[c.size]) || { color: D.color, width: 3 }, z = this.view.zoom;
     ctx.save();
-    ctx.strokeStyle = PLAN_DEFS.crossings.color;
-    ctx.lineWidth = (selected ? 4 : 3) / this.view.zoom;
+    if (selected) { ctx.strokeStyle = 'rgba(37,99,235,.35)'; ctx.lineWidth = (st.width + 5) / z; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(c.p1.x, c.p1.y); ctx.lineTo(c.p2.x, c.p2.y); ctx.stroke(); }
+    ctx.strokeStyle = st.color; ctx.lineWidth = st.width / z; ctx.lineCap = 'butt';
     ctx.beginPath(); ctx.moveTo(c.p1.x, c.p1.y); ctx.lineTo(c.p2.x, c.p2.y); ctx.stroke();
+    const len = Math.hypot(c.p2.x - c.p1.x, c.p2.y - c.p1.y) * z;
+    if (c.size && len > 34) {
+      const mx = (c.p1.x + c.p2.x) / 2, my = (c.p1.y + c.p2.y) / 2; let a = Math.atan2(c.p2.y - c.p1.y, c.p2.x - c.p1.x); if (Math.abs(a) > Math.PI / 2) a += Math.PI;
+      ctx.save(); ctx.translate(mx, my); ctx.rotate(a); ctx.font = `700 ${9 / z}px system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+      ctx.lineWidth = 3 / z; ctx.strokeStyle = 'rgba(255,255,255,.9)'; ctx.strokeText(c.size, 0, -(st.width / 2 + 1) / z); ctx.fillStyle = st.color; ctx.fillText(c.size, 0, -(st.width / 2 + 1) / z);
+      ctx.restore();
+    }
+    if (selected) { ctx.fillStyle = '#fff'; ctx.strokeStyle = '#2563eb'; ctx.lineWidth = 1.5 / z; for (const p of [c.p1, c.p2]) { ctx.beginPath(); ctx.arc(p.x, p.y, 4.5 / z, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); } }
     ctx.restore();
   },
 

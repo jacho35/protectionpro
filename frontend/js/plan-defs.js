@@ -283,7 +283,9 @@ const PLAN_DEFS = {
     'FI': { name: 'Fibre Trench', color: 'rgba(245,146,0,0.38)', width: 0.3, depth: 0.6 },
   },
 
-  crossings: { sizes: ['110', '160'], defaultSize: '110', color: '#f97316' },
+  // road crossing ducts: colour and drawn width (px) per size, so a 160 mm (MV) sleeve reads apart from a 110 mm one
+  crossings: { sizes: ['110', '160'], defaultSize: '110', color: '#f97316',
+    style: { '110': { color: '#f97316', width: 2.5 }, '160': { color: '#b91c1c', width: 4.5 } } },
 
   // Closed-polygon zones (rooms / areas). Used for area take-off and the lux
   // model. Available in both domains.

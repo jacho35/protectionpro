@@ -231,6 +231,11 @@ PlanTools.register({
         }
       }
     }
+    // 1d) an end of a selected road crossing: drag it (the other end stays)
+    for (const c of (pm.crossings || [])) {
+      if (!PlanMarkup.selectedIds.has(c.id) || !c.p1 || !c.p2) continue;
+      for (const end of ['p1', 'p2']) if (Math.hypot(pt.x - c[end].x, pt.y - c[end].y) <= 8 / z) { this._drag = { kind: 'crossend', c, end, moved: false }; return; }
+    }
     // 2) shift+click on a route segment inserts a vertex
     const rhShift = e.shiftKey ? PlanEngine.findRouteAt(pt) : null;
     if (rhShift) {
@@ -271,6 +276,8 @@ PlanTools.register({
       const found = PlanMarkup.findEntityById(id);
       if (found && found.kind === 'element') {
         this._drag = { kind: 'element', el: found.item, moved: false };
+      } else if (found && found.kind === 'crossing') {                                 // a road crossing: drag to move it (with the rest of the selection)
+        this._drag = { kind: 'crossmove', c: found.item, last: { x: pt.x, y: pt.y }, moved: false };
       }
       return;
     }
@@ -293,6 +300,14 @@ PlanTools.register({
       this._drag.moved = true;
       PlanEngine.requestDraw({ fg: true });
       return;
+    }
+    if (this._drag.kind === 'crossmove') {                                              // the whole crossing (and the selection) by the pointer's step, unsnapped so it keeps its shape
+      const dx = pt.x - this._drag.last.x, dy = pt.y - this._drag.last.y; if (!dx && !dy) return;
+      if (!this._drag.moved && Math.hypot(pt.x - this._downWorld.x, pt.y - this._downWorld.y) < 3 / PlanEngine.view.zoom) return;   // a click, not a drag
+      this._moveSelection(dx, dy, null); this._drag.last = { x: pt.x, y: pt.y }; this._drag.moved = true; PlanEngine.requestDraw({ fg: true }); return;
+    }
+    if (this._drag.kind === 'crossend') {
+      const q = PlanTools.snap(pt, { ignoreIds: new Set([this._drag.c.id]) }); this._drag.c[this._drag.end] = { x: q.x, y: q.y }; this._drag.moved = true; PlanEngine.requestDraw({ fg: true }); return;
     }
     const snapped = PlanTools.snap(pt, {
       ignoreIds: this._drag.kind === 'vertex' ? new Set([this._drag.route.id])
