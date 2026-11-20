@@ -1484,10 +1484,11 @@ const PlanLayoutUI = {
     const pm = AppState.planMarkup, f = PlanEngine.factor(), L = this.cfg();
     if (!f) return { err: 'Calibrate the plan first: the layout works in metres.' };
     const erven = pm.elements.filter(e => e.type === 'erf' && Array.isArray(e.boundary) && e.boundary.length >= 3)
-      .map(e => ({ id: e.id, poly: e.boundary.map(p => [p.x * f, p.y * f]) }));
+      .map(e => ({ id: e.id, poly: e.boundary.map(p => [p.x * f, p.y * f]), unserviced: !!(e.props && e.props.unserviced) }));
     const sr = this.streetsOnPlan();
     if (!sr.length) return { err: 'Draw the streets first: pick Street centreline in the Routes group and click along each street.' };
     if (!erven.length) return { err: 'No erf has a boundary yet. Run Detect erven first (it keeps each erf\'s boundary).' };
+    if (!erven.some(e => !e.unserviced)) return { err: 'Every erf is marked unserviced: there is nothing to supply. Mark the erven that need a supply as serviced (Detect erven › Mark unserviced, or the erf\'s Properties).' };
     const streets = sr.map((r, i) => ({ id: r.id, name: (r.props && r.props.name) || ('Street ' + (i + 1)), w: this._num(r.props && r.props.width, 6, 40, 12), cw: this._num(r.props && r.props.carriageW, 0, 40, 0) || this._cwDef(), own: this._num(r.props && r.props.carriageW, 0, 40, 0) > 0, cwAuto: !(this._num(r.props && r.props.carriageW, 0, 40, 0) > 0), cwOffset: this._num(r.props && r.props.cwOffset, -20, 20, 0), pts: this._flat(r).map(p => [p.x * f, p.y * f]) }));
     // streets from the road reserve: the same squared-off corners the plan draws its kerbs and kerb returns from
     if (typeof PlanReserve !== 'undefined' && PlanReserve.squareStreets) {
@@ -1757,7 +1758,7 @@ const PlanLayoutUI = {
     if (unserved.length) out.push({ sev: 'fail', text: `${unserved.length} erven have no kiosk: ${nm(unserved.map(lab))}.`, ids: unserved.map(e => e.id) });
     const crowd = r.kiosks.filter(k => k.members.length > P.n);
     if (crowd.length) out.push({ sev: 'fail', text: `${crowd.length} kiosks serve more than ${P.n} erven (${crowd.map(k => k.id + ': ' + k.members.length).join(', ')}).`, ids: crowd.flatMap(k => k.members.map(e => e.id)) });
-    const noBoundary = AppState.planMarkup.elements.filter(e => e.type === 'erf' && !(Array.isArray(e.boundary) && e.boundary.length >= 3));
+    const noBoundary = AppState.planMarkup.elements.filter(e => e.type === 'erf' && !(e.props && e.props.unserviced) && !(Array.isArray(e.boundary) && e.boundary.length >= 3));
     if (noBoundary.length) out.push({ sev: 'warn', text: `${noBoundary.length} erven on the plan have no boundary, so the layout ignores them (${nm(noBoundary)}). Detect them with Detect erven.`, ids: noBoundary.map(e => e.id) });
     const vd = r.vd, canAdd = (this.cfg().subs || []).length < 20, addSub = canAdd ? [{ label: 'Place another mini-sub', act: 'addsub' }] : [];
     if (r.vdBusy) { /* the engine is still answering */ }
@@ -2031,7 +2032,8 @@ const PlanLayoutUI = {
     const sevCol = { fail: '#dc2626', warn: '#b45309', info: '#64748b' }, sevTxt = { fail: 'Fix', warn: 'Check', info: 'Note' };
     const nFix = ck.filter(c => c.sev === 'fail').length, nChk = ck.filter(c => c.sev === 'warn').length, nNote = ck.filter(c => c.sev === 'info').length;
     const noKiosks = !!(r && !r.kiosks.length);
-    const sr0 = this.streetsOnPlan(), nErv = AppState.planMarkup.elements.filter(e => e.type === 'erf' && Array.isArray(e.boundary) && e.boundary.length >= 3).length;
+    const bErv = AppState.planMarkup.elements.filter(e => e.type === 'erf' && Array.isArray(e.boundary) && e.boundary.length >= 3), nUns = bErv.filter(e => e.props && e.props.unserviced).length;
+    const sr0 = this.streetsOnPlan(), nErv = bErv.length - nUns;
     const f0 = PlanEngine.factor(), streetM = f0 ? sr0.reduce((a, s) => a + this.centreLen(this._flat(s).map(q => [q.x * f0, q.y * f0])), 0) : 0;
     // ── the step bar
     const sst = [
@@ -2047,7 +2049,7 @@ const PlanLayoutUI = {
     // ── step 1: streets
     const found = (ok, html, act) => `<div style="display:flex;align-items:center;gap:6px;border-bottom:1px solid var(--border-color,#ddd);padding:3px 0"><span style="color:${ok ? '#16a34a' : '#dc2626'};font-weight:700">${ok ? '✓' : '!'}</span><span style="flex:1">${html}</span>${act ? `<button type="button" class="plan-btn" data-act="${act}" style="${sBtn}">Show</button>` : ''}</div>`;
     const step1 = `${blocked}
-        ${found(nErv > 0, nErv ? `<b>${nErv} erven</b> with boundaries` : '<b>No erven with a boundary.</b> Use Detect erven first', nErv ? 'zoomerven' : '')}
+        ${found(nErv > 0, nErv ? `<b>${nErv} erven</b> with boundaries${nUns ? ` · ${nUns} unserviced (cables go round ${nUns === 1 ? 'it' : 'them'})` : ''}` : nUns ? '<b>Every erf is unserviced.</b> Mark the ones that need a supply as serviced' : '<b>No erven with a boundary.</b> Use Detect erven first', nErv ? 'zoomerven' : '')}
         ${found(sr0.length > 0, sr0.length ? `<b>${sr0.length} street${sr0.length === 1 ? '' : 's'}</b>, ${fmt(streetM)} m` : '<b>No streets yet.</b> Add them below', sr0.length ? 'zoomstreets' : '')}
         ${kerbBlock}${centreBlock}${typeof PlanReserveUI !== 'undefined' ? PlanReserveUI.panelHtml() : ''}
         <div style="font-weight:600;margin-top:4px">Add or change streets</div>

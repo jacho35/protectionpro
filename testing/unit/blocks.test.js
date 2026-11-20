@@ -92,6 +92,20 @@ ok('solve: a service stays on the kiosk\'s side of the street and crosses at the
   assert(now.length > 20 && now.every(v => v <= 8), 'own-street services on the far corridor: ' + now.filter(v => v > 8).map(v => v.toFixed(1)).join(', '));
   assert(old.reduce((a, b) => a + b, 0) > now.reduce((a, b) => a + b, 0), 'the far-side penalty changes nothing');
 });
+ok('unserviced erven: no marker, kiosk, service or duct, every other erf served, and no run crosses them (left out entirely, runs do)', () => {
+  const runsThru = (r, polys) => { let n = 0; const runs = []; r.erven.forEach(e => { if (e.route) runs.push(e.route); if (e.duct) runs.push(e.duct); }); r.net.lv.forEach(l => runs.push(l.pts)); r.fibre.trunks.forEach(t => runs.push(t.pts));
+    for (const pts of runs) for (let i = 1; i < pts.length; i++) for (let k = 1; k < 10; k++) { const m = [pts[i - 1][0] + (pts[i][0] - pts[i - 1][0]) * k / 10, pts[i - 1][1] + (pts[i][1] - pts[i - 1][1]) * k / 10]; if (polys.some(P => pip(m, shrink(P, 0.98)))) { n++; break; } }
+    return n; };
+  for (const ids of [['E49', 'E50', 'E51', 'E52'], ['E61', 'E62', 'E63', 'E64']]) {
+    const polys = T.erven.filter(e => ids.includes(e.id)).map(e => e.poly);
+    const uns = solve({ streets: T.streets, erven: T.erven.map(e => ids.includes(e.id) ? Object.assign({}, e, { unserviced: true }) : e) });
+    const gone = solve({ streets: T.streets, erven: T.erven.filter(e => !ids.includes(e.id)) });
+    assert(!uns.erven.some(e => ids.includes(e.id)), 'an unserviced erf was laid out');
+    assert.strictEqual(uns.erven.filter(e => e.kiosk).length, T.erven.length - ids.length, 'not every other erf served');
+    assert.strictEqual(runsThru(uns, polys), 0, ids + ': a run crosses an unserviced erf');
+    assert(runsThru(gone, polys) > 0, ids + ': the fixture does not test it (runs go round open land too)');
+  }
+});
 ok('solve: kiosks and manholes stand on their corridor', () => {
   R.kiosks.forEach(k => { const B = R.blocks.blocks.map(b => PB.distBlock(b, [k.x, k.y])[0]).sort((a, b) => a - b)[0]; assert(Math.abs(B - 2) < 0.1, 'kiosk ' + B.toFixed(2) + ' m off'); });
   R.fibre.mhs.forEach(m => { const B = R.blocks.blocks.map(b => PB.distBlock(b, [m.x, m.y])[0]).sort((a, b) => a - b)[0]; assert(Math.abs(B - 1.7) < 0.1, 'manhole ' + B.toFixed(2) + ' m off'); });
