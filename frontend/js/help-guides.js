@@ -570,7 +570,7 @@ const HELP_GUIDES = [
           { sel: '#retic-bulkbar', label: 'Bulk change bar' },
         ] } },
     { title: 'Give each string a breaker',
-      html: 'A string is the kiosk fed from a minisub and everything fed on from it. Each minisub block in the side bar lists its strings with a <strong>String breaker</strong> picker. A string with no breaker shows <em>to complete</em>, and the earth-fault checks wait for it. The kiosks fed on from the head kiosk show the same breaker and are checked against it.',
+      html: 'A string is the kiosk fed from a minisub and everything fed on from it. Each minisub block in the side bar lists its strings with a <strong>String breaker</strong> picker. A string with no breaker shows <em>to complete</em>, and the earth-fault checks wait for it. The kiosks fed on from the head kiosk show the same breaker and are checked against it. Each kiosk can also have an <strong>Incomer</strong>: the string’s incoming and onward cables land on the kiosk’s line-side busbar, and the incomer feeds the erf bar. <em>Auto</em> (new kiosks) is the smallest MCCB at or above 1.2 times the kiosk’s own current (the factor is in the settings); a way with no protection of its own is checked against the incomer, and the string breaker still protects the feeders. Demand checks that the incomer carries the kiosk’s load and is selective with the string breaker and the ways; <strong>Kiosk single line</strong> in the card draws the kiosk.',
       shot: { file: 'demand-plan-3.png', alt: 'The minisub block with its string and breaker picker',
         setup: 'demand-bulk', clip: '#retic-workspace',
         callouts: [

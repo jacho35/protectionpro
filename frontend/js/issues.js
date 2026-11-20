@@ -217,7 +217,19 @@ const Issues = {
       this._capped(out, fails, (n) => ({ key: 'retic-earth:more', sev: 'fail', ws: 'retic', where: 'Demand', run: () => switchWorkspace('retic'),
         text: `${n} more earth-fault checks fail` }));
     }
-    // Custom motor loads: the starting check (a fail, or a warning on the dip).
+    // Kiosk incomers: carrying more than their rating (fail), not selective
+    // with the string breaker or a way (warning).
+    if (Retic._incomerChecks) {
+      const inc = [];
+      for (const k of Retic.kiosks || []) {
+        for (const c of Retic._incomerChecks(k, res)) {
+          inc.push({ key: `retic-inc:${k.id}:${c.id}`, sev: c.sev, ws: 'retic', where: k.name || 'Kiosk', go: 'retic:' + k.id, text: c.text });
+        }
+      }
+      this._capped(out, inc, (n) => ({ key: 'retic-inc:more', sev: 'warn', ws: 'retic', where: 'Demand', run: () => switchWorkspace('retic'),
+        text: `${n} more kiosk incomer checks` }));
+    }
+        // Custom motor loads: the starting check (a fail, or a warning on the dip).
     const motors = res.motorStart && Array.isArray(res.motorStart.motors) ? res.motorStart.motors : [];
     const starts = [];
     for (const m of motors) {

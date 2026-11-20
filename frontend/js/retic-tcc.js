@@ -148,6 +148,23 @@ const ReticTcc = {
       c.uses.add(use);
       return c;
     };
+    // A way's device is one curve per device; an incomer one curve per device
+    // too, named with the kiosks that have it.
+    const wayOf = (ed) => {
+      let dv = devices.find(x => !x.incomer && x.name === ed.name);
+      if (!dv) { dv = { name: ed.name, device: ed, color: this.COLORS[devices.length % this.COLORS.length] }; devices.push(dv); }
+      return dv;
+    };
+    const incomerOf = (kiosk, ed) => {
+      let dv = devices.find(x => x.incomer && x.device.name === ed.name);
+      if (!dv) { dv = { incomer: true, kiosks: [], name: '', device: ed, color: this.COLORS[devices.length % this.COLORS.length] }; devices.push(dv); }
+      const kn = kiosk.name || 'kiosk';
+      if (!dv.kiosks.includes(kn)) dv.kiosks.push(kn);
+      dv.name = `Incomer ${dv.kiosks.join(', ')} · ${ed.name}`;
+      return dv;
+    };
+    // Every incomer of the string is on the plot, even one no erf falls back to.
+    for (const k of strKiosks) { const inc = Retic._incomerDevice(k); if (inc) incomerOf(k, inc); }
     const rows = [];
     let tAllow = 5, ia = null;
     for (const kr of earth.kiosks) {
@@ -168,12 +185,10 @@ const ReticTcc = {
         tAllow = l.tAllowS || tAllow;
         // The erf's own way (or its kiosk's default), else the string breaker.
         const erfObj = kiosk && kiosk.erfs.find(x => x.id === e.erfId);
-        const ed = kiosk && erfObj ? Retic._erfDevice(kiosk, erfObj).device : null;
+        const er = kiosk && erfObj ? Retic._erfDevice(kiosk, erfObj) : null;
+        const ed = er && er.device;
         let dv = devices[0];
-        if (ed) {
-          dv = devices.find(x => x.name === ed.name);
-          if (!dv) { dv = { name: ed.name, device: ed, color: this.COLORS[devices.length % this.COLORS.length] }; devices.push(dv); }
-        }
+        if (ed) dv = er.source === 'incomer' ? incomerOf(kiosk, ed) : wayOf(ed);
         if (dv === devices[0] && l.iaA != null) ia = l.iaA;
         rows.push({ kiosk: kr.name || '', erf: e.erfNumber || e.erfId, ifA: l.ifA, tS: l.tS, ok: l.status === 'pass', dev: dv,
           cable: cableOf(l.withstand, 'service cable') });

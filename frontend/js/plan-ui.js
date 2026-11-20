@@ -1064,6 +1064,15 @@ const PlanUI = {
       row('Fed directly by', escHtml(parent ? (parent.name || 'Kiosk') : ((ms && ms.name) || 'Minisub')));
       row('Load class', clsLabel(k));
       row('Erven', String(k.erfs.length));
+      if (Retic._incomerOptions) {
+        // The kiosk's incomer, edited here on the Demand row itself (one value, no copy to drift).
+        rows.push(`<div class="plan-demand-row"><span>Incomer</span><select data-role="demand-incomer" data-kiosk="${escHtml(k.id)}" aria-label="Incomer breaker of this kiosk" style="max-width:60%">${Retic._incomerOptions(k)}</select></div>`);
+        const inc = Retic._incomerDevice(k), ib = Retic._kioskOwnA(k, res), inA = inc ? Retic._devRating(inc) : 0;
+        if (inc && ib != null && inA > 0) {
+          row('Incomer load', `${Math.round(ib)} A of ${Math.round(inA)} A`, ib > inA ? 'bad' : 'ok');
+          chips.push({ st: this._loadingState(ib, inA), text: `Incomer ${Math.round(ib / inA * 100)} % loaded` });
+        }
+      }
       if (kr) { row('Demand', `${kr.totalKVA} kVA · ${kr.currentA} A`); row('ADMD', `${kr.admdKVA} kVA${kr.admdPerPhase ? '/ph' : ''}`); }
       row('Feeder cable', escHtml(k.feederCable || '—'));
       const fi = this._feederInfo(k, res);
@@ -1481,6 +1490,10 @@ const PlanUI = {
     if (e.target.dataset && (e.target.dataset.xgSize || e.target.dataset.xgUse || e.target.dataset.xgSp)) { if (e.type === 'change') this._onCrossGroupField(e.target); return; }
     if (e.target.dataset && e.target.dataset.role === 'sld-link') { this._onSldLink(e); return; }
     if (e.target.dataset && e.target.dataset.role === 'demand-link') { this._onDemandLink(e); return; }
+    if (e.target.dataset && e.target.dataset.role === 'demand-incomer') {
+      if (e.type === 'change' && typeof Retic !== 'undefined') { Retic.setIncomer(e.target.dataset.kiosk, e.target.value); if (PlanMarkup.refreshProps) PlanMarkup.refreshProps(); }
+      return;
+    }
     if (e.target.dataset && e.target.dataset.role === 'delete') return;
     const key = e.target.dataset ? e.target.dataset.key : null;
     if (!key) return;

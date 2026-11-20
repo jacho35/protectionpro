@@ -26,7 +26,7 @@ const Retic = {
   // pickers' current values.
   _selErfs: new Set(),
   _selFeeders: new Set(),
-  _bulk: { cableType: '', earthCable: '', feederCable: '', phase: '', erfProtection: '', kioskProtection: '', renamePrefix: '', renameStart: 1, renameStyle: 'nest', renameTarget: 'erf' },
+  _bulk: { cableType: '', earthCable: '', feederCable: '', phase: '', erfProtection: '', kioskProtection: '', kioskIncomer: '', renamePrefix: '', renameStart: 1, renameStyle: 'nest', renameTarget: 'erf' },
   _lastTick: null,
 
   ROTATE: 'Rotate',
@@ -196,6 +196,7 @@ const Retic = {
       streetLightKVA: 0,        // fixed, undiversified street-lighting load
       feederCable: s.quickFeederCable || '',
       feederLength: s.quickFeederLen || 0,
+      incomer: 'auto',          // the kiosk's incomer breaker (between its line-side bar and the erf bar); absent on older projects = none
       collapsed: false,
       erfs: [],
     };
@@ -504,7 +505,7 @@ const Retic = {
       this._markDirty();
       if (key === 'feederCable' && typeof PlanSync !== 'undefined') PlanSync.pullCablesFromDemand();   // drawn feeder route follows
       // The kiosk's class sets its effective ADMD — refresh the placeholder.
-      if (key === 'loadClass' || key === 'protection' || key === 'outgoingProtection') this.renderKiosks();   // the card and the side-bar Strings list show the same pick
+      if (key === 'loadClass' || key === 'protection' || key === 'outgoingProtection' || key === 'incomer') this.renderKiosks();   // the card and the side-bar Strings list show the same pick
       this.recompute();
       return;
     }
@@ -614,6 +615,19 @@ const Retic = {
       this._markDirty();
       this.renderKiosks();      // the card's picker and the side-bar list show the same pick
       this.recompute();
+    }
+    else if (action === 'toggle-ksl') {
+      const id = btn.dataset.kiosk;
+      if (this._kslOpen.has(id)) this._kslOpen.delete(id); else this._kslOpen.add(id);
+      this.renderKiosks();
+    }
+    else if (action === 'use-incomer') {
+      this.setIncomer(btn.dataset.kiosk, btn.dataset.protection);
+    }
+    else if (action === 'ksl-focus') {
+      const el = document.querySelector(btn.dataset.target);
+      const box = el && ((el._ss && el._ss.input) || el);       // the type-to-search box over a searchified picker
+      if (box) { box.focus(); if (box.scrollIntoView) box.scrollIntoView({ block: 'center', behavior: 'smooth' }); }
     }
     else if (action === 'string-tcc') {
       if (typeof ReticTcc !== 'undefined') ReticTcc.open(btn.dataset.kiosk);
@@ -1210,6 +1224,10 @@ const Retic = {
         <input type="number" step="0.5" data-action="setting" data-field="maxRunVD" value="${numAttr(s.maxRunVD)}">
       </div>
       <div class="retic-field">
+        <label title="A kiosk incomer on Auto is the smallest LV MCCB / ACB at or above this factor × the kiosk's own design current (its erven, custom loads and street lighting).">Incomer factor (Auto)</label>
+        <input type="number" step="0.05" min="1" placeholder="1.2" data-action="setting" data-field="incomerFactor" value="${numAttr(s.incomerFactor || '')}">
+      </div>
+      <div class="retic-field">
         <label>LV Conductor</label>
         <select data-action="setting" data-field="lvConductor" title="The project's standard LV conductor: those cables are listed first in every LV cable picker (Demand and site plan); the others stay one click away under Show all cables.">
           ${['', 'Al', 'Cu'].map(v => `<option value="${v}"${(s.lvConductor || '') === v ? ' selected' : ''}>${v || 'Any'}</option>`).join('')}</select>
@@ -1403,7 +1421,10 @@ const Retic = {
               <select data-action="kiosk-field" data-kiosk="${escHtml(k.id)}" data-field="protection" data-cable-select data-ss-placeholder="Type to search devices — e.g. mccb 250, gg 100">${this._protectionOptions(k.protection, '— select breaker —')}</select></div>`
               : `<div class="retic-field"><label>String Breaker</label><div class="earth-pen" title="Set once on the head of the string (${escHtml(this._stringHead(k).name || 'kiosk')}); every kiosk fed on from it shares that breaker.">${escHtml(this._stringBreakerName(k))} <span style="color:var(--text-muted)">— string of ${escHtml(this._stringHead(k).name || 'kiosk')}</span></div></div>`}
             <div class="retic-field"><label title="The protection on this kiosk's outgoing ways (MCB / MCCB / fuse). It is the default for every erf's service cable in the earth-fault check; an erf can pick its own in its Protection column. Blank: the service cables are checked against the string breaker.">Outgoing protection (default)</label>
-              <select data-action="kiosk-field" data-kiosk="${escHtml(k.id)}" data-field="outgoingProtection" data-cable-select data-ss-placeholder="Outgoing way — e.g. mcb 40 c, mccb 100">${this._protectionOptions(k.outgoingProtection, '— string breaker —')}</select></div>
+              <select data-action="kiosk-field" data-kiosk="${escHtml(k.id)}" data-field="outgoingProtection" data-cable-select data-ss-placeholder="Outgoing way — e.g. mcb 40 c, mccb 100">${this._protectionOptions(k.outgoingProtection, this._incomerDevice(k) ? '— incomer —' : '— string breaker —')}</select></div>
+            <div class="retic-field"><label title="The breaker between this kiosk's line-side busbar (where the string's incoming and onward cables land) and its erf bar. Auto = the smallest MCCB at or above ${this._incomerFactor()} × the kiosk's own design current. A way with no protection of its own is checked against it; the string breaker still protects the feeders.">Incomer</label>
+              <select data-action="kiosk-field" data-kiosk="${escHtml(k.id)}" data-field="incomer" data-cable-select data-ss-placeholder="Incomer — auto, or e.g. mccb 160">${this._incomerOptions(k)}</select>
+              <div class="incomer-cell" data-incomer-kiosk="${escHtml(k.id)}"></div></div>
             ${this._earthingOf(k) === 'TN-S'
               ? `<div class="retic-field"><label title="Earth conductor of the feeder cable (Cu or Al), for the earth-fault loop and ECC size checks">Feeder Earth Cable</label>
               <select data-action="kiosk-field" data-kiosk="${escHtml(k.id)}" data-field="feederEarth" data-cable-select data-ss-placeholder="Earth cable — type to search, e.g. 25 cu, 35 al">${this._earthCableOptions(k.feederEarth)}</select></div>`
@@ -1416,6 +1437,7 @@ const Retic = {
             <tbody>${erfRows}</tbody>
           </table>
           ${this._loadsTableHtml(k)}
+          ${this._kioskSldHtml(k)}
           <div class="retic-toolbar" style="margin-top:8px">
             <button class="retic-btn" data-action="add-erf" data-kiosk="${escHtml(k.id)}">+ Erf</button>
             <button class="retic-btn" data-action="add-erf-n" data-kiosk="${escHtml(k.id)}" title="Batch size follows the Quick Build 'Erven / Kiosk' setting">+ ${Math.max(1, Math.round(Number(s.quickErven) || 5))} Erven</button>
@@ -1462,6 +1484,8 @@ const Retic = {
           <select data-action="bulk-field" data-field="erfProtection" aria-label="Protection for the selected erven">${['', '__default__'].map(v => `<option value="${v}"${b.erfProtection === v ? ' selected' : ''}>${v === '' ? '— leave unchanged —' : 'Use the kiosk default'}</option>`).join('')}${this._protectionOptions(b.erfProtection, '').replace('<option value=""></option>', '')}</select></div>
         <div class="retic-field"><label data-bulk="kioskProtLabel">Kiosk default protection</label>
           <select data-action="bulk-field" data-field="kioskProtection" aria-label="Default outgoing protection for the selected kiosks">${['', '__default__'].map(v => `<option value="${v}"${b.kioskProtection === v ? ' selected' : ''}>${v === '' ? '— leave unchanged —' : 'Clear (use the string breaker)'}</option>`).join('')}${this._protectionOptions(b.kioskProtection, '').replace('<option value=""></option>', '')}</select></div>
+        <div class="retic-field"><label>Kiosk incomer</label>
+          <select data-action="bulk-field" data-field="kioskIncomer" aria-label="Incomer for the selected kiosks">${[['', '— leave unchanged —'], ['auto', 'Auto'], ['__none__', 'None']].map(([v, l]) => `<option value="${v}"${b.kioskIncomer === v ? ' selected' : ''}>${l}</option>`).join('')}${this._protectionOptions(b.kioskIncomer, '').replace('<option value=""></option>', '')}</select></div>
         <div class="retic-field"><label data-bulk="renameLabel">Rename</label>
           <div class="bulk-rename">
             <select data-action="bulk-field" data-field="renameTarget" aria-label="What to rename">
@@ -1548,7 +1572,7 @@ const Retic = {
     if (pen) warn.push(`${pen} on a TN-C minisub use the PEN conductor — no earth cable to set.`);
     set('warn', warn.join(' '));
     const apply = bar.querySelector('[data-bulk="apply"]');
-    const any = b.cableType || b.earthCable || (b.feederCable && nF) || (b.phase && nE) || (b.erfProtection && nE) || (b.kioskProtection && nF) || renaming;
+    const any = b.cableType || b.earthCable || (b.feederCable && nF) || (b.phase && nE) || (b.erfProtection && nE) || (b.kioskProtection && nF) || (b.kioskIncomer && nF) || renaming;
     apply.disabled = !any;
     apply.textContent = any ? 'Apply' : 'Pick a change to apply';
     // Row / kiosk tick state follows the model.
@@ -1647,9 +1671,10 @@ const Retic = {
       if (b.feederCable) { k.feederCable = b.feederCable; feed++; }
       if (b.earthCable && this._earthingOf(k) === 'TN-S') { k.feederEarth = b.earthCable; earth++; }
       if (b.kioskProtection) { k.outgoingProtection = b.kioskProtection === '__default__' ? '' : b.kioskProtection; prot++; }
+      if (b.kioskIncomer) { k.incomer = b.kioskIncomer === '__none__' ? '' : b.kioskIncomer; prot++; }
     });
     if (!svc && !earth && !feed && !ph && !ren && !prot) { if (typeof UI !== 'undefined') UI.toast('Nothing to change for this selection', 'warning'); return; }
-    this._bulk = { cableType: '', earthCable: '', feederCable: '', phase: '', erfProtection: '', kioskProtection: '', renamePrefix: '', renameStart: 1, renameStyle: b.renameStyle, renameTarget: b.renameTarget };
+    this._bulk = { cableType: '', earthCable: '', feederCable: '', phase: '', erfProtection: '', kioskProtection: '', kioskIncomer: '', renamePrefix: '', renameStart: 1, renameStyle: b.renameStyle, renameTarget: b.renameTarget };
     if ((svc || feed) && typeof PlanSync !== 'undefined') PlanSync.pullCablesFromDemand();   // drawn routes follow
     this._afterMutate();
     const bits = [svc && `${svc} service cable${svc === 1 ? '' : 's'}`, feed && `${feed} feeder`, earth && `${earth} earth`, ph && `${ph} phase`, prot && `${prot} protection`, ren && `${ren} renamed`].filter(Boolean).join(', ');
@@ -1798,6 +1823,7 @@ const Retic = {
   },
 
   updateBadges() {
+    this.updateIncomers();
     const res = AppState.reticResults;
     if (!res) return;
     const byId = {};
@@ -2515,18 +2541,202 @@ const Retic = {
   _defaultProtectionLabel(k) {
     const d = k.outgoingProtection ? this._protectionDevice({ protection: k.outgoingProtection }) : null;
     if (d) return `Kiosk default · ${d.name}`;
+    const inc = this._incomerDevice(k);
+    if (inc) return `Incomer · ${inc.name}`;
     const sd = this._protectionDevice(this._stringHead(k));
     return sd ? `String breaker · ${sd.name}` : '— none selected —';
   },
   // The device that protects one erf's service cable and where it came from:
   // the erf's own pick, else the kiosk's default, else null (the engine then
   // falls back to the string breaker).
-  _erfDevice(k, e) {
+  _erfDevice(k, e, res) {
     const own = e.protection ? this._protectionDevice({ protection: e.protection }) : null;
     if (own) return { device: own, source: 'erf' };
     const kd = k.outgoingProtection ? this._protectionDevice({ protection: k.outgoingProtection }) : null;
     if (kd) return { device: kd, source: 'kiosk' };
+    const inc = this._incomerDevice(k, res);
+    if (inc) return { device: inc, source: 'incomer' };
     return { device: null, source: 'string' };
+  },
+
+  // ─── Kiosk incomer ───
+  // The breaker between a kiosk's line-side busbar (where the string's incoming
+  // and onward cables land) and its erf bar. So the string breaker still
+  // protects the feeders; the incomer protects this kiosk's bar and is the
+  // fallback for a way with no device of its own.
+  // k.incomer: '' / absent = none (every project saved before it), 'auto' =
+  // the smallest LV MCCB / ACB ≥ factor × the kiosk's OWN current (its erven,
+  // custom loads and street lighting — not the string's), 'cb:<id>' /
+  // 'fuse:<id>' = picked by hand.
+  INCOMER_K: 1.2,
+  _incomerFactor() { const f = Number(this.settings && this.settings.incomerFactor); return f > 0 ? f : this.INCOMER_K; },
+  _kioskOwnA(k, res = AppState.reticResults) {
+    const kr = res && res.kiosks && res.kiosks.find(r => r.kioskId === k.id);
+    if (!kr) return null;
+    const a = kr.worstPhaseA != null ? kr.worstPhaseA : kr.currentA;
+    return a != null && isFinite(Number(a)) ? Number(a) : null;
+  },
+  _incomerAutoFit(k, res) {
+    const a = this._kioskOwnA(k, res);
+    return a == null ? null : this._fitBreaker(Math.max(a * this._incomerFactor(), 1));
+  },
+  _incomerDevice(k, res) {
+    const v = k && k.incomer;
+    if (!v) return null;
+    if (v !== 'auto') return this._protectionDevice({ protection: v });
+    const fit = this._incomerAutoFit(k, res === undefined ? AppState.reticResults : res);
+    return fit ? this._protectionDevice({ protection: 'cb:' + fit.id }) : null;
+  },
+  _devRating(dev) {
+    const p = (dev && dev.props) || {};
+    return dev ? (dev.kind === 'fuse' ? Number(p.rated_current_a) : Number(p.trip_rating_a)) || 0 : 0;
+  },
+  _incomerOptions(k) {
+    const fit = this._incomerAutoFit(k);
+    const auto = `<option value="auto"${k.incomer === 'auto' ? ' selected' : ''}>Auto${fit ? ' · ' + escHtml(fit.name) : ''}</option>`;
+    return this._protectionOptions(k.incomer === 'auto' ? '' : (k.incomer || ''), 'None').replace('</option>', '</option>' + auto);
+  },
+  // Opening and clearing time of a device at I amps (the published tolerance
+  // band of a breaker; a fuse's pre-arcing time and total clearing ×1.2, as the
+  // earth check). Infinity = does not operate.
+  _tripBand(dev, I) {
+    const p = dev.props || {};
+    if (dev.kind === 'fuse') {
+      const t = fuseTripTime(Number(p.rated_current_a), I);
+      if (t == null || t === Infinity) return { lo: Infinity, hi: Infinity };
+      return { lo: t, hi: Math.max(t * 1.2, 0.004) };
+    }
+    const b = cbTripBand(p, I);
+    return { lo: b.tMin, hi: b.tMax };
+  },
+  // Discrimination of a downstream device under an upstream one from the
+  // downstream rating up to iMax: the downstream must clear (top of its band)
+  // before the upstream starts to open (bottom of its band) wherever the
+  // upstream operates. limitA = the lowest current where that fails.
+  _selectivity(up, down, iMax) {
+    const lo = Math.max(this._devRating(down) * 1.05, 1);
+    if (!(iMax > lo)) return { ok: true, limitA: null };
+    const n = 60;
+    for (let i = 0; i <= n; i++) {
+      const I = lo * Math.pow(iMax / lo, i / n);
+      const u = this._tripBand(up, I), d = this._tripBand(down, I);
+      if (u.lo === Infinity) continue;
+      if (!(d.hi < u.lo)) return { ok: false, limitA: I };
+    }
+    return { ok: true, limitA: null };
+  },
+  _fmtKA(a) { return a >= 1000 ? (Math.round(a / 100) / 10) + ' kA' : Math.round(a) + ' A'; },
+  // The incomer's checks for one kiosk: load (Ib ≤ In, a fail) and
+  // discrimination with the string breaker above and each way below it over the
+  // kiosk's fault range (warnings). [{ id, sev, text, fix?, curves? }]
+  _incomerChecks(k, res = AppState.reticResults) {
+    const inc = this._incomerDevice(k, res);
+    const out = [];
+    if (!inc) return out;
+    const name = k.name || 'Kiosk';
+    const ib = this._kioskOwnA(k, res), inA = this._devRating(inc);
+    if (ib != null && inA > 0 && ib > inA) {
+      const fit = this._fitBreaker(ib * this._incomerFactor());
+      out.push({ id: 'load', sev: 'fail', text: `${name}: incomer ${inc.name} carries ${Math.round(ib)} A`, fix: fit ? { protection: 'cb:' + fit.id, label: `Use ${fit.name}` } : null });
+    }
+    const ek = res && res.earth && (res.earth.kiosks || []).find(r => r.kioskId === k.id);
+    const iMax = ek && Number(ek.ik3A) > 0 ? Number(ek.ik3A) : null;
+    if (iMax) {
+      const head = this._stringHead(k);
+      const sb = this._protectionDevice(head);
+      if (sb) {
+        const s = this._selectivity(sb, inc, iMax);
+        if (!s.ok) out.push({ id: 'up', sev: 'warn', curves: head.id, text: `${name}: incomer ${inc.name} and string breaker ${sb.name} are not selective above ${this._fmtKA(s.limitA)} (Ik at the kiosk ${this._fmtKA(iMax)})` });
+      }
+      const ways = new Map();
+      for (const e of k.erfs) {
+        const ed = this._erfDevice(k, e, res);
+        if (ed.source === 'erf' || ed.source === 'kiosk') ways.set(ed.device.name, ed.device);
+      }
+      for (const w of ways.values()) {
+        const s = this._selectivity(inc, w, iMax);
+        if (!s.ok) out.push({ id: 'way:' + w.name, sev: 'warn', curves: this._stringHead(k).id, text: `${name}: way ${w.name} and incomer ${inc.name} are not selective above ${this._fmtKA(s.limitA)}` });
+      }
+    }
+    return out;
+  },
+  // The kiosk's single line, drawn from its data (nothing stored): the
+  // line-side busbar with the string's incoming and onward cables, the
+  // incomer, the erf bar and a way per erf. A part focuses its picker.
+  _kslOpen: new Set(),
+  _kioskSldHtml(k) {
+    const open = this._kslOpen.has(k.id);
+    const head = `<button type="button" class="retic-btn ksl-toggle" data-action="toggle-ksl" data-kiosk="${escHtml(k.id)}" aria-expanded="${open}">${open ? '▾' : '▸'} Kiosk single line</button>`;
+    if (!open) return `<div class="ksl-wrap">${head}</div>`;
+    const card = `.kiosk-card[data-kiosk="${CSS.escape(k.id)}"]`;
+    const part = (target, cls, html, title) => `<button type="button" class="ksl-dev ${cls}" data-action="ksl-focus" data-target="${escHtml(target)}" title="${escHtml(title)}">${html}</button>`;
+    const parent = this.kiosks.find(o => o.id === k.fedFrom);
+    const ms = parent ? null : this._minisubOf(k);
+    const from = `From ${escHtml(parent ? parent.name || 'kiosk' : (ms && ms.name) || 'minisub')}${k.feederCable ? ' · ' + escHtml(k.feederCable) : ''}${k.feederLength ? ' · ' + Math.round(k.feederLength) + ' m' : ''}`;
+    const onward = this.kiosks.filter(o => o.fedFrom === k.id);
+    const to = onward.length ? 'To ' + onward.map(o => escHtml(o.name || 'kiosk') + (o.feederCable ? ' · ' + escHtml(o.feederCable) : '')).join(', ') : 'End of the string';
+    const sb = this._protectionDevice(this._stringHead(k));
+    const inc = this._incomerDevice(k);
+    const ib = this._kioskOwnA(k);
+    const incHtml = k.incomer
+      ? `Incomer<br><span>${inc ? escHtml(inc.name) : 'Auto (after the demand)'}${k.incomer === 'auto' ? ' · Auto' : ''}</span>`
+      : 'No incomer<br><span>ways on the string breaker</span>';
+    const MAX = 16;
+    const ways = k.erfs.slice(0, MAX).map(e => {
+      const ed = this._erfDevice(k, e);
+      const fallback = ed.source === 'incomer' || ed.source === 'string';
+      const lbl = ed.device ? (ed.source === 'incomer' ? 'incomer' : escHtml(ed.device.name)) : 'string';
+      return `<div class="ksl-way"><div class="ksl-tick"></div>${part(`${card} select[data-erf="${CSS.escape(e.id)}"][data-field="protection"]`, fallback ? 'ksl-fallback' : '', lbl, `Erf ${e.erfNumber || ''}: ${ed.device ? ed.device.name : 'string breaker'} — click to change`)}<span>Erf ${escHtml(e.erfNumber || '')}</span></div>`;
+    }).join('') + (k.erfs.length > MAX ? `<div class="ksl-way ksl-more">+${k.erfs.length - MAX} more</div>` : '');
+    return `<div class="ksl-wrap">${head}
+      <div class="ksl" role="group" aria-label="Single line of ${escHtml(k.name || 'the kiosk')}">
+        <div class="ksl-line"><span class="ksl-in">${from}</span><span class="ksl-out">${to}</span></div>
+        <div class="ksl-bar" title="The string's incoming and onward cables land here: a fault on this bar or the onward cable is the string breaker's${sb ? ' (' + escHtml(sb.name) + ')' : ''}.">Line-side busbar${sb ? ` · string breaker ${escHtml(sb.name)}` : ''}</div>
+        <div class="ksl-drop"></div>
+        ${part(`${card} select[data-field="incomer"]`, k.incomer ? 'ksl-incomer' : 'ksl-fallback', incHtml, 'The incomer — click to change')}
+        <div class="ksl-drop"></div>
+        <div class="ksl-bar ksl-erfbar">Erf bar${ib != null ? ` · ${Math.round(ib)} A` : ''}</div>
+        <div class="ksl-ways">${ways || '<span class="retic-hint">No erven yet</span>'}</div>
+      </div></div>`;
+  },
+
+  // Set a kiosk's incomer ('' none, 'auto', 'cb:<id>' / 'fuse:<id>'): one undo step. Also used by the plan's kiosk panel.
+  setIncomer(kioskId, value) {
+    const k = this.kioskById(kioskId);
+    if (!k || (k.incomer || '') === (value || '')) return;
+    k.incomer = value || '';
+    this._snapshot();
+    this._markDirty();
+    if (this._active) { this.renderKiosks(); this.recompute(); }
+    else if (this.computeInBackground) this.computeInBackground();
+  },
+  // The incomer's status under its picker in the kiosk card (results arrive after the render).
+  updateIncomers() {
+    for (const k of this.kiosks) {
+      const c = document.querySelector(`.incomer-cell[data-incomer-kiosk="${CSS.escape(k.id)}"]`);
+      if (!c) continue;
+      const fit = this._incomerAutoFit(k);
+      const ao = c.parentElement && c.parentElement.querySelector('option[value="auto"]');
+      if (ao) { ao.textContent = 'Auto' + (fit ? ' · ' + fit.name : ''); const ss = ao.parentElement._ss; if (ss && ss.refresh) ss.refresh(); }
+      const inc = this._incomerDevice(k);
+      if (!k.incomer) { c.innerHTML = '<span class="retic-hint">No incomer: the ways fall back to the string breaker.</span>'; continue; }
+      if (!inc) { c.innerHTML = '<span class="retic-hint">Auto: sized after the demand is calculated.</span>'; continue; }
+      const ib = this._kioskOwnA(k), inA = this._devRating(inc);
+      const checks = this._incomerChecks(k);
+      const bits = [];
+      if (ib != null && inA > 0) {
+        const load = checks.find(x => x.id === 'load');
+        bits.push(this._earthPill(load ? 'fail' : 'pass', `${Math.round(ib)} A of ${Math.round(inA)} A`, `The kiosk's own design current (its erven, custom loads and street lighting) against the incomer's rating.${k.incomer === 'auto' ? ` Auto: the smallest breaker ≥ ${this._incomerFactor()} × that current.` : ''}`));
+        if (load && load.fix) bits.push(`<button type="button" class="retic-btn" data-action="use-incomer" data-kiosk="${escHtml(k.id)}" data-protection="${escHtml(load.fix.protection)}">${escHtml(load.fix.label)}</button>`);
+      }
+      const disc = checks.filter(x => x.sev === 'warn');
+      const earth = AppState.reticResults && AppState.reticResults.earth;
+      if (disc.length) {
+        bits.push(this._earthPill('info', `not selective (${disc.length})`, disc.map(x => x.text).join('\n')));
+        bits.push(`<button type="button" class="retic-btn ms-curve" data-action="string-tcc" data-kiosk="${escHtml(this._stringHead(k).id)}" title="The string's curves with this incomer">◔ Curves</button>`);
+      } else if (earth) bits.push(this._earthPill('pass', 'selective', 'Clears before the string breaker, and every way clears before it, up to the fault level at the kiosk.'));
+      c.innerHTML = bits.join(' ');
+    }
   },
   _earthingOf(k) { const ms = this._minisubOf(k); return (ms && ms.earthing) || 'TN-S'; },
 
@@ -2573,10 +2783,10 @@ const Retic = {
         device: this._stringHead(k, kiosks) === k ? this._protectionDevice(k) : null,   // one breaker per string, on its head
         feeder: { cable: this._cableDict(k.feederCable), earth: this._cableDict(k.feederEarth), lengthM: Number(k.feederLength) || 0 },
         erfs: k.erfs.map(e => {
-          const ed = this._erfDevice(k, e);
+          const ed = this._erfDevice(k, e, res);
           return {
             id: e.id, erfNumber: e.erfNumber,
-            device: ed.device, deviceSource: ed.source,        // the service cable's own way; null → string breaker
+            device: ed.device, deviceSource: ed.source,        // the erf's own way, the kiosk default, the incomer; null → string breaker
             service: { cable: this._cableDict(e.cableType), earth: this._cableDict(e.earthCable), lengthM: Number(e.length) || 0 },
           };
         }),
@@ -2669,7 +2879,7 @@ const Retic = {
 
   _earthTip(item) {
     const l = item.loop || {}, e = item.ecc || {};
-    const by = l.device ? `Protected by ${l.device} (${l.deviceSource === 'erf' ? "this erf's own" : l.deviceSource === 'kiosk' ? "the kiosk's default" : 'the string breaker'}).` : '';
+    const by = l.device ? `Protected by ${l.device} (${l.deviceSource === 'erf' ? "this erf's own" : l.deviceSource === 'kiosk' ? "the kiosk's default" : l.deviceSource === 'incomer' ? "the kiosk's incomer" : 'the string breaker'}).` : '';
     return [by, l.note, e.note].filter(Boolean).join('\n');
   },
 
@@ -2680,6 +2890,7 @@ const Retic = {
   },
 
   updateEarth() {
+    this.updateIncomers();
     const earth = AppState.reticResults && AppState.reticResults.earth;
     if (!earth) return;
     for (const k of earth.kiosks) {
