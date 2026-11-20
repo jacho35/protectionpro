@@ -94,6 +94,10 @@ const PhotoLib = {
           <p><label class="pl-h">Mounting height <input type="number" data-pl-h value="${h}" min="0.5" max="40" step="0.1"> m</label>
             ${iso.none ? '' : ` · ${Math.round(p.lumens)} lm · ${iso.grid} m grid · lux`}</p>${iso.svg}</section>
         <section class="pl-card" aria-label="Cone diagram"><h4>Cone diagram</h4>${coneBody}</section>
+        ${p.generic ? '' : `<section class="pl-card" aria-label="Orientation"><h4>Orientation (linear fittings)</h4>
+          <p><label class="pl-h">Length runs along <select data-pl-axis>${['C0', 'C90'].map(a => `<option value="${a}"${(p.lengthAxis || 'C0') === a ? ' selected' : ''}>${a} plane${a === 'C0' ? ' (default)' : ''}</option>`).join('')}</select></label></p>
+          ${p.sizeM ? `<p>Fitting size from the file: ${Math.round(p.sizeM.length * 1000)} × ${Math.round(p.sizeM.width * 1000)} × ${Math.round(p.sizeM.height * 1000)} mm. It is drawn at this size on the plan and in 3D.</p>` : '<p class="pv-none">This entry has no size from the file. Import the LDT again to get it.</p>'}
+          ${p.orientationUnconfirmed ? `<p style="color:#8a5a00"><b>Orientation unconfirmed.</b> ${escHtml(p.orientationUnconfirmed)}</p>` : ''}</section>`}
         <section class="pl-card" aria-label="Key figures"><h4>Key figures</h4>
           <dl class="pl-facts">${PhotoView.facts(p).map(([k, v]) => `<div><dt>${escHtml(k)}</dt><dd>${escHtml(v)}</dd></div>`).join('')}</dl></section>
       </div>`;
@@ -167,6 +171,14 @@ const PhotoLib = {
         const added = await this.importFiles(e.target.files);
         if (added.length) this._sel = added[0];
         render();
+      } else if (e.target.matches('[data-pl-axis]')) {
+        const p = this.get(this._sel);
+        if (p) {
+          p.lengthAxis = e.target.value === 'C90' ? 'C90' : 'C0';
+          this.onChanged();
+          ov.querySelector('[data-pl-detail]').innerHTML = this.detailHtml(p);
+          if (typeof PlanEngine !== 'undefined') PlanEngine.requestDraw({ fg: true });
+        }
       } else if (e.target.matches('[data-pl-h]')) {
         const h = +e.target.value;
         if (h > 0) this._viewH = Math.min(Math.max(h, 0.5), 40);
