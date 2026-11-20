@@ -35,7 +35,7 @@ const PlanLayout = (() => {
     kgeo: 'boundary', kd: 2,                                       // cables + kiosks run kd m inside the erf boundary ('street' = the old street-line offset)
     kmode: 'opt', xpen: 300, xkiosk: false, n: 6, maxc: 70, worth: 170, knet: true,   // kiosks (n = the most erven one kiosk serves; knet = one solve over the whole street network)
     strN: 4, strE: 0, strL: 350, strMode: 'fewest',                                     // LV strings: most kiosks on one string off the mini-sub (0 = no limit); 'fewest' = fewest strings, 'even' = strings of similar size
-    kside: 'count', subBal: 0,                                                                    // kiosk side of each street; the mini-sub balance (0 = off)
+    kside: 'count', subBal: 0, civMode: 'avoid',                                                                    // kiosk side of each street; the mini-sub balance (0 = off)
     m: 8, mhmerge: false, maxmh: 120, fibre: 'opp', topo: 'ring',              // fibre
     share: true, xmode: 'bound', xpref: 'near', junct: false, j110: 2, j160: 1, spare: 0,   // crossings
     route: 'blocks', xrule: 'leg', setback: 3, xroute: 20, gapTol: 4, gapFace: 40,       // routing: 'blocks' = along the erf boundaries, roads as topology only (PlanBlocks); 'street' = the street-line corridors
@@ -177,6 +177,7 @@ const PlanLayout = (() => {
         box: [Math.min(...e.poly.map(q => q[0])), Math.min(...e.poly.map(q => q[1])), Math.max(...e.poly.map(q => q[0])), Math.max(...e.poly.map(q => q[1]))] };
     });
     const BM = P.route !== 'street' ? blocksModel(input, P, erven, streets) : null;       // the corridor model (route 'blocks'): kiosks are chosen by the real route
+    if (BM) civMark(BM, streets, input, P);
     const ks = {}, fs = {}, overrides = input.overrides || {}, cuts = new Set(input.cuts || []);
     streets.forEach(st => { ks[st.id] = (input.ks && input.ks[st.id]) || 0; fs[st.id] = (input.fs && input.fs[st.id]) || null; });
     const warns = [];
@@ -1530,22 +1531,68 @@ const PlanLayout = (() => {
   const blocksLib = () => typeof PlanBlocks !== 'undefined' ? PlanBlocks : (typeof require === 'function' ? (() => { try { return require('./plan-blocks.js'); } catch (e) { return null; } })() : null);
   // the corridor model of an input (built once: the side trials of kside 'try' solve the same erven and streets again)
   const BM_CACHE = typeof WeakMap !== 'undefined' ? new WeakMap() : null;
+  // ── the civil-services side of a street (water, sewer, stormwater: `input.civ` street id → side ±1) ──
+  // Every corridor node on that side gets a cost factor (`civMode` 'avoid' ×4: used where the other side is much worse; 'keep' ×60: only
+  // where there is no other way, which in practice is the lead from a crossing into an erf on that side). A node belongs to the street it
+  // is nearest to (within the reserve + 15 m), never past a street's ends. The kiosk and fibre side of a street with no side of its own is
+  // the other side (the UI passes it in `ks` / `fs`).
+  function civMark(M, streets, input, P) {
+    const civ = input.civ || {}, on = streets.some(st => civ[st.id] === 1 || civ[st.id] === -1), K = P.civMode === 'keep' ? 60 : 4;
+    for (const g of Object.values(M.cls)) {
+      if (!on) { g.civ = null; continue; }
+      const c = new Float32Array(g.nodes.length).fill(1);
+      g.nodes.forEach((nd, i) => {
+        if (!nd.R.front[nd.i]) return;
+        let best = null;
+        for (const st of streets) { const pr = project(st, nd.p[0], nd.p[1]); if (pr.d > st.w / 2 + 15) continue; if (!best || pr.d < best.pr.d) best = { st, pr }; }
+        if (!best || !civ[best.st.id] || best.pr.s < 0.05 || best.pr.s > best.st.len - 0.05) return;
+        if (best.pr.side === civ[best.st.id]) c[i] = K;
+      });
+      g.civ = c;
+    }
+  }
+  // ── a corridor for a chosen side that no erf fronts ──
+  // A street with civil services on one side may have open land on the other — a park, a reserve with erven on the civil side only. The
+  // corridors are built from erf boundaries, so there would be none to run along there, and every run would go back to the civil side.
+  // Each stretch of at least 15 m on the side away from the civil services with no erf within 6 m of the reserve edge (12 m clear of every
+  // junction) gets a thin strip, 2 m deep, along the reserve edge: an obstacle like an unserviced erf, whose corridor is then that verge.
+  // (A side set by hand with no civil side keeps its own rules: kiosks and manholes off the corridors, `ownSide`, `sameVerge`.)
+  function sideStrips(input, erven, streets) {
+    const out = [], want = st => { const c = input.civ && input.civ[st.id]; return c === 1 || c === -1 ? -c : 0; };
+    const polys = (input.erven || []).filter(e => e.poly && e.poly.length >= 3).map(e => e.poly);
+    const pipA = (x, y, p) => { let c = false; for (let i = 0, j = p.length - 1; i < p.length; j = i++) { const a = p[i], b = p[j]; if ((a[1] > y) !== (b[1] > y) && x < (b[0] - a[0]) * (y - a[1]) / (b[1] - a[1]) + a[0]) c = !c; } return c; };
+    for (const st of streets) {
+      const v = want(st); if (!v || st.len < 20) continue;
+      const jS = (st.jids || []).map(id => st.nodeSt[id]), half = st.w / 2, step = 2;
+      const free = s => { if (jS.some(q => Math.abs(q - s) < 12)) return false;
+        for (const off of [half + 1, half + 3.5, half + 6]) { const p = ptAt(st, s, v * off); if (polys.some(P => pipA(p[0], p[1], P))) return false; } return true; };
+      let a = null;
+      const close = b => { if (a != null && b - a >= 15) { const n = Math.max(2, Math.ceil((b - a) / 2.5)), inner = [], outer = [];
+        for (let i = 0; i <= n; i++) { const q = a + (b - a) * i / n; inner.push(ptAt(st, q, v * half).slice(0, 2)); outer.push(ptAt(st, q, v * (half + 2)).slice(0, 2)); }
+        out.push({ id: `strip:${st.id}:${out.length}`, poly: inner.concat(outer.reverse()), unserviced: true }); } a = null; };
+      for (let q = 0; q <= st.len + 1e-9; q += step) { if (free(Math.min(q, st.len))) { if (a == null) a = q; } else close(q - step); }
+      close(st.len);
+    }
+    return out;
+  }
   function blocksModel(input, P, erven, streets) {
     const PB = blocksLib(); if (!PB || !erven.length || !streets.length) return null;
+    const strips = sideStrips(input, erven, streets);
     const sec = input.sections && input.sections.on !== false && Array.isArray(input.sections.list) && input.sections.list.length ? (input.sections.list.find(x => x.id === input.sections.def) || input.sections.list[0]) : null;
     const KD = Math.max(0.3, P.kd != null ? +P.kd : 2), kdP = sec ? Math.max(0.3, +sec.items.lv.off) : KD, kdF = sec ? Math.max(0.3, +sec.items.fi.off) : Math.max(0.3, KD - 0.3);
     const opt = { gap: +P.gapTol, gapFace: +P.gapFace, setback: +P.setback, rule: P.xrule, xpen: +P.xroute, xshare: 0 };
-    const sig = JSON.stringify([kdP, kdF, opt, (input.erven || []).filter(e => e.unserviced).map(e => e.id), streets.map(s => s.pts.length + ':' + s.pts[0] + ':' + s.pts[s.pts.length - 1])]);
+    const sig = JSON.stringify([kdP, kdF, opt, (input.erven || []).filter(e => e.unserviced).map(e => e.id), strips.map(x => x.id + ':' + x.poly.length + ':' + x.poly[0]), streets.map(s => s.pts.length + ':' + s.pts[0] + ':' + s.pts[s.pts.length - 1])]);
     const key = input.erven, hit = BM_CACHE && key && BM_CACHE.get(key);
     if (hit && hit.sig === sig) { Object.values(hit.M.cls).forEach(g => g.resetUse()); return hit.M; }
     const blocked = (input.erven || []).filter(e => e.unserviced && e.poly && e.poly.length >= 3).map(e => ({ id: e.id, poly: e.poly.map(p => [p[0], p[1]]) }));
-    const M = PB.model({ erven: erven.map(e => ({ id: e.id, poly: e.poly })).concat(blocked), lines: streets.map(s => s.pts), classes: { p: kdP, f: kdF } }, opt);
+    const M = PB.model({ erven: erven.map(e => ({ id: e.id, poly: e.poly })).concat(blocked, strips), lines: streets.map(s => s.pts), classes: { p: kdP, f: kdF } }, opt);
     if (BM_CACHE && key) BM_CACHE.set(key, { sig, M });
     return M;
   }
   function reroute(r, input, P) {
     const PB = blocksLib(); if (!PB || !r.erven.length || !r.streets.length) return false;
     const M = r._bm || blocksModel(input, P, r.erven, r.streets); if (!M) return false;
+    civMark(M, r.streets, input, P);
     Object.values(M.cls).forEach(g => g.resetUse()); delete r._bm;
     const G = M.cls.p, GF = M.cls.f, maxc = +P.maxc, simp = pts => PB.rdp(pts, 0.03), blk = e => M.blockOf.get(e.id);
     r.route = 'blocks'; r.blocks = M; r.keepOut = { fixed: 0, failed: 0 };
@@ -1630,7 +1677,7 @@ const PlanLayout = (() => {
       rt.commit('svc'); if (rt.xsite) rt.xsite.used.push('svc'); else if (!rt.own && e.kiosk && e.kiosk.xjoin) e.kiosk.xjoin.used.push('svc');
       // the stretch of its own verge the kiosk's services run along: one trench (trenchesBlocks)
       if (rt.vspan && e.kiosk) { const v = e.kiosk.verge || (e.kiosk.verge = { st: rt.vspan.st, off: rt.vspan.off, lo: rt.vspan.a, hi: rt.vspan.a }); v.lo = Math.min(v.lo, rt.vspan.b); v.hi = Math.max(v.hi, rt.vspan.b); }
-      e.route = simpKeep(rt.full, rt.sites); e.cable = plen(e.route); e.hopN = 0; e.xsites = rt.sites; e.farLen = rt.farLen || 0;
+      e.route = simpKeep(rt.full, rt.sites); e.cable = plen(e.route); e.hopN = 0; e.xsites = rt.sites; e.farLen = rt.farLen || 0; e.civLen = rt.civLen || 0;
     }
     // fibre: manholes onto the fibre ring, every trunk section and erf duct laid again between its own two ends
     const F = r.fibre;
@@ -1672,7 +1719,7 @@ const PlanLayout = (() => {
         if (ed.a.bnode == null || ed.b.bnode == null) continue;
         const rt = GF.route(ed.a.bnode, ed.b.bnode); if (!rt) { if (active.has(ed)) keptRuns++; continue; }
         if (active.has(ed)) { rt.commit('fib'); for (const q of [ed.a, ed.b]) if (q.xjoin) q.xjoin.used.push('fib'); }
-        ed.pts = simp([[ed.a.x, ed.a.y], ...rt.pts, [ed.b.x, ed.b.y]]); ed.len = plen(ed.pts);
+        ed.pts = simp([[ed.a.x, ed.a.y], ...rt.pts, [ed.b.x, ed.b.y]]); ed.len = plen(ed.pts); ed.civLen = rt.civLen || 0;
       }
       // erf ducts from a manhole off the corridors, put by hand, or on a street whose own fibre / kiosk side you set (`input.fsOwn`, not All
       // streets) to an erf across its street: along the manhole's verge to that erf's
@@ -1696,12 +1743,12 @@ const PlanLayout = (() => {
             const key = m.id + '|' + Math.round(sx); let site = fsites.get(key);
             if (!site) { site = { cls: 'f', kind: 'manhole', a: vg[vg.length - 1], b: GF.nodes[nd].p.slice(), used: [] }; fsites.set(key, site); kx.push(site); }
             rt.commit('fib'); site.used.push('fib'); span(sx);
-            e.duct = simp([[m.x, m.y], ...vg.slice(1), ...rt.pts, e.fibrePt.slice()]); e.ductLen = plen(e.duct); e.fibX = null; continue;
+            e.duct = simp([[m.x, m.y], ...vg.slice(1), ...rt.pts, e.fibrePt.slice()]); e.ductLen = plen(e.duct); e.fibX = null; e.ductCivLen = rt.civLen || 0; continue;
           }
           }
         }
         const rt = GF.route(m.bnode, GF.attachInto(e.fibrePt, blk(e), e.id)); if (!rt) { keptRuns++; continue; }
-        rt.commit('fib'); if (m.xjoin) m.xjoin.used.push('fib'); e.duct = simp([[m.x, m.y], ...rt.pts.slice(m.xjoin ? 0 : 1), e.fibrePt.slice()]); e.ductLen = plen(e.duct); e.fibX = null;
+        rt.commit('fib'); if (m.xjoin) m.xjoin.used.push('fib'); e.duct = simp([[m.x, m.y], ...rt.pts.slice(m.xjoin ? 0 : 1), e.fibrePt.slice()]); e.ductLen = plen(e.duct); e.fibX = null; e.ductCivLen = rt.civLen || 0;
       }
     }
     // LV: every link of the tree laid again between its two ends (a string head from its mini-sub's stub)
@@ -1712,12 +1759,20 @@ const PlanLayout = (() => {
       // between its two ends crosses no street line and no erf (the mini-sub or kiosk beside it on the same verge) it runs straight, rather
       // than across to the far corridor and back over the kiosk's own crossing
       const straight = (A, B) => (A.xjoin || B.xjoin) && M.streetSI && M.crossesBlock && !M.streetSI.crosses([A.x, A.y], [B.x, B.y], true) && !M.crossesBlock([A.x, A.y], [B.x, B.y]);
+      // two kiosks off the corridors (`xjoin`: their side of the street has no erf to give it one, e.g. the side away from the civil services)
+      // on the same street and side: along that verge, as fibre trunks between manholes do
+      const lvVerge = (A, B) => { if (!A.xjoin || !B.xjoin || !A.road || A.road !== B.road || A.x == null || B.x == null) return null;
+        const st = A.road, pa = project(st, A.x, A.y), pb = project(st, B.x, B.y); if (pa.side !== pb.side) return null;
+        const off = pa.side * (pa.d + pb.d) / 2, n = Math.max(1, Math.ceil(Math.abs(pb.s - pa.s) / 2.5)), out = [[A.x, A.y]];
+        for (let i = 0; i <= n; i++) out.push(ptAt(st, pa.s + (pb.s - pa.s) * i / n, off).slice(0, 2));
+        out.push([B.x, B.y]); return out; };
       for (const l of net.lvLinks) {
         const A = l.from, B = l.to;
         if (straight(A, B)) { l.pts = [[A.x, A.y], [B.x, B.y]]; l.len = plen(l.pts); l.direct = true; continue; }
+        { const vp = lvVerge(A, B); if (vp) { l.pts = simp(vp); l.len = plen(l.pts); l.direct = true; continue; } }
         if (A.bnode == null || B.bnode == null) { keptRuns++; continue; }
         const rt = G.route(A.bnode, B.bnode); if (!rt) { keptRuns++; continue; }
-        rt.commit('lv'); for (const k of [A, B]) if (k.xjoin) k.xjoin.used.push('lv'); l.pts = simp([[A.x, A.y], ...rt.pts, [B.x, B.y]]); l.len = plen(l.pts);
+        rt.commit('lv'); for (const k of [A, B]) if (k.xjoin) k.xjoin.used.push('lv'); l.pts = simp([[A.x, A.y], ...rt.pts, [B.x, B.y]]); l.len = plen(l.pts); l.civLen = rt.civLen || 0;
       }
       net.lv = net.lvLinks.filter(l => !l.split).map(l => ({ a: l.from, b: l.to, pts: l.pts, len: l.len, xs: [] }));
       net.lvLen = net.lv.reduce((t, ed) => t + ed.len, 0);
@@ -1754,6 +1809,14 @@ const PlanLayout = (() => {
     if (keptRuns) r.warns.push(`${keptRuns} LV or fibre run${keptRuns === 1 ? '' : 's'} could not be laid along the erf boundaries (no path on the corridors) and kept the street-line route.`);
     const links = [...G.sites, ...GF.sites].filter(x => x.kind === 'link' && x.used.length).length;
     if (links) r.warns.push(`${links} road crossing${links === 1 ? '' : 's'} could not be put on a junction leg (the mouth is open or blocked) and ${links === 1 ? 'is a straight link' : 'are straight links'} between the corridors: check ${links === 1 ? 'it' : 'them'} on the plan.`);
+    // runs along the civil-services side: more than the lead into an erf there (8 m) for a service or erf duct, more than 2 m for an LV or
+    // fibre trunk run (each with its line, for Show)
+    r.civRuns = [];
+    if (G.civ) {
+      r.erven.forEach(e => { if ((e.civLen || 0) > 8 && e.route) r.civRuns.push({ kind: 'service', id: e.id, len: e.civLen, pts: e.route }); if ((e.ductCivLen || 0) > 8 && e.duct) r.civRuns.push({ kind: 'duct', id: e.id, len: e.ductCivLen, pts: e.duct }); });
+      net.lvLinks.forEach(l => { if ((l.civLen || 0) > 2 && l.pts) r.civRuns.push({ kind: 'lv', len: l.civLen, pts: l.pts }); });
+      ((r.fibre && r.fibre.trunks) || []).forEach(t => { if ((t.civLen || 0) > 2 && t.pts) r.civRuns.push({ kind: 'trunk', len: t.civLen, pts: t.pts }); });
+    }
     const jw = new Map(); G.warns.forEach(w => { if (w.j && !jw.has(w.j)) jw.set(w.j, w.text); });
     const jBad = [...jw.entries()].filter(([, t]) => !/one side only/.test(t));
     if (jBad.length) r.warns.push(`${jBad.length} junction leg${jBad.length === 1 ? '' : 's'} got no road crossing (${jBad.slice(0, 3).map(([, t]) => t).join('; ')}): cables there go round to the next crossing.`);
