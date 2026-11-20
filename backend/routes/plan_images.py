@@ -23,8 +23,10 @@ MAX_UPLOAD_BYTES = 60 * 1024 * 1024
 # `application/json` carries a DXF trace-over underlay: the normalised entity
 # list the DXF import already produces, stored instead of the source DXF so a
 # reload is one GET rather than another ezdxf parse.
-ALLOWED_MIME = {"image/png", "image/jpeg", "image/webp", "application/pdf", "application/json"}
-ALLOWED_KIND = {"raster", "pdf", "dxf"}
+# `application/dxf` (kind `dxfsrc`) is that underlay's ORIGINAL file, kept so the plan's DXF export can merge the drawing exactly
+# (linetypes, text styles, hatches) rather than rebuild it from the parsed copy.
+ALLOWED_MIME = {"image/png", "image/jpeg", "image/webp", "application/pdf", "application/json", "application/dxf"}
+ALLOWED_KIND = {"raster", "pdf", "dxf", "dxfsrc"}
 # Orphan uploads (never attached to a saved project) are swept after this.
 ORPHAN_TTL = timedelta(hours=24)
 

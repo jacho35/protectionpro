@@ -1,18 +1,27 @@
-"""Plan Markup DXF export/import endpoints (ezdxf-backed AC1015)."""
+"""Plan Markup DXF export/import endpoints (ezdxf; export R2010)."""
 from ._http import content_disposition
-from fastapi import APIRouter, HTTPException, UploadFile, File, Request
+from urllib.parse import quote
+
+from fastapi import APIRouter, HTTPException, UploadFile, File, Request, Depends
 from fastapi.responses import Response, JSONResponse
+from sqlalchemy.orm import Session
 
 from ..analysis.plan_dxf import build_dxf, parse_dxf
+from ..auth import get_current_user
+from ..models.database import get_db, User
+from .plan_images import _load as _load_image
 
 router = APIRouter(prefix="/plan", tags=["plan-dxf"])
 
 
 @router.post("/dxf-export")
-async def dxf_export(request: Request):
+async def dxf_export(request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     payload = await request.json()
+    notes: list = []
+    # a background's stored drawing (original DXF or the plan's parsed copy), with the caller's own access to it
+    load = lambda image_id: _load_image(db, int(image_id), user, "view").data
     try:
-        data = build_dxf(payload)
+        data = build_dxf(payload, load_image=load, notes=notes)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:  # pragma: no cover - defensive
@@ -21,7 +30,9 @@ async def dxf_export(request: Request):
     return Response(
         content=data,
         media_type="application/dxf",
-        headers={"Content-Disposition": disposition},
+        # how each background went in (the original drawing, or rebuilt from the plan's copy), for the toast
+        headers={"Content-Disposition": disposition, "X-PP-Notes": quote(" | ".join(notes)[:1500]),
+                 "Access-Control-Expose-Headers": "X-PP-Notes"},
     )
 
 
