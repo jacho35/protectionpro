@@ -1569,20 +1569,34 @@ const PlanLayout = (() => {
     // cross there (and merged with any other crossing within 3 m below) — then into the erf on the far corridor; an erf on the kiosk's own side
     // is reached along the verge. Erven on other streets keep the kiosk's own crossing.
     const xsites = new Map();
-    const ownSide = (e, k) => {
-      const st = k.road; if (!k.xjoin || !st || e.road !== st || !e.marker || !e.fe) return null;
+    // `force`: a kiosk ON a corridor whose own side has no corridor out to the erf (open land on that side, the outside of a bend): the
+    // same verge run and crossing, used by `svc` when the corridors would put the service on the far side for longer
+    const ownSide = (e, k, force) => {
+      const st = k.road; if ((!k.xjoin && !force) || !st || e.road !== st || !e.marker || !e.fe) return null;
       const pk = project(st, k.x, k.y), off = pk.side * pk.d, pm = project(st, e.marker[0], e.marker[1]);
       const verge = s1 => { const out = [], n = Math.max(1, Math.ceil(Math.abs(s1 - pk.s) / 2.5)); for (let i = 1; i <= n; i++) out.push(ptAt(st, pk.s + (s1 - pk.s) * i / n, off).slice(0, 2)); return out; };
       const span = s1 => ({ st, off, a: pk.s, b: s1 });
-      if (pm.side === pk.side) { const full = [[k.x, k.y], ...verge(pm.s), e.marker.slice()]; return { full, len: plen(full), pts: [], sites: [], own: true, vspan: span(pm.s), commit() {} }; }
+      if (pm.side === pk.side) { if (force) return null; const full = [[k.x, k.y], ...verge(pm.s), e.marker.slice()]; return { full, len: plen(full), pts: [], sites: [], own: true, vspan: span(pm.s), commit() {} }; }
       const ends = [e.fe.a, e.fe.b].map(q => project(st, q[0], q[1]).s), sx = Math.abs(ends[0] - pm.s) <= Math.abs(ends[1] - pm.s) ? ends[0] : ends[1];
       const vg = verge(sx), a = vg[vg.length - 1], nd = G.attach(ptAt(st, sx, -off).slice(0, 2), blk(e)); if (nd == null) return null;
-      const rt = G.route(nd, G.attachInto(e.marker, blk(e), e.id)); if (!rt) return null;
+      if (force) { let q = [k.x, k.y]; for (const v of vg) { if (M.crossesBlock(q, v) || (M.streetSI && M.streetSI.crosses(q, v, true))) return null; q = v; } }
+      const rt = G.route(nd, G.attachInto(e.marker, blk(e), e.id)); if (!rt) return null; rt.farLen = plen(rt.pts);
       const key = k.id + '|' + Math.round(sx); let site = xsites.get(key);
       if (!site) { site = { cls: 'p', kind: 'kiosk', a, b: G.nodes[nd].p.slice(), used: [] }; xsites.set(key, site); kx.push(site); }
       rt.full = [[k.x, k.y], ...vg, ...rt.pts, e.marker.slice()]; rt.len = plen(rt.full); rt.xsite = site; rt.vspan = span(sx); return rt;
     };
-    const svc = (e, k, ov) => { const o = ownSide(e, k); if (o) return o; const rt = k.bnode == null ? null : G.route(k.bnode, G.attachInto(e.marker, blk(e), e.id), ov); if (!rt) return null; rt.full = [[k.x, k.y], ...rt.pts.slice(k.xjoin ? 0 : 1), e.marker.slice()]; rt.len = plen(rt.full); return rt; };
+    // a service stays on the kiosk's side of the street until it crosses to its erf (corridor off the kiosk's block costs `svcFar` times),
+    // round a junction corner too, so it crosses at the boundary nearest the erf's marker and never runs along the far verge to share a crossing
+    const svcFar = P.svcFar != null ? +P.svcFar : 4;
+    const svc = (e, k, ov) => { const o = ownSide(e, k); if (o) return o; const home = k.bnode == null || k.xjoin ? null : G.nodes[k.bnode].R.block;
+      const rt = k.bnode == null ? null : G.route(k.bnode, G.attachInto(e.marker, blk(e), e.id), Object.assign({ home, far: svcFar }, ov));
+      if (rt && home && svcFar > 1 && rt.farLen > 8 && !(ov && ov.farOk)) {          // the kiosk's side has no corridor that far: along its verge
+        const v = ownSide(e, k, true); if (v && v.farLen < rt.farLen - 1) return v;  // longer than the limit: another kiosk is tried below, then `farOk`
+      } if (!rt) return null; rt.full = [[k.x, k.y], ...rt.pts.slice(k.xjoin ? 0 : 1), e.marker.slice()]; rt.len = plen(rt.full); return rt; };
+    // simplified, but the two ends of every crossing kept (a crossing in line with the erf's marker would otherwise merge into the stub)
+    const simpKeep = (pts, sites) => { const ends = (sites || []).flatMap(x => [x.a, x.b]); if (!ends.length) return simp(pts);
+      const out = []; let from = 0; for (let i = 1; i < pts.length; i++) if (i === pts.length - 1 || ends.some(q => Math.hypot(q[0] - pts[i][0], q[1] - pts[i][1]) < 0.3)) { const piece = simp(pts.slice(from, i + 1)); out.push(...(out.length ? piece.slice(1) : piece)); from = i; }
+      return out; };
     let moved = 0, kept = 0, keptRuns = 0, slid = 0;
     // a kiosk with a service over the limit (the solve put it on a junction corner, its erf diagonally across) first slides along its own
     // corridor, up to 40 m each way, to the stand where the fewest of its erven are over the limit, then the least service cable
@@ -1607,12 +1621,13 @@ const PlanLayout = (() => {
         const alt = r.kiosks.filter(q => q !== k && q.members.length < P.n && Math.hypot(q.x - e.marker[0], q.y - e.marker[1]) <= maxc)
           .map(q => ({ q, rt: svc(e, q) })).filter(x => x.rt && x.rt.len <= maxc).sort((a, b) => a.rt.len - b.rt.len)[0];
         if (alt) { k.members.splice(k.members.indexOf(e), 1); alt.q.members.push(e); e.kiosk = alt.q; rt = alt.rt; moved++; }
+        else { const r3 = svc(e, k, { farOk: true }); if (r3 && (!rt || r3.len < rt.len)) rt = r3; }   // no kiosk reaches it on its own side within the limit: the far corridor
       }
       if (!rt) { kept++; continue; }                                                // no path on the rings: the solve's own route stays
       rt.commit('svc'); if (rt.xsite) rt.xsite.used.push('svc'); else if (!rt.own && e.kiosk && e.kiosk.xjoin) e.kiosk.xjoin.used.push('svc');
       // the stretch of its own verge the kiosk's services run along: one trench (trenchesBlocks)
       if (rt.vspan && e.kiosk) { const v = e.kiosk.verge || (e.kiosk.verge = { st: rt.vspan.st, off: rt.vspan.off, lo: rt.vspan.a, hi: rt.vspan.a }); v.lo = Math.min(v.lo, rt.vspan.b); v.hi = Math.max(v.hi, rt.vspan.b); }
-      e.route = simp(rt.full); e.cable = plen(e.route); e.hopN = 0; e.xsites = rt.sites;
+      e.route = simpKeep(rt.full, rt.sites); e.cable = plen(e.route); e.hopN = 0; e.xsites = rt.sites; e.farLen = rt.farLen || 0;
     }
     // fibre: manholes onto the fibre ring, every trunk section and erf duct laid again between its own two ends
     const F = r.fibre;

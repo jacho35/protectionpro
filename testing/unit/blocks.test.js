@@ -78,12 +78,19 @@ const score = r => r.kiosks.length * r.P.worth + r.stats.cable + r.P.xpen * r.ne
 ok('solve: a better design by the optimiser\'s own score than the street-line routing, with fewer crossings, clean or rough street lines', () => {
   for (const [a, b, what] of [[R, Rs, 'clean'], [solve(township({ wob: 1.3 })), solve(township({ wob: 1.3 }), { route: 'street' }), 'rough']]) {
     assert(score(a) < score(b), `${what} lines: score ${Math.round(score(a))} vs ${Math.round(score(b))}`);
-    assert(a.stats.crossings <= b.stats.crossings, `${what} lines: crossings ${a.stats.crossings} vs ${b.stats.crossings}`);
+    // services stay on the kiosk's side until they cross to their erf, which costs a few more crossings than sharing one on the far verge
+    assert(a.stats.crossings <= b.stats.crossings * 1.15, `${what} lines: crossings ${a.stats.crossings} vs ${b.stats.crossings}`);
     assert(a.stats.cable < b.stats.cable * 1.3, `${what} lines: cable ${Math.round(a.stats.cable)} vs ${Math.round(b.stats.cable)}`);
   }
   // a crossing counted as little cable: about the same service cable as before
   const c = solve(T, { xpen: 20 }), d = solve(T, { xpen: 20, route: 'street' });
   assert(c.stats.cable < d.stats.cable * 1.1, `xpen 20: cable ${Math.round(c.stats.cable)} vs ${Math.round(d.stats.cable)}`);
+});
+ok('solve: a service stays on the kiosk\'s side of the street and crosses at the boundary nearest its erf, never along the far verge to share a crossing', () => {
+  const far = r => r.erven.filter(e => e.route && e.road && e.kiosk && e.kiosk.road === e.road && (e.xsites || []).every(x => x.kind !== 'leg')).map(e => e.farLen || 0);
+  const now = far(R), old = far(solve(T, { svcFar: 1 }));
+  assert(now.length > 20 && now.every(v => v <= 8), 'own-street services on the far corridor: ' + now.filter(v => v > 8).map(v => v.toFixed(1)).join(', '));
+  assert(old.reduce((a, b) => a + b, 0) > now.reduce((a, b) => a + b, 0), 'the far-side penalty changes nothing');
 });
 ok('solve: kiosks and manholes stand on their corridor', () => {
   R.kiosks.forEach(k => { const B = R.blocks.blocks.map(b => PB.distBlock(b, [k.x, k.y])[0]).sort((a, b) => a - b)[0]; assert(Math.abs(B - 2) < 0.1, 'kiosk ' + B.toFixed(2) + ' m off'); });
