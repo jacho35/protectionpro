@@ -1494,7 +1494,7 @@ const PlanLayoutUI = {
       // (a street with the default carriageway is drawn as a centreline: nothing to square)
       const rs = streets.filter(s => s.own); if (rs.length) { const sq = PlanReserve.squareStreets(rs.map(s => ({ pts: s.pts, carriageW: s.cw, cwOffset: s.cwOffset }))); rs.forEach((s, i) => { s.pts = sq[i].pts; }); }
     }
-    const ks = {}, fs = {}, ksOwn = {}, ga = L.sides['*'] || {}; streets.forEach(s => { const sd = L.sides[s.id] || {}, pk = v => v === 1 || v === -1 ? v : null; ks[s.id] = pk(sd.k) || pk(ga.k) || 0; fs[s.id] = pk(sd.f) || pk(ga.f); if (pk(sd.k)) ksOwn[s.id] = true; });   // a street's own side overrides the all-streets one
+    const ks = {}, fs = {}, ksOwn = {}, fsOwn = {}, ga = L.sides['*'] || {}; streets.forEach(s => { const sd = L.sides[s.id] || {}, pk = v => v === 1 || v === -1 ? v : null; ks[s.id] = pk(sd.k) || pk(ga.k) || 0; fs[s.id] = pk(sd.f) || pk(ga.f); if (pk(sd.k)) ksOwn[s.id] = true; if (pk(sd.f) || pk(sd.k)) fsOwn[s.id] = true; });   // a street's own side overrides the all-streets one
     const subPts = this.placedSubs().map(q => [q.x * f, q.y * f]);                    // every mini-sub you placed: the layout works from them
     if (!subPts.length && !allowNoSub) return { err: 'Place your mini-subs first (step 2): click where each one stands. The layout works from them.' };
     const markers = {}; for (const [id, q] of Object.entries(L.markers)) if (erven.some(e => e.id === id)) markers[id] = [q.x * f, q.y * f];
@@ -1504,7 +1504,7 @@ const PlanLayoutUI = {
     const mhDrops = L.moves.mhs.filter(m => m.from).map(m => [m.from.x * f, m.from.y * f]), mhPins = L.moves.mhs.map(m => [m.to.x * f, m.to.y * f]);   // manholes moved or added by hand   // kiosks moved by hand
     // the kerb returns the plan draws at the street corners (road-reserve streets; radii dragged on the plan included), in metres
     let kerbReturns = []; try { const g = typeof PlanReserveUI !== 'undefined' && PlanReserveUI.planGeometry(); if (g && g.rets) kerbReturns = g.rets; } catch (e) { kerbReturns = []; }
-    return { f, input: { erven, streets, markers, fibreOffs, splits, kioskDrops, kioskPins, mhDrops, mhPins, ks, ksOwn, fs, overrides: L.fronts, cuts: L.cuts, subPts, entryPt: L.entry ? [L.entry.x * f, L.entry.y * f] : null, sections: L.sections.on ? L.sections : null, kerbReturns }, params: L.params };
+    return { f, input: { erven, streets, markers, fibreOffs, splits, kioskDrops, kioskPins, mhDrops, mhPins, ks, ksOwn, fs, fsOwn, overrides: L.fronts, cuts: L.cuts, subPts, entryPt: L.entry ? [L.entry.x * f, L.entry.y * f] : null, sections: L.sections.on ? L.sections : null, kerbReturns }, params: L.params };
   },
 
   // The figures shown beside Run layout: what the last run came to, and how many settings were changed since it
