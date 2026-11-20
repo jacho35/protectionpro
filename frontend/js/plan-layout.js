@@ -840,8 +840,9 @@ const PlanLayout = (() => {
       if (BM) {                                                                        // along the erf boundaries: one search from each erf marker
         // a stand joins the corridor on its own side of the street; where that side has no erf frontage it joins the one across the road,
         // and every service from it pays that crossing
-        // (a kiosk placed by hand is used as placed: its own crossing is not charged here, only counted with the crossings)
-        const G = BM.cls.p, cn = cands.map(c => { const q = kioskJoin(BM, G, c, !!(c.pin || (c.road && input.ks && input.ks[c.road.id]))); if (q && c.pin) q.x = 0; return q; });
+        // (a kiosk placed by hand, or on a street whose own kiosk side was set — `input.ksOwn`, not the All streets side — is used as asked:
+        // its join crossing is not charged here, only counted with the crossings; else the optimiser would serve those erven from another street)
+        const G = BM.cls.p, cn = cands.map(c => { const q = kioskJoin(BM, G, c, !!(c.pin || (c.road && input.ks && input.ks[c.road.id]))); if (q && (c.pin || (c.road && input.ksOwn && input.ksOwn[c.road.id]))) q.x = 0; return q; });
         for (let i = 0; i < n; i++) {
           const e = list[i], B = BM.blockOf.get(e.id);
           for (const m of e.mcs) {
@@ -880,8 +881,12 @@ const PlanLayout = (() => {
       const servable = list.map((e, i) => cover.some(a => a.includes(i)));
       const nServ = servable.filter(Boolean).length;
       // erven → the chosen stands, each taking at most N: a small min-cost flow
+      // a kiosk you placed (`kioskPins`) is served first: every other stand's link costs one crossing + the service limit more, so a placed kiosk
+      // takes the erven within reach (up to N) and is never left with none because one of the layout's own stands is a little nearer.
+      // No kiosk placed by hand: no offset, exactly as before.
+      const pinB = pinIdx.size ? XPEN + maxc : 0;
       function assignG(sel) {
-        const r = flowAssign(n, sel.length, N, (j, i) => Lm[sel[j]][i] <= maxc ? wt(sel[j], i) : null);
+        const r = flowAssign(n, sel.length, N, (j, i) => Lm[sel[j]][i] <= maxc ? wt(sel[j], i) + (pinB && !pinIdx.has(sel[j]) ? pinB : 0) : null);
         let cable = 0, xings = 0;
         r.asg.forEach((j, i) => { if (j >= 0) { cable += Lm[sel[j]][i]; xings += Xm[sel[j]][i]; } });
         return { flow: r.flow, cost: r.total, cable, xings, eff: cable + XPEN * xings, asg: r.asg };

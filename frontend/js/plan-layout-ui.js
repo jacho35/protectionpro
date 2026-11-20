@@ -151,7 +151,7 @@ const PlanLayoutUI = {
     { const mv = (L.moves && typeof L.moves === 'object') ? L.moves : {}, pt = v => v && Number.isFinite(+v.x) && Number.isFinite(+v.y) ? { x: +v.x, y: +v.y } : null, key = /^-?\d+,-?\d+$/;
       L.moves = { kiosks: [], mhs: [], verts: {}, adds: [], cuts: [], xs: {} };                           // parts moved by hand after a run (see "moving parts")
       // kiosks and fibre manholes moved (from → to) or added (from null) by hand
-      for (const kk of ['kiosks', 'mhs']) (Array.isArray(mv[kk]) ? mv[kk] : []).slice(0, 500).forEach(m => { const a = m && pt(m.from), b = m && pt(m.to); if (b) L.moves[kk].push({ from: a, to: b }); });
+      for (const kk of ['kiosks', 'mhs']) (Array.isArray(mv[kk]) ? mv[kk] : []).slice(0, 500).forEach(m => { const a = m && pt(m.from), b = m && pt(m.to); if (b) this._pushMove(L.moves[kk], { from: a, to: b }); });
       for (const [k, v] of Object.entries(mv.verts && typeof mv.verts === 'object' ? mv.verts : {}).slice(0, 5000)) { const q = pt(v); if (q && key.test(k)) L.moves.verts[k] = q; }
       (Array.isArray(mv.adds) ? mv.adds : []).slice(0, 3000).forEach(a => { const q = a && pt(a); if (q && typeof a.id === 'string' && typeof a.a === 'string' && typeof a.b === 'string') L.moves.adds.push({ id: a.id.slice(0, 20), a: a.a.slice(0, 40), b: a.b.slice(0, 40), x: q.x, y: q.y }); });
       for (const [k, v] of Object.entries(mv.xs && typeof mv.xs === 'object' ? mv.xs : {}).slice(0, 2000)) { const a = v && pt(v.a), b = v && pt(v.b); if (a && b && /^[^|]{1,80}\|-?\d+$/.test(k)) L.moves.xs[k] = { a, b }; }     // road crossings moved by hand: key = street|station, a / b = the shift of the start / end (plan points)
@@ -248,6 +248,14 @@ const PlanLayoutUI = {
   },
   // what is under a point (metres): a kiosk, an erf marker, a node, or a stretch of line
   // everything under a point, nearest first: kiosks, erf markers and nodes (one list, so the nearest wins and a part never hides one beside or under it)
+  // a kiosk / manhole move: one dragged again (its `from` within 4 m, plan metres, of an earlier move's start or end) replaces that move
+  // instead of stacking a second pin for the same part (earlier versions did, and the stale pins won its erven)
+  _pushMove(list, mv) {
+    const f = this.f || (PlanEngine.factor && PlanEngine.factor()) || 1, near = (p, q) => p && q && Math.hypot(p.x - q.x, p.y - q.y) * f <= 4;
+    // the replaced move's start is kept: it is where the solver's own kiosk / manhole stood (null = one added by hand), so that one stays dropped
+    if (mv.from) for (let i = list.length - 1; i >= 0; i--) { const o = list[i]; if (near(mv.from, o.from) || near(mv.from, o.to)) { list.splice(i, 1); mv.from = o.from; if (!mv.from) break; } }
+    list.push(mv); return mv;
+  },
   // the hand entry (moves.kiosks / moves.mhs) of a part standing at x, y (metres): the nearest `to` within 9 m (the layout puts a kiosk or
   // manhole onto the cable corridor next to where it was put, so it can stand a few metres from that point); -1 = none
   _handAt(list, x, y) { const f = this.f; let bi = -1, bd = 9; list.forEach((h, i) => { const d = Math.hypot(h.to.x * f - x, h.to.y * f - y); if (d < bd) { bd = d; bi = i; } }); return bi; },
@@ -346,10 +354,10 @@ const PlanLayoutUI = {
     const q = { x: D.cur[0] / f, y: D.cur[1] / f };
     if (D.kind === 'kiosk') {
       const i = D.k.pin ? this._handAt(M.kiosks, D.k.x, D.k.y) : -1;
-      if (i >= 0) M.kiosks[i].to = q; else M.kiosks.push({ from: { x: D.k.x / f, y: D.k.y / f }, to: q });
+      if (i >= 0) M.kiosks[i].to = q; else this._pushMove(M.kiosks, { from: { x: D.k.x / f, y: D.k.y / f }, to: q });
     } else if (D.kind === 'mh') {
       const i = D.m.hand ? this._handAt(M.mhs, D.m.x, D.m.y) : -1;
-      if (i >= 0) M.mhs[i].to = q; else M.mhs.push({ from: { x: D.m.x / f, y: D.m.y / f }, to: q });
+      if (i >= 0) M.mhs[i].to = q; else this._pushMove(M.mhs, { from: { x: D.m.x / f, y: D.m.y / f }, to: q });
     } else if (D.kind === 'marker') L.markers[D.e.id] = q;
     else if (D.kind === 'fibre') { if (D.e.marker) L.fibreMarks[D.e.id] = { dx: q.x - D.e.marker[0] / f, dy: q.y - D.e.marker[1] / f }; }
     else if (D.kind === 'vert') { if (D.add) { const a = M.adds.find(x => x.id === D.add); if (a) { a.x = q.x; a.y = q.y; } } else M.verts[D.key] = q; }
@@ -1486,7 +1494,7 @@ const PlanLayoutUI = {
       // (a street with the default carriageway is drawn as a centreline: nothing to square)
       const rs = streets.filter(s => s.own); if (rs.length) { const sq = PlanReserve.squareStreets(rs.map(s => ({ pts: s.pts, carriageW: s.cw, cwOffset: s.cwOffset }))); rs.forEach((s, i) => { s.pts = sq[i].pts; }); }
     }
-    const ks = {}, fs = {}, ga = L.sides['*'] || {}; streets.forEach(s => { const sd = L.sides[s.id] || {}, pk = v => v === 1 || v === -1 ? v : null; ks[s.id] = pk(sd.k) || pk(ga.k) || 0; fs[s.id] = pk(sd.f) || pk(ga.f); });   // a street's own side overrides the all-streets one
+    const ks = {}, fs = {}, ksOwn = {}, ga = L.sides['*'] || {}; streets.forEach(s => { const sd = L.sides[s.id] || {}, pk = v => v === 1 || v === -1 ? v : null; ks[s.id] = pk(sd.k) || pk(ga.k) || 0; fs[s.id] = pk(sd.f) || pk(ga.f); if (pk(sd.k)) ksOwn[s.id] = true; });   // a street's own side overrides the all-streets one
     const subPts = this.placedSubs().map(q => [q.x * f, q.y * f]);                    // every mini-sub you placed: the layout works from them
     if (!subPts.length && !allowNoSub) return { err: 'Place your mini-subs first (step 2): click where each one stands. The layout works from them.' };
     const markers = {}; for (const [id, q] of Object.entries(L.markers)) if (erven.some(e => e.id === id)) markers[id] = [q.x * f, q.y * f];
@@ -1496,7 +1504,7 @@ const PlanLayoutUI = {
     const mhDrops = L.moves.mhs.filter(m => m.from).map(m => [m.from.x * f, m.from.y * f]), mhPins = L.moves.mhs.map(m => [m.to.x * f, m.to.y * f]);   // manholes moved or added by hand   // kiosks moved by hand
     // the kerb returns the plan draws at the street corners (road-reserve streets; radii dragged on the plan included), in metres
     let kerbReturns = []; try { const g = typeof PlanReserveUI !== 'undefined' && PlanReserveUI.planGeometry(); if (g && g.rets) kerbReturns = g.rets; } catch (e) { kerbReturns = []; }
-    return { f, input: { erven, streets, markers, fibreOffs, splits, kioskDrops, kioskPins, mhDrops, mhPins, ks, fs, overrides: L.fronts, cuts: L.cuts, subPts, entryPt: L.entry ? [L.entry.x * f, L.entry.y * f] : null, sections: L.sections.on ? L.sections : null, kerbReturns }, params: L.params };
+    return { f, input: { erven, streets, markers, fibreOffs, splits, kioskDrops, kioskPins, mhDrops, mhPins, ks, ksOwn, fs, overrides: L.fronts, cuts: L.cuts, subPts, entryPt: L.entry ? [L.entry.x * f, L.entry.y * f] : null, sections: L.sections.on ? L.sections : null, kerbReturns }, params: L.params };
   },
 
   // The figures shown beside Run layout: what the last run came to, and how many settings were changed since it
