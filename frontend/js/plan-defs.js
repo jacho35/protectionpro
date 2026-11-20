@@ -199,7 +199,7 @@ const PLAN_DEFS = {
     bd_soundersstrobe: { name: 'Sounder/Strobe', domain: 'building', group: 'ELV & Fire', color: '#f59e0b', scale: 1, symbol: 'square', dxf: { shape: 'square', sizeM: 0.2 }, rotatable: false, schedule: null, namePrefix: 'SS', dxfBlock: 'SOUNDER-STROBE', dxfLayer: 'E-FIRE', defaults: {}, fields: [{ key: 'name', label: 'Ref', type: 'text' }, { key: 'zone', label: 'Zone', type: 'text' }] },
     bd_cctv: { name: 'CCTV Camera', domain: 'building', group: 'ELV & Fire', color: '#7c3aed', scale: 1, symbol: 'circle', dxf: { shape: 'circle', sizeM: 0.3 }, rotatable: true, schedule: null, namePrefix: 'CAM', dxfBlock: 'CCTV', dxfLayer: 'E-CCTV', defaults: {}, fields: [{ key: 'name', label: 'Ref', type: 'text' }, { key: 'zone', label: 'Zone', type: 'text' }] },
     bd_nvr: { name: 'NVR', domain: 'building', group: 'ELV & Fire', color: '#6d28d9', scale: 1, symbol: 'square', dxf: { shape: 'square', sizeM: 0.3 }, rotatable: false, schedule: null, namePrefix: 'NVR', dxfBlock: 'NVR', dxfLayer: 'E-CCTV', defaults: {}, fields: [{ key: 'name', label: 'Ref', type: 'text' }, { key: 'zone', label: 'Zone', type: 'text' }] },
-    bd_datapoint: { name: 'Data Outlet', domain: 'building', group: 'ELV & Fire', color: '#0891b2', scale: 1, symbol: 'square', dxf: { shape: 'square', sizeM: 0.2 }, rotatable: false, schedule: null, namePrefix: 'DP', defaults: {}, fields: [{ key: 'name', label: 'Ref', type: 'text' }] },
+    bd_datapoint: { name: 'Data Outlet', domain: 'building', group: 'ELV & Fire', color: '#db2777', scale: 1, symbol: 'square', dxf: { shape: 'square', sizeM: 0.2 }, rotatable: false, schedule: null, namePrefix: 'DP', defaults: {}, fields: [{ key: 'name', label: 'Ref', type: 'text' }] },
     bd_wap: { name: 'Wireless AP', domain: 'building', group: 'ELV & Fire', color: '#0e7490', scale: 1, symbol: 'circle', dxf: { shape: 'circle', sizeM: 0.3 }, rotatable: false, schedule: null, namePrefix: 'AP', defaults: {}, fields: [{ key: 'name', label: 'Ref', type: 'text' }] },
     // Control
     bd_sensor: { name: 'Occupancy Sensor', domain: 'building', group: 'Control', color: '#e11d48', scale: 1, symbol: 'circle', dxf: { shape: 'circle', sizeM: 0.25 }, rotatable: false, schedule: null, namePrefix: 'PIR', defaults: {}, fields: [{ key: 'name', label: 'Ref', type: 'text' }] },
@@ -248,7 +248,7 @@ const PLAN_DEFS = {
       defaults: { cableType: '' }, fields: [],
     },
     fibreErf: {
-      name: 'Fibre Drop', domain: 'retic', color: '#c084fc', width: 1, lineStyle: 'solid',
+      name: 'Fibre Drop', domain: 'retic', color: '#db2777', width: 1, lineStyle: 'solid',          // pink: reads apart from the purple backbone (trunk) and from the green services / blue LV
       cableVoltage: null, dxfLayer: 'FIBRE', schedule: null, requiresEndpoints: false,
       defaults: { cableType: '' }, fields: [],
     },
@@ -265,7 +265,7 @@ const PLAN_DEFS = {
     lighting_ckt: { name: 'Lighting Circuit', domain: 'building', color: '#eab308', width: 1.5, lineStyle: 'solid', cableVoltage: 'lv', dxfLayer: 'E-LIGHTING-CIRCUIT', schedule: null, requiresEndpoints: false, defaults: { cableType: '' }, fields: [{ key: 'cableType', label: 'Cable Type', type: 'cable_select', uses: ['te', 'surfix', 'single'] }] },
     conduit: { name: 'Conduit', domain: 'building', color: '#64748b', width: 2, lineStyle: 'solid', cableVoltage: null, dxfLayer: 'E-CONDUIT', schedule: null, requiresEndpoints: false, defaults: {}, fields: [] },
     cable_tray: { name: 'Cable Tray', domain: 'building', color: '#475569', width: 3, lineStyle: 'solid', cableVoltage: null, dxfLayer: 'E-CABLETRAY', schedule: null, requiresEndpoints: false, defaults: {}, fields: [] },
-    data_cable: { name: 'Data Cable', domain: 'building', color: '#0891b2', width: 1, lineStyle: 'dashed', cableVoltage: null, dxfLayer: 'DATA', schedule: null, requiresEndpoints: false, defaults: {}, fields: [] },
+    data_cable: { name: 'Data Cable', domain: 'building', color: '#db2777', width: 1, lineStyle: 'dashed', cableVoltage: null, dxfLayer: 'DATA', schedule: null, requiresEndpoints: false, defaults: {}, fields: [] },
     fire_cable: { name: 'Fire Cable', domain: 'building', color: '#dc2626', width: 1.5, lineStyle: 'dashed', cableVoltage: null, dxfLayer: 'E-FIRE-CABLE', schedule: null, requiresEndpoints: false, defaults: {}, fields: [] },
     dali_bus: { name: 'DALI Bus', domain: 'building', color: '#db2777', width: 1, lineStyle: 'dashed', cableVoltage: null, dxfLayer: 'CONTROL', schedule: null, requiresEndpoints: false, defaults: { cableType: '' }, fields: [{ key: 'cableType', label: 'Cable Type', type: 'cable_select', uses: ['control'] }] },
     ground_conductor: { name: 'Earth Conductor', domain: 'building', color: '#65a30d', width: 1.5, lineStyle: 'dashed', cableVoltage: null, dxfLayer: 'E-GROUNDING', schedule: null, requiresEndpoints: false, defaults: {}, fields: [] },
@@ -510,7 +510,7 @@ const PLAN_DEFAULT_STYLES = {
   elementScales: { kiosk: 1, minisub: 1, manhole: 1, pole: 1, rmu: 1, erf: 1 },
   routeColors: {
     mv: '#ef4444', lv: '#3b82f6', service: '#22c55e',
-    fibreBB: '#a855f7', fibreErf: '#c084fc', sl: '#f59e0b',
+    fibreBB: '#a855f7', fibreErf: '#db2777', sl: '#f59e0b',
   },
   defaultCableTypes: { mv: '', lv: '', service: '', sl: '' },
   routeLineStyles: {

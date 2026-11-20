@@ -1860,12 +1860,12 @@ const PlanLayoutUI = {
       ctx.restore();
     }
     if (S.fibre) {
-      ctx.strokeStyle = '#a21caf'; ctx.lineWidth = 1.1 * u; ctx.setLineDash([2 * u, 3 * u]);
+      ctx.strokeStyle = '#db2777'; ctx.lineWidth = 1.2 * u; ctx.setLineDash([2 * u, 3 * u]);        // ducts to the erven: pink (the trunk is purple, as on the plan)
       r.erven.forEach(e => { if (e.duct) line(e.duct); });
       ctx.setLineDash([]);
       r.fibre.spare.forEach(e => { const cut = this.cfg().cuts.includes(e.key); ctx.strokeStyle = cut ? '#dc2626' : '#94a3b8'; ctx.lineWidth = 1.4 * u; ctx.setLineDash(cut ? [3 * u, 4 * u] : [1.5 * u, 4 * u]); line(e.pts); });
       ctx.setLineDash([]); ctx.strokeStyle = '#a21caf'; ctx.lineWidth = 2.6 * u; r.fibre.trunks.forEach(e => line(e.pts));
-      ctx.fillStyle = '#fff'; ctx.strokeStyle = '#a21caf'; ctx.lineWidth = 1.6 * u;                  // fibre point: a small ring (a diamond is a fibre junction); violet halo = moved by hand
+      ctx.fillStyle = '#fff'; ctx.strokeStyle = '#db2777'; ctx.lineWidth = 1.6 * u;                  // fibre point: a small ring (a diamond is a fibre junction); violet halo = moved by hand
       r.erven.forEach(e => { if (e.fibrePt && e.duct) { const [x, y] = W(e.fibrePt); ctx.beginPath(); ctx.arc(x, y, 3 * u, 0, 7); ctx.fill(); ctx.stroke();
         if (e.fibreHand) { ctx.save(); ctx.strokeStyle = '#7c3aed'; ctx.lineWidth = 1.4 * u; ctx.beginPath(); ctx.arc(x, y, 5.5 * u, 0, 7); ctx.stroke(); ctx.restore(); } } });
     }
