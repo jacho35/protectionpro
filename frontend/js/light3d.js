@@ -449,15 +449,18 @@ const Light3D = {
       const c = this.M(el, f), z = this._lumZ(el, G), s = this._lumSize(el), on = this.sel === 'l:' + el.id;
       const k = el.props && el.props.kind;
       const emerg = k === 'emergency' || k === 'exit';
-      V3D.box(v, c, s, s, z - 0.05, 0.05, -(el.rotation || 0), {
+      const body = typeof PlanSymbols !== 'undefined' ? PlanSymbols.linearBody(el) : null;      // true-size bar of a linear fitting
+      const bh = body ? Math.min(Math.max((PhotoLib.get(el.props.photoId).sizeM.height) || 0.05, 0.03), 0.12) : 0.05;
+      V3D.box(v, c, body ? body.length : s, body ? Math.max(body.width, 0.05) : s, z - bh, bh, -(el.rotation || 0), {
         color: rendered ? '#fffdf4' : (emerg ? '#d6f5d6' : '#e4e6ea'), under: rendered ? '#fffdf4' : (emerg ? '#a8e6a8' : '#fff6cf'), pick: 'l:' + el.id,
         stroke: on ? selStroke : 'rgba(26,26,46,.45)', lw: on ? 2 : 0.8, noCull: true,
       });
       const hc = G.hAt(c[0], c[1]);
       if (z < hc - 0.01 && !rendered && !(el.props && el.props.mount === 'wall')) v.line({ pts: [[c[0], c[1], z], [c[0], c[1], hc]], stroke: '#8a919b', lw: 1, layer: 1 });
       if (rendered) {
-        v.glow({ at: [c[0], c[1], z - 0.06], r: s * 1.6, color: 'rgba(255,248,226,.55)' });
-        v.glow({ at: [c[0], c[1], z - 0.06], r: s * 0.8, color: 'rgba(255,253,240,.9)' });
+        const gs = body ? body.length / 2 : s;
+        v.glow({ at: [c[0], c[1], z - 0.06], r: gs * 1.6, color: 'rgba(255,248,226,.55)' });
+        v.glow({ at: [c[0], c[1], z - 0.06], r: gs * 0.8, color: 'rgba(255,253,240,.9)' });
       }
       if (this.cones) this._cone(v, el, c, z, G);
     }
