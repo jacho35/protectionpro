@@ -30,6 +30,7 @@ const PlanLayout = (() => {
 
   const DEFAULTS = {
     side: 4, depth: 4, corner: 'start', front: 'longest',      // marker: m from the side boundary and the front; which corner; corner erf's front
+    fentry: 'beside', fgap: 1.5, fside: 'mid',                     // fibre point: beside the power marker (fgap m along the front, on its middle / corner side) or 'opp' = mirrored at the other front corner. fgap is PROVISIONAL
     cwDef: 5,                                                      // read by the UI: the carriageway width of a street that has none (one drawn as a centreline)
     kgeo: 'boundary', kd: 2,                                       // cables + kiosks run kd m inside the erf boundary ('street' = the old street-line offset)
     kmode: 'opt', xpen: 300, xkiosk: false, n: 6, maxc: 70, worth: 170, knet: true,   // kiosks (n = the most erven one kiosk serves; knet = one solve over the whole street network)
@@ -509,15 +510,25 @@ const PlanLayout = (() => {
     streets.forEach(st => { st._pm = {}; });                                                    // the corridor pulls (pullAt) follow the fronts found in step 1
     function markerCands(e) {
       const fe = e.fe, aa = e.sa, ab = e.sb;
-      if (e.manual) return [{ end: 'a', c: fe.a, o: fe.a, t: [1, 0], pt: fe.a, fpt: fe.a }];            // the point the user placed, as is
+      if (e.manual) {                                                                                  // the point the user placed, as is; the fibre point beside it, along the street
+        let t = [-fe.out[1], fe.out[0]]; if ((e.cx - fe.a[0]) * t[0] + (e.cy - fe.a[1]) * t[1] < 0) t = [-t[0], -t[1]];   // t points to the middle of the erf
+        return [{ end: 'a', c: fe.a, o: fe.a, t, pt: fe.a, fpt: fibreBeside(e, fe.a, t) }];
+      }
       const lowEnd = aa <= ab ? 'a' : 'b', highEnd = aa <= ab ? 'b' : 'a';
       const ends = P.corner === 'pair' ? (e.pairEnd === 'hi' ? [highEnd] : [lowEnd]) : P.corner === 'start' ? [lowEnd] : P.corner === 'end' ? [highEnd] : ['a', 'b'];
       return ends.map(end => {
         const c = end === 'a' ? fe.a : fe.b, o = end === 'a' ? fe.b : fe.a, t = [(o[0] - c[0]) / fe.len, (o[1] - c[1]) / fe.len];
         return { end, c, o, t,
           pt: [c[0] + t[0] * P.side + fe.inn[0] * P.depth, c[1] + t[1] * P.side + fe.inn[1] * P.depth],
-          fpt: [o[0] - t[0] * P.side + fe.inn[0] * P.depth, o[1] - t[1] * P.side + fe.inn[1] * P.depth] };
-      });
+          fpt: null };
+      }).map(m => Object.assign(m, { fpt: P.fentry === 'opp' ? [m.o[0] - m.t[0] * P.side + fe.inn[0] * P.depth, m.o[1] - m.t[1] * P.side + fe.inn[1] * P.depth] : fibreBeside(e, m.pt, m.t) }));
+    }
+    // the fibre point fgap m from the power marker along the front: on its middle side (t, towards the other corner) or its corner side; the
+    // other way round when that point is not in the erf, the marker itself when neither is
+    function fibreBeside(e, pt, t) {
+      const g = Math.max(0, +P.fgap || 0), s = P.fside === 'corner' ? -1 : 1;
+      for (const k of [s, -s]) { const q = [pt[0] + t[0] * g * k, pt[1] + t[1] * g * k]; if (pip(q[0], q[1], e.poly)) return q; }
+      return pt.slice();
     }
     function routeFor(e, k, mc) {
       const st = e.road, sM = project(st, mc.pt[0], mc.pt[1]).s;
@@ -944,7 +955,9 @@ const PlanLayout = (() => {
           let bl = 1e9;
           for (const m of mcs) { const r = e.via ? routeVia(e, e.kiosk, m, e.via) : routeAny(e, e.kiosk, m), L = plen(r); if (L < bl) { bl = L; mc = m; route = r; } }
         }
-        e.marker = mc.pt; e.corner_pt = mc.c; e.fibrePt = mc.fpt;
+        e.marker = mc.pt; e.corner_pt = mc.c; e.fibrePt = mc.fpt; e.fibreHand = false;
+        const fh = input.fibreOffs && input.fibreOffs[e.id];                   // a fibre point the user moved: that offset from the power marker, so it follows the marker
+        if (fh && Number.isFinite(+fh[0]) && Number.isFinite(+fh[1])) { e.fibrePt = [e.marker[0] + +fh[0], e.marker[1] + +fh[1]]; e.fibreHand = true; }
         if (route) { e.route = route; e.cable = plen(route); e.hopN = route.hopN || 0; }
       }
     }
@@ -1640,8 +1653,25 @@ const PlanLayout = (() => {
       const [a, b] = x.ends || [x.a, x.b];
       out.push({ type, pts: [[a[0], a[1]], [b[0], b[1]]], depth: dep(type, null), section: null, len: Math.hypot(b[0] - a[0], b[1] - a[1]), cats: [mv && 'mv', pw && 'lv', fi && 'fi'].filter(Boolean), kind: 'crossing' });
     });
+    if (T.lead) shareLeads(res, out);
     const sum = {}; out.forEach(t => { const q = sum[t.type] || (sum[t.type] = { len: 0, n: 0, depth: t.depth }); q.len += t.len; q.n++; });
     return { list: out, summary: sum, T };
+  }
+  // one lead trench into each erf (T.lead): where an erf's fibre point is within 3 m of its power marker, the service lead and the fibre
+  // lead share a trench — the longer of the two spurs is kept, as the power trench (type and depth of the service spur), carrying both
+  function shareLeads(res, out) {
+    const near = (p, q) => Math.hypot(p[0] - q[0], p[1] - q[1]) < 0.35, endAt = (t, q) => near(t.pts[0], q) || near(t.pts[t.pts.length - 1], q);
+    const drop = new Set();
+    for (const e of res.erven) {
+      if (!e.marker || !e.fibrePt || !e.route || !e.duct || Math.hypot(e.marker[0] - e.fibrePt[0], e.marker[1] - e.fibrePt[1]) > 3) continue;
+      const spur = (cat, q, not) => out.find(t => t.kind === 'spur' && t !== not && !drop.has(t) && t.cats.includes(cat) && endAt(t, q));
+      const pw = spur('svc', e.marker, null); if (!pw) continue;
+      const fi = spur('fi', e.fibrePt, pw), keep = fi && fi.len > pw.len ? fi : pw;
+      if (fi) drop.add(keep === pw ? fi : pw);
+      keep.type = pw.type; keep.depth = pw.depth; if (pw.section !== undefined) keep.section = pw.section;
+      keep.cats = [...new Set([...pw.cats, 'fi'])]; keep.lead = true;
+    }
+    if (drop.size) { const rest = out.filter(t => !drop.has(t)); out.length = 0; out.push(...rest); }
   }
 
   // kside 'try': the kiosk side of each street is first the one with more erven; here each street the user has not set is tried the other way
@@ -1673,9 +1703,10 @@ const PlanLayout = (() => {
     combine: 'separate',                                   // 'separate' | 'mvlv': MV in the same trench as LV / service / street light
     fibre: 'own',                                          // 'own' | 'with' (in the LV trench where they run together) | 'off'
     crossings: true,                                       // a shared trench across the road at every crossing
+    lead: false,                                           // one lead trench into the erf for its service cable and fibre duct (when the two enter within 3 m)
   };
   function trenches(res, Tin) {
-    const T = { depth: Object.assign({}, TRENCH_DEFAULTS.depth, (Tin && Tin.depth) || {}), combine: (Tin && Tin.combine) || TRENCH_DEFAULTS.combine, fibre: (Tin && Tin.fibre) || TRENCH_DEFAULTS.fibre, crossings: !(Tin && Tin.crossings === false) };
+    const T = { depth: Object.assign({}, TRENCH_DEFAULTS.depth, (Tin && Tin.depth) || {}), combine: (Tin && Tin.combine) || TRENCH_DEFAULTS.combine, fibre: (Tin && Tin.fibre) || TRENCH_DEFAULTS.fibre, crossings: !(Tin && Tin.crossings === false), lead: !!(Tin && Tin.lead) };
     const streets = res.streets, lines = [], spurs = new Map(), out = [];
     const lineFor = (st, sign, off) => { let l = lines.find(q => q.st === st && q.sign === sign && Math.abs(q.off - off) <= 0.75); if (!l) { l = { st, sign, off, offN: 0, ivs: [] }; lines.push(l); } l.off = (l.off * l.offN + off) / (l.offN + 1); l.offN++; return l; };
     const rnd = p => Math.round(p[0] * 4) + ',' + Math.round(p[1] * 4);
@@ -1758,6 +1789,7 @@ const PlanLayout = (() => {
       const xsec = secOf(x.st, x.s);
       out.push({ type, pts: [[a[0], a[1]], [b[0], b[1]]], depth: dep(type, xsec), section: xsec ? xsec.id : null, len: x.ends ? Math.hypot(b[0] - a[0], b[1] - a[1]) : hA + hB, cats: [mv && 'mv', pw && 'lv', fi && 'fi'].filter(Boolean), kind: 'crossing' });
     });
+    if (T.lead) shareLeads(res, out);
     const sum = {};
     out.forEach(t => { const q = sum[t.type] || (sum[t.type] = { len: 0, n: 0, depth: t.depth }); q.len += t.len; q.n++; });
     return { list: out, summary: sum, T };

@@ -34,11 +34,14 @@ const PlanLayoutUI = {
   // trench settings: depth per cable class (m) and what shares a trench; kept apart from the layout rules (no re-solve)
   TREN: [['depth.lv', 'range', 0.4, 1.5, 0.05, 'm', 'LV, service and street-light depth'], ['depth.fi', 'range', 0.3, 1.2, 0.05, 'm', 'Fibre depth'],
     ['fibre', 'select', [['own', 'fibre in its own trench'], ['with', 'fibre in the LV trench where they run together'], ['off', 'no fibre trench']], 'Fibre'],
-    ['crossings', 'check', 'A shared trench across the road at every crossing']],
+    ['crossings', 'check', 'A shared trench across the road at every crossing'], ['lead', 'check', 'One lead trench into the erf for its service cable and fibre duct']],
   CTRL: [
     ['Marker', [['side', 'range', 1, 5, 0.5, 'm', 'From the side boundary'], ['depth', 'range', 1, 5, 0.5, 'm', 'In from the front'],
       ['corner', 'select', [['start', 'start of the street'], ['end', 'far end of the street'], ['kiosk', 'nearest its kiosk'], ['pair', 'paired on the shared boundary']], 'Front corner'],
-      ['front', 'select', [['longest', 'longest street edge'], ['shortest', 'shortest street edge'], ['busy', 'the busier street']], 'A corner erf fronts its']]],
+      ['front', 'select', [['longest', 'longest street edge'], ['shortest', 'shortest street edge'], ['busy', 'the busier street']], 'A corner erf fronts its'],
+      ['fentry', 'select', [['beside', 'beside the power marker'], ['opp', 'at the opposite front corner']], 'Fibre point'],
+      ['fgap', 'range', 0.3, 3, 0.1, 'm', 'Fibre point from the power marker'],
+      ['fside', 'select', [['mid', 'middle side of the power marker'], ['corner', 'corner side of the power marker']], 'Fibre point on the']]],
     ['Kiosks', [['kmode', 'select', [['rules', 'even runs (rule of thumb)'], ['opt', 'optimiser: fewest kiosks, then crossings, then cable']], 'Placement'],
       ['n', 'range', 4, 12, 1, '', 'Max houses per kiosk'], ['maxc', 'range', 30, 150, 5, 'm', 'Max service cable'], ['worth', 'range', 0, 600, 10, 'm', 'Extra cable accepted to save one kiosk'],
       ['kside', 'select', [['count', 'the side with more erven'], ['try', 'try both sides, keep the cheaper']], 'Kiosk side of each street'], ['xpen', 'range', 0, 600, 25, 'm', 'A road crossing counts as this much cable'], ['xkiosk', 'check', 'Keep a kiosk if removing it would add road crossings'],
@@ -69,6 +72,9 @@ const PlanLayoutUI = {
     bendMv: 'Radius of the curve an MV cable takes round a corner, in metres (0 = sharp). Provisional starting value: use your cable maker\'s minimum bend radius.',
     side: 'How far in from the erf\'s side boundary the service marker (where the service cable enters the erf) is placed.',
     depth: 'How far in from the front boundary the service marker is placed.',
+    fentry: 'Where the fibre duct enters the erf. Beside the power marker: next to the service cable, so both leads come in at one place. Opposite corner: mirrored at the other front corner, as earlier layouts did. A marker you place by hand always gets its fibre point beside it.',
+    fgap: 'How far along the front the fibre point is from the power marker, in metres. Also used for a marker you place by hand. The starting value is provisional: set it to the separation your fibre and power specifications ask for.',
+    fside: 'Which side of the power marker the fibre point goes: towards the middle of the erf or towards its corner. Where that side is outside the erf, it goes on the other side.',
     corner: 'Which front corner of each erf gets the marker. Start / far end of the street, or the corner nearest its kiosk. Paired puts the markers of two neighbouring erven on their shared boundary, so they share one service leg and, across the road, one crossing.',
     front: 'Which street a corner erf faces, and so where its marker and service go: the longer or the shorter of its street edges, or the busier street (the one with more erven on it).',
     kmode: 'How kiosks are placed. Even runs: a kiosk for every run of up to the maximum houses along each street. Optimiser: one solve over the whole street network, fewest kiosks first, then fewest road crossings, then least cable.',
@@ -114,6 +120,7 @@ const PlanLayoutUI = {
     if (Object.keys(p).length && p.xpref === undefined) p.xpref = 'few';           // a layout made before this keeps its fewest-crossings choice
     if (Object.keys(p).length && p.strN === undefined) p.strN = 0;
     if (Object.keys(p).length && p.strL === undefined) p.strL = 0;                    // a layout made before the string length limit keeps no limit                    // a layout made before strings existed keeps its one tree
+    if (Object.keys(p).length && p.fentry === undefined) p.fentry = 'opp';         // a layout made before the fibre point could sit beside the power marker keeps it at the other corner
     if (Object.keys(p).length && p.kgeo === undefined) p.kgeo = 'street';          // a layout set up before the boundary corridor existed keeps running the way it did
     for (const [, rows] of this.CTRL) for (const r of rows) {
       const k = r[0], v = p[k];
@@ -130,6 +137,7 @@ const PlanLayoutUI = {
     T.combine = ['separate', 'mvlv'].includes(T.combine) ? T.combine : D2.combine;
     T.fibre = ['own', 'with', 'off'].includes(T.fibre) ? T.fibre : D2.fibre;
     T.crossings = typeof T.crossings === 'boolean' ? T.crossings : D2.crossings;
+    T.lead = typeof T.lead === 'boolean' ? T.lead : D2.lead;
     const vd = L.vd = (L.vd && typeof L.vd === 'object') ? L.vd : {};
     vd.tx = typeof vd.tx === 'string' ? vd.tx.slice(0, 80) : '';
     vd.prot = typeof vd.prot === 'string' ? vd.prot.slice(0, 80) : '';
@@ -153,6 +161,8 @@ const PlanLayoutUI = {
     L.fronts = (L.fronts && typeof L.fronts === 'object') ? L.fronts : {};
     { const mk = (L.markers && typeof L.markers === 'object') ? L.markers : {}; L.markers = {};                      // hand-placed service markers: erf id → plan point
       for (const [id, v] of Object.entries(mk).slice(0, 5000)) if (v && Number.isFinite(+v.x) && Number.isFinite(+v.y)) L.markers[String(id).slice(0, 80)] = { x: +v.x, y: +v.y }; }
+    { const mk = (L.fibreMarks && typeof L.fibreMarks === 'object') ? L.fibreMarks : {}; L.fibreMarks = {};             // fibre points moved by hand: erf id → its offset from the power marker (plan units), so it follows the marker
+      for (const [id, v] of Object.entries(mk).slice(0, 5000)) if (v && Number.isFinite(+v.dx) && Number.isFinite(+v.dy)) L.fibreMarks[String(id).slice(0, 80)] = { dx: +v.dx, dy: +v.dy }; }
     L.cuts = Array.isArray(L.cuts) ? L.cuts.filter(x => typeof x === 'string').slice(0, 500) : [];
     L.subs = Array.isArray(L.subs) ? L.subs.filter(q => q && Number.isFinite(+q.x) && Number.isFinite(+q.y)).map(q => ({ x: +q.x, y: +q.y })).slice(0, 20) : [];   // mini-subs placed by hand: free points
     if (L.sub && Number.isFinite(+L.sub.x) && Number.isFinite(+L.sub.y) && !L.subs.some(q => Math.hypot(q.x - L.sub.x, q.y - L.sub.y) < 1e-6)) L.subs.push({ x: +L.sub.x, y: +L.sub.y });   // older files held one
@@ -243,6 +253,7 @@ const PlanLayoutUI = {
     const add = (o, dist, pri) => { if (dist <= tol) pts.push(Object.assign(o, { d: dist, score: dist + pri * 0.3 * tol })); };
     r.kiosks.forEach(k => add({ kind: 'kiosk', k, name: 'kiosk ' + k.id }, Math.max(0, d(k.x, k.y) - 2 * z), 0));
     r.erven.forEach(e => { if (e.marker) add({ kind: 'marker', e, name: 'erf marker' }, d(e.marker[0], e.marker[1]), 1); });
+    r.erven.forEach(e => { if (e.fibrePt && e.duct) add({ kind: 'fibre', e, name: 'fibre point' }, d(e.fibrePt[0], e.fibrePt[1]), 1.5); });
     (this._verts || []).forEach(v => add({ kind: 'vert', v, name: v.add ? 'added node' : 'node' }, d(v.pos[0], v.pos[1]), 2));
     pts.sort((a, b) => a.score - b.score);
     let seg = null;
@@ -292,6 +303,10 @@ const PlanLayoutUI = {
       if (ev.altKey) { const L = this.cfg(); if (L.markers[h.e.id]) { delete L.markers[h.e.id]; this.touched(true); } else UI.toast('That marker was not placed by hand.', 'info', 2500); return; }
       this._drag = { kind: 'marker', e: h.e, cur: h.e.marker.slice(), from: h.e.marker.slice() }; PlanEngine.requestDraw({ fg: true });
     }
+    if (h.kind === 'fibre') {
+      if (ev.altKey) { const L = this.cfg(); if (L.fibreMarks[h.e.id]) { delete L.fibreMarks[h.e.id]; this.touched(true); } else UI.toast('That fibre point was not moved by hand.', 'info', 2500); return; }
+      this._drag = { kind: 'fibre', e: h.e, cur: h.e.fibrePt.slice(), from: h.e.fibrePt.slice() }; PlanEngine.requestDraw({ fg: true });
+    }
   },
   moveMove(pt) {
     const D = this._drag; if (!D) return false;
@@ -316,6 +331,7 @@ const PlanLayoutUI = {
       const i = M.kiosks.findIndex(x => Math.hypot(x.to.x * f - D.k.x, x.to.y * f - D.k.y) < 0.5);
       if (i >= 0) M.kiosks[i].to = q; else M.kiosks.push({ from: { x: D.k.x / f, y: D.k.y / f }, to: q });
     } else if (D.kind === 'marker') L.markers[D.e.id] = q;
+    else if (D.kind === 'fibre') { if (D.e.marker) L.fibreMarks[D.e.id] = { dx: q.x - D.e.marker[0] / f, dy: q.y - D.e.marker[1] / f }; }
     else if (D.kind === 'vert') { if (D.add) { const a = M.adds.find(x => x.id === D.add); if (a) { a.x = q.x; a.y = q.y; } } else M.verts[D.key] = q; }
     this.touched(true); return true;
   },
@@ -357,11 +373,21 @@ const PlanLayoutUI = {
     if (c.kind === 'kiosk') p = [c.k.x, c.k.y]; else if (c.kind === 'marker') p = c.e.marker; else if (c.kind === 'vert') p = c.v.pos; else if (c.kind === 'xa') p = this._xEnds(c.c)[0]; else if (c.kind === 'xb') p = this._xEnds(c.c)[1];
     if (!p) return; const [x, y] = W(p); ctx.save(); ctx.strokeStyle = '#f59e0b'; ctx.lineWidth = 2.6 * u; ctx.setLineDash([4 * u, 3 * u]); ctx.beginPath(); ctx.arc(x, y, 14 * u, 0, 7); ctx.stroke(); ctx.restore();
   },
+  // the direction of a street at a point (radians, in plan coordinates), for parts drawn along it; 0 when there is no street
+  _streetAngle(st, p) {
+    const P = st && st.pts; if (!P || P.length < 2) return 0; let best = Infinity, ang = 0;
+    for (let i = 1; i < P.length; i++) { const a = P[i - 1], b = P[i], dx = b[0] - a[0], dy = b[1] - a[1], L2 = dx * dx + dy * dy; if (!L2) continue;
+      const t = Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / L2)), d = Math.hypot(a[0] + dx * t - p[0], a[1] + dy * t - p[1]); if (d < best) { best = d; ang = Math.atan2(dy, dx); } }
+    return ang;
+  },
   _moveDraw(ctx, u, W) {
     const r = this.result; if (!r || this.mode !== 'move') return;
     ctx.save(); ctx.lineWidth = 1.4 * u;
-    ctx.strokeStyle = '#475569'; ctx.fillStyle = '#fff';
-    (this._verts || []).forEach(v => { const [x, y] = W(v.pos); ctx.beginPath(); ctx.arc(x, y, 3.2 * u, 0, 7); ctx.fill(); ctx.stroke(); });
+    // route nodes: small solid grey dots (no part looks like them); a node on a manhole or a fibre junction is drawn as that part
+    const parts = r.fibre ? [...r.fibre.mhs, ...r.fibre.inter] : [], onPart = p => parts.some(m => Math.abs(m.x - p[0]) < 0.3 && Math.abs(m.y - p[1]) < 0.3);
+    ctx.strokeStyle = '#fff'; ctx.fillStyle = '#64748b'; ctx.lineWidth = 1 * u;
+    (this._verts || []).forEach(v => { if (onPart(v.pos)) return; const [x, y] = W(v.pos); ctx.beginPath(); ctx.arc(x, y, 2.8 * u, 0, 7); ctx.fill(); ctx.stroke(); });
+    ctx.lineWidth = 1.4 * u;
     ctx.strokeStyle = '#2563eb'; ctx.lineWidth = 1.8 * u;
     r.kiosks.forEach(k => { const [x, y] = W([k.x, k.y]); ctx.beginPath(); ctx.arc(x, y, 11 * u, 0, 7); ctx.stroke(); });
     const D = this._drag;
@@ -1376,7 +1402,7 @@ const PlanLayoutUI = {
   },
   // the step a user most likely wants when the tool opens
   firstStep() { return !this.streetsOnPlan().length ? 1 : !this.placedSubs().length ? 2 : this.result ? 4 : 3; },
-  edits() { const L = this.cfg(), M = L.moves; return Object.keys(L.fronts).length + Object.keys(L.markers).length + L.cuts.length + (L.entry ? 1 : 0) + M.kiosks.length + Object.keys(M.verts).length + M.adds.length + M.cuts.length + Object.keys(M.xs).length; },
+  edits() { const L = this.cfg(), M = L.moves; return Object.keys(L.fronts).length + Object.keys(L.markers).length + Object.keys(L.fibreMarks).length + L.cuts.length + (L.entry ? 1 : 0) + M.kiosks.length + Object.keys(M.verts).length + M.adds.length + M.cuts.length + Object.keys(M.xs).length; },
   nextAction(r, placed, noKiosks, nErv, nStreets) {
     if (!nErv) return { label: 'Detect the erven to continue', act: 'goto', s: 1, dis: true, note: 'The layout needs erf boundaries: use Detect erven.' };
     if (!nStreets) return { label: 'Add the streets to continue', act: 'goto', s: 1, dis: true, note: 'The layout needs the street centrelines.' };
@@ -1415,7 +1441,7 @@ const PlanLayoutUI = {
     if (!r.kiosks.length) return pre + 'Review: no kiosks were found. Draw a centreline beside the erven, or extend the nearest street.';
     if (this.mode === 'marker') return pre + (this.markFor ? 'click on the erf where its service cable should arrive.' : 'click inside an erf where its service cable should arrive. Alt-click removes a marker.');
     if (this.mode === 'cross') return pre + 'Road crossings: drag a start or end to move it · drag the line to slide it along the street · Alt-click: put it back · drag empty space: pan';
-    if (this.mode === 'move') return pre + 'Drag a kiosk, manhole, erf marker or node · Shift-click a line: add a node · Alt-click a node: remove it · drag empty space: pan';
+    if (this.mode === 'move') return pre + 'Drag a kiosk, manhole, erf marker, fibre point or node · Shift-click a line: add a node · Alt-click a node: remove it · drag empty space: pan';
     if (this.mode === 'trunk') return pre + 'click a trunk duct section to cut it or put it back; click a junction for the fibre entry.';
     return pre + 'Review: click a check to see it on the plan. Click an erf near an edge to make it the front.';
   },
@@ -1443,11 +1469,12 @@ const PlanLayoutUI = {
     const subPts = this.placedSubs().map(q => [q.x * f, q.y * f]);                    // every mini-sub you placed: the layout works from them
     if (!subPts.length && !allowNoSub) return { err: 'Place your mini-subs first (step 2): click where each one stands. The layout works from them.' };
     const markers = {}; for (const [id, q] of Object.entries(L.markers)) if (erven.some(e => e.id === id)) markers[id] = [q.x * f, q.y * f];
+    const fibreOffs = {}; for (const [id, q] of Object.entries(L.fibreMarks)) if (erven.some(e => e.id === id)) fibreOffs[id] = [q.dx * f, q.dy * f];
     const splits = L.vd.splits.map(q => [q.x * f, q.y * f]);
     const kioskDrops = L.moves.kiosks.map(m => [m.from.x * f, m.from.y * f]), kioskPins = L.moves.kiosks.map(m => [m.to.x * f, m.to.y * f]);   // kiosks moved by hand
     // the kerb returns the plan draws at the street corners (road-reserve streets; radii dragged on the plan included), in metres
     let kerbReturns = []; try { const g = typeof PlanReserveUI !== 'undefined' && PlanReserveUI.planGeometry(); if (g && g.rets) kerbReturns = g.rets; } catch (e) { kerbReturns = []; }
-    return { f, input: { erven, streets, markers, splits, kioskDrops, kioskPins, ks, fs, overrides: L.fronts, cuts: L.cuts, subPts, entryPt: L.entry ? [L.entry.x * f, L.entry.y * f] : null, sections: L.sections.on ? L.sections : null, kerbReturns }, params: L.params };
+    return { f, input: { erven, streets, markers, fibreOffs, splits, kioskDrops, kioskPins, ks, fs, overrides: L.fronts, cuts: L.cuts, subPts, entryPt: L.entry ? [L.entry.x * f, L.entry.y * f] : null, sections: L.sections.on ? L.sections : null, kerbReturns }, params: L.params };
   },
 
   // The figures shown beside Run layout: what the last run came to, and how many settings were changed since it
@@ -1808,7 +1835,9 @@ const PlanLayoutUI = {
       ctx.setLineDash([]);
       r.fibre.spare.forEach(e => { const cut = this.cfg().cuts.includes(e.key); ctx.strokeStyle = cut ? '#dc2626' : '#94a3b8'; ctx.lineWidth = 1.4 * u; ctx.setLineDash(cut ? [3 * u, 4 * u] : [1.5 * u, 4 * u]); line(e.pts); });
       ctx.setLineDash([]); ctx.strokeStyle = '#a21caf'; ctx.lineWidth = 2.6 * u; r.fibre.trunks.forEach(e => line(e.pts));
-      ctx.fillStyle = '#a21caf'; r.erven.forEach(e => { if (e.fibrePt && e.duct) { const [x, y] = W(e.fibrePt), s = 3 * u; ctx.beginPath(); ctx.moveTo(x, y - s); ctx.lineTo(x + s, y); ctx.lineTo(x, y + s); ctx.lineTo(x - s, y); ctx.closePath(); ctx.fill(); } });
+      ctx.fillStyle = '#fff'; ctx.strokeStyle = '#a21caf'; ctx.lineWidth = 1.6 * u;                  // fibre point: a small ring (a diamond is a fibre junction); violet halo = moved by hand
+      r.erven.forEach(e => { if (e.fibrePt && e.duct) { const [x, y] = W(e.fibrePt); ctx.beginPath(); ctx.arc(x, y, 3 * u, 0, 7); ctx.fill(); ctx.stroke();
+        if (e.fibreHand) { ctx.save(); ctx.strokeStyle = '#7c3aed'; ctx.lineWidth = 1.4 * u; ctx.beginPath(); ctx.arc(x, y, 5.5 * u, 0, 7); ctx.stroke(); ctx.restore(); } } });
     }
     if (S.lvmv && r.net) {
       ctx.setLineDash([6 * u, 3 * u]); ctx.strokeStyle = '#b45309'; ctx.lineWidth = 1.8 * u; r.net.lv.forEach(ed => line(ed.pts));
@@ -1833,8 +1862,14 @@ const PlanLayoutUI = {
     }
     if (S.fibre) {
       ctx.font = `700 ${8.5 * u}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.lineWidth = 1.8 * u;
-      r.fibre.inter.forEach(j => { const [x, y] = W([j.x, j.y]); ctx.fillStyle = '#fff'; ctx.strokeStyle = '#a21caf'; ctx.beginPath(); ctx.arc(x, y, 4 * u, 0, 7); ctx.fill(); ctx.stroke(); });
-      r.fibre.mhs.forEach(m => { const [x, y] = W([m.x, m.y]); ctx.fillStyle = '#fff'; ctx.strokeStyle = m.off ? '#dc2626' : '#a21caf'; ctx.beginPath(); ctx.arc(x, y, 6.5 * u, 0, 7); ctx.fill(); ctx.stroke(); ctx.fillStyle = '#a21caf'; ctx.fillText(m.label, x, y + .5 * u); });
+      // a fibre junction with no chamber: a hollow diamond; a manhole: a solid chamber turned along its street, labelled M1, M2… (red: cut off from the entry)
+      r.fibre.inter.forEach(j => { const [x, y] = W([j.x, j.y]), s = 5 * u; ctx.fillStyle = '#fff'; ctx.strokeStyle = '#a21caf'; ctx.lineWidth = 2 * u; ctx.beginPath(); ctx.moveTo(x, y - s); ctx.lineTo(x + s, y); ctx.lineTo(x, y + s); ctx.lineTo(x - s, y); ctx.closePath(); ctx.fill(); ctx.stroke(); });
+      r.fibre.mhs.forEach(m => { const [x, y] = W([m.x, m.y]), w = 9.5 * u, h = 6 * u, a = this._streetAngle(m.road, [m.x, m.y]);
+        ctx.save(); ctx.translate(x, y); ctx.rotate(a); ctx.fillStyle = m.off ? '#b91c1c' : '#86198f'; ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5 * u;
+        ctx.beginPath(); if (ctx.roundRect) ctx.roundRect(-w, -h, 2 * w, 2 * h, 2.5 * u); else ctx.rect(-w, -h, 2 * w, 2 * h); ctx.fill(); ctx.stroke();
+        if (Math.abs(a) > Math.PI / 2) ctx.rotate(Math.PI);                                       // the label never upside down
+        ctx.fillStyle = '#fff'; ctx.fillText('M' + m.label, 0, .5 * u); ctx.restore(); });
+      ctx.lineWidth = 1.8 * u;
       if (r.fibre.entry) { const [x, y] = W([r.fibre.entry.x, r.fibre.entry.y]); ctx.fillStyle = '#a21caf'; ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5 * u; ctx.beginPath(); ctx.moveTo(x, y + 3 * u); ctx.lineTo(x + 7 * u, y + 15 * u); ctx.lineTo(x - 7 * u, y + 15 * u); ctx.closePath(); ctx.stroke(); ctx.fill(); }
     }
     if (S.kiosk) {
@@ -2042,7 +2077,7 @@ const PlanLayoutUI = {
     const aBtn = (v, t, span) => `<button type="button" class="plan-btn" data-mode="${v}" aria-pressed="${this.mode === v}" style="min-height:40px;padding:4px 8px;font-size:13px;${span ? 'grid-column:span 2;' : ''}${this.mode === v ? 'font-weight:700;background:var(--accent,#2563eb);color:#fff;border-color:var(--accent,#2563eb)' : ''}">${t}</button>`;
     const modeText = this.mode === 'marker' ? (this.markFor ? 'Click on the erf where its service cable should arrive.' : 'Click inside an erf the layout cannot place (or one it places wrongly) where its service cable should arrive. Alt-click removes a marker. The cable, kiosk and fibre duct are worked out to it.')
       : this.mode === 'trunk' ? 'Click a trunk duct section to cut it or put it back; click a junction to make it the fibre entry.'
-      : this.mode === 'move' ? 'Drag a kiosk, a manhole, an erf marker or any node on a duct or cable route. Shift-click a line to add a node, Alt-click a node to remove it (a kiosk or marker you moved: Alt-click puts it back). A kiosk you move stays where you put it and the rest is worked out around it; the checks run again.'
+      : this.mode === 'move' ? 'Drag a kiosk, a manhole, an erf marker, a fibre point or any node on a duct or cable route. A fibre point you move keeps its place beside its marker. Shift-click a line to add a node, Alt-click a node to remove it (a kiosk, marker or fibre point you moved: Alt-click puts it back). A kiosk you move stays where you put it and the rest is worked out around it; the checks run again.'
       : this.mode === 'cross' ? '' : 'Click an erf near the edge you want as its front.';
     const adjust = `<div style="border:2px solid var(--accent,#2563eb);border-radius:8px;padding:8px;display:flex;flex-direction:column;gap:6px;background:rgba(37,99,235,.05)">
         <div style="display:flex;justify-content:space-between;align-items:baseline"><b>Adjust on the plan</b><span style="font-size:12px;color:var(--text-muted)">${cnt} edit${cnt === 1 ? '' : 's'}</span></div>
@@ -2113,7 +2148,7 @@ const PlanLayoutUI = {
         const [i, j] = b.dataset.ckact.split(':').map(Number), a = (((this._ck || [])[i] || {}).acts || [])[j]; if (!a) return;
         if (a.act === 'tx') { L.vd.tx = a.val; this.revd(); }
         else if (a.act === 'extendall') { this.extendErven(a.val || []); }
-        else if (a.act === 'resetmarkers') { this.cfg().markers = {}; this.markFor = null; this.touched(); }
+        else if (a.act === 'resetmarkers') { this.cfg().markers = {}; this.cfg().fibreMarks = {}; this.markFor = null; this.touched(); }
         else if (a.act === 'addsub') { this.setStep(2); UI.toast('Click where the next mini-sub should stand. The kiosks go to the nearest one.', 'info', 5000); PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true }); }
         else if (a.act === 'maxsize') { L.vd.maxSize = +a.val || 0; this.vdRun(); }
         else if (a.act === 'clearsize') { L.vd.minSize = 0; L.vd.maxSize = 0; this.vdRun(); }
@@ -2157,7 +2192,7 @@ const PlanLayoutUI = {
       else if (b.dataset.act === 'admdok') { this.admdConfirm(); PlanMarkup.refreshProps(); }
       else if (b.dataset.act === 'create') this.commit();
       else if (b.dataset.act === 'clear') this.clear();
-      else if (b.dataset.act === 'reset') { L.fronts = {}; L.markers = {}; L.cuts = []; delete L.entry; L.moves = { kiosks: [], verts: {}, adds: [], cuts: [], xs: {} }; this.selX = null; this.markFor = null; this._drag = null; this.touched(true); }
+      else if (b.dataset.act === 'reset') { L.fronts = {}; L.markers = {}; L.fibreMarks = {}; L.cuts = []; delete L.entry; L.moves = { kiosks: [], verts: {}, adds: [], cuts: [], xs: {} }; this.selX = null; this.markFor = null; this._drag = null; this.touched(true); }
       else if (b.dataset.mode) { this.mode = b.dataset.mode; this.markFor = null; PlanMarkup.refreshProps(); }
       else if (b.dataset.side) { const o = L.sides[b.dataset.side] = L.sides[b.dataset.side] || {}, v = +b.dataset.val; if (v === 0) delete o[b.dataset.key]; else o[b.dataset.key] = v; this.touched(); }
     };
