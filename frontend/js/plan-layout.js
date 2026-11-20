@@ -91,6 +91,33 @@ const PlanLayout = (() => {
     }
     return best;
   }
+  // the corridor node a kiosk stand joins (route 'blocks'): the nearest node on the stand's own side of its street, never across a street
+  // line, a frontage node first. `strict`: within 8 m or none — none means that side has no erf frontage there (no corridor), and the
+  // kiosk is then joined to the nearest corridor across the road by a crossing (`kioskJoin`); otherwise within 40 m, else the nearest node
+  function standNode(M, G, c, strict) {
+    const any = G.attach([c.x, c.y]), st = c.road; if (!st) return any;
+    const side = project(st, c.x, c.y).side, onSide = p => project(st, p[0], p[1]).side === side;
+    const ok = p => onSide(p) && !(M.streetSI && M.streetSI.crosses([c.x, c.y], p, true)), R2 = strict ? 64 : 1600;
+    if (any != null && ok(G.nodes[any].p) && (!strict || Math.hypot(G.nodes[any].p[0] - c.x, G.nodes[any].p[1] - c.y) <= 8)) return any;
+    let best = null;
+    for (let i = 0; i < G.nodes.length; i++) {
+      const nd = G.nodes[i], p = nd.p, dx = p[0] - c.x, dy = p[1] - c.y; if (dx * dx + dy * dy > R2) continue;
+      const d = Math.hypot(dx, dy), fr = nd.R && nd.R.front ? !!nd.R.front[nd.i] : false;
+      if (best && (best.fr && !fr || best.fr === fr && best.d <= d)) continue;
+      if (!ok(p)) continue;
+      best = { i, d, fr };
+    }
+    return best ? best.i : strict ? null : any;
+  }
+  // how a kiosk stand joins the power corridor: { nd, d, x } — x = 1 when it stands where its side has no corridor and joins the nearest one
+  // across the road (a road crossing from the kiosk). `hard` = the side was set by the user (the street's kiosk side, or a kiosk placed by
+  // hand); otherwise the stand goes onto the nearest corridor, whichever side it is on (as before)
+  function kioskJoin(M, G, c, hard) {
+    if (!hard) { const nd = standNode(M, G, c, false); return nd == null ? null : { nd, d: Math.hypot(G.nodes[nd].p[0] - c.x, G.nodes[nd].p[1] - c.y), x: 0 }; }
+    const own = standNode(M, G, c, true); if (own != null) return { nd: own, d: Math.hypot(G.nodes[own].p[0] - c.x, G.nodes[own].p[1] - c.y), x: 0 };
+    const nd = G.attach([c.x, c.y]); if (nd == null) return null;
+    const p = G.nodes[nd].p; return { nd, d: Math.hypot(p[0] - c.x, p[1] - c.y), x: c.road && project(c.road, p[0], p[1]).side !== project(c.road, c.x, c.y).side ? 1 : 0 };
+  }
   const STEP = 2.5;
   function verge(st, s0, s1, off) {
     const n = Math.max(1, Math.ceil(Math.abs(s1 - s0) / STEP)), out = [];
@@ -811,14 +838,16 @@ const PlanLayout = (() => {
       const Lm = cands.map(() => new Float64Array(n).fill(Infinity)), Xm = cands.map(() => new Uint8Array(n));
       const xcount = (pts, excl) => pathCrossings(pts, excl).length;
       if (BM) {                                                                        // along the erf boundaries: one search from each erf marker
-        const G = BM.cls.p, cn = cands.map(c => { const nd = G.attach([c.x, c.y]); return nd == null ? null : { nd, d: Math.hypot(G.nodes[nd].p[0] - c.x, G.nodes[nd].p[1] - c.y) }; });
+        // a stand joins the corridor on its own side of the street; where that side has no erf frontage it joins the one across the road,
+        // and every service from it pays that crossing
+        const G = BM.cls.p, cn = cands.map(c => kioskJoin(BM, G, c, !!(c.pin || (c.road && input.ks && input.ks[c.road.id]))));
         for (let i = 0; i < n; i++) {
           const e = list[i], B = BM.blockOf.get(e.id);
           for (const m of e.mcs) {
             const nd = G.attachInto(m.pt, B, e.id); if (nd == null) continue;
             const stub = Math.hypot(G.nodes[nd].p[0] - m.pt[0], G.nodes[nd].p[1] - m.pt[1]), R = G.reach(nd, maxc + 9 * (+P.xroute || 0));
-            for (let ci = 0; ci < C; ci++) { const q = cn[ci]; if (!q) continue; const v = R.get(q.nd); if (!v) continue; const L = v[1] + stub + q.d;
-              if (L <= maxc && L + XPEN * v[2] < Lm[ci][i] + XPEN * Xm[ci][i]) { Lm[ci][i] = L; Xm[ci][i] = Math.min(v[2], 9); } }
+            for (let ci = 0; ci < C; ci++) { const q = cn[ci]; if (!q) continue; const v = R.get(q.nd); if (!v) continue; const L = v[1] + stub + q.d, X = v[2] + q.x;
+              if (L <= maxc && L + XPEN * X < Lm[ci][i] + XPEN * Xm[ci][i]) { Lm[ci][i] = L; Xm[ci][i] = Math.min(X, 9); } }
           }
         }
       }
@@ -1505,14 +1534,18 @@ const PlanLayout = (() => {
     };
     r.erven.forEach(e => { if (e.marker) { const m = inside(e, e.marker); e.marker[0] = m[0]; e.marker[1] = m[1]; } if (e.fibrePt) { const m = inside(e, e.fibrePt); e.fibrePt[0] = m[0]; e.fibrePt[1] = m[1]; } });
     // kiosks
-    r.kiosks.forEach(k => onto(G, k));
+    // a kiosk goes onto the corridor on its own side of its street; where that side has no corridor (no erf faces it there) it stays where it
+    // was put and joins the corridor across the road by a crossing of its own (`k.xjoin`, counted with the crossings below)
+    const kx = [];
+    r.kiosks.forEach(k => { const j = kioskJoin(M, G, k, !!(k.pin || (k.road && input.ks && input.ks[k.road.id]))); if (!j) return; const p = G.nodes[j.nd].p; k.bnode = j.nd;
+      if (j.x) { k.xjoin = { cls: 'p', kind: 'kiosk', a: [k.x, k.y], b: p.slice(), used: [] }; kx.push(k.xjoin); } else { k.x = p[0]; k.y = p[1]; } });
     // services, kiosk by kiosk
-    const svc = (e, k, ov) => { const rt = k.bnode == null ? null : G.route(k.bnode, G.attachInto(e.marker, blk(e), e.id), ov); if (!rt) return null; rt.full = [[k.x, k.y], ...rt.pts.slice(1), e.marker.slice()]; rt.len = plen(rt.full); return rt; };
+    const svc = (e, k, ov) => { const rt = k.bnode == null ? null : G.route(k.bnode, G.attachInto(e.marker, blk(e), e.id), ov); if (!rt) return null; rt.full = [[k.x, k.y], ...rt.pts.slice(k.xjoin ? 0 : 1), e.marker.slice()]; rt.len = plen(rt.full); return rt; };
     let moved = 0, kept = 0, keptRuns = 0, slid = 0;
     // a kiosk with a service over the limit (the solve put it on a junction corner, its erf diagonally across) first slides along its own
     // corridor, up to 40 m each way, to the stand where the fewest of its erven are over the limit, then the least service cable
     for (const k of r.kiosks) {
-      if (k.bnode == null || k.pin) continue;
+      if (k.bnode == null || k.pin || k.xjoin) continue;
       const lens = () => k.members.filter(e => e.marker).map(e => { const rt = svc(e, k); return rt ? rt.len : Infinity; });
       const score = ls => [ls.filter(v => v > maxc).length, ls.reduce((t, v) => t + Math.min(v, 1e4), 0)];
       const cur = score(lens()); if (!cur[0]) continue;
@@ -1534,7 +1567,7 @@ const PlanLayout = (() => {
         if (alt) { k.members.splice(k.members.indexOf(e), 1); alt.q.members.push(e); e.kiosk = alt.q; rt = alt.rt; moved++; }
       }
       if (!rt) { kept++; continue; }                                                // no path on the rings: the solve's own route stays
-      rt.commit('svc'); e.route = simp(rt.full); e.cable = plen(e.route); e.hopN = 0; e.xsites = rt.sites;
+      rt.commit('svc'); if (e.kiosk && e.kiosk.xjoin) e.kiosk.xjoin.used.push('svc'); e.route = simp(rt.full); e.cable = plen(e.route); e.hopN = 0; e.xsites = rt.sites;
     }
     // fibre: manholes onto the fibre ring, every trunk section and erf duct laid again between its own two ends
     const F = r.fibre;
@@ -1560,7 +1593,7 @@ const PlanLayout = (() => {
       for (const l of net.lvLinks) {
         const A = l.from, B = l.to; if (A.bnode == null || B.bnode == null) { keptRuns++; continue; }
         const rt = G.route(A.bnode, B.bnode); if (!rt) { keptRuns++; continue; }
-        rt.commit('lv'); l.pts = simp([[A.x, A.y], ...rt.pts, [B.x, B.y]]); l.len = plen(l.pts);
+        rt.commit('lv'); for (const k of [A, B]) if (k.xjoin) k.xjoin.used.push('lv'); l.pts = simp([[A.x, A.y], ...rt.pts, [B.x, B.y]]); l.len = plen(l.pts);
       }
       net.lv = net.lvLinks.filter(l => !l.split).map(l => ({ a: l.from, b: l.to, pts: l.pts, len: l.len, xs: [] }));
       net.lvLen = net.lv.reduce((t, ed) => t + ed.len, 0);
@@ -1573,8 +1606,8 @@ const PlanLayout = (() => {
     // the crossings: the sites the cables use (power and fibre at the same place share one unless the rule is a crossing per cable class)
     const nearSt = p => { let b = null; for (const st of r.streets) { const pr = project(st, p[0], p[1]); if (!b || pr.d < b.pr.d) b = { st, pr }; } return b; };
     const cross = [], shareAll = P.xrule !== 'class' && P.share !== false;
-    for (const x of [...G.sites, ...GF.sites]) {
-      const prov = !x.used.length; if (prov && !(P.junct && x.kind === 'leg' && x.cls === 'p')) continue;
+    for (const x of [...G.sites, ...GF.sites, ...kx]) {
+      const prov = !x.used.length; if (prov && x.kind === 'kiosk') continue; if (prov && !(P.junct && x.kind === 'leg' && x.cls === 'p')) continue;
       const mid = [(x.a[0] + x.b[0]) / 2, (x.a[1] + x.b[1]) / 2], ns = nearSt(mid), s = ns.pr.s;
       const cnt = t => x.used.filter(u => u === t).length;
       let g = shareAll && !prov ? cross.find(c => !c.prov && c.st === ns.st && Math.abs(c.s - s) <= 3 && Math.hypot(c.mid[0] - mid[0], c.mid[1] - mid[1]) <= 4) : null;
