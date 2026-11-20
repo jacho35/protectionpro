@@ -463,6 +463,24 @@ ok('boundary routing: a kiosk or manhole put by hand across the road stays there
   assert(om && !om.xjoin && om.y > 0, 'on the erf side: onto the corridor there');
 });
 
+ok('boundary routing: a kiosk you place across the road is served first, even with one of the layout\'s own kiosks nearer', () => {
+  const G = markerFx(), base = L.solve(G, { route: 'blocks' });
+  const r = L.solve(Object.assign({ kioskPins: [[60, -6]] }, G), { route: 'blocks' }), pk = r.kiosks.find(q => q.pin);   // the layout's own kiosk is NOT dropped
+  assert(base.kiosks.length >= 1 && pk && pk.xjoin && pk.members.length >= 3, 'the placed kiosk takes most of the erven ' + (pk && pk.members.length));
+  assert(!r.warns.some(w => typeof w === 'string' && /moved serves no erf/.test(w)));
+  const none = L.solve(G, { route: 'blocks' });
+  assert.deepStrictEqual(none.kiosks.map(k => [k.x, k.y, k.members.length]), base.kiosks.map(k => [k.x, k.y, k.members.length]), 'no kiosk placed: unchanged');
+});
+ok('boundary routing: a street\'s own kiosk side (ksOwn) is honoured even where the optimiser would rather serve from elsewhere', () => {
+  const sq = (x0, y0, x1, y1) => [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];
+  const G = { streets: [{ id: 'A', name: 'ROAD A', w: 10, pts: [[0, 0], [160, 0]] }, { id: 'B', name: 'ROAD B', w: 10, pts: [[0, 40], [160, 40]] }],
+    erven: [0, 1, 2, 3, 4].map(i => ({ id: 'a' + i, poly: sq(10 + i * 28, 8, 10 + i * 28 + 26, 28) })).concat([0, 1, 2, 3, 4].map(i => ({ id: 'b' + i, poly: sq(10 + i * 28, 48, 10 + i * 28 + 26, 68) }))) };
+  const side = (k, st) => Math.sign(k.y - st.pts[0][1]);
+  const own = L.solve(Object.assign({ ks: { A: 1, B: -1 }, ksOwn: { A: true } }, G), { route: 'blocks' }), A = own.streets.find(s => s.id === 'A');
+  const onA = own.kiosks.filter(k => k.road === A);
+  assert(onA.length && onA.every(k => side(k, A) < 0 && k.xjoin), 'kiosks on street A stand on its set (empty) side ' + onA.map(k => k.y.toFixed(1)));
+});
+
 ok('splitting a string: a kiosk becomes its own string head, fed straight off the mini-sub along the same route', () => {
   const base = L.solve(F, { subs: 1 }), deep = base.net.lvLinks.filter(l => l.from !== base.net.subs[0].k).sort((a, b) => b.len - a.len)[0];
   assert(deep, 'a kiosk that hangs off another kiosk');
