@@ -387,7 +387,9 @@ const PlanEngine = {
     // z-order: rooms (zones, underneath) → trenches → crossings → routes → …
     for (const rm of (pm.rooms || [])) this._drawRoom(ctx, rm, sel.has(rm.id));
     for (const t of pm.trenches) this._drawTrench(ctx, t, sel.has(t.id));
-    for (const c of pm.crossings) this._drawCrossing(ctx, c, sel.has(c.id));
+    const xg = typeof PlanCrossings !== 'undefined' ? PlanCrossings.selectedGroup() : null;   // a whole crossing of several ducts selected: one outline, centre-line handles
+    for (const c of pm.crossings) this._drawCrossing(ctx, c, sel.has(c.id), !!xg);
+    if (xg) this._drawCrossGroup(ctx, xg);
     const served = this._servedOf(sel);                                  // a selected kiosk: the erven it serves
     this._drawServedUnder(ctx, served, z);
     for (const r of pm.routes) this._drawRoute(ctx, r, sel.has(r.id));
@@ -730,11 +732,21 @@ const PlanEngine = {
 
   // a road crossing duct: coloured and as wide as its size (110 mm orange, 160 mm red and wider), the size written at its middle once it is
   // long enough on screen; selected = a blue halo and a handle at each end (drag them with the select tool)
-  _drawCrossing(ctx, c, selected) {
+  // a selected crossing of several ducts: one outline round the bundle and a handle at each end of its centre line
+  _drawCrossGroup(ctx, list) {
+    const z = this.view.zoom, ctr = PlanCrossings.centre(list), dx = ctr.p2.x - ctr.p1.x, dy = ctr.p2.y - ctr.p1.y, L = Math.hypot(dx, dy) || 1;
+    const nx = -dy / L, ny = dx / L, half = PlanCrossings.spPx(PlanCrossings.spacing(list)) * (list.length - 1) / 2 + 6 / z;
+    ctx.save(); ctx.fillStyle = 'rgba(37,99,235,.12)'; ctx.strokeStyle = '#2563eb'; ctx.lineWidth = 1.5 / z;
+    ctx.beginPath(); ctx.moveTo(ctr.p1.x + nx * half, ctr.p1.y + ny * half); ctx.lineTo(ctr.p2.x + nx * half, ctr.p2.y + ny * half); ctx.lineTo(ctr.p2.x - nx * half, ctr.p2.y - ny * half); ctx.lineTo(ctr.p1.x - nx * half, ctr.p1.y - ny * half); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#fff'; ctx.lineWidth = 2 / z; for (const p of [ctr.p1, ctr.p2]) { ctx.beginPath(); ctx.arc(p.x, p.y, 5 / z, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); }
+    ctx.restore();
+  },
+
+  _drawCrossing(ctx, c, selected, inGroup) {
     if (!c.p1 || !c.p2) return;
     const D = PLAN_DEFS.crossings, st = (D.style && D.style[c.size]) || { color: D.color, width: 3 }, z = this.view.zoom;
     ctx.save();
-    if (selected) { ctx.strokeStyle = 'rgba(37,99,235,.35)'; ctx.lineWidth = (st.width + 5) / z; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(c.p1.x, c.p1.y); ctx.lineTo(c.p2.x, c.p2.y); ctx.stroke(); }
+    if (selected && !inGroup) { ctx.strokeStyle = 'rgba(37,99,235,.35)'; ctx.lineWidth = (st.width + 5) / z; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(c.p1.x, c.p1.y); ctx.lineTo(c.p2.x, c.p2.y); ctx.stroke(); }
     ctx.strokeStyle = st.color; ctx.lineWidth = st.width / z; ctx.lineCap = 'butt';
     ctx.beginPath(); ctx.moveTo(c.p1.x, c.p1.y); ctx.lineTo(c.p2.x, c.p2.y); ctx.stroke();
     const len = Math.hypot(c.p2.x - c.p1.x, c.p2.y - c.p1.y) * z;
@@ -744,7 +756,7 @@ const PlanEngine = {
       ctx.lineWidth = 3 / z; ctx.strokeStyle = 'rgba(255,255,255,.9)'; ctx.strokeText(c.size, 0, -(st.width / 2 + 1) / z); ctx.fillStyle = st.color; ctx.fillText(c.size, 0, -(st.width / 2 + 1) / z);
       ctx.restore();
     }
-    if (selected) { ctx.fillStyle = '#fff'; ctx.strokeStyle = '#2563eb'; ctx.lineWidth = 1.5 / z; for (const p of [c.p1, c.p2]) { ctx.beginPath(); ctx.arc(p.x, p.y, 4.5 / z, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); } }
+    if (selected && !inGroup) { ctx.fillStyle = '#fff'; ctx.strokeStyle = '#2563eb'; ctx.lineWidth = 1.5 / z; for (const p of [c.p1, c.p2]) { ctx.beginPath(); ctx.arc(p.x, p.y, 4.5 / z, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); } }
     ctx.restore();
   },
 

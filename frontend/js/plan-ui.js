@@ -21,6 +21,8 @@ const PlanUI = {
     propsEl.addEventListener('input', (e) => this._onPropsChange(e));
     propsEl.addEventListener('click', (e) => {
       if (e.target.closest('[data-role="delete"]')) { PlanMarkup.deleteSelected(); return; }
+      const xgb = e.target.closest('[data-xg]');
+      if (xgb) { this._onCrossGroup(xgb.dataset.xg, xgb); return; }
       const go = e.target.closest('[data-plan-go]');
       if (go) { PlanMarkup.selectOnly(go.dataset.planGo); PlanMarkup.zoomToSelection(); return; }
       const pick = e.target.closest('[data-plan-select]');
@@ -539,6 +541,7 @@ const PlanUI = {
     const bar = document.getElementById('plan-placebar');
     const info = document.getElementById('plan-info');
     if (!bar) return;
+    if (toolId === 'crossing') { bar.hidden = false; if (info) info.hidden = true; this._renderCrossBar(bar); return; }
     const type = opts && opts.type;
     const def = type && PLAN_DEFS.element(type);
     const show = def && ['place', 'array', 'devpath'].includes(toolId);
@@ -612,6 +615,8 @@ const PlanUI = {
     if (PlanMarkup.context === 'lighting' && this._underlay && !PlanMarkup.selectedIds.size) { this._renderUnderlayProps(el); return; }
     const ids = [...PlanMarkup.selectedIds];
     if (ids.length === 0) { el.innerHTML = (PlanMarkup.context === 'lighting') ? `<div class="plan-props-empty">Select an item to edit its properties.</div>` : this._summaryHtml(); return; }
+    const xg = typeof PlanCrossings !== 'undefined' ? PlanCrossings.selectedGroup() : null;   // the whole of one crossing of several ducts
+    if (xg) { this._renderCrossGroup(el, xg); return; }
     if (ids.length > 1) { this._renderBulk(el, ids); return; }
     const found = PlanMarkup.findEntityById(ids[0]);
     if (!found) { el.innerHTML = ''; return; }
@@ -638,11 +643,13 @@ const PlanUI = {
       ];
       getVal = (k) => item[k];
     } else if (kind === 'crossing') {
-      title = 'Road Crossing';
+      const xm = typeof PlanCrossings !== 'undefined' ? PlanCrossings.members(item) : [item];
+      title = 'Road Crossing' + (xm.length > 1 ? ` · one of ${xm.length} ducts in ${PlanCrossings.label(item)}` : '');
       fields = [
         { key: 'name', label: 'Name', type: 'text' },
         { key: 'size', label: 'Duct (mm)', type: 'select', options: PLAN_DEFS.crossings.sizes.map(s => ({ value: s, label: s })) },
       ];
+      if (xm.length > 1) this._pendingCrossNote = `<button type="button" class="plan-btn" data-xg="selgroup" style="margin:4px 0 8px">Select the whole crossing (${xm.length} ducts)</button>`;
       getVal = (k) => item[k];
     } else if (kind === 'room') {
       const f = PlanEngine.factor();
@@ -700,6 +707,7 @@ const PlanUI = {
     }
     // The verdicts lead the panel: straight under the title, before any field.
     if (this._pendingVerdicts) html = html.replace(/^(<div class="plan-props-title">[^]*?<\/div>)/, (m) => m + this._pendingVerdicts);
+    if (this._pendingCrossNote) { const note = this._pendingCrossNote; this._pendingCrossNote = ''; html = html.replace(/^(<div class="plan-props-title">[^]*?<\/div>)/, (m) => m + note); }
     // Delete button
     html += `<button class="plan-props-delete" data-role="delete">Delete</button>`;
     el.innerHTML = html;
@@ -709,6 +717,74 @@ const PlanUI = {
 
   // ─── Bulk edit (several items of one kind + type selected) ───
   // The field list and value reader for one entity, shared by the bulk panel.
+  // the Road crossing tool's bar: how many 110 / 160 mm ducts one line lays, and their spacing (kept in the plan settings)
+  _renderCrossBar(bar) {
+    const o = PlanCrossings.opts(), n = o.n110 + o.n160, D = PLAN_DEFS.crossings.style || {};
+    const cnt = (k, mm) => `<div class="plan-place-set" style="align-items:center;gap:4px"><span style="display:inline-block;width:18px;height:${D[mm] ? Math.round(D[mm].width) : 3}px;background:${D[mm] ? D[mm].color : PLAN_DEFS.crossings.color}" aria-hidden="true"></span><span>${mm} mm</span>
+      <button type="button" class="plan-btn" data-xb="${k}" data-d="-1" aria-label="One less ${mm} mm duct" style="min-width:30px">−</button>
+      <input type="number" min="0" max="12" step="1" data-xb-opt="${k}" value="${o[k]}" aria-label="${mm} mm ducts" style="width:44px;text-align:center">
+      <button type="button" class="plan-btn" data-xb="${k}" data-d="1" aria-label="One more ${mm} mm duct" style="min-width:30px">+</button></div>`;
+    bar.setAttribute('aria-label', 'Road crossing ducts');
+    bar.innerHTML = `<div class="plan-place-what"><small>Drawing</small><b><span class="plan-pal-swatch" style="background:${escHtml(PLAN_DEFS.crossings.color)}"></span>Road crossing</b></div>
+      ${cnt('n110', '110')}${cnt('n160', '160')}
+      <div class="plan-place-set"><label class="plan-place-unit">Spacing<input type="number" min="0.2" max="2" step="0.1" data-xb-opt="sp" value="${o.sp}" aria-label="Spacing between ducts in metres" style="width:56px"> m</label></div>
+      <div class="plan-place-set" style="align-items:center"><small style="display:inline">${n === 1 ? 'one duct' : n + ' ducts side by side, one crossing'} · click both ends</small></div>
+      <div class="plan-place-end"><button type="button" class="plan-btn" data-place-stop title="Click where the crossing starts and where it ends. Esc stops.">Stop <kbd>Esc</kbd></button></div>`;
+    if (bar._xbound) return;
+    bar._xbound = true;
+    const live = () => PlanTools.active && PlanTools.active.id === 'crossing';
+    bar.addEventListener('click', (e) => {
+      if (!live()) return;
+      if (e.target.closest('[data-place-stop]')) { PlanTools.set('select'); return; }
+      const b = e.target.closest('[data-xb]'); if (!b) return;
+      const m = PlanCrossings.opts(); m[b.dataset.xb] = Math.max(0, Math.min(12, m[b.dataset.xb] + (+b.dataset.d)));
+      if (!m.n110 && !m.n160) m[b.dataset.xb === 'n110' ? 'n160' : 'n110'] = 1;          // never no duct at all
+      PlanMarkup.markDirty(); this._renderCrossBar(bar); PlanEngine.requestDraw({ fg: true });
+    });
+    bar.addEventListener('change', (e) => {
+      if (!live()) return; const k = e.target.dataset.xbOpt; if (!k) return;
+      const m = PlanCrossings.opts(), v = parseFloat(e.target.value);
+      if (isFinite(v)) m[k] = k === 'sp' ? Math.max(0.2, Math.min(2, v)) : Math.max(0, Math.min(12, Math.round(v)));
+      if (!m.n110 && !m.n160) m.n110 = 1;
+      PlanMarkup.markDirty(); this._renderCrossBar(bar); PlanEngine.requestDraw({ fg: true });
+    });
+  },
+
+  // the Properties panel of a whole crossing of several ducts: its ducts (size, what each is for, remove), add a duct, spacing, ungroup
+  _renderCrossGroup(el, list) {
+    const o = PlanCrossings.ordered(list), f = PlanEngine.factor(), ctr = PlanCrossings.centre(list), len = Math.hypot(ctr.p2.x - ctr.p1.x, ctr.p2.y - ctr.p1.y);
+    const n110 = list.filter(c => c.size !== '160').length, n160 = list.length - n110, USES = ['service', 'LV', 'fibre', 'MV', 'junction', 'spare'];
+    const sel = (c, k, opts) => `<select data-xg-${k}="${escHtml(c.id)}" aria-label="${escHtml(c.name || '')} ${k}" style="width:100%">${opts.map(v => `<option value="${escHtml(v)}"${String(c[k] || '') === v ? ' selected' : ''}>${escHtml(v || '—')}</option>`).join('')}</select>`;
+    el.innerHTML = `<div class="plan-props-title">Road crossing ${escHtml(PlanCrossings.label(list[0]))}</div>
+      <div style="font-size:12px;color:var(--text-secondary);margin:-2px 0 8px">${list.length} ducts${f ? ' · ' + (len * f).toFixed(1) + ' m' : ''} · ${n110 ? n110 + ' × 110 mm' : ''}${n110 && n160 ? ' + ' : ''}${n160 ? n160 + ' × 160 mm' : ''}</div>
+      <div style="display:grid;grid-template-columns:auto 70px minmax(0,1fr) 32px;gap:4px 6px;align-items:center;font-size:12px">
+        <b>Duct</b><b>Size</b><b>For</b><span></span>
+        ${o.map(c => `<span>${escHtml(c.name || '')}</span>${sel(c, 'size', PLAN_DEFS.crossings.sizes)}${sel(c, 'use', ['', ...new Set([...USES, ...(c.use && !USES.includes(c.use) ? [c.use] : [])])])}<button type="button" class="plan-btn" data-xg="rm" data-id="${escHtml(c.id)}" aria-label="Remove ${escHtml(c.name || '')}" title="Remove this duct">×</button>`).join('')}
+      </div>
+      <div style="display:flex;gap:6px;margin:8px 0">${PLAN_DEFS.crossings.sizes.map(z => `<button type="button" class="plan-btn" data-xg="add" data-size="${z}" style="flex:1">+ ${z} mm duct</button>`).join('')}</div>
+      <label class="plan-field" style="display:flex;align-items:center;justify-content:space-between;gap:8px">Spacing between ducts <span><input type="number" min="0.2" max="2" step="0.1" data-xg-sp="1" value="${PlanCrossings.spacing(list)}" style="width:60px"> m</span></label>
+      <div style="font-size:12px;color:var(--text-secondary);margin:4px 0 8px">A click on the plan selects the whole crossing; click the same spot again to pick one duct. Drag the end handles to turn or stretch it.</div>
+      <button type="button" class="plan-btn" data-xg="ungroup">Ungroup the ducts</button>
+      <button class="plan-props-delete" data-role="delete">Delete the crossing (${list.length} ducts)</button>`;
+  },
+  _onCrossGroup(act, b) {
+    const list = PlanCrossings.selectedGroup() || (act === 'group' ? [...PlanMarkup.selectedIds].map(id => PlanMarkup.findEntityById(id)).filter(x => x && x.kind === 'crossing').map(x => x.item) : null);
+    if (act === 'selgroup') { const id = [...PlanMarkup.selectedIds][0], c = (AppState.planMarkup.crossings || []).find(x => x.id === id); if (c) PlanMarkup.setSelection(PlanCrossings.members(c).map(x => x.id)); return; }
+    if (!list || !list.length) return;
+    if (act === 'add') { const c = PlanCrossings.add(list, b.dataset.size); PlanMarkup.selectedIds.add(c.id); }
+    else if (act === 'rm') { const c = list.find(x => x.id === b.dataset.id); if (!c) return; PlanCrossings.remove(list, c); PlanMarkup.selectedIds.delete(c.id); }
+    else if (act === 'ungroup') PlanCrossings.ungroup(list);
+    else if (act === 'group') { if (list.length < 2) return; PlanCrossings.group(list); }
+    PlanMarkup.snapshot(); PlanMarkup.markDirty(); this.renderProps(); PlanEngine.requestDraw({ fg: true });
+  },
+  _onCrossGroupField(t) {
+    const list = PlanCrossings.selectedGroup(); if (!list) return;
+    if (t.dataset.xgSp) { const v = parseFloat(t.value); if (!(isFinite(v) && v >= 0.2 && v <= 2)) return; PlanCrossings.relay(list, v); }
+    else { const id = t.dataset.xgSize || t.dataset.xgUse, c = list.find(x => x.id === id); if (!c) return;
+      if (t.dataset.xgSize) { c.size = t.value; PlanCrossings.relay(list); } else c.use = t.value; }
+    PlanMarkup.snapshot(); PlanMarkup.markDirty(); this.renderProps(); PlanEngine.requestDraw({ fg: true });
+  },
+
   _bulkSpec(kind, item) {
     if (kind === 'element') {
       const def = PLAN_DEFS.element(item.type);
@@ -764,6 +840,7 @@ const PlanUI = {
       html += this._field(f, isMixed ? '' : first);
     }
     if (!spec.fields.length) html += `<div class="plan-props-empty">Nothing to edit in bulk for this kind.</div>`;
+    if (kind === 'crossing') html += `<button type="button" class="plan-btn" data-xg="group" style="margin:6px 0" title="Lay them side by side on their mean line, as one crossing (the ducts stay separate in the quantities)">Group as one crossing</button>`;
     html += del;
     el.innerHTML = html;
     for (const k of mixed) {
@@ -1395,6 +1472,7 @@ const PlanUI = {
   },
 
   _onPropsChange(e) {
+    if (e.target.dataset && (e.target.dataset.xgSize || e.target.dataset.xgUse || e.target.dataset.xgSp)) { if (e.type === 'change') this._onCrossGroupField(e.target); return; }
     if (e.target.dataset && e.target.dataset.role === 'sld-link') { this._onSldLink(e); return; }
     if (e.target.dataset && e.target.dataset.role === 'demand-link') { this._onDemandLink(e); return; }
     if (e.target.dataset && e.target.dataset.role === 'delete') return;
