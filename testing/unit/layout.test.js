@@ -388,6 +388,51 @@ ok('markers: a hand-placed erf makes no kiosk stand of its own, and both placeme
   assert.deepStrictEqual(a.kiosks.map(k => [k.id, k.members.length]), b.kiosks.map(k => [k.id, k.members.length]), 'deterministic');
 });
 
+// ── the fibre point: beside the power marker (default), or at the opposite front corner (layouts made before) ──
+const along = (e, p) => (p[0] - e.marker[0]) * e.fe.inn[1] * -1 + (p[1] - e.marker[1]) * e.fe.inn[0];   // signed distance along the front
+ok('fibre point: beside the power marker by default, fgap m along the front on its middle side, inside the erf', () => {
+  assert.strictEqual(L.DEFAULTS.fentry, 'beside'); assert.strictEqual(L.DEFAULTS.fgap, 1.5);
+  const r = L.solve(markerFx(), {});
+  for (const e of r.erven.filter(x => x.marker && x.fibrePt)) {
+    assert(Math.abs(Math.hypot(e.fibrePt[0] - e.marker[0], e.fibrePt[1] - e.marker[1]) - 1.5) < 1e-6, e.id);
+    const mid = [e.fe.mid[0] - e.marker[0], e.fe.mid[1] - e.marker[1]], v = [e.fibrePt[0] - e.marker[0], e.fibrePt[1] - e.marker[1]];
+    assert(mid[0] * v[0] + mid[1] * v[1] > 0, 'towards the middle ' + e.id);
+  }
+  const c = L.solve(markerFx(), { fside: 'corner', fgap: 2 });
+  for (const e of c.erven.filter(x => x.marker && x.fibrePt)) {
+    const mid = [e.fe.mid[0] - e.marker[0], e.fe.mid[1] - e.marker[1]], v = [e.fibrePt[0] - e.marker[0], e.fibrePt[1] - e.marker[1]];
+    assert(Math.abs(Math.hypot(v[0], v[1]) - 2) < 1e-6 && mid[0] * v[0] + mid[1] * v[1] < 0, 'corner side ' + e.id);
+  }
+});
+ok('fibre point: fentry opp mirrors the marker at the other front corner (as before)', () => {
+  const r = L.solve(markerFx(), { fentry: 'opp', side: 4 });
+  for (const e of r.erven.filter(x => x.marker && x.fibrePt)) assert(Math.abs(Math.hypot(e.fibrePt[0] - e.marker[0], e.fibrePt[1] - e.marker[1]) - (e.fe.len - 8)) < 1e-6, e.id);
+});
+ok('fibre point: a hand-placed marker gets its fibre point beside it along the street, flipped when that side is outside the erf', () => {
+  const G = markerFx();                                                      // f2 spans x 66–92, the street runs along x
+  for (const fentry of ['beside', 'opp']) {
+    const e = L.solve(Object.assign({ markers: { f2: [72, 14] } }, G), { fentry }).erven.find(x => x.id === 'f2');
+    assert(e.manual); assert.deepStrictEqual(e.marker, [72, 14]); assert(Math.abs(e.fibrePt[0] - 73.5) < 1e-6 && Math.abs(e.fibrePt[1] - 14) < 1e-6, fentry + ' ' + e.fibrePt);
+  }
+  const k = L.solve(Object.assign({ markers: { f2: [67, 14] } }, G), { fside: 'corner' }).erven.find(x => x.id === 'f2');
+  assert(Math.abs(k.fibrePt[0] - 68.5) < 1e-6, 'flipped into the erf ' + k.fibrePt);
+  const d = L.solve(Object.assign({ markers: { f2: [72, 14] } }, G), {}).erven.find(x => x.id === 'f2');
+  assert(d.duct && Math.hypot(d.duct[d.duct.length - 1][0] - 73.5, d.duct[d.duct.length - 1][1] - 14) < 1e-6, 'the duct ends at it');
+});
+ok('fibre point: one moved by hand keeps its offset from the power marker', () => {
+  const G = markerFx(), r = L.solve(Object.assign({ fibreOffs: { f1: [0.5, 2] }, markers: { f2: [72, 14] } }, G), {}), e = r.erven.find(x => x.id === 'f1');
+  assert(e.fibreHand && Math.abs(e.fibrePt[0] - e.marker[0] - 0.5) < 1e-6 && Math.abs(e.fibrePt[1] - e.marker[1] - 2) < 1e-6);
+  assert(!r.erven.find(x => x.id === 'f2').fibreHand);
+});
+ok('trenches: lead on = one lead trench per erf for the service and fibre leads that come in together (boundary routing)', () => {
+  const r = L.solve(F, { route: 'blocks' }), a = L.trenches(r, {}), b = L.trenches(r, { lead: true });
+  const sp = t => t.list.filter(x => x.kind === 'spur').length, leads = b.list.filter(x => x.lead);
+  assert(leads.length > 0 && sp(b) < sp(a), 'spurs ' + sp(a) + ' → ' + sp(b) + ', leads ' + leads.length);
+  assert(leads.every(x => x.type === 'LV/SL' && x.cats.includes('svc') && x.cats.includes('fi')));
+  assert.strictEqual(sp(a) - sp(b), leads.length, 'one spur dropped per shared lead');
+  const o = L.solve(F, { route: 'blocks', fentry: 'opp' }); assert.strictEqual(L.trenches(o, { lead: true }).list.filter(x => x.lead).length, 0, 'opposite corners are not shared');
+});
+
 ok('splitting a string: a kiosk becomes its own string head, fed straight off the mini-sub along the same route', () => {
   const base = L.solve(F, { subs: 1 }), deep = base.net.lvLinks.filter(l => l.from !== base.net.subs[0].k).sort((a, b) => b.len - a.len)[0];
   assert(deep, 'a kiosk that hangs off another kiosk');
