@@ -481,6 +481,14 @@ ok('boundary routing: a street\'s own kiosk side (ksOwn) is honoured even where 
   assert(onA.length && onA.every(k => side(k, A) < 0 && k.xjoin), 'kiosks on street A stand on its set (empty) side ' + onA.map(k => k.y.toFixed(1)));
 });
 
+ok('boundary routing: the LV from a mini-sub to a kiosk beside it on a side with no corridor runs straight, not across the road and back', () => {
+  const G = markerFx(), r = L.solve(Object.assign({ kioskPins: [[60, -6]], subPts: [[95, -6]] }, G), { route: 'blocks' }), pk = r.kiosks.find(q => q.pin);
+  const l = r.net.lvLinks.find(x => x.to === pk || x.from === pk);
+  assert(pk && pk.xjoin && l, 'a link to the kiosk placed across the road');
+  assert(l.direct && l.pts.length === 2 && l.pts.every(p => p[1] < 0), 'straight along its own side ' + JSON.stringify(l.pts));
+  const kc = r.net.cross.find(c => c.kind === 'kiosk'); assert(kc && kc.lv === 0, 'its crossing carries no LV');
+});
+
 ok('splitting a string: a kiosk becomes its own string head, fed straight off the mini-sub along the same route', () => {
   const base = L.solve(F, { subs: 1 }), deep = base.net.lvLinks.filter(l => l.from !== base.net.subs[0].k).sort((a, b) => b.len - a.len)[0];
   assert(deep, 'a kiosk that hangs off another kiosk');

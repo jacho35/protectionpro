@@ -1617,8 +1617,14 @@ const PlanLayout = (() => {
     const net = r.net;
     if (net && net.subs && net.subs.length) {
       net.subs.forEach(S => { const k = S.k, nd = G.attach([k.x, k.y]); if (nd == null) return; k.bnode = nd; if (k.stub) k.stub = [[k.x, k.y], G.nodes[nd].p.slice()]; });
+      // an LV link to a kiosk standing off the corridors (its side has none there, so it is joined across the road): where the straight line
+      // between its two ends crosses no street line and no erf (the mini-sub or kiosk beside it on the same verge) it runs straight, rather
+      // than across to the far corridor and back over the kiosk's own crossing
+      const straight = (A, B) => (A.xjoin || B.xjoin) && M.streetSI && M.crossesBlock && !M.streetSI.crosses([A.x, A.y], [B.x, B.y], true) && !M.crossesBlock([A.x, A.y], [B.x, B.y]);
       for (const l of net.lvLinks) {
-        const A = l.from, B = l.to; if (A.bnode == null || B.bnode == null) { keptRuns++; continue; }
+        const A = l.from, B = l.to;
+        if (straight(A, B)) { l.pts = [[A.x, A.y], [B.x, B.y]]; l.len = plen(l.pts); l.direct = true; continue; }
+        if (A.bnode == null || B.bnode == null) { keptRuns++; continue; }
         const rt = G.route(A.bnode, B.bnode); if (!rt) { keptRuns++; continue; }
         rt.commit('lv'); for (const k of [A, B]) if (k.xjoin) k.xjoin.used.push('lv'); l.pts = simp([[A.x, A.y], ...rt.pts, [B.x, B.y]]); l.len = plen(l.pts);
       }
