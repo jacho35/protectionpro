@@ -502,6 +502,23 @@ ok('boundary routing: services from a kiosk across the road run along its own ve
   assert.strictEqual(vt.length, 1, 'one trench along the kiosk verge');
 });
 
+ok('boundary routing: fibre set to a side with no erven keeps its manholes there, ducts along that verge and across at erf boundaries', () => {
+  const G = markerFx(), auto = L.solve(G, { route: 'blocks', fibre: 'same' });
+  assert(auto.fibre.mhs.every(m => m.y > 0 && !m.xjoin), 'auto: manholes on the erf side');
+  const r = L.solve(Object.assign({ fs: { A: 1 }, fsOwn: { A: true } }, G), { route: 'blocks' });
+  assert(r.fibre.mhs.length && r.fibre.mhs.every(m => m.y < 0 && m.xjoin), 'set side: manholes stay there ' + r.fibre.mhs.map(m => m.y.toFixed(1)));
+  const bnd = [10, 36, 38, 64, 66, 92, 94, 120, 122, 148];
+  for (const e of r.erven.filter(x => x.duct && x.road && x.road.id === 'A')) {
+    const i = e.duct.findIndex(p => p[1] > 0), a = e.duct[i - 1], b = e.duct[i];
+    assert(i > 0 && e.duct.slice(0, i).every(p => p[1] < 0), 'along the manhole side first ' + e.id);
+    const xAt = a[0] + (b[0] - a[0]) * (0 - a[1]) / (b[1] - a[1]);
+    assert(bnd.some(x => Math.abs(x - xAt) < 1.5), 'crosses on an erf boundary ' + e.id + ' at x ' + xAt.toFixed(1));
+  }
+  const fc = r.net.cross.filter(c => c.sites.some(x => x.kind === 'manhole')).reduce((t, c) => t + c.fib, 0);
+  assert.strictEqual(fc, r.erven.filter(x => x.duct && x.road && x.road.id === 'A').length, 'each duct crosses once, counted');
+  const t = L.trenches(r, {}); assert(t.list.some(x => x.type === 'FI' && x.kind === 'spur' && x.pts.every(p => p[1] < 0)), 'a fibre trench along that verge');
+});
+
 ok('splitting a string: a kiosk becomes its own string head, fed straight off the mini-sub along the same route', () => {
   const base = L.solve(F, { subs: 1 }), deep = base.net.lvLinks.filter(l => l.from !== base.net.subs[0].k).sort((a, b) => b.len - a.len)[0];
   assert(deep, 'a kiosk that hangs off another kiosk');

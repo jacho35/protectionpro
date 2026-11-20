@@ -1617,21 +1617,73 @@ const PlanLayout = (() => {
     // fibre: manholes onto the fibre ring, every trunk section and erf duct laid again between its own two ends
     const F = r.fibre;
     if (F) {
-      // a manhole put by hand stays on its side of the street: onto that side's fibre corridor, or, where there is none, where it was put and
-      // joined to the corridor across the road by a crossing of its own (as a kiosk)
-      [...(F.mhs || []), ...(F.inter || [])].forEach(m => { if (!m.hand) return onto(GF, m); const j = kioskJoin(M, GF, m, true); if (!j) return; const p = GF.nodes[j.nd].p; m.bnode = j.nd;
+      // a manhole stays on the side of its street it was put on — by hand, or by a fibre / kiosk side you set for the street: onto that side's
+      // fibre corridor, or, where there is none (no erf faces that side there), where it stands, joined to the corridor across the road by a
+      // crossing of its own (as a kiosk). Otherwise (Auto sides) onto the nearest corridor, as before. Junction nodes: the nearest corridor.
+      const hardF = m => !!(m.hand || (m.road && ((input.fs && input.fs[m.road.id]) || (input.ks && input.ks[m.road.id]))));
+      [...(F.mhs || []), ...(F.inter || [])].forEach(m => { if (m.junction || !hardF(m)) return onto(GF, m); const j = kioskJoin(M, GF, m, true); if (!j) return; const p = GF.nodes[j.nd].p; m.bnode = j.nd;
         if (j.x) { m.xjoin = { cls: 'f', kind: 'manhole', a: [m.x, m.y], b: p.slice(), used: [] }; kx.push(m.xjoin); } else { m.x = p[0]; m.y = p[1]; } });
+      // the line along a street's verge at `off` (signed, m) between two stations, every 2.5 m
+      const vergePts = (st, s0, s1, off) => { const out = [], n = Math.max(1, Math.ceil(Math.abs(s1 - s0) / 2.5)); for (let i = 0; i <= n; i++) out.push(ptAt(st, s0 + (s1 - s0) * i / n, off).slice(0, 2)); return out; };
+      const at = (st, q) => project(st, q.x, q.y);
+      // a trunk section with a manhole off the corridors at an end, between two manholes on the same street and side: along that verge
+      const sameVerge = ed => { const A = ed.a, B = ed.b; if (!(A.xjoin || B.xjoin) || A.junction || B.junction || !A.road || A.road !== B.road) return null;
+        const pa = at(A.road, A), pb = at(A.road, B); if (pa.side !== pb.side) return null;
+        return [[A.x, A.y], ...vergePts(A.road, pa.s, pb.s, pa.side * (pa.d + pb.d) / 2), [B.x, B.y]]; };
+      // a trunk section between a manhole on a street whose own fibre side is set (or off the corridors) and a junction node of that street:
+      // along the manhole's verge to the junction mouth (the crossing street's half width + the setback short of it), square across this
+      // street there when the node stands on the other side (a crossing, counted), then to the node
+      const toJunction = (ed, live) => {
+        const J = ed.a.junction ? ed.a : ed.b.junction ? ed.b : null, Mh = J === ed.a ? ed.b : ed.a; if (!J || Mh.junction || !Mh.road) return null;
+        const st = Mh.road; if (!(Mh.xjoin || Mh.hand || (input.fsOwn && input.fsOwn[st.id])) || !(J.streets || []).includes(st) || st.nodeSt[J.id] == null) return null;
+        const pm = at(st, Mh), off = pm.side * pm.d, sJ = st.nodeSt[J.id], dir = Math.sign(sJ - pm.s) || 1, pj = project(st, J.x, J.y);
+        let pts;
+        if (pj.side === pm.side) pts = [[Mh.x, Mh.y], ...vergePts(st, pm.s, sJ, off), [J.x, J.y]];
+        else {
+          const other = Math.max(0, ...J.streets.filter(o => o !== st).map(o => o.w || 0)), sX = clamp(sJ - dir * (other / 2 + (+P.setback || 3)), Math.min(pm.s, sJ), Math.max(pm.s, sJ));
+          const vg = vergePts(st, pm.s, sX, off), b = ptAt(st, sX, -off).slice(0, 2);
+          pts = [[Mh.x, Mh.y], ...vg, b, [J.x, J.y]];
+          if (live) kx.push({ cls: 'f', kind: 'manhole', a: vg[vg.length - 1], b, used: ['fib'] });
+        }
+        return J === ed.a ? pts.reverse() : pts;
+      };
       const active = new Set(F.trunks || []);
       for (const ed of (F.trunks || []).concat(F.spare || [])) {
+        const jp = toJunction(ed, active.has(ed)); if (jp) { ed.pts = simp(jp); ed.len = plen(ed.pts); ed.direct = true; continue; }
+        const vp = sameVerge(ed); if (vp) { ed.pts = simp(vp); ed.len = plen(ed.pts); ed.direct = true; continue; }
         if (ed.a.bnode == null || ed.b.bnode == null) continue;
         const rt = GF.route(ed.a.bnode, ed.b.bnode); if (!rt) { if (active.has(ed)) keptRuns++; continue; }
         if (active.has(ed)) { rt.commit('fib'); for (const q of [ed.a, ed.b]) if (q.xjoin) q.xjoin.used.push('fib'); }
         ed.pts = simp([[ed.a.x, ed.a.y], ...rt.pts, [ed.b.x, ed.b.y]]); ed.len = plen(ed.pts);
       }
+      // erf ducts from a manhole off the corridors, put by hand, or on a street whose own fibre / kiosk side you set (`input.fsOwn`, not All
+      // streets) to an erf across its street: along the manhole's verge to that erf's
+      // boundary nearest its fibre point, across the road there (one crossing per boundary, merged with the service crossing there when within
+      // 3 m), then into the erf; an erf on the manhole's side along the verge when the manhole is off the corridors, else on the corridor.
+      // Auto sides: every duct on the corridors, as before.
+      const fsites = new Map();
       for (const e of r.erven) {
         if (!e.mh || !e.fibrePt || e.mh.bnode == null) continue;
-        const rt = GF.route(e.mh.bnode, GF.attachInto(e.fibrePt, blk(e), e.id)); if (!rt) { keptRuns++; continue; }
-        rt.commit('fib'); if (e.mh.xjoin) e.mh.xjoin.used.push('fib'); e.duct = simp([[e.mh.x, e.mh.y], ...rt.pts.slice(e.mh.xjoin ? 0 : 1), e.fibrePt.slice()]); e.ductLen = plen(e.duct); e.fibX = null;
+        const m = e.mh, st = m.road;
+        if ((m.xjoin || m.hand || (st && input.fsOwn && input.fsOwn[st.id])) && st && e.road === st && e.fe) {
+          const pk = at(st, m), off = pk.side * pk.d, pf = project(st, e.fibrePt[0], e.fibrePt[1]);
+          const span = s1 => { const v = m.verge || (m.verge = { st, off, lo: pk.s, hi: pk.s }); v.lo = Math.min(v.lo, s1); v.hi = Math.max(v.hi, s1); };
+          if (pf.side === pk.side && !m.xjoin) { /* the manhole's own side has a corridor: the duct follows it (below) */ }
+          else if (pf.side === pk.side) { e.duct = simp([[m.x, m.y], ...vergePts(st, pk.s, pf.s, off).slice(1), e.fibrePt.slice()]); e.ductLen = plen(e.duct); e.fibX = null; span(pf.s); continue; }
+          else {
+          const ends = [e.fe.a, e.fe.b].map(q => project(st, q[0], q[1]).s), sx = Math.abs(ends[0] - pf.s) <= Math.abs(ends[1] - pf.s) ? ends[0] : ends[1];
+          const vg = vergePts(st, pk.s, sx, off), nd = GF.attach(ptAt(st, sx, -off).slice(0, 2), blk(e));
+          const rt = nd == null ? null : GF.route(nd, GF.attachInto(e.fibrePt, blk(e), e.id));
+          if (rt) {
+            const key = m.id + '|' + Math.round(sx); let site = fsites.get(key);
+            if (!site) { site = { cls: 'f', kind: 'manhole', a: vg[vg.length - 1], b: GF.nodes[nd].p.slice(), used: [] }; fsites.set(key, site); kx.push(site); }
+            rt.commit('fib'); site.used.push('fib'); span(sx);
+            e.duct = simp([[m.x, m.y], ...vg.slice(1), ...rt.pts, e.fibrePt.slice()]); e.ductLen = plen(e.duct); e.fibX = null; continue;
+          }
+          }
+        }
+        const rt = GF.route(m.bnode, GF.attachInto(e.fibrePt, blk(e), e.id)); if (!rt) { keptRuns++; continue; }
+        rt.commit('fib'); if (m.xjoin) m.xjoin.used.push('fib'); e.duct = simp([[m.x, m.y], ...rt.pts.slice(m.xjoin ? 0 : 1), e.fibrePt.slice()]); e.ductLen = plen(e.duct); e.fibX = null;
       }
     }
     // LV: every link of the tree laid again between its two ends (a string head from its mini-sub's stub)
@@ -1717,6 +1769,11 @@ const PlanLayout = (() => {
       flush(chain, cat);
     };
     res.erven.forEach(e => { if (e.route) add(e.route, 'svc', 'p'); if (T.fibre !== 'off' && e.duct) add(e.duct, 'fi', 'f'); });
+    // a manhole off the corridors: its erf ducts along its own verge share one fibre trench, as a kiosk's services do
+    // (only the stretches off the corridor: where the verge runs along a corridor, that corridor's own trench already carries it)
+    if (T.fibre !== 'off' && res.fibre) (res.fibre.mhs || []).forEach(m => { const v = m.verge; if (!v || v.hi - v.lo < 0.3) return; const n = Math.max(1, Math.ceil((v.hi - v.lo) / 1)), pieces = [[]];
+      for (let i = 0; i <= n; i++) { const p = ptAt(v.st, v.lo + (v.hi - v.lo) * i / n, v.off).slice(0, 2); if (near('f', p, 0.6) >= 0) { if (pieces[pieces.length - 1].length) pieces.push([]); } else pieces[pieces.length - 1].push(p); }
+      for (const pts of pieces) if (pts.length >= 2 && plen(pts) >= 0.3) for (const kd of kinds(new Set(['fi']), null)) out.push({ type: kd.type, pts, depth: dep(kd.type, null), len: plen(pts), cats: ['fi'], kind: 'spur', section: null }); });
     // a kiosk off the corridors: the services along its own verge share one trench from the furthest erf boundary one way to the other
     (res.kiosks || []).forEach(k => { const v = k.verge; if (!v || v.hi - v.lo < 0.3) return; const n = Math.max(1, Math.ceil((v.hi - v.lo) / 2.5)), pts = [];
       for (let i = 0; i <= n; i++) pts.push(ptAt(v.st, v.lo + (v.hi - v.lo) * i / n, v.off).slice(0, 2));
