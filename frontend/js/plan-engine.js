@@ -390,7 +390,7 @@ const PlanEngine = {
     const xg = typeof PlanCrossings !== 'undefined' ? PlanCrossings.selectedGroup() : null;   // a whole crossing of several ducts selected: one outline, centre-line handles
     for (const c of pm.crossings) this._drawCrossing(ctx, c, sel.has(c.id), !!xg);
     if (xg) this._drawCrossGroup(ctx, xg);
-    const served = this._servedOf(sel);                                  // a selected kiosk: the erven it serves
+    const served = this._servedOf(sel);                                  // a selected kiosk / manhole: the erven it serves
     this._drawServedUnder(ctx, served, z);
     for (const r of pm.routes) this._drawRoute(ctx, r, sel.has(r.id));
     if (typeof PlanReserveUI !== 'undefined' && PlanLayers.alpha('routeTypes', ['street'])) PlanReserveUI.drawPlanStreets(ctx, z);   // kerb lines and kerb returns of the streets that have a carriageway
@@ -410,52 +410,70 @@ const PlanEngine = {
     ctx.restore();
   },
 
-  // ─── A selected kiosk shows the erven it serves ───
-  // The erven on its service cables (routes of type "service" from the kiosk), plus the ones its Demand row lists.
-  // → [{ kiosk, erven: [erf element], routes: [service route] }] for each selected kiosk; nothing selected = [].
+  // ─── A selected kiosk / fibre manhole shows the erven it serves ───
+  // Kiosk: the erven on its service cables (routes of type "service"), plus the ones its Demand row lists.
+  // Manhole: the erven on its erf ducts ("fibreErf"), and its trunk ducts ("fibreBB") to the next manholes.
+  // → [{ kiosk (the selected part), kind 'kiosk' | 'manhole', erven: [erf element], routes: [route to an erf], trunks: [route] }].
   _servedOf(sel) {
     const pm = AppState.planMarkup, out = [];
     if (!sel || !sel.size) return out;
     const R = AppState.reticulation;
     for (const k of pm.elements) {
-      if (k.type !== 'kiosk' || !sel.has(k.id)) continue;
-      const ids = new Set(), routes = [];
+      if ((k.type !== 'kiosk' && k.type !== 'manhole') || !sel.has(k.id)) continue;
+      const kind = k.type, leg = kind === 'kiosk' ? 'service' : 'fibreErf';
+      const ids = new Set(), routes = [], trunks = [];
       for (const r of pm.routes) {
-        if (r.type !== 'service') continue;
-        if (r.fromId === k.id && r.toId) { ids.add(r.toId); routes.push(r); }
-        else if (r.toId === k.id && r.fromId) { ids.add(r.fromId); routes.push(r); }
+        const end = r.fromId === k.id ? r.toId : r.toId === k.id ? r.fromId : null;
+        if (r.fromId !== k.id && r.toId !== k.id) continue;
+        if (r.type === leg) { if (end) ids.add(end); routes.push(r); }
+        else if (kind === 'manhole' && r.type === 'fibreBB') trunks.push(r);
       }
-      const row = k.reticId && R && Array.isArray(R.kiosks) ? R.kiosks.find(x => x.id === k.reticId) : null;
-      if (row && Array.isArray(row.erfs)) for (const e of row.erfs) { const el = pm.elements.find(x => x.type === 'erf' && x.reticId === e.id); if (el) ids.add(el.id); }
+      if (kind === 'kiosk') {
+        const row = k.reticId && R && Array.isArray(R.kiosks) ? R.kiosks.find(x => x.id === k.reticId) : null;
+        if (row && Array.isArray(row.erfs)) for (const e of row.erfs) { const el = pm.elements.find(x => x.type === 'erf' && x.reticId === e.id); if (el) ids.add(el.id); }
+      }
       const erven = [...ids].map(id => pm.elements.find(x => x.id === id)).filter(x => x && x.type === 'erf');
-      out.push({ kiosk: k, erven, routes });
+      out.push({ kiosk: k, kind, erven, routes, trunks });
     }
     return out;
+  },
+  // Highlight colours: a kiosk amber, a manhole in the fibre colours (erf ducts pink, trunks purple).
+  _SERVED_STYLE: {
+    kiosk:   { fill: 'rgba(245,158,11,0.30)', line: '#f59e0b', tag: '#b45309' },
+    manhole: { fill: 'rgba(219,39,119,0.22)', line: '#db2777', tag: '#9d174d', trunk: '#a855f7' },
   },
   _drawServedUnder(ctx, served, z) {
     if (!served.length) return;
     const u = 1 / z;
     ctx.save();
-    for (const s of served) for (const e of s.erven) {
-      ctx.fillStyle = 'rgba(245,158,11,0.30)'; ctx.strokeStyle = '#f59e0b'; ctx.lineWidth = 2.2 * u;
-      if (Array.isArray(e.boundary) && e.boundary.length >= 3) {
-        ctx.beginPath(); e.boundary.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); ctx.closePath(); ctx.fill(); ctx.stroke();
-      } else { ctx.beginPath(); ctx.arc(e.x, e.y, 16 * u, 0, 6.2832); ctx.fill(); ctx.stroke(); }
+    for (const s of served) {
+      const st = this._SERVED_STYLE[s.kind] || this._SERVED_STYLE.kiosk;
+      for (const e of s.erven) {
+        ctx.fillStyle = st.fill; ctx.strokeStyle = st.line; ctx.lineWidth = 2.2 * u;
+        if (Array.isArray(e.boundary) && e.boundary.length >= 3) {
+          ctx.beginPath(); e.boundary.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); ctx.closePath(); ctx.fill(); ctx.stroke();
+        } else { ctx.beginPath(); ctx.arc(e.x, e.y, 16 * u, 0, 6.2832); ctx.fill(); ctx.stroke(); }
+      }
     }
     ctx.restore();
   },
   _drawServedOver(ctx, served, z) {
     if (!served.length) return;
     const u = 1 / z;
+    const line = (r) => { if (!r.points || r.points.length < 2) return; ctx.beginPath(); r.points.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); ctx.stroke(); };
     ctx.save(); ctx.lineJoin = 'round'; ctx.lineCap = 'round';
     for (const s of served) {
-      ctx.strokeStyle = '#f59e0b'; ctx.lineWidth = 3.4 * u; ctx.globalAlpha = 0.9;
-      for (const r of s.routes) { if (!r.points || r.points.length < 2) continue; ctx.beginPath(); r.points.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); ctx.stroke(); }
+      const st = this._SERVED_STYLE[s.kind] || this._SERVED_STYLE.kiosk;
+      ctx.globalAlpha = 0.9; ctx.lineWidth = 3.4 * u;
+      if (s.trunks && s.trunks.length) { ctx.strokeStyle = st.trunk; ctx.setLineDash([9 * u, 5 * u]); s.trunks.forEach(line); ctx.setLineDash([]); }
+      ctx.strokeStyle = st.line; s.routes.forEach(line);
       ctx.globalAlpha = 1;
-      const label = s.erven.length ? `serves ${s.erven.length} ${s.erven.length === 1 ? 'erf' : 'erven'}` : 'no erven connected';
+      const n = s.erven.length;
+      let label = n ? `serves ${n} ${n === 1 ? 'erf' : 'erven'}` : (s.kind === 'manhole' ? 'no erven' : 'no erven connected');
+      if (s.kind === 'manhole') label += ` · ${s.trunks.length} ${s.trunks.length === 1 ? 'trunk' : 'trunks'}`;
       ctx.font = `700 ${11 * u}px sans-serif`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
       const x = s.kiosk.x + 14 * u, y = s.kiosk.y - 16 * u, w = ctx.measureText(label).width + 10 * u;
-      ctx.fillStyle = s.erven.length ? '#b45309' : '#64748b'; ctx.fillRect(x, y - 9 * u, w, 18 * u);
+      ctx.fillStyle = (n || s.trunks.length) ? st.tag : '#64748b'; ctx.fillRect(x, y - 9 * u, w, 18 * u);
       ctx.fillStyle = '#fff'; ctx.fillText(label, x + 5 * u, y);
     }
     ctx.restore();
