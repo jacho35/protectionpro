@@ -875,6 +875,12 @@ const PlanUI = {
     if (e.target.type === 'number') val = parseFloat(val) || 0;
     if (e.target.type === 'checkbox') { val = e.target.checked; e.target.indeterminate = false; }
     const commit = (e.type === 'change');
+    if (key === 'unserviced' && typeof PlanSync !== 'undefined') {                 // erven marked (un)serviced together: their cables and Demand rows go
+      if (!commit) return;
+      const ervs = items.filter(x => x.kind === 'element' && x.item.type === 'erf').map(x => x.item);
+      PlanSync.unservicedToast(ervs.length, val, PlanSync.setUnserviced(ervs, val));
+      PlanEngine.requestDraw({ fg: true }); PlanMarkup.snapshot(); PlanMarkup.markDirty(); return;
+    }
     let circuitTouched = false;
     for (const { kind, item } of items) {
       if (kind === 'element') {
@@ -1511,6 +1517,10 @@ const PlanUI = {
       else if (key === 'symScale') { if (val > 0 && val !== 1) item.scale = Math.min(10, val); else delete item.scale; }
       else { item.props = item.props || {}; item.props[key] = val; }
       if (item.type === 'load' && typeof PlanLoads !== 'undefined') PlanLoads.pushToRow(item, key, val);
+      if (key === 'unserviced' && item.type === 'erf' && commit && typeof PlanSync !== 'undefined') {
+        PlanSync.unservicedToast(1, val, PlanSync.setUnserviced([item], val));
+        PlanEngine.requestDraw({ fg: true }); PlanMarkup.snapshot(); PlanMarkup.markDirty(); this.renderProps(); return;
+      }
       if (key === 'name' && typeof PlanSync !== 'undefined' && PlanSync.onElementRenamed) {
         // Typing syncs after a short pause as well as on commit: a name typed
         // and then abandoned by clicking elsewhere never fires `change`.

@@ -390,6 +390,7 @@ const PlanEngine = {
     const xg = typeof PlanCrossings !== 'undefined' ? PlanCrossings.selectedGroup() : null;   // a whole crossing of several ducts selected: one outline, centre-line handles
     for (const c of pm.crossings) this._drawCrossing(ctx, c, sel.has(c.id), !!xg);
     if (xg) this._drawCrossGroup(ctx, xg);
+    this._drawUnserviced(ctx, z);                                         // erven marked unserviced: hatched grey
     const served = this._servedOf(sel);                                  // a selected kiosk / manhole: the erven it serves
     this._drawServedUnder(ctx, served, z);
     for (const r of pm.routes) this._drawRoute(ctx, r, sel.has(r.id));
@@ -407,6 +408,33 @@ const PlanEngine = {
     if (typeof RoomCalc !== 'undefined' && typeof PlanMarkup !== 'undefined' && PlanMarkup.context === 'lighting') RoomCalc.draw(ctx, this.view.zoom);
     // Tool overlay (ghosts, rubber-bands, snap ring)
     if (typeof PlanTools !== 'undefined' && PlanTools.drawOverlay) PlanTools.drawOverlay(ctx, z);
+    ctx.restore();
+  },
+
+  // ─── Unserviced erven (a park, open space, servitude): no supply, Auto layout's cables go round them ───
+  // Their boundary hatched grey with a dashed outline, the word "unserviced" under the erf number; one without a boundary gets a grey ring.
+  _drawUnserviced(ctx, z) {
+    const pm = AppState.planMarkup, u = 1 / z;
+    const list = pm.elements.filter(e => e.type === 'erf' && e.props && e.props.unserviced);
+    if (!list.length) return;
+    ctx.save();
+    for (const e of list) {
+      ctx.globalAlpha = this._emphasis('visibleElementTypes', 'erf', e);
+      if (!ctx.globalAlpha) continue;
+      ctx.strokeStyle = '#64748b'; ctx.lineWidth = 1.6 * u;
+      if (Array.isArray(e.boundary) && e.boundary.length >= 3) {
+        const path = () => { ctx.beginPath(); e.boundary.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); ctx.closePath(); };
+        path(); ctx.fillStyle = 'rgba(100,116,139,0.12)'; ctx.fill();
+        ctx.save(); path(); ctx.clip();
+        let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity; for (const p of e.boundary) { x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y); }
+        const gap = 9 * u; ctx.lineWidth = 1 * u; ctx.strokeStyle = 'rgba(71,85,105,0.55)'; ctx.beginPath();
+        for (let t = x0 - (y1 - y0); t <= x1; t += gap) { ctx.moveTo(t, y1); ctx.lineTo(t + (y1 - y0), y0); }
+        ctx.stroke(); ctx.restore();
+        path(); ctx.setLineDash([6 * u, 4 * u]); ctx.lineWidth = 1.6 * u; ctx.strokeStyle = '#64748b'; ctx.stroke(); ctx.setLineDash([]);
+      } else { ctx.beginPath(); ctx.arc(e.x, e.y, 14 * u, 0, 6.2832); ctx.setLineDash([4 * u, 3 * u]); ctx.stroke(); ctx.setLineDash([]); }
+      ctx.font = `600 ${9 * u}px system-ui, sans-serif`; ctx.fillStyle = '#475569'; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+      ctx.fillText('unserviced', e.x, e.y - this.glyphHalf('erf', e.props, e) - 3 * u);
+    }
     ctx.restore();
   },
 

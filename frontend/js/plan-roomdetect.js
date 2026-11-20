@@ -850,7 +850,8 @@ Object.assign(PlanRoomDetect, {
     room: { maxAreaM2: 5000, minAreaM2: 1, minWidthM: 0.6, noun: 'room', nouns: 'rooms', Noun: 'Room' },
     erf: { maxAreaM2: 20000, minAreaM2: 20, minWidthM: 2, noun: 'erf', nouns: 'erven', Noun: 'Erf' },
   },
-  mode: 'create',       // plain click: 'create' now · 'add' to the staged set · 'subtract' from it
+  mode: 'create',       // plain click: 'create' now · 'add' to the staged set · 'subtract' from it · 'draw' · 'mark' (erven: toggle unserviced)
+  erfServ: false,       // erven created from here on are unserviced (a park, open space, servitude: no supply, cables go round it)
   staged: { target: 'room', items: [] },
 
   // target 'room' (Lighting) or 'erf' (Plan, reticulation)
@@ -1310,6 +1311,25 @@ Object.assign(PlanRoomDetect, {
   },
   _seedOf(pts) { const s = this._interior(pts.map(p => [p.x, p.y])); return { x: s[0], y: s[1] }; },
 
+  // Mark unserviced: the erf under the click (inside its boundary, else its point within 12 px) is toggled serviced ⇄ unserviced.
+  erfAt(pt) {
+    const ervs = AppState.planMarkup.elements.filter(e => e.type === 'erf');
+    const inside = ervs.filter(e => Array.isArray(e.boundary) && e.boundary.length >= 3 && this._pip([pt.x, pt.y], e.boundary.map(q => [q.x, q.y])));
+    if (inside.length) return inside.sort((a, b) => PlanEngine._polyArea(a.boundary) - PlanEngine._polyArea(b.boundary))[0];
+    const r = 12 / PlanEngine.view.zoom; let best = null, bd = r;
+    for (const e of ervs) { const d = Math.hypot(e.x - pt.x, e.y - pt.y); if (d <= bd) { bd = d; best = e; } }
+    return best;
+  },
+  markClick(pt) {
+    const el = this.erfAt(pt);
+    if (!el) { UI.toast('No erf here. Click inside an erf that is on the plan (detect it first).', 'warn', 4000); return; }
+    const on = !(el.props && el.props.unserviced);
+    const res = PlanSync.setUnserviced([el], on);
+    PlanMarkup.setSelection([el.id]); PlanMarkup.snapshot(); PlanMarkup.markDirty();
+    PlanSync.unservicedToast(1, on, res);
+    this._changed();
+  },
+
   createStaged() {
     const target = this.staged.target, items = this.staged.items;
     if (!items.length) return;
@@ -1333,7 +1353,7 @@ Object.assign(PlanRoomDetect, {
       if (target === 'erf') {
         const seed = it.seed || this._seedOf(it.points);
         const el = { id: AppState.planGenId('pmel'), type: 'erf', x: seed.x, y: seed.y, rotation: 0,
-          name: this._erfName(it.label), reticId: null, props: PLAN_DEFS.defaults('erf'),
+          name: this._erfName(it.label), reticId: null, props: Object.assign(PLAN_DEFS.defaults('erf'), this.erfServ ? { unserviced: true } : {}),
           boundary: it.points.map(p => ({ x: p.x, y: p.y })) };      // kept so Auto layout can find the erf's front
         pm.elements.push(el); made.push(Object.assign({ points: it.points }, { name: el.name })); ids.push(el.id);
       } else {
@@ -1351,6 +1371,14 @@ Object.assign(PlanRoomDetect, {
   commit(res) { return this.commitMany('room', [res])[0]; },
 
   drawHover(ctx, zoom, target, e) {
+    if (this.mode === 'mark' && target === 'erf') {                              // the erf a click would toggle
+      const el = this.hoverPt && this.erfAt(this.hoverPt); if (!el || !Array.isArray(el.boundary) || el.boundary.length < 3) return;
+      const u = 1 / zoom, on = !(el.props && el.props.unserviced);
+      ctx.save(); ctx.beginPath(); el.boundary.forEach((q, i) => i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y)); ctx.closePath();
+      ctx.fillStyle = on ? 'rgba(100,116,139,0.18)' : 'rgba(22,163,74,0.14)'; ctx.fill();
+      ctx.lineWidth = 2.5 * u; ctx.strokeStyle = on ? '#475569' : '#16a34a'; ctx.stroke(); ctx.restore();
+      return;
+    }
     const sub = !!(e && (e.altKey || e.ctrlKey || e.metaKey));
     let c = this.hover, red = false;
     if (sub && this.hoverPt && this.staged.target === target) {
@@ -1417,7 +1445,12 @@ Object.assign(PlanRoomDetect, {
         <button type="button" class="plan-btn" data-rd-all style="font-weight:600">Detect all ${lim.nouns}</button>
         <p style="margin:0;color:var(--text-muted)">Or click inside one. A plain click ${target === 'erf' ? 'places an erf' : 'creates the room'} now.
           Shift-click adds it to the set below, Alt-click takes it out. Esc to stop.</p>
-        <div style="display:flex;gap:6px;flex-wrap:wrap" role="group" aria-label="Click action">${modeBtn('create', 'Create')}${modeBtn('add', 'Add to set')}${modeBtn('subtract', 'Subtract')}${modeBtn('draw', 'Draw')}</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap" role="group" aria-label="Click action">${modeBtn('create', 'Create')}${modeBtn('add', 'Add to set')}${modeBtn('subtract', 'Subtract')}${modeBtn('draw', 'Draw')}${target === 'erf' ? modeBtn('mark', 'Mark unserviced') : ''}</div>
+        ${target === 'erf' ? `<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap" role="group" aria-label="New erven are"><span>New erven are</span>
+          <button type="button" class="plan-btn" data-rd-serv="0" aria-pressed="${!this.erfServ}" style="${!this.erfServ ? 'font-weight:600;outline:2px solid var(--accent,#2563eb)' : ''}">Serviced</button>
+          <button type="button" class="plan-btn" data-rd-serv="1" aria-pressed="${this.erfServ}" style="${this.erfServ ? 'font-weight:600;outline:2px solid var(--accent,#2563eb)' : ''}">Unserviced</button></div>
+        ${this.mode === 'mark' ? '<p style="margin:0;color:var(--text-muted)"><b>Mark unserviced</b>: click an erf on the plan to switch it between serviced and unserviced.</p>' : ''}
+        <p style="margin:0;color:var(--text-muted)">An unserviced erf (a park, open space, servitude) gets no supply, service, fibre duct or Demand row; Auto layout's cables go round it. It is drawn hatched grey.</p>` : ''}
         ${this.mode === 'draw' ? `<p style="margin:0;color:var(--text-muted)"><b>Draw</b> for a ${lim.noun} the detection gets wrong: click its corners (they snap to the drawing's corners and ends), then click the first corner, click the last one again, or press Enter to close it. Backspace takes the last corner back, Esc drops the outline. It is created as a real ${lim.noun}${target === 'erf' ? ' with its boundary, so Auto layout can use it' : ''}. Alt-click still takes a set member out.</p>` : ''}
         <div><b>Set to review</b> <span style="color:var(--text-muted)">${items.length ? `${items.length} ${items.length === 1 ? lim.noun : lim.nouns}${f ? ` · ${total.toFixed(0)} m²` : ''}` : 'empty'}</span></div>
         <div style="max-height:200px;overflow:auto">${rows}</div>
@@ -1463,6 +1496,7 @@ Object.assign(PlanRoomDetect, {
     el.querySelector('[data-rd-create]').addEventListener('click', () => this.createStaged());
     el.querySelector('[data-rd-clear]').addEventListener('click', () => this.clearStaged());
     el.querySelectorAll('[data-rd-mode]').forEach(b => b.addEventListener('click', () => { this.mode = b.dataset.rdMode; if (this.mode !== 'draw') this.draft = null; this._changed(); }));
+    el.querySelectorAll('[data-rd-serv]').forEach(b => b.addEventListener('click', () => { this.erfServ = b.dataset.rdServ === '1'; this._changed(); }));
     el.querySelectorAll('[data-rd-del]').forEach(b => b.addEventListener('click', () => { this.staged.items.splice(+b.dataset.rdDel, 1); this._changed(); }));
   },
 });
@@ -1479,11 +1513,16 @@ if (typeof PlanTools !== 'undefined') {
         return;
       }
       this._e = e; PlanRoomDetect.hoverPt = { x: pt.x, y: pt.y };
+      if (PlanRoomDetect.mode === 'mark') { PlanRoomDetect.hover = null; PlanEngine.requestDraw({ fg: true }); return; }   // marking: the erf under the pointer is outlined (drawHover)
       clearTimeout(this._t); this._t = setTimeout(() => PlanRoomDetect.hoverAt(pt, target), 60);
       PlanEngine.requestDraw({ fg: true });
     },
     cancel() { PlanTools.set('select'); },
-    onDown(pt, e) { if (PlanRoomDetect.mode === 'draw' && !(e && (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey))) PlanRoomDetect.drawClick(pt, target); else PlanRoomDetect.click(pt, target, e); },
+    onDown(pt, e) {
+      const plain = !(e && (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey));
+      if (PlanRoomDetect.mode === 'mark' && target === 'erf' && plain) PlanRoomDetect.markClick(pt);
+      else if (PlanRoomDetect.mode === 'draw' && plain) PlanRoomDetect.drawClick(pt, target); else PlanRoomDetect.click(pt, target, e);
+    },
     drawOverlay(ctx, zoom) { PlanRoomDetect.drawStaged(ctx, zoom, target); if (PlanRoomDetect.mode === 'draw') PlanRoomDetect.drawDraft(ctx, zoom, target); else PlanRoomDetect.drawHover(ctx, zoom, target, this._e); },
     keyFirst(e) {                                                              // a shape being drawn: Enter closes it, Backspace takes a corner back, Esc drops it
       const D = PlanRoomDetect.draft; if (!D || D.target !== target) return false;

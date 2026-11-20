@@ -169,7 +169,9 @@ const PlanLayout = (() => {
       if (!((s0 < 0.5 || s0 > st.len - 0.5) && (s1 < 0.5 || s1 > o.len - 0.5))) return false; const ta = ptAt(st, s0, 0), tb = ptAt(o, s1, 0); return Math.abs(ta[2] * tb[2] + ta[3] * tb[3]) > 0.966; };
     streets.forEach(st => { st.pullLo = 0; st.pullHi = 0; for (const id of st.jids) { const others = (use[id] || []).filter(o => o !== st); if (jointEnd(st, id, others)) continue; const pull = Math.max(0, ...others.map(o => (o.cw > 0 ? o.cw / 2 + Math.abs(o.co || 0) + 0.4 : 0))); if (st.nodeSt[id] < 0.5) st.pullLo = Math.max(st.pullLo, pull); if (st.nodeSt[id] > st.len - 0.5) st.pullHi = Math.max(st.pullHi, pull); } });
     const byId = Object.fromEntries(streets.map(s => [s.id, s]));
-    const erven = (input.erven || []).filter(e => e.poly && e.poly.length >= 3).map(e => {
+    // an erf marked unserviced (a park, open space, a servitude) gets no marker, kiosk, service or fibre duct: it is left out here and only
+    // joins the blocks (`blocksModel`), so the corridors go round it and no run crosses it; a verge in front of it is used as any other
+    const erven = (input.erven || []).filter(e => e.poly && e.poly.length >= 3 && !e.unserviced).map(e => {
       const c = [e.poly.reduce((s, q) => s + q[0], 0) / e.poly.length, e.poly.reduce((s, q) => s + q[1], 0) / e.poly.length];
       return { id: e.id, poly: e.poly.map(p => [p[0], p[1]]), cx: c[0], cy: c[1],
         box: [Math.min(...e.poly.map(q => q[0])), Math.min(...e.poly.map(q => q[1])), Math.max(...e.poly.map(q => q[0])), Math.max(...e.poly.map(q => q[1]))] };
@@ -1533,10 +1535,11 @@ const PlanLayout = (() => {
     const sec = input.sections && input.sections.on !== false && Array.isArray(input.sections.list) && input.sections.list.length ? (input.sections.list.find(x => x.id === input.sections.def) || input.sections.list[0]) : null;
     const KD = Math.max(0.3, P.kd != null ? +P.kd : 2), kdP = sec ? Math.max(0.3, +sec.items.lv.off) : KD, kdF = sec ? Math.max(0.3, +sec.items.fi.off) : Math.max(0.3, KD - 0.3);
     const opt = { gap: +P.gapTol, gapFace: +P.gapFace, setback: +P.setback, rule: P.xrule, xpen: +P.xroute, xshare: 0 };
-    const sig = JSON.stringify([kdP, kdF, opt, streets.map(s => s.pts.length + ':' + s.pts[0] + ':' + s.pts[s.pts.length - 1])]);
+    const sig = JSON.stringify([kdP, kdF, opt, (input.erven || []).filter(e => e.unserviced).map(e => e.id), streets.map(s => s.pts.length + ':' + s.pts[0] + ':' + s.pts[s.pts.length - 1])]);
     const key = input.erven, hit = BM_CACHE && key && BM_CACHE.get(key);
     if (hit && hit.sig === sig) { Object.values(hit.M.cls).forEach(g => g.resetUse()); return hit.M; }
-    const M = PB.model({ erven: erven.map(e => ({ id: e.id, poly: e.poly })), lines: streets.map(s => s.pts), classes: { p: kdP, f: kdF } }, opt);
+    const blocked = (input.erven || []).filter(e => e.unserviced && e.poly && e.poly.length >= 3).map(e => ({ id: e.id, poly: e.poly.map(p => [p[0], p[1]]) }));
+    const M = PB.model({ erven: erven.map(e => ({ id: e.id, poly: e.poly })).concat(blocked), lines: streets.map(s => s.pts), classes: { p: kdP, f: kdF } }, opt);
     if (BM_CACHE && key) BM_CACHE.set(key, { sig, M });
     return M;
   }

@@ -84,7 +84,8 @@ const PLAN_DEFS = {
       symbol: 'x', dxf: { shape: 'circle', sizeM: 0.8 }, rotatable: false,
       schedule: 'erf', namePrefix: 'ERF',
       defaults: {},
-      fields: [{ key: 'name', label: 'Erf Number', type: 'text' }],
+      // unserviced: a park, open space or servitude — no service, fibre duct or Demand row; Auto layout's cables go round it (PlanSync.setUnserviced)
+      fields: [{ key: 'name', label: 'Erf Number', type: 'text' }, { key: 'unserviced', label: 'Unserviced (no supply; cables go round it)', type: 'checkbox' }],
     },
     // A project-defined load (pump, borehole, motor…). Its look, rating and
     // allowed supply come from a load type (plan-loads.js); `fields` here are
