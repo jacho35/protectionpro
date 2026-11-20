@@ -1564,7 +1564,25 @@ const PlanLayout = (() => {
     r.kiosks.forEach(k => { const j = kioskJoin(M, G, k, !!(k.pin || (k.road && input.ks && input.ks[k.road.id]))); if (!j) return; const p = G.nodes[j.nd].p; k.bnode = j.nd;
       if (j.x) { k.xjoin = { cls: 'p', kind: 'kiosk', a: [k.x, k.y], b: p.slice(), used: [] }; kx.push(k.xjoin); } else { k.x = p[0]; k.y = p[1]; } });
     // services, kiosk by kiosk
-    const svc = (e, k, ov) => { const rt = k.bnode == null ? null : G.route(k.bnode, G.attachInto(e.marker, blk(e), e.id), ov); if (!rt) return null; rt.full = [[k.x, k.y], ...rt.pts.slice(k.xjoin ? 0 : 1), e.marker.slice()]; rt.len = plen(rt.full); return rt; };
+    // a kiosk off the corridors (`k.xjoin`): a service to an erf on its own street runs along the kiosk's own verge (the kiosk's offset from the
+    // street line) to that erf's boundary nearest its marker and crosses the road there — one crossing per boundary, shared by the services that
+    // cross there (and merged with any other crossing within 3 m below) — then into the erf on the far corridor; an erf on the kiosk's own side
+    // is reached along the verge. Erven on other streets keep the kiosk's own crossing.
+    const xsites = new Map();
+    const ownSide = (e, k) => {
+      const st = k.road; if (!k.xjoin || !st || e.road !== st || !e.marker || !e.fe) return null;
+      const pk = project(st, k.x, k.y), off = pk.side * pk.d, pm = project(st, e.marker[0], e.marker[1]);
+      const verge = s1 => { const out = [], n = Math.max(1, Math.ceil(Math.abs(s1 - pk.s) / 2.5)); for (let i = 1; i <= n; i++) out.push(ptAt(st, pk.s + (s1 - pk.s) * i / n, off).slice(0, 2)); return out; };
+      const span = s1 => ({ st, off, a: pk.s, b: s1 });
+      if (pm.side === pk.side) { const full = [[k.x, k.y], ...verge(pm.s), e.marker.slice()]; return { full, len: plen(full), pts: [], sites: [], own: true, vspan: span(pm.s), commit() {} }; }
+      const ends = [e.fe.a, e.fe.b].map(q => project(st, q[0], q[1]).s), sx = Math.abs(ends[0] - pm.s) <= Math.abs(ends[1] - pm.s) ? ends[0] : ends[1];
+      const vg = verge(sx), a = vg[vg.length - 1], nd = G.attach(ptAt(st, sx, -off).slice(0, 2), blk(e)); if (nd == null) return null;
+      const rt = G.route(nd, G.attachInto(e.marker, blk(e), e.id)); if (!rt) return null;
+      const key = k.id + '|' + Math.round(sx); let site = xsites.get(key);
+      if (!site) { site = { cls: 'p', kind: 'kiosk', a, b: G.nodes[nd].p.slice(), used: [] }; xsites.set(key, site); kx.push(site); }
+      rt.full = [[k.x, k.y], ...vg, ...rt.pts, e.marker.slice()]; rt.len = plen(rt.full); rt.xsite = site; rt.vspan = span(sx); return rt;
+    };
+    const svc = (e, k, ov) => { const o = ownSide(e, k); if (o) return o; const rt = k.bnode == null ? null : G.route(k.bnode, G.attachInto(e.marker, blk(e), e.id), ov); if (!rt) return null; rt.full = [[k.x, k.y], ...rt.pts.slice(k.xjoin ? 0 : 1), e.marker.slice()]; rt.len = plen(rt.full); return rt; };
     let moved = 0, kept = 0, keptRuns = 0, slid = 0;
     // a kiosk with a service over the limit (the solve put it on a junction corner, its erf diagonally across) first slides along its own
     // corridor, up to 40 m each way, to the stand where the fewest of its erven are over the limit, then the least service cable
@@ -1591,7 +1609,10 @@ const PlanLayout = (() => {
         if (alt) { k.members.splice(k.members.indexOf(e), 1); alt.q.members.push(e); e.kiosk = alt.q; rt = alt.rt; moved++; }
       }
       if (!rt) { kept++; continue; }                                                // no path on the rings: the solve's own route stays
-      rt.commit('svc'); if (e.kiosk && e.kiosk.xjoin) e.kiosk.xjoin.used.push('svc'); e.route = simp(rt.full); e.cable = plen(e.route); e.hopN = 0; e.xsites = rt.sites;
+      rt.commit('svc'); if (rt.xsite) rt.xsite.used.push('svc'); else if (!rt.own && e.kiosk && e.kiosk.xjoin) e.kiosk.xjoin.used.push('svc');
+      // the stretch of its own verge the kiosk's services run along: one trench (trenchesBlocks)
+      if (rt.vspan && e.kiosk) { const v = e.kiosk.verge || (e.kiosk.verge = { st: rt.vspan.st, off: rt.vspan.off, lo: rt.vspan.a, hi: rt.vspan.a }); v.lo = Math.min(v.lo, rt.vspan.b); v.hi = Math.max(v.hi, rt.vspan.b); }
+      e.route = simp(rt.full); e.cable = plen(e.route); e.hopN = 0; e.xsites = rt.sites;
     }
     // fibre: manholes onto the fibre ring, every trunk section and erf duct laid again between its own two ends
     const F = r.fibre;
@@ -1696,6 +1717,10 @@ const PlanLayout = (() => {
       flush(chain, cat);
     };
     res.erven.forEach(e => { if (e.route) add(e.route, 'svc', 'p'); if (T.fibre !== 'off' && e.duct) add(e.duct, 'fi', 'f'); });
+    // a kiosk off the corridors: the services along its own verge share one trench from the furthest erf boundary one way to the other
+    (res.kiosks || []).forEach(k => { const v = k.verge; if (!v || v.hi - v.lo < 0.3) return; const n = Math.max(1, Math.ceil((v.hi - v.lo) / 2.5)), pts = [];
+      for (let i = 0; i <= n; i++) pts.push(ptAt(v.st, v.lo + (v.hi - v.lo) * i / n, v.off).slice(0, 2));
+      for (const kd of kinds(new Set(['svc']), null)) out.push({ type: kd.type, pts, depth: dep(kd.type, null), len: plen(pts), cats: ['svc'], kind: 'spur', section: null }); });
     if (res.net) (res.net.lv || []).forEach(ed => add(ed.pts, 'lv', 'p'));
     if (T.fibre !== 'off' && res.fibre) (res.fibre.trunks || []).forEach(ed => add(ed.pts, 'fi', 'f'));
     const pwNear = p => { const nd = near('p', p, 0.8); if (nd < 0) return false; const G = M.cls.p, R = G.nodes[nd].R, i = G.nodes[nd].i, L = R.pts.length;
