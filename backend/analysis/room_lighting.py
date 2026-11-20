@@ -1017,6 +1017,43 @@ def _chk(key, label, value, req, op, unit):
     return {"key": key, "label": label, "value": value, "req": req, "op": op, "unit": unit, "pass": bool(ok)}
 
 
+def _wall_edges(room: "_Room", S: dict, E_surf) -> list:
+    """Per-wall illuminance: the wall patches (kind 2, not a box face) grouped by the
+    outline edge they stand on. One row per edge, in outline order: edge index, end
+    points a and b (m), length, Em (area-weighted), Emin, Emax and U0 = Emin/Em (maintained)."""
+    P = room.P
+    n = len(P)
+    pos, kind, src, area = S["pos"], S["kind"], S["src"], S["area"]
+    m = (kind == 2) & (src < 0)
+    if not m.any():
+        return []
+    idx = np.where(m)[0]
+    q = pos[idx, :2]
+    d = np.full((len(idx), n), np.inf)
+    for i in range(n):
+        a, b = P[i], P[(i + 1) % n]
+        ab = b - a
+        L2 = float(ab @ ab)
+        if L2 < 1e-12:
+            continue
+        t = np.clip(((q - a) @ ab) / L2, 0.0, 1.0)
+        d[:, i] = np.hypot(*(q - (a + t[:, None] * ab)).T)
+    own = d.argmin(axis=1)
+    out = []
+    for i in range(n):
+        sel = idx[own == i]
+        if not len(sel):
+            continue
+        E, A = E_surf[sel], area[sel]
+        em = float((E * A).sum() / A.sum())
+        out.append({"edge": i + 1, "a": [round(float(P[i][0]), 3), round(float(P[i][1]), 3)],
+                    "b": [round(float(P[(i + 1) % n][0]), 3), round(float(P[(i + 1) % n][1]), 3)],
+                    "length": round(float(np.hypot(*(P[(i + 1) % n] - P[i]))), 3),
+                    "Em": round(em, 1), "Emin": round(float(E.min()), 1), "Emax": round(float(E.max()), 1),
+                    "U0": round(float(E.min() / em), 3) if em > 0 else 0.0})
+    return out
+
+
 def evaluate_room(room: _Room, webs: dict, with_ugr: bool = True, with_cyl: bool = True) -> dict:
     t0 = time.time()
     S = _solve(room, webs)
@@ -1061,6 +1098,7 @@ def evaluate_room(room: _Room, webs: dict, with_ugr: bool = True, with_cyl: bool
     if n_hidden:
         res["notes"].append(f"{n_hidden} work-plane point{'s' if n_hidden != 1 else ''} inside objects left out")
     res["walls"] = {"Em": round(float((E_surf[kind == 2] * S["area"][kind == 2]).sum() / S["area"][kind == 2].sum()), 1)}
+    res["walls"]["perEdge"] = _wall_edges(room, S, E_surf)
     res["ceiling"] = {"Em": round(float((E_surf[kind == 1] * S["area"][kind == 1]).sum() / S["area"][kind == 1].sum()), 1)}
     res["floor"] = {"Em": round(float((E_surf[kind == 0] * S["area"][kind == 0]).sum() / S["area"][kind == 0].sum()), 1)}
     # flux balance — the radiosity solution must absorb everything emitted
