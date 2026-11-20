@@ -565,7 +565,8 @@ const RoomCalc = {
           [-ey0[0] * Math.sin(th), -ey0[1] * Math.sin(th), Math.cos(th)]];
       }
     }
-    const a = -(el.rotation || 0) * D;
+    const ph0 = PhotoLib.get(pr.photoId);
+    const a = -((el.rotation || 0) + (ph0 && ph0.lengthAxis === 'C90' ? 90 : 0)) * D;   // C90 along the length: turn the web 90°
     return [[Math.cos(a), Math.sin(a), 0], [-Math.sin(a), Math.cos(a), 0], [0, 0, 1]];
   },
 

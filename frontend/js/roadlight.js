@@ -1205,6 +1205,9 @@ const RoadLight = {
           <label title="Rated system power (lamp + driver). Street lighting circuits that use this luminaire load it at this power">System power<span class="sl-unit"><input type="number" step="0.1" data-p="watts" value="${escHtml(p.watts)}"> W</span></label>
           <label title="Power factor of the driver, for the circuit current and kVA">Power factor<input type="number" step="0.01" min="0.3" max="1" data-p="pf" value="${escHtml(p.pf || 0.95)}"></label>
           <label title="If the file's C90 plane does not point across the road to the street side, rotate it here">Rotate C-planes<select data-p="rotate">${[0, 90, 180, 270].map(a => `<option value="${a}"${+p.rotate === a ? ' selected' : ''}>${a}°</option>`).join('')}</select></label>
+          <label title="For a linear fitting (batten, strip): the C-plane that runs along its length. Room lighting turns the distribution to match. Street lighting ignores this">Length runs along<select data-p="lengthAxis">${['C0', 'C90'].map(a => `<option value="${a}"${(p.lengthAxis || 'C0') === a ? ' selected' : ''}>${a} plane${a === 'C0' ? ' (default)' : ''}</option>`).join('')}</select></label>
+          ${p.orientationUnconfirmed ? `<div class="sl-hint rl-note"><b>Orientation unconfirmed.</b> ${escHtml(p.orientationUnconfirmed)}</div>` : ''}
+          ${p.sizeM ? `<div class="sl-hint">Fitting size from the file: ${Math.round(p.sizeM.length * 1000)} × ${Math.round(p.sizeM.width * 1000)} × ${Math.round(p.sizeM.height * 1000)} mm.</div>` : ''}
           <div class="rl-kv">
             <span>Format</span><b>${escHtml(p.format || '')}${p.fileName ? ' · ' + escHtml(p.fileName) : ''}</b>
             <span>Web</span><b>${p.c.length - 1} C-planes × ${p.g.length} γ (${p.g[0]}–${p.g[p.g.length - 1]}°)</b>
@@ -1237,6 +1240,7 @@ const RoadLight = {
     p.watts = this._num(v('watts'), p.watts);
     p.pf = Math.min(1, Math.max(0.3, this._num(v('pf'), p.pf || 0.95)));
     p.rotate = this._num(v('rotate'), 0);
+    p.lengthAxis = v('lengthAxis') === 'C90' ? 'C90' : 'C0';
     this._markDirty();
     if (this._circuitsUsing(id).length) StreetLight._afterMutate(false);   // their kVA / VD follow the new power
     this.render();

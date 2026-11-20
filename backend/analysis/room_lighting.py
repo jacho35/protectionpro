@@ -349,6 +349,8 @@ class _Room:
                 continue
             mount = it.get("mount") or "recessed"
             r_deg = _f(it.get("rotate"), 0.0)
+            if mount != "wall" and getattr(webs.get(p), "length_axis", "C0") == "C90":
+                r_deg += 90.0                  # the fitting's length lies along the file's C90 plane
             wall_ang = None
             if mount == "wall":
                 x, y, wall_ang = self._wall_spot(x, y)
