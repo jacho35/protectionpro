@@ -863,7 +863,7 @@ const Light3D = {
     if (room && this.f()) {
       const sc = this.scene(room);
       const row = (id, name, kind, dot) => `<button type="button" class="l3-row${this.sel === id ? ' active' : ''}" data-l3-sel="${escHtml(id)}"><i style="background:${dot}"></i><span>${escHtml(name || '')}</span><small>${kind}</small></button>`;
-      list = sc.objects.map(o => row('o:' + o.id, o.name, (L3_KIND[o.kind] || L3_KIND.box).label, (L3_KIND[o.kind] || L3_KIND.box).color)).join('')
+      list = sc.objects.map(o => row('o:' + o.id, o.name, (L3_KIND[o.kind] || L3_KIND.box).label + (o.h > 0 ? ' · ' + (+o.z || 0).toFixed(2) + '–' + ((+o.z || 0) + o.h).toFixed(2) + ' m' : ''), (L3_KIND[o.kind] || L3_KIND.box).color)).join('')
         + this.lums(room).map(e => row('l:' + e.id, e.name || 'Luminaire', 'Luminaire', '#f5d76e')).join('')
         + sc.openings.map(o => row('w:' + o.id, o.name, o.kind === 'window' ? 'Window' : 'Door', o.kind === 'window' ? '#8cc8f0' : '#b08a60')).join('')
         + sc.surfaces.map(o => row('s:' + o.id, o.name, 'Calc surface', '#0078d7')).join('');

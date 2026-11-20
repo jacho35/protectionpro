@@ -158,6 +158,7 @@ const RoomCalc = {
       <div style="font-size:12px;color:var(--text-muted);margin:6px 0">${res.luminaires} fitting${res.luminaires === 1 ? '' : 's'} · grid ${wp.step} m, ${wp.n} points · Emin ${Math.round(wp.Emin || 0)} / Emax ${Math.round(wp.Emax || 0)} lx · ${res.power.wm2} W/m²${res.power.wm2per100lx != null ? ` · ${res.power.wm2per100lx} W/m²/100 lx` : ''}${res.cylindrical ? ` · Ēz ${Math.round(res.cylindrical.Ez)} lx` : ''}</div>
       ${(() => { const en = RoomLighting.energy(room, res); return en ? `<div style="font-size:12px;margin:2px 0">LENI <b>${en.leni.toFixed(1)}</b> kWh/m²·yr · ${en.kwh.toFixed(0)} kWh/yr${en.lpdPass == null ? '' : ` · <span style="color:${en.lpdPass ? '#1d6b3a' : '#a61b1b'};font-weight:600">${en.wm2.toFixed(1)} W/m² ${en.lpdPass ? '≤' : '>'} ${en.lpd} limit</span>`}</div>` : ''; })()}
       ${(() => { const W = this.wallRows(res); return W.length ? `<div style="font-size:12px;margin:6px 0 2px;font-weight:600">Walls (lx)</div><table style="width:100%;font-size:12px;border-collapse:collapse"><thead><tr style="color:var(--text-muted);text-align:right"><th style="text-align:left;font-weight:400">Wall</th><th style="font-weight:400">Length m</th><th style="font-weight:400">Ēm</th><th style="font-weight:400">Emin</th><th style="font-weight:400">Emax</th></tr></thead><tbody>${W.map(w => `<tr style="text-align:right;font-family:monospace"><td style="text-align:left">W${w.edge}</td><td>${w.length.toFixed(2)}</td><td>${Math.round(w.Em)}</td><td>${Math.round(w.Emin)}</td><td>${Math.round(w.Emax)}</td></tr>`).join('')}</tbody></table><div style="font-size:11px;color:var(--text-muted)">W1 starts at the first outline edge. The labels on the plan use the same numbers.</div>` : ''; })()}
+      ${this.refHtml(room, res)}
       ${(res.warnings || []).concat(res.notes || []).map(w => `<div style="font-size:11px;color:#8a5a00">${escHtml(w)}</div>`).join('')}
       ${btn}</div>`;
   },
@@ -278,6 +279,73 @@ const RoomCalc = {
   _color(v) {
     const hue = 240 - 240 * Math.max(0, Math.min(1, v));
     return `hsl(${hue}, 80%, 50%)`;
+  },
+
+  // ─── Reference results (a Relux results PDF), shown beside the app's own figures ───
+  // Rows [label, app, reference, unit, kind]: kind 'pct' = difference in %, 'abs' = difference as a number.
+  refRows(room, res) {
+    const ref = room && room.reference, wp = (res && res.workplane) || {};
+    if (!ref || !res) return [];
+    const mean = (a) => (a && a.length) ? a.reduce((s, v) => s + v, 0) / a.length : null;
+    const rows = [
+      ['Ēm work plane', wp.Em, ref.em, 'lx', 'pct'], ['Emin', wp.Emin, ref.emin, 'lx', 'pct'],
+      ['U₀', wp.U0, ref.uo, '', 'abs'], ['Ud (Emin/Emax)', wp.Ud, ref.ud, '', 'abs'],
+      ['Ēm walls (mean)', res.walls && res.walls.Em, mean(ref.wallEm), 'lx', 'pct'],
+      ['Ēm ceiling', res.ceiling && res.ceiling.Em, ref.ceilEm, 'lx', 'pct'],
+      ['Ēz cylindrical', res.cylindrical && res.cylindrical.Ez, ref.emCyl, 'lx', 'pct'],
+      ['UGR (max) / RUG', res.ugr && res.ugr.max, ref.rug, '', 'abs'],
+      ['W/m²', res.power && res.power.wm2, ref.wm2, '', 'pct'],
+      ['Fittings', res.luminaires, ref.luminaires, '', 'abs'],
+    ];
+    return rows.filter(r => r[2] != null && r[1] != null).map(r => {
+      const d = r[4] === 'pct' ? (r[2] ? (r[1] / r[2] - 1) * 100 : null) : r[1] - r[2];
+      return { label: r[0], app: r[1], ref: r[2], unit: r[3], kind: r[4], diff: d };
+    });
+  },
+  _refName(n) { return String(n || '').replace(/\s*\[.*$/, '').trim().toLowerCase(); },
+  // Put each Relux room on the room with the same name (a trailing "[note]" in the name is ignored).
+  attachReference(rooms, parsed, source) {
+    const byName = {}; Object.keys(parsed.rooms || {}).forEach(k => { byName[this._refName(k)] = k; });
+    let hit = 0; const missed = [];
+    for (const room of rooms) {
+      const k = byName[this._refName(room.name)];
+      if (!k) { missed.push(room.name); continue; }
+      room.reference = Object.assign({ source, date: parsed.date, project: parsed.project, name: k }, parsed.rooms[k]);
+      hit++;
+    }
+    return { hit, missed, unused: Object.keys(parsed.rooms || {}).filter(k => !rooms.some(r => this._refName(r.name) === this._refName(k))) };
+  },
+  importRelux() {
+    const inp = document.createElement('input');
+    inp.type = 'file'; inp.accept = '.pdf,application/pdf';
+    inp.onchange = async () => {
+      const file = inp.files && inp.files[0];
+      if (!file) return;
+      try {
+        const buf = new Uint8Array(await file.arrayBuffer());
+        let bin = ''; for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode.apply(null, buf.subarray(i, i + 0x8000));
+        const parsed = await API.request('/analysis/relux-reference', 'POST', { pdf: btoa(bin) });
+        const rooms = (AppState.planMarkup.rooms || []).filter(r => r.points && r.points.length >= 3);
+        const out = this.attachReference(rooms, parsed, file.name);
+        PlanMarkup.snapshot(); PlanMarkup.markDirty(); PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true });
+        if (typeof LightingWS !== 'undefined') LightingWS.render();
+        UI.alert(`Relux results read: ${Object.keys(parsed.rooms).length} rooms in the PDF, ${out.hit} matched by name on this floor.` +
+          (out.missed.length ? ` No Relux room for: ${out.missed.join(', ')}.` : '') + (out.unused.length ? ` Relux rooms not on this floor: ${out.unused.join(', ')}.` : ''));
+      } catch (e) { UI.alert('Relux PDF: ' + (e && e.message ? e.message : e)); }
+    };
+    inp.click();
+  },
+  refHtml(room, res) {
+    const rows = this.refRows(room, res);
+    if (!rows.length) return '';
+    const f = (v, u) => v == null ? '—' : (u === 'lx' ? Math.round(v) : (Math.abs(v) >= 100 ? Math.round(v) : (+v).toFixed(2).replace(/\.?0+$/, '')));
+    const ref = room.reference;
+    return `<div style="font-size:12px;margin:6px 0 2px;font-weight:600">Reference: ${escHtml(ref.source || 'Relux')}${ref.date ? ' · ' + escHtml(ref.date) : ''}</div>
+      <table style="width:100%;font-size:12px;border-collapse:collapse"><thead><tr style="color:var(--text-muted);text-align:right"><th style="text-align:left;font-weight:400"></th><th style="font-weight:400">App</th><th style="font-weight:400">Ref.</th><th style="font-weight:400">Diff</th></tr></thead><tbody>${rows.map(r => {
+      const bad = r.label === 'Fittings' && r.diff !== 0;
+      const d = r.diff == null ? '—' : (r.kind === 'pct' ? (r.diff >= 0 ? '+' : '') + r.diff.toFixed(1) + '%' : (r.diff >= 0 ? '+' : '') + (Math.abs(r.diff) < 10 ? r.diff.toFixed(2).replace(/\.?0+$/, '') : r.diff.toFixed(0)));
+      return `<tr style="text-align:right;font-family:monospace${bad ? ';color:#a61b1b;font-weight:600' : ''}"><td style="text-align:left;font-family:inherit">${escHtml(r.label)}</td><td>${f(r.app, r.unit)}</td><td>${f(r.ref, r.unit)}</td><td>${d}</td></tr>`;
+    }).join('')}</tbody></table>${rows.some(r => r.label === 'Fittings' && r.diff !== 0) ? '<div style="font-size:11px;color:#a61b1b">The fitting counts differ: the layouts are not the same, so the other figures are not comparable.</div>' : ''}`;
   },
 
   // Per-wall illuminance (res.walls.perEdge, metres, y up): Em of each wall at its mid-point, just inside the room.

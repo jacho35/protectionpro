@@ -355,6 +355,7 @@ const LightingWS = {
         `<option value="${escHtml(f.id)}"${f.id === pm.activeFloorId ? ' selected' : ''}>${escHtml(f.name)} (L${f.level})</option>`).join('')}</select></label>` : ''}
       ${planish ? `<label class="plan-tb-field lw-live" title="Recalculate the room, area or field you are working on a moment after each change"><input type="checkbox" id="lw-live"${this.live ? ' checked' : ''}> Live results</label>` : ''}
       <button class="plan-tb-btn lw-bar-extra" data-lw="photolib">Luminaire library…</button>
+      <button class="plan-tb-btn lw-bar-extra" data-lw="relux" title="Read a Relux results PDF and show its figures beside this app's results, room by room">Relux reference…</button>
       <button class="plan-tb-btn lw-bar-extra" data-lw="pdf">PDF report</button>
       ${v3 ? `<button class="btn-primary" data-l3="calc">${Light3D.calcLabel()}</button>`
         : '<button class="btn-primary" data-lw="calc">Calculate all</button>'}`;
@@ -379,7 +380,7 @@ const LightingWS = {
       const v = this.verdictOf(r);
       const cls = v === 'Pass' ? 'ok' : v === 'Fail' ? 'bad' : '';
       html += `<button type="button" class="plan-zone-row${PlanMarkup.selectedIds.has(r.id) ? ' selected' : ''}" data-plan-zone="${escHtml(r.id)}">
-        <span><b>${escHtml(r.name || KIND[r.kind || 'room'])}</b><small>${KIND[r.kind || 'room']}</small></span>${v ? `<span class="plan-verdict ${escHtml(cls)}">${escHtml(v)}</span>` : ''}</button>`;
+        <span><b>${escHtml(r.name || KIND[r.kind || 'room'])}</b><small>${KIND[r.kind || 'room']}${(() => { const rr = RoomCalc.results[r.id]; return (r.reference && rr && rr.res && r.reference.luminaires != null && rr.res.luminaires !== r.reference.luminaires) ? ` · <span style="color:#a61b1b">${rr.res.luminaires} fittings, reference ${r.reference.luminaires}</span>` : ''; })()}</small></span>${v ? `<span class="plan-verdict ${escHtml(cls)}">${escHtml(v)}</span>` : ''}</button>`;
     }
     return html;
   },
@@ -744,6 +745,7 @@ const LightingWS = {
     if (!a) return;
     if (a.dataset.lw === 'calc') this.calcAll();
     else if (a.dataset.lw === 'photolib') PhotoLib.open();
+    else if (a.dataset.lw === 'relux') RoomCalc.importRelux();
     else if (a.dataset.lw === 'pdf') { if (typeof LightReport !== 'undefined') LightReport.export(); }
   },
 

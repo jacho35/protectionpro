@@ -34,3 +34,34 @@ ok('linearBody: not for a square fitting, other types, missing size, or trueSize
   assert.strictEqual(PS.linearBody({ type: 'bd_light', props: { photoId: 'v', trueSize: false } }), null);
 });
 console.log(n + ' passed');
+
+// Reference rows (RoomCalc.refRows / attachReference): pull the methods out of roomcalc.js
+{
+  const src = require("fs").readFileSync(__dirname + "/../../frontend/js/roomcalc.js", "utf8");
+  const a = src.indexOf("  refRows(room, res) {"), b = src.indexOf("  importRelux() {");
+  assert.ok(a > 0 && b > a, "reference methods not found");
+  const c2 = { JSON };
+  require("vm").createContext(c2);
+  require("vm").runInContext("this.RC = {" + src.slice(a, b) + "};", c2);
+  const RC = c2.RC;
+  ok("refRows: percent and absolute differences, fittings flagged", () => {
+    const room = { reference: { em: 1000, emin: 800, uo: 0.8, luminaires: 25, wallEm: [700, 600] } };
+    const res = { workplane: { Em: 1100, Emin: 700, U0: 0.64 }, walls: { Em: 650 }, luminaires: 30 };
+    const rows = RC.refRows(room, res), by = (l) => rows.find(r => r.label === l);
+    assert.ok(Math.abs(by("Ēm work plane").diff - 10) < 1e-9);
+    assert.ok(Math.abs(by("U₀").diff - (-0.16)) < 1e-9);
+    assert.strictEqual(by("Ēm walls (mean)").ref, 650);
+    assert.strictEqual(by("Fittings").diff, 5);
+    assert.strictEqual(rows.length, 5);                  // rows with no reference value are left out
+    assert.strictEqual(RC.refRows({}, res).length, 0);
+  });
+  ok("attachReference matches by name, ignoring a [note] suffix", () => {
+    const rooms = [{ name: "Plant Area 2 - Left [layout differs]" }, { name: "Office" }, { name: "Nowhere" }];
+    const out = RC.attachReference(rooms, { date: "d", rooms: { "Plant Area 2 - Left": { em: 990 }, Office: { em: 530 }, "MCC Room": { em: 1 } } }, "x.pdf");
+    assert.strictEqual(out.hit, 2);
+    assert.strictEqual(rooms[0].reference.em, 990);
+    assert.strictEqual(out.missed.join(), "Nowhere");
+    assert.strictEqual(out.unused.join(), "MCC Room");
+  });
+}
+console.log("reference tests done");
