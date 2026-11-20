@@ -106,6 +106,27 @@ ok('unserviced erven: no marker, kiosk, service or duct, every other erf served,
     assert(runsThru(gone, polys) > 0, ids + ': the fixture does not test it (runs go round open land too)');
   }
 });
+ok('civil services side: kiosks on the other side, far less LV and fibre trunk along the civil verge, kiosk count and service limit kept; Keep off no worse than Avoid', () => {
+  const base = solve(T), sum = a => a.reduce((t, x) => t + x, 0);
+  // LV and fibre trunk length along the civil side of street `st`, measured on the result's lines (independent of the engine's own tally)
+  const along = (r, st, c) => { let n = 0; const runs = []; r.net.lv.forEach(l => runs.push(l.pts)); r.fibre.trunks.forEach(t => runs.push(t.pts));
+    for (const pts of runs) for (let i = 1; i < pts.length; i++) { const m = [(pts[i - 1][0] + pts[i][0]) / 2, (pts[i - 1][1] + pts[i][1]) / 2]; let b = null;
+      for (const o of r.streets) { const pr = L.project(o, m[0], m[1]); if (pr.d > o.w / 2 + 15) continue; if (!b || pr.d < b.pr.d) b = { o, pr }; }
+      if (b && b.o.id === st && b.pr.s > 0.05 && b.pr.s < b.o.len - 0.05 && b.pr.side === c) n += dist(pts[i - 1], pts[i]); }
+    return n; };
+  for (const sid of ['S0', 'S2']) {                                          // S2: every erf on the civil side, open land on the other
+    const c = base.ks[sid], inp = { streets: T.streets, erven: T.erven, subPts: [[150, 66]], civ: { [sid]: c }, ks: { [sid]: -c }, fs: { [sid]: -c } };
+    const run = P => { const r = L.solve(inp, Object.assign({ maxc: 80 }, P || {})); L.smooth(r, r.P); return r; };
+    const a = run(), k = run({ civMode: 'keep' }), st = a.streets.find(x => x.id === sid);
+    assert(a.kiosks.filter(q => q.road === st).every(q => L.project(st, q.x, q.y).side === -c), sid + ': a kiosk on the civil side');
+    assert(along(a, sid, c) < 0.5 * along(base, sid, c), `${sid}: along the civil side ${along(a, sid, c).toFixed(0)} m vs ${along(base, sid, c).toFixed(0)} m`);
+    assert.strictEqual(a.kiosks.length, base.kiosks.length, sid + ': kiosks'); assert.strictEqual(a.stats.over, 0, sid + ': services over the limit');
+    const eng = r => sum(r.erven.map(e => (e.civLen || 0) + (e.ductCivLen || 0))) + sum(r.net.lvLinks.map(l => l.civLen || 0)) + sum(r.fibre.trunks.map(t => t.civLen || 0));
+    assert(eng(k) <= eng(a) + 1, `${sid}: keep off ${eng(k).toFixed(0)} m vs avoid ${eng(a).toFixed(0)} m`);
+    assert(Array.isArray(a.civRuns) && a.civRuns.every(x => x.len > 2 && x.pts.length >= 2), sid + ': civil runs listed with their lines');
+  }
+  assert(!base.civRuns.length, 'no civil side: nothing listed');
+});
 ok('solve: kiosks and manholes stand on their corridor', () => {
   R.kiosks.forEach(k => { const B = R.blocks.blocks.map(b => PB.distBlock(b, [k.x, k.y])[0]).sort((a, b) => a - b)[0]; assert(Math.abs(B - 2) < 0.1, 'kiosk ' + B.toFixed(2) + ' m off'); });
   R.fibre.mhs.forEach(m => { const B = R.blocks.blocks.map(b => PB.distBlock(b, [m.x, m.y])[0]).sort((a, b) => a - b)[0]; assert(Math.abs(B - 1.7) < 0.1, 'manhole ' + B.toFixed(2) + ' m off'); });

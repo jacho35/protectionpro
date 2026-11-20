@@ -355,17 +355,20 @@ const PlanBlocks = (() => {
         // `ov.home` = a block the run belongs to (a service: the kiosk's block): every metre of corridor off it costs `ov.far` (default 4)
         // times, so the run stays on its own side as long as it can and crosses at the site nearest where it is going
         const home = ov.home || null, far = home ? (ov.far != null ? +ov.far : 4) : 1;
+        // `api.civ` (set per solve by the layout): a cost factor per node, > 1 on the civil-services side of a street; an edge costs its
+        // length times the larger factor of its ends, so runs keep to the other side. `civLen` = metres of the path on that side.
+        const C = api.civ;
         const N = nodes.length, D = new Float64Array(N).fill(Infinity), via = new Int32Array(N).fill(-1), vsite = new Array(N), done = new Uint8Array(N); D[from] = 0;
         const hp = [[0, from]], push = (d, v) => { hp.push([d, v]); let c = hp.length - 1; while (c > 0) { const p = (c - 1) >> 1; if (hp[p][0] <= hp[c][0]) break; [hp[p], hp[c]] = [hp[c], hp[p]]; c = p; } };
         const pop = () => { const top = hp[0], last = hp.pop(); if (hp.length) { hp[0] = last; let c = 0; for (;;) { const l = 2 * c + 1, r = l + 1; let m = c; if (l < hp.length && hp[l][0] < hp[m][0]) m = l; if (r < hp.length && hp[r][0] < hp[m][0]) m = r; if (m === c) break; [hp[m], hp[c]] = [hp[c], hp[m]]; c = m; } } return top; };
         while (hp.length) { const [d, u] = pop(); if (done[u]) continue; done[u] = 1; if (u === to) break;
           const off = home && nodes[u].R.block !== home;
-          for (const e of adj[u]) { let w = e.w; if (e.site) w += (e.site.used.length ? xshare : xpen) + (e.site.kind === 'leg' ? legExtra : 0); else if (off || (home && nodes[e.to].R.block !== home)) w *= far; if (d + w < D[e.to]) { D[e.to] = d + w; via[e.to] = u; vsite[e.to] = e.site; push(D[e.to], e.to); } } }
+          for (const e of adj[u]) { let w = e.w; if (e.site) w += (e.site.used.length ? xshare : xpen) + (e.site.kind === 'leg' ? legExtra : 0); else { if (off || (home && nodes[e.to].R.block !== home)) w *= far; if (C) w *= Math.max(C[u], C[e.to]); } if (d + w < D[e.to]) { D[e.to] = d + w; via[e.to] = u; vsite[e.to] = e.site; push(D[e.to], e.to); } } }
         if (!isFinite(D[to])) return null;
-        const path = [], used = []; let farLen = 0;
-        for (let v = to; v !== -1; v = via[v]) { path.push(nodes[v].p); if (vsite[v]) used.push(vsite[v]); else if (home && via[v] !== -1 && v !== from && (nodes[v].R.block !== home || nodes[via[v]].R.block !== home)) farLen += dist(nodes[v].p, nodes[via[v]].p); if (v === from) break; }
+        const path = [], used = []; let farLen = 0, civLen = 0;
+        for (let v = to; v !== -1; v = via[v]) { path.push(nodes[v].p); if (vsite[v]) used.push(vsite[v]); else if (via[v] !== -1 && v !== from) { const L = dist(nodes[v].p, nodes[via[v]].p); if (home && (nodes[v].R.block !== home || nodes[via[v]].R.block !== home)) farLen += L; if (C && Math.max(C[v], C[via[v]]) > 1) civLen += L; } if (v === from) break; }
         path.reverse(); used.reverse();
-        return { pts: path, sites: used, farLen, commit(tag) { used.forEach(x => x.used.push(tag)); } };
+        return { pts: path, sites: used, farLen, civLen, commit(tag) { used.forEach(x => x.used.push(tag)); } };
       }
       // every node within `maxCost` of a node: Map(node → [cost, length, crossings]) along the cheapest path (for the kiosk optimiser:
       // the service length and road crossings from one erf marker to every stand at once)
@@ -374,12 +377,13 @@ const PlanBlocks = (() => {
         if (from == null) return out;
         const hp = [[0, from, 0, 0]], push = q => { hp.push(q); let c = hp.length - 1; while (c > 0) { const p = (c - 1) >> 1; if (hp[p][0] <= hp[c][0]) break; [hp[p], hp[c]] = [hp[c], hp[p]]; c = p; } };
         const pop = () => { const top = hp[0], last = hp.pop(); if (hp.length) { hp[0] = last; let c = 0; for (;;) { const l = 2 * c + 1, r = l + 1; let m = c; if (l < hp.length && hp[l][0] < hp[m][0]) m = l; if (r < hp.length && hp[r][0] < hp[m][0]) m = r; if (m === c) break; [hp[m], hp[c]] = [hp[c], hp[m]]; c = m; } } return top; };
-        while (hp.length) { const [d, u, len, xs] = pop(); if (out.has(u)) continue; out.set(u, [d, len, xs]);
+        while (hp.length) { const [d, u, len, xs] = pop(); if (out.has(u)) continue; out.set(u, [d, len, xs]);     // (no civil-side cost here: the kiosk side of each street already keeps kiosks off it, and its factor would read as service length)
           for (const e of adj[u]) { if (out.has(e.to)) continue; const w = e.w + (e.site ? xpen + (e.site.kind === 'leg' ? legExtra : 0) : 0); if (d + w <= maxCost) push([d + w, e.to, len + e.w, xs + (e.site ? 1 : 0)]); } }
         return out;
       }
       const resetUse = () => sites.forEach(x => { x.used = []; });
-      return { name, kd, rings, sites, warns, nodes, attach, attachInto, route, reach, ringNear, resetUse };
+      const api = { name, kd, rings, sites, warns, nodes, attach, attachInto, route, reach, ringNear, resetUse, civ: null };
+      return api;
     }
     return { o, junctions: J, blocks, bridges, blockOf, cls, ms: Date.now() - t0, crossesBlock, streetSI: SI, distBlock };
   }
