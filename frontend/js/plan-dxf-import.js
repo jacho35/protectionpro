@@ -63,7 +63,7 @@ const PlanDxfImport = {
       if (typeof UI !== 'undefined' && UI.setBusy) UI.setBusy(false);
     }
     if (data.mode === 'roundtrip') this._reconstruct(data);
-    else await this._addUnderlay(this._normalise(data), (file.name || 'DXF').replace(/\.dxf$/i, ''));
+    else await this._addUnderlay(this._normalise(data), (file.name || 'DXF').replace(/\.dxf$/i, ''), file);
   },
 
   // ── Round-trip: rebuild native plan entities on the active floor ──
@@ -237,7 +237,7 @@ const PlanDxfImport = {
   },
 
   // ─── Adding an underlay ───
-  async _addUnderlay(data, name) {
+  async _addUnderlay(data, name, file) {
     if (data.empty || !(data.entities.length || data.inserts.length)) {
       const sk = data.skipped && Object.keys(data.skipped).length ? ` (unsupported: ${Object.keys(data.skipped).join(', ')})` : '';
       UI.alert('No drawable geometry found in that DXF' + sk + '. Only model space is read — if the drawing sits in a layout (paper space), explode or copy it to model space first.');
@@ -283,6 +283,9 @@ const PlanDxfImport = {
     } catch (e) {
       stored = false;
     }
+    // The original file too: the plan's DXF export merges it exactly (its linetypes, text styles, hatches). Best effort — without it
+    // the export rebuilds the drawing from the parsed copy.
+    if (file && stored) { try { desc.srcId = (await this._uploadSrc(file, name)).id; } catch (e) { /* the parsed copy still exports */ } }
     this._data.set(this._key(desc), data);
     this.list().push(desc);
     if (typeof PlanMarkup !== 'undefined') {
@@ -579,13 +582,31 @@ const PlanDxfImport = {
       } catch (_) { /* leave this drawing out; the rest still export */ }
     }
     if (Object.keys(assets).length) data.planAssets = { dxf: assets };
+    // the original files (base64), so the exported project still merges each drawing exactly
+    const srcs = [...new Set(this._descsOf(pm).map(d => d.srcId).filter(id => id != null))], src = {};
+    for (const id of srcs) {
+      try {
+        const r = await fetch(`${API_BASE}/plan-images/${id}`, { headers: API.authHeaders() });
+        if (r.ok) { const b = new Uint8Array(await r.arrayBuffer()); let bin = ''; for (let i = 0; i < b.length; i += 0x8000) bin += String.fromCharCode.apply(null, b.subarray(i, i + 0x8000)); src[id] = btoa(bin); }
+      } catch (_) { /* that original stays out; the export rebuilds it from the parsed copy */ }
+    }
+    if (Object.keys(src).length) { data.planAssets = data.planAssets || {}; data.planAssets.dxfsrc = src; }
     return data;
   },
 
   async unbundle(data) {
-    const assets = data && data.planAssets && data.planAssets.dxf;
+    const assets = data && data.planAssets && data.planAssets.dxf, srcs = data && data.planAssets && data.planAssets.dxfsrc;
     if (data && data.planAssets) delete data.planAssets;
-    if (!assets || !data.planMarkup) return data;
+    if (!data || !data.planMarkup) return data;
+    if (srcs) {                                                       // the original files: upload them again, point each drawing at its new copy
+      const remapS = {};
+      for (const [oldId, b64] of Object.entries(srcs)) {
+        try { const bin = atob(b64), u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); remapS[oldId] = (await this._uploadSrc(new Blob([u]), 'DXF', true)).id; }
+        catch (_) { /* that drawing exports from its parsed copy */ }
+      }
+      for (const d of this._descsOf(data.planMarkup)) if (d.srcId != null) d.srcId = remapS[String(d.srcId)] != null ? remapS[String(d.srcId)] : null;
+    }
+    if (!assets) return data;
     const remap = {};
     for (const [oldId, json] of Object.entries(assets)) {
       const desc = this._descsOf(data.planMarkup).find(d => String(d.imageId) === oldId);
@@ -596,6 +617,18 @@ const PlanDxfImport = {
       if (d.imageId != null && remap[String(d.imageId)] != null) d.imageId = remap[String(d.imageId)];
     }
     return data;
+  },
+
+  // the original DXF file, as it was imported (kind `dxfsrc`)
+  async _uploadSrc(file, name, orphan) {
+    const fd = new FormData();
+    fd.append('file', new File([file], (name || 'drawing') + '.dxf', { type: 'application/dxf' }));
+    fd.append('kind', 'dxfsrc');
+    fd.append('name', name || '');
+    if (AppState.projectId && !orphan) fd.append('project_id', String(AppState.projectId));
+    const resp = await fetch(`${API_BASE}/plan-images`, { method: 'POST', body: fd, headers: API.authHeaders() });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    return resp.json();
   },
 
   async _upload(data, name, orphan) {
@@ -649,7 +682,7 @@ const PlanDxfImport = {
   storedIds() {
     const out = [];
     for (const fl of AppState.planFloors()) {
-      for (const d of ((fl.data && fl.data.dxfs) || [])) if (d.imageId != null) out.push(d.imageId);
+      for (const d of ((fl.data && fl.data.dxfs) || [])) { if (d.imageId != null) out.push(d.imageId); if (d.srcId != null) out.push(d.srcId); }
     }
     return out;
   },

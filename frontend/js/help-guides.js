@@ -409,6 +409,8 @@ const HELP_GUIDES = [
       html: 'Units are millimetres and the Y axis points up. Line types keep their dash patterns, fills are solid, and text is real text. Circuit breakers and other symbols are <em>blocks</em> inserted at scale 1.' },
     { title: 'Read the data',
       html: 'The label beside a symbol is a visible attribute. Use your CAD package’s attribute display or data extraction to list a board’s breakers with their rating, cable and load, since those are hidden attributes on the block. A block inserted fresh prompts for the same fields.' },
+    { title: 'The plan drawing',
+      html: 'The plan’s DXF button asks for the <strong>drawing scale</strong> and the <strong>text height on paper</strong> (2.5 mm at 1 : 500 is 1.25 m in the drawing). The plan is drawn in metres. Every text uses one Arial style at that height: cable labels run along their cable, each part’s name sits beside its symbol, and your own notes keep their colour and relative size. Each layer has the colour the plan shows, lines follow their layer (a line in a different colour from its layer keeps its own), and dashed cables are dashed. Tick <strong>Include the background drawing</strong> to bring the DXF underlay along: only what the plan shows (layers you hid, parts already turned into plan items and anything outside the working area are left out), on layers named <code>BG-</code> plus the drawing’s own names, as one block placed where the plan has it. A drawing imported from now on goes in exactly as it was drawn, with its own linetypes, text styles and hatches; one imported earlier is rebuilt from the plan’s copy, so import it again to get the original.' },
   ],
   tips: [
     'Layers keep a drawing’s parts apart so you can freeze text, fills or a section.',
