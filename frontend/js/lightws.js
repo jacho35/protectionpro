@@ -266,6 +266,7 @@ const LightingWS = {
         if (typeof PlanUI !== 'undefined') PlanUI.renderPalette();
       }
       else if (e.target.id === 'lw-isostep') { RoomCalc.isoStep = +e.target.value || 0; PlanEngine.requestDraw({ fg: true }); }
+      else if (e.target.id === 'lw-walls') { RoomCalc.showWalls = e.target.checked; PlanEngine.requestDraw({ fg: true }); if (typeof Light3D !== 'undefined' && Light3D.view) Light3D.view.redraw(); }
       else if (e.target.id === 'lw-dist') { RoomCalc.showDist = e.target.checked; PlanEngine.requestDraw({ fg: true }); }
       else if (e.target.id === 'lw-live') { this.setLive(e.target.checked); this._renderBar(); PlanMarkup.refreshProps(); }
       else if (e.target.dataset && e.target.dataset.ls && typeof LightSection !== 'undefined') this._onSectionInput(e);
@@ -427,6 +428,7 @@ const LightingWS = {
         <div class="plan-pal-list">${def ? item({ type: 'bd_light', kind: 'element', name: def.name, color: def.color, desc: 'One at a time, in a row or an array' }) : ''}</div>
         <p class="lw-hint">Or select a room: its panel suggests layouts that meet the targets.</p>
         <label class="plan-field-check"><input type="checkbox" id="lw-dist"${RoomCalc.showDist ? ' checked' : ''}> Light distribution of each fitting</label>
+        <label class="plan-field-check"><input type="checkbox" id="lw-walls"${RoomCalc.showWalls ? ' checked' : ''}> Lux on each wall (Results step and 3D)</label>
         <div class="lw-hint">${fittings.length} fitting${fittings.length === 1 ? '' : 's'} on this floor${bare ? ` · <b>${bare} without a luminaire</b>` : ''}</div>
         ${this._zoneList(rooms, empty)}`;
     }
@@ -505,7 +507,8 @@ const LightingWS = {
     const steps = [0, 10, 25, 50, 100, 200, 500];
     return `<label class="plan-tb-field">Show <select id="lw-show" class="plan-tb-select">${opt('fc', 'False colour')}${opt('iso', 'Isolux lines')}${opt('isoval', 'Isolux lines + values')}${opt('val', 'Values')}${opt('off', 'Plan only')}</select></label>
       ${iso ? `<label class="plan-tb-field">Every <select id="lw-isostep" class="plan-tb-select">${steps.map(v => `<option value="${v}"${RoomCalc.isoStep === v ? ' selected' : ''}>${v ? v + ' lx' : 'Auto'}</option>`).join('')}</select></label>` : ''}
-      <label class="plan-tb-field" title="Each fitting's light distribution seen from above — how far it throws light in every direction"><input type="checkbox" id="lw-dist"${RoomCalc.showDist ? ' checked' : ''}> Light distribution</label>`;
+      <label class="plan-tb-field" title="Each fitting's light distribution seen from above — how far it throws light in every direction"><input type="checkbox" id="lw-dist"${RoomCalc.showDist ? ' checked' : ''}> Light distribution</label>
+      <label class="plan-tb-field" title="Print the illuminance on each wall (plan Results step and 3D view)"><input type="checkbox" id="lw-walls"${RoomCalc.showWalls ? ' checked' : ''}> Wall lux</label>`;
   },
 
   // From the Plan tab ("Lighting for this room…") or a table row: show the

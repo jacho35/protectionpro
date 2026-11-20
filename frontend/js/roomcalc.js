@@ -20,6 +20,7 @@ const RoomCalc = {
   layouts: {},          // room id → { lumId, cands, sel, seed }
   display: 'fc',        // results on the plan: 'fc' false colour · 'iso' isolux lines · 'isoval' lines + values · 'val' values
   isoStep: 0,           // lx between isolux lines; 0 = automatic
+  showWalls: false,     // the lux on each wall, printed on the plan (Results step) and in the 3D view
   showDist: false,      // the light distribution of every fitting, seen from above
   _distCache: new Map(),
 
@@ -156,6 +157,7 @@ const RoomCalc = {
       <table style="width:100%;font-size:12px;border-collapse:collapse"><tbody>${(res.checks || []).map(fmt).join('')}</tbody></table>
       <div style="font-size:12px;color:var(--text-muted);margin:6px 0">${res.luminaires} fitting${res.luminaires === 1 ? '' : 's'} · grid ${wp.step} m, ${wp.n} points · Emin ${Math.round(wp.Emin || 0)} / Emax ${Math.round(wp.Emax || 0)} lx · ${res.power.wm2} W/m²${res.power.wm2per100lx != null ? ` · ${res.power.wm2per100lx} W/m²/100 lx` : ''}${res.cylindrical ? ` · Ēz ${Math.round(res.cylindrical.Ez)} lx` : ''}</div>
       ${(() => { const en = RoomLighting.energy(room, res); return en ? `<div style="font-size:12px;margin:2px 0">LENI <b>${en.leni.toFixed(1)}</b> kWh/m²·yr · ${en.kwh.toFixed(0)} kWh/yr${en.lpdPass == null ? '' : ` · <span style="color:${en.lpdPass ? '#1d6b3a' : '#a61b1b'};font-weight:600">${en.wm2.toFixed(1)} W/m² ${en.lpdPass ? '≤' : '>'} ${en.lpd} limit</span>`}</div>` : ''; })()}
+      ${(() => { const W = this.wallRows(res); return W.length ? `<div style="font-size:12px;margin:6px 0 2px;font-weight:600">Walls (lx)</div><table style="width:100%;font-size:12px;border-collapse:collapse"><thead><tr style="color:var(--text-muted);text-align:right"><th style="text-align:left;font-weight:400">Wall</th><th style="font-weight:400">Length m</th><th style="font-weight:400">Ēm</th><th style="font-weight:400">Emin</th><th style="font-weight:400">Emax</th></tr></thead><tbody>${W.map(w => `<tr style="text-align:right;font-family:monospace"><td style="text-align:left">W${w.edge}</td><td>${w.length.toFixed(2)}</td><td>${Math.round(w.Em)}</td><td>${Math.round(w.Emin)}</td><td>${Math.round(w.Emax)}</td></tr>`).join('')}</tbody></table><div style="font-size:11px;color:var(--text-muted)">W1 starts at the first outline edge. The labels on the plan use the same numbers.</div>` : ''; })()}
       ${(res.warnings || []).concat(res.notes || []).map(w => `<div style="font-size:11px;color:#8a5a00">${escHtml(w)}</div>`).join('')}
       ${btn}</div>`;
   },
@@ -278,6 +280,27 @@ const RoomCalc = {
     return `hsl(${hue}, 80%, 50%)`;
   },
 
+  // Per-wall illuminance (res.walls.perEdge, metres, y up): Em of each wall at its mid-point, just inside the room.
+  wallRows(res) { return (res && res.walls && res.walls.perEdge) || []; },
+  _drawWalls(ctx, zoom, f, room, res, cur) {
+    const rows = this.wallRows(res);
+    if (!rows.length) return;
+    ctx.save();
+    ctx.globalAlpha = cur ? 1 : 0.5;
+    ctx.font = `bold ${11 / zoom}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    for (const w of rows) {
+      const ax = w.a[0] / f, ay = -w.a[1] / f, bx = w.b[0] / f, by = -w.b[1] / f;
+      const mx = (ax + bx) / 2, my = (ay + by) / 2, L = Math.hypot(bx - ax, by - ay) || 1;
+      let nx = -(by - ay) / L, ny = (bx - ax) / L;
+      const off = 14 / zoom;
+      if (!PlanEngine._pointInPoly({ x: mx + nx * off, y: my + ny * off }, room.points)) { nx = -nx; ny = -ny; }
+      const x = mx + nx * off, y = my + ny * off, t = `W${w.edge} ${Math.round(w.Em)}`;
+      ctx.lineWidth = 3 / zoom; ctx.strokeStyle = 'rgba(255,255,255,.9)'; ctx.strokeText(t, x, y);
+      ctx.fillStyle = '#1a1a2e'; ctx.fillText(t, x, y);
+    }
+    ctx.restore();
+  },
+
   // Results show on the plan when switched on and the Lighting workspace is on its Results step.
   shown() { return this.enabled && (typeof LightingWS === 'undefined' || LightingWS.resultsVisible()); },
 
@@ -325,6 +348,7 @@ const RoomCalc = {
         ctx.globalAlpha = 1;
       }
       ctx.restore();
+      if (this.showWalls) this._drawWalls(ctx, zoom, f, room, r.res, cur);
     }
     if (typeof AreaCalc !== 'undefined') AreaCalc.draw(ctx, zoom);
     if (typeof EmergCalc !== 'undefined') EmergCalc.draw(ctx, zoom);

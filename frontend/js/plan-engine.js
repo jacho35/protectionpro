@@ -627,8 +627,18 @@ const PlanEngine = {
     ctx.translate(el.x, el.y);
     if (el.rotation) ctx.rotate(el.rotation * Math.PI / 180);
     // Source-matched glyph; fall back to the registry primitive if absent.
-    const drew = (typeof PlanSymbols !== 'undefined') &&
-      PlanSymbols.draw(ctx, el.type, { color, bg, sizeWorld: half * 2, props: el.props });
+    const fac = this.factor(), body = (fac && typeof PlanSymbols !== 'undefined') ? PlanSymbols.linearBody(el) : null;
+    let drew;
+    if (body) {                       // a linear fitting at its real length and width (plan scale), at least 3 screen px thick
+      const L = body.length / fac, W = Math.max(body.width / fac, 3 / this.view.zoom);
+      ctx.fillStyle = color + '55'; ctx.strokeStyle = color; ctx.lineWidth = 1.2 / this.view.zoom;
+      ctx.fillRect(-L / 2, -W / 2, L, W); ctx.strokeRect(-L / 2, -W / 2, L, W);
+      ctx.beginPath(); ctx.moveTo(-L / 2, 0); ctx.lineTo(L / 2, 0); ctx.stroke();     // centre line = the long axis
+      drew = true;
+    } else {
+      drew = (typeof PlanSymbols !== 'undefined') &&
+        PlanSymbols.draw(ctx, el.type, { color, bg, sizeWorld: half * 2, props: el.props });
+    }
     if (!drew) {
       PLAN_DEFS.drawElement(ctx, def, { sizePx: half, color, selected, strokeW: 1.5 / this.view.zoom });
     }
