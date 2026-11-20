@@ -273,6 +273,10 @@ PlanTools.register({
     // 3) hit stack (element > route > trench > text) with tie-break cycling
     const stack = this._hitStack(pt);
     if (stack.length) {
+      // a press on a part that is already selected drags it, even where cables end on it (a manhole, a kiosk): the "click again to pick the
+      // next item here" cycle only happens on a click that does not move (onUp), so the second press never switches to a cable underneath
+      const selIn = !e.shiftKey ? stack.find(id => PlanMarkup.selectedIds.has(id) && (PlanMarkup.findEntityById(id) || {}).kind === 'element') : null;
+      if (selIn) { this._drag = { kind: 'element', el: PlanMarkup.findEntityById(selIn).item, moved: false, cycle: { pt: { x: pt.x, y: pt.y }, stack } }; return; }
       const id = this._tieBreak(pt, stack);
       if (e.shiftKey) { PlanMarkup.toggleSelect(id); return; }
       if (!PlanMarkup.selectedIds.has(id)) PlanMarkup.selectOnly(id);
@@ -370,6 +374,11 @@ PlanTools.register({
       PlanEngine.requestDraw({ fg: true });
       this._maybeTapDrawer(pt);
       return;
+    }
+    if (this._drag && !this._drag.moved && this._drag.cycle) {                          // a click (no drag) on the selected part: pick the next item here
+      const c = this._drag.cycle, id = this._tieBreak(c.pt, c.stack); this._drag = null;
+      if (!PlanMarkup.selectedIds.has(id) || PlanMarkup.selectedIds.size > 1) PlanMarkup.selectOnly(id);
+      this._maybeTapDrawer(pt); return;
     }
     if (this._drag && this._drag.moved) { PlanMarkup.snapshot(); PlanMarkup.markDirty(); PlanMarkup.refreshProps(); }
     this._drag = null;
