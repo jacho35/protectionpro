@@ -433,6 +433,36 @@ ok('trenches: lead on = one lead trench per erf for the service and fibre leads 
   const o = L.solve(F, { route: 'blocks', fentry: 'opp' }); assert.strictEqual(L.trenches(o, { lead: true }).list.filter(x => x.lead).length, 0, 'opposite corners are not shared');
 });
 
+ok('boundary routing: a kiosk side set to a side with no erven keeps the kiosks there, joined across the road by a counted crossing', () => {
+  const G = markerFx();                                                      // every erf is on side -1 of street A (y > 0)
+  const auto = L.solve(G, { route: 'blocks' });
+  assert(auto.kiosks.every(k => k.y > 0 && !k.xjoin), 'auto: on the erf side');
+  const r = L.solve(Object.assign({ ks: { A: 1 } }, G), { route: 'blocks' });
+  assert(r.kiosks.length && r.kiosks.every(k => k.y < 0 && k.xjoin), 'set to the empty side: kiosks stay there ' + r.kiosks.map(k => k.y.toFixed(1)));
+  const kc = r.net.cross.filter(c => c.kind === 'kiosk');
+  assert.strictEqual(kc.length, r.kiosks.length, 'one crossing per kiosk');
+  assert.strictEqual(kc.reduce((t, c) => t + c.svc, 0), r.erven.filter(e => e.route).length, 'every service goes over its kiosk\'s crossing');
+  for (const e of r.erven.filter(x => x.route)) assert(e.route[0][1] < 0 && e.route[1][1] > 0, 'service starts at the kiosk, then across ' + e.id);
+});
+
+ok('boundary routing: a kiosk or manhole put by hand across the road stays there, joined by a counted crossing', () => {
+  const G = markerFx(), base = L.solve(G, { route: 'blocks' });
+  const k = L.solve(Object.assign({ kioskPins: [[60, -6]] }, G), { route: 'blocks' }), pk = k.kiosks.find(q => q.pin);
+  assert(pk && Math.hypot(pk.x - 60, pk.y + 6) < 1e-9 && pk.xjoin, 'the kiosk stays where it was put');
+  assert(k.net.cross.some(c => c.kind === 'kiosk' && c.svc === pk.members.length), 'its crossing carries its services');
+  const m0 = base.fibre.mhs[0];
+  const d = L.solve(Object.assign({ mhDrops: [[m0.x, m0.y]] }, G), { route: 'blocks' });
+  assert.strictEqual(d.fibre.mhs.length, base.fibre.mhs.length - 1, 'a dropped manhole is gone');
+  const m2 = L.solve(Object.assign({ mhPins: [[30, 12]], mhDrops: [[m0.x, m0.y]] }, G), { route: 'blocks' });
+  assert(m2.fibre.mhs.length === 1 && m2.fibre.mhs[0].hand && m2.erven.filter(e => e.fe).every(e => e.mh === m2.fibre.mhs[0]), 'moved: its erven go to it');
+  const a = L.solve(Object.assign({ mhPins: [[70, -6]] }, G), { route: 'blocks' }), pm = a.fibre.mhs.find(m => m.hand);
+  assert(pm && Math.hypot(pm.x - 70, pm.y + 6) < 1e-9 && pm.xjoin, 'an added manhole stays across the road');
+  assert(a.net.cross.some(c => c.kind === 'manhole' && c.fib > 0), 'its ducts cross the road there');
+  assert.strictEqual(a.fibre.mhs.length, base.fibre.mhs.length + 1);
+  const o = L.solve(Object.assign({ mhPins: [[70, 12]] }, G), { route: 'blocks' }), om = o.fibre.mhs.find(m => m.hand);
+  assert(om && !om.xjoin && om.y > 0, 'on the erf side: onto the corridor there');
+});
+
 ok('splitting a string: a kiosk becomes its own string head, fed straight off the mini-sub along the same route', () => {
   const base = L.solve(F, { subs: 1 }), deep = base.net.lvLinks.filter(l => l.from !== base.net.subs[0].k).sort((a, b) => b.len - a.len)[0];
   assert(deep, 'a kiosk that hangs off another kiosk');
