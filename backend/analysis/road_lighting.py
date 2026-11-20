@@ -147,6 +147,7 @@ class _Web:
         self.lumens = float(prof.get("lumens") or 0) or 1.0
         self.watts = float(prof.get("watts") or 0)
         self.name = prof.get("name", "")
+        self.length_axis = "C90" if str(prof.get("lengthAxis") or "C0").upper() == "C90" else "C0"
         self.g_max = float(self.g[-1])
 
     def intensity(self, c_deg, g_deg):

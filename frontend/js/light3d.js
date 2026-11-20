@@ -391,6 +391,12 @@ const Light3D = {
       const quad = [[e.a[0], e.a[1], 0], [e.b[0], e.b[1], 0]].concat(this._topAlong(G, e.a, e.b).reverse());
       if (show && !rendered) v.face({ pts: quad, fill: V3D.shade('#eef0f3', 0.86 + 0.12 * Math.abs(e.dir[0])), stroke: '#b9bec6', lw: 1, layer: 0.5 });
       if (show && rendered) v.face({ pts: quad, fill: V3D.tone(res.walls ? res.walls.Em : 0, G.L.rhoW, '#f4f0e8', expo), layer: 0.5, bias: -1e5 });
+      if (show && (colour || rendered) && typeof RoomCalc !== 'undefined' && RoomCalc.showWalls) {
+        const rows = RoomCalc.wallRows(res), mx = (e.a[0] + e.b[0]) / 2, my = (e.a[1] + e.b[1]) / 2;
+        let best = null, bd = 1e9;
+        for (const w of rows) { const d = Math.hypot((w.a[0] + w.b[0]) / 2 - mx, (w.a[1] + w.b[1]) / 2 - my); if (d < bd) { bd = d; best = w; } }
+        if (best && bd < 0.05) v.label({ at: [mx + n[0] * 0.02, my + n[1] * 0.02, Math.min(1.4, G.H * 0.5)], text: `W${best.edge} ${Math.round(best.Em)} lx`, color: '#1a1a2e', size: 11, bold: true, dy: 0 });
+      }
       if (!show && this.walls === 'all') v.face({ pts: quad, fill: 'rgba(238,240,243,.22)', stroke: '#9aa1ab', lw: 1, layer: 2.5 });
       for (const o of sc.openings.filter(x => x.edge === e.i)) {
         const q = this._openQuad(o, e, 0.01);
@@ -857,7 +863,7 @@ const Light3D = {
     if (room && this.f()) {
       const sc = this.scene(room);
       const row = (id, name, kind, dot) => `<button type="button" class="l3-row${this.sel === id ? ' active' : ''}" data-l3-sel="${escHtml(id)}"><i style="background:${dot}"></i><span>${escHtml(name || '')}</span><small>${kind}</small></button>`;
-      list = sc.objects.map(o => row('o:' + o.id, o.name, (L3_KIND[o.kind] || L3_KIND.box).label, (L3_KIND[o.kind] || L3_KIND.box).color)).join('')
+      list = sc.objects.map(o => row('o:' + o.id, o.name, (L3_KIND[o.kind] || L3_KIND.box).label + (o.h > 0 ? ' · ' + (+o.z || 0).toFixed(2) + '–' + ((+o.z || 0) + o.h).toFixed(2) + ' m' : ''), (L3_KIND[o.kind] || L3_KIND.box).color)).join('')
         + this.lums(room).map(e => row('l:' + e.id, e.name || 'Luminaire', 'Luminaire', '#f5d76e')).join('')
         + sc.openings.map(o => row('w:' + o.id, o.name, o.kind === 'window' ? 'Window' : 'Door', o.kind === 'window' ? '#8cc8f0' : '#b08a60')).join('')
         + sc.surfaces.map(o => row('s:' + o.id, o.name, 'Calc surface', '#0078d7')).join('');

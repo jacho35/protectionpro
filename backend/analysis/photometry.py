@@ -116,9 +116,35 @@ def _canonical(name, manufacturer, c, g, cd, lumens, watts, fmt, extra=None):
         "watts": round(float(watts or 0), 2),
         "maxCd": round(float(cd.max()) if cd.size else 0.0, 1),
     }
+    prof["lengthAxis"] = "C0"            # which C-plane runs along a linear fitting's length (C0 or C90)
+    flag = _plane_mismatch(c, g, cd)
+    if flag:
+        prof["orientationUnconfirmed"] = flag
     if extra:
         prof.update(extra)
     return prof
+
+
+def _plane_mismatch(c, g, cd, limit=0.20):
+    """Text when the C0 and C90 planes differ by more than `limit` at 60 and 75 degrees: the file
+    alone does not say which plane runs along the fitting, so the user should confirm it."""
+    try:
+        c = np.asarray(c, float); g = np.asarray(g, float); cd = np.asarray(cd, float)
+        def at(cc, gg):
+            return float(cd[int(np.argmin(abs(c - cc))), int(np.argmin(abs(g - gg)))])
+        worst = 0.0
+        for gg in (60.0, 75.0):
+            if g[-1] < gg:
+                return ""
+            a, b = at(0.0, gg), at(90.0, gg)
+            if max(a, b) > 0:
+                worst = max(worst, abs(a - b) / max(a, b))
+        if worst > limit:
+            return ("The C0 and C90 planes differ by %d%% at 60-75 degrees. The file does not say which one runs "
+                    "along the fitting's length: the app assumes C0. Check the manufacturer's drawing." % round(worst * 100))
+    except Exception:
+        pass
+    return ""
 
 
 # ─── IES LM-63 ──────────────────────────────────────────────────────────
@@ -315,6 +341,12 @@ def parse_ldt(text: str) -> dict:
     extra = {}
     if abs(tilt) > 1e-6:
         extra["measurementTilt"] = tilt
+    try:
+        sl, sw_, sh = num(12) / 1000.0, num(13) / 1000.0, num(14) / 1000.0   # luminaire length, width, height (mm)
+        if sl > 0:
+            extra["sizeM"] = {"length": round(sl, 3), "width": round(sw_, 3), "height": round(sh, 3)}
+    except ValueError:
+        pass
     try:
         la, lw = num(15) / 1000.0, num(16) / 1000.0     # luminous area length/diameter, width (mm)
         area = math.pi / 4.0 * la * la if (lw <= 0 and la > 0) else (la * lw if la > 0 and lw > 0 else 0.0)

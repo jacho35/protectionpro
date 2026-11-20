@@ -764,6 +764,11 @@ class RoomLightingRequest(BaseModel):
     photometryId: str | None = None
 
 
+class ReluxReferenceRequest(BaseModel):
+    """A Relux 'Simulation Results' PDF, base64 encoded, to read per-room reference figures from."""
+    pdf: str
+
+
 class AreaLightingRequest(BaseModel):
     """Outdoor area lighting — ground illuminance + GR on polygons, vertical
     illuminance along perimeters, from poles/floods. See analysis/area_lighting.py."""

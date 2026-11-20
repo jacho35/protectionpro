@@ -465,6 +465,7 @@ const LightReport = {
       const res = it.res, rows = [];
       if (res && res.workplane) rows.push(['Illuminance min / max', `${f1(res.workplane.Emin, 1)} / ${f1(res.workplane.Emax, 1)} lx`]);
       if (res && res.walls) rows.push(['Walls / ceiling / floor mean', `${f1(res.walls.Em, 0)} / ${f1(res.ceiling.Em, 0)} / ${f1(res.floor.Em, 0)} lx`]);
+      if (res && res.walls && res.walls.perEdge) for (const w of res.walls.perEdge) rows.push([`Wall ${w.edge} (${f1(w.length, 2)} m) Em / min / max`, `${f1(w.Em, 0)} / ${f1(w.Emin, 0)} / ${f1(w.Emax, 0)} lx`]);
       if (res && res.cylindrical) rows.push(['Cylindrical Ez (mean / min)', `${f1(res.cylindrical.Ez, 0)} / ${f1(res.cylindrical.Ezmin, 0)} lx`]);
       if (res && res.vertical) rows.push(['Vertical Ev min / avg / max', `${res.vertical.Evmin} / ${res.vertical.Evavg} / ${res.vertical.Evmax} lx over ${res.length} m`]);
       if (res && res.kind === 'property' && it.kind === 'obtrusive') {
