@@ -233,6 +233,9 @@ const RoadPlan = {
     svg.addEventListener('pointerleave', () => { this._hover = null; this._readout(); });
     svg.addEventListener('dblclick', (e) => this._dbl(e));
     svg.addEventListener('wheel', (e) => this._wheel(e), { passive: false });
+    // The middle button pans: no browser autoscroll (Windows) or primary-selection paste (Linux).
+    svg.addEventListener('mousedown', (e) => { if (e.button === 1) e.preventDefault(); });
+    svg.addEventListener('auxclick', (e) => { if (e.button === 1) e.preventDefault(); });
     svg.addEventListener('contextmenu', (e) => e.preventDefault());
     this._ro = new ResizeObserver(() => this.applyView());
     this._ro.observe(host.querySelector('#rp-wrap'));
@@ -1067,8 +1070,11 @@ const RoadPlan = {
     const [wx, wy] = this._evWorld(e);
     const d = this._drag;
     if (d && d.kind === 'pan') {
-      this._view.cx = d.cx - (e.clientX - d.x) / this._view.z;
-      this._view.cy = d.cy + (e.clientY - d.y) / this._view.z;
+      if (e.pointerType !== 'touch' && e.buttons === 0) { this._up(e); return; }    // the release was lost: never pan on a hover
+      // by the change since the last event, so a wheel zoom during the pan does not throw the view
+      this._view.cx -= (e.clientX - d.x) / this._view.z;
+      this._view.cy += (e.clientY - d.y) / this._view.z;
+      d.x = e.clientX; d.y = e.clientY;
       this.applyView(); return;
     }
     if (d && d.kind === 'return') { RoadReserve.moveDrag(wx, wy); return; }

@@ -301,9 +301,9 @@ const PlanLayoutUI = {
       this.addKind = null; this.touched(true); this._syncBar(); return;
     }
     const h = this._moveHit(m);
-    if (!h) { if (PlanEngine && !ev.shiftKey && !ev.altKey) { PlanEngine.isPanning = true; PlanEngine.panStart = { x: ev.clientX - PlanEngine.view.panX, y: ev.clientY - PlanEngine.view.panY }; } return; }
+    if (!h) { if (PlanEngine && !ev.shiftKey && !ev.altKey) { PlanEngine.startPan(ev); } return; }
     if (h.kind === 'seg') {
-      if (!ev.shiftKey) { if (PlanEngine) { PlanEngine.isPanning = true; PlanEngine.panStart = { x: ev.clientX - PlanEngine.view.panX, y: ev.clientY - PlanEngine.view.panY }; } return; }
+      if (!ev.shiftKey) { if (PlanEngine) { PlanEngine.startPan(ev); } return; }
       const id = 'n' + Date.now().toString(36) + Math.floor(Math.random() * 1e3), a = { id, a: h.sg.a, b: h.sg.b, x: h.at[0] / f, y: h.at[1] / f };
       M.adds.push(a); this._drag = { kind: 'vert', add: id, cur: h.at, from: h.at, isNew: true }; PlanEngine.requestDraw({ fg: true }); return;
     }
@@ -587,7 +587,7 @@ const PlanLayoutUI = {
   crossDown(pt, ev) {
     const r = this.result, f = this.f, L = this.cfg(), M = L.moves; if (!r) { UI.toast('Run the layout first.', 'info', 3000); return; }
     const h = this._crossHit([pt.x * f, pt.y * f]);
-    if (!h) { PlanEngine.isPanning = true; PlanEngine.panStart = { x: ev.clientX - PlanEngine.view.panX, y: ev.clientY - PlanEngine.view.panY }; return; }
+    if (!h) { PlanEngine.startPan(ev); return; }
     this.selX = h.c.key;
     if (ev.altKey) { if (M.xs[h.c.key]) { delete M.xs[h.c.key]; this.touched(true); } else { PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true }); } return; }
     const [A, B] = this._xEnds(h.c), from = h.kind === 'xa' ? A.slice() : h.kind === 'xb' ? B.slice() : [pt.x * f, pt.y * f];

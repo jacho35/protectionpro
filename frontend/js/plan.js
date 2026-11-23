@@ -723,6 +723,91 @@ const PlanMarkup = {
     return true;
   },
 
+  // ─── Clipboard (right-click Copy / Cut / Paste, Ctrl+C / X / V) ───
+  // Deep copies of the selection, kept for the session, so they paste on any floor of
+  // the project. Like Duplicate, a pasted copy is a plain item: links to Demand / the
+  // single line, circuit tags and Auto layout / auto-circuit marks are not carried, and a
+  // cable keeps an end only when the part at that end was copied with it.
+  _clip: null,
+  _clipKinds: { element: ['elements', 'pmel'], route: ['routes', 'pmrt'], trench: ['trenches', 'pmtr'], crossing: ['crossings', 'pmcr'],
+    room: ['rooms', 'pmrm'], text: ['texts', 'pmtx'], measurement: ['measurements', 'pmms'] },
+  _clipPts(item) { return item.points ? item.points : item.p1 ? [item.p1, item.p2] : [item]; },
+  copySelected() {
+    const items = [];
+    let skipped = 0;
+    for (const id of this.selectedIds) {
+      const f = this.findEntityById(id);
+      if (!f || !this._clipKinds[f.kind]) continue;
+      if (f.kind === 'element' && f.item.reticId) { skipped++; continue; }    // a Demand erf / kiosk / minisub: one per Demand row
+      items.push({ kind: f.kind, item: JSON.parse(JSON.stringify(f.item)) });
+    }
+    if (!items.length) {
+      if (skipped && typeof UI !== 'undefined') UI.toast('Parts linked to Demand are not copied: add them in Demand or place a new one.', 'info', 3500);
+      return false;
+    }
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const c of items) for (const q of this._clipPts(c.item)) {
+      if (!isFinite(q.x) || !isFinite(q.y)) continue;
+      minX = Math.min(minX, q.x); minY = Math.min(minY, q.y); maxX = Math.max(maxX, q.x); maxY = Math.max(maxY, q.y);
+    }
+    this._clip = { items, cx: (minX + maxX) / 2, cy: (minY + maxY) / 2, pastes: 0 };
+    if (typeof UI !== 'undefined') UI.toast(`Copied ${items.length} item${items.length === 1 ? '' : 's'}${skipped ? ` (${skipped} linked to Demand left out)` : ''}.`, 'info', 1800);
+    return true;
+  },
+  cutSelected() {
+    if (!this.copySelected()) return false;
+    this.deleteSelected();
+    return true;
+  },
+  canPaste() { return !!(this._clip && this._clip.items.length); },
+  // `at` = a world point to paste the copied group's centre on (the right-click point, or the
+  // pointer); none = beside the original, a little further each paste.
+  paste(at) {
+    if (!this.canPaste()) return false;
+    const pm = AppState.planMarkup, clip = this._clip;
+    clip.pastes++;
+    const step = 20 / PlanEngine.view.zoom;
+    const dx = at ? at.x - clip.cx : step * clip.pastes, dy = at ? at.y - clip.cy : step * clip.pastes;
+    const ids = new Map();   // copied element id → its pasted id
+    const made = [];
+    const fresh = (c) => {
+      const it = JSON.parse(JSON.stringify(c.item));
+      const [list, prefix] = this._clipKinds[c.kind];
+      it.id = AppState.planGenId(prefix);
+      for (const q of this._clipPts(it)) { q.x += dx; q.y += dy; }
+      for (const k of ['reticId', 'sldId', 'sldCableId', 'auto', 'planLink', 'swLink', 'riserLink', 'group', 'trench', 'roadPoleId']) delete it[k];
+      if (it.props) for (const k of ['circuitDbId', 'circuitNo', 'circuitWid', 'circuitAuto', 'reticId']) delete it.props[k];
+      return [it, list];
+    };
+    for (const c of clip.items.filter(c => c.kind === 'element')) {
+      const [it, list] = fresh(c);
+      ids.set(c.item.id, it.id);
+      it.reticId = null;
+      it.name = this.nextName(it.type);
+      pm[list].push(it); made.push(it.id);
+    }
+    for (const c of clip.items.filter(c => c.kind !== 'element')) {
+      const [it, list] = fresh(c);
+      if (c.kind === 'route') {
+        it.fromId = it.fromId && ids.get(it.fromId) || null;
+        it.toId = it.toId && ids.get(it.toId) || null;
+        for (const q of it.points || []) if (q.snappedTo && !ids.has(q.snappedTo)) delete q.snappedTo; else if (q.snappedTo) q.snappedTo = ids.get(q.snappedTo);
+        const def = PLAN_DEFS.route ? PLAN_DEFS.route(it.type) : null;
+        if (def && def.requiresEndpoints && (!it.fromId || !it.toId)) continue;   // a feeder / service needs both its ends
+      }
+      if (c.kind === 'room' && it.name) it.name = it.name + ' (copy)';
+      if (!pm[list]) pm[list] = [];
+      pm[list].push(it); made.push(it.id);
+    }
+    if (!made.length) { if (typeof UI !== 'undefined') UI.toast('Nothing to paste: a feeder or service cable needs the parts at both its ends copied with it.', 'info', 3500); return false; }
+    this.setSelection(made);
+    this._snapshot(); this.markDirty();
+    if (typeof PlanCircuits !== 'undefined' && pm.settings.domain === 'building' && PlanCircuits.syncAll) PlanCircuits.syncAll();
+    this.refreshProps();
+    PlanEngine.requestDraw({ all: true });
+    return true;
+  },
+
   zoomToSelection() {
     const pts = [];
     for (const id of this.selectedIds) {
@@ -764,6 +849,9 @@ const PlanMarkup = {
         const x = this.findEntityById(id);
         return x && x.kind === 'element' && !x.item.reticId;
       });
+      items.push({ label: 'Copy', shortcut: 'Ctrl+C', action: () => this.copySelected() });
+      items.push({ label: 'Cut', shortcut: 'Ctrl+X', action: () => this.cutSelected() });
+      items.push({ label: 'Paste here', shortcut: 'Ctrl+V', disabled: !this.canPaste(), action: () => this.paste(pt) });
       items.push({ label: 'Duplicate', disabled: !canDup, action: () => this.duplicateSelected() });
       items.push({ label: 'Rotate 90°', shortcut: 'R', disabled: !canRotate, action: () => this.rotateSelected() });
       items.push('---');
@@ -773,6 +861,8 @@ const PlanMarkup = {
       const pm = AppState.planMarkup;
       const all = () => [...pm.elements, ...pm.routes, ...pm.trenches, ...pm.crossings, ...(pm.rooms || []),
         ...pm.texts, ...pm.measurements].map(x => x.id);
+      items.push({ label: 'Paste here', shortcut: 'Ctrl+V', disabled: !this.canPaste(), action: () => this.paste(pt) });
+      items.push('---');
       items.push({ label: 'Select all', action: () => this.setSelection(all()) });
       items.push({ label: 'Clear selection', disabled: !this.selectedIds.size, action: () => this.clearSelection() });
       items.push('---');
@@ -805,6 +895,17 @@ const PlanMarkup = {
     if (e.key === 'Delete' || e.key === 'Backspace') { this.deleteSelected(); return true; }
     if (e.key === 'Escape') { if (typeof ContextMenu !== 'undefined') ContextMenu.close(); PlanTools.set('select'); this.clearSelection(); PlanEngine.requestDraw({ fg: true }); return true; }
     if (e.key === 'Enter') { const c = PlanTools.onKey(e); this.onDraftChanged(); return c; }
+    if ((e.ctrlKey || e.metaKey) && !e.altKey) {
+      const k = e.key.toLowerCase();
+      if (k === 'c') return this.copySelected();
+      if (k === 'x') return this.cutSelected();
+      if (k === 'v') {   // at the pointer when it is over the plan, else beside the original
+        const fg = PlanEngine.fg, over = fg && fg.matches && fg.matches(':hover');
+        return this.paste(over && PlanEngine.mouseWorld ? PlanEngine.mouseWorld : null);
+      }
+      if (k === 'd') return this.duplicateSelected();
+      return false;
+    }
     if (e.key === 'v' || e.key === 'V') { PlanTools.set('select'); return true; }
     if (e.key === 'g' || e.key === 'G') {
       const s = AppState.planMarkup.settings; s.snapGrid = !s.snapGrid;

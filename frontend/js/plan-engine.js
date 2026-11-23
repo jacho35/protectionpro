@@ -873,6 +873,7 @@ const PlanEngine = {
     this.view = { zoom: scale, panX: 0, panY: 0 };
     pm.activeLayerId = null; // full opacity for every entity in the export
     ctx.save();
+    try {   // the view is always put back: a throw here must not leave the plan on the export's view
     ctx.setTransform(scale, 0, 0, scale, -worldRect.minX * scale, -worldRect.minY * scale);
     // Background plan images
     for (const p of pm.plans) {
@@ -897,9 +898,11 @@ const PlanEngine = {
     for (const el of pm.elements) this._drawElementEntity(ctx, el, false);
     for (const tx of pm.texts) this._drawText(ctx, tx, false);
     for (const m of pm.measurements) this._drawMeasurement(ctx, m, false);
-    ctx.restore();
-    this.view = savedView;
-    pm.activeLayerId = savedLayer;
+    } finally {
+      ctx.restore();
+      this.view = savedView;
+      pm.activeLayerId = savedLayer;
+    }
   },
 
   // World rectangle for exports: the crop box if set, else the content bbox
@@ -1099,6 +1102,9 @@ const PlanEngine = {
     document.addEventListener('pointerup', (e) => this._onUp(e));
     document.addEventListener('pointercancel', (e) => this._onUp(e));
     this.fg.addEventListener('wheel', (e) => this._onWheel(e), { passive: false });
+    // The middle button pans: no browser autoscroll (Windows) or primary-selection paste (Linux).
+    this.fg.addEventListener('mousedown', (e) => { if (e.button === 1) e.preventDefault(); });
+    this.fg.addEventListener('auxclick', (e) => { if (e.button === 1) e.preventDefault(); });
     this.fg.addEventListener('contextmenu', (e) => {
       e.preventDefault();
       if (!this._isActive()) return;
@@ -1133,6 +1139,17 @@ const PlanEngine = {
     window.addEventListener('blur', () => { this.spaceDown = false; this._restoreCursor(); });
   },
 
+  // A pan from this pointer event; `panStart` = the last pointer position (client px).
+  startPan(e) {
+    this.isPanning = true;
+    this.panStart = { x: e.clientX, y: e.clientY };
+  },
+  endPan() {
+    this.isPanning = false;
+    this.panStart = null;
+    this._restoreCursor();
+  },
+
   _restoreCursor() {
     if (typeof PlanTools !== 'undefined' && PlanTools.applyCursor) PlanTools.applyCursor();
     else this.fg.style.cursor = 'default';
@@ -1156,8 +1173,7 @@ const PlanEngine = {
     }
     // Pan: space-hold, or middle button
     if (this.spaceDown || e.button === 1) {
-      this.isPanning = true;
-      this.panStart = { x: e.clientX - this.view.panX, y: e.clientY - this.view.panY };
+      this.startPan(e);
       this.fg.style.cursor = 'grabbing';
       e.preventDefault();
       return;
@@ -1175,9 +1191,18 @@ const PlanEngine = {
       if (this.touchPointers.size >= 2) { this._pinchMove(); return; }
     }
     if (this.isPanning && this.panStart) {
+      // No button held any more: the release was lost (let go outside the window, or the
+      // browser's middle-click autoscroll took it) — end the pan, never pan on a hover.
+      if (e.pointerType !== 'touch' && e.buttons === 0) { this.endPan(); return; }
+      // Move by the change since the last event, not from where the pan began: a wheel notch
+      // rolled while the wheel is held as the middle button zooms mid-pan, and an absolute
+      // offset would then throw the plan across the screen.
+      const dx = e.clientX - this.panStart.x, dy = e.clientY - this.panStart.y;
+      this.panStart = { x: e.clientX, y: e.clientY };
+      if (!isFinite(dx) || !isFinite(dy)) return;
       this.viewSet = true;
-      this.view.panX = e.clientX - this.panStart.x;
-      this.view.panY = e.clientY - this.panStart.y;
+      this.view.panX += dx;
+      this.view.panY += dy;
       this.requestDraw({ all: true });
       return;
     }
@@ -1192,7 +1217,7 @@ const PlanEngine = {
       this.touchPointers.delete(e.pointerId);
       if (this.touchPointers.size < 2) this._pinch = null;
     }
-    if (this.isPanning) { this.isPanning = false; this.panStart = null; this._restoreCursor(); return; }
+    if (this.isPanning) { this.endPan(); return; }
     if (!this._isActive() || this._dialogOpen()) return;
     const pt = this.screenToWorld(e.clientX, e.clientY);
     if (typeof PlanTools !== 'undefined' && PlanTools.onUp) PlanTools.onUp(pt, e);
