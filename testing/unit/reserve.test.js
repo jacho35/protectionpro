@@ -154,4 +154,33 @@ ok('squareStreets: the reserve L (two streets meeting end to end with a chamfer)
   const ends = sq.flatMap(x => [x.pts[0], x.pts[x.pts.length - 1]]), corner = ends.filter(q => Math.abs(q[0] - 108) < 1 && Math.abs(q[1] - 8) < 1);
   assert.strictEqual(corner.length, 2, 'both streets end at the corner ' + JSON.stringify(ends));
 });
+// kerb lines that join up: every end of a kerb piece meets another piece's end, except the far ends of the streets
+const loose = (d, far) => d.kerbs.concat(d.arcs.map(a => a.pts)).flatMap(k => [k[0], k[k.length - 1]]).filter((q, i, all) =>
+  !far(q) && !all.some((r, j) => j !== i && Math.hypot(q[0] - r[0], q[1] - r[1]) < 0.02));
+ok('width change on a straight: the kerbs taper evenly across the joint, no step', () => {
+  const d = R.kerbDrawing([{ pts: [[0, 0], [100, 0]], carriageW: 9, w: 16 }, { pts: [[200, 0], [100, 0]], carriageW: 6, w: 16 }], {});
+  assert.deepStrictEqual(loose(d, q => q[0] < 1e-6 || q[0] > 200 - 1e-6), [], 'kerbs join up');
+  // the kerb above the street line: 4.5 up to x = 85, 3 from x = 115 (each kerb moves 1.5 m: 30 m), even (never back up) in between
+  const up = d.kerbs.flat().filter(p => p[1] > 0).sort((a, b) => a[0] - b[0]);
+  const at = x => up.find(p => Math.abs(p[0] - x) < 1e-6);
+  assert.strictEqual(at(85)[1], 4.5); assert.strictEqual(at(100)[1], 3.75); assert.strictEqual(at(115)[1], 3);
+  for (let i = 1; i < up.length; i++) assert(up[i][1] <= up[i - 1][1] + 1e-9, 'narrows steadily at ' + up[i][0]);
+  assert(!up.some(p => p[0] > 80 && p[0] < 120 && (Math.abs(p[1] - 4.5) < 1e-6 || Math.abs(p[1] - 3) < 1e-6) && p[0] > 86 && p[0] < 114), 'no old kerb across the taper');
+  // an offset that changes moves the street over the same way; the same width and offset: no taper
+  const o = R.kerbDrawing([{ pts: [[0, 0], [100, 0]], carriageW: 6, cwOffset: 2, w: 16 }, { pts: [[100, 0], [200, 0]], carriageW: 6, w: 16 }], {});
+  assert.deepStrictEqual(loose(o, q => q[0] < 1e-6 || q[0] > 200 - 1e-6), []);
+  assert.strictEqual(R.kerbDrawing([{ pts: [[0, 0], [100, 0]], carriageW: 6, w: 16 }, { pts: [[100, 0], [200, 0]], carriageW: 6, w: 16 }], {}).kerbs.length, 2);
+});
+ok('width change at a corner: the arcs become the taper round it, the inner kerb at the corner radius on the joint', () => {
+  const d = R.kerbDrawing([{ pts: [[0, 0], [60, 0]], carriageW: 9, w: 16 }, { pts: [[60, 0], [60, 60]], carriageW: 6, w: 16 }], {});
+  assert.deepStrictEqual(loose(d, q => Math.abs(q[0]) < 1e-6 || Math.abs(q[1] - 60) < 1e-6), [], 'kerbs join up');
+  const inner = d.arcs.find(a => !a.outer), outer = d.arcs.find(a => a.outer);
+  assert(inner && outer && inner.R === 8);
+  // on the bisector from the corner: the centreline arc has radius 8 + 7.5 / 2 (the width on the joint)
+  const Rc = 8 + 3.75, C = [60 - Rc, Rc], dir = Math.atan2(-C[1], 60 - C[0]);
+  const onBis = L => L.reduce((b, p) => Math.abs(Math.atan2(p[1] - C[1], p[0] - C[0]) - dir) < Math.abs(Math.atan2(b[1] - C[1], b[0] - C[0]) - dir) ? p : b);
+  const dist = p => Math.hypot(p[0] - C[0], p[1] - C[1]);
+  assert(Math.abs(dist(onBis(inner.pts)) - 8) < 0.05, 'inner ' + dist(onBis(inner.pts)));
+  assert(Math.abs(dist(onBis(outer.pts)) - 15.5) < 0.05, 'outer ' + dist(onBis(outer.pts)));
+});
 console.log(n + ' passed');

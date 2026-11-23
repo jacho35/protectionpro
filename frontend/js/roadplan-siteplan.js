@@ -59,9 +59,15 @@ const RoadSitePlan = {
 
   // Streets → runs (one road each). A street is one run; where the plan cut a
   // street at a junction (its pieces end on the same point), the piece that
-  // runs on straightest (< 35°, same carriageway) is joined to it.
+  // runs on straightest (< 35°) is joined to it. Two streets with a carriageway
+  // that meet only each other, end to end, are one street turning a corner (as
+  // the plan draws them: one inner and one outer kerb radius) and are joined
+  // whatever the turn, short of doubling back (165°). Carriageways of another
+  // width or offset are joined too: the run then carries `prof` (each piece's
+  // width / offset, oriented along the run) and the kerbs taper evenly across
+  // each joint (`profile`).
   runs(streets) {
-    const TOL = 0.6, MAXTURN = 35 * Math.PI / 180;
+    const TOL = 0.6, MAXTURN = 35 * Math.PI / 180, MAXCORNER = 165 * Math.PI / 180;
     const ends = [];                    // { s, end: 0|1, x, y, dir (unit, pointing away from the node) }
     for (const s of streets) {
       const P = s.pts, n = P.length;
@@ -78,14 +84,16 @@ const RoadSitePlan = {
     }
     // pair the ends at each node: straightest first
     const mate = new Map();             // end → its partner end
-    const same = (a, b) => Math.abs(a.carriageW - b.carriageW) < 0.05 && Math.abs(a.cwOffset - b.cwOffset) < 0.05;
+    // a carriageway joins a carriageway (any width: the kerbs taper), a centreline a centreline
+    const same = (a, b) => (a.carriageW > 0) === (b.carriageW > 0);
     for (const nd of nodes) {
       const c = [];
       for (let i = 0; i < nd.ends.length; i++) for (let j = i + 1; j < nd.ends.length; j++) {
         const a = nd.ends[i], b = nd.ends[j];
         if (a.s === b.s || !same(a.s, b.s)) continue;
         const turn = Math.PI - Math.acos(Math.max(-1, Math.min(1, a.dir[0] * b.dir[0] + a.dir[1] * b.dir[1])));
-        if (turn < MAXTURN) c.push({ a, b, turn });
+        const corner = nd.ends.length === 2 && a.s.carriageW > 0;
+        if (turn < (corner ? MAXCORNER : MAXTURN)) c.push({ a, b, turn });
       }
       c.sort((p, q) => p.turn - q.turn);
       for (const x of c) if (!mate.has(x.a) && !mate.has(x.b)) { mate.set(x.a, x.b); mate.set(x.b, x.a); }
@@ -118,19 +126,71 @@ const RoadSitePlan = {
         pts = pts.length ? pts.concat(q.slice(1)) : q.map(v => v.slice());
       }
       const len = x => { let t = 0; for (let i = 1; i < x.length; i++) t += Math.hypot(x[i][0] - x[i - 1][0], x[i][1] - x[i - 1][1]); return t; };
-      const main = pieces.slice().sort((a, b) => len(b.s.pts) - len(a.s.pts))[0].s;
+      const mp = pieces.slice().sort((a, b) => len(b.s.pts) - len(a.s.pts))[0], main = mp.s;
       const named = pieces.map(p => p.s.name).filter(Boolean);
       const name = (main.name || named[0] || '').trim();
-      out.push({ ids: pieces.map(p => p.s.id), pts, carriageW: main.carriageW, cwOffset: main.cwOffset, name,
-        sig: JSON.stringify([pts.map(q => [Math.round(q[0] * 100), Math.round(q[1] * 100)]), main.carriageW, main.cwOffset]) });
+      // the offset is to the left of the piece's own direction: a piece turned round has it on the other side
+      const eff = p => ({ w: p.s.carriageW, o: (p.rev ? -1 : 1) * (p.s.cwOffset || 0) });
+      const e0 = eff(mp), uniform = pieces.every(p => { const e = eff(p); return Math.abs(e.w - e0.w) < 0.05 && Math.abs(e.o - e0.o) < 0.05; });
+      const run = { ids: pieces.map(p => p.s.id), pts, carriageW: main.carriageW, cwOffset: e0.o, name };
+      const sig = [pts.map(q => [Math.round(q[0] * 100), Math.round(q[1] * 100)]), main.carriageW, e0.o];
+      if (!uniform) {
+        // each piece's width / offset and the joint it ends at (the joint = the last point of that piece in the run)
+        run.prof = pieces.map((p, i) => { const e = eff(p), q = p.rev ? p.s.pts[0] : p.s.pts[p.s.pts.length - 1]; return { w: e.w, o: e.o, at: i < pieces.length - 1 ? q.slice() : null }; });
+        sig.push(run.prof.map(x => [x.w, x.o]));
+      }
+      run.sig = JSON.stringify(sig);
+      out.push(run);
     }
     return out;
+  },
+
+  // The taper and the rounding are PlanReserve's (the plan's kerb drawing uses the same); TAPER / MINTAPER = its defaults.
+  TAPER: 20, MINTAPER: 10,
+  profile(run, pts) { return PlanReserve.widthProfile(run, pts, { taper: this.TAPER, taperMin: this.MINTAPER }); },
+  taperKerbs(run, pts) { return PlanReserve.taperKerbs(run, pts, { taper: this.TAPER, taperMin: this.MINTAPER }); },
+
+  // The corners the plan draws with an inner and an outer kerb radius (two-leg corners of its kerb drawing): plan frame, inner radius.
+  _corners(streets) {
+    const list = streets.filter(s => s.carriageW > 0).map(s => ({ rid: s.id, pts: s.pts, w: s.width || 12, carriageW: s.carriageW, cwOffset: s.cwOffset }));
+    if (!list.length || typeof PlanReserve === 'undefined') return [];
+    const fl = this._floors().find(x => (x.data.routes || []).some(r => list.some(l => l.rid === r.id)));
+    const rets = (((fl && fl.data.settings) || {}).layout || {}).streetReturns || {};
+    let d = null;
+    try { d = PlanReserve.kerbDrawing(list, { ret: 8, retWide: 10 }, c => { const m = rets[c.jkey]; return m && m[c.key] != null ? m[c.key] : null; }); } catch (_) { d = null; }
+    if (!d) return [];
+    const out = [];
+    for (const a of d.arcs) {
+      if (a.outer || !a.c.outer) continue;
+      const j = d.junctions.find(x => x.key === a.c.jkey); if (j) out.push({ x: j.x, y: j.y, R: +a.R });
+    }
+    return out;
+  },
+  // A street line with its sharp turns (≥ 30°) rounded so that the inner kerb has the plan's radius there (`corners`, nearest
+  // within 3 m; else 8 m): both kerbs then follow the plan's inner and outer arcs. Pure (PlanReserve.rounded).
+  rounded(run, corners) {
+    if (!(run.carriageW > 0) || typeof PlanReserve === 'undefined') return null;
+    return PlanReserve.rounded(run, V => {
+      const c = corners.filter(q => Math.hypot(q.x - V[0], q.y - V[1]) < 3).sort((p, q) => Math.hypot(p.x - V[0], p.y - V[1]) - Math.hypot(q.x - V[0], q.y - V[1]))[0];
+      return c ? c.R : 8;
+    }, { taper: this.TAPER, taperMin: this.MINTAPER });
+  },
+  // Runs with their corners rounded (`run.shapePts`); the signature then carries the radii, so a radius changed on the plan comes through.
+  _runs() {
+    const streets = this.streets(), runs = this.runs(streets);
+    if (!runs.some(r => r.carriageW > 0)) return runs;
+    const corners = this._corners(streets);
+    for (const run of runs) {
+      const r = this.rounded(run, corners); if (!r) continue;
+      run.shapePts = r.pts; run.sig = JSON.stringify([JSON.parse(run.sig), r.radii]);
+    }
+    return runs;
   },
 
   // The Road plan shape of a run (Road plan frame: y north).
   _shape(run, rev) {
     if (run.carriageW > 0 && typeof PlanReserve !== 'undefined') {
-      const k = PlanReserve.kerbLines({ pts: run.pts, carriageW: run.carriageW, cwOffset: run.cwOffset });
+      const k = run.prof ? this.taperKerbs(run, run.shapePts || run.pts) : PlanReserve.kerbLines({ pts: run.shapePts || run.pts, carriageW: run.carriageW, cwOffset: run.cwOffset });
       // flipping y turns left into right: the Road plan's kerb a is the plan's right kerb
       let a = this.flipPts(k.right), b = this.flipPts(k.left);
       if (rev) { a = a.reverse(); b = b.reverse(); }
@@ -172,7 +232,7 @@ const RoadSitePlan = {
   },
 
   async sync({ quiet = false } = {}) {
-    const RP = RoadPlan.rp, runs = this.runs(this.streets());
+    const RP = RoadPlan.rp, runs = this._runs();
     const roads = RoadPlan.roads, matched = new Set(), skip = new Set(RP.planSkip || []);
     let added = 0, changed = 0, removed = 0, designId = null;
     for (const run of runs) {
