@@ -63,6 +63,8 @@ jobs:
         run: node testing/unit/netoverview.test.js
       - name: Re-route from a kiosk or manhole (fixed solve)
         run: node testing/unit/reroute.test.js
+      - name: Auto layout crossings on the plan unit tests
+        run: node testing/unit/crossings-first.test.js
       - name: TCC curves
         run: node frontend/tests/test_tcc_curves.mjs
       - name: Distance zone grading

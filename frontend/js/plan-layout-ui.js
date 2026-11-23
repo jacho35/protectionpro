@@ -156,6 +156,7 @@ const PlanLayoutUI = {
       (Array.isArray(mv.adds) ? mv.adds : []).slice(0, 3000).forEach(a => { const q = a && pt(a); if (q && typeof a.id === 'string' && typeof a.a === 'string' && typeof a.b === 'string') L.moves.adds.push({ id: a.id.slice(0, 20), a: a.a.slice(0, 40), b: a.b.slice(0, 40), x: q.x, y: q.y }); });
       for (const [k, v] of Object.entries(mv.xs && typeof mv.xs === 'object' ? mv.xs : {}).slice(0, 2000)) { const a = v && pt(v.a), b = v && pt(v.b); if (a && b && /^[^|]{1,80}\|-?\d+$/.test(k)) L.moves.xs[k] = { a, b }; }     // road crossings moved by hand: key = street|station, a / b = the shift of the start / end (plan points)
       L.moves.cuts = (Array.isArray(mv.cuts) ? mv.cuts : []).filter(k => typeof k === 'string' && key.test(k)).slice(0, 3000); }
+    L.part = ['all', 'lv', 'fibre'].includes(L.part) ? L.part : 'all';             // what Run and Create lay out: everything, or the LV or the fibre network alone
     L.xsq = typeof L.xsq === 'boolean' ? L.xsq : true;                              // a moved crossing stays square to the road (both ends move along the street together)
     L.admdOk = typeof L.admdOk === 'string' ? L.admdOk.slice(0, 4000) : '';      // the Demand ADMD settings the user confirmed for the layout (a signature)
     L.sides = (L.sides && typeof L.sides === 'object') ? L.sides : {};
@@ -192,7 +193,7 @@ const PlanLayoutUI = {
     const tgt = k => { const v = M.verts[k]; return v ? [v.x * f, v.y * f] : null; };
     const XS = [];                                                                      // road crossings: their ends, and the ones moved by hand
     ((r.net && r.net.cross) || []).forEach(c => {
-      c.key = c.st.id + '|' + Math.round(c.s); const E = PlanLayout.crossEnds(c), mv = M.xs[c.key];
+      c.key = c.user != null ? 'plan|' + c.user : c.st.id + '|' + Math.round(c.s); const E = PlanLayout.crossEnds(c), mv = c.user != null ? null : M.xs[c.key];   // a crossing on the plan is moved on the plan, not here
       c.ends0 = [E.a, E.b]; c.hA = E.hA; c.hB = E.hB; c.ends = null;
       if (mv) { c.ends = [[E.a[0] + mv.a.x * f, E.a[1] + mv.a.y * f], [E.b[0] + mv.b.x * f, E.b[1] + mv.b.y * f]]; XS.push({ c, a: [mv.a.x * f, mv.a.y * f], b: [mv.b.x * f, mv.b.y * f] }); }
     });
@@ -575,6 +576,7 @@ const PlanLayoutUI = {
     const r = this.result; if (!r || !r.net) return null; const tol = 10 * this.f / PlanEngine.view.zoom, list = [];
     const take = (o, d, pri) => { if (d <= tol) list.push(Object.assign(o, { d, score: d + pri * 0.3 * tol })); };
     for (const c of r.net.cross) {
+      if (c.user != null) continue;                                                      // a crossing already on the plan: move it there
       const [A, B] = this._xEnds(c); if (!A) continue; const nm = (c.st.name || c.st.id) + ' · ' + Math.round(c.s) + ' m';
       take({ kind: 'xa', c, name: 'start of crossing ' + nm }, Math.hypot(A[0] - m[0], A[1] - m[1]), 0); take({ kind: 'xb', c, name: 'end of crossing ' + nm }, Math.hypot(B[0] - m[0], B[1] - m[1]), 0);
       const dx = B[0] - A[0], dy = B[1] - A[1], L2 = dx * dx + dy * dy, t = L2 ? Math.max(0, Math.min(1, ((m[0] - A[0]) * dx + (m[1] - A[1]) * dy) / L2)) : 0;
@@ -1436,11 +1438,14 @@ const PlanLayoutUI = {
   nextAction(r, placed, noKiosks, nErv, nStreets) {
     if (!nErv) return { label: 'Detect the erven to continue', act: 'goto', s: 1, dis: true, note: 'The layout needs erf boundaries: use Detect erven.' };
     if (!nStreets) return { label: 'Add the streets to continue', act: 'goto', s: 1, dis: true, note: 'The layout needs the street centrelines.' };
-    if (!placed.length) return { label: 'Place a mini-sub to continue', act: 'goto', s: 2, dis: true, note: 'The layout works from the mini-subs you place.' };
-    if (!this.admdOk()) return { label: 'Confirm the ADMD to continue', act: 'goto', s: 3, note: 'Cable sizes come from the ADMD. Confirm it in Rules.' };
+    const part = this.part(), fib = part === 'fibre';
+    if (!placed.length && !fib) return { label: 'Place a mini-sub to continue', act: 'goto', s: 2, dis: true, note: 'The layout works from the mini-subs you place.' };
+    if (!fib && !this.admdOk()) return { label: 'Confirm the ADMD to continue', act: 'goto', s: 3, note: 'Cable sizes come from the ADMD. Confirm it in Rules.' };
     if (!r || this.stale) return { label: r ? 'Re-run layout' : 'Run layout', act: 'run', note: '' };
     if (noKiosks) return { label: 'Fix the streets to continue', act: 'goto', s: 1, dis: true, note: 'No erf faces a street, so there are no kiosks to create.' };
-    return { label: 'Create on plan', act: 'create', create: true, note: 'Replaces the previous auto layout. Your own items stay.' };
+    if (part !== this._ranPart) return { label: 'Re-run layout', act: 'run', note: '' };
+    const note = part === 'lv' ? 'Replaces the LV network Auto layout made before. The fibre and your own items stay.' : fib ? 'Replaces the fibre network Auto layout made before. The LV network and your own items stay.' : 'Replaces the previous auto layout. Your own items stay.';
+    return { label: part === 'all' ? 'Create on plan' : `Create the ${part === 'lv' ? 'LV' : 'fibre'} network on plan`, act: 'create', create: true, note };
   },
   createCounts() {
     const r = this.result; if (!r) return {};
@@ -1508,7 +1513,105 @@ const PlanLayoutUI = {
     const mhDrops = L.moves.mhs.filter(m => m.from).map(m => [m.from.x * f, m.from.y * f]), mhPins = L.moves.mhs.map(m => [m.to.x * f, m.to.y * f]);   // manholes moved or added by hand   // kiosks moved by hand
     // the kerb returns the plan draws at the street corners (road-reserve streets; radii dragged on the plan included), in metres
     let kerbReturns = []; try { const g = typeof PlanReserveUI !== 'undefined' && PlanReserveUI.planGeometry(); if (g && g.rets) kerbReturns = g.rets; } catch (e) { kerbReturns = []; }
-    return { f, input: { erven, streets, markers, fibreOffs, splits, kioskDrops, kioskPins, mhDrops, mhPins, ks, ksOwn, fs, fsOwn, civ, overrides: L.fronts, cuts: L.cuts, subPts, entryPt: L.entry ? [L.entry.x * f, L.entry.y * f] : null, sections: L.sections.on ? L.sections : null, kerbReturns }, params: L.params };
+    return { f, input: { erven, streets, markers, fibreOffs, splits, kioskDrops, kioskPins, mhDrops, mhPins, ks, ksOwn, fs, fsOwn, civ, overrides: L.fronts, cuts: L.cuts, subPts, entryPt: L.entry ? [L.entry.x * f, L.entry.y * f] : null, sections: L.sections.on ? L.sections : null, kerbReturns, crossings: this.planCrossings(L.part) }, params: L.params };
+  },
+
+  // ───────── one part at a time: Everything, the LV network or the fibre network ─────────
+  // A part laid on its own keeps the other part as it is on the plan: Fibre runs with every kiosk on the plan fixed and each erf on the
+  // kiosk its service comes from; LV with every manhole fixed and each erf on its manhole (`fixFromPlan`, the same fixed solve as Re-route
+  // from here). Create replaces only that part's own items (`_ownedBy`), adds its ducts to the crossings already on the plan, and rebuilds
+  // every auto trench from the cables then on the plan (`_planView`).
+  PARTS: { all: 'Everything', lv: 'LV network', fibre: 'Fibre network' },
+  part() { return this.cfg().part; },
+  setPart(v) { const L = this.cfg(); if (!this.PARTS[v] || L.part === v) return; L.part = v; this.result = null; this.stale = true; PlanMarkup.markDirty(); PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true }); },
+  // the part an Auto layout crossing duct belongs to (`part`, written since parts exist; an older one: a fibre duct is fibre, the rest LV)
+  _xPart(c) { return c.part === 'lv' || c.part === 'fibre' ? c.part : c.use === 'fibre' ? 'fibre' : 'lv'; },
+  _FIB: ['manhole', 'fibreBB', 'fibreErf'],
+  // an item a Create of `part` replaces: only what Auto layout made, and of that part (the trenches are all rebuilt)
+  _ownedBy(x, kind, part) {
+    if (!x || x.auto !== 'layout') return false;
+    if (part === 'all' || kind === 'trench') return true;
+    if (kind === 'crossing') return this._xPart(x) === part;
+    return this._FIB.includes(x.type) ? part === 'fibre' : part === 'lv';
+  },
+  // the crossings on the plan as the layout reads them: one per crossing of several ducts (ducts sharing a group, or loose ducts drawn
+  // side by side), its centre line in metres, how many 110 / 160 mm ducts it holds and whether it was drawn by hand. The ducts the next
+  // Create of `part` replaces are left out (`part` null: none).
+  planCrossings(part) {
+    const pm = AppState.planMarkup, f = PlanEngine.factor(); if (!f) return [];
+    const list = (pm.crossings || []).filter(c => c && c.p1 && c.p2 && !(part && this._ownedBy(c, 'crossing', part)));
+    const key = c => (typeof PlanCrossings !== 'undefined' ? PlanCrossings.key(c) : (c.group || (c.auto === 'layout' && c.trench ? 'auto:' + c.trench : null)));
+    const mid = c => [(c.p1.x + c.p2.x) / 2, (c.p1.y + c.p2.y) / 2], dir = c => { const dx = c.p2.x - c.p1.x, dy = c.p2.y - c.p1.y, l = Math.hypot(dx, dy) || 1; return [dx / l, dy / l]; };
+    const seen = new Set(), out = [];
+    for (const c of list) {
+      if (seen.has(c.id)) continue;
+      const k = key(c), m0 = mid(c), d0 = dir(c);
+      const m = k ? list.filter(x => key(x) === k) : list.filter(x => !key(x) && !seen.has(x.id) && Math.hypot(mid(x)[0] - m0[0], mid(x)[1] - m0[1]) * f <= 1.5 && Math.abs(dir(x)[0] * d0[0] + dir(x)[1] * d0[1]) > 0.94);
+      m.forEach(x => seen.add(x.id));
+      // the centre line: every duct taken the same way round as the first
+      const ends = m.map(x => (dir(x)[0] * d0[0] + dir(x)[1] * d0[1]) < 0 ? [x.p2, x.p1] : [x.p1, x.p2]), n = ends.length;
+      const avg = i => [ends.reduce((t, e) => t + e[i].x, 0) / n * f, ends.reduce((t, e) => t + e[i].y, 0) / n * f];
+      out.push({ a: avg(0), b: avg(1), hand: m.some(x => x.auto !== 'layout'), n110: m.filter(x => String(x.size) !== '160').length, n160: m.filter(x => String(x.size) === '160').length,
+        ids: m.map(x => x.id), key: k, name: m[0].gname || (n === 1 ? m[0].name : '') || m[0].trench || m[0].name || '' });
+    }
+    return out;
+  },
+  // fix the kiosks (and each erf on the kiosk its service comes from) and / or the manholes (each erf on its manhole) to the plan
+  fixFromPlan(input, o) {
+    const pm = AppState.planMarkup, f = PlanEngine.factor(), M = p => [p.x * f, p.y * f];
+    const kiosks = pm.elements.filter(e => e.type === 'kiosk'), mhEls = pm.elements.filter(e => e.type === 'manhole');
+    const kIdx = new Map(kiosks.map((e, i) => [e.id, i])), mIdx = new Map(mhEls.map((e, i) => [e.id, i]));
+    const erf = new Map(pm.elements.filter(e => e.type === 'erf').map(e => [e.id, e]));
+    const ends = (r, idx) => idx.has(r.fromId) && erf.has(r.toId) ? [r.fromId, r.toId] : idx.has(r.toId) && erf.has(r.fromId) ? [r.toId, r.fromId] : null;
+    const fk = !!(o.kiosks && kiosks.length), fm = !!(o.mhs && mhEls.length);
+    input.markers = Object.assign({}, input.markers); input.fibreOffs = Object.assign({}, input.fibreOffs);
+    if (fk) { input.fixedKiosks = true; input.kioskPins = kiosks.map(M); input.kioskDrops = []; input.fixAssign = {}; }
+    if (fm) { input.fixedMhs = true; input.mhPins = mhEls.map(M); input.mhDrops = []; input.mhAssign = {}; }
+    for (const r of pm.routes) {
+      if (fk && r.type === 'service') { const e = ends(r, kIdx); if (e) { input.fixAssign[e[1]] = kIdx.get(e[0]); input.markers[e[1]] = M(erf.get(e[1])); } }
+      if (fm && r.type === 'fibreErf') { const e = ends(r, mIdx); if (e) { input.mhAssign[e[1]] = mIdx.get(e[0]); const q = r.fromId === e[0] ? r.points[r.points.length - 1] : r.points[0], p = erf.get(e[1]); if (q && p) input.fibreOffs[e[1]] = [(q.x - p.x) * f, (q.y - p.y) * f]; } }
+    }
+    return { kiosks, mhEls, kIdx, mIdx, erf, fk, fm };
+  },
+  // the result as the trenches see it when one part is laid: the other part's runs are the ones on the plan (or none)
+  _planView(r, part) {
+    if (!r || part === 'all') return r;
+    const pm = AppState.planMarkup, f = this.f, ids = new Set(r.erven.map(e => e.id)), M = pts => pts.map(p => [p.x * f, p.y * f]);
+    const runs = type => pm.routes.filter(x => x.type === type && Array.isArray(x.points) && x.points.length >= 2);
+    const byErf = type => { const m = new Map(); runs(type).forEach(x => { const id = ids.has(x.toId) ? x.toId : ids.has(x.fromId) ? x.fromId : null; if (id) m.set(id, M(x.points)); }); return m; };
+    if (part === 'fibre') {
+      const svc = byErf('service'), onPlan = pm.elements.some(e => e.type === 'kiosk');
+      return Object.assign({}, r, { erven: r.erven.map(e => Object.assign({}, e, { route: svc.get(e.id) || null })), kiosks: onPlan ? r.kiosks : [],
+        net: r.net && Object.assign({}, r.net, { lv: runs('lv').map(x => ({ pts: M(x.points), len: 0 })) }) });
+    }
+    const duct = byErf('fibreErf'), onPlan = pm.elements.some(e => e.type === 'manhole');
+    return Object.assign({}, r, { erven: r.erven.map(e => Object.assign({}, e, { duct: duct.get(e.id) || null })),
+      fibre: r.fibre && Object.assign({}, r.fibre, { trunks: runs('fibreBB').map(x => ({ pts: M(x.points) })), mhs: onPlan ? r.fibre.mhs : [] }) });
+  },
+  // the Checks rows of the crossings already on the plan
+  _crossChecks(r) {
+    const out = [], X = this._xin || [], f = this.f;
+    const ln = x => { const c = X[x.user] || {}; return [{ bad: [[c.a || x.a, c.b || x.b]] }]; };
+    const what = x => [x.svc && `${x.svc} service${x.svc === 1 ? '' : 's'}`, x.fib && `${x.fib} fibre duct${x.fib === 1 ? '' : 's'}`, x.lv && `${x.lv} LV cable${x.lv === 1 ? '' : 's'}`].filter(Boolean).join(', ');
+    ((r.net && r.net.cross) || []).filter(x => x.user != null && x.hand && x.short > 0).forEach(x => {
+      const c = X[x.user] || {}, nm = c.name ? 'Crossing ' + c.name : 'A crossing you drew';
+      out.push({ sev: 'warn', text: `${nm} needs ${x.short} more 110 mm duct${x.short === 1 ? '' : 's'}: ${what(x)} go through it (${x.d110} duct${x.d110 === 1 ? '' : 's'}) and it has ${x.have}. Auto layout does not change a crossing you drew.`, ids: [], runs: ln(x),
+        acts: [{ label: `Add ${x.short} duct${x.short === 1 ? '' : 's'} to it`, act: 'xadd', val: { i: x.user, n: x.short, uses: [...Array(x.d110s).fill('service'), ...Array(x.d110f).fill('fibre'), ...Array(x.d110l).fill('LV')] } }] });
+    });
+    const used = new Set(((r.net && r.net.cross) || []).filter(x => x.user != null).map(x => x.user));
+    const un = (r.xUnused || []).filter(i => X[i]);
+    if (un.length) out.push({ sev: 'info', text: `${un.length} crossing${un.length === 1 ? '' : 's'} on the plan ${un.length === 1 ? 'is' : 'are'} not across a road between the cable corridors, so the layout does not use ${un.length === 1 ? 'it' : 'them'} (${un.slice(0, 5).map(i => X[i].name || '?').join(', ')}).`, ids: [], runs: un.map(i => ({ bad: [[X[i].a, X[i].b]] })) });
+    const n = used.size; if (n) out.push({ sev: 'info', text: `${n} crossing${n === 1 ? '' : 's'} already on the plan ${n === 1 ? 'is' : 'are'} used before any new one.`, ids: [] });
+    return out;
+  },
+  // the fix of a crossing you drew that is short of ducts: add them to it (as yours, side by side with the others)
+  addDucts(i, n, uses) {
+    const c = (this._xin || [])[i]; if (!c || !(n > 0)) return;
+    const pm = AppState.planMarkup, list = pm.crossings.filter(x => c.ids.includes(x.id)); if (!list.length) return;
+    if (list.length === 1 && !PlanCrossings.key(list[0])) Object.assign(list[0], { group: AppState.planGenId('pmcg'), gname: PlanMarkup.nextCounter('_xgroup', 'CX') });
+    for (let k = 0; k < n; k++) { const d = PlanCrossings.add(list, '110'); d.use = (uses || [])[k] || ''; }
+    PlanMarkup.snapshot(); PlanMarkup.markDirty(); UI.toast(`Added ${n} duct${n === 1 ? '' : 's'} to ${list[0].gname || 'the crossing'}.`, 'success', 4000);
+    this.touched(true);
   },
 
   // The figures shown beside Run layout: what the last run came to, and how many settings were changed since it
@@ -1526,26 +1629,30 @@ const PlanLayoutUI = {
   },
 
   run() {
-    if (!this.admdOk()) { this.err = 'Confirm the ADMD settings in Rules first: they set the load on every cable.'; PlanMarkup.refreshProps(); UI.toast(this.err, 'warn', 5000); return; }
-    const g = this.gather();
+    const part = this.part();
+    if (part !== 'fibre' && !this.admdOk()) { this.err = 'Confirm the ADMD settings in Rules first: they set the load on every cable.'; PlanMarkup.refreshProps(); UI.toast(this.err, 'warn', 5000); return; }
+    const g = this.gather(part === 'fibre');                                              // the fibre network alone needs no mini-sub
     if (g.err) { this.err = g.err; this.result = null; PlanMarkup.refreshProps(); UI.toast(g.err, 'warn', 6000); return; }
     this.err = '';
+    // one part alone: the other part as it stands on the plan
+    let params = g.params;
+    if (part !== 'all') { const fx = this.fixFromPlan(g.input, { kiosks: part === 'fibre', mhs: part === 'lv' }); if (fx.fk) params = Object.assign({}, params, { kmode: 'opt', knet: true }); }
     const t0 = performance.now();
-    this._gathered = g; this._prevRun = this.result && this.result.stats ? this._runFigures(this.result) : null;
-    this.result = PlanLayout.solve(g.input, g.params); this._ranParams = JSON.stringify(g.params);
+    this._gathered = g; this._prevRun = this.result && this.result.stats ? this._runFigures(this.result) : null; this._xin = g.input.crossings;
+    this.result = PlanLayout.solve(g.input, params); this._ranParams = JSON.stringify(g.params); this._ranPart = part;
     this.f = g.f; this.ms = performance.now() - t0; this.stale = false; this.flag = null; this.flagRuns = null; this.nearHint = null;
     this.applyMoves(this.result);                                                       // nodes moved, added or removed by hand
     PlanLayout.keepOut(this.result);                                                    // anything a move or a re-laid crossing left inside a carriageway goes round it
     PlanLayout.smooth(this.result, g.params);                                           // then every corner rounded (the node handles stay on the corners)
     this._findCross(this.result);
-    this.result.trench = PlanLayout.trenches(this.result, this.cfg().trench);
-    this.vdRun();
+    this.result.trench = PlanLayout.trenches(this._planView(this.result, part), this.cfg().trench);
+    if (part !== 'fibre') this.vdRun();                                                 // the fibre network alone: the LV on the plan is not checked again
     PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true });
   },
   // trench depth / sharing changed: only the trenches are worked out again
   retrench() {
     if (!this.result) return;
-    this.result.trench = PlanLayout.trenches(this.result, this.cfg().trench);
+    this.result.trench = PlanLayout.trenches(this._planView(this.result, this._ranPart || 'all'), this.cfg().trench);
     PlanMarkup.markDirty(); PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true });
   },
   // after a setting changes: re-run at once when that is quick, otherwise wait for Run
@@ -1562,11 +1669,13 @@ const PlanLayoutUI = {
     const fix = this.checks().filter(c => c.sev === 'fail');
     if (fix.length && !(await UI.confirm(`${fix.length} item${fix.length === 1 ? ' is' : 's are'} still marked Fix:\n\n${fix.slice(0, 3).map(c => '• ' + c.text).join('\n')}${fix.length > 3 ? '\n• …' : ''}\n\nCreate the layout anyway?`))) return;
     if (r !== this.result) return;
-    const pm = AppState.planMarkup, opt = this._opt;
+    const pm = AppState.planMarkup, part = this._ranPart || 'all', X = this._xin || [];
+    // one part alone: only its own items are written (the other part stays as it is on the plan)
+    const opt = Object.assign({}, this._opt, part === 'fibre' ? { markers: false, kiosks: false, lv: false } : part === 'lv' ? { fibre: false } : {});
     const removeIf = (arr, fn) => { for (let i = arr.length - 1; i >= 0; i--) if (fn(arr[i])) arr.splice(i, 1); };
     const auto = x => x.auto === 'layout';
     const ptsPx = a => a.map(p => ({ x: p[0] / f, y: p[1] / f }));
-    removeIf(pm.routes, auto); removeIf(pm.crossings, auto); removeIf(pm.elements, auto); removeIf(pm.trenches, auto);
+    removeIf(pm.routes, x => this._ownedBy(x, 'route', part)); removeIf(pm.crossings, x => this._ownedBy(x, 'crossing', part)); removeIf(pm.elements, x => this._ownedBy(x, 'element', part)); removeIf(pm.trenches, x => this._ownedBy(x, 'trench', part));
     const el = (type, x, y, extra) => { const e = Object.assign({ id: AppState.planGenId('pmel'), type, x: x / f, y: y / f, rotation: 0, name: PlanMarkup.nextName(type), reticId: null, props: PLAN_DEFS.defaults(type), auto: 'layout' }, extra || {}); pm.elements.push(e); return e; };
     const route = (type, fromId, toId, pts, cable) => { const rt = { id: AppState.planGenId('pmrt'), type, fromId: fromId || null, toId: toId || null, points: ptsPx(pts), cableType: cable || this._vdCableName(type) || PLAN_DEFS.defaults(type).cableType || ((typeof PlanSync !== 'undefined' && PlanSync.defaultCableFor(type, fromId, toId)) || ''), curved: false, props: {}, auto: 'layout' }; if (typeof PlanReroute !== 'undefined') rt.lsig = PlanReroute.sig(rt.points); pm.routes.push(rt); return rt; };   // `lsig`: a later hand edit shows (Re-route from here keeps it)
     const made = { subs: 0, kiosks: 0, manholes: 0, routes: 0, crossings: 0, markers: 0, trenches: 0 };
@@ -1600,12 +1709,25 @@ const PlanLayoutUI = {
       const mEl = new Map();
       [...r.fibre.inter, ...r.fibre.mhs].forEach(m => { mEl.set(m, el('manhole', m.x, m.y)); made.manholes++; });
       r.fibre.trunks.forEach(t => { route('fibreBB', mEl.get(t.a).id, mEl.get(t.b).id, t.pts); made.routes++; });
-      r.erven.forEach(e => { if (e.duct && e.mh && mEl.get(e.mh) && erfEl.get(e.id)) { const pts = e.duct.slice(); if (!opt.markers) pts.push([erfEl.get(e.id).x * f, erfEl.get(e.id).y * f]); route('fibreErf', mEl.get(e.mh).id, e.id, pts); made.routes++; } });
+      const atMk = e => { const q = erfEl.get(e.id); return !!(e.marker && Math.hypot(q.x * f - e.marker[0], q.y * f - e.marker[1]) < 0.05); };   // the erf point is the marker already (the LV was created before)
+      r.erven.forEach(e => { if (e.duct && e.mh && mEl.get(e.mh) && erfEl.get(e.id)) { const pts = e.duct.slice(); if (!opt.markers && !atMk(e)) pts.push([erfEl.get(e.id).x * f, erfEl.get(e.id).y * f]); route('fibreErf', mEl.get(e.mh).id, e.id, pts); made.routes++; } });
     }
-    if (opt.cross) r.net.cross.forEach((x, xi) => {
+    // a new crossing's key: on from the highest one Auto layout already used (the other part's crossings keep theirs)
+    let xn = 0; pm.crossings.forEach(c => { const m = auto(c) && /^X(\d+)$/.exec(c.trench || ''); if (m) xn = Math.max(xn, +m[1]); });
+    const lv = part !== 'fibre', fi = part !== 'lv', ductPart = use => part !== 'all' ? part : use === 'fibre' ? 'fibre' : 'lv';
+    if (opt.cross) r.net.cross.forEach(x => {
       const uses = [], push = (n, w) => { for (let i = 0; i < n; i++) uses.push(w); };
-      if (x.prov) { push(x.d110, 'junction'); } else { push(x.d110s, 'service'); push(x.d110f, 'fibre'); push(x.d110l, 'LV'); push(x.spare, 'spare'); }
-      const sizes = uses.map(u => ['110', u]); for (let i = 0; i < x.d160; i++) sizes.push(['160', x.prov ? 'junction' : 'MV']);
+      if (x.prov) { if (lv) push(x.d110, 'junction'); } else { if (lv) push(x.d110s, 'service'); if (fi) push(x.d110f, 'fibre'); if (lv) push(x.d110l, 'LV'); if (x.user == null) push(x.spare, 'spare'); }
+      const sizes = uses.map(u => ['110', u]); if (lv) for (let i = 0; i < x.d160; i++) sizes.push(['160', x.prov ? 'junction' : 'MV']);
+      if (!sizes.length) return;
+      if (x.user != null) {
+        // a crossing already on the plan: one you drew is never changed (a short one is a check); one an earlier Create made takes the ducts
+        const c = X[x.user]; if (!c || c.hand) return;
+        const list = pm.crossings.filter(q => c.ids.includes(q.id)); if (!list.length) return;
+        sizes.forEach(([size, use]) => { const d = PlanCrossings.add(list, size); Object.assign(d, { use, auto: 'layout', part: ductPart(use) }); made.crossings++; });
+        return;
+      }
+      const key = 'X' + (++xn);
       sizes.forEach(([size, use], i) => {
         const off = (i - (sizes.length - 1) / 2) * 0.6;
         let a, b;
@@ -1613,7 +1735,7 @@ const PlanLayoutUI = {
           const [A, B] = x.ends || [x.a, x.b], L = Math.hypot(B[0] - A[0], B[1] - A[1]) || 1, n = [-(B[1] - A[1]) / L, (B[0] - A[0]) / L];
           a = [A[0] + n[0] * off, A[1] + n[1] * off]; b = [B[0] + n[0] * off, B[1] + n[1] * off];
         } else { a = PlanLayout.ptAt(x.st, x.s + off, x.st.w / 2); b = PlanLayout.ptAt(x.st, x.s + off, -x.st.w / 2); }
-        pm.crossings.push({ id: AppState.planGenId('pmcr'), name: PlanMarkup.nextCounter('_crossing', 'RC'), size, use, trench: 'X' + (xi + 1), p1: { x: a[0] / f, y: a[1] / f }, p2: { x: b[0] / f, y: b[1] / f }, auto: 'layout' }); made.crossings++;
+        pm.crossings.push({ id: AppState.planGenId('pmcr'), name: PlanMarkup.nextCounter('_crossing', 'RC'), size, use, trench: key, p1: { x: a[0] / f, y: a[1] / f }, p2: { x: b[0] / f, y: b[1] / f }, auto: 'layout', part: ductPart(use) }); made.crossings++;
       });
     });
     if (opt.trench && r.trench) r.trench.list.forEach(t => {
@@ -1735,7 +1857,14 @@ const PlanLayoutUI = {
   // ───────── the preview on the plan ─────────
   // ── the check list after a run ──
   // → [{ sev: 'fail' | 'warn' | 'info', text, ids: [erf ids to mark] }], worst first; [] = nothing to flag.
+  // the Checks of the last run: with one part laid alone, only what that part is about (Fibre: the LV on the plan is not checked again)
   checks() {
+    const r = this.result; if (!r) return [];
+    let out = this._checksAll();
+    if (this._ranPart === 'fibre') out = out.filter(c => /fibre|manhole|duct|trunk|face a street|carriageway|civil/i.test(c.text));
+    return this._crossChecks(r).concat(out);
+  },
+  _checksAll() {
     const r = this.result; if (!r) return [];
     const P = r.P, out = [], nm = (list) => list.slice(0, 6).map(e => e.name || e.id).join(', ') + (list.length > 6 ? '…' : '');
     const names = {}; AppState.planMarkup.elements.forEach(e => { if (e.type === 'erf') names[e.id] = e.name; });
@@ -1840,7 +1969,9 @@ const PlanLayoutUI = {
     }
     const r = this.result, f = this.f; if (!r) return;
     const u = 1 / zoom, W = p => [p[0] / f, p[1] / f], line = pts => { ctx.beginPath(); pts.forEach((p, i) => { const q = W(p); i ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1]); }); ctx.stroke(); };
-    const col = k => this.PAL[(parseInt(k.id.slice(1)) - 1) % 8], S = this.SHOW;
+    const col = k => this.PAL[(parseInt(k.id.slice(1)) - 1) % 8], pt0 = this._ranPart || 'all';
+    // one part laid alone: the other part is the one on the plan, so its preview is not drawn
+    const S = pt0 === 'fibre' ? Object.assign({}, this.SHOW, { kiosk: false, lvmv: false, front: false, mark: false }) : pt0 === 'lv' ? Object.assign({}, this.SHOW, { fibre: false }) : this.SHOW;
     ctx.save(); ctx.lineJoin = 'round'; ctx.lineCap = 'butt';
     if (S.trench && r.trench) {                                                                        // trench bands under everything else
       ctx.lineCap = 'round';
@@ -1892,7 +2023,7 @@ const PlanLayoutUI = {
       r.net.cross.forEach(x => {
         const a = W(x.ends ? x.ends[0] : PlanLayout.ptAt(x.st, x.s, x.st.w / 2)), b = W(x.ends ? x.ends[1] : PlanLayout.ptAt(x.st, x.s, -x.st.w / 2)), t = Math.min(x.d110 + x.d160, 6);
         ctx.strokeStyle = 'rgba(255,255,255,.9)'; ctx.lineWidth = (4 + t * 1.1) * u; ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke();
-        ctx.strokeStyle = '#334155'; ctx.globalAlpha = x.prov ? .45 : 1; ctx.lineWidth = (2 + t * 1.1) * u; if (x.prov) ctx.setLineDash([4 * u, 3 * u]); ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke(); ctx.setLineDash([]);
+        ctx.strokeStyle = x.user != null ? (x.short > 0 && x.hand ? '#dc2626' : '#15803d') : '#334155'; ctx.globalAlpha = x.prov ? .45 : 1;   // green: a crossing already on the plan (red: one you drew, short of ducts) ctx.lineWidth = (2 + t * 1.1) * u; if (x.prov) ctx.setLineDash([4 * u, 3 * u]); ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke(); ctx.setLineDash([]);
         const m = x.ends ? [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2] : W(PlanLayout.ptAt(x.st, x.s, 0)); ctx.fillStyle = '#334155'; ctx.beginPath(); ctx.arc(m[0], m[1], 6.5 * u, 0, 7); ctx.fill(); ctx.globalAlpha = 1; ctx.fillStyle = '#fff'; ctx.fillText(String(x.d110 + x.d160), m[0], m[1] + .5 * u);
       });
     }
@@ -2132,9 +2263,10 @@ const PlanLayoutUI = {
     // ── the footer: one button that does the next thing
     const act = this.nextAction(r, placed, noKiosks, nErv, sr0.length), co = this.createCounts();
     const chkO = (k, t, n) => `<label style="display:flex;gap:6px;align-items:flex-start"><input type="checkbox" data-opt="${k}"${opt[k] ? ' checked' : ''}> <span>${t} <em style="font-style:normal;font-family:var(--font-mono,monospace);font-size:12px;color:var(--text-muted)">${n}</em></span></label>`;
-    const nOpt = Object.values(opt).filter(Boolean).length;
-    const createOpts = act.create ? `<details style="font-size:12px"><summary style="cursor:pointer;font-weight:600">What it will create <span style="font-weight:400;color:var(--text-muted)">${nOpt} of ${Object.keys(opt).length} ticked</span></summary><div style="display:flex;flex-direction:column;gap:2px;padding:4px 0">${chkO('markers', 'Erf markers moved to their corner', co.markers)}${chkO('kiosks', 'Kiosks and service cables', co.kiosks)}${chkO('lv', 'Mini-subs and LV feeders', co.lv)}${chkO('fibre', 'Fibre manholes and ducts', co.fibre)}${chkO('cross', 'Road crossings, one per duct', co.cross)}${chkO('trench', 'Trenches along the routes (depth and sharing as set)', co.trench)}</div></details>` : '';
-    const footer = `<div style="position:sticky;bottom:-10px;margin:0 -10px -10px;padding:8px 10px;background:var(--bg-primary);border-top:1px solid var(--border-color,#ddd);display:flex;flex-direction:column;gap:5px;z-index:2">${this.lastRunHtml()}${createOpts}<button type="button" class="plan-btn" data-act="${escHtml(act.act)}"${act.s ? ` data-s="${act.s}"` : ''} aria-disabled="${!!act.dis}" style="font-weight:600;padding:9px;${act.dis ? 'opacity:.65' : (act.create ? 'background:var(--accent,#2563eb);color:#fff' : '')}">${esc(act.label)}</button>${act.note ? `<div style="color:var(--text-muted);font-size:12px;text-align:center">${esc(act.note)}</div>` : ''}${r ? `<button type="button" class="plan-btn" data-act="clear" style="align-self:center;padding:1px 8px;font-size:12px;font-weight:400">Clear the result</button>` : ''}</div>`;
+    const optKeys = Object.keys(opt).filter(k => this.part() === 'fibre' ? !['markers', 'kiosks', 'lv'].includes(k) : this.part() === 'lv' ? k !== 'fibre' : true), nOpt = optKeys.filter(k => opt[k]).length;
+    const createOpts = act.create ? `<details style="font-size:12px"><summary style="cursor:pointer;font-weight:600">What it will create <span style="font-weight:400;color:var(--text-muted)">${nOpt} of ${optKeys.length} ticked</span></summary><div style="display:flex;flex-direction:column;gap:2px;padding:4px 0">${this.part() !== 'fibre' ? chkO('markers', 'Erf markers moved to their corner', co.markers) + chkO('kiosks', 'Kiosks and service cables', co.kiosks) + chkO('lv', 'Mini-subs and LV feeders', co.lv) : ''}${this.part() !== 'lv' ? chkO('fibre', 'Fibre manholes and ducts', co.fibre) : ''}${chkO('cross', 'Road crossings, one per duct', co.cross)}${chkO('trench', 'Trenches along the routes (depth and sharing as set)', co.trench)}</div></details>` : '';
+    const curPart = this.part(), partBar = `<div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap"><span style="font-size:12px;color:var(--text-muted)">Lay out</span>${Object.entries(this.PARTS).map(([k, t]) => `<button type="button" class="plan-btn" data-act="part" data-k="${k}" aria-pressed="${curPart === k}" title="${esc(k === 'all' ? 'The LV and fibre networks together' : k === 'lv' ? 'Kiosks, mini-subs, services and LV cables only. The fibre on the plan stays as it is.' : 'Manholes, trunk and erf ducts only. The kiosks and LV on the plan stay as they are.')}" style="padding:3px 8px;font-size:12px;${curPart === k ? 'font-weight:600;outline:2px solid var(--accent,#2563eb)' : ''}">${t}</button>`).join('')}</div>`;
+    const footer = `<div style="position:sticky;bottom:-10px;margin:0 -10px -10px;padding:8px 10px;background:var(--bg-primary);border-top:1px solid var(--border-color,#ddd);display:flex;flex-direction:column;gap:5px;z-index:2">${partBar}${this.lastRunHtml()}${createOpts}<button type="button" class="plan-btn" data-act="${escHtml(act.act)}"${act.s ? ` data-s="${act.s}"` : ''} aria-disabled="${!!act.dis}" style="font-weight:600;padding:9px;${act.dis ? 'opacity:.65' : (act.create ? 'background:var(--accent,#2563eb);color:#fff' : '')}">${esc(act.label)}</button>${act.note ? `<div style="color:var(--text-muted);font-size:12px;text-align:center">${esc(act.note)}</div>` : ''}${r ? `<button type="button" class="plan-btn" data-act="clear" style="align-self:center;padding:1px 8px;font-size:12px;font-weight:400">Clear the result</button>` : ''}</div>`;
     el.innerHTML = `<div class="plan-props-title" style="margin-bottom:6px">Auto layout</div>
       <div class="plan-props-body" style="display:flex;flex-direction:column;gap:10px;font-size:13px">
         ${stepBar}
@@ -2161,6 +2293,7 @@ const PlanLayoutUI = {
       if (b.dataset.preset) { this.setPreset(b.dataset.preset); return; }
       if (b.dataset.cf) { this.ckFilter = b.dataset.cf; PlanMarkup.refreshProps(); return; }
       if (b.dataset.ckopen != null) { const c = (this._ck || [])[+b.dataset.ckopen]; if (c) { const [t] = (() => { const i = c.text.search(/[.:] /); return [i > 8 && i <= 150 ? c.text.slice(0, i) : (c.text.length <= 150 ? c.text : c.text.slice(0, 130) + '…')]; })(), k = c.sev + '|' + t; if (this._ckOpen.has(k)) this._ckOpen.delete(k); else this._ckOpen.add(k); PlanMarkup.refreshProps(); } return; }
+      if (b.dataset.act === 'part') { this.setPart(b.dataset.k); return; }
       if (b.dataset.act === 'goto') { this.setStep(+b.dataset.s); return; }
       if (b.dataset.act === 'zoomerven' || b.dataset.act === 'zoomstreets') { const pm = AppState.planMarkup, pts = []; if (b.dataset.act === 'zoomerven') pm.elements.forEach(x => { if (x.type === 'erf' && Array.isArray(x.boundary)) x.boundary.forEach(q => pts.push({ x: q.x, y: q.y })); }); else this.streetsOnPlan().forEach(x => this._flat(x).forEach(q => pts.push({ x: q.x, y: q.y }))); if (pts.length) PlanEngine.zoomToPoints(pts); return; }
       if (b.dataset.act === 'showerven') { const r0 = this.result; if (!r0) return; const ids = new Set(r0.erven.filter(x => !x.fe).map(x => x.id)); this.flag = ids; const pts = []; r0.erven.forEach(x => { if (ids.has(x.id)) x.poly.forEach(q => pts.push({ x: q[0] / this.f, y: q[1] / this.f })); }); if (pts.length) PlanEngine.zoomToPoints(pts); PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true }); return; }
@@ -2183,6 +2316,7 @@ const PlanLayoutUI = {
         if (PlanSides.checkAct(a)) return;
         if (a.act === 'tx') { L.vd.tx = a.val; this.revd(); }
         else if (a.act === 'extendall') { this.extendErven(a.val || []); }
+        else if (a.act === 'xadd') { this.addDucts(a.val.i, a.val.n, a.val.uses); }
         else if (a.act === 'resetmarkers') { this.cfg().markers = {}; this.cfg().fibreMarks = {}; this.markFor = null; this.touched(); }
         else if (a.act === 'addsub') { this.setStep(2); UI.toast('Click where the next mini-sub should stand. The kiosks go to the nearest one.', 'info', 5000); PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true }); }
         else if (a.act === 'maxsize') { L.vd.maxSize = +a.val || 0; this.vdRun(); }

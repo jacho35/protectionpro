@@ -1607,11 +1607,12 @@ const PlanLayout = (() => {
     const sec = input.sections && input.sections.on !== false && Array.isArray(input.sections.list) && input.sections.list.length ? (input.sections.list.find(x => x.id === input.sections.def) || input.sections.list[0]) : null;
     const KD = Math.max(0.3, P.kd != null ? +P.kd : 2), kdP = sec ? Math.max(0.3, +sec.items.lv.off) : KD, kdF = sec ? Math.max(0.3, +sec.items.fi.off) : Math.max(0.3, KD - 0.3);
     const opt = { gap: +P.gapTol, gapFace: +P.gapFace, setback: +P.setback, rule: P.xrule, xpen: +P.xroute, xshare: 0 };
-    const sig = JSON.stringify([kdP, kdF, opt, (input.erven || []).filter(e => e.unserviced).map(e => e.id), strips.map(x => x.id + ':' + x.poly.length + ':' + x.poly[0]), streets.map(s => s.pts.length + ':' + s.pts[0] + ':' + s.pts[s.pts.length - 1])]);
+    const xin = (input.crossings || []).filter(c => c && Array.isArray(c.a) && Array.isArray(c.b)).map(c => ({ a: c.a.slice(0, 2), b: c.b.slice(0, 2), hand: !!c.hand }));
+    const sig = JSON.stringify([kdP, kdF, opt, xin, (input.erven || []).filter(e => e.unserviced).map(e => e.id), strips.map(x => x.id + ':' + x.poly.length + ':' + x.poly[0]), streets.map(s => s.pts.length + ':' + s.pts[0] + ':' + s.pts[s.pts.length - 1])]);
     const key = input.erven, hit = BM_CACHE && key && BM_CACHE.get(key);
     if (hit && hit.sig === sig) { Object.values(hit.M.cls).forEach(g => g.resetUse()); return hit.M; }
     const blocked = (input.erven || []).filter(e => e.unserviced && e.poly && e.poly.length >= 3).map(e => ({ id: e.id, poly: e.poly.map(p => [p[0], p[1]]) }));
-    const M = PB.model({ erven: erven.map(e => ({ id: e.id, poly: e.poly })).concat(blocked, strips), lines: streets.map(s => s.pts), classes: { p: kdP, f: kdF } }, opt);
+    const M = PB.model({ erven: erven.map(e => ({ id: e.id, poly: e.poly })).concat(blocked, strips), lines: streets.map(s => s.pts), classes: { p: kdP, f: kdF }, crossings: xin }, opt);
     if (BM_CACHE && key) BM_CACHE.set(key, { sig, M });
     return M;
   }
@@ -1815,19 +1816,25 @@ const PlanLayout = (() => {
       const prov = !x.used.length; if (prov && (x.kind === 'kiosk' || x.kind === 'manhole')) continue; if (prov && !(P.junct && x.kind === 'leg' && x.cls === 'p')) continue;
       const mid = [(x.a[0] + x.b[0]) / 2, (x.a[1] + x.b[1]) / 2], ns = nearSt(mid), s = ns.pr.s;
       const cnt = t => x.used.filter(u => u === t).length;
-      let g = shareAll && !prov ? cross.find(c => !c.prov && c.st === ns.st && Math.abs(c.s - s) <= 3 && Math.hypot(c.mid[0] - mid[0], c.mid[1] - mid[1]) <= 4) : null;
-      if (!g) { g = { st: ns.st, s, s0: s, ss: [], sum: 0, n: 0, svc: 0, fib: 0, lv: 0, mv: 0, jn: 0, prov, a: x.a.slice(), b: x.b.slice(), mid, kind: x.kind, sites: [] }; cross.push(g); }
+      if (x.kind === 'user' && prov) continue;                                        // a crossing on the plan no cable uses: it stays as it is
+      // a crossing on the plan is one crossing whatever uses it (each cable class has its own site there); nothing else joins it
+      let g = x.kind === 'user' ? cross.find(c => c.user === x.user) : shareAll && !prov ? cross.find(c => !c.prov && c.user == null && c.st === ns.st && Math.abs(c.s - s) <= 3 && Math.hypot(c.mid[0] - mid[0], c.mid[1] - mid[1]) <= 4) : null;
+      if (!g) { g = { st: ns.st, s, s0: s, ss: [], sum: 0, n: 0, svc: 0, fib: 0, lv: 0, mv: 0, jn: 0, prov, a: x.a.slice(), b: x.b.slice(), mid, kind: x.kind, sites: [] }; if (x.kind === 'user') { g.user = x.user; g.hand = x.hand; g.a = x.ends[0].slice(); g.b = x.ends[1].slice(); } cross.push(g); }
       g.sites.push(x); g.ss.push(s);
       g.svc += cnt('svc'); g.fib += cnt('fib'); g.lv += cnt('lv'); if (prov) g.jn++;
-      if (!prov) { g.n += x.used.length; if (x.cls === 'p') { g.a = x.a.slice(); g.b = x.b.slice(); } }
+      if (!prov) { g.n += x.used.length; if (x.cls === 'p' && x.kind !== 'user') { g.a = x.a.slice(); g.b = x.b.slice(); } }
     }
+    const XIN = input.crossings || [];
     cross.forEach(c => {
       if (c.prov) { c.d110s = c.d110f = c.d110l = 0; c.d110 = P.j110; c.d160 = P.j160; c.spare = 0; }
-      else { c.d110s = Math.ceil(c.svc / 4); c.d110f = Math.ceil(c.fib / 4); c.d110l = Math.ceil(c.lv / 2); c.d160 = c.mv; c.spare = P.spare; c.d110 = c.d110s + c.d110f + c.d110l + P.spare; }
+      else { c.d110s = Math.ceil(c.svc / 4); c.d110f = Math.ceil(c.fib / 4); c.d110l = Math.ceil(c.lv / 2); c.d160 = c.mv; c.spare = c.user != null ? 0 : P.spare; c.d110 = c.d110s + c.d110f + c.d110l + c.spare; }
+      // a crossing on the plan: what it holds against what goes through it (`short` = the 110 mm ducts it is short of; a crossing drawn by
+      // hand is never added to by the layout, so that is a check; one an earlier Create made takes the ducts it needs)
+      if (c.user != null) { const u = XIN[c.user] || {}; c.have = Math.max(0, +u.n110 || 0); c.short = Math.max(0, c.d110 - c.have); c.key = u.key || null; }
     });
     if (net) { net.cross = cross; net.baseline = cross.reduce((t, c) => t + c.n, 0); net.prov = cross.filter(c => c.prov).length; net.d110 = cross.reduce((t, c) => t + c.d110, 0); net.d160 = cross.reduce((t, c) => t + c.d160, 0); }
     relength(r);
-    if (r.stats) Object.assign(r.stats, { crossings: cross.length, provisional: net ? net.prov : 0, baseline: net ? net.baseline : 0, d110: net ? net.d110 : 0, d160: net ? net.d160 : 0, blocks: M.blocks.length, reassigned: moved, slid });
+    if (r.stats) Object.assign(r.stats, { existing: cross.filter(c => c.user != null).length, crossings: cross.length, provisional: net ? net.prov : 0, baseline: net ? net.baseline : 0, d110: net ? net.d110 : 0, d160: net ? net.d160 : 0, blocks: M.blocks.length, reassigned: moved, slid });
     // warnings: the service-length one follows the new routes; what the crossing sites could not do is said once per junction
     r.warns = r.warns.filter(w => !/of service cable from their kiosk/.test(w));
     if (r.over.length) r.warns.push(`${r.over.length} erven are more than ${P.maxc} m of service cable from their kiosk.`);
@@ -1845,6 +1852,8 @@ const PlanLayout = (() => {
     }
     const jw = new Map(); G.warns.forEach(w => { if (w.j && !jw.has(w.j)) jw.set(w.j, w.text); });
     const jBad = [...jw.entries()].filter(([, t]) => !/one side only/.test(t));
+    // a crossing on the plan neither corridor could use (not across a road between the corridors): kept, but no cable goes through it
+    { const bad = i => [G, GF].every(g => g.warns.some(w => w.user === i)); r.xUnused = (input.crossings || []).map((c, i) => i).filter(bad); }
     if (jBad.length) r.warns.push(`${jBad.length} junction leg${jBad.length === 1 ? '' : 's'} got no road crossing (${jBad.slice(0, 3).map(([, t]) => t).join('; ')}): cables there go round to the next crossing.`);
     return true;
   }

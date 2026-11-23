@@ -11,10 +11,11 @@
 //                 the leg, `setback` m past the end of the corner splay on each block (read from the ring, so from the boundary); every erf
 //                 boundary on a frontage gets a mid-block site square across to the facing block's ring
 //   5. route    : one Dijkstra over ring edges + site edges; a site costs `xpen` m the first time it is used and `xshare` after, a junction
-//                 leg `legExtra` more (rule B, mid-block first)
+//                 leg `legExtra` more (rule B, mid-block first); a crossing already on the plan (`input.crossings`, kind 'user') costs nothing and
+//                 is not counted as a crossing by `reach`, and the layout's own sites within `userNear` of one are dropped
 const PlanBlocks = (() => {
   'use strict';
-  const DEFAULTS = { gap: 4, gapFace: 40, cell: 0.25, step: 0.5, setback: 3, maxRes: 40, maxLink: 80, reach: 25, turn: 3, midTurn: 25, midNearJ: 18, jtol: 4, jmerge: 10, stub: 6 };
+  const DEFAULTS = { gap: 4, gapFace: 40, cell: 0.25, step: 0.5, setback: 3, maxRes: 40, maxLink: 80, reach: 25, turn: 3, midTurn: 25, midNearJ: 18, jtol: 4, jmerge: 10, stub: 6, userTol: 12, userNear: 8 };
   const sub = (a, b) => [a[0] - b[0], a[1] - b[1]], add = (a, b) => [a[0] + b[0], a[1] + b[1]], mul = (a, k) => [a[0] * k, a[1] * k];
   const dot = (a, b) => a[0] * b[0] + a[1] * b[1], nrm = a => { const l = Math.hypot(a[0], a[1]) || 1; return [a[0] / l, a[1] / l]; };
   const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
@@ -299,6 +300,20 @@ const PlanBlocks = (() => {
         if (sites.some(x => (dist(x.a, p) < 1.5 && dist(x.b, qq) < 1.5) || (dist(x.a, qq) < 1.5 && dist(x.b, p) < 1.5))) continue;
         sites.push({ id: name + (sites.length + 1), cls: name, kind: 'mid', a: p, b: qq, Ra: R, Rb: best.R2 });
       }
+      // crossings already on the plan (drawn by hand, or made by an earlier Create of the other part): a site each, used before any other.
+      // Each end goes to the nearest frontage point of this class's corridors (within `userTol`); the site must cross a street line. A crossing
+      // of the layout's own within `userNear` of one is dropped, so the cables there go through the one on the plan.
+      (input.crossings || []).forEach((c, ui) => {
+        if (!c || !c.a || !c.b) return;
+        const end = (p, not) => { let best = null; for (const R of rings) for (let i = 0; i < R.pts.length; i++) { if (!R.front[i]) continue; const d = dist(p, R.pts[i]); if (d <= o.userTol && (!best || d < best.d) && !(not && dist(R.pts[i], not.p) < 2)) best = { R, i, d, p: R.pts[i] }; } return best; };
+        const A = end(c.a), B = A && end(c.b, A);
+        if (!A || !B || !SI.crosses(A.p, B.p, true)) { warns.push({ user: ui, text: 'a crossing on the plan is not across a road between the corridors, so it is not used' }); return; }
+        sites.push({ id: name + 'u' + ui, cls: name, kind: 'user', user: ui, hand: !!c.hand, a: A.p.slice(), b: B.p.slice(), Ra: A.R, Rb: B.R, ends: [c.a.slice(0, 2), c.b.slice(0, 2)] });
+      });
+      if (sites.some(x => x.kind === 'user')) {
+        const mid = x => [(x.a[0] + x.b[0]) / 2, (x.a[1] + x.b[1]) / 2], U = sites.filter(x => x.kind === 'user').map(mid);
+        for (let i = sites.length - 1; i >= 0; i--) if (sites[i].kind !== 'user' && U.some(m => dist(m, mid(sites[i])) < o.userNear)) sites.splice(i, 1);
+      }
       // the graph
       const nodes = [], adj = [];
       rings.forEach(R => { R.node = R.pts.map((p, i) => { nodes.push({ p, R, i }); adj.push([]); return nodes.length - 1; }); });
@@ -363,7 +378,7 @@ const PlanBlocks = (() => {
         const pop = () => { const top = hp[0], last = hp.pop(); if (hp.length) { hp[0] = last; let c = 0; for (;;) { const l = 2 * c + 1, r = l + 1; let m = c; if (l < hp.length && hp[l][0] < hp[m][0]) m = l; if (r < hp.length && hp[r][0] < hp[m][0]) m = r; if (m === c) break; [hp[m], hp[c]] = [hp[c], hp[m]]; c = m; } } return top; };
         while (hp.length) { const [d, u] = pop(); if (done[u]) continue; done[u] = 1; if (u === to) break;
           const off = home && nodes[u].R.block !== home;
-          for (const e of adj[u]) { let w = e.w; if (e.site) w += (e.site.used.length ? xshare : xpen) + (e.site.kind === 'leg' ? legExtra : 0); else { if (off || (home && nodes[e.to].R.block !== home)) w *= far; if (C) w *= Math.max(C[u], C[e.to]); } if (d + w < D[e.to]) { D[e.to] = d + w; via[e.to] = u; vsite[e.to] = e.site; push(D[e.to], e.to); } } }
+          for (const e of adj[u]) { let w = e.w; if (e.site) w += e.site.kind === 'user' ? 0 : (e.site.used.length ? xshare : xpen) + (e.site.kind === 'leg' ? legExtra : 0); else { if (off || (home && nodes[e.to].R.block !== home)) w *= far; if (C) w *= Math.max(C[u], C[e.to]); } if (d + w < D[e.to]) { D[e.to] = d + w; via[e.to] = u; vsite[e.to] = e.site; push(D[e.to], e.to); } } }
         if (!isFinite(D[to])) return null;
         const path = [], used = []; let farLen = 0, civLen = 0;
         for (let v = to; v !== -1; v = via[v]) { path.push(nodes[v].p); if (vsite[v]) used.push(vsite[v]); else if (via[v] !== -1 && v !== from) { const L = dist(nodes[v].p, nodes[via[v]].p); if (home && (nodes[v].R.block !== home || nodes[via[v]].R.block !== home)) farLen += L; if (C && Math.max(C[v], C[via[v]]) > 1) civLen += L; } if (v === from) break; }
@@ -378,7 +393,7 @@ const PlanBlocks = (() => {
         const hp = [[0, from, 0, 0]], push = q => { hp.push(q); let c = hp.length - 1; while (c > 0) { const p = (c - 1) >> 1; if (hp[p][0] <= hp[c][0]) break; [hp[p], hp[c]] = [hp[c], hp[p]]; c = p; } };
         const pop = () => { const top = hp[0], last = hp.pop(); if (hp.length) { hp[0] = last; let c = 0; for (;;) { const l = 2 * c + 1, r = l + 1; let m = c; if (l < hp.length && hp[l][0] < hp[m][0]) m = l; if (r < hp.length && hp[r][0] < hp[m][0]) m = r; if (m === c) break; [hp[m], hp[c]] = [hp[c], hp[m]]; c = m; } } return top; };
         while (hp.length) { const [d, u, len, xs] = pop(); if (out.has(u)) continue; out.set(u, [d, len, xs]);     // (no civil-side cost here: the kiosk side of each street already keeps kiosks off it, and its factor would read as service length)
-          for (const e of adj[u]) { if (out.has(e.to)) continue; const w = e.w + (e.site ? xpen + (e.site.kind === 'leg' ? legExtra : 0) : 0); if (d + w <= maxCost) push([d + w, e.to, len + e.w, xs + (e.site ? 1 : 0)]); } }
+          for (const e of adj[u]) { if (out.has(e.to)) continue; const us = e.site && e.site.kind !== 'user', w = e.w + (us ? xpen + (e.site.kind === 'leg' ? legExtra : 0) : 0); if (d + w <= maxCost) push([d + w, e.to, len + e.w, xs + (us ? 1 : 0)]); } }
         return out;
       }
       const resetUse = () => sites.forEach(x => { x.used = []; });

@@ -49,18 +49,8 @@ const PlanReroute = {
     const pm = this._pm(), f = PlanEngine.factor();
     const g = PlanLayoutUI.gather(true); if (g.err) { UI.toast(g.err, 'warn', 6000); return; }
     const input = g.input, params = Object.assign({}, g.params, { kmode: 'opt', knet: true });
-    const M = p => [p.x * f, p.y * f];
-    const kiosks = pm.elements.filter(e => e.type === 'kiosk'), mhEls = pm.elements.filter(e => e.type === 'manhole');
-    const kIdx = new Map(kiosks.map((e, i) => [e.id, i])), mIdx = new Map(mhEls.map((e, i) => [e.id, i]));
-    const erf = new Map(pm.elements.filter(e => e.type === 'erf').map(e => [e.id, e]));
-    const ends = (r, idx) => idx.has(r.fromId) && erf.has(r.toId) ? [r.fromId, r.toId] : idx.has(r.toId) && erf.has(r.fromId) ? [r.toId, r.fromId] : null;
-    input.fixedKiosks = true; input.kioskPins = kiosks.map(M); input.kioskDrops = []; input.fixAssign = {};
-    input.fixedMhs = true; input.mhPins = mhEls.map(M); input.mhDrops = []; input.mhAssign = {};
-    input.markers = Object.assign({}, input.markers); input.fibreOffs = Object.assign({}, input.fibreOffs);
-    for (const r of pm.routes) {
-      if (r.type === 'service') { const e = ends(r, kIdx); if (e) { input.fixAssign[e[1]] = kIdx.get(e[0]); input.markers[e[1]] = M(erf.get(e[1])); } }
-      if (r.type === 'fibreErf') { const e = ends(r, mIdx); if (e) { input.mhAssign[e[1]] = mIdx.get(e[0]); const q = r.fromId === e[0] ? r.points[r.points.length - 1] : r.points[0], p = erf.get(e[1]); if (q && p) input.fibreOffs[e[1]] = [(q.x - p.x) * f, (q.y - p.y) * f]; } }
-    }
+    input.crossings = PlanLayoutUI.planCrossings(null);                                 // every crossing on the plan is used first
+    const { kiosks, mhEls, mIdx, erf } = PlanLayoutUI.fixFromPlan(input, { kiosks: true, mhs: true });
     let res;
     try { res = PlanLayout.solve(input, params); PlanLayout.keepOut(res); PlanLayout.smooth(res, params); }
     catch (err) { console.error(err); UI.toast('The re-route could not be worked out: ' + (err.message || err), 'error', 6000); return; }
