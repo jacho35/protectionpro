@@ -570,3 +570,37 @@ body.dark-mode .plan-legend-line.target { border-color: #4a9eff; }
 .plan-assign-preview { margin: 6px 0; }
 .plan-assign-actions { display: flex; gap: 6px; margin-top: 6px; }
 .plan-assign-actions .plan-circuit-btn { flex: 1; margin: 0; }
+
+/* DXF import › Area to import (plan-dxf-area.js) */
+.dxfi-content.dxfi-wide { width: min(1180px, 96vw); }
+.dxfi-areawrap { flex: 3 1 560px; min-width: 0; }
+.dxfi-note { font-size: 12px; color: var(--text-secondary); }
+.plan-props-check { display: flex; align-items: center; gap: 8px; font-size: 13px; margin: 2px 0 8px; }
+.dxfa { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.dxfa-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.dxfa-title { font-weight: 700; font-size: 13px; }
+.dxfa-modes { display: flex; border: 1px solid var(--border-color); border-radius: 6px; overflow: hidden; flex-wrap: wrap; }
+.dxfa-mode { min-height: 32px; padding: 0 12px; border: 0; border-left: 1px solid var(--border-color); background: var(--bg-primary); color: var(--text-primary); font: inherit; font-size: 12.5px; cursor: pointer; }
+.dxfa-mode:first-child { border-left: 0; }
+.dxfa-mode:hover { background: var(--bg-tertiary); }
+.dxfa-mode.on { background: var(--accent); color: #fff; font-weight: 600; }
+.dxfa-mode:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.dxfa-strays { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px; font-size: 12.5px; line-height: 1.45;
+  background: #fff7e6; color: #7a3d00; border: 1px solid #f5c26b; }
+body.dark-mode .dxfa-strays { background: #45300f; color: #ffd8a1; border-color: #8a5a17; }
+.dxfa-strays span { flex: 1; }
+.dxfa-link { border: 0; background: none; padding: 4px 2px; color: var(--accent); font: inherit; font-size: 12.5px; text-decoration: underline; cursor: pointer; white-space: nowrap; }
+.dxfa-stage { position: relative; height: 380px; border: 1px solid var(--border-color); border-radius: 8px; overflow: hidden; background: var(--bg-primary); }
+.dxfa-canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+.dxfa-zoom { position: absolute; top: 8px; right: 8px; display: flex; flex-direction: column; gap: 4px; }
+.dxfa-zoom button { width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; border: 1px solid var(--border-color); border-radius: 6px;
+  background: var(--bg-primary); color: var(--text-primary); font-size: 16px; cursor: pointer; }
+.dxfa-hint { font-size: 12px; color: var(--text-secondary); line-height: 1.45; }
+.dxfa-keep { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 8px; background: var(--bg-tertiary); }
+.dxfa-keep b { font-size: 13px; }
+.dxfa-keep small { font-size: 12px; color: var(--text-secondary); }
+.dxfa-bar { height: 6px; border-radius: 3px; background: var(--border-color); overflow: hidden; }
+.dxfa-bar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .15s; }
+@media (max-width: 640px) { .dxfa-stage { height: 280px; } }
+.dxfi-form [hidden], .dxfa [hidden] { display: none !important; }
+.dxfi-preview .dxfa-canvas { height: 100%; border: 0; border-radius: 0; }

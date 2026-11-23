@@ -30,6 +30,7 @@ const PlanDxfImport = {
   _data: new Map(),     // imageId (or session key) → normalised drawing
   _pending: new Set(),  // imageId currently fetching
   _cache: new Map(),    // descriptor id → render/snap cache
+  _views: new Map(),    // descriptor id → { raw, sig, data }: the drawing clipped to its area (`desc.clip`)
 
   // ─── Descriptors on the active floor ───
   list() {
@@ -38,7 +39,18 @@ const PlanDxfImport = {
     return pm.dxfs;
   },
   byId(id) { return this.list().find(d => d.id === id) || null; },
-  dataOf(desc) { return desc ? (this._data.get(this._key(desc)) || null) : null; },
+  // The drawing as every tool sees it: clipped to the DXF's area to import (`desc.clip`, PlanDxfArea) when it has one.
+  // The parts outside stay in the stored drawing (`fullDataOf`) unless they were dropped at import.
+  dataOf(desc) {
+    const raw = this.fullDataOf(desc);
+    if (!raw || !desc.clip || !desc.clip.pts || desc.clip.dropped || typeof PlanDxfArea === 'undefined') return raw;
+    const sig = this._clipSig(desc);
+    let v = this._views.get(desc.id);
+    if (!v || v.raw !== raw || v.sig !== sig) { v = { raw, sig, data: PlanDxfArea.clipData(raw, desc.clip) }; this._views.set(desc.id, v); }
+    return v.data;
+  },
+  fullDataOf(desc) { return desc ? (this._data.get(this._key(desc)) || null) : null; },
+  _clipSig(desc) { const c = desc.clip; return c && c.pts ? (c.edge || 'cut') + (c.dropped ? 'D' : '') + ':' + c.pts.map(q => q[0] + ',' + q[1]).join(';') : ''; },
   _key(desc) { return desc.imageId != null ? desc.imageId : 'session:' + desc.id; },
   anyVisible() { return this.list().some(d => !d.hidden && this.dataOf(d)); },
 
@@ -248,6 +260,11 @@ const PlanDxfImport = {
     // missing or wrong, and a drawing drawn at paper size needs its 1 : N.
     const pick = await this.askImport(data, name);
     if (!pick) return;   // cancelled
+    // The area to import: kept on the descriptor (the parts outside stay stored, hidden) or, when asked, the stored
+    // drawing itself becomes the clipped copy.
+    const clip = pick.clip ? { pts: pick.clip.pts, edge: pick.clip.edge, mode: pick.clip.mode } : null;
+    const view = clip ? PlanDxfArea.clipData(data, clip) : data;
+    if (clip && pick.drop) { data = view; clip.dropped = true; }
     const unitM = pick.unitM;
     const guessed = !(data.units && data.units.m) || Math.abs(pick.unitBase - data.units.m) > 1e-12;
     // A layer off/frozen in the source file starts hidden here too — but a
@@ -266,11 +283,12 @@ const PlanDxfImport = {
       }
     }
     const desc = {
-      id: AppState.planGenId('pmdxf'), imageId: null, name, count: data.count || 0,
-      unitM, unitBase: pick.unitBase, drawScale: pick.drawScale, unitsGuessed: guessed, origin: data.origin || [0, 0], bbox: data.bbox,
+      id: AppState.planGenId('pmdxf'), imageId: null, name, count: view.count || 0,
+      unitM, unitBase: pick.unitBase, drawScale: pick.drawScale, unitsGuessed: guessed, origin: data.origin || [0, 0], bbox: view.bbox,
       k: 1, offX: 0, offY: 0, rotation: 0, scaleAdj: 1,
-      hidden: false, opacity: 1, colorMode: 'file', layers, converted: [],
+      hidden: false, opacity: 1, colorMode: 'file', layers, converted: [], lineweights: pick.lineweights !== false,
     };
+    if (clip) desc.clip = clip;
     const placedHow = this._place(desc, { centre: pick.place === 'centre' });
 
     // Persist the parsed drawing. A failed upload still leaves a usable
@@ -285,9 +303,13 @@ const PlanDxfImport = {
     }
     // The original file too: the plan's DXF export merges it exactly (its linetypes, text styles, hatches). Best effort — without it
     // the export rebuilds the drawing from the parsed copy.
-    if (file && stored) { try { desc.srcId = (await this._uploadSrc(file, name)).id; } catch (e) { /* the parsed copy still exports */ } }
+    if (file && stored && !(clip && clip.dropped)) { try { desc.srcId = (await this._uploadSrc(file, name)).id; } catch (e) { /* the parsed copy still exports */ } }
     this._data.set(this._key(desc), data);
     this.list().push(desc);
+    if (clip && pick.work && typeof PlanWorkArea !== 'undefined') {
+      AppState.planMarkup.workArea = { points: clip.pts.map(([x, y]) => this.worldOf(desc, x, y)) };
+      if (typeof PlanRoomDetect !== 'undefined') PlanRoomDetect._cands = null;
+    }
     if (typeof PlanMarkup !== 'undefined') {
       PlanMarkup.snapshot(); PlanMarkup.markDirty();
       if (PlanMarkup.updateScaleReadout) PlanMarkup.updateScaleReadout();
@@ -296,7 +318,8 @@ const PlanDxfImport = {
     if (typeof PlanUI !== 'undefined') PlanUI.renderPalette();
     if (typeof PlanEngine !== 'undefined') { PlanEngine.zoomFit(); PlanEngine.requestDraw({ all: true }); }
     const nb = Object.keys(data.blocks).length;
-    const msg = [`Imported "${name}": ${data.entities.length} entities, ${data.inserts.length} block references (${nb} blocks), ${data.layers.length} layers.`];
+    const msg = [`Imported "${name}": ${view.entities.length} entities, ${view.inserts.length} block references (${nb} blocks), ${data.layers.length} layers.`];
+    if (clip) msg.push(clip.dropped ? 'The parts outside the area were left out.' : 'The parts outside the area are kept, hidden — Underlays › Area to import… changes it.');
     if (placedHow) msg.push(placedHow);
     if (data.truncated) msg.push('The drawing is very large — only the first part was read.');
     if (!stored) msg.push('It could not be saved to the server — it will be lost on reload.');
@@ -398,7 +421,9 @@ const PlanDxfImport = {
     const hiddenN = hidden.reduce((n, l) => n + (l.n || 0), 0);
     const fmt = (m) => m >= 1000 ? (m / 1000).toFixed(2) + ' km' : m >= 10 ? m.toFixed(1) + ' m' : m >= 1 ? m.toFixed(2) + ' m' : Math.round(m * 1000) + ' mm';
     const unitName = (v) => (this.UNITS.find(u => Math.abs(u[0] - v) < 1e-12) || [0, `${v} m`])[1].toLowerCase();
-    const counts = `${(data.entities || []).length} items · ${(data.inserts || []).length} block references · ${(data.layers || []).length} layers`;
+    const counts = `${(data.entities || []).length.toLocaleString()} items · ${(data.inserts || []).length.toLocaleString()} block references · ${(data.layers || []).length} layers`;
+    const area = !cur && typeof PlanDxfArea !== 'undefined';   // a new import picks the area to import first
+    const weighted = (data.layers || []).some(l => l.w != null) || (data.entities || []).some(e => e.w != null) || (data.inserts || []).some(i => i.w != null);
     return new Promise((resolve) => {
       const ov = document.createElement('div');
       ov.className = 'modal plan-floor-modal';
@@ -410,15 +435,15 @@ const PlanDxfImport = {
         ? `The file says ${escHtml(unitName(fileM))}${fileCode ? ` ($INSUNITS = ${fileCode})` : ''}. Change it only if you know the file is wrong.`
         : `The file doesn't say what unit it is drawn in — ${escHtml(unitName(guess))} is a guess from its size.`;
       ov.innerHTML = `
-        <div class="modal-content dxfi-content">
+        <div class="modal-content dxfi-content${area ? ' dxfi-wide' : ''}">
           <div class="modal-header"><div><h3 id="dxfi-title">${cur ? 'Units and scale of' : 'Import'} ${escHtml(name)}</h3><small class="dxfi-sub">${counts}</small></div>
             <button type="button" class="modal-close" data-role="cancel" aria-label="Close">&times;</button></div>
           <div class="dxfi-body">
-            <div class="dxfi-preview">
-              <canvas width="340" height="230" aria-hidden="true"></canvas>
+            <div class="dxfi-preview${area ? ' dxfi-areawrap' : ''}">
+              ${area ? '<div class="dxfa" data-role="areahost"></div>' : '<canvas width="340" height="230" aria-hidden="true"></canvas>'}
               <div class="dxfi-size" aria-live="polite"><span>Lands at</span><b data-role="size"></b></div>
               <div class="dxfi-verdict" data-role="verdict"></div>
-              <small>Extents in the file: ${Math.round(spanW).toLocaleString()} × ${Math.round(spanH).toLocaleString()} drawing units. The size is units × scale.</small>
+              ${area ? '' : `<small>Extents in the file: ${Math.round(spanW).toLocaleString()} × ${Math.round(spanH).toLocaleString()} drawing units. The size is units × scale.</small>`}
             </div>
             <div class="dxfi-form">
               <fieldset><legend>1 · One drawing unit is</legend>
@@ -431,8 +456,14 @@ const PlanDxfImport = {
               ${cur ? '' : `<fieldset><legend>3 · Place it</legend>
                 ${sib ? `<label class="dxfi-radio"><input type="radio" name="dxfi-place" value="grid" checked> <span>In the same coordinates as <b>${escHtml(sib.name)}</b><small>When both files share a coordinate grid</small></span></label>` : ''}
                 <label class="dxfi-radio"><input type="radio" name="dxfi-place" value="centre"${sib ? '' : ' checked'}> <span>Centred on this floor</span></label></fieldset>
+              ${area ? `<fieldset data-role="areaopts" hidden><legend>4 · Outside the area</legend>
+                <label class="dxfi-radio"><input type="radio" name="dxfi-edge" value="cut" checked> <span>Cut items at the edge<small>Lines and polylines stop at the boundary</small></span></label>
+                <label class="dxfi-radio"><input type="radio" name="dxfi-edge" value="whole"> <span>Keep items that cross it whole<small>Anything that reaches inside is kept complete</small></span></label>
+                <label class="dxfi-radio"><input type="checkbox" data-role="work" checked> <span>Also make it the working area<small>Detection and conversion stay inside it</small></span></label>
+                <label class="dxfi-radio"><input type="checkbox" data-role="drop"> <span>Drop the parts outside from the saved drawing<small>Makes the project smaller. Left unticked, they are kept but hidden, and Underlays › Area to import… can widen the area later; once dropped, the area can only be made smaller.</small></span></label></fieldset>` : ''}
               <div class="dxfi-checks">
-                <label class="dxfi-radio"><input type="checkbox" data-role="area"> <span>Set a working area after import<small>Draw a rectangle round the development; the rest of the drawing is ignored by detection and conversion</small></span></label>
+                <label class="dxfi-radio"><input type="checkbox" data-role="lw" checked> <span>Show line weights<small>${weighted ? 'Thick and thin lines as drawn in the file' : 'The file sets no line weights: every line is drawn thin'}. Can be switched off later in Underlays.</small></span></label>
+                <label class="dxfi-radio" data-role="areaold"><input type="checkbox" data-role="area"> <span>Set a working area after import<small>Draw a rectangle round the development; the rest of the drawing is ignored by detection and conversion</small></span></label>
                 <label class="dxfi-radio"><input type="checkbox" data-role="check"> <span>Check against a known length after import<small>Click two points and type the real distance; the DXF is corrected to match</small></span></label>
                 ${hidden.length ? `<label class="dxfi-radio"><input type="checkbox" data-role="showall"> <span>Show every layer<small>${hidden.length} layer${hidden.length > 1 ? 's' : ''}${total ? ` (${Math.round(hiddenN / total * 100)} % of the drawing)` : ''} are off or frozen in the file</small></span></label>` : ''}
               </div>`}
@@ -447,31 +478,44 @@ const PlanDxfImport = {
       if (!this.SCALES.includes(scale)) custom.value = Math.round(scale * 1000) / 1000;
       const sizeEl = ov.querySelector('[data-role="size"]'), verdict = ov.querySelector('[data-role="verdict"]');
       const okBtn = ov.querySelector('[data-role="ok"]');
-      const cv = ov.querySelector('canvas');
-      this._drawPreview(cv, data);
+      let picker = null;
+      if (area) {
+        picker = PlanDxfArea.mount(ov.querySelector('[data-role="areahost"]'), data, { unitM: () => unit * scale, fmt, onChange: () => refresh() });
+      } else this._drawPreview(ov.querySelector('canvas'), data);
       const refresh = () => {
         ov.querySelectorAll('[data-unit]').forEach(b => { const on = Math.abs(+b.dataset.unit - unit) < 1e-12; b.classList.toggle('on', on); b.setAttribute('aria-pressed', on); });
         const isCustom = !this.SCALES.includes(scale);
         ov.querySelectorAll('[data-scale]').forEach(b => { const on = !isCustom && +b.dataset.scale === scale; b.classList.toggle('on', on); b.setAttribute('aria-pressed', on); });
         ov.querySelector('.dxfi-custom').classList.toggle('on', isCustom);
-        const w = spanW * unit * scale, h = spanH * unit * scale;
+        const ab = picker ? picker.bounds() : data.bbox, pg = picker ? picker.get() : { ok: true, pts: null };
+        const w = (ab[2] - ab[0]) * unit * scale, h = (ab[3] - ab[1]) * unit * scale;
         sizeEl.textContent = `${fmt(w)} × ${fmt(h)}`;
+        if (picker) {
+          ov.querySelector('[data-role="areaopts"]').hidden = !pg.pts;
+          const old = ov.querySelector('[data-role="areaold"]'); if (old) old.hidden = !!pg.pts;
+        }
         const lo = building ? 3 : 10, hi = building ? 600 : 20000;
         const big = Math.max(w, h);
         let cls = 'ok', msg = building ? 'About the size of a building floor plan.' : 'About the size of a site plan.';
         if (big > hi) { cls = 'warn'; msg = `That's ${fmt(big)} across — too big for a ${building ? 'floor' : 'site'} plan. Check the units, or whether it really is at 1 : ${scale}.`; }
         else if (big < lo) { cls = 'warn'; msg = `That's only ${fmt(big)} across. The file may be drawn at paper size: try 1 : 100 or 1 : 50.`; }
         verdict.className = 'dxfi-verdict ' + cls; verdict.textContent = msg;
-        okBtn.textContent = cur ? 'Apply' : `Import at ${fmt(w)} × ${fmt(h)}`;
+        okBtn.disabled = !pg.ok;
+        okBtn.textContent = cur ? 'Apply' : !pg.ok ? 'Close the outline to import' : pg.pts ? `Import the area · ${fmt(w)} × ${fmt(h)}` : `Import at ${fmt(w)} × ${fmt(h)}`;
       };
       refresh();
-      const done = (v) => { document.removeEventListener('keydown', onKey, true); ov.remove(); resolve(v); };
+      const done = (v) => { document.removeEventListener('keydown', onKey, true); if (picker) picker.destroy(); ov.remove(); resolve(v); };
       const result = () => {
         const place = (ov.querySelector('input[name="dxfi-place"]:checked') || {}).value || 'centre';
         const ck = ov.querySelector('[data-role="check"]'), sa = ov.querySelector('[data-role="showall"]');
-        return { unitM: unit * scale, unitBase: unit, drawScale: scale, place, checkLength: !!(ck && ck.checked), area: !!(ov.querySelector('[data-role="area"]') || {}).checked, showAll: !!(sa && sa.checked) };
+        const pg = picker ? picker.get() : null, chk = (r) => !!(ov.querySelector(`[data-role="${r}"]`) || {}).checked;
+        const clip = pg && pg.pts ? { pts: pg.pts, edge: (ov.querySelector('input[name="dxfi-edge"]:checked') || {}).value || 'cut', mode: pg.mode } : null;
+        return { unitM: unit * scale, unitBase: unit, drawScale: scale, place, checkLength: !!(ck && ck.checked), area: !clip && chk('area'), showAll: !!(sa && sa.checked),
+          clip, work: !!clip && chk('work'), drop: !!clip && chk('drop'), lineweights: cur ? undefined : chk('lw') };
       };
       const onKey = (e) => {
+        if (picker && !(e.target && /^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) && picker.key(e)) { e.preventDefault(); e.stopPropagation(); return; }
+        if (e.key === 'Enter' && okBtn.disabled) { e.preventDefault(); return; }
         if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); done(null); }
         else if (e.key === 'Enter' && e.target.tagName !== 'BUTTON') { e.preventDefault(); done(result()); }
       };
@@ -531,6 +575,107 @@ const PlanDxfImport = {
     if (typeof PlanMarkup !== 'undefined') { PlanMarkup.snapshot(); PlanMarkup.markDirty(); PlanMarkup.updateScaleReadout(); }
     if (typeof PlanUI !== 'undefined') { PlanUI.renderPalette(); PlanUI.renderProps(); }
     if (typeof PlanEngine !== 'undefined') PlanEngine.requestDraw({ all: true });
+  },
+
+  // Underlays › Area to import…: change the part of a placed DXF that is shown and used. The parts outside are still
+  // in the stored drawing unless they were dropped, so the area can be widened again.
+  async changeArea(desc) {
+    const full = this.fullDataOf(desc);
+    if (!full || typeof PlanDxfArea === 'undefined') return;
+    const r = await this._askArea(desc, full);
+    if (!r) return;
+    const wasDropped = !!(desc.clip && desc.clip.dropped);
+    if (!r.pts) delete desc.clip;
+    else desc.clip = { pts: r.pts, edge: r.edge, mode: r.mode };
+    let note = '';
+    if (r.pts && r.drop) {
+      const v = PlanDxfArea.clipData(full, desc.clip);
+      try {
+        const meta = await this._upload(v, desc.name);
+        const keep = Object.assign({}, v); delete keep._layerMap;
+        desc.imageId = meta.id; desc.srcId = null; desc.clip.dropped = true;
+        this._data.set(this._key(desc), keep);
+        note = 'The parts outside the area were dropped from the saved drawing.';
+      } catch (e) { note = 'The parts outside could not be dropped (the drawing could not be saved) — they are kept, hidden.'; }
+    }
+    const view = this.dataOf(desc);
+    desc.bbox = view.bbox; desc.count = view.count || 0;
+    if (r.pts && r.work) AppState.planMarkup.workArea = { points: r.pts.map(([x, y]) => this.worldOf(desc, x, y)) };
+    if (typeof PlanRoomDetect !== 'undefined') PlanRoomDetect._cands = null;
+    this._views.delete(desc.id);
+    this.invalidate(desc);
+    if (typeof PlanMarkup !== 'undefined') { PlanMarkup.snapshot(); PlanMarkup.markDirty(); }
+    if (typeof PlanUI !== 'undefined') { PlanUI.renderPalette(); PlanUI.renderProps(); }
+    if (typeof PlanEngine !== 'undefined') PlanEngine.requestDraw({ all: true });
+    UI.toast(note || (r.pts ? `Showing the area: ${view.count.toLocaleString()} items.` : (wasDropped ? 'Showing everything that was kept at import.' : 'Showing the whole drawing.')), 'success', 5000);
+  },
+
+  _askArea(desc, full) {
+    const fmt = (m) => m >= 1000 ? (m / 1000).toFixed(2) + ' km' : m >= 10 ? m.toFixed(1) + ' m' : m >= 1 ? m.toFixed(2) + ' m' : Math.round(m * 1000) + ' mm';
+    const c = desc.clip, dropped = !!(c && c.dropped);
+    return new Promise((resolve) => {
+      const ov = document.createElement('div');
+      ov.className = 'modal plan-floor-modal';
+      ov.style.display = 'flex'; ov.style.zIndex = '3000';
+      ov.setAttribute('role', 'dialog'); ov.setAttribute('aria-modal', 'true'); ov.setAttribute('aria-labelledby', 'dxfar-title');
+      ov.innerHTML = `
+        <div class="modal-content dxfi-content dxfi-wide">
+          <div class="modal-header"><div><h3 id="dxfar-title">Area to import · ${escHtml(desc.name)}</h3>
+            <small class="dxfi-sub">${dropped ? 'The parts outside the area were dropped at import: the area can be made smaller, not wider.' : 'The parts outside the area are kept in the drawing, only hidden.'}</small></div>
+            <button type="button" class="modal-close" data-role="cancel" aria-label="Close">&times;</button></div>
+          <div class="dxfi-body">
+            <div class="dxfi-preview dxfi-areawrap"><div class="dxfa" data-role="areahost"></div></div>
+            <div class="dxfi-form">
+              <fieldset data-role="areaopts"><legend>Outside the area</legend>
+                <label class="dxfi-radio"><input type="radio" name="dxfar-edge" value="cut"${c && c.edge === 'whole' ? '' : ' checked'}> <span>Cut items at the edge<small>Lines and polylines stop at the boundary</small></span></label>
+                <label class="dxfi-radio"><input type="radio" name="dxfar-edge" value="whole"${c && c.edge === 'whole' ? ' checked' : ''}> <span>Keep items that cross it whole<small>Anything that reaches inside is kept complete</small></span></label>
+                <label class="dxfi-radio"><input type="checkbox" data-role="work"> <span>Also make it the working area<small>Detection and conversion stay inside it</small></span></label>
+                <label class="dxfi-radio"><input type="checkbox" data-role="drop"> <span>Drop the parts outside from the saved drawing<small>Makes the project smaller; the area can then only be made smaller.</small></span></label>
+              </fieldset>
+              <small class="dxfi-note">Items already converted to plan items stay on the plan.</small>
+            </div>
+          </div>
+          <div class="ui-dialog-actions dxfi-actions">
+            <button type="button" class="btn-small" data-role="cancel">Cancel</button>
+            <button type="button" class="btn-primary" data-role="ok">Apply</button>
+          </div>
+        </div>`;
+      const okBtn = ov.querySelector('[data-role="ok"]');
+      const refresh = () => {
+        const g = picker.get();
+        okBtn.disabled = !g.ok;
+        okBtn.textContent = g.ok ? 'Apply' : 'Close the outline first';
+        ov.querySelector('[data-role="areaopts"]').hidden = !g.pts;
+      };
+      const picker = PlanDxfArea.mount(ov.querySelector('[data-role="areahost"]'), full, {
+        clip: c, autoMain: false, unitM: () => desc.unitM || 1, fmt, onChange: () => refresh(),
+      });
+      const done = (v) => { document.removeEventListener('keydown', onKey, true); picker.destroy(); ov.remove(); resolve(v); };
+      const result = () => {
+        const g = picker.get(), chk = (r) => !!(ov.querySelector(`[data-role="${r}"]`) || {}).checked;
+        return { pts: g.pts, mode: g.mode, edge: (ov.querySelector('input[name="dxfar-edge"]:checked') || {}).value || 'cut', work: !!g.pts && chk('work'), drop: !!g.pts && chk('drop') };
+      };
+      const onKey = (e) => {
+        if (!(e.target && /^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) && picker.key(e)) { e.preventDefault(); e.stopPropagation(); return; }
+        if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); done(null); }
+        else if (e.key === 'Enter' && e.target.tagName !== 'BUTTON') { e.preventDefault(); if (!okBtn.disabled) done(result()); }
+      };
+      document.addEventListener('keydown', onKey, true);
+      ov.addEventListener('click', (e) => {
+        const r = e.target.closest('[data-role]'); const role = r && r.dataset.role;
+        if (role === 'ok' && !okBtn.disabled) done(result());
+        else if (role === 'cancel' || e.target === ov) done(null);
+      });
+      document.body.appendChild(ov);
+      refresh();
+    });
+  },
+
+  // Line weights on or off for one DXF (Underlays).
+  setLineweights(desc, on) {
+    desc.lineweights = !!on;
+    if (typeof PlanMarkup !== 'undefined') { PlanMarkup.snapshot(); PlanMarkup.markDirty(); }
+    this._redraw();
   },
 
   // Change a DXF's units after import. When the floor's scale came from this
@@ -632,7 +777,7 @@ const PlanDxfImport = {
   },
 
   async _upload(data, name, orphan) {
-    const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
+    const blob = new Blob([JSON.stringify(data, (k, v) => (k === '_layerMap' ? undefined : v))], { type: 'application/json' });
     const fd = new FormData();
     fd.append('file', new File([blob], (name || 'dxf') + '.json', { type: 'application/json' }));
     fd.append('kind', 'dxf');
@@ -850,7 +995,11 @@ const PlanDxfImport = {
   layerHidden(desc, name) { const st = desc.layers && desc.layers[name]; return !!(st && st.hidden); },
 
   // ─── Render cache ───
-  _convSig(desc) { return (desc.converted || []).length; },
+  _convSig(desc) { return (desc.converted || []).length + '|' + this._clipSig(desc); },
+  _cacheOf(desc, data) {
+    const c = this._cache.get(desc.id);
+    return c && c.convSig === this._convSig(desc) && c.data === data ? c : this._buildCache(desc, data);
+  },
 
   _buildCache(desc, data) {
     const conv = new Set(desc.converted || []);
@@ -864,16 +1013,16 @@ const PlanDxfImport = {
     const c = {
       groups: [...groups.values()], texts,
       inserts: data.inserts.filter(i => !conv.has(i.h)),
-      blocks: new Map(), convSig: this._convSig(desc), snap: null,
+      blocks: new Map(), convSig: this._convSig(desc), snap: null, data,
     };
     this._cache.set(desc.id, c);
     return c;
   },
 
   _addToGroups(groups, r) {
-    const key = r.l + '|' + (r.k || '');
+    const key = r.l + '|' + (r.k || '') + '|' + (r.w == null ? '' : r.w);
     let g = groups.get(key);
-    if (!g) { g = { layer: r.l, k: r.k || null, path: new Path2D() }; groups.set(key, g); }
+    if (!g) { g = { layer: r.l, k: r.k || null, w: r.w == null ? null : r.w, path: new Path2D() }; groups.set(key, g); }
     const P = g.path, p = r.p;
     switch (r.t) {
       case 'l': P.moveTo(p[0], p[1]); P.lineTo(p[2], p[3]); break;
@@ -925,7 +1074,7 @@ const PlanDxfImport = {
   },
 
   _drawOne(ctx, zoom, desc, data, th, viewRect) {
-    const c = this._cache.get(desc.id) || this._buildCache(desc, data);
+    const c = this._cacheOf(desc, data);
     const ppu = this._pxPerUnit(desc);          // plan px per drawing unit
     const unitPx = zoom * ppu;                  // screen px per drawing unit
     const mono = desc.colorMode === 'mono';
@@ -955,13 +1104,20 @@ const PlanDxfImport = {
     if (desc.rotation) ctx.rotate(desc.rotation * Math.PI / 180);
     ctx.scale(ppu, -ppu);                         // drawing units, Y up
     ctx.lineJoin = 'round'; ctx.lineCap = 'round';
-    const lw = 0.9 / unitPx;
+    // The area to import, when its edge cuts: circles, arcs, blocks and hatches that reach inside are drawn clipped too.
+    const cl = desc.clip;
+    if (cl && cl.pts && cl.pts.length >= 3 && cl.edge !== 'whole') {
+      ctx.beginPath(); ctx.moveTo(cl.pts[0][0], cl.pts[0][1]);
+      for (let i = 1; i < cl.pts.length; i++) ctx.lineTo(cl.pts[i][0], cl.pts[i][1]);
+      ctx.closePath(); ctx.clip();
+    }
+    const weightFor = this._weightFn(desc, data);
 
-    // Model-space geometry, one stroke per layer/colour group.
-    ctx.lineWidth = lw;
+    // Model-space geometry, one stroke per layer/colour/weight group.
     for (const g of c.groups) {
       if (this.layerHidden(desc, g.layer)) continue;
       ctx.strokeStyle = colorFor(g.layer, g.k, null, null);
+      ctx.lineWidth = this._lwPx(desc, weightFor(g.w, g.layer, null)) / unitPx;
       ctx.stroke(g.path);
     }
     // Model-space text (skipped when too small to read).
@@ -981,7 +1137,7 @@ const PlanDxfImport = {
       if (lv && (ins.p[0] + R < lv.x0 || ins.p[0] - R > lv.x1 || ins.p[1] + R < lv.y0 || ins.p[1] - R > lv.y1)) continue;
       if (R * unitPx >= 1) {
         const col = ins.k && ins.k !== 'B' ? (mono ? monoCol : this._legible(ins.k, th)) : colorFor(ins.l, null, null, null);
-        this._drawBlock(ctx, c, data, desc, b, ins, ins.l, col, unitPx, colorFor, 0);
+        this._drawBlock(ctx, c, data, desc, b, ins, ins.l, col, unitPx, colorFor, 0, weightFor, weightFor(ins.w, ins.l, null));
       }
       // Visible attribute values (already in model-space coords).
       if (ins.at) {
@@ -995,7 +1151,19 @@ const PlanDxfImport = {
     ctx.restore();
   },
 
-  _drawBlock(ctx, c, data, desc, b, ins, inhLayer, inhCol, unitPx, colorFor, depth) {
+  // Line weights (hundredths of a mm): an entity's own, ByBlock = the block reference's, ByLayer = its layer's, else the
+  // drawing's default (0.25 mm). Drawn like AutoCAD's LWDISPLAY: a fixed width on screen, whatever the zoom.
+  _weightFn(desc, data) {
+    const map = this._layerMap(data), def = data.lwDefault != null ? data.lwDefault : 25;
+    return (w, layer, inhW) => {
+      let v = w === 'B' ? inhW : w;
+      if (v == null || v === 'B') { const ly = map.get(layer); v = ly && ly.w != null ? ly.w : def; }
+      return v;
+    };
+  },
+  _lwPx(desc, h) { return desc.lineweights === false ? 0.9 : Math.max(0.9, h * 0.0378); },   // 1 mm = 3.78 screen px
+
+  _drawBlock(ctx, c, data, desc, b, ins, inhLayer, inhCol, unitPx, colorFor, depth, weightFor, inhW) {
     if (depth > 8) return;
     const sx = ins.sx || 1, sy = ins.sy || 1;
     const scale = Math.sqrt(Math.abs(sx * sy)) || 1;
@@ -1005,11 +1173,11 @@ const PlanDxfImport = {
     ctx.scale(sx, sy);
     ctx.translate(-b.bp[0], -b.bp[1]);
     const up = unitPx * scale;
-    ctx.lineWidth = 0.9 / up;
     for (const g of b.groups) {
       const lay = g.layer === '0' ? inhLayer : g.layer;
       if (g.layer !== '0' && this.layerHidden(desc, g.layer)) continue;
       ctx.strokeStyle = colorFor(lay, g.k, inhLayer, inhCol);
+      ctx.lineWidth = this._lwPx(desc, weightFor(g.w, lay, inhW)) / up;
       ctx.stroke(g.path);
     }
     for (const t of b.texts) {
@@ -1024,7 +1192,7 @@ const PlanDxfImport = {
       const lay = n.l === '0' ? inhLayer : n.l;
       if (n.l !== '0' && this.layerHidden(desc, n.l)) continue;
       const col = n.k === 'B' ? inhCol : colorFor(lay, n.k || null, inhLayer, inhCol);
-      this._drawBlock(ctx, c, data, desc, nb, n, lay, col, up, colorFor, depth + 1);
+      this._drawBlock(ctx, c, data, desc, nb, n, lay, col, up, colorFor, depth + 1, weightFor, weightFor(n.w, lay, inhW));
     }
     ctx.restore();
   },
@@ -1052,7 +1220,7 @@ const PlanDxfImport = {
   // line/polyline end + mid points, polyline vertices, circle/arc centres and
   // arc ends, points, and block insertion points.
   _snapIndex(desc, data) {
-    const c = this._cache.get(desc.id) || this._buildCache(desc, data);
+    const c = this._cacheOf(desc, data);
     if (c.snap) return c.snap;
     const xs = [], ys = [], ls = [], ks = [];
     const add = (x, y, l, k) => { xs.push(x); ys.push(y); ls.push(l); ks.push(k); };

@@ -387,14 +387,24 @@ def _bg_from_parsed(doc, msp, bg, idx, data, hidden, converted, colors, keep_box
                 ly.color = 7
             elif _hex_to_rgb(info.get("color") or ""):
                 ly.rgb = _hex_to_rgb(info["color"])
+            if isinstance(info.get("w"), int) and info["w"] >= 0:
+                ly.dxf.lineweight = info["w"]
         return new
 
     def col(r):
-        k = r.get("k")
+        k, w = r.get("k"), r.get("w")
+        out = {}
         if k == "B":
-            return {"color": 0}
-        rgb = _hex_to_rgb(k) if k else None
-        return {"true_color": ezdxf.rgb2int(rgb)} if rgb else {}
+            out["color"] = 0
+        else:
+            rgb = _hex_to_rgb(k) if k else None
+            if rgb:
+                out["true_color"] = ezdxf.rgb2int(rgb)
+        if w == "B":
+            out["lineweight"] = -2
+        elif isinstance(w, int) and w >= 0:
+            out["lineweight"] = w
+        return out
 
     def emit(lo, r, block_names):
         t, p = r.get("t"), r.get("p") or []
@@ -680,6 +690,17 @@ def _entity_color(e):
         return None
 
 
+def _entity_lineweight(e):
+    """Explicit entity line weight: hundredths of a mm (0–211), 'B' (ByBlock) or None (ByLayer / default)."""
+    try:
+        lw = int(e.dxf.get("lineweight", -1))
+    except Exception:
+        return None
+    if lw == -2:
+        return "B"
+    return lw if lw >= 0 else None
+
+
 def _layer_table(doc):
     from ezdxf.colors import aci2rgb
     out = {}
@@ -695,6 +716,12 @@ def _layer_table(doc):
             "on": not ly.is_off(), "frozen": bool(ly.is_frozen()),
             "n": 0,
         }
+        try:
+            lw = int(ly.dxf.get("lineweight", -3))
+        except Exception:
+            lw = -3
+        if lw >= 0:
+            out[name]["w"] = lw   # hundredths of a millimetre; absent = the drawing's default
     return out
 
 
@@ -769,7 +796,8 @@ class _Reader:
       {t:'x', p:[x,y], h, r, s, ha, va}             text (rotation deg CCW)
       {t:'o', p:[x,y]}                              point
       {t:'i', b, p:[x,y], r, sx, sy}                nested insert (blocks only)
-    Every record carries l (layer) and optionally k (colour: '#hex' | 'B').
+    Every record carries l (layer) and optionally k (colour: '#hex' | 'B') and w (line weight in
+    hundredths of a mm | 'B' = ByBlock; absent = ByLayer — the layer's w, else the file's `lwDefault`).
     Top-level model-space records also carry h (handle) and, for curves, g
     (source type) so they can be converted to routes later.
     """
@@ -828,6 +856,9 @@ class _Reader:
         k = _entity_color(e)
         if k:
             base["k"] = k
+        w = _entity_lineweight(e)
+        if w is not None:
+            base["w"] = w
         if top:
             try:
                 base["h"] = e.dxf.handle
@@ -985,6 +1016,9 @@ class _Reader:
         k = _entity_color(e)
         if k:
             rec["k"] = k
+        w = _entity_lineweight(e)
+        if w is not None:
+            rec["w"] = w
         if at:
             rec["at"] = at
         self._count()
@@ -1222,6 +1256,7 @@ def _parse_foreign(doc) -> Dict[str, Any]:
         "inserts": inserts,
         "entities": entities,
         "count": len(entities) + len(inserts),
+        "lwDefault": 25,   # AutoCAD's default line weight (0.25 mm); a DXF does not carry the setting
         "truncated": rd.truncated,
         "skipped": rd.skipped,
     }

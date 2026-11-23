@@ -475,8 +475,12 @@ const PlanUI = {
       const size = D.unitM ? `${fmt((bx1 - bx0) * D.unitM)} × ${fmt((by1 - by0) * D.unitM)}` : '—';
       html = `<div class="plan-props-kicker">DXF underlay</div><div class="plan-props-title">${escHtml(D.name)}</div>
         <dl class="plan-facts"><dt>Units</dt><dd>${escHtml(this._dxfUnitsText(D))}</dd><dt>Size</dt><dd>${size}</dd>
-        <dt>Contents</dt><dd>${D.count} items${data ? ` · ${data.layers.length} layers` : ''}</dd></dl>
+        <dt>Contents</dt><dd>${D.count} items${data ? ` · ${data.layers.length} layers` : ''}</dd>
+        <dt>Area</dt><dd>${!D.clip ? 'Whole drawing' : (D.clip.mode === 'poly' ? 'Outline' : 'Rectangle') + (D.clip.dropped ? ' · the rest dropped' : ' · the rest hidden')}</dd></dl>
         ${btn('units', 'Change units or scale…', data ? '' : ' disabled')}
+        ${btn('area', 'Area to import…', data ? '' : ' disabled')}
+        <div class="plan-props-sec">Display</div>
+        <label class="plan-props-check"><input type="checkbox" data-ul-lw${D.lineweights === false ? '' : ' checked'}> Show line weights</label>
         <div class="plan-props-sec">Position</div>
         <div class="plan-btn-row">${btn('move', 'Move')}${btn('align', 'Align 2 points')}</div>
         <div class="plan-props-sec">Layers &amp; blocks</div>
@@ -505,6 +509,7 @@ const PlanUI = {
       else if (act === 'move') PlanTools.set('nudgeplan', { dxfId: D.id });
       else if (act === 'align') PlanTools.set('align', { dxfId: D.id, keepScale: !!D.unitM });
       else if (act === 'units') PlanDxfImport.changeUnits(D);
+      else if (act === 'area') PlanDxfImport.changeArea(D);
       return;
     }
     const P = this._planById(u.id); if (!P) return;
@@ -1492,6 +1497,11 @@ const PlanUI = {
   },
 
   _onPropsChange(e) {
+    if (e.target.matches && e.target.matches('[data-ul-lw]')) {
+      const u = this._underlay, D = u && u.kind === 'dxf' && PlanDxfImport.byId(u.id);
+      if (D) PlanDxfImport.setLineweights(D, e.target.checked);
+      return;
+    }
     if (e.target.dataset && (e.target.dataset.xgSize || e.target.dataset.xgUse || e.target.dataset.xgSp)) { if (e.type === 'change') this._onCrossGroupField(e.target); return; }
     if (e.target.dataset && e.target.dataset.photo && e.target.closest('.pl-size, .plan-field-check') && typeof PhotoLib !== 'undefined') {
       PhotoLib.handleSizeEvent(e);      // redraws this panel through onChanged
