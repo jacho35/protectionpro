@@ -360,7 +360,7 @@
               <svg width="14" height="14" viewBox="0 0 16 16"><path d="M2 3h12M2 7h12M2 11h12" stroke="currentColor" stroke-width="1.3" fill="none"/><path d="M11 2l3 1.5L11 5M11 6l3 1.5L11 9M11 10l3 1.5L11 13" fill="currentColor" stroke="none"/></svg>
               Run All Studies
             </button>
-        <div class="toolbar-menu" id="menu-export"><button type="button" class="toolbar-menu-btn" aria-haspopup="menu">Output <svg width="8" height="8" viewBox="0 0 8 8" aria-hidden="true"><path d="M1 3l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.2"/></svg></button><div class="toolbar-menu-panel panel-right"><span class="dropdown-label">Reports</span><button id="btn-export-pdf" class="dropdown-item">Analysis Report (PDF)</button><button id="btn-export-calculations" class="dropdown-item">Detailed Calculations (PDF)</button><button id="btn-export-aflabels" class="dropdown-item">Arc Flash Labels (PDF)</button><button id="btn-export-template" class="dropdown-item">Report Templates…</button><div class="dropdown-divider"></div><span class="dropdown-label">Quantities</span><button id="btn-boq" class="dropdown-item" data-search-skip>Bill of Quantities…</button><button id="btn-cable-schedules" class="dropdown-item" data-search-skip>Cable Schedules…</button><button id="btn-meter-schedule" class="dropdown-item" data-search-skip>Meter Schedule…</button><button id="btn-rates" class="dropdown-item" data-search-skip>Rate Library…</button><div class="dropdown-divider"></div><span class="dropdown-label">Data</span><button id="btn-export-csv" class="dropdown-item">Results (CSV)</button><button id="btn-export-settings" class="dropdown-item">Settings Schedule (CSV)</button><button id="btn-export-json" class="dropdown-item">Project (JSON)</button><div class="dropdown-divider"></div><span class="dropdown-label">Drawing</span><button id="btn-export-diagram-pdf" class="dropdown-item">Diagram (PDF)</button><button id="btn-export-sheets" class="dropdown-item" title="The diagram as a set of sheets you arrange: buses per sheet, saved views, one scale, title blocks, off-page connectors and a key plan">Drawing set — sheets (PDF)…</button><button id="btn-export-selection" class="dropdown-item" title="The selected parts, or a window on the diagram, as a PDF sheet, PNG, SVG or DXF">Export selection…</button><button id="btn-print-window" class="dropdown-item" title="Drag an area on the diagram to print or save as a view">Draw print window…</button><button id="btn-export-png" class="dropdown-item">Diagram (PNG)</button><button id="btn-export-svg" class="dropdown-item">Diagram (SVG)</button><button id="btn-export-dxf" class="dropdown-item">Diagram (DXF)</button><button id="btn-export-breakers" class="dropdown-item" data-search-skip title="Applies to the diagram PDF, PNG, SVG, DXF, print and the report diagram">Breakers in drawings: as shown</button><button id="btn-export-detail" class="dropdown-item" data-search-skip title="How much data prints beside each symbol in the diagram PDF, PNG, SVG and DXF">Diagram detail: everything…</button><button id="btn-print" class="dropdown-item">
+        <div class="toolbar-menu" id="menu-export"><button type="button" class="toolbar-menu-btn" aria-haspopup="menu">Output <svg width="8" height="8" viewBox="0 0 8 8" aria-hidden="true"><path d="M1 3l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.2"/></svg></button><div class="toolbar-menu-panel panel-right"><span class="dropdown-label">Reports</span><button id="btn-export-pdf" class="dropdown-item">Analysis Report (PDF)</button><button id="btn-export-calculations" class="dropdown-item">Detailed Calculations (PDF)</button><button id="btn-export-aflabels" class="dropdown-item">Arc Flash Labels (PDF)</button><button id="btn-export-template" class="dropdown-item">Report Templates…</button><div class="dropdown-divider"></div><span class="dropdown-label">Quantities</span><button id="btn-boq" class="dropdown-item" data-search-skip>Bill of Quantities…</button><button id="btn-cable-schedules" class="dropdown-item" data-search-skip>Cable Schedules…</button><button id="btn-meter-schedule" class="dropdown-item" data-search-skip>Meter Schedule…</button><button id="btn-rates" class="dropdown-item" data-search-skip>Rate Library…</button><div class="dropdown-divider"></div><span class="dropdown-label">Data</span><button id="btn-export-csv" class="dropdown-item">Results (CSV)</button><button id="btn-export-settings" class="dropdown-item">Settings Schedule (CSV)</button><button id="btn-export-json" class="dropdown-item">Project (JSON)</button><div class="dropdown-divider"></div><span class="dropdown-label">Drawing</span><button id="btn-network-overview" class="dropdown-item" hidden title="Block diagram of the reticulation: MV, LV strings and kiosks, street-light circuits, and the fibre network">Network overview…</button><button id="btn-export-diagram-pdf" class="dropdown-item">Diagram (PDF)</button><button id="btn-export-sheets" class="dropdown-item" title="The diagram as a set of sheets you arrange: buses per sheet, saved views, one scale, title blocks, off-page connectors and a key plan">Drawing set — sheets (PDF)…</button><button id="btn-export-selection" class="dropdown-item" title="The selected parts, or a window on the diagram, as a PDF sheet, PNG, SVG or DXF">Export selection…</button><button id="btn-print-window" class="dropdown-item" title="Drag an area on the diagram to print or save as a view">Draw print window…</button><button id="btn-export-png" class="dropdown-item">Diagram (PNG)</button><button id="btn-export-svg" class="dropdown-item">Diagram (SVG)</button><button id="btn-export-dxf" class="dropdown-item">Diagram (DXF)</button><button id="btn-export-breakers" class="dropdown-item" data-search-skip title="Applies to the diagram PDF, PNG, SVG, DXF, print and the report diagram">Breakers in drawings: as shown</button><button id="btn-export-detail" class="dropdown-item" data-search-skip title="How much data prints beside each symbol in the diagram PDF, PNG, SVG and DXF">Diagram detail: everything…</button><button id="btn-print" class="dropdown-item">
               <svg width="14" height="14" viewBox="0 0 16 16"><path d="M4 2h8v3H4zM2 5h12v6H2zM4 11h8v3H4z" fill="none" stroke="currentColor" stroke-width="1.3"/><circle cx="11" cy="8" r="0.8" fill="currentColor"/></svg>
               Print / Page Layout
             </button></div></div>
@@ -1370,15 +1370,23 @@
     </div>
   </div>
 
-  <!-- Reticulation Topology Diagram Modal (populated by js/retic-diagram.js) -->
-  <div id="retic-diagram-modal" class="modal" role="dialog" aria-modal="true" aria-label="Reticulation Topology Diagram" style="display:none">
+  <!-- Network overview Modal (populated by js/retic-diagram.js; Fibre tab by js/fibre-diagram.js) -->
+  <div id="retic-diagram-modal" class="modal" role="dialog" aria-modal="true" aria-label="Network overview" style="display:none">
     <div class="modal-content modal-wide">
       <div class="modal-header">
-        <h3 id="rdg-title">Reticulation Topology — Volt Drop &amp; Connections</h3>
-        <button class="modal-close" data-rdg="close">&times;</button>
+        <h3 id="rdg-title">Network overview — Volt drop &amp; connections</h3>
+        <button class="modal-close" data-rdg="close" aria-label="Close">&times;</button>
       </div>
       <div class="modal-body">
         <div class="rdg-toolbar">
+          <div class="rdg-tabs" role="group" aria-label="Network">
+            <button type="button" data-rdg="tab-electrical" aria-pressed="true" title="Minisubs, kiosks, LV strings and the street-light circuits they feed">Electrical</button>
+            <button type="button" data-rdg="tab-fibre" aria-pressed="false" title="Fibre entry, backbone and manholes with their erf ducts and road crossings, from the plan">Fibre</button>
+          </div>
+          <div class="rdg-detail" role="group" aria-label="Detail">
+            <button type="button" data-rdg="detail-kiosks" aria-pressed="true" title="Every kiosk; each LV string on a band headed by its breaker">Kiosks</button>
+            <button type="button" data-rdg="detail-strings" aria-pressed="false" title="One box per LV string">Strings</button>
+          </div>
           <button class="retic-btn" data-rdg="zoom-out" title="Zoom out">&minus;</button>
           <span id="rdg-zoom-label" class="rdg-zoom">100%</span>
           <button class="retic-btn" data-rdg="zoom-in" title="Zoom in">+</button>
@@ -1398,7 +1406,8 @@
           <span class="rdg-spacer"></span>
           <button class="retic-btn" data-rdg="png" title="Download the diagram as a PNG image">PNG</button>
           <button class="retic-btn" data-rdg="svg" title="Download the diagram as a vector SVG">SVG</button>
-          <button class="retic-btn" data-rdg="dxf" title="Download the diagram as a DXF for CAD (mm) — minisubs, kiosks and RMUs as blocks with attributes">DXF</button>
+          <button class="retic-btn" data-rdg="dxf" title="Download the diagram as a DXF for CAD (mm) — minisubs, kiosks, strings, street-light circuits, RMUs and manholes as blocks with attributes">DXF</button>
+          <button class="retic-btn" data-rdg="pdf" title="Download the diagram on one landscape PDF page">PDF</button>
         </div>
         <div id="retic-diagram-canvas" class="rdg-scroll"></div>
         <div class="rdg-legend rdg-legend-fault" hidden>
@@ -1413,6 +1422,18 @@
           <span><i class="rdg-sw" style="background:#2563eb"></i>Blue</span>
           <span><i class="rdg-sw" style="background:#7c3aed"></i>3&Oslash; (three-phase erf)</span>
           <span class="rdg-note">Leg labels show that segment's volt drop; the pill on each kiosk is the cumulative drop from its minisub (green/red against the Max Feeder VD setting). Downstream figures include the kiosk itself — connection counts weight a three-phase erf as 3, matching the demand engine.</span>
+        </div>
+        <div class="rdg-legend rdg-legend-net">
+          <span><i class="rdg-sw rdg-sw-band"></i>LV string (band header: breaker, kiosks, erven, tapered)</span>
+          <span><i class="rdg-sw" style="background:#b45309"></i>Street-light circuit, off the kiosk or minisub that feeds it</span>
+          <span><i class="rdg-sw rdg-sw-out" style="border-color:#d32f2f"></i>Fails a check</span>
+          <span><i class="rdg-sw rdg-sw-out" style="border-color:#b45309"></i>Within 10 % of a limit</span>
+          <span class="rdg-note">Click a box to go to it.</span>
+        </div>
+        <div class="rdg-legend rdg-legend-fibre" hidden>
+          <span><i class="rdg-sw" style="background:#6d28d9"></i>Fibre backbone (trunk length on the line)</span>
+          <span><i class="rdg-sw rdg-sw-out" style="border-color:#b45309"></i>Trunk over the Auto layout's max distance between manholes, or not joined to the entry</span>
+          <span class="rdg-note">Read from the plan: manholes, Fibre Backbone and Fibre Drop routes. A road crossing is a duct crossing a drawn street centreline. Erf ducts are counted in their manhole, not drawn. Click a manhole to go to it on the plan.</span>
         </div>
       </div>
     </div>
@@ -3072,6 +3093,7 @@
   <script src="js/dbdrawing.js?v=1.577b"></script>
   <script src="js/ga.js?v=3.5.554"></script>
   <script src="js/retic-diagram.js?v=3.5.280"></script>
+  <script src="js/fibre-diagram.js?v=3.5.280"></script>
   <script src="js/retic-tcc.js?v=2.696"></script>
   <script src="js/retic-report.js?v=3.5.274"></script>
   <script src="js/plan-symbols.js?v=2.700"></script>

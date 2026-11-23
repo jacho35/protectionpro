@@ -1350,7 +1350,7 @@ const Retic = {
         <button class="retic-btn retic-mobile-only" data-action="toggle-summary" title="Show the minisub / network summary">▤ Summary</button>
         <button class="retic-btn" data-action="undo" title="${escHtml(UndoNames.title('Undo', this.undoLabel(), 'Ctrl+Z'))}">↶ Undo</button>
         <button class="retic-btn" data-action="redo" title="${escHtml(UndoNames.title('Redo', this.redoLabel(), 'Ctrl+Shift+Z'))}">Redo ↷</button>
-        <button class="retic-btn" data-action="diagram" title="Single-line view of the minisub → kiosk topology, with per-leg and cumulative volt drop and connection counts">◱ Diagram</button>
+        <button class="retic-btn" data-action="diagram" title="Network overview: block diagram of the MV, the LV strings and kiosks with volt drop and fault current, the street-light circuits, and the fibre network">◱ Network overview</button>
         <button class="retic-btn" data-action="report" title="Export demand + cable schedule">Export Report</button>
       </div>` + (this.kiosks.length ? `
       <div class="retic-selectall">

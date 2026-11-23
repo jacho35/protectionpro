@@ -140,12 +140,13 @@ const ReticReport = {
     if (dg) {
       doc.addPage();
       doc.setFontSize(12); doc.setFont('helvetica', 'bold');
-      doc.text('Network Topology — Volt Drop & Connections', margin, margin + 4);
+      doc.text('Network Overview — Volt Drop & Connections', margin, margin + 4);
       doc.setFontSize(8); doc.setFont('helvetica', 'normal');
       doc.text(
-        'Leg labels show that segment\'s volt drop; the pill on each kiosk is the cumulative drop from its minisub'
-        + ` (limit ${s.maxFeederVD}%). Downstream figures include the kiosk itself; connection counts weight a three-phase erf as 3.`,
-        margin, margin + 10);
+        'Each LV string is a band headed by its breaker; street-light circuits hang off the kiosk or minisub that feeds them.'
+        + ' Leg labels show that segment\'s volt drop; the pill on each kiosk is the cumulative drop from its minisub'
+        + ` (limit ${s.maxFeederVD}%; red outline over it, amber within 10 %). Downstream figures include the kiosk itself; connection counts weight a three-phase erf as 3.`,
+        margin, margin + 10, { maxWidth: doc.internal.pageSize.getWidth() - margin * 2 });
 
       const pageW = doc.internal.pageSize.getWidth();
       const pageH = doc.internal.pageSize.getHeight();
@@ -159,6 +160,14 @@ const ReticReport = {
       // 'FAST' = Flate; a flat-colour schematic compresses hard, and without it
       // the raster lands in the PDF near-raw (megabytes for one page).
       doc.addImage(dg.dataUrl, 'PNG', margin, top, imgW, imgH, 'retic-topology', 'FAST');
+    }
+
+    // ── Fibre network (own page, when fibre is drawn on the plan) ──
+    const fg = (typeof ReticDiagram !== 'undefined' && ReticDiagram.rasterize)
+      ? await ReticDiagram.rasterize(2, 'fibre') : null;
+    if (fg) {
+      ReticDiagram.addPage(doc, fg, 'Network Overview — Fibre',
+        'From the fibre entry along the backbone to every manhole: erf ducts and road crossings per manhole, trunk lengths on the lines.');
     }
 
     const safe = projName.replace(/[^a-z0-9]+/gi, '_');

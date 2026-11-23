@@ -502,6 +502,19 @@ body.dark-mode .rtcc-range { fill: #a78bfa; }
 
 /* Topology: Volt drop / Fault current view, fault kinds, phone list */
 .rdg-toolbar { flex-wrap: wrap; }
+/* Network overview: Electrical | Fibre tabs, Kiosks | Strings detail, legend swatches, clickable boxes */
+.rdg-tabs, .rdg-detail { display: inline-flex; border: 1px solid var(--border-color); border-radius: 6px; overflow: hidden; background: var(--bg-secondary); }
+.rdg-tabs button, .rdg-detail button { border: 0; border-right: 1px solid var(--border-color); background: transparent; color: var(--text-primary);
+  font: inherit; font-size: 12px; font-weight: 600; padding: 0 12px; min-height: 30px; cursor: pointer; }
+.rdg-tabs button:last-child, .rdg-detail button:last-child { border-right: 0; }
+.rdg-tabs button[aria-pressed="true"] { background: var(--text-primary); color: var(--bg-primary); }
+.rdg-detail button[aria-pressed="true"] { background: var(--accent); color: #fff; }
+.rdg-seg[hidden], .rdg-detail[hidden] { display: none; }
+.rdg-legend .rdg-sw-band { border-radius: 2px; background: #eaf0fb; border: 1px solid #1e3a8a; }
+.rdg-legend .rdg-sw-out { border-radius: 2px; background: transparent; border: 2px solid; }
+#retic-diagram-canvas [data-go]:focus { outline: none; }
+#retic-diagram-canvas [data-go]:focus-visible { outline: 2px solid var(--accent); }
+#retic-diagram-canvas [data-go]:hover { opacity: 0.9; }
 .rdg-seg, .rdg-views { display: inline-flex; border: 1px solid var(--border-color); border-radius: 6px; overflow: hidden; background: var(--bg-secondary); }
 .rdg-seg button, .rdg-views button { border: 0; border-right: 1px solid var(--border-color); background: transparent; color: var(--text-primary);
   font: inherit; font-size: 12px; font-weight: 600; padding: 0 12px; min-height: 30px; cursor: pointer; }

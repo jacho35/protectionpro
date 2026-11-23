@@ -399,7 +399,7 @@ const HELP_GUIDES = [
   intro: 'Every drawing page exports a DXF in millimetres: symbols are blocks, their labels are visible attributes, and ratings and other data ride along as hidden attributes. Open it in any CAD package and the data is there to read or extract.',
   steps: [
     { title: 'Find the DXF button',
-      html: 'On the single-line diagram, use <strong>Output ▸ Drawing ▸ Diagram (DXF)</strong>. On the board Single Line and Layout (GA) tabs, the street-lighting schematic and the Demand topology, each has a <strong>DXF</strong> button in its toolbar. The plan drawing has its own export on the plan toolbar.',
+      html: 'On the single-line diagram, use <strong>Output ▸ Drawing ▸ Diagram (DXF)</strong>. On the board Single Line and Layout (GA) tabs, the street-lighting schematic and the Network overview (Demand), each has a <strong>DXF</strong> button in its toolbar. The plan drawing has its own export on the plan toolbar.',
       shot: { file: 'dxf-export-1.png', alt: 'The Output menu with the Drawing group and Diagram (DXF)',
         setup: 'output-menu', clip: 'viewport',
         callouts: [
@@ -735,8 +735,8 @@ const HELP_GUIDES = [
 
 // ───────────────────────────────────────────────────────────────────────────
 { id: 'retic-earth-fault', group: 'retic', title: 'Check earth-fault protection on a reticulation',
-  where: 'Reticulation ▸ Demand ▸ Earth-fault check, and Diagram ▸ Show: Fault current', time: '10 min', phone: 'Plot with the table stacked under it; Diagram opens as cards',
-  intro: 'After Demand has calculated, the earth-fault check plots each string’s breaker curve against the earth-fault current at every kiosk and erf and grades whether it clears in time. The topology diagram shows the same figures on the network itself.',
+  where: 'Reticulation ▸ Demand ▸ Earth-fault check, and Network overview ▸ Show: Fault current', time: '10 min', phone: 'Plot with the table stacked under it; Network overview opens as cards',
+  intro: 'After Demand has calculated, the earth-fault check plots each string’s breaker curve against the earth-fault current at every kiosk and erf and grades whether it clears in time. The Network overview shows the same figures on the network itself.',
   steps: [
     { title: 'Give every string a breaker, then calculate',
       html: 'Pick a <strong>String breaker</strong> for each minisub string and run the Demand calculation. A string without a breaker shows <em>to complete</em> and is not graded. Open <strong>Earth-fault check</strong> to see the curves against the fault current.' },
@@ -758,8 +758,8 @@ const HELP_GUIDES = [
     { title: 'Print it',
       html: '<strong>Export PDF</strong> prints the plot as displayed (A4 landscape), with the view stated and the table.' },
     { title: 'See the same figures on the network',
-      html: 'Open <strong>Diagram</strong> and switch <strong>Show</strong> from <em>Volt drop</em> to <em>Fault current</em>. Every minisub and kiosk box shows its earthing system, the maximum three-phase current and the minimum earth-fault current (L–PE on TN-S, L–PEN on TN-C / TN-C-S) with its clearing time. A kiosk also shows its lowest erf current. A red stripe means the kiosk or one of its erven does not clear in time. The toggles show three-phase, earth fault or both; PNG, SVG and DXF export the view you are looking at.',
-      shot: { file: 'retic-earth-fault-2.png', alt: 'The topology diagram in its Fault current view, each box showing three-phase and earth-fault current',
+      html: 'Open <strong>Network overview</strong> and switch <strong>Show</strong> from <em>Volt drop</em> to <em>Fault current</em>. Every minisub and kiosk box shows its earthing system, the maximum three-phase current and the minimum earth-fault current (L–PE on TN-S, L–PEN on TN-C / TN-C-S) with its clearing time. A kiosk also shows its lowest erf current. A red stripe means the kiosk or one of its erven does not clear in time. The toggles show three-phase, earth fault or both; PNG, SVG and DXF export the view you are looking at.',
+      shot: { file: 'retic-earth-fault-2.png', alt: 'The Network overview in its Fault current view, each box showing three-phase and earth-fault current',
         setup: 'retic-fault-diagram', clip: '#retic-diagram-modal .modal-content',
         callouts: [
           { sel: '#retic-diagram-modal .rdg-seg', label: 'Show: Volt drop or Fault current' },
