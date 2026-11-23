@@ -616,6 +616,7 @@ const PlanUI = {
     const el = this.propsEl; if (!el) return;
     if (typeof PlanTools !== 'undefined' && PlanTools.active && PlanTools.active.id === 'layout' && typeof PlanLayoutUI !== 'undefined') { PlanLayoutUI.renderOptions(el); return; }
     if (typeof PlanTools !== 'undefined' && PlanTools.active && (PlanTools.active.id === 'roomdetect' || PlanTools.active.id === 'erfdetect') && typeof PlanRoomDetect !== 'undefined') { PlanRoomDetect.renderOptions(el, PlanTools.active.id === 'erfdetect' ? 'erf' : 'room'); return; }
+    if (typeof PlanReroute !== 'undefined' && PlanReroute.session) { PlanReroute.renderPanel(el); return; }     // Re-route from a kiosk / manhole: its preview panel
     if (PlanMarkup.context === 'plan' && PlanMarkup.mode === 'underlays') { this._renderUnderlayProps(el); return; }
     // The Lighting tab's Space step: a picked underlay shows its actions until something else is selected.
     if (PlanMarkup.context === 'lighting' && this._underlay && !PlanMarkup.selectedIds.size) { this._renderUnderlayProps(el); return; }
@@ -699,6 +700,7 @@ const PlanUI = {
       else html += `<button type="button" class="plan-btn" data-role="open-lighting">Lighting for this ${({ escape: 'route', perimeter: 'fence', outdoor: 'area', sports: 'field', obtrusive: 'check' })[item.kind] || 'room'}…</button>`;
     }
     if (kind === 'element' && typeof PlanLoads !== 'undefined') html += PlanLoads.summaryHtml(item);
+    if (kind === 'element' && typeof PlanReroute !== 'undefined') html += PlanReroute.propsHtml(item);
     html += this._defaultCableButton(item, kind);
     this._pendingVerdicts = '';
     html += this._demandBlock(item, kind);

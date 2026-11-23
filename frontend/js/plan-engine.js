@@ -407,6 +407,7 @@ const PlanEngine = {
     // False colour and isolux belong to the Lighting tab's view of the plan.
     if (typeof RoomCalc !== 'undefined' && typeof PlanMarkup !== 'undefined' && PlanMarkup.context === 'lighting') RoomCalc.draw(ctx, this.view.zoom);
     // Tool overlay (ghosts, rubber-bands, snap ring)
+    if (typeof PlanReroute !== 'undefined') PlanReroute.draw(ctx, this.view.zoom);           // a re-route preview: now grey, after dashed blue
     if (typeof PlanTools !== 'undefined' && PlanTools.drawOverlay) PlanTools.drawOverlay(ctx, z);
     ctx.restore();
   },

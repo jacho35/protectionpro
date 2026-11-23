@@ -1568,7 +1568,7 @@ const PlanLayoutUI = {
     const ptsPx = a => a.map(p => ({ x: p[0] / f, y: p[1] / f }));
     removeIf(pm.routes, auto); removeIf(pm.crossings, auto); removeIf(pm.elements, auto); removeIf(pm.trenches, auto);
     const el = (type, x, y, extra) => { const e = Object.assign({ id: AppState.planGenId('pmel'), type, x: x / f, y: y / f, rotation: 0, name: PlanMarkup.nextName(type), reticId: null, props: PLAN_DEFS.defaults(type), auto: 'layout' }, extra || {}); pm.elements.push(e); return e; };
-    const route = (type, fromId, toId, pts, cable) => { const rt = { id: AppState.planGenId('pmrt'), type, fromId: fromId || null, toId: toId || null, points: ptsPx(pts), cableType: cable || this._vdCableName(type) || PLAN_DEFS.defaults(type).cableType || ((typeof PlanSync !== 'undefined' && PlanSync.defaultCableFor(type, fromId, toId)) || ''), curved: false, props: {}, auto: 'layout' }; pm.routes.push(rt); return rt; };
+    const route = (type, fromId, toId, pts, cable) => { const rt = { id: AppState.planGenId('pmrt'), type, fromId: fromId || null, toId: toId || null, points: ptsPx(pts), cableType: cable || this._vdCableName(type) || PLAN_DEFS.defaults(type).cableType || ((typeof PlanSync !== 'undefined' && PlanSync.defaultCableFor(type, fromId, toId)) || ''), curved: false, props: {}, auto: 'layout' }; if (typeof PlanReroute !== 'undefined') rt.lsig = PlanReroute.sig(rt.points); pm.routes.push(rt); return rt; };   // `lsig`: a later hand edit shows (Re-route from here keeps it)
     const made = { subs: 0, kiosks: 0, manholes: 0, routes: 0, crossings: 0, markers: 0, trenches: 0 };
     const erfEl = new Map(pm.elements.filter(e => e.type === 'erf').map(e => [e.id, e]));
     // erf markers: the erf point moves to its corner
