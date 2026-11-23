@@ -189,12 +189,14 @@ class _Road:
         px, py = x + d * nx, y + d * ny
         return px.reshape(s.shape), py.reshape(s.shape), tan[:, 0].reshape(s.shape), tan[:, 1].reshape(s.shape)
 
-    def project(self, qx, qy):
-        """Chainage and signed offset (+ right) of plan points — nearest centreline point."""
+    def project(self, qx, qy, with_dist=False):
+        """Chainage and signed offset (+ right) of plan points — nearest centreline point.
+        `with_dist` also returns the true distance to the centreline: past a road's end the offset is only
+        the sideways part of it."""
         qx = np.atleast_1d(np.asarray(qx, float)); qy = np.atleast_1d(np.asarray(qy, float))
         a = self.pts[:-1]; d = np.diff(self.pts, axis=0)
         L2 = np.maximum((d * d).sum(axis=1), 1e-12)
-        s_out = np.empty(len(qx)); off = np.empty(len(qx))
+        s_out = np.empty(len(qx)); off = np.empty(len(qx)); dist_out = np.empty(len(qx))
         for k0 in range(0, len(qx), 512):
             px = qx[k0:k0 + 512, None]; py = qy[k0:k0 + 512, None]
             t = np.clip(((px - a[:, 0]) * d[:, 0] + (py - a[:, 1]) * d[:, 1]) / L2, 0, 1)
@@ -204,6 +206,9 @@ class _Road:
             s_out[k0:k0 + 512] = self.cum[j] + t[rows, j] * np.sqrt(L2[j])
             tx, ty = d[j, 0] / np.sqrt(L2[j]), d[j, 1] / np.sqrt(L2[j])
             off[k0:k0 + 512] = (px[:, 0] - cx[rows, j]) * ty - (py[:, 0] - cy[rows, j]) * tx
+            dist_out[k0:k0 + 512] = dist[rows, j]
+        if with_dist:
+            return s_out, off, dist_out
         return s_out, off
 
 
@@ -691,6 +696,21 @@ def _in_poly(px, py, poly):
     return inside
 
 
+def _nearest_tangent(roads, px, py):
+    """Local road direction at plan points (for the 5H inclusion): the tangent of the road nearest by true
+    distance to its centreline. The signed offset alone is only the sideways part past a road's end, so a
+    point on the main road in line with a side road ending on it would take the side road's direction."""
+    tx, ty = np.ones_like(px), np.zeros_like(px)
+    best = np.full(px.shape, np.inf)
+    for road in roads:
+        s, _off, dist = road.project(px, py, with_dist=True)
+        _, _, rtx, rty = road.at(s, np.full(len(s), road.yc))
+        closer = dist < best
+        tx = np.where(closer, rtx, tx); ty = np.where(closer, rty, ty)
+        best = np.minimum(best, dist)
+    return tx, ty
+
+
 def evaluate_conflict(ctx, lum, area: dict, roads):
     polys = [p for p in (area.get("polygons") or []) if len(p) >= 3]
     if not polys:
@@ -708,15 +728,7 @@ def evaluate_conflict(ctx, lum, area: dict, roads):
     px, py = px[inside], py[inside]
     if not len(px):
         return None
-    # local road direction for the 5H inclusion: the nearest road's tangent
-    tx, ty = np.ones_like(px), np.zeros_like(px)
-    best = np.full(px.shape, np.inf)
-    for road in roads:
-        s, off = road.project(px, py)
-        _, _, rtx, rty = road.at(s, np.full(len(s), road.yc))
-        closer = np.abs(off) < best
-        tx = np.where(closer, rtx, tx); ty = np.where(closer, rty, ty)
-        best = np.minimum(best, np.abs(off))
+    tx, ty = _nearest_tangent(roads, px, py)
     E = _illum(ctx, lum, px, py, tx, ty)
     eav = float(E.mean())
     cls = (area.get("cls") or "").upper()

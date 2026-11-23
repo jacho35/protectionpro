@@ -9,7 +9,8 @@
  *     the cross-section, swept along the road, and its luminaire rows.
  *   2 Poles — every row of the design laid out along its own pole line at the
  *     design spacing (closer on bends tighter than a set radius, optionally a
- *     single outside row there), junction mouths kept clear; drag to move,
+ *     single outside row there), spaced evenly between junction mouths with a
+ *     pole at each mouth edge and free road end; drag to move,
  *     add, delete, override a pole's luminaire / height / tilt.
  *   3 Light on the plan — /api/analysis/road-plan (analysis/road_plan.py):
  *     illuminance / luminance heatmap with iso-lines on every road, per-segment
@@ -589,23 +590,62 @@ const RoadPlan = {
     const auto = [];
     const L = g.al.length;
     const twoSided = new Set(des.rows.map(r => RoadLight._rowGeom(r, g.xs.lay).facing)).size > 1;
+    const start = Math.max(0, this._num(cfg.start, 3));
+    // poles of the other roads (plan points): an end pole beside one of them is left out (two roads meeting end to end)
+    const others = [];
+    for (const o of this.roads) {
+      if (o === road || !this.geom(o).al.ok) continue;
+      for (const p of o.poles || []) { const pg = this.poleGeom(o, p); if (pg) others.push([pg.bx, pg.by]); }
+    }
+    const near = Math.min(S / 3, 8);
     for (const row of des.rows) {
       const rg = RoadLight._rowGeom(row, g.xs.lay);
-      const ds = 0.25;
-      let prev = g.al.at(0, g.xs.off(0, rg.poleY)), along = 0;
-      let next = this._num(cfg.start, 3) + this._num(row.xOffset, 0) * S;
-      for (let s = 0; s <= L + 1e-9; s += ds) {
-        const p = g.al.at(s, g.xs.off(s, rg.poleY));
-        along += Math.hypot(p.x - prev.x, p.y - prev.y); prev = p;
-        if (along + 1e-9 < next) continue;
-        const kap = g.al.curvature(s);
-        const tight = Math.abs(kap) > 1 / Math.max(1, cfg.bendR);
-        const d = g.xs.off(s, rg.poleY);
-        const inside = tight && kap * -d > 0;              // pole on the centre side of the bend
-        next += S * (tight ? this._num(cfg.bendFactor, 0.75) : 1);
-        if (cfg.outsideOnly && twoSided && inside) continue;
-        if (mouth.some(m => (m.endRange ? (s >= Math.min(m.s0, m.s1) && s <= Math.max(m.s0, m.s1)) : (s > m.s0 && s < m.s1 && (!m.sign || Math.sign(d) === m.sign))))) continue;
-        auto.push({ id: this._genId('rpp'), s: +s.toFixed(2), rowId: row.id, moved: false, note: tight ? `bend R${Math.round(1 / Math.abs(kap))}` : '' });
+      const side = Math.sign(g.xs.off(L / 2, rg.poleY)) || 1;
+      // the stretches this row may not use: every junction mouth on its side (a crossing / the road's own end: both sides)
+      const blocked = mouth.filter(m => m.endRange || !m.sign || m.sign === side)
+        .map(m => [Math.max(0, Math.min(m.s0, m.s1)), Math.min(L, Math.max(m.s0, m.s1))]).filter(b => b[1] > b[0])
+        .sort((a, b) => a[0] - b[0]);
+      const merged = [];
+      for (const b of blocked) { const t = merged[merged.length - 1]; if (t && b[0] <= t[1]) t[1] = Math.max(t[1], b[1]); else merged.push(b.slice()); }
+      // free stretches; an edge at a mouth takes its pole at the mouth edge, a free road end `start` m in
+      const free = [];
+      let a = 0, aMouth = false;
+      for (const b of merged) { if (b[0] > a) free.push({ a, b: b[0], am: aMouth, bm: true }); a = b[1]; aMouth = true; }
+      if (L > a) free.push({ a, b: L, am: aMouth, bm: false });
+      // effective length along the pole line: a tight bend counts 1 / bendFactor, so its poles come closer
+      const ds = 0.25, E = [0], SS = [0];
+      let prev = g.al.at(0, g.xs.off(0, rg.poleY));
+      const bf = Math.max(0.2, this._num(cfg.bendFactor, 0.75));
+      for (let s = ds; s < L + ds; s += ds) {
+        const sc = Math.min(s, L), p = g.al.at(sc, g.xs.off(sc, rg.poleY));
+        const tight = Math.abs(g.al.curvature(sc)) > 1 / Math.max(1, cfg.bendR);
+        E.push(E[E.length - 1] + Math.hypot(p.x - prev.x, p.y - prev.y) / (tight ? bf : 1)); SS.push(sc); prev = p;
+        if (sc >= L) break;
+      }
+      const eAt = (s) => { const i = Math.min(SS.length - 2, Math.max(0, Math.floor(s / ds))); const t = (s - SS[i]) / ((SS[i + 1] - SS[i]) || 1e-9); return E[i] + (E[i + 1] - E[i]) * Math.max(0, Math.min(1, t)); };
+      const sAt = (e) => { let lo = 0, hi = E.length - 1; while (hi - lo > 1) { const m = (lo + hi) >> 1; if (E[m] <= e) lo = m; else hi = m; } const t = (e - E[lo]) / ((E[hi] - E[lo]) || 1e-9); return SS[lo] + (SS[hi] - SS[lo]) * Math.max(0, Math.min(1, t)); };
+      for (const f of free) {
+        const s0 = f.am ? f.a : Math.min(f.b, f.a + start), s1 = f.bm ? f.b : Math.max(s0, f.b - start);
+        const e0 = eAt(s0), e1 = eAt(s1);
+        // a staggered row (xOffset, a fraction of the spacing) goes between the poles of the others, never on the edges
+        const frac = ((this._num(row.xOffset, 0) % 1) + 1) % 1;
+        let ss;
+        if (e1 - e0 < S * 0.4) ss = frac ? [] : [(s0 + s1) / 2];                      // a short stretch: one pole in its middle
+        else {
+          const n = Math.max(1, Math.ceil((e1 - e0) / S - 1e-6));
+          ss = [];
+          if (frac) for (let k = 0; k < n; k++) ss.push(sAt(e0 + (e1 - e0) * (k + frac) / n));
+          else for (let k = 0; k <= n; k++) ss.push(k === 0 ? s0 : k === n ? s1 : sAt(e0 + (e1 - e0) * k / n));
+        }
+        ss.forEach((s, k) => {
+          const d = g.xs.off(s, rg.poleY), kap = g.al.curvature(s);
+          const tight = Math.abs(kap) > 1 / Math.max(1, cfg.bendR);
+          if (cfg.outsideOnly && twoSided && tight && kap * -d > 0) return;           // pole on the centre side of the bend
+          // a pole at a free road end beside another road's pole (two roads meeting end to end) is left out; a junction mouth keeps its own
+          const edge = !frac && ((k === 0 && !f.am) || (k === ss.length - 1 && !f.bm));
+          if (edge && ss.length > 1) { const P = g.al.at(s, d); if (others.some(o => Math.hypot(o[0] - P.x, o[1] - P.y) < near)) return; }
+          auto.push({ id: this._genId('rpp'), s: +s.toFixed(2), rowId: row.id, moved: false, note: tight ? `bend R${Math.round(1 / Math.abs(kap))}` : '' });
+        });
       }
     }
     const kept = auto.filter(a => !moved.some(m => m.rowId === a.rowId && Math.abs(m.s - a.s) < S / 3));
