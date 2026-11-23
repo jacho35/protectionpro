@@ -114,7 +114,9 @@ const PlanDXF = {
     const data = PlanDxfImport.dataOf(desc);
     const hidden = [], colors = {};
     for (const [name, stl] of Object.entries(desc.layers || {})) { if (stl && stl.hidden) hidden.push(name); if (stl && stl.color) colors[name] = this._hex(stl.color); }
-    const area = typeof PlanWorkArea !== 'undefined' && PlanWorkArea.localPoly ? PlanWorkArea.localPoly(desc) : null;
+    // the working area, else the DXF's own area to import (its parts outside are kept in the file, hidden)
+    const area = (typeof PlanWorkArea !== 'undefined' && PlanWorkArea.localPoly ? PlanWorkArea.localPoly(desc) : null)
+      || (desc.clip && desc.clip.pts && desc.clip.pts.length >= 3 ? desc.clip.pts.map(q => [q[0], q[1]]) : null);
     return { name: desc.name || 'drawing', srcId: desc.srcId != null ? desc.srcId : null, imageId: desc.imageId != null ? desc.imageId : null,
       data: desc.imageId == null ? data : undefined, origin: (data && data.origin) || desc.origin || [0, 0],
       m: [ux[0] - o[0], uy[0] - o[0], o[0], ux[1] - o[1], uy[1] - o[1], o[1]],
