@@ -21,7 +21,7 @@
 const PlanReserve = (() => {
   const K = typeof PlanKerbs !== 'undefined' ? PlanKerbs : require('./plan-kerbs.js');
   const RD = typeof PlanRoomDetect !== 'undefined' ? PlanRoomDetect : require('./plan-roomdetect.js');
-  const D = { step: 0.5, gapM: 0.6, wmin: 6, wmax: 40, minStreet: 15, gap: 25, minRun: 8, pairStep: 2, carriageW: 6, ret: 8, retWide: 10, bend: 30, outer: true, wide: 16, minHoleM2: 6, maxPx: 16e6, snap: 0.5, minPiece: 3 };
+  const D = { step: 0.5, gapM: 0.6, wmin: 6, wmax: 40, minStreet: 15, gap: 25, minRun: 8, pairStep: 2, carriageW: 6, ret: 8, retWide: 10, bend: 30, taper: 20, taperMin: 10, outer: true, wide: 16, minHoleM2: 6, maxPx: 16e6, snap: 0.5, minPiece: 3 };
   const hyp = Math.hypot, cr = (a, b) => a[0] * b[1] - a[1] * b[0], dot = (a, b) => a[0] * b[0] + a[1] * b[1];
   const plen = pts => { let L = 0; for (let i = 1; i < pts.length; i++) L += hyp(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]); return L; };
 
@@ -427,6 +427,111 @@ const PlanReserve = (() => {
     return clampR(c, d * s / (1 - s));
   }
 
+  // ── Width changes along a street (a carriageway of another width or offset joined on) ──
+  // `run` = { pts, carriageW, cwOffset, prof?: [{ w, o, at }] } — `prof` = each piece's width and offset (to the left of the run's
+  // direction) in order, `at` = the joint where that piece ends (null on the last). Each taper is centred on its joint and runs over
+  // `taper` m per metre a kerb moves (at least `taperMin` m, at most 90 % of the room to the road's end or half way to the next
+  // joint), an S-curve (smoothstep): both kerbs leave and meet the straight kerbs tangentially. { at(s) → {w, o}, zones: [[s0, s1]] }
+  function widthProfile(run, pts, o) {
+    o = Object.assign({}, D, o || {});
+    const cum = [0]; for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + hyp(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
+    const total = cum[cum.length - 1], P = run.prof;
+    if (!P || P.length < 2) { const w = run.carriageW, off = run.cwOffset || 0; return { at: () => ({ w, o: off }), zones: [] }; }
+    const stOf = q => {
+      let best = Infinity, st = 0;
+      for (let i = 0; i + 1 < pts.length; i++) {
+        const a = pts[i], b = pts[i + 1], dx = b[0] - a[0], dy = b[1] - a[1], l2 = dx * dx + dy * dy || 1e-12;
+        const t = Math.max(0, Math.min(1, ((q[0] - a[0]) * dx + (q[1] - a[1]) * dy) / l2)), d = hyp(a[0] + dx * t - q[0], a[1] + dy * t - q[1]);
+        if (d < best - 1e-9) { best = d; st = cum[i] + t * (cum[i + 1] - cum[i]); }
+      }
+      return st;
+    };
+    const js = P.slice(0, -1).map(x => stOf(x.at));
+    const steps = js.map((sj, i) => {
+      const a = P[i], b = P[i + 1], dw = b.w - a.w, dox = b.o - a.o;
+      const shift = Math.max(Math.abs(dox + dw / 2), Math.abs(dox - dw / 2));
+      const back = i ? (sj - js[i - 1]) / 2 : sj, fwd = i + 1 < js.length ? (js[i + 1] - sj) / 2 : total - sj;
+      const half = Math.min(Math.max(o.taperMin, o.taper * shift) / 2, 0.9 * Math.min(back, fwd));
+      return { sj, s0: sj - half, s1: sj + half, dw, dox };
+    });
+    const sm = x => x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x);
+    return {
+      at: s => { let w = P[0].w, off = P[0].o; for (const k of steps) { const f = k.s1 > k.s0 ? sm((s - k.s0) / (k.s1 - k.s0)) : (s >= k.s0 ? 1 : 0); w += k.dw * f; off += k.dox * f; } return { w, o: off }; },
+      zones: steps.filter(k => k.s1 > k.s0).map(k => [k.s0, k.s1]),
+      joints: steps.map(k => k.sj),
+    };
+  }
+  // Kerb lines of a run with a varying width: `pts` with points every metre inside each taper (and at the stations `o.extra`), each
+  // offset by its own o ± w/2 (the mitre of offsetLine). { left, right, s } (s = the station of each point)
+  function taperKerbs(run, pts, o) {
+    const pr = widthProfile(run, pts, o), Q = [pts[0].slice()], S = [0], extra = (o && o.extra) || [];
+    let s = 0;
+    for (let i = 1; i < pts.length; i++) {
+      const a = pts[i - 1], b = pts[i], l = hyp(b[0] - a[0], b[1] - a[1]);
+      const add = t => { if (t > s + 1e-6 && t < s + l - 1e-6) { const f = (t - s) / l; Q.push([a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f]); S.push(t); } };
+      for (const [z0, z1] of pr.zones) { const lo = Math.max(z0, s), hi = Math.min(z1, s + l); if (hi > lo) for (let t = Math.ceil(lo); t <= hi; t++) add(t); }
+      for (const t of extra) add(t);
+      s += l; Q.push(b.slice()); S.push(s);
+    }
+    const ord = S.map((v, i) => i).sort((x, y) => S[x] - S[y]), pp = ord.map(i => Q[i]), ss = ord.map(i => S[i]);
+    const left = [], right = [];
+    for (let i = 0; i < pp.length; i++) {
+      const a = pp[Math.max(0, i - 1)], b = pp[Math.min(pp.length - 1, i + 1)], dx = b[0] - a[0], dy = b[1] - a[1], L = hyp(dx, dy) || 1;
+      let nx = -dy / L, ny = dx / L;
+      if (i > 0 && i < pp.length - 1) {
+        const p = pp[i - 1], q = pp[i + 1], e1 = [pp[i][0] - p[0], pp[i][1] - p[1]], e2 = [q[0] - pp[i][0], q[1] - pp[i][1]], l1 = hyp(e1[0], e1[1]) || 1, l2 = hyp(e2[0], e2[1]) || 1;
+        const n1 = [-e1[1] / l1, e1[0] / l1], n2 = [-e2[1] / l2, e2[0] / l2], mx = n1[0] + n2[0], my = n1[1] + n2[1], ml = hyp(mx, my) || 1, c = Math.max(0.5, (mx / ml) * n1[0] + (my / ml) * n1[1]);
+        nx = mx / ml / c; ny = my / ml / c;
+      }
+      const { w, o: off } = pr.at(ss[i]);
+      left.push([+(pp[i][0] + nx * (off + w / 2)).toFixed(3), +(pp[i][1] + ny * (off + w / 2)).toFixed(3)]);
+      right.push([+(pp[i][0] + nx * (off - w / 2)).toFixed(3), +(pp[i][1] + ny * (off - w / 2)).toFixed(3)]);
+    }
+    return { left, right, s: ss, zones: pr.zones, joints: pr.joints };
+  }
+  // A street line with its sharp turns (≥ `o.deg`, default the kerb drawing's `bend`; squared off by squareCorners) rounded with a
+  // tangent arc so that the inner kerb has radius `radiusAt(corner point)` (else 8 m) there — the outer kerb is then that radius +
+  // the carriageway width, as the kerb drawing's two arcs. The width / offset at the corner come from `widthProfile`.
+  // { pts, radii, spans (the stations each arc runs over) } or null.
+  function rounded(run, radiusAt, o) {
+    o = Object.assign({}, D, o || {});
+    if (!(run.carriageW > 0)) return null;
+    // `o.only` = round just these points of the line (as drawn, nothing squared)
+    const s = { pts: run.pts.map(p => p.slice()) };
+    if (o.only) s.bends = o.only.filter(q => s.pts.some((p, i) => i > 0 && i < s.pts.length - 1 && hyp(p[0] - q[0], p[1] - q[1]) < 1e-6)).map(q => q.slice());
+    else squareCorners(s, o.deg != null ? o.deg : o.bend);
+    if (!s.bends || !s.bends.length) return null;
+    const P = s.pts, pr = widthProfile(run, P, o);
+    const cumP = [0]; for (let i = 1; i < P.length; i++) cumP.push(cumP[i - 1] + hyp(P[i][0] - P[i - 1][0], P[i][1] - P[i - 1][1]));
+    const isBend = i => s.bends.some(b => hyp(b[0] - P[i][0], b[1] - P[i][1]) < 1e-6);
+    const out = [P[0].slice()], radii = [], spans = [];
+    const len = () => { let L = 0; for (let k = 1; k < out.length; k++) L += hyp(out[k][0] - out[k - 1][0], out[k][1] - out[k - 1][1]); return L; };
+    for (let i = 1; i < P.length - 1; i++) {
+      const V = P[i];
+      if (!isBend(i)) { out.push(V.slice()); continue; }
+      const A = P[i - 1], B = P[i + 1], la = hyp(A[0] - V[0], A[1] - V[1]), lb = hyp(B[0] - V[0], B[1] - V[1]);
+      const u = [(A[0] - V[0]) / la, (A[1] - V[1]) / la], v = [(B[0] - V[0]) / lb, (B[1] - V[1]) / lb];
+      const th = Math.acos(Math.max(-1, Math.min(1, dot(u, v))));
+      if (th < 0.17) { out.push(V.slice()); continue; }
+      const r0 = radiusAt ? radiusAt(V) : null, R = r0 != null ? r0 : 8, { w: cw, o: off } = pr.at(cumP[i]);
+      // the inner kerb is on the side the street turns to: left (offsetLine d > 0) when the turn is anticlockwise
+      const turnL = cr([-u[0], -u[1]], v) > 0;
+      let Rc = Math.max(0.5, R + cw / 2 + (turnL ? off : -off));
+      const tmax = Math.min(la * (i - 1 > 0 && isBend(i - 1) ? 0.5 : 0.95), lb * (i + 1 < P.length - 1 && isBend(i + 1) ? 0.5 : 0.95));
+      let t = Rc / Math.tan(th / 2); if (t > tmax) { t = tmax; Rc = t * Math.tan(th / 2); }
+      const t1 = [V[0] + u[0] * t, V[1] + u[1] * t], t2 = [V[0] + v[0] * t, V[1] + v[1] * t];
+      const bl = hyp(u[0] + v[0], u[1] + v[1]) || 1, C = [V[0] + (u[0] + v[0]) / bl * Rc / Math.sin(th / 2), V[1] + (u[1] + v[1]) / bl * Rc / Math.sin(th / 2)];
+      const a1 = Math.atan2(t1[1] - C[1], t1[0] - C[0]); let d = Math.atan2(t2[1] - C[1], t2[0] - C[0]) - a1;
+      while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI;
+      const n = Math.max(2, Math.ceil(Math.abs(d) / (Math.PI / 36)));
+      out.push([+t1[0].toFixed(3), +t1[1].toFixed(3)]); const sA = len();
+      for (let k = 1; k <= n; k++) { const a = a1 + d * k / n; out.push([+(C[0] + Rc * Math.cos(a)).toFixed(3), +(C[1] + Rc * Math.sin(a)).toFixed(3)]); }
+      radii.push(+R.toFixed(2)); spans.push([sA, len()]);
+    }
+    out.push(P[P.length - 1].slice());
+    return radii.length ? { pts: out, radii, spans } : null;
+  }
+
   // The kerb drawing of a set of streets: split with bends, every corner's return (radius from `radiusOf(corner)`, else its default) and the outer
   // radius of a two-leg corner, and the kerb lines cut back to where the arcs meet them. { streets, junctions, corners, kerbs, arcs: [{ pts, c, outer }] }
   function trimAt(pts, q) {
@@ -440,10 +545,47 @@ const PlanReserve = (() => {
     const corners = sp.junctions.flatMap(j => corners_(j, byId, o)), arcs = [];
     for (const c of corners) { const R = radiusOf ? radiusOf(c) : null, a = returnArc(c, R != null ? R : c.def); arcs.push({ pts: a.pts, c, outer: false, mid: a.mid, R: a.R }); if (a.outer) arcs.push({ pts: a.outer.pts, c, outer: true, R: a.outer.R }); }
     let kerbs = sp.streets.flatMap(x => { const k = kerbLines(x, o); return [k.left, k.right]; });
+    const extra = widthJoints(sp, byId, arcs, o);
     for (const a of arcs) for (const q of [a.pts[0], a.pts[a.pts.length - 1]]) kerbs = kerbs.map(k => trimAt(k, q) || k);
-    return { streets: sp.streets, junctions: sp.junctions, corners, kerbs, arcs };
+    for (const e of extra) for (const q of [e[0], e[e.length - 1]]) kerbs = kerbs.map(k => trimAt(k, q) || k);
+    return { streets: sp.streets, junctions: sp.junctions, corners, kerbs: kerbs.concat(extra), arcs };
   }
   const corners_ = (j, byId, o) => corners(j, byId, o);
+  // Two streets meeting end to end with a carriageway of another width or offset: the kerbs taper evenly across the joint (as the
+  // Road plan does: `taperKerbs`, centred on the joint, round the corner when the joint is one). At a corner the tapered kerbs take
+  // the place of its arcs' points (the arc keeps its radius, handle and return for the rest); on a straight they are extra kerb
+  // lines. Returns those extra lines; the caller cuts the street kerbs back to the ends of both.
+  function widthJoints(sp, byId, arcs, o) {
+    const extra = [];
+    for (const j of sp.junctions) {
+      if (j.legs.length !== 2) continue;
+      const [L0, L1] = j.legs, A = byId[L0.id], B = byId[L1.id]; if (!A || !B || A === B) continue;
+      const cwA = A.carriageW != null ? +A.carriageW : o.carriageW, cwB = B.carriageW != null ? +B.carriageW : o.carriageW;
+      // A runs into the joint, B out of it; an offset is to the left of the run's direction
+      const pa = L0.atEnd ? A.pts : A.pts.slice().reverse(), oa = (L0.atEnd ? 1 : -1) * (+A.cwOffset || 0);
+      const pb = L1.atEnd ? B.pts.slice().reverse() : B.pts, ob = (L1.atEnd ? -1 : 1) * (+B.cwOffset || 0);
+      if (Math.abs(cwA - cwB) < 0.05 && Math.abs(oa - ob) < 0.05) continue;
+      const J = pa[pa.length - 1].slice();
+      const run = { pts: pa.concat(pb.slice(1)), carriageW: cwA, cwOffset: oa, prof: [{ w: cwA, o: oa, at: J }, { w: cwB, o: ob, at: null }] };
+      const mine = arcs.filter(a => a.c.jkey === j.key), inner = mine.find(a => !a.outer), outer = mine.find(a => a.outer);
+      let line = run.pts, span = null;
+      if (inner) { const r = rounded(run, () => inner.R, Object.assign({}, o, { only: [J] })); if (r) { line = r.pts; span = r.spans[0]; } }
+      const pr = widthProfile(run, line, o), sj = pr.joints[0], z = pr.zones[0] || [sj, sj];
+      let total = 0; for (let i = 1; i < line.length; i++) total += hyp(line[i][0] - line[i - 1][0], line[i][1] - line[i - 1][1]);
+      const s0 = Math.max(0.05, Math.min(z[0], span ? span[0] : sj) - 0.5), s1 = Math.min(total - 0.05, Math.max(z[1], span ? span[1] : sj) + 0.5);
+      if (!(s1 > s0)) continue;
+      const K = taperKerbs(run, line, Object.assign({}, o, { extra: [s0, s1] }));
+      const cut = L => L.filter((p, i) => K.s[i] >= s0 - 1e-6 && K.s[i] <= s1 + 1e-6);
+      const pieces = [cut(K.left), cut(K.right)].filter(x => x.length >= 2);
+      if (pieces.length < 2) continue;
+      if (inner) {
+        const dm = L => Math.min(...L.map(p => hyp(p[0] - inner.mid[0], p[1] - inner.mid[1])));
+        const [pi, po] = dm(pieces[0]) <= dm(pieces[1]) ? pieces : [pieces[1], pieces[0]];
+        inner.pts = pi; if (outer) outer.pts = po; else extra.push(po);
+      } else extra.push(...pieces);
+    }
+    return extra;
+  }
 
   // The street lines the kerb drawing is made from, one per street given (same order, same other fields), so Auto layout works on the same
   // corners the plan draws: two streets that only meet each other end to end (same carriageway) are joined, a turn of `bend`° or more is squared
@@ -472,7 +614,7 @@ const PlanReserve = (() => {
     return S;
   }
 
-  return { D, makeGrid, kerbDrawing, trimAt, squareCorners, squareStreets, drawSeg, region, contours, stage, polyMask, streets, profile, split, streetKey, kerbLines, offsetLine, corners, returnArc, radiusFromDrag, outDir, label };
+  return { D, makeGrid, kerbDrawing, widthProfile, taperKerbs, rounded, trimAt, squareCorners, squareStreets, drawSeg, region, contours, stage, polyMask, streets, profile, split, streetKey, kerbLines, offsetLine, corners, returnArc, radiusFromDrag, outDir, label };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = PlanReserve;
