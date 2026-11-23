@@ -282,15 +282,20 @@ const PlanSymbols = {
     return v || 'none';
   },
 
-  // True-size body of a linear fitting: the photometry file's length x width (m), when it has one
-  // and the fitting is clearly linear (length at least 2 x width). null = draw the usual glyph.
-  // Off with props.trueSize === false. Length lies along the fitting's own x axis (rotation 0).
+  // True-size body of a fitting: the library entry's length x width (m). With the entry's
+  // `drawToSize` ticked (every import since 2.700) any fitting with a size is drawn to it —
+  // square panels and round downlights too; without it (older entries) only a clearly linear
+  // one (length at least 2 x width). null = draw the usual glyph. Off for one fitting with
+  // props.trueSize === false. Length lies along the fitting's own x axis (rotation 0).
   linearBody(el) {
     if (!el || el.type !== 'bd_light' || !el.props || el.props.trueSize === false) return null;
     const ph = typeof PhotoLib !== 'undefined' ? PhotoLib.get(el.props.photoId) : null;
     const s = ph && ph.sizeM;
-    if (!s || !(s.length > 0) || !(s.width > 0) || s.length < 2 * s.width) return null;
-    return { length: s.length, width: s.width };
+    if (!s || !(s.length > 0)) return null;
+    const width = s.width > 0 ? s.width : (s.round ? s.length : 0);
+    if (!(width > 0)) return null;
+    if (ph.drawToSize !== true && s.length < 2 * width) return null;
+    return { length: s.length, width, round: !!s.round };
   },
 
   // Draw a glyph centred at the current context origin (already translated/

@@ -40,7 +40,7 @@ const PhotoLib = {
         const text = await f.text();
         const prof = await API.request('/analysis/road-lighting/photometry', 'POST', { text, filename: f.name });
         const id = 'ph_' + (this._d._phSeq++);
-        this.library[id] = Object.assign(prof, { id, rotate: 0, fileName: f.name });
+        this.library[id] = Object.assign(prof, { id, rotate: 0, fileName: f.name, drawToSize: true });
         added.push(id);
       } catch (e) {
         failed.push(`${f.name}: ${e && e.message ? e.message : e}`);
@@ -54,7 +54,7 @@ const PhotoLib = {
   async addGeneric(kind, lumens, watts) {
     const prof = await API.request('/analysis/road-lighting/generic', 'POST', { kind, lumens, watts });
     const id = 'ph_' + (this._d._phSeq++);
-    this.library[id] = Object.assign(prof, { id, rotate: 0 });
+    this.library[id] = Object.assign(prof, { id, rotate: 0 }, prof.sizeM ? { drawToSize: true } : {});
     AppState.dirty = true;
     return id;
   },
@@ -96,11 +96,100 @@ const PhotoLib = {
         <section class="pl-card" aria-label="Cone diagram"><h4>Cone diagram</h4>${coneBody}</section>
         ${p.generic ? '' : `<section class="pl-card" aria-label="Orientation"><h4>Orientation (linear fittings)</h4>
           <p><label class="pl-h">Length runs along <select data-pl-axis>${['C0', 'C90'].map(a => `<option value="${a}"${(p.lengthAxis || 'C0') === a ? ' selected' : ''}>${a} plane${a === 'C0' ? ' (default)' : ''}</option>`).join('')}</select></label></p>
-          ${p.sizeM ? `<p>Fitting size from the file: ${Math.round(p.sizeM.length * 1000)} × ${Math.round(p.sizeM.width * 1000)} × ${Math.round(p.sizeM.height * 1000)} mm. It is drawn at this size on the plan and in 3D.</p>` : '<p class="pv-none">This entry has no size from the file. Import the LDT again to get it.</p>'}
           ${p.orientationUnconfirmed ? `<p style="color:#8a5a00"><b>Orientation unconfirmed.</b> ${escHtml(p.orientationUnconfirmed)}</p>` : ''}</section>`}
+        ${this._sizeCard(p)}
         <section class="pl-card" aria-label="Key figures"><h4>Key figures</h4>
           <dl class="pl-facts">${PhotoView.facts(p).map(([k, v]) => `<div><dt>${escHtml(k)}</dt><dd>${escHtml(v)}</dd></div>`).join('')}</dl></section>
       </div>`;
+  },
+  // ─── Fitting size (m): `sizeM` = the size it is drawn at; `sizeFile` = the file's own size,
+  // kept the first time it is edited so a changed size can say what it was changed from. ───
+  _mmTxt(z) { return z ? `${Math.round((z.length || 0) * 1000)} × ${Math.round((z.width || 0) * 1000)} × ${Math.round((z.height || 0) * 1000)} mm${z.round ? ' (round)' : ''}` : ''; },
+  fileSize(p) {
+    if (!p) return null;
+    if (p.sizeFile !== undefined) return p.sizeFile;
+    return (p.sizeM && !p.sizeM.typed) ? p.sizeM : null;        // never edited: what it has came from the file
+  },
+  sizeChanged(p) {
+    const f = this.fileSize(p), z = p && p.sizeM;
+    if (!f) return false;
+    if (!z) return true;
+    const mm = (v) => Math.round((v || 0) * 1000);
+    return mm(f.length) !== mm(z.length) || mm(f.width) !== mm(z.width) || mm(f.height) !== mm(z.height) || !!f.round !== !!z.round;
+  },
+  setSize(p, key, value) {
+    if (!p) return;
+    if (p.sizeFile === undefined) p.sizeFile = this.fileSize(p) ? Object.assign({}, p.sizeM) : null;
+    const z = Object.assign({}, p.sizeM || {});
+    if (key === 'round') { if (value) z.round = true; else delete z.round; }
+    else z[key] = Math.max(0, +value || 0) / 1000;
+    delete z.typed;
+    if (z.length > 0) p.sizeM = z; else delete p.sizeM;
+    if (!this.fileSize(p) && p.sizeM) p.sizeM.typed = true;     // a size with no file behind it
+    AppState.dirty = true;
+  },
+  resetSize(p) {
+    const f = p && this.fileSize(p);
+    if (!f) return;
+    p.sizeM = Object.assign({}, f);
+    AppState.dirty = true;
+  },
+
+  // The size fields — the same in the library and in a fitting's Properties panel. Editable for
+  // every luminaire, generic optics too; a size changed from the file says so and shows the file's.
+  sizeFieldsHtml(p, compact) {
+    const z = p.sizeM || {};
+    const id = escHtml(p.id);
+    const mm = (v) => (v > 0 ? Math.round(v * 1000) : '');
+    const kind = p.generic ? 'generic optic\'s typical' : p.format === 'IES' ? 'IES' : p.format === 'LDT' ? 'LDT' : 'photometry';
+    const file = this.fileSize(p);
+    let src;
+    if (this.sizeChanged(p)) {
+      src = p.generic && file.typical
+        ? `<b>Changed from the typical size</b> (typical: ${this._mmTxt(file)}).
+        <button type="button" class="btn-small" data-pl-sizereset data-photo="${id}">Use the typical size</button>`
+        : `<b>Changed from the ${kind} file</b> (file: ${this._mmTxt(file)}${file.fromOpening ? ', luminous opening' : ''}).
+        <button type="button" class="btn-small" data-pl-sizereset data-photo="${id}">Use the file's size</button>`;
+    } else if (file) src = file.typical ? 'A typical size for this generic optic: type the real one.' : file.fromOpening ? 'From the IES file (its luminous opening).' : `From the ${kind} file.`;
+    else src = p.generic ? 'Generic optic: type the fitting\'s size.' : 'No size in the file: type the fitting\'s size.';
+    const w = compact ? 58 : 72;
+    const field = (k, label) => `<label class="pl-h">${label} <input type="number" data-pl-size="${k}" data-photo="${id}" value="${mm(z[k])}" min="0" step="1" style="width:${w}px"> mm</label>`;
+    return `<div class="pl-size" style="display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center">${field('length', 'Length')}${field('width', 'Width')}${field('height', 'Height')}
+        <label class="pl-h" style="display:inline-flex;align-items:center;gap:4px;width:auto;margin:0"><input type="checkbox" data-pl-round data-photo="${id}"${z.round ? ' checked' : ''} style="width:auto;margin:0"> Round (length = diameter)</label></div>
+      <div style="font-size:11px;color:var(--text-muted);margin-top:4px">${src}</div>`;
+  },
+
+  // A change / click on the size fields or the tick box anywhere (library or Properties panel).
+  // true = handled; the caller redraws its own panel.
+  handleSizeEvent(e) {
+    const t = e.target;
+    if (!t || !t.dataset) return false;
+    const p = this.get(t.dataset.photo);
+    if (!p) return false;
+    if (e.type === 'click') {
+      if (!t.closest('[data-pl-sizereset]')) return false;
+      this.resetSize(p);
+    } else if (e.type === 'change') {
+      if (t.matches('[data-pl-tosize]')) p.drawToSize = t.checked;
+      else if (t.matches('[data-pl-round]')) this.setSize(p, 'round', t.checked);
+      else if (t.matches('[data-pl-size]')) this.setSize(p, t.dataset.plSize, t.value);
+      else return false;
+      AppState.dirty = true;
+    } else return false;
+    this.onChanged();
+    if (typeof PlanEngine !== 'undefined') PlanEngine.requestDraw({ all: true });
+    return true;
+  },
+
+  // Size on the plan: the tick box (on for every import) and the size it draws at.
+  _sizeCard(p) {
+    const z = p.sizeM || {};
+    const legacy = p.drawToSize === undefined && p.sizeM && !(z.length >= 2 * (z.width || z.length))
+      ? '<p class="pv-none">Off for this entry: it was imported before this setting, when only linear fittings were drawn to size.</p>' : '';
+    return `<section class="pl-card" aria-label="Size on the plan"><h4>Size on the plan</h4>
+      <p><label class="pl-h"><input type="checkbox" data-pl-tosize data-photo="${escHtml(p.id)}"${p.drawToSize === true ? ' checked' : ''}> Always draw this fitting to size</label></p>
+      <p style="font-size:12px;color:var(--text-muted)">On: every fitting of this type is drawn at its real size on the plan and in 3D — square, round or linear. Off: the usual symbol (a linear fitting is still drawn to size).</p>
+      ${legacy}${this.sizeFieldsHtml(p)}</section>`;
   },
   async _genericKinds() {
     if (!this._kinds) {
@@ -148,6 +237,7 @@ const PhotoLib = {
     const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); } };
     document.addEventListener('keydown', onKey, true);
     ov.addEventListener('click', async (e) => {
+      if (this.handleSizeEvent(e)) { this._redrawDetail(ov); return; }
       const rm = e.target.closest('[data-rm]');
       const pick = e.target.closest('[data-pick]');
       const act = e.target.dataset && e.target.dataset.act;
@@ -181,6 +271,8 @@ const PhotoLib = {
           ov.querySelector('[data-pl-detail]').innerHTML = this.detailHtml(p);
           if (typeof PlanEngine !== 'undefined') PlanEngine.requestDraw({ fg: true });
         }
+      } else if (this.handleSizeEvent(e)) {
+        this._redrawDetail(ov);
       } else if (e.target.matches('[data-pl-h]')) {
         const h = +e.target.value;
         if (h > 0) this._viewH = Math.min(Math.max(h, 0.5), 40);
@@ -193,6 +285,14 @@ const PhotoLib = {
 
   // The library changed (import, generic, remove, axis): mark it dirty and redraw every
   // screen that is showing, so each luminaire dropdown lists it without a page refresh.
+  _redrawDetail(ov) {
+    const d = ov.querySelector('[data-pl-detail]');
+    if (!d) return;
+    const top = d.scrollTop;
+    d.innerHTML = this.detailHtml(this.get(this._sel));
+    d.scrollTop = top;
+  },
+
   onChanged() {
     if (typeof PlanMarkup !== 'undefined' && PlanMarkup.markDirty) PlanMarkup.markDirty();
     if (typeof RoadLight !== 'undefined' && RoadLight._active) RoadLight.render();

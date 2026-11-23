@@ -32,6 +32,7 @@ const PlanUI = {
       if (e.target.closest('[data-role="assign-cancel"]')) { this._assignPreview = null; this.renderProps(); return; }
       if (e.target.closest('[data-role="assign-apply"]')) { this._assignPreview = null; this._bulkAssign(); return; }
       if (e.target.closest('[data-role="sync-circuits"]')) { this._syncCircuits(); return; }
+      if (e.target.closest('[data-pl-sizereset]') && typeof PhotoLib !== 'undefined') { PhotoLib.handleSizeEvent(e); return; }
       if (e.target.closest('[data-role="open-photolib"]')) { PhotoLib.open(); return; }
       const pd = e.target.closest('[data-role="open-photodata"]');
       if (pd) { PhotoLib.open(pd.dataset.photo); return; }
@@ -1355,8 +1356,12 @@ const PlanUI = {
       const ph = v && typeof PhotoLib !== 'undefined' ? PhotoLib.get(v) : null;
       const data = ph && typeof PhotoView !== 'undefined' ? `<div class="plan-photo-peek">${PhotoView.polarSvg(ph, { R: 80, beams: false })}</div>
         <button class="plan-circuit-btn" data-role="open-photodata" data-photo="${escHtml(v)}">Luminaire data — polar curve, isolux, cone diagram…</button>` : '';
+      // the library entry's size (editable, generic optics too) and "Always draw to size" (on for every
+      // import): both belong to the luminaire, so every fitting of it follows
+      const toSize = ph ? `<div class="plan-field plan-field-check"><label title="Applies to every fitting of this luminaire, on the plan and in 3D"><input type="checkbox" data-pl-tosize data-photo="${escHtml(v)}"${ph.drawToSize === true ? ' checked' : ''}> Always draw this luminaire to size</label></div>
+        <div class="plan-field"><label>Fitting size (every fitting of this luminaire)</label>${PhotoLib.sizeFieldsHtml(ph, true)}</div>` : '';
       return `<div class="plan-field">${label}<select data-key="${escHtml(f.key)}">${opts}</select></div>
-        ${data}<button class="plan-circuit-btn" data-role="open-photolib">💡 Luminaire library…</button>`;
+        ${toSize}${data}<button class="plan-circuit-btn" data-role="open-photolib">💡 Luminaire library…</button>`;
     }
     if (f.type === 'number') {
       const attrs = [f.min != null ? `min="${f.min}"` : '', f.max != null ? `max="${f.max}"` : '', f.step != null ? `step="${f.step}"` : ''].join(' ');
@@ -1488,6 +1493,10 @@ const PlanUI = {
 
   _onPropsChange(e) {
     if (e.target.dataset && (e.target.dataset.xgSize || e.target.dataset.xgUse || e.target.dataset.xgSp)) { if (e.type === 'change') this._onCrossGroupField(e.target); return; }
+    if (e.target.dataset && e.target.dataset.photo && e.target.closest('.pl-size, .plan-field-check') && typeof PhotoLib !== 'undefined') {
+      PhotoLib.handleSizeEvent(e);      // redraws this panel through onChanged
+      return;
+    }
     if (e.target.dataset && e.target.dataset.role === 'sld-link') { this._onSldLink(e); return; }
     if (e.target.dataset && e.target.dataset.role === 'demand-link') { this._onDemandLink(e); return; }
     if (e.target.dataset && e.target.dataset.role === 'demand-incomer') {
