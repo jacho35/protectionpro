@@ -73,6 +73,8 @@ const LightingWS = {
     if (this.view === 'table' || this.view === '3d') { this.setView('plan'); return; }
     this._renderBar();
     if (typeof PlanUI !== 'undefined') { PlanUI.renderPalette(); PlanUI.renderProps(); }
+    this._renderSheet();
+    if (this._phone()) requestAnimationFrame(() => this._phoneFit(false));
     PlanEngine.requestDraw({ fg: true });
     if (s === 'results') this.liveKick(0);
   },
@@ -218,6 +220,12 @@ const LightingWS = {
       PlanUI.renderProps(); PlanEngine.requestDraw({ fg: true });
     }
     if (this.view === 'section') this._renderSection();
+    const z = this.focusZone(), zid = z ? z.id : null;
+    if (zid !== this._lastZone) {
+      this.body = zid ? 'item' : 'tools';
+      this._lastZone = zid;
+      if (zid && this._phone()) this._phoneFit(false);
+    }
     this._renderSheet();
     this.liveKick(300);
   },
@@ -274,7 +282,12 @@ const LightingWS = {
     host.addEventListener('input', (e) => { if (e.target.dataset && e.target.dataset.ls === 'pos') this._onSectionInput(e); });
     // Keep the Drawing box open or shut across re-renders of the panel.
     host.addEventListener('toggle', (e) => { if (e.target.matches && e.target.matches('[data-lw-drawing]')) this._drawingOpen = e.target.open; }, true);
-    window.addEventListener('resize', () => { if (this._active) this._renderSheet(); });
+    window.addEventListener('resize', () => {
+      if (!this._active) return;
+      const ph = this._isPhone();
+      if (ph !== this._wasPhone) { this._wasPhone = ph; this._renderBar(); }
+      this._renderSheet();
+    });
   },
 
   setView(view) {
@@ -291,6 +304,7 @@ const LightingWS = {
       PlanMarkup.activate(plan, 'lighting');
       this._renderSection();
       this._renderSheet();
+      if (this._phone()) requestAnimationFrame(() => { PlanEngine.resize(); this._phoneFit(true); });
       // the section takes room from the plan: fit the plan to the cut room again
       const sr = this.view === 'section' && this._sectionRoom();
       if (sr && PlanEngine.zoomToPoints) requestAnimationFrame(() => { PlanEngine.resize(); PlanEngine.zoomToPoints(sr.points); });
@@ -338,6 +352,27 @@ const LightingWS = {
     const pm = AppState.planMarkup;
     const floors = (pm.floors || []).slice().sort((a, b) => (b.level || 0) - (a.level || 0));
     const vb = (v, label) => `<button type="button" class="plan-mode-btn${this.view === v ? ' active' : ''}" data-lw-view="${v}" aria-pressed="${this.view === v}">${label}</button>`;
+    // A phone: one row — the view, Undo, Fit and a menu with the rest. The steps are in the sheet.
+    if (this._isPhone()) {
+      const more = this._moreOpen;
+      bar.innerHTML = `<div class="plan-modes lw-phone-views" role="group" aria-label="View">${vb('plan', 'Plan')}${this.scope === 'sports' ? '' : vb('section', 'Section')}${vb('3d', '3D')}${vb('table', 'List')}</div>
+        <div class="plan-tb-spacer"></div>
+        ${planish ? `<button class="plan-tb-btn plan-icon-btn" data-lw-act="undo" aria-label="Undo">${I('undo')}</button>
+        <button class="plan-tb-btn plan-icon-btn" data-lw-act="fit" aria-label="Zoom to fit">${I('fit')}</button>` : ''}
+        <button class="plan-tb-btn plan-icon-btn lw-more-btn" data-lw-more aria-expanded="${more}" aria-label="More">⋯</button>
+        ${more ? `<div class="lw-more-pop" role="group" aria-label="More">
+          ${planish ? `<button class="plan-tb-btn" data-lw-act="redo">${I('redo')} Redo</button>
+          <label class="plan-tb-field lw-live"><input type="checkbox" id="lw-live"${this.live ? ' checked' : ''}> Live results</label>` : ''}
+          ${floors.length > 1 ? `<label class="plan-tb-field">Floor <select id="lw-floor-select">${floors.map(f => `<option value="${escHtml(f.id)}"${f.id === pm.activeFloorId ? ' selected' : ''}>${escHtml(f.name)} (L${f.level})</option>`).join('')}</select></label>` : ''}
+          <button class="plan-tb-btn" data-lw="calc">Calculate all</button>
+          <button class="plan-tb-btn" data-lw="photolib">Luminaire library…</button>
+          <button class="plan-tb-btn" data-lw="relux">Relux reference…</button>
+          <button class="plan-tb-btn" data-lw="pdf">PDF report</button></div>` : ''}
+        ${v3 ? `<div class="lw-phone-3d">${Light3D.barHtml()}<button class="btn-primary" data-l3="calc">${Light3D.calcLabel()}</button></div>` : ''}`;
+      const bottom = document.getElementById('lw-steps-bottom');
+      if (bottom) bottom.innerHTML = '';
+      return;
+    }
     bar.innerHTML = `
       ${planish ? `<nav class="lw-steps lw-steps-top" aria-label="Steps">${this._stepsHtml()}</nav>` : ''}
       <div class="plan-modes" role="group" aria-label="View">
@@ -464,7 +499,9 @@ const LightingWS = {
     if (!on) { if (LightSection.cut) { LightSection.cut = null; PlanEngine.requestDraw({ fg: true }); } return; }
     const room = this._sectionRoom();
     if (!room) {
-      host.innerHTML = '<p class="lw-hint lw-section-empty">Select a room on the plan to see its section: the fittings\' polar curves in the cut plane and the lux along the cut.</p>';
+      const rooms = (AppState.planMarkup.rooms || []).filter(r => (r.kind || 'room') === 'room' && r.points && r.points.length >= 3);
+      host.innerHTML = `<p class="lw-hint lw-section-empty">Pick a room to see its section: the fittings' polar curves in the cut plane and the lux along the cut.</p>
+        ${rooms.length ? `<div class="lw-pick-rooms">${rooms.map(r => `<button type="button" class="plan-btn" data-lw-pick="${escHtml(r.id)}">${escHtml(r.name || 'Room')}</button>`).join('')}</div>` : ''}`;
       LightSection.cut = null; PlanEngine.requestDraw({ fg: true });
       return;
     }
@@ -479,24 +516,105 @@ const LightingWS = {
   },
 
   // ─── Phone: the panels as one bottom sheet ───
-  sheet: 'peek',          // peek | tools | item
+  // `sheet` is its height — peek (the header: steps + the selected item's result or the step's hint),
+  // half (the plan stays in view above it) or full; `body` is what it holds — the step's tools or the
+  // selected item's panel. The plan's stage shrinks to the part the sheet leaves, so a fit fits there.
+  sheet: 'peek',          // peek | half | full
+  body: 'tools',          // tools | item
   _isPhone() { return typeof window.matchMedia === 'function' && window.matchMedia('(max-width: 768px)').matches; },
-  setSheet(s) { this.sheet = s; this._renderSheet(); },
+  _phone() { return this._isPhone() && this._active && (this.view === 'plan' || this.view === 'section'); },
+  // 'tools' / 'item' pick the body (opening the sheet from peek); 'peek' / 'half' / 'full' set the height.
+  setSheet(s) {
+    if (s === 'tools' || s === 'item') { this.body = s; if (this.sheet === 'peek') this.sheet = 'half'; }
+    else if (['peek', 'half', 'full'].includes(s)) this.sheet = s;
+    this._renderSheet();
+  },
+  setBody(b) { this.body = b === 'item' ? 'item' : 'tools'; this._renderSheet(); },
   _renderSheet() {
     const head = document.getElementById('lw-sheethead');
     const planEl = document.getElementById('lw-plan');
     if (!head || !planEl) return;
-    const phone = this._isPhone() && this._active && (this.view === 'plan' || this.view === 'section');
+    const phone = this._phone();
     planEl.classList.toggle('lw-phone', phone);
-    planEl.dataset.sheet = this.sheet;
-    if (!phone) { head.innerHTML = ''; return; }
+    if (typeof PlanEngine !== 'undefined') PlanEngine.quietFittings = phone;
+    if (!phone) { head.innerHTML = ''; planEl.style.removeProperty('--lw-head-h'); return; }
     const z = this.focusZone();
+    const body = z ? this.body : 'tools';
+    planEl.dataset.sheet = this.sheet;
+    planEl.dataset.body = body;
+    const steps = `<nav class="lw-sheet-steps" aria-label="Steps">${this._stepsHtml()}</nav>`;
+    let line;
+    if (z) {
+      const r = RoomCalc.results[this._resultKey(z)], pass = r && r.res ? r.res.pass : null;
+      line = `<div class="lw-sheet-z"><b>${escHtml(z.name || this.KIND[z.kind || 'room'])}</b>${pass === true ? '<span class="lw-chip ok">Pass</span>' : pass === false ? '<span class="lw-chip bad">Fail</span>' : ''}</div>${this.sheet === 'peek' ? this.stripHtml(z) : ''}`;
+    } else {
+      const sports = this.scope === 'sports', n = (AppState.planMarkup.rooms || []).filter(x => x.points && x.points.length >= 2 && this.inScope(x.kind)).length;
+      const what = sports ? 'field' : 'room';
+      const hint = this.step === 'space' ? `${n} ${what}${n === 1 ? '' : 's'} on this floor. Tap one to edit it.`
+        : this.step === 'fit' ? `Tap a ${what}, then place ${sports ? 'masts' : 'luminaires'}.` : `Tap a ${what} to see its result.`;
+      const act = this.step === 'results' ? '<button type="button" class="lw-sheet-act" data-lw="calc">Calculate all</button>'
+        : `<button type="button" class="lw-sheet-act" data-lw-sheet="tools">${this.step === 'space' ? (sports ? '+ Add' : '+ Add room') : sports ? 'Masts' : 'Luminaires'}</button>`;
+      line = `<div class="lw-sheet-line"><span>${escHtml(hint)}</span>${act}</div>`;
+    }
+    const tab = (k, label) => `<button type="button" class="lw-sheet-tab${body === k ? ' on' : ''}" data-lw-sheet="${k}" aria-pressed="${body === k}">${escHtml(label)}</button>`;
     const stepName = (this.stepList().find(x => x[0] === this.step) || [])[1] || 'Tools';
-    const tab = (k, label) => `<button type="button" class="lw-sheet-tab${this.sheet === k ? ' on' : ''}" data-lw-sheet="${k}" aria-pressed="${this.sheet === k}">${escHtml(label)}</button>`;
-    const grip = this.sheet === 'peek' ? (z ? 'item' : 'tools') : 'peek';
-    head.innerHTML = `<button type="button" class="lw-sheet-grip" data-lw-sheet="${escHtml(grip)}" aria-label="${this.sheet === 'peek' ? 'Open the panel' : 'Close the panel'}"><span></span></button>
-      ${z ? this.stripHtml(z) : `<p class="lw-hint lw-sheet-empty">${this.scope === 'sports' ? 'Tap a field to see its result.' : 'Tap a room to see its result.'}</p>`}
-      <div class="lw-sheet-tabs" role="group" aria-label="Panel">${tab('tools', stepName + ' tools')}${tab('item', z ? (z.name || this.KIND[z.kind || 'room']) : 'Selected')}</div>`;
+    // the item tab is named after what is selected: the room, or a fitting in it
+    const selEl = (AppState.planMarkup.elements || []).find(e => PlanMarkup.selectedIds.has(e.id));
+    const itemName = selEl ? (selEl.name || 'Selected') : (z && (z.name || this.KIND[z.kind || 'room']));
+    const tabs = z && this.sheet !== 'peek' ? `<div class="lw-sheet-tabs" role="group" aria-label="Panel">${tab('item', itemName)}${tab('tools', stepName + ' tools')}</div>` : '';
+    const label = this.sheet === 'peek' ? 'Open the panel' : this.sheet === 'half' ? 'Close the panel (drag up for full height)' : 'Make the panel smaller';
+    head.innerHTML = `<button type="button" class="lw-sheet-grip" data-lw-grip aria-label="${label}"><span></span></button>${steps}${line}${tabs}`;
+    if (!head._grip) { head._grip = true; this._wireGrip(head); }
+    const h = head.offsetHeight;
+    if (h && planEl.style.getPropertyValue('--lw-head-h') !== h + 'px') planEl.style.setProperty('--lw-head-h', h + 'px');
+    // the stage resizes with the sheet (ResizeObserver); keep the item in view
+    requestAnimationFrame(() => this._keepInView());
+  },
+  // The grip: a tap opens / closes the sheet, a drag up or down moves it one height.
+  _wireGrip(head) {
+    let st = null;
+    head.addEventListener('pointerdown', (e) => { if (!e.target.closest('[data-lw-grip]')) return; st = { y: e.clientY, id: e.pointerId }; try { e.target.setPointerCapture(e.pointerId); } catch (_) { /* gone */ } });
+    head.addEventListener('pointerup', (e) => {
+      if (!st || e.pointerId !== st.id) return;
+      const dy = e.clientY - st.y; st = null;
+      const order = ['peek', 'half', 'full'], i = order.indexOf(this.sheet);
+      if (Math.abs(dy) < 10) this.setSheet(this.sheet === 'peek' ? 'half' : this.sheet === 'full' ? 'half' : 'peek');
+      else this.setSheet(order[Math.max(0, Math.min(2, i + (dy < 0 ? 1 : -1)))]);
+    });
+    head.addEventListener('pointercancel', () => { st = null; });
+  },
+  // The points to fit: every room (in scope) on this floor (`all`), else the focus zone when there is one.
+  _fitPoints(all) {
+    const z = this.focusZone();
+    if (!all && z && z.points && z.points.length) return z.points;
+    const pts = [];
+    for (const r of AppState.planMarkup.rooms || []) if (r.points && this.inScope(r.kind)) pts.push(...r.points);
+    return pts.length ? pts : null;
+  },
+  // Fit the plan to the rooms (or the selected one) in the part of the screen the sheet leaves.
+  _phoneFit(all = true) {
+    if (typeof PlanEngine === 'undefined' || !PlanEngine.cssW) return;
+    PlanEngine.resize();                                 // the sheet may have just changed the stage
+    const pts = this._fitPoints(all);
+    if (!pts) { PlanEngine.zoomFit(); return; }
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const p of pts) { minX = Math.min(minX, p.x); minY = Math.min(minY, p.y); maxX = Math.max(maxX, p.x); maxY = Math.max(maxY, p.y); }
+    const pad = 20, w = Math.max(10, maxX - minX), h = Math.max(10, maxY - minY);
+    const zm = Math.max(0.02, Math.min(20, Math.min((PlanEngine.cssW - pad * 2) / w, (PlanEngine.cssH - pad * 2) / h)));
+    PlanEngine.viewSet = true;
+    PlanEngine.view.zoom = zm;
+    PlanEngine.view.panX = -((minX + maxX) / 2) * zm;
+    PlanEngine.view.panY = -((minY + maxY) / 2) * zm;
+    PlanEngine.requestDraw({ all: true });
+  },
+  // After the sheet moved: when the item being worked on left the visible plan, fit it again.
+  _keepInView() {
+    if (!this._phone() || this.sheet === 'full' || typeof PlanEngine === 'undefined' || !PlanEngine.cssW) return;
+    const pts = this._fitPoints(false);
+    if (!pts) return;
+    const zm = PlanEngine.view.zoom, cx = PlanEngine.cssW / 2 + PlanEngine.view.panX, cy = PlanEngine.cssH / 2 + PlanEngine.view.panY;
+    const off = pts.some(p => { const x = cx + p.x * zm, y = cy + p.y * zm; return x < -2 || y < -2 || x > PlanEngine.cssW + 2 || y > PlanEngine.cssH + 2; });
+    if (off) this._phoneFit(false);
   },
 
   // Plan toolbar: how results show (false colour / isolux lines / values), the line step, and
@@ -688,11 +806,11 @@ const LightingWS = {
       const glare = r.glare ? `${r.glare.label} ${num(r.glare.v, 1)} <small>/ ${r.glare.t}</small>` : '—';
       const vcls = r.verdict === 'Pass' ? 'ok' : r.verdict === 'Fail' ? 'bad' : 'muted';
       return `<tr>
-        <td><b>${escHtml(r.name)}</b></td><td>${escHtml(r.floor)}</td><td>${this.KIND[r.kind]}</td><td class="lw-task">${escHtml(r.task)}</td>
-        <td class="num">${em}${r.em && r.em.ev ? ` <small>lx ${r.em.max ? 'max' : 'min'}</small>` : ''}</td><td class="num">${num(r.uo, 2)}</td><td class="num">${glare}</td>
-        <td class="num">${num(r.wm2, 1)}</td><td>${escHtml(r.emText)}</td>
-        <td class="${vcls}"><b>${r.verdict}</b>${r.verdictNote ? ` <small>(${r.verdictNote})</small>` : ''}${r.failing.length ? `<small class="lw-why">${escHtml(r.failing.join(', '))}</small>` : ''}</td>
-        <td><button class="lw-link" data-lw-locate="${escHtml(r.id)}" data-lw-floor="${escHtml(r.floorId)}">Show on plan</button></td></tr>`;
+        <td class="lw-c-name"><b>${escHtml(r.name)}</b></td><td class="lw-c-floor" data-label="Floor">${escHtml(r.floor)}</td><td class="lw-c-kind" data-label="Type">${this.KIND[r.kind]}</td><td class="lw-task" data-label="Task">${escHtml(r.task)}</td>
+        <td class="num" data-label="Ēm / target">${em}${r.em && r.em.ev ? ` <small>lx ${r.em.max ? 'max' : 'min'}</small>` : ''}</td><td class="num" data-label="U₀ / U₂">${num(r.uo, 2)}</td><td class="num" data-label="UGR / GR">${glare}</td>
+        <td class="num" data-label="W/m²">${num(r.wm2, 1)}</td><td class="lw-c-em" data-label="Emergency">${escHtml(r.emText)}</td>
+        <td class="${vcls} lw-c-verdict"><b>${r.verdict}</b>${r.verdictNote ? ` <small>(${r.verdictNote})</small>` : ''}${r.failing.length ? `<small class="lw-why">${escHtml(r.failing.join(', '))}</small>` : ''}</td>
+        <td class="lw-c-go"><button class="lw-link" data-lw-locate="${escHtml(r.id)}" data-lw-floor="${escHtml(r.floorId)}">Show on plan</button></td></tr>`;
     };
     const title = { sports: 'Sports fields', rooms: 'Rooms & areas' }[this.scope] || 'Lighting';
     main.innerHTML = `<div class="lw-head"><h1>${title}</h1></div>
@@ -713,12 +831,21 @@ const LightingWS = {
   },
 
   _onClick(e) {
+    if (this._moreOpen && !e.target.closest('[data-lw-more]') && !(e.target.closest('.lw-more-pop') && e.target.closest('input, select, label'))) {
+      this._moreOpen = false; setTimeout(() => this._renderBar(), 0);
+    }
     const v = e.target.closest('[data-lw-view]');
     if (v) { this.setView(v.dataset.lwView); return; }
     const st = e.target.closest('[data-lw-step]');
     if (st) { this.setStep(st.dataset.lwStep); return; }
     const sh = e.target.closest('[data-lw-sheet]');
-    if (sh) { const k = sh.dataset.lwSheet; this.setSheet(this.sheet === k && k !== 'peek' ? 'peek' : k); return; }
+    if (sh) { this.setSheet(sh.dataset.lwSheet); return; }
+    if (e.target.closest('[data-lw-grip]')) return;                    // the grip works on pointer up (_wireGrip)
+    const pk = e.target.closest('[data-lw-pick]');
+    if (pk) { PlanMarkup.selectOnly(pk.dataset.lwPick); this.onSelection(); PlanEngine.requestDraw({ all: true }); return; }
+    if (e.target.closest('#lw-plan .plan-legend') && this._phone()) { const pl = document.getElementById('lw-plan'); pl.dataset.legend = pl.dataset.legend === 'open' ? '' : 'open'; return; }
+    if (e.target.closest('[data-lw-more]')) { this._moreOpen = !this._moreOpen; this._renderBar(); return; }
+    if (e.target.closest('[data-l3-camtoggle]')) { const v = document.getElementById('l3-view'); if (v) v.classList.toggle('l3-cam-open'); return; }
     if (e.target.closest('[data-lw-calcone]')) {
       const z = this.focusZone();
       if (z) this.calcZone(z).then(() => { PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true }); });
@@ -734,7 +861,7 @@ const LightingWS = {
     const t = e.target.closest('#lw-bar [data-tool]');
     if (t) { PlanTools.set(t.dataset.tool); return; }
     const la = e.target.closest('[data-lw-act]');
-    if (la) { PlanMarkup.runAction(la.dataset.lwAct); return; }
+    if (la) { if (la.dataset.lwAct === 'fit' && this._phone()) this._phoneFit(true); else PlanMarkup.runAction(la.dataset.lwAct); return; }
     const f = e.target.closest('[data-lw-filter]');
     if (f) { this.filter = f.dataset.lwFilter; this.render(); return; }
     const s = e.target.closest('[data-lw-sort]');

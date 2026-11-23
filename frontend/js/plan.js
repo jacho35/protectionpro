@@ -1019,7 +1019,7 @@ const PlanMarkup = {
   // tool's pointer-UP when the gesture didn't move (UX-6).
   openPropsForTap() {
     if (!this._isMobile()) return;
-    if (this.context === 'lighting' && typeof LightingWS !== 'undefined') { if (LightingWS.sheet === 'tools') LightingWS.setSheet('item'); return; }
+    if (this.context === 'lighting' && typeof LightingWS !== 'undefined') { LightingWS.setBody('item'); return; }
     const props = document.getElementById('plan-props');
     if (props && !props.classList.contains('mobile-open')) {
       document.getElementById('plan-palette')?.classList.remove('mobile-open');

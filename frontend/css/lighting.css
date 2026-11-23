@@ -534,57 +534,128 @@ body.dark-mode .lw-chip.bad { background: rgba(166,27,27,.35); color: #f5c2c2; }
 .sf-nudge { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; margin: 6px 0; }
 .sf-nudge .btn-small { min-height: 36px; }
 
-/* ─── Phone: steps at the bottom, the two panels as one bottom sheet ─── */
+/* ─── Phone: one tool row; the steps, the item's result and the panels in one bottom sheet ───
+   The sheet (lightws.js `_renderSheet`) has three heights — peek (its header), half (the plan stays in
+   view above it) and full — and holds the step's tools or the selected item's panel (`data-body`).
+   The plan's stage is padded by what the sheet covers, so the canvas resizes and a fit fits there. */
+.l3-cam-toggle { display: none; }
 @media (max-width: 768px) {
-  .lw-bar { gap: 6px; padding: 6px 8px; }
+  .lw-bar { gap: 4px; padding: 4px 6px; position: relative; overflow: visible; z-index: 90; }
+  .lw-bar:has(.lw-phone-views) { flex-wrap: nowrap; }
+  .lw-bar:has(.lw-phone-3d) { flex-wrap: wrap; }
+  .lw-bar .lw-phone-views { order: 0; flex: 0 1 auto; }
+  .lw-phone-3d { order: 5; flex: 1 0 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+  .lw-phone-3d .plan-tb-field { font-size: 13px; }
   .lw-bar .lw-steps-top, .lw-bar .lw-bar-extra, .lw-fit-label, .lw-sel-label { display: none; }
-  /* Calculate all is in the Results step's panel; live results recalculate the item you work on */
   .lw-bar:has(.lw-steps-top) .btn-primary[data-lw="calc"] { display: none; }
-  .lw-plan.lw-phone { --lw-sheet-h: 38vh; }
-  .lw-plan.lw-phone .lw-steps-bottom {
-    order: 3; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0; flex: 0 0 60px;
-    background: var(--bg-primary); border-top: 1px solid var(--border-color); z-index: 70;
+  .lw-phone-views { min-width: 0; }
+  .lw-phone-views .plan-mode-btn { min-height: 40px; padding: 0 9px; font-size: 13px; }
+  .lw-bar .plan-icon-btn { min-width: 44px; min-height: 44px; display: inline-flex; align-items: center; justify-content: center; }
+  .lw-more-btn { font-size: 20px; line-height: 1; }
+  .lw-more-pop {
+    position: absolute; right: 6px; top: calc(100% + 4px); z-index: 120; display: flex; flex-direction: column; gap: 4px;
+    min-width: 220px; padding: 8px; background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: 12px;
+    box-shadow: 0 8px 24px rgba(0,0,0,.18);
   }
-  .lw-plan.lw-phone .lw-step {
-    border: 0; border-radius: 0; background: none; flex-direction: column; justify-content: center; gap: 2px; padding: 0; min-height: 60px;
-  }
-  .lw-plan.lw-phone .lw-step.on { color: var(--accent); box-shadow: inset 0 3px 0 var(--accent); background: none; }
-  .lw-plan.lw-phone .lw-step-t small { display: none; }
-  .lw-plan.lw-phone .lw-step-t { align-items: center; font-size: 12px; }
+  .lw-more-pop .plan-tb-btn, .lw-more-pop .plan-tb-field { min-height: 44px; width: 100%; justify-content: flex-start; display: flex; align-items: center; gap: 8px; box-sizing: border-box; }
+  .lw-more-pop .plan-tb-field select { flex: 1; min-height: 36px; }
+
+  .lw-plan.lw-phone { --lw-head-h: 130px; --lw-body-h: 0px; }
+  .lw-plan.lw-phone[data-sheet="half"], .lw-plan.lw-phone[data-sheet="full"] { --lw-body-h: 36vh; }
+  .lw-plan.lw-phone .lw-steps-bottom { display: none; }
+  .lw-plan.lw-phone > .plan-main { overflow: hidden; box-sizing: border-box; padding-bottom: calc(var(--lw-head-h) + var(--lw-body-h)); }
   .lw-plan.lw-phone .lw-section { order: 0; height: 34vh; min-height: 0; padding: 6px 10px 8px; }
   .lw-plan.lw-phone .ls-dock-head { gap: 4px 10px; }
   .lw-plan.lw-phone .plan-info { display: none; }
-  .lw-plan.lw-phone .plan-legend { top: 8px; bottom: auto; }
-  /* the sheet header covers the stage's bottom edge: keep Done / Cancel above it */
+  .lw-plan.lw-phone .plan-status { display: none; }
   .lw-plan.lw-phone .plan-action-chip { bottom: auto; top: 10px; z-index: 80; }
 
-  /* the sheet header: grip, verdict strip, which panel */
+  /* the sheet's header: grip, steps, the item's result or the step's hint, which panel */
   .lw-plan.lw-phone .lw-sheethead {
-    display: block; position: absolute; left: 0; right: 0; bottom: 60px; z-index: 72;
-    background: var(--bg-primary); border-radius: 14px 14px 0 0; box-shadow: 0 -4px 18px rgba(0,0,0,0.16); padding: 0 12px 8px;
+    display: block; position: absolute; left: 0; right: 0; bottom: var(--lw-body-h); z-index: 72;
+    background: var(--bg-primary); border-radius: 16px 16px 0 0; box-shadow: 0 -4px 18px rgba(0,0,0,0.14); padding: 0 12px 10px;
   }
-  .lw-plan.lw-phone:not([data-sheet="peek"]) .lw-sheethead { bottom: calc(60px + var(--lw-sheet-h)); border-bottom: 1px solid var(--border-color); }
-  .lw-sheet-grip { display: flex; justify-content: center; align-items: center; width: 100%; min-height: 26px; border: 0; background: none; padding: 0; cursor: pointer; }
+  .lw-plan.lw-phone[data-sheet="full"] .lw-sheethead { bottom: auto; top: 0; border-radius: 0; box-shadow: none; border-bottom: 1px solid var(--border-color); }
+  .lw-plan.lw-phone:not([data-sheet="peek"]) .lw-sheethead { border-bottom: 1px solid var(--border-color); }
+  .lw-sheet-grip { display: flex; justify-content: center; align-items: center; width: 100%; min-height: 28px; border: 0; background: none; padding: 0; cursor: grab; touch-action: none; }
   .lw-sheet-grip span { width: 40px; height: 5px; border-radius: 3px; background: var(--border-color); }
-  .lw-sheethead .lw-strip { position: static; margin: 0 0 6px; padding: 0; background: none; border: 0; }
+  .lw-sheet-steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 3px; padding: 3px; margin: 0 0 8px; background: var(--bg-tertiary); border-radius: 12px; }
+  .lw-sheet-steps .lw-step { border: 0; border-radius: 10px; min-height: 40px; padding: 0 4px; gap: 4px; justify-content: center; background: none; color: var(--text-primary); }
+  .lw-sheet-steps .lw-step.on { background: var(--accent); color: #fff; border: 0; }
+  .lw-sheet-steps .lw-step-n { width: 18px; height: 18px; font-size: 11px; }
+  .lw-sheet-steps .lw-step-n:empty { display: none; }
+  .lw-sheet-steps .lw-step-t { align-items: center; font-size: 13px; }
+  .lw-sheet-steps .lw-step-t small { display: none; }
+  .lw-sheet-line { display: flex; align-items: center; gap: 10px; font-size: 14px; color: var(--text-secondary); }
+  .lw-sheet-line > span { flex: 1; min-width: 0; }
+  .lw-sheet-act { flex: none; min-height: 44px; padding: 0 14px; border: 0; border-radius: 10px; font: inherit; font-size: 14px; font-weight: 600; cursor: pointer;
+    background: color-mix(in srgb, var(--accent) 12%, var(--bg-primary)); color: var(--accent); }
+  .lw-sheet-z { display: flex; align-items: center; gap: 8px; font-size: 15px; margin: 0 0 4px; }
+  .lw-sheethead .lw-strip { position: static; margin: 0; padding: 0; background: none; border: 0; }
   .lw-sheethead .lw-strip-head { display: none; }
-  .lw-sheet-empty { margin: 0 0 8px; text-align: center; }
-  .lw-sheet-tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); border: 1px solid var(--border-color); border-radius: 8px; overflow: hidden; }
+  .lw-sheethead .lw-strip-state .btn-small { min-height: 36px; }
+  .lw-sheet-tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 8px; border: 1px solid var(--border-color); border-radius: 10px; overflow: hidden; }
   .lw-sheet-tab { min-height: 40px; border: 0; background: var(--bg-primary); color: var(--text-primary); font: inherit; font-size: 13px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 0 8px; }
   .lw-sheet-tab + .lw-sheet-tab { border-left: 1px solid var(--border-color); }
   .lw-sheet-tab.on { background: var(--accent); color: #fff; font-weight: 600; }
 
-  /* the sheet body: the step's tools or the selected item's panel */
+  /* the sheet's body: the step's tools or the selected item's panel */
   .lw-plan.lw-phone .plan-palette, .lw-plan.lw-phone .plan-props {
-    top: auto; left: 0; right: 0; bottom: 0; width: auto; height: var(--lw-sheet-h);
+    top: auto; left: 0; right: 0; bottom: 0; width: auto; height: var(--lw-body-h);
     transform: translateY(105%); box-shadow: none; z-index: 71; transition: transform .2s ease;
   }
-  .lw-plan.lw-phone[data-sheet="tools"] .plan-palette, .lw-plan.lw-phone[data-sheet="item"] .plan-props { transform: translateY(0); }
+  .lw-plan.lw-phone[data-sheet="full"] .plan-palette, .lw-plan.lw-phone[data-sheet="full"] .plan-props { height: calc(100% - var(--lw-head-h)); }
+  .lw-plan.lw-phone:not([data-sheet="peek"])[data-body="tools"] .plan-palette,
+  .lw-plan.lw-phone:not([data-sheet="peek"])[data-body="item"] .plan-props { transform: translateY(0); }
   .lw-plan.lw-phone .plan-props [data-lw-strip] { display: none; }
   .lw-plan.lw-phone #plan-drawer-backdrop { display: none !important; }
-  .lw-plan.lw-phone > .plan-main { overflow: hidden; }
   .lw-plan.lw-phone .plan-zone-row, .lw-plan.lw-phone .lw-lum, .lw-plan.lw-phone .plan-btn { min-height: 44px; }
   .lw-plan.lw-phone .rl-tab { min-height: 44px; }
+
+  /* the results key: one line, tap it for the whole key */
+  .lw-plan.lw-phone .plan-legend {
+    top: 8px; left: 8px; right: auto; bottom: auto; width: auto; max-width: calc(100% - 16px);
+    flex-direction: row; align-items: center; gap: 8px; padding: 6px 10px; min-height: 32px; pointer-events: auto; cursor: pointer;
+  }
+  .lw-plan.lw-phone .plan-legend > :not(.plan-legend-bar):not(.plan-legend-scale) { display: none; }
+  .lw-plan.lw-phone .plan-legend-bar { width: 96px; flex: none; }
+  .lw-plan.lw-phone .plan-legend-scale { gap: 6px; }
+  .lw-plan.lw-phone .plan-legend-scale span:nth-child(2) { display: none; }
+  .lw-plan.lw-phone .plan-legend-scale span:first-child::after { content: ' –'; }
+  .lw-plan.lw-phone .plan-legend::after { content: 'Key ▾'; font-size: 11px; color: var(--text-secondary); }
+  .lw-plan.lw-phone[data-legend="open"] .plan-legend { flex-direction: column; align-items: stretch; width: calc(100% - 16px); }
+  .lw-plan.lw-phone[data-legend="open"] .plan-legend > :not(.plan-legend-bar):not(.plan-legend-scale) { display: flex; }
+  .lw-plan.lw-phone[data-legend="open"] .plan-legend > small:not(.plan-legend-bar):not(.plan-legend-scale) { display: block; }
+  .lw-plan.lw-phone[data-legend="open"] .plan-legend-rows { flex-direction: column; }
+  .lw-plan.lw-phone[data-legend="open"] .plan-legend-bar { width: auto; display: block; }
+  .lw-plan.lw-phone[data-legend="open"] .plan-legend-scale span:nth-child(2) { display: inline; }
+  .lw-plan.lw-phone[data-legend="open"] .plan-legend-scale span:first-child::after { content: none; }
+  .lw-plan.lw-phone[data-legend="open"] .plan-legend::after { content: 'Close ▴'; align-self: flex-end; }
+
+  /* Section: pick a room when none is selected */
+  .lw-pick-rooms { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 10px 10px; }
+
+  /* Table → a list of cards */
+  .lw-tableview { flex-direction: column; }
+  .lw-tableview .lw-rail { width: 100%; max-width: 100%; min-width: 0; }
+  .lw-tablewrap { overflow: visible; border: 0; background: none; }
+  .lw-table { min-width: 0; display: block; }
+  .lw-table thead { display: none; }
+  .lw-table tbody { display: flex; flex-direction: column; gap: 10px; }
+  .lw-table tr { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 12px; padding: 12px 14px; background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: 14px; }
+  .lw-table td { display: block; border: 0; padding: 0; grid-column: 1 / -1; text-align: left !important; }
+  .lw-table td[data-label]::before { content: attr(data-label) ' · '; color: var(--text-secondary); font-size: 12px; }
+  .lw-table td.lw-c-name { grid-column: 1; grid-row: 1; font-size: 16px; }
+  .lw-table td.lw-c-verdict { grid-column: 2; grid-row: 1; text-align: right !important; }
+  .lw-table td.lw-c-floor, .lw-table td.lw-c-kind, .lw-table td.lw-task { font-size: 13px; color: var(--text-secondary); }
+  .lw-table .lw-task { max-width: none; }
+  .lw-table td.lw-c-go .lw-link { min-height: 44px; padding-left: 0; }
+
+  /* 3D: the camera controls behind a View button */
+  .l3-cam-toggle { display: block; position: absolute; top: 12px; right: 12px; z-index: 3; min-height: 44px; padding: 0 14px; border: 1px solid var(--border-color); border-radius: 10px; background: var(--bg-primary); color: var(--text-primary); font: inherit; font-size: 13px; font-weight: 600; }
+  .l3-view:not(.l3-cam-open) .l3-cam { display: none; }
+  .l3-view.l3-cam-open .l3-cam { top: 62px; }
+  .l3-hint { display: none; }
 }
 
 /* Aiming dialog: Replace luminaire + polar curve */

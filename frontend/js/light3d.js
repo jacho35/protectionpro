@@ -242,6 +242,7 @@ const Light3D = {
         <aside class="l3-pal" id="l3-pal" aria-label="Add to the room"></aside>
         <section class="l3-view" id="l3-view" aria-label="3D view">
           <div class="l3-title" id="l3-title"></div>
+          <button type="button" class="l3-cam-toggle" data-l3-camtoggle aria-label="View controls">View ▾</button>
           <div class="l3-cam" role="group" aria-label="Camera">
             <button type="button" data-l3-cam="left" aria-label="Turn left 45°" title="Turn left 45°">⟲</button>
             <button type="button" data-l3-cam="top">Top</button>

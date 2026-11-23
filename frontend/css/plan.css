@@ -564,6 +564,9 @@ body.dark-mode .plan-legend-line.target { border-color: #4a9eff; }
 
 .plan-legend { position: absolute; left: 8px; bottom: 8px; z-index: 60; display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; padding: 6px 10px; background: var(--bg-primary); color: var(--text-primary); border: 1px solid var(--bg-tertiary); border-radius: 6px; font-size: 12px; }
 .plan-legend[hidden] { display: none; }
+/* The lighting key shares #plan-legend with the route colour legend above: keep it a column, the bar full width. */
+.plan-legend:has(.plan-legend-bar) { flex-direction: column; flex-wrap: nowrap; align-items: stretch; gap: 5px; left: auto; right: 10px; bottom: 10px; width: 250px; padding: 9px 11px; z-index: 30; }
+.plan-legend:has(.plan-legend-bar) .plan-legend-bar { width: 100%; }
 .plan-legend i { display: inline-block; width: 16px; height: 4px; border-radius: 2px; margin-right: 5px; vertical-align: middle; }
 .plan-tb-field[hidden] { display: none; }
 

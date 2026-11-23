@@ -661,7 +661,11 @@ const PlanEngine = {
       ctx.strokeRect(el.x - half - pad, el.y - half - pad, (half + pad) * 2, (half + pad) * 2);
       ctx.setLineDash([]);
     }
-    if (el.name) {
+    // On a phone (LightingWS sets `quietFittings`) a luminaire's label only shows once 1 m is 30 px on screen:
+    // zoomed out, dozens of L1…L69 labels only cover the rooms.
+    const quiet = this.quietFittings && !selected && typeof RoomCalc !== 'undefined' && RoomCalc._isCalcLight(el)
+      && this.view.zoom / (this.factor() || 1) < 30;
+    if (el.name && !quiet) {
       const fpx = 11 / this.view.zoom;
       ctx.font = `${fpx}px system-ui, sans-serif`;
       ctx.fillStyle = this._cssVar('--plan-label', '#334155');
