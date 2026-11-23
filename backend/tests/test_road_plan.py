@@ -192,6 +192,23 @@ def test_conflict_area_is_the_mean_of_its_grid():
     assert [c["key"] for c in ca["checks"]] == ["Eav", "Uo"]
 
 
+def test_conflict_direction_is_the_nearest_road_by_true_distance():
+    """A T junction: points on the main road in line with the side road (which ends on it) take the main
+    road's direction for the 5H window, not the side road's — past its end the side road's offset is only the
+    sideways part of the distance."""
+    main = RP._Road({"centreline": [[-60, 0], [60, 0]], "sections": ONE_WAY}, "EN")
+    side = RP._Road({"centreline": [[0, 0], [0, 60]], "sections": ONE_WAY}, "EN")
+    px = np.array([1.0, -2.0, 0.5]); py = np.array([-2.5, -3.0, -1.5])      # on the main carriageway, |x| < |y|
+    s, off, dist = side.project(px, py, with_dist=True)
+    assert np.abs(off) == pytest.approx(np.abs(px))                          # the sideways part only
+    assert dist == pytest.approx(np.hypot(px, py))
+    tx, ty = RP._nearest_tangent([main, side], px, py)
+    assert np.abs(tx) == pytest.approx(1.0) and ty == pytest.approx(0.0, abs=1e-9)
+    # well inside the side road it is the side road's direction
+    tx, ty = RP._nearest_tangent([main, side], np.array([0.5]), np.array([30.0]))
+    assert abs(ty[0]) == pytest.approx(1.0)
+
+
 def test_errors():
     plan = _curved_plan()
     plan["luminaires"][0]["photometryId"] = "missing"
