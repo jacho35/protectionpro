@@ -220,6 +220,7 @@ const Overview = {
         <div class="ov-acts">
           <button type="button" class="btn-primary" data-ov="calc" title="${escHtml(this._calcTitle(type))}">Calculate all</button>
           ${list.length ? `<button type="button" class="btn-small" data-ov="issues">Show issues</button>` : ''}
+          ${type === 'retic' && typeof ReticDiagram !== 'undefined' ? '<button type="button" class="btn-small" data-ov="netov" title="Block diagram of the MV, LV strings and kiosks, street-light circuits and the fibre network">Network overview</button>' : ''}
           <button type="button" class="btn-small" data-ov="report">Report</button>
         </div>
       </section>
@@ -455,6 +456,7 @@ const Overview = {
   },
   async _act(a) {
     if (a === 'issues') { if (typeof Issues !== 'undefined') Issues.open(); return; }
+    if (a === 'netov') { if (typeof ReticDiagram !== 'undefined') ReticDiagram.open(); return; }
     if (a === 'rerun') { if (typeof StaleResults !== 'undefined') await StaleResults.rerun(); this.render(); return; }
     if (a === 'report') {
       const type = Workspaces.type();
