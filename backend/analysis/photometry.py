@@ -191,6 +191,7 @@ def parse_ies(text: str) -> dict:
     (n_lamps, lm_per_lamp, cd_mult, n_v, n_h, phot_type, _units,
      _w, _l, _h) = take(10)
     lum_area = _luminous_area_ies(_units, _w, _l)
+    size = _size_ies(_units, _w, _l, _h)
     ballast, _bp, watts = take(3)
     n_v, n_h = int(n_v), int(n_h)
     if n_v < 1 or n_h < 1:
@@ -219,11 +220,11 @@ def parse_ies(text: str) -> dict:
         c_full, cd_full = _full_circle(hh, rows, lambda c: c)
         return _canonical(meta.get("LUMINAIRE") or meta.get("LUMCAT") or meta.get("TEST") or "",
                           meta.get("MANUFAC", ""), c_full, v, cd_full, lumens, watts, "IES",
-                          _ies_extra(phot_type, lum_area))
+                          _ies_extra(phot_type, lum_area, size))
     c_full, cd_full = _full_circle(h, raw, mirror)
     return _canonical(meta.get("LUMINAIRE") or meta.get("LUMCAT") or meta.get("TEST") or "",
                       meta.get("MANUFAC", ""), c_full, v, cd_full, lumens, watts, "IES",
-                      _ies_extra(phot_type, lum_area))
+                      _ies_extra(phot_type, lum_area, size))
 
 
 def _luminous_area_ies(units, w, l):
@@ -240,8 +241,29 @@ def _luminous_area_ies(units, w, l):
     return aw * al if (aw > 0 and al > 0) else 0.0
 
 
-def _ies_extra(phot_type, area=0.0):
+def _size_ies(units, w, l, h):
+    """The fitting's size (m) from the LM-63 header's luminous dimensions — the only size
+    an IES file carries. Length runs along C0, width along C90; negative = round (a
+    diameter). None when the file gives no length or width."""
+    k = 0.3048 if int(units) == 1 else 1.0
+    aw, al, ah = abs(w) * k, abs(l) * k, abs(h) * k
+    if al <= 0 and aw <= 0:
+        return None
+    rnd = w < 0 or l < 0
+    if al <= 0:
+        al = aw
+    if aw <= 0:
+        aw = al if rnd else 0.0
+    out = {"length": round(al, 3), "width": round(aw, 3), "height": round(ah, 3), "fromOpening": True}
+    if rnd:
+        out["round"] = True
+    return out
+
+
+def _ies_extra(phot_type, area=0.0, size=None):
     out = {}
+    if size:
+        out["sizeM"] = size
     if area and area > 0:
         out["luminousM2"] = round(float(area), 5)
     if int(phot_type) in (2, 3):
@@ -344,7 +366,9 @@ def parse_ldt(text: str) -> dict:
     try:
         sl, sw_, sh = num(12) / 1000.0, num(13) / 1000.0, num(14) / 1000.0   # luminaire length, width, height (mm)
         if sl > 0:
-            extra["sizeM"] = {"length": round(sl, 3), "width": round(sw_, 3), "height": round(sh, 3)}
+            extra["sizeM"] = {"length": round(sl, 3), "width": round(sw_ if sw_ > 0 else sl, 3), "height": round(sh, 3)}
+            if sw_ <= 0:
+                extra["sizeM"]["round"] = True                 # EULUMDAT: width 0 = a round luminaire, length = its diameter
     except ValueError:
         pass
     try:
@@ -426,6 +450,33 @@ INDOOR_OPTICS = {
 }
 
 
+# A typical body size (m) per generic optic — length (along C0), width, height; round = length is
+# the diameter. Only so the fitting can be drawn to size; the user edits it in the library.
+GENERIC_SIZES = {
+    "generic_downlight_narrow": (0.20, 0.20, 0.10, True),
+    "generic_downlight_wide": (0.24, 0.24, 0.10, True),
+    "generic_panel": (0.60, 0.60, 0.05, False),
+    "generic_batten": (1.20, 0.07, 0.06, False),
+    "generic_highbay": (0.40, 0.40, 0.20, True),
+    "generic_flood_sym": (0.30, 0.30, 0.10, False),
+    "generic_flood_asym": (0.30, 0.30, 0.10, False),
+    "generic_sports_narrow": (0.50, 0.50, 0.15, False),
+    "generic_sports_medium": (0.50, 0.50, 0.15, False),
+    "generic_area_sym": (0.40, 0.40, 0.12, True),
+    "generic_area": (0.50, 0.30, 0.12, False),
+}
+
+
+def _generic_size(kind):
+    z = GENERIC_SIZES.get(kind)
+    if not z:
+        return None
+    out = {"length": z[0], "width": z[1], "height": z[2], "typical": True}
+    if z[3]:
+        out["round"] = True
+    return out
+
+
 def _indoor_optic(kind, spec, lumens, watts):
     c = np.arange(0.0, 360.0 + 1e-9, 5.0)
     g = np.arange(0.0, 180.0 + 1e-9, 1.0)
@@ -435,7 +486,7 @@ def _indoor_optic(kind, spec, lumens, watts):
     flux_rel = total_flux(c, g, rel)
     cd = rel * (lumens / flux_rel)
     return _canonical(spec["name"], "Generic", c, g, cd, lumens, watts, "generic",
-                      {"generic": kind, "group": spec["group"], "luminousM2": spec["area"],
+                      {"generic": kind, "group": spec["group"], "luminousM2": spec["area"], "sizeM": _generic_size(kind),
                        "warning": "Generic distribution for feasibility — not a real product. Import the manufacturer's IES/LDT for a compliance design."})
 
 

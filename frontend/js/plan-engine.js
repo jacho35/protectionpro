@@ -629,11 +629,15 @@ const PlanEngine = {
     // Source-matched glyph; fall back to the registry primitive if absent.
     const fac = this.factor(), body = (fac && typeof PlanSymbols !== 'undefined') ? PlanSymbols.linearBody(el) : null;
     let drew;
-    if (body) {                       // a linear fitting at its real length and width (plan scale), at least 3 screen px thick
-      const L = body.length / fac, W = Math.max(body.width / fac, 3 / this.view.zoom);
+    if (body) {                       // a fitting at its real length and width (plan scale), at least 3 screen px thick
+      const L = Math.max(body.length / fac, 3 / this.view.zoom), W = Math.max(body.width / fac, 3 / this.view.zoom);
       ctx.fillStyle = color + '55'; ctx.strokeStyle = color; ctx.lineWidth = 1.2 / this.view.zoom;
-      ctx.fillRect(-L / 2, -W / 2, L, W); ctx.strokeRect(-L / 2, -W / 2, L, W);
-      ctx.beginPath(); ctx.moveTo(-L / 2, 0); ctx.lineTo(L / 2, 0); ctx.stroke();     // centre line = the long axis
+      if (body.round) {
+        ctx.beginPath(); ctx.ellipse(0, 0, L / 2, W / 2, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      } else {
+        ctx.fillRect(-L / 2, -W / 2, L, W); ctx.strokeRect(-L / 2, -W / 2, L, W);
+      }
+      if (body.length >= 2 * body.width) { ctx.beginPath(); ctx.moveTo(-L / 2, 0); ctx.lineTo(L / 2, 0); ctx.stroke(); }  // centre line = the long axis
       drew = true;
     } else {
       drew = (typeof PlanSymbols !== 'undefined') &&

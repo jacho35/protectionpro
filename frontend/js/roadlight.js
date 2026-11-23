@@ -237,7 +237,7 @@ const RoadLight = {
         const text = await f.text();
         const prof = await API.request('/analysis/road-lighting/photometry', 'POST', { text, filename: f.name });
         const id = 'ph_' + (this.sl._phSeq++);
-        this.library[id] = Object.assign(prof, { id, rotate: 0, fileName: f.name });
+        this.library[id] = Object.assign(prof, { id, rotate: 0, fileName: f.name, drawToSize: true });
         added.push(prof.name || f.name);
       } catch (e) {
         failed.push(`${f.name}: ${e && e.message ? e.message : e}`);
