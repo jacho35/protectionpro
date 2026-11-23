@@ -61,6 +61,8 @@ jobs:
         run: node testing/unit/blocks.test.js
       - name: Network overview (LV strings, street lights, fibre tree)
         run: node testing/unit/netoverview.test.js
+      - name: Re-route from a kiosk or manhole (fixed solve)
+        run: node testing/unit/reroute.test.js
       - name: TCC curves
         run: node frontend/tests/test_tcc_curves.mjs
       - name: Distance zone grading

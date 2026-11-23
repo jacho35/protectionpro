@@ -839,6 +839,7 @@ const PlanMarkup = {
         // a light fitting with a library luminaire → its photometry
         const ph = f.kind === 'element' && f.item.props && typeof PhotoLib !== 'undefined' ? PhotoLib.get(f.item.props.photoId) : null;
         if (ph) items.push({ label: 'Luminaire data…', action: () => PhotoLib.open(ph.id) });
+        if (typeof PlanReroute !== 'undefined' && f.kind === 'element' && PlanReroute.can(f.item)) items.push({ label: 'Re-route from here…', action: () => PlanReroute.start(f.item.id) });
         items.push('---');
       }
       const canRotate = [...this.selectedIds].some(id => {
@@ -891,6 +892,7 @@ const PlanMarkup = {
   onKeydown(e) {
     const tag = e.target.tagName;
     if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || e.target.isContentEditable) return false;
+    if (e.key === 'Escape' && typeof PlanReroute !== 'undefined' && PlanReroute.session) { PlanReroute.cancel(); return true; }   // leave a re-route preview
     if (PlanTools.active && PlanTools.active.keyFirst && PlanTools.active.keyFirst(e)) return true;   // a tool holding a draft (e.g. a shape being drawn) takes Backspace / Esc / Enter before the plan does
     if (e.key === 'Delete' || e.key === 'Backspace') { this.deleteSelected(); return true; }
     if (e.key === 'Escape') { if (typeof ContextMenu !== 'undefined') ContextMenu.close(); PlanTools.set('select'); this.clearSelection(); PlanEngine.requestDraw({ fg: true }); return true; }

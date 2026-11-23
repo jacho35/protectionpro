@@ -826,17 +826,31 @@ const PlanLayout = (() => {
         cands.push(...mine.map(c => clearStand(c)));
       }
       // kiosks moved or put by hand: a stand dropped where the solver would have put one (`kioskDrops`) and a stand that is always used (`kioskPins`)
-      const pinIdx = new Set();
+      const pinIdx = new Set(), pinOrder = [];
+      // `fixedKiosks` (Re-route from a kiosk, plan-reroute.js): the kiosks on the plan are the only stands, each erf stays on the kiosk it is on
+      // (`fixAssign` = erf id → index into kioskPins); nothing is chosen, so only the routes are laid again
+      if (input.fixedKiosks) cands.length = 0;
       for (const q of (input.kioskDrops || [])) if (Array.isArray(q) && Number.isFinite(q[0]) && Number.isFinite(q[1])) for (let i = cands.length - 1; i >= 0; i--) if (Math.hypot(cands[i].x - q[0], cands[i].y - q[1]) <= 1.5) cands.splice(i, 1);
       for (const q of (input.kioskPins || [])) {
+        pinOrder.push(-1);
         if (!Array.isArray(q) || !Number.isFinite(q[0]) || !Number.isFinite(q[1])) continue;
         let bp = null; for (const st of streets) { const h = project(st, q[0], q[1]); if (!bp || h.d < bp.h.d) bp = { st, h }; }
         if (!bp) continue;
-        cands.push({ road: bp.st, a: bp.h.s, x: q[0], y: q[1], s: bp.h.s, shared: false, hand: true, pin: true }); pinIdx.add(cands.length - 1);
+        cands.push({ road: bp.st, a: bp.h.s, x: q[0], y: q[1], s: bp.h.s, shared: false, hand: true, pin: true }); pinIdx.add(cands.length - 1); pinOrder[pinOrder.length - 1] = cands.length - 1;
       }
       const forced = -1;                                                       // kiosks are placed from the erven alone: a mini-sub never forces one
       const C = cands.length;
       if (!C) { warns.push('No place for a kiosk on any street.'); return kiosks; }
+      let chosen;
+      if (input.fixedKiosks) {
+        chosen = cands.map(c => ({ cand: c, members: [] }));
+        list.forEach(e => {
+          const pi = input.fixAssign ? input.fixAssign[e.id] : null, ci = pi != null ? pinOrder[pi] : -1;
+          let j = ci >= 0 ? ci : -1;
+          if (j < 0) { let m = Infinity; cands.forEach((c, q) => { const d = Math.hypot(c.x - e.mcs[0].pt[0], c.y - e.mcs[0].pt[1]); if (d < m) { m = d; j = q; } }); }
+          chosen[j].members.push(e);
+        });
+      } else {
       // service length / road crossings from every stand to every erf (Infinity = out of reach)
       const Lm = cands.map(() => new Float64Array(n).fill(Infinity)), Xm = cands.map(() => new Uint8Array(n));
       const xcount = (pts, excl) => pathCrossings(pts, excl).length;
@@ -955,12 +969,13 @@ const PlanLayout = (() => {
       }
       if (budget <= 0) warns.push('The kiosk search ran out of its step budget on this site, so the kiosk layout may not be the best found. Re-run, or raise Houses per kiosk / Worth if it matters.');
       // the kiosks: each erf to its stand (an erf nothing reaches goes to the nearest one and is reported as over the limit)
-      const chosen = sel.map(ci => ({ cand: cands[ci], members: [] }));
+      chosen = sel.map(ci => ({ cand: cands[ci], members: [] }));
       list.forEach((e, i) => {
         let j = cur.asg[i];
         if (j < 0) { let m = Infinity; chosen.forEach((c, q) => { const d = Math.hypot(c.cand.x - e.mcs[0].pt[0], c.cand.y - e.mcs[0].pt[1]); if (d < m) { m = d; j = q; } }); }
         chosen[j].members.push(e);
       });
+      }
       const ord = new Map(streets.map((s, i) => [s, i]));
       chosen.filter(c => c.cand.pin && !c.members.length).forEach(() => warns.push('A kiosk you moved serves no erf there (none is within the service limit), so it was left out.'));
       const live = chosen.filter(c => c.members.length).sort((p, q) => ord.get(p.cand.road) - ord.get(q.cand.road) || p.cand.s - q.cand.s);
@@ -1010,13 +1025,14 @@ const PlanLayout = (() => {
       const okPt = q => Array.isArray(q) && Number.isFinite(q[0]) && Number.isFinite(q[1]);
       const nearestSt = q => { let b = null; for (const st of streets) { const h = project(st, q[0], q[1]); if (!b || h.d < b.h.d) b = { st, h }; } return b; };
       const mhDrops = (input.mhDrops || []).filter(okPt).map(nearestSt).filter(Boolean), pinBy = new Map();
-      for (const q of (input.mhPins || []).filter(okPt)) {
-        const b = nearestSt(q); if (!b) continue;
+      (input.mhPins || []).forEach((q, idx) => {
+        if (!okPt(q)) return; const b = nearestSt(q); if (!b) return;
         const stops = b.st.stops || [0, b.st.len]; let seg = 0; while (seg < stops.length - 2 && b.h.s > stops[seg + 1]) seg++;
-        const k = b.st.id + '|' + seg; if (!pinBy.has(k)) pinBy.set(k, []); pinBy.get(k).push({ x: q[0], y: q[1], st: b.st, s: b.h.s, side: b.h.side });
-      }
-      const pinMh = pn => { const m = { id: 'M' + (++n), x: pn.x, y: pn.y, a: pn.s, road: pn.st, members: [], junction: false, label: String(n), sg: pn.side, hand: true }; mhs.push(m); return m; };
-      for (const [gkey, list] of groups) {
+        const k = b.st.id + '|' + seg; if (!pinBy.has(k)) pinBy.set(k, []); pinBy.get(k).push({ x: q[0], y: q[1], st: b.st, s: b.h.s, side: b.h.side, idx });
+      });
+      const pinMh = pn => { const m = { id: 'M' + (++n), x: pn.x, y: pn.y, a: pn.s, road: pn.st, members: [], junction: false, label: String(n), sg: pn.side, hand: !input.fixedMhs, pidx: pn.idx }; mhs.push(m); return m; };   // a fixed re-route's manholes are the layout's own: routed as it routes them
+      // `fixedMhs` (Re-route from a manhole, plan-reroute.js): the manholes on the plan are the only ones, each erf keeps its manhole (`mhAssign` = erf id → index into mhPins)
+      for (const [gkey, list] of (input.fixedMhs ? [] : groups)) {
         const st = list[0].road, sg = fibreSign(st), seg = list[0].seg;
         list.sort((a, b) => a.al - b.al || a.id - b.id);
         const cnt = list.length, nM = Math.ceil(cnt / P.m), base = Math.floor(cnt / nM), extra = cnt % nM;
@@ -1055,11 +1071,15 @@ const PlanLayout = (() => {
         list.forEach(e => { const by = here.slice().sort((p, q) => Math.abs(p.a - e.al) - Math.abs(q.a - e.al)), best = by.find(m => m.members.length < P.m) || by[0]; best.members.push(e); e.mh = best; });
       }
       for (const list of pinBy.values()) list.forEach(pinMh);                           // a manhole put by hand where no erf faces the street: a trunk node with no erven of its own
+      if (input.fixedMhs) {
+        const byIdx = new Map(mhs.map(m => [m.pidx, m]));
+        for (const e of [...groups.values()].flat()) { e.mh = null; const m = byIdx.get(input.mhAssign ? input.mhAssign[e.id] : -1); if (m) { m.members.push(e); e.mh = m; } }
+      }
       const orphan = [...groups.values()].flat().filter(e => !e.mh || !mhs.includes(e.mh));
       if (orphan.length && mhs.length) orphan.forEach(e => { const best = mhs.slice().sort((p, q) => Math.hypot(p.x - e.cx, p.y - e.cy) - Math.hypot(q.x - e.cx, q.y - e.cy))[0]; best.members.push(e); e.mh = best; });
       // mhmerge: a stretch between junctions is solved alone, so a short one gets a manhole of its own. A manhole carrying at most half the
       // usual erven folds into another on the same street when the two together stay within `m` erven and the farthest erf is within `maxmh`.
-      if (P.mhmerge) {
+      if (P.mhmerge && !input.fixedMhs) {
         const small = mhs.filter(x => !x.hand && x.members.length <= Math.floor(P.m / 2)).sort((p, q) => p.members.length - q.members.length);
         for (const A of small) {
           if (!mhs.includes(A)) continue;
@@ -1107,6 +1127,12 @@ const PlanLayout = (() => {
         }
         return { id: j.id, x: q[0], y: q[1], junction: true, label: '', streets: use[j.id], ci };
       });
+      // a junction node is worked out again (and moved onto its corridor as before): the manhole drawn for it — the nearest one with no erven of
+      // its own, within 25 m of where the node is worked out — is that node, not a manhole of its own
+      if (input.fixedMhs) for (const j of inter) {
+        let bi = -1, bd = 25; mhs.forEach((m, i) => { if (m.members.length) return; const d = Math.hypot(j.x - m.x, j.y - m.y); if (d < bd) { bd = d; bi = i; } });
+        if (bi >= 0) mhs.splice(bi, 1);
+      }
       const nodes = [...inter, ...mhs], edges = [];
       const stat = (nd, st) => nd.junction ? st.nodeSt[nd.id] : nd.a;
       streets.forEach(st => {
