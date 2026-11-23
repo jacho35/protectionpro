@@ -158,18 +158,20 @@ const PhotoLib = {
       } else if (rm) {
         const used = this.remove(rm.dataset.rm);
         if (used) UI.toast('In use by ' + used.slice(0, 4).join(', ') + (used.length > 4 ? '…' : '') + ' — reassign it first.', 'warn', 5000);
+        else this.onChanged();
         render();
       } else if (act === 'import') ov.querySelector('[data-act="file"]').click();
       else if (act === 'generic') {
         const v = (k) => ov.querySelector(`[data-g="${k}"]`).value;
-        try { this._sel = await this.addGeneric(v('kind'), Math.max(1, +v('lumens') || 4000), Math.max(0, +v('watts') || 0)); } catch (err) { UI.alert('Could not add the optic: ' + (err.message || err)); }
+        try { this._sel = await this.addGeneric(v('kind'), Math.max(1, +v('lumens') || 4000), Math.max(0, +v('watts') || 0)); this.onChanged(); } catch (err) { UI.alert('Could not add the optic: ' + (err.message || err)); }
         render();
       } else if (act === 'close' || e.target === ov) close();
     });
     ov.addEventListener('change', async (e) => {
       if (e.target.dataset && e.target.dataset.act === 'file') {
         const added = await this.importFiles(e.target.files);
-        if (added.length) this._sel = added[0];
+        if (added.length) { this._sel = added[0]; this.onChanged(); }
+        e.target.value = '';
         render();
       } else if (e.target.matches('[data-pl-axis]')) {
         const p = this.get(this._sel);
@@ -189,8 +191,14 @@ const PhotoLib = {
     document.body.appendChild(ov);
   },
 
+  // The library changed (import, generic, remove, axis): mark it dirty and redraw every
+  // screen that is showing, so each luminaire dropdown lists it without a page refresh.
   onChanged() {
     if (typeof PlanMarkup !== 'undefined' && PlanMarkup.markDirty) PlanMarkup.markDirty();
     if (typeof RoadLight !== 'undefined' && RoadLight._active) RoadLight.render();
+    if (typeof PlanUI !== 'undefined' && typeof PlanMarkup !== 'undefined' && PlanMarkup._active) { PlanUI.renderPalette(); PlanUI.renderProps(); }
+    if (typeof LightingWS !== 'undefined' && LightingWS._active) LightingWS.refresh();
+    if (typeof StreetLight !== 'undefined' && StreetLight._active) StreetLight.render();
+    if (typeof RoadPlan !== 'undefined' && RoadPlan._active) RoadPlan.render();
   },
 };

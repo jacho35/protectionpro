@@ -31,6 +31,7 @@ const Project = {
 
     // Export actions (items live inside the File menu)
     document.getElementById('btn-export-json').addEventListener('click', () => { window.closeAllToolbarMenus?.(); this.exportJSON(); });
+    document.getElementById('btn-file-export-json')?.addEventListener('click', () => { window.closeAllToolbarMenus?.(); this.exportJSON(); });
     // Export option: draw all breakers open, or as set on the diagram
     try { this.exportBreakersOpen = localStorage.getItem('protectionpro-export-breakers-open') === '1'; } catch (e) { this.exportBreakersOpen = false; }
     const brkBtn = document.getElementById('btn-export-breakers');
