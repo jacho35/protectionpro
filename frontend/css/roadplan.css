@@ -122,6 +122,20 @@ body.dark-mode #streetlight-workspace {
   .rp-canvas-wrap { min-height: 60vh; }
 }
 
+/* Phone: the plan first, the tools in one scrolling row; the road list, background and junctions below it. */
+@media (max-width: 768px) {
+  .rp-body > .rp-main { order: -1; padding: 6px 8px; gap: 6px; }
+  .rp-body > .sl-rail { order: 1; border-top: 1px solid var(--border-color); border-bottom: 0; }
+  .rp-body > .rp-panel { order: 2; }
+  .rp-steps, .rp-toolbar { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+  .rp-steps::-webkit-scrollbar, .rp-toolbar::-webkit-scrollbar { display: none; }
+  .rp-steps > *, .rp-toolbar > * { flex: none; }
+  .rp-steps button { min-height: 40px; }
+  .rp-toolbar .btn-small { min-height: 40px; }
+  .rp-canvas-wrap { min-height: 56vh; }
+  .rp-rail .sl-rail-list { max-height: none; }
+}
+
 /* Circuits and cables (js/roadplan-circuits.js) */
 .rp-cable { fill: none; stroke: #b45f06; stroke-width: 2; }
 .rp-cable.link { stroke-dasharray: 5 3; stroke-width: 2.4; }
