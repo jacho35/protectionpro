@@ -2078,6 +2078,7 @@ const AppState = {
         // the kiosk / manhole / trench sizes set once for the project (an older project: from what it already used)
         const fl = this.planFloors ? this.planFloors() : null, hasTr = (fl && fl.length ? fl.map(f => f.data) : [this.planMarkup]).some(d => d && (d.trenches || []).length);
         RoadSections.migrateStd(st && st.layout, hasTr);
+        RoadSections.migrateVerge();
       } catch (e) { console.warn('Road sections: could not convert the older sections', e); }
     }
     this.dirty = false;

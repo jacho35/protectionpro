@@ -10,6 +10,8 @@
  * size and the width + depth of each trench type, set once for the project. A section shows those groups as *From the standard* (fields
  * greyed) until *This section differs* is ticked (dragging a service on the drawing ticks it for the offsets); *Copy from…* takes a group
  * from another section; *Make these the standard* moves a section's own values up. The crossing sleeves stay per section.
+ * Strips: only the carriageway, footpaths, cycle lanes and medians are typed; the verges are the rest of the reserve (`RoadSections.fill`),
+ * shown greyed; the reserve block sets the reserve and where the carriageway sits (`cwOff`, + toward boundary A).
  * The site plan's **Roads** tab (beside Draw / Underlays / Output; `panelHtml` in the plan's left panel, `onPanelClick`): the sections with
  * their reserve and road count, the roads selected on the plan given the picked section in one click, the picked one's strips, Edit
  * section… (this page) and Project standard…; the roads are coloured by section while it is open (`overlayOn`).
@@ -171,33 +173,37 @@ const RoadSectionsUI = {
     const esc = this.esc, types = typeof RL_SECTION_TYPES !== 'undefined' ? RL_SECTION_TYPES : [{ id: 'verge', name: 'Verge' }, { id: 'carriageway', name: 'Carriageway' }];
     const surf = typeof RL_SURFACES !== 'undefined' ? RL_SURFACES : ['R3'], groups = this._clsGroups(sec), sp = this.RS().span(sec);
     const cls = (s, i) => `<select data-rsx-st="cls" data-i="${i}" aria-label="Lighting class of strip ${i + 1}"><option value=""${!s.cls ? ' selected' : ''}>—</option>${groups.map(g => `<optgroup label="${esc(g.label)}">${g.list.map(c => `<option value="${esc(c)}"${c === s.cls ? ' selected' : ''}>${esc(c)}</option>`).join('')}</optgroup>`).join('')}${s.cls && !groups.some(g => g.list.includes(s.cls)) ? `<option value="${esc(s.cls)}" selected>${esc(s.cls)}</option>` : ''}</select>`;
-    const rows = sec.strips.map((s, i) => `<tr>
-      <td><select data-rsx-st="type" data-i="${i}" aria-label="Strip ${i + 1} type">${types.map(t => `<option value="${esc(t.id)}"${t.id === s.type ? ' selected' : ''}>${esc(t.name)}</option>`).join('')}</select></td>
+    const typed = types.filter(t => t.id !== 'verge'), n = sec.strips.length;
+    const rows = sec.strips.map((s, i) => s.type === 'verge' ? `<tr style="color:var(--text-muted)">
+      <td>Verge <small>(the rest)</small></td><td style="text-align:right;padding-right:10px">${this.f2(s.width)}</td><td>${cls(s, i)}</td><td>—</td><td style="font-size:12px">${i === 0 ? 'boundary A to the first strip' : 'last strip to boundary B'}</td></tr>` : `<tr>
+      <td><select data-rsx-st="type" data-i="${i}" aria-label="Strip ${i + 1} type">${typed.map(t => `<option value="${esc(t.id)}"${t.id === s.type ? ' selected' : ''}>${esc(t.name)}</option>`).join('')}</select></td>
       <td><input type="number" step="0.1" min="0" data-rsx-st="width" data-i="${i}" value="${esc(s.width)}" aria-label="Strip ${i + 1} width" style="width:64px"></td>
       <td>${cls(s, i)}</td>
       <td>${s.type === 'carriageway' ? `<select data-rsx-st="surface" data-i="${i}" aria-label="Strip ${i + 1} road surface">${surf.map(x => `<option${x === s.surface ? ' selected' : ''}>${esc(x)}</option>`).join('')}</select>` : '<span style="color:var(--text-muted)">—</span>'}</td>
-      <td style="white-space:nowrap"><button type="button" class="plan-btn" data-rsx="up" data-i="${i}" aria-label="Move strip ${i + 1} left"${i ? '' : ' disabled'} style="padding:0 6px">←</button><button type="button" class="plan-btn" data-rsx="down" data-i="${i}" aria-label="Move strip ${i + 1} right"${i < sec.strips.length - 1 ? '' : ' disabled'} style="padding:0 6px">→</button><button type="button" class="plan-btn" data-rsx="rmst" data-i="${i}" aria-label="Remove strip ${i + 1}" style="padding:0 6px"${sec.strips.length < 2 ? ' disabled' : ''}>&times;</button></td></tr>`).join('');
-    return `<div style="font-weight:600;margin-bottom:4px">Strips <span style="font-weight:400;font-size:12px;color:var(--text-muted)">from boundary A, left to right</span></div>
+      <td style="white-space:nowrap"><button type="button" class="plan-btn" data-rsx="up" data-i="${i}" aria-label="Move strip ${i + 1} left"${i && sec.strips[i - 1].type !== 'verge' ? '' : ' disabled'} style="padding:0 6px">←</button><button type="button" class="plan-btn" data-rsx="down" data-i="${i}" aria-label="Move strip ${i + 1} right"${i < n - 1 && sec.strips[i + 1].type !== 'verge' ? '' : ' disabled'} style="padding:0 6px">→</button><button type="button" class="plan-btn" data-rsx="rmst" data-i="${i}" aria-label="Remove strip ${i + 1}" style="padding:0 6px"${sec.strips.filter(x => x.type !== 'verge').length < 2 ? ' disabled' : ''}>&times;</button></td></tr>`).join('');
+    return `<div style="font-weight:600;margin-bottom:4px">Strips <span style="font-weight:400;font-size:12px;color:var(--text-muted)">from boundary A, left to right · type the carriageway, footpaths, cycle lanes and medians; the rest of the reserve is verge</span></div>
       <table class="sl-table" style="width:100%"><thead><tr><th>Strip</th><th>Width m</th><th title="The lighting class the strip must meet (Lighting design)">Class</th><th title="Road surface (r-table), for luminance">Surface</th><th></th></tr></thead><tbody>${rows}</tbody></table>
       <button type="button" class="plan-btn" data-rsx="addst" style="margin-top:4px">+ Strip</button>
-      <div style="font-size:12px;color:var(--text-muted);margin-top:4px">Reserve <b>${this.f2(sp.total)} m</b>: verge A ${this.f2(sp.a)} m, carriageway ${this.f2(sp.road)} m, verge B ${this.f2(sp.b)} m. A road with no carriageway width of its own takes this one; the lighting designs on this section use these strips and classes.</div>`;
+      <div style="font-size:12px;color:var(--text-muted);margin-top:4px">Reserve <b>${this.f2(this.RS().reserve(sec))} m</b>: ${this.f2(sp.a)} m from boundary A to the carriageway, carriageway ${this.f2(sp.road)} m, ${this.f2(sp.b)} m to boundary B. A road with no carriageway width of its own takes this one; the lighting designs on this section use these strips and classes.</div>`;
   },
   // ───────── the road reserve: picked, the strips fill it ─────────
   RESERVES: [13, 16, 20, 25, 30],                // the quick picks, m (any width can be typed)
   reserveHtml(sec) {
-    const RS = this.RS(), esc = this.esc, p = +sec.reserve > 0 ? +sec.reserve : null, fit = sec.reserveFit || 'both';
-    const chip = w => `<button type="button" class="plan-btn" data-rsx="res" data-w="${w}" aria-pressed="${p === w}" style="min-width:58px;min-height:36px;${p === w ? 'outline:2px solid var(--accent,#2563eb);font-weight:600' : ''}">${w} m</button>`;
-    const radio = (v, label) => `<label style="display:flex;gap:6px;align-items:center"><input type="radio" name="rsx-fit" data-rsx-fit="${v}"${fit === v ? ' checked' : ''}> ${label}</label>`;
+    const RS = this.RS(), esc = this.esc, p = RS.reserve(sec), g = RS.verges(sec);
+    const on = w => p === w && !sec.resAuto, chip = w => `<button type="button" class="plan-btn" data-rsx="res" data-w="${w}" aria-pressed="${on(w)}" style="min-width:58px;min-height:36px;${on(w) ? 'outline:2px solid var(--accent,#2563eb);font-weight:600' : ''}">${w} m</button>`;
     return `<div style="display:flex;flex-direction:column;gap:6px">
-      <div style="font-weight:600">Road reserve <span style="font-weight:400;font-size:12px;color:var(--text-muted)">${p != null ? `${this.f2(p)} m` : `not picked: the strips add up to ${this.f2(RS.total(sec))} m`}</span></div>
+      <div style="font-weight:600">Road reserve <span style="font-weight:400;font-size:12px;color:var(--text-muted)">${this.f2(p)} m${sec.resAuto ? ' (what the strips added up to: pick one to give it to the roads too)' : ''} · verge A ${this.f2(g.a)} m, verge B ${this.f2(g.b)} m</span></div>
       <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">${this.RESERVES.map(chip).join('')}
-        <label style="display:flex;gap:6px;align-items:center;font-size:13px;color:var(--text-muted)">Other <input type="number" step="0.5" min="3" max="80" data-rsx-res value="${p != null ? this.f2(p) : ''}" placeholder="${esc(this.f2(RS.total(sec)))}" aria-label="Road reserve width, m" style="width:76px;text-align:right"> m</label>
-        ${p != null ? `<button type="button" class="plan-btn" data-rsx="resclear" title="Back to the strips' sum" style="padding:1px 8px">Clear</button>` : ''}</div>
-      <div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap;font-size:13px"><span style="color:var(--text-muted)">When the reserve changes:</span>${radio('both', 'both verges share it')}${radio('a', 'verge A keeps its width')}${radio('b', 'verge B keeps its width')}</div></div>`;
+        <label style="display:flex;gap:6px;align-items:center;font-size:13px;color:var(--text-muted)">Other <input type="number" step="0.5" min="3" max="80" data-rsx-res value="${this.f2(p)}" aria-label="Road reserve width, m" style="width:76px;text-align:right"> m</label></div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:13px">
+        <label style="display:flex;gap:6px;align-items:center">Carriageway <input type="number" step="0.1" data-rsx-cwoff value="${this.f2(g.want)}" aria-label="Carriageway offset from the middle of the reserve, m (+ toward boundary A)" style="width:68px;text-align:right"> m off the middle</label>
+        <span style="font-size:12px;color:var(--text-muted)">0 = centred; + toward boundary A, − toward B${g.hi > g.lo ? ` (${this.f2(g.lo)} to ${this.f2(g.hi)} m)` : ''}</span>
+        ${Math.abs(g.want) > 0.005 ? `<button type="button" class="plan-btn" data-rsx="cwmid" style="padding:1px 8px">Centre it</button>` : ''}</div>
+      ${g.over > 0.005 ? `<div style="font-size:13px;color:#9a5b00">The typed strips are ${this.f2(g.filled)} m, ${this.f2(g.over)} m wider than the reserve: no verge is left. <button type="button" class="plan-btn" data-rsx="matchres" style="padding:1px 8px">Make the reserve ${this.f2(Math.max(3, g.filled))} m</button></div>` : g.shifted ? `<div style="font-size:12px;color:#9a5b00">The carriageway is ${this.f2(g.off)} m off the middle: as far as the verges let it go.</div>` : ''}</div>`;
   },
   // roads on this section with a reserve width of their own that is not the section's
   onPlanHtml(sec) {
-    const RS = this.RS(), esc = this.esc, p = +sec.reserve > 0 ? +sec.reserve : null; if (p == null) return '';
+    const RS = this.RS(), esc = this.esc, p = +sec.reserve > 0 && !sec.resAuto ? +sec.reserve : null; if (p == null) return '';
     const roads = RS.roadsUsing(sec.id), own = roads.map(r => +((r.props || {}).width)).filter(w => w > 0), mm = RS.widthMismatches(sec.id);
     const rng = own.length ? `${this.f2(Math.min(...own))} – ${this.f2(Math.max(...own))} m` : '';
     const nearBy = {}; mm.forEach(m => { if (m.near) (nearBy[m.near.id] = nearBy[m.near.id] || { sec: m.near, n: 0 }).n++; });
@@ -278,10 +284,10 @@ const RoadSectionsUI = {
     if (!rows.length) rows = [{ sev: 'ok', text: 'Clearances inside the section pass.' }];
     const mm = this.RS().mismatches().filter(x => x.sec.id === sec.id);
     const extra = mm.length ? [{ sev: 'warn', text: `${mm.length} road${mm.length === 1 ? ' has its own carriageway width' : 's have their own carriageway widths'} (${[...new Set(mm.map(x => this.f2(x.own)))].join(', ')} m), not this section's ${this.f2(mm[0].want)} m. Their own width is used.` }] : [];
-    if (!this.RS().fits(sec)) { const t = this.RS().total(sec), p = +sec.reserve, d = p - t;
-      extra.unshift({ sev: 'warn', text: `The strips add up to ${this.f2(t)} m, ${this.f2(Math.abs(d))} m ${d > 0 ? 'short of' : 'more than'} the ${this.f2(p)} m reserve.`, fit: true }); }
+    if (!this.RS().fits(sec)) { const g = this.RS().verges(sec);
+      extra.unshift({ sev: 'warn', text: `The typed strips are ${this.f2(g.filled)} m, ${this.f2(g.over)} m wider than the ${this.f2(this.RS().reserve(sec))} m reserve: no verge is left.`, fit: true }); }
     const r = typeof PlanLayoutUI !== 'undefined' ? PlanLayoutUI.result : null, lay = r && r.secChecks && r.sections ? r.secChecks.filter(c => !c.sec || c.sec === sec.id) : [];
-    return `<div><div style="font-weight:600;margin-bottom:4px">Checks</div>${rows.concat(extra, lay).map(c => `<div style="display:flex;gap:8px;font-size:13px;margin:2px 0"><b style="color:${col[c.sev] || '#5b6068'};min-width:46px">${c.sev === 'ok' ? 'Pass' : c.sev === 'warn' ? 'Check' : 'Note'}</b><span>${this.esc(c.text)}</span></div>`).join('')}${mm.length ? `<button type="button" class="plan-btn" data-rsx="usecw" style="margin-top:4px">Use the section's width on those roads</button>` : ''}${extra.some(c => c.fit) ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px"><button type="button" class="plan-btn" data-rsx="fitstrips" style="font-weight:600">Let the verges take the difference</button><button type="button" class="plan-btn" data-rsx="matchres">Make the reserve ${this.f2(this.RS().total(sec))} m</button></div>` : ''}</div>`;
+    return `<div><div style="font-weight:600;margin-bottom:4px">Checks</div>${rows.concat(extra, lay).map(c => `<div style="display:flex;gap:8px;font-size:13px;margin:2px 0"><b style="color:${col[c.sev] || '#5b6068'};min-width:46px">${c.sev === 'ok' ? 'Pass' : c.sev === 'warn' ? 'Check' : 'Note'}</b><span>${this.esc(c.text)}</span></div>`).join('')}${mm.length ? `<button type="button" class="plan-btn" data-rsx="usecw" style="margin-top:4px">Use the section's width on those roads</button>` : ''}${extra.some(c => c.fit) ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px"><button type="button" class="plan-btn" data-rsx="matchres">Make the reserve ${this.f2(Math.max(3, this.RS().verges(sec).filled))} m</button></div>` : ''}</div>`;
   },
   usedHtml(sec) {
     const RS = this.RS(), esc = this.esc, des = RS.designsUsing(sec.id), roads = RS.roadsUsing(sec.id), sl = RS.list && AppState.reticulation && AppState.reticulation.streetLighting;
@@ -305,7 +311,7 @@ const RoadSectionsUI = {
     const card = x => { const n = RS.roadsUsing(x.id).length, on = x.id === cur.id;
       return `<button type="button" class="plan-pal-item" data-rsp="pick" data-id="${esc(x.id)}" aria-pressed="${on}" style="flex-direction:column;align-items:flex-start;gap:2px;height:auto;padding:8px 10px;${on ? 'outline:2px solid var(--accent,#2563eb)' : ''}">
         <span style="display:flex;gap:6px;align-items:center;font-weight:600"><span aria-hidden="true" style="width:10px;height:10px;border-radius:2px;background:${this.colour(x.id)}"></span>${esc(x.name)} · ${this.f2(RS.reserve(x)).replace(/\.00$/, '')} m</span>
-        <small>${n} road${n === 1 ? '' : 's'}${x.id === d ? ' · default' : ''}${RS.fits(x) ? '' : ' · <b style="color:#9a5b00">strips don\'t fill it</b>'}</small></button>`; };
+        <small>${n} road${n === 1 ? '' : 's'}${x.id === d ? ' · default' : ''}${RS.fits(x) ? '' : ' · <b style="color:#9a5b00">strips wider than it</b>'}</small></button>`; };
     const onSecs = [...new Set(sel.map(r => (RS.of(r) || {}).name))].filter(Boolean);
     const mm = RS.widthMismatches(cur.id).length;
     return `<div class="plan-roads">
@@ -318,7 +324,7 @@ const RoadSectionsUI = {
       <div style="border-top:1px solid var(--border,#e5e7eb);padding-top:8px;display:flex;flex-direction:column;gap:6px">
         <b>${esc(cur.name)}</b>${this._stripBar(cur)}
         <small>${esc(RS.summary(cur))}</small>
-        ${RS.fits(cur) ? '' : `<small style="color:#9a5b00">The strips add up to ${this.f2(RS.total(cur))} m, not the ${this.f2(cur.reserve)} m reserve.</small>`}
+        ${RS.fits(cur) ? '' : `<small style="color:#9a5b00">The typed strips are ${this.f2(RS.verges(cur).filled)} m, wider than the ${this.f2(RS.reserve(cur))} m reserve.</small>`}
         ${mm ? `<small style="color:#9a5b00">${mm} road${mm === 1 ? ' has' : 's have'} a reserve width of ${mm === 1 ? 'its' : 'their'} own.</small>` : ''}
         <button type="button" class="plan-btn" data-rsp="edit" style="min-height:34px">Edit section…</button>
         <button type="button" class="plan-btn" data-rsp="selroads" style="min-height:34px"${RS.roadsUsing(cur.id).length ? '' : ' disabled'}>Select its roads</button>
@@ -401,8 +407,8 @@ const RoadSectionsUI = {
     const t = e.target, RS = this.RS(), sec = this.cur();
     if (t.matches('[data-rsx-name]')) { sec.name = t.value.trim().slice(0, 60) || 'Road section'; this.changed(); this.render(); return; }
     if (t.matches('[data-rsx-f]')) { this.setPath(sec, t.dataset.rsxF, t.value); this.changed(); this.render(); return; }
-    if (t.matches('[data-rsx-res]')) { if (t.value === '') { RS.clearReserve(sec); this.changed(); this.render(); return; } this._setRes(sec, t.value); return; }
-    if (t.matches('[data-rsx-fit]')) { sec.reserveFit = t.dataset.rsxFit; this.changed(); return; }
+    if (t.matches('[data-rsx-res]')) { if (t.value !== '') this._setRes(sec, t.value); else this.render(); return; }
+    if (t.matches('[data-rsx-cwoff]')) { if (!RS.setCwOff(sec, t.value || 0)) UI.toast('The carriageway went as far as the verges let it.', 'info'); this.changed(); this.render(); return; }
     if (t.matches('[data-rsx-own]')) { RS.setOwn(sec, t.dataset.rsxOwn, t.checked); this.changed(); this.render(); return; }
     if (t.matches('[data-rsx-copy]')) { const from = RS.get(t.value); if (from && RS.copyFrom(sec, from, t.dataset.rsxCopy)) { UI.toast(`${this.TITLES[t.dataset.rsxCopy]} copied from "${from.name}".`, 'success'); this.changed(); } this.render(); return; }
     if (t.matches('[data-rsx-show]')) { this.showOn = t.checked; this.changed(); return; }
@@ -426,8 +432,7 @@ const RoadSectionsUI = {
     if (act === 'dup') { const s = RS.duplicate(sec.id); if (s) this.sel = s.id; this.changed(); this.render(); return; }
     if (act === 'def') { RS.setDef(sec.id); this.changed(); this.render(); return; }
     if (act === 'res') { this._setRes(sec, b.dataset.w); return; }
-    if (act === 'resclear') { RS.clearReserve(sec); this.changed(); this.render(); return; }
-    if (act === 'fitstrips') { if (!RS.fitStrips(sec)) UI.toast('The verges cannot take it: the strips that stay are already wider than the reserve.', 'warn'); this.changed(); this.render(); return; }
+    if (act === 'cwmid') { RS.setCwOff(sec, 0); this.changed(); this.render(); return; }
     if (act === 'matchres') { RS.matchReserve(sec); this.changed(); this.render(); return; }
     if (act === 'selmis' || act === 'usew' || act === 'givenear') {
       const mm = RS.widthMismatches(sec.id).filter(m => act !== 'givenear' || (m.near && m.near.id === b.dataset.id));
@@ -449,7 +454,7 @@ const RoadSectionsUI = {
       return;
     }
     if (act === 'addst') { sec.strips.push(RS.strip(sec, { type: 'footpath', width: 2 })); this.changed(); this.render(); return; }
-    if (act === 'rmst') { if (sec.strips.length > 1) { sec.strips.splice(i, 1); this.changed(); this.render(); } return; }
+    if (act === 'rmst') { if (sec.strips[i] && sec.strips[i].type !== 'verge' && sec.strips.filter(x => x.type !== 'verge').length > 1) { sec.strips.splice(i, 1); this.changed(); this.render(); } return; }
     if (act === 'up' || act === 'down') { const j = act === 'up' ? i - 1 : i + 1; if (j < 0 || j >= sec.strips.length) return; [sec.strips[i], sec.strips[j]] = [sec.strips[j], sec.strips[i]]; this.changed(); this.render(); return; }
     if (act === 'apply') {
       const rs = this._planRoads(); if (!rs.length) return;
@@ -475,7 +480,7 @@ const RoadSectionsUI = {
 
   _setRes(sec, w) {
     const RS = this.RS();
-    if (!RS.setReserve(sec, w)) UI.toast(`A ${w} m reserve is narrower than the carriageway and the strips beside it.`, 'warn');
+    if (!RS.setReserve(sec, w)) UI.toast(`A ${w} m reserve is narrower than the typed strips: no verge is left.`, 'warn');
     this.changed(); this.render();
   },
   // to the site plan, with these roads selected
