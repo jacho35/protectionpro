@@ -150,9 +150,9 @@ ok('trenches: cables on one verge share a trench (far less than the sum of the r
   assert(sumLen(t, x => x.type === 'LV/SL' && x.kind !== 'crossing') < routes * 0.95, `${sumLen(t, x => x.type === 'LV/SL')} vs ${routes}`);
   assert(!t.list.some(x => x.type === 'MV' && x.kind !== 'crossing'), 'no MV trench along the routes');
 });
-ok('trenches: depths are the settings', () => {
-  const t = L.trenches(L.solve(F, {}), { depth: { lv: 0.85, fi: 0.5 } });
-  assert.strictEqual(t.summary['LV/SL'].depth, 0.85); assert.strictEqual(t.summary['FI'].depth, 0.5);
+ok('trenches: sizes are the project standard (`sizes`)', () => {
+  const t = L.trenches(L.solve(F, {}), { sizes: { 'LV/SL': { w: 0.5, d: 0.85 }, FI: { w: 0.3, d: 0.5 } } });
+  assert.strictEqual(t.summary['LV/SL'].depth, 0.85); assert.strictEqual(t.summary['FI'].depth, 0.5); assert.strictEqual(t.summary['FI'].w, 0.3);
 });
 ok('trenches: fibre own / with the LV trench / none', () => {
   const r = L.solve(F, { fibre: 'same' });

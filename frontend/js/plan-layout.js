@@ -1548,7 +1548,8 @@ const PlanLayout = (() => {
       }
       for (const sc of SEC.list) {
         const d = sc.items, kf = d.kiosk.off + d.kiosk.depth;
-        if (d.lv.off + d.lv.w / 2 > d.kiosk.off && d.lv.off - d.lv.w / 2 < kf) secChecks.push({ sev: 'info', street: null, text: `Section "${sc.name}": the LV trench runs under the kiosk footprint.` });
+        const lw = (sc.trench && sc.trench['LV/SL'] ? sc.trench['LV/SL'].w : 0.5) / 2;
+        if (d.lv.off + lw > d.kiosk.off && d.lv.off - lw < kf) secChecks.push({ sev: 'info', street: null, text: `Section "${sc.name}": the LV trench runs under the kiosk footprint.` });
         if (d.pole.off - kf < 1) secChecks.push({ sev: 'warn', street: null, text: `Section "${sc.name}": pole ${(d.pole.off - kf).toFixed(2)} m from the kiosk (1.00 m wanted).` });
       }
     }
@@ -1949,7 +1950,7 @@ const PlanLayout = (() => {
       const pw = spur('svc', e.marker, null); if (!pw) continue;
       const fi = spur('fi', e.fibrePt, pw), keep = fi && fi.len > pw.len ? fi : pw;
       if (fi) drop.add(keep === pw ? fi : pw);
-      keep.type = pw.type; keep.depth = pw.depth; if (pw.section !== undefined) keep.section = pw.section;
+      keep.type = pw.type; keep.depth = pw.depth; keep.w = pw.w; if (pw.section !== undefined) keep.section = pw.section;
       keep.cats = [...new Set([...pw.cats, 'fi'])]; keep.lead = true;
     }
     if (drop.size) { const rest = out.filter(t => !drop.has(t)); out.length = 0; out.push(...rest); }
@@ -1978,16 +1979,17 @@ const PlanLayout = (() => {
   // Cables that run along the same verge share one trench: the routes are cut into runs on the kiosk-side
   // and civil-side verge lines, overlapping runs are merged, and what is left (the short legs into an erf,
   // the bridges round a junction) become small trenches of their own. Road crossings get one shared
-  // trench each. Depths (m) and what shares a trench are settings.
+  // trench each. What shares a trench is a setting; the width and depth of each trench type are the road section's (`sec.trench`, already
+  // resolved to the project standard or the section's own) where a section applies, else `Tin.sizes` (the project standard), else SIZES.
+  const TRENCH_SIZES = { 'MV': { w: 0.6, d: 1.1 }, 'LV/SL': { w: 0.5, d: 0.7 }, 'MV/LV/SL': { w: 0.9, d: 1.1 }, 'FI': { w: 0.3, d: 0.6 } };   // = PlanSections.TRENCH
   const TRENCH_DEFAULTS = {
-    depth: { mv: 1.1, lv: 0.7, fi: 0.6, comb: null },     // MV; LV + service + street light; fibre; combined (null = the deepest of its cables)
     combine: 'separate',                                   // 'separate' | 'mvlv': MV in the same trench as LV / service / street light
     fibre: 'own',                                          // 'own' | 'with' (in the LV trench where they run together) | 'off'
     crossings: true,                                       // a shared trench across the road at every crossing
     lead: false,                                           // one lead trench into the erf for its service cable and fibre duct (when the two enter within 3 m)
   };
   function trenches(res, Tin) {
-    const T = { depth: Object.assign({}, TRENCH_DEFAULTS.depth, (Tin && Tin.depth) || {}), combine: (Tin && Tin.combine) || TRENCH_DEFAULTS.combine, fibre: (Tin && Tin.fibre) || TRENCH_DEFAULTS.fibre, crossings: !(Tin && Tin.crossings === false), lead: !!(Tin && Tin.lead) };
+    const T = { sizes: Object.assign({}, TRENCH_SIZES, (Tin && Tin.sizes) || {}), combine: (Tin && Tin.combine) || TRENCH_DEFAULTS.combine, fibre: (Tin && Tin.fibre) || TRENCH_DEFAULTS.fibre, crossings: !(Tin && Tin.crossings === false), lead: !!(Tin && Tin.lead) };
     const streets = res.streets, lines = [], spurs = new Map(), out = [];
     const lineFor = (st, sign, off) => { let l = lines.find(q => q.st === st && q.sign === sign && Math.abs(q.off - off) <= 0.75); if (!l) { l = { st, sign, off, offN: 0, ivs: [] }; lines.push(l); } l.off = (l.off * l.offN + off) / (l.offN + 1); l.offN++; return l; };
     const rnd = p => Math.round(p[0] * 4) + ',' + Math.round(p[1] * 4);
@@ -2021,14 +2023,11 @@ const PlanLayout = (() => {
       }
       flush(chain, cat);
     };
-    // depth of a trench: the section's own depth for its cable class where a section applies, else the Trenches setting
-    const secDepth = (sec, type) => {
-      const d = sec.items, mv = d.mv.depth, lv = Math.max(d.lv.depth, d.svc.depth), fi = d.fi.depth;
-      return type === 'MV' ? mv : type === 'FI' ? fi : type === 'LV/SL' ? lv : Math.max(mv, lv);
-    };
+    // size of a trench type: the section's where a section applies, else the project standard
+    const size = (type, sec) => (sec && sec.trench && sec.trench[type]) || T.sizes[type] || TRENCH_SIZES[type] || { w: 0.5, d: 0.7 };
     const nearStreet = (x, y) => { let b = null; for (const st of streets) { const pr = project(st, x, y); if (!b || pr.d < b.pr.d) b = { st, pr }; } return b; };
     const secOf = (st, q) => (st && typeof st.sec === 'function') ? st.sec(q) : null;
-    const dep = (type, sec) => sec && sec.items ? secDepth(sec, type) : type === 'MV' ? T.depth.mv : type === 'FI' ? T.depth.fi : type === 'LV/SL' ? T.depth.lv : (T.depth.comb != null ? T.depth.comb : Math.max(T.depth.mv, T.depth.lv));
+    const dep = (type, sec) => size(type, sec).d;
     // what a set of cables becomes: [{ type, shift }] (shift moves a separate MV trench in from the verge line)
     const kinds = (cats, sec) => {
       const mv = cats.has('mv'), pw = cats.has('lv') || cats.has('svc'), fi = cats.has('fi');
@@ -2038,11 +2037,21 @@ const PlanLayout = (() => {
       if (fi && !(T.fibre === 'with' && pw) && T.fibre !== 'off') r.push({ type: 'FI', shift: 0 });
       return r;
     };
-    if (res.route === 'blocks' && res.blocks) return trenchesBlocks(res, T, dep, kinds);
+    // every trench carries its width; the summary per type: length, count, depth and volume
+    // a trench made without a section (the blocks routing never asks; a spur): the section of the street nearest its middle, where sections apply
+    const secNear = t => { if (!t.pts || t.pts.length < 2 || !streets.some(st => typeof st.sec === 'function')) return null;
+      let h = plen(t.pts) / 2, m = t.pts[0];
+      for (let i = 1; i < t.pts.length; i++) { const p = t.pts[i - 1], q = t.pts[i], l = Math.hypot(q[0] - p[0], q[1] - p[1]); if (l >= h) { const k = l ? h / l : 0; m = [p[0] + (q[0] - p[0]) * k, p[1] + (q[1] - p[1]) * k]; break; } h -= l; }
+      const nb = nearStreet(m[0], m[1]); return nb ? secOf(nb.st, nb.pr.s) : null; };
+    const fin = r => { const sum = {};
+      r.list.forEach(t => { if (!t.section) { const sec = secNear(t); if (sec) { t.section = sec.id; t.depth = dep(t.type, sec); t.w = size(t.type, sec).w; } }
+        if (!(t.w > 0)) t.w = size(t.type, null).w; const q = sum[t.type] || (sum[t.type] = { len: 0, n: 0, depth: t.depth, w: t.w, vol: 0 }); q.len += t.len; q.n++; q.vol += t.len * t.w * t.depth; });
+      r.summary = sum; return r; };
+    if (res.route === 'blocks' && res.blocks) return fin(trenchesBlocks(res, T, dep, kinds));
     res.erven.forEach(e => { if (e.route) add(e.route, 'svc'); if (T.fibre !== 'off' && e.duct) add(e.duct, 'fi'); });
     if (res.net) { res.net.lv.forEach(ed => add(ed.pts, 'lv')); res.net.mv.forEach(ed => add(ed.pts, 'mv')); }
     if (T.fibre !== 'off' && res.fibre) res.fibre.trunks.forEach(ed => add(ed.pts, 'fi'));
-    const emit = (type, pts, cats, kind, sec) => { if (pts.length >= 2 && plen(pts) > 0.3) out.push({ type, pts, depth: dep(type, sec), len: plen(pts), cats: [...cats], kind, section: sec ? sec.id : null }); };
+    const emit = (type, pts, cats, kind, sec) => { if (pts.length >= 2 && plen(pts) > 0.3) out.push({ type, pts, depth: dep(type, sec), w: size(type, sec).w, len: plen(pts), cats: [...cats], kind, section: sec ? sec.id : null }); };
     // a run on the boundary corridor: kd inside the boundary wherever the boundary goes, plus the line's own offset
     const relVerge = (st, sign, s0, s1, rel) => {
       const n = Math.max(1, Math.ceil(Math.abs(s1 - s0) / STEP)), pts = [];
@@ -2068,12 +2077,10 @@ const PlanLayout = (() => {
       const bnd = x.st.byBoundary && typeof x.st.fd === 'function', hA = bnd ? x.st.fd(1, x.s) : x.st.w / 2, hB = bnd ? x.st.fd(-1, x.s) : x.st.w / 2;
       const a = x.ends ? x.ends[0] : ptAt(x.st, x.s, hA), b = x.ends ? x.ends[1] : ptAt(x.st, x.s, -hB);              // `ends`: a crossing whose start / end were moved by hand
       const xsec = secOf(x.st, x.s);
-      out.push({ type, pts: [[a[0], a[1]], [b[0], b[1]]], depth: dep(type, xsec), section: xsec ? xsec.id : null, len: x.ends ? Math.hypot(b[0] - a[0], b[1] - a[1]) : hA + hB, cats: [mv && 'mv', pw && 'lv', fi && 'fi'].filter(Boolean), kind: 'crossing' });
+      out.push({ type, pts: [[a[0], a[1]], [b[0], b[1]]], depth: dep(type, xsec), w: size(type, xsec).w, section: xsec ? xsec.id : null, len: x.ends ? Math.hypot(b[0] - a[0], b[1] - a[1]) : hA + hB, cats: [mv && 'mv', pw && 'lv', fi && 'fi'].filter(Boolean), kind: 'crossing' });
     });
     if (T.lead) shareLeads(res, out);
-    const sum = {};
-    out.forEach(t => { const q = sum[t.type] || (sum[t.type] = { len: 0, n: 0, depth: t.depth }); q.len += t.len; q.n++; });
-    return { list: out, summary: sum, T };
+    return fin({ list: out, summary: {}, T });
   }
 
   // ── the proposed network as Demand rows ──
@@ -2400,7 +2407,7 @@ const PlanLayout = (() => {
     const bnd = x.st.byBoundary && typeof x.st.fd === 'function', hA = bnd ? x.st.fd(1, x.s) : x.st.w / 2, hB = bnd ? x.st.fd(-1, x.s) : x.st.w / 2;
     return { a: ptAt(x.st, x.s, hA).slice(0, 2), b: ptAt(x.st, x.s, -hB).slice(0, 2), hA, hB };
   }
-  return { reach, solve, trenches, demandInput, TRENCH_DEFAULTS, DEFAULTS, fillDepth, kerbFills, ptAt, project, verge, plen, fillet, relength, smooth, crossEnds, keepOut, carriage, carriageHits, routeAround };
+  return { reach, solve, trenches, demandInput, TRENCH_DEFAULTS, TRENCH_SIZES, DEFAULTS, fillDepth, kerbFills, ptAt, project, verge, plen, fillet, relength, smooth, crossEnds, keepOut, carriage, carriageHits, routeAround };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = PlanLayout;

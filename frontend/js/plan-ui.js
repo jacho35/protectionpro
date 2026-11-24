@@ -644,12 +644,15 @@ const PlanUI = {
       getVal = (k) => (k === 'cableType') ? item.cableType : (k === 'curved') ? !!item.curved : (item.props ? item.props[k] : undefined);
     } else if (kind === 'trench') {
       title = (PLAN_DEFS.trenchTypes[item.excType] || {}).name || 'Trench';
+      // the size it takes when no width / depth is typed: the road section's (where it differs) or the project standard (roadsections.js)
+      const ts = typeof RoadSections !== 'undefined' ? RoadSections.trenchSize(item) : null, from = ts ? ts.from : 'the type';
       fields = [
         { key: 'name', label: 'Name', type: 'text' },
         { key: 'excType', label: 'Type', type: 'select', options: Object.keys(PLAN_DEFS.trenchTypes).map(k => ({ value: k, label: PLAN_DEFS.trenchTypes[k].name })) },
-        { key: 'depthOverride', label: 'Depth — blank = the type\'s', type: 'number', unit: 'm', min: 0.2, max: 4, step: 0.05 },
-        { key: 'widthOverride', label: 'Width — blank = the type\'s', type: 'number', unit: 'm', min: 0.1, max: 3, step: 0.05 },
+        { key: 'depthOverride', label: ts ? `Depth — blank = ${ts.base.d.toFixed(2)} m (${from})` : 'Depth — blank = the type\'s', type: 'number', unit: 'm', min: 0.2, max: 4, step: 0.05 },
+        { key: 'widthOverride', label: ts ? `Width — blank = ${ts.base.w.toFixed(2)} m (${from})` : 'Width — blank = the type\'s', type: 'number', unit: 'm', min: 0.1, max: 3, step: 0.05 },
       ];
+      if (ts) this._pendingCrossNote = `<div class="plan-field" style="font-size:12px;color:var(--text-muted)">Trench sizes are set once for the project in Road sections (Standard sizes); a road section can have its own. <button type="button" class="plan-btn" data-rs-act="open" ${ts.sec ? `data-id="${escHtml(ts.sec.id)}"` : 'data-id="std"'} style="padding:1px 8px">Road sections…</button></div>`;
       getVal = (k) => item[k];
     } else if (kind === 'crossing') {
       const xm = typeof PlanCrossings !== 'undefined' ? PlanCrossings.members(item) : [item];

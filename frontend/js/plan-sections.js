@@ -3,11 +3,13 @@
  *
  * A section is the street seen end-on, with EVERY item placed from the erf boundary (not from the road):
  *   strips   { a, road, b }   verge A, carriageway, verge B in m (the reserve is their sum; its centre is computed, never typed)
- *   items    svc / lv / fi / mv   { off, depth, w }   cable classes: offset from boundary A (m), depth to the bottom (m), trench width (m)
+ *   items    svc / lv / fi / mv   { off }             cable classes: offset from boundary A (m); how deep and wide their trench is comes from `trench`
  *            kiosk  { off, h, depth, len, front, end }  near face offset, height, depth across, length along, clear space at the door / each end
  *            pole   { off, h, arm }                     street light
  *            mh     { off, len, wid, depth, wall, lid, clear }  fibre manhole (centre offset, internal size, depth to invert, ...)
  *            sleeve { depth, w }                        road crossing sleeves
+ *   trench   { 'MV' | 'LV/SL' | 'MV/LV/SL' | 'FI': { w, d } }  width and depth of each trench type (the plan's trench types): the project
+ *            standard or the section's own (roadsections.js resolves which before the engine sees it)
  * Offsets are kept to 10 mm (`snap`). A project holds `{ list, def, lines }`: the sections, the default one, and the section lines —
  * polylines drawn over the street line, each read as, per street, the stretch [s0, s1] it runs along (`linesFromPolyline`). The engine
  * (plan-layout.js) takes the same object as `input.sections`.
@@ -21,18 +23,28 @@ const PlanSections = (() => {
   // the shape of a section: [group, key, default, min, max]
   const SHAPE = {
     strips: { a: [5, 0.5, 30], road: [7, 2, 40], b: [5, 0.5, 30] },
-    svc: { off: [0.4, 0, 10], depth: [0.6, 0.2, 3], w: [0.3, 0.1, 2] },
-    lv: { off: [0.9, 0, 10], depth: [0.7, 0.2, 3], w: [0.4, 0.1, 2] },
-    fi: { off: [1.7, 0, 10], depth: [0.6, 0.2, 3], w: [0.3, 0.1, 2] },
-    mv: { off: [1.6, 0, 10], depth: [1.1, 0.2, 3], w: [0.5, 0.1, 2] },
+    svc: { off: [0.4, 0, 10] },
+    lv: { off: [0.9, 0, 10] },
+    fi: { off: [1.7, 0, 10] },
+    mv: { off: [1.6, 0, 10] },
     kiosk: { off: [1.5, 0, 10], h: [1.05, 0.3, 4], depth: [0.9, 0.3, 4], len: [1.4, 0.3, 6], front: [1.0, 0, 4], end: [0.3, 0, 3] },
     pole: { off: [3.8, 0, 15], h: [8, 3, 20], arm: [1.5, 0, 5] },
     mh: { off: [2.6, 0, 10], len: [1.2, 0.3, 4], wid: [1.2, 0.3, 4], depth: [1.2, 0.3, 4], wall: [0.15, 0.05, 0.5], lid: [0.6, 0.3, 1.5], clear: [0.5, 0, 3] },
     sleeve: { depth: [0.8, 0.2, 3], w: [0.3, 0.1, 2] },
   };
+  // the trench types (PLAN_DEFS.trenchTypes keys): [width, depth] defaults; width 0.1–3 m, depth 0.2–4 m
+  const TRENCH = { 'MV': [0.6, 1.1], 'LV/SL': [0.5, 0.7], 'MV/LV/SL': [0.9, 1.1], 'FI': [0.3, 0.6] };
+  const TRENCH_W = [0.1, 3], TRENCH_D = [0.2, 4];
+  // the sizes the project standard holds (a section uses them unless it has its own): kiosk and manhole sizes (never their offsets) + trenches
+  const SIZES = { kiosk: ['len', 'depth', 'h', 'front', 'end'], mh: ['len', 'wid', 'depth', 'wall', 'lid', 'clear'] };
+  function trench(x) {
+    const out = {}, src = x && typeof x === 'object' ? x : {};
+    for (const [t, [w, d]] of Object.entries(TRENCH)) { const q = src[t] || {}; out[t] = { w: num(q.w, w, TRENCH_W[0], TRENCH_W[1]), d: num(q.d, d, TRENCH_D[0], TRENCH_D[1]) }; }
+    return out;
+  }
 
   function make(id, name, over) {
-    const sec = { id, name: String(name || 'Section').slice(0, 60), strips: {}, items: {} };
+    const sec = { id, name: String(name || 'Section').slice(0, 60), strips: {}, items: {}, trench: trench() };
     for (const [g, keys] of Object.entries(SHAPE)) {
       const tgt = g === 'strips' ? sec.strips : (sec.items[g] = {});
       for (const [k, [d]] of Object.entries(keys)) tgt[k] = d;
@@ -43,6 +55,7 @@ const PlanSections = (() => {
     const out = JSON.parse(JSON.stringify(a));
     for (const g of Object.keys(b || {})) {
       if (g === 'id' || g === 'name') { out[g] = b[g]; continue; }
+      if (g === 'trench') { out.trench = Object.assign({}, out.trench || {}, b.trench || {}); continue; }
       if (g === 'strips') Object.assign(out.strips, b.strips || {});
       else if (g === 'items') for (const k of Object.keys(b.items || {})) Object.assign(out.items[k] || (out.items[k] = {}), b.items[k]);
     }
@@ -51,7 +64,7 @@ const PlanSections = (() => {
   // fill what a saved section lacks, clamp every value, snap to 10 mm
   function normalize(x, id) {
     x = x && typeof x === 'object' ? x : {};
-    const sec = { id: String(x.id || id || 'sec_1').slice(0, 40), name: String(x.name || 'Section').slice(0, 60), strips: {}, items: {} };
+    const sec = { id: String(x.id || id || 'sec_1').slice(0, 40), name: String(x.name || 'Section').slice(0, 60), strips: {}, items: {}, trench: trench(x.trench) };
     for (const [g, keys] of Object.entries(SHAPE)) {
       const src = g === 'strips' ? (x.strips || {}) : ((x.items || {})[g] || {}), tgt = g === 'strips' ? sec.strips : (sec.items[g] = {});
       for (const [k, [d, lo, hi]] of Object.entries(keys)) tgt[k] = num(src[k], d, lo, hi);
@@ -124,10 +137,11 @@ const PlanSections = (() => {
 
   // clearances inside one section (m), all measured along the offsets from the boundary
   function checks(sec) {
-    const d = sec.items, out = [], f = v => v.toFixed(2);
-    const gap = (a, b) => Math.abs(a.off - b.off) - (a.w + b.w) / 2;
-    const g1 = gap(d.lv, d.fi); if (g1 < 0.3) out.push({ sev: 'warn', text: `LV to fibre gap ${f(g1)} m (0.30 m wanted).` });
-    const g2 = gap(d.lv, d.svc); if (g2 < 0) out.push({ sev: 'warn', text: `Service and LV trenches overlap by ${f(-g2)} m.` });
+    const d = sec.items, T = sec.trench || trench(), out = [], f = v => v.toFixed(2);
+    const W = { svc: T['LV/SL'].w, lv: T['LV/SL'].w, fi: T.FI.w, mv: T.MV.w };
+    const gap = (a, b) => Math.abs(d[a].off - d[b].off) - (W[a] + W[b]) / 2;
+    const g1 = gap('lv', 'fi'); if (g1 < 0.3) out.push({ sev: 'warn', text: `LV to fibre gap ${f(g1)} m (0.30 m wanted).` });
+    const g2 = gap('lv', 'svc'); if (g2 < 0) out.push({ sev: 'warn', text: `Service and LV trenches overlap by ${f(-g2)} m.` });
     const g3 = d.pole.off - (d.kiosk.off + d.kiosk.depth); if (g3 < 1) out.push({ sev: 'warn', text: `Kiosk to pole ${f(g3)} m (1.00 m wanted).` });
     const reserve = sec.strips.a + sec.strips.road + sec.strips.b;
     if (d.kiosk.off + d.kiosk.depth + d.kiosk.front > sec.strips.a) out.push({ sev: 'warn', text: `Kiosk and the clear space in front of its door (${f(d.kiosk.off + d.kiosk.depth + d.kiosk.front)} m) go past the edge of verge A (${f(sec.strips.a)} m).` });
@@ -138,7 +152,7 @@ const PlanSections = (() => {
     return out;
   }
 
-  return { SHAPE, snap, make, normalize, state, nextId, linesFromPolyline, projectOn, at, overlaps, checks };
+  return { SHAPE, TRENCH, TRENCH_W, TRENCH_D, SIZES, trench, snap, make, normalize, state, nextId, linesFromPolyline, projectOn, at, overlaps, checks };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = PlanSections;

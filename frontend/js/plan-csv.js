@@ -164,8 +164,9 @@ const PlanCSV = {
       const f = this._floorFactor(fl);
       for (const t of (fl.data.trenches || [])) {
         const def = PLAN_DEFS.trenchTypes[t.excType] || {};
-        const w = t.widthOverride || def.width || 0;
-        const d = t.depthOverride || def.depth || 0;
+        const ts = typeof RoadSections !== 'undefined' ? RoadSections.trenchSize(t) : null;      // its own, else its road section's / the project standard
+        const w = ts ? ts.w : (t.widthOverride || def.width || 0);
+        const d = ts ? ts.d : (t.depthOverride || def.depth || 0);
         let px = 0;
         for (let i = 1; i < t.points.length; i++) px += Math.hypot(t.points[i].x - t.points[i - 1].x, t.points[i].y - t.points[i - 1].y);
         const len = f ? +(px * f).toFixed(2) : 0;

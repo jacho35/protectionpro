@@ -9,8 +9,9 @@ const F = require('./layout-fixture.js')();
 ok('a made section has every item with its default; values snap to 10 mm and clamp', () => {
   const s = S.make('a', 'Local street');
   assert.strictEqual(s.items.kiosk.off, 1.5); assert.strictEqual(s.items.mh.len, 1.2);
-  const t = S.normalize({ id: 'x', items: { lv: { off: 0.9049, depth: 99 }, kiosk: { off: -3 } } });
-  assert.strictEqual(t.items.lv.off, 0.9); assert.strictEqual(t.items.lv.depth, 3); assert.strictEqual(t.items.kiosk.off, 0);
+  const t = S.normalize({ id: 'x', items: { lv: { off: 0.9049, depth: 99 }, kiosk: { off: -3 } }, trench: { 'LV/SL': { w: 9, d: 0.734 } } });
+  assert.strictEqual(t.items.lv.off, 0.9); assert.strictEqual(t.items.lv.depth, undefined); assert.strictEqual(t.items.kiosk.off, 0);   // a cable has an offset only
+  assert.deepStrictEqual(t.trench['LV/SL'], { w: 3, d: 0.73 }); assert.deepStrictEqual(t.trench.MV, { w: 0.6, d: 1.1 });             // trench sizes clamp, the rest default
   assert.strictEqual(S.snap(1.234), 1.23); assert.strictEqual(S.snap(1.235 + 1e-9), 1.24);
 });
 ok('state: always one section, a default that exists, lines that point at a section', () => {
@@ -53,12 +54,15 @@ ok('engine: a section can use a different offset on one street only (section lin
   for (const e of r.erven) if (e.route && e.route.length > 3) for (const p of e.route.slice(1, -1)) { const d = distErf(p, r.erven); if (d < 6) (e.road.id === sid ? onS : other).push(d); }
   assert(onS.length && other.length && mean(onS) - mean(other) > 1, `${mean(onS).toFixed(2)} v ${mean(other).toFixed(2)}`);
 });
-ok('engine: trench depth comes from the section, per cable class', () => {
-  const r = L.solve(withSec({ items: { lv: { depth: 0.9 }, svc: { depth: 0.5 }, fi: { depth: 0.45 }, mv: { depth: 1.3 } } }), {});
-  const t = L.trenches(r, {});
-  const by = {}; t.list.forEach(x => { (by[x.type] = by[x.type] || new Set()).add(x.depth); });
-  assert([...by['LV/SL']].every(d => d === 0.9), JSON.stringify([...by['LV/SL']]));
-  if (by.FI) assert([...by.FI].every(d => d === 0.45));
+ok('engine: trench width and depth come from the section, per trench type; without a section from the standard sizes', () => {
+  const r = L.solve(withSec({ trench: { 'LV/SL': { w: 0.45, d: 0.9 }, FI: { w: 0.25, d: 0.45 } } }), {});
+  const t = L.trenches(r, { sizes: { 'LV/SL': { w: 0.6, d: 0.8 } } });
+  const by = {}; t.list.forEach(x => { (by[x.type] = by[x.type] || new Set()).add(x.depth + '/' + x.w); });
+  assert([...by['LV/SL']].every(d => d === '0.9/0.45'), JSON.stringify([...by['LV/SL']]));
+  if (by.FI) assert([...by.FI].every(d => d === '0.45/0.25'));
+  const q = t.summary['LV/SL']; assert(Math.abs(q.vol - q.len * 0.45 * 0.9) < 1e-6);
+  const u = L.trenches(L.solve(F, {}), { sizes: { 'LV/SL': { w: 0.6, d: 0.8 } } });                  // no sections: the standard
+  assert(u.list.filter(x => x.type === 'LV/SL').every(x => x.depth === 0.8 && x.w === 0.6));
 });
 ok('engine: kiosks and manholes carry the section\'s sizes; the section is on the result', () => {
   const r = L.solve(withSec({ items: { kiosk: { len: 1.8, depth: 1.1 }, mh: { len: 1.5 } } }), {});
