@@ -20,7 +20,7 @@ const PlanSides = {
   L() { return PlanLayoutUI.cfg(); },
   streets() { return PlanLayoutUI.streetsOnPlan(); },
   _pk(v) { return v === 1 || v === -1 ? v : null; },
-  _w(s) { return PlanLayoutUI._num(s.props && s.props.width, 6, 40, 12); },               // reserve width, m
+  _w(s) { return PlanLayoutUI._num(PlanLayoutUI._resOf(s), 6, 40, 12); },               // reserve width, m
   name(s, i) { return (s.props && s.props.name) || ('Street ' + ((i != null ? i : this.streets().indexOf(s)) + 1)); },
 
   // ── what the engine gets (PlanLayoutUI.gather) ──

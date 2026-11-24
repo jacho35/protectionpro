@@ -17,6 +17,12 @@
  * kerbs), else the carriageway of its section; a road whose own width differs from its section's is listed by `mismatches`.
  * Older projects are converted once on open (`migrate`): Auto layout's own sections + section lines, and the strips of every lighting design.
  *
+ * Road reserve (`reserve`, `setReserve`, `fitStrips`, `fits`): a section may have a picked reserve width (`sec.reserve`, m); the strips then
+ * have to fill it. Setting it resizes the verges (the strip next to each boundary; the carriageway never moves) as `sec.reserveFit` says
+ * ('both' share it, 'a' = verge A keeps its width, 'b' = verge B keeps its); a strip edited so they no longer add up is flagged (`fits`)
+ * with `fitStrips` / `matchReserve`. No reserve picked = the strips' sum, as before. A site plan road's reserve (`reserveOf`) is its own
+ * `props.width` where typed, else its section's picked reserve; `widthMismatches` lists roads whose own width is not their section's.
+ *
  * Sizes (`std`, `sizes`, `setOwn`, `copyFrom`, `toStd`): the kiosk size, the fibre manhole size and the width + depth of each trench type
  * (MV, LV/SL, MV/LV/SL, FI) are set ONCE for the project in `streetLighting.settings.roadStd` { kiosk, mh, trench }. A section uses them
  * unless it differs (`sec.own[group]`: its own `items.kiosk` / `items.mh` sizes, its own `sec.trench`); offsets are always the section's.
@@ -152,6 +158,71 @@ const RoadSections = (() => {
     return { a: r2(k0), road: r2(k1 - k0), b: r2(y - k1), total: r2(y) };
   }
 
+  // ── the road reserve ──
+  const total = sec => r2((sec && sec.strips || []).reduce((a, t) => a + Math.max(0, num(t.width, 0)), 0));
+  const picked = sec => (sec && +sec.reserve > 0 ? r2(+sec.reserve) : null);
+  // the reserve width of a section: the one picked, else what its strips add up to
+  function reserve(sec) { return picked(sec) != null ? picked(sec) : total(sec); }
+  // the strips fill the picked reserve (always true with none picked)
+  function fits(sec) { const p = picked(sec); return p == null || Math.abs(total(sec) - p) < 0.005; }
+  // spread a change of `d` m over the verges: `fit` 'both' (shared), 'a' (verge A keeps its width: all on B), 'b' (all on A). On each side the
+  // verge strip next to the boundary takes it first, then the other strips outside the carriageway from the boundary in; a side with no strip
+  // gets a new verge when it has to grow. Never touches a carriageway or what lies between carriageways. false = it cannot (nothing restored lost)
+  function spread(sec, d, fit) {
+    const S = sec.strips || (sec.strips = []);
+    const cw = S.map((t, i) => (t.type === 'carriageway' && num(t.width, 0) > 0 ? i : -1)).filter(i => i >= 0);
+    const first = cw.length ? cw[0] : S.length, last = cw.length ? cw[cw.length - 1] : S.length - 1;
+    const side = k => { const idx = k === 'a' ? S.map((_, i) => i).filter(i => i < first) : S.map((_, i) => i).filter(i => i > last).reverse();   // boundary first
+      return idx.filter(i => S[i].type === 'verge').concat(idx.filter(i => S[i].type !== 'verge')); };
+    const before = JSON.stringify(S);
+    const apply = (k, amt) => {
+      if (Math.abs(amt) < 0.005) return 0;
+      const c = side(k);
+      if (amt > 0) {
+        if (c.length) { S[c[0]].width = r2(num(S[c[0]].width, 0) + amt); return 0; }
+        const v = strip(sec, { type: 'verge', width: r2(amt) }); if (k === 'a') S.unshift(v); else S.push(v); return 0;
+      }
+      let left = -amt;
+      for (const i of c) { const w = num(S[i].width, 0), take = Math.min(w, left); S[i].width = r2(w - take); left = r2(left - take); if (left < 0.005) return 0; }
+      return -left;
+    };
+    let dA = fit === 'a' ? 0 : fit === 'b' ? d : r2(d / 2), dB = r2(d - dA);
+    // the cw index can move when a verge is added on side A: work out side B first
+    let restB = apply('b', dB), restA = apply('a', dA + restB);
+    if (Math.abs(restA) >= 0.005) restA = apply('b', restA);
+    if (Math.abs(restA) >= 0.005) { sec.strips.splice(0, sec.strips.length, ...JSON.parse(before)); return false; }
+    return true;
+  }
+  // pick the reserve width (3–80 m): the verges take up the difference. false = the strips that cannot move are already wider
+  function setReserve(sec, w, fit) {
+    const n = parseFloat(w); if (!sec || !Number.isFinite(n)) return false;
+    const v = r2(Math.max(3, Math.min(80, n)));
+    if (fit) sec.reserveFit = ['both', 'a', 'b'].includes(fit) ? fit : 'both';
+    if (!spread(sec, r2(v - total(sec)), sec.reserveFit || 'both')) return false;
+    sec.reserve = v; return true;
+  }
+  function clearReserve(sec) { if (sec) delete sec.reserve; }
+  // strips that no longer add up: the verges take the difference, or the reserve becomes what they add up to
+  function fitStrips(sec) { const p = picked(sec); return p != null && spread(sec, r2(p - total(sec)), sec.reserveFit || 'both'); }
+  function matchReserve(sec) { if (sec) sec.reserve = total(sec); }
+  // a site plan road's reserve width: its own where typed, else its section's picked one (null = neither: the layout assumes its default)
+  function reserveOf(props) {
+    const p = props || {}; if (+p.width > 0) return { w: +p.width, src: 'own' };
+    const sec = get(p.section) || def(), v = picked(sec); return v != null ? { w: v, src: 'section', sec } : { w: null, src: null };
+  }
+  // roads with a reserve width of their own that is not their section's picked one (by more than 0.25 m); `near` = the section whose reserve is
+  // closest to the road's own (within 0.5 m), if another one
+  function widthMismatches(secId) {
+    const out = [];
+    for (const r of roads()) {
+      const sec = of(r), p = picked(sec), own = +((r.props || {}).width); if (!sec || p == null || !(own > 0) || Math.abs(own - p) <= 0.25) continue;
+      if (secId && sec.id !== secId) continue;
+      let near = null; for (const x of list()) { const q = picked(x); if (x !== sec && q != null && Math.abs(q - own) <= 0.5 && (!near || Math.abs(q - own) < Math.abs(picked(near) - own))) near = x; }
+      out.push({ route: r, sec, own, want: p, near });
+    }
+    return out;
+  }
+
   // the lighting design whose rows set the poles of this section: the first design that uses it
   function designOf(sec) {
     const sl = SL(); if (!sec || !sl) return null;
@@ -225,7 +296,7 @@ const RoadSections = (() => {
     const d = defId();
     return (withDefault ? [{ value: '', label: 'Default' + (def() ? ' (' + def().name + ')' : '') }] : []).concat(list().map(s => ({ value: s.id, label: s.name + (s.id === d && !withDefault ? ' (default)' : '') })));
   }
-  function summary(sec) { const s = span(sec); return (sec.strips || []).filter(t => num(t.width, 0) > 0).map(t => r2(num(t.width, 0))).join(' + ') + ' m · reserve ' + s.total + ' m'; }
+  function summary(sec) { return (sec.strips || []).filter(t => num(t.width, 0) > 0).map(t => r2(num(t.width, 0))).join(' + ') + ' m · reserve ' + reserve(sec) + ' m'; }
 
   function remove(id) {
     const L = list(), i = L.findIndex(s => s.id === id); if (i < 0 || L.length < 2) return false;
@@ -310,6 +381,7 @@ const RoadSections = (() => {
   }
 
   return {
+    reserve, fits, setReserve, clearReserve, fitStrips, matchReserve, reserveOf, widthMismatches, total,
     std, setStd, setSize, sizes, own, setOwn, copyFrom, toStd, differing, trenchSize, roadNear, migrateStd, GROUPS,
     list, get, defId, def, setDef, make, add, roads, ensure, span, pole, designOf, layoutShape, of, roadsUsing, assign, carriage, mismatches,
     forLayout, stripsOf, designsUsing, options, summary, remove, duplicate, migrate, stripId, strip,

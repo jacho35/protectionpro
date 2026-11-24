@@ -68,6 +68,7 @@ const PlanUI = {
     const mode = (typeof PlanMarkup !== 'undefined' && PlanMarkup.mode) || 'draw';
     let html;
     if (ctx === 'lighting') { el.setAttribute('aria-label', 'Lighting tools'); html = this._lightingPanel(); }
+    else if (mode === 'roads' && typeof RoadSectionsUI !== 'undefined') { el.setAttribute('aria-label', 'Road sections'); html = RoadSectionsUI.panelHtml(); }
     else if (mode === 'underlays') { el.setAttribute('aria-label', 'Underlays'); html = this._underlaysPanel(); }
     else if (mode === 'output') { el.setAttribute('aria-label', 'Sync and export'); html = this._outputPanel(); }
     else { el.setAttribute('aria-label', 'Parts'); html = this._drawPanel(); }
@@ -359,6 +360,8 @@ const PlanUI = {
 
   _onPaletteClick(e) {
     if (PlanMarkup.context === 'lighting' && typeof LightingWS !== 'undefined' && LightingWS.onPaletteClick && LightingWS.onPaletteClick(e)) return;
+    const rsp = e.target.closest('[data-rsp]');
+    if (rsp && typeof RoadSectionsUI !== 'undefined') { RoadSectionsUI.onPanelClick(rsp); return; }
     const actBtn = e.target.closest('[data-act]');
     if (actBtn) {
       const a = actBtn.dataset.act;

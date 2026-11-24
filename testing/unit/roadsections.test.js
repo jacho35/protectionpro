@@ -156,4 +156,33 @@ ok('migrateStd: an older project keeps the sizes it used; other sections that di
   fresh(); RS.migrateStd(null, false); assert.deepStrictEqual([RS.std().trench.MV.d, RS.std().trench['LV/SL'].d], [1.1, 0.7]);
 });
 
+ok('reserve: picked, the verges take up the change, the carriageway never moves', () => {
+  fresh(); const a = RS.add('A');                                                                  // 5 + 7 + 5
+  assert.strictEqual(RS.reserve(a), 17); assert.ok(RS.fits(a));                                  // none picked: the strips' sum
+  assert.ok(RS.setReserve(a, 16)); assert.deepStrictEqual(a.strips.map(s => s.width), [4.5, 7, 4.5]); assert.strictEqual(RS.reserve(a), 16);
+  assert.ok(RS.setReserve(a, 20, 'a')); assert.deepStrictEqual(a.strips.map(s => s.width), [4.5, 7, 8.5]);    // verge A keeps its width
+  assert.ok(RS.setReserve(a, 18, 'b')); assert.deepStrictEqual(a.strips.map(s => s.width), [2.5, 7, 8.5]);
+  assert.strictEqual(RS.setReserve(a, 6), false); assert.deepStrictEqual(a.strips.map(s => s.width), [2.5, 7, 8.5]);   // narrower than the carriageway: nothing changes
+  a.strips[1].width = 6.4; assert.ok(!RS.fits(a));                                                // a strip edited: flagged
+  assert.ok(RS.fitStrips(a)); assert.ok(RS.fits(a)); assert.strictEqual(a.strips[1].width, 6.4);
+  a.strips[0].width = 3; assert.ok(!RS.fits(a)); RS.matchReserve(a); assert.strictEqual(RS.reserve(a), RS.total(a)); assert.ok(RS.fits(a));
+  // the verge strip next to the boundary takes it first, then the other strips outside the carriageway
+  const b = RS.make('B', [{ type: 'footpath', width: 2 }, { type: 'verge', width: 1 }, { type: 'carriageway', width: 7 }, { type: 'footpath', width: 2 }]);
+  assert.ok(RS.setReserve(b, 10)); assert.deepStrictEqual(b.strips.map(s => s.width), [2, 0, 7, 1]);
+  const c = RS.make('C', [{ type: 'carriageway', width: 7 }]);                                     // nothing beside the road: new verges
+  assert.ok(RS.setReserve(c, 13)); assert.deepStrictEqual(c.strips.map(s => [s.type, s.width]), [['verge', 3], ['carriageway', 7], ['verge', 3]]);
+});
+
+ok('a road\'s reserve: its own width, else its section\'s picked one; mismatches name the nearest section', () => {
+  const roads = [{ id: 'r1', type: 'street', props: {} }, { id: 'r2', type: 'street', props: { width: 20.2 } }, { id: 'r3', type: 'street', props: { width: 16.1 } }];
+  fresh(roads); const a = RS.add('Local'), b = RS.add('Collector');
+  assert.deepStrictEqual(RS.reserveOf(roads[0].props), { w: null, src: null });                   // nothing picked anywhere
+  RS.setReserve(a, 16); RS.setReserve(b, 20);
+  assert.strictEqual(RS.reserveOf(roads[0].props).w, 16); assert.strictEqual(RS.reserveOf(roads[0].props).src, 'section');
+  assert.strictEqual(RS.reserveOf(roads[1].props).w, 20.2);
+  const mm = RS.widthMismatches();
+  assert.deepStrictEqual(mm.map(m => [m.route.id, m.near && m.near.id]), [['r2', b.id]]);         // 16.1 is within 0.25 m of 16
+  RS.assign([roads[1]], b.id); assert.strictEqual(RS.widthMismatches().length, 0);
+});
+
 console.log(n + ' passed');

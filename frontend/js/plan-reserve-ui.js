@@ -290,7 +290,7 @@ const PlanReserveUI = {
       pm.routes.push(r); made.push(r);
     });
     if (choice === 'add' && existing.length && typeof PlanKerbs !== 'undefined') {                    // the new ends run on to the streets that are already there
-      const all = pm.routes.filter(r => r.type === 'street' && r.points.length >= 2), arr = all.map(r => ({ pts: r.points.map(p => [p.x * f, p.y * f]), w: +(r.props && r.props.width) || 12, chains: [] }));
+      const all = pm.routes.filter(r => r.type === 'street' && r.points.length >= 2), arr = all.map(r => ({ pts: r.points.map(p => [p.x * f, p.y * f]), w: +(typeof RoadSections !== 'undefined' ? RoadSections.reserveOf(r.props).w : +(r.props && r.props.width)) || 12, chains: [] }));
       all.forEach((r, k) => { if (made.includes(r)) PlanKerbs.attach(arr, k, { gap: 15 }); });
       all.forEach((r, k) => { if (arr[k].pts.length !== r.points.length || made.includes(r)) r.points = arr[k].pts.map(p => ({ x: p[0] / f, y: p[1] / f })); });
     }
@@ -310,9 +310,9 @@ const PlanReserveUI = {
     const cwOf = r => typeof RoadSections !== 'undefined' ? RoadSections.carriage(r.props) : { cw: +r.props.carriageW || 0, off: +r.props.cwOffset || 0 };
     const rs = pm.routes.filter(r => r.type === 'street' && r.props && cwOf(r).cw > 0 && r.points && r.points.length >= 2); if (!rs.length) return null;
     const rets = ((pm.settings || {}).layout || {}).streetReturns || {};
-    const sig = rs.map(r => r.id + ':' + r.points.length + ':' + r.points.map(p => Math.round(p.x) + ',' + Math.round(p.y)).join(';').length + ':' + Math.round(r.points[0].x) + ',' + Math.round(r.points[0].y) + ',' + Math.round(r.points[r.points.length - 1].x) + ',' + Math.round(r.points[r.points.length - 1].y) + ':' + cwOf(r).cw + ':' + cwOf(r).off + ':' + r.props.width).join('|') + '#' + f + JSON.stringify(rets);
+    const sig = rs.map(r => r.id + ':' + r.points.length + ':' + r.points.map(p => Math.round(p.x) + ',' + Math.round(p.y)).join(';').length + ':' + Math.round(r.points[0].x) + ',' + Math.round(r.points[0].y) + ',' + Math.round(r.points[r.points.length - 1].x) + ',' + Math.round(r.points[r.points.length - 1].y) + ':' + cwOf(r).cw + ':' + cwOf(r).off + ':' + (typeof RoadSections !== 'undefined' ? RoadSections.reserveOf(r.props).w : +(r.props && r.props.width))).join('|') + '#' + f + JSON.stringify(rets);
     if (this._geo.sig === sig) return this._geo.g;
-    const list = rs.map(r => ({ rid: r.id, pts: r.points.map(p => [p.x * f, p.y * f]), w: +r.props.width || 12, carriageW: cwOf(r).cw, cwOffset: cwOf(r).off }));
+    const list = rs.map(r => ({ rid: r.id, pts: r.points.map(p => [p.x * f, p.y * f]), w: +(typeof RoadSections !== 'undefined' ? RoadSections.reserveOf(r.props).w : +(r.props && r.props.width)) || 12, carriageW: cwOf(r).cw, cwOffset: cwOf(r).off }));
     // kerb lines cut back to the returns; a corner of two streets (or a bend of one) also gets its outer radius
     const d = PlanReserve.kerbDrawing(list, { ret: 8, retWide: 10 }, c => { const m = rets[c.jkey]; return m && m[c.key] != null ? m[c.key] : null; });
     // the inner returns as geometry (metres) for Auto layout: the square kerb corner P, the arc's centre and radius and its tangent points; the

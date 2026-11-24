@@ -77,7 +77,7 @@ const Header = {
       ['btn-study-manager', 'Single-line toolbar'], ['btn-zoom-fit', 'Single-line toolbar › Zoom'],
       ['btn-zoom-reset', 'Single-line toolbar › Zoom'],
       ['btn-dark-mode', 'App bar'], ['btn-settings', 'App bar'], ['btn-help', 'App bar'],
-      ['btn-account', 'App bar'],
+      ['btn-account', 'App bar'], ['btn-road-sections', 'Site plan › Roads'],
     ];
     const names = { 'btn-zoom-fit': 'Zoom to fit', 'btn-zoom-reset': 'Actual size (1:1)',
       'btn-dark-mode': 'Toggle dark mode', 'btn-help': 'Help & documentation' };
