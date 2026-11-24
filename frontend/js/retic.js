@@ -260,6 +260,69 @@ const Retic = {
     this._afterMutate();
   },
 
+  // A kiosk with nothing on it: no erven, no custom loads, no street lighting (typed or from a circuit fed from it), no ADMD override.
+  // Kiosks fed from it stay; they move up to its supply when it goes (as deleteKiosk does).
+  emptyKiosks() {
+    const sl = AppState.reticulation && AppState.reticulation.streetLighting;
+    const fedSl = new Set(((sl && sl.circuits) || []).filter(c => c.source && c.source.kind === 'kiosk').map(c => c.source.id));
+    return this.kiosks.filter(k => !(k.erfs || []).length && !(k.loads || []).length && !(+k.streetLightKVA > 0) && !(+k.admdOverride > 0) && !fedSl.has(k.id));
+  },
+
+  removeEmptyKiosks() {
+    const list = this.emptyKiosks();
+    if (!list.length) { UI.toast('No empty kiosks.', 'info'); return; }
+    const nameOf = id => { const k = this.kioskById(id); if (k) return k.name; const m = this.minisubs.find(x => x.id === id); return m ? m.name : 'the minisub'; };
+    const gone = new Set(list.map(k => k.id));
+    // where a kiosk fed from a removed one ends up: the first supply up the chain that stays
+    const supply = id => { let k = this.kioskById(id), n = 0; while (k && gone.has(k.id) && n++ < 500) { const up = k.fedFrom; k = this.kioskById(up); if (!k) return up; } return k ? k.id : id; };
+    const row = k => {
+      const kids = this.kiosks.filter(c => c.fedFrom === k.id && !gone.has(c.id));
+      const fed = k.fedFrom && k.fedFrom !== 'source' ? nameOf(k.fedFrom) : (this.minisubs[0] ? this.minisubs[0].name : 'the minisub');
+      const note = kids.length ? kids.map(c => c.name).join(', ') + ' will be fed from ' + nameOf(supply(k.fedFrom) === 'source' ? (this.minisubs[0] || {}).id : supply(k.fedFrom)) + ' instead' : 'fed from ' + fed;
+      return `<label style="display:flex;gap:8px;align-items:center;padding:3px 0"><input type="checkbox" data-ek="${escHtml(k.id)}" checked> <b>${escHtml(k.name)}</b> <span style="color:var(--text-muted)">${escHtml(note)}</span></label>`;
+    };
+    const m = document.createElement('div');
+    m.className = 'modal'; m.style.display = 'flex'; m.style.zIndex = '3000';
+    m.innerHTML = `<div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="ek-title" style="max-width:520px;width:94vw">
+      <div class="modal-header"><h3 id="ek-title">Remove ${list.length} empty kiosk${list.length === 1 ? '' : 's'}?</h3><button class="modal-close" data-ek-act="cancel" aria-label="Close">&times;</button></div>
+      <div class="modal-body" style="display:flex;flex-direction:column;gap:8px">
+        <p style="margin:0">These kiosks have no erven, no custom loads and no street lighting. Their kiosks drawn on the plan go too.</p>
+        <div style="max-height:50vh;overflow:auto;border:1px solid var(--border-color,#ddd);border-radius:6px;padding:6px 10px">${list.map(row).join('')}</div>
+        <p style="margin:0;font-size:12px;color:var(--text-muted)">One undo step. Kiosks fed from a removed one move up to its supply.</p>
+        <div class="ui-dialog-actions"><button type="button" class="btn-small" data-ek-act="cancel">Cancel</button><button type="button" class="btn-primary ui-dialog-danger" data-ek-act="ok">Remove</button></div>
+      </div></div>`;
+    document.body.appendChild(m);
+    const ok = m.querySelector('[data-ek-act="ok"]');
+    const count = () => { const n = m.querySelectorAll('input[data-ek]:checked').length; ok.textContent = n ? `Remove ${n} kiosk${n === 1 ? '' : 's'}` : 'Remove'; ok.disabled = !n; };
+    count();
+    const close = () => { m.remove(); document.removeEventListener('keydown', onKey, true); };
+    const onKey = e => { if (e.key === 'Escape') { e.preventDefault(); close(); } };
+    document.addEventListener('keydown', onKey, true);
+    m.addEventListener('change', count);
+    m.addEventListener('click', e => {
+      const b = e.target.closest('[data-ek-act]'); if (!b && e.target !== m) return;
+      if (!b || b.dataset.ekAct === 'cancel') { close(); return; }
+      const ids = [...m.querySelectorAll('input[data-ek]:checked')].map(i => i.dataset.ek);
+      close();
+      if (ids.length) this._removeKiosks(ids);
+    });
+    ok.focus();
+  },
+
+  // delete several kiosks as one change (one undo step); each child is handed to the first supply up the chain that stays
+  _removeKiosks(ids) {
+    const gone = new Set(ids), first = this.minisubs[0] && this.minisubs[0].id;
+    for (const id of ids) {
+      const i = this.kiosks.findIndex(k => k.id === id); if (i < 0) continue;
+      const k = this.kiosks[i], parent = k.fedFrom || first;
+      if (typeof Sync !== 'undefined') { Sync.markDeleted('retic', id); for (const l of k.loads || []) Sync.markDeleted('retic', l.id); }
+      this.kiosks.splice(i, 1);
+      for (const c of this.kiosks) if (c.fedFrom === id) c.fedFrom = parent;
+    }
+    UI.toast(`Removed ${gone.size} empty kiosk${gone.size === 1 ? '' : 's'}.`, 'success');
+    this._afterMutate();
+  },
+
   addMinisub() {
     const n = this.minisubs.length + 1;
     this.minisubs.push({ id: AppState.reticGenMinisubId(), name: 'Minisub ' + n,
@@ -643,6 +706,7 @@ const Retic = {
     }
     else if (action === 'bulk-apply') this.applyBulk();
     else if (action === 'add-kiosk') this.addKiosk();
+    else if (action === 'remove-empty') this.removeEmptyKiosks();
     else if (action === 'quick-build') this.quickBuild();
     else if (action === 'add-minisub') this.addMinisub();
     else if (action === 'del-minisub') this.deleteMinisub(btn.dataset.ms);
@@ -1350,6 +1414,7 @@ const Retic = {
         <button class="retic-btn retic-mobile-only" data-action="toggle-summary" title="Show the minisub / network summary">▤ Summary</button>
         <button class="retic-btn" data-action="undo" title="${escHtml(UndoNames.title('Undo', this.undoLabel(), 'Ctrl+Z'))}">↶ Undo</button>
         <button class="retic-btn" data-action="redo" title="${escHtml(UndoNames.title('Redo', this.redoLabel(), 'Ctrl+Shift+Z'))}">Redo ↷</button>
+        ${(() => { const n = this.emptyKiosks().length; return n ? `<button class="retic-btn" data-action="remove-empty" title="Remove the kiosks with no erven, no custom loads and no street lighting">Remove empty kiosks (${n})</button>` : ''; })()}
         <button class="retic-btn" data-action="diagram" title="Network overview: block diagram of the MV, the LV strings and kiosks with volt drop and fault current, the street-light circuits, and the fibre network">◱ Network overview</button>
         <button class="retic-btn" data-action="report" title="Export demand + cable schedule">Export Report</button>
       </div>` + (this.kiosks.length ? `

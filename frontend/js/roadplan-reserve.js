@@ -43,7 +43,7 @@ const RoadReserve = Object.assign(Object.create(PlanReserveUI), {
     this.on = true;
     this.stage = { T: PlanReserve.stage(g.segs, null, { step: this.opt.step, gapM: this.opt.gapM }), f: 1, mode: 'add', draft: [], cutDraft: [], dropped: new Set(), edits: {}, returns: {}, res: null, hover: null, drag: null, layers: g.layers, usedAll: false, hasWa: true };
     RoadPlan.setTool('reserveauto'); RoadPlan.renderPanel();
-    UI.toast('Click inside a road reserve to add it. If the road space runs out of the drawing, draw a Cut line across the entrance. Alt-click a street drops it, Backspace undoes, Enter creates.', 'info', 8000);
+    UI.toast('Click inside a road reserve to add it. If the road space runs out of the drawing, draw a Cut line across the entrance. Alt-click a road drops it, Backspace undoes, Enter creates.', 'info', 8000);
   },
   start() { this.open(); },
   close() { this.on = false; this.stage = null; },
@@ -84,7 +84,7 @@ const RoadReserve = Object.assign(Object.create(PlanReserveUI), {
   // ── the panel (the shared HTML, in the Road plan's controls) ──
   panelHtml() {
     if (!this.stage) return '';
-    return '<div class="rk-panel"><h3>Roads from road reserve</h3>' + PlanReserveUI.panelHtml.call(this).replace(/data-act="rs-/g, 'data-rp="rs-').replace(/class="plan-btn"/g, 'class="btn-small"').replace('<b>Streets from road reserve</b>', '').replace(/Create (\d+) street/g, 'Create $1 road').replace(/street(s?)\b/g, 'road$1') + '</div>';
+    return '<div class="rk-panel"><h3>Roads from road reserve</h3>' + PlanReserveUI.panelHtml.call(this).replace(/data-act="rs-/g, 'data-rp="rs-').replace(/class="plan-btn"/g, 'class="btn-small"').replace('<b>Roads from road reserve</b>', '').replace(/Create (\d+) street/g, 'Create $1 road').replace(/street(s?)\b/g, 'road$1') + '</div>';
   },
 
   // ── Create ──

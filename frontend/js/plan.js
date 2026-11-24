@@ -989,7 +989,7 @@ const PlanMarkup = {
       case 'room': return 'Room — click ≥3 points; ✓ Done / Enter closes it. Esc cancels.';
       case 'perimeter': return 'Perimeter — click points along the fence; ✓ Done / Enter finishes. Esc cancels.';
       case 'roomdetect': return 'Detect room — click inside a room, or Detect all. Shift-click adds, Alt-click subtracts. Esc to stop.';
-      case 'layout': return (typeof PlanLayoutUI !== 'undefined' && PlanLayoutUI.hint) ? PlanLayoutUI.hint() : 'Auto layout — set the streets and the rules, Run, then Create.';
+      case 'layout': return (typeof PlanLayoutUI !== 'undefined' && PlanLayoutUI.hint) ? PlanLayoutUI.hint() : 'Auto layout — set the roads and the rules, Run, then Create.';
       case 'erfdetect': return 'Detect erven — click inside an erf, or Detect all. Shift-click adds, Alt-click subtracts. Esc to stop.';
       case 'crossing': return 'Crossing — click two points. Esc cancels.';
       case 'calibrate': return 'Calibrate — click two points a known distance apart.';

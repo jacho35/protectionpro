@@ -212,7 +212,7 @@ const RoadPlanOpt = {
     for (const r of X.roads) { lo[r.id] = o.minSpacing; hi[r.id] = o.maxSpacing; spacing[r.id] = o.maxSpacing; }
     const roadPass = (res) => { const m = {}; for (const r of res.roads || []) m[r.id] = r.pass !== false; return m; };
     // 1. streets: every road from the widest spacing down, by bisection with the real calculation
-    progress('Spacing the street poles…');
+    progress('Spacing the road poles…');
     let res = await API.request('/analysis/road-plan', 'POST', this._payload(X, this._place(X, chosen, spacing, kept)));
     let ok = roadPass(res);
     const open = X.roads.filter(r => !ok[r.id]).map(r => r.id);
@@ -233,7 +233,7 @@ const RoadPlanOpt = {
     for (let round = 0; round < 3 && best.n; round++) {
       const failing = (res.conflictAreas || []).filter(c => c.pass === false).map(c => X.juncs.findIndex(j => j.key === c.id)).filter(i => i >= 0);
       if (!failing.length) break;
-      progress('Choosing the junction poles again with the street poles in place…');
+      progress('Choosing the junction poles again with the road poles in place…');
       const next = {}; for (const id in placed) next[id] = placed[id].slice();
       for (const ji of failing) {
         const name = X.juncs[ji].name;
@@ -281,7 +281,7 @@ const RoadPlanOpt = {
   // ─── Dialog ────────────────────────────────────────────────────────────
   _optsHtml() {
     const o = this.opts;
-    return `<p class="rl-lead">Lays every road's poles out against the checks: the fewest poles that make each junction pass its class, then each street at the widest spacing that still passes. Pole heights are not changed; when a junction cannot pass at the design's height, the lowest height that can is suggested.</p>
+    return `<p class="rl-lead">Lays every road's poles out against the checks: the fewest poles that make each junction pass its class, then each road at the widest spacing that still passes. Pole heights are not changed; when a junction cannot pass at the design's height, the lowest height that can is suggested.</p>
       <div class="rl-form rp-opt-form">
         <label>Widest spacing to try<span class="sl-unit"><input type="number" min="10" max="200" step="5" data-ro="maxSpacing" value="${o.maxSpacing}"> m</span></label>
         <label>At most, poles per junction<input type="number" min="1" max="6" step="1" data-ro="maxN" value="${o.maxN}"></label>
@@ -299,11 +299,11 @@ const RoadPlanOpt = {
     const hrow = hs.map(h => `<tr class="${h.pass ? '' : 'bad'}${h.dh === 0 ? ' rp-opt-cur' : ''}"><td class="sl-mono">${f(h.h, 1)} m${h.dh === 0 ? ' (design)' : ''}</td><td>${h.pass ? `all pass${m ? ` with the ${m} % margin` : ''} · ${h.poles} junction poles` : `${m ? `short of the ${m} % margin` : 'fails'} at ${h.per.filter(p => p && !p.pass).map(p => escHtml(p.name)).join(', ')}`}</td></tr>`).join('');
     const short = hs[0].per.filter(p => p && !p.pass).map(p => escHtml(p.name)).join(', ');
     const marginNote = R.pass && R.sugg ? `<div class="sl-hint">The ${m} % junction margin is not reached at ${short} at ${f(R.h0, 1)} m (they pass the class itself); at ${f(R.sugg.h, 1)} m every junction reaches it.</div>` : '';
-    const head = R.pass ? `<div class="rp-opt-verdict ok"><b>Every street and junction passes</b> with ${R.total} poles (${R.juncPoles} of them at junctions); the plan has ${R.now} now.${marginNote}</div>`
+    const head = R.pass ? `<div class="rp-opt-verdict ok"><b>Every road and junction passes</b> with ${R.total} poles (${R.juncPoles} of them at junctions); the plan has ${R.now} now.${marginNote}</div>`
       : `<div class="rp-opt-verdict bad"><b>Not everything passes</b> at the design's mounting height (${f(R.h0, 1)} m)${R.sugg ? `. At <b>${f(R.sugg.h, 1)} m</b> every junction can pass: change the height in the Lighting design's row and run this again.` : '. No height up to 12 m makes every junction pass with this luminaire and ' + this.opts.maxN + ' poles per junction.'}</div>`;
     return `${head}
       <h4 class="rp-opt-h">Junctions</h4><table class="rl-table"><thead><tr><th>Junction</th><th>Class</th><th>Poles</th><th>Ē lx</th><th>Uo</th><th></th></tr></thead><tbody>${jrows}</tbody></table>
-      <h4 class="rp-opt-h">Streets</h4><table class="rl-table"><thead><tr><th>Road</th><th>Poles</th><th>Spacing m</th><th></th></tr></thead><tbody>${rrows}</tbody></table>
+      <h4 class="rp-opt-h">Roads</h4><table class="rl-table"><thead><tr><th>Road</th><th>Poles</th><th>Spacing m</th><th></th></tr></thead><tbody>${rrows}</tbody></table>
       <details class="rp-opt-heights"${R.sugg ? ' open' : ''}><summary>Mounting heights (a suggestion only — the design is not changed)</summary><table class="rl-table"><tbody>${hrow}</tbody></table></details>
       <div class="sl-hint">Apply replaces the poles of every road (one undo step); they are kept by Lay out again. Junction poles are noted as such in the pole schedule.</div>`;
   },

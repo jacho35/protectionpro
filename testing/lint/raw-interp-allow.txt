@@ -196,7 +196,9 @@ plan-layout-ui.js::(this.kerbStage ? x.layer === this.kerbStage.layer && x.d.id 
 plan-layout-ui.js::this.secDraw ? ' style="outline:2px solid var(--accent,#2563eb)"' : ''
 plan-layout-ui.js::act.s ? ` data-s="${act.s}"` : ''
 plan-layout-ui.js::act.dis ? 'opacity:.65' : (act.create ? 'background:var(--accent,#2563eb);color:#fff' : '')
-plan-sections-ui.js::this.f2(val)
-plan-sections-ui.js::col[c.sev] || '#5b6068'
+roadsections-ui.js::this.f2(val)
+roadsections-ui.js::col[c.sev] || '#5b6068'
+roadsections-ui.js::this.colour(x.id)
+roadsections-ui.js::this.colour(sec.id)
 roadplan-kerbs.js::pts.map(q => S(q[0], q[1]).map(v => v.toFixed(1)).join(' ')).join('L')
 roadplan-kerbs.js::attrs

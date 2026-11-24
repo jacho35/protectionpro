@@ -67,6 +67,8 @@ jobs:
         run: node testing/unit/crossings-first.test.js
       - name: Road plan roads from the site plan's streets
         run: node testing/unit/roadsiteplan.test.js
+      - name: Road sections unit tests
+        run: node testing/unit/roadsections.test.js
       - name: Plan DXF layers and layout sheets
         run: node testing/unit/plandxf.test.js
       - name: TCC curves

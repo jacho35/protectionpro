@@ -138,6 +138,7 @@ const Issues = {
     add(this._validation);
     add(this._lighting);
     add(this._sync);
+    add(this._roadSections);
     add(this._quantities);
     const rank = { fail: 0, warn: 1, stale: 2 };
     const ord = this.order();
@@ -390,6 +391,15 @@ const Issues = {
       out.push({ key: 'sync:' + s.key, sev: 'warn', ws, where: this.label(ws), go, run: () => switchWorkspace(ws),
         text: s.text, act: s.action && s.action.label ? s.action.label : null, actRun: s.action && s.action.run ? s.action.run : null });
     }
+  },
+
+  // ── Road sections: a road whose own carriageway width is not its section's ──
+  _roadSections(out) {
+    if (typeof RoadSections === 'undefined') return;
+    const items = RoadSections.mismatches().map(m => ({ key: 'rs-cw:' + m.route.id, sev: 'warn', ws: 'plan', where: this.label('plan'), go: 'plan:' + m.route.id,
+      text: `${(m.route.props && m.route.props.name) || 'A road'}: its own carriageway is ${(+m.own).toFixed(1)} m, its road section "${m.sec.name}" says ${(+m.want).toFixed(1)} m. Its own width is used.`,
+      act: 'Use the section\'s', actRun: () => { delete m.route.props.carriageW; delete m.route.props.cwOffset; if (typeof PlanMarkup !== 'undefined') { PlanMarkup.snapshot(); PlanMarkup.markDirty(); } this.kick(); } }));
+    this._capped(out, items);
   },
 
   // ── Quantities ──

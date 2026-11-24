@@ -53,6 +53,7 @@ const CollabData = {
         set: v => { if (SL() && v && typeof v === 'object') SL().settings = v; } },
       { key: 'sl.circuits', kind: 'list', group: 'sl', get: () => SL() && SL().circuits },
       { key: 'sl.roadDesigns', kind: 'list', group: 'sl', get: () => SL() && SL().roadDesigns },
+      { key: 'sl.roadSections', kind: 'list', group: 'sl', get: () => SL() && (SL().roadSections || (SL().roadSections = [])) },
       { key: 'sl.photometry', kind: 'map', group: 'sl', immutable: true, get: () => SL() && SL().photometry },
 
       { key: 'rp.roads', kind: 'list', group: 'rp', get: () => RP() && RP().roads },
