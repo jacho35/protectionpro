@@ -143,7 +143,37 @@ const RoadPlan = {
   _genId(prefix) { return prefix + '_' + (this.rp._seq++); },
   _num(v, d) { const x = parseFloat(v); return isFinite(x) ? x : d; },
   _fmt(v, dp = 2) { return v === null || v === undefined || !isFinite(v) ? '—' : (+v).toFixed(dp); },
-  _design(road) { return road && typeof RoadLight !== 'undefined' ? RoadLight.design(road.designId) : null; },
+  // The lighting design of a road, with the strips of the road's own road section: the site plan road it follows, else its own pick
+  // (`road.section`), else the design's. Only the strips change (a shallow copy); rows, spacing and the rest are the design's.
+  _design(road) {
+    const des = road && typeof RoadLight !== 'undefined' ? RoadLight.design(road.designId) : null;
+    const sid = des && this.sectionId(road);
+    return sid && sid !== des.section ? Object.assign({}, des, { section: sid }) : des;
+  },
+  _linkedPlanRoads(road) {
+    if (!road || !road.plan || road.plan.unlinked || !Array.isArray(road.plan.ids) || typeof RoadSections === 'undefined') return [];
+    const all = RoadSections.roads(); return road.plan.ids.map(id => all.find(x => x.id === id)).filter(Boolean);
+  },
+  // the road's section: a road that follows the site plan sets it on the plan's roads (the one place it is kept), any other road on itself
+  _setSection(road, id) {
+    const plan = this._linkedPlanRoads(road);
+    if (plan.length) { RoadSections.assign(plan, id); if (typeof PlanMarkup !== 'undefined') PlanMarkup.markDirty(); }
+    else if (id && RoadSections.get(id)) road.section = id; else delete road.section;
+  },
+  _sectionFieldHtml(road) {
+    if (typeof RoadSections === 'undefined' || !RoadSections.list().length) return '';
+    const des = RoadLight.design(road.designId), dsec = des && RoadSections.get(des.section), cur = this.sectionId(road), plan = this._linkedPlanRoads(road).length;
+    const opts = `<option value=""${cur ? '' : ' selected'}>${dsec ? 'The lighting design\'s (' + escHtml(dsec.name) + ')' : 'The lighting design\'s strips'}</option>` + RoadSections.list().map(x => `<option value="${escHtml(x.id)}"${x.id === cur ? ' selected' : ''}>${escHtml(x.name)}</option>`).join('');
+    const warn = cur && dsec && cur !== dsec.id ? `<div class="sl-hint">The strips are this road's section; the luminaire rows are the design's, made for ${escHtml(dsec.name)}.</div>` : '';
+    return `<label class="rp-field">Road section<select data-rp-road-f="section">${opts}</select></label>${warn}${plan ? '<div class="sl-hint">Kept on the site plan road this road follows: the plan and Auto layout use it too.</div>' : ''}`;
+  },
+  sectionId(road) {
+    if (!road || typeof RoadSections === 'undefined') return null;
+    if (road.plan && !road.plan.unlinked && Array.isArray(road.plan.ids)) {
+      for (const id of road.plan.ids) { const r = RoadSections.roads().find(x => x.id === id), sid = r && r.props && r.props.section; if (RoadSections.get(sid)) return sid; }
+    }
+    return RoadSections.get(road.section) ? road.section : null;
+  },
 
   // ─── Undo (road data only; the background is not snapshotted) ────────
   _snapshot() { return JSON.stringify({ roads: this.roads, junctionCls: this.rp.junctionCls, settings: this.rp.settings, scene: this.rp.scene || null, junctionReturns: this.rp.junctionReturns || null }); },
@@ -339,7 +369,7 @@ const RoadPlan = {
   // Everything derived from a road's shape + design, cached on a signature.
   geom(road) {
     const des = this._design(road);
-    const key = JSON.stringify([road.mode, road.ip, road.poly, road.kerbs, road.radius, des && des.sections, des && des.rows]);
+    const key = JSON.stringify([road.mode, road.ip, road.poly, road.kerbs, road.radius, des && RoadLight._secs(des), des && des.rows]);
     const c = this._geo.get(road.id);
     if (c && c.key === key) return c.g;
     let pts = [], els = null, kerbWidth = null;
@@ -493,7 +523,7 @@ const RoadPlan = {
     const set = this.rp.junctionCls[j.key];
     if (set) return set;
     const des = this._design(this.road(j.main));
-    const cw = des && des.sections.find(s => s.type === 'carriageway' && s.cls);
+    const cw = des && RoadLight._secs(des).find(s => s.type === 'carriageway' && s.cls);
     if (!cw) return this._standard() === 'SANS' ? 'RC4' : 'C3';
     return (this._standard() === 'SANS' ? RP_SANS_RC : RP_COMPARABLE_C)[cw.cls] || (this._standard() === 'SANS' ? 'RC4' : 'C3');
   },
@@ -681,7 +711,7 @@ const RoadPlan = {
   async deleteRoad(id) {
     const r = this.road(id);
     const linked = typeof RoadSitePlan !== 'undefined' && RoadSitePlan.linked(r);
-    if (!r || !(await UI.confirm(`Delete road "${r.name}" and its poles?${linked ? ' The street stays on the site plan; it comes back here only if you add the unused streets again.' : ''}`, { danger: true, okText: 'Delete' }))) return;
+    if (!r || !(await UI.confirm(`Delete road "${r.name}" and its poles?${linked ? ' The road stays on the site plan; it comes back here only if you add the unused roads again.' : ''}`, { danger: true, okText: 'Delete' }))) return;
     if (linked) RoadSitePlan.forget(r);
     this.rp.roads = this.roads.filter(x => x.id !== id);
     this._selRoad = this.roads.length ? this.roads[0].id : null;
@@ -1399,7 +1429,7 @@ const RoadPlan = {
       const badge = rr && !this._resStale ? (rr.pass === null ? '' : rr.pass ? '<span class="sl-badge ok">✓</span>' : '<span class="sl-badge bad">✗</span>') : '';
       return `<button class="sl-rail-item${r.id === this._selRoad ? ' active' : ''}" data-rp-road="${escHtml(r.id)}">
         <span class="sl-rail-row"><span class="sl-rail-name">${escHtml(r.name)}</span>${badge}</span>
-        <span class="sl-rail-meta">${this._fmt(g.al.length, 1)} m · ${des ? escHtml(des.name) : '<i>no design</i>'} · ${(r.poles || []).length} poles${r.plan && !r.plan.unlinked ? ' · <span class="rp-sp-tag" title="Follows its street on the site plan">Plan</span>' : ''}</span></button>`;
+        <span class="sl-rail-meta">${this._fmt(g.al.length, 1)} m · ${des ? escHtml(des.name) : '<i>no design</i>'} · ${(r.poles || []).length} poles${r.plan && !r.plan.unlinked ? ' · <span class="rp-sp-tag" title="Follows its road on the site plan">Plan</span>' : ''}</span></button>`;
     }).join('') || '<div class="sl-empty">No roads yet.</div>';
     if (typeof RoadSitePlan !== 'undefined') { const sp = RoadSitePlan.railHtml(); if (sp) el.innerHTML = sp + el.innerHTML; }
     const bgEl = document.getElementById('rp-bg');
@@ -1432,7 +1462,7 @@ const RoadPlan = {
       html = `${b('select', 'Select', 'Select a road, drag its intersection points')}${b('draw', 'Draw centreline', 'Click intersection points; corners are rounded with tangent arcs')}${b('kerbs', 'Trace kerbs', 'Trace both kerbs: the carriageway width follows them')}
         ${this.rp.bg ? b('pick', 'From DXF', 'Pick a centreline or two kerbs from the background drawing') : ''}
         ${this.rp.bg && typeof RoadKerbs !== 'undefined' ? `<button class="btn-small${this._tool === 'kerbauto' ? ' active' : ''}" data-rp="rk-open" title="Click the kerb lines you want: the roads between them are made, with their measured widths">Roads from kerbs</button>` : ''}
-        ${this.rp.bg && typeof RoadReserve !== 'undefined' ? `<button class="btn-small${this._tool === 'reserveauto' ? ' active' : ''}" data-rp="rr-open" title="Click inside the road reserves of the drawing (the space between the erf boundaries, or one outline per street): the roads are made on their carriageway, with kerb returns">Roads from road reserve</button>` : ''}
+        ${this.rp.bg && typeof RoadReserve !== 'undefined' ? `<button class="btn-small${this._tool === 'reserveauto' ? ' active' : ''}" data-rp="rr-open" title="Click inside the road reserves of the drawing (the space between the erf boundaries, or one outline per road): the roads are made on their carriageway, with kerb returns">Roads from road reserve</button>` : ''}
         <span class="sl-sep"></span>
         <label class="rl-inline" title="Radius of the tangent arc at each corner of a drawn centreline (a corner can override it)">Bend radius<span class="sl-unit"><input type="number" min="0" step="5" class="sl-in-num" data-rp-road-f="radius" value="${escHtml(r ? (r.radius ?? 50) : 50)}"${r && r.mode === 'ip' ? '' : (r ? ' disabled' : '')}> m</span></label>
         <label class="rl-inline"><input type="checkbox" data-rp="snap"${this._snap ? ' checked' : ''}> Snap</label>`;
@@ -1442,7 +1472,7 @@ const RoadPlan = {
         <span class="sl-sep"></span>
         <button class="btn-small" data-rp="relayout" title="Lay the selected road's poles out again from the rules">Lay out again</button>
         <button class="btn-small" data-rp="relayout-all" title="Every road">All roads</button>
-        <button class="btn-small" data-rp="optimise" title="The fewest poles that make every junction pass, then each street at the widest spacing that still passes">Lay out for the checks…</button>`;
+        <button class="btn-small" data-rp="optimise" title="The fewest poles that make every junction pass, then each road at the widest spacing that still passes">Lay out for the checks…</button>`;
     } else {
       const std = this._standard();
       html = `<span class="sl-view-toggle" role="group" aria-label="Quantity"><button class="${this._qty === 'E' ? 'active' : ''}" data-rp-qty="E">Illuminance</button><button class="${this._qty === 'L' ? 'active' : ''}" data-rp-qty="L">Luminance</button></span>
@@ -1763,8 +1793,9 @@ const RoadPlan = {
     const juncs = this.junctions().filter(j => j.main === r.id || j.side === r.id);
     return `<div class="rp-pane">
       <label class="rp-field">Name<input data-rp-road-f="name" value="${escHtml(r.name)}"></label>
-      <div class="rp-block"><div class="rp-block-h"><b>Cross-section</b><button class="btn-small" data-rp="edit-design"${des ? '' : ' disabled'}>Edit in Lighting design</button></div>
-        <label class="rp-field">From design<select data-rp-road-f="designId">${des ? '' : '<option value="" selected>— pick a design —</option>'}${opts}</select></label>
+      <div class="rp-block"><div class="rp-block-h"><b>Road section</b><button class="btn-small" data-rp="edit-design"${des ? '' : ' disabled'}>Edit in Lighting design</button></div>
+        <label class="rp-field">Lighting design<select data-rp-road-f="designId">${des ? '' : '<option value="" selected>— pick a design —</option>'}${opts}</select></label>
+        ${this._sectionFieldHtml(r)}
         ${des ? this._xsBar(des) : '<div class="sl-hint">Lighting design holds the strips, classes and luminaire rows.</div>'}
         <div class="sl-hint">Left to right looking up the chainage (the arrow on the road). Swept at right angles to the centreline.</div></div>
       ${typeof RoadSitePlan !== 'undefined' ? RoadSitePlan.panelHtml(r) : ''}
@@ -1816,7 +1847,7 @@ const RoadPlan = {
         <label class="rp-check"><input type="checkbox" data-rp-lay="outsideOnly"${cfg.outsideOnly ? ' checked' : ''}> On those bends, only the row on the outside of the bend</label>
         <div class="sl-hint">Mounting height, overhang, tilt and luminaire come from the design's rows (${escHtml(des.name)}: max passing spacing on a straight is found there with <i>Find max spacing</i>).</div>
         <div class="rp-actions"><button class="btn-small btn-primary" data-rp="relayout">Lay out again</button><label class="rl-inline"><input type="checkbox" data-rp="keepmoved"${this._keepMoved === false ? '' : ' checked'}> Keep poles I moved</label></div>
-        <div class="rp-actions"><button class="btn-small" data-rp="optimise">Lay out for the checks…</button><span class="sl-hint">The fewest junction poles that pass, then the widest street spacing; suggests a pole height when the design's cannot pass.</span></div></div>
+        <div class="rp-actions"><button class="btn-small" data-rp="optimise">Lay out for the checks…</button><span class="sl-hint">The fewest junction poles that pass, then the widest road spacing; suggests a pole height when the design's cannot pass.</span></div></div>
       ${selHtml}
       ${this._panelFeed(r)}
       <div class="rp-block"><div class="rp-block-h"><b>Pole schedule · ${poles.length}</b>${AppState.keepInSync !== false ? '' : '<button class="btn-small" data-rp="circuit" title="Create or update street-lighting circuits and their cables from the road plan">Circuits and cables…</button>'}</div>
@@ -1937,6 +1968,7 @@ const RoadPlan = {
       const k = d.rpRoadF;
       if (k === 'name') { r.name = t.value || r.name; this._commit(); this.renderRail(); return; }
       if (k === 'designId') { r.designId = t.value; this._geo.delete(r.id); this.layoutRoad(r, true); this._commit(); this.render(); return; }
+      if (k === 'section') { this._setSection(r, t.value); this._geo.delete(r.id); this.layoutRoad(r, true); this._commit(); this.render(); return; }
       if (k === 'radius') { r.radius = Math.max(0, this._num(t.value, 50)); this._relayoutUnmoved(r); this._commit(); this.render(); return; }
     }
     if (d.rpIpr !== undefined) {

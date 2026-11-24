@@ -50,7 +50,7 @@ const RoadSitePlan = {
         const p = r.props || {};
         out.push({ id: r.id, floorId: fl.id, name: p.name || '', f,
           pts: r.points.map(q => [q.x * f, q.y * f]),
-          carriageW: +p.carriageW > 0 ? +p.carriageW : 0, cwOffset: +p.cwOffset || 0, width: +p.width || 0 });
+          ...(() => { const c = typeof RoadSections !== 'undefined' ? RoadSections.carriage(p) : { cw: +p.carriageW > 0 ? +p.carriageW : 0, off: +p.cwOffset || 0 }; return { carriageW: c.cw > 0 ? c.cw : 0, cwOffset: c.cw > 0 ? c.off : 0 }; })(), width: +p.width || 0 });
       }
     }
     return out;
@@ -280,7 +280,7 @@ const RoadSitePlan = {
     this._last = { text: parts, at: Date.now() };
     RoadPlan._commit(`Roads from the site plan (${parts})`);
     RoadPlan.render();
-    if (!quiet) UI.toast(`Roads follow the site plan's streets: ${parts}.`, 'success', 5000);
+    if (!quiet) UI.toast(`Roads follow the site plan's roads: ${parts}.`, 'success', 5000);
     return true;
   },
 
@@ -345,23 +345,23 @@ const RoadSitePlan = {
       const own = RoadPlan.roads.filter(r => !r.plan).length;
       return `<div class="rp-siteplan offer"><b>The site plan has ${runs.length} street${runs.length === 1 ? '' : 's'}.</b>
         <span>${own ? `Use them as roads here? Your ${own} road${own === 1 ? '' : 's'} drawn here stay as they are.` : 'Use them as roads here.'}</span>
-        <span class="rp-siteplan-acts"><button class="btn-small btn-primary" data-rp="sp-use">Use the site plan's streets</button>${sp.auto === false ? '' : '<button class="btn-small" data-rp="sp-no">Not now</button>'}</span></div>`;
+        <span class="rp-siteplan-acts"><button class="btn-small btn-primary" data-rp="sp-use">Use the site plan's roads</button>${sp.auto === false ? '' : '<button class="btn-small" data-rp="sp-no">Not now</button>'}</span></div>`;
     }
     const linked = RoadPlan.roads.filter(r => this.linked(r));
     const km = linked.reduce((t, r) => t + RoadPlan.geom(r).al.length, 0) / 1000;
     const pend = this._pending(runs).length;
     return `<div class="rp-siteplan"><b>From the site plan</b>
       <span>${linked.length} road${linked.length === 1 ? '' : 's'} follow${linked.length === 1 ? 's' : ''} the plan · ${km.toFixed(2)} km${this._last && linked.length ? ` · last update: ${escHtml(this._last.text)}` : ''}</span>
-      <span class="sl-hint">Each road follows its street on the Plan; its design and poles are set here.</span>
+      <span class="sl-hint">Each road follows its road on the Plan; its design and poles are set here.</span>
       ${pend ? `<span class="rp-siteplan-acts"><button class="btn-small" data-rp="sp-use">Add ${pend} street${pend === 1 ? '' : 's'} not used here</button></span>` : ''}</div>`;
   },
   panelHtml(road) {
     if (!road || !road.plan) return '';
     if (road.plan.unlinked) return `<div class="rp-block rp-sp-link"><div class="rp-block-h"><b>Site plan</b><span class="sl-hint">unlinked</span></div>
-      <div class="sl-hint">Made from a site plan street, now kept as it is here.</div>
+      <div class="sl-hint">Made from a site plan road, now kept as it is here.</div>
       <div class="rp-actions"><button class="btn-small" data-rp="sp-relink">Link again</button></div></div>`;
-    return `<div class="rp-block rp-sp-link"><div class="rp-block-h"><b>Site plan</b><span class="rp-sp-chip">Linked to the site plan street</span></div>
-      <div class="sl-hint">${road.mode === 'kerbs' ? `Carriageway ${RoadPlan._fmt(road.carriageW, 1)} m from the plan${road.cwOffset ? `, ${RoadPlan._fmt(Math.abs(road.cwOffset), 1)} m off the street line` : ''}.` : 'The plan has the centreline only: the carriageway width is the Lighting design\'s.'} The shape follows the Plan; edit the street there, or unlink it to keep it as it is here.</div>
+    return `<div class="rp-block rp-sp-link"><div class="rp-block-h"><b>Site plan</b><span class="rp-sp-chip">Linked to the site plan road</span></div>
+      <div class="sl-hint">${road.mode === 'kerbs' ? `Carriageway ${RoadPlan._fmt(road.carriageW, 1)} m from the plan${road.cwOffset ? `, ${RoadPlan._fmt(Math.abs(road.cwOffset), 1)} m off the road line` : ''}.` : 'The plan has the centreline only: the carriageway width is the Lighting design\'s.'} The shape follows the Plan; edit the road there, or unlink it to keep it as it is here.</div>
       <div class="rp-actions"><button class="btn-small" data-rp="sp-go">Edit on the Plan</button><button class="btn-small" data-rp="sp-unlink">Unlink</button></div></div>`;
   },
 

@@ -116,7 +116,7 @@ const PlanSides = {
       return;
     }
     const h = this.hit(pt);
-    if (!h) { UI.toast('Click beside a street, on the side you want (the verge).', 'info', 3000); return; }
+    if (!h) { UI.toast('Click beside a road, on the side you want (the verge).', 'info', 3000); return; }
     const key = this.brush, cur = this._pk((this.L().sides[h.s.id] || {})[key]);
     const off = (ev && ev.altKey) || cur === h.v;
     this.set(h.s.id, key, off ? null : h.v);
@@ -131,13 +131,13 @@ const PlanSides = {
     if (e.ctrlKey || e.metaKey) return false;
     const m = { '1': 'k', '2': 'f', '3': 'c' }[e.key];
     if (m) { this.brush = m; PlanLayoutUI._syncBar(); PlanLayoutUI.syncHint(); PlanEngine.requestDraw({ fg: true }); return true; }
-    if (e.key === 'x' || e.key === 'X') { if (this.hover) this.flipStreet(this.hover.s); else UI.toast('Point at a street, then press X.', 'info', 2500); return true; }
+    if (e.key === 'x' || e.key === 'X') { if (this.hover) this.flipStreet(this.hover.s); else UI.toast('Point at a road, then press X.', 'info', 2500); return true; }
     if (e.key === 'Escape') { this.leave(); return true; }
     return false;
   },
   enter() { const U = PlanLayoutUI; U.mode = 'sides'; U.markFor = null; U.addKind = null; PlanMarkup.refreshProps(); U._syncBar(); U.syncHint(); PlanEngine.requestDraw({ fg: true }); },
   leave() { const U = PlanLayoutUI; this.hover = null; U.mode = 'front'; PlanMarkup.refreshProps(); U._syncBar(); U.syncHint(); PlanEngine.requestDraw({ fg: true }); },
-  hint() { return `Street sides · ${this.LAY[this.brush].label}: click the verge of a street to put it on that side · click it again or Alt-click: Auto · click a chip (K F C): flip it · 1 2 3 picks the layer · X flips the street under the pointer · Esc: done`; },
+  hint() { return `Street sides · ${this.LAY[this.brush].label}: click the verge of a road to put it on that side · click it again or Alt-click: Auto · click a chip (K F C): flip it · 1 2 3 picks the layer · X flips the road under the pointer · Esc: done`; },
   barHtml() {
     const btn = (k) => { const on = this.brush === k, L = this.LAY[k]; return `<button type="button" data-bm="ps-brush" data-k="${k}" aria-pressed="${on}" style="min-height:36px;padding:0 10px;border:1px solid ${on ? L.color : 'transparent'};border-radius:7px;font:inherit;font-size:13px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;background:${on ? L.soft : 'transparent'};color:#0f172a;font-weight:${on ? 600 : 500}"><span aria-hidden="true" style="width:11px;height:11px;border-radius:3px;background:${L.color};display:inline-block"></span>${L.label} <span style="font-size:11px;color:#475569;border:1px solid #cbd5e1;border-radius:4px;padding:0 4px">${k === 'k' ? 1 : k === 'f' ? 2 : 3}</span></button>`; };
     const plain = (bm, t) => `<button type="button" data-bm="${bm}" style="min-height:36px;padding:0 10px;border:0;border-radius:7px;font:inherit;font-size:13px;cursor:pointer;background:transparent;color:#334155;font-weight:500">${t}</button>`;
@@ -208,7 +208,7 @@ const PlanSides = {
     if (runs.length) {
       const by = {}; runs.forEach(x => { by[x.kind] = (by[x.kind] || 0) + 1; });
       const nm = { service: 'service', duct: 'erf fibre duct', lv: 'LV run', trunk: 'fibre trunk run' }, m = Math.round(runs.reduce((t, x) => t + x.len, 0));
-      out.push({ sev: keep ? 'fail' : 'warn', text: `${runs.length} run${runs.length === 1 ? '' : 's'} along the civil side of a street (${Object.entries(by).map(([k, n]) => n + ' ' + nm[k] + (n === 1 ? '' : 's')).join(', ')}; ${m} m). ${keep ? 'Keep off allows the civil side only to reach an erf there: move a kiosk or manhole, or set the street\'s side by hand.' : 'There was no better way on the other side (no corridor, or the length limit). Show marks them.'}`,
+      out.push({ sev: keep ? 'fail' : 'warn', text: `${runs.length} run${runs.length === 1 ? '' : 's'} along the civil side of a road (${Object.entries(by).map(([k, n]) => n + ' ' + nm[k] + (n === 1 ? '' : 's')).join(', ')}; ${m} m). ${keep ? 'Keep off allows the civil side only to reach an erf there: move a kiosk or manhole, or set the street\'s side by hand.' : 'There was no better way on the other side (no corridor, or the length limit). Show marks them.'}`,
         ids: [], runs: runs.map(x => ({ kind: x.kind, bad: [x.pts] })) });
     }
     return out;
@@ -238,18 +238,18 @@ const PlanSides = {
     };
     const GA = L.sides['*'] || {}, gseg = key => [[0, 'Auto'], [1, 'Left'], [-1, 'Right']].map(([v, t]) => { const pressed = v === 0 ? GA[key] == null : GA[key] === v; return `<button type="button" class="plan-btn" data-ps-set="*" data-k="${key}" data-v="${v}" aria-pressed="${pressed}" style="padding:2px 6px;font-size:12px${pressed ? ';font-weight:600;outline:2px solid var(--accent,#2563eb)' : ''}">${t}</button>`; }).join('');
     const lyr = PlanLayoutUI.dxfLayers();
-    return `<details${this._open ? ' open' : ''} data-ps-details><summary style="cursor:pointer;font-weight:600">Street sides <span style="font-weight:400;font-size:12px;color:var(--text-muted)">kiosks, fibre, civil services · ${nSet} of ${sts.length} set</span></summary>
+    return `<details${this._open ? ' open' : ''} data-ps-details><summary style="cursor:pointer;font-weight:600">Road sides <span style="font-weight:400;font-size:12px;color:var(--text-muted)">kiosks, fibre, civil services · ${nSet} of ${sts.length} set</span></summary>
       <div style="display:flex;flex-direction:column;gap:6px;margin-top:4px">
         <div style="display:flex;gap:6px;flex-wrap:wrap"><button type="button" class="plan-btn" data-ps-act="plan" aria-pressed="${on}" style="font-weight:600${on ? ';outline:2px solid var(--accent,#2563eb)' : ''}">${on ? 'Setting on the plan · Done' : 'Set on the plan'}</button><button type="button" class="plan-btn" data-ps-act="auto">All to Auto</button>${lyr.length ? '<button type="button" class="plan-btn" data-ps-act="civdraw">Civil side from drawing…</button>' : ''}</div>
-        <div style="font-size:12px;color:var(--text-muted)">Click beside a street on the plan to set a side; or use the list. Auto keeps kiosks, LV and fibre away from the civil services.</div>
+        <div style="font-size:12px;color:var(--text-muted)">Click beside a road on the plan to set a side; or use the list. Auto keeps kiosks, LV and fibre away from the civil services.</div>
         ${this.civDraw ? this.civDrawHtml(esc) : ''}
         <div role="radiogroup" aria-label="On the civil side" style="display:flex;flex-direction:column;gap:3px;font-size:12px;border:1px solid var(--border,#ddd);border-radius:6px;padding:5px 7px"><b>On the civil side</b>
           <label style="display:flex;gap:6px;align-items:flex-start"><input type="radio" name="ps-civmode" data-ps-mode="avoid"${keep ? '' : ' checked'}> <span><b>Avoid</b>: used only where the other side has no room or no corridor (listed in Checks)</span></label>
           <label style="display:flex;gap:6px;align-items:flex-start"><input type="radio" name="ps-civmode" data-ps-mode="keep"${keep ? ' checked' : ''}> <span><b>Keep off</b>: only to cross into an erf there; every other run is a Fix</span></label></div>
-        <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;font-size:12px" title="The side for every street that has none of its own and no civil side"><span><b>All streets</b> kiosks</span><span style="display:inline-flex;gap:2px">${gseg('k')}</span></div>
-        <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;font-size:12px"><span><b>All streets</b> fibre</span><span style="display:inline-flex;gap:2px">${gseg('f')}</span></div>
-        <label style="font-size:12px;display:flex;gap:6px;align-items:center"><input type="checkbox" data-ps-only${this.onlySet ? ' checked' : ''}> Only streets with a side set</label>
-        <div style="max-height:360px;overflow:auto">${sts.map(row).join('') || '<div style="font-size:12px;color:var(--text-muted)">No streets yet.</div>'}</div>
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;font-size:12px" title="The side for every road that has none of its own and no civil side"><span><b>All roads</b> kiosks</span><span style="display:inline-flex;gap:2px">${gseg('k')}</span></div>
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;font-size:12px"><span><b>All roads</b> fibre</span><span style="display:inline-flex;gap:2px">${gseg('f')}</span></div>
+        <label style="font-size:12px;display:flex;gap:6px;align-items:center"><input type="checkbox" data-ps-only${this.onlySet ? ' checked' : ''}> Only roads with a side set</label>
+        <div style="max-height:360px;overflow:auto">${sts.map(row).join('') || '<div style="font-size:12px;color:var(--text-muted)">No roads yet.</div>'}</div>
       </div></details>`;
   },
   // delegated from the panel's click / change handlers; true when handled
@@ -283,10 +283,10 @@ const PlanSides = {
   civDrawHtml(esc) {
     const C = this.civDraw, lyr = PlanLayoutUI.dxfLayers(), seen = new Set();
     const list = lyr.filter(x => { if (seen.has(x.layer)) return false; seen.add(x.layer); return true; }).sort((a, b) => (this.PIPE_RE.test(b.layer) - this.PIPE_RE.test(a.layer)) || a.layer.localeCompare(b.layer));
-    const res = C.res ? `<div style="display:flex;flex-direction:column;gap:2px;font-size:12px;max-height:200px;overflow:auto">${C.res.length ? C.res.map(x => `<label style="display:flex;gap:6px;align-items:center;border-bottom:1px solid var(--border,#ddd);padding:2px 0"><input type="checkbox" data-ps-use="${esc(x.id)}"${x.use ? ' checked' : ''}${x.side ? '' : ' disabled'}> <span style="flex:1">${esc(x.name)}</span><span style="${x.side ? '' : 'color:#b45309;font-weight:600'}">${x.side ? x.word + ' · ' + Math.round(x.share * 100) + ' %' : x.little ? 'only ' + Math.round(x.m) + ' m of pipe' : 'both · ' + Math.round(x.share * 100) + ' / ' + Math.round((1 - x.share) * 100) + ' %'}</span></label>`).join('') : '<div style="color:var(--text-muted)">No pipe on those layers runs along a street.</div>'}</div>
+    const res = C.res ? `<div style="display:flex;flex-direction:column;gap:2px;font-size:12px;max-height:200px;overflow:auto">${C.res.length ? C.res.map(x => `<label style="display:flex;gap:6px;align-items:center;border-bottom:1px solid var(--border,#ddd);padding:2px 0"><input type="checkbox" data-ps-use="${esc(x.id)}"${x.use ? ' checked' : ''}${x.side ? '' : ' disabled'}> <span style="flex:1">${esc(x.name)}</span><span style="${x.side ? '' : 'color:#b45309;font-weight:600'}">${x.side ? x.word + ' · ' + Math.round(x.share * 100) + ' %' : x.little ? 'only ' + Math.round(x.m) + ' m of pipe' : 'both · ' + Math.round(x.share * 100) + ' / ' + Math.round((1 - x.share) * 100) + ' %'}</span></label>`).join('') : '<div style="color:var(--text-muted)">No pipe on those layers runs along a road.</div>'}</div>
         <div style="display:flex;gap:6px"><button type="button" class="plan-btn" data-ps-act="civuse" style="font-weight:600"${C.res.some(x => x.use) ? '' : ' disabled'}>Use ${C.res.filter(x => x.use).length}</button><button type="button" class="plan-btn" data-ps-act="civcancel">Cancel</button></div>` : `<div style="display:flex;gap:6px"><button type="button" class="plan-btn" data-ps-act="civfind" style="font-weight:600"${C.layers.size ? '' : ' disabled'}>Find the sides</button><button type="button" class="plan-btn" data-ps-act="civcancel">Cancel</button></div>`;
     return `<div style="border:2px solid #92400e;border-radius:6px;padding:6px 8px;display:flex;flex-direction:column;gap:5px"><b>Civil side from drawing</b>
-      <div style="font-size:12px;color:var(--text-muted)">Tick the layers the water, sewer and stormwater are drawn on. Each street takes the side most of its pipe length runs along; one with pipes on both sides is left for you.</div>
+      <div style="font-size:12px;color:var(--text-muted)">Tick the layers the water, sewer and stormwater are drawn on. Each road takes the side most of its pipe length runs along; one with pipes on both sides is left for you.</div>
       <div style="max-height:130px;overflow:auto;font-size:12px">${list.map(x => `<label style="display:flex;gap:6px;align-items:center"><input type="checkbox" data-ps-layer="${esc(x.layer)}"${C.layers.has(x.layer) ? ' checked' : ''}> ${esc(x.layer)} <span style="color:var(--text-muted)">(${x.n})</span>${this.PIPE_RE.test(x.layer) ? ' ★' : ''}</label>`).join('')}</div>${res}</div>`;
   },
   // every line / polyline of the chosen layers, sampled every ~2 m: the length on each side of the street it runs beside (within the

@@ -292,6 +292,7 @@ const AppState = {
       _poleSeq: Math.max(sl._poleSeq || 1, maxP + 1),
       // Road lighting designs + the photometry they use (js/roadlight.js).
       roadDesigns: Array.isArray(sl.roadDesigns) ? sl.roadDesigns.filter(d => d && d.id) : [],
+      roadSections: Array.isArray(sl.roadSections) ? sl.roadSections.filter(x => x && /^rs_\d+$/.test(String(x.id)) && Array.isArray(x.strips)) : [],
       photometry: sl.photometry && typeof sl.photometry === 'object' ? sl.photometry : {},
       _rdSeq: this._maxSeq(sl.roadDesigns, /^rd_(\d+)$/, sl._rdSeq),
       _phSeq: this._maxSeq(Object.keys(sl.photometry || {}).map(id => ({ id })), /^ph_(\d+)$/, sl._phSeq),
@@ -353,6 +354,7 @@ const AppState = {
       circuits: [],             // [{id, name, source:{kind,id}, system, …, poles:[{id,name,parent,…}]}]
       _circSeq: 1, _poleSeq: 1,
       roadDesigns: [],          // lighting designs on a road cross-section (js/roadlight.js)
+      roadSections: [],         // the project's road sections: strips + services, shared by lighting designs, roads and Auto layout (js/roadsections.js)
       photometry: {},           // id → canonical Type C web (IES / LDT / generic)
       _rdSeq: 1, _phSeq: 1,
       roadPlan: this._defaultRoadPlan(),   // roads of any shape + their poles (js/roadplan.js)
@@ -2067,6 +2069,13 @@ const AppState = {
     if (typeof StandardData !== 'undefined') {
       const items = data.libraryItems || (Array.isArray(data.customCables) ? { cables: data.customCables } : null);
       if (items) setTimeout(() => StandardData.reviewProjectLibraries(items, data.libraryOrigins), 600);
+    }
+    // Road sections: an older project's Auto layout sections (+ section lines) and lighting designs' own strips become road sections, once.
+    if (typeof RoadSections !== 'undefined') {
+      try {
+        const sl = this.reticulation && this.reticulation.streetLighting, st = this.planMarkup && this.planMarkup.settings;
+        RoadSections.migrate(st && st.layout, sl && sl.roadDesigns, null);
+      } catch (e) { console.warn('Road sections: could not convert the older sections', e); }
     }
     this.dirty = false;
     // Re-baseline the reticulation workspace on the loaded project's data

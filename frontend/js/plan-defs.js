@@ -289,10 +289,12 @@ const PLAN_DEFS = {
     },
     // A street centreline: information only (no take-off). Auto layout reads these with the erf boundaries.
     street: {
-      name: 'Street centreline', domain: 'retic', color: '#64748b', width: 3, lineStyle: 'dashed',
+      name: 'Road centreline', domain: 'retic', color: '#64748b', width: 3, lineStyle: 'dashed',
       cableVoltage: null, schedule: null, requiresEndpoints: false, noTakeoff: true,
       defaults: {},
-      fields: [{ key: 'name', label: 'Street name', type: 'text' }, { key: 'width', label: 'Reserve width (m)', type: 'number', unit: 'm', min: 6, max: 40, step: 0.5 }, { key: 'carriageW', label: 'Carriageway width (m, 0 = not drawn)', type: 'number', unit: 'm', min: 0, max: 40, step: 0.5 }, { key: 'cwOffset', label: 'Carriageway offset (m, + = left)', type: 'number', unit: 'm', min: -20, max: 20, step: 0.5 }],
+      fields: [{ key: 'name', label: 'Road name', type: 'text' },
+        { key: 'section', label: 'Road section', type: 'select', get options() { return typeof RoadSections !== 'undefined' ? RoadSections.options(true) : [{ value: '', label: 'Default' }]; } },
+        { key: 'width', label: 'Reserve width (m)', type: 'number', unit: 'm', min: 6, max: 40, step: 0.5 }, { key: 'carriageW', label: 'Carriageway width (m, 0 = from the road section)', type: 'number', unit: 'm', min: 0, max: 40, step: 0.5 }, { key: 'cwOffset', label: 'Carriageway offset (m, + = left)', type: 'number', unit: 'm', min: -20, max: 20, step: 0.5 }],
     },
     fibreBB: {
       name: 'Fibre Backbone', domain: 'retic', color: '#a855f7', width: 1.5, lineStyle: 'dashed',
@@ -397,7 +399,7 @@ const PLAN_DEFS = {
     };
     if (domain === 'retic') {
       push('Detect', { type: 'erfdetect', kind: 'erfdetect', name: 'Detect erven', color: this.elements.erf.color, desc: 'Find every closed erf on the DXF / plan image, or click inside one' });
-      push('Detect', { type: 'layout', kind: 'layout', name: 'Auto layout', color: '#16a34a', desc: 'Erf markers, kiosks, mini-sub, LV / MV, fibre and shared road crossings from the erven and the street centrelines' });
+      push('Detect', { type: 'layout', kind: 'layout', name: 'Auto layout', color: '#16a34a', desc: 'Erf markers, kiosks, mini-sub, LV / MV, fibre and shared road crossings from the erven and the road centrelines' });
     }
     for (const [type, def] of Object.entries(this.elements)) {
       if (def.domain !== domain || def.adoptOnly) continue;   // adopt-only types are placed via "From SLD"

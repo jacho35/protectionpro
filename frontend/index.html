@@ -74,6 +74,9 @@
             </button><button id="btn-project-type" class="dropdown-item" title="Choose the project type and which workspaces the project shows">
               <svg width="14" height="14" viewBox="0 0 16 16"><rect x="1.5" y="3" width="4" height="10" rx="1" fill="none" stroke="currentColor" stroke-width="1.3"/><rect x="6" y="3" width="4" height="10" rx="1" fill="none" stroke="currentColor" stroke-width="1.3"/><rect x="10.5" y="3" width="4" height="10" rx="1" fill="none" stroke="currentColor" stroke-width="1.3" stroke-dasharray="2 1.5"/></svg>
               Project Type &amp; Workspaces…
+            </button><button id="btn-road-sections" class="dropdown-item" title="The project's road sections: the strips the road lighting is designed on and where the services run, given to roads by selecting them">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M1 9h14"/><path d="M5 9V7h6v2" /><path d="M3 9v4M13 9v4" stroke-dasharray="1.5 1.5"/><circle cx="6" cy="12" r="0.9"/><circle cx="10" cy="12" r="0.9"/></svg>
+              Road sections…
             </button><button id="btn-quote" class="dropdown-item" title="Lock this project's prices and library entries as a quote">
               <svg width="14" height="14" viewBox="0 0 16 16"><rect x="3" y="7" width="10" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M5.5 7V5a2.5 2.5 0 015 0v2" fill="none" stroke="currentColor" stroke-width="1.3"/></svg>
               Mark as Quoted…
@@ -1433,7 +1436,7 @@
         <div class="rdg-legend rdg-legend-fibre" hidden>
           <span><i class="rdg-sw" style="background:#6d28d9"></i>Fibre backbone (trunk length on the line)</span>
           <span><i class="rdg-sw rdg-sw-out" style="border-color:#b45309"></i>Trunk over the Auto layout's max distance between manholes, or not joined to the entry</span>
-          <span class="rdg-note">Read from the plan: manholes, Fibre Backbone and Fibre Drop routes. A road crossing is a duct crossing a drawn street centreline. Erf ducts are counted in their manhole, not drawn. Click a manhole to go to it on the plan.</span>
+          <span class="rdg-note">Read from the plan: manholes, Fibre Backbone and Fibre Drop routes. A road crossing is a duct crossing a drawn road centreline. Erf ducts are counted in their manhole, not drawn. Click a manhole to go to it on the plan.</span>
         </div>
       </div>
     </div>
@@ -3114,7 +3117,8 @@
   <script src="js/plan-layout.js?v=2.713"></script>
   <script src="js/plan-kerbs.js?v=2.665"></script>
   <script src="js/plan-sections.js?v=2.640"></script>
-  <script src="js/plan-sections-ui.js?v=2.661"></script>
+  <script src="js/roadsections.js?v=2.714"></script>
+  <script src="js/roadsections-ui.js?v=2.714"></script>
   <script src="js/plan-reserve.js?v=2.709"></script>
   <script src="js/plan-reserve-ui.js?v=2.676"></script>
   <script src="js/plan-sides-ui.js?v=2.694"></script>

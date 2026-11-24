@@ -13,9 +13,9 @@
 const PlanLayoutUI = {
   result: null, f: null, stale: true, mode: 'front', hoverT: null, ms: 0, err: '',
   step: 1, ckFilter: 'all', _ckOpen: new Set(), _active: false,
-  STEPS: ['Streets', 'Mini-subs', 'Rules', 'Review'],
+  STEPS: ['Roads', 'Mini-subs', 'Rules', 'Review'],
   PRESET_NAMES: { standard: 'Standard', short: 'Short services', fewest: 'Fewest kiosks', crossings: 'Fewest crossings', custom: 'Custom' },
-  PRESET_HINT: { standard: 'The kiosk rules most projects use.', short: 'More kiosks, so every service is short: lower volt drop and earth-fault loop.', fewest: 'Fewer, larger kiosks: the lowest kiosk count, services up to the 70 m volt-drop limit.', crossings: 'Services cross the road in as few places as possible: a crossing counts for more cable, a kiosk is kept where it saves crossings, the better side of each street is tried and markers pair up on a shared boundary.' },
+  PRESET_HINT: { standard: 'The kiosk rules most projects use.', short: 'More kiosks, so every service is short: lower volt drop and earth-fault loop.', fewest: 'Fewer, larger kiosks: the lowest kiosk count, services up to the 70 m volt-drop limit.', crossings: 'Services cross the road in as few places as possible: a crossing counts for more cable, a kiosk is kept where it saves crossings, the better side of each road is tried and markers pair up on a shared boundary.' },
   // every preset names the same settings, so choosing one puts back what another changed
   get PRESETS() {
     const D = PlanLayout.DEFAULTS, base = { n: D.n, maxc: D.maxc, worth: D.worth, xpen: D.xpen, xkiosk: D.xkiosk, kside: D.kside, corner: D.corner, xpref: D.xpref };
@@ -38,7 +38,7 @@ const PlanLayoutUI = {
   CTRL: [
     ['Marker', [['side', 'range', 1, 5, 0.5, 'm', 'From the side boundary'], ['depth', 'range', 1, 5, 0.5, 'm', 'In from the front'],
       ['corner', 'select', [['start', 'start of the street'], ['end', 'far end of the street'], ['kiosk', 'nearest its kiosk'], ['pair', 'paired on the shared boundary']], 'Front corner'],
-      ['front', 'select', [['longest', 'longest street edge'], ['shortest', 'shortest street edge'], ['busy', 'the busier street']], 'A corner erf fronts its'],
+      ['front', 'select', [['longest', 'longest road edge'], ['shortest', 'shortest road edge'], ['busy', 'the busier street']], 'A corner erf fronts its'],
       ['fentry', 'select', [['beside', 'beside the power marker'], ['opp', 'at the opposite front corner']], 'Fibre point'],
       ['fgap', 'range', 0.3, 3, 0.1, 'm', 'Fibre point from the power marker'],
       ['fside', 'select', [['mid', 'middle side of the power marker'], ['corner', 'corner side of the power marker']], 'Fibre point on the']]],
@@ -49,7 +49,7 @@ const PlanLayoutUI = {
       ['strMode', 'select', [['fewest', 'fewest strings'], ['even', 'strings of similar size']], 'Cut long strings into']]],
     ['Fibre', [['m', 'range', 4, 12, 1, '', 'Erven per manhole'], ['mhmerge', 'check', 'Fold a short stretch\'s manhole into its neighbour'], ['maxmh', 'range', 40, 200, 10, 'm', 'Max distance between manholes'],
       ['fibre', 'select', [['opp', 'civil side, opposite the kiosks'], ['same', 'same side as the kiosks']], 'Manholes default to the'],
-      ['topo', 'select', [['ring', 'every street, closed loops'], ['spur', 'spurs with T-offs from the entry']], 'Main duct layout']]],
+      ['topo', 'select', [['ring', 'every road, closed loops'], ['spur', 'spurs with T-offs from the entry']], 'Main duct layout']]],
     ['Crossings', [['xrule', 'select', [['leg', 'one per junction leg, shared by every cable'], ['mid', 'mid-block first, a junction leg only where nothing else reaches'], ['class', 'one per junction leg for each cable class']], 'At a junction cables cross'],
       ['setback', 'range', 0, 10, 0.5, 'm', 'Junction crossing past the end of the splay'], ['xroute', 'range', 0, 100, 5, 'm', 'A road crossing counts as this much cable when routing'],
       ['share', 'check', 'Share road crossings between services, fibre and LV'],
@@ -59,10 +59,10 @@ const PlanLayoutUI = {
       ['j110', 'range', 0, 4, 1, '', '110 mm ducts at an empty junction'], ['j160', 'range', 0, 2, 1, '', '160 mm ducts at an empty junction'],
       ['spare', 'range', 0, 3, 1, '', 'Spare 110 mm ducts per crossing']]],
     ['Bends', [['bendFi', 'range', 0, 5, 0.25, 'm', 'Fibre duct bend radius'], ['bendLv', 'range', 0, 5, 0.25, 'm', 'LV and service cable bend radius'], ['bendMv', 'range', 0, 8, 0.25, 'm', 'MV cable bend radius']]],
-    ['Corridor', [['route', 'select', [['blocks', 'the erf boundaries (street lines only say where the roads and junctions are)'], ['street', 'the street lines (how earlier layouts were made)']], 'Cables are routed along'],
-      ['gapTol', 'range', 0, 40, 1, 'm', 'Erven this far apart are one block'], ['gapFace', 'range', 0, 80, 5, 'm', 'Erven facing the same street, this far apart, are one block'],
-      ['kgeo', 'select', [['boundary', 'the erf boundary (the street line can be out)'], ['street', 'the street line (how earlier layouts were made)']], 'Kiosks and cables are placed from'],
-      ['kd', 'range', 0, 4, 0.05, 'm', 'Corridor distance inside the boundary'], ['cwDef', 'range', 3, 12, 0.5, 'm', 'Carriageway width of a street with none set']]],
+    ['Corridor', [['route', 'select', [['blocks', 'the erf boundaries (road lines only say where the roads and junctions are)'], ['street', 'the road lines (how earlier layouts were made)']], 'Cables are routed along'],
+      ['gapTol', 'range', 0, 40, 1, 'm', 'Erven this far apart are one block'], ['gapFace', 'range', 0, 80, 5, 'm', 'Erven facing the same road, this far apart, are one block'],
+      ['kgeo', 'select', [['boundary', 'the erf boundary (the road line can be out)'], ['street', 'the road line (how earlier layouts were made)']], 'Kiosks and cables are placed from'],
+      ['kd', 'range', 0, 4, 0.05, 'm', 'Corridor distance inside the boundary'], ['cwDef', 'range', 3, 12, 0.5, 'm', 'Carriageway width of a road with none set']]],
   ],
 
   // hover explanations for the settings that need one (native tooltip on the label and on the (?) mark)
@@ -75,33 +75,33 @@ const PlanLayoutUI = {
     fentry: 'Where the fibre duct enters the erf. Beside the power marker: next to the service cable, so both leads come in at one place. Opposite corner: mirrored at the other front corner, as earlier layouts did. A marker you place by hand always gets its fibre point beside it.',
     fgap: 'How far along the front the fibre point is from the power marker, in metres. Also used for a marker you place by hand. The starting value is provisional: set it to the separation your fibre and power specifications ask for.',
     fside: 'Which side of the power marker the fibre point goes: towards the middle of the erf or towards its corner. Where that side is outside the erf, it goes on the other side.',
-    corner: 'Which front corner of each erf gets the marker. Start / far end of the street, or the corner nearest its kiosk. Paired puts the markers of two neighbouring erven on their shared boundary, so they share one service leg and, across the road, one crossing.',
-    front: 'Which street a corner erf faces, and so where its marker and service go: the longer or the shorter of its street edges, or the busier street (the one with more erven on it).',
-    kmode: 'How kiosks are placed. Even runs: a kiosk for every run of up to the maximum houses along each street. Optimiser: one solve over the whole street network, fewest kiosks first, then fewest road crossings, then least cable.',
+    corner: 'Which front corner of each erf gets the marker. Start / far end of the road, or the corner nearest its kiosk. Paired puts the markers of two neighbouring erven on their shared boundary, so they share one service leg and, across the road, one crossing.',
+    front: 'Which road a corner erf faces, and so where its marker and service go: the longer or the shorter of its road edges, or the busier road (the one with more erven on it).',
+    kmode: 'How kiosks are placed. Even runs: a kiosk for every run of up to the maximum houses along each road. Optimiser: one solve over the whole road network, fewest kiosks first, then fewest road crossings, then least cable.',
     n: 'The most erven one kiosk may serve.',
     maxc: 'The longest service cable from a kiosk to an erf, in metres. Longer services cost more volt drop and a longer earth-fault loop, so 70 m is the usual limit. An erf beyond it is reported.',
     worth: 'How many metres of extra service cable the layout will accept to remove one kiosk. A kiosk is given up while every erf is still within the maximum service cable and the extra cable added is no more than this; a kiosk is added only if it saves more than this. Higher: fewer kiosks, longer services. 0: never trade cable for a kiosk.',
-    kside: 'Which side of each street the kiosks and LV cable run along. The side with more erven is simple. Trying both sides runs the layout each way for every street and keeps the cheaper, at the cost of a slower run.',
-    m: 'One fibre manhole for about this many erven along a street.',
+    kside: 'Which side of each road the kiosks and LV cable run along. The side with more erven is simple. Trying both sides runs the layout each way for every road and keeps the cheaper, at the cost of a slower run.',
+    m: 'One fibre manhole for about this many erven along a road.',
     mhmerge: 'Where a short stretch would get its own manhole, use its neighbour\'s instead, so fewer manholes are built.',
     maxmh: 'The longest duct run between two manholes. More manholes are added where a run would be longer.',
-    fibre: 'Which side of the street the fibre manholes and ducts are put by default: opposite the kiosks, or the same side.',
-    topo: 'How the main fibre duct runs. Ring: every street, closed into loops. Spur: spurs with T-offs from the entry point (less duct, no second path).',
+    fibre: 'Which side of the road the fibre manholes and ducts are put by default: opposite the kiosks, or the same side.',
+    topo: 'How the main fibre duct runs. Ring: every road, closed into loops. Spur: spurs with T-offs from the entry point (less duct, no second path).',
     share: 'Services, fibre and LV cable that cross the road at the same place share one crossing trench and its sleeves instead of one each.',
     xmode: 'Where a road crossing may be put: on any erf boundary, or only at kiosk stations.',
     junct: 'Lay provisional ducts across every road at every junction, even where no cable uses them yet, for later work.',
     j110: 'How many 110 mm ducts are laid at a junction crossing that carries no cable.',
     j160: 'How many 160 mm (MV size) ducts are laid at a junction crossing that carries no cable.',
     spare: 'Extra 110 mm ducts added to every crossing for future cables.',
-    kgeo: 'What the kiosk, cable and manhole offsets are measured from. The erf boundary follows the plots, so a street line that is a little out moves nothing. The street line is how earlier layouts were made.',
-    cwDef: 'A street drawn as a centreline has no carriageway of its own: it gets this width, centred on the line, and no cable, kiosk or manhole is put in it. Streets from road reserve keep their own width.',
-    kd: 'How far inside the erf boundary the cables and kiosks run. Cross-sections, when switched on, set their own offsets.',
-    route: 'How cables are laid. Along the erf boundaries: every cable runs a set distance off the erf boundary on the road side, and crosses a road only at a crossing (one per junction leg, or at an erf boundary mid-block). The street lines only tell it where the roads and junctions are, so a rough, off-centre or broken street line moves nothing. Along the street lines: the corridors are worked out from the street lines, as earlier layouts were.',
+    kgeo: 'What the kiosk, cable and manhole offsets are measured from. The erf boundary follows the plots, so a road line that is a little out moves nothing. The road line is how earlier layouts were made.',
+    cwDef: 'A road drawn as a centreline has no carriageway of its own: it gets this width, centred on the line, and no cable, kiosk or manhole is put in it. Roads from road reserve keep their own width.',
+    kd: 'How far inside the erf boundary the cables and kiosks run. Road sections, when switched on, set their own offsets.',
+    route: 'How cables are laid. Along the erf boundaries: every cable runs a set distance off the erf boundary on the road side, and crosses a road only at a crossing (one per junction leg, or at an erf boundary mid-block). The road lines only tell it where the roads and junctions are, so a rough, off-centre or broken road line moves nothing. Along the road lines: the corridors are worked out from the road lines, as earlier layouts were.',
     xrule: 'Where cables cross at a junction. One per junction leg: a single square crossing on each leg, just past the corner splay, that every cable crossing that leg shares. Mid-block first: cables cross at erf boundaries away from the junction, and use a junction leg only when nothing else is within reach. One per leg for each cable class: fibre gets its own crossing, 4 m further along the leg than the power one.',
     setback: 'How far past the end of the corner splay (or the corner curve) of the erf boundary a junction crossing is placed, so it stays clear of the bellmouth.',
     xroute: 'How many metres of cable one road crossing is worth when a cable is routed. Lower crosses more readily; higher walks further to a crossing that is already used. A service that would come out longer than the maximum is laid by the shortest path instead.',
-    gapTol: 'Erven closer than this, with no street line between them, are joined into one block, so the cables run along their fronts across the gap. Set it to the gap between houses in an estate where the erven do not touch.',
-    gapFace: 'Erven that face the same street line from the same side, with no junction between them, are joined into one block up to this far apart, so a street with erven spread along it still has one continuous corridor.',
+    gapTol: 'Erven closer than this, with no road line between them, are joined into one block, so the cables run along their fronts across the gap. Set it to the gap between houses in an estate where the erven do not touch.',
+    gapFace: 'Erven that face the same road line from the same side, with no junction between them, are joined into one block up to this far apart, so a road with erven spread along it still has one continuous corridor.',
     xpref: 'Where a service for an erf across the road crosses. At the erf\'s own boundary: the cable runs along the kiosk\'s side of the road and crosses at the erf boundary nearest the erf, so the far verge only carries the last stretch. Services whose nearest boundary is the same share that crossing. At as few places as possible: fewer crossings, but the cable may cross at the kiosk and run along the far verge.',
     subBal: 'When you place the mini-subs yourself each kiosk goes to the nearest one, so one transformer can carry far more than another. Set this to cap each mini-sub at that multiple of an even share of the erven (1.3 = 30 % above even); the kiosks nearest the border move to the neighbour with room. 0 = off, nearest wins.',
     xpen: 'How many metres of cable one road crossing counts for when erven are given to kiosks. Higher keeps services on their own side of the road.',
@@ -109,8 +109,8 @@ const PlanLayoutUI = {
     strE: 'The most erven carried by one string. When set, strings are cut by the erven they feed (a kiosk of six counts six) and the kiosk limit above is not used. 0 = count kiosks instead.',
     strL: 'The longest cable run from the mini-sub to the furthest kiosk on one string. Volt drop and the earth-fault loop grow with this length. Cutting a string does not shorten it (each string has its own feeder from the mini-sub along the same route), so a string over the limit is reported as a Fix: add a mini-sub nearer, or move the mini-sub. 0 = no limit.',
     maxFeeds: 'The most LV feeders (outgoing ways) one mini-sub can have: the branches of the network that leave it, the strings cut off them and the kiosks you split by hand. When the strings would need more, they are cut longer (more kiosks on each) until they fit; a mini-sub with more branches than this, before any string is cut, is a Fix: place another mini-sub or move it. Default 6, at most 10.',
-    strN: 'The most kiosks fed in a line from one feeder off the mini-sub. A longer street is cut into several strings, each with its own breaker and its own cable back to the mini-sub along the same route. A shorter string keeps the head breaker and the cable small and the far-end earth-fault loop short, at the price of more cable and more ways on the mini-sub board. 0 = no limit: kiosks daisy-chain along the whole street.',
-    strMode: 'How a street with more kiosks than the limit is cut. Fewest strings: cut from the far end back, so as few feeders as possible leave the mini-sub, but the last string can be short (9 kiosks at a limit of 4 gives 4 + 4 + 1). Strings of similar size: the same number of feeders as the limit needs, but shared out evenly (9 kiosks gives 3 + 3 + 3), so the strings are loaded alike. On a branching network this can need more feeders.',
+    strN: 'The most kiosks fed in a line from one feeder off the mini-sub. A longer road is cut into several strings, each with its own breaker and its own cable back to the mini-sub along the same route. A shorter string keeps the head breaker and the cable small and the far-end earth-fault loop short, at the price of more cable and more ways on the mini-sub board. 0 = no limit: kiosks daisy-chain along the whole road.',
+    strMode: 'How a road with more kiosks than the limit is cut. Fewest strings: cut from the far end back, so as few feeders as possible leave the mini-sub, but the last string can be short (9 kiosks at a limit of 4 gives 4 + 4 + 1). Strings of similar size: the same number of feeders as the limit needs, but shared out evenly (9 kiosks gives 3 + 3 + 3), so the strings are loaded alike. On a branching network this can need more feeders.',
   },
 
   // ───────── settings (saved in the project, so never trusted) ─────────
@@ -130,7 +130,7 @@ const PlanLayoutUI = {
       else if (r[1] === 'check') p[k] = typeof v === 'boolean' ? v : D[k];
       else p[k] = r[2].some(o => o[0] === v) ? v : D[k];
     }
-    L.sections = PlanSections.state(L.sections);
+    L.sections = { on: !!(L.sections && L.sections.on) };                          // the sections themselves are the project's road sections (roadsections.js)
     const T = L.trench = (L.trench && typeof L.trench === 'object') ? L.trench : {};
     const D2 = PlanLayout.TRENCH_DEFAULTS, dd = T.depth = (T.depth && typeof T.depth === 'object') ? T.depth : {};
     for (const k of ['mv', 'lv', 'fi']) { const n = parseFloat(dd[k]); dd[k] = Number.isFinite(n) ? Math.max(0.3, Math.min(3, n)) : D2.depth[k]; }
@@ -613,11 +613,11 @@ const PlanLayoutUI = {
     const r = this.result; if (!r || !r.net) return '';
     const sel = r.net.cross.find(c => c.key === this.selX), rows = r.net.cross.slice().sort((p, q) => p.st.id.localeCompare(q.st.id) || p.s - q.s).slice(0, 60);
     const num = (k, label, v) => `<label style="display:flex;flex-direction:column;gap:2px;font-size:12px;min-width:0">${label}<input type="number" step="0.1" data-xf="${k}" value="${(Math.round(v * 100) / 100)}" style="min-height:36px;width:100%;min-width:0;box-sizing:border-box;padding:0 8px"></label>`;
-    let ed = '<div style="font-size:12px;color:var(--text-muted)">Click a crossing on the plan or in the list. Drag its start or end to move that end, drag the line to slide it along the street. Alt-click puts it back.</div>';
+    let ed = '<div style="font-size:12px;color:var(--text-muted)">Click a crossing on the plan or in the list. Drag its start or end to move that end, drag the line to slide it along the road. Alt-click puts it back.</div>';
     if (sel) { const F = this.crossFields(sel), moved = !!this.cfg().moves.xs[sel.key];
       ed = `<div style="display:flex;flex-direction:column;gap:6px"><b>${esc(sel.st.name || sel.st.id)} · ${Math.round(F.along)} m</b><div style="font-size:12px;color:var(--text-muted)">${sel.svc ? sel.svc + ' service' + (sel.svc === 1 ? '' : 's') + ' · ' : ''}${sel.fib ? sel.fib + ' fibre · ' : ''}${sel.lv ? sel.lv + ' LV · ' : ''}${sel.d110} × 110 mm${sel.d160 ? ' + ' + sel.d160 + ' × 160 mm' : ''}${sel.prov ? ' (provisional, no cable yet)' : ''}</div>
-        <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:6px">${num('start', 'Start, from the road edge (m)', F.start)}${num('end', 'End, from the road edge (m)', F.end)}<div style="grid-column:span 2">${num('along', 'Along the street (m)', F.along)}</div></div>
-        <label style="display:flex;gap:8px;align-items:flex-start;font-size:12px;line-height:1.4"><input type="checkbox" data-xsq${this.cfg().xsq ? ' checked' : ''} style="width:18px;height:18px;margin:0;flex:none"><span><b>Keep the crossing square to the road</b><br><span style="color:var(--text-muted)">On: the two ends move along the street together. Off: each end moves on its own and the crossing may be angled.</span></span></label>
+        <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:6px">${num('start', 'Start, from the road edge (m)', F.start)}${num('end', 'End, from the road edge (m)', F.end)}<div style="grid-column:span 2">${num('along', 'Along the road (m)', F.along)}</div></div>
+        <label style="display:flex;gap:8px;align-items:flex-start;font-size:12px;line-height:1.4"><input type="checkbox" data-xsq${this.cfg().xsq ? ' checked' : ''} style="width:18px;height:18px;margin:0;flex:none"><span><b>Keep the crossing square to the road</b><br><span style="color:var(--text-muted)">On: the two ends move along the road together. Off: each end moves on its own and the crossing may be angled.</span></span></label>
         ${moved && sel.relaid ? `<div style="border:1px solid #bbf7d0;background:#f0fdf4;border-radius:6px;padding:6px 8px;font-size:12px;line-height:1.45"><b style="color:#166534">Re-laid ${sel.relaid.svc + sel.relaid.fi + sel.relaid.lv} run${sel.relaid.svc + sel.relaid.fi + sel.relaid.lv === 1 ? '' : 's'}</b> · ${[sel.relaid.svc && sel.relaid.svc + ' service' + (sel.relaid.svc === 1 ? '' : 's'), sel.relaid.fi && sel.relaid.fi + ' fibre', sel.relaid.lv && sel.relaid.lv + ' LV'].filter(Boolean).join(', ')} · trench ${Math.round(Math.hypot(this._xEnds(sel)[1][0] - this._xEnds(sel)[0][0], this._xEnds(sel)[1][1] - this._xEnds(sel)[0][1]) * 10) / 10} m</div>` : ''}
         <button type="button" class="plan-btn" data-act="xreset" style="min-height:36px"${moved ? '' : ' disabled'}>Put this crossing back</button></div>`; }
     const list = `<div style="max-height:150px;overflow:auto;border-top:1px solid var(--border-color,#ddd)">${rows.map(c => `<button type="button" data-xsel="${esc(c.key)}" class="plan-btn" style="display:flex;justify-content:space-between;width:100%;border:0;border-bottom:1px solid var(--border-color,#eee);border-radius:0;padding:4px 2px;font-size:12px;${c.key === this.selX ? 'font-weight:700;background:rgba(37,99,235,.1)' : ''}"><span>${esc(c.st.name || c.st.id)} · ${Math.round(c.s)} m${this.cfg().moves.xs[c.key] ? ' ●' : ''}</span><span>${c.d110 + c.d160} duct${c.d110 + c.d160 === 1 ? '' : 's'}</span></button>`).join('')}</div>`;
@@ -642,8 +642,8 @@ const PlanLayoutUI = {
     if (this._barFold === undefined) { try { this._barFold = localStorage.getItem('pp-layout-bar-fold') === '1'; } catch (x) { this._barFold = false; } }
     if (this._barFold) { bar.innerHTML = '<div style="pointer-events:auto;align-self:flex-start;margin-left:10px"><button type="button" data-bm="fold" style="min-height:32px;padding:0 12px;border:1px solid #cbd5e1;border-radius:16px;background:#fff;font:inherit;font-size:12px;font-weight:600;cursor:pointer;box-shadow:0 2px 8px rgba(15,23,42,.16)">Adjust tools ▾</button></div>'; return; }
     const n = this.edits(), btn = (v, t) => `<button type="button" data-bm="${v}" aria-pressed="${this.mode === v}" style="min-height:36px;padding:0 12px;border:0;border-radius:7px;font:inherit;font-size:13px;cursor:pointer;${this.mode === v ? 'background:#2563eb;color:#fff;font-weight:600' : 'background:transparent;color:#334155;font-weight:500'}">${t}</button>`;
-    const sidesBtn = `<button type="button" data-bm="ps-on" aria-pressed="${this.mode === 'sides'}" style="min-height:36px;padding:0 12px;border:0;border-radius:7px;font:inherit;font-size:13px;cursor:pointer;${this.mode === 'sides' ? 'background:#2563eb;color:#fff;font-weight:600' : 'background:transparent;color:#334155;font-weight:500'}">Street sides</button>`;
-    if (this.step === 1) { bar.innerHTML = `<div style="pointer-events:auto;display:flex;gap:2px;padding:4px;background:#fff;border:1px solid #cbd5e1;border-radius:10px;box-shadow:0 4px 14px rgba(15,23,42,.18)">${sidesBtn}</div>${this.mode === 'sides' ? PlanSides.barHtml() : ''}<div style="pointer-events:none;padding:5px 12px;background:#0f172a;color:#f8fafc;border-radius:8px;font-size:12px;max-width:720px;text-align:center">${(this.mode === 'sides' ? PlanSides.hint() : 'Street sides: set which side of each street the kiosks, fibre and civil services are on').replace(/&/g, '&amp;').replace(/</g, '&lt;')}</div>`; return; }
+    const sidesBtn = `<button type="button" data-bm="ps-on" aria-pressed="${this.mode === 'sides'}" style="min-height:36px;padding:0 12px;border:0;border-radius:7px;font:inherit;font-size:13px;cursor:pointer;${this.mode === 'sides' ? 'background:#2563eb;color:#fff;font-weight:600' : 'background:transparent;color:#334155;font-weight:500'}">Road sides</button>`;
+    if (this.step === 1) { bar.innerHTML = `<div style="pointer-events:auto;display:flex;gap:2px;padding:4px;background:#fff;border:1px solid #cbd5e1;border-radius:10px;box-shadow:0 4px 14px rgba(15,23,42,.18)">${sidesBtn}</div>${this.mode === 'sides' ? PlanSides.barHtml() : ''}<div style="pointer-events:none;padding:5px 12px;background:#0f172a;color:#f8fafc;border-radius:8px;font-size:12px;max-width:720px;text-align:center">${(this.mode === 'sides' ? PlanSides.hint() : 'Street sides: set which side of each road the kiosks, fibre and civil services are on').replace(/&/g, '&amp;').replace(/</g, '&lt;')}</div>`; return; }
     bar.innerHTML = `<div style="pointer-events:auto;display:flex;flex-wrap:wrap;gap:2px;padding:4px;background:#fff;border:1px solid #cbd5e1;border-radius:10px;box-shadow:0 4px 14px rgba(15,23,42,.18)">${btn('front', 'Erf fronts')}${sidesBtn}${btn('marker', 'Erf markers')}${btn('trunk', 'Trunk ducts')}${btn('move', 'Move parts')}${this.mode === 'move' ? btn('addk', (this.addKind === 'kiosk' ? '● ' : '+ ') + 'Kiosk') + btn('addm', (this.addKind === 'mh' ? '● ' : '+ ') + 'Manhole') : ''}${btn('cross', 'Crossings')}<span style="width:1px;background:#cbd5e1;margin:4px 3px"></span>${btn('reset', 'Reset edits (' + n + ')')}${btn('fold', 'Hide ▴')}</div>
       ${this.mode === 'sides' ? PlanSides.barHtml() : ''}<div style="pointer-events:none;padding:5px 12px;background:#0f172a;color:#f8fafc;border-radius:8px;font-size:12px;max-width:720px;text-align:center">${this.hint().replace(/^Auto layout · /, '').replace(/&/g, '&amp;').replace(/</g, '&lt;')}</div>`;
   },
@@ -1054,7 +1054,7 @@ const PlanLayoutUI = {
       made++;
     });
     PlanMarkup.markDirty(); this.touched();
-    UI.toast(`${made} street${made === 1 ? '' : 's'} taken from layer "${layer}"${used.size < made ? ` (${made - used.size} without a name nearby: check them)` : ''}. Width 12 m; change it in each street's properties.`, used.size < made ? 'warn' : 'success', 6000);
+    UI.toast(`${made} street${made === 1 ? '' : 's'} taken from layer "${layer}"${used.size < made ? ` (${made - used.size} without a name nearby: check them)` : ''}. Width 12 m; change it in each road's properties.`, used.size < made ? 'warn' : 'success', 6000);
     return made;
   },
 
@@ -1093,7 +1093,7 @@ const PlanLayoutUI = {
     const P = this._kerbPool(); if (!Object.keys(P.layers).length) { UI.toast('The drawings have no visible lines or polylines.', 'warn', 4000); return; }
     this.centreStage = null; if (typeof PlanReserveUI !== 'undefined') PlanReserveUI.stage = null;
     this.kerbStage = Object.assign(PlanKerbs.stage(P.layers, this.kerbOpt), { f, meta: P.meta, sigNow: this._kerbSig(), namers: {}, hover: null });
-    UI.toast('Click a kerb line to add it and the streets it touches. Shift-click takes one piece, Alt-click takes streets out, Backspace undoes the last pick, Enter creates.', 'info', 8000);
+    UI.toast('Click a kerb line to add it and the roads it touches. Shift-click takes one piece, Alt-click takes roads out, Backspace undoes the last pick, Enter creates.', 'info', 8000);
     this.syncHint(); PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true });
   },
   // the working area, a hidden layer or the scale changed: rebuild the kerb lines, keep the picks that still apply
@@ -1112,7 +1112,7 @@ const PlanLayoutUI = {
   // arm a lone kerb: the next click on the plan, on the road's side of it, makes the street half the set width in from the kerb
   kerbOne(layer, i) {
     const S = this.kerbStage; if (!S) return; S.arm(layer, i);
-    UI.toast(`Click on the road's side of that kerb: the street goes ${this.kerbOpt.oneW} m wide beside it.`, 'info', 4000);
+    UI.toast(`Click on the road's side of that kerb: the road goes ${this.kerbOpt.oneW} m wide beside it.`, 'info', 4000);
     this.syncHint(); PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true });
   },
   kerbPair(layer, i) {
@@ -1171,7 +1171,7 @@ const PlanLayoutUI = {
   kerbCreate() {
     const S = this.kerbStage; if (!S) return 0;
     const pm = AppState.planMarkup, f = S.f;
-    if (!S.streets.length) { UI.toast('No streets to create.', 'warn', 3000); return 0; }
+    if (!S.streets.length) { UI.toast('No roads to create.', 'warn', 3000); return 0; }
     PlanMarkup.snapshot();
     let named = 0;
     S.streets.forEach(st => {
@@ -1233,7 +1233,7 @@ const PlanLayoutUI = {
       pieces.forEach(pts => S.pieces.push({ pts, layer }));
       (typeof PlanKerbs !== 'undefined' ? PlanKerbs.joinPieces(pieces) : pieces.map(pts => ({ pts }))).forEach(c => S.chains.push({ pts: c.pts, layer }));
     }
-    UI.toast(`Click the centreline of each road in "${layer}". Click takes the whole line, Shift-click one drawn piece, Alt-click (or clicking it again) drops it, Enter creates the streets.`, 'info', 7000);
+    UI.toast(`Click the centreline of each road in "${layer}". Click takes the whole line, Shift-click one drawn piece, Alt-click (or clicking it again) drops it, Enter creates the roads.`, 'info', 7000);
     PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true });
   },
   centreCancel() { this.centreStage = null; PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true }); },
@@ -1275,7 +1275,7 @@ const PlanLayoutUI = {
     });
     const made = S.picks.length; this.centreStage = null;
     PlanMarkup.markDirty(); this.touched(); PlanEngine.requestDraw({ fg: true });
-    UI.toast(`${made} street${made === 1 ? '' : 's'} made from the lines you picked${named < made ? ` (${made - named} without a name nearby: check them)` : ''}. Width ${w} m; change it in each street's properties.`, named < made ? 'warn' : 'success', 6000);
+    UI.toast(`${made} street${made === 1 ? '' : 's'} made from the lines you picked${named < made ? ` (${made - named} without a name nearby: check them)` : ''}. Width ${w} m; change it in each road's properties.`, named < made ? 'warn' : 'success', 6000);
     return made;
   },
   centreDraw(ctx, zoom) {
@@ -1299,7 +1299,7 @@ const PlanLayoutUI = {
   streetDrawOn(on) {
     this.drawStreets = !!on;
     const R = this._rt(); if (!R) { this.drawStreets = false; return; }
-    if (on) { this.kerbStage = null; this.centreStage = null; if (typeof PlanReserveUI !== 'undefined') PlanReserveUI.stage = null; R._type = 'street'; R._draft = null; R._hover = null; UI.toast('Click along each street centreline. Enter, or click the last point again, finishes it; Backspace takes a point back; Esc stops. A street that ends on another one joins it.', 'info', 7000); }
+    if (on) { this.kerbStage = null; this.centreStage = null; if (typeof PlanReserveUI !== 'undefined') PlanReserveUI.stage = null; R._type = 'street'; R._draft = null; R._hover = null; UI.toast('Click along each road centreline. Enter, or click the last point again, finishes it; Backspace takes a point back; Esc stops. A road that ends on another one joins it.', 'info', 7000); }
     else { R._draft = null; R._hover = null; }
     PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true });
   },
@@ -1317,11 +1317,11 @@ const PlanLayoutUI = {
   },
   streetFinish() {
     const R = this._rt(), before = new Set(AppState.planMarkup.routes.map(r => r.id));
-    if (!R._draft || R._draft.points.length < 2) { UI.toast('A street needs at least two points.', 'warn', 2500); return true; }
+    if (!R._draft || R._draft.points.length < 2) { UI.toast('A road needs at least two points.', 'warn', 2500); return true; }
     R._finalize(null);
     const made = AppState.planMarkup.routes.filter(r => !before.has(r.id) && r.type === 'street');
     made.forEach(r => { r.props = Object.assign({}, r.props, { width: this.centreW > 0 ? this.centreW : 12, name: 'Street ' + AppState.planMarkup.routes.filter(x => x.type === 'street').length }); });
-    if (made.length) { UI.toast(`Street ${made.length > 1 ? 's' : ''} drawn. Width ${this.centreW} m; change it in the street's properties. Draw the next, or press Esc.`, 'success', 3500); this.touched(); }
+    if (made.length) { UI.toast(`Street ${made.length > 1 ? 's' : ''} drawn. Width ${this.centreW} m; change it in the road's properties. Draw the next, or press Esc.`, 'success', 3500); this.touched(); }
     return true;
   },
   streetKey(e) {
@@ -1332,70 +1332,16 @@ const PlanLayoutUI = {
     return false;
   },
 
-  // ───────── section lines: a polyline drawn over the street line says which cross-section applies there ─────────
-  secDraw: null,                                                                     // { sec: section id, pts: [{x, y}] } while the tool is on
-  _secHover: null,
-  secDrawOn(on, secId) {
-    if (on) { this.streetDrawOn(false); this.kerbStage = null; this.centreStage = null; this.secDraw = { sec: secId, pts: [] }; this._secHover = null; UI.toast('Click along the street line where this section applies. Enter, or click the last point again, finishes. Ends snap to the drawing; the line need not be exact.', 'info', 7000); }
-    else this.secDraw = null;
-    PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true });
-  },
+  // ───────── road sections (roadsections.js): each road's own section, picked in its Properties ─────────
   _cwDef() { const v = +this.cfg().params.cwDef; return v > 0 ? v : PlanLayout.DEFAULTS.cwDef; },          // the carriageway of a street drawn with none
-  _streetsM() { const f = PlanEngine.factor(); return this.streetsOnPlan().map(r => ({ id: r.id, w: this._num(r.props && r.props.width, 6, 40, 12), cw: this._num(r.props && r.props.carriageW, 0, 40, 0) || this._cwDef(), own: this._num(r.props && r.props.carriageW, 0, 40, 0) > 0, cwAuto: !(this._num(r.props && r.props.carriageW, 0, 40, 0) > 0), cwOffset: this._num(r.props && r.props.cwOffset, -20, 20, 0), pts: this._flat(r).map(p => [p.x * f, p.y * f]) })); },
-  secDown(pt) {
-    const q = PlanTools.snap(pt, { wantElements: false }), d = this.secDraw; if (!d) return;
-    const last = d.pts[d.pts.length - 1];
-    if (last && d.pts.length >= 2 && Math.hypot(q.x - last.x, q.y - last.y) <= 7 / PlanEngine.view.zoom) { this.secFinish(); return; }
-    if (!last || Math.hypot(q.x - last.x, q.y - last.y) > 1e-9) d.pts.push({ x: q.x, y: q.y });
-    this._secHover = q; PlanEngine.requestDraw({ fg: true });
+  // a road's carriageway: its own width (typed, or from the road reserve tool) where set, else its road section's (RoadSections.carriage)
+  _cwOf(r) {
+    const c = typeof RoadSections !== 'undefined' ? RoadSections.carriage(r.props) : { cw: +(r.props && r.props.carriageW) || 0, off: +(r.props && r.props.cwOffset) || 0 };
+    return { cw: this._num(c.cw, 0, 40, 0), off: this._num(c.off, -20, 20, 0) };
   },
-  secFinish() {
-    const d = this.secDraw, f = PlanEngine.factor(); if (!d || !f) return true;
-    if (d.pts.length < 2) { UI.toast('A section line needs at least two points.', 'warn', 2500); return true; }
-    const S = this.cfg().sections, made = PlanSections.linesFromPolyline(d.pts.map(p => [p.x * f, p.y * f]), this._streetsM(), d.sec);
-    if (!made.length) { UI.toast('That line does not run along a street. Draw it over the street line.', 'warn', 4000); d.pts = []; PlanEngine.requestDraw({ fg: true }); return true; }
-    let n = S.lines.length; const gid = 'g' + Date.now().toString(36);
-    made.forEach(l => { let id; do { id = 'sl_' + (++n); } while (S.lines.some(x => x.id === id)); S.lines.push(Object.assign(l, { id, group: gid })); });
-    const nm = S.list.find(x => x.id === d.sec);
-    UI.toast(`"${nm ? nm.name : 'Section'}" applies to ${made.length} street${made.length === 1 ? '' : 's'}. Draw the next line, or press Esc.`, 'success', 3500);
-    d.pts = []; this._secHover = null; this.touched(); return true;
-  },
-  secKey(e) {
-    const d = this.secDraw; if (!d) return false;
-    if (e.key === 'Enter') return this.secFinish();
-    if (e.key === 'Backspace') { if (!d.pts.length) return false; d.pts.pop(); PlanEngine.requestDraw({ fg: true }); return true; }
-    if (e.key === 'Escape') { if (d.pts.length) { d.pts = []; PlanEngine.requestDraw({ fg: true }); } else this.secDrawOn(false); return true; }
-    return false;
-  },
-  // the stretch [s0, s1] of a street as plan points (for drawing and zooming)
-  secStretch(l) {
-    const f = PlanEngine.factor(), r = AppState.planMarkup.routes.find(x => x.id === l.streetId); if (!r || !f) return null;
-    const pts = this._flat(r), cum = [0]; for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y) * f);
-    const a = Math.min(l.s0, l.s1), b = Math.max(l.s0, l.s1), at = s => { for (let i = 1; i < pts.length; i++) if (s <= cum[i] || i === pts.length - 1) { const t = Math.max(0, Math.min(1, (s - cum[i - 1]) / ((cum[i] - cum[i - 1]) || 1))); return { x: pts[i - 1].x + (pts[i].x - pts[i - 1].x) * t, y: pts[i - 1].y + (pts[i].y - pts[i - 1].y) * t }; } return pts[0]; };
-    const out = [at(a)]; for (let i = 0; i < pts.length; i++) if (cum[i] > a && cum[i] < b) out.push({ x: pts[i].x, y: pts[i].y }); out.push(at(b)); return out;
-  },
-  secShow(l) { const p = this.secStretch(l); if (p && p.length) PlanEngine.zoomToPoints(p); },
-  SEC_PAL: ['#2563eb', '#0b6e6e', '#b4501c', '#7c3aed', '#8a6a00', '#be185d'],
-  secDrawOverlay(ctx, zoom) {
-    const S = this.cfg().sections, u = 1 / zoom;
-    if (!S.lines.length && !this.secDraw) return;
-    ctx.save(); ctx.lineJoin = 'round'; ctx.lineCap = 'round';
-    for (const l of S.lines) {
-      const p = this.secStretch(l); if (!p || p.length < 2) continue;
-      const i = Math.max(0, S.list.findIndex(x => x.id === l.sec));
-      ctx.strokeStyle = this.SEC_PAL[i % this.SEC_PAL.length]; ctx.globalAlpha = S.on || this.secDraw ? 0.9 : 0.45; ctx.lineWidth = 6 * u;
-      ctx.beginPath(); p.forEach((q, k) => k ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y)); ctx.stroke();
-    }
-    ctx.globalAlpha = 1;
-    const d = this.secDraw;
-    if (d && d.pts.length) {
-      const i = Math.max(0, S.list.findIndex(x => x.id === d.sec)), col = this.SEC_PAL[i % this.SEC_PAL.length];
-      ctx.strokeStyle = col; ctx.lineWidth = 3 * u; ctx.setLineDash([8 * u, 5 * u]);
-      ctx.beginPath(); d.pts.forEach((q, k) => k ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y)); if (this._secHover) ctx.lineTo(this._secHover.x, this._secHover.y); ctx.stroke(); ctx.setLineDash([]);
-      ctx.fillStyle = '#fff'; ctx.lineWidth = 2 * u; d.pts.forEach(q => { ctx.beginPath(); ctx.arc(q.x, q.y, 4 * u, 0, 7); ctx.fill(); ctx.stroke(); });
-    }
-    ctx.restore();
-  },
+  _streetsM() { const f = PlanEngine.factor(); return this.streetsOnPlan().map(r => ({ id: r.id, w: this._num(r.props && r.props.width, 6, 40, 12), cw: this._cwOf(r).cw || this._cwDef(), own: this._cwOf(r).cw > 0, cwAuto: !(this._cwOf(r).cw > 0), cwOffset: this._cwOf(r).off, pts: this._flat(r).map(p => [p.x * f, p.y * f]) })); },
+  // Road sections on the plan while Auto layout is open and sections are on: each road drawn in its section's colour (RoadSectionsUI)
+  secDrawOverlay(ctx, zoom) { if (this.cfg().sections.on && typeof RoadSectionsUI !== 'undefined' && !RoadSectionsUI.showOn) RoadSectionsUI.drawOverlay(ctx, zoom, 0.55); },
 
   // The mini-subs you placed, in the order they will be numbered: the layout's own points (clicked with Mini-sub), then the mini-sub
   // parts you drew on the plan. [{ x, y (plan points), src: 'layout' | 'plan', i (index in cfg().subs) }]
@@ -1463,12 +1409,12 @@ const PlanLayoutUI = {
   edits() { const L = this.cfg(), M = L.moves; return Object.keys(L.fronts).length + Object.keys(L.markers).length + Object.keys(L.fibreMarks).length + L.cuts.length + (L.entry ? 1 : 0) + M.kiosks.length + M.mhs.length + Object.keys(M.verts).length + M.adds.length + M.cuts.length + Object.keys(M.xs).length; },
   nextAction(r, placed, noKiosks, nErv, nStreets) {
     if (!nErv) return { label: 'Detect the erven to continue', act: 'goto', s: 1, dis: true, note: 'The layout needs erf boundaries: use Detect erven.' };
-    if (!nStreets) return { label: 'Add the streets to continue', act: 'goto', s: 1, dis: true, note: 'The layout needs the street centrelines.' };
+    if (!nStreets) return { label: 'Add the roads to continue', act: 'goto', s: 1, dis: true, note: 'The layout needs the road centrelines.' };
     const part = this.part(), fib = part === 'fibre';
     if (!placed.length && !fib) return { label: 'Place a mini-sub to continue', act: 'goto', s: 2, dis: true, note: 'The layout works from the mini-subs you place.' };
     if (!fib && !this.admdOk()) return { label: 'Confirm the ADMD to continue', act: 'goto', s: 3, note: 'Cable sizes come from the ADMD. Confirm it in Rules.' };
     if (!r || this.stale) return { label: r ? 'Re-run layout' : 'Run layout', act: 'run', note: '' };
-    if (noKiosks) return { label: 'Fix the streets to continue', act: 'goto', s: 1, dis: true, note: 'No erf faces a street, so there are no kiosks to create.' };
+    if (noKiosks) return { label: 'Fix the roads to continue', act: 'goto', s: 1, dis: true, note: 'No erf faces a road, so there are no kiosks to create.' };
     if (part !== this._ranPart) return { label: 'Re-run layout', act: 'run', note: '' };
     const note = part === 'lv' ? 'Replaces the LV network Auto layout made before. The fibre and your own items stay.' : fib ? 'Replaces the fibre network Auto layout made before. The LV network and your own items stay.' : 'Replaces the previous auto layout. Your own items stay.';
     return { label: part === 'all' ? 'Create on plan' : `Create the ${part === 'lv' ? 'LV' : 'fibre'} network on plan`, act: 'create', create: true, note };
@@ -1483,8 +1429,7 @@ const PlanLayoutUI = {
   // the line over the plan: what a click does now
   hint() {
     const r = this.result, pre = 'Auto layout · ';
-    if (this.secDraw) return pre + 'Section line: click along the street line. Enter, or the last point again, finishes. Backspace takes a point back, Esc stops.';
-    if (this.drawStreets) return pre + 'Streets: click along the street. Enter, or the last point again, finishes it. Backspace takes a point back, Esc stops.';
+    if (this.drawStreets) return pre + 'Streets: click along the road. Enter, or the last point again, finishes it. Backspace takes a point back, Esc stops.';
     if (this.mode === 'sides') return pre + PlanSides.hint();
     if (this.centreStage) return pre + 'Streets: click the centreline of each road. Shift-click one piece, Alt-click drops it. Enter creates, Esc leaves.';
     if (typeof PlanReserveUI !== 'undefined' && PlanReserveUI.stage) return pre + 'Streets: ' + PlanReserveUI.hint();
@@ -1493,16 +1438,16 @@ const PlanLayoutUI = {
       if (S.one) return pre + 'Streets: click on the road\'s side of that kerb. Esc leaves.';
       if (S.pairFrom) return pre + 'Streets: click the kerb on the other side of that road.';
       return pre + (S.mode === 'sub'
-        ? 'Streets: Click: remove the streets of a kerb line · Shift-click: just this street · Enter: create · Backspace: undo pick · Esc: leave'
-        : 'Streets: Click: add a kerb line and its streets · Shift-click: just this piece · Alt-click: subtract · Ctrl-click: lone kerb · Enter: create · Backspace: undo pick · Esc: leave');
+        ? 'Streets: Click: remove the roads of a kerb line · Shift-click: just this road · Enter: create · Backspace: undo pick · Esc: leave'
+        : 'Streets: Click: add a kerb line and its roads · Shift-click: just this piece · Alt-click: subtract · Ctrl-click: lone kerb · Enter: create · Backspace: undo pick · Esc: leave');
     }
-    if (this.step === 1) return pre + 'Streets: draw each street centreline, or take them from the drawing in the panel.';
+    if (this.step === 1) return pre + 'Streets: draw each road centreline, or take them from the drawing in the panel.';
     if (this.step === 2) return pre + 'Mini-subs: click where each one stands. Click a mini-sub to move it, Alt-click to remove it. Click one drawn on the plan to leave it out of this scheme or take it back in.';
     if (this.step === 3) return pre + 'Rules: choose the preset and the settings in the panel.';
     if (!r) return pre + 'Review: run the layout to see the kiosks, cables and checks.';
-    if (!r.kiosks.length) return pre + 'Review: no kiosks were found. Draw a centreline beside the erven, or extend the nearest street.';
+    if (!r.kiosks.length) return pre + 'Review: no kiosks were found. Draw a centreline beside the erven, or extend the nearest road.';
     if (this.mode === 'marker') return pre + (this.markFor ? 'click on the erf where its service cable should arrive.' : 'click inside an erf where its service cable should arrive. Alt-click removes a marker.');
-    if (this.mode === 'cross') return pre + 'Road crossings: drag a start or end to move it · drag the line to slide it along the street · Alt-click: put it back · drag empty space: pan';
+    if (this.mode === 'cross') return pre + 'Road crossings: drag a start or end to move it · drag the line to slide it along the road · Alt-click: put it back · drag empty space: pan';
     if (this.mode === 'move' && this.addKind) return pre + `Click where the new ${this.addKind === 'kiosk' ? 'kiosk' : 'manhole'} stands, on either side of the road · Alt-click: cancel`;
     if (this.mode === 'move') return pre + 'Drag a kiosk, manhole, erf marker, fibre point or node (across the road too) · + Kiosk / + Manhole adds one · Shift-click a line: add a node · Alt-click a node: remove it · drag empty space: pan';
     if (this.mode === 'trunk') return pre + 'click a trunk duct section to cut it or put it back; click a junction for the fibre entry.';
@@ -1520,10 +1465,10 @@ const PlanLayoutUI = {
     const erven = pm.elements.filter(e => e.type === 'erf' && Array.isArray(e.boundary) && e.boundary.length >= 3)
       .map(e => ({ id: e.id, poly: e.boundary.map(p => [p.x * f, p.y * f]), unserviced: !!(e.props && e.props.unserviced) }));
     const sr = this.streetsOnPlan();
-    if (!sr.length) return { err: 'Draw the streets first: pick Street centreline in the Routes group and click along each street.' };
+    if (!sr.length) return { err: 'Draw the roads first: pick Road centreline in the Routes group and click along each road.' };
     if (!erven.length) return { err: 'No erf has a boundary yet. Run Detect erven first (it keeps each erf\'s boundary).' };
     if (!erven.some(e => !e.unserviced)) return { err: 'Every erf is marked unserviced: there is nothing to supply. Mark the erven that need a supply as serviced (Detect erven › Mark unserviced, or the erf\'s Properties).' };
-    const streets = sr.map((r, i) => ({ id: r.id, name: (r.props && r.props.name) || ('Street ' + (i + 1)), w: this._num(r.props && r.props.width, 6, 40, 12), cw: this._num(r.props && r.props.carriageW, 0, 40, 0) || this._cwDef(), own: this._num(r.props && r.props.carriageW, 0, 40, 0) > 0, cwAuto: !(this._num(r.props && r.props.carriageW, 0, 40, 0) > 0), cwOffset: this._num(r.props && r.props.cwOffset, -20, 20, 0), pts: this._flat(r).map(p => [p.x * f, p.y * f]) }));
+    const streets = sr.map((r, i) => ({ id: r.id, name: (r.props && r.props.name) || ('Road ' + (i + 1)), w: this._num(r.props && r.props.width, 6, 40, 12), cw: this._cwOf(r).cw || this._cwDef(), own: this._cwOf(r).cw > 0, cwAuto: !(this._cwOf(r).cw > 0), cwOffset: this._cwOf(r).off, pts: this._flat(r).map(p => [p.x * f, p.y * f]) }));
     // streets from the road reserve: the same squared-off corners the plan draws its kerbs and kerb returns from
     if (typeof PlanReserve !== 'undefined' && PlanReserve.squareStreets) {
       // (a street with the default carriageway is drawn as a centreline: nothing to square)
@@ -1539,7 +1484,7 @@ const PlanLayoutUI = {
     const mhDrops = L.moves.mhs.filter(m => m.from).map(m => [m.from.x * f, m.from.y * f]), mhPins = L.moves.mhs.map(m => [m.to.x * f, m.to.y * f]);   // manholes moved or added by hand   // kiosks moved by hand
     // the kerb returns the plan draws at the street corners (road-reserve streets; radii dragged on the plan included), in metres
     let kerbReturns = []; try { const g = typeof PlanReserveUI !== 'undefined' && PlanReserveUI.planGeometry(); if (g && g.rets) kerbReturns = g.rets; } catch (e) { kerbReturns = []; }
-    return { f, input: { erven, streets, markers, fibreOffs, splits, kioskDrops, kioskPins, mhDrops, mhPins, ks, ksOwn, fs, fsOwn, civ, overrides: L.fronts, cuts: L.cuts, subPts, entryPt: L.entry ? [L.entry.x * f, L.entry.y * f] : null, sections: L.sections.on ? L.sections : null, kerbReturns, crossings: this.planCrossings(L.part) }, params: L.params };
+    return { f, input: { erven, streets, markers, fibreOffs, splits, kioskDrops, kioskPins, mhDrops, mhPins, ks, ksOwn, fs, fsOwn, civ, overrides: L.fronts, cuts: L.cuts, subPts, entryPt: L.entry ? [L.entry.x * f, L.entry.y * f] : null, sections: L.sections.on && typeof RoadSections !== 'undefined' ? RoadSections.forLayout(true) : null, kerbReturns, crossings: this.planCrossings(L.part) }, params: L.params };
   },
 
   // ───────── one part at a time: Everything, the LV network or the fibre network ─────────
@@ -1784,7 +1729,7 @@ const PlanLayoutUI = {
   nearShow(eid) {
     const r = this.result, f = this.f, e = r && r.erven.find(x => x.id === eid); if (!e) return;
     const g = PlanLayout.reach(e.poly, r.streets, { erven: r.erven });
-    if (!g) { UI.toast('There is no street on the plan to extend.', 'warn', 3500); return; }
+    if (!g) { UI.toast('There is no road on the plan to extend.', 'warn', 3500); return; }
     this.nearHint = { erf: eid, g }; this.flag = new Set([eid]);
     const pts = e.poly.map(q => ({ x: q[0] / f, y: q[1] / f })).concat([{ x: g.q[0] / f, y: g.q[1] / f }, { x: g.t[0] / f, y: g.t[1] / f }]);
     PlanEngine.zoomToPoints(pts);
@@ -1812,11 +1757,11 @@ const PlanLayoutUI = {
       }
       if (g.crosses) through++;
     }
-    if (!snap) { UI.toast('Nothing to extend: those erven are already within reach of a street or there is none.', 'warn', 4000); return 0; }
+    if (!snap) { UI.toast('Nothing to extend: those erven are already within reach of a road or there is none.', 'warn', 4000); return 0; }
     this.nearHint = null; this.flag = null;
     PlanMarkup.markDirty(); this.touched();
     const n = ext + spurs;
-    UI.toast(`${n} ${n === 1 ? 'erf' : 'erven'} given a street: ${ext} street${ext === 1 ? '' : 's'} extended, ${spurs} spur${spurs === 1 ? '' : 's'} added${skipped ? `; ${skipped} left (already in reach, or no street)` : ''}${through ? `. ${through} run${through === 1 ? '' : 's'} pass through other erven: check the plan` : ''}. Press Run if the checks do not update.`, through || skipped ? 'warn' : 'success', 8000);
+    UI.toast(`${n} ${n === 1 ? 'erf' : 'erven'} given a road: ${ext} street${ext === 1 ? '' : 's'} extended, ${spurs} spur${spurs === 1 ? '' : 's'} added${skipped ? `; ${skipped} left (already in reach, or no road)` : ''}${through ? `. ${through} run${through === 1 ? '' : 's'} pass through other erven: check the plan` : ''}. Press Run if the checks do not update.`, through || skipped ? 'warn' : 'success', 8000);
     return n;
   },
 
@@ -1848,7 +1793,7 @@ const PlanLayoutUI = {
       if (!target) { UI.toast('Click inside the erf whose marker you want to place.', 'warn', 3500); return; }
       if (!pip(m[0], m[1], target.poly) && near(m, target.poly) > 5) { UI.toast(`Click on erf ${nm(target)} (or just beside it).`, 'warn', 3500); return; }
       L.markers[target.id] = { x: pt.x, y: pt.y }; this.markFor = null; this.touched();
-      UI.toast(`Marker placed on erf ${nm(target)}: its service cable now runs to it from the nearest street.`, 'success', 3500);
+      UI.toast(`Marker placed on erf ${nm(target)}: its service cable now runs to it from the nearest road.`, 'success', 3500);
       return;
     }
     if (this.mode === 'trunk') {
@@ -1861,7 +1806,7 @@ const PlanLayoutUI = {
     if (!e) return;
     let best = null, bd = 1e9;
     for (const d of e.edges) { const dx = d.b[0] - d.a[0], dy = d.b[1] - d.a[1], t = Math.max(0, Math.min(1, ((m[0] - d.a[0]) * dx + (m[1] - d.a[1]) * dy) / (dx * dx + dy * dy))), dist = Math.hypot(d.a[0] + t * dx - m[0], d.a[1] + t * dy - m[1]); if (dist < bd) { bd = dist; best = d; } }
-    if (!best.road) { UI.toast('That edge does not face a street.', 'warn', 3000); return; }
+    if (!best.road) { UI.toast('That edge does not face a road.', 'warn', 3000); return; }
     const auto = e.edges.filter(d => d.road).sort((p, q) => (r.P.front === 'longest' ? q.len - p.len : p.len - q.len) || p.i - q.i)[0];
     if (L.fronts[e.id] === best.i || (auto && auto.i === best.i)) delete L.fronts[e.id]; else L.fronts[e.id] = best.i;
     this.touched();
@@ -1903,10 +1848,10 @@ const PlanLayoutUI = {
     const nf = r.erven.filter(e => !e.fe);
     if (nf.length) {
       const rows = nf.map(e => ({ id: e.id, name: names[e.id] || e.id, g: PlanLayout.reach(e.poly, r.streets, { erven: r.erven }) }));
-      out.push({ sev: 'fail', text: `${nf.length} erven do not face a street and get no kiosk, service or fibre: ${nm(nf.map(lab))}. Extend the nearest street to them, or place their markers yourself and the cable and kiosk are worked out from there.`, ids: nf.map(e => e.id), rows,
-        acts: rows.filter(x => x.g && !x.g.near).length > 1 ? [{ label: 'Extend the nearest streets to all of them', act: 'extendall', val: rows.filter(x => x.g && !x.g.near).map(x => x.id) }] : [] });
+      out.push({ sev: 'fail', text: `${nf.length} erven do not face a road and get no kiosk, service or fibre: ${nm(nf.map(lab))}. Extend the nearest road to them, or place their markers yourself and the cable and kiosk are worked out from there.`, ids: nf.map(e => e.id), rows,
+        acts: rows.filter(x => x.g && !x.g.near).length > 1 ? [{ label: 'Extend the nearest roads to all of them', act: 'extendall', val: rows.filter(x => x.g && !x.g.near).map(x => x.id) }] : [] });
     }
-    if (r.net.unreached && r.net.unreached.length) out.push({ sev: 'fail', text: `The LV network does not reach ${r.net.unreached.length} ${r.net.unreached.length === 1 ? 'kiosk' : 'kiosks'} (${r.net.unreached.map(k => k.id).join(', ')}): ${(r.net.parts || 2) > 1 ? 'the streets between them are not joined up (' + r.net.parts + ' separate street networks).' : 'the streets are joined, so this is a layout fault: run the layout again and report it if it stays.'} Their erven have no LV supply, and the voltage-drop and earth-fault results leave them out. ${(r.net.parts || 2) > 1 ? 'Join the streets (Streets from kerb layer › Join networks) or add the missing street.' : ''}`, ids: r.net.unreached.flatMap(k => k.members.map(e => e.id)) });
+    if (r.net.unreached && r.net.unreached.length) out.push({ sev: 'fail', text: `The LV network does not reach ${r.net.unreached.length} ${r.net.unreached.length === 1 ? 'kiosk' : 'kiosks'} (${r.net.unreached.map(k => k.id).join(', ')}): ${(r.net.parts || 2) > 1 ? 'the roads between them are not joined up (' + r.net.parts + ' separate road networks).' : 'the roads are joined, so this is a layout fault: run the layout again and report it if it stays.'} Their erven have no LV supply, and the voltage-drop and earth-fault results leave them out. ${(r.net.parts || 2) > 1 ? 'Join the roads (Roads from kerb layer › Join networks) or add the missing road.' : ''}`, ids: r.net.unreached.flatMap(k => k.members.map(e => e.id)) });
     if (P.maxFeeds >= 1 && r.net.subs) {                                                // feeders per mini-sub
       const nameOf = (S) => 'S' + S.id;
       const over = r.net.subs.filter(S => S.feeds && S.feeds.over), raised = r.net.subs.filter(S => S.feeds && S.feeds.raised && !S.feeds.over);
@@ -1983,7 +1928,7 @@ const PlanLayoutUI = {
     if (near.length) out.push({ sev: 'warn', text: `${near.length} ${near.length === 1 ? 'service is' : 'services are'} within 15% of the ${P.maxc} m limit: ${nm(near.map(lab))}.`, ids: near.map(e => e.id) });
     const onRoad = new Map(); r.erven.forEach(e => { if (e.road) onRoad.set(e.road, (onRoad.get(e.road) || 0) + 1); });
     const thin = P.n >= 4 ? r.kiosks.filter(k => k.members.length <= 2 && (onRoad.get(k.road) || 0) > 2) : [];          // a street of 2 erven needs its own
-    if (thin.length) out.push({ sev: thin.length > 1 ? 'warn' : 'info', text: `${thin.length} of ${r.kiosks.length} kiosks ${thin.length === 1 ? 'serves' : 'serve'} 2 erven or fewer (${thin.map(k => k.id).join(', ')}). Fine on a short street; otherwise raise the worth of a kiosk (more extra cable accepted to save one) or lower the maximum houses per kiosk.`, ids: thin.flatMap(k => k.members.map(e => e.id)) });
+    if (thin.length) out.push({ sev: thin.length > 1 ? 'warn' : 'info', text: `${thin.length} of ${r.kiosks.length} kiosks ${thin.length === 1 ? 'serves' : 'serve'} 2 erven or fewer (${thin.map(k => k.id).join(', ')}). Fine on a short road; otherwise raise the worth of a kiosk (more extra cable accepted to save one) or lower the maximum houses per kiosk.`, ids: thin.flatMap(k => k.members.map(e => e.id)) });
     const mhw = (r.fibre && r.fibre.warns) || [];
     mhw.forEach(w => out.push({ sev: 'warn', text: w, ids: [] }));
     out.push(...PlanSides.checks(r));                                               // sides set on the civil side, runs along it
@@ -2158,27 +2103,27 @@ const PlanLayoutUI = {
         <label style="display:block">Service cable<select data-vd="svc" style="width:100%">${opts(cb.services, cb.svc)}</select></label>
         <div style="color:var(--text-muted)">Worked out by Demand itself: its load class and ADMD settings give the diversified current on each LV leg and on each service, and its volt-drop calculation does the rest.</div>${resetBtn(vdChanged, 'Voltage drop and earth fault')}</div></details>`;
     const lyr = this.dxfLayers();
-    const fromDxf = lyr.length ? `<div style="display:flex;flex-direction:column;gap:4px;margin:4px 0"><label style="display:block">Take streets from a drawing layer<select data-stl style="width:100%">${lyr.map((x, i) => `<option value="${i}"${i === 0 ? ' selected' : ''}>${esc(x.layer)} (${x.n} line${x.n === 1 ? '' : 's'})${x.kerbs ? ' · kerbs (pair them)' : x.guess ? ' ★' : ''}</option>`).join('')}</select></label><div style="display:flex;gap:4px;flex-wrap:wrap"><button type="button" class="plan-btn" data-act="kerbstreets" title="Click the kerb lines you want, on any layer: each click adds the streets between that kerb line and the kerbs across the road, with the measured width">Pick kerbs</button><button type="button" class="plan-btn" data-act="rs-start" title="Click inside the road reserves (the space between the erf boundaries, or one outline per street): the streets are made from them, with the reserve width, a carriageway and kerb returns">Streets from road reserve</button><button type="button" class="plan-btn" data-act="centrepick" title="The layer holds road centrelines among other lines: click the lines you want, one per road, then create the streets">Pick centrelines</button><button type="button" class="plan-btn" data-act="dxfstreets" title="The layer holds only road centrelines: every line of it becomes a street as drawn, width 12 m">All lines as streets</button></div><div style="font-size:12px;color:var(--text-muted)"><b>Pick kerbs</b>: you click kerb lines and the roads between them are made, with their measured width. <b>Streets from road reserve</b>: you click inside the road space between the erf boundaries. <b>Pick centrelines</b>: you click the centreline of each road. <b>All lines</b>: every line of the layer is a street as drawn.</div></div></div>` : '';
+    const fromDxf = lyr.length ? `<div style="display:flex;flex-direction:column;gap:4px;margin:4px 0"><label style="display:block">Take roads from a drawing layer<select data-stl style="width:100%">${lyr.map((x, i) => `<option value="${i}"${i === 0 ? ' selected' : ''}>${esc(x.layer)} (${x.n} line${x.n === 1 ? '' : 's'})${x.kerbs ? ' · kerbs (pair them)' : x.guess ? ' ★' : ''}</option>`).join('')}</select></label><div style="display:flex;gap:4px;flex-wrap:wrap"><button type="button" class="plan-btn" data-act="kerbstreets" title="Click the kerb lines you want, on any layer: each click adds the roads between that kerb line and the kerbs across the road, with the measured width">Pick kerbs</button><button type="button" class="plan-btn" data-act="rs-start" title="Click inside the road reserves (the space between the erf boundaries, or one outline per road): the roads are made from them, with the reserve width, a carriageway and kerb returns">Roads from road reserve</button><button type="button" class="plan-btn" data-act="centrepick" title="The layer holds road centrelines among other lines: click the lines you want, one per road, then create the streets">Pick centrelines</button><button type="button" class="plan-btn" data-act="dxfstreets" title="The layer holds only road centrelines: every line of it becomes a road as drawn, width 12 m">All lines as roads</button></div><div style="font-size:12px;color:var(--text-muted)"><b>Pick kerbs</b>: you click kerb lines and the roads between them are made, with their measured width. <b>Roads from road reserve</b>: you click inside the road space between the erf boundaries. <b>Pick centrelines</b>: you click the centreline of each road. <b>All lines</b>: every line of the layer is a road as drawn.</div></div></div>` : '';
     const KS = this.kerbStage, ko = this.kerbOpt, CS = this.centreStage;
     const centreBlock = CS ? `<div style="border:2px solid #f59e0b;border-radius:6px;padding:6px 8px;margin:4px 0;display:flex;flex-direction:column;gap:5px">
-        <b>Streets from centrelines: pick</b>
+        <b>Roads from centrelines: pick</b>
         <div style="font-size:12px;color:var(--text-muted)">Click the centreline of each road in ${CS.layers.map(l => '"' + esc(l) + '"').join(', ')}: the whole line is taken. Shift-click takes just the one drawn piece. Click a picked line again, or Alt-click it, to drop it. To take lines from another layer, pick it in the list below and press Pick centrelines. Enter creates, Esc leaves.</div>
-        <label style="font-size:12px;display:flex;gap:6px;align-items:center">Road width <input type="number" data-copt="w" min="3" max="60" step="0.5" value="${escHtml(this.centreW)}" style="width:60px"> m (change it per street in its properties)</label>
+        <label style="font-size:12px;display:flex;gap:6px;align-items:center">Road width <input type="number" data-copt="w" min="3" max="60" step="0.5" value="${escHtml(this.centreW)}" style="width:60px"> m (change it per road in its properties)</label>
         ${CS.picks.length ? `<div style="max-height:150px;overflow:auto">${CS.picks.map((c, i) => `<div style="display:flex;justify-content:space-between;align-items:center;gap:4px;border-bottom:1px solid var(--border,#ddd);padding:2px 0;font-size:12px"><span>${esc(CS.namer.peek(c.pts.map(q => ({ x: q[0] / CS.f, y: q[1] / CS.f }))) || 'Street ' + (i + 1))} · ${Math.round(this.centreLen(c.pts))} m${c.piece ? ' · one piece' : ''}</span><button type="button" class="plan-btn" data-act="centrerm" data-i="${i}" style="padding:1px 6px;font-size:12px">drop</button></div>`).join('')}</div>` : '<div style="color:var(--text-muted)">No lines picked yet.</div>'}
         <div style="display:flex;gap:6px"><button type="button" class="plan-btn" data-act="centrecreate" style="font-weight:600"${CS.picks.length ? '' : ' disabled'}>Create ${CS.picks.length} street${CS.picks.length === 1 ? '' : 's'}</button><button type="button" class="plan-btn" data-act="centrecancel">Cancel</button></div></div>` : '';
     const kcomps = KS ? KS.networks() : [];
     const kinfo = KS ? KS.lonely.map(l => this.kerbInfo(l)) : [];
     const kpick = (p, i) => { const n = p.op === 'all' ? 'Paired every kerb of a layer' : p.op === 'pair' ? 'Paired two kerbs by hand' : p.op === 'one' ? 'Street beside a lone kerb' : `${p.op === 'add' ? 'Added' : 'Removed'} ${p.items.length > 1 ? p.items.length + ' kerb lines' : 'a kerb line'}${p.items[0] && p.items[0].span ? ' (one piece)' : ''}`; return `<div style="display:flex;justify-content:space-between;align-items:center;gap:4px;border-bottom:1px solid var(--border,#ddd);padding:2px 0;font-size:12px"><span>${n}</span><button type="button" class="plan-btn" data-act="kerbrmpick" data-i="${i}" style="padding:0 6px;font-size:12px" title="Take this pick out">×</button></div>`; };
     const kerbBlock = KS ? `<div style="border:2px solid #f59e0b;border-radius:6px;padding:6px 8px;margin:4px 0;display:flex;flex-direction:column;gap:5px">
-        <b>Streets from kerbs: pick</b>
+        <b>Roads from kerbs: pick</b>
         <div style="display:flex;gap:4px"><button type="button" class="plan-btn" data-act="kerbmode" data-m="add" aria-pressed="${KS.mode === 'add'}" style="${KS.mode === 'add' ? 'font-weight:600;outline:2px solid #16a34a' : ''}">Add</button><button type="button" class="plan-btn" data-act="kerbmode" data-m="sub" aria-pressed="${KS.mode === 'sub'}" style="${KS.mode === 'sub' ? 'font-weight:600;outline:2px solid #dc2626' : ''}">Subtract</button><button type="button" class="plan-btn" data-act="kerbundo"${KS.picks.length ? '' : ' disabled'} title="Backspace">Undo last pick</button></div>
-        <div style="font-size:12px;color:var(--text-muted)">Click a kerb line (any layer) to add it and every street it touches. Shift-click takes just the one drawn piece. Alt-click subtracts for one click. Click a street (Subtract) to remove it.</div>
+        <div style="font-size:12px;color:var(--text-muted)">Click a kerb line (any layer) to add it and every road it touches. Shift-click takes just the one drawn piece. Alt-click subtracts for one click. Click a road (Subtract) to remove it.</div>
         <div>${KS.streets.length} street${KS.streets.length === 1 ? '' : 's'} (amber, width on each).</div>
-        <div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap"><button type="button" class="plan-btn" data-act="kerbpairall" title="Pair every kerb of the layer chosen in the list below, as the old Streets from kerb layer did">Pair all on layer</button><span style="font-size:12px;color:var(--text-muted)">(the layer picked in the list below)</span></div>
+        <div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap"><button type="button" class="plan-btn" data-act="kerbpairall" title="Pair every kerb of the layer chosen in the list below, as the old Roads from kerb layer did">Pair all on layer</button><span style="font-size:12px;color:var(--text-muted)">(the layer picked in the list below)</span></div>
         <label style="font-size:12px;display:flex;gap:6px;align-items:center"><input type="checkbox" data-kany${KS.anyLayer ? ' checked' : ''}> Look for partners on any layer</label>
         <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;font-size:12px">Road width at least <input type="number" data-kopt="wmin" min="1" max="30" step="0.5" value="${escHtml(ko.wmin)}" style="width:52px"> at most <input type="number" data-kopt="wmax" min="5" max="60" step="0.5" value="${escHtml(ko.wmax)}" style="width:52px"> Bridge gaps up to <input type="number" data-kopt="gap" min="0" max="60" step="1" value="${escHtml(ko.gap)}" style="width:52px"> m</div>
-        ${kcomps.length > 1 ? `<div style="color:#c2410c">The streets form <b>${kcomps.length} separate networks</b> (${kcomps.map(c => c.length).join(' + ')} streets; the ones cut off are orange). The LV and fibre networks do not reach across a gap. <div style="display:flex;gap:6px;align-items:center;margin-top:3px"><button type="button" class="plan-btn" data-act="kerbjoin" style="padding:2px 8px;font-size:12px">Join networks up to</button><input type="number" data-kopt="join" min="1" max="200" step="5" value="${escHtml(ko.join)}" style="width:60px"> m</div></div>` : KS.streets.length ? '<div style="color:#15803d">The streets form one connected network.</div>' : ''}
-        <div style="font-size:12px;color:var(--text-muted)">Ctrl-click a kerb that has no partner, then click on the road's side: a street <input type="number" data-kopt="oneW" min="3" max="40" step="0.5" value="${escHtml(ko.oneW)}" style="width:52px"> m wide beside it. Enter creates; Esc leaves.</div>
+        ${kcomps.length > 1 ? `<div style="color:#c2410c">The roads form <b>${kcomps.length} separate networks</b> (${kcomps.map(c => c.length).join(' + ')} roads; the ones cut off are orange). The LV and fibre networks do not reach across a gap. <div style="display:flex;gap:6px;align-items:center;margin-top:3px"><button type="button" class="plan-btn" data-act="kerbjoin" style="padding:2px 8px;font-size:12px">Join networks up to</button><input type="number" data-kopt="join" min="1" max="200" step="5" value="${escHtml(ko.join)}" style="width:60px"> m</div></div>` : KS.streets.length ? '<div style="color:#15803d">The roads form one connected network.</div>' : ''}
+        <div style="font-size:12px;color:var(--text-muted)">Ctrl-click a kerb that has no partner, then click on the road's side: a road <input type="number" data-kopt="oneW" min="3" max="40" step="0.5" value="${escHtml(ko.oneW)}" style="width:52px"> m wide beside it. Enter creates; Esc leaves.</div>
         ${kinfo.length ? `<div style="color:#b91c1c"><b>Clicked, no partner</b> (${kinfo.length}, red dashed):<div style="max-height:150px;overflow:auto;margin-top:3px">${kinfo.map(k => `<div style="display:flex;justify-content:space-between;align-items:center;gap:4px;border-bottom:1px solid var(--border,#ddd);padding:2px 0"><span>${k.name ? esc(k.name) : 'near ' + Math.round(k.at[0]) + ', ' + Math.round(k.at[1]) + ' m'} · ${Math.round(k.len)} m</span><span style="display:flex;gap:3px"><button type="button" class="plan-btn" data-act="kerbshow" data-l="${escHtml(k.layer)}" data-i="${k.i}" style="padding:1px 6px;font-size:12px">show</button><button type="button" class="plan-btn" data-act="kerbpair" data-l="${escHtml(k.layer)}" data-i="${k.i}" style="padding:1px 6px;font-size:12px${KS.pairFrom && KS.pairFrom.layer === k.layer && KS.pairFrom.chain === k.i ? ';outline:2px solid #2563eb' : ''}" title="Then click the kerb across the road">pair…</button><button type="button" class="plan-btn" data-act="kerbone" data-l="${escHtml(k.layer)}" data-i="${k.i}" style="padding:1px 6px;font-size:12px${KS.one && KS.one.layer === k.layer && KS.one.chain === k.i ? ';outline:2px solid #2563eb' : ''}" title="A road with a kerb on this side only">one side…</button></span></div>`).join('')}</div></div>` : ''}
         ${KS.picks.length ? `<details><summary style="font-size:12px;cursor:pointer">Picks (${KS.picks.length})</summary><div style="max-height:130px;overflow:auto">${KS.picks.map((p, i) => kpick(p, i)).reverse().join('')}</div></details>` : ''}
         <div style="display:flex;gap:6px"><button type="button" class="plan-btn" data-act="kerbcreate" style="font-weight:600"${KS.streets.length ? '' : ' disabled'}>Create ${KS.streets.length} street${KS.streets.length === 1 ? '' : 's'}</button><button type="button" class="plan-btn" data-act="kerbcancel">Cancel</button></div></div>` : '';
@@ -2212,22 +2157,22 @@ const PlanLayoutUI = {
     const stepBar = `<div role="tablist" style="display:grid;grid-template-columns:repeat(4,1fr);gap:3px">${sst.map((x, i) => `<button type="button" role="tab" class="plan-btn" data-step="${i + 1}" aria-selected="${this.step === i + 1}" title="${esc(this.STEPS[i] + ': ' + (x.title || x.t))}" style="display:flex;flex-direction:column;align-items:flex-start;gap:1px;padding:4px 5px;min-width:0;text-align:left;${this.step === i + 1 ? 'outline:2px solid var(--accent,#2563eb);font-weight:600' : ''}"><span style="display:flex;align-items:center;gap:4px;font-size:12px;white-space:nowrap"><span style="display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;border-radius:50%;background:${escHtml(dotCol[x.c])};color:#fff;font-size:10px;flex:none">${esc(x.g)}</span>${this.STEPS[i]}</span><small style="font-size:10px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%">${esc(x.t)}</small></button>`).join('')}</div>`;
     const banner = (kind, html) => `<div style="border-left:4px solid ${kind === 'bad' ? '#dc2626' : '#b45309'};background:${kind === 'bad' ? 'rgba(220,38,38,.08)' : 'rgba(180,83,9,.09)'};padding:6px 8px;border-radius:4px;display:flex;flex-direction:column;gap:5px">${html}</div>`;
     const sBtn = 'padding:2px 8px;font-size:12px';
-    const blocked = noKiosks ? banner('bad', `<b>No kiosks were found.</b><span>${r.erven.length} erven do not face a street, so nothing can be created. Draw a centreline beside them, or extend the nearest street.</span><span style="display:flex;gap:5px;flex-wrap:wrap"><button type="button" class="plan-btn" data-act="showerven" style="${sBtn}">Show the erven</button><button type="button" class="plan-btn" data-act="drawfix" style="${sBtn};font-weight:600">Draw centrelines</button></span>`) : '';
+    const blocked = noKiosks ? banner('bad', `<b>No kiosks were found.</b><span>${r.erven.length} erven do not face a road, so nothing can be created. Draw a centreline beside them, or extend the nearest road.</span><span style="display:flex;gap:5px;flex-wrap:wrap"><button type="button" class="plan-btn" data-act="showerven" style="${sBtn}">Show the erven</button><button type="button" class="plan-btn" data-act="drawfix" style="${sBtn};font-weight:600">Draw centrelines</button></span>`) : '';
     // ── step 1: streets
     const found = (ok, html, act) => `<div style="display:flex;align-items:center;gap:6px;border-bottom:1px solid var(--border-color,#ddd);padding:3px 0"><span style="color:${ok ? '#16a34a' : '#dc2626'};font-weight:700">${ok ? '✓' : '!'}</span><span style="flex:1">${html}</span>${act ? `<button type="button" class="plan-btn" data-act="${act}" style="${sBtn}">Show</button>` : ''}</div>`;
     const step1 = `${blocked}
         ${found(nErv > 0, nErv ? `<b>${nErv} erven</b> with boundaries${nUns ? ` · ${nUns} unserviced (cables go round ${nUns === 1 ? 'it' : 'them'})` : ''}` : nUns ? '<b>Every erf is unserviced.</b> Mark the ones that need a supply as serviced' : '<b>No erven with a boundary.</b> Use Detect erven first', nErv ? 'zoomerven' : '')}
-        ${found(sr0.length > 0, sr0.length ? `<b>${sr0.length} street${sr0.length === 1 ? '' : 's'}</b>, ${fmt(streetM)} m` : '<b>No streets yet.</b> Add them below', sr0.length ? 'zoomstreets' : '')}
+        ${found(sr0.length > 0, sr0.length ? `<b>${sr0.length} street${sr0.length === 1 ? '' : 's'}</b>, ${fmt(streetM)} m` : '<b>No roads yet.</b> Add them below', sr0.length ? 'zoomstreets' : '')}
         ${kerbBlock}${centreBlock}${typeof PlanReserveUI !== 'undefined' ? PlanReserveUI.panelHtml() : ''}
-        <div style="font-weight:600;margin-top:4px">Add or change streets</div>
-        <div style="border:1px solid var(--accent,#2563eb);border-radius:6px;padding:6px 8px;display:flex;flex-direction:column;gap:4px"><div style="display:flex;justify-content:space-between"><b>Draw centrelines</b><span style="font-size:11px;color:var(--accent,#2563eb)">usual choice</span></div><span style="font-size:12px;color:var(--text-muted)">Click along each street. An end that lands on another street joins it.</span><div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><button type="button" class="plan-btn" data-act="streetdraw" aria-pressed="${escHtml(this.drawStreets)}" style="font-weight:600;${this.drawStreets ? 'outline:2px solid var(--accent,#2563eb)' : ''}">${this.drawStreets ? 'Stop drawing' : 'Start drawing'}</button><label style="font-size:12px;display:flex;gap:4px;align-items:center">Width <input type="number" data-copt="w" min="3" max="60" step="0.5" value="${escHtml(this.centreW)}" style="width:54px"> m</label></div>${this.drawStreets ? '<div style="font-size:12px;color:var(--text-muted)">Click along the street. Enter, or click the last point again, finishes it. Backspace takes a point back, Esc stops. Points snap to the drawing\'s corners and ends. Left and right are looking along the way you drew it.</div>' : ''}</div>
-        ${fromDxf || '<div style="font-size:12px;color:var(--text-muted)">To take streets from a drawing layer, import a DXF first.</div>'}
+        <div style="font-weight:600;margin-top:4px">Add or change roads</div>
+        <div style="border:1px solid var(--accent,#2563eb);border-radius:6px;padding:6px 8px;display:flex;flex-direction:column;gap:4px"><div style="display:flex;justify-content:space-between"><b>Draw centrelines</b><span style="font-size:11px;color:var(--accent,#2563eb)">usual choice</span></div><span style="font-size:12px;color:var(--text-muted)">Click along each road. An end that lands on another road joins it.</span><div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap"><button type="button" class="plan-btn" data-act="streetdraw" aria-pressed="${escHtml(this.drawStreets)}" style="font-weight:600;${this.drawStreets ? 'outline:2px solid var(--accent,#2563eb)' : ''}">${this.drawStreets ? 'Stop drawing' : 'Start drawing'}</button><label style="font-size:12px;display:flex;gap:4px;align-items:center">Width <input type="number" data-copt="w" min="3" max="60" step="0.5" value="${escHtml(this.centreW)}" style="width:54px"> m</label></div>${this.drawStreets ? '<div style="font-size:12px;color:var(--text-muted)">Click along the road. Enter, or click the last point again, finishes it. Backspace takes a point back, Esc stops. Points snap to the drawing\'s corners and ends. Left and right are looking along the way you drew it.</div>' : ''}</div>
+        ${fromDxf || '<div style="font-size:12px;color:var(--text-muted)">To take roads from a drawing layer, import a DXF first.</div>'}
         ${PlanSides.panelHtml(esc)}`;
     // ── step 2: mini-subs
     const subRow = (q, i) => { const S = r && r.net.subs[i], ks = S ? r.kiosks.filter(k => k.subK === S.k) : null;
       return `<div style="border:1px solid var(--border-color,#ddd);border-radius:5px;padding:4px 6px;display:flex;flex-direction:column;gap:2px"><div style="display:flex;justify-content:space-between;align-items:center;gap:4px"><b>S${i + 1}${q.src === 'plan' ? ' · ' + escHtml((AppState.planMarkup.elements.find(e => e.id === q.id) || {}).name || '') : ''}</b>${q.src === 'layout' ? `<span style="display:flex;gap:4px"><button type="button" class="plan-btn" data-act="submove" data-i="${escHtml(q.i)}" style="${sBtn}">Move</button><button type="button" class="plan-btn" data-act="subrm" data-i="${escHtml(q.i)}" style="${sBtn}">Remove</button></span>` : `<button type="button" class="plan-btn" data-act="subout" data-id="${escHtml(q.id)}" style="${sBtn}">Leave out</button>`}</div><span style="font-size:12px;color:var(--text-muted)">${q.src === 'plan' ? 'Drawn on the plan. Move or remove it there. ' : ''}${f0 ? Math.round(q.x * f0) + ' m, ' + Math.round(q.y * f0) + ' m' : ''}${ks ? ` · serves ${ks.length} kiosk${ks.length === 1 ? '' : 's'}, ${ks.reduce((a, k) => a + k.members.length, 0)} erven` : ''}${S && S.nFeeds != null ? ` · ${S.nFeeds} of ${r.P.maxFeeds || '–'} feeders` : ''}</span></div>`; };
     const offList = this.offSubs(), offRows = offList.length ? `<div style="font-weight:600">Not in this scheme (${offList.length})</div>` + offList.map(e => `<div style="border:1px dashed var(--border-color,#ccc);border-radius:5px;padding:4px 6px;display:flex;justify-content:space-between;align-items:center;gap:4px;color:var(--text-muted)"><span>${escHtml(e.name || 'Mini-sub')}${f0 ? ' · ' + Math.round(e.x * f0) + ' m, ' + Math.round(e.y * f0) + ' m' : ''}</span><button type="button" class="plan-btn" data-act="subin" data-id="${escHtml(e.id)}" style="${sBtn}">Include</button></div>`).join('') : '';
-    const step2 = `<div style="font-size:12px;color:var(--text-muted)">The layout works from your mini-subs. Click where each one stands, anywhere (on a street, in a block, in a park). No kiosk is added beside it: kiosks follow the erven and go to the nearest mini-sub.</div>
+    const step2 = `<div style="font-size:12px;color:var(--text-muted)">The layout works from your mini-subs. Click where each one stands, anywhere (on a road, in a block, in a park). No kiosk is added beside it: kiosks follow the erven and go to the nearest mini-sub.</div>
         <button type="button" class="plan-btn" data-mode="sub" aria-pressed="${this.mode === 'sub'}" style="font-weight:600;padding:8px;${this.mode === 'sub' ? 'outline:2px solid var(--accent,#2563eb)' : ''}">${this.mode === 'sub' ? 'Placing: click the plan' : (placed.length ? 'Place another' : 'Place a mini-sub')}</button>
         <div style="font-weight:600">Placed (${placed.length})</div>
         ${placed.length ? placed.map(subRow).join('') : banner('warn', '<span>None yet. The layout cannot run until one is placed. Where it stands decides every LV cable, so place it with care.</span>')}
@@ -2237,10 +2182,14 @@ const PlanLayoutUI = {
     const pBtn = (k, t) => `<button type="button" class="plan-btn" data-preset="${k}" aria-pressed="${preset === k}" style="padding:3px 6px;font-size:12px;${preset === k ? 'font-weight:600;outline:2px solid var(--accent,#2563eb)' : ''}">${t}</button>`;
     const kRow = k => this.CTRL[1][1].find(x => x[0] === k);
     const nChanged = this.CTRL.filter(([, rows]) => grpChanged(rows)).length + (trChanged ? 1 : 0) + (vdChanged ? 1 : 0);
-    const SC = L.sections, secLine = `<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;font-size:12px"><span><b>Cross-sections</b> <span style="color:var(--text-muted)">off: every cable runs the Corridor distance inside the boundary</span></span><button type="button" class="plan-btn" data-act="secedit" style="padding:1px 8px;font-size:12px">Edit</button></div>`,
-      secBlock = !SC.on && !SC.lines.length ? secLine : `<div style="border:1px solid var(--border,#ddd);border-radius:6px;padding:6px 8px;display:flex;flex-direction:column;gap:5px"><div style="font-weight:600">Cross-sections <span style="font-weight:400;font-size:12px;color:var(--text-muted)">${SC.on ? 'on' : 'off'} · ${SC.list.length} section${SC.list.length === 1 ? '' : 's'}${SC.lines.length ? ' · ' + SC.lines.length + ' line' + (SC.lines.length === 1 ? '' : 's') : ''}</span></div>
-        <div style="font-size:12px;color:var(--text-muted)">${SC.on ? 'Offsets, depths and the kiosk and manhole sizes come from the section that applies to each stretch of street, all measured from the erf boundary.' : 'Off: every cable runs the Corridor distance inside the boundary. Switch sections on in the editor.'}</div>
-        <div style="display:flex;gap:4px;flex-wrap:wrap"><button type="button" class="plan-btn" data-act="secedit">Edit sections…</button><button type="button" class="plan-btn" data-act="secdraw" aria-pressed="${!!this.secDraw}"${this.secDraw ? ' style="outline:2px solid var(--accent,#2563eb)"' : ''}>${this.secDraw ? 'Stop drawing' : 'Draw section line'}</button></div></div>`;
+    const SC = L.sections, RSs = typeof RoadSections !== 'undefined' ? RoadSections : null, rsList = RSs ? RSs.list() : [], rsDef = RSs ? RSs.def() : null;
+    const rsUse = rsList.map(x => [x, RSs.roadsUsing(x.id).length]).filter(([, n]) => n > 0);
+    const rsBar = rsDef ? (() => { const sp = RSs.span(rsDef), T = sp.total || 1, seg = (w, bg, fg) => w > 0 ? `<div style="flex:${w};background:${bg};color:${fg};display:flex;align-items:center;justify-content:center;font-size:10.5px">${(+w).toFixed(1)}</div>` : ''; return T ? `<div style="display:flex;height:20px;border-radius:3px;overflow:hidden" aria-hidden="true">${seg(sp.a, '#dbeccf', '#1f4d14')}${seg(sp.road, '#55595f', '#fff')}${seg(sp.b, '#dbeccf', '#1f4d14')}</div>` : ''; })() : '';
+    const secBlock = `<div style="border:1px solid ${SC.on ? 'var(--accent,#2563eb)' : 'var(--border,#ddd)'};border-radius:6px;padding:8px;display:flex;flex-direction:column;gap:6px">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:6px"><b>Road sections</b><label style="display:flex;gap:4px;align-items:center;font-size:12px"><input type="checkbox" data-act="secon"${SC.on ? ' checked' : ''}> Use them</label></div>
+        ${SC.on ? rsBar : ''}
+        <div style="font-size:12px;color:var(--text-muted)">${SC.on ? (rsList.length ? 'The cable offsets, depths, kiosk and manhole sizes come from the road section of each road, all measured from the erf boundary. ' + escHtml(rsUse.map(([x, n]) => x.name + ' on ' + n + ' road' + (n === 1 ? '' : 's')).join(' · ')) : 'No road sections yet: open Road sections to make one.') : 'Off: every cable runs the Corridor distance inside the boundary.'} Pick a road's section in its Properties (select several roads to set them together).</div>
+        <div style="display:flex;gap:4px;flex-wrap:wrap"><button type="button" class="plan-btn" data-act="secedit" style="font-weight:600">Open Road sections</button></div></div>`;
     const q = (this.q || '').trim().toLowerCase(), words = q.split(/\s+/).filter(Boolean);
     const hay = (gname, row) => (gname + ' ' + (row[1] === 'select' ? row[3] + ' ' + row[2].map(o => o[1]).join(' ') : row[1] === 'check' ? row[2] : row[6]) + ' ' + (this.TIPS[row[0]] || '')).toLowerCase();
     const hits = words.length ? [...this.CTRL.flatMap(([gn, rows]) => rows.filter(rw => words.every(w => hay(gn, rw).includes(w))).map(rw => ({ gn, h: ctrl(rw) }))),
@@ -2262,7 +2211,7 @@ const PlanLayoutUI = {
     const rowHtml = ({ c, i }) => { const [title, detail] = split(c.text), key = c.sev + '|' + title, isOpen = this._ckOpen.has(key), col = sevCol[c.sev];
       const acts = (c.acts || []).map((a, j) => ({ a, j })).filter(({ a }) => { const k = a.label; if (c.sev === 'fail' && seenAct.has(k)) return false; seenAct.add(k); return true; });
       const rowsHtml = c.rows ? `<div style="max-height:190px;overflow:auto;margin-top:2px">${c.rows.map(x => { const g = x.g;
-        const why = !g ? 'no street on the plan' : g.near ? `already within reach of ${esc(g.street.name)}: check that its edge is not blocked by another erf` : `${esc(g.street.name)}, ${Math.round(g.d)} m away: ${g.atEnd ? 'extend it' : 'a spur'} ${Math.round(g.len)} m${g.crosses ? ` · <b style="color:#b45309">passes through ${g.crosses} other ${g.crosses === 1 ? 'erf' : 'erven'}</b>` : ''}`;
+        const why = !g ? 'no road on the plan' : g.near ? `already within reach of ${esc(g.street.name)}: check that its edge is not blocked by another erf` : `${esc(g.street.name)}, ${Math.round(g.d)} m away: ${g.atEnd ? 'extend it' : 'a spur'} ${Math.round(g.len)} m${g.crosses ? ` · <b style="color:#b45309">passes through ${g.crosses} other ${g.crosses === 1 ? 'erf' : 'erven'}</b>` : ''}`;
         return `<div style="display:flex;justify-content:space-between;align-items:center;gap:4px;border-bottom:1px solid var(--border-color,#ddd);padding:2px 0;font-size:12px"><span>${esc(x.name)} · ${why}</span><span style="display:flex;gap:3px;flex-shrink:0"><button type="button" class="plan-btn" data-ckerf="show:${esc(x.id)}" style="padding:1px 6px;font-size:12px"${g ? '' : ' disabled'}>show</button><button type="button" class="plan-btn" data-ckerf="ext:${esc(x.id)}" style="padding:1px 6px;font-size:12px;font-weight:600"${g && !g.near ? '' : ' disabled'}>extend</button><button type="button" class="plan-btn" data-ckerf="mark:${esc(x.id)}" style="padding:1px 6px;font-size:12px;font-weight:600">place marker</button></span></div>`; }).join('')}</div>` : '';
       return `<div style="display:flex;gap:6px;align-items:flex-start;padding:4px 0;border-bottom:1px solid var(--border-color,#ddd)"><span style="flex:none;margin-top:1px;padding:0 5px;border-radius:3px;background:${col};color:#fff;font-size:11px;font-weight:600">${sevTxt[c.sev]}</span><div style="flex:1;min-width:0"><b style="font-weight:600">${esc(title)}</b>${isOpen && detail ? `<div style="font-size:12px;color:var(--text-muted);margin-top:2px">${esc(detail)}</div>` : ''}${isOpen ? rowsHtml : ''}
         <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:3px">${detail || c.rows ? `<button type="button" class="plan-btn" data-ckopen="${i}" style="${sBtn}">${isOpen ? 'Hide detail' : 'Detail'}</button>` : ''}${c.ids.length || (c.runs && c.runs.length) ? `<button type="button" class="plan-btn" data-ck="${i}" style="${sBtn}">Show</button>` : ''}${acts.map(({ a, j }) => `<button type="button" class="plan-btn" data-ckact="${i}:${j}" style="${sBtn}${c.sev === 'fail' ? ';font-weight:600' : ''}">${esc(a.label)}</button>`).join('')}</div></div></div>`; };
@@ -2335,8 +2284,7 @@ const PlanLayoutUI = {
       if (b.dataset.act === 'goto') { this.setStep(+b.dataset.s); return; }
       if (b.dataset.act === 'zoomerven' || b.dataset.act === 'zoomstreets') { const pm = AppState.planMarkup, pts = []; if (b.dataset.act === 'zoomerven') pm.elements.forEach(x => { if (x.type === 'erf' && Array.isArray(x.boundary)) x.boundary.forEach(q => pts.push({ x: q.x, y: q.y })); }); else this.streetsOnPlan().forEach(x => this._flat(x).forEach(q => pts.push({ x: q.x, y: q.y }))); if (pts.length) PlanEngine.zoomToPoints(pts); return; }
       if (b.dataset.act === 'showerven') { const r0 = this.result; if (!r0) return; const ids = new Set(r0.erven.filter(x => !x.fe).map(x => x.id)); this.flag = ids; const pts = []; r0.erven.forEach(x => { if (ids.has(x.id)) x.poly.forEach(q => pts.push({ x: q[0] / this.f, y: q[1] / this.f })); }); if (pts.length) PlanEngine.zoomToPoints(pts); PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true }); return; }
-      if (b.dataset.act === 'secedit') { PlanSectionsUI.open(); return; }
-      if (b.dataset.act === 'secdraw') { this.secDrawOn(!this.secDraw, L.sections.def); return; }
+      if (b.dataset.act === 'secedit') { if (typeof RoadSectionsUI !== 'undefined') RoadSectionsUI.open(); return; }
       if (b.dataset.act === 'drawfix') { this.setStep(1); this.streetDrawOn(true); return; }
       if (b.dataset.act === 'submove') { const i = +b.dataset.i; if (L.subs[i]) { this.subMove = i; this.mode = 'sub'; UI.toast('Click where this mini-sub should stand.', 'info', 3500); PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true }); } return; }
       if (b.dataset.act === 'fromrates') { const f = this.ratesFigures(); if (f) { p.worth = f.worth; p.xpen = f.xpen; this.touched(); } return; }
@@ -2419,6 +2367,7 @@ const PlanLayoutUI = {
       const t = e.target;
       if (PlanSides.panelChange(t)) return;
       if (typeof PlanReserveUI !== 'undefined' && PlanReserveUI.change(t)) return;
+      if (t.dataset.act === 'secon') { this.cfg().sections.on = !!t.checked; if (t.checked && typeof RoadSections !== 'undefined') RoadSections.ensure(); this.touched(); return; }
       if (t.dataset.admd) { this.setAdmd(t.dataset.admd, t.value); return; }
       if (t.hasAttribute && t.hasAttribute('data-xsq')) { this.cfg().xsq = t.checked; PlanMarkup.markDirty(); PlanMarkup.refreshProps(); return; }
       if (t.dataset.xf) { const c = this.result && this.result.net.cross.find(q => q.key === this.selX); if (c) this.setCross(c, t.dataset.xf, t.value); return; }
@@ -2462,13 +2411,12 @@ if (typeof PlanTools !== 'undefined') {
       PlanLayoutUI.mode = PlanLayoutUI.step === 2 ? 'sub' : 'front';
       if (typeof PlanMarkup !== 'undefined') PlanMarkup.refreshProps();
     },
-    onDeactivate() { { const b = document.getElementById('pl-adjust-bar'); if (b) b.remove(); } PlanLayoutUI.secDraw = null; PlanLayoutUI._active = false; PlanLayoutUI.widen(false); PlanLayoutUI.hoverT = null; PlanLayoutUI.kerbStage = null; PlanLayoutUI.centreStage = null; if (typeof PlanReserveUI !== 'undefined') PlanReserveUI.stage = null; if (PlanLayoutUI.drawStreets) PlanLayoutUI.streetDrawOn(false); },
+    onDeactivate() { { const b = document.getElementById('pl-adjust-bar'); if (b) b.remove(); } PlanLayoutUI._active = false; PlanLayoutUI.widen(false); PlanLayoutUI.hoverT = null; PlanLayoutUI.kerbStage = null; PlanLayoutUI.centreStage = null; if (typeof PlanReserveUI !== 'undefined') PlanReserveUI.stage = null; if (PlanLayoutUI.drawStreets) PlanLayoutUI.streetDrawOn(false); },
     cancel() { PlanTools.set('select'); },
     onMove(pt, e) {
       if (PlanLayoutUI._drag && PlanLayoutUI.moveMove(pt)) return;
       if (typeof PlanReserveUI !== 'undefined' && PlanReserveUI.stage) { PlanReserveUI.move(pt, e); return; }
-      if (PlanLayoutUI.kerbStage && !PlanLayoutUI.secDraw && !PlanLayoutUI.drawStreets) { PlanLayoutUI.kerbMove(pt, e); return; }
-      if (PlanLayoutUI.secDraw) { PlanLayoutUI._secHover = PlanTools.snap(pt, { wantElements: false }); PlanEngine.requestDraw({ fg: true }); return; }
+      if (PlanLayoutUI.kerbStage && !PlanLayoutUI.drawStreets) { PlanLayoutUI.kerbMove(pt, e); return; }
       if (PlanLayoutUI.drawStreets) { const R = PlanLayoutUI._rt(); if (R) { R._hover = PlanTools.snap(pt, { wantElements: false }); PlanEngine.requestDraw({ fg: true }); } return; }
       if (PlanLayoutUI.mode === 'sides') { PlanSides.move(pt); return; }
       if (PlanLayoutUI.mode !== 'trunk' || !PlanLayoutUI.result) return;
@@ -2476,12 +2424,11 @@ if (typeof PlanTools !== 'undefined') {
       if ((h && h.edge) !== (PlanLayoutUI.hoverT && PlanLayoutUI.hoverT.edge)) { PlanLayoutUI.hoverT = h; PlanEngine.requestDraw({ fg: true }); }
     },
     onUp() { if (PlanLayoutUI.moveUp()) return; if (typeof PlanReserveUI !== 'undefined') PlanReserveUI.up(); },
-    onDown(pt, e) { if (typeof PlanReserveUI !== 'undefined' && PlanReserveUI.stage) PlanReserveUI.down(pt, e); else if (PlanLayoutUI.secDraw) PlanLayoutUI.secDown(pt); else if (PlanLayoutUI.drawStreets) PlanLayoutUI.streetDown(pt); else if (PlanLayoutUI.centreStage) PlanLayoutUI.centreClick(pt, e); else if (PlanLayoutUI.kerbStage) PlanLayoutUI.kerbClick(pt, e); else PlanLayoutUI.click(pt, e); },
+    onDown(pt, e) { if (typeof PlanReserveUI !== 'undefined' && PlanReserveUI.stage) PlanReserveUI.down(pt, e); else if (PlanLayoutUI.drawStreets) PlanLayoutUI.streetDown(pt); else if (PlanLayoutUI.centreStage) PlanLayoutUI.centreClick(pt, e); else if (PlanLayoutUI.kerbStage) PlanLayoutUI.kerbClick(pt, e); else PlanLayoutUI.click(pt, e); },
     drawOverlay(ctx, zoom) { PlanLayoutUI.draw(ctx, zoom); PlanSides.draw(ctx, zoom); if (PlanLayoutUI.drawStreets) { const R = PlanLayoutUI._rt(); if (R) R.drawOverlay(ctx, zoom); } },
-    keyFirst(e) { if (PlanLayoutUI.mode === 'sides' && !PlanLayoutUI.secDraw && !PlanLayoutUI.drawStreets && !PlanLayoutUI.kerbStage && !PlanLayoutUI.centreStage && PlanSides.key(e)) return true; return PlanLayoutUI.secDraw ? PlanLayoutUI.secKey(e) : PlanLayoutUI.drawStreets ? PlanLayoutUI.streetKey(e) : (PlanLayoutUI.kerbStage && e.key === 'Backspace') ? PlanLayoutUI.kerbKey(e) : (typeof PlanReserveUI !== 'undefined' && PlanReserveUI.stage && (e.key === 'Backspace')) ? PlanReserveUI.key(e) : false; },
+    keyFirst(e) { if (PlanLayoutUI.mode === 'sides' && !PlanLayoutUI.drawStreets && !PlanLayoutUI.kerbStage && !PlanLayoutUI.centreStage && PlanSides.key(e)) return true; return PlanLayoutUI.drawStreets ? PlanLayoutUI.streetKey(e) : (PlanLayoutUI.kerbStage && e.key === 'Backspace') ? PlanLayoutUI.kerbKey(e) : (typeof PlanReserveUI !== 'undefined' && PlanReserveUI.stage && (e.key === 'Backspace')) ? PlanReserveUI.key(e) : false; },
     get _draft() { const R = PlanLayoutUI.drawStreets && PlanLayoutUI._rt(); return R && R._draft ? R._draft : null; },
     onKey(e) {
-      if (PlanLayoutUI.secDraw && PlanLayoutUI.secKey(e)) return true;
       if (PlanLayoutUI.drawStreets && PlanLayoutUI.streetKey(e)) return true;
       if (PlanLayoutUI.centreStage && e.key === 'Enter') { PlanLayoutUI.centreCreate(); return true; }
       if (typeof PlanReserveUI !== 'undefined' && PlanReserveUI.stage && PlanReserveUI.key(e)) return true;

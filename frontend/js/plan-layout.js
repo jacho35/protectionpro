@@ -840,7 +840,7 @@ const PlanLayout = (() => {
       }
       const forced = -1;                                                       // kiosks are placed from the erven alone: a mini-sub never forces one
       const C = cands.length;
-      if (!C) { warns.push('No place for a kiosk on any street.'); return kiosks; }
+      if (!C) { warns.push('No place for a kiosk on any road.'); return kiosks; }
       let chosen;
       if (input.fixedKiosks) {
         chosen = cands.map(c => ({ cand: c, members: [] }));
@@ -1525,7 +1525,7 @@ const PlanLayout = (() => {
     const over = erven.filter(e => e.cable > P.maxc + 1e-6);
     if (over.length) warns.push(`${over.length} erven are more than ${P.maxc} m of service cable from their kiosk.`);
     const noFront = erven.filter(e => !e.fe);
-    if (noFront.length) warns.push(`${noFront.length} erven do not face a street and were left out.`);
+    if (noFront.length) warns.push(`${noFront.length} erven do not face a road and were left out.`);
     const fibre = placeFibre();
     const net = placeNetworks(kiosks);
     const cab = erven.filter(e => e.cable).map(e => e.cable);

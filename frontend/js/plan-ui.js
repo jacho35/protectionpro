@@ -23,6 +23,8 @@ const PlanUI = {
       if (e.target.closest('[data-role="delete"]')) { PlanMarkup.deleteSelected(); return; }
       const xgb = e.target.closest('[data-xg]');
       if (xgb) { this._onCrossGroup(xgb.dataset.xg, xgb); return; }
+      const rsb = e.target.closest('[data-rs-act]');
+      if (rsb && typeof RoadSectionsUI !== 'undefined') { RoadSectionsUI.onPropsClick(rsb); return; }
       const go = e.target.closest('[data-plan-go]');
       if (go) { PlanMarkup.selectOnly(go.dataset.planGo); PlanMarkup.zoomToSelection(); return; }
       const pick = e.target.closest('[data-plan-select]');
@@ -217,7 +219,7 @@ const PlanUI = {
       </div>
       ${dxfs.length ? (() => { const wa = PlanWorkArea.active(); return `<div class="plan-card">
         <div class="plan-card-head"><b>Working area</b><span>${wa ? 'Set' : 'Whole drawing'}</span></div>
-        <small>Detection, streets, kerbs and conversion ignore the drawing outside it (it is faded, not deleted).</small>
+        <small>Detection, roads, kerbs and conversion ignore the drawing outside it (it is faded, not deleted).</small>
         <div class="plan-btn-row"><button type="button" class="plan-btn" data-act="workarea-rect">Rectangle…</button><button type="button" class="plan-btn" data-act="workarea-poly">Polygon…</button>${wa ? '<button type="button" class="plan-btn" data-act="workarea-clear">Clear</button>' : ''}</div>
       </div>
       <div class="plan-card">
@@ -690,6 +692,7 @@ const PlanUI = {
       PlanSync.fillEmptyCables(); getVal = (k) => (k === 'cableType') ? item.cableType : (k === 'curved') ? !!item.curved : (item.props ? item.props[k] : undefined);
     }
     for (const f of fields) html += this._field(f, getVal(f.key));
+    if (kind === 'route' && item.type === 'street' && typeof RoadSectionsUI !== 'undefined') html += RoadSectionsUI.roadNote(item);
     if (kind === 'room' && typeof RoomLighting !== 'undefined') {
       // The lighting settings are edited on the Lighting tab.
       if (PlanMarkup.context === 'lighting') {

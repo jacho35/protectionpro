@@ -66,7 +66,7 @@ const PlanReroute = {
     };
     if (el.type === 'kiosk') {
       const K = res.kiosks.find(k => Math.hypot(k.x - el.x * f, k.y - el.y * f) < 3);
-      if (!K) { UI.toast('This kiosk could not be found again on the street layout. Is it still on a street the layout uses?', 'warn', 6000); return; }
+      if (!K) { UI.toast('This kiosk could not be found again on the road layout. Is it still on a road the layout uses?', 'warn', 6000); return; }
       res.erven.forEach(e => { if (e.kiosk === K && e.route && erf.has(e.id)) { const pts = e.route.slice(); add('svc', 'service', el.id, e.id, pts, 'Erf ' + (erf.get(e.id).name || e.id)); } });
       const nodeEl = o => {                                                              // a kiosk or a mini-sub of the result → its part on the plan
         if (res.kiosks.includes(o)) return at(o, kiosks);
@@ -136,7 +136,7 @@ const PlanReroute = {
     el.innerHTML = `<div class="plan-props-title">Re-route from ${escHtml(S.name)}</div>
       <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px">Preview: nothing has changed yet. Now = grey, after = dashed blue, kept by hand = orange. Esc cancels.</div>
       <div style="font-weight:600;margin:6px 0 2px">Lay again</div>${box}
-      <div style="font-size:12px;color:var(--text-muted);margin:8px 0">Stays as it is: which erven ${escHtml(S.name)} serves, its position${k ? '' : ', the fibre point on each erf'}, and every other part of the plan. Same rules as Auto layout: corridors, street sides, shared crossings.</div>
+      <div style="font-size:12px;color:var(--text-muted);margin:8px 0">Stays as it is: which erven ${escHtml(S.name)} serves, its position${k ? '' : ', the fibre point on each erf'}, and every other part of the plan. Same rules as Auto layout: corridors, road sides, shared crossings.</div>
       ${handHtml}
       <div style="font-weight:600;margin:10px 0 2px">Before → after</div>
       <table style="width:100%;border-collapse:collapse;font-size:13px"><tbody>

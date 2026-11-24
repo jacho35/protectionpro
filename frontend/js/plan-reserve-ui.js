@@ -54,7 +54,7 @@ const PlanReserveUI = {
     const g = this._segments(); if (!g.segs.length) { UI.toast('The drawings have no visible lines or polylines.', 'warn', 4000); return; }
     PlanLayoutUI.kerbStage = null; PlanLayoutUI.centreStage = null;
     this.stage = { T: PlanReserve.stage(g.segs, g.wa, { step: this.opt.step, gapM: this.opt.gapM }), f, mode: 'add', draft: [], cutDraft: [], dropped: new Set(), edits: {}, returns: {}, res: null, hover: null, drag: null, layers: g.layers, usedAll: g.usedAll, hasWa: !!g.wa };
-    UI.toast(g.wa ? 'Click inside a road reserve to add it. Alt-click a street drops it, Backspace undoes, Enter creates.' : 'Click inside a road reserve. No working area is set: draw one round the development first if the road space runs out of the drawing, or draw a Cut line across the entrance.', 'info', 8000);
+    UI.toast(g.wa ? 'Click inside a road reserve to add it. Alt-click a road drops it, Backspace undoes, Enter creates.' : 'Click inside a road reserve. No working area is set: draw one round the development first if the road space runs out of the drawing, or draw a Cut line across the entrance.', 'info', 8000);
     this._sync();
   },
   cancel() { this.stage = null; this._sync(); },
@@ -173,8 +173,8 @@ const PlanReserveUI = {
     const S = this.stage; if (!S) return '';
     if (S.mode === 'draw') return 'Click the corners of the reserve · click the first corner or Enter to close · Backspace: last corner · Esc: stop drawing';
     if (S.mode === 'cut') return 'Click across the road to cut it · Enter or the last point again: finish · then Alt-click the part to drop';
-    if (S.mode === 'sub') return 'Click a picked reserve to remove it · Alt-click a street: drop it · drag a corner handle: kerb return · Enter: create · Backspace: undo · Esc: leave';
-    return 'Click inside a road reserve to add it · Alt-click: subtract · Alt-click a street: drop it · drag a corner handle: kerb return · Enter: create · Backspace: undo · Esc: leave';
+    if (S.mode === 'sub') return 'Click a picked reserve to remove it · Alt-click a road: drop it · drag a corner handle: kerb return · Enter: create · Backspace: undo · Esc: leave';
+    return 'Click inside a road reserve to add it · Alt-click: subtract · Alt-click a road: drop it · drag a corner handle: kerb return · Enter: create · Backspace: undo · Esc: leave';
   },
 
   // ── drawing on the plan ──
@@ -221,19 +221,19 @@ const PlanReserveUI = {
     const btn = (m, label) => `<button type="button" class="plan-btn" data-act="rs-mode" data-m="${m}" aria-pressed="${S.mode === m}" style="${S.mode === m ? 'font-weight:600;outline:2px solid #f59e0b' : ''}">${label}</button>`;
     const num = (k, label, min, max, step) => `<label style="font-size:12px;display:inline-flex;gap:4px;align-items:center">${label} <input type="number" data-ropt="${k}" min="${min}" max="${max}" step="${step}" value="${E(o[k])}" style="width:54px"></label>`;
     const ws = R.streets.map(s => s.w), wr = ws.length ? `${Math.min(...ws).toFixed(0)}–${Math.max(...ws).toFixed(0)} m` : '';
-    const list = R.streets.slice(0, 120).map((s, i) => `<div style="display:flex;justify-content:space-between;align-items:center;gap:4px;border-bottom:1px solid var(--border,#ddd);padding:2px 0;font-size:12px"><span>${i + 1} · ${Math.round(PlanReserveUI._len(s.pts))} m · reserve ${s.w.toFixed(1)} m</span><span style="display:flex;gap:3px;align-items:center">c/w <input type="number" data-rsedit="cw" data-k="${E(s.key)}" min="2" max="40" step="0.5" value="${s.carriageW}" style="width:46px" title="Carriageway width (m)"> off <input type="number" data-rsedit="off" data-k="${E(s.key)}" min="-20" max="20" step="0.5" value="${s.cwOffset}" style="width:46px" title="Carriageway offset from the reserve centre (m, + = to the left looking along the street)"><button type="button" class="plan-btn" data-act="rs-drop" data-k="${E(s.key)}" style="padding:0 6px" title="Drop this street">×</button></span></div>`).join('');
+    const list = R.streets.slice(0, 120).map((s, i) => `<div style="display:flex;justify-content:space-between;align-items:center;gap:4px;border-bottom:1px solid var(--border,#ddd);padding:2px 0;font-size:12px"><span>${i + 1} · ${Math.round(PlanReserveUI._len(s.pts))} m · reserve ${s.w.toFixed(1)} m</span><span style="display:flex;gap:3px;align-items:center">c/w <input type="number" data-rsedit="cw" data-k="${E(s.key)}" min="2" max="40" step="0.5" value="${s.carriageW}" style="width:46px" title="Carriageway width (m)"> off <input type="number" data-rsedit="off" data-k="${E(s.key)}" min="-20" max="20" step="0.5" value="${s.cwOffset}" style="width:46px" title="Carriageway offset from the reserve centre (m, + = to the left looking along the road)"><button type="button" class="plan-btn" data-act="rs-drop" data-k="${E(s.key)}" style="padding:0 6px" title="Drop this street">×</button></span></div>`).join('');
     const dropped = S.dropped.size ? `<div style="font-size:12px">${S.dropped.size} street${S.dropped.size === 1 ? '' : 's'} dropped <button type="button" class="plan-btn" data-act="rs-restore" style="padding:0 6px">restore</button></div>` : '';
     return `<div style="border:2px solid #f59e0b;border-radius:6px;padding:6px 8px;margin:4px 0;display:flex;flex-direction:column;gap:5px">
-      <b>Streets from road reserve</b>
+      <b>Roads from road reserve</b>
       <div style="display:flex;gap:4px;flex-wrap:wrap">${btn('add', 'Add')}${btn('sub', 'Subtract')}${btn('draw', 'Draw')}${btn('cut', 'Cut')}<button type="button" class="plan-btn" data-act="rs-undo"${T.ops.length ? '' : ' disabled'} title="Backspace">Undo</button></div>
-      <div style="font-size:12px;color:var(--text-muted)">Click inside a road reserve to add it. Alt-click a street drops it; Alt-click elsewhere subtracts. <b>Draw</b> a reserve the detection misses; <b>Cut</b> across a road to close an entrance or to separate a part to drop. Drag the handle on a kerb return to change its radius (Alt-click: back to the default).${S.hasWa ? '' : ' <b>No working area:</b> set one round the development so the road space is closed at its edge.'}${S.usedAll ? ' No line matched the layer filter, so every visible layer is used.' : ''}</div>
+      <div style="font-size:12px;color:var(--text-muted)">Click inside a road reserve to add it. Alt-click a road drops it; Alt-click elsewhere subtracts. <b>Draw</b> a reserve the detection misses; <b>Cut</b> across a road to close an entrance or to separate a part to drop. Drag the handle on a kerb return to change its radius (Alt-click: back to the default).${S.hasWa ? '' : ' <b>No working area:</b> set one round the development so the road space is closed at its edge.'}${S.usedAll ? ' No line matched the layer filter, so every visible layer is used.' : ''}</div>
       <div><b>${R.streets.length}</b> street${R.streets.length === 1 ? '' : 's'}${wr ? ` (reserve ${wr})` : ''}, ${R.junctions.length} junction${R.junctions.length === 1 ? '' : 's'}${T.empty() ? '' : `, ${Math.round(T.areaM2()).toLocaleString('en')} m² of road space`}.</div>
       ${dropped}
       <details><summary style="font-size:12px;cursor:pointer">Settings</summary><div style="display:flex;flex-direction:column;gap:4px;margin-top:4px">
         <label style="font-size:12px;display:block">Layers (words in the layer name; blank = all)<input type="text" data-ropt="layers" value="${E(o.layers)}" style="width:100%"></label>
         <div style="display:flex;gap:8px;flex-wrap:wrap">${num('carriageW', 'Carriageway (m)', 2, 30, 0.5)}${num('ret', 'Kerb return (m)', 1, 30, 0.5)}${num('wmax', 'Widest reserve (m)', 10, 80, 1)}${num('step', 'Raster step (m)', 0.1, 2, 0.1)}${num('gapM', 'Close gaps up to (m)', 0, 5, 0.1)}</div>
         <div style="font-size:12px;color:var(--text-muted)">Changing the layers, step or gap rebuilds the picked space from the same clicks.</div></div></details>
-      ${R.streets.length ? `<details><summary style="font-size:12px;cursor:pointer">Streets (${R.streets.length}): carriageway width and offset</summary><div style="max-height:200px;overflow:auto">${list}${R.streets.length > 120 ? '<div style="font-size:12px">… the first 120 are listed.</div>' : ''}</div></details>` : ''}
+      ${R.streets.length ? `<details><summary style="font-size:12px;cursor:pointer">Roads (${R.streets.length}): carriageway width and offset</summary><div style="max-height:200px;overflow:auto">${list}${R.streets.length > 120 ? '<div style="font-size:12px">… the first 120 are listed.</div>' : ''}</div></details>` : ''}
       <div style="display:flex;gap:6px"><button type="button" class="plan-btn" data-act="rs-create" style="font-weight:600"${R.streets.length ? '' : ' disabled'}>Create ${R.streets.length} street${R.streets.length === 1 ? '' : 's'}</button><button type="button" class="plan-btn" data-act="rs-cancel">Cancel</button></div></div>`;
   },
   _len(pts) { let L = 0; for (let i = 1; i < pts.length; i++) L += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]); return L; },
@@ -268,7 +268,7 @@ const PlanReserveUI = {
   _ask(n) {                                                           // replace / add / cancel
     return new Promise(res => {
       const ov = document.createElement('div'); ov.className = 'modal ui-dialog'; ov.style.zIndex = '3000';
-      ov.innerHTML = `<div class="modal-content ui-dialog-content" role="dialog" aria-modal="true"><div class="modal-header"><h3>Streets already on this floor</h3></div><div class="modal-body"><p>This floor already has ${n} street${n === 1 ? '' : 's'}. Replace all of them with the new streets, or add the new ones (their ends join the existing streets)?</p></div><div class="modal-footer" style="display:flex;gap:8px;justify-content:flex-end;padding:8px 12px"><button type="button" class="btn" data-v="cancel">Cancel</button><button type="button" class="btn" data-v="add">Add to them</button><button type="button" class="btn btn-primary" data-v="replace">Replace all</button></div></div>`;
+      ov.innerHTML = `<div class="modal-content ui-dialog-content" role="dialog" aria-modal="true"><div class="modal-header"><h3>Roads already on this floor</h3></div><div class="modal-body"><p>This floor already has ${n} street${n === 1 ? '' : 's'}. Replace all of them with the new roads, or add the new ones (their ends join the existing roads)?</p></div><div class="modal-footer" style="display:flex;gap:8px;justify-content:flex-end;padding:8px 12px"><button type="button" class="btn" data-v="cancel">Cancel</button><button type="button" class="btn" data-v="add">Add to them</button><button type="button" class="btn btn-primary" data-v="replace">Replace all</button></div></div>`;
       ov.classList.add('visible'); document.body.appendChild(ov);
       ov.addEventListener('click', ev => { const v = ev.target.closest && ev.target.closest('[data-v]'); if (v) { ov.remove(); res(v.dataset.v); } });
     });
@@ -276,7 +276,7 @@ const PlanReserveUI = {
   async create() {
     const S = this.stage; if (!S) return 0; if (!S.res || S.res.rev !== S.T.rev) this.compute();
     const R = S.res, pm = AppState.planMarkup, f = S.f;
-    if (!R.streets.length) { UI.toast('No streets to create.', 'warn', 3000); return 0; }
+    if (!R.streets.length) { UI.toast('No roads to create.', 'warn', 3000); return 0; }
     const existing = pm.routes.filter(r => r.type === 'street'); let choice = 'replace';
     if (existing.length) { choice = await this._ask(existing.length); if (choice === 'cancel') return 0; }
     const d = PlanDxfImport.list().find(x => !x.hidden), data = d && PlanDxfImport.dataOf(d), namer = data ? PlanLayoutUI._namer(data, d, f) : (() => null);
@@ -307,11 +307,12 @@ const PlanReserveUI = {
   _geo: { sig: '', g: null },
   planGeometry() {
     const pm = AppState.planMarkup, f = PlanEngine.factor(); if (!f || typeof PlanReserve === 'undefined') return null;
-    const rs = pm.routes.filter(r => r.type === 'street' && r.props && +r.props.carriageW > 0 && r.points && r.points.length >= 2); if (!rs.length) return null;
+    const cwOf = r => typeof RoadSections !== 'undefined' ? RoadSections.carriage(r.props) : { cw: +r.props.carriageW || 0, off: +r.props.cwOffset || 0 };
+    const rs = pm.routes.filter(r => r.type === 'street' && r.props && cwOf(r).cw > 0 && r.points && r.points.length >= 2); if (!rs.length) return null;
     const rets = ((pm.settings || {}).layout || {}).streetReturns || {};
-    const sig = rs.map(r => r.id + ':' + r.points.length + ':' + r.points.map(p => Math.round(p.x) + ',' + Math.round(p.y)).join(';').length + ':' + Math.round(r.points[0].x) + ',' + Math.round(r.points[0].y) + ',' + Math.round(r.points[r.points.length - 1].x) + ',' + Math.round(r.points[r.points.length - 1].y) + ':' + r.props.carriageW + ':' + (r.props.cwOffset || 0) + ':' + r.props.width).join('|') + '#' + f + JSON.stringify(rets);
+    const sig = rs.map(r => r.id + ':' + r.points.length + ':' + r.points.map(p => Math.round(p.x) + ',' + Math.round(p.y)).join(';').length + ':' + Math.round(r.points[0].x) + ',' + Math.round(r.points[0].y) + ',' + Math.round(r.points[r.points.length - 1].x) + ',' + Math.round(r.points[r.points.length - 1].y) + ':' + cwOf(r).cw + ':' + cwOf(r).off + ':' + r.props.width).join('|') + '#' + f + JSON.stringify(rets);
     if (this._geo.sig === sig) return this._geo.g;
-    const list = rs.map(r => ({ rid: r.id, pts: r.points.map(p => [p.x * f, p.y * f]), w: +r.props.width || 12, carriageW: +r.props.carriageW, cwOffset: +r.props.cwOffset || 0 }));
+    const list = rs.map(r => ({ rid: r.id, pts: r.points.map(p => [p.x * f, p.y * f]), w: +r.props.width || 12, carriageW: cwOf(r).cw, cwOffset: cwOf(r).off }));
     // kerb lines cut back to the returns; a corner of two streets (or a bend of one) also gets its outer radius
     const d = PlanReserve.kerbDrawing(list, { ret: 8, retWide: 10 }, c => { const m = rets[c.jkey]; return m && m[c.key] != null ? m[c.key] : null; });
     // the inner returns as geometry (metres) for Auto layout: the square kerb corner P, the arc's centre and radius and its tangent points; the
