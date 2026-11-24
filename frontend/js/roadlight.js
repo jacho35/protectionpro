@@ -664,20 +664,20 @@ const RoadLight = {
           <button class="btn-small" data-rl="addsec">+ Strip</button></div>
         ${this._sectionPickHtml(des)}
         <table class="sl-table rl-table"><thead><tr><th>Strip</th><th>Name</th><th>Width m</th><th>Lanes</th><th title="EN 13201-2 / SANS 10098-1 lighting class the strip must meet — M traffic routes, C conflict areas, P pedestrian / residential">Class <button class="rl-icon rl-th-info" data-rl="info" aria-label="About lighting classes">ⓘ</button></th><th title="CIE road-surface reflection class (r-table), used for luminance">Surface <button class="rl-icon rl-th-info" data-rl="info" aria-label="About road surfaces">ⓘ</button></th><th title="Direction of travel the observer looks in">Traffic</th><th></th></tr></thead>
-        <tbody id="rl-sec-body">${this._secs(des).map((s, i) => {
-          const cw = s.type === 'carriageway';
-          return `<tr>
-            <td data-label="Strip"><select data-sec="type" data-i="${i}">${opt(RL_SECTION_TYPES, s.type)}</select></td>
+        <tbody id="rl-sec-body">${(onSec => this._secs(des).map((s, i) => {
+          const cw = s.type === 'carriageway', auto = s.type === 'verge' && onSec;          // on a road section a verge is the space left over
+          return `<tr${auto ? ' class="rl-auto"' : ''}>
+            <td data-label="Strip">${auto ? '<span title="The space the road reserve leaves beside the typed strips (Road sections)">Verge (the rest)</span>' : `<select data-sec="type" data-i="${i}">${opt(onSec ? RL_SECTION_TYPES.filter(t => t.id !== 'verge') : RL_SECTION_TYPES, s.type)}</select>`}</td>
             <td data-label="Name"><input data-sec="name" data-i="${i}" value="${escHtml(s.name || '')}" placeholder="${escHtml(this._secName(s, des))}"></td>
-            <td data-label="Width m"><input type="number" step="0.1" min="0" data-sec="width" data-i="${i}" value="${escHtml(s.width)}" class="sl-in-num"></td>
+            <td data-label="Width m">${auto ? `<span class="sl-k">${escHtml(this._fmt ? this._fmt(s.width, 2) : s.width)}</span>` : `<input type="number" step="0.1" min="0" data-sec="width" data-i="${i}" value="${escHtml(s.width)}" class="sl-in-num">`}</td>
             <td data-label="Lanes"${cw ? '' : ' class="rl-na"'}>${cw ? `<input type="number" step="1" min="1" data-sec="lanes" data-i="${i}" value="${escHtml(s.lanes)}" class="sl-in-num">` : '<span class="sl-k">—</span>'}</td>
             <td data-label="Lighting class" class="rl-cls-cell"><span class="rl-cls-pick"><select data-sec="cls" data-i="${i}" title="${escHtml(s.cls ? `${this._clsName(des, s.cls)}: ${this._clsReq(des, s.cls, s)}` : 'Not checked')}">${clsOpts(s.cls)}</select>${this._std(des) === 'SANS' && s.type !== 'median' ? `<button class="btn-small rl-suggest" data-rl-suggest="${i}" title="Suggest the SANS category from the road class, speed and traffic">Suggest</button>` : ''}</span>
               ${cw && this._std(des) === 'SANS' && RL_SANS_A[s.cls] ? `<select data-sec="volume" data-i="${i}" class="rl-vol" title="Maximum traffic volume during darkness (SANS 10098-1 Table 1)">${RL_SANS_BANDS[this._hasMedian(des) ? 'median' : 'noMedian'].map((b, k) => `<option value="${k}"${this._num(s.volume, 0) === k ? ' selected' : ''}>Night traffic ${b}</option>`).join('')}</select>` : ''}</td>
             <td data-label="Road surface"${cw ? '' : ' class="rl-na"'}>${cw ? `<select data-sec="surface" data-i="${i}" title="${escHtml(`${s.surface}: ${(RL_SURFACE_INFO[s.surface] || {}).desc || ''}`)}">${RL_SURFACES.map(x => `<option value="${x}"${x === s.surface ? ' selected' : ''} title="${escHtml(RL_SURFACE_INFO[x].desc)}">${x} — ${escHtml(RL_SURFACE_INFO[x].short)}</option>`).join('')}</select>` : '<span class="sl-k">—</span>'}</td>
             <td data-label="Traffic"${cw ? '' : ' class="rl-na"'}>${cw ? this._trafficSelect(s, i) : '<span class="sl-k">—</span>'}</td>
-            <td class="rl-row-actions"><button class="rl-icon" data-rl-secmv="-1" data-i="${i}" title="Move left" aria-label="Move left">←</button><button class="rl-icon" data-rl-secmv="1" data-i="${i}" title="Move right" aria-label="Move right">→</button><button class="rl-icon" data-rl-secdel="${i}" title="Remove" aria-label="Remove strip">×</button></td>
+            <td class="rl-row-actions">${auto ? '' : `<button class="rl-icon" data-rl-secmv="-1" data-i="${i}" title="Move left" aria-label="Move left">←</button><button class="rl-icon" data-rl-secmv="1" data-i="${i}" title="Move right" aria-label="Move right">→</button><button class="rl-icon" data-rl-secdel="${i}" title="Remove" aria-label="Remove strip">×</button>`}</td>
           </tr>`;
-        }).join('')}</tbody></table>
+        }).join(''))(!!(des.section && typeof RoadSections !== 'undefined' && RoadSections.get(des.section)))}</tbody></table>
         ${this._secNotes(des)}
       </div>
       <div class="rl-card">
