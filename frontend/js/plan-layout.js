@@ -34,7 +34,7 @@ const PlanLayout = (() => {
     cwDef: 5,                                                      // read by the UI: the carriageway width of a street that has none (one drawn as a centreline)
     kgeo: 'boundary', kd: 2,                                       // cables + kiosks run kd m inside the erf boundary ('street' = the old street-line offset)
     kmode: 'opt', xpen: 300, xkiosk: false, n: 6, maxc: 70, worth: 170, knet: true,   // kiosks (n = the most erven one kiosk serves; knet = one solve over the whole street network)
-    strN: 4, strE: 0, strL: 350, strMode: 'fewest',                                     // LV strings: most kiosks on one string off the mini-sub (0 = no limit); 'fewest' = fewest strings, 'even' = strings of similar size
+    strN: 4, strE: 0, strL: 350, strMode: 'fewest', maxFeeds: 6,                                     // LV strings: most kiosks on one string off the mini-sub (0 = no limit); 'fewest' = fewest strings, 'even' = strings of similar size
     kside: 'count', subBal: 0, civMode: 'avoid',                                                                    // kiosk side of each street; the mini-sub balance (0 = off)
     m: 8, mhmerge: false, maxmh: 120, fibre: 'opp', topo: 'ring',              // fibre
     share: true, xmode: 'bound', xpref: 'near', junct: false, j110: 2, j160: 1, spare: 0,   // crossings
@@ -1414,30 +1414,46 @@ const PlanLayout = (() => {
         // straight off the mini-sub along the same route (the same thing a manual split does).
         const orig = new Map(net.lvLinks.map(l => [l.to, l]));
         const autoHeads = new Set();
-        if (P.strN >= 1 || P.strE >= 1) {
+        // feeders per mini-sub: at most maxFeeds (1–10; 0 / absent = no limit). The feeders are the tree's own branches off the mini-sub,
+        // the strings cut off them and the kiosks split by hand; when they are more than the limit, the strings of that mini-sub are cut
+        // longer (the string limit is raised one step at a time) until they fit. Branches alone over the limit cannot be joined: `over`.
+        const maxF = P.maxFeeds >= 1 ? Math.min(10, Math.floor(P.maxFeeds)) : Infinity;
+        const splitAt = k => (input.splits || []).some(q => Math.hypot(q[0] - k.x, q[1] - k.y) <= 3);
+        for (const S of subs) {
+          const hubs = net.lvLinks.filter(l => l.from === S.k && S.g.includes(l.to)).map(l => l.to);
+          const hand = S.g.filter(k => !hubs.includes(k) && splitAt(k));
+          S.feeds = { hubs: hubs.length, hand: hand.length, cut: 0, limit: null, raised: false, over: false };
+          if (!(P.strN >= 1 || P.strE >= 1)) { S.feeds.over = hubs.length + hand.length > maxF; continue; }
           const byE = P.strE >= 1, wt0 = k => byE ? k.members.length : 1;       // strE: a string carries at most that many erven (0 = count kiosks, strN)
-          for (const S of subs) {
-            const kids = new Map(); S.g.forEach(k => kids.set(k, []));
-            net.lvLinks.forEach(l => { if (l.from !== S.k && kids.has(l.from) && kids.has(l.to)) kids.get(l.from).push(l.to); });
-            // size of the group hanging off each hub kiosk (a string head of the original tree)
-            const total = k => wt0(k) + kids.get(k).reduce((a, c) => a + total(c), 0);
-            const cutTree = (hub, limit) => {                                          // bottom-up: the fewest strings of at most `limit` kiosks
-              const up = k => {
-                const open = kids.get(k).map(c => ({ c, n: up(c) }));
-                let sum = wt0(k) + open.reduce((a, o) => a + o.n, 0);
-                open.sort((a, b) => b.n - a.n);
-                for (const o of open) { if (sum <= limit) break; autoHeads.add(o.c); sum -= o.n; }
-                return sum;
-              };
-              up(hub);
+          const kids = new Map(); S.g.forEach(k => kids.set(k, []));
+          net.lvLinks.forEach(l => { if (l.from !== S.k && kids.has(l.from) && kids.has(l.to)) kids.get(l.from).push(l.to); });
+          // size of the group hanging off each hub kiosk (a string head of the original tree)
+          const total = k => wt0(k) + kids.get(k).reduce((a, c) => a + total(c), 0);
+          const cutTree = (hub, limit, into) => {                                    // bottom-up: the fewest strings of at most `limit` kiosks
+            const up = k => {
+              const open = kids.get(k).map(c => ({ c, n: up(c) }));
+              let sum = wt0(k) + open.reduce((a, o) => a + o.n, 0);
+              open.sort((a, b) => b.n - a.n);
+              for (const o of open) { if (sum <= limit) break; into.add(o.c); sum -= o.n; }
+              return sum;
             };
-            for (const l of net.lvLinks) {
-              if (l.from !== S.k || !kids.has(l.to)) continue;
-              let limit = byE ? Math.floor(P.strE) : Math.floor(P.strN);
-              if (P.strMode === 'even') { const M = total(l.to), strs = Math.ceil(M / limit); limit = Math.ceil(M / strs); }
-              cutTree(l.to, limit);
+            up(hub);
+          };
+          const cuts = (base) => {
+            const into = new Set();
+            for (const h of hubs) {
+              let limit = base;
+              if (P.strMode === 'even') { const M = total(h), strs = Math.ceil(M / limit); limit = Math.ceil(M / strs); }
+              cutTree(h, limit, into);
             }
-          }
+            return into;
+          };
+          const base = byE ? Math.floor(P.strE) : Math.floor(P.strN), most = S.g.reduce((a, k) => a + wt0(k), 0);
+          let lim = base, got = cuts(lim);
+          const count = c => hubs.length + new Set([...c, ...hand]).size;
+          while (count(got) > maxF && got.size && lim < most) got = cuts(++lim);
+          got.forEach(k => autoHeads.add(k));
+          Object.assign(S.feeds, { cut: got.size, limit: lim, raised: lim > base, over: count(got) > maxF });
         }
         // a split string: a kiosk made its own string head (a feeder of its own straight off the mini-sub, along the same route)
         if (autoHeads.size || (input.splits && input.splits.length)) {
@@ -1452,6 +1468,7 @@ const PlanLayout = (() => {
           }
         }
         net.strings = net.lvLinks.filter(l => subs.some(S => S.k === l.from)).length;
+        subs.forEach(S => { S.nFeeds = net.lvLinks.filter(l => l.from === S.k).length; });   // the feeders (ways) each mini-sub has
         { // each string's reach: the cable run from the mini-sub to its furthest kiosk (a cut string still has its own feeder along the same route, so cutting never shortens it)
           const into = new Map(net.lvLinks.map(l => [l.to, l])), kidsOf = new Map(), dist = new Map();
           net.lvLinks.forEach(l => { if (!subs.some(S => S.k === l.from)) (kidsOf.get(l.from) || kidsOf.set(l.from, []).get(l.from)).push(l.to); });
