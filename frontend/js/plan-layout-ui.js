@@ -31,9 +31,9 @@ const PlanLayoutUI = {
     const all = Object.keys(this.SHOW_PARTS).every(k => this.SHOW[k]);
     return `<div style="display:flex;flex-wrap:wrap;gap:4px;align-items:center"><span style="font-size:12px;color:var(--text-muted)">Show on plan</span>${Object.entries(this.SHOW_PARTS).map(chip).join('')}${all ? '' : '<button type="button" class="plan-btn" data-act="show" data-k="all" style="padding:3px 9px;font-size:12px">All</button>'}</div>`;
   },
-  // trench settings: depth per cable class (m) and what shares a trench; kept apart from the layout rules (no re-solve)
-  TREN: [['depth.lv', 'range', 0.4, 1.5, 0.05, 'm', 'LV, service and street-light depth'], ['depth.fi', 'range', 0.3, 1.2, 0.05, 'm', 'Fibre depth'],
-    ['fibre', 'select', [['own', 'fibre in its own trench'], ['with', 'fibre in the LV trench where they run together'], ['off', 'no fibre trench']], 'Fibre'],
+  // trench settings: what shares a trench; kept apart from the layout rules (no re-solve). Trench sizes are the road sections' (Road sections ›
+  // Standard sizes, or a section's own)
+  TREN: [['fibre', 'select', [['own', 'fibre in its own trench'], ['with', 'fibre in the LV trench where they run together'], ['off', 'no fibre trench']], 'Fibre'],
     ['crossings', 'check', 'A shared trench across the road at every crossing'], ['lead', 'check', 'One lead trench into the erf for its service cable and fibre duct']],
   CTRL: [
     ['Marker', [['side', 'range', 1, 5, 0.5, 'm', 'From the side boundary'], ['depth', 'range', 1, 5, 0.5, 'm', 'In from the front'],
@@ -132,9 +132,7 @@ const PlanLayoutUI = {
     }
     L.sections = { on: !!(L.sections && L.sections.on) };                          // the sections themselves are the project's road sections (roadsections.js)
     const T = L.trench = (L.trench && typeof L.trench === 'object') ? L.trench : {};
-    const D2 = PlanLayout.TRENCH_DEFAULTS, dd = T.depth = (T.depth && typeof T.depth === 'object') ? T.depth : {};
-    for (const k of ['mv', 'lv', 'fi']) { const n = parseFloat(dd[k]); dd[k] = Number.isFinite(n) ? Math.max(0.3, Math.min(3, n)) : D2.depth[k]; }
-    { const n = parseFloat(dd.comb); dd.comb = Number.isFinite(n) ? Math.max(0.3, Math.min(3, n)) : null; }
+    const D2 = PlanLayout.TRENCH_DEFAULTS; delete T.depth;                           // trench sizes are the road sections' now (RoadSections.std / a section's own)
     T.combine = ['separate', 'mvlv'].includes(T.combine) ? T.combine : D2.combine;
     T.fibre = ['own', 'with', 'off'].includes(T.fibre) ? T.fibre : D2.fibre;
     T.crossings = typeof T.crossings === 'boolean' ? T.crossings : D2.crossings;
@@ -1616,14 +1614,16 @@ const PlanLayoutUI = {
     PlanLayout.keepOut(this.result);                                                    // anything a move or a re-laid crossing left inside a carriageway goes round it
     PlanLayout.smooth(this.result, g.params);                                           // then every corner rounded (the node handles stay on the corners)
     this._findCross(this.result);
-    this.result.trench = PlanLayout.trenches(this._planView(this.result, part), this.cfg().trench);
+    this.result.trench = PlanLayout.trenches(this._planView(this.result, part), this.trenchCfg());
     if (part !== 'fibre') this.vdRun();                                                 // the fibre network alone: the LV on the plan is not checked again
     PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true });
   },
-  // trench depth / sharing changed: only the trenches are worked out again
+  // the trench settings + the project standard trench sizes (a section's own come with the section, `input.sections`)
+  trenchCfg() { return Object.assign({}, this.cfg().trench, typeof RoadSections !== 'undefined' ? { sizes: RoadSections.std().trench } : {}); },
+  // trench sizes / sharing changed: only the trenches are worked out again
   retrench() {
     if (!this.result) return;
-    this.result.trench = PlanLayout.trenches(this._planView(this.result, this._ranPart || 'all'), this.cfg().trench);
+    this.result.trench = PlanLayout.trenches(this._planView(this.result, this._ranPart || 'all'), this.trenchCfg());
     PlanMarkup.markDirty(); PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true });
   },
   // after a setting changes: re-run at once when that is quick, otherwise wait for Run
@@ -1710,7 +1710,7 @@ const PlanLayoutUI = {
       });
     });
     if (opt.trench && r.trench) r.trench.list.forEach(t => {
-      pm.trenches.push({ id: AppState.planGenId('pmtr'), name: PlanMarkup.nextCounter('_trench', 'T'), excType: t.type, points: ptsPx(t.pts), widthOverride: null, depthOverride: t.depth, auto: 'layout' }); made.trenches++;
+      pm.trenches.push({ id: AppState.planGenId('pmtr'), name: PlanMarkup.nextCounter('_trench', 'T'), excType: t.type, points: ptsPx(t.pts), widthOverride: null, depthOverride: null, section: t.section || null, auto: 'layout' }); made.trenches++;
     });
     PlanMarkup.snapshot(); PlanMarkup.markDirty();
     PlanEngine.requestDraw({ fg: true });
@@ -1956,7 +1956,7 @@ const PlanLayoutUI = {
     ctx.save(); ctx.lineJoin = 'round'; ctx.lineCap = 'butt';
     if (S.trench && r.trench) {                                                                        // trench bands under everything else
       ctx.lineCap = 'round';
-      for (const t of r.trench.list) { const d = PLAN_DEFS.trenchTypes[t.type] || { color: 'rgba(120,120,120,.4)', width: 0.5 }; ctx.strokeStyle = d.color; ctx.lineWidth = Math.max(d.width / f, 1.5 * u); line(t.pts); }
+      for (const t of r.trench.list) { const d = PLAN_DEFS.trenchTypes[t.type] || { color: 'rgba(120,120,120,.4)', width: 0.5 }; ctx.strokeStyle = d.color; ctx.lineWidth = Math.max((t.w || d.width) / f, 1.5 * u); line(t.pts); }
       ctx.lineCap = 'butt';
     }
     ctx.strokeStyle = 'rgba(71,85,105,.6)'; ctx.lineWidth = 1 * u;                                   // the erf boundaries the layout read
@@ -2074,17 +2074,18 @@ const PlanLayoutUI = {
     const rc = this.ratesCheck(), rf = rc.fig, ratesBtn = `<button type="button" class="plan-btn" data-act="fromrates" ${rf ? '' : 'disabled'} title="${rf ? `A kiosk = ${rf.worth} m of service cable, a crossing = ${rf.xpen} m (from the rate library)` : 'Needs a price for the kiosk, a 110 mm crossing and the service cable in the rate library'}" style="align-self:flex-start;padding:1px 8px;font-size:12px">Set kiosk worth and crossing cost from my rates</button>` + (rf ? '' : `<span style="font-size:12px;color:#8f270a">Not available: the rate library has no price for ${esc(rc.missing.join(', '))}. Enter them in Quantities › Rate library.</span>`);
     const groups = this.CTRL.map(([name, rows]) => { const ch = grpChanged(rows), shown = rows.filter(r => !MOST.includes(r[0]));
       return shown.length ? `<details>${advHead(name, ch)}<div style="display:flex;flex-direction:column;gap:8px;padding:6px 0 4px">${shown.map(ctrl).join('')}${name === 'Kiosks' ? ratesBtn : ''}${resetBtn(ch, name)}</div></details>` : ''; }).join('');
-    const TT = L.trench, tget = k => k.startsWith('depth.') ? TT.depth[k.slice(6)] : TT[k];
-    const TTIP = { 'depth.lv': 'How deep the LV, service and street-light cable trenches are dug. Sets the trench volume in the quantities.', 'depth.fi': 'How deep the fibre duct trenches are dug.', fibre: 'Whether fibre gets its own trench, lies in the LV trench where the two run together, or has no trench drawn.', crossings: 'Draw one shared trench across the road at every crossing, so the quantities count the road cut once.' };
+    const TT = L.trench, tget = k => TT[k];
+    const TTIP = { fibre: 'Whether fibre gets its own trench, lies in the LV trench where the two run together, or has no trench drawn.', crossings: 'Draw one shared trench across the road at every crossing, so the quantities count the road cut once.' };
     const ttl = k => TTIP[k] ? ` title="${esc(TTIP[k])}"` : '';
     const tctrl = ([k, kind, a, b, c, unit, label]) => {
-      if (k === 'depth.comb' && TT.depth.comb == null) return '';
       if (kind === 'range') return `<label style="display:block"${ttl(k)}>${esc(label)} <b data-tv="${k}">${(+tget(k)).toFixed(2)} ${esc(unit)}</b><input type="range" data-t="${k}" min="${a}" max="${b}" step="${c}" value="${Number(tget(k))}" style="width:100%"></label>`;
-      if (kind === 'check') { const on = k === 'combOn' ? TT.depth.comb != null : TT[k]; return `<label style="display:flex;gap:6px;align-items:flex-start"${ttl(k)}><input type="checkbox" data-t="${k}"${on ? ' checked' : ''}> <span>${esc(a)}</span></label>`; }
+      if (kind === 'check') { const on = TT[k]; return `<label style="display:flex;gap:6px;align-items:flex-start"${ttl(k)}><input type="checkbox" data-t="${k}"${on ? ' checked' : ''}> <span>${esc(a)}</span></label>`; }
       return `<label style="display:block"${ttl(k)}>${esc(b)}<select data-t="${k}" style="width:100%">${a.map(o => `<option value="${esc(o[0])}"${TT[k] === o[0] ? ' selected' : ''}>${esc(o[1])}</option>`).join('')}</select></label>`;
     };
-    const trChanged = JSON.stringify([TT.depth.lv, TT.depth.fi, TT.fibre, TT.crossings]) !== JSON.stringify([PlanLayout.TRENCH_DEFAULTS.depth.lv, PlanLayout.TRENCH_DEFAULTS.depth.fi, PlanLayout.TRENCH_DEFAULTS.fibre, PlanLayout.TRENCH_DEFAULTS.crossings]);
-    const trenchGroup = `<details>${advHead('Trenches', trChanged)}<div style="display:flex;flex-direction:column;gap:8px;padding:6px 0 4px">${this.TREN.map(tctrl).join('')}${resetBtn(trChanged, 'Trenches')}</div></details>`;
+    const trChanged = JSON.stringify([TT.fibre, TT.crossings, TT.lead]) !== JSON.stringify([PlanLayout.TRENCH_DEFAULTS.fibre, PlanLayout.TRENCH_DEFAULTS.crossings, PlanLayout.TRENCH_DEFAULTS.lead]);
+    const trSizes = (() => { if (typeof RoadSections === 'undefined') return ''; const S = RoadSections.std().trench, nd = RoadSections.differing('trench').length, nm = t => (PLAN_DEFS.trenchTypes[t] || {}).name || t;
+      return `<div style="font-size:12px;color:var(--text-muted)">Trench sizes (width × depth) are the project standard${nd ? `, or a road section's own on its roads (${nd} section${nd === 1 ? '' : 's'} differ${nd === 1 ? 's' : ''})` : ''}: ${Object.entries(S).map(([t, v]) => `${esc(nm(t))} ${v.w.toFixed(2)} × ${v.d.toFixed(2)} m`).join(' · ')}. <button type="button" class="plan-btn" data-act="secedit" style="padding:1px 8px;font-size:12px">Set in Road sections</button></div>`; })();
+    const trenchGroup = `<details>${advHead('Trenches', trChanged)}<div style="display:flex;flex-direction:column;gap:8px;padding:6px 0 4px">${trSizes}${this.TREN.map(tctrl).join('')}${resetBtn(trChanged, 'Trenches')}</div></details>`;
     const VDc = L.vd, cb = this.vdCables(), lim = this.vdLimits(), txOpts = (typeof Retic !== 'undefined' ? Retic._txOptions() : []), opts = (list, cur) => list.map(c => `<option value="${esc(c.id)}"${cur && cur.id === c.id ? ' selected' : ''}>${esc(c.name)}</option>`).join('');
     const vdDef = { way80: true, taper: true, minSize: 0, maxSize: 0, maxSizes: 0, autoSplit: false, prot: '', protK: 1.2, svc: '' };
     const vdChanged = Object.keys(vdDef).some(k => String(VDc[k]) !== String(vdDef[k]));
@@ -2138,7 +2139,7 @@ const PlanLayoutUI = {
       <div style="max-height:200px;overflow:auto"><table style="width:100%;font-size:12px;border-collapse:collapse"><thead><tr><th style="text-align:left">Kiosk</th><th style="text-align:left">Fed from</th><th style="text-align:left">Cable</th><th style="text-align:left">Breaker</th><th style="text-align:right">m</th></tr></thead><tbody>${D.feeders.map(x => { const h = headOf.get(x.kioskId); return `<tr style="border-top:1px solid var(--border,#ddd)"><td>${esc(x.name)}</td><td>${esc(subName(x.fedFrom))}</td><td>${esc(String(x.cable).replace(/ LV$/, ''))}${x.setBy === 'taper' ? ' <span title="smaller (or larger) than the one size that would pass everywhere: set by the taper" style="color:#0f8f78;font-size:11px">· set by taper</span>' : x.setBy === 'you' ? ' <span style="font-size:11px">· set by you</span>' : ''}</td><td>${h ? (h.breaker ? esc(h.breaker) + (h.pinned ? ' <span style="font-size:11px">· set by you</span>' : '') : '<span style="color:#b91c1c">no current from Demand</span>') : '—'}</td><td style="text-align:right">${Math.round(x.lengthM)}</td></tr>`; }).join('')}</tbody></table></div>
       </div>` : (r && r.designErr ? `<div style="color:#b91c1c;margin-top:6px">The LV design could not be run: ${esc(r.designErr)}</div>` : '');
     const xt = r ? r.net.cross.slice().sort((a, b) => (a.prov - b.prov) || (b.d110 + b.d160) - (a.d110 + a.d160)).slice(0, 14).map((x, i) => { const parts = x.prov ? `${x.d110}×110, ${x.d160}×160, junction` : [x.d110s && `${x.d110s}×110 service`, x.d110f && `${x.d110f}×110 fibre`, x.d110l && `${x.d110l}×110 LV`, x.d160 && `${x.d160}×160 MV`, x.spare && `${x.spare}×110 spare`].filter(Boolean).join(', '); return `<tr><td>${esc(x.st.name)}</td><td>${esc(parts)}</td></tr>`; }).join('') : '';
-    const trenchRows = r && r.trench ? Object.entries(r.trench.summary).map(([type, q]) => { const d = PLAN_DEFS.trenchTypes[type] || { name: type, width: 0.5 }; const vol = q.len * d.width * q.depth; return `<div style="display:flex;justify-content:space-between;gap:8px"><span>${esc(d.name)}</span><span>${fmt(q.len)} m at ${q.depth.toFixed(2)} m · ${fmt(vol)} m³</span></div>`; }).join('') : '';
+    const trenchRows = r && r.trench ? Object.entries(r.trench.summary).map(([type, q]) => { const d = PLAN_DEFS.trenchTypes[type] || { name: type, width: 0.5 }; const vol = q.vol != null ? q.vol : q.len * (q.w || d.width) * q.depth; return `<div style="display:flex;justify-content:space-between;gap:8px"><span>${esc(d.name)}</span><span>${fmt(q.len)} m at ${q.depth.toFixed(2)} m · ${fmt(vol)} m³</span></div>`; }).join('') : '';
     const ck = r ? this.checks() : [], placed = this.placedSubs(), Ls = this.cfg();
     this._ck = ck;
     const sevCol = { fail: '#dc2626', warn: '#b45309', info: '#64748b' }, sevTxt = { fail: 'Fix', warn: 'Check', info: 'Note' };
@@ -2292,7 +2293,7 @@ const PlanLayoutUI = {
       if (b.dataset.act === 'resetgrp') {
         const g = b.dataset.g, grp = this.CTRL.find(x => x[0] === g);
         if (grp) { grp[1].forEach(x => { if (!MOST.includes(x[0])) p[x[0]] = dflt[x[0]]; }); this.touched(); }
-        else if (g === 'Trenches') { const T0 = PlanLayout.TRENCH_DEFAULTS; TT.depth.lv = T0.depth.lv; TT.depth.fi = T0.depth.fi; TT.fibre = T0.fibre; TT.crossings = T0.crossings; this.retrench(); }
+        else if (g === 'Trenches') { const T0 = PlanLayout.TRENCH_DEFAULTS; TT.fibre = T0.fibre; TT.crossings = T0.crossings; TT.lead = T0.lead; this.retrench(); }
         else { Object.assign(VDc, vdDef); this.vdRun(); }
         return;
       }
@@ -2352,7 +2353,7 @@ const PlanLayoutUI = {
       else if (b.dataset.act === 'add') { this.addKind = this.addKind === b.dataset.k ? null : b.dataset.k; PlanMarkup.refreshProps(); this._syncBar(); }
       else if (b.dataset.mode) { this.mode = b.dataset.mode; this.markFor = null; this.addKind = null; PlanMarkup.refreshProps(); }
     };
-    const setT = (k, v) => { if (k.startsWith('depth.')) TT.depth[k.slice(6)] = v; else TT[k] = v; };
+    const setT = (k, v) => { TT[k] = v; };
     el.oninput = (e) => {
       if (e.target.dataset.q != null) { this.q = e.target.value; this._qf = true; clearTimeout(this._tq); this._tq = setTimeout(() => PlanMarkup.refreshProps(), 120); return; }
       const vk = e.target.dataset.vd;
@@ -2382,8 +2383,7 @@ const PlanLayoutUI = {
       }
       if (t.dataset.t && t.type !== 'range') {
         const k = t.dataset.t;
-        if (k === 'combOn') TT.depth.comb = t.checked ? Math.max(TT.depth.mv, TT.depth.lv) : null;
-        else setT(k, t.type === 'checkbox' ? t.checked : t.value);
+        setT(k, t.type === 'checkbox' ? t.checked : t.value);
         this.retrench(); return;
       }
       if (t.dataset.pn) {                                                          // a number typed beside a slider

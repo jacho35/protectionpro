@@ -91,4 +91,69 @@ ok('migrate: Auto layout sections and lines, and lighting designs\' own strips, 
   assert.strictEqual(RS.migrate(lay, designs), false);                                           // nothing left to convert
 });
 
+ok('standard sizes: every section follows them until it differs; the engine shape carries the resolved sizes, offsets stay the section\'s', () => {
+  const sl = fresh(); const a = RS.add('A'), b = RS.add('B');
+  assert.deepStrictEqual(RS.std().trench['LV/SL'], { w: 0.5, d: 0.7 }); assert.strictEqual(sl.settings.roadStd, RS.std());
+  RS.setStd('kiosk', 'len', 1.8); RS.setStd('trench', 'LV/SL.d', 0.85); RS.setStd('trench', 'MV.w', 99);
+  assert.strictEqual(RS.std().trench.MV.w, 3);                                                   // clamped
+  a.items.kiosk.off = 2.2;
+  let L = RS.layoutShape(a);
+  assert.strictEqual(L.items.kiosk.len, 1.8); assert.strictEqual(L.items.kiosk.off, 2.2); assert.strictEqual(L.trench['LV/SL'].d, 0.85);
+  assert.strictEqual(RS.setSize(a, 'kiosk', 'len', 2), true); assert.strictEqual(RS.layoutShape(a).items.kiosk.len, 1.8);   // not its own: the standard still wins
+  RS.setOwn(a, 'kiosk', true);                                                                   // differs: starts from the standard
+  assert.strictEqual(a.items.kiosk.len, 1.8); RS.setSize(a, 'kiosk', 'len', 2.4);
+  assert.strictEqual(RS.layoutShape(a).items.kiosk.len, 2.4); assert.strictEqual(RS.layoutShape(b).items.kiosk.len, 1.8);
+  RS.setStd('kiosk', 'len', 1.5); assert.strictEqual(RS.layoutShape(a).items.kiosk.len, 2.4); assert.strictEqual(RS.layoutShape(b).items.kiosk.len, 1.5);
+  assert.deepStrictEqual(RS.differing('kiosk').map(s => s.id), [a.id]);
+  RS.setOwn(a, 'kiosk', false); assert.strictEqual(RS.layoutShape(a).items.kiosk.len, 1.5); assert.strictEqual(a.own, undefined);
+});
+
+ok('copy from another section, make a section\'s own the standard', () => {
+  fresh(); const a = RS.add('A'), b = RS.add('B'), c = RS.add('C');
+  RS.setOwn(a, 'trench', true); RS.setSize(a, 'trench', 'FI.d', 0.45); RS.setSize(a, 'trench', 'FI.w', 0.25);
+  assert.ok(RS.copyFrom(b, a, 'trench'));
+  assert.ok(RS.own(b, 'trench')); assert.deepStrictEqual(RS.sizes(b, 'trench').FI, { w: 0.25, d: 0.45 });
+  RS.setSize(a, 'trench', 'FI.d', 0.5); assert.strictEqual(RS.sizes(b, 'trench').FI.d, 0.45);   // a copy, not a link
+  assert.strictEqual(RS.copyFrom(b, b, 'trench'), false);
+  assert.ok(RS.toStd(a, 'trench'));
+  assert.strictEqual(RS.std().trench.FI.d, 0.5); assert.strictEqual(RS.own(a, 'trench'), false);
+  assert.strictEqual(RS.sizes(c, 'trench').FI.d, 0.5); assert.strictEqual(RS.sizes(b, 'trench').FI.d, 0.45);
+});
+
+ok('trenchSize: its own override, else the road section that differs, else the standard', () => {
+  const roads = [{ id: 's1', type: 'street', props: {}, points: [{ x: 0, y: 0 }, { x: 100, y: 0 }] }];
+  fresh(roads); const a = RS.add('A'), b = RS.add('B');
+  RS.setStd('trench', 'LV/SL.w', 0.55);
+  assert.deepStrictEqual([RS.trenchSize({ excType: 'LV/SL' }).w, RS.trenchSize({ excType: 'LV/SL' }).from], [0.55, 'project standard']);
+  RS.assign(roads, b.id); RS.setOwn(b, 'trench', true); RS.setSize(b, 'trench', 'LV/SL.w', 0.65);
+  assert.strictEqual(RS.trenchSize({ excType: 'LV/SL', roadId: 's1' }).w, 0.65);
+  assert.strictEqual(RS.trenchSize({ excType: 'LV/SL', section: b.id }).w, 0.65);
+  assert.strictEqual(RS.trenchSize({ excType: 'LV/SL', section: a.id }).w, 0.55);
+  assert.strictEqual(RS.trenchSize({ excType: 'LV/SL', roadId: 's1', widthOverride: 0.4, depthOverride: 1.2 }).w, 0.4);
+  assert.strictEqual(RS.trenchSize({ excType: 'LV/SL', roadId: 's1', widthOverride: 0.4, depthOverride: 1.2 }).d, 1.2);
+  // the road a hand-drawn trench runs along (1 px = 1 m here): within 25 m of its middle
+  assert.strictEqual(RS.roadNear([{ x: 10, y: 8 }, { x: 60, y: 8 }], 1, roads), 's1');
+  assert.strictEqual(RS.roadNear([{ x: 10, y: 40 }, { x: 60, y: 40 }], 1, roads), null);
+});
+
+ok('migrateStd: an older project keeps the sizes it used; other sections that differ keep theirs as their own', () => {
+  const sl = fresh();
+  const a = RS.add('A'), b = RS.add('B');
+  Object.assign(a.items.lv, { depth: 0.8, w: 0.4 }); Object.assign(a.items.svc, { depth: 0.6 }); Object.assign(a.items.mv, { depth: 1.2 }); Object.assign(a.items.fi, { depth: 0.55 });
+  Object.assign(b.items.lv, { depth: 0.9 }); Object.assign(b.items.svc, { depth: 0.6 }); Object.assign(b.items.mv, { depth: 1.2 }); Object.assign(b.items.fi, { depth: 0.55 });
+  b.items.kiosk.len = 2.0;
+  assert.ok(RS.migrateStd({ sections: { on: true } }, true));
+  const S = sl.settings.roadStd;
+  assert.deepStrictEqual([S.trench.MV.d, S.trench['LV/SL'].d, S.trench.FI.d, S.trench['MV/LV/SL'].d], [1.2, 0.8, 0.55, 1.2]);   // the default section's
+  assert.strictEqual(S.trench['LV/SL'].w, 0.5); assert.strictEqual(S.kiosk.len, 1.4);
+  assert.ok(RS.own(b, 'kiosk') && RS.own(b, 'trench')); assert.strictEqual(RS.sizes(b, 'trench')['LV/SL'].d, 0.9); assert.strictEqual(RS.sizes(b, 'kiosk').len, 2);
+  assert.ok(!RS.own(a, 'kiosk')); assert.strictEqual(a.items.lv.depth, undefined);
+  assert.strictEqual(RS.migrateStd({ sections: { on: true } }, true), false);                   // once
+  // Auto layout's own depths where sections were off; the old trench types for a project with drawn trenches only; else the defaults
+  fresh(); RS.add('A'); RS.migrateStd({ trench: { depth: { mv: 1.0, lv: 0.75, fi: 0.5, comb: null } } }, true);
+  assert.deepStrictEqual([RS.std().trench.MV.d, RS.std().trench['LV/SL'].d, RS.std().trench.FI.d, RS.std().trench['MV/LV/SL'].d], [1, 0.75, 0.5, 1]);
+  fresh(); RS.migrateStd(null, true); assert.deepStrictEqual([RS.std().trench.MV.d, RS.std().trench['LV/SL'].d], [1, 0.8]);
+  fresh(); RS.migrateStd(null, false); assert.deepStrictEqual([RS.std().trench.MV.d, RS.std().trench['LV/SL'].d], [1.1, 0.7]);
+});
+
 console.log(n + ' passed');

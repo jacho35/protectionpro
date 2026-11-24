@@ -946,6 +946,9 @@ PlanTools.register(makePolylineTool('trench', '#7c3aed', (pts, opts) => {
     name: PlanMarkup.nextCounter('_trench', 'T'),
     excType, points: pts, widthOverride: null, depthOverride: null,
   };
+  // the road it runs along: its size follows that road's section where the section has trench sizes of its own (RoadSections.trenchSize)
+  const rid = typeof RoadSections !== 'undefined' ? RoadSections.roadNear(pts, PlanEngine.factor(), AppState.planMarkup.routes) : null;
+  if (rid) t.roadId = rid;
   AppState.planMarkup.trenches.push(t);
   PlanMarkup.selectOnly(t.id);
   PlanMarkup.snapshot(); PlanMarkup.markDirty(); PlanMarkup.refreshProps();

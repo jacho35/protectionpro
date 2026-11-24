@@ -778,7 +778,8 @@ const PlanEngine = {
     if (!t.points || t.points.length < 1) return;
     const def = PLAN_DEFS.trenchTypes[t.excType] || { color: 'rgba(120,120,120,0.4)', width: 0.5 };
     const f = this.factor();
-    const wPx = f ? ((t.widthOverride || def.width) / f) : (10 / this.view.zoom);
+    const w = typeof RoadSections !== 'undefined' ? RoadSections.trenchSize(t).w : (t.widthOverride || def.width);   // its own, else its road section's / the project standard
+    const wPx = f ? (w / f) : (10 / this.view.zoom);
     ctx.save();
     ctx.globalAlpha = this._emphasis('trenchTypes', t.excType);
     ctx.strokeStyle = def.color;
