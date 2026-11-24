@@ -45,7 +45,7 @@ const PlanLayoutUI = {
     ['Kiosks', [['kmode', 'select', [['rules', 'even runs (rule of thumb)'], ['opt', 'optimiser: fewest kiosks, then crossings, then cable']], 'Placement'],
       ['n', 'range', 4, 12, 1, '', 'Max houses per kiosk'], ['maxc', 'range', 30, 150, 5, 'm', 'Max service cable'], ['worth', 'range', 0, 600, 10, 'm', 'Extra cable accepted to save one kiosk'],
       ['kside', 'select', [['count', 'the side with more erven'], ['try', 'try both sides, keep the cheaper']], 'Kiosk side of each street'], ['xpen', 'range', 0, 600, 25, 'm', 'A road crossing counts as this much cable'], ['xkiosk', 'check', 'Keep a kiosk if removing it would add road crossings'],
-      ['strN', 'range', 0, 10, 1, '', 'Most kiosks on one LV string (0 = no limit)'], ['strL', 'range', 0, 1000, 25, 'm', 'Longest LV string, mini-sub to furthest kiosk (0 = no limit)'], ['strE', 'tnum', 2, 60, 2, 'erven', 'Limit erven on one string (instead of kiosks)', 12], ['subBal', 'tnum', 1.1, 2, 0.1, '× an even share', 'Balance hand-placed mini-subs', 1.3],
+      ['strN', 'range', 0, 10, 1, '', 'Most kiosks on one LV string (0 = no limit)'], ['maxFeeds', 'range', 1, 10, 1, '', 'Most LV feeders from one mini-sub'], ['strL', 'range', 0, 1000, 25, 'm', 'Longest LV string, mini-sub to furthest kiosk (0 = no limit)'], ['strE', 'tnum', 2, 60, 2, 'erven', 'Limit erven on one string (instead of kiosks)', 12], ['subBal', 'tnum', 1.1, 2, 0.1, '× an even share', 'Balance hand-placed mini-subs', 1.3],
       ['strMode', 'select', [['fewest', 'fewest strings'], ['even', 'strings of similar size']], 'Cut long strings into']]],
     ['Fibre', [['m', 'range', 4, 12, 1, '', 'Erven per manhole'], ['mhmerge', 'check', 'Fold a short stretch\'s manhole into its neighbour'], ['maxmh', 'range', 40, 200, 10, 'm', 'Max distance between manholes'],
       ['fibre', 'select', [['opp', 'civil side, opposite the kiosks'], ['same', 'same side as the kiosks']], 'Manholes default to the'],
@@ -108,6 +108,7 @@ const PlanLayoutUI = {
     xkiosk: 'Giving up a kiosk is allowed while the extra service cable stays within the amount a kiosk is worth. With crossings counted, a kiosk that would add road crossings is kept unless the saving covers them (crossings counted at the figure above).',
     strE: 'The most erven carried by one string. When set, strings are cut by the erven they feed (a kiosk of six counts six) and the kiosk limit above is not used. 0 = count kiosks instead.',
     strL: 'The longest cable run from the mini-sub to the furthest kiosk on one string. Volt drop and the earth-fault loop grow with this length. Cutting a string does not shorten it (each string has its own feeder from the mini-sub along the same route), so a string over the limit is reported as a Fix: add a mini-sub nearer, or move the mini-sub. 0 = no limit.',
+    maxFeeds: 'The most LV feeders (outgoing ways) one mini-sub can have: the branches of the network that leave it, the strings cut off them and the kiosks you split by hand. When the strings would need more, they are cut longer (more kiosks on each) until they fit; a mini-sub with more branches than this, before any string is cut, is a Fix: place another mini-sub or move it. Default 6, at most 10.',
     strN: 'The most kiosks fed in a line from one feeder off the mini-sub. A longer street is cut into several strings, each with its own breaker and its own cable back to the mini-sub along the same route. A shorter string keeps the head breaker and the cable small and the far-end earth-fault loop short, at the price of more cable and more ways on the mini-sub board. 0 = no limit: kiosks daisy-chain along the whole street.',
     strMode: 'How a street with more kiosks than the limit is cut. Fewest strings: cut from the far end back, so as few feeders as possible leave the mini-sub, but the last string can be short (9 kiosks at a limit of 4 gives 4 + 4 + 1). Strings of similar size: the same number of feeders as the limit needs, but shared out evenly (9 kiosks gives 3 + 3 + 3), so the strings are loaded alike. On a branching network this can need more feeders.',
   },
@@ -166,6 +167,7 @@ const PlanLayoutUI = {
     { const mk = (L.fibreMarks && typeof L.fibreMarks === 'object') ? L.fibreMarks : {}; L.fibreMarks = {};             // fibre points moved by hand: erf id → its offset from the power marker (plan units), so it follows the marker
       for (const [id, v] of Object.entries(mk).slice(0, 5000)) if (v && Number.isFinite(+v.dx) && Number.isFinite(+v.dy)) L.fibreMarks[String(id).slice(0, 80)] = { dx: +v.dx, dy: +v.dy }; }
     L.cuts = Array.isArray(L.cuts) ? L.cuts.filter(x => typeof x === 'string').slice(0, 500) : [];
+    L.subsOff = Array.isArray(L.subsOff) ? Array.from(new Set(L.subsOff.filter(x => typeof x === 'string' || typeof x === 'number').map(String))) : [];   // mini-sub parts on the plan left out of this scheme (element ids)
     L.subs = Array.isArray(L.subs) ? L.subs.filter(q => q && Number.isFinite(+q.x) && Number.isFinite(+q.y)).map(q => ({ x: +q.x, y: +q.y })).slice(0, 20) : [];   // mini-subs placed by hand: free points
     if (L.sub && Number.isFinite(+L.sub.x) && Number.isFinite(+L.sub.y) && !L.subs.some(q => Math.hypot(q.x - L.sub.x, q.y - L.sub.y) < 1e-6)) L.subs.push({ x: +L.sub.x, y: +L.sub.y });   // older files held one
     delete L.sub;
@@ -1401,8 +1403,22 @@ const PlanLayoutUI = {
     const pm = AppState.planMarkup, L = this.cfg(), out = [];
     const near = q => out.some(o => Math.hypot(o.x - q.x, o.y - q.y) < 1 / (PlanEngine.factor() || 1));
     (L.subs || []).forEach((q, i) => { if (!near(q)) out.push({ x: q.x, y: q.y, src: 'layout', i }); });
-    pm.elements.filter(e => e.type === 'minisub' && e.auto !== 'layout').forEach(e => { if (!near(e)) out.push({ x: e.x, y: e.y, src: 'plan', id: e.id }); });
+    const off = new Set(L.subsOff || []);
+    pm.elements.filter(e => e.type === 'minisub' && e.auto !== 'layout' && !off.has(String(e.id))).forEach(e => { if (!near(e)) out.push({ x: e.x, y: e.y, src: 'plan', id: e.id }); });
     return out;
+  },
+  // the mini-sub parts on the plan that are left out of this scheme (they stay on the plan; the layout neither feeds from them nor replaces them)
+  offSubs() {
+    const off = new Set(this.cfg().subsOff || []);
+    return AppState.planMarkup.elements.filter(e => e.type === 'minisub' && e.auto !== 'layout' && off.has(String(e.id)));
+  },
+  // take a mini-sub part on the plan into the scheme, or leave it out
+  setSubIn(id, on) {
+    const L = this.cfg(), k = String(id), i = L.subsOff.indexOf(k);
+    if (on && i >= 0) L.subsOff.splice(i, 1);
+    else if (!on && i < 0) L.subsOff.push(k);
+    else return;
+    this.touched(true);
   },
   // A click in Mini-sub mode: stand a mini-sub exactly there (works before any layout has been run).
   subClick(pt, ev) {
@@ -1410,6 +1426,16 @@ const PlanLayoutUI = {
     if (!f) { UI.toast('Calibrate the plan first: the layout works in metres.', 'warn', 3500); return; }
     const m = [pt.x * f, pt.y * f], tol = 14 * f / PlanEngine.view.zoom;
     const mine = (L.subs || []).map((q, i) => ({ i, d: Math.hypot(q.x * f - m[0], q.y * f - m[1]) })).filter(x => x.d <= tol).sort((a, b) => a.d - b.d)[0];
+    // a mini-sub part drawn on the plan: a click takes it into the scheme or leaves it out (Alt-click always leaves it out)
+    const part = this.subMove == null && !mine ? AppState.planMarkup.elements.filter(e => e.type === 'minisub' && e.auto !== 'layout')
+      .map(e => ({ e, d: Math.hypot(e.x * f - m[0], e.y * f - m[1]) })).filter(x => x.d <= tol).sort((a, b) => a.d - b.d)[0] : null;
+    if (part) {
+      const isOff = L.subsOff.includes(String(part.e.id)), on = ev && ev.altKey ? false : isOff;
+      if (on === !isOff) return;
+      this.setSubIn(part.e.id, on);
+      UI.toast(`${part.e.name || 'Mini-sub'} ${on ? 'is part of this scheme again.' : 'is left out of this scheme. It stays on the plan; click it again to take it back in.'}`, 'info', 3500);
+      return;
+    }
     if (ev && ev.altKey) {                                                           // Alt-click removes the one under the pointer
       if (mine) { L.subs.splice(mine.i, 1); this.subMove = null; this.touched(true); }
       else UI.toast('No mini-sub placed by Auto layout there. A mini-sub part you drew on the plan is removed on the plan.', 'info', 3500);
@@ -1471,7 +1497,7 @@ const PlanLayoutUI = {
         : 'Streets: Click: add a kerb line and its streets · Shift-click: just this piece · Alt-click: subtract · Ctrl-click: lone kerb · Enter: create · Backspace: undo pick · Esc: leave');
     }
     if (this.step === 1) return pre + 'Streets: draw each street centreline, or take them from the drawing in the panel.';
-    if (this.step === 2) return pre + 'Mini-subs: click where each one stands. Click a mini-sub to move it, Alt-click to remove it.';
+    if (this.step === 2) return pre + 'Mini-subs: click where each one stands. Click a mini-sub to move it, Alt-click to remove it. Click one drawn on the plan to leave it out of this scheme or take it back in.';
     if (this.step === 3) return pre + 'Rules: choose the preset and the settings in the panel.';
     if (!r) return pre + 'Review: run the layout to see the kiosks, cables and checks.';
     if (!r.kiosks.length) return pre + 'Review: no kiosks were found. Draw a centreline beside the erven, or extend the nearest street.';
@@ -1881,6 +1907,13 @@ const PlanLayoutUI = {
         acts: rows.filter(x => x.g && !x.g.near).length > 1 ? [{ label: 'Extend the nearest streets to all of them', act: 'extendall', val: rows.filter(x => x.g && !x.g.near).map(x => x.id) }] : [] });
     }
     if (r.net.unreached && r.net.unreached.length) out.push({ sev: 'fail', text: `The LV network does not reach ${r.net.unreached.length} ${r.net.unreached.length === 1 ? 'kiosk' : 'kiosks'} (${r.net.unreached.map(k => k.id).join(', ')}): ${(r.net.parts || 2) > 1 ? 'the streets between them are not joined up (' + r.net.parts + ' separate street networks).' : 'the streets are joined, so this is a layout fault: run the layout again and report it if it stays.'} Their erven have no LV supply, and the voltage-drop and earth-fault results leave them out. ${(r.net.parts || 2) > 1 ? 'Join the streets (Streets from kerb layer › Join networks) or add the missing street.' : ''}`, ids: r.net.unreached.flatMap(k => k.members.map(e => e.id)) });
+    if (P.maxFeeds >= 1 && r.net.subs) {                                                // feeders per mini-sub
+      const nameOf = (S) => 'S' + S.id;
+      const over = r.net.subs.filter(S => S.feeds && S.feeds.over), raised = r.net.subs.filter(S => S.feeds && S.feeds.raised && !S.feeds.over);
+      const erfIds = S => r.kiosks.filter(k => k.subK === S.k).flatMap(k => k.members.map(e => e.id));
+      if (over.length) out.push({ sev: 'fail', text: `${over.map(S => `${nameOf(S)} needs ${S.nFeeds} LV feeders`).join(', ')}: more than the ${P.maxFeeds} a mini-sub can have. ${over.some(S => S.feeds.hubs > P.maxFeeds) ? 'The network leaves it in more directions than that, so its strings cannot be joined: place another mini-sub, or move it off the junction.' : 'Kiosks you split by hand add a feeder each: undo a split, or place another mini-sub.'}`, ids: over.flatMap(erfIds), acts: [{ label: 'Place another mini-sub', act: 'addsub' }] });
+      if (raised.length) out.push({ sev: 'warn', text: `To keep within ${P.maxFeeds} feeders, ${raised.map(S => `${nameOf(S)}'s strings carry up to ${S.feeds.limit} ${P.strE >= 1 ? 'erven' : 'kiosks'}`).join(', ')} (the string limit is ${P.strE >= 1 ? P.strE + ' erven' : P.strN + ' kiosks'}). Place another mini-sub to keep the strings shorter.`, ids: raised.flatMap(erfIds), acts: [{ label: 'Place another mini-sub', act: 'addsub' }] });
+    }
     if (P.strL > 0 && r.net.strLens) {
       const longS = r.net.strLens.filter(x => x.len > P.strL + 1e-6).sort((a, b) => b.len - a.len);
       if (longS.length) out.push({ sev: 'fail', text: `${longS.length} LV ${longS.length === 1 ? 'string is' : 'strings are'} longer than ${P.strL} m from the mini-sub to the furthest kiosk (${longS.slice(0, 5).map(x => x.far.id + ': ' + Math.round(x.len) + ' m').join(', ')}${longS.length > 5 ? ', …' : ''}). Cutting a string does not shorten it: add a mini-sub nearer the far end, or move the mini-sub.`, ids: longS.flatMap(x => x.kiosks.flatMap(k => k.members.map(e => e.id))), acts: [{ label: 'Place another mini-sub', act: 'addsub' }] });
@@ -1963,6 +1996,9 @@ const PlanLayoutUI = {
     if (typeof PlanReserveUI !== 'undefined') PlanReserveUI.draw(ctx, zoom);
     this.centreDraw(ctx, zoom);
     this.secDrawOverlay(ctx, zoom);
+    { const u0 = 1 / zoom;                                                               // mini-subs left out of this scheme: a grey ring with a cross
+      this.offSubs().forEach(e => { ctx.save(); ctx.strokeStyle = '#6b7280'; ctx.lineWidth = 1.8 * u0; ctx.setLineDash([4 * u0, 3 * u0]); ctx.beginPath(); ctx.arc(e.x, e.y, 15 * u0, 0, 6.2832); ctx.stroke(); ctx.setLineDash([]);
+        ctx.beginPath(); ctx.moveTo(e.x - 9 * u0, e.y - 9 * u0); ctx.lineTo(e.x + 9 * u0, e.y + 9 * u0); ctx.moveTo(e.x + 9 * u0, e.y - 9 * u0); ctx.lineTo(e.x - 9 * u0, e.y + 9 * u0); ctx.stroke(); ctx.restore(); }); }
     if (!this.result) {                                                                  // before a run: where the mini-subs stand
       const u0 = 1 / zoom;
       this.placedSubs().forEach(q => { ctx.save(); ctx.fillStyle = '#c92a2a'; ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.6 * u0; ctx.beginPath(); ctx.moveTo(q.x, q.y - 9 * u0); ctx.lineTo(q.x + 8 * u0, q.y + 6 * u0); ctx.lineTo(q.x - 8 * u0, q.y + 6 * u0); ctx.closePath(); ctx.stroke(); ctx.fill(); if (q.src === 'layout' && this.subMove === q.i) { ctx.strokeStyle = '#2563eb'; ctx.lineWidth = 2.2 * u0; ctx.beginPath(); ctx.arc(q.x, q.y, 14 * u0, 0, 6.2832); ctx.stroke(); } ctx.restore(); });
@@ -2086,7 +2122,7 @@ const PlanLayoutUI = {
       if (kind === 'check') return `<div style="display:flex;flex-direction:column;gap:3px"><label style="display:flex;gap:6px;align-items:flex-start"${tipOf(k)}><input type="checkbox" data-p="${k}"${p[k] ? ' checked' : ''}> <span>${dot(k)}${esc(a)}${qm(k)}</span></label>${rst(row)}</div>`;
       return `<div style="display:flex;flex-direction:column;gap:3px"><label style="display:block"${tipOf(k)}>${dot(k)}${esc(b)}${qm(k)}<select data-p="${k}" style="width:100%">${a.map(o => `<option value="${esc(o[0])}"${p[k] === o[0] ? ' selected' : ''}>${esc(o[1])}</option>`).join('')}</select></label>${rst(row)}</div>`;
     };
-    const MOST = ['n', 'maxc', 'strN', 'strL'];                                      // the two kiosk settings shown in Rules as "most used"
+    const MOST = ['n', 'maxc', 'strN', 'strL', 'maxFeeds'];                                      // the two kiosk settings shown in Rules as "most used"
     const grpChanged = rows => rows.some(r => !MOST.includes(r[0]) && String(p[r[0]]) !== String(dflt[r[0]]));
     const advHead = (name, changed, key) => `<summary style="cursor:pointer;font-weight:600;margin:2px 0">${name}${changed ? ` <span style="color:#b45309;font-weight:400;font-size:12px">● changed</span>` : ''}</summary>`;
     const resetBtn = (changed, key) => changed ? `<button type="button" class="plan-btn" data-act="resetgrp" data-g="${escHtml(key)}" style="align-self:flex-start;padding:1px 8px;font-size:12px">Reset this group</button>` : '';
@@ -2189,12 +2225,14 @@ const PlanLayoutUI = {
         ${PlanSides.panelHtml(esc)}`;
     // ── step 2: mini-subs
     const subRow = (q, i) => { const S = r && r.net.subs[i], ks = S ? r.kiosks.filter(k => k.subK === S.k) : null;
-      return `<div style="border:1px solid var(--border-color,#ddd);border-radius:5px;padding:4px 6px;display:flex;flex-direction:column;gap:2px"><div style="display:flex;justify-content:space-between;align-items:center;gap:4px"><b>S${i + 1}</b>${q.src === 'layout' ? `<span style="display:flex;gap:4px"><button type="button" class="plan-btn" data-act="submove" data-i="${escHtml(q.i)}" style="${sBtn}">Move</button><button type="button" class="plan-btn" data-act="subrm" data-i="${escHtml(q.i)}" style="${sBtn}">Remove</button></span>` : ''}</div><span style="font-size:12px;color:var(--text-muted)">${q.src === 'plan' ? 'Drawn on the plan. Move or remove it there. ' : ''}${f0 ? Math.round(q.x * f0) + ' m, ' + Math.round(q.y * f0) + ' m' : ''}${ks ? ` · serves ${ks.length} kiosk${ks.length === 1 ? '' : 's'}, ${ks.reduce((a, k) => a + k.members.length, 0)} erven` : ''}</span></div>`; };
+      return `<div style="border:1px solid var(--border-color,#ddd);border-radius:5px;padding:4px 6px;display:flex;flex-direction:column;gap:2px"><div style="display:flex;justify-content:space-between;align-items:center;gap:4px"><b>S${i + 1}${q.src === 'plan' ? ' · ' + escHtml((AppState.planMarkup.elements.find(e => e.id === q.id) || {}).name || '') : ''}</b>${q.src === 'layout' ? `<span style="display:flex;gap:4px"><button type="button" class="plan-btn" data-act="submove" data-i="${escHtml(q.i)}" style="${sBtn}">Move</button><button type="button" class="plan-btn" data-act="subrm" data-i="${escHtml(q.i)}" style="${sBtn}">Remove</button></span>` : `<button type="button" class="plan-btn" data-act="subout" data-id="${escHtml(q.id)}" style="${sBtn}">Leave out</button>`}</div><span style="font-size:12px;color:var(--text-muted)">${q.src === 'plan' ? 'Drawn on the plan. Move or remove it there. ' : ''}${f0 ? Math.round(q.x * f0) + ' m, ' + Math.round(q.y * f0) + ' m' : ''}${ks ? ` · serves ${ks.length} kiosk${ks.length === 1 ? '' : 's'}, ${ks.reduce((a, k) => a + k.members.length, 0)} erven` : ''}${S && S.nFeeds != null ? ` · ${S.nFeeds} of ${r.P.maxFeeds || '–'} feeders` : ''}</span></div>`; };
+    const offList = this.offSubs(), offRows = offList.length ? `<div style="font-weight:600">Not in this scheme (${offList.length})</div>` + offList.map(e => `<div style="border:1px dashed var(--border-color,#ccc);border-radius:5px;padding:4px 6px;display:flex;justify-content:space-between;align-items:center;gap:4px;color:var(--text-muted)"><span>${escHtml(e.name || 'Mini-sub')}${f0 ? ' · ' + Math.round(e.x * f0) + ' m, ' + Math.round(e.y * f0) + ' m' : ''}</span><button type="button" class="plan-btn" data-act="subin" data-id="${escHtml(e.id)}" style="${sBtn}">Include</button></div>`).join('') : '';
     const step2 = `<div style="font-size:12px;color:var(--text-muted)">The layout works from your mini-subs. Click where each one stands, anywhere (on a street, in a block, in a park). No kiosk is added beside it: kiosks follow the erven and go to the nearest mini-sub.</div>
         <button type="button" class="plan-btn" data-mode="sub" aria-pressed="${this.mode === 'sub'}" style="font-weight:600;padding:8px;${this.mode === 'sub' ? 'outline:2px solid var(--accent,#2563eb)' : ''}">${this.mode === 'sub' ? 'Placing: click the plan' : (placed.length ? 'Place another' : 'Place a mini-sub')}</button>
         <div style="font-weight:600">Placed (${placed.length})</div>
         ${placed.length ? placed.map(subRow).join('') : banner('warn', '<span>None yet. The layout cannot run until one is placed. Where it stands decides every LV cable, so place it with care.</span>')}
-        <div style="font-size:12px;color:var(--text-muted)">Click one, then click again to move it. Alt-click removes it. A mini-sub part you draw on the plan counts too.</div>`;
+        ${offRows}
+        <div style="font-size:12px;color:var(--text-muted)">Click one, then click again to move it. Alt-click removes it. A mini-sub part you draw on the plan counts too; click it on the plan (or use Leave out) when it is not part of this scheme.</div>`;
     // ── step 3: rules
     const pBtn = (k, t) => `<button type="button" class="plan-btn" data-preset="${k}" aria-pressed="${preset === k}" style="padding:3px 6px;font-size:12px;${preset === k ? 'font-weight:600;outline:2px solid var(--accent,#2563eb)' : ''}">${t}</button>`;
     const kRow = k => this.CTRL[1][1].find(x => x[0] === k);
@@ -2213,7 +2251,7 @@ const PlanLayoutUI = {
         ${this.admdHtml()}
         ${secBlock}
         <div style="font-weight:600">Most used</div>
-        <div style="display:flex;flex-direction:column;gap:8px">${ctrl(kRow('n'))}${ctrl(kRow('maxc'))}${ctrl(kRow('strN'))}${ctrl(kRow('strL'))}${vdTx}${vdLv}</div>
+        <div style="display:flex;flex-direction:column;gap:8px">${ctrl(kRow('n'))}${ctrl(kRow('maxc'))}${ctrl(kRow('strN'))}${ctrl(kRow('maxFeeds'))}${ctrl(kRow('strL'))}${vdTx}${vdLv}</div>
         <details><summary style="cursor:pointer;font-weight:600">Advanced <span style="font-weight:400;font-size:12px;color:var(--text-muted)">6 groups · ${nChanged} changed</span></summary><div style="display:flex;flex-direction:column;gap:4px;padding-top:4px">${groups}${trenchGroup}${vdGroup}</div></details>
         <div style="font-size:12px;color:var(--text-muted)">${r ? 'The layout runs again when you change a setting.' : 'Nothing is drawn while you choose.'}</div>`;
     // ── step 4: review
@@ -2335,6 +2373,7 @@ const PlanLayoutUI = {
       if (b.dataset.act === 'show') { const k = b.dataset.k; if (k === 'all') Object.keys(this.SHOW_PARTS).forEach(q => { this.SHOW[q] = true; }); else if (k in this.SHOW) this.SHOW[k] = !this.SHOW[k]; PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true }); return; }
       if (b.dataset.act === 'unflag') { this.flag = null; this.flagRuns = null; this.nearHint = null; PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true }); return; }
       if (b.dataset.act === 'kerbstreets') { this.streetDrawOn(false); const sel = el.querySelector('[data-stl]'), x = lyr[sel ? +sel.value : 0]; this.kerbStart(); return; }
+      if (b.dataset.act === 'subout' || b.dataset.act === 'subin') { this.setSubIn(b.dataset.id, b.dataset.act === 'subin'); return; }
       if (b.dataset.act === 'subrm') { const L2 = this.cfg(); L2.subs.splice(+b.dataset.i, 1); this.subMove = null; this.touched(); return; }
       if (b.dataset.act === 'streetdraw') { this.streetDrawOn(!this.drawStreets); return; }
       if (b.dataset.act === 'centrepick') { this.streetDrawOn(false); const sel = el.querySelector('[data-stl]'), x = lyr[sel ? +sel.value : 0]; if (x) this.centreStart(x.d.id, x.layer); return; }

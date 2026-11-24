@@ -574,7 +574,7 @@ const strSizes = (r) => {                                                       
   return r.net.lvLinks.filter(l => !kids.has(l.from)).map(l => size(l.to));
 };
 ok('strings: no string has more than strN kiosks, every kiosk is still fed once', () => {
-  const free = L.solve(F, { strN: 0 }), cut = L.solve(F, { strN: 4 });
+  const free = L.solve(F, { strN: 0 }), cut = L.solve(F, { strN: 4, maxFeeds: 0 });
   assert.strictEqual(cut.net.lvLinks.length, cut.kiosks.length);
   assert(Math.max(...strSizes(cut)) <= 4, 'sizes ' + strSizes(cut));
   assert(strSizes(cut).length >= strSizes(free).length);
@@ -584,7 +584,7 @@ ok('strings: no string has more than strN kiosks, every kiosk is still fed once'
 ok('strings: strN 0 leaves the tree as it was; "even" never has more kiosks than strN nor fewer strings than "fewest"', () => {
   const a = L.solve(F, { strN: 0 }), b = L.solve(F, { strN: 0, strMode: 'even' });
   assert.deepStrictEqual(a.net.lvLinks.map(l => l.len), b.net.lvLinks.map(l => l.len));
-  const f = L.solve(F, { strN: 3 }), e = L.solve(F, { strN: 3, strMode: 'even' });
+  const f = L.solve(F, { strN: 3, maxFeeds: 0 }), e = L.solve(F, { strN: 3, strMode: 'even', maxFeeds: 0 });
   assert(Math.max(...strSizes(e)) <= 3 && strSizes(e).length >= strSizes(f).length);
   assert(Math.max(...strSizes(e)) - Math.min(...strSizes(e)) <= Math.max(...strSizes(f)) - Math.min(...strSizes(f)));
 });
@@ -598,7 +598,7 @@ ok('crossings: "near" crosses at the boundary nearest each erf, no longer cable,
   assert(near.stats.crossings >= few.stats.crossings);
 });
 ok('strings: strE cuts by erven carried; no string carries more than strE (a single kiosk aside)', () => {
-  const r = L.solve(F, { strN: 0, strE: 12 }), up = new Map(r.net.lvLinks.map(l => [l.to, l]));
+  const r = L.solve(F, { strN: 0, strE: 12, maxFeeds: 0 }), up = new Map(r.net.lvLinks.map(l => [l.to, l]));
   const head = k => { let c = k; while (up.get(c) && up.get(c).from !== c.subK) c = up.get(c).from; return c; };
   const load = new Map(); r.kiosks.forEach(k => { const h = head(k); load.set(h, (load.get(h) || 0) + k.members.length); });
   load.forEach((n, h) => assert(n <= 12 || h.members.length > 12 || n === h.members.length, 'string of ' + n));
@@ -669,11 +669,29 @@ ok('a placed mini-sub joins the NEAREST street, not the first one', () => {
 });
 ok('strings: each string reports its reach from the mini-sub; cutting by kiosks never shortens it; default limit is 350 m', () => {
   assert.strictEqual(L.DEFAULTS.strL, 350);
-  const a = L.solve(F, { strN: 0 }), b = L.solve(F, { strN: 2 });
+  const a = L.solve(F, { strN: 0 }), b = L.solve(F, { strN: 2, maxFeeds: 0 });
   assert(a.net.strLens.length >= 1 && b.net.strLens.length > a.net.strLens.length, 'more strings when cut');
   const far = r => Math.max(...r.net.strLens.map(x => x.len));
   assert(far(b) <= far(a) + 0.05, 'the furthest kiosk is no further when cut (within 5 cm: the head feeder follows the same route, rounded at its own bends)');
   b.net.strLens.forEach(x => { assert(x.len > 0 && x.kiosks.includes(x.far)); });
+});
+ok('feeders: at most maxFeeds per mini-sub (default 6); over it the strings are cut longer, never left over the limit', () => {
+  assert.strictEqual(L.DEFAULTS.maxFeeds, 6);
+  const free = L.solve(F, { strN: 2, maxFeeds: 0 }), feeds = r => r.net.subs.map(S => S.nFeeds);
+  assert(Math.max(...feeds(free)) > 4, 'the fixture needs more than 4 feeders at strN 2: ' + feeds(free));
+  for (const m of [4, 6, 10]) {
+    const r = L.solve(F, { strN: 2, maxFeeds: m });
+    r.net.subs.forEach(S => { if (!S.feeds.over) assert(S.nFeeds <= m, `max ${m}: ${S.nFeeds}`); });
+    assert.strictEqual(r.net.lvLinks.length, r.kiosks.length, 'every kiosk still fed once');
+    assert.strictEqual(r.stats.strings, feeds(r).reduce((a, b) => a + b, 0));
+    if (Math.max(...feeds(free)) > m) assert(r.net.subs.some(S => S.feeds.raised), 'the string limit was raised');
+  }
+  const r4 = L.solve(F, { strN: 2, maxFeeds: 4 }); assert(Math.max(...strSizes(r4)) > 2, 'longer strings to keep within 4 feeders');
+  // two mini-subs share the kiosks: each keeps its own limit
+  const S0 = free.streets[0], S1 = free.streets[free.streets.length - 1], p0 = L.ptAt(S0, 5, 0.002), p1 = L.ptAt(S1, Math.max(0, S1.len - 5), 0.002);
+  const two = L.solve(Object.assign({}, F, { subPts: [[p0[0], p0[1]], [p1[0], p1[1]]] }), { strN: 1, maxFeeds: 3 });
+  assert.strictEqual(two.net.subs.length, 2);
+  two.net.subs.forEach(S => assert(S.feeds.over || S.nFeeds <= 3, 'each mini-sub: ' + S.nFeeds));
 });
 ok('a kiosk moved by hand stands exactly there and the layout is solved around it', () => {
   const r0 = L.solve(F, {}), k0 = r0.kiosks[Math.floor(r0.kiosks.length / 2)], st = k0.road;
