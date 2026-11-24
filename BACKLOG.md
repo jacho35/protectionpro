@@ -83,6 +83,11 @@ section and adding the `## Completed` entry.
 57. **Street lighting undo and plan write-back** — the workspace has no undo stack of its own yet, and the circuit's cable does not flow back to the Plan's SL routes. *(Street Lighting Enhancements)*
 59. **Road lighting: remaining criteria** — SANS 10098-1 semi-cylindrical Esc,min for B/C categories (Appendix E.1 formula, both directions on the footways; supplementary) and the maintenance factor from Table B.1 (IP rating × environment × cleaning interval); SANS 10098-1 Appendix C curve spacing ratio; EN P-class extras (Ev,min, Esc,min, TI for C/P classes), wet-road Uow (W-tables), HS/SC/EV classes; a measured-Q0 scaling of the r-table; an extended r-table for luminaires ≤ 2 m; rename *Overhang* to SANS *outreach* and show the SANS overhang past the kerb. *(Street Lighting Enhancements)*
 
+115. **Road lighting ⇄ site plan flow, step 1: road verdict on the plan** — selecting a pole or street on the Electrical plan shows its Road plan class result (pass / marginal / fail) in the Properties pane, with *Open in Roads* (← Back to plan). *(Street Lighting Enhancements)*
+116. **Road lighting flow, step 2: Design-first stepper** — one stepper in the Roads tab: Design → Roads → Poles → Check → Circuits (replaces Circuits / Lighting design / Road plan sub-tabs + steps 1-2-3); Circuits stays reachable at any time. *(Street Lighting Enhancements)*
+117. **Road lighting flow, step 3: shared plan geometry** — Roads takes the site plan's streets (Auto layout width kept), underlay and kiosk / mini-sub feed by reference; Lighting projects stay standalone with Roads' own background and drawing tools. *(Street Lighting Enhancements)*
+118. **Road lighting flow, step 4: one pole set, one Build circuits** — poles laid out along roads or placed by hand live in one set, shown on the plan and in Roads; *Sync from plan* and *Import from road plan* become *Build circuits* (drawn route wins, else road order, else nearest-neighbour from the kiosk; guesses flagged); migration for `planKey` / `roadKey` projects. *(Street Lighting Enhancements)*
+
 ### Room & outdoor lighting — follow-ups
 
 80. **Road classes: remaining EN 13201-2 criteria** *(pending)* — fTI limits for the C and P classes (Annex C: C 15–20 %, P 20–35 %), the wet-road Uow ≥ 0.15, P-class Ev,min / Esc,min where facial recognition is needed, the SC and EV classes (Tables 5–6). M1–M6 / C0–C5 / P1–P6 values already match the standard. *(Room & Outdoor Lighting Enhancements)*
@@ -415,6 +420,8 @@ The Street lighting workspace (Reticulation) solves each circuit with phasors �
 - **Undo + plan write-back.** Street-lighting edits are not on an undo stack; a circuit's cable is not written back to the Plan routes it came from.
 - ~~**Road lighting on plan-view poles.** The lighting design (`frontend/js/roadlight.js`, `backend/analysis/road_lighting.py`) models a straight road from its cross-section. Running it on the plan's real pole positions needs road polygons on the plan, a calculation grid per segment and junction (conflict-area) handling; the engine's point calculations (`_illuminance`, `_luminance`, `_threshold_increment`) already take arbitrary luminaire/point arrays.~~ Done as Street lighting ▸ Road plan (2026-10-21, see Completed).
 - **Road lighting criteria still open.** P-class Ev,min / Esc,min and C/P-class TI; wet Uow with W-tables; HS / SC / EV classes; scaling the r-table by a measured Q0; the EN 13201-3 Annex B extended r-table for luminaires ≤ 2 m high.
+
+**Road lighting ⇄ site plan flow (design review 2026-11-24, items 115-118).** Today there are two plans (the Road plan re-draws roads and copies the site plan's DXF), two pole paths to circuits (plan `sl` routes → *Sync from plan* / `planKey`; road-plan poles + Feed point → *Import from road plan* / `roadKey`), a kiosk re-picked in the Road plan, three levels of tabs, and no light result on the plan. Decisions: Lighting projects stay standalone; both pole routes stay, over one pole set; Design-first order; verdict shown in the plan's Properties pane. Build in order 115 → 118.
 
 ## Room & Outdoor Lighting Enhancements
 

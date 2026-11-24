@@ -139,6 +139,15 @@ const RoadPlan = {
   get roads() { return this.rp.roads; },
   road(id) { return this.roads.find(r => r.id === id) || null; },
   get selRoad() { return this.road(this._selRoad); },
+  // The calculated verdict of one road, read by the Electrical plan's Properties pane
+  // (results are on demand and never saved: 'none' until Light on the plan has run).
+  verdict(id) {
+    const rr = this._res && this._res.roads && !this._resStale ? this._res.roads.find(x => x.id === id) : null;
+    if (!rr) return { state: this._res && this._resStale ? 'stale' : 'none', fail: 0, n: 0 };
+    const segs = rr.segments || [];
+    const fail = segs.filter(x => x.pass === false).length;
+    return { state: rr.pass === null || rr.pass === undefined ? 'none' : (rr.pass ? 'pass' : 'fail'), fail, n: segs.length };
+  },
   _genId(prefix) { return prefix + '_' + (this.rp._seq++); },
   _num(v, d) { const x = parseFloat(v); return isFinite(x) ? x : d; },
   _fmt(v, dp = 2) { return v === null || v === undefined || !isFinite(v) ? '—' : (+v).toFixed(dp); },

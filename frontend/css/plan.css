@@ -544,3 +544,9 @@ body.dark-mode .plan-legend-line.target { border-color: #4a9eff; }
 .plan-load-sum { display: grid; gap: 2px; margin: 8px 0; padding: 8px 10px; border: 1px solid var(--border-color); border-radius: 6px; background: var(--bg-secondary, transparent); font-size: 12px; color: var(--text-secondary); }
 .plan-load-sum b { color: var(--text-primary); }
 .plan-load-sum .warn { color: #b45309; }
+
+/* Road lighting verdict on a selected kiosk / mini-sub / pole (Properties pane) */
+.plan-roadlight-row { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; font-size: 12px; }
+.plan-roadlight-v { color: var(--text-secondary); }
+.plan-roadlight-v.ok { color: #2e6b3e; font-weight: 600; }
+.plan-roadlight-v.bad { color: #b3261e; font-weight: 600; }

@@ -647,6 +647,7 @@ const PlanUI = {
     html += this._defaultCableButton(item, kind);
     html += this._demandBlock(item, kind);
     html += this._demandLinkField(item, kind);
+    html += this._roadLightBlock(item, kind);
     html += this._sldLinkField(item, kind);
     // Building auto-circuiting: circuit-tag editor on load devices; bulk-assign
     // on distribution boards.
@@ -660,6 +661,26 @@ const PlanUI = {
     el.innerHTML = html;
     this._searchifyCables(el);
     if (typeof RoomLighting !== 'undefined') RoomLighting.tipify(el, kind === 'element' ? item.type : null);
+  },
+
+  // Road lighting on a selected kiosk / mini-sub / pole: the Road plan verdict of each street-light
+  // circuit it feeds (or carries), with a link into Roads and a Back chip to this item.
+  _roadLightBlock(item, kind) {
+    if (kind !== 'element' || typeof StreetLight === 'undefined' || typeof RoadPlan === 'undefined') return '';
+    const cs = StreetLight.circuits.filter(c => c.roadKey && (
+      ((item.type === 'kiosk' || item.type === 'minisub') && item.reticId && c.source && c.source.id === item.reticId) ||
+      (item.type === 'pole' && c.poles.some(p => p.planId === item.id))));
+    if (!cs.length) return '';
+    const WORD = { pass: ['Meets its class', 'ok'], fail: ['Fails its class', 'bad'], stale: ['Out of date — recalculate', ''], none: ['Not calculated yet', ''] };
+    const rows = cs.map(c => {
+      const road = RoadPlan.road(c.roadKey);
+      if (!road) return '';
+      const v = RoadPlan.verdict(road.id), w = WORD[v.state];
+      const extra = v.state === 'fail' ? ` · ${v.fail} of ${v.n} segment${v.n === 1 ? '' : 's'}` : '';
+      return `<div class="plan-roadlight-row"><b>${escHtml(road.name || 'Road')}</b> <span class="plan-roadlight-v ${w[1]}">${escHtml(w[0] + extra)}</span>
+        <button type="button" class="plan-btn" data-link-go="rp:${escHtml(road.id)}" data-link-back="plan:${escHtml(item.id)}">Open in Roads</button></div>`;
+    }).join('');
+    return rows ? `<div class="plan-props-sec">Road lighting</div>${rows}` : '';
   },
 
   // ─── Bulk edit (several items of one kind + type selected) ───
