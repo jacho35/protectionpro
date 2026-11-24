@@ -255,6 +255,24 @@ def test_ies_bilateral_expansion():
     assert p["lumens"] == pytest.approx(p["fluxIntegrated"])  # absolute photometry
 
 
+def test_fitting_size_from_ies_header():
+    """An IES file's only size is its luminous opening: length along C0, width along C90 (m or ft)."""
+    p = parse_ies(IES_BILATERAL)
+    assert p["sizeM"] == {"length": 0.6, "width": 0.3, "height": 0.1, "fromOpening": True}
+    rnd = parse_ies(IES_BILATERAL.replace("1 2 0.3 0.6 0.1", "1 1 -0.5 -0.5 0"))       # feet, round
+    assert rnd["sizeM"]["round"] and rnd["sizeM"]["length"] == rnd["sizeM"]["width"] == pytest.approx(0.152, abs=1e-3)
+    none = parse_ies(IES_BILATERAL.replace("1 2 0.3 0.6 0.1", "1 2 0 0 0"))
+    assert "sizeM" not in none
+
+
+def test_fitting_size_from_ldt_round_when_width_zero():
+    lines = ldt_text().split("\n")
+    assert parse_ldt("\n".join(lines))["sizeM"] == {"length": 0.5, "width": 0.2, "height": 0.1}
+    lines[13] = "0"                                        # EULUMDAT: width 0 = round, length = diameter
+    z = parse_ldt("\n".join(lines))["sizeM"]
+    assert z["round"] and z["length"] == z["width"] == 0.5
+
+
 def ldt_text(isym=1, mc=1, dc=0, planes=1, value=100.0, flux=2000.0):
     g = list(range(0, 91, 10))
     lines = ["Maker", "1", str(isym), str(mc), str(dc), str(len(g)), "10", "rep", "LDT road", "no", "f.ldt", "date",
@@ -390,3 +408,12 @@ def test_generic_indoor_optics_flux_and_shape():
     ci90 = b["c"].index(90.0)
     gi60 = b["g"].index(60.0)
     assert b["cd"][ci90][gi60] < b["cd"][0][gi60]
+
+
+def test_generic_indoor_and_outdoor_optics_carry_a_typical_size():
+    from backend.analysis.photometry import INDOOR_OPTICS, GENERIC_SIZES
+    assert set(GENERIC_SIZES) == set(INDOOR_OPTICS)
+    panel = generic_optic("generic_panel", 3600, 30)["sizeM"]
+    assert panel == {"length": 0.6, "width": 0.6, "height": 0.05, "typical": True}
+    assert generic_optic("generic_downlight_wide", 2000, 20)["sizeM"]["round"]
+    assert "sizeM" not in generic_optic("generic_medium", 10000, 80)       # road optics: no size

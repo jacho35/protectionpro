@@ -122,6 +122,20 @@ body.dark-mode #streetlight-workspace {
   .rp-canvas-wrap { min-height: 60vh; }
 }
 
+/* Phone: the plan first, the tools in one scrolling row; the road list, background and junctions below it. */
+@media (max-width: 768px) {
+  .rp-body > .rp-main { order: -1; padding: 6px 8px; gap: 6px; }
+  .rp-body > .sl-rail { order: 1; border-top: 1px solid var(--border-color); border-bottom: 0; }
+  .rp-body > .rp-panel { order: 2; }
+  .rp-steps, .rp-toolbar { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+  .rp-steps::-webkit-scrollbar, .rp-toolbar::-webkit-scrollbar { display: none; }
+  .rp-steps > *, .rp-toolbar > * { flex: none; }
+  .rp-steps button { min-height: 40px; }
+  .rp-toolbar .btn-small { min-height: 40px; }
+  .rp-canvas-wrap { min-height: 56vh; }
+  .rp-rail .sl-rail-list { max-height: none; }
+}
+
 /* Circuits and cables (js/roadplan-circuits.js) */
 .rp-cable { fill: none; stroke: #b45f06; stroke-width: 2; }
 .rp-cable.link { stroke-dasharray: 5 3; stroke-width: 2.4; }
@@ -155,3 +169,27 @@ body.dark-mode #streetlight-workspace {
 /* The Roads tab's stepper (Design → Roads → Poles → Check → Circuits) replaces the Road plan's own 1-2-3 pills */
 .rp-steps { display: none; }
 .sl-stepper button b { margin-right: 4px; }
+
+/* Roads from the site plan (roadplan-siteplan.js) */
+.rp-siteplan { display: flex; flex-direction: column; gap: 4px; margin: 0 0 8px; padding: 8px 10px; border: 1px solid var(--accent-border, #b9d0f0); background: var(--accent-bg, #eef4fc); border-radius: 6px; font-size: 12px; line-height: 1.4; }
+.rp-siteplan.offer { border-color: #f0cf96; background: #fff6e8; }
+.rp-siteplan-acts { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+.rp-sp-tag { color: var(--accent-color, #1d5fbf); font-weight: 600; }
+.rp-sp-chip { padding: 1px 8px; border-radius: 999px; background: var(--accent-bg, #e9f1fc); color: var(--accent-color, #1d5fbf); font-size: 11px; font-weight: 600; }
+.rp-seg { display: flex; gap: 4px; margin: 6px 0; }
+.rp-seg .btn-small.active { background: var(--accent-color, #1d5fbf); color: #fff; border-color: transparent; }
+.rp-layer .sl-hint { margin-left: auto; }
+body.dark-mode .rp-siteplan { background: rgba(37, 99, 235, .12); border-color: rgba(96, 165, 250, .4); }
+body.dark-mode .rp-siteplan.offer { background: rgba(217, 119, 6, .14); border-color: rgba(251, 191, 36, .4); }
+/* Road plan › Lay out for the checks (roadplan-optimise.js) */
+.rp-opt-dialog { width: min(640px, 96vw); }
+.rp-opt-form { display: grid; gap: 8px; }
+.rp-opt-busy { padding: 24px 4px; color: var(--text-muted); }
+.rp-opt-verdict { padding: 8px 10px; border-radius: 6px; margin-bottom: 10px; border: 1px solid; }
+.rp-opt-verdict.ok { background: rgba(22, 163, 74, .08); border-color: rgba(22, 163, 74, .4); }
+.rp-opt-verdict.bad { background: rgba(220, 38, 38, .07); border-color: rgba(220, 38, 38, .4); }
+.rp-opt-h { margin: 12px 0 4px; font-size: 13px; }
+.rp-opt-heights { margin: 12px 0 6px; }
+.rp-opt-heights summary { cursor: pointer; font-weight: 600; font-size: 13px; }
+.rp-opt-dialog tr.bad td { color: var(--danger, #b91c1c); }
+.rp-opt-dialog tr.rp-opt-cur td { font-weight: 600; }

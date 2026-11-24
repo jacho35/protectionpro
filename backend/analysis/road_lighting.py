@@ -147,6 +147,7 @@ class _Web:
         self.lumens = float(prof.get("lumens") or 0) or 1.0
         self.watts = float(prof.get("watts") or 0)
         self.name = prof.get("name", "")
+        self.length_axis = "C90" if str(prof.get("lengthAxis") or "C0").upper() == "C90" else "C0"
         self.g_max = float(self.g[-1])
 
     def intensity(self, c_deg, g_deg):
@@ -201,6 +202,32 @@ def _f(v, d):
         return d
 
 
+def drive_side(v) -> str:
+    """Which side of the road traffic keeps to: "left" (the default — South
+    Africa, the UK, …) or "right". Only a two-way carriageway reads it."""
+    return "right" if str(v or "").lower() == "right" else "left"
+
+
+def lane_directions(sec: dict, drive: str) -> dict:
+    """Fill sec["signs"]: the direction of travel of each lane (+1 = up the
+    chainage / +x, −1 = down it). `direction` "forward" / "reverse" = every
+    lane one way; "two" = a two-way carriageway, which needs exactly 2 lanes
+    (more lanes are drawn as carriageways of their own) — the lane on the
+    traffic's own side runs up the chainage: lane 1 (low y, the left looking up
+    the chainage) when traffic drives on the left, lane 2 when on the right.
+    "two" with any other lane count is read as "forward"."""
+    d = sec.get("direction") or "forward"
+    n = sec.get("lanes") or 0
+    if d == "two" and n != 2:
+        d = "forward"
+    sec["direction"] = d
+    if d == "two":
+        sec["signs"] = [1.0, -1.0] if drive == "left" else [-1.0, 1.0]
+    else:
+        sec["signs"] = [-1.0 if d == "reverse" else 1.0] * n
+    return sec
+
+
 class _Design:
     def __init__(self, req: dict, webs: dict | None = None):
         self.req = req
@@ -210,6 +237,7 @@ class _Design:
         # saved before SANS support) or "SANS" (SANS 10098-1/-2).
         self.standard = "SANS" if str(req.get("standard") or "EN").upper().startswith("SANS") else "EN"
         self.webs = webs if webs is not None else {k: _Web(v) for k, v in (req.get("photometry") or {}).items()}
+        self.drive = drive_side(req.get("driveSide"))
         y = 0.0
         self.sections = []
         for i, s in enumerate(req.get("sections") or []):
@@ -226,6 +254,7 @@ class _Design:
                 "direction": s.get("direction") or "forward",
                 "volume": min(max(int(_f(s.get("volume"), 0)), 0), 2),
             }
+            lane_directions(sec, self.drive)
             sec["family"] = sans_family(sec["cls"]) if self.standard == "SANS" else class_family(sec["cls"])
             self.sections.append(sec)
             y += w
@@ -476,6 +505,21 @@ def evaluate(des: _Design, S: float, full: bool = True, stop_on_fail: bool = Fal
     return out
 
 
+def _observer_setup(des, S, sign):
+    """Observer x (60 m before the field, EN 13201-3 / SANS 10098-1 App. D),
+    the TI observer's start x and the luminaires TI counts, for travel along
+    sign·x. TI observer (§8.5): starts 2.75·(H − 1.5) before the first
+    luminaire in front of the field — the distance at which the 20° roof
+    screen uncovers it — and moves forward over the field in steps of D."""
+    ox0 = -OBSERVER_BACK_M if sign > 0 else S + OBSERVER_BACK_M
+    r0 = des.rows[0]
+    first = (r0["xOffset"] % 1.0) * S if sign > 0 else S - ((1.0 - r0["xOffset"] % 1.0) % 1.0) * S
+    ti_x0 = first - sign * 2.75 * max(r0["height"] - OBSERVER_EYE_M, 0.0)
+    far = _luminaires(des, S, min(ti_x0, 0.0) - 10, S + TI_RANGE_M + 10) if sign > 0 else \
+        _luminaires(des, S, -TI_RANGE_M - 10, max(ti_x0, S) + 10)
+    return ox0, ti_x0, far
+
+
 def _luminance_checks(des, sec, res, xs, D, S, lum, full):
     req = M_CLASSES[sec["cls"]]
     rt = _RTable(sec["surface"])
@@ -484,18 +528,13 @@ def _luminance_checks(des, sec, res, xs, D, S, lum, full):
     ys = np.concatenate([sec["y0"] + k * wl + (np.arange(3) + 0.5) * wl / 3 for k in range(lanes)])
     gx, gy = np.meshgrid(xs, ys, indexing="ij")
     px, py = gx.ravel(), gy.ravel()
-    sign = -1.0 if sec["direction"] == "reverse" else 1.0
-    ox0 = -OBSERVER_BACK_M if sign > 0 else S + OBSERVER_BACK_M
-    # TI observer (§8.5): starts 2.75·(H − 1.5) before the first luminaire in
-    # front of the field — the distance at which the 20° roof screen uncovers it
-    # — and moves forward over the field in steps of D.
-    r0 = des.rows[0]
-    first = (r0["xOffset"] % 1.0) * S if sign > 0 else S - ((1.0 - r0["xOffset"] % 1.0) % 1.0) * S
-    ti_x0 = first - sign * 2.75 * max(r0["height"] - OBSERVER_EYE_M, 0.0)
-    far = _luminaires(des, S, min(ti_x0, 0.0) - 10, S + TI_RANGE_M + 10) if sign > 0 else \
-        _luminaires(des, S, -TI_RANGE_M - 10, max(ti_x0, S) + 10)
+    setup = {sg: _observer_setup(des, S, sg) for sg in set(sec["signs"])}
     obs = []
     for k in range(lanes):
+        # each lane's observer looks the way that lane travels (a two-way
+        # carriageway has one lane each way)
+        sign = sec["signs"][k]
+        ox0, ti_x0, far = setup[sign]
         oy = sec["y0"] + (k + 0.5) * wl
         L = _luminance(des, lum, px, py, rt, ox0, oy, sign).reshape(gx.shape)
         lav = float(L.mean())
@@ -505,8 +544,8 @@ def _luminance_checks(des, sec, res, xs, D, S, lum, full):
         lav_init = lav / des.mf
         # observer moved over one field in steps of D
         ti = _threshold_increment(des, far, ti_x0 + sign * np.arange(len(xs)) * D, oy, sign, lav_init)
-        obs.append({"lane": k + 1, "y": round(oy, 3), "Lav": lav, "Uo": uo, "Ul": ul, "TI": ti,
-                    "grid": L})
+        obs.append({"lane": k + 1, "y": round(oy, 3), "dir": "forward" if sign > 0 else "reverse",
+                    "Lav": lav, "Uo": uo, "Ul": ul, "TI": ti, "grid": L})
     worst = min(obs, key=lambda o: o["Lav"])
     res["Lav"] = min(o["Lav"] for o in obs)
     res["Uo"] = min(o["Uo"] for o in obs)
@@ -603,29 +642,43 @@ def _sans_luminance(des, sec, res, xs, D, S, lum, full):
     ys = np.concatenate([sec["y0"] + k * wl + (np.arange(3) + 0.5) * wl / 3 for k in range(lanes)])
     gx, gy = np.meshgrid(xs, ys, indexing="ij")
     px, py = gx.ravel(), gy.ravel()
-    sign = -1.0 if sec["direction"] == "reverse" else 1.0
-    ox0 = -OBSERVER_BACK_M if sign > 0 else S + OBSERVER_BACK_M
-    r0 = des.rows[0]
-    first = (r0["xOffset"] % 1.0) * S if sign > 0 else S - ((1.0 - r0["xOffset"] % 1.0) % 1.0) * S
-    ti_x0 = first - sign * 2.75 * max(r0["height"] - OBSERVER_EYE_M, 0.0)
-    far = _luminaires(des, S, min(ti_x0, 0.0) - 10, S + TI_RANGE_M + 10) if sign > 0 else \
-        _luminaires(des, S, -TI_RANGE_M - 10, max(ti_x0, S) + 10)
-    oy_q = sec["y0"] + sec["width"] / 4 if sign > 0 else sec["y1"] - sec["width"] / 4
-    Lq = _luminance(des, lum, px, py, rt, ox0, oy_q, sign).reshape(gx.shape)
-    lav = float(Lq.mean())
-    uo = float(Lq.min() / lav) if lav > 0 else 0.0
-    ti = _threshold_increment(des, far, ti_x0 + sign * np.arange(len(xs)) * D, oy_q, sign, lav / des.mf)
+    setup = {sg: _observer_setup(des, S, sg) for sg in set(sec["signs"])}
+    # The conventional observer, a quarter of the carriageway width in from the
+    # left-hand side of the road for its direction of travel. A two-way
+    # carriageway has one per direction (each in its own lane's centre — a
+    # quarter of the width from that direction's kerb); the worst one counts.
+    quarter = []
+    for sg in (sorted(set(sec["signs"]), reverse=True)):
+        ox0, ti_x0, far = setup[sg]
+        if sec["direction"] == "two":
+            oy_q = sec["y0"] + (sec["signs"].index(sg) + 0.5) * wl
+        else:
+            oy_q = sec["y0"] + sec["width"] / 4 if sg > 0 else sec["y1"] - sec["width"] / 4
+        Lq = _luminance(des, lum, px, py, rt, ox0, oy_q, sg).reshape(gx.shape)
+        lav = float(Lq.mean())
+        uo = float(Lq.min() / lav) if lav > 0 else 0.0
+        ti = _threshold_increment(des, far, ti_x0 + sg * np.arange(len(xs)) * D, oy_q, sg, lav / des.mf)
+        quarter.append({"y": oy_q, "dir": "forward" if sg > 0 else "reverse", "Lav": lav, "Uo": uo, "TI": ti, "grid": Lq})
     lanes_out = []
     for k in range(lanes):
+        sg = sec["signs"][k]
+        ox0 = setup[sg][0]
         oy = sec["y0"] + (k + 0.5) * wl
-        L = _luminance(des, lum, px, py, rt, ox0, oy, sign).reshape(gx.shape)
+        L = _luminance(des, lum, px, py, rt, ox0, oy, sg).reshape(gx.shape)
         centre = L[:, 3 * k + 1]
-        lanes_out.append({"lane": k + 1, "y": round(oy, 3),
+        lanes_out.append({"lane": k + 1, "y": round(oy, 3), "dir": "forward" if sg > 0 else "reverse",
                           "Ul": round(float(centre.min() / centre.max()) if centre.max() > 0 else 0.0, 4)})
-    res["Lav"], res["Uo"], res["TI"] = lav, uo, ti
+    wq = min(quarter, key=lambda q: q["Lav"])
+    oy_q, Lq = wq["y"], wq["grid"]
+    res["Lav"] = min(q["Lav"] for q in quarter)
+    res["Uo"] = min(q["Uo"] for q in quarter)
+    res["TI"] = max(q["TI"] for q in quarter)
     res["Ul"] = min(o["Ul"] for o in lanes_out)
     res["surface"] = rt.name
-    res["observer"] = {"y": round(oy_q, 3), "rule": "quarter of the carriageway width from the left-hand side"}
+    res["observer"] = {"y": round(oy_q, 3), "dir": wq["dir"], "rule": "quarter of the carriageway width from the left-hand side"}
+    if len(quarter) > 1:
+        res["directions"] = [{"dir": q["dir"], "y": round(q["y"], 3), "Lav": round(q["Lav"], 4),
+                              "Uo": round(q["Uo"], 4), "TI": round(q["TI"], 4)} for q in quarter]
     res["observers"] = lanes_out
     res["volumeBand"] = SANS_VOLUME_BANDS[band_set][sec["volume"]]
     res["crossSection"] = "with median" if des.has_median else "without median"

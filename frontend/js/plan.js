@@ -59,16 +59,17 @@ const PlanMarkup = {
     ws.innerHTML = `
       <div id="plan-toolbar" class="plan-toolbar">
         <div class="plan-tb-group plan-mobile-toggle">
-          <button class="plan-tb-btn" data-action="toggle-palette" title="Show/hide the side panel">☰ Panel</button>
-          <button class="plan-tb-btn" data-action="toggle-props" title="Show/hide the properties panel">✎ Props</button>
+          <button class="plan-tb-btn" data-action="toggle-palette" title="Show/hide the side panel" aria-label="Panel">☰<span class="plan-lbl"> Panel</span></button>
+          <button class="plan-tb-btn" data-action="toggle-props" title="Show/hide the properties panel" aria-label="Properties">✎<span class="plan-lbl"> Props</span></button>
         </div>
         <div class="plan-modes" role="group" aria-label="Plan mode">
           <button type="button" class="plan-mode-btn active" data-mode="draw" aria-pressed="true" title="Place devices, draw routes and annotate">Draw</button>
+          <button type="button" class="plan-mode-btn" data-mode="roads" aria-pressed="false" title="The road sections: what each road is made of, given to roads by selecting them">Roads</button>
           <button type="button" class="plan-mode-btn" data-mode="underlays" aria-pressed="false" title="Import plans and DXFs, set the scale, move and align them">Underlays</button>
           <button type="button" class="plan-mode-btn" data-mode="output" aria-pressed="false" title="Sync with the other workspaces, set the print area and export">Output</button>
         </div>
         <div class="plan-tb-group">
-          <button class="plan-tool-btn active" data-tool="select" title="Select / move (V)">${I('select')} Select</button>
+          <button class="plan-tool-btn active" data-tool="select" title="Select / move (V)" aria-label="Select">${I('select')}<span class="plan-lbl"> Select</span></button>
           <button class="plan-tb-btn plan-icon-btn" data-action="undo" aria-label="Undo" title="Undo (Ctrl+Z)">${I('undo')}</button>
           <button class="plan-tb-btn plan-icon-btn" data-action="redo" aria-label="Redo" title="Redo (Ctrl+Shift+Z)">${I('redo')}</button>
           <button class="plan-tb-btn" data-action="fit" title="Zoom to fit">${I('fit')} Fit</button>
@@ -78,8 +79,11 @@ const PlanMarkup = {
           <label class="plan-tb-field">Floor
             <select id="plan-floor-select" title="Switch the active floor"></select>
           </label>
-          <button class="plan-tb-btn plan-icon-btn" data-action="floors" aria-label="Manage floors" title="Add, rename, reorder or delete floors">${I('floors')}</button>
+          <button class="plan-tb-btn" data-action="floors" title="Add, rename, reorder or delete floors">${I('floors')} Floors…</button>
         </div>
+        <label class="plan-tb-field" id="plan-colour-field" hidden title="Paint the cables and kiosks by a Demand result">Colour by
+          <select id="plan-colour-select"><option value="off">Type</option><option value="vd">Volt drop</option><option value="load">Cable loading</option></select>
+        </label>
         <label class="plan-tb-field" id="plan-layer-field" title="Work on one layer: the others are faded and can't be selected">Show
           <select id="plan-layer-select"></select>
         </label>
@@ -93,7 +97,8 @@ const PlanMarkup = {
             <canvas id="plan-canvas-bg" class="plan-canvas"></canvas>
             <canvas id="plan-canvas-fg" class="plan-canvas" tabindex="0" role="application"
               aria-label="Plan canvas. Use arrow keys to move between placed items when focused; R rotates, Delete removes."></canvas>
-            <div id="plan-info" class="plan-info">Import a plan, calibrate the scale, then place components and draw routes.</div>
+            <div id="plan-empty" class="plan-empty" hidden></div>
+            <div id="plan-legend" class="plan-legend" hidden></div>
             <button type="button" id="plan-calibrate-btn" class="plan-calibrate-btn" hidden>${I('ruler')}<span>Calibrate plan</span></button>
             <div id="plan-placebar" class="plan-placebar" role="group" hidden></div>
             <div id="plan-action-chip" class="plan-action-chip" role="group" aria-label="Finish or cancel the current drawing">
@@ -106,6 +111,7 @@ const PlanMarkup = {
             <button type="button" id="plan-snap-chip" class="plan-chip" aria-expanded="false" aria-controls="plan-snap-pop" title="Snap and grid settings (G toggles grid snap)"></button>
             <button type="button" class="plan-chip" id="plan-grid-chip" data-pop-focus="plan-grid-size" title="Grid spacing"></button>
             <button type="button" class="plan-chip" id="plan-sym-chip" data-pop-focus="plan-symbol-scale" title="Size of every symbol on this plan (each item can also be scaled on its own)"></button>
+            <span id="plan-info" class="plan-info">Import a plan, calibrate the scale, then place components and draw routes.</span>
             <span id="plan-status-coords" class="plan-status-coords"></span>
             <div id="plan-snap-pop" class="plan-pop" role="dialog" aria-label="Snap and grid" hidden>
               <div class="plan-pop-title">Snap to</div>
@@ -127,9 +133,13 @@ const PlanMarkup = {
 
   // Switch Draw / Underlays / Output. Tools that belong to another mode stop.
   setMode(mode) {
-    if (!['draw', 'underlays', 'output'].includes(mode)) mode = 'draw';
+    if (typeof ContextMenu !== 'undefined') ContextMenu.close();   // a menu left open would act on the old mode
+    // Roads (road sections, roadsections-ui.js) is a site plan of a reticulation: not on a building plan
+    const roadsOk = ((AppState.planMarkup && AppState.planMarkup.settings && AppState.planMarkup.settings.domain) || 'retic') !== 'building' && !!(AppState.reticulation && AppState.reticulation.streetLighting);
+    if (!['draw', 'roads', 'underlays', 'output'].includes(mode) || (mode === 'roads' && !roadsOk)) mode = 'draw';
     this.mode = mode;
     document.querySelectorAll('#plan-toolbar .plan-mode-btn').forEach(b => {
+      if (b.dataset.mode === 'roads') b.hidden = !roadsOk;
       const on = b.dataset.mode === mode;
       b.classList.toggle('active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false');
     });
@@ -201,6 +211,7 @@ const PlanMarkup = {
       if (AppState.planMarkup.settings.domain === 'building') PlanSync.syncBuildingToSLD();
       else PlanSync.pushToSchedules();
     }
+    else if (action === 'autocircuit' && typeof PlanBdAuto !== 'undefined') PlanBdAuto.open();
     else if (action === 'circuits' && typeof PlanCircuits !== 'undefined') {
       // An unlinked board has no schedule to write into: link it first. The
       // SLD sync ends with the same circuit sync, and reports it.
@@ -215,6 +226,11 @@ const PlanMarkup = {
       UI.alert(`Synced circuits from plan:\n• ${s.ways} way(s) on ${s.boards} board(s) from ${s.devices} tagged device(s)\n• ${s.lengths} way cable length(s) from routes` +
         (s.unsynced ? `\n• ${s.unsynced} board(s) not yet on the SLD (sync first)` : ''));
     }
+    else if (action === 'workarea-rect') PlanTools.set('workarea', { mode: 'rect' });
+    else if (action === 'workarea-poly') PlanTools.set('workarea', { mode: 'poly' });
+    else if (action === 'workarea-clear') PlanWorkArea.clear();
+    else if (action === 'layerfreeze') PlanTools.set('layerfreeze');
+    else if (action === 'layerthaw') PlanDxfImport.thawAll();
     else if (action === 'crop') PlanTools.set('crop');
     else if (action === 'crop-clear') {
       AppState.planMarkup.cropBox = null; this._snapshot(); this.markDirty();
@@ -299,7 +315,12 @@ const PlanMarkup = {
     const ws = document.getElementById(this.context === 'lighting' ? 'lighting-workspace' : 'plan-workspace');
     if (tb && ws) ws.style.top = tb.offsetHeight + 'px';
     if (this.context === 'plan') this.setMode(this.mode);
-    if (typeof PlanEngine !== 'undefined') { PlanEngine.resize(); PlanEngine.requestDraw({ all: true }); }
+    if (typeof PlanEngine !== 'undefined') {
+      PlanEngine.resize();
+      // First open of this project's plan: show the whole drawing, not an arbitrary corner of it.
+      if (!PlanEngine.viewSet) PlanEngine.zoomFit();
+      PlanEngine.requestDraw({ all: true });
+    }
     if (typeof PlanImages !== 'undefined') PlanImages.syncCache();
     if (typeof PlanDxfImport !== 'undefined') PlanDxfImport.syncFloor();
     if (typeof PlanUI !== 'undefined') { PlanUI.renderPalette(); PlanUI.renderProps(); }
@@ -332,6 +353,8 @@ const PlanMarkup = {
 
   markDirty() {
     AppState.dirty = true;
+    if (typeof PlanEngine !== 'undefined') PlanEngine._cmap = null;
+    this.refreshEmptyState();
     // The Lighting tab recalculates the item being worked on (Live results).
     if (this.context === 'lighting' && typeof LightingWS !== 'undefined' && LightingWS.liveKick) LightingWS.liveKick();
   },
@@ -341,6 +364,7 @@ const PlanMarkup = {
   refreshProps() {
     if (typeof PlanUI === 'undefined') return;
     PlanUI.renderProps();
+    if (this.context === 'plan' && this.mode === 'roads') PlanUI.renderPalette();   // the Roads panel offers the selected roads a section
     if (this.context === 'lighting') {
       PlanUI.renderPalette();   // its zone list marks the selection
       if (typeof LightingWS !== 'undefined' && LightingWS.onSelection) LightingWS.onSelection();
@@ -704,6 +728,91 @@ const PlanMarkup = {
     return true;
   },
 
+  // ─── Clipboard (right-click Copy / Cut / Paste, Ctrl+C / X / V) ───
+  // Deep copies of the selection, kept for the session, so they paste on any floor of
+  // the project. Like Duplicate, a pasted copy is a plain item: links to Demand / the
+  // single line, circuit tags and Auto layout / auto-circuit marks are not carried, and a
+  // cable keeps an end only when the part at that end was copied with it.
+  _clip: null,
+  _clipKinds: { element: ['elements', 'pmel'], route: ['routes', 'pmrt'], trench: ['trenches', 'pmtr'], crossing: ['crossings', 'pmcr'],
+    room: ['rooms', 'pmrm'], text: ['texts', 'pmtx'], measurement: ['measurements', 'pmms'] },
+  _clipPts(item) { return item.points ? item.points : item.p1 ? [item.p1, item.p2] : [item]; },
+  copySelected() {
+    const items = [];
+    let skipped = 0;
+    for (const id of this.selectedIds) {
+      const f = this.findEntityById(id);
+      if (!f || !this._clipKinds[f.kind]) continue;
+      if (f.kind === 'element' && f.item.reticId) { skipped++; continue; }    // a Demand erf / kiosk / minisub: one per Demand row
+      items.push({ kind: f.kind, item: JSON.parse(JSON.stringify(f.item)) });
+    }
+    if (!items.length) {
+      if (skipped && typeof UI !== 'undefined') UI.toast('Parts linked to Demand are not copied: add them in Demand or place a new one.', 'info', 3500);
+      return false;
+    }
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const c of items) for (const q of this._clipPts(c.item)) {
+      if (!isFinite(q.x) || !isFinite(q.y)) continue;
+      minX = Math.min(minX, q.x); minY = Math.min(minY, q.y); maxX = Math.max(maxX, q.x); maxY = Math.max(maxY, q.y);
+    }
+    this._clip = { items, cx: (minX + maxX) / 2, cy: (minY + maxY) / 2, pastes: 0 };
+    if (typeof UI !== 'undefined') UI.toast(`Copied ${items.length} item${items.length === 1 ? '' : 's'}${skipped ? ` (${skipped} linked to Demand left out)` : ''}.`, 'info', 1800);
+    return true;
+  },
+  cutSelected() {
+    if (!this.copySelected()) return false;
+    this.deleteSelected();
+    return true;
+  },
+  canPaste() { return !!(this._clip && this._clip.items.length); },
+  // `at` = a world point to paste the copied group's centre on (the right-click point, or the
+  // pointer); none = beside the original, a little further each paste.
+  paste(at) {
+    if (!this.canPaste()) return false;
+    const pm = AppState.planMarkup, clip = this._clip;
+    clip.pastes++;
+    const step = 20 / PlanEngine.view.zoom;
+    const dx = at ? at.x - clip.cx : step * clip.pastes, dy = at ? at.y - clip.cy : step * clip.pastes;
+    const ids = new Map();   // copied element id → its pasted id
+    const made = [];
+    const fresh = (c) => {
+      const it = JSON.parse(JSON.stringify(c.item));
+      const [list, prefix] = this._clipKinds[c.kind];
+      it.id = AppState.planGenId(prefix);
+      for (const q of this._clipPts(it)) { q.x += dx; q.y += dy; }
+      for (const k of ['reticId', 'sldId', 'sldCableId', 'auto', 'planLink', 'swLink', 'riserLink', 'group', 'trench', 'roadPoleId']) delete it[k];
+      if (it.props) for (const k of ['circuitDbId', 'circuitNo', 'circuitWid', 'circuitAuto', 'reticId']) delete it.props[k];
+      return [it, list];
+    };
+    for (const c of clip.items.filter(c => c.kind === 'element')) {
+      const [it, list] = fresh(c);
+      ids.set(c.item.id, it.id);
+      it.reticId = null;
+      it.name = this.nextName(it.type);
+      pm[list].push(it); made.push(it.id);
+    }
+    for (const c of clip.items.filter(c => c.kind !== 'element')) {
+      const [it, list] = fresh(c);
+      if (c.kind === 'route') {
+        it.fromId = it.fromId && ids.get(it.fromId) || null;
+        it.toId = it.toId && ids.get(it.toId) || null;
+        for (const q of it.points || []) if (q.snappedTo && !ids.has(q.snappedTo)) delete q.snappedTo; else if (q.snappedTo) q.snappedTo = ids.get(q.snappedTo);
+        const def = PLAN_DEFS.route ? PLAN_DEFS.route(it.type) : null;
+        if (def && def.requiresEndpoints && (!it.fromId || !it.toId)) continue;   // a feeder / service needs both its ends
+      }
+      if (c.kind === 'room' && it.name) it.name = it.name + ' (copy)';
+      if (!pm[list]) pm[list] = [];
+      pm[list].push(it); made.push(it.id);
+    }
+    if (!made.length) { if (typeof UI !== 'undefined') UI.toast('Nothing to paste: a feeder or service cable needs the parts at both its ends copied with it.', 'info', 3500); return false; }
+    this.setSelection(made);
+    this._snapshot(); this.markDirty();
+    if (typeof PlanCircuits !== 'undefined' && pm.settings.domain === 'building' && PlanCircuits.syncAll) PlanCircuits.syncAll();
+    this.refreshProps();
+    PlanEngine.requestDraw({ all: true });
+    return true;
+  },
+
   zoomToSelection() {
     const pts = [];
     for (const id of this.selectedIds) {
@@ -735,6 +844,7 @@ const PlanMarkup = {
         // a light fitting with a library luminaire → its photometry
         const ph = f.kind === 'element' && f.item.props && typeof PhotoLib !== 'undefined' ? PhotoLib.get(f.item.props.photoId) : null;
         if (ph) items.push({ label: 'Luminaire data…', action: () => PhotoLib.open(ph.id) });
+        if (typeof PlanReroute !== 'undefined' && f.kind === 'element' && PlanReroute.can(f.item)) items.push({ label: 'Re-route from here…', action: () => PlanReroute.start(f.item.id) });
         items.push('---');
       }
       const canRotate = [...this.selectedIds].some(id => {
@@ -745,6 +855,9 @@ const PlanMarkup = {
         const x = this.findEntityById(id);
         return x && x.kind === 'element' && !x.item.reticId;
       });
+      items.push({ label: 'Copy', shortcut: 'Ctrl+C', action: () => this.copySelected() });
+      items.push({ label: 'Cut', shortcut: 'Ctrl+X', action: () => this.cutSelected() });
+      items.push({ label: 'Paste here', shortcut: 'Ctrl+V', disabled: !this.canPaste(), action: () => this.paste(pt) });
       items.push({ label: 'Duplicate', disabled: !canDup, action: () => this.duplicateSelected() });
       items.push({ label: 'Rotate 90°', shortcut: 'R', disabled: !canRotate, action: () => this.rotateSelected() });
       items.push('---');
@@ -754,6 +867,8 @@ const PlanMarkup = {
       const pm = AppState.planMarkup;
       const all = () => [...pm.elements, ...pm.routes, ...pm.trenches, ...pm.crossings, ...(pm.rooms || []),
         ...pm.texts, ...pm.measurements].map(x => x.id);
+      items.push({ label: 'Paste here', shortcut: 'Ctrl+V', disabled: !this.canPaste(), action: () => this.paste(pt) });
+      items.push('---');
       items.push({ label: 'Select all', action: () => this.setSelection(all()) });
       items.push({ label: 'Clear selection', disabled: !this.selectedIds.size, action: () => this.clearSelection() });
       items.push('---');
@@ -782,9 +897,22 @@ const PlanMarkup = {
   onKeydown(e) {
     const tag = e.target.tagName;
     if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || e.target.isContentEditable) return false;
+    if (e.key === 'Escape' && typeof PlanReroute !== 'undefined' && PlanReroute.session) { PlanReroute.cancel(); return true; }   // leave a re-route preview
+    if (PlanTools.active && PlanTools.active.keyFirst && PlanTools.active.keyFirst(e)) return true;   // a tool holding a draft (e.g. a shape being drawn) takes Backspace / Esc / Enter before the plan does
     if (e.key === 'Delete' || e.key === 'Backspace') { this.deleteSelected(); return true; }
-    if (e.key === 'Escape') { PlanTools.set('select'); this.clearSelection(); PlanEngine.requestDraw({ fg: true }); return true; }
+    if (e.key === 'Escape') { if (typeof ContextMenu !== 'undefined') ContextMenu.close(); PlanTools.set('select'); this.clearSelection(); PlanEngine.requestDraw({ fg: true }); return true; }
     if (e.key === 'Enter') { const c = PlanTools.onKey(e); this.onDraftChanged(); return c; }
+    if ((e.ctrlKey || e.metaKey) && !e.altKey) {
+      const k = e.key.toLowerCase();
+      if (k === 'c') return this.copySelected();
+      if (k === 'x') return this.cutSelected();
+      if (k === 'v') {   // at the pointer when it is over the plan, else beside the original
+        const fg = PlanEngine.fg, over = fg && fg.matches && fg.matches(':hover');
+        return this.paste(over && PlanEngine.mouseWorld ? PlanEngine.mouseWorld : null);
+      }
+      if (k === 'd') return this.duplicateSelected();
+      return false;
+    }
     if (e.key === 'v' || e.key === 'V') { PlanTools.set('select'); return true; }
     if (e.key === 'g' || e.key === 'G') {
       const s = AppState.planMarkup.settings; s.snapGrid = !s.snapGrid;
@@ -822,6 +950,7 @@ const PlanMarkup = {
   },
 
   onToolChanged(id, opts) {
+    if (typeof ContextMenu !== 'undefined') ContextMenu.close();
     const PLACERS = (id === 'place' || id === 'route' || id === 'array' || id === 'devpath');
     document.querySelectorAll('.plan-tool-btn[data-tool]').forEach(b =>
       b.classList.toggle('active', b.dataset.tool === id));
@@ -852,7 +981,7 @@ const PlanMarkup = {
         if (!pm.plans.length && !pm.elements.length && !(pm.dxfs || []).length) {
           return 'Import a plan (Underlays), set the scale, then place parts and draw routes.';
         }
-        return 'Select — tap to edit, drag to move. Arrow keys nudge; R rotates.';
+        return matchMedia('(pointer: coarse)').matches ? 'Tap an item to edit it · drag to move' : 'Click an item to edit it · drag to move · arrows nudge · R rotates';
       }
       case 'place': return `Placing: ${elName(t)} — click to place. Esc / Select to stop.`;
       case 'placeSld': return 'Placing linked board — click where it goes on the plan.';
@@ -865,11 +994,15 @@ const PlanMarkup = {
       case 'room': return 'Room — click ≥3 points; ✓ Done / Enter closes it. Esc cancels.';
       case 'perimeter': return 'Perimeter — click points along the fence; ✓ Done / Enter finishes. Esc cancels.';
       case 'roomdetect': return 'Detect room — click inside a room, or Detect all. Shift-click adds, Alt-click subtracts. Esc to stop.';
-      case 'layout': return 'Auto layout — set the streets and the rules, Run, then Create. Click an erf near an edge to make it the front.';
+      case 'sllayout': return typeof SLLayoutUI !== 'undefined' ? SLLayoutUI.hint() : 'Street lighting layout';
+      case 'layout': return (typeof PlanLayoutUI !== 'undefined' && PlanLayoutUI.hint) ? PlanLayoutUI.hint() : 'Auto layout — set the roads and the rules, Run, then Create.';
       case 'erfdetect': return 'Detect erven — click inside an erf, or Detect all. Shift-click adds, Alt-click subtracts. Esc to stop.';
       case 'crossing': return 'Crossing — click two points. Esc cancels.';
       case 'calibrate': return 'Calibrate — click two points a known distance apart.';
+      case 'workarea': return 'Working area — drag a rectangle, or click the corners of a polygon (Enter or the first corner closes, Backspace undoes a corner). Esc cancels.';
+      case 'layerfreeze': return 'Freeze layer — click any item of the drawing to hide its whole layer. Esc to stop.';
       case 'crop': return 'Crop — drag the export rectangle (tiny drag clears it).';
+      case 'roadstretch': return 'Stretch of the road — click where it starts on the road, then where it ends. Backspace starts again, Esc stops.';
       case 'text': return 'Text — click to place a label.';
       case 'nudgeplan': return 'Move plan — drag the background plan. Esc / Select to stop.';
       case 'align': return 'Align plan — click a feature, then where it belongs (×2).';
@@ -893,7 +1026,7 @@ const PlanMarkup = {
   // tool's pointer-UP when the gesture didn't move (UX-6).
   openPropsForTap() {
     if (!this._isMobile()) return;
-    if (this.context === 'lighting' && typeof LightingWS !== 'undefined') { if (LightingWS.sheet === 'tools') LightingWS.setSheet('item'); return; }
+    if (this.context === 'lighting' && typeof LightingWS !== 'undefined') { LightingWS.setBody('item'); return; }
     const props = document.getElementById('plan-props');
     if (props && !props.classList.contains('mobile-open')) {
       document.getElementById('plan-palette')?.classList.remove('mobile-open');
@@ -939,15 +1072,58 @@ const PlanMarkup = {
     return true;
   },
 
+  // A plan with nothing on this floor yet: three steps instead of a one-line hint. It is out of the way
+  // (top left, like the hint it replaces) so the first part can be placed straight under it.
+  refreshEmptyState() {
+    const box = document.getElementById('plan-empty'), info = document.getElementById('plan-info');
+    if (!box) return;
+    const pm = AppState.planMarkup;
+    const empty = this.context === 'plan' && !['plans', 'dxfs', 'elements', 'routes', 'rooms', 'trenches', 'crossings', 'texts', 'measurements'].some(k => (pm[k] || []).length);
+    box.hidden = !empty;
+    if (info) info.hidden = empty;
+    if (!empty) return;
+    const retic = pm.settings && pm.settings.domain === 'retic';
+    box.innerHTML = `<div class="plan-empty-title">Start this ${retic ? 'site' : 'floor'} plan</div>
+      <ol>
+        <li><b>Import a drawing</b><span>A PDF, image or DXF to draw on. Or skip it and place parts on the empty sheet.</span>
+          <button type="button" class="plan-btn" data-empty="import">Import plan or DXF…</button></li>
+        <li><b>Set the scale</b><span>A DXF sets it for you. For a PDF or image, click two points a known distance apart.</span></li>
+        <li><b>${retic ? 'Detect erven, then place plant' : 'Place the boards and devices'}</b><span>${retic ? 'Detect erven and Auto layout give a first design from the drawing; or pick Minisub / Kiosk in the palette.' : 'Pick a part in the palette, or place the boards listed under From the single line.'}</span></li>
+      </ol>`;
+    if (!box._wired) { box._wired = true; box.addEventListener('click', (e) => { if (e.target.closest('[data-empty="import"]')) this.runAction('import'); }); }
+  },
+
+  // The Colour by control: site plans that have Demand results. The legend names what the colours mean.
+  refreshColourBy() {
+    const field = document.getElementById('plan-colour-field'), sel = document.getElementById('plan-colour-select'), lg = document.getElementById('plan-legend');
+    if (!field || !sel) return;
+    const pm = AppState.planMarkup;
+    const can = this.context === 'plan' && pm.settings && pm.settings.domain === 'retic' && !!AppState.reticResults;
+    field.hidden = !can;
+    if (!sel._wired) {
+      sel._wired = true;
+      sel.addEventListener('change', () => { PlanEngine.colourBy = sel.value; PlanEngine._cmap = null; this.refreshColourBy(); PlanEngine.requestDraw({ all: true }); });
+    }
+    if (!can && PlanEngine.colourBy !== 'off') { PlanEngine.colourBy = 'off'; PlanEngine._cmap = null; }
+    sel.value = PlanEngine.colourBy;
+    if (!lg) return;
+    const vd = PlanEngine.colourBy === 'vd', C = PlanEngine.COLOURS, lim = (typeof Retic !== 'undefined' && Retic.settings) ? Retic.settings.maxFeederVD : 7;
+    lg.hidden = !can || PlanEngine.colourBy === 'off';
+    if (!lg.hidden) lg.innerHTML = `<b>${vd ? 'Volt drop' : 'Cable loading'}</b>`
+      + `<span><i style="background:${C.ok}"></i>${vd ? 'within the limit' : 'under 90 %'}</span><span><i style="background:${C.warn}"></i>${vd ? 'within 10 % of it' : '90–100 %'}</span><span><i style="background:${C.bad}"></i>${vd ? `over ${lim} %` : 'over the rating'}</span>`;
+  },
+
   updateScaleReadout() {
     const pm = AppState.planMarkup;
+    this.refreshEmptyState();
+    this.refreshColourBy();
     const s = pm.scale;
     const calibrated = !!(s && s.factor);
     const cal = document.getElementById('plan-calibrate-btn');
     if (cal) {
       if (!cal._wired) { cal._wired = true; cal.addEventListener('click', () => PlanTools.set('calibrate')); }
       const autoW = calibrated && s.source === 'auto' && (pm.plans || []).length > 0;
-      cal.hidden = calibrated && !autoW;
+      cal.hidden = (calibrated && !autoW) || (document.getElementById('plan-empty') || {}).hidden === false;
     }
     const chip = document.getElementById('plan-scale-chip');
     if (chip) {

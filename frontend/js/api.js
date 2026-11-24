@@ -245,6 +245,21 @@ const API = {
     return this.request('/analysis/db-cable-size', 'POST', data);
   },
 
+  // Building circuiting: rooms → placed boards, devices → circuits, routes (nothing is written)
+  async buildingCircuits(req) {
+    return this.request('/analysis/building-circuits', 'POST', req);
+  },
+
+  // Proposed fixes for issues (nothing is applied): [{ key, kind: 'db_way', board_id, way_id }]
+  async proposeFixes(issues) {
+    return this.request('/analysis/fixes', 'POST', { ...AppState.toJSON(), issues, approved_keys: [] });
+  },
+
+  // Every fix checked together; hand-typed values only when their key is in approvedKeys
+  async fixAll(issues, approvedKeys = []) {
+    return this.request('/analysis/fix-all', 'POST', { ...AppState.toJSON(), issues, approved_keys: approvedKeys });
+  },
+
   // Run motor starting voltage dip analysis
   async runMotorStarting() {
     const data = AppState.toJSON();
@@ -503,6 +518,10 @@ const API = {
   // Street lighting circuits (Reticulation › Street lighting)
   async runStreetLighting(body) {
     return this.request('/analysis/street-lighting', 'POST', body);
+  },
+  // Street lighting layout: rows of poles split into circuits (smallest cable + breaker that pass)
+  async splitStreetLighting(body) {
+    return this.request('/analysis/street-lighting/split', 'POST', body);
   },
 
   // Run study manager (batch all analyses)

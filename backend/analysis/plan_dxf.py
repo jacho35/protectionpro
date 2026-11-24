@@ -1,4 +1,4 @@
-"""Plan Markup ↔ DXF (AC1015 / R2000) using ezdxf.
+"""Plan Markup ↔ DXF (export AC1024 / R2010 — true colour needs R2004 or later; import any version) using ezdxf.
 
 Export and import are done here (not in the browser) so the file is guaranteed
 spec-valid — real BLOCK/INSERT with ATTRIB attributes, true SPLINE curves, and
@@ -24,12 +24,14 @@ the DXF symbol matches the screen exactly, and INSERT one blockref per device.
 from __future__ import annotations
 import io
 import math
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Tuple
 
 import logging
 
 import ezdxf
 from ezdxf.enums import TextEntityAlignment
+
+from . import plan_dxf_sheets as sheets_mod
 
 
 class _NoFontWarning(logging.Filter):
@@ -44,6 +46,7 @@ class _NoFontWarning(logging.Filter):
 
 
 logging.getLogger("ezdxf").addFilter(_NoFontWarning())
+log = logging.getLogger(__name__)
 
 APPID = "PROTECTIONPRO"
 META_BLOCK = "PP_META"
@@ -56,6 +59,16 @@ META_BLOCK = "PP_META"
 # per-field tags (WATTS/LUMENS/ZONE/HEIGHT/SIZE/CONDUCTOR/PP_VARIANT) — see
 # `blocks[name].attrTags` in the payload from plan-dxf.js.
 ATTR_TAGS = ["REF", "TYPE", "DBFED", "CIRCUIT", "PHASE", "LOAD_VA", "CABLE"]
+
+# Layers of the plan items that are not symbols or routes (frontend PLAN_DXF_LAYERS.fixed sends the same names as `fixedLayers`).
+FIXED_LAYERS = {"trench": "EL_TRENCH", "crossing": "EL_DUCTS", "room": "EL_ROOMS", "measurement": "EL_DIM", "text": "EL_TEXT"}
+# What the importer reads by layer when an entity carries no KIND: the current name and the one used before.
+_IMPORT_LAYERS = {k: {v, old} for (k, v), old in zip(FIXED_LAYERS.items(), ("PP_TRENCH", "PP_TRENCH", "PP_ROOMS", "PP_DIM", "PP_TEXT"))}
+
+# Layout sheets: paper sizes (mm, landscape) and the margin round the one viewport of each sheet.
+PAPERS = {"A0": (1189.0, 841.0), "A1": (841.0, 594.0), "A2": (594.0, 420.0), "A3": (420.0, 297.0), "A4": (297.0, 210.0)}
+SHEET_MARGIN_MM = 10.0
+VIEWPORT_LAYER = "EL_VIEWPORTS"
 
 
 def _hex_to_rgb(h: str):
@@ -80,7 +93,8 @@ def _ensure_layer(doc, name: str, color_hex: str | None):
 
 
 # ── Block geometry from art-box (0..40) primitives ──
-def _build_block(doc, name: str, prims: List[dict], size_world: float, factor: float, attr_tags: List[str] | None = None):
+def _build_block(doc, name: str, prims: List[dict], size_world: float, factor: float, attr_tags: List[str] | None = None,
+                 text_h: float | None = None):
     """Create a block whose geometry (in metres) matches the on-screen glyph.
 
     Art box is 0..40 centred on (20,20); a glyph spans `size_world` px, so one
@@ -96,7 +110,7 @@ def _build_block(doc, name: str, prims: List[dict], size_world: float, factor: f
 
     for p in prims:
         k = p.get("k")
-        col = _attr_color(p)
+        col = _attr_color(p) or {"color": 0}   # the device's own colour: ByBlock, so the INSERT (ByLayer, or its own colour) decides
         if k == "c":  # circle
             blk.add_circle(pt(p["cx"], p["cy"]), abs(p.get("r", 1)) * s, dxfattribs=col)
         elif k == "a":  # arc — art angles are canvas (Y-down, radians); flip to CCW deg
@@ -116,14 +130,20 @@ def _build_block(doc, name: str, prims: List[dict], size_world: float, factor: f
                 blk.add_lwpolyline(pts, close=bool(p.get("close")), dxfattribs=col)
         elif k == "t":  # text
             h = max(0.001, p.get("size", 8) * s)
-            txt = blk.add_text(str(p.get("str", "")), dxfattribs={"height": h, **col})
+            txt = blk.add_text(str(p.get("str", "")), dxfattribs={"height": h, "style": TEXT_STYLE, **col})
             txt.set_placement(pt(p["x"], p["y"]), align=TextEntityAlignment.MIDDLE_CENTER)
 
-    # Attribute definitions (filled per-INSERT). Stacked below the glyph.
-    yoff = -(size_world * 0.5 * factor) - 0.001
+    # Attribute definitions (filled per-INSERT). REF — the device's name — is visible, the text height of the drawing, to the right
+    # of the symbol (each INSERT then turns it upright, `_upright_ref`); the rest are data, invisible and stacked below the glyph.
+    half = size_world * 0.5 * factor
+    yoff = -half - 0.001
     for i, tag in enumerate(attr_tags or ATTR_TAGS):
+        if tag == "REF" and text_h:
+            ad = blk.add_attdef(tag, dxfattribs={"height": text_h, "style": TEXT_STYLE})
+            ad.set_placement((half + 0.4 * text_h, 0), align=TextEntityAlignment.MIDDLE_LEFT)
+            continue
         ad = blk.add_attdef(tag, dxfattribs={"height": max(0.001, size_world / 40.0 * factor * 3),
-                                             "invisible": 1})
+                                             "flags": 1, "style": TEXT_STYLE})
         ad.set_placement((0, yoff - i * 0.001), align=TextEntityAlignment.MIDDLE_CENTER)
 
 
@@ -166,20 +186,336 @@ def _get_meta(entity) -> Dict[str, str]:
         return {}
 
 
-def build_dxf(payload: Dict[str, Any]) -> bytes:
+TEXT_STYLE = "PP_ARIAL"
+BG_PREFIX = "BG-"          # background layers (xref-style, but '|' is reserved for real xrefs in AutoCAD)
+
+
+def _readable(deg: float) -> float:
+    """A text angle turned so it never reads upside down: (-90°, 90°]."""
+    a = (deg + 180.0) % 360.0 - 180.0
+    if a > 90.0:
+        a -= 180.0
+    elif a <= -90.0:
+        a += 180.0
+    return a
+
+
+def _route_label_at(pts, h):
+    """Where a cable's label goes: the middle of its longest segment, along it, read upright, 0.8 × the text height to one side."""
+    best = None
+    for i in range(1, len(pts)):
+        (x0, y0), (x1, y1) = pts[i - 1], pts[i]
+        L = math.hypot(x1 - x0, y1 - y0)
+        if best is None or L > best[0]:
+            best = (L, x0, y0, x1, y1)
+    if not best or best[0] <= 0:
+        return pts[len(pts) // 2], 0.0
+    _, x0, y0, x1, y1 = best
+    ang = _readable(math.degrees(math.atan2(y1 - y0, x1 - x0)))
+    r = math.radians(ang)
+    nx, ny = -math.sin(r), math.cos(r)              # left of the reading direction = above the line as read
+    return ((x0 + x1) / 2 + nx * 0.8 * h, (y0 + y1) / 2 + ny * 0.8 * h), ang
+
+
+def _color_attribs(hex_color, layer_hex=None):
+    """An entity's own colour, only where it differs from its layer's (ByLayer otherwise)."""
+    rgb = _hex_to_rgb(hex_color) if hex_color else None
+    if not rgb or (layer_hex and _hex_to_rgb(layer_hex) == rgb):
+        return {}
+    return {"true_color": ezdxf.rgb2int(rgb)}
+
+
+# ── Backgrounds ──
+# A plan's DXF underlay goes into the export as one block per drawing, on BG- layers (the drawing's own layer names, prefixed), placed
+# by an INSERT with the plan's own scale / rotation / offset. Only what the plan shows: layers hidden on the plan, entities already
+# turned into plan items (`converted`) and anything outside the working area are left out. Two sources:
+#   • the original DXF (`srcId`, kept on import since the original is stored): loaded with ezdxf's xref loader — everything exact,
+#     linetypes, text styles, hatches, dimensions;
+#   • the parsed copy the plan draws from (`imageId`, or `data` inline for a drawing not yet stored): rebuilt from its records —
+#     lines, arcs, circles, polylines (curves flattened, hatches as outlines), points, text, blocks; colours kept.
+# `m` = [a, b, c, d, e, f]: export (m) = (a·x + b·y + c, d·x + e·y + f) of a point in the parsed copy's coordinates (the drawing's
+# own units, less `origin`).
+
+_VALIGN = {"b": "BOTTOM", "m": "MIDDLE", "t": "TOP"}
+_HALIGN = {"l": "LEFT", "c": "CENTER", "r": "RIGHT"}
+
+
+def _text_alignment(ha, va):
+    h = _HALIGN.get(ha or "l", "LEFT")
+    v = _VALIGN.get(va or "a")
+    try:
+        return TextEntityAlignment[f"{v}_{h}"] if v else TextEntityAlignment[h]
+    except KeyError:
+        return TextEntityAlignment.LEFT
+
+
+def _bg_layer_name(name: str) -> str:
+    return (BG_PREFIX + (name or "0"))[:250]
+
+
+def _pip_xy(x, y, poly):
+    c = False
+    j = len(poly) - 1
+    for i in range(len(poly)):
+        xi, yi = poly[i]
+        xj, yj = poly[j]
+        if (yi > y) != (yj > y) and x < (xj - xi) * (y - yi) / ((yj - yi) or 1e-12) + xi:
+            c = not c
+        j = i
+    return c
+
+
+def _area_keeper(area):
+    """A test for 'touches the working area' on a box (x0, y0, x1, y1) in the parsed copy's coordinates; None = no area."""
+    if not area or len(area) < 3:
+        return None
+    ax0 = min(p[0] for p in area); ax1 = max(p[0] for p in area)
+    ay0 = min(p[1] for p in area); ay1 = max(p[1] for p in area)
+
+    def keep(x0, y0, x1, y1):
+        if x1 < ax0 or x0 > ax1 or y1 < ay0 or y0 > ay1:
+            return False
+        if any(_pip_xy(x, y, area) for x, y in ((x0, y0), (x1, y0), (x1, y1), (x0, y1), ((x0 + x1) / 2, (y0 + y1) / 2))):
+            return True
+        return any(x0 <= px <= x1 and y0 <= py <= y1 for px, py in area)
+    return keep
+
+
+def _rec_box(r):
+    p = r.get("p") or []
+    t = r.get("t")
+    if t in ("c", "a") and len(p) >= 3:
+        return p[0] - p[2], p[1] - p[2], p[0] + p[2], p[1] + p[2]
+    if len(p) >= 2:
+        xs, ys = p[0::2], p[1::2]
+        return min(xs), min(ys), max(xs), max(ys)
+    return None
+
+
+def _place(msp, bname, m, origin, layer):
+    """The INSERT that puts a background block (in the drawing's raw coordinates when `origin` is given) where the plan has it."""
+    a, b, c, d, e, f = [float(v) for v in m]
+    ox, oy = origin or (0.0, 0.0)
+    tx, ty = c - a * ox - b * oy, f - d * ox - e * oy
+    sx = math.hypot(a, d)
+    det = a * e - b * d
+    rot = math.degrees(math.atan2(d, a))
+    return msp.add_blockref(bname, (tx, ty), dxfattribs={"layer": layer, "xscale": sx, "yscale": sx if det >= 0 else -sx, "rotation": rot})
+
+
+def _unique_block(doc, base):
+    base = "".join(ch if ch.isalnum() or ch in "-_" else "_" for ch in base)[:200] or "BG"
+    name, n = base, 1
+    while name in doc.blocks:
+        n += 1
+        name = f"{base}_{n}"
+    return name
+
+
+def _add_background(doc, msp, bg, idx, load_image) -> str:
+    name = bg.get("name") or f"background {idx + 1}"
+    hidden = set(bg.get("hidden") or [])
+    converted = set(str(h) for h in (bg.get("converted") or []))
+    colors = bg.get("colors") or {}
+    origin = bg.get("origin") or [0.0, 0.0]
+    keep_box = _area_keeper(bg.get("area"))
+    if not bg.get("m"):
+        raise ValueError("no placement")
+    _ensure_layer(doc, _bg_layer_name("0"), colors.get("0"))
+    src = None
+    if bg.get("srcId") is not None and load_image:
+        try:
+            src = load_image(bg["srcId"])
+        except Exception:
+            src = None
+    if src:
+        n = _bg_from_original(doc, msp, bg, idx, src, hidden, converted, colors, origin, keep_box)
+        return f"{name}: the original drawing, {n} entities"
+    data = bg.get("data")
+    if data is None and bg.get("imageId") is not None and load_image:
+        import json
+        data = json.loads(load_image(bg["imageId"]))
+    if not data:
+        raise ValueError("its drawing could not be read")
+    n = _bg_from_parsed(doc, msp, bg, idx, data, hidden, converted, colors, keep_box)
+    return f"{name}: rebuilt from the plan's copy, {n} entities (import it again to export the original exactly)"
+
+
+def _bg_from_original(doc, msp, bg, idx, raw, hidden, converted, colors, origin, keep_box) -> int:
+    from ezdxf import xref, bbox
+    sdoc = _read_doc(raw)
+    smsp = sdoc.modelspace()
+    ox, oy = origin
+    keep_h = set()
+    for e in smsp:
+        lay = e.dxf.get("layer", "0")
+        if lay in hidden or str(e.dxf.handle) in converted:
+            continue
+        if keep_box:
+            try:
+                ext = bbox.extents([e], fast=True)
+                if not ext.has_data or not keep_box(ext.extmin.x - ox, ext.extmin.y - oy, ext.extmax.x - ox, ext.extmax.y - oy):
+                    continue
+            except Exception:
+                pass
+        keep_h.add(e.dxf.handle)
+    # the drawing's layers become BG-<name> (layer 0 stays: inside the block it takes the INSERT's layer, BG-0), with any colour set on the plan
+    for ly in list(sdoc.layers):
+        nm = ly.dxf.name
+        if nm == "0" or nm.lower() == "defpoints":
+            continue
+        new = _bg_layer_name(nm)
+        if new in sdoc.layers:
+            continue
+        try:
+            ly.rename(new)
+        except Exception:
+            continue
+        rgb = _hex_to_rgb(colors.get(nm) or "")
+        if rgb:
+            ly.rgb = rgb
+    bname = _unique_block(doc, f"BG-{idx + 1}-{bg.get('name') or 'drawing'}")
+    blk = doc.blocks.new(bname)
+    loader = xref.Loader(sdoc, doc, conflict_policy=xref.ConflictPolicy.NUM_PREFIX)
+    loader.load_modelspace(target_layout=blk, filter_fn=lambda e: e.dxf.handle in keep_h)
+    loader.execute()
+    _place(msp, bname, bg["m"], origin, _bg_layer_name("0"))
+    return len(blk)
+
+
+def _bg_from_parsed(doc, msp, bg, idx, data, hidden, converted, colors, keep_box) -> int:
+    layers = {ly.get("name"): ly for ly in data.get("layers", []) or []}
+
+    def lay(nm):
+        if nm == "0":
+            return "0"
+        new = _bg_layer_name(nm)
+        if new not in doc.layers:
+            ly = doc.layers.add(new)
+            info = layers.get(nm) or {}
+            over = colors.get(nm)
+            if over and _hex_to_rgb(over):
+                ly.rgb = _hex_to_rgb(over)
+            elif info.get("aci7", True):
+                ly.color = 7
+            elif _hex_to_rgb(info.get("color") or ""):
+                ly.rgb = _hex_to_rgb(info["color"])
+            if isinstance(info.get("w"), int) and info["w"] >= 0:
+                ly.dxf.lineweight = info["w"]
+        return new
+
+    def col(r):
+        k, w = r.get("k"), r.get("w")
+        out = {}
+        if k == "B":
+            out["color"] = 0
+        else:
+            rgb = _hex_to_rgb(k) if k else None
+            if rgb:
+                out["true_color"] = ezdxf.rgb2int(rgb)
+        if w == "B":
+            out["lineweight"] = -2
+        elif isinstance(w, int) and w >= 0:
+            out["lineweight"] = w
+        return out
+
+    def emit(lo, r, block_names):
+        t, p = r.get("t"), r.get("p") or []
+        da = {"layer": lay(r.get("l", "0")), **col(r)}
+        if t == "l" and len(p) >= 4:
+            lo.add_line((p[0], p[1]), (p[2], p[3]), dxfattribs=da)
+        elif t == "p" and len(p) >= 4:
+            lo.add_lwpolyline(list(zip(p[0::2], p[1::2])), close=bool(r.get("c")), dxfattribs=da)
+        elif t == "c" and len(p) >= 3:
+            lo.add_circle((p[0], p[1]), p[2], dxfattribs=da)
+        elif t == "a" and len(p) >= 5:
+            lo.add_arc((p[0], p[1]), p[2], p[3], p[4], dxfattribs=da)
+        elif t == "o" and len(p) >= 2:
+            lo.add_point((p[0], p[1]), dxfattribs=da)
+        elif t == "x" and len(p) >= 2 and str(r.get("s", "")).strip():
+            for k, line in enumerate(str(r["s"]).split("\n")):
+                h = float(r.get("h") or 1.0)
+                rr = math.radians(float(r.get("r") or 0.0))
+                at = (p[0] + math.sin(rr) * 1.5 * h * k, p[1] - math.cos(rr) * 1.5 * h * k)
+                lo.add_text(line, dxfattribs={**da, "height": h, "rotation": float(r.get("r") or 0.0), "style": TEXT_STYLE}
+                            ).set_placement(at, align=_text_alignment(r.get("ha"), r.get("va")))
+        elif t == "i" and r.get("b") in block_names and len(p) >= 2:
+            lo.add_blockref(block_names[r["b"]], (p[0], p[1]), dxfattribs={**da, "rotation": float(r.get("r") or 0.0),
+                                                                          "xscale": float(r.get("sx") or 1.0), "yscale": float(r.get("sy") or 1.0)})
+
+    # block definitions the drawing uses (its own coordinates, base point kept); nested inserts resolved by name
+    blocks = data.get("blocks") or {}
+    names = {b: _unique_block(doc, f"BG{idx + 1}-{b}") for b in blocks}
+    for b, rec in blocks.items():
+        bl = doc.blocks.new(names[b], base_point=tuple((rec.get("bp") or [0, 0])[:2]))
+        for r in rec.get("e", []):
+            emit(bl, r, names)
+
+    bname = _unique_block(doc, f"BG-{idx + 1}-{bg.get('name') or 'drawing'}")
+    blk = doc.blocks.new(bname)
+    n = 0
+
+    def wanted(r):
+        if r.get("l") in hidden or (r.get("h") is not None and str(r["h"]) in converted):
+            return False
+        if keep_box:
+            bb = _rec_box(r)
+            if bb and not keep_box(*bb):
+                return False
+        return True
+
+    for r in data.get("entities", []) or []:
+        if wanted(r):
+            emit(blk, r, names)
+            n += 1
+    for ins in data.get("inserts", []) or []:
+        if not wanted(ins) or ins.get("b") not in names:
+            continue
+        emit(blk, {**ins, "t": "i"}, names)
+        for a in ins.get("at", []) or []:
+            emit(blk, a, names)
+        n += 1
+    _place(msp, bname, bg["m"], None, _bg_layer_name("0"))
+    return n
+
+
+
+def build_dxf(payload: Dict[str, Any], load_image=None, notes: List[str] | None = None) -> bytes:
+    """`load_image(id) -> bytes` reads a stored plan image (the background's original DXF or its parsed copy) for `backgrounds`;
+    `notes` collects one line per background (how it went in, or why it was left out)."""
     factor = payload.get("factor")
     if not factor or factor <= 0:
         raise ValueError("Plan is not calibrated — DXF export needs a scale (metres per pixel).")
 
-    doc = ezdxf.new("R2000", setup=True)
+    # R2010: true colour (layers and entities) needs R2004+; R2000 dropped every colour that is not an index colour
+    doc = ezdxf.new("R2010", setup=["linetypes"])          # the standard linetypes (DASHED…), not ezdxf's sample text styles
     doc.appids.add(APPID)
     msp = doc.modelspace()
 
-    # Layers (discipline colours).
+    # One text style for every text written here (a TrueType font, so it plots the same everywhere).
+    if TEXT_STYLE not in doc.styles:
+        doc.styles.add(TEXT_STYLE, font="arial.ttf")
+    # Text height (m): a paper height at a drawing scale (2.5 mm at 1:500 = 1.25 m); a payload without one keeps the old 0.9 m.
+    H = float(payload.get("textH") or 0.9)
+    doc.header["$TEXTSTYLE"] = TEXT_STYLE
+    doc.header["$TEXTSIZE"] = H
+    if payload.get("ltscale"):
+        doc.header["$LTSCALE"] = float(payload["ltscale"])
+
+    # Layers (the plan's colours, true colour; a dashed cable type's layer gets the DASHED linetype).
+    layer_hex: Dict[str, str] = {}
     for lyr in payload.get("layers", []):
         _ensure_layer(doc, lyr["name"], lyr.get("color"))
-    for extra in ("PP_ROUTES", "PP_LABELS", "PP_TRENCH", "PP_ROOMS", "PP_TEXT", "PP_DIM", META_BLOCK):
-        _ensure_layer(doc, extra, None)
+        layer_hex[lyr["name"]] = lyr.get("color") or ""
+        lt = lyr.get("linetype")
+        if lt and lt in doc.linetypes:
+            doc.layers.get(lyr["name"]).dxf.linetype = lt
+    fixed = {**FIXED_LAYERS, **(payload.get("fixedLayers") or {})}
+    L_TRENCH, L_DUCTS, L_ROOMS, L_DIM, L_TEXT = (fixed[k] for k in ("trench", "crossing", "room", "measurement", "text"))
+    extras = payload.get("extraLayers") or {}
+    for extra in (*extras.keys(), L_TRENCH, L_DUCTS, L_ROOMS, L_DIM, L_TEXT, META_BLOCK):
+        _ensure_layer(doc, extra, extras.get(extra))
+        layer_hex.setdefault(extra, extras.get(extra) or "")
 
     def X(x):
         return x * factor
@@ -193,7 +529,7 @@ def build_dxf(payload: Dict[str, Any]) -> bytes:
     for name, v in variants.items():
         tags = v.get("attrTags") or ATTR_TAGS
         block_attr_tags[name] = tags
-        _build_block(doc, name, v.get("prims", []), v.get("sizeWorld", 24), factor, tags)
+        _build_block(doc, name, v.get("prims", []), v.get("sizeWorld", 24), factor, tags, text_h=H)
 
     # Devices → blockref + attributes.
     for el in payload.get("elements", []):
@@ -201,81 +537,266 @@ def build_dxf(payload: Dict[str, Any]) -> bytes:
         if not name or name not in doc.blocks:
             continue
         rot = -float(el.get("rotation", 0) or 0)  # screen CW → DXF CCW
+        lay = el.get("layer", "0")
         ref = msp.add_blockref(name, (X(el["x"]), Y(el["y"])), dxfattribs={
-            "layer": el.get("layer", "0"),
-            "rotation": rot,
+            "layer": lay, "rotation": rot, **_color_attribs(el.get("color"), layer_hex.get(lay)),
         })
         attrs = el.get("attrs", {}) or {}
         tags = block_attr_tags.get(name, ATTR_TAGS)
         ref.add_auto_attribs({t: str(attrs.get(t, "")) for t in tags})
+        # the name reads upright, to the right of the symbol, whatever way the symbol is turned
+        half = (variants.get(name, {}).get("sizeWorld", 24) or 24) * 0.5 * factor
+        for a in ref.attribs:
+            if a.dxf.tag == "REF" and not a.is_invisible:
+                a.dxf.rotation = 0.0
+                a.set_placement((X(el["x"]) + half + 0.4 * H, Y(el["y"])), align=TextEntityAlignment.MIDDLE_LEFT)
 
-    # Routes → SPLINE (curved) or LWPOLYLINE (straight), + a cable label.
+    # Routes → SPLINE (curved) or LWPOLYLINE (straight), + a cable label: a leader to a clear spot (labels.style 'circle' /
+    # 'arrow', placed once every route is drawn) or, 'along', the text along the longest segment.
+    label_style = str((payload.get("labels") or {}).get("style") or "along")
+    leader_routes: List[dict] = []
+    lw_of: Dict[str, List[Tuple[Any, int]]] = {}        # layer → [(entity, line weight)]: set on the layer when they agree
     for r in payload.get("routes", []):
         pts = [(X(p[0]), Y(p[1])) for p in r.get("pts", [])]
         if len(pts) < 2:
             continue
-        layer = r.get("layer", "PP_ROUTES")
+        layer = r.get("layer") or "PP_ROUTES"
+        _ensure_layer(doc, layer, r.get("color"))
+        da = {"layer": layer, **_color_attribs(r.get("color"), layer_hex.get(layer))}
+        lt = r.get("linetype")              # its own linetype only where it differs from its layer's (ByLayer otherwise)
+        lay_lt = (doc.layers.get(layer).dxf.linetype if layer in doc.layers else "Continuous") or "Continuous"
+        if lt and lt in doc.linetypes and lt.lower() != lay_lt.lower():
+            da["linetype"] = lt
         if r.get("curved") and len(pts) >= 3:
-            ent = msp.add_spline(fit_points=[(x, y, 0) for x, y in pts], dxfattribs={"layer": layer})
+            ent = msp.add_spline(fit_points=[(x, y, 0) for x, y in pts], dxfattribs=da)
         else:
-            ent = msp.add_lwpolyline(pts, dxfattribs={"layer": layer})
+            ent = msp.add_lwpolyline(pts, dxfattribs=da)
         _set_meta(ent, {"KIND": "route", "TYPE": r.get("type"), "CABLE": r.get("cable"),
                         "CURVED": "1" if r.get("curved") else "0",
                         "FROM": r.get("fromName"), "TO": r.get("toName")})
+        if r.get("lw"):
+            lw_of.setdefault(layer, []).append((ent, int(r["lw"])))
+        if label_style != "along":
+            if r.get("labelLines"):
+                lab_layer = r.get("labelLayer") or (layer + "_LABELS")
+                _ensure_layer(doc, lab_layer, layer_hex.get(layer) or r.get("color"))
+                layer_hex.setdefault(lab_layer, layer_hex.get(layer) or r.get("color") or "")
+                leader_routes.append({"ptsM": pts, "labelLines": r["labelLines"], "labelLayer": lab_layer})
+            else:
+                leader_routes.append({"ptsM": pts})
+            continue
         label = r.get("label")
         if label:
-            mid = pts[len(pts) // 2]
-            msp.add_text(label, dxfattribs={"height": 0.9, "layer": "PP_LABELS"}).set_placement(mid, align=TextEntityAlignment.MIDDLE_LEFT)
+            at, ang = _route_label_at(pts, H)
+            lab_layer = r.get("labelLayer") or (layer + "_LABELS")    # each cable layer's labels on a layer of their own
+            _ensure_layer(doc, lab_layer, layer_hex.get(layer) or r.get("color"))
+            layer_hex.setdefault(lab_layer, layer_hex.get(layer) or r.get("color") or "")
+            msp.add_text(label, dxfattribs={"height": H, "layer": lab_layer, "style": TEXT_STYLE, "rotation": ang,
+                                            **_color_attribs(r.get("color"), layer_hex.get(lab_layer))}).set_placement(at, align=TextEntityAlignment.MIDDLE_CENTER)
 
     # Trenches / measurements → polylines; rooms → closed polylines; texts.
     for t in payload.get("trenches", []):
         pts = [(X(p[0]), Y(p[1])) for p in t.get("pts", [])]
         if len(pts) >= 2:
-            ent = msp.add_lwpolyline(pts, dxfattribs={"layer": "PP_TRENCH"})
+            da = {"layer": L_TRENCH, **_color_attribs(t.get("color"), layer_hex.get(L_TRENCH))}
+            if t.get("widthM"):                       # drawn at its real width, as the plan draws it
+                da["const_width"] = float(t["widthM"])
+            ent = msp.add_lwpolyline(pts, dxfattribs=da)
+            if t.get("alpha") is not None:
+                ent.transparency = max(0.0, min(1.0, 1.0 - float(t["alpha"])))
             _set_meta(ent, {"KIND": "trench", "EXC": t.get("excType"), "NAME": t.get("name")})
     for rm in payload.get("rooms", []):
         pts = [(X(p[0]), Y(p[1])) for p in rm.get("pts", [])]
         if len(pts) >= 3:
-            ent = msp.add_lwpolyline(pts, close=True, dxfattribs={"layer": "PP_ROOMS"})
+            ent = msp.add_lwpolyline(pts, close=True, dxfattribs={"layer": L_ROOMS, **_color_attribs(rm.get("color"), layer_hex.get(L_ROOMS))})
             _set_meta(ent, {"KIND": "room", "NAME": rm.get("label")})
+            if rm.get("lw"):
+                lw_of.setdefault(L_ROOMS, []).append((ent, int(rm["lw"])))
         if rm.get("label") and pts:
             cx = sum(p[0] for p in pts) / len(pts)
             cy = sum(p[1] for p in pts) / len(pts)
-            msp.add_text(rm["label"], dxfattribs={"height": 0.9, "layer": "PP_ROOMS"}).set_placement((cx, cy), align=TextEntityAlignment.MIDDLE_CENTER)
+            lab = msp.add_text(rm["label"], dxfattribs={"height": H, "layer": L_ROOMS, "style": TEXT_STYLE})
+            lab.set_placement((cx, cy), align=TextEntityAlignment.MIDDLE_CENTER)
+            _set_meta(lab, {"KIND": "roomlabel"})
     for m in payload.get("measurements", []):
         pts = [(X(p[0]), Y(p[1])) for p in m.get("pts", [])]
         if len(pts) >= 2:
-            msp.add_lwpolyline(pts, dxfattribs={"layer": "PP_DIM"})
+            ent = msp.add_lwpolyline(pts, dxfattribs={"layer": L_DIM, **_color_attribs(m.get("color"), layer_hex.get(L_DIM))})
+            _set_meta(ent, {"KIND": "measurement"})
     for c in payload.get("crossings", []):
         p1, p2 = c.get("p1"), c.get("p2")
         if p1 and p2:
-            ent = msp.add_line((X(p1[0]), Y(p1[1])), (X(p2[0]), Y(p2[1])), dxfattribs={"layer": "PP_TRENCH"})
+            # colour by duct size (ACI 1 red = 160 mm, 30 orange = 110 mm), matching the plan; the size is also in the entity's data
+            col = _color_attribs(c.get("color"), layer_hex.get(L_DUCTS)) if c.get("color") else {"color": 1 if str(c.get("size")) == "160" else 30}
+            ent = msp.add_line((X(p1[0]), Y(p1[1])), (X(p2[0]), Y(p2[1])), dxfattribs={"layer": L_DUCTS, **col})
             _set_meta(ent, {"KIND": "crossing", "SIZE": c.get("size"), "NAME": c.get("name")})
+            if c.get("lw"):
+                lw_of.setdefault(L_DUCTS, []).append((ent, int(c["lw"])))
+    # Plan texts: the drawing's text height scaled by their size on the plan (14 = normal), anchored top-left as the plan draws them,
+    # in their own colour; a payload from before text heights keeps the old size in plan units.
     for tx in payload.get("texts", []):
-        msp.add_text(str(tx.get("text", "")), dxfattribs={
-            "height": max(0.05, tx.get("h", 2) * factor), "layer": "PP_TEXT",
-        }).set_placement((X(tx["x"]), Y(tx["y"])), align=TextEntityAlignment.MIDDLE_LEFT)
+        h = H * float(tx.get("rel")) if tx.get("rel") else max(0.05, tx.get("h", 2) * factor)
+        for i, line in enumerate(str(tx.get("text", "")).split("\n")):
+            if not line.strip():
+                continue
+            ent = msp.add_text(line, dxfattribs={"height": h, "layer": L_TEXT, "style": TEXT_STYLE,
+                                                 **_color_attribs(tx.get("color"), layer_hex.get(L_TEXT))})
+            ent.set_placement((X(tx["x"]), Y(tx["y"]) - i * 1.5 * h), align=TextEntityAlignment.TOP_LEFT)
+            _set_meta(ent, {"KIND": "text"})
+
+    # Cable labels as leaders, now that everything they must keep clear of is known.
+    if label_style != "along" and leader_routes:
+        obstacles = []
+        for el in payload.get("elements", []):
+            half = (variants.get(el.get("block"), {}).get("sizeWorld", 24) or 24) * 0.5 * factor
+            obstacles.append((X(el["x"]), Y(el["y"]), half))
+        text_style = TEXT_STYLE
+        sheets_mod.place_labels(msp, doc, leader_routes, obstacles, H, label_style, text_style)
+
+    sym_layers = {el.get("layer") for el in payload.get("elements", [])}
+    # Line weights as the plan draws the lines: on the layer when every line on it has the same one, else on each line.
+    for lay, items in lw_of.items():
+        ws = {w for _, w in items}
+        if len(ws) == 1 and len(items) and lay in doc.layers and lay not in sym_layers:   # a symbol's own lines stay as drawn
+            doc.layers.get(lay).dxf.lineweight = ws.pop()
+        else:
+            for ent, w in items:
+                ent.dxf.lineweight = w
+    if lw_of:
+        doc.header["$LWDISPLAY"] = 1
+
+    # Backgrounds (the plan's DXF underlays): what the plan shows of each, on BG- layers, as one block each.
+    for i, bg in enumerate(payload.get("backgrounds", []) or []):
+        try:
+            note = _add_background(doc, msp, bg, i, load_image)
+        except Exception as e:  # one bad background never stops the export
+            note = f"{bg.get('name') or 'background'}: left out ({e})"
+        if notes is not None and note:
+            notes.append(note)
 
     # Metadata block: carries the scale factor so import inverts exactly.
     if META_BLOCK not in doc.blocks:
         mb = doc.blocks.new(META_BLOCK)
-        mb.add_attdef("FACTOR", dxfattribs={"height": 0.001, "invisible": 1}).set_placement((0, 0))
-        mb.add_attdef("FLOOR", dxfattribs={"height": 0.001, "invisible": 1}).set_placement((0, -0.001))
-        mb.add_attdef("DOMAIN", dxfattribs={"height": 0.001, "invisible": 1}).set_placement((0, -0.002))
+        mb.add_attdef("FACTOR", dxfattribs={"height": 0.001, "flags": 1}).set_placement((0, 0))
+        mb.add_attdef("FLOOR", dxfattribs={"height": 0.001, "flags": 1}).set_placement((0, -0.001))
+        mb.add_attdef("DOMAIN", dxfattribs={"height": 0.001, "flags": 1}).set_placement((0, -0.002))
     mref = msp.add_blockref(META_BLOCK, (0, 0), dxfattribs={"layer": META_BLOCK})
     mref.add_auto_attribs({"FACTOR": repr(float(factor)), "FLOOR": str(payload.get("floorName", "")),
                            "DOMAIN": str(payload.get("domain", ""))})
     # Real-world units: the file is drawn in metres.
     doc.header["$INSUNITS"] = 6
 
+    # Layout sheets: one paper-space layout per sheet, each showing only its layers.
+    if payload.get("sheets"):
+        _add_layouts(doc, msp, payload)
+
     out = io.StringIO()
     doc.write(out)
-    # Encode in the drawing's own code page (R2000 → cp1252, with \U+XXXX
+    # Encode in the drawing's own code page (R2007 and later → UTF-8; an older one → its ANSI code page, with \U+XXXX
     # escapes for anything outside it). Writing UTF-8 bytes under an ANSI_1252
     # header garbled "mm²" in AutoCAD and on our own re-import.
     return doc.encode(out.getvalue())
 
 
+
+
+def _add_layouts(doc, msp, payload):
+    """One paper-space layout per sheet (in the order sent), each with one viewport at the drawing scale on the plan's
+    extents that freezes the layers not on that sheet. `layerSheets` = {layer: [sheet ids] | 'all'}; a layer it does not
+    name (backgrounds, labels of an unlisted layer) shows on every sheet. Layout1 is replaced.
+
+    With a title-block template (plan_dxf_sheets): the template's block for the paper size at the sheet's origin, its
+    attributes filled from `titleBlock` ({common: {tag: text}, sheets: {sheet id: {tag: text}}}), the viewport inside its
+    frame left of the title panel, the legend in the panel's free column. Without one: the viewport within a margin, the
+    legend in a column on its right."""
+    lay_cfg = payload.get("layout") or {}
+    paper = str(lay_cfg.get("paper") or "A1").upper()
+    pw, ph = PAPERS.get(paper, PAPERS["A1"])
+    margin = float(lay_cfg.get("margin") or SHEET_MARGIN_MM)
+    scale = float(lay_cfg.get("scale") or payload.get("scale") or 500)
+    factor = float(payload.get("factor") or 1.0)
+    ext = lay_cfg.get("extents")
+    if ext and len(ext) == 4:
+        cx, cy = (ext[0] + ext[2]) / 2.0, (ext[1] + ext[3]) / 2.0
+    else:
+        try:
+            from ezdxf import bbox
+            b = bbox.extents(msp, fast=True)
+            cx, cy = (b.center.x, b.center.y) if b.has_data else (0.0, 0.0)
+        except Exception:
+            cx, cy = 0.0, 0.0
+    layer_sheets = dict(payload.get("layerSheets") or {})
+    # a cable layer's labels go where the cable goes
+    for ly in list(doc.layers):
+        nm = ly.dxf.name
+        if nm.endswith("_LABELS") and nm not in layer_sheets and nm[:-7] in layer_sheets:
+            layer_sheets[nm] = layer_sheets[nm[:-7]]
+    layer_sheets.setdefault(META_BLOCK, [])
+
+    tb = sheets_mod.import_title_block(doc, paper) if lay_cfg.get("titleBlock", True) else None
+    geo = sheets_mod.title_block_geometry(doc, tb) if tb else None
+    if geo and geo.get("panel") is not None:
+        fx0, fy0, fx1, fy1 = geo["frame"]
+        vp_box = (fx0 + 3, fy0 + 3, geo["panel"] - 3, fy1 - 3)
+        lx0, ly0, lx1, ly1 = geo["legend"]
+        legend_rect = (lx0, ly0 + 1, lx1, ly1 - 1)
+    else:
+        tb = None
+        col = 98.0                                   # must match PlanDXF.LEGEND_COL_MM
+        vp_box = (margin, margin, pw - margin - col - 3, ph - margin)
+        legend_rect = (pw - margin - col, margin, pw - margin, ph - margin)
+    # the legend in the title block's own lettering (its attributes' text style), else ours
+    style = next((a.dxf.style for a in doc.blocks.get(tb).attdefs() if a.dxf.style in doc.styles), TEXT_STYLE) if tb else TEXT_STYLE
+    _ensure_layer(doc, VIEWPORT_LAYER, None)
+    _ensure_layer(doc, sheets_mod.TITLE_LAYER, None)
+    _ensure_layer(doc, sheets_mod.LEGEND_LAYER, None)
+    names = [ly.dxf.name for ly in doc.layers]
+    tvals = payload.get("titleBlock") or {}
+    made = []
+    for sh in payload.get("sheets") or []:
+        sid, title = str(sh.get("id")), str(sh.get("name") or sh.get("id"))
+        if title in doc.layouts:
+            continue
+        layout = doc.layouts.new(title)
+        layout.page_setup(size=(pw, ph), margins=(0, 0, 0, 0), units="mm")
+        vx0, vy0, vx1, vy1 = vp_box
+        uw, uh = vx1 - vx0, vy1 - vy0
+        vp = layout.add_viewport(center=((vx0 + vx1) / 2.0, (vy0 + vy1) / 2.0), size=(uw, uh), view_center_point=(cx, cy),
+                                 view_height=uh * scale / 1000.0)
+        vp.dxf.layer = VIEWPORT_LAYER
+        frozen = [n for n in names if isinstance(layer_sheets.get(n), list) and sid not in layer_sheets[n]]
+        vp.frozen_layers = frozen
+        if tb:
+            ref = layout.add_blockref(tb, (0, 0), dxfattribs={"layer": sheets_mod.TITLE_LAYER})
+            vals = {**(tvals.get("common") or {}), **((tvals.get("sheets") or {}).get(sid) or {})}
+            fitted = sheets_mod.fit_attribs(doc, tb, vals)        # long titles wrap over their lines and stay inside their boxes
+            ref.add_auto_attribs({t: v[0] for t, v in fitted.items()})
+            for at in ref.attribs:
+                _, wf, hh = fitted.get(at.dxf.tag, (None, 1.0, at.dxf.height))
+                if abs(wf - 1.0) > 1e-6:
+                    at.dxf.width = math.floor(wf * 1000) / 1000.0      # down: never past the box
+                if abs(hh - at.dxf.height) > 1e-6:
+                    at.dxf.height = math.floor(hh * 1000) / 1000.0
+        else:
+            layout.add_lwpolyline([(vx0, vy0), (vx1, vy0), (vx1, vy1), (vx0, vy1)], close=True,
+                                  dxfattribs={"layer": sheets_mod.TITLE_LAYER})
+            lx0, ly0, lx1, ly1 = legend_rect
+            layout.add_lwpolyline([(lx0, ly0), (lx1, ly0), (lx1, ly1), (lx0, ly1)], close=True,
+                                  dxfattribs={"layer": sheets_mod.TITLE_LAYER})
+
+        def overflow(need, vx0=vx0, vy0=vy0):
+            return (vx0 + 2, vy0 + 2, vx0 + 2 + (legend_rect[2] - legend_rect[0]), vy0 + 2 + need)
+        try:
+            sheets_mod.draw_legend(doc, layout, legend_rect, overflow, sid, payload, layer_sheets, style, scale, factor,
+                                   title=bool(tb))
+        except Exception as e:  # pragma: no cover - a legend never stops the export
+            log.warning("legend for sheet %s left out: %s", sid, e)
+        made.append(title)
+    if made:
+        doc.layers.get(VIEWPORT_LAYER).dxf.plot = 0      # the viewport frames do not plot
+        if "Layout1" in doc.layouts and "Layout1" not in made:
+            doc.layouts.delete("Layout1")
+        doc.layouts.set_active_layout(made[0])
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -340,6 +861,17 @@ def _entity_color(e):
         return None
 
 
+def _entity_lineweight(e):
+    """Explicit entity line weight: hundredths of a mm (0–211), 'B' (ByBlock) or None (ByLayer / default)."""
+    try:
+        lw = int(e.dxf.get("lineweight", -1))
+    except Exception:
+        return None
+    if lw == -2:
+        return "B"
+    return lw if lw >= 0 else None
+
+
 def _layer_table(doc):
     from ezdxf.colors import aci2rgb
     out = {}
@@ -355,6 +887,12 @@ def _layer_table(doc):
             "on": not ly.is_off(), "frozen": bool(ly.is_frozen()),
             "n": 0,
         }
+        try:
+            lw = int(ly.dxf.get("lineweight", -3))
+        except Exception:
+            lw = -3
+        if lw >= 0:
+            out[name]["w"] = lw   # hundredths of a millimetre; absent = the drawing's default
     return out
 
 
@@ -429,7 +967,8 @@ class _Reader:
       {t:'x', p:[x,y], h, r, s, ha, va}             text (rotation deg CCW)
       {t:'o', p:[x,y]}                              point
       {t:'i', b, p:[x,y], r, sx, sy}                nested insert (blocks only)
-    Every record carries l (layer) and optionally k (colour: '#hex' | 'B').
+    Every record carries l (layer) and optionally k (colour: '#hex' | 'B') and w (line weight in
+    hundredths of a mm | 'B' = ByBlock; absent = ByLayer — the layer's w, else the file's `lwDefault`).
     Top-level model-space records also carry h (handle) and, for curves, g
     (source type) so they can be converted to routes later.
     """
@@ -488,6 +1027,9 @@ class _Reader:
         k = _entity_color(e)
         if k:
             base["k"] = k
+        w = _entity_lineweight(e)
+        if w is not None:
+            base["w"] = w
         if top:
             try:
                 base["h"] = e.dxf.handle
@@ -645,6 +1187,9 @@ class _Reader:
         k = _entity_color(e)
         if k:
             rec["k"] = k
+        w = _entity_lineweight(e)
+        if w is not None:
+            rec["w"] = w
         if at:
             rec["at"] = at
         self._count()
@@ -882,6 +1427,7 @@ def _parse_foreign(doc) -> Dict[str, Any]:
         "inserts": inserts,
         "entities": entities,
         "count": len(entities) + len(inserts),
+        "lwDefault": 25,   # AutoCAD's default line weight (0.25 mm); a DXF does not carry the setting
         "truncated": rd.truncated,
         "skipped": rd.skipped,
     }
@@ -900,8 +1446,8 @@ def _parse_ours(doc, factor, floor_name, domain) -> Dict[str, Any]:
         # every other INSERT in one of our own files is a device — LISP-named
         # blocks (LUMINAIRE, DB, ...) no longer carry a "PP_" prefix, so that
         # can't gate device recognition any more.
-        if name == META_BLOCK:
-            continue
+        if name == META_BLOCK or (e.dxf.get("layer", "") or "").startswith(BG_PREFIX):
+            continue      # the metadata block; a background drawing exported with the plan (not part of it)
         attrs = {a.dxf.tag: a.dxf.text for a in e.attribs}
         px = to_px(e.dxf.insert.x, e.dxf.insert.y)
         devices.append({
@@ -925,20 +1471,20 @@ def _parse_ours(doc, factor, floor_name, domain) -> Dict[str, Any]:
             pts = [to_px(p[0], p[1]) for p in e.get_points("xy")]
             if len(pts) < 2:
                 continue
-            if kind == "trench" or (not kind and layer == "PP_TRENCH"):
+            if kind == "trench" or (not kind and layer in _IMPORT_LAYERS["trench"]):
                 trenches.append({"pts": pts, "meta": meta})
-            elif kind == "room" or (not kind and layer == "PP_ROOMS"):
+            elif kind == "room" or (not kind and layer in _IMPORT_LAYERS["room"]):
                 rooms.append({"pts": pts, "meta": meta})
-            elif layer == "PP_DIM":
+            elif kind == "measurement" or (not kind and layer in _IMPORT_LAYERS["measurement"]):
                 measurements.append({"pts": pts})
             else:
                 routes.append({"curved": meta.get("CURVED") == "1", "layer": layer, "pts": pts, "meta": meta})
         elif t == "LINE" and kind == "crossing":
             crossings.append({"p1": to_px(e.dxf.start.x, e.dxf.start.y), "p2": to_px(e.dxf.end.x, e.dxf.end.y), "meta": meta})
-        elif t == "TEXT" and layer == "PP_TEXT":
+        elif t == "TEXT" and (kind == "text" or (not kind and layer in _IMPORT_LAYERS["text"])):
             p = to_px(e.dxf.insert.x, e.dxf.insert.y)
             texts.append({"x": p[0], "y": p[1], "text": e.dxf.text})
-        elif t == "TEXT" and layer == "PP_ROOMS":
+        elif t == "TEXT" and (kind == "roomlabel" or (not kind and layer in _IMPORT_LAYERS["room"])):
             # Room label: attach to the room polygon that contains it (older
             # files carry no NAME xdata on the polyline).
             p = to_px(e.dxf.insert.x, e.dxf.insert.y)

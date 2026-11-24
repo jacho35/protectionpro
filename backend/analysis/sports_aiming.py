@@ -41,6 +41,13 @@ The optimiser (`aim`):
      never a mast's last — while every target is still met at full output,
      with a short re-aim after each, then dims.
 
+Symmetry: when the masts, their floods and the cameras are mirror images of each
+other about the halfway line, the long axis or both (equal height, flood count,
+luminaires and output), the aiming is kept mirror-symmetric: the pattern and the
+optimiser work on one mast of each mirror set (and, for a mast on an axis, one
+flood of each mirrored pair) and the others are set from it, so mirrored masts
+can never end up aimed differently. `symmetric: false` in the request turns it off.
+
 The figures are this field's own floods only, on the calculation's own grid,
 observers and camera planes (sports_lighting.evaluate_field), so they agree
 with a full calculation of the field without other lighting.
@@ -433,10 +440,55 @@ def _masts(req, L, W):
     return out
 
 
+def _flip(p, fx, fy, L, W):
+    """A field point mirrored about the halfway line (fx) and / or the long axis (fy)."""
+    return (L - p[0] if fx else p[0], W - p[1] if fy else p[1])
+
+
+def _symmetry(masts, cams, pats, apply, movable, L, W, tol=0.3):
+    """The mirror symmetries of the setup (masts, floods, cameras) and how each mast
+    follows another. None when there is none. Returns
+    {valid: [(fx, fy)], src: {mast: (rep mast, fx, fy)}, self: {rep mast: (fx, fy)}}."""
+    n = len(masts)
+    if n < 1:
+        return None
+    sig = [(round(m["h"], 2), tuple((fl.get("photometryId"), round(fl["fluxPct"], 1)) for fl in m["floods"]),
+            pats[i], i in apply, bool(movable[i])) for i, m in enumerate(masts)]
+    valid = []
+    for fx, fy in ((True, False), (False, True), (True, True)):
+        perm = []
+        for i, m in enumerate(masts):
+            x, y = _flip((m["x"], m["y"]), fx, fy, L, W)
+            j = next((k for k, mm in enumerate(masts) if abs(mm["x"] - x) <= tol and abs(mm["y"] - y) <= tol and sig[k] == sig[i]), None)
+            if j is None:
+                break
+            perm.append(j)
+        if len(perm) != n or len(set(perm)) != n:
+            continue
+        if any(not any(abs(c2["x"] - cx) <= tol and abs(c2["y"] - cy) <= tol for c2 in cams)
+               for cx, cy in (_flip((c["x"], c["y"]), fx, fy, L, W) for c in cams)):
+            continue
+        valid.append(((fx, fy), perm))
+    if not valid:
+        return None
+    src, selfT = {}, {}
+    for i in range(n):
+        if i in src:
+            continue
+        for (fx, fy), perm in valid:
+            j = perm[i]
+            if j != i and j not in src:
+                src[j] = (i, fx, fy)
+        own = next(((fx, fy) for (fx, fy), perm in valid if perm[i] == i), None)
+        if own:
+            selfT[i] = own
+    return {"valid": [t for t, _ in valid], "src": src, "self": selfT}
+
+
 class _State:
     """Aim points, outputs and light columns of the modelled floods."""
 
-    def __init__(self, model, masts, webs, movable, masks, max_tilt):
+    def __init__(self, model, masts, webs, movable, masks, max_tilt, sym=None):
         self.model, self.masts = model, masts
         self.F = []                                       # (mast index, flood dict)
         for i, m in enumerate(masts):
@@ -456,7 +508,71 @@ class _State:
             mk = masks[i]
             self.zone.append(S.xy[mk] if mk is not None and mk.any() else None)
         self.ds = S.ds
+        self.src = [None] * len(self.F)                   # (root flood, fx, fy): follows that flood, mirrored
+        self.axis = [None] * len(self.F)                  # a flood that stays on its mast's axis of symmetry
+        self.kids = {}
+        if sym:
+            self._ties(sym)
+        self.rep = np.array([x is None for x in self.src], bool)
         self.full()
+
+    def _T(self, p, fx, fy):
+        return np.array(_flip(p, fx, fy, self.model.L, self.model.W), float)
+
+    def _T_axis(self, p, fx, fy):
+        return np.array([self.model.L / 2 if fx else p[0], self.model.W / 2 if fy else p[1]], float)
+
+    def _ties(self, sym):
+        by = {}
+        for k, (i, _) in enumerate(self.F):
+            by.setdefault(i, []).append(k)
+        tol = 0.5 * self.ds
+        for i, (fx, fy) in sym["self"].items():           # a mast on an axis: its floods in mirrored pairs
+            free = list(by.get(i, []))
+            on_axis = lambda k: float(np.hypot(*(self.a[k] - self._T(self.a[k], fx, fy)))) <= tol
+            while free:
+                a = free.pop(0)
+                if on_axis(a):                              # on the axis: pairs only with a flood stacked on it
+                    q = next((z for z, b in enumerate(free) if float(np.hypot(*(self.a[b] - self.a[a]))) <= tol), None)
+                    if q is None:
+                        self.axis[a] = (fx, fy)
+                        self.a[a] = self._T_axis(self.a[a], fx, fy)
+                        continue
+                    b = free.pop(q)
+                    self.src[b] = (a, fx, fy)
+                    self.a[b] = self._T(self.a[a], fx, fy)
+                    continue
+                t = self._T(self.a[a], fx, fy)
+                cand = [z for z, b in enumerate(free) if not on_axis(b)]
+                if not cand:                                # no one to pair with: onto the axis
+                    self.axis[a] = (fx, fy)
+                    self.a[a] = self._T_axis(self.a[a], fx, fy)
+                    continue
+                q = min(cand, key=lambda z: float(np.hypot(*(self.a[free[z]] - t))))
+                b = free.pop(q)
+                self.src[b] = (a, fx, fy)
+                self.a[b] = t
+        for j, (i, fx, fy) in sym["src"].items():          # a mirrored mast: flood p follows flood p of its rep
+            for p, k in enumerate(by.get(j, [])):
+                r = by[i][p] if p < len(by.get(i, [])) else None
+                if r is None:
+                    continue
+                root, rx, ry = self.src[r] if self.src[r] else (r, False, False)
+                self.src[k] = (root, rx != fx, ry != fy)
+        for k, v in enumerate(self.src):
+            if v:
+                self.kids.setdefault(v[0], []).append((k, v[1], v[2]))
+        self.sync(False)
+
+    def sync(self, full=True):
+        for root, ks in self.kids.items():
+            for k, fx, fy in ks:
+                self.a[k] = self._T(self.a[root], fx, fy)
+        if full:
+            self.full()
+
+    def group(self, j):
+        return [j] + [k for k, _, _ in self.kids.get(j, [])]
 
     def items(self, idx, aims, pct=None):
         out = []
@@ -496,11 +612,18 @@ class _State:
         d = float(np.hypot(*v))
         if d > self.reach[j]:
             p = self.mxy[j] + v / d * self.reach[j]
+        if self.axis[j]:
+            p = self._T_axis(p, *self.axis[j])
         return p
 
     def set_aims(self, js, P):
         if not len(js):
             return
+        js, P = list(js), [np.asarray(q, float) for q in P]
+        for j, q in list(zip(js, P)):                      # floods that follow a moved one move with it
+            for k, fx, fy in self.kids.get(j, []):
+                js.append(k)
+                P.append(self._T(q, fx, fy))
         eh, cams, gl, _ = self.model.columns(self.items(js, P))
         for k, j in enumerate(js):
             self.a[j] = P[k]
@@ -516,9 +639,9 @@ def _untangle(st):
     r = min(st.model.L, st.model.W) / 10.0
     done = set()
     for j in range(len(st.F)):
-        if j in done or not st.movable[j]:
+        if j in done or not st.movable[j] or not st.rep[j]:
             continue
-        stack = [k for k in range(j, len(st.F)) if st.movable[k] and st.F[k][0] == st.F[j][0]
+        stack = [k for k in range(j, len(st.F)) if st.movable[k] and st.rep[k] and st.F[k][0] == st.F[j][0]
                  and float(np.hypot(*(st.a[k] - st.a[j]))) < 0.5]
         done.update(stack)
         if len(stack) > 1:
@@ -526,6 +649,7 @@ def _untangle(st):
             for n, k in enumerate(stack):
                 t = 2.0 * math.pi * n / len(stack)
                 st.a[k] = c + r * np.array([math.cos(t), math.sin(t)])
+    st.sync(False)
 
 
 def _centroid_phase(st, iters, t_end, e_ref):
@@ -533,7 +657,7 @@ def _centroid_phase(st, iters, t_end, e_ref):
     best set by cost."""
     G = st.model.G[:, :2]
     best = (st.model.cost(*st.sums(), e_ref), st.a.copy())
-    mov = np.where(st.movable & st.on)[0]
+    mov = np.where(st.movable & st.on & st.rep)[0]
     for _ in range(iters):
         if time.time() > t_end or not len(mov):
             break
@@ -562,7 +686,7 @@ def _local_phase(st, t_end, e_ref, step0=None):
     """Each flood in turn tries eight moves; the step halves when a sweep finds nothing."""
     m = st.model
     step = step0 or max(m.L, m.W) / 10.0
-    mov = [j for j in range(len(st.F)) if st.movable[j] and st.on[j]]
+    mov = [j for j in range(len(st.F)) if st.movable[j] and st.on[j] and st.rep[j]]
     if not mov:
         return
     wv = st.weight()
@@ -582,22 +706,41 @@ def _local_phase(st, t_end, e_ref, step0=None):
                     cand.append(p)
             if not cand:
                 continue
-            eh, cams, gl, _ = m.columns(st.items([j] * len(cand), cand))
-            wj = wv[j]
-            base_e = Eh - st.eh[:, j] * wj
-            base_c = [c - cc[:, j] * wj for c, cc in zip(Cs, st.cams)]
-            base_g = Gl - st.gl[:, j] * wj
+            grp = [(j, False, False)] + st.kids.get(j, [])
+            idx, aims = [], []
+            for k, fx, fy in grp:
+                for c in cand:
+                    idx.append(k)
+                    aims.append(st._T(c, fx, fy) if (fx or fy) else c)
+            eh, cams, gl, _ = m.columns(st.items(idx, aims))
+            nc = len(cand)
+            members = [k for k, _, _ in grp]
+            base_e, base_c, base_g = Eh.copy(), [c.copy() for c in Cs], Gl.copy()
+            for k in members:
+                base_e -= st.eh[:, k] * wv[k]
+                for b, cc in zip(base_c, st.cams):
+                    b -= cc[:, k] * wv[k]
+                base_g -= st.gl[:, k] * wv[k]
             best_k, best_c = -1, cur - 1e-7
-            for k in range(len(cand)):
-                ck = m.cost(base_e + eh[:, k] * wj, [b + cc[:, k] * wj for b, cc in zip(base_c, cams)], base_g + gl[:, k] * wj, e_ref)
+            for q in range(nc):
+                e2, c2, g2 = base_e.copy(), [b.copy() for b in base_c], base_g.copy()
+                for mi, k in enumerate(members):
+                    col = mi * nc + q
+                    e2 += eh[:, col] * wv[k]
+                    for b, cc in zip(c2, cams):
+                        b += cc[:, col] * wv[k]
+                    g2 += gl[:, col] * wv[k]
+                ck = m.cost(e2, c2, g2, e_ref)
                 if ck < best_c:
-                    best_k, best_c = k, ck
+                    best_k, best_c = q, ck
             if best_k >= 0:
-                st.a[j] = cand[best_k]
-                st.eh[:, j] = eh[:, best_k]
-                for c, cc in zip(st.cams, cams):
-                    c[:, j] = cc[:, best_k]
-                st.gl[:, j] = gl[:, best_k]
+                for mi, k in enumerate(members):
+                    col = mi * nc + best_k
+                    st.a[k] = aims[col]
+                    st.eh[:, k] = eh[:, col]
+                    for c, cc in zip(st.cams, cams):
+                        c[:, k] = cc[:, col]
+                    st.gl[:, k] = gl[:, col]
                 Eh, Cs, Gl = st.sums(wv)
                 cur = best_c
                 improved = True
@@ -642,11 +785,18 @@ def _remove(st, t_end, e_ref, warns):
         per = {}
         for j in np.where(st.on)[0]:
             per[st.F[j][0]] = per.get(st.F[j][0], 0) + 1
-        cands = [j for j in np.where(st.on & st.movable)[0] if per[st.F[j][0]] > 1]
         best = None
-        for j in cands:
+        for j in np.where(st.on & st.movable & st.rep)[0]:
+            grp = st.group(j)
+            if not all(st.on[k] for k in grp):
+                continue
+            lose = {}
+            for k in grp:
+                lose[st.F[k][0]] = lose.get(st.F[k][0], 0) + 1
+            if any(per[i] - n < 1 for i, n in lose.items()):
+                continue
             wv = full()
-            wv[j] = 0.0
+            wv[grp] = 0.0
             mk = st.metrics(wv)
             if not _ratio_ok(mk, tg) or (_need(mk, tg) or 0) > 1.0:
                 continue
@@ -656,16 +806,17 @@ def _remove(st, t_end, e_ref, warns):
         if best is None:
             break
         j = best[1]
-        st.on[j] = False
+        grp = st.group(j)
+        st.on[grp] = False
         keep_pct = st.pct.copy()
         st.pct[st.on] = 100.0
         _local_phase(st, min(t_end, time.time() + 0.6), e_ref, step0=max(m.L, m.W) / 20.0)
         mk = st.metrics(full())
         st.pct = keep_pct
         if not (_ratio_ok(mk, tg) and (_need(mk, tg) or 0) <= 1.0):
-            st.on[j] = True                                  # the re-aim broke a target: put it back, stop
+            st.on[grp] = True                                # the re-aim broke a target: put it back, stop
             break
-        removed.append(j)
+        removed.extend(grp)
     return removed
 
 
@@ -727,6 +878,14 @@ def aim(req: dict, budget: float = None) -> dict:
         pre = _State(model, masts, webs, [True] * len(masts), [None] * len(masts), max_tilt)
         before = _summary(pre, pre.metrics())
 
+    movable0 = [req.get("move") is None or m["id"] in req.get("move") for m in masts]
+    sym, sym_note = None, None
+    if req.get("symmetric", True) is not False:
+        pats0 = [pattern if (pattern and i in apply) else m["pattern"] for i, m in enumerate(masts)]
+        sym = _symmetry(masts, fd["cameras"], pats0, set(apply), movable0, L, W)
+        if sym:
+            sym_note = ", ".join({(True, False): "about the halfway line", (False, True): "about the long axis", (True, True): "about the centre"}[t] for t in sym["valid"])
+
     if pattern:
         geo = [{"x": m["x"], "y": m["y"], "h": m["h"], "n": len(m["floods"]), "name": m["name"], "id": m["id"]} for m in masts]
         pts, w = pattern_aims(L, W, geo, pattern, apply, max_tilt, [m["pattern"] for m in masts])
@@ -735,6 +894,10 @@ def aim(req: dict, budget: float = None) -> dict:
             masts[i]["pattern"] = pattern
             for fl, (ax, ay) in zip(masts[i]["floods"], pts.get(i, [])):
                 fl["ax"], fl["ay"] = ax, ay
+        for j, (i, fx, fy) in (sym["src"].items() if sym else []):
+            if j in apply and i in apply:
+                for fl, rf in zip(masts[j]["floods"], masts[i]["floods"]):
+                    fl["ax"], fl["ay"] = _flip((rf["ax"], rf["ay"]), fx, fy, L, W)
 
     removed = []
     after = None
@@ -744,17 +907,17 @@ def aim(req: dict, budget: float = None) -> dict:
                               [m["pattern"] for m in masts], max_tilt)
         if not pattern:
             warns += w
-        move = req.get("move")
-        movable = [move is None or m["id"] in move for m in masts]
-        st = _State(model, masts, webs, movable, masks, max_tilt)
+        movable = movable0
+        st = _State(model, masts, webs, movable, masks, max_tilt, sym)
         e_ref = max(st.metrics()["Eav"], 1e-6)
         if optimise:
             iters = int(min(max(_f(req.get("iterations"), 40), 0), 120))
             # the original optimiser's points on the pitch, then the zones
             _untangle(st)
             for j in range(len(st.F)):
-                st.a[j] = st.clamp(j, st.a[j])
-            st.full()
+                if st.rep[j]:
+                    st.a[j] = st.clamp(j, st.a[j])
+            st.sync()
             _centroid_phase(st, iters, t0 + budget * 0.35, e_ref)
             _local_phase(st, t0 + budget * (0.6 if req.get("trim") == "remove" else 0.95), e_ref)
         trim = req.get("trim") or "none"
@@ -775,7 +938,7 @@ def aim(req: dict, budget: float = None) -> dict:
                           "floods": [{"id": fl.get("id"), "ax": round(fl["ax"], 2), "ay": round(fl["ay"], 2), "fluxPct": round(fl["fluxPct"], 1)}
                                      for fl in m["floods"] if fl.get("id") not in removed]})
     return {"masts": out_masts, "removed": removed, "before": before, "after": after,
-            "warnings": list(dict.fromkeys(warns)), "grid": {"nx": model.nx, "ny": model.ny},
+            "warnings": list(dict.fromkeys(warns)), "symmetric": bool(sym), "symmetry": sym_note, "grid": {"nx": model.nx, "ny": model.ny},
             "ms": round((time.time() - t0) * 1000.0)}
 
 

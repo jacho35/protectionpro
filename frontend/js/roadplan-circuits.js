@@ -435,42 +435,11 @@ if (typeof RoadPlan !== 'undefined') Object.assign(RoadPlan, {
   },
 });
 
-// ─── Site plan → Roads ──────────────────────────────────────────────────
-// Roads take the site plan's street centrelines (route type `street`) and its
-// kiosks / mini-subs as feed points. The road keeps `planRouteId`, so taking the
-// streets again updates it in place and a Links entry joins the two. Plan frame:
-// x east, y north, metres (the plan's y runs down the screen).
+// ─── Site plan → Roads: the feed point ──────────────────────────────────
+// A road's streets come from the site plan through roadplan-siteplan.js; the feed point can sit where
+// the plan's own kiosk / mini-sub is drawn. Plan frame: x east, y north, metres (the plan's y runs down).
 if (typeof RoadPlan !== 'undefined') Object.assign(RoadPlan, {
   _planM() { return (typeof PlanEngine !== 'undefined' && AppState.planMarkup) ? PlanEngine.factor() : null; },
-  planStreets() {
-    const pm = AppState.planMarkup;
-    return pm && Array.isArray(pm.routes) ? pm.routes.filter(r => r.type === 'street' && Array.isArray(r.points) && r.points.length >= 2) : [];
-  },
-  planStreetsHtml() {
-    const n = this.planStreets().length;
-    if (!n) return '';
-    const known = new Set(this.roads.map(r => r.planRouteId).filter(Boolean));
-    const fresh = this.planStreets().filter(r => !known.has(r.id)).length;
-    return `<div class="rp-bg-actions"><button class="btn-small${this.roads.length ? '' : ' btn-primary'}" data-rp="take-streets" title="Make a road of each street centreline on the Electrical plan; roads already taken are updated in place">${this.roads.length ? 'Update from plan streets' : 'Take streets from the plan'} (${n}${fresh && this.roads.length ? `, ${fresh} new` : ''})</button></div>`;
-  },
-  async takePlanStreets() {
-    const f = this._planM();
-    if (!f) { UI.toast('Calibrate the plan scale first (Plan › Scale), so its streets have a length in metres.', 'info', 4500); return; }
-    let added = 0, updated = 0;
-    for (const st of this.planStreets()) {
-      const ip = st.points.map(q => ({ x: +(q.x * f).toFixed(3), y: +(-q.y * f).toFixed(3) }));
-      const road = this.roads.find(r => r.planRouteId === st.id);
-      if (road && road.mode === 'ip') {
-        road.ip = ip; if (st.name) road.name = st.name;
-        this._geo.delete(road.id); this.layoutRoad(road, this._keepMoved !== false); updated++;
-      } else if (!road) {
-        const nr = await this._newRoad({ mode: 'ip', ip, radius: 50, planRouteId: st.id, name: (st.props && st.props.name) || st.name || undefined });
-        if (nr) added++; else break;       // the design dialog was cancelled
-      }
-    }
-    if (updated) { this._commit(); this.render(); }
-    UI.toast(`Streets from the plan: ${added} new, ${updated} updated.`, 'success', 3000);
-  },
   // The plan's own kiosk / mini-sub for the chosen source
   planSourceEl(src) {
     const pm = AppState.planMarkup;
@@ -505,7 +474,8 @@ if (typeof RoadPlan !== 'undefined') Object.assign(RoadPlan, {
     for (const rt of (pm.routes || [])) { if (rt.fromId) routed.add(rt.fromId); if (rt.toId) routed.add(rt.toId); }
     const posOf = (r, p) => { const g = this.poleGeom(r, p); return g ? { x: g.bx, y: g.by } : null; };
     const byRoadPole = new Map();
-    for (const e of els) if (e.type === 'pole' && e.roadPoleId) byRoadPole.set(e.roadPoleId, e);
+    // Poles the Road plan's *Send poles to the site plan* made (`rpPoleId`, `auto: 'rp'`) are mirrors too.
+    for (const e of els) if (e.type === 'pole' && (e.roadPoleId || e.rpPoleId)) { e.roadPoleId = e.roadPoleId || e.rpPoleId; byRoadPole.set(e.roadPoleId, e); }
     // 1) adopt hand-placed, unrouted plan poles that stand on a road
     for (const e of els) {
       if (e.type !== 'pole' || e.roadPoleId || e.auto || routed.has(e.id)) continue;
@@ -525,7 +495,7 @@ if (typeof RoadPlan !== 'undefined') Object.assign(RoadPlan, {
       const p = { id: this._genId('rpp'), s: +pr.s.toFixed(2), rowId: row.id, moved: true, note: 'from plan', planId: e.id };
       if (bd > 0.3) p.d = +pr.d.toFixed(2);
       r.poles.push(p); r.poles.sort((a, b) => a.s - b.s);
-      e.roadPoleId = p.id; e.adopted = true;
+      e.roadPoleId = p.id; e.rpPoleId = p.id; e.rpRoadId = r.id; e.adopted = true;
       byRoadPole.set(p.id, e);
       roadsMoved = true; changed = true;
     }
@@ -541,7 +511,7 @@ if (typeof RoadPlan !== 'undefined') Object.assign(RoadPlan, {
         live.add(p.id);
         let e = byRoadPole.get(p.id);
         if (!e) {
-          e = { id: AppState.planGenId('pmel'), type: 'pole', x: pos.x / f, y: -pos.y / f, rotation: 0, name: names.get(p.id) || p.name || '', reticId: null, props: {}, auto: 'roadlight', roadPoleId: p.id, mx: pos.x, my: pos.y };
+          e = { id: AppState.planGenId('pmel'), type: 'pole', x: pos.x / f, y: -pos.y / f, rotation: 0, name: names.get(p.id) || p.name || '', reticId: null, props: {}, auto: 'roadlight', roadPoleId: p.id, rpPoleId: p.id, rpRoadId: r.id, mx: pos.x, my: pos.y };
           els.push(e); p.planId = e.id; changed = true; continue;
         }
         p.planId = e.id;
@@ -562,9 +532,9 @@ if (typeof RoadPlan !== 'undefined') Object.assign(RoadPlan, {
     // 3) a mirror whose road pole is gone: auto ones go, adopted ones become plain plan poles again
     for (let i = els.length - 1; i >= 0; i--) {
       const e = els[i];
-      if (!e.roadPoleId || live.has(e.roadPoleId)) continue;
+      if (!e.roadPoleId || live.has(e.roadPoleId) || e.auto === 'rp') continue;      // a sent pole is removed by Send poles
       if (e.auto === 'roadlight') els.splice(i, 1);
-      else { delete e.roadPoleId; delete e.adopted; delete e.mx; delete e.my; }
+      else { delete e.roadPoleId; delete e.rpPoleId; delete e.rpRoadId; delete e.adopted; delete e.mx; delete e.my; }
       changed = true;
     }
     if (roadsMoved) { this._geo.clear(); this._resStale = true; }

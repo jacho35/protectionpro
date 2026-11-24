@@ -51,6 +51,28 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Phone menus reach every desktop menu item
+        run: node testing/unit/mobile-menu-coverage.test.js
+      - name: Fixes (proposed fixes, Fix all)
+        run: node testing/unit/fixes.test.js
+      - name: Building auto circuits (request, preview)
+        run: node testing/unit/plan-bdauto.test.js
+      - name: Auto layout routing along the erf boundaries
+        run: node testing/unit/blocks.test.js
+      - name: Network overview (LV strings, street lights, fibre tree)
+        run: node testing/unit/netoverview.test.js
+      - name: Re-route from a kiosk or manhole (fixed solve)
+        run: node testing/unit/reroute.test.js
+      - name: Auto layout crossings on the plan unit tests
+        run: node testing/unit/crossings-first.test.js
+      - name: Road plan roads from the site plan's streets
+        run: node testing/unit/roadsiteplan.test.js
+      - name: Road sections unit tests
+        run: node testing/unit/roadsections.test.js
+      - name: Street lighting layout (pole strings, feeds, corridors)
+        run: node testing/unit/sl-layout.test.js
+      - name: Plan DXF layers and layout sheets
+        run: node testing/unit/plandxf.test.js
       - name: TCC curves
         run: node frontend/tests/test_tcc_curves.mjs
       - name: Distance zone grading

@@ -138,6 +138,7 @@ const Issues = {
     add(this._validation);
     add(this._lighting);
     add(this._sync);
+    add(this._roadSections);
     add(this._quantities);
     const rank = { fail: 0, warn: 1, stale: 2 };
     const ord = this.order();
@@ -217,7 +218,19 @@ const Issues = {
       this._capped(out, fails, (n) => ({ key: 'retic-earth:more', sev: 'fail', ws: 'retic', where: 'Demand', run: () => switchWorkspace('retic'),
         text: `${n} more earth-fault checks fail` }));
     }
-    // Custom motor loads: the starting check (a fail, or a warning on the dip).
+    // Kiosk incomers: carrying more than their rating (fail), not selective
+    // with the string breaker or a way (warning).
+    if (Retic._incomerChecks) {
+      const inc = [];
+      for (const k of Retic.kiosks || []) {
+        for (const c of Retic._incomerChecks(k, res)) {
+          inc.push({ key: `retic-inc:${k.id}:${c.id}`, sev: c.sev, ws: 'retic', where: k.name || 'Kiosk', go: 'retic:' + k.id, text: c.text });
+        }
+      }
+      this._capped(out, inc, (n) => ({ key: 'retic-inc:more', sev: 'warn', ws: 'retic', where: 'Demand', run: () => switchWorkspace('retic'),
+        text: `${n} more kiosk incomer checks` }));
+    }
+        // Custom motor loads: the starting check (a fail, or a warning on the dip).
     const motors = res.motorStart && Array.isArray(res.motorStart.motors) ? res.motorStart.motors : [];
     const starts = [];
     for (const m of motors) {
@@ -251,7 +264,10 @@ const Issues = {
       .sort((a, b) => (a.status === 'fail' ? 0 : 1) - (b.status === 'fail' ? 0 : 1))
       .map(w => ({ key: `way:${w.board_id}/${w.way_id}`, sev: w.status, ws: 'schedules',
         where: `${w.board_name || 'Board'} › way ${w.way}`, go: `way:${w.board_id}/${w.way_id}`,
-        text: `${w.board_name || 'Board'} way ${w.way}${w.description ? ` (${w.description})` : ''}: ${(w.messages && w.messages[0]) || (w.status === 'fail' ? 'fails the circuit check' : 'warning')}` }));
+        text: `${w.board_name || 'Board'} way ${w.way}${w.description ? ` (${w.description})` : ''}: ${(w.messages && w.messages[0]) || (w.status === 'fail' ? 'fails the circuit check' : 'warning')}`,
+        // a failing way can be fixed (Fixes: the cable size that passes, proved by the circuit check)
+        ...(w.status === 'fail' && typeof Fixes !== 'undefined' ? { fix: { kind: 'db_way', board_id: w.board_id, way_id: w.way_id },
+          act: 'Fix…', actRun: () => Fixes.openOne(`way:${w.board_id}/${w.way_id}`) } : {}) }));
     this._capped(out, items, (n, rest) => ({ key: 'way:more', sev: rest.some(x => x.sev === 'fail') ? 'fail' : 'warn', ws: 'schedules', where: 'Schedules',
       run: () => switchWorkspace('schedules'), text: `${n} more ways with a fail or warning` }));
   },
@@ -375,6 +391,22 @@ const Issues = {
       out.push({ key: 'sync:' + s.key, sev: 'warn', ws, where: this.label(ws), go, run: () => switchWorkspace(ws),
         text: s.text, act: s.action && s.action.label ? s.action.label : null, actRun: s.action && s.action.run ? s.action.run : null });
     }
+  },
+
+  // ── Road sections: a road whose own carriageway width is not its section's ──
+  _roadSections(out) {
+    if (typeof RoadSections === 'undefined') return;
+    const items = RoadSections.mismatches().map(m => ({ key: 'rs-cw:' + m.route.id, sev: 'warn', ws: 'plan', where: this.label('plan'), go: 'plan:' + m.route.id,
+      text: `${(m.route.props && m.route.props.name) || 'A road'}: its own carriageway is ${(+m.own).toFixed(1)} m, its road section "${m.sec.name}" says ${(+m.want).toFixed(1)} m. Its own width is used.`,
+      act: 'Use the section\'s', actRun: () => { delete m.route.props.carriageW; delete m.route.props.cwOffset; if (typeof PlanMarkup !== 'undefined') { PlanMarkup.snapshot(); PlanMarkup.markDirty(); } this.kick(); } }));
+    // a road section whose typed strips are wider than its reserve; a road whose own reserve width is not its section's
+    for (const sec of RoadSections.list()) if (!RoadSections.fits(sec)) items.push({ key: 'rs-fit:' + sec.id, sev: 'warn', ws: 'plan', where: this.label('plan'), run: () => { if (typeof RoadSectionsUI !== 'undefined') RoadSectionsUI.open(sec.id); },
+      text: `Road section "${sec.name}": its typed strips are ${RoadSections.verges(sec).filled.toFixed(2)} m, wider than its ${RoadSections.reserve(sec).toFixed(2)} m reserve; no verge is left.`,
+      act: 'Widen the reserve', actRun: () => { RoadSections.matchReserve(sec); AppState.dirty = true; this.kick(); } });
+    for (const m of RoadSections.widthMismatches()) items.push({ key: 'rs-w:' + m.route.id, sev: 'warn', ws: 'plan', where: this.label('plan'), go: 'plan:' + m.route.id,
+      text: `${(m.route.props && m.route.props.name) || 'A road'}: its own reserve width is ${m.own.toFixed(1)} m, its road section "${m.sec.name}" is ${m.want.toFixed(1)} m.${m.near ? ` "${m.near.name}" is ${(+m.near.reserve).toFixed(1)} m.` : ''}`,
+      act: m.near ? `Give it ${m.near.name}` : 'Use the section\'s', actRun: () => { if (m.near) RoadSections.assign([m.route], m.near.id); else delete m.route.props.width; if (typeof PlanMarkup !== 'undefined') { PlanMarkup.snapshot(); PlanMarkup.markDirty(); } this.kick(); } });
+    this._capped(out, items);
   },
 
   // ── Quantities ──

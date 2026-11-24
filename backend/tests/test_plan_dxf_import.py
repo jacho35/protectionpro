@@ -500,3 +500,23 @@ def test_endpoint_round_trips_through_http(client=None):
     assert resp.status_code == 200
     j = resp.json()
     assert j["inserts"][0]["a"]["CCT"] == "L1"
+
+
+# ── Line weights ────────────────────────────────────────────────────────
+def test_line_weights_are_read_per_entity_layer_and_block():
+    doc = _foreign()
+    doc.layers.add("WALLS").dxf.lineweight = 50
+    msp = doc.modelspace()
+    msp.add_line((0, 0), (10, 0), dxfattribs={"layer": "WALLS"})                     # ByLayer
+    msp.add_line((0, 1), (10, 1), dxfattribs={"lineweight": 35})                     # explicit
+    blk = doc.blocks.new("B1")
+    blk.add_line((0, 0), (1, 0), dxfattribs={"lineweight": -2})                      # ByBlock
+    msp.add_blockref("B1", (5, 5), dxfattribs={"lineweight": 70})
+    r = parse_dxf(_bytes(doc))
+    assert r["lwDefault"] == 25
+    walls = next(ly for ly in r["layers"] if ly["name"] == "WALLS")
+    assert walls["w"] == 50
+    by_layer, explicit = r["entities"]
+    assert "w" not in by_layer and explicit["w"] == 35
+    assert r["inserts"][0]["w"] == 70
+    assert r["blocks"]["B1"]["e"][0]["w"] == "B"

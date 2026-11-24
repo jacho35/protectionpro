@@ -12,6 +12,10 @@
  * Results are on demand (this._results, never saved). Each circuit's kVA is
  * written into its source's fixed street-lighting load (kiosk / minisub
  * `streetLightKVA`, flagged `streetLightFromCircuits`) so Demand carries it.
+ * A circuit may say how it is switched (`switching`: 'contactor' = photocell +
+ * contactor at the source, 'photocell' = one on each pole) and what each pole
+ * has (`poleCutout`, `poleEarth`); the quantities count them. The site plan's
+ * Street lighting layout (sl-layout-ui.js) sets them, with `slAuto: true`.
  */
 
 // Luminaires (W, pf). Built in for now — a layered library kind is in BACKLOG.
@@ -665,6 +669,11 @@ const StreetLight = {
         <label>Pole spacing<span class="sl-unit"><input type="number" step="1" data-cf="spacingM" value="${escHtml(c.spacingM)}"> m</span></label>
         <label>Protection<select data-cf="protection">${protOpts}</select></label>
         ${c.protection === 'custom' ? `<label>Ia<span class="sl-unit"><input type="number" step="1" data-cf="iaCustom" value="${escHtml(c.iaCustom ?? '')}"> A</span></label>` : ''}
+        <label title="How the lights are switched: one photocell and contactor at the source for its circuits, or a photocell on each pole (counted in the quantities)">Switching<select data-cf="switching">
+          <option value=""${!c.switching ? ' selected' : ''}>Not set</option>
+          <option value="contactor"${c.switching === 'contactor' ? ' selected' : ''}>Photocell + contactor (source)</option>
+          <option value="photocell"${c.switching === 'photocell' ? ' selected' : ''}>Photocell on each pole</option></select></label>
+        <label title="A cut-out with fuse and an earth electrode at each pole (counted in the quantities)"><span>At each pole</span><span><input type="checkbox" data-cf="poleCutout"${c.poleCutout ? ' checked' : ''}> cut-out <input type="checkbox" data-cf="poleEarth"${c.poleEarth ? ' checked' : ''}> earth</span></label>
         <label title="Earth loop impedance at the source. Blank = estimated: ${escHtml(ze.basis)}">Ze at source
           <span class="sl-unit"><input type="number" step="0.01" data-cf="zeOhm" value="${this._blank(c.zeOhm) ? '' : escHtml(c.zeOhm)}" placeholder="${ze.value.toFixed(3)}"> Ω</span>
           <span class="sl-hint">${ze.auto ? 'auto: ' + escHtml(ze.basis) : 'entered'}</span></label>
@@ -931,6 +940,7 @@ const StreetLight = {
       if (k === 'cable' && CableLib.handleShowAll(t, c.cable, (cur) => { this._showAllCables = true; return CableLib.options(cur, { filter: (x) => CableLib.isDistribution(x) && !CableLib.isMV(x), groups: CableLib.reticGroups(), showAll: true }); })) return;
       if (k === 'source') { const [kind, ...id] = t.value.split(':'); c.source = { kind, id: id.join(':') }; }
       else if (['spacingM', 'zeOhm', 'supplyVdPct', 'iaCustom'].includes(k)) c[k] = t.value === '' ? (k === 'spacingM' ? this.defaults.spacingM : null) : this._num(t.value, null);
+      else if (k === 'poleCutout' || k === 'poleEarth') c[k] = t.checked;
       else c[k] = t.value;
       if (k === 'system' && c.system === '3ph') {
         const cab = CableLib.byName(c.cable);

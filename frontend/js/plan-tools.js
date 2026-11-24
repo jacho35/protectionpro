@@ -68,6 +68,15 @@ const PlanTools = {
       PlanEngine.requestDraw({ fg: true });
       return true;
     }
+    for (const t of (AppState.planMarkup.trenches || [])) {
+      if (!PlanMarkup.selectedIds.has(t.id) || t.points.length <= 2) continue;
+      const vi = PlanEngine.findVertexAt(t.points, pt, 9);
+      if (vi < 0) continue;
+      t.points.splice(vi, 1);
+      PlanMarkup.snapshot(); PlanMarkup.markDirty(); PlanMarkup.refreshProps();
+      PlanEngine.requestDraw({ fg: true });
+      return true;
+    }
     const hit = PlanEngine.findRouteVertexAt(pt, 9);
     if (!hit) return false;
     const { route, index } = hit;
@@ -152,6 +161,15 @@ PlanTools.register({
   _lastClick: null,  // {x, y, ids:[...], index} for tie-break cycling
 
   onActivate() { this._drag = null; this._marquee = null; },
+  // the edge of a room outline within 8 px of the point: { room, i } (edge i runs from point i to i + 1)
+  _roomEdgeAt(pt) {
+    const tol = 8 / PlanEngine.view.zoom;
+    for (const rm of (AppState.planMarkup.rooms || [])) {
+      const n = rm.points.length, closed = !(rm.kind === 'perimeter' || rm.kind === 'escape' || rm.kind === 'obtrusive');
+      for (let i = 0; i < (closed ? n : n - 1); i++) if (PlanEngine._distToSeg(pt, rm.points[i], rm.points[(i + 1) % n]) <= tol) return { room: rm, i };
+    }
+    return null;
+  },
   cancel() { this._drag = null; this._marquee = null; PlanEngine.requestDraw({ fg: true }); },
 
   onDown(pt, e) {
@@ -171,6 +189,8 @@ PlanTools.register({
       const d = SportsCalc.pickAt(pt, z);
       if (d) { this._drag = d; return; }
     }
+    // 0c) Alt+click on a node of a route / room / trench removes it (the ends of a route stay)
+    if (e.altKey && PlanTools.deleteVertexAt(pt)) return;
     // 1) route vertex of an already-selected route (fine control)
     for (const r of pm.routes) {
       if (!PlanMarkup.selectedIds.has(r.id)) continue;
@@ -195,6 +215,31 @@ PlanTools.register({
         }
       }
     }
+    // 1c) bend / segment midpoint of a selected trench: drag a bend to reshape the path,
+    // drag a midpoint to add a bend there (double-click a bend removes it).
+    for (const t of (pm.trenches || [])) {
+      if (!PlanMarkup.selectedIds.has(t.id) || PlanLayers.pickableTrench && !PlanLayers.pickableTrench(t)) continue;
+      const vi = PlanEngine.findVertexAt(t.points, pt, 8);
+      if (vi >= 0) { this._drag = { kind: 'trenchvertex', trench: t, index: vi, moved: false }; return; }
+      for (let i = 0; i < t.points.length - 1; i++) {
+        const a = t.points[i], b = t.points[i + 1];
+        const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+        if (Math.hypot(pt.x - mx, pt.y - my) <= 7 / z) {
+          // The bend is only added once the pointer moves, so a plain click on a midpoint adds nothing.
+          this._drag = { kind: 'trenchmid', trench: t, seg: i, at: { x: mx, y: my }, moved: false };
+          return;
+        }
+      }
+    }
+    // 1d) an end of a selected road crossing: drag it (the other end stays). A whole crossing of several ducts selected: the ends of its
+    // centre line, which turn and stretch every duct together
+    const xg = PlanCrossings.selectedGroup();
+    if (xg) { const ctr = PlanCrossings.centre(xg);
+      for (const end of ['p1', 'p2']) if (Math.hypot(pt.x - ctr[end].x, pt.y - ctr[end].y) <= 8 / z) { this._drag = { kind: 'groupend', list: xg, end, ctr, sp: PlanCrossings.spacing(xg), moved: false }; return; } }
+    for (const c of (xg ? [] : (pm.crossings || []))) {
+      if (!PlanMarkup.selectedIds.has(c.id) || !c.p1 || !c.p2) continue;
+      for (const end of ['p1', 'p2']) if (Math.hypot(pt.x - c[end].x, pt.y - c[end].y) <= 8 / z) { this._drag = { kind: 'crossend', c, end, moved: false }; return; }
+    }
     // 2) shift+click on a route segment inserts a vertex
     const rhShift = e.shiftKey ? PlanEngine.findRouteAt(pt) : null;
     if (rhShift) {
@@ -205,9 +250,33 @@ PlanTools.register({
       PlanEngine.requestDraw({ fg: true });
       return;
     }
+    // 2a) shift+click on the outline of a room / area inserts a corner there
+    const roomShift = e.shiftKey && !rhShift ? this._roomEdgeAt(pt) : null;
+    if (roomShift) {
+      const snapped = PlanTools.snap(pt, { ignoreIds: new Set([roomShift.room.id]) });
+      roomShift.room.points.splice(roomShift.i + 1, 0, { x: snapped.x, y: snapped.y });
+      PlanMarkup.selectOnly(roomShift.room.id);
+      PlanMarkup.snapshot(); PlanMarkup.markDirty(); PlanMarkup.refreshProps();
+      PlanEngine.requestDraw({ fg: true });
+      return;
+    }
+    // 2b) shift+click on a trench segment inserts a bend there
+    const thShift = e.shiftKey && !rhShift ? PlanEngine.findTrenchAt(pt) : null;
+    if (thShift) {
+      const snapped = PlanTools.snap(pt, { ignoreIds: new Set([thShift.trench.id]) });
+      thShift.trench.points.splice(thShift.segIndex + 1, 0, { x: snapped.x, y: snapped.y });
+      PlanMarkup.selectOnly(thShift.trench.id);
+      PlanMarkup.snapshot(); PlanMarkup.markDirty();
+      PlanEngine.requestDraw({ fg: true });
+      return;
+    }
     // 3) hit stack (element > route > trench > text) with tie-break cycling
     const stack = this._hitStack(pt);
     if (stack.length) {
+      // a press on a part that is already selected drags it, even where cables end on it (a manhole, a kiosk): the "click again to pick the
+      // next item here" cycle only happens on a click that does not move (onUp), so the second press never switches to a cable underneath
+      const selIn = !e.shiftKey ? stack.find(id => PlanMarkup.selectedIds.has(id) && (PlanMarkup.findEntityById(id) || {}).kind === 'element') : null;
+      if (selIn) { this._drag = { kind: 'element', el: PlanMarkup.findEntityById(selIn).item, moved: false, cycle: { pt: { x: pt.x, y: pt.y }, stack } }; return; }
       const id = this._tieBreak(pt, stack);
       if (e.shiftKey) { PlanMarkup.toggleSelect(id); return; }
       if (!PlanMarkup.selectedIds.has(id)) PlanMarkup.selectOnly(id);
@@ -215,6 +284,14 @@ PlanTools.register({
       const found = PlanMarkup.findEntityById(id);
       if (found && found.kind === 'element') {
         this._drag = { kind: 'element', el: found.item, moved: false };
+      } else if (found && found.kind === 'crossing') {                                 // a road crossing: drag to move it (with the rest of the selection)
+        // a crossing of several ducts: the first click selects all of them, a second click on the same spot just this duct
+        const m = PlanCrossings.members(found.item), lx = this._lastXPick, again = lx && Math.hypot(pt.x - lx.x, pt.y - lx.y) <= 4 / z;
+        if (!e.shiftKey && m.length > 1) {
+          if (again && PlanCrossings.selectedGroup()) PlanMarkup.selectOnly(found.item.id); else PlanMarkup.setSelection(m.map(c => c.id));
+        }
+        this._lastXPick = { x: pt.x, y: pt.y };
+        this._drag = { kind: 'crossmove', c: found.item, last: { x: pt.x, y: pt.y }, moved: false };
       }
       return;
     }
@@ -238,8 +315,22 @@ PlanTools.register({
       PlanEngine.requestDraw({ fg: true });
       return;
     }
+    if (this._drag.kind === 'crossmove') {                                              // the whole crossing (and the selection) by the pointer's step, unsnapped so it keeps its shape
+      const dx = pt.x - this._drag.last.x, dy = pt.y - this._drag.last.y; if (!dx && !dy) return;
+      if (!this._drag.moved && Math.hypot(pt.x - this._downWorld.x, pt.y - this._downWorld.y) < 3 / PlanEngine.view.zoom) return;   // a click, not a drag
+      this._moveSelection(dx, dy, null); this._drag.last = { x: pt.x, y: pt.y }; this._drag.moved = true; PlanEngine.requestDraw({ fg: true }); return;
+    }
+    if (this._drag.kind === 'groupend') {                                                // the centre line's end moves; every duct is laid again along it
+      const q = PlanTools.snap(pt, { ignoreIds: new Set(this._drag.list.map(c => c.id)) }), D = this._drag;
+      const p1 = D.end === 'p1' ? { x: q.x, y: q.y } : D.ctr.p1, p2 = D.end === 'p2' ? { x: q.x, y: q.y } : D.ctr.p2;
+      if (Math.hypot(p2.x - p1.x, p2.y - p1.y) > 1e-6) { PlanCrossings.layOut(D.list, p1, p2, D.sp); D.moved = true; PlanEngine.requestDraw({ fg: true }); } return;
+    }
+    if (this._drag.kind === 'crossend') {
+      const q = PlanTools.snap(pt, { ignoreIds: new Set([this._drag.c.id]) }); this._drag.c[this._drag.end] = { x: q.x, y: q.y }; this._drag.moved = true; PlanEngine.requestDraw({ fg: true }); return;
+    }
     const snapped = PlanTools.snap(pt, {
       ignoreIds: this._drag.kind === 'vertex' ? new Set([this._drag.route.id])
+        : (this._drag.kind === 'trenchvertex' || this._drag.kind === 'trenchmid') ? new Set([this._drag.trench.id])
         : this._drag.kind === 'roomvertex' ? new Set() : new Set([this._drag.el.id]),
     });
     if (this._drag.kind === 'element') {
@@ -252,6 +343,14 @@ PlanTools.register({
       this._drag.moved = true;
     } else if (this._drag.kind === 'vertex') {
       const p = this._drag.route.points[this._drag.index];
+      p.x = snapped.x; p.y = snapped.y;
+      this._drag.moved = true;
+    } else if (this._drag.kind === 'trenchmid') {
+      if (Math.hypot(pt.x - this._drag.at.x, pt.y - this._drag.at.y) < 4 / PlanEngine.view.zoom) return;   // a click, not a drag
+      this._drag.trench.points.splice(this._drag.seg + 1, 0, { x: snapped.x, y: snapped.y });
+      this._drag = { kind: 'trenchvertex', trench: this._drag.trench, index: this._drag.seg + 1, moved: true };
+    } else if (this._drag.kind === 'trenchvertex') {
+      const p = this._drag.trench.points[this._drag.index];
       p.x = snapped.x; p.y = snapped.y;
       this._drag.moved = true;
     } else if (this._drag.kind === 'roomvertex') {
@@ -275,6 +374,11 @@ PlanTools.register({
       PlanEngine.requestDraw({ fg: true });
       this._maybeTapDrawer(pt);
       return;
+    }
+    if (this._drag && !this._drag.moved && this._drag.cycle) {                          // a click (no drag) on the selected part: pick the next item here
+      const c = this._drag.cycle, id = this._tieBreak(c.pt, c.stack); this._drag = null;
+      if (!PlanMarkup.selectedIds.has(id) || PlanMarkup.selectedIds.size > 1) PlanMarkup.selectOnly(id);
+      this._maybeTapDrawer(pt); return;
     }
     if (this._drag && this._drag.moved) { PlanMarkup.snapshot(); PlanMarkup.markDirty(); PlanMarkup.refreshProps(); }
     this._drag = null;
@@ -404,6 +508,20 @@ PlanTools.register({
       }
       ctx.fillStyle = '#fff';
       for (const p of rm.points) { ctx.beginPath(); ctx.rect(p.x - h, p.y - h, 2 * h, 2 * h); ctx.fill(); ctx.stroke(); }
+      ctx.restore();
+    }
+    for (const t of (AppState.planMarkup.trenches || [])) {
+      if (!PlanMarkup.selectedIds.has(t.id) || t.points.length < 2) continue;
+      ctx.save();
+      ctx.lineWidth = 1.5 / zoom; ctx.strokeStyle = '#7c3aed';
+      const h = 5 / zoom;
+      ctx.fillStyle = 'rgba(124,58,237,0.45)';
+      for (let i = 0; i < t.points.length - 1; i++) {
+        const a = t.points[i], b = t.points[i + 1];
+        ctx.beginPath(); ctx.arc((a.x + b.x) / 2, (a.y + b.y) / 2, 3.5 / zoom, 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.fillStyle = '#fff';
+      for (const p of t.points) { ctx.beginPath(); ctx.rect(p.x - h, p.y - h, 2 * h, 2 * h); ctx.fill(); ctx.stroke(); }
       ctx.restore();
     }
     const rot = this._rotateHandle();
@@ -828,6 +946,9 @@ PlanTools.register(makePolylineTool('trench', '#7c3aed', (pts, opts) => {
     name: PlanMarkup.nextCounter('_trench', 'T'),
     excType, points: pts, widthOverride: null, depthOverride: null,
   };
+  // the road it runs along: its size follows that road's section where the section has trench sizes of its own (RoadSections.trenchSize)
+  const rid = typeof RoadSections !== 'undefined' ? RoadSections.roadNear(pts, PlanEngine.factor(), AppState.planMarkup.routes) : null;
+  if (rid) t.roadId = rid;
   AppState.planMarkup.trenches.push(t);
   PlanMarkup.selectOnly(t.id);
   PlanMarkup.snapshot(); PlanMarkup.markDirty(); PlanMarkup.refreshProps();
@@ -873,26 +994,22 @@ PlanTools.register({
   onDown(pt) {
     const s = PlanTools.snap(pt);
     if (!this._p1) { this._p1 = { x: s.x, y: s.y }; return; }
-    const c = {
-      id: AppState.planGenId('pmcr'),
-      name: PlanMarkup.nextCounter('_crossing', 'RC'),
-      size: PLAN_DEFS.crossings.defaultSize,
-      p1: this._p1, p2: { x: s.x, y: s.y },
-    };
-    AppState.planMarkup.crossings.push(c);
+    if (Math.hypot(s.x - this._p1.x, s.y - this._p1.y) < 1e-6) return;
+    // every duct set on the bar, side by side along the line (one crossing each, sharing a group)
+    const list = PlanCrossings.create(this._p1, { x: s.x, y: s.y }, PlanCrossings.opts());
     this._p1 = null;
-    PlanMarkup.selectOnly(c.id);
+    PlanMarkup.setSelection(list.map(c => c.id));
     PlanMarkup.snapshot(); PlanMarkup.markDirty(); PlanMarkup.refreshProps();
     PlanEngine.requestDraw({ fg: true });
   },
   onKey(e) { if (e.key === 'Escape') { this._p1 = null; PlanEngine.requestDraw({ fg: true }); return true; } return false; },
   drawOverlay(ctx, zoom) {
-    if (this._p1 && this._hover) {
-      ctx.save();
-      ctx.strokeStyle = PLAN_DEFS.crossings.color; ctx.lineWidth = 3 / zoom;
-      ctx.setLineDash([5 / zoom, 4 / zoom]);
-      ctx.beginPath(); ctx.moveTo(this._p1.x, this._p1.y); ctx.lineTo(this._hover.x, this._hover.y); ctx.stroke();
-      ctx.setLineDash([]);
+    if (this._p1 && this._hover) {                                                  // every duct on the bar, previewed side by side along the line
+      const o = PlanCrossings.opts(), ducts = PlanCrossings.sizesOf(o).map(size => ({ size, p1: null, p2: null }));
+      if (ducts.length > 1) PlanCrossings.layOut(ducts, this._p1, this._hover, o.sp); else { ducts[0].p1 = this._p1; ducts[0].p2 = this._hover; }
+      ctx.save(); ctx.setLineDash([5 / zoom, 4 / zoom]);
+      for (const d of ducts) { const st = (PLAN_DEFS.crossings.style || {})[d.size] || { color: PLAN_DEFS.crossings.color, width: 3 };
+        ctx.strokeStyle = st.color; ctx.lineWidth = st.width / zoom; ctx.beginPath(); ctx.moveTo(d.p1.x, d.p1.y); ctx.lineTo(d.p2.x, d.p2.y); ctx.stroke(); }
       ctx.restore();
     }
     if (this._hover) PlanTools._drawSnapRing(ctx, this._hover.x, this._hover.y, this._hover.snapped, zoom);
@@ -1089,6 +1206,66 @@ PlanTools.register({
 });
 
 // ─────────────────────────────────────────────────────────────────────────
+// FREEZE LAYER — click any DXF item to hide its whole layer (AutoCAD LAYFRZ)
+// ─────────────────────────────────────────────────────────────────────────
+PlanTools.register({
+  id: 'layerfreeze', cursor: 'crosshair',
+  onDown(pt) {
+    const r = 10 / Math.max(PlanEngine.view.zoom, 1e-6);
+    const name = PlanDxfImport.freezeLayerAt(pt, r);
+    UI.toast(name ? `Layer "${name}" frozen. Undo brings it back; Underlays › Layers & blocks lists every layer.` : 'No drawing item there — click right on a line, text or block.', name ? 'success' : 'info', 3500);
+  },
+  onKey(e) { if (e.key === 'Escape') { PlanTools.set('select'); return true; } return false; },
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// WORKING AREA — drag a rectangle, or click polygon corners (Enter / first point closes)
+// ─────────────────────────────────────────────────────────────────────────
+PlanTools.register({
+  id: 'workarea', cursor: 'crosshair', _mode: 'rect', _start: null, _pts: [], _cur: null,
+  onActivate(o) { this._mode = (o && o.mode) || 'rect'; this._start = null; this._pts = []; this._cur = null; },
+  cancel() { this._start = null; this._pts = []; this._cur = null; },
+  onDown(pt) {
+    if (this._mode === 'rect') { this._start = { x: pt.x, y: pt.y }; return; }
+    const tol = 10 / Math.max(PlanEngine.view.zoom, 1e-6);
+    if (this._pts.length >= 3 && Math.hypot(pt.x - this._pts[0].x, pt.y - this._pts[0].y) <= tol) { this._finish(); return; }
+    this._pts.push({ x: pt.x, y: pt.y }); PlanEngine.requestDraw({ fg: true });
+  },
+  onMove(pt) { this._cur = { x: pt.x, y: pt.y }; if (this._start || this._pts.length) PlanEngine.requestDraw({ fg: true }); },
+  onUp(pt) {
+    if (this._mode !== 'rect' || !this._start) return;
+    const a = this._start; this._start = null;
+    if (Math.abs(pt.x - a.x) < 4 || Math.abs(pt.y - a.y) < 4) return;
+    PlanWorkArea.set(PlanWorkArea.rect(a, pt)); PlanTools.set('select');
+  },
+  _finish() {
+    if (this._pts.length < 3) { UI.toast('A working area needs at least three corners.', 'warn', 3000); return true; }
+    const pts = this._pts; this._pts = []; PlanWorkArea.set(pts); PlanTools.set('select'); return true;
+  },
+  onKey(e) {
+    if (e.key === 'Escape') { this.cancel(); PlanTools.set('select'); return true; }
+    if (e.key === 'Enter' && this._mode === 'poly') return this._finish();
+    if (e.key === 'Backspace' && this._pts.length) { this._pts.pop(); PlanEngine.requestDraw({ fg: true }); return true; }
+    return false;
+  },
+  drawOverlay(ctx, zoom) {
+    ctx.save(); ctx.strokeStyle = '#16a34a'; ctx.lineWidth = 1.5 / zoom; ctx.setLineDash([6 / zoom, 4 / zoom]);
+    if (this._mode === 'rect' && this._start && this._cur) {
+      const r = PlanWorkArea.rect(this._start, this._cur);
+      ctx.strokeRect(r[0].x, r[0].y, r[1].x - r[0].x, r[2].y - r[0].y);
+    } else if (this._pts.length) {
+      ctx.beginPath(); ctx.moveTo(this._pts[0].x, this._pts[0].y);
+      for (const p of this._pts.slice(1)) ctx.lineTo(p.x, p.y);
+      if (this._cur) ctx.lineTo(this._cur.x, this._cur.y);
+      ctx.stroke();
+      ctx.setLineDash([]); ctx.fillStyle = '#16a34a';
+      for (const p of this._pts) { ctx.beginPath(); ctx.arc(p.x, p.y, 3.5 / zoom, 0, 7); ctx.fill(); }
+    }
+    ctx.restore();
+  },
+});
+
+// ─────────────────────────────────────────────────────────────────────────
 // ARRAY — drag a rectangle, then drop a grid (cols × rows) of one device type
 // (Distribution Designer's "Light Array"). Placed devices auto-tag to the
 // nearest board's next free circuit(s) in the building domain.
@@ -1258,4 +1435,60 @@ PlanTools._pointAtLen = function (pts, segs, target) {
   }
   const last = pts[pts.length - 1];
   return { x: last.x, y: last.y };
+};
+
+// ── road crossings of several ducts ──
+// A crossing of several ducts is a set of crossings, one per duct (so the quantities count every sleeve), that share `group` (drawn by hand,
+// display name `gname`) or, for the ones Auto layout made, `trench` ('X<n>'). They lie side by side `sp` m apart (`sp` on each duct, 0.6 by
+// default), centred on one line, the 160 mm ones on the outside. A click selects the whole crossing, a second click on the same spot one duct.
+const PlanCrossings = {
+  SP: 0.6,
+  key(c) { return c ? (c.group || (c.auto === 'layout' && c.trench ? 'auto:' + c.trench : null)) : null; },
+  members(c) { const k = this.key(c); return k ? (AppState.planMarkup.crossings || []).filter(x => this.key(x) === k) : (c ? [c] : []); },
+  label(c) { return c.gname || c.trench || c.name || ''; },
+  // the whole of one crossing of several ducts selected → its ducts, else null
+  selectedGroup() {
+    const ids = [...PlanMarkup.selectedIds]; if (ids.length < 2) return null;
+    const first = (AppState.planMarkup.crossings || []).find(c => c.id === ids[0]); if (!first || !this.key(first)) return null;
+    const m = this.members(first); return m.length === ids.length && m.every(c => PlanMarkup.selectedIds.has(c.id)) ? m : null;
+  },
+  spPx(m) { const f = PlanEngine.factor(); return f ? m / f : m * 20; },                  // metres → plan units (uncalibrated: 20 px a metre)
+  spacing(list) { const s = list.find(c => c.sp > 0); return s ? s.sp : this.SP; },
+  ordered(list) { return list.slice().sort((a, b) => (a.size === '160') - (b.size === '160') || String(a.name || '').localeCompare(String(b.name || ''), undefined, { numeric: true })); },
+  // the bundle's centre line: the mean of its ducts' ends
+  centre(list) { const n = list.length || 1, s = k => list.reduce((t, c) => ({ x: t.x + c[k].x / n, y: t.y + c[k].y / n }), { x: 0, y: 0 }); return { p1: s('p1'), p2: s('p2') }; },
+  // lay the ducts side by side along p1 → p2, `spM` m apart
+  layOut(list, p1, p2, spM) {
+    const dx = p2.x - p1.x, dy = p2.y - p1.y, L = Math.hypot(dx, dy) || 1, nx = -dy / L, ny = dx / L, sp = this.spPx(spM), o = this.ordered(list);
+    o.forEach((c, i) => { const off = (i - (o.length - 1) / 2) * sp; c.p1 = { x: p1.x + nx * off, y: p1.y + ny * off }; c.p2 = { x: p2.x + nx * off, y: p2.y + ny * off }; c.sp = spM; });
+  },
+  duct(size, extra) { return Object.assign({ id: AppState.planGenId('pmcr'), name: PlanMarkup.nextCounter('_crossing', 'RC'), size, use: '' }, extra || {}); },
+  // the drawing tool's counts, kept with the project (Plan settings)
+  opts() { const s = AppState.planMarkup.settings, m = (s.placeMemory || (s.placeMemory = {})).crossing || (s.placeMemory.crossing = {});
+    const n = (v, d, lo, hi) => { const x = parseFloat(v); return isFinite(x) ? Math.max(lo, Math.min(hi, x)) : d; };
+    m.n110 = Math.round(n(m.n110, 1, 0, 12)); m.n160 = Math.round(n(m.n160, 0, 0, 12)); m.sp = n(m.sp, this.SP, 0.2, 2); if (!m.n110 && !m.n160) m.n110 = 1; return m; },
+  sizesOf(o) { return [...Array(o.n110).fill('110'), ...Array(o.n160).fill('160')]; },
+  create(p1, p2, o) {
+    const sizes = this.sizesOf(o), pm = AppState.planMarkup;
+    if (sizes.length === 1) { const c = this.duct(sizes[0], { p1, p2 }); pm.crossings.push(c); return [c]; }
+    const g = { group: AppState.planGenId('pmcg'), gname: PlanMarkup.nextCounter('_xgroup', 'CX') }, list = sizes.map(s => this.duct(s, g));
+    this.layOut(list, p1, p2, o.sp); pm.crossings.push(...list); return list;
+  },
+  // edits of one crossing of several ducts (Properties)
+  add(list, size) {
+    const c0 = list[0], c = this.duct(size, c0.group ? { group: c0.group, gname: c0.gname } : { auto: c0.auto, trench: c0.trench });
+    const ctr = this.centre(list); AppState.planMarkup.crossings.push(c); list.push(c); this.layOut(list, ctr.p1, ctr.p2, this.spacing(list)); return c;
+  },
+  remove(list, c) {
+    const pm = AppState.planMarkup, ctr = this.centre(list); pm.crossings.splice(pm.crossings.indexOf(c), 1); list.splice(list.indexOf(c), 1);
+    if (list.length) this.layOut(list, ctr.p1, ctr.p2, this.spacing(list));
+  },
+  relay(list, spM) { const ctr = this.centre(list); this.layOut(list, ctr.p1, ctr.p2, spM != null ? spM : this.spacing(list)); },
+  ungroup(list) { list.forEach(c => { delete c.group; delete c.gname; if (c.auto === 'layout') delete c.trench; }); },
+  // several single crossings → one crossing of several ducts, on their mean line
+  group(list) {
+    const ctr = this.centre(list), g = { group: AppState.planGenId('pmcg'), gname: PlanMarkup.nextCounter('_xgroup', 'CX') };
+    list.forEach(c => { Object.assign(c, g); if (c.auto === 'layout') delete c.trench; });
+    this.layOut(list, ctr.p1, ctr.p2, this.spacing(list));
+  },
 };

@@ -555,6 +555,8 @@ const PlanRoomDetect = {
         addPoly(pts, true);
       }
     }
+    // The plan's working area: only the walls in or crossing it (PlanWorkArea).
+    if (opts && opts.desc && typeof PlanWorkArea !== 'undefined' && PlanWorkArea.active()) return PlanWorkArea.filterSegs(segs, PlanWorkArea.localPoly(opts.desc));
     return segs;
   },
 };
@@ -848,7 +850,8 @@ Object.assign(PlanRoomDetect, {
     room: { maxAreaM2: 5000, minAreaM2: 1, minWidthM: 0.6, noun: 'room', nouns: 'rooms', Noun: 'Room' },
     erf: { maxAreaM2: 20000, minAreaM2: 20, minWidthM: 2, noun: 'erf', nouns: 'erven', Noun: 'Erf' },
   },
-  mode: 'create',       // plain click: 'create' now · 'add' to the staged set · 'subtract' from it
+  mode: 'create',       // plain click: 'create' now · 'add' to the staged set · 'subtract' from it · 'draw' · 'mark' (erven: toggle unserviced)
+  erfServ: false,       // erven created from here on are unserviced (a park, open space, servitude: no supply, cables go round it)
   staged: { target: 'room', items: [] },
 
   // target 'room' (Lighting) or 'erf' (Plan, reticulation)
@@ -862,6 +865,7 @@ Object.assign(PlanRoomDetect, {
     const def = erf ? this.ERF_LAYERS : this.DEFAULT_LAYERS;
     rd.layers = (typeof rd.layers === 'string' && rd.layers.trim()) ? rd.layers.slice(0, 200) : def;
     rd.hatch = rd.hatch !== false;        // outlines of hatched / solid walls on the wall layers count as walls
+    rd.sameLayer = rd.sameLayer !== false;   // each layer is its own wall graph: lines of different layers are never joined into one boundary
     rd.hover = rd.hover !== false;        // preview the region under the pointer
     const ins = parseFloat(rd.insetM);
     rd.insetM = (!erf && Number.isFinite(ins)) ? Math.max(-2, Math.min(2, ins)) : 0;   // wall finish: + shrinks, − grows (rooms only; an erf is a point)
@@ -877,6 +881,7 @@ Object.assign(PlanRoomDetect, {
       ? PlanDxfImport.list().filter(d => !d.hidden && PlanDxfImport.dataOf(d)).reverse() : [];
     const hasImages = AppState.planMarkup.plans.some(p => p.visible !== false);
     if (!visibleDxf.length && !hasImages) return { ok: false, reason: 'no-background' };
+    if (typeof PlanWorkArea !== 'undefined' && !PlanWorkArea.inWorld(pt.x, pt.y)) return { ok: false, reason: 'outside-area' };
     let last = null;
     for (const d of visibleDxf) {
       const r = this._detectDxf(d, pt, f, o, lim);
@@ -902,22 +907,37 @@ Object.assign(PlanRoomDetect, {
     return { test: (n) => use.has(n), names: [...use], matched: matched.length > 0 };
   },
 
+  // The wall-layer tests to run: one per matched layer when `sameLayer` (default), else the merged set.
+  _layerTests(desc, data, o) {
+    const lt = this._wallLayerTest(desc, data, o.layers);
+    if (!o.sameLayer || lt.names.length < 2) return [lt];
+    return lt.names.map(n => ({ test: (x) => x === n, names: [n], matched: lt.matched }));
+  },
+
   _detectDxf(desc, pt, f, o, lim) {
     const data = PlanDxfImport.dataOf(desc);
-    const lt = this._wallLayerTest(desc, data, o.layers);
-    const segs = this.segmentsFromDxf(data, lt.test, { hatches: o.hatch && lt.matched });
-    if (!segs.length) return { ok: false, reason: 'no-walls' };
     const click = PlanDxfImport.localOf(desc, pt.x, pt.y);
     // metres per drawing unit, for the door gap and the size cap
     const mpu = f ? PlanDxfImport._pxPerUnit(desc) * f : desc.unitM;
     const gap = o.gapM / mpu;
-    const r = this.fromSegments(segs, [click.x, click.y], {
-      gap, maxArea: lim.maxAreaM2 / (mpu * mpu), tol: Math.max(0.001 / mpu, 1e-9), snap: Math.max(0.03 / mpu, 1e-9),
-    });
-    if (!r.ok) return Object.assign(r, { layers: lt.names });
+    let best = null, fail = null, any = false;
+    for (const lt of this._layerTests(desc, data, o)) {
+      const segs = this.segmentsFromDxf(data, lt.test, { hatches: o.hatch && lt.matched, desc: desc });
+      if (!segs.length) continue;
+      any = true;
+      const r = this.fromSegments(segs, [click.x, click.y], {
+        gap, maxArea: lim.maxAreaM2 / (mpu * mpu), tol: Math.max(0.001 / mpu, 1e-9), snap: Math.max(0.03 / mpu, 1e-9),
+      });
+      if (!r.ok) { if (!fail || r.reason === 'not-enclosed') fail = Object.assign(r, { layers: lt.names }); continue; }
+      const area = Math.abs(this._signedArea(r.points));
+      // the layer that encloses the click most tightly wins
+      if (!best || area < best.area) best = { r, lt, area };
+    }
+    if (!any) return { ok: false, reason: 'no-walls' };
+    if (!best) return fail;
     return {
-      ok: true, source: 'dxf', bridged: r.bridged, layers: lt.names, layerMatched: lt.matched,
-      points: r.points.map(([x, y]) => PlanDxfImport.worldOf(desc, x, y)),
+      ok: true, source: 'dxf', bridged: best.r.bridged, layers: best.lt.names, layerMatched: best.lt.matched,
+      points: best.r.points.map(([x, y]) => PlanDxfImport.worldOf(desc, x, y)),
     };
   },
 
@@ -977,6 +997,7 @@ Object.assign(PlanRoomDetect, {
       case 'no-background': return 'Import a DXF or a plan image first — there is nothing to detect from.';
       case 'uncalibrated': return 'Calibrate the plan first — detection needs real distances for the gap.';
       case 'no-walls': return `No ${target === 'erf' ? 'boundary' : 'wall'} lines found on the visible layers. Check the layer filter in the options.`;
+      case 'outside-area': return 'That click is outside the working area. Click inside it, or change the area (Underlays › Working area).';
       case 'on-wall': return `That click landed on a ${target === 'erf' ? 'boundary' : 'wall'}. Click inside the ${lim.noun}.`;
       case 'outside': return 'Click on the plan.';
       case 'too-large': return `That region is larger than ${lim.maxAreaM2} m² — probably the whole site. Close the openings, or draw the ${lim.noun} by hand.`;
@@ -1002,7 +1023,7 @@ Object.assign(PlanRoomDetect, {
     const pm = AppState.planMarkup, o = this.opts(target);
     const dxf = (typeof PlanDxfImport !== 'undefined') ? PlanDxfImport.list().map(d => [d.id, d.hidden, d.k, d.offX, d.offY, d.rotation, d.scaleAdj, d.unitM, d.layers]) : [];
     const img = pm.plans.map(p => [p.id, p.imageId, p.visible, p.offX, p.offY, p.rotation, p.scaleAdj, p.k, p.scale, p.x, p.y]);
-    return JSON.stringify([target, o.gapM, o.layers, o.hatch, PlanEngine.factor(), dxf, img]);
+    return JSON.stringify([target, o.gapM, o.layers, o.hatch, o.sameLayer, PlanEngine.factor(), dxf, img, typeof PlanWorkArea !== 'undefined' ? PlanWorkArea.sig() : '']);
   },
 
   _computeCands(target) {
@@ -1013,17 +1034,24 @@ Object.assign(PlanRoomDetect, {
     if (!visibleDxf.length && !hasImages) return { ok: false, reason: 'no-background' };
     let items = [], source = null, noWalls = true; const orphans = [];
     for (const d of visibleDxf) {
-      const data = PlanDxfImport.dataOf(d), lt = this._wallLayerTest(d, data, o.layers);
-      const segs = this.segmentsFromDxf(data, lt.test, { hatches: o.hatch && lt.matched });
-      if (!segs.length) continue;
-      noWalls = false;
+      const data = PlanDxfImport.dataOf(d);
       const mpu = f ? PlanDxfImport._pxPerUnit(d) * f : d.unitM;
-      const found = this.allFromSegments(segs, {
-        gap: o.gapM / mpu, tol: Math.max(0.001 / mpu, 1e-9), snap: Math.max(0.03 / mpu, 1e-9),
-        minArea: lim.minAreaM2 / (mpu * mpu), maxArea: lim.maxAreaM2 / (mpu * mpu), minWidth: lim.minWidthM / mpu,
-      });
+      let found = [];
+      for (const lt of this._layerTests(d, data, o)) {
+        const segs = this.segmentsFromDxf(data, lt.test, { hatches: o.hatch && lt.matched, desc: d });
+        if (!segs.length) continue;
+        noWalls = false;
+        for (const c of this.allFromSegments(segs, {
+          gap: o.gapM / mpu, tol: Math.max(0.001 / mpu, 1e-9), snap: Math.max(0.03 / mpu, 1e-9),
+          minArea: lim.minAreaM2 / (mpu * mpu), maxArea: lim.maxAreaM2 / (mpu * mpu), minWidth: lim.minWidthM / mpu,
+        })) {
+          // the same region drawn on two layers is one region
+          if (!found.some(g => Math.abs(g.area - c.area) <= 0.01 * c.area && Math.hypot(g.seed[0] - c.seed[0], g.seed[1] - c.seed[1]) <= 0.05 * Math.sqrt(c.area))) found.push(c);
+        }
+      }
+      if (!found.length) continue;
       // The text inside a region names it (a stand number, a room number), as the DXF manager does.
-      const texts = target === 'erf' ? (data.entities || []).filter(r => r.t === 'x' && r.s != null && String(r.s).trim()) : [];
+      const texts = target === 'erf' ? (data.entities || []).filter(r => r.t === 'x' && r.s != null && String(r.s).trim() && (typeof PlanWorkArea === 'undefined' || !PlanWorkArea.active() || (w => PlanWorkArea.inWorld(w.x, w.y))(PlanDxfImport.worldOf(d, r.p[0], r.p[1])))) : [];
       const used = new Set();
       for (const c of found) {
         const hits = texts.filter(t => this._pip(t.p, c.points));
@@ -1036,6 +1064,7 @@ Object.assign(PlanRoomDetect, {
           label,
         });
       }
+      if (typeof PlanWorkArea !== 'undefined' && PlanWorkArea.active()) items = items.filter(it => PlanWorkArea.inWorld(it.seed.x, it.seed.y));
       // A stand number that sits in no detected region is a stand that was missed.
       for (const t of texts) if (!used.has(t) && /^[A-Za-z]{0,4}[ -]?\d+[A-Za-z]?$/.test(String(t.s).trim())) orphans.push(String(t.s).trim());
       if (items.length) source = 'dxf';
@@ -1054,6 +1083,7 @@ Object.assign(PlanRoomDetect, {
         noWalls = false;
       }
     }
+    if (typeof PlanWorkArea !== 'undefined' && PlanWorkArea.active()) items = items.filter(it => PlanWorkArea.inWorld(it.seed.x, it.seed.y));
     if (!items.length) return { ok: false, reason: noWalls ? 'no-walls' : 'not-enclosed' };
     return { ok: true, items, source, orphans };
   },
@@ -1067,12 +1097,14 @@ Object.assign(PlanRoomDetect, {
     const dxfs = (typeof PlanDxfImport !== 'undefined')
       ? PlanDxfImport.list().filter(d => !d.hidden && PlanDxfImport.dataOf(d)).reverse() : [];
     for (const d of dxfs) {
-      const data = PlanDxfImport.dataOf(d), lt = this._wallLayerTest(d, data, o.layers);
-      const segs = this.segmentsFromDxf(data, lt.test, { hatches: o.hatch && lt.matched });
-      if (!segs.length) continue;
-      const mpu = f ? PlanDxfImport._pxPerUnit(d) * f : d.unitM, c = PlanDxfImport.localOf(d, pt.x, pt.y);
-      const r = this.leakFromSegments(segs, [c.x, c.y], { gap: o.gapM / mpu, maxGap: maxGapM / mpu, tol: Math.max(0.001 / mpu, 1e-9), snap: Math.max(0.03 / mpu, 1e-9), maxArea: lim.maxAreaM2 / (mpu * mpu) });
-      if (r.ok) return { gapM: r.gap * mpu, points: r.bridges.map(b => PlanDxfImport.worldOf(d, (b[0] + b[2]) / 2, (b[1] + b[3]) / 2)) };
+      const data = PlanDxfImport.dataOf(d);
+      for (const lt of this._layerTests(d, data, o)) {
+        const segs = this.segmentsFromDxf(data, lt.test, { hatches: o.hatch && lt.matched, desc: d });
+        if (!segs.length) continue;
+        const mpu = f ? PlanDxfImport._pxPerUnit(d) * f : d.unitM, c = PlanDxfImport.localOf(d, pt.x, pt.y);
+        const r = this.leakFromSegments(segs, [c.x, c.y], { gap: o.gapM / mpu, maxGap: maxGapM / mpu, tol: Math.max(0.001 / mpu, 1e-9), snap: Math.max(0.03 / mpu, 1e-9), maxArea: lim.maxAreaM2 / (mpu * mpu) });
+        if (r.ok) return { gapM: r.gap * mpu, points: r.bridges.map(b => PlanDxfImport.worldOf(d, (b[0] + b[2]) / 2, (b[1] + b[3]) / 2)) };
+      }
     }
     if (AppState.planMarkup.plans.some(p => p.visible !== false) && f) {
       const win = this._rasterWindow();
@@ -1170,6 +1202,69 @@ Object.assign(PlanRoomDetect, {
     return best ? best.label : '';
   },
 
+  // ── a shape drawn by hand, for what the detection gets wrong ──
+  // Click the corners (they snap like everything else on the plan, so DXF corners and ends are caught); click the first
+  // corner, click the last one again, or press Enter to close; Backspace takes the last corner back; Esc drops it.
+  draft: null,                                                  // { target, pts: [{x, y}], hover }
+  _crosses(pts) {                                                // does the outline cross itself?
+    const n = pts.length, o = (a, b, c) => (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+    for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) {
+      if (j === i + 1 || (i === 0 && j === n - 1)) continue;
+      const a = pts[i], b = pts[(i + 1) % n], c = pts[j], d = pts[(j + 1) % n];
+      if (o(a, b, c) * o(a, b, d) < 0 && o(c, d, a) * o(c, d, b) < 0) return true;
+    }
+    return false;
+  },
+  drawClick(pt, target) {
+    const lim = this.LIMITS[target], z = PlanEngine.view.zoom, tol = 9 / z;
+    if (!this.draft || this.draft.target !== target) this.draft = { target, pts: [], hover: null };
+    const D = this.draft, q = (typeof PlanTools.snap === 'function' ? PlanTools.snap(pt) : pt) || pt, p = { x: q.x, y: q.y };
+    if (D.pts.length >= 3 && (Math.hypot(p.x - D.pts[0].x, p.y - D.pts[0].y) <= tol || Math.hypot(p.x - D.pts[D.pts.length - 1].x, p.y - D.pts[D.pts.length - 1].y) <= tol)) { this.drawClose(); return; }
+    if (D.pts.length && Math.hypot(p.x - D.pts[D.pts.length - 1].x, p.y - D.pts[D.pts.length - 1].y) <= tol / 3) return;      // the same spot twice
+    D.pts.push(p); this._changed();
+  },
+  drawBack() { const D = this.draft; if (!D) return false; D.pts.pop(); if (!D.pts.length) this.draft = null; this._changed(); return true; },
+  drawCancel() { if (!this.draft) return false; this.draft = null; this._changed(); return true; },
+  // The stand number written inside a polygon (a drawn erf takes it, as a detected one does): the DXF's own text, found by position.
+  _numberIn(pts) {
+    if (typeof PlanDxfImport === 'undefined') return '';
+    const poly = pts.map(p => [p.x, p.y]); let best = null;
+    for (const d of PlanDxfImport.list().filter(x => !x.hidden && PlanDxfImport.dataOf(x))) {
+      for (const t of (PlanDxfImport.dataOf(d).entities || [])) {
+        if (t.t !== 'x' || t.s == null || !String(t.s).trim() || !t.p) continue;
+        const w = PlanDxfImport.worldOf(d, t.p[0], t.p[1]);
+        if (!this._pip([w.x, w.y], poly)) continue;
+        const rank = (/\d/.test(t.s) ? 1e9 : 0) + (t.h || 0);
+        if (!best || rank > best.rank) best = { rank, s: String(t.s).replace(/\s+/g, ' ').trim().slice(0, 40) };
+      }
+    }
+    return best ? best.s : '';
+  },
+
+  drawClose() {
+    const D = this.draft; if (!D) return false;
+    const lim = this.LIMITS[D.target], f = PlanEngine.factor();
+    if (D.pts.length < 3) { UI.toast(`A ${lim.noun} needs at least three corners.`, 'warn', 3000); return true; }
+    if (this._crosses(D.pts)) { UI.toast('The outline crosses itself. Backspace takes the last corner back.', 'warn', 4000); return true; }
+    const pts = D.pts.map(q => ({ x: q.x, y: q.y })), area = f ? PlanEngine._polyArea(pts) * f * f : null;
+    this.draft = null;
+    const label = D.target === 'erf' ? (this._numberIn(pts) || this._labelAt(this._seedOf(pts), 'erf')) : '';
+    const made = this.commitMany(D.target, [{ points: pts, label, source: 'drawn' }]);
+    UI.toast(`${made[0].name} drawn${area != null ? ` — ${area.toFixed(1)} m²` : ''}.`, 'success', 3500);
+    this._changed(); return true;
+  },
+  drawDraft(ctx, zoom, target) {
+    const D = this.draft; if (!D || D.target !== target || !D.pts.length) return;
+    const pts = D.pts, h = D.hover, u = 1 / zoom;
+    ctx.save();
+    ctx.beginPath(); pts.forEach((q, i) => i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y)); if (h) ctx.lineTo(h.x, h.y);
+    if (pts.length >= 2) { ctx.save(); ctx.closePath(); ctx.fillStyle = 'rgba(22,163,74,0.14)'; ctx.fill(); ctx.restore(); }
+    ctx.lineWidth = 2 * u; ctx.strokeStyle = '#16a34a'; ctx.setLineDash([6 * u, 4 * u]); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle = '#fff';
+    pts.forEach((q, i) => { ctx.beginPath(); ctx.arc(q.x, q.y, (i === 0 && pts.length >= 3 ? 6 : 4) * u, 0, 6.2832); ctx.fill(); ctx.stroke(); });
+    ctx.restore();
+  },
+
   // The tool's click: create now, stage (add) or unstage (subtract).
   click(pt, target, e) {
     const lim = this.LIMITS[target];
@@ -1216,6 +1311,25 @@ Object.assign(PlanRoomDetect, {
   },
   _seedOf(pts) { const s = this._interior(pts.map(p => [p.x, p.y])); return { x: s[0], y: s[1] }; },
 
+  // Mark unserviced: the erf under the click (inside its boundary, else its point within 12 px) is toggled serviced ⇄ unserviced.
+  erfAt(pt) {
+    const ervs = AppState.planMarkup.elements.filter(e => e.type === 'erf');
+    const inside = ervs.filter(e => Array.isArray(e.boundary) && e.boundary.length >= 3 && this._pip([pt.x, pt.y], e.boundary.map(q => [q.x, q.y])));
+    if (inside.length) return inside.sort((a, b) => PlanEngine._polyArea(a.boundary) - PlanEngine._polyArea(b.boundary))[0];
+    const r = 12 / PlanEngine.view.zoom; let best = null, bd = r;
+    for (const e of ervs) { const d = Math.hypot(e.x - pt.x, e.y - pt.y); if (d <= bd) { bd = d; best = e; } }
+    return best;
+  },
+  markClick(pt) {
+    const el = this.erfAt(pt);
+    if (!el) { UI.toast('No erf here. Click inside an erf that is on the plan (detect it first).', 'warn', 4000); return; }
+    const on = !(el.props && el.props.unserviced);
+    const res = PlanSync.setUnserviced([el], on);
+    PlanMarkup.setSelection([el.id]); PlanMarkup.snapshot(); PlanMarkup.markDirty();
+    PlanSync.unservicedToast(1, on, res);
+    this._changed();
+  },
+
   createStaged() {
     const target = this.staged.target, items = this.staged.items;
     if (!items.length) return;
@@ -1239,7 +1353,7 @@ Object.assign(PlanRoomDetect, {
       if (target === 'erf') {
         const seed = it.seed || this._seedOf(it.points);
         const el = { id: AppState.planGenId('pmel'), type: 'erf', x: seed.x, y: seed.y, rotation: 0,
-          name: this._erfName(it.label), reticId: null, props: PLAN_DEFS.defaults('erf'),
+          name: this._erfName(it.label), reticId: null, props: Object.assign(PLAN_DEFS.defaults('erf'), this.erfServ ? { unserviced: true } : {}),
           boundary: it.points.map(p => ({ x: p.x, y: p.y })) };      // kept so Auto layout can find the erf's front
         pm.elements.push(el); made.push(Object.assign({ points: it.points }, { name: el.name })); ids.push(el.id);
       } else {
@@ -1257,6 +1371,14 @@ Object.assign(PlanRoomDetect, {
   commit(res) { return this.commitMany('room', [res])[0]; },
 
   drawHover(ctx, zoom, target, e) {
+    if (this.mode === 'mark' && target === 'erf') {                              // the erf a click would toggle
+      const el = this.hoverPt && this.erfAt(this.hoverPt); if (!el || !Array.isArray(el.boundary) || el.boundary.length < 3) return;
+      const u = 1 / zoom, on = !(el.props && el.props.unserviced);
+      ctx.save(); ctx.beginPath(); el.boundary.forEach((q, i) => i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y)); ctx.closePath();
+      ctx.fillStyle = on ? 'rgba(100,116,139,0.18)' : 'rgba(22,163,74,0.14)'; ctx.fill();
+      ctx.lineWidth = 2.5 * u; ctx.strokeStyle = on ? '#475569' : '#16a34a'; ctx.stroke(); ctx.restore();
+      return;
+    }
     const sub = !!(e && (e.altKey || e.ctrlKey || e.metaKey));
     let c = this.hover, red = false;
     if (sub && this.hoverPt && this.staged.target === target) {
@@ -1268,7 +1390,8 @@ Object.assign(PlanRoomDetect, {
       ctx.save();
       ctx.beginPath(); pts.forEach((p, k) => k ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); ctx.closePath();
       ctx.fillStyle = red ? 'rgba(220,38,38,0.30)' : 'rgba(37,99,235,0.18)'; ctx.fill();
-      ctx.lineWidth = 2 / zoom; ctx.strokeStyle = red ? '#dc2626' : '#2563eb'; ctx.stroke();
+      ctx.lineWidth = 5 / zoom; ctx.strokeStyle = 'rgba(255,255,255,0.9)'; ctx.stroke();
+      ctx.lineWidth = 2.2 / zoom; ctx.strokeStyle = red ? '#b91c1c' : '#1d4ed8'; ctx.stroke();
       ctx.restore();
     }
     const lk = this.leak;
@@ -1286,14 +1409,18 @@ Object.assign(PlanRoomDetect, {
 
   drawStaged(ctx, zoom, target) {
     if (this.staged.target !== target || !this.staged.items.length) return;
-    const f = PlanEngine.factor();
     ctx.save();
-    ctx.lineWidth = 1.5 / zoom; ctx.setLineDash([6 / zoom, 4 / zoom]);
-    ctx.font = `600 ${12 / zoom}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.lineJoin = 'round'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.font = `700 ${13 / zoom}px sans-serif`;
+    // light fill, a white casing under a dark solid outline, a number with a white halo: the fill, the edge and the label are three different tones
     this.staged.items.forEach((it, i) => {
       ctx.beginPath(); it.points.forEach((p, k) => k ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); ctx.closePath();
-      ctx.fillStyle = 'rgba(217,119,6,0.28)'; ctx.fill(); ctx.strokeStyle = '#d97706'; ctx.stroke();
-      ctx.setLineDash([]); ctx.fillStyle = '#7c2d12'; ctx.fillText(String(it.label || (i + 1)), it.seed.x, it.seed.y); ctx.setLineDash([6 / zoom, 4 / zoom]);
+      ctx.fillStyle = 'rgba(250,204,21,0.26)'; ctx.fill();
+      ctx.lineWidth = 5 / zoom; ctx.strokeStyle = 'rgba(255,255,255,0.92)'; ctx.stroke();
+      ctx.lineWidth = 2.2 / zoom; ctx.strokeStyle = '#9a3412'; ctx.stroke();
+      const t = String(it.label || (i + 1));
+      ctx.lineWidth = 4 / zoom; ctx.strokeStyle = 'rgba(255,255,255,0.95)'; ctx.strokeText(t, it.seed.x, it.seed.y);
+      ctx.fillStyle = '#1c1917'; ctx.fillText(t, it.seed.x, it.seed.y);
     });
     ctx.restore();
   },
@@ -1318,7 +1445,13 @@ Object.assign(PlanRoomDetect, {
         <button type="button" class="plan-btn" data-rd-all style="font-weight:600">Detect all ${lim.nouns}</button>
         <p style="margin:0;color:var(--text-muted)">Or click inside one. A plain click ${target === 'erf' ? 'places an erf' : 'creates the room'} now.
           Shift-click adds it to the set below, Alt-click takes it out. Esc to stop.</p>
-        <div style="display:flex;gap:6px;flex-wrap:wrap" role="group" aria-label="Click action">${modeBtn('create', 'Create')}${modeBtn('add', 'Add to set')}${modeBtn('subtract', 'Subtract')}</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap" role="group" aria-label="Click action">${modeBtn('create', 'Create')}${modeBtn('add', 'Add to set')}${modeBtn('subtract', 'Subtract')}${modeBtn('draw', 'Draw')}${target === 'erf' ? modeBtn('mark', 'Mark unserviced') : ''}</div>
+        ${target === 'erf' ? `<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap" role="group" aria-label="New erven are"><span>New erven are</span>
+          <button type="button" class="plan-btn" data-rd-serv="0" aria-pressed="${!this.erfServ}" style="${!this.erfServ ? 'font-weight:600;outline:2px solid var(--accent,#2563eb)' : ''}">Serviced</button>
+          <button type="button" class="plan-btn" data-rd-serv="1" aria-pressed="${this.erfServ}" style="${this.erfServ ? 'font-weight:600;outline:2px solid var(--accent,#2563eb)' : ''}">Unserviced</button></div>
+        ${this.mode === 'mark' ? '<p style="margin:0;color:var(--text-muted)"><b>Mark unserviced</b>: click an erf on the plan to switch it between serviced and unserviced.</p>' : ''}
+        <p style="margin:0;color:var(--text-muted)">An unserviced erf (a park, open space, servitude) gets no supply, service, fibre duct or Demand row; Auto layout's cables go round it. It is drawn hatched grey.</p>` : ''}
+        ${this.mode === 'draw' ? `<p style="margin:0;color:var(--text-muted)"><b>Draw</b> for a ${lim.noun} the detection gets wrong: click its corners (they snap to the drawing's corners and ends), then click the first corner, click the last one again, or press Enter to close it. Backspace takes the last corner back, Esc drops the outline. It is created as a real ${lim.noun}${target === 'erf' ? ' with its boundary, so Auto layout can use it' : ''}. Alt-click still takes a set member out.</p>` : ''}
         <div><b>Set to review</b> <span style="color:var(--text-muted)">${items.length ? `${items.length} ${items.length === 1 ? lim.noun : lim.nouns}${f ? ` · ${total.toFixed(0)} m²` : ''}` : 'empty'}</span></div>
         <div style="max-height:200px;overflow:auto">${rows}</div>
         <div style="display:flex;gap:6px;flex-wrap:wrap">
@@ -1333,6 +1466,7 @@ Object.assign(PlanRoomDetect, {
         <label>${target === 'erf' ? 'Boundary' : 'Wall'} layers (DXF, regex)
           <input type="text" data-rd="layers" style="width:100%"></label>
         <label style="display:flex;gap:6px;align-items:flex-start"><input type="checkbox" data-rd="hatch"> <span>Hatched and solid ${target === 'erf' ? 'boundaries' : 'walls'} on those layers count as ${target === 'erf' ? 'boundaries' : 'walls'} (their outline is the face)</span></label>
+        <label style="display:flex;gap:6px;align-items:flex-start"><input type="checkbox" data-rd="samelayer"> <span>Use one layer at a time: lines of different layers are never joined into one ${lim.noun} boundary</span></label>
         <label style="display:flex;gap:6px;align-items:flex-start"><input type="checkbox" data-rd="hover"> <span>Preview the ${lim.noun} under the pointer${this._hoverOff ? ' (switched off: this drawing is too slow for it)' : ''}</span></label>
         <p style="margin:0;color:var(--text-muted)">With a plan image the lines are the dark pixels. ${target === 'erf' ? 'Detected erven are placed as Erf points and appear in Demand.' : 'Drag a corner to reshape a room; drag a midpoint to add a corner; double-click a corner to remove it.'}</p>
       </div>`;
@@ -1352,6 +1486,8 @@ Object.assign(PlanRoomDetect, {
     el.querySelector('[data-rd="layers"]').addEventListener('change', (e) => { o.layers = e.target.value || (target === 'erf' ? this.ERF_LAYERS : this.DEFAULT_LAYERS); PlanMarkup.markDirty(); });
     const hb = el.querySelector('[data-rd="hatch"]'), hv = el.querySelector('[data-rd="hover"]');
     hb.checked = o.hatch; hv.checked = o.hover && !this._hoverOff; hv.disabled = !!this._hoverOff;
+    const sl = el.querySelector('[data-rd="samelayer"]'); sl.checked = o.sameLayer;
+    sl.addEventListener('change', (e) => { o.sameLayer = e.target.checked; PlanMarkup.markDirty(); this.leak = null; this._changed(); });
     hb.addEventListener('change', (e) => { o.hatch = e.target.checked; PlanMarkup.markDirty(); this.leak = null; this._changed(); });
     hv.addEventListener('change', (e) => { o.hover = e.target.checked; PlanMarkup.markDirty(); this._setHover(null); });
     const fx = el.querySelector('[data-rd-fixgap]');
@@ -1359,7 +1495,8 @@ Object.assign(PlanRoomDetect, {
     el.querySelector('[data-rd-all]').addEventListener('click', () => this.detectAll(target));
     el.querySelector('[data-rd-create]').addEventListener('click', () => this.createStaged());
     el.querySelector('[data-rd-clear]').addEventListener('click', () => this.clearStaged());
-    el.querySelectorAll('[data-rd-mode]').forEach(b => b.addEventListener('click', () => { this.mode = b.dataset.rdMode; this._changed(); }));
+    el.querySelectorAll('[data-rd-mode]').forEach(b => b.addEventListener('click', () => { this.mode = b.dataset.rdMode; if (this.mode !== 'draw') this.draft = null; this._changed(); }));
+    el.querySelectorAll('[data-rd-serv]').forEach(b => b.addEventListener('click', () => { this.erfServ = b.dataset.rdServ === '1'; this._changed(); }));
     el.querySelectorAll('[data-rd-del]').forEach(b => b.addEventListener('click', () => { this.staged.items.splice(+b.dataset.rdDel, 1); this._changed(); }));
   },
 });
@@ -1368,16 +1505,35 @@ if (typeof PlanTools !== 'undefined') {
   const makeDetectTool = (id, target) => ({
     id, cursor: 'copy',
     onActivate() { PlanRoomDetect.mode = 'create'; if (typeof PlanMarkup !== 'undefined') PlanMarkup.refreshProps(); },
-    onDeactivate() { PlanRoomDetect.staged = { target, items: [] }; PlanRoomDetect.hover = null; PlanRoomDetect.leak = null; },
+    onDeactivate() { PlanRoomDetect.staged = { target, items: [] }; PlanRoomDetect.hover = null; PlanRoomDetect.leak = null; PlanRoomDetect.draft = null; },
     onMove(pt, e) {
+      if (PlanRoomDetect.mode === 'draw') {                                    // drawing by hand: the rubber band follows the pointer, no detection preview
+        const D = PlanRoomDetect.draft;
+        if (D && D.target === target) { const q = (typeof PlanTools.snap === 'function' ? PlanTools.snap(pt) : pt) || pt; D.hover = { x: q.x, y: q.y }; PlanEngine.requestDraw({ fg: true }); }
+        return;
+      }
       this._e = e; PlanRoomDetect.hoverPt = { x: pt.x, y: pt.y };
+      if (PlanRoomDetect.mode === 'mark') { PlanRoomDetect.hover = null; PlanEngine.requestDraw({ fg: true }); return; }   // marking: the erf under the pointer is outlined (drawHover)
       clearTimeout(this._t); this._t = setTimeout(() => PlanRoomDetect.hoverAt(pt, target), 60);
       PlanEngine.requestDraw({ fg: true });
     },
     cancel() { PlanTools.set('select'); },
-    onDown(pt, e) { PlanRoomDetect.click(pt, target, e); },
-    drawOverlay(ctx, zoom) { PlanRoomDetect.drawStaged(ctx, zoom, target); PlanRoomDetect.drawHover(ctx, zoom, target, this._e); },
+    onDown(pt, e) {
+      const plain = !(e && (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey));
+      if (PlanRoomDetect.mode === 'mark' && target === 'erf' && plain) PlanRoomDetect.markClick(pt);
+      else if (PlanRoomDetect.mode === 'draw' && plain) PlanRoomDetect.drawClick(pt, target); else PlanRoomDetect.click(pt, target, e);
+    },
+    drawOverlay(ctx, zoom) { PlanRoomDetect.drawStaged(ctx, zoom, target); if (PlanRoomDetect.mode === 'draw') PlanRoomDetect.drawDraft(ctx, zoom, target); else PlanRoomDetect.drawHover(ctx, zoom, target, this._e); },
+    keyFirst(e) {                                                              // a shape being drawn: Enter closes it, Backspace takes a corner back, Esc drops it
+      const D = PlanRoomDetect.draft; if (!D || D.target !== target) return false;
+      if (e.key === 'Enter') return PlanRoomDetect.drawClose();
+      if (e.key === 'Backspace') return PlanRoomDetect.drawBack();
+      if (e.key === 'Escape') return PlanRoomDetect.drawCancel();
+      return false;
+    },
+    get _draft() { const D = PlanRoomDetect.draft; return D && D.target === target ? { points: D.pts } : null; },    // lets the Done / Cancel chip show while a shape is being drawn
     onKey(e) {
+      if (this.keyFirst(e)) return true;
       if (e.key === 'Enter' && PlanRoomDetect.staged.items.length) { PlanRoomDetect.createStaged(); return true; }
       if (e.key === 'Escape') {
         if (PlanRoomDetect.staged.items.length) { PlanRoomDetect.clearStaged(); return true; }

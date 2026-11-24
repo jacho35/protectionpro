@@ -9,7 +9,8 @@
  *     the cross-section, swept along the road, and its luminaire rows.
  *   2 Poles — every row of the design laid out along its own pole line at the
  *     design spacing (closer on bends tighter than a set radius, optionally a
- *     single outside row there), junction mouths kept clear; drag to move,
+ *     single outside row there), spaced evenly between junction mouths with a
+ *     pole at each mouth edge and free road end; drag to move,
  *     add, delete, override a pole's luminaire / height / tilt.
  *   3 Light on the plan — /api/analysis/road-plan (analysis/road_plan.py):
  *     illuminance / luminance heatmap with iso-lines on every road, per-segment
@@ -151,17 +152,55 @@ const RoadPlan = {
   _genId(prefix) { return prefix + '_' + (this.rp._seq++); },
   _num(v, d) { const x = parseFloat(v); return isFinite(x) ? x : d; },
   _fmt(v, dp = 2) { return v === null || v === undefined || !isFinite(v) ? '—' : (+v).toFixed(dp); },
-  _design(road) { return road && typeof RoadLight !== 'undefined' ? RoadLight.design(road.designId) : null; },
+  // The lighting design of a road, with the strips of the road's own road section: the site plan road it follows, else its own pick
+  // (`road.section`), else the design's. Only the strips change (a shallow copy); rows, spacing and the rest are the design's.
+  _design(road) {
+    const des = road && typeof RoadLight !== 'undefined' ? RoadLight.design(road.designId) : null;
+    const sid = des && this.sectionId(road);
+    return sid && sid !== des.section ? Object.assign({}, des, { section: sid }) : des;
+  },
+  // Stretches of the road with another section (from the site plan road it follows: `road.sectionRuns`, metres along it), each with the
+  // design read on that section — the lighting checks of a segment inside one use its strips and classes; the poles keep the road's own.
+  _stretches(road) {
+    if (!road || !Array.isArray(road.sectionRuns) || !road.sectionRuns.length || typeof RoadSections === 'undefined') return [];
+    const des = road && typeof RoadLight !== 'undefined' ? RoadLight.design(road.designId) : null; if (!des) return [];
+    return road.sectionRuns.filter(x => RoadSections.get(x.section) && x.s1 - x.s0 >= 1)
+      .map(x => ({ s0: +x.s0, s1: +x.s1, section: x.section, des: Object.assign({}, des, { section: x.section }) }));
+  },
+  _linkedPlanRoads(road) {
+    if (!road || !road.plan || road.plan.unlinked || !Array.isArray(road.plan.ids) || typeof RoadSections === 'undefined') return [];
+    const all = RoadSections.roads(); return road.plan.ids.map(id => all.find(x => x.id === id)).filter(Boolean);
+  },
+  // the road's section: a road that follows the site plan sets it on the plan's roads (the one place it is kept), any other road on itself
+  _setSection(road, id) {
+    const plan = this._linkedPlanRoads(road);
+    if (plan.length) { RoadSections.assign(plan, id); if (typeof PlanMarkup !== 'undefined') PlanMarkup.markDirty(); }
+    else if (id && RoadSections.get(id)) road.section = id; else delete road.section;
+  },
+  _sectionFieldHtml(road) {
+    if (typeof RoadSections === 'undefined' || !RoadSections.list().length) return '';
+    const des = RoadLight.design(road.designId), dsec = des && RoadSections.get(des.section), cur = this.sectionId(road), plan = this._linkedPlanRoads(road).length;
+    const opts = `<option value=""${cur ? '' : ' selected'}>${dsec ? 'The lighting design\'s (' + escHtml(dsec.name) + ')' : 'The lighting design\'s strips'}</option>` + RoadSections.list().map(x => `<option value="${escHtml(x.id)}"${x.id === cur ? ' selected' : ''}>${escHtml(x.name)}</option>`).join('');
+    const warn = cur && dsec && cur !== dsec.id ? `<div class="sl-hint">The strips are this road's section; the luminaire rows are the design's, made for ${escHtml(dsec.name)}.</div>` : '';
+    return `<label class="rp-field">Road section<select data-rp-road-f="section">${opts}</select></label>${warn}${plan ? '<div class="sl-hint">Kept on the site plan road this road follows: the plan and Auto layout use it too.</div>' : ''}`;
+  },
+  sectionId(road) {
+    if (!road || typeof RoadSections === 'undefined') return null;
+    if (road.plan && !road.plan.unlinked && Array.isArray(road.plan.ids)) {
+      for (const id of road.plan.ids) { const r = RoadSections.roads().find(x => x.id === id), sid = r && r.props && r.props.section; if (RoadSections.get(sid)) return sid; }
+    }
+    return RoadSections.get(road.section) ? road.section : null;
+  },
 
   // ─── Undo (road data only; the background is not snapshotted) ────────
-  _snapshot() { return JSON.stringify({ roads: this.roads, junctionCls: this.rp.junctionCls, settings: this.rp.settings, scene: this.rp.scene || null }); },
-  _commit() {
+  _snapshot() { return JSON.stringify({ roads: this.roads, junctionCls: this.rp.junctionCls, settings: this.rp.settings, scene: this.rp.scene || null, junctionReturns: this.rp.junctionReturns || null }); },
+  _commit(label) {
     const before = this._last || this._snapshot();
     this._undo.push(before);
     if (this._undo.length > 50) { this._undo.shift(); this._undoNames.shift(); if (typeof ProjectHistory !== 'undefined') ProjectHistory.shift('road', 1); }
     this._redo = []; this._redoNames = [];
     this._last = this._snapshot();
-    const name = before.length < 3e6 ? UndoNames.road(before, this._last) : '';
+    const name = label || (before.length < 3e6 ? UndoNames.road(before, this._last) : '');
     this._undoNames.push(name);
     if (typeof ProjectHistory !== 'undefined') ProjectHistory.record('road', this._undo.length, name);
     AppState.dirty = true;
@@ -173,6 +212,7 @@ const RoadPlan = {
     const o = JSON.parse(snap);
     this.rp.roads = o.roads; this.rp.junctionCls = o.junctionCls || {}; this.rp.settings = o.settings || {};
     if (o.scene) this.rp.scene = o.scene; else delete this.rp.scene;
+    if (o.junctionReturns) this.rp.junctionReturns = o.junctionReturns; else delete this.rp.junctionReturns;
     this._last = snap; this._geo.clear(); this._resStale = true; AppState.dirty = true;
     if (!this.selRoad) this._selRoad = this.roads.length ? this.roads[0].id : null;
     this._selPole = null;
@@ -241,6 +281,9 @@ const RoadPlan = {
     svg.addEventListener('pointerleave', () => { this._hover = null; this._readout(); });
     svg.addEventListener('dblclick', (e) => this._dbl(e));
     svg.addEventListener('wheel', (e) => this._wheel(e), { passive: false });
+    // The middle button pans: no browser autoscroll (Windows) or primary-selection paste (Linux).
+    svg.addEventListener('mousedown', (e) => { if (e.button === 1) e.preventDefault(); });
+    svg.addEventListener('auxclick', (e) => { if (e.button === 1) e.preventDefault(); });
     svg.addEventListener('contextmenu', (e) => e.preventDefault());
     this._ro = new ResizeObserver(() => this.applyView());
     this._ro.observe(host.querySelector('#rp-wrap'));
@@ -254,12 +297,14 @@ const RoadPlan = {
     if (!this._fitted) { this._fitted = true; this.fit(); }
     this.render();
     if (this._step === 3 && this._resStale) this.recompute(0);
+    // roads from the site plan's streets, the plan's drawings as the background
+    if (typeof RoadSitePlan !== 'undefined') RoadSitePlan.onOpen().then(ch => { if (ch && !this._roadsFitted) { this._roadsFitted = true; this.fit(); } }).catch(e => console.warn('Road plan: site plan sync failed', e));
   },
   deactivate() { this._active = false; clearTimeout(this._timer); this._draft = null; this._kerbDraft = null; },
   onProjectChanged() {
     this._res = null; this._resStale = true; this._geo.clear(); this._undo = []; this._redo = []; this._undoNames = []; this._redoNames = [];
     if (typeof ProjectHistory !== 'undefined') ProjectHistory.reset('road');
-    this._selRoad = this.roads.length ? this.roads[0].id : null; this._selPole = null; this._fitted = false;
+    this._selRoad = this.roads.length ? this.roads[0].id : null; this._selPole = null; this._fitted = false; this._roadsFitted = false; if (typeof RoadSitePlan !== 'undefined') RoadSitePlan._last = null;
     if (this._active) { this._fitted = true; this.fit(); this.render(); this._last = this._snapshot(); }
   },
 
@@ -341,7 +386,7 @@ const RoadPlan = {
   // Everything derived from a road's shape + design, cached on a signature.
   geom(road) {
     const des = this._design(road);
-    const key = JSON.stringify([road.mode, road.ip, road.poly, road.kerbs, road.radius, des && des.sections, des && des.rows]);
+    const key = JSON.stringify([road.mode, road.ip, road.poly, road.kerbs, road.radius, des && RoadLight._secs(des), des && des.rows]);
     const c = this._geo.get(road.id);
     if (c && c.key === key) return c.g;
     let pts = [], els = null, kerbWidth = null;
@@ -495,10 +540,12 @@ const RoadPlan = {
     const set = this.rp.junctionCls[j.key];
     if (set) return set;
     const des = this._design(this.road(j.main));
-    const cw = des && des.sections.find(s => s.type === 'carriageway' && s.cls);
+    const cw = des && RoadLight._secs(des).find(s => s.type === 'carriageway' && s.cls);
     if (!cw) return this._standard() === 'SANS' ? 'RC4' : 'C3';
     return (this._standard() === 'SANS' ? RP_SANS_RC : RP_COMPARABLE_C)[cw.cls] || (this._standard() === 'SANS' ? 'RC4' : 'C3');
   },
+  // the kerb returns of a junction made from a road reserve: the fillet between the two kerb lines and the arc, for the conflict area
+  _returnPolys(j) { const l = (this.rp.junctionReturns || {})[j.key]; return l && typeof RoadReserve !== 'undefined' ? l.map(c => RoadReserve.fillet(c)) : []; },
   _kerbPolygon(road, s0, s1) {
     const g = this.geom(road);
     const n = Math.max(2, Math.ceil((s1 - s0) / 1));
@@ -528,6 +575,9 @@ const RoadPlan = {
           if (c.s1 < b) next.push([c.s1, b]);
         }
         pieces = next;
+      }
+      for (const x of this._stretches(road)) for (const at of [x.s0, x.s1]) {       // a segment never straddles a change of section
+        pieces = pieces.flatMap(([a, b]) => at > a + 0.5 && at < b - 0.5 ? [[a, at], [at, b]] : [[a, b]]);
       }
       for (const [a, b] of pieces) if (b - a >= 3) out.push({ ...run, s0: a, s1: b });
     }
@@ -590,23 +640,62 @@ const RoadPlan = {
     const auto = [];
     const L = g.al.length;
     const twoSided = new Set(des.rows.map(r => RoadLight._rowGeom(r, g.xs.lay).facing)).size > 1;
+    const start = Math.max(0, this._num(cfg.start, 3));
+    // poles of the other roads (plan points): an end pole beside one of them is left out (two roads meeting end to end)
+    const others = [];
+    for (const o of this.roads) {
+      if (o === road || !this.geom(o).al.ok) continue;
+      for (const p of o.poles || []) { const pg = this.poleGeom(o, p); if (pg) others.push([pg.bx, pg.by]); }
+    }
+    const near = Math.min(S / 3, 8);
     for (const row of des.rows) {
       const rg = RoadLight._rowGeom(row, g.xs.lay);
-      const ds = 0.25;
-      let prev = g.al.at(0, g.xs.off(0, rg.poleY)), along = 0;
-      let next = this._num(cfg.start, 3) + this._num(row.xOffset, 0) * S;
-      for (let s = 0; s <= L + 1e-9; s += ds) {
-        const p = g.al.at(s, g.xs.off(s, rg.poleY));
-        along += Math.hypot(p.x - prev.x, p.y - prev.y); prev = p;
-        if (along + 1e-9 < next) continue;
-        const kap = g.al.curvature(s);
-        const tight = Math.abs(kap) > 1 / Math.max(1, cfg.bendR);
-        const d = g.xs.off(s, rg.poleY);
-        const inside = tight && kap * -d > 0;              // pole on the centre side of the bend
-        next += S * (tight ? this._num(cfg.bendFactor, 0.75) : 1);
-        if (cfg.outsideOnly && twoSided && inside) continue;
-        if (mouth.some(m => (m.endRange ? (s >= Math.min(m.s0, m.s1) && s <= Math.max(m.s0, m.s1)) : (s > m.s0 && s < m.s1 && (!m.sign || Math.sign(d) === m.sign))))) continue;
-        auto.push({ id: this._genId('rpp'), s: +s.toFixed(2), rowId: row.id, moved: false, note: tight ? `bend R${Math.round(1 / Math.abs(kap))}` : '' });
+      const side = Math.sign(g.xs.off(L / 2, rg.poleY)) || 1;
+      // the stretches this row may not use: every junction mouth on its side (a crossing / the road's own end: both sides)
+      const blocked = mouth.filter(m => m.endRange || !m.sign || m.sign === side)
+        .map(m => [Math.max(0, Math.min(m.s0, m.s1)), Math.min(L, Math.max(m.s0, m.s1))]).filter(b => b[1] > b[0])
+        .sort((a, b) => a[0] - b[0]);
+      const merged = [];
+      for (const b of blocked) { const t = merged[merged.length - 1]; if (t && b[0] <= t[1]) t[1] = Math.max(t[1], b[1]); else merged.push(b.slice()); }
+      // free stretches; an edge at a mouth takes its pole at the mouth edge, a free road end `start` m in
+      const free = [];
+      let a = 0, aMouth = false;
+      for (const b of merged) { if (b[0] > a) free.push({ a, b: b[0], am: aMouth, bm: true }); a = b[1]; aMouth = true; }
+      if (L > a) free.push({ a, b: L, am: aMouth, bm: false });
+      // effective length along the pole line: a tight bend counts 1 / bendFactor, so its poles come closer
+      const ds = 0.25, E = [0], SS = [0];
+      let prev = g.al.at(0, g.xs.off(0, rg.poleY));
+      const bf = Math.max(0.2, this._num(cfg.bendFactor, 0.75));
+      for (let s = ds; s < L + ds; s += ds) {
+        const sc = Math.min(s, L), p = g.al.at(sc, g.xs.off(sc, rg.poleY));
+        const tight = Math.abs(g.al.curvature(sc)) > 1 / Math.max(1, cfg.bendR);
+        E.push(E[E.length - 1] + Math.hypot(p.x - prev.x, p.y - prev.y) / (tight ? bf : 1)); SS.push(sc); prev = p;
+        if (sc >= L) break;
+      }
+      const eAt = (s) => { const i = Math.min(SS.length - 2, Math.max(0, Math.floor(s / ds))); const t = (s - SS[i]) / ((SS[i + 1] - SS[i]) || 1e-9); return E[i] + (E[i + 1] - E[i]) * Math.max(0, Math.min(1, t)); };
+      const sAt = (e) => { let lo = 0, hi = E.length - 1; while (hi - lo > 1) { const m = (lo + hi) >> 1; if (E[m] <= e) lo = m; else hi = m; } const t = (e - E[lo]) / ((E[hi] - E[lo]) || 1e-9); return SS[lo] + (SS[hi] - SS[lo]) * Math.max(0, Math.min(1, t)); };
+      for (const f of free) {
+        const s0 = f.am ? f.a : Math.min(f.b, f.a + start), s1 = f.bm ? f.b : Math.max(s0, f.b - start);
+        const e0 = eAt(s0), e1 = eAt(s1);
+        // a staggered row (xOffset, a fraction of the spacing) goes between the poles of the others, never on the edges
+        const frac = ((this._num(row.xOffset, 0) % 1) + 1) % 1;
+        let ss;
+        if (e1 - e0 < S * 0.4) ss = frac ? [] : [(s0 + s1) / 2];                      // a short stretch: one pole in its middle
+        else {
+          const n = Math.max(1, Math.ceil((e1 - e0) / S - 1e-6));
+          ss = [];
+          if (frac) for (let k = 0; k < n; k++) ss.push(sAt(e0 + (e1 - e0) * (k + frac) / n));
+          else for (let k = 0; k <= n; k++) ss.push(k === 0 ? s0 : k === n ? s1 : sAt(e0 + (e1 - e0) * k / n));
+        }
+        ss.forEach((s, k) => {
+          const d = g.xs.off(s, rg.poleY), kap = g.al.curvature(s);
+          const tight = Math.abs(kap) > 1 / Math.max(1, cfg.bendR);
+          if (cfg.outsideOnly && twoSided && tight && kap * -d > 0) return;           // pole on the centre side of the bend
+          // a pole at a free road end beside another road's pole (two roads meeting end to end) is left out; a junction mouth keeps its own
+          const edge = !frac && ((k === 0 && !f.am) || (k === ss.length - 1 && !f.bm));
+          if (edge && ss.length > 1) { const P = g.al.at(s, d); if (others.some(o => Math.hypot(o[0] - P.x, o[1] - P.y) < near)) return; }
+          auto.push({ id: this._genId('rpp'), s: +s.toFixed(2), rowId: row.id, moved: false, note: tight ? `bend R${Math.round(1 / Math.abs(kap))}` : '' });
+        });
       }
     }
     const kept = auto.filter(a => !moved.some(m => m.rowId === a.rowId && Math.abs(m.s - a.s) < S / 3));
@@ -641,7 +730,9 @@ const RoadPlan = {
   },
   async deleteRoad(id) {
     const r = this.road(id);
-    if (!r || !(await UI.confirm(`Delete road "${r.name}" and its poles?`, { danger: true, okText: 'Delete' }))) return;
+    const linked = typeof RoadSitePlan !== 'undefined' && RoadSitePlan.linked(r);
+    if (!r || !(await UI.confirm(`Delete road "${r.name}" and its poles?${linked ? ' The road stays on the site plan; it comes back here only if you add the unused roads again.' : ''}`, { danger: true, okText: 'Delete' }))) return;
+    if (linked) RoadSitePlan.forget(r);
     this.rp.roads = this.roads.filter(x => x.id !== id);
     this._selRoad = this.roads.length ? this.roads[0].id : null;
     this._selPole = null;
@@ -651,6 +742,7 @@ const RoadPlan = {
     const r = this.road(id);
     if (!r) return;
     if (r.poles.some(p => p.moved) && !(await UI.confirm('Reversing the road swaps its cross-section end for end and lays the poles out again — moved poles are reset. Continue?'))) return;
+    if (r.plan) r.plan.rev = !r.plan.rev;      // a road from the site plan keeps its direction through later syncs
     if (r.mode === 'ip') r.ip.reverse();
     else if (r.mode === 'kerbs') { r.kerbs.a.reverse(); r.kerbs.b.reverse(); }
     else if (r.poly) r.poly.reverse();
@@ -691,8 +783,9 @@ const RoadPlan = {
       roads.push({
         id: road.id, name: road.name,
         centreline: g.al.pts.map(q => [+q[0].toFixed(3), +q[1].toFixed(3)]),
-        sections: lay.secs.map(s => ({ type: s.type, name: s.name || RoadLight._secName(s, des), width: s.width, lanes: s.lanes, cls: s.cls, surface: s.surface, direction: s.direction, volume: this._num(s.volume, 0) })),
+        sections: lay.secs.map(s => RoadLight._secPayload(s, des)), driveSide: RoadLight._driveSide(des),
         kerbWidth: g.kerbWidth,
+        stretches: this._stretches(road).map(x => ({ s0: +x.s0.toFixed(2), s1: +x.s1.toFixed(2), sections: RoadLight._layout(x.des).secs.map(q => RoadLight._secPayload(q, x.des)) })),
         segments: this.segments(road, juncs).map(s => ({ id: s.id, name: s.name, s0: +s.s0.toFixed(2), s1: +s.s1.toFixed(2), kind: s.kind, radius: s.radius ? +s.radius.toFixed(1) : null })),
       });
       for (const p of road.poles || []) {
@@ -704,7 +797,7 @@ const RoadPlan = {
     }
     const conflictAreas = juncs.map(j => ({
       id: j.key, name: j.name, cls: this._junctionCls(j),
-      polygons: this._junctionRanges(j).map(r => this._kerbPolygon(this.road(r.road), r.s0, r.s1)),
+      polygons: this._junctionRanges(j).map(r => this._kerbPolygon(this.road(r.road), r.s0, r.s1)).concat(this._returnPolys(j)),
     }));
     const scene = typeof Road3D !== 'undefined' ? Road3D.requestParts() : {};
     return { standard: this._standard(), mf: this._mf(), photometry, roads, luminaires, conflictAreas, hoursPerYear: 4100, ...scene };
@@ -760,6 +853,8 @@ const RoadPlan = {
     return list.filter(d => d.imageId != null || PlanDxfImport.dataOf(d));
   },
   async useSitePlan() {
+    // the site plan's own drawings, with its layers (RoadSitePlan); the picker below is the fallback
+    if (typeof RoadSitePlan !== 'undefined' && await RoadSitePlan._bgFromPlan(true)) { this.fit(); UI.toast('Background: the site plan, with the layers it shows.', 'success', 4000); return; }
     const list = this._sitePlanDxfs();
     if (!list.length) { UI.toast('The site plan has no DXF drawing to use — import one there, or load a DXF here.', 'info', 4000); return; }
     let desc = list[0];
@@ -833,7 +928,8 @@ const RoadPlan = {
   _bgVisible() {
     const bg = this.rp.bg;
     if (!bg) return [];
-    const hidden = new Set(bg.layers.filter(l => l.hidden).map(l => l.name));
+    const hid = bg.fromPlan && typeof RoadSitePlan !== 'undefined' ? (l) => RoadSitePlan.layerHidden(bg, l) : (l) => l.hidden;
+    const hidden = new Set(bg.layers.filter(hid).map(l => l.name));
     return bg.ents.filter(e => !hidden.has(e.l));
   },
   // Chain the picked entity with connected pieces on its layer (endpoints ≤ 5 cm).
@@ -1034,7 +1130,7 @@ const RoadPlan = {
     const svg = document.getElementById('rp-svg');
     svg.focus({ preventScroll: true });
     const [wx, wy] = this._evWorld(e);
-    if (e.button === 1 || e.button === 2 || (this._tool === 'select' && e.shiftKey)) { this._startPan(e); return; }
+    if (e.button === 1 || e.button === 2) { this._startPan(e); return; }                 // Shift is "add a node" here, as in the plan (see CLAUDE.md › Editing nodes and areas)
     if (e.button !== 0) return;
     if (this._tool === 'draw' || this._tool === 'kerbs') {
       const p = this._snapPt(wx, wy);
@@ -1044,10 +1140,13 @@ const RoadPlan = {
       this.renderScreen(); return;
     }
     if (this._tool === 'kerbauto') { RoadKerbs.down(wx, wy, e); return; }
+    if (this._tool === 'reserveauto') { RoadReserve.downAt(wx, wy, e); return; }
     if (this._tool === 'pick') { this._pickAt(wx, wy, e); return; }
     if (this._tool === 'addpole') { this._addPoleAt(wx, wy); return; }
     if (this._tool === 'feed') { this._feedDown(wx, wy); return; }
     // select
+    if (typeof RoadReserve !== 'undefined' && RoadReserve.downSelect(wx, wy, e)) return;
+    if (this._step === 1 && e.shiftKey && this._insertIp(wx, wy)) return;              // Shift-click a leg adds an IP
     if (this._step === 1) {
       const vi = this._hitVertex(wx, wy);
       if (vi >= 0) {
@@ -1078,10 +1177,15 @@ const RoadPlan = {
     const [wx, wy] = this._evWorld(e);
     const d = this._drag;
     if (d && d.kind === 'pan') {
-      this._view.cx = d.cx - (e.clientX - d.x) / this._view.z;
-      this._view.cy = d.cy + (e.clientY - d.y) / this._view.z;
+      if (e.pointerType !== 'touch' && e.buttons === 0) { this._up(e); return; }    // the release was lost: never pan on a hover
+      // by the change since the last event, so a wheel zoom during the pan does not throw the view
+      this._view.cx -= (e.clientX - d.x) / this._view.z;
+      this._view.cy += (e.clientY - d.y) / this._view.z;
+      d.x = e.clientX; d.y = e.clientY;
       this.applyView(); return;
     }
+    if (d && d.kind === 'return') { RoadReserve.moveDrag(wx, wy); return; }
+    if (this._tool === 'reserveauto' && typeof RoadReserve !== 'undefined') RoadReserve.moveAt(wx, wy, e);
     if (d && d.kind === 'vertex') {
       const r = this.selRoad; const p = this._snapPt(wx, wy);
       r.ip[d.i].x = p[0]; r.ip[d.i].y = p[1]; d.moved = true;
@@ -1095,26 +1199,31 @@ const RoadPlan = {
       d.pole.moved = true; d.moved = true;
       this.renderScreen(); return;
     }
+    if (this._tool === 'kerbauto' && typeof RoadKerbs !== 'undefined') RoadKerbs.move(wx, wy, e);
     this._hover = { wx, wy, sx: e.offsetX, sy: e.offsetY };
     if (this._draft || this._tool === 'pick') this.renderScreen();
     this._readout();
   },
   _up(e) {
+    if (this._tool === 'reserveauto' && typeof RoadReserve !== 'undefined') RoadReserve.up();
     const d = this._drag;
     this._drag = null;
     if (!d) return;
     try { document.getElementById('rp-svg').releasePointerCapture(d.id); } catch (_) {}
     if (d.kind === 'vertex' && d.moved) { this._relayoutUnmoved(this.selRoad); this._commit(); this.render(); }
     if (d.kind === 'pole' && d.moved) { this._commit(); this.render(); }
+    if (d.kind === 'return') RoadReserve.upDrag();
   },
   _dbl(e) {
     if (this._tool === 'feed') { if (this._feedDraft && this._feedDraft.route.length) this._feedDraft.route.pop(); this._feedFinish(); return; }
     if (this._tool === 'draw' || this._tool === 'kerbs') { if (this._draft && this._draft.length > 1) this._draft.pop(); this.finishDraft(); return; }
-    if (this._step === 1 && this._tool === 'select') {
+    if (this._step === 1 && this._tool === 'select') { const [wx, wy] = this._evWorld(e); this._insertIp(wx, wy); }
+  },
+  // insert an IP on the leg of the selected road nearest the point (Shift-click, or double-click); true when one was added
+  _insertIp(wx, wy) {
+    {
       const r = this.selRoad;
-      if (!r || r.mode !== 'ip') return;
-      const [wx, wy] = this._evWorld(e);
-      // insert an IP on the leg nearest the click
+      if (!r || r.mode !== 'ip') return false;
       let best = -1, bd = 12 / this._view.z;
       for (let i = 0; i < r.ip.length - 1; i++) {
         const a = r.ip[i], b = r.ip[i + 1], dx = b.x - a.x, dy = b.y - a.y, L2 = dx * dx + dy * dy || 1e-12;
@@ -1122,8 +1231,9 @@ const RoadPlan = {
         const dd = Math.hypot(wx - a.x - dx * t, wy - a.y - dy * t);
         if (dd < bd) { bd = dd; best = i; }
       }
-      if (best >= 0) { r.ip.splice(best + 1, 0, { x: wx, y: wy }); this._relayoutUnmoved(r); this._commit(); this.render(); }
+      if (best >= 0) { r.ip.splice(best + 1, 0, { x: wx, y: wy }); this._relayoutUnmoved(r); this._commit(); this.render(); return true; }
     }
+    return false;
   },
   _deleteVertex(i) {
     const r = this.selRoad;
@@ -1136,6 +1246,7 @@ const RoadPlan = {
     if (!this._active || this._view3d) return false;   // the 3D view takes its keys on its canvas
     const k = e.key;
     if (this._tool === 'kerbauto' && typeof RoadKerbs !== 'undefined' && RoadKerbs.key(e)) return true;
+    if (this._tool === 'reserveauto' && typeof RoadReserve !== 'undefined' && RoadReserve.keyAt(e)) return true;
     if ((this._tool === 'draw' || this._tool === 'kerbs') && this._draft) {
       if (k === 'Enter') { this.finishDraft(); return true; }
       if (k === 'Escape') { this._draft = null; this.renderScreen(); return true; }
@@ -1154,6 +1265,7 @@ const RoadPlan = {
   // ─── Tools ───────────────────────────────────────────────────────────
   setTool(t) {
     if (t !== 'kerbauto' && typeof RoadKerbs !== 'undefined') RoadKerbs.close();
+    if (t !== 'reserveauto' && typeof RoadReserve !== 'undefined') RoadReserve.close();
     this._tool = t; this._draft = null; this._feedDraft = null; this._closePick();
     if (t !== 'kerbs' && t !== 'pick') this._kerbDraft = null;
     this.renderToolbar(); this.renderScreen(); this._hint();
@@ -1313,7 +1425,7 @@ const RoadPlan = {
   },
   setStep(n) {
     this._step = n;
-    if (n !== 1 && (this._tool === 'draw' || this._tool === 'kerbs' || this._tool === 'pick' || this._tool === 'kerbauto')) { this._tool = 'select'; if (typeof RoadKerbs !== 'undefined') RoadKerbs.close(); }
+    if (n !== 1 && (this._tool === 'draw' || this._tool === 'kerbs' || this._tool === 'pick' || this._tool === 'kerbauto' || this._tool === 'reserveauto')) { this._tool = 'select'; if (typeof RoadKerbs !== 'undefined') RoadKerbs.close(); if (typeof RoadReserve !== 'undefined') RoadReserve.close(); }
     if (n !== 2 && (this._tool === 'addpole' || this._tool === 'feed')) this._tool = 'select';
     this._feedDraft = null;
     this._draft = null; this._kerbDraft = null; this._closePick();
@@ -1328,10 +1440,11 @@ const RoadPlan = {
     else if (this._tool === 'draw') t = 'Click each intersection point; corners get a tangent arc at the bend radius. Double-click or Enter to finish, Backspace removes the last point, Esc cancels.';
     else if (this._tool === 'kerbs') t = this._kerbDraft ? 'Now trace the other kerb (Enter / double-click to finish).' : 'Trace the first kerb (Enter / double-click to finish), then the other one.';
     else if (this._tool === 'kerbauto') t = RoadKerbs.hint();
+    else if (this._tool === 'reserveauto') t = RoadReserve.hint();
     else if (this._tool === 'pick') t = this._kerbDraft ? 'Click the other kerb line.' : 'Click a DXF line: connected pieces on its layer are joined.';
     else if (this._tool === 'addpole') t = 'Click beside the road: the pole goes on the nearest pole line.';
     else if (this._tool === 'feed') t = this._feedDraft ? 'Click each bend of the feeder cable, then click the pole it feeds (or Enter to feed the nearest end). Backspace removes the last bend, Esc cancels.' : 'Click where the kiosk or minisub stands, then the bends of its feeder cable to the road.';
-    else if (this._step === 1 && this.selRoad && this.selRoad.mode === 'ip') t = 'Drag a square to move an intersection point · double-click a leg to add one · Alt-click to delete · scroll to zoom, Shift-drag or right-drag to pan, F fits.';
+    else if (this._step === 1 && this.selRoad && this.selRoad.mode === 'ip') t = 'Drag a square to move an intersection point · Shift-click a leg to add one · Alt-click a point to delete it · scroll to zoom, drag empty space or right-drag to pan, F fits.';
     else if (this._step === 2) t = 'Drag a pole along its kerb · Alt-drag moves it off the pole line · Delete removes the selected pole.';
     el.textContent = t;
     el.style.display = t ? '' : 'none';
@@ -1346,15 +1459,15 @@ const RoadPlan = {
       const badge = rr && !this._resStale ? (rr.pass === null ? '' : rr.pass ? '<span class="sl-badge ok">✓</span>' : '<span class="sl-badge bad">✗</span>') : '';
       return `<button class="sl-rail-item${r.id === this._selRoad ? ' active' : ''}" data-rp-road="${escHtml(r.id)}">
         <span class="sl-rail-row"><span class="sl-rail-name">${escHtml(r.name)}</span>${badge}</span>
-        <span class="sl-rail-meta">${this._fmt(g.al.length, 1)} m · ${des ? escHtml(des.name) : '<i>no design</i>'} · ${(r.poles || []).length} poles</span></button>`;
+        <span class="sl-rail-meta">${this._fmt(g.al.length, 1)} m · ${des ? escHtml(des.name) : '<i>no design</i>'} · ${(r.poles || []).length} poles${r.plan && !r.plan.unlinked ? ' · <span class="rp-sp-tag" title="Follows its road on the site plan">Plan</span>' : ''}</span></button>`;
     }).join('') || '<div class="sl-empty">No roads yet.</div>';
+    if (typeof RoadSitePlan !== 'undefined') { const sp = RoadSitePlan.railHtml(); if (sp) el.innerHTML = sp + el.innerHTML; }
     const bgEl = document.getElementById('rp-bg');
     const bg = this.rp.bg;
-    const fromPlan = this.planStreetsHtml ? this.planStreetsHtml() : '';
-    bgEl.innerHTML = fromPlan + (bg ? `<div class="rp-bg-name">${escHtml(bg.name)} <span class="sl-hint">${bg.ents.length} lines${bg.frame === 'plan' ? ' · placed as on the site plan' : (this.planStreets && this.planStreets().length ? ' · own coordinates (not lined up with plan streets)' : '')}</span></div>
+    bgEl.innerHTML = bg && bg.fromPlan && typeof RoadSitePlan !== 'undefined' ? RoadSitePlan.bgHtml(bg) : bg ? `<div class="rp-bg-name">${escHtml(bg.name)} <span class="sl-hint">${bg.ents.length} lines</span></div>
       <details class="rp-layers"><summary>Layers (${bg.layers.length})</summary>${bg.layers.map((l, i) => `<label class="rp-layer"><input type="checkbox" data-rp-layer="${i}"${l.hidden ? '' : ' checked'}><i style="background:${escHtml(l.color)}"></i>${escHtml(l.name)}</label>`).join('')}</details>
       <div class="rp-bg-actions"><button class="btn-small" data-rp="bg">Replace…</button>${this._sitePlanDxfs().length ? '<button class="btn-small" data-rp="bg-site" title="Use a drawing already on the site plan">From site plan…</button>' : ''}<button class="btn-small" data-rp="bg-remove">Remove</button></div>`
-      : `${this._sitePlanDxfs().length ? '<button class="btn-small btn-primary" data-rp="bg-site" title="Use a drawing already on the site plan">Use the site plan…</button> ' : ''}<button class="btn-small" data-rp="bg">Load a DXF…</button><div class="sl-hint">A site plan or survey in the background; pick road lines from it.</div>`);
+      : `${this._sitePlanDxfs().length ? '<button class="btn-small btn-primary" data-rp="bg-site" title="Use a drawing already on the site plan">Use the site plan…</button> ' : ''}<button class="btn-small" data-rp="bg">Load a DXF…</button><div class="sl-hint">A site plan or survey in the background; pick road lines from it.</div>`;
     const jEl = document.getElementById('rp-junctions');
     const juncs = this.junctions();
     const opts = this._standard() === 'SANS' ? RP_CONFLICT_SANS : RP_CONFLICT_EN;
@@ -1378,7 +1491,8 @@ const RoadPlan = {
     } else if (this._step === 1) {
       html = `${b('select', 'Select', 'Select a road, drag its intersection points')}${b('draw', 'Draw centreline', 'Click intersection points; corners are rounded with tangent arcs')}${b('kerbs', 'Trace kerbs', 'Trace both kerbs: the carriageway width follows them')}
         ${this.rp.bg ? b('pick', 'From DXF', 'Pick a centreline or two kerbs from the background drawing') : ''}
-        ${this.rp.bg && typeof RoadKerbs !== 'undefined' ? `<button class="btn-small${this._tool === 'kerbauto' ? ' active' : ''}" data-rp="rk-open" title="Find every road of a kerb layer by pairing its kerb lines, review them, then create the roads with their measured widths">Roads from kerbs</button>` : ''}
+        ${this.rp.bg && typeof RoadKerbs !== 'undefined' ? `<button class="btn-small${this._tool === 'kerbauto' ? ' active' : ''}" data-rp="rk-open" title="Click the kerb lines you want: the roads between them are made, with their measured widths">Roads from kerbs</button>` : ''}
+        ${this.rp.bg && typeof RoadReserve !== 'undefined' ? `<button class="btn-small${this._tool === 'reserveauto' ? ' active' : ''}" data-rp="rr-open" title="Click inside the road reserves of the drawing (the space between the erf boundaries, or one outline per road): the roads are made on their carriageway, with kerb returns">Roads from road reserve</button>` : ''}
         <span class="sl-sep"></span>
         <label class="rl-inline" title="Radius of the tangent arc at each corner of a drawn centreline (a corner can override it)">Bend radius<span class="sl-unit"><input type="number" min="0" step="5" class="sl-in-num" data-rp-road-f="radius" value="${escHtml(r ? (r.radius ?? 50) : 50)}"${r && r.mode === 'ip' ? '' : (r ? ' disabled' : '')}> m</span></label>
         <label class="rl-inline"><input type="checkbox" data-rp="snap"${this._snap ? ' checked' : ''}> Snap</label>`;
@@ -1387,7 +1501,9 @@ const RoadPlan = {
         <button class="btn-small" data-rp="delpole"${this._selPole ? '' : ' disabled'}>Delete pole</button>
         <span class="sl-sep"></span>
         <button class="btn-small" data-rp="relayout" title="Lay the selected road's poles out again from the rules">Lay out again</button>
-        <button class="btn-small" data-rp="relayout-all" title="Every road">All roads</button>`;
+        <button class="btn-small" data-rp="relayout-all" title="Every road">All roads</button>
+        <button class="btn-small" data-rp="optimise" title="The fewest poles that make every junction pass, then each road at the widest spacing that still passes">Lay out for the checks…</button>
+        ${typeof RoadSitePlan !== 'undefined' && RoadSitePlan._floors().length ? `<span class="sl-sep"></span><button class="btn-small" data-rp="sendpoles" title="Every pole of the Road plan as a Streetlight Pole on the site plan (moved, not doubled, when sent again), for the site plan's Street lighting layout to cable">Send poles to the site plan</button>` : ''}`;
     } else {
       const std = this._standard();
       html = `<span class="sl-view-toggle" role="group" aria-label="Quantity"><button class="${this._qty === 'E' ? 'active' : ''}" data-rp-qty="E">Illuminance</button><button class="${this._qty === 'L' ? 'active' : ''}" data-rp-qty="L">Luminance</button></span>
@@ -1449,6 +1565,7 @@ const RoadPlan = {
         const poly = this._kerbPolygon(this.road(rg.road), rg.s0, rg.s1);
         lines.push(`<path d="M${poly.map(p => p.join(' ')).join('L')}Z" class="rp-conflict" vector-effect="${ns}"/>`);
       }
+      for (const poly of this._returnPolys(j)) lines.push(`<path d="M${poly.map(p => p.join(' ')).join('L')}Z" class="rp-conflict" vector-effect="${ns}"/>`);
     }
     document.getElementById('rp-w-roads').innerHTML = out.join('');
     document.getElementById('rp-w-lines').innerHTML = lines.join('');
@@ -1457,7 +1574,7 @@ const RoadPlan = {
 
   _grids() {
     if (this._step !== 3 || !this._res || !this._res.roads || this._resStale) return [];
-    return this._res.roads.map(r => r.display).filter(Boolean);
+    return this._res.roads.flatMap(r => r.displays || (r.display ? [r.display] : []));
   },
   _vmax() {
     let m = 0;
@@ -1625,6 +1742,7 @@ const RoadPlan = {
       for (const mk of (this._trim || [])) { const [mx, my] = S(mk.pt[0], mk.pt[1]); out.push(`<circle cx="${mx.toFixed(1)}" cy="${my.toFixed(1)}" r="5" class="rp-mark"/>`); }
     }
     if (this._tool === 'kerbauto' && typeof RoadKerbs !== 'undefined') RoadKerbs.overlay(S, out);
+    if (typeof RoadReserve !== 'undefined') { if (this._tool === 'reserveauto') RoadReserve.overlay(S, out); else RoadReserve.overlayReturns(S, out); }
     // draft
     if (this._draft && this._draft.length) {
       const pts = this._draft.slice();
@@ -1683,6 +1801,7 @@ const RoadPlan = {
   },
   _panelShape() {
     if (this._tool === 'kerbauto' && typeof RoadKerbs !== 'undefined') return RoadKerbs.panelHtml();
+    if (this._tool === 'reserveauto' && typeof RoadReserve !== 'undefined') return RoadReserve.panelHtml();
     const r = this.selRoad;
     if (!r) return `<div class="sl-empty"><h3>Road plan</h3><p>Draw the road's centreline on the plan — straights joined by tangent arcs — or trace both kerbs, or load a DXF site plan and pick its centreline. The cross-section of a Lighting design is swept along it.</p><p><button class="btn-small btn-primary" data-rp-tool="draw">Draw centreline</button></p></div>`;
     const g = this.geom(r), des = this._design(r);
@@ -1699,17 +1818,19 @@ const RoadPlan = {
       <div class="sl-hint">A blank radius takes the road's bend radius; a radius that does not fit between two corners is reduced.</div>`;
     } else {
       const runs = g.al.ok ? this._shapeRuns(r, g) : [];
-      align = `<div class="sl-hint">${r.mode === 'kerbs' ? 'Centreline midway between the traced kerbs; the carriageway width follows them' + (g.kerbWidth ? ` (${this._fmt(Math.min(...g.kerbWidth.map(w => w[1])), 1)}–${this._fmt(Math.max(...g.kerbWidth.map(w => w[1])), 1)} m)` : '') : 'Centreline from the DXF'} · ${this._fmt(g.al.length, 1)} m</div>
+      align = `<div class="sl-hint">${r.mode === 'kerbs' ? (r.plan ? 'Centreline midway between the carriageway kerbs' : 'Centreline midway between the traced kerbs') + '; the carriageway width follows them' + (g.kerbWidth ? ` (${this._fmt(Math.min(...g.kerbWidth.map(w => w[1])), 1)}–${this._fmt(Math.max(...g.kerbWidth.map(w => w[1])), 1)} m)` : '') : r.plan ? 'Centreline from the site plan' : 'Centreline from the DXF'} · ${this._fmt(g.al.length, 1)} m</div>
         <table class="rl-table"><thead><tr><th>Shape</th><th>Chainage m</th><th>Radius m</th></tr></thead><tbody>${runs.map(x => `<tr><td>${x.kind === 'bend' ? 'Bend ' + x.dir : 'Straight'}</td><td class="sl-mono">${this._fmt(x.s0, 1)} – ${this._fmt(x.s1, 1)}</td><td class="sl-mono">${x.radius ? Math.round(x.radius) : '—'}</td></tr>`).join('')}</tbody></table>`;
     }
     const juncs = this.junctions().filter(j => j.main === r.id || j.side === r.id);
     return `<div class="rp-pane">
       <label class="rp-field">Name<input data-rp-road-f="name" value="${escHtml(r.name)}"></label>
-      <div class="rp-block"><div class="rp-block-h"><b>Cross-section</b><button class="btn-small" data-rp="edit-design"${des ? '' : ' disabled'}>Edit in Lighting design</button></div>
-        <label class="rp-field">From design<select data-rp-road-f="designId">${des ? '' : '<option value="" selected>— pick a design —</option>'}${opts}</select></label>
+      <div class="rp-block"><div class="rp-block-h"><b>Road section</b><button class="btn-small" data-rp="edit-design"${des ? '' : ' disabled'}>Edit in Lighting design</button></div>
+        <label class="rp-field">Lighting design<select data-rp-road-f="designId">${des ? '' : '<option value="" selected>— pick a design —</option>'}${opts}</select></label>
+        ${this._sectionFieldHtml(r)}
         ${des ? this._xsBar(des) : '<div class="sl-hint">Lighting design holds the strips, classes and luminaire rows.</div>'}
         <div class="sl-hint">Left to right looking up the chainage (the arrow on the road). Swept at right angles to the centreline.</div></div>
-      <div class="rp-block"><div class="rp-block-h"><b>Alignment</b><span class="sl-hint">${r.mode === 'ip' ? 'drawn' : r.mode === 'kerbs' ? 'traced kerbs' : 'DXF'}</span></div>${align}</div>
+      ${typeof RoadSitePlan !== 'undefined' ? RoadSitePlan.panelHtml(r) : ''}
+      <div class="rp-block"><div class="rp-block-h"><b>Alignment</b><span class="sl-hint">${r.plan ? (r.plan.unlinked ? 'from the site plan, unlinked' : 'site plan') : r.mode === 'ip' ? 'drawn' : r.mode === 'kerbs' ? 'traced kerbs' : 'DXF'}</span></div>${align}</div>
       <div class="rp-block"><div class="rp-block-h"><b>Junctions on this road</b></div>${juncs.length ? juncs.map(j => `<div class="rp-junc-line"><b>${j.name}</b> · ch ${this._fmt(j.main === r.id ? j.sMain : j.sSide, 1)} · ${escHtml((this.road(j.main === r.id ? j.side : j.main) || {}).name || '')} <span class="rl-cls">${escHtml(this._junctionCls(j))}</span></div>`).join('') : '<div class="sl-hint">None.</div>'}</div>
       <div class="rp-actions"><button class="btn-small" data-rp="reverse" title="Run the chainage the other way (the cross-section turns round)">Reverse direction</button><button class="btn-small" data-rp="delroad">Delete road</button>
         <button class="btn-small btn-primary" data-rp-step="2">Next: poles →</button></div></div>`;
@@ -1756,7 +1877,8 @@ const RoadPlan = {
         </div>
         <label class="rp-check"><input type="checkbox" data-rp-lay="outsideOnly"${cfg.outsideOnly ? ' checked' : ''}> On those bends, only the row on the outside of the bend</label>
         <div class="sl-hint">Mounting height, overhang, tilt and luminaire come from the design's rows (${escHtml(des.name)}: max passing spacing on a straight is found there with <i>Find max spacing</i>).</div>
-        <div class="rp-actions"><button class="btn-small btn-primary" data-rp="relayout">Lay out again</button><label class="rl-inline"><input type="checkbox" data-rp="keepmoved"${this._keepMoved === false ? '' : ' checked'}> Keep poles I moved</label></div></div>
+        <div class="rp-actions"><button class="btn-small btn-primary" data-rp="relayout">Lay out again</button><label class="rl-inline"><input type="checkbox" data-rp="keepmoved"${this._keepMoved === false ? '' : ' checked'}> Keep poles I moved</label></div>
+        <div class="rp-actions"><button class="btn-small" data-rp="optimise">Lay out for the checks…</button><span class="sl-hint">The fewest junction poles that pass, then the widest road spacing; suggests a pole height when the design's cannot pass.</span></div></div>
       ${selHtml}
       ${this._panelFeed(r)}
       <div class="rp-block"><div class="rp-block-h"><b>Pole schedule · ${poles.length}</b>${AppState.keepInSync !== false ? '' : '<button class="btn-small" data-rp="circuit" title="Create or update street-lighting circuits and their cables from the road plan">Circuits and cables…</button>'}</div>
@@ -1803,10 +1925,20 @@ const RoadPlan = {
     if (t.dataset.rpPole) { this._selPole = t.dataset.rpPole; this.renderPanel(); this.renderScreen(); return; }
     const r = this.selRoad;
     if (t.dataset.rp === 'rk-open') { RoadKerbs.open(); return; }
+    if (t.dataset.rp === 'rr-open') { RoadReserve.open(); return; }
+    if (t.dataset.rp && t.dataset.rp.startsWith('rs-') && typeof RoadReserve !== 'undefined' && RoadReserve.act(t)) return;
     if (t.dataset.rp && t.dataset.rp.startsWith('rk-') && typeof RoadKerbs !== 'undefined' && RoadKerbs.act(t)) return;
     switch (t.dataset.rp) {
       case 'bg': document.getElementById('rp-file').click(); break;
       case 'bg-site': this.useSitePlan(); break;
+      case 'sp-use': RoadSitePlan.useStreets(); break;
+      case 'sp-no': RoadSitePlan.notNow(); break;
+      case 'sp-unlink': if (r) RoadSitePlan.unlink(r); break;
+      case 'sp-relink': if (r) RoadSitePlan.relink(r); break;
+      case 'sp-go': if (r) RoadSitePlan.goToStreet(r); break;
+      case 'sp-lay-plan': RoadSitePlan.setLayerMode('plan'); break;
+      case 'sp-lay-own': RoadSitePlan.setLayerMode('own'); break;
+      case 'sp-bg-refresh': RoadSitePlan._bgFromPlan(true).then(ok => { if (!ok) UI.toast('The site plan has no DXF drawing to show.', 'info', 3500); }); break;
       case 'bg-remove': this.rp.bg = null; AppState.dirty = true; this.setTool('select'); this.render(); break;
       case 'undo': this.undo(); break;
       case 'redo': this.redo(); break;
@@ -1815,12 +1947,19 @@ const RoadPlan = {
       case 'reverse': if (r) this.reverseRoad(r.id); break;
       case 'edit-design': if (r) { RoadLight._selId = r.designId; StreetLight.setView('design'); } break;
       case 'relayout': if (r) { this.layoutRoad(r, this._keepMoved !== false); this._commit(); this.render(); } break;
+      case 'optimise': if (typeof RoadPlanOpt !== 'undefined') RoadPlanOpt.open(); break;
       case 'relayout-all': for (const x of this.roads) this.layoutRoad(x, this._keepMoved !== false); this._commit(); this.render(); break;
       case 'delpole': this.deletePole(); break;
       case 'pole-reset': if (r) { const p = r.poles.find(x => x.id === this._selPole); if (p) { delete p.over; delete p.d; this._commit(); this.render(); } } break;
       case 'circuit': this.openCircuitImport(); break;
+      case 'sendpoles': {
+        const o = typeof RoadSitePlan !== 'undefined' ? RoadSitePlan.sendPoles() : null;
+        if (!o) { UI.toast('Calibrate the site plan first: the poles go there in metres.', 'warn', 5000); break; }
+        const parts = [o.made && `${o.made} new`, o.moved && `${o.moved} moved`, o.gone && `${o.gone} removed`].filter(Boolean);
+        UI.toast(`Site plan poles: ${parts.join(', ') || 'already up to date'}.${o.kept ? ` ${o.kept} no longer in the Road plan kept: a cable is drawn to ${o.kept === 1 ? 'it' : 'them'}.` : ''}${o.skipped.length ? ` Not sent (not on the site plan): ${o.skipped.join(', ')}.` : ''} Cable them with Site plan › Detect › Street lighting layout.`, o.skipped.length ? 'warn' : 'success', 8000);
+        break;
+      }
       case 'feed-clear': this._feedClear(); break;
-      case 'take-streets': this.takePlanStreets(); break;
       case 'feed-plan': this.feedFromPlan(); break;
       case 'calc': this.recompute(0); break;
       case 'pick-cl': this._usePicked('cl'); break;
@@ -1839,6 +1978,7 @@ const RoadPlan = {
     if (this._view3d && Road3D.onChange(e)) return;
     const t = e.target, d = t.dataset;
     const r = this.selRoad;
+    if ((d.ropt !== undefined || d.rsedit !== undefined) && typeof RoadReserve !== 'undefined') { RoadReserve.change(t); return; }
     if (d.rpk !== undefined && typeof RoadKerbs !== 'undefined') { RoadKerbs.change(t); return; }
     if (d.rpCs) {
       // The road plan's own circuit settings (Keep workspaces in sync).
@@ -1867,6 +2007,7 @@ const RoadPlan = {
       const k = d.rpRoadF;
       if (k === 'name') { r.name = t.value || r.name; this._commit(); this.renderRail(); return; }
       if (k === 'designId') { r.designId = t.value; this._geo.delete(r.id); this.layoutRoad(r, true); this._commit(); this.render(); return; }
+      if (k === 'section') { this._setSection(r, t.value); this._geo.delete(r.id); this.layoutRoad(r, true); this._commit(); this.render(); return; }
       if (k === 'radius') { r.radius = Math.max(0, this._num(t.value, 50)); this._relayoutUnmoved(r); this._commit(); this.render(); return; }
     }
     if (d.rpIpr !== undefined) {

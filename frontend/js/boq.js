@@ -183,6 +183,22 @@ const BOQ = {
       add(this._cable(c.cable), StreetLight.cableLengthM(c), 'streetlight', 'Street lighting circuits');
       term(this._cable(c.cable), c.poles.length, 'streetlight', 'Street lighting circuits');
     }
+    // its breaker, how it is switched (one photocell + contactor per source, or a photocell per pole) and what each pole has
+    const slSwitched = new Set();
+    for (const c of slCircuits) {
+      const pr = typeof SL_PROTECTION !== 'undefined' ? SL_PROTECTION.find(x => x.id === c.protection) : null, m = pr && /^([BC])(\d+)$/.exec(pr.id);
+      const poles = c.system === '1ph' ? '1P' : '3P';
+      if (m && c.slAuto) add({ key: Rates.mcbKey(poles, +m[2], m[1]), desc: `MCB ${poles} ${m[2]} A curve ${m[1]}`, unit: 'ea', cat: 'prot' }, 1, 'streetlight', 'Street lighting circuits');
+      const n = c.poles.length;
+      if (c.switching === 'photocell') add({ key: 'SL-PHOTOCELL', desc: 'Photocell (on the luminaire)', unit: 'ea' }, n, 'streetlight', 'Street lighting circuits');
+      if (c.switching === 'contactor' && c.source) slSwitched.add(c.source.kind + ':' + c.source.id);
+      if (c.poleCutout) add({ key: 'SL-CUTOUT', desc: 'Pole cut-out with fuse', unit: 'ea' }, n, 'streetlight', 'Street lighting circuits');
+      if (c.poleEarth) add({ key: 'SL-EARTH', desc: 'Pole earth electrode', unit: 'ea' }, n, 'streetlight', 'Street lighting circuits');
+    }
+    if (slSwitched.size) {
+      add({ key: 'SL-PHOTOCELL-CTRL', desc: 'Photocell for street-light control', unit: 'ea' }, slSwitched.size, 'streetlight', 'Street lighting circuits');
+      add({ key: 'SL-CONTACTOR', desc: 'Street-light contactor', unit: 'ea' }, slSwitched.size, 'streetlight', 'Street lighting circuits');
+    }
     const slNoCable = inc.streetlight && typeof StreetLight !== 'undefined' && StreetLight.data ? StreetLight.circuits.filter(c => c.poles.length && !c.cable).length : 0;
     if (slNoCable) warnings.push(`${slNoCable} street-lighting circuit${slNoCable > 1 ? 's have' : ' has'} no cable chosen, so ${slNoCable > 1 ? 'they are' : 'it is'} not counted.`);
 

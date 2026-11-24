@@ -78,12 +78,9 @@
 #plan-canvas-bg { pointer-events: none; }
 #plan-canvas-fg { touch-action: none; }
 
-.plan-info {
-  position: absolute; top: 8px; left: 8px;
-  max-width: 340px; padding: 6px 10px;
-  background: rgba(255,255,255,0.85); color: #334155;
-  border-radius: 6px; font-size: 12px; pointer-events: none;
-}
+/* The hint lives in the status bar, off the drawing. */
+.plan-info { margin-left: auto; min-width: 0; flex: 0 1 auto; font-size: 12px; color: var(--text-secondary); pointer-events: none; }
+.plan-info[hidden] { display: none; }
 
 /* Floating Done/Cancel chip for multi-point drafts — touch completion (UX-1). */
 .plan-action-chip {
@@ -183,7 +180,6 @@ body.dark-mode .plan-stage {
   --plan-grid: rgba(120,120,160,0.22);
   --plan-label: #c0c0d0;
 }
-body.dark-mode .plan-info { background: rgba(30,30,46,0.85); color: #c0c0d0; }
 
 /* DXF manager (layers / blocks / conversion) */
 .dxfm-content { max-width: 980px; width: 94vw; max-height: 88vh; display: flex; flex-direction: column; }
@@ -292,7 +288,7 @@ body.dark-mode .plan-info { background: rgba(30,30,46,0.85); color: #c0c0d0; }
 .plan-chip:hover { background: var(--bg-tertiary); }
 .plan-chip[aria-expanded="true"] { border-color: var(--accent); background: var(--bg-tertiary); }
 .plan-chip.warn { background: #f59e0b; border-color: #d97706; color: #1f1300; font-weight: 600; }
-.plan-status-coords { margin-left: auto; font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.plan-status-coords { margin-left: 12px; font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
 .plan-pop {
   position: absolute; bottom: calc(100% + 6px); left: 90px; z-index: 50; width: 270px;
   display: flex; flex-direction: column; gap: 8px; padding: 12px;
@@ -386,8 +382,10 @@ body.dark-mode .plan-info { background: rgba(30,30,46,0.85); color: #c0c0d0; }
   border: 0; border-radius: 6px; background: var(--accent); color: #fff; font-weight: 600; font-size: 13px; cursor: pointer;
 }
 .plan-primary-btn:hover { background: var(--accent-hover); }
-.plan-ul, .plan-out { display: flex; flex-direction: column; gap: 8px; padding: 10px; }
-.plan-ul .plan-sec-head, .plan-out .plan-sec-head { padding: 8px 0 0; }
+.plan-ul, .plan-out, .plan-roads { display: flex; flex-direction: column; gap: 8px; padding: 10px; }
+.plan-ul .plan-sec-head, .plan-out .plan-sec-head, .plan-roads .plan-sec-head { padding: 8px 0 0; align-items: center; }
+.plan-roads small { font-size: 12px; color: var(--text-secondary); }
+.plan-roads .plan-pal-item small { padding-left: 16px; }
 .plan-ul-hint { margin: -2px 0 0; font-size: 11px; color: var(--text-secondary); line-height: 1.45; }
 .plan-card { display: flex; flex-direction: column; gap: 6px; padding: 10px; border: 1px solid var(--border-color); border-radius: 8px; }
 .plan-card.warn { border-color: #d97706; background: color-mix(in srgb, #f59e0b 10%, transparent); }
@@ -416,8 +414,11 @@ body.dark-mode .plan-info { background: rgba(30,30,46,0.85); color: #c0c0d0; }
 .plan-verdict { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 10px; background: var(--bg-tertiary); color: var(--text-secondary); }
 .plan-verdict.ok { background: #e8f5e9; color: #1b5e20; }
 .plan-verdict.bad { background: #fdecea; color: #a12622; }
+.plan-verdict.warn { background: #fff4e0; color: #8a5300; }
+.plan-verdicts { display: flex; flex-wrap: wrap; gap: 5px; margin: 2px 0 8px; }
 body.dark-mode .plan-verdict.ok { background: #1f3d26; color: #a5e3b0; }
 body.dark-mode .plan-verdict.bad { background: #47201f; color: #ffb4ae; }
+body.dark-mode .plan-verdict.warn { background: #3d2e12; color: #f5c776; }
 .plan-props-kicker { font-size: 11px; color: var(--text-secondary); }
 .plan-props-sec { margin: 12px 0 6px; padding-top: 10px; border-top: 1px solid var(--border-color); font-weight: 600; font-size: 13px; }
 .plan-props-note { display: block; margin: 0 0 6px; font-size: 11px; color: var(--text-secondary); }
@@ -554,3 +555,67 @@ body.dark-mode .plan-legend-line.target { border-color: #4a9eff; }
 /* Space poles evenly (bulk panel) */
 .plan-btn.active { background: color-mix(in srgb, var(--accent) 16%, var(--bg-primary)); border-color: var(--accent); font-weight: 600; }
 .plan-btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; margin-top: 8px; min-height: 40px; }
+
+.plan-attns { display: flex; flex-direction: column; gap: 4px; }
+.plan-attn { display: flex; gap: 8px; align-items: baseline; text-align: left; width: 100%; padding: 6px 8px; border: 1px solid var(--bg-tertiary); border-radius: 6px; background: var(--bg-primary); color: var(--text-primary); font-size: 12px; cursor: pointer; }
+.plan-attn:not([data-plan-go]) { cursor: default; }
+.plan-attn[data-plan-go]:hover { border-color: var(--accent); }
+.plan-attns small { color: var(--text-secondary); }
+.plan-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--text-secondary); }
+.plan-dot.bad { background: var(--danger, #d32f2f); }
+.plan-dot.warn { background: #e08a00; }
+
+.plan-empty { position: absolute; top: 8px; left: 8px; z-index: 60; max-width: 340px; padding: 12px 14px; background: var(--bg-primary); color: var(--text-primary); border: 1px solid var(--bg-tertiary); border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.18); font-size: 12.5px; }
+.plan-empty[hidden] { display: none; }
+.plan-empty-title { font-weight: 700; font-size: 14px; margin-bottom: 6px; }
+.plan-empty ol { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 8px; }
+.plan-empty li b { display: block; }
+.plan-empty li span { display: block; color: var(--text-secondary); margin-bottom: 4px; }
+
+.plan-pal-recent-label { cursor: default; font-weight: 600; color: var(--text-secondary); font-size: 12px; padding: 8px 10px 2px; }
+
+.plan-legend { position: absolute; left: 8px; bottom: 8px; z-index: 60; display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; padding: 6px 10px; background: var(--bg-primary); color: var(--text-primary); border: 1px solid var(--bg-tertiary); border-radius: 6px; font-size: 12px; }
+.plan-legend[hidden] { display: none; }
+/* The lighting key shares #plan-legend with the route colour legend above: keep it a column, the bar full width. */
+.plan-legend:has(.plan-legend-bar) { flex-direction: column; flex-wrap: nowrap; align-items: stretch; gap: 5px; left: auto; right: 10px; bottom: 10px; width: 250px; padding: 9px 11px; z-index: 30; }
+.plan-legend:has(.plan-legend-bar) .plan-legend-bar { width: 100%; }
+.plan-legend i { display: inline-block; width: 16px; height: 4px; border-radius: 2px; margin-right: 5px; vertical-align: middle; }
+.plan-tb-field[hidden] { display: none; }
+
+.plan-assign-preview { margin: 6px 0; }
+.plan-assign-actions { display: flex; gap: 6px; margin-top: 6px; }
+.plan-assign-actions .plan-circuit-btn { flex: 1; margin: 0; }
+
+/* DXF import › Area to import (plan-dxf-area.js) */
+.dxfi-content.dxfi-wide { width: min(1180px, 96vw); }
+.dxfi-areawrap { flex: 3 1 560px; min-width: 0; }
+.dxfi-note { font-size: 12px; color: var(--text-secondary); }
+.plan-props-check { display: flex; align-items: center; gap: 8px; font-size: 13px; margin: 2px 0 8px; }
+.dxfa { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.dxfa-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.dxfa-title { font-weight: 700; font-size: 13px; }
+.dxfa-modes { display: flex; border: 1px solid var(--border-color); border-radius: 6px; overflow: hidden; flex-wrap: wrap; }
+.dxfa-mode { min-height: 32px; padding: 0 12px; border: 0; border-left: 1px solid var(--border-color); background: var(--bg-primary); color: var(--text-primary); font: inherit; font-size: 12.5px; cursor: pointer; }
+.dxfa-mode:first-child { border-left: 0; }
+.dxfa-mode:hover { background: var(--bg-tertiary); }
+.dxfa-mode.on { background: var(--accent); color: #fff; font-weight: 600; }
+.dxfa-mode:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.dxfa-strays { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px; font-size: 12.5px; line-height: 1.45;
+  background: #fff7e6; color: #7a3d00; border: 1px solid #f5c26b; }
+body.dark-mode .dxfa-strays { background: #45300f; color: #ffd8a1; border-color: #8a5a17; }
+.dxfa-strays span { flex: 1; }
+.dxfa-link { border: 0; background: none; padding: 4px 2px; color: var(--accent); font: inherit; font-size: 12.5px; text-decoration: underline; cursor: pointer; white-space: nowrap; }
+.dxfa-stage { position: relative; height: 380px; border: 1px solid var(--border-color); border-radius: 8px; overflow: hidden; background: var(--bg-primary); }
+.dxfa-canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+.dxfa-zoom { position: absolute; top: 8px; right: 8px; display: flex; flex-direction: column; gap: 4px; }
+.dxfa-zoom button { width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; border: 1px solid var(--border-color); border-radius: 6px;
+  background: var(--bg-primary); color: var(--text-primary); font-size: 16px; cursor: pointer; }
+.dxfa-hint { font-size: 12px; color: var(--text-secondary); line-height: 1.45; }
+.dxfa-keep { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 8px; background: var(--bg-tertiary); }
+.dxfa-keep b { font-size: 13px; }
+.dxfa-keep small { font-size: 12px; color: var(--text-secondary); }
+.dxfa-bar { height: 6px; border-radius: 3px; background: var(--border-color); overflow: hidden; }
+.dxfa-bar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .15s; }
+@media (max-width: 640px) { .dxfa-stage { height: 280px; } }
+.dxfi-form [hidden], .dxfa [hidden] { display: none !important; }
+.dxfi-preview .dxfa-canvas { height: 100%; border: 0; border-radius: 0; }

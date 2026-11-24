@@ -292,6 +292,7 @@ const AppState = {
       _poleSeq: Math.max(sl._poleSeq || 1, maxP + 1),
       // Road lighting designs + the photometry they use (js/roadlight.js).
       roadDesigns: Array.isArray(sl.roadDesigns) ? sl.roadDesigns.filter(d => d && d.id) : [],
+      roadSections: Array.isArray(sl.roadSections) ? sl.roadSections.filter(x => x && /^rs_\d+$/.test(String(x.id)) && Array.isArray(x.strips)) : [],
       photometry: sl.photometry && typeof sl.photometry === 'object' ? sl.photometry : {},
       _rdSeq: this._maxSeq(sl.roadDesigns, /^rd_(\d+)$/, sl._rdSeq),
       _phSeq: this._maxSeq(Object.keys(sl.photometry || {}).map(id => ({ id })), /^ph_(\d+)$/, sl._phSeq),
@@ -353,6 +354,7 @@ const AppState = {
       circuits: [],             // [{id, name, source:{kind,id}, system, …, poles:[{id,name,parent,…}]}]
       _circSeq: 1, _poleSeq: 1,
       roadDesigns: [],          // lighting designs on a road cross-section (js/roadlight.js)
+      roadSections: [],         // the project's road sections: strips + services, shared by lighting designs, roads and Auto layout (js/roadsections.js)
       photometry: {},           // id → canonical Type C web (IES / LDT / generic)
       _rdSeq: 1, _phSeq: 1,
       roadPlan: this._defaultRoadPlan(),   // roads of any shape + their poles (js/roadplan.js)
@@ -383,7 +385,7 @@ const AppState = {
   // The per-floor drawing collections. Each floor owns its own copy of these;
   // the active floor's copies are mirrored onto planMarkup.<key> as the live
   // working set the engine + tools read/write directly (see switchFloor).
-  _PLAN_FLOOR_KEYS: ['plans', 'scale', 'cropBox', 'dxfs', 'elements', 'routes',
+  _PLAN_FLOOR_KEYS: ['plans', 'scale', 'cropBox', 'workArea', 'dxfs', 'elements', 'routes',
     'trenches', 'crossings', 'rooms', 'texts', 'measurements'],
 
   // A fresh, empty per-floor data bundle.
@@ -393,6 +395,7 @@ const AppState = {
                           //   pdfPages,imgW,imgH,opacity,visible,offX,offY,rotation,scaleAdj}
       scale: null,        // {p1,p2,realDist,pxDist,factor}  factor = metres per pixel
       cropBox: null,      // {x,y,w,h}
+      workArea: null,     // {points:[{x,y}…]} world polygon: detection / layout / take-off ignore the drawing outside it (PlanWorkArea)
       dxfs: [],           // imported DXF drawings (several per floor, e.g.
                           //   architectural + services): {id,imageId,name,count,
                           //   unitM,origin,bbox,k,offX,offY,rotation,scaleAdj,
@@ -1320,6 +1323,7 @@ const AppState = {
     this.interlockLogic = { nodes: [], links: [] };  // CB interlocking diagram
     this.zoom = 1;
     this.panX = 0;
+    if (typeof PlanEngine !== 'undefined') PlanEngine.viewSet = false;   // a new project is fitted on first open
     this.panY = 0;
     this.mode = MODE.SELECT;
     this.placingType = null;
@@ -1549,6 +1553,7 @@ const AppState = {
     const p = v.plan;
     if (p && ok(p.zoom) && p.zoom > 0 && ok(p.panX) && ok(p.panY) && typeof PlanEngine !== 'undefined') {
       PlanEngine.view = { zoom: p.zoom, panX: p.panX, panY: p.panY };
+      PlanEngine.viewSet = true;   // the saved view is the user's own
     }
     // Switch tab once the load has finished rendering (and tabs are re-evaluated).
     if (typeof v.workspace === 'string' && typeof window !== 'undefined' && typeof window.switchWorkspace === 'function') {
@@ -1861,7 +1866,7 @@ const AppState = {
       const normData = (d) => {
         d = d || {};
         return {
-          plans: arr(d.plans), scale: d.scale || null, cropBox: d.cropBox || null,
+          plans: arr(d.plans), scale: d.scale || null, cropBox: d.cropBox || null, workArea: d.workArea || null,
           dxfs: this._planDxfsFrom(d),
           elements: arr(d.elements), routes: arr(d.routes), trenches: arr(d.trenches),
           crossings: arr(d.crossings), rooms: arr(d.rooms), texts: arr(d.texts),
@@ -2064,6 +2069,17 @@ const AppState = {
     if (typeof StandardData !== 'undefined') {
       const items = data.libraryItems || (Array.isArray(data.customCables) ? { cables: data.customCables } : null);
       if (items) setTimeout(() => StandardData.reviewProjectLibraries(items, data.libraryOrigins), 600);
+    }
+    // Road sections: an older project's Auto layout sections (+ section lines) and lighting designs' own strips become road sections, once.
+    if (typeof RoadSections !== 'undefined') {
+      try {
+        const sl = this.reticulation && this.reticulation.streetLighting, st = this.planMarkup && this.planMarkup.settings;
+        RoadSections.migrate(st && st.layout, sl && sl.roadDesigns, null);
+        // the kiosk / manhole / trench sizes set once for the project (an older project: from what it already used)
+        const fl = this.planFloors ? this.planFloors() : null, hasTr = (fl && fl.length ? fl.map(f => f.data) : [this.planMarkup]).some(d => d && (d.trenches || []).length);
+        RoadSections.migrateStd(st && st.layout, hasTr);
+        RoadSections.migrateVerge();
+      } catch (e) { console.warn('Road sections: could not convert the older sections', e); }
     }
     this.dirty = false;
     // Re-baseline the reticulation workspace on the loaded project's data

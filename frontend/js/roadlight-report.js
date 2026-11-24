@@ -98,7 +98,7 @@ const RoadLightReport = {
       head: [['Strip', 'From - to (m)', 'Width', 'Lanes', 'Class', 'Surface', 'Traffic']],
       body: lay.secs.map(s => [t(s.name || RL._secName(s, des)), `${fmt(s.y0, 2)} - ${fmt(s.y1, 2)}`, `${fmt(s.width, 2)} m`,
         s.type === 'carriageway' ? s.lanes : '-', t(s.cls ? s.cls + (sans && RL_SANS_A[s.cls] ? ` (night traffic ${RL_SANS_BANDS[RL._hasMedian(des) ? 'median' : 'noMedian'][Math.round(RL._num(s.volume, 0))]})` : '') : 'not checked'), s.type === 'carriageway' ? s.surface : '-',
-        s.type === 'carriageway' ? (s.direction === 'reverse' ? 'towards' : 'away') : '-']),
+        s.type === 'carriageway' ? RL._trafficText(s) + (s.direction === 'two' && RL._num(s.lanes, 2) === 2 ? ` (drives on the ${RL._driveSide(des)})` : '') : '-']),
     });
 
     // ── Luminaires ──
@@ -113,6 +113,7 @@ const RoadLightReport = {
         ['Observer', sans
           ? '60 m before the field, 1.5 m eye height; L, Uo and TI from one observer a quarter of the carriageway width from the left-hand side, Ul with the observer in each lane (SANS 10098-1 Appendix D); TI with the 20 deg screening angle'
           : '60 m before the field, 1.5 m eye height, centre of each lane; TI with the 20 deg screening angle'],
+        ...(RL._hasTwoWay(des) ? [['Two-way carriageway', `One lane each way, traffic drives on the ${RL._driveSide(des)}: each lane is checked from its own direction of travel${sans ? ', with one quarter-width observer per direction (in its own lane); the worse result counts' : ''}`]] : []),
       ],
       columnStyles: { 0: { cellWidth: 45, fontStyle: 'bold' } },
     });

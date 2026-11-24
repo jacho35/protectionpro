@@ -346,3 +346,166 @@ def run_street_lighting(request):
         res["smallestCable"] = smallest_cable(c, candidates) if candidates else None
         out.append(res)
     return {"circuits": out}
+
+
+# ── Street lighting auto layout: strings of poles split into circuits ──────
+def _parents(st):
+    """Each pole's parent index: its own ``parent`` (an index, None for the
+    root), else the pole before it (a plain row)."""
+    poles = st.get("poles") or []
+    if any("parent" in p for p in poles):
+        return [p.get("parent") if isinstance(p.get("parent"), int) else None for p in poles]
+    return [None] + list(range(len(poles) - 1))
+
+
+def _str_circuit(base, st, members, cable, ia, par):
+    """The circuit made of the poles ``members`` (indices, root first, each
+    pole's parent among the earlier ones): the root's span is the feeder from
+    the source to it (``feederToM``)."""
+    poles = st.get("poles") or []
+    inside = set(members)
+    root = members[0]
+    out = []
+    for i in members:
+        p = poles[i]
+        span = _num(st["feederToM"][i], 0.0) if i == root else _num(p.get("spanM"), 0.0)
+        pi = par[i] if i != root and par[i] in inside else None
+        o = {"id": str(p.get("id")), "parent": (str(poles[pi].get("id")) if pi is not None else None), "spacingM": span}
+        if p.get("watts") not in (None, ""):
+            o["watts"] = p.get("watts")
+            o["pf"] = p.get("pf")
+        out.append(o)
+    c = dict(base)
+    c.update({"id": f"{st.get('id')}:{root}", "poles": out, "cable": cable,
+              "zeOhm": _num(st.get("zeOhm"), _num(base.get("zeOhm"), 0.0)),
+              "supplyVdPct": _num(st.get("supplyVdPct"), _num(base.get("supplyVdPct"), 0.0)),
+              "protection": {"iaA": ia}})
+    if st.get("singlePhase") in PHASES:
+        c["singlePhase"] = st["singlePhase"]
+    return c
+
+
+def _with_breaker(base, st, members, cable, breakers, par):
+    """Solve with the smallest breaker that carries the circuit current, is no
+    bigger than the cable's rating and still disconnects in time (Zs). Returns
+    (result, breaker) — breaker None when none passes (result: the last tried)."""
+    first = solve_circuit(_str_circuit(base, st, members, cable, 0.0, par))
+    if not breakers:
+        return first, None
+    ib = max(list(first["phaseA"].values()) + [first["neutralA"]])
+    rated = _num(cable.get("ratedA"), 0.0)
+    fits = [b for b in breakers if _num(b.get("inA"), 0.0) >= ib - 1e-9 and (rated <= 0 or _num(b.get("inA"), 0.0) <= rated + 1e-9)]
+    res = first
+    for b in fits:
+        res = solve_circuit(_str_circuit(base, st, members, cable, _num(b.get("iaA"), 0.0), par))
+        if _passes(res):
+            return res, b
+    if not fits:
+        res = dict(res, fails=list(res.get("fails") or []) + ["breaker"], **{"pass": False})
+    return res, None
+
+
+def split_strings(request):
+    """POST /api/analysis/street-lighting/split — the street lighting auto
+    layout. Each string is a TREE of poles fed from its source: ``poles[i]``
+    in order from the source (a parent always before its children), its
+    ``parent`` index (None for the root; absent everywhere = a plain row, each
+    pole fed from the one before), ``spanM`` = the cable from its parent,
+    ``feederToM[i]`` = the cable from the source to pole i along the tree.
+    A circuit starts at a root and takes, in that order, as many of the poles
+    below it as pass every check on the largest allowed cable (and
+    ``maxPoles``); then the smallest cable and breaker that pass for those.
+    Each pole left below them starts the next circuit, back to the same
+    source. A single pole that cannot pass is its own failing circuit.
+
+    ``request``: ``{base, cables, breakers: [{id, inA, iaA}], maxPoles,
+    strings: [{id, poles, feederToM, zeOhm, supplyVdPct, singlePhase}]}``.
+    Returns ``{strings: [{id, circuits: [{poles: [indices], from, to, cable,
+    breaker, pass, fails, worstVdPct, worstCumVdPct, maxZsOhm, totalKVA,
+    phaseA, cableLengthM}]}]}`` (``from`` = the root, ``to`` = one past the
+    last index, kept for a plain row)."""
+    base = dict(request.get("base") or {})
+    system = "1ph" if base.get("system") == "1ph" else "3ph"
+    cables = [k for k in request.get("cables") or []
+              if _num(k.get("r")) > 0 and (system == "1ph" or int(_num(k.get("cores"), 4)) >= 4)]
+    cables.sort(key=lambda k: -_num(k.get("r")))                 # smallest first
+    breakers = sorted(request.get("breakers") or [], key=lambda b: (_num(b.get("inA"), 0.0), -_num(b.get("iaA"), 0.0)))
+    cap = int(_num(request.get("maxPoles"), 0)) or MAX_SOLVER_POLES
+    out = []
+    for st in request.get("strings") or []:
+        poles = st.get("poles") or []
+        n = len(poles)
+        if len(st.get("feederToM") or []) < n:
+            out.append({"id": st.get("id"), "circuits": [], "error": "feederToM is shorter than the poles"})
+            continue
+        par = _parents(st)
+        kids = [[] for _ in range(n)]
+        for i, q in enumerate(par):
+            if q is not None and 0 <= q < n:
+                kids[q].append(i)
+        taken = [False] * n
+        roots = [i for i in range(n) if par[i] is None or not (0 <= par[i] < n)]
+        circuits = []
+
+        def below(r):
+            # the untaken poles under r, in the given order (parents first)
+            seen, stack = set(), [r]
+            while stack:
+                x = stack.pop()
+                if x in seen or taken[x]:
+                    continue
+                seen.add(x)
+                stack.extend(kids[x])
+            return sorted(seen)
+
+        while roots:
+            roots.sort()
+            r = roots.pop(0)
+            if taken[r]:
+                continue
+            sub = below(r)
+            if not cables:
+                circuits.append({"poles": sub, "from": r, "to": sub[-1] + 1, "cable": None, "breaker": None, "pass": False, "fails": ["cable"]})
+                for i in sub:
+                    taken[i] = True
+                continue
+            big = cables[-1]
+            best = 0
+            for k in range(1, min(len(sub), cap) + 1):
+                res, _ = _with_breaker(base, st, sub[:k], big, breakers, par)
+                if _passes(res):
+                    best = k
+                else:
+                    break
+            if not best:
+                res, br = _with_breaker(base, st, sub[:1], big, breakers, par)
+                members, chosen = sub[:1], (big, br, res)
+            else:
+                members = sub[:best]
+                chosen = None
+                for cab in cables:
+                    res, br = _with_breaker(base, st, members, cab, breakers, par)
+                    if _passes(res):
+                        chosen = (cab, br, res)
+                        break
+                if chosen is None:
+                    chosen = (big,) + _with_breaker(base, st, members, big, breakers, par)
+            for i in members:
+                taken[i] = True
+            circuits.append(_summary(members, chosen[0], chosen[1], chosen[2]))
+            inside = set(members)
+            roots.extend(i for x in members for i in kids[x] if i not in inside and not taken[i])
+        out.append({"id": st.get("id"), "circuits": circuits})
+    return {"strings": out}
+
+
+def _summary(members, cable, breaker, res):
+    return {
+        "poles": list(members), "from": members[0], "to": members[-1] + 1,
+        "cable": cable.get("name"), "breaker": (breaker or {}).get("id"),
+        "pass": bool(res.get("pass")), "fails": list(res.get("fails") or []),
+        "worstVdPct": res.get("worstVdPct"), "worstCumVdPct": res.get("worstCumVdPct"),
+        "maxZsOhm": res.get("maxZsOhm"), "totalKVA": res.get("totalKVA"), "phaseA": res.get("phaseA"),
+        "cableLengthM": res.get("cableLengthM"), "vdLimitPct": res.get("vdLimitPct"),
+    }
+

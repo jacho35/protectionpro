@@ -362,11 +362,21 @@ class Token(BaseModel):
     user: UserOut
 
 
+def _check_password_bytes(v: str) -> str:
+    # bcrypt only reads the first 72 bytes; refuse longer ones instead of silently
+    # treating two different passwords as the same.
+    if len(v.encode("utf-8")) > 72:
+        raise ValueError("Password is too long (72 bytes at most; some characters take several)")
+    return v
+
+
 class RegisterRequest(BaseModel):
     email: str
     password: str = Field(min_length=8)
     name: str = ""
     invite_code: Optional[str] = None
+
+    _pw = field_validator("password")(_check_password_bytes)
 
 
 class LoginRequest(BaseModel):
@@ -430,10 +440,14 @@ class ChangePasswordRequest(BaseModel):
     current_password: str
     new_password: str = Field(min_length=8)
 
+    _pw = field_validator("new_password")(_check_password_bytes)
+
 
 class ResetRequest(BaseModel):
     token: str
     password: str = Field(min_length=8)
+
+    _pw = field_validator("password")(_check_password_bytes)
 
 
 class ResetLinkRequest(BaseModel):
@@ -692,6 +706,18 @@ class ReticMotorStartRequest(BaseModel):
     motors: list[dict] = []
 
 
+class StreetLightingSplitRequest(BaseModel):
+    """Street lighting auto layout (analysis/street_lighting.py split_strings):
+    circuit defaults, allowed cables, breakers and the strings of poles."""
+    model_config = {"extra": "allow"}
+
+    base: dict = {}
+    cables: list[dict] = []
+    breakers: list[dict] = []
+    maxPoles: int = 0
+    strings: list[dict] = []
+
+
 class StreetLightingRequest(BaseModel):
     """Street lighting circuits (Reticulation › Street lighting). Each circuit
     is a dict of camelCase keys resolved by the frontend (cable R/X, luminaire
@@ -748,6 +774,11 @@ class RoomLightingRequest(BaseModel):
     detail: str = "full"
     room: dict = {}
     photometryId: str | None = None
+
+
+class ReluxReferenceRequest(BaseModel):
+    """A Relux 'Simulation Results' PDF, base64 encoded, to read per-room reference figures from."""
+    pdf: str
 
 
 class AreaLightingRequest(BaseModel):

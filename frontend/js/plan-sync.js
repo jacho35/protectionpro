@@ -233,6 +233,38 @@ const PlanSync = {
     return n;
   },
 
+  // ─── Unserviced erven ───
+  // An erf marked unserviced (a park, open space, a servitude) has no supply: no service cable, fibre duct or Demand row, and Auto layout
+  // keeps it only as an obstacle its cables go round. Marking one takes away what it already has: the service / fibre-duct routes ending on
+  // it and its Demand row. No undo snapshot (the caller takes one). → { routes, rows } removed.
+  isUnserviced(el) { return !!(el && el.type === 'erf' && el.props && el.props.unserviced); },
+  setUnserviced(els, on) {
+    const pm = AppState.planMarkup, R = AppState.reticulation, out = { routes: 0, rows: 0 };
+    for (const el of els) {
+      if (!el || el.type !== 'erf') continue;
+      el.props = el.props || {};
+      if (!on) { delete el.props.unserviced; continue; }
+      el.props.unserviced = true;
+      const before = pm.routes.length;
+      pm.routes = pm.routes.filter(r => !((r.fromId === el.id || r.toId === el.id) && (r.type === 'service' || r.type === 'fibreErf')));
+      out.routes += before - pm.routes.length;
+      if (el.reticId && R && Array.isArray(R.kiosks)) for (const k of R.kiosks) {
+        const i = (k.erfs || []).findIndex(e => e.id === el.reticId);
+        if (i >= 0) { k.erfs.splice(i, 1); out.rows++; break; }     // not Sync.markDeleted: that would take the drawn erf away too
+      }
+      el.reticId = null;
+    }
+    if (out.rows && typeof Retic !== 'undefined' && Retic.render) try { Retic.render(); } catch (e) { /* Demand not open */ }
+    return out;
+  },
+  unservicedToast(n, on, res) {
+    if (typeof UI === 'undefined') return;
+    const what = n === 1 ? 'erf' : n + ' erven';
+    if (!on) { UI.toast(`${n === 1 ? 'Erf' : n + ' erven'} marked serviced. Re-run Auto layout to serve ${n === 1 ? 'it' : 'them'}.`, 'info', 5000); return; }
+    const bits = []; if (res.routes) bits.push(`${res.routes} cable${res.routes === 1 ? '' : 's'} to ${n === 1 ? 'it' : 'them'} removed`); if (res.rows) bits.push(`${res.rows} Demand row${res.rows === 1 ? '' : 's'} removed`);
+    UI.toast(`${what[0].toUpperCase() + what.slice(1)} marked unserviced: no supply, Auto layout's cables go round ${n === 1 ? 'it' : 'them'}.${bits.length ? ' ' + bits.join(', ') + '.' : ''}`, 'success', 6000);
+  },
+
   // ─── Names and links, Demand ↔ plan ───
   // The Demand row a drawn minisub / kiosk / erf is linked to (by reticId only).
   _demandRow(el) {
@@ -254,9 +286,14 @@ const PlanSync = {
     if (!pm || !AppState.reticulation) return 0;
     let n = 0;
     const editing = (typeof PlanUI !== 'undefined' && PlanUI._nameBefore) ? PlanUI._nameBefore.id : null;
+    // Runs after every Demand edit: index the rows once (a lookup per element
+    // scanned every erf — elements × erven on a big project).
+    const R = AppState.reticulation, idx = { minisub: new Map(), kiosk: new Map(), erf: new Map() };
+    for (const m of R.minisubs || []) idx.minisub.set(m.id, m);
+    for (const k of R.kiosks || []) { idx.kiosk.set(k.id, k); for (const e of k.erfs || []) idx.erf.set(e.id, e); }
     for (const el of AppState.planAllElements()) {
-      if (el.id === editing) continue;     // don't overwrite a label while it is being typed
-      const row = this._demandRow(el);
+      if (el.id === editing || !el.reticId) continue;     // don't overwrite a label while it is being typed
+      const row = idx[el.type] ? idx[el.type].get(el.reticId) || null : this._demandRow(el);
       const want = row && this._demandRowName(el, row);
       if (want && el.name !== want) { el.name = want; n++; }
     }
@@ -405,6 +442,7 @@ const PlanSync = {
       const kioskEl = a.type === 'kiosk' ? a : b.type === 'kiosk' ? b : null;
       const erfEl = a.type === 'erf' ? a : b.type === 'erf' ? b : null;
       if (!kioskEl || !erfEl || !kioskEl.reticId) continue;
+      if (this.isUnserviced(erfEl)) continue;  // an unserviced erf has no Demand row
       if (erfSeen.has(erfEl.id)) continue;     // one service cable per erf counts
       erfSeen.add(erfEl.id);
       const krow = R.kiosks.find(k => k.id === kioskEl.reticId);

@@ -351,3 +351,34 @@ def test_a_cap_on_a_string_that_cannot_pass_anyway_says_the_limit_makes_it_worse
     assert not res["ok"]
     assert res["reasons"][0]["kind"] == "maxSizeWorse" and "makes it worse" in res["reasons"][0]["text"]
     assert any("largest cable allowed (185 mm²)" in r["text"] for r in res["reasons"])      # the string reason no longer says a bigger cable cannot help
+
+
+def test_head_breaker_is_never_smaller_than_the_ways_below_it():
+    """Finding: a short string's head breaker could be rated under the 80 A erf ways, so it tripped first on an erf fault."""
+    res = run_retic_lv_design(network([("K1", None, 100.0, 3)]))      # a string of about 11 A
+    assert res["heads"] and res["heads"][0]["device"]
+    for h in res["heads"]:
+        if h["device"]:
+            assert h["device"]["rating"] >= 80, (h["name"], h["device"]["rating"])
+
+
+def test_max_sizes_caps_the_number_of_different_cables():
+    req = network(net_72())
+    free = run_retic_lv_design(req)
+    n_free = free["taper"]["count"]
+    if n_free < 2:
+        pytest.skip("the taper used one size already")
+    req["options"] = {**req["options"], "maxSizes": 1}
+    capped = run_retic_lv_design(req)
+    assert capped["taper"]["count"] <= max(1, n_free - 1) and capped["taper"]["count"] < n_free
+    assert capped["failCount"] <= free["failCount"]
+
+
+def test_grouping_factor_derates_cables_sharing_a_trench():
+    req = network([("K1", None, 100.0, 10)])
+    free = run_retic_lv_design(req)
+    r0 = free["feeders"][0]["ratingA"]
+    req["options"] = {**req["options"], "groupCircuits": {"K1": 3}}
+    g = run_retic_lv_design(req)
+    f = g["feeders"][0]
+    assert f["groupFactor"] == 0.65 and f["ratingA"] <= round(r0 * 0.65 + 0.1, 1) or f["sizeMm2"] > free["feeders"][0]["sizeMm2"]

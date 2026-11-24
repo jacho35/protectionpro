@@ -247,6 +247,8 @@ const Workspaces = {
       b.innerHTML = (n ? `<span class="ws-step" aria-hidden="true">${n}</span>` : '') + escHtml(this.label(ws));
       if (switcher) switcher.appendChild(b);
     }
+    const netOv = document.getElementById('btn-network-overview');   // Output › Network overview… (Demand projects)
+    if (netOv) netOv.hidden = !vis.includes('retic');
     const chip = document.getElementById('project-type-chip');
     if (chip) {
       chip.textContent = this.TYPES[this.type()].label;

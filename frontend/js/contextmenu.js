@@ -11,11 +11,14 @@ const ContextMenu = {
   init() {
     this.el = document.getElementById('context-menu');
     // Dismiss on any outside mousedown (menu itself stops propagation)
-    document.addEventListener('mousedown', (e) => {
+    // pointerdown as well: touch and pen taps on the plan do not always produce a mousedown.
+    const outside = (e) => {
       if (this.el && this.el.style.display !== 'none' && !this.el.contains(e.target)) {
         this.close();
       }
-    });
+    };
+    document.addEventListener('mousedown', outside);
+    document.addEventListener('pointerdown', outside);
     this.el.addEventListener('mousedown', (e) => e.stopPropagation());
     // Never show the browser menu on our menu
     this.el.addEventListener('contextmenu', (e) => e.preventDefault());

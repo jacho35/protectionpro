@@ -82,10 +82,12 @@ const Setup = {
     if (!name) { err.textContent = 'Enter your name.'; return; }
     if (!email.includes('@')) { err.textContent = 'Enter a valid email address.'; return; }
     if (password.length < 8) { err.textContent = 'Password must be at least 8 characters.'; return; }
+    if (new TextEncoder().encode(password).length > 72) { err.textContent = 'Password is too long (72 bytes at most).'; return; }
     const btn = document.getElementById('setup-next');
     btn.disabled = true;
     try {
-      const res = await API.register({ email, password, name });
+      const key = document.getElementById('setup-key').value.trim();
+      const res = await API.register({ email, password, name, invite_code: key || undefined });
       API.setToken(res.access_token);
       Auth.user = res.user;
       Auth._applyAuthedState();
@@ -93,6 +95,7 @@ const Setup = {
       this._go(3);
     } catch (e) {
       err.textContent = e.message || 'Could not create the account.';
+      if (/setup key/i.test(err.textContent)) document.getElementById('setup-key-row').hidden = false;
       btn.disabled = false;
     }
   },

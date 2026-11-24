@@ -7,7 +7,8 @@ from sqlalchemy.orm import Session
 from pathlib import Path
 
 from .models.database import init_db, get_db, User
-from .routes import projects, analysis, reports, plan_images, plan_dxf, drawing_dxf, auth, user_libraries, shared_libraries, email_settings, admin, notifications, library_submissions, collab
+from .routes import projects, analysis, reports, plan_images, plan_dxf, drawing_dxf, auth, user_libraries, shared_libraries, email_settings, admin, notifications, library_submissions, collab, oauth
+from . import mcp_server
 from .auth import get_current_user
 
 app = FastAPI(
@@ -62,6 +63,11 @@ def health(db: Session = Depends(get_db)):
 _auth_gate = [Depends(get_current_user)]
 app.include_router(auth.router, prefix="/api")
 app.include_router(projects.router, prefix="/api")
+# MCP: discovery + OAuth endpoints and /mcp live at the root (clients find them by URL);
+# the consent screen's calls are ordinary signed-in API routes.
+app.include_router(oauth.public)
+app.include_router(mcp_server.router)
+app.include_router(oauth.app_router, prefix="/api")
 # WebSocket relay authenticates itself (first message), so it sits outside the bearer gate.
 app.include_router(collab.router, prefix="/api")
 app.include_router(reports.router, prefix="/api")

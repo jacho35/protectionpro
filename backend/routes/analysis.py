@@ -8,7 +8,7 @@ from typing import List, Optional
 from fastapi import APIRouter, HTTPException
 from fastapi.routing import APIRoute
 from pydantic import BaseModel
-from ..models.schemas import ProjectData, FaultResults, LoadFlowResults, ArcFlashResults, DCArcFlashResults, UnbalancedLoadFlowResults, AdmdRequest, AdmdResults, ReticEarthRequest, ReticLvDesignRequest, ReticMotorStartRequest, StreetLightingRequest, RoadLightingRequest, RoadPlanRequest, RoomLightingRequest, AreaLightingRequest, SportsLightingRequest, ObtrusiveLightRequest, EmergencyLightingRequest, PhotometryFileRequest, GenericOpticRequest, LightningRiskRequest, LightningRiskResult, RacewayRequest, RacewayResults, DCLoadFlowResults, DCShortCircuitResults, LoadFlowCasesRequest, LoadFlowCasesResults, VoltageStabilityRequest, VoltageStabilityResults, ContingencyRequest, ContingencyResults, TimeSeriesLoadFlowRequest, TimeSeriesLoadFlowResults, HarmonicsResults, FrequencyScanRequest, FrequencyScanResults, BatterySizingRequest, BatterySizingResults, OPFRequest, OPFResults, ReliabilityResults, FilterSizingRequest, FilterSizingResults, CapacitorPlacementRequest, CapacitorPlacementResults, FlickerAnalysisRequest, FlickerAnalysisResults, HostingCapacityRequest, HostingCapacityResults, OpenConductorResults, TwoConductorOpenResults, SimultaneousFaultResults, WennerTestRequest, WennerTestResults
+from ..models.schemas import ProjectData, FaultResults, LoadFlowResults, ArcFlashResults, DCArcFlashResults, UnbalancedLoadFlowResults, AdmdRequest, AdmdResults, ReticEarthRequest, ReticLvDesignRequest, ReticMotorStartRequest, StreetLightingRequest, StreetLightingSplitRequest, RoadLightingRequest, RoadPlanRequest, RoomLightingRequest, ReluxReferenceRequest, AreaLightingRequest, SportsLightingRequest, ObtrusiveLightRequest, EmergencyLightingRequest, PhotometryFileRequest, GenericOpticRequest, LightningRiskRequest, LightningRiskResult, RacewayRequest, RacewayResults, DCLoadFlowResults, DCShortCircuitResults, LoadFlowCasesRequest, LoadFlowCasesResults, VoltageStabilityRequest, VoltageStabilityResults, ContingencyRequest, ContingencyResults, TimeSeriesLoadFlowRequest, TimeSeriesLoadFlowResults, HarmonicsResults, FrequencyScanRequest, FrequencyScanResults, BatterySizingRequest, BatterySizingResults, OPFRequest, OPFResults, ReliabilityResults, FilterSizingRequest, FilterSizingResults, CapacitorPlacementRequest, CapacitorPlacementResults, FlickerAnalysisRequest, FlickerAnalysisResults, HostingCapacityRequest, HostingCapacityResults, OpenConductorResults, TwoConductorOpenResults, SimultaneousFaultResults, WennerTestRequest, WennerTestResults
 from ..analysis.loadflow_cases import run_loadflow_cases
 from ..analysis.voltage_stability import run_voltage_stability
 from ..analysis.contingency import run_contingency
@@ -25,11 +25,15 @@ from ..analysis.hosting_capacity import run_hosting_capacity
 from ..analysis.admd import run_admd
 from ..analysis.retic_earth import run_retic_earth_check
 from ..analysis.retic_lv_design import run_retic_lv_design
+from ..analysis.retic_mv_design import design_mv
+from ..analysis.building_circuits import design_circuits
+from ..analysis.fixes import propose_fixes, fix_all
 from ..analysis.retic_motor_start import run_retic_motor_start
-from ..analysis.street_lighting import run_street_lighting
+from ..analysis.street_lighting import run_street_lighting, split_strings
 from ..analysis.road_lighting import run_road_lighting
-from ..analysis.road_plan import run_road_plan
+from ..analysis.road_plan import conflict_contributions, run_road_plan
 from ..analysis.room_lighting import run_room_lighting, suggest_layout
+from ..analysis.relux_reference import parse_relux_pdf
 from ..analysis.area_lighting import run_area_lighting, suggest_area_layout
 from ..analysis.emergency_lighting import run_emergency_lighting
 from ..analysis.sports_lighting import run_sports_lighting, optimise_aiming
@@ -571,6 +575,90 @@ def db_cable_size(data: DbCableSizeRequest):
         raise HTTPException(status_code=500, detail=f"DB cable sizing error: {e}")
 
 
+class BuildingCircuitsRequest(BaseModel):
+    """Building circuiting (analysis/building_circuits.py): placed boards, rooms, devices, doors and drawn
+    containment in metres, the project's circuit rules and the route mode."""
+    model_config = {"extra": "allow"}
+
+    mode: str = "walls"
+    mode_by_group: dict = {}
+    mode_overrides: dict = {}
+    boards: List[dict] = []
+    rooms: List[dict] = []
+    devices: List[dict] = []
+    doors: List[dict] = []
+    containment: List[List[List[float]]] = []
+    rules: dict = {}
+
+
+@router.post("/building-circuits")
+def building_circuits(data: BuildingCircuitsRequest):
+    """Rooms to the boards already placed, devices to circuits under the project rules, and a cable route per
+    circuit (containment / along walls / direct in ceiling). Proposes only; nothing is written."""
+    try:
+        return design_circuits(data.model_dump())
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Building circuiting error: {e}")
+
+
+class FixesRequest(DbCircuitCheckRequest):
+    """The project plus the issues to fix (kinds db_way / ladder, see analysis/fixes.py)."""
+    issues: List[dict] = []
+    approved_keys: List[str] = []
+
+
+@router.post("/fixes")
+def fixes(data: FixesRequest):
+    """A proposed fix per issue with the check result before and after (nothing is applied)."""
+    try:
+        return {"fixes": propose_fixes(data, data.issues)}
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Fixes error: {e}")
+
+
+@router.post("/fix-all")
+def fix_all_route(data: FixesRequest):
+    """Every available fix checked together on a copy. Hand-entered values are listed under needs_approval and
+    join the automatic set only when their issue key is in approved_keys."""
+    try:
+        return fix_all(data, data.issues, data.approved_keys)
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Fix all error: {e}")
+
+
+class ReticMvDesignRequest(BaseModel):
+    """MV network between the mini-subs (analysis/retic_mv_design.py): supply, mini-subs with kVA, street
+    centrelines, the cable ladder as plain numbers, the limits."""
+    model_config = {"extra": "allow"}
+
+    topology: str = "radial"
+    voltage_kv: float = 11.0
+    supply: dict
+    subs: List[dict] = []
+    network: List[List[List[float]]] = []
+    cables: List[dict] = []
+    limits: dict = {}
+    laying: dict = {}
+
+
+@router.post("/retic-mv-design")
+def retic_mv_design(data: ReticMvDesignRequest):
+    """Radial or ring MV cable between the mini-subs, the smallest cable that passes volt drop, fault level and
+    cable rating (a ring with every single section out in turn)."""
+    try:
+        return design_mv(data.model_dump())
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"MV design error: {e}")
+
+
 @router.post("/motor-starting")
 def motor_starting(data: ProjectData):
     """Run motor starting voltage dip analysis."""
@@ -751,6 +839,18 @@ def street_lighting(data: StreetLightingRequest):
         raise HTTPException(status_code=500, detail=f"Street lighting error: {e}")
 
 
+@router.post("/street-lighting/split")
+def street_lighting_split(data: StreetLightingSplitRequest):
+    """Street lighting auto layout: each row of poles from its source split
+    into as many circuits as the checks need, each on the smallest cable and
+    breaker that pass (same engine as /street-lighting)."""
+    try:
+        return split_strings(data.model_dump())
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Street lighting layout error: {e}")
+
+
 @router.post("/road-lighting")
 def road_lighting(data: RoadLightingRequest):
     """Road lighting on a cross-section (EN 13201-3): illuminance, luminance
@@ -774,6 +874,20 @@ def road_plan(data: RoadPlanRequest):
     illuminance / luminance display grids for the plan heatmap."""
     try:
         return run_road_plan(data.model_dump())
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Road plan error: {e}")
+
+
+@router.post("/road-plan/contributions")
+def road_plan_contributions(data: RoadPlanRequest):
+    """Road plan › Lay out for the checks: each junction conflict area's grid, class requirements, the illuminance of
+    the fixed luminaires and what each candidate pole gives every grid point (illuminance adds up, so the client
+    scores any set of candidates by summing)."""
+    try:
+        return conflict_contributions(data.model_dump())
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
@@ -805,6 +919,23 @@ def room_lighting(data: RoomLightingRequest):
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Room lighting error: {e}")
+
+
+@router.post("/relux-reference")
+def relux_reference(data: ReluxReferenceRequest):
+    """Per-room reference figures (Em, Emin, Uo, walls, ceiling, RUG, fittings) read from a Relux
+    results PDF. For comparison only: nothing here feeds the calculation."""
+    import base64
+    try:
+        raw = base64.b64decode(data.pdf, validate=False)
+        if len(raw) > 60 * 1024 * 1024:
+            raise ValueError("PDF is larger than 60 MB")
+        return parse_relux_pdf(raw)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=400, detail=f"Relux PDF could not be read: {e}")
 
 
 @router.post("/room-lighting/layout")

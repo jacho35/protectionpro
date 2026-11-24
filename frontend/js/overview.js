@@ -220,6 +220,7 @@ const Overview = {
         <div class="ov-acts">
           <button type="button" class="btn-primary" data-ov="calc" title="${escHtml(this._calcTitle(type))}">Calculate all</button>
           ${list.length ? `<button type="button" class="btn-small" data-ov="issues">Show issues</button>` : ''}
+          ${type === 'retic' && typeof ReticDiagram !== 'undefined' ? '<button type="button" class="btn-small" data-ov="netov" title="Block diagram of the MV, LV strings and kiosks, street-light circuits and the fibre network">Network overview</button>' : ''}
           <button type="button" class="btn-small" data-ov="report">Report</button>
         </div>
       </section>
@@ -270,7 +271,7 @@ const Overview = {
     const extra = rows.length - shown.length;
     return `<div class="ov-tscroll"><table class="ov-table"><thead><tr>${cols.map(c => `<th${numHtml(c.num)}>${escHtml(c.label)}</th>`).join('')}</tr></thead><tbody>`
       + shown.map(r => `<tr class="ov-r ov-st-${escHtml(r.status)}"${r.go ? ` data-ov-go="${escHtml(r.go)}"` : ''}${r.run ? ` data-ov-run="${escHtml(r.run)}"` : ''} tabindex="0">`
-        + r.cells.map((c, i) => `<td${numHtml(cols[i] && cols[i].num)}>${c}</td>`).join('') + '</tr>').join('')
+        + r.cells.map((c, i) => `<td${numHtml(cols[i] && cols[i].num)} data-l="${escHtml(cols[i] ? cols[i].label : '')}">${c}</td>`).join('') + '</tr>').join('')
       + `</tbody></table></div>${extra > 0 && more ? `<button type="button" class="ov-link ov-more" data-ov-tab="${escHtml(more)}">+${extra} more</button>` : ''}`;
   },
   _kv(pairs) {
@@ -455,6 +456,7 @@ const Overview = {
   },
   async _act(a) {
     if (a === 'issues') { if (typeof Issues !== 'undefined') Issues.open(); return; }
+    if (a === 'netov') { if (typeof ReticDiagram !== 'undefined') ReticDiagram.open(); return; }
     if (a === 'rerun') { if (typeof StaleResults !== 'undefined') await StaleResults.rerun(); this.render(); return; }
     if (a === 'report') {
       const type = Workspaces.type();

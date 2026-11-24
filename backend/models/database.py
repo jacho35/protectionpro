@@ -310,6 +310,54 @@ class DeviceAuth(Base):
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
+class OAuthClient(Base):
+    """An MCP client that registered itself (RFC 7591 dynamic client registration).
+    Public client: no secret, PKCE protects the code exchange."""
+    __tablename__ = "oauth_clients"
+
+    client_id = Column(String(64), primary_key=True)
+    client_name = Column(String(80), default="")
+    redirect_uris = Column(Text, default="[]")          # JSON list
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+class OAuthAuthRequest(Base):
+    """One authorization request: waits for the person to approve in the app, then
+    carries the one-time code (stored as a SHA-256) until the client swaps it."""
+    __tablename__ = "oauth_requests_codes"
+
+    id = Column(String(64), primary_key=True)           # the consent id in /#mcp-consent=<id>
+    client_id = Column(String(64), ForeignKey("oauth_clients.client_id", ondelete="CASCADE"), nullable=False)
+    redirect_uri = Column(String(500), nullable=False)
+    state = Column(String(500), default="")
+    code_challenge = Column(String(128), nullable=False)
+    scope_requested = Column(String(80), default="")
+    scope = Column(String(80), default="")              # what was approved
+    status = Column(String(12), default="pending")      # pending | approved | denied | used
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True)
+    code_hash = Column(String(64), nullable=True, index=True)
+    grant_id = Column(Integer, nullable=True)            # grant minted from this code (reuse => revoke)
+    expires_at = Column(DateTime, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+class OAuthGrant(Base):
+    """A client's standing access for one user. Holds the current refresh token (hashed)
+    and the one before it, so presenting a rotated-out token is detected as theft."""
+    __tablename__ = "oauth_refresh_tokens"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    client_id = Column(String(64), ForeignKey("oauth_clients.client_id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    scope = Column(String(80), default="mcp:read")
+    refresh_hash = Column(String(64), unique=True, nullable=False, index=True)
+    prev_hash = Column(String(64), nullable=True, index=True)
+    expires_at = Column(DateTime, nullable=False)
+    revoked = Column(Boolean, default=False)
+    last_used_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
 class Notification(Base):
     """One in-app notification for one user (the notifications center).
 

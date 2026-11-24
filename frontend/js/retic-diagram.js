@@ -18,15 +18,28 @@
  * Colours are literal hex from _palette(), not CSS custom properties:
  * Project._rasterizeSVG only resolves `var(--x, fallback)` forms, so bare
  * var() references would rasterize colourless into the PNG/PDF exports.
+ *
+ * The dialog is the Network overview: an Electrical tab (this diagram) and a
+ * Fibre tab (FibreDiagram, fibre-diagram.js). On the Electrical tab, Detail
+ * picks Kiosks (every kiosk, each LV string — a kiosk fed straight from the
+ * minisub and everything below it — on a band with its breaker, kiosk and
+ * erf count) or Strings (one box per string). Street-light circuits hang off
+ * the kiosk or minisub that feeds them. A box is outlined red when it fails a
+ * check (volt drop over Max Feeder VD, an earth fault that does not clear)
+ * and amber when its volt drop is within 10 % of the limit; click a box to go
+ * to it.
  */
 
 const ReticDiagram = {
   _bound: false,
   _zoom: 1,
   // View options, kept for the session: what the boxes show, and on a phone
-  // whether the fault view is a list or the diagram.
-  view: { mode: 'vd', show3: true, showE: true, list: true },
+  // whether the fault view is a list or the diagram; the tab of the Network
+  // overview and the Electrical tab's detail (kiosks / strings).
+  view: { mode: 'vd', show3: true, showE: true, list: true, tab: 'electrical', detail: 'kiosks' },
   _size: { w: 0, h: 0 },
+  BAND_HEAD: 26,    // room above each LV string's first kiosk for its band header
+  NEAR: 0.9,        // "near the limit" = at or over 90 % of it
 
   // Geometry (SVG user units, which are CSS px at zoom 1)
   NODE_W: 196,
@@ -48,10 +61,18 @@ const ReticDiagram = {
     this.autoZoom();
   },
 
+  // Open on a given tab ('electrical' / 'fibre').
+  openTab(tab) {
+    if (tab === 'fibre' || tab === 'electrical') this.view.tab = tab;
+    this.open();
+  },
+
   close() {
     const modal = document.getElementById('retic-diagram-modal');
     if (modal) modal.style.display = 'none';
   },
+
+  _isFibre() { return this.view.tab === 'fibre'; },
 
   isOpen() {
     const modal = document.getElementById('retic-diagram-modal');
@@ -67,10 +88,15 @@ const ReticDiagram = {
     this._bound = true;
     modal.addEventListener('click', (e) => {
       if (e.target === modal) { this.close(); return; }   // backdrop
+      const go = e.target.closest('#retic-diagram-canvas [data-go]');
+      if (go) { this._go(go.getAttribute('data-go')); return; }
       const btn = e.target.closest('[data-rdg]');
       if (!btn) return;
       const a = btn.dataset.rdg;
       if (a === 'close') this.close();
+      else if (a === 'tab-electrical' || a === 'tab-fibre') { this.view.tab = a.slice(4); this._rerender(); this.autoZoom(); }
+      else if (a === 'detail-kiosks' || a === 'detail-strings') { this.view.detail = a.slice(7); this._rerender(); }
+      else if (a === 'pdf') this.exportPDF();
       else if (a === 'zoom-in') this.zoom(1.25);
       else if (a === 'zoom-out') this.zoom(1 / 1.25);
       else if (a === 'fit') this.fit();
@@ -86,6 +112,21 @@ const ReticDiagram = {
       }
       else if (a === 'view-list' || a === 'view-diagram') { this.view.list = a === 'view-list'; this._rerender(); }
     });
+    // Keyboard: a box is focusable; Enter / Space goes to it.
+    modal.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      const go = e.target.closest && e.target.closest('#retic-diagram-canvas [data-go]');
+      if (go) { e.preventDefault(); this._go(go.getAttribute('data-go')); }
+    });
+  },
+
+  // Go to a box's item (Demand row, street-light circuit, plan element), with
+  // a ← Back chip to the workspace the dialog was opened from.
+  _go(addr) {
+    if (!addr || typeof Links === 'undefined') return;
+    const ws = (typeof window !== 'undefined' && window.activeWorkspace) || 'retic';
+    this.close();
+    Links.go(addr, 'tab:' + ws);
   },
 
   // ─── Topology ───
@@ -332,7 +373,125 @@ const ReticDiagram = {
       };
       ring = plan.ringLegs(used, nodeFor);
     }
-    return { minisubs, kiosks, byId, msById, msIds, rmuById, mvInfo, ring, roots, children };
+    // The MV point of supply above every top minisub that has no supply RMU
+    // drawn: one 'mv:supply' root, each minisub's own MV cable on its leg.
+    const topMs = roots.filter(id => msIds.has(id));
+    if (topMs.length) {
+      children['mv:supply'] = topMs;
+      for (const id of topMs) {
+        const m = msById[id];
+        if (!mvInfo[id] && (m.mvCable || m.mvLength)) mvInfo[id] = { cable: m.mvCable || '', len: m.mvLength || 0 };
+      }
+      roots.splice(0, roots.length, 'mv:supply', ...roots.filter(id => !msIds.has(id)));
+    }
+    // Street-light circuits hang off the kiosk / minisub that feeds them
+    // ('sl:<circuit id>' leaves, after that node's own kiosks).
+    const slById = {};
+    for (const c of this._slCircuits()) {
+      const s = c && c.source && c.source.id;
+      if (!s || !(byId[s] || msById[s])) continue;
+      const id = 'sl:' + c.id;
+      slById[id] = c;
+      children[id] = [];
+      children[s].push(id);
+    }
+    return { minisubs, kiosks, byId, msById, msIds, rmuById, mvInfo, ring, roots, children, slById };
+  },
+
+  _slCircuits() {
+    const sl = AppState.reticulation && AppState.reticulation.streetLighting;
+    return sl && Array.isArray(sl.circuits) ? sl.circuits : [];
+  },
+
+  // ─── LV strings ───
+  // A string = a kiosk fed straight from a minisub and every kiosk below it,
+  // with the street-light circuits those kiosks feed. Pure over the tree
+  // (cableMm2 = name → mm², for the taper check). Numbered per minisub.
+  strings(tree, cableMm2) {
+    const mm2 = cableMm2 || ((n) => this._cableMm2(n));
+    const out = [];
+    for (const ms of tree.minisubs) {
+      let n = 0;
+      for (const h of tree.children[ms.id] || []) {
+        if (!tree.byId[h]) continue;
+        const ids = [], seen = new Set();
+        const walk = (id) => {
+          if (seen.has(id)) return;
+          seen.add(id); ids.push(id);
+          for (const c of tree.children[id] || []) if (tree.byId[c]) walk(c);
+        };
+        walk(h);
+        const sl = [];
+        let erven = 0, tapered = false;
+        for (const id of ids) {
+          const k = tree.byId[id];
+          erven += (k.erfs || []).filter(e => this._isActive(e)).length;
+          for (const c of tree.children[id] || []) {
+            if (c.startsWith('sl:')) sl.push(c);
+            else if (tree.byId[c]) {
+              const a = mm2(k.feederCable), b = mm2(tree.byId[c].feederCable);
+              if (a && b && b < a) tapered = true;
+            }
+          }
+        }
+        out.push({ id: 'str:' + h, ms: ms.id, head: h, n: ++n, kiosks: ids, sl, erven, tapered });
+      }
+    }
+    return out;
+  },
+
+  _cableMm2(name) {
+    if (!name || typeof CableLib === 'undefined') return 0;
+    const c = CableLib.byName(name);
+    return c && c.size_mm2 ? Number(c.size_mm2) : 0;
+  },
+
+  // The tree with each string folded into one 'str:<head>' node: the
+  // minisub's head kiosk is replaced by it, and the street-light circuits of
+  // its kiosks hang off it. Kiosks are no longer reachable, so not laid out.
+  _stringTree(tree, strings) {
+    const ch = {};
+    for (const k of Object.keys(tree.children)) ch[k] = tree.children[k].slice();
+    const strById = {};
+    for (const s of strings) {
+      const list = ch[s.ms];
+      const i = list.indexOf(s.head);
+      if (i >= 0) list[i] = s.id;
+      ch[s.id] = s.sl.slice();
+      strById[s.id] = s;
+    }
+    return Object.assign({}, tree, { children: ch, kioskChildren: tree.children, strById, heads: null });
+  },
+
+  // 'fail' | 'warn' | 'ok' | null (nothing calculated) for one kiosk: its
+  // cumulative feeder volt drop against Max Feeder VD, and the earth-fault
+  // check at the kiosk and its erven.
+  _kioskVerdict(id, resById, limit, FD) {
+    const cum = Retic._cumulativeFeederVD(id, resById);
+    const d = FD && FD.k[id];
+    if ((cum != null && limit > 0 && cum > limit) || (d && (d.status === 'fail' || d.nErfFail))) return 'fail';
+    if (cum != null && limit > 0 && cum >= this.NEAR * limit) return 'warn';
+    return cum == null && !d ? null : 'ok';
+  },
+
+  _worst(list) {
+    if (list.includes('fail')) return 'fail';
+    if (list.includes('warn')) return 'warn';
+    return list.includes('ok') ? 'ok' : null;
+  },
+
+  // A street-light circuit's verdict from Street lighting's own results
+  // (calculated when that workspace runs; not saved).
+  _slResult(c) {
+    const R = typeof StreetLight !== 'undefined' && StreetLight._results;
+    return (R && c && R[c.id]) || null;
+  },
+  _slVerdict(c) {
+    const r = this._slResult(c);
+    if (!r) return null;
+    if (!r.pass) return 'fail';
+    const near = (v, lim) => v != null && lim > 0 && v >= this.NEAR * lim;
+    return near(r.worstCumVdPct, r.cumVdLimitPct) || near(r.worstVdPct, r.vdLimitPct) ? 'warn' : 'ok';
   },
 
   // ─── Counting (must match backend/analysis/admd.py conventions) ───
@@ -396,6 +555,8 @@ const ReticDiagram = {
       // Each node once: a malformed tree (a cycle) must not recurse forever.
       if (seen.has(id)) return null;
       seen.add(id);
+      // An LV string's band header needs a strip above its first kiosk.
+      if (tree.heads && tree.heads.has(id)) row += this.BAND_HEAD / this.ROW_H;
       maxDepth = Math.max(maxDepth, depth);
       const kids = children[id] || [];
       let y;
@@ -443,11 +604,15 @@ const ReticDiagram = {
       surface: '#1e1e2e', node: '#252536', nodeHead: '#2f2f44', msHead: '#1d3a5c', msBody: '#22293a',
       border: '#3a3a50', ink: '#e0e0e8', inkSec: '#a0a0b0', muted: '#7c7c96',
       edge: '#55556e', rmu: '#f87171', accent: '#4a9eff', pass: '#69db7c', fail: '#ff6b6b', tag3: '#475569', tagE: '#0f766e',
+      warn: '#fbbf24', sl: '#f59e0b', slHead: '#3d2e12', band: '#232b40', bandInk: '#93b4ff',
+      fibre: '#c084fc', fibreHead: '#33264a',
       phase: { Red: '#f87171', White: '#cbd5e1', Blue: '#60a5fa', '3 Phase': '#c084fc', other: '#7c7c96' },
     } : {
       surface: '#ffffff', node: '#ffffff', nodeHead: '#eef1f5', msHead: '#dbeafe', msBody: '#f5f8ff',
       border: '#c9ced6', ink: '#1a1a2e', inkSec: '#555555', muted: '#7a7a88',
       edge: '#9aa0aa', rmu: '#dc2626', accent: '#0078d7', pass: '#2e7d32', fail: '#d32f2f', tag3: '#334155', tagE: '#0f766e',
+      warn: '#b45309', sl: '#b45309', slHead: '#fef3c7', band: '#eaf0fb', bandInk: '#1e3a8a',
+      fibre: '#6d28d9', fibreHead: '#ede9fe',
       phase: { Red: '#dc2626', White: '#6b7280', Blue: '#2563eb', '3 Phase': '#7c3aed', other: '#9ca3af' },
     };
   },
@@ -472,13 +637,25 @@ const ReticDiagram = {
 
   // ─── SVG ───
   // Returns the diagram as an SVG string, or '' when there is nothing to draw.
+  // opts.mode / opts.detail override the dialog's view for this one drawing
+  // (the PDF report always prints the volt-drop view with every kiosk).
   buildSVG(opts) {
     opts = opts || {};
-    const tree = this._tree();
+    const saved = { mode: this.view.mode, detail: this.view.detail };
+    if (opts.mode) this.view.mode = opts.mode;
+    if (opts.detail) this.view.detail = opts.detail;
+    try { return this._buildSVG(opts); } finally { Object.assign(this.view, saved); }
+  },
+
+  _buildSVG(opts) {
+    let tree = this._tree();
     if (!tree.kiosks.length && !tree.minisubs.length) return '';
     const P = this._palette(!!opts.dark);
+    const strings = this.strings(tree);
+    const byString = this.view.detail === 'strings';
+    if (byString) tree = this._stringTree(tree, strings);
+    else tree.heads = new Set(strings.map(s => s.head));
     const L = this._layout(tree);
-    this._size = { w: L.w, h: L.h };
 
     const res = AppState.reticResults;
     const resById = {};
@@ -487,13 +664,31 @@ const ReticDiagram = {
     if (res && res.minisubs) for (const m of res.minisubs) msById[m.minisubId] = m;
 
     const limit = Number(Retic.settings.maxFeederVD) || 0;
+    const FD = this._faultData();
+    const ctx = { tree, resById, limit, FD, P };
+
+    // String bands (Kiosks view): behind everything, one per LV string,
+    // around its kiosks and the street-light circuits they feed.
+    let bandSvg = '';
+    if (!byString) {
+      for (const s of strings) {
+        const ps = s.kiosks.concat(s.sl).map(id => L.pos[id]).filter(Boolean);
+        if (!ps.length) continue;
+        const x0 = Math.min(...ps.map(p => p.x)) - 10, x1 = Math.max(...ps.map(p => p.x)) + this.NODE_W + 10;
+        const y0 = Math.min(...ps.map(p => p.y)) - this.BAND_HEAD + 2, y1 = Math.max(...ps.map(p => p.y)) + this.NODE_H + 6;
+        bandSvg += `<rect x="${x0}" y="${y0}" width="${x1 - x0}" height="${y1 - y0}" rx="8" fill="${P.band}"/>`
+          + `<text x="${x0 + 10}" y="${y0 + 15}" font-size="9.5" font-weight="700" letter-spacing="0.3" fill="${P.bandInk}">${this._esc(this._trunc(this._stringHeader(s, tree).toUpperCase(), Math.max(20, Math.floor((x1 - x0 - 20) / 6.2))))}</text>`;
+      }
+    }
 
     // Edges first so the node boxes paint over the line ends.
     let edgeSvg = '';
     for (const e of L.edges) {
       const a = L.pos[e.from], b = L.pos[e.to];
-      const k = tree.byId[e.to];
-      if (tree.mvInfo[e.to]) {
+      if (e.to.startsWith('sl:')) { edgeSvg += this._slEdge(a, b, e, tree, P); continue; }
+      const kid = e.to.startsWith('str:') ? e.to.slice(4) : e.to;   // a string box: its head kiosk's feeder
+      const k = tree.byId[kid];
+      if (tree.mvInfo[e.to] || e.from === 'mv:supply') {
         const nm = tree.rmuById[e.to] ? (tree.rmuById[e.to].name || 'RMU') : (tree.msById[e.to] || {}).name;
         edgeSvg += this._mvEdge(a, b, tree.mvInfo[e.to], nm, P);
         continue;
@@ -501,8 +696,8 @@ const ReticDiagram = {
       const px = a.x + this.NODE_W, py = a.y + this.NODE_H / 2;
       const cx = b.x, cy = b.y + this.NODE_H / 2;
       const mx = (px + cx) / 2;
-      const kr = resById[e.to];
-      const legVD = Retic._legFeederVD(e.to, resById);
+      const kr = resById[kid];
+      const legVD = Retic._legFeederVD(kid, resById);
       const amps = kr ? (kr.feederA != null ? kr.feederA : kr.currentA) : null;
       const cable = this._cableShort(k && k.feederCable);
       const len = k && k.feederLength ? `${k.feederLength} m` : '';
@@ -553,22 +748,170 @@ const ReticDiagram = {
     }
 
     let nodeSvg = '';
-    const F = this._isFault() ? this._faultData() : null;
+    const F = this._isFault() ? FD : null;
     for (const n of L.nodes) {
-      nodeSvg += n.isRmu ? this._rmuNode(n, tree, P)
-        : F ? this._faultNode(n, tree, F, P)
+      const body = n.id === 'mv:supply' ? this._supplyNode(n, tree, msById, P)
+        : n.id.startsWith('sl:') ? this._slNode(n, tree, P)
+        : n.id.startsWith('str:') ? this._stringNode(n, tree.strById[n.id], ctx)
+        : n.isRmu ? this._rmuNode(n, tree, P)
+        : F ? this._faultNode(n, tree, F, P, this._kioskVerdict(n.id, resById, limit, FD))
         : n.isMs ? this._minisubNode(n, msById[n.id], tree, P)
-        : this._kioskNode(n, tree, resById, P, limit);
+        : this._kioskNode(n, tree, resById, P, limit, this._kioskVerdict(n.id, resById, limit, FD));
+      nodeSvg += this._clickable(n, tree, body);
     }
 
+    this._size = { w: L.w, h: L.h };
+    const nSl = Object.keys(tree.slById || {}).length;
     return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${L.w} ${L.h}" width="${L.w}" height="${L.h}"
-        role="img" aria-label="Reticulation topology: ${tree.minisubs.length} minisub(s) feeding ${tree.kiosks.length} kiosk(s), annotated with ${F ? 'the three-phase and earth-fault current at each minisub and kiosk' : 'per-leg and cumulative volt drop and connection counts'}"
+        role="img" aria-label="Network overview: ${tree.minisubs.length} minisub(s) feeding ${tree.kiosks.length} kiosk(s) in ${strings.length} LV string(s)${nSl ? ` and ${nSl} street-light circuit(s)` : ''}, ${byString ? 'one box per string' : 'every kiosk'}, annotated with ${F ? 'the three-phase and earth-fault current at each minisub and kiosk' : 'per-leg and cumulative volt drop and connection counts'}"
         font-family="Helvetica, Arial, sans-serif">
       <rect x="0" y="0" width="${L.w}" height="${L.h}" fill="${P.surface}"/>
+      ${bandSvg}
       ${edgeSvg}
       ${ringSvg}
       ${nodeSvg}
     </svg>`;
+  },
+
+  // Where a box goes when clicked (a Links address), and the wrapper that
+  // makes it a focusable link in the dialog.
+  _goOf(id, tree) {
+    if (id.startsWith('sl:')) return id;
+    if (id.startsWith('str:')) return 'retic:' + id.slice(4);
+    if (id.startsWith('rmu:')) return 'plan:' + id.slice(4);
+    return (tree.byId[id] || tree.msById[id]) ? 'retic:' + id : '';
+  },
+  _clickable(n, tree, body) {
+    const go = this._goOf(n.id, tree);
+    return go ? `<g data-go="${this._esc(go)}" tabindex="0" style="cursor:pointer">${body}</g>` : body;
+  },
+
+  // The MV point of supply: the minisubs it feeds and their diversified demand.
+  _supplyNode(n, tree, msRes, P) {
+    const W = this.NODE_W, H = this.NODE_H, x = n.x, y = n.y;
+    const all = tree.minisubs.length;
+    const kva = tree.minisubs.reduce((s, m) => s + (msRes[m.id] && Number(msRes[m.id].totalKVA) || 0), 0);
+    const direct = (tree.children['mv:supply'] || []).length;
+    const l1 = `${all} minisub${all === 1 ? '' : 's'}${direct < all ? ` (${direct} fed direct)` : ''}`;
+    const l2 = kva ? `Demand ${Math.round(kva)} kVA` : 'Demand not calculated';
+    const dxf = { NAME: 'MV supply', TYPE: 'MV point of supply', MINISUBS: all, DEMAND_KVA: kva ? Math.round(kva) : '' };
+    return `<g><title>${this._esc(`MV point of supply — ${l1}; ${l2} (diversified, sum of the minisubs)`)}</title>
+      <g data-dxf-block="MV_SUPPLY" data-dxf-at="${x},${y}" data-dxf-attrs="${this._esc(JSON.stringify(dxf))}">
+      <rect x="${x}" y="${y}" width="${W}" height="${H}" rx="6" fill="${P.msBody}" stroke="${P.border}"/>
+      <path d="M ${x} ${y + 6} a 6 6 0 0 1 6 -6 h ${W - 12} a 6 6 0 0 1 6 6 v 15 h -${W} z" fill="${P.msHead}"/>
+      <text x="${x + 10}" y="${y + 15}" font-size="11" font-weight="700" fill="${P.ink}" data-dxf-attr="NAME">MV supply</text>
+      <text x="${x + W - 8}" y="${y + 15}" text-anchor="end" font-size="8" font-weight="700" fill="${P.accent}">POINT OF SUPPLY</text>
+      <text x="${x + 10}" y="${y + 40}" font-size="10.5" font-weight="600" fill="${P.accent}" data-dxf-attr="MINISUBS_LABEL">${this._esc(l1)}</text>
+      <text x="${x + 10}" y="${y + 58}" font-size="10" fill="${P.inkSec}" data-dxf-attr="DEMAND_LABEL">${this._esc(l2)}</text>
+    </g></g>`;
+  },
+
+  // Header of a string's band / box: "String 2 · 160 A MCCB · 3 kiosks · 28 erven · tapered".
+  _stringHeader(s, tree) {
+    const dev = typeof Retic !== 'undefined' && Retic._protectionDevice ? Retic._protectionDevice(tree.byId[s.head]) : null;
+    const ms = tree.msById[s.ms];
+    return [`${tree.minisubs.length > 1 && ms ? (ms.name || 'Minisub') + ' · ' : ''}String ${s.n}`,
+      dev ? dev.name : 'no string breaker',
+      `${s.kiosks.length} kiosk${s.kiosks.length === 1 ? '' : 's'}`, `${s.erven} erven`,
+      s.tapered ? 'tapered' : ''].filter(Boolean).join(' · ');
+  },
+
+  // Outline of a box for its verdict.
+  _outline(v, P) {
+    return v === 'fail' ? { stroke: P.fail, w: 2.2 } : v === 'warn' ? { stroke: P.warn, w: 2.2 } : { stroke: P.border, w: 1 };
+  },
+
+  // Street-light circuit leg: amber, from the kiosk / minisub (or the string
+  // box, then labelled with the kiosk that feeds it).
+  _slEdge(a, b, e, tree, P) {
+    const px = a.x + this.NODE_W, py = a.y + this.NODE_H / 2;
+    const cx = b.x, cy = b.y + this.NODE_H / 2;
+    const mx = (px + cx) / 2;
+    const c = tree.slById[e.to];
+    const src = c && c.source ? this._nodeName(tree, c.source.id) : '';
+    const lbl = e.from.startsWith('str:') && src ? 'from ' + src : '';
+    return `<g><title>${this._esc(`${c ? c.name : ''} street lighting, fed from ${src || '—'}`)}</title>`
+      + `<path d="M ${px} ${py} H ${mx} V ${cy} H ${cx}" fill="none" stroke="${P.sl}" stroke-width="1.6"/>`
+      + `<polygon points="${cx - 7},${cy - 4} ${cx - 7},${cy + 4} ${cx},${cy}" fill="${P.sl}"/>`
+      + (lbl ? `<text x="${mx}" y="${cy - 6}" text-anchor="middle" font-size="9" fill="${P.inkSec}">${this._esc(this._trunc(lbl, 18))}</text>` : '')
+      + `</g>`;
+  },
+
+  // A street-light circuit box: poles, system, kVA, cable, worst volt drop
+  // and Zs from Street lighting's last calculation.
+  _slNode(n, tree, P) {
+    const c = tree.slById[n.id] || { poles: [] };
+    const W = this.NODE_W, H = this.NODE_H, x = n.x, y = n.y;
+    const r = this._slResult(c);
+    const v = this._slVerdict(c);
+    const o = this._outline(v, P);
+    const kva = typeof StreetLight !== 'undefined' && StreetLight.circuitKVA ? StreetLight.circuitKVA(c) : null;
+    const sys = c.system === '1ph' ? '1Φ' : '3Φ';
+    const poles = (c.poles || []).length;
+    const vd = r ? (r.worstCumVdPct != null ? r.worstCumVdPct : r.worstVdPct) : null;
+    const l1 = `${poles} pole${poles === 1 ? '' : 's'} · ${sys}${kva != null ? ` · ${kva.toFixed(2)} kVA` : ''}`;
+    const l2 = [this._cableShort(c.cable), vd != null ? `VD ${vd.toFixed(2)}%` : ''].filter(Boolean).join(' · ');
+    const l3 = r ? (r.pass ? (v === 'warn' ? 'Near a limit' : 'Pass') + (r.zsPass ? ' · Zs ok' : '') : 'Fails: ' + (r.fails || []).join(', ')) : 'Open Street lighting to calculate';
+    const l3c = v === 'fail' ? P.fail : v === 'warn' ? P.warn : v === 'ok' ? P.pass : P.muted;
+    const tip = `${c.name || 'Street-light circuit'} — ${l1}${c.cable ? '\nCable ' + c.cable : ''}`
+      + (r ? `\nWorst volt drop ${r.worstVdPct.toFixed(2)} % (limit ${r.vdLimitPct} %), cumulative ${r.worstCumVdPct != null ? r.worstCumVdPct.toFixed(2) : '—'} % (limit ${r.cumVdLimitPct} %)\nZs ${r.zsPass ? 'clears' : 'does not clear'} the protective device` : '\nNot calculated yet — open Street lighting.');
+    const dxf = { NAME: c.name || '', ID: c.id || '', TYPE: 'Street-light circuit', SOURCE: c.source ? this._nodeName(tree, c.source.id) : '',
+      POLES: poles, SYSTEM: sys, KVA: kva != null ? kva.toFixed(2) : '', CABLE: c.cable || '',
+      WORST_VD_PCT: r ? r.worstVdPct : '', CUM_VD_PCT: r && r.worstCumVdPct != null ? r.worstCumVdPct : '', ZS_OK: r ? (r.zsPass ? 'yes' : 'no') : '',
+      STATUS: v || 'not computed' };
+    return `<g><title>${this._esc(tip)}</title>
+      <g data-dxf-block="SL_CIRCUIT" data-dxf-at="${x},${y}" data-dxf-attrs="${this._esc(JSON.stringify(dxf))}">
+      <rect x="${x}" y="${y}" width="${W}" height="${H}" rx="6" fill="${P.node}" stroke="${o.stroke}" stroke-width="${o.w}"/>
+      <path d="M ${x + 1} ${y + 7} a 6 6 0 0 1 6 -6 h ${W - 14} a 6 6 0 0 1 6 6 v 14 h -${W - 2} z" fill="${P.slHead}"/>
+      <text x="${x + 10}" y="${y + 15}" font-size="11" font-weight="700" fill="${P.ink}" data-dxf-attr="NAME">${this._esc(this._trunc(c.name || 'Street lights', 20))}</text>
+      <text x="${x + W - 8}" y="${y + 15}" text-anchor="end" font-size="8" font-weight="700" fill="${P.sl}">STREET LIGHT</text>
+      <text x="${x + 10}" y="${y + 37}" font-size="10" fill="${P.inkSec}" data-dxf-attr="POLES_LABEL">${this._esc(l1)}</text>
+      <text x="${x + 10}" y="${y + 52}" font-size="10" fill="${P.inkSec}" data-dxf-attr="CABLE_LABEL">${this._esc(l2 || '—')}</text>
+      <text x="${x + 10}" y="${y + 68}" font-size="9.5" font-weight="700" fill="${l3c}" data-dxf-attr="STATUS_LABEL">${this._esc(this._trunc(l3, 34))}</text>
+    </g></g>`;
+  },
+
+  // One box per LV string (Strings view): kiosk range, kiosks, erven, head
+  // cable, worst cumulative volt drop (or the lowest earth-fault current),
+  // head breaker; outlined by the worst of its kiosks.
+  _stringNode(n, s, ctx) {
+    const { tree, resById, limit, FD, P } = ctx;
+    const W = this.NODE_W, H = this.NODE_H, x = n.x, y = n.y;
+    if (!s) return '';
+    const v = this._worst(s.kiosks.map(id => this._kioskVerdict(id, resById, limit, FD)));
+    const o = this._outline(v, P);
+    const head = tree.byId[s.head] || {};
+    const last = tree.byId[s.kiosks[s.kiosks.length - 1]] || {};
+    const range = s.kiosks.length > 1 ? `${head.name || ''}–${last.name || ''}` : (head.name || '');
+    const cums = s.kiosks.map(id => Retic._cumulativeFeederVD(id, resById)).filter(x => x != null);
+    const worst = cums.length ? Math.max(...cums) : null;
+    const dev = Retic._protectionDevice ? Retic._protectionDevice(head) : null;
+    const l1 = `${s.kiosks.length} kiosk${s.kiosks.length === 1 ? '' : 's'} · ${s.erven} erven · ${this._cableShort(head.feederCable) || 'no cable'}`;
+    let l2;
+    if (this._isFault()) {
+      const ds = s.kiosks.map(id => FD.k[id]).filter(Boolean);
+      const lo = ds.filter(d => d.ik1 != null).sort((a, b) => a.ik1 - b.ik1)[0];
+      l2 = lo ? `Earth fault min ${this._fmtA(lo.ik1)}${lo.tS != null ? ' · ' + this._fmtS(lo.tS) : ''}` : 'Earth fault: run Demand';
+    } else {
+      l2 = `VD ${this._fmtPct(worst)}${s.tapered ? ' · tapered' : ''}`;
+    }
+    const l3 = dev ? dev.name : 'No string breaker';
+    const vc = v === 'fail' ? P.fail : v === 'warn' ? P.warn : v === 'ok' ? P.pass : P.muted;
+    const tip = `${this._stringHeader(s, tree)}\nKiosks ${s.kiosks.map(id => (tree.byId[id] || {}).name || id).join(', ')}`
+      + (worst != null ? `\nWorst cumulative volt drop ${worst.toFixed(2)} %${limit ? ` (limit ${limit} %)` : ''}` : '')
+      + (s.sl.length ? `\nFeeds ${s.sl.length} street-light circuit${s.sl.length === 1 ? '' : 's'}` : '');
+    const dxf = { NAME: `String ${s.n}`, ID: s.head, MINISUB: this._nodeName(tree, s.ms), HEAD_KIOSK: head.name || '', KIOSKS: s.kiosks.length,
+      ERVEN: s.erven, HEAD_CABLE: head.feederCable || '', BREAKER: dev ? dev.name : '', WORST_CUM_VD_PCT: worst != null ? worst.toFixed(2) : '',
+      TAPERED: s.tapered ? 'yes' : 'no', STATUS: v || 'not computed' };
+    return `<g><title>${this._esc(tip)}</title>
+      <g data-dxf-block="LV_STRING" data-dxf-at="${x},${y}" data-dxf-attrs="${this._esc(JSON.stringify(dxf))}">
+      <rect x="${x}" y="${y}" width="${W}" height="${H}" rx="6" fill="${P.node}" stroke="${o.stroke}" stroke-width="${o.w}"/>
+      <path d="M ${x + 1} ${y + 7} a 6 6 0 0 1 6 -6 h ${W - 14} a 6 6 0 0 1 6 6 v 14 h -${W - 2} z" fill="${P.band}"/>
+      <text x="${x + 10}" y="${y + 15}" font-size="11" font-weight="700" fill="${P.ink}" data-dxf-attr="NAME">${this._esc(this._trunc(`String ${s.n} · ${range}`, 26))}</text>
+      <text x="${x + 10}" y="${y + 37}" font-size="10" fill="${P.inkSec}" data-dxf-attr="KIOSKS_LABEL">${this._esc(this._trunc(l1, 34))}</text>
+      <text x="${x + 10}" y="${y + 52}" font-size="10" font-weight="700" fill="${vc}" data-dxf-attr="VD_LABEL">${this._esc(this._trunc(l2, 34))}</text>
+      <text x="${x + 10}" y="${y + 68}" font-size="9.5" fill="${P.muted}" data-dxf-attr="BREAKER_LABEL">${this._esc(this._trunc(l3, 34))}</text>
+    </g></g>`;
   },
 
   // MV leg between two minisubs (Demand › MV fed from): cable and length.
@@ -613,7 +956,7 @@ const ReticDiagram = {
     const supply = ms && !ms.mvFedFrom && !tree.mvInfo[n.id] && ms.mvLength
       ? [this._cableShort(ms.mvCable), `${ms.mvLength} m`].filter(Boolean).join(' · ') : '';
     // Erven per phase, same chips as a kiosk ("?" only when some have no phase set).
-    const pc = this._subtreePhaseCounts(n.id, tree.children, tree.byId);
+    const pc = this._subtreePhaseCounts(n.id, tree.kioskChildren || tree.children, tree.byId);
     const chips = [
       ['R', pc.Red, P.phase.Red], ['W', pc.White, P.phase.White],
       ['B', pc.Blue, P.phase.Blue], ['3Ø', pc['3 Phase'], P.phase['3 Phase']],
@@ -643,7 +986,8 @@ const ReticDiagram = {
     </g></g>`;
   },
 
-  _kioskNode(n, tree, resById, P, limit) {
+  _kioskNode(n, tree, resById, P, limit, verdict) {
+    const o = this._outline(verdict, P);
     const k = tree.byId[n.id];
     const kr = resById[n.id];
     const W = this.NODE_W, H = this.NODE_H;
@@ -696,7 +1040,7 @@ const ReticDiagram = {
       KVA: kr ? kr.totalKVA : '', WORST_PHASE_A: kr && kr.worstPhaseA != null ? kr.worstPhaseA : '', FEEDER_KVA: kr ? (kr.feederKVA != null ? kr.feederKVA : kr.totalKVA) : '',
       ERVEN_DOWNSTREAM: erven, CONNS_DOWNSTREAM: conns != null ? conns : '', KIOSKS_DOWNSTREAM: nk != null ? nk : '' };
     return `<g><title>${this._esc(tip)}</title><g data-dxf-block="KIOSK" data-dxf-at="${n.x},${n.y}" data-dxf-attrs="${this._esc(JSON.stringify(dxf))}">
-      <rect x="${n.x}" y="${n.y}" width="${W}" height="${H}" rx="6" fill="${P.node}" stroke="${P.border}"/>
+      <rect x="${n.x}" y="${n.y}" width="${W}" height="${H}" rx="6" fill="${P.node}" stroke="${o.stroke}" stroke-width="${o.w}"/>
       <path d="M ${n.x} ${n.y + 6} a 6 6 0 0 1 6 -6 h ${W - 12} a 6 6 0 0 1 6 6 v 15 h -${W} z" fill="${P.nodeHead}"/>
       <rect x="${n.x}" y="${n.y + 3}" width="3.5" height="${H - 6}" fill="${stripe}"/>
       <text x="${n.x + 12}" y="${n.y + 15}" font-size="11" font-weight="700" fill="${P.ink}" data-dxf-attr="NAME">${this._esc(name)}</text>
@@ -756,7 +1100,8 @@ const ReticDiagram = {
   },
 
   // A minisub or kiosk box in the fault view.
-  _faultNode(n, tree, F, P) {
+  _faultNode(n, tree, F, P, verdict) {
+    const o = this._outline(n.isMs ? null : verdict, P);
     const isMs = n.isMs;
     const el = isMs ? tree.msById[n.id] : tree.byId[n.id];
     const d = isMs ? F.ms[n.id] : F.k[n.id];
@@ -808,7 +1153,7 @@ const ReticDiagram = {
       LOWEST_ERF: d && d.erf ? d.erf.name : '', LOWEST_ERF_A: d && d.erf ? d.erf.ifA : '' };
     return `<g><title>${this._esc(this._faultTip(nameFull, isMs, d))}</title>
       <g data-dxf-block="${isMs ? 'MINISUB_FAULT' : 'KIOSK_FAULT'}" data-dxf-at="${x},${y}" data-dxf-attrs="${this._esc(JSON.stringify(dxf))}">
-      <rect x="${x}" y="${y}" width="${W}" height="${H}" rx="6" fill="${isMs ? P.msBody : P.node}" stroke="${P.border}"/>
+      <rect x="${x}" y="${y}" width="${W}" height="${H}" rx="6" fill="${isMs ? P.msBody : P.node}" stroke="${o.stroke}" stroke-width="${o.w}"/>
       <path d="M ${x} ${y + 6} a 6 6 0 0 1 6 -6 h ${W - 12} a 6 6 0 0 1 6 6 v 15 h -${W} z" fill="${isMs ? P.msHead : P.nodeHead}"/>
       ${isMs ? '' : `<rect x="${x}" y="${y + 3}" width="3.5" height="${H - 6}" fill="${stripe}"/>`}
       <text x="${x + 12}" y="${y + 15}" font-size="11" font-weight="700" fill="${P.ink}" data-dxf-attr="NAME">${this._esc(name)}</text>
@@ -881,19 +1226,54 @@ const ReticDiagram = {
     press('[data-rdg="showE"]', this.view.showE);
     press('[data-rdg="view-list"]', this.view.list);
     press('[data-rdg="view-diagram"]', !this.view.list);
+    const fibre = this._isFibre();
+    press('[data-rdg="tab-electrical"]', !fibre);
+    press('[data-rdg="tab-fibre"]', fibre);
+    press('[data-rdg="detail-kiosks"]', this.view.detail !== 'strings');
+    press('[data-rdg="detail-strings"]', this.view.detail === 'strings');
     const show = (sel, on) => { const el = modal.querySelector(sel); if (el) el.hidden = !on; };
-    show('.rdg-kinds', fault);
-    show('.rdg-views', fault);
-    show('.rdg-legend-fault', fault);
-    show('.rdg-legend-vd', !fault);
+    show('.rdg-seg', !fibre);
+    show('.rdg-detail', !fibre);
+    show('.rdg-kinds', fault && !fibre);
+    show('.rdg-views', fault && !fibre);
+    show('.rdg-legend-fault', fault && !fibre);
+    show('.rdg-legend-vd', !fault && !fibre);
+    show('.rdg-legend-net', !fibre);
+    show('.rdg-legend-fibre', fibre);
     const t = document.getElementById('rdg-title');
-    if (t) t.textContent = fault ? 'Reticulation Topology — Fault Current' : 'Reticulation Topology — Volt Drop & Connections';
+    if (t) t.textContent = fibre ? 'Network overview — Fibre'
+      : fault ? 'Network overview — Fault current' : 'Network overview — Volt drop & connections';
+  },
+
+  // The drawing of the open tab: {svg, w, h} ('' svg when there is nothing).
+  _current(opts) {
+    if (this._isFibre()) {
+      const svg = typeof FibreDiagram !== 'undefined' ? FibreDiagram.buildSVG(opts) : '';
+      return { svg, w: svg ? FibreDiagram._size.w : 0, h: svg ? FibreDiagram._size.h : 0 };
+    }
+    const svg = this.buildSVG(opts);
+    return { svg, w: this._size.w, h: this._size.h };
+  },
+
+  _emptyText() {
+    return this._isFibre()
+      ? 'Nothing to draw yet — draw manholes and fibre backbone routes on the plan (or create them with Auto layout) and the fibre network will appear here.'
+      : 'Nothing to draw yet — add minisubs or kiosks (or use ⚡ Quick Build) and the topology will appear here.';
   },
 
   render() {
     const host = document.getElementById('retic-diagram-canvas');
     if (!host) return;
     const dark = document.body.classList.contains('dark-mode');
+    if (this._isFibre()) {
+      host.classList.remove('rdg-list-mode');
+      const cur = this._current({ dark });
+      if (!cur.svg) { host.innerHTML = `<div class="retic-empty">${this._emptyText()}</div>`; return; }
+      this._size = { w: cur.w, h: cur.h };
+      host.innerHTML = cur.svg;
+      this._applyZoom();
+      return;
+    }
     if (this._isFault() && this.view.list && this._isPhone()) {
       host.innerHTML = this._faultList();
       host.classList.add('rdg-list-mode');
@@ -954,59 +1334,106 @@ const ReticDiagram = {
     return k ? (k.name || '') : '';
   },
 
-  // DXF: minisubs, kiosks and RMUs are blocks with their figures as attributes.
+  // ─── Export (the open tab) ───
+  // Exports always use the light palette so the figure stays legible on paper.
+  _nothing() {
+    UI.alert(this._isFibre() ? 'Nothing to export yet — draw manholes and fibre backbone routes on the plan first.'
+      : 'Nothing to export yet — add minisubs or kiosks first.');
+  },
+  _fileTag() {
+    return this._isFibre() ? 'fibre_network' : (this.view.detail === 'strings' ? 'network_overview_strings' : 'network_overview');
+  },
+
+  // DXF: minisubs, kiosks, strings, street-light circuits, RMUs and manholes
+  // are blocks with their figures as attributes.
   exportDXF() {
-    const svg = this.buildSVG({ dark: false });
-    if (!svg) { UI.alert('Nothing to export yet — add minisubs or kiosks first.'); return; }
-    return DxfExport.exportSvg(svg, { scale: 0.25, geomLayer: 'NETWORK', fileName: `${this._fileBase()}_reticulation_diagram`,
+    const cur = this._current({ dark: false });
+    if (!cur.svg) { this._nothing(); return; }
+    return DxfExport.exportSvg(cur.svg, { scale: 0.25, geomLayer: 'NETWORK', fileName: `${this._fileBase()}_${this._fileTag()}`,
       title: AppState.projectName || '', layers: { NETWORK: null, SYMBOLS: null, TEXT: null } });
   },
 
-  // ─── Export ───
-  // Exports always use the light palette so the figure stays legible on paper.
-  _exportNode() {
-    const svg = this.buildSVG({ dark: false });
-    if (!svg) return null;
+  _exportNode(opts) {
+    const cur = opts && opts.electrical ? (() => { const svg = this.buildSVG(opts); return { svg, w: this._size.w, h: this._size.h }; })()
+      : this._current(Object.assign({ dark: false }, opts || {}));
+    if (!cur.svg) return null;
     const wrap = document.createElement('div');
-    wrap.innerHTML = svg;
-    return { node: wrap.firstElementChild, w: this._size.w, h: this._size.h };
+    wrap.innerHTML = cur.svg;
+    return { node: wrap.firstElementChild, w: cur.w, h: cur.h };
   },
 
   _fileBase() {
     return String(AppState.projectName || 'project').replace(/[^a-z0-9]+/gi, '_');
   },
 
-  exportSVG() {
-    const ex = this._exportNode();
-    if (!ex) { UI.alert('Nothing to export yet — add minisubs or kiosks first.'); return; }
-    const str = new XMLSerializer().serializeToString(ex.node);
-    const url = URL.createObjectURL(new Blob([str], { type: 'image/svg+xml' }));
+  _download(blob, name) {
+    const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${this._fileBase()}_reticulation_diagram.svg`;
+    a.download = name;
     a.click();
     URL.revokeObjectURL(url);
   },
 
+  exportSVG() {
+    const ex = this._exportNode();
+    if (!ex) { this._nothing(); return; }
+    const str = new XMLSerializer().serializeToString(ex.node);
+    this._download(new Blob([str], { type: 'image/svg+xml' }), `${this._fileBase()}_${this._fileTag()}.svg`);
+  },
+
   exportPNG() {
     const ex = this._exportNode();
-    if (!ex) { UI.alert('Nothing to export yet — add minisubs or kiosks first.'); return; }
+    if (!ex) { this._nothing(); return; }
+    const name = `${this._fileBase()}_${this._fileTag()}.png`;
     Project._rasterizeSVG(ex.node, ex.w, ex.h, 2, (canvas) => {
-      canvas.toBlob((blob) => {
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `${ReticDiagram._fileBase()}_reticulation_diagram.png`;
-        a.click();
-        URL.revokeObjectURL(url);
-      }, 'image/png');
+      canvas.toBlob((blob) => this._download(blob, name), 'image/png');
     });
   },
 
-  // PNG data URL for the PDF report. Resolves null when there is nothing to draw.
-  rasterize(scale) {
+  // One landscape page (A3 when the drawing is large), the drawing fitted
+  // under a title line.
+  async exportPDF() {
+    if (!window.jspdf) { await UI.alert('PDF library not loaded.'); return; }
+    const ex = this._exportNode();
+    if (!ex) { this._nothing(); return; }
+    const title = document.getElementById('rdg-title');
+    const heading = title ? title.textContent : 'Network overview';
+    const dg = await new Promise((resolve) => Project._rasterizeSVG(ex.node, ex.w, ex.h, 2, (c) => resolve({ dataUrl: c.toDataURL('image/png'), w: ex.w, h: ex.h })));
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: ex.w > 1600 || ex.h > 1100 ? 'a3' : 'a4' });
+    this.addPage(doc, dg, heading, AppState.projectName || '', true);
+    doc.save(`${this._fileBase()}_${this._fileTag()}.pdf`);
+  },
+
+  // A diagram raster on its own page of a jsPDF document (shared with the
+  // Demand report). `first` = draw on the current page instead of adding one.
+  addPage(doc, dg, heading, sub, first) {
+    if (!first) doc.addPage();
+    const margin = 12;
+    doc.setFontSize(12); doc.setFont('helvetica', 'bold');
+    doc.text(heading, margin, margin + 4);
+    if (sub) { doc.setFontSize(8); doc.setFont('helvetica', 'normal'); doc.text(String(sub), margin, margin + 10, { maxWidth: doc.internal.pageSize.getWidth() - margin * 2 }); }
+    const pageW = doc.internal.pageSize.getWidth(), pageH = doc.internal.pageSize.getHeight();
+    const top = margin + 15;
+    const fit = Math.min((pageW - margin * 2) / dg.w, (pageH - top - margin) / dg.h);
+    const imgW = dg.w * fit, imgH = dg.h * fit;
+    doc.setDrawColor(200);
+    doc.rect(margin, top, imgW, imgH);
+    // 'FAST' = Flate; a flat-colour schematic compresses hard.
+    doc.addImage(dg.dataUrl, 'PNG', margin, top, imgW, imgH, undefined, 'FAST');
+  },
+
+  // PNG data URL for the PDF report: the Electrical tab, volt-drop view, every
+  // kiosk (whatever the dialog shows). `which` = 'fibre' for the Fibre tab.
+  // Resolves null when there is nothing to draw.
+  rasterize(scale, which) {
     return new Promise((resolve) => {
-      const ex = this._exportNode();
+      let ex;
+      if (which === 'fibre') {
+        const svg = typeof FibreDiagram !== 'undefined' ? FibreDiagram.buildSVG({ dark: false }) : '';
+        if (svg) { const wrap = document.createElement('div'); wrap.innerHTML = svg; ex = { node: wrap.firstElementChild, w: FibreDiagram._size.w, h: FibreDiagram._size.h }; }
+      } else ex = this._exportNode({ electrical: true, dark: false, mode: 'vd', detail: 'kiosks' });
       if (!ex) { resolve(null); return; }
       Project._rasterizeSVG(ex.node, ex.w, ex.h, scale || 2, (canvas) => {
         resolve({ dataUrl: canvas.toDataURL('image/png'), w: ex.w, h: ex.h });
@@ -1014,3 +1441,11 @@ const ReticDiagram = {
     });
   },
 };
+
+// Output › Network overview… (shown on a project with Demand; Ctrl K lists it).
+if (typeof document !== 'undefined' && document.addEventListener) {
+  document.addEventListener('DOMContentLoaded', () => {
+    const b = document.getElementById('btn-network-overview');
+    if (b) b.addEventListener('click', () => ReticDiagram.open());
+  });
+}

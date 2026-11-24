@@ -1,19 +1,20 @@
 /**
- * RoadKerbs — Road plan › Roads from kerbs: every road of a kerb layer of the DXF background, paired automatically.
+ * RoadKerbs — Road plan › Roads from kerbs: pick the kerb lines of the DXF background by clicking; the roads between them are made.
  *
- * The pairing is PlanKerbs (plan-kerbs.js, shared with Auto layout's Streets from kerb layer). Here it runs on the
- * background drawing (`RoadPlan.rp.bg`, already in metres), is reviewed on the road plan, and each street becomes a
- * road in `kerbs` mode: the two kerb lines are read back from the drawn kerbs (`PlanKerbs.sides`), so the carriageway
- * width follows the kerbs exactly as for two hand-picked kerbs and the lighting calculation sees the real width.
+ * The pairing is PlanKerbs (plan-kerbs.js, shared with Auto layout's Pick kerbs). Here it runs on the background drawing
+ * (`RoadPlan.rp.bg`, already in metres), is reviewed on the road plan, and each street becomes a road in `kerbs` mode: the two
+ * kerb lines are read back from the drawn kerbs (`PlanKerbs.sides`), so the carriageway width follows the kerbs exactly as for two
+ * hand-picked kerbs and the lighting calculation sees the real width.
  *
- * Review: amber = a road, orange = cut off from the main network, red dashed = a kerb chain with no partner.
- * Alt-click removes a road; Shift-click two kerbs adds one; Ctrl-click a lone kerb, then click the road's side;
- * Enter creates; Esc leaves. Session-only until Create.
+ * Nothing is chosen at first. Click = a whole joined kerb line and every road it touches; Shift-click = one drawn piece; Alt-click
+ * (or the Subtract button) takes roads out; Ctrl-click a lone kerb, then the road's side; Backspace takes the last pick back;
+ * Enter creates; Esc leaves. Amber = a road, orange = cut off from the main network, red dashed = a kerb with no partner.
+ * Session-only until Create.
  */
 const RoadKerbs = {
   on: false,                 // the Roads-from-kerbs panel is open
-  layer: '',
-  stage: null,               // PlanKerbs.stage once Find roads has run
+  layer: '',                 // the layer Pair all works on
+  stage: null,               // PlanKerbs.stage while the panel is open
   opt: { wmin: 4, wmax: 20, gap: 15, oneW: 6, join: 40 },
   _share: new Map(),
 
@@ -35,25 +36,22 @@ const RoadKerbs = {
     if (!this._share.has(key)) this._share.set(key, PlanKerbs.pairedShare(this.chainsOf(layer)) >= 0.5);
     return this._share.get(key);
   },
+  _pool() {                                                      // every layer of the drawing as kerb chains
+    const layers = {}; for (const { layer } of this.layers()) { const c = this.chainsOf(layer); if (c.length) layers[layer] = c; }
+    return layers;
+  },
 
-  // ── open / find / close ──
+  // ── open / close ──
   open() {
-    this.on = true; this.stage = null;
+    this.on = true;
     const L = this.layers(); if (!this.layer || !L.some(x => x.layer === this.layer)) this.layer = (L[0] || {}).layer || '';
+    const pool = this._pool();
+    this.stage = Object.assign(PlanKerbs.stage(pool, this.opt), { hover: null });
+    this._names();
     RoadPlan.setTool('kerbauto'); RoadPlan.renderPanel();
+    UI.toast('Click a kerb line to add it and the roads it touches. Shift-click takes one piece, Alt-click takes roads out, Backspace undoes the last pick, Enter creates.', 'info', 7000);
   },
   close() { this.on = false; this.stage = null; },
-  find() {
-    if (!this.layer) return;
-    const chains = this.chainsOf(this.layer);
-    if (!chains.length) { UI.toast(`Layer "${this.layer}" has no lines.`, 'warn', 3500); return; }
-    this.stage = PlanKerbs.stage(chains, this.opt).solve();
-    this._names();
-    const S = this.stage, u = S.unpaired.length, nets = S.networks().length;
-    UI.toast(`${S.streets.length} road${S.streets.length === 1 ? '' : 's'} found from ${chains.length} kerb chains${u ? `; ${u} without a partner` : ''}${nets > 1 ? `; ${nets} separate networks` : ''}. Alt-click removes one, Shift-click two kerbs adds one, Enter creates them.`, u || nets > 1 ? 'warn' : 'success', 8000);
-    this._refresh();
-  },
-  resolve() { if (this.stage) { this.stage.o = Object.assign({}, this.stage.o, this.opt); this.stage.solve(); this._names(); this._refresh(); } },
   _refresh() { RoadPlan.renderPanel(); RoadPlan.renderScreen(); RoadPlan._hint(); },
 
   // the nearest road-name text of the drawing (kept in `bg.texts` when the drawing was loaded), each used once
@@ -68,43 +66,64 @@ const RoadKerbs = {
     };
   },
   hint() {
-    if (!this.stage) return 'Pick the layer that holds the kerb lines, then Find roads.';
-    return 'Alt-click a road removes it · Shift-click a kerb, then the kerb across the road, adds one · Ctrl-click a kerb with no partner, then click the road\'s side · Enter creates the roads, Esc leaves.';
+    const S = this.stage;
+    if (S && S.one) return 'Click on the road\'s side of that kerb · Esc leaves.';
+    if (S && S.pairFrom) return 'Click the kerb on the other side of that road.';
+    if (S && S.mode === 'sub') return 'Click: remove the roads of a kerb line · Shift-click: just this road · Enter: create · Backspace: undo pick · Esc: leave';
+    return 'Click: add a kerb line and its roads · Shift-click: just this piece · Alt-click: subtract · Ctrl-click: lone kerb · Enter: create · Backspace: undo pick · Esc: leave';
   },
 
   // ── the canvas ──
   down(wx, wy, e) {
     const S = this.stage; if (!S) return;
-    const tol = 12 / RoadPlan._view.z, pt = [wx, wy];
-    if (S.one != null && !(e.altKey || e.shiftKey || e.ctrlKey || e.metaKey)) { S.place(pt); this._refresh(); return; }
-    if (e.ctrlKey || e.metaKey) {
-      const i = S.chainAt(pt, tol); if (i < 0) { UI.toast('Click on a kerb line.', 'info', 2500); return; }
-      S.arm(i); UI.toast(`Click on the road's side of that kerb: the road goes ${this.opt.oneW} m wide beside it.`, 'info', 4000); this._refresh(); return;
-    }
-    if (e.altKey) { if (!S.remove(pt, tol)) UI.toast('No road there.', 'info', 2000); this._refresh(); return; }
-    if (e.shiftKey) {
-      const r = S.pair(pt, tol);
-      if (r === 'nokerb') UI.toast('Click on a kerb line.', 'info', 2500);
-      else if (r === 'first') UI.toast('Now Shift-click the kerb on the other side of that road.', 'info', 3000);
-      else if (r === 'noroad') UI.toast('Those two kerbs do not run beside each other.', 'warn', 3500);
+    const tol = 12 / RoadPlan._view.z, pt = [wx, wy], mod = e.altKey || e.shiftKey || e.ctrlKey || e.metaKey;
+    if (S.one && !mod) { S.place(pt); this._refresh(); return; }
+    if (S.pairFrom && !mod) {
+      const h = S.hitAt(pt, tol);
+      if (!h) { S.pairFrom = null; UI.toast('Pairing cancelled: no kerb there.', 'info', 2500); }
+      else { const r = S.pairWith(h.layer, h.chain); if (r === 'noroad') UI.toast('Those two kerbs do not run beside each other.', 'warn', 3500); else if (r === 'layer') UI.toast('That kerb is on another layer: tick "Look for partners on any layer".', 'warn', 4000); }
       this._refresh(); return;
     }
-    UI.toast('Alt-click removes a road; Shift-click two kerbs adds one; Ctrl-click a lone kerb; Enter creates the roads.', 'info', 3500);
+    if (e.ctrlKey || e.metaKey) {
+      const h = S.hitAt(pt, tol); if (!h) { UI.toast('Click on a kerb line.', 'info', 2500); return; }
+      S.arm(h.layer, h.chain); UI.toast(`Click on the road's side of that kerb: the road goes ${this.opt.oneW} m wide beside it.`, 'info', 4000); this._refresh(); return;
+    }
+    const h = S.hitAt(pt, tol), op = e.altKey ? 'sub' : S.mode;
+    if (!h) {
+      if (op === 'sub') { const i = S.streetAt(pt, tol); if (i >= 0) { const r = S.subStreet(i); UI.toast(r && !r.noop ? 'Road removed.' : 'Nothing to remove there.', 'info', 2000); this._refresh(); return; } }
+      UI.toast('Click on a kerb line.', 'info', 2500); return;
+    }
+    if (op === 'add' && !e.shiftKey && S.lonely.some(l => l.layer === h.layer && l.chain === h.chain)) { S.armPair(h.layer, h.chain); UI.toast('Now click the kerb across the road.', 'info', 3500); this._refresh(); return; }
+    const r = S.addChain(h.layer, h.chain, e.shiftKey ? h.part : null, op), n = k => `${k} road${k === 1 ? '' : 's'}`;
+    if (r.noop) UI.toast(op === 'add' ? 'Already in.' : 'Nothing to remove there.', 'info', 1800);
+    else if (op === 'add') UI.toast(r.added ? `Added ${n(r.added)}.` : r.lonely > 0 ? 'No partner found: shown red. Click it again, then the kerb across the road.' : 'Added.', r.added ? 'success' : 'warn', 3000);
+    else UI.toast(`Removed ${n(r.removed)}.`, 'info', 2000);
+    this._refresh();
+  },
+  move(wx, wy, e) {
+    const S = this.stage; if (!S) return;
+    const h = S.hitAt([wx, wy], 12 / RoadPlan._view.z), part = h && e && e.shiftKey ? h.part : null, key = h ? h.layer + '\u0000' + h.chain + (part ? part.join(',') : '') : '';
+    if (key !== S._hk) { S._hk = key; S.hover = h ? { ...h, part } : null; RoadPlan.renderScreen(); }
   },
   key(e) {
-    if (e.key === 'Enter' && this.stage) { this.create(); return true; }
+    const S = this.stage; if (!S) return false;
+    if (e.key === 'Backspace') { if (S.undo()) { UI.toast('Last pick taken back.', 'info', 1500); this._refresh(); } return true; }
+    if (e.key === 'Enter') { this.create(); return true; }
     if (e.key === 'Escape') { RoadPlan.setTool('select'); return true; }
     return false;
   },
   overlay(S, out) {
     const T = this.stage; if (!T) return;
     const poly = (pts, attrs) => pts.length > 1 ? `<path d="M${pts.map(q => S(q[0], q[1]).map(v => v.toFixed(1)).join(' ')).join('L')}" fill="none" ${attrs}/>` : '';
-    const un = new Set(T.unpaired);
-    T.chains.forEach((c, i) => {
-      if (T.pickA === i || T.one === i) out.push(poly(c.pts, 'stroke="#2563eb" stroke-width="3"'));
-      else if (un.has(i)) out.push(poly(c.pts, 'stroke="#dc2626" stroke-width="2" stroke-dasharray="6 4"'));
-      else out.push(poly(c.pts, 'stroke="#64748b" stroke-width="1" opacity=".55"'));
+    const lonely = new Set(T.lonely.map(l => l.layer + '\u0000' + l.chain)), armed = T.pairFrom || T.one;
+    for (const k of T.keys()) T.layers[k].forEach((c, i) => {
+      const id = k + '\u0000' + i;
+      if (armed && armed.layer === k && armed.chain === i) out.push(poly(c.pts, 'stroke="#2563eb" stroke-width="3"'));
+      else if (lonely.has(id)) out.push(poly(c.pts, 'stroke="#dc2626" stroke-width="2" stroke-dasharray="6 4"'));
+      else if (T.used.has(id)) out.push(poly(c.pts, 'stroke="#1e40af" stroke-width="1.6" opacity=".75"'));
+      else out.push(poly(c.pts, 'stroke="#64748b" stroke-width="1" opacity=".4"'));
     });
+    if (T.hover) { const c = T.layers[T.hover.layer] && T.layers[T.hover.layer][T.hover.chain]; if (c) out.push(poly(c.pts, `stroke="${T.mode === 'add' ? '#16a34a' : '#dc2626'}" stroke-width="4" opacity=".9"`)); }
     const main = new Set((T.networks()[0]) || []);
     T.streets.forEach((st, k) => {
       out.push(poly(st.pts, `stroke="${main.has(k) ? '#f59e0b' : '#ea580c'}" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"`));
@@ -117,49 +136,56 @@ const RoadKerbs = {
   // ── the panel ──
   panelHtml() {
     const o = this.opt, T = this.stage, L = this.layers();
-    const num = (k, label, min, max, step) => `<label class="rk-num">${label}<input type="number" class="sl-in-num" data-rpk="${k}" min="${min}" max="${max}" step="${step}" value="${o[k]}"></label>`;
-    const pick = `<label class="rl-field">Layer with the kerb lines<select data-rpk="layer">${L.map(x => `<option value="${escHtml(x.layer)}"${x.layer === this.layer ? ' selected' : ''}>${escHtml(x.layer)} (${x.n})${x.kerbs ? ' · kerbs (pair them)' : ''}</option>`).join('')}</select></label>`;
-    let body = '';
-    if (!T) {
-      body = `<p class="sl-hint">Each road of the layer is found from its two kerbs: the centreline midway between them, the carriageway width taken from the drawing. You review the result on the plan before any road is made.</p>
-        <div class="rk-opts">${num('wmin', 'Road width at least', 1, 30, 0.5)}${num('wmax', 'at most', 5, 60, 0.5)}${num('gap', 'Bridge gaps up to (m)', 0, 60, 1)}</div>
-        <button class="btn-small btn-primary" data-rp="rk-find"${L.length ? '' : ' disabled'}>Find roads</button> <button class="btn-small" data-rp="rk-close">Cancel</button>`;
-    } else {
-      const nets = T.networks(), info = T.unpaired.map(i => T.info(i));
-      body = `<div><b>${T.streets.length}</b> road${T.streets.length === 1 ? '' : 's'} (amber, width on each) from ${T.chains.length} kerb chains.</div>
-        ${nets.length > 1 ? `<div class="rk-warn"><b>${nets.length} separate networks</b> (${nets.map(c => c.length).join(' + ')} roads; the ones cut off are orange): the circuits and junction lighting do not link across a gap.<div class="rk-row"><button class="btn-small" data-rp="rk-join">Join networks up to</button><input type="number" class="sl-in-num" data-rpk="join" min="1" max="200" step="5" value="${o.join}"> m</div></div>` : T.streets.length ? '<div class="rk-ok">The roads form one connected network.</div>' : ''}
-        <div class="rk-opts">${num('wmin', 'Road width at least', 1, 30, 0.5)}${num('wmax', 'at most', 5, 60, 0.5)}${num('gap', 'Bridge gaps up to (m)', 0, 60, 1)}</div>
-        <div class="sl-hint">Ctrl-click a kerb with no partner, then click the road's side: a road <input type="number" class="sl-in-num" data-rpk="oneW" min="3" max="40" step="0.5" value="${o.oneW}"> m wide beside it.</div>
-        ${info.length ? `<div class="rk-bad"><b>${info.length} kerb chain${info.length === 1 ? ' has' : 's have'} no partner</b> (red dashed):<div class="rk-list">${info.map(k => `<div class="rk-item"><span>near ${Math.round(k.at[0])}, ${Math.round(k.at[1])} m · ${Math.round(k.len)} m</span><span><button class="btn-small" data-rp="rk-show" data-i="${k.i}">show</button><button class="btn-small${T.one === k.i ? ' active' : ''}" data-rp="rk-one" data-i="${k.i}" title="A road with a kerb on this side only">road from this kerb</button></span></div>`).join('')}</div></div>` : '<div class="rk-ok">Every kerb chain was paired.</div>'}
-        <div class="rk-row"><button class="btn-small btn-primary" data-rp="rk-create"${T.streets.length ? '' : ' disabled'}>Create ${T.streets.length} road${T.streets.length === 1 ? '' : 's'}</button><button class="btn-small" data-rp="rk-back">Change layer</button><button class="btn-small" data-rp="rk-close">Cancel</button></div>`;
-    }
-    return `<div class="rk-panel"><h3>Roads from kerbs</h3>${T ? `<div class="sl-hint">Layer "${escHtml(this.layer)}"</div>` : pick}${body}</div>`;
+    if (!T) return '';
+    const num = (k, label, min, max, step) => `<label class="rk-num">${label}<input type="number" class="sl-in-num" data-rpk="${k}" min="${min}" max="${max}" step="${step}" value="${escHtml(o[k])}"></label>`;
+    const nets = T.networks(), info = T.lonely.map(l => T.info(l.layer, l.chain));
+    const pickName = p => p.op === 'all' ? 'Paired every kerb of a layer' : p.op === 'pair' ? 'Paired two kerbs by hand' : p.op === 'one' ? 'Road beside a lone kerb' : `${p.op === 'add' ? 'Added' : 'Removed'} ${p.items.length > 1 ? p.items.length + ' kerb lines' : 'a kerb line'}${p.items[0] && p.items[0].span ? ' (one piece)' : ''}`;
+    const body = `<div class="rk-row"><button class="btn-small${T.mode === 'add' ? ' active' : ''}" data-rp="rk-mode" data-m="add" aria-pressed="${T.mode === 'add'}">Add</button><button class="btn-small${T.mode === 'sub' ? ' active' : ''}" data-rp="rk-mode" data-m="sub" aria-pressed="${T.mode === 'sub'}">Subtract</button><button class="btn-small" data-rp="rk-undo"${T.picks.length ? '' : ' disabled'} title="Backspace">Undo last pick</button></div>
+      <div class="sl-hint">Click a kerb line (any layer) to add it and every road it touches. Shift-click takes just the one drawn piece. Alt-click subtracts for one click; click a road in Subtract to remove it.</div>
+      <div><b>${T.streets.length}</b> road${T.streets.length === 1 ? '' : 's'} (amber, width on each).</div>
+      <div class="rk-row"><label class="rl-field">Pair all on layer<select data-rpk="layer">${L.map(x => `<option value="${escHtml(x.layer)}"${x.layer === this.layer ? ' selected' : ''}>${escHtml(x.layer)} (${x.n})${x.kerbs ? ' · kerbs (pair them)' : ''}</option>`).join('')}</select></label><button class="btn-small" data-rp="rk-pairall"${L.length ? '' : ' disabled'}>Pair all</button></div>
+      <label class="sl-hint"><input type="checkbox" data-rpk="anylayer"${T.anyLayer ? ' checked' : ''}> Look for partners on any layer</label>
+      ${nets.length > 1 ? `<div class="rk-warn"><b>${nets.length} separate networks</b> (${nets.map(c => c.length).join(' + ')} roads; the ones cut off are orange): the circuits and junction lighting do not link across a gap.<div class="rk-row"><button class="btn-small" data-rp="rk-join">Join networks up to</button><input type="number" class="sl-in-num" data-rpk="join" min="1" max="200" step="5" value="${escHtml(o.join)}"> m</div></div>` : T.streets.length ? '<div class="rk-ok">The roads form one connected network.</div>' : ''}
+      <div class="rk-opts">${num('wmin', 'Road width at least', 1, 30, 0.5)}${num('wmax', 'at most', 5, 60, 0.5)}${num('gap', 'Bridge gaps up to (m)', 0, 60, 1)}</div>
+      <div class="sl-hint">Ctrl-click a kerb with no partner, then click the road's side: a road <input type="number" class="sl-in-num" data-rpk="oneW" min="3" max="40" step="0.5" value="${escHtml(o.oneW)}"> m wide beside it.</div>
+      ${info.length ? `<div class="rk-bad"><b>Clicked, no partner</b> (${info.length}, red dashed):<div class="rk-list">${info.map(k => `<div class="rk-item"><span>near ${Math.round(k.at[0])}, ${Math.round(k.at[1])} m · ${Math.round(k.len)} m</span><span><button class="btn-small" data-rp="rk-show" data-l="${escHtml(k.layer)}" data-i="${k.i}">show</button><button class="btn-small" data-rp="rk-pair" data-l="${escHtml(k.layer)}" data-i="${k.i}" title="Then click the kerb across the road">pair…</button><button class="btn-small${T.one && T.one.layer === k.layer && T.one.chain === k.i ? ' active' : ''}" data-rp="rk-one" data-l="${escHtml(k.layer)}" data-i="${k.i}" title="A road with a kerb on this side only">one side…</button></span></div>`).join('')}</div></div>` : ''}
+      ${T.picks.length ? `<details><summary class="sl-hint">Picks (${T.picks.length})</summary><div class="rk-list">${T.picks.map((p, i) => `<div class="rk-item"><span>${pickName(p)}</span><button class="btn-small" data-rp="rk-rmpick" data-i="${i}" title="Take this pick out">×</button></div>`).reverse().join('')}</div></details>` : ''}
+      <div class="rk-row"><button class="btn-small btn-primary" data-rp="rk-create"${T.streets.length ? '' : ' disabled'}>Create ${T.streets.length} road${T.streets.length === 1 ? '' : 's'}</button><button class="btn-small" data-rp="rk-close">Cancel</button></div>`;
+    return `<div class="rk-panel"><h3>Roads from kerbs: pick</h3>${body}</div>`;
   },
   act(t) {
     const a = t.dataset.rp; if (!a.startsWith('rk-')) return false;
     const T = this.stage;
-    if (a === 'rk-find') this.find();
-    else if (a === 'rk-close') RoadPlan.setTool('select');
-    else if (a === 'rk-back') { this.stage = null; this._refresh(); }
+    if (a === 'rk-close') RoadPlan.setTool('select');
     else if (a === 'rk-create') this.create();
-    else if (a === 'rk-join' && T) {
+    else if (!T) return true;
+    else if (a === 'rk-mode') { T.mode = t.dataset.m; T.one = T.pairFrom = null; this._refresh(); }
+    else if (a === 'rk-undo') { T.undo(); this._refresh(); }
+    else if (a === 'rk-rmpick') { T.removePick(+t.dataset.i); this._refresh(); }
+    else if (a === 'rk-pairall') {
+      if (!this.layer || !T.layers[this.layer]) { UI.toast(`Layer "${this.layer}" has no lines.`, 'warn', 3500); return true; }
+      const r = T.pairAll(this.layer); UI.toast(r.noop ? 'That layer is already paired.' : `${r.added} road${r.added === 1 ? '' : 's'} found${T.lonely.length ? `; ${T.lonely.length} kerb chain${T.lonely.length === 1 ? '' : 's'} without a partner (red)` : ''}.`, r.noop ? 'info' : 'success', 5000);
+      this._refresh();
+    } else if (a === 'rk-join') {
       const n = T.join(this.opt.join), c = T.networks().length;
       UI.toast(n ? `${n} join${n === 1 ? '' : 's'} made; ${c === 1 ? 'one connected network now' : c + ' networks remain (the gaps are wider than ' + this.opt.join + ' m)'}.` : `Nothing within ${this.opt.join} m to join.`, c === 1 ? 'success' : 'warn', 5000);
       this._refresh();
-    } else if (a === 'rk-show' && T) {
-      const c = T.chains[+t.dataset.i], xs = c.pts.map(p => p[0]), ys = c.pts.map(p => p[1]);
+    } else if (a === 'rk-show') {
+      const c = T.layers[t.dataset.l][+t.dataset.i], xs = c.pts.map(p => p[0]), ys = c.pts.map(p => p[1]);
       const { W, H } = RoadPlan._size(), x0 = Math.min(...xs) - 15, x1 = Math.max(...xs) + 15, y0 = Math.min(...ys) - 15, y1 = Math.max(...ys) + 15;
       RoadPlan._view = { cx: (x0 + x1) / 2, cy: (y0 + y1) / 2, z: Math.max(0.02, Math.min(40, Math.min(W / (x1 - x0), H / (y1 - y0)))) };
       RoadPlan.applyView();
-    } else if (a === 'rk-one' && T) { T.arm(+t.dataset.i); UI.toast(`Click on the road's side of that kerb: the road goes ${this.opt.oneW} m wide beside it.`, 'info', 4000); this._refresh(); }
+    } else if (a === 'rk-pair') { T.armPair(t.dataset.l, +t.dataset.i); UI.toast('Now click the kerb on the other side of that road.', 'info', 3500); this._refresh(); }
+    else if (a === 'rk-one') { T.arm(t.dataset.l, +t.dataset.i); UI.toast(`Click on the road's side of that kerb: the road goes ${this.opt.oneW} m wide beside it.`, 'info', 4000); this._refresh(); }
     return true;
   },
   change(t) {
     const k = t.dataset.rpk;
     if (k === 'layer') { this.layer = t.value; return; }
+    if (k === 'anylayer') { if (this.stage) { this.stage.setAnyLayer(t.checked); this._refresh(); } return; }
     const v = parseFloat(t.value); if (!isFinite(v)) return;
     this.opt[k] = v;
-    if (this.stage && k !== 'join' && k !== 'oneW') this.resolve();
+    if (this.stage) { if (k === 'join' || k === 'oneW') this.stage.o = Object.assign({}, this.stage.o, this.opt); else { this.stage.setOpt(this.opt); this._refresh(); } }
   },
 
   // ── Create ──
@@ -168,7 +194,7 @@ const RoadKerbs = {
     const designId = await RoadPlan._designForNewRoad(); if (!designId) return;
     const nets = T.networks().length, made = [];
     for (const st of T.streets) {
-      const sd = PlanKerbs.sides(st, T.chains, T.o); if (sd.a.length < 2 || sd.b.length < 2) continue;
+      const sd = PlanKerbs.sides(st, T.chainsOf(st), T.o); if (sd.a.length < 2 || sd.b.length < 2) continue;
       const nm = this._nameOf ? this._nameOf(st, true) : null;
       const road = { id: RoadPlan._genId('rpr'), name: nm || `Road ${RoadPlan.roads.length + 1}`, designId, radius: 50, poles: [], layout: {}, mode: 'kerbs', kerbs: { a: sd.a, b: sd.b } };
       RoadPlan.roads.push(road); made.push(road);

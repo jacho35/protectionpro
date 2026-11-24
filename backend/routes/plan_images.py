@@ -23,8 +23,10 @@ MAX_UPLOAD_BYTES = 60 * 1024 * 1024
 # `application/json` carries a DXF trace-over underlay: the normalised entity
 # list the DXF import already produces, stored instead of the source DXF so a
 # reload is one GET rather than another ezdxf parse.
-ALLOWED_MIME = {"image/png", "image/jpeg", "image/webp", "application/pdf", "application/json"}
-ALLOWED_KIND = {"raster", "pdf", "dxf"}
+# `application/dxf` (kind `dxfsrc`) is that underlay's ORIGINAL file, kept so the plan's DXF export can merge the drawing exactly
+# (linetypes, text styles, hatches) rather than rebuild it from the parsed copy.
+ALLOWED_MIME = {"image/png", "image/jpeg", "image/webp", "application/pdf", "application/json", "application/dxf"}
+ALLOWED_KIND = {"raster", "pdf", "dxf", "dxfsrc"}
 # Orphan uploads (never attached to a saved project) are swept after this.
 ORPHAN_TTL = timedelta(hours=24)
 
@@ -37,9 +39,11 @@ def _project_level(db, project_id, user):
 
 
 def _can(db: Session, img, user: User, level: str) -> bool:
-    """The uploader, or anyone whose access to the image's project reaches `level`."""
-    if img.owner_id == user.id:
-        return True
+    """Access to an image. Before it is attached to a project only its uploader has
+    any; afterwards the project's CURRENT permissions decide, so a collaborator whose
+    share was removed or downgraded loses their hold on what they uploaded."""
+    if img.project_id is None:
+        return img.owner_id == user.id
     got = _project_level(db, img.project_id, user)
     return got is not None and _LEVELS[got] >= _LEVELS[level]
 

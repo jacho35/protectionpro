@@ -392,6 +392,7 @@ const GridTable = {
     if (!el || el.disabled || el.readOnly) return true;
     raw = raw == null ? '' : String(raw).trim();
     if (el.tagName === 'SELECT') {
+      if (typeof SearchSelect !== 'undefined') SearchSelect.fill(el);   // a lazy list gets its options first
       const low = raw.toLowerCase();
       const opt = [...el.options].find(o => o.value === raw)
         || [...el.options].find(o => o.textContent.trim().toLowerCase() === low)

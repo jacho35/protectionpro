@@ -53,6 +53,7 @@ const CollabData = {
         set: v => { if (SL() && v && typeof v === 'object') SL().settings = v; } },
       { key: 'sl.circuits', kind: 'list', group: 'sl', get: () => SL() && SL().circuits },
       { key: 'sl.roadDesigns', kind: 'list', group: 'sl', get: () => SL() && SL().roadDesigns },
+      { key: 'sl.roadSections', kind: 'list', group: 'sl', get: () => SL() && (SL().roadSections || (SL().roadSections = [])) },
       { key: 'sl.photometry', kind: 'map', group: 'sl', immutable: true, get: () => SL() && SL().photometry },
 
       { key: 'rp.roads', kind: 'list', group: 'rp', get: () => RP() && RP().roads },
@@ -102,7 +103,7 @@ const CollabData = {
       const id = fl.id;
       for (const k of AppState._PLAN_FLOOR_KEYS) {
         const key = `plan.${id}.${k}`;
-        if (k === 'scale' || k === 'cropBox') {
+        if (k === 'scale' || k === 'cropBox' || k === 'workArea') {
           out.push({ key, kind: 'value', group: 'plan', get: () => live(id, k),
             set: v => {
               const p = pm(), f = floor(id);

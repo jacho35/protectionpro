@@ -175,7 +175,32 @@ const RoadLight = {
   _num(v, d) { const x = parseFloat(v); return isFinite(x) ? x : d; },
   _fmt(v, dp = 2) { return v === null || v === undefined || !isFinite(v) ? '—' : (+v).toFixed(dp); },
   _markDirty() { AppState.dirty = true; },
-  _genSecId(des) { des._secSeq = (des._secSeq || 1) + 1; return 'sec_' + des._secSeq; },
+  _genSecId(des) { const L = this._secs(des); do { des._secSeq = (des._secSeq || 1) + 1; } while (L.some(s => s.id === 'sec_' + des._secSeq)); return 'sec_' + des._secSeq; },
+  // Road section picker: the design's strips are its road section's (shared with every design and road using it), or its own
+  _sectionPickHtml(des) {
+    if (typeof RoadSections === 'undefined') return '';
+    const sec = RoadSections.get(des.section), L = RoadSections.list();
+    const others = sec ? RoadSections.designsUsing(sec.id).filter(d => d !== des).length : 0, roads = sec ? RoadSections.roadsUsing(sec.id).length : 0;
+    const use = sec ? [others ? `${others} other design${others === 1 ? '' : 's'}` : '', roads ? `${roads} road${roads === 1 ? '' : 's'} on the plan` : ''].filter(Boolean).join(' and ') : '';
+    return `<div class="rl-secpick" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:6px 0">
+      <label class="rl-inline" title="The road section the strips come from. Editing the strips here edits the section">Road section<select data-dz="section">${L.map(x => `<option value="${escHtml(x.id)}"${sec && x.id === sec.id ? ' selected' : ''}>${escHtml(x.name)}</option>`).join('')}<option value=""${sec ? '' : ' selected'}>Own strips (this design only)</option></select></label>
+      ${sec ? `<button class="btn-small" data-rl="opensec">Edit in Road sections</button><span class="sl-hint">${use ? 'Also used by ' + escHtml(use) + '. ' : ''}A change to the strips changes the section for all of them.</span>`
+        : `<button class="btn-small" data-rl="mksec">Make a road section from these strips</button><span class="sl-hint">These strips belong to this design only.</span>`}</div>`;
+  },
+  _setSection(des, id) {
+    if (typeof RoadSections === 'undefined') return;
+    const cur = RoadSections.get(des.section);
+    if (!id) { if (cur) { des.sections = JSON.parse(JSON.stringify(cur.strips)); delete des.section; } return; }
+    if (!RoadSections.get(id)) return;
+    des.section = id; des.sections = [];
+  },
+  _makeSection(des) {
+    if (typeof RoadSections === 'undefined' || RoadSections.get(des.section)) return;
+    const sec = RoadSections.add(des.name || 'Road section', this._secs(des));
+    des.section = sec.id; des.sections = [];
+  },
+  // the strips of a design: its road section's (the same array, so an edit here edits the section) or, without one, its own
+  _secs(des) { if (!des) return []; if (typeof RoadSections !== 'undefined') return RoadSections.stripsOf(des); if (!Array.isArray(des.sections)) des.sections = []; return des.sections; },
   _genRowId(des) { des._rowSeq = (des._rowSeq || 1) + 1; return 'row_' + des._rowSeq; },
 
   // ─── Mount / lifecycle (called by StreetLight's view switch) ─────────
@@ -237,7 +262,7 @@ const RoadLight = {
         const text = await f.text();
         const prof = await API.request('/analysis/road-lighting/photometry', 'POST', { text, filename: f.name });
         const id = 'ph_' + (this.sl._phSeq++);
-        this.library[id] = Object.assign(prof, { id, rotate: 0, fileName: f.name });
+        this.library[id] = Object.assign(prof, { id, rotate: 0, fileName: f.name, drawToSize: true });
         added.push(prof.name || f.name);
       } catch (e) {
         failed.push(`${f.name}: ${e && e.message ? e.message : e}`);
@@ -282,6 +307,7 @@ const RoadLight = {
       _secSeq: 1, _rowSeq: 1,
     };
     this._applyTemplate(des, 'two-lane');
+    if (typeof RoadSections !== 'undefined') { const sec = RoadSections.add((RL_TEMPLATES.find(t => t.id === 'two-lane') || {}).name || des.name, des.sections); des.section = sec.id; des.sections = []; }
     des.rows = [this._row(des, 'left', { photometryId: pid })];
     this.designs.push(des);
     this._selId = des.id;
@@ -300,17 +326,19 @@ const RoadLight = {
     if (!t) return;
     des.template = tid;
     const sans = this._std(des) === 'SANS';
-    des.sections = t.sections.map(s => {
+    // the strips go into the design's road section when it has one (every design and road using that section follows)
+    const arr = this._secs(des), made = t.sections.map(s => {
       const o = Object.assign({ id: this._genSecId(des), name: '', lanes: 2, surface: 'R3', direction: 'forward', cls: '', volume: 0 }, s);
       o.cls = sans ? (s.sans || '') : (s.cls || '');
       delete o.sans;
       return o;
     });
+    arr.splice(0, arr.length, ...made);
   },
 
   // ─── Standard (SANS 10098-1 / EN 13201-2) ────────────────────────────
   _std(des) { return des && des.standard === 'SANS' ? 'SANS' : 'EN'; },
-  _hasMedian(des) { return des.sections.some(s => s.type === 'median' && this._num(s.width, 0) > 0); },
+  _hasMedian(des) { return this._secs(des).some(s => s.type === 'median' && this._num(s.width, 0) > 0); },
   _classGroups(des) { return this._std(des) === 'SANS' ? RL_SANS_GROUPS : RL_CLASS_GROUPS; },
   _isLumClass(des, cls) { return this._std(des) === 'SANS' ? /^A[1-4]$/.test(cls || '') : /^M[1-6]$/.test(cls || ''); },
   // Requirement text for a strip's class — SANS group A depends on the
@@ -331,7 +359,7 @@ const RoadLight = {
     const to = std === 'SANS' ? 'SANS' : 'EN';
     if (this._std(des) === to) return;
     const map = to === 'SANS' ? RL_EN_TO_SANS : RL_SANS_TO_EN;
-    for (const s of des.sections) {
+    for (const s of this._secs(des)) {
       if (!s.cls) continue;
       if (to === 'SANS' && /^P[1-6]$/.test(s.cls)) s.cls = s.type === 'carriageway' ? ({ P5: 'B2', P6: 'B3' }[s.cls] || 'B1') : 'CP' + s.cls.slice(1);
       else s.cls = map[s.cls] || '';
@@ -346,7 +374,7 @@ const RoadLight = {
     const base = Object.assign({}, des.rows[0] || {});
     delete base.id; delete base.side; delete base.xOffset;
     const mk = (side, extra = {}) => this._row(des, side, Object.assign({}, base, extra));
-    const hasMedian = des.sections.some(s => s.type === 'median');
+    const hasMedian = this._secs(des).some(s => s.type === 'median');
     switch (arr) {
       case 'single-left': des.rows = [mk('left')]; break;
       case 'single-right': des.rows = [mk('right')]; break;
@@ -388,7 +416,7 @@ const RoadLight = {
   // ─── Geometry → engine payload ───────────────────────────────────────
   _layout(des) {
     let y = 0;
-    const secs = des.sections.map(s => {
+    const secs = this._secs(des).map(s => {
       const w = Math.max(0, this._num(s.width, 0));
       const o = { ...s, y0: y, y1: y + w, width: w };
       y += w;
@@ -432,8 +460,8 @@ const RoadLight = {
     const photometry = {};
     for (const id of used) if (this.library[id]) photometry[id] = this.library[id];
     const out = {
-      standard: this._std(des),
-      sections: lay.secs.map(s => ({ type: s.type, name: s.name || this._secName(s, des), width: s.width, lanes: s.lanes, cls: s.cls, surface: s.surface, direction: s.direction, volume: this._num(s.volume, 0) })),
+      standard: this._std(des), driveSide: this._driveSide(des),
+      sections: lay.secs.map(s => this._secPayload(s, des)),
       rows: this._rowsPayload(des, lay),
       spacing: this._num(des.spacing, 30), mf: this._num(des.mf, 0.8), hoursPerYear: this._num(des.hours, 4100),
       photometry, mode: 'verify',
@@ -442,15 +470,51 @@ const RoadLight = {
     return Object.assign(out, extra);
   },
 
+  // Traffic on a carriageway: one way up the chainage ('forward'), one way
+  // down it ('reverse') or — on a 2-lane carriageway only, wider roads are
+  // drawn as carriageways of their own — two way ('two', one lane each way,
+  // the side from `driveSide`). The engines check each lane from its own
+  // direction of travel.
+  _trafficSelect(s, i) {
+    const two = this._num(s.lanes, 2) === 2;
+    const d = s.direction === 'two' && two ? 'two' : s.direction === 'reverse' ? 'reverse' : 'forward';
+    return `<select data-sec="direction" data-i="${i}" title="Direction of travel the observers look in${two ? '. Two way: one lane each way, each checked from its own direction' : ''}">`
+      + `<option value="forward"${d === 'forward' ? ' selected' : ''}>→ away</option>`
+      + `<option value="reverse"${d === 'reverse' ? ' selected' : ''}>← towards</option>`
+      + (two ? `<option value="two"${d === 'two' ? ' selected' : ''}>⇅ two way</option>` : '')
+      + '</select>';
+  },
+
+  // Results line of a two-way carriageway: which way each observer lane looks.
+  _twoWayNote(a) {
+    const o = a.observers || [];
+    if (o.length < 2 || !o.some(x => x.dir === 'reverse') || !o.some(x => x.dir !== 'reverse')) return '';
+    return ` · two way: ${o.map(x => `lane ${x.lane} ${x.dir === 'reverse' ? '↓ towards' : '↑ away'}${x.Lav != null ? ` L̄ ${this._fmt(x.Lav, 2)}, TI ${this._fmt(x.TI, 1)} %` : ''}`).join(' · ')}`;
+  },
+
+  _driveSide(des) { return des && des.driveSide === 'right' ? 'right' : 'left'; },
+
+  _hasTwoWay(des) { return !!des && this._secs(des).some(s => s.type === 'carriageway' && s.direction === 'two' && this._num(s.lanes, 2) === 2); },
+
+  _trafficText(s) {
+    if (s.direction === 'two' && this._num(s.lanes, 2) === 2) return 'two way';
+    return s.direction === 'reverse' ? 'towards' : 'away';
+  },
+
+  _secPayload(s, des) {
+    const direction = s.direction === 'two' && this._num(s.lanes, 2) !== 2 ? 'forward' : (s.direction || 'forward');
+    return { type: s.type, name: s.name || this._secName(s, des), width: s.width, lanes: s.lanes, cls: s.cls, surface: s.surface, direction, volume: this._num(s.volume, 0) };
+  },
+
   _secName(s, des) {
-    const same = des.sections.filter(x => x.type === s.type);
+    const same = this._secs(des).filter(x => x.type === s.type);
     const t = (RL_SECTION_TYPES.find(x => x.id === s.type) || { name: s.type }).name;
-    return same.length > 1 ? `${t} ${same.indexOf(des.sections.find(x => x.id === s.id)) + 1}` : t;
+    return same.length > 1 ? `${t} ${same.indexOf(this._secs(des).find(x => x.id === s.id)) + 1}` : t;
   },
 
   _problems(des) {
     const p = [];
-    if (!des.sections.some(s => this._num(s.width, 0) > 0)) p.push('Add at least one strip to the cross-section.');
+    if (!this._secs(des).some(s => this._num(s.width, 0) > 0)) p.push('Add at least one strip to the cross-section.');
     if (!des.rows.length) p.push('Add a luminaire row.');
     for (const r of des.rows) if (!this.library[r.photometryId]) { p.push('Pick a luminaire for every row (import an IES / LDT file or add a generic optic).'); break; }
     if (!(this._num(des.spacing, 0) > 0)) p.push('Set a spacing.');
@@ -545,7 +609,7 @@ const RoadLight = {
     } else {
       el.innerHTML = this.designs.map(d => {
         const r = this._results[d.id];
-        const cls = [...new Set(d.sections.map(s => s.cls).filter(Boolean))].join(' · ');
+        const cls = [...new Set(this._secs(d).map(s => s.cls).filter(Boolean))].join(' · ');
         return `<button class="sl-rail-item${d.id === this._selId ? ' active' : ''}" data-rl-sel="${d.id}">
           <span class="sl-rail-row"><span class="sl-rail-name">${escHtml(d.name)}</span>${this._badge(d)}</span>
           <span class="sl-rail-meta">${escHtml((RL_ARRANGEMENTS.find(a => a.id === d.arrangement) || {}).name || '')} · S ${this._fmt(d.spacing, 1)} m${cls ? ' · ' + escHtml(cls) : ''}${r && r.energy ? ` · ${Math.round(r.energy.wPerKm)} W/km` : ''}</span>
@@ -595,23 +659,25 @@ const RoadLight = {
         <div class="rl-card-head"><b>Cross-section</b><span class="sl-hint">left to right, looking in the direction of travel on the first carriageway. Each strip's <b>Class</b> is the lighting class it must meet.</span>
           <button class="btn-small rl-info-btn" data-rl="info" title="What the lighting classes and road surfaces mean">ⓘ Classes &amp; surfaces</button>
           <label class="rl-inline" title="The standard each strip's lighting class is checked against">Standard<select data-dz="standard">${RL_STANDARDS.map(x => `<option value="${x.id}"${x.id === this._std(des) ? ' selected' : ''}>${escHtml(x.name)}</option>`).join('')}</select></label>
+          ${this._hasTwoWay(des) ? `<label class="rl-inline" title="Which side of a two-way carriageway each direction drives on: the lane on the traffic's own side travels up the chainage">Traffic drives on the<select data-dz="driveSide"><option value="left"${this._driveSide(des) === 'left' ? ' selected' : ''}>left</option><option value="right"${this._driveSide(des) === 'right' ? ' selected' : ''}>right</option></select></label>` : ''}
           <label class="rl-inline">Template<select data-dz="template"><option value="">Apply a template…</option>${RL_TEMPLATES.map(t => `<option value="${t.id}">${escHtml(t.name)}</option>`).join('')}</select></label>
           <button class="btn-small" data-rl="addsec">+ Strip</button></div>
+        ${this._sectionPickHtml(des)}
         <table class="sl-table rl-table"><thead><tr><th>Strip</th><th>Name</th><th>Width m</th><th>Lanes</th><th title="EN 13201-2 / SANS 10098-1 lighting class the strip must meet — M traffic routes, C conflict areas, P pedestrian / residential">Class <button class="rl-icon rl-th-info" data-rl="info" aria-label="About lighting classes">ⓘ</button></th><th title="CIE road-surface reflection class (r-table), used for luminance">Surface <button class="rl-icon rl-th-info" data-rl="info" aria-label="About road surfaces">ⓘ</button></th><th title="Direction of travel the observer looks in">Traffic</th><th></th></tr></thead>
-        <tbody id="rl-sec-body">${des.sections.map((s, i) => {
-          const cw = s.type === 'carriageway';
-          return `<tr>
-            <td data-label="Strip"><select data-sec="type" data-i="${i}">${opt(RL_SECTION_TYPES, s.type)}</select></td>
+        <tbody id="rl-sec-body">${(onSec => this._secs(des).map((s, i) => {
+          const cw = s.type === 'carriageway', auto = s.type === 'verge' && onSec;          // on a road section a verge is the space left over
+          return `<tr${auto ? ' class="rl-auto"' : ''}>
+            <td data-label="Strip">${auto ? '<span title="The space the road reserve leaves beside the typed strips (Road sections)">Verge (the rest)</span>' : `<select data-sec="type" data-i="${i}">${opt(onSec ? RL_SECTION_TYPES.filter(t => t.id !== 'verge') : RL_SECTION_TYPES, s.type)}</select>`}</td>
             <td data-label="Name"><input data-sec="name" data-i="${i}" value="${escHtml(s.name || '')}" placeholder="${escHtml(this._secName(s, des))}"></td>
-            <td data-label="Width m"><input type="number" step="0.1" min="0" data-sec="width" data-i="${i}" value="${escHtml(s.width)}" class="sl-in-num"></td>
+            <td data-label="Width m">${auto ? `<span class="sl-k">${escHtml(this._fmt ? this._fmt(s.width, 2) : s.width)}</span>` : `<input type="number" step="0.1" min="0" data-sec="width" data-i="${i}" value="${escHtml(s.width)}" class="sl-in-num">`}</td>
             <td data-label="Lanes"${cw ? '' : ' class="rl-na"'}>${cw ? `<input type="number" step="1" min="1" data-sec="lanes" data-i="${i}" value="${escHtml(s.lanes)}" class="sl-in-num">` : '<span class="sl-k">—</span>'}</td>
             <td data-label="Lighting class" class="rl-cls-cell"><span class="rl-cls-pick"><select data-sec="cls" data-i="${i}" title="${escHtml(s.cls ? `${this._clsName(des, s.cls)}: ${this._clsReq(des, s.cls, s)}` : 'Not checked')}">${clsOpts(s.cls)}</select>${this._std(des) === 'SANS' && s.type !== 'median' ? `<button class="btn-small rl-suggest" data-rl-suggest="${i}" title="Suggest the SANS category from the road class, speed and traffic">Suggest</button>` : ''}</span>
               ${cw && this._std(des) === 'SANS' && RL_SANS_A[s.cls] ? `<select data-sec="volume" data-i="${i}" class="rl-vol" title="Maximum traffic volume during darkness (SANS 10098-1 Table 1)">${RL_SANS_BANDS[this._hasMedian(des) ? 'median' : 'noMedian'].map((b, k) => `<option value="${k}"${this._num(s.volume, 0) === k ? ' selected' : ''}>Night traffic ${b}</option>`).join('')}</select>` : ''}</td>
             <td data-label="Road surface"${cw ? '' : ' class="rl-na"'}>${cw ? `<select data-sec="surface" data-i="${i}" title="${escHtml(`${s.surface}: ${(RL_SURFACE_INFO[s.surface] || {}).desc || ''}`)}">${RL_SURFACES.map(x => `<option value="${x}"${x === s.surface ? ' selected' : ''} title="${escHtml(RL_SURFACE_INFO[x].desc)}">${x} — ${escHtml(RL_SURFACE_INFO[x].short)}</option>`).join('')}</select>` : '<span class="sl-k">—</span>'}</td>
-            <td data-label="Traffic"${cw ? '' : ' class="rl-na"'}>${cw ? `<select data-sec="direction" data-i="${i}"><option value="forward"${s.direction !== 'reverse' ? ' selected' : ''}>→ away</option><option value="reverse"${s.direction === 'reverse' ? ' selected' : ''}>← towards</option></select>` : '<span class="sl-k">—</span>'}</td>
-            <td class="rl-row-actions"><button class="rl-icon" data-rl-secmv="-1" data-i="${i}" title="Move left" aria-label="Move left">←</button><button class="rl-icon" data-rl-secmv="1" data-i="${i}" title="Move right" aria-label="Move right">→</button><button class="rl-icon" data-rl-secdel="${i}" title="Remove" aria-label="Remove strip">×</button></td>
+            <td data-label="Traffic"${cw ? '' : ' class="rl-na"'}>${cw ? this._trafficSelect(s, i) : '<span class="sl-k">—</span>'}</td>
+            <td class="rl-row-actions">${auto ? '' : `<button class="rl-icon" data-rl-secmv="-1" data-i="${i}" title="Move left" aria-label="Move left">←</button><button class="rl-icon" data-rl-secmv="1" data-i="${i}" title="Move right" aria-label="Move right">→</button><button class="rl-icon" data-rl-secdel="${i}" title="Remove" aria-label="Remove strip">×</button>`}</td>
           </tr>`;
-        }).join('')}</tbody></table>
+        }).join(''))(!!(des.section && typeof RoadSections !== 'undefined' && RoadSections.get(des.section)))}</tbody></table>
         ${this._secNotes(des)}
       </div>
       <div class="rl-card">
@@ -768,10 +834,12 @@ const RoadLight = {
     }
     let extra = '';
     if (a.family === 'M') {
-      extra = `<div class="sl-hint">Ē ${this._fmt(a.Eav, 1)} lx on the carriageway${a.REIsides && a.REIsides.length ? ` · REI ${a.REIsides.map(s => `${s.side} ${this._fmt(s.REI, 2)}`).join(', ')}` : ''}${a.observers && a.observers.length > 1 ? ` · worst of ${a.observers.length} observer lanes` : ''}</div>`;
+      extra = `<div class="sl-hint">Ē ${this._fmt(a.Eav, 1)} lx on the carriageway${a.REIsides && a.REIsides.length ? ` · REI ${a.REIsides.map(s => `${s.side} ${this._fmt(s.REI, 2)}`).join(', ')}` : ''}${a.observers && a.observers.length > 1 ? ` · worst of ${a.observers.length} observer lanes` : ''}${this._twoWayNote(a)}</div>`;
     } else if (a.family === 'A') {
       // SANS 10098-1 group A: the conventional observer, the Table 1 column used, and ES (reported only).
-      extra = `<div class="sl-hint">Night traffic ${escHtml(a.volumeBand || '')} per lane, ${escHtml(a.crossSection || '')} · L̄, Uo, TI from the observer at y = ${this._fmt(a.observer && a.observer.y, 2)} m (a quarter of the width from the left) · Ul per lane ${(a.observers || []).map(o => this._fmt(o.Ul, 2)).join(', ')} · Ē ${this._fmt(a.Eav, 1)} lx${a.ESsides && a.ESsides.length ? ` · surround ratio ES ${a.ESsides.map(s => `${s.side} ${this._fmt(s.REI, 2)}`).join(', ')} (no limit tabulated)` : ''}</div>`;
+      extra = `<div class="sl-hint">Night traffic ${escHtml(a.volumeBand || '')} per lane, ${escHtml(a.crossSection || '')} · ${a.directions && a.directions.length > 1
+        ? `two way: L̄, Uo, TI from one observer per direction (${a.directions.map(o => `${o.dir === 'reverse' ? '↓' : '↑'} y = ${this._fmt(o.y, 2)} m: L̄ ${this._fmt(o.Lav, 2)}, Uo ${this._fmt(o.Uo, 2)}, TI ${this._fmt(o.TI, 1)} %`).join('; ')}), the worse counts`
+        : `L̄, Uo, TI from the observer at y = ${this._fmt(a.observer && a.observer.y, 2)} m (a quarter of the width from the left)`} · Ul per lane ${(a.observers || []).map(o => this._fmt(o.Ul, 2)).join(', ')} · Ē ${this._fmt(a.Eav, 1)} lx${a.ESsides && a.ESsides.length ? ` · surround ratio ES ${a.ESsides.map(s => `${s.side} ${this._fmt(s.REI, 2)}`).join(', ')} (no limit tabulated)` : ''}</div>`;
     }
     return `<div class="rl-block"><div class="rl-block-h">${title}${badge}</div>${body}${extra}${a.note ? `<div class="sl-hint rl-note">${escHtml(a.note)}</div>` : ''}</div>`;
   },
@@ -938,11 +1006,11 @@ const RoadLight = {
     if (t.dataset.rlSuggest !== undefined) { this.openSuggest(+t.dataset.rlSuggest); return; }
     if (t.dataset.rlUse) { this.useSpacing(+t.dataset.rlUse); return; }
     if (t.dataset.rlOptuse !== undefined && des) { this._useOption(des, this._opt[des.id].options[+t.dataset.rlOptuse]); return; }
-    if (t.dataset.rlSecdel !== undefined && des) { des.sections.splice(+t.dataset.rlSecdel, 1); this._afterMutate(); return; }
+    if (t.dataset.rlSecdel !== undefined && des) { this._secs(des).splice(+t.dataset.rlSecdel, 1); this._afterMutate(); return; }
     if (t.dataset.rlSecmv !== undefined && des) {
       const i = +t.dataset.i, j = i + (+t.dataset.rlSecmv);
-      if (j < 0 || j >= des.sections.length) return;
-      [des.sections[i], des.sections[j]] = [des.sections[j], des.sections[i]];
+      if (j < 0 || j >= this._secs(des).length) return;
+      [this._secs(des)[i], this._secs(des)[j]] = [this._secs(des)[j], this._secs(des)[i]];
       this._afterMutate(); return;
     }
     if (t.dataset.rlRowdel !== undefined && des) { des.rows.splice(+t.dataset.rlRowdel, 1); this._afterMutate(); return; }
@@ -952,7 +1020,9 @@ const RoadLight = {
       case 'del': if (des) this.deleteDesign(des.id); break;
       case 'import': document.getElementById('rl-file').click(); break;
       case 'generic': this._genericDialog(); break;
-      case 'addsec': if (des) { des.sections.push({ id: this._genSecId(des), type: 'footpath', name: '', width: 2, lanes: 2, cls: 'P4', surface: 'R3', direction: 'forward' }); this._afterMutate(); } break;
+      case 'opensec': if (des && typeof RoadSectionsUI !== 'undefined') RoadSectionsUI.open(des.section); break;
+      case 'mksec': if (des) { this._makeSection(des); this._afterMutate(); } break;
+      case 'addsec': if (des) { this._secs(des).push({ id: this._genSecId(des), type: 'footpath', name: '', width: 2, lanes: 2, cls: 'P4', surface: 'R3', direction: 'forward' }); this._afterMutate(); } break;
       case 'addrow': if (des) { des.rows.push(this._row(des, 'right', Object.assign({}, des.rows[0] || {}))); this._afterMutate(); } break;
       case 'sweep': this.runMaxSpacing(); break;
       case 'optimise': this.openOptimise(); break;
@@ -970,9 +1040,11 @@ const RoadLight = {
     if (d.dz) {
       const k = d.dz;
       if (k === 'name') { des.name = t.value || des.name; this._markDirty(); this.renderRail(); return; }
-      if (k === 'template') { if (t.value) { this._applyTemplate(des, t.value); if (des.arrangement === 'twin-central' && !des.sections.some(s => s.type === 'median')) this._applyArrangement(des, 'single-left'); } this._afterMutate(); return; }
+      if (k === 'template') { if (t.value) { this._applyTemplate(des, t.value); if (des.arrangement === 'twin-central' && !this._secs(des).some(s => s.type === 'median')) this._applyArrangement(des, 'single-left'); } this._afterMutate(); return; }
+      if (k === 'section') { this._setSection(des, t.value); this._afterMutate(); return; }
       if (k === 'arrangement') { this._applyArrangement(des, t.value); this._afterMutate(); return; }
       if (k === 'standard') { this._setStandard(des, t.value); this._afterMutate(); return; }
+      if (k === 'driveSide') { des.driveSide = t.value === 'right' ? 'right' : 'left'; this._afterMutate(); return; }
       des[k] = this._num(t.value, des[k]);
       this._afterMutate(false);
       this._paintSection();
@@ -980,13 +1052,16 @@ const RoadLight = {
     }
     if (d.sw) { des.sweep[d.sw] = this._num(t.value, des.sweep[d.sw]); this._markDirty(); return; }
     if (d.sec) {
-      const s = des.sections[+d.i];
+      const s = this._secs(des)[+d.i];
       if (!s) return;
       if (d.sec === 'type' || d.sec === 'name' || d.sec === 'cls' || d.sec === 'surface' || d.sec === 'direction') s[d.sec] = t.value;
       else if (d.sec === 'volume') s.volume = Math.round(this._num(t.value, 0));
       else s[d.sec] = Math.max(d.sec === 'lanes' ? 1 : 0, this._num(t.value, s[d.sec]));
-      if (d.sec === 'lanes') s.lanes = Math.round(s.lanes);
-      const structural = d.sec === 'type' || d.sec === 'cls' || d.sec === 'volume';
+      if (d.sec === 'lanes') {
+        s.lanes = Math.round(s.lanes);
+        if (s.direction === 'two' && s.lanes !== 2) s.direction = 'forward';   // two way = 2 lanes only
+      }
+      const structural = d.sec === 'type' || d.sec === 'cls' || d.sec === 'volume' || d.sec === 'lanes' || d.sec === 'direction';
       this._afterMutate(structural);
       if (!structural) this._paintSection();
       return;
@@ -1010,7 +1085,7 @@ const RoadLight = {
   // hover tooltips never show.
   _secNotes(des) {
     const sans = this._std(des) === 'SANS';
-    const lines = des.sections.filter(s => s.cls || s.type === 'carriageway').map(s => {
+    const lines = this._secs(des).filter(s => s.cls || s.type === 'carriageway').map(s => {
       const lum = this._isLumClass(des, s.cls);
       const cls = s.cls ? `<b>${escHtml(s.cls)}</b>${sans ? ' ' + escHtml(RL_SANS_NAMES[s.cls] || '') + ' —' : ''} ${escHtml(this._clsReq(des, s.cls, s))}` : '<span class="sl-k">no class — not checked</span>';
       const warn = lum && s.type !== 'carriageway' ? ` <span class="rl-bad">${sans ? 'Group A categories' : 'M classes'} apply to a carriageway</span>` : '';
@@ -1131,7 +1206,7 @@ const RoadLight = {
 
   async openSuggest(i) {
     const des = this.selected;
-    const s = des && des.sections[i];
+    const s = des && this._secs(des)[i];
     if (!s) return;
     const cw = s.type === 'carriageway';
     const median = this._hasMedian(des);
@@ -1205,6 +1280,9 @@ const RoadLight = {
           <label title="Rated system power (lamp + driver). Street lighting circuits that use this luminaire load it at this power">System power<span class="sl-unit"><input type="number" step="0.1" data-p="watts" value="${escHtml(p.watts)}"> W</span></label>
           <label title="Power factor of the driver, for the circuit current and kVA">Power factor<input type="number" step="0.01" min="0.3" max="1" data-p="pf" value="${escHtml(p.pf || 0.95)}"></label>
           <label title="If the file's C90 plane does not point across the road to the street side, rotate it here">Rotate C-planes<select data-p="rotate">${[0, 90, 180, 270].map(a => `<option value="${a}"${+p.rotate === a ? ' selected' : ''}>${a}°</option>`).join('')}</select></label>
+          <label title="For a linear fitting (batten, strip): the C-plane that runs along its length. Room lighting turns the distribution to match. Street lighting ignores this">Length runs along<select data-p="lengthAxis">${['C0', 'C90'].map(a => `<option value="${a}"${(p.lengthAxis || 'C0') === a ? ' selected' : ''}>${a} plane${a === 'C0' ? ' (default)' : ''}</option>`).join('')}</select></label>
+          ${p.orientationUnconfirmed ? `<div class="sl-hint rl-note"><b>Orientation unconfirmed.</b> ${escHtml(p.orientationUnconfirmed)}</div>` : ''}
+          ${p.sizeM ? `<div class="sl-hint">Fitting size from the file: ${Math.round(p.sizeM.length * 1000)} × ${Math.round(p.sizeM.width * 1000)} × ${Math.round(p.sizeM.height * 1000)} mm.</div>` : ''}
           <div class="rl-kv">
             <span>Format</span><b>${escHtml(p.format || '')}${p.fileName ? ' · ' + escHtml(p.fileName) : ''}</b>
             <span>Web</span><b>${p.c.length - 1} C-planes × ${p.g.length} γ (${p.g[0]}–${p.g[p.g.length - 1]}°)</b>
@@ -1237,6 +1315,7 @@ const RoadLight = {
     p.watts = this._num(v('watts'), p.watts);
     p.pf = Math.min(1, Math.max(0.3, this._num(v('pf'), p.pf || 0.95)));
     p.rotate = this._num(v('rotate'), 0);
+    p.lengthAxis = v('lengthAxis') === 'C90' ? 'C90' : 'C0';
     this._markDirty();
     if (this._circuitsUsing(id).length) StreetLight._afterMutate(false);   // their kVA / VD follow the new power
     this.render();

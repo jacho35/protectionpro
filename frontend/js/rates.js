@@ -215,7 +215,8 @@ const Rates = {
     for (const k of (typeof DB_ACCESSORY_KINDS !== 'undefined' ? DB_ACCESSORY_KINDS : [])) add(this.accKey(k.key), k.label, 'ea', 'prot');
     // Civils & labour
     if (typeof PLAN_DEFS !== 'undefined') {
-      for (const [t, d] of Object.entries(PLAN_DEFS.trenchTypes || {})) add(this.trenchKey(t), `${d.name} (${d.width} m wide × ${d.depth} m deep)`, 'm', 'civil');
+      const TS = typeof RoadSections !== 'undefined' ? RoadSections.std().trench : {};                // the project standard trench sizes
+      for (const [t, d] of Object.entries(PLAN_DEFS.trenchTypes || {})) { const z = TS[t] || { w: d.width, d: d.depth }; add(this.trenchKey(t), `${d.name} (${z.w} m wide × ${z.d} m deep)`, 'm', 'civil'); }
       for (const s of ((PLAN_DEFS.crossings || {}).sizes || [])) add(this.crossingKey(s), `Road crossing, ${s} mm sleeve`, 'ea', 'civil');
     }
     add('LAB-JB-SPLICE', 'Junction-box splice (per core joined)', 'ea', 'civil');

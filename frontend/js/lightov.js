@@ -49,7 +49,7 @@ const LightOverview = {
     const sl = AppState.reticulation && AppState.reticulation.streetLighting;
     for (const d of (sl && sl.roadDesigns) || []) {
       const r = RoadLight._results[d.id];
-      const cls = [...new Set((d.sections || []).map(s => s.cls).filter(Boolean))].join(' · ');
+      const cls = [...new Set((typeof RoadLight !== 'undefined' ? RoadLight._secs(d) : (d.sections || [])).map(s => s.cls).filter(Boolean))].join(' · ');
       out.push({ id: d.id, kind: 'design', name: d.name, sub: cls || 'Cross-section',
         value: r && r.energy && isFinite(r.energy.wPerKm) ? `${Math.round(r.energy.wPerKm)} W/km` : '',
         verdict: !r || r.error ? 'Not calculated' : r.pass ? 'Pass' : 'Fail' });

@@ -69,7 +69,7 @@ from .road_lighting import (
     C_CLASSES, LUM_FAR_H, LUM_NEAR_H, LUM_RANGE_H, M_CLASSES, OBSERVER_BACK_M, OBSERVER_EYE_M,
     P_CLASSES, SANS_A, SANS_BC, SANS_CP, SANS_FOOTWAY_M, SANS_RC, SANS_VOLUME_BANDS, TAN_MAX,
     TI_AGE, TI_RANGE_M, TI_SCREEN_DEG, TI_VIEW_DOWN_DEG, _chk, _f, _intensity_to, _long_points,
-    _RTable, _trans_points, _Web, class_family, sans_family,
+    _RTable, _trans_points, _Web, class_family, drive_side, lane_directions, sans_family,
 )
 
 FIELD_MAX_M = 40.0          # longest calculation field inside a segment
@@ -106,6 +106,7 @@ class _Road:
         d = np.diff(pts, axis=0)
         self.seg_t = d / np.hypot(d[:, 0], d[:, 1])[:, None]
         # Cross-section (same meaning as road_lighting._Design.sections)
+        self.drive = drive_side(r.get("driveSide"))
         y = 0.0
         self.sections = []
         for i, s in enumerate(r.get("sections") or []):
@@ -122,6 +123,7 @@ class _Road:
                 "direction": s.get("direction") or "forward",
                 "volume": min(max(int(_f(s.get("volume"), 0)), 0), 2),
             }
+            lane_directions(sec, self.drive)
             sec["family"] = sans_family(sec["cls"]) if standard == "SANS" else class_family(sec["cls"])
             self.sections.append(sec)
             y += w
@@ -189,12 +191,14 @@ class _Road:
         px, py = x + d * nx, y + d * ny
         return px.reshape(s.shape), py.reshape(s.shape), tan[:, 0].reshape(s.shape), tan[:, 1].reshape(s.shape)
 
-    def project(self, qx, qy):
-        """Chainage and signed offset (+ right) of plan points — nearest centreline point."""
+    def project(self, qx, qy, with_dist=False):
+        """Chainage and signed offset (+ right) of plan points — nearest centreline point.
+        `with_dist` also returns the true distance to the centreline: past a road's end the offset is only
+        the sideways part of it."""
         qx = np.atleast_1d(np.asarray(qx, float)); qy = np.atleast_1d(np.asarray(qy, float))
         a = self.pts[:-1]; d = np.diff(self.pts, axis=0)
         L2 = np.maximum((d * d).sum(axis=1), 1e-12)
-        s_out = np.empty(len(qx)); off = np.empty(len(qx))
+        s_out = np.empty(len(qx)); off = np.empty(len(qx)); dist_out = np.empty(len(qx))
         for k0 in range(0, len(qx), 512):
             px = qx[k0:k0 + 512, None]; py = qy[k0:k0 + 512, None]
             t = np.clip(((px - a[:, 0]) * d[:, 0] + (py - a[:, 1]) * d[:, 1]) / L2, 0, 1)
@@ -204,6 +208,9 @@ class _Road:
             s_out[k0:k0 + 512] = self.cum[j] + t[rows, j] * np.sqrt(L2[j])
             tx, ty = d[j, 0] / np.sqrt(L2[j]), d[j, 1] / np.sqrt(L2[j])
             off[k0:k0 + 512] = (px[:, 0] - cx[rows, j]) * ty - (py[:, 0] - cy[rows, j]) * tx
+            dist_out[k0:k0 + 512] = dist[rows, j]
+        if with_dist:
+            return s_out, off, dist_out
         return s_out, off
 
 
@@ -486,14 +493,14 @@ def _lane_points(sec):
 def _field_luminance_en(f: _Field, sec):
     rt = _RTable(sec["surface"])
     wl, ys = _lane_points(sec)
-    sign = -1.0 if sec["direction"] == "reverse" else 1.0
     obs = []
     for k in range(sec["lanes"]):
+        sign = sec["signs"][k]            # the way this lane travels (two-way: one lane each way)
         oy = sec["y0"] + (k + 0.5) * wl
         L = f.L(ys, rt, oy, sign)
         lav = float(L.mean())
         centre = L[:, 3 * k + 1]
-        obs.append({"lane": k + 1, "Lav": lav, "Uo": float(L.min() / lav) if lav > 0 else 0.0,
+        obs.append({"lane": k + 1, "dir": "forward" if sign > 0 else "reverse", "Lav": lav, "Uo": float(L.min() / lav) if lav > 0 else 0.0,
                     "Ul": float(centre.min() / centre.max()) if centre.max() > 0 else 0.0,
                     "TI": f.TI(oy, sign, lav / f.ctx.mf)})
     return {"Lav": min(o["Lav"] for o in obs), "Uo": min(o["Uo"] for o in obs),
@@ -504,17 +511,28 @@ def _field_luminance_en(f: _Field, sec):
 def _field_luminance_sans(f: _Field, road: _Road, sec):
     rt = _RTable(sec["surface"])
     wl, ys = _lane_points(sec)
-    sign = -1.0 if sec["direction"] == "reverse" else 1.0
-    oy_q = sec["y0"] + sec["width"] / 4 if sign > 0 else sec["y1"] - sec["width"] / 4
-    Lq = f.L(ys, rt, oy_q, sign)
-    lav = float(Lq.mean())
-    out = {"Lav": lav, "Uo": float(Lq.min() / lav) if lav > 0 else 0.0, "TI": f.TI(oy_q, sign, lav / f.ctx.mf),
-           "surface": rt.name, "observerY": oy_q}
+    # The quarter-width observer per direction of travel (a two-way carriageway:
+    # one per direction, in its own lane's centre); the worst counts.
+    qs = []
+    for sign in sorted(set(sec["signs"]), reverse=True):
+        if sec["direction"] == "two":
+            oy_q = sec["y0"] + (sec["signs"].index(sign) + 0.5) * wl
+        else:
+            oy_q = sec["y0"] + sec["width"] / 4 if sign > 0 else sec["y1"] - sec["width"] / 4
+        Lq = f.L(ys, rt, oy_q, sign)
+        lav = float(Lq.mean())
+        qs.append({"Lav": lav, "Uo": float(Lq.min() / lav) if lav > 0 else 0.0,
+                   "TI": f.TI(oy_q, sign, lav / f.ctx.mf), "y": oy_q})
+    w = min(qs, key=lambda q: q["Lav"])
+    out = {"Lav": w["Lav"], "Uo": min(q["Uo"] for q in qs), "TI": max(q["TI"] for q in qs),
+           "surface": rt.name, "observerY": w["y"]}
     lanes = []
     for k in range(sec["lanes"]):
+        sign = sec["signs"][k]
         oy = sec["y0"] + (k + 0.5) * wl
         centre = f.L(ys, rt, oy, sign)[:, 3 * k + 1]
-        lanes.append({"lane": k + 1, "Ul": float(centre.min() / centre.max()) if centre.max() > 0 else 0.0})
+        lanes.append({"lane": k + 1, "dir": "forward" if sign > 0 else "reverse",
+                      "Ul": float(centre.min() / centre.max()) if centre.max() > 0 else 0.0})
     out["observers"] = lanes
     out["Ul"] = min(o["Ul"] for o in lanes)
     return out
@@ -691,7 +709,24 @@ def _in_poly(px, py, poly):
     return inside
 
 
-def evaluate_conflict(ctx, lum, area: dict, roads):
+def _nearest_tangent(roads, px, py):
+    """Local road direction at plan points (for the 5H inclusion): the tangent of the road nearest by true
+    distance to its centreline. The signed offset alone is only the sideways part past a road's end, so a
+    point on the main road in line with a side road ending on it would take the side road's direction."""
+    tx, ty = np.ones_like(px), np.zeros_like(px)
+    best = np.full(px.shape, np.inf)
+    for road in roads:
+        s, _off, dist = road.project(px, py, with_dist=True)
+        _, _, rtx, rty = road.at(s, np.full(len(s), road.yc))
+        closer = dist < best
+        tx = np.where(closer, rtx, tx); ty = np.where(closer, rty, ty)
+        best = np.minimum(best, dist)
+    return tx, ty
+
+
+def _conflict_grid(area: dict, roads):
+    """The calculation points of a conflict area: a ≤ 1 m grid (coarser on a very large area) inside its polygons, with the
+    local road direction at each (for the 5H window). None when it has no points."""
     polys = [p for p in (area.get("polygons") or []) if len(p) >= 3]
     if not polys:
         return None
@@ -708,31 +743,64 @@ def evaluate_conflict(ctx, lum, area: dict, roads):
     px, py = px[inside], py[inside]
     if not len(px):
         return None
-    # local road direction for the 5H inclusion: the nearest road's tangent
-    tx, ty = np.ones_like(px), np.zeros_like(px)
-    best = np.full(px.shape, np.inf)
-    for road in roads:
-        s, off = road.project(px, py)
-        _, _, rtx, rty = road.at(s, np.full(len(s), road.yc))
-        closer = np.abs(off) < best
-        tx = np.where(closer, rtx, tx); ty = np.where(closer, rty, ty)
-        best = np.minimum(best, np.abs(off))
+    tx, ty = _nearest_tangent(roads, px, py)
+    return px, py, tx, ty, step
+
+
+def _conflict_req(ctx, cls: str):
+    """(family, [(key, label, requirement, unit)]) of a conflict-area class: C / RC on Ē and Uo, P / CP / B on Ē and Emin."""
+    fam = sans_family(cls) if ctx.standard == "SANS" else class_family(cls)
+    if fam in ("C", "RC"):
+        req = (C_CLASSES if fam == "C" else SANS_RC)[cls]
+        return fam, [("Eav", "Ē", req["Eav"], "lx"), ("Uo", "Uo", req["Uo"], "")]
+    if fam in ("P", "CP", "B"):
+        req = {"P": P_CLASSES, "CP": SANS_CP, "B": SANS_BC}[fam][cls]
+        return fam, [("Eav", "Ē", req["Eav"], "lx"), ("Emin", "Emin", req["Emin"], "lx")]
+    return fam, []
+
+
+def evaluate_conflict(ctx, lum, area: dict, roads):
+    g = _conflict_grid(area, roads)
+    if g is None:
+        return None
+    px, py, tx, ty, step = g
     E = _illum(ctx, lum, px, py, tx, ty)
     eav = float(E.mean())
     cls = (area.get("cls") or "").upper()
-    fam = sans_family(cls) if ctx.standard == "SANS" else class_family(cls)
+    fam, spec = _conflict_req(ctx, cls)
     m = {"Eav": eav, "Emin": float(E.min()), "Emax": float(E.max()), "UoE": float(E.min() / eav) if eav > 0 else 0.0}
-    checks = []
-    if fam in ("C", "RC"):
-        req = (C_CLASSES if fam == "C" else SANS_RC)[cls]
-        checks = [_chk("Eav", "Ē", eav, req["Eav"], ">=", "lx"), _chk("Uo", "Uo", m["UoE"], req["Uo"], ">=", "")]
-    elif fam in ("P", "CP", "B"):
-        req = {"P": P_CLASSES, "CP": SANS_CP, "B": SANS_BC}[fam][cls]
-        checks = [_chk("Eav", "Ē", eav, req["Eav"], ">=", "lx"), _chk("Emin", "Emin", m["Emin"], req["Emin"], ">=", "lx")]
+    val = {"Eav": eav, "Uo": m["UoE"], "Emin": m["Emin"]}
+    checks = [_chk(k, label, val[k], req, ">=", unit) for k, label, req, unit in spec]
     return {"id": area.get("id") or "", "name": area.get("name") or "", "cls": cls, "family": fam,
             "points": int(len(px)), "step": round(step, 3), "area": round(len(px) * step * step, 1),
             **{k: _r(v) for k, v in m.items()},
             "checks": checks, "pass": (all(c["pass"] for c in checks) if checks else None)}
+
+
+def _illum_each(ctx, lum, px, py, tx, ty):
+    """The maintained illuminance each luminaire gives at each point: [points, luminaires] — `_illum` without the sum
+    (the same 5H window and shadows), so a layout's illuminance is the sum of its luminaires' columns."""
+    px = np.asarray(px, float).ravel(); py = np.asarray(py, float).ravel()
+    tx = np.broadcast_to(np.asarray(tx, float).ravel(), px.shape)
+    ty = np.broadcast_to(np.asarray(ty, float).ravel(), px.shape)
+    n = len(lum["x"])
+    out = np.zeros((len(px), n))
+    if not n or not len(px):
+        return out
+    rows = max(64, 400000 // n)                                  # points per block: ≤ 400k point × luminaire pairs
+    for k0 in range(0, len(px), rows):
+        sl = slice(k0, k0 + rows)
+        dx = px[sl, None] - lum["x"][None, :]
+        dy = py[sl, None] - lum["y"][None, :]
+        h = lum["h"][None, :]
+        along = -(dx * tx[sl, None] + dy * ty[sl, None])
+        near = np.abs(along) <= LUM_RANGE_H * h
+        I = _intensity_to(ctx, lum, dx, dy, -np.broadcast_to(h, dx.shape))
+        if getattr(ctx, "boxes", None) or getattr(ctx, "crowns", None):
+            I = I * _shade(ctx, px[sl, None], py[sl, None], 0.0, lum["x"][None, :], lum["y"][None, :], h)
+        d3 = (dx * dx + dy * dy + h * h) ** 1.5
+        out[sl] = np.where(near, I * h / d3, 0.0)
+    return out * ctx.mf
 
 
 # ─── Facades and measurement points ────────────────────────────────────
@@ -806,9 +874,10 @@ def evaluate_point(ctx, lum, o: dict):
 
 # ─── Display grids ──────────────────────────────────────────────────────
 
-def display_grid(ctx, road: _Road, lum, with_luminance=True):
-    n_s = int(min(DISPLAY_MAX_ALONG, max(2, math.ceil(road.length / DISPLAY_STEP_M) + 1)))
-    ss = np.linspace(0.0, road.length, n_s)
+def display_grid(ctx, road: _Road, lum, with_luminance=True, s_range=None):
+    a, b = (0.0, road.length) if s_range is None else (max(0.0, s_range[0]), min(road.length, s_range[1]))
+    n_s = int(min(DISPLAY_MAX_ALONG, max(2, math.ceil((b - a) / DISPLAY_STEP_M) + 1)))
+    ss = np.linspace(a, b, n_s)
     n_y = int(min(DISPLAY_MAX_ACROSS, max(5, math.ceil(road.width / DISPLAY_STEP_M) + 1)))
     ys = np.linspace(0.0, road.width, n_y)
     gs, gy = np.meshgrid(ss, ys, indexing="ij")
@@ -824,10 +893,10 @@ def display_grid(ctx, road: _Road, lum, with_luminance=True):
             j = np.where((ys >= sec["y0"] - 1e-9) & (ys <= sec["y1"] + 1e-9))[0]
             if not len(j):
                 continue
-            sign = -1.0 if sec["direction"] == "reverse" else 1.0
             wl = sec["width"] / sec["lanes"]
             lane = np.clip(((ys[j] - sec["y0"]) // wl).astype(int), 0, sec["lanes"] - 1)
             oy = sec["y0"] + (lane + 0.5) * wl                      # each point's own lane centre
+            sign = np.asarray(sec["signs"])[lane][None, :]          # … seen the way that lane travels
             S, OY = np.meshgrid(ss, oy, indexing="ij")
             ox, oyy, _, _ = road.at(S - sign * OBSERVER_BACK_M, OY)
             sub_px, sub_py = px[:, j], py[:, j]
@@ -835,6 +904,52 @@ def display_grid(ctx, road: _Road, lum, with_luminance=True):
                           sign * tx[:, j], sign * ty[:, j])
             Lg[:, j] = vals.reshape(sub_px.shape)
         out["L"] = [[None if not math.isfinite(v) else round(float(v), 3) for v in row] for row in Lg]
+    return out
+
+
+# ─── Stretches: part of a road with another cross-section ───────────────
+
+def _stretches(r: dict, road: _Road, standard: str):
+    """A road's `stretches` [{s0, s1, sections}] (metres along it): each as a road of its own on the same centreline (and kerb-width
+    profile) with that cross-section, so a segment inside it is checked against its strips and classes, while luminaires and observers
+    still sit on the one road. Sorted, clipped to the road, overlaps cut away."""
+    out = []
+    for x in r.get("stretches") or []:
+        s0, s1 = max(0.0, _f(x.get("s0"), 0.0)), min(road.length, _f(x.get("s1"), 0.0))
+        if s1 - s0 < 0.5 or not x.get("sections"):
+            continue
+        out.append((s0, s1, _Road({**r, "sections": x["sections"], "stretches": None}, standard)))
+    out.sort(key=lambda t: t[0])
+    clean = []
+    for s0, s1, rd in out:
+        if clean and s0 < clean[-1][1]:
+            s0 = clean[-1][1]
+        if s1 - s0 >= 0.5:
+            clean.append((s0, s1, rd))
+    return clean
+
+
+def _road_at(road: _Road, st_list, seg: dict):
+    """The cross-section a segment is checked on: the stretch its middle lies in, else the road's own."""
+    if not st_list:
+        return road
+    m = (_f(seg.get("s0"), 0.0) + _f(seg.get("s1"), road.length)) / 2.0
+    for s0, s1, rd in st_list:
+        if s0 <= m <= s1:
+            return rd
+    return road
+
+
+def _parts(road: _Road, st_list):
+    """The road cut at its stretches: (s0, s1, road of that part) along it."""
+    out, at = [], 0.0
+    for s0, s1, rd in st_list:
+        if s0 > at + 0.5:
+            out.append((at, s0, road))
+        out.append((s0, s1, rd))
+        at = s1
+    if road.length > at + 0.5:
+        out.append((at, road.length, road))
     return out
 
 
@@ -849,11 +964,12 @@ def run_road_plan(req: dict) -> dict:
     if not roads:
         raise ValueError("No roads on the plan")
     lum = _luminaires(req.get("luminaires"), webs)
+    stretches = [_stretches(r, road, standard) for road, r in zip(roads, req.get("roads") or [])]
     field_max = max(_f(req.get("fieldMaxM"), FIELD_MAX_M), 5.0)
     want_display = req.get("display", True) is not False
     out_roads = []
     hours = max(_f(req.get("hoursPerYear"), 4100.0), 0.0)
-    for road, r in zip(roads, req.get("roads") or []):
+    for road, r, st_list in zip(roads, req.get("roads") or [], stretches):
         own = lum["road"] == road.id
         if own.any():
             s_l, _ = road.project(lum["x"][own], lum["y"][own])
@@ -861,7 +977,7 @@ def run_road_plan(req: dict) -> dict:
         else:
             lum_s = (np.zeros(0), np.zeros(0))
         segs = r.get("segments") or [{"id": "all", "name": road.name, "s0": 0.0, "s1": road.length, "kind": "straight"}]
-        results = [x for x in (evaluate_segment(ctx, road, lum, s, field_max, lum_s) for s in segs) if x]
+        results = [x for x in (evaluate_segment(ctx, _road_at(road, st_list, s), lum, s, field_max, lum_s) for s in segs) if x]
         watts = float(lum["watts"][own].sum()) if own.any() else 0.0
         entry = {"id": road.id, "name": road.name, "length": round(road.length, 2),
                  "segments": results, "pass": all(s["pass"] for s in results) if results else None,
@@ -869,7 +985,10 @@ def run_road_plan(req: dict) -> dict:
                             "wPerKm": round(watts * 1000.0 / road.length, 1) if road.length > 0 else None,
                             "kWhPerYear": round(watts * hours / 1000.0, 1)}}
         if want_display:
-            entry["display"] = display_grid(ctx, road, lum, with_luminance=req.get("luminanceDisplay", True) is not False)
+            wl = req.get("luminanceDisplay", True) is not False
+            entry["display"] = display_grid(ctx, road, lum, with_luminance=wl)
+            if st_list:          # each part with its own strips: the road's own between the stretches, each stretch its own
+                entry["displays"] = [display_grid(ctx, rd, lum, with_luminance=wl, s_range=(a, b)) for a, b, rd in _parts(road, st_list)]
         out_roads.append(entry)
     conflicts = [x for x in (evaluate_conflict(ctx, lum, a, roads) for a in (req.get("conflictAreas") or [])) if x]
     ok = [r["pass"] for r in out_roads if r["pass"] is not None] + [c["pass"] for c in conflicts if c["pass"] is not None]
@@ -878,3 +997,46 @@ def run_road_plan(req: dict) -> dict:
     return {"standard": standard, "mf": ctx.mf, "roads": out_roads, "conflictAreas": conflicts,
             "surfaces": surfaces, "points": points, "shadows": bool(ctx.boxes or ctx.crowns),
             "pass": all(ok) if ok else None, "fieldMaxM": field_max}
+
+
+# ─── Layout optimisation: what each candidate pole gives each conflict area ─────
+
+def conflict_contributions(req: dict) -> dict:
+    """For the Road plan's *Lay out for the checks*: every conflict area's grid, its class requirements, the illuminance
+    the fixed `luminaires` give it (`base`) and what each of the `candidates` (luminaires in the same form, any heights)
+    gives each grid point (`cand`: {candidate index: [E per point]}, only candidates that reach the area). Illuminance
+    adds up, so the client scores any set of candidates by summing columns — the figures are `_illum`'s exactly."""
+    standard = "SANS" if str(req.get("standard") or "EN").upper().startswith("SANS") else "EN"
+    webs = {k: _Web(v) for k, v in (req.get("photometry") or {}).items()}
+    ctx = SimpleNamespace(webs=webs, mf=min(max(_f(req.get("mf"), 0.8), 0.05), 1.0), standard=standard)
+    ctx.boxes, ctx.crowns = _obstacles(req.get("obstacles"))
+    roads = [_Road(r, standard) for r in (req.get("roads") or [])]
+    if not roads:
+        raise ValueError("No roads on the plan")
+    fixed = _luminaires(req.get("luminaires"), webs) if req.get("luminaires") else None
+    cand = _luminaires(req.get("candidates"), webs) if req.get("candidates") else None
+    areas = []
+    for a in req.get("conflictAreas") or []:
+        g = _conflict_grid(a, roads)
+        if g is None:
+            continue
+        px, py, tx, ty, step = g
+        cls = (a.get("cls") or "").upper()
+        fam, spec = _conflict_req(ctx, cls)
+        base = _illum(ctx, fixed, px, py, tx, ty) if fixed is not None else np.zeros(len(px))
+        cols = {}
+        if cand is not None:
+            reach = LUM_RANGE_H * cand["h"] + 1.0
+            near = ((cand["x"] >= px.min() - reach) & (cand["x"] <= px.max() + reach) &
+                    (cand["y"] >= py.min() - reach) & (cand["y"] <= py.max() + reach))
+            idx = np.nonzero(near)[0]
+            if len(idx):
+                M = _illum_each(ctx, _subset(cand, near), px, py, tx, ty)
+                for j, i in enumerate(idx):
+                    if M[:, j].max() > 1e-4:
+                        cols[str(int(i))] = [round(float(v), 4) for v in M[:, j]]
+        areas.append({"id": a.get("id") or "", "name": a.get("name") or "", "cls": cls, "family": fam,
+                      "points": int(len(px)), "checks": [{"key": k, "label": lb, "req": r, "unit": u} for k, lb, r, u in spec],
+                      "base": [round(float(v), 4) for v in base], "cand": cols})
+    return {"standard": standard, "mf": ctx.mf, "areas": areas}
+

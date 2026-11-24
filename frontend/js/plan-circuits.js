@@ -599,9 +599,11 @@ const PlanCircuits = {
   // load devices, group by class, and lay them into ways with per-class caps
   // (lights 10/way, sockets 6/way, other 1/way — DD's caps), minting new way
   // numbers after the board's existing ones. Returns {ways, devices}.
-  bulkAssign(dbElId) {
+  // What bulkAssign would do, without doing it: the untagged devices reachable from the board and the
+  // ways they would be laid into. Shared by the preview in the board's panel and the assignment itself.
+  planAssign(dbElId) {
     const dbEl = this._boardById(dbElId);
-    if (!dbEl) return { ways: 0, devices: 0 };
+    if (!dbEl) return { dbEl: null, ways: [], devices: 0 };
     const elById = {}; for (const e of AppState.planAllElements()) elById[e.id] = e;
     const adj = this._adjacency();
     // Reachable load devices (walk through non-board elements from the board).
@@ -617,32 +619,31 @@ const PlanCircuits = {
       }
     }
     const untagged = found.filter(e => !(e.props && e.props.circuitDbId));
-    if (!untagged.length) return { ways: 0, devices: 0 };
-
-    const CAPS = this.CAPS;
     const groups = { lighting: [], socket: [], other: [] };
     for (const e of untagged) groups[this.LOAD_TYPES[e.type].klass].push(e);
-
     // Next free way number after the board's existing schedule.
     const comp = this._sldComp(dbEl);
     let nextWay = 1;
     if (comp && Array.isArray(comp.props.circuits)) {
       for (const c of comp.props.circuits) { const w = parseInt(c.way, 10); if (w >= nextWay) nextWay = w + 1; }
     }
-    let ways = 0, devices = 0;
+    const ways = [];
     for (const klass of ['lighting', 'socket', 'other']) {
-      const list = groups[klass]; const cap = CAPS[klass];
-      for (let i = 0; i < list.length; i += cap) {
-        const chunk = list.slice(i, i + cap);
-        const way = String(nextWay++);
-        for (const e of chunk) { e.props = e.props || {}; e.props.circuitDbId = dbElId; e.props.circuitNo = way; devices++; }
-        ways++;
-      }
+      const list = groups[klass]; const cap = this.CAPS[klass];
+      for (let i = 0; i < list.length; i += cap) ways.push({ way: String(nextWay++), klass, devices: list.slice(i, i + cap) });
     }
+    return { dbEl, ways, devices: untagged.length };
+  },
+
+  bulkAssign(dbElId) {
+    const plan = this.planAssign(dbElId);
+    if (!plan.dbEl || !plan.devices) return { ways: 0, devices: 0 };
+    let devices = 0;
+    for (const w of plan.ways) for (const e of w.devices) { e.props = e.props || {}; e.props.circuitDbId = dbElId; e.props.circuitNo = w.way; devices++; }
     // Materialise the loads (and any routed lengths) into the schedule.
     this.syncLoads();
     this.syncRoutedLengths();
-    return { ways, devices };
+    return { ways: plan.ways.length, devices };
   },
 
   // Tag a batch of freshly-placed load devices (from the array / path tools)

@@ -18,6 +18,48 @@
 const PlanEngine = {
   bg: null, fg: null, bgCtx: null, fgCtx: null, stage: null,
   view: { zoom: 0.5, panX: 0, panY: 0 },
+  // Colour by (site plan): paint feeders, services and kiosks by a Demand result: 'off' | 'vd' | 'load'.
+  // Session only. The map is rebuilt after an edit or a Demand run (`_cmap = null`) and never for the sheets.
+  colourBy: 'off',
+  _cmap: null,
+  COLOURS: { ok: '#16a34a', warn: '#e08a00', bad: '#d32f2f' },
+  _colourOf(id) {
+    if (this.colourBy === 'off' || !this._lq) return null;
+    if (!this._cmap) this._buildColourMap();
+    const st = this._cmap[id];
+    return st ? this.COLOURS[st] : null;
+  },
+  _buildColourMap() {
+    const map = this._cmap = {}, mode = this.colourBy, pm = AppState.planMarkup, R = AppState.reticulation, res = AppState.reticResults;
+    if (typeof Retic === 'undefined' || typeof PlanSync === 'undefined' || typeof PlanUI === 'undefined' || !R || !res || !res.kiosks) return;
+    const elById = PlanSync._elById(), P = PlanUI;
+    const kioskState = (k) => {
+      const fi = P._feederInfo(k, res), kr = fi.kr; if (!kr) return null;
+      if (mode === 'vd') return P._vdState(fi.cumVD, Retic.settings.maxFeederVD);
+      const cab = CableLib.byName(k.feederCable), amps = kr.feederA != null ? kr.feederA : kr.currentA;
+      return cab && cab.rated_amps ? P._loadingState(amps, Number(cab.rated_amps)) : null;
+    };
+    for (const el of pm.elements) {
+      if (el.type !== 'kiosk' || !el.reticId) continue;
+      const k = R.kiosks.find(x => x.id === el.reticId), st = k && kioskState(k);
+      if (st) map[el.id] = st;
+    }
+    for (const r of pm.routes) {
+      const link = PlanSync._cableLink(r, elById); if (!link) continue;
+      let st = null;
+      if (link.key === 'feederCable') st = kioskState(link.row);
+      else if (link.key === 'cableType') {
+        const e = link.row, k = R.kiosks.find(kk => kk.erfs.includes(e));
+        if (k) {
+          const is3 = Retic._erfIs3ph(k, e), amps = Retic._erfDesignAmps(k, e);
+          if (mode === 'vd') { const vc = Retic._vdCalc(e.cableType, amps, e.length, is3); st = vc ? P._vdState(vc.vd, Retic.settings.maxRunVD) : null; }
+          else { const cab = CableLib.byName(e.cableType); st = cab && cab.rated_amps ? P._loadingState(amps, Number(cab.rated_amps)) : null; }
+        }
+      }
+      if (st) map[r.id] = st;
+    }
+  },
+  viewSet: false,   // true once the view was restored from the file or moved by the user; false ⇒ the tab fits the drawing on first open
   dpr: 1,
   cssW: 0, cssH: 0,
   _dirty: { bg: false, fg: false },
@@ -87,6 +129,8 @@ const PlanEngine = {
 
   // ─── Zoom / fit ───
   zoomAt(factor, mx, my) {
+    this.viewSet = true;
+    if (typeof ContextMenu !== 'undefined') ContextMenu.close();
     const z = this.view.zoom;
     const nz = Math.max(0.02, Math.min(20, z * factor));
     const scale = nz / z;
@@ -99,6 +143,7 @@ const PlanEngine = {
 
   // Fit the union of visible plan extents, else the geometry bbox, else reset.
   zoomFit() {
+    this.viewSet = true;
     const box = this._contentBBox();
     if (!box) { this.view = { zoom: 0.5, panX: 0, panY: 0 }; this.requestDraw({ all: true }); return; }
     const pad = 40;
@@ -237,6 +282,9 @@ const PlanEngine = {
     // Imported DXF drawings (behind markup)
     if (typeof PlanDxfImport !== 'undefined') PlanDxfImport.draw(ctx, this.view.zoom, this._visibleWorldRect());
 
+    // Working area: fade the drawing outside the clip polygon.
+    if (typeof PlanWorkArea !== 'undefined') PlanWorkArea.draw(ctx, this.view.zoom, this._visibleWorldRect());
+
     // Crop box: dim everything outside the export rectangle.
     if (pm.cropBox) {
       const cb = pm.cropBox;
@@ -297,6 +345,33 @@ const PlanEngine = {
     return { minX: tl.x, minY: tl.y, maxX: br.x, maxY: br.y };
   },
 
+  // ─── Label declutter ───
+  // On screen every label is queued, then placed by priority: the selected item's, then plant, then
+  // rooms and cables, then everything else. A label that would land on one already placed is left
+  // out; zoom in and it has room. The export sheets draw their labels straight away (no queue).
+  _lbl(ctx, text, x, y, prio) {
+    if (!this._lq) { ctx.fillText(text, x, y); return; }
+    this._lq.push({ text, x, y, prio, font: ctx.font, fill: ctx.fillStyle, align: ctx.textAlign, base: ctx.textBaseline, alpha: ctx.globalAlpha, n: this._lq.length });
+  },
+  _flushLabels(ctx) {
+    const q = this._lq; this._lq = null;
+    if (!q || !q.length) return;
+    q.sort((a, b) => a.prio - b.prio || a.n - b.n);
+    const placed = [], pad = 1.5 / this.view.zoom;
+    for (const l of q) {
+      ctx.font = l.font; ctx.textAlign = l.align; ctx.textBaseline = l.base;
+      const w = ctx.measureText(l.text).width, h = parseFloat(l.font) || 11;
+      const x0 = l.align === 'center' ? l.x - w / 2 : l.align === 'right' ? l.x - w : l.x;
+      const y0 = l.base === 'middle' ? l.y - h / 2 : l.base === 'bottom' ? l.y - h : l.y;
+      const r = { x0: x0 - pad, y0: y0 - pad, x1: x0 + w + pad, y1: y0 + h + pad };
+      if (l.prio > 0 && placed.some(p => r.x0 < p.x1 && r.x1 > p.x0 && r.y0 < p.y1 && r.y1 > p.y0)) continue;
+      placed.push(r);
+      ctx.globalAlpha = l.alpha; ctx.fillStyle = l.fill;
+      ctx.fillText(l.text, l.x, l.y);
+    }
+    ctx.globalAlpha = 1;
+  },
+
   // ─── Foreground layer ───
   _drawFg() {
     const ctx = this.fgCtx; if (!ctx) return;
@@ -307,22 +382,130 @@ const PlanEngine = {
     this._applyView(ctx);
     const z = this.view.zoom;
     const sel = (typeof PlanMarkup !== 'undefined') ? PlanMarkup.selectedIds : new Set();
+    this._lq = [];
 
     // z-order: rooms (zones, underneath) → trenches → crossings → routes → …
     for (const rm of (pm.rooms || [])) this._drawRoom(ctx, rm, sel.has(rm.id));
     for (const t of pm.trenches) this._drawTrench(ctx, t, sel.has(t.id));
-    for (const c of pm.crossings) this._drawCrossing(ctx, c, sel.has(c.id));
+    const xg = typeof PlanCrossings !== 'undefined' ? PlanCrossings.selectedGroup() : null;   // a whole crossing of several ducts selected: one outline, centre-line handles
+    for (const c of pm.crossings) this._drawCrossing(ctx, c, sel.has(c.id), !!xg);
+    if (xg) this._drawCrossGroup(ctx, xg);
+    this._drawUnserviced(ctx, z);                                         // erven marked unserviced: hatched grey
+    const served = this._servedOf(sel);                                  // a selected kiosk / manhole: the erven it serves
+    this._drawServedUnder(ctx, served, z);
     for (const r of pm.routes) this._drawRoute(ctx, r, sel.has(r.id));
+    if (typeof PlanReserveUI !== 'undefined' && PlanLayers.alpha('routeTypes', ['street'])) PlanReserveUI.drawPlanStreets(ctx, z);
+    if (typeof RoadSectionsUI !== 'undefined' && RoadSectionsUI.overlayOn() && PlanLayers.alpha('routeTypes', ['street'])) RoadSectionsUI.drawOverlay(ctx, z);   // roads in their road section's colour   // kerb lines and kerb returns of the streets that have a carriageway
     this._drawLoadFeeds(ctx);
     for (const el of pm.elements) this._drawElementEntity(ctx, el, sel.has(el.id));
+    this._drawServedOver(ctx, served, z);
     for (const tx of pm.texts) this._drawText(ctx, tx, sel.has(tx.id));
     for (const m of pm.measurements) this._drawMeasurement(ctx, m, sel.has(m.id));
+
+    this._flushLabels(ctx);
 
     // Lux heatmap overlay (drawn above zones/routes, below tool ghosts)
     // False colour and isolux belong to the Lighting tab's view of the plan.
     if (typeof RoomCalc !== 'undefined' && typeof PlanMarkup !== 'undefined' && PlanMarkup.context === 'lighting') RoomCalc.draw(ctx, this.view.zoom);
     // Tool overlay (ghosts, rubber-bands, snap ring)
+    if (typeof PlanReroute !== 'undefined') PlanReroute.draw(ctx, this.view.zoom);           // a re-route preview: now grey, after dashed blue
     if (typeof PlanTools !== 'undefined' && PlanTools.drawOverlay) PlanTools.drawOverlay(ctx, z);
+    ctx.restore();
+  },
+
+  // ─── Unserviced erven (a park, open space, servitude): no supply, Auto layout's cables go round them ───
+  // Their boundary hatched grey with a dashed outline, the word "unserviced" under the erf number; one without a boundary gets a grey ring.
+  _drawUnserviced(ctx, z) {
+    const pm = AppState.planMarkup, u = 1 / z;
+    const list = pm.elements.filter(e => e.type === 'erf' && e.props && e.props.unserviced);
+    if (!list.length) return;
+    ctx.save();
+    for (const e of list) {
+      ctx.globalAlpha = this._emphasis('visibleElementTypes', 'erf', e);
+      if (!ctx.globalAlpha) continue;
+      ctx.strokeStyle = '#64748b'; ctx.lineWidth = 1.6 * u;
+      if (Array.isArray(e.boundary) && e.boundary.length >= 3) {
+        const path = () => { ctx.beginPath(); e.boundary.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); ctx.closePath(); };
+        path(); ctx.fillStyle = 'rgba(100,116,139,0.12)'; ctx.fill();
+        ctx.save(); path(); ctx.clip();
+        let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity; for (const p of e.boundary) { x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y); }
+        const gap = 9 * u; ctx.lineWidth = 1 * u; ctx.strokeStyle = 'rgba(71,85,105,0.55)'; ctx.beginPath();
+        for (let t = x0 - (y1 - y0); t <= x1; t += gap) { ctx.moveTo(t, y1); ctx.lineTo(t + (y1 - y0), y0); }
+        ctx.stroke(); ctx.restore();
+        path(); ctx.setLineDash([6 * u, 4 * u]); ctx.lineWidth = 1.6 * u; ctx.strokeStyle = '#64748b'; ctx.stroke(); ctx.setLineDash([]);
+      } else { ctx.beginPath(); ctx.arc(e.x, e.y, 14 * u, 0, 6.2832); ctx.setLineDash([4 * u, 3 * u]); ctx.stroke(); ctx.setLineDash([]); }
+      ctx.font = `600 ${9 * u}px system-ui, sans-serif`; ctx.fillStyle = '#475569'; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+      ctx.fillText('unserviced', e.x, e.y - this.glyphHalf('erf', e.props, e) - 3 * u);
+    }
+    ctx.restore();
+  },
+
+  // ─── A selected kiosk / fibre manhole shows the erven it serves ───
+  // Kiosk: the erven on its service cables (routes of type "service"), plus the ones its Demand row lists.
+  // Manhole: the erven on its erf ducts ("fibreErf"), and its trunk ducts ("fibreBB") to the next manholes.
+  // → [{ kiosk (the selected part), kind 'kiosk' | 'manhole', erven: [erf element], routes: [route to an erf], trunks: [route] }].
+  _servedOf(sel) {
+    const pm = AppState.planMarkup, out = [];
+    if (!sel || !sel.size) return out;
+    const R = AppState.reticulation;
+    for (const k of pm.elements) {
+      if ((k.type !== 'kiosk' && k.type !== 'manhole') || !sel.has(k.id)) continue;
+      const kind = k.type, leg = kind === 'kiosk' ? 'service' : 'fibreErf';
+      const ids = new Set(), routes = [], trunks = [];
+      for (const r of pm.routes) {
+        const end = r.fromId === k.id ? r.toId : r.toId === k.id ? r.fromId : null;
+        if (r.fromId !== k.id && r.toId !== k.id) continue;
+        if (r.type === leg) { if (end) ids.add(end); routes.push(r); }
+        else if (kind === 'manhole' && r.type === 'fibreBB') trunks.push(r);
+      }
+      if (kind === 'kiosk') {
+        const row = k.reticId && R && Array.isArray(R.kiosks) ? R.kiosks.find(x => x.id === k.reticId) : null;
+        if (row && Array.isArray(row.erfs)) for (const e of row.erfs) { const el = pm.elements.find(x => x.type === 'erf' && x.reticId === e.id); if (el) ids.add(el.id); }
+      }
+      const erven = [...ids].map(id => pm.elements.find(x => x.id === id)).filter(x => x && x.type === 'erf');
+      out.push({ kiosk: k, kind, erven, routes, trunks });
+    }
+    return out;
+  },
+  // Highlight colours: a kiosk amber, a manhole in the fibre colours (erf ducts pink, trunks purple).
+  _SERVED_STYLE: {
+    kiosk:   { fill: 'rgba(245,158,11,0.30)', line: '#f59e0b', tag: '#b45309' },
+    manhole: { fill: 'rgba(219,39,119,0.22)', line: '#db2777', tag: '#9d174d', trunk: '#a855f7' },
+  },
+  _drawServedUnder(ctx, served, z) {
+    if (!served.length) return;
+    const u = 1 / z;
+    ctx.save();
+    for (const s of served) {
+      const st = this._SERVED_STYLE[s.kind] || this._SERVED_STYLE.kiosk;
+      for (const e of s.erven) {
+        ctx.fillStyle = st.fill; ctx.strokeStyle = st.line; ctx.lineWidth = 2.2 * u;
+        if (Array.isArray(e.boundary) && e.boundary.length >= 3) {
+          ctx.beginPath(); e.boundary.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); ctx.closePath(); ctx.fill(); ctx.stroke();
+        } else { ctx.beginPath(); ctx.arc(e.x, e.y, 16 * u, 0, 6.2832); ctx.fill(); ctx.stroke(); }
+      }
+    }
+    ctx.restore();
+  },
+  _drawServedOver(ctx, served, z) {
+    if (!served.length) return;
+    const u = 1 / z;
+    const line = (r) => { if (!r.points || r.points.length < 2) return; ctx.beginPath(); r.points.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); ctx.stroke(); };
+    ctx.save(); ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+    for (const s of served) {
+      const st = this._SERVED_STYLE[s.kind] || this._SERVED_STYLE.kiosk;
+      ctx.globalAlpha = 0.9; ctx.lineWidth = 3.4 * u;
+      if (s.trunks && s.trunks.length) { ctx.strokeStyle = st.trunk; ctx.setLineDash([9 * u, 5 * u]); s.trunks.forEach(line); ctx.setLineDash([]); }
+      ctx.strokeStyle = st.line; s.routes.forEach(line);
+      ctx.globalAlpha = 1;
+      const n = s.erven.length;
+      let label = n ? `serves ${n} ${n === 1 ? 'erf' : 'erven'}` : (s.kind === 'manhole' ? 'no erven' : 'no erven connected');
+      if (s.kind === 'manhole') label += ` · ${s.trunks.length} ${s.trunks.length === 1 ? 'trunk' : 'trunks'}`;
+      ctx.font = `700 ${11 * u}px sans-serif`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+      const x = s.kiosk.x + 14 * u, y = s.kiosk.y - 16 * u, w = ctx.measureText(label).width + 10 * u;
+      ctx.fillStyle = (n || s.trunks.length) ? st.tag : '#64748b'; ctx.fillRect(x, y - 9 * u, w, 18 * u);
+      ctx.fillStyle = '#fff'; ctx.fillText(label, x + 5 * u, y);
+    }
     ctx.restore();
   },
 
@@ -384,8 +567,16 @@ const PlanEngine = {
     for (let i = 1; i < rm.points.length; i++) ctx.lineTo(rm.points[i].x, rm.points[i].y);
     if (!perim || (rm.lighting && rm.lighting.closed)) ctx.closePath();
     const outdoor = rm.kind === 'outdoor' || rm.kind === 'sports';
-    if (!perim) { ctx.fillStyle = rm.color || (outdoor ? 'rgba(34,197,94,0.13)' : PLAN_DEFS.room.fill); ctx.fill(); }
-    ctx.strokeStyle = selected ? '#2563eb' : (rm.kind === 'escape' ? '#dc2626' : rm.kind === 'obtrusive' ? '#b45309' : perim ? '#7c3aed' : outdoor ? '#16a34a' : PLAN_DEFS.room.stroke);
+    // A room colour with no transparency of its own (a picked / imported one) is a tint, so the circuits,
+    // fittings and underlay stay readable through it; the outline carries the full colour.
+    const solid = !perim && typeof rm.color === 'string' && /^(#[0-9a-f]{3}|#[0-9a-f]{6}|rgb\()/i.test(rm.color.trim());
+    if (!perim) {
+      ctx.fillStyle = rm.color || (outdoor ? 'rgba(34,197,94,0.13)' : PLAN_DEFS.room.fill);
+      if (solid) ctx.globalAlpha *= 0.16;
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+    ctx.strokeStyle = selected ? '#2563eb' : (solid ? rm.color : rm.kind === 'escape' ? '#dc2626' : rm.kind === 'obtrusive' ? '#b45309' : perim ? '#7c3aed' : outdoor ? '#16a34a' : PLAN_DEFS.room.stroke);
     ctx.lineWidth = (selected ? 2.2 : (perim ? 2 : 1.2)) / this.view.zoom;
     if (perim) ctx.setLineDash([8 / this.view.zoom, 5 / this.view.zoom]);
     ctx.stroke();
@@ -402,7 +593,7 @@ const PlanEngine = {
     ctx.font = `${fpx}px system-ui, sans-serif`;
     ctx.fillStyle = this._cssVar('--plan-label', '#334155');
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText((rm.name || '') + size, c.x, c.y);
+    this._lbl(ctx, (rm.name || '') + size, c.x, c.y, selected ? 0 : 2);
     ctx.restore();
   },
 
@@ -430,7 +621,7 @@ const PlanEngine = {
 
   _drawElementEntity(ctx, el, selected) {
     const def = PLAN_DEFS.element(el.type);
-    const color = el.type === 'load' ? PlanLoads.color(el) : PLAN_DEFS.elementColor(el.type, AppState.planMarkup.styles);
+    const color = this._colourOf(el.id) || (el.type === 'load' ? PlanLoads.color(el) : PLAN_DEFS.elementColor(el.type, AppState.planMarkup.styles));
     const half = this.glyphHalf(el.type, el.props, el);
     const bg = this._cssVar('--plan-stage-bg', '#ffffff');
     ctx.save();
@@ -438,8 +629,22 @@ const PlanEngine = {
     ctx.translate(el.x, el.y);
     if (el.rotation) ctx.rotate(el.rotation * Math.PI / 180);
     // Source-matched glyph; fall back to the registry primitive if absent.
-    const drew = (typeof PlanSymbols !== 'undefined') &&
-      PlanSymbols.draw(ctx, el.type, { color, bg, sizeWorld: half * 2, props: el.props });
+    const fac = this.factor(), body = (fac && typeof PlanSymbols !== 'undefined') ? PlanSymbols.linearBody(el) : null;
+    let drew;
+    if (body) {                       // a fitting at its real length and width (plan scale), at least 3 screen px thick
+      const L = Math.max(body.length / fac, 3 / this.view.zoom), W = Math.max(body.width / fac, 3 / this.view.zoom);
+      ctx.fillStyle = color + '55'; ctx.strokeStyle = color; ctx.lineWidth = 1.2 / this.view.zoom;
+      if (body.round) {
+        ctx.beginPath(); ctx.ellipse(0, 0, L / 2, W / 2, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      } else {
+        ctx.fillRect(-L / 2, -W / 2, L, W); ctx.strokeRect(-L / 2, -W / 2, L, W);
+      }
+      if (body.length >= 2 * body.width) { ctx.beginPath(); ctx.moveTo(-L / 2, 0); ctx.lineTo(L / 2, 0); ctx.stroke(); }  // centre line = the long axis
+      drew = true;
+    } else {
+      drew = (typeof PlanSymbols !== 'undefined') &&
+        PlanSymbols.draw(ctx, el.type, { color, bg, sizeWorld: half * 2, props: el.props });
+    }
     if (!drew) {
       PLAN_DEFS.drawElement(ctx, def, { sizePx: half, color, selected, strokeW: 1.5 / this.view.zoom });
     }
@@ -451,19 +656,26 @@ const PlanEngine = {
       const pad = 4 / this.view.zoom;
       ctx.strokeStyle = '#2563eb';
       ctx.lineWidth = 1.5 / this.view.zoom;
+      ctx.fillStyle = 'rgba(37,99,235,0.16)';
+      ctx.fillRect(el.x - half - pad, el.y - half - pad, (half + pad) * 2, (half + pad) * 2);
       ctx.setLineDash([4 / this.view.zoom, 3 / this.view.zoom]);
       ctx.strokeRect(el.x - half - pad, el.y - half - pad, (half + pad) * 2, (half + pad) * 2);
       ctx.setLineDash([]);
     }
-    if (el.name) {
+    // On a phone (LightingWS sets `quietFittings`) a luminaire's label only shows once 1 m is 30 px on screen:
+    // zoomed out, dozens of L1…L69 labels only cover the rooms.
+    const quiet = this.quietFittings && !selected && typeof RoomCalc !== 'undefined' && RoomCalc._isCalcLight(el)
+      && this.view.zoom / (this.factor() || 1) < 30;
+    if (el.name && !quiet) {
       const fpx = 11 / this.view.zoom;
       ctx.font = `${fpx}px system-ui, sans-serif`;
       ctx.fillStyle = this._cssVar('--plan-label', '#334155');
       ctx.textAlign = 'center'; ctx.textBaseline = 'top';
-      ctx.fillText(el.name, el.x, el.y + half + 2 / this.view.zoom);
+      const plant = ['Plant', 'Power'].includes((def && def.group) || '');
+      this._lbl(ctx, el.name, el.x, el.y + half + 2 / this.view.zoom, selected ? 0 : plant ? 1 : 3);
       if (el.type === 'load') {
         ctx.font = `${9 / this.view.zoom}px system-ui, sans-serif`;
-        ctx.fillText(`${PlanLoads.kw(el)} kW`, el.x, el.y + half + 2 / this.view.zoom + fpx);
+        this._lbl(ctx, `${PlanLoads.kw(el)} kW`, el.x, el.y + half + 2 / this.view.zoom + fpx, selected ? 0 : 3);
       }
     }
     // Link badge (UX-5): a small chain glyph on elements linked to the SLD.
@@ -489,7 +701,7 @@ const PlanEngine = {
     ctx.restore();
   },
 
-  _routeColor(r) { return PLAN_DEFS.routeColor(r.type, AppState.planMarkup.styles); },
+  _routeColor(r) { return this._colourOf(r.id) || PLAN_DEFS.routeColor(r.type, AppState.planMarkup.styles); },
 
   _drawRoute(ctx, r, selected) {
     if (!r.points || r.points.length < 1) return;
@@ -497,10 +709,16 @@ const PlanEngine = {
     ctx.save();
     ctx.globalAlpha = this._emphasis('routeTypes', r.type);
     ctx.strokeStyle = this._routeColor(r);
-    ctx.lineWidth = ((def && def.width) || 2) * (selected ? 2 : 1) / this.view.zoom;
+    ctx.lineWidth = ((def && def.width) || 2) * (selected ? 2 : 1) * (this._colourOf(r.id) ? 1.7 : 1) / this.view.zoom;
     ctx.lineJoin = 'round'; ctx.lineCap = 'round';
     const dashed = def && def.lineStyle === 'dashed';
     ctx.setLineDash(dashed ? [8 / this.view.zoom, 5 / this.view.zoom] : []);
+    if (selected) {   // halo: a soft wide band under the cable so the selection reads at any zoom
+      ctx.save();
+      ctx.globalAlpha *= 0.28; ctx.strokeStyle = '#2563eb'; ctx.lineWidth = 12 / this.view.zoom; ctx.setLineDash([]);
+      this._pathPoly(ctx, r.points, r.curved); ctx.stroke();
+      ctx.restore();
+    }
     this._pathPoly(ctx, r.points, r.curved);
     ctx.stroke();
     ctx.setLineDash([]);
@@ -512,7 +730,11 @@ const PlanEngine = {
     }
     // Midpoint label: cable type + length (Layers › Route labels: all / selected only / none)
     const rl = (AppState.planMarkup.settings || {}).routeLabels;
-    if (r.points.length >= 2 && (rl === 'none' ? false : rl === 'selected' ? selected : true)) {
+    // Circuit segments (no endpoints to name) show their length only when selected or when there is
+    // room: otherwise every 2 m hop between fittings prints a number over the drawing.
+    const hop = def && def.requiresEndpoints === false && r.points.length >= 2 && !selected
+      && this._polyLen(r.points) * this.view.zoom < 70;
+    if (!hop && r.points.length >= 2 && (rl === 'none' ? false : rl === 'selected' ? selected : true)) {
       const mid = r.points[Math.floor(r.points.length / 2) - (r.points.length % 2 === 0 ? 1 : 0)];
       const len = this._polyLen(r.points);
       const label = (r.cableType ? r.cableType + '  ' : '') + this.lenLabel(len);
@@ -520,7 +742,7 @@ const PlanEngine = {
       ctx.font = `${fpx}px system-ui, sans-serif`;
       ctx.fillStyle = this._routeColor(r);
       ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
-      ctx.fillText(label, mid.x, mid.y - 3 / this.view.zoom);
+      this._lbl(ctx, label, mid.x, mid.y - 3 / this.view.zoom, selected ? 0 : 2);
     }
     ctx.restore();
   },
@@ -556,7 +778,8 @@ const PlanEngine = {
     if (!t.points || t.points.length < 1) return;
     const def = PLAN_DEFS.trenchTypes[t.excType] || { color: 'rgba(120,120,120,0.4)', width: 0.5 };
     const f = this.factor();
-    const wPx = f ? ((t.widthOverride || def.width) / f) : (10 / this.view.zoom);
+    const w = typeof RoadSections !== 'undefined' ? RoadSections.trenchSize(t).w : (t.widthOverride || def.width);   // its own, else its road section's / the project standard
+    const wPx = f ? (w / f) : (10 / this.view.zoom);
     ctx.save();
     ctx.globalAlpha = this._emphasis('trenchTypes', t.excType);
     ctx.strokeStyle = def.color;
@@ -574,12 +797,33 @@ const PlanEngine = {
     ctx.restore();
   },
 
-  _drawCrossing(ctx, c, selected) {
+  // a road crossing duct: coloured and as wide as its size (110 mm orange, 160 mm red and wider), the size written at its middle once it is
+  // long enough on screen; selected = a blue halo and a handle at each end (drag them with the select tool)
+  // a selected crossing of several ducts: one outline round the bundle and a handle at each end of its centre line
+  _drawCrossGroup(ctx, list) {
+    const z = this.view.zoom, ctr = PlanCrossings.centre(list), dx = ctr.p2.x - ctr.p1.x, dy = ctr.p2.y - ctr.p1.y, L = Math.hypot(dx, dy) || 1;
+    const nx = -dy / L, ny = dx / L, half = PlanCrossings.spPx(PlanCrossings.spacing(list)) * (list.length - 1) / 2 + 6 / z;
+    ctx.save(); ctx.fillStyle = 'rgba(37,99,235,.12)'; ctx.strokeStyle = '#2563eb'; ctx.lineWidth = 1.5 / z;
+    ctx.beginPath(); ctx.moveTo(ctr.p1.x + nx * half, ctr.p1.y + ny * half); ctx.lineTo(ctr.p2.x + nx * half, ctr.p2.y + ny * half); ctx.lineTo(ctr.p2.x - nx * half, ctr.p2.y - ny * half); ctx.lineTo(ctr.p1.x - nx * half, ctr.p1.y - ny * half); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#fff'; ctx.lineWidth = 2 / z; for (const p of [ctr.p1, ctr.p2]) { ctx.beginPath(); ctx.arc(p.x, p.y, 5 / z, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); }
+    ctx.restore();
+  },
+
+  _drawCrossing(ctx, c, selected, inGroup) {
     if (!c.p1 || !c.p2) return;
+    const D = PLAN_DEFS.crossings, st = (D.style && D.style[c.size]) || { color: D.color, width: 3 }, z = this.view.zoom;
     ctx.save();
-    ctx.strokeStyle = PLAN_DEFS.crossings.color;
-    ctx.lineWidth = (selected ? 4 : 3) / this.view.zoom;
+    if (selected && !inGroup) { ctx.strokeStyle = 'rgba(37,99,235,.35)'; ctx.lineWidth = (st.width + 5) / z; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(c.p1.x, c.p1.y); ctx.lineTo(c.p2.x, c.p2.y); ctx.stroke(); }
+    ctx.strokeStyle = st.color; ctx.lineWidth = st.width / z; ctx.lineCap = 'butt';
     ctx.beginPath(); ctx.moveTo(c.p1.x, c.p1.y); ctx.lineTo(c.p2.x, c.p2.y); ctx.stroke();
+    const len = Math.hypot(c.p2.x - c.p1.x, c.p2.y - c.p1.y) * z;
+    if (c.size && len > 34) {
+      const mx = (c.p1.x + c.p2.x) / 2, my = (c.p1.y + c.p2.y) / 2; let a = Math.atan2(c.p2.y - c.p1.y, c.p2.x - c.p1.x); if (Math.abs(a) > Math.PI / 2) a += Math.PI;
+      ctx.save(); ctx.translate(mx, my); ctx.rotate(a); ctx.font = `700 ${9 / z}px system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+      ctx.lineWidth = 3 / z; ctx.strokeStyle = 'rgba(255,255,255,.9)'; ctx.strokeText(c.size, 0, -(st.width / 2 + 1) / z); ctx.fillStyle = st.color; ctx.fillText(c.size, 0, -(st.width / 2 + 1) / z);
+      ctx.restore();
+    }
+    if (selected && !inGroup) { ctx.fillStyle = '#fff'; ctx.strokeStyle = '#2563eb'; ctx.lineWidth = 1.5 / z; for (const p of [c.p1, c.p2]) { ctx.beginPath(); ctx.arc(p.x, p.y, 4.5 / z, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); } }
     ctx.restore();
   },
 
@@ -636,6 +880,7 @@ const PlanEngine = {
     this.view = { zoom: scale, panX: 0, panY: 0 };
     pm.activeLayerId = null; // full opacity for every entity in the export
     ctx.save();
+    try {   // the view is always put back: a throw here must not leave the plan on the export's view
     ctx.setTransform(scale, 0, 0, scale, -worldRect.minX * scale, -worldRect.minY * scale);
     // Background plan images
     for (const p of pm.plans) {
@@ -651,6 +896,7 @@ const PlanEngine = {
     // DXF drawings, coloured for the export's white sheet.
     if (typeof PlanDxfImport !== 'undefined') PlanDxfImport.draw(ctx, scale, worldRect, { dark: false, fg: '#1f2937' });
     // Markup, same z-order as the screen (no selection/tool overlay)
+    this._lq = null;   // sheets draw every label (the screen's declutter queue is not used)
     for (const rm of (pm.rooms || [])) this._drawRoom(ctx, rm, false);
     for (const t of pm.trenches) this._drawTrench(ctx, t, false);
     for (const c of pm.crossings) this._drawCrossing(ctx, c, false);
@@ -659,9 +905,11 @@ const PlanEngine = {
     for (const el of pm.elements) this._drawElementEntity(ctx, el, false);
     for (const tx of pm.texts) this._drawText(ctx, tx, false);
     for (const m of pm.measurements) this._drawMeasurement(ctx, m, false);
-    ctx.restore();
-    this.view = savedView;
-    pm.activeLayerId = savedLayer;
+    } finally {
+      ctx.restore();
+      this.view = savedView;
+      pm.activeLayerId = savedLayer;
+    }
   },
 
   // World rectangle for exports: the crop box if set, else the content bbox
@@ -861,6 +1109,9 @@ const PlanEngine = {
     document.addEventListener('pointerup', (e) => this._onUp(e));
     document.addEventListener('pointercancel', (e) => this._onUp(e));
     this.fg.addEventListener('wheel', (e) => this._onWheel(e), { passive: false });
+    // The middle button pans: no browser autoscroll (Windows) or primary-selection paste (Linux).
+    this.fg.addEventListener('mousedown', (e) => { if (e.button === 1) e.preventDefault(); });
+    this.fg.addEventListener('auxclick', (e) => { if (e.button === 1) e.preventDefault(); });
     this.fg.addEventListener('contextmenu', (e) => {
       e.preventDefault();
       if (!this._isActive()) return;
@@ -895,6 +1146,17 @@ const PlanEngine = {
     window.addEventListener('blur', () => { this.spaceDown = false; this._restoreCursor(); });
   },
 
+  // A pan from this pointer event; `panStart` = the last pointer position (client px).
+  startPan(e) {
+    this.isPanning = true;
+    this.panStart = { x: e.clientX, y: e.clientY };
+  },
+  endPan() {
+    this.isPanning = false;
+    this.panStart = null;
+    this._restoreCursor();
+  },
+
   _restoreCursor() {
     if (typeof PlanTools !== 'undefined' && PlanTools.applyCursor) PlanTools.applyCursor();
     else this.fg.style.cursor = 'default';
@@ -918,8 +1180,7 @@ const PlanEngine = {
     }
     // Pan: space-hold, or middle button
     if (this.spaceDown || e.button === 1) {
-      this.isPanning = true;
-      this.panStart = { x: e.clientX - this.view.panX, y: e.clientY - this.view.panY };
+      this.startPan(e);
       this.fg.style.cursor = 'grabbing';
       e.preventDefault();
       return;
@@ -937,8 +1198,18 @@ const PlanEngine = {
       if (this.touchPointers.size >= 2) { this._pinchMove(); return; }
     }
     if (this.isPanning && this.panStart) {
-      this.view.panX = e.clientX - this.panStart.x;
-      this.view.panY = e.clientY - this.panStart.y;
+      // No button held any more: the release was lost (let go outside the window, or the
+      // browser's middle-click autoscroll took it) — end the pan, never pan on a hover.
+      if (e.pointerType !== 'touch' && e.buttons === 0) { this.endPan(); return; }
+      // Move by the change since the last event, not from where the pan began: a wheel notch
+      // rolled while the wheel is held as the middle button zooms mid-pan, and an absolute
+      // offset would then throw the plan across the screen.
+      const dx = e.clientX - this.panStart.x, dy = e.clientY - this.panStart.y;
+      this.panStart = { x: e.clientX, y: e.clientY };
+      if (!isFinite(dx) || !isFinite(dy)) return;
+      this.viewSet = true;
+      this.view.panX += dx;
+      this.view.panY += dy;
       this.requestDraw({ all: true });
       return;
     }
@@ -953,7 +1224,7 @@ const PlanEngine = {
       this.touchPointers.delete(e.pointerId);
       if (this.touchPointers.size < 2) this._pinch = null;
     }
-    if (this.isPanning) { this.isPanning = false; this.panStart = null; this._restoreCursor(); return; }
+    if (this.isPanning) { this.endPan(); return; }
     if (!this._isActive() || this._dialogOpen()) return;
     const pt = this.screenToWorld(e.clientX, e.clientY);
     if (typeof PlanTools !== 'undefined' && PlanTools.onUp) PlanTools.onUp(pt, e);

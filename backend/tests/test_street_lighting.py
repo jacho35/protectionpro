@@ -229,3 +229,66 @@ class TestCustomLoadKVA:
         assert ms["customLoadKVA"] == pytest.approx(5.5)
         assert ms["totalKVA"] == pytest.approx(5.5)
         assert res["total"]["customLoadKVA"] == pytest.approx(5.5)
+
+
+class TestSplitStrings:
+    """The auto layout's split: 1Φ, 1 A lamps, 100 m spans. A 1Φ string of n
+    poles on Z Ω per span drops 2·Z·n(n+1)/2 V at its far end; 5 % = 11.5 V."""
+
+    BIG = {"name": "big 5 Ω/km", "r": 5.0, "x": 0.0, "cores": 2, "ratedA": 50}
+    SMALL = {"name": "small 10 Ω/km", "r": 10.0, "x": 0.0, "cores": 2, "ratedA": 50}
+
+    def _req(self, cables, n=5, **kw):
+        base = {"system": "1ph", "singlePhase": "R", "luminaire": LAMP_1A, "snakingPct": 0.0, "loopInM": 0.0,
+                "zeOhm": 0.0, "supplyVdPct": 0.0, "vdLimitPct": 5.0, "cumVdLimitPct": 10.0}
+        st = {"id": "s1", "poles": [{"id": f"P{i + 1}", "spanM": 100.0} for i in range(n)],
+              "feederToM": [100.0 * (i + 1) for i in range(n)]}
+        r = {"base": base, "cables": cables, "breakers": [], "strings": [st]}
+        r.update(kw)
+        return r
+
+    def test_one_cable_splits_where_the_volt_drop_runs_out(self):
+        from backend.analysis.street_lighting import split_strings
+        out = split_strings(self._req([self.SMALL]))["strings"][0]["circuits"]
+        # 2 poles drop 6 V (3 would be 12); then each later pole alone: its feeder is 300 / 400 / 500 m
+        assert [(c["from"], c["to"]) for c in out] == [(0, 2), (2, 3), (3, 4), (4, 5)]
+        assert all(c["pass"] for c in out)
+        assert out[0]["worstVdPct"] == pytest.approx(6.0 / 230 * 100, abs=1e-3)
+
+    def test_most_poles_on_the_largest_cable_then_the_smallest_that_carries_them(self):
+        from backend.analysis.street_lighting import split_strings
+        out = split_strings(self._req([self.SMALL, self.BIG]))["strings"][0]["circuits"]
+        # big: 4 poles drop 10 V (5 would be 15); 4 poles on small drop 20 V → big. The last pole alone passes on small.
+        assert [(c["from"], c["to"], c["cable"]) for c in out] == [(0, 4, "big 5 Ω/km"), (4, 5, "small 10 Ω/km")]
+
+    def test_max_poles_and_the_breaker(self):
+        from backend.analysis.street_lighting import split_strings
+        req = self._req([self.BIG], maxPoles=3, breakers=[{"id": "B10", "inA": 10, "iaA": 50}, {"id": "B2", "inA": 2, "iaA": 10}, {"id": "B6", "inA": 6, "iaA": 30}])
+        out = split_strings(req)["strings"][0]["circuits"]
+        assert [(c["from"], c["to"]) for c in out] == [(0, 3), (3, 5)]
+        assert out[0]["breaker"] == "B6"          # 3 A: B2 too small, B6 the smallest above it
+        assert out[1]["breaker"] == "B2"          # 2 A
+
+    def test_a_pole_too_far_is_its_own_failing_circuit(self):
+        from backend.analysis.street_lighting import split_strings
+        req = self._req([self.SMALL], n=1)
+        req["strings"][0]["feederToM"] = [700.0]  # 2 × 7 Ω × 1 A = 14 V > 11.5
+        out = split_strings(req)["strings"][0]["circuits"]
+        assert len(out) == 1 and out[0]["pass"] is False and "vd" in out[0]["fails"]
+
+    def test_a_tree_both_ways_is_one_circuit_until_the_checks_run_out(self):
+        from backend.analysis.street_lighting import split_strings
+        # the feeder lands on P1; P2 and P3 run one way, P4 the other: 4 poles in one circuit (1Φ 1 A each on BIG: well within 5 %)
+        req = self._req([self.BIG], n=4)
+        st = req["strings"][0]
+        st["poles"] = [{"id": "P1", "spanM": 0, "parent": None}, {"id": "P2", "spanM": 100, "parent": 0},
+                       {"id": "P4", "spanM": 100, "parent": 0}, {"id": "P3", "spanM": 100, "parent": 1}]
+        st["feederToM"] = [100, 200, 200, 300]
+        out = split_strings(req)["strings"][0]["circuits"]
+        assert len(out) == 1 and sorted(out[0]["poles"]) == [0, 1, 2, 3] and out[0]["pass"]
+        # on SMALL the volt drop runs out: the circuit keeps what passes nearest the feed, each branch left over is its own circuit
+        req["cables"] = [self.SMALL]
+        out = split_strings(req)["strings"][0]["circuits"]
+        assert len(out) >= 2 and all(c["pass"] for c in out)
+        assert sorted(i for c in out for i in c["poles"]) == [0, 1, 2, 3]
+        assert out[0]["poles"][0] == 0

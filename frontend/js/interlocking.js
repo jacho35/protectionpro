@@ -313,7 +313,7 @@ const Interlocking = {
   },
 
   // ── Rendering ────────────────────────────────────────────────────────
-  _color(v) { return v ? '#2ecc71' : '#8892a0'; },
+  _color(v) { return v ? '#2ecc71' : 'var(--il-muted)'; },
 
   render() {
     if (!this._svg) return;
@@ -379,11 +379,11 @@ const Interlocking = {
     return `
       <g class="il-node il-input${clickable}" data-node="${n.id}" data-kind="input">
         <rect x="${n.x}" y="${n.y}" width="${numAttr(d.w)}" height="${numAttr(d.h)}" rx="17"
-              fill="${v ? '#1e3a2a' : '#2a2f3a'}" stroke="${sel ? '#3498db' : this._color(v)}" stroke-width="${sel ? 2.5 : 1.8}"/>
+              fill="${v ? 'var(--il-on)' : 'var(--il-elev)'}" stroke="${sel ? '#3498db' : this._color(v)}" stroke-width="${sel ? 2.5 : 1.8}"/>
         <circle cx="${n.x + 14}" cy="${n.y + d.h / 2}" r="5" fill="${this._color(v)}"/>
-        <text x="${n.x + 26}" y="${n.y + d.h / 2 + 4}" fill="#e6e9ef" font-size="12">${this._esc(label)}${n.invert ? ' (¬)' : ''}</text>
-        <text x="${n.x + d.w - 8}" y="${n.y + 12}" fill="#8892a0" font-size="8" text-anchor="end">${n.src === 'cb' ? 'CB' : 'MAN'}</text>
-        <circle class="il-port il-port-out" data-node="${n.id}" cx="${numAttr(p.x)}" cy="${numAttr(p.y)}" r="6" fill="${this._color(v)}" stroke="#11151c" stroke-width="1.5"/>
+        <text x="${n.x + 26}" y="${n.y + d.h / 2 + 4}" fill="var(--il-text)" font-size="12">${this._esc(label)}${n.invert ? ' (¬)' : ''}</text>
+        <text x="${n.x + d.w - 8}" y="${n.y + 12}" fill="var(--il-muted)" font-size="8" text-anchor="end">${n.src === 'cb' ? 'CB' : 'MAN'}</text>
+        <circle class="il-port il-port-out" data-node="${n.id}" cx="${numAttr(p.x)}" cy="${numAttr(p.y)}" r="6" fill="${this._color(v)}" stroke="var(--il-bg)" stroke-width="1.5"/>
       </g>`;
   },
 
@@ -395,29 +395,29 @@ const Interlocking = {
     const x = n.x, y = n.y, w = d.w, h = d.h;
     let shape;
     if (n.op === 'NOT') {
-      shape = `<path d="M${x},${y} L${x},${y + h} L${x + w},${y + h / 2} Z" fill="#2a2f3a" stroke="${col}" stroke-width="1.8"/>`;
+      shape = `<path d="M${x},${y} L${x},${y + h} L${x + w},${y + h / 2} Z" fill="var(--il-elev)" stroke="${col}" stroke-width="1.8"/>`;
     } else if (n.op === 'OR' || n.op === 'NOR' || n.op === 'XOR') {
-      shape = `<path d="M${x},${y} Q${x + w * 0.35},${y + h / 2} ${x},${y + h} Q${x + w * 0.65},${y + h} ${x + w},${y + h / 2} Q${x + w * 0.65},${y} ${x},${y} Z" fill="#2a2f3a" stroke="${col}" stroke-width="1.8"/>`;
+      shape = `<path d="M${x},${y} Q${x + w * 0.35},${y + h / 2} ${x},${y + h} Q${x + w * 0.65},${y + h} ${x + w},${y + h / 2} Q${x + w * 0.65},${y} ${x},${y} Z" fill="var(--il-elev)" stroke="${col}" stroke-width="1.8"/>`;
       if (n.op === 'XOR') shape = `<path d="M${x - 7},${y} Q${x + w * 0.28},${y + h / 2} ${x - 7},${y + h}" fill="none" stroke="${col}" stroke-width="1.8"/>` + shape;
     } else { // AND / NAND
-      shape = `<path d="M${x},${y} L${x + w * 0.5},${y} A${h / 2},${h / 2} 0 0 1 ${x + w * 0.5},${y + h} L${x},${y + h} Z" fill="#2a2f3a" stroke="${col}" stroke-width="1.8"/>`;
+      shape = `<path d="M${x},${y} L${x + w * 0.5},${y} A${h / 2},${h / 2} 0 0 1 ${x + w * 0.5},${y + h} L${x},${y + h} Z" fill="var(--il-elev)" stroke="${col}" stroke-width="1.8"/>`;
     }
     // Output bubble for inverting gates
     let bubble = '';
-    if (this._hasBubble(n)) bubble = `<circle cx="${x + w + 4}" cy="${y + h / 2}" r="4.5" fill="#2a2f3a" stroke="${col}" stroke-width="1.8"/>`;
+    if (this._hasBubble(n)) bubble = `<circle cx="${x + w + 4}" cy="${y + h / 2}" r="4.5" fill="var(--il-elev)" stroke="${col}" stroke-width="1.8"/>`;
     // Ports
     let ports = '';
     const k = n.arity || (n.op === 'NOT' ? 1 : 2);
     for (let i = 0; i < k; i++) {
       const ip = this._inPort(n, i);
-      ports += `<circle class="il-port il-port-in" data-node="${n.id}" data-port="${i}" cx="${numAttr(ip.x)}" cy="${numAttr(ip.y)}" r="6" fill="#2a2f3a" stroke="#8892a0" stroke-width="1.5"/>`;
+      ports += `<circle class="il-port il-port-in" data-node="${n.id}" data-port="${i}" cx="${numAttr(ip.x)}" cy="${numAttr(ip.y)}" r="6" fill="var(--il-elev)" stroke="var(--il-muted)" stroke-width="1.5"/>`;
     }
     const op = this._outPort(n);
-    ports += `<circle class="il-port il-port-out" data-node="${n.id}" cx="${numAttr(op.x)}" cy="${numAttr(op.y)}" r="6" fill="${this._color(v)}" stroke="#11151c" stroke-width="1.5"/>`;
+    ports += `<circle class="il-port il-port-out" data-node="${n.id}" cx="${numAttr(op.x)}" cy="${numAttr(op.y)}" r="6" fill="${this._color(v)}" stroke="var(--il-bg)" stroke-width="1.5"/>`;
     return `
       <g class="il-node il-gate-node" data-node="${n.id}" data-kind="gate">
         ${shape}${bubble}
-        <text x="${x + w * 0.42}" y="${y + h / 2 + 4}" fill="#e6e9ef" font-size="10" text-anchor="middle" pointer-events="none">${n.op}</text>
+        <text x="${x + w * 0.42}" y="${y + h / 2 + 4}" fill="var(--il-text)" font-size="10" text-anchor="middle" pointer-events="none">${n.op}</text>
         ${ports}
       </g>`;
   },
@@ -435,14 +435,14 @@ const Interlocking = {
         label = `${meta.label}: ${c ? (c.props?.name || n.cbId) : '?'}`;
       } else label = meta.label;
     }
-    const activeFill = v ? meta.color : '#2a2f3a';
+    const activeFill = v ? meta.color : 'var(--il-elev)';
     return `
       <g class="il-node il-output" data-node="${n.id}" data-kind="output">
         <rect x="${n.x}" y="${n.y}" width="${numAttr(d.w)}" height="${numAttr(d.h)}" rx="6"
-              fill="${activeFill}" stroke="${sel ? '#3498db' : (v ? meta.color : '#8892a0')}" stroke-width="${sel ? 2.5 : 1.8}"/>
-        <circle class="il-port il-port-in" data-node="${n.id}" data-port="0" cx="${numAttr(ip.x)}" cy="${numAttr(ip.y)}" r="6" fill="#2a2f3a" stroke="#8892a0" stroke-width="1.5"/>
-        <text x="${n.x + 14}" y="${n.y + 16}" fill="${v ? '#11151c' : '#8892a0'}" font-size="8" font-weight="bold">${this._esc(meta.tag)}</text>
-        <text x="${n.x + 14}" y="${n.y + 32}" fill="${v ? '#11151c' : '#e6e9ef'}" font-size="11">${this._esc(label)}</text>
+              fill="${activeFill}" stroke="${sel ? '#3498db' : (v ? meta.color : 'var(--il-muted)')}" stroke-width="${sel ? 2.5 : 1.8}"/>
+        <circle class="il-port il-port-in" data-node="${n.id}" data-port="0" cx="${numAttr(ip.x)}" cy="${numAttr(ip.y)}" r="6" fill="var(--il-elev)" stroke="var(--il-muted)" stroke-width="1.5"/>
+        <text x="${n.x + 14}" y="${n.y + 16}" fill="${v ? 'var(--il-bg)' : 'var(--il-muted)'}" font-size="8" font-weight="bold">${this._esc(meta.tag)}</text>
+        <text x="${n.x + 14}" y="${n.y + 32}" fill="${v ? 'var(--il-bg)' : 'var(--il-text)'}" font-size="11">${this._esc(label)}</text>
       </g>`;
   },
 

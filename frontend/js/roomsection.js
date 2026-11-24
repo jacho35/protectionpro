@@ -314,7 +314,8 @@ const RoomSection = {
     let drag = -1, frozen = null;
     ov.addEventListener('pointerdown', (e) => {
       const h = e.target.closest('.rsec-h');
-      if (!h) return;
+      if (!h) { if (e.shiftKey && e.target.closest('.rsec-svg')) { addPoint(e); e.preventDefault(); } return; }                // Shift-click the profile adds a point
+      if (e.altKey) { const i = +h.dataset.i; if (i > 0 && i < st.pts.length - 1) { st.pts.splice(i, 1); st.sel = -1; render(); } e.preventDefault(); return; }   // Alt-click a point removes it (not the two ends)
       drag = st.sel = +h.dataset.i;
       frozen = st.hView;
       h.setPointerCapture && h.setPointerCapture(e.pointerId);
@@ -329,8 +330,7 @@ const RoomSection = {
     const end = () => { if (drag >= 0) { drag = -1; frozen = null; render(); } };
     ov.addEventListener('pointerup', end);
     ov.addEventListener('pointercancel', end);
-    ov.addEventListener('dblclick', (e) => {
-      if (!e.target.closest('.rsec-svg') || e.target.closest('.rsec-h')) return;
+    const addPoint = (e) => {
       const [s] = svgPt(e);
       if (!(s > 0 && s < W)) return;
       const i = st.pts.findIndex(p => p[0] > s);
@@ -340,7 +340,8 @@ const RoomSection = {
       st.pts.splice(i, 0, [snap(s), snap(z)]);
       st.sel = i;
       render();
-    });
+    };
+    ov.addEventListener('dblclick', (e) => { if (e.target.closest('.rsec-svg') && !e.target.closest('.rsec-h')) addPoint(e); });
     ov.addEventListener('change', (e) => {
       const t = e.target.dataset && e.target.dataset.rsecPt;
       if (!t) return;

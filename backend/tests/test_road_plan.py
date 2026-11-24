@@ -192,6 +192,23 @@ def test_conflict_area_is_the_mean_of_its_grid():
     assert [c["key"] for c in ca["checks"]] == ["Eav", "Uo"]
 
 
+def test_conflict_direction_is_the_nearest_road_by_true_distance():
+    """A T junction: points on the main road in line with the side road (which ends on it) take the main
+    road's direction for the 5H window, not the side road's — past its end the side road's offset is only the
+    sideways part of the distance."""
+    main = RP._Road({"centreline": [[-60, 0], [60, 0]], "sections": ONE_WAY}, "EN")
+    side = RP._Road({"centreline": [[0, 0], [0, 60]], "sections": ONE_WAY}, "EN")
+    px = np.array([1.0, -2.0, 0.5]); py = np.array([-2.5, -3.0, -1.5])      # on the main carriageway, |x| < |y|
+    s, off, dist = side.project(px, py, with_dist=True)
+    assert np.abs(off) == pytest.approx(np.abs(px))                          # the sideways part only
+    assert dist == pytest.approx(np.hypot(px, py))
+    tx, ty = RP._nearest_tangent([main, side], px, py)
+    assert np.abs(tx) == pytest.approx(1.0) and ty == pytest.approx(0.0, abs=1e-9)
+    # well inside the side road it is the side road's direction
+    tx, ty = RP._nearest_tangent([main, side], np.array([0.5]), np.array([30.0]))
+    assert abs(ty[0]) == pytest.approx(1.0)
+
+
 def test_errors():
     plan = _curved_plan()
     plan["luminaires"][0]["photometryId"] = "missing"
@@ -203,3 +220,70 @@ def test_errors():
         RP.run_road_plan(plan)
     with pytest.raises(ValueError, match="at least two points"):
         RP._Road({"centreline": [[0, 0]], "sections": ONE_WAY}, "EN")
+
+
+def test_contributions_add_up_to_the_conflict_area_result():
+    """Lay out for the checks: base (fixed luminaires) + the sum of the chosen candidates' columns is the conflict
+    area's illuminance, exactly as run_road_plan works it out; the class requirements are the same checks."""
+    plan = _curved_plan()
+    out = RP.run_road_plan(plan)
+    ca = out["conflictAreas"][0]
+    lums = plan["luminaires"]
+    # every luminaire a candidate, nothing fixed
+    c = RP.conflict_contributions({**plan, "luminaires": [], "candidates": lums})
+    a = c["areas"][0]
+    assert a["points"] == ca["points"] and not any(a["base"])
+    E = np.zeros(a["points"])
+    for col in a["cand"].values():
+        E += np.asarray(col)
+    assert E.mean() == pytest.approx(ca["Eav"], rel=1e-3) and E.min() == pytest.approx(ca["Emin"], rel=1e-3)
+    assert [(k["key"], k["req"]) for k in a["checks"]] == [(k["key"], k["req"]) for k in ca["checks"]]
+    # half fixed, half candidates: base + the candidates' sum is the same
+    c2 = RP.conflict_contributions({**plan, "luminaires": lums[::2], "candidates": lums[1::2]})
+    a2 = c2["areas"][0]
+    E2 = np.asarray(a2["base"]) + sum((np.asarray(v) for v in a2["cand"].values()), np.zeros(a2["points"]))
+    assert E2 == pytest.approx(E, rel=1e-3, abs=1e-3)
+    # a candidate that cannot reach the area is left out
+    far = dict(lums[0], x=lums[0]["x"] + 500.0)
+    c3 = RP.conflict_contributions({**plan, "luminaires": [], "candidates": [far]})
+    assert c3["areas"][0]["cand"] == {}
+
+
+def test_contributions_route():
+    from fastapi.testclient import TestClient
+    from backend.main import app
+    from backend import auth
+    app.dependency_overrides[auth.get_current_user] = lambda: object()
+    try:
+        r = TestClient(app).post("/api/analysis/road-plan/contributions", json={**_curved_plan(), "luminaires": [], "candidates": _curved_plan()["luminaires"]})
+        assert r.status_code == 200, r.text
+        assert r.json()["areas"][0]["cls"] == "C3"
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_a_stretch_is_checked_on_its_own_cross_section():
+    """A segment inside a stretch is the road with the stretch's strips: the same as a road with those strips all the way; outside it
+    the road's own; the luminaires are the same ones. The display comes in parts, each with its own strips."""
+    _, plan = _scene(ONE_WAY)
+    WIDE = [{"type": "footpath", "width": 3, "cls": "P2"},
+            {"type": "carriageway", "width": 7.4, "lanes": 2, "cls": "M3", "surface": "R3"},
+            {"type": "footpath", "width": 2, "cls": "P4"}]
+    road = plan["roads"][0]
+    road["segments"] = [{"id": "a", "s0": 360.0, "s1": 390.0}, {"id": "b", "s0": 420.0, "s1": 450.0}]
+    road["stretches"] = [{"s0": 400.0, "s1": 480.0, "sections": WIDE}]
+    plan["display"] = True
+    out = RP.run_road_plan(plan)["roads"][0]
+    a, b = out["segments"]
+    ref = dict(plan, roads=[dict(road, sections=WIDE, stretches=None)])
+    rb = RP.run_road_plan(ref)["roads"][0]["segments"][1]
+    assert [s["name"] for s in b["strips"]] == [s["name"] for s in rb["strips"]]
+    for sa, sb in zip(b["strips"], rb["strips"]):
+        for k in KEYS:
+            if sa.get(k) is not None:
+                assert sa[k] == pytest.approx(sb[k], rel=1e-9), (sa["name"], k)
+    assert any(c["req"] for s in b["strips"] if s["name"].lower().startswith("footpath") for c in s["checks"])
+    own = RP.run_road_plan(dict(plan, roads=[dict(road, stretches=None)]))["roads"][0]["segments"][0]
+    assert a["strips"] == own["strips"]                                    # outside the stretch: unchanged
+    parts = out["displays"]
+    assert [round(p["s"][0]) for p in parts] == [0, 400, 480] and parts[1]["yc"][-1] == pytest.approx(12.4)

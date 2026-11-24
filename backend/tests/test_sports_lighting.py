@@ -349,3 +349,34 @@ def test_compare_gives_a_row_per_pattern_and_the_current_aiming():
     assert [r["pattern"] for r in rows] == [None, "near", "scatter", "cross", "band"]
     assert rows[0]["before"]["U2"] == pytest.approx(rows[0]["after"]["U2"])
     assert all(r["after"]["U2"] > rows[0]["after"]["U2"] for r in rows[1:])
+
+
+@pytest.mark.parametrize("pattern", ["near", "scatter", "cross", "band", None])
+def test_mirror_masts_are_aimed_as_mirror_images(pattern):
+    """Masts that mirror each other about the halfway line get mirrored aim points —
+    the pattern and the optimiser keep them symmetric (a mast on the axis: in mirrored pairs)."""
+    req = _pitch_req(pattern, optimise=True)
+    L = req["field"]["length"]
+    out = SA.aim(req)
+    assert out["symmetric"] is True
+    aims = {m["id"]: sorted((fl["ax"], fl["ay"]) for fl in m["floods"]) for m in out["masts"]}
+
+    def same(p, q):
+        return len(p) == len(q) and all(abs(u[0] - v[0]) < 0.02 and abs(u[1] - v[1]) < 0.02 for u, v in zip(sorted(p), sorted(q)))
+
+    def mirrored(pts):
+        return [(L - x, y) for x, y in pts]
+
+    for side in ("S", "N"):
+        assert same(mirrored(aims[f"{side}0.1"]), aims[f"{side}0.9"])
+        assert same(mirrored(aims[f"{side}0.5"]), aims[f"{side}0.5"])      # a mast on the axis: in mirrored pairs
+
+
+def test_symmetry_can_be_turned_off_and_is_dropped_when_the_masts_differ():
+    req = _pitch_req("near", optimise=False, symmetric=False)
+    assert SA.aim(req)["symmetric"] is False
+    req = _pitch_req("near", optimise=False)
+    req["masts"][0]["h"] = 30.0                      # one mast taller: no mirror of it
+    SA.aim(req)
+    out = SA.aim(req)
+    assert all("Aiming kept symmetric" not in w or "halfway" in w for w in out["warnings"])
