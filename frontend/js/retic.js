@@ -46,6 +46,7 @@ const Retic = {
       // Delegated change handler for every field in the workspace
       ws.addEventListener('change', (e) => this._onChange(e));
       ws.addEventListener('click', (e) => this._onClick(e));
+      ws.addEventListener('ss-fill', (e) => this._fillLazy(e.target));
     }
     this._snapshot(); // baseline
   },
@@ -720,17 +721,23 @@ const Retic = {
     else if (action === 'load-types') { if (typeof PlanLoads !== 'undefined') PlanLoads.openManager(); }
     else if (action === 'toggle-calc') {
       // Show/hide a calculation panel in place — no re-render, so focus and
-      // scroll stay put. Panels are always kept filled by the update passes.
+      // scroll stay put. A panel is filled as it opens; the update passes keep open ones current.
       e.stopPropagation();
       const key = btn.dataset.calc;
       const open = !this._calcOpen.has(key);
-      if (open) this._calcOpen.add(key); else this._calcOpen.delete(key);
+      if (open) { this._calcOpen.add(key); this._fillCalc(key); } else this._calcOpen.delete(key);
       document.querySelectorAll(`[data-calc-panel="${key}"]`).forEach(p => { p.hidden = !open; });
       document.querySelectorAll(`[data-calc="${key}"]`).forEach(b => {
         b.setAttribute('aria-expanded', String(open));
         const caret = b.querySelector('.calc-caret');
         if (caret) caret.textContent = open ? '▴' : '▾';
       });
+    }
+    else if (action === 'collapse-all') {
+      // View state only (like one card's toggle): no undo step, no recompute.
+      const fold = this.kiosks.some(k => !k.collapsed);
+      for (const k of this.kiosks) k.collapsed = fold;
+      this.render();
     }
     else if (action === 'toggle-kiosk') {
       const k = this.kioskById(btn.dataset.kiosk);
@@ -1411,6 +1418,9 @@ const Retic = {
     const toolbar = `
       <div class="retic-toolbar">
         <button class="retic-btn primary" data-action="add-kiosk">+ Add Kiosk</button>
+        ${this.kiosks.length ? (this.kiosks.some(k => !k.collapsed)
+          ? '<button class="retic-btn" data-action="collapse-all" title="Fold every kiosk card to its header (a big project draws much faster)">▸ Collapse all</button>'
+          : '<button class="retic-btn" data-action="collapse-all" title="Open every kiosk card">▾ Expand all</button>') : ''}
         <button class="retic-btn retic-mobile-only" data-action="toggle-summary" title="Show the minisub / network summary">▤ Summary</button>
         <button class="retic-btn" data-action="undo" title="${escHtml(UndoNames.title('Undo', this.undoLabel(), 'Ctrl+Z'))}">↶ Undo</button>
         <button class="retic-btn" data-action="redo" title="${escHtml(UndoNames.title('Redo', this.redoLabel(), 'Ctrl+Shift+Z'))}">Redo ↷</button>
@@ -1457,7 +1467,7 @@ const Retic = {
           <input class="kiosk-name" data-action="kiosk-field" data-kiosk="${escHtml(k.id)}" data-field="name" value="${escHtml(k.name)}">
           <button type="button" class="kiosk-vd-badge" data-kiosk-vd="${escHtml(k.id)}" data-action="toggle-calc" data-calc="f:${escHtml(k.id)}"
             aria-expanded="${this._calcOpen.has('f:' + k.id)}" title="Cumulative feeder volt drop from the minisub — click for the leg-by-leg working">Feeder VD —</button>
-          <button type="button" class="kiosk-demand-badge" data-kiosk="${escHtml(k.id)}" data-action="toggle-calc" data-calc="k:${escHtml(k.id)}"
+          <button type="button" class="kiosk-demand-badge" data-kiosk="${escHtml(k.id)}" data-kiosk-demand="${escHtml(k.id)}" data-action="toggle-calc" data-calc="k:${escHtml(k.id)}"
             aria-expanded="${this._calcOpen.has('k:' + k.id)}" title="Show how this demand is calculated">— kVA</button>
           <button class="btn-icon-del" data-action="del-kiosk" data-kiosk="${escHtml(k.id)}" title="Delete kiosk">&times;</button>
         </div>
@@ -1513,9 +1523,11 @@ const Retic = {
     }).join('') + this._bulkBar();
 
     this._updateBulkBar();
-    this.updateBadges();
-    this.updateVD();   // re-render replaced the cells; VD is client-side, no refetch
-    this.updateEarth();   // …and the last earth-fault check, until the next one lands
+    // The re-render replaced the cells: fill them again, each pass once.
+    this.updateIncomers();
+    this._paintBadges();
+    this.updateVD();      // VD is client-side, no refetch
+    this._paintEarth();   // …and the last earth-fault check, until the next one lands
     this._attachErfGrids();
   },
 
@@ -1748,10 +1760,13 @@ const Retic = {
   },
 
   // Each kiosk's erf table is an Excel-style grid (grid.js). Enter on the last
-  // erf adds one and lands in the same column of the new row.
+  // erf adds one and lands in the same column of the new row. Its pickers
+  // (cables, earth, protection, phase) share ONE type-to-search popup per table
+  // (SearchSelect.delegate) — a box per picker was thousands on a big project.
   _attachErfGrids() {
-    if (typeof GridTable === 'undefined') return;
     document.querySelectorAll('#retic-workspace .kiosk-card .erf-table tbody').forEach(tb => {
+      if (typeof SearchSelect !== 'undefined') SearchSelect.delegate(tb);
+      if (typeof GridTable === 'undefined') return;
       GridTable.attach(tb, {
         cells: '[data-action="erf-field"]',
         onAddRow: (cell) => {
@@ -1777,17 +1792,37 @@ const Retic = {
         <td data-cell="erf" data-label="Erf #"><input type="text" data-action="erf-field" data-kiosk="${escHtml(k.id)}" data-erf="${escHtml(e.id)}" data-field="erfNumber" value="${escHtml(e.erfNumber || '')}"></td>
         <td data-cell="len" data-label="Length (m)"><span class="retic-len-cell"><input type="number" step="1" data-action="erf-field" data-kiosk="${escHtml(k.id)}" data-erf="${escHtml(e.id)}" data-field="length" value="${numAttr(e.length || '')}">${this._planTag('len:service:' + e.id, true)}</span></td>
         <td data-cell="phase" data-label="Phase"${this._erfPhaseMismatch(k, e) ? ` class="erf-phase-warn" title="${escHtml(this._mixedPhaseText(this._kioskClass(k)))}"` : ''}><select data-action="erf-field" data-kiosk="${escHtml(k.id)}" data-erf="${escHtml(e.id)}" data-field="phase">${phaseOpts}</select></td>
-        <td data-cell="cable" data-label="Service Cable"${this._erfCableMismatch(k, e) ? ` class="erf-phase-warn" title="${escHtml(this._erfCableMismatch(k, e))}"` : ''}><select data-action="erf-field" data-kiosk="${escHtml(k.id)}" data-erf="${escHtml(e.id)}" data-field="cableType" data-cable-select>${this._cableOptions(e.cableType)}</select></td>
+        <td data-cell="cable" data-label="Service Cable"${this._erfCableMismatch(k, e) ? ` class="erf-phase-warn" title="${escHtml(this._erfCableMismatch(k, e))}"` : ''}><select data-action="erf-field" data-kiosk="${escHtml(k.id)}" data-erf="${escHtml(e.id)}" data-field="cableType" data-ss-lazy>${this._lazyOption(e.cableType ? CableLib.resolveName(e.cableType) : '', '— select —')}</select></td>
         <td data-cell="earth" data-label="Earth Cable">${this._earthingOf(k) === 'TN-C'
           ? '<div class="earth-pen" title="TN-C: the combined PEN conductor is the earth return — no separate earth conductor to size.">PEN (TN-C)</div>'
-          : `<select data-action="erf-field" data-kiosk="${escHtml(k.id)}" data-erf="${escHtml(e.id)}" data-field="earthCable" data-cable-select data-ss-placeholder="Earth cable — type to search, e.g. 16 cu, 25 al">${this._earthCableOptions(e.earthCable)}</select>`}</td>
-        <td data-cell="prot" data-label="Protection"><select data-action="erf-field" data-kiosk="${escHtml(k.id)}" data-erf="${escHtml(e.id)}" data-field="protection" aria-label="Protection of this erf's outgoing way"${e.protection ? '' : ' class="prot-default"'}>${this._protectionOptions(e.protection || '', this._defaultProtectionLabel(k))}</select></td>
+          : `<select data-action="erf-field" data-kiosk="${escHtml(k.id)}" data-erf="${escHtml(e.id)}" data-field="earthCable" data-ss-lazy>${this._lazyOption(e.earthCable ? CableLib.resolveName(e.earthCable) : '', '— assumed (Table 54.7) —')}</select>`}</td>
+        <td data-cell="prot" data-label="Protection"><select data-action="erf-field" data-kiosk="${escHtml(k.id)}" data-erf="${escHtml(e.id)}" data-field="protection" data-ss-lazy aria-label="Protection of this erf's outgoing way"${e.protection ? '' : ' class="prot-default"'}>${this._lazyOption(e.protection || '', e.protection ? ((this._protectionDevice({ protection: e.protection }) || {}).name || e.protection) : this._defaultProtectionLabel(k))}</select></td>
         <td data-cell="amps" data-label="Override (A / kVA)">${this._erfOverrideCell(k, e)}</td>
         <td class="vd-cell" data-cell="vd" data-label="Service VD" data-erf-vd="${e.id}">—</td>
         <td class="earth-cell" data-cell="ef" data-label="Earth fault" data-earth-erf="${e.id}">—</td>
         <td data-cell="del"><button class="btn-icon-del" data-action="del-erf" data-kiosk="${escHtml(k.id)}" data-erf="${escHtml(e.id)}" title="Delete erf">&times;</button></td>
       </tr>
       <tr class="calc-row" data-calc-panel="e:${e.id}"${this._calcOpen.has('e:' + e.id) ? '' : ' hidden'}><td colspan="11"><div class="calc-panel" data-calc-body="e:${e.id}"></div></td></tr>`;
+  },
+
+  // An erf row's cable / earth / protection pickers are drawn with only their
+  // chosen option (data-ss-lazy) — the full lists for every erf were most of the
+  // page. SearchSelect.fill asks for the list as one is used (_fillLazy).
+  _lazyOption(value, label) {
+    return `<option value="${escHtml(value)}" selected>${escHtml(label || value)}</option>`;
+  },
+  _fillLazy(sel) {
+    const k = sel.dataset.kiosk ? this.kioskById(sel.dataset.kiosk) : null;
+    const e = k && sel.dataset.erf ? k.erfs.find(x => x.id === sel.dataset.erf) : null;
+    if (!e) return;
+    const f = sel.dataset.field;
+    const html = f === 'cableType' ? this._cableOptions(e.cableType)
+      : f === 'earthCable' ? this._earthCableOptions(e.earthCable)
+      : f === 'protection' ? this._protectionOptions(e.protection || '', this._defaultProtectionLabel(k)) : null;
+    if (html == null) return;
+    const v = sel.value;
+    sel.innerHTML = html;
+    sel.value = v;
   },
 
   // Fixed-load override cell: type amps OR kVA; the other is derived through
@@ -1875,7 +1910,7 @@ const Retic = {
       if (!this._active) return;               // in the background: no Demand screen to update
       this.updateBadges();
       this.updateVD();
-      this.renderSummary();
+      this._summarySoon();
       this._doEarth();
       this._doMotorStart();
       // Linked site-plan elements show Demand figures in their properties.
@@ -1889,33 +1924,94 @@ const Retic = {
 
   updateBadges() {
     this.updateIncomers();
+    this._paintBadges();
+  },
+
+  // Write a cell only when its HTML changed: rewriting ~2000 unchanged cells
+  // after each calculation made the browser restyle the whole page.
+  _setHtml(el, html) {
+    if (el._html === html && el.innerHTML !== '') return;
+    el.innerHTML = html;
+    el._html = html;
+  },
+
+  // ─── Cheap lookups for the update passes ───
+  // { attribute value → element } for every element in the Demand workspace
+  // carrying `attr`: one DOM query per pass, not one per erf (each of those
+  // scanned the whole page).
+  _cells(attr) {
+    const m = new Map();
+    const host = document.getElementById('retic-workspace');
+    if (host) host.querySelectorAll(`[${attr}]`).forEach(el => m.set(el.getAttribute(attr), el));
+    return m;
+  },
+  // Result rows by kiosk id, and earth-check items by erf id — built once per result.
+  _byIdCache: new WeakMap(),
+  _resById(res = AppState.reticResults) {
+    if (!res || !res.kiosks) return {};
+    let m = this._byIdCache.get(res);
+    if (!m) { m = {}; for (const kr of res.kiosks) m[kr.kioskId] = kr; this._byIdCache.set(res, m); }
+    return m;
+  },
+  _earthByErf(earth) {
+    if (!earth || !earth.kiosks) return new Map();
+    let m = this._byIdCache.get(earth);
+    if (!m) { m = new Map(); for (const k of earth.kiosks) for (const e of k.erfs) m.set(e.erfId, e); this._byIdCache.set(earth, m); }
+    return m;
+  },
+
+  // Fill one calculation panel — 'k:<kiosk>' demand, 'f:<kiosk>' feeder VD,
+  // 'e:<erf>' service VD + earth fault. Only OPEN panels are kept filled by the
+  // update passes; a panel is filled as it opens.
+  _fillCalc(key) {
+    const id = key.slice(2);
+    if (key.startsWith('e:')) {
+      const body = document.querySelector(`.calc-panel[data-calc-body="${key}"]`);
+      if (!body) return;
+      let k = null, e = null;
+      for (const kk of this.kiosks) { e = kk.erfs.find(x => x.id === id); if (e) { k = kk; break; } }
+      if (!e) return;
+      const design = this._erfDesignCalc(k, e);
+      const vc = this._vdCalc(e.cableType, design.amps, e.length, this._erfIs3ph(k, e));
+      body.innerHTML = this._erfCalcHtml(k, e, design, vc, this.settings.maxRunVD) + this._erfEarthHtml(e.id);
+      return;
+    }
+    const panel = document.querySelector(`.calc-panel[data-calc-panel="${key}"]`);
+    if (!panel) return;
+    const byId = this._resById();
+    const kr = byId[id];
+    if (key.startsWith('k:')) panel.innerHTML = kr ? this._kioskCalcHtml(kr) : '';
+    else panel.innerHTML = kr && this._cumulativeFeederVD(id, byId) != null ? this._feederCalcHtml(id, byId) : '';
+  },
+  _fillOpenCalcs(prefix) {
+    for (const key of this._calcOpen) if (key.startsWith(prefix)) this._fillCalc(key);
+  },
+
+  // The kiosk header badges (demand, cumulative feeder VD) and the total chips.
+  _paintBadges() {
     const res = AppState.reticResults;
     if (!res) return;
-    const byId = {};
-    for (const kr of res.kiosks) byId[kr.kioskId] = kr;
-    document.querySelectorAll('.kiosk-demand-badge[data-kiosk]').forEach(el => {
-      const kr = byId[el.dataset.kiosk];
-      if (!kr) { el.textContent = '— kVA'; return; }
-      el.innerHTML = `${kr.totalKVA} kVA <span class="sep">|</span> ${kr.currentA} A <span class="sep">|</span> ${kr.conns} conns <span class="sep">|</span> ADMD ${kr.admdKVA}${kr.admdPerPhase ? '/ph' : ''} <span class="calc-caret">${this._calcOpen.has('k:' + kr.kioskId) ? '▴' : '▾'}</span>`;
-      const panel = document.querySelector(`.calc-panel[data-calc-panel="k:${kr.kioskId}"]`);
-      if (panel) panel.innerHTML = this._kioskCalcHtml(kr);
-    });
-    // Cumulative feeder VD in each kiosk's header, with its leg-by-leg working.
+    const byId = this._resById(res);
+    for (const [id, el] of this._cells('data-kiosk-demand')) {
+      const kr = byId[id];
+      if (!kr) { el.textContent = '— kVA'; continue; }
+      this._setHtml(el, `${kr.totalKVA} kVA <span class="sep">|</span> ${kr.currentA} A <span class="sep">|</span> ${kr.conns} conns <span class="sep">|</span> ADMD ${kr.admdKVA}${kr.admdPerPhase ? '/ph' : ''} <span class="calc-caret">${this._calcOpen.has('k:' + kr.kioskId) ? '▴' : '▾'}</span>`);
+    }
+    // Cumulative feeder VD in each kiosk's header; the leg-by-leg working is in its panel.
     const limit = this.settings.maxFeederVD;
-    document.querySelectorAll('.kiosk-vd-badge[data-kiosk-vd]').forEach(el => {
-      const id = el.dataset.kioskVd;
+    for (const [id, el] of this._cells('data-kiosk-vd')) {
       const cum = byId[id] ? this._cumulativeFeederVD(id, byId) : null;
       const leg = byId[id] ? this._legFeederVD(id, byId) : null;
       const open = this._calcOpen.has('f:' + id);
       el.classList.toggle('vd-ok', cum != null && cum <= limit);
       el.classList.toggle('vd-fail', cum != null && cum > limit);
-      el.innerHTML = cum == null ? 'Feeder VD —'
-        : `Feeder VD ${cum.toFixed(2)}% <span class="sep">|</span> leg ${leg == null ? '—' : leg.toFixed(2) + '%'} <span class="calc-caret">${open ? '▴' : '▾'}</span>`;
+      this._setHtml(el, cum == null ? 'Feeder VD —'
+        : `Feeder VD ${cum.toFixed(2)}% <span class="sep">|</span> leg ${leg == null ? '—' : leg.toFixed(2) + '%'} <span class="calc-caret">${open ? '▴' : '▾'}</span>`);
       el.title = cum == null ? 'Enter the feeder cable and length (here and on the kiosks above) to see the feeder volt drop'
         : 'Cumulative feeder volt drop from the minisub — click for the leg-by-leg working';
-      const panel = document.querySelector(`.calc-panel[data-calc-panel="f:${id}"]`);
-      if (panel) panel.innerHTML = cum == null ? '' : this._feederCalcHtml(id, byId);
-    });
+    }
+    this._fillOpenCalcs('k:');
+    this._fillOpenCalcs('f:');
     const tk = document.getElementById('retic-total-kva');
     const ta = document.getElementById('retic-total-a');
     const tc = document.getElementById('retic-total-conns');
@@ -2272,19 +2368,24 @@ const Retic = {
 
   updateVD() {
     const limit = this.settings.maxRunVD;
+    const cells = this._cells('data-erf-vd');
+    if (!cells.size) return;
     for (const k of this.kiosks) {
+      if (k.collapsed) continue;
       for (const e of k.erfs) {
-        const cell = document.querySelector(`.vd-cell[data-erf-vd="${e.id}"]`);
+        const cell = cells.get(e.id);
         if (!cell) continue;
         const is3ph = this._erfIs3ph(k, e);
         const design = this._erfDesignCalc(k, e);
         const vc = this._vdCalc(e.cableType, design.amps, e.length, is3ph);
-        const body = document.querySelector(`.calc-panel[data-calc-body="e:${e.id}"]`);
-        if (body) body.innerHTML = this._erfCalcHtml(k, e, design, vc, limit) + this._erfEarthHtml(e.id);
+        if (this._calcOpen.has('e:' + e.id)) {
+          const body = document.querySelector(`.calc-panel[data-calc-body="e:${e.id}"]`);
+          if (body) body.innerHTML = this._erfCalcHtml(k, e, design, vc, limit) + this._erfEarthHtml(e.id);
+        }
         if (!vc) { cell.textContent = '—'; cell.className = 'vd-cell'; continue; }
         const vd = vc.vd;
         const open = this._calcOpen.has('e:' + e.id);
-        cell.innerHTML = `<button type="button" class="calc-link" data-action="toggle-calc" data-calc="e:${escHtml(e.id)}" aria-expanded="${open}" title="Show how this volt drop is calculated">${vd.toFixed(2)}% <span class="calc-caret">${open ? '▴' : '▾'}</span></button>`;
+        this._setHtml(cell, `<button type="button" class="calc-link" data-action="toggle-calc" data-calc="e:${escHtml(e.id)}" aria-expanded="${open}" title="Show how this volt drop is calculated">${vd.toFixed(2)}% <span class="calc-caret">${open ? '▴' : '▾'}</span></button>`);
         cell.className = 'vd-cell ' + (vd > limit ? 'vd-fail' : 'vd-ok');
       }
     }
@@ -2293,7 +2394,15 @@ const Retic = {
   // ─── Summary panel (per-minisub demand + TX sizing, network total, VD) ───
   // ADMD diversity is applied per minisub across its downstream kiosks; the
   // network total is Σ minisub demands × the network diversity factor.
+  // One summary redraw per frame however many results land (ADMD, then the
+  // earth check, then motor starting each used to redraw it).
+  _summarySoon() {
+    if (this._summaryRaf) return;
+    this._summaryRaf = requestAnimationFrame(() => { this._summaryRaf = null; if (this._active) this.renderSummary(); });
+  },
+
   renderSummary() {
+    if (this._summaryRaf) { cancelAnimationFrame(this._summaryRaf); this._summaryRaf = null; }
     const host = document.getElementById('retic-summary');
     if (!host) return;
     const s = this.settings;
@@ -2779,15 +2888,17 @@ const Retic = {
   },
   // The incomer's status under its picker in the kiosk card (results arrive after the render).
   updateIncomers() {
+    const cells = this._cells('data-incomer-kiosk');
+    if (!cells.size) return;
     for (const k of this.kiosks) {
-      const c = document.querySelector(`.incomer-cell[data-incomer-kiosk="${CSS.escape(k.id)}"]`);
+      const c = cells.get(k.id);
       if (!c) continue;
       const fit = this._incomerAutoFit(k);
       const ao = c.parentElement && c.parentElement.querySelector('option[value="auto"]');
       if (ao) { ao.textContent = 'Auto' + (fit ? ' · ' + fit.name : ''); const ss = ao.parentElement._ss; if (ss && ss.refresh) ss.refresh(); }
       const inc = this._incomerDevice(k);
-      if (!k.incomer) { c.innerHTML = '<span class="retic-hint">No incomer: the ways fall back to the string breaker.</span>'; continue; }
-      if (!inc) { c.innerHTML = '<span class="retic-hint">Auto: sized after the demand is calculated.</span>'; continue; }
+      if (!k.incomer) { this._setHtml(c, '<span class="retic-hint">No incomer: the ways fall back to the string breaker.</span>'); continue; }
+      if (!inc) { this._setHtml(c, '<span class="retic-hint">Auto: sized after the demand is calculated.</span>'); continue; }
       const ib = this._kioskOwnA(k), inA = this._devRating(inc);
       const checks = this._incomerChecks(k);
       const bits = [];
@@ -2802,7 +2913,7 @@ const Retic = {
         bits.push(this._earthPill('info', `not selective (${disc.length})`, disc.map(x => x.text).join('\n')));
         bits.push(`<button type="button" class="retic-btn ms-curve" data-action="string-tcc" data-kiosk="${escHtml(this._stringHead(k).id)}" title="The string's curves with this incomer">◔ Curves</button>`);
       } else if (earth) bits.push(this._earthPill('pass', 'selective', 'Clears before the string breaker, and every way clears before it, up to the fault level at the kiosk.'));
-      c.innerHTML = bits.join(' ');
+      this._setHtml(c, bits.join(' '));
     }
   },
   _earthingOf(k) { const ms = this._minisubOf(k); return (ms && ms.earthing) || 'TN-S'; },
@@ -2886,13 +2997,13 @@ const Retic = {
     if (typeof PlanLoads === 'undefined' || !AppState.reticResults) return;
     const body = this._motorPayload();
     const stamp = this._motorStamp = (this._motorStamp || 0) + 1;
-    if (!body.motors.length) { delete AppState.reticResults.motorStart; this.renderSummary(); return; }
+    if (!body.motors.length) { if (AppState.reticResults.motorStart) { delete AppState.reticResults.motorStart; this._summarySoon(); } return; }
     try {
       const r = await API.runReticMotorStart(body);
       if (stamp !== this._motorStamp || !AppState.reticResults) return;
       AppState.reticResults.motorStart = r;
       this.updateLoadChecks();
-      this.renderSummary();
+      this._summarySoon();
     } catch (err) {
       console.error('Motor starting check failed:', err);
     }
@@ -2921,7 +3032,7 @@ const Retic = {
       if (stamp !== this._earthStamp || !AppState.reticResults) return;      // a newer run superseded this one
       AppState.reticResults.earth = r;
       this.updateEarth();
-      this.renderSummary();
+      this._summarySoon();
       if (typeof PlanMarkup !== 'undefined' && PlanMarkup.refreshProps) PlanMarkup.refreshProps();
     } catch (err) {
       console.error('Earth check failed:', err);
@@ -2958,28 +3069,32 @@ const Retic = {
 
   updateEarth() {
     this.updateIncomers();
+    this._paintEarth();
+  },
+  // The earth-fault cells (feeder + each erf) and the open erf panels, which carry the earth working too.
+  _paintEarth() {
     const earth = AppState.reticResults && AppState.reticResults.earth;
     if (!earth) return;
+    const kCells = this._cells('data-earth-kiosk'), eCells = this._cells('data-earth-erf');
     for (const k of earth.kiosks) {
-      const kc = document.querySelector(`.earth-cell[data-earth-kiosk="${k.kioskId}"]`);
-      if (kc) kc.innerHTML = this._earthPill(this._earthStatus(k), this._earthText(k), this._earthTip(k));
+      const kc = kCells.get(k.kioskId);
+      if (kc) this._setHtml(kc, this._earthPill(this._earthStatus(k), this._earthText(k), this._earthTip(k)));
       for (const e of k.erfs) {
-        const c = document.querySelector(`.earth-cell[data-earth-erf="${e.erfId}"]`);
+        const c = eCells.get(e.erfId);
         if (!c) continue;
         const st = this._earthStatus(e);
         const open = this._calcOpen.has('e:' + e.erfId);
-        c.innerHTML = `<button type="button" class="calc-link" data-action="toggle-calc" data-calc="e:${escHtml(e.erfId)}" aria-expanded="${open}" title="${escHtml(this._earthTip(e))}">${this._earthPill(st, this._earthText(e))} <span class="calc-caret">${open ? '▴' : '▾'}</span></button>`;
+        this._setHtml(c, `<button type="button" class="calc-link" data-action="toggle-calc" data-calc="e:${escHtml(e.erfId)}" aria-expanded="${open}" title="${escHtml(this._earthTip(e))}">${this._earthPill(st, this._earthText(e))} <span class="calc-caret">${open ? '▴' : '▾'}</span></button>`);
       }
     }
-    this.updateVD();     // the expandable panel carries the earth working too
+    this._fillOpenCalcs('e:');     // the expandable panel carries the earth working too
   },
 
   // Working for one erf, appended to its Service VD panel.
   _erfEarthHtml(erfId) {
     const earth = AppState.reticResults && AppState.reticResults.earth;
     if (!earth) return '';
-    let item = null;
-    for (const k of earth.kiosks) { item = k.erfs.find(x => x.erfId === erfId); if (item) break; }
+    const item = this._earthByErf(earth).get(erfId);
     if (!item) return '';
     const l = item.loop || {}, e = item.ecc;
     const f = (n, d = 2) => n == null ? '—' : this._fmt(n, d);

@@ -120,6 +120,9 @@
   border-radius: 8px;
   margin-bottom: 12px;
   overflow: hidden;
+  /* Off-screen cards skip layout and paint: a big project has thousands of erf rows. */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 420px;
 }
 .kiosk-head {
   display: flex; align-items: center; gap: 10px;
