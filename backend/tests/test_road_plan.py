@@ -260,3 +260,30 @@ def test_contributions_route():
         assert r.json()["areas"][0]["cls"] == "C3"
     finally:
         app.dependency_overrides.clear()
+
+
+def test_a_stretch_is_checked_on_its_own_cross_section():
+    """A segment inside a stretch is the road with the stretch's strips: the same as a road with those strips all the way; outside it
+    the road's own; the luminaires are the same ones. The display comes in parts, each with its own strips."""
+    _, plan = _scene(ONE_WAY)
+    WIDE = [{"type": "footpath", "width": 3, "cls": "P2"},
+            {"type": "carriageway", "width": 7.4, "lanes": 2, "cls": "M3", "surface": "R3"},
+            {"type": "footpath", "width": 2, "cls": "P4"}]
+    road = plan["roads"][0]
+    road["segments"] = [{"id": "a", "s0": 360.0, "s1": 390.0}, {"id": "b", "s0": 420.0, "s1": 450.0}]
+    road["stretches"] = [{"s0": 400.0, "s1": 480.0, "sections": WIDE}]
+    plan["display"] = True
+    out = RP.run_road_plan(plan)["roads"][0]
+    a, b = out["segments"]
+    ref = dict(plan, roads=[dict(road, sections=WIDE, stretches=None)])
+    rb = RP.run_road_plan(ref)["roads"][0]["segments"][1]
+    assert [s["name"] for s in b["strips"]] == [s["name"] for s in rb["strips"]]
+    for sa, sb in zip(b["strips"], rb["strips"]):
+        for k in KEYS:
+            if sa.get(k) is not None:
+                assert sa[k] == pytest.approx(sb[k], rel=1e-9), (sa["name"], k)
+    assert any(c["req"] for s in b["strips"] if s["name"].lower().startswith("footpath") for c in s["checks"])
+    own = RP.run_road_plan(dict(plan, roads=[dict(road, stretches=None)]))["roads"][0]["segments"][0]
+    assert a["strips"] == own["strips"]                                    # outside the stretch: unchanged
+    parts = out["displays"]
+    assert [round(p["s"][0]) for p in parts] == [0, 400, 480] and parts[1]["yc"][-1] == pytest.approx(12.4)

@@ -1002,6 +1002,7 @@ const PlanMarkup = {
       case 'workarea': return 'Working area — drag a rectangle, or click the corners of a polygon (Enter or the first corner closes, Backspace undoes a corner). Esc cancels.';
       case 'layerfreeze': return 'Freeze layer — click any item of the drawing to hide its whole layer. Esc to stop.';
       case 'crop': return 'Crop — drag the export rectangle (tiny drag clears it).';
+      case 'roadstretch': return 'Stretch of the road — click where it starts on the road, then where it ends. Backspace starts again, Esc stops.';
       case 'text': return 'Text — click to place a label.';
       case 'nudgeplan': return 'Move plan — drag the background plan. Esc / Select to stop.';
       case 'align': return 'Align plan — click a feature, then where it belongs (×2).';

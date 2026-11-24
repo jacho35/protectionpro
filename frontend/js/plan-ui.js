@@ -1509,6 +1509,7 @@ const PlanUI = {
   },
 
   _onPropsChange(e) {
+    if (e.target.dataset && e.target.dataset.rsSx) { if (e.type === 'change' && typeof RoadSectionsUI !== 'undefined') RoadSectionsUI.onStretchChange(e.target); return; }
     if (e.target.matches && e.target.matches('[data-ul-lw]')) {
       const u = this._underlay, D = u && u.kind === 'dxf' && PlanDxfImport.byId(u.id);
       if (D) PlanDxfImport.setLineweights(D, e.target.checked);

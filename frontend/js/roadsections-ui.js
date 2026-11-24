@@ -364,11 +364,41 @@ const RoadSectionsUI = {
     return `<div class="plan-field" style="font-size:12px;color:var(--text-muted);display:flex;flex-direction:column;gap:4px">
       <span><span aria-hidden="true" style="display:inline-block;width:9px;height:9px;border-radius:2px;background:${this.colour(sec.id)}"></span> ${esc(sec.name)}${own ? '' : ' (default)'}: ${esc(RS.summary(sec))}. Carriageway ${c.cw > 0 ? this.f2(c.cw) + ' m ' + (c.src === 'own' ? 'of its own' : 'from the section') : 'not set (Auto layout assumes its default)'}.</span>
       ${mis ? `<span style="color:#9a5b00">Its own carriageway (${this.f2(route.props.carriageW)} m) is not the section's ${this.f2(sp.road)} m. <button type="button" class="plan-btn" data-rs-act="usecw" style="padding:1px 8px">Use the section's</button></span>` : ''}
-      <button type="button" class="plan-btn" data-rs-act="open" data-id="${esc(sec.id)}" style="align-self:flex-start">Edit road section…</button></div>`;
+      <button type="button" class="plan-btn" data-rs-act="open" data-id="${esc(sec.id)}" style="align-self:flex-start">Edit road section…</button></div>
+      ${this.stretchHtml(route)}`;
+  },
+  // Stretches of the road with another section: one row each (section, from / to m along the road, remove) and *Pick a stretch on the plan*
+  stretchHtml(route) {
+    const RS = this.RS(), esc = this.esc, L = RS.list(); if (!L.length) return '';
+    const f = RS.factorOf(route), len = f ? RS.lengthOf(route, f) : null, xs = RS.stretches(route, f);
+    const opts = cur => L.map(x => `<option value="${esc(x.id)}"${x.id === cur ? ' selected' : ''}>${esc(x.name)}</option>`).join('');
+    const rows = xs.map(x => `<div style="display:grid;grid-template-columns:10px minmax(0,1fr) 62px 62px 26px;gap:4px;align-items:center">
+        <span aria-hidden="true" style="width:9px;height:9px;border-radius:2px;background:${this.colour(x.section)}"></span>
+        <select data-rs-sx="${esc(x.id)}" data-k="section" aria-label="Section of this stretch">${opts(x.section)}</select>
+        <input type="number" step="0.5" min="0" data-rs-sx="${esc(x.id)}" data-k="s0" value="${this.f2(x.s0)}" aria-label="From, m along the road">
+        <input type="number" step="0.5" min="0" data-rs-sx="${esc(x.id)}" data-k="s1" value="${this.f2(x.s1)}" aria-label="To, m along the road">
+        <button type="button" class="plan-btn" data-rs-act="sx-del" data-id="${esc(x.id)}" aria-label="Remove this stretch" style="padding:1px 6px">×</button></div>`).join('');
+    const picking = typeof PlanTools !== 'undefined' && PlanTools.active && PlanTools.active.id === 'roadstretch';
+    return `<div class="plan-field" style="display:flex;flex-direction:column;gap:5px">
+      <span style="font-size:12px;font-weight:600">Stretches with another section</span>
+      ${xs.length ? `<div style="display:grid;grid-template-columns:10px minmax(0,1fr) 62px 62px 26px;gap:4px;font-size:11px;color:var(--text-muted)"><span></span><span>Section</span><span>From, m</span><span>To, m</span><span></span></div>${rows}` : `<span style="font-size:12px;color:var(--text-muted)">The whole road${len ? ` (${len.toFixed(1)} m)` : ''} has one section. A bus bay, a wider bridge or a stretch with a footpath can take another: its kerbs taper into the rest, and Auto layout and the lighting checks use its section there.</span>`}
+      <button type="button" class="plan-btn" data-rs-act="sx-pick"${picking ? ' disabled' : ''} style="align-self:flex-start">${picking ? 'Click the start, then the end, on the road…' : '+ Pick a stretch on the plan'}</button></div>`;
+  },
+  onStretchChange(el) {
+    const RS = this.RS(), route = this._planRoads()[0]; if (!route) return;
+    const x = RS.stretches(route).find(t => t.id === el.dataset.rsSx); if (!x) return;
+    const k = el.dataset.k, v = k === 'section' ? el.value : parseFloat(el.value);
+    if (k !== 'section' && !Number.isFinite(v)) return;
+    const nx = Object.assign({}, x, { [k]: v });
+    if (Math.abs(nx.s1 - nx.s0) < 1) { UI.toast('A stretch is at least 1 m long.', 'warn'); PlanMarkup.refreshProps(); return; }
+    RS.setStretch(route, nx);
+    PlanMarkup.snapshot(); PlanMarkup.markDirty(); this.changed(); PlanMarkup.refreshProps();
   },
   onPropsClick(b) {
     const act = b.dataset.rsAct;
     if (act === 'open') { this.open(b.dataset.id); return; }
+    if (act === 'sx-pick') { const r = this._planRoads()[0]; if (r) PlanTools.set('roadstretch', { routeId: r.id }); PlanMarkup.refreshProps(); return; }
+    if (act === 'sx-del') { const r = this._planRoads()[0]; if (r) { this.RS().removeStretch(r, b.dataset.id); PlanMarkup.snapshot(); PlanMarkup.markDirty(); this.changed(); PlanMarkup.refreshProps(); } return; }
     if (act === 'usecw') {
       for (const r of this._planRoads()) if (r.props) { delete r.props.carriageW; delete r.props.cwOffset; }
       PlanMarkup.snapshot(); PlanMarkup.markDirty(); this.changed(); PlanMarkup.refreshProps();
@@ -382,10 +412,13 @@ const RoadSectionsUI = {
     if (!routes.length) return;
     ctx.save(); ctx.lineJoin = 'round'; ctx.lineCap = 'round'; ctx.globalAlpha = alpha == null ? 0.6 : alpha; ctx.lineWidth = 7 * u;
     for (const r of routes) {
-      const sec = RoadSections.of(r); if (!sec) continue;
-      const pts = typeof PlanLayoutUI !== 'undefined' && PlanLayoutUI._flat ? PlanLayoutUI._flat(r) : r.points;
-      ctx.strokeStyle = this.colour(sec.id); ctx.setLineDash(RoadSections.of(r, true) ? [] : [10 * u, 6 * u]);
-      ctx.beginPath(); pts.forEach((q, k) => k ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y)); ctx.stroke();
+      const hasX = RoadSections.stretches(r).length;
+      // a road with stretches in pieces, each in its section's colour (solid: a section picked for it; dashed: the default)
+      for (const q of hasX ? RoadSections.pieces(r) : [{ pts: RoadSections.flat(r), section: (r.props && r.props.section) || null }]) {
+        const sec = RoadSections.get(q.section) || RoadSections.def(); if (!sec) continue;
+        ctx.strokeStyle = this.colour(sec.id); ctx.setLineDash(RoadSections.get(q.section) ? [] : [10 * u, 6 * u]);
+        ctx.beginPath(); q.pts.forEach((p, k) => k ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); ctx.stroke();
+      }
     }
     ctx.restore();
   },
@@ -532,3 +565,54 @@ if (typeof document !== 'undefined') {
 // the old name (the Auto layout's sections dialog)
 const PlanSectionsUI = { open() { RoadSectionsUI.open(); } };
 if (typeof module !== 'undefined' && module.exports) module.exports = RoadSectionsUI;
+
+// Pick a stretch of a road on the plan: click where it starts, then where it ends (on the road; Backspace takes the start back, Esc leaves).
+// The new stretch takes the first section that is not the road's own; Properties then sets its section and fine-tunes from / to.
+if (typeof PlanTools !== 'undefined') PlanTools.register({
+  id: 'roadstretch', cursor: 'crosshair', _route: null, _a: null, _hover: null,
+  onActivate(o) { this._route = (AppState.planMarkup.routes || []).find(r => r.id === (o && o.routeId)) || null; this._a = null; this._hover = null; },
+  onDeactivate() { this._a = null; this._hover = null; if (typeof PlanMarkup !== 'undefined') setTimeout(() => PlanMarkup.refreshProps(), 0); },
+  cancel() { this._a = null; this._hover = null; },
+  _at(pt) {
+    const r = this._route; if (!r) return null;
+    const RS = RoadSections, f = RS.factorOf(r), p = RS.project(r, pt, f), tol = 25 / Math.max(PlanEngine.view.zoom, 1e-6), s = Math.round(p.s * 2) / 2;
+    return p.d <= tol ? { s, pt: RS.pointAt(r, s, f) } : null;
+  },
+  onDown(pt) {
+    const h = this._at(pt);
+    if (!h) { UI.toast('Click on the road you are picking the stretch for.', 'info', 2500); return; }
+    if (this._a == null) { this._a = h; PlanEngine.requestDraw({ fg: true }); return; }
+    if (Math.abs(h.s - this._a.s) < 1) { UI.toast('A stretch is at least 1 m long: click further along the road.', 'warn', 2500); return; }
+    const RS = RoadSections, r = this._route, own = (r.props && r.props.section) || RS.defId();
+    const sec = RS.list().find(x => x.id !== own) || RS.list()[0];
+    RS.setStretch(r, { s0: this._a.s, s1: h.s, section: sec.id });
+    PlanMarkup.snapshot(); PlanMarkup.markDirty(); RoadSectionsUI.changed();
+    UI.toast(`Stretch from ${Math.min(this._a.s, h.s).toFixed(1)} m to ${Math.max(this._a.s, h.s).toFixed(1)} m takes ${sec.name}; pick its section in Properties.`, 'success', 4500);
+    this._a = null; PlanTools.set('select'); PlanMarkup.selectOnly(r.id);
+  },
+  onMove(pt) { this._hover = this._at(pt); PlanEngine.requestDraw({ fg: true }); },
+  keyFirst(e) {
+    if (e.key === 'Backspace' && this._a) { this._a = null; PlanEngine.requestDraw({ fg: true }); if (e.preventDefault) e.preventDefault(); return true; }
+    if (e.key === 'Escape') { PlanTools.set('select'); return true; }
+    return false;
+  },
+  onKey(e) { return this.keyFirst(e); },
+  drawOverlay(ctx, zoom) {
+    const r = this._route; if (!r || typeof RoadSections === 'undefined' || !RoadSections.list().length) return;
+    const RS = RoadSections, u = 1 / zoom, f = RS.factorOf(r);
+    ctx.save(); ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    ctx.globalAlpha = 0.35; ctx.strokeStyle = '#2563eb'; ctx.lineWidth = 9 * u;
+    const P = RS.flat(r); ctx.beginPath(); P.forEach((p, k) => k ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); ctx.stroke();
+    ctx.globalAlpha = 0.9;
+    const seg = (a, b, col) => {
+      const tmp = { points: r.points, curved: r.curved, props: { stretches: [{ id: 'x', s0: Math.min(a, b), s1: Math.max(a, b), section: RS.list()[0].id }] } };
+      const q = RS.pieces(tmp, f).find(x => x.section); if (!q) return;
+      ctx.strokeStyle = col; ctx.lineWidth = 6 * u; ctx.beginPath(); q.pts.forEach((p, k) => k ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); ctx.stroke();
+    };
+    for (const x of RS.stretches(r, f)) seg(x.s0, x.s1, RoadSectionsUI.colour(x.section));
+    if (this._a && this._hover && Math.abs(this._hover.s - this._a.s) >= 1) seg(this._a.s, this._hover.s, '#f59e0b');
+    for (const h of [this._a, this._hover]) if (h) { ctx.fillStyle = h === this._a ? '#f59e0b' : '#2563eb'; ctx.beginPath(); ctx.arc(h.pt.x, h.pt.y, 5 * u, 0, Math.PI * 2); ctx.fill(); }
+    if (this._hover) { ctx.globalAlpha = 1; ctx.fillStyle = '#111827'; ctx.font = `${12 * u}px sans-serif`; ctx.fillText(this._hover.s.toFixed(1) + ' m', this._hover.pt.x + 8 * u, this._hover.pt.y - 8 * u); }
+    ctx.restore();
+  },
+});

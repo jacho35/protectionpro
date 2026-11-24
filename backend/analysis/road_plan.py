@@ -874,9 +874,10 @@ def evaluate_point(ctx, lum, o: dict):
 
 # ─── Display grids ──────────────────────────────────────────────────────
 
-def display_grid(ctx, road: _Road, lum, with_luminance=True):
-    n_s = int(min(DISPLAY_MAX_ALONG, max(2, math.ceil(road.length / DISPLAY_STEP_M) + 1)))
-    ss = np.linspace(0.0, road.length, n_s)
+def display_grid(ctx, road: _Road, lum, with_luminance=True, s_range=None):
+    a, b = (0.0, road.length) if s_range is None else (max(0.0, s_range[0]), min(road.length, s_range[1]))
+    n_s = int(min(DISPLAY_MAX_ALONG, max(2, math.ceil((b - a) / DISPLAY_STEP_M) + 1)))
+    ss = np.linspace(a, b, n_s)
     n_y = int(min(DISPLAY_MAX_ACROSS, max(5, math.ceil(road.width / DISPLAY_STEP_M) + 1)))
     ys = np.linspace(0.0, road.width, n_y)
     gs, gy = np.meshgrid(ss, ys, indexing="ij")
@@ -906,6 +907,52 @@ def display_grid(ctx, road: _Road, lum, with_luminance=True):
     return out
 
 
+# ─── Stretches: part of a road with another cross-section ───────────────
+
+def _stretches(r: dict, road: _Road, standard: str):
+    """A road's `stretches` [{s0, s1, sections}] (metres along it): each as a road of its own on the same centreline (and kerb-width
+    profile) with that cross-section, so a segment inside it is checked against its strips and classes, while luminaires and observers
+    still sit on the one road. Sorted, clipped to the road, overlaps cut away."""
+    out = []
+    for x in r.get("stretches") or []:
+        s0, s1 = max(0.0, _f(x.get("s0"), 0.0)), min(road.length, _f(x.get("s1"), 0.0))
+        if s1 - s0 < 0.5 or not x.get("sections"):
+            continue
+        out.append((s0, s1, _Road({**r, "sections": x["sections"], "stretches": None}, standard)))
+    out.sort(key=lambda t: t[0])
+    clean = []
+    for s0, s1, rd in out:
+        if clean and s0 < clean[-1][1]:
+            s0 = clean[-1][1]
+        if s1 - s0 >= 0.5:
+            clean.append((s0, s1, rd))
+    return clean
+
+
+def _road_at(road: _Road, st_list, seg: dict):
+    """The cross-section a segment is checked on: the stretch its middle lies in, else the road's own."""
+    if not st_list:
+        return road
+    m = (_f(seg.get("s0"), 0.0) + _f(seg.get("s1"), road.length)) / 2.0
+    for s0, s1, rd in st_list:
+        if s0 <= m <= s1:
+            return rd
+    return road
+
+
+def _parts(road: _Road, st_list):
+    """The road cut at its stretches: (s0, s1, road of that part) along it."""
+    out, at = [], 0.0
+    for s0, s1, rd in st_list:
+        if s0 > at + 0.5:
+            out.append((at, s0, road))
+        out.append((s0, s1, rd))
+        at = s1
+    if road.length > at + 0.5:
+        out.append((at, road.length, road))
+    return out
+
+
 # ─── Entry point ────────────────────────────────────────────────────────
 
 def run_road_plan(req: dict) -> dict:
@@ -917,11 +964,12 @@ def run_road_plan(req: dict) -> dict:
     if not roads:
         raise ValueError("No roads on the plan")
     lum = _luminaires(req.get("luminaires"), webs)
+    stretches = [_stretches(r, road, standard) for road, r in zip(roads, req.get("roads") or [])]
     field_max = max(_f(req.get("fieldMaxM"), FIELD_MAX_M), 5.0)
     want_display = req.get("display", True) is not False
     out_roads = []
     hours = max(_f(req.get("hoursPerYear"), 4100.0), 0.0)
-    for road, r in zip(roads, req.get("roads") or []):
+    for road, r, st_list in zip(roads, req.get("roads") or [], stretches):
         own = lum["road"] == road.id
         if own.any():
             s_l, _ = road.project(lum["x"][own], lum["y"][own])
@@ -929,7 +977,7 @@ def run_road_plan(req: dict) -> dict:
         else:
             lum_s = (np.zeros(0), np.zeros(0))
         segs = r.get("segments") or [{"id": "all", "name": road.name, "s0": 0.0, "s1": road.length, "kind": "straight"}]
-        results = [x for x in (evaluate_segment(ctx, road, lum, s, field_max, lum_s) for s in segs) if x]
+        results = [x for x in (evaluate_segment(ctx, _road_at(road, st_list, s), lum, s, field_max, lum_s) for s in segs) if x]
         watts = float(lum["watts"][own].sum()) if own.any() else 0.0
         entry = {"id": road.id, "name": road.name, "length": round(road.length, 2),
                  "segments": results, "pass": all(s["pass"] for s in results) if results else None,
@@ -937,7 +985,10 @@ def run_road_plan(req: dict) -> dict:
                             "wPerKm": round(watts * 1000.0 / road.length, 1) if road.length > 0 else None,
                             "kWhPerYear": round(watts * hours / 1000.0, 1)}}
         if want_display:
-            entry["display"] = display_grid(ctx, road, lum, with_luminance=req.get("luminanceDisplay", True) is not False)
+            wl = req.get("luminanceDisplay", True) is not False
+            entry["display"] = display_grid(ctx, road, lum, with_luminance=wl)
+            if st_list:          # each part with its own strips: the road's own between the stretches, each stretch its own
+                entry["displays"] = [display_grid(ctx, rd, lum, with_luminance=wl, s_range=(a, b)) for a, b, rd in _parts(road, st_list)]
         out_roads.append(entry)
     conflicts = [x for x in (evaluate_conflict(ctx, lum, a, roads) for a in (req.get("conflictAreas") or [])) if x]
     ok = [r["pass"] for r in out_roads if r["pass"] is not None] + [c["pass"] for c in conflicts if c["pass"] is not None]

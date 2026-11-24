@@ -150,6 +150,14 @@ const RoadPlan = {
     const sid = des && this.sectionId(road);
     return sid && sid !== des.section ? Object.assign({}, des, { section: sid }) : des;
   },
+  // Stretches of the road with another section (from the site plan road it follows: `road.sectionRuns`, metres along it), each with the
+  // design read on that section — the lighting checks of a segment inside one use its strips and classes; the poles keep the road's own.
+  _stretches(road) {
+    if (!road || !Array.isArray(road.sectionRuns) || !road.sectionRuns.length || typeof RoadSections === 'undefined') return [];
+    const des = road && typeof RoadLight !== 'undefined' ? RoadLight.design(road.designId) : null; if (!des) return [];
+    return road.sectionRuns.filter(x => RoadSections.get(x.section) && x.s1 - x.s0 >= 1)
+      .map(x => ({ s0: +x.s0, s1: +x.s1, section: x.section, des: Object.assign({}, des, { section: x.section }) }));
+  },
   _linkedPlanRoads(road) {
     if (!road || !road.plan || road.plan.unlinked || !Array.isArray(road.plan.ids) || typeof RoadSections === 'undefined') return [];
     const all = RoadSections.roads(); return road.plan.ids.map(id => all.find(x => x.id === id)).filter(Boolean);
@@ -559,6 +567,9 @@ const RoadPlan = {
         }
         pieces = next;
       }
+      for (const x of this._stretches(road)) for (const at of [x.s0, x.s1]) {       // a segment never straddles a change of section
+        pieces = pieces.flatMap(([a, b]) => at > a + 0.5 && at < b - 0.5 ? [[a, at], [at, b]] : [[a, b]]);
+      }
       for (const [a, b] of pieces) if (b - a >= 3) out.push({ ...run, s0: a, s1: b });
     }
     out.sort((a, b) => a.s0 - b.s0);
@@ -765,6 +776,7 @@ const RoadPlan = {
         centreline: g.al.pts.map(q => [+q[0].toFixed(3), +q[1].toFixed(3)]),
         sections: lay.secs.map(s => RoadLight._secPayload(s, des)), driveSide: RoadLight._driveSide(des),
         kerbWidth: g.kerbWidth,
+        stretches: this._stretches(road).map(x => ({ s0: +x.s0.toFixed(2), s1: +x.s1.toFixed(2), sections: RoadLight._layout(x.des).secs.map(q => RoadLight._secPayload(q, x.des)) })),
         segments: this.segments(road, juncs).map(s => ({ id: s.id, name: s.name, s0: +s.s0.toFixed(2), s1: +s.s1.toFixed(2), kind: s.kind, radius: s.radius ? +s.radius.toFixed(1) : null })),
       });
       for (const p of road.poles || []) {
@@ -1544,7 +1556,7 @@ const RoadPlan = {
 
   _grids() {
     if (this._step !== 3 || !this._res || !this._res.roads || this._resStale) return [];
-    return this._res.roads.map(r => r.display).filter(Boolean);
+    return this._res.roads.flatMap(r => r.displays || (r.display ? [r.display] : []));
   },
   _vmax() {
     let m = 0;

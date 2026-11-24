@@ -307,12 +307,20 @@ const PlanReserveUI = {
   _geo: { sig: '', g: null },
   planGeometry() {
     const pm = AppState.planMarkup, f = PlanEngine.factor(); if (!f || typeof PlanReserve === 'undefined') return null;
-    const cwOf = r => typeof RoadSections !== 'undefined' ? RoadSections.carriage(r.props) : { cw: +r.props.carriageW || 0, off: +r.props.cwOffset || 0 };
-    const rs = pm.routes.filter(r => r.type === 'street' && r.props && cwOf(r).cw > 0 && r.points && r.points.length >= 2); if (!rs.length) return null;
+    const RS = typeof RoadSections !== 'undefined' ? RoadSections : null;
+    const cwOf = props => RS ? RS.carriage(props) : { cw: +props.carriageW || 0, off: +props.cwOffset || 0 };
+    // each road as its pieces: a stretch with another section is drawn like a road of its own meeting the rest end to end (the kerbs taper)
+    const parts = [];
+    for (const r of pm.routes) {
+      if (r.type !== 'street' || !r.props || !r.points || r.points.length < 2) continue;
+      const ps = RS ? RS.pieces(r, f) : [{ pts: r.points, props: r.props }];
+      for (const q of ps) { const c = cwOf(q.props); if (c.cw > 0 && q.pts.length >= 2) parts.push({ r, pts: q.pts, cw: c.cw, off: c.off }); }
+    }
+    if (!parts.length) return null;
     const rets = ((pm.settings || {}).layout || {}).streetReturns || {};
-    const sig = rs.map(r => r.id + ':' + r.points.length + ':' + r.points.map(p => Math.round(p.x) + ',' + Math.round(p.y)).join(';').length + ':' + Math.round(r.points[0].x) + ',' + Math.round(r.points[0].y) + ',' + Math.round(r.points[r.points.length - 1].x) + ',' + Math.round(r.points[r.points.length - 1].y) + ':' + cwOf(r).cw + ':' + cwOf(r).off + ':' + (typeof RoadSections !== 'undefined' ? RoadSections.reserveOf(r.props).w : +(r.props && r.props.width))).join('|') + '#' + f + JSON.stringify(rets);
+    const sig = parts.map(({ r, pts, cw, off }) => r.id + ':' + pts.length + ':' + pts.map(p => Math.round(p.x) + ',' + Math.round(p.y)).join(';') + ':' + cw + ':' + off + ':' + (RS ? RS.reserveOf(r.props).w : +(r.props && r.props.width))).join('|') + '#' + f + JSON.stringify(rets);
     if (this._geo.sig === sig) return this._geo.g;
-    const list = rs.map(r => ({ rid: r.id, pts: r.points.map(p => [p.x * f, p.y * f]), w: +(typeof RoadSections !== 'undefined' ? RoadSections.reserveOf(r.props).w : +(r.props && r.props.width)) || 12, carriageW: cwOf(r).cw, cwOffset: cwOf(r).off }));
+    const list = parts.map(({ r, pts, cw, off }) => ({ rid: r.id, pts: pts.map(p => [p.x * f, p.y * f]), w: +(RS ? RS.reserveOf(r.props).w : +(r.props && r.props.width)) || 12, carriageW: cw, cwOffset: off }));
     // kerb lines cut back to the returns; a corner of two streets (or a bend of one) also gets its outer radius
     const d = PlanReserve.kerbDrawing(list, { ret: 8, retWide: 10 }, c => { const m = rets[c.jkey]; return m && m[c.key] != null ? m[c.key] : null; });
     // the inner returns as geometry (metres) for Auto layout: the square kerb corner P, the arc's centre and radius and its tangent points; the
