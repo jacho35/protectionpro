@@ -151,3 +151,7 @@ body.dark-mode #streetlight-workspace {
 .rk-list { max-height: 160px; overflow: auto; margin-top: 3px; }
 .rk-item { display: flex; justify-content: space-between; align-items: center; gap: 4px; border-bottom: 1px solid var(--border, #ddd); padding: 2px 0; }
 .rk-item .btn-small { padding: 1px 6px; font-size: 12px; margin-left: 3px; }
+
+/* The Roads tab's stepper (Design → Roads → Poles → Check → Circuits) replaces the Road plan's own 1-2-3 pills */
+.rp-steps { display: none; }
+.sl-stepper button b { margin-right: 4px; }

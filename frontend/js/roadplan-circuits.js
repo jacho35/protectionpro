@@ -204,7 +204,7 @@ if (typeof RoadPlan !== 'undefined') Object.assign(RoadPlan, {
       line = sel2 + `<div class="rp-feedline"><b>${escHtml(this._sourceLabel(r.feed.source))}</b>${f ? ` · feeder ${f.mode === 'route' ? 'drawn' : 'straight line'} ${this._fmt(f.routeM, 1)} m + ${f.allowPct} % = <b>${this._fmt(f.lenM, 1)} m</b>` : ''}</div>`;
     }
     return `<div class="rp-block"><div class="rp-block-h"><b>Supply</b></div>${sel}${line}
-      <div class="rp-actions"><button class="btn-small${this._tool === 'feed' ? ' active' : ''}" data-rp-tool="feed" title="Click the source's position, then click bends of the feeder cable; Enter or double-click to finish">${r.feed ? 'Move feed point' : 'Place feed point'}</button>${r.feed ? '<button class="btn-small" data-rp="feed-clear">Remove</button>' : ''}</div></div>
+      <div class="rp-actions"><button class="btn-small${this._tool === 'feed' ? ' active' : ''}" data-rp-tool="feed" title="Click the source's position, then click bends of the feeder cable; Enter or double-click to finish">${r.feed ? 'Move feed point' : 'Place feed point'}</button>${r.feed ? '<button class="btn-small" data-rp="feed-clear">Remove</button>' : ''}${this.planSourceEl(cur) && this._planM() ? '<button class="btn-small" data-rp="feed-plan" title="Put the feed point where this kiosk / mini-sub is drawn on the Electrical plan">Use the plan\'s position</button>' : ''}</div></div>
       ${AppState.keepInSync !== false ? this._panelCircuitsHtml(r) : ''}`;
   },
 
@@ -432,5 +432,57 @@ if (typeof RoadPlan !== 'undefined') Object.assign(RoadPlan, {
     StreetLight._afterMutate(true);
     UI.toast(`Street lighting: ${made} new, ${updated} updated circuit${made + updated === 1 ? '' : 's'} from the road plan.`, 'success', 5000);
     this.renderPanel();
+  },
+});
+
+// ─── Site plan → Roads ──────────────────────────────────────────────────
+// Roads take the site plan's street centrelines (route type `street`) and its
+// kiosks / mini-subs as feed points. The road keeps `planRouteId`, so taking the
+// streets again updates it in place and a Links entry joins the two. Plan frame:
+// x east, y north, metres (the plan's y runs down the screen).
+if (typeof RoadPlan !== 'undefined') Object.assign(RoadPlan, {
+  _planM() { return (typeof PlanEngine !== 'undefined' && AppState.planMarkup) ? PlanEngine.factor() : null; },
+  planStreets() {
+    const pm = AppState.planMarkup;
+    return pm && Array.isArray(pm.routes) ? pm.routes.filter(r => r.type === 'street' && Array.isArray(r.points) && r.points.length >= 2) : [];
+  },
+  planStreetsHtml() {
+    const n = this.planStreets().length;
+    if (!n) return '';
+    const known = new Set(this.roads.map(r => r.planRouteId).filter(Boolean));
+    const fresh = this.planStreets().filter(r => !known.has(r.id)).length;
+    return `<div class="rp-bg-actions"><button class="btn-small${this.roads.length ? '' : ' btn-primary'}" data-rp="take-streets" title="Make a road of each street centreline on the Electrical plan; roads already taken are updated in place">${this.roads.length ? 'Update from plan streets' : 'Take streets from the plan'} (${n}${fresh && this.roads.length ? `, ${fresh} new` : ''})</button></div>`;
+  },
+  async takePlanStreets() {
+    const f = this._planM();
+    if (!f) { UI.toast('Calibrate the plan scale first (Plan › Scale), so its streets have a length in metres.', 'info', 4500); return; }
+    let added = 0, updated = 0;
+    for (const st of this.planStreets()) {
+      const ip = st.points.map(q => ({ x: +(q.x * f).toFixed(3), y: +(-q.y * f).toFixed(3) }));
+      const road = this.roads.find(r => r.planRouteId === st.id);
+      if (road && road.mode === 'ip') {
+        road.ip = ip; if (st.name) road.name = st.name;
+        this._geo.delete(road.id); this.layoutRoad(road, this._keepMoved !== false); updated++;
+      } else if (!road) {
+        const nr = await this._newRoad({ mode: 'ip', ip, radius: 50, planRouteId: st.id, name: (st.props && st.props.name) || st.name || undefined });
+        if (nr) added++; else break;       // the design dialog was cancelled
+      }
+    }
+    if (updated) { this._commit(); this.render(); }
+    UI.toast(`Streets from the plan: ${added} new, ${updated} updated.`, 'success', 3000);
+  },
+  // The plan's own kiosk / mini-sub for the chosen source
+  planSourceEl(src) {
+    const pm = AppState.planMarkup;
+    return src && pm && Array.isArray(pm.elements) ? pm.elements.find(e => (e.type === 'kiosk' || e.type === 'minisub') && e.reticId === src.id) || null : null;
+  },
+  feedFromPlan() {
+    const r = this.selRoad, f = this._planM();
+    if (!r) { UI.toast('Select a road first.', 'info', 2500); return; }
+    const src = this._feedSrcPick(r), el = this.planSourceEl(src);
+    if (!el || !f) { UI.toast('That source is not drawn on the calibrated plan.', 'info', 3000); return; }
+    r.feed = Object.assign({}, r.feed || {}, { source: src, x: +(el.x * f).toFixed(3), y: +(-el.y * f).toFixed(3), route: (r.feed && r.feed.route) || [] });
+    this._feedSrc = src;
+    this._commit(); this.render();
   },
 });

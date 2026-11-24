@@ -48,6 +48,8 @@ const Links = {
       list: (L) => L._comps().filter(c => c.reticMinisubId).map(c => ['sld:' + c.id, 'retic:' + c.reticMinisubId]) },
     { id: 'sl-plan', label: 'Street-light pole ↔ drawn pole', field: 'pole.planId',
       list: (L) => L._circuits().flatMap(c => c.poles.filter(p => p.planId).map(p => ['sl:' + p.id, 'plan:' + p.planId])) },
+    { id: 'road-plan-street', label: 'Road ↔ site plan street', field: 'road.planRouteId',
+      list: (L) => (typeof RoadPlan !== 'undefined' ? RoadPlan.roads : []).filter(r => r.planRouteId).map(r => ['rp:' + r.id, 'plan:' + r.planRouteId]) },
     { id: 'sl-road', label: 'Street-light circuit ↔ road', field: 'circuit.roadKey',
       list: (L) => L._circuits().filter(c => c.roadKey).map(c => ['sl:' + c.id, 'rp:' + c.roadKey]) },
     { id: 'sl-source', label: 'Street-light circuit ↔ its kiosk / minisub', field: 'circuit.source',

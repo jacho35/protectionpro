@@ -1294,6 +1294,7 @@ const RoadPlan = {
       b.classList.toggle('active', on); b.setAttribute('aria-selected', on ? 'true' : 'false');
     });
     this.renderRail(); this.renderToolbar(); this.renderPanel(); this.renderWorld(); this.applyView(); this._hint();
+    if (typeof StreetLight !== 'undefined' && StreetLight.syncStepper) StreetLight.syncStepper();
   },
   // Plan | 3D
   setView3d(on) {
@@ -1341,10 +1342,11 @@ const RoadPlan = {
     }).join('') || '<div class="sl-empty">No roads yet.</div>';
     const bgEl = document.getElementById('rp-bg');
     const bg = this.rp.bg;
-    bgEl.innerHTML = bg ? `<div class="rp-bg-name">${escHtml(bg.name)} <span class="sl-hint">${bg.ents.length} lines</span></div>
+    const fromPlan = this.planStreetsHtml ? this.planStreetsHtml() : '';
+    bgEl.innerHTML = fromPlan + (bg ? `<div class="rp-bg-name">${escHtml(bg.name)} <span class="sl-hint">${bg.ents.length} lines</span></div>
       <details class="rp-layers"><summary>Layers (${bg.layers.length})</summary>${bg.layers.map((l, i) => `<label class="rp-layer"><input type="checkbox" data-rp-layer="${i}"${l.hidden ? '' : ' checked'}><i style="background:${escHtml(l.color)}"></i>${escHtml(l.name)}</label>`).join('')}</details>
       <div class="rp-bg-actions"><button class="btn-small" data-rp="bg">Replace…</button>${this._sitePlanDxfs().length ? '<button class="btn-small" data-rp="bg-site" title="Use a drawing already on the site plan">From site plan…</button>' : ''}<button class="btn-small" data-rp="bg-remove">Remove</button></div>`
-      : `${this._sitePlanDxfs().length ? '<button class="btn-small btn-primary" data-rp="bg-site" title="Use a drawing already on the site plan">Use the site plan…</button> ' : ''}<button class="btn-small" data-rp="bg">Load a DXF…</button><div class="sl-hint">A site plan or survey in the background; pick road lines from it.</div>`;
+      : `${this._sitePlanDxfs().length ? '<button class="btn-small btn-primary" data-rp="bg-site" title="Use a drawing already on the site plan">Use the site plan…</button> ' : ''}<button class="btn-small" data-rp="bg">Load a DXF…</button><div class="sl-hint">A site plan or survey in the background; pick road lines from it.</div>`);
     const jEl = document.getElementById('rp-junctions');
     const juncs = this.junctions();
     const opts = this._standard() === 'SANS' ? RP_CONFLICT_SANS : RP_CONFLICT_EN;
@@ -1810,6 +1812,8 @@ const RoadPlan = {
       case 'pole-reset': if (r) { const p = r.poles.find(x => x.id === this._selPole); if (p) { delete p.over; delete p.d; this._commit(); this.render(); } } break;
       case 'circuit': this.openCircuitImport(); break;
       case 'feed-clear': this._feedClear(); break;
+      case 'take-streets': this.takePlanStreets(); break;
+      case 'feed-plan': this.feedFromPlan(); break;
       case 'calc': this.recompute(0); break;
       case 'pick-cl': this._usePicked('cl'); break;
       case 'pick-k1': this._usePicked('k1'); break;

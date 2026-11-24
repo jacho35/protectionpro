@@ -666,7 +666,16 @@ const PlanUI = {
   // Road lighting on a selected kiosk / mini-sub / pole: the Road plan verdict of each street-light
   // circuit it feeds (or carries), with a link into Roads and a Back chip to this item.
   _roadLightBlock(item, kind) {
-    if (kind !== 'element' || typeof StreetLight === 'undefined' || typeof RoadPlan === 'undefined') return '';
+    if (typeof StreetLight === 'undefined' || typeof RoadPlan === 'undefined') return '';
+    if (kind === 'route' && item.type === 'street') {
+      const road = RoadPlan.roads.find(r => r.planRouteId === item.id);
+      if (!road) return '';
+      const v = RoadPlan.verdict(road.id);
+      const w = { pass: ['Meets its class', 'ok'], fail: ['Fails its class', 'bad'], stale: ['Out of date — recalculate', ''], none: ['Not calculated yet', ''] }[v.state];
+      return `<div class="plan-props-sec">Road lighting</div><div class="plan-roadlight-row"><b>${escHtml(road.name || 'Road')}</b> <span class="plan-roadlight-v ${w[1]}">${escHtml(w[0] + (v.state === 'fail' ? ` · ${v.fail} of ${v.n} segment${v.n === 1 ? '' : 's'}` : ''))}</span>
+        <button type="button" class="plan-btn" data-link-go="rp:${escHtml(road.id)}" data-link-back="plan:${escHtml(item.id)}">Open in Roads</button></div>`;
+    }
+    if (kind !== 'element') return '';
     const cs = StreetLight.circuits.filter(c => c.roadKey && (
       ((item.type === 'kiosk' || item.type === 'minisub') && item.reticId && c.source && c.source.id === item.reticId) ||
       (item.type === 'pole' && c.poles.some(p => p.planId === item.id))));
