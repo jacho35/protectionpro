@@ -395,7 +395,7 @@ const PlanEngine = {
     this._drawServedUnder(ctx, served, z);
     for (const r of pm.routes) this._drawRoute(ctx, r, sel.has(r.id));
     if (typeof PlanReserveUI !== 'undefined' && PlanLayers.alpha('routeTypes', ['street'])) PlanReserveUI.drawPlanStreets(ctx, z);
-    if (typeof RoadSectionsUI !== 'undefined' && RoadSectionsUI.showOn && PlanLayers.alpha('routeTypes', ['street'])) RoadSectionsUI.drawOverlay(ctx, z);   // roads in their road section's colour   // kerb lines and kerb returns of the streets that have a carriageway
+    if (typeof RoadSectionsUI !== 'undefined' && RoadSectionsUI.overlayOn() && PlanLayers.alpha('routeTypes', ['street'])) RoadSectionsUI.drawOverlay(ctx, z);   // roads in their road section's colour   // kerb lines and kerb returns of the streets that have a carriageway
     this._drawLoadFeeds(ctx);
     for (const el of pm.elements) this._drawElementEntity(ctx, el, sel.has(el.id));
     this._drawServedOver(ctx, served, z);

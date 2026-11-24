@@ -399,6 +399,13 @@ const Issues = {
     const items = RoadSections.mismatches().map(m => ({ key: 'rs-cw:' + m.route.id, sev: 'warn', ws: 'plan', where: this.label('plan'), go: 'plan:' + m.route.id,
       text: `${(m.route.props && m.route.props.name) || 'A road'}: its own carriageway is ${(+m.own).toFixed(1)} m, its road section "${m.sec.name}" says ${(+m.want).toFixed(1)} m. Its own width is used.`,
       act: 'Use the section\'s', actRun: () => { delete m.route.props.carriageW; delete m.route.props.cwOffset; if (typeof PlanMarkup !== 'undefined') { PlanMarkup.snapshot(); PlanMarkup.markDirty(); } this.kick(); } }));
+    // a road section whose strips do not fill its picked reserve; a road whose own reserve width is not its section's
+    for (const sec of RoadSections.list()) if (!RoadSections.fits(sec)) items.push({ key: 'rs-fit:' + sec.id, sev: 'warn', ws: 'plan', where: this.label('plan'), run: () => { if (typeof RoadSectionsUI !== 'undefined') RoadSectionsUI.open(sec.id); },
+      text: `Road section "${sec.name}": its strips add up to ${RoadSections.total(sec).toFixed(2)} m, not its ${(+sec.reserve).toFixed(2)} m reserve.`,
+      act: 'Let the verges take it', actRun: () => { RoadSections.fitStrips(sec); AppState.dirty = true; this.kick(); } });
+    for (const m of RoadSections.widthMismatches()) items.push({ key: 'rs-w:' + m.route.id, sev: 'warn', ws: 'plan', where: this.label('plan'), go: 'plan:' + m.route.id,
+      text: `${(m.route.props && m.route.props.name) || 'A road'}: its own reserve width is ${m.own.toFixed(1)} m, its road section "${m.sec.name}" is ${m.want.toFixed(1)} m.${m.near ? ` "${m.near.name}" is ${(+m.near.reserve).toFixed(1)} m.` : ''}`,
+      act: m.near ? `Give it ${m.near.name}` : 'Use the section\'s', actRun: () => { if (m.near) RoadSections.assign([m.route], m.near.id); else delete m.route.props.width; if (typeof PlanMarkup !== 'undefined') { PlanMarkup.snapshot(); PlanMarkup.markDirty(); } this.kick(); } });
     this._capped(out, items);
   },
 

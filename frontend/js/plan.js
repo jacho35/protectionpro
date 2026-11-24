@@ -64,6 +64,7 @@ const PlanMarkup = {
         </div>
         <div class="plan-modes" role="group" aria-label="Plan mode">
           <button type="button" class="plan-mode-btn active" data-mode="draw" aria-pressed="true" title="Place devices, draw routes and annotate">Draw</button>
+          <button type="button" class="plan-mode-btn" data-mode="roads" aria-pressed="false" title="The road sections: what each road is made of, given to roads by selecting them">Roads</button>
           <button type="button" class="plan-mode-btn" data-mode="underlays" aria-pressed="false" title="Import plans and DXFs, set the scale, move and align them">Underlays</button>
           <button type="button" class="plan-mode-btn" data-mode="output" aria-pressed="false" title="Sync with the other workspaces, set the print area and export">Output</button>
         </div>
@@ -133,9 +134,12 @@ const PlanMarkup = {
   // Switch Draw / Underlays / Output. Tools that belong to another mode stop.
   setMode(mode) {
     if (typeof ContextMenu !== 'undefined') ContextMenu.close();   // a menu left open would act on the old mode
-    if (!['draw', 'underlays', 'output'].includes(mode)) mode = 'draw';
+    // Roads (road sections, roadsections-ui.js) is a site plan of a reticulation: not on a building plan
+    const roadsOk = ((AppState.planMarkup && AppState.planMarkup.settings && AppState.planMarkup.settings.domain) || 'retic') !== 'building' && !!(AppState.reticulation && AppState.reticulation.streetLighting);
+    if (!['draw', 'roads', 'underlays', 'output'].includes(mode) || (mode === 'roads' && !roadsOk)) mode = 'draw';
     this.mode = mode;
     document.querySelectorAll('#plan-toolbar .plan-mode-btn').forEach(b => {
+      if (b.dataset.mode === 'roads') b.hidden = !roadsOk;
       const on = b.dataset.mode === mode;
       b.classList.toggle('active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false');
     });
@@ -360,6 +364,7 @@ const PlanMarkup = {
   refreshProps() {
     if (typeof PlanUI === 'undefined') return;
     PlanUI.renderProps();
+    if (this.context === 'plan' && this.mode === 'roads') PlanUI.renderPalette();   // the Roads panel offers the selected roads a section
     if (this.context === 'lighting') {
       PlanUI.renderPalette();   // its zone list marks the selection
       if (typeof LightingWS !== 'undefined' && LightingWS.onSelection) LightingWS.onSelection();

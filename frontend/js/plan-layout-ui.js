@@ -1337,9 +1337,11 @@ const PlanLayoutUI = {
     const c = typeof RoadSections !== 'undefined' ? RoadSections.carriage(r.props) : { cw: +(r.props && r.props.carriageW) || 0, off: +(r.props && r.props.cwOffset) || 0 };
     return { cw: this._num(c.cw, 0, 40, 0), off: this._num(c.off, -20, 20, 0) };
   },
-  _streetsM() { const f = PlanEngine.factor(); return this.streetsOnPlan().map(r => ({ id: r.id, w: this._num(r.props && r.props.width, 6, 40, 12), cw: this._cwOf(r).cw || this._cwDef(), own: this._cwOf(r).cw > 0, cwAuto: !(this._cwOf(r).cw > 0), cwOffset: this._cwOf(r).off, pts: this._flat(r).map(p => [p.x * f, p.y * f]) })); },
+  // a road's reserve width: its own where typed, else its road section's picked reserve (RoadSections.reserveOf), else the layout's default
+  _resOf(r) { if (typeof RoadSections !== 'undefined') { const q = RoadSections.reserveOf(r.props); return q.w; } return r.props && r.props.width; },
+  _streetsM() { const f = PlanEngine.factor(); return this.streetsOnPlan().map(r => ({ id: r.id, w: this._num(this._resOf(r), 6, 40, 12), cw: this._cwOf(r).cw || this._cwDef(), own: this._cwOf(r).cw > 0, cwAuto: !(this._cwOf(r).cw > 0), cwOffset: this._cwOf(r).off, pts: this._flat(r).map(p => [p.x * f, p.y * f]) })); },
   // Road sections on the plan while Auto layout is open and sections are on: each road drawn in its section's colour (RoadSectionsUI)
-  secDrawOverlay(ctx, zoom) { if (this.cfg().sections.on && typeof RoadSectionsUI !== 'undefined' && !RoadSectionsUI.showOn) RoadSectionsUI.drawOverlay(ctx, zoom, 0.55); },
+  secDrawOverlay(ctx, zoom) { if (this.cfg().sections.on && typeof RoadSectionsUI !== 'undefined' && !RoadSectionsUI.overlayOn()) RoadSectionsUI.drawOverlay(ctx, zoom, 0.55); },
 
   // The mini-subs you placed, in the order they will be numbered: the layout's own points (clicked with Mini-sub), then the mini-sub
   // parts you drew on the plan. [{ x, y (plan points), src: 'layout' | 'plan', i (index in cfg().subs) }]
@@ -1466,7 +1468,7 @@ const PlanLayoutUI = {
     if (!sr.length) return { err: 'Draw the roads first: pick Road centreline in the Routes group and click along each road.' };
     if (!erven.length) return { err: 'No erf has a boundary yet. Run Detect erven first (it keeps each erf\'s boundary).' };
     if (!erven.some(e => !e.unserviced)) return { err: 'Every erf is marked unserviced: there is nothing to supply. Mark the erven that need a supply as serviced (Detect erven › Mark unserviced, or the erf\'s Properties).' };
-    const streets = sr.map((r, i) => ({ id: r.id, name: (r.props && r.props.name) || ('Road ' + (i + 1)), w: this._num(r.props && r.props.width, 6, 40, 12), cw: this._cwOf(r).cw || this._cwDef(), own: this._cwOf(r).cw > 0, cwAuto: !(this._cwOf(r).cw > 0), cwOffset: this._cwOf(r).off, pts: this._flat(r).map(p => [p.x * f, p.y * f]) }));
+    const streets = sr.map((r, i) => ({ id: r.id, name: (r.props && r.props.name) || ('Road ' + (i + 1)), w: this._num(this._resOf(r), 6, 40, 12), cw: this._cwOf(r).cw || this._cwDef(), own: this._cwOf(r).cw > 0, cwAuto: !(this._cwOf(r).cw > 0), cwOffset: this._cwOf(r).off, pts: this._flat(r).map(p => [p.x * f, p.y * f]) }));
     // streets from the road reserve: the same squared-off corners the plan draws its kerbs and kerb returns from
     if (typeof PlanReserve !== 'undefined' && PlanReserve.squareStreets) {
       // (a street with the default carriageway is drawn as a centreline: nothing to square)

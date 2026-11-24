@@ -1,5 +1,5 @@
 /*
- * RoadSectionsUI — the Road sections page (Project › Road sections…, also from the Plan's Detect group, a road's Properties, a Lighting design
+ * RoadSectionsUI — the Road sections page (the site plan's Roads tab › Edit section…, Ctrl K, also from the Plan's Detect group, a road's Properties, a Lighting design
  * and Auto layout › Rules). The project's sections in a list; the one picked drawn end-on with every service placed from the erf boundary
  * (drag an item sideways — it snaps to 10 mm; Alt-drag is ten times finer; arrow keys nudge 10 mm, Shift 100 mm), its strips (the lighting
  * strips: type, width, lighting class, surface), the services, kiosk and manhole sizes, the checks, and where it is used. The street light
@@ -9,12 +9,18 @@
  * Standard sizes (pinned at the top of the list, `sel` = 'std'): the kiosk size, the fibre manhole size and the width + depth of each trench
  * type, set once for the project. A section shows those groups as *From the standard* (fields greyed) until *This section differs* is
  * ticked; *Copy from…* takes a group from another section; *Make these the standard* moves a section's own sizes up. Offsets stay per section.
+ * The site plan's **Roads** tab (beside Draw / Underlays / Output; `panelHtml` in the plan's left panel, `onPanelClick`): the sections with
+ * their reserve and road count, the roads selected on the plan given the picked section in one click, the picked one's strips, Edit
+ * section… (this page) and Standard sizes…; the roads are coloured by section while it is open (`overlayOn`).
  * Data and rules: roadsections.js + plan-sections.js (pure).
  */
 const RoadSectionsUI = {
   sel: null,                                      // the section being edited
   K: 40,                                          // px per m in the drawing
   showOn: false,                                  // colour the roads on the plan by their section
+  panelSel: null,                                 // the section picked in the plan's Roads tab
+  // the roads are drawn in their section's colour: asked for, or the plan's Roads tab is open
+  overlayOn() { return this.showOn || (typeof PlanMarkup !== 'undefined' && PlanMarkup.context === 'plan' && PlanMarkup.mode === 'roads'); },
   PAL: ['#2563eb', '#0b6e6e', '#b4501c', '#7c3aed', '#8a6a00', '#be185d', '#15803d', '#475569'],
   _m: null,
 
@@ -30,6 +36,7 @@ const RoadSectionsUI = {
     if (typeof RoadLight !== 'undefined' && RoadLight._built) { try { RoadLight.render(); RoadLight.recompute(); } catch (_) { /* not open */ } }
     if (typeof RoadPlan !== 'undefined' && RoadPlan._geo && RoadPlan._geo.clear) RoadPlan._geo.clear();
     if (typeof PlanEngine !== 'undefined' && PlanEngine.requestDraw) PlanEngine.requestDraw({ all: true });
+    if (typeof PlanMarkup !== 'undefined' && PlanMarkup.mode === 'roads' && typeof PlanUI !== 'undefined') PlanUI.renderPalette();
   },
 
   // the section as the drawing and checks see it: verge A / road / verge B from its strips, the services as they are (the same objects, so a
@@ -66,7 +73,7 @@ const RoadSectionsUI = {
     m.addEventListener('keydown', e => { if (e.key === 'Escape' && !e.target.closest('input,select')) { this.close(); return; } this._key(e); });
     this.render();
   },
-  close() { if (this._m) { this._m.remove(); this._m = null; } if (typeof PlanMarkup !== 'undefined') PlanMarkup.refreshProps(); },
+  close() { if (this._m) { this._m.remove(); this._m = null; } if (typeof PlanMarkup !== 'undefined') PlanMarkup.refreshProps(); if (typeof PlanMarkup !== 'undefined' && PlanMarkup.mode === 'roads' && typeof PlanUI !== 'undefined') PlanUI.renderPalette(); },
 
   _planRoads() { return typeof PlanMarkup !== 'undefined' ? [...PlanMarkup.selectedIds].map(id => (AppState.planMarkup.routes || []).find(r => r.id === id)).filter(r => r && r.type === 'street') : []; },
 
@@ -95,10 +102,11 @@ const RoadSectionsUI = {
       ${std ? this.stdHtml() : `<div style="display:flex;flex-direction:column;gap:14px;min-width:0">
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><label style="display:flex;gap:8px;align-items:center">Name <input type="text" data-rsx-name value="${esc(sec.name)}" maxlength="60" style="max-width:280px"></label>
           <button type="button" class="plan-btn" data-rsx="def"${sec.id === d ? ' disabled' : ''}>${sec.id === d ? 'Default section' : 'Make default'}</button></div>
+        ${this.reserveHtml(sec)}
         <div id="rsx-svg" style="overflow:auto;border:1px solid var(--border,#ddd);border-radius:8px;background:var(--bg-panel,#fbfaf7)">${this.svg(sec)}</div>
         <div style="font-size:12px;color:var(--text-muted)"><b>Drag</b> a service sideways to place it: it snaps to 10 mm, hold Alt for ten times finer. Focus one and use the arrow keys (10 mm, Shift 100 mm). The sizes are below: the standard's, or this section's own.</div>
         <div style="min-width:0;overflow-x:auto">${this.stripsHtml(sec)}</div>
-        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px;align-items:start">${this.poleHtml(sec)}${this.checksHtml(sec)}${this.usedHtml(sec)}</div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px;align-items:start">${this.poleHtml(sec)}${this.checksHtml(sec)}${this.usedHtml(sec)}${this.onPlanHtml(sec)}</div>
         <div style="min-width:0;overflow-x:auto">${this.itemsHtml(sec)}</div>
         <div style="display:flex;flex-direction:column;gap:12px">${this.kioskHtml(sec)}${this.mhHtml(sec)}${this.trenchHtml(sec)}</div>
       </div>`}</div>`;
@@ -173,6 +181,30 @@ const RoadSectionsUI = {
       <button type="button" class="plan-btn" data-rsx="addst" style="margin-top:4px">+ Strip</button>
       <div style="font-size:12px;color:var(--text-muted);margin-top:4px">Reserve <b>${this.f2(sp.total)} m</b>: verge A ${this.f2(sp.a)} m, carriageway ${this.f2(sp.road)} m, verge B ${this.f2(sp.b)} m. A road with no carriageway width of its own takes this one; the lighting designs on this section use these strips and classes.</div>`;
   },
+  // ───────── the road reserve: picked, the strips fill it ─────────
+  RESERVES: [13, 16, 20, 25, 30],                // the quick picks, m (any width can be typed)
+  reserveHtml(sec) {
+    const RS = this.RS(), esc = this.esc, p = +sec.reserve > 0 ? +sec.reserve : null, fit = sec.reserveFit || 'both';
+    const chip = w => `<button type="button" class="plan-btn" data-rsx="res" data-w="${w}" aria-pressed="${p === w}" style="min-width:58px;min-height:36px;${p === w ? 'outline:2px solid var(--accent,#2563eb);font-weight:600' : ''}">${w} m</button>`;
+    const radio = (v, label) => `<label style="display:flex;gap:6px;align-items:center"><input type="radio" name="rsx-fit" data-rsx-fit="${v}"${fit === v ? ' checked' : ''}> ${label}</label>`;
+    return `<div style="display:flex;flex-direction:column;gap:6px">
+      <div style="font-weight:600">Road reserve <span style="font-weight:400;font-size:12px;color:var(--text-muted)">${p != null ? `${this.f2(p)} m` : `not picked: the strips add up to ${this.f2(RS.total(sec))} m`}</span></div>
+      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">${this.RESERVES.map(chip).join('')}
+        <label style="display:flex;gap:6px;align-items:center;font-size:13px;color:var(--text-muted)">Other <input type="number" step="0.5" min="3" max="80" data-rsx-res value="${p != null ? this.f2(p) : ''}" placeholder="${esc(this.f2(RS.total(sec)))}" aria-label="Road reserve width, m" style="width:76px;text-align:right"> m</label>
+        ${p != null ? `<button type="button" class="plan-btn" data-rsx="resclear" title="Back to the strips' sum" style="padding:1px 8px">Clear</button>` : ''}</div>
+      <div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap;font-size:13px"><span style="color:var(--text-muted)">When the reserve changes:</span>${radio('both', 'both verges share it')}${radio('a', 'verge A keeps its width')}${radio('b', 'verge B keeps its width')}</div></div>`;
+  },
+  // roads on this section with a reserve width of their own that is not the section's
+  onPlanHtml(sec) {
+    const RS = this.RS(), esc = this.esc, p = +sec.reserve > 0 ? +sec.reserve : null; if (p == null) return '';
+    const roads = RS.roadsUsing(sec.id), own = roads.map(r => +((r.props || {}).width)).filter(w => w > 0), mm = RS.widthMismatches(sec.id);
+    const rng = own.length ? `${this.f2(Math.min(...own))} – ${this.f2(Math.max(...own))} m` : '';
+    const nearBy = {}; mm.forEach(m => { if (m.near) (nearBy[m.near.id] = nearBy[m.near.id] || { sec: m.near, n: 0 }).n++; });
+    return `<div><div style="font-weight:600;margin-bottom:4px">On the plan</div>
+      <div style="font-size:13px">${roads.length} road${roads.length === 1 ? '' : 's'} use${roads.length === 1 ? 's' : ''} this section${own.length ? `; their own reserve widths are ${rng}` : ''}. A road with no width of its own takes the section's ${this.f2(p)} m.</div>
+      ${mm.length ? `<div style="display:flex;gap:8px;font-size:13px;margin:4px 0"><b style="color:#9a5b00;min-width:46px">Check</b><span>${mm.length} road${mm.length === 1 ? ' has' : 's have'} a reserve width of ${mm.length === 1 ? 'its' : 'their'} own (${[...new Set(mm.map(m => this.f2(m.own)))].join(', ')} m), not ${this.f2(p)} m.</span></div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap"><button type="button" class="plan-btn" data-rsx="selmis" style="padding:1px 8px">Show on plan</button><button type="button" class="plan-btn" data-rsx="usew" style="padding:1px 8px">Use ${this.f2(p)} m on them</button>${Object.values(nearBy).map(x => `<button type="button" class="plan-btn" data-rsx="givenear" data-id="${esc(x.sec.id)}" style="padding:1px 8px">Give ${x.n === 1 ? 'it' : 'the ' + x.n} ${esc(x.sec.name)} (${this.f2(x.sec.reserve)} m)</button>`).join('')}</div>` : ''}</div>`;
+  },
   poleHtml(sec) {
     const p = this.RS().pole(sec), esc = this.esc;
     return `<div><div style="font-weight:600;margin-bottom:4px">Street light</div>${p
@@ -242,8 +274,10 @@ const RoadSectionsUI = {
     if (!rows.length) rows = [{ sev: 'ok', text: 'Clearances inside the section pass.' }];
     const mm = this.RS().mismatches().filter(x => x.sec.id === sec.id);
     const extra = mm.length ? [{ sev: 'warn', text: `${mm.length} road${mm.length === 1 ? ' has its own carriageway width' : 's have their own carriageway widths'} (${[...new Set(mm.map(x => this.f2(x.own)))].join(', ')} m), not this section's ${this.f2(mm[0].want)} m. Their own width is used.` }] : [];
+    if (!this.RS().fits(sec)) { const t = this.RS().total(sec), p = +sec.reserve, d = p - t;
+      extra.unshift({ sev: 'warn', text: `The strips add up to ${this.f2(t)} m, ${this.f2(Math.abs(d))} m ${d > 0 ? 'short of' : 'more than'} the ${this.f2(p)} m reserve.`, fit: true }); }
     const r = typeof PlanLayoutUI !== 'undefined' ? PlanLayoutUI.result : null, lay = r && r.secChecks && r.sections ? r.secChecks.filter(c => !c.sec || c.sec === sec.id) : [];
-    return `<div><div style="font-weight:600;margin-bottom:4px">Checks</div>${rows.concat(extra, lay).map(c => `<div style="display:flex;gap:8px;font-size:13px;margin:2px 0"><b style="color:${col[c.sev] || '#5b6068'};min-width:46px">${c.sev === 'ok' ? 'Pass' : c.sev === 'warn' ? 'Check' : 'Note'}</b><span>${this.esc(c.text)}</span></div>`).join('')}${mm.length ? `<button type="button" class="plan-btn" data-rsx="usecw" style="margin-top:4px">Use the section's width on those roads</button>` : ''}</div>`;
+    return `<div><div style="font-weight:600;margin-bottom:4px">Checks</div>${rows.concat(extra, lay).map(c => `<div style="display:flex;gap:8px;font-size:13px;margin:2px 0"><b style="color:${col[c.sev] || '#5b6068'};min-width:46px">${c.sev === 'ok' ? 'Pass' : c.sev === 'warn' ? 'Check' : 'Note'}</b><span>${this.esc(c.text)}</span></div>`).join('')}${mm.length ? `<button type="button" class="plan-btn" data-rsx="usecw" style="margin-top:4px">Use the section's width on those roads</button>` : ''}${extra.some(c => c.fit) ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px"><button type="button" class="plan-btn" data-rsx="fitstrips" style="font-weight:600">Let the verges take the difference</button><button type="button" class="plan-btn" data-rsx="matchres">Make the reserve ${this.f2(this.RS().total(sec))} m</button></div>` : ''}</div>`;
   },
   usedHtml(sec) {
     const RS = this.RS(), esc = this.esc, des = RS.designsUsing(sec.id), roads = RS.roadsUsing(sec.id), sl = RS.list && AppState.reticulation && AppState.reticulation.streetLighting;
@@ -253,6 +287,62 @@ const RoadSectionsUI = {
       <div style="display:flex;justify-content:space-between;gap:6px;font-size:13px"><span>${roads.length} road${roads.length === 1 ? '' : 's'} on the plan${sec.id === RS.defId() ? ' (with the roads that have none of their own)' : ''}</span>${roads.length ? `<button type="button" class="plan-btn" data-rsx="selroads" style="padding:1px 8px">Select on plan</button>` : ''}</div>
       ${rp.length ? `<div style="font-size:13px">Road plan · ${rp.length} road${rp.length === 1 ? '' : 's'}</div>` : ''}
       ${!des.length && !roads.length ? '<div style="font-size:12px;color:var(--text-muted)">Nothing uses it yet.</div>' : ''}</div>`;
+  },
+
+  // ───────── the site plan's Roads tab ─────────
+  _stripBar(sec) {
+    const fill = t => ({ carriageway: '#55595f', median: '#9fc28f', verge: '#cfe3c1', footpath: '#c9c6bd', cycle: '#b7c3d6' })[t] || '#cfe3c1';
+    return `<div aria-hidden="true" style="display:flex;height:18px;border-radius:4px;overflow:hidden;margin:2px 0">${(sec.strips || []).filter(t => +t.width > 0).map(t => `<span style="flex:${+t.width};background:${fill(t.type)}"></span>`).join('')}</div>`;
+  },
+  panelHtml() {
+    if (typeof RoadSections === 'undefined' || !(AppState.reticulation && AppState.reticulation.streetLighting)) return '<div class="plan-card"><small>Road sections belong to a reticulation project.</small></div>';
+    const RS = this.RS(), esc = this.esc; RS.ensure();
+    const cur = RS.get(this.panelSel) || RS.def(), d = RS.defId(), sel = this._planRoads();
+    const card = x => { const n = RS.roadsUsing(x.id).length, on = x.id === cur.id;
+      return `<button type="button" class="plan-pal-item" data-rsp="pick" data-id="${esc(x.id)}" aria-pressed="${on}" style="flex-direction:column;align-items:flex-start;gap:2px;height:auto;padding:8px 10px;${on ? 'outline:2px solid var(--accent,#2563eb)' : ''}">
+        <span style="display:flex;gap:6px;align-items:center;font-weight:600"><span aria-hidden="true" style="width:10px;height:10px;border-radius:2px;background:${this.colour(x.id)}"></span>${esc(x.name)} · ${this.f2(RS.reserve(x)).replace(/\.00$/, '')} m</span>
+        <small>${n} road${n === 1 ? '' : 's'}${x.id === d ? ' · default' : ''}${RS.fits(x) ? '' : ' · <b style="color:#9a5b00">strips don\'t fill it</b>'}</small></button>`; };
+    const onSecs = [...new Set(sel.map(r => (RS.of(r) || {}).name))].filter(Boolean);
+    const mm = RS.widthMismatches(cur.id).length;
+    return `<div class="plan-roads">
+      <div class="plan-sec-head"><span>Road sections</span><button type="button" class="plan-btn" data-rsp="new" style="padding:1px 8px">+ New</button></div>
+      ${RS.list().map(card).join('')}
+      <div class="plan-card" style="display:flex;flex-direction:column;gap:6px">${sel.length
+        ? `<span>${sel.length} road${sel.length === 1 ? '' : 's'} selected${onSecs.length ? ` (on ${esc(onSecs.join(', '))})` : ''}</span>
+           <button type="button" class="plan-btn" data-rsp="apply" style="font-weight:600;min-height:36px">Give ${sel.length === 1 ? 'it' : 'them'} ${esc(cur.name)}</button>`
+        : `<small>Click a road on the plan (Shift-click adds, or drag a box) to give it a section.</small>`}</div>
+      <div style="border-top:1px solid var(--border,#e5e7eb);padding-top:8px;display:flex;flex-direction:column;gap:6px">
+        <b>${esc(cur.name)}</b>${this._stripBar(cur)}
+        <small>${esc(RS.summary(cur))}</small>
+        ${RS.fits(cur) ? '' : `<small style="color:#9a5b00">The strips add up to ${this.f2(RS.total(cur))} m, not the ${this.f2(cur.reserve)} m reserve.</small>`}
+        ${mm ? `<small style="color:#9a5b00">${mm} road${mm === 1 ? ' has' : 's have'} a reserve width of ${mm === 1 ? 'its' : 'their'} own.</small>` : ''}
+        <button type="button" class="plan-btn" data-rsp="edit" style="min-height:34px">Edit section…</button>
+        <button type="button" class="plan-btn" data-rsp="selroads" style="min-height:34px"${RS.roadsUsing(cur.id).length ? '' : ' disabled'}>Select its roads</button>
+        <button type="button" class="plan-btn" data-rsp="std" style="min-height:34px">Standard sizes…</button>
+      </div>
+      <small style="color:var(--text-muted)">While Roads is open the roads are coloured by section; dashed = on the default.</small></div>`;
+  },
+  // the site plan's Roads tab where the project has a site plan, else the dialog
+  goRoads() {
+    const tab = document.getElementById('btn-workspace-plan');
+    if (tab && !tab.hidden && typeof window.switchWorkspace === 'function' && typeof PlanMarkup !== 'undefined' && AppState.reticulation && AppState.reticulation.streetLighting) {
+      window.switchWorkspace('plan'); PlanMarkup.setMode('roads'); if (PlanMarkup.mode === 'roads') return;
+    }
+    this.open();
+  },
+  onPanelClick(b) {
+    const RS = this.RS(), act = b.dataset.rsp, cur = RS.get(this.panelSel) || RS.def();
+    const again = () => { if (typeof PlanUI !== 'undefined') PlanUI.renderPalette(); if (typeof PlanEngine !== 'undefined') PlanEngine.requestDraw({ all: true }); };
+    if (act === 'pick') { this.panelSel = b.dataset.id; again(); return; }
+    if (act === 'new') { const s = RS.add('Road section ' + (RS.list().length + 1)); this.panelSel = s.id; this.changed(); this.open(s.id); again(); return; }
+    if (act === 'edit') { this.open(cur.id); return; }
+    if (act === 'std') { this.open('std'); return; }
+    if (act === 'selroads') { this._toPlan(RS.roadsUsing(cur.id).map(r => r.id)); return; }
+    if (act === 'apply') {
+      const rs = this._planRoads(); if (!rs.length) return;
+      RS.assign(rs, cur.id); PlanMarkup.snapshot(); PlanMarkup.markDirty(); this.changed(); again();
+      UI.toast(`"${cur.name}" given to ${rs.length} road${rs.length === 1 ? '' : 's'}.`, 'success');
+    }
   },
 
   // ───────── a road's Properties: what its section gives it ─────────
@@ -306,6 +396,8 @@ const RoadSectionsUI = {
     const t = e.target, RS = this.RS(), sec = this.cur();
     if (t.matches('[data-rsx-name]')) { sec.name = t.value.trim().slice(0, 60) || 'Road section'; this.changed(); this.render(); return; }
     if (t.matches('[data-rsx-f]')) { this.setPath(sec, t.dataset.rsxF, t.value); this.changed(); this.render(); return; }
+    if (t.matches('[data-rsx-res]')) { if (t.value === '') { RS.clearReserve(sec); this.changed(); this.render(); return; } this._setRes(sec, t.value); return; }
+    if (t.matches('[data-rsx-fit]')) { sec.reserveFit = t.dataset.rsxFit; this.changed(); return; }
     if (t.matches('[data-rsx-own]')) { RS.setOwn(sec, t.dataset.rsxOwn, t.checked); this.changed(); this.render(); return; }
     if (t.matches('[data-rsx-copy]')) { const from = RS.get(t.value); if (from && RS.copyFrom(sec, from, t.dataset.rsxCopy)) { UI.toast(`${this.TITLES[t.dataset.rsxCopy]} copied from "${from.name}".`, 'success'); this.changed(); } this.render(); return; }
     if (t.matches('[data-rsx-show]')) { this.showOn = t.checked; this.changed(); return; }
@@ -328,6 +420,17 @@ const RoadSectionsUI = {
     if (act === 'new') { const s = RS.add('Road section ' + (RS.list().length + 1)); this.sel = s.id; this.changed(); this.render(); return; }
     if (act === 'dup') { const s = RS.duplicate(sec.id); if (s) this.sel = s.id; this.changed(); this.render(); return; }
     if (act === 'def') { RS.setDef(sec.id); this.changed(); this.render(); return; }
+    if (act === 'res') { this._setRes(sec, b.dataset.w); return; }
+    if (act === 'resclear') { RS.clearReserve(sec); this.changed(); this.render(); return; }
+    if (act === 'fitstrips') { if (!RS.fitStrips(sec)) UI.toast('The verges cannot take it: the strips that stay are already wider than the reserve.', 'warn'); this.changed(); this.render(); return; }
+    if (act === 'matchres') { RS.matchReserve(sec); this.changed(); this.render(); return; }
+    if (act === 'selmis' || act === 'usew' || act === 'givenear') {
+      const mm = RS.widthMismatches(sec.id).filter(m => act !== 'givenear' || (m.near && m.near.id === b.dataset.id));
+      if (act === 'selmis') { const ids = mm.map(m => m.route.id); this.close(); this._toPlan(ids); return; }
+      if (act === 'usew') mm.forEach(m => { delete m.route.props.width; });
+      else RS.assign(mm.map(m => m.route), b.dataset.id);
+      PlanMarkup.snapshot(); PlanMarkup.markDirty(); this.changed(); this.render(); return;
+    }
     if (act === 'tostd') {
       const g = b.dataset.g, n = RS.list().filter(x => x !== sec && !RS.own(x, g)).length;
       UI.confirm(`Make the ${this.TITLES[g].toLowerCase()} of "${sec.name}" the project standard? ${n} other section${n === 1 ? '' : 's'} that follow${n === 1 ? 's' : ''} the standard change${n === 1 ? 's' : ''} with it.`, { okText: 'Make standard' }).then(ok => { if (ok && RS.toStd(sec, g)) { this.changed(); this.render(); } });
@@ -365,6 +468,17 @@ const RoadSectionsUI = {
     }
   },
 
+  _setRes(sec, w) {
+    const RS = this.RS();
+    if (!RS.setReserve(sec, w)) UI.toast(`A ${w} m reserve is narrower than the carriageway and the strips beside it.`, 'warn');
+    this.changed(); this.render();
+  },
+  // to the site plan, with these roads selected
+  _toPlan(ids) {
+    if (typeof window !== 'undefined' && typeof window.switchWorkspace === 'function' && typeof PlanMarkup !== 'undefined' && PlanMarkup.context !== 'plan') window.switchWorkspace('plan');
+    if (typeof PlanMarkup !== 'undefined') { PlanMarkup.setSelection(ids); if (PlanMarkup.zoomToSelection) PlanMarkup.zoomToSelection(); }
+  },
+
   // ───────── dragging a service on the drawing ─────────
   _items: { svc: 'Service', lv: 'LV', fi: 'Fibre', mv: 'MV', kiosk: 'Kiosk', mh: 'Manhole' },
   _down(e) {
@@ -394,7 +508,14 @@ const RoadSectionsUI = {
   },
 };
 if (typeof document !== 'undefined') {
-  const bind = () => { const b = document.getElementById('btn-road-sections'); if (b && !b._rs) { b._rs = true; b.addEventListener('click', () => RoadSectionsUI.open()); } };
+  // Road sections live on the site plan's Roads tab; this hidden button only keeps them in Ctrl K (header.js lists it)
+  const bind = () => {
+    if (document.getElementById('btn-road-sections')) return;
+    const tb = document.getElementById('toolbar'); if (!tb) return;
+    const b = document.createElement('button'); b.type = 'button'; b.id = 'btn-road-sections'; b.style.display = 'none'; b.textContent = 'Road sections';
+    b.title = 'The road sections: what each road is made of (strips, reserve, services, sizes), on the site plan’s Roads tab';
+    b.addEventListener('click', () => RoadSectionsUI.goRoads()); tb.appendChild(b);
+  };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bind); else bind();
 }
 // the old name (the Auto layout's sections dialog)
