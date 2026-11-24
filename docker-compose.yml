@@ -16,8 +16,12 @@ services:
       # in the MCP discovery documents, e.g. https://protectionpro.devmooreapps.co.za
       # Unset ⇒ taken from the request's Host / X-Forwarded-* headers.
       - PUBLIC_URL=${PUBLIC_URL:-}
+      # Title-block template for the plan's DXF layout sheets: a DXF with blocks named …-TB-A0 … -TB-A4 in ./templates
+      # (kept out of git). No template ⇒ plain sheets.
+      - PP_DXF_TEMPLATES=/app/templates
     volumes:
       - db-data:/data
+      - ./templates:/app/templates:ro
     expose:
       - "8000"
     restart: unless-stopped

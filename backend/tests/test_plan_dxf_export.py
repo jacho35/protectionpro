@@ -11,6 +11,12 @@ import pytest
 from backend.analysis.plan_dxf import build_dxf, parse_dxf, BG_PREFIX, TEXT_STYLE
 
 
+@pytest.fixture(autouse=True)
+def _no_template(tmp_path, monkeypatch):
+    """No title-block template unless a test makes one (the repo's own templates/ folder is local only)."""
+    monkeypatch.setenv("PP_DXF_TEMPLATES", str(tmp_path / "no-templates"))
+
+
 def _read(data: bytes):
     return ezdxf.read(io.StringIO(data.decode("utf-8")))
 
@@ -170,8 +176,8 @@ def test_one_paper_space_layout_per_sheet_each_freezing_the_other_layers():
     assert "EL_LV" not in mv.frozen_layers and "EL_TEXT" not in mv.frozen_layers
     assert {"EL_LV", "EL_LV_LABELS"} <= set(fi.frozen_layers) and "EL_TRENCH" not in fi.frozen_layers
     assert "PP_META" in mv.frozen_layers                                                 # the hidden data block shows nowhere
-    # A1 less 10 mm margins: 821 × 574 mm; 574 mm at 1:500 = 287 m of plan; centred on the plan's extents
-    assert (mv.dxf.width, mv.dxf.height) == pytest.approx((821, 574))
+    # A1 less 10 mm margins and the legend column (98 mm + 3 mm gap): 720 × 574 mm; 574 mm at 1:500 = 287 m of plan
+    assert (mv.dxf.width, mv.dxf.height) == pytest.approx((720, 574))
     assert mv.dxf.view_height == pytest.approx(287)
     assert (mv.dxf.view_center_point.x, mv.dxf.view_center_point.y) == pytest.approx((10, -5))
     assert doc.layers.get("EL_VIEWPORTS").dxf.plot == 0
@@ -191,7 +197,7 @@ def test_ducts_sheet_shows_the_road_crossing_ducts_alone():
 def test_paper_size_and_scale_set_the_viewport():
     doc = _read(build_dxf(_sheeted(layout={"paper": "A3", "scale": 1000, "extents": [0, 0, 1, 1]})))
     vp = _viewport(doc, "LV")
-    assert (vp.dxf.width, vp.dxf.height) == pytest.approx((400, 277))
+    assert (vp.dxf.width, vp.dxf.height) == pytest.approx((299, 277))
     assert vp.dxf.view_height == pytest.approx(277)
 
 

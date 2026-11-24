@@ -77,8 +77,38 @@ const PlanDXF = {
   // the background drawings. Kept per project in planMarkup.settings.dxfExport.
   SCALES: [100, 200, 250, 500, 1000, 1250, 2000, 2500, 5000, 10000],
   HEIGHTS: [1.8, 2.5, 3.5, 5],
-  PAPERS: { A0: [1189, 841], A1: [841, 594], A2: [594, 420], A3: [420, 297] },   // mm, landscape; must match backend PAPERS
+  PAPERS: { A0: [1189, 841], A1: [841, 594], A2: [594, 420], A3: [420, 297], A4: [297, 210] },   // mm, landscape; must match backend PAPERS
   MARGIN_MM: 10,
+  LEGEND_COL_MM: 98,       // without a template the legend takes a column this wide right of the viewport
+  STATUSES: ['PRELIMINARY', 'FOR COMMENT', 'FOR APPROVAL', 'FOR TENDER', 'FOR CONSTRUCTION', 'AS BUILT'],
+  LABEL_STYLES: { circle: 'Leader with a circle on the cable', arrow: 'Leader with an arrow onto the cable', along: 'Text along the cable' },
+  // route types drawn by the dozen (one per erf): no label unless the cable differs from the most common one, which is a
+  // note in the legend instead
+  TYPICAL: { service: 'Service cables', fibreErf: 'Fibre drops' },
+  CHAIN: ['sl'],           // route types drawn span by span and looped through: one label per run (an LV cable kiosk to kiosk is its own cable)
+  SHEET_TITLES: { MV: 'MV RETICULATION', LV: 'LV RETICULATION', SL: 'STREET LIGHTING', FIBRE: 'FIBRE NETWORK', DUCTS: 'ROAD CROSSING DUCTS',
+    LIGHTING: 'LIGHTING LAYOUT', POWER: 'POWER LAYOUT', FIRE: 'FIRE DETECTION', ELV: 'ELECTRONIC SERVICES', PLAN: 'LAYOUT' },
+  ISO_LW: [13, 18, 25, 35, 50, 70, 100],
+  // a line the plan draws px screen pixels wide → its DXF line weight (hundredths of a mm): px × 0.175 mm, the nearest ISO pen
+  lineweight(px) { const want = Math.max(0, +px || 0) * 17.5; return this.ISO_LW.reduce((b, w) => Math.abs(w - want) < Math.abs(b - want) ? w : b, this.ISO_LW[0]); },
+  // 'rgba(r,g,b,a)' → a (1 for any other colour)
+  _alpha(c) { const m = /^rgba\([^)]*,\s*([\d.]+)\s*\)$/i.exec(String(c || '').trim()); return m ? +m[1] : 1; },
+  // the server's title-block template: { available, papers: { A1: { viewport: [w, h] } }, name }
+  async _template() {
+    if (this._tpl) return this._tpl;
+    try {
+      const r = await fetch(`${API_BASE}/plan/dxf-template`, { headers: API.authHeaders({}) });
+      this._tpl = r.ok ? await r.json() : { available: false, papers: {} };
+    } catch (_) { this._tpl = { available: false, papers: {} }; }
+    return this._tpl;
+  },
+  // the viewport of a sheet of `paper` (mm): inside the template's frame left of its title panel, else within the margin
+  _viewport(paper) {
+    const t = this._tpl, v = t && t.available && t.papers && t.papers[paper] && t.papers[paper].viewport;
+    if (v) return v;
+    const [pw, ph] = this.PAPERS[paper] || this.PAPERS.A1;
+    return [pw - 2 * this.MARGIN_MM - this.LEGEND_COL_MM - 3, ph - 2 * this.MARGIN_MM];
+  },
 
   // The plan's extents in the export's metres ([xmin, ymin, xmax, ymax], DXF y up), from every plan item; null when there is none.
   _extents(pm, f) {
@@ -93,7 +123,7 @@ const PlanDXF = {
   },
   // Does the plan fit the paper's viewport at 1 : scale? And the smallest listed scale that fits.
   _fit(ext, paper, scale) {
-    const [pw, ph] = this.PAPERS[paper] || this.PAPERS.A1, uw = pw - 2 * this.MARGIN_MM, uh = ph - 2 * this.MARGIN_MM;
+    const [uw, uh] = this._viewport(paper);
     if (!ext) return { ok: true, need: null, w: 0, h: 0 };
     const w = ext[2] - ext[0], h = ext[3] - ext[1];
     const fits = sc => w * 1000 / sc <= uw + 1e-6 && h * 1000 / sc <= uh + 1e-6;
@@ -112,8 +142,11 @@ const PlanDXF = {
     return out.length ? out : [{ id: 'PLAN', name: 'Plan' }];
   },
 
-  _options() {
-    const pm = AppState.planMarkup, st = pm.settings.dxfExport = Object.assign({ scale: 500, paperMm: 2.5, bg: true, paper: 'A1' }, pm.settings.dxfExport || {});
+  async _options() {
+    const pm = AppState.planMarkup, st = pm.settings.dxfExport = Object.assign({ scale: 500, paperMm: 2.5, bg: true, paper: 'A1',
+      labels: 'circle', status: 'PRELIMINARY', numberPattern: '{project}-EL-{nn}', revisions: [], notes: '', lengths: true }, pm.settings.dxfExport || {});
+    const tpl = await this._template();
+    const papers = Object.keys(this.PAPERS).filter(p => p !== 'A4' || (tpl.available && tpl.papers && tpl.papers.A4));
     const ext = this._extents(pm, this._factor()), sheets = this._sheets(pm);
     const bgs = typeof PlanDxfImport !== 'undefined' ? PlanDxfImport.list().filter(d => !d.hidden && PlanDxfImport.dataOf(d)) : [];
     const orig = bgs.filter(d => d.srcId != null).length;
@@ -124,15 +157,38 @@ const PlanDXF = {
         <div class="modal-header"><h3 id="pdx-t">Export DXF</h3></div>
         <div class="modal-body" style="display:flex;flex-direction:column;gap:10px">
           <label>Drawing scale ${sel('pdx-scale', this.SCALES, st.scale, v => '1 : ' + v)}</label>
-          <label>Paper size of the layout sheets ${sel('pdx-paper', Object.keys(this.PAPERS), st.paper, v => v + ' landscape')}</label>
+          <label>Paper size of the layout sheets ${sel('pdx-paper', papers, st.paper, v => v + ' landscape')}</label>
           <div style="font-size:12px" id="pdx-fit" aria-live="polite"></div>
-          <div style="font-size:12px;color:var(--text-muted)">Layout sheets (${sheets.length}): ${sheets.map(s => escHtml(s.name)).join(', ')}. Each shows only its own layers.</div>
+          <div style="font-size:12px;color:var(--text-muted)">Layout sheets (${sheets.length}): ${sheets.map(s => escHtml(s.name)).join(', ')}. Each shows only its own layers, with a legend of what is on it.
+            ${tpl.available ? `Title block: the ${escHtml(tpl.name || 'company')} template, filled in from Project settings.` : 'No title-block template on this server, so the sheets get a plain frame.'}</div>
           <label>Text height on paper ${sel('pdx-h', this.HEIGHTS, st.paperMm, v => v + ' mm')}</label>
           <div style="font-size:12px;color:var(--text-muted)" id="pdx-hint"></div>
+          <label>Cable labels ${sel('pdx-lab', Object.keys(this.LABEL_STYLES), st.labels, v => this.LABEL_STYLES[v])}</label>
+          <div style="font-size:12px;color:var(--text-muted)">Service cables and fibre drops of the most common cable get no label of their own: a note in the legend says what they are.</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+            <label>Status ${sel('pdx-status', this.STATUSES, st.status, v => v)}</label>
+            <label>Drawing number <input id="pdx-no" type="text" value="${escHtml(st.numberPattern)}" style="width:100%" title="{project} = the project number, {nn} = the sheet number (01, 02 …), {sheet} = the sheet's name"></label>
+          </div>
+          <details${(st.revisions || []).length ? ' open' : ''}><summary>Revisions (${(st.revisions || []).length})</summary>
+            <div id="pdx-revs" style="display:flex;flex-direction:column;gap:4px;margin-top:6px"></div>
+            <button type="button" class="btn-small" data-rev-add style="margin-top:6px">+ Add revision</button></details>
+          <label>Drawing notes (one per line, on every sheet's legend)<textarea id="pdx-notes" rows="3" style="width:100%">${escHtml(st.notes || '')}</textarea></label>
+          <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="pdx-len"${st.lengths ? ' checked' : ''}> Cable lengths in the legend</label>
           ${bgs.length ? `<label style="display:flex;gap:8px;align-items:flex-start"><input type="checkbox" id="pdx-bg"${st.bg ? ' checked' : ''}> <span>Include the background drawing${bgs.length === 1 ? '' : 's'} (${bgs.length}): what the plan shows, on BG- layers.${orig < bgs.length ? ` ${bgs.length - orig === bgs.length ? (bgs.length === 1 ? 'It was' : 'They were') : (bgs.length - orig) + ' of them were'} imported before the original was kept, so ${bgs.length - orig === 1 ? 'it is' : 'they are'} rebuilt from the plan's copy (no linetypes or hatch fills); import again to get the original exactly.` : ''}</span></label>` : ''}
           <div class="ui-dialog-actions"><button type="button" class="btn-small" data-x="cancel">Cancel</button><button type="button" class="btn-primary" data-x="ok">Export</button></div>
         </div></div>`;
       document.body.appendChild(ov);
+      const revs = (st.revisions || []).map(r => Object.assign({}, r));
+      const drawRevs = () => {
+        ov.querySelector('#pdx-revs').innerHTML = revs.map((r, i) => `<div style="display:grid;grid-template-columns:44px 1fr 96px 56px 24px;gap:4px">
+          <input aria-label="Revision" data-rev="${i}" data-k="rev" value="${escHtml(r.rev || '')}" placeholder="A">
+          <input aria-label="Description" data-rev="${i}" data-k="desc" value="${escHtml(r.desc || '')}" placeholder="Description">
+          <input aria-label="Date" data-rev="${i}" data-k="date" type="date" value="${escHtml(r.date || '')}">
+          <input aria-label="By" data-rev="${i}" data-k="by" value="${escHtml(r.by || '')}" placeholder="By">
+          <button type="button" class="btn-small" data-rev-del="${i}" aria-label="Remove revision">×</button></div>`).join('');
+      };
+      drawRevs();
+      ov.addEventListener('input', e => { const i = e.target.dataset.rev; if (i != null) revs[+i][e.target.dataset.k] = e.target.value; });
       const hint = () => {
         const sc = +ov.querySelector('#pdx-scale').value, mm = +ov.querySelector('#pdx-h').value, paper = ov.querySelector('#pdx-paper').value;
         ov.querySelector('#pdx-hint').textContent = `Text is ${(mm * sc / 1000).toFixed(2)} m high in the drawing (${mm} mm when plotted at 1 : ${sc}); dashed cables plot with 5 mm dashes.`;
@@ -146,12 +202,16 @@ const PlanDXF = {
         }
       };
       ov.addEventListener('change', hint); hint();
-      const done = ok => { const r = ok ? { scale: +ov.querySelector('#pdx-scale').value, paperMm: +ov.querySelector('#pdx-h').value, paper: ov.querySelector('#pdx-paper').value, bg: !!(ov.querySelector('#pdx-bg') && ov.querySelector('#pdx-bg').checked) } : null;
+      const done = ok => { const r = ok ? { scale: +ov.querySelector('#pdx-scale').value, paperMm: +ov.querySelector('#pdx-h').value, paper: ov.querySelector('#pdx-paper').value, bg: !!(ov.querySelector('#pdx-bg') && ov.querySelector('#pdx-bg').checked),
+          labels: ov.querySelector('#pdx-lab').value, status: ov.querySelector('#pdx-status').value, numberPattern: ov.querySelector('#pdx-no').value,
+          revisions: revs.filter(x => x.rev || x.desc), notes: ov.querySelector('#pdx-notes').value, lengths: ov.querySelector('#pdx-len').checked } : null;
         document.removeEventListener('keydown', key, true); ov.remove(); if (r) { Object.assign(st, r); PlanMarkup.markDirty(); } resolve(r); };
-      const key = e => { if (e.key === 'Escape') { e.preventDefault(); done(false); } else if (e.key === 'Enter') { e.preventDefault(); done(true); } };
+      const key = e => { if (e.key === 'Escape') { e.preventDefault(); done(false); } else if (e.key === 'Enter' && e.target.tagName !== 'TEXTAREA' && e.target.tagName !== 'INPUT') { e.preventDefault(); done(true); } };
       document.addEventListener('keydown', key, true);
       ov.addEventListener('click', e => {
         const fb = e.target.closest('[data-fit]'); if (fb) { ov.querySelector('#pdx-scale').value = fb.dataset.fit; hint(); return; }
+        if (e.target.closest('[data-rev-add]')) { revs.push({ rev: '', desc: '', date: new Date().toISOString().slice(0, 10), by: '' }); drawRevs(); return; }
+        const rd = e.target.closest('[data-rev-del]'); if (rd) { revs.splice(+rd.dataset.revDel, 1); drawRevs(); return; }
         const b = e.target.closest('[data-x]'); if (b) done(b.dataset.x === 'ok'); else if (e.target === ov) done(false); });
       ov.querySelector('[data-x="ok"]').focus();
     });
@@ -173,6 +233,85 @@ const PlanDXF = {
       data: desc.imageId == null ? data : undefined, origin: (data && data.origin) || desc.origin || [0, 0],
       m: [ux[0] - o[0], uy[0] - o[0], o[0], ux[1] - o[1], uy[1] - o[1], o[1]],
       hidden, converted: desc.converted || [], colors, area: area || null };
+  },
+
+  // A run drawn as many routes end to end (a street-light circuit, pole to pole) is labelled once: routes of one type and cable that meet only each other at a point form a chain; its longest route carries the
+  // label, with the chain's total length.
+  _chainLabels(routes) {
+    const key = r => r.type + '|' + (r.cable || ''), pk = p => Math.round(p[0] * 2) + ',' + Math.round(p[1] * 2);
+    const at = new Map();
+    routes.forEach((r, i) => { if (!r.labelLines || !this.CHAIN.includes(r.type)) return;
+      for (const p of [r.pts[0], r.pts[r.pts.length - 1]]) { const k = key(r) + '@' + pk(p); if (!at.has(k)) at.set(k, []); at.get(k).push(i); } });
+    const up = routes.map((_, i) => i), find = i => (up[i] === i ? i : (up[i] = find(up[i])));
+    for (const ids of at.values()) if (ids.length === 2) up[find(ids[0])] = find(ids[1]);
+    const groups = new Map();
+    routes.forEach((r, i) => { if (!r.labelLines) return; const g = find(i); if (!groups.has(g)) groups.set(g, []); groups.get(g).push(i); });
+    for (const ids of groups.values()) {
+      if (ids.length < 2) continue;
+      const total = ids.reduce((t, i) => t + (routes[i]._lenM || 0), 0);
+      const best = ids.reduce((b, i) => ((routes[i]._lenM || 0) > (routes[b]._lenM || 0) ? i : b), ids[0]);
+      for (const i of ids) if (i !== best) routes[i].labelLines = null;
+      routes[best].labelLines = [routes[best].labelLines[0], `${total.toFixed(1)} m`];
+    }
+    for (const r of routes) delete r._lenM;
+  },
+
+  // The legend of every sheet (the server keeps, per sheet, the rows whose layer it shows): the symbols placed, each route
+  // type with its cables by size and total length, the trench types and duct sizes, the "… U.N.O." notes, the drawing notes.
+  _legend(pm, { elements, legRoutes, trenches, crossings, typical, FX, opt }) {
+    const entries = [], seen = new Set();
+    for (const e of elements) {
+      if (seen.has(e.type)) continue; seen.add(e.type);
+      const def = PLAN_DEFS.element(e.type) || {};
+      entries.push({ group: 'equipment', kind: 'symbol', block: e.block, layer: e.layer, label: def.name || e.type, color: e.color });
+    }
+    for (const g of legRoutes.values()) {
+      const items = Object.entries(g.len).filter(([k]) => k || Object.keys(g.len).length > 1)
+        .sort((a, b) => a[0].localeCompare(b[0], undefined, { numeric: true }))
+        .map(([k, m]) => ({ text: k || 'Cable not set', lenM: m }));
+      entries.push({ group: 'cables', kind: 'line', layer: g.layer, label: g.label, color: g.color, lw: g.lw, linetype: g.linetype,
+        items: g.noTakeoff ? [] : items });
+    }
+    const exc = new Map();
+    for (const t of trenches) if (!exc.has(t.excType)) exc.set(t.excType, t);
+    for (const [k, t] of exc) entries.push({ group: 'ducts', kind: 'band', layer: FX.trench, label: (PLAN_DEFS.trenchTypes[k] || {}).name || 'Trench', color: t.color, alpha: t.alpha });
+    const sizes = new Map();
+    for (const c of crossings) if (!sizes.has(c.size)) sizes.set(c.size, c);
+    for (const [k, c] of sizes) entries.push({ group: 'ducts', kind: 'crossing', layer: FX.crossing, label: `Road crossing, ${k ? k + ' mm ' : ''}duct`, color: c.color, lw: c.lw });
+    const notes = [];
+    for (const [t, cable] of Object.entries(typical)) {
+      const rdef = PLAN_DEFS.route(t) || {};
+      notes.push({ layer: PLAN_DXF_LAYERS.of('route', t, rdef)[0], text: `${this.TYPICAL[t]}: ${cable} unless noted otherwise.` });
+    }
+    for (const line of String(opt.notes || '').split('\n')) if (line.trim()) notes.push({ text: line.trim() });
+    return { entries, notes, lengths: opt.lengths !== false };
+  },
+
+  // The title block's attributes by tag (the template's tags; one it lacks is ignored, one not sent keeps its default).
+  _titleBlock(sheets, opt, af) {
+    const d = AppState.projectDetails || {}, up = s => String(s || '').toUpperCase();
+    const name = up(AppState.projectName);
+    let n1 = name, n2 = '';
+    if (name.length > 40) { const cut = name.lastIndexOf(' ', 40); n1 = name.slice(0, cut > 10 ? cut : 40); n2 = name.slice(n1.length).trim(); }
+    const revs = (opt.revisions || []).slice(-8);
+    const cur = revs.length ? revs[revs.length - 1].rev : (d.revisionNumber || '');
+    const common = {
+      PROJECT_NO: d.projectNumber || '', PROJECT_NAME: n1, PROJECT_NAME2: n2, CLIENT: up(d.client),
+      SCALE: `1:${opt.scale}`, STATUS: opt.status || '', CURRENT_REV: cur || '',
+      DRAWN_DATE: d.date || new Date().toISOString().slice(0, 10), DRAWN: d.engineerName || '', DESIGNED: d.engineerName || '', CHECKED: d.checkedBy || '',
+      PANEL_TITLE: 'LEGEND / SLEUTEL',
+    };
+    revs.forEach((r, i) => Object.assign(common, { [`REV${i + 1}_NO`]: r.rev || '', [`REV${i + 1}_DESC`]: up(r.desc), [`REV${i + 1}_DATE`]: r.date || '', [`REV${i + 1}_BY`]: r.by || '' }));
+    const per = {}, N = sheets.length;
+    sheets.forEach((sh, i) => {
+      const nn = String(i + 1).padStart(2, '0');
+      per[sh.id] = {
+        DRAWING_TITLE1: this.SHEET_TITLES[sh.id] || up(sh.name), DRAWING_TITLE2: af && af.name ? up(af.name) : '',
+        DRAWING_NO: String(opt.numberPattern || '{project}-EL-{nn}').replace(/\{project\}/g, d.projectNumber || 'XXXX').replace(/\{nn\}/g, nn).replace(/\{sheet\}/g, up(sh.name)),
+        SHEET: `${i + 1} of ${N}`,
+      };
+    });
+    return { common, sheets: per };
   },
 
   async export() {
@@ -236,35 +375,57 @@ const PlanDXF = {
       elements.push({ block: name, type: el.type, x: el.x, y: el.y, rotation: el.rotation || 0, layer: lname, attrs, color: ecol });
     }
 
-    // Routes (curved flag preserved) + cable/length label.
-    const routes = [];
-    for (const r of pm.routes) {
-      if (!r.points || r.points.length < 2) continue;
+    // Routes (curved flag preserved) + cable/length label, line weight as the plan draws them.
+    const drawn = pm.routes.filter(r => r.points && r.points.length >= 2);
+    const typical = {};          // route type → its most common cable (those get no label of their own)
+    for (const t of Object.keys(this.TYPICAL)) {
+      const n = {};
+      for (const r of drawn) if (r.type === t && r.cableType) n[r.cableType] = (n[r.cableType] || 0) + 1;
+      const best = Object.entries(n).sort((a, b) => b[1] - a[1])[0];
+      if (best) typical[t] = best[0];
+    }
+    const routes = [], legRoutes = new Map();
+    for (const r of drawn) {
       const rdef = PLAN_DEFS.route(r.type) || {};
       const rcol = this._hex(PLAN_DEFS.routeColor(r.type, styles)) || '#3b82f6', lt = rdef.lineStyle === 'dashed' ? 'DASHED' : null;
       const lname = layer(PLAN_DXF_LAYERS.of('route', r.type, rdef), rcol, lt);
-      const lenM = this._routeLenM(r, factor);
+      const lenM = this._routeLenM(r, factor), lw = this.lineweight(rdef.width || 2);
+      const quiet = rdef.noTakeoff || (r.type in this.TYPICAL && (!r.cableType || r.cableType === typical[r.type]));
       // type/cable/end names travel as XDATA so a re-import rebuilds the
       // route exactly (the layer alone can't carry a mixed-case type key).
       routes.push({
         layer: lname, labelLayer: lname + '_LABELS', type: r.type, curved: !!r.curved, cable: r.cableType || '',
         fromName: r.fromId ? boardName(r.fromId) : '', toName: r.toId ? boardName(r.toId) : '',
         label: `${r.cableType ? r.cableType + ' ' : ''}${lenM.toFixed(2)} m`,
-        pts: r.points.map(p => [p.x, p.y]), color: rcol, linetype: lt || 'CONTINUOUS',
+        labelLines: quiet ? null : [r.cableType || rdef.name || r.type, `${lenM.toFixed(1)} m`],
+        pts: r.points.map(p => [p.x, p.y]), color: rcol, linetype: lt || 'CONTINUOUS', lw,
       });
+      routes[routes.length - 1]._lenM = lenM;
+      // the legend: one row per route type, its cables by size with their total length
+      let g = legRoutes.get(r.type);
+      if (!g) legRoutes.set(r.type, g = { group: 'cables', kind: 'line', layer: lname, label: rdef.name || r.type, color: rcol, lw, linetype: lt, len: {}, noTakeoff: !!rdef.noTakeoff });
+      const k = r.cableType || '';
+      g.len[k] = (g.len[k] || 0) + lenM;
     }
 
+    this._chainLabels(routes);
     const trenches = (pm.trenches || []).filter(t => t.points && t.points.length >= 2)
-      .map(t => ({ pts: t.points.map(p => [p.x, p.y]), excType: t.excType || '', name: t.name || '', color: this._hex((PLAN_DEFS.trenchTypes[t.excType] || {}).color) || '#787878' }));
+      .map(t => {
+        const def = PLAN_DEFS.trenchTypes[t.excType] || {};
+        const widthM = typeof RoadSections !== 'undefined' && RoadSections.trenchSize ? RoadSections.trenchSize(t).w : (t.widthOverride || def.width || 0.5);
+        return { pts: t.points.map(p => [p.x, p.y]), excType: t.excType || '', name: t.name || '', color: this._hex(def.color) || '#787878',
+          alpha: this._alpha(def.color), widthM };   // drawn at its real width, see-through like the plan
+      });
     const roomStroke = this._hex(PLAN_DEFS.room.stroke) || '#0ea5e9';
     const rooms = (pm.rooms || []).filter(rm => rm.points && rm.points.length >= 3)
-      .map(rm => ({ label: rm.name || '', pts: rm.points.map(p => [p.x, p.y]), color: this._hex(rm.color) || roomStroke }));
+      .map(rm => ({ label: rm.name || '', pts: rm.points.map(p => [p.x, p.y]), color: this._hex(rm.color) || roomStroke, lw: this.lineweight(1.2) }));
     const dimCol = this._hex(PLAN_DEFS.annotations && PLAN_DEFS.annotations.measurement && PLAN_DEFS.annotations.measurement.color) || '#0f766e';
     const measurements = (pm.measurements || []).filter(m => m.points && m.points.length >= 2)
       .map(m => ({ pts: m.points.map(p => [p.x, p.y]), color: dimCol }));
     const xst = (PLAN_DEFS.crossings && PLAN_DEFS.crossings.style) || {};
     const crossings = (pm.crossings || []).filter(c => c.p1 && c.p2)
-      .map(c => ({ p1: [c.p1.x, c.p1.y], p2: [c.p2.x, c.p2.y], size: c.size || '', name: c.name || '', color: this._hex((xst[c.size] || {}).color || (PLAN_DEFS.crossings && PLAN_DEFS.crossings.color)) }));
+      .map(c => ({ p1: [c.p1.x, c.p1.y], p2: [c.p2.x, c.p2.y], size: c.size || '', name: c.name || '', color: this._hex((xst[c.size] || {}).color || (PLAN_DEFS.crossings && PLAN_DEFS.crossings.color)),
+        lw: this.lineweight((xst[c.size] || {}).width || 2.5) }));
     // a plan text is its size relative to the normal 14 (so a 28 is twice the drawing's text height), in its own colour
     const texts = (pm.texts || []).map(t => ({ x: t.x, y: t.y, h: t.fontSize || 14, rel: (t.fontSize || 14) / 14, text: t.text || '', color: this._hex(t.color) || '#111827' }));
     const backgrounds = opt.bg && typeof PlanDxfImport !== 'undefined' ? PlanDxfImport.list().filter(d => !d.hidden && PlanDxfImport.dataOf(d)).map(d => this._background(d, factor)) : [];
@@ -273,12 +434,15 @@ const PlanDXF = {
     const FX = {};
     for (const k of Object.keys(PLAN_DXF_LAYERS.fixed)) { const row = PLAN_DXF_LAYERS.of('fixed', k); FX[k] = row[0]; layerSheets[row[0]] = row[1]; }
     const af = (typeof AppState.planActiveFloor === 'function') && AppState.planActiveFloor();
+    const sheets = this._sheets(pm);
+    const legend = this._legend(pm, { elements, legRoutes, trenches, crossings, typical, FX, opt });
+    const titleBlock = this._titleBlock(sheets, opt, af);
     const payload = {
       factor, floorName: (af && af.name) || '', domain: pm.settings.domain || '',
       fileName: ((AppState.projectName || 'plan').replace(/[^\w-]+/g, '_')) + (af && af.name ? '_' + af.name.replace(/[^\w-]+/g, '_') : ''),
       layers: Object.entries(layers).map(([name, color]) => ({ name, color, linetype: ltypes[name] || null })),
       extraLayers: { [FX.trench]: '#787878', [FX.crossing]: this._hex((PLAN_DEFS.crossings || {}).color) || '#f97316', [FX.room]: roomStroke, [FX.text]: '#111827', [FX.measurement]: dimCol },
-      fixedLayers: FX, layerSheets, sheets: this._sheets(pm),
+      fixedLayers: FX, layerSheets, sheets, legend, titleBlock, labels: { style: opt.labels || 'circle' },
       layout: { paper: opt.paper || 'A1', margin: this.MARGIN_MM, scale: opt.scale, extents: this._extents(pm, factor) },
       textH: H, ltscale: opt.scale / 100, scale: opt.scale,
       blocks, elements, routes, trenches, rooms, measurements, crossings, texts, backgrounds,

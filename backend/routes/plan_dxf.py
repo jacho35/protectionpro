@@ -7,11 +7,21 @@ from fastapi.responses import Response, JSONResponse
 from sqlalchemy.orm import Session
 
 from ..analysis.plan_dxf import build_dxf, parse_dxf
+from ..analysis.plan_dxf_sheets import template_info
 from ..auth import get_current_user
 from ..models.database import get_db, User
 from .plan_images import _load as _load_image
 
 router = APIRouter(prefix="/plan", tags=["plan-dxf"])
+
+
+@router.get("/dxf-template")
+async def dxf_template(user: User = Depends(get_current_user)):
+    """Whether the server has a title-block template for the layout sheets, and its paper sizes."""
+    try:
+        return template_info()
+    except Exception:
+        return {"available": False, "papers": []}
 
 
 @router.post("/dxf-export")

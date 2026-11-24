@@ -24,12 +24,14 @@ the DXF symbol matches the screen exactly, and INSERT one blockref per device.
 from __future__ import annotations
 import io
 import math
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Tuple
 
 import logging
 
 import ezdxf
 from ezdxf.enums import TextEntityAlignment
+
+from . import plan_dxf_sheets as sheets_mod
 
 
 class _NoFontWarning(logging.Filter):
@@ -44,6 +46,7 @@ class _NoFontWarning(logging.Filter):
 
 
 logging.getLogger("ezdxf").addFilter(_NoFontWarning())
+log = logging.getLogger(__name__)
 
 APPID = "PROTECTIONPRO"
 META_BLOCK = "PP_META"
@@ -63,7 +66,7 @@ FIXED_LAYERS = {"trench": "EL_TRENCH", "crossing": "EL_DUCTS", "room": "EL_ROOMS
 _IMPORT_LAYERS = {k: {v, old} for (k, v), old in zip(FIXED_LAYERS.items(), ("PP_TRENCH", "PP_TRENCH", "PP_ROOMS", "PP_DIM", "PP_TEXT"))}
 
 # Layout sheets: paper sizes (mm, landscape) and the margin round the one viewport of each sheet.
-PAPERS = {"A0": (1189.0, 841.0), "A1": (841.0, 594.0), "A2": (594.0, 420.0), "A3": (420.0, 297.0)}
+PAPERS = {"A0": (1189.0, 841.0), "A1": (841.0, 594.0), "A2": (594.0, 420.0), "A3": (420.0, 297.0), "A4": (297.0, 210.0)}
 SHEET_MARGIN_MM = 10.0
 VIEWPORT_LAYER = "EL_VIEWPORTS"
 
@@ -548,7 +551,11 @@ def build_dxf(payload: Dict[str, Any], load_image=None, notes: List[str] | None 
                 a.dxf.rotation = 0.0
                 a.set_placement((X(el["x"]) + half + 0.4 * H, Y(el["y"])), align=TextEntityAlignment.MIDDLE_LEFT)
 
-    # Routes → SPLINE (curved) or LWPOLYLINE (straight), + a cable label.
+    # Routes → SPLINE (curved) or LWPOLYLINE (straight), + a cable label: a leader to a clear spot (labels.style 'circle' /
+    # 'arrow', placed once every route is drawn) or, 'along', the text along the longest segment.
+    label_style = str((payload.get("labels") or {}).get("style") or "along")
+    leader_routes: List[dict] = []
+    lw_of: Dict[str, List[Tuple[Any, int]]] = {}        # layer → [(entity, line weight)]: set on the layer when they agree
     for r in payload.get("routes", []):
         pts = [(X(p[0]), Y(p[1])) for p in r.get("pts", [])]
         if len(pts) < 2:
@@ -567,6 +574,17 @@ def build_dxf(payload: Dict[str, Any], load_image=None, notes: List[str] | None 
         _set_meta(ent, {"KIND": "route", "TYPE": r.get("type"), "CABLE": r.get("cable"),
                         "CURVED": "1" if r.get("curved") else "0",
                         "FROM": r.get("fromName"), "TO": r.get("toName")})
+        if r.get("lw"):
+            lw_of.setdefault(layer, []).append((ent, int(r["lw"])))
+        if label_style != "along":
+            if r.get("labelLines"):
+                lab_layer = r.get("labelLayer") or (layer + "_LABELS")
+                _ensure_layer(doc, lab_layer, layer_hex.get(layer) or r.get("color"))
+                layer_hex.setdefault(lab_layer, layer_hex.get(layer) or r.get("color") or "")
+                leader_routes.append({"ptsM": pts, "labelLines": r["labelLines"], "labelLayer": lab_layer})
+            else:
+                leader_routes.append({"ptsM": pts})
+            continue
         label = r.get("label")
         if label:
             at, ang = _route_label_at(pts, H)
@@ -580,13 +598,20 @@ def build_dxf(payload: Dict[str, Any], load_image=None, notes: List[str] | None 
     for t in payload.get("trenches", []):
         pts = [(X(p[0]), Y(p[1])) for p in t.get("pts", [])]
         if len(pts) >= 2:
-            ent = msp.add_lwpolyline(pts, dxfattribs={"layer": L_TRENCH, **_color_attribs(t.get("color"), layer_hex.get(L_TRENCH))})
+            da = {"layer": L_TRENCH, **_color_attribs(t.get("color"), layer_hex.get(L_TRENCH))}
+            if t.get("widthM"):                       # drawn at its real width, as the plan draws it
+                da["const_width"] = float(t["widthM"])
+            ent = msp.add_lwpolyline(pts, dxfattribs=da)
+            if t.get("alpha") is not None:
+                ent.transparency = max(0.0, min(1.0, 1.0 - float(t["alpha"])))
             _set_meta(ent, {"KIND": "trench", "EXC": t.get("excType"), "NAME": t.get("name")})
     for rm in payload.get("rooms", []):
         pts = [(X(p[0]), Y(p[1])) for p in rm.get("pts", [])]
         if len(pts) >= 3:
             ent = msp.add_lwpolyline(pts, close=True, dxfattribs={"layer": L_ROOMS, **_color_attribs(rm.get("color"), layer_hex.get(L_ROOMS))})
             _set_meta(ent, {"KIND": "room", "NAME": rm.get("label")})
+            if rm.get("lw"):
+                lw_of.setdefault(L_ROOMS, []).append((ent, int(rm["lw"])))
         if rm.get("label") and pts:
             cx = sum(p[0] for p in pts) / len(pts)
             cy = sum(p[1] for p in pts) / len(pts)
@@ -605,6 +630,8 @@ def build_dxf(payload: Dict[str, Any], load_image=None, notes: List[str] | None 
             col = _color_attribs(c.get("color"), layer_hex.get(L_DUCTS)) if c.get("color") else {"color": 1 if str(c.get("size")) == "160" else 30}
             ent = msp.add_line((X(p1[0]), Y(p1[1])), (X(p2[0]), Y(p2[1])), dxfattribs={"layer": L_DUCTS, **col})
             _set_meta(ent, {"KIND": "crossing", "SIZE": c.get("size"), "NAME": c.get("name")})
+            if c.get("lw"):
+                lw_of.setdefault(L_DUCTS, []).append((ent, int(c["lw"])))
     # Plan texts: the drawing's text height scaled by their size on the plan (14 = normal), anchored top-left as the plan draws them,
     # in their own colour; a payload from before text heights keeps the old size in plan units.
     for tx in payload.get("texts", []):
@@ -616,6 +643,27 @@ def build_dxf(payload: Dict[str, Any], load_image=None, notes: List[str] | None 
                                                  **_color_attribs(tx.get("color"), layer_hex.get(L_TEXT))})
             ent.set_placement((X(tx["x"]), Y(tx["y"]) - i * 1.5 * h), align=TextEntityAlignment.TOP_LEFT)
             _set_meta(ent, {"KIND": "text"})
+
+    # Cable labels as leaders, now that everything they must keep clear of is known.
+    if label_style != "along" and leader_routes:
+        obstacles = []
+        for el in payload.get("elements", []):
+            half = (variants.get(el.get("block"), {}).get("sizeWorld", 24) or 24) * 0.5 * factor
+            obstacles.append((X(el["x"]), Y(el["y"]), half))
+        text_style = TEXT_STYLE
+        sheets_mod.place_labels(msp, doc, leader_routes, obstacles, H, label_style, text_style)
+
+    sym_layers = {el.get("layer") for el in payload.get("elements", [])}
+    # Line weights as the plan draws the lines: on the layer when every line on it has the same one, else on each line.
+    for lay, items in lw_of.items():
+        ws = {w for _, w in items}
+        if len(ws) == 1 and len(items) and lay in doc.layers and lay not in sym_layers:   # a symbol's own lines stay as drawn
+            doc.layers.get(lay).dxf.lineweight = ws.pop()
+        else:
+            for ent, w in items:
+                ent.dxf.lineweight = w
+    if lw_of:
+        doc.header["$LWDISPLAY"] = 1
 
     # Backgrounds (the plan's DXF underlays): what the plan shows of each, on BG- layers, as one block each.
     for i, bg in enumerate(payload.get("backgrounds", []) or []):
@@ -655,11 +703,18 @@ def build_dxf(payload: Dict[str, Any], load_image=None, notes: List[str] | None 
 def _add_layouts(doc, msp, payload):
     """One paper-space layout per sheet (in the order sent), each with one viewport at the drawing scale on the plan's
     extents that freezes the layers not on that sheet. `layerSheets` = {layer: [sheet ids] | 'all'}; a layer it does not
-    name (backgrounds, labels of an unlisted layer) shows on every sheet. Layout1 is replaced."""
+    name (backgrounds, labels of an unlisted layer) shows on every sheet. Layout1 is replaced.
+
+    With a title-block template (plan_dxf_sheets): the template's block for the paper size at the sheet's origin, its
+    attributes filled from `titleBlock` ({common: {tag: text}, sheets: {sheet id: {tag: text}}}), the viewport inside its
+    frame left of the title panel, the legend in the panel's free column. Without one: the viewport within a margin, the
+    legend in a column on its right."""
     lay_cfg = payload.get("layout") or {}
-    pw, ph = PAPERS.get(str(lay_cfg.get("paper") or "A1"), PAPERS["A1"])
+    paper = str(lay_cfg.get("paper") or "A1").upper()
+    pw, ph = PAPERS.get(paper, PAPERS["A1"])
     margin = float(lay_cfg.get("margin") or SHEET_MARGIN_MM)
     scale = float(lay_cfg.get("scale") or payload.get("scale") or 500)
+    factor = float(payload.get("factor") or 1.0)
     ext = lay_cfg.get("extents")
     if ext and len(ext) == 4:
         cx, cy = (ext[0] + ext[2]) / 2.0, (ext[1] + ext[3]) / 2.0
@@ -670,7 +725,6 @@ def _add_layouts(doc, msp, payload):
             cx, cy = (b.center.x, b.center.y) if b.has_data else (0.0, 0.0)
         except Exception:
             cx, cy = 0.0, 0.0
-    uw, uh = pw - 2 * margin, ph - 2 * margin
     layer_sheets = dict(payload.get("layerSheets") or {})
     # a cable layer's labels go where the cable goes
     for ly in list(doc.layers):
@@ -678,8 +732,26 @@ def _add_layouts(doc, msp, payload):
         if nm.endswith("_LABELS") and nm not in layer_sheets and nm[:-7] in layer_sheets:
             layer_sheets[nm] = layer_sheets[nm[:-7]]
     layer_sheets.setdefault(META_BLOCK, [])
+
+    tb = sheets_mod.import_title_block(doc, paper) if lay_cfg.get("titleBlock", True) else None
+    geo = sheets_mod.title_block_geometry(doc, tb) if tb else None
+    if geo and geo.get("panel") is not None:
+        fx0, fy0, fx1, fy1 = geo["frame"]
+        vp_box = (fx0 + 3, fy0 + 3, geo["panel"] - 3, fy1 - 3)
+        lx0, ly0, lx1, ly1 = geo["legend"]
+        legend_rect = (lx0, ly0 + 1, lx1, ly1 - 1)
+    else:
+        tb = None
+        col = 98.0                                   # must match PlanDXF.LEGEND_COL_MM
+        vp_box = (margin, margin, pw - margin - col - 3, ph - margin)
+        legend_rect = (pw - margin - col, margin, pw - margin, ph - margin)
+    # the legend in the title block's own lettering (its attributes' text style), else ours
+    style = next((a.dxf.style for a in doc.blocks.get(tb).attdefs() if a.dxf.style in doc.styles), TEXT_STYLE) if tb else TEXT_STYLE
     _ensure_layer(doc, VIEWPORT_LAYER, None)
+    _ensure_layer(doc, sheets_mod.TITLE_LAYER, None)
+    _ensure_layer(doc, sheets_mod.LEGEND_LAYER, None)
     names = [ly.dxf.name for ly in doc.layers]
+    tvals = payload.get("titleBlock") or {}
     made = []
     for sh in payload.get("sheets") or []:
         sid, title = str(sh.get("id")), str(sh.get("name") or sh.get("id"))
@@ -687,11 +759,32 @@ def _add_layouts(doc, msp, payload):
             continue
         layout = doc.layouts.new(title)
         layout.page_setup(size=(pw, ph), margins=(0, 0, 0, 0), units="mm")
-        vp = layout.add_viewport(center=(pw / 2.0, ph / 2.0), size=(uw, uh), view_center_point=(cx, cy),
+        vx0, vy0, vx1, vy1 = vp_box
+        uw, uh = vx1 - vx0, vy1 - vy0
+        vp = layout.add_viewport(center=((vx0 + vx1) / 2.0, (vy0 + vy1) / 2.0), size=(uw, uh), view_center_point=(cx, cy),
                                  view_height=uh * scale / 1000.0)
         vp.dxf.layer = VIEWPORT_LAYER
         frozen = [n for n in names if isinstance(layer_sheets.get(n), list) and sid not in layer_sheets[n]]
         vp.frozen_layers = frozen
+        if tb:
+            ref = layout.add_blockref(tb, (0, 0), dxfattribs={"layer": sheets_mod.TITLE_LAYER})
+            vals = {**(tvals.get("common") or {}), **((tvals.get("sheets") or {}).get(sid) or {})}
+            defaults = {a.dxf.tag: a.dxf.text for a in doc.blocks.get(tb).attdefs()}
+            ref.add_auto_attribs({t: str(vals[t]) if t in vals else d for t, d in defaults.items()})
+        else:
+            layout.add_lwpolyline([(vx0, vy0), (vx1, vy0), (vx1, vy1), (vx0, vy1)], close=True,
+                                  dxfattribs={"layer": sheets_mod.TITLE_LAYER})
+            lx0, ly0, lx1, ly1 = legend_rect
+            layout.add_lwpolyline([(lx0, ly0), (lx1, ly0), (lx1, ly1), (lx0, ly1)], close=True,
+                                  dxfattribs={"layer": sheets_mod.TITLE_LAYER})
+
+        def overflow(need, vx0=vx0, vy0=vy0):
+            return (vx0 + 2, vy0 + 2, vx0 + 2 + (legend_rect[2] - legend_rect[0]), vy0 + 2 + need)
+        try:
+            sheets_mod.draw_legend(doc, layout, legend_rect, overflow, sid, payload, layer_sheets, style, scale, factor,
+                                   title=bool(tb))
+        except Exception as e:  # pragma: no cover - a legend never stops the export
+            log.warning("legend for sheet %s left out: %s", sid, e)
         made.append(title)
     if made:
         doc.layers.get(VIEWPORT_LAYER).dxf.plot = 0      # the viewport frames do not plot
