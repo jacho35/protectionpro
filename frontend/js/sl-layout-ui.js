@@ -33,9 +33,12 @@ const SLLayoutUI = {
   cfg() {
     const st = this.pm().settings || (this.pm().settings = {});
     const d = typeof StreetLight !== 'undefined' && StreetLight.data ? StreetLight.defaults : {};
-    st.slLayout = Object.assign({ system: d.system === '1ph' ? '1ph' : '3ph', trench: 'share', switching: 'contactor', vdLimit: null, minSize: 10, maxSize: 0, cond: 'Cu',
-      maxPoles: 0, cutout: true, earth: true, maxFeedM: 500, feeds: null, relay: false }, st.slLayout || {});
-    return st.slLayout;
+    // the same object every time (defaults filled in place): a caller may hold it while something else reads it
+    const L = st.slLayout && typeof st.slLayout === 'object' ? st.slLayout : (st.slLayout = {});
+    const D = { system: d.system === '1ph' ? '1ph' : '3ph', trench: 'share', switching: 'contactor', vdLimit: null, minSize: 10, maxSize: 0, cond: 'Cu',
+      maxPoles: 0, cutout: true, earth: true, maxFeedM: 500, feeds: null, relay: false, joinSides: false, maxPerFeed: 4 };
+    for (const k of Object.keys(D)) if (!(k in L)) L[k] = D[k];
+    return L;
   },
   esc(v) { return escHtml(v == null ? '' : String(v)); },
   f2(v) { return (Math.round(v * 100) / 100).toFixed(2); },
@@ -66,11 +69,18 @@ const SLLayoutUI = {
   preview() {
     const f = this.f(); if (!f) return null;
     const poles = this.poleEls().map(e => ({ id: e.id, x: e.x * f, y: e.y * f })), streets = this._streets(), feeds = this._feeds();
-    const key = JSON.stringify([poles, streets.map(s => [s.pts, s.corr]), feeds.map(x => [x.id, x.x, x.y]), this.cfg().maxFeedM]);
+    const c = this.cfg(), key = JSON.stringify([poles, streets.map(s => [s.pts, s.corr]), feeds.map(x => [x.id, x.x, x.y]), c.maxFeedM, c.joinSides]);
     if (this._pv && this._pv.key === key) return this._pv.plan;
-    const plan = SLLayout.plan({ poles, streets, feeds: feeds.map(x => ({ id: x.id, x: x.x, y: x.y, name: x.name })), o: { maxFeedM: +this.cfg().maxFeedM || 500 } });
+    const plan = this._plan({});
     this._pv = { key, plan };
     return plan;
+  },
+  // the planner on what is on the plan; `extra` = { joinFor, ban } from the cap rounds
+  _plan(extra) {
+    const f = this.f(), c = this.cfg();
+    return SLLayout.plan({ poles: this.poleEls().map(e => ({ id: e.id, x: e.x * f, y: e.y * f })), streets: this._streets(),
+      feeds: this._feeds().map(x => ({ id: x.id, x: x.x, y: x.y, name: x.name })),
+      o: Object.assign({ maxFeedM: +c.maxFeedM || 500, joinSides: !!c.joinSides }, extra || {}) });
   },
   feedColor(id) { const ids = this._feeds().map(x => x.id), i = ids.indexOf(id); return this.COLORS[(i < 0 ? 0 : i) % this.COLORS.length]; },
 
@@ -112,12 +122,12 @@ const SLLayoutUI = {
     const R = this.result && !this.result.stale ? this.result : null, colOf = new Map();
     if (R) {
       for (const c of R.circuits) {
-        for (let k = c.from; k < c.to; k++) colOf.set(c.st.poles[k].id, c.color);
-        line(SLLayout.pathTo(c.g, c.st, c.from), c.color, 2.4, true);
-        for (let k = c.from + 1; k < c.to; k++) line(c.st.spanPts[k], c.color, 2.6, false);
-        if (!c.pass) { const p = c.st.poles[c.from]; ctx.strokeStyle = '#b91c1c'; ctx.lineWidth = 2 * u; ctx.setLineDash([]); ctx.beginPath(); ctx.arc(p.x / f, p.y / f, 11 * u, 0, 6.2832); ctx.stroke(); }
+        for (const i of c.poles) colOf.set(c.comp.poles[i].id, c.color);
+        line(SLLayout.pathTo(c.comp, c.poles[0]), c.color, 2.4, true);
+        for (const i of c.poles.slice(1)) line(c.comp.spanPts[i], c.color, 2.6, false);
+        if (!c.pass) { const p = c.comp.poles[c.poles[0]]; ctx.strokeStyle = '#b91c1c'; ctx.lineWidth = 2 * u; ctx.setLineDash([]); ctx.beginPath(); ctx.arc(p.x / f, p.y / f, 11 * u, 0, 6.2832); ctx.stroke(); }
       }
-    } else for (const g of P.groups) { const col = this.feedColor(g.feed.id); for (const st of g.strings) for (const p of st.poles) colOf.set(p.id, col); if (g.strings[0]) line(SLLayout.pathTo(g, g.strings[0], 0), col, 1.5, true); }
+    } else for (const cm of P.comps) { const col = this.feedColor(cm.feed.id); for (const p of cm.poles) colOf.set(p.id, col); line(cm.feederPts, col, 1.5, true); }
     ctx.setLineDash([]);
     if (this.step === 1) {
       ctx.strokeStyle = 'rgba(245,158,11,.45)'; ctx.lineWidth = 8 * u;
@@ -191,40 +201,65 @@ const SLLayoutUI = {
   // ───────── Run: the engine splits each string into circuits ─────────
   async run() {
     if (this.busy) return;
-    const P = this.preview(); if (!P) { UI.toast('Calibrate the plan first.', 'warn'); return; }
-    const strings = [], meta = new Map(), c = this.cfg(), d = StreetLight.defaults, feeds = this._feeds();
-    const lum = StreetLight._lum(d.luminaireId), phases = ['R', 'W', 'B'], perFeed = new Map();
-    for (const g of P.groups) {
-      const fd = feeds.find(x => x.id === g.feed.id), src = this._srcOf(fd);
-      const ze = this._zeFor(fd, src), svd = src && src.kind === 'kiosk' ? StreetLight._supplyVd({ source: src, supplyVdPct: null }).value : 0;
-      for (const st of g.strings) {
-        const n = perFeed.get(g.feed.id) || 0; perFeed.set(g.feed.id, n + 1);
-        strings.push({ id: st.id, poles: st.poles.map((p, k) => ({ id: p.id, spanM: st.spanM[k] })), feederToM: st.feederToM, zeOhm: ze, supplyVdPct: svd, singlePhase: phases[n % 3] });
-        meta.set(st.id, { g, st });
-      }
-    }
-    if (!strings.length) { UI.toast(P.groups.length ? 'Nothing to run.' : 'No pole is near a road with a feed: tick or place a kiosk (Feeds).', 'warn', 5000); return; }
-    const cables = this._cables(), breakers = SL_PROTECTION.filter(p => /^[BC]\d+$/.test(p.id)).map(p => ({ id: p.id, inA: +p.id.slice(1), iaA: p.ia }));
-    if (!cables.length) { UI.toast('No cable in the size range for a ' + (c.system === '1ph' ? '1Φ (2-core)' : '3Φ (4-core)') + ' circuit: widen it in Rules.', 'warn', 6000); return; }
-    const base = { system: c.system, phaseStart: 'R', singlePhase: 'R', luminaire: { name: lum.name, watts: lum.watts, pf: lum.pf },
-      snakingPct: StreetLight._num(d.snakingPct, 0), loopInM: StreetLight._num(d.loopInM, 0),
-      vdLimitPct: +c.vdLimit > 0 ? +c.vdLimit : StreetLight._num(d.vdLimitPct, 5), cumVdLimitPct: StreetLight._num(d.cumVdLimitPct, 10) };
+    if (!this.f()) { UI.toast('Calibrate the plan first.', 'warn'); return; }
+    const c = this.cfg(), cap = +c.maxPerFeed > 0 ? Math.round(+c.maxPerFeed) : 0;
+    if (!this._cables().length) { UI.toast('No cable in the size range for a ' + (c.system === '1ph' ? '1Φ (2-core)' : '3Φ (4-core)') + ' circuit: widen it in Rules.', 'warn', 6000); return; }
     this.busy = true; PlanMarkup.refreshProps();
     try {
-      const res = await API.splitStreetLighting({ base, cables, breakers, maxPoles: +c.maxPoles || 0, strings });
-      const circuits = [], count = new Map();
-      for (const s of res.strings || []) {
-        const m = meta.get(s.id); if (!m) continue;
-        for (const x of s.circuits || []) {
-          const k = (count.get(m.g.feed.id) || 0) + 1; count.set(m.g.feed.id, k);
-          const fd = feeds.find(q => q.id === m.g.feed.id);
-          circuits.push(Object.assign({}, x, { g: m.g, st: m.st, singlePhase: strings.find(q => q.id === s.id).singlePhase, name: `${fd ? fd.name : 'Feed'} / ${k}`, color: this.COLORS[circuits.length % this.COLORS.length] }));
+      // the cap: a kiosk over it first has both sides of its roads joined, then its smallest road sides go to their next feed;
+      // the round with the least over the cap (and no pole left without a feed for it) is kept
+      let joinFor = [], ban = {}, best = null;
+      for (let round = 0; round < 5; round++) {
+        const P = this._plan({ joinFor, ban }), out = await this._split(P);
+        if (!out) break;
+        const per = new Map(); for (const x of out.circuits) per.set(x.comp.feed.id, (per.get(x.comp.feed.id) || 0) + 1);
+        const over = [...per].filter(([, n]) => cap && n > cap);
+        const score = over.reduce((sm, [, n]) => sm + n - cap, 0) + 10 * P.unassigned.length;
+        if (!best || score < best.score) best = { score, P, out, per, joinFor: joinFor.slice() };
+        if (!over.length) break;
+        const fresh = over.map(([id]) => id).filter(id => !joinFor.includes(id));
+        if (!c.joinSides && fresh.length) { joinFor = joinFor.concat(fresh); continue; }
+        let moved = false;
+        for (const [id] of over) {
+          const mine = P.comps.filter(x => x.feed.id === id).sort((a, b) => a.poles.length - b.poles.length)[0];
+          if (mine) { ban[mine.key] = (ban[mine.key] || []).concat([id]); moved = true; }
         }
+        if (!moved) break;
       }
-      this.result = { plan: P, circuits, unassigned: P.unassigned, base };
+      if (!best) return;
+      this.result = { plan: best.P, circuits: best.out.circuits, unassigned: best.P.unassigned, base: best.out.base, per: best.per, cap, joined: best.joinFor };
       this.step = 4;
     } catch (err) { UI.toast('Street lighting layout: ' + (err.message || err), 'error', 6000); }
     finally { this.busy = false; PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true }); }
+  },
+  // one plan through the engine: each component a tree of poles from its feed
+  async _split(P) {
+    const c = this.cfg(), d = StreetLight.defaults, feeds = this._feeds(), lum = StreetLight._lum(d.luminaireId), phases = ['R', 'W', 'B'], perFeed = new Map();
+    const strings = [], meta = new Map();
+    P.comps.forEach((cm, ci) => {
+      const fd = feeds.find(x => x.id === cm.feed.id), src = this._srcOf(fd);
+      const ze = this._zeFor(fd, src), svd = src && src.kind === 'kiosk' ? StreetLight._supplyVd({ source: src, supplyVdPct: null }).value : 0;
+      const n = perFeed.get(cm.feed.id) || 0; perFeed.set(cm.feed.id, n + 1);
+      const id = 'c' + ci;
+      strings.push({ id, poles: cm.poles.map((p, k) => ({ id: p.id, spanM: cm.spanM[k], parent: cm.parent[k] })), feederToM: cm.feederToM, zeOhm: ze, supplyVdPct: svd, singlePhase: phases[n % 3] });
+      meta.set(id, cm);
+    });
+    if (!strings.length) { UI.toast('No pole is near a road with a feed: tick or place a kiosk (Feeds).', 'warn', 5000); return null; }
+    const cables = this._cables(), breakers = SL_PROTECTION.filter(p => /^[BC]\d+$/.test(p.id)).map(p => ({ id: p.id, inA: +p.id.slice(1), iaA: p.ia }));
+    const base = { system: c.system, phaseStart: 'R', singlePhase: 'R', luminaire: { name: lum.name, watts: lum.watts, pf: lum.pf },
+      snakingPct: StreetLight._num(d.snakingPct, 0), loopInM: StreetLight._num(d.loopInM, 0),
+      vdLimitPct: +c.vdLimit > 0 ? +c.vdLimit : StreetLight._num(d.vdLimitPct, 5), cumVdLimitPct: StreetLight._num(d.cumVdLimitPct, 10) };
+    const res = await API.splitStreetLighting({ base, cables, breakers, maxPoles: +c.maxPoles || 0, strings });
+    const circuits = [], count = new Map();
+    for (const s of res.strings || []) {
+      const cm = meta.get(s.id); if (!cm) continue;
+      for (const x of s.circuits || []) {
+        const k = (count.get(cm.feed.id) || 0) + 1; count.set(cm.feed.id, k);
+        const fd = feeds.find(q => q.id === cm.feed.id);
+        circuits.push(Object.assign({}, x, { comp: cm, singlePhase: strings.find(q => q.id === s.id).singlePhase, name: `${fd ? fd.name : 'Feed'} / ${k}`, color: this.COLORS[circuits.length % this.COLORS.length] }));
+      }
+    }
+    return { circuits, base };
   },
   _srcOf(fd) {
     const e = fd && fd.el, R = AppState.reticulation; if (!e || !e.reticId || !R) return null;
@@ -266,7 +301,9 @@ const SLLayoutUI = {
     }
     const why = new Map(); for (const u of R.unassigned) why.set(u.reason, (why.get(u.reason) || 0) + 1);
     for (const [t, n] of why) out.push({ sev: 'warn', text: `${n} pole${n === 1 ? '' : 's'}: ${t}.` });
-    const x = R.plan.groups.filter(g => g.crosses).length; if (x) out.push({ sev: 'note', text: `${x} feeder${x === 1 ? ' crosses' : 's cross'} a road: a crossing duct each.` });
+    for (const [id, n] of R.per || []) if (R.cap && n > R.cap) { const fd = this._feeds().find(q => q.id === id); out.push({ sev: 'fail', text: `${fd ? fd.name : 'A feed'} feeds ${n} circuits, more than ${R.cap}: tick or place another kiosk near its poles, or raise Most circuits from one kiosk.` }); }
+    if ((R.joined || []).length && !this.cfg().joinSides) out.push({ sev: 'note', text: `To stay within ${R.cap} circuits, both sides of the roads of ${R.joined.map(id => (this._feeds().find(q => q.id === id) || {}).name || id).join(', ')} are joined across the road ends.` });
+    const x = SLLayout.usage(R.plan, R.plan.comps).crossings.length; if (x) out.push({ sev: 'note', text: `${x} road crossing${x === 1 ? '' : 's'}: a 110 mm duct each.` });
     const rpc = typeof StreetLight !== 'undefined' ? StreetLight.circuits.filter(x => x.roadKey).length : 0;
     if (rpc && this.poleEls().some(e => e.auto === 'rp')) out.push({ sev: 'warn', text: `${rpc} circuit${rpc === 1 ? '' : 's'} in the Circuits tab ${rpc === 1 ? 'was' : 'were'} made by the Road plan (Send to circuits) from the same poles: delete ${rpc === 1 ? 'it' : 'them'} after Create, or the poles are counted twice.` });
     if (this.pend.length) out.push({ sev: 'note', text: `${this.pend.length} new kiosk${this.pend.length === 1 ? '' : 's'}: Ze is taken from the nearest mini-sub until Demand has ${this.pend.length === 1 ? 'it' : 'them'}; the Circuits tab works it out after Create.` });
@@ -292,6 +329,7 @@ const SLLayoutUI = {
       : `<button type="button" class="plan-btn" data-sll="create" style="width:100%;min-height:40px;font-weight:600;background:var(--accent,#2563eb);color:#fff">Create on plan</button>`;
     el.innerHTML = `<div class="sll" style="display:flex;flex-direction:column;gap:10px;font-size:13px">${head}${body}<div style="position:sticky;bottom:0;background:var(--bg-panel,#fff);padding-top:6px">${next}</div></div>`;
     el.onclick = ev => this._click(ev); el.onchange = ev => this._change(ev);
+    if (typeof PlanMarkup !== 'undefined') PlanMarkup._toolMsg = this.hint();
   },
   _placeHtml() {
     const roads = this.streetRoutes().length; if (!roads) return '';
@@ -315,14 +353,14 @@ const SLLayoutUI = {
     const n = this.poleEls().length, roads = this.streetRoutes().length;
     if (!n && this.allPoles().length) return `<p>All ${this.allPoles().length} poles are already wired by street-light cables drawn by hand. To lay them out again, tick <i>Re-lay hand-drawn cables too</i> in Feeds.</p>`;
     if (!n) return '<p>No street-light poles on the plan yet. Place them along the roads below, one by one with the Streetlight Pole tool (Street Lighting group), or send the poles of Street lighting › Road plan here with its <i>Send poles to the site plan</i> (Poles step).</p>';
-    const sides = P.groups.length, onRoad = n - P.unassigned.filter(u => /road/.test(u.reason)).length;
-    return `<p>${n} pole${n === 1 ? '' : 's'} on the plan, ${onRoad} beside ${roads} road${roads === 1 ? '' : 's'}${sides ? `: ${sides} road side${sides === 1 ? '' : 's'} with a feed` : ''}.</p>
-      <p style="color:var(--text-muted)">Each side of a road is its own string, so a circuit never crosses the road; only a feeder does. A pole more than 40 m from every road line is left out (draw the road, or move the pole).</p>
+    const sides = P.comps.length, onRoad = n - P.unassigned.filter(u => /road/.test(u.reason)).length;
+    return `<p>${n} pole${n === 1 ? '' : 's'} on the plan, ${onRoad} beside ${roads} road${roads === 1 ? '' : 's'}${sides ? `: ${sides} group${sides === 1 ? '' : 's'} of poles with a feed` : ''}.</p>
+      <p style="color:var(--text-muted)">A circuit runs along the verge, both ways from its feed and on round the corners of the block; it crosses a road only at a road end, when Rules joins both sides. Feeders follow the verges and cross a road square.</p>
       ${!roads ? '<p style="color:#9a5b00">There are no roads on the plan: draw their centrelines (Auto layout › Streets, or the Street route).</p>' : ''}`;
   },
   _feedsHtml(P) {
     const tick = new Set(this.ticked().map(e => e.id)), cnt = new Map();
-    for (const g of P.groups) cnt.set(g.feed.id, (cnt.get(g.feed.id) || 0) + g.poles.length);
+    for (const cm of P.comps) cnt.set(cm.feed.id, (cnt.get(cm.feed.id) || 0) + cm.poles.length);
     const row = (e) => `<label style="display:flex;gap:8px;align-items:center;padding:6px 8px;border:1px solid var(--border,#e5e7eb);border-radius:6px">
       <input type="checkbox" data-sll-feed="${this.esc(e.id)}"${tick.has(e.id) ? ' checked' : ''}><span aria-hidden="true" style="width:10px;height:10px;border-radius:2px;background:${tick.has(e.id) ? this.feedColor(e.id) : '#cbd5e1'}"></span>
       <span style="flex:1"><b>${this.esc(e.name || e.type)}</b> ${e.type === 'minisub' ? 'mini-sub' : 'kiosk'}${e.reticId ? '' : ' <small style="color:#9a5b00">(not in Demand yet)</small>'}</span><span style="color:var(--text-muted)">${cnt.get(e.id) ? cnt.get(e.id) + ' poles' : tick.has(e.id) ? 'not used' : ''}</span></label>`;
@@ -341,7 +379,11 @@ const SLLayoutUI = {
     const num = (k, label, ph, step) => `<label style="display:flex;flex-direction:column;gap:2px;font-size:12px;color:var(--text-muted)">${label}<input type="number" step="${step || 1}" min="0" data-sll-set="${k}" value="${c[k] ? this.esc(c[k]) : ''}" placeholder="${this.esc(ph)}"></label>`;
     const sel = (k, label, ph) => `<label style="display:flex;flex-direction:column;gap:2px;font-size:12px;color:var(--text-muted)">${label}<select data-sll-set="${k}"><option value="0">${ph}</option>${sizes.map(s => `<option value="${s}"${+c[k] === s ? ' selected' : ''}>${s} mm²</option>`).join('')}</select></label>`;
     const d = StreetLight.defaults;
-    return `<div style="display:flex;flex-direction:column;gap:6px"><b>Phases</b>${radio('system', '3ph', '3Φ, poles on R-W-B in turn (4-core)')}${radio('system', '1ph', '1Φ strings (2-core), the strings of a feed spread over R, W, B')}</div>
+    return `<div style="display:flex;flex-direction:column;gap:6px;background:var(--bg-panel,#f6f7f9);border-radius:6px;padding:8px"><b>Circuits</b>
+        <span style="color:var(--text-muted)">A circuit runs both ways from its feed and on round the corners of the block; it is split only where the checks run out.</span>
+        <label style="display:flex;gap:8px;align-items:flex-start"><input type="checkbox" data-sll-set="joinSides"${c.joinSides ? ' checked' : ''}> <span>Both sides of a road in one circuit, crossing at the end of the road</span></label>
+        <label style="display:flex;gap:8px;align-items:center">Most circuits from one kiosk <input type="number" min="0" step="1" data-sll-set="maxPerFeed" value="${c.maxPerFeed ? this.esc(c.maxPerFeed) : ''}" placeholder="no limit" style="width:70px"></label></div>
+      <div style="display:flex;flex-direction:column;gap:6px"><b>Phases</b>${radio('system', '3ph', '3Φ, poles on R-W-B in turn (4-core)')}${radio('system', '1ph', '1Φ strings (2-core), the strings of a feed spread over R, W, B')}</div>
       <div style="display:flex;flex-direction:column;gap:6px"><b>Trench</b>${radio('trench', 'share', 'Share the LV trench: the cable runs on the road section\'s LV line; an SL trench only where no LV trench runs')}${radio('trench', 'own', 'Its own SL trench, along the pole line')}</div>
       <div style="display:flex;flex-direction:column;gap:6px"><b>Switching</b>${radio('switching', 'contactor', 'Photocell + contactor in the kiosk, a breaker per circuit')}${radio('switching', 'photocell', 'Photocell on each pole, a breaker feeding the string')}</div>
       <div style="display:flex;flex-direction:column;gap:6px"><b>Limits</b>
@@ -355,18 +397,20 @@ const SLLayoutUI = {
     const R = this.result;
     if (!R) return '<p>Press Run layout.</p>';
     const ok = R.circuits.filter(c => c.pass).length, n = R.circuits.length, poles = R.circuits.reduce((s, c) => s + c.to - c.from, 0);
-    const kms = R.circuits.reduce((s, c) => s + (+c.cableLengthM || 0), 0) / 1000, feeds = new Set(R.circuits.map(c => c.g.feed.id)).size;
+    const kms = R.circuits.reduce((s, c) => s + (+c.cableLengthM || 0), 0) / 1000, feeds = new Set(R.circuits.map(c => c.comp.feed.id)).size;
     const verdict = ok === n ? `<div style="background:#e7f4ec;border-radius:6px;padding:8px"><b style="color:#0b5d2a">${n} circuit${n === 1 ? ' passes' : 's pass'}</b><br>${poles} poles · ${feeds} feed${feeds === 1 ? '' : 's'} · ${kms.toFixed(2)} km of cable</div>`
       : `<div style="background:#fde8e8;border-radius:6px;padding:8px"><b style="color:#9b1c1c">${n - ok} of ${n} circuits fail</b><br>${poles} poles · ${kms.toFixed(2)} km of cable</div>`;
     const rows = R.circuits.map(c => `<tr><td><span style="color:${c.color}">■</span> ${this.esc(c.name)}</td><td>${c.to - c.from}</td><td>${this.esc((c.cable || '—').replace(/ LV$/, '').replace('mm² ', ' '))}</td><td>${this.esc(c.breaker || '—')}</td><td style="${c.pass ? '' : 'color:#9b1c1c;font-weight:600'}">${c.worstVdPct != null ? (+c.worstVdPct).toFixed(1) + ' %' : '—'}</td></tr>`).join('');
     const col = { fail: '#9b1c1c', warn: '#9a5b00', near: '#9a5b00', note: '#5b6068' }, lab = { fail: 'Fix', warn: 'Check', near: 'Near', note: 'Note' };
     const ch = this.checks();
+    const ways = [...(R.per || [])].map(([id, n]) => { const fd = this._feeds().find(q => q.id === id); return `<span style="${R.cap && n > R.cap ? 'color:#9b1c1c;font-weight:600' : ''}">${this.esc(fd ? fd.name : id)}: ${n}${R.cap ? ' of ' + R.cap : ''}</span>`; }).join(' · ');
     return `${R.stale ? '<div style="background:#fdf0dc;border-radius:6px;padding:8px;color:#6b3a00">Something changed since this run: Run again.</div>' : ''}${verdict}
+      ${ways ? `<div style="font-size:12px"><b>Circuits per feed</b> ${ways}</div>` : ''}
       <div style="overflow-x:auto"><table class="sl-table" style="width:100%;font-size:12px"><thead><tr><th>Circuit</th><th>Poles</th><th>Cable</th><th>Breaker</th><th>VD</th></tr></thead><tbody>${rows}</tbody></table></div>
       ${ch.length ? `<div style="display:flex;flex-direction:column;gap:4px"><b>Checks</b>${ch.map(c => `<div style="display:flex;gap:8px"><b style="color:${col[c.sev]};min-width:40px">${lab[c.sev]}</b><span>${this.esc(c.text)}</span></div>`).join('')}</div>` : ''}
       <div style="display:flex;flex-direction:column;gap:2px;border-top:1px solid var(--border,#e5e7eb);padding-top:8px"><b>Create makes</b>
         <span>${n} circuit${n === 1 ? '' : 's'} in Street lighting › Circuits</span><span>Street-light cable routes on the plan</span>
-        <span>${this.cfg().trench === 'share' ? 'SL trenches where no LV trench runs' : 'SL trenches along the pole lines'}${R.plan.groups.some(g => g.crosses) ? ' and the road crossings' : ''}</span>
+        <span>${this.cfg().trench === 'share' ? 'SL trenches where no LV trench runs' : 'SL trenches along the pole lines'}${SLLayout.usage(R.plan, R.plan.comps).crossings.length ? ' and the road crossings' : ''}</span>
         ${this.pend.length ? `<span>${this.pend.length} new kiosk${this.pend.length === 1 ? '' : 's'}, added to Demand</span>` : ''}
         <small style="color:var(--text-muted)">A Create replaces what the last one made; circuits and routes drawn by hand stay.</small></div>`;
   },
@@ -418,19 +462,20 @@ const SLLayoutUI = {
     const route = (fromId, toId, pts, cable) => { pm.routes.push({ id: AppState.planGenId('pmrt'), type: 'sl', fromId, toId, points: px(pts), cableType: cable || '', curved: false, props: {}, auto: 'sl' }); made.routes++; };
     const used = new Set();
     for (const cc of R.circuits) {
-      const fe = elOf.get(cc.g.feed.id); if (!fe) continue;
-      used.add(cc.g);
-      route(fe.id, cc.st.poles[cc.from].id, SLLayout.pathTo(cc.g, cc.st, cc.from), cc.cable);
-      for (let k = cc.from + 1; k < cc.to; k++) route(cc.st.poles[k - 1].id, cc.st.poles[k].id, cc.st.spanPts[k], cc.cable);
+      const fe = elOf.get(cc.comp.feed.id); if (!fe) continue;
+      used.add(cc.comp);
+      const cm = cc.comp, root = cc.poles[0];
+      route(fe.id, cm.poles[root].id, SLLayout.pathTo(cm, root), cc.cable);
+      for (const i of cc.poles.slice(1)) route(cm.poles[cm.parent[i]].id, cm.poles[i].id, cm.spanPts[i], cc.cable);
     }
-    // the trenches (shared: only where no LV trench runs) and a crossing where a feeder crosses a road
+    // the trenches (shared: only where no LV trench runs) and a 110 mm duct at each road crossing
+    const U = SLLayout.usage(R.plan, [...used]);
     const lvT = c.trench === 'share' ? pm.trenches.filter(t => t.auto !== 'sl' && (t.excType === 'LV/SL' || t.excType === 'MV/LV/SL') && t.points && t.points.length > 1).map(t => t.points.map(p => [p.x * f, p.y * f])) : [];
-    for (const g of used) {
-      const runs = [g.trench].concat(g.crosses ? [] : [g.leg]).filter(r => r && SLLayout.len(r) >= 1);
-      const pieces = c.trench === 'share' ? runs.flatMap(r => SLLayout.uncovered(r, lvT)) : runs;
-      for (const pc of pieces) { pm.trenches.push({ id: AppState.planGenId('pmtr'), name: PlanMarkup.nextCounter('_trench', 'T'), excType: 'LV/SL', points: px(pc), widthOverride: null, depthOverride: null, roadId: g.street.id, auto: 'sl' }); made.trenches++; }
-      if (g.crosses) { const [a, b] = g.leg; pm.crossings.push({ id: AppState.planGenId('pmcr'), name: PlanMarkup.nextCounter('_crossing', 'RC'), size: '110', use: 'SL', trench: 'sl:' + g.key, p1: { x: a[0] / f, y: a[1] / f }, p2: { x: b[0] / f, y: b[1] / f }, auto: 'sl' }); made.crossings++; }
-    }
+    const pieces = c.trench === 'share' ? U.trench.flatMap(r => SLLayout.uncovered(r, lvT)) : U.trench;
+    for (const pc of pieces) { pm.trenches.push({ id: AppState.planGenId('pmtr'), name: PlanMarkup.nextCounter('_trench', 'T'), excType: 'LV/SL', points: px(pc), widthOverride: null, depthOverride: null, auto: 'sl' }); made.trenches++; }
+    const xs = [];
+    for (const [a, b] of U.crossings) { const m = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]; if (xs.some(q => Math.hypot(q[0] - m[0], q[1] - m[1]) < 2)) continue; xs.push(m);
+      pm.crossings.push({ id: AppState.planGenId('pmcr'), name: PlanMarkup.nextCounter('_crossing', 'RC'), size: '110', use: 'SL', trench: 'sl:' + xs.length, p1: { x: a[0] / f, y: a[1] / f }, p2: { x: b[0] / f, y: b[1] / f }, auto: 'sl' }); made.crossings++; }
     // Demand: new kiosks (and feeds not in it yet) get their rows; a new kiosk is fed from the nearest mini-sub
     if (typeof PlanSync !== 'undefined' && [...elOf.values()].some(e => !e.reticId)) {
       PlanSync._pushCore({ interactive: false });
@@ -446,8 +491,8 @@ const SLLayoutUI = {
     if (typeof StreetLight !== 'undefined') {
       StreetLight._planCore({ prune: true });
       for (const cc of R.circuits) {
-        const fe = elOf.get(cc.g.feed.id); if (!fe) continue;
-        const sc = StreetLight.circuits.find(x => x.planKey === `${fe.id}>${cc.st.poles[cc.from].id}`); if (!sc) continue;
+        const fe = elOf.get(cc.comp.feed.id); if (!fe) continue;
+        const sc = StreetLight.circuits.find(x => x.planKey === `${fe.id}>${cc.comp.poles[cc.poles[0]].id}`); if (!sc) continue;
         Object.assign(sc, { system: c.system, cable: cc.cable || sc.cable, switching: c.switching, poleCutout: !!c.cutout, poleEarth: !!c.earth, slAuto: true });
         if (cc.breaker) sc.protection = cc.breaker;
         // a circuit reused from an earlier one (same first pole) keeps its name: give it its source's if that changed

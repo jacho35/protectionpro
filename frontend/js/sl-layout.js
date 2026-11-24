@@ -20,7 +20,7 @@
  */
 const SLLayout = (() => {
   'use strict';
-  const D = { snapM: 40, maxFeedM: 500, crossPenM: 60 };
+  const D = { snapM: 40, maxFeedM: 500, crossPenM: 60, endTolM: 12 };
   const r2 = v => Math.round(v * 100) / 100;
   const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
   const len = pts => { let L = 0; for (let i = 1; i < pts.length; i++) L += dist(pts[i - 1], pts[i]); return L; };
@@ -78,64 +78,258 @@ const SLLayout = (() => {
   const median = xs => { const v = xs.slice().sort((a, b) => a - b), m = v.length >> 1; return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2; };
   const dedupe = pts => pts.filter((p, i) => !i || dist(p, pts[i - 1]) > 1e-6);
 
+  // ── the verge network ──
+  // One corridor per side of every street (its offset line: `corr`, else the median distance of that side's poles, else the other
+  // side's, else 6 m), clipped where a street ends on another (at its corridor's crossing with that street's corridor). Corridors of
+  // different streets meet where their lines cross (a block corner, or the mouth of a side street). Edges: `run` along a corridor
+  // (`inRoad` when its middle lies inside another street's corridors — it crosses that street's mouth), `cross` square across a
+  // street at its ends, its junctions and opposite each feed, `tail` from a pole to its foot, `leg` from a feed to its corridor.
+  function network(streets, poles, feeds, o) {
+    const nodes = [], edges = [], adj = [];
+    const node = (pt, extra) => { nodes.push(Object.assign({ id: nodes.length, pt }, extra || {})); adj.push([]); return nodes.length - 1; };
+    const edge = (a, b, len, kind, pts, extra) => { const e = Object.assign({ id: edges.length, a, b, len, kind, pts }, extra || {}); edges.push(e); adj[a].push(e.id); adj[b].push(e.id); return e; };
+    const bySide = new Map();
+    for (const p of poles) { const k = p.street + '|' + p.side; if (!bySide.has(k)) bySide.set(k, []); bySide.get(k).push(p.d); }
+    const corrs = [];
+    for (const st of streets) for (const side of [1, -1]) {
+      const c = st.corr, own = c && typeof c === 'object' ? c[side > 0 ? 'L' : 'R'] : c, mine = bySide.get(st.id + '|' + side), other = bySide.get(st.id + '|' + -side);
+      const off = +own > 0 ? +own : mine ? median(mine) : other ? median(other) : 6;
+      const pts = offset(st.pts, side * off);
+      corrs.push({ key: st.id + '|' + side, st, side, off, pts, L: len(pts), lo: 0, hi: len(pts), stops: [] });
+    }
+    const cOf = new Map(corrs.map(c => [c.key, c]));
+    // where corridors of different streets cross
+    const hits = [];
+    for (let i = 0; i < corrs.length; i++) for (let j = i + 1; j < corrs.length; j++) {
+      const A = corrs[i], B = corrs[j]; if (A.st === B.st) continue;
+      let sa = 0;
+      for (let u = 1; u < A.pts.length; u++) {
+        const a0 = A.pts[u - 1], a1 = A.pts[u], la = dist(a0, a1); let sb = 0;
+        for (let v = 1; v < B.pts.length; v++) {
+          const b0 = B.pts[v - 1], b1 = B.pts[v], lb = dist(b0, b1), X = segX(a0, a1, b0, b1);
+          if (X) hits.push({ A, B, sA: sa + la * X.t, sB: sb + lb * X.u, pt: X.p });
+          sb += lb;
+        }
+        sa += la;
+      }
+    }
+    // a street that ends on another stops at the first crossing of its corridor with that street's corridors
+    for (const c of corrs) for (const end of ['lo', 'hi']) {
+      const E = end === 'lo' ? c.st.pts[0] : c.st.pts[c.st.pts.length - 1];
+      const onto = streets.filter(t => t !== c.st && project(E, t.pts).d <= o.endTolM);
+      if (!onto.length) continue;
+      const near = hits.filter(h => (h.A === c && onto.includes(h.B.st)) || (h.B === c && onto.includes(h.A.st))).map(h => (h.A === c ? h.sA : h.sB));
+      if (!near.length) continue;
+      // the crossing nearest the body of the street (a line that overshoots crosses the far corridor first)
+      if (end === 'lo') { const a = near.filter(s => s <= c.L / 2); if (a.length) c.lo = Math.max(...a); }
+      else { const a = near.filter(s => s > c.L / 2); if (a.length) c.hi = Math.min(...a); }
+    }
+    const stop = (c, s, nid) => { c.stops.push({ s, n: nid }); return nid; };
+    for (const h of hits) {
+      if (h.sA < h.A.lo - 1e-6 || h.sA > h.A.hi + 1e-6 || h.sB < h.B.lo - 1e-6 || h.sB > h.B.hi + 1e-6) continue;
+      const n = node(h.pt, { kind: 'corner' }); stop(h.A, h.sA, n); stop(h.B, h.sB, n);
+    }
+    for (const c of corrs) { stop(c, c.lo, node(at(c.pts, c.lo), { kind: 'end' })); stop(c, c.hi, node(at(c.pts, c.hi), { kind: 'end' })); }
+    // a point on a corridor, clamped to its clipped range
+    const onCorr = (c, q) => { const pr = project(q, c.pts), s = Math.max(c.lo, Math.min(c.hi, pr.s)); return { s, q: at(c.pts, s) }; };
+    // crossings: at each street's ends and junctions, and opposite each feed
+    const crossAt = (st, q, why) => {
+      const P = cOf.get(st.id + '|1'), M = cOf.get(st.id + '|-1'), a = onCorr(P, q), b = onCorr(M, q);
+      const na = stop(P, a.s, node(a.q, { kind: 'x' })), nb = stop(M, b.s, node(b.q, { kind: 'x' }));
+      edge(na, nb, dist(a.q, b.q), 'cross', [a.q, b.q], { st: st.id, why });
+    };
+    for (const st of streets) {
+      const P = cOf.get(st.id + '|1');
+      crossAt(st, at(P.pts, P.lo), 'end'); crossAt(st, at(P.pts, P.hi), 'end');
+      for (const h of hits) if (h.A.st === st || h.B.st === st) { const q = project(h.pt, st.pts).q; crossAt(st, q, 'junction'); }
+    }
+    // poles: a node off their own side's corridor, a tail to its foot
+    const poleNode = new Map(), footOf = new Map();
+    for (const p of poles) {
+      const c = cOf.get(p.street + '|' + p.side), f = onCorr(c, [p.x, p.y]);
+      const nf = stop(c, f.s, node(f.q, { kind: 'foot', pole: p.id })), np = node([p.x, p.y], { kind: 'pole', pole: p.id });
+      edge(np, nf, dist([p.x, p.y], f.q), 'tail', [[p.x, p.y], f.q]);
+      poleNode.set(p.id, np); footOf.set(p.id, nf);
+    }
+    // feeds: a leg to the nearest corridor, and a crossing opposite it
+    const feedNode = new Map();
+    for (const f of feeds) {
+      let best = null;
+      for (const c of corrs) { const g = onCorr(c, [f.x, f.y]), d = dist([f.x, f.y], g.q); if (!best || d < best.d) best = { c, g, d }; }
+      if (!best) continue;
+      const nf = stop(best.c, best.g.s, node(best.g.q, { kind: 'feedfoot' })), n = node([f.x, f.y], { kind: 'feed', feed: f.id });
+      edge(n, nf, best.d, 'leg', [[f.x, f.y], best.g.q], { crosses: crossesAny([f.x, f.y], best.g.q, streets) });
+      crossAt(best.c.st, best.g.q, 'feed');
+      feedNode.set(f.id, n);
+    }
+    // runs along each corridor between its stops
+    for (const c of corrs) {
+      c.stops.sort((a, b) => a.s - b.s);
+      for (let i = 1; i < c.stops.length; i++) {
+        const A = c.stops[i - 1], B = c.stops[i]; if (B.s < c.lo - 1e-6 || A.s > c.hi + 1e-6) continue;
+        const pts = dedupe(along(c.pts, A.s, B.s)), mid = at(c.pts, (A.s + B.s) / 2);
+        const inRoad = streets.some(t => t !== c.st && project(mid, t.pts).d < Math.min(cOf.get(t.id + '|1').off, cOf.get(t.id + '|-1').off) - 0.25);
+        edge(A.n, B.n, B.s - A.s, 'run', pts.length > 1 ? pts : [nodes[A.n].pt, nodes[B.n].pt], { corr: c.key, s1: A.s, s2: B.s, inRoad });
+      }
+    }
+    return { nodes, edges, adj, corrs, poleNode, footOf, feedNode };
+  }
+  // segment crossing a0→a1 with b0→b1: { t, u, p } or null
+  function segX(a0, a1, b0, b1) {
+    const rx = a1[0] - a0[0], ry = a1[1] - a0[1], sx = b1[0] - b0[0], sy = b1[1] - b0[1], den = rx * sy - ry * sx;
+    if (Math.abs(den) < 1e-12) return null;
+    const qx = b0[0] - a0[0], qy = b0[1] - a0[1], t = (qx * sy - qy * sx) / den, u = (qx * ry - qy * rx) / den;
+    return t >= 0 && t <= 1 && u >= 0 && u <= 1 ? { t, u, p: [a0[0] + rx * t, a0[1] + ry * t] } : null;
+  }
+  const crossing = e => e.kind === 'cross' || (e.kind === 'run' && e.inRoad) || (e.kind === 'leg' && e.crosses);
+  // shortest paths from a node: cost = length, + crossPen per crossing; `ok(e)` = the edges that may be used
+  function dijkstra(G, src, ok, pen) {
+    const n = G.nodes.length, D = new Float64Array(n).fill(Infinity), Lm = new Float64Array(n).fill(Infinity), prev = new Int32Array(n).fill(-1);
+    const H = [], push = (d, u) => { H.push([d, u]); let i = H.length - 1; while (i) { const j = (i - 1) >> 1; if (H[j][0] <= H[i][0]) break; [H[i], H[j]] = [H[j], H[i]]; i = j; } };
+    const pop = () => { const top = H[0], last = H.pop(); if (H.length) { H[0] = last; let i = 0; for (;;) { const l = 2 * i + 1, r = l + 1; let m = i; if (l < H.length && H[l][0] < H[m][0]) m = l; if (r < H.length && H[r][0] < H[m][0]) m = r; if (m === i) break; [H[i], H[m]] = [H[m], H[i]]; i = m; } } return top; };
+    const heap = H; push(0, src);
+    D[src] = 0; Lm[src] = 0;
+    while (heap.length) {
+      const [d, u] = pop();
+      if (d > D[u]) continue;
+      for (const eid of G.adj[u]) {
+        const e = G.edges[eid]; if (ok && !ok(e)) continue;
+        const v = e.a === u ? e.b : e.a, w = e.len + (crossing(e) ? pen : 0);
+        if (D[u] + w < D[v] - 1e-9) { D[v] = D[u] + w; Lm[v] = Lm[u] + e.len; prev[v] = eid; push(D[v], v); }
+      }
+    }
+    return { D, Lm, prev };
+  }
+  // the edges from src to v (in order), and their points
+  function pathEdges(G, R, v) { const out = []; while (R.prev[v] >= 0) { const e = G.edges[R.prev[v]]; out.push({ e, to: v }); v = e.a === v ? e.b : e.a; } return out.reverse(); }
+  function pathPts(G, steps) {
+    const out = [];
+    for (const { e, to } of steps) { const pts = e.b === to ? e.pts : e.pts.slice().reverse(); for (const q of pts) if (!out.length || dist(out[out.length - 1], q) > 1e-6) out.push(q); }
+    return out;
+  }
+
+  // ── the plan ──
+  // Poles go to the nearest street (within `snapM`) and its side. A COMPONENT is the poles a circuit may join without crossing a
+  // road: along a corridor and round block corners (o.joinSides, or a feed in o.joinFor: also across a street at its ends). Each
+  // component takes the feed with the least cable along the network (a crossing costs `crossPenM` more; over `maxFeedM` = not
+  // reached; o.ban: component key → feeds it may not take). Its poles form a TREE from the pole the feeder reaches (`entry`): each
+  // pole's parent is the pole before it on its shortest path, so a string runs both ways and on round corners. Returns
+  // { comps: [{ key, feed, poles [{ id, x, y }] in order from the entry, parent [index | null], spanM, spanPts, feederPts, feederM,
+  // feederToM, edges (ids used), crossings }], unassigned, G }.
   function plan(input) {
     const o = Object.assign({}, D, input.o || {});
-    const streets = (input.streets || []).filter(s => s.pts && s.pts.length >= 2);
-    const feeds = input.feeds || [];
-    const unassigned = [], byKey = new Map();
+    const streets = (input.streets || []).filter(s => s.pts && s.pts.length >= 2), feeds = input.feeds || [], unassigned = [], poles = [];
     for (const p of input.poles || []) {
       let best = null;
       for (const s of streets) { const pr = project([p.x, p.y], s.pts); if (pr && pr.d <= o.snapM && (!best || pr.d < best.pr.d)) best = { s, pr }; }
       if (!best) { unassigned.push({ id: p.id, reason: `no road within ${o.snapM} m` }); continue; }
-      const key = best.s.id + '|' + best.pr.side;
-      if (!byKey.has(key)) byKey.set(key, { key, street: best.s, side: best.pr.side, poles: [] });
-      byKey.get(key).poles.push({ id: p.id, x: p.x, y: p.y, d: best.pr.d });
+      poles.push({ id: p.id, x: p.x, y: p.y, street: best.s.id, side: best.pr.side, d: best.pr.d });
     }
-    const groups = [];
-    for (const g of byKey.values()) {
-      const c = g.street.corr, own = c && typeof c === 'object' ? c[g.side > 0 ? 'L' : 'R'] : c;
-      g.off = +own > 0 ? +own : median(g.poles.map(p => p.d));
-      g.fromSection = +own > 0;
-      g.corr = offset(g.street.pts, g.side * g.off);
-      for (const p of g.poles) { const pr = project([p.x, p.y], g.corr); p.t = pr.s; p.foot = pr.q; }
-      g.poles.sort((a, b) => a.t - b.t);
-      const t0 = g.poles[0].t, t1 = g.poles[g.poles.length - 1].t;
-      // the feed: least cable to the nearest pole of the group
-      let best = null;
-      for (const f of feeds) {
-        const pr = project([f.x, f.y], g.corr), crosses = crossesAny([f.x, f.y], pr.q, streets);
-        const alongM = pr.s < t0 ? t0 - pr.s : pr.s > t1 ? pr.s - t1 : 0;
-        const cost = pr.d + alongM + (crosses ? o.crossPenM : 0);
-        if (!best || cost < best.cost) best = { f, pr, crosses, cost, m: pr.d + alongM };
+    if (!streets.length || !poles.length) return { comps: [], unassigned, G: null };
+    const G = network(streets, poles, feeds, o), byId = new Map(poles.map(p => [p.id, p]));
+    // components: union over the edges a circuit may use (no crossing)
+    const par = G.nodes.map((_, i) => i), find = x => { while (par[x] !== x) { par[x] = par[par[x]]; x = par[x]; } return x; };
+    const union = (a, b) => { a = find(a); b = find(b); if (a !== b) par[a] = b; };
+    for (const e of G.edges) if (e.kind === 'tail' || (e.kind === 'run' && !e.inRoad)) union(e.a, e.b);
+    const groupOf = () => { const m = new Map(); for (const p of poles) { const r = find(G.poleNode.get(p.id)); if (!m.has(r)) m.set(r, []); m.get(r).push(p); } return m; };
+    // each feed's shortest paths (every edge, crossings costed)
+    const FR = new Map(); for (const f of feeds) if (G.feedNode.has(f.id)) FR.set(f.id, dijkstra(G, G.feedNode.get(f.id), null, o.crossPenM));
+    const assign = groups => {
+      const out = [];
+      for (const [root, ps] of groups) {
+        const key = ps.map(p => p.id).sort()[0], ban = (o.ban && o.ban[key]) || [];
+        let best = null;
+        for (const f of feeds) {
+          const R = FR.get(f.id); if (!R || ban.includes(f.id)) continue;
+          for (const p of ps) { const n = G.poleNode.get(p.id); if (R.D[n] < (best ? best.cost : Infinity)) best = { f, R, p, cost: R.D[n], m: R.Lm[n] }; }
+        }
+        out.push({ root, ps, key, best });
       }
+      return out;
+    };
+    let A = assign(groupOf());
+    // both sides of a road in one circuit: components of one feed that meet across a street end are joined
+    const joinFor = o.joinSides ? null : new Set(o.joinFor || []);
+    const joined = new Set();
+    if (o.joinSides || joinFor.size) {
+      const feedOfRoot = new Map(A.filter(x => x.best).map(x => [x.root, x.best.f.id])), before = G.nodes.map((_, i) => find(i));
+      for (const e of G.edges) {
+        if (e.kind !== 'cross' || e.why !== 'end') continue;
+        const fa = feedOfRoot.get(before[e.a]), fb = feedOfRoot.get(before[e.b]);
+        if (!fa || fa !== fb || (joinFor && !joinFor.has(fa)) || find(e.a) === find(e.b)) continue;
+        union(e.a, e.b); joined.add(e.id);
+      }
+      if (joined.size) A = assign(groupOf());
+    }
+    const comps = [];
+    for (const { ps, key, best } of A) {
       if (!best || best.m > o.maxFeedM) {
-        for (const p of g.poles) unassigned.push({ id: p.id, reason: best ? `the nearest feed (${best.f.name || best.f.id}) is ${Math.round(best.m)} m of cable away (limit ${o.maxFeedM} m)` : 'no feed ticked' });
+        for (const p of ps) unassigned.push({ id: p.id, reason: best ? `the nearest feed (${best.f.name || best.f.id}) is ${Math.round(best.m)} m of cable away (limit ${o.maxFeedM} m)` : feeds.length ? 'no road joins them to a ticked feed (draw the road between, or tick a kiosk on theirs)' : 'no feed ticked' });
         continue;
       }
-      g.feed = best.f; g.crosses = best.crosses; g.tf = best.pr.s; g.ff = best.pr.q;
-      g.leg = [[best.f.x, best.f.y], best.pr.q];
-      const ups = g.poles.filter(p => p.t >= g.tf), downs = g.poles.filter(p => p.t < g.tf).reverse();
-      g.strings = [ups, downs].filter(a => a.length).map((ps, i) => mkString(g, ps, i));
-      const lo = Math.min(t0, g.tf), hi = Math.max(t1, g.tf);
-      g.trench = hi - lo > 0.5 ? dedupe(along(g.corr, lo, hi)) : null;
-      groups.push(g);
+      const entry = best.p, inComp = new Set(ps.map(p => p.id));
+      const T = dijkstra(G, G.poleNode.get(entry.id), e => e.kind === 'tail' || (e.kind === 'run' && !e.inRoad) || joined.has(e.id), o.crossPenM);
+      // each pole's parent: the first other pole whose foot lies on its path back to the entry
+      const footPole = new Map(); for (const p of ps) footPole.set(G.footOf.get(p.id), p.id);
+      const info = new Map();
+      for (const p of ps) {
+        const pn = G.poleNode.get(p.id); if (!(T.D[pn] < Infinity)) continue;
+        if (p === entry) { info.set(p.id, { parent: null, steps: [] }); continue; }
+        const steps = pathEdges(G, T, pn); let k = steps.length - 1, q = null;
+        // walk back from the pole: its tail, then the corridor, to the nearest other pole's foot
+        for (; k >= 0; k--) { const at0 = steps[k].e.a === steps[k].to ? steps[k].e.b : steps[k].e.a, fp = footPole.get(at0); if (fp && fp !== p.id && inComp.has(fp)) { q = fp; break; } }
+        if (q == null) { info.set(p.id, { parent: entry.id, steps }); continue; }
+        const qTail = G.edges.find(e => e.kind === 'tail' && (e.a === G.poleNode.get(q) || e.b === G.poleNode.get(q)));
+        info.set(p.id, { parent: q, steps: [{ e: qTail, to: G.footOf.get(q) }].concat(steps.slice(k)) });
+      }
+      // order: by the length of cable from the entry, parents first
+      const order = [], seen = new Set(), kids = new Map();
+      for (const [id, x] of info) if (x.parent) { if (!kids.has(x.parent)) kids.set(x.parent, []); kids.get(x.parent).push(id); }
+      const Lof = id => T.Lm[G.poleNode.get(id)];
+      const queue = [entry.id];
+      while (queue.length) { queue.sort((a, b) => Lof(a) - Lof(b)); const id = queue.shift(); if (seen.has(id)) continue; seen.add(id); order.push(id); for (const c of kids.get(id) || []) queue.push(c); }
+      for (const p of ps) if (!seen.has(p.id)) unassigned.push({ id: p.id, reason: 'cannot be reached along the verge from the rest of its road side' });
+      const idx = new Map(order.map((id, i) => [id, i])), feedSteps = pathEdges(G, best.R, G.poleNode.get(entry.id));
+      const comp = { key, feed: best.f, poles: order.map(id => ({ id, x: byId.get(id).x, y: byId.get(id).y })), parent: [], spanM: [], spanPts: [], feederToM: [],
+        feederPts: pathPts(G, feedSteps), feederM: r2(feedSteps.reduce((s, x) => s + x.e.len, 0)), edges: new Set(feedSteps.map(x => x.e.id)), joined: false };
+      order.forEach((id, i) => {
+        const x = info.get(id);
+        if (!x.parent) { comp.parent.push(null); comp.spanM.push(0); comp.spanPts.push(null); comp.feederToM.push(comp.feederM); return; }
+        const pts = pathPts(G, x.steps), m = r2(x.steps.reduce((s, y) => s + y.e.len, 0));
+        comp.parent.push(idx.get(x.parent)); comp.spanM.push(m); comp.spanPts.push(pts);
+        comp.feederToM.push(r2(comp.feederToM[idx.get(x.parent)] + m));
+        for (const y of x.steps) { comp.edges.add(y.e.id); if (joined.has(y.e.id)) comp.joined = true; }
+      });
+      comps.push(comp);
     }
-    return { groups, unassigned };
+    return { comps, unassigned, G };
   }
-  function mkString(g, ps, i) {
-    const st = { id: `${g.key}|${i}`, poles: ps.map(p => ({ id: p.id, x: p.x, y: p.y, t: p.t, foot: p.foot })), spanM: [], spanPts: [], feederToM: [] };
-    ps.forEach((p, k) => {
-      const path = pathTo(g, st, k);
-      st.feederToM.push(r2(len(path)));
-      if (k) { const q = ps[k - 1], sp = dedupe([[q.x, q.y]].concat(along(g.corr, q.t, p.t), [[p.x, p.y]])); st.spanPts.push(sp); st.spanM.push(r2(len(sp))); }
-      else { st.spanPts.push(null); st.spanM.push(0); }
-    });
-    return st;
+  // the feeder route from the component's feed to pole i: to the entry, then along the tree
+  function pathTo(comp, i) {
+    const chain = []; for (let k = i; k != null && comp.parent[k] != null; k = comp.parent[k]) chain.push(k);
+    const out = comp.feederPts.slice();
+    for (const k of chain.reverse()) for (const q of comp.spanPts[k]) if (dist(out[out.length - 1], q) > 1e-6) out.push(q);
+    return out;
   }
-  // the feeder route from the group's feed to pole k of the string: straight to the corridor, along it, then the pole's tail
-  function pathTo(g, st, k) {
-    const p = st.poles[k];
-    return dedupe([[g.feed.x, g.feed.y]].concat(along(g.corr, g.tf, p.t), [[p.x, p.y]]));
+  // what a set of components digs: trench runs along the corridors (merged per corridor), the feed legs that do not cross, and the
+  // crossings ([[a, b]]: square crossings and corridor stretches through another road's mouth)
+  function usage(P, comps) {
+    const G = P.G; if (!G) return { trench: [], crossings: [] };
+    const ids = new Set(); for (const c of comps) for (const id of c.edges) ids.add(id);
+    const runs = new Map(), trench = [], crossings = [];
+    for (const id of ids) {
+      const e = G.edges[id];
+      if (crossing(e)) { crossings.push([e.pts[0], e.pts[e.pts.length - 1]]); continue; }
+      if (e.kind === 'run') { if (!runs.has(e.corr)) runs.set(e.corr, []); runs.get(e.corr).push([Math.min(e.s1, e.s2), Math.max(e.s1, e.s2)]); }
+      else if (e.kind === 'leg' && e.len >= 1) trench.push(e.pts);
+    }
+    for (const [key, iv] of runs) {
+      const c = G.corrs.find(x => x.key === key); iv.sort((a, b) => a[0] - b[0]);
+      let cur = null; const flush = () => { if (cur && cur[1] - cur[0] >= 1) trench.push(dedupe(along(c.pts, cur[0], cur[1]))); };
+      for (const v of iv) { if (cur && v[0] <= cur[1] + 0.05) cur[1] = Math.max(cur[1], v[1]); else { flush(); cur = v.slice(); } }
+      flush();
+    }
+    return { trench, crossings };
   }
 
   // the pieces of a run (points in m) not within `tol` of any of `lines` (m), each at least `minM` long
@@ -171,7 +365,7 @@ const SLLayout = (() => {
     return out;
   }
 
-  return { D, plan, pathTo, project, offset, along, at, len, uncovered, crossSeg, polesAlong };
+  return { D, plan, pathTo, usage, project, offset, along, at, len, uncovered, crossSeg, polesAlong };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = SLLayout;

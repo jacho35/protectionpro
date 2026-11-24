@@ -9,44 +9,61 @@ const near = (a, b, e = 1e-6) => assert.ok(Math.abs(a - b) <= e, `${a} ≠ ${b}`
 const street = { id: 's1', name: 'Main', pts: [[0, 0], [200, 0]] };
 const polesL = [20, 60, 100, 140, 180].map((x, i) => ({ id: 'L' + i, x, y: 6 }));
 
-ok('a street side is a group on its pole line; the feed at its start feeds one string', () => {
+ok('a road side is one component; the feed at its start feeds a row', () => {
   const r = SL.plan({ poles: polesL, streets: [street], feeds: [{ id: 'K', x: 0, y: 10 }] });
-  assert.strictEqual(r.groups.length, 1); assert.strictEqual(r.unassigned.length, 0);
-  const g = r.groups[0]; assert.strictEqual(g.side, 1); near(g.off, 6); assert.strictEqual(g.crosses, false);
-  assert.strictEqual(g.strings.length, 1);
-  const st = g.strings[0];
-  assert.deepStrictEqual(st.poles.map(p => p.id), ['L0', 'L1', 'L2', 'L3', 'L4']);
-  near(st.feederToM[0], 4 + 20); near(st.feederToM[4], 4 + 180);          // 4 m to the corridor, then along it
-  assert.deepStrictEqual(st.spanM, [0, 40, 40, 40, 40]);
-  near(SL.len(g.trench), 180);                                            // from the feed's foot (x 0) to the last pole
+  assert.strictEqual(r.comps.length, 1); assert.strictEqual(r.unassigned.length, 0);
+  const c = r.comps[0];
+  assert.deepStrictEqual(c.poles.map(p => p.id), ['L0', 'L1', 'L2', 'L3', 'L4']);
+  assert.deepStrictEqual(c.parent, [null, 0, 1, 2, 3]);
+  near(c.feederM, 4 + 20, 0.01); near(c.feederToM[4], 4 + 180, 0.01);           // 4 m onto the pole line, then along it
+  assert.deepStrictEqual(c.spanM, [0, 40, 40, 40, 40]);
 });
 
-ok('the section\'s LV line: the corridor at that offset, each pole a tail off it', () => {
-  const r = SL.plan({ poles: polesL, streets: [Object.assign({}, street, { corr: 8 })], feeds: [{ id: 'K', x: 0, y: 10 }] });
-  const g = r.groups[0]; near(g.off, 8); assert.ok(g.fromSection);
-  near(g.strings[0].spanM[1], 2 + 40 + 2);                                // tail down, along, tail up
-});
-
-ok('a feed beside the middle feeds two strings, one each way', () => {
+ok('a feed beside the middle: one tree, both ways from the pole nearest it', () => {
   const r = SL.plan({ poles: polesL, streets: [street], feeds: [{ id: 'K', x: 110, y: 12 }] });
-  const ss = r.groups[0].strings;
-  assert.deepStrictEqual(ss.map(s => s.poles.map(p => p.id)), [['L3', 'L4'], ['L2', 'L1', 'L0']]);
-  near(ss[1].feederToM[0], 6 + 10);
+  assert.strictEqual(r.comps.length, 1);
+  const c = r.comps[0], id = i => c.poles[i].id;
+  assert.strictEqual(id(0), 'L2');                                               // x 100: the nearest pole
+  const kidsOfRoot = c.parent.map((q, i) => q === 0 ? id(i) : null).filter(Boolean).sort();
+  assert.deepStrictEqual(kidsOfRoot, ['L1', 'L3']);
 });
 
-ok('each side its own group; a feed across the road costs a crossing, a nearer one on the side wins', () => {
+ok('each side of a road its own component; joined across the road end when asked', () => {
   const polesR = [30, 90].map((x, i) => ({ id: 'R' + i, x, y: -6 }));
   let r = SL.plan({ poles: polesL.concat(polesR), streets: [street], feeds: [{ id: 'K', x: 0, y: 10 }] });
-  const gr = r.groups.find(g => g.side === -1); assert.strictEqual(gr.crosses, true); assert.strictEqual(gr.feed.id, 'K');
-  r = SL.plan({ poles: polesL.concat(polesR), streets: [street], feeds: [{ id: 'K', x: 0, y: 10 }, { id: 'K2', x: 100, y: -12 }] });
-  assert.strictEqual(r.groups.find(g => g.side === -1).feed.id, 'K2');
-  assert.strictEqual(r.groups.find(g => g.side === 1).feed.id, 'K');
+  assert.strictEqual(r.comps.length, 2);
+  const right = r.comps.find(c => c.poles[0].id.startsWith('R'));
+  assert.ok(SL.usage(r, [right]).crossings.length >= 1);                         // its feeder crosses the road
+  r = SL.plan({ poles: polesL.concat(polesR), streets: [street], feeds: [{ id: 'K', x: 0, y: 10 }], o: { joinSides: true } });
+  assert.strictEqual(r.comps.length, 1); assert.strictEqual(r.comps[0].poles.length, 7);
+});
+
+ok('round the corner: the inside of an L is one component, no crossing', () => {
+  const A = { id: 'A', pts: [[0, 0], [100, 0]] }, B = { id: 'B', pts: [[100, 0], [100, -100]] };
+  // the block inside the L lies at y < 0, x < 100: A's right side (−1), B's right side (−1)
+  const ps = [{ id: 'a1', x: 30, y: -6 }, { id: 'a2', x: 70, y: -6 }, { id: 'b1', x: 94, y: -40 }, { id: 'b2', x: 94, y: -80 }];
+  const r = SL.plan({ poles: ps, streets: [A, B], feeds: [{ id: 'K', x: 10, y: -10 }] });
+  assert.strictEqual(r.comps.length, 1);
+  assert.deepStrictEqual(r.comps[0].poles.map(p => p.id), ['a1', 'a2', 'b1', 'b2']);
+  assert.strictEqual(SL.usage(r, r.comps).crossings.length, 0);
+});
+
+ok('a feeder follows the verges round the corner, not a straight line across the block', () => {
+  // two parallel streets joined by a cross street; the feed is on the top one, the poles on the bottom one
+  const top = { id: 'T', pts: [[0, 100], [200, 100]] }, bot = { id: 'Bo', pts: [[0, 0], [200, 0]] }, cross = { id: 'X', pts: [[200, 0], [200, 100]] };
+  const ps = [40, 80, 120].map((x, i) => ({ id: 'p' + i, x, y: 6 }));          // the block side of the bottom street
+  const r = SL.plan({ poles: ps, streets: [top, bot, cross], feeds: [{ id: 'K', x: 60, y: 94 }] });
+  const c = r.comps[0], f = c.feederPts;
+  assert.ok(c.feederM > 200, 'routed round the block: ' + c.feederM);             // along y≈94, down x≈194, back along y≈6
+  for (let i = 1; i < f.length; i++) { const m = [(f[i - 1][0] + f[i][0]) / 2, (f[i - 1][1] + f[i][1]) / 2];
+    assert.ok([top, bot, cross].some(s => SL.project(m, s.pts).d <= 12), 'off the verges at ' + m); }
+  assert.strictEqual(SL.usage(r, r.comps).crossings.length, 0);                  // the inside of the block: no road to cross
 });
 
 ok('poles far from a road or a feed are reported', () => {
   const r = SL.plan({ poles: polesL.concat([{ id: 'X', x: 100, y: 90 }]), streets: [street], feeds: [{ id: 'K', x: -200, y: 10 }], o: { maxFeedM: 100 } });
   assert.strictEqual(r.unassigned.find(u => u.id === 'X').reason, 'no road within 40 m');
-  assert.strictEqual(r.groups.length, 0);                                    // 4 + 220 m to the nearest pole > 100 → not reached
+  assert.strictEqual(r.comps.length, 0);
   assert.strictEqual(r.unassigned.filter(u => u.id.startsWith('L')).length, 5);
 });
 
