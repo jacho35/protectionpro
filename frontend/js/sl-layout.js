@@ -152,7 +152,26 @@ const SLLayout = (() => {
     return out;
   }
 
-  return { D, plan, pathTo, project, offset, along, at, len, uncovered, crossSeg };
+  // Poles along a street (m): exactly every `spacing` m at `off` m from its centre line, as many as keep each end's gap within
+  // `endM` (default half the spacing), the slack shared at both ends; `arr` 'A' / 'B' (one side: A = left of the street's direction), 'both' (opposite
+  // pairs) or 'stagger' (sides in turn, half the spacing apart). A pole within `clearM` (3) of another street's line (a junction
+  // mouth) or of a pole in `keep` is left out. Returns [{ x, y, side, s }].
+  function polesAlong(street, o, others, keep) {
+    const pts = street.pts, L = len(pts), sp = Math.max(5, +o.spacing || 35), off = Math.max(0.5, +o.off || 5), clr = o.clearM != null ? +o.clearM : 3;
+    const arr = o.arr || 'A', stag = arr === 'stagger', step = stag ? sp / 2 : sp, end = o.endM != null ? Math.max(0, +o.endM) : Math.min(sp / 2, L / 2);
+    if (L < 1) return [];
+    let n = Math.max(1, Math.ceil((L - 2 * end) / step - 1e-9) + 1); while (n > 1 && (n - 1) * step > L) n--;
+    const s0 = (L - (n - 1) * step) / 2;
+    const lines = { 1: offset(pts, off), [-1]: offset(pts, -off) }, out = [];
+    const blocked = q => (others || []).some(t => t !== street && t.pts && project(q, t.pts).d < clr) || (keep || []).some(k => dist(q, k) < clr);
+    for (let i = 0; i < n; i++) {
+      const s = s0 + i * step, sides = arr === 'both' ? [1, -1] : arr === 'B' ? [-1] : stag ? [i % 2 ? -1 : 1] : [1];
+      for (const sd of sides) { const q = at(lines[sd], s); if (!blocked(q)) out.push({ x: q[0], y: q[1], side: sd, s: r2(s) }); }
+    }
+    return out;
+  }
+
+  return { D, plan, pathTo, project, offset, along, at, len, uncovered, crossSeg, polesAlong };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = SLLayout;

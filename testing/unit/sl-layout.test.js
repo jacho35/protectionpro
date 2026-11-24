@@ -61,4 +61,18 @@ ok('offset: a mitred corner keeps the distance', () => {
   assert.deepStrictEqual(o.map(p => p.map(v => Math.round(v * 1000) / 1000)), [[0, 1], [9, 1], [9, 10]]);
 });
 
+ok('poles along a street: spacing, the slack at both ends, one side / both / staggered', () => {
+  const st = { id: 's', pts: [[0, 0], [200, 0]] };
+  let ps = SL.polesAlong(st, { spacing: 35, off: 6, arr: 'A' });
+  assert.deepStrictEqual(ps.map(p => p.s), [12.5, 47.5, 82.5, 117.5, 152.5, 187.5]);    // 6 poles, 12.5 m from each end
+  assert.ok(ps.every(p => p.y === 6 && p.side === 1));
+  ps = SL.polesAlong(st, { spacing: 35, off: 6, arr: 'both' }); assert.strictEqual(ps.length, 12);
+  ps = SL.polesAlong(st, { spacing: 40, off: 6, arr: 'stagger' });
+  assert.deepStrictEqual(ps.slice(0, 3).map(p => [p.s, p.y]), [[20, 6], [40, -6], [60, 6]]);
+  // a side street joining at x = 100 takes out the pole in its mouth; so does a pole already there
+  const side = { id: 't', pts: [[100, 0], [100, 80]] };
+  ps = SL.polesAlong(st, { spacing: 20, off: 6, arr: 'A', endM: 0 }, [st, side], [[20, 6]]);
+  assert.ok(!ps.some(p => Math.abs(p.x - 100) < 3)); assert.ok(!ps.some(p => Math.abs(p.x - 20) < 3));
+});
+
 console.log(n + ' passed');

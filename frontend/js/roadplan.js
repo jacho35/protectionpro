@@ -1472,7 +1472,8 @@ const RoadPlan = {
         <span class="sl-sep"></span>
         <button class="btn-small" data-rp="relayout" title="Lay the selected road's poles out again from the rules">Lay out again</button>
         <button class="btn-small" data-rp="relayout-all" title="Every road">All roads</button>
-        <button class="btn-small" data-rp="optimise" title="The fewest poles that make every junction pass, then each road at the widest spacing that still passes">Lay out for the checks…</button>`;
+        <button class="btn-small" data-rp="optimise" title="The fewest poles that make every junction pass, then each road at the widest spacing that still passes">Lay out for the checks…</button>
+        ${typeof RoadSitePlan !== 'undefined' && RoadSitePlan._floors().length ? `<span class="sl-sep"></span><button class="btn-small" data-rp="sendpoles" title="Every pole of the Road plan as a Streetlight Pole on the site plan (moved, not doubled, when sent again), for the site plan's Street lighting layout to cable">Send poles to the site plan</button>` : ''}`;
     } else {
       const std = this._standard();
       html = `<span class="sl-view-toggle" role="group" aria-label="Quantity"><button class="${this._qty === 'E' ? 'active' : ''}" data-rp-qty="E">Illuminance</button><button class="${this._qty === 'L' ? 'active' : ''}" data-rp-qty="L">Luminance</button></span>
@@ -1921,6 +1922,13 @@ const RoadPlan = {
       case 'delpole': this.deletePole(); break;
       case 'pole-reset': if (r) { const p = r.poles.find(x => x.id === this._selPole); if (p) { delete p.over; delete p.d; this._commit(); this.render(); } } break;
       case 'circuit': this.openCircuitImport(); break;
+      case 'sendpoles': {
+        const o = typeof RoadSitePlan !== 'undefined' ? RoadSitePlan.sendPoles() : null;
+        if (!o) { UI.toast('Calibrate the site plan first: the poles go there in metres.', 'warn', 5000); break; }
+        const parts = [o.made && `${o.made} new`, o.moved && `${o.moved} moved`, o.gone && `${o.gone} removed`].filter(Boolean);
+        UI.toast(`Site plan poles: ${parts.join(', ') || 'already up to date'}.${o.kept ? ` ${o.kept} no longer in the Road plan kept: a cable is drawn to ${o.kept === 1 ? 'it' : 'them'}.` : ''}${o.skipped.length ? ` Not sent (not on the site plan): ${o.skipped.join(', ')}.` : ''} Cable them with Site plan › Detect › Street lighting layout.`, o.skipped.length ? 'warn' : 'success', 8000);
+        break;
+      }
       case 'feed-clear': this._feedClear(); break;
       case 'calc': this.recompute(0); break;
       case 'pick-cl': this._usePicked('cl'); break;
