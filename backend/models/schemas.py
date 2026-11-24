@@ -706,6 +706,18 @@ class ReticMotorStartRequest(BaseModel):
     motors: list[dict] = []
 
 
+class StreetLightingSplitRequest(BaseModel):
+    """Street lighting auto layout (analysis/street_lighting.py split_strings):
+    circuit defaults, allowed cables, breakers and the strings of poles."""
+    model_config = {"extra": "allow"}
+
+    base: dict = {}
+    cables: list[dict] = []
+    breakers: list[dict] = []
+    maxPoles: int = 0
+    strings: list[dict] = []
+
+
 class StreetLightingRequest(BaseModel):
     """Street lighting circuits (Reticulation › Street lighting). Each circuit
     is a dict of camelCase keys resolved by the frontend (cable R/X, luminaire

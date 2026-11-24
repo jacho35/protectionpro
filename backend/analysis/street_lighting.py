@@ -346,3 +346,119 @@ def run_street_lighting(request):
         res["smallestCable"] = smallest_cable(c, candidates) if candidates else None
         out.append(res)
     return {"circuits": out}
+
+
+# ── Street lighting auto layout: strings of poles split into circuits ──────
+def _str_circuit(base, st, start, k, cable, ia):
+    """The circuit made of poles start … start+k-1 of string ``st``: the first
+    pole's span is the feeder from the source to it (``feederToM``)."""
+    poles = st.get("poles") or []
+    out = []
+    for i in range(start, start + k):
+        p = poles[i]
+        span = _num(st["feederToM"][start], 0.0) if i == start else _num(p.get("spanM"), 0.0)
+        o = {"id": str(p.get("id")), "parent": (str(poles[i - 1].get("id")) if i > start else None), "spacingM": span}
+        if p.get("watts") not in (None, ""):
+            o["watts"] = p.get("watts")
+            o["pf"] = p.get("pf")
+        out.append(o)
+    c = dict(base)
+    c.update({"id": f"{st.get('id')}:{start}", "poles": out, "cable": cable,
+              "zeOhm": _num(st.get("zeOhm"), _num(base.get("zeOhm"), 0.0)),
+              "supplyVdPct": _num(st.get("supplyVdPct"), _num(base.get("supplyVdPct"), 0.0)),
+              "protection": {"iaA": ia}})
+    if st.get("singlePhase") in PHASES:
+        c["singlePhase"] = st["singlePhase"]
+    return c
+
+
+def _with_breaker(base, st, start, k, cable, breakers):
+    """Solve with the smallest breaker that carries the circuit current, is no
+    bigger than the cable's rating and still disconnects in time (Zs). Returns
+    (result, breaker) — breaker None when none passes (result: the last tried)."""
+    first = solve_circuit(_str_circuit(base, st, start, k, cable, 0.0))
+    if not breakers:
+        return first, None
+    ib = max(list(first["phaseA"].values()) + [first["neutralA"]])
+    rated = _num(cable.get("ratedA"), 0.0)
+    res = first
+    for b in breakers:
+        i_n = _num(b.get("inA"), 0.0)
+        if i_n < ib - 1e-9 or (rated > 0 and i_n > rated + 1e-9):
+            continue
+        res = solve_circuit(_str_circuit(base, st, start, k, cable, _num(b.get("iaA"), 0.0)))
+        if _passes(res):
+            return res, b
+    if not any(_num(b.get("inA"), 0.0) >= ib - 1e-9 and (rated <= 0 or _num(b.get("inA"), 0.0) <= rated + 1e-9) for b in breakers):
+        res = dict(res, fails=list(res.get("fails") or []) + ["breaker"], **{"pass": False})
+    return res, None
+
+
+def split_strings(request):
+    """POST /api/analysis/street-lighting/split — the street lighting auto
+    layout. Each string is a row of poles in order from its source
+    (``poles[i].spanM`` = the cable from pole i-1 to pole i; ``feederToM[i]`` =
+    the cable from the source to pole i along the route). A circuit takes as
+    many poles from the start of what is left as pass every check on the
+    largest allowed cable (and ``maxPoles``); then the smallest cable and
+    breaker that pass for those poles. The rest is the next circuit, back to
+    the same source. A single pole that cannot pass is its own failing circuit.
+
+    ``request``: ``{base: {circuit defaults as for /street-lighting}, cables:
+    [{name, r, x, ratedA, cores}], breakers: [{id, inA, iaA}] (any order),
+    maxPoles, strings: [{id, poles, feederToM, zeOhm, supplyVdPct, singlePhase}]}``.
+    Returns ``{strings: [{id, circuits: [{from, to, cable, breaker, pass,
+    fails, worstVdPct, worstCumVdPct, maxZsOhm, totalKVA, phaseA,
+    cableLengthM}]}]}``."""
+    base = dict(request.get("base") or {})
+    system = "1ph" if base.get("system") == "1ph" else "3ph"
+    cables = [k for k in request.get("cables") or []
+              if _num(k.get("r")) > 0 and (system == "1ph" or int(_num(k.get("cores"), 4)) >= 4)]
+    cables.sort(key=lambda k: -_num(k.get("r")))                 # smallest first
+    breakers = sorted(request.get("breakers") or [], key=lambda b: (_num(b.get("inA"), 0.0), -_num(b.get("iaA"), 0.0)))
+    cap = int(_num(request.get("maxPoles"), 0)) or MAX_SOLVER_POLES
+    out = []
+    for st in request.get("strings") or []:
+        poles = st.get("poles") or []
+        n = len(poles)
+        circuits = []
+        if len(st.get("feederToM") or []) < n:
+            out.append({"id": st.get("id"), "circuits": [], "error": "feederToM is shorter than the poles"})
+            continue
+        start = 0
+        while start < n:
+            if not cables:
+                circuits.append({"from": start, "to": n, "cable": None, "breaker": None, "pass": False, "fails": ["cable"]})
+                break
+            big = cables[-1]
+            best = 0
+            for k in range(1, min(n - start, cap) + 1):
+                res, _ = _with_breaker(base, st, start, k, big, breakers)
+                if _passes(res):
+                    best = k
+                else:
+                    break
+            if not best:
+                res, br = _with_breaker(base, st, start, 1, big, breakers)
+                circuits.append(_summary(start, 1, big, br, res))
+                start += 1
+                continue
+            for cab in cables:
+                res, br = _with_breaker(base, st, start, best, cab, breakers)
+                if _passes(res):
+                    circuits.append(_summary(start, best, cab, br, res))
+                    break
+            start += best
+        out.append({"id": st.get("id"), "circuits": circuits})
+    return {"strings": out}
+
+
+def _summary(start, k, cable, breaker, res):
+    return {
+        "from": start, "to": start + k, "cable": cable.get("name"), "breaker": (breaker or {}).get("id"),
+        "pass": bool(res.get("pass")), "fails": list(res.get("fails") or []),
+        "worstVdPct": res.get("worstVdPct"), "worstCumVdPct": res.get("worstCumVdPct"),
+        "maxZsOhm": res.get("maxZsOhm"), "totalKVA": res.get("totalKVA"), "phaseA": res.get("phaseA"),
+        "cableLengthM": res.get("cableLengthM"), "vdLimitPct": res.get("vdLimitPct"),
+    }
+

@@ -400,6 +400,7 @@ const PLAN_DEFS = {
     if (domain === 'retic') {
       push('Detect', { type: 'erfdetect', kind: 'erfdetect', name: 'Detect erven', color: this.elements.erf.color, desc: 'Find every closed erf on the DXF / plan image, or click inside one' });
       push('Detect', { type: 'layout', kind: 'layout', name: 'Auto layout', color: '#16a34a', desc: 'Erf markers, kiosks, mini-sub, LV / MV, fibre and shared road crossings from the erven and the road centrelines' });
+      push('Detect', { type: 'sllayout', kind: 'sllayout', name: 'Street lighting layout', color: '#f59e0b', desc: 'The street-light cables: poles in circuits from the kiosks you pick or place, sized by the street-light checks, with trenches and crossings; the circuits go to Street lighting' });
     }
     for (const [type, def] of Object.entries(this.elements)) {
       if (def.domain !== domain || def.adoptOnly) continue;   // adopt-only types are placed via "From SLD"

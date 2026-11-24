@@ -54,7 +54,7 @@ const PlanUI = {
   // kind → the tool id that draws it; disabled until that tool is registered.
   _toolFor(kind) {
     return { element: 'place', route: 'route', trench: 'trench',
-      crossing: 'crossing', text: 'text', measurement: 'measurement', room: 'room', roomdetect: 'roomdetect', erfdetect: 'erfdetect', layout: 'layout', roomshape: 'roomshape', perimeter: 'perimeter', sportsfield: 'sportsfield' }[kind];
+      crossing: 'crossing', text: 'text', measurement: 'measurement', room: 'room', roomdetect: 'roomdetect', erfdetect: 'erfdetect', layout: 'layout', sllayout: 'sllayout', roomshape: 'roomshape', perimeter: 'perimeter', sportsfield: 'sportsfield' }[kind];
   },
 
   // Folded palette groups (session only); the group last used stays open.
@@ -620,6 +620,7 @@ const PlanUI = {
     if (typeof PlanMarkup !== 'undefined' && PlanMarkup.refreshColourBy) PlanMarkup.refreshColourBy();
     const el = this.propsEl; if (!el) return;
     if (typeof PlanTools !== 'undefined' && PlanTools.active && PlanTools.active.id === 'layout' && typeof PlanLayoutUI !== 'undefined') { PlanLayoutUI.renderOptions(el); return; }
+    if (typeof PlanTools !== 'undefined' && PlanTools.active && PlanTools.active.id === 'sllayout' && typeof SLLayoutUI !== 'undefined') { SLLayoutUI.renderOptions(el); return; }   // Street lighting layout: its four steps
     if (typeof PlanTools !== 'undefined' && PlanTools.active && (PlanTools.active.id === 'roomdetect' || PlanTools.active.id === 'erfdetect') && typeof PlanRoomDetect !== 'undefined') { PlanRoomDetect.renderOptions(el, PlanTools.active.id === 'erfdetect' ? 'erf' : 'room'); return; }
     if (typeof PlanReroute !== 'undefined' && PlanReroute.session) { PlanReroute.renderPanel(el); return; }     // Re-route from a kiosk / manhole: its preview panel
     if (PlanMarkup.context === 'plan' && PlanMarkup.mode === 'underlays') { this._renderUnderlayProps(el); return; }
@@ -770,7 +771,7 @@ const PlanUI = {
   // the Properties panel of a whole crossing of several ducts: its ducts (size, what each is for, remove), add a duct, spacing, ungroup
   _renderCrossGroup(el, list) {
     const o = PlanCrossings.ordered(list), f = PlanEngine.factor(), ctr = PlanCrossings.centre(list), len = Math.hypot(ctr.p2.x - ctr.p1.x, ctr.p2.y - ctr.p1.y);
-    const n110 = list.filter(c => c.size !== '160').length, n160 = list.length - n110, USES = ['service', 'LV', 'fibre', 'MV', 'junction', 'spare'];
+    const n110 = list.filter(c => c.size !== '160').length, n160 = list.length - n110, USES = ['service', 'LV', 'SL', 'fibre', 'MV', 'junction', 'spare'];
     const sel = (c, k, opts) => `<select data-xg-${k}="${escHtml(c.id)}" aria-label="${escHtml(c.name || '')} ${k}" style="width:100%">${opts.map(v => `<option value="${escHtml(v)}"${String(c[k] || '') === v ? ' selected' : ''}>${escHtml(v || '—')}</option>`).join('')}</select>`;
     el.innerHTML = `<div class="plan-props-title">Road crossing ${escHtml(PlanCrossings.label(list[0]))}</div>
       <div style="font-size:12px;color:var(--text-secondary);margin:-2px 0 8px">${list.length} ducts${f ? ' · ' + (len * f).toFixed(1) + ' m' : ''} · ${n110 ? n110 + ' × 110 mm' : ''}${n110 && n160 ? ' + ' : ''}${n160 ? n160 + ' × 160 mm' : ''}</div>
