@@ -711,7 +711,9 @@ def _nearest_tangent(roads, px, py):
     return tx, ty
 
 
-def evaluate_conflict(ctx, lum, area: dict, roads):
+def _conflict_grid(area: dict, roads):
+    """The calculation points of a conflict area: a ≤ 1 m grid (coarser on a very large area) inside its polygons, with the
+    local road direction at each (for the 5H window). None when it has no points."""
     polys = [p for p in (area.get("polygons") or []) if len(p) >= 3]
     if not polys:
         return None
@@ -729,22 +731,63 @@ def evaluate_conflict(ctx, lum, area: dict, roads):
     if not len(px):
         return None
     tx, ty = _nearest_tangent(roads, px, py)
+    return px, py, tx, ty, step
+
+
+def _conflict_req(ctx, cls: str):
+    """(family, [(key, label, requirement, unit)]) of a conflict-area class: C / RC on Ē and Uo, P / CP / B on Ē and Emin."""
+    fam = sans_family(cls) if ctx.standard == "SANS" else class_family(cls)
+    if fam in ("C", "RC"):
+        req = (C_CLASSES if fam == "C" else SANS_RC)[cls]
+        return fam, [("Eav", "Ē", req["Eav"], "lx"), ("Uo", "Uo", req["Uo"], "")]
+    if fam in ("P", "CP", "B"):
+        req = {"P": P_CLASSES, "CP": SANS_CP, "B": SANS_BC}[fam][cls]
+        return fam, [("Eav", "Ē", req["Eav"], "lx"), ("Emin", "Emin", req["Emin"], "lx")]
+    return fam, []
+
+
+def evaluate_conflict(ctx, lum, area: dict, roads):
+    g = _conflict_grid(area, roads)
+    if g is None:
+        return None
+    px, py, tx, ty, step = g
     E = _illum(ctx, lum, px, py, tx, ty)
     eav = float(E.mean())
     cls = (area.get("cls") or "").upper()
-    fam = sans_family(cls) if ctx.standard == "SANS" else class_family(cls)
+    fam, spec = _conflict_req(ctx, cls)
     m = {"Eav": eav, "Emin": float(E.min()), "Emax": float(E.max()), "UoE": float(E.min() / eav) if eav > 0 else 0.0}
-    checks = []
-    if fam in ("C", "RC"):
-        req = (C_CLASSES if fam == "C" else SANS_RC)[cls]
-        checks = [_chk("Eav", "Ē", eav, req["Eav"], ">=", "lx"), _chk("Uo", "Uo", m["UoE"], req["Uo"], ">=", "")]
-    elif fam in ("P", "CP", "B"):
-        req = {"P": P_CLASSES, "CP": SANS_CP, "B": SANS_BC}[fam][cls]
-        checks = [_chk("Eav", "Ē", eav, req["Eav"], ">=", "lx"), _chk("Emin", "Emin", m["Emin"], req["Emin"], ">=", "lx")]
+    val = {"Eav": eav, "Uo": m["UoE"], "Emin": m["Emin"]}
+    checks = [_chk(k, label, val[k], req, ">=", unit) for k, label, req, unit in spec]
     return {"id": area.get("id") or "", "name": area.get("name") or "", "cls": cls, "family": fam,
             "points": int(len(px)), "step": round(step, 3), "area": round(len(px) * step * step, 1),
             **{k: _r(v) for k, v in m.items()},
             "checks": checks, "pass": (all(c["pass"] for c in checks) if checks else None)}
+
+
+def _illum_each(ctx, lum, px, py, tx, ty):
+    """The maintained illuminance each luminaire gives at each point: [points, luminaires] — `_illum` without the sum
+    (the same 5H window and shadows), so a layout's illuminance is the sum of its luminaires' columns."""
+    px = np.asarray(px, float).ravel(); py = np.asarray(py, float).ravel()
+    tx = np.broadcast_to(np.asarray(tx, float).ravel(), px.shape)
+    ty = np.broadcast_to(np.asarray(ty, float).ravel(), px.shape)
+    n = len(lum["x"])
+    out = np.zeros((len(px), n))
+    if not n or not len(px):
+        return out
+    rows = max(64, 400000 // n)                                  # points per block: ≤ 400k point × luminaire pairs
+    for k0 in range(0, len(px), rows):
+        sl = slice(k0, k0 + rows)
+        dx = px[sl, None] - lum["x"][None, :]
+        dy = py[sl, None] - lum["y"][None, :]
+        h = lum["h"][None, :]
+        along = -(dx * tx[sl, None] + dy * ty[sl, None])
+        near = np.abs(along) <= LUM_RANGE_H * h
+        I = _intensity_to(ctx, lum, dx, dy, -np.broadcast_to(h, dx.shape))
+        if getattr(ctx, "boxes", None) or getattr(ctx, "crowns", None):
+            I = I * _shade(ctx, px[sl, None], py[sl, None], 0.0, lum["x"][None, :], lum["y"][None, :], h)
+        d3 = (dx * dx + dy * dy + h * h) ** 1.5
+        out[sl] = np.where(near, I * h / d3, 0.0)
+    return out * ctx.mf
 
 
 # ─── Facades and measurement points ────────────────────────────────────
@@ -890,3 +933,46 @@ def run_road_plan(req: dict) -> dict:
     return {"standard": standard, "mf": ctx.mf, "roads": out_roads, "conflictAreas": conflicts,
             "surfaces": surfaces, "points": points, "shadows": bool(ctx.boxes or ctx.crowns),
             "pass": all(ok) if ok else None, "fieldMaxM": field_max}
+
+
+# ─── Layout optimisation: what each candidate pole gives each conflict area ─────
+
+def conflict_contributions(req: dict) -> dict:
+    """For the Road plan's *Lay out for the checks*: every conflict area's grid, its class requirements, the illuminance
+    the fixed `luminaires` give it (`base`) and what each of the `candidates` (luminaires in the same form, any heights)
+    gives each grid point (`cand`: {candidate index: [E per point]}, only candidates that reach the area). Illuminance
+    adds up, so the client scores any set of candidates by summing columns — the figures are `_illum`'s exactly."""
+    standard = "SANS" if str(req.get("standard") or "EN").upper().startswith("SANS") else "EN"
+    webs = {k: _Web(v) for k, v in (req.get("photometry") or {}).items()}
+    ctx = SimpleNamespace(webs=webs, mf=min(max(_f(req.get("mf"), 0.8), 0.05), 1.0), standard=standard)
+    ctx.boxes, ctx.crowns = _obstacles(req.get("obstacles"))
+    roads = [_Road(r, standard) for r in (req.get("roads") or [])]
+    if not roads:
+        raise ValueError("No roads on the plan")
+    fixed = _luminaires(req.get("luminaires"), webs) if req.get("luminaires") else None
+    cand = _luminaires(req.get("candidates"), webs) if req.get("candidates") else None
+    areas = []
+    for a in req.get("conflictAreas") or []:
+        g = _conflict_grid(a, roads)
+        if g is None:
+            continue
+        px, py, tx, ty, step = g
+        cls = (a.get("cls") or "").upper()
+        fam, spec = _conflict_req(ctx, cls)
+        base = _illum(ctx, fixed, px, py, tx, ty) if fixed is not None else np.zeros(len(px))
+        cols = {}
+        if cand is not None:
+            reach = LUM_RANGE_H * cand["h"] + 1.0
+            near = ((cand["x"] >= px.min() - reach) & (cand["x"] <= px.max() + reach) &
+                    (cand["y"] >= py.min() - reach) & (cand["y"] <= py.max() + reach))
+            idx = np.nonzero(near)[0]
+            if len(idx):
+                M = _illum_each(ctx, _subset(cand, near), px, py, tx, ty)
+                for j, i in enumerate(idx):
+                    if M[:, j].max() > 1e-4:
+                        cols[str(int(i))] = [round(float(v), 4) for v in M[:, j]]
+        areas.append({"id": a.get("id") or "", "name": a.get("name") or "", "cls": cls, "family": fam,
+                      "points": int(len(px)), "checks": [{"key": k, "label": lb, "req": r, "unit": u} for k, lb, r, u in spec],
+                      "base": [round(float(v), 4) for v in base], "cand": cols})
+    return {"standard": standard, "mf": ctx.mf, "areas": areas}
+

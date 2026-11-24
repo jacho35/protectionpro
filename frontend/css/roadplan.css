@@ -177,3 +177,15 @@ body.dark-mode #streetlight-workspace {
 .rp-layer .sl-hint { margin-left: auto; }
 body.dark-mode .rp-siteplan { background: rgba(37, 99, 235, .12); border-color: rgba(96, 165, 250, .4); }
 body.dark-mode .rp-siteplan.offer { background: rgba(217, 119, 6, .14); border-color: rgba(251, 191, 36, .4); }
+/* Road plan › Lay out for the checks (roadplan-optimise.js) */
+.rp-opt-dialog { width: min(640px, 96vw); }
+.rp-opt-form { display: grid; gap: 8px; }
+.rp-opt-busy { padding: 24px 4px; color: var(--text-muted); }
+.rp-opt-verdict { padding: 8px 10px; border-radius: 6px; margin-bottom: 10px; border: 1px solid; }
+.rp-opt-verdict.ok { background: rgba(22, 163, 74, .08); border-color: rgba(22, 163, 74, .4); }
+.rp-opt-verdict.bad { background: rgba(220, 38, 38, .07); border-color: rgba(220, 38, 38, .4); }
+.rp-opt-h { margin: 12px 0 4px; font-size: 13px; }
+.rp-opt-heights { margin: 12px 0 6px; }
+.rp-opt-heights summary { cursor: pointer; font-weight: 600; font-size: 13px; }
+.rp-opt-dialog tr.bad td { color: var(--danger, #b91c1c); }
+.rp-opt-dialog tr.rp-opt-cur td { font-weight: 600; }

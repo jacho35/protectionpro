@@ -31,7 +31,7 @@ from ..analysis.fixes import propose_fixes, fix_all
 from ..analysis.retic_motor_start import run_retic_motor_start
 from ..analysis.street_lighting import run_street_lighting
 from ..analysis.road_lighting import run_road_lighting
-from ..analysis.road_plan import run_road_plan
+from ..analysis.road_plan import conflict_contributions, run_road_plan
 from ..analysis.room_lighting import run_room_lighting, suggest_layout
 from ..analysis.relux_reference import parse_relux_pdf
 from ..analysis.area_lighting import run_area_lighting, suggest_area_layout
@@ -862,6 +862,20 @@ def road_plan(data: RoadPlanRequest):
     illuminance / luminance display grids for the plan heatmap."""
     try:
         return run_road_plan(data.model_dump())
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Road plan error: {e}")
+
+
+@router.post("/road-plan/contributions")
+def road_plan_contributions(data: RoadPlanRequest):
+    """Road plan › Lay out for the checks: each junction conflict area's grid, class requirements, the illuminance of
+    the fixed luminaires and what each candidate pole gives every grid point (illuminance adds up, so the client
+    scores any set of candidates by summing)."""
+    try:
+        return conflict_contributions(data.model_dump())
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
