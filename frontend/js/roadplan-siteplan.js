@@ -336,6 +336,45 @@ const RoadSitePlan = {
     if (typeof Links !== 'undefined' && Links.go) Links.go('plan:' + id, 'sl:roadplan');
   },
 
+  // ─── Poles to the site plan ──────────────────────────────────────────
+  // Every Road plan pole becomes a Streetlight Pole on the site plan, at its base (plan px = metres ÷ the floor's scale, y flipped),
+  // so the site plan's Street lighting layout can cable it. A road goes to the floor of the street it follows, else (a road of its
+  // own) to the floor the Road plan's background comes from; a road with neither is skipped. A pole sent before carries
+  // `rpPoleId` / `rpRoadId` (`auto: 'rp'`) and is moved, not added again; one whose Road plan pole is gone is removed unless a cable
+  // is drawn to it. Returns { made, moved, gone, kept, skipped: [road names] }.
+  sendPoles() {
+    const RP = RoadPlan, fls = this._floors(), out = { made: 0, moved: 0, gone: 0, kept: 0, skipped: [] };
+    if (!fls.length) return null;
+    const streetFloor = new Map(); for (const fl of fls) for (const r of fl.data.routes || []) if (r.type === 'street') streetFloor.set(r.id, fl);
+    const bgFl = RP.rp.bg && RP.rp.bg.fromPlan ? this._bgFloor() : null;
+    const floorOf = road => { const ids = road.plan && !road.plan.unlinked && road.plan.ids; for (const id of ids || []) if (streetFloor.has(id)) return streetFloor.get(id); return bgFl; };
+    const seen = new Set(), done = new Set();
+    for (const road of RP.roads) {
+      if (!(road.poles || []).length) continue;
+      const fl = floorOf(road); if (!fl) { out.skipped.push(road.name || 'a road'); continue; }
+      done.add(road.id);
+      const f = +fl.data.scale.factor, els = fl.data.elements || (fl.data.elements = []);
+      for (const p of road.poles) {
+        const g = RP.poleGeom(road, p); if (!g) continue;
+        const x = g.bx / f, y = -g.by / f; seen.add(p.id);
+        const e = els.find(q => q.type === 'pole' && q.rpPoleId === p.id);
+        if (e) { if (Math.hypot(e.x - x, e.y - y) > 1e-6) { e.x = x; e.y = y; out.moved++; } e.rpRoadId = road.id; }
+        else { els.push({ id: AppState.planGenId('pmel'), type: 'pole', x, y, rotation: 0, name: PlanMarkup.nextName('pole'), reticId: null, props: PLAN_DEFS.defaults('pole'), rpPoleId: p.id, rpRoadId: road.id, auto: 'rp' }); out.made++; }
+      }
+    }
+    const roads = new Set(RP.roads.map(r => r.id));
+    for (const fl of fls) {
+      const els = fl.data.elements || [], wired = new Set(); for (const r of fl.data.routes || []) { if (r.fromId) wired.add(r.fromId); if (r.toId) wired.add(r.toId); }
+      for (let i = els.length - 1; i >= 0; i--) {
+        const e = els[i]; if (e.type !== 'pole' || e.auto !== 'rp' || seen.has(e.rpPoleId) || (roads.has(e.rpRoadId) && !done.has(e.rpRoadId))) continue;
+        if (wired.has(e.id)) { out.kept++; continue; }
+        els.splice(i, 1); out.gone++;
+      }
+    }
+    if (out.made || out.moved || out.gone) { if (typeof PlanMarkup !== 'undefined') { PlanMarkup.snapshot(); PlanMarkup.markDirty(); } AppState.dirty = true; }
+    return out;
+  },
+
   // ─── Rail / panel HTML ───────────────────────────────────────────────
   railHtml() {
     const RP = RoadPlan.rp, runs = this.runs(this.streets());

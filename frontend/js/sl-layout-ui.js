@@ -1,7 +1,10 @@
 /*
  * SLLayoutUI — the site plan's Street lighting layout (Detect group, tool `sllayout`): the cable reticulation of the street lights.
  * Four steps in the Properties panel (`renderOptions`):
- *   1 Poles   — every street-light pole on the plan (drawn, or sent from the Road plan), each matched to a side of a road;
+ *   1 Poles   — every street-light pole on the plan (drawn, placed here, or sent from the Road plan), each matched to a side of a road;
+ *               *Place poles along roads* (`draftPoles` / `placePoles`, SLLayout.polesAlong): the roads clicked on the plan (none = all),
+ *               a spacing, one side / both / staggered, a distance from the centre (blank = the road section's lighting-design pole,
+ *               else 1 m behind the kerb); poles `auto: 'slp'` with `roadId`, replaced (unless wired) by the next placing on that road;
  *   2 Feeds   — the kiosks / mini-subs that feed them (click one on the plan to tick it), and new kiosks (click empty ground; Alt-click
  *               takes one away). While open the poles take the colour of the feed they would go to;
  *   3 Rules   — `planMarkup.settings.slLayout`: phases (3Φ R-W-B / 1Φ), trench (share the LV trench at the road section's LV line, or
@@ -19,6 +22,8 @@ const SLLayoutUI = {
   _active: false,
   step: 1,
   pend: [],            // new kiosks placed in Feeds (plan px), until Create
+  roadPick: new Set(), // roads picked in Poles for *Place poles along roads* (none = every road)
+  pp: { spacing: null, arr: 'A', off: null }, // that placement's spacing, arrangement, distance from the centre (null = from the road)
   result: null,        // the last Run: { plan, circuits, unassigned, at }
   busy: false,
   COLORS: ['#2563eb', '#0b6e6e', '#7c3aed', '#b4501c', '#be185d', '#15803d', '#a16207', '#0369a1', '#9333ea', '#c2410c'],
@@ -75,13 +80,15 @@ const SLLayoutUI = {
   touched() { this._pv = null; if (this.result) this.result.stale = true; PlanMarkup.markDirty(); PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true }); },
   hint() {
     if (!this.f()) return 'Street lighting layout: calibrate the plan first (lengths are in metres).';
-    return this.step === 2 ? 'Click a kiosk or mini-sub to tick it as a feed · click empty ground to place a new kiosk · Alt-click takes one away'
+    return this.step === 1 ? 'Click a road to pick it for Place poles (again or Alt-click drops it; none picked = every road)'
+      : this.step === 2 ? 'Click a kiosk or mini-sub to tick it as a feed · click empty ground to place a new kiosk · Alt-click takes one away'
       : this.step === 4 ? 'Each circuit in its colour; dashed = a feeder. Create writes them to the plan and the Circuits tab.'
       : 'Street lighting layout: the poles, the feeds, the rules, then Run and Create.';
   },
 
   // ───────── the plan: clicks and drawing ─────────
   click(pt, e) {
+    if (this.step === 1 && this.f()) { this._pickRoad(pt, e); return; }
     if (this.step !== 2 || !this.f()) return;
     const z = PlanEngine.view.zoom, R = 14 / z;
     const src = this.sourceEls().map(s => ({ s, d: Math.hypot(s.x - pt.x, s.y - pt.y) })).filter(o => o.d <= R).sort((a, b) => a.d - b.d)[0];
@@ -112,6 +119,12 @@ const SLLayoutUI = {
       }
     } else for (const g of P.groups) { const col = this.feedColor(g.feed.id); for (const st of g.strings) for (const p of st.poles) colOf.set(p.id, col); if (g.strings[0]) line(SLLayout.pathTo(g, g.strings[0], 0), col, 1.5, true); }
     ctx.setLineDash([]);
+    if (this.step === 1) {
+      ctx.strokeStyle = 'rgba(245,158,11,.45)'; ctx.lineWidth = 8 * u;
+      for (const r of this.streetRoutes()) if (this.roadPick.has(r.id)) { ctx.beginPath(); r.points.forEach((q, i) => i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y)); ctx.stroke(); }
+      ctx.strokeStyle = '#b45309'; ctx.lineWidth = 1.8 * u;
+      for (const d of this.draftPoles()) { ctx.beginPath(); ctx.arc(d.x, d.y, 6 * u, 0, 6.2832); ctx.stroke(); }
+    }
     for (const e of this.poleEls()) {
       const col = colOf.get(e.id); ctx.fillStyle = col || '#9aa0a8'; ctx.beginPath(); ctx.arc(e.x, e.y, 5 * u, 0, 6.2832); ctx.fill();
       if (!col) { ctx.strokeStyle = '#b45309'; ctx.lineWidth = 1.6 * u; ctx.beginPath(); ctx.moveTo(e.x - 6 * u, e.y - 6 * u); ctx.lineTo(e.x + 6 * u, e.y + 6 * u); ctx.moveTo(e.x + 6 * u, e.y - 6 * u); ctx.lineTo(e.x - 6 * u, e.y + 6 * u); ctx.stroke(); }
@@ -127,6 +140,52 @@ const SLLayoutUI = {
       ctx.setLineDash([]); ctx.beginPath(); ctx.arc(p.x, p.y, 16 * u, 0, 6.2832); ctx.stroke();
     });
     ctx.restore();
+  },
+
+  // ───────── Poles along roads (step 1) ─────────
+  _pickRoad(pt, e) {
+    const z = PlanEngine.view.zoom, f = this.f();
+    let best = null;
+    for (const r of this.streetRoutes()) { const pr = SLLayout.project([pt.x, pt.y], r.points.map(q => [q.x, q.y])); if (pr && pr.d * z <= 12 && (!best || pr.d < best.d)) best = { r, d: pr.d }; }
+    if (!best) return;
+    if (e && e.altKey) this.roadPick.delete(best.r.id); else if (this.roadPick.has(best.r.id)) this.roadPick.delete(best.r.id); else this.roadPick.add(best.r.id);
+    PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true });
+  },
+  pickedRoads() { const all = this.streetRoutes(); return this.roadPick.size ? all.filter(r => this.roadPick.has(r.id)) : all; },
+  // a road's distance from its centre line to the pole line (m): the lighting design's pole on its road section, else 1 m behind
+  // the kerb, else 1.5 m inside the reserve, else 6 m
+  autoOff(r) {
+    const RS = typeof RoadSections !== 'undefined' ? RoadSections : null; if (!RS) return 6;
+    const sec = RS.of(r), w = (RS.reserveOf(r.props) || {}).w || (sec ? RS.reserve(sec) : 0), p = sec ? RS.pole(sec) : null;
+    if (p && w > 0) return Math.max(0.5, Math.abs(w / 2 - p.off));
+    const c = RS.carriage(r.props); if (c && c.cw > 0) return c.cw / 2 + 1;
+    return w > 0 ? Math.max(0.5, w / 2 - 1.5) : 6;
+  },
+  spacing() { return +this.pp.spacing > 0 ? +this.pp.spacing : StreetLight._num(StreetLight.defaults.spacingM, 35); },
+  // the poles *Place* would put down (plan px), with the road each is on
+  draftPoles() {
+    const f = this.f(); if (!f) return [];
+    const all = this.streetRoutes().map(r => ({ id: r.id, r, pts: r.points.map(q => [q.x * f, q.y * f]) }));
+    const picked = new Set(this.pickedRoads().map(r => r.id)), wired = this._wired();
+    const keep = this.allPoles().filter(e => !(e.auto === 'slp' && picked.has(e.roadId) && !wired.has(e.id))).map(e => [e.x * f, e.y * f]);   // what Place replaces is not in the way
+    const out = [];
+    for (const r of this.pickedRoads()) {
+      const st = all.find(x => x.id === r.id), off = +this.pp.off > 0 ? +this.pp.off : this.autoOff(r);
+      for (const q of SLLayout.polesAlong(st, { spacing: this.spacing(), off, arr: this.pp.arr }, all.map(x => ({ id: x.id, pts: x.pts })).filter(x => x.id !== r.id), keep.concat(out.map(o => [o.x * f, o.y * f]))))
+        out.push({ x: q.x / f, y: q.y / f, roadId: r.id });
+    }
+    return out;
+  },
+  _wired() { const w = new Set(); for (const r of this.pm().routes) { if (r.fromId) w.add(r.fromId); if (r.toId) w.add(r.toId); } return w; },
+  placePoles() {
+    const pm = this.pm(), roads = new Set(this.pickedRoads().map(r => r.id)), drafts = this.draftPoles();
+    if (!drafts.length) { UI.toast('No pole fits: the roads are too short for the spacing, or poles are already there.', 'warn', 5000); return; }
+    const wired = this._wired();
+    let gone = 0;
+    for (let i = pm.elements.length - 1; i >= 0; i--) { const e = pm.elements[i]; if (e.type === 'pole' && e.auto === 'slp' && roads.has(e.roadId) && !wired.has(e.id)) { pm.elements.splice(i, 1); gone++; } }
+    for (const d of drafts) pm.elements.push({ id: AppState.planGenId('pmel'), type: 'pole', x: d.x, y: d.y, rotation: 0, name: PlanMarkup.nextName('pole'), reticId: null, props: PLAN_DEFS.defaults('pole'), roadId: d.roadId, auto: 'slp' });
+    PlanMarkup.snapshot(); PlanMarkup.markDirty(); this.touched();
+    UI.toast(`Placed ${drafts.length} pole${drafts.length === 1 ? '' : 's'}${gone ? ` (replacing ${gone} placed here before)` : ''}. Next: Feeds.`, 'success', 5000);
   },
 
   // ───────── Run: the engine splits each string into circuits ─────────
@@ -208,6 +267,8 @@ const SLLayoutUI = {
     const why = new Map(); for (const u of R.unassigned) why.set(u.reason, (why.get(u.reason) || 0) + 1);
     for (const [t, n] of why) out.push({ sev: 'warn', text: `${n} pole${n === 1 ? '' : 's'}: ${t}.` });
     const x = R.plan.groups.filter(g => g.crosses).length; if (x) out.push({ sev: 'note', text: `${x} feeder${x === 1 ? ' crosses' : 's cross'} a road: a crossing duct each.` });
+    const rpc = typeof StreetLight !== 'undefined' ? StreetLight.circuits.filter(x => x.roadKey).length : 0;
+    if (rpc && this.poleEls().some(e => e.auto === 'rp')) out.push({ sev: 'warn', text: `${rpc} circuit${rpc === 1 ? '' : 's'} in the Circuits tab ${rpc === 1 ? 'was' : 'were'} made by the Road plan (Send to circuits) from the same poles: delete ${rpc === 1 ? 'it' : 'them'} after Create, or the poles are counted twice.` });
     if (this.pend.length) out.push({ sev: 'note', text: `${this.pend.length} new kiosk${this.pend.length === 1 ? '' : 's'}: Ze is taken from the nearest mini-sub until Demand has ${this.pend.length === 1 ? 'it' : 'them'}; the Circuits tab works it out after Create.` });
     return out;
   },
@@ -232,10 +293,28 @@ const SLLayoutUI = {
     el.innerHTML = `<div class="sll" style="display:flex;flex-direction:column;gap:10px;font-size:13px">${head}${body}<div style="position:sticky;bottom:0;background:var(--bg-panel,#fff);padding-top:6px">${next}</div></div>`;
     el.onclick = ev => this._click(ev); el.onchange = ev => this._change(ev);
   },
+  _placeHtml() {
+    const roads = this.streetRoutes().length; if (!roads) return '';
+    const picked = this.roadPick.size, n = this.draftPoles().length, pp = this.pp;
+    const offs = [...new Set(this.pickedRoads().map(r => this.f2(this.autoOff(r))))];
+    const arr = [['A', 'One side: A (left of the road\'s direction)'], ['B', 'One side: B'], ['both', 'Both sides, opposite'], ['stagger', 'Both sides, staggered']];
+    return `<div style="display:flex;flex-direction:column;gap:6px;border:1px solid var(--border,#e5e7eb);border-radius:8px;padding:8px 10px">
+      <b>Place poles along roads</b>
+      <span>${picked ? `${picked} road${picked === 1 ? '' : 's'} picked` : `All ${roads} road${roads === 1 ? '' : 's'}`} · click a road on the plan to pick it (again or Alt-click drops it).</span>
+      <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px">
+        <label style="display:flex;flex-direction:column;gap:2px;font-size:12px;color:var(--text-muted)">Spacing, m<input type="number" min="5" step="1" data-sll-pp="spacing" value="${pp.spacing ? this.esc(pp.spacing) : ''}" placeholder="${this.esc(this.spacing())}"></label>
+        <label style="display:flex;flex-direction:column;gap:2px;font-size:12px;color:var(--text-muted)">From the road centre, m<input type="number" min="0.5" step="0.1" data-sll-pp="off" value="${pp.off ? this.esc(pp.off) : ''}" placeholder="${this.esc(offs.length === 1 ? offs[0] : 'per road')}"></label></div>
+      <label style="display:flex;flex-direction:column;gap:2px;font-size:12px;color:var(--text-muted)">Arrangement<select data-sll-pp="arr">${arr.map(([v, t]) => `<option value="${v}"${pp.arr === v ? ' selected' : ''}>${t}</option>`).join('')}</select></label>
+      <small style="color:var(--text-muted)">Blank distance = the pole of the road section's lighting design, else 1 m behind the kerb. No pole in a junction mouth or on top of another. The hollow circles on the plan are where they go.</small>
+      <button type="button" class="plan-btn" data-sll="place" style="font-weight:600;min-height:36px"${n ? '' : ' disabled'}>Place ${n} pole${n === 1 ? '' : 's'}</button></div>`;
+  },
   _polesHtml(P) {
+    return this._polesInfo(P) + this._placeHtml();
+  },
+  _polesInfo(P) {
     const n = this.poleEls().length, roads = this.streetRoutes().length;
     if (!n && this.allPoles().length) return `<p>All ${this.allPoles().length} poles are already wired by street-light cables drawn by hand. To lay them out again, tick <i>Re-lay hand-drawn cables too</i> in Feeds.</p>`;
-    if (!n) return '<p>No street-light poles on the plan yet. Place them with the Streetlight Pole tool, or lay them out in Street lighting › Road plan and send them to the site plan.</p>';
+    if (!n) return '<p>No street-light poles on the plan yet. Place them along the roads below, one by one with the Streetlight Pole tool (Street Lighting group), or send the poles of Street lighting › Road plan here with its <i>Send poles to the site plan</i> (Poles step).</p>';
     const sides = P.groups.length, onRoad = n - P.unassigned.filter(u => /road/.test(u.reason)).length;
     return `<p>${n} pole${n === 1 ? '' : 's'} on the plan, ${onRoad} beside ${roads} road${roads === 1 ? '' : 's'}${sides ? `: ${sides} road side${sides === 1 ? '' : 's'} with a feed` : ''}.</p>
       <p style="color:var(--text-muted)">Each side of a road is its own string, so a circuit never crosses the road; only a feeder does. A pole more than 40 m from every road line is left out (draw the road, or move the pole).</p>
@@ -296,6 +375,7 @@ const SLLayoutUI = {
     const a = b.dataset.sll, c = this.cfg();
     if (a === 'step') { this.step = +b.dataset.n; PlanMarkup.refreshProps(); PlanMarkup._toolMsg = this.hint(); PlanEngine.requestDraw({ fg: true }); return; }
     if (a === 'run') { this.run(); return; }
+    if (a === 'place') { this.placePoles(); return; }
     if (a === 'create') { this.commit(); return; }
     if (a === 'all') { c.feeds = null; this.touched(); return; }
     if (a === 'none') { c.feeds = []; this.touched(); return; }
@@ -303,6 +383,7 @@ const SLLayoutUI = {
   },
   _change(ev) {
     const t = ev.target, c = this.cfg();
+    if (t.matches('[data-sll-pp]')) { const k = t.dataset.sllPp; this.pp[k] = k === 'arr' ? t.value : (t.value === '' ? null : Math.max(0, +t.value || 0) || null); PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true }); return; }
     if (t.matches('[data-sll-feed]')) { const ids = new Set(this.ticked().map(e => e.id)); if (t.checked) ids.add(t.dataset.sllFeed); else ids.delete(t.dataset.sllFeed); c.feeds = [...ids]; this.touched(); return; }
     if (t.matches('[data-sll-set]')) {
       const k = t.dataset.sllSet;
