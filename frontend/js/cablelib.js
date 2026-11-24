@@ -206,6 +206,8 @@ const CableLib = {
     sel.value = this.resolveName(currentValue || '');
     // A SearchSelect over this select: show its (now full) list again.
     if (sel._ss) { setTimeout(() => sel._ss.reopen(), 0); return true; }
+    // A select in a delegated container (SearchSelect.delegate): its shared popup.
+    if (typeof SearchSelect !== 'undefined' && SearchSelect.isDelegated(sel)) { setTimeout(() => { if (sel.isConnected) SearchSelect.popup(sel, ''); }, 0); return true; }
     setTimeout(() => { try { sel.focus(); if (sel.showPicker) sel.showPicker(); } catch (e) { /* not supported */ } }, 0);
     return true;
   },

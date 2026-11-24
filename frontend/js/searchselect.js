@@ -156,18 +156,47 @@ const SearchSelect = {
       if (el) pick(+el.dataset.i);
     });
     wrap.querySelector('.ss-caret').addEventListener('pointerdown', (e) => { e.preventDefault(); if (list.hidden) { input.focus(); } else close(); });
-    const reposition = () => { if (!list.hidden) place(); };
-    window.addEventListener('resize', reposition);
-    document.addEventListener('scroll', reposition, true);
-    // The list lives on <body>; drop it when the select leaves the DOM.
-    const gone = new MutationObserver(() => {
-      if (!select.isConnected) { list.remove(); gone.disconnect(); window.removeEventListener('resize', reposition); document.removeEventListener('scroll', reposition, true); }
-    });
-    gone.observe(document.body, { childList: true, subtree: true });
+    st.place = place;
+    this._track(st);
     st.refresh = showCurrent;
     // Open again with the select's current options (after a caller swapped them in).
     st.reopen = () => { input.focus(); input.select(); open(''); };
     return st;
+  },
+
+  // Every attached box shares ONE observer and one scroll / resize listener
+  // (one each per box made every DOM write in the app run a callback per box —
+  // thousands on a big Demand page). The list lives on <body>; it is dropped
+  // when its select leaves the DOM; only an open list follows a scroll.
+  _live: null,
+  _track(st) {
+    if (!this._live) {
+      const live = this._live = new Set();
+      new MutationObserver(() => {
+        for (const s of live) if (!s.select.isConnected) { s.list.remove(); live.delete(s); }
+      }).observe(document.body, { childList: true, subtree: true });
+      const reposition = () => { for (const s of live) if (!s.list.hidden) s.place(); };
+      window.addEventListener('resize', reposition);
+      document.addEventListener('scroll', reposition, true);
+    }
+    this._live.add(st);
+  },
+
+  // A <select data-ss-lazy> is drawn with only its chosen option (a big table
+  // of full lists is hundreds of thousands of nodes). fill() asks its owner for
+  // the full list once, with a bubbling `ss-fill` event the owner answers
+  // synchronously; called before anything reads its options (a press or focus
+  // in a delegated container, the popup, a grid paste).
+  fill(select) {
+    if (!select || select.tagName !== 'SELECT' || !select.hasAttribute('data-ss-lazy')) return;
+    select.removeAttribute('data-ss-lazy');
+    select.dispatchEvent(new CustomEvent('ss-fill', { bubbles: true }));
+  },
+
+  // Is this select inside a container handed to delegate()?
+  isDelegated(select) {
+    for (let el = select; el; el = el.parentElement) if (el._ssDelegated) return true;
+    return false;
   },
 
   // ── Delegated popup ───────────────────────────────────────────────
@@ -180,6 +209,11 @@ const SearchSelect = {
     };
     // mousedown: stop the native list (and its focus) but let the grid see
     // the press for its own cell selection; the popup opens on the click.
+    // A lazy list is filled before the press or focus reaches it (a touch
+    // opens the native list, Tab lands on it).
+    const fillLazy = (e) => { if (e.target && e.target.tagName === 'SELECT') this.fill(e.target); };
+    root.addEventListener('pointerdown', fillLazy, true);
+    root.addEventListener('focusin', fillLazy, true);
     root.addEventListener('mousedown', (e) => {
       const s = target(e);
       if (!s || e.button !== 0) return;
@@ -261,6 +295,7 @@ const SearchSelect = {
   },
 
   popup(select, q) {
+    this.fill(select);
     const pop = this._popEl();
     pop.select = select;
     pop.box.hidden = false;

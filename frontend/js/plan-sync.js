@@ -286,9 +286,14 @@ const PlanSync = {
     if (!pm || !AppState.reticulation) return 0;
     let n = 0;
     const editing = (typeof PlanUI !== 'undefined' && PlanUI._nameBefore) ? PlanUI._nameBefore.id : null;
+    // Runs after every Demand edit: index the rows once (a lookup per element
+    // scanned every erf — elements × erven on a big project).
+    const R = AppState.reticulation, idx = { minisub: new Map(), kiosk: new Map(), erf: new Map() };
+    for (const m of R.minisubs || []) idx.minisub.set(m.id, m);
+    for (const k of R.kiosks || []) { idx.kiosk.set(k.id, k); for (const e of k.erfs || []) idx.erf.set(e.id, e); }
     for (const el of AppState.planAllElements()) {
-      if (el.id === editing) continue;     // don't overwrite a label while it is being typed
-      const row = this._demandRow(el);
+      if (el.id === editing || !el.reticId) continue;     // don't overwrite a label while it is being typed
+      const row = idx[el.type] ? idx[el.type].get(el.reticId) || null : this._demandRow(el);
       const want = row && this._demandRowName(el, row);
       if (want && el.name !== want) { el.name = want; n++; }
     }
