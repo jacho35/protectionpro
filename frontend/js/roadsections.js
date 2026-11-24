@@ -17,10 +17,13 @@
  * kerbs), else the carriageway of its section; a road whose own width differs from its section's is listed by `mismatches`.
  * Older projects are converted once on open (`migrate`): Auto layout's own sections + section lines, and the strips of every lighting design.
  *
- * Road reserve (`reserve`, `setReserve`, `fitStrips`, `fits`): a section may have a picked reserve width (`sec.reserve`, m); the strips then
- * have to fill it. Setting it resizes the verges (the strip next to each boundary; the carriageway never moves) as `sec.reserveFit` says
- * ('both' share it, 'a' = verge A keeps its width, 'b' = verge B keeps its); a strip edited so they no longer add up is flagged (`fits`)
- * with `fitStrips` / `matchReserve`. No reserve picked = the strips' sum, as before. A site plan road's reserve (`reserveOf`) is its own
+ * Road reserve and verges (`reserve`, `setReserve`, `setCwOff`, `verges`, `fill`, `fits`): every section has a reserve width (`sec.reserve`, m).
+ * Only the carriageway, footpaths, cycle lanes and medians are typed; the space the reserve leaves is verge, worked out (`fill`: one verge
+ * strip at each end of `sec.strips`, in place, so the lighting designs see them) — the carriageway in the middle or `sec.cwOff` m toward
+ * boundary A, the typed strips side by side in their order. Typed strips wider than the reserve = verge 0 and flagged (`fits`, *Make the
+ * reserve …* = `matchReserve`). An older section is converted once (`migrateVerge` / `adopt`): reserve = the picked one else the strips' sum,
+ * the carriageway stays where it was, footpaths move next to the kerb; a reserve worked out that way is `resAuto` (roads do not take it as their
+ * width, `reserveOf` / `widthMismatches`) until one is picked. A site plan road's reserve (`reserveOf`) is its own
  * `props.width` where typed, else its section's picked reserve; `widthMismatches` lists roads whose own width is not their section's.
  *
  * The project standard (`std`, `sizes`, `setOwn`, `copyFrom`, `toStd`): the offsets from the erf boundary (service, LV, fibre, MV, kiosk
@@ -169,6 +172,7 @@ const RoadSections = (() => {
     for (const s of (strips && strips.length ? strips : [{ type: 'verge', width: 5 }, { type: 'carriageway', width: 7, cls: '' }, { type: 'verge', width: 5 }])) {
       const o = Object.assign({}, s); delete o.id; delete o.sans; sec.strips.push(strip(sec, o));
     }
+    adopt(sec);
     return sec;
   }
   function add(name, strips, items) { const s = make(name, strips, items); list().push(s); if (!SL().settings || !get(SL().settings.roadSectionDef)) setDef(s.id); return s; }
@@ -176,7 +180,8 @@ const RoadSections = (() => {
 
   // verge A / carriageway / verge B of a section: everything from the first carriageway to the last (a median between them included) is the
   // road; what is before it is A, after it B. A section with no carriageway is all verge: the middle is a road of 0 m.
-  function span(sec) {
+  function span(sec) { if (sec && sec.cwOff != null) fill(sec); return spanOf(sec); }
+  function spanOf(sec) {
     let y = 0; const xs = (sec && sec.strips || []).map(s => { const w = Math.max(0, num(s.width, 0)), o = { type: s.type, y0: y, y1: y + w }; y += w; return o; });
     const cw = xs.filter(s => s.type === 'carriageway' && s.y1 > s.y0);
     if (!cw.length) return { a: r2(y / 2), road: 0, b: r2(y / 2), total: r2(y) };
@@ -184,66 +189,82 @@ const RoadSections = (() => {
     return { a: r2(k0), road: r2(k1 - k0), b: r2(y - k1), total: r2(y) };
   }
 
-  // ── the road reserve ──
+  // ── the road reserve and the verges ──
+  // Only the carriageway, footpaths, cycle lanes and medians are typed; whatever the reserve leaves on either side is verge. The typed strips
+  // stay in their order, side by side; the carriageway sits in the middle of the reserve, or `sec.cwOff` m off it (+ = toward boundary A).
+  // `fill` keeps one verge strip at each end of `sec.strips` (the same array the lighting designs read) with those widths, in place.
+  const filled = t => t && t.type !== 'verge';
   const total = sec => r2((sec && sec.strips || []).reduce((a, t) => a + Math.max(0, num(t.width, 0)), 0));
+  const filledW = sec => r2((sec && sec.strips || []).filter(filled).reduce((a, t) => a + Math.max(0, num(t.width, 0)), 0));
   const picked = sec => (sec && +sec.reserve > 0 ? r2(+sec.reserve) : null);
-  // the reserve width of a section: the one picked, else what its strips add up to
+  // a reserve the user chose (an older section's, worked out from its strips on conversion, is `resAuto` until picked: roads do not take it)
+  const chosen = sec => (sec && !sec.resAuto ? picked(sec) : null);
+  // the reserve width of a section: the one picked, else what its strips add up to (only before `adopt`)
   function reserve(sec) { return picked(sec) != null ? picked(sec) : total(sec); }
-  // the strips fill the picked reserve (always true with none picked)
-  function fits(sec) { const p = picked(sec); return p == null || Math.abs(total(sec) - p) < 0.005; }
-  // spread a change of `d` m over the verges: `fit` 'both' (shared), 'a' (verge A keeps its width: all on B), 'b' (all on A). On each side the
-  // verge strip next to the boundary takes it first, then the other strips outside the carriageway from the boundary in; a side with no strip
-  // gets a new verge when it has to grow. Never touches a carriageway or what lies between carriageways. false = it cannot (nothing restored lost)
-  function spread(sec, d, fit) {
-    const S = sec.strips || (sec.strips = []);
-    const cw = S.map((t, i) => (t.type === 'carriageway' && num(t.width, 0) > 0 ? i : -1)).filter(i => i >= 0);
-    const first = cw.length ? cw[0] : S.length, last = cw.length ? cw[cw.length - 1] : S.length - 1;
-    const side = k => { const idx = k === 'a' ? S.map((_, i) => i).filter(i => i < first) : S.map((_, i) => i).filter(i => i > last).reverse();   // boundary first
-      return idx.filter(i => S[i].type === 'verge').concat(idx.filter(i => S[i].type !== 'verge')); };
-    const before = JSON.stringify(S);
-    const apply = (k, amt) => {
-      if (Math.abs(amt) < 0.005) return 0;
-      const c = side(k);
-      if (amt > 0) {
-        if (c.length) { S[c[0]].width = r2(num(S[c[0]].width, 0) + amt); return 0; }
-        const v = strip(sec, { type: 'verge', width: r2(amt) }); if (k === 'a') S.unshift(v); else S.push(v); return 0;
-      }
-      let left = -amt;
-      for (const i of c) { const w = num(S[i].width, 0), take = Math.min(w, left); S[i].width = r2(w - take); left = r2(left - take); if (left < 0.005) return 0; }
-      return -left;
-    };
-    let dA = fit === 'a' ? 0 : fit === 'b' ? d : r2(d / 2), dB = r2(d - dA);
-    // the cw index can move when a verge is added on side A: work out side B first
-    let restB = apply('b', dB), restA = apply('a', dA + restB);
-    if (Math.abs(restA) >= 0.005) restA = apply('b', restA);
-    if (Math.abs(restA) >= 0.005) { sec.strips.splice(0, sec.strips.length, ...JSON.parse(before)); return false; }
-    return true;
+  // the verges: { a, b } widths, `off` = where the carriageway really is (the typed offset, moved in if it would push a verge below 0),
+  // `over` = how far the typed strips exceed the reserve, `filled` = their width, `lo` / `hi` = the offsets the carriageway can take
+  function verges(sec) {
+    const R = reserve(sec); let y = 0, k0 = null, k1 = null;
+    for (const t of (sec && sec.strips || []).filter(filled)) { const w = Math.max(0, num(t.width, 0)); if (t.type === 'carriageway' && w > 0) { if (k0 == null) k0 = y; k1 = y + w; } y += w; }
+    const F = y, mid = k0 == null ? F / 2 : (k0 + k1) / 2, room = Math.max(0, R - F), a0 = R / 2 - mid;   // a0 = verge A with the carriageway centred
+    const want = num(sec && sec.cwOff, 0), a = a0 - want, aC = Math.max(0, Math.min(room, a));
+    return { a: r2(aC), b: r2(room - aC), off: r2(want + (a - aC)), want: r2(want), over: r2(Math.max(0, F - R)), filled: r2(F), lo: r2(a0 - room), hi: r2(a0), shifted: Math.abs(a - aC) > 0.005 };
   }
-  // pick the reserve width (3–80 m): the verges take up the difference. false = the strips that cannot move are already wider
-  function setReserve(sec, w, fit) {
+  // the verge strips of a section put right (a verge between typed strips goes; one at each end takes the verge width; none where 0)
+  function fill(sec) {
+    if (!sec || !Array.isArray(sec.strips) || picked(sec) == null) return false;
+    const S = sec.strips, V = S.filter(t => t.type === 'verge'), F = S.filter(filled), g = verges(sec), fresh = [];
+    const va = V[0] || null, vb = V.length > 1 ? V[V.length - 1] : null;
+    const put = (old, w) => { if (old) { if (num(old.width, -1) !== w) old.width = w; return old; } const o = { type: 'verge', width: w }; fresh.push(o); return o; };
+    const next = [];
+    if (g.a >= 0.005) next.push(put(va, g.a));
+    next.push(...F);
+    if (g.b >= 0.005) next.push(put(g.a >= 0.005 ? vb : (vb || va), g.b));
+    const same = next.length === S.length && next.every((t, i) => t === S[i]);
+    if (!same) S.splice(0, S.length, ...next);
+    for (const o of fresh) Object.assign(o, strip(sec, { type: 'verge', width: o.width }));        // ids once they are in the list
+    return !same || fresh.length > 0;
+  }
+  // a section from before the verges were worked out: its reserve = the picked one, else what its strips added up to; the carriageway stays
+  // where it was (`cwOff`); the footpaths move next to the kerb and the verges take the rest
+  function adopt(sec, auto) {
+    if (!sec || !Array.isArray(sec.strips)) return false;
+    let ch = false;
+    if (picked(sec) == null) { sec.reserve = r2(Math.max(3, Math.min(80, total(sec) || 17))); if (auto) sec.resAuto = true; ch = true; }
+    if (sec.cwOff == null) { const sp = spanOf(sec); sec.cwOff = r2(reserve(sec) / 2 - (sp.a + sp.road / 2)); ch = true; }
+    delete sec.reserveFit;
+    return fill(sec) || ch;
+  }
+  // the typed strips fit in the reserve
+  function fits(sec) { return picked(sec) == null || verges(sec).over < 0.005; }
+  // pick the reserve width (3–80 m): the verges take the change. false = the typed strips are wider than it (verge 0, flagged)
+  function setReserve(sec, w) {
     const n = parseFloat(w); if (!sec || !Number.isFinite(n)) return false;
-    const v = r2(Math.max(3, Math.min(80, n)));
-    if (fit) sec.reserveFit = ['both', 'a', 'b'].includes(fit) ? fit : 'both';
-    if (!spread(sec, r2(v - total(sec)), sec.reserveFit || 'both')) return false;
-    sec.reserve = v; return true;
+    sec.reserve = r2(Math.max(3, Math.min(80, n))); delete sec.resAuto; fill(sec); return fits(sec);
   }
-  function clearReserve(sec) { if (sec) delete sec.reserve; }
-  // strips that no longer add up: the verges take the difference, or the reserve becomes what they add up to
-  function fitStrips(sec) { const p = picked(sec); return p != null && spread(sec, r2(p - total(sec)), sec.reserveFit || 'both'); }
-  function matchReserve(sec) { if (sec) sec.reserve = total(sec); }
+  // where the carriageway sits: `v` m off the middle of the reserve, + toward boundary A (kept within what the verges allow)
+  function setCwOff(sec, v) {
+    const n = parseFloat(v); if (!sec || !Number.isFinite(n)) return false;
+    const g = verges(Object.assign({}, sec, { cwOff: 0 }));
+    sec.cwOff = r2(g.hi >= g.lo ? Math.max(g.lo, Math.min(g.hi, n)) : n); fill(sec); return Math.abs(sec.cwOff - n) < 0.005;
+  }
+  // the reserve becomes what the typed strips need (verges 0)
+  function matchReserve(sec) { if (sec) { sec.reserve = r2(Math.max(3, filledW(sec))); delete sec.resAuto; fill(sec); } }
+  // once for an older project: every section's verges worked out
+  function migrateVerge() { let n = 0; for (const sec of list()) if (sec.cwOff == null || picked(sec) == null) { adopt(sec, true); n++; } return n; }
   // a site plan road's reserve width: its own where typed, else its section's picked one (null = neither: the layout assumes its default)
   function reserveOf(props) {
     const p = props || {}; if (+p.width > 0) return { w: +p.width, src: 'own' };
-    const sec = get(p.section) || def(), v = picked(sec); return v != null ? { w: v, src: 'section', sec } : { w: null, src: null };
+    const sec = get(p.section) || def(), v = chosen(sec); return v != null ? { w: v, src: 'section', sec } : { w: null, src: null };
   }
   // roads with a reserve width of their own that is not their section's picked one (by more than 0.25 m); `near` = the section whose reserve is
   // closest to the road's own (within 0.5 m), if another one
   function widthMismatches(secId) {
     const out = [];
     for (const r of roads()) {
-      const sec = of(r), p = picked(sec), own = +((r.props || {}).width); if (!sec || p == null || !(own > 0) || Math.abs(own - p) <= 0.25) continue;
+      const sec = of(r), p = chosen(sec), own = +((r.props || {}).width); if (!sec || p == null || !(own > 0) || Math.abs(own - p) <= 0.25) continue;
       if (secId && sec.id !== secId) continue;
-      let near = null; for (const x of list()) { const q = picked(x); if (x !== sec && q != null && Math.abs(q - own) <= 0.5 && (!near || Math.abs(q - own) < Math.abs(picked(near) - own))) near = x; }
+      let near = null; for (const x of list()) { const q = chosen(x); if (x !== sec && q != null && Math.abs(q - own) <= 0.5 && (!near || Math.abs(q - own) < Math.abs(chosen(near) - own))) near = x; }
       out.push({ route: r, sec, own, want: p, near });
     }
     return out;
@@ -316,7 +337,7 @@ const RoadSections = (() => {
 
   // ── lighting designs ──
   // the strips a design works with: its section's (the same array: editing them edits the section) or its own
-  function stripsOf(des) { if (!des) return []; const s = get(des.section); if (s) return s.strips; if (!Array.isArray(des.sections)) des.sections = []; return des.sections; }
+  function stripsOf(des) { if (!des) return []; const s = get(des.section); if (s) { if (s.cwOff != null) fill(s); return s.strips; } if (!Array.isArray(des.sections)) des.sections = []; return des.sections; }
   function designsUsing(id) { const sl = SL(); return ((sl && sl.roadDesigns) || []).filter(d => d && d.section === id); }
 
   function options(withDefault) {
@@ -408,7 +429,7 @@ const RoadSections = (() => {
   }
 
   return {
-    reserve, fits, setReserve, clearReserve, fitStrips, matchReserve, reserveOf, widthMismatches, total,
+    reserve, fits, setReserve, setCwOff, matchReserve, reserveOf, widthMismatches, total, filledW, verges, fill, adopt, migrateVerge,
     std, setStd, setSize, sizes, own, setOwn, copyFrom, toStd, differing, trenchSize, roadNear, migrateStd, GROUPS,
     list, get, defId, def, setDef, make, add, roads, ensure, span, pole, designOf, layoutShape, of, roadsUsing, assign, carriage, mismatches,
     forLayout, stripsOf, designsUsing, options, summary, remove, duplicate, migrate, stripId, strip,
