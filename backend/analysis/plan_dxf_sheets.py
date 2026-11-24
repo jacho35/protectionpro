@@ -128,6 +128,151 @@ def title_block_geometry(doc, name: str) -> Optional[Dict[str, Any]]:
     return {"frame": frame, "panel": panel, "legend": (panel, gap[0], x1, gap[1])}
 
 
+# ── Title-block text that fits its box ──────────────────────────────────
+
+# Arial / Helvetica advance widths (1/1000 em) and cap height: enough to measure a line without the font file on the server.
+_W = dict(zip(" !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~",
+              [278, 278, 355, 556, 556, 889, 667, 191, 333, 333, 389, 584, 278, 333, 278, 278] + [556] * 10 +
+              [278, 278, 584, 584, 584, 556, 1015, 667, 667, 722, 722, 667, 611, 778, 722, 278, 500, 667, 556, 833, 722, 778,
+               667, 778, 722, 667, 611, 722, 667, 944, 667, 667, 611, 278, 278, 278, 469, 556, 333, 556, 556, 500, 556, 556, 278,
+               556, 556, 222, 222, 500, 222, 833, 556, 556, 556, 556, 333, 500, 278, 556, 500, 722, 500, 500, 500, 334, 260, 334, 584]))
+_CAP = 0.716
+MIN_WIDTH_FACTOR = 0.5
+
+
+def text_width(text: str, height: float, font: str = "", width_factor: float = 1.0) -> float:
+    """Width (drawing units) of `text` at cap `height` in Arial (Arial Narrow when the font file says so: 82 %)."""
+    em = height / _CAP
+    narrow = 0.82 if "n.ttf" in (font or "").lower() or "narrow" in (font or "").lower() else 1.0
+    return sum(_W.get(c, 556) for c in str(text)) / 1000.0 * em * narrow * width_factor
+
+
+def _attdef_x(a):
+    h = a.dxf.get("halign", 0)
+    return (a.dxf.align_point.x if h and a.dxf.hasattr("align_point") else a.dxf.insert.x), h
+
+
+def attdef_room(blk, a) -> float:
+    """How wide the text of attribute definition `a` may run: to the nearest line of the block across its row (either side for a
+    centred one, leftward for a right-aligned one), 1 mm clear; the block's outline counts as a line."""
+    x, h = _attdef_x(a)
+    y = a.dxf.insert.y + a.dxf.height / 2.0
+    xs = []
+    for e in blk.query("LINE"):
+        s, t = e.dxf.start, e.dxf.end
+        if abs(s.x - t.x) < 0.01 and min(s.y, t.y) - 0.5 <= y <= max(s.y, t.y) + 0.5:
+            xs.append(s.x)
+    for e in blk.query("LWPOLYLINE"):
+        pts = [(p[0], p[1]) for p in e.get_points()]
+        if e.closed:
+            pts.append(pts[0])
+        for (x0, y0), (x1, y1) in zip(pts, pts[1:]):
+            if abs(x0 - x1) < 0.01 and min(y0, y1) - 0.5 <= y <= max(y0, y1) + 0.5:
+                xs.append(x0)
+    right = min([v for v in xs if v > x + 0.5], default=None)
+    left = max([v for v in xs if v < x - 0.5], default=None)
+    return _room_raw(x, h, left, right) * ROOM_MARGIN if _room_raw(x, h, left, right) < 1e8 else 1e9
+
+
+ROOM_MARGIN = 0.95          # the width estimate is Arial's metrics; CAD fonts and renderers differ by a few per cent
+
+
+def _room_raw(x, h, left, right):
+    if h == 2:
+        return (x - left - 1.0) if left is not None else 1e9
+    if h in (1, 4):
+        if left is None or right is None:
+            return 1e9
+        return 2 * min(x - left, right - x) - 2.0
+    return (right - x - 1.0) if right is not None else 1e9
+
+
+def _wrap(words: List[str], room: float, width) -> List[str]:
+    lines, cur = [], ""
+    for w in words:
+        t = (cur + " " + w).strip()
+        if cur and width(t) > room:
+            lines.append(cur)
+            cur = w
+        else:
+            cur = t
+    if cur:
+        lines.append(cur)
+    return lines
+
+
+def fit_attribs(doc, block_name: str, values: Dict[str, str]) -> Dict[str, Tuple[str, float, float]]:
+    """The title block's text so every value stays inside its box. A numbered group (DRAWING_TITLE1–3, PROJECT_NAME +
+    PROJECT_NAME2) is one text wrapped word by word over its lines, the values joined in order. What does not fit at the
+    template's height is tried smaller (down to 60 %), then narrowed by the width factor, so nothing runs past its box.
+    Returns {tag: (text, width factor, height)} for every attribute definition of the block."""
+    blk = doc.blocks.get(block_name)
+    defs = {a.dxf.tag: a for a in blk.attdefs()}
+    out: Dict[str, Tuple[str, float, float]] = {}
+    groups: Dict[str, List[str]] = {}
+    for tag in defs:
+        m = re.match(r"^(.*?[A-Z_])(\d+)$", tag)
+        base = m.group(1) if m else tag
+        if m and (base in defs or base + "1" in defs or any(t != tag and re.match(re.escape(base) + r"\d+$", t) for t in defs)):
+            groups.setdefault(base, []).append(tag)
+        elif not m and (tag + "2") in defs:
+            groups.setdefault(tag, []).append(tag)
+    for tags in groups.values():
+        tags.sort(key=lambda t: -defs[t].dxf.insert.y)          # top line first
+    grouped = {t for ts in groups.values() for t in ts}
+
+    def font_of(a):
+        st = doc.styles.get(a.dxf.style) if a.dxf.style in doc.styles else None
+        return st.dxf.font if st is not None else ""
+
+    def wf0(a):
+        return float(a.dxf.get("width", 1.0) or 1.0)
+
+    def fit_lines(texts: List[str], a, room, n) -> List[Tuple[str, float, float]]:
+        """`texts` over `n` lines of attdef `a`'s size: (line, width factor, height) each."""
+        h0, wf, font = a.dxf.height, wf0(a), font_of(a)
+        words = " ".join(t for t in texts if t).split()
+        if room <= 0 or room > 1e8 or not words:
+            lines = _wrap(words, room if 0 < room < 1e8 else 1e9, lambda t: text_width(t, h0, font, wf)) if words else []
+            lines = (lines[:n - 1] + [" ".join(lines[n - 1:])]) if len(lines) > n else lines
+            return [(l, wf, h0) for l in lines + [""] * (n - len(lines))]
+        for k in (1.0, 0.9, 0.8, 0.7, 0.6):
+            h = h0 * k
+            width = lambda t, h=h: text_width(t, h, font, wf)
+            lines = _wrap(words, room, width)
+            if len(lines) <= n and all(width(l) <= room for l in lines):
+                return [(l, wf, h) for l in lines + [""] * (n - len(lines))]
+            if k == 0.6:
+                if len(lines) > n:
+                    lines = lines[:n - 1] + [" ".join(lines[n - 1:])]
+                res = []
+                for l in lines + [""] * (n - len(lines)):
+                    w = width(l)
+                    res.append((l, wf * room / w if w > room else wf, h))
+                return res
+        return []
+
+    for tag, a in defs.items():
+        if tag not in grouped:
+            text = str(values[tag]) if tag in values else a.dxf.text
+            room = attdef_room(blk, a)
+            if " " not in text.strip():
+                h0, wf, w = a.dxf.height, wf0(a), text_width(text, a.dxf.height, font_of(a), wf0(a))
+                out[tag] = (text, wf * room / w if 0 < room < w else wf, h0) if w <= room or w * MIN_WIDTH_FACTOR > room \
+                    else (text, max(MIN_WIDTH_FACTOR, wf * room / w), h0)
+            else:
+                (out[tag],) = fit_lines([text], a, room, 1)
+    for base, tags in groups.items():
+        if not any(t in values for t in tags):
+            for t in tags:
+                out[t] = (defs[t].dxf.text, wf0(defs[t]), defs[t].dxf.height)
+            continue
+        room = min(attdef_room(blk, defs[t]) for t in tags)
+        for t, v in zip(tags, fit_lines([str(values.get(t, "") or "") for t in tags], defs[tags[0]], room, len(tags))):
+            out[t] = v
+    return out
+
+
 # ── Legend ───────────────────────────────────────────────────────────────
 
 GROUPS = (("equipment", "EQUIPMENT"), ("cables", "CABLES & ROUTES"), ("ducts", "DUCTS & TRENCHES"),

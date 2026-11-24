@@ -290,13 +290,11 @@ const PlanDXF = {
   // The title block's attributes by tag (the template's tags; one it lacks is ignored, one not sent keeps its default).
   _titleBlock(sheets, opt, af) {
     const d = AppState.projectDetails || {}, up = s => String(s || '').toUpperCase();
-    const name = up(AppState.projectName);
-    let n1 = name, n2 = '';
-    if (name.length > 40) { const cut = name.lastIndexOf(' ', 40); n1 = name.slice(0, cut > 10 ? cut : 40); n2 = name.slice(n1.length).trim(); }
+    const name = up(AppState.projectName);           // the server wraps it over PROJECT_NAME / PROJECT_NAME2 to fit the box
     const revs = (opt.revisions || []).slice(-8);
     const cur = revs.length ? revs[revs.length - 1].rev : (d.revisionNumber || '');
     const common = {
-      PROJECT_NO: d.projectNumber || '', PROJECT_NAME: n1, PROJECT_NAME2: n2, CLIENT: up(d.client),
+      PROJECT_NO: d.projectNumber || '', PROJECT_NAME: name, PROJECT_NAME2: '', CLIENT: up(d.client),
       SCALE: `1:${opt.scale}`, STATUS: opt.status || '', CURRENT_REV: cur || '',
       DRAWN_DATE: d.date || new Date().toISOString().slice(0, 10), DRAWN: d.engineerName || '', DESIGNED: d.engineerName || '', CHECKED: d.checkedBy || '',
       PANEL_TITLE: 'LEGEND / SLEUTEL',

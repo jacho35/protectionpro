@@ -184,3 +184,41 @@ def test_iso_lineweight(px, lw):
 def test_template_info(template):
     info = S.template_info()
     assert info["available"] and info["name"] == "CO" and info["papers"]["A3"]["viewport"] == [324.0, 281.0]
+
+
+def test_long_titles_wrap_over_their_lines_and_stay_inside_the_box(tmp_path, monkeypatch):
+    """Panel x 335..415: a title three lines tall (DRAWING_TITLE1–3), a project name two (PROJECT_NAME + 2), one-line fields."""
+    d = ezdxf.new("R2010")
+    d.styles.add("CO-ARIAL", font="arial.ttf")
+    b = d.blocks.new("CO-TB-A3")
+    b.add_lwpolyline([(5, 5), (415, 5), (415, 292), (5, 292)], close=True)
+    b.add_line((335, 5), (335, 292))
+    for y in (30, 60, 120, 200, 286):
+        b.add_line((335, y), (415, y))
+    b.add_line((390, 5), (390, 30))                                  # DRAWING_NO's box ends at x 390
+    for tag, y, h in (("DRAWING_TITLE1", 52, 4.5), ("DRAWING_TITLE2", 46, 4.5), ("DRAWING_TITLE3", 40, 4.5),
+                      ("PROJECT_NAME", 100, 4.5), ("PROJECT_NAME2", 94, 4.5), ("DRAWING_NO", 10, 6.0)):
+        b.add_attdef(tag, (336.5, y), dxfattribs={"height": h, "style": "CO-ARIAL"})
+    folder = tmp_path / "tpl"
+    folder.mkdir()
+    d.saveas(folder / "company.dxf")
+    monkeypatch.setenv("PP_DXF_TEMPLATES", str(folder))
+    p = _payload()
+    p["titleBlock"] = {"common": {"PROJECT_NAME": "RIVERSIDE EXTENSION 4 TOWNSHIP ESTABLISHMENT ELECTRICAL RETICULATION PHASE TWO"},
+                       "sheets": {"LV": {"DRAWING_TITLE1": "LV RETICULATION AND STREET LIGHTING CABLE LAYOUT",
+                                         "DRAWING_TITLE2": "GROUND FLOOR AND BASEMENT PARKING LEVEL", "DRAWING_NO": "E1234-EL-RET-0001-A"}}}
+    doc = _read(build_dxf(p))
+    ref = next(e for e in doc.layouts.get("LV") if e.dxftype() == "INSERT")
+    att = {a.dxf.tag: a for a in ref.attribs}
+    title = [att[f"DRAWING_TITLE{i}"].dxf.text for i in (1, 2, 3)]
+    assert all(title) and " ".join(title).split() == ("LV RETICULATION AND STREET LIGHTING CABLE LAYOUT "
+                                                      "GROUND FLOOR AND BASEMENT PARKING LEVEL").split()
+    assert att["PROJECT_NAME2"].dxf.text                                # the name ran on to its second line
+    for a in att.values():                                               # every line inside its box
+        room = ((390 if a.dxf.tag == "DRAWING_NO" else 415) - 336.5 - 1.0) * S.ROOM_MARGIN
+        assert S.text_width(a.dxf.text, a.dxf.height, "arial.ttf", a.dxf.get("width", 1.0)) <= room + 1e-6, a.dxf.tag
+
+
+def test_text_width_is_arial():
+    assert S.text_width("H", 0.716) == pytest.approx(0.722)
+    assert S.text_width("H", 0.716, "ARIALN.TTF") == pytest.approx(0.722 * 0.82)

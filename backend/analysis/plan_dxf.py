@@ -769,8 +769,14 @@ def _add_layouts(doc, msp, payload):
         if tb:
             ref = layout.add_blockref(tb, (0, 0), dxfattribs={"layer": sheets_mod.TITLE_LAYER})
             vals = {**(tvals.get("common") or {}), **((tvals.get("sheets") or {}).get(sid) or {})}
-            defaults = {a.dxf.tag: a.dxf.text for a in doc.blocks.get(tb).attdefs()}
-            ref.add_auto_attribs({t: str(vals[t]) if t in vals else d for t, d in defaults.items()})
+            fitted = sheets_mod.fit_attribs(doc, tb, vals)        # long titles wrap over their lines and stay inside their boxes
+            ref.add_auto_attribs({t: v[0] for t, v in fitted.items()})
+            for at in ref.attribs:
+                _, wf, hh = fitted.get(at.dxf.tag, (None, 1.0, at.dxf.height))
+                if abs(wf - 1.0) > 1e-6:
+                    at.dxf.width = math.floor(wf * 1000) / 1000.0      # down: never past the box
+                if abs(hh - at.dxf.height) > 1e-6:
+                    at.dxf.height = math.floor(hh * 1000) / 1000.0
         else:
             layout.add_lwpolyline([(vx0, vy0), (vx1, vy0), (vx1, vy1), (vx0, vy1)], close=True,
                                   dxfattribs={"layer": sheets_mod.TITLE_LAYER})
