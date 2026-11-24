@@ -73,34 +73,86 @@ const PlanDXF = {
     return '';
   },
 
-  // The export's choices: drawing scale and paper text height (the text size when plotted), and the background drawings.
-  // Kept per project in planMarkup.settings.dxfExport.
-  SCALES: [100, 200, 250, 500, 1000, 1250, 2000, 2500],
+  // The export's choices: drawing scale, paper size of the layout sheets, paper text height (the text size when plotted), and
+  // the background drawings. Kept per project in planMarkup.settings.dxfExport.
+  SCALES: [100, 200, 250, 500, 1000, 1250, 2000, 2500, 5000, 10000],
   HEIGHTS: [1.8, 2.5, 3.5, 5],
+  PAPERS: { A0: [1189, 841], A1: [841, 594], A2: [594, 420], A3: [420, 297] },   // mm, landscape; must match backend PAPERS
+  MARGIN_MM: 10,
+
+  // The plan's extents in the export's metres ([xmin, ymin, xmax, ymax], DXF y up), from every plan item; null when there is none.
+  _extents(pm, f) {
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    const add = (p) => { if (!p || !isFinite(p.x) || !isFinite(p.y)) return; const X = p.x * f, Y = -p.y * f;
+      if (X < x0) x0 = X; if (X > x1) x1 = X; if (Y < y0) y0 = Y; if (Y > y1) y1 = Y; };
+    for (const e of pm.elements || []) add(e);
+    for (const list of [pm.routes, pm.trenches, pm.rooms, pm.measurements]) for (const r of list || []) for (const p of r.points || []) add(p);
+    for (const c of pm.crossings || []) { add(c.p1); add(c.p2); }
+    for (const t of pm.texts || []) add(t);
+    return isFinite(x0) ? [x0, y0, x1, y1] : null;
+  },
+  // Does the plan fit the paper's viewport at 1 : scale? And the smallest listed scale that fits.
+  _fit(ext, paper, scale) {
+    const [pw, ph] = this.PAPERS[paper] || this.PAPERS.A1, uw = pw - 2 * this.MARGIN_MM, uh = ph - 2 * this.MARGIN_MM;
+    if (!ext) return { ok: true, need: null, w: 0, h: 0 };
+    const w = ext[2] - ext[0], h = ext[3] - ext[1];
+    const fits = sc => w * 1000 / sc <= uw + 1e-6 && h * 1000 / sc <= uh + 1e-6;
+    return { ok: fits(scale), need: this.SCALES.find(fits) || null, w, h };
+  },
+  // The layout sheets this plan has: a sheet is written when an item on it is not shown on every sheet; in PLAN_DXF_SHEETS order.
+  // No such item → one sheet, 'Plan', with everything on it.
+  _sheets(pm) {
+    const used = new Set();
+    const take = (row) => { if (Array.isArray(row[1])) row[1].forEach(id => used.add(id)); };
+    for (const e of pm.elements || []) take(PLAN_DXF_LAYERS.of('element', e.type, PLAN_DEFS.element(e.type)));
+    for (const r of pm.routes || []) if (r.points && r.points.length >= 2) take(PLAN_DXF_LAYERS.of('route', r.type, PLAN_DEFS.route(r.type)));
+    if ((pm.trenches || []).length) take(PLAN_DXF_LAYERS.of('fixed', 'trench'));
+    if ((pm.crossings || []).length) take(PLAN_DXF_LAYERS.of('fixed', 'crossing'));
+    const out = PLAN_DXF_SHEETS.filter(s => used.has(s.id));
+    return out.length ? out : [{ id: 'PLAN', name: 'Plan' }];
+  },
+
   _options() {
-    const pm = AppState.planMarkup, st = pm.settings.dxfExport = Object.assign({ scale: 500, paperMm: 2.5, bg: true }, pm.settings.dxfExport || {});
+    const pm = AppState.planMarkup, st = pm.settings.dxfExport = Object.assign({ scale: 500, paperMm: 2.5, bg: true, paper: 'A1' }, pm.settings.dxfExport || {});
+    const ext = this._extents(pm, this._factor()), sheets = this._sheets(pm);
     const bgs = typeof PlanDxfImport !== 'undefined' ? PlanDxfImport.list().filter(d => !d.hidden && PlanDxfImport.dataOf(d)) : [];
     const orig = bgs.filter(d => d.srcId != null).length;
     return new Promise(resolve => {
       const ov = document.createElement('div'); ov.className = 'modal ui-dialog'; ov.style.zIndex = '3000';
-      const sel = (id, vals, cur, fmt) => `<select id="${id}" style="width:100%">${vals.map(v => `<option value="${v}"${+v === +cur ? ' selected' : ''}>${fmt(v)}</option>`).join('')}</select>`;
+      const sel = (id, vals, cur, fmt) => `<select id="${id}" style="width:100%">${vals.map(v => `<option value="${v}"${String(v) === String(cur) ? ' selected' : ''}>${fmt(v)}</option>`).join('')}</select>`;
       ov.innerHTML = `<div class="modal-content ui-dialog-content" role="dialog" aria-modal="true" aria-labelledby="pdx-t" style="max-width:440px">
         <div class="modal-header"><h3 id="pdx-t">Export DXF</h3></div>
         <div class="modal-body" style="display:flex;flex-direction:column;gap:10px">
           <label>Drawing scale ${sel('pdx-scale', this.SCALES, st.scale, v => '1 : ' + v)}</label>
+          <label>Paper size of the layout sheets ${sel('pdx-paper', Object.keys(this.PAPERS), st.paper, v => v + ' landscape')}</label>
+          <div style="font-size:12px" id="pdx-fit" aria-live="polite"></div>
+          <div style="font-size:12px;color:var(--text-muted)">Layout sheets (${sheets.length}): ${sheets.map(s => escHtml(s.name)).join(', ')}. Each shows only its own layers.</div>
           <label>Text height on paper ${sel('pdx-h', this.HEIGHTS, st.paperMm, v => v + ' mm')}</label>
           <div style="font-size:12px;color:var(--text-muted)" id="pdx-hint"></div>
           ${bgs.length ? `<label style="display:flex;gap:8px;align-items:flex-start"><input type="checkbox" id="pdx-bg"${st.bg ? ' checked' : ''}> <span>Include the background drawing${bgs.length === 1 ? '' : 's'} (${bgs.length}): what the plan shows, on BG- layers.${orig < bgs.length ? ` ${bgs.length - orig === bgs.length ? (bgs.length === 1 ? 'It was' : 'They were') : (bgs.length - orig) + ' of them were'} imported before the original was kept, so ${bgs.length - orig === 1 ? 'it is' : 'they are'} rebuilt from the plan's copy (no linetypes or hatch fills); import again to get the original exactly.` : ''}</span></label>` : ''}
           <div class="ui-dialog-actions"><button type="button" class="btn-small" data-x="cancel">Cancel</button><button type="button" class="btn-primary" data-x="ok">Export</button></div>
         </div></div>`;
       document.body.appendChild(ov);
-      const hint = () => { const sc = +ov.querySelector('#pdx-scale').value, mm = +ov.querySelector('#pdx-h').value; ov.querySelector('#pdx-hint').textContent = `Text is ${(mm * sc / 1000).toFixed(2)} m high in the drawing (${mm} mm when plotted at 1 : ${sc}); dashed cables plot with 5 mm dashes.`; };
+      const hint = () => {
+        const sc = +ov.querySelector('#pdx-scale').value, mm = +ov.querySelector('#pdx-h').value, paper = ov.querySelector('#pdx-paper').value;
+        ov.querySelector('#pdx-hint').textContent = `Text is ${(mm * sc / 1000).toFixed(2)} m high in the drawing (${mm} mm when plotted at 1 : ${sc}); dashed cables plot with 5 mm dashes.`;
+        const f = this._fit(ext, paper, sc), box = ov.querySelector('#pdx-fit');
+        const size = ext ? `The plan is ${f.w.toFixed(0)} × ${f.h.toFixed(0)} m. ` : '';
+        if (f.ok) { box.style.color = 'var(--text-muted)'; box.textContent = `${size}It fits ${paper} at 1 : ${sc}.`; }
+        else {
+          box.style.color = 'var(--warning, #b45309)';
+          box.innerHTML = `${escHtml(size)}It does not fit ${paper} at 1 : ${sc}; the sheets show its middle.`
+            + (f.need ? ` <button type="button" class="btn-small" data-fit="${f.need}">Use 1 : ${f.need}</button>` : ' Pick a larger paper size.');
+        }
+      };
       ov.addEventListener('change', hint); hint();
-      const done = ok => { const r = ok ? { scale: +ov.querySelector('#pdx-scale').value, paperMm: +ov.querySelector('#pdx-h').value, bg: !!(ov.querySelector('#pdx-bg') && ov.querySelector('#pdx-bg').checked) } : null;
+      const done = ok => { const r = ok ? { scale: +ov.querySelector('#pdx-scale').value, paperMm: +ov.querySelector('#pdx-h').value, paper: ov.querySelector('#pdx-paper').value, bg: !!(ov.querySelector('#pdx-bg') && ov.querySelector('#pdx-bg').checked) } : null;
         document.removeEventListener('keydown', key, true); ov.remove(); if (r) { Object.assign(st, r); PlanMarkup.markDirty(); } resolve(r); };
       const key = e => { if (e.key === 'Escape') { e.preventDefault(); done(false); } else if (e.key === 'Enter') { e.preventDefault(); done(true); } };
       document.addEventListener('keydown', key, true);
-      ov.addEventListener('click', e => { const b = e.target.closest('[data-x]'); if (b) done(b.dataset.x === 'ok'); else if (e.target === ov) done(false); });
+      ov.addEventListener('click', e => {
+        const fb = e.target.closest('[data-fit]'); if (fb) { ov.querySelector('#pdx-scale').value = fb.dataset.fit; hint(); return; }
+        const b = e.target.closest('[data-x]'); if (b) done(b.dataset.x === 'ok'); else if (e.target === ov) done(false); });
       ov.querySelector('[data-x="ok"]').focus();
     });
   },
@@ -131,9 +183,17 @@ const PlanDXF = {
     const H = opt.paperMm * opt.scale / 1000;                    // text height in the drawing, m
     const elById = {}; for (const e of pm.elements) elById[e.id] = e;
     const boardName = (id) => { const b = elById[id]; return b ? (b.name || '') : ''; };
-    // layers: the plan's colour of the first thing on each (true colour); a layer of dashed cables gets the DASHED linetype
-    const layers = {}, ltypes = {};
-    const layer = (name, color, lt) => { if (name && !layers[name]) { layers[name] = this._hex(color) || '#333333'; if (lt) ltypes[name] = lt; } return name; };
+    // layers: the plan's colour of the first thing on each (true colour); a layer of dashed cables gets the DASHED linetype;
+    // a layer's sheets = the union of its items' (PLAN_DXF_LAYERS), 'all' when any of them shows on every sheet
+    const layers = {}, ltypes = {}, layerSheets = {};
+    const layer = (row, color, lt) => {
+      const [name, sh] = row;
+      if (name && !layers[name]) { layers[name] = this._hex(color) || '#333333'; if (lt) ltypes[name] = lt; }
+      const cur = layerSheets[name];
+      if (sh === 'all' || cur === 'all') layerSheets[name] = 'all';
+      else layerSheets[name] = Array.from(new Set([...(cur || []), ...sh]));
+      return name;
+    };
     const styles = pm.styles;
 
     // Symbol blocks (one per variant, or one per type when it has a fixed
@@ -154,7 +214,7 @@ const PlanDXF = {
         blocks[name] = { sizeWorld, prims, attrTags };
       }
       const ecol = this._hex(el.type === 'load' && typeof PlanLoads !== 'undefined' ? PlanLoads.color(el) : PLAN_DEFS.elementColor(el.type, styles));
-      const lname = layer(def.dxfLayer || ('EL_' + (def.group || 'MISC').toUpperCase().replace(/[^A-Z0-9]+/g, '_')), ecol || def.color);
+      const lname = layer(PLAN_DXF_LAYERS.of('element', el.type, def), ecol || def.color);
       const isCircuit = typeof PlanCircuits !== 'undefined' && PlanCircuits.isCircuitDevice && PlanCircuits.isCircuitDevice(el.type);
       const load = isCircuit ? PlanCircuits.deviceVA(el) : '';
       const p = el.props || {};
@@ -182,12 +242,12 @@ const PlanDXF = {
       if (!r.points || r.points.length < 2) continue;
       const rdef = PLAN_DEFS.route(r.type) || {};
       const rcol = this._hex(PLAN_DEFS.routeColor(r.type, styles)) || '#3b82f6', lt = rdef.lineStyle === 'dashed' ? 'DASHED' : null;
-      const lname = layer(rdef.dxfLayer || ('RT_' + String(r.type).toUpperCase()), rcol, lt);
+      const lname = layer(PLAN_DXF_LAYERS.of('route', r.type, rdef), rcol, lt);
       const lenM = this._routeLenM(r, factor);
       // type/cable/end names travel as XDATA so a re-import rebuilds the
       // route exactly (the layer alone can't carry a mixed-case type key).
       routes.push({
-        layer: lname, type: r.type, curved: !!r.curved, cable: r.cableType || '',
+        layer: lname, labelLayer: lname + '_LABELS', type: r.type, curved: !!r.curved, cable: r.cableType || '',
         fromName: r.fromId ? boardName(r.fromId) : '', toName: r.toId ? boardName(r.toId) : '',
         label: `${r.cableType ? r.cableType + ' ' : ''}${lenM.toFixed(2)} m`,
         pts: r.points.map(p => [p.x, p.y]), color: rcol, linetype: lt || 'CONTINUOUS',
@@ -209,12 +269,17 @@ const PlanDXF = {
     const texts = (pm.texts || []).map(t => ({ x: t.x, y: t.y, h: t.fontSize || 14, rel: (t.fontSize || 14) / 14, text: t.text || '', color: this._hex(t.color) || '#111827' }));
     const backgrounds = opt.bg && typeof PlanDxfImport !== 'undefined' ? PlanDxfImport.list().filter(d => !d.hidden && PlanDxfImport.dataOf(d)).map(d => this._background(d, factor)) : [];
 
+    // the layers of the rest of the plan, on their sheets
+    const FX = {};
+    for (const k of Object.keys(PLAN_DXF_LAYERS.fixed)) { const row = PLAN_DXF_LAYERS.of('fixed', k); FX[k] = row[0]; layerSheets[row[0]] = row[1]; }
     const af = (typeof AppState.planActiveFloor === 'function') && AppState.planActiveFloor();
     const payload = {
       factor, floorName: (af && af.name) || '', domain: pm.settings.domain || '',
       fileName: ((AppState.projectName || 'plan').replace(/[^\w-]+/g, '_')) + (af && af.name ? '_' + af.name.replace(/[^\w-]+/g, '_') : ''),
       layers: Object.entries(layers).map(([name, color]) => ({ name, color, linetype: ltypes[name] || null })),
-      extraLayers: { PP_TRENCH: '#787878', PP_ROOMS: roomStroke, PP_TEXT: '#111827', PP_DIM: dimCol, PP_LABELS: '#334155' },
+      extraLayers: { [FX.trench]: '#787878', [FX.crossing]: this._hex((PLAN_DEFS.crossings || {}).color) || '#f97316', [FX.room]: roomStroke, [FX.text]: '#111827', [FX.measurement]: dimCol },
+      fixedLayers: FX, layerSheets, sheets: this._sheets(pm),
+      layout: { paper: opt.paper || 'A1', margin: this.MARGIN_MM, scale: opt.scale, extents: this._extents(pm, factor) },
       textH: H, ltscale: opt.scale / 100, scale: opt.scale,
       blocks, elements, routes, trenches, rooms, measurements, crossings, texts, backgrounds,
     };
@@ -239,7 +304,7 @@ const PlanDXF = {
       a.href = url; a.download = payload.fileName + '.dxf';
       document.body.appendChild(a); a.click(); a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
-      UI.toast(`DXF exported at 1 : ${opt.scale}, text ${opt.paperMm} mm.${notes ? ' Background: ' + notes.split(' | ').join('; ') + '.' : ''}`, notes && /left out|rebuilt/.test(notes) ? 'warn' : 'success', 7000);
+      UI.toast(`DXF exported at 1 : ${opt.scale}, text ${opt.paperMm} mm, ${payload.sheets.length} layout sheet${payload.sheets.length === 1 ? '' : 's'} on ${payload.layout.paper}.${notes ? ' Background: ' + notes.split(' | ').join('; ') + '.' : ''}`, notes && /left out|rebuilt/.test(notes) ? 'warn' : 'success', 7000);
     } catch (e) {
       UI.alert('DXF export failed: ' + (e && e.message ? e.message : e));
     } finally {

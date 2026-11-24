@@ -57,6 +57,16 @@ META_BLOCK = "PP_META"
 # `blocks[name].attrTags` in the payload from plan-dxf.js.
 ATTR_TAGS = ["REF", "TYPE", "DBFED", "CIRCUIT", "PHASE", "LOAD_VA", "CABLE"]
 
+# Layers of the plan items that are not symbols or routes (frontend PLAN_DXF_LAYERS.fixed sends the same names as `fixedLayers`).
+FIXED_LAYERS = {"trench": "EL_TRENCH", "crossing": "EL_DUCTS", "room": "EL_ROOMS", "measurement": "EL_DIM", "text": "EL_TEXT"}
+# What the importer reads by layer when an entity carries no KIND: the current name and the one used before.
+_IMPORT_LAYERS = {k: {v, old} for (k, v), old in zip(FIXED_LAYERS.items(), ("PP_TRENCH", "PP_TRENCH", "PP_ROOMS", "PP_DIM", "PP_TEXT"))}
+
+# Layout sheets: paper sizes (mm, landscape) and the margin round the one viewport of each sheet.
+PAPERS = {"A0": (1189.0, 841.0), "A1": (841.0, 594.0), "A2": (594.0, 420.0), "A3": (420.0, 297.0)}
+SHEET_MARGIN_MM = 10.0
+VIEWPORT_LAYER = "EL_VIEWPORTS"
+
 
 def _hex_to_rgb(h: str):
     if not h:
@@ -497,8 +507,10 @@ def build_dxf(payload: Dict[str, Any], load_image=None, notes: List[str] | None 
         lt = lyr.get("linetype")
         if lt and lt in doc.linetypes:
             doc.layers.get(lyr["name"]).dxf.linetype = lt
+    fixed = {**FIXED_LAYERS, **(payload.get("fixedLayers") or {})}
+    L_TRENCH, L_DUCTS, L_ROOMS, L_DIM, L_TEXT = (fixed[k] for k in ("trench", "crossing", "room", "measurement", "text"))
     extras = payload.get("extraLayers") or {}
-    for extra in ("PP_ROUTES", "PP_LABELS", "PP_TRENCH", "PP_ROOMS", "PP_TEXT", "PP_DIM", META_BLOCK):
+    for extra in (*extras.keys(), L_TRENCH, L_DUCTS, L_ROOMS, L_DIM, L_TEXT, META_BLOCK):
         _ensure_layer(doc, extra, extras.get(extra))
         layer_hex.setdefault(extra, extras.get(extra) or "")
 
@@ -541,7 +553,8 @@ def build_dxf(payload: Dict[str, Any], load_image=None, notes: List[str] | None 
         pts = [(X(p[0]), Y(p[1])) for p in r.get("pts", [])]
         if len(pts) < 2:
             continue
-        layer = r.get("layer", "PP_ROUTES")
+        layer = r.get("layer") or "PP_ROUTES"
+        _ensure_layer(doc, layer, r.get("color"))
         da = {"layer": layer, **_color_attribs(r.get("color"), layer_hex.get(layer))}
         lt = r.get("linetype")              # its own linetype only where it differs from its layer's (ByLayer otherwise)
         lay_lt = (doc.layers.get(layer).dxf.linetype if layer in doc.layers else "Continuous") or "Continuous"
@@ -557,34 +570,40 @@ def build_dxf(payload: Dict[str, Any], load_image=None, notes: List[str] | None 
         label = r.get("label")
         if label:
             at, ang = _route_label_at(pts, H)
-            msp.add_text(label, dxfattribs={"height": H, "layer": "PP_LABELS", "style": TEXT_STYLE, "rotation": ang,
-                                            **_color_attribs(r.get("color"), layer_hex.get("PP_LABELS"))}).set_placement(at, align=TextEntityAlignment.MIDDLE_CENTER)
+            lab_layer = r.get("labelLayer") or (layer + "_LABELS")    # each cable layer's labels on a layer of their own
+            _ensure_layer(doc, lab_layer, layer_hex.get(layer) or r.get("color"))
+            layer_hex.setdefault(lab_layer, layer_hex.get(layer) or r.get("color") or "")
+            msp.add_text(label, dxfattribs={"height": H, "layer": lab_layer, "style": TEXT_STYLE, "rotation": ang,
+                                            **_color_attribs(r.get("color"), layer_hex.get(lab_layer))}).set_placement(at, align=TextEntityAlignment.MIDDLE_CENTER)
 
     # Trenches / measurements → polylines; rooms → closed polylines; texts.
     for t in payload.get("trenches", []):
         pts = [(X(p[0]), Y(p[1])) for p in t.get("pts", [])]
         if len(pts) >= 2:
-            ent = msp.add_lwpolyline(pts, dxfattribs={"layer": "PP_TRENCH", **_color_attribs(t.get("color"), layer_hex.get("PP_TRENCH"))})
+            ent = msp.add_lwpolyline(pts, dxfattribs={"layer": L_TRENCH, **_color_attribs(t.get("color"), layer_hex.get(L_TRENCH))})
             _set_meta(ent, {"KIND": "trench", "EXC": t.get("excType"), "NAME": t.get("name")})
     for rm in payload.get("rooms", []):
         pts = [(X(p[0]), Y(p[1])) for p in rm.get("pts", [])]
         if len(pts) >= 3:
-            ent = msp.add_lwpolyline(pts, close=True, dxfattribs={"layer": "PP_ROOMS", **_color_attribs(rm.get("color"), layer_hex.get("PP_ROOMS"))})
+            ent = msp.add_lwpolyline(pts, close=True, dxfattribs={"layer": L_ROOMS, **_color_attribs(rm.get("color"), layer_hex.get(L_ROOMS))})
             _set_meta(ent, {"KIND": "room", "NAME": rm.get("label")})
         if rm.get("label") and pts:
             cx = sum(p[0] for p in pts) / len(pts)
             cy = sum(p[1] for p in pts) / len(pts)
-            msp.add_text(rm["label"], dxfattribs={"height": H, "layer": "PP_ROOMS", "style": TEXT_STYLE}).set_placement((cx, cy), align=TextEntityAlignment.MIDDLE_CENTER)
+            lab = msp.add_text(rm["label"], dxfattribs={"height": H, "layer": L_ROOMS, "style": TEXT_STYLE})
+            lab.set_placement((cx, cy), align=TextEntityAlignment.MIDDLE_CENTER)
+            _set_meta(lab, {"KIND": "roomlabel"})
     for m in payload.get("measurements", []):
         pts = [(X(p[0]), Y(p[1])) for p in m.get("pts", [])]
         if len(pts) >= 2:
-            msp.add_lwpolyline(pts, dxfattribs={"layer": "PP_DIM", **_color_attribs(m.get("color"), layer_hex.get("PP_DIM"))})
+            ent = msp.add_lwpolyline(pts, dxfattribs={"layer": L_DIM, **_color_attribs(m.get("color"), layer_hex.get(L_DIM))})
+            _set_meta(ent, {"KIND": "measurement"})
     for c in payload.get("crossings", []):
         p1, p2 = c.get("p1"), c.get("p2")
         if p1 and p2:
             # colour by duct size (ACI 1 red = 160 mm, 30 orange = 110 mm), matching the plan; the size is also in the entity's data
-            col = _color_attribs(c.get("color"), layer_hex.get("PP_TRENCH")) if c.get("color") else {"color": 1 if str(c.get("size")) == "160" else 30}
-            ent = msp.add_line((X(p1[0]), Y(p1[1])), (X(p2[0]), Y(p2[1])), dxfattribs={"layer": "PP_TRENCH", **col})
+            col = _color_attribs(c.get("color"), layer_hex.get(L_DUCTS)) if c.get("color") else {"color": 1 if str(c.get("size")) == "160" else 30}
+            ent = msp.add_line((X(p1[0]), Y(p1[1])), (X(p2[0]), Y(p2[1])), dxfattribs={"layer": L_DUCTS, **col})
             _set_meta(ent, {"KIND": "crossing", "SIZE": c.get("size"), "NAME": c.get("name")})
     # Plan texts: the drawing's text height scaled by their size on the plan (14 = normal), anchored top-left as the plan draws them,
     # in their own colour; a payload from before text heights keeps the old size in plan units.
@@ -593,9 +612,10 @@ def build_dxf(payload: Dict[str, Any], load_image=None, notes: List[str] | None 
         for i, line in enumerate(str(tx.get("text", "")).split("\n")):
             if not line.strip():
                 continue
-            msp.add_text(line, dxfattribs={"height": h, "layer": "PP_TEXT", "style": TEXT_STYLE,
-                                           **_color_attribs(tx.get("color"), layer_hex.get("PP_TEXT"))}
-                         ).set_placement((X(tx["x"]), Y(tx["y"]) - i * 1.5 * h), align=TextEntityAlignment.TOP_LEFT)
+            ent = msp.add_text(line, dxfattribs={"height": h, "layer": L_TEXT, "style": TEXT_STYLE,
+                                                 **_color_attribs(tx.get("color"), layer_hex.get(L_TEXT))})
+            ent.set_placement((X(tx["x"]), Y(tx["y"]) - i * 1.5 * h), align=TextEntityAlignment.TOP_LEFT)
+            _set_meta(ent, {"KIND": "text"})
 
     # Backgrounds (the plan's DXF underlays): what the plan shows of each, on BG- layers, as one block each.
     for i, bg in enumerate(payload.get("backgrounds", []) or []):
@@ -618,6 +638,10 @@ def build_dxf(payload: Dict[str, Any], load_image=None, notes: List[str] | None 
     # Real-world units: the file is drawn in metres.
     doc.header["$INSUNITS"] = 6
 
+    # Layout sheets: one paper-space layout per sheet, each showing only its layers.
+    if payload.get("sheets"):
+        _add_layouts(doc, msp, payload)
+
     out = io.StringIO()
     doc.write(out)
     # Encode in the drawing's own code page (R2007 and later → UTF-8; an older one → its ANSI code page, with \U+XXXX
@@ -626,6 +650,54 @@ def build_dxf(payload: Dict[str, Any], load_image=None, notes: List[str] | None 
     return doc.encode(out.getvalue())
 
 
+
+
+def _add_layouts(doc, msp, payload):
+    """One paper-space layout per sheet (in the order sent), each with one viewport at the drawing scale on the plan's
+    extents that freezes the layers not on that sheet. `layerSheets` = {layer: [sheet ids] | 'all'}; a layer it does not
+    name (backgrounds, labels of an unlisted layer) shows on every sheet. Layout1 is replaced."""
+    lay_cfg = payload.get("layout") or {}
+    pw, ph = PAPERS.get(str(lay_cfg.get("paper") or "A1"), PAPERS["A1"])
+    margin = float(lay_cfg.get("margin") or SHEET_MARGIN_MM)
+    scale = float(lay_cfg.get("scale") or payload.get("scale") or 500)
+    ext = lay_cfg.get("extents")
+    if ext and len(ext) == 4:
+        cx, cy = (ext[0] + ext[2]) / 2.0, (ext[1] + ext[3]) / 2.0
+    else:
+        try:
+            from ezdxf import bbox
+            b = bbox.extents(msp, fast=True)
+            cx, cy = (b.center.x, b.center.y) if b.has_data else (0.0, 0.0)
+        except Exception:
+            cx, cy = 0.0, 0.0
+    uw, uh = pw - 2 * margin, ph - 2 * margin
+    layer_sheets = dict(payload.get("layerSheets") or {})
+    # a cable layer's labels go where the cable goes
+    for ly in list(doc.layers):
+        nm = ly.dxf.name
+        if nm.endswith("_LABELS") and nm not in layer_sheets and nm[:-7] in layer_sheets:
+            layer_sheets[nm] = layer_sheets[nm[:-7]]
+    layer_sheets.setdefault(META_BLOCK, [])
+    _ensure_layer(doc, VIEWPORT_LAYER, None)
+    names = [ly.dxf.name for ly in doc.layers]
+    made = []
+    for sh in payload.get("sheets") or []:
+        sid, title = str(sh.get("id")), str(sh.get("name") or sh.get("id"))
+        if title in doc.layouts:
+            continue
+        layout = doc.layouts.new(title)
+        layout.page_setup(size=(pw, ph), margins=(0, 0, 0, 0), units="mm")
+        vp = layout.add_viewport(center=(pw / 2.0, ph / 2.0), size=(uw, uh), view_center_point=(cx, cy),
+                                 view_height=uh * scale / 1000.0)
+        vp.dxf.layer = VIEWPORT_LAYER
+        frozen = [n for n in names if isinstance(layer_sheets.get(n), list) and sid not in layer_sheets[n]]
+        vp.frozen_layers = frozen
+        made.append(title)
+    if made:
+        doc.layers.get(VIEWPORT_LAYER).dxf.plot = 0      # the viewport frames do not plot
+        if "Layout1" in doc.layouts and "Layout1" not in made:
+            doc.layouts.delete("Layout1")
+        doc.layouts.set_active_layout(made[0])
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -1300,20 +1372,20 @@ def _parse_ours(doc, factor, floor_name, domain) -> Dict[str, Any]:
             pts = [to_px(p[0], p[1]) for p in e.get_points("xy")]
             if len(pts) < 2:
                 continue
-            if kind == "trench" or (not kind and layer == "PP_TRENCH"):
+            if kind == "trench" or (not kind and layer in _IMPORT_LAYERS["trench"]):
                 trenches.append({"pts": pts, "meta": meta})
-            elif kind == "room" or (not kind and layer == "PP_ROOMS"):
+            elif kind == "room" or (not kind and layer in _IMPORT_LAYERS["room"]):
                 rooms.append({"pts": pts, "meta": meta})
-            elif layer == "PP_DIM":
+            elif kind == "measurement" or (not kind and layer in _IMPORT_LAYERS["measurement"]):
                 measurements.append({"pts": pts})
             else:
                 routes.append({"curved": meta.get("CURVED") == "1", "layer": layer, "pts": pts, "meta": meta})
         elif t == "LINE" and kind == "crossing":
             crossings.append({"p1": to_px(e.dxf.start.x, e.dxf.start.y), "p2": to_px(e.dxf.end.x, e.dxf.end.y), "meta": meta})
-        elif t == "TEXT" and layer == "PP_TEXT":
+        elif t == "TEXT" and (kind == "text" or (not kind and layer in _IMPORT_LAYERS["text"])):
             p = to_px(e.dxf.insert.x, e.dxf.insert.y)
             texts.append({"x": p[0], "y": p[1], "text": e.dxf.text})
-        elif t == "TEXT" and layer == "PP_ROOMS":
+        elif t == "TEXT" and (kind == "roomlabel" or (not kind and layer in _IMPORT_LAYERS["room"])):
             # Room label: attach to the room polygon that contains it (older
             # files carry no NAME xdata on the polyline).
             p = to_px(e.dxf.insert.x, e.dxf.insert.y)

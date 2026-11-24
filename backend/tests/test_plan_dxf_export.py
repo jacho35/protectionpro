@@ -19,7 +19,7 @@ def _payload(**kw):
     p = {"factor": 0.05, "floorName": "", "domain": "retic", "textH": 1.25, "ltscale": 5,
          "layers": [{"name": "RT_SERVICE", "color": "#22c55e"}, {"name": "RT_FIBREBB", "color": "#a855f7", "linetype": "DASHED"},
                     {"name": "EL_PLANT", "color": "#22c55e"}],
-         "extraLayers": {"PP_TRENCH": "#787878", "PP_TEXT": "#111827"},
+         "extraLayers": {"EL_TRENCH": "#787878", "EL_TEXT": "#111827"},
          "blocks": {"PP_kiosk": {"sizeWorld": 24, "prims": [{"k": "r", "x": 8, "y": 8, "w": 24, "h": 24, "s": "col"}]}},
          "elements": [{"block": "PP_kiosk", "type": "kiosk", "x": 100, "y": 100, "rotation": 180, "layer": "EL_PLANT",
                        "color": "#ef4444", "attrs": {"REF": "K1", "TYPE": "kiosk"}}],
@@ -40,10 +40,10 @@ def test_text_one_style_paper_height_labels_along_their_cable():
     assert TEXT_STYLE in doc.styles and doc.styles.get(TEXT_STYLE).dxf.font.lower() == "arial.ttf"
     texts = list(msp.query("TEXT"))
     assert texts and all(t.dxf.style == TEXT_STYLE for t in texts)
-    (lab,) = [t for t in texts if t.dxf.layer == "PP_LABELS"]
+    (lab,) = [t for t in texts if t.dxf.layer == "RT_SERVICE_LABELS"]
     assert lab.dxf.height == pytest.approx(1.25)
     assert abs(lab.dxf.rotation) == pytest.approx(90)          # along the longest (vertical) segment, read upright
-    note = sorted([t for t in texts if t.dxf.layer == "PP_TEXT"], key=lambda t: -t.dxf.insert.y)
+    note = sorted([t for t in texts if t.dxf.layer == "EL_TEXT"], key=lambda t: -t.dxf.insert.y)
     assert [t.dxf.text for t in note] == ["Note A", "line 2"] and note[0].dxf.height == pytest.approx(2.5)
     assert note[0].rgb == (0x25, 0x63, 0xEB)
     (ref,) = msp.query("INSERT[name=='PP_kiosk']")
@@ -139,3 +139,79 @@ def test_a_background_that_cannot_be_read_is_left_out_with_a_note():
     data = build_dxf(_payload(backgrounds=[{"name": "lost", "imageId": 99, "m": [1, 0, 0, 0, 1, 0]}]),
                      load_image=lambda i: (_ for _ in ()).throw(KeyError(i)), notes=notes)
     assert data and notes and notes[0].startswith("lost: left out")
+
+
+# ── layout sheets ────────────────────────────────────────────────────────
+
+def _sheeted(**kw):
+    base = dict(
+        layers=[{"name": "EL_LV", "color": "#22c55e"}, {"name": "EL_FI", "color": "#a855f7", "linetype": "DASHED"}],
+        elements=[{"block": "PP_kiosk", "type": "kiosk", "x": 100, "y": 100, "layer": "EL_LV", "attrs": {"REF": "K1"}}],
+        routes=[{"layer": "EL_LV", "type": "lv", "label": "95 mm² 10.00 m", "pts": [[0, 0], [100, 0]]},
+                {"layer": "EL_FI", "type": "fibreBB", "label": "trunk", "pts": [[0, 0], [0, 100]]}],
+        sheets=[{"id": "MV", "name": "MV"}, {"id": "LV", "name": "LV"}, {"id": "FIBRE", "name": "Fibre"}],
+        layerSheets={"EL_LV": ["MV", "LV"], "EL_FI": ["FIBRE"], "EL_TRENCH": ["MV", "LV", "SL", "FIBRE"],
+                     "EL_DUCTS": ["MV", "LV", "SL", "FIBRE"], "EL_TEXT": "all"},
+        layout={"paper": "A1", "margin": 10, "scale": 500, "extents": [0, -10, 20, 0]})
+    base.update(kw)
+    return _payload(**base)
+
+
+def _viewport(doc, name):
+    (vp,) = [v for v in doc.layouts.get(name).query("VIEWPORT") if v.dxf.id != 1]
+    return vp
+
+
+def test_one_paper_space_layout_per_sheet_each_freezing_the_other_layers():
+    doc = _read(build_dxf(_sheeted()))
+    assert [l.name for l in doc.layouts if l.name != "Model"] == ["MV", "LV", "Fibre"]     # Layout1 replaced, in the order sent
+    mv, fi = _viewport(doc, "MV"), _viewport(doc, "Fibre")
+    assert "EL_FI" in mv.frozen_layers and "EL_FI_LABELS" in mv.frozen_layers           # labels follow their cable
+    assert "EL_LV" not in mv.frozen_layers and "EL_TEXT" not in mv.frozen_layers
+    assert {"EL_LV", "EL_LV_LABELS"} <= set(fi.frozen_layers) and "EL_TRENCH" not in fi.frozen_layers
+    assert "PP_META" in mv.frozen_layers                                                 # the hidden data block shows nowhere
+    # A1 less 10 mm margins: 821 × 574 mm; 574 mm at 1:500 = 287 m of plan; centred on the plan's extents
+    assert (mv.dxf.width, mv.dxf.height) == pytest.approx((821, 574))
+    assert mv.dxf.view_height == pytest.approx(287)
+    assert (mv.dxf.view_center_point.x, mv.dxf.view_center_point.y) == pytest.approx((10, -5))
+    assert doc.layers.get("EL_VIEWPORTS").dxf.plot == 0
+
+
+def test_paper_size_and_scale_set_the_viewport():
+    doc = _read(build_dxf(_sheeted(layout={"paper": "A3", "scale": 1000, "extents": [0, 0, 1, 1]})))
+    vp = _viewport(doc, "LV")
+    assert (vp.dxf.width, vp.dxf.height) == pytest.approx((400, 277))
+    assert vp.dxf.view_height == pytest.approx(277)
+
+
+def test_no_sheets_keeps_the_plain_file():
+    doc = _read(build_dxf(_payload()))
+    assert [l.name for l in doc.layouts if l.name != "Model"] == ["Layout1"]
+
+
+def test_fixed_layers_round_trip_and_older_pp_names_still_import():
+    p = _sheeted(trenches=[{"pts": [[0, 0], [50, 0]]}], measurements=[{"pts": [[0, 0], [9, 9]]}],
+                 rooms=[{"label": "Store", "pts": [[0, 0], [40, 0], [40, 40], [0, 40]]}])
+    data = build_dxf(p)
+    doc = _read(data)
+    layers = {e.dxf.layer for e in doc.modelspace()}
+    assert {"EL_TRENCH", "EL_DUCTS", "EL_DIM", "EL_ROOMS", "EL_TEXT"} <= layers and not any(l.startswith("PP_") and l != "PP_META" for l in layers)
+    r = parse_dxf(data)
+    assert (len(r["trenches"]), len(r["crossings"]), len(r["measurements"]), len(r["rooms"]), len(r["texts"])) == (1, 1, 1, 1, 2)
+    assert r["rooms"][0].get("label") == "Store"
+    # a file from before: the old PP_ layers with no KIND data are read by their layer
+    old = ezdxf.new("R2010")
+    msp = old.modelspace()
+    for name in ("PP_TRENCH", "PP_ROOMS", "PP_DIM", "PP_TEXT"):
+        old.layers.add(name)
+    mb = old.blocks.new("PP_META")
+    mb.add_attdef("FACTOR", dxfattribs={"height": 0.001}).set_placement((0, 0))
+    msp.add_blockref("PP_META", (0, 0)).add_auto_attribs({"FACTOR": "0.05"})
+    msp.add_lwpolyline([(0, 0), (5, 0)], dxfattribs={"layer": "PP_TRENCH"})
+    msp.add_lwpolyline([(0, 0), (5, 0), (5, 5)], close=True, dxfattribs={"layer": "PP_ROOMS"})
+    msp.add_lwpolyline([(0, 0), (1, 1)], dxfattribs={"layer": "PP_DIM"})
+    msp.add_text("old note", dxfattribs={"layer": "PP_TEXT"}).set_placement((1, 1))
+    buf = io.StringIO()
+    old.write(buf)
+    r = parse_dxf(buf.getvalue().encode("utf-8"))
+    assert (len(r["trenches"]), len(r["rooms"]), len(r["measurements"]), len(r["texts"])) == (1, 1, 1, 1)
