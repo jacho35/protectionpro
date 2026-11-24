@@ -48,9 +48,14 @@ const RoadSitePlan = {
       for (const r of fl.data.routes || []) {
         if (r.type !== 'street' || !Array.isArray(r.points) || r.points.length < 2) continue;
         const p = r.props || {};
-        out.push({ id: r.id, floorId: fl.id, name: p.name || '', f,
-          pts: r.points.map(q => [q.x * f, q.y * f]),
-          ...(() => { const c = typeof RoadSections !== 'undefined' ? RoadSections.carriage(p) : { cw: +p.carriageW > 0 ? +p.carriageW : 0, off: +p.cwOffset || 0 }; return { carriageW: c.cw > 0 ? c.cw : 0, cwOffset: c.cw > 0 ? c.off : 0 }; })(), width: +p.width || 0 });
+        // a road with stretches of another section comes in as its pieces (ids `<road>~<k>`, `rid` = the road): they join back into one
+        // run, its kerbs taper where the carriageway changes, and the run knows each piece's section (`sec`)
+        const ps = typeof RoadSections !== 'undefined' ? RoadSections.pieces(r, f) : [{ pts: r.points, props: p, section: p.section || null }];
+        ps.forEach((q, k) => {
+          const c = typeof RoadSections !== 'undefined' ? RoadSections.carriage(q.props) : { cw: +p.carriageW > 0 ? +p.carriageW : 0, off: +p.cwOffset || 0 };
+          out.push({ id: ps.length > 1 ? r.id + '~' + k : r.id, rid: r.id, sec: (q.section || null) !== (p.section || null) ? q.section : null, floorId: fl.id, name: p.name || '', f,
+            pts: q.pts.map(v => [v.x * f, v.y * f]), carriageW: c.cw > 0 ? c.cw : 0, cwOffset: c.cw > 0 ? c.off : 0, width: +p.width || 0 });
+        });
       }
     }
     return out;
@@ -132,8 +137,22 @@ const RoadSitePlan = {
       // the offset is to the left of the piece's own direction: a piece turned round has it on the other side
       const eff = p => ({ w: p.s.carriageW, o: (p.rev ? -1 : 1) * (p.s.cwOffset || 0) });
       const e0 = eff(mp), uniform = pieces.every(p => { const e = eff(p); return Math.abs(e.w - e0.w) < 0.05 && Math.abs(e.o - e0.o) < 0.05; });
-      const run = { ids: pieces.map(p => p.s.id), pts, carriageW: main.carriageW, cwOffset: e0.o, name };
+      const run = { ids: [...new Set(pieces.map(p => p.s.rid || p.s.id))], pts, carriageW: main.carriageW, cwOffset: e0.o, name };
       const sig = [pts.map(q => [Math.round(q[0] * 100), Math.round(q[1] * 100)]), main.carriageW, e0.o];
+      // the stretches along the run (pieces that are a stretch of their road, `sec`), metres along the run as walked
+      if (pieces.some(p => p.s.sec)) {
+        let at = 0; run.secs = [];
+        for (const p of pieces) {
+          const l = len(p.s.pts);
+          if (p.s.sec) {
+            const last = run.secs[run.secs.length - 1];
+            if (last && last.section === p.s.sec && Math.abs(last.s1 - at) < 0.01) last.s1 = +(at + l).toFixed(2);
+            else run.secs.push({ s0: +at.toFixed(2), s1: +(at + l).toFixed(2), section: p.s.sec });
+          }
+          at += l;
+        }
+        sig.push(run.secs.map(x => [x.s0, x.s1, x.section]));
+      }
       if (!uniform) {
         // each piece's width / offset and the joint it ends at (the joint = the last point of that piece in the run)
         run.prof = pieces.map((p, i) => { const e = eff(p), q = p.rev ? p.s.pts[0] : p.s.pts[p.s.pts.length - 1]; return { w: e.w, o: e.o, at: i < pieces.length - 1 ? q.slice() : null }; });
@@ -152,7 +171,7 @@ const RoadSitePlan = {
 
   // The corners the plan draws with an inner and an outer kerb radius (two-leg corners of its kerb drawing): plan frame, inner radius.
   _corners(streets) {
-    const list = streets.filter(s => s.carriageW > 0).map(s => ({ rid: s.id, pts: s.pts, w: s.width || 12, carriageW: s.carriageW, cwOffset: s.cwOffset }));
+    const list = streets.filter(s => s.carriageW > 0).map(s => ({ rid: s.rid || s.id, pts: s.pts, w: s.width || 12, carriageW: s.carriageW, cwOffset: s.cwOffset }));
     if (!list.length || typeof PlanReserve === 'undefined') return [];
     const fl = this._floors().find(x => (x.data.routes || []).some(r => list.some(l => l.rid === r.id)));
     const rets = (((fl && fl.data.settings) || {}).layout || {}).streetReturns || {};
@@ -200,9 +219,15 @@ const RoadSitePlan = {
     return { mode: 'poly', poly, kerbs: undefined, carriageW: undefined, cwOffset: undefined };
   },
   _apply(road, run) {
-    const sh = this._shape(run, road.plan && road.plan.rev);
+    const rev = road.plan && road.plan.rev, sh = this._shape(run, rev);
     for (const k of Object.keys(sh)) { if (sh[k] === undefined) delete road[k]; else road[k] = sh[k]; }
     delete road.ip;
+    // the stretches of another section along the road, in Road plan metres along it (turned round with the road); derived, set on every sync
+    if (run.secs && run.secs.length) {
+      let L = 0; for (let i = 1; i < run.pts.length; i++) L += Math.hypot(run.pts[i][0] - run.pts[i - 1][0], run.pts[i][1] - run.pts[i - 1][1]);
+      road.sectionRuns = run.secs.map(x => rev ? { s0: +(L - x.s1).toFixed(2), s1: +(L - x.s0).toFixed(2), section: x.section } : Object.assign({}, x))
+        .sort((a, b) => a.s0 - b.s0);
+    } else delete road.sectionRuns;
   },
 
   linked(road) { return !!(road && road.plan && !road.plan.unlinked); },

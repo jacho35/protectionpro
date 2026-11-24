@@ -229,4 +229,39 @@ ok('a standard made before the offsets: they come from the default section, a se
   assert.strictEqual(RS.layoutShape(c).items.lv.off, 0.9); assert.strictEqual(RS.layoutShape(c).items.fi.off, 2.5);   // unchanged
   assert.strictEqual(RS.migrateStd({}, false), false);
 });
+ok('stretches: part of a road with another section; others give way; a removed section takes its stretches with it', () => {
+  const road = { id: 'r1', type: 'street', points: [{ x: 0, y: 0 }, { x: 200, y: 0 }], props: {} };
+  fresh([road]);
+  const a = RS.add('Local'), b = RS.add('Bus bay'), c = RS.add('Wide');
+  RS.assign([road], a.id);
+  const x = RS.setStretch(road, { s0: 60, s1: 90, section: b.id });
+  assert.deepStrictEqual(RS.stretches(road, 0.5).map(t => [t.s0, t.s1, t.section]), [[60, 90, b.id]]);
+  assert.strictEqual(RS.sectionAt(road, 75, 0.5).id, b.id); assert.strictEqual(RS.sectionAt(road, 30, 0.5).id, a.id);
+  // a new stretch over the middle of it splits it
+  RS.setStretch(road, { s0: 70, s1: 80, section: c.id });
+  assert.deepStrictEqual(RS.stretches(road, 0.5).map(t => [t.s0, t.s1, t.section]), [[60, 70, b.id], [70, 80, c.id], [80, 90, b.id]]);
+  // editing one moves it; past the road's end it is clamped there (200 px × 0.5 = 100 m)
+  RS.setStretch(road, { id: x.id, s0: 85, s1: 130, section: b.id });
+  assert.deepStrictEqual(RS.stretches(road, 0.5).map(t => [t.s0, t.s1]), [[70, 80], [80, 85], [85, 100]]);
+  assert.ok(RS.roadsUsing(c.id).includes(road));
+  RS.remove(c.id);
+  assert.ok(RS.stretches(road, 0.5).every(t => t.section !== c.id));
+});
+
+ok('pieces: the road cut at its stretch ends, each with its section (none = the road itself)', () => {
+  const road = { id: 'r1', type: 'street', points: [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 100 }], props: { name: 'Main' } };
+  fresh([road]);
+  const a = RS.add('Local'), b = RS.add('Bus bay');
+  assert.strictEqual(RS.pieces(road, 1).length, 1);
+  RS.setStretch(road, { s0: 80, s1: 130, section: b.id });
+  const P = RS.pieces(road, 1);
+  assert.deepStrictEqual(P.map(p => [p.s0, p.s1, p.section]), [[0, 80, null], [80, 130, b.id], [130, 200, null]]);
+  assert.deepStrictEqual(P[1].pts, [{ x: 80, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 30 }]);     // round the bend
+  assert.strictEqual(P[1].props.name, 'Main'); assert.strictEqual(P[1].props.stretches, undefined);
+  assert.deepStrictEqual(RS.project(road, { x: 103, y: 50 }, 1), { s: 150, d: 3 });
+  // Auto layout: the road's line, then the stretch's (the later line wins at a station)
+  RS.assign([road], a.id);
+  const lines = RS.forLayout(true).lines.filter(l => l.streetId === 'r1');
+  assert.deepStrictEqual(lines.map(l => [l.s0, l.s1, l.sec]), [[0, 1e9, a.id], [80, 130, b.id]]);
+});
 console.log(n + ' passed');

@@ -118,4 +118,16 @@ ok('a closed ring of pieces is one road, each piece once', () => {
   assert.deepStrictEqual(all, ['a', 'b', 'c']);
 });
 
+ok('a road with a stretch of another section: its pieces join into one road that knows where the stretch is', () => {
+  // road r1 as the site plan sync reads it: three pieces, the middle one a stretch (sec) with a wider carriageway
+  const r = S.runs([st('r1~0', [[0, 0], [80, 0]], { rid: 'r1', carriageW: 6 }), st('r1~1', [[80, 0], [130, 0]], { rid: 'r1', sec: 'rs_2', carriageW: 9 }),
+                    st('r1~2', [[130, 0], [200, 0]], { rid: 'r1', carriageW: 6 })]);
+  assert.strictEqual(r.length, 1);
+  assert.deepStrictEqual(r[0].ids, ['r1']);
+  assert.deepStrictEqual(r[0].secs, [{ s0: 80, s1: 130, section: 'rs_2' }]);
+  assert.ok(r[0].prof);                                                   // the kerbs taper into the wider stretch
+  // turned round on the Road plan, the stretch is measured from the other end
+  const road = { plan: { rev: true } }; S._apply(road, Object.assign({}, r[0], { carriageW: 0 }));
+  assert.deepStrictEqual(road.sectionRuns, [{ s0: 70, s1: 120, section: 'rs_2' }]);
+});
 console.log(`${n} passed`);

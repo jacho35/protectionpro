@@ -9,7 +9,9 @@
  * Stored in `reticulation.streetLighting.roadSections` (Collab list `sl.roadSections`); the default is `streetLighting.settings.roadSectionDef`.
  *
  * Who reads it:
- *   - a road on the site plan (a `street` route) picks one with `props.section` (Properties, bulk too); none = the default;
+ *   - a road on the site plan (a `street` route) picks one with `props.section` (Properties, bulk too); none = the default; a part of it can
+ *     take another (`props.stretches` [{ id, s0, s1, section }], metres along it: `stretches`, `setStretch`, `sectionAt`); the kerb drawing
+ *     and the Road plan read the road cut there (`pieces`), Auto layout gets a section line per stretch;
  *   - a Lighting design picks one with `des.section`: its strips ARE the section's (`stripsOf`); a design without one keeps its own strips;
  *   - a Road plan road reads the site plan road it follows, else its own `road.section`, else its design's (`RoadPlan._design`);
  *   - Auto layout reads `forLayout()`: the services offsets per road, in the engine's { strips: {a, road, b}, items } shape (`layoutShape`).
@@ -305,7 +307,7 @@ const RoadSections = (() => {
   const roads = () => _roadsFn();
   // the section a site plan road uses: its own pick, else the default (`own` = only its own pick)
   function of(route, own) { const id = route && route.props && route.props.section; const s = get(id); return s || (own ? null : def()); }
-  function roadsUsing(id) { const d = defId(); return roads().filter(r => { const p = r.props && r.props.section; return get(p) ? p === id : id === d; }); }
+  function roadsUsing(id) { const d = defId(); return roads().filter(r => { const p = r.props && r.props.section; return (get(p) ? p === id : id === d) || (Array.isArray(r.props && r.props.stretches) && r.props.stretches.some(x => x.section === id)); }); }
   function assign(routes, id) { for (const r of routes || []) { if (!r) continue; r.props = r.props || {}; if (id && get(id)) r.props.section = id; else delete r.props.section; } }
 
   // the carriageway of a site plan road: its own (kerbs it was drawn with) where set, else its own section's (a road with no pick and no own
@@ -327,11 +329,111 @@ const RoadSections = (() => {
     return out;
   }
 
-  // Auto layout's input.sections: every section in the engine's shape; a road with its own pick is a line over the whole of it
+  // ── stretches: part of a road with another section ──
+  // `route.props.stretches` = [{ id, s0, s1, section }]: metres along the road from its first point (along the curve the plan draws, `flat`).
+  // A stretch's section applies from s0 to s1; elsewhere the road's own (or the default). Stretches never overlap (a later one is trimmed by
+  // an earlier one when it is set, `setStretch`) and are at least 1 m.
+  function flat(route) {
+    const pts = (route.points || []).map(p => ({ x: p.x, y: p.y }));
+    if (!route.curved || pts.length < 3) return pts;
+    const out = [], P = [pts[0], ...pts, pts[pts.length - 1]];
+    for (let i = 1; i < P.length - 2; i++) {
+      const p0 = P[i - 1], p1 = P[i], p2 = P[i + 1], p3 = P[i + 2];
+      for (let k = 0; k < 8; k++) {
+        const t = k / 8, t2 = t * t, t3 = t2 * t;
+        out.push({ x: 0.5 * (2 * p1.x + (-p0.x + p2.x) * t + (2 * p0.x - 5 * p1.x + 4 * p2.x - p3.x) * t2 + (-p0.x + 3 * p1.x - 3 * p2.x + p3.x) * t3),
+                   y: 0.5 * (2 * p1.y + (-p0.y + p2.y) * t + (2 * p0.y - 5 * p1.y + 4 * p2.y - p3.y) * t2 + (-p0.y + 3 * p1.y - 3 * p2.y + p3.y) * t3) });
+      }
+    }
+    out.push(pts[pts.length - 1]);
+    return out;
+  }
+  // metres per plan pixel of the floor a road is on (else the open plan's)
+  function factorOf(route) {
+    const fl = (typeof AppState !== 'undefined' && AppState.planFloors) ? AppState.planFloors() : null;
+    if (fl) for (const f of fl) if (((f.data && f.data.routes) || []).includes(route)) return +(f.data.scale && f.data.scale.factor) || null;
+    if (typeof PlanEngine !== 'undefined' && PlanEngine.factor) return PlanEngine.factor() || null;
+    return null;
+  }
+  function cumOf(pts) { const c = [0]; for (let i = 1; i < pts.length; i++) c.push(c[i - 1] + Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y)); return c; }
+  function lengthOf(route, f) { f = f || factorOf(route) || 1; const c = cumOf(flat(route)); return c[c.length - 1] * f; }
+  // the road's stretches, valid and in order along it (clamped to its length when `f` is known)
+  function stretches(route, f) {
+    const L = f || factorOf(route) ? lengthOf(route, f) : Infinity;
+    const raw = (route && route.props && Array.isArray(route.props.stretches)) ? route.props.stretches : [];
+    return raw.filter(x => x && get(x.section)).map(x => ({ id: x.id, section: x.section, s0: Math.max(0, Math.min(+x.s0, +x.s1)), s1: Math.min(L, Math.max(+x.s0, +x.s1)) }))
+      .filter(x => Number.isFinite(x.s0) && Number.isFinite(x.s1) && x.s1 - x.s0 >= 1).sort((a, b) => a.s0 - b.s0);
+  }
+  // the section at a distance along the road (`own` = null where the road takes the default)
+  function sectionAt(route, s, f, own) { const x = stretches(route, f).find(t => s >= t.s0 && s <= t.s1); return x ? get(x.section) : of(route, own); }
+  // add or change a stretch; the others give way to it (trimmed, split or dropped). Returns it.
+  function setStretch(route, st) {
+    route.props = route.props || {};
+    const L = Array.isArray(route.props.stretches) ? route.props.stretches : [];
+    const a = r2(Math.max(0, Math.min(+st.s0, +st.s1))), b = r2(Math.max(+st.s0, +st.s1));
+    let id = st.id; if (!id) { let n = L.length + 1; while (L.some(x => x.id === 'sx_' + n)) n++; id = 'sx_' + n; }
+    const out = [];
+    for (const x of L) {
+      if (x.id === id) continue;
+      if (x.s1 <= a || x.s0 >= b) { out.push(x); continue; }
+      if (x.s0 < a) out.push(Object.assign({}, x, { s1: a }));
+      if (x.s1 > b) { let n = L.length + out.length + 2; while (L.concat(out).some(y => y.id === 'sx_' + n) || 'sx_' + n === id) n++; out.push(Object.assign({}, x, { id: x.s0 < a ? 'sx_' + n : x.id, s0: b })); }
+    }
+    const me = { id, s0: a, s1: b, section: st.section };
+    out.push(me);
+    route.props.stretches = out.filter(x => x.s1 - x.s0 >= 1).sort((p, q) => p.s0 - q.s0);
+    return me;
+  }
+  function removeStretch(route, id) {
+    if (!route || !route.props || !Array.isArray(route.props.stretches)) return;
+    route.props.stretches = route.props.stretches.filter(x => x.id !== id);
+    if (!route.props.stretches.length) delete route.props.stretches;
+  }
+  // a point along the road (plan px) at distance s (m)
+  function pointAt(route, s, f) {
+    f = f || factorOf(route) || 1; const P = flat(route), c = cumOf(P), d = s / f;
+    for (let i = 1; i < P.length; i++) if (d <= c[i] || i === P.length - 1) { const t = (c[i] - c[i - 1]) ? Math.max(0, Math.min(1, (d - c[i - 1]) / (c[i] - c[i - 1]))) : 0; return { x: P[i - 1].x + (P[i].x - P[i - 1].x) * t, y: P[i - 1].y + (P[i].y - P[i - 1].y) * t }; }
+    return P[0];
+  }
+  // the distance along the road (m) of the point of it nearest `pt` (plan px), and how far off it is (px)
+  function project(route, pt, f) {
+    f = f || factorOf(route) || 1; const P = flat(route), c = cumOf(P); let best = { s: 0, d: Infinity };
+    for (let i = 1; i < P.length; i++) {
+      const a = P[i - 1], b = P[i], dx = b.x - a.x, dy = b.y - a.y, l2 = dx * dx + dy * dy || 1e-12;
+      const t = Math.max(0, Math.min(1, ((pt.x - a.x) * dx + (pt.y - a.y) * dy) / l2)), x = a.x + dx * t, y = a.y + dy * t, d = Math.hypot(pt.x - x, pt.y - y);
+      if (d < best.d) best = { s: (c[i - 1] + Math.sqrt(l2) * t) * f, d };
+    }
+    return best;
+  }
+  // The road cut at its stretch ends: [{ pts (plan px), s0, s1, section (id or null = the road's own / default), props (the road's, with that
+  // section and no stretches) }] — one piece, the road itself, when it has none. The kerb drawing and the Road plan read a road this way,
+  // so a stretch with another carriageway tapers into the rest like two roads meeting end to end.
+  function pieces(route, f) {
+    f = f || factorOf(route) || 1;
+    const P = flat(route), c = cumOf(P), L = c[c.length - 1] * f, own = (route.props && route.props.section) || null;
+    const xs = stretches(route, f), base = Object.assign({}, route.props || {}); delete base.stretches;
+    if (!xs.length) return [{ pts: (route.points || []).map(p => ({ x: p.x, y: p.y })), s0: 0, s1: L, section: own, props: base }];   // the road as drawn
+    const cuts = [];
+    let at = 0;
+    for (const x of xs) { if (x.s0 > at + 0.01) cuts.push({ s0: at, s1: x.s0, section: own }); cuts.push({ s0: x.s0, s1: x.s1, section: x.section }); at = x.s1; }
+    if (L > at + 0.01) cuts.push({ s0: at, s1: L, section: own });
+    const slice = (a, b) => {
+      const out = [pointAt(route, a, f)];
+      for (let i = 1; i < P.length - 1; i++) { const s = c[i] * f; if (s > a + 1e-6 && s < b - 1e-6) out.push({ x: P[i].x, y: P[i].y }); }
+      out.push(pointAt(route, b, f)); return out;
+    };
+    return cuts.map(k => ({ pts: slice(k.s0, k.s1), s0: r2(k.s0), s1: r2(k.s1), section: k.section, props: Object.assign({}, base, { section: k.section || undefined }) }));
+  }
+
+  // Auto layout's input.sections: every section in the engine's shape; a road with its own pick is a line over the whole of it, and each
+  // stretch a line over its part (`secAt` takes the last line over a station, so the stretch wins there). Stations are metres along the road.
   function forLayout(on) {
     const L = list(); if (!L.length) return null;
     const lines = [];
-    for (const r of roads()) { const id = r.props && r.props.section; if (get(id)) lines.push({ id: 'ra_' + r.id, streetId: r.id, s0: 0, s1: 1e9, sec: id }); }
+    for (const r of roads()) {
+      const id = r.props && r.props.section; if (get(id)) lines.push({ id: 'ra_' + r.id, streetId: r.id, s0: 0, s1: 1e9, sec: id });
+      for (const x of stretches(r)) lines.push({ id: 'rx_' + r.id + '_' + x.id, streetId: r.id, s0: x.s0, s1: x.s1, sec: x.section });
+    }
     return { on: on !== false, list: L.map(layoutShape), def: defId(), lines };
   }
 
@@ -351,7 +453,10 @@ const RoadSections = (() => {
     const sec = L[i];
     // a design that used it keeps the strips as its own; roads go back to the default
     for (const d of designsUsing(id)) { d.sections = JSON.parse(JSON.stringify(sec.strips)); delete d.section; }
-    for (const r of roads()) if (r.props && r.props.section === id) delete r.props.section;
+    for (const r of roads()) {
+      if (r.props && r.props.section === id) delete r.props.section;
+      if (r.props && Array.isArray(r.props.stretches)) { r.props.stretches = r.props.stretches.filter(x => x.section !== id); if (!r.props.stretches.length) delete r.props.stretches; }
+    }
     const sl = SL(); if (sl && sl.roadPlan) for (const rd of sl.roadPlan.roads || []) if (rd.section === id) delete rd.section;
     L.splice(i, 1);
     if (defId() === id || !get(SL().settings && SL().settings.roadSectionDef)) setDef(L[0].id);
@@ -433,6 +538,7 @@ const RoadSections = (() => {
     std, setStd, setSize, sizes, own, setOwn, copyFrom, toStd, differing, trenchSize, roadNear, migrateStd, GROUPS,
     list, get, defId, def, setDef, make, add, roads, ensure, span, pole, designOf, layoutShape, of, roadsUsing, assign, carriage, mismatches,
     forLayout, stripsOf, designsUsing, options, summary, remove, duplicate, migrate, stripId, strip,
+    flat, factorOf, lengthOf, stretches, sectionAt, setStretch, removeStretch, pointAt, project, pieces,
     _use(sl, roadsFn) { _sl = sl || null; _roadsFn = roadsFn || _roads; },                                          // tests
   };
 })();

@@ -38,14 +38,19 @@ same(L.of('fixed', 'crossing')[1].includes('DUCTS') && !L.of('fixed', 'trench')[
 same(names(pm({ elements: [{ type: 'bd_socket', x: 0, y: 0 }, { type: 'bd_smoke', x: 0, y: 0 }, { type: 'bd_light', x: 0, y: 0 }] })),
   ['LIGHTING', 'POWER', 'FIRE']);
 
-// extents in export metres (y flipped) and the fit on paper: A1 less 10 mm margins = 821 × 574 mm
-const ext = D._extents(pm({ elements: [{ type: 'kiosk', x: 0, y: 0 }, { type: 'kiosk', x: 8000, y: 2000 }] }), 0.05);
-same(ext, [0, -100, 400, 0]);
+// extents in export metres (y flipped) and the fit on paper. No template: A1 less 10 mm margins and the legend column (98 + 3 mm)
+// = 720 × 574 mm; with a template, its viewport (the DVM A1: 725 × 578 mm)
+const ext = D._extents(pm({ elements: [{ type: 'kiosk', x: 0, y: 0 }, { type: 'kiosk', x: 7000, y: 2000 }] }), 0.05);
+same(ext, [0, -100, 350, 0]);
 assert.strictEqual(D._extents(pm({}), 0.05), null);
-let f = D._fit(ext, 'A1', 500);              // 400 m at 1:500 = 800 mm ≤ 821; 100 m = 200 mm
+D._tpl = { available: false, papers: {} };
+let f = D._fit(ext, 'A1', 500);              // 350 m at 1:500 = 700 mm ≤ 720; 100 m = 200 mm
 assert(f.ok && f.need === 500);
-f = D._fit(ext, 'A3', 500);                  // A3: 400 mm usable → needs 1:1000 (400 mm)
-assert(!f.ok && f.need === 1000);
+f = D._fit(ext, 'A3', 500);                  // A3: 420 − 20 − 101 = 299 mm usable → needs 1:1250 (280 mm)
+assert(!f.ok && f.need === 1250);
 assert(D._fit(null, 'A3', 100).ok);
+D._tpl = { available: true, papers: { A3: { viewport: [324, 281] } } };
+assert(D._fit(ext, 'A3', 1250).ok && D._fit(ext, 'A3', 1250).need === 1250);   // 280 mm ≤ 324
+D._tpl = null;
 
 console.log('plandxf: ok');
