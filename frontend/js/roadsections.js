@@ -23,9 +23,11 @@
  * with `fitStrips` / `matchReserve`. No reserve picked = the strips' sum, as before. A site plan road's reserve (`reserveOf`) is its own
  * `props.width` where typed, else its section's picked reserve; `widthMismatches` lists roads whose own width is not their section's.
  *
- * Sizes (`std`, `sizes`, `setOwn`, `copyFrom`, `toStd`): the kiosk size, the fibre manhole size and the width + depth of each trench type
- * (MV, LV/SL, MV/LV/SL, FI) are set ONCE for the project in `streetLighting.settings.roadStd` { kiosk, mh, trench }. A section uses them
- * unless it differs (`sec.own[group]`: its own `items.kiosk` / `items.mh` sizes, its own `sec.trench`); offsets are always the section's.
+ * The project standard (`std`, `sizes`, `setOwn`, `copyFrom`, `toStd`): the offsets from the erf boundary (service, LV, fibre, MV, kiosk
+ * near face, manhole centre), the kiosk size, the fibre manhole size and the width + depth of each trench type (MV, LV/SL, MV/LV/SL, FI)
+ * are set ONCE for the project in `streetLighting.settings.roadStd` { off, kiosk, mh, trench }. A section uses each group unless it
+ * differs (`sec.own[group]`: its own `items[k].off` offsets, `items.kiosk` / `items.mh` sizes, its own `sec.trench`). A standard made
+ * before it held the offsets takes them from the default section; the sections that differ keep theirs (`offInit`).
  * `layoutShape` hands the engine the resolved sizes; `trenchSize(t)` is the size of a plan trench (its own width / depth override, else
  * the section of the road it lies along (`t.roadId`) or the section Auto layout made it on (`t.section`) where that section differs, else
  * the standard) — the plan drawing, the CSV and the trench Properties read it. `migrateStd` sets the standard up once for an older project.
@@ -51,21 +53,33 @@ const RoadSections = (() => {
   const strip = (sec, o) => Object.assign({ id: stripId(sec), type: 'verge', name: '', width: 2, lanes: 2, cls: '', surface: 'R3', direction: 'forward' }, o);
 
   // ── sizes: the project standard and what a section has of its own ──
-  const GROUPS = ['kiosk', 'mh', 'trench'];
+  const GROUPS = ['off', 'kiosk', 'mh', 'trench'];
   const clone = o => JSON.parse(JSON.stringify(o));
   function sizeGroup(g, src) {
     const P = PS(), out = {}, x = src && typeof src === 'object' ? src : {};
     for (const k of P.SIZES[g]) { const [d, lo, hi] = P.SHAPE[g][k], n = parseFloat(x[k]); out[k] = Number.isFinite(n) ? P.snap(Math.max(lo, Math.min(hi, n))) : d; }
     return out;
   }
-  const normStd = raw => ({ kiosk: sizeGroup('kiosk', raw && raw.kiosk), mh: sizeGroup('mh', raw && raw.mh), trench: PS().trench(raw && raw.trench) });
+  // the offsets from the erf boundary { svc, lv, fi, mv, kiosk, mh }: from a standard's `off` (flat) or a section's items (`items[k].off`)
+  function offGroup(src, fromItems) {
+    const P = PS(), out = {}, x = src && typeof src === 'object' ? src : {};
+    for (const k of P.OFFS) { const [d, lo, hi] = P.SHAPE[k].off, n = parseFloat(fromItems ? (x[k] || {}).off : x[k]); out[k] = Number.isFinite(n) ? P.snap(Math.max(lo, Math.min(hi, n))) : d; }
+    return out;
+  }
+  const normStd = raw => ({ off: offGroup(raw && raw.off), kiosk: sizeGroup('kiosk', raw && raw.kiosk), mh: sizeGroup('mh', raw && raw.mh), trench: PS().trench(raw && raw.trench) });
+  // a standard made before it held the offsets: they come from the default section, and every other section whose offsets differ keeps
+  // them as its own (so nothing moves)
+  function offInit(S) {
+    const d0 = def(); S.off = offGroup(d0 && d0.items, true);
+    for (const sec of list()) if (sec.items && !own(sec, 'off') && JSON.stringify(offGroup(sec.items, true)) !== JSON.stringify(S.off)) sec.own = Object.assign({}, sec.own || {}, { off: true });
+  }
   // the project standard (stored, edited in place); made from the defaults the first time it is asked for
   function std() {
     const sl = SL(), raw = sl && sl.settings && sl.settings.roadStd;
-    if (raw && raw.kiosk && raw.mh && raw.trench) return raw;
-    const s = normStd(raw); if (sl) { sl.settings = sl.settings || {}; sl.settings.roadStd = s; } return s;
+    if (raw && raw.kiosk && raw.mh && raw.trench) { if (!raw.off) offInit(raw); return raw; }
+    const s = normStd(raw); if (!(raw && raw.off)) offInit(s); if (sl) { sl.settings = sl.settings || {}; sl.settings.roadStd = s; } return s;
   }
-  // set one value of the standard (`group`, `key`; trench keys are '<type>.w' / '<type>.d'), clamped and snapped
+  // set one value of the standard (`group`, `key`; trench keys are '<type>.w' / '<type>.d', offset keys the item: 'off', 'lv'), clamped and snapped
   function setStd(g, key, v) { return setSize(std(), g, key, v); }
   function setSize(holder, g, key, v) {
     const P = PS(), n = parseFloat(v); if (!Number.isFinite(n)) return false;
@@ -73,32 +87,44 @@ const RoadSections = (() => {
       const [t, k] = key.split('.'), T = holder.trench || (holder.trench = P.trench()); if (!P.TRENCH[t] || !['w', 'd'].includes(k)) return false;
       const R = k === 'w' ? P.TRENCH_W : P.TRENCH_D; T[t] = T[t] || {}; T[t][k] = P.snap(Math.max(R[0], Math.min(R[1], n))); return true;
     }
+    if (g === 'off') {
+      if (!P.OFFS.includes(key)) return false;
+      const [, lo, hi] = P.SHAPE[key].off, x = P.snap(Math.max(lo, Math.min(hi, n)));
+      if (holder === std()) holder.off[key] = x; else (holder.items[key] || (holder.items[key] = {})).off = x;
+      return true;
+    }
     if (!P.SIZES[g] || !P.SIZES[g].includes(key)) return false;
     const tgt = holder === std() ? holder[g] : holder.items[g], [, lo, hi] = P.SHAPE[g][key];
     tgt[key] = P.snap(Math.max(lo, Math.min(hi, n))); return true;
   }
   const own = (sec, g) => !!(sec && sec.own && sec.own[g]);
-  // the sizes a section works with for a group: its own where it differs, else the standard's
+  // what a section works with for a group: its own where it differs, else the standard's
   function sizes(sec, g) {
     if (g === 'trench') return own(sec, g) ? PS().trench(sec.trench) : PS().trench(std().trench);
+    if (g === 'off') return own(sec, g) ? offGroup(sec.items, true) : offGroup(std().off);
     return own(sec, g) ? sizeGroup(g, sec.items && sec.items[g]) : sizeGroup(g, std()[g]);
+  }
+  // write a group's values into a section (its own from now on)
+  function put(sec, g, v) {
+    if (g === 'trench') sec.trench = clone(v);
+    else if (g === 'off') for (const k of Object.keys(v)) (sec.items[k] || (sec.items[k] = {})).off = v[k];
+    else Object.assign(sec.items[g] || (sec.items[g] = {}), v);
   }
   // this section differs from the standard (`on`: it starts from the standard's values) or follows it again
   function setOwn(sec, g, on) {
     if (!sec || !GROUPS.includes(g)) return;
     sec.own = Object.assign({}, sec.own || {});
-    if (on) { const v = sizes(sec, g); sec.own[g] = true; if (g === 'trench') sec.trench = clone(v); else Object.assign(sec.items[g] || (sec.items[g] = {}), v); }
+    if (on) { if (!sec.own[g]) { const v = sizes(sec, g); sec.own[g] = true; put(sec, g, v); } }
     else { delete sec.own[g]; if (g === 'trench') delete sec.trench; }
     if (!Object.keys(sec.own).length) delete sec.own;
   }
-  // copy a group's sizes from another section (what that one works with); this one then has them as its own
+  // copy a group from another section (what that one works with); this one then has it as its own
   function copyFrom(sec, from, g) {
     if (!sec || !from || sec === from || !GROUPS.includes(g)) return false;
-    const v = sizes(from, g); setOwn(sec, g, true);
-    if (g === 'trench') sec.trench = clone(v); else Object.assign(sec.items[g], v);
+    const v = sizes(from, g); setOwn(sec, g, true); put(sec, g, v);
     return true;
   }
-  // make a section's own sizes the standard; the section then follows it
+  // make a section's own values the standard; the section then follows it
   function toStd(sec, g) {
     if (!own(sec, g)) return false;
     const v = sizes(sec, g), S = std(); S[g] = clone(v); setOwn(sec, g, false); return true;
@@ -243,6 +269,7 @@ const RoadSections = (() => {
     const s = span(sec), items = JSON.parse(JSON.stringify(sec.items || {})), p = pole(sec);
     if (p) items.pole = Object.assign({}, items.pole || {}, { off: p.off, h: p.h, arm: p.arm });
     items.kiosk = Object.assign({}, items.kiosk || {}, sizes(sec, 'kiosk')); items.mh = Object.assign({}, items.mh || {}, sizes(sec, 'mh'));
+    const O = sizes(sec, 'off'); for (const k of Object.keys(O)) items[k] = Object.assign({}, items[k] || {}, { off: O[k] });
     return PS().normalize({ id: sec.id, name: sec.name, strips: { a: Math.max(0.5, s.a), road: Math.max(2, s.road), b: Math.max(0.5, s.b) }, items, trench: sizes(sec, 'trench') }, sec.id);
   }
 
@@ -357,7 +384,7 @@ const RoadSections = (() => {
   function migrateStd(lay, hasTrenches) {
     const sl = SL(); if (!sl) return false;
     sl.settings = sl.settings || {};
-    if (sl.settings.roadStd && typeof sl.settings.roadStd === 'object') { sl.settings.roadStd = normStd(sl.settings.roadStd); return false; }
+    if (sl.settings.roadStd && typeof sl.settings.roadStd === 'object') { const had = !!sl.settings.roadStd.off; if (!had) offInit(sl.settings.roadStd); sl.settings.roadStd = normStd(sl.settings.roadStd); return !had; }
     const P = PS(), L = list(), d0 = def(), onSec = !!(lay && lay.sections && lay.sections.on), td = lay && lay.trench && lay.trench.depth;
     const n = v => { const x = parseFloat(v); return Number.isFinite(x) ? x : null; };
     const fromCables = sec => { const it = (sec && sec.items) || {}, mv = n((it.mv || {}).depth), lv = Math.max(n((it.lv || {}).depth) || 0, n((it.svc || {}).depth) || 0) || null, fi = n((it.fi || {}).depth);
@@ -368,7 +395,7 @@ const RoadSections = (() => {
     if (!depths && hasTrenches) depths = { 'MV': 1.0, 'LV/SL': 0.8, 'MV/LV/SL': 1.0, 'FI': 0.6 };             // the plan's trench types before the standard
     const tr = P.trench(); if (depths) for (const t of Object.keys(tr)) if (depths[t] != null) tr[t].d = P.trench({ [t]: { d: depths[t] } })[t].d;
     const S = { kiosk: sizeGroup('kiosk', d0 && d0.items && d0.items.kiosk), mh: sizeGroup('mh', d0 && d0.items && d0.items.mh), trench: tr };
-    sl.settings.roadStd = S;
+    offInit(S); sl.settings.roadStd = S;
     const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
     for (const sec of L) {
       if (!sec.items) continue;

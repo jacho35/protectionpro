@@ -91,12 +91,12 @@ ok('migrate: Auto layout sections and lines, and lighting designs\' own strips, 
   assert.strictEqual(RS.migrate(lay, designs), false);                                           // nothing left to convert
 });
 
-ok('standard sizes: every section follows them until it differs; the engine shape carries the resolved sizes, offsets stay the section\'s', () => {
+ok('standard sizes: every section follows them until it differs; the engine shape carries the resolved sizes', () => {
   const sl = fresh(); const a = RS.add('A'), b = RS.add('B');
   assert.deepStrictEqual(RS.std().trench['LV/SL'], { w: 0.5, d: 0.7 }); assert.strictEqual(sl.settings.roadStd, RS.std());
   RS.setStd('kiosk', 'len', 1.8); RS.setStd('trench', 'LV/SL.d', 0.85); RS.setStd('trench', 'MV.w', 99);
   assert.strictEqual(RS.std().trench.MV.w, 3);                                                   // clamped
-  a.items.kiosk.off = 2.2;
+  RS.setOwn(a, 'off', true); a.items.kiosk.off = 2.2;
   let L = RS.layoutShape(a);
   assert.strictEqual(L.items.kiosk.len, 1.8); assert.strictEqual(L.items.kiosk.off, 2.2); assert.strictEqual(L.trench['LV/SL'].d, 0.85);
   assert.strictEqual(RS.setSize(a, 'kiosk', 'len', 2), true); assert.strictEqual(RS.layoutShape(a).items.kiosk.len, 1.8);   // not its own: the standard still wins
@@ -105,7 +105,7 @@ ok('standard sizes: every section follows them until it differs; the engine shap
   assert.strictEqual(RS.layoutShape(a).items.kiosk.len, 2.4); assert.strictEqual(RS.layoutShape(b).items.kiosk.len, 1.8);
   RS.setStd('kiosk', 'len', 1.5); assert.strictEqual(RS.layoutShape(a).items.kiosk.len, 2.4); assert.strictEqual(RS.layoutShape(b).items.kiosk.len, 1.5);
   assert.deepStrictEqual(RS.differing('kiosk').map(s => s.id), [a.id]);
-  RS.setOwn(a, 'kiosk', false); assert.strictEqual(RS.layoutShape(a).items.kiosk.len, 1.5); assert.strictEqual(a.own, undefined);
+  RS.setOwn(a, 'kiosk', false); assert.strictEqual(RS.layoutShape(a).items.kiosk.len, 1.5); RS.setOwn(a, 'off', false); assert.strictEqual(a.own, undefined);
 });
 
 ok('copy from another section, make a section\'s own the standard', () => {
@@ -185,4 +185,30 @@ ok('a road\'s reserve: its own width, else its section\'s picked one; mismatches
   RS.assign([roads[1]], b.id); assert.strictEqual(RS.widthMismatches().length, 0);
 });
 
+
+ok('standard offsets: every section follows them until it differs; a drag on its own offsets moves only that section', () => {
+  const sl = fresh(); const a = RS.add('A'), b = RS.add('B');
+  assert.deepStrictEqual(RS.std().off, { svc: 0.4, lv: 0.9, fi: 1.7, mv: 1.6, kiosk: 1.5, mh: 2.6 });
+  RS.setStd('off', 'lv', 1.1); RS.setStd('off', 'fi', 99);
+  assert.strictEqual(RS.std().off.fi, 10);                                                       // clamped
+  assert.strictEqual(RS.layoutShape(a).items.lv.off, 1.1); assert.strictEqual(RS.layoutShape(b).items.lv.off, 1.1);
+  a.items.lv.off = 3; assert.strictEqual(RS.layoutShape(a).items.lv.off, 1.1);                   // not its own: the standard wins
+  RS.setOwn(a, 'off', true); assert.strictEqual(a.items.lv.off, 1.1);                            // starts from the standard
+  RS.setSize(a, 'off', 'lv', 1.4);
+  assert.strictEqual(RS.layoutShape(a).items.lv.off, 1.4); assert.strictEqual(RS.layoutShape(b).items.lv.off, 1.1);
+  RS.copyFrom(b, a, 'off'); assert.strictEqual(RS.own(b, 'off'), true); assert.strictEqual(RS.layoutShape(b).items.lv.off, 1.4);
+  RS.toStd(a, 'off'); assert.strictEqual(RS.std().off.lv, 1.4); assert.strictEqual(RS.own(a, 'off'), false);
+  assert.deepStrictEqual(RS.differing('off').map(x => x.id), [b.id]);
+});
+
+ok('a standard made before the offsets: they come from the default section, a section that differs keeps its own', () => {
+  const sl = fresh(); const a = RS.add('A'), b = RS.add('B'), c = RS.add('C');
+  a.items.lv.off = 1.2; b.items.lv.off = 1.2; c.items.fi.off = 2.5;
+  sl.settings.roadStd = { kiosk: {}, mh: {}, trench: {} };                                        // as 2.716 saved it
+  assert.strictEqual(RS.migrateStd({}, false), true);
+  assert.strictEqual(RS.std().off.lv, 1.2); assert.strictEqual(RS.std().off.fi, 1.7);
+  assert.strictEqual(RS.own(a, 'off'), false); assert.strictEqual(RS.own(b, 'off'), false); assert.strictEqual(RS.own(c, 'off'), true);
+  assert.strictEqual(RS.layoutShape(c).items.lv.off, 0.9); assert.strictEqual(RS.layoutShape(c).items.fi.off, 2.5);   // unchanged
+  assert.strictEqual(RS.migrateStd({}, false), false);
+});
 console.log(n + ' passed');

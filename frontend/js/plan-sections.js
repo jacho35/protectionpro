@@ -37,6 +37,8 @@ const PlanSections = (() => {
   const TRENCH_W = [0.1, 3], TRENCH_D = [0.2, 4];
   // the sizes the project standard holds (a section uses them unless it has its own): kiosk and manhole sizes (never their offsets) + trenches
   const SIZES = { kiosk: ['len', 'depth', 'h', 'front', 'end'], mh: ['len', 'wid', 'depth', 'wall', 'lid', 'clear'] };
+  // the items whose offset from the erf boundary the project standard holds (the pole's comes from the lighting design)
+  const OFFS = ['svc', 'lv', 'fi', 'mv', 'kiosk', 'mh'];
   function trench(x) {
     const out = {}, src = x && typeof x === 'object' ? x : {};
     for (const [t, [w, d]] of Object.entries(TRENCH)) { const q = src[t] || {}; out[t] = { w: num(q.w, w, TRENCH_W[0], TRENCH_W[1]), d: num(q.d, d, TRENCH_D[0], TRENCH_D[1]) }; }
@@ -152,7 +154,7 @@ const PlanSections = (() => {
     return out;
   }
 
-  return { SHAPE, TRENCH, TRENCH_W, TRENCH_D, SIZES, trench, snap, make, normalize, state, nextId, linesFromPolyline, projectOn, at, overlaps, checks };
+  return { SHAPE, TRENCH, TRENCH_W, TRENCH_D, SIZES, OFFS, trench, snap, make, normalize, state, nextId, linesFromPolyline, projectOn, at, overlaps, checks };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = PlanSections;
