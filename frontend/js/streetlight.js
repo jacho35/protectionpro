@@ -1005,6 +1005,7 @@ const StreetLight = {
   // that share poles are reported, never merged silently.
   buildCircuits() {
     let r = null;
+    if (typeof RoadPlan !== 'undefined' && RoadPlan.syncPlanPoles) RoadPlan.syncPlanPoles();
     if (typeof PlanSync !== 'undefined' && AppState.planMarkup && PlanSync._factor()) {
       r = this._planCore({ guess: true });
       if (r.made || r.updated) { if (!this.selected) this._selId = this.circuits[0].id; this._afterMutate(true); }
@@ -1074,7 +1075,7 @@ const StreetLight = {
     if (opts.guess) {
       const maxPx = (typeof RoadCircuits !== 'undefined' ? RoadCircuits.LINK_MAX_M : 60) / factor;
       const els = Object.values(elById);
-      let free = els.filter(e => e.type === 'pole' && !adj[e.id]);
+      let free = els.filter(e => e.type === 'pole' && !adj[e.id] && !e.roadPoleId);
       const sources = els.filter(e => (e.type === 'kiosk' || e.type === 'minisub') && e.reticId);
       for (const so of sources) {
         let cur = so;

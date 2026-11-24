@@ -486,3 +486,93 @@ if (typeof RoadPlan !== 'undefined') Object.assign(RoadPlan, {
     this._commit(); this.render();
   },
 });
+
+// ─── One pole set: road poles are the store, the plan mirrors them ──────────
+// A road pole has a plan pole element (`auto: 'roadlight'`, `roadPoleId`; the road pole keeps
+// `planId`), so the plan shows the lit road's poles and Properties shows their verdict.
+// A pole drawn by hand on the plan (no `sl` route) that stands on a road is adopted: the road
+// gets a moved pole there and the element becomes that pole's mirror (not auto: it stays when
+// the pole is removed). Poles on a drawn route are left alone — a drawn route wins.
+// Position edits go both ways: the side that moved since the last pass wins (`mx`, `my`).
+if (typeof RoadPlan !== 'undefined') Object.assign(RoadPlan, {
+  syncPlanPoles() {
+    const f = this._planM(), pm = AppState.planMarkup;
+    if (!f || !pm || !Array.isArray(pm.elements) || !this.roads.length) return false;
+    const EPS = 0.05;
+    let changed = false, roadsMoved = false;
+    const els = pm.elements;
+    const routed = new Set();
+    for (const rt of (pm.routes || [])) { if (rt.fromId) routed.add(rt.fromId); if (rt.toId) routed.add(rt.toId); }
+    const posOf = (r, p) => { const g = this.poleGeom(r, p); return g ? { x: g.bx, y: g.by } : null; };
+    const byRoadPole = new Map();
+    for (const e of els) if (e.type === 'pole' && e.roadPoleId) byRoadPole.set(e.roadPoleId, e);
+    // 1) adopt hand-placed, unrouted plan poles that stand on a road
+    for (const e of els) {
+      if (e.type !== 'pole' || e.roadPoleId || e.auto || routed.has(e.id)) continue;
+      const x = e.x * f, y = -e.y * f;
+      let best = null;
+      for (const r of this.roads) {
+        const g = this.geom(r), des = this._design(r);
+        if (!g.al.ok || !des || !des.rows.length) continue;
+        const pr = g.al.project(x, y);
+        if (pr.dist > g.xs.width / 2 + 8 || (best && pr.dist >= best.pr.dist)) continue;
+        best = { r, g, des, pr };
+      }
+      if (!best) continue;
+      const { r, g, des, pr } = best;
+      let row = des.rows[0], bd = Infinity;
+      for (const rw of des.rows) { const d = Math.abs(g.xs.off(pr.s, RoadLight._rowGeom(rw, g.xs.lay).poleY) - pr.d); if (d < bd) { bd = d; row = rw; } }
+      const p = { id: this._genId('rpp'), s: +pr.s.toFixed(2), rowId: row.id, moved: true, note: 'from plan', planId: e.id };
+      if (bd > 0.3) p.d = +pr.d.toFixed(2);
+      r.poles.push(p); r.poles.sort((a, b) => a.s - b.s);
+      e.roadPoleId = p.id; e.adopted = true;
+      byRoadPole.set(p.id, e);
+      roadsMoved = true; changed = true;
+    }
+    // 2) mirror every road pole; follow whichever side moved
+    const live = new Set();
+    for (const r of this.roads) {
+      const g = this.geom(r);
+      if (!g.al.ok) continue;
+      const names = this._poleNames(r);
+      for (const p of r.poles) {
+        const pos = posOf(r, p);
+        if (!pos) continue;
+        live.add(p.id);
+        let e = byRoadPole.get(p.id);
+        if (!e) {
+          e = { id: AppState.planGenId('pmel'), type: 'pole', x: pos.x / f, y: -pos.y / f, rotation: 0, name: names.get(p.id) || p.name || '', reticId: null, props: {}, auto: 'roadlight', roadPoleId: p.id, mx: pos.x, my: pos.y };
+          els.push(e); p.planId = e.id; changed = true; continue;
+        }
+        p.planId = e.id;
+        const cx = e.x * f, cy = -e.y * f;
+        const planMoved = e.mx !== undefined && Math.hypot(cx - e.mx, cy - e.my) > EPS;
+        if (planMoved) {
+          const pr = g.al.project(cx, cy);
+          p.s = +pr.s.toFixed(2); p.d = +pr.d.toFixed(2); p.moved = true;
+          const np = posOf(r, p) || { x: cx, y: cy };
+          e.mx = np.x; e.my = np.y; e.x = np.x / f; e.y = -np.y / f;
+          roadsMoved = true; changed = true;
+        } else if (e.mx === undefined || Math.hypot(pos.x - e.mx, pos.y - e.my) > EPS) {
+          e.x = pos.x / f; e.y = -pos.y / f; e.mx = pos.x; e.my = pos.y; changed = true;
+        }
+        if (names.get(p.id) && !e.adopted && e.name !== names.get(p.id)) { e.name = names.get(p.id); changed = true; }
+      }
+    }
+    // 3) a mirror whose road pole is gone: auto ones go, adopted ones become plain plan poles again
+    for (let i = els.length - 1; i >= 0; i--) {
+      const e = els[i];
+      if (!e.roadPoleId || live.has(e.roadPoleId)) continue;
+      if (e.auto === 'roadlight') els.splice(i, 1);
+      else { delete e.roadPoleId; delete e.adopted; delete e.mx; delete e.my; }
+      changed = true;
+    }
+    if (roadsMoved) { this._geo.clear(); this._resStale = true; }
+    if (changed) {
+      AppState.dirty = true;
+      if (typeof PlanEngine !== 'undefined') PlanEngine.requestDraw({ all: true });
+      if (this._built) this.render();
+    }
+    return changed;
+  },
+});

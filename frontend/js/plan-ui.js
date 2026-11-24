@@ -676,6 +676,15 @@ const PlanUI = {
         <button type="button" class="plan-btn" data-link-go="rp:${escHtml(road.id)}" data-link-back="plan:${escHtml(item.id)}">Open in Roads</button></div>`;
     }
     if (kind !== 'element') return '';
+    if (item.type === 'pole' && item.roadPoleId) {
+      const road = RoadPlan.roads.find(r => (r.poles || []).some(p => p.id === item.roadPoleId));
+      if (road) {
+        const v = RoadPlan.verdict(road.id);
+        const w = { pass: ['Meets its class', 'ok'], fail: ['Fails its class', 'bad'], stale: ['Out of date — recalculate', ''], none: ['Not calculated yet', ''] }[v.state];
+        return `<div class="plan-props-sec">Road lighting</div><div class="plan-roadlight-row"><span class="plan-roadlight-v">${item.adopted ? 'Placed here; Roads uses it as a moved pole.' : 'Laid out by the road lighting design. Drag it here or in Roads; delete it in Roads.'}</span><b>${escHtml(road.name || 'Road')}</b> <span class="plan-roadlight-v ${w[1]}">${escHtml(w[0] + (v.state === 'fail' ? ` · ${v.fail} of ${v.n} segment${v.n === 1 ? '' : 's'}` : ''))}</span>
+        <button type="button" class="plan-btn" data-link-go="rp:${escHtml(road.id)}" data-link-back="plan:${escHtml(item.id)}">Open in Roads</button></div>`;
+      }
+    }
     const cs = StreetLight.circuits.filter(c => c.roadKey && (
       ((item.type === 'kiosk' || item.type === 'minisub') && item.reticId && c.source && c.source.id === item.reticId) ||
       (item.type === 'pole' && c.poles.some(p => p.planId === item.id))));

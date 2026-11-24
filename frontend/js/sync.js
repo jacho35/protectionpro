@@ -295,6 +295,21 @@ Sync.register({
   },
 });
 
+// ── Routine: road plan poles ⇄ site plan poles (one pole set) ──
+// Each road pole has a mirror pole on the site plan; a pole drawn by hand on a road is adopted.
+// Runs before the circuits routine so both read the same poles.
+Sync.register({
+  id: 'roadpoles',
+  order: 35,
+  label: 'Road plan poles ⇄ site plan',
+  run(ctx) {
+    if (typeof RoadPlan === 'undefined' || !RoadPlan.syncPlanPoles || !AppState.planMarkup) return false;
+    const changed = RoadPlan.syncPlanPoles();
+    if (changed) { ctx.touch('plan'); ctx.touch('rp'); }
+    return changed;
+  },
+});
+
 // ── Routine: site plan and road plan → street-lighting circuits ──
 // Poles drawn on the site plan from a kiosk or minisub, and roads with a feed
 // point in the road plan, are Street lighting circuits (spans measured, kept
