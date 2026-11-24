@@ -21,6 +21,9 @@ const PlanUI = {
     propsEl.addEventListener('input', (e) => this._onPropsChange(e));
     propsEl.addEventListener('click', (e) => {
       if (e.target.closest('[data-role="delete"]')) { PlanMarkup.deleteSelected(); return; }
+      if (e.target.closest('[data-role="space-go"]')) { this._spaceGo(); return; }
+      const sm = e.target.closest('button[data-space="mode"]');
+      if (sm) { this._space.mode = sm.dataset.v; this.renderProps(); return; }
       const pick = e.target.closest('[data-plan-select]');
       if (pick) { PlanMarkup.selectOnly(pick.dataset.planSelect); PlanEngine.requestDraw({ fg: true }); return; }
       if (e.target.closest('[data-role="edit-schedule"]')) { this._editBoardSchedule(); return; }
@@ -701,6 +704,122 @@ const PlanUI = {
     return rows ? `<div class="plan-props-sec">Road lighting</div>${rows}` : '';
   },
 
+  // ─── Space poles evenly (bulk panel of 3+ selected street-light poles) ───
+  _space: { mode: 'even', along: 'path', span: 30 },
+
+  // Pure: where the poles go. pts [{id, x, y}] in plan pixels; o = { mode: 'even' | 'span', spanPx,
+  // line: a RoadPlan-style projector { project(x, y) → {s, d}, at(s, d) → {x, y}, length } or null }.
+  // Returns { order, total, targets [{id, x, y}], skipped [id] }. The first pole stays; in Even the last
+  // stays too; in Span the last is one more span on. Poles that do not fit are left and listed.
+  spaceCalc(pts, o) {
+    const n = pts.length;
+    if (n < 3) return null;
+    let order, pos, total, limit;
+    if (o.line) {
+      const pr = pts.map(q => ({ q, ...o.line.project(q.x, q.y) })).sort((a, b) => a.s - b.s);
+      order = pr.map(r => r.q);
+      const s0 = pr[0].s, s1 = pr[n - 1].s;
+      total = s1 - s0; limit = o.line.length - s0;
+      pos = (t, i) => o.line.at(s0 + t, pr[Math.min(i, n - 1)].d);
+    } else {
+      // The path through the poles: sorted along their main direction, measured by arc length.
+      const mx = pts.reduce((a, q) => a + q.x, 0) / n, my = pts.reduce((a, q) => a + q.y, 0) / n;
+      let sxx = 0, sxy = 0, syy = 0;
+      for (const q of pts) { sxx += (q.x - mx) ** 2; sxy += (q.x - mx) * (q.y - my); syy += (q.y - my) ** 2; }
+      const th = 0.5 * Math.atan2(2 * sxy, sxx - syy), ux = Math.cos(th), uy = Math.sin(th);
+      order = pts.slice().sort((a, b) => ((a.x - mx) * ux + (a.y - my) * uy) - ((b.x - mx) * ux + (b.y - my) * uy));
+      const cum = [0];
+      for (let i = 1; i < n; i++) cum.push(cum[i - 1] + Math.hypot(order[i].x - order[i - 1].x, order[i].y - order[i - 1].y));
+      total = cum[n - 1]; limit = total;
+      pos = (t) => {
+        let i = 1;
+        while (i < n - 1 && cum[i] < t) i++;
+        const u = (t - cum[i - 1]) / ((cum[i] - cum[i - 1]) || 1);
+        return { x: order[i - 1].x + (order[i].x - order[i - 1].x) * u, y: order[i - 1].y + (order[i].y - order[i - 1].y) * u };
+      };
+    }
+    const targets = [], skipped = [];
+    for (let i = 1; i < n; i++) {
+      const t = o.mode === 'span' ? i * o.spanPx : total * i / (n - 1);
+      if (o.mode === 'even' && i === n - 1) continue;           // the last pole stays
+      if (o.mode === 'span' && t > limit + 1e-6) { skipped.push(order[i].id); continue; }
+      const p = pos(t, i);
+      targets.push({ id: order[i].id, x: p.x, y: p.y });
+    }
+    return { order, total, targets, skipped };
+  },
+  // The road these poles were laid out along, when they all are (Along: the road's centreline).
+  _spaceRoad(items) {
+    if (typeof RoadPlan === 'undefined' || typeof PlanEngine === 'undefined' || !PlanEngine.factor()) return null;
+    const ids = items.map(x => x.item.roadPoleId);
+    if (ids.some(x => !x)) return null;
+    const road = RoadPlan.roads.find(r => ids.every(id => (r.poles || []).some(p => p.id === id)));
+    if (!road) return null;
+    const g = RoadPlan.geom(road);
+    return g && g.al && g.al.ok ? { road, al: g.al } : null;
+  },
+  _spaceInput(items) {
+    const f = PlanEngine.factor(), sp = this._space;
+    const pts = items.map(x => ({ id: x.item.id, x: x.item.x, y: x.item.y }));
+    const rd = sp.along === 'road' ? this._spaceRoad(items) : null;
+    const line = rd && f ? {
+      length: rd.al.length,
+      project: (x, y) => { const r = rd.al.project(x * f, -y * f); return { s: r.s, d: r.d }; },
+      at: (s, d) => { const q = rd.al.at(s, d); return { x: q.x / f, y: -q.y / f }; },
+    } : null;
+    // road work is in metres: the span and the line's own length use metres, not pixels
+    const spanPx = sp.mode === 'span' ? (f ? sp.span / f : NaN) : 0;
+    return { pts, o: { mode: sp.mode, spanPx: line ? sp.span : spanPx, line }, line, f };
+  },
+  _spaceHtml(items) {
+    const f = PlanEngine.factor(), sp = this._space;
+    const hasRoad = !!this._spaceRoad(items);
+    if (!hasRoad && sp.along === 'road') sp.along = 'path';
+    if (!f && sp.mode === 'span') sp.mode = 'even';
+    const inp = this._spaceInput(items);
+    const r = this.spaceCalc(inp.pts, inp.o);
+    const n = items.length;
+    const m = (v) => (inp.line ? v : v * (f || 1));
+    const unit = f ? 'm' : 'px';
+    let info = '';
+    if (r) info = sp.mode === 'even'
+      ? `${inp.line ? "Road" : "Path"} length ${(m(r.total)).toFixed(1)} ${unit} from first to last pole: ${n - 1} spans of ${(m(r.total) / (n - 1)).toFixed(1)} ${unit}.`
+      : `${sp.span} m from the first pole${r.skipped.length ? `: ${r.skipped.length} pole${r.skipped.length === 1 ? '' : 's'} do not fit and stay where they are.` : '.'}`;
+    return `<div class="plan-props-sec">Spacing</div>
+      <div class="plan-roadlight-row"><span>${escHtml(info)}</span></div>
+      <div class="plan-btn-row">
+        <button type="button" class="plan-btn${sp.mode === 'even' ? ' active' : ''}" data-space="mode" data-v="even" aria-pressed="${sp.mode === 'even'}">Even</button>
+        <button type="button" class="plan-btn${sp.mode === 'span' ? ' active' : ''}" data-space="mode" data-v="span" aria-pressed="${sp.mode === 'span'}"${f ? '' : ' disabled title="Calibrate the plan scale first"'}>Set span</button>
+      </div>
+      <label class="plan-field"><span class="plan-field-label">Along</span><select data-space="along">
+        <option value="path"${sp.along === 'path' ? ' selected' : ''}>The path through the poles</option>
+        ${hasRoad ? `<option value="road"${sp.along === 'road' ? ' selected' : ''}>The road centreline</option>` : ''}</select></label>
+      ${sp.mode === 'span' ? `<label class="plan-field"><span class="plan-field-label">Span (m)</span><input type="number" min="1" step="0.5" data-space="span" value="${escHtml(sp.span)}"></label>` : ''}
+      <button type="button" class="plan-btn plan-btn-primary" data-role="space-go">${sp.mode === 'span' ? `Space at ${escHtml(sp.span)} m` : 'Space evenly'}</button>`;
+  },
+  _onSpaceInput(e) {
+    const k = e.target.dataset.space, sp = this._space;
+    if (k === 'span') { const v = parseFloat(e.target.value); if (v > 0) sp.span = v; if (e.type === 'change') this.renderProps(); return; }
+    if (e.type === 'input' && e.target.tagName === 'SELECT') return;
+    if (k === 'along') sp.along = e.target.value;
+    this.renderProps();
+  },
+  _spaceGo() {
+    const items = [...PlanMarkup.selectedIds].map(id => PlanMarkup.findEntityById(id)).filter(x => x && x.kind === 'element' && x.item.type === 'pole');
+    if (items.length < 3) return;
+    const inp = this._spaceInput(items);
+    const r = this.spaceCalc(inp.pts, inp.o);
+    if (!r || !r.targets.length) { UI.toast('No pole needs to move.', 'info', 2500); return; }
+    const byId = new Map(items.map(x => [x.item.id, x.item]));
+    for (const t of r.targets) { const el = byId.get(t.id); el.x = t.x; el.y = t.y; }
+    PlanMarkup.reconcileRoutes(new Set(r.targets.map(t => t.id)));
+    PlanMarkup.snapshot(); PlanMarkup.markDirty();
+    PlanEngine.requestDraw({ all: true });
+    this.renderProps();
+    const sp = this._space;
+    UI.toast(`Spaced ${r.targets.length} pole${r.targets.length === 1 ? '' : 's'}${sp.mode === 'span' ? ` to ${sp.span} m` : ' evenly'}${r.skipped.length ? `; ${r.skipped.length} did not fit and stayed` : ''}. Ctrl+Z puts them back.`, 'success', 4000);
+  },
+
   // ─── Bulk edit (several items of one kind + type selected) ───
   // The field list and value reader for one entity, shared by the bulk panel.
   _bulkSpec(kind, item) {
@@ -758,6 +877,7 @@ const PlanUI = {
       html += this._field(f, isMixed ? '' : first);
     }
     if (!spec.fields.length) html += `<div class="plan-props-empty">Nothing to edit in bulk for this kind.</div>`;
+    if (kind === 'element' && items[0].item.type === 'pole' && items.length >= 3) html += this._spaceHtml(items);
     html += del;
     el.innerHTML = html;
     for (const k of mixed) {
@@ -1302,6 +1422,7 @@ const PlanUI = {
   },
 
   _onPropsChange(e) {
+    if (e.target.dataset && e.target.dataset.space && e.target.dataset.space !== 'mode') { this._onSpaceInput(e); return; }
     if (e.target.dataset && e.target.dataset.role === 'sld-link') { this._onSldLink(e); return; }
     if (e.target.dataset && e.target.dataset.role === 'demand-link') { this._onDemandLink(e); return; }
     if (e.target.dataset && e.target.dataset.role === 'delete') return;

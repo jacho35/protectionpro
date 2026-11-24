@@ -550,3 +550,7 @@ body.dark-mode .plan-legend-line.target { border-color: #4a9eff; }
 .plan-roadlight-v { color: var(--text-secondary); }
 .plan-roadlight-v.ok { color: #2e6b3e; font-weight: 600; }
 .plan-roadlight-v.bad { color: #b3261e; font-weight: 600; }
+
+/* Space poles evenly (bulk panel) */
+.plan-btn.active { background: color-mix(in srgb, var(--accent) 16%, var(--bg-primary)); border-color: var(--accent); font-weight: 600; }
+.plan-btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; margin-top: 8px; min-height: 40px; }
