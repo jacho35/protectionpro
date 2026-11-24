@@ -177,6 +177,17 @@ def test_one_paper_space_layout_per_sheet_each_freezing_the_other_layers():
     assert doc.layers.get("EL_VIEWPORTS").dxf.plot == 0
 
 
+def test_ducts_sheet_shows_the_road_crossing_ducts_alone():
+    doc = _read(build_dxf(_sheeted(
+        layers=[{"name": "EL_LV", "color": "#22c55e"}, {"name": "EL_FI", "color": "#a855f7"}, {"name": "EL_DUCTS", "color": "#8a6a00"}],
+        sheets=[{"id": "LV", "name": "LV"}, {"id": "FIBRE", "name": "Fibre"}, {"id": "DUCTS", "name": "Ducts"}],
+        layerSheets={"EL_LV": ["MV", "LV"], "EL_FI": ["FIBRE"], "EL_DUCTS": ["MV", "LV", "SL", "FIBRE", "DUCTS"], "EL_TEXT": "all"})))
+    assert [l.name for l in doc.layouts if l.name != "Model"] == ["LV", "Fibre", "Ducts"]
+    du = set(_viewport(doc, "Ducts").frozen_layers)
+    assert {"EL_LV", "EL_LV_LABELS", "EL_FI", "EL_FI_LABELS"} <= du                    # no cables
+    assert "EL_DUCTS" not in du and "EL_TEXT" not in du                                  # the ducts, and what shows on every sheet
+
+
 def test_paper_size_and_scale_set_the_viewport():
     doc = _read(build_dxf(_sheeted(layout={"paper": "A3", "scale": 1000, "extents": [0, 0, 1, 1]})))
     vp = _viewport(doc, "LV")
