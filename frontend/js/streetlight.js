@@ -1003,7 +1003,7 @@ const StreetLight = {
   // One action for both pole routes: the site plan's drawn routes (plus poles on no route, chained
   // from the nearest kiosk and flagged), then roads with a feed point. A plan circuit and a road
   // that share poles are reported, never merged silently.
-  buildCircuits() {
+  async buildCircuits() {
     let r = null;
     if (typeof RoadPlan !== 'undefined' && RoadPlan.syncPlanPoles) RoadPlan.syncPlanPoles();
     if (typeof PlanSync !== 'undefined' && AppState.planMarkup && PlanSync._factor()) {
@@ -1013,26 +1013,56 @@ const StreetLight = {
     const parts = [];
     if (r && (r.made || r.updated)) parts.push(`${r.made} new, ${r.updated} updated from the site plan`);
     if (r && r.guessed) parts.push(`${r.guessed} pole(s) with no route were chained by position — check their order`);
-    const dup = this._planRoadDupes();
-    if (dup.length) parts.push(`${dup.map(d => `${d.circuit} and ${d.road} share ${d.n} poles`).join('; ')} — keep one`);
-    if (parts.length) UI.toast('Build circuits: ' + parts.join('. ') + '.', dup.length ? 'warning' : 'success', 7000);
+    const dup = await this._resolveDupes();
+    if (dup.dropped) { this._afterMutate(true); parts.push(`${dup.dropped} duplicate circuit(s) removed`); }
+    if (dup.kept) parts.push(`${dup.kept} pair(s) of circuits on the same poles kept`);
+    if (parts.length) UI.toast('Build circuits: ' + parts.join('. ') + '.', dup.kept ? 'warning' : 'success', 7000);
     if (typeof RoadPlan !== 'undefined' && RoadPlan.roads.some(x => x.feed)) RoadPlan.openCircuitImport();
     else if (!parts.length) UI.alert('Nothing to build from: draw street-lighting routes from a kiosk or mini-sub on the site plan, or give a road a feed point in Roads › Poles.');
   },
+  // Plan circuits and road circuits that are the same poles: a project made before the plan and
+  // the road plan shared one pole set can hold both. [{ plan, road, n }] — poles within 5 m.
   _planRoadDupes() {
     const f = typeof PlanSync !== 'undefined' ? PlanSync._factor() : null;
     if (!f || typeof RoadPlan === 'undefined') return [];
-    const els = PlanSync._elById(), out = [];
-    for (const c of this.circuits.filter(x => x.planKey)) {
-      const pts = c.poles.filter(p => p.planId && els[p.planId]).map(p => [els[p.planId].x * f, -els[p.planId].y * f]);
-      for (const road of RoadPlan.roads) {
-        const rpts = RoadPlan.roads.length ? (RoadPlan._circuitInput().find(x => x.id === road.id) || { poles: [] }).poles : [];
+    const els = PlanSync._elById(), inp = RoadPlan._circuitInput(), out = [];
+    for (const pc of this.circuits.filter(x => x.planKey)) {
+      const pts = pc.poles.filter(p => p.planId && els[p.planId] && els[p.planId].auto !== 'roadlight').map(p => [els[p.planId].x * f, -els[p.planId].y * f]);
+      if (pts.length < 2) continue;
+      for (const rc of this.circuits.filter(x => x.roadKey)) {
+        const rpts = [];
+        for (const r of RoadPlan.roads) if (r.circuitId === rc.id) rpts.push(...((inp.find(x => x.id === r.id) || { poles: [] }).poles));
         const n = pts.filter(q => rpts.some(p => Math.hypot(p.x - q[0], p.y - q[1]) < 5)).length;
-        if (n >= 2 && n >= pts.length / 2) out.push({ circuit: c.name, road: road.name || 'a road', n });
+        if (n >= 2 && n >= pts.length / 2) out.push({ plan: pc, road: rc, n });
       }
     }
     return out;
   },
+  _removeCircuit(c, linked) {
+    if (linked) this._deleteLinkedCircuit(c);
+    const i = this.circuits.indexOf(c);
+    if (i >= 0) this.circuits.splice(i, 1);
+    delete this._results[c.id];
+    if (this._sent) delete this._sent[c.id];
+    if (this._selId === c.id) this._selId = this.circuits.length ? this.circuits[0].id : null;
+  },
+  // Ask, for each pair, which circuit to keep. The one dropped takes its drawing with it (the
+  // plan's duplicate poles, or the road's feed point), so the next pass does not make it again.
+  async _resolveDupes() {
+    let kept = 0, dropped = 0;
+    for (const d of this._planRoadDupes()) {
+      if (!this.circuits.includes(d.plan) || !this.circuits.includes(d.road)) continue;
+      const m = RoadLight._modal('sl-dupe-modal', 'The same poles are in two circuits',
+        `<p class="rl-lead"><b>${escHtml(d.plan.name)}</b> (drawn on the site plan) and <b>${escHtml(d.road.name)}</b> (from the road plan) share ${d.n} poles. Keep one: the other is removed with its drawing (the plan's duplicate poles, or the road's feed point), so it is not made again. Undo on that plan puts it back.</p>`,
+        '<button class="btn-small" data-m="both">Keep both</button><button class="btn-small" data-m="plan">Keep the site plan’s</button><button class="btn-small btn-primary" data-m="road">Keep the road plan’s</button>');
+      const pick = await RoadLight._modalResult(m);
+      if (pick === 'road') { this._removeCircuit(d.plan, true); dropped++; }
+      else if (pick === 'plan') { this._removeCircuit(d.road, true); dropped++; }
+      else kept++;
+    }
+    return { kept, dropped };
+  },
+
 
   // ── Kept in sync (Settings › Keep workspaces in sync) ──
   // What the pass takes away (a circuit whose poles were all deleted, a pole
