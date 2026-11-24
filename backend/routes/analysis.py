@@ -8,7 +8,7 @@ from typing import List, Optional
 from fastapi import APIRouter, HTTPException
 from fastapi.routing import APIRoute
 from pydantic import BaseModel
-from ..models.schemas import ProjectData, FaultResults, LoadFlowResults, ArcFlashResults, DCArcFlashResults, UnbalancedLoadFlowResults, AdmdRequest, AdmdResults, ReticEarthRequest, ReticLvDesignRequest, ReticMotorStartRequest, StreetLightingRequest, RoadLightingRequest, RoadPlanRequest, RoomLightingRequest, ReluxReferenceRequest, AreaLightingRequest, SportsLightingRequest, ObtrusiveLightRequest, EmergencyLightingRequest, PhotometryFileRequest, GenericOpticRequest, LightningRiskRequest, LightningRiskResult, RacewayRequest, RacewayResults, DCLoadFlowResults, DCShortCircuitResults, LoadFlowCasesRequest, LoadFlowCasesResults, VoltageStabilityRequest, VoltageStabilityResults, ContingencyRequest, ContingencyResults, TimeSeriesLoadFlowRequest, TimeSeriesLoadFlowResults, HarmonicsResults, FrequencyScanRequest, FrequencyScanResults, BatterySizingRequest, BatterySizingResults, OPFRequest, OPFResults, ReliabilityResults, FilterSizingRequest, FilterSizingResults, CapacitorPlacementRequest, CapacitorPlacementResults, FlickerAnalysisRequest, FlickerAnalysisResults, HostingCapacityRequest, HostingCapacityResults, OpenConductorResults, TwoConductorOpenResults, SimultaneousFaultResults, WennerTestRequest, WennerTestResults
+from ..models.schemas import ProjectData, FaultResults, LoadFlowResults, ArcFlashResults, DCArcFlashResults, UnbalancedLoadFlowResults, AdmdRequest, AdmdResults, ReticEarthRequest, ReticLvDesignRequest, ReticMotorStartRequest, StreetLightingRequest, StreetLightingSplitRequest, RoadLightingRequest, RoadPlanRequest, RoomLightingRequest, ReluxReferenceRequest, AreaLightingRequest, SportsLightingRequest, ObtrusiveLightRequest, EmergencyLightingRequest, PhotometryFileRequest, GenericOpticRequest, LightningRiskRequest, LightningRiskResult, RacewayRequest, RacewayResults, DCLoadFlowResults, DCShortCircuitResults, LoadFlowCasesRequest, LoadFlowCasesResults, VoltageStabilityRequest, VoltageStabilityResults, ContingencyRequest, ContingencyResults, TimeSeriesLoadFlowRequest, TimeSeriesLoadFlowResults, HarmonicsResults, FrequencyScanRequest, FrequencyScanResults, BatterySizingRequest, BatterySizingResults, OPFRequest, OPFResults, ReliabilityResults, FilterSizingRequest, FilterSizingResults, CapacitorPlacementRequest, CapacitorPlacementResults, FlickerAnalysisRequest, FlickerAnalysisResults, HostingCapacityRequest, HostingCapacityResults, OpenConductorResults, TwoConductorOpenResults, SimultaneousFaultResults, WennerTestRequest, WennerTestResults
 from ..analysis.loadflow_cases import run_loadflow_cases
 from ..analysis.voltage_stability import run_voltage_stability
 from ..analysis.contingency import run_contingency
@@ -29,7 +29,7 @@ from ..analysis.retic_mv_design import design_mv
 from ..analysis.building_circuits import design_circuits
 from ..analysis.fixes import propose_fixes, fix_all
 from ..analysis.retic_motor_start import run_retic_motor_start
-from ..analysis.street_lighting import run_street_lighting
+from ..analysis.street_lighting import run_street_lighting, split_strings
 from ..analysis.road_lighting import run_road_lighting
 from ..analysis.road_plan import conflict_contributions, run_road_plan
 from ..analysis.room_lighting import run_room_lighting, suggest_layout
@@ -837,6 +837,18 @@ def street_lighting(data: StreetLightingRequest):
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Street lighting error: {e}")
+
+
+@router.post("/street-lighting/split")
+def street_lighting_split(data: StreetLightingSplitRequest):
+    """Street lighting auto layout: each row of poles from its source split
+    into as many circuits as the checks need, each on the smallest cable and
+    breaker that pass (same engine as /street-lighting)."""
+    try:
+        return split_strings(data.model_dump())
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Street lighting layout error: {e}")
 
 
 @router.post("/road-lighting")

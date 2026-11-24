@@ -69,6 +69,8 @@ jobs:
         run: node testing/unit/roadsiteplan.test.js
       - name: Road sections unit tests
         run: node testing/unit/roadsections.test.js
+      - name: Street lighting layout (pole strings, feeds, corridors)
+        run: node testing/unit/sl-layout.test.js
       - name: Plan DXF layers and layout sheets
         run: node testing/unit/plandxf.test.js
       - name: TCC curves

@@ -519,6 +519,10 @@ const API = {
   async runStreetLighting(body) {
     return this.request('/analysis/street-lighting', 'POST', body);
   },
+  // Street lighting layout: rows of poles split into circuits (smallest cable + breaker that pass)
+  async splitStreetLighting(body) {
+    return this.request('/analysis/street-lighting/split', 'POST', body);
+  },
 
   // Run study manager (batch all analyses)
   async runStudyManager(enabledStudies = null, project = null) {
