@@ -781,9 +781,12 @@ const RoadPlan = {
     } catch (e) {
       UI.alert('Could not read the site plan drawing: ' + (e && e.message ? e.message : e)); return;
     } finally { UI.setBusy && UI.setBusy(false); }
-    await this._setBackground(data, desc.name || 'Site plan', desc.unitM);
+    await this._setBackground(data, desc.name || 'Site plan', desc.unitM, desc);
   },
-  async _setBackground(data, name, knownUnitM) {
+  // `desc`: the site plan's own DXF descriptor — the drawing is then placed where it sits on the
+  // plan (its offset, rotation and scale), in the plan frame (x east, y north, metres), so it lines
+  // up with streets and poles taken from the plan. Without a calibrated plan it keeps its own frame.
+  async _setBackground(data, name, knownUnitM, desc) {
     let unitM = knownUnitM || (data.units && data.units.m);
     if (!unitM) {
       const m = RoadLight._modal('rp-units-modal', 'Drawing units', `<p class="rl-lead">The DXF does not say what its units are. One drawing unit is:</p>
@@ -795,13 +798,18 @@ const RoadPlan = {
     }
     const ents = [], texts = [];
     let npts = 0, truncated = false;
+    const f = desc && typeof PlanEngine !== 'undefined' && typeof PlanDxfImport !== 'undefined' ? PlanEngine.factor() : null;
+    const place = f ? (X, Y) => { const w = PlanDxfImport.worldOf(desc, X, Y); return [+(w.x * f).toFixed(3), +(-w.y * f).toFixed(3)]; } : null;
     const push = (l, flat, closed) => {
       if (npts + flat.length / 2 > 120000) { truncated = true; return; }
       npts += flat.length / 2;
-      ents.push({ l, p: flat.map(v => +(v * unitM).toFixed(3)), c: closed ? 1 : 0 });
+      let out;
+      if (place) { out = []; for (let i = 0; i < flat.length; i += 2) out.push(...place(flat[i], flat[i + 1])); }
+      else out = flat.map(v => +(v * unitM).toFixed(3));
+      ents.push({ l, p: out, c: closed ? 1 : 0 });
     };
     for (const e of data.entities) {
-      if (e.t === 'x' && texts.length < 500 && /[A-Za-z]{3,}/.test(String(e.s || '')) && e.p) { texts.push({ s: String(e.s).replace(/\s+/g, ' ').trim(), x: +(e.p[0] * unitM).toFixed(3), y: +(e.p[1] * unitM).toFixed(3) }); continue; }
+      if (e.t === 'x' && texts.length < 500 && /[A-Za-z]{3,}/.test(String(e.s || '')) && e.p) { { const q = place ? place(e.p[0], e.p[1]) : [+(e.p[0] * unitM).toFixed(3), +(e.p[1] * unitM).toFixed(3)]; texts.push({ s: String(e.s).replace(/\s+/g, ' ').trim(), x: q[0], y: q[1] }); } continue; }
       if (e.t === 'l') push(e.l, e.p, false);
       else if (e.t === 'p' && e.p && e.p.length >= 4) push(e.l, e.p, !!e.c);
       else if (e.t === 'a' || e.t === 'c') {
@@ -816,7 +824,7 @@ const RoadPlan = {
     }
     const layers = (data.layers || []).map(l => ({ name: l.name, color: l.color || '#8a8f98', hidden: !l.on || !!l.frozen }))
       .filter(l => ents.some(e => e.l === l.name));
-    this.rp.bg = { name, unitM, origin: data.origin || [0, 0], layers, ents, texts };
+    this.rp.bg = { name, unitM, origin: data.origin || [0, 0], layers, ents, texts, frame: place ? 'plan' : 'dxf' };
     AppState.dirty = true;
     this.fit();
     this.render();
@@ -1343,7 +1351,7 @@ const RoadPlan = {
     const bgEl = document.getElementById('rp-bg');
     const bg = this.rp.bg;
     const fromPlan = this.planStreetsHtml ? this.planStreetsHtml() : '';
-    bgEl.innerHTML = fromPlan + (bg ? `<div class="rp-bg-name">${escHtml(bg.name)} <span class="sl-hint">${bg.ents.length} lines</span></div>
+    bgEl.innerHTML = fromPlan + (bg ? `<div class="rp-bg-name">${escHtml(bg.name)} <span class="sl-hint">${bg.ents.length} lines${bg.frame === 'plan' ? ' · placed as on the site plan' : (this.planStreets && this.planStreets().length ? ' · own coordinates (not lined up with plan streets)' : '')}</span></div>
       <details class="rp-layers"><summary>Layers (${bg.layers.length})</summary>${bg.layers.map((l, i) => `<label class="rp-layer"><input type="checkbox" data-rp-layer="${i}"${l.hidden ? '' : ' checked'}><i style="background:${escHtml(l.color)}"></i>${escHtml(l.name)}</label>`).join('')}</details>
       <div class="rp-bg-actions"><button class="btn-small" data-rp="bg">Replace…</button>${this._sitePlanDxfs().length ? '<button class="btn-small" data-rp="bg-site" title="Use a drawing already on the site plan">From site plan…</button>' : ''}<button class="btn-small" data-rp="bg-remove">Remove</button></div>`
       : `${this._sitePlanDxfs().length ? '<button class="btn-small btn-primary" data-rp="bg-site" title="Use a drawing already on the site plan">Use the site plan…</button> ' : ''}<button class="btn-small" data-rp="bg">Load a DXF…</button><div class="sl-hint">A site plan or survey in the background; pick road lines from it.</div>`);
