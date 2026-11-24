@@ -33,6 +33,8 @@ same(names(pm({ elements: [{ type: 'kiosk', x: 0, y: 0 }], routes: [{ type: 'fib
 same(names(pm({ elements: [{ type: 'pole', x: 0, y: 0 }] })), ['SL']);
 same(names(pm({ routes: [{ type: 'street', points: [{ x: 0, y: 0 }, { x: 9, y: 0 }] }] })), ['PLAN']);
 same(names(pm({ trenches: [{ points: [] }] })), ['MV', 'LV', 'SL', 'FIBRE']);
+same(names(pm({ crossings: [{ a: { x: 0, y: 0 }, b: { x: 0, y: 9 } }] })), ['MV', 'LV', 'SL', 'FIBRE', 'DUCTS']);   // road crossing ducts get a sheet of their own
+same(L.of('fixed', 'crossing')[1].includes('DUCTS') && !L.of('fixed', 'trench')[1].includes('DUCTS'), true);
 same(names(pm({ elements: [{ type: 'bd_socket', x: 0, y: 0 }, { type: 'bd_smoke', x: 0, y: 0 }, { type: 'bd_light', x: 0, y: 0 }] })),
   ['LIGHTING', 'POWER', 'FIRE']);
 

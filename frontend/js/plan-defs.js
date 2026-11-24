@@ -43,7 +43,7 @@ const PLAN_DXF_FIELD_TAGS = {
 // One table, so a layer or a sheet is changed here only. A layer's sheets are the union of its items' (an item on a layer shows
 // on every sheet that layer shows on); 'all' = every sheet the file has. A sheet is written only when something on it is not 'all'.
 const PLAN_DXF_SHEETS = [
-  { id: 'MV', name: 'MV' }, { id: 'LV', name: 'LV' }, { id: 'SL', name: 'SL' }, { id: 'FIBRE', name: 'Fibre' },
+  { id: 'MV', name: 'MV' }, { id: 'LV', name: 'LV' }, { id: 'SL', name: 'SL' }, { id: 'FIBRE', name: 'Fibre' }, { id: 'DUCTS', name: 'Ducts' },
   { id: 'LIGHTING', name: 'Lighting' }, { id: 'POWER', name: 'Power' }, { id: 'FIRE', name: 'Fire Detection' }, { id: 'ELV', name: 'Electronics' },
 ];
 const PLAN_DXF_LAYERS = {
@@ -75,7 +75,7 @@ const PLAN_DXF_LAYERS = {
   },
   // the rest of the plan (the importer also reads the older PP_ names of these)
   fixed: {
-    trench: ['EL_TRENCH', ['MV', 'LV', 'SL', 'FIBRE']], crossing: ['EL_DUCTS', ['MV', 'LV', 'SL', 'FIBRE']],
+    trench: ['EL_TRENCH', ['MV', 'LV', 'SL', 'FIBRE']], crossing: ['EL_DUCTS', ['MV', 'LV', 'SL', 'FIBRE', 'DUCTS']],   // DUCTS: a sheet of the road crossing ducts alone
     room: ['EL_ROOMS', 'all'], measurement: ['EL_DIM', 'all'], text: ['EL_TEXT', 'all'],
   },
   // an item type with no row: its palette group's layer, on every sheet
