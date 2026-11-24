@@ -220,3 +220,43 @@ def test_errors():
         RP.run_road_plan(plan)
     with pytest.raises(ValueError, match="at least two points"):
         RP._Road({"centreline": [[0, 0]], "sections": ONE_WAY}, "EN")
+
+
+def test_contributions_add_up_to_the_conflict_area_result():
+    """Lay out for the checks: base (fixed luminaires) + the sum of the chosen candidates' columns is the conflict
+    area's illuminance, exactly as run_road_plan works it out; the class requirements are the same checks."""
+    plan = _curved_plan()
+    out = RP.run_road_plan(plan)
+    ca = out["conflictAreas"][0]
+    lums = plan["luminaires"]
+    # every luminaire a candidate, nothing fixed
+    c = RP.conflict_contributions({**plan, "luminaires": [], "candidates": lums})
+    a = c["areas"][0]
+    assert a["points"] == ca["points"] and not any(a["base"])
+    E = np.zeros(a["points"])
+    for col in a["cand"].values():
+        E += np.asarray(col)
+    assert E.mean() == pytest.approx(ca["Eav"], rel=1e-3) and E.min() == pytest.approx(ca["Emin"], rel=1e-3)
+    assert [(k["key"], k["req"]) for k in a["checks"]] == [(k["key"], k["req"]) for k in ca["checks"]]
+    # half fixed, half candidates: base + the candidates' sum is the same
+    c2 = RP.conflict_contributions({**plan, "luminaires": lums[::2], "candidates": lums[1::2]})
+    a2 = c2["areas"][0]
+    E2 = np.asarray(a2["base"]) + sum((np.asarray(v) for v in a2["cand"].values()), np.zeros(a2["points"]))
+    assert E2 == pytest.approx(E, rel=1e-3, abs=1e-3)
+    # a candidate that cannot reach the area is left out
+    far = dict(lums[0], x=lums[0]["x"] + 500.0)
+    c3 = RP.conflict_contributions({**plan, "luminaires": [], "candidates": [far]})
+    assert c3["areas"][0]["cand"] == {}
+
+
+def test_contributions_route():
+    from fastapi.testclient import TestClient
+    from backend.main import app
+    from backend import auth
+    app.dependency_overrides[auth.get_current_user] = lambda: object()
+    try:
+        r = TestClient(app).post("/api/analysis/road-plan/contributions", json={**_curved_plan(), "luminaires": [], "candidates": _curved_plan()["luminaires"]})
+        assert r.status_code == 200, r.text
+        assert r.json()["areas"][0]["cls"] == "C3"
+    finally:
+        app.dependency_overrides.clear()

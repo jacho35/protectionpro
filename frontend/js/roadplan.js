@@ -1441,7 +1441,8 @@ const RoadPlan = {
         <button class="btn-small" data-rp="delpole"${this._selPole ? '' : ' disabled'}>Delete pole</button>
         <span class="sl-sep"></span>
         <button class="btn-small" data-rp="relayout" title="Lay the selected road's poles out again from the rules">Lay out again</button>
-        <button class="btn-small" data-rp="relayout-all" title="Every road">All roads</button>`;
+        <button class="btn-small" data-rp="relayout-all" title="Every road">All roads</button>
+        <button class="btn-small" data-rp="optimise" title="The fewest poles that make every junction pass, then each street at the widest spacing that still passes">Lay out for the checks…</button>`;
     } else {
       const std = this._standard();
       html = `<span class="sl-view-toggle" role="group" aria-label="Quantity"><button class="${this._qty === 'E' ? 'active' : ''}" data-rp-qty="E">Illuminance</button><button class="${this._qty === 'L' ? 'active' : ''}" data-rp-qty="L">Luminance</button></span>
@@ -1814,7 +1815,8 @@ const RoadPlan = {
         </div>
         <label class="rp-check"><input type="checkbox" data-rp-lay="outsideOnly"${cfg.outsideOnly ? ' checked' : ''}> On those bends, only the row on the outside of the bend</label>
         <div class="sl-hint">Mounting height, overhang, tilt and luminaire come from the design's rows (${escHtml(des.name)}: max passing spacing on a straight is found there with <i>Find max spacing</i>).</div>
-        <div class="rp-actions"><button class="btn-small btn-primary" data-rp="relayout">Lay out again</button><label class="rl-inline"><input type="checkbox" data-rp="keepmoved"${this._keepMoved === false ? '' : ' checked'}> Keep poles I moved</label></div></div>
+        <div class="rp-actions"><button class="btn-small btn-primary" data-rp="relayout">Lay out again</button><label class="rl-inline"><input type="checkbox" data-rp="keepmoved"${this._keepMoved === false ? '' : ' checked'}> Keep poles I moved</label></div>
+        <div class="rp-actions"><button class="btn-small" data-rp="optimise">Lay out for the checks…</button><span class="sl-hint">The fewest junction poles that pass, then the widest street spacing; suggests a pole height when the design's cannot pass.</span></div></div>
       ${selHtml}
       ${this._panelFeed(r)}
       <div class="rp-block"><div class="rp-block-h"><b>Pole schedule · ${poles.length}</b>${AppState.keepInSync !== false ? '' : '<button class="btn-small" data-rp="circuit" title="Create or update street-lighting circuits and their cables from the road plan">Circuits and cables…</button>'}</div>
@@ -1883,6 +1885,7 @@ const RoadPlan = {
       case 'reverse': if (r) this.reverseRoad(r.id); break;
       case 'edit-design': if (r) { RoadLight._selId = r.designId; StreetLight.setView('design'); } break;
       case 'relayout': if (r) { this.layoutRoad(r, this._keepMoved !== false); this._commit(); this.render(); } break;
+      case 'optimise': if (typeof RoadPlanOpt !== 'undefined') RoadPlanOpt.open(); break;
       case 'relayout-all': for (const x of this.roads) this.layoutRoad(x, this._keepMoved !== false); this._commit(); this.render(); break;
       case 'delpole': this.deletePole(); break;
       case 'pole-reset': if (r) { const p = r.poles.find(x => x.id === this._selPole); if (p) { delete p.over; delete p.d; this._commit(); this.render(); } } break;
