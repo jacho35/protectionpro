@@ -733,7 +733,7 @@ const RoadPlan = {
       roads.push({
         id: road.id, name: road.name,
         centreline: g.al.pts.map(q => [+q[0].toFixed(3), +q[1].toFixed(3)]),
-        sections: lay.secs.map(s => ({ type: s.type, name: s.name || RoadLight._secName(s, des), width: s.width, lanes: s.lanes, cls: s.cls, surface: s.surface, direction: s.direction, volume: this._num(s.volume, 0) })),
+        sections: lay.secs.map(s => RoadLight._secPayload(s, des)), driveSide: RoadLight._driveSide(des),
         kerbWidth: g.kerbWidth,
         segments: this.segments(road, juncs).map(s => ({ id: s.id, name: s.name, s0: +s.s0.toFixed(2), s1: +s.s1.toFixed(2), kind: s.kind, radius: s.radius ? +s.radius.toFixed(1) : null })),
       });

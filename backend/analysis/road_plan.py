@@ -69,7 +69,7 @@ from .road_lighting import (
     C_CLASSES, LUM_FAR_H, LUM_NEAR_H, LUM_RANGE_H, M_CLASSES, OBSERVER_BACK_M, OBSERVER_EYE_M,
     P_CLASSES, SANS_A, SANS_BC, SANS_CP, SANS_FOOTWAY_M, SANS_RC, SANS_VOLUME_BANDS, TAN_MAX,
     TI_AGE, TI_RANGE_M, TI_SCREEN_DEG, TI_VIEW_DOWN_DEG, _chk, _f, _intensity_to, _long_points,
-    _RTable, _trans_points, _Web, class_family, sans_family,
+    _RTable, _trans_points, _Web, class_family, drive_side, lane_directions, sans_family,
 )
 
 FIELD_MAX_M = 40.0          # longest calculation field inside a segment
@@ -106,6 +106,7 @@ class _Road:
         d = np.diff(pts, axis=0)
         self.seg_t = d / np.hypot(d[:, 0], d[:, 1])[:, None]
         # Cross-section (same meaning as road_lighting._Design.sections)
+        self.drive = drive_side(r.get("driveSide"))
         y = 0.0
         self.sections = []
         for i, s in enumerate(r.get("sections") or []):
@@ -122,6 +123,7 @@ class _Road:
                 "direction": s.get("direction") or "forward",
                 "volume": min(max(int(_f(s.get("volume"), 0)), 0), 2),
             }
+            lane_directions(sec, self.drive)
             sec["family"] = sans_family(sec["cls"]) if standard == "SANS" else class_family(sec["cls"])
             self.sections.append(sec)
             y += w
@@ -491,14 +493,14 @@ def _lane_points(sec):
 def _field_luminance_en(f: _Field, sec):
     rt = _RTable(sec["surface"])
     wl, ys = _lane_points(sec)
-    sign = -1.0 if sec["direction"] == "reverse" else 1.0
     obs = []
     for k in range(sec["lanes"]):
+        sign = sec["signs"][k]            # the way this lane travels (two-way: one lane each way)
         oy = sec["y0"] + (k + 0.5) * wl
         L = f.L(ys, rt, oy, sign)
         lav = float(L.mean())
         centre = L[:, 3 * k + 1]
-        obs.append({"lane": k + 1, "Lav": lav, "Uo": float(L.min() / lav) if lav > 0 else 0.0,
+        obs.append({"lane": k + 1, "dir": "forward" if sign > 0 else "reverse", "Lav": lav, "Uo": float(L.min() / lav) if lav > 0 else 0.0,
                     "Ul": float(centre.min() / centre.max()) if centre.max() > 0 else 0.0,
                     "TI": f.TI(oy, sign, lav / f.ctx.mf)})
     return {"Lav": min(o["Lav"] for o in obs), "Uo": min(o["Uo"] for o in obs),
@@ -509,17 +511,28 @@ def _field_luminance_en(f: _Field, sec):
 def _field_luminance_sans(f: _Field, road: _Road, sec):
     rt = _RTable(sec["surface"])
     wl, ys = _lane_points(sec)
-    sign = -1.0 if sec["direction"] == "reverse" else 1.0
-    oy_q = sec["y0"] + sec["width"] / 4 if sign > 0 else sec["y1"] - sec["width"] / 4
-    Lq = f.L(ys, rt, oy_q, sign)
-    lav = float(Lq.mean())
-    out = {"Lav": lav, "Uo": float(Lq.min() / lav) if lav > 0 else 0.0, "TI": f.TI(oy_q, sign, lav / f.ctx.mf),
-           "surface": rt.name, "observerY": oy_q}
+    # The quarter-width observer per direction of travel (a two-way carriageway:
+    # one per direction, in its own lane's centre); the worst counts.
+    qs = []
+    for sign in sorted(set(sec["signs"]), reverse=True):
+        if sec["direction"] == "two":
+            oy_q = sec["y0"] + (sec["signs"].index(sign) + 0.5) * wl
+        else:
+            oy_q = sec["y0"] + sec["width"] / 4 if sign > 0 else sec["y1"] - sec["width"] / 4
+        Lq = f.L(ys, rt, oy_q, sign)
+        lav = float(Lq.mean())
+        qs.append({"Lav": lav, "Uo": float(Lq.min() / lav) if lav > 0 else 0.0,
+                   "TI": f.TI(oy_q, sign, lav / f.ctx.mf), "y": oy_q})
+    w = min(qs, key=lambda q: q["Lav"])
+    out = {"Lav": w["Lav"], "Uo": min(q["Uo"] for q in qs), "TI": max(q["TI"] for q in qs),
+           "surface": rt.name, "observerY": w["y"]}
     lanes = []
     for k in range(sec["lanes"]):
+        sign = sec["signs"][k]
         oy = sec["y0"] + (k + 0.5) * wl
         centre = f.L(ys, rt, oy, sign)[:, 3 * k + 1]
-        lanes.append({"lane": k + 1, "Ul": float(centre.min() / centre.max()) if centre.max() > 0 else 0.0})
+        lanes.append({"lane": k + 1, "dir": "forward" if sign > 0 else "reverse",
+                      "Ul": float(centre.min() / centre.max()) if centre.max() > 0 else 0.0})
     out["observers"] = lanes
     out["Ul"] = min(o["Ul"] for o in lanes)
     return out
@@ -879,10 +892,10 @@ def display_grid(ctx, road: _Road, lum, with_luminance=True):
             j = np.where((ys >= sec["y0"] - 1e-9) & (ys <= sec["y1"] + 1e-9))[0]
             if not len(j):
                 continue
-            sign = -1.0 if sec["direction"] == "reverse" else 1.0
             wl = sec["width"] / sec["lanes"]
             lane = np.clip(((ys[j] - sec["y0"]) // wl).astype(int), 0, sec["lanes"] - 1)
             oy = sec["y0"] + (lane + 0.5) * wl                      # each point's own lane centre
+            sign = np.asarray(sec["signs"])[lane][None, :]          # … seen the way that lane travels
             S, OY = np.meshgrid(ss, oy, indexing="ij")
             ox, oyy, _, _ = road.at(S - sign * OBSERVER_BACK_M, OY)
             sub_px, sub_py = px[:, j], py[:, j]
