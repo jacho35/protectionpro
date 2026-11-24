@@ -32,7 +32,7 @@ const PlanLayoutUI = {
     return `<div style="display:flex;flex-wrap:wrap;gap:4px;align-items:center"><span style="font-size:12px;color:var(--text-muted)">Show on plan</span>${Object.entries(this.SHOW_PARTS).map(chip).join('')}${all ? '' : '<button type="button" class="plan-btn" data-act="show" data-k="all" style="padding:3px 9px;font-size:12px">All</button>'}</div>`;
   },
   // trench settings: what shares a trench; kept apart from the layout rules (no re-solve). Trench sizes are the road sections' (Road sections ›
-  // Standard sizes, or a section's own)
+  // Project standard, or a section's own)
   TREN: [['fibre', 'select', [['own', 'fibre in its own trench'], ['with', 'fibre in the LV trench where they run together'], ['off', 'no fibre trench']], 'Fibre'],
     ['crossings', 'check', 'A shared trench across the road at every crossing'], ['lead', 'check', 'One lead trench into the erf for its service cable and fibre duct']],
   CTRL: [

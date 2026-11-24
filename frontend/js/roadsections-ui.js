@@ -6,12 +6,13 @@
  * is drawn from the lighting design that uses the section (its first row) and is edited there.
  * A section is given to roads by selecting them on the plan: *Apply to the selected roads* here, or the Road section field in their
  * Properties (several roads at once). `drawOverlay` colours every road by its section (Show on plan, and Auto layout with sections on).
- * Standard sizes (pinned at the top of the list, `sel` = 'std'): the kiosk size, the fibre manhole size and the width + depth of each trench
- * type, set once for the project. A section shows those groups as *From the standard* (fields greyed) until *This section differs* is
- * ticked; *Copy from…* takes a group from another section; *Make these the standard* moves a section's own sizes up. Offsets stay per section.
+ * Project standard (pinned at the top of the list, `sel` = 'std'): the offsets from the erf boundary, the kiosk size, the fibre manhole
+ * size and the width + depth of each trench type, set once for the project. A section shows those groups as *From the standard* (fields
+ * greyed) until *This section differs* is ticked (dragging a service on the drawing ticks it for the offsets); *Copy from…* takes a group
+ * from another section; *Make these the standard* moves a section's own values up. The crossing sleeves stay per section.
  * The site plan's **Roads** tab (beside Draw / Underlays / Output; `panelHtml` in the plan's left panel, `onPanelClick`): the sections with
  * their reserve and road count, the roads selected on the plan given the picked section in one click, the picked one's strips, Edit
- * section… (this page) and Standard sizes…; the roads are coloured by section while it is open (`overlayOn`).
+ * section… (this page) and Project standard…; the roads are coloured by section while it is open (`overlayOn`).
  * Data and rules: roadsections.js + plan-sections.js (pure).
  */
 const RoadSectionsUI = {
@@ -44,10 +45,10 @@ const RoadSectionsUI = {
   // the sizes are the ones it works with (the standard's, or its own where it differs): each cable drawn in its trench type's width and depth
   view(sec) {
     const RS = this.RS(), sp = RS.span(sec), pole = RS.pole(sec), T = RS.sizes(sec, 'trench');
-    const cab = (k, t) => Object.assign({}, sec.items[k], { w: T[t].w, depth: T[t].d });
+    const O = RS.sizes(sec, 'off'), cab = (k, t) => Object.assign({}, sec.items[k], { off: O[k], w: T[t].w, depth: T[t].d });
     const items = Object.assign({}, sec.items, {
       svc: cab('svc', 'LV/SL'), lv: cab('lv', 'LV/SL'), fi: cab('fi', 'FI'), mv: cab('mv', 'MV'),
-      kiosk: Object.assign({}, sec.items.kiosk, RS.sizes(sec, 'kiosk')), mh: Object.assign({}, sec.items.mh, RS.sizes(sec, 'mh')),
+      kiosk: Object.assign({}, sec.items.kiosk, RS.sizes(sec, 'kiosk'), { off: O.kiosk }), mh: Object.assign({}, sec.items.mh, RS.sizes(sec, 'mh'), { off: O.mh }),
       pole: pole ? Object.assign({}, sec.items.pole, { off: pole.off, h: pole.h, arm: pole.arm }) : sec.items.pole });
     return { id: sec.id, name: sec.name, strips: { a: sp.a, road: sp.road, b: sp.b }, list: sec.strips, items, trench: T, pole };
   },
@@ -82,7 +83,7 @@ const RoadSectionsUI = {
     const RS = this.RS(), std = this.isStd(), sec = this.cur(), esc = this.esc, d = RS.defId();
     const nOwn = RS.list().filter(x => RS.GROUPS.some(g => RS.own(x, g))).length;
     const stdBtn = `<button type="button" class="plan-btn" data-rsx="pick" data-id="std" aria-pressed="${std}" style="text-align:left;display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:8px 10px;border-style:dashed;${std ? 'outline:2px solid var(--accent,#2563eb)' : ''}">
-        <b>Standard sizes</b><span style="font-size:12px;color:var(--text-muted)">Kiosk, manhole and trenches for the whole project${nOwn ? ` · ${nOwn} section${nOwn === 1 ? ' has' : 's have'} own` : ''}</span></button>`;
+        <b>Project standard</b><span style="font-size:12px;color:var(--text-muted)">Offsets, kiosk, manhole and trenches for the whole project${nOwn ? ` · ${nOwn} section${nOwn === 1 ? ' has' : 's have'} own` : ''}</span></button>`;
     const rail = stdBtn + RS.list().map(x => { const n = RS.roadsUsing(x.id).length, nd = RS.designsUsing(x.id).length, on = !std && x.id === sec.id;
       return `<button type="button" class="plan-btn" data-rsx="pick" data-id="${esc(x.id)}" aria-pressed="${on}" style="text-align:left;display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:8px 10px;${on ? 'outline:2px solid var(--accent,#2563eb)' : ''}">
         <span style="display:flex;gap:6px;align-items:center"><span aria-hidden="true" style="width:10px;height:10px;border-radius:2px;background:${this.colour(x.id)}"></span><b>${esc(x.name)}</b>${x.id === d ? ' <small>(default)</small>' : ''}</span>
@@ -104,7 +105,7 @@ const RoadSectionsUI = {
           <button type="button" class="plan-btn" data-rsx="def"${sec.id === d ? ' disabled' : ''}>${sec.id === d ? 'Default section' : 'Make default'}</button></div>
         ${this.reserveHtml(sec)}
         <div id="rsx-svg" style="overflow:auto;border:1px solid var(--border,#ddd);border-radius:8px;background:var(--bg-panel,#fbfaf7)">${this.svg(sec)}</div>
-        <div style="font-size:12px;color:var(--text-muted)"><b>Drag</b> a service sideways to place it: it snaps to 10 mm, hold Alt for ten times finer. Focus one and use the arrow keys (10 mm, Shift 100 mm). The sizes are below: the standard's, or this section's own.</div>
+        <div style="font-size:12px;color:var(--text-muted)"><b>Drag</b> a service sideways to place it: it snaps to 10 mm, hold Alt for ten times finer. Focus one and use the arrow keys (10 mm, Shift 100 mm). The offsets and sizes are below: the project standard's, or this section's own; moving a service here gives this section offsets of its own.</div>
         <div style="min-width:0;overflow-x:auto">${this.stripsHtml(sec)}</div>
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px;align-items:start">${this.poleHtml(sec)}${this.checksHtml(sec)}${this.usedHtml(sec)}${this.onPlanHtml(sec)}</div>
         <div style="min-width:0;overflow-x:auto">${this.itemsHtml(sec)}</div>
@@ -211,27 +212,30 @@ const RoadSectionsUI = {
       ? `<div style="font-size:13px">${this.f2(p.off)} m from boundary A, ${this.f2(p.h)} m high, ${this.f2(p.arm)} m arm: the first row of <b>${esc(p.design)}</b>. <button type="button" class="plan-btn" data-rsx="opendes" data-id="${esc(p.designId)}" style="padding:1px 8px">Edit in Lighting design</button></div>`
       : '<div style="font-size:12px;color:var(--text-muted)">No lighting design uses this section, so no street light is drawn. Pick this section in a Lighting design to place one.</div>'}</div>`;
   },
-  // the services: where each sits (offset from boundary A, the section's own); a cable's trench is its trench type's size (Trench sizes below)
+  // the services: where each sits (offset from boundary A: the standard's, or this section's own); a cable's trench is its trench type's size
   itemsHtml(sec) {
-    const d = sec.items, T = this.RS().sizes(sec, 'trench'), K = this.RS().sizes(sec, 'kiosk'), M = this.RS().sizes(sec, 'mh'), nm = t => (typeof PLAN_DEFS !== 'undefined' && PLAN_DEFS.trenchTypes[t] || {}).name || t;
+    const RS = this.RS(), d = sec.items, own = RS.own(sec, 'off'), O = RS.sizes(sec, 'off'), T = RS.sizes(sec, 'trench'), K = RS.sizes(sec, 'kiosk'), M = RS.sizes(sec, 'mh'), nm = t => (typeof PLAN_DEFS !== 'undefined' && PLAN_DEFS.trenchTypes[t] || {}).name || t;
     const tr = t => `${this.esc(nm(t))} ${this.f2(T[t].w)} × ${this.f2(T[t].d)} m`;
-    const row = (k, name, col, size, note) => `<tr><td style="white-space:nowrap"><span style="color:${col}">&#9632;</span> ${name}</td><td>${this.inp('items.' + k + '.off', d[k].off, '', name + ' offset')}</td><td style="white-space:nowrap">${size}</td><td style="font-size:12px;color:var(--text-muted);min-width:150px">${note}</td></tr>`;
-    return `<div style="font-weight:600;margin-bottom:4px">Services</div><table class="sl-table" style="width:100%"><thead><tr><th>Service</th><th title="From the erf boundary (A)">Offset from A, m</th><th>Trench / size</th><th>What it sets</th></tr></thead><tbody>
-      ${row('svc', 'Service cable', '#8a6a00', tr('LV/SL'), 'runs in the LV corridor')}
-      ${row('lv', 'LV feeder', '#b4501c', tr('LV/SL'), 'the corridor services and LV run on')}
-      ${row('fi', 'Fibre duct', '#2b5fa8', tr('FI'), 'on the fibre (civil) side')}
-      ${row('mv', 'MV cable', '#6b3fa0', tr('MV'), 'own trench beside the LV')}
-      ${row('kiosk', 'Kiosk (near face)', '#2f3a45', `${this.f2(K.len)} × ${this.f2(K.depth)} m`, 'where the stand is: this + half its depth')}
-      ${row('mh', 'Fibre manhole (centre)', '#2b5fa8', `${this.f2(M.len)} × ${this.f2(M.wid)} m`, 'on the fibre side')}
-      <tr><td style="white-space:nowrap"><span style="color:#8a6a00">&#9632;</span> Crossing sleeves</td><td><span style="color:var(--text-muted)">—</span></td><td style="white-space:nowrap">depth ${this.inp('items.sleeve.depth', d.sleeve.depth, 'm', 'Crossing sleeves depth')} width ${this.inp('items.sleeve.w', d.sleeve.w, 'm', 'Crossing sleeves width')}</td><td style="font-size:12px;color:var(--text-muted);min-width:150px">across the carriageway</td></tr></tbody></table>
-      <div style="font-size:12px;color:var(--text-muted);margin-top:4px">Every offset is measured from the erf boundary on the side the service runs. Sizes are the standard's unless this section has its own (below).</div>`;
+    const row = (k, size, note) => `<tr><td style="white-space:nowrap"><span style="color:${this.OFF_COL[k]}">&#9632;</span> ${this.LABELS.off[k]}</td><td>${this.inp(own ? 'items.' + k + '.off' : 'std.off.' + k, O[k], '', this.LABELS.off[k] + ' offset', !own)}</td><td style="white-space:nowrap">${size}</td><td style="font-size:12px;color:var(--text-muted);min-width:150px">${note}</td></tr>`;
+    const table = `<table class="sl-table" style="width:100%"><thead><tr><th>Service</th><th title="From the erf boundary (A)">Offset from A, m</th><th>Trench / size</th><th>What it sets</th></tr></thead><tbody>
+      ${row('svc', tr('LV/SL'), 'runs in the LV corridor')}
+      ${row('lv', tr('LV/SL'), 'the corridor services and LV run on')}
+      ${row('fi', tr('FI'), 'on the fibre (civil) side')}
+      ${row('mv', tr('MV'), 'own trench beside the LV')}
+      ${row('kiosk', `${this.f2(K.len)} × ${this.f2(K.depth)} m`, 'where the stand is: this + half its depth')}
+      ${row('mh', `${this.f2(M.len)} × ${this.f2(M.wid)} m`, 'on the fibre side')}</tbody></table>
+      <div style="font-size:12px;color:var(--text-muted);margin-top:4px">Every offset is measured from the erf boundary on the side the service runs.${own ? '' : ' Dragging a service on the drawing gives this section offsets of its own.'}</div>`;
+    return `${this.groupHtml(sec, 'off', table)}
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:13px;margin-top:8px"><span><span style="color:#8a6a00">&#9632;</span> Crossing sleeves (this section's)</span> depth ${this.inp('items.sleeve.depth', d.sleeve.depth, 'm', 'Crossing sleeves depth')} width ${this.inp('items.sleeve.w', d.sleeve.w, 'm', 'Crossing sleeves width')} <span style="font-size:12px;color:var(--text-muted)">across the carriageway</span></div>`;
   },
   // ───────── sizes: kiosk, manhole, trenches (the standard, or a section's own) ─────────
   LABELS: {
+    off: { svc: 'Service cable', lv: 'LV feeder', fi: 'Fibre duct', mv: 'MV cable', kiosk: 'Kiosk (near face)', mh: 'Fibre manhole (centre)' },
     kiosk: { len: 'Length along the road', depth: 'Depth across, from the near face', h: 'Height', front: 'Clear space in front of the door', end: 'Clear space at either end' },
     mh: { len: 'Internal length', wid: 'Internal width', depth: 'Depth to invert', wall: 'Wall thickness', lid: 'Lid size', clear: 'Clear space around' },
   },
-  TITLES: { kiosk: 'Kiosk size', mh: 'Fibre manhole size', trench: 'Trench sizes' },
+  OFF_COL: { svc: '#8a6a00', lv: '#b4501c', fi: '#2b5fa8', mv: '#6b3fa0', kiosk: '#2f3a45', mh: '#2b5fa8' },
+  TITLES: { off: 'Offsets from the erf boundary', kiosk: 'Kiosk size', mh: 'Fibre manhole size', trench: 'Trench sizes' },
   TRENCH_USE: { 'MV': 'MV cable on its own', 'LV/SL': 'LV feeder, service cable, street light', 'MV/LV/SL': 'MV laid with the LV (Auto layout › Trenches)', 'FI': 'fibre ducts' },
   // the fields of a group; `pre` = the path prefix ('std.' or the section's), `v` = the values shown, `off` = greyed (following the standard)
   _fields(g, pre, v, off) {
@@ -243,7 +247,7 @@ const RoadSectionsUI = {
     return `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px">${Object.keys(L).map(k => `<label style="display:flex;flex-direction:column;gap:2px;font-size:12px;color:var(--text-muted)">${L[k]}${this.inp(pre + g + '.' + k, v[k], 'm', L[k], off)}</label>`).join('')}</div>`;
   },
   // a group on a section: From the standard / This section differs, Copy from…, Make these the standard
-  groupHtml(sec, g) {
+  groupHtml(sec, g, body) {
     const RS = this.RS(), esc = this.esc, own = RS.own(sec, g), v = RS.sizes(sec, g), others = RS.list().filter(x => x.id !== sec.id);
     const copy = others.length ? `<select data-rsx-copy="${g}" aria-label="Copy the ${this.TITLES[g].toLowerCase()} from another section"><option value="">Copy from section…</option>${others.map(x => `<option value="${esc(x.id)}">${esc(x.name)}${RS.own(x, g) ? '' : ' (standard)'}</option>`).join('')}</select>` : '';
     return `<div style="border:1px solid var(--border,#ddd);border-radius:8px;padding:8px 10px">
@@ -252,20 +256,20 @@ const RoadSectionsUI = {
         <label style="display:flex;gap:6px;align-items:center;font-size:13px"><input type="checkbox" data-rsx-own="${g}"${own ? ' checked' : ''}> This section differs</label>
         ${copy}
         ${own ? `<button type="button" class="plan-btn" data-rsx="tostd" data-g="${g}" style="padding:1px 8px">Make these the standard</button>` : `<button type="button" class="plan-btn" data-rsx="pick" data-id="std" style="padding:1px 8px">Edit the standard</button>`}</div>
-      ${this._fields(g, own ? '' : 'std.', v, !own)}</div>`;
+      ${body || this._fields(g, own ? '' : 'std.', v, !own)}</div>`;
   },
   kioskHtml(sec) { return this.groupHtml(sec, 'kiosk'); },
   mhHtml(sec) { return this.groupHtml(sec, 'mh'); },
   trenchHtml(sec) { return this.groupHtml(sec, 'trench'); },
-  // the Standard sizes page
+  // the Project standard page
   stdHtml() {
     const RS = this.RS(), esc = this.esc, S = RS.std();
     const box = g => { const diff = RS.differing(g);
       return `<div style="border:1px solid var(--border,#ddd);border-radius:8px;padding:8px 10px"><div style="font-weight:600;margin-bottom:6px">${this.TITLES[g]}</div>${this._fields(g, 'std.', S[g], false)}
-        <div style="font-size:12px;color:var(--text-muted);margin-top:6px">${diff.length ? `Own sizes in ${diff.map(x => `<button type="button" class="plan-btn" data-rsx="pick" data-id="${esc(x.id)}" style="padding:0 6px">${esc(x.name)}</button>`).join(' ')}: they do not follow this.` : 'Every road section uses these.'}</div></div>`; };
+        <div style="font-size:12px;color:var(--text-muted);margin-top:6px">${diff.length ? `Own ${g === 'off' ? 'offsets' : 'sizes'} in ${diff.map(x => `<button type="button" class="plan-btn" data-rsx="pick" data-id="${esc(x.id)}" style="padding:0 6px">${esc(x.name)}</button>`).join(' ')}: they do not follow this.` : 'Every road section uses these.'}</div></div>`; };
     return `<div style="display:flex;flex-direction:column;gap:12px;min-width:0">
-      <div><h4 style="margin:0 0 4px">Standard sizes</h4><div style="font-size:13px;color:var(--text-muted)">Set once for the project. Every road section uses these unless it has its own (tick <i>This section differs</i> on the section, or <i>Copy from section…</i>). Where each part sits across the verge stays with each section. Trench sizes are also what a trench drawn on the plan takes when no width or depth is typed on it, and what Auto layout and the quantities use.</div></div>
-      ${box('kiosk')}${box('mh')}${box('trench')}</div>`;
+      <div><h4 style="margin:0 0 4px">Project standard</h4><div style="font-size:13px;color:var(--text-muted)">Set once for the project. Every road section uses these unless it has its own (tick <i>This section differs</i> on the section, or <i>Copy from section…</i>). The offsets are measured from the erf boundary on the side each service runs. Trench sizes are also what a trench drawn on the plan takes when no width or depth is typed on it, and what Auto layout and the quantities use.</div></div>
+      ${box('off')}${box('kiosk')}${box('mh')}${box('trench')}</div>`;
   },
   checksHtml(sec) {
     const col = { ok: '#0b6e3a', warn: '#9a5b00', info: '#5b6068' }, v = this.view(sec);
@@ -318,7 +322,7 @@ const RoadSectionsUI = {
         ${mm ? `<small style="color:#9a5b00">${mm} road${mm === 1 ? ' has' : 's have'} a reserve width of ${mm === 1 ? 'its' : 'their'} own.</small>` : ''}
         <button type="button" class="plan-btn" data-rsp="edit" style="min-height:34px">Edit section…</button>
         <button type="button" class="plan-btn" data-rsp="selroads" style="min-height:34px"${RS.roadsUsing(cur.id).length ? '' : ' disabled'}>Select its roads</button>
-        <button type="button" class="plan-btn" data-rsp="std" style="min-height:34px">Standard sizes…</button>
+        <button type="button" class="plan-btn" data-rsp="std" style="min-height:34px">Project standard…</button>
       </div>
       <small style="color:var(--text-muted)">While Roads is open the roads are coloured by section; dashed = on the default.</small></div>`;
   },
@@ -387,6 +391,7 @@ const RoadSectionsUI = {
     if (parts[0] === 'trench') { if (RS.own(sec, 'trench')) RS.setSize(sec, 'trench', parts.slice(1).join('.'), v); return; }
     if (parts[0] !== 'items') return;
     if ((parts[1] === 'kiosk' || parts[1] === 'mh') && parts[2] !== 'off' && !RS.own(sec, parts[1])) return;   // a size it takes from the standard
+    if (parts[2] === 'off' && PlanSections.OFFS.includes(parts[1]) && !RS.own(sec, 'off')) return;               // an offset it takes from the standard
     const tgt = sec.items[parts[1]], key = parts[2], rng = PlanSections.SHAPE[parts[1]] && PlanSections.SHAPE[parts[1]][key];
     if (!tgt || !rng) return;
     const n = parseFloat(v); if (!Number.isFinite(n)) return;
@@ -486,6 +491,7 @@ const RoadSectionsUI = {
     const svg = this._m.querySelector('#rsx-draw'), sec = this.cur(), key = g.dataset.drag;
     if (!this._items[key]) return;
     e.preventDefault(); svg.setPointerCapture(e.pointerId); g.focus && g.focus({ preventScroll: true });
+    this.RS().setOwn(sec, 'off', true);                                                       // moving one gives the section offsets of its own
     const x0 = e.clientX, o0 = sec.items[key].off, K = this.K;
     this._drag = { key, label: this._items[key], fine: false };
     const move = ev => {
@@ -500,7 +506,7 @@ const RoadSectionsUI = {
   _key(e) {
     const g = e.target.closest && e.target.closest('[data-drag]'); if (!g || !['ArrowLeft', 'ArrowRight'].includes(e.key)) return;
     const sec = this.cur(), key = g.dataset.drag; if (!this._items[key]) return;
-    e.preventDefault();
+    e.preventDefault(); this.RS().setOwn(sec, 'off', true);
     const step = e.shiftKey ? 0.1 : 0.01;
     sec.items[key].off = PlanSections.snap(Math.max(0, Math.min(PlanSections.SHAPE[key].off[2], sec.items[key].off + (e.key === 'ArrowRight' ? step : -step))));
     this.changed(); this.render();
