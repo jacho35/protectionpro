@@ -1488,7 +1488,7 @@ const Retic = {
             <div class="retic-field"><label title="The protection on this kiosk's outgoing ways (MCB / MCCB / fuse). It is the default for every erf's service cable in the earth-fault check; an erf can pick its own in its Protection column. Blank: the service cables are checked against the string breaker.">Outgoing protection (default)</label>
               <select data-action="kiosk-field" data-kiosk="${escHtml(k.id)}" data-field="outgoingProtection" data-cable-select data-ss-placeholder="Outgoing way — e.g. mcb 40 c, mccb 100">${this._protectionOptions(k.outgoingProtection, this._incomerDevice(k) ? '— incomer —' : '— string breaker —')}</select></div>
             <div class="retic-field"><label title="The breaker between this kiosk's line-side busbar (where the string's incoming and onward cables land) and its erf bar. Auto = the smallest MCCB at or above ${this._incomerFactor()} × the kiosk's own design current. A way with no protection of its own is checked against it; the string breaker still protects the feeders.">Incomer</label>
-              <select data-action="kiosk-field" data-kiosk="${escHtml(k.id)}" data-field="incomer" data-cable-select data-ss-placeholder="Incomer — auto, or e.g. mccb 160">${this._incomerOptions(k)}</select>
+              <select data-action="kiosk-field" data-kiosk="${escHtml(k.id)}" data-field="incomer" data-cable-select data-ss-placeholder="None — pick Auto, or e.g. mccb 160">${this._incomerOptions(k)}</select>
               <div class="incomer-cell" data-incomer-kiosk="${escHtml(k.id)}"></div></div>
             ${this._earthingOf(k) === 'TN-S'
               ? `<div class="retic-field"><label title="Earth conductor of the feeder cable (Cu or Al), for the earth-fault loop and ECC size checks">Feeder Earth Cable</label>
@@ -2659,7 +2659,9 @@ const Retic = {
   _incomerOptions(k) {
     const fit = this._incomerAutoFit(k);
     const auto = `<option value="auto"${k.incomer === 'auto' ? ' selected' : ''}>Auto${fit ? ' · ' + escHtml(fit.name) : ''}</option>`;
-    return this._protectionOptions(k.incomer === 'auto' ? '' : (k.incomer || ''), 'None').replace('</option>', '</option>' + auto);
+    // "None" has a blank value, which SearchSelect hides unless it is marked always-shown.
+    return this._protectionOptions(k.incomer === 'auto' ? '' : (k.incomer || ''), 'None — no incomer')
+      .replace('<option value="">', '<option value="" data-ss-always>').replace('</option>', '</option>' + auto);
   },
   // Opening and clearing time of a device at I amps (the published tolerance
   // band of a breaker; a fuse's pre-arcing time and total clearing ×1.2, as the
