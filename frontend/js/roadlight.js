@@ -432,14 +432,50 @@ const RoadLight = {
     const photometry = {};
     for (const id of used) if (this.library[id]) photometry[id] = this.library[id];
     const out = {
-      standard: this._std(des),
-      sections: lay.secs.map(s => ({ type: s.type, name: s.name || this._secName(s, des), width: s.width, lanes: s.lanes, cls: s.cls, surface: s.surface, direction: s.direction, volume: this._num(s.volume, 0) })),
+      standard: this._std(des), driveSide: this._driveSide(des),
+      sections: lay.secs.map(s => this._secPayload(s, des)),
       rows: this._rowsPayload(des, lay),
       spacing: this._num(des.spacing, 30), mf: this._num(des.mf, 0.8), hoursPerYear: this._num(des.hours, 4100),
       photometry, mode: 'verify',
     };
     delete extra.extraPhotometry;
     return Object.assign(out, extra);
+  },
+
+  // Traffic on a carriageway: one way up the chainage ('forward'), one way
+  // down it ('reverse') or — on a 2-lane carriageway only, wider roads are
+  // drawn as carriageways of their own — two way ('two', one lane each way,
+  // the side from `driveSide`). The engines check each lane from its own
+  // direction of travel.
+  _trafficSelect(s, i) {
+    const two = this._num(s.lanes, 2) === 2;
+    const d = s.direction === 'two' && two ? 'two' : s.direction === 'reverse' ? 'reverse' : 'forward';
+    return `<select data-sec="direction" data-i="${i}" title="Direction of travel the observers look in${two ? '. Two way: one lane each way, each checked from its own direction' : ''}">`
+      + `<option value="forward"${d === 'forward' ? ' selected' : ''}>→ away</option>`
+      + `<option value="reverse"${d === 'reverse' ? ' selected' : ''}>← towards</option>`
+      + (two ? `<option value="two"${d === 'two' ? ' selected' : ''}>⇅ two way</option>` : '')
+      + '</select>';
+  },
+
+  // Results line of a two-way carriageway: which way each observer lane looks.
+  _twoWayNote(a) {
+    const o = a.observers || [];
+    if (o.length < 2 || !o.some(x => x.dir === 'reverse') || !o.some(x => x.dir !== 'reverse')) return '';
+    return ` · two way: ${o.map(x => `lane ${x.lane} ${x.dir === 'reverse' ? '↓ towards' : '↑ away'}${x.Lav != null ? ` L̄ ${this._fmt(x.Lav, 2)}, TI ${this._fmt(x.TI, 1)} %` : ''}`).join(' · ')}`;
+  },
+
+  _driveSide(des) { return des && des.driveSide === 'right' ? 'right' : 'left'; },
+
+  _hasTwoWay(des) { return !!des && des.sections.some(s => s.type === 'carriageway' && s.direction === 'two' && this._num(s.lanes, 2) === 2); },
+
+  _trafficText(s) {
+    if (s.direction === 'two' && this._num(s.lanes, 2) === 2) return 'two way';
+    return s.direction === 'reverse' ? 'towards' : 'away';
+  },
+
+  _secPayload(s, des) {
+    const direction = s.direction === 'two' && this._num(s.lanes, 2) !== 2 ? 'forward' : (s.direction || 'forward');
+    return { type: s.type, name: s.name || this._secName(s, des), width: s.width, lanes: s.lanes, cls: s.cls, surface: s.surface, direction, volume: this._num(s.volume, 0) };
   },
 
   _secName(s, des) {
@@ -595,6 +631,7 @@ const RoadLight = {
         <div class="rl-card-head"><b>Cross-section</b><span class="sl-hint">left to right, looking in the direction of travel on the first carriageway. Each strip's <b>Class</b> is the lighting class it must meet.</span>
           <button class="btn-small rl-info-btn" data-rl="info" title="What the lighting classes and road surfaces mean">ⓘ Classes &amp; surfaces</button>
           <label class="rl-inline" title="The standard each strip's lighting class is checked against">Standard<select data-dz="standard">${RL_STANDARDS.map(x => `<option value="${x.id}"${x.id === this._std(des) ? ' selected' : ''}>${escHtml(x.name)}</option>`).join('')}</select></label>
+          ${this._hasTwoWay(des) ? `<label class="rl-inline" title="Which side of a two-way carriageway each direction drives on: the lane on the traffic's own side travels up the chainage">Traffic drives on the<select data-dz="driveSide"><option value="left"${this._driveSide(des) === 'left' ? ' selected' : ''}>left</option><option value="right"${this._driveSide(des) === 'right' ? ' selected' : ''}>right</option></select></label>` : ''}
           <label class="rl-inline">Template<select data-dz="template"><option value="">Apply a template…</option>${RL_TEMPLATES.map(t => `<option value="${t.id}">${escHtml(t.name)}</option>`).join('')}</select></label>
           <button class="btn-small" data-rl="addsec">+ Strip</button></div>
         <table class="sl-table rl-table"><thead><tr><th>Strip</th><th>Name</th><th>Width m</th><th>Lanes</th><th title="EN 13201-2 / SANS 10098-1 lighting class the strip must meet — M traffic routes, C conflict areas, P pedestrian / residential">Class <button class="rl-icon rl-th-info" data-rl="info" aria-label="About lighting classes">ⓘ</button></th><th title="CIE road-surface reflection class (r-table), used for luminance">Surface <button class="rl-icon rl-th-info" data-rl="info" aria-label="About road surfaces">ⓘ</button></th><th title="Direction of travel the observer looks in">Traffic</th><th></th></tr></thead>
@@ -608,7 +645,7 @@ const RoadLight = {
             <td data-label="Lighting class" class="rl-cls-cell"><span class="rl-cls-pick"><select data-sec="cls" data-i="${i}" title="${escHtml(s.cls ? `${this._clsName(des, s.cls)}: ${this._clsReq(des, s.cls, s)}` : 'Not checked')}">${clsOpts(s.cls)}</select>${this._std(des) === 'SANS' && s.type !== 'median' ? `<button class="btn-small rl-suggest" data-rl-suggest="${i}" title="Suggest the SANS category from the road class, speed and traffic">Suggest</button>` : ''}</span>
               ${cw && this._std(des) === 'SANS' && RL_SANS_A[s.cls] ? `<select data-sec="volume" data-i="${i}" class="rl-vol" title="Maximum traffic volume during darkness (SANS 10098-1 Table 1)">${RL_SANS_BANDS[this._hasMedian(des) ? 'median' : 'noMedian'].map((b, k) => `<option value="${k}"${this._num(s.volume, 0) === k ? ' selected' : ''}>Night traffic ${b}</option>`).join('')}</select>` : ''}</td>
             <td data-label="Road surface"${cw ? '' : ' class="rl-na"'}>${cw ? `<select data-sec="surface" data-i="${i}" title="${escHtml(`${s.surface}: ${(RL_SURFACE_INFO[s.surface] || {}).desc || ''}`)}">${RL_SURFACES.map(x => `<option value="${x}"${x === s.surface ? ' selected' : ''} title="${escHtml(RL_SURFACE_INFO[x].desc)}">${x} — ${escHtml(RL_SURFACE_INFO[x].short)}</option>`).join('')}</select>` : '<span class="sl-k">—</span>'}</td>
-            <td data-label="Traffic"${cw ? '' : ' class="rl-na"'}>${cw ? `<select data-sec="direction" data-i="${i}"><option value="forward"${s.direction !== 'reverse' ? ' selected' : ''}>→ away</option><option value="reverse"${s.direction === 'reverse' ? ' selected' : ''}>← towards</option></select>` : '<span class="sl-k">—</span>'}</td>
+            <td data-label="Traffic"${cw ? '' : ' class="rl-na"'}>${cw ? this._trafficSelect(s, i) : '<span class="sl-k">—</span>'}</td>
             <td class="rl-row-actions"><button class="rl-icon" data-rl-secmv="-1" data-i="${i}" title="Move left" aria-label="Move left">←</button><button class="rl-icon" data-rl-secmv="1" data-i="${i}" title="Move right" aria-label="Move right">→</button><button class="rl-icon" data-rl-secdel="${i}" title="Remove" aria-label="Remove strip">×</button></td>
           </tr>`;
         }).join('')}</tbody></table>
@@ -768,10 +805,12 @@ const RoadLight = {
     }
     let extra = '';
     if (a.family === 'M') {
-      extra = `<div class="sl-hint">Ē ${this._fmt(a.Eav, 1)} lx on the carriageway${a.REIsides && a.REIsides.length ? ` · REI ${a.REIsides.map(s => `${s.side} ${this._fmt(s.REI, 2)}`).join(', ')}` : ''}${a.observers && a.observers.length > 1 ? ` · worst of ${a.observers.length} observer lanes` : ''}</div>`;
+      extra = `<div class="sl-hint">Ē ${this._fmt(a.Eav, 1)} lx on the carriageway${a.REIsides && a.REIsides.length ? ` · REI ${a.REIsides.map(s => `${s.side} ${this._fmt(s.REI, 2)}`).join(', ')}` : ''}${a.observers && a.observers.length > 1 ? ` · worst of ${a.observers.length} observer lanes` : ''}${this._twoWayNote(a)}</div>`;
     } else if (a.family === 'A') {
       // SANS 10098-1 group A: the conventional observer, the Table 1 column used, and ES (reported only).
-      extra = `<div class="sl-hint">Night traffic ${escHtml(a.volumeBand || '')} per lane, ${escHtml(a.crossSection || '')} · L̄, Uo, TI from the observer at y = ${this._fmt(a.observer && a.observer.y, 2)} m (a quarter of the width from the left) · Ul per lane ${(a.observers || []).map(o => this._fmt(o.Ul, 2)).join(', ')} · Ē ${this._fmt(a.Eav, 1)} lx${a.ESsides && a.ESsides.length ? ` · surround ratio ES ${a.ESsides.map(s => `${s.side} ${this._fmt(s.REI, 2)}`).join(', ')} (no limit tabulated)` : ''}</div>`;
+      extra = `<div class="sl-hint">Night traffic ${escHtml(a.volumeBand || '')} per lane, ${escHtml(a.crossSection || '')} · ${a.directions && a.directions.length > 1
+        ? `two way: L̄, Uo, TI from one observer per direction (${a.directions.map(o => `${o.dir === 'reverse' ? '↓' : '↑'} y = ${this._fmt(o.y, 2)} m: L̄ ${this._fmt(o.Lav, 2)}, Uo ${this._fmt(o.Uo, 2)}, TI ${this._fmt(o.TI, 1)} %`).join('; ')}), the worse counts`
+        : `L̄, Uo, TI from the observer at y = ${this._fmt(a.observer && a.observer.y, 2)} m (a quarter of the width from the left)`} · Ul per lane ${(a.observers || []).map(o => this._fmt(o.Ul, 2)).join(', ')} · Ē ${this._fmt(a.Eav, 1)} lx${a.ESsides && a.ESsides.length ? ` · surround ratio ES ${a.ESsides.map(s => `${s.side} ${this._fmt(s.REI, 2)}`).join(', ')} (no limit tabulated)` : ''}</div>`;
     }
     return `<div class="rl-block"><div class="rl-block-h">${title}${badge}</div>${body}${extra}${a.note ? `<div class="sl-hint rl-note">${escHtml(a.note)}</div>` : ''}</div>`;
   },
@@ -973,6 +1012,7 @@ const RoadLight = {
       if (k === 'template') { if (t.value) { this._applyTemplate(des, t.value); if (des.arrangement === 'twin-central' && !des.sections.some(s => s.type === 'median')) this._applyArrangement(des, 'single-left'); } this._afterMutate(); return; }
       if (k === 'arrangement') { this._applyArrangement(des, t.value); this._afterMutate(); return; }
       if (k === 'standard') { this._setStandard(des, t.value); this._afterMutate(); return; }
+      if (k === 'driveSide') { des.driveSide = t.value === 'right' ? 'right' : 'left'; this._afterMutate(); return; }
       des[k] = this._num(t.value, des[k]);
       this._afterMutate(false);
       this._paintSection();
@@ -985,8 +1025,11 @@ const RoadLight = {
       if (d.sec === 'type' || d.sec === 'name' || d.sec === 'cls' || d.sec === 'surface' || d.sec === 'direction') s[d.sec] = t.value;
       else if (d.sec === 'volume') s.volume = Math.round(this._num(t.value, 0));
       else s[d.sec] = Math.max(d.sec === 'lanes' ? 1 : 0, this._num(t.value, s[d.sec]));
-      if (d.sec === 'lanes') s.lanes = Math.round(s.lanes);
-      const structural = d.sec === 'type' || d.sec === 'cls' || d.sec === 'volume';
+      if (d.sec === 'lanes') {
+        s.lanes = Math.round(s.lanes);
+        if (s.direction === 'two' && s.lanes !== 2) s.direction = 'forward';   // two way = 2 lanes only
+      }
+      const structural = d.sec === 'type' || d.sec === 'cls' || d.sec === 'volume' || d.sec === 'lanes' || d.sec === 'direction';
       this._afterMutate(structural);
       if (!structural) this._paintSection();
       return;

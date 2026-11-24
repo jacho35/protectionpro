@@ -645,7 +645,7 @@ const HELP_GUIDES = [
           { sel: '.rl-verdict', label: 'Verdict against every class' },
         ] } },
     { title: 'Describe the road',
-      html: 'Pick the <strong>Standard</strong> (SANS 10098 or EN 13201), then a <strong>Template</strong> to start from, or add strips one by one: carriageways, footpaths, cycle tracks, verges and medians. Give each strip its width, and for a carriageway its lanes, <strong>road surface</strong> and direction of travel. Each strip’s <strong>Class</strong> is the lighting category it must meet. <strong>Suggest</strong> proposes one from the road’s function and speed.',
+      html: 'Pick the <strong>Standard</strong> (SANS 10098 or EN 13201), then a <strong>Template</strong> to start from, or add strips one by one: carriageways, footpaths, cycle tracks, verges and medians. Give each strip its width, and for a carriageway its lanes, <strong>road surface</strong> and direction of travel (<em>Traffic</em>: one way either way, or two way on a 2-lane carriageway, where each lane is checked from its own direction). Each strip’s <strong>Class</strong> is the lighting category it must meet. <strong>Suggest</strong> proposes one from the road’s function and speed.',
       shot: { file: 'road-lighting-2.png', alt: 'The cross-section table with a category for the carriageway',
         setup: 'road-design', clip: '#rl-main .rl-card:has(#rl-sec-body)',
         callouts: [
