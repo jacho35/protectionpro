@@ -275,3 +275,20 @@ class TestSplitStrings:
         req["strings"][0]["feederToM"] = [700.0]  # 2 × 7 Ω × 1 A = 14 V > 11.5
         out = split_strings(req)["strings"][0]["circuits"]
         assert len(out) == 1 and out[0]["pass"] is False and "vd" in out[0]["fails"]
+
+    def test_a_tree_both_ways_is_one_circuit_until_the_checks_run_out(self):
+        from backend.analysis.street_lighting import split_strings
+        # the feeder lands on P1; P2 and P3 run one way, P4 the other: 4 poles in one circuit (1Φ 1 A each on BIG: well within 5 %)
+        req = self._req([self.BIG], n=4)
+        st = req["strings"][0]
+        st["poles"] = [{"id": "P1", "spanM": 0, "parent": None}, {"id": "P2", "spanM": 100, "parent": 0},
+                       {"id": "P4", "spanM": 100, "parent": 0}, {"id": "P3", "spanM": 100, "parent": 1}]
+        st["feederToM"] = [100, 200, 200, 300]
+        out = split_strings(req)["strings"][0]["circuits"]
+        assert len(out) == 1 and sorted(out[0]["poles"]) == [0, 1, 2, 3] and out[0]["pass"]
+        # on SMALL the volt drop runs out: the circuit keeps what passes nearest the feed, each branch left over is its own circuit
+        req["cables"] = [self.SMALL]
+        out = split_strings(req)["strings"][0]["circuits"]
+        assert len(out) >= 2 and all(c["pass"] for c in out)
+        assert sorted(i for c in out for i in c["poles"]) == [0, 1, 2, 3]
+        assert out[0]["poles"][0] == 0
