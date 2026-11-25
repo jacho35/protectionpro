@@ -51,3 +51,36 @@ def test_table_data_report_says_screening_grade_and_has_no_attribution():
 def test_report_needs_a_result():
     with pytest.raises(ValueError):
         generate_solar_report("P", {"inputs": {}})
+
+
+def _jpeg_data_url(color):
+    import base64
+    import io
+    from PIL import Image
+    buf = io.BytesIO()
+    Image.new("RGB", (400, 250), color).save(buf, "JPEG", quality=80)
+    return "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode()
+
+
+def test_roof_pictures_are_placed_under_their_captions_and_a_broken_one_is_skipped():
+    from pypdf import PdfReader
+    images = [{"title": "Isometric view", "png": _jpeg_data_url((200, 120, 60))},
+              {"title": "Broken", "png": "data:image/jpeg;base64,not-an-image"},
+              {"title": "From above (north up)", "png": _jpeg_data_url((60, 120, 200))}]
+    buf = generate_solar_report("P", {"inputs": {}, "result": _res(), "images": images})
+    r = PdfReader(buf)
+    n_images = sum(len(p.images) for p in r.pages)
+    text = " ".join(p.extract_text() for p in r.pages)
+    assert n_images == 2
+    assert "Roof model" in text and "Isometric view" in text and "From above" in text and "Broken" not in text
+    # without pictures there is no Roof model section
+    plain = " ".join(p.extract_text() for p in PdfReader(generate_solar_report("P", {"inputs": {}, "result": _res()})).pages)
+    assert "Roof model" not in plain
+
+
+def test_report_route_accepts_pictures_and_rejects_too_many():
+    from backend.routes.reports import SolarReportRequest
+    ok = SolarReportRequest(result={"x": 1}, images=[{"title": "t", "png": "abc"}])
+    assert len(ok.images) == 1
+    with pytest.raises(ValueError):
+        SolarReportRequest(result={"x": 1}, images=[{"title": "t", "png": "abc"}] * 7)

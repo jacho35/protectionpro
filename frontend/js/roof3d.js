@@ -576,6 +576,41 @@ const Roof3D = {
     this.view.redraw();
   },
   unmount() { if (this.view) { this.view.destroy(); this.view = null; } this.host = null; },
+  // Pictures of the roofs for the Solar PV report: [{ title, png }] (JPEG data URLs). Drawn on an off-screen 2D view (the painter, so it
+  // needs no WebGL) from a fresh scene, with the design-hour sun's shadows; the editor's own scene, tool and selection are left as they were.
+  async snapshot(views, w = 1000, h = 620) {
+    views = views || [['Isometric view', 150, 32], ['From above (north up)', 0, 89]];
+    const sc = await this.build(); if (!sc || sc.empty || !sc.items.length) return [];
+    await Solar._locations();
+    try {
+      const sun = await API.request('/analysis/solar-sun', 'POST', { lat: Solar._loc(Solar.cfg()).lat, hour_angle_deg: this.hourAngle });
+      sc.sun = sun;
+      sc.shadowPolys = sun.elevation_deg > 0.5 ? this.shadows(sc, this.sunVec(sun.azimuth_deg + (sc.north || 0), sun.elevation_deg)) : [];
+    } catch (_) { sc.shadowPolys = []; }
+    const keep = { scene: this.scene, tool: this.tool, hover: this.hover, sel: this.sel };
+    const host = document.createElement('div');
+    host.style.cssText = `position:fixed;left:-12000px;top:0;width:${w}px;height:${h}px;visibility:hidden`;
+    document.body.appendChild(host);
+    let v = null; const out = [];
+    try {
+      this.scene = sc; this.tool = 'select'; this.hover = null; this.sel = null;
+      v = new View3D(host, { labelLayout: true, fitMargin: 0.03, sky: ['#d3e4f3', '#f1f4f8'] });
+      v.onDraw = (vv) => this.draw(vv);
+      const b = this._bounds(); if (!b) return [];
+      v.fit(b[0], b[1]);
+      for (const [title, yaw, pitch] of views) {
+        v.setView(yaw + (title.startsWith('Iso') ? (sc.north || 0) : 0), pitch);
+        if (v._raf) { cancelAnimationFrame(v._raf); v._raf = 0; }
+        v.draw();
+        out.push({ title, png: v.canvas.toDataURL('image/jpeg', 0.9) });
+      }
+    } finally {
+      this.scene = keep.scene; this.tool = keep.tool; this.hover = keep.hover; this.sel = keep.sel;
+      try { if (v) { v._stopAnim(); v._ro.disconnect(); if (v._raf) cancelAnimationFrame(v._raf); } } catch (_) { /* gone */ }
+      host.remove();
+    }
+    return out;
+  },
   hover: null,        // the pick id under the pointer (planes, objects, handles): drawn highlighted
   // Double-click: glide to the roof or object under the pointer, or back to the whole model on empty space.
   _focus(id) {

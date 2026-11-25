@@ -85,7 +85,15 @@ class SolarReportRequest(BaseModel):
     strings: Optional[dict] = None
     protection: Optional[dict] = None
     shading: Optional[dict] = None
+    images: Optional[list[dict]] = None       # [{title, png}] pictures of the roofs: data URLs (JPEG / PNG)
     projectDetails: Optional[dict] = None
+
+    @field_validator("images")
+    @classmethod
+    def _images_size(cls, v):
+        if v is not None and (len(v) > 6 or sum(len(str(x.get("png", ""))) for x in v) > _MAX_IMAGE_CHARS):
+            raise ValueError("images are too large")
+        return v
 
 
 report_router = APIRouter(prefix="/reports", tags=["reports"])
@@ -121,7 +129,7 @@ def generate_solar_pdf(req: SolarReportRequest):
     """Solar PV design report PDF from the modal's results."""
     try:
         buf = generate_solar_report(req.projectName, {"inputs": req.inputs, "result": req.result, "strings": req.strings,
-                                                       "protection": req.protection, "shading": req.shading}, req.projectDetails)
+                                                       "protection": req.protection, "shading": req.shading, "images": req.images}, req.projectDetails)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:

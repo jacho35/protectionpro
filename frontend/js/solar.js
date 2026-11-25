@@ -605,7 +605,10 @@ const Solar = {
   async exportReport() {
     const c = this.cfg();
     if (!this._res) throw new Error('Calculate the array on step 1 first.');
+    let images = [];
+    if (c.roofShape === 'plan' && typeof Roof3D !== 'undefined') { try { images = await Roof3D.snapshot(); } catch (e) { images = []; } }      // pictures are a bonus: the report goes ahead without them
     const blob = await API.generateSolarReport({
+      images,
       inputs: { location: c.location + (this.coords(c) ? ` (${this.coords(c).lat}, ${this.coords(c).lon})` : ''), module: this.panel(c).name, inverter: this.inverter(c).name, perString: c.perString },
       result: this._res, strings: this._str || null, protection: this._prot || null, shading: this._shade || null });
     const url = URL.createObjectURL(blob), a = document.createElement('a');
