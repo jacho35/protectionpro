@@ -448,9 +448,15 @@ const Solar = {
         }
         const first = arrays.length, nb = PlanSolar.shadeFor(r);      // this roof's own objects + the other roofs (used or not): each array sees only its own roof's
         arrays.push(...PlanSolar.arrays([r], gcr, packing));
-        if (r.array && !PlanSolar.usesPlanes(r) && typeof PlanSolarArray !== 'undefined') {       // an array placed on the roof: the panels as laid out are the design
-          const lay = PlanSolarArray.layout(r);
-          if (!lay.pending) for (const a of arrays.slice(first)) if (a.name === r.name) a.modules = lay.n;
+        if (r.array && typeof PlanSolarArray !== 'undefined') {       // an array placed on the roof: the panels as laid out are the design
+          const lay = PlanSolarArray.layout(r), planes = PlanSolar.usesPlanes(r);
+          if (!lay.pending) for (const a of arrays.slice(first)) {
+            if (!planes) { if (a.name === r.name) a.modules = lay.n; }
+            else {                                                // a plane roof: one array per plane, named 'roof · plane'
+              const pn = a.name.slice(r.name.length + 3);
+              a.modules = (lay.byPlane && lay.byPlane[pn]) || 0;
+            }
+          }
         }
         if (nb.length) for (const a of arrays.slice(first)) a.obstructions = nb;
       }
