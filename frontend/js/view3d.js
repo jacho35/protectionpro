@@ -29,6 +29,19 @@ class View3D {
     if (opts.label) this.canvas.setAttribute('aria-label', opts.label);
     host.appendChild(this.canvas);
     this.ctx = this.canvas.getContext('2d');
+    // WebGL2 backend (opts.gl): a second canvas under this one takes the polygons; this canvas stays for input, labels and glows.
+    // Off with localStorage 'pp-3d-renderer' = '2d' (support / tests), and it falls back to the 2D painter if the context is lost.
+    this.gl = null; this.glCanvas = null;
+    let force2d = false; try { force2d = localStorage.getItem('pp-3d-renderer') === '2d'; } catch (_) { /* no storage */ }
+    if (opts.gl && !force2d && typeof V3DGL !== 'undefined') {
+      const gc = document.createElement('canvas');
+      gc.className = 'v3d-canvas v3d-gl'; gc.style.pointerEvents = 'none'; gc.setAttribute('aria-hidden', 'true');
+      host.insertBefore(gc, this.canvas);
+      this.gl = V3DGL.create(gc);
+      if (this.gl) { this.glCanvas = gc; this.gl.onLost = () => this._glFallback(); } else gc.remove();
+    }
+    this.sun = null;          // { dir: [x, y, z] toward the sun } -> real shadows (WebGL only)
+    this.light = null;        // overrides Geom3D.LIGHT for lit faces
     this.yaw = opts.yaw != null ? opts.yaw : -32;
     this.pitch = opts.pitch != null ? opts.pitch : 36;
     this.zoom = 1;
@@ -133,7 +146,8 @@ class View3D {
     const g = this.ctx;
     g.setTransform(dpr, 0, 0, dpr, 0, 0);
     g.clearRect(0, 0, W, H);
-    if (this.bg) { g.fillStyle = this.bg; g.fillRect(0, 0, W, H); }
+    const useGL = !!(this.gl && this.gl.ok);
+    if (this.bg && !useGL) { g.fillStyle = this.bg; g.fillRect(0, 0, W, H); }
     this._items = []; this._labels = [];
     this._c = this._cam();
     if (this.onDraw) this.onDraw(this);
@@ -152,19 +166,18 @@ class View3D {
       } else it.fillLit = it.fill;
       list.push(it);
     }
+    if (useGL && this._renderGL(list, k, W, H, dpr, w)) {
+      g.globalAlpha = 1;
+      for (const it of list) if (it.t === 'g') this._glow(g, it, k);
+      this._drawLabels(g, k, W, H);
+      return;
+    }
+    if (this.glCanvas && !useGL) this.glCanvas.style.display = 'none';
     list.sort((a, b) => (a.layer - b.layer) || (a.d - b.d));
     this._picks = [];
     for (const it of list) {
       g.globalAlpha = it.alpha != null ? it.alpha : 1;
-      if (it.t === 'g') {
-        const r = Math.max(2, it.r * k.S);
-        const gr = g.createRadialGradient(it.sp[0], it.sp[1], 0, it.sp[0], it.sp[1], r);
-        gr.addColorStop(0, it.color || 'rgba(255,246,214,.75)');
-        gr.addColorStop(1, 'rgba(255,246,214,0)');
-        g.fillStyle = gr;
-        g.beginPath(); g.arc(it.sp[0], it.sp[1], r, 0, Math.PI * 2); g.fill();
-        continue;
-      }
+      if (it.t === 'g') { this._glow(g, it, k); continue; }
       g.beginPath();
       it.sp.forEach((p, i) => (i ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1])));
       if (it.t === 'f') {
@@ -187,6 +200,80 @@ class View3D {
     this._drawLabels(g, k, W, H);
   }
 
+  _glow(g, it, k) {
+    g.globalAlpha = it.alpha != null ? it.alpha : 1;
+    const r = Math.max(2, it.r * k.S);
+    const gr = g.createRadialGradient(it.sp[0], it.sp[1], 0, it.sp[0], it.sp[1], r);
+    gr.addColorStop(0, it.color || 'rgba(255,246,214,.75)');
+    gr.addColorStop(1, 'rgba(255,246,214,0)');
+    g.fillStyle = gr;
+    g.beginPath(); g.arc(it.sp[0], it.sp[1], r, 0, Math.PI * 2); g.fill();
+    g.globalAlpha = 1;
+  }
+
+  // Hand the frame to the WebGL backend. Vertices are projected here (the same maths the painter and the labels use) and sent with
+  // a normalised depth; `layer` < 3 is depth tested, >= 3 is drawn on top. Returns false when the backend cannot draw (then the painter runs).
+  _renderGL(list, k, W, H, dpr, w) {
+    if (this.glCanvas) this.glCanvas.style.display = '';
+    let dmin = Infinity, dmax = -Infinity;
+    for (const it of list) if (it.t !== 'g') for (const p of it.sp) { if (p[2] < dmin) dmin = p[2]; if (p[2] > dmax) dmax = p[2]; }
+    if (!isFinite(dmin)) { dmin = 0; dmax = 1; }
+    const range = Math.max(1e-6, dmax - dmin), nd = (d) => 0.98 - 1.96 * (d - dmin) / range;
+    const faces = [], lines = [];
+    const G = typeof Geom3D !== 'undefined' ? Geom3D : null;
+    for (const it of list) {
+      if (it.t === 'g') continue;
+      const pts = it.sp.map(p => { const q = [p[0], p[1], p[2]]; q.z = nd(p[2]); return q; });
+      const alpha = it.alpha != null ? it.alpha : 1;
+      if (it.t === 'f') {
+        if (it.fill) {
+          const c = G.parseColor(it.fill); c[3] *= alpha;
+          const n = it.n || G.faceNormal(it.pts);
+          faces.push({ sp: pts, pts: it.pts, tris: this._tris(it.pts), rgba: c, lit: !!it.lit, n, layer: it.layer, pick: it.pick, d: it.d, noShadow: !!it.noShadow });
+        }
+        if (it.stroke) { const c = G.parseColor(it.stroke); c[3] *= alpha; lines.push({ sp: pts.concat([pts[0]]), rgba: c, lw: it.lw || 1, dash: it.dash, layer: it.layer, pick: it.pick, d: it.d }); }
+      } else if (it.stroke) {
+        const c = G.parseColor(it.stroke); c[3] *= alpha;
+        lines.push({ sp: pts, rgba: c, lw: it.lw || 1, dash: it.dash, layer: it.layer, pick: it.pick, d: it.d });
+      }
+    }
+    const L = this.light || G.LIGHT, sun = this.sun && this.sun.dir ? this.sun : null;
+    const bg = this.bg ? G.parseColor(this.bg) : [0, 0, 0, 0];
+    const fr = { W, H, dpr, bg, faces, lines, light: sun ? { dir: sun.dir, ambient: 0.56, sun: 0.5, sky: 0.08 } : L, sunOn: !!sun && this.shadows !== false, viewDir: this.viewDir(k) };
+    this._glFrame = fr;
+    try { return this.gl.render(fr); } catch (e) { this.gl.ok = false; this._glFallback(); return false; }
+  }
+  _tris(pts) {
+    const n = pts.length;
+    if (n === 3) return [[0, 1, 2]];
+    if (n === 4) {                                    // a convex quad is two triangles; check the turn at each corner
+      const nm = Geom3D.faceNormal(pts); let ok = true;
+      for (let i = 0; i < 4 && ok; i++) {
+        const a = pts[i], b = pts[(i + 1) % 4], c = pts[(i + 2) % 4];
+        const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2], vx = c[0] - b[0], vy = c[1] - b[1], vz = c[2] - b[2];
+        if ((uy * vz - uz * vy) * nm[0] + (uz * vx - ux * vz) * nm[1] + (ux * vy - uy * vx) * nm[2] < -1e-9) ok = false;
+      }
+      if (ok) return [[0, 1, 2], [0, 2, 3]];
+    }
+    return Geom3D.triangulate(pts);
+  }
+  _glFallback() {
+    if (this.glCanvas) this.glCanvas.style.display = 'none';
+    if (this.gl) this.gl.ok = false;
+    this.redraw();
+  }
+  get usesGL() { return !!(this.gl && this.gl.ok); }
+  // The picture as one canvas (WebGL + labels), for export; renders now so the GL buffer is still valid.
+  toCanvas() {
+    this.draw();
+    const c = document.createElement('canvas'); c.width = this.canvas.width; c.height = this.canvas.height;
+    const g = c.getContext('2d');
+    if (this.bg) { g.fillStyle = this.bg; g.fillRect(0, 0, c.width, c.height); }
+    if (this.usesGL) g.drawImage(this.glCanvas, 0, 0);
+    g.drawImage(this.canvas, 0, 0);
+    return c;
+  }
+
   // Labels: with opts.labelLayout they are placed so none overlaps (higher `prio` first, a moved one gets a leader line, one that
   // cannot fit is dropped); otherwise each sits on its anchor.
   _drawLabels(g, k, W, H) {
@@ -207,6 +294,7 @@ class View3D {
 
   // Front-most pickable item under a screen point.
   pickAt(sx, sy) {
+    if (this.usesGL && this._glFrame) { try { return this.gl.pick(this._glFrame, sx, sy); } catch (_) { return null; } }
     for (let i = this._picks.length - 1; i >= 0; i--) {
       const it = this._picks[i];
       if (it.t === 'f' ? this._inPoly(sx, sy, it.sp) : this._nearLine(sx, sy, it.sp, 7)) return it.pick;
@@ -297,7 +385,7 @@ class View3D {
     this.redraw();
   }
 
-  destroy() { this._ro.disconnect(); this.canvas.remove(); }
+  destroy() { this._ro.disconnect(); if (this.gl) { this.gl.destroy(); this.gl = null; } if (this.glCanvas) this.glCanvas.remove(); this.canvas.remove(); }
 }
 
 // Colour helpers shared by the 3D views.

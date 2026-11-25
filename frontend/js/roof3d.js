@@ -449,6 +449,7 @@ const Roof3D = {
         sc.sun = old && old.sun;
         sc.shadowPolys = this.shadePreview && sc.sun && sc.sun.elevation_deg > 0.5 ? this.shadows(sc, this.sunVec(sc.sun.azimuth_deg + sc.north, sc.sun.elevation_deg)) : [];
         this.scene = sc;
+        this._applySun(sc);
         if (this.sel && !sc.items.some(i => i.roof.id === this.sel.roof)) this.sel = null;
       } while (this._again);
       this._message();
@@ -487,7 +488,7 @@ const Roof3D = {
     if (this.view) { this.view.destroy(); this.view = null; }
     this.host = host;
     try { this.scene = await this.build(); } catch (e) { this.scene = { items: [], objs: [], north: 0, total: 0, empty: true, error: e.message || String(e) }; }
-    this.view = new View3D(host, { labelLayout: true, label: 'Rotatable 3D view of the roofs. Drag empty space to orbit, right-drag to pan, wheel to zoom; with a tool picked, drag a handle, the gizmo or an object.', yaw: 150, pitch: 32, bg: '#eef0f3' });
+    this.view = new View3D(host, { gl: true, labelLayout: true, label: 'Rotatable 3D view of the roofs. Drag empty space to orbit, right-drag to pan, wheel to zoom; with a tool picked, drag a handle, the gizmo or an object.', yaw: 150, pitch: 32, bg: '#eef0f3' });
     this.view.onDraw = (v) => this.draw(v);
     this.view.onPick = (id, e) => this._pick(id, e);
     this.view.onClick = (id, e) => this._click(id, e);
@@ -521,6 +522,12 @@ const Roof3D = {
   },
   viewName: 'iso',
 
+  // The view's directional light = the sun of the scene (real shadows in the WebGL view); none when the sun is down.
+  _applySun(sc) {
+    const v = this.view; if (!v) return;
+    const s = sc && sc.sun;
+    v.sun = s && s.elevation_deg > 0.5 ? { dir: this.sunVec(s.azimuth_deg + (sc.north || 0), s.elevation_deg) } : null;
+  },
   // Sun at the chosen hour on the winter solstice (the engine's position), then the shadows for it.
   async setHour(h, noRedraw) {
     this.hourAngle = +h;
@@ -529,6 +536,7 @@ const Roof3D = {
     const c = Solar.cfg();
     const sun = await API.request('/analysis/solar-sun', 'POST', { lat: Solar._loc(c).lat, hour_angle_deg: this.hourAngle });
     sc.sun = sun;
+    this._applySun(sc);
     sc.shadowPolys = this.shadePreview && sun.elevation_deg > 0.5 ? this.shadows(sc, this.sunVec(sun.azimuth_deg + (sc.north || 0), sun.elevation_deg)) : [];
     this._message();
     if (this.view && !noRedraw) this.view.redraw();
@@ -815,7 +823,14 @@ const Roof3D = {
   },
   draw(v) {
     const sc = this.scene; if (!sc) return;
-    const occ = this.occluders(sc), vw = v.viewDir ? v.viewDir() : [0, 0, 1], mid = (q) => q.reduce((a, p) => [a[0] + p[0] / q.length, a[1] + p[1] / q.length, a[2] + p[2] / q.length], [0, 0, 0]);
+    const gl = !!v.usesGL;                                                  // with a depth buffer nothing needs the ray tests or the polygon shadows
+    const occ = gl ? [] : this.occluders(sc), vw = v.viewDir ? v.viewDir() : [0, 0, 1], mid = (q) => q.reduce((a, p) => [a[0] + p[0] / q.length, a[1] + p[1] / q.length, a[2] + p[2] / q.length], [0, 0, 0]);
+    if (sc.items.length) {                                                     // the ground, so shadows have somewhere to fall
+      const xs = [], ys = [];
+      for (const it of sc.items) for (const q of it.poly) { xs.push(q[0]); ys.push(q[1]); }
+      const g0 = [Math.min(...xs) - 8, Math.min(...ys) - 8], g1 = [Math.max(...xs) + 8, Math.max(...ys) + 8];
+      v.face({ pts: [[g0[0], g0[1], -0.03], [g1[0], g0[1], -0.03], [g1[0], g1[1], -0.03], [g0[0], g1[1], -0.03]], fill: '#dfe4dc', layer: 0, lit: true, noShadow: true });
+    }
     for (const it of sc.items) {
       const r = it.roof, P = it.poly, e = it.eave, flat = r.shape === 'flat';
       for (let i = 0; i < P.length; i++) {                                    // walls, their tops following the roof
@@ -834,7 +849,7 @@ const Roof3D = {
           v.face({ pts: pl.poly.map(q => [q[0], q[1], pl.zAt(q[0], q[1])]), fill: pl.lean ? '#c98a55' : it.use[i] ? '#b7653a' : '#9c5430', stroke: on ? '#1d4ed8' : '#6b3a1f', lw: on ? 2.5 : 1, layer: 1, pick: 'p:' + r.id + ':' + i, lit: true });
         });
       }
-      it.mods.forEach((m, i) => { if (!this.hidden(mid(m), vw, occ)) v.face({ pts: m, fill: it.shaded && it.shaded[i] ? '#7b8794' : '#27506b', stroke: '#9fc4dd', lw: 0.8, layer: 2, lit: true }); });
+      it.mods.forEach((m, i) => { if (gl || !this.hidden(mid(m), vw, occ)) v.face({ pts: m, fill: !gl && it.shaded && it.shaded[i] ? '#7b8794' : '#27506b', stroke: '#9fc4dd', lw: 0.8, layer: 2, lit: true }); });
       if (this.tool === 'aisle') this._drawGaps(v, it);
       const c = P.reduce((a, q) => [a[0] + q[0] / P.length, a[1] + q[1] / P.length], [0, 0]);
       const picked = (this.sel && this.sel.roof === r.id) || (typeof PlanSolar.isSelected === 'function' && PlanSolar.isSelected(r.id));
@@ -844,10 +859,10 @@ const Roof3D = {
       if (this.tool === 'pushpull') { const q = P[0]; handle([q[0], q[1], e], 'h:eave:' + r.id, '#1d4ed8'); v.line({ pts: [[q[0], q[1], 0], [q[0], q[1], e]], stroke: '#1d4ed8', lw: 1.5, dash: [4, 3], layer: 3 }); v.label({ at: [q[0], q[1], e + hs * 3], text: 'eave ' + e.toFixed(2) + ' m', color: '#1d4ed8', size: 12, bold: true, prio: 9 }); }
       if (this.tool === 'ridge' && !flat) { const q = this._ridgePoint(it); if (q) { handle(q, 'h:ridge:' + r.id, '#1d4ed8'); v.label({ at: [q[0], q[1], q[2] + hs * 3], text: (r.shape === 'pyramid' ? 'apex ' + (+r.apex || 1.8).toFixed(2) + ' m' : (+r.pitch).toFixed(1) + '°') + ' · ridge ' + q[2].toFixed(2) + ' m', color: '#1d4ed8', size: 12, bold: true }); } }
     }
-    for (const sp of (sc.shadowPolys || [])) if (!this.hidden(mid(sp.pts), vw, occ)) v.face({ pts: sp.pts, fill: 'rgba(30,41,59,0.38)', stroke: null, lw: 0, layer: sp.kind === 'ground' ? 0.5 : 1.5 });
+    if (!gl) for (const sp of (sc.shadowPolys || [])) if (!this.hidden(mid(sp.pts), vw, occ)) v.face({ pts: sp.pts, fill: 'rgba(30,41,59,0.38)', stroke: null, lw: 0, layer: sp.kind === 'ground' ? 0.5 : 1.5 });
     for (const o of (sc.objs || [])) {                                         // objects standing on the roofs
       const on = this.sel && this.sel.obj === o.id;
-      if (!on && this.hidden([o.c[0], o.c[1], o.z0 + o.hh / 2], vw, occ)) continue;                     // behind the roof or a wall
+      if (!gl && !on && this.hidden([o.c[0], o.c[1], o.z0 + o.hh / 2], vw, occ)) continue;                     // behind the roof or a wall
       V3D.box(v, o.c, o.w, o.d, o.z0, o.hh, -o.rot, { color: on ? '#bfdbfe' : '#f3f4f6', stroke: on ? '#1d4ed8' : '#111827', lw: on ? 2 : 1, pick: 'o:' + o.id, layer: 2.5, lit: true });
       v.label({ at: [o.c[0], o.c[1], o.z0 + o.hh + 0.1], text: (PlanSolar.OBJECT_TYPES[o.type] || { label: o.type }).label, color: '#111827', size: 11, prio: on ? 8 : 2 });
     }
