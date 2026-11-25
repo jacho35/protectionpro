@@ -279,6 +279,16 @@ const PlanSolar = {
   // ── Corner editing (the one gesture set of CLAUDE.md: drag a node, Shift-click an edge adds one,
   // Alt-click or double-click a node removes it (a roof keeps three corners), double-click an edge adds one,
   // drag a midpoint to add and move a corner). Always live with the Select tool; no selection needed. ──
+  // The nearest corner of any roof or keep-out within `tol` (world px) of a point, for snapping; `ignore` = corner objects to skip
+  // (the one being dragged), or null.
+  snapCorner(pt, tol, ignore) {
+    let best = null, bd = tol;
+    for (const r of this._polys()) for (const q of (r.points || [])) {
+      if (ignore && ignore.has(q)) continue;
+      const d = Math.hypot(pt.x - q.x, pt.y - q.y); if (d <= bd) { bd = d; best = q; }
+    }
+    return best ? { x: best.x, y: best.y } : null;
+  },
   // Every outline with corners: the keep-out areas first (so they win over the roof under them), then the roofs.
   _polys() { const rs = this.roofs(); return rs.flatMap(r => r.keepouts || []).concat(rs); },
   nodeAt(pt, zoom, px) {

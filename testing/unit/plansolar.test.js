@@ -163,4 +163,14 @@ ok('picking roofs: toggle adds / removes one, so several can be edited together'
   S.toggleSelect(a.id); assert.deepStrictEqual([...S.sel], [b.id]);
   S.clearSelection(); assert.strictEqual(S.sel.size, 0);
 });
+ok('corner snap: the nearest roof or keep-out corner within the tolerance, never the corner being dragged', () => {
+  const st = S._store(); st.roofs = [];
+  const a = S.addRoof(rect(100, 100)), b = S.addRoof([{ x: 200, y: 0 }, { x: 300, y: 0 }, { x: 300, y: 100 }, { x: 200, y: 100 }]);
+  assert.deepStrictEqual(S.snapCorner({ x: 103, y: 2 }, 10, null), { x: 100, y: 0 });
+  assert.strictEqual(S.snapCorner({ x: 150, y: 50 }, 10, null), null, 'nothing near');
+  assert.deepStrictEqual(S.snapCorner({ x: 198, y: 1 }, 10, new Set([a.points[1]])), { x: 200, y: 0 }, 'skips an ignored corner, finds the next');
+  assert.strictEqual(S.snapCorner({ x: 101, y: 1 }, 10, new Set([a.points[1]])), null, 'the dragged corner does not snap to itself');
+  const k = S.addKeepout(a, [{ x: 20, y: 20 }, { x: 40, y: 20 }, { x: 40, y: 40 }]);
+  assert.deepStrictEqual(S.snapCorner({ x: 22, y: 19 }, 10, null), { x: 20, y: 20 }, 'keep-out corners snap too');
+});
 console.log(n + ' passed');

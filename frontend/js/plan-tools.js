@@ -118,6 +118,11 @@ const PlanTools = {
         if (vi >= 0) return { x: r.points[vi].x, y: r.points[vi].y, snapped: 'vtx', targetId: r.id };
       }
     }
+    // corners of the solar roofs (and their keep-outs): roofs drawn side by side meet exactly
+    if (s.snapRoof !== false && o.wantRoof !== false && typeof PlanSolar !== 'undefined') {
+      const c = PlanSolar.snapCorner(pt, 10 / z, o.ignorePts);
+      if (c) return { x: c.x, y: c.y, snapped: 'roof', targetId: null };
+    }
     // imported DXF geometry (ends, mids, vertices, centres, block inserts)
     if (s.snapDxf !== false && o.wantDxf !== false && typeof PlanDxfImport !== 'undefined') {
       const d = PlanDxfImport.snap(pt, 10 / z);
@@ -145,7 +150,7 @@ const PlanTools = {
     if (!kind) return;
     const r = 7 / zoom;
     ctx.save();
-    ctx.strokeStyle = kind === 'el' ? '#22c55e' : (kind === 'vtx' ? '#2563eb' : kind === 'dxf' ? '#d946ef' : '#94a3b8');
+    ctx.strokeStyle = kind === 'el' ? '#22c55e' : (kind === 'vtx' ? '#2563eb' : kind === 'roof' ? '#c2410c' : kind === 'dxf' ? '#d946ef' : '#94a3b8');
     ctx.lineWidth = 1.5 / zoom;
     ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.stroke();
     ctx.restore();
@@ -360,6 +365,7 @@ PlanTools.register({
       const q = PlanTools.snap(pt, { ignoreIds: new Set([this._drag.c.id]) }); this._drag.c[this._drag.end] = { x: q.x, y: q.y }; this._drag.moved = true; PlanEngine.requestDraw({ fg: true }); return;
     }
     const snapped = PlanTools.snap(pt, {
+      ignorePts: (this._drag.kind === 'roofvertex') ? new Set([this._drag.roof.points[this._drag.index]]) : null,   // not onto the corner being dragged
       ignoreIds: this._drag.kind === 'vertex' ? new Set([this._drag.route.id])
         : (this._drag.kind === 'trenchvertex' || this._drag.kind === 'trenchmid') ? new Set([this._drag.trench.id])
         : (this._drag.kind === 'roomvertex' || this._drag.kind === 'roofvertex') ? new Set() : new Set([this._drag.el.id]),
