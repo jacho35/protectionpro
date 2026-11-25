@@ -631,6 +631,11 @@ const PlanUI = {
     if (PlanMarkup.context === 'plan' && PlanMarkup.mode === 'underlays') { this._renderUnderlayProps(el); return; }
     // The Lighting tab's Space step: a picked underlay shows its actions until something else is selected.
     if (PlanMarkup.context === 'lighting' && this._underlay && !PlanMarkup.selectedIds.size) { this._renderUnderlayProps(el); return; }
+    // One solar roof picked with the Select tool: when an array is placed on it, the right panel shows that array's properties.
+    if (typeof PlanSolar !== 'undefined' && typeof PlanSolarArray !== 'undefined' && PlanSolar.sel.size === 1 && !PlanMarkup.selectedIds.size) {
+      const rf = PlanSolar.roofs().find(x => PlanSolar.sel.has(x.id));
+      if (rf && rf.array) { PlanSolarArray.sel = rf.id; PlanSolarArray.renderOptions(el); return; }
+    }
     const ids = [...PlanMarkup.selectedIds];
     if (ids.length === 0) { el.innerHTML = (PlanMarkup.context === 'lighting') ? `<div class="plan-props-empty">Select an item to edit its properties.</div>` : this._summaryHtml(); return; }
     const xg = typeof PlanCrossings !== 'undefined' ? PlanCrossings.selectedGroup() : null;   // the whole of one crossing of several ducts

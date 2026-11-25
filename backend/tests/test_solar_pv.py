@@ -271,3 +271,31 @@ def test_roof_max_modules_caps_the_roof_and_the_planes_share_it():
     assert capped["arrays"][2]["modules"] == free["arrays"][2]["modules"]   # the other roof is untouched
     big = sp.run_solar_size(dict(base, arrays=[dict(a, max_modules=10000) for a in arrays]))
     assert big["modules"] == free["modules"]                          # a limit above the capacity changes nothing
+
+
+def test_kwp_target_sets_the_size_and_the_load_plays_no_part():
+    base = {"location": "Pretoria", "tilt_deg": 25, "azimuth_deg": 0, "usable_area_m2": 78, "mode": "kwp"}
+    r = sp.run_solar_size(dict(base, target_kwp=5.5))
+    assert r["modules"] == 10 and r["kwp"] == pytest.approx(5.5) and r["limited_by"] == "target" and r["modules_target"] == 10
+    assert sp.run_solar_size(dict(base, target_kwp=5.5, annual_kwh=900))["modules"] == 10      # consumption is only for the share it covers
+    big = sp.run_solar_size(dict(base, target_kwp=50))                                           # the roof holds 24
+    assert big["modules"] == big["modules_roof"] == 24 and big["limited_by"] == "roof" and big["modules_target"] == 91
+    with pytest.raises(ValueError):
+        sp.run_solar_size(dict(base))                                                            # no target
+
+
+def test_kwp_target_over_several_roofs_and_laid_out_arrays_are_kept():
+    arrays = [{"name": "North", "area_m2": 40, "packing": 0.8, "tilt_deg": 25, "azimuth_deg": 0},
+              {"name": "East", "area_m2": 20, "packing": 0.8, "tilt_deg": 25, "azimuth_deg": 90}]
+    r = sp.run_solar_size({"location": "Pretoria", "arrays": arrays, "mode": "kwp", "target_kwp": 6.6})
+    assert r["modules"] == 12 and sum(p["modules"] for p in r["arrays"]) == 12 and r["limited_by"] == "target"
+    # North is already laid out with 5 panels: that stays, the target's remaining 3 go to the other roof
+    placed = [dict(arrays[0], modules=5), arrays[1]]
+    k = sp.run_solar_size({"location": "Pretoria", "arrays": placed, "mode": "kwp", "target_kwp": 4.4})
+    assert [p["modules"] for p in k["arrays"]] == [5, 3] and k["modules"] == 8
+    # filling the roof: a laid-out roof keeps its count, the others fill
+    f = sp.run_solar_size({"location": "Pretoria", "arrays": placed, "mode": "roof"})
+    caps = [sp.modules_from_area(a["area_m2"], 0.8, MOD) for a in arrays]
+    assert [p["modules"] for p in f["arrays"]] == [5, caps[1]]
+    # yield follows the laid-out count
+    assert f["arrays"][0]["kwp"] == pytest.approx(5 * 0.55)

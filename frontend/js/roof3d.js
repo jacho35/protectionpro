@@ -93,10 +93,51 @@ const Roof3D = {
       return false;
     });
   },
-  // Space left over when `n` modules of size `size` are laid in a row of length `space` with `gap` between neighbours (0 when none fit).
-  slack(space, size, gap) {
-    const n = Math.floor((space + gap) / (size + gap) + 1e-9);
-    return n > 0 ? space - (n * size + (n - 1) * gap) : 0;
+  // Where modules of length `size` start along a row of length `space`: `gap` between neighbours, plus the maintenance aisles in `cuts`
+  // (`[{after, w}]`: `w` m of clear space before module number `after`, in place of the gap). Returns the start offsets that fit and the
+  // space left over.
+  track(space, size, gap, cuts) {
+    const ex = (cuts || []).slice().sort((a, b) => a.after - b.after), pos = [];
+    let add = 0, c = 0;
+    for (let j = 0; j < 4000; j++) {
+      while (c < ex.length && ex[c].after <= j) { add += Math.max(0, ex[c].w - gap); c++; }
+      const x = j * (size + gap) + add;
+      if (x + size > space + 1e-9) break;
+      pos.push(x);
+    }
+    return { pos, slack: pos.length ? space - (pos[pos.length - 1] + size) : 0 };
+  },
+  slack(space, size, gap) { return this.track(space, size, gap).slack; },
+  // The gaps between the rows and columns of a laid-out array (modules carry `ri` / `ci` from the layouts), in the plan's metre frame:
+  // `cols` / `rows` = [{after: modules before it, at: centre on its axis, clear: free space there}], with the axes and the array's extent.
+  boundaries(mods, az) {
+    const { u, w } = this.axes(az), C = {}, R = {};
+    let v0 = 1e9, v1 = -1e9, s0 = 1e9, s1 = -1e9;
+    for (const m of mods) {
+      if (m.ci == null) continue;
+      let a = 1e9, b = -1e9, c = 1e9, d = -1e9;
+      for (const q of m) { const v = q[0] * w[0] + q[1] * w[1], s = q[0] * u[0] + q[1] * u[1]; a = Math.min(a, v); b = Math.max(b, v); c = Math.min(c, s); d = Math.max(d, s); }
+      const cc = C[m.ci] || (C[m.ci] = { lo: a, hi: b }), rr = R[m.ri] || (R[m.ri] = { lo: c, hi: d });
+      cc.lo = Math.min(cc.lo, a); cc.hi = Math.max(cc.hi, b); rr.lo = Math.min(rr.lo, c); rr.hi = Math.max(rr.hi, d);
+      v0 = Math.min(v0, a); v1 = Math.max(v1, b); s0 = Math.min(s0, c); s1 = Math.max(s1, d);
+    }
+    const cols = [], rows = [], key = (o) => Object.keys(o).map(Number).sort((x, y) => x - y);
+    for (const k of key(C)) if (C[k + 1]) cols.push({ after: k + 1, at: (C[k].hi + C[k + 1].lo) / 2, clear: C[k + 1].lo - C[k].hi });
+    for (const k of key(R)) if (R[k + 1]) rows.push({ after: k + 1, at: (R[k].lo + R[k + 1].hi) / 2, clear: R[k].lo - R[k + 1].hi });
+    return { cols, rows, u, w, v: [v0, v1], s: [s0, s1] };
+  },
+  // The gap nearest a point [x, y] (m) within `tol` of its edge: {axis: 'col' | 'row', after, at, clear} or null.
+  boundaryAt(bd, pt, tol) {
+    if (!bd || !bd.cols) return null;
+    const v = pt[0] * bd.w[0] + pt[1] * bd.w[1], s = pt[0] * bd.u[0] + pt[1] * bd.u[1];
+    let best = null, near = 1e9;
+    const test = (list, axis, x, y, lo, hi) => {                      // x = the point on the axis the gaps are on; y must lie along the array
+      if (!(lo - tol <= y && y <= hi + tol)) return;
+      for (const g of list) { const d = Math.abs(x - g.at) - Math.max(0, g.clear) / 2; if (d <= tol && d < near) { near = d; best = { axis, after: g.after, at: g.at, clear: g.clear }; } }
+    };
+    test(bd.cols, 'col', v, s, bd.s[0], bd.s[1]);
+    test(bd.rows, 'row', s, v, bd.v[0], bd.v[1]);
+    return best;
   },
   layoutModules(poly, az, pitchDeg, setback, mod, max, g, al, ex) {
     const { u, w } = this.axes(az), t = Math.tan(pitchDeg * Math.PI / 180);
@@ -104,15 +145,17 @@ const Roof3D = {
     const vs = poly.map(p => p[0] * w[0] + p[1] * w[1]), vmin = Math.min(...vs), vmax = Math.max(...vs);
     const at = (v, s) => [w[0] * v + u[0] * s, w[1] * v + u[1] * s];
     const z = (s) => (g.eave != null ? g.eave : this.EAVE_M) + t * (g.smax - s) + 0.04;
-    const sh = this.alignShare(al), rowSpace = g.smax - setback - g.ridge, colSpace = vmax - vmin - 2 * setback;
-    const sOff = sh.v * this.slack(rowSpace, run, gap), vOff = sh.h * this.slack(colSpace, wid, gap);
-    for (let k = 0; k < 400; k++) {
-      const s0 = g.smax - setback - sOff - k * (run + gap), s1 = s0 - run;      // eave side, ridge side
-      if (s1 < g.ridge - 1e-9) break;
-      for (let v = vmin + setback + vOff; v + wid <= vmax - setback + 1e-9; v += wid + gap) {
+    const sh = this.alignShare(al), rowSpace = g.smax - setback - g.ridge, colSpace = vmax - vmin - 2 * setback, cuts = mod.cuts || {};
+    const rt = this.track(rowSpace, run, gap, cuts.row), ct = this.track(colSpace, wid, gap, cuts.col);
+    const sOff = sh.v * rt.slack, vOff = sh.h * ct.slack;
+    for (let k = 0; k < rt.pos.length; k++) {
+      const s0 = g.smax - setback - sOff - rt.pos[k], s1 = s0 - run;      // eave side, ridge side
+      for (let j = 0; j < ct.pos.length; j++) {
+        const v = vmin + setback + vOff + ct.pos[j];
         const cs = [at(v, s0), at(v + wid, s0), at(v + wid, s1), at(v, s1)];
         if (!cs.every(p => this._usable(p, poly, setback - 1e-6)) || this.hitsKeepout(cs, ex)) continue;
-        out.push(cs.map(p => [p[0], p[1], z(p[0] * u[0] + p[1] * u[1])]));
+        const m = cs.map(p => [p[0], p[1], z(p[0] * u[0] + p[1] * u[1])]); m.ri = k; m.ci = j;     // row from the eave, column from the low side
+        out.push(m);
         if (out.length >= max) return out;
       }
     }
@@ -127,15 +170,18 @@ const Roof3D = {
     const vs = poly.map(p => p[0] * w[0] + p[1] * w[1]), vmin = Math.min(...vs), vmax = Math.max(...vs);
     const at = (v, s) => [w[0] * v + u[0] * s, w[1] * v + u[1] * s];
     const run = mod.len * Math.cos(b), rise = mod.len * Math.sin(b), gap = Math.max(0, +mod.gap || 0), out = [];   // the gap is along a row; the row pitch already holds the space between rows
-    const sh = this.alignShare(al), rowSpace = smax - smin - 2 * setback, colSpace = vmax - vmin - 2 * setback;
-    const nRows = rowSpace >= run - 1e-9 ? Math.floor((rowSpace - run) / pitch + 1e-9) + 1 : 0;
-    const sOff = nRows ? sh.v * (rowSpace - ((nRows - 1) * pitch + run)) : 0, vOff = sh.h * this.slack(colSpace, mod.wid, gap);
-    for (let s0 = smax - setback - sOff; s0 - run >= smin + setback - 1e-9; s0 -= pitch) {
-      for (let v = vmin + setback + vOff; v + mod.wid <= vmax - setback + 1e-9; v += mod.wid + gap) {
+    const sh = this.alignShare(al), rowSpace = smax - smin - 2 * setback, colSpace = vmax - vmin - 2 * setback, cuts = mod.cuts || {};
+    const rt = this.track(rowSpace, run, pitch - run, cuts.row), ct = this.track(colSpace, mod.wid, gap, cuts.col);
+    const sOff = sh.v * rt.slack, vOff = sh.h * ct.slack;
+    for (let k = 0; k < rt.pos.length; k++) {
+      const s0 = smax - setback - sOff - rt.pos[k];
+      for (let j = 0; j < ct.pos.length; j++) {
+        const v = vmin + setback + vOff + ct.pos[j];
         const lo = [at(v, s0), at(v + mod.wid, s0)], hi = [at(v, s0 - run), at(v + mod.wid, s0 - run)];
         if (![...lo, ...hi].every(p => this._usable(p, poly, setback - 1e-6)) || this.hitsKeepout([lo[0], lo[1], hi[1], hi[0]], ex)) continue;
-        out.push([[lo[0][0], lo[0][1], zBase + 0.1], [lo[1][0], lo[1][1], zBase + 0.1],
-          [hi[1][0], hi[1][1], zBase + 0.1 + rise], [hi[0][0], hi[0][1], zBase + 0.1 + rise]]);
+        const m = [[lo[0][0], lo[0][1], zBase + 0.1], [lo[1][0], lo[1][1], zBase + 0.1],
+          [hi[1][0], hi[1][1], zBase + 0.1 + rise], [hi[0][0], hi[0][1], zBase + 0.1 + rise]]; m.ri = k; m.ci = j;
+        out.push(m);
         if (out.length >= max) return out;
       }
     }
@@ -600,6 +646,14 @@ const Roof3D = {
       this.sel = null; this._fire('onPanel'); if (this.view) this.view.redraw(); return;
     }
     const [kind, a, b] = String(id).split(':');
+    if (kind === 'a') {                                                     // a gap between panels (Aisles tool): click inserts, Alt-click removes
+      const [, rid, axis, after] = String(id).split(':'), roof = this._roof(rid);
+      if (roof) {
+        const has = !!PlanSolar.aisleAt(roof, axis, +after);
+        if (!has || (e && e.altKey)) { PlanSolar.setAisle(roof, axis, +after, !has); PlanSolar._changed(); this.sel = { roof: rid }; this.refresh(); }
+      }
+      return;
+    }
     if (kind === 'p') {
       if (this.tool === 'object' && f) {
         const it = this._item(a), pl = it && it.pls[+b], roof = this._roof(a);
@@ -699,6 +753,21 @@ const Roof3D = {
     }
     return false;
   },
+  // The Aisles tool: every gap between rows and columns of panels becomes a clickable strip (blue to insert an aisle, amber where one is).
+  _drawGaps(v, it) {
+    const r = it.roof;
+    if (it.unused || PlanSolar.usesPlanes(r) || !it.mods.length) return;
+    const az = PlanSolar.planAz(r), bd = this.boundaries(it.mods, az), flat = r.shape === 'flat';
+    const lift = flat ? this.PARAPET_M + 0.14 : 0.1, z = (x, y) => this.deckZ(it, x, y) + lift;
+    const strip = (list, axis) => {
+      const ax = axis === 'col' ? bd.w : bd.u, al = axis === 'col' ? bd.u : bd.w, ext = axis === 'col' ? bd.s : bd.v;
+      for (const g of list) {
+        const has = !!PlanSolar.aisleAt(r, axis, g.after), hw = Math.max(0.1, Math.max(0, g.clear) / 2), P = (x, d) => { const px = ax[0] * (g.at + d) + al[0] * x, py = ax[1] * (g.at + d) + al[1] * x; return [px, py, z(px, py)]; };
+        v.face({ pts: [P(ext[0], -hw), P(ext[1], -hw), P(ext[1], hw), P(ext[0], hw)], fill: has ? '#f2b84b' : '#2563eb', alpha: has ? 0.85 : 0.35, stroke: has ? '#a16207' : '#1d4ed8', lw: 1, layer: 3, pick: 'a:' + r.id + ':' + axis + ':' + g.after });
+      }
+    };
+    strip(bd.cols, 'col'); strip(bd.rows, 'row');
+  },
   draw(v) {
     const sc = this.scene; if (!sc) return;
     const occ = this.occluders(sc), vw = v.viewDir ? v.viewDir() : [0, 0, 1], mid = (q) => q.reduce((a, p) => [a[0] + p[0] / q.length, a[1] + p[1] / q.length, a[2] + p[2] / q.length], [0, 0, 0]);
@@ -721,6 +790,7 @@ const Roof3D = {
         });
       }
       it.mods.forEach((m, i) => { if (!this.hidden(mid(m), vw, occ)) v.face({ pts: m, fill: it.shaded && it.shaded[i] ? '#7b8794' : '#27506b', stroke: '#9fc4dd', lw: 0.8, layer: 2 }); });
+      if (this.tool === 'aisle') this._drawGaps(v, it);
       const c = P.reduce((a, q) => [a[0] + q[0] / P.length, a[1] + q[1] / P.length], [0, 0]);
       v.label({ at: [c[0], c[1], this._ridgeZ(it) + 1.2], text: `${r.name} · ${it.mods.length} modules`, color: '#1f2937', size: 12, bold: true });
       const hs = Math.max(0.12, v.radius * 0.025);                              // handles for the Push / pull and Ridge tools

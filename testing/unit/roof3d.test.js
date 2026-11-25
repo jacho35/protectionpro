@@ -153,4 +153,25 @@ ok('panel gap: fewer modules, neighbours exactly `gap` apart, zero gap unchanged
   close(R.slack(9, 1, 0.1), 0.3, 1e-9);
   assert.strictEqual(R.slack(0.5, 1, 0.1), 0);
 });
+ok('maintenance aisles: a column aisle opens exactly its width, indexes follow, rows too', () => {
+  const mod = { len: 2, wid: 1 }, g = R.gablePlanes(rect(10, 6), 0, 30, 3);
+  const withCol = R.layoutModules(rect(10, 6), 0, 30, 0.5, Object.assign({ cuts: { col: [{ after: 4, w: 0.8 }] } }, mod), 1e9, g);
+  assert.strictEqual(withCol.length, 8, '9 m of width: 8 modules and the 0.8 m aisle');
+  const xs = (ci) => withCol.filter(m => m.ci === ci).map(m => Math.min(...m.map(p => p[0])))[0];
+  close(xs(4) - xs(3), 1.8, 1e-6);                                  // module width + 0.8 aisle
+  close(xs(3) - xs(2), 1, 1e-6);
+  const bd = R.boundaries(withCol, 0);
+  const col = bd.cols.find(c => c.after === 4);
+  assert(col && Math.abs(col.clear - 0.8) < 1e-6, 'the boundary reports its clear width');
+  const at = (v, sx) => [bd.w[0] * v + bd.u[0] * sx, bd.w[1] * v + bd.u[1] * sx], hit = R.boundaryAt(bd, at(col.at, (bd.s[0] + bd.s[1]) / 2), 0.1);
+  assert(hit && hit.axis === 'col' && hit.after === 4, 'a point in the aisle finds it');
+  const far = R.boundaryAt(bd, at(col.at + 0.7, (bd.s[0] + bd.s[1]) / 2), 0.05);
+  assert(!far || far.after !== 4, 'a point inside a panel is not the aisle');
+  const racks = (cuts) => R.layoutRacks(rect(10, 12), 0, 15, 0.5, Object.assign({ cuts }, { len: 2, wid: 1 }), 1e9, 3, 3.4);
+  const rowsOf = (l) => new Set(l.map(m => m.ri)).size;
+  assert(rowsOf(racks({ row: [{ after: 2, w: 2 }] })) < rowsOf(racks({})), 'a row aisle takes room from the rows');
+  const b = racks({ row: [{ after: 2, w: 2 }] });
+  const sOf = (l, ri) => Math.max(...l.filter(m => m.ri === ri).flatMap(m => m.map(p => p[1])));
+  close(sOf(b, 1) - sOf(b, 2), 3 + (2 - (3 - 2 * Math.cos(15 * Math.PI / 180))), 1e-6);
+});
 console.log('shadow tests done');

@@ -26,7 +26,7 @@ const Solar = {
   DEFAULTS: {
     location: 'Pretoria', module: 'pv_550_mono', inverter: 'inv_10k_2mppt',
     roofShape: 'gable', length: 10, width: 9.2, pitch: 25, setback: 0.5, area: 60, packing: 0.8,
-    tilt: 15, azimuth: 0, mode: 'min', annualKwh: 18500, sharePct: 70,
+    tilt: 15, azimuth: 0, mode: 'kwp', targetKwp: 10, annualKwh: '', sharePct: 70,
     perString: 8, hour: 0, cableM: 30, vdPct: 1, acV: 400, exportKw: '', busId: '', pvId: '',
     hybrid: false, battKwh: 20, battKw: 10, battDod: 90,
     obsH: 0, obsD: 6, obsB: 0, obsW: 8,
@@ -35,13 +35,19 @@ const Solar = {
   cfg() {
     const pm = AppState.planMarkup;
     const store = pm && pm.settings ? (pm.settings.solar = pm.settings.solar || {}) : (this._mem = this._mem || {});
-    return Object.assign({}, this.DEFAULTS, store);
+    const o = Object.assign({}, this.DEFAULTS, store);
+    if (o.mode === 'min' || o.mode === 'load') {         // projects sized by the load: the array size is now a kWp target set in the design
+      o.mode = 'kwp';
+      if (!(+store.targetKwp > 0)) o.targetKwp = this._res && this._res.kwp > 0 ? +this._res.kwp : this.DEFAULTS.targetKwp;
+    }
+    return o;
   },
   set(key, value) {
     const pm = AppState.planMarkup;
     const store = pm && pm.settings ? (pm.settings.solar = pm.settings.solar || {}) : (this._mem = this._mem || {});
     store[key] = value;
     AppState.dirty = true;
+    if (['mode', 'targetKwp', 'module'].includes(key) && typeof PlanSolarArray !== 'undefined') { PlanSolarArray._redraw(); PlanSolarArray._queue(); }   // the placed arrays follow the design
   },
 
   // Library = the shipped lists (constants.js) + the entries added here, kept with the project (settings.solar).
@@ -163,7 +169,7 @@ const Solar = {
     const mod = this._opt(this.panels(), c.module, o => o.id, o => o.name);
     const inv = this._opt(this.inverters(), c.inverter, o => o.id, o => o.name);
     const shape = [['plan', 'Roofs drawn on the plan'], ['gable', 'Gable (north plane)'], ['flat', 'Flat with tilted racks'], ['area', 'Type a usable area']];
-    const modes = [['min', 'Smaller of roof and load'], ['roof', 'Roof capacity'], ['load', 'Load target']];
+    const modes = [['kwp', 'A kWp target I set'], ['roof', 'Fill the roof']];
     const geo = c.roofShape === 'plan' ? this._roofsHtml()
       : c.roofShape === 'area'
       ? this._in(c, 'area', 'Usable area (m²)') + this._in(c, 'packing', 'Packing factor') + this._in(c, 'tilt', 'Tilt (°)') + this._in(c, 'azimuth', 'Azimuth (° from north)')
@@ -176,12 +182,13 @@ const Solar = {
       <label for="sol-inverter">Inverter</label><select id="sol-inverter" data-k="inverter">${inv}</select>
       <label for="sol-roofShape">Roof</label><select id="sol-roofShape" data-k="roofShape">${this._opt(shape, c.roofShape, o => o[0], o => o[1])}</select>
       ${geo}
-      ${this._in(c, 'annualKwh', 'Annual consumption (kWh)')}
-      ${this._in(c, 'sharePct', 'Share to cover (%)')}
-      <label for="sol-mode">Size set by</label><select id="sol-mode" data-k="mode">${this._opt(modes, c.mode, o => o[0], o => o[1])}</select>`)
+      <label for="sol-mode">Array size</label><select id="sol-mode" data-k="mode">${this._opt(modes, c.mode, o => o[0], o => o[1])}</select>
+      ${c.mode === 'kwp' ? this._in(c, 'targetKwp', 'Target array size (kWp)') : ''}
+      ${this._in(c, 'annualKwh', 'Annual consumption (kWh, optional)')}`)
       + `<div style="margin-top:12px;display:flex;gap:8px;align-items:center"><button class="btn btn-primary" type="button" data-act="run">Calculate</button>
          ${c.roofShape === 'plan' ? '<button class="btn" type="button" data-act="view3d">Edit roofs in 3D</button>' : ''}
          <span style="font-size:12px;color:var(--text-muted,#6d6d6d)">${escHtml(this.roofArea(c).note)}</span></div>`
+      + `<div style="margin-top:6px;font-size:11px;color:var(--text-muted,#6d6d6d)">The size is the kWp you set, limited by what the roof holds. Consumption does not size the array; it only gives the share of the load the yield covers. Roofs with an array placed on the plan keep the panels as laid out there.</div>`
       + this._sizeResult();
   },
 
@@ -216,17 +223,18 @@ const Solar = {
     const bars = r.months.map((m, i) => `<div style="flex:1;text-align:center;font-size:10px" title="${names[i]}: ${Math.round(m.kwh)} kWh">
       <div style="height:${Math.round(80 * m.kwh / max)}px;background:var(--accent,#d9822b);margin-top:${80 - Math.round(80 * m.kwh / max)}px"></div>${names[i]}</div>`).join('');
     const tile = (l, v) => `<div style="background:var(--bg-muted,#f3f2ee);border-radius:6px;padding:8px 10px"><div style="font-size:11px;color:var(--text-muted,#6d6d6d)">${l}</div><div style="font-weight:600;font-size:15px">${v}</div></div>`;
-    const lim = { roof: 'the roof', load: 'the load target' }[r.limited_by];
+    const lim = { roof: 'what the roof holds', load: 'the load target', target: 'the kWp target' }[r.limited_by];
+    const short = r.mode === 'kwp' && r.limited_by === 'roof' && r.modules_target > r.modules;
     return `<div style="margin-top:14px;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px">
-        ${tile('Modules', r.modules + ' (roof ' + (r.modules_roof ?? '–') + ', load ' + (r.modules_load ?? '–') + ')')}
+        ${tile('Modules', r.mode === 'kwp' ? r.modules + ' (target ' + r.modules_target + ')' : r.modules + ' (roof ' + (r.modules_roof ?? '–') + ')')}
         ${tile('Array size', r.kwp + ' kWp')}
         ${tile('Annual yield', (r.annual_kwh / 1000).toFixed(1) + ' MWh')}
         ${tile('Specific yield', Math.round(r.specific_yield_kwh_kwp) + ' kWh/kWp')}
         ${tile('Performance ratio', r.performance_ratio ?? '–')}
         ${tile('Load covered', r.load_share_pct != null ? r.load_share_pct + ' %' : '–')}
       </div>
-      <div style="margin-top:8px;font-size:12px">Size is set by ${lim}${r.dc_ac_ratio ? '; DC/AC ratio ' + r.dc_ac_ratio : ''}.</div>
-      ${r.arrays ? '<div style="margin-top:8px;font-size:12px">' + r.arrays.map(a => escHtml(a.name || 'Roof') + ': ' + a.modules + ' of ' + a.modules_roof + ' modules, ' + a.kwp + ' kWp, ' + Math.round(a.annual_kwh) + ' kWh').join('<br>') + '</div>' : ''}
+      <div style="margin-top:8px;font-size:12px">Size is set by ${lim}${short ? ': the roof holds ' + r.kwp + ' kWp of the ' + r.target_kwp + ' kWp target' : ''}${r.dc_ac_ratio ? '; DC/AC ratio ' + r.dc_ac_ratio : ''}.</div>
+      ${r.arrays ? '<div style="margin-top:8px;font-size:12px">' + r.arrays.map(a => escHtml(a.name || 'Roof') + ': ' + a.modules + (a.laid_out ? ' modules as laid out, ' : ' of ' + a.modules_roof + ' modules, ') + a.kwp + ' kWp, ' + Math.round(a.annual_kwh) + ' kWh').join('<br>') + '</div>' : ''}
       <div style="display:flex;gap:3px;align-items:flex-end;height:104px;margin-top:8px" role="img" aria-label="Monthly energy, kWh">${bars}</div>
       ${r.shading_loss_pct != null ? '<div style="margin-top:6px;font-size:12px">Shading loss ' + r.shading_loss_pct + ' %</div>' : ''}
       <div style="margin-top:6px;font-size:11px;color:var(--text-muted,#6d6d6d)">${escHtml(r.data_note)}</div>`;
@@ -418,12 +426,16 @@ const Solar = {
         }
         const first = arrays.length, nb = PlanSolar.shadeFor(r);      // this roof's own objects + the other roofs (used or not): each array sees only its own roof's
         arrays.push(...PlanSolar.arrays([r], gcr, packing));
+        if (r.array && !PlanSolar.usesPlanes(r) && typeof PlanSolarArray !== 'undefined') {       // an array placed on the roof: the panels as laid out are the design
+          const lay = PlanSolarArray.layout(r);
+          if (!lay.pending) for (const a of arrays.slice(first)) if (a.name === r.name) a.modules = lay.n;
+        }
         if (nb.length) for (const a of arrays.slice(first)) a.obstructions = nb;
       }
       if (!arrays.length) throw new Error('The roofs have no usable area. Calibrate the plan scale and check the setback.');
       this._res = await API.request('/analysis/solar-size', 'POST', {
         location: c.location, module: this.moduleBody(p), inverter: this.inverterBody(inv), mode: c.mode, arrays,
-        annual_kwh: +c.annualKwh || null, share_pct: +c.sharePct,
+        annual_kwh: +c.annualKwh || null, share_pct: +c.sharePct, target_kwp: +c.targetKwp || null,
         obstructions: +c.obsH > 0 ? [{ height_m: +c.obsH, distance_m: +c.obsD, bearing_deg: +c.obsB, width_m: +c.obsW }] : [] });   // the typed one applies to every roof; objects and neighbours ride on each roof's arrays
       this._str = null; this._prot = null;
       return;
@@ -437,7 +449,7 @@ const Solar = {
     this._res = await API.request('/analysis/solar-size', 'POST', {
       location: c.location, module: this.moduleBody(p), inverter: this.inverterBody(inv),
       tilt_deg: g.tilt, azimuth_deg: g.azimuth, mode: c.mode, usable_area_m2: g.area, packing,
-      annual_kwh: +c.annualKwh || null, share_pct: +c.sharePct,
+      annual_kwh: +c.annualKwh || null, share_pct: +c.sharePct, target_kwp: +c.targetKwp || null,
       obstructions: +c.obsH > 0 ? [{ height_m: +c.obsH, distance_m: +c.obsD, bearing_deg: +c.obsB, width_m: +c.obsW }] : [] });
     this._str = null;
     this._prot = null;
