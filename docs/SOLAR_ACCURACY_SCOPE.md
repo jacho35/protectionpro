@@ -52,7 +52,7 @@ Quantify the current error before changing the model, so every later package sho
 - PVGIS terms checked: free, commercial use allowed with attribution, no endorsement implied; caching is not mentioned and not restricted.
 - Done when: yield can be produced from hourly data and the result states its data source.
 
-### WP3 — Hourly model: Perez, IAM, clipping, degradation — BUILT 2026-11-25 (`solar_hourly.py`; all six PVGIS reference cases within ±1.6 % annual; the UI shows clipping and years 1 / 25; the mismatch stays a percentage, the stack's soiling / wiring / availability stay fixed)
+### WP3 — Hourly model: Perez, IAM, clipping, degradation — BUILT 2026-11-25 (`solar_hourly.py`; 42 PVGIS reference cases (7 sites x 6 layouts) within ±2.8 % annual; the UI shows clipping and years 1 / 25; the mismatch stays a percentage, the stack's soiling / wiring / availability stay fixed)
 Depends on WP2 for hourly input.
 
 - Perez transposition replaces isotropic sky (keep isotropic selectable for regression comparison).

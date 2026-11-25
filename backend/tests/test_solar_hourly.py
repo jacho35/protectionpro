@@ -13,7 +13,9 @@ HERE = os.path.dirname(__file__)
 TMY_DIR = os.path.join(HERE, "..", "..", "testing", "solar", "tmy")
 REF = json.load(open(os.path.join(HERE, "..", "..", "testing", "solar", "pvgis_reference.json")))
 MOD = sp.get_module("pv_550_mono")
-SITES = {"Johannesburg": (-26.2, 28.04), "Cape Town": (-33.92, 18.42), "Upington": (-28.45, 21.26)}
+SITES = {"Johannesburg": (-26.2, 28.04), "Cape Town": (-33.92, 18.42), "Upington": (-28.45, 21.26),
+         "Durban": (-29.86, 31.02), "Polokwane": (-23.9, 29.45), "Bloemfontein": (-29.12, 26.21), "Gqeberha": (-33.96, 25.6)}
+CASES = ["north_30", "flat_ew", "north_15", "north_45", "west_30", "ew_5"]
 AZ_N = {180: 0, -90: 90, 90: 270}
 
 
@@ -24,7 +26,7 @@ def _tmy(site):
 
 
 @pytest.mark.parametrize("site", list(SITES))
-@pytest.mark.parametrize("case", ["north_30", "flat_ew"])
+@pytest.mark.parametrize("case", CASES)
 def test_annual_energy_within_three_percent_of_pvgis(site, case):
     t = _tmy(site)
     planes = REF["sites"][site][case]
