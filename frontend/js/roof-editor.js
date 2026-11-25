@@ -59,7 +59,7 @@ const RoofEditor = {
     const dock = document.createElement('section');
     dock.id = 're-dock'; dock.className = 're-dock'; dock.hidden = true; dock.setAttribute('aria-label', 'Roof 3D view and properties');
     dock.innerHTML = `<div class="re-head">
-        <div class="re-title"><b id="re-name">3D</b><span>orbit: drag · pan: right-drag · zoom: wheel</span></div>
+        <div class="re-title"><b id="re-name">3D</b><span>orbit: drag · pan: right-drag · zoom: wheel · double-click: focus · arrows: nudge the picked item</span></div>
         <div class="re-views" role="group" aria-label="Named views">${[['top', 'Top'], ['north', 'From north'], ['east', 'From east'], ['iso', 'Iso']].map(v => `<button type="button" class="re-btn" data-re-view="${v[0]}">${v[1]}</button>`).join('')}</div>
         <label class="re-field">Sun <input type="range" id="re-hour" min="7" max="17" step="0.25" value="${12 + (Roof3D.hourAngle || 0) / 15}" aria-label="Time of day, winter solstice"> <output id="re-hour-t" for="re-hour">${Roof3D.hourText(Roof3D.hourAngle)}</output></label>
         <button type="button" class="re-btn" id="re-shade" aria-pressed="true">Shade preview</button>

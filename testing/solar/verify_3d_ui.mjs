@@ -89,6 +89,15 @@ for (const mode of ['gl', '2d']) {
   await page.waitForTimeout(800);
   const p1 = await page.evaluate(() => PlanSolar.roofs()[0].points[0].x);
   check(mode + ': dragging the gizmo X arrow moves the roof', Math.abs(p1 - g.p0) > 1, g.p0.toFixed(1) + ' -> ' + p1.toFixed(1));
+  // Arrow keys nudge the selected object
+  await page.evaluate(() => { Roof3D.tool = 'select'; Roof3D.sel = { roof: PlanSolar.roofs()[0].id, obj: 'o1' }; Roof3D._rebuild(); });
+  await page.waitForTimeout(600);
+  const n0 = await page.evaluate(() => { Roof3D.view.canvas.focus(); const o = PlanSolar.roofs()[0].objects[0]; return { x: o.x, y: o.y }; });
+  await page.keyboard.press('ArrowRight'); await page.waitForTimeout(500);
+  await page.keyboard.press('Shift+ArrowUp'); await page.waitForTimeout(500);
+  const n1 = await page.evaluate(() => { const o = PlanSolar.roofs()[0].objects[0]; return { x: o.x, y: o.y }; });
+  const f = 0.05, moved = Math.hypot(n1.x - n0.x, n1.y - n0.y) * f;
+  check(mode + ': arrow keys nudge the selected object (about 0.55 m after 5 cm + 50 cm)', moved > 0.4 && moved < 0.7, moved.toFixed(2) + ' m');
   await page.close();
 }
 await browser.close();

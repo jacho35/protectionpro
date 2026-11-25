@@ -537,6 +537,7 @@ const Roof3D = {
     this.view.onDraw = (v) => this.draw(v);
     this.view.onPick = (id, e) => this._pick(id, e);
     this.view.onClick = (id, e) => this._click(id, e);
+    this.view.canvas.addEventListener('keydown', (e) => this._nudge(e));
     this.view.onHover = (id) => { this.hover = id; if (this.view) this.view.redraw(); };
     this.view.onDblClick = (id) => this._focus(id);
     this.fit();
@@ -653,6 +654,19 @@ const Roof3D = {
     if (t.kind === 'obj') { t.o.x = base.x + wx; t.o.y = base.y + wy; return; }
     t.roof.points.forEach((q, i) => { q.x = base.pts[i].x + wx; q.y = base.pts[i].y + wy; });
     (t.roof.objects || []).forEach((o, i) => { o.x = base.obj[i].x + wx; o.y = base.obj[i].y + wy; });
+  },
+  // Arrow keys move the selected roof or object along the screen's right / up directions on the ground: 5 cm, Shift 50 cm, Alt 1 cm.
+  // One undo step per press.
+  _nudge(e) {
+    const dir = { ArrowRight: [1, 0], ArrowLeft: [-1, 0], ArrowUp: [0, 1], ArrowDown: [0, -1] }[e.key];
+    if (!dir || !this.view || !PlanEngine.factor() || e.ctrlKey || e.metaKey) return;
+    const t = this._target(); if (!t) return;
+    e.preventDefault();
+    const step = e.shiftKey ? 0.5 : e.altKey ? 0.01 : 0.05, y = this.view.yaw * Math.PI / 180, cy = Math.cos(y), sy = Math.sin(y);
+    const right = [cy, -sy], fwd = [sy, cy];                               // the screen's right and up, as world (east, north) vectors
+    const dx = (right[0] * dir[0] + fwd[0] * dir[1]) * step, dy = (right[1] * dir[0] + fwd[1] * dir[1]) * step;
+    this._moveBy(t, this._capture(t), dx, dy);
+    this._commit();
   },
   _capture(t) { return t.kind === 'obj' ? { x: t.o.x, y: t.o.y, h: t.o.h, w: t.o.w, d: t.o.d, rot: t.o.rot || 0 } : { pts: t.roof.points.map(q => ({ x: q.x, y: q.y })), obj: (t.roof.objects || []).map(o => ({ x: o.x, y: o.y, w: o.w, d: o.d, h: o.h, rot: o.rot || 0 })), az: +t.roof.azimuth || 0, eave: RoofPlanes.eave(t.roof) }; },
 
