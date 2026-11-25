@@ -1,7 +1,8 @@
 // Headless check of the roof 3D view on both renderers (WebGL2 and the 2D fallback): picks a roof plane and an object, nothing in a corner.
 // Needs a full stack on a THROWAWAY database (see testing/help-guides/lib.mjs): node testing/solar/verify_3d_ui.mjs <output dir>
 import { launch, token, openApp } from '../help-guides/lib.mjs';
-const SP = process.argv[2];
+import { mkdirSync } from 'node:fs';
+const SP = process.argv[2]; mkdirSync(SP, { recursive: true });
 let fails = 0; const check = (n, ok, x = '') => { if (!ok) fails++; console.log(ok ? 'PASS' : 'FAIL', n, x); };
 const browser = await launch();
 for (const mode of ['gl', '2d']) {

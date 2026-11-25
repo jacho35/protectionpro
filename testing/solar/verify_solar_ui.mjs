@@ -1,8 +1,8 @@
 // Headless check of the Solar PV Design UI (PVGIS hourly sizing, PVsyst import, annual shading, report download).
 // Needs a full stack on a THROWAWAY database (see testing/help-guides/lib.mjs): node testing/solar/verify_solar_ui.mjs <output dir>
 import { launch, token, openApp, BASE_URL } from '../help-guides/lib.mjs';
-import { writeFileSync } from 'node:fs';
-const SP = process.argv[2];
+import { writeFileSync, mkdirSync } from 'node:fs';
+const SP = process.argv[2]; mkdirSync(SP, { recursive: true });
 const log = (...a) => console.log(...a);
 let fails = 0; const check = (name, ok, extra = '') => { if (!ok) fails++; log(ok ? 'PASS' : 'FAIL', name, extra); };
 const browser = await launch();
