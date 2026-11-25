@@ -18,7 +18,6 @@ const PlanSolarArray = {
   _timer: null, _busy: false, _again: false,
   sld: '',              // last single-line message
   _layouts: new Map(),  // roof id → { key, lay }
-  _chosen: {},          // roof name → panels the last single-line size run chose (the roof, or the load target, limits it)
 
   style() { const s = PlanSolar._store(); return (s && s.arrayStyle) || 'modules'; },
   setStyle(v) { const s = PlanSolar._store(); if (s) s.arrayStyle = v === 'block' ? 'block' : 'modules'; if (typeof PlanMarkup !== 'undefined') PlanMarkup.markDirty(); this._redraw(); },
@@ -50,7 +49,7 @@ const PlanSolarArray = {
   layout(roof) {
     const f = PlanEngine.factor(), c = Solar.cfg(), p = Solar.panel(c);
     if (!f || !roof.points || roof.points.length < 3) return { mods: [], n: 0, kwp: 0, pending: false };
-    const key = [roof.points.map(q => q.x + ',' + q.y).join(';'), roof.shape, roof.pitch, roof.tilt, roof.azimuth, roof.setback, p.id, p.len, p.wid, f, c.hour, c.location, this._chosen[roof.name]].join('|');
+    const key = [roof.points.map(q => q.x + ',' + q.y).join(';'), roof.shape, roof.pitch, roof.tilt, roof.azimuth, roof.setback, p.id, p.len, p.wid, f, c.hour, c.location].join('|');
     const hit = this._layouts.get(roof.id);
     if (hit && hit.key === key) return hit.lay;
     const poly = Roof3D.toMetres(roof.points, f), az = +roof.azimuth || 0, setback = Math.max(0, +roof.setback || 0);
@@ -63,9 +62,7 @@ const PlanSolarArray = {
       if (rp == null) pending = true;
       else mods = Roof3D.layoutRacks(poly, az, +roof.tilt, setback, p, 1e9, rp, 0);
     }
-    const fit = mods.length, cap = this._chosen[roof.name];
-    if (cap != null && cap < mods.length) mods = mods.slice(0, cap);           // the size run chose fewer than fit (the load target limits it)
-    const lay = { mods: mods.map(m => m.map(q => [q[0], q[1]])), n: mods.length, fit, kwp: mods.length * p.w / 1000, pending };
+    const lay = { mods: mods.map(m => m.map(q => [q[0], q[1]])), n: mods.length, fit: mods.length, kwp: mods.length * p.w / 1000, pending };
     if (!pending) this._layouts.set(roof.id, { key, lay });
     return lay;
   },
@@ -76,7 +73,7 @@ const PlanSolarArray = {
     this._after('Array placed on ' + roof.name + '.');
   },
   remove(roof) {
-    roof.array = false; delete this._chosen[roof.name]; this._layouts.delete(roof.id);
+    roof.array = false; this._layouts.delete(roof.id);
     this._after(null, true);
   },
   edit(roof, patch) {
@@ -102,15 +99,23 @@ const PlanSolarArray = {
     this._busy = true;
     try {
       if (!PlanEngine.factor()) throw new Error('Calibrate the plan scale first so the roofs have a size.');
-      Solar.set('roofShape', 'plan');
+      // The array on the plan IS the design: size the roofs as they are (not capped by the load target, which would
+      // shrink what was placed), then take the panels actually laid out as the count. The sizing mode the modal
+      // uses is left as the user set it.
       await Solar._locations();
-      await Solar.runSize();
-      const pv = Solar.placePv(true), res = Solar._res;
-      this._chosen = {};
-      for (const a of (res.arrays || [])) this._chosen[a.name] = a.modules;
-      this._layouts.clear(); this._redraw();
-      const fit = roofs.reduce((t, r) => t + this.layout(r).fit, 0), lim = { roof: 'the roof', load: 'the load target' }[res.limited_by] || '';
-      this.sld = `On the single line as ${pv.props.name || 'PV array'}: ${res.modules} panels${res.modules < fit ? ` (limited by ${lim}; ${fit} fit on the roofs)` : ''}.`;
+      for (let k = 0; k < 20 && roofs.some(r => this.layout(r).pending); k++) await new Promise(res => setTimeout(res, 150));   // a flat roof waits for its row pitch
+      const keep = Solar.cfg().mode;
+      Solar.set('roofShape', 'plan'); Solar.set('mode', 'roof');
+      try { await Solar._locations(); await Solar.runSize(); } finally { Solar.set('mode', keep); }
+      const res = Solar._res;
+      let total = 0;
+      for (const a of (res.arrays || [])) {
+        const roof = roofs.find(r => r.name === a.name);
+        if (roof) { a.modules = this.layout(roof).n; total += a.modules; }
+      }
+      res.modules = total;
+      const pv = Solar.placePv(true);
+      this.sld = `On the single line as ${pv.props.name || 'PV array'}: ${total} panels, as laid out.`;
     } catch (e) {
       this.sld = 'Single line not updated: ' + (e.message || e);
     } finally {
