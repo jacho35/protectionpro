@@ -50,6 +50,7 @@ log = logging.getLogger(__name__)
 
 APPID = "PROTECTIONPRO"
 META_BLOCK = "PP_META"
+CROSSING_LABEL_BLOCK = "EL_DUCTCOUNT_"      # a leader + circle + COUNT attribute per crossing (never read back as a device)
 # Core attribute tags carried on every device blockref. REF/TYPE/DBFED/
 # CIRCUIT/PHASE/CABLE match the AutoCAD LISP toolkit's own block-attribute
 # vocabulary directly (see CLAUDE.md's Plan Markup DXF notes); LOAD_VA is
@@ -555,12 +556,14 @@ def build_dxf(payload: Dict[str, Any], load_image=None, notes: List[str] | None 
     # 'arrow', placed once every route is drawn) or, 'along', the text along the longest segment.
     label_style = str((payload.get("labels") or {}).get("style") or "along")
     leader_routes: List[dict] = []
+    avoid_lines: List[List[Tuple[float, float]]] = []   # every cable / trench / room line in m, for the crossing labels to keep clear of
     lw_of: Dict[str, List[Tuple[Any, int]]] = {}        # layer → [(entity, line weight)]: set on the layer when they agree
     for r in payload.get("routes", []):
         pts = [(X(p[0]), Y(p[1])) for p in r.get("pts", [])]
         if len(pts) < 2:
             continue
         layer = r.get("layer") or "PP_ROUTES"
+        avoid_lines.append(pts)
         _ensure_layer(doc, layer, r.get("color"))
         da = {"layer": layer, **_color_attribs(r.get("color"), layer_hex.get(layer))}
         lt = r.get("linetype")              # its own linetype only where it differs from its layer's (ByLayer otherwise)
@@ -598,6 +601,7 @@ def build_dxf(payload: Dict[str, Any], load_image=None, notes: List[str] | None 
     for t in payload.get("trenches", []):
         pts = [(X(p[0]), Y(p[1])) for p in t.get("pts", [])]
         if len(pts) >= 2:
+            avoid_lines.append(pts)
             da = {"layer": L_TRENCH, **_color_attribs(t.get("color"), layer_hex.get(L_TRENCH))}
             if t.get("widthM"):                       # drawn at its real width, as the plan draws it
                 da["const_width"] = float(t["widthM"])
@@ -608,6 +612,7 @@ def build_dxf(payload: Dict[str, Any], load_image=None, notes: List[str] | None 
     for rm in payload.get("rooms", []):
         pts = [(X(p[0]), Y(p[1])) for p in rm.get("pts", [])]
         if len(pts) >= 3:
+            avoid_lines.append(pts + [pts[0]])
             ent = msp.add_lwpolyline(pts, close=True, dxfattribs={"layer": L_ROOMS, **_color_attribs(rm.get("color"), layer_hex.get(L_ROOMS))})
             _set_meta(ent, {"KIND": "room", "NAME": rm.get("label")})
             if rm.get("lw"):
@@ -645,13 +650,14 @@ def build_dxf(payload: Dict[str, Any], load_image=None, notes: List[str] | None 
             _set_meta(ent, {"KIND": "text"})
 
     # Cable labels as leaders, now that everything they must keep clear of is known.
+    obstacles = []
+    for el in payload.get("elements", []):
+        half = (variants.get(el.get("block"), {}).get("sizeWorld", 24) or 24) * 0.5 * factor
+        obstacles.append((X(el["x"]), Y(el["y"]), half))
+    taken: List[Tuple] = []                              # the cable labels' text boxes and leaders, for the crossing labels
     if label_style != "along" and leader_routes:
-        obstacles = []
-        for el in payload.get("elements", []):
-            half = (variants.get(el.get("block"), {}).get("sizeWorld", 24) or 24) * 0.5 * factor
-            obstacles.append((X(el["x"]), Y(el["y"]), half))
         text_style = TEXT_STYLE
-        sheets_mod.place_labels(msp, doc, leader_routes, obstacles, H, label_style, text_style)
+        sheets_mod.place_labels(msp, doc, leader_routes, obstacles, H, label_style, text_style, taken)
 
     # A leader and a circle per road crossing with its duct count (3L/4S = 3 large 160 mm, 4 small 110 mm).
     xl = payload.get("crossingLabels") or []
@@ -661,18 +667,16 @@ def build_dxf(payload: Dict[str, Any], load_image=None, notes: List[str] | None 
         lab_in = []
         for q in xl:
             a, p2 = q.get("p1"), q.get("p2")
-            if not a or not p2:
+            if not a or not p2 or not q.get("text"):
                 continue
             A, B = (X(a[0]), Y(a[1])), (X(p2[0]), Y(p2[1]))
-            mid = ((A[0] + B[0]) / 2, (A[1] + B[1]) / 2)
-            lab_in.append({"a": mid, "dir": (B[0] - A[0], B[1] - A[1]) if A != B else (1.0, 0.0), "text": q.get("text") or "",
-                           "lines": [(A, B)]})
-        allines = [l for q in lab_in for l in q["lines"]]
-        for q in lab_in:
-            q["lines"] = [q["lines"][0]] + [l for l in allines if l != q["lines"][0]]
-        obst = [(X(el["x"]), Y(el["y"]), (variants.get(el.get("block"), {}).get("sizeWorld", 24) or 24) * 0.5 * factor)
-                for el in payload.get("elements", [])]
-        sheets_mod.place_crossing_labels(msp, [q for q in lab_in if q["text"]], obst, H, xl_layer, TEXT_STYLE, _set_meta)
+            ducts = [((X(d[0][0]), Y(d[0][1])), (X(d[1][0]), Y(d[1][1]))) for d in (q.get("ducts") or []) if len(d) == 2] or [(A, B)]
+            lab_in.append({"a": ((A[0] + B[0]) / 2, (A[1] + B[1]) / 2), "dir": (B[0] - A[0], B[1] - A[1]) if A != B else (1.0, 0.0),
+                           "text": q["text"], "ducts": ducts})
+        # every duct of every crossing is something to keep clear of (a crossing without a label too)
+        all_ducts = [((X(c["p1"][0]), Y(c["p1"][1])), (X(c["p2"][0]), Y(c["p2"][1]))) for c in payload.get("crossings", []) if c.get("p1") and c.get("p2")]
+        sheets_mod.place_crossing_labels(doc, msp, lab_in, obstacles, H, xl_layer, TEXT_STYLE, CROSSING_LABEL_BLOCK,
+                                         avoid_lines, all_ducts, taken, _set_meta)
 
     sym_layers = {el.get("layer") for el in payload.get("elements", [])}
     # Line weights as the plan draws the lines: on the layer when every line on it has the same one, else on each line.
@@ -1467,8 +1471,8 @@ def _parse_ours(doc, factor, floor_name, domain) -> Dict[str, Any]:
         # every other INSERT in one of our own files is a device — LISP-named
         # blocks (LUMINAIRE, DB, ...) no longer carry a "PP_" prefix, so that
         # can't gate device recognition any more.
-        if name == META_BLOCK or (e.dxf.get("layer", "") or "").startswith(BG_PREFIX):
-            continue      # the metadata block; a background drawing exported with the plan (not part of it)
+        if name == META_BLOCK or name.startswith(CROSSING_LABEL_BLOCK) or (e.dxf.get("layer", "") or "").startswith(BG_PREFIX):
+            continue      # the metadata block, a crossing's duct-count label; a background drawing exported with the plan (not part of it)
         attrs = {a.dxf.tag: a.dxf.text for a in e.attribs}
         px = to_px(e.dxf.insert.x, e.dxf.insert.y)
         devices.append({

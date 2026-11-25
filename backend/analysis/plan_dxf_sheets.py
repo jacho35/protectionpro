@@ -512,11 +512,12 @@ ANGLES = (60, 120, 300, 240, 45, 135, 315, 225, 75, 105, 285, 255, 30, 150, 330,
 
 
 def place_labels(msp, doc, routes: List[dict], obstacles: List[Tuple[float, float, float]], H: float, style: str,
-                 text_style: str) -> int:
+                 text_style: str, taken: Optional[List[Tuple]] = None) -> int:
     """Each route with `labelLines` gets one MULTILEADER: horizontal text in a clear spot, a leader back to the cable
     ending in an open circle round it (`style` 'circle') or an arrow onto it ('arrow'). Cables running side by side
     (a shared trench) get one leader each to one stacked label. `routes[i]['ptsM']` = the route in metres.
-    `obstacles` = (x, y, half size) of every symbol. Returns how many leaders were written."""
+    `obstacles` = (x, y, half size) of every symbol. `taken`, when given, collects what the labels use ('box', text box) and
+    ('seg', leader start, end) for whatever is placed after them. Returns how many leaders were written."""
     from ezdxf.render import mleader
     from ezdxf.render.arrows import ARROWS
     from ezdxf.math import Vec2
@@ -638,66 +639,122 @@ def place_labels(msp, doc, routes: List[dict], obstacles: List[Tuple[float, floa
         grid.add("label", box, None, box)
         lb = (min(A[0], E[0]), min(A[1], E[1]), max(A[0], E[0]), max(A[1], E[1]))
         grid.add("seg", (A, E), -1, lb)
+        if taken is not None:
+            taken.append(("box", box))
+            taken.append(("seg", A, E))
         done.update(members)
         written += 1
     return written
 
 
-def place_crossing_labels(msp, labels: List[dict], obstacles: List[Tuple[float, float, float]], H: float,
-                          layer: str, text_style: str, meta=None) -> int:
-    """A leader and a circle with the duct count ('3L/4S': large 160 mm / small 110 mm) for each road crossing.
-    `labels` = [{ 'a': (x, y) the crossing's centre, 'dir': (dx, dy) its direction, 'text': '3L/4S', 'lines': [...] }]
-    in metres; `lines` = every crossing's centre line, which the circle keeps clear of. The circle goes beside the
-    road (along the road, off the ducts), the first of eight spots that is clear; the leader starts on a dot at `a`."""
+def _seg_seg_touch(a, b, c, d) -> bool:
+    """Segments that cross or touch (collinear overlaps included)."""
+    def on(p, q, r):
+        return min(p[0], q[0]) - 1e-9 <= r[0] <= max(p[0], q[0]) + 1e-9 and min(p[1], q[1]) - 1e-9 <= r[1] <= max(p[1], q[1]) + 1e-9
+
+    def cr(o, p, q):
+        return (p[0] - o[0]) * (q[1] - o[1]) - (p[1] - o[1]) * (q[0] - o[0])
+    d1, d2, d3, d4 = cr(c, d, a), cr(c, d, b), cr(a, b, c), cr(a, b, d)
+    if ((d1 > 0) != (d2 > 0)) and ((d3 > 0) != (d4 > 0)):
+        return True
+    return (abs(d1) < 1e-9 and on(c, d, a)) or (abs(d2) < 1e-9 and on(c, d, b)) or (abs(d3) < 1e-9 and on(a, b, c)) or (abs(d4) < 1e-9 and on(a, b, d))
+
+
+def place_crossing_labels(doc, msp, labels: List[dict], obstacles: List[Tuple[float, float, float]], H: float,
+                          layer: str, text_style: str, block_prefix: str, avoid_lines: List[List[Tuple[float, float]]],
+                          all_ducts: List[Tuple], taken: Optional[List[Tuple]] = None, meta=None) -> int:
+    """A leader and a circle with the duct count ('3L/4S': large 160 mm / small 110 mm) for each road crossing, each one
+    a BLOCK (`block_prefix` + n: the leader, a dot on the crossing, the circle and a COUNT attribute, drawn relative to
+    the crossing's centre) inserted on `layer`.
+
+    `labels` = [{ 'a': the crossing's centre (m), 'dir': its direction, 'text': '3L/4S', 'ducts': [(p, q), ...] its ducts }].
+    Clash detection: the circle (with a margin) keeps clear of the symbols, every cable / trench / room line
+    (`avoid_lines`, polylines in m), every duct of every crossing (`all_ducts`, a crossing with no label too), the cable labels already placed (`taken`) and the
+    circles already placed; the leader keeps off the symbols and other labels and crosses as few lines as it can.
+    Spots tried: both sides of the road, sliding along the crossing, further out in steps; the cleanest wins, and the
+    first without any clash is taken at once."""
+    margin = 0.35 * H
+    segs = [(p, q) for pl in avoid_lines for p, q in zip(pl, pl[1:]) if p != q]
+    fixed_boxes = [t[1] for t in (taken or []) if t[0] == "box"]
+    fixed_segs = [(t[1], t[2]) for t in (taken or []) if t[0] == "seg"]
     placed: List[Tuple[float, float, float, float]] = []
-    segs = [tuple(l) for lab in labels for l in lab.get("lines", [])]
+    placed_leaders: List[Tuple[Tuple[float, float], Tuple[float, float]]] = []
     count = 0
-    for lab in labels:
+    for k, lab in enumerate(labels):
         a, d, text = lab["a"], lab["dir"], str(lab["text"])
         dl = math.hypot(*d) or 1.0
         d = (d[0] / dl, d[1] / dl)
         n = (-d[1], d[0])                                  # along the road
+        own = {tuple(x) for x in lab.get("ducts", [])}
+        others = [x for x in all_ducts if x not in own]
         r = max(1.3 * H, 0.6 * H * len(text) / 2 + 0.6 * H)
+        # half the bundle's width across the road, so the circle starts clear of its own ducts
+        half = max([abs((p[0] - a[0]) * n[0] + (p[1] - a[1]) * n[1]) for x in own for p in x] or [0.0])
         best = None
-        for mult in (1.0, 1.7, 2.6):
-            for sgn_n in (1, -1):
-                for t in (0.0, 0.8, -0.8, 1.6, -1.6):
-                    dist = (r + 2.5 * H) * mult
-                    e = (a[0] + n[0] * sgn_n * dist + d[0] * t * r, a[1] + n[1] * sgn_n * dist + d[1] * t * r)
-                    box = (e[0] - r, e[1] - r, e[0] + r, e[1] + r)
-                    s = mult * 0.5 + abs(t) * 0.2
+        for mult in (1.0, 1.5, 2.1, 2.8, 3.6, 4.6, 6.0):
+            for sgn in (1, -1):
+                for t in (0.0, 0.7, -0.7, 1.4, -1.4, 2.2, -2.2):
+                    dist = half + r + margin + 2.0 * H * mult
+                    e = (a[0] + n[0] * sgn * dist + d[0] * t * r, a[1] + n[1] * sgn * dist + d[1] * t * r)
+                    box = (e[0] - r - margin, e[1] - r - margin, e[0] + r + margin, e[1] + r + margin)
+                    s = (mult - 1) * 0.6 + abs(t) * 0.25
                     for (x, y, h) in obstacles:
                         if _box_box(box, (x - h, y - h, x + h, y + h)):
                             s += 100
-                    for q in placed:
+                    for q in placed + fixed_boxes:
                         if _box_box(box, q):
                             s += 100
                     for (p, q) in segs:
                         if _seg_box(p, q, box):
+                            s += 100
+                    for (p, q) in others:
+                        if _seg_box(p, q, box):
+                            s += 100
+                    for (p, q) in fixed_segs + placed_leaders:        # the circle on another label's leader
+                        if _seg_box(p, q, box):
                             s += 60
-                        elif _seg_seg(a, e, p, q) and (p, q) != tuple(lab["lines"][0]):
-                            s += 6
+                    if s < 100:                                    # a clear circle: how the leader fares
+                        for (p, q) in segs:
+                            if _seg_seg_touch(a, e, p, q):
+                                s += 4
+                        for (p, q) in others:
+                            if _seg_seg_touch(a, e, p, q):
+                                s += 5
+                        for (p, q) in fixed_segs + placed_leaders:
+                            if _seg_seg_touch(a, e, p, q):
+                                s += 8
+                        for (x, y, h) in obstacles:
+                            if _seg_box(a, e, (x - h, y - h, x + h, y + h)):
+                                s += 20
+                        for q in placed + fixed_boxes:
+                            if _seg_box(a, e, q):
+                                s += 30
                     if best is None or s < best[0]:
                         best = (s, e)
-                    if s < 1.0:
+                    if s < 0.5:
                         break
-                if best and best[0] < 1.0:
+                if best[0] < 0.5:
                     break
-            if best and best[0] < 1.0:
+            if best[0] < 0.5:
                 break
         e = best[1]
         ang = math.atan2(e[1] - a[1], e[0] - a[0])
         end = (e[0] - math.cos(ang) * r, e[1] - math.sin(ang) * r)
-        attrs = {"layer": layer}
-        ents = [msp.add_line(a, end, dxfattribs=attrs),
-                msp.add_circle(a, 0.25 * H, dxfattribs=attrs),
-                msp.add_circle(e, r, dxfattribs=attrs)]
-        t = msp.add_text(text, dxfattribs={"height": H, "layer": layer, "style": text_style})
-        t.set_placement(e, align=TextEntityAlignment.MIDDLE_CENTER)
-        ents.append(t)
+        rel = (e[0] - a[0], e[1] - a[1])
+        name = f"{block_prefix}{k + 1}"
+        while name in doc.blocks:
+            name += "_"
+        blk = doc.blocks.new(name)
+        blk.add_line((0, 0), (end[0] - a[0], end[1] - a[1]), dxfattribs={"layer": "0"})
+        blk.add_circle((0, 0), 0.25 * H, dxfattribs={"layer": "0"})
+        blk.add_circle(rel, r, dxfattribs={"layer": "0"})
+        ad = blk.add_attdef("COUNT", rel, text, dxfattribs={"height": H, "layer": "0", "style": text_style})
+        ad.set_placement(rel, align=TextEntityAlignment.MIDDLE_CENTER)
+        ref = msp.add_blockref(name, a, dxfattribs={"layer": layer})
+        ref.add_auto_attribs({"COUNT": text})
         if meta:
-            for en in ents:
-                meta(en, {"KIND": "crossinglabel"})
+            meta(ref, {"KIND": "crossinglabel", "TEXT": text})
         placed.append((e[0] - r, e[1] - r, e[0] + r, e[1] + r))
+        placed_leaders.append((a, end))
         count += 1
     return count
