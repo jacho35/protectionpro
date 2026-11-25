@@ -57,7 +57,8 @@ const diffInPage = (a, b) => page.evaluate(async ([a, b]) => {
 for (const [sn, setup] of Object.entries(scenes)) {
   await page.evaluate(setup);
   await page.evaluate(() => RoofEditor.open());
-  await page.waitForTimeout(2200);
+  await page.waitForFunction(() => Roof3D.view && Roof3D.scene && Roof3D.scene.sun && Roof3D.view.sun, null, { timeout: 20000 });     // the sun arrives from the server: without it the picture has no shadows (a race that made earlier runs differ)
+  await page.waitForTimeout(600);
   if (!(await page.evaluate(() => Roof3D.view.usesGL))) { console.log('SKIP: WebGL is not available here'); await browser.close(); process.exit(0); }
   for (const [vn, [yaw, pitch]] of Object.entries(views)) {
     await page.evaluate(([y, p]) => { Roof3D.view.setView(y, p); Roof3D.view.draw(); }, [yaw, pitch]);

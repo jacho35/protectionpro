@@ -491,7 +491,7 @@ const Roof3D = {
       do {
         this._again = false;
         const old = this.scene, sc = await this.build();
-        sc.sun = old && old.sun;
+        sc.sun = (old && old.sun) || this.sunNow;
         sc.shadowPolys = this.shadePreview && sc.sun && sc.sun.elevation_deg > 0.5 ? this.shadows(sc, this.sunVec(sc.sun.azimuth_deg + sc.north, sc.sun.elevation_deg)) : [];
         this.scene = sc;
         this._applySun(sc);
@@ -610,16 +610,19 @@ const Roof3D = {
   // Sun at the chosen hour on the winter solstice (the engine's position), then the shadows for it.
   async setHour(h, noRedraw) {
     this.hourAngle = +h;
-    const sc = this.scene; if (!sc || sc.empty) return;
+    if (!this.scene || this.scene.empty) return;
     await Solar._locations();
     const c = Solar.cfg();
     const sun = await API.request('/analysis/solar-sun', 'POST', { lat: Solar._loc(c).lat, hour_angle_deg: this.hourAngle });
+    this.sunNow = sun;                                          // kept on the editor too: a rebuild during the request replaces the scene, and the sun must not be lost with it
+    const sc = this.scene; if (!sc || sc.empty) return;          // the scene as it is NOW, not the one the request started with
     sc.sun = sun;
     this._applySun(sc);
     sc.shadowPolys = this.shadePreview && sun.elevation_deg > 0.5 ? this.shadows(sc, this.sunVec(sun.azimuth_deg + (sc.north || 0), sun.elevation_deg)) : [];
     this._message();
     if (this.view && !noRedraw) this.view.redraw();
   },
+  sunNow: null,
   setShade(on) {
     this.shadePreview = !!on;
     const sc = this.scene; if (!sc) return;
