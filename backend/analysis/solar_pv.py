@@ -268,11 +268,27 @@ def run_solar_arrays(req, module, city, inverter):
         raise ValueError("No roofs given")
     horizon = [obstruction_block(o["height_m"], o["distance_m"], o["bearing_deg"], o.get("width_m", 5.0))
                for o in (req.get("obstructions") or [])] or None
+
+    def horizon_of(a):
+        # the request's obstructions plus this array's own (the other roofs seen from it)
+        own = [obstruction_block(o["height_m"], o["distance_m"], o["bearing_deg"], o.get("width_m", 5.0))
+               for o in (a.get("obstructions") or [])]
+        return ((horizon or []) + own) or None
+
     caps, specs = [], []
     for a in arrays:
         caps.append(modules_from_area(float(a["area_m2"]), float(a.get("packing", 0.8)), module))
         specs.append(energy_yield(city, 1.0, float(a["tilt_deg"]), float(a.get("azimuth_deg", 0)), module,
-                                  req.get("losses"), horizon=horizon)["annual_kwh"])
+                                  req.get("losses"), horizon=horizon_of(a))["annual_kwh"])
+    # a roof's own "maximum panels": the arrays sharing a `group` (one roof's planes) hold at most `max_modules` together
+    groups = {}
+    for i, a in enumerate(arrays):
+        if a.get("max_modules") is not None and float(a["max_modules"]) >= 0:
+            groups.setdefault(a.get("group") or a.get("name") or i, (int(float(a["max_modules"])), []))[1].append(i)
+    for limit, idx in groups.values():
+        if sum(caps[i] for i in idx) > limit:
+            for i, n in zip(idx, _allocate(limit, [caps[i] for i in idx])):
+                caps[i] = n
     roof_total = sum(caps)
     spec = (sum(c * sp for c, sp in zip(caps, specs)) / roof_total) if roof_total else (sum(specs) / len(specs))
     load_mods = None
@@ -293,7 +309,7 @@ def run_solar_arrays(req, module, city, inverter):
     for a, n, cap in zip(arrays, shares, caps):
         kwp = round(n * module["pmax_w"] / 1000.0, 3)
         y = energy_yield(city, kwp, float(a["tilt_deg"]), float(a.get("azimuth_deg", 0)), module, req.get("losses"),
-                         inverter["efficiency_pct"] if inverter else None, horizon)
+                         inverter["efficiency_pct"] if inverter else None, horizon_of(a))
         for i, m in enumerate(y["months"]):
             months[i] += m["kwh"]
         annual += y["annual_kwh"]

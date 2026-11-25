@@ -69,7 +69,30 @@ const PlanSolar = {
     st.roofs.push(roof);
     return roof;
   },
+  // The roofs picked with the Select tool (click a roof, Shift-click adds, drag a box): moved as they are, never reshaped.
+  sel: new Set(),
+  isSelected(id) { return this.sel.has(id); },
+  selectRoofs(ids, add) { if (!add) this.sel.clear(); for (const i of ids) this.sel.add(i); if (typeof PlanEngine !== 'undefined') PlanEngine.requestDraw({ fg: true }); },
+  clearSelection() { if (!this.sel.size) return; this.sel.clear(); if (typeof PlanEngine !== 'undefined') PlanEngine.requestDraw({ fg: true }); },
+  // Every picked roof (corners and the objects on it) by the same step: the shape, and each object's place on it, stay as drawn.
+  moveSelected(dx, dy) {
+    for (const r of this.roofs()) {
+      if (!this.sel.has(r.id)) continue;
+      for (const q of r.points) { q.x += dx; q.y += dy; }
+      for (const o of (r.objects || [])) { o.x += dx; o.y += dy; }
+    }
+    if (typeof PlanEngine !== 'undefined') PlanEngine.requestDraw({ fg: true });
+  },
+  // Delete the picked roofs; true when there were any.
+  deleteSelected() {
+    const st = this._store(); if (!st || !this.sel.size) return false;
+    st.roofs = st.roofs.filter(r => !this.sel.has(r.id)); this.sel.clear();
+    if (typeof PlanMarkup !== 'undefined') { PlanMarkup.snapshot(); PlanMarkup.markDirty(); }
+    if (typeof PlanEngine !== 'undefined') PlanEngine.requestDraw({ fg: true });
+    return true;
+  },
   removeRoof(id) {
+    this.sel.delete(id);
     const st = this._store(); if (!st) return;
     st.roofs = st.roofs.filter(r => r.id !== id);
     if (typeof PlanMarkup !== 'undefined') { PlanMarkup.snapshot(); PlanMarkup.markDirty(); }
@@ -82,6 +105,8 @@ const PlanSolar = {
     if (typeof PlanEngine !== 'undefined') PlanEngine.requestDraw({ fg: true });
   },
 
+  // The roof's own limit on the number of panels (`roof.maxModules`, blank / 0 = no limit): a whole number, or Infinity.
+  maxModules(r) { const n = Math.floor(+r.maxModules); return n > 0 ? n : Infinity; },
   // The planes of a roof in metres (plan frame, see roof-planes.js), their use flags and the roof outline in metres.
   // null until the plan is calibrated.
   // Does the roof's area come from its planes (hip, mono, pyramid, cross-gable, or a gable with a lean-to)?
@@ -113,6 +138,36 @@ const PlanSolar = {
       const dx = (o.x - c.x) * f, dy = -(o.y - c.y) * f;                       // metres east / north
       return { height_m: +o.h, distance_m: Math.max(0.5, Math.hypot(dx, dy)), bearing_deg: ((Math.atan2(dx, dy) * 180 / Math.PI - this.northAngle()) % 360 + 360) % 360, width_m: Math.max(+o.w, +o.d) };
     });
+  },
+
+  // The other roofs, used or not, as obstructions seen from this roof's middle: how much higher than this roof's modules
+  // their top stands, the distance to their nearest edge, and the bearing / width they cover. Only roofs that stand higher count.
+  neighbourObstructions(roof) {
+    const f = PlanEngine.factor(); if (!f || typeof RoofPlanes === 'undefined' || typeof Roof3D === 'undefined') return [];
+    const north = this.northAngle(), model = (r) => { const base = Roof3D.toMetres(r.points, f), m = RoofPlanes.model(base, r, this.planAz(r), north); return { base, m }; };
+    const top = (r, m) => { let t = RoofPlanes.eave(r); for (const pl of m.planes) for (const q of pl.poly) t = Math.max(t, pl.zAt(q[0], q[1])); return r.shape === 'flat' ? t + (Roof3D.PARAPET_M || 0) : t; };
+    const me = model(roof), eave = RoofPlanes.eave(roof), ref = (eave + top(roof, me.m)) / 2;
+    const cx = me.base.reduce((a, p) => a + p[0], 0) / me.base.length, cy = me.base.reduce((a, p) => a + p[1], 0) / me.base.length;
+    const out = [];
+    for (const o of this.roofs()) {
+      if (o.id === roof.id || !o.points || o.points.length < 3) continue;
+      const { base, m } = model(o), h = top(o, m) - ref; if (h < 0.2) continue;
+      let dist = Infinity, inside = false;
+      for (let i = 0, j = base.length - 1; i < base.length; j = i++) {
+        const a = base[j], b = base[i], dx = b[0] - a[0], dy = b[1] - a[1], l2 = dx * dx + dy * dy;
+        const t = l2 ? Math.max(0, Math.min(1, ((cx - a[0]) * dx + (cy - a[1]) * dy) / l2)) : 0;
+        dist = Math.min(dist, Math.hypot(cx - a[0] - t * dx, cy - a[1] - t * dy));
+        if ((a[1] > cy) !== (b[1] > cy) && cx < (b[0] - a[0]) * (cy - a[1]) / (b[1] - a[1]) + a[0]) inside = !inside;
+      }
+      if (inside) continue;                                                     // overlapping this roof: not a neighbour
+      const ang = base.map(p => Math.atan2(p[0] - cx, p[1] - cy) * 180 / Math.PI);
+      const mid = ang.reduce((a, v) => a + v, 0) / ang.length;                  // unwrap around the mean so a block across the south is one span
+      const rel = ang.map(v => ((v - mid + 540) % 360) - 180), lo = Math.min(...rel), hi = Math.max(...rel);
+      if (hi - lo >= 170) continue;                                              // surrounds this roof: no single block describes it
+      const d = Math.max(0.5, dist), bearing = ((mid + (lo + hi) / 2 - north) % 360 + 360) % 360;
+      out.push({ name: o.name, height_m: Math.round(h * 100) / 100, distance_m: Math.round(d * 100) / 100, bearing_deg: Math.round(bearing * 10) / 10, width_m: Math.max(0.5, Math.round(2 * d * Math.tan((hi - lo) / 2 * Math.PI / 180) * 100) / 100) });
+    }
+    return out;
   },
 
   // Corners closer than this count as one line when a roof is cut into wings (0.2 % of the roof's size).
@@ -182,17 +237,23 @@ const PlanSolar = {
     const out = [];
     for (const r of roofs) {
       if (r.use === false) continue;
-      if (this.usesPlanes(r)) {                                           // one array per plane in use, each at its own pitch and azimuth
-        for (const q of this._planeAreas(r)) out.push({ name: r.name + ' · ' + q.plane.name, area_m2: q.area, packing, tilt_deg: q.plane.pitch, azimuth_deg: q.plane.trueAz });
-        continue;
-      }
-      const area = this.usableAreaM2(r);
-      if (!area) continue;
-      out.push(r.shape === 'gable'
-        ? { name: r.name, area_m2: area, packing, tilt_deg: +r.pitch, azimuth_deg: +r.azimuth }
-        : { name: r.name, area_m2: area, packing: gcr, tilt_deg: +r.tilt, azimuth_deg: +r.azimuth });
+      const first = out.length;
+      this._arrays(r, gcr, packing, out);
+      const cap = this.maxModules(r);
+      if (Number.isFinite(cap)) for (const a of out.slice(first)) { a.group = r.name; a.max_modules = cap; }     // the engine shares the roof's limit over its planes
     }
     return out;
+  },
+  _arrays(r, gcr, packing, out) {
+    if (this.usesPlanes(r)) {                                             // one array per plane in use, each at its own pitch and azimuth
+      for (const q of this._planeAreas(r)) out.push({ name: r.name + ' · ' + q.plane.name, area_m2: q.area, packing, tilt_deg: q.plane.pitch, azimuth_deg: q.plane.trueAz });
+      return;
+    }
+    const area = this.usableAreaM2(r);
+    if (!area) return;
+    out.push(r.shape === 'gable'
+      ? { name: r.name, area_m2: area, packing, tilt_deg: +r.pitch, azimuth_deg: +r.azimuth }
+      : { name: r.name, area_m2: area, packing: gcr, tilt_deg: +r.tilt, azimuth_deg: +r.azimuth });
   },
 
   // ── Corner editing (the one gesture set of CLAUDE.md: drag a node, Shift-click an edge adds one,
@@ -221,6 +282,18 @@ const PlanSolar = {
       for (let i = 0; i < n && n >= 3; i++) if (PlanEngine._distToSeg(pt, r.points[i], r.points[(i + 1) % n]) <= tol) return { roof: r, i };
     }
     return null;
+  },
+  // Make the roof face straight out of its edge i (the modules then run square to that edge): sets the TRUE azimuth
+  // from the edge's outward normal on the plan, less the plan's north angle.
+  alignToEdge(roof, i) {
+    const pts = roof.points, n = pts.length, a = pts[i], b = pts[(i + 1) % n];
+    const cx = pts.reduce((t, q) => t + q.x, 0) / n, cy = pts.reduce((t, q) => t + q.y, 0) / n;
+    let nx = b.y - a.y, ny = -(b.x - a.x);
+    if (nx * ((a.x + b.x) / 2 - cx) + ny * ((a.y + b.y) / 2 - cy) < 0) { nx = -nx; ny = -ny; }
+    const bearing = Math.atan2(nx, -ny) * 180 / Math.PI;
+    const az = ((Math.round((bearing - this.northAngle()) * 10) / 10 % 360) + 360) % 360;
+    this.update(roof.id, { azimuth: az });
+    return az;
   },
   insertNode(roof, i, p) {
     roof.points.splice(i + 1, 0, { x: p.x, y: p.y });
@@ -345,8 +418,9 @@ const PlanSolar = {
       ctx.closePath();
       ctx.fillStyle = r.use === false ? 'rgba(107,114,128,0.10)' : 'rgba(217,130,43,0.16)';
       ctx.fill();
-      ctx.strokeStyle = r.use === false ? '#6b7280' : '#c2410c';
-      ctx.lineWidth = 1.6 * u;
+      const picked = this.sel.has(r.id);
+      ctx.strokeStyle = picked ? '#2563eb' : r.use === false ? '#6b7280' : '#c2410c';
+      ctx.lineWidth = (picked ? 3 : 1.6) * u;
       ctx.setLineDash([7 * u, 4 * u]);
       ctx.stroke();
       ctx.setLineDash([]);

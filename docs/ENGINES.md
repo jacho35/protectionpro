@@ -14,7 +14,7 @@ Endpoint table and engine internals, moved out of CLAUDE.md. Read the relevant s
 | `/api/analysis/contingency` | N-1 / N-2 security screening | Load-flow contingency analysis |
 | `/api/analysis/timeseries-loadflow` | Quasi-dynamic time-series load flow | 24h/8760h load & generation profile, BESS SoC + OLTC tap carried between steps |
 | `/api/analysis/frequency-scan` | Impedance vs frequency (resonance) | Nodal Z_kk(h) sweep on the harmonics network model |
-| `/api/analysis/solar-size` | PV array sizing (roof area and / or load) + monthly / annual yield | Klein day, Erbs + Collares-Pereira & Rabl, isotropic sky; screening grade |
+| `/api/analysis/solar-size` | PV array sizing (roof area and / or load) + monthly / annual yield | Klein day, Erbs + Collares-Pereira & Rabl, isotropic sky; screening grade; each `arrays[]` entry may carry its own `obstructions` (other roofs seen from it) and a `group` + `max_modules` (a roof's own panel limit, shared by the arrays of that group in proportion to capacity) on top of the request-level ones |
 | `/api/analysis/solar-row-spacing` | Tilted-rack row pitch and GCR | winter-solstice solar elevation |
 | `/api/analysis/solar-protection` | PV string fuse, DC isolator, DC string cable, export limit | IEC 62548 / 60364-7-712 style; PV1-F ratings are typical manufacturer data |
 | `GET /api/analysis/solar-library` | Default modules, inverters, loss stack, irradiance locations | — |

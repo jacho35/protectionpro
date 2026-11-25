@@ -101,4 +101,17 @@ ok('a turned plan: the roof faces the plan bearing azimuth + north angle', () =>
   assert(Array.isArray(polys));
   const u = R.axes(0 + sc.north).u; close(u[0], 1); close(u[1], 0, 1e-9);   // true north is plan east
 });
+ok('module placement: packed to a corner or centred, same count', () => {
+  const mod = { len: 2, wid: 1.4 }, g = R.gablePlanes(rect(10, 6), 0, 30, 3), at = (al) => R.layoutModules(rect(10, 6), 0, 30, 0.5, mod, 1e9, g, al);
+  const xs = (ms) => ms.flatMap(m => m.map(p => p[0])), ys = (ms) => ms.flatMap(m => m.map(p => p[1]));
+  const def = at(), br = at('bottom-right'), tl = at('top-left'), cc = at('center-center');
+  assert.strictEqual(def.length, 6); assert.strictEqual(tl.length, 6); assert.strictEqual(cc.length, 6);
+  assert.deepStrictEqual(def, br, 'no setting = bottom-right, the layout before this option existed');
+  close(Math.min(...xs(br)), 0.5); close(Math.max(...xs(tl)), 9.5); close(Math.min(...xs(cc)), 0.8);
+  close(Math.max(...ys(br)), 5.5); close(Math.min(...ys(tl)), 3);                       // eave side / ridge side
+  const run = 2 * Math.cos(30 * Math.PI / 180); close(Math.max(...ys(cc)), 5.5 - (2.5 - run) / 2, 1e-6);
+  const racks = (al) => R.layoutRacks(rect(10, 6), 0, 20, 0.5, { len: 2, wid: 1.4 }, 1e9, 3, 0, al);
+  assert.strictEqual(racks('top-left').length, racks('bottom-right').length);
+  assert(Math.max(...ys(racks('top-left'))) < Math.max(...ys(racks('bottom-right'))), 'top-aligned rows sit up the roof');
+});
 console.log('shadow tests done');

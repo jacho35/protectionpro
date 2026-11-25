@@ -232,17 +232,19 @@ const RoofPlanes = {
 
   // Whole modules on one plane (portrait, the long side down the slope), from its low edge up, inside the footprint
   // setback and the plane's own outline. Returns up to `max` quads of four [x, y, z] corners.
-  layoutPlane(pl, foot, setback, mod, max) {
+  layoutPlane(pl, foot, setback, mod, max, al) {
     const { u, w } = Roof3D.axes(pl.az), cs = Math.cos(pl.pitch * Math.PI / 180);
     const run = mod.len * cs, wid = mod.wid, out = [];
     const ss = pl.poly.map(p => p[0] * u[0] + p[1] * u[1]), smax = Math.max(...ss), smin = Math.min(...ss);
     const vs = pl.poly.map(p => p[0] * w[0] + p[1] * w[1]), vmin = Math.min(...vs), vmax = Math.max(...vs);
     const at = (v, s) => [w[0] * v + u[0] * s, w[1] * v + u[1] * s];
     const ok = (p) => Roof3D._usable(p, foot, setback - 1e-6) && (Roof3D._inside(p, pl.poly) || Roof3D._edgeDist(p, pl.poly) < 1e-6);
+    const sh = Roof3D.alignShare(al), rowSpace = smax - setback - smin, colSpace = vmax - vmin - 2 * setback;
+    const sOff = sh.v * (rowSpace - Math.floor(rowSpace / run + 1e-9) * run), vOff = sh.h * (colSpace - Math.floor(colSpace / wid + 1e-9) * wid);
     for (let k = 0; k < 400; k++) {
-      const s0 = smax - setback - k * run, s1 = s0 - run;
+      const s0 = smax - setback - sOff - k * run, s1 = s0 - run;
       if (s1 < smin - 1e-9) break;
-      for (let v = vmin + setback; v + wid <= vmax - setback + 1e-9; v += wid) {
+      for (let v = vmin + setback + vOff; v + wid <= vmax - setback + 1e-9; v += wid) {
         const q = [at(v, s0), at(v + wid, s0), at(v + wid, s1), at(v, s1)];
         if (!q.every(ok)) continue;
         out.push(q.map(p => [p[0], p[1], pl.zAt(p[0], p[1]) + 0.04]));

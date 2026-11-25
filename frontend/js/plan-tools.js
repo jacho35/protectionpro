@@ -288,6 +288,7 @@ PlanTools.register({
     }
     // 3) hit stack (element > route > trench > text) with tie-break cycling
     const stack = this._hitStack(pt);
+    if (stack.length && typeof PlanSolar !== 'undefined' && !e.shiftKey) PlanSolar.clearSelection();
     if (stack.length) {
       // a press on a part that is already selected drags it, even where cables end on it (a manhole, a kiosk): the "click again to pick the
       // next item here" cycle only happens on a click that does not move (onUp), so the second press never switches to a cable underneath
@@ -311,9 +312,17 @@ PlanTools.register({
       }
       return;
     }
+    // 3b) the body of a solar roof (nothing else under the point): pick it, Shift adds / removes; drag moves every picked roof as it is
+    const rf = typeof PlanSolar !== 'undefined' && typeof PlanSolarArray !== 'undefined' ? PlanSolarArray.roofAt(pt) : null;
+    if (rf) {
+      if (e.shiftKey) { if (PlanSolar.sel.has(rf.id)) PlanSolar.sel.delete(rf.id); else PlanSolar.sel.add(rf.id); PlanEngine.requestDraw({ fg: true }); return; }
+      if (!PlanSolar.sel.has(rf.id)) { PlanMarkup.clearSelection(); PlanSolar.selectRoofs([rf.id]); }
+      this._drag = { kind: 'roofmove', last: { x: pt.x, y: pt.y }, moved: false };
+      return;
+    }
     // 4) empty space → marquee (or clear)
     this._lastClick = null;
-    if (!e.shiftKey) PlanMarkup.clearSelection();
+    if (!e.shiftKey) { PlanMarkup.clearSelection(); if (typeof PlanSolar !== 'undefined') PlanSolar.clearSelection(); }
     this._marquee = { start: { x: pt.x, y: pt.y }, cur: { x: pt.x, y: pt.y }, add: e.shiftKey };
     PlanEngine.requestDraw({ fg: true });
   },
@@ -323,6 +332,11 @@ PlanTools.register({
     if (!this._drag) return;
     if (this._drag.kind === 'mastpick') return;
     if (this._drag.kind === 'north') { PlanSolar.dragNorth(pt); return; }
+    if (this._drag.kind === 'roofmove') {                                               // the picked roofs by the pointer's step, unsnapped so no shape changes
+      const dx = pt.x - this._drag.last.x, dy = pt.y - this._drag.last.y; if (!dx && !dy) return;
+      if (!this._drag.moved && Math.hypot(pt.x - this._downWorld.x, pt.y - this._downWorld.y) < 3 / PlanEngine.view.zoom) return;   // a click, not a drag
+      PlanSolar.moveSelected(dx, dy); this._drag.last = { x: pt.x, y: pt.y }; this._drag.moved = true; return;
+    }
     if (this._drag.kind === 'aim') { SportsCalc.dragAim(this._drag, pt); PlanEngine.requestDraw({ fg: true }); return; }
     if (this._drag.kind === 'rotate') {
       const el = this._drag.el;
@@ -389,6 +403,7 @@ PlanTools.register({
         const ids = this._entitiesInRect(r);
         if (this._marquee.add) ids.forEach(id => PlanMarkup.selectedIds.add(id));
         else PlanMarkup.setSelection(ids);
+        if (typeof PlanSolar !== 'undefined') PlanSolar.selectRoofs(PlanSolar.roofs().filter(q => (q.points || []).some(p => this._ptIn(p, r))).map(q => q.id), this._marquee.add);
         PlanMarkup.refreshProps();
       }
       this._marquee = null;

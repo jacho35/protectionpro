@@ -596,6 +596,7 @@ const PlanMarkup = {
   },
 
   deleteSelected() {
+    if (typeof PlanSolar !== 'undefined' && PlanSolar.sel.size && !this.selectedIds.size) { PlanSolar.deleteSelected(); return; }   // picked solar roofs
     if (!this.selectedIds.size) return;
     const pm = AppState.planMarkup;
     // EE-3: note whether any deleted element carried a circuit tag (or was a
