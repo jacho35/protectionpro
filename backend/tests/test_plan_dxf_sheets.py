@@ -224,17 +224,62 @@ def test_text_width_is_arial():
     assert S.text_width("H", 0.716, "ARIALN.TTF") == pytest.approx(0.722 * 0.82)
 
 
-def test_road_crossing_gets_a_leader_and_circle_with_its_duct_count(no_template):
-    """3 large (160) + 4 small (110) ducts side by side = one crossing labelled 3L/4S; the labels are not imported back."""
+def _label_circles(doc):
+    """(centre, radius, text, insert point) of every duct-count label, in model space metres."""
+    out = []
+    for e in doc.modelspace().query("INSERT"):
+        if not e.dxf.name.startswith("EL_DUCTCOUNT_"):
+            continue
+        ip = (e.dxf.insert.x, e.dxf.insert.y)
+        circ = [c for c in doc.blocks.get(e.dxf.name).query("CIRCLE") if c.dxf.radius > 0.4]
+        assert len(circ) == 1
+        c = circ[0]
+        out.append(((ip[0] + c.dxf.center.x, ip[1] + c.dxf.center.y), c.dxf.radius, {a.dxf.tag: a.dxf.text for a in e.attribs}["COUNT"], ip))
+    return out
+
+
+def _seg_dist(p, a, b):
+    dx, dy = b[0] - a[0], b[1] - a[1]
+    t = 0.0 if dx == dy == 0 else max(0.0, min(1.0, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / (dx * dx + dy * dy)))
+    return ((p[0] - a[0] - t * dx) ** 2 + (p[1] - a[1] - t * dy) ** 2) ** 0.5
+
+
+def test_road_crossing_gets_a_block_with_its_duct_count(no_template):
+    """3 large (160) + 4 small (110) ducts side by side = one crossing labelled 3L/4S, as a block with a COUNT attribute;
+    it is not imported back, and with the option off nothing is written."""
     ducts = [{"p1": [100 + i * 6, 0], "p2": [100 + i * 6, 120], "size": "160" if i < 3 else "110", "name": f"RC{i}"} for i in range(7)]
-    p = _payload(crossings=ducts, crossingLabels=[{"p1": [118, 0], "p2": [118, 120], "text": "3L/4S"}])
-    doc = _read(build_dxf(p, load_image=lambda i: None, notes=[]))
-    msp = doc.modelspace()
-    lay = [e for e in msp if e.dxf.layer.endswith("_DUCTS_LABELS")]
-    assert [e.dxf.text for e in lay if e.dxftype() == "TEXT"] == ["3L/4S"]
-    assert sorted(e.dxftype() for e in lay) == ["CIRCLE", "CIRCLE", "LINE", "TEXT"]
-    imported = parse_dxf(build_dxf(p, load_image=lambda i: None, notes=[]))
-    assert len(imported["crossings"]) == 7 and not any("3L/4S" in str(t) for t in imported["texts"])
-    # off: nothing written
+    lab = {"p1": [118, 0], "p2": [118, 120], "ducts": [[[d["p1"][0], 0], [d["p2"][0], 120]] for d in ducts], "text": "3L/4S"}
+    p = _payload(crossings=ducts, crossingLabels=[lab])
+    data = build_dxf(p, load_image=lambda i: None, notes=[])
+    doc = _read(data)
+    labs = _label_circles(doc)
+    assert [t for _, _, t, _ in labs] == ["3L/4S"]
+    ins = [e for e in doc.modelspace().query("INSERT") if e.dxf.name.startswith("EL_DUCTCOUNT_")][0]
+    assert ins.dxf.layer.endswith("_DUCTS_LABELS")
+    assert sorted(e.dxftype() for e in doc.blocks.get(ins.dxf.name)) == ["ATTDEF", "CIRCLE", "CIRCLE", "LINE"]
+    imported = parse_dxf(data)
+    assert len(imported["crossings"]) == 7 and not any(d.get("block", "").startswith("EL_DUCTCOUNT_") for d in imported["devices"])
     q = _payload(crossings=ducts)
-    assert not [e for e in _read(build_dxf(q, load_image=lambda i: None, notes=[])).modelspace() if e.dxf.layer.endswith("_DUCTS_LABELS")]
+    assert not _label_circles(_read(build_dxf(q, load_image=lambda i: None, notes=[])))
+
+
+def test_crossing_labels_keep_clear_of_each_other_and_of_every_line(no_template):
+    """Crossings 2 m apart along an LV route and its trench, next to a kiosk: no circle overlaps another, a duct, a cable,
+    a trench or the symbol."""
+    xs = [400, 440, 480, 520, 560]
+    ducts = [{"p1": [x, 160], "p2": [x, 260], "size": "160", "name": f"RC{i}"} for i, x in enumerate(xs)]
+    labs = [{"p1": [x, 160], "p2": [x, 260], "ducts": [[[x, 160], [x, 260]]], "text": f"{i + 1}L/{i}S"} for i, x in enumerate(xs)]
+    p = _payload(crossings=ducts, crossingLabels=labs)
+    doc = _read(build_dxf(p, load_image=lambda i: None, notes=[]))
+    f = p["factor"]
+    circles = _label_circles(doc)
+    assert len(circles) == len(xs)
+    for i, (c1, r1, _, _) in enumerate(circles):
+        for c2, r2, _, _ in circles[i + 1:]:
+            assert ((c1[0] - c2[0]) ** 2 + (c1[1] - c2[1]) ** 2) ** 0.5 >= r1 + r2
+        lines = [((x * f, -y1 * f), (x * f, -y2 * f)) for x in xs for y1, y2 in [(160, 260)]]
+        lines += [((0, -200 * f), (800 * f, -200 * f)), ((0, -205 * f), (800 * f, -205 * f)), ((0, -400 * f), (800 * f, -400 * f))]
+        for a, b in lines:
+            assert _seg_dist(c1, a, b) >= r1, (c1, r1, a, b)
+        kx, ky, h = 300 * f, -200 * f, 12 * f
+        assert not (kx - h - r1 < c1[0] < kx + h + r1 and ky - h - r1 < c1[1] < ky + h + r1)

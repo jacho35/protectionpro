@@ -455,7 +455,7 @@ const PlanDXF = {
         list.forEach(x => seen.add(x.id));
         const ctr = list.length > 1 && typeof PlanCrossings !== 'undefined' ? PlanCrossings.centre(list) : { p1: c.p1, p2: c.p2 };
         const L = list.filter(x => String(x.size) === '160').length, S = list.length - L;
-        crossingLabels.push({ p1: [ctr.p1.x, ctr.p1.y], p2: [ctr.p2.x, ctr.p2.y], text: [L && L + 'L', S && S + 'S'].filter(Boolean).join('/') });
+        crossingLabels.push({ p1: [ctr.p1.x, ctr.p1.y], p2: [ctr.p2.x, ctr.p2.y], ducts: list.map(x => [[x.p1.x, x.p1.y], [x.p2.x, x.p2.y]]), text: [L && L + 'L', S && S + 'S'].filter(Boolean).join('/') });
       }
     }
     // a plan text is its size relative to the normal 14 (so a 28 is twice the drawing's text height), in its own colour
