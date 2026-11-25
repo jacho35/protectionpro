@@ -7,8 +7,9 @@ from fastapi.responses import Response, JSONResponse
 from sqlalchemy.orm import Session
 
 from ..analysis.plan_dxf import build_dxf, parse_dxf
+from ..analysis import plan_dxf_sheets as sheets_mod
 from ..analysis.plan_dxf_sheets import template_info
-from ..auth import get_current_user
+from ..auth import get_current_user, require_admin
 from ..models.database import get_db, User
 from .plan_images import _load as _load_image
 
@@ -22,6 +23,37 @@ async def dxf_template(user: User = Depends(get_current_user)):
         return template_info()
     except Exception:
         return {"available": False, "papers": []}
+
+
+@router.post("/dxf-template")
+async def dxf_template_upload(file: UploadFile = File(...), user: User = Depends(require_admin)):
+    """Admin: make this DXF the server's title-block template (kept next to the database, so it survives a rebuild)."""
+    raw = await file.read()
+    if len(raw) > 30 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="Template too large (30 MB limit).")
+    try:
+        sheets_mod.validate_template(raw)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    dest = sheets_mod.uploaded_path()
+    try:
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        tmp = dest.with_suffix(".tmp")
+        tmp.write_bytes(raw)
+        tmp.replace(dest)
+    except OSError as e:
+        raise HTTPException(status_code=500, detail=f"Could not save the template: {e}")
+    return template_info()
+
+
+@router.delete("/dxf-template")
+async def dxf_template_remove(user: User = Depends(require_admin)):
+    """Admin: drop the uploaded template (a template in the server's template folder, if any, is used again)."""
+    try:
+        sheets_mod.uploaded_path().unlink()
+    except FileNotFoundError:
+        pass
+    return template_info()
 
 
 @router.post("/dxf-export")
