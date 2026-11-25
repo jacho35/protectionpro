@@ -7,7 +7,7 @@
 .re-tool:hover { background: var(--bg-hover, #f4f3ef); }
 .re-tool.active { background: #fdf1df; border-color: #b45309; color: #7a3a06; }
 .re-tool:focus-visible, .re-btn:focus-visible, .re-dock input:focus-visible, .re-dock select:focus-visible, .re-status input:focus-visible { outline: 2px solid #1d5fd1; outline-offset: 2px; }
-.re-dock { flex: 1.35 1 0; min-width: 0; display: flex; flex-direction: column; border-left: 1px solid var(--border, #d9d7d0); background: var(--bg-panel, #fff); }
+.re-dock { flex: 1.35 1 0; min-width: 0; min-height: 0; overflow: hidden; display: flex; flex-direction: column; border-left: 1px solid var(--border, #d9d7d0); background: var(--bg-panel, #fff); }
 .re-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 6px 10px; border-bottom: 1px solid var(--border, #d9d7d0); background: var(--bg-subtle, #faf9f5); }
 .re-title { display: flex; flex-direction: column; margin-right: auto; font-size: 13px; }
 .re-title span { font-size: 11px; color: var(--text-muted, #4a515c); }
@@ -16,9 +16,9 @@
 .re-btn { min-height: 34px; padding: 0 10px; border-radius: 6px; border: 1px solid var(--border, #d9d7d0); background: var(--bg-panel, #fff); color: var(--text, #1b1f24); font: inherit; font-size: 12px; cursor: pointer; }
 .re-btn.active { background: #fdf1df; border-color: #b45309; color: #7a3a06; }
 .re-btn.re-primary { background: #b45309; border-color: #b45309; color: #fff; font-weight: 600; }
-.re-body { display: flex; flex: 1; min-height: 0; flex-wrap: wrap; }
-.re-view { position: relative; flex: 1 1 320px; min-width: 0; min-height: 320px; background: #eef0f3; }
-.re-panel { flex: 0 1 280px; min-width: 240px; max-width: 340px; padding: 12px; box-sizing: border-box; overflow-y: auto; border-left: 1px solid var(--border, #d9d7d0); display: flex; flex-direction: column; gap: 12px; font-size: 13px; }
+.re-body { display: flex; flex: 1; min-height: 0; flex-wrap: nowrap; overflow: hidden; }
+.re-view { position: relative; flex: 1 1 240px; min-width: 0; min-height: 240px; background: #eef0f3; }
+.re-panel { flex: 0 0 280px; width: 280px; min-height: 0; max-height: 100%; padding: 12px 12px 24px; box-sizing: border-box; overflow-y: auto; overflow-x: hidden; border-left: 1px solid var(--border, #d9d7d0); display: flex; flex-direction: column; gap: 12px; font-size: 13px; }
 .re-card { background: #fdf1df; border: 1px solid #e9c58e; border-radius: 8px; padding: 10px 12px; color: #3f4650; line-height: 1.45; }
 .re-card b { display: block; color: #7a3a06; margin-bottom: 4px; }
 .re-sec { display: flex; flex-direction: column; gap: 6px; }
@@ -28,7 +28,8 @@
 .re-seg .re-btn { flex: 1 1 auto; min-height: 40px; }
 .re-chips .re-btn { min-height: 40px; }
 .re-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 12px; }
-.re-row input, .re-row select { width: 96px; min-height: 36px; box-sizing: border-box; padding: 0 8px; border: 1px solid #bdbab0; border-radius: 6px; font: inherit; text-align: right; background: var(--bg-input, #fff); color: inherit; }
+.re-row > span { min-width: 0; overflow-wrap: anywhere; }
+.re-row input, .re-row select { flex: 0 0 auto; width: 96px; min-height: 36px; box-sizing: border-box; padding: 0 8px; border: 1px solid #bdbab0; border-radius: 6px; font: inherit; text-align: right; background: var(--bg-input, #fff); color: inherit; }
 .re-row input[type="text"] { text-align: left; }
 .re-list { display: flex; flex-direction: column; border: 1px solid var(--border, #d9d7d0); border-radius: 8px; overflow: hidden; }
 .re-li { display: flex; justify-content: space-between; gap: 8px; padding: 9px 12px; border-bottom: 1px solid var(--border, #d9d7d0); font-size: 12px; }
@@ -47,6 +48,8 @@
   #plan-main.re-on { flex-wrap: wrap; overflow-y: auto; }
   .re-tools { flex-direction: row; flex-wrap: wrap; width: 100%; border-right: 0; border-bottom: 1px solid var(--border, #d9d7d0); }
   #plan-main.re-on > .plan-stage-col { flex: 1 1 100%; min-height: 55vh; }
-  .re-dock { flex: 1 1 100%; border-left: 0; }
-  .re-panel { max-width: none; flex: 1 1 100%; border-left: 0; border-top: 1px solid var(--border, #d9d7d0); }
+  .re-dock { flex: 1 1 100%; border-left: 0; overflow: visible; }
+  .re-body { flex-wrap: wrap; overflow: visible; }
+  .re-view { flex: 1 1 100%; min-height: 320px; }
+  .re-panel { max-width: none; width: auto; max-height: none; flex: 1 1 100%; border-left: 0; border-top: 1px solid var(--border, #d9d7d0); }
 }
