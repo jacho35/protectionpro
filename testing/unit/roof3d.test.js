@@ -95,4 +95,10 @@ ok('a rack row shades the row behind it at low sun, not at high sun', () => {
   assert(low.filter(Boolean).length >= 1 && high.filter(Boolean).length === 0);
   assert(!low[0], 'the front (north) row is never shaded by the rows behind it');
 });
+ok('a turned plan: the roof faces the plan bearing azimuth + north angle', () => {
+  const sc = { north: 90, items: [{ roof: { pitch: 20, azimuth: 0 }, planes: R.gablePlanes(rect(10, 6), 90, 20, R.EAVE_M), mods: [], poly: rect(10, 6) }], obs: null };
+  const polys = R.shadows(sc, R.sunVec(90, 40));
+  assert(Array.isArray(polys));
+  const u = R.axes(0 + sc.north).u; close(u[0], 1); close(u[1], 0, 1e-9);   // true north is plan east
+});
 console.log('shadow tests done');

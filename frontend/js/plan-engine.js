@@ -387,6 +387,7 @@ const PlanEngine = {
     // z-order: rooms (zones, underneath) → trenches → crossings → routes → …
     for (const rm of (pm.rooms || [])) this._drawRoom(ctx, rm, sel.has(rm.id));
     if (typeof PlanSolar !== 'undefined') PlanSolar.draw(ctx, z);   // solar roofs (settings.solar.roofs)
+    if (typeof RoofEditor !== 'undefined') RoofEditor.drawPlan(ctx, z);   // the roof editor: dimensions of the selected roof, and a change made here reaches its 3D view
     if (typeof PlanSolarArray !== 'undefined') PlanSolarArray.draw(ctx, z);   // the panels laid on them (Place array)
     for (const t of pm.trenches) this._drawTrench(ctx, t, sel.has(t.id));
     const xg = typeof PlanCrossings !== 'undefined' ? PlanCrossings.selectedGroup() : null;   // a whole crossing of several ducts selected: one outline, centre-line handles
@@ -413,6 +414,7 @@ const PlanEngine = {
     if (typeof PlanReroute !== 'undefined') PlanReroute.draw(ctx, this.view.zoom);           // a re-route preview: now grey, after dashed blue
     if (typeof PlanTools !== 'undefined' && PlanTools.drawOverlay) PlanTools.drawOverlay(ctx, z);
     ctx.restore();
+    if (typeof PlanSolar !== 'undefined') PlanSolar.drawNorth(ctx, this.cssW);   // north arrow (screen space), once solar roofs exist
   },
 
   // ─── Unserviced erven (a park, open space, servitude): no supply, Auto layout's cables go round them ───

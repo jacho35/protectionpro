@@ -150,6 +150,7 @@ const Solar = {
       PlanSolar.update(i.dataset.roof, { [k]: k === 'use' ? i.checked : k === 'shape' ? i.value : parseFloat(i.value) });
       this.render();
     }));
+    el.querySelectorAll('[data-north]').forEach(i => i.addEventListener('change', () => { PlanSolar.setNorthAngle(parseFloat(i.value)); this.render(); }));
     el.querySelectorAll('[data-act]').forEach(b => b.addEventListener('click', () => this._act(b.dataset.act, b.dataset.v)));
   },
 
@@ -179,7 +180,7 @@ const Solar = {
       ${this._in(c, 'sharePct', 'Share to cover (%)')}
       <label for="sol-mode">Size set by</label><select id="sol-mode" data-k="mode">${this._opt(modes, c.mode, o => o[0], o => o[1])}</select>`)
       + `<div style="margin-top:12px;display:flex;gap:8px;align-items:center"><button class="btn btn-primary" type="button" data-act="run">Calculate</button>
-         ${c.roofShape === 'plan' ? '<button class="btn" type="button" data-act="view3d">View in 3D</button>' : ''}
+         ${c.roofShape === 'plan' ? '<button class="btn" type="button" data-act="view3d">Edit roofs in 3D</button>' : ''}
          <span style="font-size:12px;color:var(--text-muted,#6d6d6d)">${escHtml(this.roofArea(c).note)}</span></div>`
       + this._sizeResult();
   },
@@ -194,15 +195,17 @@ const Solar = {
       const a = PlanSolar.usableAreaM2(r);
       return `<tr><td><input type="checkbox" data-roof="${escHtml(r.id)}" data-rk="use" ${r.use === false ? '' : 'checked'} aria-label="Use ${escHtml(r.name)}"></td>
         <td>${escHtml(r.name)}</td>
-        <td><select data-roof="${escHtml(r.id)}" data-rk="shape" aria-label="Shape"><option value="gable"${r.shape === 'gable' ? ' selected' : ''}>Gable</option><option value="flat"${r.shape === 'flat' ? ' selected' : ''}>Flat</option></select></td>
-        <td>${r.shape === 'gable' ? num(r, 'pitch') : num(r, 'tilt')}</td><td>${num(r, 'azimuth')}</td><td>${num(r, 'setback', 48)}</td>
+        <td><select data-roof="${escHtml(r.id)}" data-rk="shape" aria-label="Shape">${RoofPlanes.SHAPES.map(k => `<option value="${k}"${r.shape === k ? ' selected' : ''}>${RoofPlanes.LABELS[k]}</option>`).join('')}</select></td>
+        <td>${r.shape === 'flat' ? num(r, 'tilt') : num(r, 'pitch')}</td><td>${num(r, 'azimuth')}</td><td>${num(r, 'eave', 48)}</td><td>${num(r, 'setback', 48)}</td>
         <td>${a == null ? '–' : a.toFixed(1)}</td>
         <td><button type="button" class="btn" data-act="delroof" data-v="${escHtml(r.id)}" aria-label="Delete ${escHtml(r.name)}">×</button></td></tr>`;
     }).join('');
     return `<div style="grid-column:1/-1;overflow-x:auto"><table style="font-size:12px;border-collapse:collapse;width:100%">
-      <thead><tr><th></th><th align="left">Roof</th><th align="left">Shape</th><th align="left">Pitch / tilt °</th><th align="left">Azimuth °</th><th align="left">Setback m</th><th align="left">Usable m²</th><th></th></tr></thead>
+      <thead><tr><th></th><th align="left">Roof</th><th align="left">Shape</th><th align="left">Pitch / tilt °</th><th align="left">Azimuth °</th><th align="left">Eave m</th><th align="left">Setback m</th><th align="left">Usable m²</th><th></th></tr></thead>
       <tbody>${rows}</tbody></table>${calibrated ? '' : '<div style="margin-top:6px;font-size:12px;color:#8a2b1e">Calibrate the plan scale so areas can be worked out.</div>'}
-      <div style="margin-top:6px;font-size:11px;color:var(--text-muted,#6d6d6d)">Gable: the north-facing plane (azimuth 0 = north). Flat: racks at the tilt, spaced for the design hour on the Rows step.</div></div>`;
+      <div style="margin-top:6px;font-size:11px;color:var(--text-muted,#6d6d6d)">Gable: the north-facing plane (azimuth 0 = true north). Hip and mono-pitch: every plane that faces the sun gets modules, each at its own azimuth (tick or untick planes in View in 3D). Flat: racks at the tilt, spaced for the design hour on the Rows step. The blue arrows on the plan point down each plane and show its true azimuth.</div>
+      <div style="margin-top:8px;display:flex;align-items:center;gap:8px;font-size:13px"><label for="sol-north">True north, clockwise from the top of the plan (°)</label>
+        <input id="sol-north" type="number" step="any" min="0" max="359.9" data-north value="${escHtml(PlanSolar.northAngle())}" style="width:72px"></div></div>`;
   },
 
   _sizeResult() {
@@ -359,7 +362,7 @@ const Solar = {
 
   async _act(act, v) {
     if (act === 'tab') { this._tab = v; this.render(); return; }
-    if (act === 'view3d') { Roof3D.open(); return; }
+    if (act === 'view3d') { this.close(); RoofEditor.open(); return; }
     if (act === 'delroof') { PlanSolar.removeRoof(v); this.render(); return; }
     if (['addpanel', 'addinv'].includes(act)) { this._addEntry(act.slice(3)); this.render(); return; }
     if (['delpanel', 'delinv'].includes(act)) { this._delEntry(act.slice(3), v); this.render(); return; }
@@ -419,7 +422,8 @@ const Solar = {
       this._res = await API.request('/analysis/solar-size', 'POST', {
         location: c.location, module: this.moduleBody(p), inverter: this.inverterBody(inv), mode: c.mode, arrays,
         annual_kwh: +c.annualKwh || null, share_pct: +c.sharePct,
-        obstructions: +c.obsH > 0 ? [{ height_m: +c.obsH, distance_m: +c.obsD, bearing_deg: +c.obsB, width_m: +c.obsW }] : [] });
+        obstructions: (+c.obsH > 0 ? [{ height_m: +c.obsH, distance_m: +c.obsD, bearing_deg: +c.obsB, width_m: +c.obsW }] : [])
+          .concat(used.flatMap(r => PlanSolar.obstructions(r))) });      // + the vents, chimneys... placed on the roofs
       this._str = null; this._prot = null;
       return;
     }

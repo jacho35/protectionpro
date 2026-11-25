@@ -59,4 +59,14 @@ ok('corner editing: find a node / midpoint / edge, add, move, remove (keeping th
   assert(S.removeNodeAt({ x: 100, y: 60 }, z)); assert.strictEqual(r.points.length, 3);
   assert(!S.removeNodeAt(r.points[0], z), 'a roof keeps three corners'); assert.strictEqual(r.points.length, 3);
 });
+ok('north angle: stored, wrapped, and added to a roof azimuth for plan geometry', () => {
+  assert.strictEqual(S.northAngle(), 0);
+  const r = S.addRoof(rect(240, 160)); r.azimuth = 10; r.shape = 'gable'; r.setback = 0; r.use = true;
+  assert.strictEqual(S.planAz(r), 10);
+  S.setNorthAngle(30); assert.strictEqual(S.northAngle(), 30); assert.strictEqual(S.planAz(r), 40);
+  S.setNorthAngle(-20); assert.strictEqual(S.northAngle(), 340); assert.strictEqual(S.planAz(r), 350);
+  S.setNorthAngle(370); assert.strictEqual(S.northAngle(), 10);
+  S.setNorthAngle('x'); assert.strictEqual(S.northAngle(), 0);
+  assert.deepStrictEqual(S.arrays([r], 0.8, 0.8).map(a => a.azimuth_deg), [10], 'the engine still gets the true azimuth');
+});
 console.log(n + ' passed');
