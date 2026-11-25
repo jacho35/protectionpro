@@ -166,6 +166,7 @@ const Solar = {
       this.render();
     }));
     el.querySelectorAll('[data-north]').forEach(i => i.addEventListener('change', () => { PlanSolar.setNorthAngle(parseFloat(i.value)); this.render(); }));
+    el.querySelectorAll('[data-solimport]').forEach(i => i.addEventListener('change', () => this._importFiles(i.files)));
     el.querySelectorAll('[data-act]').forEach(b => b.addEventListener('click', () => this._act(b.dataset.act, b.dataset.v)));
   },
 
@@ -323,7 +324,11 @@ const Solar = {
       <button class="btn" type="button" data-act="add${kind}" style="margin-top:8px">Add ${kind === 'panel' ? 'module' : 'inverter'}</button></fieldset>`;
     const mine = (list, kind) => list.length ? list.map(e => `<div style="display:flex;gap:8px;padding:4px 0"><span style="flex:1">${escHtml(e.name)}</span>
       <button class="btn" type="button" data-act="del${kind}" data-v="${escHtml(e.id)}" aria-label="Delete ${escHtml(e.name)}">×</button></div>`).join('') : '<div style="font-size:12px;color:var(--text-muted,#6d6d6d)">None yet.</div>';
-    return `<div style="font-size:12px;color:var(--text-muted,#6d6d6d)">The shipped modules and inverters are fixed. Entries you add here are kept with this project.</div>
+    const imp = `<fieldset style="margin-top:12px;border:1px solid var(--border,#e4e2dc);border-radius:6px;padding:10px"><legend style="font-weight:600">Import from PVsyst or CSV</legend>
+      <label for="sol-lib-import" style="font-size:13px">Module (.PAN), inverter (.OND) or a CSV table with a header row</label>
+      <input id="sol-lib-import" type="file" accept=".pan,.ond,.csv" multiple data-solimport style="display:block;margin-top:6px">
+      ${this._impMsg ? `<div role="status" style="margin-top:8px;font-size:12px;white-space:pre-wrap">${escHtml(this._impMsg)}</div>` : ''}</fieldset>`;
+    return `<div style="font-size:12px;color:var(--text-muted,#6d6d6d)">The shipped modules and inverters are fixed. Entries you add here are kept with this project.</div>${imp}
       <div style="margin-top:10px;font-weight:600">Your modules</div>${mine(this.customPanels(), 'panel')}${form('panel', this.PANEL_FIELDS, 'New module')}
       <div style="margin-top:14px;font-weight:600">Your inverters</div>${mine(this.customInverters(), 'inv')}${form('inv', this.INVERTER_FIELDS, 'New inverter')}
       ${this._libErr ? `<div role="alert" style="margin-top:8px;color:#8a2b1e;font-size:13px">${escHtml(this._libErr)}</div>` : ''}`;
@@ -344,6 +349,29 @@ const Solar = {
     e.id = 'custom_pv_' + (kind === 'panel' ? 'm' : 'i') + '_' + Date.now().toString(36);
     list.push(e);
     this.set(key, list);
+  },
+  // Import .PAN / .OND / .CSV files into THIS PROJECT's library (never an account or shared library). Each entry is validated
+  // like a typed one; rejects and duplicates are listed, nothing is overwritten.
+  async _importFiles(files) {
+    const msgs = [];
+    for (const f of Array.from(files || [])) {
+      const text = await f.text();
+      const ext = f.name.toLowerCase().split('.').pop();
+      const kind = ext === 'pan' ? 'panel' : ext === 'ond' ? 'inv' : '';
+      const have = (k) => (k === 'panel' ? this.customPanels() : this.customInverters()).map(e => e.name);
+      const r = SolarImport.fromFile(f.name, text, (k, e) => (k === 'panel' ? this.validatePanel(e) : this.validateInverter(e)), kind ? have(kind) : have('panel').concat(have('inv')));
+      if (r.entries.length) {
+        const key = r.kind === 'panel' ? 'customPanels' : 'customInverters';
+        const list = (r.kind === 'panel' ? this.customPanels() : this.customInverters()).slice();
+        r.entries.forEach((e, i) => { e.id = 'custom_pv_' + (r.kind === 'panel' ? 'm' : 'i') + '_' + Date.now().toString(36) + i; list.push(e); });
+        this.set(key, list);
+        const d = Array.from(new Set(r.entries.flatMap(e => e.derived || [])));
+        msgs.push(`${f.name}: added ${r.entries.length} ${r.kind === 'panel' ? 'module' : 'inverter'}${r.entries.length > 1 ? 's' : ''}` + (d.length ? ` (${d.join(', ')} not in the file: estimated, check them)` : '.'));
+      }
+      r.skipped.forEach(x => msgs.push(x));
+    }
+    this._impMsg = msgs.join('\n') || 'No file chosen.';
+    this.render();
   },
   _delEntry(kind, id) {
     const key = kind === 'panel' ? 'customPanels' : 'customInverters';
