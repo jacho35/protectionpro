@@ -8,7 +8,7 @@ global.PlanEngine = { view: { zoom: 1 }, requestDraw() {}, factor: () => AppStat
 global.Roof3D = require('../../frontend/js/roof3d.js');
 global.RoofPlanes = require('../../frontend/js/roof-planes.js');
 const PS = global.PlanSolar = require('../../frontend/js/plan-solar.js');
-global.Solar = { cfg: () => ({ obsH: 0, hour: 0 }), panel: () => ({ len: 1.7, wid: 1.1, w: 550, id: 'm' }), _res: null, _loc: () => ({ lat: -26 }) };
+global.Solar = { cfg: () => ({ obsH: 0, hour: 0 }), panel: () => ({ len: 1.7, wid: 1.1, w: 550, id: 'm' }), _res: null, _loc: () => ({ lat: -26 }), _locations: async () => [{ name: 'X', lat: -26 }] };
 global.API = { request: async () => ({ pitch_m: 3.2 }) };
 global.V3D = { box(v, c, w, d, z0, h, rot, o) { v.face({ pts: [[c[0], c[1], z0]], pick: o.pick }); } };
 let n = 0; const ok = async (name, fn) => { await fn(); n++; console.log('ok', name); };

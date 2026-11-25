@@ -169,6 +169,7 @@ const RoofEditor = {
       PlanSolar._changed(); Roof3D.refresh(); return;
     }
     const k = el.dataset.reF; if (!k) return;
+    if (k === 'slope') { PlanSolar.setSlopeShown(el.checked); return; }
     const roof = this._selRoof(); if (!roof && k !== 'north') return;
     const n = parseFloat(el.value);
     if (k === 'north') { PlanSolar.setNorthAngle(n); Roof3D.refresh(); return; }
@@ -282,18 +283,18 @@ const RoofEditor = {
     if (Roof3D.tool === 'transform') h += `<div class="re-sec"><div class="re-lab">Gizmo mode</div><div class="re-seg">${[['move', 'Move'], ['rotate', 'Rotate'], ['scale', 'Scale']].map(g => btn(Roof3D.gizmo === g[0], `data-re-gizmo="${g[0]}"`, g[1])).join('')}</div></div>`;
     const types = Object.entries(PlanSolar.OBJECT_TYPES);
     if (Roof3D.tool === 'object') h += `<div class="re-sec"><div class="re-lab">Pick, then click a roof plane</div><div class="re-chips" role="group" aria-label="Object to place">${types.map(([k, t]) => btn(Roof3D.addType === k, `data-re-add="${k}"`, esc(t.label))).join('')}</div></div>`;
-    h += `<div class="re-sec"><div class="re-lab">Site orientation</div>${num('north', 'True north, clockwise from plan up (°)', PlanSolar.northAngle(), 1)}<div class="re-note">Plane azimuths and the solar calculation use true north, so set this when the site plan is drawn at an angle.</div></div>`;
+    h += `<div class="re-sec"><div class="re-lab">Site orientation</div>${num('north', 'True north, clockwise from plan up (°)', PlanSolar.northAngle(), 1)}<label class="re-row"><span>Slope arrows on the plan</span><input type="checkbox" data-re-f="slope"${PlanSolar.slopeShown() ? ' checked' : ''}></label><div class="re-note">Plane azimuths and the solar calculation use true north, so set this when the site plan is drawn at an angle.</div></div>`;
     h += this._globalSection(btn);
     if (sc && sc.items.length > 1) h += `<div class="re-sec"><div class="re-lab">Roofs</div><div class="re-chips">${sc.items.map(i => btn(roof && i.roof.id === roof.id, `data-re-roof="${esc(i.roof.id)}"`, esc(i.roof.name))).join('')}</div></div>`;
     if (!roof || !it) {
       h += `<div class="re-note">${sc && sc.empty ? 'No roofs yet. Pick <b>Footprint</b> and click the corners of the building.' : 'Click a roof on the plan or in 3D.'}</div>`;
-      host.innerHTML = h; return;
+      host.innerHTML = h; this._shownRoof = null; return;
     }
     const shapeBtns = ['gable', 'hip', 'mono', 'flat'].map(s => btn(roof.shape === s, `data-re-shape="${s}"`, RoofPlanes.LABELS[s])).join('');
     const moreShapes = ['pyramid', 'wings'].map(s => btn(roof.shape === s, `data-re-shape="${s}"`, RoofPlanes.LABELS[s])).join('');
     const eave = RoofPlanes.eave(roof), isFlat = roof.shape === 'flat';
     const monoHigh = roof.shape === 'mono' ? (() => { const { u } = Roof3D.axes(PlanSolar.planAz(roof)), ss = it.base.map(q => q[0] * u[0] + q[1] * u[1]); return eave + Math.tan((+roof.pitch || 0) * Math.PI / 180) * (Math.max(...ss) - Math.min(...ss)); })() : 0;
-    h += `<div class="re-sec"><div class="re-lab">Roof planes</div><div class="re-list">${it.pls.length && !isFlat ? RoofPlanes.groups(it.pls).map(gr => { const pl = it.pls[gr.idx[0]], sel = Roof3D.sel && gr.idx.includes(Roof3D.sel.plane);
+    h += `<div class="re-sec" data-re-roofsec="${esc(roof.id)}"><div class="re-lab">Roof planes</div><div class="re-list">${it.pls.length && !isFlat ? RoofPlanes.groups(it.pls).map(gr => { const pl = it.pls[gr.idx[0]], sel = Roof3D.sel && gr.idx.includes(Roof3D.sel.plane);
         return `<label class="re-li${sel ? ' sel' : ''}"><span><input type="checkbox" data-re-f="use" data-re-i="${esc(pl.name)}" ${it.use[gr.idx[0]] ? 'checked' : ''} aria-label="Modules on ${esc(pl.name)}"> ${esc(pl.name)}</span><span>${pl.pitch.toFixed(1)}° · az ${Math.round(pl.trueAz)}°</span></label>`; }).join('') : '<div class="re-li"><span>Flat deck</span><span>racks at ' + (+roof.tilt) + '°</span></div>'}</div></div>`;
     h += `<div class="re-sec"><div class="re-lab">Align modules</div>${btn(!!this.aligning, 'data-re-align="1"', this.aligning ? 'Click an edge of the roof on the plan…' : 'Align to edge')}<div class="re-note">Click the roof edge the modules should run along (the eave side). No angle needed.</div>
       <div class="re-lab" style="margin-top:8px">Place modules in the roof</div>
@@ -325,6 +326,14 @@ const RoofEditor = {
       <div class="re-note">Objects feed the shading, so a vent beside the array changes the result.</div></div>
       <div class="re-sec"><button type="button" class="re-btn" data-re-delroof="${esc(roof.id)}">Delete this roof</button></div>`;
     host.innerHTML = h;
+    this._jumpToRoof(host, roof);
+  },
+  // Picking a roof (on the plan, in 3D or from the Roofs chips) takes the properties column straight to that roof's section.
+  _jumpToRoof(host, roof) {
+    const first = this._shownRoof !== roof.id; this._shownRoof = roof.id;
+    if (!first) return;
+    const sec = host.querySelector('[data-re-roofsec]'); if (!sec) return;
+    host.scrollTop += sec.getBoundingClientRect().top - host.getBoundingClientRect().top - 8;
   },
 };
 

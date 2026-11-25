@@ -151,4 +151,9 @@ ok('keep-out areas: stored on the roof, edited like roof corners, moved with the
   S.selectRoofs([r.id]); S.moveSelected(10, 5); assert.deepStrictEqual(k.points[0], { x: 30, y: 25 });
   S.removeKeepout(r, k.id); assert.strictEqual(r.keepouts.length, 0); assert(Math.abs(S.usableAreaM2(r) - full) < 1e-9);
 });
+ok('slope arrows: shown by default, switchable, compass letters for the azimuth', () => {
+  assert.strictEqual(S.slopeShown(), true);
+  S.setSlopeShown(false); assert.strictEqual(S.slopeShown(), false); S.setSlopeShown(true); assert.strictEqual(S.slopeShown(), true);
+  assert.deepStrictEqual([0, 44, 90, 180, 225, 315, 359, -90].map(a => S.compass(a)), ['N', 'NE', 'E', 'S', 'SW', 'NW', 'N', 'W']);
+});
 console.log(n + ' passed');
