@@ -30,4 +30,17 @@ ok('inverter validation messages', () => {
   assert(/100/.test(Solar.validateInverter(Object.assign({}, good, { eff_pct: 101 }))));
   assert(/Phases/.test(Solar.validateInverter(Object.assign({}, good, { phases: 2 }))));
 });
+ok('site coordinates: both valid numbers in range, else the city is used', () => {
+  assert.deepStrictEqual(Solar.coords({ lat: '-33.92', lon: '18.42' }), { lat: -33.92, lon: 18.42 });
+  assert.strictEqual(Solar.coords({ lat: '', lon: '18' }), null);
+  assert.strictEqual(Solar.coords({ lat: '95', lon: '18' }), null);
+  assert.strictEqual(Solar.coords({ lat: 'abc', lon: '18' }), null);
+  assert.strictEqual(Solar.coords({ lat: '10', lon: '190' }), null);
+  Solar._locs = [{ name: 'Pretoria', lat: -25.75, lon: 28.19, tmin_c: -2 }];
+  assert.strictEqual(Solar._loc({ location: 'Pretoria', lat: '', lon: '' }).lat, -25.75);
+  const l = Solar._loc({ location: 'Pretoria', lat: '-33.92', lon: '18.42' });
+  assert.strictEqual(l.lat, -33.92); assert.strictEqual(l.tmin_c, -2);
+  assert.deepStrictEqual(Solar._site({ location: 'Pretoria', lat: '-33.92', lon: '18.42' }), { location: 'Pretoria', lat: -33.92, lon: 18.42 });
+  assert.deepStrictEqual(Solar._site({ location: 'Pretoria', lat: '', lon: '' }), { location: 'Pretoria' });
+});
 console.log(n + ' passed');

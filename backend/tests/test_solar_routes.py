@@ -90,3 +90,21 @@ def test_shading_route_and_removed_duplicates(client, auth):
 def test_sun_route(client, auth):
     r = client.post(f"{API}/solar-sun", headers=auth, json={"lat": -25.75, "hour_angle_deg": -30})
     assert r.status_code == 200 and 30 < r.json()["elevation_deg"] < 36
+
+
+def test_sun_grid_and_shading_routes(client, auth, monkeypatch):
+    import gzip, json
+    from backend.analysis import pvgis_tmy
+    path = os.path.join(os.path.dirname(__file__), "..", "..", "testing", "solar", "tmy", "tmy_-26.20_28.04.json.gz")
+    monkeypatch.setattr(pvgis_tmy, "get_tmy", lambda la, lo: json.load(gzip.open(path, "rt")))
+    assert client.post(f"{API}/solar-sun-grid", json={"location": "Johannesburg"}).status_code in (401, 403)
+    g = client.post(f"{API}/solar-sun-grid", headers=auth, json={"location": "Johannesburg"})
+    assert g.status_code == 200 and len(g.json()["samples"]) > 100
+    n = len(g.json()["samples"])
+    ok = client.post(f"{API}/solar-shading", headers=auth, json={
+        "location": "Johannesburg", "arrays": [{"name": "A", "tilt_deg": 30, "azimuth_deg": 0, "modules": 2, "per_string": 2,
+                                                "shade": ["0" * n, "1" * n]}]})
+    assert ok.status_code == 200 and 20 < ok.json()["loss_pct"] < 50 and len(ok.json()["strings"]) == 1
+    bad = client.post(f"{API}/solar-shading", headers=auth, json={
+        "location": "Johannesburg", "arrays": [{"name": "A", "tilt_deg": 30, "modules": 2, "shade": ["0", "1"]}]})
+    assert bad.status_code == 400

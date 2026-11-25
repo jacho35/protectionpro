@@ -24,7 +24,7 @@ const Solar = {
   _prot: null,
   _busy: false,
   DEFAULTS: {
-    location: 'Pretoria', module: 'pv_550_mono', inverter: 'inv_10k_2mppt',
+    location: 'Pretoria', lat: '', lon: '', irrSrc: 'pvgis', module: 'pv_550_mono', inverter: 'inv_10k_2mppt',
     roofShape: 'gable', length: 10, width: 9.2, pitch: 25, setback: 0.5, area: 60, packing: 0.8,
     tilt: 15, azimuth: 0, mode: 'kwp', targetKwp: 10, annualKwh: '', sharePct: 70,
     perString: 8, hour: 0, cableM: 30, vdPct: 1, acV: 400, exportKw: '', busId: '', pvId: '',
@@ -166,6 +166,7 @@ const Solar = {
       this.render();
     }));
     el.querySelectorAll('[data-north]').forEach(i => i.addEventListener('change', () => { PlanSolar.setNorthAngle(parseFloat(i.value)); this.render(); }));
+    el.querySelectorAll('[data-solimport]').forEach(i => i.addEventListener('change', () => this._importFiles(i.files)));
     el.querySelectorAll('[data-act]').forEach(b => b.addEventListener('click', () => this._act(b.dataset.act, b.dataset.v)));
   },
 
@@ -205,7 +206,7 @@ const Solar = {
     const inv = this._opt(this.inverters(), c.inverter, o => o.id, o => o.name);
     const shape = [['plan', 'Roofs drawn on the plan'], ['gable', 'Gable (north plane)'], ['flat', 'Flat with tilted racks'], ['area', 'Type a usable area']];
     const modes = [['kwp', 'A kWp target I set'], ['roof', 'Fill the roof']];
-    const geo = c.roofShape === 'plan' ? (dock ? '' : this._roofsHtml())
+    const geo = c.roofShape === 'plan' ? (dock ? '' : this._roofsNote())
       : c.roofShape === 'area'
       ? this._in(c, 'area', 'Usable area (m²)') + this._in(c, 'packing', 'Packing factor') + this._in(c, 'tilt', 'Tilt (°)') + this._in(c, 'azimuth', 'Azimuth (° from north)')
       : this._in(c, 'length', 'Length (m)') + this._in(c, 'width', 'Width (m)')
@@ -213,6 +214,9 @@ const Solar = {
         + this._in(c, 'setback', 'Edge setback (m)');
     return this._grid(`
       <label for="sol-location">Location</label><select id="sol-location" data-k="location">${loc}</select>
+      <label for="sol-lat">Site latitude (°, blank = the city)</label><input id="sol-lat" data-k="lat" type="text" inputmode="decimal" style="max-width:140px" value="${escHtml(c.lat)}" placeholder="e.g. -33.92">
+      <label for="sol-lon">Site longitude (°)</label><input id="sol-lon" data-k="lon" type="text" inputmode="decimal" style="max-width:140px" value="${escHtml(c.lon)}" placeholder="e.g. 18.42">
+      <label for="sol-irrSrc">Irradiance data</label><select id="sol-irrSrc" data-k="irrSrc">${this._opt([['pvgis', 'PVGIS typical year (hourly)'], ['table', 'Bundled monthly table (screening)']], c.irrSrc, o => o[0], o => o[1])}</select>
       <label for="sol-module">Module</label><select id="sol-module" data-k="module">${mod}</select>
       <label for="sol-inverter">Inverter</label><select id="sol-inverter" data-k="inverter">${inv}</select>
       <label for="sol-roofShape">Roof</label><select id="sol-roofShape" data-k="roofShape">${this._opt(shape, c.roofShape, o => o[0], o => o[1])}</select>
@@ -232,6 +236,13 @@ const Solar = {
     if (c.roofShape !== 'plan' || typeof PlanSolarArray === 'undefined') return '';
     const t = PlanSolarArray.totals();
     return `<div style="margin-top:10px;display:flex;justify-content:space-between;font-size:13px"><span style="color:var(--text-muted,#6d6d6d)">Placed on the plan</span><strong>${t.n ? t.n + ' panels · ' + t.kwp.toFixed(1) + ' kWp' : 'nothing yet'}</strong></div>`;
+  },
+
+  // The roofs are drawn and edited on the Plan (Solar toolbar, Roof editor); the dialog only lists them.
+  _roofsNote() {
+    const roofs = PlanSolar.roofs();
+    const list = roofs.length ? roofs.map(r => `${escHtml(r.name)}${r.use === false ? ' (not used)' : ''}`).join(', ') : 'none yet';
+    return `<span style="grid-column:1/-1;font-size:12px">Roofs on the plan: ${list}. Draw and edit them with the Solar toolbar on the Plan tab (Roof, Roof editor); sizes here use every roof in use.</span>`;
   },
 
   _sizeResult() {
@@ -256,6 +267,7 @@ const Solar = {
       ${r.arrays ? '<div style="margin-top:8px;font-size:12px">' + r.arrays.map(a => escHtml(a.name || 'Roof') + ': ' + a.modules + (a.laid_out ? ' modules as laid out, ' : ' of ' + a.modules_roof + ' modules, ') + a.kwp + ' kWp, ' + Math.round(a.annual_kwh) + ' kWh').join('<br>') + '</div>' : ''}
       <div style="display:flex;gap:3px;align-items:flex-end;height:104px;margin-top:8px" role="img" aria-label="Monthly energy, kWh">${bars}</div>
       ${r.shading_loss_pct != null ? '<div style="margin-top:6px;font-size:12px">Shading loss ' + r.shading_loss_pct + ' %</div>' : ''}
+      ${r.clipping_loss_pct != null ? '<div style="margin-top:6px;font-size:12px">Inverter clipping ' + r.clipping_loss_pct + ' % of the DC energy' + (r.lifetime ? '; year 1 ' + Math.round(r.lifetime[0].kwh).toLocaleString() + ' kWh after first-year degradation, year 25 ' + Math.round(r.lifetime[24].kwh).toLocaleString() + ' kWh' : '') + '.</div>' : ''}
       <div style="margin-top:6px;font-size:11px;color:var(--text-muted,#6d6d6d)">${escHtml(r.data_note)}</div>`;
   },
 
@@ -323,7 +335,11 @@ const Solar = {
       <button class="btn" type="button" data-act="add${kind}" style="margin-top:8px">Add ${kind === 'panel' ? 'module' : 'inverter'}</button></fieldset>`;
     const mine = (list, kind) => list.length ? list.map(e => `<div style="display:flex;gap:8px;padding:4px 0"><span style="flex:1">${escHtml(e.name)}</span>
       <button class="btn" type="button" data-act="del${kind}" data-v="${escHtml(e.id)}" aria-label="Delete ${escHtml(e.name)}">×</button></div>`).join('') : '<div style="font-size:12px;color:var(--text-muted,#6d6d6d)">None yet.</div>';
-    return `<div style="font-size:12px;color:var(--text-muted,#6d6d6d)">The shipped modules and inverters are fixed. Entries you add here are kept with this project.</div>
+    const imp = `<fieldset style="margin-top:12px;border:1px solid var(--border,#e4e2dc);border-radius:6px;padding:10px"><legend style="font-weight:600">Import from PVsyst or CSV</legend>
+      <label for="sol-lib-import" style="font-size:13px">Module (.PAN), inverter (.OND) or a CSV table with a header row</label>
+      <input id="sol-lib-import" type="file" accept=".pan,.ond,.csv" multiple data-solimport style="display:block;margin-top:6px">
+      ${this._impMsg ? `<div role="status" style="margin-top:8px;font-size:12px;white-space:pre-wrap">${escHtml(this._impMsg)}</div>` : ''}</fieldset>`;
+    return `<div style="font-size:12px;color:var(--text-muted,#6d6d6d)">The shipped modules and inverters are fixed. Entries you add here are kept with this project.</div>${imp}
       <div style="margin-top:10px;font-weight:600">Your modules</div>${mine(this.customPanels(), 'panel')}${form('panel', this.PANEL_FIELDS, 'New module')}
       <div style="margin-top:14px;font-weight:600">Your inverters</div>${mine(this.customInverters(), 'inv')}${form('inv', this.INVERTER_FIELDS, 'New inverter')}
       ${this._libErr ? `<div role="alert" style="margin-top:8px;color:#8a2b1e;font-size:13px">${escHtml(this._libErr)}</div>` : ''}`;
@@ -344,6 +360,29 @@ const Solar = {
     e.id = 'custom_pv_' + (kind === 'panel' ? 'm' : 'i') + '_' + Date.now().toString(36);
     list.push(e);
     this.set(key, list);
+  },
+  // Import .PAN / .OND / .CSV files into THIS PROJECT's library (never an account or shared library). Each entry is validated
+  // like a typed one; rejects and duplicates are listed, nothing is overwritten.
+  async _importFiles(files) {
+    const msgs = [];
+    for (const f of Array.from(files || [])) {
+      const text = await f.text();
+      const ext = f.name.toLowerCase().split('.').pop();
+      const kind = ext === 'pan' ? 'panel' : ext === 'ond' ? 'inv' : '';
+      const have = (k) => (k === 'panel' ? this.customPanels() : this.customInverters()).map(e => e.name);
+      const r = SolarImport.fromFile(f.name, text, (k, e) => (k === 'panel' ? this.validatePanel(e) : this.validateInverter(e)), kind ? have(kind) : have('panel').concat(have('inv')));
+      if (r.entries.length) {
+        const key = r.kind === 'panel' ? 'customPanels' : 'customInverters';
+        const list = (r.kind === 'panel' ? this.customPanels() : this.customInverters()).slice();
+        r.entries.forEach((e, i) => { e.id = 'custom_pv_' + (r.kind === 'panel' ? 'm' : 'i') + '_' + Date.now().toString(36) + i; list.push(e); });
+        this.set(key, list);
+        const d = Array.from(new Set(r.entries.flatMap(e => e.derived || [])));
+        msgs.push(`${f.name}: added ${r.entries.length} ${r.kind === 'panel' ? 'module' : 'inverter'}${r.entries.length > 1 ? 's' : ''}` + (d.length ? ` (${d.join(', ')} not in the file: estimated, check them)` : '.'));
+      }
+      r.skipped.forEach(x => msgs.push(x));
+    }
+    this._impMsg = msgs.join('\n') || 'No file chosen.';
+    this.render();
   },
   _delEntry(kind, id) {
     const key = kind === 'panel' ? 'customPanels' : 'customInverters';
@@ -370,10 +409,19 @@ const Solar = {
       <label for="sol-hybrid">Add a DC-coupled battery</label><input id="sol-hybrid" data-k="hybrid" data-bool="1" type="checkbox" ${c.hybrid ? 'checked' : ''}>
       ${c.hybrid ? this._in(c, 'battKwh', 'Battery capacity (kWh)') + this._in(c, 'battKw', 'Max charge / discharge (kW)') + this._in(c, 'battDod', 'Usable depth of discharge (%)') : ''}`);
     const shade = this._res && this._res.shading_loss_pct != null ? `<div style="margin-top:8px;font-size:13px">Shading loss from the obstruction: <strong>${this._res.shading_loss_pct} %</strong> of the annual yield.</div>` : '';
+    const can = this._res && this._res.arrays && c.roofShape === 'plan';
+    const sh = this._shade;
+    const annual = `<div style="margin-top:12px;font-weight:600">Annual shading from the 3D roofs</div>
+      <div style="font-size:12px;color:var(--text-muted,#6d6d6d)">Checks every module against the roof objects, the obstruction above and the racks in front of it, for the middle day of each month at every solar hour. Strings are ${+c.perString || 'one'} modules, filled in layout order.</div>
+      <div style="margin-top:6px"><button class="btn" type="button" data-act="shade" ${can ? '' : 'disabled'}>Run annual shading</button>${can ? '' : '<span style="font-size:12px"> needs roofs drawn on the plan and a calculation on step 1</span>'}</div>`
+      + (sh ? `<div style="margin-top:8px;font-size:13px">Shading loss <strong>${sh.loss_pct} %</strong> of the annual yield (${Math.round(sh.unshaded_kwh).toLocaleString()} to ${Math.round(sh.shaded_kwh).toLocaleString()} kWh).</div>
+        <div style="display:flex;gap:3px;align-items:flex-end;height:60px;margin-top:6px" role="img" aria-label="Shading loss by month, %">${sh.months.map(m => `<div title="${m.month}: ${m.loss_pct} %" style="flex:1;background:#b8860b;height:${Math.max(2, Math.min(60, m.loss_pct * 6))}px"></div>`).join('')}</div>
+        <table style="margin-top:8px;font-size:12px;border-collapse:collapse"><tr><th align="left" style="padding:0 12px 0 0">Roof</th><th style="padding:0 12px">String</th><th style="padding:0 12px">Modules</th><th style="padding:0 12px">Loss %</th></tr>${sh.strings.map(r => `<tr><td style="padding:0 12px 0 0">${escHtml(r.array || '')}</td><td align="center">${r.string}</td><td align="center">${r.modules}</td><td align="center">${r.loss_pct}</td></tr>`).join('')}</table>
+        <div style="margin-top:6px;font-size:11px;color:var(--text-muted,#6d6d6d)">${escHtml(sh.note)} ${escHtml(sh.attribution || '')}</div>` : '');
     const placed = this._pvComp();
     const run = (act, label, tip) => `<button class="btn" type="button" data-act="${act}" title="${escHtml(tip)}" ${placed ? '' : 'disabled'}>${label}</button>`;
-    return head + shade + `<div style="margin-top:12px"><button class="btn btn-primary" type="button" data-act="place" ${this._res ? '' : 'disabled'}>Place / update on the SLD</button>
-      ${this._res ? '' : '<span style="font-size:12px"> calculate on step 1 first</span>'}</div>
+    return head + shade + annual + `<div style="margin-top:12px"><button class="btn btn-primary" type="button" data-act="place" ${this._res ? '' : 'disabled'}>Place / update on the SLD</button>
+      ${this._res ? '<button class="btn" type="button" data-act="report" style="margin-left:6px">Solar PV report (PDF)</button>' : '<span style="font-size:12px"> calculate on step 1 first</span>'}</div>
       <div style="margin-top:12px;display:flex;gap:6px;flex-wrap:wrap">
         ${run('study:fault', 'Fault analysis', 'The inverter adds fault current from its Fault current (p.u.) setting')}
         ${run('study:loadflow', 'Load flow', 'Voltage rise and loading with the PV running at its irradiance setting')}
@@ -403,6 +451,8 @@ const Solar = {
       else if (act === 'strings') await this.runStrings();
       else if (act === 'rows') await this.runRows();
       else if (act === 'protect') await this.runProtection();
+      else if (act === 'shade') await this.runShading();
+      else if (act === 'report') await this.exportReport();
       else if (act === 'place') this.placePv();
       else if (act.startsWith('study:')) this.runStudy(act.slice(6));
     } catch (e) {
@@ -411,7 +461,19 @@ const Solar = {
     this.render();
   },
 
-  _loc(c) { return this._locs.find(l => l.name === c.location) || this._locs[0]; },
+  // The site: the chosen city, with its coordinates replaced by the typed ones when both are valid (the city still gives the
+  // bundled-table climate and the minimum temperature; PVGIS data and the sun use the coordinates).
+  _loc(c) {
+    const base = this._locs.find(l => l.name === c.location) || this._locs[0], co = this.coords(c);
+    return co ? Object.assign({}, base, co) : base;
+  },
+  // {lat, lon} when the typed site coordinates are both numbers in range, else null. Pure.
+  coords(c) {
+    const la = parseFloat(c.lat), lo = parseFloat(c.lon);
+    return c.lat !== '' && c.lon !== '' && isFinite(la) && isFinite(lo) && Math.abs(la) <= 90 && Math.abs(lo) <= 180 ? { lat: la, lon: lo } : null;
+  },
+  // location + coordinates as the engine routes take them
+  _site(c) { const co = this.coords(c); return co ? { location: c.location, lat: co.lat, lon: co.lon } : { location: c.location }; },
 
   async runProtection() {
     const c = this.cfg();
@@ -462,10 +524,10 @@ const Solar = {
       }
       if (!arrays.length) throw new Error('The roofs have no usable area. Calibrate the plan scale and check the setback.');
       this._res = await API.request('/analysis/solar-size', 'POST', {
-        location: c.location, module: this.moduleBody(p), inverter: this.inverterBody(inv), mode: c.mode, arrays,
+        ...this._site(c), irradiance_source: c.irrSrc, module: this.moduleBody(p), inverter: this.inverterBody(inv), mode: c.mode, arrays,
         annual_kwh: +c.annualKwh || null, share_pct: +c.sharePct, target_kwp: +c.targetKwp || null,
         obstructions: +c.obsH > 0 ? [{ height_m: +c.obsH, distance_m: +c.obsD, bearing_deg: +c.obsB, width_m: +c.obsW }] : [] });   // the typed one applies to every roof; objects and neighbours ride on each roof's arrays
-      this._str = null; this._prot = null;
+      this._str = null; this._prot = null; this._shade = null;
       return;
     }
     if (g.flat) {
@@ -475,12 +537,13 @@ const Solar = {
       packing = rs.ground_cover_ratio;
     }
     this._res = await API.request('/analysis/solar-size', 'POST', {
-      location: c.location, module: this.moduleBody(p), inverter: this.inverterBody(inv),
+      ...this._site(c), irradiance_source: c.irrSrc, module: this.moduleBody(p), inverter: this.inverterBody(inv),
       tilt_deg: g.tilt, azimuth_deg: g.azimuth, mode: c.mode, usable_area_m2: g.area, packing,
       annual_kwh: +c.annualKwh || null, share_pct: +c.sharePct, target_kwp: +c.targetKwp || null,
       obstructions: +c.obsH > 0 ? [{ height_m: +c.obsH, distance_m: +c.obsD, bearing_deg: +c.obsB, width_m: +c.obsW }] : [] });
     this._str = null;
     this._prot = null;
+    this._shade = null;
   },
 
   // Place / update the PV array on the SLD, then read the app's own string checks for it.
@@ -538,6 +601,39 @@ const Solar = {
   },
 
   // Run one of the app's own studies on the placed array, by pressing its normal menu button.
+  // The Solar PV report: the results already on screen go to the server to be typeset (nothing is recalculated there).
+  async exportReport() {
+    const c = this.cfg();
+    if (!this._res) throw new Error('Calculate the array on step 1 first.');
+    const blob = await API.generateSolarReport({
+      inputs: { location: c.location + (this.coords(c) ? ` (${this.coords(c).lat}, ${this.coords(c).lon})` : ''), module: this.panel(c).name, inverter: this.inverter(c).name, perString: c.perString },
+      result: this._res, strings: this._str || null, protection: this._prot || null, shading: this._shade || null });
+    const url = URL.createObjectURL(blob), a = document.createElement('a');
+    a.href = url; a.download = `${AppState.projectName || 'Untitled'}_solar_pv.pdf`; a.click();
+    URL.revokeObjectURL(url);
+    this._status('Exported the Solar PV report as PDF.');
+  },
+
+  // Annual shading: the 3D scene's module shade flags at the sun grid, then the engine's hourly model per string.
+  async runShading() {
+    const c = this.cfg(), res = this._res;
+    if (c.roofShape !== 'plan' || !res || !res.arrays) throw new Error('Calculate the size for roofs drawn on the plan first.');
+    this._status('Checking every module against the sun over the year…');
+    const sc = await Roof3D.build();
+    if (sc.empty) throw new Error('No roofs to check.');
+    const grid = await API.request('/analysis/solar-sun-grid', 'POST', this._site(c));
+    const flags = Roof3D.annualFlags(sc, grid.samples);
+    const arrays = res.arrays.map(a => {
+      const f = flags.find(x => x.arr === a.name);
+      return f ? { name: a.name, tilt_deg: a.tilt_deg, azimuth_deg: a.azimuth_deg, modules: f.shade.length, per_string: +c.perString || f.shade.length, shade: f.shade } : null;
+    }).filter(Boolean);
+    if (!arrays.length) throw new Error('No modules are laid out on the roofs yet.');
+    const p = this.panel(c), inv = this.inverter(c);
+    this._shade = await API.request('/analysis/solar-shading', 'POST', {
+      ...this._site(c), module: this.moduleBody(p), inverter: this.inverterBody(inv), arrays });
+    this._status('');
+  },
+
   runStudy(which) {
     const id = { fault: 'btn-run-fault', loadflow: 'btn-run-loadflow', hosting: 'btn-hosting-capacity', compliance: 'btn-compliance',
       battery: 'btn-battery-sizing', backup: 'btn-backup-study', timeseries: 'btn-timeseries' }[which];

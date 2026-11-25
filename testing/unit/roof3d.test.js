@@ -175,3 +175,83 @@ ok('maintenance aisles: a column aisle opens exactly its width, indexes follow, 
   close(sOf(b, 1) - sOf(b, 2), 3 + (2 - (3 - 2 * Math.cos(15 * Math.PI / 180))), 1e-6);
 });
 console.log('shadow tests done');
+
+// ── annual shading ──
+ok('rack rows: the 3D shade flags match the closed-form profile shading at every sun elevation', () => {
+  const mod = { len: 2, wid: 1 }, tilt = 15, pitch = 3, b = tilt * Math.PI / 180;
+  const racks = R.layoutRacks(rect(2, 14), 0, tilt, 0.5, mod, 1e9, pitch, 0);       // one column, rows from the north edge
+  assert(racks.length >= 4);
+  // profile (y, z) of each module: low edge = the corner at the larger y, high edge the other
+  const prof = racks.map(m => { const ys = m.map(p => p[1]); const lo = m.find(p => p[1] === Math.max(...ys)), hi = m.find(p => p[1] === Math.min(...ys)); return { lo: [lo[1], lo[2]], hi: [hi[1], hi[2]], ri: m.ri }; });
+  const centre = (q) => [(q.lo[0] + q.hi[0]) / 2, (q.lo[1] + q.hi[1]) / 2];
+  const hitsSeg = (P, d, a, c) => {                                                  // ray P + t d (t > 0) meets segment a-c
+    const e = [c[0] - a[0], c[1] - a[1]], den = d[0] * e[1] - d[1] * e[0];
+    if (Math.abs(den) < 1e-12) return false;
+    const w = [a[0] - P[0], a[1] - P[1]], t = (w[0] * e[1] - w[1] * e[0]) / den, u = (w[0] * d[1] - w[1] * d[0]) / den;
+    return t > 1e-6 && u >= -1e-9 && u <= 1 + 1e-9;
+  };
+  let sawShade = false, sawLight = false;
+  for (const el of [6, 10, 15, 20, 30, 45, 60, 80]) {
+    const flags = R.shadedModules([racks], R.sunVec(0, el), []);                    // sun due north, in the plane of the profile
+    const d = [Math.cos(el * Math.PI / 180), Math.sin(el * Math.PI / 180)];
+    prof.forEach((q, i) => {
+      const expect = prof.some((o, j) => j !== i && hitsSeg(centre(q), d, o.lo, o.hi));
+      assert.strictEqual(flags[i], expect, `elevation ${el}, row ${q.ri}`);
+      sawShade = sawShade || expect; sawLight = sawLight || !expect;
+    });
+  }
+  assert(sawShade && sawLight);
+  const rise = mod.len * Math.sin(b), run = mod.len * Math.cos(b), alpha = Math.atan(rise / (pitch - run));     // the design elevation that just clears
+  assert(R.shadedModules([racks], R.sunVec(0, alpha * 180 / Math.PI + 2), []).filter(Boolean).length <= 1);
+});
+ok('annualFlags: one flag character per sun position, grouped by engine array, wall shades the morning only', () => {
+  const mod = { len: 2, wid: 1 };
+  const m1 = R.layoutModules(rect(6, 6), 0, 20, 0.3, mod, 4, R.gablePlanes(rect(6, 6), 0, 20, 3));
+  m1.forEach(m => { m.arr = 'Roof A'; });
+  const wall = { foot: [[-4, 7], [10, 7], [10, 7.5], [-4, 7.5]], h: 30 };             // a high wall north of the roof
+  const sc = { items: [{ roof: { name: 'Roof A' }, mods: m1, planes: R.gablePlanes(rect(6, 6), 0, 20, 3), poly: rect(6, 6), roofShape: 'gable' }], obs: wall, objs: [], north: 0 };
+  const samples = [{ azimuth_deg: 0, elevation_deg: 40 }, { azimuth_deg: 180, elevation_deg: 40 }, { azimuth_deg: 0, elevation_deg: 89 }];
+  const out = R.annualFlags(sc, samples);
+  assert.strictEqual(out.length, 1); assert.strictEqual(out[0].arr, 'Roof A');
+  assert.strictEqual(out[0].shade.length, m1.length);
+  assert(out[0].shade.every(r => r.length === 3));
+  assert(out[0].shade.every(r => r === '100'));                                        // sun low in the north: behind the wall; sun in the south or nearly overhead: clear
+});
+console.log(n + ' passed (with annual shading)');
+
+// ── parapet ──
+ok('parapet: inset outline is the footprint shrunk by the wall thickness, inner faces are planar quads facing in', () => {
+  const it = { poly: rect(10, 6), eave: 3 };
+  const pp = R.parapet(it);
+  close(pp.deck, 3 + R.PARAPET_M); close(pp.top, pp.deck + R.PARAPET_H);
+  close(area(pp.Q), (10 - 2 * R.PARAPET_T) * (6 - 2 * R.PARAPET_T), 1e-9);
+  assert.strictEqual(pp.inner.length, 4);
+  for (const q of pp.inner) { close(q[0][2], pp.top); close(q[2][2], pp.deck); }
+  const rev = R.inset(rect(10, 6).slice().reverse(), 0.15); close(area(rev), area(pp.Q), 1e-9);       // either winding
+});
+ok('annualFlags: the parapet shades a rack right behind it in low sun and not in high sun', () => {
+  const mod = { len: 2, wid: 1 }, it0 = { roof: { name: 'F', shape: 'flat' }, poly: rect(10, 6), eave: 3, mods: [] };
+  const pp = R.parapet(it0), z = pp.deck + 0.1;
+  // one module 0.1 m north of the south parapet's inner face (y = 0.15): its centre is shaded by that wall when the sun is low in the south
+  const m = [[4, 0.35, z], [5, 0.35, z], [5, 0.75, z + 0.1], [4, 0.75, z + 0.1]];
+  m.ri = 0; m.arr = 'F'; it0.mods = [m];
+  const out = R.annualFlags({ items: [it0], obs: null, objs: [], north: 0 }, [{ azimuth_deg: 180, elevation_deg: 8 }, { azimuth_deg: 180, elevation_deg: 60 }, { azimuth_deg: 0, elevation_deg: 8 }]);
+  assert.strictEqual(out[0].shade[0], '100');
+});
+console.log(n + ' passed (with parapet)');
+
+// ── plane edges: ridge caps and roof thickness ──
+ok('planeEdges: a gable has one ridge (shared edge, both planes fall away) and four free edges; a hip has more ridges', () => {
+  const g = R.gablePlanes(rect(10, 6), 0, 25, 3), t = Math.tan(25 * Math.PI / 180);
+  const mk = (poly3) => ({ poly: poly3.map(p => [p[0], p[1]]), zAt: (x, y) => 3 + t * (3 - Math.abs(y - 3)) });          // ridge along y = 3 at 3 + 3 t
+  const A = mk([[0, 0], [10, 0], [10, 3], [0, 3]]), B = mk([[0, 3], [10, 3], [10, 6], [0, 6]]);
+  const e = R.planeEdges([A, B]);
+  assert.strictEqual(e.shared.length, 1); close(e.shared[0].a[2], 3 + 3 * t); close(e.shared[0].b[2], 3 + 3 * t);
+  assert.strictEqual(e.free.length, 6);                                                                                      // 3 free edges on each plane (the ridge is the 4th)
+  assert(g.front.length && g.back.length);
+});
+ok('planeEdges: a valley (planes rise away from the shared edge) is not capped', () => {
+  const t = 0.4, A = { poly: [[0, 0], [10, 0], [10, 3], [0, 3]], zAt: (x, y) => 3 + t * (3 - y) }, B = { poly: [[0, 3], [10, 3], [10, 6], [0, 6]], zAt: (x, y) => 3 + t * (y - 3) };
+  assert.strictEqual(R.planeEdges([A, B]).shared.length, 0);
+});
+console.log(n + ' passed (with edges)');

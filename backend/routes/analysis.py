@@ -1103,6 +1103,12 @@ class SolarSizeRequest(BaseModel):
     annual_kwh: Optional[float] = None
     share_pct: float = 70.0
     losses: Optional[dict] = None
+    irradiance_source: str = "table"     # table (bundled monthly, screening grade) | pvgis (hourly typical year for lat / lon, falls back to the table)
+    transposition: Optional[str] = None  # pvgis hourly model: perez (default) | isotropic (for comparison with the old model)
+    lid_pct: Optional[float] = None      # first-year light-induced degradation, % (default 1.0)
+    degradation_pct: Optional[float] = None   # annual degradation after year 1, % per year (default 0.4)
+    lat: Optional[float] = None          # pvgis: site coordinates (default: the named location's)
+    lon: Optional[float] = None
     obstructions: Optional[List[dict]] = None   # [{height_m, distance_m, bearing_deg, width_m}] above the array
     arrays: Optional[List[dict]] = None         # roofs drawn on the plan: [{name, area_m2, packing, tilt_deg, azimuth_deg, modules?}] (modules = already laid out, kept as is)
 
@@ -1157,6 +1163,23 @@ class SolarProtectionRequest(BaseModel):
     num_inverters: int = 1
     t_min_c: float = -5.0
     export_limit_kw: Optional[float] = None   # set on the connection point
+
+
+class SolarSunGridRequest(BaseModel):
+    location: str = "Pretoria"
+    lat: Optional[float] = None
+
+
+@router.post("/solar-sun-grid")
+def solar_sun_grid(data: SolarSunGridRequest):
+    """The sun positions (middle day of each month, every solar hour) the 3D roof scene is checked at for annual shading."""
+    return _solar_call(solar_pv.sun_grid, data.model_dump())
+
+
+@router.post("/solar-shading")
+def solar_shading(data: SolarSizeRequest):
+    """Annual shading loss from the 3D scene's per-module shade flags (`arrays[].shade`), on the PVGIS hourly year."""
+    return _solar_call(solar_pv.run_solar_shading, data.model_dump())
 
 
 @router.post("/solar-protection")

@@ -509,7 +509,7 @@ const PlanSolar = {
   draw(ctx, zoom) {
     const roofs = this.roofs();
     if (!roofs.length) return;
-    const u = 1 / zoom;
+    const u = 1 / zoom, labels = [];
     for (const r of roofs) {
       if (!r.points || r.points.length < 3) continue;
       ctx.save();
@@ -533,9 +533,22 @@ const PlanSolar = {
       if (typeof PlanTools !== 'undefined' && PlanTools.active && PlanTools.active.id === 'select') { this._handles(ctx, r, u); for (const k of (r.keepouts || [])) this._handles(ctx, k, u); }
       if (this.slopeShown()) this._slopeArrows(ctx, r, u);
       ctx.fillStyle = '#7c2d12'; ctx.textAlign = 'center'; ctx.font = `${12 * u}px sans-serif`;
-      ctx.fillText(`${r.name} · ${r.shape === 'flat' ? 'flat, ' + r.tilt + '° racks' : r.shape + ' ' + r.pitch + '°'}${a != null ? ' · ' + a.toFixed(0) + ' m²' : ''}`, c.x, c.y);
+      labels.push({ text: `${r.name} · ${r.shape === 'flat' ? 'flat, ' + r.tilt + '° racks' : r.shape + ' ' + r.pitch + '°'}${a != null ? ' · ' + a.toFixed(0) + ' m²' : ''}`, x: c.x, y: c.y, picked });
       ctx.restore();
     }
+    // Roof names: picked roofs first, each moved down a line at a time until it clears the ones already written; one that never
+    // clears is left out (its roof is still outlined, and the Roof editor names it).
+    ctx.save(); ctx.fillStyle = '#7c2d12'; ctx.textAlign = 'center'; ctx.font = `${12 * u}px sans-serif`;
+    const taken = [];
+    for (const l of labels.sort((p, q) => (q.picked ? 1 : 0) - (p.picked ? 1 : 0))) {
+      const w = ctx.measureText(l.text).width, h = 14 * u;
+      for (let k = 0; k < 5; k++) {
+        const y = l.y + k * h, box = { x0: l.x - w / 2 - 2 * u, x1: l.x + w / 2 + 2 * u, y0: y - h + 2 * u, y1: y + 3 * u };
+        if (taken.some(t => box.x0 < t.x1 && box.x1 > t.x0 && box.y0 < t.y1 && box.y1 > t.y0)) continue;
+        taken.push(box); ctx.fillText(l.text, l.x, y); break;
+      }
+    }
+    ctx.restore();
   },
 };
 
