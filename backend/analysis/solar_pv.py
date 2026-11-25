@@ -248,10 +248,86 @@ def energy_yield(city_name, kwp, tilt, azimuth_n, module, losses=None, inverter_
             "performance_ratio": round(annual / (kwp * poa_year), 3) if kwp > 0 and poa_year > 0 else 0.0}
 
 
+def _allocate(total, weights):
+    """Split a whole-number total over weights by largest remainder."""
+    w = float(sum(weights))
+    if total <= 0 or w <= 0:
+        return [0] * len(weights)
+    raw = [total * x / w for x in weights]
+    out = [int(math.floor(x)) for x in raw]
+    for i in sorted(range(len(raw)), key=lambda k: raw[k] - out[k], reverse=True)[: total - sum(out)]:
+        out[i] += 1
+    return out
+
+
+def run_solar_arrays(req, module, city, inverter):
+    """Several roof planes, each with its own area, tilt and azimuth (roofs drawn on the plan).
+
+    Roof capacity is the sum of each plane's modules. The load target uses the capacity-weighted
+    specific yield. The chosen module count is shared over the planes in proportion to their
+    capacity (largest remainder), and each plane's yield is worked out at its own orientation.
+    """
+    mode = req.get("mode", "min")
+    if mode not in ("roof", "load", "min"):
+        raise ValueError("mode must be roof, load or min")
+    arrays = req["arrays"]
+    if not arrays:
+        raise ValueError("No roofs given")
+    horizon = [obstruction_block(o["height_m"], o["distance_m"], o["bearing_deg"], o.get("width_m", 5.0))
+               for o in (req.get("obstructions") or [])] or None
+    caps, specs = [], []
+    for a in arrays:
+        caps.append(modules_from_area(float(a["area_m2"]), float(a.get("packing", 0.8)), module))
+        specs.append(energy_yield(city, 1.0, float(a["tilt_deg"]), float(a.get("azimuth_deg", 0)), module,
+                                  req.get("losses"), horizon=horizon)["annual_kwh"])
+    roof_total = sum(caps)
+    spec = (sum(c * sp for c, sp in zip(caps, specs)) / roof_total) if roof_total else (sum(specs) / len(specs))
+    load_mods = None
+    if req.get("annual_kwh") is not None:
+        load_mods = modules_from_load(float(req["annual_kwh"]), float(req.get("share_pct", 70)) / 100.0, spec, module)
+    if mode == "roof" or (mode == "min" and load_mods is None):
+        total, limited = roof_total, "roof"
+    elif mode == "load" or roof_total == 0:
+        if load_mods is None:
+            raise ValueError("mode 'load' needs annual_kwh")
+        total, limited = load_mods, "load"
+    else:
+        total = min(roof_total, load_mods)
+        limited = "roof" if roof_total <= load_mods else "load"
+    shares = _allocate(total, caps if roof_total else [1] * len(arrays))
+    months = [0.0] * 12
+    parts, annual, kwp_total, poa_w = [], 0.0, 0.0, 0.0
+    for a, n, cap in zip(arrays, shares, caps):
+        kwp = round(n * module["pmax_w"] / 1000.0, 3)
+        y = energy_yield(city, kwp, float(a["tilt_deg"]), float(a.get("azimuth_deg", 0)), module, req.get("losses"),
+                         inverter["efficiency_pct"] if inverter else None, horizon)
+        for i, m in enumerate(y["months"]):
+            months[i] += m["kwh"]
+        annual += y["annual_kwh"]
+        kwp_total += kwp
+        parts.append({"name": a.get("name"), "modules": n, "modules_roof": cap, "kwp": kwp, "tilt_deg": a["tilt_deg"],
+                      "azimuth_deg": a.get("azimuth_deg", 0), "annual_kwh": y["annual_kwh"]})
+    out = {"location": req.get("location", "Pretoria"), "mode": mode, "limited_by": limited,
+           "modules_roof": roof_total, "modules_load": load_mods, "modules": total, "kwp": round(kwp_total, 3),
+           "annual_kwh": round(annual, 0),
+           "specific_yield_kwh_kwp": round(annual / kwp_total, 0) if kwp_total else 0.0,
+           "months": [{"month": i + 1, "kwh": round(v, 1)} for i, v in enumerate(months)],
+           "arrays": parts, "tilt_deg": None, "azimuth_deg": None, "performance_ratio": None,
+           "data_note": SOURCE_NOTE, "exceeds_roof": total > roof_total}
+    if req.get("annual_kwh"):
+        out["load_share_pct"] = round(100.0 * annual / float(req["annual_kwh"]), 1)
+    if inverter:
+        out["dc_ac_ratio"] = round(kwp_total / (inverter["ac_kw"] * req.get("num_inverters", 1)), 2)
+    return out
+
+
 def run_solar_size(req):
     """Phase 1: size from roof area and / or load, then the yield of the chosen size."""
     module = get_module(req.get("module", "pv_550_mono"))
     city = req.get("location", "Pretoria")
+    if req.get("arrays"):
+        get_city(city)
+        return run_solar_arrays(req, module, city, get_inverter(req["inverter"]) if req.get("inverter") else None)
     tilt = float(req.get("tilt_deg", 20))
     az = float(req.get("azimuth_deg", 0))
     mode = req.get("mode", "min")

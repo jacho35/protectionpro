@@ -996,6 +996,7 @@ const PlanMarkup = {
       case 'roomdetect': return 'Detect room — click inside a room, or Detect all. Shift-click adds, Alt-click subtracts. Esc to stop.';
       case 'sllayout': return typeof SLLayoutUI !== 'undefined' ? SLLayoutUI.hint() : 'Street lighting layout';
       case 'layout': return (typeof PlanLayoutUI !== 'undefined' && PlanLayoutUI.hint) ? PlanLayoutUI.hint() : 'Auto layout — set the roads and the rules, Run, then Create.';
+      case 'roofdetect': return 'Detect roof — click inside a building, or Detect all; or Draw the outline. Shift-click adds, Alt-click subtracts. Esc to stop.';
       case 'erfdetect': return 'Detect erven — click inside an erf, or Detect all. Shift-click adds, Alt-click subtracts. Esc to stop.';
       case 'crossing': return 'Crossing — click two points. Esc cancels.';
       case 'calibrate': return 'Calibrate — click two points a known distance apart.';

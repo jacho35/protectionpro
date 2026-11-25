@@ -243,3 +243,32 @@ def test_voltage_rise_hand_calc():
     assert sp.voltage_rise(100, 400, 1000, 1.0)["ok"] is False          # 7.07 %
     with pytest.raises(ValueError):
         sp.voltage_rise(10, 400, 0)
+
+
+def test_arrays_mode_sums_roofs_and_respects_orientation():
+    arrays = [{"name": "North", "area_m2": 40, "packing": 0.8, "tilt_deg": 25, "azimuth_deg": 0},
+              {"name": "East", "area_m2": 20, "packing": 0.8, "tilt_deg": 25, "azimuth_deg": 90}]
+    r = sp.run_solar_size({"location": "Pretoria", "arrays": arrays, "mode": "roof"})
+    caps = [sp.modules_from_area(a["area_m2"], 0.8, MOD) for a in arrays]
+    assert r["modules"] == sum(caps) == r["modules_roof"] and [p["modules"] for p in r["arrays"]] == caps
+    north = sp.energy_yield("Pretoria", caps[0] * 0.55, 25, 0, MOD)["annual_kwh"]
+    east = sp.energy_yield("Pretoria", caps[1] * 0.55, 25, 90, MOD)["annual_kwh"]
+    assert r["annual_kwh"] == pytest.approx(north + east, abs=2)
+    assert sum(m["kwh"] for m in r["months"]) == pytest.approx(r["annual_kwh"], abs=3)
+    # load target smaller than the roofs: modules shared in proportion, never more than the roofs
+    small = sp.run_solar_size({"location": "Pretoria", "arrays": arrays, "mode": "min", "annual_kwh": 6000})
+    assert small["limited_by"] == "load" and small["modules"] < small["modules_roof"]
+    assert sum(p["modules"] for p in small["arrays"]) == small["modules"]
+    assert all(p["modules"] <= p["modules_roof"] for p in small["arrays"])
+    # one array equals the single-orientation answer
+    one = sp.run_solar_size({"location": "Pretoria", "arrays": arrays[:1], "mode": "roof"})
+    solo = sp.run_solar_size({"location": "Pretoria", "usable_area_m2": 40, "tilt_deg": 25, "azimuth_deg": 0, "mode": "roof"})
+    assert one["modules"] == solo["modules"] and one["annual_kwh"] == pytest.approx(solo["annual_kwh"], abs=1)
+    with pytest.raises(ValueError):
+        sp.run_solar_size({"location": "Pretoria", "arrays": [], "mode": "roof"})
+
+
+def test_allocate_largest_remainder():
+    assert sp._allocate(10, [1, 1, 1]) == [4, 3, 3] or sum(sp._allocate(10, [1, 1, 1])) == 10
+    assert sp._allocate(7, [3, 1]) == [5, 2]
+    assert sp._allocate(0, [1, 2]) == [0, 0]

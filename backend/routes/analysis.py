@@ -1103,6 +1103,7 @@ class SolarSizeRequest(BaseModel):
     share_pct: float = 70.0
     losses: Optional[dict] = None
     obstructions: Optional[List[dict]] = None   # [{height_m, distance_m, bearing_deg, width_m}] above the array
+    arrays: Optional[List[dict]] = None         # roofs drawn on the plan: [{name, area_m2, packing, tilt_deg, azimuth_deg}]
 
 
 class SolarStringsRequest(BaseModel):

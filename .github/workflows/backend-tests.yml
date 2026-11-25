@@ -53,6 +53,8 @@ jobs:
           node-version: '22'
       - name: Phone menus reach every desktop menu item
         run: node testing/unit/mobile-menu-coverage.test.js
+      - name: Solar roofs (plan geometry, array list)
+        run: node testing/unit/plansolar.test.js
       - name: Fixes (proposed fixes, Fix all)
         run: node testing/unit/fixes.test.js
       - name: Building auto circuits (request, preview)

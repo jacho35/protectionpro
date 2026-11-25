@@ -58,6 +58,10 @@ const Solar = {
   // and whether the area is a tilted plane (gable / typed) or a flat roof that needs row spacing.
   roofArea(c) {
     const s = Math.max(0, +c.setback || 0);
+    if (c.roofShape === 'plan') {
+      const n = PlanSolar.roofs().filter(r => r.use !== false).length;
+      return { tilt: 0, azimuth: 0, area: 0, flat: false, plan: true, note: n + ' roof' + (n === 1 ? '' : 's') + ' in use from the plan' };
+    }
     if (c.roofShape === 'gable') {
       const slope = (c.width / 2) / Math.cos(c.pitch * Math.PI / 180);
       const area = Math.max(0, (c.length - 2 * s) * (slope - 2 * s));
@@ -107,6 +111,11 @@ const Solar = {
       this.set(i.dataset.k, v);
       if (['roofShape', 'mode'].includes(i.dataset.k)) this.render();
     }));
+    el.querySelectorAll('[data-roof]').forEach(i => i.addEventListener('change', () => {
+      const k = i.dataset.rk;
+      PlanSolar.update(i.dataset.roof, { [k]: k === 'use' ? i.checked : k === 'shape' ? i.value : parseFloat(i.value) });
+      this.render();
+    }));
     el.querySelectorAll('[data-act]').forEach(b => b.addEventListener('click', () => this._act(b.dataset.act, b.dataset.v)));
   },
 
@@ -118,9 +127,10 @@ const Solar = {
     const loc = this._opt(this._locs, c.location, o => o.name, o => o.name);
     const mod = this._opt(PV_PANELS, c.module, o => o.id, o => o.name);
     const inv = this._opt(PV_INVERTERS, c.inverter, o => o.id, o => o.name);
-    const shape = [['gable', 'Gable (north plane)'], ['flat', 'Flat with tilted racks'], ['area', 'Type a usable area']];
+    const shape = [['plan', 'Roofs drawn on the plan'], ['gable', 'Gable (north plane)'], ['flat', 'Flat with tilted racks'], ['area', 'Type a usable area']];
     const modes = [['min', 'Smaller of roof and load'], ['roof', 'Roof capacity'], ['load', 'Load target']];
-    const geo = c.roofShape === 'area'
+    const geo = c.roofShape === 'plan' ? this._roofsHtml()
+      : c.roofShape === 'area'
       ? this._in(c, 'area', 'Usable area (m²)') + this._in(c, 'packing', 'Packing factor') + this._in(c, 'tilt', 'Tilt (°)') + this._in(c, 'azimuth', 'Azimuth (° from north)')
       : this._in(c, 'length', 'Length (m)') + this._in(c, 'width', 'Width (m)')
         + (c.roofShape === 'gable' ? this._in(c, 'pitch', 'Pitch (°)') : this._in(c, 'tilt', 'Rack tilt (°)') + this._in(c, 'azimuth', 'Azimuth (° from north)'))
@@ -139,6 +149,27 @@ const Solar = {
       + this._sizeResult();
   },
 
+  // The roofs on the plan: one row each, edited here, drawn with Plan > Solar > Detect roof.
+  _roofsHtml() {
+    const roofs = PlanSolar.roofs();
+    if (!roofs.length) return `<span style="grid-column:1/-1;font-size:12px">No roofs yet. On the Plan tab pick <strong>Solar › Detect roof</strong> (click inside a building, Detect all, or Draw the outline), then come back.</span>`;
+    const calibrated = !!PlanEngine.factor();
+    const num = (r, k, w = 56) => `<input type="number" step="any" data-roof="${escHtml(r.id)}" data-rk="${k}" value="${escHtml(r[k])}" style="width:${w}px" aria-label="${k}">`;
+    const rows = roofs.map(r => {
+      const a = PlanSolar.usableAreaM2(r);
+      return `<tr><td><input type="checkbox" data-roof="${escHtml(r.id)}" data-rk="use" ${r.use === false ? '' : 'checked'} aria-label="Use ${escHtml(r.name)}"></td>
+        <td>${escHtml(r.name)}</td>
+        <td><select data-roof="${escHtml(r.id)}" data-rk="shape" aria-label="Shape"><option value="gable"${r.shape === 'gable' ? ' selected' : ''}>Gable</option><option value="flat"${r.shape === 'flat' ? ' selected' : ''}>Flat</option></select></td>
+        <td>${r.shape === 'gable' ? num(r, 'pitch') : num(r, 'tilt')}</td><td>${num(r, 'azimuth')}</td><td>${num(r, 'setback', 48)}</td>
+        <td>${a == null ? '–' : a.toFixed(1)}</td>
+        <td><button type="button" class="btn" data-act="delroof" data-v="${escHtml(r.id)}" aria-label="Delete ${escHtml(r.name)}">×</button></td></tr>`;
+    }).join('');
+    return `<div style="grid-column:1/-1;overflow-x:auto"><table style="font-size:12px;border-collapse:collapse;width:100%">
+      <thead><tr><th></th><th align="left">Roof</th><th align="left">Shape</th><th align="left">Pitch / tilt °</th><th align="left">Azimuth °</th><th align="left">Setback m</th><th align="left">Usable m²</th><th></th></tr></thead>
+      <tbody>${rows}</tbody></table>${calibrated ? '' : '<div style="margin-top:6px;font-size:12px;color:#8a2b1e">Calibrate the plan scale so areas can be worked out.</div>'}
+      <div style="margin-top:6px;font-size:11px;color:var(--text-muted,#6d6d6d)">Gable: the north-facing plane (azimuth 0 = north). Flat: racks at the tilt, spaced for the design hour on the Rows step.</div></div>`;
+  },
+
   _sizeResult() {
     const r = this._res;
     if (!r) return '';
@@ -153,10 +184,11 @@ const Solar = {
         ${tile('Array size', r.kwp + ' kWp')}
         ${tile('Annual yield', (r.annual_kwh / 1000).toFixed(1) + ' MWh')}
         ${tile('Specific yield', Math.round(r.specific_yield_kwh_kwp) + ' kWh/kWp')}
-        ${tile('Performance ratio', r.performance_ratio)}
+        ${tile('Performance ratio', r.performance_ratio ?? '–')}
         ${tile('Load covered', r.load_share_pct != null ? r.load_share_pct + ' %' : '–')}
       </div>
       <div style="margin-top:8px;font-size:12px">Size is set by ${lim}${r.dc_ac_ratio ? '; DC/AC ratio ' + r.dc_ac_ratio : ''}.</div>
+      ${r.arrays ? '<div style="margin-top:8px;font-size:12px">' + r.arrays.map(a => escHtml(a.name || 'Roof') + ': ' + a.modules + ' of ' + a.modules_roof + ' modules, ' + a.kwp + ' kWp, ' + Math.round(a.annual_kwh) + ' kWh').join('<br>') + '</div>' : ''}
       <div style="display:flex;gap:3px;align-items:flex-end;height:104px;margin-top:8px" role="img" aria-label="Monthly energy, kWh">${bars}</div>
       ${r.shading_loss_pct != null ? '<div style="margin-top:6px;font-size:12px">Shading loss ' + r.shading_loss_pct + ' %</div>' : ''}
       <div style="margin-top:6px;font-size:11px;color:var(--text-muted,#6d6d6d)">${escHtml(r.data_note)}</div>`;
@@ -247,6 +279,7 @@ const Solar = {
 
   async _act(act, v) {
     if (act === 'tab') { this._tab = v; this.render(); return; }
+    if (act === 'delroof') { PlanSolar.removeRoof(v); this.render(); return; }
     if (this._busy) return;
     this._busy = true;
     try {
@@ -292,6 +325,27 @@ const Solar = {
     const c = this.cfg();
     const g = this.roofArea(c), p = this.panel(c), inv = this.inverter(c);
     let packing = +c.packing;
+    if (g.plan) {
+      const used = PlanSolar.roofs().filter(r => r.use !== false);
+      if (!used.length) throw new Error('No roofs in use. Tick a roof, or draw one on the plan.');
+      const arrays = [];
+      for (const r of used) {
+        let gcr = packing;
+        if (r.shape === 'flat') {
+          const rs = await API.request('/analysis/solar-row-spacing', 'POST', {
+            lat: this._loc(c).lat, tilt_deg: +r.tilt, module_length_m: p.len, hour_angle_deg: +c.hour });
+          gcr = rs.ground_cover_ratio;
+        }
+        arrays.push(...PlanSolar.arrays([r], gcr, packing));
+      }
+      if (!arrays.length) throw new Error('The roofs have no usable area. Calibrate the plan scale and check the setback.');
+      this._res = await API.request('/analysis/solar-size', 'POST', {
+        location: c.location, module: this.moduleBody(p), inverter: this.inverterBody(inv), mode: c.mode, arrays,
+        annual_kwh: +c.annualKwh || null, share_pct: +c.sharePct,
+        obstructions: +c.obsH > 0 ? [{ height_m: +c.obsH, distance_m: +c.obsD, bearing_deg: +c.obsB, width_m: +c.obsW }] : [] });
+      this._str = null; this._prot = null;
+      return;
+    }
     if (g.flat) {
       // racks need row spacing: modules per area = ground cover ratio at the design hour
       const rs = await API.request('/analysis/solar-row-spacing', 'POST', {
