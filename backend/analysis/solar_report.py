@@ -82,19 +82,22 @@ def _pictures(pdf, images):
     for r in range(0, len(ok), 2):
         row = ok[r:r + 2]
         ph = max(pw * h / w for _, _, w, h in row)
-        if pdf.get_y() + ph + 16 > pdf.h - 15:
+        extra = 12 if first else 0                                   # the heading
+        if pdf.get_y() + extra + ph * 0.7 + 10 > pdf.h - 15:         # not even 70 % of the pictures fits: start a page
             pdf.add_page()
         if first:
             _h(pdf, "Roof model")
             first = False
+        room = pdf.h - 15 - pdf.get_y() - 10                         # shrink the row to the page when it is a little too tall
+        k = min(1.0, room / ph) if ph > 0 else 1.0
         y0 = pdf.get_y()
         for c, (title, data, w, h) in enumerate(row):
-            x = pdf.l_margin + c * (pw + gap)
+            x = pdf.l_margin + c * (pw * k + gap)
             pdf.set_xy(x, y0)
             pdf.set_font("Helvetica", "I", 8)
-            pdf.cell(pw, 4, _safe(title))
-            pdf.image(io.BytesIO(data), x=x, y=y0 + 5, w=pw, h=pw * h / w)
-        pdf.set_y(y0 + 5 + ph + 4)
+            pdf.cell(pw * k, 4, _safe(title))
+            pdf.image(io.BytesIO(data), x=x, y=y0 + 5, w=pw * k, h=pw * k * h / w)
+        pdf.set_y(y0 + 5 + ph * k + 4)
 
 
 def _bars(pdf, values, labels, title):

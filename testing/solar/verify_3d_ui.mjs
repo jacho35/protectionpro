@@ -130,6 +130,18 @@ for (const mode of ['gl', '2d']) {
   const n1 = await page.evaluate(() => { const o = PlanSolar.roofs()[0].objects[0]; return { x: o.x, y: o.y }; });
   const f = 0.05, moved = Math.hypot(n1.x - n0.x, n1.y - n0.y) * f;
   check(mode + ': arrow keys nudge the selected object (about 0.55 m after 5 cm + 50 cm)', moved > 0.4 && moved < 0.7, moved.toFixed(2) + ' m');
+  // The plan's picture lies on the ground (a drawn stand-in for a PDF / image underlay)
+  await page.evaluate(async () => {
+    const c = document.createElement('canvas'); c.width = 600; c.height = 400; const g = c.getContext('2d'); g.fillStyle = '#cfe8c8'; g.fillRect(0, 0, 600, 400);
+    const img = new Image(); img.src = c.toDataURL('image/png'); await img.decode();
+    PlanImages._cache.set('ground-test', img);
+    AppState.planMarkup.plans.push({ imageId: 'ground-test', visible: true, offX: -100, offY: -100, rotation: 0, scaleAdj: 1, opacity: 1, imgW: 600, imgH: 400 });
+    Roof3D.view.setView(150, 38); Roof3D.view.draw();
+  });
+  await page.waitForTimeout(300);
+  const tex = await page.evaluate(() => { const v = Roof3D.view; return v.usesGL ? v._glFrame.faces.some(f => f.tex) : v._items.some(i => i.tex); });
+  check(mode + ': the plan picture is drawn on the ground', tex === true);
+  await page.evaluate(() => { AppState.planMarkup.plans = AppState.planMarkup.plans.filter(p => p.imageId !== 'ground-test'); });
   await page.close();
 }
 await browser.close();

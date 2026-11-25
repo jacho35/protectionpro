@@ -230,6 +230,14 @@ class View3D {
       if (it.t === 'f') {
         g.closePath();
         if (it.fillLit) { g.fillStyle = it.fillLit; g.fill(); }
+        if (it.tex && it.tex.img && it.tex.img.complete && (it.tex.img.naturalWidth || it.tex.img.width) && it.sp.length >= 4) {   // a picture on a flat face: orthographic, so an affine map of the image
+          const im = it.tex.img, iw = im.naturalWidth || im.width, ih = im.naturalHeight || im.height, a = it.sp[0], b = it.sp[1], d = it.sp[3];
+          g.save(); g.clip();
+          g.transform((b[0] - a[0]) / iw, (b[1] - a[1]) / iw, (d[0] - a[0]) / ih, (d[1] - a[1]) / ih, a[0], a[1]);
+          g.globalAlpha = it.alpha != null ? it.alpha : 1;
+          g.drawImage(im, 0, 0);
+          g.restore();
+        }
       }
       if (it.stroke) {
         g.strokeStyle = it.stroke; g.lineWidth = it.lw || 1;
@@ -277,7 +285,7 @@ class View3D {
         if (it.fill) {
           const c = G.parseColor(it.fill); c[3] *= alpha;
           const n = it.n || G.faceNormal(it.pts);
-          faces.push({ sp: pts, pts: it.pts, tris: this._tris(it.pts), rgba: c, lit: !!it.lit, n, layer: it.layer, pick: it.pick, d: it.d, noShadow: !!it.noShadow });
+          faces.push({ sp: pts, pts: it.pts, tris: this._tris(it.pts), rgba: c, lit: !!it.lit, n, layer: it.layer, pick: it.pick, d: it.d, noShadow: !!it.noShadow, tex: it.tex && it.tex.img && it.tex.img.complete && (it.tex.img.naturalWidth || it.tex.img.width) ? it.tex : null });
         }
         if (it.stroke) { const c = G.parseColor(it.stroke); c[3] *= alpha; lines.push({ sp: pts.concat([pts[0]]), rgba: c, lw: it.lw || 1, dash: it.dash, layer: it.layer, pick: it.pick, d: it.d }); }
       } else if (it.stroke) {

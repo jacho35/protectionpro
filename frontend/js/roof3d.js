@@ -990,6 +990,13 @@ const Roof3D = {
       for (const it of sc.items) for (const q of it.poly) { xs.push(q[0]); ys.push(q[1]); }
       const g0 = [Math.min(...xs) - 30, Math.min(...ys) - 30], g1 = [Math.max(...xs) + 30, Math.max(...ys) + 30];
       v.face({ pts: [[g0[0], g0[1], -0.03], [g1[0], g0[1], -0.03], [g1[0], g1[1], -0.03], [g0[0], g1[1], -0.03]], fill: '#dfe4dc', layer: 0, lit: true, noShadow: true });
+      const fct = PlanEngine.factor();                                         // the plan's picture (a PDF or image underlay) lies on the ground where it is on the plan
+      if (fct && typeof PlanImages !== 'undefined') for (const pl of (AppState.planMarkup.plans || [])) {
+        if (pl.visible === false) continue;
+        const img = PlanImages.getElementImage(pl.imageId); if (!img || !img.complete || !img.naturalWidth) continue;
+        const w = img.naturalWidth, h = img.naturalHeight, at = (ix, iy) => { const q = PlanEngine.planImageToWorld(pl, ix, iy); return [q.x * fct, -q.y * fct, -0.02]; };
+        v.face({ pts: [at(0, 0), at(w, 0), at(w, h), at(0, h)], fill: '#e8e8e8', tex: { img, uv: [[0, 0], [1, 0], [1, 1], [0, 1]] }, alpha: pl.opacity != null ? pl.opacity : 1, layer: 0.2, lit: true, noShadow: true });
+      }
     }
     for (const it of sc.items) {
       const r = it.roof, P = it.poly, e = it.eave, flat = r.shape === 'flat';
