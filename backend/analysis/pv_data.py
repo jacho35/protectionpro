@@ -6,22 +6,20 @@ these are the "Reset to defaults" values.
 """
 
 PV_MODULES = [
+    # Mirrors PV_PANELS in frontend/js/constants.js (the app's single module list; tests keep them in step).
     # pmax W, STC electrical, temperature coefficients in %/degC, size in m, NOCT degC
-    {"id": "pv_550_mono_144", "name": "550 W mono 144-cell", "pmax_w": 550, "voc_v": 49.5, "vmp_v": 41.5,
-     "isc_a": 13.9, "imp_a": 13.25, "k_voc_pct": -0.27, "k_vmp_pct": -0.34, "k_pmax_pct": -0.35,
-     "length_m": 2.28, "width_m": 1.13, "noct_c": 44, "max_system_v": 1500},
-    {"id": "pv_445_mono_108", "name": "445 W mono 108-cell", "pmax_w": 445, "voc_v": 37.9, "vmp_v": 31.8,
-     "isc_a": 14.0, "imp_a": 14.0, "k_voc_pct": -0.27, "k_vmp_pct": -0.34, "k_pmax_pct": -0.35,
-     "length_m": 1.90, "width_m": 1.10, "noct_c": 44, "max_system_v": 1500},
-    {"id": "pv_400_mono_108", "name": "400 W mono 108-cell", "pmax_w": 400, "voc_v": 37.2, "vmp_v": 31.0,
-     "isc_a": 13.5, "imp_a": 12.9, "k_voc_pct": -0.28, "k_vmp_pct": -0.35, "k_pmax_pct": -0.36,
-     "length_m": 1.77, "width_m": 1.10, "noct_c": 44, "max_system_v": 1500},
-    {"id": "pv_600_mono_156", "name": "600 W mono 156-cell", "pmax_w": 600, "voc_v": 52.9, "vmp_v": 44.0,
-     "isc_a": 14.3, "imp_a": 13.6, "k_voc_pct": -0.25, "k_vmp_pct": -0.32, "k_pmax_pct": -0.34,
-     "length_m": 2.38, "width_m": 1.30, "noct_c": 44, "max_system_v": 1500},
-    {"id": "pv_330_poly_120", "name": "330 W poly 120-cell", "pmax_w": 330, "voc_v": 40.6, "vmp_v": 33.8,
-     "isc_a": 10.2, "imp_a": 9.8, "k_voc_pct": -0.31, "k_vmp_pct": -0.41, "k_pmax_pct": -0.40,
+    {"id": "pv_330_poly", "name": "330 W Poly 72-cell", "pmax_w": 330, "voc_v": 45.9, "vmp_v": 37.8,
+     "isc_a": 9.15, "imp_a": 8.73, "k_voc_pct": -0.29, "k_vmp_pct": -0.37, "k_pmax_pct": -0.40,
      "length_m": 1.96, "width_m": 0.99, "noct_c": 45, "max_system_v": 1000},
+    {"id": "pv_450_mono", "name": "450 W Mono PERC", "pmax_w": 450, "voc_v": 41.5, "vmp_v": 34.5,
+     "isc_a": 13.9, "imp_a": 13.05, "k_voc_pct": -0.27, "k_vmp_pct": -0.35, "k_pmax_pct": -0.35,
+     "length_m": 1.91, "width_m": 1.13, "noct_c": 44, "max_system_v": 1500},
+    {"id": "pv_550_mono", "name": "550 W Mono PERC", "pmax_w": 550, "voc_v": 49.9, "vmp_v": 41.95,
+     "isc_a": 14.0, "imp_a": 13.12, "k_voc_pct": -0.26, "k_vmp_pct": -0.34, "k_pmax_pct": -0.35,
+     "length_m": 2.28, "width_m": 1.13, "noct_c": 44, "max_system_v": 1500},
+    {"id": "pv_600_ntype", "name": "600 W N-type Bifacial", "pmax_w": 600, "voc_v": 45.6, "vmp_v": 38.0,
+     "isc_a": 16.7, "imp_a": 15.8, "k_voc_pct": -0.25, "k_vmp_pct": -0.30, "k_pmax_pct": -0.30,
+     "length_m": 2.38, "width_m": 1.30, "noct_c": 43, "max_system_v": 1500},
 ]
 
 PV_INVERTERS = [

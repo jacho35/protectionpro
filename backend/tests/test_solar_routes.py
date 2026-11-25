@@ -40,7 +40,7 @@ def test_library_lists_modules_inverters_and_hermanus(client, auth):
     r = client.get(f"{API}/solar-library", headers=auth)
     assert r.status_code == 200
     d = r.json()
-    assert len(d["modules"]) >= 5 and len(d["inverters"]) >= 5
+    assert len(d["modules"]) >= 4 and len(d["inverters"]) >= 5
     assert "Hermanus" in [x["name"] for x in d["locations"]]
     assert "Screening" in d["data_note"]
 
@@ -59,7 +59,7 @@ def test_size_round_trip_and_errors(client, auth):
 
 def test_strings_and_row_spacing(client, auth):
     r = client.post(f"{API}/solar-strings", headers=auth, json={
-        "module": "pv_550_mono_144", "inverter": "inv_10k_2mppt", "modules_per_string": 20, "strings_per_mppt": [1, 1]})
+        "module": "pv_550_mono", "inverter": "inv_10k_2mppt", "modules_per_string": 20, "strings_per_mppt": [1, 1]})
     assert r.status_code == 200 and r.json()["ok"] is False
     r = client.post(f"{API}/solar-row-spacing", headers=auth,
                     json={"lat": -25.75, "tilt_deg": 15, "module_length_m": 2.28, "roof_depth_m": 9.2})

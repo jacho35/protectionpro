@@ -1211,6 +1211,10 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('opf-config-modal').style.display = 'none';
   });
 
+  // ── Solar PV design ──
+  document.getElementById('btn-solar').addEventListener('click', () => Solar.open());
+  document.getElementById('btn-close-solar').addEventListener('click', () => Solar.close());
+
   // ── Battery Sizing & Discharge ──
   document.getElementById('btn-battery-sizing').addEventListener('click', () => {
     if (AppState.components.size === 0) {

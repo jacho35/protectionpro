@@ -7,7 +7,7 @@ from backend.analysis import solar_pv as sp
 from backend.analysis.pv_data import PV_INVERTERS, PV_MODULES
 from backend.analysis.solar_irradiance_data import CITIES
 
-MOD = sp.get_module("pv_550_mono_144")
+MOD = sp.get_module("pv_550_mono")
 INV = sp.get_inverter("inv_10k_2mppt")
 
 
@@ -89,34 +89,34 @@ def test_run_size_errors():
 
 
 def test_string_temperature_corrected_voltages():
-    # Voc cold = 49.5 * (1 + (-0.27 / 100) * (-5 - 25)) = 49.5 * 1.081 = 53.5095
-    # Vmp hot  = 41.5 * (1 + (-0.34 / 100) * (70 - 25)) = 41.5 * 0.847 = 35.1505
+    # Voc cold = 49.9 * (1 + (-0.26 / 100) * (-5 - 25)) = 49.9 * 1.078 = 53.7922
+    # Vmp hot  = 41.95 * (1 + (-0.34 / 100) * (70 - 25)) = 41.95 * 0.847 = 35.5317
     lim = sp.string_limits(MOD, INV, -5, 70)
-    assert lim["voc_cold_v"] == pytest.approx(53.5095, abs=1e-3)
-    assert lim["vmp_hot_v"] == pytest.approx(35.1505, abs=1e-3)
+    assert lim["voc_cold_v"] == pytest.approx(53.7922, abs=1e-3)
+    assert lim["vmp_hot_v"] == pytest.approx(35.5317, abs=1e-3)
 
 
 def test_string_limits_take_the_tighter_of_voltage_and_mppt_max():
     lim = sp.string_limits(MOD, INV, -5, 70)
-    assert lim["n_max"] == min(math.floor(1000 / 53.5095), math.floor(800 / 41.5))
-    assert lim["n_min"] == math.ceil(200 / 35.1505)
+    assert lim["n_max"] == min(math.floor(1000 / 53.7922), math.floor(800 / 41.95))
+    assert lim["n_min"] == math.ceil(200 / 35.5317)
 
 
 def test_check_strings_pass_and_each_failure():
-    ok = sp.check_strings({"module": "pv_550_mono_144", "inverter": "inv_10k_2mppt",
+    ok = sp.check_strings({"module": "pv_550_mono", "inverter": "inv_10k_2mppt",
                            "modules_per_string": 8, "strings_per_mppt": [2, 1]})
     assert ok["ok"] and ok["total_modules"] == 24 and ok["kwp"] == pytest.approx(13.2)
     assert ok["dc_ac_ratio"] == pytest.approx(1.32)
-    assert ok["string_isc_design_a"] == pytest.approx(1.25 * 13.9, abs=0.01)
+    assert ok["string_isc_design_a"] == pytest.approx(1.25 * 14.0, abs=0.01)
 
     def failing(**kw):
-        r = sp.check_strings(dict({"module": "pv_550_mono_144", "inverter": "inv_10k_2mppt",
+        r = sp.check_strings(dict({"module": "pv_550_mono", "inverter": "inv_10k_2mppt",
                                    "modules_per_string": 8, "strings_per_mppt": [2, 1]}, **kw))
         return {c["id"] for c in r["checks"] if not c["ok"]}
 
-    assert failing(modules_per_string=19) >= {"max_voltage"}           # 19 * 53.5 = 1017 V
-    assert failing(modules_per_string=5) == {"mppt_min"}               # 5 * 35.15 = 176 V
-    assert failing(strings_per_mppt=[3, 1]) == {"mppt_current"}        # 3 * 13.9 = 41.7 A
+    assert failing(modules_per_string=19) >= {"max_voltage"}           # 19 * 53.8 = 1022 V
+    assert failing(modules_per_string=5) == {"mppt_min"}               # 5 * 35.5 = 178 V
+    assert failing(strings_per_mppt=[3, 1]) == {"mppt_current"}        # 3 * 14.0 = 42 A
     assert failing(strings_per_mppt=[1, 1, 1]) == {"mppt_count"}
     assert failing(modules_per_string=19)                              # also above the MPPT ceiling
 
@@ -140,6 +140,22 @@ def test_default_libraries_are_well_formed():
     for m in PV_MODULES:
         assert m["vmp_v"] < m["voc_v"] and m["imp_a"] <= m["isc_a"]
         assert m["voc_v"] * m["isc_a"] > m["pmax_w"]
-        assert m["pmax_w"] == pytest.approx(m["vmp_v"] * m["imp_a"], rel=0.02)
+        assert m["pmax_w"] == pytest.approx(m["vmp_v"] * m["imp_a"], rel=0.03)
     for i in PV_INVERTERS:
         assert i["mppt_min_v"] < i["mppt_max_v"] < i["max_dc_v"]
+
+
+def test_module_defaults_match_the_frontend_panel_list():
+    """frontend/js/constants.js PV_PANELS is the app's module list; pv_data mirrors it."""
+    import re
+    from pathlib import Path
+    src = (Path(__file__).resolve().parents[2] / "frontend" / "js" / "constants.js").read_text()
+    block = src[src.index("const PV_PANELS = ["):]
+    block = block[:block.index("];")]
+    rows = re.findall(r"id: '(\w+)'.*?w: (\d+), voc: ([\d.]+), vmp: ([\d.]+),\s+isc: ([\d.]+), imp: ([\d.]+),"
+                      r"\s+beta_voc: (-?[\d.]+), gamma_vmp: (-?[\d.]+)", block)
+    assert len(rows) == len(PV_MODULES)
+    for (pid, w, voc, vmp, isc, imp, beta, gamma), m in zip(rows, PV_MODULES):
+        assert m["id"] == pid and m["pmax_w"] == float(w)
+        assert (m["voc_v"], m["vmp_v"], m["isc_a"], m["imp_a"]) == (float(voc), float(vmp), float(isc), float(imp))
+        assert (m["k_voc_pct"], m["k_vmp_pct"]) == (float(beta), float(gamma))

@@ -1318,10 +1318,20 @@ const GROUNDING_CONDUCTOR_MATERIALS = [
 // per module, temperature coefficients in %/°C (negative = falls with heat).
 // Used by the Solar PV array mode for string sizing per IEC 62548.
 const PV_PANELS = [
-  { id: 'pv_330_poly',  name: '330 W Poly 72-cell',     w: 330, voc: 45.9, vmp: 37.8,  isc: 9.15, imp: 8.73,  beta_voc: -0.29, gamma_vmp: -0.37 },
-  { id: 'pv_450_mono',  name: '450 W Mono PERC',        w: 450, voc: 41.5, vmp: 34.5,  isc: 13.9, imp: 13.05, beta_voc: -0.27, gamma_vmp: -0.35 },
-  { id: 'pv_550_mono',  name: '550 W Mono PERC',        w: 550, voc: 49.9, vmp: 41.95, isc: 14.0, imp: 13.12, beta_voc: -0.26, gamma_vmp: -0.34 },
-  { id: 'pv_600_ntype', name: '600 W N-type Bifacial',  w: 600, voc: 45.6, vmp: 38.0,  isc: 16.7, imp: 15.8,  beta_voc: -0.25, gamma_vmp: -0.30 },
+  { id: 'pv_330_poly',  name: '330 W Poly 72-cell',     w: 330, voc: 45.9, vmp: 37.8,  isc: 9.15, imp: 8.73,  beta_voc: -0.29, gamma_vmp: -0.37, k_pmax: -0.40, len: 1.96, wid: 0.99, noct: 45, sysv: 1000 },
+  { id: 'pv_450_mono',  name: '450 W Mono PERC',        w: 450, voc: 41.5, vmp: 34.5,  isc: 13.9, imp: 13.05, beta_voc: -0.27, gamma_vmp: -0.35, k_pmax: -0.35, len: 1.91, wid: 1.13, noct: 44, sysv: 1500 },
+  { id: 'pv_550_mono',  name: '550 W Mono PERC',        w: 550, voc: 49.9, vmp: 41.95, isc: 14.0, imp: 13.12, beta_voc: -0.26, gamma_vmp: -0.34, k_pmax: -0.35, len: 2.28, wid: 1.13, noct: 44, sysv: 1500 },
+  { id: 'pv_600_ntype', name: '600 W N-type Bifacial',  w: 600, voc: 45.6, vmp: 38.0,  isc: 16.7, imp: 15.8,  beta_voc: -0.25, gamma_vmp: -0.30, k_pmax: -0.30, len: 2.38, wid: 1.30, noct: 43, sysv: 1500 },
+];
+
+// PV inverter library for the Solar design tool (frontend/js/solar.js). DC window, per-MPPT current
+// limits and the fault current as a multiple of rated AC current. Mirrored by backend/analysis/pv_data.py.
+const PV_INVERTERS = [
+  { id: 'inv_10k_2mppt',   name: '10 kW, 2 MPPT, 1000 V',   ac_kw: 10,  phases: 3, dc_max_v: 1000, mppt_min_v: 200, mppt_max_v: 800, mppt_count: 2,  mppt_max_a: 30, eff_pct: 98.0, fault_x: 1.1 },
+  { id: 'inv_8k_2mppt',    name: '8 kW, 2 MPPT, 1000 V',    ac_kw: 8,   phases: 3, dc_max_v: 1000, mppt_min_v: 200, mppt_max_v: 800, mppt_count: 2,  mppt_max_a: 30, eff_pct: 97.8, fault_x: 1.1 },
+  { id: 'inv_5k_1mppt',    name: '5 kW, 1 MPPT, 600 V',     ac_kw: 5,   phases: 1, dc_max_v: 600,  mppt_min_v: 120, mppt_max_v: 500, mppt_count: 1,  mppt_max_a: 25, eff_pct: 97.5, fault_x: 1.1 },
+  { id: 'inv_50k_6mppt',   name: '50 kW, 6 MPPT, 1100 V',   ac_kw: 50,  phases: 3, dc_max_v: 1100, mppt_min_v: 200, mppt_max_v: 950, mppt_count: 6,  mppt_max_a: 40, eff_pct: 98.5, fault_x: 1.1 },
+  { id: 'inv_100k_10mppt', name: '100 kW, 10 MPPT, 1100 V', ac_kw: 100, phases: 3, dc_max_v: 1100, mppt_min_v: 200, mppt_max_v: 950, mppt_count: 10, mppt_max_a: 40, eff_pct: 98.6, fault_x: 1.1 },
 ];
 
 // Standard MCCB frame sizes for the custom device dropdown

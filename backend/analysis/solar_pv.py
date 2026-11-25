@@ -201,7 +201,7 @@ def energy_yield(city_name, kwp, tilt, azimuth_n, module, losses=None, inverter_
 
 def run_solar_size(req):
     """Phase 1: size from roof area and / or load, then the yield of the chosen size."""
-    module = get_module(req.get("module", "pv_550_mono_144"))
+    module = get_module(req.get("module", "pv_550_mono"))
     city = req.get("location", "Pretoria")
     tilt = float(req.get("tilt_deg", 20))
     az = float(req.get("azimuth_deg", 0))

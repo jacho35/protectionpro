@@ -1091,7 +1091,7 @@ def study_manager(data: StudyManagerRequest):
 # ---------------------------------------------------------------- Solar PV design (phase 1)
 class SolarSizeRequest(BaseModel):
     location: str = "Pretoria"
-    module: Union[str, dict] = "pv_550_mono_144"
+    module: Union[str, dict] = "pv_550_mono"
     inverter: Optional[Union[str, dict]] = None
     num_inverters: int = 1
     tilt_deg: float = 20.0
