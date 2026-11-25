@@ -533,7 +533,7 @@ const Roof3D = {
     if (this.view) { this.view.destroy(); this.view = null; }
     this.host = host;
     try { this.scene = await this.build(); } catch (e) { this.scene = { items: [], objs: [], north: 0, total: 0, empty: true, error: e.message || String(e) }; }
-    this.view = new View3D(host, { gl: true, labelLayout: true, animate: true, sky: ['#d3e4f3', '#f1f4f8'], label: 'Rotatable 3D view of the roofs. Drag empty space to orbit, right-drag to pan, wheel to zoom; with a tool picked, drag a handle, the gizmo or an object.', yaw: 150, pitch: 32, bg: '#eef0f3' });
+    this.view = new View3D(host, { gl: true, labelLayout: true, animate: true, cube: true, sky: ['#d3e4f3', '#f1f4f8'], label: 'Rotatable 3D view of the roofs. Drag empty space to orbit, right-drag to pan, wheel to zoom; with a tool picked, drag a handle, the gizmo or an object.', yaw: 150, pitch: 32, bg: '#eef0f3' });
     this.view.onDraw = (v) => this.draw(v);
     this.view.onPick = (id, e) => this._pick(id, e);
     this.view.onClick = (id, e) => this._click(id, e);
@@ -601,6 +601,9 @@ const Roof3D = {
   // The view's directional light = the sun of the scene (real shadows in the WebGL view); none when the sun is down.
   _applySun(sc) {
     const v = this.view; if (!v) return;
+    const n = (sc && sc.north) || 0, r = ((Math.round(n / 90) % 4) + 4) % 4, L = ['N', 'E', 'S', 'W'];    // the cube names its sides by true compass: plan-up is true north turned by the plan's north angle
+    v.cubeNorth = n;
+    v.cubeLabels = { '+y': L[(0 - r + 4) % 4], '+x': L[(1 - r + 4) % 4], '-y': L[(2 - r + 4) % 4], '-x': L[(3 - r + 4) % 4], top: 'Top' };
     const s = sc && sc.sun;
     v.sun = s && s.elevation_deg > 0.5 ? { dir: this.sunVec(s.azimuth_deg + (sc.north || 0), s.elevation_deg) } : null;
   },

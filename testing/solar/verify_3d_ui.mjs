@@ -89,6 +89,21 @@ for (const mode of ['gl', '2d']) {
   await page.waitForTimeout(800);
   const p1 = await page.evaluate(() => PlanSolar.roofs()[0].points[0].x);
   check(mode + ': dragging the gizmo X arrow moves the roof', Math.abs(p1 - g.p0) > 1, g.p0.toFixed(1) + ' -> ' + p1.toFixed(1));
+  // View cube: hover lights a face, a click glides to that side, Top looks straight down with north up, Iso comes back
+  await page.evaluate(() => { Roof3D.view.setView(150, 32); });
+  await page.waitForTimeout(700);
+  const cf = async (key) => page.evaluate((key) => { const v = Roof3D.view, r = v.canvas.getBoundingClientRect(); v.draw();
+    if (key === 'home') { const h = v._cube.home; return { x: r.left + (h.x0 + h.x1) / 2, y: r.top + (h.y0 + h.y1) / 2 }; }
+    const f = v._cube.faces.find(f => key === 'side' ? f.key !== 'top' : f.key === key); return { x: r.left + f.poly.reduce((a, q) => a + q[0] / 4, 0), y: r.top + f.poly.reduce((a, q) => a + q[1] / 4, 0), key: f.key }; }, key);
+  let c = await cf('side'); await page.mouse.move(c.x, c.y); await page.waitForTimeout(250);
+  check(mode + ': view cube hover lights the face', await page.evaluate(() => Roof3D.view._cubeHover != null));
+  await page.mouse.click(c.x, c.y); await page.waitForTimeout(800);
+  const want = { '+y': 180, '-y': 0, '+x': -90, '-x': 90 }[c.key];
+  check(mode + ': view cube side face looks from that side', await page.evaluate((w) => Math.abs(Roof3D.view.yaw - w) < 0.5 && Math.abs(Roof3D.view.pitch - 25) < 0.5, want), c.key);
+  c = await cf('top'); await page.mouse.click(c.x, c.y); await page.waitForTimeout(800);
+  check(mode + ': view cube Top looks straight down, north up', await page.evaluate(() => Roof3D.view.pitch > 88 && Math.abs(Roof3D.view.yaw) < 0.5));
+  c = await cf('home'); await page.mouse.click(c.x, c.y); await page.waitForTimeout(800);
+  check(mode + ': view cube Iso returns to the corner view', await page.evaluate(() => Math.abs(Roof3D.view.yaw - 150) < 0.5 && Math.abs(Roof3D.view.pitch - 32) < 0.5));
   // Arrow keys nudge the selected object
   await page.evaluate(() => { Roof3D.tool = 'select'; Roof3D.sel = { roof: PlanSolar.roofs()[0].id, obj: 'o1' }; Roof3D._rebuild(); });
   await page.waitForTimeout(600);

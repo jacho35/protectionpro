@@ -63,10 +63,11 @@ class View3D {
     c.addEventListener('pointercancel', (e) => this._up(e));
     c.addEventListener('wheel', (e) => this._wheel(e), { passive: false });
     c.addEventListener('contextmenu', (e) => e.preventDefault());
-    c.addEventListener('pointerleave', () => { if (this.hoverId != null) { this.hoverId = null; c.style.cursor = ''; if (this.onHover) this.onHover(null); } });
+    c.addEventListener('pointerleave', () => { if (this._cubeHover) { this._cubeHover = null; this.redraw(); } if (this.hoverId != null) { this.hoverId = null; c.style.cursor = ''; if (this.onHover) this.onHover(null); } });
     c.addEventListener('dblclick', (e) => { const [x, y] = this._pos(e); if (this.onDblClick) this.onDblClick(this.pickAt(x, y), e); });
     this.hoverId = null; this._hoverRaf = 0; this._anim = 0; this._ready = false;
     this.onHover = null; this.onDblClick = null;
+    this.cubeLabels = { '+y': 'N', '+x': 'E', '-y': 'S', '-x': 'W', top: 'Top' }; this.cubeNorth = 0; this._cube = null; this._cubeHover = null;
     if (opts.sky) host.style.background = `linear-gradient(${opts.sky[0]}, ${opts.sky[1]})`;       // sky behind a transparent WebGL canvas
     this._ro = new ResizeObserver(() => { this._refit(); this.redraw(); });
     this._ro.observe(host);
@@ -215,6 +216,7 @@ class View3D {
       g.globalAlpha = 1;
       for (const it of list) if (it.t === 'g') this._glow(g, it, k);
       this._drawLabels(g, k, W, H);
+      this._drawCube(g, k, W, H);
       return;
     }
     if (this.glCanvas && !useGL) this.glCanvas.style.display = 'none';
@@ -243,6 +245,7 @@ class View3D {
     }
     g.globalAlpha = 1;
     this._drawLabels(g, k, W, H);
+    this._drawCube(g, k, W, H);
   }
 
   _glow(g, it, k) {
@@ -320,6 +323,62 @@ class View3D {
     return c;
   }
 
+  // ─── View cube (opts.cube) ─────────────────────────────────────────────
+  // A small cube in the corner turned like the scene: the faces are the four sides and the top (labels in `cubeLabels`, turned by the
+  // plan's north angle through `cubeNorth`). Hover lights a face, a click glides to the view from that side (as the Top / From north /
+  // … buttons do); "Iso" under it returns to the corner view. Drawn on the overlay canvas, so it works on both renderers.
+  _cubeLayout(W) {
+    const s = 20, cx = 14 + s + 10, cy = 14 + s + 14;
+    return { s, cx, cy };
+  }
+  _drawCube(g, k, W, H) {
+    if (!this.opts.cube) { this._cube = null; return; }
+    const { s, cx, cy } = this._cubeLayout(W), w = this.viewDir(k);
+    const P = (x, y, z) => { const u = x * k.cy - y * k.sy, v = x * k.sy + y * k.cy; return [cx + u * s, cy - (z * k.cp + v * k.sp) * s]; };
+    const F = [
+      { key: 'top', n: [0, 0, 1], q: [[-1, -1, 1], [1, -1, 1], [1, 1, 1], [-1, 1, 1]], c: '#f4f6f8' },
+      { key: '+y', n: [0, 1, 0], q: [[-1, 1, -1], [1, 1, -1], [1, 1, 1], [-1, 1, 1]], c: '#dfe5ec' },
+      { key: '-y', n: [0, -1, 0], q: [[1, -1, -1], [-1, -1, -1], [-1, -1, 1], [1, -1, 1]], c: '#e9edf2' },
+      { key: '+x', n: [1, 0, 0], q: [[1, 1, -1], [1, -1, -1], [1, -1, 1], [1, 1, 1]], c: '#d5dce5' },
+      { key: '-x', n: [-1, 0, 0], q: [[-1, -1, -1], [-1, 1, -1], [-1, 1, 1], [-1, -1, 1]], c: '#e3e8ee' },
+    ];
+    this._cube = { faces: [], home: { x0: cx - 17, x1: cx + 17, y0: cy + s + 8, y1: cy + s + 24 } };
+    g.save(); g.globalAlpha = 1; g.lineJoin = 'round';
+    for (const f of F) {
+      if (f.n[0] * w[0] + f.n[1] * w[1] + f.n[2] * w[2] <= 0.02) continue;
+      const poly = f.q.map(p => P(p[0], p[1], p[2])), hov = this._cubeHover === f.key;
+      this._cube.faces.push({ key: f.key, poly });
+      g.beginPath(); poly.forEach((p, i) => i ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1])); g.closePath();
+      g.fillStyle = hov ? '#93c5fd' : f.c; g.fill(); g.lineWidth = 1; g.strokeStyle = hov ? '#1d4ed8' : '#8a94a1'; g.stroke();
+      const lab = this.cubeLabels[f.key];
+      if (lab) {
+        const mx = poly.reduce((a, p) => a + p[0] / 4, 0), my = poly.reduce((a, p) => a + p[1] / 4, 0);
+        g.font = '700 10px system-ui, -apple-system, "Segoe UI", sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+        g.fillStyle = hov ? '#0b2a63' : '#3b4452'; g.fillText(lab, mx, my + 0.5);
+      }
+    }
+    const h = this._cube.home, hov = this._cubeHover === 'home';
+    g.fillStyle = hov ? '#93c5fd' : 'rgba(255,255,255,.9)'; g.strokeStyle = hov ? '#1d4ed8' : '#8a94a1';
+    g.beginPath(); g.roundRect ? g.roundRect(h.x0, h.y0, h.x1 - h.x0, h.y1 - h.y0, 4) : g.rect(h.x0, h.y0, h.x1 - h.x0, h.y1 - h.y0); g.fill(); g.stroke();
+    g.font = '600 10px system-ui, -apple-system, "Segoe UI", sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = hov ? '#0b2a63' : '#3b4452';
+    g.fillText('Iso', (h.x0 + h.x1) / 2, (h.y0 + h.y1) / 2 + 0.5);
+    g.restore();
+  }
+  _cubeAt(x, y) {
+    const c = this._cube; if (!c) return null;
+    if (x >= c.home.x0 && x <= c.home.x1 && y >= c.home.y0 && y <= c.home.y1) return 'home';
+    for (const f of c.faces) if (this._inPoly(x, y, f.poly)) return f.key;
+    return null;
+  }
+  // The view from a cube face: the side faces look from that side at a modest pitch, the top looks down, Iso is the corner view.
+  cubeGo(key) {
+    if (this.onCubeView && this.onCubeView(key)) return;
+    const n = this.cubeNorth || 0;
+    if (key === 'home') this.setView(150 + n, 32);
+    else if (key === 'top') this.setView(0, 89);                                 // plan up, as the Top button
+    else this.setView({ '+y': 180, '-y': 0, '+x': -90, '-x': 90 }[key] + n, 25);
+  }
+
   // Labels: with opts.labelLayout they are placed so none overlaps (higher `prio` first, a moved one gets a leader line, one that
   // cannot fit is dropped); otherwise each sits on its anchor.
   _drawLabels(g, k, W, H) {
@@ -379,6 +438,8 @@ class View3D {
       return;
     }
     if (this._ptrs.size > 2) return;
+    const cube = e.button === 0 ? this._cubeAt(x, y) : null;
+    if (cube) { this._drag = { mode: 'cube', key: cube, x, y, moved: false }; return; }
     const panMode = e.button === 2 || e.button === 1 || e.shiftKey;
     const id = panMode ? null : this.pickAt(x, y);
     const h = id != null && this.onPick ? this.onPick(id, e) : null;
@@ -387,6 +448,11 @@ class View3D {
   }
 
   _hoverPick(e) {
+    if (this._cube && e.pointerType !== 'touch') {                                 // the view cube takes the hover first (cheap, no pick pass)
+      const [x, y] = this._pos(e), c = this._cubeAt(x, y);
+      if (c !== this._cubeHover) { this._cubeHover = c; this.canvas.style.cursor = c ? 'pointer' : ''; this.redraw(); }
+      if (c) { if (this.hoverId != null) { this.hoverId = null; if (this.onHover) this.onHover(null); } return; }
+    }
     if (!this.onHover || e.pointerType === 'touch' || this._hoverRaf) return;
     const [x, y] = this._pos(e);
     this._hoverRaf = requestAnimationFrame(() => {
@@ -415,6 +481,7 @@ class View3D {
     const dx = x - d.x, dy = y - d.y;
     if (Math.abs(dx) + Math.abs(dy) > 3) d.moved = true;
     if (!d.moved) return;
+    if (d.mode === 'cube') return;
     if (d.mode === 'obj') { d.handler.move(e, x, y, dx, dy); return; }
     if (d.mode === 'pan') this.pan = [d.pan[0] + dx, d.pan[1] + dy];
     else { this.yaw = d.yaw + dx * 0.4; this.pitch = Math.max(5, Math.min(89.5, d.pitch + dy * 0.3)); }
@@ -427,6 +494,7 @@ class View3D {
     if (!d) return;
     if (d.mode === 'pinch') { if (!this._ptrs.size) this._drag = null; return; }
     this._drag = null;
+    if (d.mode === 'cube') { if (!d.moved) this.cubeGo(d.key); return; }
     if (d.mode === 'obj') { if (d.handler.up) d.handler.up(e, d.moved); return; }
     if (!d.moved && this.onClick) this.onClick(d.id, e);
   }
