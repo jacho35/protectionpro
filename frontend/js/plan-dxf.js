@@ -160,7 +160,8 @@ const PlanDXF = {
           <label>Paper size of the layout sheets ${sel('pdx-paper', papers, st.paper, v => v + ' landscape')}</label>
           <div style="font-size:12px" id="pdx-fit" aria-live="polite"></div>
           <div style="font-size:12px;color:var(--text-muted)">Layout sheets (${sheets.length}): ${sheets.map(s => escHtml(s.name)).join(', ')}. Each shows only its own layers, with a legend of what is on it.
-            ${tpl.available ? `Title block: the ${escHtml(tpl.name || 'company')} template, filled in from Project settings.` : 'No title-block template on this server, so the sheets get a plain frame.'}</div>
+            <span id="pdx-tpl"></span></div>
+          <div id="pdx-tpl-admin" style="display:none;gap:6px;align-items:center;flex-wrap:wrap"><button type="button" class="btn-small" data-tpl="up"></button><button type="button" class="btn-small" data-tpl="del">Remove template</button><input type="file" id="pdx-tpl-file" accept=".dxf" hidden></div>
           <label>Text height on paper ${sel('pdx-h', this.HEIGHTS, st.paperMm, v => v + ' mm')}</label>
           <div style="font-size:12px;color:var(--text-muted)" id="pdx-hint"></div>
           <label>Cable labels ${sel('pdx-lab', Object.keys(this.LABEL_STYLES), st.labels, v => this.LABEL_STYLES[v])}</label>
@@ -188,6 +189,24 @@ const PlanDXF = {
           <button type="button" class="btn-small" data-rev-del="${i}" aria-label="Remove revision">×</button></div>`).join('');
       };
       drawRevs();
+      const showTpl = () => {
+        const t = this._tpl || tpl, admin = typeof Auth !== 'undefined' && Auth.isAdmin && Auth.isAdmin();
+        ov.querySelector('#pdx-tpl').textContent = t.available ? `Title block: the ${t.name || 'company'} template, filled in from Project settings.` : 'No title-block template on this server, so the sheets get a plain frame.' + (admin ? '' : ' An admin can upload one here.');
+        const ad = ov.querySelector('#pdx-tpl-admin'); ad.style.display = admin ? 'flex' : 'none';
+        ad.querySelector('[data-tpl="up"]').textContent = t.available ? 'Replace template…' : 'Upload title-block template…';
+        ad.querySelector('[data-tpl="del"]').style.display = t.available ? '' : 'none';
+      };
+      showTpl();
+      const tplCall = async (method, file) => {
+        const fd = file ? new FormData() : null; if (fd) fd.append('file', file);
+        try {
+          const r = await fetch(`${API_BASE}/plan/dxf-template`, { method, body: fd, headers: API.authHeaders() });
+          if (!r.ok) { let d = `HTTP ${r.status}`; try { const j = await r.json(); if (j.detail) d = j.detail; } catch (_) {} throw new Error(d); }
+          this._tpl = await r.json(); showTpl();
+          if (typeof UI !== 'undefined' && UI.toast) UI.toast(method === 'DELETE' ? 'Title-block template removed.' : 'Title-block template saved. Reopen Export DXF to see its paper sizes.', 'info', 3500);
+        } catch (e) { if (typeof UI !== 'undefined' && UI.toast) UI.toast('Template: ' + e.message, 'error', 5000); }
+      };
+      ov.querySelector('#pdx-tpl-file').addEventListener('change', e => { const f = e.target.files[0]; e.target.value = ''; if (f) tplCall('POST', f); });
       ov.addEventListener('input', e => { const i = e.target.dataset.rev; if (i != null) revs[+i][e.target.dataset.k] = e.target.value; });
       const hint = () => {
         const sc = +ov.querySelector('#pdx-scale').value, mm = +ov.querySelector('#pdx-h').value, paper = ov.querySelector('#pdx-paper').value;
@@ -209,6 +228,7 @@ const PlanDXF = {
       const key = e => { if (e.key === 'Escape') { e.preventDefault(); done(false); } else if (e.key === 'Enter' && e.target.tagName !== 'TEXTAREA' && e.target.tagName !== 'INPUT') { e.preventDefault(); done(true); } };
       document.addEventListener('keydown', key, true);
       ov.addEventListener('click', e => {
+        const tb = e.target.closest('[data-tpl]'); if (tb) { if (tb.dataset.tpl === 'up') ov.querySelector('#pdx-tpl-file').click(); else tplCall('DELETE'); return; }
         const fb = e.target.closest('[data-fit]'); if (fb) { ov.querySelector('#pdx-scale').value = fb.dataset.fit; hint(); return; }
         if (e.target.closest('[data-rev-add]')) { revs.push({ rev: '', desc: '', date: new Date().toISOString().slice(0, 10), by: '' }); drawRevs(); return; }
         const rd = e.target.closest('[data-rev-del]'); if (rd) { revs.splice(+rd.dataset.revDel, 1); drawRevs(); return; }

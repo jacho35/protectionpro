@@ -41,12 +41,57 @@ def template_dir() -> Path:
     return Path(env) if env else Path(__file__).resolve().parents[2] / "templates"
 
 
+def upload_dir() -> Path:
+    """Where a template uploaded from the app is kept: `PP_DXF_UPLOADS`, else next to the database (its volume)."""
+    env = os.environ.get("PP_DXF_UPLOADS")
+    if env:
+        return Path(env)
+    try:
+        from sqlalchemy.engine import make_url
+        from ..models.database import DATABASE_URL
+        u = make_url(DATABASE_URL)
+        if u.get_backend_name() == "sqlite" and u.database and u.database != ":memory:":
+            return Path(u.database).resolve().parent / "dxf_templates"
+    except Exception:
+        pass
+    return template_dir() / "uploaded"
+
+
+def uploaded_path() -> Path:
+    return upload_dir() / "template.dxf"
+
+
+def validate_template(raw: bytes) -> str:
+    """Parse an uploaded DXF; raises ValueError (a message for the user) unless it holds title blocks `…-TB-A0..A4`."""
+    import io
+    try:
+        text = raw.decode("utf-8", "ignore") if raw[:2] != b"\xff\xfe" else raw.decode("utf-16")
+        doc = ezdxf.read(io.StringIO(text))
+    except Exception:
+        try:
+            import tempfile
+            with tempfile.NamedTemporaryFile(suffix=".dxf") as f:
+                f.write(raw); f.flush()
+                doc = ezdxf.readfile(f.name)
+        except Exception as e:
+            raise ValueError(f"Could not read that DXF: {e}")
+    names = [b.name for b in doc.blocks if _TB_RE.search(b.name)]
+    if not names:
+        raise ValueError("That DXF has no title blocks. It needs blocks named like DVM-TB-A1 (one per paper size, A0 to A4).")
+    return _TB_RE.sub("", names[0])
+
+
 def _load_template():
-    """The first DXF in the template folder that has title blocks, read once per file version; None when there is none."""
+    """The first DXF (an uploaded one first, then the template folder) that has title blocks, read once per file
+    version; None when there is none."""
+    files = []
+    up = uploaded_path()
+    if up.is_file():
+        files.append(up)
     d = template_dir()
-    if not d.is_dir():
-        return None
-    for p in sorted(d.glob("*.dxf")) + sorted(d.glob("*.DXF")):
+    if d.is_dir():
+        files += sorted(d.glob("*.dxf")) + sorted(d.glob("*.DXF"))
+    for p in files:
         try:
             mt = p.stat().st_mtime
             hit = _TEMPLATE_CACHE.get(str(p))
