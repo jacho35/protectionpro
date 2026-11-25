@@ -93,18 +93,23 @@ const Roof3D = {
       return false;
     });
   },
+  // Space left over when `n` modules of size `size` are laid in a row of length `space` with `gap` between neighbours (0 when none fit).
+  slack(space, size, gap) {
+    const n = Math.floor((space + gap) / (size + gap) + 1e-9);
+    return n > 0 ? space - (n * size + (n - 1) * gap) : 0;
+  },
   layoutModules(poly, az, pitchDeg, setback, mod, max, g, al, ex) {
     const { u, w } = this.axes(az), t = Math.tan(pitchDeg * Math.PI / 180);
-    const run = mod.len * Math.cos(pitchDeg * Math.PI / 180), wid = mod.wid, out = [];
+    const run = mod.len * Math.cos(pitchDeg * Math.PI / 180), wid = mod.wid, gap = Math.max(0, +mod.gap || 0), out = [];
     const vs = poly.map(p => p[0] * w[0] + p[1] * w[1]), vmin = Math.min(...vs), vmax = Math.max(...vs);
     const at = (v, s) => [w[0] * v + u[0] * s, w[1] * v + u[1] * s];
     const z = (s) => (g.eave != null ? g.eave : this.EAVE_M) + t * (g.smax - s) + 0.04;
     const sh = this.alignShare(al), rowSpace = g.smax - setback - g.ridge, colSpace = vmax - vmin - 2 * setback;
-    const sOff = sh.v * (rowSpace - Math.floor(rowSpace / run + 1e-9) * run), vOff = sh.h * (colSpace - Math.floor(colSpace / wid + 1e-9) * wid);
+    const sOff = sh.v * this.slack(rowSpace, run, gap), vOff = sh.h * this.slack(colSpace, wid, gap);
     for (let k = 0; k < 400; k++) {
-      const s0 = g.smax - setback - sOff - k * run, s1 = s0 - run;      // eave side, ridge side
+      const s0 = g.smax - setback - sOff - k * (run + gap), s1 = s0 - run;      // eave side, ridge side
       if (s1 < g.ridge - 1e-9) break;
-      for (let v = vmin + setback + vOff; v + wid <= vmax - setback + 1e-9; v += wid) {
+      for (let v = vmin + setback + vOff; v + wid <= vmax - setback + 1e-9; v += wid + gap) {
         const cs = [at(v, s0), at(v + wid, s0), at(v + wid, s1), at(v, s1)];
         if (!cs.every(p => this._usable(p, poly, setback - 1e-6)) || this.hitsKeepout(cs, ex)) continue;
         out.push(cs.map(p => [p[0], p[1], z(p[0] * u[0] + p[1] * u[1])]));
@@ -121,12 +126,12 @@ const Roof3D = {
     const ss = poly.map(p => p[0] * u[0] + p[1] * u[1]), smax = Math.max(...ss), smin = Math.min(...ss);
     const vs = poly.map(p => p[0] * w[0] + p[1] * w[1]), vmin = Math.min(...vs), vmax = Math.max(...vs);
     const at = (v, s) => [w[0] * v + u[0] * s, w[1] * v + u[1] * s];
-    const run = mod.len * Math.cos(b), rise = mod.len * Math.sin(b), out = [];
+    const run = mod.len * Math.cos(b), rise = mod.len * Math.sin(b), gap = Math.max(0, +mod.gap || 0), out = [];   // the gap is along a row; the row pitch already holds the space between rows
     const sh = this.alignShare(al), rowSpace = smax - smin - 2 * setback, colSpace = vmax - vmin - 2 * setback;
     const nRows = rowSpace >= run - 1e-9 ? Math.floor((rowSpace - run) / pitch + 1e-9) + 1 : 0;
-    const sOff = nRows ? sh.v * (rowSpace - ((nRows - 1) * pitch + run)) : 0, vOff = sh.h * (colSpace - Math.floor(colSpace / mod.wid + 1e-9) * mod.wid);
+    const sOff = nRows ? sh.v * (rowSpace - ((nRows - 1) * pitch + run)) : 0, vOff = sh.h * this.slack(colSpace, mod.wid, gap);
     for (let s0 = smax - setback - sOff; s0 - run >= smin + setback - 1e-9; s0 -= pitch) {
-      for (let v = vmin + setback + vOff; v + mod.wid <= vmax - setback + 1e-9; v += mod.wid) {
+      for (let v = vmin + setback + vOff; v + mod.wid <= vmax - setback + 1e-9; v += mod.wid + gap) {
         const lo = [at(v, s0), at(v + mod.wid, s0)], hi = [at(v, s0 - run), at(v + mod.wid, s0 - run)];
         if (![...lo, ...hi].every(p => this._usable(p, poly, setback - 1e-6)) || this.hitsKeepout([lo[0], lo[1], hi[1], hi[0]], ex)) continue;
         out.push([[lo[0][0], lo[0][1], zBase + 0.1], [lo[1][0], lo[1][1], zBase + 0.1],
@@ -300,7 +305,7 @@ const Roof3D = {
       const m = RoofPlanes.model(base, r, paz, north), pls = m.planes, use = RoofPlanes.used(pls, r), poly = m.foot;
       const item = { roof: r, poly, base, mods: [], planes: null, pls, use, eave, junctions: m.junctions, unused: r.use === false };   // a roof not in the calculation is still drawn, just without modules
       const ex = PlanSolar.keepoutsM(r), cap = PlanSolar.maxModules(r), max = Math.min(cap, chosen[r.name] != null ? chosen[r.name] : 1e9);   // the roof's own maximum panels caps every layout
-      const setback = Math.max(0, +r.setback || 0);
+      const setback = Math.max(0, +r.setback || 0), mp = PlanSolar.modFor(r, p);
       if (item.unused) {
         if (r.shape === 'gable') item.planes = this.gablePlanes(poly, paz, +r.pitch, eave);
       } else if (PlanSolar.usesPlanes(r)) {
@@ -308,17 +313,17 @@ const Roof3D = {
         for (const gr of RoofPlanes.groups(pls)) {                          // a plane's pieces share the count the calculation chose for it
           if (!use[gr.idx[0]]) continue;
           let rem = chosen[r.name + ' · ' + gr.name] != null ? chosen[r.name + ' · ' + gr.name] : 1e9;
-          for (const i of gr.idx) { rem = Math.min(rem, left); if (rem <= 0) break; const ms = RoofPlanes.layoutPlane(pls[i], poly, setback, p, rem, r.modAlign, ex); item.mods.push(...ms); rem -= ms.length; left -= ms.length; }
+          for (const i of gr.idx) { rem = Math.min(rem, left); if (rem <= 0) break; const ms = RoofPlanes.layoutPlane(pls[i], poly, setback, mp, rem, r.modAlign, ex); item.mods.push(...ms); rem -= ms.length; left -= ms.length; }
         }
       } else if (r.shape === 'gable') {
         const g = this.gablePlanes(poly, paz, +r.pitch, eave);
         item.planes = g;
-        item.mods = this.layoutModules(poly, paz, +r.pitch, setback, p, max, g, r.modAlign, ex);
+        item.mods = this.layoutModules(poly, paz, +r.pitch, setback, mp, max, g, r.modAlign, ex);
       } else {
         const rs = await API.request('/analysis/solar-row-spacing', 'POST', {
           lat: Solar._loc(c).lat, tilt_deg: +r.tilt, module_length_m: p.len, hour_angle_deg: +c.hour });
         item.rowPitch = rs.pitch_m;
-        item.mods = this.layoutRacks(poly, paz, +r.tilt, setback, p, max, rs.pitch_m, eave + this.PARAPET_M, r.modAlign, ex);
+        item.mods = this.layoutRacks(poly, paz, +r.tilt, setback, mp, max, rs.pitch_m, eave + this.PARAPET_M, r.modAlign, ex);
       }
       for (const o of (r.objects || [])) {                                  // vents, chimneys...: boxes standing on the roof
         const cx = o.x * f, cy = -o.y * f, z0 = this.deckZ(item, cx, cy);

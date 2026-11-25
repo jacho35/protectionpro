@@ -252,6 +252,17 @@ const PlanSolar = {
     return out;
   },
 
+  // Space between neighbouring panels on a roof, mm (`roof.panelGap`, 0 = touching). The layouts take it as `mod.gap` in metres.
+  gapMm(roof) { return Math.max(0, Math.min(200, +roof.panelGap || 0)); },
+  modFor(roof, p) { return Object.assign({}, p, { gap: this.gapMm(roof) / 1000 }); },
+  // Share of a roof's area the panels keep once the gap is added around each one: (len × wid) ÷ ((len + gap) × (wid + gap)).
+  // Racks on a flat roof only lose width (the row pitch already holds the space between rows).
+  gapShare(roof, p, flat) {
+    const g = this.gapMm(roof) / 1000;
+    if (!g || !p || !p.len || !p.wid) return 1;
+    return flat ? p.wid / (p.wid + g) : (p.len * p.wid) / ((p.len + g) * (p.wid + g));
+  },
+
   // The engine's array list for the roofs in use. `gcr` is the ground cover ratio for flat roofs.
   arrays(roofs, gcr, packing) {
     const out = [];
@@ -265,6 +276,8 @@ const PlanSolar = {
     return out;
   },
   _arrays(r, gcr, packing, out) {
+    const pn = typeof Solar !== 'undefined' ? Solar.panel(Solar.cfg()) : null, share = this.gapShare(r, pn, false);
+    packing = packing * share;
     if (this.usesPlanes(r)) {                                             // one array per plane in use, each at its own pitch and azimuth
       for (const q of this._planeAreas(r)) out.push({ name: r.name + ' · ' + q.plane.name, area_m2: q.area, packing, tilt_deg: q.plane.pitch, azimuth_deg: q.plane.trueAz });
       return;
@@ -273,7 +286,7 @@ const PlanSolar = {
     if (!area) return;
     out.push(r.shape === 'gable'
       ? { name: r.name, area_m2: area, packing, tilt_deg: +r.pitch, azimuth_deg: +r.azimuth }
-      : { name: r.name, area_m2: area, packing: gcr, tilt_deg: +r.tilt, azimuth_deg: +r.azimuth });
+      : { name: r.name, area_m2: area, packing: gcr * this.gapShare(r, pn, true), tilt_deg: +r.tilt, azimuth_deg: +r.azimuth });
   },
 
   // ── Corner editing (the one gesture set of CLAUDE.md: drag a node, Shift-click an edge adds one,
