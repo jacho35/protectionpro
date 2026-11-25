@@ -13,7 +13,7 @@
   <link rel="stylesheet" href="css/dbcoord.css?v=1.0">
   <link rel="stylesheet" href="css/lightning.css?v=3.5.274">
   <link rel="stylesheet" href="css/rates.css?v=3.5.274">
-  <link rel="stylesheet" href="css/plan.css?v=2.717">
+  <link rel="stylesheet" href="css/plan.css?v=2.730">
   <link rel="stylesheet" href="css/drawingset.css?v=1.542b">
   <link rel="stylesheet" href="css/resultspanel.css?v=2.603">
   <link rel="stylesheet" href="css/overview.css?v=2.595">
@@ -30,7 +30,7 @@
   <link rel="stylesheet" href="css/lighting.css?v=2.708">
   <link rel="stylesheet" href="css/streetlight.css?v=2.600">
   <link rel="stylesheet" href="css/roadlight.css?v=3.5.274">
-  <link rel="stylesheet" href="css/roadplan.css?v=2.710">
+  <link rel="stylesheet" href="css/roadplan.css?v=2.730">
   <link rel="stylesheet" href="css/help.css?v=2.593">
 </head>
 <body>
@@ -322,6 +322,9 @@
             </button><button id="btn-battery-sizing" class="dropdown-item" title="Battery Sizing &amp; Discharge — duty-cycle capacity sizing (IEEE 485-style factors) + SoC / terminal-voltage discharge simulation">
               <svg width="14" height="14" viewBox="0 0 16 16"><rect x="2" y="5" width="11" height="7" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M13 7h1.5v3H13" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M7.5 6.5L5.5 9h2l-1.5 2" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"/></svg>
               Battery Sizing &amp; Discharge
+            </button><button id="btn-solar" class="dropdown-item" title="Solar PV Design — size an array from the roof and / or the load, monthly yield, string checks against the inverter, flat-roof row spacing">
+              <svg width="14" height="14" viewBox="0 0 16 16"><circle cx="8" cy="8" r="3" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4" stroke="currentColor" stroke-width="1.1"/></svg>
+              Solar PV Design
             </button><button id="btn-backup-study" class="dropdown-item" title="Grid-outage backup adequacy &amp; battery autonomy (hybrid PV / BESS)">
               <svg width="14" height="14" viewBox="0 0 16 16"><rect x="3" y="5" width="10" height="7" rx="1" fill="none" stroke="currentColor" stroke-width="1.3"/><line x1="6" y1="3.5" x2="6" y2="5" stroke="currentColor" stroke-width="1.3"/><line x1="10" y1="3.5" x2="10" y2="5" stroke="currentColor" stroke-width="1.3"/><path d="M8.6 6.5L6.8 9h1.6l-1 2 2.8-3H8.6z" fill="currentColor"/></svg>
               Backup Autonomy
@@ -1281,6 +1284,39 @@
       <div class="modal-footer" style="display:flex;justify-content:flex-end;gap:8px;padding:10px 16px">
         <button class="btn" id="btn-opf-cancel">Cancel</button>
         <button class="btn btn-primary" id="btn-opf-run">Run Study</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Solar PV design -->
+  <div id="solar-modal" class="modal" role="dialog" aria-modal="true" aria-label="Solar PV Design" style="display:none">
+    <div class="modal-content" style="max-width:640px">
+      <div class="modal-header">
+        <h3>Solar PV Design</h3>
+        <button class="modal-close" id="btn-close-solar" aria-label="Close">&times;</button>
+      </div>
+      <div class="modal-body"><div id="solar-body"><!-- Populated by JS --></div></div>
+    </div>
+  </div>
+
+  <!-- Solar roofs in 3D -->
+  <div id="roof3d-modal" class="modal" role="dialog" aria-modal="true" aria-label="Solar roofs in 3D" style="display:none">
+    <div class="modal-content" style="max-width:980px;width:96vw">
+      <div class="modal-header">
+        <h3>Solar roofs in 3D</h3>
+        <button class="modal-close" id="btn-close-roof3d" aria-label="Close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div id="roof3d-msg" style="font-size:13px;margin-bottom:8px" role="status"></div>
+        <div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap">
+          <button class="btn" type="button" id="btn-r3-iso">From the north</button>
+          <button class="btn" type="button" id="btn-r3-top">Top</button>
+          <button class="btn" type="button" id="btn-r3-south">From the south</button>
+          <label for="r3-hour" style="margin-left:8px;align-self:center;font-size:13px">Sun (winter solstice)</label>
+          <select id="r3-hour"><option value="-45">09:00</option><option value="-30">10:00</option><option value="0" selected>Noon</option><option value="30">14:00</option><option value="45">15:00</option></select>
+        </div>
+        <div id="roof3d-host" style="position:relative;height:min(560px,62vh)"></div>
+        <div style="font-size:11px;color:var(--text-muted,#6d6d6d);margin-top:6px">Drag to orbit, right-drag to pan, wheel to zoom. Read only: change roofs on the plan or in Solar PV Design.</div>
       </div>
     </div>
   </div>
@@ -2959,7 +2995,7 @@
   <script src="js/lib/xlsx.full.min.js?v=3.5.274"></script>
   <script src="js/lib/pdf.min.js?v=3.5.274"></script>
   <script src="js/iec-60364-data.js?v=3.5.274"></script>
-  <script src="js/constants.js?v=2.729"></script>
+  <script src="js/constants.js?v=2.730"></script>
   <script src="js/vendor-trip-units.js?v=1.0"></script>
   <script src="js/vendor-trip-units-abb.js?v=1.0"></script>
   <script src="js/vendor-trip-units-abb-xt.js?v=3.5.536"></script>
@@ -2983,7 +3019,7 @@
   <script src="js/vendor-trip-units-cbi-de.js?v=1.0"></script>
   <script src="js/cablelib.js?v=2.729"></script>
   <script src="js/conduit.js?v=3.5.274"></script>
-  <script src="js/plan-defs.js?v=2.721"></script>
+  <script src="js/plan-defs.js?v=2.730"></script>
   <script src="js/ui.js?v=3.5.528"></script>
   <script src="js/cases.js?v=2.602"></script>
   <script src="js/casesmanager.js?v=2.602"></script>
@@ -3007,8 +3043,8 @@
   <script src="js/resultspanel.js?v=2.660"></script>
   <script src="js/fixes.js?v=2.660"></script>
   <script src="js/issues.js?v=2.720"></script>
-  <script src="js/sync.js?v=2.609"></script>
-  <script src="js/links.js?v=2.609"></script>
+  <script src="js/sync.js?v=2.730"></script>
+  <script src="js/links.js?v=2.730"></script>
   <script src="js/cablefocus.js?v=3.5.274"></script>
   <script src="js/api.js?v=2.721"></script>
   <script src="js/emailform.js?v=3.5.274"></script>
@@ -3067,14 +3103,14 @@
   <script src="js/schedule-mobile.js?v=1.575b"></script>
   <script src="js/schedules.js?v=2.591"></script>
   <script src="js/searchselect.js?v=2.729"></script>
-  <script src="js/streetlight.js?v=2.721"></script>
+  <script src="js/streetlight.js?v=2.730"></script>
   <script src="js/photoview.js?v=3.5.525"></script>
   <script src="js/roadlight.js?v=2.720"></script>
   <script src="js/view3d.js?v=3.5.316"></script>
-  <script src="js/roadplan.js?v=2.726"></script>
+  <script src="js/roadplan.js?v=2.730"></script>
   <script src="js/roadplan-kerbs.js?v=2.665"></script>
   <script src="js/road3d.js?v=3.5.316"></script>
-  <script src="js/roadplan-circuits.js?v=2.585"></script>
+  <script src="js/roadplan-circuits.js?v=2.730"></script>
   <script src="js/roadlight-report.js?v=2.711"></script>
   <script src="js/sl-diagram.js?v=3.5.274"></script>
   <script src="js/workspaces.js?v=2.703"></script>
@@ -3099,7 +3135,7 @@
   <script src="js/plan-symbols.js?v=2.700"></script>
   <script src="js/plan-layers.js?v=2.618"></script>
   <script src="js/plan-loads.js?v=2.613"></script>
-  <script src="js/plan-engine.js?v=2.717"></script>
+  <script src="js/plan-engine.js?v=2.730"></script>
   <script src="js/plan-images.js?v=3.5.324"></script>
   <script src="js/plan-tools.js?v=2.716"></script>
   <script src="js/plan-sync.js?v=2.729"></script>
@@ -3109,7 +3145,8 @@
   <script src="js/plan-dxf-area.js?v=2.702"></script>
   <script src="js/plan-dxf-import.js?v=2.702"></script>
   <script src="js/plan-workarea.js?v=2.663"></script>
-  <script src="js/plan-roomdetect.js?v=2.693"></script>
+  <script src="js/plan-solar.js?v=2.730"></script>
+  <script src="js/plan-roomdetect.js?v=2.730"></script>
   <script src="js/plan-blocks.js?v=2.705"></script>
   <script src="js/plan-layout.js?v=2.716"></script>
   <script src="js/plan-kerbs.js?v=2.665"></script>
@@ -3139,6 +3176,8 @@
   <script src="js/area3d.js?v=3.5.532"></script>
   <script src="js/obtrusive.js?v=3.5.525"></script>
   <script src="js/emergcalc.js?v=3.5.525"></script>
+  <script src="js/solar.js?v=2.730"></script>
+  <script src="js/roof3d.js?v=2.730"></script>
   <script src="js/lightws.js?v=2.708"></script>
   <script src="js/lightov.js?v=2.714"></script>
   <script src="js/overview.js?v=2.703"></script>
@@ -3155,8 +3194,8 @@
   <script src="js/plan-dd-import.js?v=3.5.313"></script>
   <script src="js/plan-circuits.js?v=2.651"></script>
   <script src="js/plan-bdauto.js?v=2.661"></script>
-  <script src="js/plan-ui.js?v=2.726"></script>
-  <script src="js/plan.js?v=2.726"></script>
+  <script src="js/plan-ui.js?v=2.730"></script>
+  <script src="js/plan.js?v=2.730"></script>
   <script src="js/help.js?v=2.593"></script>
   <script src="js/help-faults.js?v=3.5.274"></script>
   <script src="js/help-flow.js?v=1.571b"></script>
@@ -3166,7 +3205,7 @@
   <script src="js/help-design.js?v=2.726"></script>
   <script src="js/help-workflow.js?v=2.703"></script>
   <script src="js/help-guides.js?v=2.724"></script>
-  <script src="js/app.js?v=2.602"></script>
+  <script src="js/app.js?v=2.730"></script>
   <script src="js/mobile.js?v=2.659"></script>
 </body>
 </html>

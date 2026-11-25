@@ -33,7 +33,7 @@ const HELP_GUIDE_GROUPS = [
 // The guides worth reading first in each project type (Help ▸ Guides lists them on top;
 // every other guide stays in its group below).
 const HELP_GUIDES_FOR_TYPE = {
-  retic: ['project-types', 'demand-plan', 'plan-dxf', 'auto-layout', 'plan-select', 'plan-place', 'street-light', 'road-lighting', 'retic-earth-fault', 'overview-issues', 'quoted'],
+  retic: ['project-types', 'demand-plan', 'plan-dxf', 'auto-layout', 'solar-design', 'plan-select', 'plan-place', 'street-light', 'road-lighting', 'retic-earth-fault', 'overview-issues', 'quoted'],
   building: ['project-types', 'db-schedule', 'db-single-line', 'db-sections', 'db-ga', 'plan-dxf', 'plan-select', 'plan-place', 'overview-issues', 'quoted'],
   network: ['project-types', 'sld-draw', 'sld-edit', 'study-fault', 'study-loadflow', 'study-cable', 'study-duty', 'study-arcflash', 'tcc-read', 'tcc-coordination', 'results-panel', 'overview-issues'],
   lighting: ['project-types', 'road-lighting', 'street-light', 'plan-dxf', 'plan-select'],
@@ -512,6 +512,23 @@ const HELP_GUIDES = [
   ],
   tips: ['On a building plan, a batch is tagged to the nearest board’s next free circuit.'],
   related: [{ help: 'design-plan', label: 'Plan markup (site & floor plans)' }] },
+
+// ───────────────────────────────────────────────────────────────────────────
+{ id: 'solar-design', group: 'retic', title: 'Design a solar PV array',
+  where: 'Analyse ▸ Sizing & installation ▸ Solar PV Design (roofs: Plan ▸ Solar ▸ Detect roof)', time: '15 min', phone: 'Best on a larger screen',
+  intro: 'Size an array from a roof and / or the load, see the monthly and yearly energy, check the strings, size the DC protection and put the array on the single line. The electrical studies (fault, load flow, hosting capacity, the IEC 62548 string checks) are the app’s own, run on the array you place.',
+  steps: [
+    { title: 'Draw the roofs',
+      html: 'On the Plan (calibrate it first) pick <strong>Detect roof</strong> in the Solar group. Click inside a building, or <strong>Draw</strong> its outline. To reshape a roof with the Select tool: drag a corner, <kbd>Shift</kbd>-click an edge to add a corner, <kbd>Alt</kbd>-click or double-click a corner to remove it (a roof keeps three), or double-click an edge to add one. Without a plan you can pick <strong>Gable</strong>, <strong>Flat</strong> or a typed area in the dialog instead.' },
+    { title: 'Size the system',
+      html: 'Open <strong>Solar PV Design</strong>. Pick the location, module and inverter, choose <strong>Roofs drawn on the plan</strong> and set each roof’s shape, pitch or tilt, azimuth (0° = north) and edge setback. Choose whether the roof, the load or the smaller of the two sets the size, then <strong>Calculate</strong>. The irradiance table is approximate: confirm it before relying on the numbers.' },
+    { title: 'Place it and check the strings',
+      html: 'On <strong>Strings</strong>, set the modules per string and press <strong>Place on the SLD and check strings</strong>. The array is an ordinary Solar PV in array mode, so the Properties panel and the Compliance report show the same IEC 62548 checks. On <strong>Shading & studies</strong> pick the bus to connect to, and run Fault analysis, Load flow, Hosting capacity or Compliance on the whole network. A hybrid battery works with Battery sizing, Backup autonomy and the time-series load flow.' },
+    { title: 'Protection, rows and the 3D view',
+      html: '<strong>Protection</strong> sizes the string fuse, the DC isolator and the DC cable, and checks an export limit at the connection point. <strong>Rows</strong> gives the row pitch for tilted racks on a flat roof. <strong>View in 3D</strong> shows the roofs, modules and an obstruction, with the sun at the hour you pick on the winter solstice and the modules in shade.' },
+  ],
+  tips: ['Own modules and inverters can be added on the Library tab; they are kept with the project.', 'Shading loss is worked out from the obstruction on the Shading & studies step; the 3D shadows are a picture of one hour.'],
+  related: [{ help: 'plan-select', label: 'Select and edit many items on a plan' }] },
 
 // ───────────────────────────────────────────────────────────────────────────
 { id: 'auto-layout', group: 'retic', title: 'Lay out a township: erf markers, kiosks, fibre and trenches',

@@ -59,6 +59,7 @@ const PlanTools = {
   // Delete an interior node (bend) of a route under `pt`. Endpoints are the
   // cable's terminals, so they're kept (and a straight 2-point cable has none).
   deleteVertexAt(pt) {
+    if (typeof PlanSolar !== 'undefined' && PlanSolar.removeNodeAt(pt, PlanEngine.view.zoom)) return true;   // a solar roof's corner
     for (const rm of (AppState.planMarkup.rooms || [])) {
       if (!PlanMarkup.selectedIds.has(rm.id) || rm.points.length <= ((rm.kind === 'perimeter' || rm.kind === 'escape' || rm.kind === 'obtrusive') ? 2 : 3)) continue;
       const vi = PlanEngine.findVertexAt(rm.points, pt, 9);
@@ -191,6 +192,13 @@ PlanTools.register({
     }
     // 0c) Alt+click on a node of a route / room / trench removes it (the ends of a route stay)
     if (e.altKey && PlanTools.deleteVertexAt(pt)) return;
+    // 0d) Solar roofs: drag a corner, or a midpoint to add a corner there (no selection needed)
+    if (typeof PlanSolar !== 'undefined') {
+      const nd = PlanSolar.nodeAt(pt, z);
+      if (nd) { this._drag = { kind: 'roofvertex', roof: nd.roof, index: nd.i, moved: false }; return; }
+      const md = PlanSolar.midAt(pt, z);
+      if (md) { PlanSolar.insertNode(md.roof, md.i, md.mid); this._drag = { kind: 'roofvertex', roof: md.roof, index: md.i + 1, moved: true }; return; }
+    }
     // 1) route vertex of an already-selected route (fine control)
     for (const r of pm.routes) {
       if (!PlanMarkup.selectedIds.has(r.id)) continue;
@@ -249,6 +257,11 @@ PlanTools.register({
       PlanMarkup.snapshot(); PlanMarkup.markDirty();
       PlanEngine.requestDraw({ fg: true });
       return;
+    }
+    // 2a0) shift+click on a solar roof's outline inserts a corner there
+    if (e.shiftKey && typeof PlanSolar !== 'undefined') {
+      const rf = PlanSolar.edgeAt(pt, PlanEngine.view.zoom);
+      if (rf) { const q = PlanTools.snap(pt, {}); PlanSolar.insertNode(rf.roof, rf.i, q); return; }
     }
     // 2a) shift+click on the outline of a room / area inserts a corner there
     const roomShift = e.shiftKey && !rhShift ? this._roomEdgeAt(pt) : null;
@@ -331,7 +344,7 @@ PlanTools.register({
     const snapped = PlanTools.snap(pt, {
       ignoreIds: this._drag.kind === 'vertex' ? new Set([this._drag.route.id])
         : (this._drag.kind === 'trenchvertex' || this._drag.kind === 'trenchmid') ? new Set([this._drag.trench.id])
-        : this._drag.kind === 'roomvertex' ? new Set() : new Set([this._drag.el.id]),
+        : (this._drag.kind === 'roomvertex' || this._drag.kind === 'roofvertex') ? new Set() : new Set([this._drag.el.id]),
     });
     if (this._drag.kind === 'element') {
       // Move the whole multi-selection by the same delta.
@@ -351,6 +364,10 @@ PlanTools.register({
       this._drag = { kind: 'trenchvertex', trench: this._drag.trench, index: this._drag.seg + 1, moved: true };
     } else if (this._drag.kind === 'trenchvertex') {
       const p = this._drag.trench.points[this._drag.index];
+      p.x = snapped.x; p.y = snapped.y;
+      this._drag.moved = true;
+    } else if (this._drag.kind === 'roofvertex') {
+      const p = this._drag.roof.points[this._drag.index];
       p.x = snapped.x; p.y = snapped.y;
       this._drag.moved = true;
     } else if (this._drag.kind === 'roomvertex') {

@@ -166,6 +166,10 @@ body.dark-mode #streetlight-workspace {
 .rk-item { display: flex; justify-content: space-between; align-items: center; gap: 4px; border-bottom: 1px solid var(--border, #ddd); padding: 2px 0; }
 .rk-item .btn-small { padding: 1px 6px; font-size: 12px; margin-left: 3px; }
 
+/* The Roads tab's stepper (Design → Roads → Poles → Check → Circuits) replaces the Road plan's own 1-2-3 pills */
+.rp-steps { display: none; }
+.sl-stepper button b { margin-right: 4px; }
+
 /* Roads from the site plan (roadplan-siteplan.js) */
 .rp-siteplan { display: flex; flex-direction: column; gap: 4px; margin: 0 0 8px; padding: 8px 10px; border: 1px solid var(--accent-border, #b9d0f0); background: var(--accent-bg, #eef4fc); border-radius: 6px; font-size: 12px; line-height: 1.4; }
 .rp-siteplan.offer { border-color: #f0cf96; background: #fff6e8; }

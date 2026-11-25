@@ -172,17 +172,18 @@ const StreetLight = {
     ws.innerHTML = `
       <div class="sl-toolbar">
         <span class="sl-title">Street lighting</span>
-        <span class="sl-view-toggle" role="tablist" aria-label="Street lighting view">
-          <button role="tab" data-sl="view" data-view="circuits" title="Circuits: volt drop per pole, earth loop, phase balance">Circuits</button>
-          <button role="tab" data-sl="view" data-view="design" title="Lighting design: lux / luminance on the road cross-section (EN 13201 / SANS 10098-1)">Lighting design</button>
-          <button role="tab" data-sl="view" data-view="plan" title="Road plan: roads of any shape on a plan — poles along them, the light on the road and checks per segment and junction">Road plan</button>
+        <span class="sl-view-toggle sl-stepper" role="tablist" aria-label="Road lighting steps">
+          <button role="tab" data-sl="view" data-view="design" data-step="design" title="Cross-section, class and luminaires: lux / luminance (EN 13201 / SANS 10098-1)"><b>1</b> Design</button>
+          <button role="tab" data-sl="view" data-view="plan" data-step="roads" title="Roads: take them from the site plan, draw a centreline, or trace kerbs from a DXF"><b>2</b> Roads</button>
+          <button role="tab" data-sl="view" data-view="plan" data-step="poles" title="Poles: laid out along the roads, or placed by hand"><b>3</b> Poles</button>
+          <button role="tab" data-sl="view" data-view="plan" data-step="check" title="Check the light: heatmap and the result per segment and junction"><b>4</b> Check</button>
+          <button role="tab" data-sl="view" data-view="circuits" data-step="circuits" title="Circuits: volt drop per pole, earth loop, phase balance"><b>5</b> Circuits</button>
         </span>
         <span class="sl-sep"></span>
         <span class="sl-tb-circuits">
         <button class="btn-small btn-primary" data-sl="new">+ New circuit</button>
         <button class="btn-small" data-sl="quick" title="Size a uniform string before drawing it — save it as a circuit when it works">Quick calc</button>
-        <button class="btn-small" data-sl="sync" title="Create / update circuits from the Plan's street-lighting routes (poles, spans and spurs)">Sync from site plan</button>
-        <button class="btn-small" data-sl="sync-road" title="Create / update circuits and their cables from the Road plan: poles, spans, feeder and spurs">Import from road plan</button>
+        <button class="btn-small" data-sl="build" title="Create / update circuits from the site plan's street-lighting routes and from roads that have a feed point. A drawn route wins; poles on no route are chained from the nearest kiosk (and flagged).">Build circuits</button>
         <span class="sl-sep"></span>
         <span class="ws-pop sl-settings">
           <button type="button" class="btn-small" aria-expanded="false" aria-haspopup="true" title="Volt-drop limits, snaking and loop-in for every circuit">⚙ Settings</button>
@@ -229,7 +230,7 @@ const StreetLight = {
       ws.querySelector('.sl-title').textContent = circ && Workspaces.type() !== 'lighting' ? 'Street lighting' : 'Roads';
       ws.querySelector('[data-view="circuits"]').hidden = !circ;
     }
-    this.setView(this._view || (circ ? 'circuits' : 'design'));
+    this.setView(this._view || (circ && this.circuits.length ? 'circuits' : 'design'));
   },
   _circuitsOn() { return typeof Workspaces === 'undefined' || Workspaces.roadCircuitsOn(); },
 
@@ -247,11 +248,6 @@ const StreetLight = {
     const ws = document.getElementById('streetlight-workspace');
     if (!ws) return;
     const design = this._view === 'design', plan = this._view === 'plan';
-    ws.querySelectorAll('[data-sl="view"]').forEach(b => {
-      const on = b.dataset.view === this._view;
-      b.classList.toggle('active', on);
-      b.setAttribute('aria-selected', on ? 'true' : 'false');
-    });
     ws.querySelector('.sl-tb-circuits').style.display = design || plan ? 'none' : '';
     const setBtn = ws.querySelector('.sl-settings');
     if (setBtn) setBtn.style.display = design || plan ? 'none' : '';
@@ -270,6 +266,34 @@ const StreetLight = {
       this.render();
       this.recompute(0);
     }
+    this.syncStepper();
+  },
+
+  // The stepper reads the work order: Design → Roads → Poles → Check → Circuits.
+  // Roads / Poles / Check are the Road plan's own steps 1 / 2 / 3.
+  stepNow() {
+    if (this._view === 'design') return 'design';
+    if (this._view === 'plan') return typeof RoadPlan !== 'undefined' ? ({ 1: 'roads', 2: 'poles', 3: 'check' })[RoadPlan._step] || 'roads' : 'roads';
+    return 'circuits';
+  },
+  syncStepper() {
+    const ws = document.getElementById('streetlight-workspace');
+    if (!ws) return;
+    const now = this.stepNow();
+    ws.querySelectorAll('[data-sl="view"]').forEach(b => {
+      const on = b.dataset.step === now;
+      b.classList.toggle('active', on);
+      b.setAttribute('aria-selected', on ? 'true' : 'false');
+    });
+  },
+  // A step of the stepper: Roads / Poles / Check open the Road plan at that step.
+  setStep(step) {
+    const n = { roads: 1, poles: 2, check: 3 }[step];
+    if (n && typeof RoadPlan !== 'undefined') {
+      if (this._view !== 'plan') this.setView('plan');
+      if (RoadPlan._step !== n || !RoadPlan._built) RoadPlan.setStep(n);
+      this.syncStepper();
+    } else this.setView(step === 'design' ? 'design' : 'circuits');
   },
 
   // Called when the project is replaced (AppState.reset / fromJSON).
@@ -556,7 +580,7 @@ const StreetLight = {
     const ws = document.getElementById('streetlight-workspace');
     for (const el of ws.querySelectorAll('[data-df]')) el.value = this.defaults[el.dataset.df];
     // Settings › Keep workspaces in sync: the sync pass does what these did.
-    for (const el of ws.querySelectorAll('[data-sl="sync"], [data-sl="sync-road"]')) el.hidden = this._syncOn();
+    for (const el of ws.querySelectorAll('[data-sl="build"]')) el.hidden = this._syncOn();
     const note = ws.querySelector('.sl-rail-foot');
     if (note) note.textContent = (this._syncOn() ? 'Poles drawn on the site plan and roads with a feed point in the road plan are circuits here a moment after each edit. ' : '')
       + 'Each circuit’s load goes to its kiosk or minisub as fixed street-lighting kVA in Demand.';
@@ -597,7 +621,7 @@ const StreetLight = {
     }
     if (orphans.length) html += `<div class="sl-rail-group">Source missing</div>` + orphans.map(item).join('');
     if (!this.circuits.length) {
-      html = `<div class="sl-empty">No circuits yet. Add one, size a string with <b>Quick calc</b>, or pull the poles in from the Plan with <b>Sync from plan</b>.</div>`;
+      html = `<div class="sl-empty">No circuits yet. Add one, size a string with <b>Quick calc</b>, or use <b>Build circuits</b> to pull the poles in from the site plan and the roads.</div>`;
     }
     host.innerHTML = html;
   },
@@ -883,11 +907,10 @@ const StreetLight = {
     if (!b) return;
     const act = b.dataset.sl;
     const c = this.selected;
-    if (act === 'view') this.setView(b.dataset.view);
+    if (act === 'view') this.setStep(b.dataset.step);
     else if (act === 'new') this.newCircuit();
     else if (act === 'quick') this.openQuickCalc();
-    else if (act === 'sync') this.syncFromPlan();
-    else if (act === 'sync-road') { if (typeof RoadPlan !== 'undefined') RoadPlan.openCircuitImport(); }
+    else if (act === 'build') this.buildCircuits();
     else if (act === 'select') { this._selId = b.dataset.id; this.renderRail(); this.renderMain(); this.renderResults(); }
     else if (act === 'diagram' && c) SLDiagram.open(c.id);
     else if (act === 'dup' && c) this.duplicateCircuit(c.id);
@@ -987,6 +1010,70 @@ const StreetLight = {
     UI.toast(`Street lighting: ${r.made} new, ${r.updated} updated circuit(s)${r.skipped ? `, ${r.skipped} pole(s) not connected to a source` : ''}.`, 'success');
   },
 
+  // One action for both pole routes: the site plan's drawn routes (plus poles on no route, chained
+  // from the nearest kiosk and flagged), then roads with a feed point. A plan circuit and a road
+  // that share poles are reported, never merged silently.
+  async buildCircuits() {
+    let r = null;
+    if (typeof RoadPlan !== 'undefined' && RoadPlan.syncPlanPoles) RoadPlan.syncPlanPoles();
+    if (typeof PlanSync !== 'undefined' && AppState.planMarkup && PlanSync._factor()) {
+      r = this._planCore({ guess: true });
+      if (r.made || r.updated) { if (!this.selected) this._selId = this.circuits[0].id; this._afterMutate(true); }
+    }
+    const parts = [];
+    if (r && (r.made || r.updated)) parts.push(`${r.made} new, ${r.updated} updated from the site plan`);
+    if (r && r.guessed) parts.push(`${r.guessed} pole(s) with no route were chained by position — check their order`);
+    const dup = await this._resolveDupes();
+    if (dup.dropped) { this._afterMutate(true); parts.push(`${dup.dropped} duplicate circuit(s) removed`); }
+    if (dup.kept) parts.push(`${dup.kept} pair(s) of circuits on the same poles kept`);
+    if (parts.length) UI.toast('Build circuits: ' + parts.join('. ') + '.', dup.kept ? 'warning' : 'success', 7000);
+    if (typeof RoadPlan !== 'undefined' && RoadPlan.roads.some(x => x.feed)) RoadPlan.openCircuitImport();
+    else if (!parts.length) UI.alert('Nothing to build from: draw street-lighting routes from a kiosk or mini-sub on the site plan, or give a road a feed point in Roads › Poles.');
+  },
+  // Plan circuits and road circuits that are the same poles: a project made before the plan and
+  // the road plan shared one pole set can hold both. [{ plan, road, n }] — poles within 5 m.
+  _planRoadDupes() {
+    const f = typeof PlanSync !== 'undefined' ? PlanSync._factor() : null;
+    if (!f || typeof RoadPlan === 'undefined') return [];
+    const els = PlanSync._elById(), inp = RoadPlan._circuitInput(), out = [];
+    for (const pc of this.circuits.filter(x => x.planKey)) {
+      const pts = pc.poles.filter(p => p.planId && els[p.planId] && els[p.planId].auto !== 'roadlight').map(p => [els[p.planId].x * f, -els[p.planId].y * f]);
+      if (pts.length < 2) continue;
+      for (const rc of this.circuits.filter(x => x.roadKey)) {
+        const rpts = [];
+        for (const r of RoadPlan.roads) if (r.circuitId === rc.id) rpts.push(...((inp.find(x => x.id === r.id) || { poles: [] }).poles));
+        const n = pts.filter(q => rpts.some(p => Math.hypot(p.x - q[0], p.y - q[1]) < 5)).length;
+        if (n >= 2 && n >= pts.length / 2) out.push({ plan: pc, road: rc, n });
+      }
+    }
+    return out;
+  },
+  _removeCircuit(c, linked) {
+    if (linked) this._deleteLinkedCircuit(c);
+    const i = this.circuits.indexOf(c);
+    if (i >= 0) this.circuits.splice(i, 1);
+    delete this._results[c.id];
+    if (this._sent) delete this._sent[c.id];
+    if (this._selId === c.id) this._selId = this.circuits.length ? this.circuits[0].id : null;
+  },
+  // Ask, for each pair, which circuit to keep. The one dropped takes its drawing with it (the
+  // plan's duplicate poles, or the road's feed point), so the next pass does not make it again.
+  async _resolveDupes() {
+    let kept = 0, dropped = 0;
+    for (const d of this._planRoadDupes()) {
+      if (!this.circuits.includes(d.plan) || !this.circuits.includes(d.road)) continue;
+      const m = RoadLight._modal('sl-dupe-modal', 'The same poles are in two circuits',
+        `<p class="rl-lead"><b>${escHtml(d.plan.name)}</b> (drawn on the site plan) and <b>${escHtml(d.road.name)}</b> (from the road plan) share ${d.n} poles. Keep one: the other is removed with its drawing (the plan's duplicate poles, or the road's feed point), so it is not made again. Undo on that plan puts it back.</p>`,
+        '<button class="btn-small" data-m="both">Keep both</button><button class="btn-small" data-m="plan">Keep the site plan’s</button><button class="btn-small btn-primary" data-m="road">Keep the road plan’s</button>');
+      const pick = await RoadLight._modalResult(m);
+      if (pick === 'road') { this._removeCircuit(d.plan, true); dropped++; }
+      else if (pick === 'plan') { this._removeCircuit(d.road, true); dropped++; }
+      else kept++;
+    }
+    return { kept, dropped };
+  },
+
+
   // ── Kept in sync (Settings › Keep workspaces in sync) ──
   // What the pass takes away (a circuit whose poles were all deleted, a pole
   // deleted on the plan) is remembered for the session, so an undo on the
@@ -1021,6 +1108,26 @@ const StreetLight = {
     for (const r of routes) {
       if (PlanSync._effectiveType(r, elById) !== 'sl' || !r.fromId || !r.toId) continue;
       add(r.fromId, r.toId, r); add(r.toId, r.fromId, r);
+    }
+    // Poles on no street-lighting route (Build circuits only): chained from the nearest kiosk /
+    // mini-sub by position, nearest next, each hop within the link limit. Drawn routes win.
+    const guessedPoles = new Set();
+    if (opts.guess) {
+      const maxPx = (typeof RoadCircuits !== 'undefined' ? RoadCircuits.LINK_MAX_M : 60) / factor;
+      const els = Object.values(elById);
+      let free = els.filter(e => e.type === 'pole' && !adj[e.id] && !e.roadPoleId);
+      const sources = els.filter(e => (e.type === 'kiosk' || e.type === 'minisub') && e.reticId);
+      for (const so of sources) {
+        let cur = so;
+        for (;;) {
+          let best = null, bd = maxPx;
+          for (const q of free) { const d = Math.hypot(q.x - cur.x, q.y - cur.y); if (d < bd) { bd = d; best = q; } }
+          if (!best) break;
+          const rt = { id: 'guess_' + cur.id + '_' + best.id, points: [{ x: cur.x, y: cur.y }, { x: best.x, y: best.y }], guessed: true };
+          add(cur.id, best.id, rt); add(best.id, cur.id, rt);
+          guessedPoles.add(best.id); free = free.filter(q => q !== best); cur = best;
+        }
+      }
     }
     const R = AppState.reticulation;
     const srcOf = (el) => {
@@ -1067,6 +1174,7 @@ const StreetLight = {
           out.made++;
         } else { out.updated++; c.planKey = planKey; c.source = src; }
         seenKeys.add(c.planKey);
+        if (poles.some(sp => guessedPoles.has(sp.planId))) { c.guessed = true; out.guessed = (out.guessed || 0) + poles.filter(sp => guessedPoles.has(sp.planId)).length; }
         const old = {};
         for (const p of c.poles) if (p.planId) old[p.planId] = p;
         const idOf = {}, kept = new Set();

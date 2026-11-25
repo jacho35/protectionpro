@@ -140,6 +140,15 @@ const RoadPlan = {
   get roads() { return this.rp.roads; },
   road(id) { return this.roads.find(r => r.id === id) || null; },
   get selRoad() { return this.road(this._selRoad); },
+  // The calculated verdict of one road, read by the Electrical plan's Properties pane
+  // (results are on demand and never saved: 'none' until Light on the plan has run).
+  verdict(id) {
+    const rr = this._res && this._res.roads && !this._resStale ? this._res.roads.find(x => x.id === id) : null;
+    if (!rr) return { state: this._res && this._resStale ? 'stale' : 'none', fail: 0, n: 0 };
+    const segs = rr.segments || [];
+    const fail = segs.filter(x => x.pass === false).length;
+    return { state: rr.pass === null || rr.pass === undefined ? 'none' : (rr.pass ? 'pass' : 'fail'), fail, n: segs.length };
+  },
   _genId(prefix) { return prefix + '_' + (this.rp._seq++); },
   _num(v, d) { const x = parseFloat(v); return isFinite(x) ? x : d; },
   _fmt(v, dp = 2) { return v === null || v === undefined || !isFinite(v) ? '—' : (+v).toFixed(dp); },
@@ -867,9 +876,12 @@ const RoadPlan = {
     } catch (e) {
       UI.alert('Could not read the site plan drawing: ' + (e && e.message ? e.message : e)); return;
     } finally { UI.setBusy && UI.setBusy(false); }
-    await this._setBackground(data, desc.name || 'Site plan', desc.unitM);
+    await this._setBackground(data, desc.name || 'Site plan', desc.unitM, desc);
   },
-  async _setBackground(data, name, knownUnitM) {
+  // `desc`: the site plan's own DXF descriptor — the drawing is then placed where it sits on the
+  // plan (its offset, rotation and scale), in the plan frame (x east, y north, metres), so it lines
+  // up with streets and poles taken from the plan. Without a calibrated plan it keeps its own frame.
+  async _setBackground(data, name, knownUnitM, desc) {
     let unitM = knownUnitM || (data.units && data.units.m);
     if (!unitM) {
       const m = RoadLight._modal('rp-units-modal', 'Drawing units', `<p class="rl-lead">The DXF does not say what its units are. One drawing unit is:</p>
@@ -881,13 +893,18 @@ const RoadPlan = {
     }
     const ents = [], texts = [];
     let npts = 0, truncated = false;
+    const f = desc && typeof PlanEngine !== 'undefined' && typeof PlanDxfImport !== 'undefined' ? PlanEngine.factor() : null;
+    const place = f ? (X, Y) => { const w = PlanDxfImport.worldOf(desc, X, Y); return [+(w.x * f).toFixed(3), +(-w.y * f).toFixed(3)]; } : null;
     const push = (l, flat, closed) => {
       if (npts + flat.length / 2 > 120000) { truncated = true; return; }
       npts += flat.length / 2;
-      ents.push({ l, p: flat.map(v => +(v * unitM).toFixed(3)), c: closed ? 1 : 0 });
+      let out;
+      if (place) { out = []; for (let i = 0; i < flat.length; i += 2) out.push(...place(flat[i], flat[i + 1])); }
+      else out = flat.map(v => +(v * unitM).toFixed(3));
+      ents.push({ l, p: out, c: closed ? 1 : 0 });
     };
     for (const e of data.entities) {
-      if (e.t === 'x' && texts.length < 500 && /[A-Za-z]{3,}/.test(String(e.s || '')) && e.p) { texts.push({ s: String(e.s).replace(/\s+/g, ' ').trim(), x: +(e.p[0] * unitM).toFixed(3), y: +(e.p[1] * unitM).toFixed(3) }); continue; }
+      if (e.t === 'x' && texts.length < 500 && /[A-Za-z]{3,}/.test(String(e.s || '')) && e.p) { { const q = place ? place(e.p[0], e.p[1]) : [+(e.p[0] * unitM).toFixed(3), +(e.p[1] * unitM).toFixed(3)]; texts.push({ s: String(e.s).replace(/\s+/g, ' ').trim(), x: q[0], y: q[1] }); } continue; }
       if (e.t === 'l') push(e.l, e.p, false);
       else if (e.t === 'p' && e.p && e.p.length >= 4) push(e.l, e.p, !!e.c);
       else if (e.t === 'a' || e.t === 'c') {
@@ -902,7 +919,7 @@ const RoadPlan = {
     }
     const layers = (data.layers || []).map(l => ({ name: l.name, color: l.color || '#8a8f98', hidden: !l.on || !!l.frozen }))
       .filter(l => ents.some(e => e.l === l.name));
-    this.rp.bg = { name, unitM, origin: data.origin || [0, 0], layers, ents, texts };
+    this.rp.bg = { name, unitM, origin: data.origin || [0, 0], layers, ents, texts, frame: place ? 'plan' : 'dxf' };
     AppState.dirty = true;
     this.fit();
     this.render();
@@ -1397,6 +1414,7 @@ const RoadPlan = {
       b.classList.toggle('active', on); b.setAttribute('aria-selected', on ? 'true' : 'false');
     });
     this.renderRail(); this.renderToolbar(); this.renderPanel(); this.renderWorld(); this.applyView(); this._hint();
+    if (typeof StreetLight !== 'undefined' && StreetLight.syncStepper) StreetLight.syncStepper();
   },
   // Plan | 3D
   setView3d(on) {
@@ -1942,6 +1960,7 @@ const RoadPlan = {
         break;
       }
       case 'feed-clear': this._feedClear(); break;
+      case 'feed-plan': this.feedFromPlan(); break;
       case 'calc': this.recompute(0); break;
       case 'pick-cl': this._usePicked('cl'); break;
       case 'pick-k1': this._usePicked('k1'); break;

@@ -1211,6 +1211,15 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('opf-config-modal').style.display = 'none';
   });
 
+  // ── Solar PV design ──
+  document.getElementById('btn-solar').addEventListener('click', () => Solar.open());
+  document.getElementById('btn-close-solar').addEventListener('click', () => Solar.close());
+  document.getElementById('btn-close-roof3d').addEventListener('click', () => Roof3D.close());
+  document.getElementById('btn-r3-iso').addEventListener('click', () => Roof3D.view && Roof3D.view.setView(150, 32));
+  document.getElementById('btn-r3-top').addEventListener('click', () => Roof3D.view && Roof3D.view.setView(0, 89));
+  document.getElementById('r3-hour').addEventListener('change', (e) => Roof3D.setHour(e.target.value).catch(err => { document.getElementById('roof3d-msg').textContent = err.message || String(err); }));
+  document.getElementById('btn-r3-south').addEventListener('click', () => Roof3D.view && Roof3D.view.setView(-30, 32));
+
   // ── Battery Sizing & Discharge ──
   document.getElementById('btn-battery-sizing').addEventListener('click', () => {
     if (AppState.components.size === 0) {

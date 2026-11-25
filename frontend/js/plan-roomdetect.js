@@ -844,11 +844,14 @@ Object.assign(PlanRoomDetect, {
 
 Object.assign(PlanRoomDetect, {
   DEFAULT_LAYERS: 'wall|mur|muur|a-wall|walls',
+  ROOF_LAYERS: 'roof|building|bldg|footprint|outline|wall',
+  _defLayers(target) { return target === 'erf' ? this.ERF_LAYERS : target === 'roof' ? this.ROOF_LAYERS : this.DEFAULT_LAYERS; },
   ERF_LAYERS: 'erf|erven|stand|cadastr|parcel|boundary|property|lot|cadastre',
   // Per target: what a region may be (m²) and how thin before it is a wall band.
   LIMITS: {
     room: { maxAreaM2: 5000, minAreaM2: 1, minWidthM: 0.6, noun: 'room', nouns: 'rooms', Noun: 'Room' },
     erf: { maxAreaM2: 20000, minAreaM2: 20, minWidthM: 2, noun: 'erf', nouns: 'erven', Noun: 'Erf' },
+    roof: { maxAreaM2: 5000, minAreaM2: 4, minWidthM: 1.5, noun: 'roof', nouns: 'roofs', Noun: 'Roof' },   // Solar: building outlines (PlanSolar)
   },
   mode: 'create',       // plain click: 'create' now · 'add' to the staged set · 'subtract' from it · 'draw' · 'mark' (erven: toggle unserviced)
   erfServ: false,       // erven created from here on are unserviced (a park, open space, servitude: no supply, cables go round it)
@@ -858,11 +861,11 @@ Object.assign(PlanRoomDetect, {
   opts(target) {
     const s = AppState.planMarkup.settings, erf = target === 'erf';
     // Saved in the project file, so never trust what comes back from it.
-    const key = erf ? 'erfDetect' : 'roomDetect';
+    const key = erf ? 'erfDetect' : target === 'roof' ? 'roofDetect' : 'roomDetect';
     const rd = (s[key] && typeof s[key] === 'object') ? s[key] : (s[key] = {});
     const gap = parseFloat(rd.gapM);
-    rd.gapM = Number.isFinite(gap) ? Math.max(0, Math.min(5, gap)) : (erf ? 0.5 : 1.2);
-    const def = erf ? this.ERF_LAYERS : this.DEFAULT_LAYERS;
+    rd.gapM = Number.isFinite(gap) ? Math.max(0, Math.min(5, gap)) : (erf || target === 'roof' ? 0.5 : 1.2);
+    const def = this._defLayers(target);
     rd.layers = (typeof rd.layers === 'string' && rd.layers.trim()) ? rd.layers.slice(0, 200) : def;
     rd.hatch = rd.hatch !== false;        // outlines of hatched / solid walls on the wall layers count as walls
     rd.sameLayer = rd.sameLayer !== false;   // each layer is its own wall graph: lines of different layers are never joined into one boundary
@@ -1153,6 +1156,7 @@ Object.assign(PlanRoomDetect, {
   _alreadyThere(target, c) {
     const pm = AppState.planMarkup, poly = c.points.map(p => [p.x, p.y]);
     if (target === 'erf') return pm.elements.some(e => e.type === 'erf' && this._pip([e.x, e.y], poly));
+    if (target === 'roof') return PlanSolar.roofs().some(r => r.points && r.points.length >= 3 && this._pip(this._interior(r.points.map(p => [p.x, p.y])), poly));
     return (pm.rooms || []).some(r => (!r.kind || r.kind === 'room' || r.kind === 'outdoor') && r.points && r.points.length >= 3 &&
       this._pip(this._interior(r.points.map(p => [p.x, p.y])), poly));
   },
@@ -1356,6 +1360,8 @@ Object.assign(PlanRoomDetect, {
           name: this._erfName(it.label), reticId: null, props: Object.assign(PLAN_DEFS.defaults('erf'), this.erfServ ? { unserviced: true } : {}),
           boundary: it.points.map(p => ({ x: p.x, y: p.y })) };      // kept so Auto layout can find the erf's front
         pm.elements.push(el); made.push(Object.assign({ points: it.points }, { name: el.name })); ids.push(el.id);
+      } else if (target === 'roof') {
+        const roof = PlanSolar.addRoof(it.points, it.source); made.push(roof); ids.push(roof.id);
       } else {
         const room = { id: AppState.planGenId('pmrm'), name: PlanMarkup.nextCounter('_room', 'Room '),
           points: it.points.map(p => ({ x: p.x, y: p.y })), color: null, source: it.source };
@@ -1440,10 +1446,10 @@ Object.assign(PlanRoomDetect, {
         <span><b style="color:#dc2626">Not closed.</b> ${lk.points.length === 1 ? 'The opening' : lk.points.length + ' openings'} marked in red close${lk.points.length === 1 ? 's' : ''} at ${need.toFixed(1)} m.</span>
         <button type="button" class="plan-btn" data-rd-fixgap="${need}">Set gap to ${need.toFixed(1)} m</button></div>` : '';
     const modeBtn = (v, t) => `<button type="button" class="plan-btn" data-rd-mode="${v}" aria-pressed="${this.mode === v}" style="${this.mode === v ? 'font-weight:600;outline:2px solid var(--accent,#2563eb)' : ''}">${t}</button>`;
-    el.innerHTML = `<div class="plan-props-title">Detect ${lim.noun === 'erf' ? 'erven' : 'rooms'}</div>
+    el.innerHTML = `<div class="plan-props-title">Detect ${lim.nouns}</div>
       <div class="plan-props-body" style="display:flex;flex-direction:column;gap:10px;font-size:13px">
         <button type="button" class="plan-btn" data-rd-all style="font-weight:600">Detect all ${lim.nouns}</button>
-        <p style="margin:0;color:var(--text-muted)">Or click inside one. A plain click ${target === 'erf' ? 'places an erf' : 'creates the room'} now.
+        <p style="margin:0;color:var(--text-muted)">Or click inside one. A plain click ${target === 'erf' ? 'places an erf' : 'creates the ' + lim.noun} now.
           Shift-click adds it to the set below, Alt-click takes it out. Esc to stop.</p>
         <div style="display:flex;gap:6px;flex-wrap:wrap" role="group" aria-label="Click action">${modeBtn('create', 'Create')}${modeBtn('add', 'Add to set')}${modeBtn('subtract', 'Subtract')}${modeBtn('draw', 'Draw')}${target === 'erf' ? modeBtn('mark', 'Mark unserviced') : ''}</div>
         ${target === 'erf' ? `<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap" role="group" aria-label="New erven are"><span>New erven are</span>
@@ -1483,7 +1489,7 @@ Object.assign(PlanRoomDetect, {
       });
     }
     el.querySelector('[data-rd="gap"]').addEventListener('change', (e) => { o.gapM = Math.max(0, Math.min(5, parseFloat(e.target.value) || 0)); PlanMarkup.markDirty(); this.leak = null; PlanEngine.requestDraw({ fg: true }); });
-    el.querySelector('[data-rd="layers"]').addEventListener('change', (e) => { o.layers = e.target.value || (target === 'erf' ? this.ERF_LAYERS : this.DEFAULT_LAYERS); PlanMarkup.markDirty(); });
+    el.querySelector('[data-rd="layers"]').addEventListener('change', (e) => { o.layers = e.target.value || this._defLayers(target); PlanMarkup.markDirty(); });
     const hb = el.querySelector('[data-rd="hatch"]'), hv = el.querySelector('[data-rd="hover"]');
     hb.checked = o.hatch; hv.checked = o.hover && !this._hoverOff; hv.disabled = !!this._hoverOff;
     const sl = el.querySelector('[data-rd="samelayer"]'); sl.checked = o.sameLayer;
@@ -1544,6 +1550,7 @@ if (typeof PlanTools !== 'undefined') {
   });
   PlanTools.register(makeDetectTool('roomdetect', 'room'));
   PlanTools.register(makeDetectTool('erfdetect', 'erf'));
+  PlanTools.register(makeDetectTool('roofdetect', 'roof'));
 }
 
 if (typeof module !== 'undefined' && module.exports) module.exports = PlanRoomDetect;

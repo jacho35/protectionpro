@@ -204,7 +204,7 @@ if (typeof RoadPlan !== 'undefined') Object.assign(RoadPlan, {
       line = sel2 + `<div class="rp-feedline"><b>${escHtml(this._sourceLabel(r.feed.source))}</b>${f ? ` · feeder ${f.mode === 'route' ? 'drawn' : 'straight line'} ${this._fmt(f.routeM, 1)} m + ${f.allowPct} % = <b>${this._fmt(f.lenM, 1)} m</b>` : ''}</div>`;
     }
     return `<div class="rp-block"><div class="rp-block-h"><b>Supply</b></div>${sel}${line}
-      <div class="rp-actions"><button class="btn-small${this._tool === 'feed' ? ' active' : ''}" data-rp-tool="feed" title="Click the source's position, then click bends of the feeder cable; Enter or double-click to finish">${r.feed ? 'Move feed point' : 'Place feed point'}</button>${r.feed ? '<button class="btn-small" data-rp="feed-clear">Remove</button>' : ''}</div></div>
+      <div class="rp-actions"><button class="btn-small${this._tool === 'feed' ? ' active' : ''}" data-rp-tool="feed" title="Click the source's position, then click bends of the feeder cable; Enter or double-click to finish">${r.feed ? 'Move feed point' : 'Place feed point'}</button>${r.feed ? '<button class="btn-small" data-rp="feed-clear">Remove</button>' : ''}${this.planSourceEl(cur) && this._planM() ? '<button class="btn-small" data-rp="feed-plan" title="Put the feed point where this kiosk / mini-sub is drawn on the Electrical plan">Use the plan\'s position</button>' : ''}</div></div>
       ${AppState.keepInSync !== false ? this._panelCircuitsHtml(r) : ''}`;
   },
 
@@ -432,5 +432,117 @@ if (typeof RoadPlan !== 'undefined') Object.assign(RoadPlan, {
     StreetLight._afterMutate(true);
     UI.toast(`Street lighting: ${made} new, ${updated} updated circuit${made + updated === 1 ? '' : 's'} from the road plan.`, 'success', 5000);
     this.renderPanel();
+  },
+});
+
+// ─── Site plan → Roads: the feed point ──────────────────────────────────
+// A road's streets come from the site plan through roadplan-siteplan.js; the feed point can sit where
+// the plan's own kiosk / mini-sub is drawn. Plan frame: x east, y north, metres (the plan's y runs down).
+if (typeof RoadPlan !== 'undefined') Object.assign(RoadPlan, {
+  _planM() { return (typeof PlanEngine !== 'undefined' && AppState.planMarkup) ? PlanEngine.factor() : null; },
+  // The plan's own kiosk / mini-sub for the chosen source
+  planSourceEl(src) {
+    const pm = AppState.planMarkup;
+    return src && pm && Array.isArray(pm.elements) ? pm.elements.find(e => (e.type === 'kiosk' || e.type === 'minisub') && e.reticId === src.id) || null : null;
+  },
+  feedFromPlan() {
+    const r = this.selRoad, f = this._planM();
+    if (!r) { UI.toast('Select a road first.', 'info', 2500); return; }
+    const src = this._feedSrcPick(r), el = this.planSourceEl(src);
+    if (!el || !f) { UI.toast('That source is not drawn on the calibrated plan.', 'info', 3000); return; }
+    r.feed = Object.assign({}, r.feed || {}, { source: src, x: +(el.x * f).toFixed(3), y: +(-el.y * f).toFixed(3), route: (r.feed && r.feed.route) || [] });
+    this._feedSrc = src;
+    this._commit(); this.render();
+  },
+});
+
+// ─── One pole set: road poles are the store, the plan mirrors them ──────────
+// A road pole has a plan pole element (`auto: 'roadlight'`, `roadPoleId`; the road pole keeps
+// `planId`), so the plan shows the lit road's poles and Properties shows their verdict.
+// A pole drawn by hand on the plan (no `sl` route) that stands on a road is adopted: the road
+// gets a moved pole there and the element becomes that pole's mirror (not auto: it stays when
+// the pole is removed). Poles on a drawn route are left alone — a drawn route wins.
+// Position edits go both ways: the side that moved since the last pass wins (`mx`, `my`).
+if (typeof RoadPlan !== 'undefined') Object.assign(RoadPlan, {
+  syncPlanPoles() {
+    const f = this._planM(), pm = AppState.planMarkup;
+    if (!f || !pm || !Array.isArray(pm.elements) || !this.roads.length) return false;
+    const EPS = 0.05;
+    let changed = false, roadsMoved = false;
+    const els = pm.elements;
+    const routed = new Set();
+    for (const rt of (pm.routes || [])) { if (rt.fromId) routed.add(rt.fromId); if (rt.toId) routed.add(rt.toId); }
+    const posOf = (r, p) => { const g = this.poleGeom(r, p); return g ? { x: g.bx, y: g.by } : null; };
+    const byRoadPole = new Map();
+    // Poles the Road plan's *Send poles to the site plan* made (`rpPoleId`, `auto: 'rp'`) are mirrors too.
+    for (const e of els) if (e.type === 'pole' && (e.roadPoleId || e.rpPoleId)) { e.roadPoleId = e.roadPoleId || e.rpPoleId; byRoadPole.set(e.roadPoleId, e); }
+    // 1) adopt hand-placed, unrouted plan poles that stand on a road
+    for (const e of els) {
+      if (e.type !== 'pole' || e.roadPoleId || e.auto || routed.has(e.id)) continue;
+      const x = e.x * f, y = -e.y * f;
+      let best = null;
+      for (const r of this.roads) {
+        const g = this.geom(r), des = this._design(r);
+        if (!g.al.ok || !des || !des.rows.length) continue;
+        const pr = g.al.project(x, y);
+        if (pr.dist > g.xs.width / 2 + 8 || (best && pr.dist >= best.pr.dist)) continue;
+        best = { r, g, des, pr };
+      }
+      if (!best) continue;
+      const { r, g, des, pr } = best;
+      let row = des.rows[0], bd = Infinity;
+      for (const rw of des.rows) { const d = Math.abs(g.xs.off(pr.s, RoadLight._rowGeom(rw, g.xs.lay).poleY) - pr.d); if (d < bd) { bd = d; row = rw; } }
+      const p = { id: this._genId('rpp'), s: +pr.s.toFixed(2), rowId: row.id, moved: true, note: 'from plan', planId: e.id };
+      if (bd > 0.3) p.d = +pr.d.toFixed(2);
+      r.poles.push(p); r.poles.sort((a, b) => a.s - b.s);
+      e.roadPoleId = p.id; e.rpPoleId = p.id; e.rpRoadId = r.id; e.adopted = true;
+      byRoadPole.set(p.id, e);
+      roadsMoved = true; changed = true;
+    }
+    // 2) mirror every road pole; follow whichever side moved
+    const live = new Set();
+    for (const r of this.roads) {
+      const g = this.geom(r);
+      if (!g.al.ok) continue;
+      const names = this._poleNames(r);
+      for (const p of r.poles) {
+        const pos = posOf(r, p);
+        if (!pos) continue;
+        live.add(p.id);
+        let e = byRoadPole.get(p.id);
+        if (!e) {
+          e = { id: AppState.planGenId('pmel'), type: 'pole', x: pos.x / f, y: -pos.y / f, rotation: 0, name: names.get(p.id) || p.name || '', reticId: null, props: {}, auto: 'roadlight', roadPoleId: p.id, rpPoleId: p.id, rpRoadId: r.id, mx: pos.x, my: pos.y };
+          els.push(e); p.planId = e.id; changed = true; continue;
+        }
+        p.planId = e.id;
+        const cx = e.x * f, cy = -e.y * f;
+        const planMoved = e.mx !== undefined && Math.hypot(cx - e.mx, cy - e.my) > EPS;
+        if (planMoved) {
+          const pr = g.al.project(cx, cy);
+          p.s = +pr.s.toFixed(2); p.d = +pr.d.toFixed(2); p.moved = true;
+          const np = posOf(r, p) || { x: cx, y: cy };
+          e.mx = np.x; e.my = np.y; e.x = np.x / f; e.y = -np.y / f;
+          roadsMoved = true; changed = true;
+        } else if (e.mx === undefined || Math.hypot(pos.x - e.mx, pos.y - e.my) > EPS) {
+          e.x = pos.x / f; e.y = -pos.y / f; e.mx = pos.x; e.my = pos.y; changed = true;
+        }
+        if (names.get(p.id) && !e.adopted && e.name !== names.get(p.id)) { e.name = names.get(p.id); changed = true; }
+      }
+    }
+    // 3) a mirror whose road pole is gone: auto ones go, adopted ones become plain plan poles again
+    for (let i = els.length - 1; i >= 0; i--) {
+      const e = els[i];
+      if (!e.roadPoleId || live.has(e.roadPoleId) || e.auto === 'rp') continue;      // a sent pole is removed by Send poles
+      if (e.auto === 'roadlight') els.splice(i, 1);
+      else { delete e.roadPoleId; delete e.rpPoleId; delete e.rpRoadId; delete e.adopted; delete e.mx; delete e.my; }
+      changed = true;
+    }
+    if (roadsMoved) { this._geo.clear(); this._resStale = true; }
+    if (changed) {
+      AppState.dirty = true;
+      if (typeof PlanEngine !== 'undefined') PlanEngine.requestDraw({ all: true });
+      if (this._built) this.render();
+    }
+    return changed;
   },
 });
