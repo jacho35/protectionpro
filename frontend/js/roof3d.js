@@ -277,18 +277,48 @@ const Roof3D = {
     const obsList = (scene.obs ? [scene.obs] : []).concat(scene.objs || []);
     const faces = obsList.flatMap(o => this.boxFaces(o.foot, o.h)).concat(scene.items.filter(it => it.roof.shape === 'flat' && it.poly.length >= 3).flatMap(it => this.parapet(it).inner));      // a flat roof's parapet shades the racks beside it
     const items = scene.items.filter(it => it.mods.length);
+    // the roofs' own bodies (walls, planes, decks, parapets) block the sun too: a taller wing beside an array, a roof's own ridge in a low
+    // sun. Scenes without roof geometry (a hand-made test scene) skip this.
+    const occ = this.occluders({ items: scene.items.filter(it => it.poly && it.poly.length >= 3 && it.eave != null && (Array.isArray(it.pls) || (it.roof && it.roof.shape === 'flat'))) });
     const racks = items.map(it => this._surfaces(it).some(sf => sf.racks));
     const rows = items.map(it => it.mods.map(() => []));
-    const cent = items.map(it => it.mods.map(m => m.reduce((a, p) => [a[0] + p[0] / 4, a[1] + p[1] / 4, a[2] + p[2] / 4], [0, 0, 0])));
+    // Every module as a possible blocker: centre, top height, horizontal radius. For each sun position the modules are bucketed across
+    // the sun's direction, so a module is tested only against the few in its own and the two neighbouring strips that stand in front
+    // of it and are tall enough to reach the ray (a rack roof with 900 modules took 7 s with every pair tested; this takes a fraction).
+    const all = [];
+    items.forEach((it, i) => it.mods.forEach((m, k) => {
+      const c = m.reduce((a, p) => [a[0] + p[0] / 4, a[1] + p[1] / 4, a[2] + p[2] / 4], [0, 0, 0]);
+      let zmax = -Infinity, rh = 0;
+      for (const p of m) { if (p[2] > zmax) zmax = p[2]; rh = Math.max(rh, Math.hypot(p[0] - c[0], p[1] - c[1])); }
+      all.push({ i, k, m, c, zmax, rh, lat: 0, al: 0 });
+    }));
+    const CELL = Math.max(1, 2 * all.reduce((a, b) => Math.max(a, b.rh), 0) + 0.2);
     for (const smp of samples) {
       const s = this.sunVec(smp.azimuth_deg + (scene.north || 0), smp.elevation_deg);
-      items.forEach((it, i) => it.mods.forEach((m, k) => {
-        const c = cent[i][k];
-        let hit = faces.some(f => this.rayHitsQuad(c, s, f));
-        if (!hit && racks[i]) hit = it.mods.some(o => o !== m && this.rayHitsQuad(c, s, o));
-        if (!hit) hit = items.some((jt, j) => j !== i && jt.mods.some(o => this.rayHitsQuad(c, s, o)));
-        rows[i][k].push(hit ? '1' : '0');
-      }));
+      const hh = Math.hypot(s[0], s[1]), up = hh < 1e-6, sx = up ? 0 : s[0] / hh, sy = up ? 0 : s[1] / hh, tanEl = up ? 0 : s[2] / hh;
+      const buckets = new Map();
+      if (!up) for (const a of all) {
+        a.lat = a.c[0] * sy - a.c[1] * sx; a.al = a.c[0] * sx + a.c[1] * sy;
+        const key = Math.floor(a.lat / CELL); let l = buckets.get(key); if (!l) buckets.set(key, l = []); l.push(a);
+      }
+      for (const a of all) {
+        let hit = faces.some(f => this.rayHitsQuad(a.c, s, f));
+        if (!hit && !up) {
+          const kb = Math.floor(a.lat / CELL);
+          search: for (let q = kb - 1; q <= kb + 1; q++) {
+            const l = buckets.get(q); if (!l) continue;
+            for (const b of l) {
+              if (b === a || (b.i === a.i && !racks[a.i])) continue;                 // modules on one pitched plane are coplanar: they cannot shade each other
+              const d = b.al - a.al;
+              if (d < -b.rh || Math.abs(b.lat - a.lat) > b.rh + 0.1) continue;       // behind it, or off to the side of the ray
+              if (a.c[2] + Math.max(0, d - b.rh) * tanEl > b.zmax + 1e-3) continue;   // the ray is already above it
+              if (this.rayHitsQuad(a.c, s, b.m)) { hit = true; break search; }
+            }
+          }
+        }
+        if (!hit && occ.length) hit = this.hidden(a.c, s, occ);
+        rows[a.i][a.k].push(hit ? '1' : '0');
+      }
     }
     const out = [], by = {};
     items.forEach((it, i) => it.mods.forEach((m, k) => {
