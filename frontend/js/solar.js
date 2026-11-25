@@ -39,8 +39,37 @@ const Solar = {
     AppState.dirty = true;
   },
 
-  panel(c) { return PV_PANELS.find(p => p.id === c.module) || PV_PANELS[0]; },
-  inverter(c) { return PV_INVERTERS.find(i => i.id === c.inverter) || PV_INVERTERS[0]; },
+  // Library = the shipped lists (constants.js) + the entries added here, kept with the project (settings.solar).
+  customPanels() { return Array.isArray(this.cfg().customPanels) ? this.cfg().customPanels : []; },
+  customInverters() { return Array.isArray(this.cfg().customInverters) ? this.cfg().customInverters : []; },
+  panels() { return PV_PANELS.concat(this.customPanels()); },
+  inverters() { return PV_INVERTERS.concat(this.customInverters()); },
+  panel(c) { const l = this.panels(); return l.find(p => p.id === c.module) || l[0]; },
+  inverter(c) { const l = this.inverters(); return l.find(i => i.id === c.inverter) || l[0]; },
+
+  PANEL_FIELDS: [['name', 'Name', 'text'], ['w', 'Pmax (W)'], ['voc', 'Voc (V)'], ['vmp', 'Vmp (V)'], ['isc', 'Isc (A)'], ['imp', 'Imp (A)'],
+    ['beta_voc', 'Voc coeff (%/°C)'], ['gamma_vmp', 'Vmp coeff (%/°C)'], ['k_pmax', 'Power coeff (%/°C)'], ['len', 'Length (m)'], ['wid', 'Width (m)'], ['noct', 'NOCT (°C)'], ['sysv', 'Max system V']],
+  INVERTER_FIELDS: [['name', 'Name', 'text'], ['ac_kw', 'AC power (kW)'], ['phases', 'Phases'], ['dc_max_v', 'Max DC V'], ['mppt_min_v', 'MPPT min V'], ['mppt_max_v', 'MPPT max V'],
+    ['mppt_count', 'MPPT inputs'], ['mppt_max_a', 'Max A per MPPT'], ['eff_pct', 'Efficiency (%)'], ['fault_x', 'Fault current (× rated)']],
+
+  // Returns '' when the entry is sound, else what is wrong. Pure.
+  validatePanel(p) {
+    if (!p.name) return 'Give the module a name.';
+    for (const k of ['w', 'voc', 'vmp', 'isc', 'imp', 'len', 'wid', 'noct', 'sysv']) if (!(p[k] > 0)) return `${k} must be a positive number.`;
+    if (p.vmp >= p.voc) return 'Vmp must be below Voc.';
+    if (p.imp > p.isc) return 'Imp cannot be above Isc.';
+    if (p.beta_voc > 0 || p.gamma_vmp > 0 || p.k_pmax > 0) return 'Temperature coefficients are negative (the module loses voltage and power when hot).';
+    return '';
+  },
+  validateInverter(i) {
+    if (!i.name) return 'Give the inverter a name.';
+    for (const k of ['ac_kw', 'dc_max_v', 'mppt_min_v', 'mppt_max_v', 'mppt_count', 'mppt_max_a', 'eff_pct']) if (!(i[k] > 0)) return `${k} must be a positive number.`;
+    if (!(i.mppt_min_v < i.mppt_max_v && i.mppt_max_v <= i.dc_max_v)) return 'Need MPPT min < MPPT max <= max DC voltage.';
+    if (i.eff_pct > 100) return 'Efficiency cannot be above 100 %.';
+    if (![1, 3].includes(i.phases)) return 'Phases must be 1 or 3.';
+    if (!(i.fault_x > 0)) return 'Fault current multiple must be positive.';
+    return '';
+  },
 
   // The module as the engine wants it (values come from the library entry; nothing is hard-coded here).
   moduleBody(p) {
@@ -101,9 +130,9 @@ const Solar = {
 
   render() {
     const c = this.cfg();
-    const tabs = [['size', '1 Roof & size'], ['strings', '2 Strings'], ['rows', '3 Rows (flat roof)'], ['protect', '4 Protection'], ['grid', '5 Shading & grid']];
+    const tabs = [['size', '1 Roof & size'], ['strings', '2 Strings'], ['rows', '3 Rows (flat roof)'], ['protect', '4 Protection'], ['grid', '5 Shading & grid'], ['library', 'Library']];
     const bar = tabs.map(([k, l]) => `<button type="button" class="btn${this._tab === k ? ' btn-primary' : ''}" data-act="tab" data-v="${k}">${l}</button>`).join(' ');
-    const body = { size: () => this._sizeHtml(c), strings: () => this._stringsHtml(c), rows: () => this._rowsHtml(c), protect: () => this._protectHtml(c), grid: () => this._gridHtml(c) }[this._tab]();
+    const body = { size: () => this._sizeHtml(c), strings: () => this._stringsHtml(c), rows: () => this._rowsHtml(c), protect: () => this._protectHtml(c), grid: () => this._gridHtml(c), library: () => this._libraryHtml() }[this._tab]();
     const el = document.getElementById('solar-body');
     el.innerHTML = `<div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap">${bar}</div>${body}`;
     el.querySelectorAll('[data-k]').forEach(i => i.addEventListener('change', () => {
@@ -125,8 +154,8 @@ const Solar = {
 
   _sizeHtml(c) {
     const loc = this._opt(this._locs, c.location, o => o.name, o => o.name);
-    const mod = this._opt(PV_PANELS, c.module, o => o.id, o => o.name);
-    const inv = this._opt(PV_INVERTERS, c.inverter, o => o.id, o => o.name);
+    const mod = this._opt(this.panels(), c.module, o => o.id, o => o.name);
+    const inv = this._opt(this.inverters(), c.inverter, o => o.id, o => o.name);
     const shape = [['plan', 'Roofs drawn on the plan'], ['gable', 'Gable (north plane)'], ['flat', 'Flat with tilted racks'], ['area', 'Type a usable area']];
     const modes = [['min', 'Smaller of roof and load'], ['roof', 'Roof capacity'], ['load', 'Load target']];
     const geo = c.roofShape === 'plan' ? this._roofsHtml()
@@ -254,6 +283,43 @@ const Solar = {
       ${ok ? '' : '<span style="font-size:12px"> check the strings on step 2 first</span>'}</div><div style="margin-top:12px">${rows}</div>${exp}`;
   },
 
+  _libraryHtml() {
+    const form = (kind, fields, title) => `<fieldset style="margin-top:12px;border:1px solid var(--border,#e4e2dc);border-radius:6px;padding:10px"><legend style="font-weight:600">${title}</legend>
+      <div style="display:grid;grid-template-columns:auto 1fr;gap:6px 10px;align-items:center;font-size:13px">${fields.map(([k, l, t]) =>
+        `<label for="sol-lib-${kind}-${k}">${l}</label><input id="sol-lib-${kind}-${k}" data-lib="${kind}" data-lk="${k}" type="${t || 'number'}" step="any" style="max-width:200px"${k === 'phases' ? ' value="3"' : ''}>`).join('')}</div>
+      <button class="btn" type="button" data-act="add${kind}" style="margin-top:8px">Add ${kind === 'panel' ? 'module' : 'inverter'}</button></fieldset>`;
+    const mine = (list, kind) => list.length ? list.map(e => `<div style="display:flex;gap:8px;padding:4px 0"><span style="flex:1">${escHtml(e.name)}</span>
+      <button class="btn" type="button" data-act="del${kind}" data-v="${escHtml(e.id)}" aria-label="Delete ${escHtml(e.name)}">×</button></div>`).join('') : '<div style="font-size:12px;color:var(--text-muted,#6d6d6d)">None yet.</div>';
+    return `<div style="font-size:12px;color:var(--text-muted,#6d6d6d)">The shipped modules and inverters are fixed. Entries you add here are kept with this project.</div>
+      <div style="margin-top:10px;font-weight:600">Your modules</div>${mine(this.customPanels(), 'panel')}${form('panel', this.PANEL_FIELDS, 'New module')}
+      <div style="margin-top:14px;font-weight:600">Your inverters</div>${mine(this.customInverters(), 'inv')}${form('inv', this.INVERTER_FIELDS, 'New inverter')}
+      ${this._libErr ? `<div role="alert" style="margin-top:8px;color:#8a2b1e;font-size:13px">${escHtml(this._libErr)}</div>` : ''}`;
+  },
+
+  _addEntry(kind) {
+    const fields = kind === 'panel' ? this.PANEL_FIELDS : this.INVERTER_FIELDS;
+    const e = {};
+    for (const [k, , t] of fields) {
+      const v = document.getElementById(`sol-lib-${kind}-${k}`).value;
+      e[k] = t === 'text' ? v.trim() : parseFloat(v);
+    }
+    const err = kind === 'panel' ? this.validatePanel(e) : this.validateInverter(e);
+    this._libErr = err;
+    if (err) return;
+    const key = kind === 'panel' ? 'customPanels' : 'customInverters';
+    const list = (kind === 'panel' ? this.customPanels() : this.customInverters()).slice();
+    e.id = 'custom_pv_' + (kind === 'panel' ? 'm' : 'i') + '_' + Date.now().toString(36);
+    list.push(e);
+    this.set(key, list);
+  },
+  _delEntry(kind, id) {
+    const key = kind === 'panel' ? 'customPanels' : 'customInverters';
+    this.set(key, (kind === 'panel' ? this.customPanels() : this.customInverters()).filter(e => e.id !== id));
+    const c = this.cfg();
+    if (kind === 'panel' && c.module === id) this.set('module', this.DEFAULTS.module);
+    if (kind === 'inv' && c.inverter === id) this.set('inverter', this.DEFAULTS.inverter);
+  },
+
   _gridHtml(c) {
     const head = this._grid(`
       <span style="grid-column:1/-1;font-weight:600">Obstruction above the array (applied on step 1, height 0 = none)</span>
@@ -280,6 +346,8 @@ const Solar = {
   async _act(act, v) {
     if (act === 'tab') { this._tab = v; this.render(); return; }
     if (act === 'delroof') { PlanSolar.removeRoof(v); this.render(); return; }
+    if (['addpanel', 'addinv'].includes(act)) { this._addEntry(act.slice(3)); this.render(); return; }
+    if (['delpanel', 'delinv'].includes(act)) { this._delEntry(act.slice(3), v); this.render(); return; }
     if (this._busy) return;
     this._busy = true;
     try {
@@ -398,3 +466,5 @@ const Solar = {
     this.close();
   },
 };
+
+if (typeof module !== "undefined" && module.exports) module.exports = Solar;
