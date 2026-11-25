@@ -103,7 +103,7 @@ const PlanSolarArray = {
     const ex = PlanSolar.keepoutsM(roof), cap = Math.min(1e9, PlanSolar.maxModules(roof), limit == null ? 1e9 : limit);                 // the roof's own maximum panels
     if (PlanSolar.usesPlanes(roof)) {                                       // a layout on every plane in use
       const g = PlanSolar.planesOf(roof), use = g.use;
-      g.planes.forEach((pl, i) => { if (use[i] && mods.length < cap) mods.push(...RoofPlanes.layoutPlane(pl, g.poly, setback, mp, cap - mods.length, roof.modAlign, ex)); });
+      g.planes.forEach((pl, i) => { if (use[i] && mods.length < cap) mods.push(...RoofPlanes.layoutPlane(pl, g.poly, setback, mp, cap - mods.length, roof.modAlign, ex).map(m => { m.pl = pl.name; return m; })); });   // each panel keeps its plane, so the size run can take the count per plane
     } else if (roof.shape === 'gable') {
       const g = Roof3D.gablePlanes(poly, az, +roof.pitch, Roof3D.EAVE_M);
       mods = Roof3D.layoutModules(poly, az, +roof.pitch, setback, mp, cap, g, roof.modAlign, ex);
@@ -112,7 +112,9 @@ const PlanSolarArray = {
       if (rp == null) pending = true;
       else mods = Roof3D.layoutRacks(poly, az, +roof.tilt, setback, mp, cap, rp, 0, roof.modAlign, ex);
     }
-    const lay = { mods: mods.map(m => { const a = m.map(q => [q[0], q[1]]); a.ri = m.ri; a.ci = m.ci; return a; }), n: mods.length, fit: mods.length, kwp: mods.length * p.w / 1000, pending };
+    const byPlane = {};                                                      // placed panels per plane name (plane roofs only)
+    for (const m of mods) if (m.pl != null) byPlane[m.pl] = (byPlane[m.pl] || 0) + 1;
+    const lay = { mods: mods.map(m => { const a = m.map(q => [q[0], q[1]]); a.ri = m.ri; a.ci = m.ci; a.pl = m.pl; return a; }), n: mods.length, fit: mods.length, kwp: mods.length * p.w / 1000, byPlane, pending };
     if (!pending) this._layouts.set(roof.id, { key, lay });
     return lay;
   },
