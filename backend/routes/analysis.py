@@ -1165,6 +1165,23 @@ class SolarProtectionRequest(BaseModel):
     export_limit_kw: Optional[float] = None   # set on the connection point
 
 
+class SolarSunGridRequest(BaseModel):
+    location: str = "Pretoria"
+    lat: Optional[float] = None
+
+
+@router.post("/solar-sun-grid")
+def solar_sun_grid(data: SolarSunGridRequest):
+    """The sun positions (middle day of each month, every solar hour) the 3D roof scene is checked at for annual shading."""
+    return _solar_call(solar_pv.sun_grid, data.model_dump())
+
+
+@router.post("/solar-shading")
+def solar_shading(data: SolarSizeRequest):
+    """Annual shading loss from the 3D scene's per-module shade flags (`arrays[].shade`), on the PVGIS hourly year."""
+    return _solar_call(solar_pv.run_solar_shading, data.model_dump())
+
+
 @router.post("/solar-protection")
 def solar_protection(data: SolarProtectionRequest):
     """String fuses, DC isolator, DC string cable and the export limit."""

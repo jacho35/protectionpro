@@ -582,3 +582,74 @@ def sun_position(lat, hour_angle_deg=0.0):
     if az > 359.99:
         az = 0.0
     return {"elevation_deg": round(elev, 2), "azimuth_deg": round(az, 2), "declination_deg": dec}
+
+
+# ---------------------------------------------------------------- annual shading from the 3D scene
+def run_solar_shading(req):
+    """Annual shading loss from per-module shade flags worked out in the 3D roof scene.
+
+    `arrays`: [{name, tilt_deg, azimuth_deg, modules, per_string, shade}] where `shade` is one string of '0' / '1' per
+    module, one character per entry of `solar_hourly.sun_samples(lat)` (1 = that module's beam is blocked). Modules are
+    chunked into strings of `per_string` in layout order. A string loses beam energy in proportion to its shaded modules
+    (diffuse and ground-reflected stay); it is then run through the same hourly model as the unshaded array, with the
+    inverter's AC capacity shared by kWp. Needs the PVGIS hourly year.
+    """
+    module = get_module(req.get("module", "pv_550_mono"))
+    site, info = resolve_site(dict(req, irradiance_source="pvgis"))
+    if not site.get("tmy"):
+        raise ValueError("Annual shading needs the PVGIS hourly data, which could not be reached")
+    tmy = site["tmy"]
+    inverter = get_inverter(req["inverter"]) if req.get("inverter") else None
+    arrays = req.get("arrays") or []
+    if not arrays:
+        raise ValueError("No roofs given")
+    samples = solar_hourly.sun_samples(site["lat"])
+    idx = solar_hourly.hour_index(tmy)
+    all_mods = sum(int(a["modules"]) for a in arrays)
+    if all_mods <= 0:
+        raise ValueError("No modules to check")
+    ac_total = inverter["ac_kw"] * req.get("num_inverters", 1) if inverter else None
+    eff = inverter["efficiency_pct"] if inverter else None
+    pmax = module["pmax_w"] / 1000.0
+    opts = (site.get("transposition", "perez"), site.get("lid_pct"), site.get("degradation_pct"))
+    un_m, sh_m = [0.0] * 12, [0.0] * 12
+    strings_out = []
+    for a in arrays:
+        n = int(a["modules"])
+        if n <= 0:
+            continue
+        shade = a.get("shade") or []
+        if len(shade) != n or any(len(row) != len(samples) for row in shade):
+            raise ValueError(f"Shade data for '{a.get('name')}' must be {n} modules x {len(samples)} sun positions")
+        flags = [[1 if ch == "1" else 0 for ch in row] for row in shade]
+        per = max(1, int(a.get("per_string") or n))
+        tilt, az = float(a["tilt_deg"]), float(a.get("azimuth_deg", 0))
+        for k0 in range(0, n, per):
+            chunk = flags[k0:k0 + per]
+            kwp = len(chunk) * pmax
+            ac = ac_total * kwp / (all_mods * pmax) if ac_total else None
+            frac = [sum(col) / len(chunk) for col in zip(*chunk)]
+            bf = 1.0 - solar_hourly.shaded_fraction_by_hour(idx, samples, frac)
+            clear = solar_hourly.hourly_yield(tmy, kwp, tilt, az, module, req.get("losses"), eff, None, ac, *opts)
+            shaded = solar_hourly.hourly_yield(tmy, kwp, tilt, az, module, req.get("losses"), eff, None, ac, *opts, beam_factor=bf)
+            for i in range(12):
+                un_m[i] += clear["months"][i]["kwh"]
+                sh_m[i] += shaded["months"][i]["kwh"]
+            strings_out.append({"array": a.get("name"), "string": k0 // per + 1, "modules": len(chunk), "kwp": round(kwp, 3),
+                                "unshaded_kwh": clear["annual_kwh"], "shaded_kwh": shaded["annual_kwh"],
+                                "loss_pct": round(100.0 * (1 - shaded["annual_kwh"] / clear["annual_kwh"]), 2) if clear["annual_kwh"] else 0.0})
+    un, sh = sum(un_m), sum(sh_m)
+    return {"irradiance_source": info["irradiance_source"], "attribution": info.get("attribution"), "samples": len(samples),
+            "unshaded_kwh": round(un, 0), "shaded_kwh": round(sh, 0), "loss_pct": round(100.0 * (1 - sh / un), 2) if un else 0.0,
+            "months": [{"month": i + 1, "unshaded_kwh": round(un_m[i], 1), "shaded_kwh": round(sh_m[i], 1),
+                        "loss_pct": round(100.0 * (1 - sh_m[i] / un_m[i]), 2) if un_m[i] else 0.0} for i in range(12)],
+            "strings": strings_out,
+            "note": "Beam shading from the 3D roof scene on the middle day of each month at every solar hour; a string loses beam energy "
+                    "in proportion to its shaded modules. Replaces the horizon-based shading figure for these roofs."}
+
+
+def sun_grid(req):
+    """The sun positions the 3D scene must be checked at for this site (see solar_hourly.sun_samples)."""
+    site = get_city(req.get("location", "Pretoria"))
+    lat = float(req["lat"]) if req.get("lat") is not None else site["lat"]
+    return {"lat": lat, "samples": solar_hourly.sun_samples(lat)}

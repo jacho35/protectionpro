@@ -49,8 +49,9 @@ _PEREZ = np.array([
     [0.6777470, -0.3272588, -0.2504286, 0.1561313, -1.3765031, 0.2506212]])
 
 
-def _sun(tmy):
-    """Per hour: sun elevation (rad), azimuth from north (rad), day of year, month index, extraterrestrial normal W/m2."""
+def _sun(tmy, with_solar_time=False):
+    """Per hour: sun elevation (rad), azimuth from north (rad), month index, extraterrestrial normal W/m2
+    (and, with_solar_time, the solar time in hours as a fifth value)."""
     ts = tmy["time"]
     mon = np.array([int(t[4:6]) for t in ts])
     day = np.array([int(t[6:8]) for t in ts])
@@ -70,6 +71,8 @@ def _sun(tmy):
     north = np.sin(dec) * np.cos(phi) - np.cos(dec) * np.sin(phi) * np.cos(w)
     az = np.arctan2(east, north) % (2 * math.pi)
     i0n = GSC * (1 + 0.033 * np.cos(2 * math.pi * n / 365.0))
+    if with_solar_time:
+        return el, az, mon - 1, i0n, st
     return el, az, mon - 1, i0n
 
 
@@ -145,14 +148,18 @@ def inverter_ac(pdc_kw, ac_kw, eff_pct):
 
 
 def hourly_yield(tmy, kwp, tilt, azimuth_n, module, losses=None, inverter_eff_pct=None, horizon=None, ac_kw=None,
-                 transposition="perez", lid_pct=None, degradation_pct=None):
+                 transposition="perez", lid_pct=None, degradation_pct=None, beam_factor=None):
     """Monthly and annual AC energy for kwp at one orientation from the hourly year. Same result shape as
-    solar_pv.energy_yield, plus clipping and the lifetime table."""
+    solar_pv.energy_yield, plus clipping and the lifetime table. `beam_factor` (8760 values, 0..1) scales the beam
+    component hour by hour: the share of the beam NOT blocked by 3D shading (diffuse and ground stay)."""
     loss = dict(DEFAULT_LOSSES)
     loss.update(losses or {})
     gamma = module.get("k_pmax_pct", -0.35) / 100.0
     noct = module.get("noct_c", 44)
     p = plane_of_array(tmy, tilt, azimuth_n, transposition, horizon)
+    if beam_factor is not None:
+        p["beam"] = p["beam"] * np.asarray(beam_factor, float)
+        p["poa"] = p["beam"] + p["sky"] + p["ground"]
     beta = tilt * RAD
     cos_i = p["cos_i"]
     f_beam = _aoi_factor(cos_i)
@@ -202,3 +209,56 @@ def hourly_yield(tmy, kwp, tilt, azimuth_n, module, losses=None, inverter_eff_pc
             "clipping_kwh": round(clip_kwh, 0),
             "clipping_loss_pct": round(100.0 * clip_kwh / (annual + clip_kwh), 2) if annual + clip_kwh > 0 else 0.0,
             "lifetime": years, "lid_pct": lid, "degradation_pct_yr": deg, "model": f"hourly, {transposition} sky"}
+
+
+# ---------------------------------------------------------------- annual 3D shading
+SHADE_HOURS = range(5, 20)          # solar hours sampled each day
+MID_DAY = [15, 46, 74, 105, 135, 166, 196, 227, 258, 288, 319, 349]   # mid-month day of year
+
+
+def sun_samples(lat):
+    """Sun positions the 3D scene is asked about: the middle day of each month at every whole solar hour with the sun
+    above 1 degree. [{month 1-12, hour, azimuth_deg (from north), elevation_deg}], always the same order for a latitude."""
+    out = []
+    phi = lat * RAD
+    for m, n in enumerate(MID_DAY, start=1):
+        b = 2 * math.pi * (n - 1) / 365.0
+        dec = (0.006918 - 0.399912 * math.cos(b) + 0.070257 * math.sin(b) - 0.006758 * math.cos(2 * b)
+               + 0.000907 * math.sin(2 * b) - 0.002697 * math.cos(3 * b) + 0.00148 * math.sin(3 * b))
+        for h in SHADE_HOURS:
+            w = (h - 12.0) * 15.0 * RAD
+            sin_el = math.sin(phi) * math.sin(dec) + math.cos(phi) * math.cos(dec) * math.cos(w)
+            el = math.degrees(math.asin(max(-1.0, min(1.0, sin_el))))
+            if el <= 1.0:
+                continue
+            east = -math.cos(dec) * math.sin(w)
+            north = math.sin(dec) * math.cos(phi) - math.cos(dec) * math.sin(phi) * math.cos(w)
+            out.append({"month": m, "hour": h, "azimuth_deg": round(math.degrees(math.atan2(east, north)) % 360.0, 3),
+                        "elevation_deg": round(el, 3)})
+    return out
+
+
+def hour_index(tmy):
+    """(month index, sampled solar hour, sun-up mask) per TMY hour, computed once per site."""
+    el, _, mon, _, st = _sun(tmy, True)
+    hour = np.clip(np.rint(st), min(SHADE_HOURS), max(SHADE_HOURS)).astype(int)
+    return mon, hour, el > 0
+
+
+def shaded_fraction_by_hour(idx, samples, frac):
+    """Per TMY hour, the share of a string's modules in shade, `frac` being that share at each sample. Hours between
+    samples take the nearest sampled solar hour of the same month; a month with no sample is unshaded."""
+    mon, hour, up = idx
+    tab = np.zeros((12, 24))
+    have = np.zeros((12, 24), bool)
+    for f, smp in zip(frac, samples):
+        tab[smp["month"] - 1, smp["hour"]] = f
+        have[smp["month"] - 1, smp["hour"]] = True
+    for m in range(12):
+        hs = np.nonzero(have[m])[0]
+        if not len(hs):
+            continue
+        for h in range(24):
+            if not have[m, h]:
+                tab[m, h] = tab[m, hs[np.argmin(np.abs(hs - h))]]
+    return np.where(up, tab[mon, hour], 0.0)

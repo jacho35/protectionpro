@@ -266,6 +266,36 @@ const Roof3D = {
     return out;
   },
 
+  // Annual shading: the shade flag of every module at each of `samples` ([{azimuth_deg (true), elevation_deg}], from
+  // /analysis/solar-sun-grid). Same test as shadedModules (obstruction + objects, other modules; a module on a pitched
+  // plane cannot shade its coplanar neighbours, so only racks are tested against their own roof). Returns
+  // [{arr: engine array name, shade: ['0101…' per module, one character per sample]}] in module order.
+  annualFlags(scene, samples) {
+    const obsList = (scene.obs ? [scene.obs] : []).concat(scene.objs || []);
+    const faces = obsList.flatMap(o => this.boxFaces(o.foot, o.h));
+    const items = scene.items.filter(it => it.mods.length);
+    const racks = items.map(it => this._surfaces(it).some(sf => sf.racks));
+    const rows = items.map(it => it.mods.map(() => []));
+    const cent = items.map(it => it.mods.map(m => m.reduce((a, p) => [a[0] + p[0] / 4, a[1] + p[1] / 4, a[2] + p[2] / 4], [0, 0, 0])));
+    for (const smp of samples) {
+      const s = this.sunVec(smp.azimuth_deg + (scene.north || 0), smp.elevation_deg);
+      items.forEach((it, i) => it.mods.forEach((m, k) => {
+        const c = cent[i][k];
+        let hit = faces.some(f => this.rayHitsQuad(c, s, f));
+        if (!hit && racks[i]) hit = it.mods.some(o => o !== m && this.rayHitsQuad(c, s, o));
+        if (!hit) hit = items.some((jt, j) => j !== i && jt.mods.some(o => this.rayHitsQuad(c, s, o)));
+        rows[i][k].push(hit ? '1' : '0');
+      }));
+    }
+    const out = [], by = {};
+    items.forEach((it, i) => it.mods.forEach((m, k) => {
+      const key = m.arr || it.roof.name;
+      if (!by[key]) { by[key] = { arr: key, shade: [] }; out.push(by[key]); }
+      by[key].shade.push(rows[i][k].join(''));
+    }));
+    return out;
+  },
+
   // The obstruction's footprint quad ([x, y] corners): width across the bearing, 0.5 m deep.
   obstructionFoot(o) {
     const a = o.bearing * Math.PI / 180, hx = Math.cos(a) * o.w / 2, hy = -Math.sin(a) * o.w / 2, ox = Math.sin(a) * 0.25, oy = Math.cos(a) * 0.25;
@@ -359,7 +389,7 @@ const Roof3D = {
         for (const gr of RoofPlanes.groups(pls)) {                          // a plane's pieces share the count the calculation chose for it
           if (!use[gr.idx[0]]) continue;
           let rem = chosen[r.name + ' · ' + gr.name] != null ? chosen[r.name + ' · ' + gr.name] : 1e9;
-          for (const i of gr.idx) { rem = Math.min(rem, left); if (rem <= 0) break; const ms = RoofPlanes.layoutPlane(pls[i], poly, setback, mp, rem, r.modAlign, ex); item.mods.push(...ms); rem -= ms.length; left -= ms.length; }
+          for (const i of gr.idx) { rem = Math.min(rem, left); if (rem <= 0) break; const ms = RoofPlanes.layoutPlane(pls[i], poly, setback, mp, rem, r.modAlign, ex); ms.forEach(m => { m.arr = r.name + ' · ' + gr.name; }); item.mods.push(...ms); rem -= ms.length; left -= ms.length; }
         }
       } else if (r.shape === 'gable') {
         const g = this.gablePlanes(poly, paz, +r.pitch, eave);
@@ -371,6 +401,7 @@ const Roof3D = {
         item.rowPitch = rs.pitch_m;
         item.mods = this.layoutRacks(poly, paz, +r.tilt, setback, mp, max, rs.pitch_m, eave + this.PARAPET_M, r.modAlign, ex);
       }
+      item.mods.forEach(m => { if (!m.arr) m.arr = r.name; });                // which engine array a module belongs to (annual shading)
       for (const o of (r.objects || [])) {                                  // vents, chimneys...: boxes standing on the roof
         const cx = o.x * f, cy = -o.y * f, z0 = this.deckZ(item, cx, cy);
         objs.push({ id: o.id, roofId: r.id, type: o.type, c: [cx, cy], w: +o.w, d: +o.d, rot: +o.rot || 0, z0, hh: +o.h, h: z0 + +o.h, foot: this.rectFoot(cx, cy, +o.w, +o.d, -(+o.rot || 0)) });

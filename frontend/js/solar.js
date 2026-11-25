@@ -400,9 +400,18 @@ const Solar = {
       <label for="sol-hybrid">Add a DC-coupled battery</label><input id="sol-hybrid" data-k="hybrid" data-bool="1" type="checkbox" ${c.hybrid ? 'checked' : ''}>
       ${c.hybrid ? this._in(c, 'battKwh', 'Battery capacity (kWh)') + this._in(c, 'battKw', 'Max charge / discharge (kW)') + this._in(c, 'battDod', 'Usable depth of discharge (%)') : ''}`);
     const shade = this._res && this._res.shading_loss_pct != null ? `<div style="margin-top:8px;font-size:13px">Shading loss from the obstruction: <strong>${this._res.shading_loss_pct} %</strong> of the annual yield.</div>` : '';
+    const can = this._res && this._res.arrays && c.roofShape === 'plan';
+    const sh = this._shade;
+    const annual = `<div style="margin-top:12px;font-weight:600">Annual shading from the 3D roofs</div>
+      <div style="font-size:12px;color:var(--text-muted,#6d6d6d)">Checks every module against the roof objects, the obstruction above and the racks in front of it, for the middle day of each month at every solar hour. Strings are ${+c.perString || 'one'} modules, filled in layout order.</div>
+      <div style="margin-top:6px"><button class="btn" type="button" data-act="shade" ${can ? '' : 'disabled'}>Run annual shading</button>${can ? '' : '<span style="font-size:12px"> needs roofs drawn on the plan and a calculation on step 1</span>'}</div>`
+      + (sh ? `<div style="margin-top:8px;font-size:13px">Shading loss <strong>${sh.loss_pct} %</strong> of the annual yield (${Math.round(sh.unshaded_kwh).toLocaleString()} to ${Math.round(sh.shaded_kwh).toLocaleString()} kWh).</div>
+        <div style="display:flex;gap:3px;align-items:flex-end;height:60px;margin-top:6px" role="img" aria-label="Shading loss by month, %">${sh.months.map(m => `<div title="${m.month}: ${m.loss_pct} %" style="flex:1;background:#b8860b;height:${Math.max(2, Math.min(60, m.loss_pct * 6))}px"></div>`).join('')}</div>
+        <table style="margin-top:8px;font-size:12px;border-collapse:collapse"><tr><th align="left">Roof</th><th>String</th><th>Modules</th><th>Loss %</th></tr>${sh.strings.map(r => `<tr><td>${escHtml(r.array || '')}</td><td align="center">${r.string}</td><td align="center">${r.modules}</td><td align="center">${r.loss_pct}</td></tr>`).join('')}</table>
+        <div style="margin-top:6px;font-size:11px;color:var(--text-muted,#6d6d6d)">${escHtml(sh.note)} ${escHtml(sh.attribution || '')}</div>` : '');
     const placed = this._pvComp();
     const run = (act, label, tip) => `<button class="btn" type="button" data-act="${act}" title="${escHtml(tip)}" ${placed ? '' : 'disabled'}>${label}</button>`;
-    return head + shade + `<div style="margin-top:12px"><button class="btn btn-primary" type="button" data-act="place" ${this._res ? '' : 'disabled'}>Place / update on the SLD</button>
+    return head + shade + annual + `<div style="margin-top:12px"><button class="btn btn-primary" type="button" data-act="place" ${this._res ? '' : 'disabled'}>Place / update on the SLD</button>
       ${this._res ? '' : '<span style="font-size:12px"> calculate on step 1 first</span>'}</div>
       <div style="margin-top:12px;display:flex;gap:6px;flex-wrap:wrap">
         ${run('study:fault', 'Fault analysis', 'The inverter adds fault current from its Fault current (p.u.) setting')}
@@ -433,6 +442,7 @@ const Solar = {
       else if (act === 'strings') await this.runStrings();
       else if (act === 'rows') await this.runRows();
       else if (act === 'protect') await this.runProtection();
+      else if (act === 'shade') await this.runShading();
       else if (act === 'place') this.placePv();
       else if (act.startsWith('study:')) this.runStudy(act.slice(6));
     } catch (e) {
@@ -495,7 +505,7 @@ const Solar = {
         location: c.location, irradiance_source: c.irrSrc, module: this.moduleBody(p), inverter: this.inverterBody(inv), mode: c.mode, arrays,
         annual_kwh: +c.annualKwh || null, share_pct: +c.sharePct, target_kwp: +c.targetKwp || null,
         obstructions: +c.obsH > 0 ? [{ height_m: +c.obsH, distance_m: +c.obsD, bearing_deg: +c.obsB, width_m: +c.obsW }] : [] });   // the typed one applies to every roof; objects and neighbours ride on each roof's arrays
-      this._str = null; this._prot = null;
+      this._str = null; this._prot = null; this._shade = null;
       return;
     }
     if (g.flat) {
@@ -511,6 +521,7 @@ const Solar = {
       obstructions: +c.obsH > 0 ? [{ height_m: +c.obsH, distance_m: +c.obsD, bearing_deg: +c.obsB, width_m: +c.obsW }] : [] });
     this._str = null;
     this._prot = null;
+    this._shade = null;
   },
 
   // Place / update the PV array on the SLD, then read the app's own string checks for it.
@@ -568,6 +579,26 @@ const Solar = {
   },
 
   // Run one of the app's own studies on the placed array, by pressing its normal menu button.
+  // Annual shading: the 3D scene's module shade flags at the sun grid, then the engine's hourly model per string.
+  async runShading() {
+    const c = this.cfg(), res = this._res;
+    if (c.roofShape !== 'plan' || !res || !res.arrays) throw new Error('Calculate the size for roofs drawn on the plan first.');
+    this._status('Checking every module against the sun over the year…');
+    const sc = await Roof3D.build();
+    if (sc.empty) throw new Error('No roofs to check.');
+    const grid = await API.request('/analysis/solar-sun-grid', 'POST', { location: c.location });
+    const flags = Roof3D.annualFlags(sc, grid.samples);
+    const arrays = res.arrays.map(a => {
+      const f = flags.find(x => x.arr === a.name);
+      return f ? { name: a.name, tilt_deg: a.tilt_deg, azimuth_deg: a.azimuth_deg, modules: f.shade.length, per_string: +c.perString || f.shade.length, shade: f.shade } : null;
+    }).filter(Boolean);
+    if (!arrays.length) throw new Error('No modules are laid out on the roofs yet.');
+    const p = this.panel(c), inv = this.inverter(c);
+    this._shade = await API.request('/analysis/solar-shading', 'POST', {
+      location: c.location, module: this.moduleBody(p), inverter: this.inverterBody(inv), arrays });
+    this._status('');
+  },
+
   runStudy(which) {
     const id = { fault: 'btn-run-fault', loadflow: 'btn-run-loadflow', hosting: 'btn-hosting-capacity', compliance: 'btn-compliance',
       battery: 'btn-battery-sizing', backup: 'btn-backup-study', timeseries: 'btn-timeseries' }[which];

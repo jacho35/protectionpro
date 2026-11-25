@@ -63,7 +63,7 @@ Depends on WP2 for hourly input.
 - Done when: results agree with the WP1 reference within an agreed tolerance (target ±3 % annual) and clipping appears
   in the result at DC/AC > 1.
 
-### WP4 — Annual shading from the 3D geometry
+### WP4 — Annual shading from the 3D geometry — BUILT 2026-11-25 (`Roof3D.annualFlags` + `solar-shading`; sampled middle day of each month, proportional string rule; the single-obstruction horizon stays for quick sizing; not yet exercised in a browser)
 - Reuse the `roof3d.js` scene: compute, per module and hour, whether the beam is blocked, using the same geometry as
   the cast shadows.
 - Shading factor by module, aggregated per string; a string loses output in proportion to its shaded modules
