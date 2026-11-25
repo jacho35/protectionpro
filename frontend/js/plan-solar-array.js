@@ -28,13 +28,29 @@ const PlanSolarArray = {
     return null;
   },
 
-  // The gap between panels under a point (world px) on a placed array, or null: {roof, axis, after, at, clear, has}. Gable and flat roofs.
-  gapAt(pt, zoom) {
+  // The panels placed on the plan: {n, kwp, roofs}.
+  totals() {
+    const p = Solar.panel(Solar.cfg()); let n = 0, roofs = 0;
+    for (const r of PlanSolar.roofs()) if (r.array && r.use !== false) { const l = this.layout(r); if (!l.pending) { n += l.n; roofs++; } }
+    return { n, kwp: n * p.w / 1000, roofs };
+  },
+  // The laid-out array's gaps (cached with the layout): see Roof3D.boundaries.
+  _bd(roof, lay) { return lay._bd || (lay._bd = Roof3D.boundaries(lay.mods, PlanSolar.planAz(roof))); },
+  // Can aisles go on this roof? (a placed array on a gable or flat roof). Else why not, as text.
+  aisleBlock(roof) {
+    if (!roof.array) return 'Place an array on the roof first (Array › Place array).';
+    if (PlanSolar.usesPlanes(roof)) return 'Maintenance aisles work on gable and flat roofs.';
+    const lay = this.layout(roof);
+    return lay.pending || !lay.mods.length ? 'The array has no panels yet.' : '';
+  },
+  // The gap between panels under a point (world px), or null: {roof, axis, after, at, clear, has, bd}. `mode` is the aisle tool:
+  // 'row' / 'col' only look at that kind of gap, 'remove' only at gaps that already have an aisle.
+  gapAt(pt, zoom, mode) {
     const f = PlanEngine.factor(), r = this.roofAt(pt);
-    if (!f || !r || !r.array || PlanSolar.usesPlanes(r)) return null;
-    const lay = this.layout(r); if (lay.pending || !lay.mods.length) return null;
-    const bd = Roof3D.boundaries(lay.mods, PlanSolar.planAz(r));
-    const hit = Roof3D.boundaryAt(bd, [pt.x * f, -pt.y * f], (7 / (zoom || 1)) * f);
+    if (!f || !r || this.aisleBlock(r)) return null;
+    const lay = this.layout(r), bd = this._bd(r, lay);
+    const ok = mode === 'row' ? (a) => a === 'row' : mode === 'col' ? (a) => a === 'col' : mode === 'remove' ? (a, i) => !!PlanSolar.aisleAt(r, a, i) : null;
+    const hit = Roof3D.boundaryAt(bd, [pt.x * f, -pt.y * f], (8 / (zoom || 1)) * f, ok);
     return hit ? Object.assign(hit, { roof: r, bd, has: !!PlanSolar.aisleAt(r, hit.axis, hit.after) }) : null;
   },
   // Insert the aisle at a gap, or (off) take it out.
@@ -113,6 +129,7 @@ const PlanSolarArray = {
   edit(roof, patch) {
     Object.assign(roof, patch); this._layouts.delete(roof.id);
     PlanMarkup.markDirty(); this._redraw(); this._queue();
+    if (typeof RoofEditor !== 'undefined' && RoofEditor.on && typeof Roof3D !== 'undefined') Roof3D.refresh();
   },
   _after(msg, noSld) {
     PlanMarkup.snapshot(); PlanMarkup.markDirty(); this._redraw(); PlanMarkup.refreshProps();
@@ -148,6 +165,7 @@ const PlanSolarArray = {
       this._busy = false;
       if (this._again) { this._again = false; this._queue(); }
       if (typeof PlanTools !== 'undefined' && PlanTools.active && PlanTools.active.id === 'solararray') PlanMarkup.refreshProps();
+      if (typeof Solar !== 'undefined' && Solar._renderDock) Solar._renderDock();                    // Design parameters: the placed count
     }
   },
 
@@ -193,20 +211,34 @@ const PlanSolarArray = {
         }
       }
       ctx.restore();
-      const gh = armed && this.hoverGap && this.hoverGap.roof.id === r.id ? this.hoverGap : null;
-      if (gh && mode !== 'block') this._drawGapMark(ctx, u, f, gh);
+      const am = PlanTools.active && PlanTools.active.id === 'solaraisle' ? (PlanTools.opts && PlanTools.opts.mode) || 'row' : null;
+      if (am && mode !== 'block' && !this.aisleBlock(r)) {
+        const bd = this._bd(r, lay);
+        for (const g of [...(am === 'col' ? [] : bd.rows.map(x => Object.assign({ axis: 'row' }, x))), ...(am === 'row' ? [] : bd.cols.map(x => Object.assign({ axis: 'col' }, x)))]) {
+          const has = !!PlanSolar.aisleAt(r, g.axis, g.after);
+          if (am === 'remove' ? has : !has) this._gapLine(ctx, u, f, bd, g, has ? '#b91c1c' : '#6d93ea', true);
+        }
+        const gh = this.hoverGap && this.hoverGap.roof.id === r.id ? this.hoverGap : null;
+        if (gh) this._drawGapMark(ctx, u, f, gh);
+      }
     }
   },
-  // The blue insert line (or the red remove line over an existing aisle) across a gap, with a plus.
+  // A line across a gap, along the array.
+  _gapLine(ctx, u, f, bd, g, col, dashed) {
+    const ext = g.axis === 'col' ? bd.s : bd.v, ax = g.axis === 'col' ? bd.w : bd.u, al = g.axis === 'col' ? bd.u : bd.w;
+    const at = (x) => [ax[0] * g.at + al[0] * x, ax[1] * g.at + al[1] * x], a = at(ext[0]), b = at(ext[1]);
+    ctx.save(); ctx.strokeStyle = col; ctx.lineWidth = (dashed ? 1.5 : 3) * u; ctx.lineCap = 'round'; if (dashed) ctx.setLineDash([5 * u, 4 * u]);
+    ctx.beginPath(); ctx.moveTo(a[0] / f, -a[1] / f); ctx.lineTo(b[0] / f, -b[1] / f); ctx.stroke(); ctx.restore();
+    return [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+  },
+  // The solid blue insert line (red over an existing aisle) across the gap under the pointer, with a chip: "+ Aisle 0.8 m" / "× Remove".
   _drawGapMark(ctx, u, f, g) {
-    const bd = g.bd, ext = g.axis === 'col' ? bd.s : bd.v, ax = g.axis === 'col' ? bd.w : bd.u, al = g.axis === 'col' ? bd.u : bd.w;
-    const pt = (x, y) => [ax[0] * g.at + al[0] * x, ax[1] * g.at + al[1] * x];
-    const a = pt(ext[0]), b = pt(ext[1]), mid = pt((ext[0] + ext[1]) / 2), col = g.has ? '#b91c1c' : '#1d4ed8';
-    ctx.save(); ctx.strokeStyle = col; ctx.fillStyle = col; ctx.lineWidth = 2.5 * u; ctx.lineCap = 'round';
-    ctx.beginPath(); ctx.moveTo(a[0] / f, -a[1] / f); ctx.lineTo(b[0] / f, -b[1] / f); ctx.stroke();
-    ctx.beginPath(); ctx.arc(mid[0] / f, -mid[1] / f, 9 * u, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = '#fff'; ctx.font = `700 ${14 * u}px sans-serif`; ctx.textAlign = 'center'; ctx.fillText(g.has ? '×' : '+', mid[0] / f, -mid[1] / f + 5 * u);
-    ctx.restore();
+    const col = g.has ? '#b91c1c' : '#1d4ed8', mid = this._gapLine(ctx, u, f, g.bd, g, col, false);
+    const text = g.has ? '× Remove' : '+ Aisle ' + PlanSolar.aisleWidth(g.roof).toFixed(1) + ' m', cx = mid[0] / f, cy = -mid[1] / f;
+    ctx.save(); ctx.font = `700 ${12 * u}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    const w = ctx.measureText(text).width + 16 * u, h = 20 * u;
+    ctx.fillStyle = col; ctx.beginPath(); ctx.roundRect ? ctx.roundRect(cx - w / 2, cy - h / 2, w, h, h / 2) : ctx.rect(cx - w / 2, cy - h / 2, w, h); ctx.fill();
+    ctx.fillStyle = '#fff'; ctx.fillText(text, cx, cy + 0.5 * u); ctx.restore();
   },
 
   // ── Properties of the tool ──
@@ -216,14 +248,14 @@ const PlanSolarArray = {
     const rows = list.map(a => `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><span>${a.axis === 'row' ? 'Between rows' : 'Between columns'} ${a.after} and ${a.after + 1}</span><button type="button" class="plan-btn" data-sa-aisle-rm="${a.axis}:${a.after}" aria-label="Remove the aisle ${a.axis === 'row' ? 'between rows' : 'between columns'} ${a.after} and ${a.after + 1}">Remove</button></div>`).join('');
     return `<div class="plan-props-sec">Maintenance aisles</div>${rows || '<div style="color:var(--text-muted)">None. Click the gap between two rows or columns of panels, Alt-click an aisle to remove it.</div>'}`;
   },
-  hint() { return 'Place array: click a roof and its panels are laid out on it. Click the gap between two rows or columns of panels to add a maintenance aisle, Alt-click an aisle to remove it. Esc to stop.'; },
+  hint() { return 'Place array: click a roof and its panels are laid out on it. Aisles have their own tools in the Maintenance aisles group of the Solar toolbar. Esc to stop.'; },
   renderOptions(el) {
     const roofs = PlanSolar.roofs(), f = PlanEngine.factor(), c = Solar.cfg(), p = Solar.panel(c);
     const esc = (s) => String(s).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
     const r = roofs.find(x => x.id === this.sel) || null;
     let body;
     if (!roofs.length) {
-      body = `<p style="margin:0;color:var(--text-muted)">No roofs yet. Pick <b>Roof</b> in the Solar group (click inside a building, or Draw its outline), then come back to <b>Place array</b>.</p>`;
+      body = `<p style="margin:0;color:var(--text-muted)">No roofs yet. Pick <b>Roof</b> in the Solar toolbar (click inside a building, or Draw its outline), then come back to <b>Place array</b>.</p>`;
     } else {
       const list = roofs.map(x => {
         const l = x.array ? this.layout(x) : null;
@@ -275,26 +307,47 @@ const PlanSolarArray = {
 
 if (typeof PlanTools !== 'undefined') PlanTools.register({
   id: 'solararray', cursor: 'crosshair',
-  onActivate() { PlanSolarArray.hover = null; PlanSolarArray.hoverGap = null; },
-  cancel() { PlanSolarArray.hover = null; PlanSolarArray.hoverGap = null; PlanEngine.requestDraw({ fg: true }); },
+  onActivate() { PlanSolarArray.hover = null; },
+  cancel() { PlanSolarArray.hover = null; PlanEngine.requestDraw({ fg: true }); },
   onMove(pt) {
-    const r = PlanSolarArray.roofAt(pt), id = r ? r.id : null, g = PlanSolarArray.gapAt(pt, PlanEngine.view.zoom);
-    const gk = g ? g.roof.id + g.axis + g.after : null, ok = PlanSolarArray.hoverGap ? PlanSolarArray.hoverGap.roof.id + PlanSolarArray.hoverGap.axis + PlanSolarArray.hoverGap.after : null;
-    if (id !== PlanSolarArray.hover || gk !== ok) { PlanSolarArray.hover = id; PlanSolarArray.hoverGap = g; PlanEngine.requestDraw({ fg: true }); }
+    const r = PlanSolarArray.roofAt(pt), id = r ? r.id : null;
+    if (id !== PlanSolarArray.hover) { PlanSolarArray.hover = id; PlanEngine.requestDraw({ fg: true }); }
   },
-  onDown(pt, e) {
-    const g = PlanSolarArray.gapAt(pt, PlanEngine.view.zoom);
-    if (g) {                                                           // a gap between panels: click inserts an aisle, Alt-click takes it out
-      if (g.has) { if (e && e.altKey) PlanSolarArray.setAisle(g.roof, g.axis, g.after, false); else if (typeof UI !== 'undefined' && UI.toast) UI.toast('Alt-click an aisle to remove it.', 'info', 2000); }
-      else PlanSolarArray.setAisle(g.roof, g.axis, g.after, true);
-      PlanSolarArray.hoverGap = null; PlanSolarArray.sel = g.roof.id; PlanMarkup.refreshProps(); return;
-    }
+  onDown(pt) {
     const r = PlanSolarArray.roofAt(pt);
-    if (!r) { if (typeof UI !== 'undefined' && UI.toast) UI.toast('Click inside a roof. Draw one first with Solar › Roof.', 'info', 3000); return; }
+    if (!r) { if (typeof UI !== 'undefined' && UI.toast) UI.toast('Click inside a roof. Draw one first with Roof in the Solar toolbar.', 'info', 3000); return; }
     if (r.array) { PlanSolarArray.sel = r.id; PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true }); return; }
     PlanSolarArray.place(r);
   },
   onKey(e) { if (e.key === 'Escape') { PlanTools.set('select'); return true; } return false; },
+});
+
+// The Row aisle / Column aisle / Remove aisle tools (Solar toolbar): `PlanTools.opts.mode` = 'row' | 'col' | 'remove'. The gaps the tool can act on show
+// as dashed lines; the one under the pointer goes solid with a chip; a click inserts (or removes) the aisle there.
+if (typeof PlanTools !== 'undefined') PlanTools.register({
+  id: 'solaraisle', cursor: 'copy',
+  mode() { return (PlanTools.opts && PlanTools.opts.mode) || 'row'; },
+  onActivate() { PlanSolarArray.hoverGap = null; PlanEngine.requestDraw({ fg: true }); },
+  cancel() { PlanSolarArray.hoverGap = null; PlanEngine.requestDraw({ fg: true }); },
+  onMove(pt) {
+    const g = PlanSolarArray.gapAt(pt, PlanEngine.view.zoom, this.mode()), h = PlanSolarArray.hoverGap;
+    if ((g ? g.roof.id + g.axis + g.after : null) !== (h ? h.roof.id + h.axis + h.after : null)) { PlanSolarArray.hoverGap = g; PlanEngine.requestDraw({ fg: true }); }
+  },
+  onDown(pt, e) {
+    const toast = (m) => { if (typeof UI !== 'undefined' && UI.toast) UI.toast(m, 'info', 3500); };
+    const g = PlanSolarArray.gapAt(pt, PlanEngine.view.zoom, this.mode());
+    if (g) {
+      if (!g.has) PlanSolarArray.setAisle(g.roof, g.axis, g.after, true);
+      else if (this.mode() === 'remove' || (e && e.altKey)) PlanSolarArray.setAisle(g.roof, g.axis, g.after, false);
+      else toast('That gap already has an aisle. Use Remove aisle, or Alt-click it.');
+      PlanSolarArray.hoverGap = null; PlanSolarArray.sel = g.roof.id; PlanMarkup.refreshProps(); return;
+    }
+    const r = PlanSolarArray.roofAt(pt);
+    if (!r) return;
+    const why = PlanSolarArray.aisleBlock(r);
+    toast(why || (this.mode() === 'remove' ? 'No aisle there. Click an aisle (the hatched strip) to remove it.' : 'Click on the dashed line between two ' + (this.mode() === 'row' ? 'rows' : 'columns') + ' of panels.'));
+  },
+  onKey(e) { if (e.key === 'Escape') { if (typeof SolarBar !== 'undefined') SolarBar.pick('select'); else PlanTools.set('select'); return true; } return false; },
 });
 
 if (typeof module !== 'undefined' && module.exports) module.exports = PlanSolarArray;

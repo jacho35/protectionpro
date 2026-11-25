@@ -74,8 +74,11 @@ const PlanUI = {
     else if (mode === 'roads' && typeof RoadSectionsUI !== 'undefined') { el.setAttribute('aria-label', 'Road sections'); html = RoadSectionsUI.panelHtml(); }
     else if (mode === 'underlays') { el.setAttribute('aria-label', 'Underlays'); html = this._underlaysPanel(); }
     else if (mode === 'output') { el.setAttribute('aria-label', 'Sync and export'); html = this._outputPanel(); }
+    else if (mode === 'solar' && typeof Solar !== 'undefined') { el.setAttribute('aria-label', 'Solar design'); html = ''; }
     else { el.setAttribute('aria-label', 'Parts'); html = this._drawPanel(); }
+    el.classList.toggle('sd-wide', mode === 'solar' && ctx !== 'lighting');
     el.innerHTML = html;
+    if (mode === 'solar' && ctx !== 'lighting' && typeof Solar !== 'undefined') Solar.mountDock(el);       // Design parameters, docked beside the plan
     this._markArmed();
   },
 
@@ -635,6 +638,12 @@ const PlanUI = {
     if (typeof PlanSolar !== 'undefined' && typeof PlanSolarArray !== 'undefined' && PlanSolar.sel.size === 1 && !PlanMarkup.selectedIds.size) {
       const rf = PlanSolar.roofs().find(x => PlanSolar.sel.has(x.id));
       if (rf && rf.array) { PlanSolarArray.sel = rf.id; PlanSolarArray.renderOptions(el); return; }
+    }
+    // The Solar mode: with nothing else picked the right panel is the placed array's properties (the first array when none is selected).
+    if (PlanMarkup.context === 'plan' && PlanMarkup.mode === 'solar' && typeof PlanSolarArray !== 'undefined' && typeof PlanSolar !== 'undefined' && !PlanMarkup.selectedIds.size) {
+      const rs = PlanSolar.roofs();
+      if (!rs.some(x => x.id === PlanSolarArray.sel && x.array)) { const a = rs.find(x => x.array); PlanSolarArray.sel = a ? a.id : null; }
+      PlanSolarArray.renderOptions(el); return;
     }
     const ids = [...PlanMarkup.selectedIds];
     if (ids.length === 0) { el.innerHTML = (PlanMarkup.context === 'lighting') ? `<div class="plan-props-empty">Select an item to edit its properties.</div>` : this._summaryHtml(); return; }

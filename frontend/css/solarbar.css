@@ -1,0 +1,53 @@
+/* The Solar toolbar (solar-bar.js) across the top of the Plan, its hint bar, and the left "Design parameters" dock (solar.js). */
+.plan-solar-bar[hidden] { display: none; }
+.plan-solar-bar { background: var(--bg-primary); border-bottom: 1px solid var(--border-color); }
+.sb-bar { display: flex; flex-wrap: wrap; gap: 8px 4px; align-items: stretch; padding: 8px 16px; }
+.sb-grp { display: flex; flex-direction: column; gap: 2px; }
+.sb-glab { font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--text-muted); padding-left: 4px; }
+.sb-row { display: flex; gap: 2px; align-items: stretch; }
+.sb-center { align-items: center; }
+.sb-sep { width: 1px; background: var(--border-color); align-self: stretch; margin: 0 4px; }
+.sb-btn { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; min-width: 64px; min-height: 54px; padding: 4px 8px;
+  border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--text-primary); cursor: pointer; font-size: 12px; }
+.sb-btn:hover { background: var(--bg-tertiary); }
+.sb-btn.on { background: color-mix(in srgb, var(--accent) 14%, var(--bg-primary)); border-color: var(--accent); color: var(--accent); }
+.sb-btn svg { width: 22px; height: 22px; stroke: currentColor; fill: none; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.sb-step { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-height: 54px; padding: 0 6px; }
+.sb-v { display: flex; align-items: center; gap: 2px; }
+.sb-v button { width: 44px; height: 30px; border: 1px solid var(--border-color); background: var(--bg-primary); color: var(--text-primary); border-radius: 6px; cursor: pointer; font-size: 16px; line-height: 1; }
+.sb-v button:hover { background: var(--bg-tertiary); border-color: var(--accent); }
+.sb-v output { min-width: 58px; text-align: center; font-weight: 600; font-size: 13px; color: var(--text-primary); }
+.sb-step small { font-size: 11px; color: var(--text-muted); }
+.sb-seg { display: flex; border: 1px solid var(--border-color); border-radius: 8px; overflow: hidden; }
+.sb-seg button { min-width: 52px; min-height: 44px; border: 0; background: var(--bg-primary); color: var(--text-primary); cursor: pointer; font-weight: 600; font-size: 13px; }
+.sb-seg button.on { background: var(--accent); color: #fff; }
+.sb-bar button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.sb-hint { display: flex; gap: 16px; align-items: center; flex-wrap: nowrap; height: 36px; box-sizing: border-box; overflow: hidden; padding: 0 20px;     /* fixed height: a longer hint must never resize the plan under the pointer */ background: color-mix(in srgb, var(--accent) 9%, var(--bg-primary)); border-top: 1px solid var(--border-color); font-size: 13px; }
+.sb-hint strong { color: var(--accent); }
+.sb-hint strong, .sb-hint small { flex: none; white-space: nowrap; }
+.sb-hint span { flex: 1; min-width: 0; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sb-hint small { color: var(--text-muted); font-size: 12px; }
+
+/* Left panel of the Solar mode: Design parameters (the Solar PV Design steps docked beside the plan). */
+#plan-palette.sd-wide { width: 340px; flex: 0 0 340px; padding: 12px; }
+.sd-nav { display: flex; flex-direction: column; gap: 8px; }
+.sd-glab { font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--text-muted); }
+.sd-btn { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 0 12px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-primary);
+  color: var(--text-primary); cursor: pointer; font-size: 13px; font-weight: 600; text-align: left; }
+.sd-btn:hover { background: var(--bg-tertiary); border-color: var(--accent); }
+.sd-btn.open { background: color-mix(in srgb, var(--accent) 14%, var(--bg-primary)); border-color: var(--accent); color: var(--accent); }
+.sd-btn svg { width: 20px; height: 20px; flex: none; stroke: currentColor; fill: none; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.sd-grow { flex: 1; }
+.sd-note { font-size: 12px; color: var(--text-muted); line-height: 1.5; padding: 0 4px; }
+.sd-tabs { display: flex; gap: 2px; flex-wrap: wrap; margin: 4px 0 4px; }
+.sd-tab { min-height: 40px; padding: 0 10px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--text-secondary); cursor: pointer; font-size: 12px; font-weight: 600; }
+.sd-tab:hover { background: var(--bg-tertiary); }
+.sd-tab.on { background: var(--accent); color: #fff; }
+.sd-body { display: flex; flex-direction: column; gap: 12px; font-size: 13px; }
+.sd-body select, .sd-body input[type="number"], .sd-body input[type="text"] { min-height: 36px; box-sizing: border-box; max-width: 100%; }
+.sd-more { align-self: flex-start; background: none; border: 0; padding: 8px 4px; color: var(--accent); cursor: pointer; font-size: 12px; text-decoration: underline; }
+.sd-nav button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* In the Solar mode the hint bar says what the tool does; the status bar keeps one line so a longer message never resizes the plan under the pointer. */
+.plan-solar-on .plan-status { flex-wrap: nowrap; height: 37px; box-sizing: border-box; overflow: hidden; }
+.plan-solar-on .plan-info { flex: 1 1 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: right; }

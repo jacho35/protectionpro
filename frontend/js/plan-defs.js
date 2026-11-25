@@ -403,11 +403,7 @@ const PLAN_DEFS = {
       push('Detect', { type: 'sllayout', kind: 'sllayout', name: 'Street lighting layout', color: '#f59e0b', desc: 'The street-light cables: poles in circuits from the kiosks you pick or place, sized by the street-light checks, with trenches and crossings; the circuits go to Street lighting' });
     }
     if (domain === 'retic' || domain === 'building') {
-      push('Solar', { type: 'roofedit', kind: 'roofedit', name: 'Roof editor', color: '#b45309', desc: 'The plan and a live 3D view side by side: draw a footprint, push it up, set the roof type and pitch, add a lean-to, vents and chimneys' });
-      push('Solar', { type: 'roofdetect', kind: 'roofdetect', name: 'Roof', color: '#d9822b', desc: 'Detect a building roof on the DXF / plan image, or Draw its outline' });
-      push('Solar', { type: 'roofkeepout', kind: 'roofkeepout', name: 'Keep-out area', color: '#b91c1c', desc: 'Click the corners of an area of a roof the panels must avoid (skylight, walkway, a shaded corner)' });
-      push('Solar', { type: 'solararray', kind: 'solararray', name: 'Place array', color: '#1f4e79', desc: 'Click a roof: the panels are laid out on it and the array goes on the single line' });
-      push('Solar', { type: 'solardesign', kind: 'solardesign', name: 'Open design', color: '#64748b', desc: 'Yield, strings and protection in Solar PV Design' });
+      // The solar tools (Roof, Roof editor, Keep-out, Place array, aisles, Design parameters) live in the Solar mode's toolbar (solar-bar.js).
     }
     for (const [type, def] of Object.entries(this.elements)) {
       if (def.domain !== domain || def.adoptOnly) continue;   // adopt-only types are placed via "From SLD"
