@@ -124,4 +124,31 @@ ok('maximum panels: blank is no limit, a whole number caps, and it rides on the 
   assert(S.arrays([r], 0.8, 0.8).every(x => x.max_modules === undefined), 'no limit sent when blank');
   r.maxModules = 0; assert.strictEqual(S.maxModules(r), Infinity);
 });
+ok('shade for a roof: its own objects and the neighbours, never another roof\'s objects', () => {
+  S.setNorthAngle(0); const st = S._store(); st.roofs = [];
+  global.Roof3D = { PARAPET_M: 0.4, toMetres: (pts, f) => pts.map(p => [p.x * f, -p.y * f]) };
+  global.RoofPlanes = { eave: () => 3, model: (base) => ({ planes: [{ poly: base, zAt: () => 3 }] }) };
+  global.PlanEngine.factor = () => 1;
+  const a = S.addRoof(rect(10, 10)), b = S.addRoof([{ x: 40, y: 0 }, { x: 50, y: 0 }, { x: 50, y: 10 }, { x: 40, y: 10 }]);
+  a.shape = b.shape = 'flat';
+  S.addObject(a, 'vent', { x: 5, y: 5 }); S.addObject(b, 'vent', { x: 45, y: 5 });
+  assert.strictEqual(S.shadeFor(a).length, 1, 'one vent: its own'); assert.strictEqual(S.shadeFor(b).length, 1);
+  assert.strictEqual(S.shadeFor(a)[0].distance_m, 0.5, 'a vent in the middle of its roof is at the minimum distance, not 40 m away');
+});
+ok('keep-out areas: stored on the roof, edited like roof corners, moved with the roof, taken off the usable area', () => {
+  S.setNorthAngle(0); const st = S._store(); st.roofs = [];
+  global.PlanEngine.factor = () => 0.1;
+  global.Roof3D = { PARAPET_M: 0.4, toMetres: (pts, f) => pts.map(p => [p.x * f, -p.y * f]), _inside: (p, poly) => { let c = false; for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) { const a = poly[i], b = poly[j]; if ((a[1] > p[1]) !== (b[1] > p[1]) && p[0] < (b[0] - a[0]) * (p[1] - a[1]) / (b[1] - a[1]) + a[0]) c = !c; } return c; } };
+  const r = S.addRoof(rect(200, 100)); r.shape = 'flat'; r.setback = 0;
+  const full = S.usableAreaM2(r);
+  const k = S.addKeepout(r, [{ x: 20, y: 20 }, { x: 70, y: 20 }, { x: 70, y: 60 }, { x: 20, y: 60 }]);
+  assert(k && k.keepout && r.keepouts.length === 1 && !S.addKeepout(r, [{ x: 0, y: 0 }, { x: 1, y: 1 }]), 'three corners at least');
+  const lost = 1 - S.usableAreaM2(r) / full;
+  assert(Math.abs(lost - (50 * 40) / (200 * 100)) < 0.02, 'a tenth of the roof is kept out, got ' + lost);
+  assert.strictEqual(S.nodeAt({ x: 20, y: 20 }, 1).roof, k, 'its corner is picked, not the roof under it');
+  assert.strictEqual(S.nodeAt({ x: 0, y: 0 }, 1).roof, r, 'the roof corner still is');
+  S.insertNode(k, 0, { x: 45, y: 20 }); assert.strictEqual(k.points.length, 5);
+  S.selectRoofs([r.id]); S.moveSelected(10, 5); assert.deepStrictEqual(k.points[0], { x: 30, y: 25 });
+  S.removeKeepout(r, k.id); assert.strictEqual(r.keepouts.length, 0); assert(Math.abs(S.usableAreaM2(r) - full) < 1e-9);
+});
 console.log(n + ' passed');

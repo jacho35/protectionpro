@@ -80,6 +80,7 @@ const PlanSolar = {
       if (!this.sel.has(r.id)) continue;
       for (const q of r.points) { q.x += dx; q.y += dy; }
       for (const o of (r.objects || [])) { o.x += dx; o.y += dy; }
+      for (const k of (r.keepouts || [])) for (const q of k.points) { q.x += dx; q.y += dy; }
     }
     if (typeof PlanEngine !== 'undefined') PlanEngine.requestDraw({ fg: true });
   },
@@ -140,6 +141,9 @@ const PlanSolar = {
     });
   },
 
+  // Everything that shades this roof's arrays, seen from its own middle: the objects standing on it and the taller roofs around it.
+  // Never another roof's objects: those are measured from THEIR roof's middle, so on this roof they would shade the wrong modules.
+  shadeFor(roof) { return this.obstructions(roof).concat(this.neighbourObstructions(roof)); },
   // The other roofs, used or not, as obstructions seen from this roof's middle: how much higher than this roof's modules
   // their top stands, the distance to their nearest edge, and the bearing / width they cover. Only roofs that stand higher count.
   neighbourObstructions(roof) {
@@ -192,6 +196,10 @@ const PlanSolar = {
       const k = rects.findIndex(r => o.x >= r[0] && o.x <= r[2] && o.y >= r[1] && o.y <= r[3]);
       wings[k >= 0 ? k : 0].objects.push(o);
     }
+    for (const k of (roof.keepouts || [])) {
+      const c = k.points[0], i = rects.findIndex(r => c.x >= r[0] && c.x <= r[2] && c.y >= r[1] && c.y <= r[3]);
+      (wings[i >= 0 ? i : 0].keepouts = wings[i >= 0 ? i : 0].keepouts || []).push(k);
+    }
     const at = st.roofs.indexOf(roof);
     st.roofs.splice(at, 1, ...wings);
     this._changed();
@@ -218,7 +226,8 @@ const PlanSolar = {
     const a = this.usableFootprintM2(roof);
     if (a == null) return null;
     if (this.usesPlanes(roof)) return this._planeAreas(roof).reduce((n, q) => n + q.area, 0);
-    return roof.shape === 'gable' ? a / 2 / Math.cos((+roof.pitch || 0) * Math.PI / 180) : a;
+    const f = PlanEngine.factor(), keep = 1 - ((f && typeof Roof3D !== 'undefined') ? this.keepFraction(Roof3D.toMetres(roof.points, f), this.keepoutsM(roof)) : 0);   // less the keep-out areas
+    return keep * (roof.shape === 'gable' ? a / 2 / Math.cos((+roof.pitch || 0) * Math.PI / 180) : a);
   },
   // The planes in use with their module area (m² along the slope) after the setback, a plane's pieces added: [{plane, area}].
   _planeAreas(roof) {
@@ -226,7 +235,8 @@ const PlanSolar = {
     const sb = Math.max(0, +roof.setback || 0), out = [];
     for (const gr of RoofPlanes.groups(g.planes)) {
       if (!g.use[gr.idx[0]]) continue;
-      const area = gr.idx.reduce((n, i) => n + RoofPlanes.usableArea(g.planes[i], g.poly, sb), 0);
+      const ex = this.keepoutsM(roof);
+      const area = gr.idx.reduce((n, i) => n + RoofPlanes.usableArea(g.planes[i], g.poly, sb) * (1 - this.keepFraction(g.planes[i].poly, ex)), 0);   // less the keep-out areas on each piece
       if (area > 0) out.push({ plane: g.planes[gr.idx[0]], area });
     }
     return out;
@@ -259,14 +269,16 @@ const PlanSolar = {
   // ── Corner editing (the one gesture set of CLAUDE.md: drag a node, Shift-click an edge adds one,
   // Alt-click or double-click a node removes it (a roof keeps three corners), double-click an edge adds one,
   // drag a midpoint to add and move a corner). Always live with the Select tool; no selection needed. ──
+  // Every outline with corners: the keep-out areas first (so they win over the roof under them), then the roofs.
+  _polys() { const rs = this.roofs(); return rs.flatMap(r => r.keepouts || []).concat(rs); },
   nodeAt(pt, zoom, px) {
     const tol = (px || 8) / zoom;
-    for (const r of this.roofs()) for (let i = 0; i < (r.points || []).length; i++) if (Math.hypot(pt.x - r.points[i].x, pt.y - r.points[i].y) <= tol) return { roof: r, i };
+    for (const r of this._polys()) for (let i = 0; i < (r.points || []).length; i++) if (Math.hypot(pt.x - r.points[i].x, pt.y - r.points[i].y) <= tol) return { roof: r, i };
     return null;
   },
   midAt(pt, zoom) {
     const tol = 7 / zoom;
-    for (const r of this.roofs()) {
+    for (const r of this._polys()) {
       const n = (r.points || []).length;
       for (let i = 0; i < n && n >= 3; i++) {
         const a = r.points[i], b = r.points[(i + 1) % n];
@@ -277,11 +289,36 @@ const PlanSolar = {
   },
   edgeAt(pt, zoom) {
     const tol = 8 / zoom;
-    for (const r of this.roofs()) {
+    for (const r of this._polys()) {
       const n = (r.points || []).length;
       for (let i = 0; i < n && n >= 3; i++) if (PlanEngine._distToSeg(pt, r.points[i], r.points[(i + 1) % n]) <= tol) return { roof: r, i };
     }
     return null;
+  },
+  // ── Keep-out areas: parts of a roof the module layout avoids (a skylight, a walkway, a shaded corner). `roof.keepouts`
+  // [{id, keepout: true, points (world)}]. Their corners are edited with the roof's own gestures (`_polys`). ──
+  addKeepout(roof, points) {
+    if (!roof || !points || points.length < 3) return null;
+    const k = { id: AppState.planGenId('pmko'), keepout: true, points: points.map(p => ({ x: p.x, y: p.y })) };
+    (roof.keepouts = roof.keepouts || []).push(k); this._changed(); return k;
+  },
+  removeKeepout(roof, id) { roof.keepouts = (roof.keepouts || []).filter(k => k.id !== id); this._changed(); },
+  // The keep-outs in metres (plan frame, the layout's), [] without a calibrated plan.
+  keepoutsM(roof) {
+    const f = PlanEngine.factor(); if (!f || !(roof.keepouts || []).length || typeof Roof3D === 'undefined') return [];
+    return roof.keepouts.filter(k => k.points && k.points.length >= 3).map(k => Roof3D.toMetres(k.points, f));
+  },
+  // The share (0..1) of a polygon (metres) covered by the keep-outs, by sampling a grid (0.25 m, at most ~40000 points).
+  keepFraction(polyM, ex) {
+    if (!ex.length || !polyM || polyM.length < 3 || typeof Roof3D === 'undefined') return 0;
+    const xs = polyM.map(p => p[0]), ys = polyM.map(p => p[1]), x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+    const step = Math.max(0.25, Math.sqrt((x1 - x0) * (y1 - y0) / 40000));
+    let inside = 0, hit = 0;
+    for (let x = x0 + step / 2; x < x1; x += step) for (let y = y0 + step / 2; y < y1; y += step) {
+      if (!Roof3D._inside([x, y], polyM)) continue;
+      inside++; if (ex.some(e => Roof3D._inside([x, y], e))) hit++;
+    }
+    return inside ? hit / inside : 0;
   },
   // Make the roof face straight out of its edge i (the modules then run square to that edge): sets the TRUE azimuth
   // from the edge's outward normal on the plan, less the plan's north angle.
@@ -315,6 +352,20 @@ const PlanSolar = {
   _changed() {
     if (typeof PlanMarkup !== 'undefined') { PlanMarkup.snapshot(); PlanMarkup.markDirty(); }
     if (typeof PlanEngine !== 'undefined') PlanEngine.requestDraw({ fg: true });
+  },
+  // A keep-out area: hatched red with a dashed outline and its label.
+  _drawKeepout(ctx, k, u) {
+    if (!k.points || k.points.length < 3) return;
+    ctx.save();
+    ctx.beginPath(); k.points.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); ctx.closePath();
+    ctx.fillStyle = 'rgba(185,28,28,0.22)'; ctx.fill();
+    ctx.strokeStyle = '#b91c1c'; ctx.lineWidth = 1.5 * u; ctx.setLineDash([6 * u, 4 * u]); ctx.stroke(); ctx.setLineDash([]);
+    ctx.clip(); ctx.lineWidth = 1 * u; ctx.strokeStyle = 'rgba(185,28,28,0.5)';
+    const xs = k.points.map(p => p.x), ys = k.points.map(p => p.y), x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys), step = 8 * u;
+    ctx.beginPath(); for (let d = x0 - (y1 - y0); d < x1; d += step) { ctx.moveTo(d, y1); ctx.lineTo(d + (y1 - y0), y0); } ctx.stroke();
+    ctx.restore();
+    const c = k.points.reduce((a, p) => ({ x: a.x + p.x / k.points.length, y: a.y + p.y / k.points.length }), { x: 0, y: 0 });
+    ctx.save(); ctx.font = `600 ${11 * u}px sans-serif`; ctx.textAlign = 'center'; ctx.fillStyle = '#7f1d1d'; ctx.fillText('Keep-out', c.x, c.y + 4 * u); ctx.restore();
   },
   _handles(ctx, r, u) {
     ctx.save();
@@ -429,7 +480,8 @@ const PlanSolar = {
       ctx.fillStyle = '#7c2d12';
       ctx.font = `${12 * u}px sans-serif`;
       ctx.textAlign = 'center';
-      if (typeof PlanTools !== 'undefined' && PlanTools.active && PlanTools.active.id === 'select') this._handles(ctx, r, u);
+      for (const k of (r.keepouts || [])) this._drawKeepout(ctx, k, u);
+      if (typeof PlanTools !== 'undefined' && PlanTools.active && PlanTools.active.id === 'select') { this._handles(ctx, r, u); for (const k of (r.keepouts || [])) this._handles(ctx, k, u); }
       this._slopeArrows(ctx, r, u);
       ctx.fillStyle = '#7c2d12'; ctx.textAlign = 'center'; ctx.font = `${12 * u}px sans-serif`;
       ctx.fillText(`${r.name} · ${r.shape === 'flat' ? 'flat, ' + r.tilt + '° racks' : r.shape + ' ' + r.pitch + '°'}${a != null ? ' · ' + a.toFixed(0) + ' m²' : ''}`, c.x, c.y);

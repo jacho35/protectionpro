@@ -114,4 +114,16 @@ ok('module placement: packed to a corner or centred, same count', () => {
   assert.strictEqual(racks('top-left').length, racks('bottom-right').length);
   assert(Math.max(...ys(racks('top-left'))) < Math.max(...ys(racks('bottom-right'))), 'top-aligned rows sit up the roof');
 });
+ok('keep-out: no module touches the area, and the rest still fit', () => {
+  const mod = { len: 2, wid: 1 }, g = R.gablePlanes(rect(10, 6), 0, 30, 3), ex = [[[2.2, 3.2], [4.8, 3.2], [4.8, 5.4], [2.2, 5.4]]];
+  const free = R.layoutModules(rect(10, 6), 0, 30, 0.5, mod, 1e9, g), kept = R.layoutModules(rect(10, 6), 0, 30, 0.5, mod, 1e9, g, null, ex);
+  assert(kept.length < free.length && kept.length > 0, free.length + ' vs ' + kept.length);
+  assert(kept.every(m => !R.hitsKeepout(m, ex)), 'no module overlaps');
+  assert(free.some(m => R.hitsKeepout(m, ex)), 'the area really was in the way');
+  assert(R.hitsKeepout([[0, 0], [10, 0], [10, 10], [0, 10]], [[[4, 4], [5, 4], [5, 5], [4, 5]]]), 'a keep-out wholly inside a module');
+  assert(R.hitsKeepout([[0, 0], [2, 0], [2, 1], [0, 1]], [[[1, -1], [1.5, -1], [1.5, 2], [1, 2]]]), 'edges crossing with no corner inside');
+  assert(!R.hitsKeepout([[0, 0], [1, 0], [1, 1], [0, 1]], [[[2, 2], [3, 2], [3, 3], [2, 3]]]));
+  const racks = (e) => R.layoutRacks(rect(10, 6), 0, 20, 0.5, mod, 1e9, 3, 0, null, e);
+  assert(racks(ex).length < racks().length, 'racks avoid it too');
+});
 console.log('shadow tests done');

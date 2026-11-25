@@ -82,7 +82,18 @@ const Roof3D = {
     const [v, h] = String(al || 'bottom-right').split('-');
     return { v: v === 'top' ? 1 : v === 'center' ? 0.5 : 0, h: h === 'left' ? 1 : h === 'center' ? 0.5 : 0 };
   },
-  layoutModules(poly, az, pitchDeg, setback, mod, max, g, al) {
+  // Does a module's plan quad touch a keep-out polygon (both [x, y] lists in metres)? `ex` = a list of polygons.
+  hitsKeepout(quad, ex) {
+    if (!ex || !ex.length) return false;
+    const seg = (a, b, c, d) => { const o = (p, q, r) => (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]); return o(a, b, c) * o(a, b, d) < 0 && o(c, d, a) * o(c, d, b) < 0; };
+    const q = quad.map(p => [p[0], p[1]]);
+    return ex.some(poly => {
+      if (q.some(p => this._inside(p, poly)) || poly.some(p => this._inside(p, q))) return true;
+      for (let i = 0; i < 4; i++) for (let j = 0; j < poly.length; j++) if (seg(q[i], q[(i + 1) % 4], poly[j], poly[(j + 1) % poly.length])) return true;
+      return false;
+    });
+  },
+  layoutModules(poly, az, pitchDeg, setback, mod, max, g, al, ex) {
     const { u, w } = this.axes(az), t = Math.tan(pitchDeg * Math.PI / 180);
     const run = mod.len * Math.cos(pitchDeg * Math.PI / 180), wid = mod.wid, out = [];
     const vs = poly.map(p => p[0] * w[0] + p[1] * w[1]), vmin = Math.min(...vs), vmax = Math.max(...vs);
@@ -95,7 +106,7 @@ const Roof3D = {
       if (s1 < g.ridge - 1e-9) break;
       for (let v = vmin + setback + vOff; v + wid <= vmax - setback + 1e-9; v += wid) {
         const cs = [at(v, s0), at(v + wid, s0), at(v + wid, s1), at(v, s1)];
-        if (!cs.every(p => this._usable(p, poly, setback - 1e-6))) continue;
+        if (!cs.every(p => this._usable(p, poly, setback - 1e-6)) || this.hitsKeepout(cs, ex)) continue;
         out.push(cs.map(p => [p[0], p[1], z(p[0] * u[0] + p[1] * u[1])]));
         if (out.length >= max) return out;
       }
@@ -105,7 +116,7 @@ const Roof3D = {
 
   // Tilted rows on a flat roof: from the +u edge, one row every `pitch` m toward -u. Each row is a run of
   // modules side by side; returns {rect: four corners, ...} per module with the high edge toward -u.
-  layoutRacks(poly, az, tiltDeg, setback, mod, max, pitch, zBase, al) {
+  layoutRacks(poly, az, tiltDeg, setback, mod, max, pitch, zBase, al, ex) {
     const { u, w } = this.axes(az), b = tiltDeg * Math.PI / 180;
     const ss = poly.map(p => p[0] * u[0] + p[1] * u[1]), smax = Math.max(...ss), smin = Math.min(...ss);
     const vs = poly.map(p => p[0] * w[0] + p[1] * w[1]), vmin = Math.min(...vs), vmax = Math.max(...vs);
@@ -117,7 +128,7 @@ const Roof3D = {
     for (let s0 = smax - setback - sOff; s0 - run >= smin + setback - 1e-9; s0 -= pitch) {
       for (let v = vmin + setback + vOff; v + mod.wid <= vmax - setback + 1e-9; v += mod.wid) {
         const lo = [at(v, s0), at(v + mod.wid, s0)], hi = [at(v, s0 - run), at(v + mod.wid, s0 - run)];
-        if (![...lo, ...hi].every(p => this._usable(p, poly, setback - 1e-6))) continue;
+        if (![...lo, ...hi].every(p => this._usable(p, poly, setback - 1e-6)) || this.hitsKeepout([lo[0], lo[1], hi[1], hi[0]], ex)) continue;
         out.push([[lo[0][0], lo[0][1], zBase + 0.1], [lo[1][0], lo[1][1], zBase + 0.1],
           [hi[1][0], hi[1][1], zBase + 0.1 + rise], [hi[0][0], hi[0][1], zBase + 0.1 + rise]]);
         if (out.length >= max) return out;
@@ -287,7 +298,7 @@ const Roof3D = {
       const base = this.toMetres(r.points, f), paz = PlanSolar.planAz(r), eave = RoofPlanes.eave(r);
       const m = RoofPlanes.model(base, r, paz, north), pls = m.planes, use = RoofPlanes.used(pls, r), poly = m.foot;
       const item = { roof: r, poly, base, mods: [], planes: null, pls, use, eave, junctions: m.junctions, unused: r.use === false };   // a roof not in the calculation is still drawn, just without modules
-      const cap = PlanSolar.maxModules(r), max = Math.min(cap, chosen[r.name] != null ? chosen[r.name] : 1e9);   // the roof's own maximum panels caps every layout
+      const ex = PlanSolar.keepoutsM(r), cap = PlanSolar.maxModules(r), max = Math.min(cap, chosen[r.name] != null ? chosen[r.name] : 1e9);   // the roof's own maximum panels caps every layout
       const setback = Math.max(0, +r.setback || 0);
       if (item.unused) {
         if (r.shape === 'gable') item.planes = this.gablePlanes(poly, paz, +r.pitch, eave);
@@ -296,17 +307,17 @@ const Roof3D = {
         for (const gr of RoofPlanes.groups(pls)) {                          // a plane's pieces share the count the calculation chose for it
           if (!use[gr.idx[0]]) continue;
           let rem = chosen[r.name + ' · ' + gr.name] != null ? chosen[r.name + ' · ' + gr.name] : 1e9;
-          for (const i of gr.idx) { rem = Math.min(rem, left); if (rem <= 0) break; const ms = RoofPlanes.layoutPlane(pls[i], poly, setback, p, rem, r.modAlign); item.mods.push(...ms); rem -= ms.length; left -= ms.length; }
+          for (const i of gr.idx) { rem = Math.min(rem, left); if (rem <= 0) break; const ms = RoofPlanes.layoutPlane(pls[i], poly, setback, p, rem, r.modAlign, ex); item.mods.push(...ms); rem -= ms.length; left -= ms.length; }
         }
       } else if (r.shape === 'gable') {
         const g = this.gablePlanes(poly, paz, +r.pitch, eave);
         item.planes = g;
-        item.mods = this.layoutModules(poly, paz, +r.pitch, setback, p, max, g, r.modAlign);
+        item.mods = this.layoutModules(poly, paz, +r.pitch, setback, p, max, g, r.modAlign, ex);
       } else {
         const rs = await API.request('/analysis/solar-row-spacing', 'POST', {
           lat: Solar._loc(c).lat, tilt_deg: +r.tilt, module_length_m: p.len, hour_angle_deg: +c.hour });
         item.rowPitch = rs.pitch_m;
-        item.mods = this.layoutRacks(poly, paz, +r.tilt, setback, p, max, rs.pitch_m, eave + this.PARAPET_M, r.modAlign);
+        item.mods = this.layoutRacks(poly, paz, +r.tilt, setback, p, max, rs.pitch_m, eave + this.PARAPET_M, r.modAlign, ex);
       }
       for (const o of (r.objects || [])) {                                  // vents, chimneys...: boxes standing on the roof
         const cx = o.x * f, cy = -o.y * f, z0 = this.deckZ(item, cx, cy);

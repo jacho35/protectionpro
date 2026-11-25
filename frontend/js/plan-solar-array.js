@@ -49,22 +49,22 @@ const PlanSolarArray = {
   layout(roof) {
     const f = PlanEngine.factor(), c = Solar.cfg(), p = Solar.panel(c);
     if (!f || !roof.points || roof.points.length < 3) return { mods: [], n: 0, kwp: 0, pending: false };
-    const key = [roof.points.map(q => q.x + ',' + q.y).join(';'), roof.shape, roof.pitch, roof.tilt, roof.azimuth, PlanSolar.northAngle(), roof.eave, JSON.stringify(roof.planeUse || null), roof.setback, roof.modAlign, roof.maxModules, p.id, p.len, p.wid, f, c.hour, c.location].join('|');
+    const key = [roof.points.map(q => q.x + ',' + q.y).join(';'), roof.shape, roof.pitch, roof.tilt, roof.azimuth, PlanSolar.northAngle(), roof.eave, JSON.stringify(roof.planeUse || null), roof.setback, roof.modAlign, roof.maxModules, JSON.stringify(roof.keepouts || []), p.id, p.len, p.wid, f, c.hour, c.location].join('|');
     const hit = this._layouts.get(roof.id);
     if (hit && hit.key === key) return hit.lay;
     const poly = Roof3D.toMetres(roof.points, f), az = PlanSolar.planAz(roof), setback = Math.max(0, +roof.setback || 0);
     let mods = [], pending = false;
-    const cap = Math.min(1e9, PlanSolar.maxModules(roof));                 // the roof's own maximum panels
+    const ex = PlanSolar.keepoutsM(roof), cap = Math.min(1e9, PlanSolar.maxModules(roof));                 // the roof's own maximum panels
     if (PlanSolar.usesPlanes(roof)) {                                       // a layout on every plane in use
       const g = PlanSolar.planesOf(roof), use = g.use;
-      g.planes.forEach((pl, i) => { if (use[i] && mods.length < cap) mods.push(...RoofPlanes.layoutPlane(pl, g.poly, setback, p, cap - mods.length, roof.modAlign)); });
+      g.planes.forEach((pl, i) => { if (use[i] && mods.length < cap) mods.push(...RoofPlanes.layoutPlane(pl, g.poly, setback, p, cap - mods.length, roof.modAlign, ex)); });
     } else if (roof.shape === 'gable') {
       const g = Roof3D.gablePlanes(poly, az, +roof.pitch, Roof3D.EAVE_M);
-      mods = Roof3D.layoutModules(poly, az, +roof.pitch, setback, p, cap, g, roof.modAlign);
+      mods = Roof3D.layoutModules(poly, az, +roof.pitch, setback, p, cap, g, roof.modAlign, ex);
     } else {
       const rp = this.rowPitch(roof, p);
       if (rp == null) pending = true;
-      else mods = Roof3D.layoutRacks(poly, az, +roof.tilt, setback, p, cap, rp, 0, roof.modAlign);
+      else mods = Roof3D.layoutRacks(poly, az, +roof.tilt, setback, p, cap, rp, 0, roof.modAlign, ex);
     }
     const lay = { mods: mods.map(m => m.map(q => [q[0], q[1]])), n: mods.length, fit: mods.length, kwp: mods.length * p.w / 1000, pending };
     if (!pending) this._layouts.set(roof.id, { key, lay });
