@@ -44,6 +44,20 @@ const PlanSolar = {
     st.northAngle = Number.isFinite(+a) ? ((Math.round(+a * 10) / 10 % 360) + 360) % 360 : 0;
     this._changed();
   },
+  // The north arrow's centre on screen (see drawNorth) and whether a plan point is on it.
+  _northCentre() { return { x: PlanEngine.cssW - 44, y: 52 }; },
+  northHit(pt) {
+    if (!this.roofs().length && !this.northAngle()) return false;
+    const s = PlanEngine.worldToScreen(pt.x, pt.y), c = this._northCentre();
+    return Math.hypot(s.x - c.x, s.y - c.y) <= 28;
+  },
+  // Drag the north arrow: it points at the pointer. Whole degrees; the caller snapshots once on release.
+  dragNorth(pt) {
+    const st = this._store(); if (!st) return;
+    const s = PlanEngine.worldToScreen(pt.x, pt.y), c = this._northCentre();
+    st.northAngle = (Math.round(Math.atan2(s.x - c.x, -(s.y - c.y)) * 180 / Math.PI) + 360) % 360;
+    PlanEngine.requestDraw({ fg: true });
+  },
   // The roof's facing direction as a bearing on the plan (° clockwise from the top of the plan), 0 ≤ a < 360.
   planAz(roof) { return ((((+roof.azimuth || 0) + this.northAngle()) % 360) + 360) % 360; },
 
