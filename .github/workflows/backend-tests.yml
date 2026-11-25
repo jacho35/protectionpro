@@ -238,6 +238,9 @@ jobs:
       - name: 3D roof view through the UI
         run: node testing/solar/verify_3d_ui.mjs /tmp/solar-ui
 
+      - name: 3D roof view on a phone-sized touch screen (emulated)
+        run: node testing/solar/verify_3d_touch.mjs /tmp/solar-ui
+
       - name: 3D pixel snapshots (reported, not blocking)
         continue-on-error: true
         run: node testing/solar/snapshot_3d.mjs /tmp/solar-ui
