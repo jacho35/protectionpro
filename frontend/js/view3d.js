@@ -444,7 +444,20 @@ class View3D {
     const id = panMode ? null : this.pickAt(x, y);
     const h = id != null && this.onPick ? this.onPick(id, e) : null;
     if (h) { this._drag = { mode: 'obj', handler: h, x, y, moved: false }; return; }
+    if (!panMode && this.opts.orbitCursor !== false) this._pivot(x, y);
     this._drag = { mode: panMode ? 'pan' : 'orbit', x, y, yaw: this.yaw, pitch: this.pitch, pan: this.pan.slice(), moved: false, id };
+  }
+
+  // Orbit about the cursor: the point on the target's height plane under the pointer becomes the pivot, kept where it is on the screen,
+  // so the thing you grab turns in place instead of swinging about the middle of the model. A press far from the model (more than
+  // 1.2 radii from the current pivot) keeps the old pivot. opts.orbitCursor = false turns it off.
+  _pivot(x, y) {
+    const t = this.target, p = this.planeAt(x, y, t[2]);
+    if (!p || !isFinite(p[0]) || !isFinite(p[1]) || Math.hypot(p[0] - t[0], p[1] - t[1]) > this.radius * 1.2) return;
+    const k = this._cam(), before = this.project(p[0], p[1], t[2], k);
+    this.target = [p[0], p[1], t[2]];
+    const after = this.project(p[0], p[1], t[2], k);
+    this.pan = [this.pan[0] + before[0] - after[0], this.pan[1] + before[1] - after[1]];
   }
 
   _hoverPick(e) {

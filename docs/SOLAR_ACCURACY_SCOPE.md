@@ -73,7 +73,7 @@ Depends on WP2 for hourly input.
 - Done when: the result shows a monthly shading loss and a per-string table, and a flat-roof row-to-row case matches
   the closed-form row-spacing shading.
 
-### WP5 — Module and inverter library import — BUILT 2026-11-25 (`solar-import.js`; checked with synthetic `.PAN` / `.OND` only, try a real PVsyst file before relying on it)
+### WP5 — Module and inverter library import — BUILT 2026-11-25 (`solar-import.js`; checked on a real `.PAN` and `.OND` (pvlib's test data, `testing/solar/pvsyst/`): the first parser version read the real inverter's nominal power from the wrong key and unit, now fixed)
 - Importer for PVsyst `.PAN` and `.OND` files into the project library tab, and CSV import.
 - Never overwrites user libraries (see the libraries and project-data principles); entries land in the project layer
   first.

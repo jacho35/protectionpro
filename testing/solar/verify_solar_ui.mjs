@@ -35,18 +35,17 @@ await page.evaluate(() => { Solar.set('irrSrc', 'pvgis'); });
 
 // ---- 2. library import
 await page.evaluate(() => { Solar._tab = 'library'; Solar.render(); });
-const PAN = `PVObject_=pvModule\n  PVObject_Commercial=pvCommercial\n    Manufacturer=Acme Solar\n    Model=AS-550M\n    Width=1.134\n    Height=2.278\n  End of PVObject pvCommercial\n  PNom=550\n  Isc=14.00\n  Voc=49.90\n  Imp=13.12\n  Vmp=41.95\n  muISC=7.0\n  muVocSpec=-129.7\n  muPmpReq=-0.350\n  VMaxIEC=1500\nEnd of PVObject pvModule\n`;
-const OND = `PVObject_=pvGInverter\n  PVObject_Commercial=pvCommercial\n    Manufacturer=Acme Power\n    Model=AP-10K\n  End of PVObject pvCommercial\n  Pnom=10000\n  VAbsMax=1000\n  VMppMin=200\n  VMPPMax=800\n  IMaxDC=60\n  NbMPPT=2\n  EfficEuro=98.0\n  TPhase=TriPhase\nEnd of PVObject pvGInverter\n`;
 const CSV = 'name,pmax,voc,vmp,isc,imp,voc coeff,pmax coeff,length,width,max system v\nCsv Mod,500,45,38,13,12.2,-0.27,-0.36,2.2,1.1,1500\n';
-writeFileSync(SP + '/a.pan', PAN); writeFileSync(SP + '/a.ond', OND); writeFileSync(SP + '/m.csv', CSV);
-await page.setInputFiles('#sol-lib-import', [SP + '/a.pan', SP + '/a.ond', SP + '/m.csv']);
+writeFileSync(SP + '/m.csv', CSV);
+const REAL = new URL('./pvsyst/', import.meta.url).pathname;
+await page.setInputFiles('#sol-lib-import', [REAL + 'ET-M772BH550GL.PAN', REAL + 'CPS-SCH275KTL.OND', SP + '/m.csv']);
 await page.waitForTimeout(800);
 const lib = await page.evaluate(() => ({ p: Solar.customPanels().map(x => x.name), i: Solar.customInverters().map(x => x.name), msg: Solar._impMsg }));
 log(JSON.stringify(lib));
-check('PAN + CSV modules imported', lib.p.includes('Acme Solar AS-550M') && lib.p.includes('Csv Mod'));
-check('OND inverter imported', lib.i.includes('Acme Power AP-10K'));
+check('PAN + CSV modules imported', lib.p.includes('ET SOLAR ET-M772BH550GL') && lib.p.includes('Csv Mod'));
+check('OND inverter imported', lib.i.includes('ChintPower CPS SCH275KTL-DO/US-800'));
 await page.screenshot({ path: SP + '/s2-library.png' });
-await page.setInputFiles('#sol-lib-import', [SP + '/a.pan']);
+await page.setInputFiles('#sol-lib-import', [REAL + 'ET-M772BH550GL.PAN']);
 await page.waitForTimeout(500);
 check('duplicate refused', await page.evaluate(() => /already/.test(Solar._impMsg) && Solar.customPanels().length === 2));
 // the imported module is selectable and sizes

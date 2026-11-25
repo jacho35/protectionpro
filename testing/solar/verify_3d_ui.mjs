@@ -89,6 +89,18 @@ for (const mode of ['gl', '2d']) {
   await page.waitForTimeout(800);
   const p1 = await page.evaluate(() => PlanSolar.roofs()[0].points[0].x);
   check(mode + ': dragging the gizmo X arrow moves the roof', Math.abs(p1 - g.p0) > 1, g.p0.toFixed(1) + ' -> ' + p1.toFixed(1));
+  // Orbit about the cursor: the ground point under the press stays under the pointer while the scene turns
+  await page.evaluate(() => { Roof3D.tool = 'select'; Roof3D.sel = null; Roof3D.view.setView(150, 32); Roof3D.fit(); });
+  await page.waitForTimeout(900);
+  const ob = await page.evaluate(() => { const v = Roof3D.view, r = v.canvas.getBoundingClientRect(), x = v.canvas.clientWidth * 0.55, y = v.canvas.clientHeight * 0.58;
+    const P = v.planeAt(x, y, v.target[2]); return { sx: r.left + x, sy: r.top + y, P, tz: v.target[2] }; });
+  await page.mouse.move(ob.sx, ob.sy); await page.mouse.down(); await page.mouse.move(ob.sx + 60, ob.sy + 25, { steps: 8 }); await page.mouse.up(); await page.waitForTimeout(200);
+  const oa = await page.evaluate((o) => { const v = Roof3D.view, s = v.project(o.P[0], o.P[1], o.tz, v._cam()); return { x: s[0], y: s[1], yaw: v.yaw }; }, ob);
+  const r0 = await page.evaluate(() => Roof3D.view.canvas.getBoundingClientRect().toJSON());
+  const dist = Math.hypot(oa.x - (ob.sx - r0.left), oa.y - (ob.sy - r0.top));
+  check(mode + ': orbit about the cursor keeps the grabbed point under the pointer', dist < 2.5 && Math.abs(oa.yaw - 150) > 10, dist.toFixed(2) + ' px, yaw ' + oa.yaw.toFixed(0));
+  await page.evaluate(() => { Roof3D.view.setView(150, 32); Roof3D.fit(); });
+  await page.waitForTimeout(700);
   // View cube: hover lights a face, a click glides to that side, Top looks straight down with north up, Iso comes back
   await page.evaluate(() => { Roof3D.view.setView(150, 32); });
   await page.waitForTimeout(700);

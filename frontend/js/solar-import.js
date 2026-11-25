@@ -13,7 +13,7 @@ const SolarImport = {
   // Flatten a PVsyst file to {Key: value}: first occurrence wins; nested commercial block keys are kept as `Manufacturer`/`Model`.
   parseIni(text) {
     const out = {};
-    for (const raw of String(text || '').split(/\r?\n/)) {
+    for (const raw of String(text || '').replace(/^\uFEFF/, '').split(/\r?\n/)) {
       const m = /^\s*([A-Za-z0-9_]+)\s*=\s*(.*?)\s*$/.exec(raw);
       if (m && !(m[1] in out)) out[m[1]] = m[2];
     }
@@ -41,16 +41,22 @@ const SolarImport = {
     return e;
   },
 
+  // Real .OND files (checked against a Chint Power CPS SCH275KTL file): the nominal AC power is PNomConv in kW (older files carry
+  // Pnom in W), PMaxOUT the largest AC output, MonoTri / TPhase the phases, IMaxDC the total DC current over NbMPPT trackers.
   parseOnd(text) {
     const k = this.parseIni(text), n = (x) => this._n(k[x]);
     const derived = ['Fault current'];
-    const acW = isFinite(n('Pnom')) && n('Pnom') > 0 ? n('Pnom') : n('PmaxOUT');
-    const mppt = isFinite(n('NbMPPT')) && n('NbMPPT') > 0 ? n('NbMPPT') : n('NbInputs');
-    const eff = isFinite(n('EfficEuro')) && n('EfficEuro') > 0 ? n('EfficEuro') : n('EfficMax');
-    const phases = /^tri/i.test(k.TPhase || '') ? 3 : /^mono/i.test(k.TPhase || '') ? 1 : 3;
-    if (!k.TPhase) derived.push('Phases');
+    let acKw = n('PNomConv');
+    if (!(acKw > 0)) acKw = n('PMaxOUT');
+    if (!(acKw > 0) && n('Pnom') > 0) acKw = n('Pnom') / 1000;
+    if (!(acKw > 0) && n('PmaxOUT') > 0) acKw = n('PmaxOUT') / 1000;
+    const mppt = n('NbMPPT') > 0 ? n('NbMPPT') : n('NbInputs');
+    const eff = n('EfficEuro') > 0 ? n('EfficEuro') : n('EfficMax');
+    const ph = k.MonoTri || k.TPhase || '';
+    const phases = /^tri/i.test(ph) ? 3 : /^mono/i.test(ph) ? 1 : 3;
+    if (!ph) derived.push('Phases');
     const name = [k.Manufacturer, k.Model].filter(Boolean).join(' ') || k.Model || '';
-    return { name, ac_kw: this._r(acW / 1000, 3), phases, dc_max_v: this._first(k.VAbsMax), mppt_min_v: this._first(k.VMppMin),
+    return { name, ac_kw: this._r(acKw, 3), phases, dc_max_v: this._first(k.VAbsMax), mppt_min_v: this._first(k.VMppMin),
       mppt_max_v: this._first(k.VMPPMax), mppt_count: mppt, mppt_max_a: this._r(n('IMaxDC') / mppt, 2), eff_pct: eff,
       fault_x: 1.1, derived };
   },

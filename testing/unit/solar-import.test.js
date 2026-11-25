@@ -92,4 +92,29 @@ ok('fromFile: rejects bad entries and duplicates, never adds them', () => {
   assert(/\.pan, \.ond or \.csv/.test(SI.fromFile('x.txt', '', validate, []).skipped[0]));
   assert.strictEqual(SI.fromFile('empty.pan', '', validate, []).entries.length, 0);
 });
+
+// ── real PVsyst files (testing/solar/pvsyst, from pvlib's test data) ──
+const fs = require('fs'), path = require('path');
+const real = (f) => fs.readFileSync(path.join(__dirname, '../solar/pvsyst', f), f.endsWith('.PAN') ? 'latin1' : 'utf8');
+ok('a real .PAN (ET Solar ET-M772BH550GL) imports with the right numbers', () => {
+  const m = SI.parsePan(real('ET-M772BH550GL.PAN'));
+  assert.strictEqual(m.name, 'ET SOLAR ET-M772BH550GL');
+  assert.deepStrictEqual([m.w, m.voc, m.vmp, m.isc, m.imp, m.len, m.wid, m.sysv, m.k_pmax], [550, 49.9, 41.96, 14, 13.11, 2.278, 1.134, 1500, -0.34]);
+  assert(Math.abs(m.beta_voc - (-128.0 / 49.9 / 10)) < 0.001);                    // -128 mV/C on 49.9 V
+  assert(Math.abs(m.gamma_vmp - (-0.34 - 7.28 / 14 / 10)) < 0.001);              // power coefficient less the Isc coefficient (7.28 mA/C on 14 A)
+  assert.strictEqual(Solar.validatePanel(m), '');
+});
+ok('a real .OND (Chint Power CPS SCH275KTL, BOM, kW units, MonoTri) imports with the right numbers', () => {
+  const t = real('CPS-SCH275KTL.OND'); assert.strictEqual(t.charCodeAt(0), 0xFEFF);          // the file does start with a BOM
+  const i = SI.parseOnd(t);
+  assert.strictEqual(i.name, 'ChintPower CPS SCH275KTL-DO/US-800');
+  assert.deepStrictEqual([i.ac_kw, i.phases, i.dc_max_v, i.mppt_min_v, i.mppt_max_v, i.mppt_count, i.mppt_max_a, i.eff_pct], [250, 3, 1500, 500, 1500, 12, 30, 98.49]);
+  assert.strictEqual(Solar.validateInverter(i), '');
+});
+ok('real files through fromFile: added once, a second import is a duplicate', () => {
+  const a = SI.fromFile('ET-M772BH550GL.PAN', real('ET-M772BH550GL.PAN'), validate, []);
+  assert.strictEqual(a.entries.length, 1);
+  assert(/already/.test(SI.fromFile('x.PAN', real('ET-M772BH550GL.PAN'), validate, [a.entries[0].name]).skipped[0]));
+  assert.strictEqual(SI.fromFile('i.OND', real('CPS-SCH275KTL.OND'), validate, []).entries.length, 1);
+});
 console.log(n + ' passed');
