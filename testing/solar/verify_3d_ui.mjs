@@ -100,6 +100,10 @@ for (const mode of ['gl', '2d']) {
   await page.mouse.click(c.x, c.y); await page.waitForTimeout(800);
   const want = { '+y': 180, '-y': 0, '+x': -90, '-x': 90 }[c.key];
   check(mode + ': view cube side face looks from that side', await page.evaluate((w) => Math.abs(Roof3D.view.yaw - w) < 0.5 && Math.abs(Roof3D.view.pitch - 25) < 0.5, want), c.key);
+  c = await cf('top');
+  const y0 = await page.evaluate(() => Roof3D.view.yaw);
+  await page.mouse.move(c.x, c.y); await page.mouse.down(); await page.mouse.move(c.x + 50, c.y + 10, { steps: 6 }); await page.mouse.up(); await page.waitForTimeout(200);
+  check(mode + ': dragging the cube orbits the scene (no jump to a face)', await page.evaluate((y) => Math.abs(Roof3D.view.yaw - y) > 10 && Roof3D.view.pitch < 80, y0));
   c = await cf('top'); await page.mouse.click(c.x, c.y); await page.waitForTimeout(800);
   check(mode + ': view cube Top looks straight down, north up', await page.evaluate(() => Roof3D.view.pitch > 88 && Math.abs(Roof3D.view.yaw) < 0.5));
   c = await cf('home'); await page.mouse.click(c.x, c.y); await page.waitForTimeout(800);

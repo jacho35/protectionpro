@@ -327,13 +327,13 @@ class View3D {
   // A small cube in the corner turned like the scene: the faces are the four sides and the top (labels in `cubeLabels`, turned by the
   // plan's north angle through `cubeNorth`). Hover lights a face, a click glides to the view from that side (as the Top / From north /
   // … buttons do); "Iso" under it returns to the corner view. Drawn on the overlay canvas, so it works on both renderers.
-  _cubeLayout(W) {
-    const s = 20, cx = 14 + s + 10, cy = 14 + s + 14;
+  _cubeLayout(W, H) {
+    const s = 20, cx = 14 + s + 10, cy = this.opts.cubePos === 'bl' ? H - 14 - 28 - s - 8 : 14 + s + 14;     // top-left, or bottom-left where the top-left holds an info card
     return { s, cx, cy };
   }
   _drawCube(g, k, W, H) {
     if (!this.opts.cube) { this._cube = null; return; }
-    const { s, cx, cy } = this._cubeLayout(W), w = this.viewDir(k);
+    const { s, cx, cy } = this._cubeLayout(W, H), w = this.viewDir(k);
     const P = (x, y, z) => { const u = x * k.cy - y * k.sy, v = x * k.sy + y * k.cy; return [cx + u * s, cy - (z * k.cp + v * k.sp) * s]; };
     const F = [
       { key: 'top', n: [0, 0, 1], q: [[-1, -1, 1], [1, -1, 1], [1, 1, 1], [-1, 1, 1]], c: '#f4f6f8' },
@@ -373,10 +373,10 @@ class View3D {
   // The view from a cube face: the side faces look from that side at a modest pitch, the top looks down, Iso is the corner view.
   cubeGo(key) {
     if (this.onCubeView && this.onCubeView(key)) return;
-    const n = this.cubeNorth || 0;
-    if (key === 'home') this.setView(150 + n, 32);
+    const n = this.cubeNorth || 0, H = this.opts.cubeHome || [150, 32];
+    if (key === 'home') this.setView(H[0] + n, H[1]);
     else if (key === 'top') this.setView(0, 89);                                 // plan up, as the Top button
-    else this.setView({ '+y': 180, '-y': 0, '+x': -90, '-x': 90 }[key] + n, 25);
+    else this.setView({ '+y': 180, '-y': 0, '+x': -90, '-x': 90 }[key] + n, this.opts.cubeSidePitch || 25);
   }
 
   // Labels: with opts.labelLayout they are placed so none overlaps (higher `prio` first, a moved one gets a leader line, one that
@@ -439,7 +439,7 @@ class View3D {
     }
     if (this._ptrs.size > 2) return;
     const cube = e.button === 0 ? this._cubeAt(x, y) : null;
-    if (cube) { this._drag = { mode: 'cube', key: cube, x, y, moved: false }; return; }
+    if (cube) { this._drag = { mode: 'cube', key: cube, x, y, yaw: this.yaw, pitch: this.pitch, moved: false }; return; }
     const panMode = e.button === 2 || e.button === 1 || e.shiftKey;
     const id = panMode ? null : this.pickAt(x, y);
     const h = id != null && this.onPick ? this.onPick(id, e) : null;
@@ -481,7 +481,11 @@ class View3D {
     const dx = x - d.x, dy = y - d.y;
     if (Math.abs(dx) + Math.abs(dy) > 3) d.moved = true;
     if (!d.moved) return;
-    if (d.mode === 'cube') return;
+    if (d.mode === 'cube') {                                                      // dragging the cube orbits the scene (a click on a face is a jump)
+      this.yaw = d.yaw + dx * 0.5; this.pitch = Math.max(5, Math.min(89.5, d.pitch + dy * 0.4));
+      if (this._cubeHover) this._cubeHover = null;
+      this.redraw(); return;
+    }
     if (d.mode === 'obj') { d.handler.move(e, x, y, dx, dy); return; }
     if (d.mode === 'pan') this.pan = [d.pan[0] + dx, d.pan[1] + dy];
     else { this.yaw = d.yaw + dx * 0.4; this.pitch = Math.max(5, Math.min(89.5, d.pitch + dy * 0.3)); }
