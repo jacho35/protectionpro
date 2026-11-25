@@ -610,6 +610,14 @@ const PlanMarkup = {
     }
     // The Building sync carries a deleted board / feeder to the single line.
     if (typeof Sync !== 'undefined' && Sync.markDeleted) for (const id of this.selectedIds) Sync.markDeleted('plan', id);
+    // A road-lighting pole is mirrored onto the plan from the road's own pole list
+    // (RoadPlan.syncPlanPoles), so deleting only the mirror would bring it back:
+    // remove the road pole as well.
+    if (typeof RoadPlan !== 'undefined' && Array.isArray(RoadPlan.roads)) {
+      const gone = new Set();
+      for (const e of pm.elements) if (e.type === 'pole' && this.selectedIds.has(e.id) && (e.roadPoleId || e.rpPoleId)) gone.add(e.roadPoleId || e.rpPoleId);
+      if (gone.size) for (const r of RoadPlan.roads) if ((r.poles || []).some(p => gone.has(p.id))) r.poles = r.poles.filter(p => !gone.has(p.id));
+    }
     const kill = (arr) => { for (let i = arr.length - 1; i >= 0; i--) if (this.selectedIds.has(arr[i].id)) arr.splice(i, 1); };
     kill(pm.elements); kill(pm.routes); kill(pm.trenches);
     kill(pm.crossings); if (pm.rooms) kill(pm.rooms); kill(pm.texts); kill(pm.measurements);
