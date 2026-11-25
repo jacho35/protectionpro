@@ -57,10 +57,7 @@ def test_size_round_trip_and_errors(client, auth):
     assert client.post(f"{API}/solar-size", json={"location": "Pretoria"}, headers=auth).status_code == 400
 
 
-def test_strings_and_row_spacing(client, auth):
-    r = client.post(f"{API}/solar-strings", headers=auth, json={
-        "module": "pv_550_mono", "inverter": "inv_10k_2mppt", "modules_per_string": 20, "strings_per_mppt": [1, 1]})
-    assert r.status_code == 200 and r.json()["ok"] is False
+def test_row_spacing(client, auth):
     r = client.post(f"{API}/solar-row-spacing", headers=auth,
                     json={"lat": -25.75, "tilt_deg": 15, "module_length_m": 2.28, "roof_depth_m": 9.2})
     assert r.status_code == 200 and r.json()["rows"] == 3
@@ -80,11 +77,11 @@ def test_protection_route(client, auth):
         "strings_per_mppt": [2, 1], "string_cable_m": -1}).status_code == 400
 
 
-def test_voltage_rise_and_shading_routes(client, auth):
-    r = client.post(f"{API}/solar-voltage-rise", headers=auth, json={"p_kw": 10, "s_sc_kva": 1000})
-    assert r.status_code == 200 and r.json()["voltage_rise_pct"] == 0.707
-    assert client.post(f"{API}/solar-voltage-rise", headers=auth, json={"p_kw": 10, "s_sc_kva": 0}).status_code == 400
+def test_shading_route_and_removed_duplicates(client, auth):
     r = client.post(f"{API}/solar-size", headers=auth, json={
         "location": "Pretoria", "tilt_deg": 25, "usable_area_m2": 40, "mode": "roof",
         "obstructions": [{"height_m": 4, "distance_m": 6, "bearing_deg": 0, "width_m": 20}]})
     assert r.status_code == 200 and r.json()["shading_loss_pct"] > 5
+    # string checks, fault contribution and voltage rise are the app's own studies, not solar routes
+    for gone in ("solar-strings", "solar-voltage-rise"):
+        assert client.post(f"{API}/{gone}", headers=auth, json={}).status_code in (404, 405)

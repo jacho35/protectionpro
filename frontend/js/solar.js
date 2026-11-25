@@ -1,12 +1,16 @@
 /* ProtectionPro — Solar PV design (phases 1-2 of docs/SOLAR_DESIGN_PLAN.md).
  *
- * One modal with three steps: Roof & size (location, roof from a dialog or a typed area, sizing from
- * the roof and / or the annual load, monthly yield), Strings (modules per string and strings per MPPT
- * checked against the inverter) and Rows (flat-roof row spacing). "Add to SLD" places a Solar PV
- * inverter in array mode with the chosen module / inverter / strings, plus its AC breaker.
+ * One modal: Roof & size (location, roof from the plan, a dialog or a typed area, sizing from the roof
+ * and / or the annual load, monthly yield), Strings (modules per string; the PV array goes on the SLD and
+ * the app's EXISTING IEC 62548 string checks are shown), Rows (flat-roof row spacing), Protection (string
+ * fuse, DC isolator, DC cable — the only electrical sizing done here, nothing else in the app does it),
+ * Shading & studies (an obstruction, the bus to connect to, and buttons that run the app's own Fault
+ * Analysis, Load Flow, Hosting Capacity and Compliance on the placed PV array) and the project Library.
+ * The PV array is a normal Solar PV component in array mode, so every existing engine sees it: fault
+ * contribution, load flow, hosting capacity, cable sizing. Nothing electrical is recalculated here.
  *
  * Modules and inverters come from PV_PANELS / PV_INVERTERS (constants.js). Every number comes from the
- * backend (/analysis/solar-size, solar-strings, solar-row-spacing); this file only gathers inputs,
+ * backend (/analysis/solar-size, solar-row-spacing, solar-protection); this file only gathers inputs,
  * works out the roof area from the dialog (`roofArea`, pure) and draws results.
  * The inputs are kept with the project in planMarkup.settings.solar.
  */
@@ -17,14 +21,13 @@ const Solar = {
   _str: null,
   _rows: null,
   _prot: null,
-  _rise: null,
   _busy: false,
   DEFAULTS: {
     location: 'Pretoria', module: 'pv_550_mono', inverter: 'inv_10k_2mppt',
     roofShape: 'gable', length: 10, width: 9.2, pitch: 25, setback: 0.5, area: 60, packing: 0.8,
     tilt: 15, azimuth: 0, mode: 'min', annualKwh: 18500, sharePct: 70,
-    perString: 8, hour: 0, cableM: 30, vdPct: 1, acV: 400, exportKw: '',
-    obsH: 0, obsD: 6, obsB: 0, obsW: 8, sscKva: 500, xr: 1, absPf: 1, riseLimit: 3,
+    perString: 8, hour: 0, cableM: 30, vdPct: 1, acV: 400, exportKw: '', busId: '', pvId: '',
+    obsH: 0, obsD: 6, obsB: 0, obsW: 8,
   },
 
   cfg() {
@@ -130,7 +133,7 @@ const Solar = {
 
   render() {
     const c = this.cfg();
-    const tabs = [['size', '1 Roof & size'], ['strings', '2 Strings'], ['rows', '3 Rows (flat roof)'], ['protect', '4 Protection'], ['grid', '5 Shading & grid'], ['library', 'Library']];
+    const tabs = [['size', '1 Roof & size'], ['strings', '2 Strings'], ['rows', '3 Rows (flat roof)'], ['protect', '4 Protection'], ['grid', '5 Shading & studies'], ['library', 'Library']];
     const bar = tabs.map(([k, l]) => `<button type="button" class="btn${this._tab === k ? ' btn-primary' : ''}" data-act="tab" data-v="${k}">${l}</button>`).join(' ');
     const body = { size: () => this._sizeHtml(c), strings: () => this._stringsHtml(c), rows: () => this._rowsHtml(c), protect: () => this._protectHtml(c), grid: () => this._gridHtml(c), library: () => this._libraryHtml() }[this._tab]();
     const el = document.getElementById('solar-body');
@@ -232,7 +235,8 @@ const Solar = {
       <span>Inverter</span><span>${escHtml(inv.name)}</span>
       <span>Modules in the array</span><span>${total || '— calculate on step 1 first'}</span>
       ${this._in(c, 'perString', 'Modules per string', 'min="1"')}`);
-    return head + `<div style="margin-top:12px"><button class="btn btn-primary" type="button" data-act="strings" ${total ? '' : 'disabled'}>Check strings</button></div>` + this._stringsResult();
+    return head + `<div style="margin-top:12px"><button class="btn btn-primary" type="button" data-act="strings" ${total ? '' : 'disabled'}>Place on the SLD and check strings</button></div>
+      <div style="margin-top:6px;font-size:11px;color:var(--text-muted,#6d6d6d)">The checks are the app's own IEC 62548 string checks (also in the Properties panel and the Compliance report).</div>` + this._stringsResult();
   },
 
   // Spread whole strings over the inverter's MPPT inputs as evenly as possible.
@@ -240,20 +244,17 @@ const Solar = {
     const strings = Math.floor(total / Math.max(1, perString));
     const out = [];
     for (let i = 0; i < Math.min(mppts, strings); i++) out.push(Math.floor(strings / mppts) + (i < strings % mppts ? 1 : 0));
-    // more strings than the even split can carry per input: keep spreading
     return { strings, perMppt: out.length ? out : [0], left: total - strings * perString };
   },
 
   _stringsResult() {
     const r = this._str;
     if (!r) return '';
-    const rows = r.checks.map(k => `<div style="display:flex;gap:10px;padding:6px 0;border-bottom:1px solid var(--border,#e4e2dc)">
-      <span style="min-width:44px;font-size:11px;font-weight:700;color:${k.ok ? '#1e5b2b' : '#8a2b1e'}">${k.ok ? 'PASS' : 'FAIL'}</span>
-      <span style="flex:1">${escHtml(k.label)}</span><span>${k.value} / ${k.limit}</span></div>`).join('');
+    const mark = { pass: ['PASS', '#1e5b2b'], fail: ['FAIL', '#8a2b1e'], warn: ['WARN', '#8a5a00'], info: ['INFO', '#4b5563'] };
+    const rows = r.items.map(k => { const m = mark[k.status] || mark.info; return `<div style="display:flex;gap:10px;padding:6px 0;border-bottom:1px solid var(--border,#e4e2dc)">
+      <span style="min-width:44px;font-size:11px;font-weight:700;color:${m[1]}">${m[0]}</span><span style="flex:1">${escHtml(k.message)}</span></div>`; }).join('');
     return `<div style="margin-top:12px">${rows}</div>
-      <div style="margin-top:8px;font-size:12px">Allowed modules per string: ${r.n_min} to ${r.n_max}. String current for fuses and cables: 1.25 × Isc = ${r.string_isc_design_a} A.
-      ${r.total_modules} modules used (${r.kwp} kWp, DC/AC ${r.dc_ac_ratio})${r.left ? '; <strong>' + r.left + ' left over</strong> — change modules per string' : ''}.</div>
-      <div style="margin-top:12px"><button class="btn" type="button" data-act="sld">Add to SLD</button></div>`;
+      <div style="margin-top:8px;font-size:12px">${r.strings} string${r.strings === 1 ? '' : 's'} × ${escHtml(this.cfg().perString)} modules placed on the SLD as <strong>${escHtml(r.name)}</strong>${r.left ? '; <strong>' + r.left + ' module' + (r.left === 1 ? '' : 's') + ' left over</strong> — change modules per string' : ''}.</div>`;
   },
 
   _rowsHtml(c) {
@@ -273,7 +274,6 @@ const Solar = {
     const head = this._grid(`
       ${this._in(c, 'cableM', 'String cable length, one way (m)')}
       ${this._in(c, 'vdPct', 'DC voltage-drop limit (%)')}
-      ${this._in(c, 'acV', 'AC voltage (V)')}
       <label for="sol-exportKw">Export limit at the connection point (kW, blank = none)</label>
       <input id="sol-exportKw" data-k="exportKw" type="text" inputmode="decimal" style="max-width:140px" value="${escHtml(c.exportKw)}">`);
     const r = this._prot;
@@ -322,23 +322,30 @@ const Solar = {
   },
 
   _gridHtml(c) {
+    const buses = [...AppState.components.values()].filter(x => x.type === 'bus');
+    const busOpt = '<option value="">None — I will wire it myself</option>' + buses.map(b =>
+      `<option value="${escHtml(b.id)}"${b.id === c.busId ? ' selected' : ''}>${escHtml((b.props && b.props.name) || b.id)}</option>`).join('');
     const head = this._grid(`
       <span style="grid-column:1/-1;font-weight:600">Obstruction above the array (applied on step 1, height 0 = none)</span>
       ${this._in(c, 'obsH', 'Height above the array (m)')}
       ${this._in(c, 'obsD', 'Distance from the array (m)')}
       ${this._in(c, 'obsB', 'Bearing from the array (° from north)')}
       ${this._in(c, 'obsW', 'Width (m)')}
-      <span style="grid-column:1/-1;font-weight:600;margin-top:8px">Voltage rise at the point of connection</span>
-      ${this._in(c, 'sscKva', 'Fault level at the connection (kVA)')}
-      ${this._in(c, 'xr', 'X/R ratio')}
-      ${this._in(c, 'absPf', 'Inverter power factor (absorbing, 1 = unity)')}
-      ${this._in(c, 'riseLimit', 'Voltage-rise limit (%) — check the utility rule')}`);
-    const r = this._rise;
-    const out = r ? `<div style="margin-top:12px;font-size:13px"><strong style="color:${r.ok ? '#1e5b2b' : '#8a2b1e'}">${r.ok ? 'OK' : 'OVER LIMIT'}</strong>
-      — rise ${r.voltage_rise_pct} % against ${r.limit_pct} %; fault level is ${r.ssc_ratio} × the inverter.
-      ${r.max_p_kw_at_limit != null ? 'Largest output at the limit: ' + r.max_p_kw_at_limit + ' kW.' : ''}</div>` : '';
-    return head + `<div style="margin-top:12px"><button class="btn btn-primary" type="button" data-act="rise">Calculate voltage rise</button></div>${out}`
-      + (this._res && this._res.shading_loss_pct != null ? `<div style="margin-top:8px;font-size:13px">Shading loss from the obstruction: <strong>${this._res.shading_loss_pct} %</strong> of the annual yield.</div>` : '');
+      <span style="grid-column:1/-1;font-weight:600;margin-top:8px">Connection and the app's studies</span>
+      <label for="sol-busId">Connect to bus</label><select id="sol-busId" data-k="busId">${busOpt}</select>
+      ${this._in(c, 'acV', 'AC voltage (V)')}`);
+    const shade = this._res && this._res.shading_loss_pct != null ? `<div style="margin-top:8px;font-size:13px">Shading loss from the obstruction: <strong>${this._res.shading_loss_pct} %</strong> of the annual yield.</div>` : '';
+    const placed = this._pvComp();
+    const run = (act, label, tip) => `<button class="btn" type="button" data-act="${act}" title="${escHtml(tip)}" ${placed ? '' : 'disabled'}>${label}</button>`;
+    return head + shade + `<div style="margin-top:12px"><button class="btn btn-primary" type="button" data-act="place" ${this._res ? '' : 'disabled'}>Place / update on the SLD</button>
+      ${this._res ? '' : '<span style="font-size:12px"> calculate on step 1 first</span>'}</div>
+      <div style="margin-top:12px;display:flex;gap:6px;flex-wrap:wrap">
+        ${run('study:fault', 'Fault analysis', 'The inverter adds fault current from its Fault current (p.u.) setting')}
+        ${run('study:loadflow', 'Load flow', 'Voltage rise and loading with the PV running at its irradiance setting')}
+        ${run('study:hosting', 'Hosting capacity', 'How much PV the connection can take before voltage or thermal limits')}
+        ${run('study:compliance', 'Compliance report', 'Includes the IEC 62548 string checks')}
+      </div>
+      <div style="margin-top:6px;font-size:11px;color:var(--text-muted,#6d6d6d)">These run the app's own studies on the whole network, so connect the array to a bus first. The results open in the usual place.</div>`;
   },
 
   // ── Actions ────────────────────────────────────────────────────────
@@ -357,8 +364,8 @@ const Solar = {
       else if (act === 'strings') await this.runStrings();
       else if (act === 'rows') await this.runRows();
       else if (act === 'protect') await this.runProtection();
-      else if (act === 'rise') await this.runRise();
-      else if (act === 'sld') this.addToSld();
+      else if (act === 'place') this.placePv();
+      else if (act.startsWith('study:')) this.runStudy(act.slice(6));
     } catch (e) {
       this._status('Solar: ' + (e.message || e));
     } finally { this._busy = false; }
@@ -372,16 +379,10 @@ const Solar = {
     const p = this.panel(c), inv = this.inverter(c);
     const sp = this.stringSplit(this._res.modules, +c.perString, inv.mppt_count);
     const body = { module: this.moduleBody(p), inverter: this.inverterBody(inv), modules_per_string: +c.perString,
-      strings_per_mppt: sp.perMppt, string_cable_m: +c.cableM, vd_limit_pct: +c.vdPct, ac_voltage_v: +c.acV,
+      strings_per_mppt: sp.perMppt, string_cable_m: +c.cableM, vd_limit_pct: +c.vdPct,
       t_min_c: this._loc(c).tmin_c };
     if (String(c.exportKw).trim() !== '') body.export_limit_kw = parseFloat(c.exportKw);
     this._prot = await API.request('/analysis/solar-protection', 'POST', body);
-  },
-
-  async runRise() {
-    const c = this.cfg(), inv = this.inverter(c);
-    this._rise = await API.request('/analysis/solar-voltage-rise', 'POST', {
-      p_kw: inv.ac_kw, v_ll_v: +c.acV, s_sc_kva: +c.sscKva, xr_ratio: +c.xr, absorb_pf: +c.absPf, limit_pct: +c.riseLimit });
   },
 
   async runRows() {
@@ -431,41 +432,65 @@ const Solar = {
     this._prot = null;
   },
 
+  // Place / update the PV array on the SLD, then read the app's own string checks for it.
   async runStrings() {
-    const c = this.cfg();
-    const p = this.panel(c), inv = this.inverter(c);
+    const c = this.cfg(), inv = this.inverter(c);
     const sp = this.stringSplit(this._res.modules, +c.perString, inv.mppt_count);
-    this._str = await API.request('/analysis/solar-strings', 'POST', {
-      module: this.moduleBody(p), inverter: this.inverterBody(inv), modules_per_string: +c.perString,
-      strings_per_mppt: sp.perMppt, t_min_c: this._loc(c).tmin_c });
-    this._str.left = sp.left;
-    this._str.strings = sp.strings;
+    if (!sp.strings) throw new Error('Fewer modules than one string. Lower the modules per string.');
+    const comp = this.placePv(true);
+    const items = Compliance._checkPVStrings().items.filter(i => i.component === (comp.props.name || comp.id));
+    this._str = { items, strings: sp.strings, left: sp.left, name: comp.props.name || comp.id };
   },
 
-  // Place one Solar PV inverter in array mode and its AC breaker; the user wires it to a bus.
-  addToSld() {
-    const c = this.cfg(), p = this.panel(c), inv = this.inverter(c), r = this._str;
-    if (!r) return;
-    let x = 200, y = 160;
-    for (const comp of AppState.components.values()) { x = Math.max(x, comp.x + 200); }
-    const pv = AppState.addComponent('solar_pv', x, y);
+  _pvComp() { const id = this.cfg().pvId; return id ? AppState.components.get(id) || null : null; },
+
+  // Create or update the one Solar PV array (and its AC breaker) this tool owns. It is an ordinary
+  // Solar PV component in array mode, so the fault, load flow, hosting capacity and compliance engines see it.
+  placePv(quiet) {
+    const c = this.cfg(), p = this.panel(c), inv = this.inverter(c);
+    const sp = this.stringSplit(this._res.modules, +c.perString, inv.mppt_count);
+    let pv = this._pvComp(), cb = null;
+    const bus = c.busId ? AppState.components.get(c.busId) : null;
+    if (!pv) {
+      let x = bus ? bus.x : 200, y = bus ? bus.y - 200 : 160;
+      if (!bus) for (const comp of AppState.components.values()) x = Math.max(x, comp.x + 200);
+      pv = AppState.addComponent('solar_pv', x, y);
+      pv.props.name = 'PV array';
+      this.set('pvId', pv.id);
+      cb = AppState.addComponent('cb', pv.x, pv.y + 110);
+      cb.props.name = 'PV AC breaker';
+      AppState.addWire(pv.id, 'out', cb.id, 'top');
+    } else {
+      cb = [...AppState.wires.values()].filter(w => w.fromComponent === pv.id && w.fromPort === 'out')
+        .map(w => AppState.components.get(w.toComponent)).find(x => x && x.type === 'cb') || null;
+    }
     Object.assign(pv.props, {
-      name: 'PV array', rated_kw: inv.ac_kw, num_inverters: 1, inverter_eff: +(inv.eff_pct / 100).toFixed(4),
+      rated_kw: inv.ac_kw, num_inverters: 1, voltage_kv: +(+c.acV / 1000).toFixed(4), inverter_eff: +(inv.eff_pct / 100).toFixed(4),
+      fault_contribution_pu: inv.fault_x,
       pv_array_mode: 'array', pv_panel_type: p.id, pv_panel_w: p.w, pv_voc: p.voc, pv_vmp: p.vmp, pv_isc: p.isc,
       pv_imp: p.imp, pv_beta_voc: p.beta_voc, pv_gamma_vmp: p.gamma_vmp,
-      pv_panels_per_string: +c.perString, pv_strings: this._str.strings,
+      pv_panels_per_string: +c.perString, pv_strings: sp.strings,
       mppt_min_v: inv.mppt_min_v, mppt_max_v: inv.mppt_max_v, dc_max_v: inv.dc_max_v,
-      mppt_count: inv.mppt_count, mppt_max_a: inv.mppt_max_a,
-      site_temp_min_c: this._loc(c).tmin_c,
+      mppt_count: inv.mppt_count, mppt_max_a: inv.mppt_max_a, site_temp_min_c: this._loc(c).tmin_c,
     });
-    const cb = AppState.addComponent('cb', x, y + 120);
-    cb.props.name = 'PV AC breaker';
-    const brk = this._prot && this._prot.items.find(i => i.id === 'ac_breaker');
-    if (brk && brk.rating_a) { cb.props.rated_current_a = brk.rating_a; cb.props.trip_rating_a = brk.rating_a; cb.props.rated_voltage_kv = 0.69; }
-    AppState.addWire(pv.id, 'out', cb.id, 'top');
+    // connect the breaker to the chosen bus once (a wire already there is left alone)
+    if (bus && cb && ![...AppState.wires.values()].some(w => (w.fromComponent === cb.id || w.toComponent === cb.id) && (w.fromComponent === bus.id || w.toComponent === bus.id))) {
+      AppState.addWire(cb.id, 'bottom', bus.id, 'at_0');
+    }
+    AppState.dirty = true;
     if (typeof Canvas !== 'undefined') Canvas.render();
-    this._status('Solar: placed ' + pv.props.name + ' (' + this._str.strings + ' × ' + c.perString + ' modules) and its AC breaker. Wire the breaker to a bus.');
+    if (!quiet) this._status('Solar: ' + (pv.props.name) + ' placed / updated (' + sp.strings + ' × ' + c.perString + ' modules).');
+    return pv;
+  },
+
+  // Run one of the app's own studies on the placed array, by pressing its normal menu button.
+  runStudy(which) {
+    const id = { fault: 'btn-run-fault', loadflow: 'btn-run-loadflow', hosting: 'btn-hosting-capacity', compliance: 'btn-compliance' }[which];
+    const b = document.getElementById(id);
+    if (!b) return;
+    if (!this._pvComp()) throw new Error('Place the PV array on the SLD first.');
     this.close();
+    b.click();
   },
 };
 

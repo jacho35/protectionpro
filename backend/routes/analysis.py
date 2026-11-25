@@ -1106,15 +1106,6 @@ class SolarSizeRequest(BaseModel):
     arrays: Optional[List[dict]] = None         # roofs drawn on the plan: [{name, area_m2, packing, tilt_deg, azimuth_deg}]
 
 
-class SolarStringsRequest(BaseModel):
-    module: Union[str, dict]
-    inverter: Union[str, dict]
-    modules_per_string: int
-    strings_per_mppt: List[int]
-    t_min_c: float = -5.0
-    t_cell_max_c: float = 70.0
-
-
 class SolarRowSpacingRequest(BaseModel):
     lat: float
     tilt_deg: float
@@ -1148,12 +1139,6 @@ def solar_size(data: SolarSizeRequest):
     return _solar_call(solar_pv.run_solar_size, data.model_dump())
 
 
-@router.post("/solar-strings")
-def solar_strings(data: SolarStringsRequest):
-    """Check modules per string and strings per MPPT against the inverter limits."""
-    return _solar_call(solar_pv.check_strings, data.model_dump())
-
-
 @router.post("/solar-row-spacing")
 def solar_row_spacing(data: SolarRowSpacingRequest):
     """Row pitch and ground cover ratio for tilted racks on a flat roof."""
@@ -1168,7 +1153,6 @@ class SolarProtectionRequest(BaseModel):
     strings_per_mppt: List[int]
     string_cable_m: float = 30.0
     vd_limit_pct: float = 1.0
-    ac_voltage_v: float = 400.0
     num_inverters: int = 1
     t_min_c: float = -5.0
     export_limit_kw: Optional[float] = None   # set on the connection point
@@ -1176,21 +1160,5 @@ class SolarProtectionRequest(BaseModel):
 
 @router.post("/solar-protection")
 def solar_protection(data: SolarProtectionRequest):
-    """String fuses, DC isolator, DC string cable, AC breaker, fault contribution and export limit."""
+    """String fuses, DC isolator, DC string cable and the export limit."""
     return _solar_call(solar_pv.size_protection, data.model_dump())
-
-
-class SolarVoltageRiseRequest(BaseModel):
-    p_kw: float
-    v_ll_v: float = 400.0
-    s_sc_kva: float
-    xr_ratio: float = 1.0
-    absorb_pf: float = 1.0
-    limit_pct: float = 3.0
-
-
-@router.post("/solar-voltage-rise")
-def solar_voltage_rise(data: SolarVoltageRiseRequest):
-    """Voltage rise at the point of connection from the fault level (screening)."""
-    return _solar_call(lambda d: solar_pv.voltage_rise(d["p_kw"], d["v_ll_v"], d["s_sc_kva"], d["xr_ratio"],
-                                                       d["absorb_pf"], d["limit_pct"]), data.model_dump())

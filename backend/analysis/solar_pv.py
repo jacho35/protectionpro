@@ -18,30 +18,23 @@ east, 180 = south), tilt from horizontal.
 temperature T_cell = T_day + (NOCT - 20) / 800 * 700 W/m2 (a representative
 generating irradiance).
 
-**Strings** (IEC 62548 / 60364-7-712 style): cold Voc = N * Voc * (1 + k_Voc *
-(T_min - 25)); hot Vmp = N * Vmp * (1 + k_Vmp * (T_cell_max - 25)).
-
-**DC / AC protection** (phase 3, IEC 62548 / 60364-7-712 style): string overcurrent
-protection is required where 3 or more strings share an input ((n - 1) x Isc can
-exceed a module's reverse-current rating); gPV fuse In >= 1.5 x Isc, rounded up to
-a standard size and never above the module's maximum series fuse. DC isolator
-current >= 1.25 x Isc x strings on the input, voltage >= cold Voc of the string.
-DC string cable: smallest PV1-F size whose current rating (free air at 60 degC,
-typical manufacturer data) is >= 1.25 x Isc and whose two-way voltage drop
-(rho 0.0206 ohm mm2/m, copper at 70 degC) is within the limit. AC side: rated
-current from the inverter kW, breaker = next standard size >= rated current,
-fault contribution = fault_x x rated current, export limit checked at the
-connection point.
+**DC protection** (phase 3, IEC 62548 / 60364-7-712 style): string overcurrent protection is
+required where 3 or more strings share an input ((n - 1) x Isc can exceed a module's
+reverse-current rating); gPV fuse In >= 1.5 x Isc, rounded up to a standard size and
+never above the module's maximum series fuse. DC isolator current >= 1.25 x Isc x
+strings on the input, voltage >= cold Voc of the string. DC string cable: smallest
+PV1-F size whose current rating (free air at 60 degC, typical manufacturer data) is
+>= 1.25 x Isc and whose two-way voltage drop (rho 0.0206 ohm mm2/m, copper at 70 degC)
+is within the limit. The export limit is checked at the connection point. Everything
+electrical beyond this (string voltage / current checks, fault contribution, voltage
+rise, loading, hosting capacity) is done by the app's existing engines on the placed
+PV component, never here.
 
 **Shading (phase 4)**: obstructions (parapet, vent, tree, neighbouring building) become
 horizon blocks. A block of height h at distance d, bearing b and width w covers
 azimuths b +- atan(w / 2d) up to elevation atan(h / d). In the hourly integration
 the beam is zero whenever the sun is behind a block; diffuse and ground-reflected
 irradiance are unchanged (a conservative simplification).
-
-**Grid impact (phase 4)**: voltage rise at the point of connection from the fault
-level, dV% = 100 (P R + Q X) / V^2 with Z = V^2 / S_sc split by the X/R ratio;
-reactive power absorbed by the inverter (lagging) reduces the rise.
 
 **Row spacing** for tilted racks: pitch = L cos(beta) + L sin(beta) / tan(alpha),
 alpha the solar elevation at the design hour on the winter solstice.
@@ -378,55 +371,6 @@ def run_solar_size(req):
     return out
 
 
-# ---------------------------------------------------------------- strings
-def string_limits(module, inverter, t_min_c, t_cell_max_c):
-    """Smallest and largest modules per string for this module / inverter pair."""
-    voc_cold = module["voc_v"] * (1 + module.get("k_voc_pct", -0.27) / 100.0 * (t_min_c - 25))
-    vmp_hot = module["vmp_v"] * (1 + module.get("k_vmp_pct", -0.34) / 100.0 * (t_cell_max_c - 25))
-    limit_v = min(inverter["max_dc_v"], module.get("max_system_v", inverter["max_dc_v"]))
-    n_max = int(math.floor(limit_v / voc_cold + 1e-9))
-    n_max = min(n_max, int(math.floor(inverter["mppt_max_v"] / module["vmp_v"] + 1e-9)))
-    n_min = int(math.ceil(inverter["mppt_min_v"] / vmp_hot - 1e-9))
-    return {"voc_cold_v": voc_cold, "vmp_hot_v": vmp_hot, "n_min": n_min, "n_max": n_max}
-
-
-def check_strings(req):
-    """Check an array layout: modules per string, strings per MPPT, against the inverter."""
-    module = get_module(req["module"])
-    inverter = get_inverter(req["inverter"])
-    n = int(req["modules_per_string"])
-    per_mppt = [int(x) for x in req["strings_per_mppt"]]
-    if n < 1 or not per_mppt or any(x < 0 for x in per_mppt):
-        raise ValueError("Need at least 1 module per string and a non-negative strings-per-MPPT list")
-    t_min = float(req.get("t_min_c", -5))
-    t_cell_max = float(req.get("t_cell_max_c", 70))
-    lim = string_limits(module, inverter, t_min, t_cell_max)
-    voc_cold = n * lim["voc_cold_v"]
-    vmp_hot = n * lim["vmp_hot_v"]
-    vmp_stc = n * module["vmp_v"]
-    worst_a = max(per_mppt) * module["isc_a"]
-    limit_v = min(inverter["max_dc_v"], module.get("max_system_v", inverter["max_dc_v"]))
-    checks = [
-        {"id": "max_voltage", "ok": voc_cold <= limit_v, "value": round(voc_cold, 1), "limit": limit_v,
-         "label": "Max system voltage (cold Voc)"},
-        {"id": "mppt_min", "ok": vmp_hot >= inverter["mppt_min_v"], "value": round(vmp_hot, 1),
-         "limit": inverter["mppt_min_v"], "label": "MPPT start window (hot Vmp)"},
-        {"id": "mppt_max", "ok": vmp_stc <= inverter["mppt_max_v"], "value": round(vmp_stc, 1),
-         "limit": inverter["mppt_max_v"], "label": "MPPT upper limit (Vmp at STC)"},
-        {"id": "mppt_current", "ok": worst_a <= inverter["max_a_per_mppt"], "value": round(worst_a, 2),
-         "limit": inverter["max_a_per_mppt"], "label": "MPPT input current"},
-        {"id": "mppt_count", "ok": len(per_mppt) <= inverter["mppt_count"], "value": len(per_mppt),
-         "limit": inverter["mppt_count"], "label": "MPPT inputs used"},
-    ]
-    total_modules = n * sum(per_mppt)
-    kwp = total_modules * module["pmax_w"] / 1000.0
-    return {"ok": all(c["ok"] for c in checks), "checks": checks, "n_min": lim["n_min"], "n_max": lim["n_max"],
-            "voc_cold_per_module_v": round(lim["voc_cold_v"], 2), "vmp_hot_per_module_v": round(lim["vmp_hot_v"], 2),
-            "string_isc_design_a": round(1.25 * module["isc_a"], 2),
-            "total_modules": total_modules, "kwp": round(kwp, 3),
-            "dc_ac_ratio": round(kwp / inverter["ac_kw"], 2)}
-
-
 # ---------------------------------------------------------------- row spacing
 def row_spacing(lat, tilt, module_length_m, hour_angle_deg=0.0, roof_depth_m=None):
     """Row pitch for tilted racks so no row shades the next at the design hour (winter solstice)."""
@@ -446,7 +390,6 @@ def row_spacing(lat, tilt, module_length_m, hour_angle_deg=0.0, roof_depth_m=Non
 
 # ---------------------------------------------------------------- DC / AC protection
 FUSE_SIZES_A = [10, 12, 15, 16, 20, 25, 30, 32, 40, 50, 63]
-BREAKER_SIZES_A = [6, 10, 16, 20, 25, 32, 40, 50, 63, 80, 100, 125, 160, 200, 250, 315, 400, 500, 630]
 # PV1-F cable, current rating in A (free air, 60 degC ambient, typical manufacturer data)
 PV_CABLE_A = {2.5: 41, 4: 55, 6: 70, 10: 98, 16: 132, 25: 176}
 RHO_CU_70 = 0.0206  # ohm mm2 / m
@@ -461,7 +404,7 @@ def _next_up(sizes, x):
 
 
 def size_protection(req):
-    """Phase 3: string fuses, DC isolator, DC string cable, AC breaker, fault contribution, export limit."""
+    """Phase 3: string fuses, DC isolator, DC string cable and the export limit (the rest is the app's own studies)."""
     module = get_module(req["module"])
     inverter = get_inverter(req["inverter"])
     n = int(req["modules_per_string"])
@@ -470,10 +413,9 @@ def size_protection(req):
         raise ValueError("Need modules per string and strings per MPPT")
     length = float(req.get("string_cable_m", 30))
     vd_limit = float(req.get("vd_limit_pct", 1.0))
-    ac_v = float(req.get("ac_voltage_v", 400))
     num_inv = int(req.get("num_inverters", 1))
-    if length <= 0 or vd_limit <= 0 or ac_v <= 0 or num_inv < 1:
-        raise ValueError("Cable length, voltage-drop limit, AC voltage and inverter count must be positive")
+    if length <= 0 or vd_limit <= 0 or num_inv < 1:
+        raise ValueError("Cable length, voltage-drop limit and inverter count must be positive")
     isc = module["isc_a"]
     worst = max(per_mppt)
     items = []
@@ -512,18 +454,8 @@ def size_protection(req):
     items.append({"id": "dc_cable", "ok": chosen is not None, "cable": chosen,
                   "label": (f"DC string cable {chosen['size_mm2']} mm2 PV1-F, drop {chosen['vd_pct']} % over {length:g} m"
                             if chosen else f"No PV cable up to 25 mm2 keeps the drop within {vd_limit} %")})
-    # AC side
     total_kw = inverter["ac_kw"] * num_inv
-    phases = int(inverter.get("phases", 3))
-    i_rated = total_kw * 1000.0 / ((math.sqrt(3) if phases == 3 else 1.0) * ac_v)
-    brk = _next_up(BREAKER_SIZES_A, i_rated)
-    fault_a = inverter.get("fault_x_rated", 1.1) * i_rated
-    items.append({"id": "ac_breaker", "ok": brk is not None, "rating_a": brk, "ac_current_a": round(i_rated, 1),
-                  "label": f"AC breaker {brk} A for {i_rated:.1f} A rated output" if brk else "No standard breaker fits"})
-    items.append({"id": "fault_contribution", "ok": True, "fault_a": round(fault_a, 1),
-                  "label": f"Inverter fault contribution about {fault_a:.1f} A ({inverter.get('fault_x_rated', 1.1)} x rated)"})
-    out = {"items": items, "ok": all(i["ok"] for i in items), "ac_current_a": round(i_rated, 2),
-           "fault_contribution_a": round(fault_a, 2), "total_ac_kw": total_kw}
+    out = {"items": items, "ok": all(i["ok"] for i in items), "total_ac_kw": total_kw}
     limit = req.get("export_limit_kw")
     if limit is not None:
         limit = float(limit)
@@ -533,23 +465,3 @@ def size_protection(req):
                               f"set the inverter's export control to {limit:g} kW" if total_kw > limit
                               else f"Within the {limit:g} kW export limit")
     return out
-
-
-# ---------------------------------------------------------------- grid impact
-def voltage_rise(p_kw, v_ll_v, s_sc_kva, xr_ratio=1.0, absorb_pf=1.0, limit_pct=3.0):
-    """Steady-state voltage rise at the point of connection from the fault level.
-
-    absorb_pf < 1 makes the inverter absorb reactive power (lagging), which lowers the rise.
-    """
-    if p_kw < 0 or v_ll_v <= 0 or s_sc_kva <= 0 or xr_ratio < 0 or not 0 < absorb_pf <= 1 or limit_pct <= 0:
-        raise ValueError("Power >= 0; voltage, fault level and limit > 0; X/R >= 0; power factor in (0, 1]")
-    z = v_ll_v ** 2 / (s_sc_kva * 1000.0)
-    r = z / math.sqrt(1 + xr_ratio ** 2)
-    x = r * xr_ratio
-    p = p_kw * 1000.0
-    q_abs = p * math.tan(math.acos(absorb_pf))
-    rise = 100.0 * (p * r - q_abs * x) / v_ll_v ** 2
-    return {"voltage_rise_pct": round(rise, 3), "limit_pct": limit_pct, "ok": rise <= limit_pct,
-            "r_ohm": round(r, 5), "x_ohm": round(x, 5), "ssc_ratio": round(s_sc_kva / p_kw, 1) if p_kw > 0 else None,
-            "max_p_kw_at_limit": round(limit_pct / 100.0 * v_ll_v ** 2 / (r - x * math.tan(math.acos(absorb_pf))) / 1000.0, 1)
-            if r - x * math.tan(math.acos(absorb_pf)) > 0 else None}

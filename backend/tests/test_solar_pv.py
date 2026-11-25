@@ -88,37 +88,10 @@ def test_run_size_errors():
         sp.run_solar_size({"location": "Pretoria", "mode": "roof", "annual_kwh": 1000})
 
 
-def test_string_temperature_corrected_voltages():
-    # Voc cold = 49.9 * (1 + (-0.26 / 100) * (-5 - 25)) = 49.9 * 1.078 = 53.7922
-    # Vmp hot  = 41.95 * (1 + (-0.34 / 100) * (70 - 25)) = 41.95 * 0.847 = 35.5317
-    lim = sp.string_limits(MOD, INV, -5, 70)
-    assert lim["voc_cold_v"] == pytest.approx(53.7922, abs=1e-3)
-    assert lim["vmp_hot_v"] == pytest.approx(35.5317, abs=1e-3)
 
 
-def test_string_limits_take_the_tighter_of_voltage_and_mppt_max():
-    lim = sp.string_limits(MOD, INV, -5, 70)
-    assert lim["n_max"] == min(math.floor(1000 / 53.7922), math.floor(800 / 41.95))
-    assert lim["n_min"] == math.ceil(200 / 35.5317)
 
 
-def test_check_strings_pass_and_each_failure():
-    ok = sp.check_strings({"module": "pv_550_mono", "inverter": "inv_10k_2mppt",
-                           "modules_per_string": 8, "strings_per_mppt": [2, 1]})
-    assert ok["ok"] and ok["total_modules"] == 24 and ok["kwp"] == pytest.approx(13.2)
-    assert ok["dc_ac_ratio"] == pytest.approx(1.32)
-    assert ok["string_isc_design_a"] == pytest.approx(1.25 * 14.0, abs=0.01)
-
-    def failing(**kw):
-        r = sp.check_strings(dict({"module": "pv_550_mono", "inverter": "inv_10k_2mppt",
-                                   "modules_per_string": 8, "strings_per_mppt": [2, 1]}, **kw))
-        return {c["id"] for c in r["checks"] if not c["ok"]}
-
-    assert failing(modules_per_string=19) >= {"max_voltage"}           # 19 * 53.8 = 1022 V
-    assert failing(modules_per_string=5) == {"mppt_min"}               # 5 * 35.5 = 178 V
-    assert failing(strings_per_mppt=[3, 1]) == {"mppt_current"}        # 3 * 14.0 = 42 A
-    assert failing(strings_per_mppt=[1, 1, 1]) == {"mppt_count"}
-    assert failing(modules_per_string=19)                              # also above the MPPT ceiling
 
 
 def test_row_spacing_hand_calc():
@@ -175,9 +148,6 @@ def test_protection_hand_calcs():
     # cable: 1.25 * 14 = 17.5 A -> 2.5 mm2 carries 41 A but 2 * 30 * 14 * 0.0206 / 2.5 = 6.9 V = 2.06 % (> 1 %)
     # 4 mm2: 1.29 % > 1 %; 6 mm2: 2.884 V / (8 * 41.95 = 335.6 V) = 0.86 %
     assert by["dc_cable"]["cable"]["size_mm2"] == 6 and by["dc_cable"]["cable"]["vd_pct"] == pytest.approx(0.86, abs=0.01)
-    # AC: 10000 / (sqrt(3) * 400) = 14.43 A -> 16 A breaker; fault 1.1 * 14.43 = 15.9 A
-    assert r["ac_current_a"] == pytest.approx(14.43, abs=0.01) and by["ac_breaker"]["rating_a"] == 16
-    assert r["fault_contribution_a"] == pytest.approx(15.88, abs=0.02)
     assert r["ok"] is True
 
 
@@ -231,18 +201,6 @@ def test_shading_reduces_yield_only_when_the_block_is_in_the_sun_path():
     assert north["annual_kwh"] < clear["annual_kwh"] == north["unshaded_annual_kwh"]
 
 
-def test_voltage_rise_hand_calc():
-    # 400 V, 5 MVA... use 1 MVA fault level: Z = 400^2 / 1e6 = 0.16 ohm, X/R = 1 -> R = X = 0.11314
-    # 10 kW unity pf: dV = 100 * 10000 * 0.11314 / 400^2 = 0.707 %
-    r = sp.voltage_rise(10, 400, 1000, 1.0)
-    assert r["voltage_rise_pct"] == pytest.approx(0.707, abs=0.001) and r["ok"]
-    # absorbing at pf 0.95 lagging: Q = 10000 * tan(acos(0.95)) = 3287 var -> dV = (10000 - 3287) * 0.11314 / 160000 * 100
-    r2 = sp.voltage_rise(10, 400, 1000, 1.0, absorb_pf=0.95)
-    assert r2["voltage_rise_pct"] == pytest.approx(0.4747, abs=0.001)
-    assert r2["voltage_rise_pct"] < r["voltage_rise_pct"]
-    assert sp.voltage_rise(100, 400, 1000, 1.0)["ok"] is False          # 7.07 %
-    with pytest.raises(ValueError):
-        sp.voltage_rise(10, 400, 0)
 
 
 def test_arrays_mode_sums_roofs_and_respects_orientation():
