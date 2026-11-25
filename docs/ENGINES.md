@@ -14,6 +14,10 @@ Endpoint table and engine internals, moved out of CLAUDE.md. Read the relevant s
 | `/api/analysis/contingency` | N-1 / N-2 security screening | Load-flow contingency analysis |
 | `/api/analysis/timeseries-loadflow` | Quasi-dynamic time-series load flow | 24h/8760h load & generation profile, BESS SoC + OLTC tap carried between steps |
 | `/api/analysis/frequency-scan` | Impedance vs frequency (resonance) | Nodal Z_kk(h) sweep on the harmonics network model |
+| `/api/analysis/solar-size` | PV array sizing (roof area and / or load) + monthly / annual yield | Klein day, Erbs + Collares-Pereira & Rabl, isotropic sky; screening grade |
+| `/api/analysis/solar-strings` | PV string check against inverter limits | cold Voc / hot Vmp / MPPT window / per-MPPT current (IEC 62548 style) |
+| `/api/analysis/solar-row-spacing` | Tilted-rack row pitch and GCR | winter-solstice solar elevation |
+| `GET /api/analysis/solar-library` | Default modules, inverters, loss stack, irradiance locations | — |
 | `/api/analysis/battery-sizing` | Duty-cycle battery sizing + discharge sim | IEEE 485-style factors, Peukert, OCV(SoC) |
 | `/api/analysis/opf` | Economic dispatch + Volt/VAR optimization | Merit order by marginal cost + LF-scored hill climb |
 | `/api/analysis/reliability` | SAIDI/SAIFI/MAIFI/EENS | IEEE 1366 indices, analytical FMEA (Billinton) |
@@ -132,6 +136,9 @@ Endpoint table and engine internals, moved out of CLAUDE.md. Read the relevant s
   motor infeeds excluded; V_pre from a baseline load flow with the motor off)
 - Starters: DOL, star-delta, autotransformer, soft starter (current-limited); VFD not simulated
 - Reports accel time, stall, peak current, voltage dip trajectory, rotor I²t thermal use
+
+### Solar PV (solar_pv.py)
+Request bodies are their own small models (not ProjectData). Azimuth is degrees from **north** (0 = north-facing, the southern-hemisphere default); tilt from horizontal. Yield = kWp × H_poa × days × PR_month with PR_month = temperature factor × loss stack (soiling 3 %, mismatch 2 %, DC wiring 1.5 %, inverter 1 − η, AC wiring 0.5 %, availability 1 %); cell temperature = daytime air + (NOCT − 20)/800 × 700. Irradiance is `solar_irradiance_data.py` (generated, screening grade — confirm against PVGIS / SolarGIS before certified use). `mode` `min` returns the smaller of the roof and load module counts and `limited_by` says which. Strings use the design minimum air temperature of the location (`tmin_c`) and 70 °C cell temperature unless sent. Errors are `ValueError` → 400.
 
 ### Arc Flash (arcflash.py)
 - **Both editions are implemented**, selected per bus by the `arc_flash_method` prop. Absent ⇒ `IEEE 1584-2002`, so projects saved before the 2018 method was added stay byte-identical; **new buses default to `IEEE 1584-2018`** (`frontend/js/constants.js`), the current edition.

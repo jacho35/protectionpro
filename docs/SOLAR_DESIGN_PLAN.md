@@ -1,6 +1,6 @@
 # Solar PV design — plan
 
-Agreed 2026-11-25 from a design canvas (nine boards: sizing on the site plan, roadmap, 3D roof, roof entry, sizing mode, string design, SLD generation, module / inverter library, flat-roof row spacing). Nothing is built yet.
+Agreed 2026-11-25 from a design canvas (nine boards: sizing on the site plan, roadmap, 3D roof, roof entry, sizing mode, string design, SLD generation, module / inverter library, flat-roof row spacing). Status: **phase 1 backend built 2026-11-25** (engine, data, routes, tests); the frontend (library, roof entry, sizing panel, results) is next.
 
 ## 1. Decisions taken
 
@@ -14,6 +14,7 @@ Agreed 2026-11-25 from a design canvas (nine boards: sizing on the site plan, ro
 | Standards | A selectable pack per project. **SANS 10142-1-2 / NRS 097-2 and IEC 62548 / 60364-7-712 first**, NEC 690 later |
 | Roof shapes | **Gable and flat (tilted racks)**. Ground mount later |
 | Roof entry | **Detect** (as room / erf detect), **Draw** (nodes), and **Generate from a dialog** (as rooms are today). Node gestures follow the single table in `CLAUDE.md` |
+| Export limit | **Sits on the connection point** (phase 3), not a project setting |
 | Advanced | Shading and 3D roof, battery / hybrid and export limit, DC / AC protection and cable sizing, grid impact (fault, load flow, voltage rise) |
 
 ## 2. Phases
@@ -53,6 +54,5 @@ Each new file gets its entry in `docs/CODEMAP.md`, and the endpoints a section i
 
 ## 6. Open questions
 
-- Which cities go into the first irradiance table, and where the monthly values come from (a licensed source must be confirmed before bundling).
+- The irradiance table covers all major South African cities and Hermanus (17 locations) but its annual means are approximate, not a licensed dataset. Replace them with PVGIS / SolarGIS monthly values before any certified use.
 - Default inverter fault multiple and whether it is per-inverter or per-library entry.
-- Whether export limit is a project setting or lives on the connection point.

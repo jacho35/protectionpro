@@ -130,7 +130,7 @@ Full plan and decisions: `docs/DESIGN_AUTOMATION_PLAN.md`. Rule for all of them:
 
 Full plan and decisions: `docs/SOLAR_DESIGN_PLAN.md`. Site plan first; SANS / NRS 097-2 and IEC first; modules and inverters in a new library.
 
-121. **Solar phase 1 — size and yield** — roof entry (detect / draw / generate from dialog, gable and flat), module library, sizing from roof area or Demand load, monthly and annual kWh from a bundled irradiance table. *(Solar PV Design)*
+121. **Solar phase 1 — size and yield** *(in progress: backend, data and tests done 2026-11-25; frontend open)* — roof entry (detect / draw / generate from dialog, gable and flat), module library, sizing from roof area or Demand load, monthly and annual kWh from a bundled irradiance table. *(Solar PV Design)*
 122. **Solar phase 2 — string design** — series / parallel counts checked against inverter MPPT window, max voltage and per-MPPT current; DC/AC ratio. *(Solar PV Design)*
 123. **Solar on the SLD** — generate PV source, string fuses, DC isolator, inverter, AC breaker and the connection to a chosen board. *(Solar PV Design)*
 124. **Solar phase 3 — DC / AC protection** — string fuses, isolators, SPDs, DC cable sizing, export limit, inverter fault contribution. *(Solar PV Design)*

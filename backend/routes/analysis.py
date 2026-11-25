@@ -4,7 +4,7 @@ and study manager."""
 
 import functools
 import traceback
-from typing import List, Optional
+from typing import List, Optional, Union
 from fastapi import APIRouter, HTTPException
 from fastapi.routing import APIRoute
 from pydantic import BaseModel
@@ -16,6 +16,9 @@ from ..analysis.timeseries_loadflow import run_timeseries_loadflow
 from ..analysis.harmonics import run_harmonics
 from ..analysis.frequency_scan import run_frequency_scan
 from ..analysis.battery_sizing import run_battery_sizing
+from ..analysis import solar_pv
+from ..analysis.pv_data import PV_INVERTERS, PV_MODULES, DEFAULT_LOSSES
+from ..analysis.solar_irradiance_data import CITIES as SOLAR_CITIES, SOURCE_NOTE as SOLAR_NOTE
 from ..analysis.optimal_powerflow import run_opf
 from ..analysis.reliability import run_reliability
 from ..analysis.filter_sizing import run_filter_sizing
@@ -1083,3 +1086,74 @@ def study_manager(data: StudyManagerRequest):
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Study manager error: {e}")
+
+
+# ---------------------------------------------------------------- Solar PV design (phase 1)
+class SolarSizeRequest(BaseModel):
+    location: str = "Pretoria"
+    module: Union[str, dict] = "pv_550_mono_144"
+    inverter: Optional[Union[str, dict]] = None
+    num_inverters: int = 1
+    tilt_deg: float = 20.0
+    azimuth_deg: float = 0.0            # degrees from north; 0 = north-facing (southern hemisphere)
+    mode: str = "min"                    # roof | load | min
+    usable_area_m2: Optional[float] = None
+    packing: float = 0.8
+    annual_kwh: Optional[float] = None
+    share_pct: float = 70.0
+    losses: Optional[dict] = None
+
+
+class SolarStringsRequest(BaseModel):
+    module: Union[str, dict]
+    inverter: Union[str, dict]
+    modules_per_string: int
+    strings_per_mppt: List[int]
+    t_min_c: float = -5.0
+    t_cell_max_c: float = 70.0
+
+
+class SolarRowSpacingRequest(BaseModel):
+    lat: float
+    tilt_deg: float
+    module_length_m: float
+    hour_angle_deg: float = 0.0          # 0 = solar noon, 15 deg per hour
+    roof_depth_m: Optional[float] = None
+
+
+def _solar_call(fn, payload):
+    try:
+        return fn(payload)
+    except (ValueError, KeyError) as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Solar error: {e}")
+
+
+@router.get("/solar-library")
+def solar_library():
+    """Default PV modules, inverters, loss stack and the irradiance locations."""
+    return {"modules": PV_MODULES, "inverters": PV_INVERTERS, "losses": DEFAULT_LOSSES,
+            "locations": [{"name": n, "lat": c["lat"], "lon": c["lon"], "tmin_c": c["tmin_c"]}
+                          for n, c in SOLAR_CITIES.items()],
+            "data_note": SOLAR_NOTE}
+
+
+@router.post("/solar-size")
+def solar_size(data: SolarSizeRequest):
+    """Size a PV array from roof area and / or load, with monthly and annual yield."""
+    return _solar_call(solar_pv.run_solar_size, data.model_dump())
+
+
+@router.post("/solar-strings")
+def solar_strings(data: SolarStringsRequest):
+    """Check modules per string and strings per MPPT against the inverter limits."""
+    return _solar_call(solar_pv.check_strings, data.model_dump())
+
+
+@router.post("/solar-row-spacing")
+def solar_row_spacing(data: SolarRowSpacingRequest):
+    """Row pitch and ground cover ratio for tilted racks on a flat roof."""
+    return _solar_call(lambda d: solar_pv.row_spacing(d["lat"], d["tilt_deg"], d["module_length_m"],
+                                                      d["hour_angle_deg"], d["roof_depth_m"]), data.model_dump())
