@@ -58,6 +58,11 @@ const PlanSolar = {
     st.northAngle = (Math.round(Math.atan2(s.x - c.x, -(s.y - c.y)) * 180 / Math.PI) + 360) % 360;
     PlanEngine.requestDraw({ fg: true });
   },
+  // Whether the plan shows each roof's down-slope arrow with its true azimuth (default yes; kept with the project).
+  slopeShown() { const st = this._store(); return !st || st.showSlope !== false; },
+  setSlopeShown(on) { const st = this._store(); if (!st) return; st.showSlope = !!on; this._changed(); },
+  // 'N', 'NE', … for a true azimuth in degrees.
+  compass(az) { return ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'][Math.round((((+az || 0) % 360) + 360) % 360 / 45) % 8]; },
   // The roof's facing direction as a bearing on the plan (° clockwise from the top of the plan), 0 ≤ a < 360.
   planAz(roof) { return ((((+roof.azimuth || 0) + this.northAngle()) % 360) + 360) % 360; },
 
@@ -401,7 +406,7 @@ const PlanSolar = {
       ctx.beginPath(); ctx.moveTo(x1 + a.dir.x * 2 * u, y1 + a.dir.y * 2 * u);
       ctx.lineTo(x1 - a.dir.x * h + nx * h * 0.6, y1 - a.dir.y * h + ny * h * 0.6);
       ctx.lineTo(x1 - a.dir.x * h - nx * h * 0.6, y1 - a.dir.y * h - ny * h * 0.6); ctx.closePath(); ctx.fill();
-      ctx.fillText(Math.round(a.az) + '°', a.at.x + nx * 14 * u, a.at.y + ny * 14 * u + 4 * u);
+      ctx.fillText(Math.round(a.az) + '° ' + this.compass(a.az), a.at.x + nx * 14 * u, a.at.y + ny * 14 * u + 4 * u);
     }
     ctx.restore();
   },
@@ -428,7 +433,7 @@ const PlanSolar = {
       ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke();
       ctx.beginPath(); ctx.moveTo(x1 + d.x * 2 * u, y1 + d.y * 2 * u); ctx.lineTo(x1 - d.x * h + nx * h * 0.6, y1 - d.y * h + ny * h * 0.6); ctx.lineTo(x1 - d.x * h - nx * h * 0.6, y1 - d.y * h - ny * h * 0.6); ctx.closePath(); ctx.fill();
       ctx.font = `600 ${11 * u}px sans-serif`; ctx.textAlign = 'center';
-      ctx.fillText(Math.round(pl.trueAz) + '°', c.x + nx * 14 * u, c.y + ny * 14 * u + 4 * u);
+      ctx.fillText(Math.round(pl.trueAz) + '° ' + this.compass(pl.trueAz), c.x + nx * 14 * u, c.y + ny * 14 * u + 4 * u);
     });
     for (const o of (r.objects || [])) {
       const a = (+o.rot || 0) * Math.PI / 180, ca = Math.cos(a), sa = Math.sin(a), hw = o.w / 2 / f, hd = o.d / 2 / f;
@@ -482,7 +487,7 @@ const PlanSolar = {
       ctx.textAlign = 'center';
       for (const k of (r.keepouts || [])) this._drawKeepout(ctx, k, u);
       if (typeof PlanTools !== 'undefined' && PlanTools.active && PlanTools.active.id === 'select') { this._handles(ctx, r, u); for (const k of (r.keepouts || [])) this._handles(ctx, k, u); }
-      this._slopeArrows(ctx, r, u);
+      if (this.slopeShown()) this._slopeArrows(ctx, r, u);
       ctx.fillStyle = '#7c2d12'; ctx.textAlign = 'center'; ctx.font = `${12 * u}px sans-serif`;
       ctx.fillText(`${r.name} · ${r.shape === 'flat' ? 'flat, ' + r.tilt + '° racks' : r.shape + ' ' + r.pitch + '°'}${a != null ? ' · ' + a.toFixed(0) + ' m²' : ''}`, c.x, c.y);
       ctx.restore();

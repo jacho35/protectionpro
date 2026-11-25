@@ -291,6 +291,7 @@ const Roof3D = {
     const f = PlanEngine.factor();
     const roofs = PlanSolar.roofs().filter(r => r.points && r.points.length >= 3);
     if (!f || !roofs.length) return { items: [], obs: null, objs: [], north: PlanSolar.northAngle(), total: 0, empty: true, uncalibrated: !f };
+    await Solar._locations();                                              // the irradiance locations (latitude for the row pitch and the sun) load on first use
     const c = Solar.cfg(), p = Solar.panel(c), res = Solar._res, chosen = {};
     if (res && res.arrays) for (const a of res.arrays) chosen[a.name] = a.modules;
     const out = [], objs = [], north = PlanSolar.northAngle();
@@ -384,6 +385,7 @@ const Roof3D = {
   refresh() { return this._rebuild(); },
   _message() {
     const sc = this.scene; if (!sc) return;
+    if (sc.error) { this._fire('onMessage', 'The 3D view could not be built: ' + sc.error); return; }
     if (sc.empty) { this._fire('onMessage', sc.uncalibrated ? 'Calibrate the plan scale first so the roofs have a size.' : 'No roofs yet. Pick Footprint and click the corners of the building, on the plan or on the ground here.'); return; }
     let txt = sc.total + ' modules on ' + sc.items.filter(i => !i.unused).length + ' roof' + (sc.items.filter(i => !i.unused).length === 1 ? '' : 's')
       + (Solar._res && Solar._res.arrays ? ' (the count from your last calculation).' : ' (all that fit).');
@@ -402,7 +404,7 @@ const Roof3D = {
     this.hooks = hooks || {};
     if (this.view) { this.view.destroy(); this.view = null; }
     this.host = host;
-    try { this.scene = await this.build(); } catch (e) { this.scene = { items: [], objs: [], north: 0, total: 0, empty: true }; this._fire('onMessage', e.message || String(e)); }
+    try { this.scene = await this.build(); } catch (e) { this.scene = { items: [], objs: [], north: 0, total: 0, empty: true, error: e.message || String(e) }; }
     this.view = new View3D(host, { label: 'Rotatable 3D view of the roofs. Drag empty space to orbit, right-drag to pan, wheel to zoom; with a tool picked, drag a handle, the gizmo or an object.', yaw: 150, pitch: 32, bg: '#eef0f3' });
     this.view.onDraw = (v) => this.draw(v);
     this.view.onPick = (id, e) => this._pick(id, e);
@@ -437,6 +439,7 @@ const Roof3D = {
   async setHour(h, noRedraw) {
     this.hourAngle = +h;
     const sc = this.scene; if (!sc || sc.empty) return;
+    await Solar._locations();
     const c = Solar.cfg();
     const sun = await API.request('/analysis/solar-sun', 'POST', { lat: Solar._loc(c).lat, hour_angle_deg: this.hourAngle });
     sc.sun = sun;
