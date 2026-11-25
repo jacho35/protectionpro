@@ -185,7 +185,7 @@ const RoofEditor = {
   },
   // All roofs: one place to set the module settings for every roof at once (a field shows blank, "mixed", when the roofs differ).
   GLOBAL: [['tilt', 'Rack tilt (°)', 1, r => r.shape === 'flat'], ['azimuth', 'Azimuth, true (°)', 1, r => !['wings', 'pyramid'].includes(r.shape)],
-    ['pitch', 'Pitch (°)', 0.1, r => r.shape !== 'flat'], ['eave', 'Eave height (m)', 0.05, () => true], ['setback', 'Edge setback (m)', 0.05, () => true], ['overhang', 'Overhang (m)', 0.05, r => ['gable', 'hip', 'mono'].includes(r.shape)], ['maxModules', 'Max panels per roof', 1, () => true]],
+    ['pitch', 'Pitch (°)', 0.1, r => r.shape !== 'flat'], ['eave', 'Eave height (m)', 0.05, () => true], ['setback', 'Edge setback (m)', 0.05, () => true], ['panelGap', 'Gap between panels (mm)', 5, () => true], ['overhang', 'Overhang (m)', 0.05, r => ['gable', 'hip', 'mono'].includes(r.shape)], ['maxModules', 'Max panels per roof', 1, () => true]],
   // The roofs the group section edits: the ones picked on the plan (two or more), else every roof.
   _scope() {
     const all = PlanSolar.roofs().filter(r => r.points && r.points.length >= 3), picked = all.filter(r => PlanSolar.sel.has(r.id));
@@ -229,7 +229,7 @@ const RoofEditor = {
 
   // ── Plan side ──
   _sig() {
-    return JSON.stringify([PlanSolar.northAngle(), PlanSolar.roofs().map(r => [r.id, r.name, r.shape, r.points, r.pitch, r.tilt, r.azimuth, r.setback, r.eave, r.apex, r.overhang, r.lean, r.planeUse, r.use, r.objects, r.modAlign, r.maxModules, r.keepouts])]);
+    return JSON.stringify([PlanSolar.northAngle(), PlanSolar.roofs().map(r => [r.id, r.name, r.shape, r.points, r.pitch, r.tilt, r.azimuth, r.setback, r.panelGap, r.eave, r.apex, r.overhang, r.lean, r.planeUse, r.use, r.objects, r.modAlign, r.maxModules, r.keepouts])]);
   },
   // Called from every plan redraw: a roof changed on the plan (a corner dragged, undo, a new one drawn) updates the 3D view.
   syncFromPlan() {
@@ -323,6 +323,7 @@ const RoofEditor = {
       ${roof.shape === 'wings' || roof.shape === 'pyramid' ? '' : num('azimuth', 'Azimuth, true (°)', +roof.azimuth, 1)}
       ${['gable', 'hip', 'mono'].includes(roof.shape) ? num('overhang', 'Overhang (m)', +roof.overhang || 0, 0.05) : ''}
       ${num('setback', 'Edge setback (m)', +roof.setback, 0.05)}
+      ${num('panelGap', 'Gap between panels (mm)', PlanSolar.gapMm(roof), 5)}
       <label class="re-row"><span>Max panels (blank = no limit)</span><input type="number" min="0" step="1" value="${esc(PlanSolar.maxModules(roof) === Infinity ? '' : PlanSolar.maxModules(roof))}" placeholder="no limit" data-re-f="maxModules"></label>
       ${roof.shape === 'wings' ? '<div class="re-note">A cross-gable needs an L, T or U outline with straight, axis-aligned edges. The longest wing is the main one; the others stop at its ridge.</div>' : ''}</div>`;
     if (!isFlat && roof.shape !== 'wings') {

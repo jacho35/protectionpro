@@ -138,4 +138,19 @@ ok('occlusion: a point behind a wall or the ridge is hidden, one in the open or 
   const sideOn = [-1, 0, 0];
   assert(R.hidden([5, 3, 1], sideOn, occ), 'behind the west wall');
 });
+ok('panel gap: fewer modules, neighbours exactly `gap` apart, zero gap unchanged', () => {
+  const mod = { len: 2, wid: 1 }, g = R.gablePlanes(rect(10, 6), 0, 30, 3);
+  const base = R.layoutModules(rect(10, 6), 0, 30, 0.5, mod, 1e9, g);
+  assert.strictEqual(R.layoutModules(rect(10, 6), 0, 30, 0.5, Object.assign({ gap: 0 }, mod), 1e9, g).length, base.length);
+  const gapped = R.layoutModules(rect(10, 6), 0, 30, 0.5, Object.assign({ gap: 0.1 }, mod), 1e9, g);
+  // 9 m of width: n modules need n + 0.1 (n - 1) <= 9 -> 8 modules (8.7 m); a row is 8 modules
+  assert.strictEqual(gapped.length, 8);
+  const xs = gapped.map(m => Math.min(...m.map(p => p[0]))).sort((a, b) => a - b);
+  for (let i = 1; i < xs.length; i++) close(xs[i] - xs[i - 1], 1.1, 1e-6);
+  const racks = (gap) => R.layoutRacks(rect(10, 12), 0, 15, 0.5, { len: 2, wid: 1, gap }, 1e9, 3, 3.4);
+  assert(racks(0.1).length < racks(0).length, 'racks lose a module per row');
+  assert.strictEqual(R.slack(9, 1, 0), 0);
+  close(R.slack(9, 1, 0.1), 0.3, 1e-9);
+  assert.strictEqual(R.slack(0.5, 1, 0.1), 0);
+});
 console.log('shadow tests done');

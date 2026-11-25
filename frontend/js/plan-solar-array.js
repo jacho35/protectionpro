@@ -49,22 +49,23 @@ const PlanSolarArray = {
   layout(roof) {
     const f = PlanEngine.factor(), c = Solar.cfg(), p = Solar.panel(c);
     if (!f || !roof.points || roof.points.length < 3) return { mods: [], n: 0, kwp: 0, pending: false };
-    const key = [roof.points.map(q => q.x + ',' + q.y).join(';'), roof.shape, roof.pitch, roof.tilt, roof.azimuth, PlanSolar.northAngle(), roof.eave, JSON.stringify(roof.planeUse || null), roof.setback, roof.modAlign, roof.maxModules, JSON.stringify(roof.keepouts || []), p.id, p.len, p.wid, f, c.hour, c.location].join('|');
+    const key = [roof.points.map(q => q.x + ',' + q.y).join(';'), roof.shape, roof.pitch, roof.tilt, roof.azimuth, PlanSolar.northAngle(), roof.eave, JSON.stringify(roof.planeUse || null), roof.setback, roof.panelGap, roof.modAlign, roof.maxModules, JSON.stringify(roof.keepouts || []), p.id, p.len, p.wid, f, c.hour, c.location].join('|');
     const hit = this._layouts.get(roof.id);
     if (hit && hit.key === key) return hit.lay;
     const poly = Roof3D.toMetres(roof.points, f), az = PlanSolar.planAz(roof), setback = Math.max(0, +roof.setback || 0);
     let mods = [], pending = false;
+    const mp = PlanSolar.modFor(roof, p);                                      // the panel with this roof's gap
     const ex = PlanSolar.keepoutsM(roof), cap = Math.min(1e9, PlanSolar.maxModules(roof));                 // the roof's own maximum panels
     if (PlanSolar.usesPlanes(roof)) {                                       // a layout on every plane in use
       const g = PlanSolar.planesOf(roof), use = g.use;
-      g.planes.forEach((pl, i) => { if (use[i] && mods.length < cap) mods.push(...RoofPlanes.layoutPlane(pl, g.poly, setback, p, cap - mods.length, roof.modAlign, ex)); });
+      g.planes.forEach((pl, i) => { if (use[i] && mods.length < cap) mods.push(...RoofPlanes.layoutPlane(pl, g.poly, setback, mp, cap - mods.length, roof.modAlign, ex)); });
     } else if (roof.shape === 'gable') {
       const g = Roof3D.gablePlanes(poly, az, +roof.pitch, Roof3D.EAVE_M);
-      mods = Roof3D.layoutModules(poly, az, +roof.pitch, setback, p, cap, g, roof.modAlign, ex);
+      mods = Roof3D.layoutModules(poly, az, +roof.pitch, setback, mp, cap, g, roof.modAlign, ex);
     } else {
       const rp = this.rowPitch(roof, p);
       if (rp == null) pending = true;
-      else mods = Roof3D.layoutRacks(poly, az, +roof.tilt, setback, p, cap, rp, 0, roof.modAlign, ex);
+      else mods = Roof3D.layoutRacks(poly, az, +roof.tilt, setback, mp, cap, rp, 0, roof.modAlign, ex);
     }
     const lay = { mods: mods.map(m => m.map(q => [q[0], q[1]])), n: mods.length, fit: mods.length, kwp: mods.length * p.w / 1000, pending };
     if (!pending) this._layouts.set(roof.id, { key, lay });
@@ -202,7 +203,7 @@ const PlanSolarArray = {
         <div style="color:var(--text-muted)">${esc(p.name || p.id)} (${p.w} W). Change the panel, inverter and location in Open design.</div>
         <label style="display:flex;gap:8px;align-items:center"><span>Roof</span><select data-sa-shape>${RoofPlanes.SHAPES.map(k => `<option value="${k}"${r.shape === k ? ' selected' : ''}>${RoofPlanes.LABELS[k]}</option>`).join('')}</select></label>
         ${r.shape !== 'flat' ? sl('pitch', 'Roof pitch', 0, 45, 1, '°') : sl('tilt', 'Rack tilt', 0, 40, 1, '°')}${sl('eave', 'Eave height', 2, 12, 0.1, ' m')}
-        ${sl('azimuth', 'Azimuth (0 = north)', 0, 359, 1, '°')}${sl('setback', 'Edge setback', 0, 2, 0.1, ' m')}
+        ${sl('azimuth', 'Azimuth (0 = north)', 0, 359, 1, '°')}${sl('setback', 'Edge setback', 0, 2, 0.1, ' m')}${sl('panelGap', 'Gap between panels', 0, 100, 5, ' mm')}
         <label style="display:flex;gap:8px;align-items:center"><span>Show as</span><select data-sa-style><option value="modules"${this.style() === 'modules' ? ' selected' : ''}>Individual panels</option><option value="block"${this.style() === 'block' ? ' selected' : ''}>One block with a count</option></select></label>
         <div data-sa-sld style="color:${/not updated/.test(this.sld) ? '#b45309' : 'var(--text-muted)'}">${esc(this.sld || (f ? 'The single line follows this array.' : 'Calibrate the plan scale to size the array.'))}</div>
         <div style="display:flex;gap:6px;flex-wrap:wrap"><button type="button" class="plan-btn" data-sa-design style="font-weight:600">Open design</button><button type="button" class="plan-btn" data-sa-remove>Remove array</button></div>`;
