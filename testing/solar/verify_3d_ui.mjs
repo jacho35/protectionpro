@@ -66,6 +66,29 @@ for (const mode of ['gl', '2d']) {
   check(mode + ': picks a roof plane', /^p:/.test(info.plane || ''), info.plane);
   check(mode + ': picks the chimney', info.obj === 'o:o1', info.obj);
   check(mode + ': nothing in the corner', info.none == null, info.none);
+  // Push / pull handle: drag the eave handle and the roof's eave height must change
+  await page.evaluate(() => { Roof3D.setTool ? Roof3D.setTool('pushpull') : (Roof3D.tool = 'pushpull'); Roof3D.view.setView(150, 32); Roof3D.view.draw(); });
+  await page.waitForTimeout(500);
+  const h = await page.evaluate(() => {
+    const v = Roof3D.view, it = Roof3D.scene.items[0], q = it.poly[0], P = v.project(q[0], q[1], it.eave, v._c), r = v.canvas.getBoundingClientRect();
+    return { x: r.left + P[0], y: r.top + P[1], eave: it.roof.eave };
+  });
+  await page.mouse.move(h.x, h.y); await page.mouse.down(); await page.mouse.move(h.x, h.y - 25, { steps: 5 }); await page.mouse.up();
+  await page.waitForTimeout(800);
+  const e1 = await page.evaluate(() => PlanSolar.roofs()[0].eave);
+  check(mode + ': dragging the eave handle changes the eave height', e1 != null && Math.abs(e1 - (h.eave != null ? h.eave : 3)) > 0.05, (h.eave) + ' -> ' + e1);
+  // Transform gizmo: drag the X arrow and the roof must move
+  await page.evaluate(() => { Roof3D.tool = 'transform'; Roof3D.gizmo = 'move'; Roof3D.sel = { roof: PlanSolar.roofs()[0].id, plane: 0 }; Roof3D._rebuild(); });
+  await page.waitForTimeout(800);
+  const g = await page.evaluate(() => {
+    const v = Roof3D.view; v.draw(); const t = Roof3D._target(), o = Roof3D._gizmoOrigin(t), L = Math.max(0.6, v.radius * 0.22);
+    const a = v.project(o[0] + L * 0.7, o[1], o[2], v._c), r = v.canvas.getBoundingClientRect();
+    return { x: r.left + a[0], y: r.top + a[1], p0: PlanSolar.roofs()[0].points[0].x };
+  });
+  await page.mouse.move(g.x, g.y); await page.mouse.down(); await page.mouse.move(g.x + 40, g.y + 10, { steps: 6 }); await page.mouse.up();
+  await page.waitForTimeout(800);
+  const p1 = await page.evaluate(() => PlanSolar.roofs()[0].points[0].x);
+  check(mode + ': dragging the gizmo X arrow moves the roof', Math.abs(p1 - g.p0) > 1, g.p0.toFixed(1) + ' -> ' + p1.toFixed(1));
   await page.close();
 }
 await browser.close();
