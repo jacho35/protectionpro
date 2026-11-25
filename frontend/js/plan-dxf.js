@@ -144,7 +144,7 @@ const PlanDXF = {
 
   async _options() {
     const pm = AppState.planMarkup, st = pm.settings.dxfExport = Object.assign({ scale: 500, paperMm: 2.5, bg: true, paper: 'A1',
-      labels: 'circle', status: 'PRELIMINARY', numberPattern: '{project}-EL-{nn}', revisions: [], notes: '', lengths: true }, pm.settings.dxfExport || {});
+      labels: 'circle', status: 'PRELIMINARY', numberPattern: '{project}-EL-{nn}', revisions: [], notes: '', lengths: true, ductCount: true }, pm.settings.dxfExport || {});
     const tpl = await this._template();
     const papers = Object.keys(this.PAPERS).filter(p => p !== 'A4' || (tpl.available && tpl.papers && tpl.papers.A4));
     const ext = this._extents(pm, this._factor()), sheets = this._sheets(pm);
@@ -175,6 +175,7 @@ const PlanDXF = {
             <button type="button" class="btn-small" data-rev-add style="margin-top:6px">+ Add revision</button></details>
           <label>Drawing notes (one per line, on every sheet's legend)<textarea id="pdx-notes" rows="3" style="width:100%">${escHtml(st.notes || '')}</textarea></label>
           <label style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="pdx-len"${st.lengths ? ' checked' : ''}> Cable lengths in the legend</label>
+          <label style="display:flex;gap:8px;align-items:flex-start"><input type="checkbox" id="pdx-duct"${st.ductCount ? ' checked' : ''}> <span>Duct count on road crossings: a leader to a circle, 3L/4S = 3 large (160 mm) and 4 small (110 mm) ducts</span></label>
           ${bgs.length ? `<label style="display:flex;gap:8px;align-items:flex-start"><input type="checkbox" id="pdx-bg"${st.bg ? ' checked' : ''}> <span>Include the background drawing${bgs.length === 1 ? '' : 's'} (${bgs.length}): what the plan shows, on BG- layers.${orig < bgs.length ? ` ${bgs.length - orig === bgs.length ? (bgs.length === 1 ? 'It was' : 'They were') : (bgs.length - orig) + ' of them were'} imported before the original was kept, so ${bgs.length - orig === 1 ? 'it is' : 'they are'} rebuilt from the plan's copy (no linetypes or hatch fills); import again to get the original exactly.` : ''}</span></label>` : ''}
           <div class="ui-dialog-actions"><button type="button" class="btn-small" data-x="cancel">Cancel</button><button type="button" class="btn-primary" data-x="ok">Export</button></div>
         </div></div>`;
@@ -223,7 +224,7 @@ const PlanDXF = {
       ov.addEventListener('change', hint); hint();
       const done = ok => { const r = ok ? { scale: +ov.querySelector('#pdx-scale').value, paperMm: +ov.querySelector('#pdx-h').value, paper: ov.querySelector('#pdx-paper').value, bg: !!(ov.querySelector('#pdx-bg') && ov.querySelector('#pdx-bg').checked),
           labels: ov.querySelector('#pdx-lab').value, status: ov.querySelector('#pdx-status').value, numberPattern: ov.querySelector('#pdx-no').value,
-          revisions: revs.filter(x => x.rev || x.desc), notes: ov.querySelector('#pdx-notes').value, lengths: ov.querySelector('#pdx-len').checked } : null;
+          revisions: revs.filter(x => x.rev || x.desc), notes: ov.querySelector('#pdx-notes').value, lengths: ov.querySelector('#pdx-len').checked, ductCount: ov.querySelector('#pdx-duct').checked } : null;
         document.removeEventListener('keydown', key, true); ov.remove(); if (r) { Object.assign(st, r); PlanMarkup.markDirty(); } resolve(r); };
       const key = e => { if (e.key === 'Escape') { e.preventDefault(); done(false); } else if (e.key === 'Enter' && e.target.tagName !== 'TEXTAREA' && e.target.tagName !== 'INPUT') { e.preventDefault(); done(true); } };
       document.addEventListener('keydown', key, true);
@@ -444,6 +445,19 @@ const PlanDXF = {
     const crossings = (pm.crossings || []).filter(c => c.p1 && c.p2)
       .map(c => ({ p1: [c.p1.x, c.p1.y], p2: [c.p2.x, c.p2.y], size: c.size || '', name: c.name || '', color: this._hex((xst[c.size] || {}).color || (PLAN_DEFS.crossings && PLAN_DEFS.crossings.color)),
         lw: this.lineweight((xst[c.size] || {}).width || 2.5) }));
+    // one label per road crossing (a bundle of ducts is one crossing): its centre line and the count 3L/4S (L = 160 mm, S = 110 mm)
+    const crossingLabels = [];
+    if (opt.ductCount !== false) {
+      const seen = new Set();
+      for (const c of pm.crossings || []) {
+        if (!c.p1 || !c.p2 || seen.has(c.id)) continue;
+        const list = (typeof PlanCrossings !== 'undefined' ? PlanCrossings.members(c) : [c]).filter(x => x.p1 && x.p2);
+        list.forEach(x => seen.add(x.id));
+        const ctr = list.length > 1 && typeof PlanCrossings !== 'undefined' ? PlanCrossings.centre(list) : { p1: c.p1, p2: c.p2 };
+        const L = list.filter(x => String(x.size) === '160').length, S = list.length - L;
+        crossingLabels.push({ p1: [ctr.p1.x, ctr.p1.y], p2: [ctr.p2.x, ctr.p2.y], text: [L && L + 'L', S && S + 'S'].filter(Boolean).join('/') });
+      }
+    }
     // a plan text is its size relative to the normal 14 (so a 28 is twice the drawing's text height), in its own colour
     const texts = (pm.texts || []).map(t => ({ x: t.x, y: t.y, h: t.fontSize || 14, rel: (t.fontSize || 14) / 14, text: t.text || '', color: this._hex(t.color) || '#111827' }));
     const backgrounds = opt.bg && typeof PlanDxfImport !== 'undefined' ? PlanDxfImport.list().filter(d => !d.hidden && PlanDxfImport.dataOf(d)).map(d => this._background(d, factor)) : [];
@@ -460,7 +474,7 @@ const PlanDXF = {
       fileName: ((AppState.projectName || 'plan').replace(/[^\w-]+/g, '_')) + (af && af.name ? '_' + af.name.replace(/[^\w-]+/g, '_') : ''),
       layers: Object.entries(layers).map(([name, color]) => ({ name, color, linetype: ltypes[name] || null })),
       extraLayers: { [FX.trench]: '#787878', [FX.crossing]: this._hex((PLAN_DEFS.crossings || {}).color) || '#f97316', [FX.room]: roomStroke, [FX.text]: '#111827', [FX.measurement]: dimCol },
-      fixedLayers: FX, layerSheets, sheets, legend, titleBlock, labels: { style: opt.labels || 'circle' },
+      fixedLayers: FX, layerSheets, sheets, legend, titleBlock, crossingLabels, labels: { style: opt.labels || 'circle' },
       layout: { paper: opt.paper || 'A1', margin: this.MARGIN_MM, scale: opt.scale, extents: this._extents(pm, factor) },
       textH: H, ltscale: opt.scale / 100, scale: opt.scale,
       blocks, elements, routes, trenches, rooms, measurements, crossings, texts, backgrounds,

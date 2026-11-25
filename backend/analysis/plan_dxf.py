@@ -653,6 +653,27 @@ def build_dxf(payload: Dict[str, Any], load_image=None, notes: List[str] | None 
         text_style = TEXT_STYLE
         sheets_mod.place_labels(msp, doc, leader_routes, obstacles, H, label_style, text_style)
 
+    # A leader and a circle per road crossing with its duct count (3L/4S = 3 large 160 mm, 4 small 110 mm).
+    xl = payload.get("crossingLabels") or []
+    if xl:
+        xl_layer = L_DUCTS + "_LABELS"
+        _ensure_layer(doc, xl_layer, layer_hex.get(L_DUCTS))
+        lab_in = []
+        for q in xl:
+            a, p2 = q.get("p1"), q.get("p2")
+            if not a or not p2:
+                continue
+            A, B = (X(a[0]), Y(a[1])), (X(p2[0]), Y(p2[1]))
+            mid = ((A[0] + B[0]) / 2, (A[1] + B[1]) / 2)
+            lab_in.append({"a": mid, "dir": (B[0] - A[0], B[1] - A[1]) if A != B else (1.0, 0.0), "text": q.get("text") or "",
+                           "lines": [(A, B)]})
+        allines = [l for q in lab_in for l in q["lines"]]
+        for q in lab_in:
+            q["lines"] = [q["lines"][0]] + [l for l in allines if l != q["lines"][0]]
+        obst = [(X(el["x"]), Y(el["y"]), (variants.get(el.get("block"), {}).get("sizeWorld", 24) or 24) * 0.5 * factor)
+                for el in payload.get("elements", [])]
+        sheets_mod.place_crossing_labels(msp, [q for q in lab_in if q["text"]], obst, H, xl_layer, TEXT_STYLE, _set_meta)
+
     sym_layers = {el.get("layer") for el in payload.get("elements", [])}
     # Line weights as the plan draws the lines: on the layer when every line on it has the same one, else on each line.
     for lay, items in lw_of.items():
