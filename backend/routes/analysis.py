@@ -1162,3 +1162,14 @@ class SolarProtectionRequest(BaseModel):
 def solar_protection(data: SolarProtectionRequest):
     """String fuses, DC isolator, DC string cable and the export limit."""
     return _solar_call(solar_pv.size_protection, data.model_dump())
+
+
+class SolarSunRequest(BaseModel):
+    lat: float
+    hour_angle_deg: float = 0.0          # 0 = solar noon, 15 deg per hour, negative = morning
+
+
+@router.post("/solar-sun")
+def solar_sun(data: SolarSunRequest):
+    """Sun elevation and azimuth on the winter solstice (for the 3D shadows)."""
+    return _solar_call(lambda d: solar_pv.sun_position(d["lat"], d["hour_angle_deg"]), data.model_dump())

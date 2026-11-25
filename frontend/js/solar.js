@@ -5,7 +5,8 @@
  * the app's EXISTING IEC 62548 string checks are shown), Rows (flat-roof row spacing), Protection (string
  * fuse, DC isolator, DC cable — the only electrical sizing done here, nothing else in the app does it),
  * Shading & studies (an obstruction, the bus to connect to, and buttons that run the app's own Fault
- * Analysis, Load Flow, Hosting Capacity and Compliance on the placed PV array) and the project Library.
+ * Analysis, Load Flow, Hosting Capacity and Compliance on the placed PV array; an optional hybrid battery
+ * that the existing Battery Sizing, Backup Autonomy and Time-series studies work on) and the project Library.
  * The PV array is a normal Solar PV component in array mode, so every existing engine sees it: fault
  * contribution, load flow, hosting capacity, cable sizing. Nothing electrical is recalculated here.
  *
@@ -27,6 +28,7 @@ const Solar = {
     roofShape: 'gable', length: 10, width: 9.2, pitch: 25, setback: 0.5, area: 60, packing: 0.8,
     tilt: 15, azimuth: 0, mode: 'min', annualKwh: 18500, sharePct: 70,
     perString: 8, hour: 0, cableM: 30, vdPct: 1, acV: 400, exportKw: '', busId: '', pvId: '',
+    hybrid: false, battKwh: 20, battKw: 10, battDod: 90,
     obsH: 0, obsD: 6, obsB: 0, obsW: 8,
   },
 
@@ -139,9 +141,9 @@ const Solar = {
     const el = document.getElementById('solar-body');
     el.innerHTML = `<div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap">${bar}</div>${body}`;
     el.querySelectorAll('[data-k]').forEach(i => i.addEventListener('change', () => {
-      const v = i.type === 'number' ? parseFloat(i.value) : i.value;
+      const v = i.type === 'checkbox' ? i.checked : i.type === 'number' ? parseFloat(i.value) : i.value;
       this.set(i.dataset.k, v);
-      if (['roofShape', 'mode'].includes(i.dataset.k)) this.render();
+      if (['roofShape', 'mode', 'hybrid'].includes(i.dataset.k)) this.render();
     }));
     el.querySelectorAll('[data-roof]').forEach(i => i.addEventListener('change', () => {
       const k = i.dataset.rk;
@@ -333,7 +335,10 @@ const Solar = {
       ${this._in(c, 'obsW', 'Width (m)')}
       <span style="grid-column:1/-1;font-weight:600;margin-top:8px">Connection and the app's studies</span>
       <label for="sol-busId">Connect to bus</label><select id="sol-busId" data-k="busId">${busOpt}</select>
-      ${this._in(c, 'acV', 'AC voltage (V)')}`);
+      ${this._in(c, 'acV', 'AC voltage (V)')}
+      <span style="grid-column:1/-1;font-weight:600;margin-top:8px">Storage (hybrid inverter)</span>
+      <label for="sol-hybrid">Add a DC-coupled battery</label><input id="sol-hybrid" data-k="hybrid" data-bool="1" type="checkbox" ${c.hybrid ? 'checked' : ''}>
+      ${c.hybrid ? this._in(c, 'battKwh', 'Battery capacity (kWh)') + this._in(c, 'battKw', 'Max charge / discharge (kW)') + this._in(c, 'battDod', 'Usable depth of discharge (%)') : ''}`);
     const shade = this._res && this._res.shading_loss_pct != null ? `<div style="margin-top:8px;font-size:13px">Shading loss from the obstruction: <strong>${this._res.shading_loss_pct} %</strong> of the annual yield.</div>` : '';
     const placed = this._pvComp();
     const run = (act, label, tip) => `<button class="btn" type="button" data-act="${act}" title="${escHtml(tip)}" ${placed ? '' : 'disabled'}>${label}</button>`;
@@ -344,6 +349,7 @@ const Solar = {
         ${run('study:loadflow', 'Load flow', 'Voltage rise and loading with the PV running at its irradiance setting')}
         ${run('study:hosting', 'Hosting capacity', 'How much PV the connection can take before voltage or thermal limits')}
         ${run('study:compliance', 'Compliance report', 'Includes the IEC 62548 string checks')}
+        ${c.hybrid ? run('study:battery', 'Battery sizing', 'Duty-cycle sizing and discharge simulation of the hybrid battery') + run('study:backup', 'Backup autonomy', 'Grid-outage adequacy and battery autonomy') + run('study:timeseries', 'Time-series load flow', 'Day profile with the PV and battery') : ''}
       </div>
       <div style="margin-top:6px;font-size:11px;color:var(--text-muted,#6d6d6d)">These run the app's own studies on the whole network, so connect the array to a bus first. The results open in the usual place.</div>`;
   },
@@ -472,7 +478,10 @@ const Solar = {
       pv_panels_per_string: +c.perString, pv_strings: sp.strings,
       mppt_min_v: inv.mppt_min_v, mppt_max_v: inv.mppt_max_v, dc_max_v: inv.dc_max_v,
       mppt_count: inv.mppt_count, mppt_max_a: inv.mppt_max_a, site_temp_min_c: this._loc(c).tmin_c,
+      inverter_type: c.hybrid ? 'hybrid' : 'grid_tied',
     });
+    // the hybrid battery uses the Solar PV component's own battery fields (the existing storage studies read them)
+    if (c.hybrid) Object.assign(pv.props, { battery_kwh: +c.battKwh, battery_dod_pct: +c.battDod, battery_max_charge_kw: +c.battKw, battery_max_discharge_kw: +c.battKw });
     // connect the breaker to the chosen bus once (a wire already there is left alone)
     if (bus && cb && ![...AppState.wires.values()].some(w => (w.fromComponent === cb.id || w.toComponent === cb.id) && (w.fromComponent === bus.id || w.toComponent === bus.id))) {
       AppState.addWire(cb.id, 'bottom', bus.id, 'at_0');
@@ -485,7 +494,8 @@ const Solar = {
 
   // Run one of the app's own studies on the placed array, by pressing its normal menu button.
   runStudy(which) {
-    const id = { fault: 'btn-run-fault', loadflow: 'btn-run-loadflow', hosting: 'btn-hosting-capacity', compliance: 'btn-compliance' }[which];
+    const id = { fault: 'btn-run-fault', loadflow: 'btn-run-loadflow', hosting: 'btn-hosting-capacity', compliance: 'btn-compliance',
+      battery: 'btn-battery-sizing', backup: 'btn-backup-study', timeseries: 'btn-timeseries' }[which];
     const b = document.getElementById(id);
     if (!b) return;
     if (!this._pvComp()) throw new Error('Place the PV array on the SLD first.');

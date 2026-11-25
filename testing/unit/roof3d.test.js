@@ -51,3 +51,48 @@ ok('racks: rows step by the pitch from the north edge, high edge toward the sout
   assert(m[2][1] < m[0][1]);
 });
 console.log(n + ' passed');
+
+// ── shadows ──
+const approx = (a, b, e = 1e-6) => assert(Math.abs(a - b) < e, `${a} vs ${b}`);
+ok('sun vector: due north at 45 degrees', () => {
+  const s = R.sunVec(0, 45);
+  approx(s[0], 0); approx(s[1], Math.SQRT1_2); approx(s[2], Math.SQRT1_2);
+});
+ok('shadow point of a pole top on the ground is its height / tan(elevation) away from the sun', () => {
+  const s = R.sunVec(0, 30);                                   // sun in the north: shadow falls south (-y)
+  const p = R.shadowPoint([2, 5, 3], s, [0, 0, 0], [0, 0, 1]);
+  approx(p[2], 0); approx(p[0], 2); approx(p[1], 5 - 3 / Math.tan(30 * Math.PI / 180), 1e-9);
+  assert.strictEqual(R.shadowPoint([2, 5, 3], R.sunVec(0, -5), [0, 0, 0], [0, 0, 1]), null);   // sun below the plane
+});
+ok('hull and convex clip', () => {
+  const h = R.hull([[0, 0], [4, 0], [4, 4], [0, 4], [2, 2]]);
+  assert.strictEqual(h.length, 4);
+  const c = R.clipConvex([[-2, -2], [6, -2], [6, 6], [-2, 6]], [[0, 0], [4, 0], [4, 4], [0, 4]]);
+  approx(area(c), 16);
+  assert.strictEqual(R.clipConvex([[10, 10], [12, 10], [12, 12]], [[0, 0], [4, 0], [4, 4], [0, 4]]).length, 0);
+});
+ok('ray hits a quad only in front of it and inside it', () => {
+  const quad = [[0, 0, 2], [2, 0, 2], [2, 2, 2], [0, 2, 2]];     // a horizontal 2 x 2 plate at z = 2
+  const up = [0, 0, 1];
+  assert(R.rayHitsQuad([1, 1, 0], up, quad));
+  assert(!R.rayHitsQuad([3, 1, 0], up, quad));                    // beside it
+  assert(!R.rayHitsQuad([1, 1, 3], up, quad));                    // already above it
+});
+ok('a wall in the north shades a module behind it only when the sun is low enough', () => {
+  const wall = R.boxFaces([[0, 10], [10, 10], [10, 10.5], [0, 10.5]], 4);       // 4 m high wall, north of the module
+  const mod = [[4, 0, 0.5], [5, 0, 0.5], [5, 1, 0.5], [4, 1, 0.5]];
+  // wall is 9.5 m north of the module centre, 3.5 m above it: shades when the sun elevation < atan(3.5 / 9.5) = 20.2 deg
+  assert.deepStrictEqual(R.shadedModules([[mod]], R.sunVec(0, 15), wall), [true]);
+  assert.deepStrictEqual(R.shadedModules([[mod]], R.sunVec(0, 30), wall), [false]);
+  assert.deepStrictEqual(R.shadedModules([[mod]], R.sunVec(180, 15), wall), [false]);   // sun in the south
+});
+ok('a rack row shades the row behind it at low sun, not at high sun', () => {
+  const mod = { len: 2, wid: 1 };
+  const racks = R.layoutRacks(rect(2, 12), 0, 15, 0.5, mod, 1e9, 2.5, 3.4);       // rows of one module, pitch 2.5 m (tight)
+  const rows = new Map(); for (const m of racks) { const k = Math.round(m[0][1] * 10); (rows.get(k) || rows.set(k, []).get(k)).push(m); }
+  const groups = [...rows.values()];
+  const low = R.shadedModules(groups, R.sunVec(0, 8), []), high = R.shadedModules(groups, R.sunVec(0, 60), []);
+  assert(low.filter(Boolean).length >= 1 && high.filter(Boolean).length === 0);
+  assert(!low[0], 'the front (north) row is never shaded by the rows behind it');
+});
+console.log('shadow tests done');

@@ -230,3 +230,14 @@ def test_allocate_largest_remainder():
     assert sp._allocate(10, [1, 1, 1]) == [4, 3, 3] or sum(sp._allocate(10, [1, 1, 1])) == 10
     assert sp._allocate(7, [3, 1]) == [5, 2]
     assert sp._allocate(0, [1, 2]) == [0, 0]
+
+
+def test_sun_position_winter_solstice():
+    noon = sp.sun_position(-25.75, 0)
+    assert noon["elevation_deg"] == pytest.approx(40.8, abs=0.05) and noon["azimuth_deg"] == pytest.approx(0, abs=0.5)
+    morning = sp.sun_position(-25.75, -45)
+    afternoon = sp.sun_position(-25.75, 45)
+    assert morning["elevation_deg"] == pytest.approx(afternoon["elevation_deg"], abs=0.01) == pytest.approx(24.3, abs=0.1)
+    assert 0 < morning["azimuth_deg"] < 90 and 270 < afternoon["azimuth_deg"] < 360       # east of north, west of north
+    north = sp.sun_position(40, 0)                                                         # northern hemisphere: sun is south
+    assert north["azimuth_deg"] == pytest.approx(180, abs=0.5)

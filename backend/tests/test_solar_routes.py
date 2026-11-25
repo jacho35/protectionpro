@@ -85,3 +85,8 @@ def test_shading_route_and_removed_duplicates(client, auth):
     # string checks, fault contribution and voltage rise are the app's own studies, not solar routes
     for gone in ("solar-strings", "solar-voltage-rise"):
         assert client.post(f"{API}/{gone}", headers=auth, json={}).status_code in (404, 405)
+
+
+def test_sun_route(client, auth):
+    r = client.post(f"{API}/solar-sun", headers=auth, json={"lat": -25.75, "hour_angle_deg": -30})
+    assert r.status_code == 200 and 30 < r.json()["elevation_deg"] < 36

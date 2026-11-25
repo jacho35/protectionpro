@@ -465,3 +465,13 @@ def size_protection(req):
                               f"set the inverter's export control to {limit:g} kW" if total_kw > limit
                               else f"Within the {limit:g} kW export limit")
     return out
+
+
+def sun_position(lat, hour_angle_deg=0.0):
+    """Solar elevation and azimuth (degrees from north) at an hour angle on the winter solstice."""
+    dec = -23.45 if lat >= 0 else 23.45
+    elev = solar_elevation(lat, dec, hour_angle_deg)
+    az = solar_azimuth_n(lat, dec, hour_angle_deg)
+    if az > 359.99:
+        az = 0.0
+    return {"elevation_deg": round(elev, 2), "azimuth_deg": round(az, 2), "declination_deg": dec}
