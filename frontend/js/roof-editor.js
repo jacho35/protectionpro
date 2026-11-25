@@ -152,8 +152,11 @@ const RoofEditor = {
     const del = t.closest('[data-re-delobj]'); if (del && roof) { PlanSolar.removeObject(roof, del.dataset.reDelobj); Roof3D.sel = { roof: roof.id }; Roof3D.refresh(); return; }
     const sh = t.closest('[data-re-shape]'); if (sh && roof) { this._edit(roof, { shape: sh.dataset.reShape }); return; }
     const ln = t.closest('[data-re-lean]'); if (ln && roof) { const L = this.LEANS.find(x => x[0] === ln.dataset.reLean); this._edit(roof, { lean: L && L[2] ? Object.assign({}, L[2]) : null }); return; }
-    const rs = t.closest('[data-re-roof]'); if (rs) { Roof3D.sel = { roof: rs.dataset.reRoof }; this.renderPanel(); if (Roof3D.view) Roof3D.view.redraw(); return; }
-    const gm = t.closest('[data-re-gmodalign]'); if (gm) { for (const r of PlanSolar.roofs()) PlanSolar.update(r.id, { modAlign: gm.dataset.reGmodalign }); PlanSolar._changed(); Roof3D.refresh(); return; }
+    const rs = t.closest('[data-re-roof]'); if (rs && e.shiftKey) { PlanSolar.toggleSelect(rs.dataset.reRoof); return; }
+    if (rs) { Roof3D.sel = { roof: rs.dataset.reRoof }; this.renderPanel(); if (Roof3D.view) Roof3D.view.redraw(); return; }
+    const gm = t.closest('[data-re-gmodalign]'); if (gm) { this._applyScope({ modAlign: gm.dataset.reGmodalign }); return; }
+    const gs = t.closest('[data-re-gshape]'); if (gs) { this._applyScope({ shape: gs.dataset.reGshape }); return; }
+    const gu = t.closest('[data-re-guse]'); if (gu) { this._applyScope({ use: gu.dataset.reGuse === '1' }); return; }
     const ma = t.closest('[data-re-modalign]'); if (ma && roof) { this._edit(roof, { modAlign: ma.dataset.reModalign }); return; }
     const al = t.closest('[data-re-align]'); if (al && roof) { this.aligning = true; PlanTools.set('roofedit'); this.renderPanel(); return; }
     const tl = t.closest('[data-re-tool]'); if (tl) { this.setTool(tl.dataset.reTool); return; }
@@ -165,8 +168,7 @@ const RoofEditor = {
     if (el.id === 're-hour') { this._onHour(el); return; }
     if (el.dataset.reG) {                                                       // the All roofs section
       const g = this.GLOBAL.find(x => x[0] === el.dataset.reG), n = parseFloat(el.value); if (!g || !Number.isFinite(n)) return;
-      for (const r of PlanSolar.roofs()) if (g[3](r)) PlanSolar.update(r.id, { [g[0]]: g[0] === 'azimuth' ? ((n % 360) + 360) % 360 : Math.max(0, n) });
-      PlanSolar._changed(); Roof3D.refresh(); return;
+      this._applyScope({ [g[0]]: g[0] === 'azimuth' ? ((n % 360) + 360) % 360 : Math.max(0, n) }, g[3]); return;
     }
     const k = el.dataset.reF; if (!k) return;
     if (k === 'slope') { PlanSolar.setSlopeShown(el.checked); return; }
@@ -183,9 +185,14 @@ const RoofEditor = {
   },
   // All roofs: one place to set the module settings for every roof at once (a field shows blank, "mixed", when the roofs differ).
   GLOBAL: [['tilt', 'Rack tilt (°)', 1, r => r.shape === 'flat'], ['azimuth', 'Azimuth, true (°)', 1, r => !['wings', 'pyramid'].includes(r.shape)],
-    ['pitch', 'Pitch (°)', 0.1, r => r.shape !== 'flat'], ['setback', 'Edge setback (m)', 0.05, () => true], ['overhang', 'Overhang (m)', 0.05, r => ['gable', 'hip', 'mono'].includes(r.shape)], ['maxModules', 'Max panels per roof', 1, () => true]],
+    ['pitch', 'Pitch (°)', 0.1, r => r.shape !== 'flat'], ['eave', 'Eave height (m)', 0.05, () => true], ['setback', 'Edge setback (m)', 0.05, () => true], ['overhang', 'Overhang (m)', 0.05, r => ['gable', 'hip', 'mono'].includes(r.shape)], ['maxModules', 'Max panels per roof', 1, () => true]],
+  // The roofs the group section edits: the ones picked on the plan (two or more), else every roof.
+  _scope() {
+    const all = PlanSolar.roofs().filter(r => r.points && r.points.length >= 3), picked = all.filter(r => PlanSolar.sel.has(r.id));
+    return picked.length >= 2 ? { roofs: picked, picked: true } : { roofs: all, picked: false };
+  },
   _globalSection(btn) {
-    const roofs = PlanSolar.roofs().filter(r => r.points && r.points.length >= 3); if (roofs.length < 1) return '';
+    const sc = this._scope(), roofs = sc.roofs; if (roofs.length < 1) return '';
     const open = this._gOpen !== false, esc = this._esc;
     const row = ([k, label, step, ok]) => {
       const rs = roofs.filter(ok); if (!rs.length) return '';
@@ -194,9 +201,17 @@ const RoofEditor = {
     };
     const als = new Set(roofs.map(r => r.modAlign || 'bottom-right')), cur = als.size === 1 ? [...als][0] : '';
     const grid = ['top', 'center', 'bottom'].map(v => ['left', 'center', 'right'].map(hh => this._alignBtn({ modAlign: cur || 'none' }, v, hh, btn).replace('data-re-modalign', 'data-re-gmodalign')).join('')).join('');
-    return `<details class="re-sec re-all"${open ? ' open' : ''}><summary class="re-lab">All roofs (${roofs.length})</summary>${this.GLOBAL.map(row).join('')}
-      <div class="re-lab" style="margin-top:8px">Place modules in every roof</div><div class="re-grid3" role="group" aria-label="Where the modules sit on every roof">${grid}</div>
-      <div class="re-note">A value typed here is set on every roof it applies to (rack tilt on flat roofs, pitch and overhang on pitched ones). Blank means the roofs differ.</div></details>`;
+    const shapes = ['gable', 'hip', 'mono', 'flat'], same = new Set(roofs.map(r => r.shape)), curShape = same.size === 1 ? [...same][0] : '';
+    const types = `<div class="re-lab" style="margin-top:8px">Roof type</div><div class="re-seg" role="group" aria-label="Roof type for ${sc.picked ? 'the picked roofs' : 'every roof'}">${shapes.map(x => btn(curShape === x, `data-re-gshape="${x}"`, RoofPlanes.LABELS[x])).join('')}</div>`;
+    const uses = new Set(roofs.map(r => r.use !== false)), useRow = `<div class="re-lab" style="margin-top:8px">In the solar calculation</div><div class="re-seg">${btn(uses.size === 1 && uses.has(true), 'data-re-guse="1"', 'Use')}${btn(uses.size === 1 && uses.has(false), 'data-re-guse="0"', 'Leave out')}</div>`;
+    return `<details class="re-sec re-all"${open ? ' open' : ''}><summary class="re-lab">${sc.picked ? 'Picked roofs' : 'All roofs'} (${roofs.length})</summary>${sc.picked ? `<div class="re-note">${esc(roofs.map(r => r.name).join(', '))}</div>` : ''}${this.GLOBAL.map(row).join('')}${types}${useRow}
+      <div class="re-lab" style="margin-top:8px">Place modules in ${sc.picked ? 'these roofs' : 'every roof'}</div><div class="re-grid3" role="group" aria-label="Where the modules sit on every roof">${grid}</div>
+      <div class="re-note">${sc.picked ? 'Shift-click roofs on the plan, or drag a box round them, to pick several; with fewer than two picked this section edits every roof.' : 'Pick two or more roofs on the plan (Shift-click, or drag a box) to edit just those.'} A value typed here is set on every roof it applies to (rack tilt on flat roofs, pitch and overhang on pitched ones). Blank means the roofs differ.</div></details>`;
+  },
+  // Set fields on every roof of the group section's scope (the picked roofs, else all), only where `ok(roof)` allows.
+  _applyScope(patch, ok) {
+    for (const r of this._scope().roofs) if (!ok || ok(r)) PlanSolar.update(r.id, patch);
+    PlanSolar._changed(); Roof3D.refresh();
   },
   _alignBtn(roof, v, h, btn) {
     const k = v + '-' + h, name = (v === 'center' && h === 'center') ? 'Centre' : [v === 'top' ? 'Top (ridge)' : v === 'bottom' ? 'Bottom (eave)' : '', h === 'center' ? '' : h === 'left' ? 'left' : 'right'].filter(Boolean).join(', ');

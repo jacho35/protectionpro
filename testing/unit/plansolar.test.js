@@ -156,4 +156,11 @@ ok('slope arrows: shown by default, switchable, compass letters for the azimuth'
   S.setSlopeShown(false); assert.strictEqual(S.slopeShown(), false); S.setSlopeShown(true); assert.strictEqual(S.slopeShown(), true);
   assert.deepStrictEqual([0, 44, 90, 180, 225, 315, 359, -90].map(a => S.compass(a)), ['N', 'NE', 'E', 'S', 'SW', 'NW', 'N', 'W']);
 });
+ok('picking roofs: toggle adds / removes one, so several can be edited together', () => {
+  const st = S._store(); st.roofs = []; S.sel.clear();
+  const a = S.addRoof(rect(10, 10)), b = S.addRoof(rect(20, 20));
+  S.toggleSelect(a.id); S.toggleSelect(b.id); assert.strictEqual(S.sel.size, 2);
+  S.toggleSelect(a.id); assert.deepStrictEqual([...S.sel], [b.id]);
+  S.clearSelection(); assert.strictEqual(S.sel.size, 0);
+});
 console.log(n + ' passed');

@@ -77,8 +77,13 @@ const PlanSolar = {
   // The roofs picked with the Select tool (click a roof, Shift-click adds, drag a box): moved as they are, never reshaped.
   sel: new Set(),
   isSelected(id) { return this.sel.has(id); },
-  selectRoofs(ids, add) { if (!add) this.sel.clear(); for (const i of ids) this.sel.add(i); if (typeof PlanEngine !== 'undefined') PlanEngine.requestDraw({ fg: true }); },
-  clearSelection() { if (!this.sel.size) return; this.sel.clear(); if (typeof PlanEngine !== 'undefined') PlanEngine.requestDraw({ fg: true }); },
+  _selChanged() {
+    if (typeof PlanEngine !== 'undefined') PlanEngine.requestDraw({ fg: true });
+    if (typeof RoofEditor !== 'undefined' && RoofEditor.on) RoofEditor.renderPanel();          // the editor's panel edits the picked roofs together
+  },
+  selectRoofs(ids, add) { if (!add) this.sel.clear(); for (const i of ids) this.sel.add(i); this._selChanged(); },
+  toggleSelect(id) { if (this.sel.has(id)) this.sel.delete(id); else this.sel.add(id); this._selChanged(); },
+  clearSelection() { if (!this.sel.size) return; this.sel.clear(); this._selChanged(); },
   // Every picked roof (corners and the objects on it) by the same step: the shape, and each object's place on it, stay as drawn.
   moveSelected(dx, dy) {
     for (const r of this.roofs()) {
