@@ -232,7 +232,7 @@ const RoofPlanes = {
 
   // Whole modules on one plane (portrait, the long side down the slope), from its low edge up, inside the footprint
   // setback and the plane's own outline. Returns up to `max` quads of four [x, y, z] corners.
-  layoutPlane(pl, foot, setback, mod, max, al) {
+  layoutPlane(pl, foot, setback, mod, max, al, ex) {
     const { u, w } = Roof3D.axes(pl.az), cs = Math.cos(pl.pitch * Math.PI / 180);
     const run = mod.len * cs, wid = mod.wid, out = [];
     const ss = pl.poly.map(p => p[0] * u[0] + p[1] * u[1]), smax = Math.max(...ss), smin = Math.min(...ss);
@@ -246,7 +246,7 @@ const RoofPlanes = {
       if (s1 < smin - 1e-9) break;
       for (let v = vmin + setback + vOff; v + wid <= vmax - setback + 1e-9; v += wid) {
         const q = [at(v, s0), at(v + wid, s0), at(v + wid, s1), at(v, s1)];
-        if (!q.every(ok)) continue;
+        if (!q.every(ok) || Roof3D.hitsKeepout(q, ex)) continue;
         out.push(q.map(p => [p[0], p[1], pl.zAt(p[0], p[1]) + 0.04]));
         if (out.length >= max) return out;
       }

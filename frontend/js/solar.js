@@ -416,7 +416,7 @@ const Solar = {
             lat: this._loc(c).lat, tilt_deg: +r.tilt, module_length_m: p.len, hour_angle_deg: +c.hour });
           gcr = rs.ground_cover_ratio;
         }
-        const first = arrays.length, nb = PlanSolar.neighbourObstructions(r);      // the other roofs, used or not, may shade this one
+        const first = arrays.length, nb = PlanSolar.shadeFor(r);      // this roof's own objects + the other roofs (used or not): each array sees only its own roof's
         arrays.push(...PlanSolar.arrays([r], gcr, packing));
         if (nb.length) for (const a of arrays.slice(first)) a.obstructions = nb;
       }
@@ -424,8 +424,7 @@ const Solar = {
       this._res = await API.request('/analysis/solar-size', 'POST', {
         location: c.location, module: this.moduleBody(p), inverter: this.inverterBody(inv), mode: c.mode, arrays,
         annual_kwh: +c.annualKwh || null, share_pct: +c.sharePct,
-        obstructions: (+c.obsH > 0 ? [{ height_m: +c.obsH, distance_m: +c.obsD, bearing_deg: +c.obsB, width_m: +c.obsW }] : [])
-          .concat(used.flatMap(r => PlanSolar.obstructions(r))) });      // + the vents, chimneys... placed on the roofs
+        obstructions: +c.obsH > 0 ? [{ height_m: +c.obsH, distance_m: +c.obsD, bearing_deg: +c.obsB, width_m: +c.obsW }] : [] });   // the typed one applies to every roof; objects and neighbours ride on each roof's arrays
       this._str = null; this._prot = null;
       return;
     }

@@ -1255,6 +1255,51 @@ PlanTools.register({
 });
 
 // ─────────────────────────────────────────────────────────────────────────
+// ROOF KEEP-OUT — click the corners of an area of a roof the modules must avoid (the first corner picks the roof);
+// Enter or a click on the first corner closes it, Backspace takes a corner back, Esc cancels.
+// ─────────────────────────────────────────────────────────────────────────
+PlanTools.register({
+  id: 'roofkeepout', cursor: 'crosshair', _pts: [], _cur: null, _roof: null,
+  onActivate() { this._pts = []; this._cur = null; this._roof = null; },
+  cancel() { this._pts = []; this._cur = null; this._roof = null; PlanEngine.requestDraw({ fg: true }); },
+  onDown(pt) {
+    const q = PlanTools.snap(pt, { wantElements: false }) || pt;
+    if (!this._pts.length) {
+      const roof = typeof PlanSolarArray !== 'undefined' ? PlanSolarArray.roofAt(q) : null;
+      if (!roof) { UI.toast('Start inside a roof: the area belongs to the roof it starts on.', 'info', 3000); return; }
+      this._roof = roof;
+    }
+    const tol = 10 / Math.max(PlanEngine.view.zoom, 1e-6);
+    if (this._pts.length >= 3 && Math.hypot(q.x - this._pts[0].x, q.y - this._pts[0].y) <= tol) { this._finish(); return; }
+    this._pts.push({ x: q.x, y: q.y }); PlanEngine.requestDraw({ fg: true });
+  },
+  onMove(pt) { this._cur = PlanTools.snap(pt, { wantElements: false }) || pt; if (this._pts.length) PlanEngine.requestDraw({ fg: true }); },
+  _finish() {
+    if (this._pts.length < 3) { UI.toast('A keep-out area needs at least three corners.', 'warn', 3000); return true; }
+    const roof = this._roof, k = PlanSolar.addKeepout(roof, this._pts);
+    this._pts = []; this._cur = null; this._roof = null;
+    if (typeof RoofEditor !== 'undefined' && RoofEditor.on) { Roof3D.sel = { roof: roof.id }; RoofEditor.setTool('select'); Roof3D.refresh(); } else PlanTools.set('select');
+    return !!k;
+  },
+  onKey(e) {
+    if (e.key === 'Escape') { this.cancel(); if (typeof RoofEditor !== 'undefined' && RoofEditor.on) RoofEditor.setTool('select'); else PlanTools.set('select'); return true; }
+    if (e.key === 'Enter') return this._finish();
+    if (e.key === 'Backspace' && this._pts.length) { this._pts.pop(); if (!this._pts.length) this._roof = null; PlanEngine.requestDraw({ fg: true }); return true; }
+    return false;
+  },
+  drawOverlay(ctx, zoom) {
+    if (!this._pts.length) return;
+    ctx.save(); ctx.strokeStyle = '#b91c1c'; ctx.lineWidth = 1.5 / zoom; ctx.setLineDash([6 / zoom, 4 / zoom]);
+    ctx.beginPath(); ctx.moveTo(this._pts[0].x, this._pts[0].y);
+    for (const p of this._pts.slice(1)) ctx.lineTo(p.x, p.y);
+    if (this._cur) ctx.lineTo(this._cur.x, this._cur.y);
+    ctx.stroke(); ctx.setLineDash([]); ctx.fillStyle = '#b91c1c';
+    for (const p of this._pts) { ctx.beginPath(); ctx.arc(p.x, p.y, 3.5 / zoom, 0, 7); ctx.fill(); }
+    ctx.restore();
+  },
+});
+
+// ─────────────────────────────────────────────────────────────────────────
 // WORKING AREA — drag a rectangle, or click polygon corners (Enter / first point closes)
 // ─────────────────────────────────────────────────────────────────────────
 PlanTools.register({

@@ -57,7 +57,7 @@ const PlanUI = {
   // kind → the tool id that draws it; disabled until that tool is registered.
   _toolFor(kind) {
     return { element: 'place', route: 'route', trench: 'trench',
-      crossing: 'crossing', text: 'text', measurement: 'measurement', room: 'room', roomdetect: 'roomdetect', erfdetect: 'erfdetect', roofdetect: 'roofdetect', roofedit: 'roofedit', solararray: 'solararray', solardesign: 'solardesign', layout: 'layout', sllayout: 'sllayout', roomshape: 'roomshape', perimeter: 'perimeter', sportsfield: 'sportsfield' }[kind];
+      crossing: 'crossing', text: 'text', measurement: 'measurement', room: 'room', roomdetect: 'roomdetect', erfdetect: 'erfdetect', roofdetect: 'roofdetect', roofedit: 'roofedit', roofkeepout: 'roofkeepout', solararray: 'solararray', solardesign: 'solardesign', layout: 'layout', sllayout: 'sllayout', roomshape: 'roomshape', perimeter: 'perimeter', sportsfield: 'sportsfield' }[kind];
   },
 
   // Folded palette groups (session only); the group last used stays open.

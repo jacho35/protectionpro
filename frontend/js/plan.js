@@ -1007,6 +1007,7 @@ const PlanMarkup = {
       case 'layout': return (typeof PlanLayoutUI !== 'undefined' && PlanLayoutUI.hint) ? PlanLayoutUI.hint() : 'Auto layout — set the roads and the rules, Run, then Create.';
       case 'solararray': return PlanSolarArray.hint();
       case 'roofedit': return 'Roof editor — click a roof to select it, or place the chosen object on it. Pick the tool on the left.';
+      case 'roofkeepout': return 'Keep-out area — click the corners inside a roof; Enter or the first corner closes it, Backspace takes a corner back, Esc cancels.';
       case 'roofdetect': return 'Detect roof — click inside a building, or Detect all; or Draw the outline. Shift-click adds, Alt-click subtracts. Esc to stop.';
       case 'erfdetect': return 'Detect erven — click inside an erf, or Detect all. Shift-click adds, Alt-click subtracts. Esc to stop.';
       case 'crossing': return 'Crossing — click two points. Esc cancels.';

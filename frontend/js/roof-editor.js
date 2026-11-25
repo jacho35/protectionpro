@@ -28,6 +28,8 @@ const RoofEditor = {
       'Click a face to select it. Pick the roof type below (gable, hip, mono-pitch, pyramid, cross-gable, flat), a lean-to, and which planes carry modules.', 'Pitch'],
     ['transform', 'Transform', 'G', 'M12 3 V21 M3 12 H21 M9 6 L12 3 L15 6 M9 18 L12 21 L15 18 M6 9 L3 12 L6 15 M18 9 L21 12 L18 15',
       'Move, turn or scale the selected roof or object. Drag an arrow to lock to that axis, or type a value and press Enter.', 'Distance'],
+    ['keepout', 'Keep-out', 'K', 'M4 5 H20 V19 H4 Z M4 19 L20 5 M4 12 L12 5 M12 19 L20 12',
+      'Click the corners of an area of a roof the modules must avoid. Enter or the first corner closes it, Backspace takes a corner back. Drag its corners with Select.', 'Length'],
     ['object', 'Objects', 'O', 'M12 3 L20 7.5 V16.5 L12 21 L4 16.5 V7.5 Z M4 7.5 L12 12 L20 7.5 M12 12 V21',
       'Pick an object below, then click a roof plane. It sits on the plane, snaps to the grid and shades the modules around it.', 'Height'],
   ],
@@ -114,6 +116,7 @@ const RoofEditor = {
     const def = this._def(id);
     Roof3D.setTool(id);
     if (id === 'select') PlanTools.set('select');
+    else if (id === 'keepout') PlanTools.set('roofkeepout');
     else if (id === 'footprint') { PlanTools.set('roofdetect'); if (typeof PlanRoomDetect !== 'undefined') { PlanRoomDetect.mode = 'draw'; PlanRoomDetect.draft = null; } }
     else PlanTools.set('roofedit');
     const l = document.getElementById('re-vcb-l'); if (l) l.textContent = id === 'transform' ? ({ move: 'Distance', rotate: 'Turn °', scale: 'Scale ×' })[Roof3D.gizmo] : (id === 'ridge' && this._selRoof() && this._selRoof().shape === 'pyramid' ? 'Apex' : def[5]);
@@ -153,6 +156,8 @@ const RoofEditor = {
     const gm = t.closest('[data-re-gmodalign]'); if (gm) { for (const r of PlanSolar.roofs()) PlanSolar.update(r.id, { modAlign: gm.dataset.reGmodalign }); PlanSolar._changed(); Roof3D.refresh(); return; }
     const ma = t.closest('[data-re-modalign]'); if (ma && roof) { this._edit(roof, { modAlign: ma.dataset.reModalign }); return; }
     const al = t.closest('[data-re-align]'); if (al && roof) { this.aligning = true; PlanTools.set('roofedit'); this.renderPanel(); return; }
+    const tl = t.closest('[data-re-tool]'); if (tl) { this.setTool(tl.dataset.reTool); return; }
+    const dk = t.closest('[data-re-delko]'); if (dk && roof) { PlanSolar.removeKeepout(roof, dk.dataset.reDelko); Roof3D.refresh(); return; }
     const dr = t.closest('[data-re-delroof]'); if (dr) { PlanSolar.removeRoof(dr.dataset.reDelroof); Roof3D.sel = null; Roof3D.refresh(); return; }
   },
   _onChange(e) {
@@ -208,7 +213,7 @@ const RoofEditor = {
 
   // ── Plan side ──
   _sig() {
-    return JSON.stringify([PlanSolar.northAngle(), PlanSolar.roofs().map(r => [r.id, r.name, r.shape, r.points, r.pitch, r.tilt, r.azimuth, r.setback, r.eave, r.apex, r.overhang, r.lean, r.planeUse, r.use, r.objects, r.modAlign, r.maxModules])]);
+    return JSON.stringify([PlanSolar.northAngle(), PlanSolar.roofs().map(r => [r.id, r.name, r.shape, r.points, r.pitch, r.tilt, r.azimuth, r.setback, r.eave, r.apex, r.overhang, r.lean, r.planeUse, r.use, r.objects, r.modAlign, r.maxModules, r.keepouts])]);
   },
   // Called from every plan redraw: a roof changed on the plan (a corner dragged, undo, a new one drawn) updates the 3D view.
   syncFromPlan() {
@@ -247,7 +252,7 @@ const RoofEditor = {
   planDown(pt) {
     if (this.aligning) {                                                       // Align to edge: the clicked roof edge becomes the eave side
       const hit = PlanSolar.edgeAt(pt, PlanEngine.view ? PlanEngine.view.zoom : 1), roof = this._selRoof();
-      if (hit && (!roof || hit.roof.id === roof.id)) { PlanSolar.alignToEdge(hit.roof, hit.i); PlanSolar._changed(); this.aligning = false; Roof3D.sel = { roof: hit.roof.id }; this.setTool('select'); Roof3D.refresh(); }
+      if (hit && !hit.roof.keepout && (!roof || hit.roof.id === roof.id)) { PlanSolar.alignToEdge(hit.roof, hit.i); PlanSolar._changed(); this.aligning = false; Roof3D.sel = { roof: hit.roof.id }; this.setTool('select'); Roof3D.refresh(); }
       return;
     }
     const f = PlanEngine.factor(); if (!f) return;
@@ -311,6 +316,8 @@ const RoofEditor = {
         <label class="re-row"><span>Side</span><select data-re-f="lean.side">${[['front', 'Facing side'], ['back', 'Back'], ['end', 'End (+)'], ['end2', 'End (−)']].map(o => `<option value="${o[0]}"${L.side === o[0] ? ' selected' : ''}>${o[1]}</option>`).join('')}</select></label>` : ''}
         <div class="re-note">${L ? '' : 'Needs a rectangular footprint.'}</div></div>`;
     }
+    h += `<div class="re-sec"><div class="re-lab">Keep-out areas</div>${(roof.keepouts || []).map((k, i) => `<div class="re-objh"><span>Keep-out ${i + 1}</span><button type="button" class="re-btn" data-re-delko="${esc(k.id)}" aria-label="Delete keep-out ${i + 1}">×</button></div>`).join('') || '<div class="re-note">None.</div>'}
+      <button type="button" class="re-btn" data-re-tool="keepout">Draw a keep-out</button><div class="re-note">Modules are not placed on these areas, and they come off the usable area the size calculation uses.</div></div>`;
     const mods = it.mods.length, mw = (typeof Solar !== 'undefined' && Solar.panel) ? Solar.panel(Solar.cfg()).w : 0;
     h += `<div class="re-sec"><div class="re-lab">Array</div><div class="re-note">${mods} modules${mw ? ' · ' + (mods * mw / 1000).toFixed(1) + ' kWp' : ''} (from the last size calculation, or all that fit).</div></div>`;
     h += `<div class="re-sec"><div class="re-lab">Objects on this roof</div>${(roof.objects || []).map(o => `<div class="re-obj${Roof3D.sel && Roof3D.sel.obj === o.id ? ' sel' : ''}"><div class="re-objh"><span>${esc((PlanSolar.OBJECT_TYPES[o.type] || { label: o.type }).label)}</span><button type="button" class="re-btn" data-re-delobj="${esc(o.id)}" aria-label="Delete ${esc(o.type)}">×</button></div>
