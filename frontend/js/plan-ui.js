@@ -57,7 +57,7 @@ const PlanUI = {
   // kind → the tool id that draws it; disabled until that tool is registered.
   _toolFor(kind) {
     return { element: 'place', route: 'route', trench: 'trench',
-      crossing: 'crossing', text: 'text', measurement: 'measurement', room: 'room', roomdetect: 'roomdetect', erfdetect: 'erfdetect', roofdetect: 'roofdetect', layout: 'layout', sllayout: 'sllayout', roomshape: 'roomshape', perimeter: 'perimeter', sportsfield: 'sportsfield' }[kind];
+      crossing: 'crossing', text: 'text', measurement: 'measurement', room: 'room', roomdetect: 'roomdetect', erfdetect: 'erfdetect', roofdetect: 'roofdetect', solararray: 'solararray', solardesign: 'solardesign', layout: 'layout', sllayout: 'sllayout', roomshape: 'roomshape', perimeter: 'perimeter', sportsfield: 'sportsfield' }[kind];
   },
 
   // Folded palette groups (session only); the group last used stays open.
@@ -91,7 +91,7 @@ const PlanUI = {
 
   _palItem(it) {
     const toolId = this._toolFor(it.kind);
-    const ready = typeof PlanTools !== 'undefined' && PlanTools._tools[toolId];
+    const ready = it.kind === 'solardesign' || (typeof PlanTools !== 'undefined' && PlanTools._tools[toolId]);
     return `<button type="button" class="plan-pal-item${ready ? '' : ' disabled'}" data-kind="${escHtml(it.kind)}" data-type="${escHtml(it.type)}"${it.loadType ? ` data-loadtype="${escHtml(it.loadType)}"` : ''}${ready ? '' : ' disabled'}${it.desc ? ` title="${escHtml(it.desc)}"` : ''}>
       <span class="plan-pal-swatch" style="background:${escHtml(it.color)}"></span><span class="plan-pal-name">${escHtml(it.name)}</span>${it.desc ? `<small>${escHtml(it.desc)}</small>` : ''}</button>`;
   },
@@ -435,6 +435,7 @@ const PlanUI = {
       const byMode = { single: 'place', array: 'array', path: 'devpath' };
       PlanTools.set(byMode[this.placeModeFor(type)] || 'place', { type });
     }
+    else if (kind === 'solardesign') { Solar.open(); return; }
     else PlanTools.set(this._toolFor(kind), { type });
     this.paletteEl.querySelectorAll('.plan-pal-item.armed').forEach(b => b.classList.remove('armed'));
     item.classList.add('armed');
@@ -623,6 +624,7 @@ const PlanUI = {
     if (typeof PlanMarkup !== 'undefined' && PlanMarkup.refreshColourBy) PlanMarkup.refreshColourBy();
     const el = this.propsEl; if (!el) return;
     if (typeof PlanTools !== 'undefined' && PlanTools.active && PlanTools.active.id === 'layout' && typeof PlanLayoutUI !== 'undefined') { PlanLayoutUI.renderOptions(el); return; }
+    if (typeof PlanTools !== 'undefined' && PlanTools.active && PlanTools.active.id === 'solararray' && typeof PlanSolarArray !== 'undefined') { PlanSolarArray.renderOptions(el); return; }   // Place array: roofs, layout settings, single-line status
     if (typeof PlanTools !== 'undefined' && PlanTools.active && PlanTools.active.id === 'sllayout' && typeof SLLayoutUI !== 'undefined') { SLLayoutUI.renderOptions(el); return; }   // Street lighting layout: its four steps
     if (typeof PlanTools !== 'undefined' && PlanTools.active && (PlanTools.active.id === 'roomdetect' || PlanTools.active.id === 'erfdetect' || PlanTools.active.id === 'roofdetect') && typeof PlanRoomDetect !== 'undefined') { PlanRoomDetect.renderOptions(el, PlanTools.active.id === 'erfdetect' ? 'erf' : PlanTools.active.id === 'roofdetect' ? 'roof' : 'room'); return; }
     if (typeof PlanReroute !== 'undefined' && PlanReroute.session) { PlanReroute.renderPanel(el); return; }     // Re-route from a kiosk / manhole: its preview panel

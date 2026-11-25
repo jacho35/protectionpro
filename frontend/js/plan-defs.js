@@ -403,7 +403,9 @@ const PLAN_DEFS = {
       push('Detect', { type: 'sllayout', kind: 'sllayout', name: 'Street lighting layout', color: '#f59e0b', desc: 'The street-light cables: poles in circuits from the kiosks you pick or place, sized by the street-light checks, with trenches and crossings; the circuits go to Street lighting' });
     }
     if (domain === 'retic' || domain === 'building') {
-      push('Solar', { type: 'roofdetect', kind: 'roofdetect', name: 'Detect roof', color: '#d9822b', desc: 'Find building roofs on the DXF / plan image, click inside one, or Draw the outline. Size the array in Analyse > Solar PV Design' });
+      push('Solar', { type: 'roofdetect', kind: 'roofdetect', name: 'Roof', color: '#d9822b', desc: 'Detect a building roof on the DXF / plan image, or Draw its outline' });
+      push('Solar', { type: 'solararray', kind: 'solararray', name: 'Place array', color: '#1f4e79', desc: 'Click a roof: the panels are laid out on it and the array goes on the single line' });
+      push('Solar', { type: 'solardesign', kind: 'solardesign', name: 'Open design', color: '#64748b', desc: 'Yield, strings and protection in Solar PV Design' });
     }
     for (const [type, def] of Object.entries(this.elements)) {
       if (def.domain !== domain || def.adoptOnly) continue;   // adopt-only types are placed via "From SLD"
