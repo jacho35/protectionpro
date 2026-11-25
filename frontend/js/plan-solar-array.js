@@ -49,12 +49,15 @@ const PlanSolarArray = {
   layout(roof) {
     const f = PlanEngine.factor(), c = Solar.cfg(), p = Solar.panel(c);
     if (!f || !roof.points || roof.points.length < 3) return { mods: [], n: 0, kwp: 0, pending: false };
-    const key = [roof.points.map(q => q.x + ',' + q.y).join(';'), roof.shape, roof.pitch, roof.tilt, roof.azimuth, roof.setback, p.id, p.len, p.wid, f, c.hour, c.location].join('|');
+    const key = [roof.points.map(q => q.x + ',' + q.y).join(';'), roof.shape, roof.pitch, roof.tilt, roof.azimuth, PlanSolar.northAngle(), roof.eave, JSON.stringify(roof.planeUse || null), roof.setback, p.id, p.len, p.wid, f, c.hour, c.location].join('|');
     const hit = this._layouts.get(roof.id);
     if (hit && hit.key === key) return hit.lay;
-    const poly = Roof3D.toMetres(roof.points, f), az = +roof.azimuth || 0, setback = Math.max(0, +roof.setback || 0);
+    const poly = Roof3D.toMetres(roof.points, f), az = PlanSolar.planAz(roof), setback = Math.max(0, +roof.setback || 0);
     let mods = [], pending = false;
-    if (roof.shape === 'gable') {
+    if (PlanSolar.usesPlanes(roof)) {                                       // a layout on every plane in use
+      const g = PlanSolar.planesOf(roof), use = g.use;
+      g.planes.forEach((pl, i) => { if (use[i]) mods.push(...RoofPlanes.layoutPlane(pl, g.poly, setback, p, 1e9)); });
+    } else if (roof.shape === 'gable') {
       const g = Roof3D.gablePlanes(poly, az, +roof.pitch, Roof3D.EAVE_M);
       mods = Roof3D.layoutModules(poly, az, +roof.pitch, setback, p, 1e9, g);
     } else {
@@ -150,7 +153,7 @@ const PlanSolarArray = {
       if (!lay.mods.length) continue;
       ctx.save();
       if (mode === 'block') {
-        const { u: au, w: aw } = Roof3D.axes(+r.azimuth || 0);
+        const { u: au, w: aw } = Roof3D.axes(PlanSolar.planAz(r));
         let a0 = 1e9, a1 = -1e9, b0 = 1e9, b1 = -1e9;
         for (const m of lay.mods) for (const q of m) { const s = q[0] * au[0] + q[1] * au[1], v = q[0] * aw[0] + q[1] * aw[1]; a0 = Math.min(a0, s); a1 = Math.max(a1, s); b0 = Math.min(b0, v); b1 = Math.max(b1, v); }
         const at = (v, s) => [aw[0] * v + au[0] * s, aw[1] * v + au[1] * s];
@@ -196,8 +199,8 @@ const PlanSolarArray = {
       detail = `<div class="plan-props-sec">${esc(r.name)} · solar array</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px"><div><small>Panels</small><br><b data-sa-n style="font-size:16px">${l.pending ? '…' : l.n}</b></div><div><small>Power</small><br><b data-sa-kwp style="font-size:16px">${l.pending ? '…' : l.kwp.toFixed(1) + ' kWp'}</b></div></div>
         <div style="color:var(--text-muted)">${esc(p.name || p.id)} (${p.w} W). Change the panel, inverter and location in Open design.</div>
-        <label style="display:flex;gap:8px;align-items:center"><span>Roof</span><select data-sa-shape><option value="gable"${r.shape === 'gable' ? ' selected' : ''}>Gable (north plane)</option><option value="flat"${r.shape === 'flat' ? ' selected' : ''}>Flat with racks</option></select></label>
-        ${r.shape === 'gable' ? sl('pitch', 'Roof pitch', 0, 45, 1, '°') : sl('tilt', 'Rack tilt', 0, 40, 1, '°')}
+        <label style="display:flex;gap:8px;align-items:center"><span>Roof</span><select data-sa-shape>${RoofPlanes.SHAPES.map(k => `<option value="${k}"${r.shape === k ? ' selected' : ''}>${RoofPlanes.LABELS[k]}</option>`).join('')}</select></label>
+        ${r.shape !== 'flat' ? sl('pitch', 'Roof pitch', 0, 45, 1, '°') : sl('tilt', 'Rack tilt', 0, 40, 1, '°')}${sl('eave', 'Eave height', 2, 12, 0.1, ' m')}
         ${sl('azimuth', 'Azimuth (0 = north)', 0, 359, 1, '°')}${sl('setback', 'Edge setback', 0, 2, 0.1, ' m')}
         <label style="display:flex;gap:8px;align-items:center"><span>Show as</span><select data-sa-style><option value="modules"${this.style() === 'modules' ? ' selected' : ''}>Individual panels</option><option value="block"${this.style() === 'block' ? ' selected' : ''}>One block with a count</option></select></label>
         <div data-sa-sld style="color:${/not updated/.test(this.sld) ? '#b45309' : 'var(--text-muted)'}">${esc(this.sld || (f ? 'The single line follows this array.' : 'Calibrate the plan scale to size the array.'))}</div>
@@ -215,7 +218,7 @@ const PlanSolarArray = {
     el.oninput = (e) => {
       const k = e.target.dataset.saK; if (!k || !r) return;
       this.edit(r, { [k]: +e.target.value });
-      const o = el.querySelector(`[data-sa-o="${k}"]`); if (o) o.textContent = r[k] + (k === 'setback' ? ' m' : '°');
+      const o = el.querySelector(`[data-sa-o="${k}"]`); if (o) o.textContent = r[k] + (k === 'setback' || k === 'eave' ? ' m' : '°');
       const l = this.layout(r), n = el.querySelector('[data-sa-n]'), kw = el.querySelector('[data-sa-kwp]');
       if (n) n.textContent = l.pending ? '…' : l.n; if (kw) kw.textContent = l.pending ? '…' : l.kwp.toFixed(1) + ' kWp';
     };
