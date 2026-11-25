@@ -222,3 +222,19 @@ def test_long_titles_wrap_over_their_lines_and_stay_inside_the_box(tmp_path, mon
 def test_text_width_is_arial():
     assert S.text_width("H", 0.716) == pytest.approx(0.722)
     assert S.text_width("H", 0.716, "ARIALN.TTF") == pytest.approx(0.722 * 0.82)
+
+
+def test_road_crossing_gets_a_leader_and_circle_with_its_duct_count(no_template):
+    """3 large (160) + 4 small (110) ducts side by side = one crossing labelled 3L/4S; the labels are not imported back."""
+    ducts = [{"p1": [100 + i * 6, 0], "p2": [100 + i * 6, 120], "size": "160" if i < 3 else "110", "name": f"RC{i}"} for i in range(7)]
+    p = _payload(crossings=ducts, crossingLabels=[{"p1": [118, 0], "p2": [118, 120], "text": "3L/4S"}])
+    doc = _read(build_dxf(p, load_image=lambda i: None, notes=[]))
+    msp = doc.modelspace()
+    lay = [e for e in msp if e.dxf.layer.endswith("_DUCTS_LABELS")]
+    assert [e.dxf.text for e in lay if e.dxftype() == "TEXT"] == ["3L/4S"]
+    assert sorted(e.dxftype() for e in lay) == ["CIRCLE", "CIRCLE", "LINE", "TEXT"]
+    imported = parse_dxf(build_dxf(p, load_image=lambda i: None, notes=[]))
+    assert len(imported["crossings"]) == 7 and not any("3L/4S" in str(t) for t in imported["texts"])
+    # off: nothing written
+    q = _payload(crossings=ducts)
+    assert not [e for e in _read(build_dxf(q, load_image=lambda i: None, notes=[])).modelspace() if e.dxf.layer.endswith("_DUCTS_LABELS")]

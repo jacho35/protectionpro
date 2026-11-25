@@ -641,3 +641,63 @@ def place_labels(msp, doc, routes: List[dict], obstacles: List[Tuple[float, floa
         done.update(members)
         written += 1
     return written
+
+
+def place_crossing_labels(msp, labels: List[dict], obstacles: List[Tuple[float, float, float]], H: float,
+                          layer: str, text_style: str, meta=None) -> int:
+    """A leader and a circle with the duct count ('3L/4S': large 160 mm / small 110 mm) for each road crossing.
+    `labels` = [{ 'a': (x, y) the crossing's centre, 'dir': (dx, dy) its direction, 'text': '3L/4S', 'lines': [...] }]
+    in metres; `lines` = every crossing's centre line, which the circle keeps clear of. The circle goes beside the
+    road (along the road, off the ducts), the first of eight spots that is clear; the leader starts on a dot at `a`."""
+    placed: List[Tuple[float, float, float, float]] = []
+    segs = [tuple(l) for lab in labels for l in lab.get("lines", [])]
+    count = 0
+    for lab in labels:
+        a, d, text = lab["a"], lab["dir"], str(lab["text"])
+        dl = math.hypot(*d) or 1.0
+        d = (d[0] / dl, d[1] / dl)
+        n = (-d[1], d[0])                                  # along the road
+        r = max(1.3 * H, 0.6 * H * len(text) / 2 + 0.6 * H)
+        best = None
+        for mult in (1.0, 1.7, 2.6):
+            for sgn_n in (1, -1):
+                for t in (0.0, 0.8, -0.8, 1.6, -1.6):
+                    dist = (r + 2.5 * H) * mult
+                    e = (a[0] + n[0] * sgn_n * dist + d[0] * t * r, a[1] + n[1] * sgn_n * dist + d[1] * t * r)
+                    box = (e[0] - r, e[1] - r, e[0] + r, e[1] + r)
+                    s = mult * 0.5 + abs(t) * 0.2
+                    for (x, y, h) in obstacles:
+                        if _box_box(box, (x - h, y - h, x + h, y + h)):
+                            s += 100
+                    for q in placed:
+                        if _box_box(box, q):
+                            s += 100
+                    for (p, q) in segs:
+                        if _seg_box(p, q, box):
+                            s += 60
+                        elif _seg_seg(a, e, p, q) and (p, q) != tuple(lab["lines"][0]):
+                            s += 6
+                    if best is None or s < best[0]:
+                        best = (s, e)
+                    if s < 1.0:
+                        break
+                if best and best[0] < 1.0:
+                    break
+            if best and best[0] < 1.0:
+                break
+        e = best[1]
+        ang = math.atan2(e[1] - a[1], e[0] - a[0])
+        end = (e[0] - math.cos(ang) * r, e[1] - math.sin(ang) * r)
+        attrs = {"layer": layer}
+        ents = [msp.add_line(a, end, dxfattribs=attrs),
+                msp.add_circle(a, 0.25 * H, dxfattribs=attrs),
+                msp.add_circle(e, r, dxfattribs=attrs)]
+        t = msp.add_text(text, dxfattribs={"height": H, "layer": layer, "style": text_style})
+        t.set_placement(e, align=TextEntityAlignment.MIDDLE_CENTER)
+        ents.append(t)
+        if meta:
+            for en in ents:
+                meta(en, {"KIND": "crossinglabel"})
+        placed.append((e[0] - r, e[1] - r, e[0] + r, e[1] + r))
+        count += 1
+    return count
