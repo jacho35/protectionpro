@@ -1,6 +1,6 @@
 /* ProtectionPro — Roof3D: the plan's solar roofs in 3D (View3D), with the modules laid out on them.
  *
- * The 3D half of the Plan tab's roof editor (roof-editor.js; opened from Plan › Solar › Roof editor or Solar PV Design).
+ * The 3D half of the Plan tab's roof editor (roof-editor.js; opened from the Solar toolbar (Roof editor, or 3D) or Solar PV Design).
  * The roofs are edited here and on the plan alike; the older notes below about a read-only view are out of date. Formerly: the
  * modal. Every roof from `PlanSolar` becomes a prism (walls to the eave) with a gable roof — two planes
  * either side of a ridge across the facing direction — or a flat roof with parapet and tilted racks. The
@@ -126,14 +126,14 @@ const Roof3D = {
     for (const k of key(R)) if (R[k + 1]) rows.push({ after: k + 1, at: (R[k].lo + R[k + 1].hi) / 2, clear: R[k].lo - R[k + 1].hi });
     return { cols, rows, u, w, v: [v0, v1], s: [s0, s1] };
   },
-  // The gap nearest a point [x, y] (m) within `tol` of its edge: {axis: 'col' | 'row', after, at, clear} or null.
-  boundaryAt(bd, pt, tol) {
+  // The gap nearest a point [x, y] (m) within `tol` of its edge: {axis: 'col' | 'row', after, at, clear} or null. `ok(axis, after)` limits which gaps count.
+  boundaryAt(bd, pt, tol, ok) {
     if (!bd || !bd.cols) return null;
     const v = pt[0] * bd.w[0] + pt[1] * bd.w[1], s = pt[0] * bd.u[0] + pt[1] * bd.u[1];
     let best = null, near = 1e9;
     const test = (list, axis, x, y, lo, hi) => {                      // x = the point on the axis the gaps are on; y must lie along the array
       if (!(lo - tol <= y && y <= hi + tol)) return;
-      for (const g of list) { const d = Math.abs(x - g.at) - Math.max(0, g.clear) / 2; if (d <= tol && d < near) { near = d; best = { axis, after: g.after, at: g.at, clear: g.clear }; } }
+      for (const g of list) { if (ok && !ok(axis, g.after)) continue; const d = Math.abs(x - g.at) - Math.max(0, g.clear) / 2; if (d <= tol && d < near) { near = d; best = { axis, after: g.after, at: g.at, clear: g.clear }; } }
     };
     test(bd.cols, 'col', v, s, bd.s[0], bd.s[1]);
     test(bd.rows, 'row', s, v, bd.v[0], bd.v[1]);
@@ -506,7 +506,7 @@ const Roof3D = {
     this._message(); if (this.view) this.view.redraw();
   },
 
-  setTool(t) { this.tool = t; this._fire('onTool', t); this._fire('onPanel'); if (this.view) this.view.redraw(); },
+  setTool(t, mode) { this.tool = t; if (mode) this.aisleMode = mode; this._fire('onTool', t); this._fire('onPanel'); if (this.view) this.view.redraw(); },
 
   // Ground point under the pointer for a plane: the plane's height is found by iterating, as the view looks down at an angle.
   _pointOnPlane(pl, sx, sy) {
@@ -646,12 +646,18 @@ const Roof3D = {
       this.sel = null; this._fire('onPanel'); if (this.view) this.view.redraw(); return;
     }
     const [kind, a, b] = String(id).split(':');
-    if (kind === 'a') {                                                     // a gap between panels (Aisles tool): click inserts, Alt-click removes
+    if (kind === 'a') {                                                     // a gap between panels (Row / Column / Remove aisle tools): click inserts or removes
       const [, rid, axis, after] = String(id).split(':'), roof = this._roof(rid);
       if (roof) {
-        const has = !!PlanSolar.aisleAt(roof, axis, +after);
-        if (!has || (e && e.altKey)) { PlanSolar.setAisle(roof, axis, +after, !has); PlanSolar._changed(); this.sel = { roof: rid }; this.refresh(); }
+        const has = !!PlanSolar.aisleAt(roof, axis, +after), kill = this.aisleMode === 'remove' || (e && e.altKey);
+        if (!has || kill) { PlanSolar.setAisle(roof, axis, +after, !has); PlanSolar._changed(); this.sel = { roof: rid }; this.refresh(); }
+        else if (typeof UI !== 'undefined' && UI.toast) UI.toast('That gap already has an aisle. Use Remove aisle, or Alt-click it.', 'info', 3000);
       }
+      return;
+    }
+    if (kind === 'p' && this.tool === 'aisle') {                           // a roof that has no gaps to click: say why
+      const roof = this._roof(a), why = roof && typeof PlanSolarArray !== 'undefined' ? PlanSolarArray.aisleBlock(roof) : '';
+      if (typeof UI !== 'undefined' && UI.toast) UI.toast(why || 'Click a blue strip between two panels.', 'info', 3500);
       return;
     }
     if (kind === 'p') {
@@ -755,18 +761,22 @@ const Roof3D = {
   },
   // The Aisles tool: every gap between rows and columns of panels becomes a clickable strip (blue to insert an aisle, amber where one is).
   _drawGaps(v, it) {
-    const r = it.roof;
+    const r = it.roof, mode = this.aisleMode || 'row';
     if (it.unused || PlanSolar.usesPlanes(r) || !it.mods.length) return;
     const az = PlanSolar.planAz(r), bd = this.boundaries(it.mods, az), flat = r.shape === 'flat';
     const lift = flat ? this.PARAPET_M + 0.14 : 0.1, z = (x, y) => this.deckZ(it, x, y) + lift;
     const strip = (list, axis) => {
       const ax = axis === 'col' ? bd.w : bd.u, al = axis === 'col' ? bd.u : bd.w, ext = axis === 'col' ? bd.s : bd.v;
       for (const g of list) {
-        const has = !!PlanSolar.aisleAt(r, axis, g.after), hw = Math.max(0.1, Math.max(0, g.clear) / 2), P = (x, d) => { const px = ax[0] * (g.at + d) + al[0] * x, py = ax[1] * (g.at + d) + al[1] * x; return [px, py, z(px, py)]; };
-        v.face({ pts: [P(ext[0], -hw), P(ext[1], -hw), P(ext[1], hw), P(ext[0], hw)], fill: has ? '#f2b84b' : '#2563eb', alpha: has ? 0.85 : 0.35, stroke: has ? '#a16207' : '#1d4ed8', lw: 1, layer: 3, pick: 'a:' + r.id + ':' + axis + ':' + g.after });
+        const has = !!PlanSolar.aisleAt(r, axis, g.after);
+        if (mode === 'remove' ? !has : false) continue;                    // Remove aisle: only the aisles
+        const hw = Math.max(0.1, Math.max(0, g.clear) / 2), P = (x, d) => { const px = ax[0] * (g.at + d) + al[0] * x, py = ax[1] * (g.at + d) + al[1] * x; return [px, py, z(px, py)]; };
+        const kill = has && mode === 'remove';
+        v.face({ pts: [P(ext[0], -hw), P(ext[1], -hw), P(ext[1], hw), P(ext[0], hw)], fill: kill ? '#dc2626' : has ? '#f2b84b' : '#2563eb', alpha: has ? 0.85 : 0.4, stroke: kill ? '#7f1d1d' : has ? '#a16207' : '#1d4ed8', lw: 1, layer: 3, pick: 'a:' + r.id + ':' + axis + ':' + g.after });
       }
     };
-    strip(bd.cols, 'col'); strip(bd.rows, 'row');
+    if (mode !== 'col') strip(bd.rows, 'row');
+    if (mode !== 'row') strip(bd.cols, 'col');
   },
   draw(v) {
     const sc = this.scene; if (!sc) return;

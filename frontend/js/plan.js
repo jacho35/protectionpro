@@ -16,6 +16,7 @@ const PlanMarkup = {
 
   init() {
     this.buildDOM();
+    if (typeof SolarBar !== 'undefined') SolarBar.init();
     if (typeof PlanEngine !== 'undefined') PlanEngine.init();
     if (typeof PlanImages !== 'undefined') PlanImages.init();
     const palette = document.getElementById('plan-palette');
@@ -64,6 +65,7 @@ const PlanMarkup = {
         </div>
         <div class="plan-modes" role="group" aria-label="Plan mode">
           <button type="button" class="plan-mode-btn active" data-mode="draw" aria-pressed="true" title="Place devices, draw routes and annotate">Draw</button>
+          <button type="button" class="plan-mode-btn" data-mode="solar" aria-pressed="false" title="Solar roofs, arrays and maintenance aisles: the solar toolbar and the design parameters" hidden>Solar</button>
           <button type="button" class="plan-mode-btn" data-mode="roads" aria-pressed="false" title="The road sections: what each road is made of, given to roads by selecting them">Roads</button>
           <button type="button" class="plan-mode-btn" data-mode="underlays" aria-pressed="false" title="Import plans and DXFs, set the scale, move and align them">Underlays</button>
           <button type="button" class="plan-mode-btn" data-mode="output" aria-pressed="false" title="Sync with the other workspaces, set the print area and export">Output</button>
@@ -90,6 +92,7 @@ const PlanMarkup = {
         <button class="plan-tb-btn" id="plan-layers-btn" data-action="layers" title="Rename, recolour, hide, lock and edit the contents of the layers">Layers…</button>
         <input type="file" id="plan-file-input" accept="image/png,image/jpeg,image/webp,application/pdf,.dxf,.json,application/json" style="display:none">
       </div>
+      <div id="plan-solar-bar" class="plan-solar-bar" hidden></div>
       <div id="plan-main" class="plan-main">
         <aside id="plan-palette" class="plan-palette"></aside>
         <div class="plan-stage-col">
@@ -137,15 +140,20 @@ const PlanMarkup = {
     if (typeof ContextMenu !== 'undefined') ContextMenu.close();   // a menu left open would act on the old mode
     // Roads (road sections, roadsections-ui.js) is a site plan of a reticulation: not on a building plan
     const roadsOk = ((AppState.planMarkup && AppState.planMarkup.settings && AppState.planMarkup.settings.domain) || 'retic') !== 'building' && !!(AppState.reticulation && AppState.reticulation.streetLighting);
-    if (!['draw', 'roads', 'underlays', 'output'].includes(mode) || (mode === 'roads' && !roadsOk)) mode = 'draw';
+    const solarOk = ['retic', 'building'].includes((AppState.planMarkup && AppState.planMarkup.settings && AppState.planMarkup.settings.domain) || 'retic');   // the Solar toolbar: roofs and arrays on a reticulation or building plan
+    if (!['draw', 'roads', 'underlays', 'output', 'solar'].includes(mode) || (mode === 'roads' && !roadsOk) || (mode === 'solar' && !solarOk)) mode = 'draw';
     this.mode = mode;
+    const pw = document.getElementById('plan-workspace'); if (pw) pw.classList.toggle('plan-solar-on', mode === 'solar');
     document.querySelectorAll('#plan-toolbar .plan-mode-btn').forEach(b => {
       if (b.dataset.mode === 'roads') b.hidden = !roadsOk;
+      if (b.dataset.mode === 'solar') b.hidden = !solarOk;
       const on = b.dataset.mode === mode;
       b.classList.toggle('active', on); b.setAttribute('aria-pressed', on ? 'true' : 'false');
     });
     if (typeof PlanTools !== 'undefined' && PlanTools.active && PlanTools.active.id !== 'select') PlanTools.set('select');
     if (typeof PlanUI !== 'undefined') { PlanUI.renderPalette(); PlanUI.renderProps(); }
+    if (typeof SolarBar !== 'undefined') SolarBar.sync();
+    if (typeof PlanEngine !== 'undefined' && PlanEngine.resize) setTimeout(() => PlanEngine.resize(), 0);     // the toolbar changes the stage's height
   },
 
   // Move the canvas + side panels into another workspace (the Lighting tab)
@@ -971,6 +979,7 @@ const PlanMarkup = {
     this._toolMsg = this._statusFor(id, opts || {});
     if (typeof PlanUI !== 'undefined' && PlanUI.renderPlaceBar) PlanUI.renderPlaceBar(id, opts || {});
     this.onDraftChanged();
+    if (typeof SolarBar !== 'undefined') SolarBar.render();
     // Mobile: after arming a placement tool from the palette drawer, close it
     // so the canvas is tappable.
     if (PLACERS && this._isMobile()) this._closeDrawers();
@@ -1007,6 +1016,7 @@ const PlanMarkup = {
       case 'sllayout': return typeof SLLayoutUI !== 'undefined' ? SLLayoutUI.hint() : 'Street lighting layout';
       case 'layout': return (typeof PlanLayoutUI !== 'undefined' && PlanLayoutUI.hint) ? PlanLayoutUI.hint() : 'Auto layout — set the roads and the rules, Run, then Create.';
       case 'solararray': return PlanSolarArray.hint();
+      case 'solaraisle': return SolarBar.hint((opts && opts.mode) || 'row').join(': ') + ' Esc to stop.';
       case 'roofedit': return 'Roof editor — click a roof to select it, or place the chosen object on it. Pick the tool on the left.';
       case 'roofkeepout': return 'Keep-out area — click the corners inside a roof; Enter or the first corner closes it, Backspace takes a corner back, Esc cancels.';
       case 'roofdetect': return 'Detect roof — click inside a building, or Detect all; or Draw the outline. Shift-click adds, Alt-click subtracts. Esc to stop.';

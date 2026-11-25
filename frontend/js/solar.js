@@ -140,12 +140,21 @@ const Solar = {
   },
 
   render() {
+    const m = document.getElementById('solar-modal');
+    if (m && m.style.display !== 'none') this._renderModal();
+    this._renderDock();
+  },
+  _renderModal() {
     const c = this.cfg();
     const tabs = [['size', '1 Roof & size'], ['strings', '2 Strings'], ['rows', '3 Rows (flat roof)'], ['protect', '4 Protection'], ['grid', '5 Shading & studies'], ['library', 'Library']];
     const bar = tabs.map(([k, l]) => `<button type="button" class="btn${this._tab === k ? ' btn-primary' : ''}" data-act="tab" data-v="${k}">${l}</button>`).join(' ');
     const body = { size: () => this._sizeHtml(c), strings: () => this._stringsHtml(c), rows: () => this._rowsHtml(c), protect: () => this._protectHtml(c), grid: () => this._gridHtml(c), library: () => this._libraryHtml() }[this._tab]();
     const el = document.getElementById('solar-body');
     el.innerHTML = `<div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap">${bar}</div>${body}`;
+    this._bind(el);
+  },
+  // The field / button handlers of a rendered Solar PV Design body (the dialog's or the dock's).
+  _bind(el) {
     el.querySelectorAll('[data-k]').forEach(i => i.addEventListener('change', () => {
       const v = i.type === 'checkbox' ? i.checked : i.type === 'number' ? parseFloat(i.value) : i.value;
       this.set(i.dataset.k, v);
@@ -160,17 +169,43 @@ const Solar = {
     el.querySelectorAll('[data-act]').forEach(b => b.addEventListener('click', () => this._act(b.dataset.act, b.dataset.v)));
   },
 
+  // ── Design parameters: the same steps docked on the left of the Plan's Solar mode, so the plan stays in view ──
+  _dockEl: null, _dockOpen: true, _dtab: 'size',
+  async mountDock(host) {
+    this._dockEl = host;
+    try { await this._locations(); } catch (e) { host.textContent = 'Solar: ' + (e.message || e); return; }
+    this._renderDock();
+  },
+  _renderDock() {
+    const el = this._dockEl;
+    if (!el || !el.isConnected || !this._locs) return;
+    if (typeof PlanMarkup !== 'undefined' && PlanMarkup.mode !== 'solar') return;
+    const c = this.cfg(), open = this._dockOpen !== false;
+    const head = `<span class="sd-glab">Design</span><button type="button" class="sd-btn${open ? ' open' : ''}" data-act="dock" aria-expanded="${open}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7 H20 M4 12 H20 M4 17 H20 M9 5 V9 M15 10 V14 M8 15 V19"/></svg><span class="sd-grow">Design parameters</span><span aria-hidden="true">${open ? '‹' : '›'}</span></button>`;
+    let body = '<div class="sd-note">Module, inverter, location, kWp target and strings.</div>';
+    if (open) {
+      const tabs = [['size', '1 Size'], ['strings', '2 Strings'], ['protect', '3 Protection'], ['results', '4 Results']];
+      const tab = tabs.some(t => t[0] === this._dtab) ? this._dtab : 'size';
+      const bar = `<div class="sd-tabs" role="tablist" aria-label="Design steps">${tabs.map(([k, l]) => `<button type="button" role="tab" class="sd-tab${tab === k ? ' on' : ''}" aria-selected="${tab === k}" data-act="dtab" data-v="${k}">${l}</button>`).join('')}</div>`;
+      const inner = { size: () => this._sizeHtml(c, true), strings: () => this._stringsHtml(c), protect: () => this._protectHtml(c),
+        results: () => this._sizeResult() || '<div class="sd-note">Press Calculate on the Size step.</div>' }[tab]();
+      body = bar + `<div class="sd-body">${inner}<button type="button" class="sd-more" data-act="more">Rows, shading and library…</button></div>`;
+    }
+    el.innerHTML = `<nav class="sd-nav" aria-label="Solar design">${head}${body}</nav>`.replace(/id="sol-/g, 'id="sd-').replace(/for="sol-/g, 'for="sd-');
+    this._bind(el);
+  },
+
   _grid(inner) {
     return `<div style="display:grid;grid-template-columns:auto 1fr;gap:8px 12px;align-items:center;font-size:13px">${inner}</div>`;
   },
 
-  _sizeHtml(c) {
+  _sizeHtml(c, dock) {
     const loc = this._opt(this._locs, c.location, o => o.name, o => o.name);
     const mod = this._opt(this.panels(), c.module, o => o.id, o => o.name);
     const inv = this._opt(this.inverters(), c.inverter, o => o.id, o => o.name);
     const shape = [['plan', 'Roofs drawn on the plan'], ['gable', 'Gable (north plane)'], ['flat', 'Flat with tilted racks'], ['area', 'Type a usable area']];
     const modes = [['kwp', 'A kWp target I set'], ['roof', 'Fill the roof']];
-    const geo = c.roofShape === 'plan' ? this._roofsHtml()
+    const geo = c.roofShape === 'plan' ? (dock ? '' : this._roofsHtml())
       : c.roofShape === 'area'
       ? this._in(c, 'area', 'Usable area (m²)') + this._in(c, 'packing', 'Packing factor') + this._in(c, 'tilt', 'Tilt (°)') + this._in(c, 'azimuth', 'Azimuth (° from north)')
       : this._in(c, 'length', 'Length (m)') + this._in(c, 'width', 'Width (m)')
@@ -185,34 +220,18 @@ const Solar = {
       <label for="sol-mode">Array size</label><select id="sol-mode" data-k="mode">${this._opt(modes, c.mode, o => o[0], o => o[1])}</select>
       ${c.mode === 'kwp' ? this._in(c, 'targetKwp', 'Target array size (kWp)') : ''}
       ${this._in(c, 'annualKwh', 'Annual consumption (kWh, optional)')}`)
-      + `<div style="margin-top:12px;display:flex;gap:8px;align-items:center"><button class="btn btn-primary" type="button" data-act="run">Calculate</button>
-         ${c.roofShape === 'plan' ? '<button class="btn" type="button" data-act="view3d">Edit roofs in 3D</button>' : ''}
+      + `<div style="margin-top:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button class="btn btn-primary" type="button" data-act="run">Calculate</button>
+         ${c.roofShape === 'plan' && !dock ? '<button class="btn" type="button" data-act="view3d">Edit roofs in 3D</button>' : ''}
          <span style="font-size:12px;color:var(--text-muted,#6d6d6d)">${escHtml(this.roofArea(c).note)}</span></div>`
+      + (dock ? this._placedLine(c) : '')
       + `<div style="margin-top:6px;font-size:11px;color:var(--text-muted,#6d6d6d)">The size is the kWp you set, limited by what the roof holds. Consumption does not size the array; it only gives the share of the load the yield covers. Roofs with an array placed on the plan keep the panels as laid out there.</div>`
-      + this._sizeResult();
+      + (dock ? '' : this._sizeResult());
   },
-
-  // The roofs on the plan: one row each, edited here, drawn with Plan > Solar > Roof, laid out with Place array.
-  _roofsHtml() {
-    const roofs = PlanSolar.roofs();
-    if (!roofs.length) return `<span style="grid-column:1/-1;font-size:12px">No roofs yet. On the Plan tab pick <strong>Solar › Roof</strong> (click inside a building, Detect all, or Draw the outline), then come back.</span>`;
-    const calibrated = !!PlanEngine.factor();
-    const num = (r, k, w = 56) => `<input type="number" step="any" data-roof="${escHtml(r.id)}" data-rk="${k}" value="${escHtml(r[k])}" style="width:${w}px" aria-label="${k}">`;
-    const rows = roofs.map(r => {
-      const a = PlanSolar.usableAreaM2(r);
-      return `<tr><td><input type="checkbox" data-roof="${escHtml(r.id)}" data-rk="use" ${r.use === false ? '' : 'checked'} aria-label="Use ${escHtml(r.name)}"></td>
-        <td>${escHtml(r.name)}</td>
-        <td><select data-roof="${escHtml(r.id)}" data-rk="shape" aria-label="Shape">${RoofPlanes.SHAPES.map(k => `<option value="${k}"${r.shape === k ? ' selected' : ''}>${RoofPlanes.LABELS[k]}</option>`).join('')}</select></td>
-        <td>${r.shape === 'flat' ? num(r, 'tilt') : num(r, 'pitch')}</td><td>${num(r, 'azimuth')}</td><td>${num(r, 'eave', 48)}</td><td>${num(r, 'setback', 48)}</td>
-        <td>${a == null ? '–' : a.toFixed(1)}</td>
-        <td><button type="button" class="btn" data-act="delroof" data-v="${escHtml(r.id)}" aria-label="Delete ${escHtml(r.name)}">×</button></td></tr>`;
-    }).join('');
-    return `<div style="grid-column:1/-1;overflow-x:auto"><table style="font-size:12px;border-collapse:collapse;width:100%">
-      <thead><tr><th></th><th align="left">Roof</th><th align="left">Shape</th><th align="left">Pitch / tilt °</th><th align="left">Azimuth °</th><th align="left">Eave m</th><th align="left">Setback m</th><th align="left">Usable m²</th><th></th></tr></thead>
-      <tbody>${rows}</tbody></table>${calibrated ? '' : '<div style="margin-top:6px;font-size:12px;color:#8a2b1e">Calibrate the plan scale so areas can be worked out.</div>'}
-      <div style="margin-top:6px;font-size:11px;color:var(--text-muted,#6d6d6d)">Gable: the north-facing plane (azimuth 0 = true north). Hip and mono-pitch: every plane that faces the sun gets modules, each at its own azimuth (tick or untick planes in View in 3D). Flat: racks at the tilt, spaced for the design hour on the Rows step. The blue arrows on the plan point down each plane and show its true azimuth.</div>
-      <div style="margin-top:8px;display:flex;align-items:center;gap:8px;font-size:13px"><label for="sol-north">True north, clockwise from the top of the plan (°)</label>
-        <input id="sol-north" type="number" step="any" min="0" max="359.9" data-north value="${escHtml(PlanSolar.northAngle())}" style="width:72px"></div></div>`;
+  // "Placed on the plan: N panels · X kWp" (Design parameters).
+  _placedLine(c) {
+    if (c.roofShape !== 'plan' || typeof PlanSolarArray === 'undefined') return '';
+    const t = PlanSolarArray.totals();
+    return `<div style="margin-top:10px;display:flex;justify-content:space-between;font-size:13px"><span style="color:var(--text-muted,#6d6d6d)">Placed on the plan</span><strong>${t.n ? t.n + ' panels · ' + t.kwp.toFixed(1) + ' kWp' : 'nothing yet'}</strong></div>`;
   },
 
   _sizeResult() {
@@ -370,6 +389,9 @@ const Solar = {
 
   async _act(act, v) {
     if (act === 'tab') { this._tab = v; this.render(); return; }
+    if (act === 'dtab') { this._dtab = v; this.render(); return; }
+    if (act === 'dock') { this._dockOpen = !this._dockOpen; this.render(); return; }
+    if (act === 'more') { this.open(); return; }
     if (act === 'view3d') { this.close(); RoofEditor.open(); return; }
     if (act === 'delroof') { PlanSolar.removeRoof(v); this.render(); return; }
     if (['addpanel', 'addinv'].includes(act)) { this._addEntry(act.slice(3)); this.render(); return; }

@@ -4,7 +4,7 @@
  * Layout (a dock inside #plan-main while `on`): a vertical tool palette (Select, Footprint, Push/pull, Ridge, Planes,
  * Transform, Objects) · the plan · the 3D view (named views, shade preview, Use in Solar PV Design) · the properties
  * column, and a status bar under the plan: the typed value (Enter applies it to what the tool is doing), the X / Y / Z
- * axis lock and the snap. Opened from Plan › Solar › Roof editor or Solar PV Design › View in 3D.
+ * axis lock and the snap. Opened from the Solar toolbar (Roof editor, or 3D) or Solar PV Design › View in 3D.
  *
  * The tools: Select is the plan's own (corners drag, Shift-click adds one, Alt-click or double-click removes one);
  * Footprint is the plan's roof Draw mode, in the plan or on the ground in 3D, a typed length places the next corner, Enter
@@ -30,8 +30,6 @@ const RoofEditor = {
       'Move, turn or scale the selected roof or object. Drag an arrow to lock to that axis, or type a value and press Enter.', 'Distance'],
     ['keepout', 'Keep-out', 'K', 'M4 5 H20 V19 H4 Z M4 19 L20 5 M4 12 L12 5 M12 19 L20 12',
       'Click the corners of an area of a roof the modules must avoid. Enter or the first corner closes it, Backspace takes a corner back. Drag its corners with Select.', 'Length'],
-    ['aisle', 'Aisles', 'A', 'M3 5 H10 V19 H3 Z M14 5 H21 V19 H14 Z',
-      'Click the gap between two rows or columns of panels to add a maintenance aisle there. Alt-click an aisle to remove it. Gable and flat roofs.', 'Width'],
     ['object', 'Objects', 'O', 'M12 3 L20 7.5 V16.5 L12 21 L4 16.5 V7.5 Z M4 7.5 L12 12 L20 7.5 M12 12 V21',
       'Pick an object below, then click a roof plane. It sits on the plane, snaps to the grid and shades the modules around it.', 'Height'],
   ],
@@ -44,7 +42,7 @@ const RoofEditor = {
     if (PlanSolar.usesPlanes(roof)) return '<div class="re-note">Maintenance aisles are for gable and flat roofs.</div>';
     const list = PlanSolar.aislesOf(roof).slice().sort((a, b) => a.axis === b.axis ? a.after - b.after : (a.axis === 'row' ? -1 : 1));
     return list.map(a => `<div class="re-objh"><span>Aisle ${a.axis === 'row' ? 'between rows' : 'between columns'} ${a.after} and ${a.after + 1}</span><button type="button" class="re-btn" data-re-aisle-rm="${a.axis}:${a.after}" aria-label="Remove the aisle ${a.axis === 'row' ? 'between rows' : 'between columns'} ${a.after} and ${a.after + 1}">Remove</button></div>`).join('')
-      + `<button type="button" class="re-btn" data-re-tool="aisle">Add an aisle</button>`;
+      + '<div class="re-note">Add or remove aisles with the Row aisle, Column aisle and Remove aisle tools in the Solar toolbar.</div>';
   },
   _esc(x) { return String(x).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch])); },
   _def(id) { return this.TOOLS.find(t => t[0] === id) || this.TOOLS[0]; },
@@ -109,6 +107,7 @@ const RoofEditor = {
     this.setTool(PlanSolar.roofs().length ? 'select' : 'footprint');
     Roof3D.setView('iso');
     this._syncViews();
+    if (typeof SolarBar !== 'undefined') SolarBar.render();
   },
   close() {
     this.on = false;
@@ -117,6 +116,7 @@ const RoofEditor = {
     Roof3D.unmount();
     if (typeof PlanTools !== 'undefined') PlanTools.set('select');
     if (typeof PlanEngine !== 'undefined' && PlanEngine.resize) setTimeout(() => PlanEngine.resize(), 0);
+    if (typeof SolarBar !== 'undefined') SolarBar.render();
   },
 
   // ── Tools ──
