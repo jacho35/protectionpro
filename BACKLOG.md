@@ -126,6 +126,16 @@ Full plan and decisions: `docs/DESIGN_AUTOMATION_PLAN.md`. Rule for all of them:
 119. **Reticulation MV design and street lights in Auto layout** — MV ring or radial between the placed mini-subs with cable sizing and checks; poles and street-light circuits created with the layout. Volt drop, fault level and cable rating all govern, each with its own project limit. **Backend done 2026-11-15** — `retic_mv_design.py`, `POST /analysis/retic-mv-design`: radial + ring, all three checks (17 tests); Auto layout wiring (Rules step, Create) and street-light poles are frontend work. UI not built yet (mockups agreed in the design canvas).
 120. **Single-line sizing pass** — size drawn cables, transformers and breakers in one reviewed pass; tidy a synced single line.
 
+### Solar PV design — phased (2026-11-25 plan)
+
+Full plan and decisions: `docs/SOLAR_DESIGN_PLAN.md`. Site plan first; SANS / NRS 097-2 and IEC first; modules and inverters in a new library.
+
+121. **Solar phase 1 — size and yield** — roof entry (detect / draw / generate from dialog, gable and flat), module library, sizing from roof area or Demand load, monthly and annual kWh from a bundled irradiance table. *(Solar PV Design)*
+122. **Solar phase 2 — string design** — series / parallel counts checked against inverter MPPT window, max voltage and per-MPPT current; DC/AC ratio. *(Solar PV Design)*
+123. **Solar on the SLD** — generate PV source, string fuses, DC isolator, inverter, AC breaker and the connection to a chosen board. *(Solar PV Design)*
+124. **Solar phase 3 — DC / AC protection** — string fuses, isolators, SPDs, DC cable sizing, export limit, inverter fault contribution. *(Solar PV Design)*
+125. **Solar phase 4 — shading, storage, grid** — flat-roof row spacing, hourly shading, 3D roof planes, battery / hybrid dispatch, voltage rise and load flow with solar. *(Solar PV Design)*
+
 ### Large or long-horizon — scope decision needed before starting
 
 47. **Standard + user-defined dynamic model library** — GENROU/EXST1/GAST and a DSL/Modelica/UDM mechanism. Large sustained investment; machine/AVR/governor models are fixed built-ins today. *(DIgSILENT / PSS Additions)*
@@ -441,6 +451,16 @@ Room and outdoor lighting design (Plan › Lighting mode + Lighting workspace) c
 - ~~**Standards tables to confirm.** The EN 12464-1 / SANS 10114-1 indoor task table, the EN 12464-2 outdoor table and the EN 1838 / SANS 10114-2 emergency limits were entered from memory.~~ Done (2026-10-22) — checked against the licensed standards; see the Completed entry. Remaining: items 80 and 81 above.
 - **3D view follow-ups.** Indoor luminaire tilt / aiming (the room engine has no tilt; road and area luminaires do); daylight through the windows (τ is stored, unused); furniture from a DXF / IFC block library instead of only drawn in the 3D view; objects shown and editable on the Road plan's plan view (only the 3D view draws them); obtrusive-light limits on the road plan's facade checks (item 79).
 - **Legacy plan lux heatmap.** Retire `plan-lux.js` + `plan-ies.js` once per-plan IES profiles can be converted to library entries (needs the original files, or the symmetry kept on import).
+
+## Solar PV Design
+
+Plan: `docs/SOLAR_DESIGN_PLAN.md` (agreed 2026-11-25, nothing built yet). Items 121-125 in the index.
+
+- [ ] Phase 1: roof entry, module / inverter library, sizing (roof or load), yield from bundled irradiance table
+- [ ] Phase 2: string design checks and SLD generation
+- [ ] Phase 3: DC / AC protection and cable sizing
+- [ ] Phase 4: row spacing and shading, 3D roof, battery / hybrid, grid impact
+- [ ] Ground mount (later), NEC 690 standards pack (later), PVGIS lookup (later)
 
 ## Help Guides
 
