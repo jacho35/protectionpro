@@ -264,7 +264,7 @@ const Light3D = {
       </div>
       <div class="l3-res" id="l3-res"></div>`;
     const view = host.querySelector('#l3-view');
-    this.view = new View3D(view, { gl: true, label: 'Rotatable 3D view of the room. Drag empty space to orbit, drag an object to move it.' });
+    this.view = new View3D(view, { gl: true, animate: true, label: 'Rotatable 3D view of the room. Drag empty space to orbit, drag an object to move it.' });
     this.view.onDraw = (v) => this._draw(v);
     this.view.onPick = (id, e) => this._pick(id, e);
     this.view.onClick = (id) => { if (id == null) { this.sel = null; this.renderSide(); this.view.redraw(); } };

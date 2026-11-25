@@ -20,6 +20,7 @@ const Roof3D = {
   PARAPET_M: 0.4,      // a flat roof's deck stands this far above its eave line (the layout, shadows and annual shading all use it)
   PARAPET_H: 0.35,     // the parapet wall stands this far above the deck
   PARAPET_T: 0.15,     // and is this thick
+  ROOF_T: 0.12,        // thickness of a pitched roof's edge (fascia) and of the overhang's underside
   view: null,
   scene: null,
   hourAngle: 0,        // design hour on the winter solstice: degrees, 0 = noon, negative = morning
@@ -321,6 +322,31 @@ const Roof3D = {
     const z = (it.eave != null ? it.eave : this.EAVE_M) + this.PARAPET_M;
     return [{ zAt: () => z, Q: [0, 0, z], n: [0, 0, 1], clip: it.poly, racks: true }];
   },
+  // Edges of a roof's planes. `shared` = edges two planes have in common that both fall away from: ridges and hips (capped);
+  // `free` = edges only one plane has (eaves, gable ends): they get the roof's thickness. Planes are {poly: [[x, y]…], zAt}.
+  planeEdges(pls) {
+    const key = (p) => Math.round(p[0] * 1e4) + ',' + Math.round(p[1] * 1e4);
+    const map = new Map();
+    pls.forEach((pl, pi) => pl.poly.forEach((p, i) => {
+      const q = pl.poly[(i + 1) % pl.poly.length], k1 = key(p) + '|' + key(q), k2 = key(q) + '|' + key(p);
+      const hit = map.get(k2);
+      if (hit) { hit.other = { pi, i }; } else map.set(k1, { pi, i, other: null, p, q });
+    }));
+    const shared = [], free = [];
+    for (const e of map.values()) {
+      const pl = pls[e.pi], a = [e.p[0], e.p[1], pl.zAt(e.p[0], e.p[1])], b = [e.q[0], e.q[1], pl.zAt(e.q[0], e.q[1])];
+      if (!e.other) { free.push({ pi: e.pi, a, b }); continue; }
+      // a ridge or hip: both planes lower away from the edge (a valley rises away from it)
+      const mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2, falls = (pp) => {
+        const c = pp.poly.reduce((t, q) => [t[0] + q[0] / pp.poly.length, t[1] + q[1] / pp.poly.length], [0, 0]);
+        const dx = c[0] - mx, dy = c[1] - my, L = Math.hypot(dx, dy) || 1;
+        return pp.zAt(mx + dx / L * 0.3, my + dy / L * 0.3) < (a[2] + b[2]) / 2 - 1e-4;
+      };
+      if (falls(pl) && falls(pls[e.other.pi])) shared.push({ a, b });
+    }
+    return { shared, free };
+  },
+
   // A polygon moved inward by d (mitred corners; fine for the small offsets used here).
   inset(P, d) {
     const n = P.length; let area = 0;
@@ -507,16 +533,46 @@ const Roof3D = {
     if (this.view) { this.view.destroy(); this.view = null; }
     this.host = host;
     try { this.scene = await this.build(); } catch (e) { this.scene = { items: [], objs: [], north: 0, total: 0, empty: true, error: e.message || String(e) }; }
-    this.view = new View3D(host, { gl: true, labelLayout: true, label: 'Rotatable 3D view of the roofs. Drag empty space to orbit, right-drag to pan, wheel to zoom; with a tool picked, drag a handle, the gizmo or an object.', yaw: 150, pitch: 32, bg: '#eef0f3' });
+    this.view = new View3D(host, { gl: true, labelLayout: true, animate: true, sky: ['#d3e4f3', '#f1f4f8'], label: 'Rotatable 3D view of the roofs. Drag empty space to orbit, right-drag to pan, wheel to zoom; with a tool picked, drag a handle, the gizmo or an object.', yaw: 150, pitch: 32, bg: '#eef0f3' });
     this.view.onDraw = (v) => this.draw(v);
     this.view.onPick = (id, e) => this._pick(id, e);
     this.view.onClick = (id, e) => this._click(id, e);
+    this.view.onHover = (id) => { this.hover = id; if (this.view) this.view.redraw(); };
+    this.view.onDblClick = (id) => this._focus(id);
     this.fit();
     this._message();
     this.setHour(this.hourAngle, true).catch(() => {}).then(() => { if (this.view) this.view.redraw(); });
     this.view.redraw();
   },
   unmount() { if (this.view) { this.view.destroy(); this.view = null; } this.host = null; },
+  hover: null,        // the pick id under the pointer (planes, objects, handles): drawn highlighted
+  // Double-click: glide to the roof or object under the pointer, or back to the whole model on empty space.
+  _focus(id) {
+    const v = this.view, sc = this.scene; if (!v || !sc || sc.empty) return;
+    let m;
+    if (id && (m = /^p:([^:]+):/.exec(id))) {
+      const it = this._item(m[1]);
+      if (it) { const xs = it.poly.map(q => q[0]), ys = it.poly.map(q => q[1]); v.focusBox([Math.min(...xs) - 1, Math.min(...ys) - 1, 0], [Math.max(...xs) + 1, Math.max(...ys) + 1, this._ridgeZ(it) + 1]); return; }
+    }
+    if (id && (m = /^o:(.+)$/.exec(id))) {
+      const o = (sc.objs || []).find(x => x.id === m[1]);
+      if (o) { v.focusBox([o.c[0] - 2, o.c[1] - 2, Math.max(0, o.z0 - 1)], [o.c[0] + 2, o.c[1] + 2, o.h + 1]); return; }
+    }
+    const b = this._bounds(); if (b) v.focusBox(b[0], b[1]);
+  },
+  _bounds() {
+    const sc = this.scene; if (!sc) return null;
+    const xs = [], ys = [], zs = [0];
+    for (const it of (sc ? sc.items : [])) {
+      for (const q of it.poly) { xs.push(q[0]); ys.push(q[1]); }
+      zs.push(this._ridgeZ(it) + 0.5);
+      for (const m of it.mods) for (const q of m) zs.push(q[2]);
+    }
+    for (const o of (sc.objs || [])) { xs.push(o.c[0]); ys.push(o.c[1]); zs.push(o.h); }
+    if (sc.obs) { xs.push(sc.obs.x); ys.push(sc.obs.y); zs.push(sc.obs.h); }
+    if (!xs.length) return null;
+    return [[Math.min(...xs) - 1, Math.min(...ys) - 1, 0], [Math.max(...xs) + 1, Math.max(...ys) + 1, Math.max(...zs) + 0.5]];
+  },
   fit() {
     const sc = this.scene, v = this.view; if (!v) return;
     const xs = [], ys = [], zs = [0];
@@ -847,7 +903,7 @@ const Roof3D = {
     if (sc.items.length) {                                                     // the ground, so shadows have somewhere to fall
       const xs = [], ys = [];
       for (const it of sc.items) for (const q of it.poly) { xs.push(q[0]); ys.push(q[1]); }
-      const g0 = [Math.min(...xs) - 8, Math.min(...ys) - 8], g1 = [Math.max(...xs) + 8, Math.max(...ys) + 8];
+      const g0 = [Math.min(...xs) - 30, Math.min(...ys) - 30], g1 = [Math.max(...xs) + 30, Math.max(...ys) + 30];
       v.face({ pts: [[g0[0], g0[1], -0.03], [g1[0], g0[1], -0.03], [g1[0], g1[1], -0.03], [g0[0], g1[1], -0.03]], fill: '#dfe4dc', layer: 0, lit: true, noShadow: true });
     }
     for (const it of sc.items) {
@@ -877,9 +933,19 @@ const Roof3D = {
         }
       } else {
         it.pls.forEach((pl, i) => {
-          const on = this.sel && this.sel.roof === r.id && this.sel.plane === i;
-          v.face({ pts: pl.poly.map(q => [q[0], q[1], pl.zAt(q[0], q[1])]), fill: pl.lean ? '#c98a55' : it.use[i] ? '#b7653a' : '#9c5430', stroke: on ? '#1d4ed8' : '#6b3a1f', lw: on ? 2.5 : 1, layer: 1, pick: 'p:' + r.id + ':' + i, lit: true });
+          const on = this.sel && this.sel.roof === r.id && this.sel.plane === i, hov = this.hover === 'p:' + r.id + ':' + i;
+          const top = pl.poly.map(q => [q[0], q[1], pl.zAt(q[0], q[1])]);
+          v.face({ pts: top, fill: pl.lean ? '#c98a55' : it.use[i] ? '#b7653a' : '#9c5430', stroke: on ? '#1d4ed8' : hov ? '#2563eb' : '#6b3a1f', lw: on ? 2.5 : hov ? 2 : 1, layer: 1, pick: 'p:' + r.id + ':' + i, lit: true });
+          if (hov && !on) v.face({ pts: top, fill: 'rgba(37,99,235,0.16)', layer: 1.1, lit: false, noShadow: true });
+          if (on) v.line({ pts: top.concat([top[0]]), stroke: '#1d4ed8', lw: 3, layer: 2.4 });
         });
+        const ed = this.planeEdges(it.pls), T = this.ROOF_T;                                // the roof's edge has thickness; ridges and hips are capped
+        for (const f of ed.free) {
+          const a = f.a, b = f.b;
+          v.face({ pts: [a, b, [b[0], b[1], b[2] - T], [a[0], a[1], a[2] - T]], fill: '#7a4527', stroke: '#4a2a16', lw: 0.8, layer: 0.9, lit: true });
+        }
+        it.pls.forEach(pl => { const u = pl.poly.map(q => [q[0], q[1], pl.zAt(q[0], q[1]) - T]); v.face({ pts: u, fill: '#5a3a24', layer: 0.8, lit: true, noShadow: true }); });
+        for (const rd of ed.shared) v.line({ pts: [rd.a, rd.b], stroke: '#4a2a16', lw: 3.2, layer: 1.3 });
       }
       it.mods.forEach((m, i) => { if (gl || !this.hidden(mid(m), vw, occ)) v.face({ pts: m, fill: !gl && it.shaded && it.shaded[i] ? '#7b8794' : '#27506b', stroke: '#9fc4dd', lw: 0.8, layer: 2, lit: true }); });
       if (this.tool === 'aisle') this._drawGaps(v, it);
@@ -887,7 +953,7 @@ const Roof3D = {
       const picked = (this.sel && this.sel.roof === r.id) || (typeof PlanSolar.isSelected === 'function' && PlanSolar.isSelected(r.id));
       if (it.mods.length || picked) v.label({ at: [c[0], c[1], this._ridgeZ(it) + 1.2], text: it.mods.length ? `${r.name} · ${it.mods.length} modules` : r.name, color: '#1f2937', size: 12, bold: true, prio: picked ? 10 : 5 });   // a roof without modules is named only when picked
       const hs = Math.max(0.12, v.radius * 0.025);                              // handles for the Push / pull and Ridge tools
-      const handle = (at, id, color) => V3D.box(v, [at[0], at[1]], hs * 2, hs * 2, at[2] - hs, hs * 2, 0, { color, stroke: '#ffffff', lw: 1.5, pick: id, layer: 3 });
+      const handle = (at, id, color) => V3D.box(v, [at[0], at[1]], hs * 2, hs * 2, at[2] - hs, hs * 2, 0, { color: this.hover === id ? '#60a5fa' : color, stroke: '#ffffff', lw: this.hover === id ? 2.5 : 1.5, pick: id, layer: 3 });
       if (this.tool === 'pushpull') { const q = P[0]; handle([q[0], q[1], e], 'h:eave:' + r.id, '#1d4ed8'); v.line({ pts: [[q[0], q[1], 0], [q[0], q[1], e]], stroke: '#1d4ed8', lw: 1.5, dash: [4, 3], layer: 3 }); v.label({ at: [q[0], q[1], e + hs * 3], text: 'eave ' + e.toFixed(2) + ' m', color: '#1d4ed8', size: 12, bold: true, prio: 9 }); }
       if (this.tool === 'ridge' && !flat) { const q = this._ridgePoint(it); if (q) { handle(q, 'h:ridge:' + r.id, '#1d4ed8'); v.label({ at: [q[0], q[1], q[2] + hs * 3], text: (r.shape === 'pyramid' ? 'apex ' + (+r.apex || 1.8).toFixed(2) + ' m' : (+r.pitch).toFixed(1) + '°') + ' · ridge ' + q[2].toFixed(2) + ' m', color: '#1d4ed8', size: 12, bold: true }); } }
     }
@@ -895,7 +961,9 @@ const Roof3D = {
     for (const o of (sc.objs || [])) {                                         // objects standing on the roofs
       const on = this.sel && this.sel.obj === o.id;
       if (!gl && !on && this.hidden([o.c[0], o.c[1], o.z0 + o.hh / 2], vw, occ)) continue;                     // behind the roof or a wall
-      V3D.box(v, o.c, o.w, o.d, o.z0, o.hh, -o.rot, { color: on ? '#bfdbfe' : '#f3f4f6', stroke: on ? '#1d4ed8' : '#111827', lw: on ? 2 : 1, pick: 'o:' + o.id, layer: 2.5, lit: true });
+      const hovO = this.hover === 'o:' + o.id;
+      V3D.box(v, o.c, o.w, o.d, o.z0, o.hh, -o.rot, { color: on ? '#bfdbfe' : hovO ? '#dbeafe' : '#f3f4f6', stroke: on ? '#1d4ed8' : hovO ? '#2563eb' : '#111827', lw: on || hovO ? 2 : 1, pick: 'o:' + o.id, layer: 2.5, lit: true });
+      if (o.type === 'chimney') V3D.box(v, o.c, o.w + 0.16, o.d + 0.16, o.z0 + o.hh, 0.1, -o.rot, { color: '#d1d5db', stroke: '#111827', lw: 0.8, layer: 2.6, lit: true });                   // the cap
       v.label({ at: [o.c[0], o.c[1], o.z0 + o.hh + 0.1], text: (PlanSolar.OBJECT_TYPES[o.type] || { label: o.type }).label, color: '#111827', size: 11, prio: on ? 8 : 2 });
     }
     if (sc.obs) {

@@ -63,6 +63,11 @@ class View3D {
     c.addEventListener('pointercancel', (e) => this._up(e));
     c.addEventListener('wheel', (e) => this._wheel(e), { passive: false });
     c.addEventListener('contextmenu', (e) => e.preventDefault());
+    c.addEventListener('pointerleave', () => { if (this.hoverId != null) { this.hoverId = null; c.style.cursor = ''; if (this.onHover) this.onHover(null); } });
+    c.addEventListener('dblclick', (e) => { const [x, y] = this._pos(e); if (this.onDblClick) this.onDblClick(this.pickAt(x, y), e); });
+    this.hoverId = null; this._hoverRaf = 0; this._anim = 0; this._ready = false;
+    this.onHover = null; this.onDblClick = null;
+    if (opts.sky) host.style.background = `linear-gradient(${opts.sky[0]}, ${opts.sky[1]})`;       // sky behind a transparent WebGL canvas
     this._ro = new ResizeObserver(() => { this._refit(); this.redraw(); });
     this._ro.observe(host);
   }
@@ -88,7 +93,43 @@ class View3D {
     this.zoom = Math.max(0.2, Math.min(40, f.zoom)); this.pan = f.pan;
     this._fitState = { zoom: this.zoom, pan: this.pan.slice() };
   }
-  setView(yaw, pitch) { this.yaw = yaw; this.pitch = pitch; this._refit(); this.redraw(); }
+  // Named views and focus moves glide (opts.animate) once the view has drawn; a press, wheel or pinch stops the glide.
+  setView(yaw, pitch) {
+    if (this.opts.animate && this._ready) { this.animateView(yaw, pitch); return; }
+    this._stopAnim(); this.yaw = yaw; this.pitch = pitch; this._refit(); this.redraw();
+  }
+  _stopAnim() { if (this._anim) { cancelAnimationFrame(this._anim); this._anim = 0; } }
+  _glide(ms, apply) {
+    this._stopAnim();
+    const t0 = performance.now();
+    const step = (now) => {
+      const t = Math.min(1, (now - t0) / ms);
+      apply(Geom3D.ease(t));
+      this.draw();
+      this._anim = t < 1 ? requestAnimationFrame(step) : 0;
+    };
+    this._anim = requestAnimationFrame(step);
+  }
+  animateView(yaw, pitch, ms = 340) {
+    const y0 = this.yaw, p0 = this.pitch;
+    this._glide(ms, (k) => { this.yaw = Geom3D.lerpAngle(y0, yaw, k); this.pitch = p0 + (pitch - p0) * k; this._refit(); });
+  }
+  // Frame another box (e.g. the picked roof), gliding there when opts.animate; it becomes the box a later resize refits.
+  focusBox(min, max) {
+    if (!(this.opts.animate && this._ready)) { this.fit(min, max); return; }
+    const k0 = this._cam(), S0 = k0.S, t0 = this.target.slice(), pan0 = this.pan.slice();
+    const t1 = [(min[0] + max[0]) / 2, (min[1] + max[1]) / 2, (min[2] + max[2]) / 2], R1 = Math.max(0.5, Math.hypot(max[0] - min[0], max[1] - min[1], max[2] - min[2]) / 2);
+    const W = this.canvas.clientWidth, H = this.canvas.clientHeight;
+    const f = Geom3D.fitCamera(min, max, W, H, this.yaw, this.pitch, this.opts.fitMargin != null ? this.opts.fitMargin : 0.06);
+    const base = Math.min(W, H) / (2.2 * R1), z0 = S0 / base;
+    this.radius = R1; this._fitBox = [min.slice(), max.slice()];
+    this._glide(380, (k) => {
+      this.target = [t0[0] + (t1[0] - t0[0]) * k, t0[1] + (t1[1] - t0[1]) * k, t0[2] + (t1[2] - t0[2]) * k];
+      this.zoom = Math.max(0.2, Math.min(40, z0 + (f.zoom - z0) * k));
+      this.pan = [pan0[0] + (f.pan[0] - pan0[0]) * k, pan0[1] + (f.pan[1] - pan0[1]) * k];
+      this._fitState = { zoom: this.zoom, pan: this.pan.slice() };
+    });
+  }
   rotate(d) { this.yaw += d; this.redraw(); }
   zoomBy(k) { this.zoom = Math.max(0.2, Math.min(40, this.zoom * k)); this.redraw(); }
 
@@ -142,12 +183,16 @@ class View3D {
     const c = this.canvas, dpr = window.devicePixelRatio || 1;
     const W = c.clientWidth, H = c.clientHeight;
     if (!W || !H) return;
+    this._ready = true;
     if (c.width !== Math.round(W * dpr) || c.height !== Math.round(H * dpr)) { c.width = Math.round(W * dpr); c.height = Math.round(H * dpr); }
     const g = this.ctx;
     g.setTransform(dpr, 0, 0, dpr, 0, 0);
     g.clearRect(0, 0, W, H);
     const useGL = !!(this.gl && this.gl.ok);
-    if (this.bg && !useGL) { g.fillStyle = this.bg; g.fillRect(0, 0, W, H); }
+    if (!useGL) {
+      if (this.opts.sky) { const gr = g.createLinearGradient(0, 0, 0, H); gr.addColorStop(0, this.opts.sky[0]); gr.addColorStop(1, this.opts.sky[1]); g.fillStyle = gr; g.fillRect(0, 0, W, H); }
+      else if (this.bg) { g.fillStyle = this.bg; g.fillRect(0, 0, W, H); }
+    }
     this._items = []; this._labels = [];
     this._c = this._cam();
     if (this.onDraw) this.onDraw(this);
@@ -238,7 +283,7 @@ class View3D {
       }
     }
     const L = this.light || G.LIGHT, sun = this.sun && this.sun.dir ? this.sun : null;
-    const bg = this.bg ? G.parseColor(this.bg) : [0, 0, 0, 0];
+    const bg = this.bg && !this.opts.sky ? G.parseColor(this.bg) : [0, 0, 0, 0];
     const fr = { W, H, dpr, bg, faces, lines, light: sun ? { dir: sun.dir, ambient: 0.56, sun: 0.5, sky: 0.08 } : L, sunOn: !!sun && this.shadows !== false, viewDir: this.viewDir(k) };
     this._glFrame = fr;
     try { return this.gl.render(fr); } catch (e) { this.gl.ok = false; this._glFallback(); return false; }
@@ -268,7 +313,8 @@ class View3D {
     this.draw();
     const c = document.createElement('canvas'); c.width = this.canvas.width; c.height = this.canvas.height;
     const g = c.getContext('2d');
-    if (this.bg) { g.fillStyle = this.bg; g.fillRect(0, 0, c.width, c.height); }
+    if (this.opts.sky) { const gr = g.createLinearGradient(0, 0, 0, c.height); gr.addColorStop(0, this.opts.sky[0]); gr.addColorStop(1, this.opts.sky[1]); g.fillStyle = gr; g.fillRect(0, 0, c.width, c.height); }
+    else if (this.bg) { g.fillStyle = this.bg; g.fillRect(0, 0, c.width, c.height); }
     if (this.usesGL) g.drawImage(this.glCanvas, 0, 0);
     g.drawImage(this.canvas, 0, 0);
     return c;
@@ -321,6 +367,7 @@ class View3D {
   _pos(e) { const r = this.canvas.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; }
 
   _down(e) {
+    this._stopAnim();
     this.canvas.focus({ preventScroll: true });
     const [x, y] = this._pos(e);
     this._ptrs.set(e.pointerId, [x, y]);
@@ -339,8 +386,19 @@ class View3D {
     this._drag = { mode: panMode ? 'pan' : 'orbit', x, y, yaw: this.yaw, pitch: this.pitch, pan: this.pan.slice(), moved: false, id };
   }
 
+  _hoverPick(e) {
+    if (!this.onHover || e.pointerType === 'touch' || this._hoverRaf) return;
+    const [x, y] = this._pos(e);
+    this._hoverRaf = requestAnimationFrame(() => {
+      this._hoverRaf = 0;
+      if (this._drag) return;
+      const id = this.pickAt(x, y);
+      if (id !== this.hoverId) { this.hoverId = id; this.canvas.style.cursor = id != null ? 'pointer' : ''; this.onHover(id); }
+    });
+  }
+
   _move(e) {
-    if (!this._ptrs.has(e.pointerId)) return;
+    if (!this._ptrs.has(e.pointerId)) { this._hoverPick(e); return; }
     const [x, y] = this._pos(e);
     this._ptrs.set(e.pointerId, [x, y]);
     const d = this._drag;
@@ -375,6 +433,7 @@ class View3D {
 
   _wheel(e) {
     e.preventDefault();
+    this._stopAnim();
     const [x, y] = this._pos(e);
     const k = Math.exp(-e.deltaY * 0.0015);
     const z0 = this.zoom;
@@ -385,7 +444,7 @@ class View3D {
     this.redraw();
   }
 
-  destroy() { this._ro.disconnect(); if (this.gl) { this.gl.destroy(); this.gl = null; } if (this.glCanvas) this.glCanvas.remove(); this.canvas.remove(); }
+  destroy() { this._stopAnim(); if (this._hoverRaf) cancelAnimationFrame(this._hoverRaf); this._ro.disconnect(); if (this.gl) { this.gl.destroy(); this.gl = null; } if (this.glCanvas) this.glCanvas.remove(); this.canvas.remove(); }
 }
 
 // Colour helpers shared by the 3D views.

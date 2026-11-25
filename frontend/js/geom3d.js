@@ -33,6 +33,10 @@ const Geom3D = {
     return { zoom: S / (Math.min(W, H) / (2.2 * R)), pan: [-(e.u0 + e.u1) / 2 * S, -(e.a0 + e.a1) / 2 * S], S, radius: R };
   },
 
+  // Shortest-way interpolation between two angles in degrees, and a smooth ease for camera moves.
+  lerpAngle(a, b, t) { const d = ((b - a + 540) % 360 + 360) % 360 - 180; return a + d * t; },
+  ease(t) { t = Math.max(0, Math.min(1, t)); return t * t * (3 - 2 * t); },
+
   faceNormal(pts) {
     let n = [0, 0, 0];
     for (let i = 0; i < pts.length; i++) {

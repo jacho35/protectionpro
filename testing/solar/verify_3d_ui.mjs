@@ -35,6 +35,33 @@ for (const mode of ['gl', '2d']) {
     return { gl: v.usesGL, plane, obj, none, ms };
   });
   console.log(mode, JSON.stringify(info));
+  // pointer interaction: hover highlight, double-click focus, animated named view
+  const pt = await page.evaluate(() => {
+    const v = Roof3D.view, it = Roof3D.scene.items[0], pl = it.pls[0], m = pl.poly.reduce((a, q) => [a[0] + q[0] / pl.poly.length, a[1] + q[1] / pl.poly.length], [0, 0]);
+    const P = v.project(m[0], m[1], pl.zAt(m[0], m[1]), v._c), r = v.canvas.getBoundingClientRect();
+    const o = Roof3D.scene.objs[0], O = v.project(o.c[0], o.c[1], o.z0 + o.hh / 2, v._c);
+    return { x: r.left + P[0], y: r.top + P[1], cx: r.left + 6, cy: r.top + 6, ox: r.left + O[0], oy: r.top + O[1] };
+  });
+  await page.mouse.move(pt.x - 3, pt.y - 3); await page.mouse.move(pt.x, pt.y);
+  await page.waitForTimeout(300);
+  check(mode + ': hover finds the roof plane', await page.evaluate(() => /^p:/.test(Roof3D.hover || '')));
+  await page.mouse.move(pt.cx, pt.cy); await page.waitForTimeout(300);
+  check(mode + ': hover clears off the roof', await page.evaluate(() => Roof3D.hover == null));
+  const z0 = await page.evaluate(() => Roof3D.view.zoom);
+  await page.mouse.dblclick(pt.ox, pt.oy);
+  await page.waitForTimeout(900);
+  const z1 = await page.evaluate(() => Roof3D.view.zoom);
+  check(mode + ': double-click on an object zooms to it', z1 > z0 * 1.2, z0.toFixed(2) + ' -> ' + z1.toFixed(2));
+  await page.mouse.dblclick(pt.cx, pt.cy);
+  await page.waitForTimeout(900);
+  const z2 = await page.evaluate(() => Roof3D.view.zoom);
+  check(mode + ': double-click on empty space shows the whole model again', Math.abs(z2 - z0) / z0 < 0.05, z2.toFixed(2));
+  await page.evaluate(() => Roof3D.setView('top'));
+  await page.waitForTimeout(120);
+  const mid = await page.evaluate(() => Roof3D.view.pitch);
+  await page.waitForTimeout(700);
+  const end = await page.evaluate(() => Roof3D.view.pitch);
+  check(mode + ': named view glides (mid-way value differs from both ends)', end > 80 && mid < end - 1 && mid > 20, mid.toFixed(1) + ' -> ' + end.toFixed(1));
   check(mode + ': renderer', info.gl === (mode === 'gl'));
   check(mode + ': picks a roof plane', /^p:/.test(info.plane || ''), info.plane);
   check(mode + ': picks the chimney', info.obj === 'o:o1', info.obj);

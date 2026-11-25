@@ -84,4 +84,8 @@ ok('layoutLabels: nothing overlaps, the high priority label keeps its spot, a ho
   const pile = Array.from({ length: 40 }, (_, i) => mk(300, 200, 40 - i));
   const rp = G.layoutLabels(pile, 800, 600); assert(rp[0].shown && rp.filter(p => p.shown).length < 40);
 });
+ok('lerpAngle takes the short way round and ease is smooth', () => {
+  close(G.lerpAngle(350, 10, 0.5), 360); close(G.lerpAngle(10, 350, 0.5), 0); close(G.lerpAngle(0, 90, 1), 90); close(G.lerpAngle(30, 30, 0.7), 30);
+  close(G.ease(0), 0); close(G.ease(1), 1); close(G.ease(0.5), 0.5); assert(G.ease(0.25) < 0.25 && G.ease(0.75) > 0.75);
+});
 console.log(n + ' passed');

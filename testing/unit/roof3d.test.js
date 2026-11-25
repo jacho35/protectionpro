@@ -239,3 +239,19 @@ ok('annualFlags: the parapet shades a rack right behind it in low sun and not in
   assert.strictEqual(out[0].shade[0], '100');
 });
 console.log(n + ' passed (with parapet)');
+
+// ── plane edges: ridge caps and roof thickness ──
+ok('planeEdges: a gable has one ridge (shared edge, both planes fall away) and four free edges; a hip has more ridges', () => {
+  const g = R.gablePlanes(rect(10, 6), 0, 25, 3), t = Math.tan(25 * Math.PI / 180);
+  const mk = (poly3) => ({ poly: poly3.map(p => [p[0], p[1]]), zAt: (x, y) => 3 + t * (3 - Math.abs(y - 3)) });          // ridge along y = 3 at 3 + 3 t
+  const A = mk([[0, 0], [10, 0], [10, 3], [0, 3]]), B = mk([[0, 3], [10, 3], [10, 6], [0, 6]]);
+  const e = R.planeEdges([A, B]);
+  assert.strictEqual(e.shared.length, 1); close(e.shared[0].a[2], 3 + 3 * t); close(e.shared[0].b[2], 3 + 3 * t);
+  assert.strictEqual(e.free.length, 6);                                                                                      // 3 free edges on each plane (the ridge is the 4th)
+  assert(g.front.length && g.back.length);
+});
+ok('planeEdges: a valley (planes rise away from the shared edge) is not capped', () => {
+  const t = 0.4, A = { poly: [[0, 0], [10, 0], [10, 3], [0, 3]], zAt: (x, y) => 3 + t * (3 - y) }, B = { poly: [[0, 3], [10, 3], [10, 6], [0, 6]], zAt: (x, y) => 3 + t * (y - 3) };
+  assert.strictEqual(R.planeEdges([A, B]).shared.length, 0);
+});
+console.log(n + ' passed (with edges)');
