@@ -113,7 +113,7 @@ class View3D {
   }
   animateView(yaw, pitch, ms = 340) {
     const y0 = this.yaw, p0 = this.pitch;
-    this._glide(ms, (k) => { this.yaw = Geom3D.lerpAngle(y0, yaw, k); this.pitch = p0 + (pitch - p0) * k; this._refit(); });
+    this._glide(ms, (k) => { this.yaw = k >= 1 ? yaw : Geom3D.lerpAngle(y0, yaw, k); this.pitch = p0 + (pitch - p0) * k; this._refit(); });   // lands on the exact angle asked for, not its 360° twin
   }
   // Frame another box (e.g. the picked roof), gliding there when opts.animate; it becomes the box a later resize refits.
   focusBox(min, max) {
