@@ -23,6 +23,19 @@ const SolarImport = {
   // PVsyst writes a list for some inverter voltages ("570,720,880"): take the first number.
   _first(v) { return this._n(String(v == null ? '' : v).split(',')[0]); },
 
+  // The points of a nested profile (`Key=TCubicProfile` … `Point_n=a,b` … `End of TCubicProfile`) as [[a, b], …].
+  _profile(text, key) {
+    const lines = String(text || '').replace(/^\uFEFF/, '').split(/\r?\n/), pts = [];
+    let on = false;
+    for (const raw of lines) {
+      if (!on) { if (new RegExp('^\\s*' + key + '\\s*=').test(raw)) on = true; continue; }
+      if (/^\s*End of TCubicProfile/i.test(raw)) break;
+      const m = /^\s*Point_\d+\s*=\s*([-+0-9.eE]+)\s*,\s*([-+0-9.eE]+)/.exec(raw);
+      if (m) pts.push([parseFloat(m[1]), parseFloat(m[2])]);
+    }
+    return pts;
+  },
+
   parsePan(text) {
     const k = this.parseIni(text), n = (x) => this._n(k[x]);
     const derived = [];
@@ -35,9 +48,11 @@ const SolarImport = {
     derived.push('Vmp coefficient', 'NOCT');
     const width = n('Width'), height = n('Height');
     const name = [k.Manufacturer, k.Model].filter(Boolean).join(' ') || k.Model || '';
+    const iam = this._profile(text, 'IAMProfile').filter(q => isFinite(q[0]) && isFinite(q[1]));      // the manufacturer's incidence-angle table (angle deg, factor)
     const e = { name, w, voc, vmp, isc, imp, beta_voc: this._r(betaVoc, 3), gamma_vmp: this._r(gammaVmp, 3), k_pmax: kPmax,
       len: Math.max(width || NaN, height || NaN), wid: Math.min(width || NaN, height || NaN), noct: 44,
       sysv: isFinite(n('VMaxIEC')) && n('VMaxIEC') > 0 ? n('VMaxIEC') : (isFinite(n('VMaxUL')) ? n('VMaxUL') : 1000), derived };
+    if (iam.length >= 3) e.iam = iam;
     return e;
   },
 
@@ -56,9 +71,15 @@ const SolarImport = {
     const phases = /^tri/i.test(ph) ? 3 : /^mono/i.test(ph) ? 1 : 3;
     if (!ph) derived.push('Phases');
     const name = [k.Manufacturer, k.Model].filter(Boolean).join(' ') || k.Model || '';
-    return { name, ac_kw: this._r(acKw, 3), phases, dc_max_v: this._first(k.VAbsMax), mppt_min_v: this._first(k.VMppMin),
+    const out = { name, ac_kw: this._r(acKw, 3), phases, dc_max_v: this._first(k.VAbsMax), mppt_min_v: this._first(k.VMppMin),
       mppt_max_v: this._first(k.VMPPMax), mppt_count: mppt, mppt_max_a: this._r(n('IMaxDC') / mppt, 2), eff_pct: eff,
       fault_x: 1.1, derived };
+    // The efficiency curve (ProfilPIO: DC input W, AC output W) as [relative DC load, efficiency], the load taken against the
+    // nominal DC input (PNomDC kW, else the AC rating over the Euro efficiency).
+    const dcNom = (n('PNomDC') > 0 ? n('PNomDC') : acKw / (eff / 100)) * 1000;
+    const pts = this._profile(text, 'ProfilPIO').filter(q => q[0] > 0 && q[1] >= 0 && q[1] <= q[0] * 1.001).sort((a, b) => a[0] - b[0]);
+    if (pts.length >= 3 && dcNom > 0) out.eff_curve = pts.map(q => [this._r(q[0] / dcNom, 5), this._r(Math.min(1, q[1] / q[0]), 5)]);
+    return out;
   },
 
   _r(x, d) { return isFinite(x) ? Math.round(x * Math.pow(10, d)) / Math.pow(10, d) : x; },

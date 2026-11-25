@@ -148,7 +148,7 @@ def generate_solar_report(project_name, design, project_details=None):
         ["Energy model", res.get("model", "-")],
         ["Module", inp.get("module", "-")],
         ["Inverter", inp.get("inverter", "-")],
-    ], [50, pdf.w - 30 - 50])
+    ] + ([["Incidence-angle loss", res["curves"]["incidence"]], ["Inverter efficiency", res["curves"]["inverter"]]] if res.get("curves") else []), [50, pdf.w - 30 - 50])
     if res.get("attribution"):
         _p(pdf, res["attribution"], 8, True)
 

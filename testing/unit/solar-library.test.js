@@ -43,4 +43,11 @@ ok('site coordinates: both valid numbers in range, else the city is used', () =>
   assert.deepStrictEqual(Solar._site({ location: 'Pretoria', lat: '-33.92', lon: '18.42' }), { location: 'Pretoria', lat: -33.92, lon: 18.42 });
   assert.deepStrictEqual(Solar._site({ location: 'Pretoria', lat: '', lon: '' }), { location: 'Pretoria' });
 });
+ok('isLegacy: a design used before the irradiance source existed (location saved, no irrSrc) is flagged once', () => {
+  assert.strictEqual(Solar.isLegacy({ location: 'Pretoria' }), true);
+  assert.strictEqual(Solar.isLegacy({ location: 'Pretoria', irrSrc: 'pvgis' }), false);
+  assert.strictEqual(Solar.isLegacy({ location: 'Pretoria', irrSrc: 'table' }), false);
+  assert.strictEqual(Solar.isLegacy({ roofs: [], northAngle: 0 }), false);       // roofs drawn on the plan, the design never used
+  assert.strictEqual(Solar.isLegacy({}), false); assert.strictEqual(Solar.isLegacy(null), false);
+});
 console.log(n + ' passed');

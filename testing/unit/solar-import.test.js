@@ -117,4 +117,25 @@ ok('real files through fromFile: added once, a second import is a duplicate', ()
   assert(/already/.test(SI.fromFile('x.PAN', real('ET-M772BH550GL.PAN'), validate, [a.entries[0].name]).skipped[0]));
   assert.strictEqual(SI.fromFile('i.OND', real('CPS-SCH275KTL.OND'), validate, []).entries.length, 1);
 });
+ok('the real .PAN incidence table and the real .OND efficiency curve are read and validate', () => {
+  const m = SI.parsePan(real('ET-M772BH550GL.PAN'));
+  assert.deepStrictEqual(m.iam, [[0, 1], [20, 1], [30, 1], [40, 0.99], [50, 0.98], [60, 0.96], [70, 0.89], [80, 0.66], [90, 0]]);
+  assert.strictEqual(Solar.validatePanel(m), '');
+  assert.deepStrictEqual(Solar.moduleBody(m).iam_profile, m.iam);
+  const i = SI.parseOnd(real('CPS-SCH275KTL.OND'));
+  assert.strictEqual(i.eff_curve.length, 9);                                              // the trailing 0,0 points of the file are dropped
+  const at = (x) => i.eff_curve.find(q => Math.abs(q[0] - x) < 1e-4);
+  assert(Math.abs(at(0.29644)[1] - 0.985) < 1e-4);                                        // 75 000 W in, 73 875 W out, on a 253 kW nominal DC input
+  assert(Math.abs(at(0.59289)[1] - 0.9901) < 1e-4);
+  assert.strictEqual(Solar.validateInverter(i), '');
+  assert.deepStrictEqual(Solar.inverterBody(i).eff_curve, i.eff_curve);
+});
+ok('curves that are wrong are refused with a reason', () => {
+  const m = Object.assign({}, SI.parsePan(real('ET-M772BH550GL.PAN')));
+  assert(/incidence-angle table/.test(Solar.validatePanel(Object.assign({}, m, { iam: [[0, 1], [90, 0]] }))));          // too few points
+  assert(/incidence-angle table/.test(Solar.validatePanel(Object.assign({}, m, { iam: [[0, 1], [50, 1], [40, 0.9], [90, 0]] }))));   // angles not rising
+  const i = SI.parseOnd(real('CPS-SCH275KTL.OND'));
+  assert(/efficiency curve/.test(Solar.validateInverter(Object.assign({}, i, { eff_curve: [[0.1, 0.9], [0.5, 1.4], [1, 0.9]] }))));
+  assert(/efficiency curve/.test(Solar.validateInverter(Object.assign({}, i, { eff_curve: [[0.5, 0.9], [0.4, 0.95], [1, 0.9]] }))));
+});
 console.log(n + ' passed');

@@ -82,6 +82,14 @@ def _aoi_factor(cos_i):
     return np.where(cos_i <= 0, 0.0, np.clip(1 - AOI_B0 * (1.0 / c - 1), 0, 1))
 
 
+def _iam_table(cos_i, table):
+    """Incidence-angle modifier from a manufacturer's table [[angle deg, factor], ...] (linear between points), 0 at or past grazing."""
+    xs = np.array([float(a) for a, _ in table])
+    ys = np.array([float(f) for _, f in table])
+    ang = np.degrees(np.arccos(np.clip(cos_i, -1.0, 1.0)))
+    return np.where(cos_i <= 0, 0.0, np.clip(np.interp(ang, xs, ys), 0.0, 1.0))
+
+
 def plane_of_array(tmy, tilt, azimuth_n, transposition="perez", horizon=None):
     """Hourly POA components (W/m2): beam, sky diffuse, ground, plus cos(incidence) and hours the horizon blocked."""
     el, az, mon, i0n = _sun(tmy)
@@ -134,8 +142,19 @@ def _eff_curve_c(eff):
     return max(0.0, (1 - eff - A_LOSS * s1 - B_LOSS) / s3)
 
 
-def inverter_ac(pdc_kw, ac_kw, eff_pct):
-    """AC output (kW) per hour for DC input `pdc_kw` into an inverter rated `ac_kw` with stated efficiency; plus the kWh clipped."""
+def inverter_ac(pdc_kw, ac_kw, eff_pct, curve=None):
+    """AC output (kW) per hour for DC input `pdc_kw` into an inverter rated `ac_kw` with stated efficiency; plus the kWh clipped.
+
+    `curve` = the manufacturer's efficiency curve [[DC load relative to the nominal DC input, efficiency], ...] (from an imported .OND): the
+    efficiency is read from it at each hour's load (the nominal DC input is the AC rating over the curve's efficiency at 1.0; below the
+    first point nothing is delivered), instead of the generic curve fitted to the Euro efficiency."""
+    if curve:
+        xs = np.array([float(a) for a, _ in curve])
+        es = np.array([float(b) for _, b in curve])
+        prated = ac_kw / max(0.5, float(np.interp(1.0, xs, es)))
+        x = pdc_kw / prated
+        pac = np.where(pdc_kw > 0, pdc_kw * np.interp(x, xs, es, left=0.0), 0.0)
+        return np.minimum(pac, ac_kw), float(np.sum(np.maximum(pac - ac_kw, 0.0)))
     eff = eff_pct / 100.0
     prated = ac_kw / eff
     x = pdc_kw / prated
@@ -148,7 +167,7 @@ def inverter_ac(pdc_kw, ac_kw, eff_pct):
 
 
 def hourly_yield(tmy, kwp, tilt, azimuth_n, module, losses=None, inverter_eff_pct=None, horizon=None, ac_kw=None,
-                 transposition="perez", lid_pct=None, degradation_pct=None, beam_factor=None):
+                 transposition="perez", lid_pct=None, degradation_pct=None, beam_factor=None, eff_curve=None):
     """Monthly and annual AC energy for kwp at one orientation from the hourly year. Same result shape as
     solar_pv.energy_yield, plus clipping and the lifetime table. `beam_factor` (8760 values, 0..1) scales the beam
     component hour by hour: the share of the beam NOT blocked by 3D shading (diffuse and ground stay)."""
@@ -162,11 +181,13 @@ def hourly_yield(tmy, kwp, tilt, azimuth_n, module, losses=None, inverter_eff_pc
         p["poa"] = p["beam"] + p["sky"] + p["ground"]
     beta = tilt * RAD
     cos_i = p["cos_i"]
-    f_beam = _aoi_factor(cos_i)
+    iam = module.get("iam_profile")                       # the manufacturer's table (an imported .PAN), else ASHRAE b0 = 0.05
+    aoi = (lambda c: _iam_table(c, iam)) if iam else _aoi_factor
+    f_beam = aoi(cos_i)
     th_sky = (59.7 - 0.1388 * tilt + 0.001497 * tilt ** 2) * RAD
     th_gnd = (90.0 - 0.5788 * tilt + 0.002693 * tilt ** 2) * RAD
-    f_sky = float(_aoi_factor(np.array(math.cos(th_sky))))
-    f_gnd = float(_aoi_factor(np.array(math.cos(th_gnd))))
+    f_sky = float(aoi(np.array(math.cos(th_sky))))
+    f_gnd = float(aoi(np.array(math.cos(th_gnd))))
     g_eff = p["beam"] * f_beam + p["sky"] * f_sky + p["ground"] * f_gnd
     tair = np.asarray(tmy["t2m_c"], float)
     tcell = tair + (noct - 20.0) / 800.0 * p["poa"]
@@ -181,7 +202,7 @@ def hourly_yield(tmy, kwp, tilt, azimuth_n, module, losses=None, inverter_eff_pc
     pdc = pdc * dc_f
     clip_kwh = 0.0
     if ac_kw and inverter_eff_pct:
-        pac, clip_kwh = inverter_ac(pdc, ac_kw, inverter_eff_pct)
+        pac, clip_kwh = inverter_ac(pdc, ac_kw, inverter_eff_pct, eff_curve)
         pac = pac * ac_f
         clip_kwh *= ac_f
     else:
