@@ -28,6 +28,21 @@ const PlanSolarArray = {
     return null;
   },
 
+  // The gap between panels under a point (world px) on a placed array, or null: {roof, axis, after, at, clear, has}. Gable and flat roofs.
+  gapAt(pt, zoom) {
+    const f = PlanEngine.factor(), r = this.roofAt(pt);
+    if (!f || !r || !r.array || PlanSolar.usesPlanes(r)) return null;
+    const lay = this.layout(r); if (lay.pending || !lay.mods.length) return null;
+    const bd = Roof3D.boundaries(lay.mods, PlanSolar.planAz(r));
+    const hit = Roof3D.boundaryAt(bd, [pt.x * f, -pt.y * f], (7 / (zoom || 1)) * f);
+    return hit ? Object.assign(hit, { roof: r, bd, has: !!PlanSolar.aisleAt(r, hit.axis, hit.after) }) : null;
+  },
+  // Insert the aisle at a gap, or (off) take it out.
+  setAisle(r, axis, after, on) {
+    PlanSolar.setAisle(r, axis, after, on); this._layouts.delete(r.id);
+    this._after(on ? 'Maintenance aisle added to ' + r.name + '.' : 'Maintenance aisle removed.');
+  },
+
   // The row pitch a flat roof's racks need, from the engine (cached); null until it has answered.
   rowPitch(roof, p) {
     if (!Solar._locs) {      // the irradiance locations (latitude) load once, as Solar PV Design does
@@ -46,16 +61,30 @@ const PlanSolarArray = {
   },
 
   // The panels on a roof: { mods: [four [x, y] corners, metres], n, kwp, pending }. Whole panels inside the setback.
-  layout(roof) {
+  // The panels each placed roof may take under the design's kWp target (Solar PV Design › Target array size): roofs fill in plan order until
+  // the target is reached. "Fill the roof" has no limit. {roofId: panels}
+  _limits() {
+    const c = Solar.cfg();
+    if (c.mode !== 'kwp' || !(+c.targetKwp > 0)) return {};
+    let left = Math.max(1, Math.round(+c.targetKwp * 1000 / Solar.panel(c).w));
+    const out = {};
+    for (const r of PlanSolar.roofs()) {
+      if (!r.array || r.use === false || PlanSolar.usesPlanes(r)) continue;
+      out[r.id] = Math.min(this._lay(r, null).n, left); left -= out[r.id];
+    }
+    return out;
+  },
+  layout(roof) { const lim = this._limits()[roof.id]; return this._lay(roof, lim == null ? null : lim); },
+  _lay(roof, limit) {
     const f = PlanEngine.factor(), c = Solar.cfg(), p = Solar.panel(c);
     if (!f || !roof.points || roof.points.length < 3) return { mods: [], n: 0, kwp: 0, pending: false };
-    const key = [roof.points.map(q => q.x + ',' + q.y).join(';'), roof.shape, roof.pitch, roof.tilt, roof.azimuth, PlanSolar.northAngle(), roof.eave, JSON.stringify(roof.planeUse || null), roof.setback, roof.panelGap, roof.modAlign, roof.maxModules, JSON.stringify(roof.keepouts || []), p.id, p.len, p.wid, f, c.hour, c.location].join('|');
+    const key = [roof.points.map(q => q.x + ',' + q.y).join(';'), roof.shape, roof.pitch, roof.tilt, roof.azimuth, PlanSolar.northAngle(), roof.eave, JSON.stringify(roof.planeUse || null), roof.setback, roof.panelGap, JSON.stringify(roof.aisles || null), limit, roof.modAlign, roof.maxModules, JSON.stringify(roof.keepouts || []), p.id, p.len, p.wid, f, c.hour, c.location].join('|');
     const hit = this._layouts.get(roof.id);
     if (hit && hit.key === key) return hit.lay;
     const poly = Roof3D.toMetres(roof.points, f), az = PlanSolar.planAz(roof), setback = Math.max(0, +roof.setback || 0);
     let mods = [], pending = false;
     const mp = PlanSolar.modFor(roof, p);                                      // the panel with this roof's gap
-    const ex = PlanSolar.keepoutsM(roof), cap = Math.min(1e9, PlanSolar.maxModules(roof));                 // the roof's own maximum panels
+    const ex = PlanSolar.keepoutsM(roof), cap = Math.min(1e9, PlanSolar.maxModules(roof), limit == null ? 1e9 : limit);                 // the roof's own maximum panels
     if (PlanSolar.usesPlanes(roof)) {                                       // a layout on every plane in use
       const g = PlanSolar.planesOf(roof), use = g.use;
       g.planes.forEach((pl, i) => { if (use[i] && mods.length < cap) mods.push(...RoofPlanes.layoutPlane(pl, g.poly, setback, mp, cap - mods.length, roof.modAlign, ex)); });
@@ -67,7 +96,7 @@ const PlanSolarArray = {
       if (rp == null) pending = true;
       else mods = Roof3D.layoutRacks(poly, az, +roof.tilt, setback, mp, cap, rp, 0, roof.modAlign, ex);
     }
-    const lay = { mods: mods.map(m => m.map(q => [q[0], q[1]])), n: mods.length, fit: mods.length, kwp: mods.length * p.w / 1000, pending };
+    const lay = { mods: mods.map(m => { const a = m.map(q => [q[0], q[1]]); a.ri = m.ri; a.ci = m.ci; return a; }), n: mods.length, fit: mods.length, kwp: mods.length * p.w / 1000, pending };
     if (!pending) this._layouts.set(roof.id, { key, lay });
     return lay;
   },
@@ -104,23 +133,15 @@ const PlanSolarArray = {
     this._busy = true;
     try {
       if (!PlanEngine.factor()) throw new Error('Calibrate the plan scale first so the roofs have a size.');
-      // The array on the plan IS the design: size the roofs as they are (not capped by the load target, which would
-      // shrink what was placed), then take the panels actually laid out as the count. The sizing mode the modal
-      // uses is left as the user set it.
+      // The array on the plan IS the design: Solar PV Design's size run keeps each placed roof's laid-out count (the layout is already
+      // limited to the kWp target) and sizes any other roof by the mode, so the modal, the 3D view and the single line agree.
       await Solar._locations();
       for (let k = 0; k < 20 && roofs.some(r => this.layout(r).pending); k++) await new Promise(res => setTimeout(res, 150));   // a flat roof waits for its row pitch
-      const keep = Solar.cfg().mode;
-      Solar.set('roofShape', 'plan'); Solar.set('mode', 'roof');
-      try { await Solar._locations(); await Solar.runSize(); } finally { Solar.set('mode', keep); }
-      const res = Solar._res;
-      let total = 0;
-      for (const a of (res.arrays || [])) {
-        const roof = roofs.find(r => r.name === a.name);
-        if (roof) { a.modules = this.layout(roof).n; total += a.modules; }
-      }
-      res.modules = total;
+      Solar.set('roofShape', 'plan');
+      await Solar._locations(); await Solar.runSize();
+      const res = Solar._res, total = res.modules;
       const pv = Solar.placePv(true);
-      this.sld = `On the single line as ${pv.props.name || 'PV array'}: ${total} panels, as laid out.`;
+      this.sld = `On the single line as ${pv.props.name || 'PV array'}: ${total} panels, ${res.kwp} kWp, as laid out.`;
     } catch (e) {
       this.sld = 'Single line not updated: ' + (e.message || e);
     } finally {
@@ -172,11 +193,30 @@ const PlanSolarArray = {
         }
       }
       ctx.restore();
+      const gh = armed && this.hoverGap && this.hoverGap.roof.id === r.id ? this.hoverGap : null;
+      if (gh && mode !== 'block') this._drawGapMark(ctx, u, f, gh);
     }
+  },
+  // The blue insert line (or the red remove line over an existing aisle) across a gap, with a plus.
+  _drawGapMark(ctx, u, f, g) {
+    const bd = g.bd, ext = g.axis === 'col' ? bd.s : bd.v, ax = g.axis === 'col' ? bd.w : bd.u, al = g.axis === 'col' ? bd.u : bd.w;
+    const pt = (x, y) => [ax[0] * g.at + al[0] * x, ax[1] * g.at + al[1] * x];
+    const a = pt(ext[0]), b = pt(ext[1]), mid = pt((ext[0] + ext[1]) / 2), col = g.has ? '#b91c1c' : '#1d4ed8';
+    ctx.save(); ctx.strokeStyle = col; ctx.fillStyle = col; ctx.lineWidth = 2.5 * u; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(a[0] / f, -a[1] / f); ctx.lineTo(b[0] / f, -b[1] / f); ctx.stroke();
+    ctx.beginPath(); ctx.arc(mid[0] / f, -mid[1] / f, 9 * u, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#fff'; ctx.font = `700 ${14 * u}px sans-serif`; ctx.textAlign = 'center'; ctx.fillText(g.has ? '×' : '+', mid[0] / f, -mid[1] / f + 5 * u);
+    ctx.restore();
   },
 
   // ── Properties of the tool ──
-  hint() { return 'Place array: click a roof and its panels are laid out on it. Set tilt, azimuth and spacing in Properties. Esc to stop.'; },
+  _aisleList(r) {
+    if (PlanSolar.usesPlanes(r)) return '<div style="color:var(--text-muted)">Maintenance aisles are for gable and flat roofs.</div>';
+    const list = PlanSolar.aislesOf(r).slice().sort((a, b) => a.axis === b.axis ? a.after - b.after : (a.axis === 'row' ? -1 : 1));
+    const rows = list.map(a => `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><span>${a.axis === 'row' ? 'Between rows' : 'Between columns'} ${a.after} and ${a.after + 1}</span><button type="button" class="plan-btn" data-sa-aisle-rm="${a.axis}:${a.after}" aria-label="Remove the aisle ${a.axis === 'row' ? 'between rows' : 'between columns'} ${a.after} and ${a.after + 1}">Remove</button></div>`).join('');
+    return `<div class="plan-props-sec">Maintenance aisles</div>${rows || '<div style="color:var(--text-muted)">None. Click the gap between two rows or columns of panels, Alt-click an aisle to remove it.</div>'}`;
+  },
+  hint() { return 'Place array: click a roof and its panels are laid out on it. Click the gap between two rows or columns of panels to add a maintenance aisle, Alt-click an aisle to remove it. Esc to stop.'; },
   renderOptions(el) {
     const roofs = PlanSolar.roofs(), f = PlanEngine.factor(), c = Solar.cfg(), p = Solar.panel(c);
     const esc = (s) => String(s).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
@@ -197,13 +237,14 @@ const PlanSolarArray = {
     if (r && r.array) {
       const l = this.layout(r);
       const sl = (k, label, min, max, step, unit) => `<label style="display:grid;gap:2px"><span style="display:flex;justify-content:space-between"><span>${label}</span><output data-sa-o="${k}">${+r[k]}${unit}</output></span>
-        <input type="range" data-sa-k="${k}" min="${min}" max="${max}" step="${step}" value="${+r[k]}"></label>`;
+        <input type="range" data-sa-k="${k}" data-sa-u="${unit}" min="${min}" max="${max}" step="${step}" value="${+r[k]}"></label>`;
       detail = `<div class="plan-props-sec">${esc(r.name)} · solar array</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px"><div><small>Panels</small><br><b data-sa-n style="font-size:16px">${l.pending ? '…' : l.n}</b></div><div><small>Power</small><br><b data-sa-kwp style="font-size:16px">${l.pending ? '…' : l.kwp.toFixed(1) + ' kWp'}</b></div></div>
-        <div style="color:var(--text-muted)">${esc(p.name || p.id)} (${p.w} W). Change the panel, inverter and location in Open design.</div>
+        <div style="color:var(--text-muted)">${esc(p.name || p.id)} (${p.w} W). ${c.mode === 'kwp' ? 'Design target ' + (+c.targetKwp || 0) + ' kWp, shared over the roofs in order. ' : 'Fill the roof. '}Change the panel, size, inverter and location in Open design.</div>
         <label style="display:flex;gap:8px;align-items:center"><span>Roof</span><select data-sa-shape>${RoofPlanes.SHAPES.map(k => `<option value="${k}"${r.shape === k ? ' selected' : ''}>${RoofPlanes.LABELS[k]}</option>`).join('')}</select></label>
         ${r.shape !== 'flat' ? sl('pitch', 'Roof pitch', 0, 45, 1, '°') : sl('tilt', 'Rack tilt', 0, 40, 1, '°')}${sl('eave', 'Eave height', 2, 12, 0.1, ' m')}
-        ${sl('azimuth', 'Azimuth (0 = north)', 0, 359, 1, '°')}${sl('setback', 'Edge setback', 0, 2, 0.1, ' m')}${sl('panelGap', 'Gap between panels', 0, 100, 5, ' mm')}
+        ${sl('azimuth', 'Azimuth (0 = north)', 0, 359, 1, '°')}${sl('setback', 'Edge setback', 0, 2, 0.1, ' m')}${sl('panelGap', 'Gap between panels', 0, 100, 5, ' mm')}${sl('aisleWidth', 'Maintenance aisle width', 0.3, 3, 0.1, ' m')}
+        ${this._aisleList(r)}
         <label style="display:flex;gap:8px;align-items:center"><span>Show as</span><select data-sa-style><option value="modules"${this.style() === 'modules' ? ' selected' : ''}>Individual panels</option><option value="block"${this.style() === 'block' ? ' selected' : ''}>One block with a count</option></select></label>
         <div data-sa-sld style="color:${/not updated/.test(this.sld) ? '#b45309' : 'var(--text-muted)'}">${esc(this.sld || (f ? 'The single line follows this array.' : 'Calibrate the plan scale to size the array.'))}</div>
         <div style="display:flex;gap:6px;flex-wrap:wrap"><button type="button" class="plan-btn" data-sa-design style="font-weight:600">Open design</button><button type="button" class="plan-btn" data-sa-remove>Remove array</button></div>`;
@@ -214,13 +255,14 @@ const PlanSolarArray = {
     el.onclick = (e) => {
       const pick = e.target.closest('[data-sa-pick]'); if (pick) { this.sel = pick.dataset.saPick; PlanMarkup.refreshProps(); this._redraw(); return; }
       const pl = e.target.closest('[data-sa-place]'); if (pl) { const x = roofOf(pl.dataset.saPlace); if (x) this.place(x); return; }
+      const rm = e.target.closest('[data-sa-aisle-rm]'); if (rm && r) { const [ax, af] = rm.dataset.saAisleRm.split(':'); this.setAisle(r, ax, +af, false); return; }
       if (e.target.closest('[data-sa-design]')) { Solar.open(); return; }
       if (e.target.closest('[data-sa-remove]') && r) { this.remove(r); }
     };
     el.oninput = (e) => {
       const k = e.target.dataset.saK; if (!k || !r) return;
       this.edit(r, { [k]: +e.target.value });
-      const o = el.querySelector(`[data-sa-o="${k}"]`); if (o) o.textContent = r[k] + (k === 'setback' || k === 'eave' ? ' m' : '°');
+      const o = el.querySelector(`[data-sa-o="${k}"]`); if (o) o.textContent = r[k] + (e.target.dataset.saU || '');
       const l = this.layout(r), n = el.querySelector('[data-sa-n]'), kw = el.querySelector('[data-sa-kwp]');
       if (n) n.textContent = l.pending ? '…' : l.n; if (kw) kw.textContent = l.pending ? '…' : l.kwp.toFixed(1) + ' kWp';
     };
@@ -233,13 +275,20 @@ const PlanSolarArray = {
 
 if (typeof PlanTools !== 'undefined') PlanTools.register({
   id: 'solararray', cursor: 'crosshair',
-  onActivate() { PlanSolarArray.hover = null; },
-  cancel() { PlanSolarArray.hover = null; PlanEngine.requestDraw({ fg: true }); },
+  onActivate() { PlanSolarArray.hover = null; PlanSolarArray.hoverGap = null; },
+  cancel() { PlanSolarArray.hover = null; PlanSolarArray.hoverGap = null; PlanEngine.requestDraw({ fg: true }); },
   onMove(pt) {
-    const r = PlanSolarArray.roofAt(pt), id = r ? r.id : null;
-    if (id !== PlanSolarArray.hover) { PlanSolarArray.hover = id; PlanEngine.requestDraw({ fg: true }); }
+    const r = PlanSolarArray.roofAt(pt), id = r ? r.id : null, g = PlanSolarArray.gapAt(pt, PlanEngine.view.zoom);
+    const gk = g ? g.roof.id + g.axis + g.after : null, ok = PlanSolarArray.hoverGap ? PlanSolarArray.hoverGap.roof.id + PlanSolarArray.hoverGap.axis + PlanSolarArray.hoverGap.after : null;
+    if (id !== PlanSolarArray.hover || gk !== ok) { PlanSolarArray.hover = id; PlanSolarArray.hoverGap = g; PlanEngine.requestDraw({ fg: true }); }
   },
-  onDown(pt) {
+  onDown(pt, e) {
+    const g = PlanSolarArray.gapAt(pt, PlanEngine.view.zoom);
+    if (g) {                                                           // a gap between panels: click inserts an aisle, Alt-click takes it out
+      if (g.has) { if (e && e.altKey) PlanSolarArray.setAisle(g.roof, g.axis, g.after, false); else if (typeof UI !== 'undefined' && UI.toast) UI.toast('Alt-click an aisle to remove it.', 'info', 2000); }
+      else PlanSolarArray.setAisle(g.roof, g.axis, g.after, true);
+      PlanSolarArray.hoverGap = null; PlanSolarArray.sel = g.roof.id; PlanMarkup.refreshProps(); return;
+    }
     const r = PlanSolarArray.roofAt(pt);
     if (!r) { if (typeof UI !== 'undefined' && UI.toast) UI.toast('Click inside a roof. Draw one first with Solar › Roof.', 'info', 3000); return; }
     if (r.array) { PlanSolarArray.sel = r.id; PlanMarkup.refreshProps(); PlanEngine.requestDraw({ fg: true }); return; }

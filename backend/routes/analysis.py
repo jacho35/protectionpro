@@ -1096,14 +1096,15 @@ class SolarSizeRequest(BaseModel):
     num_inverters: int = 1
     tilt_deg: float = 20.0
     azimuth_deg: float = 0.0            # degrees from north; 0 = north-facing (southern hemisphere)
-    mode: str = "min"                    # roof | load | min
+    mode: str = "min"                    # kwp (the design's target) | roof (fill it) | load | min
+    target_kwp: Optional[float] = None   # mode kwp: the array size set in the design, capped by what the roof holds
     usable_area_m2: Optional[float] = None
     packing: float = 0.8
     annual_kwh: Optional[float] = None
     share_pct: float = 70.0
     losses: Optional[dict] = None
     obstructions: Optional[List[dict]] = None   # [{height_m, distance_m, bearing_deg, width_m}] above the array
-    arrays: Optional[List[dict]] = None         # roofs drawn on the plan: [{name, area_m2, packing, tilt_deg, azimuth_deg}]
+    arrays: Optional[List[dict]] = None         # roofs drawn on the plan: [{name, area_m2, packing, tilt_deg, azimuth_deg, modules?}] (modules = already laid out, kept as is)
 
 
 class SolarRowSpacingRequest(BaseModel):

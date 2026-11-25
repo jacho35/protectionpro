@@ -30,6 +30,8 @@ const RoofEditor = {
       'Move, turn or scale the selected roof or object. Drag an arrow to lock to that axis, or type a value and press Enter.', 'Distance'],
     ['keepout', 'Keep-out', 'K', 'M4 5 H20 V19 H4 Z M4 19 L20 5 M4 12 L12 5 M12 19 L20 12',
       'Click the corners of an area of a roof the modules must avoid. Enter or the first corner closes it, Backspace takes a corner back. Drag its corners with Select.', 'Length'],
+    ['aisle', 'Aisles', 'A', 'M3 5 H10 V19 H3 Z M14 5 H21 V19 H14 Z',
+      'Click the gap between two rows or columns of panels to add a maintenance aisle there. Alt-click an aisle to remove it. Gable and flat roofs.', 'Width'],
     ['object', 'Objects', 'O', 'M12 3 L20 7.5 V16.5 L12 21 L4 16.5 V7.5 Z M4 7.5 L12 12 L20 7.5 M12 12 V21',
       'Pick an object below, then click a roof plane. It sits on the plane, snaps to the grid and shades the modules around it.', 'Height'],
   ],
@@ -37,6 +39,13 @@ const RoofEditor = {
     ['B', 'Catslide', { side: 'front', kind: 'catslide', depth: 3 }], ['C', 'East end', { side: 'end', kind: 'under', depth: 3, pitch: 11 }],
     ['D', 'Steeper, north', { side: 'front', kind: 'under', depth: 3, pitch: 20 }]],
 
+  // The roof's maintenance aisles, each with a Remove button (they are added with the Aisles tool).
+  _aisleRows(roof) {
+    if (PlanSolar.usesPlanes(roof)) return '<div class="re-note">Maintenance aisles are for gable and flat roofs.</div>';
+    const list = PlanSolar.aislesOf(roof).slice().sort((a, b) => a.axis === b.axis ? a.after - b.after : (a.axis === 'row' ? -1 : 1));
+    return list.map(a => `<div class="re-objh"><span>Aisle ${a.axis === 'row' ? 'between rows' : 'between columns'} ${a.after} and ${a.after + 1}</span><button type="button" class="re-btn" data-re-aisle-rm="${a.axis}:${a.after}" aria-label="Remove the aisle ${a.axis === 'row' ? 'between rows' : 'between columns'} ${a.after} and ${a.after + 1}">Remove</button></div>`).join('')
+      + `<button type="button" class="re-btn" data-re-tool="aisle">Add an aisle</button>`;
+  },
   _esc(x) { return String(x).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch])); },
   _def(id) { return this.TOOLS.find(t => t[0] === id) || this.TOOLS[0]; },
 
@@ -147,6 +156,7 @@ const RoofEditor = {
     if (t.closest('#re-use')) { if (typeof Solar !== 'undefined') Solar.open(); return; }
     if (t.closest('#re-shade')) { const b = document.getElementById('re-shade'), on = b.getAttribute('aria-pressed') !== 'true'; b.setAttribute('aria-pressed', on ? 'true' : 'false'); b.classList.toggle('active', on); Roof3D.setShade(on); return; }
     const roof = this._selRoof();
+    const rm = t.closest('[data-re-aisle-rm]'); if (rm && roof) { const [ax, af] = rm.dataset.reAisleRm.split(':'); PlanSolar.setAisle(roof, ax, +af, false); PlanSolar._changed(); Roof3D.refresh(); return; }
     const g = t.closest('[data-re-gizmo]'); if (g) { Roof3D.gizmo = g.dataset.reGizmo; this.setTool('transform'); return; }
     const add = t.closest('[data-re-add]'); if (add) { Roof3D.addType = add.dataset.reAdd; this.setTool('object'); return; }
     const del = t.closest('[data-re-delobj]'); if (del && roof) { PlanSolar.removeObject(roof, del.dataset.reDelobj); Roof3D.sel = { roof: roof.id }; Roof3D.refresh(); return; }
@@ -229,7 +239,7 @@ const RoofEditor = {
 
   // ── Plan side ──
   _sig() {
-    return JSON.stringify([PlanSolar.northAngle(), PlanSolar.roofs().map(r => [r.id, r.name, r.shape, r.points, r.pitch, r.tilt, r.azimuth, r.setback, r.panelGap, r.eave, r.apex, r.overhang, r.lean, r.planeUse, r.use, r.objects, r.modAlign, r.maxModules, r.keepouts])]);
+    return JSON.stringify([PlanSolar.northAngle(), PlanSolar.roofs().map(r => [r.id, r.name, r.shape, r.points, r.pitch, r.tilt, r.azimuth, r.setback, r.panelGap, r.aisles, r.eave, r.apex, r.overhang, r.lean, r.planeUse, r.use, r.objects, r.modAlign, r.maxModules, r.keepouts])]);
   },
   // Called from every plan redraw: a roof changed on the plan (a corner dragged, undo, a new one drawn) updates the 3D view.
   syncFromPlan() {
@@ -324,7 +334,8 @@ const RoofEditor = {
       ${['gable', 'hip', 'mono'].includes(roof.shape) ? num('overhang', 'Overhang (m)', +roof.overhang || 0, 0.05) : ''}
       ${num('setback', 'Edge setback (m)', +roof.setback, 0.05)}
       ${num('panelGap', 'Gap between panels (mm)', PlanSolar.gapMm(roof), 5)}
-      <label class="re-row"><span>Max panels (blank = no limit)</span><input type="number" min="0" step="1" value="${esc(PlanSolar.maxModules(roof) === Infinity ? '' : PlanSolar.maxModules(roof))}" placeholder="no limit" data-re-f="maxModules"></label>
+      ${num('aisleWidth', 'Maintenance aisle width (m)', PlanSolar.aisleWidth(roof), 0.1)}
+${this._aisleRows(roof)}      <label class="re-row"><span>Max panels (blank = no limit)</span><input type="number" min="0" step="1" value="${esc(PlanSolar.maxModules(roof) === Infinity ? '' : PlanSolar.maxModules(roof))}" placeholder="no limit" data-re-f="maxModules"></label>
       ${roof.shape === 'wings' ? '<div class="re-note">A cross-gable needs an L, T or U outline with straight, axis-aligned edges. The longest wing is the main one; the others stop at its ridge.</div>' : ''}</div>`;
     if (!isFlat && roof.shape !== 'wings') {
       const L = roof.lean && +roof.lean.depth > 0 ? roof.lean : null, cur = !L ? 'none' : (this.LEANS.find(x => x[2] && x[2].side === L.side && x[2].kind === L.kind && Math.abs((+x[2].pitch || 0) - (+L.pitch || 0)) < 0.5) || ['none'])[0];

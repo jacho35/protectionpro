@@ -79,6 +79,7 @@ const PlanSolar = {
   isSelected(id) { return this.sel.has(id); },
   _selChanged() {
     if (typeof PlanEngine !== 'undefined') PlanEngine.requestDraw({ fg: true });
+    if (typeof PlanMarkup !== 'undefined' && PlanMarkup.refreshProps) PlanMarkup.refreshProps();      // one picked roof with an array shows the array's properties
     if (typeof RoofEditor !== 'undefined' && RoofEditor.on) RoofEditor.renderPanel();          // the editor's panel edits the picked roofs together
   },
   selectRoofs(ids, add) { if (!add) this.sel.clear(); for (const i of ids) this.sel.add(i); this._selChanged(); },
@@ -254,7 +255,22 @@ const PlanSolar = {
 
   // Space between neighbouring panels on a roof, mm (`roof.panelGap`, 0 = touching). The layouts take it as `mod.gap` in metres.
   gapMm(roof) { return Math.max(0, Math.min(200, +roof.panelGap || 0)); },
-  modFor(roof, p) { return Object.assign({}, p, { gap: this.gapMm(roof) / 1000 }); },
+  modFor(roof, p) { return Object.assign({}, p, { gap: this.gapMm(roof) / 1000, cuts: this.cuts(roof) }); },
+  // Maintenance aisles: `roof.aisles` = [{axis: 'row' | 'col', after}] (`after` panels before it, counted from the eave / the low side), each
+  // `roof.aisleWidth` m (default 0.8) of clear space. Gable and flat roofs only.
+  aisleWidth(roof) { return Math.max(0.3, Math.min(3, +roof.aisleWidth || 0.8)); },
+  aislesOf(roof) { return (roof.aisles || []).filter(a => (a.axis === 'row' || a.axis === 'col') && a.after >= 1); },
+  cuts(roof) {
+    const c = { row: [], col: [] };
+    if (!this.usesPlanes(roof)) for (const a of this.aislesOf(roof)) c[a.axis].push({ after: +a.after, w: this.aisleWidth(roof) });
+    return c;
+  },
+  aisleAt(roof, axis, after) { return this.aislesOf(roof).find(a => a.axis === axis && +a.after === +after) || null; },
+  // Insert (on) or remove (off) the aisle at a gap; the caller redraws and snapshots.
+  setAisle(roof, axis, after, on) {
+    const rest = (roof.aisles || []).filter(a => !(a.axis === axis && +a.after === +after));
+    roof.aisles = on ? rest.concat([{ axis, after: +after }]) : rest;
+  },
   // Share of a roof's area the panels keep once the gap is added around each one: (len × wid) ÷ ((len + gap) × (wid + gap)).
   // Racks on a flat roof only lose width (the row pitch already holds the space between rows).
   gapShare(roof, p, flat) {
