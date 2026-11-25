@@ -862,6 +862,14 @@ const API = {
     });
   },
 
+  // Solar PV design report: the Solar PV Design modal's own results (nothing is recalculated server-side)
+  async generateSolarReport(design) {
+    return this.requestBlob('/reports/solar', {
+      method: 'POST', errorLabel: 'Solar report generation failed',
+      body: Object.assign({ projectName: AppState.projectName || 'Untitled Project', projectDetails: AppState.projectDetails || {} }, design),
+    });
+  },
+
   // Server-side arc flash label PDF
   async generateArcFlashLabels() {
     const body = {

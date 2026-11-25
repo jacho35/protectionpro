@@ -18,6 +18,7 @@ from ..analysis.fault import run_fault_analysis
 from ..analysis.loadflow import run_load_flow
 from ..analysis.deliverables_pack import build_pack, PackError
 from ..analysis.pdf_reports import generate_full_report, generate_arcflash_labels, generate_calculations_report
+from ..analysis.solar_report import generate_solar_report
 
 router = APIRouter(prefix="/projects", tags=["reports"])
 
@@ -76,6 +77,17 @@ class CalculationsReportRequest(BaseModel):
     projectDetails: Optional[dict] = None  # project metadata for cover page
 
 
+class SolarReportRequest(BaseModel):
+    """Request body for the Solar PV design report: what the Solar PV Design modal already computed."""
+    projectName: str = "Untitled Project"
+    inputs: dict = {}
+    result: dict
+    strings: Optional[dict] = None
+    protection: Optional[dict] = None
+    shading: Optional[dict] = None
+    projectDetails: Optional[dict] = None
+
+
 report_router = APIRouter(prefix="/reports", tags=["reports"])
 
 
@@ -102,6 +114,20 @@ def generate_pdf_report(req: ReportRequest):
         media_type="application/pdf",
         headers={"Content-Disposition": disposition}
     )
+
+
+@report_router.post("/solar")
+def generate_solar_pdf(req: SolarReportRequest):
+    """Solar PV design report PDF from the modal's results."""
+    try:
+        buf = generate_solar_report(req.projectName, {"inputs": req.inputs, "result": req.result, "strings": req.strings,
+                                                       "protection": req.protection, "shading": req.shading}, req.projectDetails)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Solar report generation failed: {exc}") from exc
+    return StreamingResponse(buf, media_type="application/pdf",
+                             headers={"Content-Disposition": content_disposition(f"{req.projectName}_solar_pv", "pdf")})
 
 
 @report_router.post("/calculations")

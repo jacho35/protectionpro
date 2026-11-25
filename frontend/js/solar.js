@@ -412,7 +412,7 @@ const Solar = {
     const placed = this._pvComp();
     const run = (act, label, tip) => `<button class="btn" type="button" data-act="${act}" title="${escHtml(tip)}" ${placed ? '' : 'disabled'}>${label}</button>`;
     return head + shade + annual + `<div style="margin-top:12px"><button class="btn btn-primary" type="button" data-act="place" ${this._res ? '' : 'disabled'}>Place / update on the SLD</button>
-      ${this._res ? '' : '<span style="font-size:12px"> calculate on step 1 first</span>'}</div>
+      ${this._res ? '<button class="btn" type="button" data-act="report" style="margin-left:6px">Solar PV report (PDF)</button>' : '<span style="font-size:12px"> calculate on step 1 first</span>'}</div>
       <div style="margin-top:12px;display:flex;gap:6px;flex-wrap:wrap">
         ${run('study:fault', 'Fault analysis', 'The inverter adds fault current from its Fault current (p.u.) setting')}
         ${run('study:loadflow', 'Load flow', 'Voltage rise and loading with the PV running at its irradiance setting')}
@@ -443,6 +443,7 @@ const Solar = {
       else if (act === 'rows') await this.runRows();
       else if (act === 'protect') await this.runProtection();
       else if (act === 'shade') await this.runShading();
+      else if (act === 'report') await this.exportReport();
       else if (act === 'place') this.placePv();
       else if (act.startsWith('study:')) this.runStudy(act.slice(6));
     } catch (e) {
@@ -579,6 +580,19 @@ const Solar = {
   },
 
   // Run one of the app's own studies on the placed array, by pressing its normal menu button.
+  // The Solar PV report: the results already on screen go to the server to be typeset (nothing is recalculated there).
+  async exportReport() {
+    const c = this.cfg();
+    if (!this._res) throw new Error('Calculate the array on step 1 first.');
+    const blob = await API.generateSolarReport({
+      inputs: { location: c.location, module: this.panel(c).name, inverter: this.inverter(c).name, perString: c.perString },
+      result: this._res, strings: this._str || null, protection: this._prot || null, shading: this._shade || null });
+    const url = URL.createObjectURL(blob), a = document.createElement('a');
+    a.href = url; a.download = `${AppState.projectName || 'Untitled'}_solar_pv.pdf`; a.click();
+    URL.revokeObjectURL(url);
+    this._status('Exported the Solar PV report as PDF.');
+  },
+
   // Annual shading: the 3D scene's module shade flags at the sun grid, then the engine's hourly model per string.
   async runShading() {
     const c = this.cfg(), res = this._res;

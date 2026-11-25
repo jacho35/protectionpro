@@ -80,7 +80,7 @@ Depends on WP2 for hourly input.
 - Done when: a module and inverter imported from PVsyst files produce the same string-check and yield inputs as the
   same parts entered by hand.
 
-### WP6 — Report
+### WP6 — Report — BUILT 2026-11-25 (`solar_report.py`, button in the modal; layout not yet eyeballed in a PDF viewer)
 - One Solar PV report (PDF through `pdf_reports.py`): site, array layout, loss tree, monthly and annual yield,
   string checks, DC protection, shading, data source and the reference-check result.
 - User-facing text states results and sources, never a `.md` file.
