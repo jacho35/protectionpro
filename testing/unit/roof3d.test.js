@@ -218,3 +218,24 @@ ok('annualFlags: one flag character per sun position, grouped by engine array, w
   assert(out[0].shade.every(r => r === '100'));                                        // sun low in the north: behind the wall; sun in the south or nearly overhead: clear
 });
 console.log(n + ' passed (with annual shading)');
+
+// ── parapet ──
+ok('parapet: inset outline is the footprint shrunk by the wall thickness, inner faces are planar quads facing in', () => {
+  const it = { poly: rect(10, 6), eave: 3 };
+  const pp = R.parapet(it);
+  close(pp.deck, 3 + R.PARAPET_M); close(pp.top, pp.deck + R.PARAPET_H);
+  close(area(pp.Q), (10 - 2 * R.PARAPET_T) * (6 - 2 * R.PARAPET_T), 1e-9);
+  assert.strictEqual(pp.inner.length, 4);
+  for (const q of pp.inner) { close(q[0][2], pp.top); close(q[2][2], pp.deck); }
+  const rev = R.inset(rect(10, 6).slice().reverse(), 0.15); close(area(rev), area(pp.Q), 1e-9);       // either winding
+});
+ok('annualFlags: the parapet shades a rack right behind it in low sun and not in high sun', () => {
+  const mod = { len: 2, wid: 1 }, it0 = { roof: { name: 'F', shape: 'flat' }, poly: rect(10, 6), eave: 3, mods: [] };
+  const pp = R.parapet(it0), z = pp.deck + 0.1;
+  // one module 0.1 m north of the south parapet's inner face (y = 0.15): its centre is shaded by that wall when the sun is low in the south
+  const m = [[4, 0.35, z], [5, 0.35, z], [5, 0.75, z + 0.1], [4, 0.75, z + 0.1]];
+  m.ri = 0; m.arr = 'F'; it0.mods = [m];
+  const out = R.annualFlags({ items: [it0], obs: null, objs: [], north: 0 }, [{ azimuth_deg: 180, elevation_deg: 8 }, { azimuth_deg: 180, elevation_deg: 60 }, { azimuth_deg: 0, elevation_deg: 8 }]);
+  assert.strictEqual(out[0].shade[0], '100');
+});
+console.log(n + ' passed (with parapet)');

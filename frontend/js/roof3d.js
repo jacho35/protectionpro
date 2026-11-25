@@ -17,7 +17,9 @@
  */
 const Roof3D = {
   EAVE_M: 3,
-  PARAPET_M: 0.4,
+  PARAPET_M: 0.4,      // a flat roof's deck stands this far above its eave line (the layout, shadows and annual shading all use it)
+  PARAPET_H: 0.35,     // the parapet wall stands this far above the deck
+  PARAPET_T: 0.15,     // and is this thick
   view: null,
   scene: null,
   hourAngle: 0,        // design hour on the winter solstice: degrees, 0 = noon, negative = morning
@@ -272,7 +274,7 @@ const Roof3D = {
   // [{arr: engine array name, shade: ['0101…' per module, one character per sample]}] in module order.
   annualFlags(scene, samples) {
     const obsList = (scene.obs ? [scene.obs] : []).concat(scene.objs || []);
-    const faces = obsList.flatMap(o => this.boxFaces(o.foot, o.h));
+    const faces = obsList.flatMap(o => this.boxFaces(o.foot, o.h)).concat(scene.items.filter(it => it.roof.shape === 'flat' && it.poly.length >= 3).flatMap(it => this.parapet(it).inner));      // a flat roof's parapet shades the racks beside it
     const items = scene.items.filter(it => it.mods.length);
     const racks = items.map(it => this._surfaces(it).some(sf => sf.racks));
     const rows = items.map(it => it.mods.map(() => []));
@@ -319,10 +321,27 @@ const Roof3D = {
     const z = (it.eave != null ? it.eave : this.EAVE_M) + this.PARAPET_M;
     return [{ zAt: () => z, Q: [0, 0, z], n: [0, 0, 1], clip: it.poly, racks: true }];
   },
+  // A polygon moved inward by d (mitred corners; fine for the small offsets used here).
+  inset(P, d) {
+    const n = P.length; let area = 0;
+    for (let i = 0; i < n; i++) { const a = P[i], b = P[(i + 1) % n]; area += a[0] * b[1] - b[0] * a[1]; }
+    const sg = area >= 0 ? 1 : -1, nrm = (a, b) => { const dx = b[0] - a[0], dy = b[1] - a[1], L = Math.hypot(dx, dy) || 1; return [-dy / L * sg, dx / L * sg]; };
+    return P.map((q, i) => {
+      const n1 = nrm(P[(i + n - 1) % n], q), n2 = nrm(q, P[(i + 1) % n]), k = 1 + n1[0] * n2[0] + n1[1] * n2[1];
+      const m = k < 0.2 ? [n1[0], n1[1]] : [(n1[0] + n2[0]) / k, (n1[1] + n2[1]) / k];
+      return [q[0] + m[0] * d, q[1] + m[1] * d];
+    });
+  },
+  // A flat roof's parapet: the deck level, the wall top, the inner outline and the inner wall faces (planar quads, facing inward).
+  parapet(it) {
+    const deck = (it.eave != null ? it.eave : this.EAVE_M) + this.PARAPET_M, top = deck + this.PARAPET_H, Q = this.inset(it.poly, this.PARAPET_T);
+    const inner = Q.map((q, i) => { const r = Q[(i + 1) % Q.length]; return [[q[0], q[1], top], [r[0], r[1], top], [r[0], r[1], deck], [q[0], q[1], deck]]; });
+    return { deck, top, Q, inner };
+  },
   shadows(scene, s) {
     const polys = [];
     const obs = scene.obs, obsList = (obs ? [obs] : []).concat(scene.objs || []);
-    const faces = obsList.flatMap(o => this.boxFaces(o.foot, o.h));
+    const faces = obsList.flatMap(o => this.boxFaces(o.foot, o.h)).concat(scene.items.filter(it => it.roof.shape === 'flat' && it.poly.length >= 3).flatMap(it => this.parapet(it).inner));
     if (obs && s[2] > 0.02) {                                                 // the typed obstruction on the ground
       const pts = obs.foot.map(p => [p[0], p[1], 0]).concat(obs.foot.map(p => this.shadowPoint([p[0], p[1], obs.h], s, [0, 0, 0], [0, 0, 1])).filter(Boolean));
       if (pts.length >= 3) polys.push({ kind: 'ground', pts: this.hull(pts).map(p => [p[0], p[1], 0.01]) });
@@ -778,7 +797,7 @@ const Roof3D = {
       const P = it.poly, e = it.eave, flat = it.roof.shape === 'flat';
       for (let i = 0; i < P.length; i++) {
         const a = P[i], b = P[(i + 1) % P.length], top = [];
-        if (flat) top.push([b[0], b[1], e], [a[0], a[1], e]);
+        if (flat) { const wt = e + this.PARAPET_M + this.PARAPET_H; top.push([b[0], b[1], wt], [a[0], a[1], wt]); }
         else for (let k = 8; k >= 0; k--) { const x = a[0] + (b[0] - a[0]) * k / 8, y = a[1] + (b[1] - a[1]) * k / 8; top.push([x, y, this._roofZ(it, x, y)]); }
         add([[a[0], a[1], 0], [b[0], b[1], 0]].concat(top));
       }
@@ -836,13 +855,26 @@ const Roof3D = {
       for (let i = 0; i < P.length; i++) {                                    // walls, their tops following the roof
         const a = P[i], b = P[(i + 1) % P.length];
         const top = [];
-        if (flat) top.push([b[0], b[1], e], [a[0], a[1], e]);
+        if (flat) { const wt = e + this.PARAPET_M + this.PARAPET_H; top.push([b[0], b[1], wt], [a[0], a[1], wt]); }
         else for (let k = 24; k >= 0; k--) { const x = a[0] + (b[0] - a[0]) * k / 24, y = a[1] + (b[1] - a[1]) * k / 24; top.push([x, y, this._roofZ(it, x, y)]); }
         v.face({ pts: [[a[0], a[1], 0], [b[0], b[1], 0]].concat(top), fill: '#d9d4c7', stroke: '#9a9486', lw: 1, layer: 1, lit: true });
       }
       for (const j of (it.junctions || [])) v.face({ pts: [[j.a[0], j.a[1], j.z0], [j.b[0], j.b[1], j.z0], [j.b[0], j.b[1], e], [j.a[0], j.a[1], e]], fill: '#cfc9bb', stroke: '#9a9486', lw: 1, layer: 1, lit: true });
       if (flat) {                                                              // flat roof and parapet
-        v.face({ pts: P.map(q => [q[0], q[1], e + this.PARAPET_M]), fill: '#c9ccd1', stroke: '#6b7280', lw: 1, layer: 1, pick: 'p:' + r.id + ':0', lit: true });
+        const pp = this.parapet(it);
+        v.face({ pts: P.map(q => [q[0], q[1], pp.deck]), fill: '#c9ccd1', stroke: '#6b7280', lw: 1, layer: 1, pick: 'p:' + r.id + ':0', lit: true });
+        for (let i = 0; i < P.length; i++) {                                    // the parapet: coping on top, inner face down to the deck
+          const j = (i + 1) % P.length, a = P[i], b = P[j], qa = pp.Q[i], qb = pp.Q[j];
+          v.face({ pts: [[a[0], a[1], pp.top], [b[0], b[1], pp.top], [qb[0], qb[1], pp.top], [qa[0], qa[1], pp.top]], fill: '#b9bcc2', stroke: '#6b7280', lw: 0.8, layer: 1, lit: true });
+          v.face({ pts: pp.inner[i], fill: '#cfd2d7', layer: 1, lit: true });
+        }
+        if (it.mods.length <= 1500) for (const m of it.mods) {                  // rack frames: the back and both ends of every module, down to the deck
+          const lo0 = m[0], lo1 = m[1], hi1 = m[2], hi0 = m[3], d = pp.deck, Z = (p) => [p[0], p[1], d];
+          const metal = '#8b949e';
+          v.face({ pts: [hi0, hi1, Z(hi1), Z(hi0)], fill: metal, layer: 1.2, lit: true });
+          v.face({ pts: [lo0, hi0, Z(hi0), Z(lo0)], fill: metal, layer: 1.2, lit: true });
+          v.face({ pts: [lo1, hi1, Z(hi1), Z(lo1)], fill: metal, layer: 1.2, lit: true });
+        }
       } else {
         it.pls.forEach((pl, i) => {
           const on = this.sel && this.sel.roof === r.id && this.sel.plane === i;

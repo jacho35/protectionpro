@@ -92,7 +92,7 @@ const Road3D = {
         <div class="l3-empty" id="r3-empty" hidden></div>
       </div>
       <div class="l3-res" id="r3-res"></div>`;
-    this.view = new View3D(host.querySelector('#r3-view'), { label: 'Rotatable 3D view of the road plan. Drag empty space to orbit, drag an object to move it.', yaw: -30, pitch: 30 });
+    this.view = new View3D(host.querySelector('#r3-view'), { gl: true, label: 'Rotatable 3D view of the road plan. Drag empty space to orbit, drag an object to move it.', yaw: -30, pitch: 30 });
     this.view.onDraw = (v) => this._draw(v);
     this.view.onPick = (id, e) => this._pick(id, e);
     this.view.onClick = (id) => { if (id == null) { this.sel = null; RoadPlan.renderPanel(); this.view.redraw(); } };
