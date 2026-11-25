@@ -19,9 +19,13 @@ services:
       # Title-block template for the plan's DXF layout sheets: a DXF with blocks named …-TB-A0 … -TB-A4 in ./templates
       # (kept out of git). No template ⇒ plain sheets.
       - PP_DXF_TEMPLATES=/app/templates
+      # PVGIS hourly typical years (Solar PV Design), fetched once per site and kept in their own volume so a rebuild does not refetch them.
+      # Disposable: removing the volume only means the first run at each site fetches again.
+      - PVGIS_CACHE_DIR=/app/pvgis_cache
     volumes:
       - db-data:/data
       - ./templates:/app/templates:ro
+      - pvgis-cache:/app/pvgis_cache
     expose:
       - "8000"
     restart: unless-stopped
@@ -45,3 +49,4 @@ services:
 
 volumes:
   db-data:
+  pvgis-cache:

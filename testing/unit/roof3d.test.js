@@ -255,3 +255,39 @@ ok('planeEdges: a valley (planes rise away from the shared edge) is not capped',
   assert.strictEqual(R.planeEdges([A, B]).shared.length, 0);
 });
 console.log(n + ' passed (with edges)');
+
+// ── neighbouring roofs shade ──
+ok('annualFlags: a taller neighbouring roof shades a rack in low sun from its side, not from the other side or in high sun', () => {
+  const tall = { roof: { name: 'A', shape: 'flat' }, poly: rect(6, 6), eave: 9, mods: [] };
+  const low = { roof: { name: 'B', shape: 'flat' }, poly: [[8, 0], [14, 0], [14, 6], [8, 6]], eave: 3, mods: [] };
+  const m = [[9, 2, 3.5], [10, 2, 3.5], [10, 2.4, 3.6], [9, 2.4, 3.6]]; m.ri = 0; m.arr = 'B'; low.mods = [m];
+  const S = [{ azimuth_deg: 270, elevation_deg: 20 }, { azimuth_deg: 90, elevation_deg: 20 }, { azimuth_deg: 270, elevation_deg: 80 }];
+  assert.strictEqual(R.annualFlags({ items: [tall, low], obs: null, objs: [], north: 0 }, S)[0].shade[0], '100');
+  assert.strictEqual(R.annualFlags({ items: [low], obs: null, objs: [], north: 0 }, S)[0].shade[0], '000');       // the same roof alone: nothing in the way
+});
+console.log(n + ' passed (with neighbours)');
+
+// ── the bucketed module test equals the brute-force test ──
+ok('annualFlags (bucketed) gives the same flags as testing every pair, on racks with an object, a wall and a neighbour', () => {
+  const mod = { len: 2, wid: 1 };
+  const poly = [[0, 0], [24, 0], [24, 18], [0, 18]], it = { roof: { name: 'F', shape: 'flat' }, poly, eave: 3, mods: R.layoutRacks(poly, 0, 15, 0.5, mod, 1e9, 3, 3.4) };
+  it.mods.forEach(m => { m.arr = 'F'; });
+  const nb = { roof: { name: 'N', shape: 'flat' }, poly: [[26, 0], [34, 0], [34, 18], [26, 18]], eave: 8, mods: [] };
+  const obs = { foot: [[10, 9], [11.5, 9], [11.5, 10.5], [10, 10.5]], h: 7 };
+  const scene = { items: [it, nb], obs, objs: [], north: 0 };
+  const S = []; for (let az = 60; az <= 300; az += 30) for (const el of [3, 8, 15, 30, 55, 80]) S.push({ azimuth_deg: az, elevation_deg: el });
+  const got = R.annualFlags(scene, S)[0].shade;
+  const faces = R.boxFaces(obs.foot, obs.h).concat(R.parapet(it).inner, R.parapet(nb).inner), occ = R.occluders({ items: [it, nb] });
+  let diff = 0, shadedN = 0;
+  it.mods.forEach((m, k) => {
+    const c = m.reduce((a, p) => [a[0] + p[0] / 4, a[1] + p[1] / 4, a[2] + p[2] / 4], [0, 0, 0]);
+    S.forEach((smp, si) => {
+      const s = R.sunVec(smp.azimuth_deg, smp.elevation_deg);
+      const hit = faces.some(f => R.rayHitsQuad(c, s, f)) || it.mods.some(o => o !== m && R.rayHitsQuad(c, s, o)) || R.hidden(c, s, occ);
+      if (hit) shadedN++;
+      if ((got[k][si] === '1') !== hit) diff++;
+    });
+  });
+  assert.strictEqual(diff, 0); assert(shadedN > 20 && shadedN < it.mods.length * S.length - 20, 'a mix of shaded and lit: ' + shadedN);
+});
+console.log(n + ' passed (with equivalence)');

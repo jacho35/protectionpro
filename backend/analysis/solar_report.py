@@ -4,6 +4,7 @@ DC protection, annual shading, reference check and limits. Built from what the S
 
 User-facing text states results and sources only. The PVGIS attribution is printed whenever PVGIS data was used.
 """
+import base64
 import datetime
 import io
 
@@ -59,6 +60,41 @@ def _n(v, d=0):
         return f"{float(v):,.{d}f}"
     except (TypeError, ValueError):
         return "-"
+
+
+def _pictures(pdf, images):
+    """The roof pictures (data URLs from the 3D view), two to a row under their captions; ones that cannot be read are skipped."""
+    ok = []
+    for im in (images or [])[:6]:
+        try:
+            raw = str(im.get("png", ""))
+            data = base64.b64decode(raw.split(",", 1)[1] if "," in raw else raw)
+            from PIL import Image
+            w, h = Image.open(io.BytesIO(data)).size
+        except Exception:
+            continue
+        ok.append((str(im.get("title", "")), data, w, h))
+    if not ok:
+        return
+    gap = 6
+    pw = (pdf.w - pdf.l_margin - pdf.r_margin - gap) / 2
+    first = True
+    for r in range(0, len(ok), 2):
+        row = ok[r:r + 2]
+        ph = max(pw * h / w for _, _, w, h in row)
+        if pdf.get_y() + ph + 16 > pdf.h - 15:
+            pdf.add_page()
+        if first:
+            _h(pdf, "Roof model")
+            first = False
+        y0 = pdf.get_y()
+        for c, (title, data, w, h) in enumerate(row):
+            x = pdf.l_margin + c * (pw + gap)
+            pdf.set_xy(x, y0)
+            pdf.set_font("Helvetica", "I", 8)
+            pdf.cell(pw, 4, _safe(title))
+            pdf.image(io.BytesIO(data), x=x, y=y0 + 5, w=pw, h=pw * h / w)
+        pdf.set_y(y0 + 5 + ph + 4)
 
 
 def _bars(pdf, values, labels, title):
@@ -131,6 +167,8 @@ def generate_solar_report(project_name, design, project_details=None):
         tot.append(f"DC/AC ratio {res['dc_ac_ratio']}")
     tot.append(f"specific yield {_n(res.get('specific_yield_kwh_kwp'))} kWh/kWp, annual {_n(res.get('annual_kwh'))} kWh")
     _p(pdf, "; ".join(tot) + ".")
+
+    _pictures(pdf, design.get("images"))
 
     _h(pdf, "3. Energy yield")
     months = res.get("months") or []
