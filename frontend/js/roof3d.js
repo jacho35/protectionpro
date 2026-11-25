@@ -75,16 +75,25 @@ const Roof3D = {
 
   // Whole modules on the plane facing +u (portrait: the long side down the slope), from the eave toward the
   // ridge. `g` is `gablePlanes`. Returns up to `max` rectangles of four [x, y, z] corners.
-  layoutModules(poly, az, pitchDeg, setback, mod, max, g) {
+  // Where the whole modules sit in the free space: `al` = 'bottom-right' (the default: eave side, the low-w edge) … 'top-left',
+  // 'center-center'. Seen from outside the plane, ridge up: top = ridge side, bottom = eave side, left = +w, right = -w.
+  // `slack(al)` → [along-the-slope share, across share] of the leftover space to leave on the eave / low-w side (0 .. 1).
+  alignShare(al) {
+    const [v, h] = String(al || 'bottom-right').split('-');
+    return { v: v === 'top' ? 1 : v === 'center' ? 0.5 : 0, h: h === 'left' ? 1 : h === 'center' ? 0.5 : 0 };
+  },
+  layoutModules(poly, az, pitchDeg, setback, mod, max, g, al) {
     const { u, w } = this.axes(az), t = Math.tan(pitchDeg * Math.PI / 180);
     const run = mod.len * Math.cos(pitchDeg * Math.PI / 180), wid = mod.wid, out = [];
     const vs = poly.map(p => p[0] * w[0] + p[1] * w[1]), vmin = Math.min(...vs), vmax = Math.max(...vs);
     const at = (v, s) => [w[0] * v + u[0] * s, w[1] * v + u[1] * s];
     const z = (s) => (g.eave != null ? g.eave : this.EAVE_M) + t * (g.smax - s) + 0.04;
+    const sh = this.alignShare(al), rowSpace = g.smax - setback - g.ridge, colSpace = vmax - vmin - 2 * setback;
+    const sOff = sh.v * (rowSpace - Math.floor(rowSpace / run + 1e-9) * run), vOff = sh.h * (colSpace - Math.floor(colSpace / wid + 1e-9) * wid);
     for (let k = 0; k < 400; k++) {
-      const s0 = g.smax - setback - k * run, s1 = s0 - run;      // eave side, ridge side
+      const s0 = g.smax - setback - sOff - k * run, s1 = s0 - run;      // eave side, ridge side
       if (s1 < g.ridge - 1e-9) break;
-      for (let v = vmin + setback; v + wid <= vmax - setback + 1e-9; v += wid) {
+      for (let v = vmin + setback + vOff; v + wid <= vmax - setback + 1e-9; v += wid) {
         const cs = [at(v, s0), at(v + wid, s0), at(v + wid, s1), at(v, s1)];
         if (!cs.every(p => this._usable(p, poly, setback - 1e-6))) continue;
         out.push(cs.map(p => [p[0], p[1], z(p[0] * u[0] + p[1] * u[1])]));
@@ -96,14 +105,17 @@ const Roof3D = {
 
   // Tilted rows on a flat roof: from the +u edge, one row every `pitch` m toward -u. Each row is a run of
   // modules side by side; returns {rect: four corners, ...} per module with the high edge toward -u.
-  layoutRacks(poly, az, tiltDeg, setback, mod, max, pitch, zBase) {
+  layoutRacks(poly, az, tiltDeg, setback, mod, max, pitch, zBase, al) {
     const { u, w } = this.axes(az), b = tiltDeg * Math.PI / 180;
     const ss = poly.map(p => p[0] * u[0] + p[1] * u[1]), smax = Math.max(...ss), smin = Math.min(...ss);
     const vs = poly.map(p => p[0] * w[0] + p[1] * w[1]), vmin = Math.min(...vs), vmax = Math.max(...vs);
     const at = (v, s) => [w[0] * v + u[0] * s, w[1] * v + u[1] * s];
     const run = mod.len * Math.cos(b), rise = mod.len * Math.sin(b), out = [];
-    for (let s0 = smax - setback; s0 - run >= smin + setback - 1e-9; s0 -= pitch) {
-      for (let v = vmin + setback; v + mod.wid <= vmax - setback + 1e-9; v += mod.wid) {
+    const sh = this.alignShare(al), rowSpace = smax - smin - 2 * setback, colSpace = vmax - vmin - 2 * setback;
+    const nRows = rowSpace >= run - 1e-9 ? Math.floor((rowSpace - run) / pitch + 1e-9) + 1 : 0;
+    const sOff = nRows ? sh.v * (rowSpace - ((nRows - 1) * pitch + run)) : 0, vOff = sh.h * (colSpace - Math.floor(colSpace / mod.wid + 1e-9) * mod.wid);
+    for (let s0 = smax - setback - sOff; s0 - run >= smin + setback - 1e-9; s0 -= pitch) {
+      for (let v = vmin + setback + vOff; v + mod.wid <= vmax - setback + 1e-9; v += mod.wid) {
         const lo = [at(v, s0), at(v + mod.wid, s0)], hi = [at(v, s0 - run), at(v + mod.wid, s0 - run)];
         if (![...lo, ...hi].every(p => this._usable(p, poly, setback - 1e-6))) continue;
         out.push([[lo[0][0], lo[0][1], zBase + 0.1], [lo[1][0], lo[1][1], zBase + 0.1],
@@ -266,7 +278,7 @@ const Roof3D = {
   // Build the roofs as drawable data. `chosen` = modules per roof name from the last size calculation (or null).
   async build() {
     const f = PlanEngine.factor();
-    const roofs = PlanSolar.roofs().filter(r => r.use !== false && r.points && r.points.length >= 3);
+    const roofs = PlanSolar.roofs().filter(r => r.points && r.points.length >= 3);
     if (!f || !roofs.length) return { items: [], obs: null, objs: [], north: PlanSolar.northAngle(), total: 0, empty: true, uncalibrated: !f };
     const c = Solar.cfg(), p = Solar.panel(c), res = Solar._res, chosen = {};
     if (res && res.arrays) for (const a of res.arrays) chosen[a.name] = a.modules;
@@ -274,24 +286,27 @@ const Roof3D = {
     for (const r of roofs) {
       const base = this.toMetres(r.points, f), paz = PlanSolar.planAz(r), eave = RoofPlanes.eave(r);
       const m = RoofPlanes.model(base, r, paz, north), pls = m.planes, use = RoofPlanes.used(pls, r), poly = m.foot;
-      const item = { roof: r, poly, base, mods: [], planes: null, pls, use, eave, junctions: m.junctions };
-      const max = chosen[r.name] != null ? chosen[r.name] : 1e9;
+      const item = { roof: r, poly, base, mods: [], planes: null, pls, use, eave, junctions: m.junctions, unused: r.use === false };   // a roof not in the calculation is still drawn, just without modules
+      const cap = PlanSolar.maxModules(r), max = Math.min(cap, chosen[r.name] != null ? chosen[r.name] : 1e9);   // the roof's own maximum panels caps every layout
       const setback = Math.max(0, +r.setback || 0);
-      if (PlanSolar.usesPlanes(r)) {
+      if (item.unused) {
+        if (r.shape === 'gable') item.planes = this.gablePlanes(poly, paz, +r.pitch, eave);
+      } else if (PlanSolar.usesPlanes(r)) {
+        let left = cap;                                                     // what the roof's maximum still allows over all its planes
         for (const gr of RoofPlanes.groups(pls)) {                          // a plane's pieces share the count the calculation chose for it
           if (!use[gr.idx[0]]) continue;
           let rem = chosen[r.name + ' · ' + gr.name] != null ? chosen[r.name + ' · ' + gr.name] : 1e9;
-          for (const i of gr.idx) { if (rem <= 0) break; const ms = RoofPlanes.layoutPlane(pls[i], poly, setback, p, rem); item.mods.push(...ms); rem -= ms.length; }
+          for (const i of gr.idx) { rem = Math.min(rem, left); if (rem <= 0) break; const ms = RoofPlanes.layoutPlane(pls[i], poly, setback, p, rem, r.modAlign); item.mods.push(...ms); rem -= ms.length; left -= ms.length; }
         }
       } else if (r.shape === 'gable') {
         const g = this.gablePlanes(poly, paz, +r.pitch, eave);
         item.planes = g;
-        item.mods = this.layoutModules(poly, paz, +r.pitch, setback, p, max, g);
+        item.mods = this.layoutModules(poly, paz, +r.pitch, setback, p, max, g, r.modAlign);
       } else {
         const rs = await API.request('/analysis/solar-row-spacing', 'POST', {
           lat: Solar._loc(c).lat, tilt_deg: +r.tilt, module_length_m: p.len, hour_angle_deg: +c.hour });
         item.rowPitch = rs.pitch_m;
-        item.mods = this.layoutRacks(poly, paz, +r.tilt, setback, p, max, rs.pitch_m, eave + this.PARAPET_M);
+        item.mods = this.layoutRacks(poly, paz, +r.tilt, setback, p, max, rs.pitch_m, eave + this.PARAPET_M, r.modAlign);
       }
       for (const o of (r.objects || [])) {                                  // vents, chimneys...: boxes standing on the roof
         const cx = o.x * f, cy = -o.y * f, z0 = this.deckZ(item, cx, cy);
@@ -359,7 +374,7 @@ const Roof3D = {
   _message() {
     const sc = this.scene; if (!sc) return;
     if (sc.empty) { this._fire('onMessage', sc.uncalibrated ? 'Calibrate the plan scale first so the roofs have a size.' : 'No roofs yet. Pick Footprint and click the corners of the building, on the plan or on the ground here.'); return; }
-    let txt = sc.total + ' modules on ' + sc.items.length + ' roof' + (sc.items.length === 1 ? '' : 's')
+    let txt = sc.total + ' modules on ' + sc.items.filter(i => !i.unused).length + ' roof' + (sc.items.filter(i => !i.unused).length === 1 ? '' : 's')
       + (Solar._res && Solar._res.arrays ? ' (the count from your last calculation).' : ' (all that fit).');
     if (sc.sun && this.shadePreview) {
       const shaded = sc.items.reduce((n, it) => n + (it.shaded || []).filter(Boolean).length, 0);
@@ -367,7 +382,9 @@ const Roof3D = {
     }
     this._fire('onMessage', txt);
   },
-  hourLabel() { return ({ '-45': '09:00', '-30': '10:00', '0': 'noon', '30': '14:00', '45': '15:00' })[String(this.hourAngle)] || 'the chosen hour'; },
+  // Hour angle (15° per hour, 0 = solar noon) as a clock time, and back.
+  hourText(ha) { const m = Math.round((12 + (+ha || 0) / 15) * 60); return String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0'); },
+  hourLabel() { return this.hourText(this.hourAngle); },
 
   // Show the roofs in `host`. `hooks`: onPanel(), onMessage(text), onTool().
   async mount(host, hooks) {

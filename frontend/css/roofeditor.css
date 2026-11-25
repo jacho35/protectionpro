@@ -53,3 +53,9 @@
   .re-view { flex: 1 1 100%; min-height: 320px; }
   .re-panel { max-width: none; width: auto; max-height: none; flex: 1 1 100%; border-left: 0; border-top: 1px solid var(--border, #d9d7d0); }
 }
+
+.re-grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; max-width: 200px; }
+.re-grid3 .re-btn { min-height: 40px; padding: 0; }
+#re-hour { width: 110px; vertical-align: middle; }
+#re-hour-t { min-width: 3em; font-variant-numeric: tabular-nums; }
+.re-all > summary { cursor: pointer; }

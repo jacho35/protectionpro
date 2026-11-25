@@ -241,3 +241,33 @@ def test_sun_position_winter_solstice():
     assert 0 < morning["azimuth_deg"] < 90 and 270 < afternoon["azimuth_deg"] < 360       # east of north, west of north
     north = sp.sun_position(40, 0)                                                         # northern hemisphere: sun is south
     assert north["azimuth_deg"] == pytest.approx(180, abs=0.5)
+
+
+def test_array_own_obstructions_shade_only_that_array():
+    wall = [{"height_m": 4, "distance_m": 6, "bearing_deg": 0, "width_m": 20}]
+    arrays = [{"name": "A", "area_m2": 40, "tilt_deg": 25, "azimuth_deg": 0},
+              {"name": "B", "area_m2": 40, "tilt_deg": 25, "azimuth_deg": 0}]
+    base = {"location": "Pretoria", "mode": "roof", "arrays": arrays}
+    clear = sp.run_solar_size(base)
+    shaded = sp.run_solar_size(dict(base, arrays=[dict(arrays[0], obstructions=wall), arrays[1]]))
+    both = sp.run_solar_size(dict(base, obstructions=wall))
+    a_clear, b_clear = [p["annual_kwh"] for p in clear["arrays"]]
+    a_sh, b_sh = [p["annual_kwh"] for p in shaded["arrays"]]
+    assert a_sh < a_clear and b_sh == b_clear          # only array A sees the wall
+    assert shaded["annual_kwh"] < clear["annual_kwh"]
+    assert both["annual_kwh"] < shaded["annual_kwh"]    # request-level obstruction hits both arrays
+
+
+def test_roof_max_modules_caps_the_roof_and_the_planes_share_it():
+    arrays = [{"name": "R · A", "group": "R", "area_m2": 60, "tilt_deg": 25, "azimuth_deg": 0},
+              {"name": "R · B", "group": "R", "area_m2": 30, "tilt_deg": 25, "azimuth_deg": 90},
+              {"name": "S", "area_m2": 40, "tilt_deg": 25, "azimuth_deg": 0}]
+    base = {"location": "Pretoria", "mode": "roof", "arrays": arrays}
+    free = sp.run_solar_size(base)
+    capped = sp.run_solar_size(dict(base, arrays=[dict(a, max_modules=10) if a.get("group") else a for a in arrays]))
+    r = [p for p in capped["arrays"] if p["name"].startswith("R")]
+    assert sum(p["modules"] for p in r) == 10 and capped["modules_roof"] == 10 + free["arrays"][2]["modules"]
+    assert r[0]["modules"] > r[1]["modules"]                         # shared in proportion to each plane's capacity
+    assert capped["arrays"][2]["modules"] == free["arrays"][2]["modules"]   # the other roof is untouched
+    big = sp.run_solar_size(dict(base, arrays=[dict(a, max_modules=10000) for a in arrays]))
+    assert big["modules"] == free["modules"]                          # a limit above the capacity changes nothing

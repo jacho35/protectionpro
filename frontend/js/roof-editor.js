@@ -17,7 +17,7 @@ const RoofEditor = {
   on: false,
   TOOLS: [
     ['select', 'Select', 'V', 'M5 3 L5 18 L9.5 14 L13 21 L15.5 20 L12 13 L18 13 Z',
-      'Click a roof, plane, edge or object. Shift-click an edge adds a corner, Alt-click a corner removes it, double-click does either. Drag a corner to move it.', 'Length'],
+      'Click a roof, plane, edge or object. Shift-click an edge adds a corner, Alt-click a corner removes it, double-click does either. Drag a corner to move it. Drag the body of a roof to move the whole roof; Shift-click adds more roofs, or drag a box round several, and they move together without changing shape.', 'Length'],
     ['footprint', 'Footprint', 'D', 'M4 18 L4 7 L12 4 L20 9 L18 19 Z',
       'Click corners on the plan or on the ground in 3D. Type a length and press Enter to place the next corner exactly. Enter closes the footprint, Backspace takes a corner back.', 'Length'],
     ['pushpull', 'Push/pull', 'P', 'M4 16 L12 20 L20 16 L12 12 Z M12 12 V3 M9 6 L12 3 L15 6',
@@ -52,7 +52,7 @@ const RoofEditor = {
     dock.innerHTML = `<div class="re-head">
         <div class="re-title"><b id="re-name">3D</b><span>orbit: drag · pan: right-drag · zoom: wheel</span></div>
         <div class="re-views" role="group" aria-label="Named views">${[['top', 'Top'], ['north', 'From north'], ['east', 'From east'], ['iso', 'Iso']].map(v => `<button type="button" class="re-btn" data-re-view="${v[0]}">${v[1]}</button>`).join('')}</div>
-        <label class="re-field">Sun <select id="re-hour"><option value="-45">09:00</option><option value="-30">10:00</option><option value="0" selected>Noon</option><option value="30">14:00</option><option value="45">15:00</option></select></label>
+        <label class="re-field">Sun <input type="range" id="re-hour" min="7" max="17" step="0.25" value="${12 + (Roof3D.hourAngle || 0) / 15}" aria-label="Time of day, winter solstice"> <output id="re-hour-t" for="re-hour">${Roof3D.hourText(Roof3D.hourAngle)}</output></label>
         <button type="button" class="re-btn" id="re-shade" aria-pressed="true">Shade preview</button>
         <button type="button" class="re-btn re-primary" id="re-use">Use in Solar PV Design</button>
         <button type="button" class="re-btn" id="re-close" aria-label="Close the roof editor" title="Close the roof editor">✕</button>
@@ -70,6 +70,7 @@ const RoofEditor = {
     tools.addEventListener('click', (e) => { const b = e.target.closest('[data-re-tool]'); if (b) this.setTool(b.dataset.reTool); });
     dock.addEventListener('click', (e) => this._onClick(e));
     dock.addEventListener('change', (e) => this._onChange(e));
+    dock.addEventListener('input', (e) => { if (e.target.id === 're-hour') this._onHour(e.target); });
     status.addEventListener('click', (e) => { const b = e.target.closest('[data-re-axis]'); if (b) this.setAxis(b.dataset.reAxis); });
     status.querySelector('#re-vcb').addEventListener('keydown', (e) => {
       if (e.key === 'Enter') { const v = e.target.value; if (Roof3D.applyTyped(v)) { e.target.value = ''; } e.preventDefault(); e.stopPropagation(); }
@@ -109,6 +110,7 @@ const RoofEditor = {
 
   // ── Tools ──
   setTool(id) {
+    this.aligning = false;
     const def = this._def(id);
     Roof3D.setTool(id);
     if (id === 'select') PlanTools.set('select');
@@ -136,6 +138,7 @@ const RoofEditor = {
   },
   _onClick(e) {
     const t = e.target;
+    const sm = t.closest('summary'); if (sm && sm.closest('.re-all')) this._gOpen = !sm.parentElement.open;
     const v = t.closest('[data-re-view]'); if (v) { Roof3D.setView(v.dataset.reView); this._syncViews(); return; }
     if (t.closest('#re-close')) { this.close(); return; }
     if (t.closest('#re-use')) { if (typeof Solar !== 'undefined') Solar.open(); return; }
@@ -147,11 +150,19 @@ const RoofEditor = {
     const sh = t.closest('[data-re-shape]'); if (sh && roof) { this._edit(roof, { shape: sh.dataset.reShape }); return; }
     const ln = t.closest('[data-re-lean]'); if (ln && roof) { const L = this.LEANS.find(x => x[0] === ln.dataset.reLean); this._edit(roof, { lean: L && L[2] ? Object.assign({}, L[2]) : null }); return; }
     const rs = t.closest('[data-re-roof]'); if (rs) { Roof3D.sel = { roof: rs.dataset.reRoof }; this.renderPanel(); if (Roof3D.view) Roof3D.view.redraw(); return; }
+    const gm = t.closest('[data-re-gmodalign]'); if (gm) { for (const r of PlanSolar.roofs()) PlanSolar.update(r.id, { modAlign: gm.dataset.reGmodalign }); PlanSolar._changed(); Roof3D.refresh(); return; }
+    const ma = t.closest('[data-re-modalign]'); if (ma && roof) { this._edit(roof, { modAlign: ma.dataset.reModalign }); return; }
+    const al = t.closest('[data-re-align]'); if (al && roof) { this.aligning = true; PlanTools.set('roofedit'); this.renderPanel(); return; }
     const dr = t.closest('[data-re-delroof]'); if (dr) { PlanSolar.removeRoof(dr.dataset.reDelroof); Roof3D.sel = null; Roof3D.refresh(); return; }
   },
   _onChange(e) {
     const el = e.target;
-    if (el.id === 're-hour') { Roof3D.setHour(el.value).catch(() => {}); return; }
+    if (el.id === 're-hour') { this._onHour(el); return; }
+    if (el.dataset.reG) {                                                       // the All roofs section
+      const g = this.GLOBAL.find(x => x[0] === el.dataset.reG), n = parseFloat(el.value); if (!g || !Number.isFinite(n)) return;
+      for (const r of PlanSolar.roofs()) if (g[3](r)) PlanSolar.update(r.id, { [g[0]]: g[0] === 'azimuth' ? ((n % 360) + 360) % 360 : Math.max(0, n) });
+      PlanSolar._changed(); Roof3D.refresh(); return;
+    }
     const k = el.dataset.reF; if (!k) return;
     const roof = this._selRoof(); if (!roof && k !== 'north') return;
     const n = parseFloat(el.value);
@@ -161,13 +172,43 @@ const RoofEditor = {
     if (k.startsWith('lean.')) { const L = Object.assign({ side: 'front', kind: 'under', depth: 3, pitch: 8 }, roof.lean || {}); L[k.slice(5)] = el.type === 'number' ? n : el.value; this._edit(roof, { lean: L }); return; }
     if (k.startsWith('obj.')) { const o = (roof.objects || []).find(x => x.id === el.dataset.reI); if (o) { o[k.slice(4)] = n; PlanSolar._changed(); Roof3D.refresh(); } return; }
     if (k === 'name') { this._edit(roof, { name: el.value }); return; }
+    if (k === 'maxModules') { this._edit(roof, { maxModules: Number.isFinite(n) && n > 0 ? Math.floor(n) : null }); return; }
     this._edit(roof, { [k]: n });
+  },
+  // All roofs: one place to set the module settings for every roof at once (a field shows blank, "mixed", when the roofs differ).
+  GLOBAL: [['tilt', 'Rack tilt (°)', 1, r => r.shape === 'flat'], ['azimuth', 'Azimuth, true (°)', 1, r => !['wings', 'pyramid'].includes(r.shape)],
+    ['pitch', 'Pitch (°)', 0.1, r => r.shape !== 'flat'], ['setback', 'Edge setback (m)', 0.05, () => true], ['overhang', 'Overhang (m)', 0.05, r => ['gable', 'hip', 'mono'].includes(r.shape)], ['maxModules', 'Max panels per roof', 1, () => true]],
+  _globalSection(btn) {
+    const roofs = PlanSolar.roofs().filter(r => r.points && r.points.length >= 3); if (roofs.length < 1) return '';
+    const open = this._gOpen !== false, esc = this._esc;
+    const row = ([k, label, step, ok]) => {
+      const rs = roofs.filter(ok); if (!rs.length) return '';
+      const vals = new Set(rs.map(r => Math.round((+r[k] || 0) * 1000) / 1000)), one = vals.size === 1 ? ([...vals][0] || (k === 'maxModules' ? '' : 0)) : '';
+      return `<label class="re-row"><span>${label}</span><input type="number" step="${step}" value="${esc(one)}" placeholder="mixed" data-re-g="${k}"></label>`;
+    };
+    const als = new Set(roofs.map(r => r.modAlign || 'bottom-right')), cur = als.size === 1 ? [...als][0] : '';
+    const grid = ['top', 'center', 'bottom'].map(v => ['left', 'center', 'right'].map(hh => this._alignBtn({ modAlign: cur || 'none' }, v, hh, btn).replace('data-re-modalign', 'data-re-gmodalign')).join('')).join('');
+    return `<details class="re-sec re-all"${open ? ' open' : ''}><summary class="re-lab">All roofs (${roofs.length})</summary>${this.GLOBAL.map(row).join('')}
+      <div class="re-lab" style="margin-top:8px">Place modules in every roof</div><div class="re-grid3" role="group" aria-label="Where the modules sit on every roof">${grid}</div>
+      <div class="re-note">A value typed here is set on every roof it applies to (rack tilt on flat roofs, pitch and overhang on pitched ones). Blank means the roofs differ.</div></details>`;
+  },
+  _alignBtn(roof, v, h, btn) {
+    const k = v + '-' + h, name = (v === 'center' && h === 'center') ? 'Centre' : [v === 'top' ? 'Top (ridge)' : v === 'bottom' ? 'Bottom (eave)' : '', h === 'center' ? '' : h === 'left' ? 'left' : 'right'].filter(Boolean).join(', ');
+    return btn((roof.modAlign || 'bottom-right') === k, `data-re-modalign="${k}" title="${name}" aria-label="${name}"`, ({ top: '↑', center: '·', bottom: '↓' })[v] + ({ left: '←', center: '', right: '→' })[h]);
+  },
+  // The time-of-day slider: the sun and shadows follow it (one request at a time; the latest value wins).
+  _onHour(el) {
+    const ha = (parseFloat(el.value) - 12) * 15, t = document.getElementById('re-hour-t'); if (t) t.textContent = Roof3D.hourText(ha);
+    this._hourWant = ha; if (this._hourBusy) return;
+    this._hourBusy = true;
+    const go = () => { const w = this._hourWant; return Roof3D.setHour(w).catch(() => {}).then(() => { if (this._hourWant !== w) return go(); this._hourBusy = false; }); };
+    go();
   },
   _edit(roof, patch) { PlanSolar.update(roof.id, patch); PlanSolar._changed(); Roof3D.refresh(); },
 
   // ── Plan side ──
   _sig() {
-    return JSON.stringify([PlanSolar.northAngle(), PlanSolar.roofs().map(r => [r.id, r.name, r.shape, r.points, r.pitch, r.tilt, r.azimuth, r.setback, r.eave, r.apex, r.overhang, r.lean, r.planeUse, r.use, r.objects])]);
+    return JSON.stringify([PlanSolar.northAngle(), PlanSolar.roofs().map(r => [r.id, r.name, r.shape, r.points, r.pitch, r.tilt, r.azimuth, r.setback, r.eave, r.apex, r.overhang, r.lean, r.planeUse, r.use, r.objects, r.modAlign, r.maxModules])]);
   },
   // Called from every plan redraw: a roof changed on the plan (a corner dragged, undo, a new one drawn) updates the 3D view.
   syncFromPlan() {
@@ -204,6 +245,11 @@ const RoofEditor = {
   },
   // A click on the plan with a 3D tool: pick the roof (or object) under it, or drop the chosen object on it.
   planDown(pt) {
+    if (this.aligning) {                                                       // Align to edge: the clicked roof edge becomes the eave side
+      const hit = PlanSolar.edgeAt(pt, PlanEngine.view ? PlanEngine.view.zoom : 1), roof = this._selRoof();
+      if (hit && (!roof || hit.roof.id === roof.id)) { PlanSolar.alignToEdge(hit.roof, hit.i); PlanSolar._changed(); this.aligning = false; Roof3D.sel = { roof: hit.roof.id }; this.setTool('select'); Roof3D.refresh(); }
+      return;
+    }
     const f = PlanEngine.factor(); if (!f) return;
     const zoom = PlanEngine.view ? PlanEngine.view.zoom : 1, tol = 8 / zoom;
     for (const r of PlanSolar.roofs()) for (const o of (r.objects || [])) {
@@ -232,6 +278,7 @@ const RoofEditor = {
     const types = Object.entries(PlanSolar.OBJECT_TYPES);
     if (Roof3D.tool === 'object') h += `<div class="re-sec"><div class="re-lab">Pick, then click a roof plane</div><div class="re-chips" role="group" aria-label="Object to place">${types.map(([k, t]) => btn(Roof3D.addType === k, `data-re-add="${k}"`, esc(t.label))).join('')}</div></div>`;
     h += `<div class="re-sec"><div class="re-lab">Site orientation</div>${num('north', 'True north, clockwise from plan up (°)', PlanSolar.northAngle(), 1)}<div class="re-note">Plane azimuths and the solar calculation use true north, so set this when the site plan is drawn at an angle.</div></div>`;
+    h += this._globalSection(btn);
     if (sc && sc.items.length > 1) h += `<div class="re-sec"><div class="re-lab">Roofs</div><div class="re-chips">${sc.items.map(i => btn(roof && i.roof.id === roof.id, `data-re-roof="${esc(i.roof.id)}"`, esc(i.roof.name))).join('')}</div></div>`;
     if (!roof || !it) {
       h += `<div class="re-note">${sc && sc.empty ? 'No roofs yet. Pick <b>Footprint</b> and click the corners of the building.' : 'Click a roof on the plan or in 3D.'}</div>`;
@@ -243,7 +290,11 @@ const RoofEditor = {
     const monoHigh = roof.shape === 'mono' ? (() => { const { u } = Roof3D.axes(PlanSolar.planAz(roof)), ss = it.base.map(q => q[0] * u[0] + q[1] * u[1]); return eave + Math.tan((+roof.pitch || 0) * Math.PI / 180) * (Math.max(...ss) - Math.min(...ss)); })() : 0;
     h += `<div class="re-sec"><div class="re-lab">Roof planes</div><div class="re-list">${it.pls.length && !isFlat ? RoofPlanes.groups(it.pls).map(gr => { const pl = it.pls[gr.idx[0]], sel = Roof3D.sel && gr.idx.includes(Roof3D.sel.plane);
         return `<label class="re-li${sel ? ' sel' : ''}"><span><input type="checkbox" data-re-f="use" data-re-i="${esc(pl.name)}" ${it.use[gr.idx[0]] ? 'checked' : ''} aria-label="Modules on ${esc(pl.name)}"> ${esc(pl.name)}</span><span>${pl.pitch.toFixed(1)}° · az ${Math.round(pl.trueAz)}°</span></label>`; }).join('') : '<div class="re-li"><span>Flat deck</span><span>racks at ' + (+roof.tilt) + '°</span></div>'}</div></div>`;
-    h += `<div class="re-sec"><div class="re-lab">${esc(roof.name)}</div>${txt('name', 'Name', roof.name)}
+    h += `<div class="re-sec"><div class="re-lab">Align modules</div>${btn(!!this.aligning, 'data-re-align="1"', this.aligning ? 'Click an edge of the roof on the plan…' : 'Align to edge')}<div class="re-note">Click the roof edge the modules should run along (the eave side). No angle needed.</div>
+      <div class="re-lab" style="margin-top:8px">Place modules in the roof</div>
+      <div class="re-grid3" role="group" aria-label="Where the modules sit on the roof, seen from outside with the ridge at the top">${['top', 'center', 'bottom'].map(v => ['left', 'center', 'right'].map(hh => this._alignBtn(roof, v, hh, btn)).join('')).join('')}</div>
+      <div class="re-note">Top is the ridge side and left / right are as seen from outside the roof. The modules are packed into that corner, or centred.</div></div>
+    <div class="re-sec"><div class="re-lab">${esc(roof.name)}</div>${txt('name', 'Name', roof.name)}
       <div class="re-seg" role="group" aria-label="Roof type">${shapeBtns}</div><div class="re-seg" role="group" aria-label="More roof types">${moreShapes}</div>
       ${num('eave', 'Eave height (m)', eave, 0.05)}
       ${isFlat ? num('tilt', 'Rack tilt (°)', +roof.tilt, 1) : roof.shape === 'pyramid' ? num('apex', 'Apex height above eave (m)', +roof.apex || 1.8, 0.05) : roof.shape === 'wings' ? num('pitch', 'Pitch (°)', +roof.pitch, 0.1) : num('pitch', 'Pitch (°)', +roof.pitch, 0.1)}
@@ -251,6 +302,7 @@ const RoofEditor = {
       ${roof.shape === 'wings' || roof.shape === 'pyramid' ? '' : num('azimuth', 'Azimuth, true (°)', +roof.azimuth, 1)}
       ${['gable', 'hip', 'mono'].includes(roof.shape) ? num('overhang', 'Overhang (m)', +roof.overhang || 0, 0.05) : ''}
       ${num('setback', 'Edge setback (m)', +roof.setback, 0.05)}
+      <label class="re-row"><span>Max panels (blank = no limit)</span><input type="number" min="0" step="1" value="${esc(PlanSolar.maxModules(roof) === Infinity ? '' : PlanSolar.maxModules(roof))}" placeholder="no limit" data-re-f="maxModules"></label>
       ${roof.shape === 'wings' ? '<div class="re-note">A cross-gable needs an L, T or U outline with straight, axis-aligned edges. The longest wing is the main one; the others stop at its ridge.</div>' : ''}</div>`;
     if (!isFlat && roof.shape !== 'wings') {
       const L = roof.lean && +roof.lean.depth > 0 ? roof.lean : null, cur = !L ? 'none' : (this.LEANS.find(x => x[2] && x[2].side === L.side && x[2].kind === L.kind && Math.abs((+x[2].pitch || 0) - (+L.pitch || 0)) < 0.5) || ['none'])[0];
@@ -276,7 +328,7 @@ if (typeof PlanTools !== 'undefined') PlanTools.register({
   onDown(pt) { if (PlanSolar.northHit(pt)) { this._north = true; PlanSolar.dragNorth(pt); return; } RoofEditor.planDown(pt); },
   onMove(pt) { if (this._north) PlanSolar.dragNorth(pt); },
   onUp() { if (this._north) { this._north = false; PlanMarkup.snapshot(); PlanMarkup.markDirty(); RoofEditor.renderPanel(); } },
-  onKey(e) { if (e.key === 'Escape') { Roof3D.sel = null; RoofEditor.renderPanel(); PlanEngine.requestDraw({ fg: true }); return true; } return false; },
+  onKey(e) { if (e.key === 'Escape') { RoofEditor.aligning = false; Roof3D.sel = null; RoofEditor.renderPanel(); PlanEngine.requestDraw({ fg: true }); return true; } return false; },
 });
 
 if (typeof module !== 'undefined' && module.exports) module.exports = RoofEditor;

@@ -416,7 +416,9 @@ const Solar = {
             lat: this._loc(c).lat, tilt_deg: +r.tilt, module_length_m: p.len, hour_angle_deg: +c.hour });
           gcr = rs.ground_cover_ratio;
         }
+        const first = arrays.length, nb = PlanSolar.neighbourObstructions(r);      // the other roofs, used or not, may shade this one
         arrays.push(...PlanSolar.arrays([r], gcr, packing));
+        if (nb.length) for (const a of arrays.slice(first)) a.obstructions = nb;
       }
       if (!arrays.length) throw new Error('The roofs have no usable area. Calibrate the plan scale and check the setback.');
       this._res = await API.request('/analysis/solar-size', 'POST', {

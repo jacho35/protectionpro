@@ -69,4 +69,59 @@ ok('north angle: stored, wrapped, and added to a roof azimuth for plan geometry'
   S.setNorthAngle('x'); assert.strictEqual(S.northAngle(), 0);
   assert.deepStrictEqual(S.arrays([r], 0.8, 0.8).map(a => a.azimuth_deg), [10], 'the engine still gets the true azimuth');
 });
+ok('align to edge: the roof faces out of the clicked edge, less the north angle', () => {
+  S.setNorthAngle(0);
+  const r = S.addRoof([{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 50 }, { x: 0, y: 50 }]);
+  assert.strictEqual(S.alignToEdge(r, 0), 0, 'top edge faces plan-up');
+  assert.strictEqual(S.alignToEdge(r, 1), 90, 'right edge');
+  assert.strictEqual(S.alignToEdge(r, 2), 180, 'bottom edge');
+  assert.strictEqual(S.alignToEdge(r, 3), 270, 'left edge');
+  assert.strictEqual(r.azimuth, 270);
+  S.setNorthAngle(30); assert.strictEqual(S.alignToEdge(r, 2), 150, 'true azimuth = plan bearing - north angle');
+  assert.strictEqual(S.planAz(r), 180, 'the plan bearing is still square to the edge');
+  S.setNorthAngle(0);
+});
+ok('other roofs as obstructions: a higher neighbour to the north shades, a lower or overlapping one does not', () => {
+  S.setNorthAngle(0);
+  global.Roof3D = { PARAPET_M: 0.4, toMetres: (pts, f) => pts.map(p => [p.x * f, -p.y * f]) };
+  global.RoofPlanes = { eave: (r) => (r.eave != null ? r.eave : 3), model: (base, r) => ({ planes: [{ poly: base, zAt: () => (r.eave != null ? r.eave : 3) + (r.rise || 0) }] }) };
+  global.PlanEngine.factor = () => 1;
+  const st = S._store(); st.roofs = [];
+  const a = S.addRoof([{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }]); a.shape = 'flat'; a.eave = 3; a.rise = 0;
+  const tall = S.addRoof([{ x: -5, y: -26 }, { x: 15, y: -26 }, { x: 15, y: -16 }, { x: -5, y: -16 }]); tall.shape = 'flat'; tall.eave = 9; tall.rise = 0; tall.use = false;   // stands north of A (plan up)
+  const low = S.addRoof([{ x: 20, y: 0 }, { x: 30, y: 0 }, { x: 30, y: 10 }, { x: 20, y: 10 }]); low.shape = 'flat'; low.eave = 3; low.rise = 0;
+  const ob = S.neighbourObstructions(a);
+  assert.strictEqual(ob.length, 1, 'only the higher roof counts, used or not');
+  assert.strictEqual(ob[0].name, tall.name);
+  assert(Math.abs(ob[0].bearing_deg - 0) < 1 || Math.abs(ob[0].bearing_deg - 360) < 1, 'due north: ' + ob[0].bearing_deg);
+  assert(ob[0].height_m > 5 && ob[0].distance_m > 10 && ob[0].width_m > 15, JSON.stringify(ob[0]));
+  S.setNorthAngle(90);
+  assert(Math.abs(S.neighbourObstructions(a)[0].bearing_deg - 270) < 1, 'plan bearing 0 with north 90 is true bearing 270');
+  S.setNorthAngle(0);
+});
+ok('picked roofs move as they are, with their objects; delete removes the picked ones', () => {
+  const st = S._store(); st.roofs = [];
+  const a = S.addRoof(rect(240, 160)), b = S.addRoof(rect(100, 100)), c = S.addRoof(rect(50, 50));
+  S.addObject(a, 'vent', { x: 20, y: 30 });
+  const before = JSON.stringify([a.points, b.points, c.points]);
+  S.selectRoofs([a.id]); S.selectRoofs([b.id], true);
+  S.moveSelected(10, -5);
+  assert.deepStrictEqual(a.points[2], { x: 250, y: 155 }); assert.deepStrictEqual(b.points[0], { x: 10, y: -5 });
+  assert.deepStrictEqual(c.points, rect(50, 50), 'an unpicked roof stays');
+  assert.deepStrictEqual([a.objects[0].x, a.objects[0].y], [30, 25], 'its objects go with it');
+  S.moveSelected(-10, 5);
+  assert.strictEqual(JSON.stringify([a.points, b.points, c.points]), before, 'moving back restores every corner');
+  S.selectRoofs([c.id]); assert(S.deleteSelected()); assert.strictEqual(S.roofs().length, 2); assert(!S.deleteSelected());
+  S.selectRoofs([a.id]); S.removeRoof(a.id); assert.strictEqual(S.sel.size, 0, 'a removed roof leaves the selection');
+});
+ok('maximum panels: blank is no limit, a whole number caps, and it rides on the engine arrays as the roof group', () => {
+  const st = S._store(); st.roofs = [];
+  const r = S.addRoof(rect(240, 160)); r.shape = 'gable'; r.use = true; r.setback = 0;
+  assert.strictEqual(S.maxModules(r), Infinity);
+  r.maxModules = 12.9; assert.strictEqual(S.maxModules(r), 12);
+  const a = S.arrays([r], 0.8, 0.8); assert(a.length >= 1 && a.every(x => x.max_modules === 12 && x.group === r.name), JSON.stringify(a));
+  r.maxModules = null; assert.strictEqual(S.maxModules(r), Infinity);
+  assert(S.arrays([r], 0.8, 0.8).every(x => x.max_modules === undefined), 'no limit sent when blank');
+  r.maxModules = 0; assert.strictEqual(S.maxModules(r), Infinity);
+});
 console.log(n + ' passed');
