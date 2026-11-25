@@ -174,6 +174,7 @@ const Solar = {
       ${this._in(c, 'sharePct', 'Share to cover (%)')}
       <label for="sol-mode">Size set by</label><select id="sol-mode" data-k="mode">${this._opt(modes, c.mode, o => o[0], o => o[1])}</select>`)
       + `<div style="margin-top:12px;display:flex;gap:8px;align-items:center"><button class="btn btn-primary" type="button" data-act="run">Calculate</button>
+         ${c.roofShape === 'plan' ? '<button class="btn" type="button" data-act="view3d">View in 3D</button>' : ''}
          <span style="font-size:12px;color:var(--text-muted,#6d6d6d)">${escHtml(this.roofArea(c).note)}</span></div>`
       + this._sizeResult();
   },
@@ -345,6 +346,7 @@ const Solar = {
 
   async _act(act, v) {
     if (act === 'tab') { this._tab = v; this.render(); return; }
+    if (act === 'view3d') { Roof3D.open(); return; }
     if (act === 'delroof') { PlanSolar.removeRoof(v); this.render(); return; }
     if (['addpanel', 'addinv'].includes(act)) { this._addEntry(act.slice(3)); this.render(); return; }
     if (['delpanel', 'delinv'].includes(act)) { this._delEntry(act.slice(3), v); this.render(); return; }

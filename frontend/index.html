@@ -1299,6 +1299,26 @@
     </div>
   </div>
 
+  <!-- Solar roofs in 3D -->
+  <div id="roof3d-modal" class="modal" role="dialog" aria-modal="true" aria-label="Solar roofs in 3D" style="display:none">
+    <div class="modal-content" style="max-width:980px;width:96vw">
+      <div class="modal-header">
+        <h3>Solar roofs in 3D</h3>
+        <button class="modal-close" id="btn-close-roof3d" aria-label="Close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div id="roof3d-msg" style="font-size:13px;margin-bottom:8px" role="status"></div>
+        <div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap">
+          <button class="btn" type="button" id="btn-r3-iso">From the north</button>
+          <button class="btn" type="button" id="btn-r3-top">Top</button>
+          <button class="btn" type="button" id="btn-r3-south">From the south</button>
+        </div>
+        <div id="roof3d-host" style="position:relative;height:min(560px,62vh)"></div>
+        <div style="font-size:11px;color:var(--text-muted,#6d6d6d);margin-top:6px">Drag to orbit, right-drag to pan, wheel to zoom. Read only: change roofs on the plan or in Solar PV Design.</div>
+      </div>
+    </div>
+  </div>
+
   <!-- Battery Sizing — setup Modal -->
   <div id="bsz-config-modal" class="modal" role="dialog" aria-modal="true" aria-label="Battery Sizing Setup" style="display:none">
     <div class="modal-content">
@@ -3155,6 +3175,7 @@
   <script src="js/obtrusive.js?v=3.5.525"></script>
   <script src="js/emergcalc.js?v=3.5.525"></script>
   <script src="js/solar.js?v=2.731"></script>
+  <script src="js/roof3d.js?v=2.731"></script>
   <script src="js/lightws.js?v=2.708"></script>
   <script src="js/lightov.js?v=2.714"></script>
   <script src="js/overview.js?v=2.703"></script>
