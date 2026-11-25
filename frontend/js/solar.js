@@ -258,6 +258,7 @@ const Solar = {
       ${r.arrays ? '<div style="margin-top:8px;font-size:12px">' + r.arrays.map(a => escHtml(a.name || 'Roof') + ': ' + a.modules + (a.laid_out ? ' modules as laid out, ' : ' of ' + a.modules_roof + ' modules, ') + a.kwp + ' kWp, ' + Math.round(a.annual_kwh) + ' kWh').join('<br>') + '</div>' : ''}
       <div style="display:flex;gap:3px;align-items:flex-end;height:104px;margin-top:8px" role="img" aria-label="Monthly energy, kWh">${bars}</div>
       ${r.shading_loss_pct != null ? '<div style="margin-top:6px;font-size:12px">Shading loss ' + r.shading_loss_pct + ' %</div>' : ''}
+      ${r.clipping_loss_pct != null ? '<div style="margin-top:6px;font-size:12px">Inverter clipping ' + r.clipping_loss_pct + ' % of the DC energy' + (r.lifetime ? '; year 1 ' + Math.round(r.lifetime[0].kwh).toLocaleString() + ' kWh after first-year degradation, year 25 ' + Math.round(r.lifetime[24].kwh).toLocaleString() + ' kWh' : '') + '.</div>' : ''}
       <div style="margin-top:6px;font-size:11px;color:var(--text-muted,#6d6d6d)">${escHtml(r.data_note)}</div>`;
   },
 

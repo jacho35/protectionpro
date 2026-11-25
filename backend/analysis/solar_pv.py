@@ -41,7 +41,7 @@ alpha the solar elevation at the design hour on the winter solstice.
 """
 import math
 
-from . import pvgis_tmy
+from . import pvgis_tmy, solar_hourly
 from .pv_data import DEFAULT_LOSSES, PV_INVERTERS, PV_MODULES
 from .solar_irradiance_data import CITIES, SOURCE_NOTE
 
@@ -203,7 +203,8 @@ def resolve_site(req):
     """
     name = req.get("location", "Pretoria")
     table = get_city(name)
-    table_info = {"irradiance_source": "Bundled monthly table (screening grade)", "data_note": SOURCE_NOTE}
+    table_info = {"irradiance_source": "Bundled monthly table (screening grade)", "data_note": SOURCE_NOTE,
+                  "model": "monthly representative day, isotropic sky"}
     if req.get("irradiance_source") != "pvgis":
         return table, table_info
     lat = req["lat"] if req.get("lat") is not None else table["lat"]
@@ -216,11 +217,18 @@ def resolve_site(req):
         return table, table_info
     site = dict(table)
     site.update(pvgis_tmy.monthly_summary(tmy))
+    site["tmy"] = tmy
+    site["transposition"] = req.get("transposition") or "perez"
+    if site["transposition"] not in ("perez", "isotropic"):
+        raise ValueError("transposition must be perez or isotropic")
+    site["lid_pct"] = req.get("lid_pct")
+    site["degradation_pct"] = req.get("degradation_pct")
     site["lat"] = float(lat)
     site["lon"] = float(lon)
     label = pvgis_tmy.source_label(tmy)
-    return site, {"irradiance_source": label, "data_note": label + ". " + pvgis_tmy.ATTRIBUTION,
-                  "attribution": pvgis_tmy.ATTRIBUTION}
+    return site, {"irradiance_source": label, "data_note": label + "; hourly model, " + site["transposition"]
+                  + " sky, incidence-angle loss, inverter clipping. " + pvgis_tmy.ATTRIBUTION,
+                  "attribution": pvgis_tmy.ATTRIBUTION, "model": "hourly, " + site["transposition"] + " sky"}
 
 
 # ---------------------------------------------------------------- sizing
@@ -240,11 +248,17 @@ def modules_from_load(annual_kwh, share, specific_yield, module):
 
 
 # ---------------------------------------------------------------- yield
-def energy_yield(city_name, kwp, tilt, azimuth_n, module, losses=None, inverter_eff_pct=None, horizon=None):
-    """Monthly and annual AC energy for kwp of modules at one orientation."""
+def energy_yield(city_name, kwp, tilt, azimuth_n, module, losses=None, inverter_eff_pct=None, horizon=None, ac_kw=None):
+    """Monthly and annual AC energy for kwp of modules at one orientation.
+
+    A site carrying an hourly year (`tmy`, from resolve_site) uses the hourly model, with AC clipping at `ac_kw`;
+    otherwise the monthly representative-day model."""
     city = get_city(city_name)
     if kwp < 0 or not 0 <= tilt <= 90:
         raise ValueError("kWp must be >= 0 and tilt between 0 and 90 degrees")
+    if city.get("tmy"):
+        return solar_hourly.hourly_yield(city["tmy"], kwp, tilt, azimuth_n, module, losses, inverter_eff_pct, horizon, ac_kw,
+                                         city.get("transposition", "perez"), city.get("lid_pct"), city.get("degradation_pct"))
     loss = dict(DEFAULT_LOSSES)
     loss.update(losses or {})
     if inverter_eff_pct:
@@ -361,11 +375,17 @@ def run_solar_arrays(req, module, city, inverter):
     else:
         shares = _allocate(total, caps if roof_total else [1] * len(arrays))
     months = [0.0] * 12
-    parts, annual, kwp_total, poa_w = [], 0.0, 0.0, 0.0
+    parts, annual, kwp_total, poa_w, clip, life = [], 0.0, 0.0, 0.0, 0.0, None
+    ac_total = inverter["ac_kw"] * req.get("num_inverters", 1) if inverter else None
+    all_kwp = sum(shares) * module["pmax_w"] / 1000.0
     for idx, (a, n, cap) in enumerate(zip(arrays, shares, caps)):
         kwp = round(n * module["pmax_w"] / 1000.0, 3)
         y = energy_yield(city, kwp, float(a["tilt_deg"]), float(a.get("azimuth_deg", 0)), module, req.get("losses"),
-                         inverter["efficiency_pct"] if inverter else None, horizon_of(a))
+                         inverter["efficiency_pct"] if inverter else None, horizon_of(a),
+                         ac_total * kwp / all_kwp if ac_total and all_kwp else None)
+        clip += y.get("clipping_kwh", 0.0)
+        if "lifetime" in y:
+            life = [{"year": r["year"], "kwh": (life[i]["kwh"] if life else 0) + r["kwh"]} for i, r in enumerate(y["lifetime"])]
         for i, m in enumerate(y["months"]):
             months[i] += m["kwh"]
         annual += y["annual_kwh"]
@@ -379,6 +399,10 @@ def run_solar_arrays(req, module, city, inverter):
            "months": [{"month": i + 1, "kwh": round(v, 1)} for i, v in enumerate(months)],
            "arrays": parts, "tilt_deg": None, "azimuth_deg": None, "performance_ratio": None,
            "data_note": SOURCE_NOTE, "exceeds_roof": total > roof_total}
+    if city.get("tmy"):
+        out["clipping_kwh"] = round(clip, 0)
+        out["lifetime"] = life
+        out["clipping_loss_pct"] = round(100.0 * clip / (annual + clip), 2) if annual + clip > 0 else 0.0
     if req.get("annual_kwh"):
         out["load_share_pct"] = round(100.0 * annual / float(req["annual_kwh"]), 1)
     if inverter:
@@ -429,17 +453,21 @@ def run_solar_size(req):
     inverter = get_inverter(req["inverter"]) if req.get("inverter") else None
     horizon = [obstruction_block(o["height_m"], o["distance_m"], o["bearing_deg"], o.get("width_m", 5.0))
                for o in (req.get("obstructions") or [])]
+    ac_kw = inverter["ac_kw"] * req.get("num_inverters", 1) if inverter else None
     y = energy_yield(city, kwp, tilt, az, module, req.get("losses"),
-                     inverter["efficiency_pct"] if inverter else None, horizon or None)
+                     inverter["efficiency_pct"] if inverter else None, horizon or None, ac_kw)
     out = {"location": name, "tilt_deg": tilt, "azimuth_deg": az, "mode": mode, "limited_by": limited_by,
            "modules_roof": roof_mods, "modules_load": load_mods, "modules_target": target_mods, "target_kwp": float(req["target_kwp"]) if target_mods else None, "modules": modules, "kwp": kwp,
            "annual_kwh": y["annual_kwh"], "specific_yield_kwh_kwp": y["specific_yield_kwh_kwp"],
            "performance_ratio": y["performance_ratio"], "poa_kwh_m2_year": y["poa_kwh_m2_year"],
            "ghi_kwh_m2_year": y["ghi_kwh_m2_year"], "months": y["months"],
            "data_note": SOURCE_NOTE}
+    for k in ("clipping_kwh", "clipping_loss_pct", "lifetime"):
+        if k in y:
+            out[k] = y[k]
     if horizon:
         clear = energy_yield(city, kwp, tilt, az, module, req.get("losses"),
-                             inverter["efficiency_pct"] if inverter else None)
+                             inverter["efficiency_pct"] if inverter else None, None, ac_kw)
         out["shading_loss_pct"] = round(100.0 * (1 - y["annual_kwh"] / clear["annual_kwh"]), 2) if clear["annual_kwh"] else 0.0
         out["unshaded_annual_kwh"] = clear["annual_kwh"]
     if req.get("annual_kwh"):

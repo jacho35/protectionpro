@@ -73,6 +73,7 @@ def _compact(raw, lat, lon):
         if len(rows) < 8700:
             raise ValueError(f"{len(rows)} hourly rows")
         return {"lat": lat, "lon": lon, "elevation_m": raw["inputs"]["location"].get("elevation"),
+                "time_offset_h": float(raw["inputs"]["location"].get("irradiance_time_offset") or 0.0),
                 "radiation_db": meta.get("radiation_db"), "meteo_db": meta.get("meteo_db"),
                 "years": [meta.get("year_min"), meta.get("year_max")],
                 "time": t, "ghi_w_m2": ghi, "dni_w_m2": bn, "dhi_w_m2": dh, "t2m_c": temp, "ws10m_ms": ws}

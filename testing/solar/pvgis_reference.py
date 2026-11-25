@@ -31,3 +31,6 @@ for site, (lat, lon) in SITES.items():
 path = os.path.join(os.path.dirname(__file__), "pvgis_reference.json")
 json.dump(out, open(path, "w"), indent=1)
 print("wrote", path)
+
+# The hourly typical years used by backend/tests/test_solar_hourly.py are the cache files of pvgis_tmy.get_tmy for these
+# sites, copied to testing/solar/tmy/ (set PVGIS_CACHE_DIR, call get_tmy for each site, copy tmy_<lat>_<lon>.json.gz).

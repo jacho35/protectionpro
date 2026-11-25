@@ -1104,6 +1104,9 @@ class SolarSizeRequest(BaseModel):
     share_pct: float = 70.0
     losses: Optional[dict] = None
     irradiance_source: str = "table"     # table (bundled monthly, screening grade) | pvgis (hourly typical year for lat / lon, falls back to the table)
+    transposition: Optional[str] = None  # pvgis hourly model: perez (default) | isotropic (for comparison with the old model)
+    lid_pct: Optional[float] = None      # first-year light-induced degradation, % (default 1.0)
+    degradation_pct: Optional[float] = None   # annual degradation after year 1, % per year (default 0.4)
     lat: Optional[float] = None          # pvgis: site coordinates (default: the named location's)
     lon: Optional[float] = None
     obstructions: Optional[List[dict]] = None   # [{height_m, distance_m, bearing_deg, width_m}] above the array
