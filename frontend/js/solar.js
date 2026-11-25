@@ -24,7 +24,7 @@ const Solar = {
   _prot: null,
   _busy: false,
   DEFAULTS: {
-    location: 'Pretoria', module: 'pv_550_mono', inverter: 'inv_10k_2mppt',
+    location: 'Pretoria', irrSrc: 'pvgis', module: 'pv_550_mono', inverter: 'inv_10k_2mppt',
     roofShape: 'gable', length: 10, width: 9.2, pitch: 25, setback: 0.5, area: 60, packing: 0.8,
     tilt: 15, azimuth: 0, mode: 'kwp', targetKwp: 10, annualKwh: '', sharePct: 70,
     perString: 8, hour: 0, cableM: 30, vdPct: 1, acV: 400, exportKw: '', busId: '', pvId: '',
@@ -214,6 +214,7 @@ const Solar = {
         + this._in(c, 'setback', 'Edge setback (m)');
     return this._grid(`
       <label for="sol-location">Location</label><select id="sol-location" data-k="location">${loc}</select>
+      <label for="sol-irrSrc">Irradiance data</label><select id="sol-irrSrc" data-k="irrSrc">${this._opt([['pvgis', 'PVGIS typical year (hourly)'], ['table', 'Bundled monthly table (screening)']], c.irrSrc, o => o[0], o => o[1])}</select>
       <label for="sol-module">Module</label><select id="sol-module" data-k="module">${mod}</select>
       <label for="sol-inverter">Inverter</label><select id="sol-inverter" data-k="inverter">${inv}</select>
       <label for="sol-roofShape">Roof</label><select id="sol-roofShape" data-k="roofShape">${this._opt(shape, c.roofShape, o => o[0], o => o[1])}</select>
@@ -490,7 +491,7 @@ const Solar = {
       }
       if (!arrays.length) throw new Error('The roofs have no usable area. Calibrate the plan scale and check the setback.');
       this._res = await API.request('/analysis/solar-size', 'POST', {
-        location: c.location, module: this.moduleBody(p), inverter: this.inverterBody(inv), mode: c.mode, arrays,
+        location: c.location, irradiance_source: c.irrSrc, module: this.moduleBody(p), inverter: this.inverterBody(inv), mode: c.mode, arrays,
         annual_kwh: +c.annualKwh || null, share_pct: +c.sharePct, target_kwp: +c.targetKwp || null,
         obstructions: +c.obsH > 0 ? [{ height_m: +c.obsH, distance_m: +c.obsD, bearing_deg: +c.obsB, width_m: +c.obsW }] : [] });   // the typed one applies to every roof; objects and neighbours ride on each roof's arrays
       this._str = null; this._prot = null;
@@ -503,7 +504,7 @@ const Solar = {
       packing = rs.ground_cover_ratio;
     }
     this._res = await API.request('/analysis/solar-size', 'POST', {
-      location: c.location, module: this.moduleBody(p), inverter: this.inverterBody(inv),
+      location: c.location, irradiance_source: c.irrSrc, module: this.moduleBody(p), inverter: this.inverterBody(inv),
       tilt_deg: g.tilt, azimuth_deg: g.azimuth, mode: c.mode, usable_area_m2: g.area, packing,
       annual_kwh: +c.annualKwh || null, share_pct: +c.sharePct, target_kwp: +c.targetKwp || null,
       obstructions: +c.obsH > 0 ? [{ height_m: +c.obsH, distance_m: +c.obsD, bearing_deg: +c.obsB, width_m: +c.obsW }] : [] });

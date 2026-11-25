@@ -30,3 +30,6 @@ archive/
 # Personal notes and scripts
 notes/
 templates/
+
+# PVGIS typical-year cache (fetched at run time)
+pvgis_cache/

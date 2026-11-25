@@ -1103,6 +1103,9 @@ class SolarSizeRequest(BaseModel):
     annual_kwh: Optional[float] = None
     share_pct: float = 70.0
     losses: Optional[dict] = None
+    irradiance_source: str = "table"     # table (bundled monthly, screening grade) | pvgis (hourly typical year for lat / lon, falls back to the table)
+    lat: Optional[float] = None          # pvgis: site coordinates (default: the named location's)
+    lon: Optional[float] = None
     obstructions: Optional[List[dict]] = None   # [{height_m, distance_m, bearing_deg, width_m}] above the array
     arrays: Optional[List[dict]] = None         # roofs drawn on the plan: [{name, area_m2, packing, tilt_deg, azimuth_deg, modules?}] (modules = already laid out, kept as is)
 

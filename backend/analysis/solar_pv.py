@@ -41,6 +41,7 @@ alpha the solar elevation at the design hour on the winter solstice.
 """
 import math
 
+from . import pvgis_tmy
 from .pv_data import DEFAULT_LOSSES, PV_INVERTERS, PV_MODULES
 from .solar_irradiance_data import CITIES, SOURCE_NOTE
 
@@ -158,6 +159,8 @@ def daily_poa(lat, n, h_horizontal, tilt, azimuth_n, horizon=None):
 
 # ---------------------------------------------------------------- data lookups
 def get_city(name):
+    if isinstance(name, dict):      # a site already resolved (e.g. from PVGIS data): lat, ghi_kwh_m2_day, tday_c
+        return name
     if name not in CITIES:
         raise ValueError(f"Unknown location '{name}'. Choose one of: {', '.join(sorted(CITIES))}")
     return CITIES[name]
@@ -189,6 +192,35 @@ def get_inverter(inv):
     if not found:
         raise ValueError(f"Unknown inverter '{inv}'")
     return dict(found[0])
+
+
+def resolve_site(req):
+    """The irradiance site for a request: (site dict, info dict for the result).
+
+    `irradiance_source` 'pvgis' with `lat` / `lon` (else the named location's coordinates) takes the monthly means from the
+    hourly PVGIS typical year; if PVGIS can't be reached the bundled table is used and the result says so. Anything else
+    is the bundled table, labelled screening grade.
+    """
+    name = req.get("location", "Pretoria")
+    table = get_city(name)
+    table_info = {"irradiance_source": "Bundled monthly table (screening grade)", "data_note": SOURCE_NOTE}
+    if req.get("irradiance_source") != "pvgis":
+        return table, table_info
+    lat = req["lat"] if req.get("lat") is not None else table["lat"]
+    lon = req["lon"] if req.get("lon") is not None else table["lon"]
+    try:
+        tmy = pvgis_tmy.get_tmy(lat, lon)
+    except pvgis_tmy.PvgisUnavailable as e:
+        table_info["data_note"] = "PVGIS could not be reached, so the bundled monthly table was used. " + SOURCE_NOTE
+        table_info["pvgis_error"] = str(e)
+        return table, table_info
+    site = dict(table)
+    site.update(pvgis_tmy.monthly_summary(tmy))
+    site["lat"] = float(lat)
+    site["lon"] = float(lon)
+    label = pvgis_tmy.source_label(tmy)
+    return site, {"irradiance_source": label, "data_note": label + ". " + pvgis_tmy.ATTRIBUTION,
+                  "attribution": pvgis_tmy.ATTRIBUTION}
 
 
 # ---------------------------------------------------------------- sizing
@@ -357,10 +389,12 @@ def run_solar_arrays(req, module, city, inverter):
 def run_solar_size(req):
     """Phase 1: size from roof area and / or load, then the yield of the chosen size."""
     module = get_module(req.get("module", "pv_550_mono"))
-    city = req.get("location", "Pretoria")
+    name = req.get("location", "Pretoria")
+    city, info = resolve_site(req)
     if req.get("arrays"):
-        get_city(city)
-        return run_solar_arrays(req, module, city, get_inverter(req["inverter"]) if req.get("inverter") else None)
+        out = run_solar_arrays(req, module, city, get_inverter(req["inverter"]) if req.get("inverter") else None)
+        out.update(info)
+        return out
     tilt = float(req.get("tilt_deg", 20))
     az = float(req.get("azimuth_deg", 0))
     mode = req.get("mode", "min")
@@ -397,7 +431,7 @@ def run_solar_size(req):
                for o in (req.get("obstructions") or [])]
     y = energy_yield(city, kwp, tilt, az, module, req.get("losses"),
                      inverter["efficiency_pct"] if inverter else None, horizon or None)
-    out = {"location": city, "tilt_deg": tilt, "azimuth_deg": az, "mode": mode, "limited_by": limited_by,
+    out = {"location": name, "tilt_deg": tilt, "azimuth_deg": az, "mode": mode, "limited_by": limited_by,
            "modules_roof": roof_mods, "modules_load": load_mods, "modules_target": target_mods, "target_kwp": float(req["target_kwp"]) if target_mods else None, "modules": modules, "kwp": kwp,
            "annual_kwh": y["annual_kwh"], "specific_yield_kwh_kwp": y["specific_yield_kwh_kwp"],
            "performance_ratio": y["performance_ratio"], "poa_kwh_m2_year": y["poa_kwh_m2_year"],
@@ -412,6 +446,7 @@ def run_solar_size(req):
         out["load_share_pct"] = round(100.0 * y["annual_kwh"] / float(req["annual_kwh"]), 1)
     if inverter:
         out["dc_ac_ratio"] = round(kwp / (inverter["ac_kw"] * req.get("num_inverters", 1)), 2)
+    out.update(info)
     return out
 
 

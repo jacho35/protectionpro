@@ -45,11 +45,11 @@ Quantify the current error before changing the model, so every later package sho
 - Pinned as a backend test (`test_solar_pvgis_reference.py`) with PVGIS values in `testing/solar/pvgis_reference.json`. Not added as an in-app verification template: that machinery is for engine hand calcs, and this is a model-error measurement.
 - Done when: the error per location is documented in `docs/ENGINES.md` (as a result, not a file citation).
 
-### WP2 — PVGIS hourly data
+### WP2 — PVGIS hourly data — BUILT 2026-11-25 (`pvgis_tmy.py`; terms checked: free incl. commercial with attribution; yield currently uses monthly means of the hourly year, the hourly model is WP3; site coordinates = the named location's, the Plan's coordinate picker is not wired yet)
 - New lookup of hourly TMY by latitude / longitude (server-side proxy; cache per rounded coordinate).
 - Offline fallback to the bundled monthly table, clearly labelled as screening grade in the result.
 - Project setting for site coordinates; the location picker already used by the Plan feeds it.
-- Decision needed: PVGIS terms and rate limits allow server-side caching for this use; confirm before building.
+- PVGIS terms checked: free, commercial use allowed with attribution, no endorsement implied; caching is not mentioned and not restricted.
 - Done when: yield can be produced from hourly data and the result states its data source.
 
 ### WP3 — Hourly model: Perez, IAM, clipping, degradation
