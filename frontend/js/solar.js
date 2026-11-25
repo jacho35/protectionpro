@@ -206,7 +206,7 @@ const Solar = {
     const inv = this._opt(this.inverters(), c.inverter, o => o.id, o => o.name);
     const shape = [['plan', 'Roofs drawn on the plan'], ['gable', 'Gable (north plane)'], ['flat', 'Flat with tilted racks'], ['area', 'Type a usable area']];
     const modes = [['kwp', 'A kWp target I set'], ['roof', 'Fill the roof']];
-    const geo = c.roofShape === 'plan' ? (dock ? '' : this._roofsHtml())
+    const geo = c.roofShape === 'plan' ? (dock ? '' : this._roofsNote())
       : c.roofShape === 'area'
       ? this._in(c, 'area', 'Usable area (m²)') + this._in(c, 'packing', 'Packing factor') + this._in(c, 'tilt', 'Tilt (°)') + this._in(c, 'azimuth', 'Azimuth (° from north)')
       : this._in(c, 'length', 'Length (m)') + this._in(c, 'width', 'Width (m)')
@@ -234,6 +234,13 @@ const Solar = {
     if (c.roofShape !== 'plan' || typeof PlanSolarArray === 'undefined') return '';
     const t = PlanSolarArray.totals();
     return `<div style="margin-top:10px;display:flex;justify-content:space-between;font-size:13px"><span style="color:var(--text-muted,#6d6d6d)">Placed on the plan</span><strong>${t.n ? t.n + ' panels · ' + t.kwp.toFixed(1) + ' kWp' : 'nothing yet'}</strong></div>`;
+  },
+
+  // The roofs are drawn and edited on the Plan (Solar toolbar, Roof editor); the dialog only lists them.
+  _roofsNote() {
+    const roofs = PlanSolar.roofs();
+    const list = roofs.length ? roofs.map(r => `${escHtml(r.name)}${r.use === false ? ' (not used)' : ''}`).join(', ') : 'none yet';
+    return `<span style="grid-column:1/-1;font-size:12px">Roofs on the plan: ${list}. Draw and edit them with the Solar toolbar on the Plan tab (Roof, Roof editor); sizes here use every roof in use.</span>`;
   },
 
   _sizeResult() {
@@ -407,7 +414,7 @@ const Solar = {
       <div style="margin-top:6px"><button class="btn" type="button" data-act="shade" ${can ? '' : 'disabled'}>Run annual shading</button>${can ? '' : '<span style="font-size:12px"> needs roofs drawn on the plan and a calculation on step 1</span>'}</div>`
       + (sh ? `<div style="margin-top:8px;font-size:13px">Shading loss <strong>${sh.loss_pct} %</strong> of the annual yield (${Math.round(sh.unshaded_kwh).toLocaleString()} to ${Math.round(sh.shaded_kwh).toLocaleString()} kWh).</div>
         <div style="display:flex;gap:3px;align-items:flex-end;height:60px;margin-top:6px" role="img" aria-label="Shading loss by month, %">${sh.months.map(m => `<div title="${m.month}: ${m.loss_pct} %" style="flex:1;background:#b8860b;height:${Math.max(2, Math.min(60, m.loss_pct * 6))}px"></div>`).join('')}</div>
-        <table style="margin-top:8px;font-size:12px;border-collapse:collapse"><tr><th align="left">Roof</th><th>String</th><th>Modules</th><th>Loss %</th></tr>${sh.strings.map(r => `<tr><td>${escHtml(r.array || '')}</td><td align="center">${r.string}</td><td align="center">${r.modules}</td><td align="center">${r.loss_pct}</td></tr>`).join('')}</table>
+        <table style="margin-top:8px;font-size:12px;border-collapse:collapse"><tr><th align="left" style="padding:0 12px 0 0">Roof</th><th style="padding:0 12px">String</th><th style="padding:0 12px">Modules</th><th style="padding:0 12px">Loss %</th></tr>${sh.strings.map(r => `<tr><td style="padding:0 12px 0 0">${escHtml(r.array || '')}</td><td align="center">${r.string}</td><td align="center">${r.modules}</td><td align="center">${r.loss_pct}</td></tr>`).join('')}</table>
         <div style="margin-top:6px;font-size:11px;color:var(--text-muted,#6d6d6d)">${escHtml(sh.note)} ${escHtml(sh.attribution || '')}</div>` : '');
     const placed = this._pvComp();
     const run = (act, label, tip) => `<button class="btn" type="button" data-act="${act}" title="${escHtml(tip)}" ${placed ? '' : 'disabled'}>${label}</button>`;
