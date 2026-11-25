@@ -50,19 +50,32 @@ class View3D {
     c.addEventListener('pointercancel', (e) => this._up(e));
     c.addEventListener('wheel', (e) => this._wheel(e), { passive: false });
     c.addEventListener('contextmenu', (e) => e.preventDefault());
-    this._ro = new ResizeObserver(() => this.redraw());
+    this._ro = new ResizeObserver(() => { this._refit(); this.redraw(); });
     this._ro.observe(host);
   }
 
   // ─── Camera ────────────────────────────────────────────────────────────
+  // Frame a box: the whole of it inside the viewport at the current yaw / pitch and aspect (Geom3D.fitCamera). It is refitted when the
+  // view is resized or given a named view while the camera is still where the fit put it; once the user orbit-zooms / pans it stays.
   fit(min, max) {
     this.target = [(min[0] + max[0]) / 2, (min[1] + max[1]) / 2, (min[2] + max[2]) / 2];
     this.radius = Math.max(0.5, Math.hypot(max[0] - min[0], max[1] - min[1], max[2] - min[2]) / 2);
     this.pan = [0, 0];
     this.zoom = 1;
+    this._fitBox = [min.slice(), max.slice()];
+    this._refit(true);
     this.redraw();
   }
-  setView(yaw, pitch) { this.yaw = yaw; this.pitch = pitch; this.redraw(); }
+  _refit(force) {
+    const b = this._fitBox, W = this.canvas.clientWidth, H = this.canvas.clientHeight;
+    if (!b || !W || !H || typeof Geom3D === 'undefined') return;
+    const l = this._fitState;
+    if (!force && l && (l.zoom !== this.zoom || l.pan[0] !== this.pan[0] || l.pan[1] !== this.pan[1])) return;   // the user has moved the camera since
+    const f = Geom3D.fitCamera(b[0], b[1], W, H, this.yaw, this.pitch, this.opts.fitMargin != null ? this.opts.fitMargin : 0.06);
+    this.zoom = Math.max(0.2, Math.min(40, f.zoom)); this.pan = f.pan;
+    this._fitState = { zoom: this.zoom, pan: this.pan.slice() };
+  }
+  setView(yaw, pitch) { this.yaw = yaw; this.pitch = pitch; this._refit(); this.redraw(); }
   rotate(d) { this.yaw += d; this.redraw(); }
   zoomBy(k) { this.zoom = Math.max(0.2, Math.min(40, this.zoom * k)); this.redraw(); }
 
@@ -133,6 +146,10 @@ class View3D {
       const sp = it.pts.map(q => this.project(q[0], q[1], q[2], k));
       let d = 0; for (const p of sp) d += p[2];
       it.sp = sp; it.d = d / sp.length + (it.bias || 0);
+      if (it.t === 'f' && it.lit && it.fill && typeof Geom3D !== 'undefined') {     // `lit`: shade the face by how it faces the light
+        const n = it.n || Geom3D.faceNormal(it.pts), flip = n[0] * w[0] + n[1] * w[1] + n[2] * w[2] < 0;
+        it.fillLit = Geom3D.shadeColor(it.fill, Geom3D.lightFactor(flip ? [-n[0], -n[1], -n[2]] : n, this.light));
+      } else it.fillLit = it.fill;
       list.push(it);
     }
     list.sort((a, b) => (a.layer - b.layer) || (a.d - b.d));
@@ -152,7 +169,7 @@ class View3D {
       it.sp.forEach((p, i) => (i ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1])));
       if (it.t === 'f') {
         g.closePath();
-        if (it.fill) { g.fillStyle = it.fill; g.fill(); }
+        if (it.fillLit) { g.fillStyle = it.fillLit; g.fill(); }
       }
       if (it.stroke) {
         g.strokeStyle = it.stroke; g.lineWidth = it.lw || 1;
@@ -162,20 +179,30 @@ class View3D {
         g.setLineDash([]);
       } else if (it.t === 'f' && it.fill) {
         // seal hairline gaps between neighbouring patches
-        g.strokeStyle = it.fill; g.lineWidth = 0.6; g.stroke();
+        g.strokeStyle = it.fillLit; g.lineWidth = 0.6; g.stroke();
       }
       if (it.pick) this._picks.push(it);
     }
     g.globalAlpha = 1;
-    for (const l of this._labels) {
-      const p = this.project(l.at[0], l.at[1], l.at[2], k);
-      g.font = `${l.bold ? 700 : 600} ${l.size || 12}px system-ui, -apple-system, "Segoe UI", sans-serif`;
-      g.textAlign = 'center'; g.textBaseline = 'bottom';
+    this._drawLabels(g, k, W, H);
+  }
+
+  // Labels: with opts.labelLayout they are placed so none overlaps (higher `prio` first, a moved one gets a leader line, one that
+  // cannot fit is dropped); otherwise each sits on its anchor.
+  _drawLabels(g, k, W, H) {
+    const font = (l) => `${l.bold ? 700 : 600} ${l.size || 12}px system-ui, -apple-system, "Segoe UI", sans-serif`;
+    const pr = this._labels.map(l => { const p = this.project(l.at[0], l.at[1], l.at[2], k); g.font = font(l); return { l, x: p[0], y: p[1] + (l.dy || 0), w: g.measureText(l.text).width + 6, h: (l.size || 12) + 4, prio: l.prio || 0 }; });
+    const place = (this.opts.labelLayout && typeof Geom3D !== 'undefined') ? Geom3D.layoutLabels(pr, W, H) : pr.map(q => ({ shown: true, x: q.x, y: q.y, leader: false }));
+    pr.forEach((q, i) => {
+      const o = place[i]; if (!o.shown) return;
+      const l = q.l;
+      g.font = font(l); g.textAlign = 'center'; g.textBaseline = 'bottom';
+      if (o.leader) { g.strokeStyle = 'rgba(31,41,55,.55)'; g.lineWidth = 1; g.beginPath(); g.moveTo(q.x, q.y); g.lineTo(o.x, o.y + 1); g.stroke(); }
       g.lineWidth = 4; g.strokeStyle = l.halo || 'rgba(255,255,255,.92)'; g.lineJoin = 'round';
-      g.strokeText(l.text, p[0], p[1] + (l.dy || 0));
+      g.strokeText(l.text, o.x, o.y);
       g.fillStyle = l.color || '#1a1a2e';
-      g.fillText(l.text, p[0], p[1] + (l.dy || 0));
-    }
+      g.fillText(l.text, o.x, o.y);
+    });
   }
 
   // Front-most pickable item under a screen point.
@@ -296,8 +323,8 @@ const V3D = {
     for (const fc of faces) {
       if (o.outline) { v.line({ pts: fc.q.concat([fc.q[0]]), stroke: o.stroke, lw: o.lw, layer: 2, pick: o.pick }); continue; }
       if (!o.alpha && o.alpha !== undefined) continue;
-      const fill = fc.under && o.under ? o.under : this.shade(o.color, fc.f);
-      v.face({ pts: fc.q, fill, stroke: o.stroke, lw: o.lw, dash: o.dash, alpha: o.alpha, pick: o.pick, cull: o.noCull && fc.under ? null : fc.n, layer: o.layer != null ? o.layer : 1 });
+      const fill = o.lit ? o.color : fc.under && o.under ? o.under : this.shade(o.color, fc.f);       // `lit`: the view shades each face by the light instead of the fixed factors
+      v.face({ lit: !!o.lit, n: fc.n, pts: fc.q, fill, stroke: o.stroke, lw: o.lw, dash: o.dash, alpha: o.alpha, pick: o.pick, cull: o.noCull && fc.under ? null : fc.n, layer: o.layer != null ? o.layer : 1 });
     }
   },
   // A surface as bright as it looks: luminance ρE/π through a soft exposure curve.

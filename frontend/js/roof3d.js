@@ -487,7 +487,7 @@ const Roof3D = {
     if (this.view) { this.view.destroy(); this.view = null; }
     this.host = host;
     try { this.scene = await this.build(); } catch (e) { this.scene = { items: [], objs: [], north: 0, total: 0, empty: true, error: e.message || String(e) }; }
-    this.view = new View3D(host, { label: 'Rotatable 3D view of the roofs. Drag empty space to orbit, right-drag to pan, wheel to zoom; with a tool picked, drag a handle, the gizmo or an object.', yaw: 150, pitch: 32, bg: '#eef0f3' });
+    this.view = new View3D(host, { labelLayout: true, label: 'Rotatable 3D view of the roofs. Drag empty space to orbit, right-drag to pan, wheel to zoom; with a tool picked, drag a handle, the gizmo or an object.', yaw: 150, pitch: 32, bg: '#eef0f3' });
     this.view.onDraw = (v) => this.draw(v);
     this.view.onPick = (id, e) => this._pick(id, e);
     this.view.onClick = (id, e) => this._click(id, e);
@@ -499,13 +499,17 @@ const Roof3D = {
   unmount() { if (this.view) { this.view.destroy(); this.view = null; } this.host = null; },
   fit() {
     const sc = this.scene, v = this.view; if (!v) return;
-    const xs = [], ys = [];
-    for (const it of (sc ? sc.items : [])) for (const q of it.poly) { xs.push(q[0]); ys.push(q[1]); }
-    if (sc && sc.obs) { xs.push(sc.obs.x); ys.push(sc.obs.y); }
-    if (!xs.length) { xs.push(-8, 8); ys.push(-8, 8); }
-    const pad = 4;
-    v.fit([Math.min(...xs) - pad, Math.min(...ys) - pad, 0], [Math.max(...xs) + pad, Math.max(...ys) + pad, (sc && sc.items[0] ? sc.items[0].eave : 3) + 4]);
-    v.zoom = 1.7;
+    const xs = [], ys = [], zs = [0];
+    for (const it of (sc ? sc.items : [])) {
+      for (const q of it.poly) { xs.push(q[0]); ys.push(q[1]); }
+      zs.push(this._ridgeZ(it) + 0.5);
+      for (const m of it.mods) for (const q of m) zs.push(q[2]);
+    }
+    for (const o of ((sc && sc.objs) || [])) { xs.push(o.c[0]); ys.push(o.c[1]); zs.push(o.h); }
+    if (sc && sc.obs) { xs.push(sc.obs.x); ys.push(sc.obs.y); zs.push(sc.obs.h); }
+    if (!xs.length) { xs.push(-8, 8); ys.push(-8, 8); zs.push(3); }
+    const pad = 1;                                                           // View3D's own margin does the rest
+    v.fit([Math.min(...xs) - pad, Math.min(...ys) - pad, 0], [Math.max(...xs) + pad, Math.max(...ys) + pad, Math.max(...zs) + 0.5]);
   },
   // Named views: top, north (looking from the north), east, south, west, iso.
   setView(name) {
@@ -819,32 +823,33 @@ const Roof3D = {
         const top = [];
         if (flat) top.push([b[0], b[1], e], [a[0], a[1], e]);
         else for (let k = 24; k >= 0; k--) { const x = a[0] + (b[0] - a[0]) * k / 24, y = a[1] + (b[1] - a[1]) * k / 24; top.push([x, y, this._roofZ(it, x, y)]); }
-        v.face({ pts: [[a[0], a[1], 0], [b[0], b[1], 0]].concat(top), fill: '#d9d4c7', stroke: '#9a9486', lw: 1, layer: 1 });
+        v.face({ pts: [[a[0], a[1], 0], [b[0], b[1], 0]].concat(top), fill: '#d9d4c7', stroke: '#9a9486', lw: 1, layer: 1, lit: true });
       }
-      for (const j of (it.junctions || [])) v.face({ pts: [[j.a[0], j.a[1], j.z0], [j.b[0], j.b[1], j.z0], [j.b[0], j.b[1], e], [j.a[0], j.a[1], e]], fill: '#cfc9bb', stroke: '#9a9486', lw: 1, layer: 1 });
+      for (const j of (it.junctions || [])) v.face({ pts: [[j.a[0], j.a[1], j.z0], [j.b[0], j.b[1], j.z0], [j.b[0], j.b[1], e], [j.a[0], j.a[1], e]], fill: '#cfc9bb', stroke: '#9a9486', lw: 1, layer: 1, lit: true });
       if (flat) {                                                              // flat roof and parapet
-        v.face({ pts: P.map(q => [q[0], q[1], e + this.PARAPET_M]), fill: '#c9ccd1', stroke: '#6b7280', lw: 1, layer: 1, pick: 'p:' + r.id + ':0' });
+        v.face({ pts: P.map(q => [q[0], q[1], e + this.PARAPET_M]), fill: '#c9ccd1', stroke: '#6b7280', lw: 1, layer: 1, pick: 'p:' + r.id + ':0', lit: true });
       } else {
         it.pls.forEach((pl, i) => {
           const on = this.sel && this.sel.roof === r.id && this.sel.plane === i;
-          v.face({ pts: pl.poly.map(q => [q[0], q[1], pl.zAt(q[0], q[1])]), fill: pl.lean ? '#c98a55' : it.use[i] ? '#b7653a' : '#9c5430', stroke: on ? '#1d4ed8' : '#6b3a1f', lw: on ? 2.5 : 1, layer: 1, pick: 'p:' + r.id + ':' + i });
+          v.face({ pts: pl.poly.map(q => [q[0], q[1], pl.zAt(q[0], q[1])]), fill: pl.lean ? '#c98a55' : it.use[i] ? '#b7653a' : '#9c5430', stroke: on ? '#1d4ed8' : '#6b3a1f', lw: on ? 2.5 : 1, layer: 1, pick: 'p:' + r.id + ':' + i, lit: true });
         });
       }
-      it.mods.forEach((m, i) => { if (!this.hidden(mid(m), vw, occ)) v.face({ pts: m, fill: it.shaded && it.shaded[i] ? '#7b8794' : '#27506b', stroke: '#9fc4dd', lw: 0.8, layer: 2 }); });
+      it.mods.forEach((m, i) => { if (!this.hidden(mid(m), vw, occ)) v.face({ pts: m, fill: it.shaded && it.shaded[i] ? '#7b8794' : '#27506b', stroke: '#9fc4dd', lw: 0.8, layer: 2, lit: true }); });
       if (this.tool === 'aisle') this._drawGaps(v, it);
       const c = P.reduce((a, q) => [a[0] + q[0] / P.length, a[1] + q[1] / P.length], [0, 0]);
-      v.label({ at: [c[0], c[1], this._ridgeZ(it) + 1.2], text: `${r.name} · ${it.mods.length} modules`, color: '#1f2937', size: 12, bold: true });
+      const picked = (this.sel && this.sel.roof === r.id) || (typeof PlanSolar.isSelected === 'function' && PlanSolar.isSelected(r.id));
+      if (it.mods.length || picked) v.label({ at: [c[0], c[1], this._ridgeZ(it) + 1.2], text: it.mods.length ? `${r.name} · ${it.mods.length} modules` : r.name, color: '#1f2937', size: 12, bold: true, prio: picked ? 10 : 5 });   // a roof without modules is named only when picked
       const hs = Math.max(0.12, v.radius * 0.025);                              // handles for the Push / pull and Ridge tools
       const handle = (at, id, color) => V3D.box(v, [at[0], at[1]], hs * 2, hs * 2, at[2] - hs, hs * 2, 0, { color, stroke: '#ffffff', lw: 1.5, pick: id, layer: 3 });
-      if (this.tool === 'pushpull') { const q = P[0]; handle([q[0], q[1], e], 'h:eave:' + r.id, '#1d4ed8'); v.line({ pts: [[q[0], q[1], 0], [q[0], q[1], e]], stroke: '#1d4ed8', lw: 1.5, dash: [4, 3], layer: 3 }); v.label({ at: [q[0], q[1], e + hs * 3], text: 'eave ' + e.toFixed(2) + ' m', color: '#1d4ed8', size: 12, bold: true }); }
+      if (this.tool === 'pushpull') { const q = P[0]; handle([q[0], q[1], e], 'h:eave:' + r.id, '#1d4ed8'); v.line({ pts: [[q[0], q[1], 0], [q[0], q[1], e]], stroke: '#1d4ed8', lw: 1.5, dash: [4, 3], layer: 3 }); v.label({ at: [q[0], q[1], e + hs * 3], text: 'eave ' + e.toFixed(2) + ' m', color: '#1d4ed8', size: 12, bold: true, prio: 9 }); }
       if (this.tool === 'ridge' && !flat) { const q = this._ridgePoint(it); if (q) { handle(q, 'h:ridge:' + r.id, '#1d4ed8'); v.label({ at: [q[0], q[1], q[2] + hs * 3], text: (r.shape === 'pyramid' ? 'apex ' + (+r.apex || 1.8).toFixed(2) + ' m' : (+r.pitch).toFixed(1) + '°') + ' · ridge ' + q[2].toFixed(2) + ' m', color: '#1d4ed8', size: 12, bold: true }); } }
     }
     for (const sp of (sc.shadowPolys || [])) if (!this.hidden(mid(sp.pts), vw, occ)) v.face({ pts: sp.pts, fill: 'rgba(30,41,59,0.38)', stroke: null, lw: 0, layer: sp.kind === 'ground' ? 0.5 : 1.5 });
     for (const o of (sc.objs || [])) {                                         // objects standing on the roofs
       const on = this.sel && this.sel.obj === o.id;
       if (!on && this.hidden([o.c[0], o.c[1], o.z0 + o.hh / 2], vw, occ)) continue;                     // behind the roof or a wall
-      V3D.box(v, o.c, o.w, o.d, o.z0, o.hh, -o.rot, { color: on ? '#bfdbfe' : '#f3f4f6', stroke: on ? '#1d4ed8' : '#111827', lw: on ? 2 : 1, pick: 'o:' + o.id, layer: 2.5 });
-      v.label({ at: [o.c[0], o.c[1], o.z0 + o.hh + 0.1], text: (PlanSolar.OBJECT_TYPES[o.type] || { label: o.type }).label, color: '#111827', size: 11 });
+      V3D.box(v, o.c, o.w, o.d, o.z0, o.hh, -o.rot, { color: on ? '#bfdbfe' : '#f3f4f6', stroke: on ? '#1d4ed8' : '#111827', lw: on ? 2 : 1, pick: 'o:' + o.id, layer: 2.5, lit: true });
+      v.label({ at: [o.c[0], o.c[1], o.z0 + o.hh + 0.1], text: (PlanSolar.OBJECT_TYPES[o.type] || { label: o.type }).label, color: '#111827', size: 11, prio: on ? 8 : 2 });
     }
     if (sc.obs) {
       const o = sc.obs, a = o.bearing * Math.PI / 180, hx = Math.cos(a) * o.w / 2, hy = -Math.sin(a) * o.w / 2, d = 0.25;
@@ -852,9 +857,9 @@ const Roof3D = {
       const q = (sx, sy, z) => [o.x + sx, o.y + sy, z];
       const base = [q(-hx - ox, -hy - oy, 0), q(hx - ox, hy - oy, 0), q(hx + ox, hy + oy, 0), q(-hx + ox, -hy + oy, 0)];
       const top = base.map(p => [p[0], p[1], o.h]);
-      for (let i = 0; i < 4; i++) { const j = (i + 1) % 4; v.face({ pts: [base[i], base[j], top[j], top[i]], fill: '#8a8f98', stroke: '#4b5563', lw: 1, layer: 1 }); }
-      v.face({ pts: top, fill: '#a3a8b0', stroke: '#4b5563', lw: 1, layer: 1 });
-      v.label({ at: [o.x, o.y, o.h + 0.8], text: 'Obstruction', color: '#374151', size: 11 });
+      for (let i = 0; i < 4; i++) { const j = (i + 1) % 4; v.face({ pts: [base[i], base[j], top[j], top[i]], fill: '#8a8f98', stroke: '#4b5563', lw: 1, layer: 1, lit: true }); }
+      v.face({ pts: top, fill: '#a3a8b0', stroke: '#4b5563', lw: 1, layer: 1, lit: true });
+      v.label({ at: [o.x, o.y, o.h + 0.8], text: 'Obstruction', color: '#374151', size: 11, prio: 3 });
     }
     this._drawGizmo(v);
     this._drawDraft(v);
@@ -864,7 +869,7 @@ const Roof3D = {
     const tail = [bx - dx * L / 2, by - dy * L / 2, 0.05], tip = [bx + dx * L / 2, by + dy * L / 2, 0.05];
     v.line({ pts: [tail, tip], stroke: '#111827', lw: 3 });
     v.line({ pts: [[tip[0] - dx * L * 0.25 + dy * L * 0.12, tip[1] - dy * L * 0.25 - dx * L * 0.12, 0.05], tip, [tip[0] - dx * L * 0.25 - dy * L * 0.12, tip[1] - dy * L * 0.25 + dx * L * 0.12, 0.05]], stroke: '#111827', lw: 3 });
-    v.label({ at: [tip[0] + dx * L * 0.3, tip[1] + dy * L * 0.3, 0.05], text: 'N', color: '#111827', size: 13, bold: true });
+    v.label({ at: [tip[0] + dx * L * 0.3, tip[1] + dy * L * 0.3, 0.05], text: 'N', color: '#111827', size: 13, bold: true, prio: 20 });
   },
 
   // The Transform tool's gizmo on the selected roof or object: arrows (X red, Y green, Z blue), a turn ring or scale handles.
