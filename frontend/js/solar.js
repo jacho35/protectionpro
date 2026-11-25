@@ -184,10 +184,10 @@ const Solar = {
       + this._sizeResult();
   },
 
-  // The roofs on the plan: one row each, edited here, drawn with Plan > Solar > Detect roof.
+  // The roofs on the plan: one row each, edited here, drawn with Plan > Solar > Roof, laid out with Place array.
   _roofsHtml() {
     const roofs = PlanSolar.roofs();
-    if (!roofs.length) return `<span style="grid-column:1/-1;font-size:12px">No roofs yet. On the Plan tab pick <strong>Solar › Detect roof</strong> (click inside a building, Detect all, or Draw the outline), then come back.</span>`;
+    if (!roofs.length) return `<span style="grid-column:1/-1;font-size:12px">No roofs yet. On the Plan tab pick <strong>Solar › Roof</strong> (click inside a building, Detect all, or Draw the outline), then come back.</span>`;
     const calibrated = !!PlanEngine.factor();
     const num = (r, k, w = 56) => `<input type="number" step="any" data-roof="${escHtml(r.id)}" data-rk="${k}" value="${escHtml(r[k])}" style="width:${w}px" aria-label="${k}">`;
     const rows = roofs.map(r => {
