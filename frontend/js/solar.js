@@ -24,7 +24,7 @@ const Solar = {
   _prot: null,
   _busy: false,
   DEFAULTS: {
-    location: 'Pretoria', irrSrc: 'pvgis', module: 'pv_550_mono', inverter: 'inv_10k_2mppt',
+    location: 'Pretoria', lat: '', lon: '', irrSrc: 'pvgis', module: 'pv_550_mono', inverter: 'inv_10k_2mppt',
     roofShape: 'gable', length: 10, width: 9.2, pitch: 25, setback: 0.5, area: 60, packing: 0.8,
     tilt: 15, azimuth: 0, mode: 'kwp', targetKwp: 10, annualKwh: '', sharePct: 70,
     perString: 8, hour: 0, cableM: 30, vdPct: 1, acV: 400, exportKw: '', busId: '', pvId: '',
@@ -214,6 +214,8 @@ const Solar = {
         + this._in(c, 'setback', 'Edge setback (m)');
     return this._grid(`
       <label for="sol-location">Location</label><select id="sol-location" data-k="location">${loc}</select>
+      <label for="sol-lat">Site latitude (°, blank = the city)</label><input id="sol-lat" data-k="lat" type="text" inputmode="decimal" style="max-width:140px" value="${escHtml(c.lat)}" placeholder="e.g. -33.92">
+      <label for="sol-lon">Site longitude (°)</label><input id="sol-lon" data-k="lon" type="text" inputmode="decimal" style="max-width:140px" value="${escHtml(c.lon)}" placeholder="e.g. 18.42">
       <label for="sol-irrSrc">Irradiance data</label><select id="sol-irrSrc" data-k="irrSrc">${this._opt([['pvgis', 'PVGIS typical year (hourly)'], ['table', 'Bundled monthly table (screening)']], c.irrSrc, o => o[0], o => o[1])}</select>
       <label for="sol-module">Module</label><select id="sol-module" data-k="module">${mod}</select>
       <label for="sol-inverter">Inverter</label><select id="sol-inverter" data-k="inverter">${inv}</select>
@@ -459,7 +461,19 @@ const Solar = {
     this.render();
   },
 
-  _loc(c) { return this._locs.find(l => l.name === c.location) || this._locs[0]; },
+  // The site: the chosen city, with its coordinates replaced by the typed ones when both are valid (the city still gives the
+  // bundled-table climate and the minimum temperature; PVGIS data and the sun use the coordinates).
+  _loc(c) {
+    const base = this._locs.find(l => l.name === c.location) || this._locs[0], co = this.coords(c);
+    return co ? Object.assign({}, base, co) : base;
+  },
+  // {lat, lon} when the typed site coordinates are both numbers in range, else null. Pure.
+  coords(c) {
+    const la = parseFloat(c.lat), lo = parseFloat(c.lon);
+    return c.lat !== '' && c.lon !== '' && isFinite(la) && isFinite(lo) && Math.abs(la) <= 90 && Math.abs(lo) <= 180 ? { lat: la, lon: lo } : null;
+  },
+  // location + coordinates as the engine routes take them
+  _site(c) { const co = this.coords(c); return co ? { location: c.location, lat: co.lat, lon: co.lon } : { location: c.location }; },
 
   async runProtection() {
     const c = this.cfg();
@@ -510,7 +524,7 @@ const Solar = {
       }
       if (!arrays.length) throw new Error('The roofs have no usable area. Calibrate the plan scale and check the setback.');
       this._res = await API.request('/analysis/solar-size', 'POST', {
-        location: c.location, irradiance_source: c.irrSrc, module: this.moduleBody(p), inverter: this.inverterBody(inv), mode: c.mode, arrays,
+        ...this._site(c), irradiance_source: c.irrSrc, module: this.moduleBody(p), inverter: this.inverterBody(inv), mode: c.mode, arrays,
         annual_kwh: +c.annualKwh || null, share_pct: +c.sharePct, target_kwp: +c.targetKwp || null,
         obstructions: +c.obsH > 0 ? [{ height_m: +c.obsH, distance_m: +c.obsD, bearing_deg: +c.obsB, width_m: +c.obsW }] : [] });   // the typed one applies to every roof; objects and neighbours ride on each roof's arrays
       this._str = null; this._prot = null; this._shade = null;
@@ -523,7 +537,7 @@ const Solar = {
       packing = rs.ground_cover_ratio;
     }
     this._res = await API.request('/analysis/solar-size', 'POST', {
-      location: c.location, irradiance_source: c.irrSrc, module: this.moduleBody(p), inverter: this.inverterBody(inv),
+      ...this._site(c), irradiance_source: c.irrSrc, module: this.moduleBody(p), inverter: this.inverterBody(inv),
       tilt_deg: g.tilt, azimuth_deg: g.azimuth, mode: c.mode, usable_area_m2: g.area, packing,
       annual_kwh: +c.annualKwh || null, share_pct: +c.sharePct, target_kwp: +c.targetKwp || null,
       obstructions: +c.obsH > 0 ? [{ height_m: +c.obsH, distance_m: +c.obsD, bearing_deg: +c.obsB, width_m: +c.obsW }] : [] });
@@ -592,7 +606,7 @@ const Solar = {
     const c = this.cfg();
     if (!this._res) throw new Error('Calculate the array on step 1 first.');
     const blob = await API.generateSolarReport({
-      inputs: { location: c.location, module: this.panel(c).name, inverter: this.inverter(c).name, perString: c.perString },
+      inputs: { location: c.location + (this.coords(c) ? ` (${this.coords(c).lat}, ${this.coords(c).lon})` : ''), module: this.panel(c).name, inverter: this.inverter(c).name, perString: c.perString },
       result: this._res, strings: this._str || null, protection: this._prot || null, shading: this._shade || null });
     const url = URL.createObjectURL(blob), a = document.createElement('a');
     a.href = url; a.download = `${AppState.projectName || 'Untitled'}_solar_pv.pdf`; a.click();
@@ -607,7 +621,7 @@ const Solar = {
     this._status('Checking every module against the sun over the year…');
     const sc = await Roof3D.build();
     if (sc.empty) throw new Error('No roofs to check.');
-    const grid = await API.request('/analysis/solar-sun-grid', 'POST', { location: c.location });
+    const grid = await API.request('/analysis/solar-sun-grid', 'POST', this._site(c));
     const flags = Roof3D.annualFlags(sc, grid.samples);
     const arrays = res.arrays.map(a => {
       const f = flags.find(x => x.arr === a.name);
@@ -616,7 +630,7 @@ const Solar = {
     if (!arrays.length) throw new Error('No modules are laid out on the roofs yet.');
     const p = this.panel(c), inv = this.inverter(c);
     this._shade = await API.request('/analysis/solar-shading', 'POST', {
-      location: c.location, module: this.moduleBody(p), inverter: this.inverterBody(inv), arrays });
+      ...this._site(c), module: this.moduleBody(p), inverter: this.inverterBody(inv), arrays });
     this._status('');
   },
 
