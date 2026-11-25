@@ -315,7 +315,7 @@ PlanTools.register({
     // 3b) the body of a solar roof (nothing else under the point): pick it, Shift adds / removes; drag moves every picked roof as it is
     const rf = typeof PlanSolar !== 'undefined' && typeof PlanSolarArray !== 'undefined' ? PlanSolarArray.roofAt(pt) : null;
     if (rf) {
-      if (e.shiftKey) { if (PlanSolar.sel.has(rf.id)) PlanSolar.sel.delete(rf.id); else PlanSolar.sel.add(rf.id); PlanEngine.requestDraw({ fg: true }); return; }
+      if (e.shiftKey) { PlanSolar.toggleSelect(rf.id); return; }
       if (!PlanSolar.sel.has(rf.id)) { PlanMarkup.clearSelection(); PlanSolar.selectRoofs([rf.id]); }
       this._drag = { kind: 'roofmove', last: { x: pt.x, y: pt.y }, moved: false };
       return;

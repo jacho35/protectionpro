@@ -126,4 +126,16 @@ ok('keep-out: no module touches the area, and the rest still fit', () => {
   const racks = (e) => R.layoutRacks(rect(10, 6), 0, 20, 0.5, mod, 1e9, 3, 0, null, e);
   assert(racks(ex).length < racks().length, 'racks avoid it too');
 });
+ok('occlusion: a point behind a wall or the ridge is hidden, one in the open or on the viewer side is not', () => {
+  const sc = { items: [{ roof: { shape: 'flat' }, poly: [[0, 0], [10, 0], [10, 6], [0, 6]], eave: 3, pls: [], mods: [] }] };
+  const occ = R.occluders(sc);
+  assert(occ.length === 5, 'four walls and the deck');
+  const toViewerUp = [0, 0, 1];
+  assert(R.hidden([5, 3, 1], toViewerUp, occ), 'inside the box, under the deck');
+  assert(!R.hidden([5, 3, 3.6], toViewerUp, occ), 'on top of the deck, looking down');
+  assert(!R.hidden([20, 3, 1], toViewerUp, occ), 'beside the building');
+  assert(R.hidden([5, 3, 3.6], [0, 0, -1], occ), 'seen from below the deck is in the way');
+  const sideOn = [-1, 0, 0];
+  assert(R.hidden([5, 3, 1], sideOn, occ), 'behind the west wall');
+});
 console.log('shadow tests done');

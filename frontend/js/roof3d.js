@@ -654,8 +654,49 @@ const Roof3D = {
     return z;
   },
 
+  // Things standing or lying on a roof are painted in a layer above the roof's own faces, so one hidden behind the ridge, a wall or
+  // the roof it sits under would show through. `occluders(sc)` lists the solid faces (walls, planes, decks) as polygons with a normal;
+  // `hidden(p, w, occ)` says whether the ray from p toward the viewer (direction w, the view is parallel) is stopped by one of them.
+  occluders(sc) {
+    const out = [], add = (pts) => {
+      let n = [0, 0, 0];
+      for (let i = 0; i < pts.length; i++) { const a = pts[i], b = pts[(i + 1) % pts.length]; n[0] += (a[1] - b[1]) * (a[2] + b[2]); n[1] += (a[2] - b[2]) * (a[0] + b[0]); n[2] += (a[0] - b[0]) * (a[1] + b[1]); }
+      const m = Math.hypot(n[0], n[1], n[2]); if (m < 1e-9) return;
+      n = n.map(x => x / m);
+      const ax = Math.abs(n[0]) > Math.abs(n[1]) ? (Math.abs(n[0]) > Math.abs(n[2]) ? 0 : 2) : (Math.abs(n[1]) > Math.abs(n[2]) ? 1 : 2), u = ax === 0 ? 1 : 0, w = ax === 2 ? 1 : 2;
+      out.push({ pts, n, ax, u, w, d: n[0] * pts[0][0] + n[1] * pts[0][1] + n[2] * pts[0][2] });
+    };
+    for (const it of sc.items) {
+      const P = it.poly, e = it.eave, flat = it.roof.shape === 'flat';
+      for (let i = 0; i < P.length; i++) {
+        const a = P[i], b = P[(i + 1) % P.length], top = [];
+        if (flat) top.push([b[0], b[1], e], [a[0], a[1], e]);
+        else for (let k = 8; k >= 0; k--) { const x = a[0] + (b[0] - a[0]) * k / 8, y = a[1] + (b[1] - a[1]) * k / 8; top.push([x, y, this._roofZ(it, x, y)]); }
+        add([[a[0], a[1], 0], [b[0], b[1], 0]].concat(top));
+      }
+      if (flat) add(P.map(q => [q[0], q[1], e + this.PARAPET_M]));
+      else for (const pl of it.pls) add(pl.poly.map(q => [q[0], q[1], pl.zAt(q[0], q[1])]));
+    }
+    return out;
+  },
+  hidden(p, w, occ) {
+    const o = [p[0] + w[0] * 0.03, p[1] + w[1] * 0.03, p[2] + w[2] * 0.03];
+    for (const f of occ) {
+      const dn = f.n[0] * w[0] + f.n[1] * w[1] + f.n[2] * w[2]; if (Math.abs(dn) < 1e-9) continue;
+      const t = (f.d - (f.n[0] * o[0] + f.n[1] * o[1] + f.n[2] * o[2])) / dn; if (t < 1e-6) continue;
+      const x = [o[0] + w[0] * t, o[1] + w[1] * t, o[2] + w[2] * t], px = x[f.u], py = x[f.w];
+      let inside = false;
+      for (let i = 0, j = f.pts.length - 1; i < f.pts.length; j = i++) {
+        const a = f.pts[i], b = f.pts[j];
+        if ((a[f.w] > py) !== (b[f.w] > py) && px < (b[f.u] - a[f.u]) * (py - a[f.w]) / (b[f.w] - a[f.w]) + a[f.u]) inside = !inside;
+      }
+      if (inside) return true;
+    }
+    return false;
+  },
   draw(v) {
     const sc = this.scene; if (!sc) return;
+    const occ = this.occluders(sc), vw = v.viewDir ? v.viewDir() : [0, 0, 1], mid = (q) => q.reduce((a, p) => [a[0] + p[0] / q.length, a[1] + p[1] / q.length, a[2] + p[2] / q.length], [0, 0, 0]);
     for (const it of sc.items) {
       const r = it.roof, P = it.poly, e = it.eave, flat = r.shape === 'flat';
       for (let i = 0; i < P.length; i++) {                                    // walls, their tops following the roof
@@ -674,7 +715,7 @@ const Roof3D = {
           v.face({ pts: pl.poly.map(q => [q[0], q[1], pl.zAt(q[0], q[1])]), fill: pl.lean ? '#c98a55' : it.use[i] ? '#b7653a' : '#9c5430', stroke: on ? '#1d4ed8' : '#6b3a1f', lw: on ? 2.5 : 1, layer: 1, pick: 'p:' + r.id + ':' + i });
         });
       }
-      it.mods.forEach((m, i) => v.face({ pts: m, fill: it.shaded && it.shaded[i] ? '#7b8794' : '#27506b', stroke: '#9fc4dd', lw: 0.8, layer: 2 }));
+      it.mods.forEach((m, i) => { if (!this.hidden(mid(m), vw, occ)) v.face({ pts: m, fill: it.shaded && it.shaded[i] ? '#7b8794' : '#27506b', stroke: '#9fc4dd', lw: 0.8, layer: 2 }); });
       const c = P.reduce((a, q) => [a[0] + q[0] / P.length, a[1] + q[1] / P.length], [0, 0]);
       v.label({ at: [c[0], c[1], this._ridgeZ(it) + 1.2], text: `${r.name} · ${it.mods.length} modules`, color: '#1f2937', size: 12, bold: true });
       const hs = Math.max(0.12, v.radius * 0.025);                              // handles for the Push / pull and Ridge tools
@@ -682,9 +723,10 @@ const Roof3D = {
       if (this.tool === 'pushpull') { const q = P[0]; handle([q[0], q[1], e], 'h:eave:' + r.id, '#1d4ed8'); v.line({ pts: [[q[0], q[1], 0], [q[0], q[1], e]], stroke: '#1d4ed8', lw: 1.5, dash: [4, 3], layer: 3 }); v.label({ at: [q[0], q[1], e + hs * 3], text: 'eave ' + e.toFixed(2) + ' m', color: '#1d4ed8', size: 12, bold: true }); }
       if (this.tool === 'ridge' && !flat) { const q = this._ridgePoint(it); if (q) { handle(q, 'h:ridge:' + r.id, '#1d4ed8'); v.label({ at: [q[0], q[1], q[2] + hs * 3], text: (r.shape === 'pyramid' ? 'apex ' + (+r.apex || 1.8).toFixed(2) + ' m' : (+r.pitch).toFixed(1) + '°') + ' · ridge ' + q[2].toFixed(2) + ' m', color: '#1d4ed8', size: 12, bold: true }); } }
     }
-    for (const sp of (sc.shadowPolys || [])) v.face({ pts: sp.pts, fill: 'rgba(30,41,59,0.38)', stroke: null, lw: 0, layer: sp.kind === 'ground' ? 0.5 : 1.5 });
+    for (const sp of (sc.shadowPolys || [])) if (!this.hidden(mid(sp.pts), vw, occ)) v.face({ pts: sp.pts, fill: 'rgba(30,41,59,0.38)', stroke: null, lw: 0, layer: sp.kind === 'ground' ? 0.5 : 1.5 });
     for (const o of (sc.objs || [])) {                                         // objects standing on the roofs
       const on = this.sel && this.sel.obj === o.id;
+      if (!on && this.hidden([o.c[0], o.c[1], o.z0 + o.hh / 2], vw, occ)) continue;                     // behind the roof or a wall
       V3D.box(v, o.c, o.w, o.d, o.z0, o.hh, -o.rot, { color: on ? '#bfdbfe' : '#f3f4f6', stroke: on ? '#1d4ed8' : '#111827', lw: on ? 2 : 1, pick: 'o:' + o.id, layer: 2.5 });
       v.label({ at: [o.c[0], o.c[1], o.z0 + o.hh + 0.1], text: (PlanSolar.OBJECT_TYPES[o.type] || { label: o.type }).label, color: '#111827', size: 11 });
     }
