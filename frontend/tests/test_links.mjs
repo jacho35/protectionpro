@@ -29,6 +29,7 @@ vm.createContext(ctx);
 for (const f of ['constants.js', 'cases.js', 'state.js', 'plan-defs.js', 'plan-sync.js', 'links.js']) {
   vm.runInContext(readFileSync(join(js, f), 'utf8'), ctx, { filename: f });
 }
+vm.runInContext("var RoadPlan = { roads: [{ id: 'rd1', plan: { ids: ['pk1'] } }] };", ctx);       // a road following a site-plan street (the 'road-plan-street' link kind)
 const A = vm.runInContext('AppState', ctx);
 const L = vm.runInContext('Links', ctx);
 const deq = (a, b) => assert.deepStrictEqual(JSON.parse(JSON.stringify(a ?? null)), JSON.parse(JSON.stringify(b ?? null)));
@@ -71,6 +72,7 @@ await ok('every kind of link is listed from the field it is stored in', () => {
   deq([...L.KINDS.map(k => k.id)].filter(k => !kinds.has(k)), []);
   const has = (a, b) => L.all().some(l => l.a === a && l.b === b);
   assert.ok(has('plan:pk1', 'retic:k1'));
+  assert.ok(has('rp:rd1', 'plan:pk1'));              // a road → the site-plan street it follows
   assert.ok(has('sld:tx1', 'retic:ms1'));
   assert.ok(has('plan:dev1', 'way:db1/w1'));          // a device tagged to the plan board → the single-line board's way
   assert.ok(has('way:db1/w1', 'sld:cab1'));

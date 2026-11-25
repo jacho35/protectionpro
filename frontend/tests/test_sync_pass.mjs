@@ -186,8 +186,8 @@ await ok('an old project opens with an adopt pass pending; one saved now does no
   deq(A.syncOverrides, { 'len:dst': { v: 1, src: 2 } });
 });
 
-await ok('the Reticulation, street-lighting, Building, Demand → single line and single-line feeder routines are registered, in order', () => {
-  deq(builtIn.map(r => r.id), ['retic', 'streetlight', 'building', 'demand-sld', 'sld-feeder-ways']);
+await ok('the Reticulation, road-pole, street-lighting, Building, Demand → single line and single-line feeder routines are registered, in order', () => {
+  deq(builtIn.map(r => r.id), ['retic', 'roadpoles', 'streetlight', 'building', 'demand-sld', 'sld-feeder-ways']);
 });
 
 await wait();
