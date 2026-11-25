@@ -138,4 +138,18 @@ ok('curves that are wrong are refused with a reason', () => {
   assert(/efficiency curve/.test(Solar.validateInverter(Object.assign({}, i, { eff_curve: [[0.1, 0.9], [0.5, 1.4], [1, 0.9]] }))));
   assert(/efficiency curve/.test(Solar.validateInverter(Object.assign({}, i, { eff_curve: [[0.5, 0.9], [0.4, 0.95], [1, 0.9]] }))));
 });
+ok('four more real modules from other vendors (PVsyst 6.78 files) import and validate; a missing incidence table is simply absent', () => {
+  const rows = [['LG-320-N1K-A5.PAN', 'LG Electronics LG 320 N1K-A5', 320, 40.11, 32.71, 10.35, 9.784, -0.394, 1.686, 1.016, false],
+    ['Mission-MSE300SQ5T.PAN', 'Mission Solar MSE300SQ5T', 300, 40.33, 32.74, 9.655, 9.163, -0.391, 1.664, 0.999, false],
+    ['CanadianSolar-CS6K-275M.PAN', 'Canadian Solar Inc. CS6K - 275M', 275, 38.13, 31.35, 9.259, 8.773, -0.412, 1.65, 0.992, true],
+    ['QCells-Q.PEAK-G4.1-300.PAN', 'Hanwha Q Cells Q.PEAK-G4.1 300', 300, 40.22, 32.48, 9.756, 9.235, -0.396, 1.67, 1.0, true]];
+  for (const [f, name, w, voc, vmp, isc, imp, kp, len, wid, hasIam] of rows) {
+    const m = SI.parsePan(real(f));
+    assert.strictEqual(m.name, name, f);
+    assert.deepStrictEqual([m.w, m.voc, m.vmp, m.isc, m.imp, m.k_pmax, m.len, m.wid], [w, voc, vmp, isc, imp, kp, len, wid], f);
+    assert.strictEqual(Solar.validatePanel(m), '', f);
+    assert.strictEqual(Array.isArray(m.iam), hasIam, f + ' incidence table');
+    if (hasIam) assert.strictEqual(m.iam.length, 9);
+  }
+});
 console.log(n + ' passed');
