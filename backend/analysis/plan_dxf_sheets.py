@@ -690,53 +690,67 @@ def place_crossing_labels(doc, msp, labels: List[dict], obstacles: List[Tuple[fl
         r = max(1.3 * H, 0.6 * H * len(text) / 2 + 0.6 * H)
         # half the bundle's width across the road, so the circle starts clear of its own ducts
         half = max([abs((p[0] - a[0]) * n[0] + (p[1] - a[1]) * n[1]) for x in own for p in x] or [0.0])
+        # only what is near enough to matter (the search reaches `reach` from the crossing)
+        step = r + 2.0 * H
+        reach = half + r + margin + step * 0.45 * 30 + r + margin
+        near_box = (a[0] - reach, a[1] - reach, a[0] + reach, a[1] + reach)
+
+        def near(sg):
+            return [(p, q) for p, q in sg if not (max(p[0], q[0]) < near_box[0] or min(p[0], q[0]) > near_box[2]
+                                                  or max(p[1], q[1]) < near_box[1] or min(p[1], q[1]) > near_box[3])]
+        l_segs, l_others, l_own = near(segs), near(others), near([tuple(x) for x in own])
+        l_fixed_segs, l_placed_leaders = near(fixed_segs), near(placed_leaders)
+        l_obst = [(x, y, h) for (x, y, h) in obstacles if abs(x - a[0]) <= reach + h and abs(y - a[1]) <= reach + h]
+        l_boxes = [q for q in placed + fixed_boxes if _box_box(q, near_box)]
+        # directions round the crossing, across the road first, then slanting, then along it
+        angles = sorted(range(-165, 195, 15), key=lambda g: (abs(abs(g) - 90), abs(g)))
         best = None
-        for mult in (1.0, 1.5, 2.1, 2.8, 3.6, 4.6, 6.0):
-            for sgn in (1, -1):
-                for t in (0.0, 0.7, -0.7, 1.4, -1.4, 2.2, -2.2):
-                    dist = half + r + margin + 2.0 * H * mult
-                    e = (a[0] + n[0] * sgn * dist + d[0] * t * r, a[1] + n[1] * sgn * dist + d[1] * t * r)
-                    box = (e[0] - r - margin, e[1] - r - margin, e[0] + r + margin, e[1] + r + margin)
-                    s = (mult - 1) * 0.6 + abs(t) * 0.25
-                    for (x, y, h) in obstacles:
-                        if _box_box(box, (x - h, y - h, x + h, y + h)):
-                            s += 100
-                    for q in placed + fixed_boxes:
-                        if _box_box(box, q):
-                            s += 100
-                    for (p, q) in segs:
-                        if _seg_box(p, q, box):
-                            s += 100
-                    for (p, q) in others:
-                        if _seg_box(p, q, box):
-                            s += 100
-                    for (p, q) in fixed_segs + placed_leaders:        # the circle on another label's leader
-                        if _seg_box(p, q, box):
-                            s += 60
-                    if s < 100:                                    # a clear circle: how the leader fares
-                        for (p, q) in segs:
-                            if _seg_seg_touch(a, e, p, q):
-                                s += 4
-                        for (p, q) in others:
-                            if _seg_seg_touch(a, e, p, q):
-                                s += 5
-                        for (p, q) in fixed_segs + placed_leaders:
-                            if _seg_seg_touch(a, e, p, q):
-                                s += 8
-                        for (x, y, h) in obstacles:
-                            if _seg_box(a, e, (x - h, y - h, x + h, y + h)):
-                                s += 20
-                        for q in placed + fixed_boxes:
-                            if _seg_box(a, e, q):
-                                s += 30
-                    if best is None or s < best[0]:
-                        best = (s, e)
-                    if s < 0.5:
-                        break
-                if best[0] < 0.5:
-                    break
-            if best[0] < 0.5:
-                break
+        first_clear = None
+        for k in range(31):
+            dist = half + r + margin + step * 0.45 * k
+            for g in angles:
+                gr = math.radians(g)
+                ux, uy = d[0] * math.cos(gr) + n[0] * math.sin(gr), d[1] * math.cos(gr) + n[1] * math.sin(gr)
+                e = (a[0] + ux * dist, a[1] + uy * dist)
+                box = (e[0] - r - margin, e[1] - r - margin, e[0] + r + margin, e[1] + r + margin)
+                s = k * 0.6 + abs(abs(g) - 90) * 0.01
+                for (x, y, h) in l_obst:
+                    if _box_box(box, (x - h, y - h, x + h, y + h)):
+                        s += 100
+                for q in l_boxes:
+                    if _box_box(box, q):
+                        s += 100
+                for (p, q) in l_segs:
+                    if _seg_box(p, q, box):
+                        s += 100
+                for (p, q) in l_others + l_own:                # the circle clear of its own ducts as well (the leader starts on them)
+                    if _seg_box(p, q, box):
+                        s += 100
+                for (p, q) in l_fixed_segs + l_placed_leaders:        # the circle on another label's leader
+                    if _seg_box(p, q, box):
+                        s += 60
+                if s < 100:                                    # a clear circle: how the leader fares
+                    for (p, q) in l_segs:
+                        if _seg_seg_touch(a, e, p, q):
+                            s += 4
+                    for (p, q) in l_others:
+                        if _seg_seg_touch(a, e, p, q):
+                            s += 5
+                    for (p, q) in l_fixed_segs + l_placed_leaders:
+                        if _seg_seg_touch(a, e, p, q):
+                            s += 8
+                    for (x, y, h) in l_obst:
+                        if _seg_box(a, e, (x - h, y - h, x + h, y + h)):
+                            s += 20
+                    for q in l_boxes:
+                        if _seg_box(a, e, q):
+                            s += 30
+                if best is None or s < best[0]:
+                    best = (s, e)
+            if best[0] < 100 and first_clear is None:
+                first_clear = k
+            if first_clear is not None and (best[0] < 1.0 or k >= first_clear + 2):
+                break                                           # a clear spot found: look two steps further for a cleaner leader, then stop
         e = best[1]
         ang = math.atan2(e[1] - a[1], e[0] - a[0])
         end = (e[0] - math.cos(ang) * r, e[1] - math.sin(ang) * r)
