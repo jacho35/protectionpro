@@ -159,3 +159,87 @@ def test_module_defaults_match_the_frontend_panel_list():
         assert m["id"] == pid and m["pmax_w"] == float(w)
         assert (m["voc_v"], m["vmp_v"], m["isc_a"], m["imp_a"]) == (float(voc), float(vmp), float(isc), float(imp))
         assert (m["k_voc_pct"], m["k_vmp_pct"]) == (float(beta), float(gamma))
+
+
+def _prot(**kw):
+    base = {"module": "pv_550_mono", "inverter": "inv_10k_2mppt", "modules_per_string": 8, "strings_per_mppt": [2, 1]}
+    return sp.size_protection(dict(base, **kw))
+
+
+def test_protection_hand_calcs():
+    r = _prot()
+    by = {i["id"]: i for i in r["items"]}
+    assert by["string_fuse"]["required"] is False                      # 2 strings per input
+    # isolator: 1.25 * 14.0 * 2 = 35 A -> 40 A; Voc cold string = 8 * 53.7922 = 430 V
+    assert by["dc_isolator"]["rating_a"] == 40 and by["dc_isolator"]["voltage_v"] == 430
+    # cable: 1.25 * 14 = 17.5 A -> 2.5 mm2 carries 41 A but 2 * 30 * 14 * 0.0206 / 2.5 = 6.9 V = 2.06 % (> 1 %)
+    # 4 mm2: 1.29 % > 1 %; 6 mm2: 2.884 V / (8 * 41.95 = 335.6 V) = 0.86 %
+    assert by["dc_cable"]["cable"]["size_mm2"] == 6 and by["dc_cable"]["cable"]["vd_pct"] == pytest.approx(0.86, abs=0.01)
+    # AC: 10000 / (sqrt(3) * 400) = 14.43 A -> 16 A breaker; fault 1.1 * 14.43 = 15.9 A
+    assert r["ac_current_a"] == pytest.approx(14.43, abs=0.01) and by["ac_breaker"]["rating_a"] == 16
+    assert r["fault_contribution_a"] == pytest.approx(15.88, abs=0.02)
+    assert r["ok"] is True
+
+
+def test_protection_fuse_required_from_three_strings_and_limited_by_module():
+    r = _prot(strings_per_mppt=[3, 3])
+    f = {i["id"]: i for i in r["items"]}["string_fuse"]
+    assert f["required"] and f["rating_a"] == 25 and f["ok"]          # 1.5 * 14 = 21 A -> 25 A, module max 25 A
+    r = sp.size_protection({"module": dict(sp.get_module("pv_550_mono"), max_fuse_a=20), "inverter": "inv_10k_2mppt",
+                            "modules_per_string": 8, "strings_per_mppt": [3, 3]})
+    assert {i["id"]: i for i in r["items"]}["string_fuse"]["ok"] is False and r["ok"] is False
+
+
+def test_protection_cable_grows_with_length_and_can_fail():
+    short = {i["id"]: i for i in _prot(string_cable_m=10)["items"]}["dc_cable"]["cable"]["size_mm2"]
+    long = {i["id"]: i for i in _prot(string_cable_m=120)["items"]}["dc_cable"]["cable"]["size_mm2"]
+    assert short < long
+    assert _prot(string_cable_m=2000)["ok"] is False
+
+
+def test_protection_export_limit_and_errors():
+    r = _prot(export_limit_kw=8)
+    assert r["export_limited"] is True and "8 kW" in r["export_note"]
+    assert _prot(export_limit_kw=10)["export_limited"] is False
+    assert _prot(num_inverters=2)["total_ac_kw"] == 20
+    with pytest.raises(ValueError):
+        _prot(string_cable_m=0)
+
+
+def test_solar_azimuth_noon_is_north_in_the_south_and_morning_is_east():
+    assert sp.solar_azimuth_n(-25.75, 23.45, 0) == pytest.approx(0, abs=0.5) or sp.solar_azimuth_n(-25.75, 23.45, 0) > 359.5
+    assert 60 < sp.solar_azimuth_n(-25.75, 0, -60) < 90                 # morning, east of north
+    assert 270 < sp.solar_azimuth_n(-25.75, 0, 60) < 300                # afternoon, west
+
+
+def test_obstruction_block_geometry():
+    a0, a1, e = sp.obstruction_block(3.0, 6.0, 0, 8.0)
+    assert e == pytest.approx(math.degrees(math.atan(0.5)), abs=1e-6)
+    assert a0 == pytest.approx(360 - math.degrees(math.atan(4 / 6)), abs=1e-6) and a1 == pytest.approx(math.degrees(math.atan(4 / 6)), abs=1e-6)
+    with pytest.raises(ValueError):
+        sp.obstruction_block(0, 5, 0, 5)
+
+
+def test_shading_reduces_yield_only_when_the_block_is_in_the_sun_path():
+    base = {"location": "Pretoria", "tilt_deg": 25, "azimuth_deg": 0, "usable_area_m2": 40, "mode": "roof"}
+    clear = sp.run_solar_size(base)
+    north = sp.run_solar_size(dict(base, obstructions=[{"height_m": 4, "distance_m": 6, "bearing_deg": 0, "width_m": 20}]))
+    south = sp.run_solar_size(dict(base, obstructions=[{"height_m": 4, "distance_m": 6, "bearing_deg": 180, "width_m": 20}]))
+    assert "shading_loss_pct" not in clear
+    assert north["shading_loss_pct"] > 5                                # 34 degree wall due north blocks the midday sun
+    assert south["shading_loss_pct"] < 0.5 * north["shading_loss_pct"]
+    assert north["annual_kwh"] < clear["annual_kwh"] == north["unshaded_annual_kwh"]
+
+
+def test_voltage_rise_hand_calc():
+    # 400 V, 5 MVA... use 1 MVA fault level: Z = 400^2 / 1e6 = 0.16 ohm, X/R = 1 -> R = X = 0.11314
+    # 10 kW unity pf: dV = 100 * 10000 * 0.11314 / 400^2 = 0.707 %
+    r = sp.voltage_rise(10, 400, 1000, 1.0)
+    assert r["voltage_rise_pct"] == pytest.approx(0.707, abs=0.001) and r["ok"]
+    # absorbing at pf 0.95 lagging: Q = 10000 * tan(acos(0.95)) = 3287 var -> dV = (10000 - 3287) * 0.11314 / 160000 * 100
+    r2 = sp.voltage_rise(10, 400, 1000, 1.0, absorb_pf=0.95)
+    assert r2["voltage_rise_pct"] == pytest.approx(0.4747, abs=0.001)
+    assert r2["voltage_rise_pct"] < r["voltage_rise_pct"]
+    assert sp.voltage_rise(100, 400, 1000, 1.0)["ok"] is False          # 7.07 %
+    with pytest.raises(ValueError):
+        sp.voltage_rise(10, 400, 0)

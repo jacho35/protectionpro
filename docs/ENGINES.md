@@ -17,6 +17,8 @@ Endpoint table and engine internals, moved out of CLAUDE.md. Read the relevant s
 | `/api/analysis/solar-size` | PV array sizing (roof area and / or load) + monthly / annual yield | Klein day, Erbs + Collares-Pereira & Rabl, isotropic sky; screening grade |
 | `/api/analysis/solar-strings` | PV string check against inverter limits | cold Voc / hot Vmp / MPPT window / per-MPPT current (IEC 62548 style) |
 | `/api/analysis/solar-row-spacing` | Tilted-rack row pitch and GCR | winter-solstice solar elevation |
+| `/api/analysis/solar-protection` | PV string fuse, DC isolator, DC cable, AC breaker, fault contribution, export limit | IEC 62548 / 60364-7-712 style; PV1-F ratings are typical manufacturer data |
+| `/api/analysis/solar-voltage-rise` | Voltage rise at the point of connection | dV = (P R + Q X) / V² from the fault level; the limit is an input |
 | `GET /api/analysis/solar-library` | Default modules, inverters, loss stack, irradiance locations | — |
 | `/api/analysis/battery-sizing` | Duty-cycle battery sizing + discharge sim | IEEE 485-style factors, Peukert, OCV(SoC) |
 | `/api/analysis/opf` | Economic dispatch + Volt/VAR optimization | Merit order by marginal cost + LF-scored hill climb |

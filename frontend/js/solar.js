@@ -16,12 +16,15 @@ const Solar = {
   _res: null,
   _str: null,
   _rows: null,
+  _prot: null,
+  _rise: null,
   _busy: false,
   DEFAULTS: {
     location: 'Pretoria', module: 'pv_550_mono', inverter: 'inv_10k_2mppt',
     roofShape: 'gable', length: 10, width: 9.2, pitch: 25, setback: 0.5, area: 60, packing: 0.8,
     tilt: 15, azimuth: 0, mode: 'min', annualKwh: 18500, sharePct: 70,
-    perString: 8, hour: 0,
+    perString: 8, hour: 0, cableM: 30, vdPct: 1, acV: 400, exportKw: '',
+    obsH: 0, obsD: 6, obsB: 0, obsW: 8, sscKva: 500, xr: 1, absPf: 1, riseLimit: 3,
   },
 
   cfg() {
@@ -94,9 +97,9 @@ const Solar = {
 
   render() {
     const c = this.cfg();
-    const tabs = [['size', '1 Roof & size'], ['strings', '2 Strings'], ['rows', '3 Rows (flat roof)']];
+    const tabs = [['size', '1 Roof & size'], ['strings', '2 Strings'], ['rows', '3 Rows (flat roof)'], ['protect', '4 Protection'], ['grid', '5 Shading & grid']];
     const bar = tabs.map(([k, l]) => `<button type="button" class="btn${this._tab === k ? ' btn-primary' : ''}" data-act="tab" data-v="${k}">${l}</button>`).join(' ');
-    const body = { size: () => this._sizeHtml(c), strings: () => this._stringsHtml(c), rows: () => this._rowsHtml(c) }[this._tab]();
+    const body = { size: () => this._sizeHtml(c), strings: () => this._stringsHtml(c), rows: () => this._rowsHtml(c), protect: () => this._protectHtml(c), grid: () => this._gridHtml(c) }[this._tab]();
     const el = document.getElementById('solar-body');
     el.innerHTML = `<div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap">${bar}</div>${body}`;
     el.querySelectorAll('[data-k]').forEach(i => i.addEventListener('change', () => {
@@ -155,6 +158,7 @@ const Solar = {
       </div>
       <div style="margin-top:8px;font-size:12px">Size is set by ${lim}${r.dc_ac_ratio ? '; DC/AC ratio ' + r.dc_ac_ratio : ''}.</div>
       <div style="display:flex;gap:3px;align-items:flex-end;height:104px;margin-top:8px" role="img" aria-label="Monthly energy, kWh">${bars}</div>
+      ${r.shading_loss_pct != null ? '<div style="margin-top:6px;font-size:12px">Shading loss ' + r.shading_loss_pct + ' %</div>' : ''}
       <div style="margin-top:6px;font-size:11px;color:var(--text-muted,#6d6d6d)">${escHtml(r.data_note)}</div>`;
   },
 
@@ -202,6 +206,42 @@ const Solar = {
     return body + `<div style="margin-top:12px"><button class="btn btn-primary" type="button" data-act="rows">Calculate rows</button></div>` + out;
   },
 
+  _protectHtml(c) {
+    const ok = !!this._str;
+    const head = this._grid(`
+      ${this._in(c, 'cableM', 'String cable length, one way (m)')}
+      ${this._in(c, 'vdPct', 'DC voltage-drop limit (%)')}
+      ${this._in(c, 'acV', 'AC voltage (V)')}
+      <label for="sol-exportKw">Export limit at the connection point (kW, blank = none)</label>
+      <input id="sol-exportKw" data-k="exportKw" type="text" inputmode="decimal" style="max-width:140px" value="${escHtml(c.exportKw)}">`);
+    const r = this._prot;
+    const rows = r ? r.items.map(k => `<div style="display:flex;gap:10px;padding:6px 0;border-bottom:1px solid var(--border,#e4e2dc)">
+      <span style="min-width:44px;font-size:11px;font-weight:700;color:${k.ok ? '#1e5b2b' : '#8a2b1e'}">${k.ok ? 'OK' : 'FAIL'}</span><span>${escHtml(k.label)}</span></div>`).join('') : '';
+    const exp = r && r.export_note ? `<div style="margin-top:8px;font-size:12px;font-weight:600;color:${r.export_limited ? '#8a2b1e' : 'inherit'}">${escHtml(r.export_note)}</div>` : '';
+    return head + `<div style="margin-top:12px"><button class="btn btn-primary" type="button" data-act="protect" ${ok ? '' : 'disabled'}>Size protection</button>
+      ${ok ? '' : '<span style="font-size:12px"> check the strings on step 2 first</span>'}</div><div style="margin-top:12px">${rows}</div>${exp}`;
+  },
+
+  _gridHtml(c) {
+    const head = this._grid(`
+      <span style="grid-column:1/-1;font-weight:600">Obstruction above the array (applied on step 1, height 0 = none)</span>
+      ${this._in(c, 'obsH', 'Height above the array (m)')}
+      ${this._in(c, 'obsD', 'Distance from the array (m)')}
+      ${this._in(c, 'obsB', 'Bearing from the array (° from north)')}
+      ${this._in(c, 'obsW', 'Width (m)')}
+      <span style="grid-column:1/-1;font-weight:600;margin-top:8px">Voltage rise at the point of connection</span>
+      ${this._in(c, 'sscKva', 'Fault level at the connection (kVA)')}
+      ${this._in(c, 'xr', 'X/R ratio')}
+      ${this._in(c, 'absPf', 'Inverter power factor (absorbing, 1 = unity)')}
+      ${this._in(c, 'riseLimit', 'Voltage-rise limit (%) — check the utility rule')}`);
+    const r = this._rise;
+    const out = r ? `<div style="margin-top:12px;font-size:13px"><strong style="color:${r.ok ? '#1e5b2b' : '#8a2b1e'}">${r.ok ? 'OK' : 'OVER LIMIT'}</strong>
+      — rise ${r.voltage_rise_pct} % against ${r.limit_pct} %; fault level is ${r.ssc_ratio} × the inverter.
+      ${r.max_p_kw_at_limit != null ? 'Largest output at the limit: ' + r.max_p_kw_at_limit + ' kW.' : ''}</div>` : '';
+    return head + `<div style="margin-top:12px"><button class="btn btn-primary" type="button" data-act="rise">Calculate voltage rise</button></div>${out}`
+      + (this._res && this._res.shading_loss_pct != null ? `<div style="margin-top:8px;font-size:13px">Shading loss from the obstruction: <strong>${this._res.shading_loss_pct} %</strong> of the annual yield.</div>` : '');
+  },
+
   // ── Actions ────────────────────────────────────────────────────────
   _status(m) { document.getElementById('status-info').textContent = m; },
 
@@ -213,6 +253,8 @@ const Solar = {
       if (act === 'run') await this.runSize();
       else if (act === 'strings') await this.runStrings();
       else if (act === 'rows') await this.runRows();
+      else if (act === 'protect') await this.runProtection();
+      else if (act === 'rise') await this.runRise();
       else if (act === 'sld') this.addToSld();
     } catch (e) {
       this._status('Solar: ' + (e.message || e));
@@ -221,6 +263,23 @@ const Solar = {
   },
 
   _loc(c) { return this._locs.find(l => l.name === c.location) || this._locs[0]; },
+
+  async runProtection() {
+    const c = this.cfg();
+    const p = this.panel(c), inv = this.inverter(c);
+    const sp = this.stringSplit(this._res.modules, +c.perString, inv.mppt_count);
+    const body = { module: this.moduleBody(p), inverter: this.inverterBody(inv), modules_per_string: +c.perString,
+      strings_per_mppt: sp.perMppt, string_cable_m: +c.cableM, vd_limit_pct: +c.vdPct, ac_voltage_v: +c.acV,
+      t_min_c: this._loc(c).tmin_c };
+    if (String(c.exportKw).trim() !== '') body.export_limit_kw = parseFloat(c.exportKw);
+    this._prot = await API.request('/analysis/solar-protection', 'POST', body);
+  },
+
+  async runRise() {
+    const c = this.cfg(), inv = this.inverter(c);
+    this._rise = await API.request('/analysis/solar-voltage-rise', 'POST', {
+      p_kw: inv.ac_kw, v_ll_v: +c.acV, s_sc_kva: +c.sscKva, xr_ratio: +c.xr, absorb_pf: +c.absPf, limit_pct: +c.riseLimit });
+  },
 
   async runRows() {
     const c = this.cfg();
@@ -242,8 +301,10 @@ const Solar = {
     this._res = await API.request('/analysis/solar-size', 'POST', {
       location: c.location, module: this.moduleBody(p), inverter: this.inverterBody(inv),
       tilt_deg: g.tilt, azimuth_deg: g.azimuth, mode: c.mode, usable_area_m2: g.area, packing,
-      annual_kwh: +c.annualKwh || null, share_pct: +c.sharePct });
+      annual_kwh: +c.annualKwh || null, share_pct: +c.sharePct,
+      obstructions: +c.obsH > 0 ? [{ height_m: +c.obsH, distance_m: +c.obsD, bearing_deg: +c.obsB, width_m: +c.obsW }] : [] });
     this._str = null;
+    this._prot = null;
   },
 
   async runStrings() {
@@ -275,6 +336,8 @@ const Solar = {
     });
     const cb = AppState.addComponent('cb', x, y + 120);
     cb.props.name = 'PV AC breaker';
+    const brk = this._prot && this._prot.items.find(i => i.id === 'ac_breaker');
+    if (brk && brk.rating_a) { cb.props.rated_current_a = brk.rating_a; cb.props.trip_rating_a = brk.rating_a; cb.props.rated_voltage_kv = 0.69; }
     AppState.addWire(pv.id, 'out', cb.id, 'top');
     if (typeof Canvas !== 'undefined') Canvas.render();
     this._status('Solar: placed ' + pv.props.name + ' (' + this._str.strings + ' × ' + c.perString + ' modules) and its AC breaker. Wire the breaker to a bus.');

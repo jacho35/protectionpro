@@ -1102,6 +1102,7 @@ class SolarSizeRequest(BaseModel):
     annual_kwh: Optional[float] = None
     share_pct: float = 70.0
     losses: Optional[dict] = None
+    obstructions: Optional[List[dict]] = None   # [{height_m, distance_m, bearing_deg, width_m}] above the array
 
 
 class SolarStringsRequest(BaseModel):
@@ -1157,3 +1158,38 @@ def solar_row_spacing(data: SolarRowSpacingRequest):
     """Row pitch and ground cover ratio for tilted racks on a flat roof."""
     return _solar_call(lambda d: solar_pv.row_spacing(d["lat"], d["tilt_deg"], d["module_length_m"],
                                                       d["hour_angle_deg"], d["roof_depth_m"]), data.model_dump())
+
+
+class SolarProtectionRequest(BaseModel):
+    module: Union[str, dict]
+    inverter: Union[str, dict]
+    modules_per_string: int
+    strings_per_mppt: List[int]
+    string_cable_m: float = 30.0
+    vd_limit_pct: float = 1.0
+    ac_voltage_v: float = 400.0
+    num_inverters: int = 1
+    t_min_c: float = -5.0
+    export_limit_kw: Optional[float] = None   # set on the connection point
+
+
+@router.post("/solar-protection")
+def solar_protection(data: SolarProtectionRequest):
+    """String fuses, DC isolator, DC string cable, AC breaker, fault contribution and export limit."""
+    return _solar_call(solar_pv.size_protection, data.model_dump())
+
+
+class SolarVoltageRiseRequest(BaseModel):
+    p_kw: float
+    v_ll_v: float = 400.0
+    s_sc_kva: float
+    xr_ratio: float = 1.0
+    absorb_pf: float = 1.0
+    limit_pct: float = 3.0
+
+
+@router.post("/solar-voltage-rise")
+def solar_voltage_rise(data: SolarVoltageRiseRequest):
+    """Voltage rise at the point of connection from the fault level (screening)."""
+    return _solar_call(lambda d: solar_pv.voltage_rise(d["p_kw"], d["v_ll_v"], d["s_sc_kva"], d["xr_ratio"],
+                                                       d["absorb_pf"], d["limit_pct"]), data.model_dump())

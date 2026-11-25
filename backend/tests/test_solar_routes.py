@@ -66,3 +66,25 @@ def test_strings_and_row_spacing(client, auth):
     assert r.status_code == 200 and r.json()["rows"] == 3
     assert client.post(f"{API}/solar-row-spacing", headers=auth,
                        json={"lat": -80, "tilt_deg": 15, "module_length_m": 2.28, "hour_angle_deg": 90}).status_code == 400
+
+
+def test_protection_route(client, auth):
+    r = client.post(f"{API}/solar-protection", headers=auth, json={
+        "module": "pv_550_mono", "inverter": "inv_10k_2mppt", "modules_per_string": 8,
+        "strings_per_mppt": [2, 1], "export_limit_kw": 8})
+    assert r.status_code == 200, r.text
+    d = r.json()
+    assert d["export_limited"] is True and d["items"][0]["id"] == "string_fuse"
+    assert client.post(f"{API}/solar-protection", headers=auth, json={
+        "module": "pv_550_mono", "inverter": "inv_10k_2mppt", "modules_per_string": 8,
+        "strings_per_mppt": [2, 1], "string_cable_m": -1}).status_code == 400
+
+
+def test_voltage_rise_and_shading_routes(client, auth):
+    r = client.post(f"{API}/solar-voltage-rise", headers=auth, json={"p_kw": 10, "s_sc_kva": 1000})
+    assert r.status_code == 200 and r.json()["voltage_rise_pct"] == 0.707
+    assert client.post(f"{API}/solar-voltage-rise", headers=auth, json={"p_kw": 10, "s_sc_kva": 0}).status_code == 400
+    r = client.post(f"{API}/solar-size", headers=auth, json={
+        "location": "Pretoria", "tilt_deg": 25, "usable_area_m2": 40, "mode": "roof",
+        "obstructions": [{"height_m": 4, "distance_m": 6, "bearing_deg": 0, "width_m": 20}]})
+    assert r.status_code == 200 and r.json()["shading_loss_pct"] > 5

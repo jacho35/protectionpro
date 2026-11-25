@@ -1,6 +1,6 @@
 # Solar PV design — plan
 
-Agreed 2026-11-25 from a design canvas (nine boards: sizing on the site plan, roadmap, 3D roof, roof entry, sizing mode, string design, SLD generation, module / inverter library, flat-roof row spacing). Status: **phase 1 backend built 2026-11-25** (engine, data, routes, tests); the frontend (library, roof entry, sizing panel, results) is next.
+Agreed 2026-11-25 from a design canvas (nine boards: sizing on the site plan, roadmap, 3D roof, roof entry, sizing mode, string design, SLD generation, module / inverter library, flat-roof row spacing). Status (2026-11-25): **built** — engine, routes, tests for phases 1-3 and the closed-form parts of phase 4 (row spacing, obstruction shading, voltage rise); the Solar PV Design modal (`solar.js`) with five steps. **Open** — roof Detect / Draw on the plan, the module / inverter library editor, the 3D roof view, shading from real 3D geometry, battery / hybrid dispatch, load-flow / fault integration of the PV source, SLD generation of the isolator and string fuse parts.
 
 ## 1. Decisions taken
 
