@@ -78,6 +78,66 @@ const PlanSolar = {
     return out;
   },
 
+  // ── Corner editing (the one gesture set of CLAUDE.md: drag a node, Shift-click an edge adds one,
+  // Alt-click or double-click a node removes it (a roof keeps three corners), double-click an edge adds one,
+  // drag a midpoint to add and move a corner). Always live with the Select tool; no selection needed. ──
+  nodeAt(pt, zoom, px) {
+    const tol = (px || 8) / zoom;
+    for (const r of this.roofs()) for (let i = 0; i < (r.points || []).length; i++) if (Math.hypot(pt.x - r.points[i].x, pt.y - r.points[i].y) <= tol) return { roof: r, i };
+    return null;
+  },
+  midAt(pt, zoom) {
+    const tol = 7 / zoom;
+    for (const r of this.roofs()) {
+      const n = (r.points || []).length;
+      for (let i = 0; i < n && n >= 3; i++) {
+        const a = r.points[i], b = r.points[(i + 1) % n];
+        if (Math.hypot(pt.x - (a.x + b.x) / 2, pt.y - (a.y + b.y) / 2) <= tol) return { roof: r, i, mid: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 } };
+      }
+    }
+    return null;
+  },
+  edgeAt(pt, zoom) {
+    const tol = 8 / zoom;
+    for (const r of this.roofs()) {
+      const n = (r.points || []).length;
+      for (let i = 0; i < n && n >= 3; i++) if (PlanEngine._distToSeg(pt, r.points[i], r.points[(i + 1) % n]) <= tol) return { roof: r, i };
+    }
+    return null;
+  },
+  insertNode(roof, i, p) {
+    roof.points.splice(i + 1, 0, { x: p.x, y: p.y });
+    this._changed();
+  },
+  removeNodeAt(pt, zoom) {
+    const h = this.nodeAt(pt, zoom, 9);
+    if (!h || h.roof.points.length <= 3) return false;
+    h.roof.points.splice(h.i, 1);
+    this._changed();
+    return true;
+  },
+  addNodeAtEdge(pt, zoom) {
+    const h = this.edgeAt(pt, zoom);
+    if (!h) return false;
+    this.insertNode(h.roof, h.i, pt);
+    return true;
+  },
+  _changed() {
+    if (typeof PlanMarkup !== 'undefined') { PlanMarkup.snapshot(); PlanMarkup.markDirty(); }
+    if (typeof PlanEngine !== 'undefined') PlanEngine.requestDraw({ fg: true });
+  },
+  _handles(ctx, r, u) {
+    ctx.save();
+    ctx.fillStyle = '#fff'; ctx.strokeStyle = '#c2410c'; ctx.lineWidth = 1.4 * u;
+    const n = r.points.length;
+    for (let i = 0; i < n; i++) {
+      const p = r.points[i], q = r.points[(i + 1) % n];
+      ctx.beginPath(); ctx.rect(p.x - 4 * u, p.y - 4 * u, 8 * u, 8 * u); ctx.fill(); ctx.stroke();
+      ctx.beginPath(); ctx.arc((p.x + q.x) / 2, (p.y + q.y) / 2, 3 * u, 0, 6.2832); ctx.fill(); ctx.stroke();
+    }
+    ctx.restore();
+  },
+
   // Canvas overlay: each roof as an amber outline with its name, shape and usable area.
   draw(ctx, zoom) {
     const roofs = this.roofs();
@@ -101,6 +161,7 @@ const PlanSolar = {
       ctx.fillStyle = '#7c2d12';
       ctx.font = `${12 * u}px sans-serif`;
       ctx.textAlign = 'center';
+      if (typeof PlanTools !== 'undefined' && PlanTools.active && PlanTools.active.id === 'select') this._handles(ctx, r, u);
       ctx.fillText(`${r.name} · ${r.shape === 'gable' ? 'gable ' + r.pitch + '°' : 'flat, ' + r.tilt + '° racks'}${a != null ? ' · ' + a.toFixed(0) + ' m²' : ''}`, c.x, c.y);
       ctx.restore();
     }

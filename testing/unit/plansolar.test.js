@@ -5,7 +5,7 @@ global.AppState = { planMarkup: { settings: {}, nameCounters: {} }, planGenId: (
 global.PlanMarkup = { nextCounter: (k, p) => p + '1', snapshot() {}, markDirty() {} };
 global.PlanRoomDetect = Detect;
 const poly = (pts) => { let a = 0; for (let i = 0; i < pts.length; i++) { const p = pts[i], q = pts[(i + 1) % pts.length]; a += p.x * q.y - q.x * p.y; } return Math.abs(a) / 2; };
-global.PlanEngine = { factor: () => AppState.planMarkup.scale && AppState.planMarkup.scale.factor, _polyArea: poly };
+global.PlanEngine = { view: { zoom: 1 }, _distToSeg: (p, a, b) => { const dx = b.x - a.x, dy = b.y - a.y, l2 = dx * dx + dy * dy, t = l2 ? Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / l2)) : 0; return Math.hypot(p.x - a.x - t * dx, p.y - a.y - t * dy); }, requestDraw() {}, factor: () => AppState.planMarkup.scale && AppState.planMarkup.scale.factor, _polyArea: poly };
 const S = require('../../frontend/js/plan-solar.js');
 let n = 0; const ok = (name, fn) => { fn(); n++; console.log('ok', name); };
 const rect = (w, h) => [{ x: 0, y: 0 }, { x: w, y: 0 }, { x: w, y: h }, { x: 0, y: h }];
@@ -41,5 +41,22 @@ ok('arrays: gable uses pitch and packing, flat uses tilt and the ground cover ra
 ok('removeRoof keeps the others', () => {
   const before = S.roofs().length; global.PlanEngine.requestDraw = () => {};
   S.removeRoof(S.roofs()[0].id); assert.strictEqual(S.roofs().length, before - 1);
+});
+ok('corner editing: find a node / midpoint / edge, add, move, remove (keeping three)', () => {
+  AppState.planMarkup.settings.solar.roofs = [];
+  const r = S.addRoof(rect(100, 60));
+  const z = 1;
+  assert.strictEqual(S.nodeAt({ x: 101, y: 1 }, z).i, 1);                  // near the (100, 0) corner
+  assert.strictEqual(S.nodeAt({ x: 50, y: 30 }, z), null);
+  const m = S.midAt({ x: 50, y: 1 }, z);                                    // midpoint of edge 0
+  assert.deepStrictEqual([m.i, m.mid.x, m.mid.y], [0, 50, 0]);
+  assert.strictEqual(S.edgeAt({ x: 30, y: 3 }, z).i, 0);
+  assert.strictEqual(S.edgeAt({ x: 50, y: 30 }, z), null);
+  assert(S.addNodeAtEdge({ x: 30, y: 2 }, z));                              // double-click / Shift-click on an edge
+  assert.strictEqual(r.points.length, 5);
+  assert(S.removeNodeAt({ x: 100, y: 0 }, z));                              // Alt-click / double-click on a corner
+  assert.strictEqual(r.points.length, 4);
+  assert(S.removeNodeAt({ x: 100, y: 60 }, z)); assert.strictEqual(r.points.length, 3);
+  assert(!S.removeNodeAt(r.points[0], z), 'a roof keeps three corners'); assert.strictEqual(r.points.length, 3);
 });
 console.log(n + ' passed');

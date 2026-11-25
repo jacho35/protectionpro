@@ -1129,7 +1129,8 @@ const PlanEngine = {
     this.fg.addEventListener('dblclick', (e) => {
       if (!this._isActive()) return;
       const pt = this.screenToWorld(e.clientX, e.clientY);
-      if (typeof PlanTools !== 'undefined' && PlanTools.deleteVertexAt) PlanTools.deleteVertexAt(pt);
+      if (typeof PlanTools !== 'undefined' && PlanTools.deleteVertexAt && PlanTools.deleteVertexAt(pt)) return;
+      if (typeof PlanSolar !== 'undefined') PlanSolar.addNodeAtEdge(pt, this.view.zoom);   // double-click an edge of a solar roof: add a corner
     });
     // Space-hold pan (guarded to the active workspace)
     document.addEventListener('keydown', (e) => {
