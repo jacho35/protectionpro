@@ -196,6 +196,12 @@ const RoofEditor = {
     ctx.save(); ctx.translate(x0 - off - 6 * u, (y0 + y1) / 2); ctx.rotate(-Math.PI / 2); ctx.fillText(((y1 - y0) * f).toFixed(2) + ' m', 0, 0); ctx.restore();
     ctx.restore();
   },
+  // Select tool: the roof under the click becomes the selected roof (properties column + 3D); a click elsewhere leaves it as is.
+  pickRoof(pt) {
+    const roof = typeof PlanSolarArray !== 'undefined' ? PlanSolarArray.roofAt(pt) : null;
+    if (!roof || (Roof3D.sel && Roof3D.sel.roof === roof.id && !Roof3D.sel.obj)) return;
+    Roof3D.sel = { roof: roof.id }; this.renderPanel(); if (Roof3D.view) Roof3D.view.redraw(); PlanEngine.requestDraw({ fg: true });
+  },
   // A click on the plan with a 3D tool: pick the roof (or object) under it, or drop the chosen object on it.
   planDown(pt) {
     const f = PlanEngine.factor(); if (!f) return;
@@ -267,7 +273,9 @@ if (typeof PlanTools !== 'undefined') PlanTools.register({
   id: 'roofedit', cursor: 'crosshair',
   onActivate() { if (!RoofEditor.on) RoofEditor.open(); },
   cancel() { PlanTools.set('select'); },
-  onDown(pt) { RoofEditor.planDown(pt); },
+  onDown(pt) { if (PlanSolar.northHit(pt)) { this._north = true; PlanSolar.dragNorth(pt); return; } RoofEditor.planDown(pt); },
+  onMove(pt) { if (this._north) PlanSolar.dragNorth(pt); },
+  onUp() { if (this._north) { this._north = false; PlanMarkup.snapshot(); PlanMarkup.markDirty(); RoofEditor.renderPanel(); } },
   onKey(e) { if (e.key === 'Escape') { Roof3D.sel = null; RoofEditor.renderPanel(); PlanEngine.requestDraw({ fg: true }); return true; } return false; },
 });
 

@@ -192,12 +192,15 @@ PlanTools.register({
     }
     // 0c) Alt+click on a node of a route / room / trench removes it (the ends of a route stay)
     if (e.altKey && PlanTools.deleteVertexAt(pt)) return;
+    // 0c2) the north arrow: press and drag to point it at true north
+    if (typeof PlanSolar !== 'undefined' && PlanSolar.northHit(pt)) { this._drag = { kind: 'north', moved: false }; PlanSolar.dragNorth(pt); this._drag.moved = true; return; }
     // 0d) Solar roofs: drag a corner, or a midpoint to add a corner there (no selection needed)
     if (typeof PlanSolar !== 'undefined') {
       const nd = PlanSolar.nodeAt(pt, z);
       if (nd) { this._drag = { kind: 'roofvertex', roof: nd.roof, index: nd.i, moved: false }; return; }
       const md = PlanSolar.midAt(pt, z);
       if (md) { PlanSolar.insertNode(md.roof, md.i, md.mid); this._drag = { kind: 'roofvertex', roof: md.roof, index: md.i + 1, moved: true }; return; }
+      if (typeof RoofEditor !== 'undefined' && RoofEditor.on) RoofEditor.pickRoof(pt);   // roof editor open: the roof under the click shows its properties (the click still selects as usual)
     }
     // 1) route vertex of an already-selected route (fine control)
     for (const r of pm.routes) {
@@ -319,6 +322,7 @@ PlanTools.register({
     if (this._marquee) { this._marquee.cur = { x: pt.x, y: pt.y }; PlanEngine.requestDraw({ fg: true }); return; }
     if (!this._drag) return;
     if (this._drag.kind === 'mastpick') return;
+    if (this._drag.kind === 'north') { PlanSolar.dragNorth(pt); return; }
     if (this._drag.kind === 'aim') { SportsCalc.dragAim(this._drag, pt); PlanEngine.requestDraw({ fg: true }); return; }
     if (this._drag.kind === 'rotate') {
       const el = this._drag.el;
