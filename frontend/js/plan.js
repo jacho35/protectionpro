@@ -118,6 +118,7 @@ const PlanMarkup = {
               <label><input type="checkbox" data-snap="snapGrid"> Grid <kbd>G</kbd></label>
               <label><input type="checkbox" data-snap="snapEl"> Placed parts</label>
               <label><input type="checkbox" data-snap="snapVtx"> Route and outline corners</label>
+              <label title="Corners of solar roofs and their keep-out areas, so roofs drawn next to each other meet exactly"><input type="checkbox" data-snap="snapRoof"> Roof corners <small>solar roofs, keep-outs</small></label>
               <label title="Line/polyline ends, midpoints and vertices, circle/arc centres and block insertion points"><input type="checkbox" data-snap="snapDxf"> DXF geometry <small>ends, midpoints, centres</small></label>
               <div class="plan-pop-sep"></div>
               <label><input type="checkbox" data-snap="showGrid"> Show grid</label>
@@ -289,7 +290,7 @@ const PlanMarkup = {
 
   _syncSnapPop() {
     const s = AppState.planMarkup.settings;
-    document.querySelectorAll('#plan-snap-pop [data-snap]').forEach(cb => { cb.checked = !!s[cb.dataset.snap]; });
+    document.querySelectorAll('#plan-snap-pop [data-snap]').forEach(cb => { cb.checked = cb.dataset.snap === 'snapRoof' ? s.snapRoof !== false : !!s[cb.dataset.snap]; });
     const g = document.getElementById('plan-grid-size'); if (g) g.value = s.gridSize;
     const ss = document.getElementById('plan-symbol-scale'); if (ss) ss.value = s.symbolScale || 1;
   },
@@ -1151,7 +1152,7 @@ const PlanMarkup = {
     const st = pm.settings;
     const snap = document.getElementById('plan-snap-chip');
     if (snap) {
-      const on = [st.snapGrid && 'grid', st.snapEl && 'parts', st.snapVtx && 'corners', st.snapDxf && 'DXF'].filter(Boolean);
+      const on = [st.snapGrid && 'grid', st.snapEl && 'parts', st.snapVtx && 'corners', st.snapRoof !== false && typeof PlanSolar !== 'undefined' && PlanSolar.roofs().length && 'roofs', st.snapDxf && 'DXF'].filter(Boolean);
       snap.textContent = on.length ? `Snap: ${on.join(' · ')}` : 'Snap: off';
     }
     const g = document.getElementById('plan-grid-chip');

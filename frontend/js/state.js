@@ -441,7 +441,7 @@ const AppState = {
       styles: {},         // sparse overrides merged over PLAN_DEFS defaults — shared
       settings: {
         domain: 'retic', gridSize: 0.5,
-        snapGrid: true, snapEl: true, snapVtx: true, snapRoute: true, snapDxf: true,
+        snapGrid: true, snapEl: true, snapVtx: true, snapRoute: true, snapDxf: true, snapRoof: true,
         routeLabels: 'all',   // route length labels: 'all' | 'selected' | 'none'
         layerOthers: 'ghost',   // other layers while one is shown: 'ghost' (faded) | 'hide'
         showGrid: true, greyBg: false, invertBg: false, slPoleKVA: 0.15,
