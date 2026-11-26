@@ -1,0 +1,126 @@
+/* The Plan's left panel, one frame for every mode (plan-ui.js `_frame`): a 48 px title bar, a body that scrolls, and a footer zone.
+   Draw adds a head block (search + tabs); Solar, Roads, Underlays and Output fill the body and footer with their own things.
+   The shared parts: rows (.pf-row), count badge (.pf-n / .pf-badge), pills, switch (.pf-sw), section header (.pf-sec), footer cards (.pf-card). */
+.plan-palette, #plan-palette.sd-wide { width: 296px; flex: 0 0 296px; padding: 0; box-sizing: border-box; overflow: hidden; display: flex; flex-direction: column; background: var(--bg-primary); }
+.pf { display: flex; flex-direction: column; flex: 1; min-height: 0; color: var(--text-primary); font-size: 13px; }
+.pf-top { flex: none; border-bottom: 1px solid var(--border-color); }
+.pf-title { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 8px; height: 48px; box-sizing: border-box; padding: 0 12px; border-bottom: 1px solid var(--border-color); }
+.pf-top > .pf-title { border-bottom: 0; height: 44px; }
+.pf-name { font-size: 14px; font-weight: 600; display: flex; align-items: baseline; gap: 6px; }
+.pf-n { font-weight: 400; font-size: 13px; color: var(--text-secondary); }
+.pf-aux { font-size: 12px; color: var(--text-secondary); }
+.pf-chip { display: inline-flex; align-items: center; height: 24px; padding: 0 10px; border-radius: 12px; background: var(--bg-tertiary); color: var(--text-secondary); font-size: 12px; }
+select.pf-chip { border: 0; padding-right: 4px; cursor: pointer; max-width: 150px; }
+.pf-body { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; padding: 12px; }
+.pf-body.pf-tight { gap: 2px; }
+.pf-foot { flex: none; padding: 10px 12px; border-top: 1px solid var(--border-color); background: var(--bg-secondary); display: flex; flex-direction: column; gap: 8px; }
+.pf-head { display: flex; flex-direction: column; gap: 10px; padding: 0 12px; }
+.pf-search { display: flex; align-items: center; gap: 8px; height: 36px; box-sizing: border-box; padding: 0 10px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-primary); }
+.pf-search:focus-within { border: 2px solid var(--accent); padding: 0 9px; }
+.pf-search svg { flex: none; width: 16px; height: 16px; stroke: var(--text-secondary); fill: none; stroke-width: 1.6; stroke-linecap: round; }
+.pf-search input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--text-primary); font: inherit; font-size: 13px; }
+.pf-kbd { font-size: 11px; color: var(--text-secondary); border: 1px solid var(--border-color); border-radius: 4px; padding: 0 5px; }
+.pf-tabs { display: flex; margin: 0 -12px; padding: 0 12px; }
+.pf-tab { flex: 1; height: 36px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--text-secondary); font: inherit; font-size: 13px; cursor: pointer; }
+.pf-tab b { font-weight: 400; color: var(--text-secondary); }
+.pf-tab[aria-selected="true"] { color: var(--text-primary); font-weight: 600; border-bottom-color: var(--accent); }
+.pf-tab:hover { background: var(--bg-secondary); }
+.pf-meta { height: 36px; display: flex; align-items: center; font-size: 12px; color: var(--text-secondary); }
+
+/* rows */
+.plan-palette .pf-row { display: flex; align-items: center; flex-wrap: nowrap; gap: 10px; width: 100%; min-height: 40px; box-sizing: border-box; padding: 0 8px; border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--text-primary); font: inherit; font-size: 13px; text-align: left; cursor: pointer; }
+.plan-palette .pf-row:hover { background: var(--bg-secondary); }
+.plan-palette .pf-row .pf-rname { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.plan-palette .pf-row .pf-rsub, .pf-rcat { flex: none; font-size: 12px; color: var(--text-secondary); max-width: 46%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.plan-palette .pf-row.armed { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, var(--bg-primary)); font-weight: 600; }
+.plan-palette .pf-row.armed::after { content: attr(data-verb); font-size: 12px; font-weight: 400; color: var(--text-primary); }
+.plan-palette .pf-row.todo { border-style: dashed; border-color: var(--text-secondary); background: var(--bg-primary); }
+.plan-palette .pf-row.disabled, .plan-palette .pf-row:disabled { opacity: .45; cursor: not-allowed; }
+.pf-glyph { flex: none; width: 20px; height: 20px; }
+.pf mark { background: #fff0b3; color: #1a1a2e; font-weight: 600; border-radius: 2px; }
+.pf-two { display: flex; flex-direction: column; align-items: flex-start; min-width: 0; flex: 1; }
+.pf-two > span:last-child { font-size: 12px; color: var(--text-secondary); font-weight: 400; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* section header (folds) */
+.plan-palette .pf-sec { display: flex; align-items: center; gap: 8px; width: 100%; height: 36px; padding: 0 4px; border: 0; background: transparent; color: var(--text-primary); font: inherit; font-size: 13px; font-weight: 600; text-align: left; cursor: pointer; }
+.pf-sec svg { flex: none; width: 12px; height: 12px; fill: none; stroke: var(--text-secondary); stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.pf-sec .pf-n { margin-left: auto; }
+.pf-cap { font-size: 12px; color: var(--text-secondary); margin: 0 0 6px 2px; }
+.pf-grp { display: flex; flex-direction: column; gap: 2px; }
+
+/* the To place card */
+.pf-todo { border: 1px solid var(--border-color); border-radius: 10px; background: var(--bg-secondary); }
+.pf-todo-head { display: flex; align-items: center; gap: 8px; width: 100%; height: 38px; padding: 0 12px; border: 0; background: transparent; color: var(--text-primary); font: inherit; cursor: pointer; text-align: left; }
+.pf-todo-head b { font-size: 13px; flex: 1; }
+.pf-todo-head span { font-size: 12px; color: var(--text-secondary); }
+.pf-badge { min-width: 22px; height: 20px; box-sizing: border-box; padding: 0 6px; border-radius: 10px; background: var(--accent); color: #fff; font-size: 12px; font-weight: 600; text-align: center; line-height: 20px; }
+.pf-todo-rows { display: flex; flex-direction: column; gap: 2px; padding: 0 6px 6px; }
+.pf-todo details > summary { display: flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 8px; cursor: pointer; font-size: 13px; list-style: none; }
+.pf-todo details > summary::-webkit-details-marker { display: none; }
+.pf-todo details > summary::before { content: ''; width: 0; height: 0; border-left: 5px solid var(--text-secondary); border-top: 4px solid transparent; border-bottom: 4px solid transparent; transition: transform .1s; }
+.pf-todo details[open] > summary::before { transform: rotate(90deg); }
+.pf-todo details > summary span { margin-left: auto; font-size: 12px; color: var(--text-secondary); }
+
+/* recent chips */
+.pf-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.plan-palette .pf-ichip { width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; padding: 0; border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-primary); cursor: pointer; }
+.plan-palette .pf-ichip:hover { background: var(--bg-secondary); }
+.plan-palette .pf-ichip.armed { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, var(--bg-primary)); }
+.pf-ichip .pf-glyph { width: 22px; height: 22px; }
+
+/* Auto: numbered steps */
+.pf-steps-note { font-size: 12px; color: var(--text-secondary); line-height: 1.5; }
+.pf-step { border: 1px solid var(--border-color); border-radius: 10px; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+.pf-step.later { background: var(--bg-secondary); }
+.pf-step-head { display: flex; align-items: center; gap: 10px; font-weight: 600; }
+.pf-step-n { width: 24px; height: 24px; box-sizing: border-box; border-radius: 12px; background: var(--accent); color: #fff; font-size: 12px; text-align: center; line-height: 24px; flex: none; }
+.pf-step.later .pf-step-n { background: var(--bg-tertiary); color: var(--text-secondary); border: 1px solid var(--text-secondary); line-height: 22px; }
+.pf-step p { margin: 0; font-size: 12px; line-height: 1.5; color: var(--text-secondary); }
+.pf-step small { font-size: 12px; color: var(--text-secondary); }
+
+/* buttons */
+.plan-palette .pf-btn { height: 34px; padding: 0 12px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-primary); color: var(--text-primary); font: inherit; font-size: 13px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+.plan-palette .pf-btn:hover { background: var(--bg-tertiary); }
+.plan-palette .pf-btn.pf-primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+.plan-palette .pf-btn.pf-primary:hover { filter: brightness(1.08); }
+.plan-palette .pf-btn.pf-amber { background: #d9822b; border-color: #d9822b; color: #1f2328; font-weight: 600; }
+.plan-palette .pf-btn.pf-sm { height: 28px; padding: 0 10px; font-size: 12px; }
+.pf-btnrow { display: flex; gap: 6px; }
+.pf-btnrow > .pf-btn { flex: 1; min-width: 0; }
+.pf-btn svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+
+/* footer cards */
+.pf-card { padding: 10px 12px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-primary); font-size: 12px; color: var(--text-secondary); line-height: 1.5; }
+.pf-card.pf-pad { background: var(--bg-secondary); }
+.pf-armed { display: flex; align-items: center; gap: 10px; }
+.pf-armed > div { flex: 1; min-width: 0; }
+.pf-armed b { display: block; font-size: 13px; color: var(--text-primary); }
+.pf-armed span { display: block; font-size: 12px; color: var(--text-secondary); line-height: 1.4; }
+.pf-tools { display: flex; gap: 6px; }
+.pf-armed + .pf-tools { padding-top: 8px; border-top: 1px solid var(--border-color); }
+.plan-palette .pf-tools .pf-row { flex: 1; justify-content: center; min-height: 34px; border: 1px solid var(--border-color); background: var(--bg-primary); gap: 6px; padding: 0 8px; }
+.plan-palette .pf-tools .pf-row .pf-glyph { width: 16px; height: 16px; }
+.plan-palette .pf-tools .pf-row.armed::after { content: none; }
+.plan-palette .pf-tools .pf-btn { flex: 1; }
+
+/* switch + pills (Solar's roofs, anywhere an in / out is needed) */
+.pf-sw { flex: none; width: 36px; height: 20px; border-radius: 10px; border: 0; background: #8a929c; position: relative; padding: 0; cursor: pointer; }
+.pf-sw span { position: absolute; left: 2px; top: 2px; width: 16px; height: 16px; border-radius: 8px; background: #fff; transition: left .12s; }
+.pf-sw[aria-checked="true"] { background: #1d7a46; }
+.pf-sw[aria-checked="true"] span { left: 18px; }
+.pf-sw:focus-visible, .pf button:focus-visible, .pf summary:focus-visible, .pf select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.pf-row.pf-two-row { min-height: 48px; }
+.pf-empty { font-size: 12px; color: var(--text-secondary); line-height: 1.5; padding: 4px; }
+.pf-strip { display: flex; height: 22px; border-radius: 4px; overflow: hidden; border: 1px solid var(--text-secondary); }
+@media (max-width: 900px) { .plan-palette, #plan-palette.sd-wide { width: 100%; flex: 0 0 auto; } }
+
+/* a row with a pick button and a switch beside it (Solar's roofs) */
+.pf-rowx { display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 0 8px 0 0; border: 1px solid transparent; border-radius: 8px; }
+.pf-rowx:hover { background: var(--bg-secondary); }
+.pf-rowx.sel, .plan-palette .pf-row.sel { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, var(--bg-primary)); }
+.pf-rowmain { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; min-height: 46px; padding: 0 0 0 8px; border: 0; background: transparent; color: var(--text-primary); font: inherit; font-size: 13px; text-align: left; cursor: pointer; }
+.pf-rowx.sel .pf-rname { font-weight: 600; }
+.pf-rowx.out .pf-rname { color: var(--text-secondary); }
+.pf-aux { font-size: 12px; color: var(--text-secondary); }
+.pf-body > .plan-ul, .pf-body > .plan-out, .pf-body > .plan-roads { padding: 0; }
+.plan-palette .pf-tools .pf-btn { flex: 1.5; white-space: nowrap; padding: 0 6px; font-size: 12px; }

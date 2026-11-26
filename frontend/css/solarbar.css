@@ -67,30 +67,7 @@ body.dark-mode .plan-solar-bar { --sb-on-bg: #4a3318; --sb-on-bd: #e0954a; --sb-
 .sb-hint span { flex: 1; min-width: 0; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sb-hint small { color: var(--text-secondary); }
 
-/* Left panel of the Solar mode: the Roofs list. */
-#plan-palette.sd-wide { width: 268px; flex: 0 0 268px; padding: 0; background: var(--bg-primary); }
-.sr-head { display: flex; justify-content: space-between; align-items: center; padding: 12px 14px 8px; }
-.sr-title { font-weight: 600; }
-.sr-n, .sr-in { font-weight: 400; font-size: 12px; color: var(--text-secondary); }
-.sr-tools { display: flex; gap: 6px; padding: 0 14px 8px; }
-.sr-btn { flex: 1; min-height: 32px; border: 1px solid var(--border-color); background: var(--bg-primary); color: var(--text-primary); border-radius: 6px; font: inherit; font-size: 12px; cursor: pointer; }
-.sr-btn:hover { background: var(--bg-tertiary); }
-.sr-list { flex: 1; min-height: 0; overflow-y: auto; border-top: 1px solid var(--border-color); }
-.sr-row { display: flex; align-items: center; gap: 8px; padding-right: 14px; border-left: 3px solid transparent; }
-.sr-row.sel { background: var(--sb-on-bg, #fdf0e1); border-left-color: #d9822b; }
-.sr-main { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 1px; padding: 8px 0 8px 11px; border: 0; background: transparent; color: var(--text-primary); cursor: pointer; font: inherit; text-align: left; min-height: 44px; }
-.sr-name { font-weight: 500; font-size: 13px; }
-.sr-row.sel .sr-name { font-weight: 600; }
-.sr-row.out .sr-name { color: var(--text-secondary); }
-.sr-sub { font-size: 12px; color: var(--text-secondary); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.sr-sw { flex: none; width: 36px; height: 20px; border-radius: 10px; border: 0; background: #8a929c; position: relative; padding: 0; cursor: pointer; }
-.sr-sw span { position: absolute; left: 2px; top: 2px; width: 16px; height: 16px; border-radius: 8px; background: #fff; transition: left .12s; }
-.sr-sw.on { background: #1d7a46; }
-.sr-sw.on span { left: 18px; }
-.sr-main:focus-visible, .sr-sw:focus-visible, .sr-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-.sr-empty { padding: 14px; font-size: 12px; color: var(--text-secondary); line-height: 1.5; }
-
 /* The hint strip says what the tool does, so the status bar keeps one line. */
 .plan-solar-on .plan-status { flex-wrap: nowrap; height: 37px; box-sizing: border-box; overflow: hidden; }
 .plan-solar-on .plan-info { flex: 1 1 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: right; }
-@media (max-width: 900px) { .sb-grp { padding: 0 8px; } .sb-fill { display: none; } #plan-palette.sd-wide { width: 100%; flex: 0 0 auto; } }
+@media (max-width: 900px) { .sb-grp { padding: 0 8px; } .sb-fill { display: none; } }

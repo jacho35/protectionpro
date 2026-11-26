@@ -203,7 +203,7 @@ const SolarBar = {
   _renderList() {
     const el = this._listEl; if (!el || !el.isConnected || !this.shown()) return;
     const esc = this._esc, roofs = PlanSolar.roofs().filter(r => r.points && r.points.length >= 3);
-    const sw = (r) => { const on = r.use !== false; return `<button type="button" class="sr-sw${on ? ' on' : ''}" role="switch" aria-checked="${on}" data-sr-use="${esc(r.id)}" aria-label="${esc(r.name)} ${on ? 'in the calculation' : 'left out'}"><span></span></button>`; };
+    const sw = (r) => { const on = r.use !== false; return `<button type="button" class="pf-sw" role="switch" aria-checked="${on}" data-sr-use="${esc(r.id)}" aria-label="${esc(r.name)} ${on ? 'in the calculation' : 'left out'}"><span></span></button>`; };
     const row = (r) => {
       const lay = r.array && typeof PlanSolarArray !== 'undefined' ? PlanSolarArray.layout(r) : null;
       const aisles = (r.aisles || []).length, parts = [RoofPlanes.LABELS[r.shape] || r.shape];
@@ -212,16 +212,19 @@ const SolarBar = {
       if (aisles) parts.push(aisles + (aisles === 1 ? ' aisle' : ' aisles'));
       if ((r.keepouts || []).length) parts.push('keep-out');
       const picked = PlanSolar.sel.has(r.id);
-      return `<div class="sr-row${picked ? ' sel' : ''}${r.use === false ? ' out' : ''}"><button type="button" class="sr-main" data-sr-pick="${esc(r.id)}" aria-pressed="${picked}"><span class="sr-name">${esc(r.name)}</span><span class="sr-sub">${esc(parts.join(' · '))}</span></button>${sw(r)}</div>`;
+      return `<div class="pf-rowx${picked ? ' sel' : ''}${r.use === false ? ' out' : ''}"><button type="button" class="pf-rowmain" data-sr-pick="${esc(r.id)}" aria-pressed="${picked}"><svg class="pf-glyph" viewBox="0 0 18 18" aria-hidden="true"><rect x="3" y="3" width="12" height="12" rx="2.5" fill="#d9822b" fill-opacity=".25" stroke="#d9822b" stroke-width="1.6"/></svg><span class="pf-two"><span class="pf-rname">${esc(r.name)}</span><span>${esc(parts.join(' · '))}</span></span></button>${sw(r)}</div>`;
     };
-    const top = el.querySelector('.sr-list') ? el.querySelector('.sr-list').scrollTop : 0;
-    el.innerHTML = `<div class="sr-head"><span class="sr-title">Roofs <span class="sr-n">${roofs.length}</span></span><span class="sr-in">In calc</span></div>
-      <div class="sr-tools"><button type="button" class="sr-btn" data-sr="all">Include all</button><button type="button" class="sr-btn" data-sr="arrays">With arrays only</button></div>
-      <div class="sr-list">${roofs.length ? roofs.map(row).join('') : '<div class="sr-empty">No roofs yet. Use <b>Detect roof</b> or <b>Draw</b> in the toolbar.</div>'}</div>`;
-    const list = el.querySelector('.sr-list'); if (list) list.scrollTop = top;
+    const top = el.querySelector('.pf-body') ? el.querySelector('.pf-body').scrollTop : 0;
+    const tot = typeof PlanSolarArray !== 'undefined' ? PlanSolarArray.totals() : { n: 0 }, inN = roofs.filter(r => r.use !== false).length;
+    const body = `<div class="pf-btnrow" style="margin-bottom:8px"><button type="button" class="pf-btn pf-sm" data-sr="all">Include all</button><button type="button" class="pf-btn pf-sm" data-sr="arrays">With arrays only</button></div>`
+      + (roofs.length ? roofs.map(row).join('') : '<div class="pf-empty">No roofs yet. Use <b>Detect roof</b> or <b>Draw</b> in the toolbar.</div>');
+    el.innerHTML = PlanUI._frame('Roofs', { count: roofs.length, right: '<span class="pf-aux">In calc</span>', tight: true, body,
+      footer: `<div class="pf-aux">${tot.n.toLocaleString()} panels · ${inN} of ${roofs.length} roofs in</div><button type="button" class="pf-btn pf-amber" data-sb-design="1">Design &amp; report</button>` });
+    const bd = el.querySelector('.pf-body'); if (bd) bd.scrollTop = top;
     if (!el._srBound) {
       el._srBound = true;
       el.addEventListener('click', (e) => {
+        if (e.target.closest('[data-sb-design]')) { if (typeof Solar !== 'undefined') Solar.open(); return; }
         const sw = e.target.closest('[data-sr-use]'), pk = e.target.closest('[data-sr-pick]'), bt = e.target.closest('[data-sr]');
         const all = PlanSolar.roofs().filter(r => r.points && r.points.length >= 3);
         if (sw) { const r = all.find(x => x.id === sw.dataset.srUse); if (r) PlanSolar.setUse([r.id], r.use === false); return; }

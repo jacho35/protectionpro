@@ -979,6 +979,7 @@ const PlanMarkup = {
     // Live mode/status line (UX-7): what's armed + how to finish/exit.
     this._toolMsg = this._statusFor(id, opts || {});
     if (typeof PlanUI !== 'undefined' && PlanUI.renderPlaceBar) PlanUI.renderPlaceBar(id, opts || {});
+    if (typeof PlanUI !== 'undefined' && PlanUI.renderPaletteFooter) PlanUI.renderPaletteFooter();              // the footer says what a click does
     this.onDraftChanged();
     if (typeof SolarBar !== 'undefined') SolarBar.render();
     // Mobile: after arming a placement tool from the palette drawer, close it

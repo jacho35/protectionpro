@@ -305,32 +305,32 @@ const RoadSectionsUI = {
     return `<div aria-hidden="true" style="display:flex;height:18px;border-radius:4px;overflow:hidden;margin:2px 0">${(sec.strips || []).filter(t => +t.width > 0).map(t => `<span style="flex:${+t.width};background:${fill(t.type)}"></span>`).join('')}</div>`;
   },
   panelHtml() {
-    if (typeof RoadSections === 'undefined' || !(AppState.reticulation && AppState.reticulation.streetLighting)) return '<div class="plan-card"><small>Road sections belong to a reticulation project.</small></div>';
+    const F = (t, o) => (typeof PlanUI !== 'undefined' && PlanUI._frame) ? PlanUI._frame(t, o) : (o.body || '');
+    if (typeof RoadSections === 'undefined' || !(AppState.reticulation && AppState.reticulation.streetLighting)) return F('Road sections', { body: '<div class="pf-empty">Road sections belong to a reticulation project.</div>' });
     const RS = this.RS(), esc = this.esc; RS.ensure();
     const cur = RS.get(this.panelSel) || RS.def(), d = RS.defId(), sel = this._planRoads();
     const card = x => { const n = RS.roadsUsing(x.id).length, on = x.id === cur.id;
-      return `<button type="button" class="plan-pal-item" data-rsp="pick" data-id="${esc(x.id)}" aria-pressed="${on}" style="flex-direction:column;align-items:flex-start;gap:2px;height:auto;padding:8px 10px;${on ? 'outline:2px solid var(--accent,#2563eb)' : ''}">
-        <span style="display:flex;gap:6px;align-items:center;font-weight:600"><span aria-hidden="true" style="width:10px;height:10px;border-radius:2px;background:${this.colour(x.id)}"></span>${esc(x.name)} · ${this.f2(RS.reserve(x)).replace(/\.00$/, '')} m</span>
-        <small>${n} road${n === 1 ? '' : 's'}${x.id === d ? ' · default' : ''}${RS.fits(x) ? '' : ' · <b style="color:#9a5b00">strips wider than it</b>'}</small></button>`; };
+      return `<button type="button" class="pf-row pf-two-row${on ? ' sel' : ''}" data-rsp="pick" data-id="${esc(x.id)}" aria-pressed="${on}">
+        <span aria-hidden="true" style="width:12px;height:12px;border-radius:3px;background:${this.colour(x.id)};flex:none"></span>
+        <span class="pf-two"><span class="pf-rname">${esc(x.name)} · ${this.f2(RS.reserve(x)).replace(/\.00$/, '')} m</span>
+        <span>${n} road${n === 1 ? '' : 's'}${x.id === d ? ' · default' : ''}${RS.fits(x) ? '' : ' · <b style="color:#9a5b00">strips wider than it</b>'}</span></span></button>`; };
     const onSecs = [...new Set(sel.map(r => (RS.of(r) || {}).name))].filter(Boolean);
     const mm = RS.widthMismatches(cur.id).length;
-    return `<div class="plan-roads">
-      <div class="plan-sec-head"><span>Road sections</span><button type="button" class="plan-btn" data-rsp="new" style="padding:1px 8px">+ New</button></div>
-      ${RS.list().map(card).join('')}
-      <div class="plan-card" style="display:flex;flex-direction:column;gap:6px">${sel.length
-        ? `<span>${sel.length} road${sel.length === 1 ? '' : 's'} selected${onSecs.length ? ` (on ${esc(onSecs.join(', '))})` : ''}</span>
-           <button type="button" class="plan-btn" data-rsp="apply" style="font-weight:600;min-height:36px">Give ${sel.length === 1 ? 'it' : 'them'} ${esc(cur.name)}</button>`
-        : `<small>Click a road on the plan (Shift-click adds, or drag a box) to give it a section.</small>`}</div>
-      <div style="border-top:1px solid var(--border,#e5e7eb);padding-top:8px;display:flex;flex-direction:column;gap:6px">
+    const body = `${RS.list().map(card).join('')}
+      <section class="pf-card pf-pad" aria-label="Roads picked on the plan" style="margin-top:10px;display:flex;flex-direction:column;gap:8px">${sel.length
+        ? `<span style="color:var(--text-primary);font-size:13px">${sel.length} road${sel.length === 1 ? '' : 's'} selected${onSecs.length ? ` <span style="color:var(--text-secondary)">(on ${esc(onSecs.join(', '))})</span>` : ''}</span>
+           <button type="button" class="pf-btn pf-primary" data-rsp="apply" style="height:36px">Give ${sel.length === 1 ? 'it' : 'them'} ${esc(cur.name)}</button>`
+        : `<span>Click a road on the plan (Shift-click adds, or drag a box) to give it a section.</span>`}</section>
+      <section aria-label="The picked section" style="margin-top:10px;display:flex;flex-direction:column;gap:8px;padding:0 4px">
         <b>${esc(cur.name)}</b>${this._stripBar(cur)}
-        <small>${esc(RS.summary(cur))}</small>
-        ${RS.fits(cur) ? '' : `<small style="color:#9a5b00">The typed strips are ${this.f2(RS.verges(cur).filled)} m, wider than the ${this.f2(RS.reserve(cur))} m reserve.</small>`}
-        ${mm ? `<small style="color:#9a5b00">${mm} road${mm === 1 ? ' has' : 's have'} a reserve width of ${mm === 1 ? 'its' : 'their'} own.</small>` : ''}
-        <button type="button" class="plan-btn" data-rsp="edit" style="min-height:34px">Edit section…</button>
-        <button type="button" class="plan-btn" data-rsp="selroads" style="min-height:34px"${RS.roadsUsing(cur.id).length ? '' : ' disabled'}>Select its roads</button>
-        <button type="button" class="plan-btn" data-rsp="std" style="min-height:34px">Project standard…</button>
-      </div>
-      <small style="color:var(--text-muted)">While Roads is open the roads are coloured by section; dashed = on the default.</small></div>`;
+        <span class="pf-aux">${esc(RS.summary(cur))}</span>
+        ${RS.fits(cur) ? '' : `<span class="pf-aux" style="color:#9a5b00">The typed strips are ${this.f2(RS.verges(cur).filled)} m, wider than the ${this.f2(RS.reserve(cur))} m reserve.</span>`}
+        ${mm ? `<span class="pf-aux" style="color:#9a5b00">${mm} road${mm === 1 ? ' has' : 's have'} a reserve width of ${mm === 1 ? 'its' : 'their'} own.</span>` : ''}
+        <span class="pf-aux">While Roads is open the roads are coloured by section; dashed = on the default.</span>
+      </section>`;
+    const footer = `<div class="pf-btnrow"><button type="button" class="pf-btn" data-rsp="edit">Edit section…</button><button type="button" class="pf-btn" data-rsp="selroads"${RS.roadsUsing(cur.id).length ? '' : ' disabled'}>Select its roads</button></div>
+      <button type="button" class="pf-btn" data-rsp="std">Project standard…</button>`;
+    return F('Road sections', { count: RS.list().length, right: '<button type="button" class="pf-btn pf-sm" data-rsp="new">+ New</button>', body, footer, tight: true });
   },
   // the site plan's Roads tab where the project has a site plan, else the dialog
   goRoads() {
