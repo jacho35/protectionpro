@@ -17,6 +17,14 @@ const PlanUI = {
     if (clean) clean.addEventListener('click', () => this._cleanup());
     paletteEl.addEventListener('click', (e) => this._onPaletteClick(e));
     paletteEl.addEventListener('input', (e) => this._onPaletteInput(e));
+    paletteEl.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && e.target.dataset && e.target.dataset.role === 'search' && this._search) { e.preventDefault(); e.stopPropagation(); this._search = ''; this.renderPalette(); const b = paletteEl.querySelector('[data-role="search"]'); if (b) b.focus(); }
+    });
+    document.addEventListener('keydown', (e) => {                              // "/" jumps to the search, as the hint in the box says
+      if (e.key !== '/' || e.ctrlKey || e.metaKey || e.altKey || !paletteEl.offsetParent) return;
+      if (/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName) || e.target.isContentEditable) return;
+      const b = paletteEl.querySelector('[data-role="search"]'); if (b) { e.preventDefault(); b.focus(); }
+    });
     propsEl.addEventListener('change', (e) => this._onPropsChange(e));
     propsEl.addEventListener('input', (e) => this._onPropsChange(e));
     propsEl.addEventListener('click', (e) => {
@@ -99,35 +107,102 @@ const PlanUI = {
       <span class="plan-pal-swatch" style="background:${escHtml(it.color)}"></span><span class="plan-pal-name">${escHtml(it.name)}</span>${it.desc ? `<small>${escHtml(it.desc)}</small>` : ''}</button>`;
   },
 
-  // "From the single line": SLD boards / supply that are not on the plan yet. Shown at the top of the
-  // palette: placing them is the first job of a building plan.
-  _sldTrayHtml(pm, domain) {
-    let html = '';
+  // ── The left panel: one frame for every mode (css/planpanel.css) ──
+  // A title bar, a body that scrolls and a footer zone; `head` (Draw) is a block under the title with the search and the tabs.
+  _frame(title, o = {}) {
+    const top = o.head ? `<div class="pf-top"><div class="pf-title">${title}${o.right || ''}</div>${o.head}</div>`
+      : `<div class="pf-title"><span class="pf-name">${title}${o.count != null ? `<span class="pf-n">${o.count}</span>` : ''}</span>${o.right || ''}</div>`;
+    return `<div class="pf">${top}<div class="pf-body${o.tight ? ' pf-tight' : ''}">${o.body || ''}</div>${o.footer != null ? `<div class="pf-foot">${o.footer}</div>` : ''}</div>`;
+  },
+  // A glyph that matches the plan: parts by their symbol, routes as a line, trenches as a dashed block.
+  _glyph(kind, type, color, symbol) {
+    const c = escHtml(color || '#6b7280'), sym = symbol || (PLAN_DEFS.element(type) || {}).symbol;
+    let g;
+    if (kind === 'route') g = `<path d="M2 9 H16" stroke="${c}" stroke-width="3" stroke-linecap="round"/>`;
+    else if (kind === 'trench') g = `<rect x="2" y="5" width="14" height="8" rx="2" fill="${c}" stroke="${c}" stroke-width="1.2" stroke-dasharray="3 2"/>`;
+    else if (kind === 'crossing') g = `<path d="M3 4 V14 M15 4 V14 M3 9 H15" stroke="${c}" stroke-width="2" stroke-linecap="round" fill="none"/>`;
+    else if (kind === 'text') g = `<path d="M4 4 H14 M9 4 V14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" fill="none"/>`;
+    else if (kind === 'measurement') g = `<path d="M3 12 L12 3 L15 6 L6 15 Z M6 9 L8 11 M9 6 L11 8" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linejoin="round"/>`;
+    else if (kind === 'erfdetect' || kind === 'layout' || kind === 'sllayout') g = `<path d="M3 3 H8 V8 H3 Z M10 3 H15 V8 H10 Z M3 10 H8 V15 H3 Z M12.5 10 V15 M10 12.5 H15" stroke="${c}" stroke-width="1.5" fill="none" stroke-linecap="round"/>`;
+    else if (sym === 'x') g = `<path d="M4 4 L14 14 M14 4 L4 14" stroke="${c}" stroke-width="1.8" stroke-linecap="round"/>`;
+    else if (sym === 'circle' || kind === 'element' && !sym) g = `<circle cx="9" cy="9" r="6" fill="${c}" fill-opacity=".2" stroke="${c}" stroke-width="1.6"/>`;
+    else g = `<rect x="3" y="3" width="12" height="12" rx="2.5" fill="${c}" fill-opacity=".2" stroke="${c}" stroke-width="1.6"/>`;
+    return `<svg class="pf-glyph" viewBox="0 0 18 18" aria-hidden="true">${g}</svg>`;
+  },
+  _verb(kind) { return kind === 'element' ? 'Placing' : (kind === 'route' || kind === 'trench' || kind === 'measurement') ? 'Drawing' : 'Active'; },
+  // One part / route / tool as a row (the click hooks are the old palette item's: class plan-pal-item and the data- attributes).
+  _pfRow(it, o = {}) {
+    const toolId = this._toolFor(it.kind), ready = typeof PlanTools !== 'undefined' && PlanTools._tools[toolId];
+    const name = o.hl ? o.hl(it.name) : escHtml(it.name);
+    return `<button type="button" class="plan-pal-item pf-row" data-kind="${escHtml(it.kind)}" data-type="${escHtml(it.type)}"${it.loadType ? ` data-loadtype="${escHtml(it.loadType)}"` : ''} data-verb="${this._verb(it.kind)}"${ready ? '' : ' disabled'}${it.desc ? ` title="${escHtml(it.desc)}"` : ''}>${this._glyph(it.kind, it.type, it.color)}<span class="pf-rname">${name}</span>${o.cat ? `<span class="pf-rcat">${escHtml(o.cat)}</span>` : ''}</button>`;
+  },
+  _pfSec(key, label, count, open) {
+    return `<button type="button" class="pf-sec" data-role="fold" data-group="${escHtml(key)}" aria-expanded="${open}"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="${open ? 'M2 4 L6 8 L10 4' : 'M4 2 L8 6 L4 10'}"/></svg><span>${escHtml(label)}</span><span class="pf-n">${count}</span></button>`;
+  },
+
+  // Everything the Draw panel offers, split by what you do with it: Place (parts), Route (lines, trenches, crossings), Auto (detect and layout tools),
+  // and the two cross-cutting tools (Text, Measure) that live in the footer.
+  ROUTE_GROUPS: {
+    retic: [['Cables', ['mv', 'lv', 'service', 'sl']], ['Fibre', ['fibreBB', 'fibreErf']], ['Roads, trenches and crossings', ['street', '@trench', '@crossing']]],
+    building: [['Circuits', ['feeder', 'circuit', 'lighting_ckt', 'ground_conductor']], ['Containment', ['conduit', 'cable_tray', 'power_skirting']],
+      ['Data, fire and control', ['data_cable', 'fire_cable', 'dali_bus', 'fibre_duct']], ['Trenches and crossings', ['@trench', '@crossing']]],
+  },
+  _drawData(domain) {
+    const groups = PLAN_DEFS.paletteGroups(domain), SKIP = new Set(['Detect', 'Routes', 'Trenches', 'Other', 'Annotate']);
+    const by = (l) => (groups.find(g => g.label === l) || { items: [] }).items;
+    const place = groups.filter(g => !SKIP.has(g.label)).map(g => ({ label: g.label === 'Street Lighting' ? 'Street lighting' : g.label, items: g.items }));
+    const routeItems = by('Routes').concat(by('Trenches'), by('Other'));
+    const used = new Set(), route = [];
+    for (const [label, keys] of (this.ROUTE_GROUPS[domain] || [])) {
+      const items = [];
+      for (const k of keys) for (const it of routeItems) {
+        if (used.has(it) || !(k === '@trench' ? it.kind === 'trench' : k === '@crossing' ? it.kind === 'crossing' : it.kind === 'route' && it.type === k)) continue;
+        used.add(it); items.push(it);
+      }
+      if (items.length) route.push({ label, items });
+    }
+    const rest = routeItems.filter(it => !used.has(it)); if (rest.length) route.push({ label: 'Other routes', items: rest });
+    return { place, route, auto: by('Detect'), tools: by('Annotate') };
+  },
+
+  // "To place": what the other workspaces already know about and the plan does not show yet. Building: single-line boards and supply; Reticulation: Demand's
+  // minisubs, kiosks, erven and custom loads. One card, one look.
+  _toPlace(domain) {
+    const pm = AppState.planMarkup, row = (attr, color, symbol, label, sub, title) => ({ attr, color, symbol, label, sub, title });
+    const rows = [], groups = []; let source = '';
     if (domain === 'building' && typeof AppState.components !== 'undefined' && PLAN_DEFS.sldLinkTypes) {
+      source = 'From the single line';
       const linkedSld = new Set(pm.elements.filter(e => e.sldId).map(e => e.sldId));
-      const rows = [];
       for (const c of AppState.components.values()) {
         if (!PLAN_DEFS.sldLinkTypes[c.type] || c.type === 'bus' || linkedSld.has(c.id)) continue;
         const t = PLAN_DEFS.sldLinkTypes[c.type];
         const typeName = (typeof COMPONENT_DEFS !== 'undefined' && COMPONENT_DEFS[c.type] && COMPONENT_DEFS[c.type].name) || c.type;
-        rows.push({ id: c.id, label: c.props.name || typeName, sub: typeName, color: PLAN_DEFS.elementColor(t, pm.styles) });
+        rows.push(row(`data-sld="${escHtml(c.id)}"`, PLAN_DEFS.elementColor(t, pm.styles), (PLAN_DEFS.element(t) || {}).symbol, c.props.name || typeName, typeName, 'Place from the single line'));
       }
       if (typeof PlanSync !== 'undefined' && PlanSync.sldSwitchboardGroups) {
         for (const g of PlanSync.sldSwitchboardGroups()) {
-          if (g.busIds.some(id => linkedSld.has(id))) continue;   // already adopted
-          rows.push({ id: g.primaryBusId, label: g.name, sub: `Switchboard${g.busIds.length > 1 ? ' · ' + g.busIds.length + ' sections' : ''}`, color: PLAN_DEFS.elementColor('bd_switchboard', pm.styles) });
+          if (g.busIds.some(id => linkedSld.has(id))) continue;
+          rows.push(row(`data-sld="${escHtml(g.primaryBusId)}"`, PLAN_DEFS.elementColor('bd_switchboard', pm.styles), 'square', g.name, `Switchboard${g.busIds.length > 1 ? ' · ' + g.busIds.length + ' sections' : ''}`, 'Place from the single line'));
         }
       }
-      if (rows.length) {
-        html += `<div class="plan-fromsld"><div class="plan-sec-head"><span>From the single line</span><small>${rows.length} not placed</small></div>`;
-        for (const r of rows) {
-          html += `<button type="button" class="plan-pal-item plan-sld-item" data-sld="${escHtml(r.id)}" title="Place ${escHtml(r.label)} from the single line">
-            <span class="plan-pal-swatch" style="background:${escHtml(r.color)}"></span><span class="plan-pal-name">${escHtml(r.label)}</span><small>${escHtml(r.sub)}</small></button>`;
-        }
-        html += `</div>`;
-      }
+    } else if (domain === 'retic' && typeof PlanSync !== 'undefined' && PlanSync.reticUnplaced && AppState.reticulation) {
+      source = 'From Demand';
+      const u = PlanSync.reticUnplaced(), col = (t) => PLAN_DEFS.elementColor(t, pm.styles), sym = (t) => (PLAN_DEFS.element(t) || {}).symbol;
+      const place = (id, type, label, sub) => row(`data-retic-place="${escHtml(id)}"`, col(type), sym(type), label, sub, 'Place on the plan, then click where it goes');
+      for (const m of u.minisubs) rows.push(place(m.id, 'minisub', m.name || 'Minisub', 'Minisub'));
+      for (const k of u.kiosks) rows.push(place(k.id, 'kiosk', k.name || 'Kiosk', `Kiosk · ${k.erfs.length} erven`));
+      for (const g of u.erven) groups.push({ title: `${g.kiosk.name || 'Kiosk'} · ${g.erfs.length} erf${g.erfs.length === 1 ? '' : 'ven'}`, rows: g.erfs.map(e => place(e.id, 'erf', `Erf ${e.erfNumber || ''}`.trim(), g.kiosk.name || 'Kiosk')) });
+      if ((u.loads || []).length) groups.push({ title: `Custom loads · ${u.loads.length}`, rows: u.loads.map(l => row(`data-retic-place="${escHtml(l.row.id)}"`, col('load'), 'circle', l.row.name || 'Custom load', l.owner.name || 'Supply', 'Place on the plan')) });
     }
-    return html;
+    const n = rows.length + groups.reduce((a, g) => a + g.rows.length, 0);
+    return { source, rows, groups, n };
+  },
+  _toPlaceHtml(domain) {
+    const t = this._toPlace(domain); if (!t.n) return '';
+    const open = !this._folded.has('__toplace');
+    const rowHtml = (r) => `<button type="button" class="plan-pal-item pf-row todo plan-sld-item" ${r.attr} title="${escHtml(r.title)}">${this._glyph('element', '', r.color, r.symbol)}<span class="pf-rname">${escHtml(r.label)}</span><span class="pf-rsub">${escHtml(r.sub)}</span></button>`;
+    return `<section class="pf-todo" aria-label="Not placed yet"><button type="button" class="pf-todo-head" data-role="fold" data-group="__toplace" aria-expanded="${open}"><b>To place</b><span>${escHtml(t.source)}</span><span class="pf-badge">${t.n}</span></button>`
+      + (open ? `<div class="pf-todo-rows">${t.rows.map(rowHtml).join('')}${t.groups.map(g => `<details><summary>${escHtml(g.title)}</summary>${g.rows.map(rowHtml).join('')}</details>`).join('')}</div>` : '') + `</section>`;
   },
 
   // The last five parts used on this kind of plan, one click from the top of the palette.
@@ -140,73 +215,78 @@ const PlanUI = {
     try { localStorage.setItem(this._recentKey(domain), JSON.stringify(list)); } catch (_) { /* private mode */ }
   },
 
+  // The Draw panel: head (plan type, search, tabs), body (To place, Recent, the groups of the tab), footer (what a click does, Text, Measure).
   _drawPanel() {
-    const pm = AppState.planMarkup;
-    const domain = pm.settings.domain || 'retic';
-    const filter = (this._search || '').toLowerCase();
-    // Workflow order: the parts you place first, then the routes that join them, then the rest.
-    const groups = PLAN_DEFS.paletteGroups(domain).slice();
-    const ri = groups.findIndex(g => g.label === 'Routes');
-    if (ri > 0) { const [rg] = groups.splice(ri, 1); groups.splice(groups.findIndex(g => g.label !== 'Detect') + 1, 0, rg); }
-    const openTo = Math.max(1, groups.findIndex(g => g.label === 'Routes'));
-    if (!this._folded || this._foldedDomain !== domain) { this._folded = new Set(groups.slice(openTo + 1).map(g => g.label)); this._foldedDomain = domain; }
-    // The project type normally fixes the plan's domain (workspaces.js); the
-    // selector only appears when it doesn't — a Network project with a plan,
-    // or a plan whose content is the other domain's.
+    const pm = AppState.planMarkup, domain = pm.settings.domain || 'retic', q = (this._search || '').trim().toLowerCase(), esc = escHtml;
+    const D = this._drawData(domain), all = D.place.flatMap(g => g.items), routes = D.route.flatMap(g => g.items);
+    const tabs = [['place', 'Place', all.length], ['route', 'Route', routes.length]].concat(D.auto.length ? [['auto', 'Auto', D.auto.length]] : []);
+    if (!tabs.some(t => t[0] === this._tab)) this._tab = 'place';
+    if (!this._folded || this._foldedDomain !== domain) {                      // the first group of each tab is open, the rest folded
+      this._folded = new Set(D.place.slice(1).map(g => g.label).concat(D.route.slice(1).map(g => g.label)));
+      this._foldedDomain = domain;
+    }
     const domainLocked = typeof Workspaces !== 'undefined' && Workspaces.planDomainLocked && Workspaces.planDomainLocked();
-    let html = `<div class="plan-pal-header">
-        ${domainLocked ? '' : `<label class="plan-domain-field">
-          <span class="plan-domain-cap">Plan type</span>
-          <select class="plan-domain-select" data-role="domain">
-            ${PLAN_DOMAINS.map(d => `<option value="${d.id}" ${d.id === domain ? 'selected' : ''}>${escHtml(d.name)}</option>`).join('')}
-          </select>
-        </label>`}
-        <label class="plan-domain-field plan-pal-searchfield"><span class="plan-domain-cap">Find a part</span>
-        <input type="search" class="plan-pal-search" data-role="search" placeholder="Socket, DB, smoke…" value="${escHtml(this._search || '')}"></label>
-      </div><div class="plan-pal-groups">`;
-    if (!filter) html += this._sldTrayHtml(pm, domain) + (domain === 'retic' ? this._reticTrayHtml() : '');
-    if (!filter) {
-      const all = groups.flatMap(g => g.items), rec = this._recent(domain)
-        .map(r => all.find(it => it.kind === r.kind && it.type === r.type && (it.loadType || '') === (r.loadType || ''))).filter(Boolean);
-      if (rec.length) html += `<div class="plan-pal-group"><div class="plan-pal-group-label plan-pal-recent-label">Recent</div><div class="plan-pal-grid">${rec.map(it => this._palItem(it)).join('')}</div></div>`;
+    const dName = (PLAN_DOMAINS.find(d => d.id === domain) || { name: domain }).name;
+    const chip = domainLocked ? `<span class="pf-chip">${esc(dName)} plan</span>`
+      : `<select class="pf-chip" data-role="domain" aria-label="Plan type">${PLAN_DOMAINS.map(d => `<option value="${d.id}" ${d.id === domain ? 'selected' : ''}>${esc(d.name)}</option>`).join('')}</select>`;
+    const hl = (name) => { const i = q ? name.toLowerCase().indexOf(q) : -1; return i < 0 ? esc(name) : esc(name.slice(0, i)) + '<mark>' + esc(name.slice(i, i + q.length)) + '</mark>' + esc(name.slice(i + q.length)); };
+    let head = `<div class="pf-head"><label class="pf-search"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="9" cy="9" r="5.5"/><path d="M13.5 13.5 L17 17"/></svg><input type="search" data-role="search" aria-label="Find a part, route or tool" placeholder="Find a part, route or tool" value="${esc(this._search || '')}"><span class="pf-kbd">${q ? 'Esc' : '/'}</span></label>`;
+    let body = '';
+    if (q) {
+      const hit = (it) => it.name.toLowerCase().includes(q) || (it.desc || '').toLowerCase().includes(q);
+      const sect = (title, list) => !list.length ? '' : `<div class="pf-grp"><div class="pf-cap">${title}</div>${list.map(([it, cat]) => this._pfRow(it, { hl, cat })).join('')}</div>`;
+      const parts = D.place.flatMap(g => g.items.filter(hit).map(it => [it, g.label])), rts = D.route.flatMap(g => g.items.filter(hit).map(it => [it, g.label]));
+      const tools = D.auto.filter(hit).map(it => [it, 'Auto']).concat(D.tools.filter(hit).map(it => [it, 'Tool']));
+      head += `<div class="pf-meta">${parts.length} part${parts.length === 1 ? '' : 's'} · ${rts.length} route${rts.length === 1 ? '' : 's'}${tools.length ? ` · ${tools.length} tool${tools.length === 1 ? '' : 's'}` : ''} match, across every tab</div></div>`;
+      body = sect('Parts', parts) + sect('Routes', rts) + sect('Tools', tools) + (parts.length + rts.length + tools.length ? '' : `<div class="pf-empty">Nothing matches "${esc(this._search)}".</div>`);
+    } else {
+      head += `<div class="pf-tabs" role="tablist" aria-label="What to draw">${tabs.map(t => `<button type="button" class="pf-tab" role="tab" data-role="tab" data-tab="${t[0]}" aria-selected="${this._tab === t[0]}">${t[1]} <b>${t[2]}</b></button>`).join('')}</div></div>`;
+      const groupsHtml = (groups) => groups.map(g => {
+        const open = !this._folded.has(g.label);
+        return `<div class="pf-grp">${this._pfSec(g.label, g.label, g.items.length, open)}${open ? g.items.map(it => this._pfRow(it)).join('') : ''}</div>`;
+      }).join('');
+      if (this._tab === 'place') {
+        const rec = this._recent(domain).map(r => all.concat(routes).find(it => it.kind === r.kind && it.type === r.type && (it.loadType || '') === (r.loadType || ''))).filter(Boolean);
+        body = this._toPlaceHtml(domain)
+          + (rec.length ? `<section aria-label="Recent parts"><div class="pf-cap">Recent</div><div class="pf-chips">${rec.map(it => `<button type="button" class="plan-pal-item pf-ichip" data-kind="${esc(it.kind)}" data-type="${esc(it.type)}"${it.loadType ? ` data-loadtype="${esc(it.loadType)}"` : ''} aria-label="${esc(it.name)}" title="${esc(it.name)}">${this._glyph(it.kind, it.type, it.color)}</button>`).join('')}</div></section>` : '')
+          + `<section aria-label="Parts" class="pf-grp">${groupsHtml(D.place)}</section>`;
+      } else if (this._tab === 'route') {
+        body = `<section aria-label="Routes" class="pf-grp">${groupsHtml(D.route)}</section>`;
+      } else {
+        const has = (t) => pm.elements.some(e => e.type === t), steps = [
+          ['erfdetect', 1, 'Detect erven', 'Find every closed erf on the DXF or plan image, or click inside one.', ''],
+          ['layout', 2, 'Auto layout', 'Erf markers, kiosks, mini-sub, LV and MV, fibre and shared road crossings, from the erven and the road centrelines.', has('erf') ? '' : 'Needs erven from step 1.'],
+          ['sllayout', 3, 'Street lighting layout', 'Street-light cables: poles in circuits from the kiosks you pick or place.', has('kiosk') ? '' : 'Needs kiosks from step 2.']];
+        body = `<div class="pf-steps-note">Do these in order. Each one builds on the last and writes real plan items that Demand and the quantities pick up.</div>`
+          + steps.map(([kind, n, name, desc, note]) => { const it = D.auto.find(a => a.kind === kind); if (!it) return '';
+            return `<section class="pf-step${n > 1 && note ? ' later' : ''}"><div class="pf-step-head"><span class="pf-step-n">${n}</span><span>${esc(name)}</span></div><p>${esc(desc)}</p>
+              <button type="button" class="plan-pal-item pf-btn ${n === 1 ? 'pf-primary' : ''}" data-kind="${esc(it.kind)}" data-type="${esc(it.type)}" data-verb="Active">${n === 1 ? 'Start' : 'Open'}</button>${note ? `<small>${esc(note)}</small>` : ''}</section>`; }).join('');
+      }
     }
-    for (const g of groups) {
-      const items = g.items.filter(it => !filter || it.name.toLowerCase().includes(filter));
-      if (!items.length) continue;
-      const open = !!filter || !this._folded.has(g.label);
-      html += `<div class="plan-pal-group">
-        <button type="button" class="plan-pal-group-label" data-role="fold" data-group="${escHtml(g.label)}" aria-expanded="${open}">
-          <span class="plan-pal-chev" aria-hidden="true">${open ? '▾' : '▸'}</span>${escHtml(g.label)}<span class="plan-pal-count">${items.length}</span></button>`;
-      if (open) html += `<div class="plan-pal-grid">${items.map(it => this._palItem(it)).join('')}</div>`;
-      html += `</div>`;
+    return this._frame('<span class="pf-name">Draw</span>', { head, right: chip, body, footer: this._drawFoot(domain, D) });
+  },
+  // The footer: the armed tool (what a click does, Stop), then Text, Measure and (Reticulation) Load types…
+  _drawFoot(domain, D) {
+    D = D || this._drawData(domain);
+    const t = typeof PlanTools !== 'undefined' && PlanTools.active, id = t && t.id, opts = (typeof PlanTools !== 'undefined' && PlanTools.opts) || {};
+    const el = (ty) => (PLAN_DEFS.element(ty) || {}).name || ty, rt = (ty) => (PLAN_DEFS.route(ty) || {}).name || ty;
+    const TITLES = { place: () => 'Placing ' + el(opts.type), array: () => 'Placing ' + el(opts.type) + ' as an array', devpath: () => 'Placing ' + el(opts.type) + ' along a path', route: () => 'Drawing ' + rt(opts.type),
+      trench: () => 'Drawing a trench', crossing: () => 'Drawing a road crossing', measurement: () => 'Measuring', text: () => 'Adding text', erfdetect: () => 'Detect erven', layout: () => 'Auto layout',
+      sllayout: () => 'Street lighting layout', placeSld: () => 'Placing a linked board', placeRetic: () => 'Placing from Demand' };
+    let html = '';
+    if (id && TITLES[id]) {
+      const msg = (PlanMarkup._toolMsg || '').replace(/^[^—]*—\s*/, '');
+      html += `<div class="pf-card pf-pad pf-armed"><div><b>${escHtml(TITLES[id]())}</b><span>${escHtml(msg)}</span></div><button type="button" class="pf-btn" data-role="stop">Stop</button></div>`;
     }
-    html += `</div>`;
-    if (domain === 'retic') html += `<div class="plan-fromsld"><button type="button" class="plan-btn" data-role="load-types" title="Define pumps, boreholes and other loads that are fed from a mini-sub or kiosk">Load types…</button></div>`;
+    html += `<div class="pf-tools">${D.tools.map(it => `<button type="button" class="plan-pal-item pf-row" data-kind="${escHtml(it.kind)}" data-type="${escHtml(it.type)}" data-verb="Active">${this._glyph(it.kind, it.type, it.color)}<span>${escHtml(it.name === 'Measure' ? 'Measure' : it.name)}</span></button>`).join('')}${domain === 'retic' ? `<button type="button" class="pf-btn" data-role="load-types" title="Define pumps, boreholes and other loads that are fed from a mini-sub or kiosk">Load types…</button>` : ''}</div>`;
     return html;
   },
-
-  _reticTrayHtml() {
-    if (typeof PlanSync === 'undefined' || !PlanSync.reticUnplaced || !AppState.reticulation) return '';
-    const pm = AppState.planMarkup;
-    const u = PlanSync.reticUnplaced();
-    const nErven = u.erven.reduce((n, g) => n + g.erfs.length, 0);
-    const nLoads = (u.loads || []).length;
-    const n = u.minisubs.length + u.kiosks.length + nErven + nLoads;
-    if (!n) return '';
-    const item = (id, type, label, sub) => `<button type="button" class="plan-pal-item plan-sld-item" data-retic-place="${escHtml(id)}" title="Place ${escHtml(label)} on the plan — then click where it goes">
-      <span class="plan-pal-swatch" style="background:${escHtml(PLAN_DEFS.elementColor(type, pm.styles))}"></span><span class="plan-pal-name">${escHtml(label)}</span><small>${escHtml(sub)}</small></button>`;
-    let html = `<div class="plan-fromsld plan-unplaced"><div class="plan-sec-head"><span>Not placed yet</span><small>${n} in Demand</small></div>`;
-    for (const m of u.minisubs) html += item(m.id, 'minisub', m.name || 'Minisub', 'Minisub');
-    for (const k of u.kiosks) html += item(k.id, 'kiosk', k.name || 'Kiosk', `Kiosk · ${k.erfs.length} erven`);
-    for (const g of u.erven) {
-      html += `<details class="plan-unplaced-grp"><summary>${escHtml(g.kiosk.name || 'Kiosk')} · ${g.erfs.length} erf${g.erfs.length === 1 ? '' : 'ven'}</summary>`
-        + g.erfs.map(e => item(e.id, 'erf', `Erf ${e.erfNumber || ''}`.trim(), g.kiosk.name || 'Kiosk')).join('') + `</details>`;
-    }
-    if (nLoads) {
-      html += `<details class="plan-unplaced-grp"><summary>Custom loads · ${nLoads}</summary>`
-        + u.loads.map(l => item(l.row.id, 'load', l.row.name || 'Custom load', l.owner.name || 'Supply')).join('') + `</details>`;
-    }
-    return html + `</div>`;
+  // A tool was armed or stopped: only the footer changes.
+  renderPaletteFooter() {
+    const el = this.paletteEl; if (!el || typeof PlanMarkup === 'undefined' || PlanMarkup.mode !== 'draw' || PlanMarkup.context === 'lighting') return;
+    const f = el.querySelector('.pf-foot'); if (!f) return;
+    f.innerHTML = this._drawFoot((AppState.planMarkup.settings.domain) || 'retic');
+    this._markArmed();
   },
 
   _underlaysPanel() {
@@ -217,7 +297,6 @@ const PlanUI = {
       ? (() => { const d = dxfs.find(x => x.unitM); return d ? `Set from ${escHtml(d.name)}` : 'Set from a DXF'; })()
       : 'Calibrated from two points') : 'Not set — lengths, areas and cable runs need it';
     let html = `<div class="plan-ul">
-      <button type="button" class="plan-primary-btn" data-act="import">${PlanMarkup._icon('upload')} Import plan or DXF…</button>
       <p class="plan-ul-hint">PDF, PNG, JPEG or DXF. You can pick the DXF's units and drawing scale before it lands.</p>
       <div class="plan-card${s && s.factor ? '' : ' warn'}">
         <div class="plan-card-head"><b>Floor scale</b><span>${s && s.factor ? `1 px = ${s.factor.toFixed(4)} m` : 'Not set'}</span></div>
@@ -248,7 +327,7 @@ const PlanUI = {
         ? `<span class="plan-pagenav">Page <button type="button" data-role="prev" data-plan="${escHtml(P.id)}" aria-label="Previous page">◀</button>${P.pdfPage} of ${P.pdfPageCount}<button type="button" data-role="next" data-plan="${escHtml(P.id)}" aria-label="Next page">▶</button></span>` : '';
       html += this._ulCard('plan', P.id, P.name, isPdf ? 'PDF' : 'Image', isPdf && P.pdfPageCount === 1 ? 'PDF page' : '', P.visible !== false, typeof P.opacity === 'number' ? P.opacity : 1, sel.kind === 'plan' && sel.id === P.id, nav);
     }
-    return html + `</div>`;
+    return this._frame('Underlays', { count: dxfs.length + pm.plans.length, body: html + `</div>`, footer: `<button type="button" class="pf-btn pf-primary" style="height:36px" data-act="import">${PlanMarkup._icon('upload')} Import plan or DXF…</button>` });
   },
 
   _dxfUnitsText(D) {
@@ -284,7 +363,7 @@ const PlanUI = {
     const act = (a, title, sub) => `<button type="button" class="plan-act" data-act="${a}"><b>${title}</b><small>${sub}</small></button>`;
     const exp = (a, ext, title, sub) => `<button type="button" class="plan-act plan-act-x" data-act="${a}"><span class="plan-ext">${ext}</span><span><b>${title}</b><small>${sub}</small></span></button>`;
     const crop = pm.cropBox;
-    return `<div class="plan-out">
+    return this._frame('Output', { body: `<div class="plan-out">
       <div class="plan-sec-head"><span>Sync</span></div>
       ${building && autoSync
         ? `<div class="plan-card plan-sync-auto"><b>Kept in sync</b><small>Boards, feeders and riser feeders are on the single line, and each way's load, points and routed length come from the devices tagged to it — a moment after each edit.${untagged ? ` ${untagged} device${untagged > 1 ? 's are' : ' is'} not on a circuit yet.` : ''}</small></div>`
@@ -304,7 +383,7 @@ const PlanUI = {
       ${exp('png', 'PNG', 'Image', 'The annotated plan as an image')}
       ${exp('dxf', 'DXF', 'AutoCAD drawing', 'Markup on named layers and blocks')}
       ${exp('csv', 'CSV', 'Schedules', 'Every device, route and room, per type')}
-    </div>`;
+    </div>` });
   },
 
   // The Lighting tab's panel: zones to draw, fittings to place, and every
@@ -375,6 +454,9 @@ const PlanUI = {
       PlanMarkup.runAction(a); return;
     }
     if (e.target.closest('[data-role="load-types"]')) { PlanLoads.openManager(); return; }
+    const tabBtn = e.target.closest('[data-role="tab"]');
+    if (tabBtn) { this._tab = tabBtn.dataset.tab; this.renderPalette(); return; }
+    if (e.target.closest('[data-role="stop"]')) { PlanTools.set('select'); return; }
     const fold = e.target.closest('[data-role="fold"]');
     if (fold) {
       const g = fold.dataset.group;
