@@ -109,6 +109,7 @@ const PlanMarkup = {
               <button type="button" data-chip="cancel" title="Cancel (Esc)">✕ Cancel</button>
             </div>
           </div>
+          <div id="plan-solar-hint" class="sb-hint" hidden></div>
           <div id="plan-status" class="plan-status">
             <button type="button" id="plan-scale-chip" class="plan-chip" title="Plan scale">${I('ruler')}<span></span></button>
             <button type="button" id="plan-snap-chip" class="plan-chip" aria-expanded="false" aria-controls="plan-snap-pop" title="Snap and grid settings (G toggles grid snap)"></button>

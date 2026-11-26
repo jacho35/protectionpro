@@ -317,6 +317,8 @@ PlanTools.register({
       }
       return;
     }
+    // 3a) the status chip of a solar roof: a click puts the roof in or out of the calculation
+    if (typeof PlanSolar !== 'undefined' && PlanSolar.chipAt(pt) && PlanSolar.clickChip(PlanSolar.chipAt(pt).id)) return;
     // 3b) the body of a solar roof (nothing else under the point): pick it, Shift adds / removes; drag moves every picked roof as it is
     const rf = typeof PlanSolar !== 'undefined' && typeof PlanSolarArray !== 'undefined' ? PlanSolarArray.roofAt(pt) : null;
     if (rf) {

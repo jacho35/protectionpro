@@ -234,16 +234,16 @@ const Solar = {
       ${this._in(c, 'annualKwh', 'Annual consumption (kWh, optional)')}`)
       + `<div style="margin-top:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button class="btn btn-primary" type="button" data-act="run">Calculate</button>
          ${c.roofShape === 'plan' && !dock ? '<button class="btn" type="button" data-act="view3d">Edit roofs in 3D</button>' : ''}
-         <span style="font-size:12px;color:var(--text-muted,#6d6d6d)">${escHtml(this.roofArea(c).note)}</span></div>`
+         <span style="font-size:12px;color:var(--text-secondary,#555)">${escHtml(this.roofArea(c).note)}</span></div>`
       + (dock ? this._placedLine(c) : '')
-      + `<div style="margin-top:6px;font-size:11px;color:var(--text-muted,#6d6d6d)">The size is the kWp you set, limited by what the roof holds. Consumption does not size the array; it only gives the share of the load the yield covers. Roofs with an array placed on the plan keep the panels as laid out there.</div>`
+      + `<div style="margin-top:6px;font-size:11px;color:var(--text-secondary,#555)">The size is the kWp you set, limited by what the roof holds. Consumption does not size the array; it only gives the share of the load the yield covers. Roofs with an array placed on the plan keep the panels as laid out there.</div>`
       + (dock ? '' : this._sizeResult());
   },
   // "Placed on the plan: N panels · X kWp" (Design parameters).
   _placedLine(c) {
     if (c.roofShape !== 'plan' || typeof PlanSolarArray === 'undefined') return '';
     const t = PlanSolarArray.totals();
-    return `<div style="margin-top:10px;display:flex;justify-content:space-between;font-size:13px"><span style="color:var(--text-muted,#6d6d6d)">Placed on the plan</span><strong>${t.n ? t.n + ' panels · ' + t.kwp.toFixed(1) + ' kWp' : 'nothing yet'}</strong></div>`;
+    return `<div style="margin-top:10px;display:flex;justify-content:space-between;font-size:13px"><span style="color:var(--text-secondary,#555)">Placed on the plan</span><strong>${t.n ? t.n + ' panels · ' + t.kwp.toFixed(1) + ' kWp' : 'nothing yet'}</strong></div>`;
   },
 
   // The roofs are drawn and edited on the Plan (Solar toolbar, Roof editor); the dialog only lists them.
@@ -260,7 +260,7 @@ const Solar = {
     const names = ['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D'];
     const bars = r.months.map((m, i) => `<div style="flex:1;text-align:center;font-size:10px" title="${names[i]}: ${Math.round(m.kwh)} kWh">
       <div style="height:${Math.round(80 * m.kwh / max)}px;background:var(--accent,#d9822b);margin-top:${80 - Math.round(80 * m.kwh / max)}px"></div>${names[i]}</div>`).join('');
-    const tile = (l, v) => `<div style="background:var(--bg-muted,#f3f2ee);border-radius:6px;padding:8px 10px"><div style="font-size:11px;color:var(--text-muted,#6d6d6d)">${l}</div><div style="font-weight:600;font-size:15px">${v}</div></div>`;
+    const tile = (l, v) => `<div style="background:var(--bg-tertiary,#f3f2ee);color:var(--text-primary,#1a1a2e);border-radius:6px;padding:8px 10px"><div style="font-size:11px;color:var(--text-secondary,#555)">${l}</div><div style="font-weight:600;font-size:15px">${v}</div></div>`;
     const lim = { roof: 'what the roof holds', load: 'the load target', target: 'the kWp target' }[r.limited_by];
     const short = r.mode === 'kwp' && r.limited_by === 'roof' && r.modules_target > r.modules;
     return `<div style="margin-top:14px;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px">
@@ -277,7 +277,7 @@ const Solar = {
       ${r.shading_loss_pct != null ? '<div style="margin-top:6px;font-size:12px">Shading loss ' + r.shading_loss_pct + ' %</div>' : ''}
       ${r.clipping_loss_pct != null ? '<div style="margin-top:6px;font-size:12px">Inverter clipping ' + r.clipping_loss_pct + ' % of the DC energy' + (r.lifetime ? '; year 1 ' + Math.round(r.lifetime[0].kwh).toLocaleString() + ' kWh after first-year degradation, year 25 ' + Math.round(r.lifetime[24].kwh).toLocaleString() + ' kWh' : '') + '.</div>' : ''}
       ${r.model_note ? `<div role="status" style="margin-top:8px;padding:6px 8px;font-size:12px;background:#fff4dc;border:1px solid #e0b14a;border-radius:4px">${escHtml(r.model_note)}</div>` : ''}
-      <div style="margin-top:6px;font-size:11px;color:var(--text-muted,#6d6d6d)">${escHtml(r.data_note)}</div>`;
+      <div style="margin-top:6px;font-size:11px;color:var(--text-secondary,#555)">${escHtml(r.data_note)}</div>`;
   },
 
   _stringsHtml(c) {
@@ -289,7 +289,7 @@ const Solar = {
       <span>Modules in the array</span><span>${total || '— calculate on step 1 first'}</span>
       ${this._in(c, 'perString', 'Modules per string', 'min="1"')}`);
     return head + `<div style="margin-top:12px"><button class="btn btn-primary" type="button" data-act="strings" ${total ? '' : 'disabled'}>Place on the SLD and check strings</button></div>
-      <div style="margin-top:6px;font-size:11px;color:var(--text-muted,#6d6d6d)">The checks are the app's own IEC 62548 string checks (also in the Properties panel and the Compliance report).</div>` + this._stringsResult();
+      <div style="margin-top:6px;font-size:11px;color:var(--text-secondary,#555)">The checks are the app's own IEC 62548 string checks (also in the Properties panel and the Compliance report).</div>` + this._stringsResult();
   },
 
   // Spread whole strings over the inverter's MPPT inputs as evenly as possible.
@@ -343,12 +343,12 @@ const Solar = {
         `<label for="sol-lib-${kind}-${k}">${l}</label><input id="sol-lib-${kind}-${k}" data-lib="${kind}" data-lk="${k}" type="${t || 'number'}" step="any" style="max-width:200px"${k === 'phases' ? ' value="3"' : ''}>`).join('')}</div>
       <button class="btn" type="button" data-act="add${kind}" style="margin-top:8px">Add ${kind === 'panel' ? 'module' : 'inverter'}</button></fieldset>`;
     const mine = (list, kind) => list.length ? list.map(e => `<div style="display:flex;gap:8px;padding:4px 0"><span style="flex:1">${escHtml(e.name)}</span>
-      <button class="btn" type="button" data-act="del${kind}" data-v="${escHtml(e.id)}" aria-label="Delete ${escHtml(e.name)}">×</button></div>`).join('') : '<div style="font-size:12px;color:var(--text-muted,#6d6d6d)">None yet.</div>';
+      <button class="btn" type="button" data-act="del${kind}" data-v="${escHtml(e.id)}" aria-label="Delete ${escHtml(e.name)}">×</button></div>`).join('') : '<div style="font-size:12px;color:var(--text-secondary,#555)">None yet.</div>';
     const imp = `<fieldset style="margin-top:12px;border:1px solid var(--border,#e4e2dc);border-radius:6px;padding:10px"><legend style="font-weight:600">Import from PVsyst or CSV</legend>
       <label for="sol-lib-import" style="font-size:13px">Module (.PAN), inverter (.OND) or a CSV table with a header row</label>
       <input id="sol-lib-import" type="file" accept=".pan,.ond,.csv" multiple data-solimport style="display:block;margin-top:6px">
       ${this._impMsg ? `<div role="status" style="margin-top:8px;font-size:12px;white-space:pre-wrap">${escHtml(this._impMsg)}</div>` : ''}</fieldset>`;
-    return `<div style="font-size:12px;color:var(--text-muted,#6d6d6d)">The shipped modules and inverters are fixed. Entries you add here are kept with this project.</div>${imp}
+    return `<div style="font-size:12px;color:var(--text-secondary,#555)">The shipped modules and inverters are fixed. Entries you add here are kept with this project.</div>${imp}
       <div style="margin-top:10px;font-weight:600">Your modules</div>${mine(this.customPanels(), 'panel')}${form('panel', this.PANEL_FIELDS, 'New module')}
       <div style="margin-top:14px;font-weight:600">Your inverters</div>${mine(this.customInverters(), 'inv')}${form('inv', this.INVERTER_FIELDS, 'New inverter')}
       ${this._libErr ? `<div role="alert" style="margin-top:8px;color:#8a2b1e;font-size:13px">${escHtml(this._libErr)}</div>` : ''}`;
@@ -421,12 +421,12 @@ const Solar = {
     const can = this._res && this._res.arrays && c.roofShape === 'plan';
     const sh = this._shade;
     const annual = `<div style="margin-top:12px;font-weight:600">Annual shading from the 3D roofs</div>
-      <div style="font-size:12px;color:var(--text-muted,#6d6d6d)">Checks every module against the roof objects, the obstruction above and the racks in front of it, for the middle day of each month at every solar hour. Strings are ${+c.perString || 'one'} modules, filled in layout order.</div>
+      <div style="font-size:12px;color:var(--text-secondary,#555)">Checks every module against the roof objects, the obstruction above and the racks in front of it, for the middle day of each month at every solar hour. Strings are ${+c.perString || 'one'} modules, filled in layout order.</div>
       <div style="margin-top:6px"><button class="btn" type="button" data-act="shade" ${can ? '' : 'disabled'}>Run annual shading</button>${can ? '' : '<span style="font-size:12px"> needs roofs drawn on the plan and a calculation on step 1</span>'}</div>`
       + (sh ? `<div style="margin-top:8px;font-size:13px">Shading loss <strong>${sh.loss_pct} %</strong> of the annual yield (${Math.round(sh.unshaded_kwh).toLocaleString()} to ${Math.round(sh.shaded_kwh).toLocaleString()} kWh).</div>
         <div style="display:flex;gap:3px;align-items:flex-end;height:60px;margin-top:6px" role="img" aria-label="Shading loss by month, %">${sh.months.map(m => `<div title="${Number(m.month)}: ${Number(m.loss_pct)} %" style="flex:1;background:#b8860b;height:${Math.max(2, Math.min(60, m.loss_pct * 6))}px"></div>`).join('')}</div>
         <table style="margin-top:8px;font-size:12px;border-collapse:collapse"><tr><th align="left" style="padding:0 12px 0 0">Roof</th><th style="padding:0 12px">String</th><th style="padding:0 12px">Modules</th><th style="padding:0 12px">Loss %</th></tr>${sh.strings.map(r => `<tr><td style="padding:0 12px 0 0">${escHtml(r.array || '')}</td><td align="center">${r.string}</td><td align="center">${r.modules}</td><td align="center">${r.loss_pct}</td></tr>`).join('')}</table>
-        <div style="margin-top:6px;font-size:11px;color:var(--text-muted,#6d6d6d)">${escHtml(sh.note)} ${escHtml(sh.attribution || '')}</div>` : '');
+        <div style="margin-top:6px;font-size:11px;color:var(--text-secondary,#555)">${escHtml(sh.note)} ${escHtml(sh.attribution || '')}</div>` : '');
     const placed = this._pvComp();
     const run = (act, label, tip) => `<button class="btn" type="button" data-act="${act}" title="${escHtml(tip)}" ${placed ? '' : 'disabled'}>${label}</button>`;
     return head + shade + annual + `<div style="margin-top:12px"><button class="btn btn-primary" type="button" data-act="place" ${this._res ? '' : 'disabled'}>Place / update on the SLD</button>
@@ -438,7 +438,7 @@ const Solar = {
         ${run('study:compliance', 'Compliance report', 'Includes the IEC 62548 string checks')}
         ${c.hybrid ? run('study:battery', 'Battery sizing', 'Duty-cycle sizing and discharge simulation of the hybrid battery') + run('study:backup', 'Backup autonomy', 'Grid-outage adequacy and battery autonomy') + run('study:timeseries', 'Time-series load flow', 'Day profile with the PV and battery') : ''}
       </div>
-      <div style="margin-top:6px;font-size:11px;color:var(--text-muted,#6d6d6d)">These run the app's own studies on the whole network, so connect the array to a bus first. The results open in the usual place.</div>`;
+      <div style="margin-top:6px;font-size:11px;color:var(--text-secondary,#555)">These run the app's own studies on the whole network, so connect the array to a bus first. The results open in the usual place.</div>`;
   },
 
   // ── Actions ────────────────────────────────────────────────────────

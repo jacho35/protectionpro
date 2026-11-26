@@ -168,6 +168,7 @@ const PlanSolarArray = {
       this._busy = false;
       if (this._again) { this._again = false; this._queue(); }
       if (typeof PlanTools !== 'undefined' && PlanTools.active && PlanTools.active.id === 'solararray') PlanMarkup.refreshProps();
+      if (typeof SolarBar !== 'undefined') SolarBar.render();                                          // the totals and the Roofs list take the new counts
       if (typeof Solar !== 'undefined' && Solar._renderDock) Solar._renderDock();                    // Design parameters: the placed count
     }
   },
@@ -187,6 +188,7 @@ const PlanSolarArray = {
         ctx.strokeStyle = '#d9822b'; ctx.lineWidth = 3 * u; ctx.stroke(); ctx.restore();
       }
       if (!r.array && !showHover) continue;
+      if (r.use === false && !showHover) continue;                            // a roof left out of the calculation shows no panels (its chip says so)
       const lay = this.layout(r);
       if (showHover) {
         const ctr = r.points.reduce((a, q) => ({ x: a.x + q.x / r.points.length, y: a.y + q.y / r.points.length }), { x: 0, y: 0 });

@@ -1,53 +1,96 @@
-/* The Solar toolbar (solar-bar.js) across the top of the Plan, its hint bar, and the left "Design parameters" dock (solar.js). */
+/* The Solar toolbar (solar-bar.js): row 1 the tools, row 2 the selection bar; the Roofs list on the left; the hint strip. */
+.plan-solar-bar { --sb-on-bg: #fdf0e1; --sb-on-bd: #d9822b; --sb-on-fg: #7a3a05; --sb-sel-bg: #fdf6ec; --sb-sel-bd: #ecd3ae; --sb-in-bg: #e7f5ec; --sb-in-fg: #14532d; --sb-in-bd: #1d7a46; --sb-mix-bg: #fff3d6; --sb-mix-fg: #7a3a05; --sb-mix-bd: #b45309; }
+body.dark-mode .plan-solar-bar { --sb-on-bg: #4a3318; --sb-on-bd: #e0954a; --sb-on-fg: #ffd9b0; --sb-sel-bg: #2d2a26; --sb-sel-bd: #5a4a33; --sb-in-bg: #17361f; --sb-in-fg: #b6e8c7; --sb-in-bd: #3da56a; --sb-mix-bg: #3d3216; --sb-mix-fg: #ffe6a8; --sb-mix-bd: #d6a032; }
 .plan-solar-bar[hidden] { display: none; }
-.plan-solar-bar { background: var(--bg-primary); border-bottom: 1px solid var(--border-color); }
-.sb-bar { display: flex; flex-wrap: wrap; gap: 8px 4px; align-items: stretch; padding: 8px 16px; }
-.sb-grp { display: flex; flex-direction: column; gap: 2px; }
-.sb-glab { font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--text-muted); padding-left: 4px; }
-.sb-row { display: flex; gap: 2px; align-items: stretch; }
-.sb-center { align-items: center; }
-.sb-sep { width: 1px; background: var(--border-color); align-self: stretch; margin: 0 4px; }
-.sb-btn { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; min-width: 64px; min-height: 54px; padding: 4px 8px;
-  border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--text-primary); cursor: pointer; font-size: 12px; }
-.sb-btn:hover { background: var(--bg-tertiary); }
-.sb-btn.on { background: color-mix(in srgb, var(--accent) 14%, var(--bg-primary)); border-color: var(--accent); color: var(--accent); }
-.sb-btn svg { width: 22px; height: 22px; stroke: currentColor; fill: none; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
-.sb-step { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-height: 54px; padding: 0 6px; }
-.sb-v { display: flex; align-items: center; gap: 2px; }
-.sb-v button { width: 44px; height: 30px; border: 1px solid var(--border-color); background: var(--bg-primary); color: var(--text-primary); border-radius: 6px; cursor: pointer; font-size: 16px; line-height: 1; }
-.sb-v button:hover { background: var(--bg-tertiary); border-color: var(--accent); }
-.sb-v output { min-width: 58px; text-align: center; font-weight: 600; font-size: 13px; color: var(--text-primary); }
-.sb-step small { font-size: 11px; color: var(--text-muted); }
-.sb-seg { display: flex; border: 1px solid var(--border-color); border-radius: 8px; overflow: hidden; }
-.sb-seg button { min-width: 52px; min-height: 44px; border: 0; background: var(--bg-primary); color: var(--text-primary); cursor: pointer; font-weight: 600; font-size: 13px; }
-.sb-seg button.on { background: var(--accent); color: #fff; }
-.sb-bar button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.sb-hint { display: flex; gap: 16px; align-items: center; flex-wrap: nowrap; height: 36px; box-sizing: border-box; overflow: hidden; padding: 0 20px;     /* fixed height: a longer hint must never resize the plan under the pointer */ background: color-mix(in srgb, var(--accent) 9%, var(--bg-primary)); border-top: 1px solid var(--border-color); font-size: 13px; }
-.sb-hint strong { color: var(--accent); }
+.plan-solar-bar { position: relative; z-index: 80; background: var(--bg-primary); border-bottom: 1px solid var(--border-color); }     /* above the plan, so the Aisles menu and the align picker open over it */
+.sb-bar { display: flex; flex-wrap: wrap; gap: 4px 0; align-items: stretch; padding: 6px 16px; min-height: 60px; box-sizing: border-box; }
+.sb-grp { display: flex; flex-direction: column; justify-content: center; gap: 3px; padding: 0 16px; }
+.sb-grp:first-child { padding-left: 0; }
+.sb-glab { font-size: 11px; letter-spacing: .04em; text-transform: uppercase; color: var(--text-secondary); }
+.sb-row { display: flex; gap: 4px; align-items: center; }
+.sb-sep { width: 1px; background: var(--border-color); margin: 6px 0; }
+.sb-fill { flex: 1 1 0; }
+.sb-right { padding-right: 0; align-items: flex-end; }
+.sb-btn { display: flex; align-items: center; gap: 6px; height: 32px; padding: 0 10px; border: 1px solid var(--border-color); border-radius: 6px; background: var(--bg-primary); color: var(--text-primary); cursor: pointer; font: inherit; font-size: 13px; white-space: nowrap; }
+.sb-btn:hover, .sb-ibtn:hover, .sb-seg button:hover, .sb-mi:hover { background: var(--bg-tertiary); }
+.sb-btn.on, .sb-seg button.on, .sb-mi.on { background: var(--sb-on-bg); border-color: var(--sb-on-bd); color: var(--sb-on-fg); }
+.sb-seg button.on { font-weight: 600; }
+.ic { width: 18px; height: 18px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.ic.caret { width: 14px; height: 14px; }
+.sb-ibtn { display: flex; align-items: center; justify-content: center; width: 32px; height: 32px; border: 1px solid var(--border-color); border-radius: 6px; background: var(--bg-primary); color: var(--text-primary); cursor: pointer; }
+.sb-seg { display: flex; border: 1px solid var(--border-color); border-radius: 6px; overflow: hidden; height: 32px; }
+.sb-seg button { border: 0; border-left: 1px solid var(--border-color); background: var(--bg-primary); color: var(--text-primary); padding: 0 12px; cursor: pointer; font: inherit; font-size: 13px; }
+.sb-seg button:first-child { border-left: 0; }
+.sb-tot { gap: 10px; height: 32px; font-size: 13px; color: var(--text-primary); }
+.sb-tot strong { font-size: 15px; }
+.sb-bar-sep { color: var(--border-color); }
+.sb-go { height: 32px; padding: 0 12px; border: 1px solid #d9822b; background: #d9822b; color: #1f2328; border-radius: 6px; font: inherit; font-weight: 600; font-size: 13px; cursor: pointer; }
+.sb-go:hover { background: #e59443; }
+.sb-pop { position: relative; }
+.sb-menu { position: absolute; z-index: 20; top: calc(100% + 4px); left: 0; min-width: 170px; padding: 4px; background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: 8px; box-shadow: 0 6px 18px rgba(0,0,0,.18); display: flex; flex-direction: column; gap: 2px; }
+.sb-mi { display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 10px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--text-primary); cursor: pointer; font: inherit; font-size: 13px; text-align: left; }
+
+/* Row 2: the selection bar */
+.sb-sel { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding: 6px 16px; min-height: 60px; box-sizing: border-box; background: var(--sb-sel-bg); border-top: 1px solid var(--sb-sel-bd); color: var(--text-primary); }
+.sb-seltxt { font-size: 13px; }
+.sb-selname { display: flex; flex-direction: column; gap: 1px; min-width: 110px; max-width: 170px; }
+.sb-selname b { font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sb-selname span { font-size: 12px; color: var(--text-secondary); }
+.sb-pill { display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 12px 0 6px; border-radius: 16px; border: 1px solid; font: inherit; font-weight: 600; font-size: 13px; cursor: pointer; }
+.sb-pill.in { background: var(--sb-in-bg); color: var(--sb-in-fg); border-color: var(--sb-in-bd); }
+.sb-pill.out { background: var(--bg-primary); color: var(--text-primary); border-color: var(--border-color); }
+.sb-pill.mix { background: var(--sb-mix-bg); color: var(--sb-mix-fg); border-color: var(--sb-mix-bd); }
+.sb-tick { display: inline-block; width: 22px; height: 22px; border-radius: 11px; text-align: center; line-height: 22px; color: #fff; background: #6b7280; }
+.sb-pill.in .sb-tick { background: #1d7a46; }
+.sb-pill.mix .sb-tick { background: #b45309; }
+.sb-f { display: flex; flex-direction: column; gap: 2px; font-size: 11px; color: var(--text-secondary); }
+.sb-f input { height: 26px; box-sizing: border-box; border: 1px solid var(--border-color); border-radius: 4px; padding: 0 6px; font: inherit; font-size: 13px; color: var(--text-primary); background: var(--bg-primary); }
+.sb-f input::placeholder { color: var(--text-secondary); }
+.sb-alchip { display: flex; align-items: center; gap: 6px; height: 26px; padding: 0 8px; border: 1px solid var(--border-color); border-radius: 4px; background: var(--bg-primary); color: var(--text-primary); cursor: pointer; font: inherit; font-size: 13px; white-space: nowrap; }
+.sb-alchip svg { width: 16px; height: 16px; color: #d9822b; }
+.sb-alpop { position: absolute; z-index: 20; top: calc(100% + 4px); left: 0; width: 156px; box-sizing: border-box; padding: 10px; background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: 8px; box-shadow: 0 6px 18px rgba(0,0,0,.18); color: var(--text-primary); }
+.sb-alcap { font-size: 11px; color: var(--text-secondary); text-align: center; margin: 2px 0 6px; }
+.sb-algrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.sb-al { height: 36px; border: 1px solid var(--border-color); border-radius: 6px; background: var(--bg-primary); cursor: pointer; position: relative; padding: 0; }
+.sb-al:hover { background: var(--bg-tertiary); }
+.sb-al.on { border-color: var(--sb-on-bd); background: var(--sb-on-bg); }
+.sb-al.on span { position: absolute; left: 50%; top: 50%; width: 10px; height: 10px; margin: -5px 0 0 -5px; border-radius: 5px; background: #d9822b; }
+.sb-aledge { width: 100%; margin-top: 8px; height: 30px; border: 1px solid var(--border-color); border-radius: 6px; background: var(--bg-primary); color: var(--text-primary); cursor: pointer; font: inherit; font-size: 12px; }
+.sb-more { height: 32px; padding: 0 12px; border: 1px solid var(--border-color); background: var(--bg-primary); color: var(--text-primary); border-radius: 6px; font: inherit; font-size: 13px; cursor: pointer; }
+.sb-bar button:focus-visible, .sb-sel button:focus-visible, .sb-sel input:focus-visible, .sb-menu button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* The hint strip under the plan: the armed tool and what a click does. */
+.sb-hint[hidden] { display: none; }
+.sb-hint { display: flex; gap: 16px; align-items: center; flex-wrap: nowrap; height: 32px; flex: none; box-sizing: border-box; overflow: hidden; padding: 0 16px; background: var(--bg-primary); border-top: 1px solid var(--border-color); font-size: 12px; }
+.sb-hint strong { color: var(--text-primary); }
 .sb-hint strong, .sb-hint small { flex: none; white-space: nowrap; }
-.sb-hint span { flex: 1; min-width: 0; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.sb-hint small { color: var(--text-muted); font-size: 12px; }
+.sb-hint span { flex: 1; min-width: 0; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sb-hint small { color: var(--text-secondary); }
 
-/* Left panel of the Solar mode: Design parameters (the Solar PV Design steps docked beside the plan). */
-#plan-palette.sd-wide { width: 340px; flex: 0 0 340px; padding: 12px; }
-.sd-nav { display: flex; flex-direction: column; gap: 8px; }
-.sd-glab { font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--text-muted); }
-.sd-btn { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 0 12px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-primary);
-  color: var(--text-primary); cursor: pointer; font-size: 13px; font-weight: 600; text-align: left; }
-.sd-btn:hover { background: var(--bg-tertiary); border-color: var(--accent); }
-.sd-btn.open { background: color-mix(in srgb, var(--accent) 14%, var(--bg-primary)); border-color: var(--accent); color: var(--accent); }
-.sd-btn svg { width: 20px; height: 20px; flex: none; stroke: currentColor; fill: none; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
-.sd-grow { flex: 1; }
-.sd-note { font-size: 12px; color: var(--text-muted); line-height: 1.5; padding: 0 4px; }
-.sd-tabs { display: flex; gap: 2px; flex-wrap: wrap; margin: 4px 0 4px; }
-.sd-tab { min-height: 40px; padding: 0 10px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--text-secondary); cursor: pointer; font-size: 12px; font-weight: 600; }
-.sd-tab:hover { background: var(--bg-tertiary); }
-.sd-tab.on { background: var(--accent); color: #fff; }
-.sd-body { display: flex; flex-direction: column; gap: 12px; font-size: 13px; }
-.sd-body select, .sd-body input[type="number"], .sd-body input[type="text"] { min-height: 36px; box-sizing: border-box; max-width: 100%; }
-.sd-more { align-self: flex-start; background: none; border: 0; padding: 8px 4px; color: var(--accent); cursor: pointer; font-size: 12px; text-decoration: underline; }
-.sd-nav button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* Left panel of the Solar mode: the Roofs list. */
+#plan-palette.sd-wide { width: 268px; flex: 0 0 268px; padding: 0; background: var(--bg-primary); }
+.sr-head { display: flex; justify-content: space-between; align-items: center; padding: 12px 14px 8px; }
+.sr-title { font-weight: 600; }
+.sr-n, .sr-in { font-weight: 400; font-size: 12px; color: var(--text-secondary); }
+.sr-tools { display: flex; gap: 6px; padding: 0 14px 8px; }
+.sr-btn { flex: 1; min-height: 32px; border: 1px solid var(--border-color); background: var(--bg-primary); color: var(--text-primary); border-radius: 6px; font: inherit; font-size: 12px; cursor: pointer; }
+.sr-btn:hover { background: var(--bg-tertiary); }
+.sr-list { flex: 1; min-height: 0; overflow-y: auto; border-top: 1px solid var(--border-color); }
+.sr-row { display: flex; align-items: center; gap: 8px; padding-right: 14px; border-left: 3px solid transparent; }
+.sr-row.sel { background: var(--sb-on-bg, #fdf0e1); border-left-color: #d9822b; }
+.sr-main { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 1px; padding: 8px 0 8px 11px; border: 0; background: transparent; color: var(--text-primary); cursor: pointer; font: inherit; text-align: left; min-height: 44px; }
+.sr-name { font-weight: 500; font-size: 13px; }
+.sr-row.sel .sr-name { font-weight: 600; }
+.sr-row.out .sr-name { color: var(--text-secondary); }
+.sr-sub { font-size: 12px; color: var(--text-secondary); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sr-sw { flex: none; width: 36px; height: 20px; border-radius: 10px; border: 0; background: #8a929c; position: relative; padding: 0; cursor: pointer; }
+.sr-sw span { position: absolute; left: 2px; top: 2px; width: 16px; height: 16px; border-radius: 8px; background: #fff; transition: left .12s; }
+.sr-sw.on { background: #1d7a46; }
+.sr-sw.on span { left: 18px; }
+.sr-main:focus-visible, .sr-sw:focus-visible, .sr-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.sr-empty { padding: 14px; font-size: 12px; color: var(--text-secondary); line-height: 1.5; }
 
-/* In the Solar mode the hint bar says what the tool does; the status bar keeps one line so a longer message never resizes the plan under the pointer. */
+/* The hint strip says what the tool does, so the status bar keeps one line. */
 .plan-solar-on .plan-status { flex-wrap: nowrap; height: 37px; box-sizing: border-box; overflow: hidden; }
 .plan-solar-on .plan-info { flex: 1 1 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: right; }
+@media (max-width: 900px) { .sb-grp { padding: 0 8px; } .sb-fill { display: none; } #plan-palette.sd-wide { width: 100%; flex: 0 0 auto; } }
