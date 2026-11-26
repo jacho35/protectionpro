@@ -530,13 +530,39 @@ const PlanSolar = {
       ctx.font = `600 ${11 * u}px sans-serif`; ctx.textAlign = 'center';
       ctx.fillText(Math.round(pl.trueAz) + '° ' + this.compass(pl.trueAz), c.x + nx * 14 * u, c.y + ny * 14 * u + 4 * u);
     });
-    for (const o of (r.objects || [])) {
-      const a = (+o.rot || 0) * Math.PI / 180, ca = Math.cos(a), sa = Math.sin(a), hw = o.w / 2 / f, hd = o.d / 2 / f;
+    ctx.restore();
+  },
+
+  // The objects standing on a roof (vents, chimneys, skylights, parapets, air-con units): the same ones the 3D view draws, each as its
+  // plan footprint with a one-letter tag, picked ones outlined blue. Drawn whatever the slope arrows setting says.
+  _objTag: { vent: 'V', chimney: 'C', skylight: 'S', parapet: 'P', aircon: 'A' },
+  _drawObjects(ctx, r, u) {
+    const f = PlanEngine.factor(); if (!f || !(r.objects || []).length) return;
+    const pick = typeof Roof3D !== 'undefined' && Roof3D.sel && Roof3D.sel.obj ? Roof3D.sel.obj : null;
+    ctx.save(); ctx.lineJoin = 'round';
+    for (const o of r.objects) {
+      const a = (+o.rot || 0) * Math.PI / 180, ca = Math.cos(a), sa = Math.sin(a), hw = Math.max(o.w / 2 / f, 2.5 * u), hd = Math.max(o.d / 2 / f, 2.5 * u), on = pick === o.id;
       ctx.beginPath();
       [[-hw, -hd], [hw, -hd], [hw, hd], [-hw, hd]].forEach(([x, y], k) => { const px = o.x + x * ca - y * sa, py = o.y + x * sa + y * ca; k ? ctx.lineTo(px, py) : ctx.moveTo(px, py); });
-      ctx.closePath(); ctx.fillStyle = '#ffffff'; ctx.fill(); ctx.strokeStyle = '#111827'; ctx.lineWidth = 1.5 * u; ctx.stroke();
+      ctx.closePath(); ctx.fillStyle = '#ffffff'; ctx.fill(); ctx.strokeStyle = on ? '#2563eb' : '#111827'; ctx.lineWidth = (on ? 2.5 : 1.5) * u; ctx.stroke();
+      if (Math.min(hw, hd) * 2 / u >= 11) { const px = Math.min(12, Math.min(hw, hd) * 1.4 / u); ctx.fillStyle = on ? '#2563eb' : '#111827'; ctx.font = `600 ${px * u}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(this._objTag[o.type] || '?', o.x, o.y); }
     }
     ctx.restore();
+  },
+  // The roof object under a world point, or null: {roof, obj}.
+  objectAt(pt, zoom) {
+    const f = PlanEngine.factor(); if (!f) return null;
+    const tol = 8 / (zoom || 1);
+    for (const r of this.roofs()) for (const o of (r.objects || [])) if (Math.hypot(pt.x - o.x, pt.y - o.y) <= Math.max(tol, Math.max(o.w, o.d) / 2 / f)) return { roof: r, obj: o };
+    return null;
+  },
+  // Pick an object (and its roof), as a click in 3D does.
+  selectObject(hit) {
+    this.selectRoofs([hit.roof.id]);
+    if (typeof Roof3D !== 'undefined') Roof3D.sel = { roof: hit.roof.id, obj: hit.obj.id };
+    if (typeof RoofEditor !== 'undefined') { RoofEditor.tab = 'detail'; RoofEditor.renderPanel(); }
+    if (typeof Roof3D !== 'undefined' && Roof3D.view) Roof3D.view.redraw();
+    if (typeof PlanEngine !== 'undefined') PlanEngine.requestDraw({ fg: true });
   },
 
   // The north arrow, in screen pixels (call after the world transform is restored): top-right of the plan,
@@ -583,6 +609,7 @@ const PlanSolar = {
       for (const k of (r.keepouts || [])) this._drawKeepout(ctx, k, u);
       if (typeof PlanTools !== 'undefined' && PlanTools.active && PlanTools.active.id === 'select') { this._handles(ctx, r, u); for (const k of (r.keepouts || [])) this._handles(ctx, k, u); }
       if (this.slopeShown()) this._slopeArrows(ctx, r, u);
+      this._drawObjects(ctx, r, u);
       ctx.fillStyle = '#7c2d12'; ctx.textAlign = 'center'; ctx.font = `${12 * u}px sans-serif`;
       labels.push({ text: `${r.name} · ${r.shape === 'flat' ? 'flat, ' + r.tilt + '° racks' : r.shape + ' ' + r.pitch + '°'}${a != null ? ' · ' + a.toFixed(0) + ' m²' : ''}`, x: c.x, y: c.y, picked });
       ctx.restore();

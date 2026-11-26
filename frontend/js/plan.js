@@ -1017,6 +1017,7 @@ const PlanMarkup = {
       case 'sllayout': return typeof SLLayoutUI !== 'undefined' ? SLLayoutUI.hint() : 'Street lighting layout';
       case 'layout': return (typeof PlanLayoutUI !== 'undefined' && PlanLayoutUI.hint) ? PlanLayoutUI.hint() : 'Auto layout — set the roads and the rules, Run, then Create.';
       case 'solararray': return PlanSolarArray.hint();
+      case 'roofobject': return SolarBar.hint('object').join(': ');
       case 'solaraisle': return SolarBar.hint((opts && opts.mode) || 'row').join(': ') + ' Esc to stop.';
       case 'roofedit': return 'Roof editor — click a roof to select it, or place the chosen object on it. Pick the tool on the left.';
       case 'roofkeepout': return 'Keep-out area — click the corners inside a roof; Enter or the first corner closes it, Backspace takes a corner back, Esc cancels.';

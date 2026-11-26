@@ -42,6 +42,7 @@ const SolarBar = {
     row: ['Row aisle', 'Click the dashed line between two rows of panels to open an aisle there. Alt-click an aisle to remove it.'],
     col: ['Column aisle', 'Click the dashed line between two columns of panels to open an aisle there. Alt-click an aisle to remove it.'],
     remove: ['Remove aisle', 'Click an aisle to remove it.'],
+    object: ['Add object', 'Click a roof to put the object there; it shows on the plan and in 3D. Drag an object with Select to move it. Esc to stop.'],
   },
   hint(key) { return this._hints[key] || this._hints.select; },
 
@@ -51,7 +52,7 @@ const SolarBar = {
     if (id === 'solaraisle') return (PlanTools.opts && PlanTools.opts.mode) || 'row';
     if (id === 'select' && this.is3d() && typeof Roof3D !== 'undefined' && Roof3D.tool === 'aisle') return Roof3D.aisleMode || 'row';
     if (id === 'roofdetect') return typeof PlanRoomDetect !== 'undefined' && PlanRoomDetect.mode === 'draw' ? 'draw' : 'roof';
-    return { roofedit: 'editor', roofkeepout: 'keepout', solararray: 'place' }[id] || 'select';
+    return { roofedit: 'editor', roofkeepout: 'keepout', solararray: 'place', roofobject: 'object' }[id] || 'select';
   },
   is3d() { return typeof RoofEditor !== 'undefined' && !!RoofEditor.on; },
   // 2d (the plan alone) | split (the plan beside the 3D view) | 3d (the 3D view alone).

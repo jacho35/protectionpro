@@ -317,6 +317,11 @@ PlanTools.register({
       }
       return;
     }
+    // 3a0) an object standing on a solar roof (vent, chimney, air-con…): a click picks it, a drag moves it; 3D shows the same object
+    if (typeof PlanSolar !== 'undefined' && !e.shiftKey) {
+      const oh = PlanSolar.objectAt(pt, PlanEngine.view ? PlanEngine.view.zoom : 1);
+      if (oh) { PlanSolar.selectObject(oh); this._drag = { kind: 'objmove', o: oh.obj, last: { x: pt.x, y: pt.y }, moved: false }; return; }
+    }
     // 3a) the status chip of a solar roof: a click puts the roof in or out of the calculation
     if (typeof PlanSolar !== 'undefined' && PlanSolar.chipAt(pt) && PlanSolar.clickChip(PlanSolar.chipAt(pt).id)) return;
     // 3b) the body of a solar roof (nothing else under the point): pick it, Shift adds / removes; drag moves every picked roof as it is
@@ -339,6 +344,13 @@ PlanTools.register({
     if (!this._drag) return;
     if (this._drag.kind === 'mastpick') return;
     if (this._drag.kind === 'north') { PlanSolar.dragNorth(pt); return; }
+    if (this._drag.kind === 'objmove') {                                                 // the object by the pointer's step; the 3D view follows live
+      const dx = pt.x - this._drag.last.x, dy = pt.y - this._drag.last.y; if (!dx && !dy) return;
+      if (!this._drag.moved && Math.hypot(pt.x - this._downWorld.x, pt.y - this._downWorld.y) < 3 / PlanEngine.view.zoom) return;
+      this._drag.o.x += dx; this._drag.o.y += dy; this._drag.last = { x: pt.x, y: pt.y }; this._drag.moved = true;
+      if (typeof RoofEditor !== 'undefined' && RoofEditor.on && typeof Roof3D !== 'undefined') Roof3D._live(); else { PlanMarkup.markDirty(); PlanEngine.requestDraw({ fg: true }); }
+      return;
+    }
     if (this._drag.kind === 'roofmove') {                                               // the picked roofs by the pointer's step, unsnapped so no shape changes
       const dx = pt.x - this._drag.last.x, dy = pt.y - this._drag.last.y; if (!dx && !dy) return;
       if (!this._drag.moved && Math.hypot(pt.x - this._downWorld.x, pt.y - this._downWorld.y) < 3 / PlanEngine.view.zoom) return;   // a click, not a drag
