@@ -80,7 +80,12 @@ const PlanSolar = {
   _selChanged() {
     if (typeof PlanEngine !== 'undefined') PlanEngine.requestDraw({ fg: true });
     if (typeof PlanMarkup !== 'undefined' && PlanMarkup.refreshProps) PlanMarkup.refreshProps();      // one picked roof with an array shows the array's properties
-    if (typeof RoofEditor !== 'undefined' && RoofEditor.on) RoofEditor.renderPanel();          // the editor's panel edits the picked roofs together
+    if (typeof RoofEditor !== 'undefined' && RoofEditor.on) {
+      if (typeof Roof3D !== 'undefined') Roof3D.sel = this.sel.size === 1 ? { roof: [...this.sel][0] } : null;   // one picked roof is the 3D view's roof too
+      RoofEditor.renderPanel();                                                                // the editor's panel edits the picked roofs together
+      if (typeof Roof3D !== 'undefined' && Roof3D.view) Roof3D.view.redraw();
+    }
+    if (typeof SolarBar !== 'undefined') SolarBar.render();                                    // the selection bar and the Roofs list follow the pick
   },
   selectRoofs(ids, add) { if (!add) this.sel.clear(); for (const i of ids) this.sel.add(i); this._selChanged(); },
   toggleSelect(id) { if (this.sel.has(id)) this.sel.delete(id); else this.sel.add(id); this._selChanged(); },
@@ -115,6 +120,51 @@ const PlanSolar = {
     Object.assign(r, patch);
     if (typeof PlanMarkup !== 'undefined') PlanMarkup.markDirty();
     if (typeof PlanEngine !== 'undefined') PlanEngine.requestDraw({ fg: true });
+  },
+
+  // Include roofs in the solar calculation, or leave them out: the one switch behind the chip on the roof, the Roofs list and the
+  // selection bar. A roof that is left out is drawn without panels in 2D and 3D and does not count in the totals.
+  setUse(ids, on) {
+    let n = 0;
+    for (const r of this.roofs()) if (ids.includes(r.id) && (r.use !== false) !== !!on) { r.use = !!on; n++; }
+    if (!n) return 0;
+    this._changed();
+    if (typeof PlanSolarArray !== 'undefined' && this.roofs().some(r => r.array)) PlanSolarArray._queue();     // the single line follows the roofs in use
+    if (typeof RoofEditor !== 'undefined') RoofEditor._refresh();
+    if (typeof PlanMarkup !== 'undefined' && PlanMarkup.refreshProps) PlanMarkup.refreshProps();
+    if (typeof SolarBar !== 'undefined') SolarBar.render();
+    return n;
+  },
+  // The status chip drawn on each roof (screen-sized, top-left of the roof): what it is now, and a click flips it. World boxes kept for the hit test.
+  _chips: [],
+  _chipText(r) {
+    const used = r.use !== false, n = r.array && typeof PlanSolarArray !== 'undefined' ? PlanSolarArray.layout(r) : null, cnt = n && !n.pending ? n.n : null;
+    if (used) return { kind: 'in', text: r.array && cnt != null ? '✓ In · ' + cnt + ' panel' + (cnt === 1 ? '' : 's') : '✓ In' };
+    return r.array ? { kind: 'warn', text: 'Array placed but left out · Include' } : { kind: 'out', text: 'Left out · Include' };
+  },
+  _drawChips(ctx, zoom) {
+    const u = 1 / zoom, H = 20 * u, pad = 9 * u; this._chips = [];
+    ctx.save(); ctx.font = `600 ${11 * u}px sans-serif`; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    const sty = { in: ['#ffffff', '#1d7a46', '#14532d'], out: ['#ffffff', '#6b7280', '#1f2328'], warn: ['#fff3d6', '#b45309', '#7a3a05'] };
+    for (const r of this.roofs()) {
+      if (!r.points || r.points.length < 3 || r.keepout) continue;
+      const c = this._chipText(r), w = ctx.measureText(c.text).width + 2 * pad;
+      const x = Math.min(...r.points.map(p => p.x)), y = Math.min(...r.points.map(p => p.y)) - H - 3 * u, rad = H / 2;
+      ctx.beginPath(); ctx.moveTo(x + rad, y); ctx.lineTo(x + w - rad, y); ctx.arc(x + w - rad, y + rad, rad, -Math.PI / 2, Math.PI / 2); ctx.lineTo(x + rad, y + H); ctx.arc(x + rad, y + rad, rad, Math.PI / 2, Math.PI * 1.5); ctx.closePath();
+      ctx.fillStyle = sty[c.kind][0]; ctx.fill(); ctx.strokeStyle = sty[c.kind][1]; ctx.lineWidth = 1.3 * u; ctx.setLineDash([]); ctx.stroke();
+      ctx.fillStyle = sty[c.kind][2]; ctx.fillText(c.text, x + pad, y + H / 2 + 0.5 * u);
+      this._chips.push({ id: r.id, x0: x, y0: y, x1: x + w, y1: y + H });
+    }
+    ctx.restore();
+  },
+  // The roof whose chip is under the point (world px), or null.
+  chipAt(pt) { return this._chips.find(c => pt.x >= c.x0 && pt.x <= c.x1 && pt.y >= c.y0 && pt.y <= c.y1) || null; },
+  // A click on a chip: flip that roof (a picked roof's chip flips every picked roof, so a group goes in or out together).
+  clickChip(id) {
+    const r = this.roofs().find(x => x.id === id); if (!r) return false;
+    const ids = this.sel.has(id) && this.sel.size > 1 ? [...this.sel] : [id];
+    this.setUse(ids, r.use === false);
+    return true;
   },
 
   // The roof's own limit on the number of panels (`roof.maxModules`, blank / 0 = no limit): a whole number, or Infinity.
@@ -401,6 +451,7 @@ const PlanSolar = {
   _changed() {
     if (typeof PlanMarkup !== 'undefined') { PlanMarkup.snapshot(); PlanMarkup.markDirty(); }
     if (typeof PlanEngine !== 'undefined') PlanEngine.requestDraw({ fg: true });
+    if (typeof SolarBar !== 'undefined') SolarBar.render();                                  // the selection bar, totals and Roofs list follow every edit
   },
   // A keep-out area: hatched red with a dashed outline and its label.
   _drawKeepout(ctx, k, u) {
@@ -516,7 +567,7 @@ const PlanSolar = {
       ctx.beginPath();
       r.points.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y));
       ctx.closePath();
-      ctx.fillStyle = r.use === false ? 'rgba(107,114,128,0.10)' : 'rgba(217,130,43,0.16)';
+      ctx.fillStyle = r.use === false ? 'rgba(107,114,128,0.22)' : 'rgba(217,130,43,0.16)';
       ctx.fill();
       const picked = this.sel.has(r.id);
       ctx.strokeStyle = picked ? '#2563eb' : r.use === false ? '#6b7280' : '#c2410c';
@@ -549,6 +600,7 @@ const PlanSolar = {
       }
     }
     ctx.restore();
+    this._drawChips(ctx, zoom);
   },
 };
 

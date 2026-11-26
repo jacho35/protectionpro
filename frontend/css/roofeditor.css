@@ -1,6 +1,9 @@
 /* Roof editor (js/roof-editor.js): the plan and a live 3D view side by side, a tool palette, a properties column
    and a status bar. Only shown while #plan-main has .re-on. */
 #plan-main.re-on > #plan-palette, #plan-main.re-on > #plan-props { display: none; }
+.plan-solar-on #plan-main.re-on > #plan-palette { display: flex; }       /* the Roofs list stays beside the plan and the 3D view */
+#plan-main.re-only3d > .plan-stage-col { display: none; }                  /* 3D alone: the plan is hidden, the 3D view takes its room */
+#plan-main.re-only3d > .re-dock { flex: 1 1 0; border-left: 0; }
 .re-tools { display: flex; flex-direction: column; gap: 4px; padding: 8px; width: 72px; box-sizing: border-box; background: var(--bg-panel, #fff); border-right: 1px solid var(--border, #d9d7d0); overflow-y: auto; }
 .re-tools[hidden], .re-dock[hidden], .re-status[hidden] { display: none; }
 .re-tool { display: flex; flex-direction: column; align-items: center; gap: 3px; min-width: 56px; min-height: 56px; padding: 4px 2px; border-radius: 8px; border: 1px solid transparent; background: transparent; color: var(--text, #3f4650); font: inherit; font-size: 11px; cursor: pointer; }
@@ -59,3 +62,21 @@
 #re-hour { width: 110px; vertical-align: middle; }
 #re-hour-t { min-width: 3em; font-variant-numeric: tabular-nums; }
 .re-all > summary { cursor: pointer; }
+
+/* The inspector (Detail / Site / Sun): tabs, then cards for what is rarely changed on the picked roof. */
+.si-tabs { display: flex; border-bottom: 1px solid var(--border-color, #d0d0d0); margin: -12px -12px 10px; position: sticky; top: -12px; background: var(--bg-primary, #fff); z-index: 1; }
+.si-tab { flex: 1; min-height: 40px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--text-secondary, #555); cursor: pointer; font: inherit; font-size: 13px; }
+.si-tab.on { color: var(--text-primary, #1a1a2e); font-weight: 600; border-bottom-color: #d9822b; }
+.si-tab:focus-visible, .si-card summary:focus-visible { outline: 2px solid #1d5fd1; outline-offset: -2px; }
+.si-pane { display: flex; flex-direction: column; gap: 10px; }
+.si-lead { margin: 0; }
+.si-roofname { font-weight: 600; font-size: 14px; }
+.si-card { border: 1px solid var(--border-color, #d0d0d0); border-radius: 8px; }
+.si-card summary { display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 40px; padding: 0 12px; cursor: pointer; font-weight: 600; font-size: 13px; list-style: none; }
+.si-card summary::-webkit-details-marker { display: none; }
+.si-card summary::after { content: '›'; margin-left: 4px; color: var(--text-secondary, #555); transition: transform .12s; }
+.si-card[open] summary::after { transform: rotate(90deg); }
+.si-card summary > span:first-child { flex: 1; }
+.si-count { font-weight: 400; color: var(--text-secondary, #555); }
+.si-body { display: flex; flex-direction: column; gap: 8px; padding: 0 12px 12px; }
+.si-note { width: 100%; box-sizing: border-box; padding: 6px 8px; border: 1px solid #bdbab0; border-radius: 6px; font: inherit; font-size: 12px; resize: vertical; background: var(--bg-primary, #fff); color: var(--text-primary, #1a1a2e); }
