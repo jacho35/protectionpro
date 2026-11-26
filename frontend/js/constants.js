@@ -15,7 +15,7 @@
 // App version = 1.<PR number>b — set to the number of the PR that ships the change
 // (CLAUDE.md › Development Workflow). It also stamps saved study results, so
 // every bump marks results from older builds as stale.
-const APP_VERSION = '2.759';
+const APP_VERSION = '2.761';
 
 // Way poles (DB schedule, GA, drawings): '1P' live + neutral; '2P' live + neutral, or two
 // phases (L–L) when `phase` is a pair RW / WB / BR; '3P' R W B; '4P' R W B + neutral.
@@ -280,12 +280,14 @@ const STANDARD_OVERHEAD_LINES = [
   { id: 'acsr_squirrel', name: 'ACSR Squirrel (20 mm²)', material: 'ACSR', size_mm2: 20,  r_per_km: 1.3740, x_per_km: 0.412, r0_per_km: 1.524, x0_per_km: 1.442, rated_amps: 107 },
   { id: 'acsr_gopher',   name: 'ACSR Gopher (26 mm²)',   material: 'ACSR', size_mm2: 26,  r_per_km: 1.0980, x_per_km: 0.400, r0_per_km: 1.248, x0_per_km: 1.400, rated_amps: 128 },
   { id: 'acsr_weasel',   name: 'ACSR Weasel (34 mm²)',   material: 'ACSR', size_mm2: 34,  r_per_km: 0.9116, x_per_km: 0.391, r0_per_km: 1.062, x0_per_km: 1.369, rated_amps: 150 },
+  { id: 'acsr_fox', name: 'ACSR Fox (37 mm²)', material: 'ACSR', size_mm2: 37, r_per_km: 0.7822, x_per_km: 0.388, r0_per_km: 0.932, x0_per_km: 1.36, rated_amps: 222 },
   { id: 'acsr_ferret',   name: 'ACSR Ferret (42 mm²)',   material: 'ACSR', size_mm2: 42,  r_per_km: 0.6795, x_per_km: 0.383, r0_per_km: 0.830, x0_per_km: 1.341, rated_amps: 176 },
   { id: 'acsr_rabbit',   name: 'ACSR Rabbit (55 mm²)',   material: 'ACSR', size_mm2: 55,  r_per_km: 0.5449, x_per_km: 0.371, r0_per_km: 0.695, x0_per_km: 1.299, rated_amps: 208 },
   { id: 'acsr_mink',     name: 'ACSR Mink (65 mm²)',     material: 'ACSR', size_mm2: 65,  r_per_km: 0.4565, x_per_km: 0.366, r0_per_km: 0.607, x0_per_km: 1.281, rated_amps: 236 },
   { id: 'acsr_dog',      name: 'ACSR Dog (100 mm²)',     material: 'ACSR', size_mm2: 100, r_per_km: 0.2733, x_per_km: 0.350, r0_per_km: 0.424, x0_per_km: 1.225, rated_amps: 305 },
   { id: 'acsr_hare',     name: 'ACSR Hare (105 mm²)',    material: 'ACSR', size_mm2: 105, r_per_km: 0.2680, x_per_km: 0.348, r0_per_km: 0.419, x0_per_km: 1.218, rated_amps: 311 },
   { id: 'acsr_wolf',     name: 'ACSR Wolf (158 mm²)',    material: 'ACSR', size_mm2: 158, r_per_km: 0.1871, x_per_km: 0.331, r0_per_km: 0.334, x0_per_km: 1.159, rated_amps: 405 },
+  { id: 'acsr_chickadee', name: 'ACSR Chickadee (201 mm²)', material: 'ACSR', size_mm2: 201, r_per_km: 0.1427, x_per_km: 0.321, r0_per_km: 0.293, x0_per_km: 1.126, rated_amps: 662 },
   { id: 'acsr_panther',  name: 'ACSR Panther (212 mm²)', material: 'ACSR', size_mm2: 212, r_per_km: 0.1390, x_per_km: 0.319, r0_per_km: 0.289, x0_per_km: 1.117, rated_amps: 480 },
   { id: 'acsr_lynx',     name: 'ACSR Lynx (226 mm²)',    material: 'ACSR', size_mm2: 226, r_per_km: 0.1441, x_per_km: 0.320, r0_per_km: 0.294, x0_per_km: 1.120, rated_amps: 490 },
   { id: 'acsr_zebra',    name: 'ACSR Zebra (428 mm²)',   material: 'ACSR', size_mm2: 428, r_per_km: 0.0674, x_per_km: 0.297, r0_per_km: 0.212, x0_per_km: 1.040, rated_amps: 730 },
