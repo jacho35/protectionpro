@@ -160,6 +160,7 @@ const PlanSolarArray = {
       await Solar._locations(); await Solar.runSize();
       const res = Solar._res, total = res.modules;
       const pv = Solar.placePv(true);
+      if (typeof RoofEditor !== 'undefined' && RoofEditor.on && typeof Roof3D !== 'undefined') Roof3D.refresh();   // the 3D view caps each roof at this run's count
       this.sld = `On the single line as ${pv.props.name || 'PV array'}: ${total} panels, ${res.kwp} kWp, as laid out.`;
     } catch (e) {
       this.sld = 'Single line not updated: ' + (e.message || e);
