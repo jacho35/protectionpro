@@ -7,7 +7,7 @@ import traceback
 from typing import List, Optional, Union
 from fastapi import APIRouter, HTTPException
 from fastapi.routing import APIRoute
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from ..models.schemas import ProjectData, FaultResults, LoadFlowResults, ArcFlashResults, DCArcFlashResults, UnbalancedLoadFlowResults, AdmdRequest, AdmdResults, ReticEarthRequest, ReticLvDesignRequest, ReticMotorStartRequest, StreetLightingRequest, StreetLightingSplitRequest, RoadLightingRequest, RoadPlanRequest, RoomLightingRequest, ReluxReferenceRequest, AreaLightingRequest, SportsLightingRequest, ObtrusiveLightRequest, EmergencyLightingRequest, PhotometryFileRequest, GenericOpticRequest, LightningRiskRequest, LightningRiskResult, RacewayRequest, RacewayResults, DCLoadFlowResults, DCShortCircuitResults, LoadFlowCasesRequest, LoadFlowCasesResults, VoltageStabilityRequest, VoltageStabilityResults, ContingencyRequest, ContingencyResults, TimeSeriesLoadFlowRequest, TimeSeriesLoadFlowResults, HarmonicsResults, FrequencyScanRequest, FrequencyScanResults, BatterySizingRequest, BatterySizingResults, OPFRequest, OPFResults, ReliabilityResults, FilterSizingRequest, FilterSizingResults, CapacitorPlacementRequest, CapacitorPlacementResults, FlickerAnalysisRequest, FlickerAnalysisResults, HostingCapacityRequest, HostingCapacityResults, OpenConductorResults, TwoConductorOpenResults, SimultaneousFaultResults, WennerTestRequest, WennerTestResults
 from ..analysis.loadflow_cases import run_loadflow_cases
 from ..analysis.voltage_stability import run_voltage_stability
@@ -1191,9 +1191,10 @@ def solar_protection(data: SolarProtectionRequest):
 class SolarSunRequest(BaseModel):
     lat: float
     hour_angle_deg: float = 0.0          # 0 = solar noon, 15 deg per hour, negative = morning
+    month: Optional[int] = Field(None, ge=1, le=12)   # middle day of this month; None = winter solstice
 
 
 @router.post("/solar-sun")
 def solar_sun(data: SolarSunRequest):
-    """Sun elevation and azimuth on the winter solstice (for the 3D shadows)."""
-    return _solar_call(lambda d: solar_pv.sun_position(d["lat"], d["hour_angle_deg"]), data.model_dump())
+    """Sun elevation and azimuth on the winter solstice, or the middle day of a month (for the 3D shadows)."""
+    return _solar_call(lambda d: solar_pv.sun_position(d["lat"], d["hour_angle_deg"], d.get("month")), data.model_dump())

@@ -583,9 +583,13 @@ def size_protection(req):
     return out
 
 
-def sun_position(lat, hour_angle_deg=0.0):
-    """Solar elevation and azimuth (degrees from north) at an hour angle on the winter solstice."""
-    dec = -23.45 if lat >= 0 else 23.45
+def sun_position(lat, hour_angle_deg=0.0, month=None):
+    """Solar elevation and azimuth (degrees from north) at an hour angle: on the winter solstice, or (month 1-12) on the
+    middle day of that month, when the sun's declination, and so its path across the sky, is different."""
+    if month:
+        dec = declination(REP_DAY[int(month) - 1])
+    else:
+        dec = -23.45 if lat >= 0 else 23.45
     elev = solar_elevation(lat, dec, hour_angle_deg)
     az = solar_azimuth_n(lat, dec, hour_angle_deg)
     if az > 359.99:
