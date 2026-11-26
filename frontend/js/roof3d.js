@@ -23,6 +23,7 @@ const Roof3D = {
   ROOF_T: 0.12,        // thickness of a pitched roof's edge (fascia) and of the overhang's underside
   view: null,
   scene: null,
+  month: 0,            // sun date for the preview: 0 = winter solstice (the design day), 1-12 = the middle day of that month
   hourAngle: 0,        // design hour on the winter solstice: degrees, 0 = noon, negative = morning
 
   // ── Pure geometry ──────────────────────────────────────────────────
@@ -549,7 +550,7 @@ const Roof3D = {
       + (Solar._res && Solar._res.arrays ? ' (the count from your last calculation).' : ' (all that fit).');
     if (sc.sun && this.shadePreview) {
       const shaded = sc.items.reduce((n, it) => n + (it.shaded || []).filter(Boolean).length, 0);
-      txt += ' At ' + this.hourLabel() + ' on the winter solstice (sun ' + sc.sun.elevation_deg + '° up, from ' + sc.sun.azimuth_deg + '°) ' + shaded + ' of ' + sc.total + ' modules are in shade.';
+      txt += ' At ' + this.hourLabel() + (this.month ? ' on the middle day of ' + ['January','February','March','April','May','June','July','August','September','October','November','December'][this.month - 1] : ' on the winter solstice') + ' (sun ' + sc.sun.elevation_deg + '° up, from ' + sc.sun.azimuth_deg + '°) ' + shaded + ' of ' + sc.total + ' modules are in shade.';
     }
     this._fire('onMessage', txt);
   },
@@ -672,13 +673,14 @@ const Roof3D = {
     const s = sc && sc.sun;
     v.sun = s && s.elevation_deg > 0.5 ? { dir: this.sunVec(s.azimuth_deg + (sc.north || 0), s.elevation_deg) } : null;
   },
-  // Sun at the chosen hour on the winter solstice (the engine's position), then the shadows for it.
+  // Sun at the chosen hour on the winter solstice or the chosen month's middle day (the engine's position), then the shadows for it.
+  async setMonth(m) { this.month = +m || 0; return this.setHour(this.hourAngle); },
   async setHour(h, noRedraw) {
     this.hourAngle = +h;
     if (!this.scene || this.scene.empty) return;
     await Solar._locations();
     const c = Solar.cfg();
-    const sun = await API.request('/analysis/solar-sun', 'POST', { lat: Solar._loc(c).lat, hour_angle_deg: this.hourAngle });
+    const sun = await API.request('/analysis/solar-sun', 'POST', { lat: Solar._loc(c).lat, hour_angle_deg: this.hourAngle, month: this.month || null });
     this.sunNow = sun;                                          // kept on the editor too: a rebuild during the request replaces the scene, and the sun must not be lost with it
     const sc = this.scene; if (!sc || sc.empty) return;          // the scene as it is NOW, not the one the request started with
     sc.sun = sun;

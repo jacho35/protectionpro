@@ -191,6 +191,7 @@ const RoofEditor = {
   _onChange(e) {
     const el = e.target;
     if (el.id === 're-hour') { this._onHour(el); return; }
+    if (el.id === 're-month') { Roof3D.setMonth(el.value).catch(() => {}); return; }
     if (el.dataset.reG) {                                                       // the All roofs section
       const g = this.GLOBAL.find(x => x[0] === el.dataset.reG), n = parseFloat(el.value); if (!g || !Number.isFinite(n)) return;
       this._applyScope({ [g[0]]: g[0] === 'azimuth' ? ((n % 360) + 360) % 360 : Math.max(0, n) }, g[3]); return;
@@ -338,8 +339,8 @@ const RoofEditor = {
     } else if (this.tab === 'sun') {
       if (this.on) {
         const shade = Roof3D.shadePreview !== false;
-        h += `<div class="re-sec"><div class="re-lab">Time of day</div><div class="re-row"><input type="range" id="re-hour" min="7" max="17" step="0.25" value="${12 + (Roof3D.hourAngle || 0) / 15}" aria-label="Time of day, winter solstice" style="width:150px;text-align:left"><output id="re-hour-t" for="re-hour">${esc(Roof3D.hourText(Roof3D.hourAngle))}</output></div>
-          <div class="re-note">The sun and the shadows in 3D follow the slider (winter solstice). Rack rows are spaced for the design hour on Solar PV Design.</div>
+        h += `<div class="re-sec"><div class="re-lab">Date and time of day</div><div class="re-row"><select id="re-month" aria-label="Sun date" style="width:100%">${['Winter solstice (design day)','January','February','March','April','May','June','July','August','September','October','November','December'].map((n, i) => `<option value="${i}"${(Roof3D.month || 0) === i ? ' selected' : ''}>${n}</option>`).join('')}</select></div><div class="re-row"><input type="range" id="re-hour" min="5" max="19" step="0.25" value="${12 + (Roof3D.hourAngle || 0) / 15}" aria-label="Time of day" style="width:150px;text-align:left"><output id="re-hour-t" for="re-hour">${esc(Roof3D.hourText(Roof3D.hourAngle))}</output></div>
+          <div class="re-note">The sun and the shadows in 3D follow the date and the slider: the sun's path changes through the year, so check the months you care about (the yield and the annual shading loss already use every month's sun). Rack rows are spaced for the design hour on Solar PV Design.</div>
           <button type="button" class="re-btn${shade ? ' active' : ''}" id="re-shade" aria-pressed="${shade}">Shade preview</button></div>`;
       } else h += `<div class="re-note">Open <b>Split</b> or <b>3D</b> in the toolbar to move the sun and see the shadows on the roofs.</div>`;
     } else {

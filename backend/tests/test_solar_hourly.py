@@ -165,3 +165,11 @@ def test_result_says_where_the_curves_came_from(monkeypatch):
     assert r["curves"] == {"incidence": "manufacturer's table", "inverter": "manufacturer's curve"}
     plain = sp.run_solar_size(dict(req, module="pv_550_mono", inverter="inv_10k_2mppt"))
     assert plain["curves"]["incidence"].startswith("ASHRAE") and plain["curves"]["inverter"].startswith("generic")
+
+
+def test_sun_position_follows_the_month():
+    from backend.analysis import solar_pv
+    lat = -33.9
+    winter = solar_pv.sun_position(lat, 0.0)
+    assert solar_pv.sun_position(lat, 0.0, 6)["elevation_deg"] < 35 < solar_pv.sun_position(lat, 0.0, 12)["elevation_deg"]
+    assert abs(solar_pv.sun_position(lat, 0.0, 6)["elevation_deg"] - winter["elevation_deg"]) < 1.0
