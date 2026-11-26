@@ -162,7 +162,12 @@ const RoofEditor = {
     const roof = this._selRoof();
     const rm = t.closest('[data-re-aisle-rm]'); if (rm && roof) { const [ax, af] = rm.dataset.reAisleRm.split(':'); PlanSolar.setAisle(roof, ax, +af, false); PlanSolar._changed(); this._refresh(); return; }
     const g = t.closest('[data-re-gizmo]'); if (g) { Roof3D.gizmo = g.dataset.reGizmo; this.setTool('transform'); return; }
-    const add = t.closest('[data-re-add]'); if (add) { Roof3D.addType = add.dataset.reAdd; this.setTool('object'); return; }
+    const add = t.closest('[data-re-add]'); if (add) {
+      Roof3D.addType = add.dataset.reAdd;
+      if (this.on) this.setTool('object');                                   // in 3D: the Objects tool, on the plan or on a plane
+      else { PlanTools.set('roofobject'); this.renderPanel(); }              // on the plan alone: click a roof to drop it
+      return;
+    }
     const del = t.closest('[data-re-delobj]'); if (del && roof) { PlanSolar.removeObject(roof, del.dataset.reDelobj); Roof3D.sel = { roof: roof.id }; this._refresh(); return; }
     const sh = t.closest('[data-re-shape]'); if (sh && roof) { this._edit(roof, { shape: sh.dataset.reShape }); return; }
     const ln = t.closest('[data-re-lean]'); if (ln && roof) { const L = this.LEANS.find(x => x[0] === ln.dataset.reLean); this._edit(roof, { lean: L && L[2] ? Object.assign({}, L[2]) : null }); return; }
@@ -302,6 +307,11 @@ const RoofEditor = {
     const open = this._cardOpen[key] !== false;
     return `<details class="si-card"${open ? ' open' : ''}><summary data-si-card="${key}"><span>${title}</span>${count != null ? `<span class="si-count">${count}</span>` : ''}</summary><div class="si-body">${body}</div></details>`;
   },
+  // The object type being placed on the plan (the roofobject tool is armed), else the 3D Objects tool's, else ''.
+  _placing() {
+    if (typeof PlanTools !== 'undefined' && PlanTools.active && PlanTools.active.id === 'roofobject') return Roof3D.addType;
+    return this.on && Roof3D.tool === 'object' ? Roof3D.addType : '';
+  },
   _bindHost(host) {
     if (host._riBound) return; host._riBound = true;
     host.addEventListener('click', (e) => { if (host.id === 'plan-props' || !this._inDock(host)) this._onClick(e); });
@@ -363,7 +373,7 @@ const RoofEditor = {
         h += this._card('planes', 'Roof planes', nPl != null ? nPl : 1, pb);
         const objs = (roof.objects || []).map(o => `<div class="re-obj${this.on && Roof3D.sel && Roof3D.sel.obj === o.id ? ' sel' : ''}"><div class="re-objh"><span>${esc((PlanSolar.OBJECT_TYPES[o.type] || { label: o.type }).label)}</span><button type="button" class="re-btn" data-re-delobj="${esc(o.id)}" aria-label="Delete ${esc(o.type)}">×</button></div>
           ${['w', 'd', 'h', 'rot'].map(k => `<label class="re-row"><span>${{ w: 'Width (m)', d: 'Depth (m)', h: 'Height (m)', rot: 'Turn (°)' }[k]}</span><input type="number" step="any" value="${esc(Math.round(+o[k] * 1000) / 1000)}" data-re-f="obj.${k}" data-re-i="${esc(o.id)}"></label>`).join('')}</div>`).join('');
-        h += this._card('objects', 'Objects', (roof.objects || []).length, (objs || '<div class="re-note">None.</div>') + `<button type="button" class="re-btn" data-re-tool="object">Add an object</button><div class="re-note">Objects feed the shading, so a vent beside the array changes the result.</div>`);
+        h += this._card('objects', 'Objects', (roof.objects || []).length, (objs || '<div class="re-note">None.</div>') + `<div class="re-lab" style="margin-top:4px">Add one: pick, then click a roof</div><div class="re-chips" role="group" aria-label="Object to place">${Object.entries(PlanSolar.OBJECT_TYPES).map(([k, t]) => btn(this._placing() === k, `data-re-add="${k}"`, esc(t.label))).join('')}</div><div class="re-note">The same objects show on the plan and in 3D. Drag one on the plan to move it. They feed the shading, so a vent beside the array changes the result.</div>`);
         const kos = (roof.keepouts || []).map((k, i) => `<div class="re-objh"><span>Keep-out ${i + 1}</span><button type="button" class="re-btn" data-re-delko="${esc(k.id)}" aria-label="Delete keep-out ${i + 1}">×</button></div>`).join('');
         h += this._card('keepouts', 'Keep-outs', (roof.keepouts || []).length, (kos || '<div class="re-note">None.</div>') + `<button type="button" class="re-btn" data-re-tool="keepout">Draw a keep-out</button><div class="re-note">Modules are not placed on these areas, and they come off the usable area the size calculation uses.</div>`);
         const aisles = PlanSolar.usesPlanes(roof) ? '<div class="re-note">Maintenance aisles are for gable and flat roofs.</div>' : this._aisleRows(roof);
@@ -376,6 +386,19 @@ const RoofEditor = {
     host.innerHTML = h;
   },
 };
+
+// Place roof objects on the plan alone (no 3D view open): click a roof and the object sits there, the tool stays armed. Esc stops.
+if (typeof PlanTools !== 'undefined') PlanTools.register({
+  id: 'roofobject', cursor: 'crosshair',
+  cancel() { PlanTools.set('select'); },
+  onDown(pt) {
+    const roof = typeof PlanSolarArray !== 'undefined' ? PlanSolarArray.roofAt(pt) : null; if (!roof) return;
+    const q = (typeof PlanTools.snap === 'function' ? PlanTools.snap(pt) : pt) || pt;
+    const o = PlanSolar.addObject(roof, Roof3D.addType || 'vent', { x: q.x, y: q.y });
+    if (o) PlanSolar.selectObject({ roof, obj: o });
+  },
+  onKey(e) { if (e.key === 'Escape') { PlanTools.set('select'); RoofEditor.renderPanel(); return true; } return false; },
+});
 
 if (typeof PlanTools !== 'undefined') PlanTools.register({
   id: 'roofedit', cursor: 'crosshair',
