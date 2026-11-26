@@ -239,7 +239,7 @@ const RoofEditor = {
 
   // ── Plan side ──
   _sig() {
-    return JSON.stringify([PlanSolar.northAngle(), PlanSolar.roofs().map(r => [r.id, r.name, r.shape, r.points, r.pitch, r.tilt, r.azimuth, r.setback, r.panelGap, r.aisles, r.eave, r.apex, r.overhang, r.lean, r.planeUse, r.use, r.objects, r.modAlign, r.maxModules, r.keepouts])]);
+    return JSON.stringify([PlanSolar.northAngle(), PlanSolar.roofs().map(r => [r.id, r.name, r.shape, r.points, r.pitch, r.tilt, r.azimuth, r.setback, r.panelGap, r.aisles, r.eave, r.apex, r.overhang, r.lean, r.planeUse, r.use, r.array, r.objects, r.modAlign, r.maxModules, r.keepouts])]);
   },
   // Called from every plan redraw: a roof changed on the plan (a corner dragged, undo, a new one drawn) updates the 3D view.
   syncFromPlan() {
