@@ -691,7 +691,7 @@ body.ws-secondary-active { --toolbar-height: var(--app-bar-height); }
 .notif-more { display: block; width: calc(100% - 32px); margin: 12px 16px; min-height: 36px; border: 1px solid var(--border-color); border-radius: 6px; background: var(--bg-primary); color: var(--text-primary); font: inherit; cursor: pointer; }
 
 /* File menu's neighbours: Open · Save · Share, always in the app bar */
-#toolbar { position: relative; z-index: 60; flex-shrink: 0; }
+#toolbar { position: relative; z-index: 100; flex-shrink: 0; }
 #toolbar .top-actions { display: flex; align-items: center; gap: 4px; margin: 0 6px 0 2px; padding-left: 8px; border-left: 1px solid var(--border-color); flex-shrink: 0; }
 #toolbar .top-action { display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 9px; border: 1px solid var(--border-color); border-radius: 5px; background: var(--bg-primary); color: var(--text-primary); font: 500 12px var(--font-family); cursor: pointer; white-space: nowrap; }
 #toolbar .top-action:hover { background: var(--bg-tertiary); }
