@@ -1,8 +1,8 @@
 // Headless check of the Solar PV Design UI (PVGIS hourly sizing, PVsyst import, annual shading, report download).
 // Needs a full stack on a THROWAWAY database (see testing/help-guides/lib.mjs): node testing/solar/verify_solar_ui.mjs <output dir>
 import { launch, token, openApp, BASE_URL } from '../help-guides/lib.mjs';
-import { writeFileSync } from 'node:fs';
-const SP = process.argv[2];
+import { writeFileSync, mkdirSync } from 'node:fs';
+const SP = process.argv[2]; mkdirSync(SP, { recursive: true });
 const log = (...a) => console.log(...a);
 let fails = 0; const check = (name, ok, extra = '') => { if (!ok) fails++; log(ok ? 'PASS' : 'FAIL', name, extra); };
 const browser = await launch();
@@ -53,6 +53,17 @@ await page.evaluate(() => { Solar.set('module', Solar.customPanels()[0].id); Sol
 await page.evaluate(() => Solar._act('run'));
 await page.waitForFunction(() => Solar._res && !Solar._busy && Solar._res.kwp > 0, null, { timeout: 60000 });
 check('imported parts size an array', await page.evaluate(() => Solar._res.kwp > 0));
+const cv = await page.evaluate(() => Solar._res.curves);
+check('the manufacturer\'s incidence table and inverter curve are used', !!cv && /manufacturer/.test(cv.incidence) && /manufacturer/.test(cv.inverter), JSON.stringify(cv));
+// a design saved before the irradiance source existed: the first calculation says the model changed, once
+await page.evaluate(() => { Solar.set('module', 'pv_550_mono'); Solar.set('inverter', 'inv_10k_2mppt'); const st = PlanSolar._store(); delete st.irrSrc; st.location = 'Johannesburg'; Solar._res = null; });
+await page.evaluate(() => Solar._act('run'));
+await page.waitForFunction(() => Solar._res && !Solar._busy, null, { timeout: 90000 });
+check('an older design is told the model changed, and the choice is then saved', await page.evaluate(() => /earlier monthly model/.test(Solar._res.model_note || '') && PlanSolar._store().irrSrc === 'pvgis'));
+await page.evaluate(() => { Solar._res = null; });
+await page.evaluate(() => Solar._act('run'));
+await page.waitForFunction(() => Solar._res && !Solar._busy, null, { timeout: 90000 });
+check('and not told again', await page.evaluate(() => !Solar._res.model_note));
 
 // ---- 3. plan roof + obstruction → annual shading
 await page.evaluate(() => Solar.close && Solar.close());

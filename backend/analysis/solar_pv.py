@@ -248,7 +248,7 @@ def modules_from_load(annual_kwh, share, specific_yield, module):
 
 
 # ---------------------------------------------------------------- yield
-def energy_yield(city_name, kwp, tilt, azimuth_n, module, losses=None, inverter_eff_pct=None, horizon=None, ac_kw=None):
+def energy_yield(city_name, kwp, tilt, azimuth_n, module, losses=None, inverter_eff_pct=None, horizon=None, ac_kw=None, eff_curve=None):
     """Monthly and annual AC energy for kwp of modules at one orientation.
 
     A site carrying an hourly year (`tmy`, from resolve_site) uses the hourly model, with AC clipping at `ac_kw`;
@@ -258,7 +258,7 @@ def energy_yield(city_name, kwp, tilt, azimuth_n, module, losses=None, inverter_
         raise ValueError("kWp must be >= 0 and tilt between 0 and 90 degrees")
     if city.get("tmy"):
         return solar_hourly.hourly_yield(city["tmy"], kwp, tilt, azimuth_n, module, losses, inverter_eff_pct, horizon, ac_kw,
-                                         city.get("transposition", "perez"), city.get("lid_pct"), city.get("degradation_pct"))
+                                         city.get("transposition", "perez"), city.get("lid_pct"), city.get("degradation_pct"), eff_curve=eff_curve)
     loss = dict(DEFAULT_LOSSES)
     loss.update(losses or {})
     if inverter_eff_pct:
@@ -304,6 +304,12 @@ def _target_modules(req, module):
     if req.get("target_kwp") is None or float(req["target_kwp"]) <= 0:
         raise ValueError("mode 'kwp' needs target_kwp > 0")
     return max(1, int(round(float(req["target_kwp"]) * 1000.0 / module["pmax_w"])))
+
+
+def curve_note(module, inverter):
+    """Where the incidence loss and the inverter efficiency came from (hourly model): the manufacturer's data when an imported part has it."""
+    return {"incidence": "manufacturer's table" if module.get("iam_profile") else "ASHRAE, b0 0.05",
+            "inverter": "manufacturer's curve" if inverter and inverter.get("eff_curve") else "generic curve at the stated efficiency"}
 
 
 def run_solar_arrays(req, module, city, inverter):
@@ -382,7 +388,7 @@ def run_solar_arrays(req, module, city, inverter):
         kwp = round(n * module["pmax_w"] / 1000.0, 3)
         y = energy_yield(city, kwp, float(a["tilt_deg"]), float(a.get("azimuth_deg", 0)), module, req.get("losses"),
                          inverter["efficiency_pct"] if inverter else None, horizon_of(a),
-                         ac_total * kwp / all_kwp if ac_total and all_kwp else None)
+                         ac_total * kwp / all_kwp if ac_total and all_kwp else None, inverter.get("eff_curve") if inverter else None)
         clip += y.get("clipping_kwh", 0.0)
         if "lifetime" in y:
             life = [{"year": r["year"], "kwh": (life[i]["kwh"] if life else 0) + r["kwh"]} for i, r in enumerate(y["lifetime"])]
@@ -401,6 +407,7 @@ def run_solar_arrays(req, module, city, inverter):
            "data_note": SOURCE_NOTE, "exceeds_roof": total > roof_total}
     if city.get("tmy"):
         out["clipping_kwh"] = round(clip, 0)
+        out["curves"] = curve_note(module, inverter)
         out["lifetime"] = life
         out["clipping_loss_pct"] = round(100.0 * clip / (annual + clip), 2) if annual + clip > 0 else 0.0
     if req.get("annual_kwh"):
@@ -455,7 +462,7 @@ def run_solar_size(req):
                for o in (req.get("obstructions") or [])]
     ac_kw = inverter["ac_kw"] * req.get("num_inverters", 1) if inverter else None
     y = energy_yield(city, kwp, tilt, az, module, req.get("losses"),
-                     inverter["efficiency_pct"] if inverter else None, horizon or None, ac_kw)
+                     inverter["efficiency_pct"] if inverter else None, horizon or None, ac_kw, inverter.get("eff_curve") if inverter else None)
     out = {"location": name, "tilt_deg": tilt, "azimuth_deg": az, "mode": mode, "limited_by": limited_by,
            "modules_roof": roof_mods, "modules_load": load_mods, "modules_target": target_mods, "target_kwp": float(req["target_kwp"]) if target_mods else None, "modules": modules, "kwp": kwp,
            "annual_kwh": y["annual_kwh"], "specific_yield_kwh_kwp": y["specific_yield_kwh_kwp"],
@@ -465,9 +472,11 @@ def run_solar_size(req):
     for k in ("clipping_kwh", "clipping_loss_pct", "lifetime"):
         if k in y:
             out[k] = y[k]
+    if city.get("tmy"):
+        out["curves"] = curve_note(module, inverter)
     if horizon:
         clear = energy_yield(city, kwp, tilt, az, module, req.get("losses"),
-                             inverter["efficiency_pct"] if inverter else None, None, ac_kw)
+                             inverter["efficiency_pct"] if inverter else None, None, ac_kw, inverter.get("eff_curve") if inverter else None)
         out["shading_loss_pct"] = round(100.0 * (1 - y["annual_kwh"] / clear["annual_kwh"]), 2) if clear["annual_kwh"] else 0.0
         out["unshaded_annual_kwh"] = clear["annual_kwh"]
     if req.get("annual_kwh"):
@@ -610,6 +619,7 @@ def run_solar_shading(req):
         raise ValueError("No modules to check")
     ac_total = inverter["ac_kw"] * req.get("num_inverters", 1) if inverter else None
     eff = inverter["efficiency_pct"] if inverter else None
+    curve = inverter.get("eff_curve") if inverter else None
     pmax = module["pmax_w"] / 1000.0
     opts = (site.get("transposition", "perez"), site.get("lid_pct"), site.get("degradation_pct"))
     un_m, sh_m = [0.0] * 12, [0.0] * 12
@@ -630,8 +640,8 @@ def run_solar_shading(req):
             ac = ac_total * kwp / (all_mods * pmax) if ac_total else None
             frac = [sum(col) / len(chunk) for col in zip(*chunk)]
             bf = 1.0 - solar_hourly.shaded_fraction_by_hour(idx, samples, frac)
-            clear = solar_hourly.hourly_yield(tmy, kwp, tilt, az, module, req.get("losses"), eff, None, ac, *opts)
-            shaded = solar_hourly.hourly_yield(tmy, kwp, tilt, az, module, req.get("losses"), eff, None, ac, *opts, beam_factor=bf)
+            clear = solar_hourly.hourly_yield(tmy, kwp, tilt, az, module, req.get("losses"), eff, None, ac, *opts, eff_curve=curve)
+            shaded = solar_hourly.hourly_yield(tmy, kwp, tilt, az, module, req.get("losses"), eff, None, ac, *opts, beam_factor=bf, eff_curve=curve)
             for i in range(12):
                 un_m[i] += clear["months"][i]["kwh"]
                 sh_m[i] += shaded["months"][i]["kwh"]

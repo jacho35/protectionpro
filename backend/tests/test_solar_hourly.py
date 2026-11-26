@@ -13,7 +13,9 @@ HERE = os.path.dirname(__file__)
 TMY_DIR = os.path.join(HERE, "..", "..", "testing", "solar", "tmy")
 REF = json.load(open(os.path.join(HERE, "..", "..", "testing", "solar", "pvgis_reference.json")))
 MOD = sp.get_module("pv_550_mono")
-SITES = {"Johannesburg": (-26.2, 28.04), "Cape Town": (-33.92, 18.42), "Upington": (-28.45, 21.26)}
+SITES = {"Johannesburg": (-26.2, 28.04), "Cape Town": (-33.92, 18.42), "Upington": (-28.45, 21.26),
+         "Durban": (-29.86, 31.02), "Polokwane": (-23.9, 29.45), "Bloemfontein": (-29.12, 26.21), "Gqeberha": (-33.96, 25.6)}
+CASES = ["north_30", "flat_ew", "north_15", "north_45", "west_30", "ew_5"]
 AZ_N = {180: 0, -90: 90, 90: 270}
 
 
@@ -24,7 +26,7 @@ def _tmy(site):
 
 
 @pytest.mark.parametrize("site", list(SITES))
-@pytest.mark.parametrize("case", ["north_30", "flat_ew"])
+@pytest.mark.parametrize("case", CASES)
 def test_annual_energy_within_three_percent_of_pvgis(site, case):
     t = _tmy(site)
     planes = REF["sites"][site][case]
@@ -114,3 +116,52 @@ def test_run_solar_size_uses_the_hourly_model_and_reports_clipping(monkeypatch):
     assert arr["clipping_kwh"] >= 0 and len(arr["lifetime"]) == 25
     table = sp.run_solar_size(dict(req, irradiance_source="table"))
     assert table["model"].startswith("monthly") and "clipping_kwh" not in table
+
+
+# ---------------------------------------------------------------- manufacturer data from imported parts
+# the Chint Power CPS SCH275KTL efficiency curve as the importer reads it (DC load relative to the nominal DC input, efficiency)
+CPS_CURVE = [[0.00494, 0], [0.02964, 0.92307], [0.04941, 0.95], [0.09881, 0.97], [0.19763, 0.982], [0.29644, 0.985],
+             [0.59289, 0.9901], [0.98814, 0.986], [1.08696, 0.983]]
+# the ET Solar ET-M772BH550GL incidence table as the importer reads it
+ET_IAM = [[0, 1], [20, 1], [30, 1], [40, 0.99], [50, 0.98], [60, 0.96], [70, 0.89], [80, 0.66], [90, 0]]
+
+
+def test_inverter_curve_is_read_at_each_load_and_clips_at_the_ac_rating():
+    ac = 250.0
+    prated = ac / float(np.interp(1.0, [a for a, _ in CPS_CURVE], [e for _, e in CPS_CURVE]))
+    for x, eff in ((0.29644, 0.985), (0.59289, 0.9901), (0.19763, 0.982)):           # points of the curve: exactly the file's efficiency
+        pac, _ = sh.inverter_ac(np.array([x * prated]), ac, 98.49, CPS_CURVE)
+        assert pac[0] / (x * prated) == pytest.approx(eff, abs=1e-4)
+    assert sh.inverter_ac(np.array([0.003 * prated]), ac, 98.49, CPS_CURVE)[0][0] == 0.0         # below the first point nothing is delivered
+    pac, clipped = sh.inverter_ac(np.array([1.3 * prated, 0.5 * prated]), ac, 98.49, CPS_CURVE)
+    assert pac[0] == ac and clipped > 0 and pac[1] < ac
+
+
+def test_curve_and_generic_inverter_agree_on_a_year_but_are_not_the_same_model():
+    t = _tmy("Johannesburg")
+    gen = sh.hourly_yield(t, 350.0, 20, 0, MOD, None, 98.49, None, 250.0)
+    cur = sh.hourly_yield(t, 350.0, 20, 0, MOD, None, 98.49, None, 250.0, eff_curve=CPS_CURVE)
+    assert cur["annual_kwh"] != gen["annual_kwh"]
+    assert abs(cur["annual_kwh"] / gen["annual_kwh"] - 1) < 0.02            # both describe the same machine: within 2 % of each other
+    assert cur["clipping_loss_pct"] > 0.5                                    # DC/AC 1.4 clips
+
+
+def test_module_incidence_table_replaces_ashrae():
+    t = _tmy("Cape Town")
+    ashrae = sh.hourly_yield(t, 5.0, 30, 0, MOD)["annual_kwh"]
+    flat = sh.hourly_yield(t, 5.0, 30, 0, dict(MOD, iam_profile=[[0, 1], [90, 1]]))["annual_kwh"]      # no incidence loss at all (except past grazing)
+    harsh = sh.hourly_yield(t, 5.0, 30, 0, dict(MOD, iam_profile=[[0, 1], [40, 0.9], [70, 0.5], [90, 0]]))["annual_kwh"]
+    et = sh.hourly_yield(t, 5.0, 30, 0, dict(MOD, iam_profile=ET_IAM))["annual_kwh"]
+    assert harsh < et <= flat and harsh < ashrae < flat * 1.001
+    assert abs(et / ashrae - 1) < 0.02                                      # the ET table is close to ASHRAE b0 0.05: a small change
+
+
+def test_result_says_where_the_curves_came_from(monkeypatch):
+    monkeypatch.setattr(pvgis_tmy, "get_tmy", lambda la, lo: _tmy("Upington"))
+    inv = dict(sp.get_inverter("inv_10k_2mppt"), eff_curve=CPS_CURVE)
+    req = {"location": "Upington", "module": dict(MOD, iam_profile=ET_IAM), "inverter": inv, "mode": "kwp", "target_kwp": 12,
+           "tilt_deg": 20, "azimuth_deg": 0, "irradiance_source": "pvgis"}
+    r = sp.run_solar_size(req)
+    assert r["curves"] == {"incidence": "manufacturer's table", "inverter": "manufacturer's curve"}
+    plain = sp.run_solar_size(dict(req, module="pv_550_mono", inverter="inv_10k_2mppt"))
+    assert plain["curves"]["incidence"].startswith("ASHRAE") and plain["curves"]["inverter"].startswith("generic")

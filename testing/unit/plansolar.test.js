@@ -173,4 +173,22 @@ ok('corner snap: the nearest roof or keep-out corner within the tolerance, never
   const k = S.addKeepout(a, [{ x: 20, y: 20 }, { x: 40, y: 20 }, { x: 40, y: 40 }]);
   assert.deepStrictEqual(S.snapCorner({ x: 22, y: 19 }, 10, null), { x: 20, y: 20 }, 'keep-out corners snap too');
 });
+ok('roof names on the plan do not pile up: a picked roof keeps its spot, the others move down a line or are left out', () => {
+  AppState.planMarkup.scale = { factor: 0.05 };
+  S._store().roofs = []; S.sel.clear();
+  const a = S.addRoof(rect(200, 200)), b = S.addRoof(rect(200, 200)), c = S.addRoof(rect(200, 200));
+  a.name = 'Roof A'; b.name = 'Roof B'; c.name = 'Roof C';
+  S.selectRoofs([b.id]); S.setSlopeShown(false);                 // (the slope arrows need the plane model, not under test here)
+  const calls = [];
+  const noop = () => {};
+  const ctx = new Proxy({ measureText: (t) => ({ width: String(t).length * 7 }), fillText: (t, x, y) => calls.push({ t: String(t), x, y }), setLineDash: noop }, { get: (o, k) => (k in o ? o[k] : noop), set: () => true });
+  S.draw(ctx, 1);
+  const names = calls.filter(q => /Roof [ABC] ·/.test(q.t));
+  assert(names.length >= 1 && names.length <= 3);
+  const ys = names.map(q => q.y);
+  assert.strictEqual(new Set(ys).size, ys.length, 'no two names on the same line');
+  const bl = names.find(q => q.t.startsWith('Roof B'));
+  assert.strictEqual(bl.y, 100, 'the picked roof is written first, at the middle of its roof');   // centre of a 200 x 200 roof
+  S.clearSelection(); S.setSlopeShown(true);
+});
 console.log(n + ' passed');

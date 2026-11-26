@@ -31,7 +31,9 @@ class V3DGL {
     this.progs.line = this._prog(defs(), V3DGL.VS_LINE, V3DGL.FS_LINE);
     this.progs.idFace = this._prog(defs('#define ID\n'), V3DGL.VS_FACE, V3DGL.FS_FACE);
     this.progs.idLine = this._prog(defs('#define ID\n'), V3DGL.VS_LINE, V3DGL.FS_LINE);
+    this.progs.tex = this._prog(defs('#define TEX\n'), V3DGL.VS_FACE, V3DGL.FS_FACE);
     this.progs.shadow = this._prog(defs(), V3DGL.VS_SHADOW, V3DGL.FS_SHADOW);
+    this._tex = new WeakMap();
     this.vao = gl.createVertexArray();
     this._shadowTex = null; this._shadowFbo = null;
     this._idFbo = null; this._idW = 0; this._idH = 0;
@@ -65,18 +67,19 @@ class V3DGL {
   }
 
   // ─── Geometry builders (CPU → interleaved floats) ──────────────────────
-  // Face vertex: screen x, y, depth(-1..1) | world xyz | normal xyz | rgba | lit
+  // Face vertex: screen x, y, depth(-1..1) | world xyz | normal xyz | rgba | lit | uv
   static faceVerts(faces, W, H) {
     let n = 0; for (const f of faces) n += f.tris.length * 3;
-    const out = new Float32Array(n * 14); let o = 0;
+    const out = new Float32Array(n * 16); let o = 0;
     for (const f of faces) {
-      const c = f.rgba, lit = f.lit ? 1 : 0, nm = f.n || [0, 0, 1];
+      const c = f.rgba, lit = f.lit ? 1 : 0, nm = f.n || [0, 0, 1], uv = f.tex ? f.tex.uv : null;
       for (const t of f.tris) for (let k = 0; k < 3; k++) {
         const i = t[k], s = f.sp[i], w = f.pts[i];
         out[o++] = s[0]; out[o++] = s[1]; out[o++] = s.z;
         out[o++] = w[0]; out[o++] = w[1]; out[o++] = w[2];
         out[o++] = nm[0]; out[o++] = nm[1]; out[o++] = nm[2];
         out[o++] = c[0]; out[o++] = c[1]; out[o++] = c[2]; out[o++] = c[3]; out[o++] = lit;
+        out[o++] = uv ? uv[i][0] : 0; out[o++] = uv ? uv[i][1] : 0;
       }
     }
     return { data: out, count: n };
@@ -107,16 +110,16 @@ class V3DGL {
   }
 
   // ─── Drawing ───────────────────────────────────────────────────────────
-  _faceAttrs() { return [[0, 3], [1, 3], [2, 3], [3, 4], [4, 1]]; }
+  _faceAttrs() { return [[0, 3], [1, 3], [2, 3], [3, 4], [4, 1], [5, 2]]; }
   _lineAttrs() { return [[0, 3], [1, 4], [2, 1], [3, 2], [4, 1]]; }
-  _clearAttribs() { const gl = this.gl; for (let i = 0; i < 6; i++) gl.disableVertexAttribArray(i); }
+  _clearAttribs() { const gl = this.gl; for (let i = 0; i < 7; i++) gl.disableVertexAttribArray(i); }
 
   _drawFaces(prog, list, W, H, frame, idMode) {
     if (!list.length) return;
     const gl = this.gl, v = V3DGL.faceVerts(list, W, H);
     if (!v.count) return;
     gl.useProgram(prog); gl.bindVertexArray(this.vao);
-    this._upload('face', v.data, this._faceAttrs(), 14);
+    this._upload('face', v.data, this._faceAttrs(), 16);
     gl.uniform2f(prog.u.uSize, W, H);
     if (!idMode) this._lightUniforms(prog, frame);
     gl.drawArrays(gl.TRIANGLES, 0, v.count);
@@ -131,6 +134,37 @@ class V3DGL {
     gl.uniform2f(prog.u.uSize, W, H);
     gl.drawArrays(gl.TRIANGLES, 0, v.count);
     this._clearAttribs();
+  }
+  // A picture as a texture (cached per image; shrunk when it is bigger than the GPU takes or 4096 px).
+  _texture(img) {
+    const gl = this.gl; let t = this._tex.get(img);
+    if (t) return t;
+    let src = img; const lim = Math.min(4096, gl.getParameter(gl.MAX_TEXTURE_SIZE)), w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
+    if (w > lim || h > lim) { const k = lim / Math.max(w, h), c = document.createElement('canvas'); c.width = Math.max(1, Math.round(w * k)); c.height = Math.max(1, Math.round(h * k)); c.getContext('2d').drawImage(img, 0, 0, c.width, c.height); src = c; }
+    t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, src);
+    gl.generateMipmap(gl.TEXTURE_2D);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    this._tex.set(img, t);
+    return t;
+  }
+  // Textured faces (the plan picture on the ground), lit and shadowed like any face, one draw per picture.
+  _drawTex(list, W, H, frame) {
+    if (!list.length) return;
+    const gl = this.gl, by = new Map();
+    for (const f of list) { if (!by.has(f.tex.img)) by.set(f.tex.img, []); by.get(f.tex.img).push(f); }
+    for (const [img, fs] of by) {
+      const v = V3DGL.faceVerts(fs, W, H); if (!v.count) continue;
+      const tex = this._texture(img), prog = this.progs.tex;
+      gl.useProgram(prog); gl.bindVertexArray(this.vao);
+      this._upload('face', v.data, this._faceAttrs(), 16);
+      gl.uniform2f(prog.u.uSize, W, H);
+      this._lightUniforms(prog, frame);
+      gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, tex); gl.uniform1i(prog.u.uTex, 1); gl.activeTexture(gl.TEXTURE0);
+      gl.drawArrays(gl.TRIANGLES, 0, v.count);
+      this._clearAttribs();
+    }
   }
   _lightUniforms(prog, fr) {
     const gl = this.gl, L = fr.light, d = L.dir, m = Math.hypot(d[0], d[1], d[2]) || 1;
@@ -175,7 +209,7 @@ class V3DGL {
     const F = split(fr.faces), Ln = split(fr.lines);
     const byLayer = (list) => { const m = new Map(); for (const x of list) { const k = x.layer; if (!m.has(k)) m.set(k, []); m.get(k).push(x); } return [...m.entries()].sort((a, b) => a[0] - b[0]); };
     gl.enable(gl.DEPTH_TEST); gl.depthFunc(gl.LESS); gl.enable(gl.POLYGON_OFFSET_FILL);
-    for (const [layer, list] of byLayer(F.op)) { gl.polygonOffset(-layer * 1.5, -layer * 3); this._drawFaces(this.progs.face, list, W, H, fr, false); }
+    for (const [layer, list] of byLayer(F.op)) { gl.polygonOffset(-layer * 1.5, -layer * 3); this._drawFaces(this.progs.face, list.filter(f => !f.tex), W, H, fr, false); this._drawTex(list.filter(f => f.tex), W, H, fr); }
     gl.depthMask(false); gl.depthFunc(gl.LEQUAL);                                       // lines test against the faces but do not write depth: two lines on one edge never z-fight
     for (const [layer, list] of byLayer(Ln.op)) { gl.polygonOffset(-3 - layer * 1.5, -14 - layer * 3); this._drawLines(this.progs.line, list, W, H, false); }
     gl.depthFunc(gl.LESS);                                                               // transparent: far to near, no depth write                                                                 // transparent: far to near, no depth write
@@ -296,17 +330,20 @@ class V3DGL {
 V3DGL.VS_FACE = `
 precision highp float;
 layout(location=0) in vec3 aScr; layout(location=1) in vec3 aWorld; layout(location=2) in vec3 aNorm;
-layout(location=3) in vec4 aCol; layout(location=4) in float aLit;
+layout(location=3) in vec4 aCol; layout(location=4) in float aLit; layout(location=5) in vec2 aUV;
 uniform vec2 uSize;
-out vec3 vWorld; out vec3 vNorm; out vec4 vCol; out float vLit;
+out vec3 vWorld; out vec3 vNorm; out vec4 vCol; out float vLit; out vec2 vUV;
 void main() {
-  vWorld = aWorld; vNorm = aNorm; vCol = aCol; vLit = aLit;
+  vWorld = aWorld; vNorm = aNorm; vCol = aCol; vLit = aLit; vUV = aUV;
   gl_Position = vec4(aScr.x / uSize.x * 2.0 - 1.0, 1.0 - aScr.y / uSize.y * 2.0, aScr.z, 1.0);
 }`;
 V3DGL.FS_FACE = `
 precision highp float; precision highp sampler2DShadow;
-in vec3 vWorld; in vec3 vNorm; in vec4 vCol; in float vLit;
+in vec3 vWorld; in vec3 vNorm; in vec4 vCol; in float vLit; in vec2 vUV;
 out vec4 outColor;
+#ifdef TEX
+uniform sampler2D uTex;
+#endif
 #ifndef ID
 uniform vec3 uLight; uniform vec3 uLp; uniform vec3 uViewDir; uniform float uShadowOn;
 uniform mat4 uLightVP; uniform sampler2DShadow uShadow; uniform float uTexel;
@@ -324,6 +361,9 @@ void main() {
   outColor = vec4(vCol.rgb, 1.0);
 #else
   vec4 col = vCol;
+#ifdef TEX
+  col = texture(uTex, vUV); col.a *= vCol.a;
+#endif
   if (vLit > 0.5) {
     vec3 n = normalize(vNorm);
     if (dot(n, uViewDir) < 0.0) n = -n;

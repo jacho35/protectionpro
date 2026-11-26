@@ -230,6 +230,14 @@ class View3D {
       if (it.t === 'f') {
         g.closePath();
         if (it.fillLit) { g.fillStyle = it.fillLit; g.fill(); }
+        if (it.tex && it.tex.img && it.tex.img.complete && (it.tex.img.naturalWidth || it.tex.img.width) && it.sp.length >= 4) {   // a picture on a flat face: orthographic, so an affine map of the image
+          const im = it.tex.img, iw = im.naturalWidth || im.width, ih = im.naturalHeight || im.height, a = it.sp[0], b = it.sp[1], d = it.sp[3];
+          g.save(); g.clip();
+          g.transform((b[0] - a[0]) / iw, (b[1] - a[1]) / iw, (d[0] - a[0]) / ih, (d[1] - a[1]) / ih, a[0], a[1]);
+          g.globalAlpha = it.alpha != null ? it.alpha : 1;
+          g.drawImage(im, 0, 0);
+          g.restore();
+        }
       }
       if (it.stroke) {
         g.strokeStyle = it.stroke; g.lineWidth = it.lw || 1;
@@ -277,7 +285,7 @@ class View3D {
         if (it.fill) {
           const c = G.parseColor(it.fill); c[3] *= alpha;
           const n = it.n || G.faceNormal(it.pts);
-          faces.push({ sp: pts, pts: it.pts, tris: this._tris(it.pts), rgba: c, lit: !!it.lit, n, layer: it.layer, pick: it.pick, d: it.d, noShadow: !!it.noShadow });
+          faces.push({ sp: pts, pts: it.pts, tris: this._tris(it.pts), rgba: c, lit: !!it.lit, n, layer: it.layer, pick: it.pick, d: it.d, noShadow: !!it.noShadow, tex: it.tex && it.tex.img && it.tex.img.complete && (it.tex.img.naturalWidth || it.tex.img.width) ? it.tex : null });
         }
         if (it.stroke) { const c = G.parseColor(it.stroke); c[3] *= alpha; lines.push({ sp: pts.concat([pts[0]]), rgba: c, lw: it.lw || 1, dash: it.dash, layer: it.layer, pick: it.pick, d: it.d }); }
       } else if (it.stroke) {
@@ -328,7 +336,8 @@ class View3D {
   // plan's north angle through `cubeNorth`). Hover lights a face, a click glides to the view from that side (as the Top / From north /
   // … buttons do); "Iso" under it returns to the corner view. Drawn on the overlay canvas, so it works on both renderers.
   _cubeLayout(W, H) {
-    const s = 20, cx = 14 + s + 10, cy = this.opts.cubePos === 'bl' ? H - 14 - 28 - s - 8 : 14 + s + 14;     // top-left, or bottom-left where the top-left holds an info card
+    const coarse = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;                    // a finger needs a bigger cube than a mouse
+    const s = coarse ? 30 : 20, cx = 14 + s + 10, cy = this.opts.cubePos === 'bl' ? H - 14 - (coarse ? 36 : 28) - s - 8 : 14 + s + 14;     // top-left, or bottom-left where the top-left holds an info card
     return { s, cx, cy };
   }
   _drawCube(g, k, W, H) {
@@ -342,7 +351,8 @@ class View3D {
       { key: '+x', n: [1, 0, 0], q: [[1, 1, -1], [1, -1, -1], [1, -1, 1], [1, 1, 1]], c: '#d5dce5' },
       { key: '-x', n: [-1, 0, 0], q: [[-1, -1, -1], [-1, 1, -1], [-1, 1, 1], [-1, -1, 1]], c: '#e3e8ee' },
     ];
-    this._cube = { faces: [], home: { x0: cx - 17, x1: cx + 17, y0: cy + s + 8, y1: cy + s + 24 } };
+    const hw = s > 20 ? 26 : 17, hh = s > 20 ? 28 : 16;
+    this._cube = { faces: [], home: { x0: cx - hw, x1: cx + hw, y0: cy + s + 8, y1: cy + s + 8 + hh } };
     g.save(); g.globalAlpha = 1; g.lineJoin = 'round';
     for (const f of F) {
       if (f.n[0] * w[0] + f.n[1] * w[1] + f.n[2] * w[2] <= 0.02) continue;

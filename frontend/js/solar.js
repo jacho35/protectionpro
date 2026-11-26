@@ -70,6 +70,10 @@ const Solar = {
     if (p.vmp >= p.voc) return 'Vmp must be below Voc.';
     if (p.imp > p.isc) return 'Imp cannot be above Isc.';
     if (p.beta_voc > 0 || p.gamma_vmp > 0 || p.k_pmax > 0) return 'Temperature coefficients are negative (the module loses voltage and power when hot).';
+    if (p.iam !== undefined) {                                           // an imported incidence-angle table: angles rising within 0-90, factors 0-1
+      const t = p.iam, ok = Array.isArray(t) && t.length >= 3 && t.every((q, i) => Array.isArray(q) && q[0] >= 0 && q[0] <= 90 && q[1] >= 0 && q[1] <= 1.05 && (i === 0 || q[0] > t[i - 1][0]));
+      if (!ok) return 'The incidence-angle table must have three or more points, angles rising within 0 to 90 degrees, factors between 0 and 1.';
+    }
     return '';
   },
   validateInverter(i) {
@@ -79,6 +83,10 @@ const Solar = {
     if (i.eff_pct > 100) return 'Efficiency cannot be above 100 %.';
     if (![1, 3].includes(i.phases)) return 'Phases must be 1 or 3.';
     if (!(i.fault_x > 0)) return 'Fault current multiple must be positive.';
+    if (i.eff_curve !== undefined) {                                     // an imported efficiency curve: load rising, efficiency within (0, 1]
+      const t = i.eff_curve, ok = Array.isArray(t) && t.length >= 3 && t.every((q, i2) => Array.isArray(q) && q[0] > 0 && q[1] >= 0 && q[1] <= 1 && (i2 === 0 || q[0] > t[i2 - 1][0])) && t[t.length - 1][1] > 0.5;
+      if (!ok) return 'The efficiency curve must have three or more points, load rising, efficiency between 0 and 1.';
+    }
     return '';
   },
 
@@ -86,12 +94,12 @@ const Solar = {
   moduleBody(p) {
     return { pmax_w: p.w, voc_v: p.voc, vmp_v: p.vmp, isc_a: p.isc, imp_a: p.imp, k_voc_pct: p.beta_voc,
       k_vmp_pct: p.gamma_vmp, k_pmax_pct: p.k_pmax, length_m: p.len, width_m: p.wid, noct_c: p.noct,
-      max_system_v: p.sysv };
+      max_system_v: p.sysv, iam_profile: p.iam };
   },
   inverterBody(i) {
     return { ac_kw: i.ac_kw, phases: i.phases, max_dc_v: i.dc_max_v, mppt_min_v: i.mppt_min_v,
       mppt_max_v: i.mppt_max_v, mppt_count: i.mppt_count, max_a_per_mppt: i.mppt_max_a,
-      max_isc_a_per_mppt: i.mppt_max_a * 1.25, efficiency_pct: i.eff_pct, fault_x_rated: i.fault_x };
+      max_isc_a_per_mppt: i.mppt_max_a * 1.25, efficiency_pct: i.eff_pct, fault_x_rated: i.fault_x, eff_curve: i.eff_curve };
   },
 
   // Roof geometry from the dialog. Pure: returns the tilt, the footprint area the modules may use (m2)
@@ -268,6 +276,7 @@ const Solar = {
       <div style="display:flex;gap:3px;align-items:flex-end;height:104px;margin-top:8px" role="img" aria-label="Monthly energy, kWh">${bars}</div>
       ${r.shading_loss_pct != null ? '<div style="margin-top:6px;font-size:12px">Shading loss ' + r.shading_loss_pct + ' %</div>' : ''}
       ${r.clipping_loss_pct != null ? '<div style="margin-top:6px;font-size:12px">Inverter clipping ' + r.clipping_loss_pct + ' % of the DC energy' + (r.lifetime ? '; year 1 ' + Math.round(r.lifetime[0].kwh).toLocaleString() + ' kWh after first-year degradation, year 25 ' + Math.round(r.lifetime[24].kwh).toLocaleString() + ' kWh' : '') + '.</div>' : ''}
+      ${r.model_note ? `<div role="status" style="margin-top:8px;padding:6px 8px;font-size:12px;background:#fff4dc;border:1px solid #e0b14a;border-radius:4px">${escHtml(r.model_note)}</div>` : ''}
       <div style="margin-top:6px;font-size:11px;color:var(--text-muted,#6d6d6d)">${escHtml(r.data_note)}</div>`;
   },
 
@@ -415,7 +424,7 @@ const Solar = {
       <div style="font-size:12px;color:var(--text-muted,#6d6d6d)">Checks every module against the roof objects, the obstruction above and the racks in front of it, for the middle day of each month at every solar hour. Strings are ${+c.perString || 'one'} modules, filled in layout order.</div>
       <div style="margin-top:6px"><button class="btn" type="button" data-act="shade" ${can ? '' : 'disabled'}>Run annual shading</button>${can ? '' : '<span style="font-size:12px"> needs roofs drawn on the plan and a calculation on step 1</span>'}</div>`
       + (sh ? `<div style="margin-top:8px;font-size:13px">Shading loss <strong>${sh.loss_pct} %</strong> of the annual yield (${Math.round(sh.unshaded_kwh).toLocaleString()} to ${Math.round(sh.shaded_kwh).toLocaleString()} kWh).</div>
-        <div style="display:flex;gap:3px;align-items:flex-end;height:60px;margin-top:6px" role="img" aria-label="Shading loss by month, %">${sh.months.map(m => `<div title="${m.month}: ${m.loss_pct} %" style="flex:1;background:#b8860b;height:${Math.max(2, Math.min(60, m.loss_pct * 6))}px"></div>`).join('')}</div>
+        <div style="display:flex;gap:3px;align-items:flex-end;height:60px;margin-top:6px" role="img" aria-label="Shading loss by month, %">${sh.months.map(m => `<div title="${Number(m.month)}: ${Number(m.loss_pct)} %" style="flex:1;background:#b8860b;height:${Math.max(2, Math.min(60, m.loss_pct * 6))}px"></div>`).join('')}</div>
         <table style="margin-top:8px;font-size:12px;border-collapse:collapse"><tr><th align="left" style="padding:0 12px 0 0">Roof</th><th style="padding:0 12px">String</th><th style="padding:0 12px">Modules</th><th style="padding:0 12px">Loss %</th></tr>${sh.strings.map(r => `<tr><td style="padding:0 12px 0 0">${escHtml(r.array || '')}</td><td align="center">${r.string}</td><td align="center">${r.modules}</td><td align="center">${r.loss_pct}</td></tr>`).join('')}</table>
         <div style="margin-top:6px;font-size:11px;color:var(--text-muted,#6d6d6d)">${escHtml(sh.note)} ${escHtml(sh.attribution || '')}</div>` : '');
     const placed = this._pvComp();
@@ -493,7 +502,19 @@ const Solar = {
       hour_angle_deg: +c.hour, roof_depth_m: +c.width });
   },
 
+  // A project whose Solar PV Design was used before PVGIS hourly data became the default has a location saved but no irradiance source.
+  // Its next calculation uses the new model, so the result says so once and the choice is saved with the project (pure).
+  isLegacy(store) { return !!store && store.location !== undefined && store.irrSrc === undefined; },
+  _raw() { const pm = AppState.planMarkup; return pm && pm.settings ? pm.settings.solar : this._mem; },
   async runSize() {
+    const legacy = this.isLegacy(this._raw());
+    await this._runSize();
+    if (legacy && this._res) {
+      this._res.model_note = 'This design was last calculated with the earlier monthly model (screening grade). This calculation uses ' + (this._res.irradiance_source || 'the new model') + ', so the yields differ from the ones you saw before. The choice is under Irradiance data on step 1.';
+      this.set('irrSrc', this.cfg().irrSrc);
+    }
+  },
+  async _runSize() {
     const c = this.cfg();
     const g = this.roofArea(c), p = this.panel(c), inv = this.inverter(c);
     let packing = +c.packing;

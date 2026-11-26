@@ -8,9 +8,11 @@ Run: python testing/solar/pvgis_reference.py
 import json, os, urllib.request
 
 LOSS = 9.61
-SITES = {"Johannesburg": (-26.2, 28.04), "Cape Town": (-33.92, 18.42), "Upington": (-28.45, 21.26)}
+SITES = {"Johannesburg": (-26.2, 28.04), "Cape Town": (-33.92, 18.42), "Upington": (-28.45, 21.26),
+         "Durban": (-29.86, 31.02), "Polokwane": (-23.9, 29.45), "Bloemfontein": (-29.12, 26.21), "Gqeberha": (-33.96, 25.6)}
 # PVGIS aspect: 0 = south, 180 = north, -90 = east, 90 = west (southern hemisphere: north-facing is 180)
-CASES = {"north_30": [(30, 180)], "flat_ew": [(10, -90), (10, 90)]}
+CASES = {"north_30": [(30, 180)], "flat_ew": [(10, -90), (10, 90)],
+         "north_15": [(15, 180)], "north_45": [(45, 180)], "west_30": [(30, 90)], "ew_5": [(5, -90), (5, 90)]}
 
 
 def fetch(lat, lon, angle, aspect):
@@ -32,5 +34,16 @@ path = os.path.join(os.path.dirname(__file__), "pvgis_reference.json")
 json.dump(out, open(path, "w"), indent=1)
 print("wrote", path)
 
-# The hourly typical years used by backend/tests/test_solar_hourly.py are the cache files of pvgis_tmy.get_tmy for these
-# sites, copied to testing/solar/tmy/ (set PVGIS_CACHE_DIR, call get_tmy for each site, copy tmy_<lat>_<lon>.json.gz).
+
+
+# the hourly typical years the hourly-model test uses: PVGIS TMY for every site above, written to testing/solar/tmy/ through the app's own lookup
+import gzip, shutil, sys, tempfile
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
+os.environ["PVGIS_CACHE_DIR"] = tempfile.mkdtemp(prefix="pvgis-tmy-")
+from backend.analysis import pvgis_tmy
+os.makedirs(os.path.join(os.path.dirname(__file__), "tmy"), exist_ok=True)
+for site, (lat, lon) in SITES.items():
+    pvgis_tmy.get_tmy(lat, lon)
+    f = f"tmy_{lat:.2f}_{lon:.2f}.json.gz"
+    shutil.copy(os.path.join(os.environ["PVGIS_CACHE_DIR"], f), os.path.join(os.path.dirname(__file__), "tmy", f))
+print("wrote", len(SITES), "typical years")

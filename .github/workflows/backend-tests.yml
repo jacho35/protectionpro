@@ -57,6 +57,10 @@ jobs:
         run: node testing/unit/roof3d.test.js
       - name: Solar library validation
         run: node testing/unit/solar-library.test.js
+      - name: Solar PVsyst / CSV import (real .PAN and .OND files)
+        run: node testing/unit/solar-import.test.js
+      - name: 3D view helpers (fit, lighting, triangulation, labels)
+        run: node testing/unit/geom3d.test.js
       - name: Solar roofs (plan geometry, array list)
         run: node testing/unit/plansolar.test.js
       - name: Fixes (proposed fixes, Fix all)
@@ -188,5 +192,65 @@ jobs:
           name: ui-failures
           path: |
             testing/ui/ui-failures/
+            /tmp/uvicorn.log
+          if-no-files-found: ignore
+
+  ui-solar-3d:
+    # The Solar PV Design dialog and the 3D roof view in headless Chromium (software WebGL): PVGIS hourly sizing, PVsyst import, annual
+    # shading, report download (testing/solar/verify_solar_ui.mjs) and picking, hover, glides, drags, the view cube, orbit and nudge on
+    # both renderers (verify_3d_ui.mjs). The PVGIS typical years come from the checked-in fixtures, so the job needs no network.
+    # The pixel snapshots are compared too but only reported: software GL differs a little between machines.
+    runs-on: ubuntu-latest
+    env:
+      BASE_URL: http://localhost:8000
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install backend
+        run: pip install -r backend/requirements.txt
+
+      - name: Install Playwright + Chromium
+        working-directory: testing/ui
+        run: npm install && npx playwright install --with-deps chromium
+
+      - name: Start app on a throwaway database
+        env:
+          DATABASE_URL: sqlite:////tmp/pp-solar.db
+          SECRET_KEY: ci-solar-verify-only
+          PVGIS_CACHE_DIR: ${{ github.workspace }}/testing/solar/tmy
+        run: |
+          nohup python -m uvicorn backend.main:app --port 8000 > /tmp/uvicorn.log 2>&1 &
+          for i in $(seq 1 30); do curl -sf localhost:8000/api/health && break; sleep 1; done
+
+      - name: Solar PV Design through the UI
+        run: node testing/solar/verify_solar_ui.mjs /tmp/solar-ui
+
+      - name: 3D roof view through the UI
+        run: node testing/solar/verify_3d_ui.mjs /tmp/solar-ui
+
+      - name: 3D roof view on a phone-sized touch screen (emulated)
+        run: node testing/solar/verify_3d_touch.mjs /tmp/solar-ui
+
+      - name: 3D pixel snapshots (reported, not blocking)
+        continue-on-error: true
+        run: node testing/solar/snapshot_3d.mjs /tmp/solar-ui
+
+      - name: Upload pictures and log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: solar-3d-ui
+          path: |
+            /tmp/solar-ui/
             /tmp/uvicorn.log
           if-no-files-found: ignore
