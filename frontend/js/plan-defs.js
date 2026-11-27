@@ -252,7 +252,16 @@ const PLAN_DEFS = {
     bd_cctv: { name: 'CCTV Camera', domain: 'building', group: 'ELV & Fire', color: '#7c3aed', scale: 1, symbol: 'circle', dxf: { shape: 'circle', sizeM: 0.3 }, rotatable: true, schedule: null, namePrefix: 'CAM', dxfBlock: 'CCTV', defaults: {}, fields: [{ key: 'name', label: 'Ref', type: 'text' }, { key: 'zone', label: 'Zone', type: 'text' }] },
     bd_nvr: { name: 'NVR', domain: 'building', group: 'ELV & Fire', color: '#6d28d9', scale: 1, symbol: 'square', dxf: { shape: 'square', sizeM: 0.3 }, rotatable: false, schedule: null, namePrefix: 'NVR', dxfBlock: 'NVR', defaults: {}, fields: [{ key: 'name', label: 'Ref', type: 'text' }, { key: 'zone', label: 'Zone', type: 'text' }] },
     bd_datapoint: { name: 'Data Outlet', domain: 'building', group: 'ELV & Fire', color: '#db2777', scale: 1, symbol: 'square', dxf: { shape: 'square', sizeM: 0.2 }, rotatable: false, schedule: null, namePrefix: 'DP', defaults: {}, fields: [{ key: 'name', label: 'Ref', type: 'text' }] },
-    bd_wap: { name: 'Wireless AP', domain: 'building', group: 'ELV & Fire', color: '#0e7490', scale: 1, symbol: 'circle', dxf: { shape: 'circle', sizeM: 0.3 }, rotatable: false, schedule: null, namePrefix: 'AP', defaults: {}, fields: [{ key: 'name', label: 'Ref', type: 'text' }] },
+    bd_wap: { name: 'Wireless AP', domain: 'building', group: 'ELV & Fire', color: '#0e7490', scale: 1, symbol: 'circle', dxf: { shape: 'circle', sizeM: 0.3 }, rotatable: false, schedule: null, namePrefix: 'AP',
+      // The WiFi tab predicts from these (wifi-engine.js): Tx power and antenna gain per radio, the channel (blank = Auto), PoE draw.
+      defaults: { model: 'Generic Wi-Fi 6 AP', tx: 17, gain: 4, channel: '', mountH: 2.7, watts: 15.4 },
+      fields: [{ key: 'name', label: 'Ref', type: 'text' },
+        { key: 'model', label: 'Model', type: 'text' },
+        { key: 'tx', label: 'Tx power', type: 'number', unit: 'dBm', min: 0, max: 30, step: 1 },
+        { key: 'gain', label: 'Antenna gain', type: 'number', unit: 'dBi', min: 0, max: 15, step: 0.5 },
+        { key: 'channel', label: 'Channel (blank = Auto)', type: 'number', min: 1, max: 233, step: 1 },
+        { key: 'mountH', label: 'Mounting height', type: 'number', unit: 'm', min: 0, max: 20, step: 0.1 },
+        { key: 'watts', label: 'PoE draw', type: 'number', unit: 'W', min: 0, max: 90, step: 0.1 }] },
     // Control
     bd_sensor: { name: 'Occupancy Sensor', domain: 'building', group: 'Control', color: '#e11d48', scale: 1, symbol: 'circle', dxf: { shape: 'circle', sizeM: 0.25 }, rotatable: false, schedule: null, namePrefix: 'PIR', defaults: {}, fields: [{ key: 'name', label: 'Ref', type: 'text' }] },
     bd_dali: { name: 'DALI Controller', domain: 'building', group: 'Control', color: '#db2777', scale: 1, symbol: 'square', dxf: { shape: 'square', sizeM: 0.3 }, rotatable: true, schedule: null, namePrefix: 'DAL', defaults: {}, fields: [{ key: 'name', label: 'Ref', type: 'text' }] },
