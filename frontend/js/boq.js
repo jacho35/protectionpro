@@ -268,6 +268,7 @@ const BOQ = {
         } catch (e) { /* plan helpers unavailable — count the routes */ }
       }
       let skipDemand = 0, skipSld = 0, skipWay = 0, skipSl = 0, unscaled = 0;
+      let cctvRuns = 0; const cctvCams = [];     // the CCTV tab's cameras (every floor) and the camera cable runs it drew
       for (const fl of floors) {
         const f = PlanCSV._floorFactor(fl);
         const d = fl.data || {};
@@ -284,6 +285,7 @@ const BOQ = {
           }
           if (!f) { unscaled++; continue; }
           const len = PlanCSV._routeLenM(r, f);
+          if (r.auto === 'cctv') cctvRuns++;
           const def = PLAN_DEFS.route(et) || PLAN_DEFS.route(r.type) || {};
           const item = r.cableType ? this._cable(r.cableType) : { key: Rates.routeKey(et), desc: def.name || et, unit: 'm' };
           add(item, len, 'plan', `Plan ${(def.name || et)} routes`);
@@ -303,6 +305,7 @@ const BOQ = {
             if (!((inc.sld || inc.db) && onSld)) add({ key: el.type === 'bd_db' ? 'EQ-DB' : 'EQ-SWITCHBOARD' }, 1, 'plan', 'Plan boards');
             continue;
           }
+          if ((el.type === 'bd_cctv' || el.type === 'cam') && typeof CctvWS !== 'undefined') cctvCams.push(el);
           const it = Rates.planElementItem(el);
           if (it) add(it, 1, 'plan', 'Plan ' + ((PLAN_DEFS.element(el.type) || {}).name || el.type).toLowerCase() + 's');
         }
@@ -318,6 +321,12 @@ const BOQ = {
         }
         bases.crossings += (d.crossings || []).length;
         for (const c of (d.crossings || [])) add({ key: Rates.crossingKey(c.size), desc: `Road crossing, ${c.size || ''} mm sleeve`, unit: 'ea' }, 1, 'plan', 'Plan crossings');
+      }
+      if (cctvCams.length && typeof CctvWS !== 'undefined') {
+        try {
+          const L = CctvWS.boqLines(cctvCams, cctvRuns);
+          for (const l of L) add({ key: l.key, desc: l.desc, unit: l.unit }, l.qty, 'plan', 'Plan CCTV');
+        } catch (e) { /* no CCTV settings */ }
       }
       if (!(inc.sld && riserSld.size)) {
         const v = PlanCSV._verticalRuns ? PlanCSV._verticalRuns() : [];

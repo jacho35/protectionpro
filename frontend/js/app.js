@@ -97,6 +97,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const slWs = document.getElementById('streetlight-workspace');
     const qWs = document.getElementById('quantities-workspace');
     const wfWs = document.getElementById('wifi-workspace');
+    const ctWs = document.getElementById('cctv-workspace');
     const lWs = document.getElementById('lighting-workspace');
     const loWs = document.getElementById('lightov-workspace');
     const ovWs = document.getElementById('overview-workspace');
@@ -110,6 +111,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (typeof StreetLight !== 'undefined' && StreetLight._active && name !== 'streetlight') StreetLight.deactivate();
     if (typeof Quantities !== 'undefined' && Quantities._active && name !== 'quantities') Quantities.deactivate();
     if (typeof WifiWS !== 'undefined' && WifiWS._active && name !== 'wifi') WifiWS.deactivate();
+    if (typeof CctvWS !== 'undefined' && CctvWS._active && name !== 'cctv') CctvWS.deactivate();
     if (typeof LightingWS !== 'undefined' && LightingWS._active && !lightPane) LightingWS.deactivate();
     if (typeof LightOverview !== 'undefined' && LightOverview._active && name !== 'lightov') LightOverview.deactivate();
     if (typeof Overview !== 'undefined' && Overview._active && name !== 'overview') Overview.deactivate();
@@ -122,6 +124,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (slWs) slWs.style.display = (name === 'streetlight') ? 'flex' : 'none';
     if (qWs) qWs.style.display = (name === 'quantities') ? 'flex' : 'none';
     if (wfWs) wfWs.style.display = (name === 'wifi') ? 'flex' : 'none';
+    if (ctWs) ctWs.style.display = (name === 'cctv') ? 'flex' : 'none';
     if (lWs) lWs.style.display = lightPane ? 'flex' : 'none';
     if (loWs) loWs.style.display = (name === 'lightov') ? 'flex' : 'none';
     if (ovWs) ovWs.style.display = (name === 'overview') ? 'flex' : 'none';
@@ -150,6 +153,7 @@ document.addEventListener('DOMContentLoaded', () => {
     else if (name === 'streetlight' && typeof StreetLight !== 'undefined') { StreetLight.activate(); }
     else if (name === 'quantities' && typeof Quantities !== 'undefined') { Quantities.activate(); }
     else if (name === 'wifi' && typeof WifiWS !== 'undefined') { WifiWS.activate(); }
+    else if (name === 'cctv' && typeof CctvWS !== 'undefined') { CctvWS.activate(); }
     else if (lightPane && typeof LightingWS !== 'undefined') { LightingWS.activate(name === 'sports' ? 'sports' : null); }
     else if (name === 'lightov' && typeof LightOverview !== 'undefined') { LightOverview.activate(); }
     else if (name === 'overview' && typeof Overview !== 'undefined') { Overview.activate(); }
@@ -166,6 +170,7 @@ document.addEventListener('DOMContentLoaded', () => {
     ['streetlight', 'btn-workspace-streetlight'],
     ['quantities', 'btn-workspace-quantities'],
     ['wifi', 'btn-workspace-wifi'],
+    ['cctv', 'btn-workspace-cctv'],
     ['lighting', 'btn-workspace-lighting'],
     ['sports', 'btn-workspace-sports'],
     ['lightov', 'btn-workspace-lightov'],

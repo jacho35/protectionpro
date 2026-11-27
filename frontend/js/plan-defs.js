@@ -50,7 +50,7 @@ const PLAN_DXF_LAYERS = {
   // plan symbols (element type → [layer, sheets])
   elements: {
     minisub: ['EL_MV', ['MV', 'LV']], rmu: ['EL_MV', ['MV', 'LV']], kiosk: ['EL_LV', ['MV', 'LV']],
-    pole: ['EL_SL', ['SL']], erf: ['EL_ERF', ['LV']], load: ['EL_LOAD', ['LV']], manhole: ['EL_FI', ['FIBRE']],
+    cam: ['EL_CCTV', ['ELV']], camhub: ['EL_CCTV', ['ELV']], pole: ['EL_SL', ['SL']], erf: ['EL_ERF', ['LV']], load: ['EL_LOAD', ['LV']], manhole: ['EL_FI', ['FIBRE']],
     bd_utility: ['EL_POWER', ['MV', 'LV']], bd_transformer: ['EL_POWER', ['MV', 'LV']], bd_generator: ['EL_POWER', ['MV', 'LV']],
     bd_switchboard: ['EL_POWER', ['MV', 'LV']], bd_jb: ['EL_POWER', ['MV', 'LV']],
     bd_db: ['EL_DB', ['LV']], bd_riser: ['EL_RISER', ['MV', 'LV']],
@@ -77,6 +77,7 @@ const PLAN_DXF_LAYERS = {
   fixed: {
     trench: ['EL_TRENCH', ['MV', 'LV', 'SL', 'FIBRE']], crossing: ['EL_DUCTS', ['MV', 'LV', 'SL', 'FIBRE', 'DUCTS']],   // DUCTS: a sheet of the road crossing ducts alone
     room: ['EL_ROOMS', 'all'], measurement: ['EL_DIM', 'all'], text: ['EL_TEXT', 'all'],
+    cctv: ['EL_CCTV_COVERAGE', ['ELV']],   // the CCTV tab's DORI zone outlines (CctvWS.dxfZones); written only when a camera is on the plan
     wifi: ['EL_WIFI_COVERAGE', ['ELV']],   // the WiFi tab's predicted-signal contour lines (WifiWS.dxfZones); written only when an access point is on the plan
   },
   // an item type with no row: its palette group's layer, on every sheet
@@ -91,6 +92,19 @@ const PLAN_DXF_LAYERS = {
   },
 };
 
+// CCTV camera values the CCTV tab predicts from (cctv-engine.js). A blank value falls back to the manufacturer model, else the generic camera.
+const _CCTV_DEFAULTS = { libId: '', model: '', kind: 'dome', mountH: '', tilt: '', hfov: '', res: '', fps: '', codec: '', watts: '' };
+const _CCTV_FIELDS = [{ key: 'name', label: 'Ref', type: 'text' }, { key: 'zone', label: 'Zone', type: 'text' },
+  { key: 'libId', label: 'Manufacturer model', type: 'select', options: [{ value: '', label: 'Generic (4 MP, 100°)' }].concat(typeof VENDOR_CAMERAS !== 'undefined' ? VENDOR_CAMERAS.map(c => ({ value: c.id, label: `${c.vendor} ${c.model}` })) : []) },
+  { key: 'model', label: 'Note / part number', type: 'text' },
+  { key: 'kind', label: 'Type', type: 'select', options: [{ value: 'dome', label: 'Dome' }, { value: 'bullet', label: 'Bullet' }, { value: 'ptz', label: 'PTZ' }] },
+  { key: 'mountH', label: 'Mounting height (blank = 2.8 m indoors, 6 m on a pole)', type: 'number', unit: 'm', min: 0.5, max: 30, step: 0.1 },
+  { key: 'tilt', label: 'Tilt below horizontal (blank = 25° indoors, 20° outdoors)', type: 'number', unit: '°', min: 0, max: 90, step: 1 },
+  { key: 'hfov', label: 'Horizontal field of view (blank = the model\'s)', type: 'number', unit: '°', min: 10, max: 180, step: 1 },
+  { key: 'res', label: 'Resolution (blank = the model\'s)', type: 'select', options: [{ value: '', label: 'The model\'s' }, { value: '1920x1080', label: '2 MP 1920×1080' }, { value: '2688x1520', label: '4 MP 2688×1520' }, { value: '2592x1944', label: '5 MP 2592×1944' }, { value: '3840x2160', label: '8 MP 3840×2160' }] },
+  { key: 'fps', label: 'Frame rate (blank = project)', type: 'number', unit: 'fps', min: 1, max: 60, step: 1 },
+  { key: 'codec', label: 'Codec (blank = project)', type: 'select', options: [{ value: '', label: 'Project default' }, { value: 'h264', label: 'H.264' }, { value: 'h265', label: 'H.265' }, { value: 'h265s', label: 'H.265 + smart codec' }, { value: 'mjpeg', label: 'MJPEG' }] },
+  { key: 'watts', label: 'PoE draw (blank = the model\'s)', type: 'number', unit: 'W', min: 0, max: 90, step: 0.1 }];
 const PLAN_DEFS = {
   // Point elements. `fields[]` follow the Properties.renderField conventions
   // ({key,label,type,unit,options,...}); `cable_select` is a plan-specific
@@ -160,6 +174,10 @@ const PLAN_DEFS = {
       defaults: {},
       fields: [{ key: 'name', label: 'Name', type: 'text' }],
     },
+    cam: { name: 'CCTV Camera', domain: 'retic', group: 'Security', color: '#7c3aed', scale: 1, symbol: 'circle', dxf: { shape: 'circle', sizeM: 0.5 }, rotatable: true, schedule: null, namePrefix: 'CAM',
+      defaults: _CCTV_DEFAULTS, fields: _CCTV_FIELDS },
+    camhub: { name: 'CCTV Control Room / NVR', domain: 'retic', group: 'Security', color: '#6d28d9', scale: 1, symbol: 'square', dxf: { shape: 'square', sizeM: 1.0 }, rotatable: false, schedule: null, namePrefix: 'CR',
+      defaults: {}, fields: [{ key: 'name', label: 'Ref', type: 'text' }] },
     // ── building domain (floor-plan distribution) ──
     // Power / distribution
     bd_utility: { name: 'Utility Intake', domain: 'building', group: 'Power', color: '#ef4444', scale: 1, symbol: 'square', dxf: { shape: 'square', sizeM: 0.8 }, rotatable: true, schedule: null, namePrefix: 'UT', defaults: {}, fields: [{ key: 'name', label: 'Name', type: 'text' }] },
@@ -250,7 +268,7 @@ const PLAN_DEFS = {
     bd_strobe: { name: 'Strobe', domain: 'building', group: 'ELV & Fire', color: '#f97316', scale: 1, symbol: 'square', dxf: { shape: 'square', sizeM: 0.2 }, rotatable: false, schedule: null, namePrefix: 'STR', dxfBlock: 'STROBE', defaults: {}, fields: [{ key: 'name', label: 'Ref', type: 'text' }, { key: 'zone', label: 'Zone', type: 'text' }] },
     bd_sounder: { name: 'Sounder', domain: 'building', group: 'ELV & Fire', color: '#fb923c', scale: 1, symbol: 'square', dxf: { shape: 'square', sizeM: 0.2 }, rotatable: false, schedule: null, namePrefix: 'SND', dxfBlock: 'SOUNDER', defaults: {}, fields: [{ key: 'name', label: 'Ref', type: 'text' }, { key: 'zone', label: 'Zone', type: 'text' }] },
     bd_soundersstrobe: { name: 'Sounder/Strobe', domain: 'building', group: 'ELV & Fire', color: '#f59e0b', scale: 1, symbol: 'square', dxf: { shape: 'square', sizeM: 0.2 }, rotatable: false, schedule: null, namePrefix: 'SS', dxfBlock: 'SOUNDER-STROBE', defaults: {}, fields: [{ key: 'name', label: 'Ref', type: 'text' }, { key: 'zone', label: 'Zone', type: 'text' }] },
-    bd_cctv: { name: 'CCTV Camera', domain: 'building', group: 'ELV & Fire', color: '#7c3aed', scale: 1, symbol: 'circle', dxf: { shape: 'circle', sizeM: 0.3 }, rotatable: true, schedule: null, namePrefix: 'CAM', dxfBlock: 'CCTV', defaults: {}, fields: [{ key: 'name', label: 'Ref', type: 'text' }, { key: 'zone', label: 'Zone', type: 'text' }] },
+    bd_cctv: { name: 'CCTV Camera', domain: 'building', group: 'ELV & Fire', color: '#7c3aed', scale: 1, symbol: 'circle', dxf: { shape: 'circle', sizeM: 0.3 }, rotatable: true, schedule: null, namePrefix: 'CAM', dxfBlock: 'CCTV', defaults: _CCTV_DEFAULTS, fields: _CCTV_FIELDS },
     bd_nvr: { name: 'NVR', domain: 'building', group: 'ELV & Fire', color: '#6d28d9', scale: 1, symbol: 'square', dxf: { shape: 'square', sizeM: 0.3 }, rotatable: false, schedule: null, namePrefix: 'NVR', dxfBlock: 'NVR', defaults: {}, fields: [{ key: 'name', label: 'Ref', type: 'text' }, { key: 'zone', label: 'Zone', type: 'text' }] },
     bd_datapoint: { name: 'Data Outlet', domain: 'building', group: 'ELV & Fire', color: '#db2777', scale: 1, symbol: 'square', dxf: { shape: 'square', sizeM: 0.2 }, rotatable: false, schedule: null, namePrefix: 'DP', defaults: {}, fields: [{ key: 'name', label: 'Ref', type: 'text' }] },
     bd_wap: { name: 'Wireless AP', domain: 'building', group: 'ELV & Fire', color: '#0e7490', scale: 1, symbol: 'circle', dxf: { shape: 'circle', sizeM: 0.3 }, rotatable: false, schedule: null, namePrefix: 'AP',
@@ -519,6 +537,11 @@ const PLAN_DEFAULT_LAYERS = [
     id: 'sl', name: 'Street Lighting', discipline: 'sl', color: '#22c55e',
     visibleElementTypes: ['pole', 'kiosk'], routeTypes: ['sl'],
     trenchTypes: ['LV/SL'], showCrossings: false, drawingNo: '', revision: '',
+  },
+  {
+    id: 'cctv', name: 'CCTV', discipline: 'cctv', color: '#7c3aed',
+    visibleElementTypes: ['cam', 'camhub', 'pole'], routeTypes: ['data_cable', 'fibreErf'],
+    trenchTypes: ['FI'], showCrossings: false, drawingNo: '', revision: '',
   },
   {
     id: 'loads', name: 'Custom Loads', discipline: 'loads', color: '#0ea5e9',

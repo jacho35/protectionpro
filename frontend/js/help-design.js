@@ -167,6 +167,25 @@ $$LENI=\frac{\sum P\,F_C\,\big(t_D F_O F_D+t_N F_O\big)}{1000\,A}\ \ [\text{kWh/
 <div class="hc-example"><span class="hc-label">Worked example</span>
 <p>Six 4000 lm panels in a 6 × 5 m room (room index 1.4, reflectances 0.7 / 0.5 / 0.2), maintenance factor 1. The whole-plane utilisation comes out at 0.82, so $\bar E_m\approx 6\times4000\times0.82/30=\mathbf{656\ lx}$ — the tabulated utilisation factor for a near-Lambertian luminaire at this room index is about 0.8. With no reflections at all the same room gives 0.67, about 535 lx.</p></div>` },
 
+{ id: 'design-cctv', group: 'design', title: 'CCTV coverage, storage and cabling (Building and Reticulation)',
+  std: 'CCTV tab · DORI pixel density (IEC 62676-4) · planning values, not a site test',
+  kw: 'cctv camera security surveillance dori detect observe recognise identify pixel density px per metre field of view fov lens blind spot nvr storage bitrate retention poe fibre pole mounting height tilt dome bullet ptz',
+  html: String.raw`
+<p>The <strong>CCTV</strong> tab, in Building and Reticulation projects, predicts what each camera sees on the plan you already have, checks it against the level of detail each area needs, and works out storage, PoE and cabling. On a floor plan the <em>rooms</em> are both the areas to cover and the walls that hide things. On a site plan, <em>outdoor areas</em> are what you watch and <em>buildings</em> (rooms) block the view.</p>
+<h4>Workflow</h4>
+<ol><li>Set the plan scale (<em>Underlays &amp; scale</em>): coverage needs metres.</li><li>Draw the rooms (Building) or the outdoor areas and buildings (Reticulation). Open an area in the left panel to set its <em>target</em> (Detect, Observe, Recognise or Identify), its lowest scene light, and, for a room, the type of each wall: solid, glass or an opening.</li><li>Place cameras, or press <em>Auto-place cameras</em>: it places the fewest that bring every area to its target, uses your street-light poles as the places on a site plan, and keeps the cameras you placed by hand. Rotate a camera to aim it; lens, mounting height and tilt are in Properties, or pick a manufacturer model.</li><li>Pick what to show: DORI levels, whether each area meets its target, or only the blind spots.</li><li>Select the NVR or control room and press <em>Use selected as recorder</em>; then <em>Draw the cable runs</em> to put them on the plan so the bill of quantities counts them.</li><li>The <em>Results</em> page has the verdict per area, the camera schedule, the mounting checks, storage and bandwidth, and the PDF report.</li></ol>
+<h4>The model</h4>
+<p>Pixel density at a point, for a face $h_t$ (1.6 m) above the floor:</p>
+$$\text{ppm}=\frac{W_{px}}{2\,z\,\tan(\mathrm{HFOV}/2)}$$
+<p>where $z$ is the distance of the point along the camera axis. A point is covered when it is inside the horizontal and vertical field of view and no solid wall or building lies on the plan line between camera and point. The levels are Detect 25, Observe 62, Recognise 125 and Identify 250 px/m. An area passes when 90 % of it reaches its target (and, where both are known, its lowest scene light is at least the camera's minimum illumination).</p>
+<h4>Mounting checks</h4>
+<p>A camera lower than 2.4 m can be reached by hand. A camera that looks down more than 45° at the range where it reaches Identify sees the top of a head, not a face: mount it lower or further back, or tilt it up. These limits are planning values.</p>
+<h4>Storage, PoE and fibre</h4>
+<p>Bitrate = megapixels × frame rate × a codec factor (H.265 0.065 Mbps per megapixel per frame per second); storage = bitrate × retention days × recording share, +10 % for overhead and RAID. Copper runs are limited to 90 m and share the PoE budget of 24-port switches. On a site plan a longer run goes on fibre, with a media converter and power at the pole.</p>
+<h4>Bill of quantities and export</h4>
+<p>Each camera counts by type (dome, bullet, PTZ), the NVR, the cable runs you drew with two terminations each, PoE switches, storage in TB and fibre media converters. The PDF report holds the coverage map, the verdicts, the schedules and the assumptions; the DXF export writes the camera symbols and the DORI zone outlines on their own layer, and the drawing set can show the coverage on its sheets.</p>
+<p class="help-note">This is a prediction from the lens, sensor and mounting data and the walls on the plan. Furniture, vehicles, trees, glare and low light are not modelled: check the coverage with test images on site before sign-off.</p>` },
+
 { id: 'design-wifi', group: 'design', title: 'WiFi coverage, capacity and cabling (Building)',
   std: 'WiFi tab · wall-aware path loss · planning values, not a site survey',
   kw: 'wifi wi-fi wireless access point ap wap coverage heatmap rssi snr signal channel capacity poe power over ethernet data outlet cat6 rack switch link point to point fresnel fade margin 2.4 5 6 ghz wall attenuation brick concrete drywall',

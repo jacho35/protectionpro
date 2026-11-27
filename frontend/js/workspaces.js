@@ -35,13 +35,13 @@ const Workspaces = {
     retic: {
       label: 'Reticulation',
       desc: 'A township or site LV network: minisubs, kiosks and erven, sized by ADMD (NRS 034-1).',
-      core: ['overview', 'plan', 'retic', 'streetlight', 'sld', 'quantities'],
+      core: ['overview', 'plan', 'retic', 'streetlight', 'cctv', 'sld', 'quantities'],
       planDomain: 'retic',
     },
     building: {
       label: 'Building',
       desc: 'Floors, distribution boards and final circuits, down to each way.',
-      core: ['overview', 'plan', 'sld', 'schedules', 'lighting', 'wifi', 'quantities'],
+      core: ['overview', 'plan', 'sld', 'schedules', 'lighting', 'wifi', 'cctv', 'quantities'],
       planDomain: 'building',
     },
     network: {
@@ -69,10 +69,10 @@ const Workspaces = {
   // Workspaces a Lighting project never shows (it has its own Overview).
   NOT_LIGHTING: ['overview'],
   // Canonical order for workspaces outside a type's core set.
-  ORDER: ['overview', 'lightov', 'plan', 'retic', 'streetlight', 'sld', 'schedules', 'lighting', 'wifi', 'sports', 'interlock', 'quantities'],
+  ORDER: ['overview', 'lightov', 'plan', 'retic', 'streetlight', 'sld', 'schedules', 'lighting', 'wifi', 'cctv', 'sports', 'interlock', 'quantities'],
   TAB_IDS: {
     sld: 'btn-workspace-sld', retic: 'btn-workspace-retic', streetlight: 'btn-workspace-streetlight', plan: 'btn-workspace-plan',
-    interlock: 'btn-workspace-interlock', schedules: 'btn-workspace-schedules', quantities: 'btn-workspace-quantities', lighting: 'btn-workspace-lighting', wifi: 'btn-workspace-wifi',
+    interlock: 'btn-workspace-interlock', schedules: 'btn-workspace-schedules', quantities: 'btn-workspace-quantities', lighting: 'btn-workspace-lighting', wifi: 'btn-workspace-wifi', cctv: 'btn-workspace-cctv',
     lightov: 'btn-workspace-lightov', sports: 'btn-workspace-sports', overview: 'btn-workspace-overview',
   },
   DESCS: {
@@ -84,6 +84,7 @@ const Workspaces = {
     interlock: 'Breaker interlocking logic, simulated against the single-line',
     quantities: 'Bill of quantities, cable schedules and the rate library',
     wifi: 'WiFi coverage heatmap, capacity, channels, cabling and PoE',
+    cctv: 'CCTV coverage (DORI), blind spots, storage, cabling and PoE',
     lighting: 'Rooms, outdoor areas, fences and escape routes: lux, glare, energy and emergency lighting',
     lightov: 'Every lighting design with its verdict, Calculate all and the report',
     overview: 'Is the project OK? Every workspace with its results and verdict, Calculate all and the issues',
@@ -169,6 +170,7 @@ const Workspaces = {
       case 'interlock': return !!(AppState.interlockLogic && AppState.interlockLogic.nodes && AppState.interlockLogic.nodes.length);
       case 'schedules': return this._schedulesHaveData();
       case 'wifi': return typeof WifiWS !== 'undefined' && WifiWS.hasData();
+      case 'cctv': return typeof CctvWS !== 'undefined' && CctvWS.hasData();
       case 'lighting': return typeof LightingWS !== 'undefined' && LightingWS.hasData(this.type() === 'lighting' ? 'rooms' : undefined);
       case 'sports': return this.type() === 'lighting' && this.kindHasData('sports');
       // A project that already priced something keeps its Quantities tab.
@@ -208,7 +210,7 @@ const Workspaces = {
       const d = AppState.planMarkup && AppState.planMarkup.settings && AppState.planMarkup.settings.domain;
       return d === 'building' ? 'Floor plans' : 'Site plan';
     }
-    return { overview: 'Overview', sld: 'Single-line', retic: 'Demand', streetlight: 'Street lighting', schedules: 'Schedules', interlock: 'Interlocking', quantities: 'Quantities', lighting: 'Lighting', wifi: 'WiFi' }[ws] || ws;
+    return { overview: 'Overview', sld: 'Single-line', retic: 'Demand', streetlight: 'Street lighting', schedules: 'Schedules', interlock: 'Interlocking', quantities: 'Quantities', lighting: 'Lighting', wifi: 'WiFi', cctv: 'CCTV' }[ws] || ws;
   },
 
   // ── Plan domain follows the type ────────────────────────────────────
@@ -346,7 +348,7 @@ const Workspaces = {
       if (l) return l;
     }
     if (ws === 'plan') return type === 'building' ? 'Floor plans' : 'Site plan';
-    return { overview: 'Overview', sld: 'Single-line', retic: 'Demand', streetlight: 'Street lighting', schedules: 'Schedules', interlock: 'Interlocking', quantities: 'Quantities', lighting: 'Lighting', wifi: 'WiFi' }[ws];
+    return { overview: 'Overview', sld: 'Single-line', retic: 'Demand', streetlight: 'Street lighting', schedules: 'Schedules', interlock: 'Interlocking', quantities: 'Quantities', lighting: 'Lighting', wifi: 'WiFi', cctv: 'CCTV' }[ws];
   },
 
   // A Lighting project's design picker: the three kinds, the electrical

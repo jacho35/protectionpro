@@ -328,7 +328,7 @@ const PlanMarkup = {
     // width / responsive wrapping) so the workspace tabs stay visible and the
     // user can always switch back. CSS var is only a fallback.
     const tb = document.getElementById('toolbar');
-    const ws = document.getElementById(this.context === 'lighting' ? 'lighting-workspace' : this.context === 'wifi' ? 'wifi-workspace' : 'plan-workspace');
+    const ws = document.getElementById(this.context === 'lighting' ? 'lighting-workspace' : this.context === 'wifi' ? 'wifi-workspace' : this.context === 'cctv' ? 'cctv-workspace' : 'plan-workspace');
     if (tb && ws) ws.style.top = tb.offsetHeight + 'px';
     if (this.context === 'plan') this.setMode(this.mode);
     if (typeof PlanEngine !== 'undefined') {
@@ -374,6 +374,7 @@ const PlanMarkup = {
     // The Lighting tab recalculates the item being worked on (Live results).
     if (this.context === 'lighting' && typeof LightingWS !== 'undefined' && LightingWS.liveKick) LightingWS.liveKick();
     if (this.context === 'wifi' && typeof WifiWS !== 'undefined') WifiWS.liveKick();   // the heatmap follows every edit
+    if (this.context === 'cctv' && typeof CctvWS !== 'undefined') CctvWS.liveKick();   // so does the CCTV coverage
   },
 
   // The Output panel's sync button names its target per domain; re-render it.
@@ -383,6 +384,7 @@ const PlanMarkup = {
     PlanUI.renderProps();
     if (this.context === 'plan' && this.mode === 'roads') PlanUI.renderPalette();   // the Roads panel offers the selected roads a section
     if (this.context === 'wifi' && typeof WifiWS !== 'undefined') WifiWS.onSelection();   // its AP list marks the selection
+    if (this.context === 'cctv' && typeof CctvWS !== 'undefined') CctvWS.onSelection();   // its camera list marks the selection
     if (this.context === 'lighting') {
       PlanUI.renderPalette();   // its zone list marks the selection
       if (typeof LightingWS !== 'undefined' && LightingWS.onSelection) LightingWS.onSelection();

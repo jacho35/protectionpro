@@ -86,6 +86,11 @@ const PlanSymbols = {
       { k: 'c', cx: 15, cy: 20, r: 5, f: 'col' },
       { k: 'p', pts: [[20, 20], [36, 12], [36, 28]], f: 'faint', s: 'col', lw: 1 },
     ] },
+    cam: { size: 24, prims: [
+      { k: 'c', cx: 15, cy: 20, r: 5, f: 'col' },
+      { k: 'p', pts: [[20, 20], [36, 12], [36, 28]], f: 'faint', s: 'col', lw: 1 },
+    ] },
+    camhub: { size: 26, prims: [{ k: 'r', x: 6, y: 12, w: 28, h: 16, s: 'col', lw: 1.5 }, { k: 't', x: 20, y: 20, str: 'CR', size: 7, f: 'col', bold: 1 }] },
     bd_datapoint: { size: 26, prims: [{ k: 'p', pts: [[20, 6], [34, 20], [20, 34], [6, 20]], s: 'col', lw: 1.5, close: 1 }] },
     bd_wap: { size: 22, prims: [{ k: 'c', cx: 20, cy: 20, r: 10, s: 'col', lw: 1.5 }, { k: 't', x: 20, y: 20, str: 'AP', size: 7, f: 'col', bold: 1 }] },
     bd_sensor: { size: 24, prims: [{ k: 'c', cx: 20, cy: 20, r: 10, s: 'col', lw: 1.5 }, { k: 't', x: 20, y: 20, str: 'PIR', size: 6, f: 'col', bold: 1 }] },

@@ -248,3 +248,19 @@ def test_wifi_signal_contours_are_polylines_with_a_level_label_on_their_own_laye
     # a plan without WiFi has neither the layer's entities nor a changed output
     plain = _read(build_dxf(_payload()))
     assert not [e for e in plain.modelspace() if e.dxf.layer == "EL_WIFI_COVERAGE"]
+
+
+def test_cctv_dori_zones_are_polylines_with_a_level_label_on_their_own_layer():
+    zones = [{"pts": [[0, 0], [100, 0], [100, 100], [0, 100]], "closed": True, "color": "#3e8bd0", "label": "Recognise 125 px/m"},
+             {"pts": [[0, 0], [40, 40]], "closed": False, "color": "#8cb9e3", "label": "Observe 62 px/m"}]
+    doc = _read(build_dxf(_payload(cctvZones=zones, extraLayers={"EL_TRENCH": "#787878", "EL_TEXT": "#111827", "EL_CCTV_COVERAGE": "#7c3aed"},
+                                   fixedLayers={"cctv": "EL_CCTV_COVERAGE"})))
+    msp = doc.modelspace()
+    polys = [e for e in msp.query("LWPOLYLINE") if e.dxf.layer == "EL_CCTV_COVERAGE"]
+    assert len(polys) == 2 and sorted(p.closed for p in polys) == [False, True]
+    labels = sorted(t.dxf.text for t in msp.query("TEXT") if t.dxf.layer == "EL_CCTV_COVERAGE")
+    assert labels == ["Observe 62 px/m", "Recognise 125 px/m"]
+    assert "EL_CCTV_COVERAGE" in doc.layers
+    # a plan without CCTV has neither the layer's entities nor a changed output
+    plain = _read(build_dxf(_payload()))
+    assert not [e for e in plain.modelspace() if e.dxf.layer == "EL_CCTV_COVERAGE"]
