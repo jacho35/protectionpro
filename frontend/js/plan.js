@@ -925,6 +925,7 @@ const PlanMarkup = {
     if (typeof PlanAids !== 'undefined' && PlanAids.onKey(e)) return true;   // F3 / F8 / F10 / F11 and typed length + angle
     if (e.key === 'Escape' && typeof PlanReroute !== 'undefined' && PlanReroute.session) { PlanReroute.cancel(); return true; }   // leave a re-route preview
     if (PlanTools.active && PlanTools.active.keyFirst && PlanTools.active.keyFirst(e)) return true;   // a tool holding a draft (e.g. a shape being drawn) takes Backspace / Esc / Enter before the plan does
+    if (e.key === 'Backspace' && PlanTools.draftBack()) return true;   // a draft is open: take its last point back, never delete the selection
     if (e.key === 'Delete' || e.key === 'Backspace') { this.deleteSelected(); return true; }
     if (e.key === 'Escape') { if (typeof ContextMenu !== 'undefined') ContextMenu.close(); PlanTools.set('select'); this.clearSelection(); PlanEngine.requestDraw({ fg: true }); return true; }
     if (e.key === 'Enter') { const c = PlanTools.onKey(e); this.onDraftChanged(); return c; }
