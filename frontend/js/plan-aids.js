@@ -56,7 +56,7 @@ const PlanAids = {
 
   _lines(ignore, fn) {
     const pm = AppState.planMarkup;
-    for (const r of (pm.routes || [])) if (!ignore.has(r.id)) fn(r.points, false);
+    for (const r of (pm.routes || [])) if (!ignore.has(r.id)) fn(r.points, false, r);
     for (const t of (pm.trenches || [])) if (!ignore.has(t.id) && t.points) fn(t.points, false);
     for (const rm of (pm.rooms || [])) {
       if (ignore.has(rm.id) || !rm.points) continue;
@@ -117,7 +117,14 @@ const PlanAids = {
       if (dy <= tol && (!gy || dy < gy.d)) gy = { y: p.y, src: p, d: dy, label };
     };
     for (const e of (pm.elements || [])) if (!ignore.has(e.id)) test(e, 'part');
-    this._lines(ignore, (pts) => { for (const p of pts) test(p, 'corner'); });
+    this._lines(ignore, (pts, closed, owner) => {
+      for (let i = 0; i < pts.length; i++) {
+        const p = pts[i];
+        // a route end that rides on a part being moved is that part's own old position: never a guide
+        if (owner && ((p.snappedTo && ignore.has(p.snappedTo)) || (i === 0 && ignore.has(owner.fromId)) || (i === pts.length - 1 && ignore.has(owner.toId)))) continue;
+        test(p, 'corner');
+      }
+    });
     if (from) test(from, 'previous point');
     return { gx, gy };
   },
@@ -133,7 +140,8 @@ const PlanAids = {
     const full = mode === true || this.isRoomDraw(), guidesOnly = mode === 'guides';
     const from = (full ? (o.from !== undefined ? o.from : this.anchorOf(tool)) : null) || null;
     this.anchor = from;
-    const ignore = o.ignoreIds || new Set();
+    let ignore = o.ignoreIds || new Set();
+    if (guidesOnly && typeof PlanMarkup !== 'undefined' && PlanMarkup.selectedIds && PlanMarkup.selectedIds.size) ignore = new Set([...ignore, ...PlanMarkup.selectedIds]);   // dragging: the picked parts move with the pointer, so never align to them
     const tol = 9 / z;
     const aid = { from, pt: null, guides: [], ang: null, len: null, kind: null };
     const done = (r) => { aid.pt = { x: r.x, y: r.y }; aid.kind = r.snapped; if (from) { aid.len = Math.hypot(r.x - from.x, r.y - from.y); aid.ang = Math.atan2(r.y - from.y, r.x - from.x); } this.aid = (from || aid.guides.length) ? aid : null; if (typeof PlanEngine !== 'undefined' && (from || aid.guides.length)) PlanEngine.requestDraw({ fg: true }); return r; };
