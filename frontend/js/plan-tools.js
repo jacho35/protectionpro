@@ -52,7 +52,21 @@ const PlanTools = {
     if (!a) return null;
     if (a._draft && a._draft.points && a._draft.points.length) return { n: a._draft.points.length };
     if (a._pts && a._pts.length) return { n: a._pts.length };
+    if (a._p1) return { n: 1 };
     return null;
+  },
+  // Backspace while a draft is open takes its last point back (never deletes the selection). A tool that
+  // handles Backspace itself (keep-out, work area) gets the key first.
+  draftBack() {
+    const a = this.active;
+    if (!a || !this.draftInfo()) return false;
+    if (a.onKey && a.onKey({ key: 'Backspace', preventDefault() {} })) { this._notifyDraft(); return true; }
+    if (a._draft && a._draft.points) { a._draft.points.pop(); if (!a._draft.points.length) a._draft = null; }
+    else if (a._pts && a._pts.length) { a._pts.pop(); if (!a._pts.length) a._pts = null; }
+    else if (a._p1) a._p1 = null;
+    if (typeof PlanEngine !== 'undefined') PlanEngine.requestDraw({ fg: true });
+    this._notifyDraft();
+    return true;
   },
   _notifyDraft() {
     if (typeof PlanMarkup !== 'undefined' && PlanMarkup.onDraftChanged) PlanMarkup.onDraftChanged();
