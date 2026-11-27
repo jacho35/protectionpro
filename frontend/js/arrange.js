@@ -240,6 +240,61 @@ const Arrange = {
     Canvas.render();
   },
 
+  // ─── Bus attachments: slide a wire's end along its bus, or straighten wires ───
+  // A wire meets a bus at the free position 'at_<x>' (x along the bar). Straight = the same x (y on a 90° bar) as the part at
+  // the other end. Only the stored port changes; no part moves.
+  _busLocalX(bus, world) {
+    const rad = (bus.rotation || 0) * Math.PI / 180, c = Math.cos(rad), sn = Math.sin(rad);
+    const lx = Math.abs(c) > 0.5 ? (world.x - bus.x) / c : (world.y - bus.y) / sn;
+    const hw = ((bus.props && bus.props.busWidth) || 120) / 2;
+    return { x: Math.round(Math.max(-hw, Math.min(hw, lx)) * 100) / 100, clamped: Math.abs(lx) > hw + 0.01 };
+  },
+  // The bus ends of a wire whose other end is a part (a bus-to-bus tie has no single straight position).
+  _busEnds(wire) {
+    const a = AppState.components.get(wire.fromComponent), b = AppState.components.get(wire.toComponent);
+    if (!a || !b || (a.type === 'bus') === (b.type === 'bus')) return [];
+    return a.type === 'bus' ? [{ key: 'fromPort', bus: a, other: b, otherPort: wire.toPort }] : [{ key: 'toPort', bus: b, other: a, otherPort: wire.fromPort }];
+  },
+  // Straighten the given wires (ids). Wires with bend points lose them: bends are what keep a wire from being straight.
+  straightenWires(wireIds) {
+    let moved = 0, clamped = 0, cleared = 0;
+    for (const id of wireIds) {
+      const w = AppState.wires.get(id);
+      if (!w) continue;
+      for (const e of this._busEnds(w)) {
+        const o = Symbols.getPortWorldPosition(e.other, e.otherPort);
+        const t = this._busLocalX(e.bus, o), port = `at_${t.x}`;
+        if (t.clamped) clamped++;
+        if (w[e.key] !== port || (w.bendPoints && w.bendPoints.length)) {
+          if (w.bendPoints && w.bendPoints.length) cleared++;
+          w[e.key] = port; w.bendPoints = []; delete w.midY; moved++;
+        }
+      }
+    }
+    return { moved, clamped, cleared };
+  },
+  // Straighten the selection: the picked wires plus every wire on a picked bus.
+  straightenSelection() {
+    const ids = new Set();
+    for (const id of AppState.selectedIds) {
+      if (AppState.wires.has(id)) ids.add(id);
+      else if (AppState.components.get(id)?.type === 'bus') {
+        for (const [wid, w] of AppState.wires) if (w.fromComponent === id || w.toComponent === id) ids.add(wid);
+      }
+    }
+    if (!ids.size) { this._say('Select a bus or some wires to straighten.'); return; }
+    const r = this.straightenWires(ids);
+    if (r.moved) {
+      AppState.dirty = true;
+      if (typeof UndoManager !== 'undefined') UndoManager.snapshot();
+      Canvas.render();
+    }
+    this._say(r.moved
+      ? `Straightened ${r.moved} wire${r.moved === 1 ? '' : 's'}${r.cleared ? ` (cleared bends on ${r.cleared})` : ''}${r.clamped ? `. ${r.clamped} part${r.clamped === 1 ? ' is' : 's are'} beyond the end of the bus: extend the bus to straighten ${r.clamped === 1 ? 'it' : 'them'}.` : '.'}`
+      : (r.clamped ? 'The remaining parts are beyond the end of the bus: extend the bus to straighten them.' : 'Already straight.'));
+  },
+  _say(msg) { const el = document.getElementById('status-info'); if (el) el.textContent = msg; },
+
   _showPreview() {
     let bar = document.getElementById('arrange-preview');
     if (!bar) {
