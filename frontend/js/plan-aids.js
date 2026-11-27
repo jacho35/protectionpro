@@ -107,6 +107,79 @@ const PlanAids = {
     best.sort((p, q) => p.rank - q.rank || p.d - q.d);
     return best[0];
   },
+  // which points of a line ride on a part being moved (a route end that follows its part is that part's old position)
+  _riding(owner, pts, ignore) {
+    return pts.map((p, i) => !!(owner && ((p.snappedTo && ignore.has(p.snappedTo)) || (i === 0 && ignore.has(owner.fromId)) || (i === pts.length - 1 && ignore.has(owner.toId)))));
+  },
+  // Smart guide: the point sits on the extension of a drawn line past its free end (open lines) or past either end of an edge (closed rooms).
+  extHits(pt, tol, ignore) {
+    const cap = 1500 / PlanEngine.view.zoom;
+    let best = null;
+    const consider = (a, b) => {                         // extend a→b beyond b
+      const vx = b.x - a.x, vy = b.y - a.y, L = Math.hypot(vx, vy);
+      if (L < tol * 2) return;
+      const ux = vx / L, uy = vy / L, rx = pt.x - b.x, ry = pt.y - b.y;
+      const t = rx * ux + ry * uy;
+      if (t < tol || t > cap) return;
+      const d = Math.abs(rx * uy - ry * ux);
+      if (d > tol || (best && d >= best.d)) return;
+      best = { x: b.x + t * ux, y: b.y + t * uy, d, src: { x: b.x, y: b.y } };
+    };
+    this._lines(ignore, (pts, closed, owner) => {
+      const n = pts.length; if (n < 2) return;
+      const rd = this._riding(owner, pts, ignore);
+      if (closed) { for (let i = 0; i < n; i++) { const j = (i + 1) % n; if (rd[i] || rd[j]) continue; consider(pts[i], pts[j]); consider(pts[j], pts[i]); } }
+      else {
+        if (!rd[0] && !rd[1]) consider(pts[1], pts[0]);
+        if (!rd[n - 1] && !rd[n - 2]) consider(pts[n - 2], pts[n - 1]);
+      }
+    });
+    return best;
+  },
+  // Smart guide: the direction from → pt runs parallel or square to a drawn segment near the pointer.
+  parHits(pt, from, tol, ignore, orthoOn) {
+    const dx = pt.x - from.x, dy = pt.y - from.y, d = Math.hypot(dx, dy);
+    if (d < tol * 2) return null;
+    const alpha = Math.atan2(dy, dx), R = 120 / PlanEngine.view.zoom, aTol = 3 * Math.PI / 180;
+    let best = null;
+    this._lines(ignore, (pts, closed, owner) => {
+      const n = pts.length, rd = this._riding(owner, pts, ignore);
+      for (let i = 0; i < (closed ? n : n - 1); i++) {
+        const j = (i + 1) % n, a = pts[i], b = pts[j];
+        if (rd[i] || rd[j] || Math.hypot(b.x - a.x, b.y - a.y) < tol * 2) continue;
+        if (PlanEngine._distToSeg(pt, a, b) > R) continue;
+        const th = Math.atan2(b.y - a.y, b.x - a.x);
+        for (let k = 0; k < 2; k++) {
+          const tgt = th + k * Math.PI / 2;
+          if (orthoOn && Math.abs(Math.sin(2 * tgt)) < 0.02) continue;   // ortho already gives the axis directions
+          let diff = alpha - tgt; diff = ((diff + Math.PI / 2) % Math.PI + Math.PI) % Math.PI - Math.PI / 2;
+          if (Math.abs(diff) > aTol || (best && Math.abs(diff) >= best.diff)) continue;
+          best = { ang: alpha - diff, diff: Math.abs(diff), ref: [a, b], label: k ? 'perpendicular' : 'parallel' };
+        }
+      }
+    });
+    if (best) best.len = d * Math.cos(alpha - best.ang);
+    return best && best.len > 0 ? best : null;
+  },
+  // Smart guide: along a row (axis 'x', parts sharing p.y) or column (axis 'y', sharing p.x) the pointer makes equal gaps,
+  // either midway between two parts or one gap beyond the last pair.
+  spaceHit(p, axis, tol, ignore) {
+    const k = axis === 'x' ? 'y' : 'x', vals = [];
+    for (const e of (AppState.planMarkup.elements || [])) if (!ignore.has(e.id) && Math.abs(e[k] - p[k]) <= 0.5) vals.push(e[axis]);
+    vals.sort((a, b) => a - b);
+    const v = vals.filter((x, i) => i === 0 || x - vals[i - 1] > 0.5);
+    let best = null;
+    const cand = (val, segs, d) => { const dist = Math.abs(p[axis] - val); if (dist <= tol && (!best || dist < best.dist)) best = { val, segs, d, dist }; };
+    for (let i = 0; i < v.length - 1; i++) {
+      const a = v[i], b = v[i + 1], d = b - a;
+      if (d < tol * 2) continue;
+      const m = (a + b) / 2;
+      cand(m, [[a, m], [m, b]], d / 2);
+      if (i === v.length - 2) cand(b + d, [[a, b], [b, b + d]], d);
+      if (i === 0) cand(a - d, [[a - d, a], [a, b]], d);
+    }
+    return best;
+  },
   // Points whose x or y lines up with `pt` within tol: {gx: {x, src}|null, gy: {y, src}|null}
   guideHits(pt, tol, ignore, from) {
     const pm = AppState.planMarkup;
@@ -118,11 +191,13 @@ const PlanAids = {
     };
     for (const e of (pm.elements || [])) if (!ignore.has(e.id)) test(e, 'part');
     this._lines(ignore, (pts, closed, owner) => {
-      for (let i = 0; i < pts.length; i++) {
-        const p = pts[i];
+      const rd = this._riding(owner, pts, ignore), n = pts.length;
+      for (let i = 0; i < n; i++) {
         // a route end that rides on a part being moved is that part's own old position: never a guide
-        if (owner && ((p.snappedTo && ignore.has(p.snappedTo)) || (i === 0 && ignore.has(owner.fromId)) || (i === pts.length - 1 && ignore.has(owner.toId)))) continue;
-        test(p, 'corner');
+        if (rd[i]) continue;
+        test(pts[i], 'corner');
+        const j = (i + 1) % n;                           // the middle of each edge lines up too (a whole wall, not just its corners)
+        if ((closed || i < n - 1) && !rd[j] && n > 1) test({ x: (pts[i].x + pts[j].x) / 2, y: (pts[i].y + pts[j].y) / 2 }, 'edge middle');
       }
     });
     if (from) test(from, 'previous point');
@@ -155,30 +230,48 @@ const PlanAids = {
       if (h) return done({ x: h.x, y: h.y, snapped: h.kind, targetId: null });
     }
     let p = { x: pt.x, y: pt.y }, snappedKind = null;
-    // 3) angle lock from the previous point
+    // 3) angle lock from the previous point: parallel / square to a nearby drawn line, else ortho / polar
     if (from) {
       const ortho = this.orthoOn(this.isRoomDraw());
-      const c = ortho ? this.constrain(p, from, 'ortho') : (this.polarOn() ? this.constrain(p, from, 'polar', this.polarStep()) : null);
+      const par = this.guidesOn() ? this.parHits(p, from, tol, ignore, ortho) : null;
+      const c = par || (ortho ? this.constrain(p, from, 'ortho') : (this.polarOn() ? this.constrain(p, from, 'polar', this.polarStep()) : null));
       if (c) {
         let len = c.len;
         const f = PlanEngine.factor(), s = this._s();
         if (s.snapGrid && f) { const st = s.gridSize / f; if (len > st) len = Math.round(len / st) * st; }
         p = { x: from.x + len * Math.cos(c.ang), y: from.y + len * Math.sin(c.ang) };
         snappedKind = ortho ? 'ortho' : 'polar';
+        if (par) { aid.guides.push({ kind: 'par', ang: par.ang, ref: par.ref, label: par.label }); snappedKind = 'guide'; }
         // a guide that crosses the locked ray still pulls the length onto it
-        if (this.guidesOn()) this._rayGuide(p, from, c.ang, tol, ignore, aid);
-        if (aid.guides.length) { p = aid.guides[0].at; snappedKind = 'guide'; }
+        else if (this.guidesOn()) this._rayGuide(p, from, c.ang, tol, ignore, aid);
+        if (!par && aid.guides.length) { p = aid.guides[0].at; snappedKind = 'guide'; }
         return done({ x: p.x, y: p.y, snapped: snappedKind, targetId: null });
       }
     }
     // 4) alignment guides
     if ((full || guidesOnly) && this.guidesOn()) {
       const g = this.guideHits(p, tol, ignore, from);
+      const ex = (g.gx && g.gy) ? null : this.extHits(p, tol, ignore);       // nearest guide only: an extension line beats a single, farther alignment
+      if (ex && ex.d < (g.gx ? g.gx.d : g.gy ? g.gy.d : Infinity)) {
+        aid.guides.push({ kind: 'ext', src: ex.src, label: 'extension' });
+        return done({ x: ex.x, y: ex.y, snapped: 'guide', targetId: null });
+      }
       if (g.gx || g.gy) {
         if (g.gx) p.x = g.gx.x;
         if (g.gy) p.y = g.gy.y;
         if (g.gx) aid.guides.push({ vertical: true, src: g.gx.src, label: g.gx.label });
         if (g.gy) aid.guides.push({ vertical: false, src: g.gy.src, label: g.gy.label });
+        // lined up on a row or column of parts: the pointer may also make the gaps equal
+        for (const axis of ['x', 'y']) {
+          const al = axis === 'x' ? g.gy : g.gx, cross = axis === 'x' ? g.gx : g.gy;     // the row / column the pointer is lined up on
+          const sh = al ? this.spaceHit(p, axis, tol, ignore) : null;
+          if (!sh || (cross && sh.dist > cross.d)) continue;                              // equal spacing wins a tie with a single alignment
+          p[axis] = sh.val;
+          const gi = aid.guides.findIndex(q => q.vertical === (axis === 'x'));            // the alignment it replaced
+          if (gi >= 0) aid.guides.splice(gi, 1);
+          aid.guides.push({ kind: 'space', axis, fixed: axis === 'x' ? p.y : p.x, segs: sh.segs, d: sh.d, label: 'equal spacing' });
+          break;
+        }
         return done({ x: p.x, y: p.y, snapped: 'guide', targetId: null });
       }
     }
@@ -218,14 +311,34 @@ const PlanAids = {
     const u = 1 / zoom;
     ctx.save();
     ctx.lineWidth = 1.2 * u;
+    let li = 0;
+    const tag = (t) => { ctx.fillStyle = '#a21caf'; ctx.font = `${11 * u}px sans-serif`; ctx.fillText(t, a.pt.x + 10 * u, a.pt.y - 8 * u - 13 * u * li++); };
     for (const g of a.guides) {
       ctx.strokeStyle = '#d946ef'; ctx.setLineDash([5 * u, 4 * u]);
       ctx.beginPath();
+      if (g.kind === 'ext') { ctx.moveTo(g.src.x, g.src.y); ctx.lineTo(a.pt.x, a.pt.y); ctx.stroke(); tag(g.label); continue; }
+      if (g.kind === 'par') {
+        const L = 4000 * u, cs = Math.cos(g.ang), sn = Math.sin(g.ang);
+        ctx.moveTo(a.from.x - L * cs, a.from.y - L * sn); ctx.lineTo(a.from.x + L * cs, a.from.y + L * sn); ctx.stroke();
+        ctx.setLineDash([]); ctx.lineWidth = 3 * u; ctx.beginPath(); ctx.moveTo(g.ref[0].x, g.ref[0].y); ctx.lineTo(g.ref[1].x, g.ref[1].y); ctx.stroke(); ctx.lineWidth = 1.2 * u;
+        tag(g.label); continue;
+      }
+      if (g.kind === 'space') {
+        ctx.setLineDash([]);
+        const pt = (v) => g.axis === 'x' ? { x: v, y: g.fixed } : { x: g.fixed, y: v };
+        for (const [v0, v1] of g.segs) {
+          const p0 = pt(v0), p1 = pt(v1);
+          ctx.beginPath(); ctx.moveTo(p0.x, p0.y); ctx.lineTo(p1.x, p1.y);
+          for (const q of [p0, p1]) { if (g.axis === 'x') { ctx.moveTo(q.x, q.y - 5 * u); ctx.lineTo(q.x, q.y + 5 * u); } else { ctx.moveTo(q.x - 5 * u, q.y); ctx.lineTo(q.x + 5 * u, q.y); } }
+          ctx.stroke();
+          ctx.fillStyle = '#a21caf'; ctx.font = `${11 * u}px sans-serif`; ctx.fillText(this._fmt(g.d), (p0.x + p1.x) / 2 + 3 * u, (p0.y + p1.y) / 2 - 6 * u);
+        }
+        tag(g.label); continue;
+      }
       if (g.vertical === undefined || g.vertical) { ctx.moveTo(g.src.x, g.src.y); ctx.lineTo(g.src.x, a.pt.y); }
       else { ctx.moveTo(g.src.x, g.src.y); ctx.lineTo(a.pt.x, g.src.y); }
       ctx.stroke();
-      ctx.fillStyle = '#a21caf'; ctx.font = `${11 * u}px sans-serif`;
-      ctx.fillText(`aligned · ${g.label}`, a.pt.x + 10 * u, a.pt.y - 8 * u);
+      tag(`aligned · ${g.label}`);
     }
     ctx.setLineDash([]);
     if (a.from && a.pt) {
