@@ -232,3 +232,19 @@ def test_fixed_layers_round_trip_and_older_pp_names_still_import():
     old.write(buf)
     r = parse_dxf(buf.getvalue().encode("utf-8"))
     assert (len(r["trenches"]), len(r["rooms"]), len(r["measurements"]), len(r["texts"])) == (1, 1, 1, 1)
+
+
+def test_wifi_signal_contours_are_polylines_with_a_level_label_on_their_own_layer():
+    zones = [{"pts": [[0, 0], [100, 0], [100, 100], [0, 100]], "closed": True, "color": "#8dbe4a", "label": "5 GHz -65 dBm"},
+             {"pts": [[0, 0], [40, 40]], "closed": False, "color": "#e07b39", "label": "5 GHz -75 dBm"}]
+    doc = _read(build_dxf(_payload(wifiZones=zones, extraLayers={"EL_TRENCH": "#787878", "EL_TEXT": "#111827", "EL_WIFI_COVERAGE": "#0e7490"},
+                                   fixedLayers={"wifi": "EL_WIFI_COVERAGE"})))
+    msp = doc.modelspace()
+    polys = [e for e in msp.query("LWPOLYLINE") if e.dxf.layer == "EL_WIFI_COVERAGE"]
+    assert len(polys) == 2 and sorted(p.closed for p in polys) == [False, True]
+    labels = sorted(t.dxf.text for t in msp.query("TEXT") if t.dxf.layer == "EL_WIFI_COVERAGE")
+    assert labels == ["5 GHz -65 dBm", "5 GHz -75 dBm"]
+    assert "EL_WIFI_COVERAGE" in doc.layers
+    # a plan without WiFi has neither the layer's entities nor a changed output
+    plain = _read(build_dxf(_payload()))
+    assert not [e for e in plain.modelspace() if e.dxf.layer == "EL_WIFI_COVERAGE"]

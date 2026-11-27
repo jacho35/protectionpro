@@ -386,6 +386,7 @@ const PlanEngine = {
 
     // z-order: rooms (zones, underneath) → trenches → crossings → routes → …
     for (const rm of (pm.rooms || [])) this._drawRoom(ctx, rm, sel.has(rm.id));
+    if (typeof WifiWS !== 'undefined' && PlanMarkup.context === 'wifi') WifiWS.draw(ctx, z);   // the WiFi tab's signal heatmap, under the devices
     if (typeof PlanSolar !== 'undefined') PlanSolar.draw(ctx, z);   // solar roofs (settings.solar.roofs)
     if (typeof RoofEditor !== 'undefined') RoofEditor.drawPlan(ctx, z);   // the roof editor: dimensions of the selected roof, and a change made here reaches its 3D view
     if (typeof PlanSolarArray !== 'undefined') PlanSolarArray.draw(ctx, z);   // the panels laid on them (Place array)
@@ -902,6 +903,7 @@ const PlanEngine = {
     // Markup, same z-order as the screen (no selection/tool overlay)
     this._lq = null;   // sheets draw every label (the screen's declutter queue is not used)
     for (const rm of (pm.rooms || [])) this._drawRoom(ctx, rm, false);
+    if (typeof WifiWS !== 'undefined' && WifiWS.exportHeat()) WifiWS.draw(ctx, scale);   // Heatmap on sheet / PNG exports (WiFi tab setting)
     for (const t of pm.trenches) this._drawTrench(ctx, t, false);
     for (const c of pm.crossings) this._drawCrossing(ctx, c, false);
     for (const r of pm.routes) this._drawRoute(ctx, r, false);

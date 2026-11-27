@@ -167,6 +167,30 @@ $$LENI=\frac{\sum P\,F_C\,\big(t_D F_O F_D+t_N F_O\big)}{1000\,A}\ \ [\text{kWh/
 <div class="hc-example"><span class="hc-label">Worked example</span>
 <p>Six 4000 lm panels in a 6 × 5 m room (room index 1.4, reflectances 0.7 / 0.5 / 0.2), maintenance factor 1. The whole-plane utilisation comes out at 0.82, so $\bar E_m\approx 6\times4000\times0.82/30=\mathbf{656\ lx}$ — the tabulated utilisation factor for a near-Lambertian luminaire at this room index is about 0.8. With no reflections at all the same room gives 0.67, about 535 lx.</p></div>` },
 
+{ id: 'design-wifi', group: 'design', title: 'WiFi coverage, capacity and cabling (Building)',
+  std: 'WiFi tab · wall-aware path loss · planning values, not a site survey',
+  kw: 'wifi wi-fi wireless access point ap wap coverage heatmap rssi snr signal channel capacity poe power over ethernet data outlet cat6 rack switch link point to point fresnel fade margin 2.4 5 6 ghz wall attenuation brick concrete drywall',
+  html: String.raw`
+<p>The <strong>WiFi</strong> tab of a Building project predicts the signal across a floor from the access points you place, then checks capacity, channels, cabling and PoE. It works on the floor plan you already have: the <em>rooms</em> are the walls, <em>Access point</em> and <em>Data outlet</em> are plan parts.</p>
+<h4>Workflow</h4>
+<ol><li>Set the plan scale (<em>Underlays &amp; scale</em>): the signal needs metres.</li><li>Draw the rooms. Each room outline is a wall; an edge two rooms share is one wall. Open a room in the left panel to set its <em>use</em> (target level), the number of people, and the material of each wall.</li><li>Place access points, or press <em>Auto-place APs</em>: it places the fewest that bring every room to its target and keeps the ones you placed by hand. Edit Tx power, antenna gain, channel and PoE draw in Properties.</li><li>Pick the band and channel width, and what to show: signal strength, signal-to-noise, co-channel overlap or the load on each AP. Drag an AP and the map follows.</li><li><em>Assign channels</em> gives neighbours that hear each other different channels. Results has the compliance table, capacity, cabling and PoE, links, and the CSV and PDF export.</li></ol>
+<h4>The model</h4>
+<p>Signal at a point:</p>
+$$\text{RSSI}=P_{tx}+G-\Big(20\log_{10}f_{MHz}-27.55+10\,n\log_{10}d\Big)-\sum L_{wall}$$
+<p>with $d\ge 1$ m, the path-loss exponent $n$ (3.0 to begin with) and one loss for every wall the straight line crosses (drywall 4 dB, glass 3, brick 10, concrete 15, metal 25 at 5 GHz; less at 2.4 GHz, more at 6). A room passes when its worst point is at or above its target: <em>General</em> −67 dBm, <em>Meeting / video call</em> −60, <em>Low use</em> −72.</p>
+<p>Capacity: each room's people (area ÷ m² per person, or the number you give) times devices times the Mbps per device times concurrency, shared between the APs that serve the room's cells. An AP's capacity is 60 % of the data rate its median client gets (SNR to rate steps for Wi-Fi 6, scaled by width and spatial streams).</p>
+<h4>Cabling and PoE</h4>
+<p>Pick the comms rack (select it on the plan, then <em>Use selected as rack</em>). Each AP and data outlet gets a run: across and along the plan plus 3 m of drop at each end and 10 % slack. The tab counts switch ports (24 per switch), the PoE draw against the switch budget and flags any run over 90 m. <em>Draw the cable runs</em> adds them as data-cable routes, so the bill of quantities counts the cable.</p>
+<h4>Links</h4>
+<p>A point-to-point link between two access points (or a typed distance): free-space loss, received level, fade margin and the first Fresnel zone, $F_1=8.656\sqrt{d_{km}/f_{GHz}}$. It passes with a fade margin of 15 dB or more and 60 % of $F_1$ clear.</p>
+<h4>Manufacturer models, PDF and DXF</h4>
+<p>Pick a <em>Manufacturer model</em> for an access point (or the model that <em>New access points use</em>) and it takes the datasheet's maximum Tx power, antenna gain, MIMO streams and power draw for the band shown; an access point whose model has no radio on that band adds no signal there. Type a Tx, gain or PoE value to override the model's (a regulator may allow less than the datasheet maximum). <em>PDF report</em> on the Results page writes the summary, signal map, compliance, capacity, access point schedule, cabling and PoE, links and the assumptions. The plan's DXF export gains an <em>EL_WIFI_COVERAGE</em> layer with the signal contour lines (-55, -65, -70 and -75 dBm) on the Electronics sheet, next to the access points and data outlets; switch it off in the WiFi panel.</p>
+<h4>What it does not model</h4>
+<p>Reflections, diffraction round corners, floors above and below, furniture and people, or interference from outside. The wall losses, exponent, data rates and the 60 % efficiency are typical planning values. Check the result on site before sign-off.</p>
+<div class="hc-example"><span class="hc-label">Worked example</span>
+<p>An access point at 17 dBm with a 4 dBi antenna, 10 m away in the open at 5 GHz: loss $=20\log_{10}5500-27.55+30\log_{10}10=47.3+30=77.3$ dB, so the signal is $21-77.3=\mathbf{-56.3\ dBm}$. Put a brick wall between (10 dB) and it is $-66.3$ dBm, just inside the $-67$ dBm target.</p></div>
+` },
+
 { id: 'design-sportslight', group: 'design', title: 'Sports field lighting (floodlit pitches and courts)',
   std: 'Lighting ▸ Plan ▸ Sports field · EN 12193 classes (provisional) · CIE 112 · EN 12464-2 grid',
   kw: 'sports field pitch court stadium 3d three dimensional render stand spectator spill aerial ball flight football soccer rugby hockey tennis netball floodlight mast aiming aim point tilt heading class I II III en 12193 uniformity u1 u2 glare gr cie 112 vertical illuminance camera television tv players optimise aiming pattern near scattered scatter opposite cross banded band compare patterns dim dimming remove floods trim',

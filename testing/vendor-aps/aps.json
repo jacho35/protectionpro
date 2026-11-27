@@ -1,0 +1,24 @@
+{
+  "_about": "Manufacturer access-point data for the WiFi tab (frontend/js/vendor-aps.js is GENERATED from this by build_vendor_aps.py). Every value is the manufacturer's own published figure, read on 2026-11-27 from the page named in `source`; a band the radio does not have is absent. tx = the listed maximum transmit power (dBm), gain = the listed antenna gain (dBi), streams = the listed MIMO streams on that band, watts = the listed maximum power consumption. Regulations cap the power actually allowed: the AP's own Tx field overrides tx.",
+  "aps": [
+    { "id": "ubnt-u6-lite", "vendor": "Ubiquiti", "model": "UniFi U6 Lite", "standard": "Wi-Fi 6", "mount": "ceiling", "poe": "PoE", "watts": 12,
+      "bands": { "2.4": { "tx": 23, "gain": 2.8, "streams": 2 }, "5": { "tx": 23, "gain": 3, "streams": 2 } },
+      "widths": { "2.4": 40, "5": 80 }, "source": "https://techspecs.ui.com/unifi/wifi/u6-lite" },
+    { "id": "ubnt-u6-plus", "vendor": "Ubiquiti", "model": "UniFi U6+", "standard": "Wi-Fi 6", "mount": "ceiling", "poe": "PoE", "watts": 9,
+      "bands": { "2.4": { "tx": 23, "gain": 3, "streams": 2 }, "5": { "tx": 23, "gain": 5.4, "streams": 2 } },
+      "widths": { "2.4": 40, "5": 160 }, "source": "https://techspecs.ui.com/unifi/wifi/u6-plus" },
+    { "id": "ubnt-u6-pro", "vendor": "Ubiquiti", "model": "UniFi U6 Pro", "standard": "Wi-Fi 6", "mount": "ceiling", "poe": "PoE", "watts": 13,
+      "bands": { "2.4": { "tx": 22, "gain": 4, "streams": 2 }, "5": { "tx": 26, "gain": 6, "streams": 4 } },
+      "widths": { "2.4": 40, "5": 160 }, "source": "https://techspecs.ui.com/unifi/wifi/u6-pro" },
+    { "id": "ubnt-u6-enterprise", "vendor": "Ubiquiti", "model": "UniFi U6 Enterprise", "standard": "Wi-Fi 6E", "mount": "ceiling", "poe": "PoE+", "watts": 22,
+      "bands": { "2.4": { "tx": 22, "gain": 3.2, "streams": 2 }, "5": { "tx": 26, "gain": 5.3, "streams": 4 }, "6": { "tx": 26, "gain": 6, "streams": 4 } },
+      "widths": { "2.4": 40, "5": 160, "6": 160 }, "source": "https://techspecs.ui.com/unifi/wifi/u6-enterprise" },
+    { "id": "ubnt-u7-pro", "vendor": "Ubiquiti", "model": "UniFi U7 Pro", "standard": "Wi-Fi 7", "mount": "ceiling", "poe": "PoE+", "watts": 21,
+      "bands": { "2.4": { "tx": 23, "gain": 4, "streams": 2 }, "5": { "tx": 26, "gain": 6, "streams": 2 }, "6": { "tx": 23, "gain": 5.8, "streams": 2 } },
+      "widths": { "2.4": 40, "5": 160, "6": 160 }, "source": "https://techspecs.ui.com/unifi/wifi/u7-pro" },
+    { "id": "cisco-c9130axi", "vendor": "Cisco", "model": "Catalyst 9130AXI", "standard": "Wi-Fi 6", "mount": "ceiling", "poe": "802.3at", "watts": 25.5,
+      "bands": { "2.4": { "tx": 23, "gain": 4, "streams": 4 }, "5": { "tx": 26, "gain": 6, "streams": 8 } },
+      "widths": { "2.4": 40, "5": 160 }, "note": "5 GHz is 8x8 as one radio or two 4x4 radios; 25.5 W is the 802.3at figure (802.3af 13.4 W with reduced radios, 802.3bt 30.5 W).",
+      "source": "https://www.cisco.com/c/en/us/products/collateral/wireless/catalyst-9100ax-access-points/nb-06-cat-9130-ser-ap-ds-cte-en.html" }
+  ]
+}
