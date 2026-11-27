@@ -16,7 +16,16 @@ const WifiWS = {
     const st = AppState.planMarkup.settings;
     if (!st.wifi) st.wifi = {};
     const w = st.wifi, D = WifiEngine.DEFAULTS;
+    // A project file is other people's data: every stored value is coerced to what the engine expects before it reaches a template.
     for (const k of ['band', 'width', 'exponent', 'defaultWall', 'density', 'devices', 'mbps', 'concurrency', 'streams']) if (w[k] == null) w[k] = D[k];
+    if (!WifiEngine.BANDS[w.band]) w.band = D.band;
+    if (!WifiEngine.MATERIALS[w.defaultWall]) w.defaultWall = D.defaultWall;
+    for (const k of ['width', 'exponent', 'density', 'devices', 'mbps', 'concurrency', 'streams']) { const v = Number(w[k]); w[k] = isFinite(v) && v > 0 ? v : D[k]; }
+    if (!WifiEngine.BANDS[w.band].widths.includes(w.width)) w.width = w.band === '2.4' ? 20 : 80;
+    if (!['rssi', 'snr', 'overlap', 'capacity'].includes(w.show)) w.show = 'rssi';
+    if (!Array.isArray(w.links)) w.links = [];
+    for (const l of w.links) for (const k of ['dist', 'freq', 'tx', 'gainA', 'gainB', 'obstruct']) { if (l[k] === '' || l[k] == null) continue; const v = Number(l[k]); l[k] = isFinite(v) ? v : ''; }
+    if (w.persons && typeof w.persons === 'object') for (const k of Object.keys(w.persons)) { const v = Number(w.persons[k]); if (!isFinite(v)) delete w.persons[k]; else w.persons[k] = v; }
     if (!w.wallMats) w.wallMats = {};
     if (!w.uses) w.uses = {};
     if (!w.persons) w.persons = {};
@@ -311,17 +320,17 @@ const WifiWS = {
         return `<label class="wf-wall">Wall ${i + 1}${f ? ` · ${len.toFixed(1)} m` : ''}<select data-wf-wall="${esc(key)}">${opt('', 'Default (' + E.MATERIALS[S.defaultWall].name + ')', cur)}${Object.keys(E.MATERIALS).map(k => opt(k, E.MATERIALS[k].name, cur)).join('')}</select></label>`; }).join('');
       return `<details class="wf-room"><summary><span class="wf-rn">${esc(r.name || r.id)}</span>${rs && rs.pass != null ? `<span class="${rs.pass ? 'wf-ok' : 'wf-bad'}">${rs.pass ? 'Pass' : 'Fail'}</span>` : ''}</summary>
         <label class="wf-wall">Use <select data-wf-room="${esc(r.id)}" data-f="use">${this.USES.map(u => opt(u, (E.DEFAULTS.uses[u] || {}).name + ((E.DEFAULTS.uses[u] || {}).rssi != null ? ` (≥ ${E.DEFAULTS.uses[u].rssi} dBm)` : ''), use)).join('')}</select></label>
-        <label class="wf-wall">People (blank = from area) <input type="number" min="0" step="1" data-wf-room="${esc(r.id)}" data-f="persons" value="${S.persons[r.id] != null ? S.persons[r.id] : ''}"></label>
+        <label class="wf-wall">People (blank = from area) <input type="number" min="0" step="1" data-wf-room="${esc(r.id)}" data-f="persons" value="${esc(S.persons[r.id] != null ? S.persons[r.id] : '')}"></label>
         <label class="wf-wall">All walls <select data-wf-room-walls="${esc(r.id)}"><option value="">Set every wall…</option>${Object.keys(E.MATERIALS).map(k => opt(k, E.MATERIALS[k].name, '')).join('')}</select></label>${walls}</details>`;
     }).join('') : `<div class="wf-note">No rooms on this floor. Draw them with the Room tool: they hold the walls the signal passes through.</div>`;
     body += `<div class="wf-h">Model</div><div class="wf-form">
       <label>Walls without a material<select data-wf-set="defaultWall">${Object.keys(E.MATERIALS).map(k => opt(k, E.MATERIALS[k].name, S.defaultWall)).join('')}</select></label>
-      <label>Path-loss exponent<input type="number" step="0.1" min="2" max="6" data-wf-set="exponent" value="${S.exponent}"></label>
-      <label>m² per person<input type="number" step="1" min="1" data-wf-set="density" value="${S.density}"></label>
-      <label>Devices per person<input type="number" step="0.5" min="0.5" data-wf-set="devices" value="${S.devices}"></label>
-      <label>Mbps per active device<input type="number" step="5" min="1" data-wf-set="mbps" value="${S.mbps}"></label>
-      <label>Concurrency (0–1)<input type="number" step="0.1" min="0.1" max="1" data-wf-set="concurrency" value="${S.concurrency}"></label>
-      <label>Spatial streams<input type="number" step="1" min="1" max="4" data-wf-set="streams" value="${S.streams}"></label>
+      <label>Path-loss exponent<input type="number" step="0.1" min="2" max="6" data-wf-set="exponent" value="${esc(S.exponent)}"></label>
+      <label>m² per person<input type="number" step="1" min="1" data-wf-set="density" value="${esc(S.density)}"></label>
+      <label>Devices per person<input type="number" step="0.5" min="0.5" data-wf-set="devices" value="${esc(S.devices)}"></label>
+      <label>Mbps per active device<input type="number" step="5" min="1" data-wf-set="mbps" value="${esc(S.mbps)}"></label>
+      <label>Concurrency (0–1)<input type="number" step="0.1" min="0.1" max="1" data-wf-set="concurrency" value="${esc(S.concurrency)}"></label>
+      <label>Spatial streams<input type="number" step="1" min="1" max="4" data-wf-set="streams" value="${esc(S.streams)}"></label>
       <label class="wf-chk"><input type="checkbox" data-wf-flag="exportHeat"${S.exportHeat ? ' checked' : ''}> Heatmap on sheet and PNG exports</label></div>`;
     body += `<div class="wf-h">Legend · ${S.show === 'snr' ? 'SNR' : S.show === 'overlap' ? 'APs on the same channel' : S.show === 'capacity' ? 'Load of the serving AP' : 'RSSI'}</div>${this._legend()}`;
     const foot = PlanTools.active && PlanTools.active.id !== 'select' ? `<button type="button" class="pf-btn" data-wf="stop">Stop placing</button>` : '';
@@ -345,7 +354,7 @@ const WifiWS = {
     const failRooms = c.rooms.filter(r => r.pass === false), capFail = c.cap.filter(x => !x.pass), poeFail = c.poe && !c.poe.pass;
     const nm = id => (c.aps.find(a => a.id === id) || {}).name || id;
     const stat = (l, v, bad) => `<div class="wf-stat${bad ? ' bad' : ''}"><span>${l}</span><b>${v}</b></div>`;
-    let h = `<div class="wf-page"><div class="wf-head"><h1>WiFi · ${esc(E.BANDS[S.band].label)}, ${S.width} MHz</h1><div class="wf-acts">
+    let h = `<div class="wf-page"><div class="wf-head"><h1>WiFi · ${esc(E.BANDS[S.band].label)}, ${esc(S.width)} MHz</h1><div class="wf-acts">
       <button type="button" class="wf-btn" data-wf="csv" data-what="aps">AP schedule CSV</button><button type="button" class="wf-btn" data-wf="csv" data-what="rooms">Compliance CSV</button><button type="button" class="wf-btn" data-wf="print">Print / save as PDF</button></div></div>
       <div class="wf-stats">${stat('Rooms passing', `${c.rooms.filter(r => r.pass).length} of ${c.rooms.filter(r => r.pass != null).length}`, failRooms.length)}${stat('Floor ≥ −67 dBm', pc(c.cov[0].pct), c.cov[0].pct < 0.95)}${stat('Capacity', capFail.length ? capFail.length + ' AP over' : 'Pass', capFail.length)}${stat('PoE and runs', c.poe ? (c.poe.pass ? 'Pass' : 'Fail') : 'No rack set', poeFail)}</div>`;
     if (!c.aps.length) h += `<p class="wf-note">No access points on this floor yet. Place them on the Plan, or use Auto-place APs.</p>`;
@@ -369,7 +378,7 @@ const WifiWS = {
     const S = this.S(), esc = this.esc, pm = AppState.planMarkup, f = c.m.f;
     const aps = pm.elements.filter(e => e.type === 'bd_wap');
     const sel = (id, cur, f2) => `<select data-wf-link="${esc(id)}" data-f="${f2}"><option value="">–</option>${aps.map(a => `<option value="${esc(a.id)}"${a.id === cur ? ' selected' : ''}>${esc(a.name || a.id)}</option>`).join('')}</select>`;
-    const num = (l, k, w) => `<input type="number" step="any" data-wf-link="${esc(l.id)}" data-f="${k}" value="${l[k] == null ? '' : l[k]}" style="width:${w || 72}px">`;
+    const num = (l, k, w) => `<input type="number" step="any" data-wf-link="${esc(l.id)}" data-f="${k}" value="${esc(l[k] == null ? '' : l[k])}" style="width:${w || 72}px">`;
     const rows = S.links.map(l => {
       const A = pm.elements.find(e => e.id === l.a), B = pm.elements.find(e => e.id === l.b);
       const dist = A && B && f ? Math.hypot(A.x - B.x, A.y - B.y) * f : l.dist;
