@@ -138,6 +138,7 @@ const PlanDXF = {
     for (const r of pm.routes || []) if (r.points && r.points.length >= 2) take(PLAN_DXF_LAYERS.of('route', r.type, PLAN_DEFS.route(r.type)));
     if ((pm.trenches || []).length) take(PLAN_DXF_LAYERS.of('fixed', 'trench'));
     if ((pm.crossings || []).length) take(PLAN_DXF_LAYERS.of('fixed', 'crossing'));
+    if (typeof WifiWS !== 'undefined' && WifiWS.dxfZones().length) take(PLAN_DXF_LAYERS.of('fixed', 'wifi'));
     const out = PLAN_DXF_SHEETS.filter(s => used.has(s.id));
     return out.length ? out : [{ id: 'PLAN', name: 'Plan' }];
   },
@@ -465,6 +466,8 @@ const PlanDXF = {
     // the layers of the rest of the plan, on their sheets
     const FX = {};
     for (const k of Object.keys(PLAN_DXF_LAYERS.fixed)) { const row = PLAN_DXF_LAYERS.of('fixed', k); FX[k] = row[0]; layerSheets[row[0]] = row[1]; }
+    const wifiZones = typeof WifiWS !== 'undefined' ? WifiWS.dxfZones() : [];      // the WiFi tab's signal contours, in plan px
+    if (!wifiZones.length) delete layerSheets[FX.wifi];
     const af = (typeof AppState.planActiveFloor === 'function') && AppState.planActiveFloor();
     const sheets = this._sheets(pm);
     const legend = this._legend(pm, { elements, legRoutes, trenches, crossings, typical, FX, opt });
@@ -473,11 +476,11 @@ const PlanDXF = {
       factor, floorName: (af && af.name) || '', domain: pm.settings.domain || '',
       fileName: ((AppState.projectName || 'plan').replace(/[^\w-]+/g, '_')) + (af && af.name ? '_' + af.name.replace(/[^\w-]+/g, '_') : ''),
       layers: Object.entries(layers).map(([name, color]) => ({ name, color, linetype: ltypes[name] || null })),
-      extraLayers: { [FX.trench]: '#787878', [FX.crossing]: this._hex((PLAN_DEFS.crossings || {}).color) || '#f97316', [FX.room]: roomStroke, [FX.text]: '#111827', [FX.measurement]: dimCol },
+      extraLayers: { [FX.trench]: '#787878', [FX.crossing]: this._hex((PLAN_DEFS.crossings || {}).color) || '#f97316', [FX.room]: roomStroke, [FX.text]: '#111827', [FX.measurement]: dimCol, ...(wifiZones.length ? { [FX.wifi]: '#0e7490' } : {}) },
       fixedLayers: FX, layerSheets, sheets, legend, titleBlock, crossingLabels, labels: { style: opt.labels || 'circle' },
       layout: { paper: opt.paper || 'A1', margin: this.MARGIN_MM, scale: opt.scale, extents: this._extents(pm, factor) },
       textH: H, ltscale: opt.scale / 100, scale: opt.scale,
-      blocks, elements, routes, trenches, rooms, measurements, crossings, texts, backgrounds,
+      blocks, elements, routes, trenches, rooms, measurements, crossings, texts, backgrounds, wifiZones,
     };
 
     // UX-10: disable the trigger + show a busy overlay for the backend round-trip.

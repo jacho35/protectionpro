@@ -204,7 +204,7 @@ const WifiEngine = (() => {
     });
     return aps.map((ap, a) => {
       const p = per[a], sn = p.snrs.sort((x, y) => x - y), med = sn.length ? sn[sn.length >> 1] : null;
-      const phy = med == null ? 0 : rate1(med) * fw * s.streams, cap = phy * s.efficiency;
+      const st = Math.min(4, ap.streams || s.streams), phy = med == null ? 0 : rate1(med) * fw * st, cap = phy * s.efficiency;
       const demand = p.clients * s.mbps * s.concurrency;
       return { id: ap.id, cells: p.cells, area: p.cells * cellArea, clients: p.clients, demand, snrMedian: med, phy, capacity: cap, load: cap > 0 ? demand / cap : (demand > 0 ? Infinity : 0), pass: demand <= cap + 1e-9 };
     });
@@ -306,11 +306,50 @@ const WifiEngine = (() => {
     return { aps: out, uncovered: open.filter(Boolean).length, samples: samples.length };
   }
 
+  /**
+   * Contour lines of the predicted level at `level` dBm (marching squares over the cell centres; a square with a corner outside
+   * every served room is skipped, so a line stops up to one cell short of a wall). Returns polylines in metres:
+   * [{ pts: [[x, y], …], closed }]. For the DXF export.
+   */
+  function contours(pred, level) {
+    const { nx, ny, x0, y0, step, best, room } = pred, segs = [];
+    const val = (i, j) => (i < 0 || j < 0 || i >= nx || j >= ny || room[j * nx + i] < 0 ? null : best[j * nx + i]);
+    const TAB = { 1: [[3, 0]], 2: [[0, 1]], 3: [[3, 1]], 4: [[1, 2]], 5: [[3, 0], [1, 2]], 6: [[0, 2]], 7: [[3, 2]], 8: [[2, 3]], 9: [[0, 2]], 10: [[0, 1], [2, 3]], 11: [[1, 2]], 12: [[1, 3]], 13: [[0, 1]], 14: [[3, 0]] };
+    for (let j = 0; j < ny - 1; j++) for (let i = 0; i < nx - 1; i++) {
+      const v = [val(i, j), val(i + 1, j), val(i + 1, j + 1), val(i, j + 1)];
+      if (v.some(x => x == null)) continue;
+      const c = (v[0] >= level ? 1 : 0) | (v[1] >= level ? 2 : 0) | (v[2] >= level ? 4 : 0) | (v[3] >= level ? 8 : 0);
+      if (!TAB[c]) continue;
+      const P = [[i, j], [i + 1, j], [i + 1, j + 1], [i, j + 1]];
+      const edge = e => { const [a, b] = [[0, 1], [1, 2], [3, 2], [0, 3]][e], t = (level - v[a]) / (v[b] - v[a] || 1e-9); return [x0 + (P[a][0] + (P[b][0] - P[a][0]) * t + 0.5) * step, y0 + (P[a][1] + (P[b][1] - P[a][1]) * t + 0.5) * step]; };
+      for (const [e1, e2] of TAB[c]) segs.push([edge(e1), edge(e2)]);
+    }
+    const key = p => Math.round(p[0] * 1e5) + ',' + Math.round(p[1] * 1e5), ends = new Map(), used = new Array(segs.length).fill(false);
+    segs.forEach((sg, i) => { for (const p of sg) { const k = key(p); if (!ends.has(k)) ends.set(k, []); ends.get(k).push(i); } });
+    const out = [];
+    const walk = (pts, from) => {                                  // extend `pts` at its last point until no unused segment is left
+      for (;;) {
+        const k = key(pts[pts.length - 1]), nxt = (ends.get(k) || []).find(i => !used[i]);
+        if (nxt == null) return;
+        used[nxt] = true; const sg = segs[nxt]; pts.push(key(sg[0]) === k ? sg[1] : sg[0]);
+      }
+    };
+    for (let i = 0; i < segs.length; i++) {
+      if (used[i]) continue;
+      used[i] = true; let pts = [segs[i][0], segs[i][1]]; walk(pts);
+      pts.reverse(); walk(pts);                                    // and the other way, for an open line
+      const closed = pts.length > 3 && key(pts[0]) === key(pts[pts.length - 1]);
+      if (closed) pts.pop();
+      out.push({ pts, closed });
+    }
+    return out;
+  }
+
   /** Heat colour for an RSSI: [r, g, b]. Same five steps as the legend. */
   const STEPS = [[-55, [46, 158, 91], 'Excellent'], [-65, [141, 190, 74], 'Good'], [-70, [227, 178, 60], 'Fair'], [-75, [224, 123, 57], 'Weak'], [-200, [201, 74, 74], 'Dead zone']];
   function colour(v) { for (const [t, c] of STEPS) if (v >= t) return c; return STEPS[STEPS.length - 1][1]; }
 
-  return { BANDS, MATERIALS, DEFAULTS, MCS, STEPS, walls, wallLoss, rssi, predict, roomStats, coverage, capacity, channels, cableRun, poe, link, autoPlace, rate1, noiseFloor, fspl1, colour, inside, area };
+  return { BANDS, MATERIALS, DEFAULTS, MCS, STEPS, walls, wallLoss, rssi, predict, roomStats, coverage, capacity, channels, cableRun, poe, link, autoPlace, contours, rate1, noiseFloor, fspl1, colour, inside, area };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = WifiEngine;

@@ -62,7 +62,7 @@ CROSSING_LABEL_BLOCK = "EL_DUCTCOUNT_"      # a leader + circle + COUNT attribut
 ATTR_TAGS = ["REF", "TYPE", "DBFED", "CIRCUIT", "PHASE", "LOAD_VA", "CABLE"]
 
 # Layers of the plan items that are not symbols or routes (frontend PLAN_DXF_LAYERS.fixed sends the same names as `fixedLayers`).
-FIXED_LAYERS = {"trench": "EL_TRENCH", "crossing": "EL_DUCTS", "room": "EL_ROOMS", "measurement": "EL_DIM", "text": "EL_TEXT"}
+FIXED_LAYERS = {"trench": "EL_TRENCH", "crossing": "EL_DUCTS", "room": "EL_ROOMS", "measurement": "EL_DIM", "text": "EL_TEXT", "wifi": "EL_WIFI_COVERAGE"}
 # What the importer reads by layer when an entity carries no KIND: the current name and the one used before.
 _IMPORT_LAYERS = {k: {v, old} for (k, v), old in zip(FIXED_LAYERS.items(), ("PP_TRENCH", "PP_TRENCH", "PP_ROOMS", "PP_DIM", "PP_TEXT"))}
 
@@ -628,6 +628,17 @@ def build_dxf(payload: Dict[str, Any], load_image=None, notes: List[str] | None 
         if len(pts) >= 2:
             ent = msp.add_lwpolyline(pts, dxfattribs={"layer": L_DIM, **_color_attribs(m.get("color"), layer_hex.get(L_DIM))})
             _set_meta(ent, {"KIND": "measurement"})
+    # The WiFi tab's predicted-signal contours: one polyline per line, its level in the name tag and a label on the first point.
+    L_WIFI = fixed["wifi"]
+    for z in payload.get("wifiZones", []):
+        pts = [(X(p[0]), Y(p[1])) for p in z.get("pts", [])]
+        if len(pts) < 2:
+            continue
+        ent = msp.add_lwpolyline(pts, close=bool(z.get("closed")), dxfattribs={"layer": L_WIFI, **_color_attribs(z.get("color"), layer_hex.get(L_WIFI))})
+        _set_meta(ent, {"KIND": "wifi_coverage", "NAME": z.get("label")})
+        if z.get("label"):
+            lab = msp.add_text(str(z["label"]), dxfattribs={"height": H * 0.7, "layer": L_WIFI, "style": TEXT_STYLE, **_color_attribs(z.get("color"), layer_hex.get(L_WIFI))})
+            lab.set_placement(pts[0], align=TextEntityAlignment.BOTTOM_LEFT)
     for c in payload.get("crossings", []):
         p1, p2 = c.get("p1"), c.get("p2")
         if p1 and p2:

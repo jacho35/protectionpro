@@ -99,4 +99,19 @@ ok('autoPlace: a 10 x 10 room needs one AP; a 40 x 10 room with brick walls ever
   const p = W.predict({ rooms, aps: many.aps.map((a, i) => ({ id: 'a' + i, x: a.x, y: a.y, tx: 17, gain: 4 })), band: '5', exponent: 3, defaultWall: 'brick', cell: 1 });
   assert(W.roomStats(p, rooms, {}).filter(r => r.pass).length >= 3);
 });
+ok('capacity: an AP\'s own stream count sets its rate, capped at 4', () => {
+  const rooms = [{ id: 'A', points: rect(0, 0, 10, 10) }];
+  const mk = streams => [{ id: 'a', x: 5, y: 5, tx: 17, gain: 4, streams }];
+  const run = streams => { const aps = mk(streams), p = W.predict({ rooms, aps, band: '5', exponent: 3, defaultWall: 'open', cell: 1 }); return W.capacity(p, rooms, aps, { width: 80, streams: 2 })[0]; };
+  near(run(4).phy, 143.4 * 4.5 * 4, 0.01); near(run(8).phy, 143.4 * 4.5 * 4, 0.01); near(run(null).phy, 143.4 * 4.5 * 2, 0.01);
+});
+ok('contours: the −60 dBm line round one AP in the open is a closed ring at 13.3 m', () => {
+  const rooms = [{ id: 'A', points: rect(0, 0, 40, 40) }], aps = [{ id: 'a', x: 20, y: 20, tx: 17, gain: 4 }];
+  const p = W.predict({ rooms, aps, band: '5', exponent: 3, defaultWall: 'open', cell: 0.5 });
+  const lines = W.contours(p, -60);
+  assert.strictEqual(lines.length, 1); assert(lines[0].closed && lines[0].pts.length > 40);
+  const want = Math.pow(10, (21 - W.fspl1('5') + 60) / 30);                       // 13.3 m
+  for (const [x, y] of lines[0].pts) near(Math.hypot(x - 20, y - 20), want, 0.4);
+  assert.strictEqual(W.contours(p, 0).length, 0);                                  // louder than anywhere: no line
+});
 console.log(n + ' passed');

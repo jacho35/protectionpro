@@ -55,3 +55,4 @@
 .wf-h { font-size: 12px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--text-secondary); margin: 4px 0 -6px; display: flex; justify-content: space-between; }
 .wf-tools { display: flex; flex-direction: column; gap: 2px; }
 .wf-tools .pf-row { width: 100%; }
+.wf-primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }

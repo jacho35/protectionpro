@@ -77,6 +77,7 @@ const PLAN_DXF_LAYERS = {
   fixed: {
     trench: ['EL_TRENCH', ['MV', 'LV', 'SL', 'FIBRE']], crossing: ['EL_DUCTS', ['MV', 'LV', 'SL', 'FIBRE', 'DUCTS']],   // DUCTS: a sheet of the road crossing ducts alone
     room: ['EL_ROOMS', 'all'], measurement: ['EL_DIM', 'all'], text: ['EL_TEXT', 'all'],
+    wifi: ['EL_WIFI_COVERAGE', ['ELV']],   // the WiFi tab's predicted-signal contour lines (WifiWS.dxfZones); written only when an access point is on the plan
   },
   // an item type with no row: its palette group's layer, on every sheet
   fallback(kind, type, def) {
@@ -254,14 +255,15 @@ const PLAN_DEFS = {
     bd_datapoint: { name: 'Data Outlet', domain: 'building', group: 'ELV & Fire', color: '#db2777', scale: 1, symbol: 'square', dxf: { shape: 'square', sizeM: 0.2 }, rotatable: false, schedule: null, namePrefix: 'DP', defaults: {}, fields: [{ key: 'name', label: 'Ref', type: 'text' }] },
     bd_wap: { name: 'Wireless AP', domain: 'building', group: 'ELV & Fire', color: '#0e7490', scale: 1, symbol: 'circle', dxf: { shape: 'circle', sizeM: 0.3 }, rotatable: false, schedule: null, namePrefix: 'AP',
       // The WiFi tab predicts from these (wifi-engine.js): Tx power and antenna gain per radio, the channel (blank = Auto), PoE draw.
-      defaults: { model: 'Generic Wi-Fi 6 AP', tx: 17, gain: 4, channel: '', mountH: 2.7, watts: 15.4 },
+      defaults: { libId: '', model: '', tx: '', gain: '', channel: '', mountH: 2.7, watts: '' },
       fields: [{ key: 'name', label: 'Ref', type: 'text' },
-        { key: 'model', label: 'Model', type: 'text' },
-        { key: 'tx', label: 'Tx power', type: 'number', unit: 'dBm', min: 0, max: 30, step: 1 },
-        { key: 'gain', label: 'Antenna gain', type: 'number', unit: 'dBi', min: 0, max: 15, step: 0.5 },
+        { key: 'libId', label: 'Manufacturer model', type: 'select', options: [{ value: '', label: 'Generic (17 dBm, 4 dBi)' }].concat(typeof VENDOR_APS !== 'undefined' ? VENDOR_APS.map(a => ({ value: a.id, label: `${a.vendor} ${a.model}` })) : []) },
+        { key: 'model', label: 'Note / part number', type: 'text' },
+        { key: 'tx', label: 'Tx power (blank = the model\'s)', type: 'number', unit: 'dBm', min: 0, max: 30, step: 1 },
+        { key: 'gain', label: 'Antenna gain (blank = the model\'s)', type: 'number', unit: 'dBi', min: 0, max: 15, step: 0.5 },
         { key: 'channel', label: 'Channel (blank = Auto)', type: 'number', min: 1, max: 233, step: 1 },
         { key: 'mountH', label: 'Mounting height', type: 'number', unit: 'm', min: 0, max: 20, step: 0.1 },
-        { key: 'watts', label: 'PoE draw', type: 'number', unit: 'W', min: 0, max: 90, step: 0.1 }] },
+        { key: 'watts', label: 'PoE draw (blank = the model\'s)', type: 'number', unit: 'W', min: 0, max: 90, step: 0.1 }] },
     // Control
     bd_sensor: { name: 'Occupancy Sensor', domain: 'building', group: 'Control', color: '#e11d48', scale: 1, symbol: 'circle', dxf: { shape: 'circle', sizeM: 0.25 }, rotatable: false, schedule: null, namePrefix: 'PIR', defaults: {}, fields: [{ key: 'name', label: 'Ref', type: 'text' }] },
     bd_dali: { name: 'DALI Controller', domain: 'building', group: 'Control', color: '#db2777', scale: 1, symbol: 'square', dxf: { shape: 'square', sizeM: 0.3 }, rotatable: true, schedule: null, namePrefix: 'DAL', defaults: {}, fields: [{ key: 'name', label: 'Ref', type: 'text' }] },
