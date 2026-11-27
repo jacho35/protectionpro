@@ -37,6 +37,7 @@ const Canvas = {
 
   // State for dragging wire bend points
   bendDrag: null, // { wireId, bendIndex, startX, startY }
+  busEndDrag: null, // { wireId, key, moved } — sliding a wire's end along its bus
   wireSegDrag: null, // { wireId, grabOffset, moved } — dragging a wire's mid-run
 
   // Space-bar held down → left-drag pans the canvas
@@ -81,7 +82,7 @@ const Canvas = {
       if (typeof ContextMenu === 'undefined') return;
       // No menu mid-gesture (wire drawing, drags, marquee)
       if (AppState.wireStart || AppState.dragState || this.busResize ||
-          this.bendDrag || this.isSelecting || this.isPanning) return;
+          this.bendDrag || this.busEndDrag || this.isSelecting || this.isPanning) return;
 
       const worldPt = this.screenToWorld(e.clientX, e.clientY);
 
@@ -379,6 +380,14 @@ const Canvas = {
       }
     }
 
+    // A selected wire's bus end: slide it along the bar
+    const busEndEl = e.target.closest('.wire-bus-end');
+    if (busEndEl) {
+      this.busEndDrag = { wireId: busEndEl.dataset.wireId, key: busEndEl.dataset.end, moved: false };
+      e.preventDefault();
+      return;
+    }
+
     // Check if clicked on a wire bend point (for dragging)
     const bendEl = e.target.closest('.wire-bend-point');
     if (bendEl) {
@@ -583,7 +592,7 @@ const Canvas = {
 
     // Safety net: if the button was released outside the window (we never saw
     // mouseup), finalize any active drag instead of leaving it sticky.
-    const interacting = this.isPanning || this.busResize || this.bendDrag ||
+    const interacting = this.isPanning || this.busResize || this.bendDrag || this.busEndDrag ||
         this.wireSegDrag || this.annotationDrag || this.labelDrag ||
         this.nameLabelDrag || AppState.dragState || this.isSelecting ||
         AppState.wireStart;
@@ -662,6 +671,27 @@ const Canvas = {
         }
         AppState.dirty = true;
         this.render();
+      }
+      return;
+    }
+
+    // Sliding a wire's end along its bus (snaps to the grid, and to straight with the part at the other end)
+    if (this.busEndDrag) {
+      const wire = AppState.wires.get(this.busEndDrag.wireId), key = this.busEndDrag.key;
+      const bus = wire && AppState.components.get(key === 'fromPort' ? wire.fromComponent : wire.toComponent);
+      if (bus && bus.type === 'bus') {
+        const hw = ((bus.props && bus.props.busWidth) || 120) / 2;
+        const rad = -(bus.rotation || 0) * Math.PI / 180;
+        const dx = worldPt.x - bus.x, dy = worldPt.y - bus.y;
+        let lx = Math.max(-hw, Math.min(hw, Math.round((dx * Math.cos(rad) - dy * Math.sin(rad)) / GRID_SIZE) * GRID_SIZE));
+        const ends = Arrange._busEnds(wire);
+        if (ends.length) {                                   // magnet: straight with the part at the other end
+          const t = Arrange._busLocalX(ends[0].bus, Symbols.getPortWorldPosition(ends[0].other, ends[0].otherPort));
+          const cur = (dx * Math.cos(rad) - dy * Math.sin(rad));
+          if (!t.clamped && Math.abs(cur - t.x) <= 8) lx = t.x;
+        }
+        const port = `at_${Math.round(lx * 100) / 100}`;
+        if (wire[key] !== port) { wire[key] = port; this.busEndDrag.moved = true; this.render(); }
       }
       return;
     }
@@ -827,6 +857,15 @@ const Canvas = {
       if (typeof UndoManager !== 'undefined') UndoManager.snapshot();
       this.busResize = null;
       this.render();
+      return;
+    }
+
+    if (this.busEndDrag) {
+      if (this.busEndDrag.moved) {
+        AppState.dirty = true;
+        if (typeof UndoManager !== 'undefined') UndoManager.snapshot();
+      }
+      this.busEndDrag = null;
       return;
     }
 
@@ -1155,7 +1194,7 @@ const Canvas = {
     if (emptyHint) emptyHint.style.display = AppState.components.size === 0 ? '' : 'none';
 
     // Render wires
-    let wiresHtml = '';
+    let wiresHtml = '', handlesHtml = '';
     for (const [id, wire] of pageWires) {
       const fromComp = AppState.components.get(wire.fromComponent);
       const toComp = AppState.components.get(wire.toComponent);
@@ -1195,6 +1234,12 @@ const Canvas = {
       }
       wiresHtml += `<path class="sld-wire${selected}" data-id="${id}" d="${escHtml(path)}"/>`;
 
+      // Selected wire: a handle on each bus end, slid along the bar to straighten the wire
+      if (AppState.selectedIds.has(id)) {
+        for (const [comp, pos, key] of [[fromComp, from, 'fromPort'], [toComp, to, 'toPort']]) {
+          if (comp.type === 'bus') handlesHtml += `<circle class="wire-bus-end" data-wire-id="${id}" data-end="${key}" cx="${numAttr(pos.x)}" cy="${numAttr(pos.y)}" r="6" fill="#d9480f" stroke="#fff" stroke-width="1.5" style="cursor:ew-resize"><title>Drag along the bus</title></circle>`;
+        }
+      }
       // Draw bend point handles for selected wires
       if (AppState.selectedIds.has(id) && wire.bendPoints) {
         wire.bendPoints.forEach((bp, i) => {
@@ -1205,6 +1250,7 @@ const Canvas = {
     wiresHtml += this.renderMeterLinks(pageComps);
     wiresHtml += this.renderControllerLinks(pageComps);
     this.wiresLayer.innerHTML = wiresHtml;
+    const hl = document.getElementById('wire-handles-layer'); if (hl) hl.innerHTML = handlesHtml;
     if (typeof SldShapes !== 'undefined') SldShapes.render();
 
     // Render components (page-filtered)

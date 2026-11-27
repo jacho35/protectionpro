@@ -131,6 +131,10 @@ const ContextMenu = {
           action: () => SOO.openConfig({ busId: comp.id }),
         });
       }
+      items.push({
+        label: 'Straighten Wires',
+        action: () => { if (!AppState.selectedIds.has(comp.id)) AppState.select(comp.id); Arrange.straightenSelection(); },
+      });
       items.push('---');
     }
 
@@ -287,6 +291,11 @@ const ContextMenu = {
         label: 'Add Bend Point',
         shortcut: 'Dbl-click',
         action: () => Canvas.addWireBendPoint(wire.id, worldPt),
+      },
+      {
+        label: 'Straighten',
+        disabled: !Arrange._busEnds(wire).length,
+        action: () => { if (!AppState.selectedIds.has(wire.id)) AppState.select(wire.id); Arrange.straightenSelection(); },
       },
       {
         label: 'Reset Route',

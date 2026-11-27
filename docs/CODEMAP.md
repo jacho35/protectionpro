@@ -19,6 +19,7 @@ frontend/
     ├── canvas.js           # SVG rendering, pan/zoom, grid, 5-layer system
     ├── sidebar.js          # Searchable component palette, drag-drop
     ├── wiring.js           # Orthogonal wire routing, port snapping
+    ├── arrange.js          # Arrange — align / distribute, layered auto-arrange, and bus attachments: a wire meets a bus at the free port `at_<x>` (x along the bar); `straightenWires` / `straightenSelection` (context menu on a bus or wire) set each to the x (y on a 90° bar) of the part at the other end, clamped to the bar, clearing bends; `_busLocalX` / `_busEnds` are the helpers; bus-to-bus ties are skipped. Canvas draws an orange handle per bus end of a selected wire in `#wire-handles-layer` (above the parts) and `busEndDrag` slides it (grid, magnet to straight). Only the stored port changes, never a part
     ├── components.js       # Network graph validation, adjacency, cycle detection
     ├── symbols.js          # IEC-standard SVG symbol generators (40 types)
     ├── properties.js       # Dynamic property editor per component type; filter chips + "Used by" per section (`SECTION_FILTERS`, `SECTION_USED_BY`), a label's "(0 = …)" rule shown as a hint line (`splitLabelRule`)

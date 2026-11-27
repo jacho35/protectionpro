@@ -399,7 +399,7 @@ const Project = {
       .comp-outline { stroke: none; fill: none; }
       .select-handle { display: none; }
       .bus-resize-handle { display: none; }
-      .wire-bend-point { display: none; }
+      .wire-bend-point, .wire-bus-end { display: none; }
 
       /* Annotations — CSS vars resolved to actual hex values */
       .annotation-badge { rx: 4; ry: 4; }
