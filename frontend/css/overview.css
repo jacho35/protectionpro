@@ -99,7 +99,9 @@ body.dark-mode #toolbar .app-bar .toolbar-right > button.issues-btn.issues-fail 
   #toolbar .app-bar .toolbar-right > button.cmd-search-btn > span { display: none; }
   #toolbar #account-email { display: none; }
 }
+@media (max-width: 1500px) {
+  #toolbar .workspace-tab .ws-step { display: none; }   /* eight tabs (a Building project with WiFi and CCTV) clip the last label above this */
+}
 @media (max-width: 1380px) {
-  #toolbar .workspace-tab .ws-step { display: none; }
   #toolbar .project-name { max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 }

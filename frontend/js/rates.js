@@ -156,6 +156,11 @@ const Rates = {
       const g = el.gangs || '1', k = el.kind || 'standard';
       return { key: `EQ-SWITCH-${g}G-${this.slug(k)}`, desc: `Switch ${g} gang — ${opt('kind', k)}` };
     }
+    if (el.type === 'bd_cctv' || el.type === 'cam') {
+      const k = String((el.props && el.props.kind) || el.kind || 'dome'), kk = ['dome', 'bullet', 'ptz'].includes(k) ? k : 'dome';
+      return { key: 'EQ-CCTV-' + kk.toUpperCase(), desc: `CCTV camera — ${kk === 'ptz' ? 'PTZ' : kk[0].toUpperCase() + kk.slice(1)}` };
+    }
+    if (el.type === 'bd_nvr' || el.type === 'camhub') return { key: 'EQ-NVR', desc: 'NVR / CCTV recorder' };
     return { key: 'EQ-' + this.slug(base), desc: name };
   },
 
@@ -192,12 +197,17 @@ const Rates = {
     add('EQ-VT', 'Voltage transformer', 'ea', 'equip');
     add('EQ-RELAY', 'Protection relay', 'ea', 'equip');
     add('EQ-PPC', 'Plant controller', 'ea', 'equip');
+    add('EQ-CCTV-POE-SW', 'PoE switch, 24 port, for CCTV cameras', 'ea', 'equip');
+    add('EQ-CCTV-STORAGE', 'NVR storage for the retention period', 'TB', 'equip');
+    add('EQ-CCTV-FIBRE-MC', 'Fibre media converter pair with local power, pole camera', 'ea', 'equip');
+    add('EQ-CCTV-TERM', 'Data cable termination, CCTV camera run (2 per run)', 'ea', 'term');
     if (typeof PLAN_DEFS !== 'undefined') {
       for (const [t, d] of Object.entries(PLAN_DEFS.elements || {})) {
         if (this.PLAN_SKIP.includes(t)) continue;
         const f = k => (d.fields || []).find(x => x.key === k);
         const vals = k => (f(k) ? f(k).options.map(o => o.value ?? o) : []);
         if (t === 'bd_light') vals('kind').forEach(k => { const it = this.planElementItem({ type: t, kind: k }); add(it.key, it.desc, 'ea', 'equip'); });
+        else if (t === 'bd_cctv' || t === 'cam') ['dome', 'bullet', 'ptz'].forEach(k => { const it = this.planElementItem({ type: t, kind: k }); add(it.key, it.desc, 'ea', 'equip'); });
         else if (t === 'bd_socket') vals('outlets').forEach(k => [false, true].forEach(wp => { const it = this.planElementItem({ type: t, outlets: k, weatherproof: wp }); add(it.key, it.desc, 'ea', 'equip'); }));
         else if (t === 'bd_switch') vals('gangs').forEach(g => vals('kind').forEach(k => { const it = this.planElementItem({ type: t, gangs: g, kind: k }); add(it.key, it.desc, 'ea', 'equip'); }));
         else { const it = this.planElementItem({ type: t }); add(it.key, it.desc, 'ea', 'equip'); }

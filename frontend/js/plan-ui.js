@@ -80,6 +80,7 @@ const PlanUI = {
     let html;
     if (ctx === 'lighting') { el.setAttribute('aria-label', 'Lighting tools'); html = this._lightingPanel(); }
     else if (ctx === 'wifi' && typeof WifiWS !== 'undefined') { el.setAttribute('aria-label', 'WiFi tools'); html = WifiWS.panelHtml(); }
+    else if (ctx === 'cctv' && typeof CctvWS !== 'undefined') { el.setAttribute('aria-label', 'CCTV tools'); html = CctvWS.panelHtml(); }
     else if (mode === 'roads' && typeof RoadSectionsUI !== 'undefined') { el.setAttribute('aria-label', 'Road sections'); html = RoadSectionsUI.panelHtml(); }
     else if (mode === 'underlays') { el.setAttribute('aria-label', 'Underlays'); html = this._underlaysPanel(); }
     else if (mode === 'output') { el.setAttribute('aria-label', 'Sync and export'); html = this._outputPanel(); }
@@ -284,7 +285,7 @@ const PlanUI = {
   },
   // A tool was armed or stopped: only the footer changes.
   renderPaletteFooter() {
-    const el = this.paletteEl; if (!el || typeof PlanMarkup === 'undefined' || PlanMarkup.mode !== 'draw' || PlanMarkup.context === 'lighting' || PlanMarkup.context === 'wifi') return;
+    const el = this.paletteEl; if (!el || typeof PlanMarkup === 'undefined' || PlanMarkup.mode !== 'draw' || PlanMarkup.context === 'lighting' || PlanMarkup.context === 'wifi' || PlanMarkup.context === 'cctv') return;
     const f = el.querySelector('.pf-foot'); if (!f) return;
     f.innerHTML = this._drawFoot((AppState.planMarkup.settings.domain) || 'retic');
     this._markArmed();

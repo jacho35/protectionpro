@@ -200,7 +200,7 @@ Run these after any change to `backend/analysis/`. Frontend testing is mostly ma
 ## Key Conventions
 
 - Frontend files are classic scripts loaded by `index.html` (each module is a global, e.g. `AppState`, `Retic`) — no build step
-- **GENERATED files are never hand-edited** — change the source data and re-run the generator named in their `docs/CODEMAP.md` entry: `frontend/samples/*.json`, `vendor-trip-units*.js`, `vendor-cascading.js`, `js/lib/pdf-fonts.js`, `iec-60364-data.js` / `iec_60364_data.py`, `cascading_data.py`, `vendor-aps.js` (testing/vendor-aps/build_vendor_aps.py), `verification-templates.js`, `img/help/*.png`, `clients/mcp/component_catalog.json`
+- **GENERATED files are never hand-edited** — change the source data and re-run the generator named in their `docs/CODEMAP.md` entry: `frontend/samples/*.json`, `vendor-trip-units*.js`, `vendor-cascading.js`, `js/lib/pdf-fonts.js`, `iec-60364-data.js` / `iec_60364_data.py`, `cascading_data.py`, `vendor-aps.js` (testing/vendor-aps/build_vendor_aps.py), `vendor-cameras.js` (testing/vendor-cameras/build_vendor_cameras.py), `verification-templates.js`, `img/help/*.png`, `clients/mcp/component_catalog.json`
 - One cable library (`STANDARD_CABLES` via `CableLib`); never add a second cable list
 - All analysis requests send the full ProjectData JSON to the backend
 - Each study's results are stored on their own AppState field (`faultResults`, `loadFlowResults`, …) and rendered as SVG annotations

@@ -62,7 +62,7 @@ CROSSING_LABEL_BLOCK = "EL_DUCTCOUNT_"      # a leader + circle + COUNT attribut
 ATTR_TAGS = ["REF", "TYPE", "DBFED", "CIRCUIT", "PHASE", "LOAD_VA", "CABLE"]
 
 # Layers of the plan items that are not symbols or routes (frontend PLAN_DXF_LAYERS.fixed sends the same names as `fixedLayers`).
-FIXED_LAYERS = {"trench": "EL_TRENCH", "crossing": "EL_DUCTS", "room": "EL_ROOMS", "measurement": "EL_DIM", "text": "EL_TEXT", "wifi": "EL_WIFI_COVERAGE"}
+FIXED_LAYERS = {"trench": "EL_TRENCH", "crossing": "EL_DUCTS", "room": "EL_ROOMS", "measurement": "EL_DIM", "text": "EL_TEXT", "wifi": "EL_WIFI_COVERAGE", "cctv": "EL_CCTV_COVERAGE"}
 # What the importer reads by layer when an entity carries no KIND: the current name and the one used before.
 _IMPORT_LAYERS = {k: {v, old} for (k, v), old in zip(FIXED_LAYERS.items(), ("PP_TRENCH", "PP_TRENCH", "PP_ROOMS", "PP_DIM", "PP_TEXT"))}
 
@@ -638,6 +638,17 @@ def build_dxf(payload: Dict[str, Any], load_image=None, notes: List[str] | None 
         _set_meta(ent, {"KIND": "wifi_coverage", "NAME": z.get("label")})
         if z.get("label"):
             lab = msp.add_text(str(z["label"]), dxfattribs={"height": H * 0.7, "layer": L_WIFI, "style": TEXT_STYLE, **_color_attribs(z.get("color"), layer_hex.get(L_WIFI))})
+            lab.set_placement(pts[0], align=TextEntityAlignment.BOTTOM_LEFT)
+    # The CCTV tab's DORI zones (Identify / Recognise / Observe / Detect outlines): same shape as the WiFi contours.
+    L_CCTV = fixed["cctv"]
+    for z in payload.get("cctvZones", []):
+        pts = [(X(p[0]), Y(p[1])) for p in z.get("pts", [])]
+        if len(pts) < 2:
+            continue
+        ent = msp.add_lwpolyline(pts, close=bool(z.get("closed")), dxfattribs={"layer": L_CCTV, **_color_attribs(z.get("color"), layer_hex.get(L_CCTV))})
+        _set_meta(ent, {"KIND": "cctv_coverage", "NAME": z.get("label")})
+        if z.get("label"):
+            lab = msp.add_text(str(z["label"]), dxfattribs={"height": H * 0.7, "layer": L_CCTV, "style": TEXT_STYLE, **_color_attribs(z.get("color"), layer_hex.get(L_CCTV))})
             lab.set_placement(pts[0], align=TextEntityAlignment.BOTTOM_LEFT)
     for c in payload.get("crossings", []):
         p1, p2 = c.get("p1"), c.get("p2")
