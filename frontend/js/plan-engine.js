@@ -1233,6 +1233,7 @@ const PlanEngine = {
     if (!this._isActive() || this._dialogOpen()) return;
     const pt = this.screenToWorld(e.clientX, e.clientY);
     if (typeof PlanTools !== 'undefined' && PlanTools.onUp) PlanTools.onUp(pt, e);
+    if (typeof PlanAids !== 'undefined' && PlanTools.active && PlanTools.active.aids === 'guides') PlanAids.aid = null;   // a drag ended: its guides go
   },
 
   _onWheel(e) {

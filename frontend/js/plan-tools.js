@@ -23,6 +23,7 @@ const PlanTools = {
     const next = this._tools[id];
     if (!next) return;
     if (this.active && this.active.onDeactivate) this.active.onDeactivate();
+    if (typeof PlanAids !== 'undefined') { PlanAids.aid = null; PlanAids.typed = null; PlanAids.anchor = null; }
     this.active = next;
     this.opts = opts || {};
     if (next.onActivate) next.onActivate(this.opts);
@@ -39,6 +40,7 @@ const PlanTools = {
 
   cancel() {
     if (this.active && this.active.cancel) this.active.cancel();
+    if (typeof PlanAids !== 'undefined') { PlanAids.aid = null; PlanAids.typed = null; PlanAids.anchor = null; }
     if (typeof PlanEngine !== 'undefined') PlanEngine.requestDraw({ fg: true });
     this._notifyDraft();
   },
@@ -92,13 +94,15 @@ const PlanTools = {
   onMove(pt, e) { if (this.active && this.active.onMove) this.active.onMove(pt, e); },
   onUp(pt, e) { if (this.active && this.active.onUp) this.active.onUp(pt, e); this._notifyDraft(); },
   onKey(e) { const r = this.active && this.active.onKey ? this.active.onKey(e) : false; this._notifyDraft(); return r; },
-  drawOverlay(ctx, zoom) { if (this.active && this.active.drawOverlay) this.active.drawOverlay(ctx, zoom); },
+  drawOverlay(ctx, zoom) { if (this.active && this.active.drawOverlay) this.active.drawOverlay(ctx, zoom); if (typeof PlanAids !== 'undefined') PlanAids.draw(ctx, zoom); },
 
   // ─── Snapping ───
   // Priority: vertex → element anchor → route projection → metric grid.
   // Each stage gated by the matching settings.snap* flag. Returns
   // {x, y, snapped: 'vtx'|'el'|'route'|'grid'|null, targetId}.
-  snap(pt, o) {
+  snap(pt, o) { return PlanAids.run(pt, o || {}); },
+  // The hard snaps (parts, vertices, roof corners, DXF) and, unless noGrid, the grid. PlanAids.run adds line snaps, angle lock and guides around it.
+  _snapBase(pt, o, noGrid) {
     o = o || {};
     const pm = AppState.planMarkup;
     const s = pm.settings;
@@ -129,7 +133,7 @@ const PlanTools = {
       if (d) return { x: d.x, y: d.y, snapped: 'dxf', dxfKind: d.kind, targetId: null };
     }
     // grid (only when calibrated)
-    if (s.snapGrid) {
+    if (s.snapGrid && !noGrid) {
       const f = PlanEngine.factor();
       if (f) {
         const step = s.gridSize / f;
@@ -148,6 +152,7 @@ const PlanTools = {
   // Draw a small ring at a snapped point (shared by tools).
   _drawSnapRing(ctx, x, y, kind, zoom) {
     if (!kind) return;
+    if (typeof PlanAids !== 'undefined' && PlanAids.glyph(ctx, x, y, kind, zoom)) return;
     const r = 7 / zoom;
     ctx.save();
     ctx.strokeStyle = kind === 'el' ? '#22c55e' : (kind === 'vtx' ? '#2563eb' : kind === 'roof' ? '#c2410c' : kind === 'dxf' ? '#d946ef' : '#94a3b8');

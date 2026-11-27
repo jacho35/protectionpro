@@ -124,6 +124,12 @@ const PlanMarkup = {
               <label><input type="checkbox" data-snap="snapVtx"> Route and outline corners</label>
               <label title="Corners of solar roofs and their keep-out areas, so roofs drawn next to each other meet exactly"><input type="checkbox" data-snap="snapRoof"> Roof corners <small>solar roofs, keep-outs</small></label>
               <label title="Line/polyline ends, midpoints and vertices, circle/arc centres and block insertion points"><input type="checkbox" data-snap="snapDxf"> DXF geometry <small>ends, midpoints, centres</small></label>
+              <label title="Intersection, midpoint and perpendicular on routes, trenches and room edges while drawing"><input type="checkbox" data-snap="snapSeg"> Line snaps <kbd>F3</kbd> <small>intersection, midpoint, perpendicular</small></label>
+              <div class="plan-pop-sep"></div>
+              <div class="plan-pop-title">Drawing aids</div>
+              <label title="Lock each new segment to 0 / 90 / 180 / 270° from the previous point. Hold Ctrl to flip it for one click. Rooms drawn by hand start with it on."><input type="checkbox" data-snap="ortho"> Ortho <kbd>F8</kbd></label>
+              <label title="Lock each new segment to 15° steps when the pointer is within 4° of one"><input type="checkbox" data-snap="polar"> Polar 15° <kbd>F10</kbd></label>
+              <label title="Dashed guides when a point lines up with the x or y of a part, corner or route node"><input type="checkbox" data-snap="snapGuides"> Alignment guides <kbd>F11</kbd></label>
               <div class="plan-pop-sep"></div>
               <label><input type="checkbox" data-snap="showGrid"> Show grid</label>
               <label class="plan-pop-num">Grid size <span><input type="number" id="plan-grid-size" min="0.1" step="0.1" value="0.5"> m</span></label>
@@ -299,7 +305,7 @@ const PlanMarkup = {
 
   _syncSnapPop() {
     const s = AppState.planMarkup.settings;
-    document.querySelectorAll('#plan-snap-pop [data-snap]').forEach(cb => { cb.checked = cb.dataset.snap === 'snapRoof' ? s.snapRoof !== false : !!s[cb.dataset.snap]; });
+    document.querySelectorAll('#plan-snap-pop [data-snap]').forEach(cb => { cb.checked = ['snapRoof', 'snapGuides', 'snapSeg'].includes(cb.dataset.snap) ? s[cb.dataset.snap] !== false : !!s[cb.dataset.snap]; });
     const g = document.getElementById('plan-grid-size'); if (g) g.value = s.gridSize;
     const ss = document.getElementById('plan-symbol-scale'); if (ss) ss.value = s.symbolScale || 1;
   },
@@ -916,6 +922,7 @@ const PlanMarkup = {
   onKeydown(e) {
     const tag = e.target.tagName;
     if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || e.target.isContentEditable) return false;
+    if (typeof PlanAids !== 'undefined' && PlanAids.onKey(e)) return true;   // F3 / F8 / F10 / F11 and typed length + angle
     if (e.key === 'Escape' && typeof PlanReroute !== 'undefined' && PlanReroute.session) { PlanReroute.cancel(); return true; }   // leave a re-route preview
     if (PlanTools.active && PlanTools.active.keyFirst && PlanTools.active.keyFirst(e)) return true;   // a tool holding a draft (e.g. a shape being drawn) takes Backspace / Esc / Enter before the plan does
     if (e.key === 'Delete' || e.key === 'Backspace') { this.deleteSelected(); return true; }
@@ -1165,7 +1172,7 @@ const PlanMarkup = {
     const st = pm.settings;
     const snap = document.getElementById('plan-snap-chip');
     if (snap) {
-      const on = [st.snapGrid && 'grid', st.snapEl && 'parts', st.snapVtx && 'corners', st.snapRoof !== false && typeof PlanSolar !== 'undefined' && PlanSolar.roofs().length && 'roofs', st.snapDxf && 'DXF'].filter(Boolean);
+      const on = [st.snapGrid && 'grid', st.snapEl && 'parts', st.snapVtx && 'corners', st.snapRoof !== false && typeof PlanSolar !== 'undefined' && PlanSolar.roofs().length && 'roofs', st.snapDxf && 'DXF', st.snapSeg !== false && 'lines', st.snapGuides !== false && 'guides', st.ortho && 'ortho', st.polar && 'polar'].filter(Boolean);
       snap.textContent = on.length ? `Snap: ${on.join(' · ')}` : 'Snap: off';
     }
     const g = document.getElementById('plan-grid-chip');
