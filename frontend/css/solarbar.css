@@ -68,6 +68,6 @@ body.dark-mode .plan-solar-bar { --sb-on-bg: #4a3318; --sb-on-bd: #e0954a; --sb-
 .sb-hint small { color: var(--text-secondary); }
 
 /* The hint strip says what the tool does, so the status bar keeps one line. */
-.plan-solar-on .plan-status { flex-wrap: nowrap; height: 37px; box-sizing: border-box; overflow: hidden; }
+.plan-solar-on .plan-status { flex-wrap: nowrap; height: 37px; box-sizing: border-box; overflow: visible; }
 .plan-solar-on .plan-info { flex: 1 1 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: right; }
 @media (max-width: 900px) { .sb-grp { padding: 0 8px; } .sb-fill { display: none; } }
